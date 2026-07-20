@@ -145,6 +145,83 @@ async function checkRouteErrorCodeI18nCoverage(
 }
 
 /**
+ * Track B — credit-note WAIVER reasons must have copy in every locale.
+ *
+ * A refund can legitimately carry no §86/10 ใบลดหนี้, and when that happens the
+ * admin toast is the only place a human is told — that the money went back AND
+ * that an output-VAT adjustment nobody has made is now outstanding. If the copy
+ * is missing, next-intl does not throw: it renders the raw dotted key. So the
+ * failure mode is an admin reading
+ * `admin.refund.success.waivedReason.section105Receipt` on a money surface and
+ * learning nothing.
+ *
+ * DERIVED FROM DOMAIN, not hand-listed. `CREDIT_NOTE_WAIVER_REASONS` is a
+ * closed `as const satisfies readonly CreditNoteWaiverReason[]`, so adding a
+ * reason there extends the required key set here automatically — which is the
+ * whole point: the person adding a reason is not the person who remembers the
+ * JSON exists.
+ *
+ * The snake_case → camelCase transform MUST stay in step with `waiverKey()` in
+ * refund-form.tsx. They are the same mapping written twice; if they diverge
+ * this gate passes while the toast renders a raw key.
+ */
+const WAIVER_REASON_SOURCE =
+  'src/modules/invoicing/domain/refund-credit-note-requirement.ts';
+const WAIVER_REASON_NAMESPACE = 'admin.refund.success.waivedReason';
+// Floor guard against a silent false-GREEN, same reasoning as `minCodes` above:
+// if the array's shape changes, fail loudly rather than conclude "0 required".
+const WAIVER_REASON_MIN = 2;
+const WAIVER_REASON_ARRAY_RE =
+  /CREDIT_NOTE_WAIVER_REASONS\s*=\s*\[([\s\S]*?)\]\s*as const/;
+
+const toCamel = (s: string): string =>
+  s.replace(/_([a-z0-9])/g, (_, c: string) => c.toUpperCase());
+
+async function checkWaiverReasonI18nCoverage(
+  sets: Record<Locale, Set<string>>,
+): Promise<boolean> {
+  const src = await readFile(resolve(process.cwd(), WAIVER_REASON_SOURCE), 'utf8');
+  const block = WAIVER_REASON_ARRAY_RE.exec(src);
+  if (block === null) {
+    console.error(
+      `[check:i18n] HARD FAIL — could not locate CREDIT_NOTE_WAIVER_REASONS in ` +
+        `${WAIVER_REASON_SOURCE}. Fix the extractor pattern — do NOT delete this check.`,
+    );
+    return false;
+  }
+  const reasons = [...block[1]!.matchAll(/'([a-z0-9_]+)'/g)].map((m) => m[1]!);
+  if (reasons.length < WAIVER_REASON_MIN) {
+    console.error(
+      `[check:i18n] HARD FAIL — extracted only ${reasons.length} waiver reason(s) ` +
+        `(expected >= ${WAIVER_REASON_MIN}). The extractor no longer matches the source. ` +
+        `Fix the pattern — do NOT lower WAIVER_REASON_MIN.`,
+    );
+    return false;
+  }
+
+  let ok = true;
+  // The two toast TITLES are structural too — a waiver renders one of them.
+  const required = [
+    'admin.refund.success.waivedToast',
+    'admin.refund.success.pendingWaivedToast',
+    ...reasons.map((r) => `${WAIVER_REASON_NAMESPACE}.${toCamel(r)}`),
+  ];
+  for (const key of required) {
+    for (const locale of LOCALES) {
+      if (!sets[locale].has(key)) {
+        console.error(
+          `[check:i18n] HARD FAIL — a refund can be issued with no §86/10 credit note, ` +
+            `but ${locale}.json has no "${key}". next-intl renders the raw dotted key, so ` +
+            `an admin would be told nothing about the outstanding VAT adjustment.`,
+        );
+        ok = false;
+      }
+    }
+  }
+  return ok;
+}
+
+/**
  * T040 — F5 sub-folder catalogue validation. The top-20 Stripe
  * decline-reason catalogue lives under `messages/{locale}/payment-
  * decline-reasons.json` (separate files per locale — the main
@@ -314,6 +391,13 @@ async function main(): Promise<void> {
   // soft path below exists for TH/SV translation lag; this is structural
   // wiring that breaks EN too, so it belongs with the namespace hard fail.
   if (!(await checkRouteErrorCodeI18nCoverage(sets))) {
+    process.exitCode = 1;
+  }
+
+  // Track B — same reasoning, same severity: a waived refund with no copy
+  // leaves an admin holding an unrecorded output-VAT obligation and a raw
+  // dotted key. Hard fail on every branch, EN included.
+  if (!(await checkWaiverReasonI18nCoverage(sets))) {
     process.exitCode = 1;
   }
 

@@ -3916,9 +3916,15 @@
         }
       },
       "success": {
-        "toast": "Återbetalning utförd — kreditnota {number} utfärdad och skickad till medlemmen",
+        "toast": "Återbetalning utförd — kreditnota {number} utfärdad",
         "pendingToast": "Återbetalning inskickad — inväntar bekräftelse från betalningsleverantören. Kreditnotan utfärdas när återbetalningen har genomförts.",
-        "deferredToast": "Återbetalningen är skickad — pengarna är på väg tillbaka till medlemmen. Kreditnotan slutförs automatiskt; ingen åtgärd behövs."
+        "deferredToast": "Återbetalningen är skickad — pengarna är på väg tillbaka till medlemmen. Kreditnotan slutförs automatiskt; ingen åtgärd behövs.",
+        "waivedToast": "Återbetalning utförd — ingen kreditnota utfärdades",
+        "pendingWaivedToast": "Återbetalning skickad — inväntar betalleverantören. Ingen kreditnota kommer att utfärdas.",
+        "waivedReason": {
+          "section105Receipt": "Originalhandlingen var ett kvitto enligt § 105, inte en momsfaktura enligt § 86/4, så det finns ingen faktura som en kreditnota enligt § 86/10 kan hänvisa till. Den utgående moms som redan deklarerats för denna försäljning har inte justerats — lämna över återbetalningen till revisorn vid månadsavslut.",
+          "invoiceVoided": "Fakturan makulerades, så det finns ingen momsfaktura kvar att kreditera. Om fakturan hade betalats och dess utgående moms redan deklarerats, lämna över återbetalningen till revisorn vid månadsavslut."
+        }
       },
       "error": {
         "title": "Det gick inte att utfärda återbetalningen",
@@ -3933,6 +3939,7 @@
         "f4_preflight_invalid_status": "Denna faktura kan inte längre krediteras och kan därför inte återbetalas. Inga pengar flyttades. Kontrollera fakturan — den kan ha makulerats eller redan krediterats i sin helhet.",
         "f4_preflight_not_creditable": "För denna betalning utfärdades endast ett kvitto, inte en skattefaktura, så ingen kreditnota kan utfärdas för den. Inga pengar flyttades. Återbetalning kräver manuell hantering — kontakta supporten.",
         "f4_preflight_receipt_rendering": "Kvittot för denna betalning håller fortfarande på att skapas. Inga pengar flyttades — försök återbetala igen om några minuter.",
+        "invoice_data_corrupt": "Denna faktura saknar de köparuppgifter som registrerades vid utfärdandet, så återbetalningens skattemässiga hantering kan inte fastställas säkert. Inga pengar flyttades. Detta är ett datafel som inte kan åtgärdas från den här vyn — kontakta supporten.",
         "f4_preflight_receipt_render_stuck": "Kvittot för denna betalning skapades inte, och det slutförs inte av sig själv. Inga pengar flyttades. Supporten behöver skapa om kvittot innan återbetalningen kan genomföras — kontakta supporten.",
         "tenant_settings_incomplete": "Betalningsinställningarna är ofullständiga, så återbetalningar kan inte behandlas. Inga pengar flyttades. Be en administratör komplettera betalningsinställningarna.",
         "invalid_input": "Återbetalningsbegäran avvisades som ogiltig. Inga pengar flyttades. Kontrollera belopp och orsak och försök igen.",

@@ -157,6 +157,19 @@ export type IssueRefundSuccess =
         readonly id: string;
         readonly status: 'pending';
         readonly processorRefundId: string;
+        /**
+         * Track B — the waiver DECISION, already known. It is resolved at
+         * pre-flight and stamped on the row at Phase-A insert, long before
+         * Stripe settles, so an async refund can say truthfully whether a
+         * §86/10 will ever follow. Without it the admin is told "the credit
+         * note is issued once the refund settles" for a refund where none ever
+         * will be — the same class of lie as the synchronous toast this
+         * remediation started from.
+         *
+         * `null` on the ordinary path: a credit note IS owed and will be
+         * booked by the `charge.refund.updated` webhook.
+         */
+        readonly creditNoteWaiverReason: CreditNoteWaiverReason | null;
       };
     };
 
@@ -1006,6 +1019,7 @@ async function issueRefundBody(
         id: prepared.refundId,
         status: 'pending',
         processorRefundId: stripeRefund.value.id,
+        creditNoteWaiverReason: prepared.creditNoteWaiverReason,
       },
     });
   }

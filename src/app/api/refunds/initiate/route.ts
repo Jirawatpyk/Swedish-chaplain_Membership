@@ -330,6 +330,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
               id: v.refund.id,
               status: v.refund.status,
               processorRefundId: v.refund.processorRefundId,
+              // Track B — known at pre-flight, so the 202 can say truthfully
+              // whether a §86/10 will ever follow this refund. Null on the
+              // ordinary path (the webhook books one when Stripe settles).
+              creditNoteWaiverReason: v.refund.creditNoteWaiverReason,
             },
             message: REFUND_PENDING_MESSAGE_EN,
             messageThai: REFUND_PENDING_MESSAGE_TH,

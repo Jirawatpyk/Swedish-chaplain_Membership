@@ -3916,9 +3916,15 @@
         }
       },
       "success": {
-        "toast": "Refund processed — credit note {number} issued and emailed to member",
+        "toast": "Refund processed — credit note {number} issued",
         "pendingToast": "Refund submitted — awaiting confirmation from the payment processor. The credit note is issued once the refund settles.",
-        "deferredToast": "Refund sent — the money is on its way back to the member. The credit note completes automatically; no action is needed."
+        "deferredToast": "Refund sent — the money is on its way back to the member. The credit note completes automatically; no action is needed.",
+        "waivedToast": "Refund processed — no credit note (ใบลดหนี้) was issued",
+        "pendingWaivedToast": "Refund submitted — awaiting the payment processor. No credit note will be issued.",
+        "waivedReason": {
+          "section105Receipt": "The original document was a Section 105 receipt (ใบเสร็จรับเงิน), not a Section 86/4 tax invoice, so there is no tax invoice for a Section 86/10 credit note to reference. The output VAT already filed on this sale has not been adjusted — pass this refund to the accountant at month close.",
+          "invoiceVoided": "The invoice was voided, so there is no tax invoice left to credit. If this invoice had been paid and its output VAT already filed, pass this refund to the accountant at month close."
+        }
       },
       "error": {
         "title": "Couldn't issue the refund",
@@ -3933,6 +3939,7 @@
         "f4_preflight_invalid_status": "This invoice can no longer be credited, so it can't be refunded. No money was moved. Check the invoice — it may have been voided or already fully credited.",
         "f4_preflight_not_creditable": "This payment was issued a Section 105 receipt, not a tax invoice/receipt, so no credit note can be issued against it. No money was moved. Refunding it needs a manual process — please contact support.",
         "f4_preflight_receipt_rendering": "The receipt for this payment is still being generated. No money was moved — try the refund again in a few minutes.",
+        "invoice_data_corrupt": "This invoice is missing the buyer details recorded at issue time, so the tax treatment of a refund cannot be determined safely. No money was moved. This is a data fault, not something you can resolve from this screen — please contact support.",
         "f4_preflight_receipt_render_stuck": "The receipt for this payment was not generated, and it will not complete on its own. No money was moved. This needs support to regenerate the receipt before the refund can go through — please contact support.",
         "tenant_settings_incomplete": "Payment settings are incomplete, so refunds cannot be processed. No money was moved. Ask an administrator to complete the payment settings.",
         "invalid_input": "The refund request was rejected as invalid. No money was moved. Check the amount and reason, then try again.",
