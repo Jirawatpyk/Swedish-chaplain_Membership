@@ -31,6 +31,15 @@ export {
 
 export { type CycleStatus } from './domain/value-objects/cycle-status';
 
+// WP3 — plan price-change classifier. Pure Domain TS (zero imports), so it is
+// client-bundle-safe. Consumed by the portal renewal grouping + downgrade
+// dialog; also exported from the full barrel for the server confirmRenewal gate.
+export {
+  classifyPlanPriceChange,
+  requiresDowngradeAck,
+  type PlanPriceChange,
+} from './domain/plan-price-change';
+
 // Outreach-channel canonical list — pure Domain TS (imports only
 // `@/lib/result`), so it is client-bundle-safe. Consumed by the at-risk
 // OutreachDialog channel <Select> (067 #4 review-fix — replaced a
