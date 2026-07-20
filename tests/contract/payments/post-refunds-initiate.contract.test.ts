@@ -175,7 +175,14 @@ const SUCCESS_PAYLOAD = {
     reason: 'Tier downgrade — partial refund of upgrade fee',
     status: 'succeeded' as const,
     processorRefundId: 're_3RABCDEFGHIJK',
-    creditNoteId: 'cn_01JABCDEFGHIJKL',
+    // Track B — the use-case reports the documenting instrument as a
+    // discriminated union, so a waived refund cannot masquerade as an issued
+    // credit note with an empty number.
+    creditNote: {
+      kind: 'issued' as const,
+      id: 'cn_01JABCDEFGHIJKL',
+      number: 'CN-2026-000042',
+    },
     completedAt: '2026-05-15T03:14:22.456Z',
   },
   payment: {
@@ -470,23 +477,66 @@ describe('contract: POST /api/refunds/initiate (T101)', () => {
   // axis (check the invoice / permanent, escalate / just wait for the render),
   // so collapsing them into one code would make the copy wrong for two thirds
   // of the cases.
+  // Track B — the use-case now returns ONE error code carrying F4's Domain
+  // reason, and the ROUTE fans that reason out to the operator-facing codes.
+  // That fan-out is the thing worth pinning here: the reason→(status, code)
+  // table is where an admin's next step is decided, and Domain cannot see it.
+  //
+  // Two entries changed meaning. `identity_snapshot_missing` is a 422, not a
+  // 409 — the request is well-formed and the stored row is not. And a VOIDED
+  // invoice no longer appears at all: it waives and the refund proceeds, which
+  // is asserted on the success side, not here.
   const preflightRefusals = [
-    { code: 'f4_preflight_invalid_status', error: { code: 'f4_preflight_invalid_status', status: 'void' } },
-    { code: 'f4_preflight_not_creditable', error: { code: 'f4_preflight_not_creditable' } },
-    { code: 'f4_preflight_receipt_rendering', error: { code: 'f4_preflight_receipt_rendering' } },
-    { code: 'f4_preflight_receipt_render_stuck', error: { code: 'f4_preflight_receipt_render_stuck' } },
+    {
+      name: 'already-credited invoice',
+      reason: {
+        code: 'invoice_not_creditable',
+        retryability: 'permanent',
+        status: 'credited',
+      },
+      expectedStatus: 409,
+      expectedCode: 'f4_preflight_invalid_status',
+    },
+    {
+      name: 'corrupt buyer snapshot',
+      reason: { code: 'identity_snapshot_missing', retryability: 'permanent' },
+      expectedStatus: 422,
+      expectedCode: 'invoice_data_corrupt',
+    },
+    {
+      name: 'receipt still rendering',
+      reason: { code: 'receipt_render_pending', retryability: 'transient' },
+      expectedStatus: 409,
+      expectedCode: 'f4_preflight_receipt_rendering',
+    },
+    {
+      name: 'receipt render failed',
+      reason: { code: 'receipt_render_failed', retryability: 'operator' },
+      expectedStatus: 409,
+      expectedCode: 'f4_preflight_receipt_render_stuck',
+    },
+    {
+      // Shares the code above deliberately — distinct in Domain for telemetry,
+      // identical in remedy, so one copy serves both.
+      name: 'receipt render never started (NULL)',
+      reason: { code: 'receipt_render_not_started', retryability: 'operator' },
+      expectedStatus: 409,
+      expectedCode: 'f4_preflight_receipt_render_stuck',
+    },
   ] as const;
 
   for (const c of preflightRefusals) {
-    it(`409 ${c.code} — F4 would decline the credit note; refused before Stripe`, async () => {
+    it(`${c.expectedStatus} ${c.expectedCode} — ${c.name}; refused before Stripe`, async () => {
       requireAdminContextMock.mockResolvedValueOnce(adminContext);
-      issueRefundMock.mockResolvedValueOnce(err(c.error));
+      issueRefundMock.mockResolvedValueOnce(
+        err({ code: 'f4_preflight_credit_note_blocked', reason: c.reason }),
+      );
 
       const { POST } = await importRoute();
       const res = await POST(makeJsonRequest(VALID_BODY));
-      expect(res.status).toBe(409);
+      expect(res.status).toBe(c.expectedStatus);
       const body = (await res.json()) as Record<string, unknown>;
-      expect((body['error'] as Record<string, unknown>)['code']).toBe(c.code);
+      expect((body['error'] as Record<string, unknown>)['code']).toBe(c.expectedCode);
     });
   }
 

@@ -62,6 +62,13 @@ function makeRefund(partial: Partial<Refund> = {}): Refund {
     processorRefundId: 're_test_1',
     failureReasonCode: null,
     creditNoteId: null,
+    // Track B — the webhook finaliser reads the waiver decision off the ROW
+    // (it was pinned at Phase-A insert). Omitting these leaves them `undefined`,
+    // and the finaliser's `waiverReason === null` test then takes the WAIVE arm
+    // for an ordinary refund — silently skipping credit-note issuance. Explicit
+    // nulls are load-bearing here, not boilerplate.
+    creditNoteWaivedAt: null,
+    creditNoteWaiverReason: null,
     initiatedAt: new Date('2026-07-11T00:00:00.000Z'),
     completedAt: null,
     initiatorUserId: 'usr_admin_1',

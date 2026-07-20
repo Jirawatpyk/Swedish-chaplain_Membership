@@ -614,6 +614,11 @@ describe('processWebhookEvent (T056)', () => {
       processorRefundId: 're_xevent',
       failureReasonCode: null,
       creditNoteId: null,
+      // Track B — explicit nulls: the finaliser reads the waiver decision off
+      // this row, and `undefined` would route an ordinary refund down the
+      // waive arm (skipping credit-note issuance entirely).
+      creditNoteWaivedAt: null,
+      creditNoteWaiverReason: null,
       initiatedAt: new Date(),
       completedAt: null,
       initiatorUserId: 'usr_1',

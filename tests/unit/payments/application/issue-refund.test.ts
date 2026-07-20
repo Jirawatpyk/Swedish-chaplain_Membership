@@ -213,18 +213,20 @@ function makeDeps(
     // + total===payment.amount so the invoice bound never binds tighter than
     // the payment bound → every existing assertion (payment-cap only) is
     // preserved. Per-test overrides exercise the credit-based cap.
-    // F-4 (money-remediation Task 7) — the read also carries the three axes of
-    // F4's credit-note gate. Defaults are the ALLOW values (a paid, creditable
-    // invoice whose receipt has rendered) so every pre-existing assertion in
-    // this file keeps testing what it was written to test; the F-4 describe
-    // block below overrides them per axis.
+    // F-4 (money-remediation Task 7) — the read also carries F4's credit-note
+    // verdict. Track B replaced the three hand-ordered axes (`status`,
+    // `creditable`, `receiptRenderState`) with ONE Domain verdict, so the gate
+    // order lives in `resolveRefundCreditNoteRequirement` and cannot be
+    // reordered independently by each caller.
+    //
+    // Default is `issue` — a credit note is owed AND issuable — so every
+    // pre-existing assertion in this file keeps testing what it was written to
+    // test; the F-4 describe block below overrides it per verdict.
     getInvoiceCreditedTotal: vi.fn(async () =>
       ok({
         creditedTotalSatang: asSatang(0n),
         totalSatang: PAYMENT_AMOUNT_SATANG,
-        status: 'paid' as const,
-        creditable: true,
-        receiptRenderState: 'rendered' as const,
+        creditNoteRequirement: { kind: 'issue' as const },
       }),
     ),
     // tax#5 (B.2) — the shared finaliser now reads the invoice's
@@ -510,38 +512,57 @@ describe('issueRefund (T108) — Stripe + F4 failure paths', () => {
   // PLACEMENT rather than mere existence: `err()` inside `runInTenant` COMMITS,
   // so a guard below either write would leave a phantom `pending` row (which
   // then blocks every future refund on this payment) plus a false audit trail.
+  // Track B — every rejection now travels under ONE code,
+  // `f4_preflight_credit_note_blocked`, carrying the Domain reason. The reason
+  // (not the code) is what the copy, the route mapping and the F8 bridge branch
+  // on, so each case pins the reason and its `retryability` classification.
   const preflightRejectionCases = [
     {
-      name: 'voided invoice',
-      overrides: { status: 'void' as const },
-      expectedCode: 'f4_preflight_invalid_status',
-    },
-    {
       name: 'already fully-credited invoice',
-      overrides: { status: 'credited' as const },
-      expectedCode: 'f4_preflight_invalid_status',
-    },
-    {
-      name: '§105 receipt (non-VAT-registrant event buyer) — permanently uncreditable',
-      overrides: { creditable: false },
-      expectedCode: 'f4_preflight_not_creditable',
+      blockReason: {
+        code: 'invoice_not_creditable' as const,
+        retryability: 'permanent' as const,
+        status: 'credited' as const,
+      },
     },
     {
       // C2 — TRANSIENT arm. The reconcile cron sweeps stuck `pending` rows, so
       // this genuinely clears itself and the copy may say "wait".
       name: 'receipt PDF still rendering (pending)',
-      overrides: { receiptRenderState: 'rendering' as const },
-      expectedCode: 'f4_preflight_receipt_rendering',
+      blockReason: {
+        code: 'receipt_render_pending' as const,
+        retryability: 'transient' as const,
+      },
     },
     {
       // C2 — OPERATOR arm: `failed` or NULL. Nothing sweeps these (the cron
       // resets the attempts counter, and its scan predicate matches NULL not
       // at all), so telling the admin to wait strands the member's money with
-      // nobody alerted. MUST be a different code from its sibling above —
-      // route codes are the i18n keys, so one code cannot carry both copies.
-      name: 'receipt PDF failed or never started (stuck)',
-      overrides: { receiptRenderState: 'unrendered' as const },
-      expectedCode: 'f4_preflight_receipt_render_stuck',
+      // nobody alerted. MUST carry a different reason from its sibling above —
+      // reasons drive the i18n keys, so one reason cannot carry both copies.
+      name: 'receipt PDF failed (stuck)',
+      blockReason: {
+        code: 'receipt_render_failed' as const,
+        retryability: 'operator' as const,
+      },
+    },
+    {
+      name: 'receipt PDF never started (NULL — cron never sweeps it)',
+      blockReason: {
+        code: 'receipt_render_not_started' as const,
+        retryability: 'operator' as const,
+      },
+    },
+    {
+      // Track B — the corrupt row. Kept on the REFUSE side deliberately: the
+      // §105 discriminator is fail-closed, so a missing snapshot would
+      // otherwise WAIVE — moving money and creating an output-VAT obligation
+      // with no credit note recording it.
+      name: 'missing buyer identity snapshot (corrupt row)',
+      blockReason: {
+        code: 'identity_snapshot_missing' as const,
+        retryability: 'permanent' as const,
+      },
     },
   ];
 
@@ -552,10 +573,7 @@ describe('issueRefund (T108) — Stripe + F4 failure paths', () => {
         ok({
           creditedTotalSatang: asSatang(0n),
           totalSatang: PAYMENT_AMOUNT_SATANG,
-          status: 'paid' as const,
-          creditable: true,
-          receiptRenderState: 'rendered' as const,
-          ...c.overrides,
+          creditNoteRequirement: { kind: 'blocked' as const, reason: c.blockReason },
         }),
       );
 
@@ -572,7 +590,82 @@ describe('issueRefund (T108) — Stripe + F4 failure paths', () => {
       ).toBeUndefined();
 
       expect(r.ok).toBe(false);
-      if (!r.ok) expect(r.error.code).toBe(c.expectedCode);
+      if (!r.ok) {
+        expect(r.error.code).toBe('f4_preflight_credit_note_blocked');
+        if (r.error.code === 'f4_preflight_credit_note_blocked') {
+          // The reason travels WHOLE. A code-only assertion would pass an
+          // implementation that dropped `retryability`, which is what decides
+          // whether F8 waits or escalates and whether the copy says "retry".
+          expect(r.error.reason).toEqual(c.blockReason);
+        }
+      }
+    });
+  }
+
+  // ── Track B: the two verdicts that INVERTED ─────────────────────────────
+  //
+  // Both of these used to refuse the refund. Refusing was the bug: a voided
+  // invoice and a §105 receipt are precisely the two states where NO §86/10 is
+  // owed, and `void-invoice` writes nothing to payments — so refusing stranded
+  // settled member money behind a gate that could never open.
+  //
+  // These assert the MONEY moved. The waiver's persistence and forensic trail
+  // are asserted separately; what would be catastrophic here is a silent
+  // regression back to refusing, which only a "createRefund WAS called"
+  // assertion catches.
+  const preflightWaiverCases = [
+    {
+      name: 'voided invoice — the void stamp is the tax reversal',
+      reason: 'invoice_voided' as const,
+      invoiceStatus: 'void' as const,
+    },
+    {
+      name: '§105 receipt (non-registrant event buyer) — no ใบกำกับภาษี to cite',
+      reason: 'section_105_receipt' as const,
+      invoiceStatus: 'paid' as const,
+    },
+  ];
+
+  for (const c of preflightWaiverCases) {
+    it(`Track B — PROCEEDS past Stripe on a waiver: ${c.name}`, async () => {
+      const deps = makeDeps();
+      asMock(deps.invoicingBridge.getInvoiceCreditedTotal).mockResolvedValueOnce(
+        ok({
+          creditedTotalSatang: asSatang(0n),
+          totalSatang: PAYMENT_AMOUNT_SATANG,
+          creditNoteRequirement: {
+            kind: 'waive' as const,
+            reason: c.reason,
+            invoiceStatus: c.invoiceStatus,
+          },
+        }),
+      );
+
+      const r = await issueRefund(deps, baseInput());
+
+      // THE assertion: the member's money went back.
+      expect(asMock(deps.processorGateway.createRefund)).toHaveBeenCalledTimes(1);
+      expect(r.ok).toBe(true);
+
+      // The waiver reason is pinned on the row at Phase-A INSERT, not at
+      // settlement — so a refund that later fails at Stripe still carries the
+      // decision that was made about it.
+      const inserted = asMock(deps.refundsRepo.insert).mock.calls[0]?.[0] as
+        | Record<string, unknown>
+        | undefined;
+      expect(inserted?.['creditNoteWaiverReason']).toBe(c.reason);
+
+      // 10-year forensic — this is the ONLY durable record that a refund
+      // legitimately carried no §86/10, and the accountant's month-close
+      // discovery query is built on it.
+      const waived = asMock(deps.audit.emit).mock.calls.find(
+        (call) => call[1].eventType === 'refund_credit_note_waived',
+      );
+      expect(waived).toBeDefined();
+      expect(waived![1].payload).toMatchObject({
+        waiver_reason: c.reason,
+        invoice_status: c.invoiceStatus,
+      });
     });
   }
 
@@ -587,9 +680,12 @@ describe('issueRefund (T108) — Stripe + F4 failure paths', () => {
       ok({
         creditedTotalSatang: asSatang(0n),
         totalSatang: PAYMENT_AMOUNT_SATANG,
-        status: 'partially_credited' as const,
-        creditable: true,
-        receiptRenderState: 'rendered' as const,
+        // Track B moved the status allow-list INTO the Domain resolver, which
+        // is where the `paid | partially_credited` pair is now pinned (see
+        // tests/unit/invoicing/domain/refund-credit-note-requirement.test.ts).
+        // From this use-case's side the observable contract is that a verdict
+        // of `issue` proceeds — regardless of which status produced it.
+        creditNoteRequirement: { kind: 'issue' as const },
       }),
     );
 
@@ -771,8 +867,15 @@ describe('issueRefund (T108) — happy paths', () => {
     if (r.ok && r.value.kind === 'succeeded') {
       expect(r.value.refund.status).toBe('succeeded');
       expect(r.value.refund.processorRefundId).toBe('re_test_xxx');
-      expect(r.value.refund.creditNoteId).toBe('cn_test_1');
-      expect(r.value.refund.creditNoteNumber).toBe('TC-2026-000001');
+      // Track B — the flat `creditNoteId`/`creditNoteNumber` pair became a
+      // discriminated union so a waived refund cannot present as an issued one
+      // carrying empty strings. Deep-equal the whole arm: asserting only `.id`
+      // would pass a `kind:'waived'` object that happened to carry an id.
+      expect(r.value.refund.creditNote).toEqual({
+        kind: 'issued',
+        id: 'cn_test_1',
+        number: 'TC-2026-000001',
+      });
       expect(r.value.payment.status).toBe('partially_refunded');
       expect(r.value.payment.refundedAmountSatang).toBe(350_000n);
       expect(r.value.payment.remainingRefundableSatang).toBe(5_000_000n);
@@ -1144,7 +1247,10 @@ describe('issueRefund (#1) — Stripe refund-status branch', () => {
     expect(r.ok).toBe(true);
     if (r.ok && r.value.kind === 'succeeded') {
       // The idempotent F4 CN read (A.7) still returns the existing CN.
-      expect(r.value.refund.creditNoteId).toBe('cn_test_1');
+      expect(r.value.refund.creditNote).toMatchObject({
+        kind: 'issued',
+        id: 'cn_test_1',
+      });
       expect(r.value.refund.status).toBe('succeeded');
     } else {
       throw new Error('expected kind=succeeded on the sibling-won path');

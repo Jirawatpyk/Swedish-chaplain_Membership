@@ -62,10 +62,21 @@ const docKindSpies = vi.hoisted(() => ({
   resolveBuyerIsVatRegistrant: vi.fn(),
 }));
 
+// Track B — `resolveRefundCreditNoteRequirement` is the THIRD barrel binding
+// the bridge reaches for, and omitting it from this factory reproduced the
+// documented failure above verbatim: the binding is `undefined`, the call
+// throws, and all eleven derivation cases surface as `credit_gate_underivable`
+// rather than as "the mock is missing an export". Wired to the REAL resolver
+// for the same reason the doc-kind pair is — a stub would test the opposite of
+// the invariant, which is that F4's rules are answered in exactly one place.
+// Pure Domain (no framework/ORM imports), so importing it for real is safe.
 vi.mock('@/modules/invoicing', async () => {
   const docKind = await vi.importActual<
     typeof import('@/modules/invoicing/domain/document-kind')
   >('@/modules/invoicing/domain/document-kind');
+  const cnRequirement = await vi.importActual<
+    typeof import('@/modules/invoicing/domain/refund-credit-note-requirement')
+  >('@/modules/invoicing/domain/refund-credit-note-requirement');
   docKindSpies.inferEventDocumentKind.mockImplementation(
     docKind.inferEventDocumentKind,
   );
@@ -76,6 +87,8 @@ vi.mock('@/modules/invoicing', async () => {
     ...f4Mock,
     inferEventDocumentKind: docKindSpies.inferEventDocumentKind,
     resolveBuyerIsVatRegistrant: docKindSpies.resolveBuyerIsVatRegistrant,
+    resolveRefundCreditNoteRequirement:
+      cnRequirement.resolveRefundCreditNoteRequirement,
   };
 });
 
@@ -514,9 +527,17 @@ describe('invoicingBridge.getInvoiceCreditedTotal — Minor#1 graceful read-thro
   // from the payments integration suite without seeding a full F6 event +
   // event_registration (the `invoices_subject_fields_ck` CHECK requires both),
   // so this is where that derivation is pinned.
+  // Track B — these cases pin the COMPOSITION, not the rules. The rules
+  // (`resolveRefundCreditNoteRequirement`) are pinned arm-by-arm in
+  // tests/unit/invoicing/domain/refund-credit-note-requirement.test.ts. What
+  // only this file can catch is the bridge feeding the resolver the WRONG
+  // INPUTS: `inferEventDocumentKind ∘ resolveBuyerIsVatRegistrant` for the §105
+  // axis, `memberIdentitySnapshot != null` for the integrity axis, and the raw
+  // receipt column. A resolver with perfect unit coverage still returns the
+  // wrong verdict if this composition drifts.
   const derivationCases = [
     {
-      name: 'membership invoice → creditable (§86/4 tax invoice)',
+      name: 'membership invoice → issue (§86/4 tax invoice)',
       invoice: {
         invoiceSubject: 'membership',
         memberId,
@@ -524,10 +545,14 @@ describe('invoicingBridge.getInvoiceCreditedTotal — Minor#1 graceful read-thro
         receiptPdfStatus: 'rendered',
         status: 'paid',
       },
-      expected: { creditable: true, receiptRenderState: 'rendered', status: 'paid' },
+      expected: { kind: 'issue' },
     },
     {
-      name: 'event invoice, NON-registrant buyer → NOT creditable (§105 receipt)',
+      // Track B INVERSION — this case used to assert the refund was REFUSED.
+      // A §105 receipt owes no §86/10 at all (there is no original ใบกำกับภาษี
+      // for one to cite), so the correct verdict is WAIVE: the money goes back
+      // and the waiver is recorded on the refund row.
+      name: 'event invoice, NON-registrant buyer → WAIVE (§105 receipt)',
       invoice: {
         invoiceSubject: 'event',
         memberId,
@@ -537,10 +562,14 @@ describe('invoicingBridge.getInvoiceCreditedTotal — Minor#1 graceful read-thro
         receiptPdfStatus: 'rendered',
         status: 'paid',
       },
-      expected: { creditable: false, receiptRenderState: 'rendered', status: 'paid' },
+      expected: {
+        kind: 'waive',
+        reason: 'section_105_receipt',
+        invoiceStatus: 'paid',
+      },
     },
     {
-      name: 'event invoice, VAT-registrant buyer → creditable',
+      name: 'event invoice, VAT-registrant buyer → issue',
       invoice: {
         invoiceSubject: 'event',
         memberId,
@@ -548,12 +577,12 @@ describe('invoicingBridge.getInvoiceCreditedTotal — Minor#1 graceful read-thro
         receiptPdfStatus: 'rendered',
         status: 'paid',
       },
-      expected: { creditable: true, receiptRenderState: 'rendered', status: 'paid' },
+      expected: { kind: 'issue' },
     },
     {
       // C2 — TRANSIENT. The reconcile cron's scan matches `pending` rows older
       // than the stuck interval, so this genuinely clears itself.
-      name: 'receipt PDF pending → rendering (transient)',
+      name: 'receipt PDF pending → blocked, transient',
       invoice: {
         invoiceSubject: 'membership',
         memberId,
@@ -561,7 +590,10 @@ describe('invoicingBridge.getInvoiceCreditedTotal — Minor#1 graceful read-thro
         receiptPdfStatus: 'pending',
         status: 'paid',
       },
-      expected: { creditable: true, receiptRenderState: 'rendering', status: 'paid' },
+      expected: {
+        kind: 'blocked',
+        reason: { code: 'receipt_render_pending', retryability: 'transient' },
+      },
     },
     {
       // C2 — NOT transient, deliberately. The reconcile cron RESETS
@@ -570,7 +602,7 @@ describe('invoicingBridge.getInvoiceCreditedTotal — Minor#1 graceful read-thro
       // gave up and paged". Classified as operator-action on the asymmetry: a
       // false "escalate" costs a self-resolving ticket, a false "wait a few
       // minutes" costs the member their refund indefinitely.
-      name: 'receipt PDF failed → unrendered (operator action, NOT "wait")',
+      name: 'receipt PDF failed → blocked, operator (NOT "wait")',
       invoice: {
         invoiceSubject: 'membership',
         memberId,
@@ -578,7 +610,10 @@ describe('invoicingBridge.getInvoiceCreditedTotal — Minor#1 graceful read-thro
         receiptPdfStatus: 'failed',
         status: 'paid',
       },
-      expected: { creditable: true, receiptRenderState: 'unrendered', status: 'paid' },
+      expected: {
+        kind: 'blocked',
+        reason: { code: 'receipt_render_failed', retryability: 'operator' },
+      },
     },
     {
       // C2 + I2 — the input that gave a silently wrong answer before. NULL is
@@ -586,7 +621,7 @@ describe('invoicingBridge.getInvoiceCreditedTotal — Minor#1 graceful read-thro
       // (`= 'failed'` OR `= 'pending' AND stuck`), because SQL NULL compares
       // equal to nothing. So a null-status row is swept by nobody, ever, and
       // telling the admin to wait a few minutes is simply false.
-      name: 'receipt PDF status NULL → unrendered (cron never sweeps NULL)',
+      name: 'receipt PDF status NULL → blocked, operator (cron never sweeps NULL)',
       invoice: {
         invoiceSubject: 'membership',
         memberId,
@@ -594,15 +629,19 @@ describe('invoicingBridge.getInvoiceCreditedTotal — Minor#1 graceful read-thro
         receiptPdfStatus: null,
         status: 'paid',
       },
-      expected: { creditable: true, receiptRenderState: 'unrendered', status: 'paid' },
+      expected: {
+        kind: 'blocked',
+        reason: { code: 'receipt_render_not_started', retryability: 'operator' },
+      },
     },
     {
       // I2 / 066 relax — THE case with live production rows behind it. A
       // membership invoice is a valid §86/4 regardless of the buyer's
-      // registrant status, so it stays creditable. Production holds 11 such
-      // invoices; the wrong buyer-side §86/10 rationale, if ever acted on,
-      // would break exactly these.
-      name: 'membership invoice, NON-registrant buyer → still creditable (066 relax)',
+      // registrant status, so a credit note IS owed and IS issuable. Production
+      // holds 11 such invoices; the wrong buyer-side §86/10 rationale, if ever
+      // acted on, would flip exactly these to `waive` and stop issuing the
+      // credit notes those members are entitled to.
+      name: 'membership invoice, NON-registrant buyer → still issue (066 relax)',
       invoice: {
         invoiceSubject: 'membership',
         memberId,
@@ -610,13 +649,13 @@ describe('invoicingBridge.getInvoiceCreditedTotal — Minor#1 graceful read-thro
         receiptPdfStatus: 'rendered',
         status: 'paid',
       },
-      expected: { creditable: true, receiptRenderState: 'rendered', status: 'paid' },
+      expected: { kind: 'issue' },
     },
     {
       // I2 — the walk-in arm. `resolveBuyerIsVatRegistrant` falls back to TIN
       // presence when `memberId` is null; every case above passes a non-null
       // memberId, so this branch was unexercised here.
-      name: 'walk-in (memberId null) event invoice WITH a TIN → creditable',
+      name: 'walk-in (memberId null) event invoice WITH a TIN → issue',
       invoice: {
         invoiceSubject: 'event',
         memberId: null,
@@ -624,10 +663,11 @@ describe('invoicingBridge.getInvoiceCreditedTotal — Minor#1 graceful read-thro
         receiptPdfStatus: 'rendered',
         status: 'paid',
       },
-      expected: { creditable: true, receiptRenderState: 'rendered', status: 'paid' },
+      expected: { kind: 'issue' },
     },
     {
-      name: 'walk-in (memberId null) event invoice with NO TIN → not creditable',
+      // Track B INVERSION — see the §105 case above. Same reason, walk-in arm.
+      name: 'walk-in (memberId null) event invoice with NO TIN → WAIVE (§105)',
       invoice: {
         invoiceSubject: 'event',
         memberId: null,
@@ -635,10 +675,17 @@ describe('invoicingBridge.getInvoiceCreditedTotal — Minor#1 graceful read-thro
         receiptPdfStatus: 'rendered',
         status: 'paid',
       },
-      expected: { creditable: false, receiptRenderState: 'rendered', status: 'paid' },
+      expected: {
+        kind: 'waive',
+        reason: 'section_105_receipt',
+        invoiceStatus: 'paid',
+      },
     },
     {
-      name: 'voided invoice → status surfaced verbatim',
+      // Track B INVERSION — the void carve-out. `void-invoice` writes NOTHING
+      // to payments, so refusing here strands settled member money permanently.
+      // The void stamp IS the tax reversal; no §86/10 is owed.
+      name: 'voided invoice → WAIVE (the void stamp is the reversal)',
       invoice: {
         invoiceSubject: 'membership',
         memberId,
@@ -646,19 +693,44 @@ describe('invoicingBridge.getInvoiceCreditedTotal — Minor#1 graceful read-thro
         receiptPdfStatus: 'rendered',
         status: 'void',
       },
-      expected: { creditable: true, receiptRenderState: 'rendered', status: 'void' },
+      expected: {
+        kind: 'waive',
+        reason: 'invoice_voided',
+        invoiceStatus: 'void',
+      },
+    },
+    {
+      // Track B — the corrupt row. `resolveBuyerIsVatRegistrant` is FAIL-CLOSED
+      // for a missing snapshot: it answers "not a registrant", which on an event
+      // invoice yields `isSection105` and would therefore WAIVE. Waiving moves
+      // money AND creates an output-VAT obligation nobody recorded, so the
+      // resolver blocks instead. This case is the composition proof: the bridge
+      // must feed `hasIdentitySnapshot` SEPARATELY from the §105 discriminator,
+      // because the discriminator alone cannot tell corruption from a real §105.
+      name: 'event invoice, NULL snapshot → blocked (corruption, not a §105)',
+      invoice: {
+        invoiceSubject: 'event',
+        memberId,
+        memberIdentitySnapshot: null,
+        receiptPdfStatus: 'rendered',
+        status: 'paid',
+      },
+      expected: {
+        kind: 'blocked',
+        reason: { code: 'identity_snapshot_missing', retryability: 'permanent' },
+      },
     },
   ];
 
-  it('I2: a refusing gate leaves a discriminating trace; a passing one is silent', async () => {
+  it('I2: a non-issue gate leaves a discriminating trace; a passing one is silent', async () => {
     const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
     try {
       // A corrupt row: `memberIdentitySnapshot` is null, so
       // `resolveBuyerIsVatRegistrant` takes its FAIL-CLOSED arm and returns
-      // false — identical output to a legitimate §105 receipt. Downstream sees
-      // only `f4_preflight_not_creditable` either way, so without this log a
-      // snapshot-shape regression that made every event invoice uncreditable
-      // would look like "finance says refunds stopped working" and nothing else.
+      // false — identical output to a legitimate §105 receipt. Under Track B
+      // those two inputs now diverge into OPPOSITE money outcomes (block vs
+      // waive), which raises the stakes on this log rather than lowering them:
+      // the verdict alone no longer tells an operator which one happened.
       f4Mock.getInvoice.mockResolvedValueOnce(
         ok({
           id: invoiceId,
@@ -676,15 +748,14 @@ describe('invoicingBridge.getInvoiceCreditedTotal — Minor#1 graceful read-thro
       await bridge.getInvoiceCreditedTotal({ tenantId, invoiceId });
 
       const call = warnSpy.mock.calls.find(
-        (c) => c[1] === 'invoicing-bridge.credit_gate_will_refuse',
+        (c) => c[1] === 'invoicing-bridge.credit_gate_non_issue',
       );
       expect(call).toBeDefined();
       const c = call![0] as Record<string, unknown>;
-      expect(c['creditable']).toBe(false);
-      expect(c['receiptRenderState']).toBe('unrendered');
+      expect(c['creditNoteVerdict']).toBe('blocked');
+      expect(c['verdictReason']).toBe('identity_snapshot_missing');
       // The raw column separates "a worker gave up" from "no cron ever scanned
-      // this row" — both collapse to `unrendered`, but they need different
-      // human action.
+      // this row" — both need different human action.
       expect(c['receiptPdfStatus']).toBeNull();
       // THE discriminator: fail-closed arm vs a real §105 verdict.
       expect(c['hasIdentitySnapshot']).toBe(false);
@@ -692,8 +763,37 @@ describe('invoicingBridge.getInvoiceCreditedTotal — Minor#1 graceful read-thro
       // No PII, ever — the snapshot carries name, address and TIN.
       expect(JSON.stringify(c)).not.toContain('memberIdentitySnapshot":{');
 
-      // …and a fully creditable invoice must NOT log. An always-on line would
-      // be noise that gets filtered, which is how it stops being read.
+      // Track B — a WAIVE must log too, and must be distinguishable from the
+      // block above. A waived refund looks like an ordinary refund in every
+      // other table; this line is the only place a surge of credit-note-less
+      // refunds is greppable before the accountant finds it at month close.
+      warnSpy.mockClear();
+      f4Mock.getInvoice.mockResolvedValueOnce(
+        ok({
+          id: invoiceId,
+          total: { satang: 107_000n },
+          creditedTotal: { satang: 0n },
+          status: 'paid',
+          invoiceSubject: 'event',
+          memberId,
+          memberIdentitySnapshot: { tax_id: null, buyer_is_vat_registrant: false },
+          receiptPdfStatus: 'rendered',
+        }),
+      );
+      await bridge.getInvoiceCreditedTotal({ tenantId, invoiceId });
+      const waiveCall = warnSpy.mock.calls.find(
+        (c) => c[1] === 'invoicing-bridge.credit_gate_non_issue',
+      );
+      expect(waiveCall).toBeDefined();
+      const w = waiveCall![0] as Record<string, unknown>;
+      expect(w['creditNoteVerdict']).toBe('waive');
+      expect(w['verdictReason']).toBe('section_105_receipt');
+      // Same shape, opposite money outcome from the corrupt row above — and
+      // `hasIdentitySnapshot` is what separates them.
+      expect(w['hasIdentitySnapshot']).toBe(true);
+
+      // …and an issuable invoice must NOT log. An always-on line would be
+      // noise that gets filtered, which is how it stops being read.
       warnSpy.mockClear();
       f4Mock.getInvoice.mockResolvedValueOnce(
         ok({
@@ -710,7 +810,7 @@ describe('invoicingBridge.getInvoiceCreditedTotal — Minor#1 graceful read-thro
       await bridge.getInvoiceCreditedTotal({ tenantId, invoiceId });
       expect(
         warnSpy.mock.calls.some(
-          (c) => c[1] === 'invoicing-bridge.credit_gate_will_refuse',
+          (c) => c[1] === 'invoicing-bridge.credit_gate_non_issue',
         ),
       ).toBe(false);
     } finally {
@@ -734,9 +834,11 @@ describe('invoicingBridge.getInvoiceCreditedTotal — Minor#1 graceful read-thro
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.creditable).toBe(c.expected.creditable);
-        expect(result.value.receiptRenderState).toBe(c.expected.receiptRenderState);
-        expect(result.value.status).toBe(c.expected.status);
+        // Deep-equal the WHOLE verdict, not field-by-field. A partial assertion
+        // would pass a resolver that returned the right `kind` with the wrong
+        // reason attached — and the reason is what the copy, the F8 bridge and
+        // the persisted waiver column all branch on.
+        expect(result.value.creditNoteRequirement).toEqual(c.expected);
       }
     });
   }

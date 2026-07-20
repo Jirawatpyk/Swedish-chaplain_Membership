@@ -186,17 +186,55 @@ describe('refund: assertRefundComplete', () => {
     if (!r.ok) expect(r.reason).toBe('succeeded_missing_processor_refund_id');
   });
 
-  it('succeeded missing creditNoteId → succeeded_missing_credit_note_id', () => {
+  // Track B — a succeeded refund must carry EXACTLY ONE documenting instrument:
+  // a §86/10 credit note, or a recorded waiver. Neither is the incomplete state
+  // (the old rule demanded a credit note unconditionally, which is what made a
+  // legitimately credit-note-less refund unrepresentable). Mirrors the DB CHECK
+  // `refunds_succeeded_iff_documented` (migration 0268).
+  it('succeeded with NEITHER credit note nor waiver → succeeded_missing_credit_note_documentation', () => {
     const r = assertRefundComplete(
       makeRefund({
         status: 'succeeded',
         completedAt: new Date(),
         processorRefundId: 're_3R',
         creditNoteId: null,
+        creditNoteWaivedAt: null,
       }),
     );
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.reason).toBe('succeeded_missing_credit_note_id');
+    if (!r.ok) expect(r.reason).toBe('succeeded_missing_credit_note_documentation');
+  });
+
+  it('succeeded, waived, WITH a reason → ok (no credit note required)', () => {
+    const r = assertRefundComplete(
+      makeRefund({
+        status: 'succeeded',
+        completedAt: new Date(),
+        processorRefundId: 're_3R',
+        creditNoteId: null,
+        creditNoteWaivedAt: new Date(),
+        creditNoteWaiverReason: 'section_105_receipt',
+      }),
+    );
+    expect(r.ok).toBe(true);
+  });
+
+  // The reason is not decoration: it is the only field that tells the
+  // accountant WHY no §86/10 exists, and it drives the month-close discovery
+  // query. A waiver without one is an unexplained hole in the tax trail.
+  it('succeeded, waived, WITHOUT a reason → waived_without_reason', () => {
+    const r = assertRefundComplete(
+      makeRefund({
+        status: 'succeeded',
+        completedAt: new Date(),
+        processorRefundId: 're_3R',
+        creditNoteId: null,
+        creditNoteWaivedAt: new Date(),
+        creditNoteWaiverReason: null,
+      }),
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe('waived_without_reason');
   });
 
   it('succeeded fully populated → ok', () => {
