@@ -98,9 +98,24 @@ describe('F5 audit_event_type ↔ F5AuditEventType parity', () => {
       sqlScopeFilter: isF5Event,
     });
 
+    // The SQL→TS direction is scoped to values a migration IN THIS TREE
+    // declares. The dev Neon branch is SHARED, so a sibling feature branch
+    // applying its own migration puts enum values there that this branch has
+    // never heard of — real, but not this branch's drift, and not fixable
+    // here: adding one to this TS union would reference an enum value this
+    // branch's migrations never create, which is fine on the shared dev DB and
+    // broken the moment the branch merges to main alone.
+    //
+    // `missingInTsDeclaredHere` keeps the guard's actual purpose intact — a
+    // migration in this tree that extends the enum without the TS union being
+    // updated is still a hard failure. Foreign values are warned about by the
+    // helper and listed below for triage.
     expect(
-      { missingInSql: result.missingInSql, missingInTs: result.missingInTs },
-      `Drift detected:\n  SQL missing TS values: ${JSON.stringify(result.missingInSql)}\n  TS union missing SQL values: ${JSON.stringify(result.missingInTs)}\n\nAdd a migration to extend audit_event_type, OR update F5AuditEventType + F5_AUDIT_RETENTION_YEARS in src/modules/payments/application/ports/audit-port.ts.\n\nNote: if the new event type does NOT match the F5 prefix list extend F5_PREFIXES in this test.`,
+      {
+        missingInSql: result.missingInSql,
+        missingInTs: result.missingInTsDeclaredHere,
+      },
+      `Drift detected:\n  SQL missing TS values: ${JSON.stringify(result.missingInSql)}\n  TS union missing SQL values (declared by a migration in THIS tree): ${JSON.stringify(result.missingInTsDeclaredHere)}\n\nAdd a migration to extend audit_event_type, OR update F5AuditEventType + F5_AUDIT_RETENTION_YEARS in src/modules/payments/application/ports/audit-port.ts.\n\nNote: if the new event type does NOT match the F5 prefix list extend F5_PREFIXES in this test.\n\nIgnored as sibling-branch values (no declaring migration in this tree): ${JSON.stringify(result.missingInTsForeign)}`,
     ).toEqual({ missingInSql: [], missingInTs: [] });
   });
 
