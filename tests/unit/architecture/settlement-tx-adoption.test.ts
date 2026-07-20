@@ -198,8 +198,23 @@ function relPath(file: string): string {
  * worked `paymentsRepo.withTx(...)` example — a code sample is not a call site.
  * A block-comment state machine handles JSDoc (including its ` * ` continuation
  * lines, which sit inside the block by construction); trailing `//` is cut from
- * its first occurrence. Both err toward over-counting on exotic input, which
- * fails loudly rather than silently passing.
+ * its first occurrence.
+ *
+ * PRECISION CAVEAT (task-12a review): "err toward over-counting" is TRUE for the
+ * comment shapes this repo actually contains, but is not universal:
+ *   - A SINGLE-LINE block comment wrapping a withTx call is NOT stripped — the
+ *     state machine enters `inBlock` only when an opening block-comment token has
+ *     no closing token on the same line. So a one-line commented-out call still
+ *     OVER-counts and reddens. Safe. The mutation note's "block comment stays
+ *     GREEN" therefore holds only for MULTI-LINE / JSDoc blocks, not single-line.
+ *   - A latent UNDER-count vector exists: a `.withTx(` sharing a line with a
+ *     string literal that itself contains `//` (or an unclosed block-comment
+ *     token) would be truncated or swallowed by the strip → a silent miss. There
+ *     are ZERO such lines today (every call site is a bare
+ *     `await deps.paymentsRepo.withTx(async (tx) => {` with no inline string), so
+ *     the guard is sound now — but the "err toward over-counting" claim is not a
+ *     guarantee. If a future call site puts a string literal on the withTx line,
+ *     tighten the stripper (a real tokenizer) rather than trusting this note.
  */
 function countOutsideComments(content: string, pattern: RegExp): number {
   let count = 0;
