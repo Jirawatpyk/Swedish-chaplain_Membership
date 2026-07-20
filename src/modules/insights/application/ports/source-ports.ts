@@ -20,6 +20,7 @@
  *   - EventConsumptionSource → events barrel `getEventAttendeesByMember`
  *     (cultural filtered + year-scoped locally).
  *   - InvoiceSource      → invoicing barrel (YTD/overdue/monthly revenue reads).
+ *   - WaivedRefundSource → payments barrel (`listWaivedRefundTotalsByInvoice`).
  *
  * Method set is grounded in spec FR-001/002/019/021 + data-model R1/R2.
  */
@@ -205,6 +206,31 @@ export interface BenefitConsumptionAggregateSource {
   ): Promise<ReadonlyMap<string, number>>;
 }
 
+/**
+ * Track B — money returned to members by refunds that carried NO §86/10 credit
+ * note, keyed by invoice id. Invoices with no waived refund are ABSENT (the
+ * consumer defaults with `?? 0n`).
+ *
+ * VAT BASIS: satang as CASH — the amount actually refunded, VAT-INCLUSIVE. A
+ * consumer working on an ex-VAT basis must scale it by that invoice's own
+ * `subtotal / total`, exactly as it already does for the gross invoice total.
+ * Subtracting this figure from an ex-VAT number unscaled removes ~7% too much.
+ */
+export type WaivedRefundTotals = ReadonlyMap<string, bigint>;
+
+/**
+ * Track B — the ONE seam where insights reads F5.
+ *
+ * A separate port rather than a method on `InvoiceSource`: that port's contract
+ * is "backed by the invoicing barrel", and an adapter that quietly also read
+ * payments would make the type a lie. It also lets the snapshot fetch this ONCE
+ * and thread it into all three revenue reads, so the KPI, the trend and the
+ * donut cannot disagree with each other inside a single persisted snapshot.
+ */
+export interface WaivedRefundSource {
+  sumWaivedByInvoice(ctx: TenantContext): Promise<WaivedRefundTotals>;
+}
+
 export interface InvoiceSource {
   /**
    * Fiscal-year-to-date PAID revenue in satang (FR-001). The adapter derives the
@@ -213,7 +239,11 @@ export interface InvoiceSource {
    * stored fiscal year. The calendar year would silently mis-window revenue for
    * any non-January fiscal-year tenant (F9 #4).
    */
-  getYtdPaidRevenueSatang(ctx: TenantContext, nowIso: string): Promise<bigint>;
+  getYtdPaidRevenueSatang(
+    ctx: TenantContext,
+    nowIso: string,
+    waivedByInvoice: WaivedRefundTotals,
+  ): Promise<bigint>;
   /** Count of overdue invoices for the tenant (FR-002 needs-attention). */
   /**
    * `nowIso` is injected, not read from the host clock, so this KPI and the
@@ -232,6 +262,7 @@ export interface InvoiceSource {
     ctx: TenantContext,
     monthKeys: readonly string[],
     timeZone: string,
+    waivedByInvoice: WaivedRefundTotals,
   ): Promise<Readonly<Record<string, bigint>>>;
   /**
    * Invoice status distribution for the tenant (buckets: paid/unpaid/overdue,
@@ -240,6 +271,7 @@ export interface InvoiceSource {
   getInvoiceStatusDistribution(
     ctx: TenantContext,
     nowIso: string,
+    waivedByInvoice: WaivedRefundTotals,
   ): Promise<{
     readonly buckets: ReadonlyArray<{
       bucket: 'paid' | 'unpaid' | 'overdue';

@@ -50,6 +50,14 @@ import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
 import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
 import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
+/**
+ * Track B — the waived-refund netting map. Every case in this file predates
+ * credit-note waivers and has none, so an empty map preserves exactly what
+ * each assertion was written to test. The netting itself is exercised in the
+ * dedicated cases that build a non-empty map.
+ */
+const NO_WAIVERS: ReadonlyMap<string, bigint> = new Map();
+
 const SNAP_TENANT = {
   legal_name_th: 'ท', legal_name_en: 'T', tax_id: '0',
   address_th: 'B', address_en: 'B', logo_blob_key: null,
@@ -246,7 +254,7 @@ describe('F9 067 Task 4 — invoiceSourceAdapter.getInvoiceStatusDistribution (l
 
     it('buckets paid/unpaid/overdue at the correct net amounts + counts, and counts the draft', async () => {
       const nowIso = new Date().toISOString();
-      const dist = await invoiceSourceAdapter.getInvoiceStatusDistribution(tenantA.ctx, nowIso);
+      const dist = await invoiceSourceAdapter.getInvoiceStatusDistribution(tenantA.ctx, nowIso, NO_WAIVERS);
 
       expect(bucket(dist, 'paid')).toEqual({ bucket: 'paid', satang: 107_000n, count: 1 });
       expect(bucket(dist, 'unpaid')).toEqual({ bucket: 'unpaid', satang: 53_500n, count: 1 });
@@ -256,7 +264,7 @@ describe('F9 067 Task 4 — invoiceSourceAdapter.getInvoiceStatusDistribution (l
 
     it('the overdue bucket COUNT equals countOverdue(ctx) — same underlying rule, independently derived', async () => {
       const nowIso = new Date().toISOString();
-      const dist = await invoiceSourceAdapter.getInvoiceStatusDistribution(tenantA.ctx, nowIso);
+      const dist = await invoiceSourceAdapter.getInvoiceStatusDistribution(tenantA.ctx, nowIso, NO_WAIVERS);
       const overdueCount = await invoiceSourceAdapter.countOverdue(
         tenantA.ctx,
         new Date().toISOString(),
@@ -312,7 +320,7 @@ describe('F9 067 Task 4 — invoiceSourceAdapter.getInvoiceStatusDistribution (l
     }, 60_000);
 
     it('boundary invoice is NOT overdue; partially_credited folds into paid at NET balance; fully-credited is invisible', async () => {
-      const dist = await invoiceSourceAdapter.getInvoiceStatusDistribution(tenantB.ctx, nowIso);
+      const dist = await invoiceSourceAdapter.getInvoiceStatusDistribution(tenantB.ctx, nowIso, NO_WAIVERS);
 
       // The partially_credited invoice (net 120_000 − 20_000 = 100_000) is
       // the only paid row — it was reached FROM `paid`, so its due date

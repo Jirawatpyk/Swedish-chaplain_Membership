@@ -27,6 +27,7 @@ import type { FailPaymentDeps } from '../application/use-cases/fail-payment';
 import type { CancelPaymentDeps } from '../application/use-cases/cancel-payment';
 import type { HandleCancelEventDeps } from '../application/use-cases/handle-cancel-event';
 import type { ListSucceededPaymentMethodsDeps } from '../application/use-cases/list-succeeded-payment-methods';
+import type { ListWaivedRefundTotalsByInvoiceDeps } from '../application/use-cases/list-waived-refund-totals-by-invoice';
 import type { LoadInvoicePaymentActivityDeps } from '../application/use-cases/load-invoice-payment-activity';
 import type { IssueRefundDeps } from '../application/use-cases/issue-refund';
 import type { ResolveFailedAutoRefundDeps } from '../application/use-cases/resolve-failed-auto-refund';
@@ -252,6 +253,19 @@ export function makeListSucceededPaymentMethodsDeps(
 ): ListSucceededPaymentMethodsDeps {
   return {
     paymentsRepo: makeDrizzlePaymentsRepo(tenantId),
+  };
+}
+
+/**
+ * Track B — deps for F9's waived-refund netting read. `makeDrizzleRefundsRepo`
+ * now binds a tenant context because `sumWaivedByInvoice` is the repo's one
+ * standalone read (no caller-supplied `tx`).
+ */
+export function makeListWaivedRefundTotalsByInvoiceDeps(
+  tenantId: string,
+): ListWaivedRefundTotalsByInvoiceDeps {
+  return {
+    refundsRepo: makeDrizzleRefundsRepo(tenantId),
   };
 }
 

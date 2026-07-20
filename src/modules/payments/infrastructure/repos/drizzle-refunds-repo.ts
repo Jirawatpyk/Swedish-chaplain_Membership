@@ -29,6 +29,7 @@ import { asPaymentId, type PaymentId } from '../../domain/payment';
 import { asRefundId, REFUND_STATUSES, type Refund } from '../../domain/refund';
 import { payments, refunds, type RefundRow } from '../schema';
 import { runInTenant, type TenantTx } from '@/lib/db';
+import { asTenantContext } from '@/modules/tenants';
 import type { CreditNoteWaiverReason } from '@/modules/invoicing';
 import { logger } from '@/lib/logger';
 
@@ -91,12 +92,13 @@ function toRefundDomain(row: RefundRow): Refund {
   };
 }
 
-export function makeDrizzleRefundsRepo(_tenantId: string): RefundsRepo {
-  // tenantId currently unused — every method receives `tx` from its
-  // caller's `runInTenant` scope, RLS+FORCE handles isolation. Kept
-  // in the factory signature for symmetry with `makeDrizzlePaymentsRepo`
-  // (DI wiring stays uniform). Reintroduce `asTenantContext(tenantId)`
-  // when a standalone read path is added.
+export function makeDrizzleRefundsRepo(tenantId: string): RefundsRepo {
+  // Almost every method receives `tx` from its caller's `runInTenant` scope and
+  // relies on RLS+FORCE for isolation. `sumWaivedByInvoice` is the exception
+  // this comment used to anticipate ("reintroduce `asTenantContext(tenantId)`
+  // when a standalone read path is added") — F9's snapshot cron calls it with
+  // no enclosing tenant scope, so it opens its own.
+  const ctx = asTenantContext(tenantId);
   return {
     async insert(txUnknown, input): Promise<DomainRefundRow> {
       const tx = txUnknown as TenantTx;
@@ -507,6 +509,56 @@ export function makeDrizzleRefundsRepo(_tenantId: string): RefundsRepo {
         nextSeq: Number(row?.total_count ?? 0) + 1,
         settledUnbookedCount: Number(row?.settled_unbooked_count ?? 0),
       };
+    },
+
+    async sumWaivedByInvoice(
+      inputTenantId: string,
+    ): Promise<ReadonlyMap<string, bigint>> {
+      // The ONE standalone read on this repo, and the reason the factory's
+      // `tenantId` stopped being unused — see the note above `return {`.
+      // Every other method takes its caller's `tx`; F9's snapshot cron has no
+      // enclosing tenant scope to borrow, so this opens its own.
+      //
+      // `tenant_id = …` is defence-in-depth ALONGSIDE RLS+FORCE, not instead
+      // of it: `runInTenant` sets `app.current_tenant` and the policy is what
+      // actually isolates, but an explicit predicate keeps the query correct
+      // if it is ever read or copied outside that scope.
+      return runInTenant(ctx, async (tx) => {
+        const rows = (await tx.execute(sql`
+          SELECT invoice_id, SUM(amount_satang) AS waived_satang
+            FROM refunds
+           WHERE tenant_id = ${inputTenantId}
+             AND status = 'succeeded'
+             -- The TIMESTAMP, never the reason. The reason is written at
+             -- Phase-A insert while the row is still pending and survives a
+             -- FAILED settlement; only the succeeded flip stamps this column.
+             -- Keying on the reason would net money that never moved.
+             AND credit_note_waived_at IS NOT NULL
+           GROUP BY invoice_id
+        `)) as unknown as Array<{
+          invoice_id: string;
+          waived_satang: string | number | bigint | null;
+        }>;
+
+        const out = new Map<string, bigint>();
+        for (const row of rows) {
+          const raw = row.waived_satang;
+          // `SUM(bigint)` returns numeric; the driver may hand it back as a
+          // string or a bigint depending on version. A `number` would be a
+          // precision bug above 2^53 satang and `BigInt()` would throw on a
+          // non-integer, so assert the shape rather than cast through it —
+          // this is money, and a silent narrowing here is unrecoverable.
+          if (raw === null) continue;
+          if (typeof raw === 'number') {
+            throw new Error(
+              'sumWaivedByInvoice: SUM(amount_satang) came back as a JS number; ' +
+                'refusing to risk precision loss on a money aggregate',
+            );
+          }
+          out.set(row.invoice_id, BigInt(raw));
+        }
+        return out;
+      });
     },
   };
 }

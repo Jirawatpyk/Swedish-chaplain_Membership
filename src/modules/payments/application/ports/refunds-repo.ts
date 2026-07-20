@@ -338,4 +338,33 @@ export interface RefundsRepo {
       readonly processorRefundId: string | null;
     }>
   >;
+
+  /**
+   * Track B — total satang of SUCCEEDED refunds whose §86/10 credit note was
+   * WAIVED, grouped by invoice.
+   *
+   * Exists because F9 nets refunded money out of revenue via
+   * `invoices.credited_total_satang`, and a waived refund never touches that
+   * column: no credit note is issued, so a §105 invoice stays `paid` at full
+   * value after the cash went back. This read is what lets F9 subtract it.
+   *
+   * WHY IT FILTERS ON THE TIMESTAMP, NOT THE REASON. `credit_note_waiver_reason`
+   * is pinned at the Phase-A insert while the row is still `pending`, and the
+   * FAILED path keeps it — it records the decision, not the outcome. Only the
+   * succeeded flip stamps `credit_note_waived_at`. Filtering on the reason
+   * would net money that never moved.
+   *
+   * NO DOUBLE-COUNT. `refunds_cn_xor_waived` (migration 0268) makes credit-noted
+   * and waived mutually exclusive per row, so this total can never overlap
+   * `credited_total_satang`. The caller therefore subtracts BOTH terms; picking
+   * one over the other would drop a real reversal.
+   *
+   * Invoices with no waived refund are ABSENT from the map, not zero — the
+   * caller defaults with `?? 0n`.
+   *
+   * Opens its own `runInTenant` (no `tx` param): F9's snapshot cron has no
+   * enclosing tenant scope, and nesting one inside another while row locks are
+   * held is the deadlock shape this codebase has already paid for once.
+   */
+  sumWaivedByInvoice(tenantId: string): Promise<ReadonlyMap<string, bigint>>;
 }

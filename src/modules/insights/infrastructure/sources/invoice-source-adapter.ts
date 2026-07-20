@@ -21,7 +21,7 @@ import {
 } from '@/modules/invoicing';
 import { deriveFiscalYear, type FiscalYearStartMonth } from '@/lib/fiscal-year';
 import type { TenantContext } from '@/modules/tenants';
-import type { InvoiceSource } from '../../application/ports/source-ports';
+import type { InvoiceSource, WaivedRefundTotals } from '../../application/ports/source-ports';
 import { monthKeyOf } from '../../domain/trend-window';
 
 const PAGE = 100;
@@ -38,7 +38,10 @@ const PAGE = 100;
 // So the F5 refund TERMINALS (`refunded` / `partially_refunded` / `auto_refunded`)
 // are all excluded from revenue by construction: a succeeded refund's money
 // impact flows in via the CREDIT NOTE it issues (invoice → credited /
-// partially_credited, netted above), and an `auto_refunded` payment (reached
+// partially_credited, netted above) OR — Track B — via the WAIVED-refund total
+// threaded in as `waivedByInvoice`, for the refunds that legitimately issue no
+// credit note at all and therefore leave both the status and
+// `credited_total_satang` untouched. An `auto_refunded` payment (reached
 // ONLY from `pending` on the stale-invoice path) NEVER settled its invoice —
 // the invoice is `void`/`credited`/paid-out-of-band, so either it is excluded
 // here or the legitimate out-of-band revenue is counted exactly ONCE (this
@@ -67,14 +70,31 @@ const PAID_REVENUE_STATUSES: ReadonlySet<string> = new Set([
  * (sub-satang, negligible for a dashboard KPI). This is a MANAGEMENT figure, not
  * a tax document — do not reconcile it against ภ.พ.30.
  */
-const netPaidRevenueSatang = (inv: {
-  subtotal: { satang: bigint } | null;
-  total: { satang: bigint } | null;
-  creditedTotal: { satang: bigint } | null;
-}): bigint => {
+const netPaidRevenueSatang = (
+  inv: {
+    subtotal: { satang: bigint } | null;
+    total: { satang: bigint } | null;
+    creditedTotal: { satang: bigint } | null;
+  },
+  /**
+   * Track B — VAT-INCLUSIVE cash returned by refunds carrying no §86/10.
+   * Folded into the numerator BEFORE the single division, deliberately: scaling
+   * it separately and subtracting afterwards truncates twice and can differ by
+   * a satang. Both terms are subtracted, never one or the other — the DB's
+   * `refunds_cn_xor_waived` makes them mutually exclusive per refund row, so
+   * they can never describe the same money.
+   */
+  waivedSatang: bigint,
+): bigint => {
   const total = inv.total?.satang ?? 0n;
   if (total <= 0n) return 0n;
-  const netOfCredit = total - (inv.creditedTotal?.satang ?? 0n);
+  const netOfCredit = total - (inv.creditedTotal?.satang ?? 0n) - waivedSatang;
+  // Unreachable today: a §105 invoice always has creditedTotal == 0 (F4 refuses
+  // to credit one) and Σwaived is capped at the payment amount, which is capped
+  // at the invoice total. Kept as defence-in-depth against a future edit, NOT
+  // as a fix for an observed negative — do not delete it after "verifying" the
+  // scenario cannot happen, because that verification is what makes it safe.
+  if (netOfCredit <= 0n) return 0n;
   return (netOfCredit * (inv.subtotal?.satang ?? 0n)) / total;
 };
 
@@ -95,16 +115,34 @@ const netPaidRevenueSatang = (inv: {
  * `partially_credited` invoice was paid first — its net balance is already-
  * collected cash, not an outstanding receivable, regardless of `dueDate`.
  */
-const netBalanceSatang = (inv: {
-  total: { satang: bigint } | null;
-  creditedTotal: { satang: bigint } | null;
-}): bigint => {
+const netBalanceSatang = (
+  inv: {
+    total: { satang: bigint } | null;
+    creditedTotal: { satang: bigint } | null;
+  },
+  /**
+   * Track B — subtracted RAW here, with NO ex-VAT scaling. This helper works on
+   * the gross, VAT-inclusive basis, and the refund amount is gross cash, so the
+   * two already agree. Applying the `subtotal / total` ratio here — the mirror
+   * image of forgetting it in `netPaidRevenueSatang` — would under-subtract by
+   * the VAT portion.
+   */
+  waivedSatang: bigint,
+): bigint => {
   const total = inv.total?.satang ?? 0n;
-  return total - (inv.creditedTotal?.satang ?? 0n);
+  const net = total - (inv.creditedTotal?.satang ?? 0n) - waivedSatang;
+  // Clamped explicitly: unlike the helper above there is no division to
+  // truncate a negative away, and a negative bucket renders as a negative
+  // percentage in the donut legend beside a hard-coded 100% total.
+  return net <= 0n ? 0n : net;
 };
 
 export const invoiceSourceAdapter: InvoiceSource = {
-  async getYtdPaidRevenueSatang(ctx: TenantContext, nowIso: string): Promise<bigint> {
+  async getYtdPaidRevenueSatang(
+    ctx: TenantContext,
+    nowIso: string,
+    waivedByInvoice: WaivedRefundTotals,
+  ): Promise<bigint> {
     // Resolve the CURRENT fiscal year the way F4 tags invoices at issue time
     // (deriveFiscalYear + the tenant's fiscalYearStartMonth) so the KPI windows
     // by the same value stored on invoices.fiscalYear. The calendar year would
@@ -132,7 +170,11 @@ export const invoiceSourceAdapter: InvoiceSource = {
       if (!result.ok) throw new Error('InvoiceSource: paid-revenue list failed');
       for (const inv of result.value.rows) {
         if (!PAID_REVENUE_STATUSES.has(inv.status)) continue;
-        total += netPaidRevenueSatang(inv);
+        // The status filter above is what excludes `invoice_voided` waivers:
+        // a voided invoice never reaches this line, so its waived refund is
+        // never netted from a figure that never included it. That is why the
+        // F5 read is reason-agnostic.
+        total += netPaidRevenueSatang(inv, waivedByInvoice.get(inv.invoiceId) ?? 0n);
       }
       cursor = result.value.nextCursor;
     } while (cursor !== null);
@@ -164,6 +206,7 @@ export const invoiceSourceAdapter: InvoiceSource = {
     ctx: TenantContext,
     monthKeys: readonly string[],
     timeZone: string,
+    waivedByInvoice: WaivedRefundTotals,
   ): Promise<Readonly<Record<string, bigint>>> {
     // NOTE: this buckets by the month a paid invoice was SETTLED (`paidAt`),
     // spanning fiscal years — intentionally a different basis from the YTD KPI
@@ -193,7 +236,19 @@ export const invoiceSourceAdapter: InvoiceSource = {
         if (!settled) continue;
         const key = monthKeyOf(new Date(settled), timeZone);
         if (!window.has(key)) continue; // outside the 12-month window
-        buckets[key] = (buckets[key] ?? 0n) + netPaidRevenueSatang(inv);
+        // Track B — the waived amount nets into the invoice's ORIGINAL settle
+        // month, never the month the refund completed. Same basis the credit
+        // notes already use (see the note above). Attributing it to the refund
+        // month would subtract money from a month whose revenue never included
+        // it, and would stop the trend reconciling with the fiscal-year KPI
+        // rendered beside it on the same page.
+        //
+        // Accepted consequence: a waived refund on an invoice settled outside
+        // the 12-month window is never netted from anything. The netting is not
+        // retroactive beyond the live window.
+        buckets[key] =
+          (buckets[key] ?? 0n) +
+          netPaidRevenueSatang(inv, waivedByInvoice.get(inv.invoiceId) ?? 0n);
       }
       cursor = result.value.nextCursor;
     } while (cursor !== null);
@@ -203,6 +258,7 @@ export const invoiceSourceAdapter: InvoiceSource = {
   async getInvoiceStatusDistribution(
     ctx: TenantContext,
     nowIso: string,
+    waivedByInvoice: WaivedRefundTotals,
   ): Promise<{
     readonly buckets: ReadonlyArray<{
       bucket: 'paid' | 'unpaid' | 'overdue';
@@ -245,15 +301,22 @@ export const invoiceSourceAdapter: InvoiceSource = {
             // (`canTransition` in invoice.ts) — it was paid first, so its
             // net balance is already-collected cash, not a receivable. Never
             // route it through the overdue-by-due-date check below.
-            paidSatang += netBalanceSatang(inv);
+            paidSatang += netBalanceSatang(inv, waivedByInvoice.get(inv.invoiceId) ?? 0n);
+            // Count is deliberately NOT netted. A fully-refunded §105 invoice
+            // reads "paid — ฿0.00 — 1 invoice", which is true: it WAS paid, and
+            // the refund is a later event. Dropping the count would also make
+            // the bucket counts stop summing to the invoice population.
             paidCount += 1;
             break;
           case 'issued':
+            // No waiver lookup on the `issued` arm: an unpaid invoice has no
+            // succeeded payment, so it can have no refund. Passing 0n keeps
+            // that reasoning visible rather than implicit.
             if (computeIsOverdue(inv, nowIso)) {
-              overdueSatang += netBalanceSatang(inv);
+              overdueSatang += netBalanceSatang(inv, 0n);
               overdueCount += 1;
             } else {
-              unpaidSatang += netBalanceSatang(inv);
+              unpaidSatang += netBalanceSatang(inv, 0n);
               unpaidCount += 1;
             }
             break;

@@ -25,6 +25,14 @@ import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
 import { seedTenantFiscal } from '../helpers/seed-tenant-fiscal';
 import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
+/**
+ * Track B — the waived-refund netting map. Every case in this file predates
+ * credit-note waivers and has none, so an empty map preserves exactly what
+ * each assertion was written to test. The netting itself is exercised in the
+ * dedicated cases that build a non-empty map.
+ */
+const NO_WAIVERS: ReadonlyMap<string, bigint> = new Map();
+
 describe('F9 #4 invoiceSourceAdapter — fiscal-year YTD on a non-January tenant (live Neon)', () => {
   let tenant: TestTenant;
   let admin: TestUser;
@@ -131,6 +139,7 @@ describe('F9 #4 invoiceSourceAdapter — fiscal-year YTD on a non-January tenant
     const total = await invoiceSourceAdapter.getYtdPaidRevenueSatang(
       tenant.ctx,
       '2026-02-15T00:00:00.000Z',
+      NO_WAIVERS,
     );
     expect(total).toBe(100_000n);
   });
@@ -142,6 +151,7 @@ describe('F9 #4 invoiceSourceAdapter — fiscal-year YTD on a non-January tenant
     const total = await invoiceSourceAdapter.getYtdPaidRevenueSatang(
       tenant.ctx,
       '2026-06-15T00:00:00.000Z',
+      NO_WAIVERS,
     );
     expect(total).toBe(100_000n);
   });

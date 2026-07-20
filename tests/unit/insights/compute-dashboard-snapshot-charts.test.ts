@@ -70,6 +70,10 @@ function makeDeps(): ComputeDashboardSnapshotDeps {
       getMonthlyPaidRevenueSatang: async () => ({}),
       getInvoiceStatusDistribution: async () => INVOICE_DISTRIBUTION,
     },
+    // Track B — the snapshot fetches waived-refund totals once and threads
+    // them into the three revenue reads. Empty here: these cases assert chart
+    // and quota shape, not netting arithmetic.
+    waivedRefundSource: { sumWaivedByInvoice: async () => new Map() },
     broadcastSource: { countAwaitingApproval: async () => 0 },
     memberEnumeration: {
       listActiveWithPlan: async () => ACTIVE_MEMBERS,

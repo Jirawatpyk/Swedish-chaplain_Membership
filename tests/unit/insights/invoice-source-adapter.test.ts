@@ -20,6 +20,14 @@
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
+/**
+ * Track B — the waived-refund netting map. Every case in this file predates
+ * credit-note waivers and has none, so an empty map preserves exactly what
+ * each assertion was written to test. The netting itself is exercised in the
+ * dedicated cases that build a non-empty map.
+ */
+const NO_WAIVERS: ReadonlyMap<string, bigint> = new Map();
+
 const listInvoicesMock = vi.hoisted(() => vi.fn());
 const getForIssueMock = vi.hoisted(() => vi.fn());
 
@@ -62,6 +70,7 @@ describe('invoiceSourceAdapter.getYtdPaidRevenueSatang — fiscal-year windowing
     const total = await invoiceSourceAdapter.getYtdPaidRevenueSatang(
       ctx,
       '2026-02-15T00:00:00.000Z',
+      NO_WAIVERS,
     );
 
     expect(total).toBe(500n);
@@ -78,7 +87,7 @@ describe('invoiceSourceAdapter.getYtdPaidRevenueSatang — fiscal-year windowing
     getForIssueMock.mockResolvedValue({ fiscalYearStartMonth: 1 });
     listInvoicesMock.mockResolvedValue({ ok: true, value: { rows: [], nextCursor: null } });
 
-    await invoiceSourceAdapter.getYtdPaidRevenueSatang(ctx, '2026-02-15T00:00:00.000Z');
+    await invoiceSourceAdapter.getYtdPaidRevenueSatang(ctx, '2026-02-15T00:00:00.000Z', NO_WAIVERS);
 
     expect(listInvoicesMock).toHaveBeenCalledWith(
       expect.anything(),
@@ -90,7 +99,7 @@ describe('invoiceSourceAdapter.getYtdPaidRevenueSatang — fiscal-year windowing
     getForIssueMock.mockResolvedValue(null);
     listInvoicesMock.mockResolvedValue({ ok: true, value: { rows: [], nextCursor: null } });
 
-    await invoiceSourceAdapter.getYtdPaidRevenueSatang(ctx, '2026-02-15T00:00:00.000Z');
+    await invoiceSourceAdapter.getYtdPaidRevenueSatang(ctx, '2026-02-15T00:00:00.000Z', NO_WAIVERS);
 
     expect(listInvoicesMock).toHaveBeenCalledWith(
       expect.anything(),
@@ -116,6 +125,7 @@ describe('invoiceSourceAdapter.getYtdPaidRevenueSatang — net-of-VAT', () => {
     const total = await invoiceSourceAdapter.getYtdPaidRevenueSatang(
       ctx,
       '2026-02-15T00:00:00.000Z',
+      NO_WAIVERS,
     );
 
     expect(total).toBe(100_000n); // ex-VAT, NOT the 107,000 gross
@@ -157,6 +167,7 @@ describe('invoiceSourceAdapter.getYtdPaidRevenueSatang — credit-note netting',
     const total = await invoiceSourceAdapter.getYtdPaidRevenueSatang(
       ctx,
       '2026-02-15T00:00:00.000Z',
+      NO_WAIVERS,
     );
 
     // 100,000 + (100,000 − 20,000) + 0 = 180,000 (ex-VAT).
@@ -194,6 +205,7 @@ describe('invoiceSourceAdapter — auto_refunded payment money is non-revenue (M
     const total = await invoiceSourceAdapter.getYtdPaidRevenueSatang(
       ctx,
       '2026-02-15T00:00:00.000Z',
+      NO_WAIVERS,
     );
 
     expect(total).toBe(0n);
@@ -219,6 +231,7 @@ describe('invoiceSourceAdapter — auto_refunded payment money is non-revenue (M
     const total = await invoiceSourceAdapter.getYtdPaidRevenueSatang(
       ctx,
       '2026-02-15T00:00:00.000Z',
+      NO_WAIVERS,
     );
 
     expect(total).toBe(100_000n); // ex-VAT, counted once — NOT 200,000
@@ -245,6 +258,7 @@ describe('invoiceSourceAdapter — auto_refunded payment money is non-revenue (M
       ctx,
       ['2026-03'],
       'Asia/Bangkok',
+      NO_WAIVERS,
     );
 
     expect(buckets['2026-03']).toBeUndefined();
@@ -297,6 +311,7 @@ describe('invoiceSourceAdapter.getMonthlyPaidRevenueSatang — credit-note netti
       ctx,
       ['2026-03'],
       'Asia/Bangkok',
+      NO_WAIVERS,
     );
 
     // 500,000 + (100,000 − 10,000) = 590,000 (ex-VAT).
@@ -305,5 +320,173 @@ describe('invoiceSourceAdapter.getMonthlyPaidRevenueSatang — credit-note netti
       expect.anything(),
       expect.objectContaining({ status: 'all' }),
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Track B — netting refunds that carried NO §86/10 credit note
+// ---------------------------------------------------------------------------
+//
+// A waived refund returns money to the member and writes NOTHING to
+// `credited_total_satang`, and leaves the invoice status alone. A §105 event
+// invoice therefore stays `paid` at full value after the cash went back, and
+// every revenue figure here overstated by exactly the refunded amount.
+//
+// The worked example throughout: subtotal 100,000 + 7% VAT = total 107,000
+// satang, refunded 21,400 gross (20%).
+//
+// These cases assert EXACT figures, never "less than before". The lookup key is
+// `inv.invoiceId` — the `Invoice` aggregate has no `id` field — so a typo there
+// makes the netting a silent no-op that any "revenue decreased" assertion would
+// happily pass.
+describe('invoiceSourceAdapter — waived-refund netting (Track B)', () => {
+  const INV = 'inv-105';
+  // A §105 event invoice: paid, VAT-bearing, never credited.
+  const section105Row = {
+    invoiceId: INV,
+    status: 'paid',
+    subtotal: { satang: 100_000n },
+    total: { satang: 107_000n },
+    creditedTotal: { satang: 0n },
+    paidAt: '2026-03-20T00:00:00.000Z',
+  };
+
+  beforeEach(() => {
+    getForIssueMock.mockResolvedValue({ fiscalYearStartMonth: 1 });
+  });
+
+  it('YTD nets the waived amount on the EX-VAT basis, not raw', async () => {
+    listInvoicesMock.mockResolvedValue({
+      ok: true,
+      value: { rows: [section105Row], nextCursor: null },
+    });
+
+    const total = await invoiceSourceAdapter.getYtdPaidRevenueSatang(
+      ctx,
+      '2026-06-15T00:00:00.000Z',
+      new Map([[INV, 21_400n]]),
+    );
+
+    // ((107000 − 0 − 21400) × 100000) / 107000 = 80,000 exactly.
+    // Subtracting the gross 21,400 from the ex-VAT 100,000 would give 78,600 —
+    // ~7% too much removed, which is the mistake this asserts against.
+    expect(total).toBe(80_000n);
+  });
+
+  it('a FULL waived refund takes the invoice to exactly zero, never negative', async () => {
+    listInvoicesMock.mockResolvedValue({
+      ok: true,
+      value: { rows: [section105Row], nextCursor: null },
+    });
+
+    const total = await invoiceSourceAdapter.getYtdPaidRevenueSatang(
+      ctx,
+      '2026-06-15T00:00:00.000Z',
+      new Map([[INV, 107_000n]]),
+    );
+    expect(total).toBe(0n);
+  });
+
+  it('two partial waived refunds sum to the same figure as one combined refund', async () => {
+    listInvoicesMock.mockResolvedValue({
+      ok: true,
+      value: { rows: [section105Row], nextCursor: null },
+    });
+    // The source read already SUMs per invoice, so the adapter sees one total.
+    const total = await invoiceSourceAdapter.getYtdPaidRevenueSatang(
+      ctx,
+      '2026-06-15T00:00:00.000Z',
+      new Map([[INV, 10_700n + 10_700n]]),
+    );
+    expect(total).toBe(80_000n);
+  });
+
+  it('NEVER double-subtracts: a credit note and a waiver describe different money', async () => {
+    // `refunds_cn_xor_waived` makes these mutually exclusive per refund row, so
+    // both terms are subtracted. An implementation that picked one over the
+    // other (`credited > 0 ? credited : waived`) would drop a real reversal.
+    listInvoicesMock.mockResolvedValue({
+      ok: true,
+      value: {
+        rows: [
+          {
+            ...section105Row,
+            status: 'partially_credited',
+            creditedTotal: { satang: 21_400n },
+          },
+        ],
+        nextCursor: null,
+      },
+    });
+
+    const total = await invoiceSourceAdapter.getYtdPaidRevenueSatang(
+      ctx,
+      '2026-06-15T00:00:00.000Z',
+      new Map([[INV, 21_400n]]),
+    );
+    // ((107000 − 21400 − 21400) × 100000) / 107000 = 60,000.
+    // 80,000 would mean one of the two reversals was ignored.
+    expect(total).toBe(60_000n);
+  });
+
+  it('a VOIDED invoice is excluded by status, so its waiver never nets anything', async () => {
+    // This is why the F5 read is reason-agnostic: the status filter, not a
+    // reason filter, is what keeps `invoice_voided` waivers out. Netting one
+    // here would subtract money from a figure that never included it.
+    listInvoicesMock.mockResolvedValue({
+      ok: true,
+      value: {
+        rows: [{ ...section105Row, status: 'void' }],
+        nextCursor: null,
+      },
+    });
+
+    const total = await invoiceSourceAdapter.getYtdPaidRevenueSatang(
+      ctx,
+      '2026-06-15T00:00:00.000Z',
+      new Map([[INV, 107_000n]]),
+    );
+    expect(total).toBe(0n);
+  });
+
+  it('the monthly trend nets into the invoice SETTLE month, not the refund month', async () => {
+    listInvoicesMock.mockResolvedValue({
+      ok: true,
+      value: { rows: [section105Row], nextCursor: null },
+    });
+
+    const buckets = await invoiceSourceAdapter.getMonthlyPaidRevenueSatang(
+      ctx,
+      ['2026-03', '2026-04', '2026-05'],
+      'Asia/Bangkok',
+      new Map([[INV, 21_400n]]),
+    );
+
+    // Netted where the invoice SETTLED (paidAt = March), matching how credit
+    // notes are already attributed. Crediting the refund's own month would
+    // subtract from a month whose revenue never contained this invoice.
+    expect(buckets['2026-03']).toBe(80_000n);
+    expect(buckets['2026-05']).toBeUndefined();
+  });
+
+  it('the donut paid bucket nets on the GROSS basis and keeps the count', async () => {
+    listInvoicesMock.mockResolvedValue({
+      ok: true,
+      value: { rows: [section105Row], nextCursor: null },
+    });
+
+    const dist = await invoiceSourceAdapter.getInvoiceStatusDistribution(
+      ctx,
+      '2026-06-15T00:00:00.000Z',
+      new Map([[INV, 21_400n]]),
+    );
+
+    const paid = dist.buckets.find((b) => b.bucket === 'paid');
+    // 107000 − 21400 = 85,600 — VAT-INCLUSIVE, because the donut compares
+    // against unpaid/overdue receivables which are booked gross. Scaling this
+    // one ex-VAT is the mirror image of forgetting to scale the KPI.
+    expect(paid?.satang).toBe(85_600n);
+    // The count is deliberately NOT netted: the invoice WAS paid.
+    expect(paid?.count).toBe(1);
   });
 });
