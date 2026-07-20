@@ -18,7 +18,7 @@
 ## F2 Integration Requirements
 
 - [X] CHK006 - F2 `scheduleNextRenewalPlanChange` use-case TS signature — **DONE** evidence: research.md R13 + spec Complexity Tracking #4 + Phase 4 Wave C-8 audit-emit wiring (4 audit event types + payload schemas + summariseEvent cases shipped); use-case audit emit naturally co-lands with F4 invoice-paid hook + tier-upgrade-accepted in Phase 7 T188a (per phase-10-backlog.md).
-- [X] CHK007 - F2 `getEffectivePlanForRenewal(memberId, cycleId)` resolver — **DONE** evidence: research.md R13 + Phase 7 `apply-pending-tier-upgrade.ts` uses this resolver to pick current-vs-pending plan.
+- [X] CHK007 - F2 effective-plan-for-renewal resolution reaches billing — **DONE (mechanism revised)** evidence: the originally-planned `getEffectivePlanForRenewal(memberId, cycleId)` resolver + `CurrentPlanResolverPort` were REMOVED as dead code (Package B2) — they had zero production call sites and their only possible implementation was an un-implementable plans→members dependency inversion. The effective plan now reaches renewal billing directly: plan changes flip `members.plan_id` (+`plan_year`) at apply/confirm time (Package B1) and the next-cycle seed reads `members.plan_id` (Package A). The prior citation to `apply-pending-tier-upgrade.ts` "using this resolver" was inaccurate — that file only ever referenced the resolver in a comment.
 - [X] CHK008 - F2 `renewal_tier_bucket` coordinated migration — **DONE** evidence: spec Complexity Tracking #2 + migration 0086 (F8 batch) extends F2 plans with `renewalTierBucket` NOT NULL backfilled + 5-bucket enum CHECK.
 - [X] CHK009 - F2 `getPlanBucket(planId)` barrel-export — **DONE** evidence: spec Complexity Tracking #2 + F2 module barrel exports.
 - [X] CHK010 - F2 `member_plan_manually_changed` event listener — **DONE** evidence: research.md R13 + spec FR-039 step 5 + `supersede-pending-tier-upgrade.ts`.
@@ -35,7 +35,7 @@
 - [X] CHK015 - `F4InvoicePaidEvent` canonical shape unambiguous — **DONE** evidence: research.md R12 (full TS shape pinned by `f4-callback-rollback.test.ts`).
 - [X] CHK016 - F4 `markPaidFromProcessor` callback parameter (Option A LOCKED) — **DONE** evidence: research.md R12 + spec Complexity Tracking #3 + `f4-callback-rollback.test.ts` (per-tenant closure isolation + ReadonlyArray invariant verified).
 - [X] CHK017 - F4 `createMembershipInvoice` input — **DONE** evidence: spec FR-022 + `confirm-renewal.ts` use-case calls F4 bridge with member_id, plan_id, period, frozen-price-from-cycle.
-- [X] CHK018 - F4 renewal-invoice creation hook consults F2 `getEffectivePlanForRenewal` — **DONE** evidence: research.md R13 + `apply-pending-tier-upgrade.ts` Phase 7 wiring.
+- [X] CHK018 - F4 renewal-invoice creation prices against the member's effective plan — **DONE (mechanism revised)** evidence: no F4 hook ever consulted `getEffectivePlanForRenewal` — the resolver had zero call sites and was removed in Package B2. The next-cycle seed reads `members.plan_id` (Package A), kept current by the plan-change apply/confirm paths (Package B1), so the renewal invoice is priced against the member's current/scheduled plan without a resolver.
 - [X] CHK019 - F4 receipt-PDF generation delegated to F4 — **DONE** evidence: spec FR-023 + F4 owns @react-pdf/renderer chain; F8 only links via `linked_invoice_id` FK.
 
 ## F5 Integration Requirements

@@ -30,8 +30,9 @@
  * wrapper over it. That row is a forensic receipt only — nothing reads it to
  * decide a price. The audit chain `tier_upgrade_applied_at_renewal` is the F8
  * canonical apply event; the F2 audit chain (`plan_change_applied`) lands
- * post-tx alongside it. (`getEffectivePlanForRenewal` was never implemented;
- * its deletion is a follow-up package.)
+ * post-tx alongside it. (The never-implemented `getEffectivePlanForRenewal`
+ * resolver was removed as dead code in Package B2 — billing reaches the new
+ * plan via the `members.plan_id` write below, read by the next-cycle seed.)
  *
  * Audit: emits `tier_upgrade_applied_at_renewal` (atomic with the
  * suggestion transition).

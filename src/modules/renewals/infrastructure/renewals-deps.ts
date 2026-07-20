@@ -171,8 +171,10 @@ export interface RenewalsDeps {
    * forensic receipt only — nothing reads it to DECIDE a price. The actual
    * plan flip that reaches billing is the `members.plan_id` write in
    * `applyPendingTierUpgradeInTx` (Package B1), picked up by Package A's
-   * next-cycle seed. (`getEffectivePlanForRenewal` / `CurrentPlanResolverPort`
-   * were never implemented; their deletion is a follow-up package.)
+   * next-cycle seed. (The never-implemented `getEffectivePlanForRenewal`
+   * resolver / `CurrentPlanResolverPort` were removed as dead code in
+   * Package B2 — the plans→members dependency inversion they required is
+   * moot now that billing reads `members.plan_id` directly.)
    */
   readonly scheduledPlanChangeRepo: ScheduledPlanChangeRepo;
   /**
