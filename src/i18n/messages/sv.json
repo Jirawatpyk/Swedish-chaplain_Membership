@@ -5610,13 +5610,32 @@
         "errorPlanUnavailable": "Den valda planen är inte längre tillgänglig.",
         "errorInvoiceFailed": "Vi kunde inte skapa din faktura. Försök igen eller kontakta support.",
         "errorRateLimited": "För många förnyelseförsök. Vänta en stund och försök igen.",
-        "errorNetwork": "Anslutningsproblem. Kontrollera din internetanslutning och försök igen."
+        "errorNetwork": "Anslutningsproblem. Kontrollera din internetanslutning och försök igen.",
+        "errorDowngradeNotAcknowledged": "Bekräfta bytet till en plan med lägre pris innan du fortsätter."
       },
       "planChange": {
         "label": "Välj en plan",
         "placeholder": "{defaultLabel}",
         "currentSuffix": "nuvarande",
-        "changeNotice": "Att byta till en annan plan låser det nya priset på din förnyelsefaktura."
+        "changeNotice": "Att byta till en annan plan låser det nya priset på din förnyelsefaktura.",
+        "groupUpgrade": "Planer med högre pris",
+        "groupCurrent": "Din nuvarande plan",
+        "groupDowngrade": "Planer med lägre pris",
+        "optionWithPrice": "{label} — {price}",
+        "priceHeading": "Prisändring",
+        "priceCurrent": "Nuvarande låst pris",
+        "priceNew": "Nytt pris",
+        "priceDelta": "Skillnad"
+      },
+      "downgrade": {
+        "title": "Bekräfta en plan med lägre pris",
+        "description": "Du byter från {currentLabel} till {newLabel}. Det sänker ditt förnyelsepris och minskar vissa medlemsförmåner.",
+        "losesHeading": "Detta ändras",
+        "quotaEblast": "E-Blast per år: {from} → {to}",
+        "quotaCulturalTickets": "Kulturbiljetter per år: {from} → {to}",
+        "overQuotaWarning": "Du har redan använt {used} av {benefitName} denna period — mer än de {quota} som ingår i den nya planen.",
+        "confirmCta": "Ja, byt till denna plan",
+        "cancelCta": "Behåll min nuvarande plan"
       },
       "onboarding": {
         "heading": "Välkommen till din första förnyelse",

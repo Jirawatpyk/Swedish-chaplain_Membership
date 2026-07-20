@@ -5610,13 +5610,32 @@
         "errorPlanUnavailable": "The selected plan is no longer available.",
         "errorInvoiceFailed": "We couldn't generate your invoice. Please try again or contact support.",
         "errorRateLimited": "Too many renewal attempts. Please wait a few minutes and try again.",
-        "errorNetwork": "Connection issue. Please check your internet and try again."
+        "errorNetwork": "Connection issue. Please check your internet and try again.",
+        "errorDowngradeNotAcknowledged": "Please confirm the lower-priced plan change before continuing."
       },
       "planChange": {
         "label": "Choose a plan",
         "placeholder": "{defaultLabel}",
         "currentSuffix": "current",
-        "changeNotice": "Switching to a different plan will lock the new price on your renewal invoice."
+        "changeNotice": "Switching to a different plan will lock the new price on your renewal invoice.",
+        "groupUpgrade": "Higher-priced plans",
+        "groupCurrent": "Your current plan",
+        "groupDowngrade": "Lower-priced plans",
+        "optionWithPrice": "{label} — {price}",
+        "priceHeading": "Price change",
+        "priceCurrent": "Current locked-in price",
+        "priceNew": "New price",
+        "priceDelta": "Difference"
+      },
+      "downgrade": {
+        "title": "Confirm a lower-priced plan",
+        "description": "You are switching from {currentLabel} to {newLabel}. This lowers your renewal price and reduces some membership benefits.",
+        "losesHeading": "What changes",
+        "quotaEblast": "E-Blasts per year: {from} → {to}",
+        "quotaCulturalTickets": "Cultural event tickets per year: {from} → {to}",
+        "overQuotaWarning": "You have already used {used} of {benefitName} this cycle — more than the {quota} included in the new plan.",
+        "confirmCta": "Yes, switch to this plan",
+        "cancelCta": "Keep my current plan"
       },
       "onboarding": {
         "heading": "Welcome to your first renewal",
