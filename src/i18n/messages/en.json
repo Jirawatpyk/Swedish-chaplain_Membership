@@ -1882,7 +1882,7 @@
           "unknown": "An unknown error occurred. Please try again.",
           "concurrent": "This invoice was already credited or voided in another session. Refresh to see the latest status.",
           "refreshAction": "Refresh",
-          "receiptNotCreditable": "Receipts issued to a buyer without a Tax ID cannot be credited. Use a direct refund or void instead.",
+          "receiptNotCreditable": "This payment was issued a Section 105 receipt, not a tax invoice, so no credit note can be issued against it. Refunding it needs a manual process — please contact support.",
           "receiptNotRendered": "The tax receipt PDF is still being generated (or failed to render). A credit note can only be issued once the §86/4 receipt has rendered — wait a moment and retry, or re-render the receipt from the invoice page.",
           "membershipEffectRequired": "Choose what should happen to the membership before issuing this credit note. Reload the page and try again.",
           "codeFallback": "Error code: {code}"

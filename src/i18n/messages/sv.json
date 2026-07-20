@@ -1882,7 +1882,7 @@
           "refreshAction": "Uppdatera",
           "failed": "Kreditnotan kunde inte utfärdas.",
           "unknown": "Ett okänt fel uppstod. Försök igen.",
-          "receiptNotCreditable": "Kvitton som utfärdats till en köpare utan momsregistreringsnummer kan inte krediteras. Använd en direkt återbetalning eller makulering i stället.",
+          "receiptNotCreditable": "För denna betalning utfärdades ett kvitto enligt paragraf 105, inte en skattefaktura, så ingen kreditnota kan utfärdas för den. Återbetalning kräver manuell hantering — kontakta supporten.",
           "receiptNotRendered": "Skattekvittots PDF genereras fortfarande (eller kunde inte skapas). En kreditnota kan utfärdas först när §86/4-kvittot har genererats — vänta en stund och försök igen, eller återskapa kvittot från fakturasidan.",
           "membershipEffectRequired": "Välj vad som ska hända med medlemskapet innan du utfärdar denna kreditnota. Ladda om sidan och försök igen.",
           "codeFallback": "Felkod: {code}"
