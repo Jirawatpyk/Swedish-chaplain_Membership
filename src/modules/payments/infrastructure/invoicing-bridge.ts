@@ -486,6 +486,45 @@ export const invoicingBridge: InvoicingBridgePort = {
       return err({ code: 'credit_gate_underivable' });
     }
 
+    // I2 (Task 7 remediation) — leave a trace when a gate axis will REFUSE.
+    //
+    // `creditable: false` and a non-`rendered` receipt are both permanent-
+    // looking refusals whose two causes are indistinguishable downstream: a
+    // legitimate §105 receipt and a CORRUPT row produce the identical verdict,
+    // because `resolveBuyerIsVatRegistrant` is fail-closed and returns `false`
+    // for a missing or key-less snapshot. Without this line, a snapshot-shape
+    // regression that flipped every event invoice to uncreditable would present
+    // as "finance says refunds stopped working" with nothing in logs or metrics
+    // to point at — the refusal itself is logged by the route, but only as a
+    // code, with no discriminator.
+    //
+    // This is the ONLY caller of `getInvoiceCreditedTotal` (the refund
+    // pre-flight), so it fires on refusals and nowhere else.
+    //
+    // LOG HYGIENE: bounded literals and presence booleans only. The snapshot
+    // holds the buyer's name, address and TIN; presence is the whole
+    // diagnostic — it tells you whether `resolveBuyerIsVatRegistrant` took its
+    // snapshot arm or its fail-closed arm, which is exactly the ambiguity being
+    // resolved.
+    if (!creditable || receiptRenderState !== 'rendered') {
+      logger.warn(
+        {
+          tenantId: input.tenantId,
+          invoiceId: input.invoiceId,
+          invoiceSubject: inv.invoiceSubject,
+          creditable,
+          receiptRenderState,
+          // Raw column value: distinguishes a `failed` render (a worker gave
+          // up) from NULL (a legacy row no cron has ever scanned). Both map to
+          // `unrendered`, but they need different human action.
+          receiptPdfStatus: inv.receiptPdfStatus,
+          hasIdentitySnapshot: inv.memberIdentitySnapshot != null,
+          hasMemberId: inv.memberId != null,
+        },
+        'invoicing-bridge.credit_gate_will_refuse',
+      );
+    }
+
     return ok({
       creditedTotalSatang,
       totalSatang,

@@ -650,6 +650,74 @@ describe('invoicingBridge.getInvoiceCreditedTotal — Minor#1 graceful read-thro
     },
   ];
 
+  it('I2: a refusing gate leaves a discriminating trace; a passing one is silent', async () => {
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    try {
+      // A corrupt row: `memberIdentitySnapshot` is null, so
+      // `resolveBuyerIsVatRegistrant` takes its FAIL-CLOSED arm and returns
+      // false — identical output to a legitimate §105 receipt. Downstream sees
+      // only `f4_preflight_not_creditable` either way, so without this log a
+      // snapshot-shape regression that made every event invoice uncreditable
+      // would look like "finance says refunds stopped working" and nothing else.
+      f4Mock.getInvoice.mockResolvedValueOnce(
+        ok({
+          id: invoiceId,
+          total: { satang: 107_000n },
+          creditedTotal: { satang: 0n },
+          status: 'paid',
+          invoiceSubject: 'event',
+          memberId,
+          memberIdentitySnapshot: null,
+          receiptPdfStatus: null,
+        }),
+      );
+
+      const bridge = await loadBridge();
+      await bridge.getInvoiceCreditedTotal({ tenantId, invoiceId });
+
+      const call = warnSpy.mock.calls.find(
+        (c) => c[1] === 'invoicing-bridge.credit_gate_will_refuse',
+      );
+      expect(call).toBeDefined();
+      const c = call![0] as Record<string, unknown>;
+      expect(c['creditable']).toBe(false);
+      expect(c['receiptRenderState']).toBe('unrendered');
+      // The raw column separates "a worker gave up" from "no cron ever scanned
+      // this row" — both collapse to `unrendered`, but they need different
+      // human action.
+      expect(c['receiptPdfStatus']).toBeNull();
+      // THE discriminator: fail-closed arm vs a real §105 verdict.
+      expect(c['hasIdentitySnapshot']).toBe(false);
+      expect(c['invoiceSubject']).toBe('event');
+      // No PII, ever — the snapshot carries name, address and TIN.
+      expect(JSON.stringify(c)).not.toContain('memberIdentitySnapshot":{');
+
+      // …and a fully creditable invoice must NOT log. An always-on line would
+      // be noise that gets filtered, which is how it stops being read.
+      warnSpy.mockClear();
+      f4Mock.getInvoice.mockResolvedValueOnce(
+        ok({
+          id: invoiceId,
+          total: { satang: 107_000n },
+          creditedTotal: { satang: 0n },
+          status: 'paid',
+          invoiceSubject: 'membership',
+          memberId,
+          memberIdentitySnapshot: { tax_id: '1234567890123', buyer_is_vat_registrant: true },
+          receiptPdfStatus: 'rendered',
+        }),
+      );
+      await bridge.getInvoiceCreditedTotal({ tenantId, invoiceId });
+      expect(
+        warnSpy.mock.calls.some(
+          (c) => c[1] === 'invoicing-bridge.credit_gate_will_refuse',
+        ),
+      ).toBe(false);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   for (const c of derivationCases) {
     it(`F-4 derivation — ${c.name}`, async () => {
       f4Mock.getInvoice.mockResolvedValueOnce(
