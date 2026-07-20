@@ -128,6 +128,13 @@ function httpStatusForUseCaseError(code: IssueRefundError['code']): {
       // on-call does NOT hunt a non-existent orphaned refund via the
       // out-of-band-refund runbook. Retrying the same request is the fix.
       return { status: 502, routeCode: 'f4_preflight_read_error' };
+    // I1 (Task 7) — 502 like its read-failure sibling (the fault is ours, not
+    // the request's), but a DISTINCT code because the copy must not say
+    // "retry". The gate axes could not be computed at all, so every identical
+    // retry fails identically; the admin is told to contact support while the
+    // bridge's dedicated metric pages SRE.
+    case 'f4_preflight_gate_underivable':
+      return { status: 502, routeCode: 'f4_preflight_gate_underivable' };
     // F-4 (money-remediation Task 7) — all three are 409, NEVER 502. The
     // refund was refused BEFORE Stripe: no money moved, no orphaned refund
     // exists, and retrying the identical request changes nothing. A 502 here

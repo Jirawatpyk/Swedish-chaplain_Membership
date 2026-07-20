@@ -167,7 +167,7 @@ describe('invoicingBridge.getInvoiceForPayment — H-1 corrupted_total path', ()
     expect(c['tenantId']).toBe(tenantId);
     expect(c['invoiceId']).toBe(invoiceId);
     expect(c['rawTotalSatang']).toBe('-42');
-    expect(c['errKind']).toBe('RangeError');
+    expect(c['err']).toBe('RangeError');
   });
 
   it('happy path (positive totalSatang) returns Result.ok with branded value', async () => {
@@ -593,7 +593,7 @@ describe('invoicingBridge.getInvoiceStatus — F4-authoritative status read', ()
     expect(metricsSpy).toHaveBeenCalledWith('getInvoiceStatus_read_threw');
     const [ctx, msg] = loggerErrorSpy.mock.calls[0]!;
     expect(msg).toBe('invoicing-bridge.getInvoiceStatus_read_threw');
-    expect((ctx as Record<string, unknown>)['errKind']).toBe('Error');
+    expect((ctx as Record<string, unknown>)['err']).toBe('Error');
   });
 });
 

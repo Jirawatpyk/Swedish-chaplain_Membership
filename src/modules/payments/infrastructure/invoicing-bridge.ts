@@ -21,6 +21,11 @@ import { err, ok, type Result } from '@/lib/result';
 import { paymentsMetrics } from '@/lib/metrics';
 import { asSatang, type Satang } from '@/lib/money';
 import { logger } from '@/lib/logger';
+// I1 (Task 7) — canonical error-kind helper. `src/lib/log-id.ts` declares the
+// shape `logger.error({ err: errKind(e), …context }, 'op.failed')` and exists
+// precisely because this was hand-rolled at 15+ F5 sites; this file was one of
+// them, at four call sites.
+import { errKind } from '@/lib/log-id';
 import {
   getInvoiceForPayment as f4GetInvoiceForPayment,
   getInvoice as f4GetInvoice,
@@ -71,7 +76,7 @@ function mapF4InvoiceForPayment(
         tenantId: v.tenantId,
         invoiceId: v.id,
         rawTotalSatang: String(v.totalSatang),
-        errKind: e instanceof Error ? e.constructor.name : 'unknown',
+        err: errKind(e),
       },
       'invoicing-bridge.f4_invoice_total_brand_failed',
     );
@@ -335,7 +340,7 @@ export const invoicingBridge: InvoicingBridgePort = {
         {
           tenantId: input.tenantId,
           invoiceId: input.invoiceId,
-          errKind: e instanceof Error ? e.constructor.name : 'unknown',
+          err: errKind(e),
         },
         'invoicing-bridge.getInvoiceCreditedTotal_read_threw',
       );
@@ -357,31 +362,14 @@ export const invoicingBridge: InvoicingBridgePort = {
       );
       return err({ code: 'invalid_total' });
     }
+    // F5R3 H-5 — brand at the Money VO escape point, in a try that now wraps
+    // NOTHING BUT the two brand calls. `asSatang` throws on negative (dropped
+    // CHECK / OOB SQL) → typed `invalid_total` instead of a raw 500.
+    let creditedTotalSatang: Satang;
+    let totalSatang: Satang;
     try {
-      return ok({
-        // F5R3 H-5 — brand at the Money VO escape point. `asSatang` throws on
-        // negative (dropped CHECK / OOB SQL) → the catch converts to a typed
-        // `invalid_total` instead of a raw 500 through the tracer.
-        creditedTotalSatang: asSatang(inv.creditedTotal.satang),
-        totalSatang: asSatang(inv.total.satang),
-        // F-4 (Task 7) — the other two axes of F4's credit-note gate, read off
-        // the invoice ALREADY in hand. No extra round-trip: `f4GetInvoice`
-        // above returned the whole aggregate; the pre-fix contract simply did
-        // not surface these, which is why the pre-flight could not check them
-        // even by accident.
-        status: inv.status,
-        // §105 creditability — derived through the SAME shared discriminator
-        // `issue-credit-note.ts` uses, deliberately rather than re-deriving it
-        // here. Keying this on TIN-presence while F4's gate keys on registrant
-        // status is exactly the lockstep divergence `document-kind.ts` exists
-        // to prevent (059 / PR-A Task 6a).
-        creditable:
-          inferEventDocumentKind(
-            inv.invoiceSubject,
-            resolveBuyerIsVatRegistrant(inv.memberId, inv.memberIdentitySnapshot),
-          ) !== 'receipt_separate',
-        receiptRendered: inv.receiptPdfStatus === 'rendered',
-      });
+      creditedTotalSatang = asSatang(inv.creditedTotal.satang);
+      totalSatang = asSatang(inv.total.satang);
     } catch (e) {
       paymentsMetrics.f4BridgeUnknownErrorShape(
         'getInvoiceCreditedTotal_brand_failed',
@@ -392,12 +380,80 @@ export const invoicingBridge: InvoicingBridgePort = {
           invoiceId: input.invoiceId,
           rawTotalSatang: String(inv.total.satang),
           rawCreditedTotalSatang: String(inv.creditedTotal.satang),
-          errKind: e instanceof Error ? e.constructor.name : 'unknown',
+          err: errKind(e),
         },
         'invoicing-bridge.getInvoiceCreditedTotal_brand_failed',
       );
       return err({ code: 'invalid_total' });
     }
+
+    // I1 (Task 7 remediation) — the credit-gate axes get their OWN catch,
+    // their OWN metric op and their OWN log fields.
+    //
+    // They used to share the brand catch above, which bumps `…_brand_failed`,
+    // logs only satang values and returns `invalid_total` — mapped downstream
+    // to a retryable 502 about the refundable BALANCE. A document-kind fault
+    // is not a money fault, says nothing about the money, and no retry clears
+    // it. See tests/unit/payments/invoicing-bridge.test.ts — this file already
+    // failed exactly that way once, when these fields were first added.
+    //
+    // "The helpers are pure and total so they cannot throw" is the reasoning
+    // that produced that incident. `inferEventDocumentKind` and
+    // `resolveBuyerIsVatRegistrant` are indeed pure and total — and the call
+    // still threw, because a call site throws when the BINDING is undefined
+    // (barrel export dropped, circular-import TDZ, mock factory omission) or
+    // when the F4 aggregate stops carrying a field read here. Keep this try.
+    let creditable: boolean;
+    let receiptRendered: boolean;
+    try {
+      // §105 creditability — derived through the SAME shared discriminator
+      // `issue-credit-note.ts` uses, deliberately rather than re-deriving it
+      // here. Keying this on TIN-presence while F4's gate keys on registrant
+      // status is exactly the lockstep divergence `document-kind.ts` exists
+      // to prevent (059 / PR-A Task 6a).
+      creditable =
+        inferEventDocumentKind(
+          inv.invoiceSubject,
+          resolveBuyerIsVatRegistrant(inv.memberId, inv.memberIdentitySnapshot),
+        ) !== 'receipt_separate';
+      receiptRendered = inv.receiptPdfStatus === 'rendered';
+    } catch (e) {
+      paymentsMetrics.f4BridgeUnknownErrorShape(
+        'getInvoiceCreditedTotal_credit_gate_underivable',
+      );
+      // LOG HYGIENE: every field below is a BOUNDED LITERAL, a presence
+      // boolean, or an opaque id. `memberIdentitySnapshot` holds the buyer's
+      // name, address and TIN — log ONLY whether it was present, NEVER the
+      // object, never a field of it, not even truncated. Same rule for
+      // `memberId`: presence is the whole diagnostic (it selects which arm of
+      // `resolveBuyerIsVatRegistrant` ran), the value adds nothing.
+      logger.error(
+        {
+          tenantId: input.tenantId,
+          invoiceId: input.invoiceId,
+          invoiceSubject: inv.invoiceSubject,
+          hasIdentitySnapshot: inv.memberIdentitySnapshot != null,
+          hasMemberId: inv.memberId != null,
+          receiptPdfStatus: inv.receiptPdfStatus,
+          err: errKind(e),
+        },
+        'invoicing-bridge.getInvoiceCreditedTotal_credit_gate_underivable',
+      );
+      return err({ code: 'credit_gate_underivable' });
+    }
+
+    return ok({
+      creditedTotalSatang,
+      totalSatang,
+      // F-4 (Task 7) — the other axes of F4's credit-note gate, read off the
+      // invoice ALREADY in hand. No extra round-trip: `f4GetInvoice` above
+      // returned the whole aggregate; the pre-fix contract simply did not
+      // surface these, which is why the pre-flight could not check them even
+      // by accident.
+      status: inv.status,
+      creditable,
+      receiptRendered,
+    });
   },
 
   /**
@@ -426,7 +482,7 @@ export const invoicingBridge: InvoicingBridgePort = {
         {
           tenantId: input.tenantId,
           invoiceId: input.invoiceId,
-          errKind: e instanceof Error ? e.constructor.name : 'unknown',
+          err: errKind(e),
         },
         'invoicing-bridge.getInvoiceStatus_read_threw',
       );

@@ -171,6 +171,17 @@ export type IssueRefundError =
    */
   | { readonly code: 'f4_preflight_read_error'; readonly detail: string }
   /**
+   * I1 (Task 7 remediation) — the F4 read succeeded and the money branded
+   * cleanly, but the credit-gate axes could not be DERIVED. A code/shape
+   * fault, not a money fault and not a transient one: no retry clears it, so
+   * it must NOT share `f4_preflight_read_error`'s "please retry" copy.
+   *
+   * Money did not move. The actionable signal is the bridge's
+   * `getInvoiceCreditedTotal_credit_gate_underivable` metric and its log line,
+   * which page SRE; the admin is told to contact support rather than to retry.
+   */
+  | { readonly code: 'f4_preflight_gate_underivable' }
+  /**
    * F-4 (money-remediation Task 7) — the refund was refused in Phase A because
    * F4 would decline the §86/10 credit note. Money did NOT move; no Stripe
    * refund exists to hunt; no `refunds` row and no `refund_initiated` audit
@@ -563,6 +574,20 @@ async function issueRefundBody(
       externalTx: tx,
     });
     if (!invoiceCredited.ok) {
+      // I1 (Task 7 remediation) — a DERIVATION fault is not a READ fault, and
+      // must not inherit `f4_preflight_read_error`'s copy, which tells the
+      // admin that retrying the same request is the fix. It is not: the gate
+      // axes could not be computed at all (a barrel export gone undefined, an
+      // F4 aggregate field removed), so every identical retry fails
+      // identically. That is exactly the retryable-looking-but-permanent copy
+      // this remediation exists to delete elsewhere; do not reintroduce it
+      // here. Money did not move on either path.
+      if (invoiceCredited.error.code === 'credit_gate_underivable') {
+        return {
+          kind: 'rejected',
+          error: { code: 'f4_preflight_gate_underivable' },
+        } as const;
+      }
       // Fix#1 — DISTINCT pre-flight code (money did NOT move; safe to retry;
       // no out-of-band refund exists), NOT the post-Stripe `f4_bridge_error`.
       return {

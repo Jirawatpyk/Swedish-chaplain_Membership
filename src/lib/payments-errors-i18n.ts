@@ -59,6 +59,11 @@ export type F5RouteErrorCode =
   // succeed → out-of-band-refund runbook) so on-call does not chase a
   // non-existent refund. Both currently map to 502.
   | 'f4_preflight_read_error'
+  // I1 (Task 7) — the credit-gate axes could not be DERIVED (a code/shape
+  // fault). Distinct from `f4_preflight_read_error` because that copy says to
+  // retry, which is false here: no retry can compute a verdict the code cannot
+  // compute. Money did not move on either.
+  | 'f4_preflight_gate_underivable'
   // F-4 (money-remediation Task 7) — the refund was refused in Phase A
   // because F4's credit-note gates would decline it. Money did NOT move.
   // All three are 409, and DELIBERATELY not collapsed into one code: the
@@ -199,6 +204,15 @@ export const F5_ERROR_MESSAGES: Record<F5RouteErrorCode, Bilingual> = {
       "This invoice can no longer be credited, so it cannot be refunded. No money was moved. Check the invoice — it may have been voided or already fully credited.",
     messageThai:
       'ใบแจ้งหนี้นี้ไม่สามารถออกใบลดหนี้ได้แล้ว จึงไม่สามารถคืนเงินได้ ยังไม่มีการเคลื่อนไหวของเงิน กรุณาตรวจสอบใบแจ้งหนี้ อาจถูกยกเลิกหรือออกใบลดหนี้เต็มจำนวนไปแล้ว',
+  },
+  f4_preflight_gate_underivable: {
+    // Deliberately does NOT say "retry". The verdict could not be computed at
+    // all, so an identical retry fails identically — the same
+    // retryable-looking-but-permanent copy this remediation removes elsewhere.
+    message:
+      'Could not determine whether this payment can be credited, so the refund was not attempted. No money was moved. This needs a fix on our side — please contact support.',
+    messageThai:
+      'ระบบไม่สามารถระบุได้ว่าการชำระเงินนี้ออกใบลดหนี้ได้หรือไม่ จึงยังไม่ได้ดำเนินการคืนเงิน ยังไม่มีการเคลื่อนไหวของเงิน กรณีนี้ต้องแก้ไขที่ระบบ กรุณาติดต่อฝ่ายสนับสนุน',
   },
   f4_preflight_not_creditable: {
     // Permanent by law, so the copy must not imply retrying: a §105

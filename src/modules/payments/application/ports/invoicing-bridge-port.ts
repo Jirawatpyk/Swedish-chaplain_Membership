@@ -293,7 +293,28 @@ export interface InvoicingBridgePort {
          */
         readonly receiptRendered: boolean;
       },
-      { readonly code: 'not_found' | 'invalid_total' | 'read_failed' }
+      {
+        readonly code:
+          | 'not_found'
+          | 'invalid_total'
+          | 'read_failed'
+          /**
+           * I1 (Task 7 remediation) — the F4 read SUCCEEDED and the money
+           * fields branded cleanly, but deriving the credit-note gate axes
+           * THREW. Distinct from `invalid_total` on purpose: `invalid_total`
+           * asserts the invoice's MONEY is corrupt and is rendered to the
+           * admin as a retryable failure to read the refundable balance. A
+           * derivation throw is neither — it is a code/shape fault (a barrel
+           * export gone undefined, an F4 aggregate field removed, a
+           * circular-import TDZ), it says nothing about the money, and
+           * retrying an identical request cannot clear it.
+           *
+           * It was reported as `invalid_total` once already (see
+           * tests/unit/payments/invoicing-bridge.test.ts), which is why the
+           * derivation now owns its own try/catch, metric op and log fields.
+           */
+          | 'credit_gate_underivable';
+      }
     >
   >;
 
