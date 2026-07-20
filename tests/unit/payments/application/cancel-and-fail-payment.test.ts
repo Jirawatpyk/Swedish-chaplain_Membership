@@ -115,11 +115,23 @@ describe('failPayment (T058)', () => {
     expect(r.ok).toBe(true);
   });
 
-  it('tenant_settings missing → processor_unavailable', async () => {
+  it('tenant_settings missing → bridge_error / tenant_settings_missing (webhook-permanent)', async () => {
+    // Title corrected (Task 5): this was `→ processor_unavailable`, the
+    // pre-F5R2-CRIT-2 transient behaviour it was fixed AWAY from. failPayment
+    // now refuses an unconfigured tenant with `bridge_error` + the shared
+    // detail, and the webhook dispatcher classifies that detail PERMANENT — so
+    // the `.detail` is the producer half of that contract and must be pinned,
+    // not just `r.ok === false`.
     const d = deps();
     (d.tenantSettingsRepo.getByTenantId as ReturnType<typeof vi.fn>).mockResolvedValueOnce(null);
     const r = await failPayment(d, INPUT);
     expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('bridge_error');
+      if (r.error.code === 'bridge_error') {
+        expect(r.error.detail).toBe('tenant_settings_missing');
+      }
+    }
   });
 
   it('unknown intent → unknown_intent outcome', async () => {

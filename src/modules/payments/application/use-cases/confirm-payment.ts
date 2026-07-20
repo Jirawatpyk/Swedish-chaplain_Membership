@@ -46,7 +46,11 @@ import type { TaxAtPaymentFlag } from '@/modules/invoicing';
 import { enforceOneSucceededPerInvoice } from '../../domain/invariants/one-succeeded-payment-per-invoice';
 import { SYSTEM_ACTOR_STRIPE_WEBHOOK } from '../../domain/system-actors';
 import { retentionFor } from '../ports/audit-port';
-import { markProcessedIfPresent, emitTerminalStateAck } from './_shared';
+import {
+  markProcessedIfPresent,
+  emitTerminalStateAck,
+  F5_SETTINGS_MISSING_DETAIL,
+} from './_shared';
 // money-remediation Task 2 primitives (Task 4 adopts them here). `withTx`
 // commits whenever the callback returns, so `return err(...)` out of a
 // settlement tx persists the writes it is refusing — finding F-1. These make
@@ -573,7 +577,7 @@ async function confirmPaymentBody(
   if (!settings) {
     // Pre-resolution tenant miss is handled at the route; if we're here
     // without settings, log via caller's warn path.
-    return err({ code: 'bridge_error', detail: 'tenant_settings_missing' });
+    return err({ code: 'bridge_error', detail: F5_SETTINGS_MISSING_DETAIL });
   }
 
   // R2 H-3 — captured by closure inside withTx; if Phase A determines

@@ -19,6 +19,7 @@ import {
   emitTerminalStateAck,
   emitWebhookUnknownIntent,
   markProcessedIfPresent,
+  F5_SETTINGS_MISSING_DETAIL,
 } from './_shared';
 import { paymentsMetrics } from '@/lib/metrics';
 import { paymentsTracer } from '@/lib/otel-tracer';
@@ -135,7 +136,7 @@ async function failPaymentBody(
     // → route returns 200 + forensic audit instead of 500 → Stripe
     // stops retrying. Pre-fix this path triggered a 72h Stripe retry
     // storm on a configuration gap.
-    return err({ code: 'bridge_error', detail: 'tenant_settings_missing' });
+    return err({ code: 'bridge_error', detail: F5_SETTINGS_MISSING_DETAIL });
   }
 
   return await deps.paymentsRepo.withTx(async (tx) => {

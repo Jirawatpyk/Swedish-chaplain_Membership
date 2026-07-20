@@ -214,6 +214,13 @@ describe('confirmPayment (T057)', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe('bridge_error');
+    // Task 5 — the `.detail` is the PRODUCER half of the webhook-permanence
+    // contract: `classifyDispatchPermanence` special-cases exactly this string
+    // to `permanent`. Asserting only `.code` let a rename of the detail silently
+    // reclassify an unconfigured-tenant capture as transient (→ 48h retries).
+    if (result.error.code === 'bridge_error') {
+      expect(result.error.detail).toBe('tenant_settings_missing');
+    }
   });
 
   it('unknown intent — unknown_intent outcome', async () => {

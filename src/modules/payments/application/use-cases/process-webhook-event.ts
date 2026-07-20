@@ -46,6 +46,7 @@ import { retentionFor } from '../ports/audit-port';
 // result.value` narrowing only needs the use-case function imports.
 import { confirmPayment } from './confirm-payment';
 import { failPayment } from './fail-payment';
+import { F5_SETTINGS_MISSING_DETAIL } from './_shared';
 import { handleCancelEvent } from './handle-cancel-event';
 import { processChargeRefunded } from './process-charge-refunded';
 import { processRefundUpdated } from './process-refund-updated';
@@ -334,8 +335,11 @@ export function classifyDispatchPermanence(
       if (subDetail === null) return 'transient';
       // F5's OWN pre-bridge refusal (confirm-payment + fail-payment settings
       // guards) — not an F4 code, so it is not in the Record above.
-      // Permanent by F5R2-CRIT-2; see that Record's docstring.
-      if (subDetail === 'tenant_settings_missing') return 'permanent';
+      // Permanent by F5R2-CRIT-2; see that Record's docstring. The detail
+      // string is the shared `F5_SETTINGS_MISSING_DETAIL` const so this
+      // consumer and its two producers rename in lockstep (a drift here silently
+      // reclassifies an unconfigured-tenant capture as transient → 48h retries).
+      if (subDetail === F5_SETTINGS_MISSING_DETAIL) return 'permanent';
       return (
         F4_RECORD_PAYMENT_PERMANENCE[subDetail as RecordPaymentError['code']] ??
         // `f4_error` (summariseF4Error's code fallback) and anything else we

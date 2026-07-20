@@ -24,6 +24,25 @@ import type { AuditPort, ProcessorEventsRepo } from '../ports';
 import { retentionFor } from '../ports/audit-port';
 import { SYSTEM_ACTOR_STRIPE_WEBHOOK } from '../../domain/system-actors';
 
+/**
+ * Task 5 (F-1 item 3) — the ONE detail string that welds two producers to one
+ * consumer across a webhook boundary. `confirm-payment` and `fail-payment` both
+ * refuse an unconfigured tenant with `bridge_error` + this detail; the webhook
+ * dispatcher (`classifyDispatchPermanence`) special-cases it to `permanent` so
+ * an unconfigured-tenant capture is 200-acked with a forensic row instead of
+ * retried by Stripe for 48h against a state that cannot self-heal.
+ *
+ * Unlike the F4 half — compile-welded to `RecordPaymentError['code']` — this is
+ * an F5-OWN guard with no shared type, so before this constant the contract was
+ * three loose string literals. Renaming any one silently broke the
+ * classification (all tests stayed green) → the tenant-unconfigured gap fell
+ * through to `?? 'transient'` → 48h of retries + a give-up forensic stamped
+ * `retry_ceiling_exceeded` that misdirects the operator to "F4/Blob was down two
+ * days" when the truth is "F5 was never configured". Referencing this const at
+ * all three sites turns that rename into a build error.
+ */
+export const F5_SETTINGS_MISSING_DETAIL = 'tenant_settings_missing' as const;
+
 interface MarkProcessedDeps {
   readonly processorEventsRepo?: ProcessorEventsRepo;
 }
