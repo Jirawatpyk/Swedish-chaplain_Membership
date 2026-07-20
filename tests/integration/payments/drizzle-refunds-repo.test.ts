@@ -37,7 +37,10 @@ import {
   tenantPaymentSettings,
   type NewTenantPaymentSettingsRow,
 } from '@/modules/payments/infrastructure/schema';
-import type { CreditNoteWaiverReason } from '@/modules/invoicing';
+import {
+  CREDIT_NOTE_WAIVER_REASONS,
+  type CreditNoteWaiverReason,
+} from '@/modules/invoicing';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
 import { tenantDocumentSequences } from '@/modules/invoicing/infrastructure/db/schema-tenant-document-sequences';
@@ -1220,6 +1223,32 @@ describe('DrizzleRefundsRepo — live Neon', () => {
         }),
         'refunds_cn_xor_waived',
       );
+    });
+
+    it('the DB CHECK enumerates EXACTLY the Domain waiver reasons (no drift)', async () => {
+      // `credit_note_waiver_reason` is a TEXT column + CHECK, not a pg_enum, so
+      // `assert-enum-parity.ts` does not cover it and the `as const satisfies`
+      // in Domain checks assignability, not that the DB agrees. This closes that
+      // gap: add a third ground and forget the migration → the CHECK silently
+      // rejects it at Phase-A insert (money-safe, but the ground is dead and no
+      // other test notices). Assert the live constraint mentions every reason.
+      const def = await runInTenant(tenantA.ctx, async (tx) => {
+        const rows = (await tx.execute(sql`
+          SELECT pg_get_constraintdef(oid) AS def
+            FROM pg_constraint
+           WHERE conname = 'refunds_waiver_reason_enum'
+             AND conrelid = 'refunds'::regclass
+        `)) as unknown as Array<{ def: string }>;
+        return rows[0]?.def ?? '';
+      });
+      expect(def).not.toBe('');
+      for (const reason of CREDIT_NOTE_WAIVER_REASONS) {
+        expect(def).toContain(`'${reason}'`);
+      }
+      // And the CHECK lists no MORE than the Domain knows — a reason in the DB
+      // but not the union is the same drift in the other direction.
+      const dbReasons = [...def.matchAll(/'([a-z0-9_]+)'/g)].map((m) => m[1]);
+      expect(new Set(dbReasons)).toEqual(new Set(CREDIT_NOTE_WAIVER_REASONS));
     });
   });
 
