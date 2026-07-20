@@ -184,6 +184,39 @@ describe('confirmPayment (T057)', () => {
     expect(succeededCall?.[1].retentionYears).toBe(10);
   });
 
+  // Task 4 (review I-1) — the CAS-mismatch guard on the succeeded flip. When
+  // `updateStatus` returns null (its `expectedCurrentStatus` no longer matched),
+  // it must ROLL BACK, not continue: the UPDATE matched zero rows, so continuing
+  // would let F4's `markPaidFromProcessor` flip the invoice to `paid` against a
+  // payment row that was never advanced — a silent inconsistent commit, the
+  // exact class this branch exists to prevent. The mismatch is unreachable under
+  // the row lock in normal operation, which is precisely why it was untested;
+  // that also means a refactor deleting the guard (or flipping rollbackTx →
+  // commitTxWithRefusal) would redden nothing without this test.
+  it('Task 4 I-1 — updateStatus CAS mismatch (null) rolls back; F4 markPaid NOT called', async () => {
+    const deps = makeDeps();
+    (deps.paymentsRepo.updateStatus as ReturnType<typeof vi.fn>).mockResolvedValueOnce(null);
+
+    const result = await confirmPayment(deps, INPUT);
+
+    // Surfaces a transient decline so the webhook is retried, not 200-acked into
+    // silence (a captured payment on a still-`pending` row).
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('processor_unavailable');
+      if (result.error.code === 'processor_unavailable') {
+        expect(result.error.reason).toBe('payment_row_cas_mismatch');
+      }
+    }
+    // THE money assertion: the invoice was NOT flipped to paid.
+    expect(deps.invoicingBridge.markPaidFromProcessor).not.toHaveBeenCalled();
+    // And no payment_succeeded audit was emitted for a flip that did not happen.
+    const succeededEmit = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.find(
+      (c) => c[1].eventType === 'payment_succeeded',
+    );
+    expect(succeededEmit).toBeUndefined();
+  });
+
   // R2 CRIT-1 (2026-04-27): pins audit-chain ordering across F5+F4 for
   // US1 AS1. The full chain `payment_initiated → payment_succeeded →
   // invoice_paid` spans 2 use-cases (initiate-payment.test.ts asserts
