@@ -288,4 +288,144 @@ describe('void-pdf-reconcile cron (bug 10)', () => {
     expect(row?.pdfSha256).toBe(RESTAMP_SHA);
     expect(row?.pendingAt).toBeNull();
   }, 60_000);
+
+  /** Seed a doomed `invoice_voided` auto-email row (pinned to the un-stamped
+   *  sha_P1 the blob_upload leg never produced). */
+  async function seedFailedVoidEmail(
+    invoiceId: string,
+    opts: { sha: string; status?: 'permanently_failed' | 'pending' },
+  ): Promise<void> {
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.execute(sql`
+        INSERT INTO notifications_outbox
+          (tenant_id, notification_type, to_email, locale, context_data, status, attempts, next_retry_at)
+        VALUES
+          (${tenant.ctx.slug}, 'invoice_auto_email'::notification_type,
+           'void.member@example.com', 'th',
+           ${JSON.stringify({
+             event_type: 'invoice_voided',
+             invoice_id: invoiceId,
+             credit_note_id: null,
+             pdf_blob_key: `invoicing/${tenant.ctx.slug}/x.pdf`,
+             pdf_template_version: 1,
+             document_number: 'VPRC-DOOMED',
+             void_reason: 'wrong tier',
+             expected_pdf_sha256: opts.sha,
+             depends_on_receipt_pdf: false,
+             privacy_footer_kind: null,
+           })}::jsonb,
+           ${opts.status ?? 'permanently_failed'}::outbox_status, 5, now())
+      `);
+    });
+  }
+
+  async function voidEmailRows(
+    invoiceId: string,
+  ): Promise<Array<{ id: string; status: string; sha: string | null; to: string }>> {
+    return runInTenant(tenant.ctx, (tx) =>
+      tx.execute<{ id: string; status: string; sha: string | null; to: string }>(sql`
+        SELECT id, status::text AS status,
+               context_data->>'expected_pdf_sha256' AS sha,
+               to_email AS "to"
+          FROM notifications_outbox
+         WHERE tenant_id = ${tenant.ctx.slug}
+           AND notification_type = 'invoice_auto_email'::notification_type
+           AND context_data->>'event_type' = 'invoice_voided'
+           AND context_data->>'invoice_id' = ${invoiceId}
+      `),
+    );
+  }
+
+  it('D3 — escalation past the threshold PERSISTS a deduped alert (disposition=retrying)', async () => {
+    const invoiceId = await seedMarkedVoid({
+      voidReason: 'upload keeps failing',
+      attempts: 4,
+      seq: 5,
+    });
+    (vercelBlobAdapter.uploadPdf as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error('blob outage'),
+    );
+
+    const res = await reconcileCron(cronReq());
+    expect(res.status).toBe(200);
+
+    const row = await readMarker(invoiceId);
+    expect(row?.attempts).toBe(5); // 4 → 5, crosses ESCALATION_THRESHOLD
+    expect(row?.pendingAt).not.toBeNull(); // still retrying — never abandoned
+
+    // The null-tx audit emit inside runInTenant MUST persist (RLS resolves to
+    // the row's tenant). This is the only signal a voided §86/4 is stuck.
+    const alerts = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({
+          disposition: sql<string>`${auditLog.payload}->>'disposition'`,
+          attempts: sql<string>`${auditLog.payload}->>'attempts'`,
+        })
+        .from(auditLog)
+        .where(
+          and(
+            eq(auditLog.tenantId, tenant.ctx.slug),
+            eq(auditLog.eventType, 'pdf_render_permanently_failed'),
+            sql`${auditLog.payload}->>'invoice_id' = ${invoiceId}`,
+            sql`${auditLog.payload}->>'source' = 'cron.void_pdf_reconcile'`,
+          ),
+        ),
+    );
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]?.disposition).toBe('escalated_retrying');
+    expect(alerts[0]?.attempts).toBe('5');
+  }, 60_000);
+
+  it('D6 — re-enqueues the cancellation email on reconcile when the original was intended + failed', async () => {
+    const invoiceId = await seedMarkedVoid({ voidReason: 'restamp + email', seq: 6 });
+    // The original void email was pinned to the un-stamped sha and permanently
+    // failed (blob_upload leg): the member never got the FR-036 notice.
+    await seedFailedVoidEmail(invoiceId, { sha: 'a'.repeat(64) });
+
+    const res = await reconcileCron(cronReq());
+    expect(res.status).toBe(200);
+
+    const rows = await voidEmailRows(invoiceId);
+    // A FRESH pending row pinned to the freshly-uploaded sha_cron now exists.
+    const fresh = rows.filter((r) => r.status === 'pending' && r.sha === RESTAMP_SHA);
+    expect(fresh).toHaveLength(1);
+    expect(fresh[0]?.to).toBe('void.member@example.com'); // copied context
+  }, 60_000);
+
+  it('D6b — does NOT re-enqueue when no void email was ever intended (suppressed void)', async () => {
+    const invoiceId = await seedMarkedVoid({ voidReason: 'suppressed', seq: 7 });
+    // No outbox row seeded — a suppressed void-on-reissue never enqueued one.
+
+    const res = await reconcileCron(cronReq());
+    expect(res.status).toBe(200);
+
+    const rows = await voidEmailRows(invoiceId);
+    expect(rows).toHaveLength(0); // no spurious cancellation email
+  }, 60_000);
+
+  it('D8 — a hung blob upload times out + bumps (never holds the row lock forever)', async () => {
+    const prev = process.env.VOID_RECONCILE_UPLOAD_TIMEOUT_MS;
+    process.env.VOID_RECONCILE_UPLOAD_TIMEOUT_MS = '300';
+    const invoiceId = await seedMarkedVoid({ voidReason: 'hung upload', seq: 8 });
+    // Upload hangs ~2s; the 300ms timeout must fire first, roll back the tx,
+    // release the lock, and let the catch bump attempts.
+    (vercelBlobAdapter.uploadPdf as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      () =>
+        new Promise((resolve) =>
+          setTimeout(() => resolve({ key: 'k', url: 'u' }), 2000),
+        ),
+    );
+
+    const started = Date.now();
+    const res = await reconcileCron(cronReq());
+    const elapsed = Date.now() - started;
+    process.env.VOID_RECONCILE_UPLOAD_TIMEOUT_MS = prev;
+
+    expect(res.status).toBe(200);
+    // Returned well before the 2s hang would have completed.
+    expect(elapsed).toBeLessThan(1800);
+    const row = await readMarker(invoiceId);
+    expect(row?.attempts).toBe(1); // timeout → throw → catch → bump
+    expect(row?.pendingAt).not.toBeNull();
+  }, 60_000);
 });

@@ -821,6 +821,29 @@ describe('voidInvoice — 088 T068 new-flow bill + paid two-blob void', () => {
     if (r.ok) expect(r.value.pdf?.sha256).toBe('b'.repeat(64));
   });
 
+  it('bug 10 M2b — sha_sync leg retries the sha-write more than once before giving up', async () => {
+    const deps = makeDeps(makeIssuedMembership());
+    // Original Phase-2 write fails, the FIRST retry fails too, the SECOND retry
+    // succeeds. A single-retry implementation would give up after the first
+    // retry and mis-report a persistent DB-sha gap that never self-heals.
+    (deps.invoiceRepo.applyInvoicePdfRegeneration as ReturnType<typeof vi.fn>)
+      .mockRejectedValueOnce(new Error('sha write outage 1'))
+      .mockRejectedValueOnce(new Error('sha write outage 2'))
+      .mockResolvedValueOnce(undefined);
+    const r = await voidInvoice(deps, INPUT);
+    expect(r.ok).toBe(true);
+    // Original write + 2 retries = 3 calls (single-retry would stop at 2).
+    expect(deps.invoiceRepo.applyInvoicePdfRegeneration).toHaveBeenCalledTimes(3);
+    expect(deps.invoiceRepo.markVoidPdfReconcilePending).not.toHaveBeenCalled();
+    // Recovered inline → NO persistent-gap audit; stamped sha patched on.
+    expect(
+      (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.filter(
+        (c) => c[1].eventType === 'pdf_render_failed',
+      ),
+    ).toEqual([]);
+    if (r.ok) expect(r.value.pdf?.sha256).toBe('b'.repeat(64));
+  });
+
   it('bug 10 M3 — full Phase-2 success sets no reconcile marker', async () => {
     const deps = makeDeps(makeIssuedMembership());
     const r = await voidInvoice(deps, INPUT);

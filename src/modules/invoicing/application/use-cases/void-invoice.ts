@@ -511,39 +511,52 @@ export async function voidInvoice(
       let recovered = false;
       if (blobUploaded) {
         // sha_sync leg: the blob ALREADY holds the VOID-stamped bytes (sha_P1);
-        // only the DB sha column lags. Retry the exact sha-write once — NO
-        // re-render, NO reconcile marker. Re-rendering here would upload a
-        // DIFFERENT sha (@react-pdf randomises the font-subset stream) and break
-        // the cancellation email's sha_P1 integrity check on an otherwise-
-        // correct, already-served document.
-        try {
-          await deps.invoiceRepo.withTx(async (tx3) => {
-            if (t.persist === 'invoice') {
-              await deps.invoiceRepo.applyInvoicePdfRegeneration(tx3, {
-                tenantId: input.tenantId,
-                invoiceId,
-                pdfSha256: t.rendered.sha256,
-              });
-            } else {
-              await deps.invoiceRepo.applyReceiptPdfRegeneration(tx3, {
-                tenantId: input.tenantId,
-                invoiceId,
-                receiptPdfSha256: t.rendered.sha256,
-              });
-            }
-          });
-          if (t.persist === 'invoice') syncedSha.invoice = t.rendered.sha256;
-          else syncedSha.receipt = t.rendered.sha256;
-          recovered = true;
-        } catch (retryErr) {
+        // only the DB sha column lags. Retry the exact sha-write up to 3× — a
+        // transient DB blip (brief lock contention / a connection wobble)
+        // usually clears on an immediate retry. NO re-render, NO reconcile
+        // marker: re-rendering would upload a DIFFERENT sha (@react-pdf
+        // randomises the font-subset stream) and break the cancellation email's
+        // sha_P1 integrity check on an otherwise-correct, already-served
+        // document — and no cron covers the sha_sync leg. Residual (tax-safe): a
+        // DB outage lasting past all 3 attempts leaves `pdf_sha256` cosmetically
+        // stale while the served blob, audit, and email all stay correct.
+        const SHA_SYNC_MAX_ATTEMPTS = 3;
+        let lastShaSyncErr: unknown = e;
+        for (let attempt = 1; attempt <= SHA_SYNC_MAX_ATTEMPTS; attempt += 1) {
+          try {
+            await deps.invoiceRepo.withTx(async (tx3) => {
+              if (t.persist === 'invoice') {
+                await deps.invoiceRepo.applyInvoicePdfRegeneration(tx3, {
+                  tenantId: input.tenantId,
+                  invoiceId,
+                  pdfSha256: t.rendered.sha256,
+                });
+              } else {
+                await deps.invoiceRepo.applyReceiptPdfRegeneration(tx3, {
+                  tenantId: input.tenantId,
+                  invoiceId,
+                  receiptPdfSha256: t.rendered.sha256,
+                });
+              }
+            });
+            if (t.persist === 'invoice') syncedSha.invoice = t.rendered.sha256;
+            else syncedSha.receipt = t.rendered.sha256;
+            recovered = true;
+            break;
+          } catch (retryErr) {
+            lastShaSyncErr = retryErr;
+          }
+        }
+        if (!recovered) {
           logger.error(
             {
-              err: errKind(retryErr),
+              err: errKind(lastShaSyncErr),
               invoiceId: input.invoiceId,
               tenantId: input.tenantId,
               target: t.persist,
+              attempts: SHA_SYNC_MAX_ATTEMPTS,
             },
-            'voidInvoice: sha_sync retry failed; DB sha column lags (served doc + audit + email stay correct)',
+            'voidInvoice: sha_sync retries exhausted; DB sha column lags (served doc + audit + email stay correct)',
           );
         }
       } else {
