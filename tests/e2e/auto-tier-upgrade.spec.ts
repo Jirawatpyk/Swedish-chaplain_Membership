@@ -23,6 +23,7 @@
 import type { Locator, Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { signInAsAdmin } from './helpers/admin-session';
+import { seedF8Renewals } from './helpers/renewals-seed';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const F8_RENEWALS_ENABLED = process.env.FEATURE_F8_RENEWALS === 'true';
@@ -226,5 +227,81 @@ describeBlock('F8 — auto tier-upgrade queue (US5)', () => {
     // Cancel keeps the suggestion in queue.
     await cancelBtn.click();
     await expect(page.getByRole('alertdialog')).toHaveCount(0);
+  });
+
+  // WP6 (plan-change UX) — the queue must justify a price increase with the
+  // full pricing EVIDENCE (declared turnover / paid-invoice volume + threshold
+  // date), and link a resolved company NAME to the member detail (P1-9), rather
+  // than approving on a coarse reason label + a raw UUID slice.
+  test('renders pricing evidence + a member company-name link (WP6)', async ({
+    page,
+  }) => {
+    // Guarantee an OPEN suggestion for the e2e-member with declared-turnover
+    // evidence (evidence_jsonb.turnoverThb = 120_000_000). Idempotent.
+    const seed = await seedF8Renewals();
+    if (!seed) {
+      throw new Error(
+        'seedF8Renewals returned null — verify DATABASE_URL + E2E_MEMBER_EMAIL are set in .env.local',
+      );
+    }
+    await signInAsAdmin(page);
+    await page.goto('/admin/renewals/tier-upgrades');
+
+    // Evidence line — the declared-turnover figure renders as `฿120,000,000`
+    // (narrowSymbol, 0 fraction digits). Match comma-grouped digits only so the
+    // narrow/no-break separator + symbol stay tolerant across builds.
+    await expect(page.getByText(/declared turnover/i).first()).toBeVisible();
+    await expect(page.getByText(/120,000,000/).first()).toBeVisible();
+
+    // Member cell links the resolved company NAME to /admin/members/<uuid>
+    // (the href carries the id; the company name is the AT-meaningful label).
+    const memberLink = page.locator(
+      `a[href="/admin/members/${seed.memberId}"]`,
+    );
+    await expect(memberLink.first()).toBeVisible();
+    await expect(memberLink.first()).toContainText(/E2E Alpha Co/);
+  });
+
+  // Optional error-toast path (BP5 item 1 + C-19: drive through Escalate — it
+  // fires `callAction` with no AlertDialog, so no jsdom/portal deadlock). A
+  // failed action surfaces a human toast (localised title + description), never
+  // the raw server code.
+  test('a failed action surfaces a localised error toast, not a raw code (escalate → 500)', async ({
+    page,
+  }) => {
+    const seed = await seedF8Renewals();
+    if (!seed) {
+      throw new Error(
+        'seedF8Renewals returned null — verify DATABASE_URL + E2E_MEMBER_EMAIL are set in .env.local',
+      );
+    }
+    // Force the escalate endpoint to fail server-side (a 500 the normalizer
+    // maps to `server_error`).
+    await page.route(
+      '**/api/admin/renewals/tier-upgrades/*/escalate',
+      async (route) => {
+        await route.fulfill({
+          status: 500,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: { code: 'server_error' } }),
+        });
+      },
+    );
+
+    await signInAsAdmin(page);
+    await page.goto('/admin/renewals/tier-upgrades');
+
+    // Escalate has no confirm dialog — clickRowAction handles desktop inline
+    // + mobile row-menu on every viewport.
+    await clickRowAction(page, /^escalate$/i);
+
+    // sonner toast — localised title + human description, and NOT the raw code.
+    await expect(page.getByText(/failed to draft outreach/i)).toBeVisible({
+      timeout: 10_000,
+    });
+    await expect(
+      page.getByText(/something went wrong on our side/i),
+    ).toBeVisible();
+    await expect(page.getByText('server_error')).toHaveCount(0);
   });
 });
