@@ -822,3 +822,42 @@ export function f8OnPaidCallbacks(
     },
   ];
 }
+
+/**
+ * F4 invoice-paid POST-COMMIT callbacks registration factory.
+ *
+ * The in-tx `f8OnPaidCallbacks` above run INSIDE the F4 settlement tx (and
+ * must — the cycle flip + tier-upgrade apply have to be atomic with the
+ * invoice flip). The F2 `scheduled_plan_changes` pending → applied
+ * finalisation, by contrast, MUST run AFTER that tx commits: its
+ * `plan_change_applied` audit re-fires the member-row `last_activity_at`
+ * trigger, which self-deadlocks against the settlement tx's member-row lock
+ * if run in-callback (the outer tx is parked in a JS `await`, so Postgres
+ * can't detect it; it resolves only at `statement_timeout`).
+ *
+ * These callbacks are fired by whoever OWNS the settlement commit — the F5
+ * webhook `confirmPayment` and the admin F4 manual-pay route — once their tx
+ * has committed and the member-row lock is released. The OFFLINE admin
+ * mark-paid path finalises inline post-commit itself (it owns its outer tx),
+ * so it does NOT consume this array.
+ *
+ * Each callback takes only the paid invoice id: the finaliser re-resolves the
+ * cycle (+ member) from it in a fresh tx, is idempotent, and self-heals on
+ * Stripe at-least-once redelivery.
+ */
+export function f8AfterCommitCallbacks(
+  tenantId: string,
+): ReadonlyArray<(invoiceId: string) => Promise<void>> {
+  const deps = makeRenewalsDeps(tenantId);
+  return [
+    async (invoiceId: string) => {
+      const { finaliseF2PlanChangeForPaidInvoiceOnline } = await import(
+        '../application/use-cases/finalise-f2-plan-change-on-paid'
+      );
+      await finaliseF2PlanChangeForPaidInvoiceOnline(deps, {
+        tenantId,
+        invoiceId,
+      });
+    },
+  ];
+}

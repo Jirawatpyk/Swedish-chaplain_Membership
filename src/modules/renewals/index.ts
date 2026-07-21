@@ -727,8 +727,10 @@ export {
 // invoice-paid callback + the offline admin mark-paid path.
 export {
   finaliseF2PlanChangeOnPaid,
+  finaliseF2PlanChangeForPaidInvoiceOnline,
   defaultOnlineF2Actor,
   type FinaliseF2Actor,
+  type FinaliseF2PaidTarget,
 } from './application/use-cases/finalise-f2-plan-change-on-paid';
 
 export {
@@ -880,5 +882,6 @@ export {
   // on the directory hot path).
   makeMembersMembershipStatusDeps,
   f8OnPaidCallbacks,
+  f8AfterCommitCallbacks,
 } from './infrastructure/renewals-deps';
 export type { RenewalsDeps } from './infrastructure/renewals-deps';
