@@ -798,6 +798,14 @@ export {
   f8OnManualPlanChangeCallbacks,
 } from './infrastructure/ports-adapters/f2-plan-change-bridge';
 
+// Plan-change → billing remediation (Phase 2) — renewals adapter implementing
+// the MEMBERS-owned `PlanChangeBillingRemediationPort`. The route + members
+// deps wire it (gated on FEATURE_PLAN_CHANGE_IMMEDIATE_REFREEZE) into
+// `changePlan` so a manual plan change ALSO re-freezes the OPEN cycle.
+export {
+  makePlanChangeBillingRemediation,
+} from './infrastructure/ports-adapters/plan-change-billing-remediation-drizzle';
+
 // F8-completion Slice 1 · Task 1.6 — F3 → F8 create-member onboarding
 // bridge (factory for the listener array consumed by F3's `createMember`
 // use-case; creates the new member's initial renewal cycle post-commit).

@@ -24,7 +24,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
-import { changePlan } from '@/modules/members';
+import { changePlan, type MemberId } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { makePlanChangeBillingRemediation } from '@/modules/renewals';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
@@ -131,7 +131,7 @@ describe('change-plan billing remediation — no self-deadlock under member lock
     let cancelled = 0;
     const start = Date.now();
     const change = changePlan(
-      memberId,
+      memberId as MemberId,
       { new_plan_id: 'premium', new_plan_year: 2026 },
       { actorUserId: admin.userId, requestId: `nd-${randomUUID().slice(0, 8)}` },
       deps,

@@ -10,7 +10,13 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { env } from '@/lib/env';
 import type { TenantContext } from '@/modules/tenants';
+// Plan-change -> billing remediation (Phase 2). Cross-module import through the
+// renewals public barrel (Constitution Principle III). The factory returns a
+// cheap closure — its `makeRenewalsDeps` only runs when a plan change actually
+// invokes it — so wiring it here is cold-start-safe.
+import { makePlanChangeBillingRemediation } from '@/modules/renewals';
 import { drizzleMemberRepo } from './infrastructure/db/drizzle-member-repo';
 import { drizzleContactRepo } from './infrastructure/db/drizzle-contact-repo';
 import { drizzleAuditAdapter } from './infrastructure/audit/audit-adapter';
@@ -58,6 +64,7 @@ import type { RenewalsCascadePort } from './application/ports/renewals-cascade-p
 import type { TimelinePort } from './application/ports/timeline-port';
 import type { PlanAdvisoryLockPort } from './application/ports/plan-advisory-lock-port';
 import type { MembershipAccessPort } from './application/ports/membership-access-port';
+import type { PlanChangeBillingRemediationPort } from './application/ports/plan-change-billing-remediation-port';
 import type { MemberId } from './domain/member';
 import type { ContactId } from './domain/contact';
 
@@ -122,6 +129,15 @@ export type MembersDeps = {
    * Must be called INSIDE a `runInTenant(ctx, (tx) => …)` block — never raw db.
    */
   memberSettings: MemberSettingsReaderPort;
+  /**
+   * Plan-change -> billing remediation (Phase 2) — OPTIONAL renewals adapter
+   * that re-freezes the member's OPEN cycle to the new plan on a manual
+   * change-plan. Wired ONLY when FEATURE_PLAN_CHANGE_IMMEDIATE_REFREEZE is on
+   * (`buildMembersDeps` gates it); undefined otherwise so change-plan is
+   * byte-identical to Phase 1 (the change defers to the next cycle). Consumed
+   * only by `changePlan` (the route's `planChangeDeps` spread carries it).
+   */
+  applyPlanChangeToBilling?: PlanChangeBillingRemediationPort;
   idFactory: {
     memberId(): MemberId;
     contactId(): ContactId;
@@ -178,6 +194,18 @@ export function buildMembersDeps(tenant: TenantContext): MembersDeps {
     clock: systemClock,
     memberNumberAllocator: drizzleMemberNumberAllocator,
     memberSettings: drizzleMemberSettingsRepo,
+    // Phase 2 — gate the wiring on the flag so flag-off is byte-identical to
+    // Phase 1 (dep undefined -> changePlan skips the re-freeze entirely). The
+    // baked-in `immediateRefreezeEnabled` equals the flag (always true here);
+    // the adapter's own flag check is defence-in-depth for a future unwired-
+    // -but-flag-off caller + is what the flag-off integration test exercises.
+    ...(env.features.planChangeImmediateRefreeze
+      ? {
+          applyPlanChangeToBilling: makePlanChangeBillingRemediation(tenant.slug, {
+            immediateRefreezeEnabled: env.features.planChangeImmediateRefreeze,
+          }),
+        }
+      : {}),
     idFactory: systemIdFactory,
   };
 }
