@@ -468,6 +468,43 @@ describe('voidInvoice — S32 non-member event rows + S31 kind-true re-render', 
     expect(renderInput.voidUnderlyingKind).toBe('invoice');
   });
 
+  // ── bug 10: the extraction (buildVoidRenderTargets) threads the tax-critical
+  // render inputs from the loaded row. The adapter goldens
+  // (void-kind-true-golden / zero-rate-pdf-golden) prove those fields RENDER as
+  // text; these pin that the shared helper PASSES them (a dropped WHT/zero-rate
+  // line would ship silently — unit render is mocked).
+  it('bug 10 — render inputs thread invoiceSubject (WHT), vatInclusive, and the §80/1(5) zero-rate spread from the loaded row', async () => {
+    const deps = makeDeps(
+      makeIssuedMembership({
+        vatInclusive: true,
+        vatTreatment: 'zero_rated_80_1_5',
+        zeroRateCertNo: 'MFA-2026-000042',
+        zeroRateCertDate: '2026-03-01',
+      }),
+    );
+    const r = await voidInvoice(deps, INPUT);
+    expect(r.ok).toBe(true);
+    const renderInput = (deps.pdfRender.render as ReturnType<typeof vi.fn>).mock
+      .calls[0]![0] as PdfRenderInput;
+    expect(renderInput.invoiceSubject).toBe('membership');
+    expect(renderInput.vatInclusive).toBe(true);
+    expect(renderInput.vatTreatment).toBe('zero_rated_80_1_5');
+    expect(renderInput.zeroRateCertNo).toBe('MFA-2026-000042');
+    expect(renderInput.zeroRateCertDate).toBe('2026-03-01');
+  });
+
+  it('bug 10 — a standard (non-zero-rate) row OMITS the zero-rate spread (deterministic-seed byte-stability)', async () => {
+    const deps = makeDeps(makeIssuedMembership()); // vatTreatment: 'standard'
+    const r = await voidInvoice(deps, INPUT);
+    expect(r.ok).toBe(true);
+    const renderInput = (deps.pdfRender.render as ReturnType<typeof vi.fn>).mock
+      .calls[0]![0] as PdfRenderInput;
+    // The conditional spread must be ABSENT (undefined), never present-with-null
+    // — the deterministic seed depends on the omission (SC-003).
+    expect('vatTreatment' in renderInput).toBe(false);
+    expect(renderInput.vatInclusive).toBe(false);
+  });
+
   it('member prefers Thai → invoice_voided outbox row carries recipientLocale=th (email-locale audit 2026-07-16)', async () => {
     const deps = makeDeps(makeIssuedMembership());
     deps.recipientLocale.getMemberEmailLocale = vi.fn(async () => 'th' as const);
