@@ -184,6 +184,41 @@ describe('confirmPayment (T057)', () => {
     expect(succeededCall?.[1].retentionYears).toBe(10);
   });
 
+  // POST-COMMIT F8 finalise hook — fired by invoice id AFTER the settlement tx
+  // commits, on `processed` ONLY. This is where the F2 scheduled-plan-change
+  // finaliser runs (it CANNOT run in-tx — self-deadlocks against the member-row
+  // lock). Without coverage a regression dropping the invocation (or moving it
+  // in-tx) would redden nothing.
+  it('post-commit — onAfterCommitCallbacks fired with the invoice id on processed', async () => {
+    const deps = makeDeps();
+    const afterCommit = vi.fn(async () => undefined);
+    const result = await confirmPayment(
+      { ...deps, onAfterCommitCallbacks: [afterCommit] },
+      INPUT,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.kind).toBe('processed');
+    expect(afterCommit).toHaveBeenCalledTimes(1);
+    expect(afterCommit).toHaveBeenCalledWith(PENDING_PAYMENT.invoiceId);
+  });
+
+  it('post-commit — an onAfterCommitCallbacks throw is swallowed; the payment stays processed (never downgraded)', async () => {
+    const deps = makeDeps();
+    const afterCommit = vi.fn(async () => {
+      throw new Error('F2 finalise blew up post-commit');
+    });
+    const result = await confirmPayment(
+      { ...deps, onAfterCommitCallbacks: [afterCommit] },
+      INPUT,
+    );
+    // The payment already committed — a finalise throw must NOT downgrade it.
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.kind).toBe('processed');
+    expect(afterCommit).toHaveBeenCalledTimes(1);
+  });
+
   // Task 4 (review I-1) — the CAS-mismatch guard on the succeeded flip. When
   // `updateStatus` returns null (its `expectedCurrentStatus` no longer matched),
   // it must ROLL BACK, not continue: the UPDATE matched zero rows, so continuing

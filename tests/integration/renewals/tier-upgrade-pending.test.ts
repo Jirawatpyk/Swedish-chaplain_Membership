@@ -48,6 +48,7 @@ import {
   supersedePendingTierUpgrade,
   makeRenewalsDeps,
   f8OnPaidCallbacks,
+  finaliseF2PlanChangeForPaidInvoiceOnline,
 } from '@/modules/renewals';
 import type { RenewalGateway, RenewalsDeps } from '@/modules/renewals';
 import { asSatang } from '@/lib/money';
@@ -1490,6 +1491,14 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
     // on the pooled connection.
     const callbacks = f8OnPaidCallbacks(tenant.ctx.slug);
     await callbacks[1]!(evt, undefined);
+    // Post-commit half of the online rail: callback[1] now only does the
+    // in-tx apply; the F2 scheduled-plan-change finalises AFTER the settlement
+    // tx commits (mirrors confirmPayment / markPaidOffline). Re-resolves the
+    // cycle from the paid invoice id — idempotent + gate-preserving.
+    await finaliseF2PlanChangeForPaidInvoiceOnline(
+      makeRenewalsDeps(tenant.ctx.slug),
+      { tenantId: tenant.ctx.slug, invoiceId: evt.invoiceId },
+    );
 
     // 4) ASSERT: the F2 pending row must NOT have flipped to applied —
     //    the supersede cancelled the upgrade; billing it is the bug.
@@ -1570,6 +1579,14 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
     };
     const callbacks = f8OnPaidCallbacks(tenant.ctx.slug);
     await callbacks[1]!(evt, undefined);
+    // Post-commit half of the online rail: callback[1] now only does the
+    // in-tx apply; the F2 scheduled-plan-change finalises AFTER the settlement
+    // tx commits (mirrors confirmPayment / markPaidOffline). Re-resolves the
+    // cycle from the paid invoice id — idempotent + gate-preserving.
+    await finaliseF2PlanChangeForPaidInvoiceOnline(
+      makeRenewalsDeps(tenant.ctx.slug),
+      { tenantId: tenant.ctx.slug, invoiceId: evt.invoiceId },
+    );
 
     // F8 suggestion applied.
     const [suggestion] = await runInTenant(tenant.ctx, (tx) =>
@@ -1713,6 +1730,14 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
     };
     const callbacks = f8OnPaidCallbacks(tenant.ctx.slug);
     await callbacks[1]!(evt, undefined);
+    // Post-commit half of the online rail: callback[1] now only does the
+    // in-tx apply; the F2 scheduled-plan-change finalises AFTER the settlement
+    // tx commits (mirrors confirmPayment / markPaidOffline). Re-resolves the
+    // cycle from the paid invoice id — idempotent + gate-preserving.
+    await finaliseF2PlanChangeForPaidInvoiceOnline(
+      makeRenewalsDeps(tenant.ctx.slug),
+      { tenantId: tenant.ctx.slug, invoiceId: evt.invoiceId },
+    );
 
     // 4) ASSERT: the stranded F2 row is healed → applied.
     const [healedRow] = await runInTenant(tenant.ctx, (tx) =>
@@ -1903,6 +1928,14 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
     };
     const callbacks = f8OnPaidCallbacks(tenant.ctx.slug);
     await callbacks[1]!(evt, undefined);
+    // Post-commit half of the online rail: callback[1] now only does the
+    // in-tx apply; the F2 scheduled-plan-change finalises AFTER the settlement
+    // tx commits (mirrors confirmPayment / markPaidOffline). Re-resolves the
+    // cycle from the paid invoice id — idempotent + gate-preserving.
+    await finaliseF2PlanChangeForPaidInvoiceOnline(
+      makeRenewalsDeps(tenant.ctx.slug),
+      { tenantId: tenant.ctx.slug, invoiceId: evt.invoiceId },
+    );
 
     // ASSERT: suggestion2's F2 pending row flipped to `applied` (its OWN
     // suggestion is `applied`, NOT superseded — the cycle-wide gate wrongly

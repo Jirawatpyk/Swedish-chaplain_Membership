@@ -86,8 +86,11 @@ export async function POST(
   // is on. Vercel Fluid Compute caches the import after first hit, so
   // F8-enabled tenants pay the load cost once per process, while
   // F4-only deploys never load the barrel at all.
-  const f8Callbacks = env.features.f8Renewals
-    ? (await import('@/modules/renewals')).f8OnPaidCallbacks(tenantCtx.slug)
+  const renewalsBarrel = env.features.f8Renewals
+    ? await import('@/modules/renewals')
+    : null;
+  const f8Callbacks = renewalsBarrel
+    ? renewalsBarrel.f8OnPaidCallbacks(tenantCtx.slug)
     : undefined;
   const result = await recordPayment(
     makeRecordPaymentDeps(tenantCtx.slug, undefined, f8Callbacks),
@@ -129,6 +132,38 @@ export async function POST(
       : 422;
     return NextResponse.json({ error: stripReason(result.error) }, { status });
   }
+  // POST-COMMIT F8 finalise — this route OWNS recordPayment's tx (no
+  // externalTx threaded), so it is the settlement-commit owner for the F4
+  // manual-pay rail and must fire the F2 scheduled-plan-change finaliser AFTER
+  // recordPayment returns. It CANNOT run in the in-tx f8 callbacks: the
+  // finaliser's `plan_change_applied` audit re-fires the member-row
+  // `last_activity_at` trigger, which self-deadlocks against the tier-upgrade
+  // apply's member-row lock inside the same tx. Best-effort + non-blocking: a
+  // finalise throw must never fail the already-committed payment (idempotent;
+  // the plan flip already committed). Non-renewal invoices resolve no cycle →
+  // no-op.
+  if (renewalsBarrel) {
+    for (const cb of renewalsBarrel.f8AfterCommitCallbacks(tenantCtx.slug)) {
+      try {
+        await cb(invoiceId);
+      } catch (finaliseErr) {
+        logger.error(
+          {
+            err:
+              finaliseErr instanceof Error
+                ? finaliseErr.message
+                : String(finaliseErr),
+            requestId,
+            tenantId: tenantCtx.slug,
+            invoiceId,
+            errorId: 'F2.PLAN_CHANGE.ADMIN_MANUAL_FINALISE_THREW',
+          },
+          'POST /api/invoices/[id]/pay: post-commit F2 finalise threw — payment already committed; not downgraded (manual replay via errorId if stranded)',
+        );
+      }
+    }
+  }
+
   // Cluster 5 (Finding 1) — surface the auto-email dispatch outcome so the
   // pay dialog can warn the admin when the receipt was NOT emailed (member has
   // no contact email on file). The payment itself still succeeded.

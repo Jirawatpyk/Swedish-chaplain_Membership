@@ -192,6 +192,16 @@ describe('F8 tier-upgrade on OFFLINE mark-paid — 070 Item D (live Neon)', () =
         closedAt: new Date(now - 365 * MS_PER_DAY),
         closedReason: 'cancelled',
       });
+    });
+    // tx2 — the awaiting_payment cycle in a STRICTLY LATER tx than the
+    // cancelled predecessor above. `findLatestCycleForMember` orders by
+    // `created_at DESC, cycle_id DESC`; both cycles inserted in ONE tx share
+    // `created_at`, so the cancelled predecessor's random cycle_id could win
+    // the tiebreaker and be picked as "latest" — tripping markPaidOffline's
+    // terminated-gate (`member_terminated`) on ~50% of runs (a flaky failure).
+    // Separate txs make the awaiting cycle deterministically latest. (Same fix
+    // as tier-upgrade-reaches-billing.test.ts lines 108-114.)
+    await runInTenant(tenant.ctx, async (tx) => {
       await tx.insert(renewalCycles).values({
         tenantId: tenant.ctx.slug,
         cycleId,

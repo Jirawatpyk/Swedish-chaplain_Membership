@@ -220,8 +220,10 @@ export async function applyPendingTierUpgradeInTx(
         tx,
         args.tenantId,
         suggestion.memberId,
+        suggestion.fromPlanId,
         suggestion.toPlanId,
         appliedFiscalYear,
+        args.cycleId,
         args.correlationId,
       );
     }
@@ -250,10 +252,40 @@ async function flipMemberPlanForUpgradeInTx(
   tx: TenantTx,
   tenantId: string,
   memberId: string,
+  fromPlanId: string,
   toPlanId: string,
   fiscalYear: number,
+  cycleId: string,
   correlationId: string,
 ): Promise<void> {
+  // #9 forensic — when the plan flip is SKIPPED (target unresolvable for the
+  // cycle fiscal year), the member stays on the prior plan but the paid upgrade
+  // did NOT take effect. A `logger.warn` alone rolls off in 30 days; emit a
+  // `member_plan_change_billing_effect(tier_upgrade_target_unresolvable)` audit
+  // so an operator has a durable, queryable record to reconcile against (fix the
+  // plan-year catalogue then replay). Atomic with the caller's F4-paid tx (the
+  // port's emitInTx throws → rolls back → the Stripe at-least-once retry heals);
+  // the audit's member_id trigger updates the member row already locked by THIS
+  // tx (no cross-connection deadlock — unlike the F2 finaliser, which is why
+  // THAT one runs post-commit).
+  const emitSkipForensic = () =>
+    deps.planChangeBillingEffectAudit.emitInTx(
+      tx,
+      { tenantId, actorUserId: null, correlationId },
+      {
+        memberId,
+        oldPlanId: fromPlanId,
+        newPlanId: toPlanId,
+        cycleId,
+        effect: 'tier_upgrade_target_unresolvable',
+        oldPriceThb: null,
+        newPriceThb: null,
+        effectiveFrom: null,
+        blockingInvoiceId: null,
+        blockingSource: null,
+      },
+    );
+
   let plan;
   try {
     plan = await deps.planLookupForRenewal.loadPlanFrozenFields({
@@ -274,6 +306,7 @@ async function flipMemberPlanForUpgradeInTx(
       },
       '[apply-tier-upgrade] target-plan lookup threw — skipping members.plan_id flip (payment proceeds; member stays on prior plan)',
     );
+    await emitSkipForensic();
     return;
   }
   if (plan.status !== 'found') {
@@ -281,6 +314,7 @@ async function flipMemberPlanForUpgradeInTx(
       { tenantId, memberId, toPlanId, fiscalYear, status: plan.status, correlationId },
       '[apply-tier-upgrade] target plan not offered for the cycle fiscal year — skipping members.plan_id flip (member stays on prior plan)',
     );
+    await emitSkipForensic();
     return;
   }
   // Confirmed offered+active for this year → the (planId, planYear) pair

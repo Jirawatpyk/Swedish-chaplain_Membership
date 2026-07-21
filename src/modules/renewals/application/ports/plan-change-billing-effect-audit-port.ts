@@ -20,10 +20,15 @@ import type { TenantTx } from '@/lib/db';
 
 /**
  * All billing-effect outcomes recorded by `member_plan_change_billing_effect`.
- * Package A emits ONLY `seed_fallback_plan_unresolvable` (from the seed
- * seams); the members change-plan operation emits the other variants (a
- * later package). The full union is registered here so the payload shape is
+ * Package A emits `seed_fallback_plan_unresolvable` (from the next-cycle seed
+ * seams); the F8 tier-upgrade apply emits `tier_upgrade_target_unresolvable`
+ * (see below); the members change-plan operation emits the remaining variants
+ * (a later package). The full union is registered here so the payload shape is
  * documented in one place.
+ *
+ * `effect` is a free JSONB payload field (no DB CHECK / pgEnum backing — the
+ * `member_plan_change_billing_effect` audit_event_type is the only enum value,
+ * shipped in migration 0270), so adding a variant here is a pure TS change.
  */
 export type PlanChangeBillingEffect =
   | 'applied_to_open_cycle'
@@ -31,7 +36,19 @@ export type PlanChangeBillingEffect =
   | 'deferred_term_length_change'
   | 'deferred_immediate_not_enabled'
   | 'no_open_cycle'
-  | 'seed_fallback_plan_unresolvable';
+  | 'seed_fallback_plan_unresolvable'
+  /**
+   * The F8 tier-upgrade apply (`applyPendingTierUpgradeInTx` →
+   * `flipMemberPlanForUpgradeInTx`) SKIPPED the `members.plan_id` flip because
+   * the accepted upgrade's target plan is unresolvable for the applied cycle's
+   * fiscal year (the exact-year OFFER lookup returned a non-`found` status, or
+   * threw). The member is left on the prior/lower plan — never over-billed —
+   * but the paid upgrade did NOT take effect, so an operator must reconcile
+   * (fix the plan-year catalogue then replay). Kept DISTINCT from
+   * `seed_fallback_plan_unresolvable` (the next-cycle SEED path) so forensic
+   * queries can tell the two "plan unresolvable" scenarios apart.
+   */
+  | 'tier_upgrade_target_unresolvable';
 
 export interface PlanChangeBillingEffectAuditContext {
   readonly tenantId: string;

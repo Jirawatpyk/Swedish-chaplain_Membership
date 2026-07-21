@@ -222,6 +222,19 @@ export interface ConfirmPaymentDeps {
       tx?: unknown,
     ) => Promise<void>
   >;
+  /**
+   * F8 cross-module POST-COMMIT hooks (renewals `f8AfterCommitCallbacks`).
+   * Fired by invoice id AFTER the Phase-A settlement tx commits, on the
+   * `processed` outcome only (the invoice was flipped issued → paid in this
+   * dispatch). This is where the F2 scheduled-plan-change finaliser runs —
+   * it CANNOT run in-tx (its `plan_change_applied` audit re-fires the
+   * member-row `last_activity_at` trigger, which self-deadlocks against the
+   * settlement tx's member-row lock). Injected only when
+   * `FEATURE_F8_RENEWALS=true`.
+   */
+  readonly onAfterCommitCallbacks?: ReadonlyArray<
+    (invoiceId: string) => Promise<void>
+  >;
   readonly logger?: {
     warn: (msg: string, ctx: Record<string, unknown>) => void;
   };
@@ -1869,6 +1882,50 @@ async function confirmPaymentBody(
       kind: 'auto_refunded_stale_invoice',
       invoiceId: payment.invoiceId,
     });
+  }
+
+  // POST-COMMIT F8 hooks (the F2 scheduled-plan-change finaliser). Runs
+  // AFTER the Phase-A settlement tx has committed — the SAME structural point
+  // `mark-paid-offline.ts` finalises from (its `result.ok && paidEventForFinalise`
+  // block). It MUST be post-commit: the finaliser's `plan_change_applied`
+  // audit re-fires the member-row `last_activity_at` trigger, which
+  // self-deadlocks against the settlement tx's member-row lock if run
+  // in-callback. Gated on `processed` ONLY — the one outcome that means the
+  // invoice was flipped issued → paid in THIS dispatch (the in-tx apply +
+  // cycle flip ran). `already_succeeded` is deliberately EXCLUDED: it also
+  // covers terminal `canceled`/`refunded` rows (a late `succeeded` webhook),
+  // where finalising a pending plan-change would be a false
+  // `plan_change_applied`; the `processed` first-delivery is the finalise
+  // point, matching the offline rail's one-shot semantics. Each callback is
+  // wrapped so a finalise throw can NEVER downgrade the already-committed
+  // payment (mirrors the offline outer catch + its `F2.PLAN_CHANGE.*_THREW`
+  // log). Idempotent: a stranded F2 row only misses its audit — the actual
+  // plan flip (`members.plan_id`) already committed in the in-tx apply.
+  if (
+    deps.onAfterCommitCallbacks !== undefined &&
+    phaseA.value.ok &&
+    phaseA.value.value.kind === 'processed'
+  ) {
+    const paidInvoiceId = phaseA.value.value.invoiceId;
+    for (const cb of deps.onAfterCommitCallbacks) {
+      try {
+        await cb(paidInvoiceId);
+      } catch (finaliseErr) {
+        logger.error(
+          {
+            err:
+              finaliseErr instanceof Error
+                ? finaliseErr.message
+                : String(finaliseErr),
+            tenantId: input.tenantId,
+            invoiceId: paidInvoiceId,
+            paymentIntentId: input.paymentIntentId,
+            errorId: 'F2.PLAN_CHANGE.ONLINE_FINALISE_THREW',
+          },
+          'confirmPayment: post-commit F8 finalise threw — payment already committed; not downgraded (self-heals on Stripe webhook redelivery)',
+        );
+      }
+    }
   }
 
   // `phaseA` is a `TxOutcome`; `.value` is the Result the caller contracts

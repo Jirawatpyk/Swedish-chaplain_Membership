@@ -121,6 +121,10 @@ describe('payments barrel — public API contract', () => {
         'clock',
         'invoicingBridge',
         'logger',
+        // F2 finaliser deadlock fix — POST-commit F8 hook (f8AfterCommitCallbacks),
+        // present under FEATURE_F8_RENEWALS=true alongside onPaidCallbacks. Its
+        // absence would silently un-wire the post-commit F2 finalise.
+        'onAfterCommitCallbacks',
         'onPaidCallbacks',
         'paymentsRepo',
         'processorEventsRepo',
@@ -149,6 +153,10 @@ describe('payments barrel — public API contract', () => {
         'clock',
         'invoicingBridge',
         'logger',
+        // F2 finaliser deadlock fix — POST-commit F8 hook, fired after the
+        // settlement tx commits on the `processed` outcome (present under
+        // FEATURE_F8_RENEWALS=true alongside onPaidCallbacks).
+        'onAfterCommitCallbacks',
         'onPaidCallbacks',
         'paymentsRepo',
         'processorEventsRepo',
