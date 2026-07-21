@@ -899,6 +899,41 @@ export function makeDrizzleRenewalCycleRepo(
       return rowToDomain(row);
     },
 
+    async clearLinkedInvoiceForVoidInTx(
+      tx: unknown,
+      tenantId: string,
+      cycleId: CycleId,
+      expectedInvoiceId: string,
+    ): Promise<boolean> {
+      // Plan-change / void-on-reissue unlink (Phase 2, Step 2.4). GUARDED
+      // single UPDATE — mirrors `clearRejectRefundMarkerInTx`'s CAS shape:
+      //   - CAS on `linked_invoice_id = expectedInvoiceId` so a concurrent
+      //     relink to a DIFFERENT invoice is never clobbered (0 rows → false).
+      //   - Restricted to the OPEN cycle statuses. A `completed` cycle MUST NOT
+      //     be cleared: `renewal_cycles_completed_requires_invoice_check`
+      //     (migration 0087) forbids a NULL `linked_invoice_id` when
+      //     status='completed', so a NULL-write there aborts the whole void tx.
+      //     The reissue workflow this serves only touches an OPEN cycle whose
+      //     §86/4 is issued-but-unpaid — the paid→void edge (completed cycle) is
+      //     a no-op here (returns false; the void proceeds unchanged).
+      // The explicit `tenant_id` predicate is defence-in-depth alongside RLS
+      // (Principle I § 1) — same convention as `refreezeOpenCycleForPlanChangeInTx`.
+      const txDb = tx as typeof db;
+      const updated = await txDb
+        .update(renewalCycles)
+        .set({ linkedInvoiceId: null })
+        .where(
+          and(
+            eq(renewalCycles.cycleId, cycleId),
+            eq(renewalCycles.tenantId, tenantId),
+            inArray(renewalCycles.status, [...OPEN_CYCLE_STATUSES]),
+            eq(renewalCycles.linkedInvoiceId, expectedInvoiceId),
+          ),
+        )
+        .returning({ cycleId: renewalCycles.cycleId });
+      return updated.length > 0;
+    },
+
     async acquireCycleLockInTx(
       tx: unknown,
       tenantId: string,

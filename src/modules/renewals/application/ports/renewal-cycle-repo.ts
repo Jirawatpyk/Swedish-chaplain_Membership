@@ -227,6 +227,39 @@ export interface RenewalCycleRepo {
   ): Promise<RenewalCycle>;
 
   /**
+   * Plan-change / void-on-reissue unlink (Phase 2, Step 2.4) — clear the
+   * cycle's `linked_invoice_id` when the invoice it points at is VOIDED. A
+   * voided §86/4 no longer validly links the cycle; without this clear a
+   * subsequent re-issue would hit `InvoiceLinkConflictError` from
+   * `linkInvoice`'s `WHERE linked_invoice_id IS NULL OR = $new` guard.
+   *
+   * GUARDED single UPDATE (mirrors `clearRejectRefundMarkerInTx`):
+   *   `WHERE cycle_id = ? AND tenant_id = ? AND status IN
+   *    ('upcoming','reminded','awaiting_payment') AND linked_invoice_id = ?
+   *    RETURNING cycle_id`
+   *
+   *   - CAS on `linked_invoice_id = expectedInvoiceId` — a concurrent relink
+   *     to a DIFFERENT invoice is NEVER clobbered (0 rows → `false`).
+   *   - Restricted to the OPEN cycle statuses. A `completed` cycle is left
+   *     UNTOUCHED: the `renewal_cycles_completed_requires_invoice_check` CHECK
+   *     forbids a NULL `linked_invoice_id` there, so clearing one would abort
+   *     the whole void tx. The reissue workflow only applies to an OPEN cycle
+   *     whose §86/4 is issued-but-unpaid, so this is also the correct scope.
+   *   - `true` when 1 row cleared, `false` on 0 rows (raced / non-open /
+   *     already-cleared / cross-tenant) — NEVER throws on a miss.
+   *
+   * The explicit `tenant_id` predicate is application-layer defence-in-depth
+   * alongside RLS (Principle I § 1). Thread `tx` from the caller's tx (the
+   * void's Phase-1 tx) — NEVER a nested `runInTenant`.
+   */
+  clearLinkedInvoiceForVoidInTx(
+    tx: TenantTx,
+    tenantId: string,
+    cycleId: CycleId,
+    expectedInvoiceId: string,
+  ): Promise<boolean>;
+
+  /**
    * Find the unique active cycle for a member (status NOT IN
    * lapsed/cancelled/completed) per data-model.md § 2.1 invariant
    * L135. Returns null when the member has no active cycle.

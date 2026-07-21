@@ -19,6 +19,7 @@ import {
 } from '@/modules/invoicing';
 import { serialiseInvoice, stripReason } from '../../_serialise';
 import { logger } from '@/lib/logger';
+import { env } from '@/lib/env';
 import { rateLimitedJson } from '@/lib/rate-limit-helpers';
 import { rateLimiter } from '@/lib/auth-deps';
 
@@ -111,17 +112,32 @@ export async function POST(
     );
   }
 
+  // Phase 2 Step 2.4 — wire the renewals cycle-unlink seam so a membership void
+  // ALSO clears the `renewal_cycles.linked_invoice_id` that pointed at the
+  // voided §86/4 (freeing a reissue to re-link a fresh invoice). Dynamic-import
+  // the renewals barrel ONLY when FEATURE_F8_RENEWALS is on (mirrors the /pay
+  // route): with F8 off there are no renewal_cycles to unlink, so the seam stays
+  // absent and the void is byte-identical to before. NOT gated on
+  // FEATURE_PLAN_CHANGE_IMMEDIATE_REFREEZE — a voided invoice never validly
+  // links a cycle regardless of that flag.
+  const onMembershipInvoiceVoidedInTx = env.features.f8Renewals
+    ? (await import('@/modules/renewals')).makeVoidInvoiceCycleUnlink(tenantCtx.slug)
+    : undefined;
+
   // Server-derived identity is assembled here rather than spread over the
   // parsed body, so no client value can reach these fields (CWE-915) — most
   // importantly `actorUserId`, which lands in the audit event for a void,
   // and a void retires a §87 sequential number irreversibly.
-  const result = await voidInvoice(makeVoidInvoiceDeps(tenantCtx.slug), {
-    tenantId: tenantCtx.slug,
-    actorUserId: ctx.current.user.id,
-    requestId,
-    invoiceId: parsedInvoiceId.value,
-    voidReason: parsed.data.voidReason,
-  });
+  const result = await voidInvoice(
+    makeVoidInvoiceDeps(tenantCtx.slug, onMembershipInvoiceVoidedInTx),
+    {
+      tenantId: tenantCtx.slug,
+      actorUserId: ctx.current.user.id,
+      requestId,
+      invoiceId: parsedInvoiceId.value,
+      voidReason: parsed.data.voidReason,
+    },
+  );
   if (!result.ok) {
     logger.warn(
       {

@@ -806,6 +806,15 @@ export {
   makePlanChangeBillingRemediation,
 } from './infrastructure/ports-adapters/plan-change-billing-remediation-drizzle';
 
+// Void-invoice → renewal-cycle unlink (Phase 2, Step 2.4) — renewals adapter for
+// the INVOICING-owned `onMembershipInvoiceVoidedInTx` void seam. The void route
+// wires it (when FEATURE_F8_RENEWALS is on) so a membership void ALSO clears the
+// `renewal_cycles.linked_invoice_id` that pointed at the voided §86/4 — freeing
+// a reissue to re-link a fresh invoice id.
+export {
+  makeVoidInvoiceCycleUnlink,
+} from './infrastructure/ports-adapters/void-invoice-cycle-unlink-drizzle';
+
 // F8-completion Slice 1 · Task 1.6 — F3 → F8 create-member onboarding
 // bridge (factory for the listener array consumed by F3's `createMember`
 // use-case; creates the new member's initial renewal cycle post-commit).

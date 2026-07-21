@@ -277,8 +277,8 @@ describe('Step 2.4 — void-invoice clears renewal_cycles.linked_invoice_id', ()
 
   beforeAll(async () => {
     user = await createActiveTestUser('admin');
-    tenantA = await createTestTenant('test-unlink-a');
-    tenantB = await createTestTenant('test-unlink-b');
+    tenantA = await createTestTenant('test-swecham');
+    tenantB = await createTestTenant('test-chamber');
     await seedPlan(tenantA, user);
     await seedPlan(tenantB, user);
   }, 120_000);
