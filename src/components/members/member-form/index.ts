@@ -10,3 +10,7 @@ export {
   type ResolvedServerFieldError,
   type PlanOption,
 } from './schema';
+export {
+  buildPlanOptions,
+  type PlanRowForOptions,
+} from './build-plan-options';

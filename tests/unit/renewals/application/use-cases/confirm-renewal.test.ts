@@ -793,6 +793,103 @@ describe('confirmRenewal (T122) — plan-change error paths', () => {
   });
 });
 
+describe('confirmRenewal (WP4) — downgrade acknowledgement gate', () => {
+  // A CHEAPER target plan (30,000 vs the buildCycle default frozen 50,000)
+  // makes the switch a downgrade.
+  const CHEAP_PLAN: PlanLookupForRenewalResult = {
+    status: 'found',
+    plan: {
+      tierBucket: 'regular',
+      priceTHB: parseThbDecimal('30000.00'),
+      termMonths: 12,
+      currency: 'THB',
+    },
+  };
+
+  it('lower-priced target with NO ack → downgrade_not_acknowledged carrying both prices + currency', async () => {
+    const cycle = buildCycle();
+    const { deps } = fakeDeps({ cycle, planLookup: CHEAP_PLAN });
+    const r = await confirmRenewal(deps, { ...baseInput, newPlanId: NEW_PLAN_ID });
+    expect(r.ok).toBe(false);
+    if (!r.ok && r.error.kind === 'downgrade_not_acknowledged') {
+      expect(r.error.currentPriceMinorUnits).toBe(5_000_000); // 50,000.00 frozen
+      expect(r.error.newPriceMinorUnits).toBe(3_000_000); // 30,000.00 target
+      expect(r.error.currency).toBe('THB');
+    } else {
+      expect.fail(`expected downgrade_not_acknowledged, got ${JSON.stringify(r)}`);
+    }
+  });
+
+  it('lower-priced target WITH acknowledgeDowngrade:true → proceeds', async () => {
+    const cycle = buildCycle();
+    const { deps, updateFrozenPlanMock } = fakeDeps({ cycle, planLookup: CHEAP_PLAN });
+    const r = await confirmRenewal(deps, {
+      ...baseInput,
+      newPlanId: NEW_PLAN_ID,
+      acknowledgeDowngrade: true,
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.planChanged).toBe(true);
+    expect(updateFrozenPlanMock).toHaveBeenCalledOnce();
+  });
+
+  it('higher-priced target with NO ack → proceeds (upgrade needs no gate)', async () => {
+    // Default planLookup is premium 180,000 > frozen 50,000 = upgrade.
+    const cycle = buildCycle();
+    const { deps } = fakeDeps({ cycle });
+    const r = await confirmRenewal(deps, { ...baseInput, newPlanId: NEW_PLAN_ID });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.planChanged).toBe(true);
+  });
+
+  it('NO-WRITE-ON-REFUSAL — an upcoming cycle downgrade with no ack never transitions nor emits enter-awaiting', async () => {
+    const cycle = buildCycle({ status: 'upcoming' });
+    const { deps, transitionStatusMock, emitInTxMock, updateFrozenPlanMock, invoiceBridgeMock } =
+      fakeDeps({ cycle, planLookup: CHEAP_PLAN });
+    const r = await confirmRenewal(deps, { ...baseInput, newPlanId: NEW_PLAN_ID });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe('downgrade_not_acknowledged');
+    // The gate sits ABOVE the first write — nothing mutated.
+    expect(transitionStatusMock).not.toHaveBeenCalled();
+    expect(updateFrozenPlanMock).not.toHaveBeenCalled();
+    expect(invoiceBridgeMock).not.toHaveBeenCalled();
+    const enterEmits = emitInTxMock.mock.calls.filter(
+      (c) => (c?.[1] as { type?: string })?.type === 'renewal_entered_awaiting_payment',
+    );
+    expect(enterEmits.length).toBe(0);
+  });
+
+  it('precedence — a terminal cycle + a bogus plan returns cycle_not_payable (NOT plan_not_found); plan lookup never runs', async () => {
+    const cycle = buildCycle({ status: 'completed' });
+    const { deps, planLookupMock } = fakeDeps({ cycle, planLookup: { status: 'not_found' } });
+    const r = await confirmRenewal(deps, { ...baseInput, newPlanId: NEW_PLAN_ID });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe('cycle_not_payable');
+    expect(planLookupMock).not.toHaveBeenCalled();
+  });
+
+  it('precedence — a cross-member probe + a bogus plan returns cross_member_probe (GAP-3)', async () => {
+    const cycle = buildCycle({ memberId: '00000000-0000-0000-0000-000000000999' });
+    const { deps, planLookupMock } = fakeDeps({ cycle, planLookup: { status: 'not_found' } });
+    const r = await confirmRenewal(deps, { ...baseInput, newPlanId: NEW_PLAN_ID });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe('cross_member_probe');
+    expect(planLookupMock).not.toHaveBeenCalled();
+  });
+
+  it('plan lookup runs EXACTLY ONCE on a successful acknowledged downgrade (pre-flight reused by the branch)', async () => {
+    const cycle = buildCycle();
+    const { deps, planLookupMock } = fakeDeps({ cycle, planLookup: CHEAP_PLAN });
+    const r = await confirmRenewal(deps, {
+      ...baseInput,
+      newPlanId: NEW_PLAN_ID,
+      acknowledgeDowngrade: true,
+    });
+    expect(r.ok).toBe(true);
+    expect(planLookupMock).toHaveBeenCalledOnce();
+  });
+});
+
 describe('confirmRenewal (T122) — F4 invoice creation failures', () => {
   it('create_failed → invoice_creation_failed stage=create', async () => {
     const cycle = buildCycle();
@@ -945,6 +1042,15 @@ describe('selfServiceFailureReason — error → SelfServiceFailureReason mappin
     [{ kind: 'invalid_input', message: 'bad' }, 'invalid_input'],
     [{ kind: 'cross_member_probe', attemptedMemberId: 'mid' }, 'cross_member'],
     [{ kind: 'server_error', message: 'boom' }, 'server_error'],
+    [
+      {
+        kind: 'downgrade_not_acknowledged',
+        currentPriceMinorUnits: 5_000_000,
+        newPriceMinorUnits: 3_000_000,
+        currency: 'THB',
+      },
+      'downgrade_unacknowledged',
+    ],
   ] as const)('maps %j → %s', (errorVariant, expectedReason) => {
     const reason = selfServiceFailureReason(errorVariant as ConfirmRenewalError);
     expect(reason).toBe(expectedReason);

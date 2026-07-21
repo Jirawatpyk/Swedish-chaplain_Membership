@@ -69,6 +69,11 @@ import { renewalsMetrics } from '@/lib/metrics';
 import { deriveFiscalYear } from '@/lib/fiscal-year';
 import { addMonthsUtc } from '@/lib/dates';
 import { omitUndefined } from '@/lib/object-helpers';
+// WP4 — the downgrade gate compares the cycle's frozen price to the target
+// plan's price as THB satang. `cycleFrozenPriceSatang` + `parseThbDecimalToSatang`
+// are the audited THB-decimal→satang parsers; `satangToProcessorAmount` is the
+// single auditable bigint→number narrowing (C-1..C-4). No bare `Number()`.
+import { satangToProcessorAmount, parseThbDecimalToSatang } from '@/lib/money';
 import { asMemberId } from '@/modules/members';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import type {
@@ -76,11 +81,19 @@ import type {
   IssueInvoiceForRenewalResult,
   RenewalInvoiceErrorCode,
 } from '../ports/f4-invoicing-bridge';
-import type { PlanLookupForRenewalPort } from '../ports/plan-lookup-for-renewal';
+import type {
+  PlanFrozenFields,
+  PlanLookupForRenewalPort,
+} from '../ports/plan-lookup-for-renewal';
 import { classifyMembershipPayment } from '../../domain/classify-membership-payment';
+import {
+  classifyPlanPriceChange,
+  requiresDowngradeAck,
+} from '../../domain/plan-price-change';
 import { loadClassificationCounts } from './_lib/classification-input';
 import {
   parseCycleId,
+  cycleFrozenPriceSatang,
   type CycleId,
   type RenewalCycle,
 } from '../../domain/renewal-cycle';
@@ -96,6 +109,12 @@ export const confirmRenewalInputSchema = z.object({
   memberId: z.string().uuid(),
   /** Optional — when present + differs from cycle.planIdAtCycleStart triggers plan-change branch. */
   newPlanId: z.string().min(1).optional(),
+  // WP4 — the member's explicit two-step acknowledgement that they are
+  // switching to a LOWER-priced plan (loses benefits + pays less). Tolerant
+  // `z.boolean().optional()` here (the wire schema keeps `z.literal(true)`);
+  // the gate treats any non-`true` value as "not acknowledged", so an honest
+  // `false` is never a validation error.
+  acknowledgeDowngrade: z.boolean().optional(),
   // 070 (FR-022 / L2 security) — `planYear` REMOVED from the input. The
   // §86/4 fiscal year (the "Membership {year}" label + the §87 numbering
   // bucket) is a tax-document field and MUST be SERVER-derived, never
@@ -136,6 +155,17 @@ export type ConfirmRenewalError =
     }
   | { readonly kind: 'plan_not_found' }
   | { readonly kind: 'plan_inactive' }
+  | {
+      // WP4 — the member chose a lower-priced plan without the explicit
+      // acknowledgement flag. Carries both prices (THB satang / minor units)
+      // + currency so the route echoes them and the client renders the
+      // before/after in the downgrade dialog. Server-derived — the client
+      // never posts a price.
+      readonly kind: 'downgrade_not_acknowledged';
+      readonly currentPriceMinorUnits: number;
+      readonly newPriceMinorUnits: number;
+      readonly currency: PlanFrozenFields['currency'];
+    }
   | {
       readonly kind: 'invoice_creation_failed';
       readonly stage: 'create' | 'issue';
@@ -236,6 +266,74 @@ export async function confirmRenewal(
         attemptedMemberId: cycle.memberId,
       });
     }
+    // WP4 (a) — HOISTED terminal-status guard. A cycle that is neither
+    // payable now (`awaiting_payment`) nor lazily-payable (`upcoming|reminded`)
+    // is terminal / pending_admin_reactivation and not self-renewable. Hoisted
+    // ABOVE both the downgrade pre-flight and the first write (the lazy
+    // transition) so:
+    //   • status precedence beats plan precedence — a terminal cycle + a bogus
+    //     newPlanId returns `cycle_not_payable`, never `plan_not_found` (the
+    //     plan lookup below never runs); and
+    //   • a downgrade refusal can never commit a state flip (`err()` inside
+    //     `runInTenant` COMMITS earlier writes — this file uses throw-to-abort,
+    //     but the guards must still sit above the first write).
+    // This subsumes the former `else if (status !== 'awaiting_payment')` arm at
+    // the tail of the lazy transition, which is now dead.
+    if (
+      cycle.status !== 'upcoming' &&
+      cycle.status !== 'reminded' &&
+      cycle.status !== 'awaiting_payment'
+    ) {
+      return err({
+        kind: 'cycle_not_payable' as const,
+        currentStatus: cycle.status,
+      });
+    }
+
+    // WP4 (b) + (c) — DOWNGRADE PRE-FLIGHT (read-only), BEFORE any state write.
+    // Resolve the target plan for THIS cycle's fiscal year (`mode:'offer'` —
+    // same lookup the plan-change branch performs), classify the price move,
+    // and refuse a lower-priced switch that lacks the member's explicit
+    // acknowledgement. Both the `(newPlanId, deriveFiscalYear(periodFrom))`
+    // lookup key and the frozen current price are IMMUTABLE across the lazy
+    // CAS re-read below, so the branch reuses `preflightPlan` — no double
+    // round-trip in the common case (C-8). The comparison is two THB satang
+    // numbers only (currency axis dropped, C-5).
+    let preflightPlan: PlanFrozenFields | null = null;
+    if (input.newPlanId && input.newPlanId !== cycle.planIdAtCycleStart) {
+      const preflightResult = await deps.planLookupForRenewal.loadPlanFrozenFields({
+        tenantId: input.tenantId,
+        planId: input.newPlanId,
+        fiscalYear: deriveFiscalYear(cycle.periodFrom),
+        mode: 'offer',
+      });
+      if (preflightResult.status === 'not_found') {
+        return err({ kind: 'plan_not_found' as const });
+      }
+      if (preflightResult.status === 'plan_inactive') {
+        return err({ kind: 'plan_inactive' as const });
+      }
+      preflightPlan = preflightResult.plan;
+      const currentPriceMinorUnits = satangToProcessorAmount(
+        cycleFrozenPriceSatang(cycle),
+      );
+      const newPriceMinorUnits = satangToProcessorAmount(
+        parseThbDecimalToSatang(preflightPlan.priceTHB),
+      );
+      const priceChange = classifyPlanPriceChange({
+        currentMinorUnits: currentPriceMinorUnits,
+        targetMinorUnits: newPriceMinorUnits,
+      });
+      if (requiresDowngradeAck(priceChange) && input.acknowledgeDowngrade !== true) {
+        return err({
+          kind: 'downgrade_not_acknowledged' as const,
+          currentPriceMinorUnits,
+          newPriceMinorUnits,
+          currency: preflightPlan.currency,
+        });
+      }
+    }
+
     // B-lazy (F8-completion slice 2.5) — let a member renew EARLY by
     // self-transitioning their cycle `upcoming|reminded → awaiting_payment`
     // here in Step-1 (under the advisory lock acquired above), then
@@ -308,42 +406,28 @@ export async function confirmRenewal(
           throw e;
         }
       }
-    } else if (cycle.status !== 'awaiting_payment') {
-      // Terminal (completed/lapsed/cancelled) or pending_admin_reactivation
-      // — not self-renewable here. A `pending_admin_reactivation` cycle is
-      // resolved only by the admin reactivate/reject routes (070 #18),
-      // never by member confirm — so this stays a server-side reject by
-      // design.
-      return err({
-        kind: 'cycle_not_payable' as const,
-        currentStatus: cycle.status,
-      });
     }
-    // (cycle.status === 'awaiting_payment' falls through unchanged —
-    // already payable, proceed.)
+    // (cycle.status === 'awaiting_payment' falls through unchanged — already
+    // payable, proceed. The terminal / pending_admin_reactivation reject is
+    // handled by the hoisted WP4 guard above, before any write.)
 
     // Plan-change branch (FR-021b atomic)
     let planChanged = false;
     let resolvedCycle: RenewalCycle = cycle;
     if (input.newPlanId && input.newPlanId !== cycle.planIdAtCycleStart) {
-      // 070 §86/4 — resolve the new plan by THIS cycle's fiscal year
-      // (`mode: 'offer'` — a plan-change is an offer check: the member
-      // cannot switch to a plan not offered for this cycle's year, and an
-      // inactive exact-year row must NOT fall through to a different year's
-      // price). The year is the cycle's `period_from`, the SAME
-      // `deriveFiscalYear` anchor the §86/4 numbering uses below (line ~414).
-      const planResult = await deps.planLookupForRenewal.loadPlanFrozenFields({
-        tenantId: input.tenantId,
-        planId: input.newPlanId,
-        fiscalYear: deriveFiscalYear(cycle.periodFrom),
-        mode: 'offer',
-      });
-      if (planResult.status === 'not_found') {
-        return err({ kind: 'plan_not_found' as const });
+      // WP4 — reuse the read-only pre-flight lookup (same `(planId,
+      // fiscalYear)` key — both immutable across the lazy CAS re-read, so
+      // the price/tier are identical). The pre-flight runs on the IDENTICAL
+      // condition as this branch, so `preflightPlan` is always populated here;
+      // the null guard is belt-and-suspenders against a future reorder (fails
+      // loud rather than silently skipping the §86/4 re-freeze).
+      if (preflightPlan === null) {
+        return err({
+          kind: 'server_error' as const,
+          message: 'plan-change pre-flight missing before frozen-plan re-freeze',
+        });
       }
-      if (planResult.status === 'plan_inactive') {
-        return err({ kind: 'plan_inactive' as const });
-      }
+      const planFields: PlanFrozenFields = preflightPlan;
       try {
         resolvedCycle = await deps.cyclesRepo.updateFrozenPlan(
           tx,
@@ -351,10 +435,10 @@ export async function confirmRenewal(
           cycleId,
           {
             planIdAtCycleStart: input.newPlanId,
-            tierAtCycleStart: planResult.plan.tierBucket,
-            frozenPlanPriceThb: planResult.plan.priceTHB,
-            frozenPlanTermMonths: planResult.plan.termMonths,
-            frozenPlanCurrency: planResult.plan.currency,
+            tierAtCycleStart: planFields.tierBucket,
+            frozenPlanPriceThb: planFields.priceTHB,
+            frozenPlanTermMonths: planFields.termMonths,
+            frozenPlanCurrency: planFields.currency,
           },
         );
       } catch (e) {
@@ -394,8 +478,8 @@ export async function confirmRenewal(
           payload: {
             cycle_id: cycle.cycleId,
             plan_id: input.newPlanId,
-            frozen_price_thb: planResult.plan.priceTHB,
-            frozen_term_months: planResult.plan.termMonths,
+            frozen_price_thb: planFields.priceTHB,
+            frozen_term_months: planFields.termMonths,
           },
         },
         {
@@ -713,6 +797,7 @@ export type SelfServiceFailureReason =
   | 'plan_inactive'
   | 'invalid_input'
   | 'cross_member'
+  | 'downgrade_unacknowledged'
   | 'server_error'
   | 'unexpected_error';
 
@@ -732,6 +817,8 @@ export function selfServiceFailureReason(
       return 'invalid_input';
     case 'cross_member_probe':
       return 'cross_member';
+    case 'downgrade_not_acknowledged':
+      return 'downgrade_unacknowledged';
     case 'server_error':
       return 'server_error';
     default: {

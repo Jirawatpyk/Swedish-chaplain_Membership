@@ -1,20 +1,14 @@
 /**
- * Unit tests for `<RenewalConfirmFlow>` — Round 4 review-fix R4-I1.
+ * Unit tests for `<RenewalConfirmFlow>`.
  *
- * Round 3's R3-S3 fix introduced a distinct `malformed_response`
- * client-side error code for the case where the confirm POST returns
- * 200 but the body fails JSON.parse (proxy injecting an HTML error
- * page on a mid-deploy edge race, server bug emitting non-JSON 200).
- * That branch had ZERO test coverage at K20 ship — a refactor that
- * flipped `await r.json()` outside the inner try/catch would silently
- * regress to mislabelling the failure as `network_error`.
+ * Covers the original R4-I1 client error-handling contract (malformed 200 +
+ * missing pay_url) PLUS the WP5 plan-change UX: the always-on price panel
+ * (C-6), grouped priced options, the downgrade acknowledgement gate, the
+ * inline-alert polish, and the 409 downgrade error mapping.
  *
- * This file covers:
- *   1. Happy path — 200 with `{ pay_url }` redirects via window.location
- *   2. Malformed response — 200 with non-JSON body → setError('malformed_response')
- *      + sendBeacon dispatched with the distinct code (the R3-S3 lock)
- *   3. Missing pay_url — 200 with `{}` → setError('missing_pay_url')
- *      (regression cover for the partner branch in the same control flow)
+ * Rendered against the REAL en.json (G2) so the copy the member sees is what
+ * ships. The base-ui Select + AlertDialog portals open reliably here under
+ * real timers (`vi.useRealTimers()` in beforeEach).
  */
 import {
   describe,
@@ -24,49 +18,79 @@ import {
   beforeEach,
   afterEach,
 } from 'vitest';
-import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
+import {
+  render,
+  screen,
+  cleanup,
+  fireEvent,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
+import enMessages from '@/i18n/messages/en.json';
 
-import { RenewalConfirmFlow } from '@/app/(member)/portal/renewal/[memberId]/_components/renewal-confirm-flow';
-
-const messages = {
-  portal: {
-    renewal: {
-      confirm: {
-        cta: 'Confirm renewal',
-        busy: 'Confirming…',
-        errorGeneric: 'Something went wrong',
-        errorCycleNotFound: 'Cycle not found',
-        errorCycleNotPayable: 'Cycle not payable',
-        errorPlanUnavailable: 'Plan unavailable',
-        errorInvoiceFailed: 'Could not issue invoice',
-        errorNetwork: 'Network problem',
-      },
-      planChange: {
-        label: 'Membership plan',
-        placeholder: '{defaultLabel}',
-        currentSuffix: 'current',
-        changeNotice: 'Plan change locks the new price.',
-      },
+// jsdom cannot drive Base UI's pointer-based Select popup selection (same
+// precedent as tests/unit/components/schedules/step-card.test.tsx). Mock the
+// Select so a click on a `role="option"` genuinely fires `onValueChange`; the
+// real grouped popup + prices are covered by the e2e spec. Options render
+// eagerly (no portal) so they are always queryable.
+vi.mock('@/components/ui/select', async () => {
+  const React = await import('react');
+  const OnChange = React.createContext<(v: string) => void>(() => {});
+  return {
+    Select: ({ onValueChange, children }: { onValueChange: (v: string) => void; children: React.ReactNode }) =>
+      React.createElement(OnChange.Provider, { value: onValueChange }, children),
+    SelectTrigger: ({ id, children }: { id?: string; children: React.ReactNode }) =>
+      React.createElement('button', { type: 'button', role: 'combobox', id }, children),
+    SelectContent: ({ children }: { children: React.ReactNode }) => React.createElement(React.Fragment, null, children),
+    SelectGroup: ({ children }: { children: React.ReactNode }) => React.createElement('div', { role: 'group' }, children),
+    SelectLabel: ({ children }: { children: React.ReactNode }) => React.createElement('div', null, children),
+    SelectItem: ({ value, children }: { value: string; children: React.ReactNode }) => {
+      const onChange = React.useContext(OnChange);
+      return React.createElement('div', { role: 'option', tabIndex: 0, onClick: () => onChange(value) }, children);
     },
-  },
+    TranslatedSelectValue: ({ placeholder }: { placeholder?: string }) => React.createElement('span', null, placeholder),
+  };
+});
+
+import {
+  RenewalConfirmFlow,
+  type RenewalPlanOption,
+} from '@/app/(member)/portal/renewal/[memberId]/_components/renewal-confirm-flow';
+
+const CURRENT: RenewalPlanOption = {
+  planId: 'plan-current',
+  label: 'Current plan',
+  annualFeeMinorUnits: 1_500_000, // ฿15,000.00
+};
+const HIGHER: RenewalPlanOption = {
+  planId: 'plan-higher',
+  label: 'Higher plan',
+  annualFeeMinorUnits: 3_000_000, // ฿30,000.00
+};
+const LOWER: RenewalPlanOption = {
+  planId: 'plan-lower',
+  label: 'Lower plan',
+  annualFeeMinorUnits: 800_000, // ฿8,000.00
 };
 
-function renderFlow() {
+function renderFlow(opts?: {
+  plans?: RenewalPlanOption[];
+  frozenPriceMinorUnits?: number;
+}) {
   return render(
-    <NextIntlClientProvider locale="en" messages={messages}>
+    <NextIntlClientProvider locale="en" messages={enMessages}>
       <RenewalConfirmFlow
         memberId="member-1"
         cycleId="00000000-0000-0000-0000-000000000001"
         currentPlanId="plan-current"
         currentPlanLabel="Current plan"
-        availablePlans={[
-          {
-            planId: 'plan-current',
-            label: 'Current plan',
-            annualFeeMinorUnits: 1_500_000,
-          },
-        ]}
+        availablePlans={opts?.plans ?? [CURRENT]}
+        frozenPriceMinorUnits={opts?.frozenPriceMinorUnits ?? 1_500_000}
+        benefitUsage={{
+          eblast: { used: 0, quota: null },
+          culturalTickets: { used: 0, quota: null },
+        }}
       />
     </NextIntlClientProvider>,
   );
@@ -77,26 +101,19 @@ const sendBeaconMock = vi.fn();
 const locationAssignMock = vi.fn();
 
 beforeEach(() => {
-  // tests/setup.ts pins fake timers globally (so timer-driven UIs like
-  // the idle-warning-dialog can be advanced deterministically). This
-  // file exercises real fetch + Promise microtasks + React useTransition
-  // — all of which deadlock under fake timers — so we override locally.
+  // This file exercises real fetch + Promise microtasks + React useTransition +
+  // base-ui portals — all deadlock under the global fake timers.
   vi.useRealTimers();
 
   fetchMock.mockReset();
   sendBeaconMock.mockReset();
   locationAssignMock.mockReset();
 
-  // Stub global fetch and navigator.sendBeacon. jsdom defines
-  // `navigator` but not `sendBeacon` — define-property is required
-  // because the property is non-configurable on some platforms.
   vi.stubGlobal('fetch', fetchMock);
   Object.defineProperty(navigator, 'sendBeacon', {
     configurable: true,
     value: sendBeaconMock,
   });
-  // Stub window.location.assign so the happy-path doesn't
-  // navigate the test runner away.
   Object.defineProperty(window, 'location', {
     configurable: true,
     value: {
@@ -110,14 +127,10 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
-  // Restore fake timers so the next test file inherits the global default.
   vi.useFakeTimers({ shouldAdvanceTime: false });
 });
 
 async function blobToObject(blob: Blob): Promise<Record<string, unknown>> {
-  // jsdom's `Blob.prototype.text()` is missing in the version this
-  // project uses; FileReader is universally supported. The Blob's
-  // text payload is the JSON string we wrote in `reportClientError`.
   const text = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result ?? ''));
@@ -127,7 +140,16 @@ async function blobToObject(blob: Blob): Promise<Record<string, unknown>> {
   return JSON.parse(text) as Record<string, unknown>;
 }
 
-describe('<RenewalConfirmFlow> — Round 4 R4-I1', () => {
+/** Pick the plan option whose text matches (mocked Select renders options eagerly). */
+async function pickPlan(optionMatcher: RegExp) {
+  const option = await screen.findByRole('option', { name: optionMatcher });
+  fireEvent.click(option);
+}
+
+const GENERIC_ERROR =
+  "We couldn't process your renewal. Please try again or contact support.";
+
+describe('<RenewalConfirmFlow> — client error handling (R4-I1)', () => {
   it('happy path: 200 + { pay_url } → window.location.assign(pay_url)', async () => {
     fetchMock.mockResolvedValueOnce({
       ok: true,
@@ -139,16 +161,12 @@ describe('<RenewalConfirmFlow> — Round 4 R4-I1', () => {
     fireEvent.click(screen.getByRole('button', { name: /confirm renewal/i }));
 
     await waitFor(() => {
-      expect(locationAssignMock).toHaveBeenCalledWith(
-        'https://example.test/pay/123',
-      );
+      expect(locationAssignMock).toHaveBeenCalledWith('https://example.test/pay/123');
     });
-    // No beacon should fire on the happy path — the endpoint is for
-    // failure correlation only.
     expect(sendBeaconMock).not.toHaveBeenCalled();
   });
 
-  it('R3-S3 lock: 200 with non-JSON body → setError("malformed_response") + beacon with that distinct code', async () => {
+  it('malformed 200 body → generic error inside confirm-error + beacon with the distinct code', async () => {
     fetchMock.mockResolvedValueOnce({
       ok: true,
       status: 200,
@@ -160,19 +178,15 @@ describe('<RenewalConfirmFlow> — Round 4 R4-I1', () => {
     renderFlow();
     fireEvent.click(screen.getByRole('button', { name: /confirm renewal/i }));
 
-    // User-visible error: malformed_response is NOT in the
-    // ERROR_CODE_TO_I18N_KEY map → falls through to errorGeneric.
-    // The state distinction is preserved at the beacon level so
-    // support can correlate; the user just sees the generic message.
-    // Use findByText (built-in async polling) + verify it's rendered
-    // inside the [data-testid='confirm-error'] container; avoids
-    // depending on @testing-library/jest-dom matchers.
-    const errorEl = await screen.findByText('Something went wrong');
-    expect(errorEl.getAttribute('data-testid')).toBe('confirm-error');
+    // DEFECT-1 fix — the message now lives in <InlineAlertDescription>, so
+    // assert it inside the confirm-error container rather than reading a
+    // data-testid off the text node.
+    await waitFor(() => {
+      expect(
+        within(screen.getByTestId('confirm-error')).getByText(GENERIC_ERROR),
+      ).toBeInTheDocument();
+    });
 
-    // The R3-S3 lock: beacon ships the precise tag so SRE can
-    // distinguish a malformed-body incident from a generic
-    // network_error in /api/internal/client-error logs.
     expect(sendBeaconMock).toHaveBeenCalledTimes(1);
     const [url, blob] = sendBeaconMock.mock.calls[0]!;
     expect(url).toBe('/api/internal/client-error');
@@ -183,36 +197,124 @@ describe('<RenewalConfirmFlow> — Round 4 R4-I1', () => {
       status: 200,
       path: '/portal/renewal/member-1',
     });
-
-    // window.location must NOT have been navigated — the failure
-    // path returns before the pay_url check.
     expect(locationAssignMock).not.toHaveBeenCalled();
   });
 
-  it('partner branch: 200 + {} → setError("missing_pay_url") (no beacon — partner branch is a server bug, not a parse failure)', async () => {
-    fetchMock.mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      json: async () => ({}),
-    });
+  it('missing pay_url (200 + {}) → generic error inside confirm-error, no beacon', async () => {
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({}) });
 
     renderFlow();
     fireEvent.click(screen.getByRole('button', { name: /confirm renewal/i }));
 
-    // missing_pay_url ALSO falls through to errorGeneric (not in the
-    // ERROR_CODE_TO_I18N_KEY map). This regression-locks the partner
-    // branch alongside the R4-I1 malformed_response branch — both are
-    // server-emitted-200-but-broken cases.
-    // Use findByText (built-in async polling) + verify it's rendered
-    // inside the [data-testid='confirm-error'] container; avoids
-    // depending on @testing-library/jest-dom matchers.
-    const errorEl = await screen.findByText('Something went wrong');
-    expect(errorEl.getAttribute('data-testid')).toBe('confirm-error');
-
-    // Partner branch (R3-S3 fix only added beacon to malformed-JSON
-    // path; missing pay_url is a different server contract violation
-    // that doesn't beacon — server-side log already covers it).
+    await waitFor(() => {
+      expect(
+        within(screen.getByTestId('confirm-error')).getByText(GENERIC_ERROR),
+      ).toBeInTheDocument();
+    });
     expect(sendBeaconMock).not.toHaveBeenCalled();
     expect(locationAssignMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('<RenewalConfirmFlow> — price visibility (WP5)', () => {
+  it('renders the current price in the diff panel AT REST with a single plan (locks C-6)', () => {
+    renderFlow({ plans: [CURRENT], frozenPriceMinorUnits: 1_500_000 });
+    // No select at all (single plan) — the panel still shows the price.
+    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(screen.getByTestId('price-current').textContent).toContain('15,000.00');
+    // At rest, new === current, delta zero.
+    expect(screen.getByTestId('price-new').textContent).toContain('15,000.00');
+  });
+
+  it('each option in the open list contains its formatted price', async () => {
+    renderFlow({ plans: [CURRENT, HIGHER, LOWER] });
+    fireEvent.click(screen.getByRole('combobox', { name: 'Choose a plan' }));
+    expect(await screen.findByRole('option', { name: /Higher plan/ })).toHaveTextContent(
+      /30,000\.00/,
+    );
+    expect(screen.getByRole('option', { name: /Lower plan/ })).toHaveTextContent(/8,000\.00/);
+    expect(screen.getByRole('option', { name: /Current plan/ })).toHaveTextContent(/15,000\.00/);
+  });
+
+  it('selecting a higher-priced plan updates the New + Difference rows', async () => {
+    renderFlow({ plans: [CURRENT, HIGHER], frozenPriceMinorUnits: 1_500_000 });
+    await pickPlan(/Higher plan/);
+    await waitFor(() => {
+      expect(screen.getByTestId('price-new').textContent).toContain('30,000.00');
+    });
+    // Difference = +15,000.00 (higher − current).
+    expect(screen.getByTestId('price-delta').textContent).toContain('15,000.00');
+  });
+});
+
+describe('<RenewalConfirmFlow> — downgrade gate (WP5)', () => {
+  it('Confirm on a LOWER-priced plan opens the dialog and fires NO fetch', async () => {
+    renderFlow({ plans: [CURRENT, LOWER], frozenPriceMinorUnits: 1_500_000 });
+    await pickPlan(/Lower plan/);
+    fireEvent.click(screen.getByRole('button', { name: /confirm renewal/i }));
+
+    // The downgrade dialog opens (title) and the money path is NOT hit.
+    expect(await screen.findByText('Confirm a lower-priced plan')).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('Confirm on a HIGHER-priced plan POSTs with NO acknowledgeDowngrade key', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ pay_url: 'https://example.test/pay/9' }),
+    });
+    renderFlow({ plans: [CURRENT, HIGHER], frozenPriceMinorUnits: 1_500_000 });
+    await pickPlan(/Higher plan/);
+    fireEvent.click(screen.getByRole('button', { name: /confirm renewal/i }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const body = JSON.parse(fetchMock.mock.calls[0]![1].body as string) as Record<string, unknown>;
+    expect(body.newPlanId).toBe('plan-higher');
+    expect('acknowledgeDowngrade' in body).toBe(false);
+  });
+
+  it('a 409 downgrade_not_acknowledged renders the mapped message', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 409,
+      json: async () => ({ error: { code: 'downgrade_not_acknowledged' } }),
+    });
+    renderFlow();
+    fireEvent.click(screen.getByRole('button', { name: /confirm renewal/i }));
+
+    await waitFor(() => {
+      expect(
+        within(screen.getByTestId('confirm-error')).getByText(
+          'Please confirm the lower-priced plan change before continuing.',
+        ),
+      ).toBeInTheDocument();
+    });
+  });
+});
+
+describe('<RenewalConfirmFlow> — inline-alert polish (WP5)', () => {
+  it('the change-notice is an InlineAlert with role="status" and no muted-foreground', async () => {
+    renderFlow({ plans: [CURRENT, HIGHER], frozenPriceMinorUnits: 1_500_000 });
+    await pickPlan(/Higher plan/);
+    const notice = await screen.findByText(
+      /Switching to a different plan will lock the new price/,
+    );
+    const alert = notice.closest('[data-slot="inline-alert"]');
+    expect(alert?.getAttribute('role')).toBe('status');
+    expect(alert?.className ?? '').not.toContain('text-muted-foreground');
+  });
+
+  it('the error alert has role="alert", NO aria-live, and receives focus', async () => {
+    fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    renderFlow();
+    fireEvent.click(screen.getByRole('button', { name: /confirm renewal/i }));
+
+    await waitFor(() => {
+      const errorEl = screen.getByTestId('confirm-error');
+      expect(errorEl.getAttribute('role')).toBe('alert');
+      expect(errorEl.getAttribute('aria-live')).toBeNull();
+      expect(document.activeElement).toBe(errorEl);
+    });
   });
 });

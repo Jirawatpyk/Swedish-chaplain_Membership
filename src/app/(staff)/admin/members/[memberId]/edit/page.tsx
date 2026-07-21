@@ -11,7 +11,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { headers } from 'next/headers';
-import { getTranslations } from 'next-intl/server';
+import { getTranslations, getLocale } from 'next-intl/server';
 import { ArrowLeftIcon } from 'lucide-react';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
@@ -37,7 +37,7 @@ import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { EditMemberClient } from '@/components/members/edit-member-client';
 import { AdminPreferredLocaleCard } from '@/components/admin/admin-preferred-locale-card';
-import type { PlanOption } from '@/components/members/member-form';
+import { buildPlanOptions, type PlanOption } from '@/components/members/member-form';
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -128,12 +128,13 @@ export default async function EditMemberPage({ params }: PageProps) {
   if (!plansResult.ok) {
     throw new Error('plans: fee config missing');
   }
-  const plans: PlanOption[] = plansResult.value.data.map((p) => ({
-    plan_id: p.plan_id,
-    plan_year: p.plan_year,
-    display_name: `${p.plan_name.en ?? p.plan_id} — ${p.plan_year}`,
-    requires_date_of_birth: p.member_type_scope === 'individual',
-  }));
+  // WP2 / P1-8 — locale-aware name + annual fee via the shared mapper.
+  const locale = await getLocale();
+  const plans: PlanOption[] = buildPlanOptions(
+    plansResult.value.data,
+    locale,
+    plansResult.value.meta.currency_code,
+  );
 
   return (
     <FormContainer>

@@ -39,6 +39,16 @@ const BodySchema = z.object({
   cycleId: z.string().uuid(),
   /** Optional — when present + differs from cycle.planIdAtCycleStart triggers FR-025 plan-change branch. */
   newPlanId: z.string().min(1).optional(),
+  // WP4 — the member's downgrade acknowledgement. An ack is only meaningful
+  // as affirmative, so the wire type stays `z.literal(true)` (absent ≡ not
+  // acknowledged). The `preprocess` coerces any non-`true` value (including an
+  // honest `false`) to `undefined` so a legitimate "I did not ack" body is
+  // NEVER a 400 (C-9) — the use-case then treats the absent flag as
+  // not-acknowledged and refuses a lower-priced switch with a 409.
+  acknowledgeDowngrade: z.preprocess(
+    (v) => (v === true ? true : undefined),
+    z.literal(true).optional(),
+  ),
   // 070 (FR-022 / L2 security) — `planYear` is NO LONGER accepted from the
   // request body. The §86/4 fiscal year is a tax-document field that must
   // be SERVER-derived from the authoritative cycle (`confirmRenewal`
@@ -137,6 +147,11 @@ export async function POST(
           ...(parsed.data.newPlanId !== undefined
             ? { newPlanId: parsed.data.newPlanId }
             : {}),
+          // WP4 — forward the ack only when affirmatively true (omitted
+          // otherwise for exactOptionalPropertyTypes).
+          ...(parsed.data.acknowledgeDowngrade === true
+            ? { acknowledgeDowngrade: true }
+            : {}),
           // 070 — `planYear` intentionally NOT forwarded: the use-case
           // derives the §86/4 fiscal year server-side from the cycle.
           actorUserId: ctx.current.user.id,
@@ -188,6 +203,21 @@ export async function POST(
             status: 400,
             code: result.error.kind,
             correlationId,
+          });
+        case 'downgrade_not_acknowledged':
+          // WP4 — 409: the member must confirm the lower-priced switch. Echo
+          // the server-derived prices + currency so the client renders the
+          // before/after in the downgrade dialog (the client never posts a
+          // price — these are authoritative).
+          return errorResponse({
+            status: 409,
+            code: 'downgrade_not_acknowledged',
+            correlationId,
+            details: {
+              current_price_minor_units: result.error.currentPriceMinorUnits,
+              new_price_minor_units: result.error.newPriceMinorUnits,
+              currency: result.error.currency,
+            },
           });
         case 'invoice_creation_failed':
           return errorResponse({

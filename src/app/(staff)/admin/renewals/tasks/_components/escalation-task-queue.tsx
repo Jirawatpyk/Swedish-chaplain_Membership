@@ -722,6 +722,10 @@ export function EscalationTaskQueue({
                                   <Button
                                     size="sm"
                                     variant="ghost"
+                                    // WP8 (§ 9.1) — 44×44 tap target on mobile
+                                    // (was the size-8 default, below the WCAG
+                                    // 2.5.5 minimum).
+                                    className="h-11 w-11"
                                     disabled={!isOpen || busy}
                                     aria-busy={busy}
                                   >

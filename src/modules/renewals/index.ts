@@ -184,6 +184,16 @@ export {
   type MembershipPaymentClassification,
 } from './domain/classify-membership-payment';
 
+// WP3 — plan price-change classifier (shared by the portal client grouping/
+// downgrade gate + the server confirmRenewal refusal). Also re-exported from
+// `client.ts` (matches the TIER_BUCKETS precedent) so the client bundle picks
+// it up without dragging the server graph.
+export {
+  classifyPlanPriceChange,
+  requiresDowngradeAck,
+  type PlanPriceChange,
+} from './domain/plan-price-change';
+
 // --- Application ports (Wave E T041-T051) -----------------------------------
 // Pure interfaces — no adapter implementations until Wave G+.
 export {
