@@ -134,6 +134,8 @@ describe('void-pdf-reconcile cron (bug 10)', () => {
     voidReason: string | null;
     attempts?: number;
     seq: number;
+    /** When set, seed a PAID two-blob void (a distinct §86/4 receipt blob). */
+    receipt?: { docNumberRaw: string };
   }): Promise<string> {
     const invoiceId = randomUUID();
     const memberId = randomUUID();
@@ -174,7 +176,15 @@ describe('void-pdf-reconcile cron (bug 10)', () => {
         pdfBlobKey: `invoicing/${tenant.ctx.slug}/2026/${invoiceId}_v1.pdf`,
         pdfSha256: 'a'.repeat(64),
         pdfTemplateVersion: 1,
-        receiptPdfStatus: null,
+        ...(opts.receipt
+          ? {
+              receiptPdfBlobKey: `invoicing/${tenant.ctx.slug}/2026/${invoiceId}_receipt.pdf`,
+              receiptPdfSha256: 'c'.repeat(64),
+              receiptPdfTemplateVersion: 1,
+              receiptPdfStatus: 'rendered' as const,
+              receiptDocumentNumberRaw: opts.receipt.docNumberRaw,
+            }
+          : { receiptPdfStatus: null }),
         voidedAt: new Date('2026-03-01T03:00:00Z'),
         voidReason: opts.voidReason,
         voidedByUserId: user.userId,
@@ -201,6 +211,7 @@ describe('void-pdf-reconcile cron (bug 10)', () => {
       tx
         .select({
           pdfSha256: invoices.pdfSha256,
+          receiptPdfSha256: invoices.receiptPdfSha256,
           pendingAt: invoices.voidPdfReconcilePendingAt,
           attempts: invoices.voidPdfReconcileAttempts,
           parkedAt: invoices.voidPdfReconcileParkedAt,
@@ -477,6 +488,46 @@ describe('void-pdf-reconcile cron (bug 10)', () => {
     ).toHaveLength(1);
     const marker = await readMarker(invoiceId);
     expect(marker?.pendingAt).toBeNull();
+  }, 60_000);
+
+  it('D10 — two-blob paid void re-stamps BOTH the §86/4 + §105 receipt, one M1 per target', async () => {
+    const invoiceId = await seedMarkedVoid({
+      voidReason: 'two blob',
+      seq: 12,
+      receipt: { docNumberRaw: 'VPRC-2026-000912' },
+    });
+    (vercelBlobAdapter.uploadPdf as ReturnType<typeof vi.fn>).mockClear();
+
+    const res = await reconcileCron(cronReq());
+    expect(res.status).toBe(200);
+
+    // BOTH the main §86/4 blob AND the separate §105 receipt blob re-uploaded.
+    expect(vercelBlobAdapter.uploadPdf).toHaveBeenCalledTimes(2);
+    const row = await readMarker(invoiceId);
+    expect(row?.pdfSha256).toBe(RESTAMP_SHA); // main sha synced
+    expect(row?.receiptPdfSha256).toBe(RESTAMP_SHA); // receipt sha synced
+    expect(row?.pendingAt).toBeNull(); // marker cleared
+
+    // One invoice_pdf_regenerated per target, each labelled with ITS OWN number.
+    const regen = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({
+          target: sql<string>`${auditLog.payload}->>'target'`,
+          num: sql<string>`${auditLog.payload}->>'invoice_number'`,
+        })
+        .from(auditLog)
+        .where(
+          and(
+            eq(auditLog.tenantId, tenant.ctx.slug),
+            eq(auditLog.eventType, 'invoice_pdf_regenerated'),
+            sql`${auditLog.payload}->>'invoice_id' = ${invoiceId}`,
+          ),
+        ),
+    );
+    expect(regen).toHaveLength(2);
+    const byTarget = Object.fromEntries(regen.map((r) => [r.target, r.num]));
+    expect(byTarget.invoice).toBe('VPRC-2026-000012'); // main §86/4 number
+    expect(byTarget.receipt).toBe('VPRC-2026-000912'); // RC — its OWN number
   }, 60_000);
 
   it('D8 — a hung blob upload times out + bumps (never holds the row lock forever)', async () => {

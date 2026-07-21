@@ -419,10 +419,13 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
             requestId,
             eventType: 'invoice_pdf_regenerated',
             actorUserId: 'system:cron',
-            summary: `Void ${built.value.mainDocNum.raw} ${t.persist} PDF re-stamped by void-pdf-reconcile`,
+            summary: `Void ${t.documentNumber.raw} ${t.persist} PDF re-stamped by void-pdf-reconcile`,
             payload: {
               invoice_id: row.invoiceId,
-              document_number: built.value.mainDocNum.raw,
+              // Per-target number: the RC (receipt) number for the `receipt`
+              // target, the main §86/4/bill number for `invoice`. Field name
+              // mirrors issueCreditNote's invoice_pdf_regenerated payload.
+              invoice_number: t.documentNumber.raw,
               original_sha256: priorSha,
               new_sha256: t.rendered.sha256,
               reason: 'void_pdf_reconcile',

@@ -45,6 +45,14 @@ export type VoidRenderTarget = {
   readonly blobKey: string;
   readonly rendered: { readonly bytes: Uint8Array; readonly sha256: Sha256Hex };
   readonly persist: 'invoice' | 'receipt';
+  /**
+   * The number THIS blob prints under — the main bill/§86/4 number for the
+   * `invoice` target, the §86/4 receipt (RC) number for the `receipt` target.
+   * Carried per-target so a forensic (e.g. the reconcile cron's
+   * `invoice_pdf_regenerated`) labels each re-stamped blob with ITS own number,
+   * not just the main one.
+   */
+  readonly documentNumber: DocumentNumber;
   readonly syncContext:
     | 'invoice_void_phase2_sync'
     | 'invoice_void_phase2_receipt_sync';
@@ -182,6 +190,7 @@ export async function buildVoidRenderTargets(
     blobKey: loaded.pdf.blobKey,
     rendered: renderedA,
     persist: 'invoice',
+    documentNumber: mainDocNum,
     syncContext: 'invoice_void_phase2_sync',
   };
 
@@ -258,6 +267,7 @@ export async function buildVoidRenderTargets(
       blobKey: loaded.receiptPdf.blobKey,
       rendered: renderedB,
       persist: 'receipt',
+      documentNumber: receiptDocNum,
       syncContext: 'invoice_void_phase2_receipt_sync',
     };
   }
