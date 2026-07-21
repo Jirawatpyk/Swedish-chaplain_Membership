@@ -289,6 +289,11 @@ function makeDeps(
       applyCreditNoteRollup: vi.fn(),
       applyInvoicePdfRegeneration: vi.fn(async () => {}),
       applyReceiptPdfRegeneration: vi.fn(async () => {}),
+      // Bug 10 — reconcile-marker repo methods (Phase-2 leg-split).
+      markVoidPdfReconcilePending: vi.fn(async () => {}),
+      clearVoidPdfReconcileMarker: vi.fn(async () => {}),
+      bumpVoidPdfReconcileAttempts: vi.fn(async () => {}),
+      parkVoidPdfReconcile: vi.fn(async () => {}),
       applyVoid: vi.fn(async () =>
         ({
           ...(loaded as Invoice),
@@ -772,6 +777,69 @@ describe('voidInvoice — 088 T068 new-flow bill + paid two-blob void', () => {
     const pl = syncFail![1].payload as Record<string, unknown>;
     expect(pl.phase).toBe('blob_upload');
     expect(pl.blob_bytes_uploaded).toBe(false);
+  });
+
+  // ── bug 10: Phase-2 leg-split recovery ───────────────────────────────────
+  it('bug 10 M1 — blob_upload leg failure sets the reconcile marker (cron re-renders)', async () => {
+    const deps = makeDeps(makeIssuedMembership());
+    (deps.blob.uploadPdf as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error('blob outage'),
+    );
+    const r = await voidInvoice(deps, INPUT);
+    expect(r.ok).toBe(true);
+    expect(deps.invoiceRepo.markVoidPdfReconcilePending).toHaveBeenCalledTimes(1);
+    expect(
+      (deps.invoiceRepo.markVoidPdfReconcilePending as ReturnType<typeof vi.fn>)
+        .mock.calls[0]![1],
+    ).toMatchObject({ tenantId: 'test-swecham', invoiceId: INVOICE_ID });
+    // The blob_upload leg NEVER retries the sha-write (the blob has no stamped
+    // bytes to sync a sha against).
+    expect(deps.invoiceRepo.applyInvoicePdfRegeneration).not.toHaveBeenCalled();
+  });
+
+  it('bug 10 M2 — sha_sync leg failure retries the sha-write inline and sets NO marker', async () => {
+    const deps = makeDeps(makeIssuedMembership());
+    // Upload succeeds; the Phase-2 sha-write throws once, then the inline retry
+    // (a fresh withTx) succeeds — the blob already holds the stamped bytes.
+    (deps.invoiceRepo.applyInvoicePdfRegeneration as ReturnType<typeof vi.fn>)
+      .mockRejectedValueOnce(new Error('sha write outage'))
+      .mockResolvedValueOnce(undefined);
+    const r = await voidInvoice(deps, INPUT);
+    expect(r.ok).toBe(true);
+    // Called twice: the failed Phase-2 write + the successful inline retry.
+    expect(deps.invoiceRepo.applyInvoicePdfRegeneration).toHaveBeenCalledTimes(2);
+    // NEVER handed to the re-render cron (re-rendering would break the email's
+    // sha_P1 integrity check on the already-correct blob).
+    expect(deps.invoiceRepo.markVoidPdfReconcilePending).not.toHaveBeenCalled();
+    // Recovered inline → NO persistent-gap audit.
+    expect(
+      (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.filter(
+        (c) => c[1].eventType === 'pdf_render_failed',
+      ),
+    ).toEqual([]);
+    // The recovered (stamped) sha is patched onto the return.
+    if (r.ok) expect(r.value.pdf?.sha256).toBe('b'.repeat(64));
+  });
+
+  it('bug 10 M3 — full Phase-2 success sets no reconcile marker', async () => {
+    const deps = makeDeps(makeIssuedMembership());
+    const r = await voidInvoice(deps, INPUT);
+    expect(r.ok).toBe(true);
+    expect(deps.invoiceRepo.markVoidPdfReconcilePending).not.toHaveBeenCalled();
+  });
+
+  it('bug 10 M4 — a reconcile-marker write failure is swallowed (void still succeeds)', async () => {
+    const deps = makeDeps(makeIssuedMembership());
+    (deps.blob.uploadPdf as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error('blob outage'),
+    );
+    (
+      deps.invoiceRepo.markVoidPdfReconcilePending as ReturnType<typeof vi.fn>
+    ).mockRejectedValueOnce(new Error('marker write outage'));
+    const r = await voidInvoice(deps, INPUT);
+    // The public contract (Result<Invoice, VoidInvoiceError>) holds despite the
+    // double-fault — the pdf_render_failed audit still preserves the signal.
+    expect(r.ok).toBe(true);
   });
 });
 

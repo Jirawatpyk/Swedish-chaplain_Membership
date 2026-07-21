@@ -43,6 +43,7 @@
     { "path": "/api/cron/outbox-purge", "schedule": "15 20 * * *" },
     { "path": "/api/cron/sweep-stale-pending-refunds", "schedule": "7 * * * *" },
     { "path": "/api/internal/cron/receipt-pdf-reconcile", "schedule": "*/5 * * * *" },
+    { "path": "/api/internal/cron/void-pdf-reconcile", "schedule": "*/5 * * * *" },
     { "path": "/api/cron/lockout-cleanup", "schedule": "45 3 * * *" }
   ]
 }

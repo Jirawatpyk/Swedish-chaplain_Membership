@@ -94,6 +94,7 @@ import {
 } from '@/modules/invoicing/domain/invoice';
 import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { sha256Hex } from '@/lib/crypto';
 import { TxAbort } from '../lib/tx-abort';
 import { InvoiceApplyConflictError } from '../lib/invoice-apply-conflict-error';
@@ -506,6 +507,71 @@ export async function voidInvoice(
       const phase: 'blob_upload' | 'sha_sync' = blobUploaded
         ? 'sha_sync'
         : 'blob_upload';
+      // Bug 10 — leg-split recovery, per target.
+      let recovered = false;
+      if (blobUploaded) {
+        // sha_sync leg: the blob ALREADY holds the VOID-stamped bytes (sha_P1);
+        // only the DB sha column lags. Retry the exact sha-write once — NO
+        // re-render, NO reconcile marker. Re-rendering here would upload a
+        // DIFFERENT sha (@react-pdf randomises the font-subset stream) and break
+        // the cancellation email's sha_P1 integrity check on an otherwise-
+        // correct, already-served document.
+        try {
+          await deps.invoiceRepo.withTx(async (tx3) => {
+            if (t.persist === 'invoice') {
+              await deps.invoiceRepo.applyInvoicePdfRegeneration(tx3, {
+                tenantId: input.tenantId,
+                invoiceId,
+                pdfSha256: t.rendered.sha256,
+              });
+            } else {
+              await deps.invoiceRepo.applyReceiptPdfRegeneration(tx3, {
+                tenantId: input.tenantId,
+                invoiceId,
+                receiptPdfSha256: t.rendered.sha256,
+              });
+            }
+          });
+          if (t.persist === 'invoice') syncedSha.invoice = t.rendered.sha256;
+          else syncedSha.receipt = t.rendered.sha256;
+          recovered = true;
+        } catch (retryErr) {
+          logger.error(
+            {
+              err: errKind(retryErr),
+              invoiceId: input.invoiceId,
+              tenantId: input.tenantId,
+              target: t.persist,
+            },
+            'voidInvoice: sha_sync retry failed; DB sha column lags (served doc + audit + email stay correct)',
+          );
+        }
+      } else {
+        // blob_upload leg: the VOID-stamped bytes never reached the blob, so the
+        // served §86/4 keeps its ORIGINAL un-stamped bytes on a voided sale
+        // (tax-dangerous, sha-check blind). Set the durable reconcile marker;
+        // the void-pdf-reconcile cron re-renders + re-uploads until the served
+        // doc carries the VOID overlay.
+        try {
+          await deps.invoiceRepo.withTx(async (tx3) => {
+            await deps.invoiceRepo.markVoidPdfReconcilePending(tx3, {
+              tenantId: input.tenantId,
+              invoiceId,
+            });
+          });
+        } catch (markErr) {
+          logger.error(
+            {
+              err: errKind(markErr),
+              invoiceId: input.invoiceId,
+              tenantId: input.tenantId,
+            },
+            'voidInvoice: reconcile-marker write failed; blob_upload gap signalled only via the pdf_render_failed audit below',
+          );
+        }
+      }
+      // sha_sync recovered inline → no persistent gap, skip the failure audit.
+      if (recovered) continue;
       // N-2 — DO NOT log blobKey (PG-1 regression — key embeds tenant +
       // invoice path segments). `invoiceId + tenantId` correlate the row
       // uniquely without leaking the storage layout.

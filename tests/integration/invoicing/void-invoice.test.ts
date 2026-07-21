@@ -489,6 +489,43 @@ describe('F4 US5 — void-invoice (T098)', () => {
     expect(rowAfter?.documentNumber).toBe('VDIT-2026-000001');
   }, 60_000);
 
+  it('bug 10 C1 — a blob_upload-leg failure durably persists the reconcile marker (RLS-scoped)', async () => {
+    const { invoiceId } = await seedInvoice(tenant, user, planId, 'issued');
+    const deps = makeDeps(tenant.ctx.slug);
+    // The Phase-2 blob upload fails → the served §86/4 keeps its un-stamped
+    // bytes; the void-pdf-reconcile marker MUST be set for the cron to recover.
+    (deps.blob.uploadPdf as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error('blob outage'),
+    );
+
+    const r = await voidInvoice(deps, {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      invoiceId,
+      voidReason: 'blob-upload-leg marker probe',
+    });
+
+    // The void is committed despite the Phase-2 failure (best-effort overlay).
+    expect(r.ok).toBe(true);
+
+    const [row] = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({
+          status: invoices.status,
+          pendingAt: invoices.voidPdfReconcilePendingAt,
+          attempts: invoices.voidPdfReconcileAttempts,
+          parkedAt: invoices.voidPdfReconcileParkedAt,
+        })
+        .from(invoices)
+        .where(eq(invoices.invoiceId, invoiceId)),
+    );
+    expect(row?.status).toBe('void');
+    // The durable marker landed under RLS (a null-tx write would silently no-op).
+    expect(row?.pendingAt).not.toBeNull();
+    expect(row?.attempts).toBe(0);
+    expect(row?.parkedAt).toBeNull();
+  }, 60_000);
+
   it('088 T068 — voids a PAID single-blob invoice (legacy combined): status→void, ONE blob re-stamped', async () => {
     // Paid legacy-shape row: documentNumber set, pdf_doc_kind 'invoice', NO
     // separate receipt blob (receiptPdf null). Voiding a paid membership is the
@@ -828,6 +865,9 @@ describe('F4 US5 — void-invoice (T098)', () => {
             eq(auditLog.tenantId, tenant.ctx.slug),
             eq(auditLog.eventType, 'pdf_render_failed'),
             sql`${auditLog.payload}->>'context' = 'invoice_void_phase2_sync'`,
+            // Scope to THIS void — the shared-tenant suite now has other
+            // blob_upload-leg voids (bug 10 C1) emitting the same context.
+            sql`${auditLog.payload}->>'invoice_id' = ${invoiceId}`,
           ),
         ),
     );
