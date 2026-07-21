@@ -545,6 +545,11 @@ export async function voidInvoice(
             break;
           } catch (retryErr) {
             lastShaSyncErr = retryErr;
+            // No inter-attempt delay: the immediate retry covers the common
+            // serialization-error / lock-blip (Postgres advises retrying those
+            // at once), and a real timer here is both frozen by the suite's
+            // fake clock and pointless against a sustained outage — whose
+            // residual (a cosmetically stale pdf_sha256) is tax-safe anyway.
           }
         }
         if (!recovered) {

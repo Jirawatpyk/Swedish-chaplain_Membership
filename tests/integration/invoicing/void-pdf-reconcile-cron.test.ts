@@ -236,6 +236,28 @@ describe('void-pdf-reconcile cron (bug 10)', () => {
     expect(row?.pendingAt).toBeNull();
     expect(row?.attempts).toBe(0);
     expect(row?.parkedAt).toBeNull();
+
+    // M1 — a 10-year `invoice_pdf_regenerated` forensic records the SERVED sha
+    // (sha_cron), so the audit trail no longer disagrees with the blob (the
+    // original void audit pinned sha_P1, which the blob_upload leg never served).
+    const regen = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({
+          newSha: sql<string>`${auditLog.payload}->>'new_sha256'`,
+          reason: sql<string>`${auditLog.payload}->>'reason'`,
+        })
+        .from(auditLog)
+        .where(
+          and(
+            eq(auditLog.tenantId, tenant.ctx.slug),
+            eq(auditLog.eventType, 'invoice_pdf_regenerated'),
+            sql`${auditLog.payload}->>'invoice_id' = ${invoiceId}`,
+          ),
+        ),
+    );
+    expect(regen).toHaveLength(1);
+    expect(regen[0]?.newSha).toBe(RESTAMP_SHA);
+    expect(regen[0]?.reason).toBe('void_pdf_reconcile');
   }, 60_000);
 
   // NOTE: the cron's corruption-PARK branch (null void_reason / no_snapshot) is
@@ -293,7 +315,7 @@ describe('void-pdf-reconcile cron (bug 10)', () => {
    *  sha_P1 the blob_upload leg never produced). */
   async function seedFailedVoidEmail(
     invoiceId: string,
-    opts: { sha: string; status?: 'permanently_failed' | 'pending' },
+    opts: { sha: string; status?: 'permanently_failed' | 'pending' | 'sent' },
   ): Promise<void> {
     await runInTenant(tenant.ctx, async (tx) => {
       await tx.execute(sql`
@@ -401,6 +423,60 @@ describe('void-pdf-reconcile cron (bug 10)', () => {
 
     const rows = await voidEmailRows(invoiceId);
     expect(rows).toHaveLength(0); // no spurious cancellation email
+  }, 60_000);
+
+  it('D6c — does NOT re-enqueue when a valid cancellation email already shipped (sent)', async () => {
+    const invoiceId = await seedMarkedVoid({ voidReason: 'already sent', seq: 9 });
+    // Ambiguous upload / two-blob-A-sent: the ORIGINAL already shipped a valid
+    // VOID-stamped notice. Re-enqueuing would deliver a duplicate cancellation.
+    await seedFailedVoidEmail(invoiceId, { sha: 'a'.repeat(64), status: 'sent' });
+
+    const res = await reconcileCron(cronReq());
+    expect(res.status).toBe(200);
+
+    const rows = await voidEmailRows(invoiceId);
+    // Still exactly the one sent row — NO fresh pending duplicate.
+    expect(rows.filter((r) => r.status === 'pending')).toHaveLength(0);
+    expect(rows.filter((r) => r.status === 'sent')).toHaveLength(1);
+  }, 60_000);
+
+  it('D6d — retires a still-pending doomed original + re-enqueues exactly one fresh row', async () => {
+    const invoiceId = await seedMarkedVoid({ voidReason: 'pending doomed', seq: 10 });
+    // The original is still pending (byte-deterministic template / dispatcher
+    // lag): it must be retired so it cannot ALSO ship alongside the fresh row.
+    await seedFailedVoidEmail(invoiceId, { sha: 'a'.repeat(64), status: 'pending' });
+
+    const res = await reconcileCron(cronReq());
+    expect(res.status).toBe(200);
+
+    const rows = await voidEmailRows(invoiceId);
+    const pending = rows.filter((r) => r.status === 'pending');
+    expect(pending).toHaveLength(1); // exactly one send-able row
+    expect(pending[0]?.sha).toBe(RESTAMP_SHA); // the fresh sha_cron row
+    // The doomed original was retired → never ships a second copy.
+    expect(rows.filter((r) => r.status === 'permanently_failed')).toHaveLength(1);
+  }, 60_000);
+
+  it('D9 — concurrent ticks re-enqueue the cancellation email exactly once', async () => {
+    const invoiceId = await seedMarkedVoid({ voidReason: 'concurrent ticks', seq: 11 });
+    await seedFailedVoidEmail(invoiceId, { sha: 'a'.repeat(64) }); // permanently_failed
+
+    // Two ticks race: both scan the pending row, both take lockForUpdate. The
+    // loser's under-lock marker re-check must see pendingAt=null and skip — no
+    // second upload, no duplicate re-enqueue.
+    const [r1, r2] = await Promise.all([
+      reconcileCron(cronReq()),
+      reconcileCron(cronReq()),
+    ]);
+    expect(r1.status).toBe(200);
+    expect(r2.status).toBe(200);
+
+    const rows = await voidEmailRows(invoiceId);
+    expect(
+      rows.filter((r) => r.status === 'pending' && r.sha === RESTAMP_SHA),
+    ).toHaveLength(1);
+    const marker = await readMarker(invoiceId);
+    expect(marker?.pendingAt).toBeNull();
   }, 60_000);
 
   it('D8 — a hung blob upload times out + bumps (never holds the row lock forever)', async () => {

@@ -121,6 +121,17 @@ async function bumpAndReadActionableAttempts(
  * row was re-enqueued. Idempotent across ticks: the reconcile clears the marker
  * on success, and the marker re-check below skips a row a racing tick already
  * cleared, so exactly one re-enqueue happens per recovered void.
+ *
+ * Exactly-once DELIVERY (not just exactly-one INSERT) is enforced two ways:
+ *  1. RETIRE any still-`pending` original first — on a byte-deterministic
+ *     template (sha_cron == sha_P1) or before the dispatcher has run, the doomed
+ *     original would ALSO match the re-uploaded blob and ship a second copy.
+ *  2. Re-enqueue ONLY if no cancellation email was already `sent` — the
+ *     ambiguous-upload leg (upload threw but persisted) and the two-blob leg
+ *     where only the §105 receipt failed both leave the main §86/4 correctly
+ *     served, so the dispatcher already shipped the original. Keying on `sent`
+ *     (not the dispatcher's sha-check) is correct even with
+ *     FEATURE_F4_VOID_ATTACHMENT off, where originals ship link-only.
  */
 async function reEnqueueVoidCancellationEmail(
   tx: TenantTx,
@@ -128,18 +139,37 @@ async function reEnqueueVoidCancellationEmail(
   invoiceId: string,
   newSha: string,
 ): Promise<boolean> {
-  const inserted = (await tx.execute(sql`
-    INSERT INTO notifications_outbox
-      (tenant_id, notification_type, to_email, locale, context_data, status, attempts, next_retry_at)
-    SELECT tenant_id, notification_type, to_email, locale,
-           jsonb_set(context_data, '{expected_pdf_sha256}', to_jsonb(${newSha}::text)),
-           'pending'::outbox_status, 0, now()
-      FROM notifications_outbox
+  await tx.execute(sql`
+    UPDATE notifications_outbox
+       SET status = 'permanently_failed'::outbox_status,
+           last_error = 'superseded_by_void_pdf_reconcile',
+           updated_at = now()
      WHERE tenant_id = ${tenantId}
        AND notification_type = 'invoice_auto_email'::notification_type
        AND context_data->>'event_type' = 'invoice_voided'
        AND context_data->>'invoice_id' = ${invoiceId}
-     ORDER BY created_at DESC
+       AND status = 'pending'
+  `);
+  const inserted = (await tx.execute(sql`
+    INSERT INTO notifications_outbox
+      (tenant_id, notification_type, to_email, locale, context_data, status, attempts, next_retry_at)
+    SELECT o.tenant_id, o.notification_type, o.to_email, o.locale,
+           jsonb_set(o.context_data, '{expected_pdf_sha256}', to_jsonb(${newSha}::text)),
+           'pending'::outbox_status, 0, now()
+      FROM notifications_outbox o
+     WHERE o.tenant_id = ${tenantId}
+       AND o.notification_type = 'invoice_auto_email'::notification_type
+       AND o.context_data->>'event_type' = 'invoice_voided'
+       AND o.context_data->>'invoice_id' = ${invoiceId}
+       AND NOT EXISTS (
+         SELECT 1 FROM notifications_outbox s
+          WHERE s.tenant_id = ${tenantId}
+            AND s.notification_type = 'invoice_auto_email'::notification_type
+            AND s.context_data->>'event_type' = 'invoice_voided'
+            AND s.context_data->>'invoice_id' = ${invoiceId}
+            AND s.status = 'sent'::outbox_status
+       )
+     ORDER BY o.created_at DESC
      LIMIT 1
     RETURNING id
   `)) as unknown as Array<{ id: string }>;
@@ -156,9 +186,13 @@ async function alertOncePermanentlyFailed(
   reason: string,
   disposition: AlertDisposition,
 ): Promise<boolean> {
-  // Dedupe + emit inside runInTenant so RLS on audit_log resolves to the row's
-  // tenant (a bare read leaves app.current_tenant unset → zero rows → re-emit
-  // every tick → double-paging). Verbatim mirror of receipt-pdf-reconcile.
+  // The dedup read + emit run on the pool-global `db` (BYPASSRLS owner role), so
+  // the explicit tenant_id / invoice_id / source / disposition filters — NOT RLS
+  // — scope them; the `runInTenant` wrapper is kept for parity with
+  // receipt-pdf-reconcile (and to give `f4AuditAdapter.emit(null)` a tenant
+  // context on adapter paths that read one). D3 proves the emit persists on live
+  // Neon. The dedup key includes `disposition` so a PARK (manual-repair) alert is
+  // still delivered even if an `escalated_retrying` alert already fired.
   return runInTenant(asTenantContext(tenantId), async () => {
     const existing = await db
       .select({ id: auditLog.id })
@@ -169,6 +203,7 @@ async function alertOncePermanentlyFailed(
           eq(auditLog.eventType, 'pdf_render_permanently_failed'),
           sql`${auditLog.payload}->>'invoice_id' = ${invoiceId}`,
           sql`${auditLog.payload}->>'source' = 'cron.void_pdf_reconcile'`,
+          sql`${auditLog.payload}->>'disposition' = ${disposition}`,
         ),
       )
       .limit(1);
@@ -332,13 +367,18 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         }
         // Upload each target's freshly-rendered bytes + sync its sha.
         //
-        // Partial-failure note: the blob is NOT transactional. If a second
-        // target's upload throws, this tx rolls back — reverting the first
-        // target's sha write but NOT its already-overwritten blob bytes. That
-        // leaves a TRANSIENT DB-sha-lags-blob split on the first target (the
-        // served doc is correctly VOID-stamped — tax-safe). The marker stays
-        // pending (the clear rolled back too), so a later all-succeed tick
-        // re-uploads both + re-syncs both shas and converges.
+        // All-or-nothing per tick: both targets (the §86/4 main + any §105
+        // receipt) upload + sync inside ONE tx. A PERMANENTLY-failing receipt
+        // (targetB) therefore blocks targetA's sha sync + the email re-enqueue
+        // and keeps the marker pending → retries + escalates. This is correct:
+        // never signal "stamped" (nor ship the cancellation email) while the
+        // receipt copy is still un-stamped. Runbook: a stuck two-blob void needs
+        // the receipt blob key checked. Partial-failure note: the blob is NOT
+        // transactional — if targetB's upload throws AFTER targetA's uploaded,
+        // the rollback reverts targetA's sha write but not its already-
+        // overwritten blob bytes, leaving a TRANSIENT DB-sha-lags-blob split on
+        // targetA (served doc is correctly VOID-stamped — tax-safe). A later
+        // all-succeed tick re-uploads both + re-syncs both shas and converges.
         const targets = built.value.targetB
           ? [built.value.targetA, built.value.targetB]
           : [built.value.targetA];
@@ -353,6 +393,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
             uploadTimeoutMs,
             'upload',
           );
+          const priorSha =
+            t.persist === 'invoice'
+              ? (loaded.pdf?.sha256 ?? null)
+              : (loaded.receiptPdf?.sha256 ?? null);
           if (t.persist === 'invoice') {
             await repo.applyInvoicePdfRegeneration(tx, {
               tenantId: row.tenantId,
@@ -366,6 +410,25 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
               receiptPdfSha256: t.rendered.sha256,
             });
           }
+          // M1 — record the SERVED sha (sha_cron) in a 10-year `invoice_pdf_
+          // regenerated` forensic so the audit trail matches the blob. The
+          // original void audit pinned sha_P1, which the blob_upload leg never
+          // uploaded. Mirrors issueCreditNote's companion event + payload names.
+          await f4AuditAdapter.emit(tx, {
+            tenantId: row.tenantId,
+            requestId,
+            eventType: 'invoice_pdf_regenerated',
+            actorUserId: 'system:cron',
+            summary: `Void ${built.value.mainDocNum.raw} ${t.persist} PDF re-stamped by void-pdf-reconcile`,
+            payload: {
+              invoice_id: row.invoiceId,
+              document_number: built.value.mainDocNum.raw,
+              original_sha256: priorSha,
+              new_sha256: t.rendered.sha256,
+              reason: 'void_pdf_reconcile',
+              target: t.persist,
+            },
+          });
         }
         // Re-enqueue the lost cancellation email pinned to the MAIN (§86/4)
         // blob's freshly-uploaded sha. Intent-gated on an existing void row, so
