@@ -325,7 +325,7 @@ describe('G2 — changePlan plan_bundle_changed audit (US3 AS5 / FR-010)', () =>
       // --- Assert: plan change succeeded ---
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.planId).toBe(partnerPlanId);
+        expect(result.value.member.planId).toBe(partnerPlanId);
       }
 
       // --- Assert: plan_bundle_changed audit exists with correct payload ---

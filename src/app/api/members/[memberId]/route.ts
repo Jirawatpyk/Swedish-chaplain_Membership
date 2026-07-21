@@ -202,7 +202,10 @@ export async function PATCH(
     };
     const result = await changePlan(memberId, rawBody, meta, planChangeDeps);
     if (result.ok) {
-      const responseBody = serialiseMember(result.value);
+      // Phase 2 — `changePlan` now returns `{ member, billingEffect }`. The
+      // billingEffect (applied-now vs applies-next-cycle) is threaded for a
+      // later UI task; the response body stays the serialised member for now.
+      const responseBody = serialiseMember(result.value.member);
       await rememberIdempotentResponse(tenant, keyCheck.key, bodyHash, {
         status: 200,
         body: responseBody,

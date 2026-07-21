@@ -180,6 +180,39 @@ export interface RenewalCycleRepo {
   ): Promise<RenewalCycle>;
 
   /**
+   * Plan-change immediate re-freeze (Phase 2, Step 2.2) — re-freeze the 5
+   * frozen_plan_* columns of a member's OPEN cycle to a NEW plan when a manual
+   * admin change-plan flips `members.plan_id`. DISTINCT from `updateFrozenPlan`:
+   *   - accepts ANY open status (`upcoming|reminded|awaiting_payment`), not
+   *     just `awaiting_payment` (the change can land before the T-0 cron flips
+   *     the cycle to payable);
+   *   - GUARDED by `linked_invoice_id IS NULL` — an OPEN cycle whose §86/4 has
+   *     already been issued+linked is NEVER rewritten (tax-safe: an issued tax
+   *     invoice is immutable);
+   *   - returns `null` (NEVER throws) on 0 rows — the cycle raced into a
+   *     terminal/linked state, and the caller DEFERS rather than erroring.
+   *
+   * The guard predicate mirrors the SQL `WHERE cycle_id = ? AND tenant_id = ?
+   * AND status IN ('upcoming','reminded','awaiting_payment') AND
+   * linked_invoice_id IS NULL RETURNING *`. Term-length changes are handled by
+   * the CALLER (the plan-change billing remediation defers a term change —
+   * period re-derivation is out of scope), so this method rewrites the frozen
+   * fields verbatim from `args`. Thread `tx` from the caller's `runInTenant`.
+   */
+  refreezeOpenCycleForPlanChangeInTx(
+    tx: TenantTx,
+    tenantId: string,
+    cycleId: CycleId,
+    args: {
+      readonly planIdAtCycleStart: string;
+      readonly tierAtCycleStart: TierBucket;
+      readonly frozenPlanPriceThb: ThbDecimal;
+      readonly frozenPlanTermMonths: number;
+      readonly frozenPlanCurrency: 'THB' | 'SEK' | 'EUR' | 'USD';
+    },
+  ): Promise<RenewalCycle | null>;
+
+  /**
    * Phase 5 Wave B (T122) — link an issued F4 invoice to the cycle.
    * Runs after `f4InvoicingBridge.issueInvoiceForRenewal` succeeds; the
    * cycle's `linked_invoice_id` becomes the joining column the F4
@@ -192,6 +225,39 @@ export interface RenewalCycleRepo {
     cycleId: CycleId,
     invoiceId: string,
   ): Promise<RenewalCycle>;
+
+  /**
+   * Plan-change / void-on-reissue unlink (Phase 2, Step 2.4) — clear the
+   * cycle's `linked_invoice_id` when the invoice it points at is VOIDED. A
+   * voided §86/4 no longer validly links the cycle; without this clear a
+   * subsequent re-issue would hit `InvoiceLinkConflictError` from
+   * `linkInvoice`'s `WHERE linked_invoice_id IS NULL OR = $new` guard.
+   *
+   * GUARDED single UPDATE (mirrors `clearRejectRefundMarkerInTx`):
+   *   `WHERE cycle_id = ? AND tenant_id = ? AND status IN
+   *    ('upcoming','reminded','awaiting_payment') AND linked_invoice_id = ?
+   *    RETURNING cycle_id`
+   *
+   *   - CAS on `linked_invoice_id = expectedInvoiceId` — a concurrent relink
+   *     to a DIFFERENT invoice is NEVER clobbered (0 rows → `false`).
+   *   - Restricted to the OPEN cycle statuses. A `completed` cycle is left
+   *     UNTOUCHED: the `renewal_cycles_completed_requires_invoice_check` CHECK
+   *     forbids a NULL `linked_invoice_id` there, so clearing one would abort
+   *     the whole void tx. The reissue workflow only applies to an OPEN cycle
+   *     whose §86/4 is issued-but-unpaid, so this is also the correct scope.
+   *   - `true` when 1 row cleared, `false` on 0 rows (raced / non-open /
+   *     already-cleared / cross-tenant) — NEVER throws on a miss.
+   *
+   * The explicit `tenant_id` predicate is application-layer defence-in-depth
+   * alongside RLS (Principle I § 1). Thread `tx` from the caller's tx (the
+   * void's Phase-1 tx) — NEVER a nested `runInTenant`.
+   */
+  clearLinkedInvoiceForVoidInTx(
+    tx: TenantTx,
+    tenantId: string,
+    cycleId: CycleId,
+    expectedInvoiceId: string,
+  ): Promise<boolean>;
 
   /**
    * Find the unique active cycle for a member (status NOT IN

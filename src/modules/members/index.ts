@@ -168,7 +168,19 @@ export {
   type ChangePlanInput,
   type ChangePlanError,
   type ChangePlanDeps,
+  type ChangePlanSuccess,
 } from './application/use-cases/change-plan';
+
+// Plan-change -> billing remediation (Phase 2) — MEMBERS-owned port implemented
+// by a renewals adapter. Exported so the renewals adapter can import the
+// contract (renewals -> members, type-only) + the route/deps can reference the
+// BillingEffect surface.
+export type {
+  PlanChangeBillingEffect,
+  PlanChangeBillingEffectKind,
+  PlanChangeBillingRemediationContext,
+  PlanChangeBillingRemediationPort,
+} from './application/ports/plan-change-billing-remediation-port';
 
 export {
   addContact,

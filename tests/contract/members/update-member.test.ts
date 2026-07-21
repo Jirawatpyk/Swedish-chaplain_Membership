@@ -146,7 +146,8 @@ describe('contract: PATCH /api/members/[memberId] (T071 / T090)', () => {
   it('200 on plan change happy path', async () => {
     requireAdminContextMock.mockResolvedValueOnce(adminContext);
     changePlanMock.mockResolvedValueOnce(
-      ok({ ...stubMember, planId: 'premium' }),
+      // Phase 2 — changePlan's ok payload is `{ member, billingEffect }`.
+      ok({ member: { ...stubMember, planId: 'premium' }, billingEffect: null }),
     );
     const { PATCH } = await import('@/app/api/members/[memberId]/route');
     const res = await PATCH(
