@@ -34,13 +34,16 @@ export type F3AuditEventType =
   // Plan-change → billing remediation (Package A, migration 0259). Forensic
   // record of the BILLING consequence when a member's live `members.plan_id`
   // diverges from a renewal cycle's frozen plan. Members-owned (this union),
-  // but the `seed_fallback_plan_unresolvable` variant is emitted from the F8
-  // renewals seed seams (create-next-cycle-on-paid + resolve-unlinked
-  // renewalComplete) via a narrow renewals-owned audit port — renewals cannot
-  // import the members AuditPort (Clean Architecture, Principle III), so its
-  // adapter writes this shared pgEnum value to `audit_log` directly. The
-  // members change-plan operation emits the other variants (a later package).
-  // 5y retention (F3 default — NOT a tax-document event).
+  // but the `seed_fallback_plan_unresolvable` + `tier_upgrade_target_unresolvable`
+  // variants are emitted from the F8 renewals seams (create-next-cycle-on-paid +
+  // resolve-unlinked renewalComplete for the former; the tier-upgrade apply for
+  // the latter) via a narrow renewals-owned audit port — renewals cannot import
+  // the members AuditPort (Clean Architecture, Principle III), so its adapter
+  // writes this shared pgEnum value to `audit_log` directly. `effect` is a free
+  // JSONB payload string (no DB CHECK), so the union is authoritative here as
+  // documentation only. The members change-plan operation emits the other
+  // variants (a later package). 5y retention (F3 default — NOT a tax-document
+  // event).
   //
   // Payload (English keys per repo convention):
   //   {
@@ -51,7 +54,8 @@ export type F3AuditEventType =
   //           | 'deferred_term_length_change'
   //           | 'deferred_immediate_not_enabled'
   //           | 'no_open_cycle'
-  //           | 'seed_fallback_plan_unresolvable',   // <- only variant emitted in Package A
+  //           | 'seed_fallback_plan_unresolvable'     // <- emitted in Package A (seed seams)
+  //           | 'tier_upgrade_target_unresolvable',   // <- emitted by the F8 tier-upgrade apply skip
   //     old_price_thb: string | null, new_price_thb: string | null,
   //     effective_from: string | null,
   //     blocking_invoice_id: string | null,
