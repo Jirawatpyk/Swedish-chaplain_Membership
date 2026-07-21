@@ -180,6 +180,39 @@ export interface RenewalCycleRepo {
   ): Promise<RenewalCycle>;
 
   /**
+   * Plan-change immediate re-freeze (Phase 2, Step 2.2) — re-freeze the 5
+   * frozen_plan_* columns of a member's OPEN cycle to a NEW plan when a manual
+   * admin change-plan flips `members.plan_id`. DISTINCT from `updateFrozenPlan`:
+   *   - accepts ANY open status (`upcoming|reminded|awaiting_payment`), not
+   *     just `awaiting_payment` (the change can land before the T-0 cron flips
+   *     the cycle to payable);
+   *   - GUARDED by `linked_invoice_id IS NULL` — an OPEN cycle whose §86/4 has
+   *     already been issued+linked is NEVER rewritten (tax-safe: an issued tax
+   *     invoice is immutable);
+   *   - returns `null` (NEVER throws) on 0 rows — the cycle raced into a
+   *     terminal/linked state, and the caller DEFERS rather than erroring.
+   *
+   * The guard predicate mirrors the SQL `WHERE cycle_id = ? AND tenant_id = ?
+   * AND status IN ('upcoming','reminded','awaiting_payment') AND
+   * linked_invoice_id IS NULL RETURNING *`. Term-length changes are handled by
+   * the CALLER (the plan-change billing remediation defers a term change —
+   * period re-derivation is out of scope), so this method rewrites the frozen
+   * fields verbatim from `args`. Thread `tx` from the caller's `runInTenant`.
+   */
+  refreezeOpenCycleForPlanChangeInTx(
+    tx: TenantTx,
+    tenantId: string,
+    cycleId: CycleId,
+    args: {
+      readonly planIdAtCycleStart: string;
+      readonly tierAtCycleStart: TierBucket;
+      readonly frozenPlanPriceThb: ThbDecimal;
+      readonly frozenPlanTermMonths: number;
+      readonly frozenPlanCurrency: 'THB' | 'SEK' | 'EUR' | 'USD';
+    },
+  ): Promise<RenewalCycle | null>;
+
+  /**
    * Phase 5 Wave B (T122) — link an issued F4 invoice to the cycle.
    * Runs after `f4InvoicingBridge.issueInvoiceForRenewal` succeeds; the
    * cycle's `linked_invoice_id` becomes the joining column the F4

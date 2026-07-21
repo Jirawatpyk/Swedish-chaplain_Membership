@@ -87,7 +87,14 @@ describe('RenewalCycleRepo.refreezeOpenCycleForPlanChangeInTx (Step 2.2)', () =>
         proRatePolicySnapshot: 'none',
         netDaysSnapshot: 30,
         tenantIdentitySnapshot: { legalNameEn: 'Test', taxId: '0' } as unknown,
-        memberIdentitySnapshot: { companyName: 'Refreeze Co' } as unknown,
+        memberIdentitySnapshot: {
+          companyName: 'Refreeze Co',
+          country: 'TH',
+          legal_name: 'Refreeze Co Ltd',
+          address: '1 Test Road, Bangkok 10110',
+          primary_contact_name: 'Refreeze Person',
+          primary_contact_email: 'refreeze@example.com',
+        } as unknown,
         pdfBlobKey: `invoicing/${tenant.ctx.slug}/2026/${invoiceId}.pdf`,
         pdfSha256: 'a'.repeat(64),
         pdfTemplateVersion: 1,
@@ -238,5 +245,93 @@ describe('RenewalCycleRepo.refreezeOpenCycleForPlanChangeInTx (Step 2.2)', () =>
     const row = await readCycle(cycleId);
     expect(row.planIdAtCycleStart).toBe('regular');
     expect(row.frozenPlanPriceThb).toBe('50000.00');
+  });
+
+  it('(cross-tenant) a refreeze from tenant A never rewrites tenant B\'s open cycle (RLS + tenant_id guard)', async () => {
+    // Victim: tenant B has an OPEN, unlinked cycle on 'regular' @ 50,000.00.
+    const tenantB = await createTestTenant('test-swecham');
+    try {
+      await runInTenant(tenantB.ctx, (tx) =>
+        seedF8MembershipPlan(tx, {
+          tenantSlug: tenantB.ctx.slug,
+          planId: 'regular',
+          planName: { en: 'regular' },
+          benefitMatrix: DEFAULT_TEST_BENEFIT_MATRIX,
+          createdBy: admin.userId,
+          annualFeeMinorUnits: 5_000_000,
+          minTurnoverMinorUnits: 50_000_000,
+          renewalTierBucket: 'regular',
+        }),
+      );
+      const victimMemberId = randomUUID();
+      const victimCycleId = randomUUID();
+      await runInTenant(tenantB.ctx, async (tx) => {
+        await tx.insert(members).values({
+          tenantId: tenantB.ctx.slug,
+          memberId: victimMemberId,
+          memberNumber: nextSeedMemberNumber(),
+          companyName: 'Victim Co',
+          country: 'TH',
+          planId: 'regular',
+          planYear: 2026,
+          turnoverThb: 120_000_000,
+          registrationFeePaid: true,
+          registrationDate: '2020-01-01',
+        });
+        await tx.insert(renewalCycles).values({
+          tenantId: tenantB.ctx.slug,
+          cycleId: victimCycleId,
+          memberId: victimMemberId,
+          status: 'awaiting_payment',
+          periodFrom: new Date('2026-01-01T00:00:00.000Z'),
+          periodTo: new Date('2027-01-01T00:00:00.000Z'),
+          expiresAt: new Date('2027-01-01T00:00:00.000Z'),
+          cycleLengthMonths: 12,
+          tierAtCycleStart: 'regular',
+          planIdAtCycleStart: 'regular',
+          frozenPlanPriceThb: '50000.00',
+          frozenPlanTermMonths: 12,
+          frozenPlanCurrency: 'THB',
+        });
+      });
+
+      const repo = makeDrizzleRenewalCycleRepo(tenant.ctx);
+      // Attacker runs inside tenant A's RLS context. Try BOTH the honest
+      // (tenantId = A) and the forged (tenantId = B) argument — RLS(A) hides
+      // B's rows either way, so both match 0 rows and return null.
+      const honest = await runInTenant(tenant.ctx, (tx) =>
+        repo.refreezeOpenCycleForPlanChangeInTx(
+          tx,
+          tenant.ctx.slug,
+          asCycleId(victimCycleId),
+          NEW_ARGS,
+        ),
+      );
+      const forged = await runInTenant(tenant.ctx, (tx) =>
+        repo.refreezeOpenCycleForPlanChangeInTx(
+          tx,
+          tenantB.ctx.slug,
+          asCycleId(victimCycleId),
+          NEW_ARGS,
+        ),
+      );
+      expect(honest).toBeNull();
+      expect(forged).toBeNull();
+
+      // Victim row is byte-for-byte untouched.
+      const rows = await db
+        .select()
+        .from(renewalCycles)
+        .where(eq(renewalCycles.cycleId, victimCycleId))
+        .limit(1);
+      expect(rows[0]!.planIdAtCycleStart).toBe('regular');
+      expect(rows[0]!.frozenPlanPriceThb).toBe('50000.00');
+      expect(rows[0]!.tierAtCycleStart).toBe('regular');
+    } finally {
+      await db.delete(renewalCycles).where(eq(renewalCycles.tenantId, tenantB.ctx.slug)).catch(() => {});
+      await db.delete(members).where(eq(members.tenantId, tenantB.ctx.slug)).catch(() => {});
+      await db.delete(membershipPlans).where(eq(membershipPlans.tenantId, tenantB.ctx.slug)).catch(() => {});
+      await tenantB.cleanup().catch(() => {});
+    }
   });
 });

@@ -803,6 +803,50 @@ export function makeDrizzleRenewalCycleRepo(
       return rowToDomain(row);
     },
 
+    async refreezeOpenCycleForPlanChangeInTx(
+      tx: unknown,
+      tenantId: string,
+      cycleId: CycleId,
+      args: {
+        readonly planIdAtCycleStart: string;
+        readonly tierAtCycleStart: TierBucket;
+        readonly frozenPlanPriceThb: ThbDecimal;
+        readonly frozenPlanTermMonths: number;
+        readonly frozenPlanCurrency: 'THB' | 'SEK' | 'EUR' | 'USD';
+      },
+    ): Promise<RenewalCycle | null> {
+      // Plan-change immediate re-freeze (Phase 2, Step 2.2). GUARDED single
+      // UPDATE: only an OPEN (upcoming|reminded|awaiting_payment) cycle whose
+      // §86/4 has NOT yet been issued+linked (`linked_invoice_id IS NULL`)
+      // qualifies. 0 rows -> `null` (raced into terminal/linked/issued state);
+      // the caller DEFERS rather than throwing — an issued tax invoice is never
+      // rewritten (tax-safe). The explicit `tenant_id` predicate is
+      // application-layer defence-in-depth alongside RLS (Principle I § 1).
+      // Term-length changes are gated OUT by the caller (period re-derivation is
+      // out of scope), so the frozen fields are written verbatim from `args`.
+      const txDb = tx as typeof db;
+      const updated = await txDb
+        .update(renewalCycles)
+        .set({
+          planIdAtCycleStart: args.planIdAtCycleStart,
+          tierAtCycleStart: args.tierAtCycleStart,
+          frozenPlanPriceThb: args.frozenPlanPriceThb,
+          frozenPlanTermMonths: args.frozenPlanTermMonths,
+          frozenPlanCurrency: args.frozenPlanCurrency,
+        })
+        .where(
+          and(
+            eq(renewalCycles.cycleId, cycleId),
+            eq(renewalCycles.tenantId, tenantId),
+            inArray(renewalCycles.status, [...OPEN_CYCLE_STATUSES]),
+            isNull(renewalCycles.linkedInvoiceId),
+          ),
+        )
+        .returning();
+      const row = updated[0];
+      return row ? rowToDomain(row) : null;
+    },
+
     async linkInvoice(
       tx: unknown,
       _tenantId: string,
