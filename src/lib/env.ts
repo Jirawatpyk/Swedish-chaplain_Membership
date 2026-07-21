@@ -347,6 +347,16 @@ const schema = z.object({
   // dangling duplicate bill is the pre-existing behaviour, not a regression.
   FEATURE_VOID_ON_REISSUE: booleanFromString.default(false),
 
+  // plan-change immediate re-freeze (Phase 2) — when a manual admin
+  // change-plan flips `members.plan_id`, ALSO re-freeze the member's OPEN
+  // (not-yet-invoiced) renewal cycle to the new plan/price IMMEDIATELY, so the
+  // change takes effect THIS cycle rather than only the next one (Phase-1
+  // behaviour). An OPEN cycle whose §86/4 has already been issued keeps
+  // deferring — an issued tax invoice is never rewritten (tax-safe). Default
+  // false — ships dark; a plan change deferring to the next cycle is the
+  // pre-existing (Phase-1) behaviour, not a regression.
+  FEATURE_PLAN_CHANGE_IMMEDIATE_REFREEZE: booleanFromString.default(false),
+
   // money-remediation Task 4 (finding F-1) — settlement-abort on a bridge
   // decline. When TRUE, a refusal from the F4 invoicing bridge inside
   // `confirmPayment`'s Phase-A transaction ROLLS BACK that transaction
@@ -1019,6 +1029,9 @@ export const env = {
     f088TaxAtPayment: raw.FEATURE_088_TAX_AT_PAYMENT,
     // 106-void-on-reissue — auto-void superseded membership bills on reissue.
     voidOnReissue: raw.FEATURE_VOID_ON_REISSUE,
+    // plan-change immediate re-freeze (Phase 2) — re-freeze the OPEN
+    // not-yet-invoiced cycle to the new plan/price on a manual change-plan.
+    planChangeImmediateRefreeze: raw.FEATURE_PLAN_CHANGE_IMMEDIATE_REFREEZE,
     // money-remediation Task 4 (F-1) — roll back the settlement tx when the
     // F4 bridge declines, instead of committing the refused writes.
     f5SettlementAbort: raw.FEATURE_F5_SETTLEMENT_ABORT,
