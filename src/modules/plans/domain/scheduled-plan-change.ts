@@ -379,17 +379,3 @@ export type CancelScheduledPlanChangeError =
       readonly message: string;
       readonly recheckErrMessage: string;
     };
-
-/** Resolved plan for a renewal cycle — output of `getEffectivePlanForRenewal`. */
-export interface EffectivePlanForRenewal {
-  readonly planId: string;
-  /**
-   * `'scheduled'` iff a pending row is driving the resolution; `'current'`
-   * when the resolver fell through to the member's current plan.
-   */
-  readonly source: 'scheduled' | 'current';
-}
-
-export type GetEffectivePlanForRenewalError =
-  | { readonly code: 'member_not_found'; readonly memberId: string }
-  | { readonly code: 'server_error'; readonly message: string };

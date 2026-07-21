@@ -142,6 +142,10 @@ export type MarkCycleCompleteDeps = Pick<
   // FIX-8(d) (PR #173 review, 2026-07-09) — `'clock'` was Pick'd but never
   // referenced anywhere in this file; dropped (dead dependency).
   | 'memberPlanLookup'
+  // Plan-change -> billing remediation (Package A) — threaded through to the
+  // unlinked hook's `renewalComplete` next-cycle seed (cohort-E fallback
+  // audit). Required by `resolveUnlinkedMembershipPaymentInTx`'s deps.
+  | 'planChangeBillingEffectAudit'
   // FIX-3 (PR #173 review, 2026-07-09) — threaded into BOTH the unlinked
   // hook's `firstPayment` branch and the linked path's own reanchor call
   // below, so the FY-crossing re-freeze check uses the tenant's REAL
@@ -232,6 +236,7 @@ export async function markCycleCompleteInTx(
         cyclesRepo: deps.cyclesRepo,
         planLookup: deps.planLookupForRenewal,
         memberPlanLookup: deps.memberPlanLookup,
+        planChangeBillingEffectAudit: deps.planChangeBillingEffectAudit,
         auditEmitter: deps.auditEmitter,
         idFactory: deps.cycleIdFactory,
         memberRenewalFlagsRepo: deps.memberRenewalFlagsRepo,

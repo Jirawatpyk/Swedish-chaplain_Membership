@@ -254,6 +254,11 @@ function fakeDeps(args: {
     memberPlanLookup: {
       loadMemberPlanInTx: loadMemberPlanMock,
     } as unknown as MarkCycleCompleteDeps['memberPlanLookup'],
+    // Package A — cohort-E fallback audit port for the unlinked hook's
+    // renewalComplete seed (unused here — member plan == cycle plan).
+    planChangeBillingEffectAudit: {
+      emitInTx: vi.fn(async () => {}),
+    } as unknown as MarkCycleCompleteDeps['planChangeBillingEffectAudit'],
     fiscalYearSettings: {
       getFiscalYearStartMonthInTx: getFiscalYearStartMonthInTxMock,
     },

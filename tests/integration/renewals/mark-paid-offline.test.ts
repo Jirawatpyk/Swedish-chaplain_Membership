@@ -648,6 +648,9 @@ describe('F8 markPaidOffline — integration (T077)', () => {
             auditEmitter: deps.auditEmitter,
             // The active-cycle guard short-circuits before this is called.
             idFactory: { cycleId: () => asCycleId(randomUUID()) },
+            // Package A — seed reads the member's live plan + cohort-E audit.
+            memberPlanLookup: deps.memberPlanLookup,
+            planChangeBillingEffectAudit: deps.planChangeBillingEffectAudit,
           },
           {
             tenantId: tenantA.ctx.slug,

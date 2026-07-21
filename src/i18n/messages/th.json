@@ -5791,6 +5791,7 @@
       "plan_cross_tenant_probe": "ตรวจพบการเข้าถึงข้ามองค์กร (แพ็กเกจ)",
       "fee_config_updated": "อัปเดตการตั้งค่าค่าธรรมเนียม",
       "member_plan_manually_changed": "เปลี่ยนแพ็กเกจด้วยตนเอง",
+      "member_plan_change_billing_effect": "ผลต่อการวางบิลจากการเปลี่ยนแพ็กเกจ",
       "plan_change_scheduled": "กำหนดเวลาเปลี่ยนแพ็กเกจ",
       "plan_change_superseded": "การเปลี่ยนแพ็กเกจถูกแทนที่",
       "plan_change_cancelled": "ยกเลิกการเปลี่ยนแพ็กเกจ",

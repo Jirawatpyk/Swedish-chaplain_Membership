@@ -111,6 +111,7 @@ function fakeDeps(args: {
   countCyclesForMemberInTxMock: ReturnType<typeof vi.fn>;
   countSettledCyclesForMemberInTxMock: ReturnType<typeof vi.fn>;
   readReactivationGuardsInTxMock: ReturnType<typeof vi.fn>;
+  memberPlanWriterMock: ReturnType<typeof vi.fn>;
 } {
   // First findByIdInTx call returns the seed cycle; any subsequent call
   // (the CAS-loss re-read) returns `rereadCycle` (defaults to the seed).
@@ -174,6 +175,16 @@ function fakeDeps(args: {
     blocked: false,
     erased: args.memberErased ?? false,
   }));
+  // Package B1 — the plan-change branch persists the pick to members.plan_id.
+  const memberPlanWriterMock = vi.fn(
+    async (
+      _tx: unknown,
+      _tenantId: string,
+      _memberId: string,
+      planId: string,
+      planYear: number,
+    ) => ({ planId, planYear }),
+  );
   const planLookup: PlanLookupForRenewalPort = {
     loadPlanFrozenFields: planLookupMock as never,
   };
@@ -213,6 +224,9 @@ function fakeDeps(args: {
     memberRenewalFlagsRepo: {
       readReactivationGuardsInTx: readReactivationGuardsInTxMock,
     } as unknown as ConfirmRenewalDeps['memberRenewalFlagsRepo'],
+    memberPlanWriter: {
+      writePlanIdInTx: memberPlanWriterMock,
+    } as unknown as ConfirmRenewalDeps['memberPlanWriter'],
   };
   return {
     deps,
@@ -225,6 +239,7 @@ function fakeDeps(args: {
     countCyclesForMemberInTxMock,
     countSettledCyclesForMemberInTxMock,
     readReactivationGuardsInTxMock,
+    memberPlanWriterMock,
   };
 }
 

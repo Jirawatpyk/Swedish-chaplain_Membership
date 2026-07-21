@@ -21,13 +21,20 @@
  * delivery. A connection-fresh read would still see the prior cycle as
  * active and no-op (the happy-path-DEAD bug Task 1.1 prevents).
  *
- * THROWS on any failure (prior lookup / plan resolution / insert /
- * audit). This is in-tx state work: a throw propagates out of the F4
- * record-payment tx → the whole tx rolls back → the F4 invoice stays
- * `issued` → the Stripe at-least-once webhook retry re-runs the chain,
- * which heals idempotently. NEVER swallow — a swallow would commit the
- * payment while the member silently drops out of the renewal pipeline
- * with no retry trigger.
+ * THROWS on any GENUINE failure (prior lookup / insert / audit). This is
+ * in-tx state work: a throw propagates out of the F4 record-payment tx →
+ * the whole tx rolls back → the F4 invoice stays `issued` → the Stripe
+ * at-least-once webhook retry re-runs the chain, which heals idempotently.
+ * NEVER swallow — a swallow would commit the payment while the member
+ * silently drops out of the renewal pipeline with no retry trigger.
+ *
+ * Plan-change -> billing remediation (Package A): the next cycle is now
+ * seeded from the member's LIVE plan (`members.plan_id`) via
+ * `seedNextCycleFromMemberPlanInTx`, NOT the prior cycle's plan. The ONE
+ * exception to the never-swallow rule is cohort E — the member's live plan
+ * has no catalogue row resolvable for the next cycle's fiscal year — which
+ * the helper handles by falling back to the prior plan + a forensic audit
+ * (never a rollback). See that helper's docstring.
  *
  * Pure Application — port interfaces only (Constitution Principle III).
  */
@@ -35,11 +42,11 @@ import type { TenantTx } from '@/lib/db';
 import type { F4InvoicePaidEvent } from '@/modules/invoicing';
 import type { RenewalCycleRepo } from '../ports/renewal-cycle-repo';
 import {
-  createCycleInTx,
-  type CreateCycleInTxDeps,
-} from './create-cycle-in-tx';
+  seedNextCycleFromMemberPlanInTx,
+  type SeedNextCycleFromMemberPlanDeps,
+} from './_lib/seed-next-cycle-from-member-plan';
 
-export type CreateNextCycleOnPaidDeps = CreateCycleInTxDeps & {
+export type CreateNextCycleOnPaidDeps = SeedNextCycleFromMemberPlanDeps & {
   readonly cyclesRepo: Pick<
     RenewalCycleRepo,
     'findByInvoiceIdInTx' | 'findActiveForMemberInTx' | 'insert'
@@ -61,20 +68,23 @@ export async function createNextCycleOnPaidInTx(
     return;
   }
 
-  // 2. Gapless next cycle. `createCycleInTx` no-ops if the member still
-  //    has an active cycle — but callback[0] flipped `prior` →completed
-  //    in THIS tx, so `findActiveForMemberInTx` (in-tx-visible) excludes
-  //    it and the new cycle IS created on first delivery.
+  // 2. Gapless next cycle, seeded from the member's LIVE plan (Package A).
+  //    `createCycleInTx` (called inside the helper) no-ops if the member
+  //    still has an active cycle — but callback[0] flipped `prior`
+  //    →completed in THIS tx, so `findActiveForMemberInTx` (in-tx-visible)
+  //    excludes it and the new cycle IS created on first delivery.
   //    F4InvoicePaidEvent carries no correlationId — derive a
   //    deterministic one from the invoice id for log/trace correlation.
-  await createCycleInTx(deps, tx, {
+  await seedNextCycleFromMemberPlanInTx(deps, tx, {
     tenantId: evt.tenantId,
     memberId: prior.memberId,
     periodFrom: prior.periodTo,
-    planId: prior.planIdAtCycleStart,
+    priorPlanId: prior.planIdAtCycleStart,
     actorUserId: null,
     actorRole: 'system',
     correlationId: `on-paid:${evt.invoiceId}`,
   });
-  // Any throw above propagates → F4 tx rolls back → Stripe retry heals.
+  // Any GENUINE throw above propagates → F4 tx rolls back → Stripe retry
+  // heals. Cohort E (live plan unresolvable) is handled by the helper: it
+  // falls back to the prior plan + emits an audit, never a rollback.
 }

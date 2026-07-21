@@ -75,6 +75,9 @@ import { makeDrizzlePlanLookupForRenewal } from './ports-adapters/plan-lookup-fo
 import { makeDrizzleFiscalYearStartMonth } from './ports-adapters/fiscal-year-settings-drizzle';
 import type { FiscalYearStartMonthPort } from '../application/ports/fiscal-year-settings-port';
 import { memberPlanLookupDrizzle } from './ports-adapters/member-plan-lookup-drizzle';
+import { memberPlanWriterDrizzle } from './ports-adapters/member-plan-writer-drizzle';
+import { planChangeBillingEffectAuditDrizzle } from './ports-adapters/plan-change-billing-effect-audit-drizzle';
+import type { PlanChangeBillingEffectAuditPort } from '../application/ports/plan-change-billing-effect-audit-port';
 import { renewalLinkTokenSigner } from './renewal-link-token/hmac-signer';
 import { renewalLinkTokenVerifier } from './renewal-link-token/hmac-verifier';
 import { makeDrizzleConsumedLinkTokensRepo } from './drizzle/drizzle-consumed-link-tokens-repo';
@@ -132,6 +135,7 @@ import type { F4InvoicingForRenewalBridge } from '../application/ports/f4-invoic
 import type { F5RefundBridge } from '../application/ports/f5-refund-bridge';
 import type { PlanLookupForRenewalPort } from '../application/ports/plan-lookup-for-renewal';
 import type { MemberPlanLookupPort } from '../application/ports/member-plan-lookup-port';
+import type { MemberPlanWriterPort } from '../application/ports/member-plan-writer-port';
 import type { BenefitConsumptionReader } from '../application/ports/benefit-consumption-reader';
 import type { CreateCycleInTxDeps } from '../application/use-cases/create-cycle-in-tx';
 import type { RenewalCycleRepo } from '../application/ports/renewal-cycle-repo';
@@ -160,9 +164,17 @@ import { type ClockPort, wallClock } from '../application/ports/clock-port';
 export interface RenewalsDeps {
   readonly tenant: TenantContext;
   /**
-   * F2 cross-module scheduled-plan-change repo. The F4 invoice-paid
-   * hook consults `getEffectivePlanForRenewal` via this repo when the
-   * F4↔F8 paid-cycle bridge fires (see `f4-invoice-bridge.ts`).
+   * F2 cross-module scheduled-plan-change repo. `acceptTierUpgrade` writes a
+   * pending `scheduled_plan_changes` row via
+   * `supersedeAndInsertPendingAtomically`, and the F4 invoice-paid finaliser
+   * (`finaliseF2PlanChangeOnPaid`) flips it pending → applied. The row is a
+   * forensic receipt only — nothing reads it to DECIDE a price. The actual
+   * plan flip that reaches billing is the `members.plan_id` write in
+   * `applyPendingTierUpgradeInTx` (Package B1), picked up by Package A's
+   * next-cycle seed. (The never-implemented `getEffectivePlanForRenewal`
+   * resolver / `CurrentPlanResolverPort` were removed as dead code in
+   * Package B2 — the plans→members dependency inversion they required is
+   * moot now that billing reads `members.plan_id` directly.)
    */
   readonly scheduledPlanChangeRepo: ScheduledPlanChangeRepo;
   /**
@@ -234,6 +246,22 @@ export interface RenewalsDeps {
    * adapter delegating to F3's `findByIdInTx`.
    */
   readonly memberPlanLookup: MemberPlanLookupPort;
+  /**
+   * Plan-change -> billing remediation (Package B1) — F8 → F3 member-plan
+   * WRITE port. Persists a member's new plan (`members.plan_id` + `plan_year`)
+   * inside the caller's tx so Package A's next-cycle seed follows it. Used by
+   * `applyPendingTierUpgradeInTx` (tier-upgrade apply) + `confirmRenewal`
+   * (portal plan pick). Adapter delegates to the SAME F3 repo method
+   * `change-plan.ts` uses (`f3DrizzleMemberRepo.updateFieldsInTx`).
+   */
+  readonly memberPlanWriter: MemberPlanWriterPort;
+  /**
+   * Plan-change -> billing remediation (Package A) — narrow renewals-owned
+   * audit port for the `member_plan_change_billing_effect` event, emitted
+   * by the seed seams' cohort-E fallback. Stateless const adapter (writes
+   * `audit_log` via the caller's tx).
+   */
+  readonly planChangeBillingEffectAudit: PlanChangeBillingEffectAuditPort;
   /**
    * F8 renewal benefit-summary — F8 → F9 bridge that resolves a member's
    * metered benefit consumption (E-Blasts / cultural tickets) for the
@@ -432,6 +460,8 @@ export function makeRenewalsDeps(tenantId: string): RenewalsDeps {
     planLookupForRenewal: makeDrizzlePlanLookupForRenewal(tenant),
     fiscalYearSettings: makeDrizzleFiscalYearStartMonth(),
     memberPlanLookup: memberPlanLookupDrizzle,
+    memberPlanWriter: memberPlanWriterDrizzle,
+    planChangeBillingEffectAudit: planChangeBillingEffectAuditDrizzle,
     benefitConsumptionReader: benefitConsumptionReaderInsights,
     cycleIdFactory: { cycleId: () => asCycleId(randomUUID()) },
     eventAttendees: eventAttendeesPort,
@@ -782,6 +812,9 @@ export function f8OnPaidCallbacks(
           planLookup: deps.planLookupForRenewal,
           auditEmitter: deps.auditEmitter,
           idFactory: deps.cycleIdFactory,
+          // Package A — seed the next cycle from the member's live plan.
+          memberPlanLookup: deps.memberPlanLookup,
+          planChangeBillingEffectAudit: deps.planChangeBillingEffectAudit,
         },
         evt,
         txUnknown,
