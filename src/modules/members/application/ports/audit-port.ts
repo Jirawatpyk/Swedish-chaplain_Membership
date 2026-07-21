@@ -31,7 +31,7 @@ export type F3AuditEventType =
   // emit ONLY `member_plan_changed`, NOT this event. F8 supersede
   // listener (Phase 5+ T184) consumes only this specific event.
   | 'member_plan_manually_changed'
-  // Plan-change → billing remediation (Package A, migration 0259). Forensic
+  // Plan-change → billing remediation (Package A, migration 0270). Forensic
   // record of the BILLING consequence when a member's live `members.plan_id`
   // diverges from a renewal cycle's frozen plan. Members-owned (this union),
   // but the `seed_fallback_plan_unresolvable` + `tier_upgrade_target_unresolvable`

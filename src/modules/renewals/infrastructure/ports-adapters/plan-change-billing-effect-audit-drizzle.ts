@@ -4,7 +4,7 @@
  *
  * Persists the `member_plan_change_billing_effect` event to F1's `audit_log`
  * inside the caller's tx (atomic with the state mutation, Principle VIII).
- * The pgEnum value ships in migration 0259 — apply it before this adapter is
+ * The pgEnum value ships in migration 0270 — apply it before this adapter is
  * exercised (F4 R8 gotcha: unit mocks hide pgEnum gaps).
  *
  * `retention_years` is left NULL so the DB trigger applies the 5-year default
