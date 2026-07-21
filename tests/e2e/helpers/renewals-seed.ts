@@ -25,9 +25,37 @@ export interface SeedResult {
   readonly memberId: string;
 }
 
+/**
+ * Optional overrides for the seeded UPCOMING cycle. Defaults reproduce the
+ * historical fixture verbatim (the e2e-member on the `regular` slug at a frozen
+ * 50,000.00 THB), so every existing `seedF8Renewals()` caller — including
+ * `global-setup.ts` — is unaffected.
+ *
+ * The plan-change-UX downgrade E2E (`portal-renewal-downgrade.spec.ts`) passes
+ * a HIGHER-priced current plan (`premium`) with the frozen price set to that
+ * plan's real catalogue fee (36,000.00 THB), so the renewal picker offers
+ * genuinely cheaper plans that trip the two-step downgrade acknowledgement gate.
+ * The lapsed cycle + tier-upgrade suggestion below are left on their historical
+ * values — they are read by unrelated surfaces and do not affect the portal
+ * picker (which reads only the active `upcoming`/`awaiting_payment` cycle).
+ */
+export interface SeedF8RenewalsOptions {
+  /** `plan_id_at_cycle_start` for the upcoming cycle (default `'regular'`). */
+  readonly planId?: string;
+  /** `tier_at_cycle_start` for the upcoming cycle (default `'regular'`). */
+  readonly tier?: string;
+  /** `frozen_plan_price_thb` decimal string (default `'50000.00'`). */
+  readonly frozenPlanPriceThb?: string;
+}
+
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
-export async function seedF8Renewals(): Promise<SeedResult | null> {
+export async function seedF8Renewals(
+  options: SeedF8RenewalsOptions = {},
+): Promise<SeedResult | null> {
+  const planIdAtCycleStart = options.planId ?? 'regular';
+  const tierAtCycleStart = options.tier ?? 'regular';
+  const frozenPlanPriceThb = options.frozenPlanPriceThb ?? '50000.00';
   const dbUrl = process.env.DATABASE_URL;
   const memberEmail = process.env.E2E_MEMBER_EMAIL;
   if (!dbUrl || !memberEmail) {
@@ -143,8 +171,8 @@ export async function seedF8Renewals(): Promise<SeedResult | null> {
       VALUES (
         ${TENANT_ID}, ${cycleId}::uuid, ${member.member_id}::uuid, 'upcoming',
         ${periodFrom.toISOString()}::timestamptz, ${expiresAt.toISOString()}::timestamptz, ${expiresAt.toISOString()}::timestamptz,
-        12, 'regular',
-        'regular', '50000.00',
+        12, ${tierAtCycleStart},
+        ${planIdAtCycleStart}, ${frozenPlanPriceThb},
         12, 'THB'
       )
     `;
