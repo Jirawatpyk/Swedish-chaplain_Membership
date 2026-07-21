@@ -17,7 +17,7 @@
  * (Constitution Principle I § 1).
  */
 import { and, eq, gte, isNotNull, sql } from 'drizzle-orm';
-import { runInTenant } from '@/lib/db';
+import { runInTenant, type TenantTx } from '@/lib/db';
 import type { TenantContext } from '@/modules/tenants';
 import { invoicesTable } from '@/modules/invoicing';
 import type {
@@ -48,6 +48,36 @@ export function makeInvoiceDueBridgeDrizzle(ctx: TenantContext): InvoiceDueBridg
           .limit(1);
         return rows.length > 0;
       });
+    },
+
+    async hasIssuedMembershipInvoiceForMemberInTx(
+      tx: TenantTx,
+      tenantId: string,
+      memberId: string,
+    ): Promise<{ readonly invoiceId: string } | null> {
+      // Plan-change immediate re-freeze (Phase 2, Step 2.5). Runs on the
+      // CALLER's `tx` (NOT its own `runInTenant`) so the re-freeze can consult
+      // it while `change-plan` holds the member FOR UPDATE lock in one tx —
+      // opening a second pooled connection here would risk a cross-connection
+      // stall under the pooler's dropped `statement_timeout`. `status='issued'`
+      // = unpaid-but-billed; paid / draft / void / credited / partially_credited
+      // never count (a paid or voided §86/4 does NOT block the re-freeze). RLS
+      // scopes the read to `tx`'s tenant GUC; the explicit `tenant_id` predicate
+      // is defence-in-depth (Constitution Principle I § 1).
+      const rows = await tx
+        .select({ invoiceId: invoicesTable.invoiceId })
+        .from(invoicesTable)
+        .where(
+          and(
+            eq(invoicesTable.tenantId, tenantId),
+            eq(invoicesTable.memberId, memberId),
+            eq(invoicesTable.invoiceSubject, 'membership'),
+            eq(invoicesTable.status, 'issued'),
+          ),
+        )
+        .limit(1);
+      const row = rows[0];
+      return row ? { invoiceId: row.invoiceId } : null;
     },
 
     async oldestUnpaidMembershipInvoiceDueDate(

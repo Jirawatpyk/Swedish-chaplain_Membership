@@ -142,6 +142,8 @@ function fakeDeps(args: {
     // boundary + on the no-in-window-invoice branch (see hasUnpaidImpl doc).
     hasUnpaidNotYetDueMembershipInvoice: hasUnpaidMock as never,
     oldestUnpaidMembershipInvoiceDueDate: invoiceDueMock as never,
+    // Plan-change Phase-2 probe (Step 2.5) — unused by lapseCyclesOnGraceExpiry.
+    hasIssuedMembershipInvoiceForMemberInTx: (async () => null) as never,
   };
 
   const findByTenantMock = vi.fn(async () =>

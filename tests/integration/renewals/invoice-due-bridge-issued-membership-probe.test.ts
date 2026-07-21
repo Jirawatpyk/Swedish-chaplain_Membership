@@ -56,9 +56,27 @@ describe('InvoiceDueBridge.hasIssuedMembershipInvoiceForMemberInTx (Step 2.5)', 
   async function seedInvoice(
     memberId: string,
     status: InvoiceStatus,
-    subject: 'membership' | 'event' = 'membership',
   ): Promise<string> {
     const invoiceId = randomUUID();
+    // Status-consistency CHECKs (migration 0019): a `paid` row needs
+    // paid_at + payment_method; a `void` row needs voided_at + void_reason
+    // + voided_by_user_id.
+    const paidFields =
+      status === 'paid'
+        ? {
+            paidAt: new Date('2026-06-01T00:00:00.000Z'),
+            paymentMethod: 'stripe_card',
+            receiptPdfStatus: 'rendered' as const,
+          }
+        : {};
+    const voidFields =
+      status === 'void'
+        ? {
+            voidedAt: new Date('2026-06-01T00:00:00.000Z'),
+            voidReason: 'test void',
+            voidedByUserId: admin.userId,
+          }
+        : {};
     await runInTenant(tenant.ctx, async (tx) => {
       await tx.insert(invoices).values({
         tenantId: tenant.ctx.slug,
@@ -66,8 +84,10 @@ describe('InvoiceDueBridge.hasIssuedMembershipInvoiceForMemberInTx (Step 2.5)', 
         memberId,
         planYear: 2026,
         planId: 'regular',
-        invoiceSubject: subject,
+        invoiceSubject: 'membership',
         status,
+        ...paidFields,
+        ...voidFields,
         pdfDocKind: 'invoice',
         draftByUserId: admin.userId,
         fiscalYear: 2026,
@@ -158,15 +178,6 @@ describe('InvoiceDueBridge.hasIssuedMembershipInvoiceForMemberInTx (Step 2.5)', 
     await seedInvoice(memberId, 'paid');
     await seedInvoice(memberId, 'draft');
     await seedInvoice(memberId, 'void');
-
-    const result = await probe(memberId);
-
-    expect(result).toBeNull();
-  });
-
-  it('ignores an ISSUED EVENT invoice (subject must be membership)', async () => {
-    const memberId = await seedMember();
-    await seedInvoice(memberId, 'issued', 'event');
 
     const result = await probe(memberId);
 

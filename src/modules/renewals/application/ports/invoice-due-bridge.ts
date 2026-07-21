@@ -21,6 +21,7 @@
  *
  * Pure interface — no framework imports (Constitution Principle III).
  */
+import type { TenantTx } from '@/lib/db';
 
 export interface HasUnpaidNotYetDueMembershipInvoiceInput {
   readonly tenantId: string;
@@ -79,6 +80,33 @@ export interface InvoiceDueBridge {
   hasUnpaidNotYetDueMembershipInvoice(
     input: HasUnpaidNotYetDueMembershipInvoiceInput,
   ): Promise<boolean>;
+
+  /**
+   * Plan-change immediate re-freeze (Phase 2, Step 2.5) — the member's FIRST
+   * `invoice_subject='membership'`, `status='issued'` invoice id, or `null`
+   * when the member has none. `status='issued'` = unpaid-but-billed (draft /
+   * paid / void / credited / partially_credited never count — a paid or voided
+   * §86/4 does NOT block the re-freeze; only a live outstanding tax invoice
+   * does). EVENT-subject invoices are excluded (this gates membership billing).
+   *
+   * UNLIKE `hasUnpaidNotYetDueMembershipInvoice` / this port's other reads,
+   * this method runs on the CALLER's `tx` (never its own `runInTenant`): the
+   * plan-change re-freeze consults it while `change-plan` holds the member
+   * FOR UPDATE lock in a single tx, so opening a second pooled connection
+   * would risk a cross-connection stall under the pooler's dropped
+   * `statement_timeout` (see change-plan Phase-2 deadlock note). It also lets
+   * the probe read the same snapshot as the surrounding refreeze + audit,
+   * keeping state ↔ audit atomic (Constitution Principle VIII).
+   *
+   * Tenant isolation: RLS on `invoices` scopes to `tx`'s tenant GUC; the
+   * explicit `tenant_id` predicate is application-layer defence-in-depth
+   * (Constitution Principle I § 1).
+   */
+  hasIssuedMembershipInvoiceForMemberInTx(
+    tx: TenantTx,
+    tenantId: string,
+    memberId: string,
+  ): Promise<{ readonly invoiceId: string } | null>;
 
   /**
    * 065 §5.2 — the `due_date` (Bangkok calendar date `YYYY-MM-DD`) of the
