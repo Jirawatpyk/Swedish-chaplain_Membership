@@ -91,12 +91,13 @@ describe('TierUpgradeQueueClient — WP6', () => {
     ).toBeInTheDocument();
   });
 
-  it('links the resolved company name to the member detail with the full id in the a11y tree (P1-9)', () => {
+  it('links the resolved company name to the member detail (P1-9)', () => {
     renderQueue([makeItem()]);
     const link = screen.getByRole('link', { name: /Acme Trading Co/ });
+    // The full id lives in the href — the actionable, AT-meaningful identifier.
+    // enterprise-ux C3 removed the sr-only full-UUID text (a 36-char string read
+    // aloud on every row is pure noise).
     expect(link).toHaveAttribute('href', `/admin/members/${MEMBER_UUID}`);
-    // Full id present for AT disambiguation (sr-only sibling).
-    expect(screen.getByText(new RegExp(MEMBER_UUID))).toBeInTheDocument();
   });
 
   it('gives the mobile overflow trigger a 44×44 tap target (h-11 w-11, not size-8)', () => {

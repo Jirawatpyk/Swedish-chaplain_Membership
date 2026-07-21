@@ -15,8 +15,9 @@
  * schema with the plan's conditional DOB requirement) — so the `planId`
  * state itself stays in the root rather than living here.
  */
-import { useTranslations, useFormatter } from 'next-intl';
+import { useTranslations, useLocale } from 'next-intl';
 import { Controller, useFormContext } from 'react-hook-form';
+import { formatSatangThb } from '@/lib/format-thb';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RequiredMark } from '@/components/ui/required-mark';
@@ -41,12 +42,13 @@ export function MembershipSection({
 }) {
   const t = useTranslations('admin.members.create');
   const tf = useTranslations('admin.members.create.fields');
-  // Client-safe currency formatter (next-intl). The plans-domain `formatMoney`
-  // lives behind the server-heavy `@/modules/plans` barrel, so it can't be
-  // imported into this client component — `useFormatter` is the client
-  // equivalent. THB/SEK/EUR/USD (the tenant currencies) all carry 2 minor-unit
-  // decimals, so minor→major is `/100`.
-  const format = useFormatter();
+  // Locale for the canonical `formatSatangThb` money formatter — the SAME
+  // suffix-style "36,000.00 THB" the plan-change confirm dialog renders
+  // (`plan-change-summary.ts` → `format-thb.ts`), so the picker and the confirm
+  // dialog read identically within the member-edit flow (enterprise-ux C1).
+  // `formatSatangThb` is pure/client-safe; the plans-domain `formatMoney` lives
+  // behind the server-heavy `@/modules/plans` barrel and can't be imported here.
+  const locale = useLocale();
   const {
     register,
     control,
@@ -54,13 +56,18 @@ export function MembershipSection({
   } = useFormContext<MemberFormValues>();
 
   function planFeeLabel(p: PlanOption): string | null {
-    if (p.annual_fee_minor_units === undefined || p.currency_code === undefined) {
+    if (
+      p.annual_fee_minor_units === undefined ||
+      p.currency_code === undefined ||
+      !Number.isInteger(p.annual_fee_minor_units)
+    ) {
       return null;
     }
-    return format.number(p.annual_fee_minor_units / 100, {
-      style: 'currency',
-      currency: p.currency_code,
-    });
+    return formatSatangThb(
+      BigInt(p.annual_fee_minor_units),
+      locale,
+      p.currency_code,
+    );
   }
 
   return (

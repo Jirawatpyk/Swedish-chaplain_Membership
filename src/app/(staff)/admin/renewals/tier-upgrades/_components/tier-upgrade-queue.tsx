@@ -191,7 +191,15 @@ export function TierUpgradeQueueClient({
         duration: Infinity,
       });
     } finally {
+      // Close the confirm dialog only AFTER the action settles + `setPending`
+      // clears — so Base UI reads `finalFocus` with `closedViaSuccessRef`
+      // reflecting the real outcome AND the trigger re-enabled: success →
+      // #main-content (row unmounts on refresh); error → the now-enabled
+      // trigger (admin can retry). The old synchronous close-on-click dropped
+      // focus to <body> on the error path (WCAG 2.4.3). No-op for the inline
+      // escalate path (no dialog open).
       setPending(null);
+      setDialog(null);
     }
   }
 
@@ -242,7 +250,10 @@ export function TierUpgradeQueueClient({
                 <TableRow key={item.suggestionId} aria-busy={busy}>
                   {/* P1-9 — resolved company name linked to the member
                       detail; falls back to the 8-char id slice when the SSR
-                      lookup returned nothing. Full id always available to AT. */}
+                      lookup returned nothing. enterprise-ux C3: no sr-only full
+                      UUID — a screen reader reading a 36-char id on every row is
+                      pure noise; the company-name link (its href carries the id)
+                      is the meaningful, actionable identifier for AT. */}
                   <TableCell>
                     <Link
                       href={`/admin/members/${item.memberId}`}
@@ -254,7 +265,6 @@ export function TierUpgradeQueueClient({
                         </span>
                       )}
                     </Link>
-                    <span className="sr-only"> · {item.memberId}</span>
                   </TableCell>
                   {/* Render localised plan name; fall back to the raw ID
                       (font-mono, title tooltip) when the SSR lookup
@@ -438,24 +448,31 @@ export function TierUpgradeQueueClient({
             <AlertDialogCancel>
               {t('dialog.cancel')}
             </AlertDialogCancel>
-            {/* Phase 7 review-fix C-UX-2: destructive variant for Dismiss
-                (irreversible — 90d suppression). Accept stays default
-                (positive action). ux-standards.md § 6.2 requires the
-                visual destructive affordance for irreversible actions. */}
+            {/* Phase 7 review-fix C-UX-2 + enterprise-ux C5: use the Button
+                `destructive` variant for Dismiss (irreversible — 90d
+                suppression) rather than hand-rolled utility classes that drift
+                if the token changes. Accept stays default. ux-standards § 6.2. */}
             <AlertDialogAction
-              className={
-                dialog?.action === 'dismiss'
-                  ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90 focus-visible:ring-destructive/20'
-                  : undefined
-              }
-              onClick={() => {
+              variant={dialog?.action === 'dismiss' ? 'destructive' : 'default'}
+              disabled={pending !== null}
+              onClick={(e) => {
                 if (!dialog) return;
+                // Keep the dialog OPEN until callAction settles (it closes in
+                // its `finally`), so focus resolves correctly on both paths —
+                // see the callAction finally note. preventDefault stops Base
+                // UI's synchronous auto-close.
+                e.preventDefault();
                 const { action, suggestionId } = dialog;
-                setDialog(null);
                 void callAction(suggestionId, action);
               }}
             >
-              {dialog ? t(`actions.${dialog.action}.label`) : ''}
+              {dialog
+                ? t(
+                    pending !== null
+                      ? `actions.${dialog.action}.submitting`
+                      : `actions.${dialog.action}.label`,
+                  )
+                : ''}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
