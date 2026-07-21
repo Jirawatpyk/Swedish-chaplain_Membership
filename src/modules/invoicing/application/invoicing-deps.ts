@@ -53,6 +53,8 @@ import type { ExportPaidInvoicesCsvDeps } from './use-cases/export-paid-invoices
 import {
   listSucceededPaymentMethods,
   makeListSucceededPaymentMethodsDeps,
+  countPendingRefundsForInvoice,
+  makeCountPendingRefundsForInvoiceDeps,
 } from '@/modules/payments';
 import type { PreviewInvoiceDraftDeps } from './use-cases/preview-invoice-draft';
 import type { DeleteInvoiceDraftDeps } from './use-cases/delete-invoice-draft';
@@ -62,6 +64,7 @@ import type { RenderReceiptPdfDeps } from './use-cases/render-receipt-pdf';
 import type { UpdateInvoiceDraftDeps } from './use-cases/update-invoice-draft';
 import type { IssueCreditNoteDeps } from './use-cases/issue-credit-note';
 import type { VoidInvoiceDeps } from './use-cases/void-invoice';
+import type { PendingRefundGuardPort } from './ports/pending-refund-guard-port';
 import type { IssueMembershipBillDeps } from './use-cases/issue-membership-bill';
 import type { GetCreditNoteDeps } from './use-cases/get-credit-note';
 import type { GetCreditNotePdfSignedUrlDeps } from './use-cases/get-credit-note-pdf-signed-url';
@@ -353,6 +356,26 @@ export function makeUpdateInvoiceDraftDeps(tenantId: string): UpdateInvoiceDraft
   };
 }
 
+/**
+ * 8A — the invoicing-side `PendingRefundGuardPort`, wired to the payments count
+ * facade through the public barrel (Principle III: no reach into F5 internals).
+ * Fail-open (`? r.value : 0`): a count-read hiccup narrows to "guard did not
+ * fire" rather than hard-failing an admin credit note / void.
+ */
+function makePendingRefundGuard(): PendingRefundGuardPort {
+  return {
+    // The tenant is the `tid` the use-case passes (its own `input.tenantId`);
+    // the repo is scoped to it (RLS), so no outer tenant binding is needed.
+    countPendingRefundsForInvoice: async (tid, invoiceId) => {
+      const r = await countPendingRefundsForInvoice(
+        makeCountPendingRefundsForInvoiceDeps(tid),
+        { tenantId: tid, invoiceId },
+      );
+      return r.ok ? r.value : 0;
+    },
+  };
+}
+
 export function makeIssueCreditNoteDeps(tenantId: string): IssueCreditNoteDeps {
   return {
     invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
@@ -366,6 +389,10 @@ export function makeIssueCreditNoteDeps(tenantId: string): IssueCreditNoteDeps {
     outbox: resendEmailOutboxAdapter,
     recipientLocale: recipientLocaleAdapter,
     currentTemplateVersion: CURRENT_TEMPLATE_VERSION,
+    // 8A — non-locking pending-refund count via the payments barrel (F4↔F5
+    // coupling, deliberate). Fail-open at the seam (`? r.value : 0`): a rare
+    // count-read hiccup must not hard-fail an admin credit note.
+    pendingRefundGuard: makePendingRefundGuard(),
   };
 }
 
@@ -403,6 +430,10 @@ export function makeVoidInvoiceDeps(tenantId: string): VoidInvoiceDeps {
     clock: systemClock,
     outbox: resendEmailOutboxAdapter,
     recipientLocale: recipientLocaleAdapter,
+    // 8A — see makeIssueCreditNoteDeps. `issueMembershipBill` composes this with
+    // `requireStatus:'issued'` (an unpaid bill → no payment → guard reads 0),
+    // so void-on-reissue is never blocked.
+    pendingRefundGuard: makePendingRefundGuard(),
   };
 }
 

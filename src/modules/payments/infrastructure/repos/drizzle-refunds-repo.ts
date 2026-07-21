@@ -591,6 +591,26 @@ export function makeDrizzleRefundsRepo(tenantId: string): RefundsRepo {
         return out;
       });
     },
+
+    async countPendingByInvoice(
+      inputTenantId: string,
+      invoiceId: string,
+    ): Promise<number> {
+      // 8A — NON-LOCKING plain COUNT. A `FOR UPDATE`/`FOR SHARE` here would
+      // invert the finaliser's refunds→invoices lock order and deadlock (see
+      // the port docstring). Own `runInTenant` — the invoicing caller has no F5
+      // `tx` to borrow. `tenant_id = …` is defence-in-depth alongside RLS+FORCE.
+      return runInTenant(ctx, async (tx) => {
+        const rows = (await tx.execute(sql`
+          SELECT COUNT(*)::int AS c
+            FROM refunds
+           WHERE tenant_id = ${inputTenantId}
+             AND invoice_id = ${invoiceId}
+             AND status = 'pending'
+        `)) as unknown as Array<{ c: number | string }>;
+        return Number(rows[0]?.c ?? 0);
+      });
+    },
   };
 }
 

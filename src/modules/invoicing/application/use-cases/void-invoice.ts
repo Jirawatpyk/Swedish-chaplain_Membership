@@ -79,6 +79,7 @@ import { emitNonMemberInvoiceEvent, type AuditPort } from '../ports/audit-port';
 import type { ClockPort } from '../ports/clock-port';
 import type { EmailOutboxPort } from '../ports/email-outbox-port';
 import type { RecipientLocalePort } from '../ports/recipient-locale-port';
+import type { PendingRefundGuardPort } from '../ports/pending-refund-guard-port';
 import { resolveRecipientLocale } from '../lib/resolve-recipient-locale';
 import {
   asInvoiceId,
@@ -117,7 +118,15 @@ export type VoidInvoiceError =
   | { code: 'no_snapshot_on_invoice' }
   | { code: 'settings_missing' }
   | { code: 'pdf_render_failed'; reason: string }
-  | { code: 'concurrent_state_change' };
+  | { code: 'concurrent_state_change' }
+  /**
+   * 8A — a refund is in flight (`status='pending'`) on this invoice's
+   * payment(s). Voiding now flips the invoice to `void`, so the refund's own
+   * Phase-B §86/10 then declines against it and the Stripe-settled refund is
+   * stranded `pending` forever. Refuse (409); the admin retries once the refund
+   * settles. UNCONDITIONAL — a void has no refund-origin variant (unlike a CN).
+   */
+  | { code: 'refund_in_progress' };
 
 class VoidInvoiceInternalError extends TxAbort<VoidInvoiceError> {
   override readonly name = 'VoidInvoiceInternalError';
@@ -133,6 +142,8 @@ export interface VoidInvoiceDeps {
   readonly outbox: EmailOutboxPort;
   /** Email-locale audit 2026-07-16 — member preference for the cancellation email. */
   readonly recipientLocale: RecipientLocalePort;
+  /** 8A — non-locking count of in-flight refunds (guards the void). */
+  readonly pendingRefundGuard: PendingRefundGuardPort;
 }
 
 /**
@@ -165,6 +176,20 @@ export async function voidInvoice(
   // Settings read outside the outer tx (same reason as issue-credit-note
   // § 134 — nested `runInTenant` on concurrent voids would deadlock).
   const settings = await deps.tenantSettingsRepo.getForIssue(input.tenantId);
+
+  // 8A — refuse a void while a refund is in flight on this invoice (a
+  // non-locking count; see the port docstring). ABOVE Phase 1 on purpose:
+  // `err()` inside `runInTenant` COMMITS, so a guard below the first write would
+  // leave a phantom row + false audit behind a refusal. UNCONDITIONAL — a void
+  // has no refund-origin variant (unlike a credit note).
+  const pendingRefunds =
+    await deps.pendingRefundGuard.countPendingRefundsForInvoice(
+      input.tenantId,
+      invoiceId,
+    );
+  if (pendingRefunds > 0) {
+    return err({ code: 'refund_in_progress' });
+  }
 
   // Phase 1 — DB-only atomic commit. Render(s) happen inside so the new
   // bytes/shas are available for the audit payload + the Phase 2 upload(s).

@@ -90,6 +90,9 @@ const ERROR_STATUS: Record<IssueCreditNoteError['code'], number> = {
   // request, but the use-case cannot proceed without the staff's
   // declared intent.
   membership_effect_required: 422,
+  // 8A — a refund is in flight on this invoice. 409 Conflict: transient, the
+  // admin retries once the refund settles.
+  refund_in_progress: 409,
 };
 
 export async function POST(request: NextRequest): Promise<NextResponse> {

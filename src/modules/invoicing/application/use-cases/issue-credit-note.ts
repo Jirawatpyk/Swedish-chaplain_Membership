@@ -61,6 +61,7 @@ import { emitNonMemberInvoiceEvent, type AuditPort } from '../ports/audit-port';
 import type { ClockPort } from '../ports/clock-port';
 import type { EmailOutboxPort } from '../ports/email-outbox-port';
 import type { RecipientLocalePort } from '../ports/recipient-locale-port';
+import type { PendingRefundGuardPort } from '../ports/pending-refund-guard-port';
 import { resolveRecipientLocale } from '../lib/resolve-recipient-locale';
 import {
   asInvoiceId,
@@ -232,7 +233,16 @@ export type IssueCreditNoteError =
    * §87 sequence number burned) — same pre-allocation discipline as every
    * other guard in this file.
    */
-  | { code: 'membership_effect_required' };
+  | { code: 'membership_effect_required' }
+  /**
+   * 8A — a refund is in flight (`status='pending'`) on this invoice's
+   * payment(s). Issuing a MANUAL credit note now would consume the creditable
+   * remainder the refund's own §86/10 needs, stranding that Stripe-settled
+   * refund `pending` forever. Refuse (409); the admin retries once the refund
+   * settles. NOT raised for a refund-origin CN (`sourceRefundId` set) — that CN
+   * IS the refund's own, so blocking it on its own pending row is nonsensical.
+   */
+  | { code: 'refund_in_progress' };
 
 class IssueCreditNoteInternalError extends TxAbort<IssueCreditNoteError> {
   override readonly name = 'IssueCreditNoteInternalError';
@@ -305,6 +315,8 @@ export interface IssueCreditNoteDeps {
   /** Email-locale audit 2026-07-16 — member preference for the credit-note email. */
   readonly recipientLocale: RecipientLocalePort;
   readonly currentTemplateVersion: number;
+  /** 8A — non-locking count of in-flight refunds (guards a manual CN). */
+  readonly pendingRefundGuard: PendingRefundGuardPort;
 }
 
 export async function issueCreditNote(
@@ -325,6 +337,24 @@ export async function issueCreditNote(
   // of the row make a mid-race mutation a no-op), so reading outside
   // the tx is safe.
   const settings = await deps.tenantSettingsRepo.getForIssue(input.tenantId);
+
+  // 8A — refuse a MANUAL credit note while a refund is in flight on this
+  // invoice (a non-locking count; see the port docstring). ABOVE the withTx on
+  // purpose: `err()` inside `runInTenant` COMMITS, so a guard below the first
+  // write would leave a phantom row + false audit behind a refusal. Gated on
+  // `sourceRefundId === undefined` — a refund-origin CN IS the refund's own
+  // §86/10, so blocking it on its own pending row is nonsensical (and would
+  // deadlock the refund it belongs to).
+  if (input.sourceRefundId === undefined) {
+    const pendingRefunds =
+      await deps.pendingRefundGuard.countPendingRefundsForInvoice(
+        input.tenantId,
+        invoiceId,
+      );
+    if (pendingRefunds > 0) {
+      return err({ code: 'refund_in_progress' });
+    }
+  }
 
   // T122 — track which render invocation was in-flight when a
   // `pdf_render_failed` is thrown so the post-rollback audit can

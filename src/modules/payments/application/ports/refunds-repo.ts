@@ -377,4 +377,20 @@ export interface RefundsRepo {
    * held is the deadlock shape this codebase has already paid for once.
    */
   sumWaivedByInvoice(tenantId: string): Promise<ReadonlyMap<string, bigint>>;
+
+  /**
+   * 8A — count `status='pending'` refunds for `(tenantId, invoiceId)`. Powers
+   * the invoicing-side `PendingRefundGuardPort` (issueCreditNote / voidInvoice
+   * refuse while a refund is in flight).
+   *
+   * NON-LOCKING — a plain `COUNT(*)`, and this is a HARD CONTRACT, not a style
+   * choice: rebinding it to a `FOR UPDATE`/`FOR SHARE` read inverts the refund
+   * finaliser's `refunds FOR NO KEY UPDATE → invoices FOR UPDATE` acquisition
+   * order (the finaliser locks the refund row, then the CN bridge locks the
+   * invoice) and DEADLOCKS. Opens its own `runInTenant` (mirrors
+   * `sumWaivedByInvoice`): the caller is the invoicing module, which has no F5
+   * `tx` to thread, and nesting one inside the caller's own tx while it holds
+   * row locks is the deadlock shape this codebase has already paid for once.
+   */
+  countPendingByInvoice(tenantId: string, invoiceId: string): Promise<number>;
 }

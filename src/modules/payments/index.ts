@@ -106,6 +106,14 @@ export type {
   ListWaivedRefundTotalsByInvoiceDeps,
 } from './application/use-cases/list-waived-refund-totals-by-invoice';
 export { makeListWaivedRefundTotalsByInvoiceDeps } from './infrastructure/di';
+// 8A — F4 (issueCreditNote / voidInvoice) reads the pending-refund guard count
+// through this facade, never through the repo port (Principle III).
+export {
+  countPendingRefundsForInvoice,
+  type CountPendingRefundsForInvoiceInput,
+  type CountPendingRefundsForInvoiceDeps,
+} from './application/use-cases/count-pending-refunds-for-invoice';
+export { makeCountPendingRefundsForInvoiceDeps } from './infrastructure/di';
 export {
   issueRefund,
   type IssueRefundInput,

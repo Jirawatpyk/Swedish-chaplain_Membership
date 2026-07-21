@@ -277,6 +277,9 @@ describe('POST /api/credit-notes — contract', () => {
     // F-2 (2026-07-08) — full membership credit missing the required intent
     // field → 422 Unprocessable Entity.
     ['membership_effect_required', 422],
+    // 8A — a refund is in flight on this invoice → 409 Conflict (transient,
+    // retriable once the refund settles).
+    ['refund_in_progress', 409],
   ] as const)('maps %s use-case error → HTTP %i', async (code, status) => {
     requireAdminContextMock.mockResolvedValueOnce(ADMIN_CONTEXT);
     rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });

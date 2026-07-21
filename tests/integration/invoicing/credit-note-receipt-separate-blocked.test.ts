@@ -138,6 +138,7 @@ function makeCreditNoteDeps(tenantSlug: string): {
     sha256: Sha256Hex.ofUnsafe('d'.repeat(64)),
   }));
   const deps: IssueCreditNoteDeps = {
+    pendingRefundGuard: { countPendingRefundsForInvoice: async () => 0 },
     invoiceRepo: makeDrizzleInvoiceRepo(tenantSlug),
     creditNoteRepo: makeDrizzleCreditNoteRepo(tenantSlug),
     tenantSettingsRepo: drizzleTenantSettingsRepo,

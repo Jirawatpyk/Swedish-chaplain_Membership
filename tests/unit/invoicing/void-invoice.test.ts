@@ -339,6 +339,11 @@ function makeDeps(
     outbox: { enqueue: vi.fn(async () => {}) },
     // Email-locale audit 2026-07-16 — default no stored preference (→ 'en').
     recipientLocale: { getMemberEmailLocale: vi.fn(async () => null) },
+    // 8A — default: no refund in flight → the guard never fires on the existing
+    // void happy paths. The guard test overrides with a positive count.
+    pendingRefundGuard: {
+      countPendingRefundsForInvoice: vi.fn(async () => 0),
+    },
     ...overrides,
   };
 }
@@ -353,6 +358,38 @@ const INPUT = {
 
 describe('voidInvoice — S32 non-member event rows + S31 kind-true re-render', () => {
   beforeEach(() => vi.clearAllMocks());
+
+  // ── 8A: pending-refund guard (void) ──────────────────────────────────────
+  //
+  // Voiding while a refund is settling flips the invoice to `void`, so the
+  // refund's own Phase-B §86/10 then declines against it and the Stripe-settled
+  // refund is stranded `pending` forever. The guard refuses (409) ABOVE the
+  // first write. UNCONDITIONAL — a void has no refund-origin variant.
+  it('blocks a void with refund_in_progress when a pending refund exists', async () => {
+    const guard = vi.fn(async () => 1);
+    const deps = makeDeps(makeIssuedMembership(), {
+      pendingRefundGuard: { countPendingRefundsForInvoice: guard },
+    });
+
+    const r = await voidInvoice(deps, INPUT);
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('refund_in_progress');
+    // ABOVE the first write — no tx, no re-render.
+    expect(deps.invoiceRepo.withTx).not.toHaveBeenCalled();
+    expect(deps.pdfRender.render).not.toHaveBeenCalled();
+    expect(guard).toHaveBeenCalledWith('test-swecham', INVOICE_ID);
+  });
+
+  it('consults the guard on a void happy path (count 0 → proceeds)', async () => {
+    const deps = makeDeps(makeIssuedMembership());
+    const r = await voidInvoice(deps, INPUT);
+    expect(r.ok).toBe(true);
+    expect(deps.pendingRefundGuard.countPendingRefundsForInvoice).toHaveBeenCalledWith(
+      'test-swecham',
+      INVOICE_ID,
+    );
+  });
 
   it('S32 — LEGACY non-member ISSUED event row voids OK (remediation Step 2.1 executable)', async () => {
     const deps = makeDeps(makeLegacyNoTinEvent());

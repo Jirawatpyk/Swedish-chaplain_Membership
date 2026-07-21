@@ -254,6 +254,11 @@ const PERMANENT_CN_DECLINE: Readonly<Record<IssueCreditNoteError['code'], boolea
   blob_upload_failed: false, // transient infra
   concurrent_state_change: false, // optimistic-lock race — retry may win
   membership_effect_required: false, // unreachable via refund (bridge hardcodes 'keep')
+  // 8A — UNREACHABLE on the refund path: the pending-refund guard is gated on
+  // `sourceRefundId === undefined`, and a refund-origin CN always carries one,
+  // so `issueCreditNoteFromRefund` never returns this. Classified transient
+  // (conservative default) purely to keep the Record exhaustive.
+  refund_in_progress: false,
 };
 
 function isPermanentCreditNoteDecline(code: string): boolean {

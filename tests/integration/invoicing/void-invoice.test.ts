@@ -264,6 +264,7 @@ function makeDeps(tenantId: string): VoidInvoiceDeps & {
   const uploadCalls: unknown[] = [];
   const outboxCalls: unknown[] = [];
   return {
+    pendingRefundGuard: { countPendingRefundsForInvoice: async () => 0 },
     invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
     tenantSettingsRepo: drizzleTenantSettingsRepo,
     pdfRender: {

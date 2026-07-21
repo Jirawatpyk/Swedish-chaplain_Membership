@@ -49,6 +49,17 @@ describe('routeCreditNoteError (FR-032)', () => {
     });
   });
 
+  it('8A — maps refund_in_progress to a DEDICATED message, NOT concurrent', () => {
+    // A refund is settling on this invoice's payment; a manual CN would strand
+    // it. The invoice is still creditable (just temporarily blocked), so the
+    // misleading `concurrent` "already credited — refresh" copy is WRONG — a
+    // dedicated "a refund is in progress" message routes it correctly.
+    expect(routeCreditNoteError('refund_in_progress')).toEqual({
+      kind: 'failure',
+      messageKey: 'errors.refundInProgress',
+    });
+  });
+
   it('an unrecognised but present code falls back to codeFallback with the raw code', () => {
     expect(routeCreditNoteError('overflow')).toEqual({
       kind: 'failure',
