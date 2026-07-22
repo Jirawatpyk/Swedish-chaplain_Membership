@@ -40,9 +40,11 @@ import { RenewalConfirmFlow, type RenewalPlanOption } from './_components/renewa
 // by a unit test instead of relying on E2E for behavioural pinning.
 // Promoted to `@/lib/` (plan-change UX P1-8) so admin surfaces share it.
 import { resolvePlanName } from '@/lib/resolve-plan-name';
-// 059-membership-suspension Task 9 item 4 — payability-gate predicate,
-// extracted for unit-testability (see `_lib/is-renewal-payable.ts`).
-import { isRenewalPayable } from './_lib/is-renewal-payable';
+// 059-membership-suspension Task 9 item 4 — payability-gate predicate.
+// Shared single source of truth (plan-change-ux seam 2): the portal
+// dashboard's "Renew now" CTA gates on the SAME predicate, so the two can
+// never disagree. Lives in `portal/_lib` (not this route's `_lib`).
+import { isRenewalPayable } from '../../_lib/is-renewal-payable';
 
 export default async function RenewalPortalPage({
   params,

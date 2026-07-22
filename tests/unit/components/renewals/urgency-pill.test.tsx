@@ -6,27 +6,14 @@ import { render, screen } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import { UrgencyPill } from '@/components/renewals/urgency-pill';
 import type { UrgencyBucket } from '@/modules/renewals';
-
-const messages = {
-  admin: {
-    renewals: {
-      urgencyPill: {
-        t_90: 'Due in 90d',
-        t_60: 'Due in 60d',
-        t_30: 'Due in 30d',
-        t_14: 'Due in 14d',
-        t_7: 'Due in 7d',
-        t_0: 'Due today',
-        grace: 'Grace period',
-        lapsed: 'Lapsed',
-      },
-    },
-  },
-};
+// Pin against the REAL canonical EN copy (not an inline fixture) so a
+// revert of the renewal-countdown wording back to a payment-due phrase
+// ("Due in Xd") is caught here — the exact plan-change-ux seam 1(a) fix.
+import en from '@/i18n/messages/en.json';
 
 function renderPill(urgency: UrgencyBucket) {
   return render(
-    <NextIntlClientProvider locale="en" messages={messages}>
+    <NextIntlClientProvider locale="en" messages={en}>
       <UrgencyPill urgency={urgency} />
     </NextIntlClientProvider>,
   );
@@ -35,18 +22,34 @@ function renderPill(urgency: UrgencyBucket) {
 describe('<UrgencyPill>', () => {
   it('renders localised label for each of the 8 urgency buckets', () => {
     const urgencies: ReadonlyArray<[UrgencyBucket, string]> = [
-      ['t-90', 'Due in 90d'],
-      ['t-60', 'Due in 60d'],
-      ['t-30', 'Due in 30d'],
-      ['t-14', 'Due in 14d'],
-      ['t-7', 'Due in 7d'],
-      ['t-0', 'Due today'],
+      ['t-90', 'Renews in 90d'],
+      ['t-60', 'Renews in 60d'],
+      ['t-30', 'Renews in 30d'],
+      ['t-14', 'Renews in 14d'],
+      ['t-7', 'Renews in 7d'],
+      ['t-0', 'Renews today'],
       ['grace', 'Grace period'],
       ['lapsed', 'Lapsed'],
     ];
     for (const [urgency, label] of urgencies) {
       const { unmount } = renderPill(urgency);
       expect(screen.getByText(label)).toBeDefined();
+      unmount();
+    }
+  });
+
+  // plan-change-ux seam 1(a): the pre-expiry countdown buckets (t-90…t-0)
+  // MUST read as a renewal countdown, never a payment-due demand — the
+  // pipeline pairs them with an empty invoice cell, and "Due in Xd" +
+  // blank invoice read to staff as "payment owed / unpaid". Only these
+  // pre-expiry buckets are reworded; `grace` (post-expiry) + `lapsed`
+  // (terminal) are genuine overdue/terminal states and stay unchanged.
+  it('phrases the pre-expiry buckets as a renewal countdown, not a payment demand', () => {
+    for (const urgency of ['t-90', 't-60', 't-30', 't-14', 't-7', 't-0'] as const) {
+      const { container, unmount } = renderPill(urgency);
+      const text = container.querySelector('span')!.textContent ?? '';
+      expect(text).toMatch(/Renews/);
+      expect(text).not.toMatch(/Due/);
       unmount();
     }
   });
@@ -74,7 +77,7 @@ describe('<UrgencyPill>', () => {
     // alone correctly serves as the accessible name (WCAG 1.1 + 4.1.2).
     const { container } = renderPill('t-7');
     const el = container.querySelector('span')!;
-    expect(el.textContent).toBe('Due in 7d');
+    expect(el.textContent).toBe('Renews in 7d');
     expect(el.getAttribute('aria-label')).toBeNull();
   });
 

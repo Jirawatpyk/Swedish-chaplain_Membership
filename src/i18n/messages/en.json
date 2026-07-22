@@ -3135,12 +3135,12 @@
         "no_invoice_backstop": "No renewal invoice was ever issued"
       },
       "urgencyPill": {
-        "t_90": "Due in 90d",
-        "t_60": "Due in 60d",
-        "t_30": "Due in 30d",
-        "t_14": "Due in 14d",
-        "t_7": "Due in 7d",
-        "t_0": "Due today",
+        "t_90": "Renews in 90d",
+        "t_60": "Renews in 60d",
+        "t_30": "Renews in 30d",
+        "t_14": "Renews in 14d",
+        "t_7": "Renews in 7d",
+        "t_0": "Renews today",
         "grace": "Grace period",
         "lapsed": "Lapsed"
       },
@@ -3197,6 +3197,8 @@
           "pending_admin_reactivation": "Pending admin reactivation"
         },
         "viewInvoice": "View invoice",
+        "invoiceCoveredLabel": "Covered",
+        "invoiceCoveredTitle": "This renewal period is already covered by an earlier payment — no renewal invoice is linked yet.",
         "noRows": "No members in this bucket.",
         "noRowsInBucket": "No members are due to renew in this window. Switch to another urgency tab to see pending renewals.",
         "noRowsInMonth": "No members renew in {month}.",
@@ -4921,6 +4923,7 @@
         "label": "Membership",
         "activeValue": "Active",
         "renewDueValue": "Renew soon",
+        "renewUpcomingValue": "Renewal upcoming",
         "overdueValue": "Renewal overdue",
         "activeSub": "Your membership is in good standing.",
         "daysRemainingSub": "Renews in {days} days",

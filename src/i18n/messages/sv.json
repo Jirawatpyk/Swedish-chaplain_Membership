@@ -3135,12 +3135,12 @@
         "no_invoice_backstop": "Ingen förnyelsefaktura utfärdades någonsin"
       },
       "urgencyPill": {
-        "t_90": "Förfaller om 90 d",
-        "t_60": "Förfaller om 60 d",
-        "t_30": "Förfaller om 30 d",
-        "t_14": "Förfaller om 14 d",
-        "t_7": "Förfaller om 7 d",
-        "t_0": "Förfaller idag",
+        "t_90": "Förnyas om 90 d",
+        "t_60": "Förnyas om 60 d",
+        "t_30": "Förnyas om 30 d",
+        "t_14": "Förnyas om 14 d",
+        "t_7": "Förnyas om 7 d",
+        "t_0": "Förnyas idag",
         "grace": "Respitperiod",
         "lapsed": "Förfallen"
       },
@@ -3197,6 +3197,8 @@
           "pending_admin_reactivation": "Väntar på återaktivering"
         },
         "viewInvoice": "Visa faktura",
+        "invoiceCoveredLabel": "Täckt",
+        "invoiceCoveredTitle": "Denna förnyelseperiod täcks redan av en tidigare betalning — ingen förnyelsefaktura är kopplad ännu.",
         "noRows": "Inga medlemmar i detta intervall.",
         "noRowsInBucket": "Inga medlemmar ska förnya i detta intervall. Växla till en annan brådskeflik för att se väntande förnyelser.",
         "noRowsInMonth": "Inga medlemmar förnyas i {month}.",
@@ -4921,6 +4923,7 @@
         "label": "Medlemskap",
         "activeValue": "Aktivt",
         "renewDueValue": "Förnya snart",
+        "renewUpcomingValue": "Förnyelse närmar sig",
         "overdueValue": "Förnyelse försenad",
         "activeSub": "Ditt medlemskap är i gott skick.",
         "daysRemainingSub": "Förnyas om {days} dagar",

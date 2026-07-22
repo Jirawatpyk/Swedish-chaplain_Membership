@@ -32,7 +32,23 @@ export interface IssueInvoiceForRenewalInput {
   readonly memberId: string;
   /** F2 plan id — frozen on the cycle row at confirmation time. */
   readonly planId: string;
-  /** Calendar year (e.g. 2026) of the membership the invoice covers. */
+  /**
+   * The FROZEN-CATALOGUE key — the year keying the `(plan_id, plan_year)` FK
+   * + `getAnnualFeeSatang` lookup in F4's `createInvoiceDraft`. `confirmRenewal`
+   * derives it SERVER-SIDE from the cycle's `period_from` fiscal year.
+   *
+   * SAFE-PIN (rolling-anchor axis) — this MAY LAG the printed coverage window
+   * by one period on an anchored renewal: the §86/4 face prints the NEXT term
+   * (`membershipCoverage` below; `feeYearCe` = that window's start year), while
+   * `planYear` stays on the CURRENT term. These are two SEPARATE axes, and §87
+   * sequential numbering rides a THIRD one — `invoices.fiscal_year`, derived
+   * from the ISSUE / payment date, NEVER this `planYear`. Consumers MUST bucket
+   * membership revenue / tax-document counts by `invoices.fiscal_year`, never by
+   * `invoices.plan_year`. Keying to `period_from` (not `period_to`) is also
+   * what keeps the FIRST anchored renewal issuable — a next-year value would
+   * `plan_not_found` (no next-year catalogue row exists yet). Pinned by
+   * tests/integration/renewals/confirm-renewal-anchored-plan-year-pin.test.ts.
+   */
   readonly planYear: number;
   /**
    * FR-022 — the cycle's FROZEN membership price as a `decimal(12,2)`

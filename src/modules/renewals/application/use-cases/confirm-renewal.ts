@@ -598,6 +598,24 @@ export async function confirmRenewal(
   // requires. (The prior `input.planYear`, sourced from the page's
   // `expiresAt`/period-END `getUTCFullYear()`, was both client-tamperable
   // AND off-by-one for cycles whose period crosses a calendar-year edge.)
+  //
+  // SAFE-PIN (rolling-anchor axis) — `planYear` is the FROZEN-CATALOGUE key
+  // (the `(plan_id, plan_year)` FK + `getAnnualFeeSatang` lookup in
+  // `create-invoice-draft.ts`), keyed to `period_from`'s fiscal year. On an
+  // ANCHORED renewal it DELIBERATELY lags the PRINTED coverage by one period:
+  // the §86/4 face prints the NEXT term (`period_to → period_to + term`;
+  // `feeYearCe` = that window's start year — see the `membershipCoverage`
+  // below) while `planYear` stays on the CURRENT term. The three years are
+  // INDEPENDENT axes: printed coverage year ← the coverage window; §87
+  // sequential numbering ← the issue-date `fiscal_year` (`issue-invoice.ts`,
+  // NEVER planYear); catalogue FK key ← this `planYear`.
+  //
+  // DO NOT change to `deriveFiscalYear(cycleAfterPlanChange.periodTo)`: the
+  // next-year catalogue row is not cloned until that year, so
+  // `getAnnualFeeSatang(planId, nextYear)` is null → `plan_not_found` → the
+  // first anchored renewal cannot issue. That naive "fix" is a regression,
+  // not a correction. Pinned by
+  // tests/integration/renewals/confirm-renewal-anchored-plan-year-pin.test.ts.
   const planYear = deriveFiscalYear(cycleAfterPlanChange.periodFrom);
 
   // Rolling-anchor refactor (design 2026-07-08 rev 3 §3, Task 8) — a
