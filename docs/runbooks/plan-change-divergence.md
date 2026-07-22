@@ -38,7 +38,15 @@ Two finding kinds:
   prod — this is the standing pre-flag-flip gate. It must return **CLEAN (0
   divergences, exit 0)**.
 - As a **recurring gate** afterwards — it catches any cycle↔invoice price drift
-  regardless of the flag's state.
+  regardless of the flag's state. This runs automatically as a **native Vercel
+  Cron** (`GET /api/internal/cron/plan-change-divergence`, `CRON_SECRET` Bearer,
+  daily 03:20 UTC — `vercel.json`). On any divergence the route emits the
+  `renewals_plan_change_divergence_detected_total{tenant}` counter with the
+  per-tenant count **and returns HTTP 500** so Vercel cron-failure alerting fires
+  independently of the metrics pipeline. Expected steady state is CLEAN (0) — the
+  confirm-renewal reconcile-at-link guard (Finding #20) heals the immediate-
+  refreeze↔self-renew race that used to create these, emitting the paired
+  `renewals_plan_change_divergence_reconciled_total{tenant}` counter when it does.
 
 Operator ship-gate run (prod, read-only):
 
