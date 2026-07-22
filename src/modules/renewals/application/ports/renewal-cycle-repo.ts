@@ -702,6 +702,21 @@ export interface PipelineRow {
   readonly lastReminderStepId: string | null;
   readonly linkedInvoiceId: string | null;
   /**
+   * plan-change-ux seam 1(b) — TRUE when this cycle's period is already
+   * PAID coverage (the rolling-anchor discriminator `anchored_at IS NOT
+   * NULL`), regardless of whether a renewal invoice has been LINKED yet.
+   * An `upcoming` cycle covering an already-paid window carries the paid
+   * anchor on `anchor_invoice_id` (NULL for the R4 backfill of pre-system
+   * payments) — NOT on `linked_invoice_id`, which the read-model shows in
+   * the invoice cell. Without this flag that row renders an empty "—"
+   * invoice cell which, paired with a pre-expiry countdown, reads to staff
+   * as "payment owed / unpaid". The UI shows a "Paid" indicator instead.
+   * Derived from the anchor discriminator, NOT a join to `invoices` — see
+   * the read-model rationale (anchor_invoice_id is forensic-only + NULL
+   * for the backfill cohort, so a document-number join would be fragile).
+   */
+  readonly anchored: boolean;
+  /**
    * Frozen reason on terminal cycles. NULL for non-terminal rows.
    * Surfaced on the lapsed-tab UI so admins see WHY a cycle lapsed
    * (grace_expired vs payment_failed vs admin_marked) per spec AS3.

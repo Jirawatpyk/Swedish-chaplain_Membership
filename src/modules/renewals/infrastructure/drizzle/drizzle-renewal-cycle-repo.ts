@@ -1480,6 +1480,12 @@ export function makeDrizzleRenewalCycleRepo(
             lastReminderAt: lastReminderSubq.dispatchedAt,
             lastReminderStepId: lastReminderSubq.stepId,
             linkedInvoiceId: renewalCycles.linkedInvoiceId,
+            // plan-change-ux seam 1(b) — the rolling-anchor "paid coverage"
+            // discriminator. Zero-cost additive projection (already on this
+            // table); mapped to the `anchored` boolean below. NO join to
+            // `invoices` (anchor_invoice_id is forensic-only + NULL for the
+            // R4 backfill, so a document-number join would be fragile).
+            anchoredAt: renewalCycles.anchoredAt,
             closedReason: renewalCycles.closedReason,
             // J4-H13: surface members.email_unverified to the UI
             // — already JOIN'd above, so adding the column to the
@@ -1522,6 +1528,10 @@ export function makeDrizzleRenewalCycleRepo(
               : (r.lastReminderAt as string | null),
           lastReminderStepId: r.lastReminderStepId ?? null,
           linkedInvoiceId: r.linkedInvoiceId,
+          // plan-change-ux seam 1(b) — paid-coverage flag from the anchor
+          // discriminator. `!= null` catches both a real payment anchor and
+          // the R4 backfill (both stamp `anchored_at`).
+          anchored: r.anchoredAt != null,
           closedReason: r.closedReason as ClosedReason | null,
           // J4-H13: defaults to false when the LEFT JOIN didn't match
           // (orphan cycle without a member row — should never happen

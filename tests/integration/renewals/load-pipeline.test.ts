@@ -205,4 +205,50 @@ describe('F8 loadPipeline — integration (T075)', () => {
       expect(isFromA).toBe(false);
     }
   });
+
+  // plan-change-ux seam 1(b) — the `anchored` flag distinguishes an
+  // already-PAID upcoming cycle (period covered by a prior/anchor invoice,
+  // `anchored_at` stamped, no LINKED renewal invoice yet) from a genuinely
+  // unpaid one. The pipeline UI shows "Paid" instead of a bare "—" for the
+  // former so it is never misread as "payment owed". This pins the flag
+  // end-to-end from live Neon (both branches).
+  it('surfaces already-paid coverage via the `anchored` flag', async () => {
+    const anchoredCycleId = randomUUID();
+    const anchoredMemberId = randomUUID();
+    await seedCycles(tenantA, [
+      {
+        cycleId: anchoredCycleId,
+        memberId: anchoredMemberId,
+        // 20 days out → t-30 bucket, inside the 90-day window.
+        expiresAt: new Date(Date.now() + 20 * 86_400_000),
+        tier: 'regular',
+      },
+    ]);
+    // Stamp the rolling-anchor discriminator (a real payment / R4 backfill
+    // would set this) so the cycle reads as PAID coverage.
+    await runInTenant(tenantA.ctx, (tx) =>
+      tx
+        .update(renewalCycles)
+        .set({ anchoredAt: new Date() })
+        .where(eq(renewalCycles.cycleId, anchoredCycleId)),
+    );
+
+    const deps = makeRenewalsDeps(tenantA.ctx.slug);
+    const result = await loadPipeline(deps, {
+      tenantId: tenantA.ctx.slug,
+      urgency: 't-30',
+      limit: 50,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const anchoredRow = result.value.rows.find((r) => r.cycleId === anchoredCycleId);
+    expect(anchoredRow?.anchored).toBe(true);
+
+    // A plain upcoming seedA row (no anchor) stays `false`.
+    const plainRow = result.value.rows.find((r) =>
+      seedA.some((s) => s.cycleId === r.cycleId),
+    );
+    expect(plainRow?.anchored).toBe(false);
+  });
 });

@@ -157,6 +157,19 @@ export function PipelineTable({ rows, monthLabel, monthKind }: PipelineTableProp
             >
               {t('viewInvoice')}
             </Link>
+          ) : row.original.anchored ? (
+            // plan-change-ux seam 1(b) — the cycle's period is already PAID
+            // (rolling-anchor) but no RENEWAL invoice is linked yet (the
+            // paid invoice is the prior/anchor one). Show "Paid" so the
+            // cell is never misread as "payment owed" when paired with a
+            // pre-expiry countdown pill. `title` explains the missing link.
+            // Text label (not colour alone) carries the meaning — WCAG 1.4.1.
+            <span
+              className="text-sm font-medium text-emerald-700 dark:text-emerald-400"
+              title={t('invoicePaidTitle')}
+            >
+              {t('invoicePaidLabel')}
+            </span>
           ) : (
             <span className="text-muted-foreground">—</span>
           ),
