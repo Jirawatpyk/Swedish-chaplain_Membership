@@ -158,17 +158,25 @@ export function PipelineTable({ rows, monthLabel, monthKind }: PipelineTableProp
               {t('viewInvoice')}
             </Link>
           ) : row.original.anchored ? (
-            // plan-change-ux seam 1(b) — the cycle's period is already PAID
-            // (rolling-anchor) but no RENEWAL invoice is linked yet (the
-            // paid invoice is the prior/anchor one). Show "Paid" so the
-            // cell is never misread as "payment owed" when paired with a
-            // pre-expiry countdown pill. `title` explains the missing link.
-            // Text label (not colour alone) carries the meaning — WCAG 1.4.1.
+            // plan-change-ux seam 1(b) — the cycle's period is already
+            // COVERED (rolling-anchor) but no RENEWAL invoice is linked yet
+            // (the paying invoice is the prior/anchor one, which for the R4
+            // backfill cohort may not be in the system at all). Show
+            // "Covered" — coverage language that describes the period being
+            // covered WITHOUT asserting a current payment status or an
+            // invoice — so the cell is never misread as "payment owed" when
+            // paired with a pre-expiry countdown pill. `title` gives sighted
+            // mouse users the reason; the `sr-only` span exposes the SAME
+            // reason to keyboard/touch/screen-reader users (a `title` on a
+            // non-interactive span is not reliably announced). Text label
+            // (not colour alone) carries the meaning — WCAG 1.4.1; the
+            // `--success` design token themes light/dark (ux-standards § 1.2).
             <span
-              className="text-sm font-medium text-emerald-700 dark:text-emerald-400"
-              title={t('invoicePaidTitle')}
+              className="text-sm font-medium text-success"
+              title={t('invoiceCoveredTitle')}
             >
-              {t('invoicePaidLabel')}
+              {t('invoiceCoveredLabel')}
+              <span className="sr-only"> — {t('invoiceCoveredTitle')}</span>
             </span>
           ) : (
             <span className="text-muted-foreground">—</span>

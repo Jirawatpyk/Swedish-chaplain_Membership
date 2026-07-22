@@ -207,9 +207,9 @@ describe('F8 loadPipeline — integration (T075)', () => {
   });
 
   // plan-change-ux seam 1(b) — the `anchored` flag distinguishes an
-  // already-PAID upcoming cycle (period covered by a prior/anchor invoice,
+  // already-covered upcoming cycle (period covered by a prior/anchor payment,
   // `anchored_at` stamped, no LINKED renewal invoice yet) from a genuinely
-  // unpaid one. The pipeline UI shows "Paid" instead of a bare "—" for the
+  // unpaid one. The pipeline UI shows "Covered" instead of a bare "—" for the
   // former so it is never misread as "payment owed". This pins the flag
   // end-to-end from live Neon (both branches).
   it('surfaces already-paid coverage via the `anchored` flag', async () => {

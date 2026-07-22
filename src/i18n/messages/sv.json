@@ -3185,8 +3185,8 @@
           "pending_admin_reactivation": "Väntar på återaktivering"
         },
         "viewInvoice": "Visa faktura",
-        "invoicePaidLabel": "Betald",
-        "invoicePaidTitle": "Denna förnyelseperiod är redan betald — via en tidigare faktura, så ingen förnyelsefaktura är kopplad ännu.",
+        "invoiceCoveredLabel": "Täckt",
+        "invoiceCoveredTitle": "Denna förnyelseperiod täcks redan av en tidigare betalning — ingen förnyelsefaktura är kopplad ännu.",
         "noRows": "Inga medlemmar i detta intervall.",
         "noRowsInBucket": "Inga medlemmar ska förnya i detta intervall. Växla till en annan brådskeflik för att se väntande förnyelser.",
         "noRowsInMonth": "Inga medlemmar förnyas i {month}.",
@@ -4909,6 +4909,7 @@
         "label": "Medlemskap",
         "activeValue": "Aktivt",
         "renewDueValue": "Förnya snart",
+        "renewUpcomingValue": "Förnyelse närmar sig",
         "overdueValue": "Förnyelse försenad",
         "activeSub": "Ditt medlemskap är i gott skick.",
         "daysRemainingSub": "Förnyas om {days} dagar",

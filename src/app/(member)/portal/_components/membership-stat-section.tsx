@@ -43,6 +43,20 @@ export async function MembershipStatSection({
   const now = new Date();
   const stat = deriveMembershipStat(cycle, now);
 
+  // plan-change-ux seam 2 — is this cycle genuinely payable right now? Gated
+  // on the SAME `isRenewalPayable` predicate the renewal page uses for its
+  // Confirm-flow gate (via `shouldOfferRenewNow`), so the dashboard and the
+  // page can never disagree. This one predicate drives BOTH:
+  //   (1) the headline copy — the imperative "Renew soon" (act now) is used
+  //       ONLY when payable; otherwise the descriptive "Renewal upcoming", so
+  //       a card that (correctly) has NO button never reads as a command the
+  //       member cannot yet act on; and
+  //   (2) the actionable "Renew now" button (see the actionProps block below).
+  // NOTE: `deriveMembershipStat` only emits `due` for an `upcoming`/`reminded`
+  // cycle that is NOT yet expired — for which `isRenewalPayable` is false — so
+  // TODAY the whole `due` cohort takes the informational headline + no button.
+  const renewable = shouldOfferRenewNow(stat, now);
+
   // 059-membership-suspension — the `suspended` kind needs the member's
   // unpaid MEMBERSHIP invoice (if any) for both the "invoice due {date}"
   // copy and the smart-CTA target. Reuses `loadDashboardOutstanding` (React
@@ -76,7 +90,14 @@ export async function MembershipStatSection({
             : stat.kind === 'overdue'
               ? t('overdueValue')
               : stat.kind === 'due'
-                ? t('renewDueValue')
+                ? // plan-change-ux seam 2 — the imperative headline is used
+                  // ONLY when the card also shows the actionable button;
+                  // otherwise a descriptive, informational headline (paired
+                  // with the "Renews in {days} days" sub) so a button-less
+                  // card never reads as an un-actionable command.
+                  renewable
+                  ? t('renewDueValue')
+                  : t('renewUpcomingValue')
                 : t('activeValue');
 
   const sub =
@@ -139,15 +160,12 @@ export async function MembershipStatSection({
   // (invoices-summary-card.tsx). Subject line is i18n-driven so members email
   // in their own language.
   //
-  // plan-change-ux seam 2 — gate the actionable "Renew now" button on the
-  // SAME `isRenewalPayable` predicate the renewal page uses (via
-  // `shouldOfferRenewNow`). Previously `due`/`overdue` alone lit the button,
-  // but the whole `due` cohort is an `upcoming`/`reminded` cycle whose period
-  // has NOT yet ended — for which the renewal page answers "renewal window not
-  // yet open", so the button dead-ended. When not yet payable the card now
-  // shows only the informational countdown (the "Renews in {days} days" sub);
-  // the button appears once the cycle is genuinely payable.
-  const renewable = shouldOfferRenewNow(stat, now);
+  // plan-change-ux seam 2 — the actionable "Renew now" button is gated on
+  // `renewable` (computed above, from the SAME `isRenewalPayable` predicate
+  // the renewal page uses), so it can never dead-end on the page's "renewal
+  // window not yet open" card. When not yet payable the `due` card shows only
+  // the informational headline + countdown (no button); the button surfaces
+  // once the cycle is genuinely payable.
 
   // 059-membership-suspension — smart CTA for the `suspended` card (design
   // doc § "Smart CTA — must never dead-end"): pay the specific outstanding

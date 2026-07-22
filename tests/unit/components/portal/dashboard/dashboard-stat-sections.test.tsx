@@ -177,15 +177,20 @@ describe('MembershipStatSection — every stat.kind resolves real en keys', () =
     expect(html).toContain(en.portal.dashboard.membership.activeValue);
   });
 
-  it('due (renew-soon within threshold, not yet invoiced)', async () => {
+  it('due (renew-soon within threshold, not yet invoiced) — informational headline', async () => {
     // 059-membership-suspension — `awaiting_payment` now ALWAYS resolves to
-    // `suspended` (see below), so the `due` ("renew soon") state now only
-    // applies to the pre-invoice `upcoming`/`reminded` statuses.
+    // `suspended` (see below), so the `due` state now only applies to the
+    // pre-invoice `upcoming`/`reminded` statuses.
+    // plan-change-ux seam 2 — that whole `due` cohort is NOT yet payable, so
+    // the card shows the DESCRIPTIVE `renewUpcomingValue` headline (not the
+    // imperative `renewDueValue`), which is reserved for the payable state
+    // that also carries the "Renew now" button.
     const soon = new Date(Date.now() + 10 * 86_400_000).toISOString();
     renewalRead.mockResolvedValue(cycle({ status: 'upcoming', expiresAt: soon }));
     const html = await renderMembership();
     noMissing(html);
-    expect(html).toContain(en.portal.dashboard.membership.renewDueValue);
+    expect(html).toContain(en.portal.dashboard.membership.renewUpcomingValue);
+    expect(html).not.toContain(en.portal.dashboard.membership.renewDueValue);
   });
 
   it('suspended, reason unpaid (expired non-terminal cycle, no invoice on file yet)', async () => {
@@ -268,15 +273,16 @@ describe('MembershipStatSection — renew-now CTA gating per stat.kind', () => {
     // `reminded` cycle whose period has NOT yet ended, so the renewal page is
     // NOT yet payable (it answers "renewal window not yet open"). The dashboard
     // must therefore WITHHOLD the "Renew now" button (it would dead-end) and
-    // show only the informational "Renew soon" countdown. The button returns
-    // once the cycle is genuinely payable — at which point the cycle is
-    // `suspended` and carries its own pay-CTA (covered above).
+    // show only the informational "Renewal upcoming" headline + countdown. The
+    // button returns once the cycle is genuinely payable — at which point the
+    // cycle is `suspended` and carries its own pay-CTA (covered above).
     const soon = new Date(Date.now() + 10 * 86_400_000).toISOString();
     renewalRead.mockResolvedValue(cycle({ status: 'upcoming', expiresAt: soon }));
     const html = await renderMembership();
     expectCta(html, false);
-    // The card still communicates the due state (informational, no button).
-    expect(html).toContain(en.portal.dashboard.membership.renewDueValue);
+    // The card still communicates the due state — but with the DESCRIPTIVE
+    // informational headline (no button), never the imperative "Renew soon".
+    expect(html).toContain(en.portal.dashboard.membership.renewUpcomingValue);
   });
 
   it('suspended (unpaid, no invoice on file) → smart CTA links to self-serve renewal, labelled "Pay to restore benefits"', async () => {

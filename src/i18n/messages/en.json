@@ -3185,8 +3185,8 @@
           "pending_admin_reactivation": "Pending admin reactivation"
         },
         "viewInvoice": "View invoice",
-        "invoicePaidLabel": "Paid",
-        "invoicePaidTitle": "This renewal period is already paid — via an earlier invoice, so no renewal invoice is linked yet.",
+        "invoiceCoveredLabel": "Covered",
+        "invoiceCoveredTitle": "This renewal period is already covered by an earlier payment — no renewal invoice is linked yet.",
         "noRows": "No members in this bucket.",
         "noRowsInBucket": "No members are due to renew in this window. Switch to another urgency tab to see pending renewals.",
         "noRowsInMonth": "No members renew in {month}.",
@@ -4909,6 +4909,7 @@
         "label": "Membership",
         "activeValue": "Active",
         "renewDueValue": "Renew soon",
+        "renewUpcomingValue": "Renewal upcoming",
         "overdueValue": "Renewal overdue",
         "activeSub": "Your membership is in good standing.",
         "daysRemainingSub": "Renews in {days} days",
