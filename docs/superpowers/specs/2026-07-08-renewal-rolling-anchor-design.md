@@ -1,5 +1,11 @@
 # Renewal Rolling-Anchor Refactor — Design
 
+> **⚠️ SUPERSEDED (2026-07-22) — the payment-anchor model in this doc was REVERSED.**
+> The membership period is now FIXED at the registration/enrolment anchor and does
+> NOT move to the payment month on first payment (payment only *activates* the
+> cycle). See **`docs/Bug/2026-07-22-fixed-anchor-shipped-and-residuals.md`** (PR
+> #246). Read this doc for historical mechanics only; do not restore payment-anchor.
+
 **Date**: 2026-07-08 (rev 2 — post chamber-os-architect review, all Critical/Important findings resolved)
 **Status**: Approved design, revised per adversarial review; awaiting maintainer re-confirmation of rev-2 deltas
 **Provenance**: QA finding triage + TSCC policy answers in
