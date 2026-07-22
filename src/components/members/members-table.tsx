@@ -624,11 +624,10 @@ export function MembersTable({
       // toggle on click and pollute the button's accessible name.
       cell: (info) => (
         // 057 overflow fix — the status control plus a Lapsed/Suspended badge
-        // exceeds the 130px column when laid out horizontally and painted over
-        // the Engagement column. Stacking drops the badge onto its own line.
-        // The badge MUST stay a sibling of InlineStatusCell (never a child) —
-        // inside the <button> it would fire the status toggle and pollute the
-        // button's accessible name.
+        // exceeds the 130px column when laid out horizontally and paints over
+        // the Engagement column. `flex-col` stacks the badge onto its own
+        // line instead. See the #4 comment above for why the badge must stay
+        // a sibling of InlineStatusCell, not a child.
         <span className="flex flex-col items-start gap-1">
           {enableSelection ? (
             <InlineStatusCell
