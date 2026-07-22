@@ -46,28 +46,44 @@ export default async function Loading() {
       </div>
       {/* Table shell mirrors the live queue's `rounded-md border` wrapper (NOT
           a Card). 6 cols: member · from-plan · to-plan · reason · status ·
-          actions. */}
+          actions. WP-P5 CLS fix: `grid-cols-12` with per-column spans mirrors
+          the live `<table>`'s content-driven widths (reason widest, status
+          narrowest) instead of equal `grid-cols-6`, and the reason cell renders
+          TWO skeleton lines to match the live 2-line (reason + evidence) cell —
+          a single line under-measured the row and shifted the layout on load. */}
       <div className="rounded-md border">
         <div className="flex flex-col gap-4 p-4">
-          <div className="grid grid-cols-6 gap-4 border-b py-2" aria-hidden>
-            {Array.from({ length: 6 }).map((_, i) => (
-              <Skeleton key={i} className="h-4 w-full" />
-            ))}
+          <div className="grid grid-cols-12 gap-4 border-b py-2" aria-hidden>
+            <Skeleton className="col-span-2 h-4 w-full" />
+            <Skeleton className="col-span-2 h-4 w-full" />
+            <Skeleton className="col-span-2 h-4 w-full" />
+            <Skeleton className="col-span-3 h-4 w-full" />
+            <Skeleton className="col-span-1 h-4 w-full" />
+            <Skeleton className="col-span-2 h-4 w-full" />
           </div>
           {Array.from({ length: 10 }).map((_, rowIdx) => (
             <div
               key={rowIdx}
-              className="grid grid-cols-6 gap-4 py-2"
+              className="grid grid-cols-12 items-start gap-4 py-2"
               aria-hidden
             >
-              {Array.from({ length: 5 }).map((_, colIdx) => (
-                <Skeleton key={colIdx} className="h-5 w-full" />
-              ))}
+              <Skeleton className="col-span-2 h-5 w-full" />
+              <Skeleton className="col-span-2 h-5 w-full" />
+              <Skeleton className="col-span-2 h-5 w-full" />
+              {/* Reason cell = reason label + evidence sub-line (2 lines). */}
+              <div
+                className="col-span-3 flex flex-col gap-1"
+                data-slot="reason-skeleton"
+              >
+                <Skeleton className="h-5 w-full" />
+                <Skeleton className="h-3 w-3/4" />
+              </div>
+              <Skeleton className="col-span-1 h-5 w-full" />
               {/* Last col mimics the 3 action buttons */}
-              <div className="flex justify-end gap-2">
-                <Skeleton className="h-8 w-16" />
-                <Skeleton className="h-8 w-16" />
-                <Skeleton className="h-8 w-16" />
+              <div className="col-span-2 flex justify-end gap-2">
+                <Skeleton className="h-8 w-14" />
+                <Skeleton className="h-8 w-14" />
+                <Skeleton className="h-8 w-14" />
               </div>
             </div>
           ))}
