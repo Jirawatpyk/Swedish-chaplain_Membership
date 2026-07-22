@@ -261,4 +261,41 @@ describe('listPlans use case', () => {
       expect(result.value.data[0]!.missing_translations).toContain('sv');
     }
   });
+
+  // C4 — additive optional projection of the two quantifiable yearly benefit
+  // quotas (eblast + cultural tickets) from `benefit_matrix`, so the portal
+  // renewal downgrade dialog can render the quota-delta rows + over-quota
+  // warning for the TARGET plan. `benefit_matrix` is already loaded by
+  // `findByTenantAndYear`, so this is a pure projection — no extra query.
+  it('projects eblast + cultural-ticket yearly quotas from benefit_matrix (C4)', async () => {
+    const plan = makePlan({
+      benefit_matrix: {
+        eblast_per_year: 12,
+        cultural_tickets_per_year: 6,
+      } as unknown as Plan['benefit_matrix'],
+    });
+    const deps = makeDeps({ plans: [plan] });
+    const result = await listPlans(baseInput, deps);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const item = result.value.data[0]!;
+      expect(item.eblast_quota_per_year).toBe(12);
+      expect(item.cultural_tickets_quota_per_year).toBe(6);
+    }
+  });
+
+  it('projects null quotas when benefit_matrix lacks the quota fields (C4)', async () => {
+    // default fixture carries `benefit_matrix: {}` — a legacy / partial JSONB
+    // row. The projection must fall back to null (unlimited/unknown), never
+    // `undefined`, so downstream `?? null` consumers stay well-typed.
+    const plan = makePlan();
+    const deps = makeDeps({ plans: [plan] });
+    const result = await listPlans(baseInput, deps);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const item = result.value.data[0]!;
+      expect(item.eblast_quota_per_year).toBeNull();
+      expect(item.cultural_tickets_quota_per_year).toBeNull();
+    }
+  });
 });

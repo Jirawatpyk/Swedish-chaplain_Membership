@@ -17,6 +17,7 @@
  * is no stranded-focus case to engineer around.
  */
 import { useRef } from 'react';
+import { Loader2 } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import {
   AlertDialog,
@@ -68,7 +69,10 @@ export function PlanChangeConfirmDialog({
 
         {summary ? (
           <div className="space-y-3 text-left">
-            <div className="grid grid-cols-2 gap-4 rounded-md border bg-muted/30 p-3 text-sm">
+            {/* P6 — stack the old|new comparison on narrow screens; the
+                AlertDialog is only max-w-xs (320px) until the sm breakpoint, so
+                two columns were cramped <400px. Splits at sm: (≥640px). */}
+            <div className="grid grid-cols-1 gap-4 rounded-md border bg-muted/30 p-3 text-sm sm:grid-cols-2">
               <div>
                 <div className="text-xs text-muted-foreground">
                   {t('currentPlan')}
@@ -117,6 +121,11 @@ export function PlanChangeConfirmDialog({
             {t('cancel')}
           </AlertDialogCancel>
           <AlertDialogAction disabled={submitting} onClick={onConfirm}>
+            {/* Busy spinner while the confirm mutation runs (ux-standards
+                § 6.2). aria-hidden keeps the button's accessible name = the
+                confirm label; the global reduced-motion rule (globals.css § 19)
+                neutralises .animate-spin. */}
+            {submitting ? <Loader2 className="animate-spin" aria-hidden /> : null}
             {t('confirm')}
           </AlertDialogAction>
         </AlertDialogFooter>

@@ -46,4 +46,14 @@ describe('tier-upgrades loading skeleton', () => {
     expect(out).toContain('data-slot="layout-container"');
     expect(out).toContain('data-variant="table"');
   });
+
+  it('mirrors the live 2-line reason cell to hold CLS (WP-P5)', async () => {
+    const out = await html();
+    // The reason column renders a dedicated 2-line skeleton block (reason label
+    // + evidence sub-line), not a single line — one line under-measured the row.
+    expect(out).toContain('data-slot="reason-skeleton"');
+    // Proportional columns (grid-cols-12) replaced equal grid-cols-6.
+    expect(out).toContain('grid-cols-12');
+    expect(out).not.toContain('grid-cols-6');
+  });
 });

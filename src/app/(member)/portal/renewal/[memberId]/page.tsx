@@ -163,6 +163,15 @@ export default async function RenewalPortalPage({
         planId: p.plan_id,
         label: resolvePlanName(p.plan_name, p.plan_id, locale),
         annualFeeMinorUnits: Number(p.annual_fee_minor_units),
+        // C4 — the TARGET plan's per-year benefit quotas, projected by
+        // `listPlans` from each plan's `benefit_matrix`. Feeds the downgrade
+        // dialog's quota-delta rows + over-quota warning (the `to` side of the
+        // delta; `from`/`used` come from `benefitUsage` below). `?? null`
+        // because the projection is an OPTIONAL additive field.
+        quotas: {
+          eblast: p.eblast_quota_per_year ?? null,
+          culturalTickets: p.cultural_tickets_quota_per_year ?? null,
+        },
       }))
     : [];
 

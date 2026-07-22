@@ -91,6 +91,17 @@ describe('TierUpgradeQueueClient — WP6', () => {
     ).toBeInTheDocument();
   });
 
+  it('renders the status via the shared StatusBadge with the mapped tone (P4)', () => {
+    renderQueue([makeItem({ status: 'open' })]);
+    const badge = screen.getByText(
+      enMessages.admin.renewals.tier_upgrades.status.open,
+    );
+    // The shared primitive stamps data-slot + data-tone; the hand-rolled
+    // bg-secondary pill did neither.
+    expect(badge).toHaveAttribute('data-slot', 'status-badge');
+    expect(badge).toHaveAttribute('data-tone', 'info');
+  });
+
   it('links the resolved company name to the member detail (P1-9)', () => {
     renderQueue([makeItem()]);
     const link = screen.getByRole('link', { name: /Acme Trading Co/ });

@@ -32,7 +32,7 @@ import { useCallback, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useFormatter, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { MoreHorizontal } from 'lucide-react';
+import { Loader2, MoreHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
@@ -59,9 +59,14 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { StatusBadge } from '@/components/ui/status-badge';
 import { resolveDialogFinalFocus } from '@/components/broadcast/resolve-dialog-final-focus';
 import { TierUpgradesEmptyState } from './tier-upgrades-empty-state';
-import { buildEvidenceMessage } from '../_lib/evidence-message';
+import { tierUpgradeStatusTone } from '../_lib/tier-upgrade-status-tone';
+import {
+  buildAcceptDialogMessage,
+  buildEvidenceMessage,
+} from '../_lib/evidence-message';
 import { normalizeTierUpgradeErrorCode } from '../_lib/tier-upgrade-error-codes';
 import type { TierUpgradeEvidenceView } from '../_lib/tier-upgrade-queue-item';
 
@@ -74,9 +79,13 @@ type TierUpgradeQueueItem = {
   readonly fromPlanId: string;
   /** Localised plan name resolved in the SSR page; falls back to the ID. */
   readonly fromPlanName?: string;
+  /** Annual fee (minor units) of the from-plan; absent when the plan lookup returned nothing. */
+  readonly fromFeeMinorUnits?: number;
   readonly toPlanId: string;
   /** Localised plan name resolved in the SSR page; falls back to the ID. */
   readonly toPlanName?: string;
+  /** Annual fee (minor units) of the to-plan; absent when the plan lookup returned nothing. */
+  readonly toFeeMinorUnits?: number;
   readonly reasonCode: string;
   /** Validated + server-date-formatted evidence view; null → render "unavailable". */
   readonly evidence: TierUpgradeEvidenceView | null;
@@ -208,21 +217,29 @@ export function TierUpgradeQueueClient({
     : null;
 
   /**
-   * Accept restates the evidence + the plan move (§ 6.2 — repeat the figures
-   * before an irreversible-feeling money action). Dismiss keeps its
-   * suppression consequence copy.
+   * Accept restates the evidence + the plan move WITH the old→new annual fees
+   * (§ 6.2 — repeat the figures before an irreversible-feeling money action; C2
+   * — an admin approving a price increase must see the numbers). Dismiss keeps
+   * its suppression consequence copy.
    */
   function dialogDescription(): string {
     if (!dialog || !dialogItem) return '';
     if (dialog.action === 'dismiss') return t('actions.dismiss.confirm');
-    const evidenceText = dialogItem.evidence
-      ? buildEvidenceMessage(t, dialogItem.evidence, thb)
-      : t('evidence.unavailable');
-    return t('actions.accept.evidence_restated', {
-      evidence: evidenceText,
-      fromPlan: dialogItem.fromPlanName ?? dialogItem.fromPlanId,
-      toPlan: dialogItem.toPlanName ?? dialogItem.toPlanId,
-    });
+    return buildAcceptDialogMessage(
+      t,
+      {
+        evidence: dialogItem.evidence,
+        fromPlanLabel: dialogItem.fromPlanName ?? dialogItem.fromPlanId,
+        toPlanLabel: dialogItem.toPlanName ?? dialogItem.toPlanId,
+        ...(dialogItem.fromFeeMinorUnits !== undefined
+          ? { fromFeeMinorUnits: dialogItem.fromFeeMinorUnits }
+          : {}),
+        ...(dialogItem.toFeeMinorUnits !== undefined
+          ? { toFeeMinorUnits: dialogItem.toFeeMinorUnits }
+          : {}),
+      },
+      thb,
+    );
   }
 
   return (
@@ -307,10 +324,14 @@ export function TierUpgradeQueueClient({
                         : t('evidence.unavailable')}
                     </span>
                   </TableCell>
+                  {/* P4 — shared semantic StatusBadge (ux-patterns § 6) instead
+                      of a hand-rolled bg-secondary pill; tone is mapped from the
+                      suggestion status so it reads consistently with the rest of
+                      the state surfaces (invoice/payment/member). */}
                   <TableCell>
-                    <span className="inline-flex items-center rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium">
+                    <StatusBadge tone={tierUpgradeStatusTone(item.status)}>
                       {t(`status.${item.status}`)}
-                    </span>
+                    </StatusBadge>
                   </TableCell>
                   {/* Phase 7 review-fix I-UX-3: 3 buttons inline at md+,
                       DropdownMenu collapse below md so the 44×44 tap-target
@@ -331,9 +352,18 @@ export function TierUpgradeQueueClient({
                           });
                         }}
                       >
-                        {busy && pending?.action === 'accept'
-                          ? t('actions.accept.submitting')
-                          : t('actions.accept.label')}
+                        {busy && pending?.action === 'accept' ? (
+                          <>
+                            {/* Busy spinner (ux-standards § 2.2). No size class
+                                → inherits the sm-button icon scale; no
+                                per-component motion-reduce (global rule in
+                                globals.css neutralises .animate-spin, § 19). */}
+                            <Loader2 className="animate-spin" aria-hidden />
+                            {t('actions.accept.submitting')}
+                          </>
+                        ) : (
+                          t('actions.accept.label')
+                        )}
                       </Button>
                       <Button
                         size="sm"
@@ -360,9 +390,14 @@ export function TierUpgradeQueueClient({
                           });
                         }}
                       >
-                        {busy && pending?.action === 'dismiss'
-                          ? t('actions.dismiss.submitting')
-                          : t('actions.dismiss.label')}
+                        {busy && pending?.action === 'dismiss' ? (
+                          <>
+                            <Loader2 className="animate-spin" aria-hidden />
+                            {t('actions.dismiss.submitting')}
+                          </>
+                        ) : (
+                          t('actions.dismiss.label')
+                        )}
                       </Button>
                     </div>
                     <div className="md:hidden">
@@ -466,13 +501,18 @@ export function TierUpgradeQueueClient({
                 void callAction(suggestionId, action);
               }}
             >
-              {dialog
-                ? t(
-                    pending !== null
-                      ? `actions.${dialog.action}.submitting`
-                      : `actions.${dialog.action}.label`,
-                  )
-                : ''}
+              {dialog ? (
+                pending !== null ? (
+                  <>
+                    <Loader2 className="animate-spin" aria-hidden />
+                    {t(`actions.${dialog.action}.submitting`)}
+                  </>
+                ) : (
+                  t(`actions.${dialog.action}.label`)
+                )
+              ) : (
+                ''
+              )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

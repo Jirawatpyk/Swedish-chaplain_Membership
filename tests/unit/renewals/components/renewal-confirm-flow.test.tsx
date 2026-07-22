@@ -74,9 +74,15 @@ const LOWER: RenewalPlanOption = {
   annualFeeMinorUnits: 800_000, // ฿8,000.00
 };
 
+type FlowBenefitUsage = {
+  eblast: { used: number; quota: number | null };
+  culturalTickets: { used: number; quota: number | null };
+};
+
 function renderFlow(opts?: {
   plans?: RenewalPlanOption[];
   frozenPriceMinorUnits?: number;
+  benefitUsage?: FlowBenefitUsage;
 }) {
   return render(
     <NextIntlClientProvider locale="en" messages={enMessages}>
@@ -87,10 +93,12 @@ function renderFlow(opts?: {
         currentPlanLabel="Current plan"
         availablePlans={opts?.plans ?? [CURRENT]}
         frozenPriceMinorUnits={opts?.frozenPriceMinorUnits ?? 1_500_000}
-        benefitUsage={{
-          eblast: { used: 0, quota: null },
-          culturalTickets: { used: 0, quota: null },
-        }}
+        benefitUsage={
+          opts?.benefitUsage ?? {
+            eblast: { used: 0, quota: null },
+            culturalTickets: { used: 0, quota: null },
+          }
+        }
       />
     </NextIntlClientProvider>,
   );
@@ -316,5 +324,58 @@ describe('<RenewalConfirmFlow> — inline-alert polish (WP5)', () => {
       expect(errorEl.getAttribute('aria-live')).toBeNull();
       expect(document.activeElement).toBe(errorEl);
     });
+  });
+});
+
+describe('<RenewalConfirmFlow> — downgrade quota delta (C4)', () => {
+  // The TARGET (lower-priced) plan now carries per-year quotas (populated on
+  // the page from `listPlans`' `benefit_matrix` projection). This locks the
+  // whole chain: benefitUsage (`from`/`used`) + target quota (`to`) → the
+  // dialog's quota-delta row + over-quota warning.
+  const LOWER_WITH_QUOTAS: RenewalPlanOption = {
+    planId: 'plan-lower',
+    label: 'Lower plan',
+    annualFeeMinorUnits: 800_000, // ฿8,000.00 (a downgrade from ฿15,000.00)
+    quotas: { eblast: 4, culturalTickets: 2 },
+  };
+
+  it('builds the delta from benefitUsage + target quota; over-quota warning shows when used > to', async () => {
+    renderFlow({
+      plans: [CURRENT, LOWER_WITH_QUOTAS],
+      frozenPriceMinorUnits: 1_500_000,
+      benefitUsage: {
+        eblast: { used: 6, quota: 12 }, // used 6 > new-plan eblast quota 4
+        culturalTickets: { used: 0, quota: 6 },
+      },
+    });
+
+    await pickPlan(/Lower plan/);
+    fireEvent.click(screen.getByRole('button', { name: /confirm renewal/i }));
+
+    // The downgrade dialog opens with the concrete "current → target" rows…
+    expect(await screen.findByText('Confirm a lower-priced plan')).toBeInTheDocument();
+    expect(screen.getByText(/E-Blasts per year: 12 → 4/)).toBeInTheDocument();
+    expect(screen.getByText(/Cultural event tickets per year: 6 → 2/)).toBeInTheDocument();
+    // …and the over-quota warning because 6 already used > the new plan's 4.
+    expect(screen.getByText(/You have already used 6 of/)).toBeInTheDocument();
+    // Still gated behind the two-step ack — no money path yet.
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('shows the quota-delta row WITHOUT an over-quota warning when used <= to', async () => {
+    renderFlow({
+      plans: [CURRENT, LOWER_WITH_QUOTAS],
+      frozenPriceMinorUnits: 1_500_000,
+      benefitUsage: {
+        eblast: { used: 2, quota: 12 }, // used 2 <= new-plan eblast quota 4
+        culturalTickets: { used: 0, quota: 6 },
+      },
+    });
+
+    await pickPlan(/Lower plan/);
+    fireEvent.click(screen.getByRole('button', { name: /confirm renewal/i }));
+
+    expect(await screen.findByText(/E-Blasts per year: 12 → 4/)).toBeInTheDocument();
+    expect(screen.queryByText(/You have already used/)).toBeNull();
   });
 });

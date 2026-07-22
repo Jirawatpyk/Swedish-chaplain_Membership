@@ -3723,7 +3723,8 @@
             "confirm": "Uppgraderingen träder i kraft vid medlemmens nästa förnyelse. Medlemmen meddelas via e-post och en verifieringsuppgift schemaläggs om förnyelsen är mer än 180 dagar bort.",
             "success": "Nivåhöjning accepterad",
             "error": "Kunde inte acceptera nivåhöjning",
-            "evidence_restated": "Underlag: {evidence}. Detta flyttar medlemmen från {fromPlan} till {toPlan} — årsavgiften ändras på nästa förnyelsefaktura.",
+            "evidence_restated": "Underlag: {evidence}. Detta flyttar medlemmen från {fromPlan} ({fromFee}) till {toPlan} ({toFee}) — årsavgiften ändras på nästa förnyelsefaktura.",
+            "fee_unknown": "avgift saknas",
             "submitting": "Accepterar…"
           },
           "dismiss": {

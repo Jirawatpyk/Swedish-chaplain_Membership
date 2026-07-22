@@ -3723,7 +3723,8 @@
             "confirm": "The upgrade will apply at the member's next renewal. The member will be notified by email and a verification task will be scheduled if the renewal is more than 180 days away.",
             "success": "Tier upgrade accepted",
             "error": "Failed to accept tier upgrade",
-            "evidence_restated": "Evidence: {evidence}. This moves the member from {fromPlan} to {toPlan} — their annual fee changes on the next renewal invoice.",
+            "evidence_restated": "Evidence: {evidence}. This moves the member from {fromPlan} ({fromFee}) to {toPlan} ({toFee}) — their annual fee changes on the next renewal invoice.",
+            "fee_unknown": "fee unavailable",
             "submitting": "Accepting…"
           },
           "dismiss": {
