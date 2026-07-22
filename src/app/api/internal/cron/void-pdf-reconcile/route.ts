@@ -34,17 +34,23 @@ import { verifyCronBearer } from '@/lib/cron-auth';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { requestIdFromHeaders } from '@/lib/request-id';
-import { asInvoiceId } from '@/modules/invoicing/domain/invoice';
 import { asTenantContext } from '@/modules/tenants';
-import { makeDrizzleInvoiceRepo, f4AuditAdapter } from '@/modules/invoicing';
-import { buildVoidRenderTargets } from '@/modules/invoicing/application/lib/build-void-render-targets';
-// Deep imports — the cross-tenant maintenance escape hatch (mirrors
-// receipt-pdf-reconcile): the render adapter + raw schema tables are not
-// barrel-exported (that would invite raw-SQL / render coupling into product
-// code). This route is operational infrastructure.
+// Principle III — route every non-render symbol through the invoicing PUBLIC
+// BARREL (the invoiceId brand, the void-render helper, the repo/adapter
+// composition roots, and the invoices table are all re-exported there).
+import {
+  asInvoiceId,
+  buildVoidRenderTargets,
+  makeDrizzleInvoiceRepo,
+  f4AuditAdapter,
+  vercelBlobAdapter,
+  invoicesTable as invoices,
+} from '@/modules/invoicing';
+// The ONE sanctioned deep import — the render adapter is deliberately NOT
+// barrel-exported (that would invite render coupling into product code), so
+// this operational-infra route deep-imports it (allowlisted in
+// invoicing-presentation-imports.test.ts, mirroring receipt-pdf-reconcile).
 import { reactPdfRenderAdapter } from '@/modules/invoicing/infrastructure/adapters/react-pdf-render-adapter';
-import { vercelBlobAdapter } from '@/modules/invoicing/infrastructure/adapters/vercel-blob-adapter';
-import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 
 export const runtime = 'nodejs';
