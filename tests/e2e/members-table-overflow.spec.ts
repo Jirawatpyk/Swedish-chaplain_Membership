@@ -15,6 +15,34 @@
  * tolerate an empty table, and there is no other members seed helper — a
  * generic iteration would pass vacuously against an empty/short-content
  * table, guarding nothing.
+ *
+ * Dev-profiler pageerror (DEV-ONLY noise — NARROW scoped opt-out below,
+ * mirrors `tests/e2e/portal/account-hub-route-safety.spec.ts`): under
+ * `next dev`, navigating `/admin/members` deterministically trips React's
+ * dev component-performance profiler (`flushComponentPerformance`, in
+ * `/_next/static/...`), which throws a `Performance.measure` `TypeError`
+ * unrelated to this spec's table-layout assertion. The profiler's
+ * `performance.measure` calls are DEV-ONLY (stripped from prod builds), so
+ * it never fires against a production build — the related endpoint 404s
+ * there. It reproduces on WebKit (`mobile-safari`) only: WebKit surfaces the
+ * error as a bare, uninformative `Type error` whose sole stable
+ * discriminator is the `flushComponentPerformance` stack frame, so the
+ * shared `../fixtures` pageerror auto-fail (which only carves out
+ * `__nextjs`-prefixed messages) treats it as a genuine client crash and
+ * fails the spec even though the Plan/Status bleed assertion below never
+ * ran or passed cleanly. `playwright.config.ts` runs `pnpm dev` as its
+ * webServer both locally and in CI, and `mobile-safari` is a default
+ * (non-opt-in) project, so this trips on every documented run without the
+ * fix below.
+ *
+ * We set the NARROW `E2E_PAGEERROR_IGNORE_PATTERN` regex (not the blanket
+ * `E2E_PAGEERROR_IGNORE=true`) in `beforeAll`/restore in `afterAll`, scoped
+ * to this spec file's worker only. `flushComponentPerformance` is a React
+ * dev-profiler internal that never appears in an app-level error stack, so
+ * it cannot mask a real `MISSING_MESSAGE`, hydration mismatch, or any other
+ * app `TypeError` — those still fail loudly. Do not read this as "ignore
+ * page errors on this page": it ignores exactly one known, deterministic,
+ * dev-only, engine-specific noise source and nothing else.
  */
 import { expect, test } from './fixtures';
 import { signInAsAdmin } from './helpers/admin-session';
@@ -31,6 +59,25 @@ test.describe('members directory — column overflow @a11y', () => {
     !ADMIN_EMAIL || !ADMIN_PASSWORD,
     'Set E2E_ADMIN_EMAIL and E2E_ADMIN_PASSWORD',
   );
+
+  // Scope the dev-profiler pageerror opt-out (see header note) to THIS
+  // spec's worker process — the shared fixtures.ts pageerror auto-fail
+  // reads `process.env.E2E_PAGEERROR_IGNORE_PATTERN` at teardown, so
+  // toggling it here is honoured per-test, and restoring (not deleting) the
+  // prior value in afterAll prevents leaking into / clobbering other specs
+  // that may run in the same `--workers=1` process.
+  let prevPageErrorIgnorePattern: string | undefined;
+  test.beforeAll(() => {
+    prevPageErrorIgnorePattern = process.env.E2E_PAGEERROR_IGNORE_PATTERN;
+    process.env.E2E_PAGEERROR_IGNORE_PATTERN = 'flushComponentPerformance';
+  });
+  test.afterAll(() => {
+    if (prevPageErrorIgnorePattern === undefined) {
+      delete process.env.E2E_PAGEERROR_IGNORE_PATTERN;
+    } else {
+      process.env.E2E_PAGEERROR_IGNORE_PATTERN = prevPageErrorIgnorePattern;
+    }
+  });
 
   test.afterAll(async () => {
     await cleanupLongContentMember();
