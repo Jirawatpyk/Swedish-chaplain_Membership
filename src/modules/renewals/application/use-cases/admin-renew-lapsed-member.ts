@@ -61,6 +61,7 @@ import { z } from 'zod';
 import { ok, err, type Result } from '@/lib/result';
 import { runInTenant, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { renewalsMetrics } from '@/lib/metrics';
 import { deriveFiscalYear } from '@/lib/fiscal-year';
 import { addMonthsUtc } from '@/lib/dates';
 import { omitUndefined } from '@/lib/object-helpers';
@@ -82,7 +83,11 @@ import {
   PlanNotResolvableError,
   type CreateCycleInTxDeps,
 } from './create-cycle-in-tx';
-import { type CycleId, type RenewalCycle } from '../../domain/renewal-cycle';
+import {
+  frozenPlanSnapshotsDiffer,
+  type CycleId,
+  type RenewalCycle,
+} from '../../domain/renewal-cycle';
 import { classifyMembershipPayment } from '../../domain/classify-membership-payment';
 import { loadClassificationCounts } from './_lib/classification-input';
 import { paymentAnchorMonthStartUtc } from './_lib/payment-anchor-date';
@@ -507,18 +512,46 @@ export async function adminRenewLapsedMember(
     return mapInvoiceError(invoiceResult);
   }
 
-  // ---- Step 3 (tx2): link invoice + emit audit atomically under the
-  // per-cycle advisory lock (mirror confirm-renewal Step-4 — the lock +
-  // the adapter's `WHERE (linked_invoice_id IS NULL OR = $1)` guard close
-  // the orphan-invoice race).
+  // ---- Step 3 (tx2): link invoice + reconcile frozen price + emit audit
+  // atomically under the per-cycle advisory lock (mirror confirm-renewal
+  // Step-4 — the lock + the adapter's `WHERE (linked_invoice_id IS NULL OR
+  // = $1)` guard close the orphan-invoice race).
   return runInTenant(deps.tenant, async (tx) => {
     await deps.cyclesRepo.acquireCycleLockInTx(tx, input.tenantId, cycleId);
+
+    // FIX H1 (Finding #20 follow-up) — Step-1's fresh-cycle creation and
+    // Step-2's §86/4 ISSUE run OUTSIDE this advisory lock (tx1 held no lock; it
+    // committed before Step-2). A concurrent admin `change-plan` immediate-
+    // refreeze can land in that gap and CAS-refreeze this still-open, still-
+    // unlinked fresh cycle to a DIFFERENT plan/price (recording
+    // applied_to_open_cycle). The §86/4 we issued in Step-2 bills the price the
+    // admin billed — the fresh cycle's OWN frozen fields as captured at Step-1
+    // creation, an immutable tax document — so we LINK and simultaneously
+    // RECONCILE the cycle's frozen fields back to that billed snapshot in one
+    // guarded statement (under the re-acquired lock, so no concurrent refreeze
+    // can slip between the two). The plan change defers to the next cycle — the
+    // member is never rebilled a price they did not confirm. `previous` carries
+    // the cycle's pre-link frozen fields so we emit a truthful corrective audit
+    // ONLY when a real divergence was healed. This path has no member-plan-change
+    // branch of its own — the billed snapshot is simply the cycle's own frozen
+    // fields used to price/issue the invoice at Step-2.
+    let linkResult: {
+      readonly cycle: RenewalCycle;
+      readonly previous: RenewalCycle;
+    };
     try {
-      await deps.cyclesRepo.linkInvoice(
+      linkResult = await deps.cyclesRepo.linkInvoiceAndReconcileFrozenPlanInTx(
         tx,
         input.tenantId,
         cycleId,
         invoiceResult.invoiceId,
+        {
+          planIdAtCycleStart: cycle.planIdAtCycleStart,
+          tierAtCycleStart: cycle.tierAtCycleStart,
+          frozenPlanPriceThb: cycle.frozenPlanPriceThb,
+          frozenPlanTermMonths: cycle.frozenPlanTermMonths,
+          frozenPlanCurrency: cycle.frozenPlanCurrency,
+        },
       );
     } catch (e) {
       if (e instanceof CycleNotFoundError) {
@@ -547,6 +580,61 @@ export async function adminRenewLapsedMember(
         });
       }
       throw e;
+    }
+
+    // FIX H1 — a concurrent change-plan refroze this cycle mid-issue iff any of
+    // the pre-link frozen_plan_* fields differ from what the §86/4 billed (the
+    // cycle's own frozen fields captured at Step-1 creation). The link above
+    // already reconciled the DATA for ALL five frozen fields; here we make the
+    // AUDIT trail truthful only when a real reconciliation was healed — a
+    // corrective `renewal_cycle_price_frozen` recording the cycle's final frozen
+    // fields are the billed ones (superseding the concurrent change-plan's
+    // applied_to_open_cycle). Same tx as the link, so an emit failure rolls the
+    // reconcile+link back (Principle VIII). Mirrors confirm-renewal Step-4.
+    //
+    // M1 — widened from a PRICE-only gate to "any of the 5 frozen fields differ"
+    // (`frozenPlanSnapshotsDiffer`, satang-normalized price) so a same-price
+    // cross-plan swap (which resets plan_id/tier while the price invariant holds)
+    // still emits the corrective row for plan-mix / reporting.
+    const frozenReconciled = frozenPlanSnapshotsDiffer(linkResult.previous, cycle);
+    if (frozenReconciled) {
+      await deps.auditEmitter.emitInTx(
+        tx,
+        {
+          type: 'renewal_cycle_price_frozen' as const,
+          payload: {
+            cycle_id: cycle.cycleId,
+            plan_id: cycle.planIdAtCycleStart,
+            frozen_price_thb: cycle.frozenPlanPriceThb,
+            frozen_term_months: cycle.frozenPlanTermMonths,
+            // Reconciliation forensics (permissive payload; keys mirror the
+            // confirm-renewal corrective emit). `reverted_*` records the
+            // price/plan the concurrent change-plan had refrozen the cycle to,
+            // which this reconcile undid — the plan change defers to the next cycle.
+            reconciled_from_concurrent_plan_change: true,
+            reverted_frozen_price_thb: linkResult.previous.frozenPlanPriceThb,
+            reverted_plan_id: linkResult.previous.planIdAtCycleStart,
+            invoice_id: invoiceResult.invoiceId,
+          },
+        },
+        {
+          tenantId: input.tenantId,
+          actorUserId: input.actorUserId,
+          actorRole: 'admin',
+          correlationId: input.correlationId,
+          requestId: input.requestId ?? null,
+        },
+      );
+      logger.warn(
+        {
+          cycleId,
+          invoiceId: invoiceResult.invoiceId,
+          billedFrozenPriceThb: cycle.frozenPlanPriceThb,
+          revertedFrozenPriceThb: linkResult.previous.frozenPlanPriceThb,
+        },
+        '[admin-renew-lapsed-member] reconciled fresh cycle frozen price back to the billed §86/4 — a concurrent plan-change refroze this open cycle mid-issue; the plan change defers to the next cycle',
+      );
+      renewalsMetrics.planChangeDivergenceReconciled(input.tenantId);
     }
 
     try {

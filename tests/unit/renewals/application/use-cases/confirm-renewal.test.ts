@@ -71,7 +71,24 @@ function fakeDeps(args: {
   planLookup?: PlanLookupForRenewalResult;
   invoiceResult?: IssueInvoiceForRenewalResult;
   updateFrozenPlanImpl?: () => Promise<RenewalCycle>;
-  linkInvoiceImpl?: () => Promise<RenewalCycle>;
+  /**
+   * FINDING #20 — Step-4 now links+reconciles via
+   * `linkInvoiceAndReconcileFrozenPlanInTx`, returning `{ cycle, previous }`.
+   * Override the whole call (e.g. to throw CycleNotFoundError).
+   */
+  linkReconcileImpl?: () => Promise<{
+    cycle: RenewalCycle;
+    previous: RenewalCycle;
+  }>;
+  /**
+   * FINDING #20 — the cycle's PRE-LINK frozen state, as if a concurrent admin
+   * change-plan refroze it between Step-1's commit and Step-4's link. When it
+   * differs from the billed snapshot (`cycleAfterPlanChange`), the use-case
+   * reconciles the cycle back to billed + emits a corrective
+   * `renewal_cycle_price_frozen`. Defaults to the post-Step-1 cycle (no
+   * divergence — the common path).
+   */
+  linkReconcilePrevious?: RenewalCycle;
   transitionStatusImpl?: () => Promise<RenewalCycle>;
   emitInTxImpl?: () => Promise<void>;
   /**
@@ -105,7 +122,7 @@ function fakeDeps(args: {
   planLookupMock: ReturnType<typeof vi.fn>;
   invoiceBridgeMock: ReturnType<typeof vi.fn>;
   updateFrozenPlanMock: ReturnType<typeof vi.fn>;
-  linkInvoiceMock: ReturnType<typeof vi.fn>;
+  linkAndReconcileMock: ReturnType<typeof vi.fn>;
   transitionStatusMock: ReturnType<typeof vi.fn>;
   emitInTxMock: ReturnType<typeof vi.fn>;
   countCyclesForMemberInTxMock: ReturnType<typeof vi.fn>;
@@ -123,6 +140,11 @@ function fakeDeps(args: {
       ? args.rereadCycle
       : (args.cycle ?? null);
   });
+  // FINDING #20 — the cycle's live frozen state as the use-case would re-read
+  // it. `updateFrozenPlan` (member-initiated plan-change) advances it so
+  // Step-4's `linkInvoiceAndReconcileFrozenPlanInTx` reports `previous ==
+  // cycleAfterPlanChange` (no false divergence on the plan-change path).
+  let latestCycle: RenewalCycle = args.cycle ?? buildCycle();
   const transitionStatusMock = vi.fn(
     args.transitionStatusImpl ??
       (async () =>
@@ -133,15 +155,27 @@ function fakeDeps(args: {
   );
   const updateFrozenPlanMock = vi.fn(
     args.updateFrozenPlanImpl ??
-      (async () => ({
-        ...args.cycle!,
-        planIdAtCycleStart: NEW_PLAN_ID,
-        tierAtCycleStart: 'premium' as const,
-        frozenPlanPriceThb: '180000.00',
-      } as unknown as RenewalCycle)),
+      (async () => {
+        const next = {
+          ...args.cycle!,
+          planIdAtCycleStart: NEW_PLAN_ID,
+          tierAtCycleStart: 'premium' as const,
+          frozenPlanPriceThb: '180000.00',
+        } as unknown as RenewalCycle;
+        // Advance the live cycle so Step-4's reconcile sees `previous` matching
+        // the re-snapshotted (billed) cycle — no false divergence.
+        latestCycle = next;
+        return next;
+      }),
   );
-  const linkInvoiceMock = vi.fn(
-    args.linkInvoiceImpl ?? (async () => args.cycle ?? buildCycle()),
+  const linkAndReconcileMock = vi.fn(
+    args.linkReconcileImpl ??
+      (async () => ({
+        cycle: latestCycle,
+        // Default: the pre-link cycle equals what was billed → not reconciled.
+        // A test injects `linkReconcilePrevious` to model a concurrent refreeze.
+        previous: args.linkReconcilePrevious ?? latestCycle,
+      })),
   );
   const planLookupMock = vi.fn(
     async (): Promise<PlanLookupForRenewalResult> =>
@@ -187,6 +221,9 @@ function fakeDeps(args: {
   );
   const planLookup: PlanLookupForRenewalPort = {
     loadPlanFrozenFields: planLookupMock as never,
+    // #21 — confirm-renewal calls only the connection-fresh variant (it holds
+    // no member row lock); the in-tx sibling is unused here.
+    loadPlanFrozenFieldsInTx: planLookupMock as never,
   };
   const invoiceBridge: F4InvoicingForRenewalBridge = {
     issueInvoiceForRenewal: invoiceBridgeMock as never,
@@ -196,7 +233,8 @@ function fakeDeps(args: {
     cyclesRepo: {
       findByIdInTx: findByIdInTxMock,
       updateFrozenPlan: updateFrozenPlanMock,
-      linkInvoice: linkInvoiceMock,
+      // FINDING #20 — Step-4 links + reconciles frozen fields in one call.
+      linkInvoiceAndReconcileFrozenPlanInTx: linkAndReconcileMock,
       // B-lazy (slice 2.5) — the Step-1 lazy self-transition flips an
       // `upcoming|reminded` cycle to `awaiting_payment`. Stubbed here;
       // real CAS semantics are exercised by integration tests.
@@ -233,7 +271,7 @@ function fakeDeps(args: {
     planLookupMock,
     invoiceBridgeMock,
     updateFrozenPlanMock,
-    linkInvoiceMock,
+    linkAndReconcileMock,
     transitionStatusMock,
     emitInTxMock,
     countCyclesForMemberInTxMock,
@@ -280,7 +318,7 @@ describe('confirmRenewal (T122) — happy paths', () => {
       deps,
       invoiceBridgeMock,
       planLookupMock,
-      linkInvoiceMock,
+      linkAndReconcileMock,
       emitInTxMock,
     } = fakeDeps({ cycle });
     const r = await confirmRenewal(deps, baseInput);
@@ -309,7 +347,7 @@ describe('confirmRenewal (T122) — happy paths', () => {
       planId: 'plan-regular-2026',
       planYear: 2026,
     });
-    expect(linkInvoiceMock).toHaveBeenCalledOnce();
+    expect(linkAndReconcileMock).toHaveBeenCalledOnce();
     // Two emits: cross_member_probe is skipped (matches), so only the
     // invoice_created emit fires from the link tx (the planChange emits
     // would also be in the state tx if a plan change occurred).
@@ -893,7 +931,7 @@ describe('confirmRenewal (WP4) — downgrade acknowledgement gate', () => {
 describe('confirmRenewal (T122) — F4 invoice creation failures', () => {
   it('create_failed → invoice_creation_failed stage=create', async () => {
     const cycle = buildCycle();
-    const { deps, linkInvoiceMock } = fakeDeps({
+    const { deps, linkAndReconcileMock } = fakeDeps({
       cycle,
       invoiceResult: {
         status: 'create_failed',
@@ -907,7 +945,7 @@ describe('confirmRenewal (T122) — F4 invoice creation failures', () => {
       expect(r.error.stage).toBe('create');
       expect(r.error.errorCode).toBe('plan_not_found');
     }
-    expect(linkInvoiceMock).not.toHaveBeenCalled();
+    expect(linkAndReconcileMock).not.toHaveBeenCalled();
   });
 
   it('issue_failed → invoice_creation_failed stage=issue', async () => {
@@ -934,11 +972,11 @@ describe('confirmRenewal (T122) — F4 invoice creation failures', () => {
 });
 
 describe('confirmRenewal (T122) — link / audit failure paths', () => {
-  it('CycleNotFoundError on linkInvoice — returns server_error (orphan F4 invoice)', async () => {
+  it('CycleNotFoundError on link+reconcile — returns server_error (orphan F4 invoice)', async () => {
     const cycle = buildCycle();
     const { deps } = fakeDeps({
       cycle,
-      linkInvoiceImpl: async () => {
+      linkReconcileImpl: async () => {
         throw new CycleNotFoundError(CYCLE_UUID);
       },
     });
@@ -989,6 +1027,68 @@ describe('confirmRenewal (T122) — link / audit failure paths', () => {
     // updateFrozenPlan was called before the failing emit — that's the
     // mutation the Principle VIII rollback is meant to undo.
     expect(updateFrozenPlanMock).toHaveBeenCalledOnce();
+  });
+});
+
+describe('confirmRenewal (FINDING #20) — reconcile-at-link on a concurrent refreeze', () => {
+  // A concurrent admin change-plan refroze the open, unlinked cycle to a
+  // DIFFERENT plan/price between confirm-renewal's Step-1 commit and its Step-4
+  // link. The §86/4 was issued at the price the MEMBER CONFIRMED (the old
+  // 50,000 from `buildCycle`); the cycle's live pre-link state is the refrozen
+  // 180,000. Step-4 must link + reconcile the cycle BACK to the billed 50,000
+  // and emit a truthful corrective `renewal_cycle_price_frozen`.
+  it('links+reconciles to the BILLED snapshot and emits a corrective price-frozen audit', async () => {
+    const cycle = buildCycle(); // billed: plan-regular-2026 @ 50,000.00
+    const divergedPrevious = buildCycle({
+      planIdAtCycleStart: NEW_PLAN_ID,
+      tierAtCycleStart: 'premium',
+      frozenPlanPriceThb: parseThbDecimal('180000.00'),
+    });
+    const { deps, linkAndReconcileMock, emitInTxMock } = fakeDeps({
+      cycle,
+      linkReconcilePrevious: divergedPrevious,
+    });
+    // The MEMBER does not change plan — the admin did, concurrently.
+    const r = await confirmRenewal(deps, baseInput);
+    expect(r.ok).toBe(true);
+
+    // The link is driven with the BILLED (old) snapshot — never the refrozen one.
+    expect(linkAndReconcileMock).toHaveBeenCalledOnce();
+    expect(linkAndReconcileMock.mock.calls[0]?.[4]).toMatchObject({
+      planIdAtCycleStart: 'plan-regular-2026',
+      frozenPlanPriceThb: '50000.00',
+    });
+
+    // A corrective renewal_cycle_price_frozen at the billed price, tagged so a
+    // forensic reader can tell it apart from a normal plan-change freeze.
+    const corrective = emitInTxMock.mock.calls.find(
+      (c) => (c?.[1] as { type?: string })?.type === 'renewal_cycle_price_frozen',
+    );
+    expect(corrective).toBeDefined();
+    expect(corrective?.[1]).toMatchObject({
+      payload: {
+        reconciled_from_concurrent_plan_change: true,
+        frozen_price_thb: '50000.00',
+        reverted_frozen_price_thb: '180000.00',
+        reverted_plan_id: NEW_PLAN_ID,
+      },
+    });
+    // ...and still the terminal renewal_invoice_created audit.
+    const emittedTypes = emitInTxMock.mock.calls.map(
+      (c) => (c?.[1] as { type?: string })?.type,
+    );
+    expect(emittedTypes).toContain('renewal_invoice_created');
+  });
+
+  it('no divergence (billed price == live pre-link price) — no corrective audit', async () => {
+    const cycle = buildCycle();
+    const { deps, emitInTxMock } = fakeDeps({ cycle }); // previous defaults to billed
+    const r = await confirmRenewal(deps, baseInput);
+    expect(r.ok).toBe(true);
+    const priceFrozen = emitInTxMock.mock.calls.filter(
+      (c) => (c?.[1] as { type?: string })?.type === 'renewal_cycle_price_frozen',
+    );
+    expect(priceFrozen.length).toBe(0);
   });
 });
 

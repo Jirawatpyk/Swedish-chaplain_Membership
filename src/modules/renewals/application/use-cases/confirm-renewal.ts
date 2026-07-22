@@ -24,7 +24,17 @@
  *           audits inside the same tx.
  *   4. Compose F4 createInvoiceDraft → issueInvoice via the
  *      `f4InvoicingForRenewalBridge` port.
- *   5. Link the issued invoice to the cycle (`cyclesRepo.linkInvoice`).
+ *   5. Link the issued invoice to the cycle AND reconcile the cycle's
+ *      frozen_plan_* fields to what the §86/4 actually billed, in one
+ *      guarded statement (`cyclesRepo.linkInvoiceAndReconcileFrozenPlanInTx`).
+ *      This closes Finding #20 (Phase 2 #238): Step-1's frozen-price capture
+ *      + Step-3's §86/4 issue run OUTSIDE the per-cycle advisory lock, so a
+ *      concurrent admin change-plan immediate-refreeze can refreeze this open,
+ *      unlinked cycle to a DIFFERENT price in the gap. The §86/4 is immutable
+ *      and bills the price the member confirmed, so the cycle is reconciled
+ *      back to that billed snapshot (the plan change defers to the next cycle);
+ *      a corrective `renewal_cycle_price_frozen` audit is emitted iff a real
+ *      divergence was healed.
  *   6. Emit `renewal_invoice_created` audit.
  *   7. Return `{ invoiceId, payUrl }` for the route handler to redirect
  *      to `/portal/invoices/<invoiceId>?pay=1` — the invoice detail page,
@@ -94,6 +104,7 @@ import { loadClassificationCounts } from './_lib/classification-input';
 import {
   parseCycleId,
   cycleFrozenPriceSatang,
+  frozenPlanSnapshotsDiffer,
   type CycleId,
   type RenewalCycle,
 } from '../../domain/renewal-cycle';
@@ -667,7 +678,7 @@ export async function confirmRenewal(
     return mapInvoiceError(invoiceResult);
   }
 
-  // ---- Step 4 + 5: link invoice + emit audit atomically
+  // ---- Step 4 + 5: link invoice + reconcile frozen price + emit audit atomically
   return runInTenant(deps.tenant, async (tx) => {
     // I1 review-fix: acquire per-cycle advisory lock first so two
     // concurrent confirms serialise on the link step. Combined with the
@@ -675,12 +686,37 @@ export async function confirmRenewal(
     // closes the orphan-invoice race for all but pathological clock-
     // skew scenarios (covered by the conflict-error branch below).
     await deps.cyclesRepo.acquireCycleLockInTx(tx, input.tenantId, cycleId);
+
+    // Finding #20 (Phase 2 #238 adversarial money-path review) — Step-1's
+    // frozen-price CAPTURE and Step-3's §86/4 ISSUE run OUTSIDE this advisory
+    // lock (it was released at Step-1's commit). A concurrent admin `change-plan`
+    // immediate-refreeze can land in that gap and CAS-refreeze this still-open,
+    // still-unlinked cycle to a DIFFERENT plan/price (recording
+    // applied_to_open_cycle). The §86/4 we issued in Step-3 bills the price the
+    // MEMBER CONFIRMED (`cycleAfterPlanChange`, an immutable tax document), so we
+    // LINK and simultaneously RECONCILE the cycle's frozen fields back to that
+    // billed snapshot in one guarded statement (under the re-acquired lock, so no
+    // concurrent refreeze can slip between the two). The plan change defers to the
+    // next cycle — the member is never rebilled a price they did not confirm.
+    // `previous` carries the cycle's pre-link frozen fields so we emit a truthful
+    // corrective audit ONLY when a real divergence was healed.
+    let linkResult: {
+      readonly cycle: RenewalCycle;
+      readonly previous: RenewalCycle;
+    };
     try {
-      await deps.cyclesRepo.linkInvoice(
+      linkResult = await deps.cyclesRepo.linkInvoiceAndReconcileFrozenPlanInTx(
         tx,
         input.tenantId,
         cycleId,
         invoiceResult.invoiceId,
+        {
+          planIdAtCycleStart: cycleAfterPlanChange.planIdAtCycleStart,
+          tierAtCycleStart: cycleAfterPlanChange.tierAtCycleStart,
+          frozenPlanPriceThb: cycleAfterPlanChange.frozenPlanPriceThb,
+          frozenPlanTermMonths: cycleAfterPlanChange.frozenPlanTermMonths,
+          frozenPlanCurrency: cycleAfterPlanChange.frozenPlanCurrency,
+        },
       );
     } catch (e) {
       if (e instanceof CycleNotFoundError) {
@@ -714,6 +750,67 @@ export async function confirmRenewal(
         });
       }
       throw e;
+    }
+
+    // Finding #20 — a concurrent change-plan refroze this cycle mid-issue iff any
+    // of the pre-link frozen_plan_* fields differ from what the §86/4 billed. The
+    // link above already reconciled the DATA for ALL five frozen fields (the repo
+    // UPDATE overwrites plan/tier/price/term/currency); here we make the AUDIT
+    // trail truthful only when a real reconciliation was healed — emit a
+    // corrective `renewal_cycle_price_frozen` recording that the cycle's final
+    // frozen fields are the billed ones (superseding the concurrent change-plan's
+    // applied_to_open_cycle). Same tx as the link, so an emit failure rolls the
+    // reconcile+link back (Principle VIII).
+    //
+    // M1 — widened from a PRICE-only gate to "any of the 5 frozen fields differ".
+    // A same-price cross-plan swap (A@50,000 → B@50,000, different tier) leaves
+    // the price invariant intact (the standing divergence scan stays clean) but
+    // DID reset plan_id/tier — a price-only gate reset them silently with no
+    // corrective row, losing the superseded applied_to_open_cycle for plan-mix /
+    // reporting. `frozenPlanSnapshotsDiffer` still satang-normalizes the price, so
+    // "50000" vs "50000.00" is never a false positive.
+    const frozenReconciled = frozenPlanSnapshotsDiffer(
+      linkResult.previous,
+      cycleAfterPlanChange,
+    );
+    if (frozenReconciled) {
+      await deps.auditEmitter.emitInTx(
+        tx,
+        {
+          type: 'renewal_cycle_price_frozen' as const,
+          payload: {
+            cycle_id: cycleAfterPlanChange.cycleId,
+            plan_id: cycleAfterPlanChange.planIdAtCycleStart,
+            frozen_price_thb: cycleAfterPlanChange.frozenPlanPriceThb,
+            frozen_term_months: cycleAfterPlanChange.frozenPlanTermMonths,
+            // Reconciliation forensics (permissive payload; keys extend the
+            // plan-change emit's shape). `reverted_*` records the price/plan the
+            // concurrent change-plan had refrozen the cycle to, which this
+            // reconcile undid — the plan change defers to the next cycle.
+            reconciled_from_concurrent_plan_change: true,
+            reverted_frozen_price_thb: linkResult.previous.frozenPlanPriceThb,
+            reverted_plan_id: linkResult.previous.planIdAtCycleStart,
+            invoice_id: invoiceResult.invoiceId,
+          },
+        },
+        {
+          tenantId: input.tenantId,
+          actorUserId: input.actorUserId,
+          actorRole: input.actorRole,
+          correlationId: input.correlationId,
+          requestId: input.requestId ?? null,
+        },
+      );
+      logger.warn(
+        {
+          cycleId,
+          invoiceId: invoiceResult.invoiceId,
+          billedFrozenPriceThb: cycleAfterPlanChange.frozenPlanPriceThb,
+          revertedFrozenPriceThb: linkResult.previous.frozenPlanPriceThb,
+        },
+        '[confirm-renewal] reconciled cycle frozen price back to the billed §86/4 — a concurrent plan-change refroze this open cycle mid-issue; the plan change defers to the next cycle',
+      );
+      renewalsMetrics.planChangeDivergenceReconciled(input.tenantId);
     }
 
     try {

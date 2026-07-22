@@ -3103,6 +3103,49 @@ export const renewalsMetrics = {
   },
 
   /**
+   * Finding #20 (Phase 2 #238) — the LIVE guard fired: confirm-renewal's Step-4
+   * link detected that a concurrent admin change-plan immediate-refreeze had
+   * refrozen the open cycle to a DIFFERENT price than the §86/4 it just issued,
+   * and reconciled the cycle back to the billed (confirmed) price. A non-zero
+   * rate is expected only under genuine concurrent-write races; a sustained
+   * spike signals an admin repeatedly changing plans while members self-renew.
+   * Paired with the standing `plan_change_divergence_detected` scan gauge — the
+   * reconcile counter is the guard firing, the scan is the on-disk residual
+   * (which should stay 0 precisely because this guard fires).
+   *
+   * Emitted INSIDE the Step-4 tx via `safeMetric` (an @vercel/otel exporter
+   * throw must never roll back the committed-in-tx link) — parity with
+   * `selfServiceCompleted`.
+   */
+  planChangeDivergenceReconciled(tenant: string): void {
+    safeMetric(() => {
+      counter(
+        'renewals_plan_change_divergence_reconciled_total',
+        'confirm-renewal reconciled a cycle whose frozen price a concurrent change-plan diverged from the billed §86/4 (Finding #20 guard)',
+      ).add(1, { tenant });
+    });
+  },
+
+  /**
+   * Finding #20 defense-in-depth — the standing divergence scan
+   * (`checkPlanChangeDivergence`, wired to a Vercel cron) found `count`
+   * renewal_cycle↔linked-§86/4 price disagreements for `tenant` on this pass.
+   * A COUNTER (rate is the signal, mirrors `outboxMetrics.stuckRows`), not a
+   * gauge: a tenant with 0 divergences is never emitted, so a gauge would go
+   * stale at its last non-zero value. Expected to stay flat at 0 once the
+   * reconcile-at-link guard ships. Any non-zero rate is stop-the-line (the cron
+   * route also returns non-2xx so Vercel cron alerting fires independently).
+   */
+  planChangeDivergenceDetected(tenant: string, count: number): void {
+    safeMetric(() => {
+      counter(
+        'renewals_plan_change_divergence_detected_total',
+        'Standing renewal_cycle↔§86/4 frozen-price divergences found by the scan cron (should stay 0)',
+      ).add(count, { tenant });
+    });
+  },
+
+  /**
    * `at_risk_scores_recomputed_total{tenant}` — total score writes
    * per recompute pass. Pairs with the per-tenant `recompute_duration_ms`
    * histogram already in the operational block above. Sustained

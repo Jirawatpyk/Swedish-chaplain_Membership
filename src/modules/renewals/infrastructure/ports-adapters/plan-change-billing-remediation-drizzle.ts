@@ -8,15 +8,21 @@
  * so the re-freeze + its `member_plan_change_billing_effect` audit commit
  * ATOMICALLY with the plan flip (Constitution Principle VIII).
  *
- * Order (ALL on the passed `tx`, except the F2 plan-frozen-fields lookup which
- * reads the never-locked `membership_plans` table on its own connection and so
- * cannot deadlock against change-plan's member FOR UPDATE lock):
+ * Order (ALL on the passed `tx` — Finding #21 closed the one exception: the F2
+ * plan-frozen-fields lookup now uses `loadPlanFrozenFieldsInTx(tx, …)`, reading
+ * `membership_plans` on the SAME connection rather than opening a nested
+ * `runInTenant` under change-plan's held member FOR UPDATE + cycle advisory lock.
+ * `membership_plans` is never row-locked by these paths, so the old nested read
+ * could not deadlock TODAY, but it violated the repo's "never nest runInTenant
+ * while holding a row lock" guardrail — a latent footgun the pooler's dropped
+ * statement_timeout would turn into a hang-forever if a future path locked that
+ * table):
  *   1. findOpenCycleForMemberInTx        -> null ⇒ `no_open_cycle`
  *   2. acquireCycleLockInTx              (serialise with mark-paid-offline etc.)
  *   3. hasIssuedMembershipInvoiceForMemberInTx -> issued ⇒
  *      `deferred_invoice_already_issued` (+blockingInvoiceId, member_scoped)
- *   4. resolve the new plan's frozen fields for the cycle's fiscal year; if the
- *      new term differs from the cycle's frozen term ⇒ `deferred_term_length_change`
+ *   4. resolve the new plan's frozen fields for the cycle's fiscal year (on `tx`);
+ *      if the new term differs from the cycle's frozen term ⇒ `deferred_term_length_change`
  *   5. flag OFF ⇒ `deferred_immediate_not_enabled`
  *   6. else refreezeOpenCycleForPlanChangeInTx -> non-null ⇒ `applied_to_open_cycle`;
  *      null (raced into linked/terminal) ⇒ `deferred_invoice_already_issued` (linked)
@@ -157,7 +163,11 @@ async function computeOutcome(
   //    so this resolves the exact-year row (or the freeze fallback). A term
   //    change would require re-deriving the cycle period (out of scope) — defer.
   const fiscalYear = deriveFiscalYear(openCycle.periodFrom);
-  const lookup = await deps.planLookupForRenewal.loadPlanFrozenFields({
+  // Finding #21 — thread the caller's `tx` (change-plan holds the member FOR
+  // UPDATE + cycle advisory lock) instead of the port's connection-fresh
+  // `loadPlanFrozenFields`, which opened a nested `runInTenant` = a 2nd pooled
+  // connection under a held row lock. Same rows, same resolution, one connection.
+  const lookup = await deps.planLookupForRenewal.loadPlanFrozenFieldsInTx(tx, {
     tenantId: ctx.tenantId,
     planId: ctx.newPlanId,
     fiscalYear,

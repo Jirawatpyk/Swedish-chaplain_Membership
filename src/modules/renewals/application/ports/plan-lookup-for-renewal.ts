@@ -12,6 +12,7 @@
  *
  * Pure interface — no framework imports (Constitution Principle III).
  */
+import type { TenantTx } from '@/lib/db';
 import type { ThbDecimal } from '@/lib/money';
 
 export interface PlanFrozenFields {
@@ -32,6 +33,21 @@ export type PlanLookupForRenewalResult =
   | { readonly status: 'found'; readonly plan: PlanFrozenFields }
   | { readonly status: 'not_found' }
   | { readonly status: 'plan_inactive' };
+
+/**
+ * The `loadPlanFrozenFields` input — shared by the connection-fresh variant and
+ * the in-tx variant so the two never drift.
+ */
+export interface LoadPlanFrozenFieldsInput {
+  readonly tenantId: string;
+  readonly planId: string;
+  /**
+   * The fiscal year of the relevant cycle — see `loadPlanFrozenFields` below
+   * for the full EXACT-YEAR-FIRST resolution contract.
+   */
+  readonly fiscalYear: number;
+  readonly mode: 'freeze' | 'offer';
+}
 
 export interface PlanLookupForRenewalPort {
   loadPlanFrozenFields(input: {
@@ -80,4 +96,24 @@ export interface PlanLookupForRenewalPort {
      */
     readonly mode: 'freeze' | 'offer';
   }): Promise<PlanLookupForRenewalResult>;
+
+  /**
+   * Finding #21 — the in-tx sibling of `loadPlanFrozenFields`. Reads the SAME
+   * rows via the SAME EXACT-YEAR-FIRST resolution, but on the CALLER's `tx`
+   * instead of opening its own `runInTenant`. Required by the plan-change →
+   * billing remediation, which runs on `change-plan`'s tx while it holds the
+   * member row FOR UPDATE + the per-cycle advisory lock: the non-tx variant's
+   * nested `runInTenant` there is a 2nd pooled connection acquired UNDER a held
+   * row lock (the repo's "never nest runInTenant while holding a row lock"
+   * guardrail — benign today because `membership_plans` is never row-locked by
+   * these paths, but a latent deadlock footgun the pooler's dropped
+   * statement_timeout would turn into a hang-forever). Threading `tx` keeps the
+   * read on the SAME connection. Tenant scope comes from the inherited GUC set
+   * by the caller's `runInTenant`; the explicit `tenantId` on the input is
+   * defence-in-depth only. Mirrors the F4 invoice-due bridge's `*InTx` methods.
+   */
+  loadPlanFrozenFieldsInTx(
+    tx: TenantTx,
+    input: LoadPlanFrozenFieldsInput,
+  ): Promise<PlanLookupForRenewalResult>;
 }

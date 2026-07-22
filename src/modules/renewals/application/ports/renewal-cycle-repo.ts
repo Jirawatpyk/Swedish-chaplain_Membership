@@ -227,6 +227,49 @@ export interface RenewalCycleRepo {
   ): Promise<RenewalCycle>;
 
   /**
+   * Finding #20 (Phase 2 #238 adversarial money-path review) — link the issued
+   * §86/4 to the cycle AND (re-)assert the cycle's 5 frozen_plan_* columns to the
+   * `billed` snapshot the invoice was actually issued from, in ONE guarded
+   * statement so the two can never disagree.
+   *
+   * confirm-renewal Step-4 uses this (NOT `linkInvoice`) because its Step-1
+   * frozen-price capture + Step-3 §86/4 issue run OUTSIDE the per-cycle advisory
+   * lock (released at Step-1's commit). A concurrent admin `change-plan`
+   * immediate-refreeze can land in that window and CAS-refreeze the still-open,
+   * still-unlinked cycle to a DIFFERENT plan/price — so at link time the cycle's
+   * frozen fields may no longer match what the (immutable) §86/4 bills. Since the
+   * member already holds an issued tax document at the price they CONFIRMED, the
+   * cycle is reconciled BACK to the billed snapshot (the plan change defers to the
+   * next cycle) rather than the member being rebilled.
+   *
+   * Runs under the caller's Step-4 tx while it holds `acquireCycleLockInTx`, so
+   * the SELECT-before + guarded UPDATE are race-free against other frozen-price
+   * writers (they all take the same lock). Returns BOTH the post-update `cycle`
+   * and the `previous` (pre-update) row so the use-case can decide whether a real
+   * reconciliation occurred (previous frozen fields differ from `billed`) and emit
+   * a truthful corrective audit ONLY then.
+   *
+   * Guard `WHERE cycle_id = ? AND tenant_id = ? AND (linked_invoice_id IS NULL OR
+   * linked_invoice_id = ?)` mirrors `linkInvoice` exactly — idempotent re-link,
+   * `InvoiceLinkConflictError` on a concurrent link to a DIFFERENT invoice (0
+   * rows → nothing written, so no partial reconcile), `CycleNotFoundError` when
+   * the row vanished. Thread `tx` from `runInTenant`; NEVER the global `db`.
+   */
+  linkInvoiceAndReconcileFrozenPlanInTx(
+    tx: TenantTx,
+    tenantId: string,
+    cycleId: CycleId,
+    invoiceId: string,
+    billed: {
+      readonly planIdAtCycleStart: string;
+      readonly tierAtCycleStart: TierBucket;
+      readonly frozenPlanPriceThb: ThbDecimal;
+      readonly frozenPlanTermMonths: number;
+      readonly frozenPlanCurrency: 'THB' | 'SEK' | 'EUR' | 'USD';
+    },
+  ): Promise<{ readonly cycle: RenewalCycle; readonly previous: RenewalCycle }>;
+
+  /**
    * Plan-change / void-on-reissue unlink (Phase 2, Step 2.4) — clear the
    * cycle's `linked_invoice_id` when the invoice it points at is VOIDED. A
    * voided §86/4 no longer validly links the cycle; without this clear a
