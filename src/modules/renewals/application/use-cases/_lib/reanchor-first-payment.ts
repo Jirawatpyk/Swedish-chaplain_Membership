@@ -38,6 +38,7 @@ import type { RenewalCycleRepo } from '../../ports/renewal-cycle-repo';
 import type { PlanLookupForRenewalPort } from '../../ports/plan-lookup-for-renewal';
 import type { RenewalAuditEmitter } from '../../ports/renewal-audit-emitter';
 import type { FiscalYearStartMonthPort } from '../../ports/fiscal-year-settings-port';
+import { addMonthsUtc } from '@/lib/dates';
 import { paymentAnchorMonthStartUtc } from './payment-anchor-date';
 
 export type ReanchorFirstPaymentDeps = {
@@ -122,13 +123,32 @@ export async function reanchorFirstPaymentCycleInTx(
   // price/term stand.
   const anchoredAtStamp = paymentAnchorMonthStartUtc(evt);
 
+  // EXPIRED-PERIOD EXCEPTION (comeback semantics). Normally the period STAYS
+  // at the cycle's registration/backfill anchor — pay early or late, the
+  // anniversary does not move. BUT if that fixed period has ALREADY fully
+  // elapsed by the time of payment (period_to <= the payment month), keeping
+  // the dead period would leave the member paid-but-suspended (an 'upcoming'
+  // cycle with an already-past period resolves to `suspended`) and stuck in
+  // the enter-awaiting-payment-on-expiry cron loop. That member is effectively
+  // a comeback, so — matching admin-renew-lapsed-member's fully-expired branch
+  // — we RE-ANCHOR to the payment month to grant a fresh period. Frozen
+  // price/term are kept as-is here (the member's NEXT renewal re-resolves
+  // them); restoring the FY-refreeze for this rare edge is not worth the
+  // complexity.
+  const periodExpiredAtPayment =
+    Date.parse(cycle.periodTo) <= Date.parse(anchoredAtStamp);
+  const newPeriodFrom = periodExpiredAtPayment ? anchoredAtStamp : cycle.periodFrom;
+  const newPeriodTo = periodExpiredAtPayment
+    ? addMonthsUtc(anchoredAtStamp, cycle.frozenPlanTermMonths)
+    : cycle.periodTo;
+
   const reanchored = await deps.cyclesRepo.reanchorPeriodInTx(
     tx,
     evt.tenantId,
     cycle.cycleId,
     {
-      periodFrom: cycle.periodFrom,
-      periodTo: cycle.periodTo,
+      periodFrom: newPeriodFrom,
+      periodTo: newPeriodTo,
       anchoredAt: anchoredAtStamp,
       anchorInvoiceId: evt.invoiceId,
       frozenPlanPriceThb: cycle.frozenPlanPriceThb,

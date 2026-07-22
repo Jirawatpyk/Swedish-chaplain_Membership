@@ -204,4 +204,34 @@ describe('reanchorFirstPaymentCycleInTx — fixed-anchor: period is NOT moved to
     expect(mocks.loadPlanFrozenFields).not.toHaveBeenCalled();
     expect(result?.refrozePlanFields).toBe(false);
   });
+
+  it('EXPIRED period at payment → re-anchors to the payment month (comeback), NOT the dead period', async () => {
+    const { deps, mocks } = fakeDeps();
+    // Period fully elapsed (2024-2025) but the invoice is paid June 2026 —
+    // keeping the dead period would leave the payer suspended. Treat as comeback.
+    const cycle = unanchoredCycle({
+      periodFrom: '2024-01-01T00:00:00.000Z',
+      periodTo: '2025-01-01T00:00:00.000Z',
+      frozenPlanTermMonths: 12,
+    });
+
+    await reanchorFirstPaymentCycleInTx(
+      deps,
+      buildEvent({ paidAt: '2026-06-16T10:00:00Z', paymentDate: '2026-06-16' }),
+      {} as never,
+      cycle,
+    );
+
+    // Re-anchored to a FRESH June 2026 period (not the dead 2024 one).
+    expect(mocks.reanchorPeriodInTx).toHaveBeenCalledWith(
+      expect.anything(),
+      TENANT_ID,
+      cycle.cycleId,
+      expect.objectContaining({
+        periodFrom: '2026-06-01T00:00:00.000Z',
+        periodTo: '2027-06-01T00:00:00.000Z',
+        anchoredAt: '2026-06-01T00:00:00.000Z',
+      }),
+    );
+  });
 });

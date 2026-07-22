@@ -3594,7 +3594,7 @@
           "cancel": "Cancel",
           "submitting": "Recording…",
           "successToast": "Offline payment recorded — the cycle is now completed.",
-          "successReanchored": "Payment recorded — membership period now starts {date}.",
+          "successReanchored": "Payment recorded — membership activated (period from {date}).",
           "successNoEmailWarning": "No email on file — the receipt was not sent. Deliver it to the member manually.",
           "viewOrphanInvoice": "View invoice",
           "viewExistingInvoice": "Open existing invoice",

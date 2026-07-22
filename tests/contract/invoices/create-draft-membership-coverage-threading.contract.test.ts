@@ -175,9 +175,7 @@ describe('contract: POST /api/invoices — membershipCoverage server-side thread
     loadMemberRenewalContextMock.mockResolvedValueOnce({
       classification: { kind: 'renewal' },
       periodTo: '2027-06-01',
-      termMonths: 12,
-      hasUnpaidMembershipInvoice: false,
-    });
+      termMonths: 12,    });
 
     const { POST } = (await importRoute()) as { POST: (req: NextRequest) => Promise<Response> };
     const res = await POST(makePostRequest(REQUEST_BODY));
@@ -198,9 +196,7 @@ describe('contract: POST /api/invoices — membershipCoverage server-side thread
       periodTo: null,
       termMonths: null,
       currentPeriodFrom: null,
-      currentPeriodTo: null,
-      hasUnpaidMembershipInvoice: false,
-    });
+      currentPeriodTo: null,    });
 
     const { POST } = (await importRoute()) as { POST: (req: NextRequest) => Promise<Response> };
     const res = await POST(makePostRequest(REQUEST_BODY));
@@ -216,9 +212,7 @@ describe('contract: POST /api/invoices — membershipCoverage server-side thread
       periodTo: null,
       termMonths: null,
       currentPeriodFrom: '2026-08-01',
-      currentPeriodTo: '2027-08-01',
-      hasUnpaidMembershipInvoice: false,
-    });
+      currentPeriodTo: '2027-08-01',    });
 
     const { POST } = (await importRoute()) as { POST: (req: NextRequest) => Promise<Response> };
     const res = await POST(makePostRequest(REQUEST_BODY));
@@ -238,9 +232,7 @@ describe('contract: POST /api/invoices — membershipCoverage server-side thread
     loadMemberRenewalContextMock.mockResolvedValueOnce({
       classification: { kind: 'not_applicable', reason: 'terminal_only' },
       periodTo: null,
-      termMonths: null,
-      hasUnpaidMembershipInvoice: false,
-    });
+      termMonths: null,    });
 
     const { POST } = (await importRoute()) as { POST: (req: NextRequest) => Promise<Response> };
     const res = await POST(makePostRequest(REQUEST_BODY));
@@ -269,9 +261,7 @@ describe('contract: POST /api/invoices — membershipCoverage server-side thread
     loadMemberRenewalContextMock.mockResolvedValueOnce({
       classification: { kind: 'not_applicable', reason: 'erased' },
       periodTo: null,
-      termMonths: null,
-      hasUnpaidMembershipInvoice: false,
-    });
+      termMonths: null,    });
 
     const { POST } = (await importRoute()) as { POST: (req: NextRequest) => Promise<Response> };
     const res = await POST(
@@ -294,9 +284,7 @@ describe('contract: POST /api/invoices — membershipCoverage server-side thread
     loadMemberRenewalContextMock.mockResolvedValueOnce({
       classification: { kind: 'first_payment' },
       periodTo: null,
-      termMonths: null,
-      hasUnpaidMembershipInvoice: false,
-    });
+      termMonths: null,    });
 
     const { POST } = (await importRoute()) as { POST: (req: NextRequest) => Promise<Response> };
     await POST(makePostRequest(REQUEST_BODY));

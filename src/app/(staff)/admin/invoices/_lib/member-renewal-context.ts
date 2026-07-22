@@ -1,11 +1,11 @@
 /**
  * Task 9 (renewal-rolling-anchor design 2026-07-08 §3b) — server-side read
  * resolving a member's renewal-payment classification for the New-invoice
- * form's advisory context line + duplicate-billing warning.
+ * form's advisory context line.
  *
- * Presentation orchestrates BOTH the F8 (renewals) and F4 (invoicing)
- * public barrels here (Constitution Principle III — cross-context reads go
- * through public barrels only; F4 itself never imports F8). Consumed by:
+ * Presentation orchestrates the F8 (renewals) public barrel here
+ * (Constitution Principle III — cross-context reads go through public barrels
+ * only; F4 itself never imports F8). Consumed by:
  *   - `GET /api/invoices/member-renewal-context` (client-side fetch, driven
  *     by the New-invoice form's member picker);
  *   - `POST /api/invoices` (Task 9 review-mandate — the SAME classification
@@ -26,7 +26,6 @@ import {
   makeRenewalsDeps,
   type MembershipPaymentClassification,
 } from '@/modules/renewals';
-import { listInvoicesByMember, makeListInvoicesByMemberDeps } from '@/modules/invoicing';
 
 export interface MemberRenewalContext {
   readonly classification: MembershipPaymentClassification;
@@ -42,15 +41,7 @@ export interface MemberRenewalContext {
    */
   readonly currentPeriodFrom: string | null;
   readonly currentPeriodTo: string | null;
-  /** An existing `status='issued'` (unpaid) membership invoice for this member. */
-  readonly hasUnpaidMembershipInvoice: boolean;
 }
-
-// Advisory-only unpaid-invoice peek (see module docstring) — a member very
-// rarely accumulates more than a handful of ISSUED membership invoices at
-// once (annual billing), so a single capped page is sufficient without a
-// pagination loop.
-const UNPAID_CHECK_PAGE_SIZE = 50;
 
 /**
  * Given a memberId, resolves the same `classifyMembershipPayment` shape
@@ -65,18 +56,8 @@ export async function loadMemberRenewalContext(
   const ctx = asTenantContext(tenantSlug);
   const renewalsDeps = makeRenewalsDeps(tenantSlug);
 
-  // FIX-8(h) (PR #173 review, 2026-07-09) — the classification read (F8
-  // renewals, its own tx) and the unpaid-membership-invoice peek (F4
-  // invoicing, its own separate `runInTenant`) are fully independent —
-  // neither depends on the other's result. Both are advisory-only reads
-  // feeding a UI hint line (module docstring), so running them
-  // concurrently via `Promise.all` is a safe latency win rather than the
-  // previous strictly-sequential await chain.
-  const [
-    { classification, periodTo, termMonths, currentPeriodFrom, currentPeriodTo },
-    invoicesResult,
-  ] = await Promise.all([
-    runInTenant(ctx, async (tx) => {
+  const { classification, periodTo, termMonths, currentPeriodFrom, currentPeriodTo } =
+    await runInTenant(ctx, async (tx) => {
       const guards = await renewalsDeps.memberRenewalFlagsRepo.readReactivationGuardsInTx(
         tx,
         tenantSlug,
@@ -143,18 +124,7 @@ export async function loadMemberRenewalContext(
         currentPeriodFrom: openCycle?.periodFrom ?? null,
         currentPeriodTo: openCycle?.periodTo ?? null,
       };
-    }),
-    listInvoicesByMember(makeListInvoicesByMemberDeps(tenantSlug), {
-      tenantId: tenantSlug,
-      memberId,
-      status: 'issued',
-      pageSize: UNPAID_CHECK_PAGE_SIZE,
-      offset: 0,
-    }),
-  ]);
-  const hasUnpaidMembershipInvoice =
-    invoicesResult.ok &&
-    invoicesResult.value.rows.some((invoice) => invoice.invoiceSubject === 'membership');
+    });
 
   return {
     classification,
@@ -162,6 +132,5 @@ export async function loadMemberRenewalContext(
     termMonths,
     currentPeriodFrom,
     currentPeriodTo,
-    hasUnpaidMembershipInvoice,
   };
 }

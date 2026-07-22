@@ -3594,7 +3594,7 @@
           "cancel": "Avbryt",
           "submitting": "Registrerar…",
           "successToast": "Offlinebetalning registrerad — cykeln är nu slutförd.",
-          "successReanchored": "Betalning registrerad — medlemsperioden börjar {date}.",
+          "successReanchored": "Betalning registrerad — medlemskapet aktiverat (period från {date}).",
           "successNoEmailWarning": "Ingen e-postadress finns registrerad — kvittot skickades inte. Leverera det till medlemmen manuellt.",
           "viewOrphanInvoice": "Visa faktura",
           "viewExistingInvoice": "Öppna befintlig faktura",

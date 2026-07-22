@@ -128,7 +128,6 @@ export type RenewalContextDto = {
     | { readonly kind: 'not_applicable'; readonly reason: 'erased' | 'terminal_only' };
   readonly periodTo: string | null;
   readonly termMonths: number | null;
-  readonly hasUnpaidMembershipInvoice: boolean;
 };
 
 /** `YYYY-MM-DD` slice (dates are ISO instants or date-only strings); '—' when absent — same missing-value convention used across the admin app. */
@@ -209,14 +208,12 @@ function RenewalContextLoader({ memberId }: { readonly memberId: string }) {
           classification: RenewalContextDto['classification'];
           period_to: string | null;
           term_months: number | null;
-          has_unpaid_membership_invoice: boolean;
         };
         if (!cancelled) {
           setContext({
             classification: body.classification,
             periodTo: body.period_to,
             termMonths: body.term_months,
-            hasUnpaidMembershipInvoice: body.has_unpaid_membership_invoice,
           });
         }
       } catch {

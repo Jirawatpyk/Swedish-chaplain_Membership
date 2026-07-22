@@ -34,9 +34,7 @@ describe('<RenewalContextPanel> — informational context line (3 classification
     renderPanel({
       classification: { kind: 'renewal' },
       periodTo: '2027-06-01',
-      termMonths: 12,
-      hasUnpaidMembershipInvoice: false,
-    });
+      termMonths: 12,    });
     expect(screen.getByTestId('renewal-context-line')).toHaveTextContent(
       'Current period ends 2027-06-01 — paying this bill renews the membership (2027-06-01 to 2028-06-01).',
     );
@@ -46,9 +44,7 @@ describe('<RenewalContextPanel> — informational context line (3 classification
     renderPanel({
       classification: { kind: 'first_payment' },
       periodTo: null,
-      termMonths: null,
-      hasUnpaidMembershipInvoice: false,
-    });
+      termMonths: null,    });
     expect(screen.getByTestId('renewal-context-line')).toHaveTextContent(
       'Membership not active yet — paying this bill activates benefits from the payment date; the 12-month period is fixed to the enrolment date.',
     );
@@ -58,9 +54,7 @@ describe('<RenewalContextPanel> — informational context line (3 classification
     renderPanel({
       classification: { kind: 'heal_no_cycle' },
       periodTo: null,
-      termMonths: null,
-      hasUnpaidMembershipInvoice: false,
-    });
+      termMonths: null,    });
     expect(screen.getByTestId('renewal-context-line')).toHaveTextContent(
       'Membership not active yet — paying this bill activates benefits from the payment date; the 12-month period is fixed to the enrolment date.',
     );
@@ -70,9 +64,7 @@ describe('<RenewalContextPanel> — informational context line (3 classification
     renderPanel({
       classification: { kind: 'not_applicable', reason: 'erased' },
       periodTo: null,
-      termMonths: null,
-      hasUnpaidMembershipInvoice: false,
-    });
+      termMonths: null,    });
     expect(screen.getByTestId('renewal-context-line')).toHaveTextContent(
       'No active membership period — this bill will not affect renewals (use the reactivation flow for lapsed members).',
     );
@@ -82,9 +74,7 @@ describe('<RenewalContextPanel> — informational context line (3 classification
     renderPanel({
       classification: { kind: 'not_applicable', reason: 'terminal_only' },
       periodTo: null,
-      termMonths: null,
-      hasUnpaidMembershipInvoice: false,
-    });
+      termMonths: null,    });
     expect(screen.getByTestId('renewal-context-line')).toHaveTextContent(
       'No active membership period — this bill will not affect renewals (use the reactivation flow for lapsed members).',
     );
@@ -94,9 +84,7 @@ describe('<RenewalContextPanel> — informational context line (3 classification
     renderPanel({
       classification: { kind: 'first_payment' },
       periodTo: null,
-      termMonths: null,
-      hasUnpaidMembershipInvoice: false,
-    });
+      termMonths: null,    });
     const line = screen.getByTestId('renewal-context-line');
     expect(line.querySelector('svg')).not.toBeNull();
     expect(line.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
