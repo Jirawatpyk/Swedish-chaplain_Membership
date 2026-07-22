@@ -54,6 +54,11 @@ export {
 } from './domain/portal-self-update-fields';
 
 export {
+  derivePortalState,
+  type PortalState,
+} from './domain/portal-state';
+
+export {
   assertNeverAuditEvent,
   type F3AuditEventType,
   type F3AuditEvent,
@@ -151,6 +156,12 @@ export {
   type DirectorySearchWithCountOutput,
   type DirectoryRow,
 } from './application/use-cases/directory-search';
+
+export {
+  loadMembersPortalStatus,
+  type LoadMembersPortalStatusInput,
+  type LoadMembersPortalStatusDeps,
+} from './application/use-cases/load-members-portal-status';
 
 // --- US3 use cases ----------------------------------------------------------
 
