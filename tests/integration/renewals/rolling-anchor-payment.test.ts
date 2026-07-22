@@ -232,6 +232,42 @@ describe('rolling-anchor unlinked-payment resolution — integration (Task 5)', 
   }
 
   /**
+   * FIXED-ANCHOR comeback (2026-07-22) — a provisional first-payment cycle
+   * whose period has ALREADY fully elapsed (2024-06 → 2025-06) by the time
+   * the August-2026 payment lands. Still `upcoming` + never anchored, so it
+   * classifies as `first_payment`, but keeping the dead 2024 period would
+   * leave the payer paid-but-suspended. The comeback exception must re-anchor
+   * it to the payment month instead (distinct from `seedProvisionalCycle`'s
+   * still-live June-2026 period).
+   */
+  async function seedExpiredProvisionalCycle(
+    t: TestTenant,
+    memberId: string,
+    planId: string,
+  ): Promise<string> {
+    const cycleId = randomUUID();
+    await runInTenant(t.ctx, (tx) =>
+      tx.insert(renewalCycles).values({
+        tenantId: t.ctx.slug,
+        cycleId,
+        memberId,
+        status: 'upcoming',
+        periodFrom: new Date('2024-06-01T00:00:00Z'),
+        periodTo: new Date('2025-06-01T00:00:00Z'),
+        expiresAt: new Date('2025-06-01T00:00:00Z'),
+        cycleLengthMonths: 12,
+        tierAtCycleStart: 'regular',
+        planIdAtCycleStart: planId,
+        frozenPlanPriceThb: '50000.00',
+        frozenPlanTermMonths: 12,
+        frozenPlanCurrency: 'THB',
+        anchoredAt: null,
+      }),
+    );
+    return cycleId;
+  }
+
+  /**
    * F2 fix (final-review, 2026-07-09) — a TERMINATED cycle that was
    * cancelled WITHOUT ever being anchored to a real payment (the
    * genuinely-never-paid shape). Distinct from `seedProvisionalCycle`'s
@@ -590,6 +626,32 @@ describe('rolling-anchor unlinked-payment resolution — integration (Task 5)', 
     expect(reanchored.status).toBe('upcoming');
     // Fixed-anchor: period stays at the provisional June anchor, not payment month.
     expect(reanchored.periodFrom.toISOString()).toBe('2026-06-01T00:00:00.000Z');
+    expect(reanchored.anchoredAt?.toISOString()).toBe('2026-08-01T00:00:00.000Z');
+    expect(reanchored.anchorInvoiceId).toBe(invoiceId);
+    expect(reanchored.closedReason).toBeNull(); // never completed
+  }, 120_000);
+
+  it('FIXED-ANCHOR comeback: first payment on an EXPIRED provisional period RE-ANCHORS to the payment month (not the dead period)', async () => {
+    const memberId = await seedMember(tenantA, planIdA);
+    const expiredCycleId = await seedExpiredProvisionalCycle(tenantA, memberId, planIdA);
+    const invoiceId = await seedIssuedInvoice(tenantA, memberId, planIdA);
+
+    // Period 2024-06 → 2025-06 is fully elapsed by the August-2026 payment
+    // (paymentDate 2026-08-16 → month-start anchor 2026-08-01). Keeping the
+    // dead period would resolve to `suspended`; the comeback exception must
+    // grant a FRESH 2026-08 → 2027-08 period instead. This is the ONE
+    // legitimate payment-time anchor move on the first-payment path.
+    await fireOnPaidChainInTx(tenantA, invoiceId, memberId, '2026-08-16');
+
+    const cycles = await loadCycles(tenantA, memberId);
+    expect(cycles).toHaveLength(1);
+    const reanchored = cycles[0]!;
+    expect(reanchored.cycleId).toBe(expiredCycleId);
+    expect(reanchored.status).toBe('upcoming');
+    // The dead 2024 period is REPLACED by a fresh payment-month period —
+    // NOT kept (which fixed-anchor does for a still-LIVE period).
+    expect(reanchored.periodFrom.toISOString()).toBe('2026-08-01T00:00:00.000Z');
+    expect(reanchored.periodTo.toISOString()).toBe('2027-08-01T00:00:00.000Z');
     expect(reanchored.anchoredAt?.toISOString()).toBe('2026-08-01T00:00:00.000Z');
     expect(reanchored.anchorInvoiceId).toBe(invoiceId);
     expect(reanchored.closedReason).toBeNull(); // never completed

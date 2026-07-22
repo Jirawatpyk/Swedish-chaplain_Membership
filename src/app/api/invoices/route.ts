@@ -7,6 +7,7 @@ import { requireAdminContext } from '@/lib/admin-context';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { addMonthsUtc } from '@/lib/dates';
+import { bangkokLocalDate } from '@/lib/fiscal-year';
 import {
   createInvoiceDraft,
   createInvoiceDraftSchema,
@@ -19,6 +20,19 @@ import {
 import { logger } from '@/lib/logger';
 import { serialiseInvoice } from './_serialise';
 import { loadMemberRenewalContext } from '@/app/(staff)/admin/invoices/_lib/member-renewal-context';
+
+/**
+ * First day of the CURRENT Bangkok month as a naive UTC-midnight ISO stamp
+ * (`YYYY-MM-01T00:00:00.000Z`) — the SAME month-start basis the renewal
+ * settlement core stores anchors on (`paymentAnchorMonthStartUtc`), so the
+ * "has this cycle's period already expired at issue time?" check compares
+ * like-for-like against a stored `period_to`. Used only for the first-payment
+ * comeback carve-out in POST below.
+ */
+function currentBangkokMonthStartUtc(): string {
+  const today = bangkokLocalDate(new Date().toISOString()); // YYYY-MM-DD (Bangkok)
+  return `${today.slice(0, 7)}-01T00:00:00.000Z`;
+}
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const ctx = await requireAdminContext(request, { resource: 'invoice', action: 'read' });
@@ -111,7 +125,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   //   - 064: a FIRST payment (or any member with an open cycle) bills the
   //     CURRENT period `[currentPeriodFrom, currentPeriodTo)` — so an imported
   //     member's first §86/4 prints their real membership dates, not the generic
-  //     "12 months from payment" wording (which regressed in PR #173).
+  //     "12 months from payment" wording (which regressed in PR #173) — UNLESS
+  //     that current period has ALREADY expired (see the comeback carve-out
+  //     below).
   let membershipCoverage: CreateInvoiceDraftInput['membershipCoverage'];
   try {
     const renewalContext = await loadMemberRenewalContext(tenantCtx.slug, parsed.data.member_id);
@@ -127,7 +143,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       };
     } else if (
       renewalContext.currentPeriodFrom &&
-      renewalContext.currentPeriodTo
+      renewalContext.currentPeriodTo &&
+      // FIXED-ANCHOR comeback carve-out (2026-07-22) — only print the cycle's
+      // CURRENT period as the concrete §86/4 window while it is still live. If
+      // it has ALREADY expired by the current Bangkok month, paying this bill
+      // triggers the settlement comeback exception (reanchor-first-payment.ts),
+      // which re-anchors to the PAYMENT month — so the dead past window would
+      // contradict the receipt. Fall through to the `from_payment` default
+      // ("12 months, effective from the month of payment"): the honest wording
+      // when the real anchor is only fixed at payment time. The month-start
+      // basis mirrors the core's comeback comparison (`periodTo <= payment
+      // month`), using THIS month as the best proxy for the (unknown) payment
+      // month at issue time.
+      Date.parse(renewalContext.currentPeriodTo) > Date.parse(currentBangkokMonthStartUtc())
     ) {
       membershipCoverage = {
         kind: 'window',

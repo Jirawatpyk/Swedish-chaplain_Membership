@@ -228,6 +228,30 @@ describe('contract: POST /api/invoices — membershipCoverage server-side thread
     });
   });
 
+  it('064 — first_payment with an EXPIRED open cycle → membershipCoverage OMITTED (comeback re-anchors at payment)', async () => {
+    loadMemberRenewalContextMock.mockResolvedValueOnce({
+      classification: { kind: 'first_payment' },
+      periodTo: null,
+      termMonths: null,
+      // A lapsed member being re-billed: the provisional period ended years
+      // ago. Paying this bill triggers the settlement comeback exception
+      // (reanchor-first-payment.ts), which re-anchors to the PAYMENT month —
+      // so printing this DEAD past window as the §86/4 coverage would
+      // contradict the receipt. The route must fall through to the generic
+      // `from_payment` wording ("12 months, effective from the month of
+      // payment") instead of threading the stale window.
+      currentPeriodFrom: '2020-08-01',
+      currentPeriodTo: '2021-08-01',
+    });
+
+    const { POST } = (await importRoute()) as { POST: (req: NextRequest) => Promise<Response> };
+    const res = await POST(makePostRequest(REQUEST_BODY));
+
+    expect(res.status).toBe(201);
+    const [, input] = createInvoiceDraftMock.mock.calls[0] as [unknown, Record<string, unknown>];
+    expect('membershipCoverage' in input).toBe(false);
+  });
+
   it('not_applicable-classified member → membershipCoverage OMITTED', async () => {
     loadMemberRenewalContextMock.mockResolvedValueOnce({
       classification: { kind: 'not_applicable', reason: 'terminal_only' },
