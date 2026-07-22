@@ -13,6 +13,7 @@
  */
 'use client';
 
+import { Loader2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import {
   AlertDialogAction,
@@ -131,6 +132,10 @@ export function DowngradeConfirmDialogBody({
       <AlertDialogFooter>
         <AlertDialogCancel onClick={onCancel}>{t('cancelCta')}</AlertDialogCancel>
         <AlertDialogAction onClick={onConfirm} disabled={submitting}>
+          {/* Busy spinner while the renewal POST runs (ux-standards § 6.2).
+              aria-hidden preserves the button's accessible name; the global
+              reduced-motion rule (globals.css § 19) neutralises .animate-spin. */}
+          {submitting ? <Loader2 className="animate-spin" aria-hidden /> : null}
           {t('confirmCta')}
         </AlertDialogAction>
       </AlertDialogFooter>
