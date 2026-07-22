@@ -175,9 +175,7 @@ describe('contract: POST /api/invoices — membershipCoverage server-side thread
     loadMemberRenewalContextMock.mockResolvedValueOnce({
       classification: { kind: 'renewal' },
       periodTo: '2027-06-01',
-      termMonths: 12,
-      hasUnpaidMembershipInvoice: false,
-    });
+      termMonths: 12,    });
 
     const { POST } = (await importRoute()) as { POST: (req: NextRequest) => Promise<Response> };
     const res = await POST(makePostRequest(REQUEST_BODY));
@@ -198,9 +196,7 @@ describe('contract: POST /api/invoices — membershipCoverage server-side thread
       periodTo: null,
       termMonths: null,
       currentPeriodFrom: null,
-      currentPeriodTo: null,
-      hasUnpaidMembershipInvoice: false,
-    });
+      currentPeriodTo: null,    });
 
     const { POST } = (await importRoute()) as { POST: (req: NextRequest) => Promise<Response> };
     const res = await POST(makePostRequest(REQUEST_BODY));
@@ -216,9 +212,7 @@ describe('contract: POST /api/invoices — membershipCoverage server-side thread
       periodTo: null,
       termMonths: null,
       currentPeriodFrom: '2026-08-01',
-      currentPeriodTo: '2027-08-01',
-      hasUnpaidMembershipInvoice: false,
-    });
+      currentPeriodTo: '2027-08-01',    });
 
     const { POST } = (await importRoute()) as { POST: (req: NextRequest) => Promise<Response> };
     const res = await POST(makePostRequest(REQUEST_BODY));
@@ -234,13 +228,93 @@ describe('contract: POST /api/invoices — membershipCoverage server-side thread
     });
   });
 
+  it('064 — first_payment with an EXPIRED open cycle → membershipCoverage OMITTED (comeback re-anchors at payment)', async () => {
+    loadMemberRenewalContextMock.mockResolvedValueOnce({
+      classification: { kind: 'first_payment' },
+      periodTo: null,
+      termMonths: null,
+      // A lapsed member being re-billed: the provisional period ended years
+      // ago. Paying this bill triggers the settlement comeback exception
+      // (reanchor-first-payment.ts), which re-anchors to the PAYMENT month —
+      // so printing this DEAD past window as the §86/4 coverage would
+      // contradict the receipt. The route must fall through to the generic
+      // `from_payment` wording ("12 months, effective from the month of
+      // payment") instead of threading the stale window.
+      currentPeriodFrom: '2020-08-01',
+      currentPeriodTo: '2021-08-01',
+    });
+
+    const { POST } = (await importRoute()) as { POST: (req: NextRequest) => Promise<Response> };
+    const res = await POST(makePostRequest(REQUEST_BODY));
+
+    expect(res.status).toBe(201);
+    const [, input] = createInvoiceDraftMock.mock.calls[0] as [unknown, Record<string, unknown>];
+    expect('membershipCoverage' in input).toBe(false);
+  });
+
+  it('M-1 — first_payment whose current period ends NEXT month → membershipCoverage OMITTED (comeback risk if payment slips)', async () => {
+    // Fake ONLY Date (no setTimeout/interval → no async interference) so the
+    // route's `new Date()` sees a fixed issue month of 2026-07.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-07-15T00:00:00.000Z'));
+    try {
+      loadMemberRenewalContextMock.mockResolvedValueOnce({
+        classification: { kind: 'first_payment' },
+        periodTo: null,
+        termMonths: null,
+        // Period ends 2026-08-20 — NEXT month relative to the 2026-07 issue. A
+        // payment slipping into August lands after period_to → settlement
+        // comeback → a concrete window printed now would contradict the receipt.
+        // The route must be conservative and fall back to from_payment.
+        currentPeriodFrom: '2025-08-20',
+        currentPeriodTo: '2026-08-20',
+      });
+
+      const { POST } = (await importRoute()) as { POST: (req: NextRequest) => Promise<Response> };
+      const res = await POST(makePostRequest(REQUEST_BODY));
+
+      expect(res.status).toBe(201);
+      const [, input] = createInvoiceDraftMock.mock.calls[0] as [unknown, Record<string, unknown>];
+      expect('membershipCoverage' in input).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('M-1 — first_payment whose current period ends 2+ months out → concrete window threaded (safe from a normal-timing comeback)', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-07-15T00:00:00.000Z'));
+    try {
+      loadMemberRenewalContextMock.mockResolvedValueOnce({
+        classification: { kind: 'first_payment' },
+        periodTo: null,
+        termMonths: null,
+        // Period ends 2026-10-01 — comfortably beyond next month, so a
+        // normal-timing payment (July/August) cannot cross it. Print real dates.
+        currentPeriodFrom: '2025-10-01',
+        currentPeriodTo: '2026-10-01',
+      });
+
+      const { POST } = (await importRoute()) as { POST: (req: NextRequest) => Promise<Response> };
+      const res = await POST(makePostRequest(REQUEST_BODY));
+
+      expect(res.status).toBe(201);
+      const [, input] = createInvoiceDraftMock.mock.calls[0] as [unknown, Record<string, unknown>];
+      expect(input.membershipCoverage).toEqual({
+        kind: 'window',
+        fromIso: '2025-10-01',
+        toIso: '2026-10-01',
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('not_applicable-classified member → membershipCoverage OMITTED', async () => {
     loadMemberRenewalContextMock.mockResolvedValueOnce({
       classification: { kind: 'not_applicable', reason: 'terminal_only' },
       periodTo: null,
-      termMonths: null,
-      hasUnpaidMembershipInvoice: false,
-    });
+      termMonths: null,    });
 
     const { POST } = (await importRoute()) as { POST: (req: NextRequest) => Promise<Response> };
     const res = await POST(makePostRequest(REQUEST_BODY));
@@ -269,9 +343,7 @@ describe('contract: POST /api/invoices — membershipCoverage server-side thread
     loadMemberRenewalContextMock.mockResolvedValueOnce({
       classification: { kind: 'not_applicable', reason: 'erased' },
       periodTo: null,
-      termMonths: null,
-      hasUnpaidMembershipInvoice: false,
-    });
+      termMonths: null,    });
 
     const { POST } = (await importRoute()) as { POST: (req: NextRequest) => Promise<Response> };
     const res = await POST(
@@ -294,9 +366,7 @@ describe('contract: POST /api/invoices — membershipCoverage server-side thread
     loadMemberRenewalContextMock.mockResolvedValueOnce({
       classification: { kind: 'first_payment' },
       periodTo: null,
-      termMonths: null,
-      hasUnpaidMembershipInvoice: false,
-    });
+      termMonths: null,    });
 
     const { POST } = (await importRoute()) as { POST: (req: NextRequest) => Promise<Response> };
     await POST(makePostRequest(REQUEST_BODY));

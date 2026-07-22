@@ -156,74 +156,144 @@ describe('reanchorFirstPaymentCycleInTx — orphaned-linked-invoice log', () => 
   });
 });
 
-// FIX-3 (PR #173 review, 2026-07-09) — the FY-crossing boundary check must
-// use the TENANT's real fiscal_year_start_month, not a silently-defaulted
-// January. `periodFrom` is Feb 2026 throughout; only the payment month
-// (March vs May) + the tenant's startMonth vary.
-describe('reanchorFirstPaymentCycleInTx — FIX-3: tenant fiscal-year-start-month threading', () => {
+// FIXED-ANCHOR (2026-07-22): first payment must NOT move the period to the
+// payment month — it keeps the cycle's registration/backfill anchor and only
+// stamps `anchored_at` + activates the status. This reverses the #173
+// payment-anchor bug, so there is no fiscal-year boundary crossing and no
+// plan re-freeze on first payment.
+describe('reanchorFirstPaymentCycleInTx — fixed-anchor: period is NOT moved to the payment month', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  const FEB_PERIOD_FROM = '2026-02-01T00:00:00.000Z';
+  it('passes the cycle EXISTING period to the repo, not the payment month', async () => {
+    const { deps, mocks } = fakeDeps();
+    // cycle period is Jan 2026; the payment lands in June.
+    const cycle = unanchoredCycle();
 
-  it('startMonth=4 (April) tenant, payment in March → SAME fiscal year as Feb periodFrom → no refreeze', async () => {
-    const { deps, mocks } = fakeDeps({ fiscalYearStartMonth: 4 });
-    const cycle = unanchoredCycle({ periodFrom: FEB_PERIOD_FROM });
-
-    const result = await reanchorFirstPaymentCycleInTx(
+    await reanchorFirstPaymentCycleInTx(
       deps,
-      buildEvent({ paymentDate: '2026-03-16' }),
+      buildEvent({ paidAt: '2026-06-16T10:00:00Z', paymentDate: '2026-06-16' }),
       {} as never,
       cycle,
     );
 
-    expect(mocks.getFiscalYearStartMonthInTx).toHaveBeenCalledWith(
+    expect(mocks.reanchorPeriodInTx).toHaveBeenCalledWith(
       expect.anything(),
       TENANT_ID,
+      cycle.cycleId,
+      expect.objectContaining({
+        periodFrom: cycle.periodFrom,
+        periodTo: cycle.periodTo,
+        anchorInvoiceId: PAYING_INVOICE_UUID,
+      }),
     );
+  });
+
+  it('does NOT read the fiscal-year start-month or re-freeze the plan (no period move → no boundary crossing)', async () => {
+    const { deps, mocks } = fakeDeps({ fiscalYearStartMonth: 4 });
+
+    const result = await reanchorFirstPaymentCycleInTx(
+      deps,
+      buildEvent({ paymentDate: '2026-05-16' }),
+      {} as never,
+      unanchoredCycle({ periodFrom: '2026-02-01T00:00:00.000Z' }),
+    );
+
+    expect(mocks.getFiscalYearStartMonthInTx).not.toHaveBeenCalled();
     expect(mocks.loadPlanFrozenFields).not.toHaveBeenCalled();
     expect(result?.refrozePlanFields).toBe(false);
   });
 
-  it('startMonth=4 (April) tenant, payment in May → CROSSES into the new fiscal year → refreezes at fiscalYear=2026', async () => {
-    const { deps, mocks } = fakeDeps({ fiscalYearStartMonth: 4 });
-    const cycle = unanchoredCycle({ periodFrom: FEB_PERIOD_FROM });
-    mocks.loadPlanFrozenFields.mockResolvedValue({
-      status: 'found' as const,
-      plan: {
-        tierBucket: 'regular' as const,
-        priceTHB: '45000.00',
-        termMonths: 12,
-        currency: 'THB' as const,
-      },
+  it('EXPIRED period at payment → re-anchors to the payment month (comeback), NOT the dead period', async () => {
+    const { deps, mocks } = fakeDeps();
+    // Period fully elapsed (2024-2025) but the invoice is paid June 2026 —
+    // keeping the dead period would leave the payer suspended. Treat as comeback.
+    const cycle = unanchoredCycle({
+      periodFrom: '2024-01-01T00:00:00.000Z',
+      periodTo: '2025-01-01T00:00:00.000Z',
+      frozenPlanTermMonths: 12,
     });
 
-    const result = await reanchorFirstPaymentCycleInTx(
+    await reanchorFirstPaymentCycleInTx(
       deps,
-      buildEvent({ paymentDate: '2026-05-16' }),
+      buildEvent({ paidAt: '2026-06-16T10:00:00Z', paymentDate: '2026-06-16' }),
       {} as never,
       cycle,
     );
 
-    expect(mocks.loadPlanFrozenFields).toHaveBeenCalledWith(
-      expect.objectContaining({ fiscalYear: 2026, mode: 'freeze' }),
+    // Re-anchored to a FRESH June 2026 period (not the dead 2024 one).
+    expect(mocks.reanchorPeriodInTx).toHaveBeenCalledWith(
+      expect.anything(),
+      TENANT_ID,
+      cycle.cycleId,
+      expect.objectContaining({
+        periodFrom: '2026-06-01T00:00:00.000Z',
+        periodTo: '2027-06-01T00:00:00.000Z',
+        anchoredAt: '2026-06-01T00:00:00.000Z',
+      }),
     );
-    expect(result?.refrozePlanFields).toBe(true);
   });
 
-  it('startMonth=1 (January, default) tenant, same dates → does NOT cross (calendar-year both sides) — contrast case proving the threading matters', async () => {
-    const { deps, mocks } = fakeDeps({ fiscalYearStartMonth: 1 });
-    const cycle = unanchoredCycle({ periodFrom: FEB_PERIOD_FROM });
+  it('B-1: period ends MID-MONTH, payment lands later that SAME month → still a comeback (not paid-but-suspended)', async () => {
+    const { deps, mocks } = fakeDeps();
+    // An onboarded member's period runs from their registration day-of-month:
+    // it ends 2026-06-15. They pay 2026-06-20 — later in the SAME month. The
+    // month-start anchor (2026-06-01) is BEFORE period_to, but the real payment
+    // date (the 20th) is AFTER it. Comparing against the month-start would
+    // wrongly keep the dead period (paid-but-suspended); comparing against the
+    // ACTUAL payment date correctly treats it as a comeback (review B-1).
+    const cycle = unanchoredCycle({
+      periodFrom: '2025-06-15T00:00:00.000Z',
+      periodTo: '2026-06-15T00:00:00.000Z',
+      frozenPlanTermMonths: 12,
+    });
 
-    const result = await reanchorFirstPaymentCycleInTx(
+    await reanchorFirstPaymentCycleInTx(
       deps,
-      buildEvent({ paymentDate: '2026-05-16' }),
+      buildEvent({ paidAt: '2026-06-20T10:00:00Z', paymentDate: '2026-06-20' }),
       {} as never,
       cycle,
     );
 
-    expect(mocks.loadPlanFrozenFields).not.toHaveBeenCalled();
-    expect(result?.refrozePlanFields).toBe(false);
+    // A comeback: fresh month-start period, NOT the dead mid-month one kept.
+    expect(mocks.reanchorPeriodInTx).toHaveBeenCalledWith(
+      expect.anything(),
+      TENANT_ID,
+      cycle.cycleId,
+      expect.objectContaining({
+        periodFrom: '2026-06-01T00:00:00.000Z',
+        periodTo: '2027-06-01T00:00:00.000Z',
+        anchoredAt: '2026-06-01T00:00:00.000Z',
+      }),
+    );
+  });
+
+  it('B-1 boundary: period ends mid-month, payment BEFORE that end (same month) → period KEPT (still live, no comeback)', async () => {
+    const { deps, mocks } = fakeDeps();
+    // Same mid-month period ending 2026-06-15, but paid 2026-06-10 — BEFORE the
+    // period ends. Still live → keep the registration period (fixed-anchor).
+    const cycle = unanchoredCycle({
+      periodFrom: '2025-06-15T00:00:00.000Z',
+      periodTo: '2026-06-15T00:00:00.000Z',
+      frozenPlanTermMonths: 12,
+    });
+
+    await reanchorFirstPaymentCycleInTx(
+      deps,
+      buildEvent({ paidAt: '2026-06-10T10:00:00Z', paymentDate: '2026-06-10' }),
+      {} as never,
+      cycle,
+    );
+
+    expect(mocks.reanchorPeriodInTx).toHaveBeenCalledWith(
+      expect.anything(),
+      TENANT_ID,
+      cycle.cycleId,
+      expect.objectContaining({
+        periodFrom: '2025-06-15T00:00:00.000Z',
+        periodTo: '2026-06-15T00:00:00.000Z',
+      }),
+    );
   });
 });

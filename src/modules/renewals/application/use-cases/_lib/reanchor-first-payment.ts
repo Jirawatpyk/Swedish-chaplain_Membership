@@ -31,8 +31,6 @@
 import type { TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { renewalsMetrics } from '@/lib/metrics';
-import { deriveFiscalYear, type FiscalYearStartMonth } from '@/lib/fiscal-year';
-import { addMonthsUtc } from '@/lib/dates';
 import type { F4InvoicePaidEvent, InvoiceId } from '@/modules/invoicing';
 import type { MemberId } from '@/modules/members';
 import { asCycleId, type RenewalCycle } from '../../../domain/renewal-cycle';
@@ -40,7 +38,8 @@ import type { RenewalCycleRepo } from '../../ports/renewal-cycle-repo';
 import type { PlanLookupForRenewalPort } from '../../ports/plan-lookup-for-renewal';
 import type { RenewalAuditEmitter } from '../../ports/renewal-audit-emitter';
 import type { FiscalYearStartMonthPort } from '../../ports/fiscal-year-settings-port';
-import { paymentAnchorMonthStartUtc } from './payment-anchor-date';
+import { addMonthsUtc } from '@/lib/dates';
+import { paymentAnchorMonthStartUtc, paymentDateOnly } from './payment-anchor-date';
 
 export type ReanchorFirstPaymentDeps = {
   readonly cyclesRepo: Pick<RenewalCycleRepo, 'reanchorPeriodInTx'>;
@@ -110,68 +109,57 @@ export async function reanchorFirstPaymentCycleInTx(
     );
   }
 
-  const anchorDate = paymentAnchorMonthStartUtc(evt);
+  // FIXED-ANCHOR (2026-07-22, bug-doc Q-2 + maintainer decision): the
+  // membership period is FIXED at the cycle's registration/backfill anchor and
+  // must NOT move to the payment month. First payment only ACTIVATES the cycle
+  // (status → 'upcoming', stamps `anchored_at`, clears the parked invoice); the
+  // 059 suspension model gates benefit access ("no benefit until paid"). This
+  // REVERSES the #173 payment-anchor behaviour (was `periodFrom = payment
+  // month`), which drifted every member's anniversary to their payment date and
+  // mis-stated the §86/4 coverage window. `anchored_at` is stamped from the
+  // payment month purely as a forensic "when activated" marker — it no longer
+  // defines the period. No fiscal-year re-freeze: the period does not cross a
+  // boundary because it does not move, so the registration-year frozen
+  // price/term stand.
+  const anchoredAtStamp = paymentAnchorMonthStartUtc(evt);
 
-  // FIX-3 (PR #173 review, 2026-07-09) — thread the tenant's REAL
-  // fiscal-year-start-month into the boundary check. Without this, a
-  // non-January-start tenant's re-anchor could silently skip re-freezing
-  // the plan's price/term for the new fiscal year (the previous
-  // `deriveFiscalYear` calls below took no `startMonth` arg, defaulting
-  // to January for every tenant).
+  // EXPIRED-PERIOD EXCEPTION (comeback semantics). Normally the period STAYS
+  // at the cycle's registration/backfill anchor — pay early or late, the
+  // anniversary does not move. BUT if that fixed period has ALREADY fully
+  // elapsed by the ACTUAL payment date, keeping the dead period would leave the
+  // member paid-but-suspended (an 'upcoming' cycle with an already-past period
+  // resolves to `suspended`) and stuck in the enter-awaiting-payment-on-expiry
+  // cron loop. That member is effectively a comeback, so — matching
+  // admin-renew-lapsed-member's fully-expired branch — we RE-ANCHOR to the
+  // payment month to grant a fresh period. Frozen price/term are kept as-is
+  // here (the member's NEXT renewal re-resolves them); restoring the FY-refreeze
+  // for this rare edge is not worth the complexity.
   //
-  // R2-FIX-1 (PR #173 round-2 review, 2026-07-09) — read on the OUTER
-  // settlement `tx` (`getFiscalYearStartMonthInTx`) rather than the prior
-  // no-`tx` variant that opened its own `runInTenant` (a second pooled
-  // connection while this money-path tx still holds the first — the
-  // nested-connection pool-exhaustion class documented in `src/lib/db.ts`).
-  const startMonth = (await deps.fiscalYearSettings.getFiscalYearStartMonthInTx(
-    tx,
-    evt.tenantId,
-  )) as FiscalYearStartMonth;
-  const oldFiscalYear = deriveFiscalYear(cycle.periodFrom, startMonth);
-  const newFiscalYear = deriveFiscalYear(anchorDate, startMonth);
-
-  let frozenPlanPriceThb = cycle.frozenPlanPriceThb;
-  let frozenPlanTermMonths = cycle.frozenPlanTermMonths;
-  let refrozePlanFields = false;
-
-  if (newFiscalYear !== oldFiscalYear) {
-    const resolved = await deps.planLookup.loadPlanFrozenFields({
-      tenantId: evt.tenantId,
-      planId: cycle.planIdAtCycleStart,
-      fiscalYear: newFiscalYear,
-      mode: 'freeze',
-    });
-    if (resolved.status === 'found') {
-      frozenPlanPriceThb = resolved.plan.priceTHB;
-      frozenPlanTermMonths = resolved.plan.termMonths;
-      refrozePlanFields = true;
-    } else {
-      logger.error(
-        {
-          cycleId: cycle.cycleId,
-          planId: cycle.planIdAtCycleStart,
-          newFiscalYear,
-          status: resolved.status,
-        },
-        '[reanchor-first-payment] re-anchor crossed a fiscal-year boundary but the plan is unresolvable for the new year — keeping old frozen fields',
-      );
-    }
-  }
-
-  const newPeriodTo = addMonthsUtc(anchorDate, frozenPlanTermMonths);
+  // The expiry test compares `period_to` against the RAW payment date, NOT the
+  // month-start anchor: an onboarded member's period runs from their
+  // registration day-of-month (mid-month), so a payment landing later in the
+  // same month as period_to (e.g. period ends the 15th, paid the 20th) is
+  // genuinely past-expiry even though the month-start anchor (the 1st) is not.
+  // Comparing against the month-start would leave that late-in-month payer
+  // paid-but-suspended (financial-integrity review B-1, 2026-07-22).
+  const periodExpiredAtPayment =
+    Date.parse(cycle.periodTo) <= Date.parse(paymentDateOnly(evt));
+  const newPeriodFrom = periodExpiredAtPayment ? anchoredAtStamp : cycle.periodFrom;
+  const newPeriodTo = periodExpiredAtPayment
+    ? addMonthsUtc(anchoredAtStamp, cycle.frozenPlanTermMonths)
+    : cycle.periodTo;
 
   const reanchored = await deps.cyclesRepo.reanchorPeriodInTx(
     tx,
     evt.tenantId,
     cycle.cycleId,
     {
-      periodFrom: anchorDate,
+      periodFrom: newPeriodFrom,
       periodTo: newPeriodTo,
-      anchoredAt: anchorDate,
+      anchoredAt: anchoredAtStamp,
       anchorInvoiceId: evt.invoiceId,
-      frozenPlanPriceThb,
-      frozenPlanTermMonths,
+      frozenPlanPriceThb: cycle.frozenPlanPriceThb,
+      frozenPlanTermMonths: cycle.frozenPlanTermMonths,
     },
   );
   if (!reanchored) {
@@ -191,7 +179,7 @@ export async function reanchorFirstPaymentCycleInTx(
         new_period_from: reanchored.cycle.periodFrom,
         new_period_to: reanchored.cycle.periodTo,
         old_status: cycle.status,
-        refroze_plan_fields: refrozePlanFields,
+        refroze_plan_fields: false,
         reminder_events_reset: reanchored.reminderEventsReset,
       },
     },
@@ -205,7 +193,7 @@ export async function reanchorFirstPaymentCycleInTx(
   renewalsMetrics.unlinkedPaymentResolved('reanchored');
   return {
     cycle: reanchored.cycle,
-    refrozePlanFields,
+    refrozePlanFields: false,
     reminderEventsReset: reanchored.reminderEventsReset,
   };
 }

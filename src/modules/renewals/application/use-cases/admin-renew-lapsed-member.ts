@@ -201,8 +201,13 @@ async function resolveComebackPeriodFrom(
     memberId,
   );
   if (paidThrough === null) {
-    // No settled predecessor — keep the now anchor (onPaid re-anchors the
-    // first_payment cycle to the actual payment month).
+    // No settled predecessor — anchor the comeback cycle at `now` (the
+    // reactivation instant). This is a genuine re-anchor: a long-lapsed member
+    // returning starts a fresh period (bug-doc Q-2's "one place a payment-time
+    // anchor is right"). Since the fixed-anchor change (2026-07-22), first
+    // payment no longer moves the period, so the comeback period stays at this
+    // `now` anchor rather than being refined to the later payment month —
+    // acceptable, as `now` (admin-renew time) is itself the comeback instant.
     return nowIso;
   }
   // Size the gapless window with the member's CURRENT plan term. Term is

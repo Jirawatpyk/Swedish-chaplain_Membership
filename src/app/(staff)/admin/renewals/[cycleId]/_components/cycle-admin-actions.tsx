@@ -237,13 +237,16 @@ export function CycleAdminActions({ cycleId, status }: CycleAdminActionsProps) {
         },
         'markPaidOffline',
         (data) => {
-          // Task 7 (rolling-anchor refactor) — the member's one-and-only
-          // cycle was re-anchored (not completed) to the actual payment
-          // month. Distinct copy so the admin understands the cycle
-          // stayed `upcoming` instead of completing. The authoritative
-          // new period dates render on the refreshed page below; the
-          // toast's `{date}` is the TRUE period start (first of month)
-          // after re-anchor.
+          // FIXED-ANCHOR (2026-07-22) — the member's one-and-only cycle was
+          // ACTIVATED (not completed): status stays `upcoming` and
+          // `anchored_at` is stamped, but the membership PERIOD keeps its
+          // registration/backfill anchor — it does NOT move to the payment
+          // month (that was the reverted #173 payment-anchor bug). Distinct
+          // copy so the admin understands the cycle stayed `upcoming` instead
+          // of completing. The toast's `{date}` is that fixed period start.
+          // (The rare comeback exception — an already-expired period at
+          // payment — re-anchors to a fresh period, and `{date}` then renders
+          // the new start.)
           const dataObj = data as
             | {
                 outcome?: string;
