@@ -219,6 +219,9 @@ function makeDeps(opts?: {
     } as unknown as AdminRenewLapsedMemberDeps['memberRenewalFlagsRepo'],
     planLookupForRenewal: {
       loadPlanFrozenFields: loadPlanFrozenMock,
+      // #21 — admin-renew uses only the connection-fresh variant; the in-tx
+      // sibling is unused here (reuse the same mock to satisfy the port).
+      loadPlanFrozenFieldsInTx: loadPlanFrozenMock,
     },
     memberPlanLookup: { loadMemberPlanInTx: loadMemberPlanMock },
     f4InvoicingBridge: { issueInvoiceForRenewal: bridgeMock },

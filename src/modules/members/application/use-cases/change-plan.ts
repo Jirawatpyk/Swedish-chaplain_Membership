@@ -132,10 +132,13 @@ export type ChangePlanDeps = {
    * FEATURE_PLAN_CHANGE_IMMEDIATE_REFREEZE flag baked into the adapter is off,
    * change-plan behaves exactly as Phase 1 (the change defers to the next
    * cycle) — the cycle's frozen §86/4 fields are byte-identical. When set, it
-   * runs on the caller's `tx` (never a nested runInTenant) and returns the
-   * observed `BillingEffect`, threaded onto the ok payload for the UI. A throw
-   * from it rolls back the entire plan flip (atomic; Constitution Principle
-   * VIII).
+   * runs entirely on the caller's `tx` — including the F2 plan-frozen-fields
+   * lookup, which uses `loadPlanFrozenFieldsInTx(tx, …)` so it does NOT open a
+   * nested `runInTenant` under the member FOR UPDATE + cycle advisory lock this
+   * tx holds (Finding #21; the prior code claimed "never a nested runInTenant"
+   * but the plan lookup did open one). It returns the observed `BillingEffect`,
+   * threaded onto the ok payload for the UI. A throw from it rolls back the
+   * entire plan flip (atomic; Constitution Principle VIII).
    */
   applyPlanChangeToBilling?: PlanChangeBillingRemediationPort;
 };

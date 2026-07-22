@@ -197,4 +197,33 @@ describe('F8 plan-lookup adapter — cycle fiscal-year resolution (070)', () => 
     });
     expect(result.status).toBe('not_found');
   });
+
+  // Finding #21 — `loadPlanFrozenFieldsInTx(tx, …)` (the caller's-tx variant the
+  // plan-change billing remediation now uses instead of a nested runInTenant)
+  // must read the IDENTICAL rows as the connection-fresh `loadPlanFrozenFields`.
+  // Both delegate to the same shared query; this proves parity end-to-end
+  // against live Neon, including that RLS scopes correctly via the caller's
+  // inherited tenant GUC (the read is on someone else's tx, not its own).
+  it('#21 in-tx variant resolves the SAME rows as the connection-fresh variant (no behaviour change)', async () => {
+    const adapter = makeDrizzlePlanLookupForRenewal(tenant.ctx);
+    const missingPlanId = `f8-missing-${randomUUID().slice(0, 8)}`;
+    const inputs = [
+      { planId: bothActivePlanId, fiscalYear: 2026, mode: 'freeze' as const },
+      { planId: bothActivePlanId, fiscalYear: 2027, mode: 'freeze' as const },
+      { planId: inactiveNextYearPlanId, fiscalYear: 2027, mode: 'offer' as const },
+      { planId: bothActivePlanId, fiscalYear: 2099, mode: 'freeze' as const },
+      { planId: missingPlanId, fiscalYear: 2026, mode: 'freeze' as const },
+    ];
+    for (const partial of inputs) {
+      const input = { tenantId: tenant.ctx.slug, ...partial };
+      const fresh = await adapter.loadPlanFrozenFields(input);
+      // Run the in-tx variant on a real caller-owned tx (as the remediation does).
+      const inTx = await runInTenant(tenant.ctx, (tx) =>
+        adapter.loadPlanFrozenFieldsInTx(tx, input),
+      );
+      expect(inTx, `parity for ${partial.planId} ${partial.fiscalYear} ${partial.mode}`).toEqual(
+        fresh,
+      );
+    }
+  }, 120_000);
 });

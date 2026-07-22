@@ -121,7 +121,11 @@ function makeDeps(opts?: {
       findActiveForMemberInTx,
       insert,
     } as unknown as WrapperDeps['cyclesRepo'],
-    planLookup: { loadPlanFrozenFields },
+    planLookup: {
+      loadPlanFrozenFields,
+      // #21 — this use-case uses only the connection-fresh variant.
+      loadPlanFrozenFieldsInTx: loadPlanFrozenFields,
+    },
     auditEmitter: { emit: vi.fn(), emitInTx, bulkEmitInTx: vi.fn() },
     idFactory: { cycleId: () => asCycleId('00000000-0000-0000-0000-0000000000c2') },
     memberPlanLookup: { loadMemberPlanInTx },

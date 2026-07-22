@@ -221,6 +221,9 @@ function fakeDeps(args: {
   );
   const planLookup: PlanLookupForRenewalPort = {
     loadPlanFrozenFields: planLookupMock as never,
+    // #21 — confirm-renewal calls only the connection-fresh variant (it holds
+    // no member row lock); the in-tx sibling is unused here.
+    loadPlanFrozenFieldsInTx: planLookupMock as never,
   };
   const invoiceBridge: F4InvoicingForRenewalBridge = {
     issueInvoiceForRenewal: invoiceBridgeMock as never,
