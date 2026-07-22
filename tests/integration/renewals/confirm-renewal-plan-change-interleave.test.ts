@@ -49,7 +49,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
-import { asSatang, parseThbDecimalToSatang } from '@/lib/money';
+import { asSatang, parseThbDecimal, parseThbDecimalToSatang } from '@/lib/money';
 import { changePlan, type MemberId } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
@@ -364,7 +364,7 @@ describe('FINDING #20 — confirm-renewal issue→link window vs concurrent chan
     expect(cycleRow[0]?.linkedInvoiceId).toBe(result.value.invoiceId);
 
     // INVARIANT: a linked cycle's frozen price === the linked §86/4 line unit price.
-    expect(parseThbDecimalToSatang(cycleRow[0]!.frozen)).toBe(
+    expect(parseThbDecimalToSatang(parseThbDecimal(cycleRow[0]!.frozen))).toBe(
       BigInt(membershipLine!.unitPriceSatang),
     );
     // Concretely: reconciled back to the BILLED (old) plan/price, NOT the
@@ -384,19 +384,18 @@ describe('FINDING #20 — confirm-renewal issue→link window vs concurrent chan
     expect(memberRow[0]?.planId).toBe(newPlanId);
 
     // ── The correction is auditable: a truthful corrective price-frozen row. ──
-    const priceFrozenRows = await runInTenant(tenant.ctx, (tx) =>
+    // Filter by the payload discriminator in JS (the drizzle `audit_event_type`
+    // enum union is a curated subset that does not list every F8 event type —
+    // the runtime pgEnum does; see the tuple-vs-DB drift note).
+    const tenantAuditRows = await runInTenant(tenant.ctx, (tx) =>
       tx
-        .select({ payload: auditLog.payload })
+        .select({ eventType: auditLog.eventType, payload: auditLog.payload })
         .from(auditLog)
-        .where(
-          and(
-            eq(auditLog.tenantId, tenant.ctx.slug),
-            eq(auditLog.eventType, 'renewal_cycle_price_frozen'),
-          ),
-        ),
+        .where(eq(auditLog.tenantId, tenant.ctx.slug)),
     );
-    const corrective = priceFrozenRows.find(
+    const corrective = tenantAuditRows.find(
       (r) =>
+        (r.eventType as string) === 'renewal_cycle_price_frozen' &&
         (r.payload as { reconciled_from_concurrent_plan_change?: boolean } | null)
           ?.reconciled_from_concurrent_plan_change === true,
     );

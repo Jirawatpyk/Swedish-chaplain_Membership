@@ -899,6 +899,80 @@ export function makeDrizzleRenewalCycleRepo(
       return rowToDomain(row);
     },
 
+    async linkInvoiceAndReconcileFrozenPlanInTx(
+      tx: unknown,
+      tenantId: string,
+      cycleId: CycleId,
+      invoiceId: string,
+      billed: {
+        readonly planIdAtCycleStart: string;
+        readonly tierAtCycleStart: TierBucket;
+        readonly frozenPlanPriceThb: ThbDecimal;
+        readonly frozenPlanTermMonths: number;
+        readonly frozenPlanCurrency: 'THB' | 'SEK' | 'EUR' | 'USD';
+      },
+    ): Promise<{ readonly cycle: RenewalCycle; readonly previous: RenewalCycle }> {
+      // Finding #20 — atomic link + reconcile-frozen-to-billed. The caller
+      // (confirm-renewal Step-4) holds the per-cycle advisory lock, so the
+      // pre-read + guarded UPDATE below are race-free against every other
+      // frozen-price writer (they all take `renewals:<tenant>:<cycle>`). The
+      // pre-read captures the CURRENT (possibly concurrently-refrozen) frozen
+      // fields so the use-case can emit a corrective audit ONLY when a real
+      // divergence was healed. The UPDATE's link CAS mirrors `linkInvoice`
+      // exactly (WHERE linked_invoice_id IS NULL OR = $invoiceId) — 0 rows means
+      // nothing is written (no partial reconcile). The explicit `tenant_id`
+      // predicate is application-layer defence-in-depth alongside RLS (Principle
+      // I § 1).
+      const txDb = tx as typeof db;
+      const beforeRows = await txDb
+        .select()
+        .from(renewalCycles)
+        .where(
+          and(
+            eq(renewalCycles.cycleId, cycleId),
+            eq(renewalCycles.tenantId, tenantId),
+          ),
+        )
+        .limit(1);
+      const before = beforeRows[0];
+      if (!before) {
+        throw new CycleNotFoundError(cycleId);
+      }
+      const updated = await txDb
+        .update(renewalCycles)
+        .set({
+          linkedInvoiceId: invoiceId,
+          planIdAtCycleStart: billed.planIdAtCycleStart,
+          tierAtCycleStart: billed.tierAtCycleStart,
+          frozenPlanPriceThb: billed.frozenPlanPriceThb,
+          frozenPlanTermMonths: billed.frozenPlanTermMonths,
+          frozenPlanCurrency: billed.frozenPlanCurrency,
+        })
+        .where(
+          and(
+            eq(renewalCycles.cycleId, cycleId),
+            eq(renewalCycles.tenantId, tenantId),
+            or(
+              isNull(renewalCycles.linkedInvoiceId),
+              eq(renewalCycles.linkedInvoiceId, invoiceId),
+            ),
+          ),
+        )
+        .returning();
+      const row = updated[0];
+      if (!row) {
+        // The row exists (pre-read succeeded) but the link CAS matched 0 rows —
+        // a concurrent writer already linked a DIFFERENT invoice. Mirror
+        // `linkInvoice`'s conflict shape so the use-case maps it identically.
+        throw new InvoiceLinkConflictError(
+          cycleId,
+          invoiceId,
+          before.linkedInvoiceId ?? '<unexpected-null>',
+        );
+      }
+      return { cycle: rowToDomain(row), previous: rowToDomain(before) };
+    },
+
     async clearLinkedInvoiceForVoidInTx(
       tx: unknown,
       tenantId: string,
