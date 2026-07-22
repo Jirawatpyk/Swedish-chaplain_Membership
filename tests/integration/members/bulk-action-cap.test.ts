@@ -47,6 +47,7 @@ function stubDeps(): BulkActionDeps {
       findMemberByPrimaryContactEmailInTx: vi.fn(),
     findLastPlanChangedAt: vi.fn(),
     findPendingInvitationsForMember: vi.fn(),
+    findPendingInvitationsForPrimaryContacts: vi.fn(),
     scrubPiiInTx: vi.fn(),
     findErasedAtById: vi.fn(),
     findStuckErasuresInTx: vi.fn(),

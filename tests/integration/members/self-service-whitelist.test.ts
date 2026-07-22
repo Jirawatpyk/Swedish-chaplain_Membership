@@ -113,6 +113,8 @@ function makeStubDeps(): MemberSelfUpdateDeps {
     findMemberByPrimaryContactEmailInTx: async () => ok(null),
     findLastPlanChangedAt: async () => ok(null),
     findPendingInvitationsForMember: async () => ok([]),
+    // Task 4 (feat/members-portal-status) — interface compliance stub.
+    findPendingInvitationsForPrimaryContacts: async () => ok([]),
     // COMP-1 (Task 3) — interface compliance stub.
     scrubPiiInTx: async () => ok(undefined),
     // COMP-1 (erase pre-flight) — interface compliance stub.

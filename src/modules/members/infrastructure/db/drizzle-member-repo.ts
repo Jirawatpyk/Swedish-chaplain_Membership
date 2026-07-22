@@ -1463,4 +1463,56 @@ export const drizzleMemberRepo: MemberRepo = {
       return err(unexpected(e));
     }
   },
+
+  async findPendingInvitationsForPrimaryContacts(ctx, memberIds) {
+    if (memberIds.length === 0) return ok([]);
+    try {
+      const rows = await runInTenant(ctx, async (tx) => {
+        // Second reference to `invitations` for the active-user anti-join,
+        // aliased so the correlated user_id refs resolve unambiguously.
+        const consumedInv = alias(invitations, 'consumed_inv');
+        return tx
+          .selectDistinctOn([contacts.memberId], {
+            memberId: contacts.memberId,
+            expiresAt: invitations.expiresAt,
+          })
+          .from(invitations)
+          .innerJoin(contacts, eq(contacts.linkedUserId, invitations.userId))
+          .where(
+            and(
+              inArray(contacts.memberId, [...memberIds]),
+              eq(contacts.isPrimary, true),
+              isNull(contacts.removedAt),
+              // An expired-but-unconsumed invite MUST surface (it is the
+              // re-invite signal), so there is deliberately no expires_at
+              // filter here.
+              isNull(invitations.consumedAt),
+              // Never-redeemed anti-join — see the port doc, guard 1.
+              notExists(
+                tx
+                  .select({ one: sql`1` })
+                  .from(consumedInv)
+                  .where(
+                    and(
+                      eq(consumedInv.userId, invitations.userId),
+                      isNotNull(consumedInv.consumedAt),
+                    ),
+                  ),
+              ),
+            ),
+          )
+          // DISTINCT ON (member_id) requires member_id to lead ORDER BY;
+          // expires_at DESC then keeps the freshest unconsumed invite.
+          .orderBy(contacts.memberId, desc(invitations.expiresAt));
+      });
+      return ok(
+        rows.map((r) => ({
+          memberId: r.memberId as MemberId,
+          expiresAt: r.expiresAt,
+        })),
+      );
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
 };

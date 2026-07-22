@@ -73,6 +73,7 @@ function stubDeps(overrides?: Partial<InlineEditDeps>): InlineEditDeps {
       findMemberByPrimaryContactEmailInTx: vi.fn(),
     findLastPlanChangedAt: vi.fn(),
     findPendingInvitationsForMember: vi.fn(),
+    findPendingInvitationsForPrimaryContacts: vi.fn(),
     scrubPiiInTx: vi.fn(),
     findErasedAtById: vi.fn(),
     findStuckErasuresInTx: vi.fn(),

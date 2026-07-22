@@ -375,6 +375,45 @@ export interface MemberRepo {
     >
   >;
 
+  /**
+   * Directory batch read (design doc 2026-07-23 §3.2) — for each supplied
+   * member, the FRESHEST unconsumed invitation held by its PRIMARY contact.
+   * A member with no such invitation is simply absent from the result.
+   *
+   * Same two guards as `findPendingInvitationsForMember`, and they are
+   * load-bearing:
+   *   1. never-redeemed anti-join — `reissueInvitation` mints a new row
+   *      without invalidating the old one, so a user who activated keeps a
+   *      stale unconsumed row forever. Without the anti-join that member is
+   *      reported as still needing an invite, permanently.
+   *   2. DISTINCT ON (member_id) ORDER BY expires_at DESC — one contact can
+   *      hold several unconsumed invitations; without this the caller's Map
+   *      is last-write-wins over an unordered result and invited vs
+   *      invite_expired becomes non-deterministic.
+   *
+   * NO `LIMIT`: the single-member method caps at 50 contacts, which is safe
+   * for one member but would silently truncate a 50-member page.
+   *
+   * Tenant scope: `contacts` is RLS-bound inside `runInTenant`; the auth
+   * `invitations` table is cross-tenant by design, so the join through
+   * `contacts` is what enforces the boundary. Only `user_id`, `consumed_at`
+   * and `expires_at` may be referenced (migration 0017 column grants).
+   *
+   * Callers MUST pass a page-bounded id list (directory PAGE_SIZE = 50).
+   */
+  findPendingInvitationsForPrimaryContacts(
+    ctx: TenantContext,
+    memberIds: readonly MemberId[],
+  ): Promise<
+    Result<
+      ReadonlyArray<{
+        readonly memberId: MemberId;
+        readonly expiresAt: Date;
+      }>,
+      RepoError
+    >
+  >;
+
   /** US2 directory search — substring across company, contact name, email. */
   searchDirectory(
     ctx: TenantContext,
