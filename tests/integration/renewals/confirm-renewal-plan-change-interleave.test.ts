@@ -90,7 +90,7 @@ import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 const VAT_RATE = '0.0700';
 const OLD_FROZEN_THB = '50000.00';
 const OLD_FROZEN_SATANG = 5_000_000n;
-const NEW_FROZEN_THB = '180000.00';
+// The NEW plan the concurrent admin change-plan refreezes the cycle to (180,000).
 const NEW_FROZEN_SATANG = 18_000_000n;
 
 /**
