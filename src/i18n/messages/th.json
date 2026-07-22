@@ -5790,7 +5790,7 @@
       "renewal_reminder_sent": "ส่งการแจ้งเตือนต่ออายุแล้ว",
       "renewal_reminder_skipped": "ข้ามการแจ้งเตือนต่ออายุ",
       "renewal_schedule_policy_updated": "อัปเดตนโยบายตารางต่ออายุ",
-      "renewal_schedule_rescheduled": "เลื่อนการต่ออายุ",
+      "renewal_schedule_rescheduled": "ประเมินการเลื่อนต่ออายุ",
       "renewal_schedule_reschedule_skipped": "ข้ามการเลื่อนต่ออายุ",
       "renewal_self_service_initiated": "สมาชิกเริ่มต่ออายุเอง",
       "renewal_skipped_no_joined_at": "ข้ามการต่ออายุ — ไม่มีวันที่เริ่มเป็นสมาชิก",

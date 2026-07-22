@@ -1,0 +1,84 @@
+# Runbook — plan-change frozen-price divergence (`check:plan-divergence`)
+
+**Script:** `scripts/check-plan-change-divergence.ts` · **npm:** `pnpm check:plan-divergence` · **Read-only.**
+
+## What it means
+
+The detector finds renewal cycles whose **frozen price disagrees with the
+§86/4 that was issued + linked to them**. For every `renewal_cycles` row with a
+non-null `linked_invoice_id` pointing at an `invoices` row that is
+`status IN ('issued','paid')` and `invoice_subject='membership'`, it compares:
+
+- **cycle side** — `parseThbDecimalToSatang(frozen_plan_price_thb)`
+  (VAT-exclusive satang), and
+- **invoice side** — the invoice's single `membership_fee` line's
+  `unit_price_satang` (VAT-exclusive, **pre-pro-rate**).
+
+The two are directly comparable because the renewal billing path
+(`f4-invoicing-for-renewal-bridge-drizzle.ts` → `createInvoiceDraft`) writes the
+frozen price verbatim into the line's `unit_price_satang` and forces
+`quantity = pro_rate_factor = 1.0000` (a renewal is always a full cycle,
+FR-022). We compare on `unit_price_satang` rather than the raw `total_satang`
+so the check is immune to a legitimately pro-rated line and to two-step
+rounding — comparing the full-cycle frozen price to a pro-rated total would
+false-positive.
+
+Two finding kinds:
+
+- `price_divergence` — the frozen price ≠ the billed unit price. This is the
+  drift the immediate re-freeze flag can create (a cycle re-frozen to a new
+  price while an old §86/4 stays issued+linked at the old price).
+- `membership_line_anomaly` — the linked invoice does not carry **exactly one**
+  `membership_fee` line (0 or >1). A real membership §86/4 always has exactly
+  one; a `lines=0` result on a `test-*` tenant is fixture noise (see below).
+
+## When to run it
+
+- **Before** setting `FEATURE_PLAN_CHANGE_IMMEDIATE_REFREEZE=true` in Vercel
+  prod — this is the standing pre-flag-flip gate. It must return **CLEAN (0
+  divergences, exit 0)**.
+- As a **recurring gate** afterwards — it catches any cycle↔invoice price drift
+  regardless of the flag's state.
+
+Operator ship-gate run (prod, read-only):
+
+```bash
+node --env-file=.env.local.bak.prod --import tsx scripts/check-plan-change-divergence.ts
+```
+
+Dev smoke-test:
+
+```bash
+pnpm check:plan-divergence
+```
+
+> **Dev-branch noise:** the shared `dev` Neon branch accumulates `test-*` tenant
+> fixtures from integration tests that seed a linked invoice with **no**
+> `membership_fee` line. These surface as `membership_line_anomaly` (`lines=0`)
+> on `test-*` tenants and are expected on dev — they do NOT exist on prod (every
+> real issued membership invoice carries a line). The gate-relevant signal is
+> any finding on a **real** tenant, and any `price_divergence` anywhere.
+
+## Exit codes
+
+- `0` — CLEAN (0 divergences). Gate PASSES.
+- `1` — divergence(s) found (gate FAILS) **or** a fatal query error.
+
+## What to do on a hit
+
+1. **Do NOT enable / immediately disable `FEATURE_PLAN_CHANGE_IMMEDIATE_REFREEZE`.**
+2. For each `price_divergence` row, note the `cycle_id`, `member_id`,
+   `invoice_id`, the printed document number, `frozen` vs `line unit`, and the
+   `delta` (satang). Decide the source of truth:
+   - If the **issued §86/4 is correct** (the member was billed the right price)
+     and the cycle's frozen price is stale, the cycle needs its frozen fields
+     re-aligned to the invoice (an admin/maintenance correction — never rewrite
+     an issued tax document).
+   - If the **cycle's frozen price is correct** and the invoice is wrong, the
+     invoice must be handled through the normal void/credit-note flow
+     (§86/10 / ป.86/2542) by the treasurer — a §86/4 is never silently edited.
+3. For a `membership_line_anomaly` on a **real** tenant, treat it as a
+   data-integrity incident: an issued membership invoice with 0 (or >1)
+   `membership_fee` lines should be impossible via `createInvoiceDraft`.
+   Investigate how the row was written before proceeding with the flag.
+4. Re-run until CLEAN before flipping the flag.
