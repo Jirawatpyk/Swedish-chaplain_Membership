@@ -5790,7 +5790,7 @@
       "renewal_reminder_sent": "Renewal reminder sent",
       "renewal_reminder_skipped": "Renewal reminder skipped",
       "renewal_schedule_policy_updated": "Renewal schedule policy updated",
-      "renewal_schedule_rescheduled": "Renewal rescheduled",
+      "renewal_schedule_rescheduled": "Renewal reschedule evaluated",
       "renewal_schedule_reschedule_skipped": "Renewal reschedule skipped",
       "renewal_self_service_initiated": "Member-initiated renewal",
       "renewal_skipped_no_joined_at": "Renewal skipped — no join date",

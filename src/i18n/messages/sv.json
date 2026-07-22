@@ -5790,7 +5790,7 @@
       "renewal_reminder_sent": "Förnyelsepåminnelse skickad",
       "renewal_reminder_skipped": "Förnyelsepåminnelse hoppad",
       "renewal_schedule_policy_updated": "Förnyelseschemapolicy uppdaterad",
-      "renewal_schedule_rescheduled": "Förnyelse omplanerad",
+      "renewal_schedule_rescheduled": "Förnyelseomplanering utvärderad",
       "renewal_schedule_reschedule_skipped": "Förnyelseomplanering hoppad",
       "renewal_self_service_initiated": "Medlemsinitierad förnyelse",
       "renewal_skipped_no_joined_at": "Förnyelse hoppad — inget anslutningsdatum",

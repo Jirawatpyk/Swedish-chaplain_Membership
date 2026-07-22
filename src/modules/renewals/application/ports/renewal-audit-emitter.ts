@@ -661,13 +661,28 @@ export interface F8AuditPayloadShapes {
   /**
    * Phase 7 T188a — F2 → F8 reschedule-on-plan-change listener emit.
    * Captured when an admin's manual plan-change shifts the member's
-   * tier-bucket and not-yet-fired reminders shift cadence. Per spec
+   * tier-bucket and not-yet-fired reminders would shift cadence. Per spec
    * Edge Cases line 182, already-sent reminders are NOT recalled —
    * only future schedule steps differ.
    *
    * `cancelled_step_ids` are old-bucket steps no longer scheduled;
    * `new_step_ids` are new-bucket steps newly scheduled. Same-bucket
    * plan changes do not emit (early-return inside the use-case).
+   *
+   * **`applied: false` (advisory-only, truthful-semantics fix).** This
+   * event records an EVALUATION, not a performed reschedule: the listener
+   * computes the step diff but PERSISTS NOTHING schedule-related. The
+   * reminder dispatcher joins its schedule policy on the cycle's FROZEN
+   * `renewal_cycles.tier_at_cycle_start` (see `drizzle-dispatch-candidate-
+   * repo.ts`), which this use-case never modifies — so the reminder
+   * cadence in effect is unchanged by this emit. The field is a literal
+   * `false` so a dashboard reading the raw event is not misled into
+   * counting it as a reschedule that took effect; if a future change makes
+   * the reschedule actually persist, widening this to a boolean/union is a
+   * compile-time forcing function at every read site. Renaming the event
+   * value itself was rejected as disproportionate (an `ALTER TYPE
+   * audit_event_type RENAME VALUE` on the append-only regulated enum + a
+   * ~9-site registration churn for a semantic-clarity change).
    *
    * Phase 7 review-fix I-TYPE-2: bucket fields use Domain `TierBucket`
    * literal-union instead of bare string.
@@ -679,6 +694,8 @@ export interface F8AuditPayloadShapes {
     readonly new_tier_bucket: TierBucket;
     readonly cancelled_step_ids: ReadonlyArray<string>;
     readonly new_step_ids: ReadonlyArray<string>;
+    /** Advisory-only marker — this event evaluated, it did not apply. */
+    readonly applied: false;
   };
   /**
    * Phase 7 review-fix I-ERR-1 — emitted when admin Accept commits
