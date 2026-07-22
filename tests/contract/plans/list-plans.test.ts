@@ -85,6 +85,11 @@ describe('contract: GET /api/plans (T062)', () => {
             created_at: '2026-04-11T10:00:00Z',
             updated_at: '2026-04-11T10:00:00Z',
             missing_translations: [],
+            // C4 — additive OPTIONAL per-year benefit-quota projection
+            // (contracts/plans-api.md § 1). Passed through verbatim by the
+            // route; the portal renewal downgrade dialog reads them.
+            eblast_quota_per_year: 12,
+            cultural_tickets_quota_per_year: 6,
           },
         ],
         meta: {
@@ -105,6 +110,9 @@ describe('contract: GET /api/plans (T062)', () => {
     expect(body.data[0].plan_id).toBe('premium');
     expect(body.meta.currency_code).toBe('THB');
     expect(body.meta.filter.showDeleted).toBe(false);
+    // C4 — additive optional benefit-quota fields flow through untouched.
+    expect(body.data[0].eblast_quota_per_year).toBe(12);
+    expect(body.data[0].cultural_tickets_quota_per_year).toBe(6);
   });
 
   it('200 for manager role (read-only access)', async () => {

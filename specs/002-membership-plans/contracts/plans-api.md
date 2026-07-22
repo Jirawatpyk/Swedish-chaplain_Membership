@@ -56,7 +56,9 @@ This document is the authoritative contract between Presentation (React / Server
       "deleted_at": null,
       "created_at": "2026-04-11T10:00:00Z",
       "updated_at": "2026-04-11T10:00:00Z",
-      "missing_translations": ["sv"]              // computed from plan_name — only shown to admin
+      "missing_translations": ["sv"],             // computed from plan_name — only shown to admin
+      "eblast_quota_per_year": 12,                // C4 — additive OPTIONAL; projected from benefit_matrix.eblast_per_year (null = unlimited/unknown)
+      "cultural_tickets_quota_per_year": 6        // C4 — additive OPTIONAL; projected from benefit_matrix.cultural_tickets_per_year (null = unlimited/unknown)
     }
     // ... up to 9 rows for SweCham 2026
   ],
@@ -70,6 +72,8 @@ This document is the authoritative contract between Presentation (React / Server
 ```
 
 Note: response does NOT include a per-plan `currency_code` field — currency is resolved from `tenant_fee_config.currency_code` and surfaced once on `meta.currency_code` (critique P3, 2026-04-11).
+
+Note (C4): `eblast_quota_per_year` + `cultural_tickets_quota_per_year` are **additive, optional** projections of the two quantifiable yearly benefit quotas from each plan's `benefit_matrix`. They exist so the portal renewal downgrade dialog can render the quota-delta rows + over-quota warning for the target plan. `null` means unlimited/unknown (a legacy or partial `benefit_matrix` row missing the field). Being optional + additive, they do not break existing consumers — this is not a contract-breaking change.
 
 **Errors**: `401 unauthenticated`, `403 forbidden` (member role), `400 invalid_query`.
 
