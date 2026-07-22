@@ -234,4 +234,66 @@ describe('reanchorFirstPaymentCycleInTx — fixed-anchor: period is NOT moved to
       }),
     );
   });
+
+  it('B-1: period ends MID-MONTH, payment lands later that SAME month → still a comeback (not paid-but-suspended)', async () => {
+    const { deps, mocks } = fakeDeps();
+    // An onboarded member's period runs from their registration day-of-month:
+    // it ends 2026-06-15. They pay 2026-06-20 — later in the SAME month. The
+    // month-start anchor (2026-06-01) is BEFORE period_to, but the real payment
+    // date (the 20th) is AFTER it. Comparing against the month-start would
+    // wrongly keep the dead period (paid-but-suspended); comparing against the
+    // ACTUAL payment date correctly treats it as a comeback (review B-1).
+    const cycle = unanchoredCycle({
+      periodFrom: '2025-06-15T00:00:00.000Z',
+      periodTo: '2026-06-15T00:00:00.000Z',
+      frozenPlanTermMonths: 12,
+    });
+
+    await reanchorFirstPaymentCycleInTx(
+      deps,
+      buildEvent({ paidAt: '2026-06-20T10:00:00Z', paymentDate: '2026-06-20' }),
+      {} as never,
+      cycle,
+    );
+
+    // A comeback: fresh month-start period, NOT the dead mid-month one kept.
+    expect(mocks.reanchorPeriodInTx).toHaveBeenCalledWith(
+      expect.anything(),
+      TENANT_ID,
+      cycle.cycleId,
+      expect.objectContaining({
+        periodFrom: '2026-06-01T00:00:00.000Z',
+        periodTo: '2027-06-01T00:00:00.000Z',
+        anchoredAt: '2026-06-01T00:00:00.000Z',
+      }),
+    );
+  });
+
+  it('B-1 boundary: period ends mid-month, payment BEFORE that end (same month) → period KEPT (still live, no comeback)', async () => {
+    const { deps, mocks } = fakeDeps();
+    // Same mid-month period ending 2026-06-15, but paid 2026-06-10 — BEFORE the
+    // period ends. Still live → keep the registration period (fixed-anchor).
+    const cycle = unanchoredCycle({
+      periodFrom: '2025-06-15T00:00:00.000Z',
+      periodTo: '2026-06-15T00:00:00.000Z',
+      frozenPlanTermMonths: 12,
+    });
+
+    await reanchorFirstPaymentCycleInTx(
+      deps,
+      buildEvent({ paidAt: '2026-06-10T10:00:00Z', paymentDate: '2026-06-10' }),
+      {} as never,
+      cycle,
+    );
+
+    expect(mocks.reanchorPeriodInTx).toHaveBeenCalledWith(
+      expect.anything(),
+      TENANT_ID,
+      cycle.cycleId,
+      expect.objectContaining({
+        periodFrom: '2025-06-15T00:00:00.000Z',
+        periodTo: '2026-06-15T00:00:00.000Z',
+      }),
+    );
+  });
 });

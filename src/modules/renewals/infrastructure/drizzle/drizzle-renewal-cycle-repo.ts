@@ -1721,9 +1721,14 @@ export function makeDrizzleRenewalCycleRepo(
      * re-reads and reclassifies rather than treating this as a hard error.
      *
      * Deletes the cycle's `renewal_reminder_events` rows in the SAME tx
-     * (the re-anchored period invalidates any dispatch history logged
-     * against the old period) and returns the deleted count so the caller
-     * can audit `reminderEventsReset`.
+     * ONLY WHEN `period_to` actually moves (the moved period invalidates any
+     * dispatch history logged against the old one, and its stale
+     * `year_in_cycle` keys would collide with — and silently suppress — the
+     * NEW period's reminders). Under fixed-anchor a first payment normally
+     * KEEPS the period, so nothing is deleted; the delete fires only on a
+     * period-moving re-anchor (the comeback exception and the CSV backfill).
+     * Returns the deleted count so the caller can audit `reminderEventsReset`
+     * (review H-1, 2026-07-22).
      */
     async reanchorPeriodInTx(
       tx: unknown,
@@ -1739,6 +1744,17 @@ export function makeDrizzleRenewalCycleRepo(
       },
     ): Promise<{ readonly cycle: RenewalCycle; readonly reminderEventsReset: number } | null> {
       const txDb = tx as typeof db;
+      // Read the CURRENT period_to (same tx) before the UPDATE so we can tell a
+      // period-KEEPING re-anchor (fixed-anchor normal first payment) from a
+      // period-MOVING one (the comeback exception or the CSV backfill). Only
+      // the latter must reset the reminder ladder (review H-1).
+      const existing = await txDb
+        .select({ periodTo: renewalCycles.periodTo })
+        .from(renewalCycles)
+        .where(eq(renewalCycles.cycleId, cycleId))
+        .limit(1);
+      const oldPeriodTo = existing[0]?.periodTo ?? null;
+
       const updated = await txDb
         .update(renewalCycles)
         .set({
@@ -1765,12 +1781,25 @@ export function makeDrizzleRenewalCycleRepo(
         .returning();
       const row = updated[0];
       if (!row) return null;
-      // FIXED-ANCHOR (2026-07-22): first payment no longer MOVES the period —
-      // it keeps the cycle's registration/backfill anchor and only stamps
-      // `anchored_at` + activates the status. Because `period_to` is unchanged,
-      // the reminder events keyed off it stay valid, so they are NOT deleted
-      // (the #173 delete existed only to reset reminders after a period move).
-      return { cycle: rowToDomain(row), reminderEventsReset: 0 };
+
+      // FIXED-ANCHOR (2026-07-22): first payment normally KEEPS the cycle's
+      // registration/backfill period (only stamps `anchored_at` + activates the
+      // status), so its reminder events stay valid and are NOT deleted. But when
+      // the period actually MOVES — the comeback exception grants a fresh period,
+      // or the CSV backfill re-anchors a pre-system member — the old period's
+      // reminder rows must be purged: their `year_in_cycle` keys would otherwise
+      // collide with the new period's reminders and suppress them as
+      // already-sent (silent renewal-lapse; review H-1).
+      const periodMoved =
+        oldPeriodTo === null || oldPeriodTo.getTime() !== new Date(args.periodTo).getTime();
+      if (!periodMoved) {
+        return { cycle: rowToDomain(row), reminderEventsReset: 0 };
+      }
+      const deleted = await txDb
+        .delete(renewalReminderEvents)
+        .where(eq(renewalReminderEvents.cycleId, cycleId))
+        .returning({ id: renewalReminderEvents.reminderEventId });
+      return { cycle: rowToDomain(row), reminderEventsReset: deleted.length };
     },
   };
 }

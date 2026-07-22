@@ -39,7 +39,7 @@ import type { PlanLookupForRenewalPort } from '../../ports/plan-lookup-for-renew
 import type { RenewalAuditEmitter } from '../../ports/renewal-audit-emitter';
 import type { FiscalYearStartMonthPort } from '../../ports/fiscal-year-settings-port';
 import { addMonthsUtc } from '@/lib/dates';
-import { paymentAnchorMonthStartUtc } from './payment-anchor-date';
+import { paymentAnchorMonthStartUtc, paymentDateOnly } from './payment-anchor-date';
 
 export type ReanchorFirstPaymentDeps = {
   readonly cyclesRepo: Pick<RenewalCycleRepo, 'reanchorPeriodInTx'>;
@@ -126,17 +126,24 @@ export async function reanchorFirstPaymentCycleInTx(
   // EXPIRED-PERIOD EXCEPTION (comeback semantics). Normally the period STAYS
   // at the cycle's registration/backfill anchor — pay early or late, the
   // anniversary does not move. BUT if that fixed period has ALREADY fully
-  // elapsed by the time of payment (period_to <= the payment month), keeping
-  // the dead period would leave the member paid-but-suspended (an 'upcoming'
-  // cycle with an already-past period resolves to `suspended`) and stuck in
-  // the enter-awaiting-payment-on-expiry cron loop. That member is effectively
-  // a comeback, so — matching admin-renew-lapsed-member's fully-expired branch
-  // — we RE-ANCHOR to the payment month to grant a fresh period. Frozen
-  // price/term are kept as-is here (the member's NEXT renewal re-resolves
-  // them); restoring the FY-refreeze for this rare edge is not worth the
-  // complexity.
+  // elapsed by the ACTUAL payment date, keeping the dead period would leave the
+  // member paid-but-suspended (an 'upcoming' cycle with an already-past period
+  // resolves to `suspended`) and stuck in the enter-awaiting-payment-on-expiry
+  // cron loop. That member is effectively a comeback, so — matching
+  // admin-renew-lapsed-member's fully-expired branch — we RE-ANCHOR to the
+  // payment month to grant a fresh period. Frozen price/term are kept as-is
+  // here (the member's NEXT renewal re-resolves them); restoring the FY-refreeze
+  // for this rare edge is not worth the complexity.
+  //
+  // The expiry test compares `period_to` against the RAW payment date, NOT the
+  // month-start anchor: an onboarded member's period runs from their
+  // registration day-of-month (mid-month), so a payment landing later in the
+  // same month as period_to (e.g. period ends the 15th, paid the 20th) is
+  // genuinely past-expiry even though the month-start anchor (the 1st) is not.
+  // Comparing against the month-start would leave that late-in-month payer
+  // paid-but-suspended (financial-integrity review B-1, 2026-07-22).
   const periodExpiredAtPayment =
-    Date.parse(cycle.periodTo) <= Date.parse(anchoredAtStamp);
+    Date.parse(cycle.periodTo) <= Date.parse(paymentDateOnly(evt));
   const newPeriodFrom = periodExpiredAtPayment ? anchoredAtStamp : cycle.periodFrom;
   const newPeriodTo = periodExpiredAtPayment
     ? addMonthsUtc(anchoredAtStamp, cycle.frozenPlanTermMonths)

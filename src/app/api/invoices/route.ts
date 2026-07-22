@@ -144,18 +144,24 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     } else if (
       renewalContext.currentPeriodFrom &&
       renewalContext.currentPeriodTo &&
-      // FIXED-ANCHOR comeback carve-out (2026-07-22) — only print the cycle's
-      // CURRENT period as the concrete §86/4 window while it is still live. If
-      // it has ALREADY expired by the current Bangkok month, paying this bill
-      // triggers the settlement comeback exception (reanchor-first-payment.ts),
-      // which re-anchors to the PAYMENT month — so the dead past window would
-      // contradict the receipt. Fall through to the `from_payment` default
-      // ("12 months, effective from the month of payment"): the honest wording
-      // when the real anchor is only fixed at payment time. The month-start
-      // basis mirrors the core's comeback comparison (`periodTo <= payment
-      // month`), using THIS month as the best proxy for the (unknown) payment
-      // month at issue time.
-      Date.parse(renewalContext.currentPeriodTo) > Date.parse(currentBangkokMonthStartUtc())
+      // FIXED-ANCHOR comeback carve-out (2026-07-22, hardened at review M-1) —
+      // print the cycle's CURRENT period as the concrete §86/4 window only when
+      // it will still be the member's period AFTER payment. The invoice's
+      // coverage line is baked at issue time and the receipt reuses it verbatim
+      // (never re-derived), so if paying this bill later triggers the settlement
+      // comeback exception (reanchor-first-payment.ts re-anchors an expired
+      // period to the PAYMENT month), a concrete window printed now would
+      // contradict the period actually granted. We cannot know the payment date
+      // at issue time, so we are conservative: only commit to the concrete
+      // window when the period extends beyond the NEXT Bangkok month — i.e. a
+      // normal-timing payment (this month or next) cannot cross `period_to` and
+      // comeback. When the period ends this month or next, fall through to the
+      // `from_payment` default ("12 months, effective from the month of
+      // payment") — the honest wording when the real anchor is only fixed at
+      // payment. (Residual: a payment 2+ months late on a period ending exactly
+      // two months out can still comeback — bounded and rare.)
+      Date.parse(renewalContext.currentPeriodTo) >=
+        Date.parse(addMonthsUtc(currentBangkokMonthStartUtc(), 2))
     ) {
       membershipCoverage = {
         kind: 'window',

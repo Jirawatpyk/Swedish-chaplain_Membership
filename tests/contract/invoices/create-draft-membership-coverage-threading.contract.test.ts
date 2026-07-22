@@ -252,6 +252,64 @@ describe('contract: POST /api/invoices — membershipCoverage server-side thread
     expect('membershipCoverage' in input).toBe(false);
   });
 
+  it('M-1 — first_payment whose current period ends NEXT month → membershipCoverage OMITTED (comeback risk if payment slips)', async () => {
+    // Fake ONLY Date (no setTimeout/interval → no async interference) so the
+    // route's `new Date()` sees a fixed issue month of 2026-07.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-07-15T00:00:00.000Z'));
+    try {
+      loadMemberRenewalContextMock.mockResolvedValueOnce({
+        classification: { kind: 'first_payment' },
+        periodTo: null,
+        termMonths: null,
+        // Period ends 2026-08-20 — NEXT month relative to the 2026-07 issue. A
+        // payment slipping into August lands after period_to → settlement
+        // comeback → a concrete window printed now would contradict the receipt.
+        // The route must be conservative and fall back to from_payment.
+        currentPeriodFrom: '2025-08-20',
+        currentPeriodTo: '2026-08-20',
+      });
+
+      const { POST } = (await importRoute()) as { POST: (req: NextRequest) => Promise<Response> };
+      const res = await POST(makePostRequest(REQUEST_BODY));
+
+      expect(res.status).toBe(201);
+      const [, input] = createInvoiceDraftMock.mock.calls[0] as [unknown, Record<string, unknown>];
+      expect('membershipCoverage' in input).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('M-1 — first_payment whose current period ends 2+ months out → concrete window threaded (safe from a normal-timing comeback)', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-07-15T00:00:00.000Z'));
+    try {
+      loadMemberRenewalContextMock.mockResolvedValueOnce({
+        classification: { kind: 'first_payment' },
+        periodTo: null,
+        termMonths: null,
+        // Period ends 2026-10-01 — comfortably beyond next month, so a
+        // normal-timing payment (July/August) cannot cross it. Print real dates.
+        currentPeriodFrom: '2025-10-01',
+        currentPeriodTo: '2026-10-01',
+      });
+
+      const { POST } = (await importRoute()) as { POST: (req: NextRequest) => Promise<Response> };
+      const res = await POST(makePostRequest(REQUEST_BODY));
+
+      expect(res.status).toBe(201);
+      const [, input] = createInvoiceDraftMock.mock.calls[0] as [unknown, Record<string, unknown>];
+      expect(input.membershipCoverage).toEqual({
+        kind: 'window',
+        fromIso: '2025-10-01',
+        toIso: '2026-10-01',
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('not_applicable-classified member → membershipCoverage OMITTED', async () => {
     loadMemberRenewalContextMock.mockResolvedValueOnce({
       classification: { kind: 'not_applicable', reason: 'terminal_only' },
