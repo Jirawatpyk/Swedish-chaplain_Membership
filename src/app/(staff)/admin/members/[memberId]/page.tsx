@@ -272,6 +272,13 @@ type PendingInvitation = {
    * dropped its `expires_at > NOW()` filter) so the UI can show an
    * "Invitation expired" badge + a re-invite affordance instead of a
    * false "Portal linked" dead-end.
+   *
+   * The SAME `expiresAt <= now` boundary is implemented by
+   * `derivePortalState` (src/modules/members/domain/portal-state.ts), which
+   * powers the directory's portal badge. Change one and you must change the
+   * other, or the detail page and the directory will disagree about a
+   * borderline invitation. The boundary case is pinned by
+   * tests/unit/members/domain/portal-state.test.ts.
    */
   readonly expired: boolean;
 };
