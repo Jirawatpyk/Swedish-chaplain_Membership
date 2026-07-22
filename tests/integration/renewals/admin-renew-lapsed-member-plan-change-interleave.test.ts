@@ -97,6 +97,13 @@ const OLD_FROZEN_THB = '50000.00';
 const OLD_FROZEN_SATANG = 5_000_000n;
 /** The NEW plan the concurrent admin change-plan refreezes the fresh cycle to (180,000). */
 const NEW_FROZEN_SATANG = 18_000_000n;
+/**
+ * M1 — a DIFFERENT plan at the SAME price (50,000) but a different tier
+ * (`premium` vs old `regular`). A concurrent swap to this plan changes plan_id +
+ * tier while the price invariant holds, so a PRICE-ONLY corrective-audit gate
+ * would silently reset plan_id/tier with NO audit — the M1 gap this test pins.
+ */
+const SAME_PRICE_SATANG = 5_000_000n;
 
 /**
  * The production `f4InvoicingForRenewalBridge` shape, with the F4 issue step's
@@ -196,6 +203,8 @@ describe('FIX H1 — admin-renew-lapsed issue→link window vs concurrent change
   let user: TestUser;
   let oldPlanId: string;
   let newPlanId: string;
+  /** M1 — same price as `oldPlanId` (50,000) but tier `premium` (old is `regular`). */
+  let samePricePlanId: string;
 
   beforeAll(async () => {
     user = await createActiveTestUser('admin');
@@ -204,6 +213,7 @@ describe('FIX H1 — admin-renew-lapsed issue→link window vs concurrent change
 
     oldPlanId = `h1-old-${randomUUID().slice(0, 8)}`;
     newPlanId = `h1-new-${randomUUID().slice(0, 8)}`;
+    samePricePlanId = `m1-same-${randomUUID().slice(0, 8)}`;
 
     await runInTenant(tenant.ctx, (tx) =>
       seedF8MembershipPlan(tx, {
@@ -224,6 +234,17 @@ describe('FIX H1 — admin-renew-lapsed issue→link window vs concurrent change
         benefitMatrix: DEFAULT_TEST_BENEFIT_MATRIX,
         createdBy: user.userId,
         annualFeeMinorUnits: Number(NEW_FROZEN_SATANG),
+        renewalTierBucket: 'premium',
+      }),
+    );
+    await runInTenant(tenant.ctx, (tx) =>
+      seedF8MembershipPlan(tx, {
+        tenantSlug: tenant.ctx.slug,
+        planId: samePricePlanId,
+        planName: { en: 'M1 Same Price Diff Tier' },
+        benefitMatrix: DEFAULT_TEST_BENEFIT_MATRIX,
+        createdBy: user.userId,
+        annualFeeMinorUnits: Number(SAME_PRICE_SATANG),
         renewalTierBucket: 'premium',
       }),
     );
@@ -410,8 +431,11 @@ describe('FIX H1 — admin-renew-lapsed issue→link window vs concurrent change
     const corrective = tenantAuditRows.find(
       (r) =>
         (r.eventType as string) === 'renewal_cycle_price_frozen' &&
-        (r.payload as { reconciled_from_concurrent_plan_change?: boolean } | null)
-          ?.reconciled_from_concurrent_plan_change === true,
+        (r.payload as {
+          reconciled_from_concurrent_plan_change?: boolean;
+          cycle_id?: string;
+        } | null)?.reconciled_from_concurrent_plan_change === true &&
+        (r.payload as { cycle_id?: string }).cycle_id === cycleId,
     );
     expect(corrective, 'a corrective renewal_cycle_price_frozen audit row').toBeDefined();
     expect((corrective!.payload as { frozen_price_thb?: string }).frozen_price_thb).toBe(
@@ -419,6 +443,149 @@ describe('FIX H1 — admin-renew-lapsed issue→link window vs concurrent change
     );
 
     // ── The standing divergence scan is CLEAN for this tenant. ──
+    const report = await checkPlanChangeDivergence({ tenantId: tenant.ctx.slug });
+    expect(report.divergences).toEqual([]);
+  }, 180_000);
+
+  // ── FIX M1 — same-price cross-plan swap ──────────────────────────────────
+  // A concurrent change-plan swaps to a DIFFERENT plan at the SAME price
+  // (50,000 → 50,000, `regular` → `premium`). The reconcile-at-link overwrites
+  // ALL FIVE frozen_plan_* fields back to the billed plan/tier, so the cycle
+  // DATA is correct either way — but a PRICE-ONLY corrective-audit gate leaves
+  // NO audit of the plan_id/tier reset, so plan-mix/reporting analytics is wrong
+  // with nothing to net against (no money impact — the price invariant holds).
+  // The widened gate ("any of the 5 frozen fields differ") emits the corrective
+  // audit whenever plan_id/tier/term/currency differ too.
+  //
+  // RED (price-only gate): the cycle is reconciled back to `oldPlanId`/`regular`
+  // but NO corrective renewal_cycle_price_frozen row exists.
+  // GREEN (widened gate): the corrective row exists, recording the reverted
+  // (same-price, different) plan.
+  it('same-price cross-plan swap: reconciles plan_id/tier back AND emits a corrective audit (M1)', async () => {
+    const memberId = await seedLapsedMemberWithPredecessor();
+
+    const membersDeps = {
+      ...buildMembersDeps(tenant.ctx),
+      applyPlanChangeToBilling: makePlanChangeBillingRemediation(tenant.ctx.slug, {
+        immediateRefreezeEnabled: true,
+      }),
+    };
+    const runConcurrentChangePlan = async (): Promise<void> => {
+      const cp = await changePlan(
+        memberId as MemberId,
+        { new_plan_id: samePricePlanId, new_plan_year: 2026 },
+        { actorUserId: user.userId, requestId: `m1-concurrent-cp-${memberId}` },
+        membersDeps,
+      );
+      if (!cp.ok) {
+        throw new Error(`concurrent change-plan failed: ${JSON.stringify(cp.error)}`);
+      }
+      // The same-price swap MUST still refreeze the open cycle (price unchanged,
+      // but plan_id + tier change) — otherwise the M1 gap is not exercised.
+      expect(cp.value.billingEffect?.effect).toBe('applied_to_open_cycle');
+    };
+
+    const realDeps = makeRenewalsDeps(tenant.ctx.slug);
+    const deps: AdminRenewLapsedMemberDeps = {
+      tenant: realDeps.tenant,
+      cyclesRepo: realDeps.cyclesRepo,
+      auditEmitter: realDeps.auditEmitter,
+      clock: realDeps.clock,
+      planLookupForRenewal: realDeps.planLookupForRenewal,
+      memberPlanLookup: realDeps.memberPlanLookup,
+      cycleIdFactory: realDeps.cycleIdFactory,
+      memberRenewalFlagsRepo: realDeps.memberRenewalFlagsRepo,
+      f4InvoicingBridge: makeInterleavingRenewalBridge(runConcurrentChangePlan),
+    };
+
+    const result = await adminRenewLapsedMember(deps, {
+      tenantId: tenant.ctx.slug,
+      memberId,
+      actorUserId: user.userId,
+      actorRole: 'admin',
+      correlationId: `m1-admin-renew-${memberId}`,
+      requestId: `m1-req-${memberId.slice(0, 8)}`,
+    });
+    if (!result.ok) {
+      throw new Error(`admin renew failed: ${JSON.stringify(result.error)}`);
+    }
+    const { cycleId, invoiceId } = result.value;
+
+    // The §86/4 bills the old plan's price (50,000).
+    const lineRows = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({ kind: invoiceLines.kind, unitPriceSatang: invoiceLines.unitPriceSatang })
+        .from(invoiceLines)
+        .where(
+          and(
+            eq(invoiceLines.tenantId, tenant.ctx.slug),
+            eq(invoiceLines.invoiceId, invoiceId),
+          ),
+        ),
+    );
+    const membershipLine = lineRows.find((l) => l.kind === 'membership_fee');
+    expect(membershipLine).toBeDefined();
+    expect(BigInt(membershipLine!.unitPriceSatang)).toBe(OLD_FROZEN_SATANG);
+
+    // The cycle is reconciled back to the BILLED plan/tier (data correct even
+    // under a price-only gate — the reconcile overwrites all 5 fields).
+    const cycleRow = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({
+          frozen: renewalCycles.frozenPlanPriceThb,
+          planId: renewalCycles.planIdAtCycleStart,
+          tier: renewalCycles.tierAtCycleStart,
+          linkedInvoiceId: renewalCycles.linkedInvoiceId,
+        })
+        .from(renewalCycles)
+        .where(eq(renewalCycles.cycleId, cycleId))
+        .limit(1),
+    );
+    expect(cycleRow[0]?.linkedInvoiceId).toBe(invoiceId);
+    expect(cycleRow[0]?.frozen).toBe(OLD_FROZEN_THB);
+    expect(cycleRow[0]?.planId).toBe(oldPlanId);
+    expect(cycleRow[0]?.tier).toBe('regular');
+
+    // The admin's plan change is preserved (defers to the next cycle).
+    const memberRow = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({ planId: members.planId })
+        .from(members)
+        .where(eq(members.memberId, memberId))
+        .limit(1),
+    );
+    expect(memberRow[0]?.planId).toBe(samePricePlanId);
+
+    // ── THE M1 DISCRIMINATOR: a corrective audit EXISTS even though the price
+    // never changed (the concurrent swap changed plan_id + tier only). ──
+    const tenantAuditRows = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({ eventType: auditLog.eventType, payload: auditLog.payload })
+        .from(auditLog)
+        .where(eq(auditLog.tenantId, tenant.ctx.slug)),
+    );
+    const corrective = tenantAuditRows.find(
+      (r) =>
+        (r.eventType as string) === 'renewal_cycle_price_frozen' &&
+        (r.payload as {
+          reconciled_from_concurrent_plan_change?: boolean;
+          cycle_id?: string;
+        } | null)?.reconciled_from_concurrent_plan_change === true &&
+        (r.payload as { cycle_id?: string }).cycle_id === cycleId,
+    );
+    expect(
+      corrective,
+      'a corrective renewal_cycle_price_frozen audit row on a SAME-PRICE plan swap',
+    ).toBeDefined();
+    // It records the (same-price, different) plan the reconcile reverted.
+    expect((corrective!.payload as { reverted_plan_id?: string }).reverted_plan_id).toBe(
+      samePricePlanId,
+    );
+    expect((corrective!.payload as { frozen_price_thb?: string }).frozen_price_thb).toBe(
+      OLD_FROZEN_THB,
+    );
+
+    // The price invariant held throughout → the divergence scan is CLEAN.
     const report = await checkPlanChangeDivergence({ tenantId: tenant.ctx.slug });
     expect(report.divergences).toEqual([]);
   }, 180_000);
