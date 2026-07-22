@@ -229,14 +229,19 @@ describe('MembershipStatSection — every stat.kind resolves real en keys', () =
 /**
  * 067 I5(a) — the in-portal "Renew now" CTA gating per `stat.kind`.
  *
- * The CTA links to /portal/renewal/[memberId] (the in-portal renewal flow). It
- * MUST appear ONLY for the renewable cohort (`due`/`overdue` — a non-terminal
- * cycle that route can actually resolve) and MUST be ABSENT for everything
- * else. `lapsed` is the load-bearing case: that route's `findActiveForMember`
- * rejects terminal cycles → redirect('/portal'), a dead-end, so offering the
- * button there would no-op. These assertions FAIL if `lapsed` (or any terminal
- * kind) were re-added to the `renewable` predicate, locking the just-fixed
- * dead-end. `renderMembership()` uses memberId 'm1' → href /portal/renewal/m1.
+ * The CTA links to /portal/renewal/[memberId] (the in-portal renewal flow).
+ *
+ * plan-change-ux seam 2 — the button is now gated on the SAME payability
+ * predicate the renewal page uses (`shouldOfferRenewNow` → `isRenewalPayable`),
+ * NOT on `stat.kind` alone. A `due` card (an `upcoming`/`reminded` cycle whose
+ * period has NOT yet ended) is NOT yet payable — the page answers "renewal
+ * window not yet open" — so the button is WITHHELD and the card shows only the
+ * informational countdown. The button surfaces once the cycle is genuinely
+ * payable; at that point the cycle is `suspended`, which carries its OWN
+ * "pay to restore" CTA (covered below). `lapsed` remains a load-bearing
+ * ABSENT case: that route's `findActiveForMember` rejects terminal cycles →
+ * redirect('/portal'), a dead-end. `renderMembership()` uses memberId 'm1' →
+ * href /portal/renewal/m1.
  */
 describe('MembershipStatSection — renew-now CTA gating per stat.kind', () => {
   beforeEach(() => renewalRead.mockReset());
@@ -258,10 +263,20 @@ describe('MembershipStatSection — renew-now CTA gating per stat.kind', () => {
     }
   }
 
-  it('due → renders the renew-now link to /portal/renewal/[memberId]', async () => {
+  it('due (upcoming, not yet payable) → NO renew-now CTA; shows the informational countdown instead', async () => {
+    // plan-change-ux seam 2 — the whole `due` cohort is an `upcoming`/
+    // `reminded` cycle whose period has NOT yet ended, so the renewal page is
+    // NOT yet payable (it answers "renewal window not yet open"). The dashboard
+    // must therefore WITHHOLD the "Renew now" button (it would dead-end) and
+    // show only the informational "Renew soon" countdown. The button returns
+    // once the cycle is genuinely payable — at which point the cycle is
+    // `suspended` and carries its own pay-CTA (covered above).
     const soon = new Date(Date.now() + 10 * 86_400_000).toISOString();
     renewalRead.mockResolvedValue(cycle({ status: 'upcoming', expiresAt: soon }));
-    expectCta(await renderMembership(), true);
+    const html = await renderMembership();
+    expectCta(html, false);
+    // The card still communicates the due state (informational, no button).
+    expect(html).toContain(en.portal.dashboard.membership.renewDueValue);
   });
 
   it('suspended (unpaid, no invoice on file) → smart CTA links to self-serve renewal, labelled "Pay to restore benefits"', async () => {
@@ -337,7 +352,9 @@ describe('MembershipStatSection — renew-now CTA gating per stat.kind', () => {
     expect(html).not.toContain(`href="${RENEW_HREF}"`);
   });
 
-  it('due → NO contact-support mailto (renewable via the in-portal flow)', async () => {
+  it('due → NO contact-support mailto (informational countdown, never the lapsed mailto path)', async () => {
+    // The `due` card shows no button at all (seam 2) — and in particular NOT
+    // the lapsed-cohort mailto affordance.
     const soon = new Date(Date.now() + 10 * 86_400_000).toISOString();
     renewalRead.mockResolvedValue(cycle({ status: 'upcoming', expiresAt: soon }));
     const html = await renderMembership();

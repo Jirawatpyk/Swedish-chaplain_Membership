@@ -10,7 +10,7 @@
 // its lazy `upcoming|reminded → awaiting_payment` self-transition
 // (`confirm-renewal.ts`), so only the presentation gate was the dead end.
 import { describe, expect, it } from 'vitest';
-import { isRenewalPayable } from '@/app/(member)/portal/renewal/[memberId]/_lib/is-renewal-payable';
+import { isRenewalPayable } from '@/app/(member)/portal/_lib/is-renewal-payable';
 
 const NOW = new Date('2026-06-06T00:00:00.000Z');
 

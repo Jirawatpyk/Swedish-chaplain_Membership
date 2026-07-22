@@ -1,9 +1,20 @@
 /**
- * 059-membership-suspension Task 9 item 4 — renewal-page payability gate.
+ * 059-membership-suspension Task 9 item 4 — renewal payability gate.
+ *
+ * The SINGLE source of truth for "may this member pay their renewal now?".
+ * Consumed by BOTH:
+ *   - the renewal page (`portal/renewal/[memberId]/page.tsx`) — gates the
+ *     Confirm flow vs the "renewal window not yet open" card;
+ *   - the portal dashboard membership stat (`_lib/dashboard-stats.ts`
+ *     `shouldOfferRenewNow`) — gates the actionable "Renew now" CTA.
+ * Sharing ONE predicate is load-bearing: a `due` stat card whose CTA links
+ * here must never offer a "Renew now" button that dead-ends on the page's
+ * not-yet-open gate (plan-change-ux seam 2). Moved up from the renewal
+ * route's `_lib` to `portal/_lib` so the dashboard can import it without
+ * reaching into a nested route segment.
  *
  * Extracted from `page.tsx` (mirrors the `resolve-plan-name.ts` extraction
- * pattern colocated in this same `_lib` directory) so the predicate is
- * unit-testable in isolation.
+ * pattern) so the predicate is unit-testable in isolation.
  *
  * BLOCKER fix: the gate previously keyed ONLY on `summary.status ===
  * 'awaiting_payment'`, so the `upcoming`/`reminded`-but-expired cohort the
