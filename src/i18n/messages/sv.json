@@ -990,6 +990,13 @@
         "confirm": "Byt plan",
         "cancel": "Avbryt"
       },
+      "planChangeResult": {
+        "applied_to_open_cycle": "Den nuvarande förnyelseperioden debiteras nu enligt den nya planen.",
+        "deferred_invoice_already_issued": "Fakturan för den nuvarande förnyelsen är redan utfärdad, så den nya planen gäller från nästa förnyelse. För att tillämpa den nu, makulera och utfärda fakturan på nytt.",
+        "deferred_term_length_change": "Planerna har olika löptider, så den nya planen gäller från nästa förnyelse.",
+        "deferred_immediate_not_enabled": "Den nya planen gäller från nästa förnyelse.",
+        "no_open_cycle": "Det finns ingen aktiv förnyelsecykel, så den nya planen gäller vid nästa förnyelse."
+      },
       "subtitle": "Medlemsföretag + primära kontakter",
       "directory": {
         "managerReadOnlyBanner": "Skrivskyddad vy — chefer kan bläddra och söka men inte redigera, arkivera eller utföra massåtgärder. Kontakta en systemadministratör för att göra ändringar.",
