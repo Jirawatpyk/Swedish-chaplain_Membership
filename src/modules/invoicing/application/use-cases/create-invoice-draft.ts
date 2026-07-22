@@ -50,6 +50,35 @@ export const createInvoiceDraftSchema = z.object({
   planYear: z.number().int().min(2000).max(2100),
   autoEmailOnIssue: z.boolean().nullable().optional(),
   /**
+   * How this caller wants an existing live membership invoice for the same
+   * (tenant, member, plan_year) handled. A member CAN legitimately hold two
+   * live membership invoices in one plan year — but on an INTERACTIVE
+   * surface it must be deliberate, never accidental.
+   *
+   *   - absent         — do not check. The caller has already established
+   *                      whether a second bill is correct.
+   *   - 'refuse'       — refuse with `duplicate_membership_invoice`, carrying
+   *                      the existing document so a human can decide.
+   *   - 'acknowledged' — a human was shown the existing document and chose to
+   *                      proceed; the override is recorded in the audit payload.
+   *
+   * WHY ABSENT MEANS "DO NOT CHECK", rather than the safer-sounding default
+   * of always checking: `createInvoiceDraft` is shared, and the void-on-
+   * reissue chain legitimately mints a second live bill for a plan year.
+   * `issueMembershipBill` / `issueInvoiceForRenewal` draft the REPLACEMENT
+   * bill while the superseded one is still `issued` — voiding the old one is
+   * the step AFTER this one. An always-on guard here would break that shipped
+   * path. The automated/renewal callers are not left unprotected:
+   * `confirmRenewal`, `adminRenewLapsedMember`, the auto-draft cron and
+   * `markPaidOffline` each carry their own hard, non-overridable duplicate
+   * guard, sited where they can tell a deliberate reissue from a mistake.
+   *
+   * So this field really marks "there is a human here to ask" — which is why
+   * only the admin "New invoice" route sets it, and why it sets it on EVERY
+   * submit rather than only when it suspects a duplicate.
+   */
+  duplicatePolicy: z.enum(['refuse', 'acknowledged']).optional(),
+  /**
    * F8-completion Slice 1 (FR-022) — RENEWAL signal. When present, the
    * draft is a §86/4 renewal invoice and the membership line is billed
    * at the cycle's FROZEN price instead of the live F2 catalogue price
@@ -117,6 +146,29 @@ export type CreateInvoiceDraftError =
   | { code: 'member_not_found' }
   | { code: 'member_archived' }
   | { code: 'plan_not_found' }
+  /**
+   * The member ALREADY holds a live (`status <> 'void'`) membership invoice
+   * for this plan year, and the caller did not acknowledge it. Minting
+   * another would produce a SECOND numbered §86/4 for one membership year —
+   * always a bug on an automated path, and on the admin path a decision only
+   * a human should make.
+   *
+   * Carries the existing document's identifying facts so the caller can show
+   * the admin WHAT already exists (and deep-link to it) rather than a bare
+   * "duplicate exists" they would reflexively click through. `documentNumber`
+   * and `totalSatang` are null when the existing invoice is itself a draft.
+   *
+   * Recoverable by design: re-submitting with
+   * `duplicatePolicy: 'acknowledged'` proceeds and records the override in
+   * the audit payload.
+   */
+  | {
+      code: 'duplicate_membership_invoice';
+      existingInvoiceId: string;
+      existingStatus: string;
+      existingDocumentNumber: string | null;
+      existingTotalSatang: bigint | null;
+    }
   | { code: 'invalid_line'; reason: string };
 // NOTE: a `plan_mismatch` variant is intentionally ABSENT — the
 // member/plan parity guard is UI-enforced today (the invoice form's Plan
@@ -198,6 +250,61 @@ export async function createInvoiceDraft(
     const member = await deps.memberIdentity.getForIssue(tx, input.tenantId, input.memberId);
     if (!member) return err({ code: 'member_not_found' });
     if (member.isArchived) return err({ code: 'member_archived' });
+
+    // --- Deliberate-duplicate guard ----------------------------------------
+    //
+    // A member CAN legitimately hold two live membership invoices in the same
+    // plan year — but on an interactive surface it must be deliberate, never
+    // accidental. So this ASKS rather than forbids: refuse, and proceed only
+    // on an explicit acknowledgement that is recorded in the audit payload.
+    //
+    // Runs ONLY when the caller opted in via `duplicatePolicy` — see that
+    // field's note for why an always-on check here would break void-on-
+    // reissue, which drafts the replacement bill while the superseded one is
+    // still live. Automated callers carry their own hard guards instead.
+    //
+    // Why a guard and not a `(tenant_id, member_id, plan_year) WHERE
+    // invoice_subject='membership' AND status <> 'void'` unique index (which
+    // the `event` subject did get, in migration 0201): today "one live bill
+    // per plan year" coincides with "one per membership term" ONLY because
+    // every renewal cycle in production happens to be 12 months. Introduce a
+    // shorter-term plan and two legitimate bills could share a plan year — at
+    // which point a database constraint would be flatly wrong and would need
+    // a migration to undo. An asking guard is correct under both regimes.
+    //
+    // PLACEMENT — above the first write, deliberately. `err(...)` inside this
+    // `withTx` callback does NOT throw: the transaction COMMITS. Everything
+    // above this line is a read, so refusing here persists nothing and emits
+    // no audit row. Do not move it below `insertDraft`.
+    //
+    // PRECEDENCE — after the member gates on purpose. "You already billed
+    // this member" is only a meaningful thing to tell an operator once the
+    // member is known to exist and be billable; and the acknowledgement must
+    // never be able to wave through an archived member.
+    //
+    // The `void` exclusion lives in the adapter's `ne(status,'void')`
+    // predicate: an invoice voided for correction has to stay freely
+    // re-issuable, or a mis-issued document would fence the member out of
+    // being billed at all.
+    const existingBill =
+      input.duplicatePolicy === undefined
+        ? null
+        : await deps.invoiceRepo.findLiveMembershipBillInTx(tx, {
+            tenantId: input.tenantId,
+            memberId: input.memberId,
+            planYear: input.planYear,
+          });
+    const acknowledgedDuplicate =
+      existingBill !== null && input.duplicatePolicy === 'acknowledged';
+    if (existingBill && !acknowledgedDuplicate) {
+      return err({
+        code: 'duplicate_membership_invoice',
+        existingInvoiceId: existingBill.invoiceId,
+        existingStatus: existingBill.status,
+        existingDocumentNumber: existingBill.documentNumber,
+        existingTotalSatang: existingBill.totalSatang,
+      });
+    }
 
     // TODO (server-side plan-parity guard): invoice plan MUST match the
     // member's current plan (US1 "confirm the membership tier"). Enforced
@@ -468,6 +575,22 @@ export async function createInvoiceDraft(
         // FR-022 — flags a frozen-price renewal §86/4 (membership line
         // billed at the cycle's frozen price, reg-fee suppressed).
         is_renewal: isRenewal,
+        // Deliberate-duplicate override. Answers "who knowingly created a
+        // second live membership invoice for this plan year, and against
+        // which existing one" — `actorUserId` on this same audit row is the
+        // who. Emitted UNCONDITIONALLY (false/null on an ordinary draft) so
+        // that "not a duplicate" and "a duplicate we failed to detect" are
+        // distinguishable in the trail rather than both being an absent key.
+        //
+        // Carried on the payload of the existing `invoice_draft_created`
+        // event rather than a dedicated event type: a new type needs an
+        // 8-place lockstep plus an enum migration, and the migration numbers
+        // after 0258 are already claimed on another branch. Worth promoting
+        // to its own type once that lands — see the report.
+        acknowledged_duplicate: acknowledgedDuplicate,
+        acknowledged_duplicate_of_invoice_id: acknowledgedDuplicate
+          ? existingBill!.invoiceId
+          : null,
       },
     });
 

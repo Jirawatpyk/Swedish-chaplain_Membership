@@ -2331,6 +2331,20 @@
           "annualFee": "Årsavgift: {amount} THB (före moms)",
           "changePlan": "Ändra medlemmens plan →"
         },
+        "duplicateConfirm": {
+          "title": "Medlemmen har redan en faktura för {year}",
+          "description": "En andra faktura för samma medlemsår är tillåten, men den skapar ytterligare ett skattedokument. Granska den befintliga innan du fortsätter.",
+          "fields": {
+            "documentNumber": "Dokumentnummer",
+            "status": "Status",
+            "amount": "Belopp"
+          },
+          "notYetNumbered": "Ännu inte numrerad (utkast)",
+          "notYetTotalled": "Ännu inte summerad (utkast)",
+          "viewExisting": "Öppna den befintliga fakturan i en ny flik",
+          "cancel": "Avbryt",
+          "createAnyway": "Skapa en andra faktura"
+        },
         "renewalContext": {
           "renewal": "Nuvarande period slutar {periodTo} — betalning av denna faktura förnyar medlemskapet ({from} till {to}).",
           "firstPayment": "Medlemsperioden har inte börjat — betalning startar 12-månadersperioden från betalningsdatumet.",
