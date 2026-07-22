@@ -84,7 +84,7 @@ import {
   type CreateCycleInTxDeps,
 } from './create-cycle-in-tx';
 import {
-  cycleFrozenPriceSatang,
+  frozenPlanSnapshotsDiffer,
   type CycleId,
   type RenewalCycle,
 } from '../../domain/renewal-cycle';
@@ -577,21 +577,21 @@ export async function adminRenewLapsedMember(
       throw e;
     }
 
-    // FIX H1 — a concurrent change-plan refroze this cycle mid-issue iff the
-    // pre-link PRICE differs from what the §86/4 billed (the cycle's own frozen
-    // price captured at Step-1). Price (VAT-exclusive satang) is BOTH the money
-    // invariant this fix guarantees (cycle.frozen == linked line unit_price) AND
-    // the exact axis the standing divergence scan compares, so gating the
-    // corrective audit on it keeps the two in lock-step. The link above already
-    // reconciled the DATA for ALL five frozen fields; here we make the AUDIT
-    // trail truthful only when a real, scan-visible divergence was healed — a
+    // FIX H1 — a concurrent change-plan refroze this cycle mid-issue iff any of
+    // the pre-link frozen_plan_* fields differ from what the §86/4 billed (the
+    // cycle's own frozen fields captured at Step-1 creation). The link above
+    // already reconciled the DATA for ALL five frozen fields; here we make the
+    // AUDIT trail truthful only when a real reconciliation was healed — a
     // corrective `renewal_cycle_price_frozen` recording the cycle's final frozen
-    // price is the billed one (superseding the concurrent change-plan's
+    // fields are the billed ones (superseding the concurrent change-plan's
     // applied_to_open_cycle). Same tx as the link, so an emit failure rolls the
     // reconcile+link back (Principle VIII). Mirrors confirm-renewal Step-4.
-    const frozenReconciled =
-      cycleFrozenPriceSatang(linkResult.previous) !==
-      cycleFrozenPriceSatang(cycle);
+    //
+    // M1 — widened from a PRICE-only gate to "any of the 5 frozen fields differ"
+    // (`frozenPlanSnapshotsDiffer`, satang-normalized price) so a same-price
+    // cross-plan swap (which resets plan_id/tier while the price invariant holds)
+    // still emits the corrective row for plan-mix / reporting.
+    const frozenReconciled = frozenPlanSnapshotsDiffer(linkResult.previous, cycle);
     if (frozenReconciled) {
       await deps.auditEmitter.emitInTx(
         tx,

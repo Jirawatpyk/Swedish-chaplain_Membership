@@ -104,6 +104,7 @@ import { loadClassificationCounts } from './_lib/classification-input';
 import {
   parseCycleId,
   cycleFrozenPriceSatang,
+  frozenPlanSnapshotsDiffer,
   type CycleId,
   type RenewalCycle,
 } from '../../domain/renewal-cycle';
@@ -751,23 +752,27 @@ export async function confirmRenewal(
       throw e;
     }
 
-    // Finding #20 — a concurrent change-plan refroze this cycle mid-issue iff the
-    // pre-link PRICE differs from what the §86/4 billed. Price (VAT-exclusive
-    // satang) is BOTH the money invariant this fix guarantees (cycle.frozen ==
-    // linked line unit_price) AND the exact axis the standing divergence scan
-    // (`checkPlanChangeDivergence`) compares, so gating the corrective audit on
-    // it keeps the two in lock-step. The link above already reconciled the DATA
-    // for ALL five frozen fields (the repo UPDATE overwrites plan/tier/term/
-    // currency too, so a degenerate same-price plan-swap is still made
-    // consistent); here we make the AUDIT trail truthful only when a real,
-    // scan-visible divergence was healed — emit a corrective
-    // `renewal_cycle_price_frozen` recording that the cycle's final frozen price
-    // is the billed one (superseding the concurrent change-plan's
+    // Finding #20 — a concurrent change-plan refroze this cycle mid-issue iff any
+    // of the pre-link frozen_plan_* fields differ from what the §86/4 billed. The
+    // link above already reconciled the DATA for ALL five frozen fields (the repo
+    // UPDATE overwrites plan/tier/price/term/currency); here we make the AUDIT
+    // trail truthful only when a real reconciliation was healed — emit a
+    // corrective `renewal_cycle_price_frozen` recording that the cycle's final
+    // frozen fields are the billed ones (superseding the concurrent change-plan's
     // applied_to_open_cycle). Same tx as the link, so an emit failure rolls the
     // reconcile+link back (Principle VIII).
-    const frozenReconciled =
-      cycleFrozenPriceSatang(linkResult.previous) !==
-      cycleFrozenPriceSatang(cycleAfterPlanChange);
+    //
+    // M1 — widened from a PRICE-only gate to "any of the 5 frozen fields differ".
+    // A same-price cross-plan swap (A@50,000 → B@50,000, different tier) leaves
+    // the price invariant intact (the standing divergence scan stays clean) but
+    // DID reset plan_id/tier — a price-only gate reset them silently with no
+    // corrective row, losing the superseded applied_to_open_cycle for plan-mix /
+    // reporting. `frozenPlanSnapshotsDiffer` still satang-normalizes the price, so
+    // "50000" vs "50000.00" is never a false positive.
+    const frozenReconciled = frozenPlanSnapshotsDiffer(
+      linkResult.previous,
+      cycleAfterPlanChange,
+    );
     if (frozenReconciled) {
       await deps.auditEmitter.emitInTx(
         tx,

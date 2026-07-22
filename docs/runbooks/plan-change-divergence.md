@@ -32,6 +32,60 @@ Two finding kinds:
   `membership_fee` line (0 or >1). A real membership §86/4 always has exactly
   one; a `lines=0` result on a `test-*` tenant is fixture noise (see below).
 
+## The superseded-audit + reconcile contract (Finding #20 / M1)
+
+Two use-cases issue a membership §86/4 through a create/capture → issue → link
+sequence where the frozen-price capture + the issue run OUTSIDE the per-cycle
+advisory lock: **confirm-renewal** (member self-renew, Step-4 link) and
+**admin-renew-lapsed-member** (admin lapsed-comeback, Step-3 link). In the gap
+between capture and link, a concurrent admin `change-plan` immediate-refreeze
+(`FEATURE_PLAN_CHANGE_IMMEDIATE_REFREEZE=true`) can CAS-refreeze the still-open,
+still-unlinked cycle to a NEW plan and record
+`member_plan_change_billing_effect(effect = applied_to_open_cycle)`.
+
+Both link steps use `linkInvoiceAndReconcileFrozenPlanInTx`, which — under the
+re-acquired lock — links the invoice AND overwrites the cycle's **5**
+`frozen_plan_*` columns (plan_id, tier, price, term, currency) back to the snapshot
+the §86/4 was actually billed from. When that reconcile heals a real difference
+the use-case emits a corrective
+`renewal_cycle_price_frozen(reconciled_from_concurrent_plan_change: true)` on the
+same cycle, carrying `reverted_plan_id` / `reverted_frozen_price_thb` (the values
+the concurrent change-plan had refrozen the cycle to, now undone).
+
+Consequences for anyone reading these audit rows:
+
+- **An `applied_to_open_cycle` billing-effect row may be SUPERSEDED** by a later
+  `renewal_cycle_price_frozen(reconciled_from_concurrent_plan_change: true)` on the
+  **same `cycle_id`**. When both exist for a cycle, the plan change did NOT take
+  effect on that cycle — it deferred to the next cycle. `members.plan_id` still
+  reflects the admin's new plan (the change is not lost), but the CURRENT cycle
+  bills the pre-change plan.
+- **Any consumer that aggregates plan changes per cycle** (e.g. a future
+  plan-mix / churn / MRR-by-tier report) **MUST NET** a superseded
+  `applied_to_open_cycle` against its corrective `renewal_cycle_price_frozen`
+  row — otherwise it double-counts the plan move on the current cycle. The
+  corrective row is a DIFFERENT event type, so a naive `count(applied_to_open_cycle)`
+  overcounts.
+- **The §86/4 and the member charge are ALWAYS correct** regardless of netting:
+  the tax document is immutable and the reconcile guarantees
+  `cycle.frozen_plan_price_thb == linked membership_fee line unit_price_satang`
+  (this detector's invariant). The netting caveat is a REPORTING/analytics concern
+  only — never a money one.
+
+**M1 widening:** the corrective audit is gated on "any of the 5 `frozen_plan_*`
+fields differ" (`frozenPlanSnapshotsDiffer`, satang-normalized price), NOT price
+alone. A same-price cross-plan swap (A@50,000 regular → B@50,000 premium) leaves
+this price detector CLEAN but still resets plan_id/tier — the widened gate emits
+the corrective row so the supersede is auditable.
+
+**Current consumers (2026-07-23):** no F9/insights dashboard, KPI, or export reads
+`member_plan_change_billing_effect` or `applied_to_open_cycle` for aggregation
+(grep of `src/modules/insights/**` + repo-wide is emitters/ports/wiring only). The
+F9 audit viewer / activity feed display raw rows chronologically, which is CORRECT
+for an audit trail (both the superseded row and its correction should show). No
+reader overcounts today; this note pre-empts the netting requirement for the first
+consumer that aggregates these events.
+
 ## When to run it
 
 - **Before** setting `FEATURE_PLAN_CHANGE_IMMEDIATE_REFREEZE=true` in Vercel
