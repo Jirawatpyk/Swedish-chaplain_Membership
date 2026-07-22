@@ -165,17 +165,24 @@ describe('findPendingInvitationsForPrimaryContacts', () => {
     expect(res.value).toEqual([]);
   });
 
-  it('returns one row per member across a full 50-member page', async () => {
-    // Guards against copying the single-member method's `.limit(50)`, which
-    // would silently drop badges at exactly the directory page size.
+  it('returns one row per member across a 51-member batch (guard against LIMIT truncation)', async () => {
+    // DISTINCT ON (member_id) + ORDER BY + LIMIT executes as Sort → Unique → Limit
+    // (dedup happens BEFORE truncation). Seeding exactly 50 members means exactly
+    // 50 groups, so the query returns 50 rows whether or not `.limit(50)` is present
+    // — the test would pass either way and guard nothing. By seeding 51 members,
+    // we force a `LIMIT 50` to truncate the 51st row AFTER the sort+dedup, proving
+    // the method correctly omits any per-batch limit that would silently drop badges
+    // at exactly the directory page size.
     const ids: MemberId[] = [];
-    for (let i = 0; i < 50; i++) {
+    let _51stMemberId: MemberId | undefined;
+    for (let i = 0; i < 51; i++) {
       const invitee = await createActiveTestUser('member');
       const { memberId } = await seedPortalMemberWithContact(tenant, PLAN_ID, {
         linkedUserId: invitee.userId,
       });
       await seedPortalInvitation(invitee.userId, adminUser.userId);
       ids.push(memberId);
+      if (i === 50) _51stMemberId = memberId;
     }
 
     const deps = buildMembersDeps(tenant.ctx);
@@ -185,8 +192,11 @@ describe('findPendingInvitationsForPrimaryContacts', () => {
     );
     expect(res.ok).toBe(true);
     if (!res.ok) return;
-    expect(res.value).toHaveLength(50);
-  }, 120_000);
+    expect(res.value).toHaveLength(51);
+    // Confirm the 51st member is present in the result, not silently truncated.
+    // This makes the failure message point at the truncation guard specifically.
+    expect(res.value.some((r) => r.memberId === _51stMemberId)).toBe(true);
+  }, 150_000);
 
   it('does not leak another tenant’s invitation', async () => {
     const invitee = await createActiveTestUser('member');
