@@ -251,3 +251,86 @@ describe('EditMemberClient — plan-change confirm gate', () => {
     expect(screen.queryByTestId('plan-confirm')).toBeNull();
   });
 });
+
+/**
+ * Phase 2 UI wiring — the PATCH response for a plan change now carries a
+ * server-computed `billing_effect` discriminator (applied-now vs
+ * applies-next-cycle). The post-success toast description must reflect the
+ * ACTUAL outcome. Copy is asserted via the sonner mock (base-ui toasts render
+ * in a portal — the sonner mock is the reliable assertion surface, not the DOM).
+ */
+describe('EditMemberClient — plan-change billing-effect toast', () => {
+  it('surfaces the applied-now effect on a successful plan change', async () => {
+    h.values = PLAN_ONLY;
+    fetchMock.mockResolvedValueOnce(
+      res(200, {
+        member_id: 'm1',
+        billing_effect: { effect: 'applied_to_open_cycle' },
+      }),
+    );
+    renderClient();
+    fireEvent.click(screen.getByText('stub-submit'));
+    fireEvent.click(screen.getByText('confirm-plan'));
+
+    await vi.waitFor(() =>
+      expect(h.toast.success).toHaveBeenCalledWith('admin.members.edit.success', {
+        description: 'admin.members.planChangeResult.applied_to_open_cycle',
+      }),
+    );
+  });
+
+  it('surfaces the deferred effect (flag-off default) on a successful plan change', async () => {
+    h.values = PLAN_ONLY;
+    fetchMock.mockResolvedValueOnce(
+      res(200, {
+        member_id: 'm1',
+        billing_effect: { effect: 'deferred_immediate_not_enabled' },
+      }),
+    );
+    renderClient();
+    fireEvent.click(screen.getByText('stub-submit'));
+    fireEvent.click(screen.getByText('confirm-plan'));
+
+    await vi.waitFor(() =>
+      expect(h.toast.success).toHaveBeenCalledWith('admin.members.edit.success', {
+        description:
+          'admin.members.planChangeResult.deferred_immediate_not_enabled',
+      }),
+    );
+  });
+
+  it('falls back to the plain success toast when billing_effect is absent (no regression)', async () => {
+    h.values = PLAN_ONLY;
+    fetchMock.mockResolvedValueOnce(res(200, { member_id: 'm1' }));
+    renderClient();
+    fireEvent.click(screen.getByText('stub-submit'));
+    fireEvent.click(screen.getByText('confirm-plan'));
+
+    await vi.waitFor(() =>
+      expect(h.toast.success).toHaveBeenCalledWith('admin.members.edit.success'),
+    );
+    // No effect → no description argument (the pre-Phase-2 plain toast).
+    expect(h.toast.success).not.toHaveBeenCalledWith(
+      'admin.members.edit.success',
+      expect.anything(),
+    );
+  });
+
+  it('falls back to the plain success toast for an unknown effect string', async () => {
+    h.values = PLAN_ONLY;
+    fetchMock.mockResolvedValueOnce(
+      res(200, { member_id: 'm1', billing_effect: { effect: 'something_new' } }),
+    );
+    renderClient();
+    fireEvent.click(screen.getByText('stub-submit'));
+    fireEvent.click(screen.getByText('confirm-plan'));
+
+    await vi.waitFor(() =>
+      expect(h.toast.success).toHaveBeenCalledWith('admin.members.edit.success'),
+    );
+    expect(h.toast.success).not.toHaveBeenCalledWith(
+      'admin.members.edit.success',
+      expect.anything(),
+    );
+  });
+});
