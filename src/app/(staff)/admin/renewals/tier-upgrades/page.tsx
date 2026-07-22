@@ -83,6 +83,12 @@ export default async function TierUpgradeQueuePage() {
   // ≤10 items, so N queries is acceptable; no batch-plan endpoint
   // exists yet — matches the cycle-detail-fetchers pattern).
   const planNameMap = new Map<string, string>();
+  // Plan-change UX C2 — the same batched plan read also carries each plan's
+  // annual fee (minor units) so the Accept dialog can restate the old→new fee
+  // numbers (฿36,000 → ฿60,000), not just the plan NAMES. Absent from the map
+  // when the plan lookup returned nothing → the dialog renders the localised
+  // "fee unavailable" token in that slot.
+  const planFeeMap = new Map<string, number>();
   // P1-9 — resolve each suggestion's member COMPANY NAME in ONE batched,
   // RLS-scoped read (reuses the pending-review enrichment helper), so the
   // queue links a human name to `/admin/members/[id]` instead of a raw
@@ -104,7 +110,12 @@ export default async function TierUpgradeQueuePage() {
               planId,
               locale,
             });
-            if (display) planNameMap.set(planId, display.localisedName);
+            if (display) {
+              planNameMap.set(planId, display.localisedName);
+              if (display.annualFeeMinorUnits !== undefined) {
+                planFeeMap.set(planId, display.annualFeeMinorUnits);
+              }
+            }
           } catch (e) {
             // Non-fatal: fall back to rendering the ID.
             logger.warn(
@@ -179,6 +190,8 @@ export default async function TierUpgradeQueuePage() {
           items={queueItems.map((s) => {
             const fromPlanName = planNameMap.get(s.fromPlanId);
             const toPlanName = planNameMap.get(s.toPlanId);
+            const fromFeeMinorUnits = planFeeMap.get(s.fromPlanId);
+            const toFeeMinorUnits = planFeeMap.get(s.toPlanId);
             const companyName = companyNames.get(s.memberId);
             // Validate + pre-format the evidence at the presentation
             // boundary; a malformed/mismatched shape becomes `null` → the
@@ -197,8 +210,10 @@ export default async function TierUpgradeQueuePage() {
               // exactOptionalPropertyTypes (string | undefined is not
               // assignable to optional string without this guard).
               ...(fromPlanName !== undefined ? { fromPlanName } : {}),
+              ...(fromFeeMinorUnits !== undefined ? { fromFeeMinorUnits } : {}),
               toPlanId: s.toPlanId,
               ...(toPlanName !== undefined ? { toPlanName } : {}),
+              ...(toFeeMinorUnits !== undefined ? { toFeeMinorUnits } : {}),
               ...(companyName !== undefined ? { companyName } : {}),
               reasonCode: s.reasonCode,
               evidence,

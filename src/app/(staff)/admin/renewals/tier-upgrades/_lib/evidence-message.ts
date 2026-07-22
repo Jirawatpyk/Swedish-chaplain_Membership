@@ -46,3 +46,47 @@ export function buildEvidenceMessage(
       return assertNever(view);
   }
 }
+
+/**
+ * Plan-change UX C2 — compose the Accept-dialog description.
+ *
+ * Restates the pricing evidence AND the old→new plan move WITH the actual
+ * annual fees (e.g. ฿36,000 → ฿60,000), so an admin approving a price increase
+ * sees the numbers, not just plan names (ux-standards § 6.2 — repeat the
+ * figures before a money action). A fee absent from the resolved plan map
+ * (archived / deleted plan) renders the localised `fee_unknown` token in that
+ * slot rather than a blank or `NaN`.
+ *
+ * Pure (takes the translate + THB-format callbacks), so it is unit-testable
+ * against the real messages without a React render.
+ *
+ * @param formatThb formats a raw MAJOR-baht figure to a `฿…` string (same
+ *   contract as {@link buildEvidenceMessage}); fees are stored in MINOR units,
+ *   so they are divided by 100 before formatting.
+ */
+export function buildAcceptDialogMessage(
+  t: (key: string, values?: Record<string, string | number>) => string,
+  args: {
+    readonly evidence: TierUpgradeEvidenceView | null;
+    readonly fromPlanLabel: string;
+    readonly toPlanLabel: string;
+    readonly fromFeeMinorUnits?: number;
+    readonly toFeeMinorUnits?: number;
+  },
+  formatThb: (majorBaht: number) => string,
+): string {
+  const evidenceText = args.evidence
+    ? buildEvidenceMessage(t, args.evidence, formatThb)
+    : t('evidence.unavailable');
+  const feeText = (minorUnits: number | undefined): string =>
+    minorUnits === undefined
+      ? t('actions.accept.fee_unknown')
+      : formatThb(minorUnits / 100);
+  return t('actions.accept.evidence_restated', {
+    evidence: evidenceText,
+    fromPlan: args.fromPlanLabel,
+    toPlan: args.toPlanLabel,
+    fromFee: feeText(args.fromFeeMinorUnits),
+    toFee: feeText(args.toFeeMinorUnits),
+  });
+}
