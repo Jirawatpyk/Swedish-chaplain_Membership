@@ -16,10 +16,10 @@
  * predicate is application-layer defence-in-depth alongside RLS
  * (Constitution Principle I § 1).
  */
-import { and, eq, gte, isNotNull, ne, sql } from 'drizzle-orm';
+import { and, eq, gte, isNotNull, sql } from 'drizzle-orm';
 import { db, runInTenant, type TenantTx } from '@/lib/db';
 import type { TenantContext } from '@/modules/tenants';
-import { invoicesTable } from '@/modules/invoicing';
+import { invoicesTable, liveMembershipBillWhere } from '@/modules/invoicing';
 import type {
   HasUnpaidNotYetDueMembershipInvoiceInput,
   InvoiceDueBridge,
@@ -39,14 +39,15 @@ export function makeInvoiceDueBridgeDrizzle(ctx: TenantContext): InvoiceDueBridg
       // `runInTenant` here would take a second pooled connection that neither
       // sees the lock's snapshot nor is safe to open mid-transaction.
       // Tenant scope therefore rides the caller's `SET LOCAL
-      // app.current_tenant` GUC; the explicit `tenantId` predicate is
-      // application-layer defence-in-depth alongside RLS (Constitution
-      // Principle I § 1), matching the sibling reads below.
+      // app.current_tenant` GUC; the explicit `tenantId` predicate (inside the
+      // shared helper) is application-layer defence-in-depth alongside RLS
+      // (Constitution Principle I § 1), matching the sibling reads below.
       //
-      // `ne(status, 'void')` rather than an IN-list of live statuses: a future
-      // `invoiceStatusEnum` addition then defaults to BLOCKING (safe — refuse
-      // to mint a second tax document) instead of silently falling through the
-      // guard, which is the direction a §86/4 duplicate check must fail.
+      // "Live membership bill" (status <> 'void') via the shared
+      // `liveMembershipBillWhere` from the invoicing barrel — the SAME
+      // predicate the admin-create guard (`createInvoiceDraft`) uses, so the
+      // two duplicate-§86/4 checks read one rule and cannot drift. This method
+      // owns only its projection + ordering.
       const txDb = tx as typeof db;
       const rows = await txDb
         .select({
@@ -55,13 +56,11 @@ export function makeInvoiceDueBridgeDrizzle(ctx: TenantContext): InvoiceDueBridg
         })
         .from(invoicesTable)
         .where(
-          and(
-            eq(invoicesTable.tenantId, input.tenantId),
-            eq(invoicesTable.memberId, input.memberId),
-            eq(invoicesTable.invoiceSubject, 'membership'),
-            eq(invoicesTable.planYear, input.planYear),
-            ne(invoicesTable.status, 'void'),
-          ),
+          liveMembershipBillWhere({
+            tenantId: input.tenantId,
+            memberId: input.memberId,
+            planYear: input.planYear,
+          }),
         )
         // Deterministic pick so the id surfaced to the operator (and the
         // deep-link in the toast) is stable across retries: newest first, so

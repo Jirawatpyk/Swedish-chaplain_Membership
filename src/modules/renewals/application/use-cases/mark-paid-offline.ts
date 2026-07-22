@@ -438,14 +438,11 @@ export async function markPaidOffline(
       // exact key the bridge will mint under, so no gap can open between
       // check and use.
       //
-      // NOTE (deliberate duplication, remove on consolidation): the feature
-      // branch `059-membership-suspension` introduces a shared
-      // `findLiveMembershipBill` helper under `use-cases/_lib/`. That file
-      // does not exist on `main` and this is an independently shippable
-      // production fix, so the predicate is inlined here via the F4 read
-      // bridge. When that branch merges, fold this call site onto the shared
-      // helper — four inconsistent copies of this check is what produced the
-      // defect in the first place.
+      // The bridge's `findLiveMembershipBillInTx` reads the SAME
+      // `liveMembershipBillWhere` predicate (shared from the invoicing barrel)
+      // that the admin-create guard uses — one definition of "live membership
+      // bill", so the two guards cannot drift. Inconsistent copies of this
+      // check are what produced the defect in the first place.
       const existingBill =
         await deps.invoiceDueBridge.findLiveMembershipBillInTx(tx, {
           tenantId: input.tenantId,

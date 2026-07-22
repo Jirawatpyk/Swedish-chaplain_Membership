@@ -546,6 +546,14 @@ export { receiptPdfRenderEnqueueAdapter } from './infrastructure/adapters/receip
 // (instead of a deep `./infrastructure/db/schema-invoices` import) keeps
 // the cross-module dependency at the documented barrel surface.
 export { invoices as invoicesTable } from './infrastructure/db/schema-invoices';
+// Single source of truth for the "live membership bill for (tenant, member,
+// plan year)" WHERE predicate, shared by the invoicing admin-create guard
+// (`createInvoiceDraft`) and the renewals offline mark-paid guard (via the F8
+// `InvoiceDueBridge`) so the two duplicate-§86/4 checks cannot drift apart.
+export {
+  liveMembershipBillWhere,
+  type LiveMembershipBillKey,
+} from './infrastructure/db/live-membership-bill-predicate';
 // Bug 10 — the VOID-overlay render construction, shared by `voidInvoice`
 // (intra-module) AND the `void-pdf-reconcile` cron. The cron lives under
 // `src/app/**`, so per Principle III it MUST reach this Application helper

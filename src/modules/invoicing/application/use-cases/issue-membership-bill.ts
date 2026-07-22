@@ -82,7 +82,12 @@ export async function issueMembershipBill(
   //    (asymmetric (created_at, id) < newBill → the newest is never voidable →
   //    never zero survivors; exactly one for the reactivation shape (older bill
   //    pre-committed), but two brand-new concurrent same-member issues may
-  //    leave two — closed by sub-project #2's content guard).
+  //    leave two. The interactive guards (admin `createInvoiceDraft` +
+  //    renewals `markPaidOffline`, both via the shared `liveMembershipBillWhere`)
+  //    refuse accidental duplicates on THEIR paths, but two concurrent
+  //    automated issues here stay a soft residual — there is no
+  //    (member, plan_year) unique index for membership, by design (a
+  //    shorter-term plan could legitimately share a plan_year)).
   const newBill = issued.value;
   const supersedeWarnings: string[] = [];
   let older: ReadonlyArray<{ readonly invoiceId: string }> = [];
