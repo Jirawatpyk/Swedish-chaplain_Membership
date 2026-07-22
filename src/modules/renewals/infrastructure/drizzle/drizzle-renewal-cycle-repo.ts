@@ -1765,11 +1765,12 @@ export function makeDrizzleRenewalCycleRepo(
         .returning();
       const row = updated[0];
       if (!row) return null;
-      const deleted = await txDb
-        .delete(renewalReminderEvents)
-        .where(eq(renewalReminderEvents.cycleId, cycleId))
-        .returning({ id: renewalReminderEvents.reminderEventId });
-      return { cycle: rowToDomain(row), reminderEventsReset: deleted.length };
+      // FIXED-ANCHOR (2026-07-22): first payment no longer MOVES the period —
+      // it keeps the cycle's registration/backfill anchor and only stamps
+      // `anchored_at` + activates the status. Because `period_to` is unchanged,
+      // the reminder events keyed off it stay valid, so they are NOT deleted
+      // (the #173 delete existed only to reset reminders after a period move).
+      return { cycle: rowToDomain(row), reminderEventsReset: 0 };
     },
   };
 }

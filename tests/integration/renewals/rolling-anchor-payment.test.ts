@@ -384,8 +384,11 @@ describe('rolling-anchor unlinked-payment resolution — integration (Task 5)', 
     const anchored = cycles[0]!;
     expect(anchored.cycleId).toBe(provisionalCycleId);
     expect(anchored.status).toBe('upcoming');
-    expect(anchored.periodFrom.toISOString()).toBe('2026-08-01T00:00:00.000Z');
-    expect(anchored.periodTo.toISOString()).toBe('2027-08-01T00:00:00.000Z');
+    // FIXED-ANCHOR (2026-07-22): period STAYS at the provisional registration
+    // anchor (June) — it is NOT moved to the August payment month. Only
+    // anchored_at (the "when activated" stamp) reflects the payment month.
+    expect(anchored.periodFrom.toISOString()).toBe('2026-06-01T00:00:00.000Z');
+    expect(anchored.periodTo.toISOString()).toBe('2027-06-01T00:00:00.000Z');
     expect(anchored.anchoredAt?.toISOString()).toBe('2026-08-01T00:00:00.000Z');
     expect(anchored.anchorInvoiceId).toBe(invoice1);
     // linked_invoice_id stays free for the future renewal invoice.
@@ -407,11 +410,12 @@ describe('rolling-anchor unlinked-payment resolution — integration (Task 5)', 
     expect(completed.status).toBe('completed');
     expect(completed.closedReason).toBe('paid');
     expect(completed.linkedInvoiceId).toBe(invoice2);
-    // Gapless: next cycle anchors at the completed cycle's periodTo —
-    // NOT the second payment's date (TSCC: paying within grace backdates).
+    // Gapless: next cycle anchors at the completed cycle's (unchanged, June-
+    // anchored) periodTo — NOT the second payment's date (paying within grace
+    // backdates; and fixed-anchor means the completed period never moved).
     expect(next.status).toBe('upcoming');
-    expect(next.periodFrom.toISOString()).toBe('2027-08-01T00:00:00.000Z');
-    expect(next.periodTo.toISOString()).toBe('2028-08-01T00:00:00.000Z');
+    expect(next.periodFrom.toISOString()).toBe('2027-06-01T00:00:00.000Z');
+    expect(next.periodTo.toISOString()).toBe('2028-06-01T00:00:00.000Z');
 
     const completedAfter = await countAuditRows(tenantA, 'renewal_completed');
     expect(completedAfter).toBe(completedBefore + 1);
@@ -469,8 +473,9 @@ describe('rolling-anchor unlinked-payment resolution — integration (Task 5)', 
     const reanchored = cycles[0]!;
     expect(reanchored.cycleId).toBe(cycleId);
     expect(reanchored.status).toBe('upcoming');
-    expect(reanchored.periodFrom.toISOString()).toBe('2026-08-01T00:00:00.000Z');
-    expect(reanchored.periodTo.toISOString()).toBe('2027-08-01T00:00:00.000Z');
+    // FIXED-ANCHOR: period stays June (registration), not the Aug payment month.
+    expect(reanchored.periodFrom.toISOString()).toBe('2026-06-01T00:00:00.000Z');
+    expect(reanchored.periodTo.toISOString()).toBe('2027-06-01T00:00:00.000Z');
     expect(reanchored.anchoredAt?.toISOString()).toBe('2026-08-01T00:00:00.000Z');
     expect(reanchored.anchorInvoiceId).toBe(invoice1);
     // linked_invoice_id CLEARED by the guarded UPDATE — frees the slot so
@@ -507,11 +512,11 @@ describe('rolling-anchor unlinked-payment resolution — integration (Task 5)', 
     expect(completed.status).toBe('completed');
     expect(completed.closedReason).toBe('paid');
     expect(completed.linkedInvoiceId).toBe(invoice2);
-    // Gapless from the RE-ANCHORED period's periodTo (2027-08-01) — NOT the
-    // second payment's own date.
+    // Gapless from the activated cycle's (unchanged, June-anchored) periodTo —
+    // fixed-anchor: the first payment did not move it to the Aug payment month.
     expect(next.status).toBe('upcoming');
-    expect(next.periodFrom.toISOString()).toBe('2027-08-01T00:00:00.000Z');
-    expect(next.periodTo.toISOString()).toBe('2028-08-01T00:00:00.000Z');
+    expect(next.periodFrom.toISOString()).toBe('2027-06-01T00:00:00.000Z');
+    expect(next.periodTo.toISOString()).toBe('2028-06-01T00:00:00.000Z');
 
     const completedAfterSecond = await countAuditRows(tenantA, 'renewal_completed');
     expect(completedAfterSecond).toBe(completedBefore + 1);
@@ -529,7 +534,11 @@ describe('rolling-anchor unlinked-payment resolution — integration (Task 5)', 
 
     const cycles = await loadCycles(tenantA, memberId);
     expect(cycles).toHaveLength(1);
-    expect(cycles[0]!.periodFrom.toISOString()).toBe('2026-08-01T00:00:00.000Z');
+    // Fixed-anchor: period stays at the provisional June anchor. The paidAt
+    // fallback governs only `anchored_at` (the activation stamp), which derives
+    // from paidAt (2026-08-16 → Bangkok month-start 2026-08-01).
+    expect(cycles[0]!.periodFrom.toISOString()).toBe('2026-06-01T00:00:00.000Z');
+    expect(cycles[0]!.anchoredAt?.toISOString()).toBe('2026-08-01T00:00:00.000Z');
     expect(cycles[0]!.anchorInvoiceId).toBe(invoiceId);
   }, 120_000);
 
@@ -579,7 +588,8 @@ describe('rolling-anchor unlinked-payment resolution — integration (Task 5)', 
     expect(cycles).toHaveLength(2);
     const reanchored = cycles.find((c) => c.cycleId === provisionalCycleId)!;
     expect(reanchored.status).toBe('upcoming');
-    expect(reanchored.periodFrom.toISOString()).toBe('2026-08-01T00:00:00.000Z');
+    // Fixed-anchor: period stays at the provisional June anchor, not payment month.
+    expect(reanchored.periodFrom.toISOString()).toBe('2026-06-01T00:00:00.000Z');
     expect(reanchored.anchoredAt?.toISOString()).toBe('2026-08-01T00:00:00.000Z');
     expect(reanchored.anchorInvoiceId).toBe(invoiceId);
     expect(reanchored.closedReason).toBeNull(); // never completed

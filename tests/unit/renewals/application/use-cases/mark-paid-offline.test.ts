@@ -304,6 +304,12 @@ function fakeDeps(
     f4InvoiceBridge: {
       issueAndMarkPaid: bridgeMock,
     } as unknown as RenewalsDeps['f4InvoiceBridge'],
+    // #244 duplicate-membership-bill guard reads this BEFORE the F4 chain.
+    // Default null = "no existing live bill" so the guard passes and the
+    // pre-existing tests exercise the mint path unchanged.
+    invoiceDueBridge: {
+      findLiveMembershipBillInTx: vi.fn(async () => null),
+    } as unknown as RenewalsDeps['invoiceDueBridge'],
     auditEmitter: { emit: emitMock, emitInTx: emitInTxMock },
     planLookupForRenewal: {
       loadPlanFrozenFields: loadPlanFrozenFieldsMock,

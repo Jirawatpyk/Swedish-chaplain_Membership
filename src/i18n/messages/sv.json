@@ -2347,10 +2347,8 @@
         },
         "renewalContext": {
           "renewal": "Nuvarande period slutar {periodTo} — betalning av denna faktura förnyar medlemskapet ({from} till {to}).",
-          "firstPayment": "Medlemsperioden har inte börjat — betalning startar 12-månadersperioden från betalningsdatumet.",
-          "notApplicable": "Ingen aktiv medlemsperiod — denna faktura påverkar inte förnyelser (använd återaktiveringsflödet för utgångna medlemmar).",
-          "duplicateWarning": "Medlemmen har redan en obetald medlemsfaktura, eller så löper nuvarande period till {periodTo} — ytterligare en betald faktura köper ett år till.",
-          "duplicateWarningUnpaidOnly": "Medlemmen har redan en obetald medlemsfaktura — ytterligare en betald faktura köper ett år till."
+          "firstPayment": "Medlemskapet är inte aktivt än — betala fakturan för att aktivera förmåner från betalningsdagen; 12-månadersperioden är fast enligt inskrivningsdatumet.",
+          "notApplicable": "Ingen aktiv medlemsperiod — denna faktura påverkar inte förnyelser (använd återaktiveringsflödet för utgångna medlemmar)."
         }
       },
       "detail": {

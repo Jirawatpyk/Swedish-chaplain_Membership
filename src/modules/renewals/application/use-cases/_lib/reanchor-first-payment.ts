@@ -31,8 +31,6 @@
 import type { TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { renewalsMetrics } from '@/lib/metrics';
-import { deriveFiscalYear, type FiscalYearStartMonth } from '@/lib/fiscal-year';
-import { addMonthsUtc } from '@/lib/dates';
 import type { F4InvoicePaidEvent, InvoiceId } from '@/modules/invoicing';
 import type { MemberId } from '@/modules/members';
 import { asCycleId, type RenewalCycle } from '../../../domain/renewal-cycle';
@@ -110,68 +108,31 @@ export async function reanchorFirstPaymentCycleInTx(
     );
   }
 
-  const anchorDate = paymentAnchorMonthStartUtc(evt);
-
-  // FIX-3 (PR #173 review, 2026-07-09) — thread the tenant's REAL
-  // fiscal-year-start-month into the boundary check. Without this, a
-  // non-January-start tenant's re-anchor could silently skip re-freezing
-  // the plan's price/term for the new fiscal year (the previous
-  // `deriveFiscalYear` calls below took no `startMonth` arg, defaulting
-  // to January for every tenant).
-  //
-  // R2-FIX-1 (PR #173 round-2 review, 2026-07-09) — read on the OUTER
-  // settlement `tx` (`getFiscalYearStartMonthInTx`) rather than the prior
-  // no-`tx` variant that opened its own `runInTenant` (a second pooled
-  // connection while this money-path tx still holds the first — the
-  // nested-connection pool-exhaustion class documented in `src/lib/db.ts`).
-  const startMonth = (await deps.fiscalYearSettings.getFiscalYearStartMonthInTx(
-    tx,
-    evt.tenantId,
-  )) as FiscalYearStartMonth;
-  const oldFiscalYear = deriveFiscalYear(cycle.periodFrom, startMonth);
-  const newFiscalYear = deriveFiscalYear(anchorDate, startMonth);
-
-  let frozenPlanPriceThb = cycle.frozenPlanPriceThb;
-  let frozenPlanTermMonths = cycle.frozenPlanTermMonths;
-  let refrozePlanFields = false;
-
-  if (newFiscalYear !== oldFiscalYear) {
-    const resolved = await deps.planLookup.loadPlanFrozenFields({
-      tenantId: evt.tenantId,
-      planId: cycle.planIdAtCycleStart,
-      fiscalYear: newFiscalYear,
-      mode: 'freeze',
-    });
-    if (resolved.status === 'found') {
-      frozenPlanPriceThb = resolved.plan.priceTHB;
-      frozenPlanTermMonths = resolved.plan.termMonths;
-      refrozePlanFields = true;
-    } else {
-      logger.error(
-        {
-          cycleId: cycle.cycleId,
-          planId: cycle.planIdAtCycleStart,
-          newFiscalYear,
-          status: resolved.status,
-        },
-        '[reanchor-first-payment] re-anchor crossed a fiscal-year boundary but the plan is unresolvable for the new year — keeping old frozen fields',
-      );
-    }
-  }
-
-  const newPeriodTo = addMonthsUtc(anchorDate, frozenPlanTermMonths);
+  // FIXED-ANCHOR (2026-07-22, bug-doc Q-2 + maintainer decision): the
+  // membership period is FIXED at the cycle's registration/backfill anchor and
+  // must NOT move to the payment month. First payment only ACTIVATES the cycle
+  // (status → 'upcoming', stamps `anchored_at`, clears the parked invoice); the
+  // 059 suspension model gates benefit access ("no benefit until paid"). This
+  // REVERSES the #173 payment-anchor behaviour (was `periodFrom = payment
+  // month`), which drifted every member's anniversary to their payment date and
+  // mis-stated the §86/4 coverage window. `anchored_at` is stamped from the
+  // payment month purely as a forensic "when activated" marker — it no longer
+  // defines the period. No fiscal-year re-freeze: the period does not cross a
+  // boundary because it does not move, so the registration-year frozen
+  // price/term stand.
+  const anchoredAtStamp = paymentAnchorMonthStartUtc(evt);
 
   const reanchored = await deps.cyclesRepo.reanchorPeriodInTx(
     tx,
     evt.tenantId,
     cycle.cycleId,
     {
-      periodFrom: anchorDate,
-      periodTo: newPeriodTo,
-      anchoredAt: anchorDate,
+      periodFrom: cycle.periodFrom,
+      periodTo: cycle.periodTo,
+      anchoredAt: anchoredAtStamp,
       anchorInvoiceId: evt.invoiceId,
-      frozenPlanPriceThb,
-      frozenPlanTermMonths,
+      frozenPlanPriceThb: cycle.frozenPlanPriceThb,
+      frozenPlanTermMonths: cycle.frozenPlanTermMonths,
     },
   );
   if (!reanchored) {
@@ -191,7 +152,7 @@ export async function reanchorFirstPaymentCycleInTx(
         new_period_from: reanchored.cycle.periodFrom,
         new_period_to: reanchored.cycle.periodTo,
         old_status: cycle.status,
-        refroze_plan_fields: refrozePlanFields,
+        refroze_plan_fields: false,
         reminder_events_reset: reanchored.reminderEventsReset,
       },
     },
@@ -205,7 +166,7 @@ export async function reanchorFirstPaymentCycleInTx(
   renewalsMetrics.unlinkedPaymentResolved('reanchored');
   return {
     cycle: reanchored.cycle,
-    refrozePlanFields,
+    refrozePlanFields: false,
     reminderEventsReset: reanchored.reminderEventsReset,
   };
 }

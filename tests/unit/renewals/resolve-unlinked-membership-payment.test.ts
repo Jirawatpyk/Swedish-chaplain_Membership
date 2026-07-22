@@ -413,12 +413,12 @@ describe('resolveUnlinkedMembershipPaymentInTx — behaviour 3: heal_no_cycle', 
 });
 
 describe('resolveUnlinkedMembershipPaymentInTx — behaviour 4: first_payment', () => {
-  it('re-anchors the never-before-paid cycle; no FY crossing → refroze_plan_fields:false', async () => {
+  it('fixed-anchor: activates the cycle KEEPING its period (Jan), does NOT move it to the payment month (May)', async () => {
     const openCycle = buildCycle({
       status: 'upcoming',
       anchoredAt: null,
-      periodFrom: '2026-05-01T00:00:00Z',
-      periodTo: '2027-05-01T00:00:00Z',
+      periodFrom: '2026-01-01T00:00:00Z',
+      periodTo: '2027-01-01T00:00:00Z',
     });
     const { deps, mocks } = fakeDeps({ cycleCountForMember: 1, openCycle });
     const r = await resolveUnlinkedMembershipPaymentInTx(
@@ -427,13 +427,16 @@ describe('resolveUnlinkedMembershipPaymentInTx — behaviour 4: first_payment', 
       SENTINEL_TX,
     );
     expect(r).toEqual({ kind: 'reanchored', cycleId: openCycle.cycleId });
+    // No fiscal-year re-freeze — the period doesn't move, so no boundary crossing.
     expect(mocks.loadPlanFrozenFields).not.toHaveBeenCalled();
     expect(mocks.reanchor).toHaveBeenCalledWith(
       SENTINEL_TX,
       TENANT_ID,
       openCycle.cycleId,
       expect.objectContaining({
-        periodFrom: '2026-05-01T00:00:00.000Z',
+        // Period stays at the cycle's Jan anchor — NOT the May payment month.
+        periodFrom: openCycle.periodFrom,
+        periodTo: openCycle.periodTo,
         anchoredAt: '2026-05-01T00:00:00.000Z',
         anchorInvoiceId: INVOICE_UUID,
         frozenPlanPriceThb: openCycle.frozenPlanPriceThb,
@@ -480,79 +483,9 @@ describe('resolveUnlinkedMembershipPaymentInTx — behaviour 4: first_payment', 
     expect(renewalsMetrics.unlinkedPaymentResolved).toHaveBeenCalledWith('reanchored');
   });
 
-  it('re-anchor crosses a fiscal-year boundary + plan resolvable → re-freezes fields', async () => {
-    const openCycle = buildCycle({
-      status: 'upcoming',
-      anchoredAt: null,
-      periodFrom: '2025-11-01T00:00:00Z',
-      periodTo: '2026-11-01T00:00:00Z',
-      frozenPlanPriceThb: parseThbDecimal('40000.00'),
-      frozenPlanTermMonths: 12,
-    });
-    const newPlan = {
-      status: 'found' as const,
-      plan: { tierBucket: 'regular' as const, priceTHB: parseThbDecimal('45000.00'), termMonths: 12, currency: 'THB' as const },
-    };
-    const { deps, mocks } = fakeDeps({
-      cycleCountForMember: 1,
-      openCycle,
-      planLookupImpl: async () => newPlan,
-    });
-    const r = await resolveUnlinkedMembershipPaymentInTx(
-      deps,
-      buildEvent({ paymentDate: '2026-03-16' }), // crosses into FY2026
-      SENTINEL_TX,
-    );
-    expect(r.kind).toBe('reanchored');
-    expect(mocks.loadPlanFrozenFields).toHaveBeenCalledWith(
-      expect.objectContaining({ tenantId: TENANT_ID, planId: openCycle.planIdAtCycleStart, mode: 'freeze' }),
-    );
-    expect(mocks.reanchor).toHaveBeenCalledWith(
-      SENTINEL_TX,
-      TENANT_ID,
-      openCycle.cycleId,
-      expect.objectContaining({
-        frozenPlanPriceThb: '45000.00',
-        frozenPlanTermMonths: 12,
-      }),
-    );
-    const auditCall = mocks.emitInTx.mock.calls[0]?.[1];
-    expect(auditCall.payload.refroze_plan_fields).toBe(true);
-  });
-
-  it('re-anchor crosses FY boundary but plan unresolvable → keeps old fields + logs error', async () => {
-    const openCycle = buildCycle({
-      status: 'upcoming',
-      anchoredAt: null,
-      periodFrom: '2025-11-01T00:00:00Z',
-      periodTo: '2026-11-01T00:00:00Z',
-      frozenPlanPriceThb: parseThbDecimal('40000.00'),
-      frozenPlanTermMonths: 12,
-    });
-    const { deps, mocks } = fakeDeps({
-      cycleCountForMember: 1,
-      openCycle,
-      planLookupImpl: async () => ({ status: 'not_found' as const }),
-    });
-    const r = await resolveUnlinkedMembershipPaymentInTx(
-      deps,
-      buildEvent({ paymentDate: '2026-03-16' }),
-      SENTINEL_TX,
-    );
-    expect(r.kind).toBe('reanchored');
-    expect(logger.error).toHaveBeenCalled();
-    expect(mocks.reanchor).toHaveBeenCalledWith(
-      SENTINEL_TX,
-      TENANT_ID,
-      openCycle.cycleId,
-      expect.objectContaining({
-        frozenPlanPriceThb: openCycle.frozenPlanPriceThb,
-        frozenPlanTermMonths: openCycle.frozenPlanTermMonths,
-      }),
-    );
-    const auditCall = mocks.emitInTx.mock.calls[0]?.[1];
-    expect(auditCall.payload.refroze_plan_fields).toBe(false);
-  });
+  // NOTE: the two FY-crossing re-freeze tests were REMOVED (fixed-anchor,
+  // 2026-07-22) — first payment no longer moves the period, so it can never
+  // cross a fiscal-year boundary and never re-freezes the plan fields.
 
   it('lost the reanchor-guard race (reanchorPeriodInTx→null) → reclassifies, falls to renewal', async () => {
     const openCycle = buildCycle({ status: 'upcoming', anchoredAt: null });

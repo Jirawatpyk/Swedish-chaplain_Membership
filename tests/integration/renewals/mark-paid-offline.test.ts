@@ -745,7 +745,7 @@ describe('F8 markPaidOffline — integration (T077)', () => {
       // stamped by the re-anchor inside `onPaid`, i.e. after the mint.
     }, 120_000);
 
-    it('re-anchors the cycle to the payment month instead of completing it', async () => {
+    it('activates the first-payment cycle (KEEPING its Jan period) instead of completing it', async () => {
       const deps = makeRenewalsDeps(tenantA.ctx.slug);
       const paidAt = new Date().toISOString();
       const bridgeSpy = vi
@@ -806,8 +806,9 @@ describe('F8 markPaidOffline — integration (T077)', () => {
       expect(r.value.outcome).toBe('reanchored');
       expect(r.value.cycleStatus).toBe('upcoming');
       expect(r.value.invoiceId).toBe(seededInvoiceFirstPayId);
-      // Bangkok month-start anchor: 2026-06-20 → 2026-06-01, +12 months.
-      expect(r.value.newExpiresAt).toBe('2027-06-01T00:00:00.000Z');
+      // FIXED-ANCHOR: the period (and thus expires_at) stays at the seeded Jan
+      // anchor — the June payment does not move it.
+      expect(r.value.newExpiresAt).toBe('2027-01-15T00:00:00.000Z');
 
       const rows = await runInTenant(tenantA.ctx, (tx) =>
         tx
@@ -825,9 +826,11 @@ describe('F8 markPaidOffline — integration (T077)', () => {
       // future renewal can still link cleanly.
       expect(row.linkedInvoiceId).toBeNull();
       expect(row.anchorInvoiceId).toBe(seededInvoiceFirstPayId);
+      // anchored_at (the activation stamp) = the June payment month-start.
       expect(row.anchoredAt?.toISOString()).toBe('2026-06-01T00:00:00.000Z');
-      expect(row.periodFrom.toISOString()).toBe('2026-06-01T00:00:00.000Z');
-      expect(row.periodTo.toISOString()).toBe('2027-06-01T00:00:00.000Z');
+      // Period STAYS at the seeded Jan anchor — NOT moved to the June payment.
+      expect(row.periodFrom.toISOString()).toBe('2026-01-15T00:00:00.000Z');
+      expect(row.periodTo.toISOString()).toBe('2027-01-15T00:00:00.000Z');
       expect(row.frozenPlanPriceThb).toBe('50000.00');
 
       // renewal_cycle_reanchored fired for this cycle.

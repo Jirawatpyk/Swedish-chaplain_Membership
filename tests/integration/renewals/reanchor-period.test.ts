@@ -286,7 +286,7 @@ describe('F8 rolling-anchor repo surface — integration (Task 4)', () => {
       expect(result?.cycle.status).toBe('upcoming');
     });
 
-    it("(d) deletes and counts the cycle's seeded renewal_reminder_events rows", async () => {
+    it("(d) fixed-anchor: does NOT delete the cycle's reminder events (period unchanged → reminders stay valid, reset=0)", async () => {
       const memberId = await seedMember(tenantA);
       const cycleId: CycleId = asCycleId(randomUUID());
       await seedCycle(tenantA, { cycleId, memberId, status: 'upcoming' });
@@ -322,7 +322,7 @@ describe('F8 rolling-anchor repo surface — integration (Task 4)', () => {
         }),
       );
 
-      expect(result?.reminderEventsReset).toBe(2);
+      expect(result?.reminderEventsReset).toBe(0);
 
       const remaining = await runInTenant(tenantA.ctx, (tx) =>
         tx
@@ -330,7 +330,8 @@ describe('F8 rolling-anchor repo surface — integration (Task 4)', () => {
           .from(renewalReminderEvents)
           .where(eq(renewalReminderEvents.cycleId, cycleId)),
       );
-      expect(remaining).toHaveLength(0);
+      // Reminders are KEPT — the period did not move so they are still valid.
+      expect(remaining).toHaveLength(2);
     });
 
     it("(e) cross-tenant: tenant B cannot re-anchor tenant A's cycle (RLS → null)", async () => {

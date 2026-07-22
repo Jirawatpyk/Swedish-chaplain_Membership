@@ -2347,10 +2347,8 @@
         },
         "renewalContext": {
           "renewal": "Current period ends {periodTo} — paying this bill renews the membership ({from} to {to}).",
-          "firstPayment": "Membership period has not started — paying this bill starts the 12-month period from the payment date.",
-          "notApplicable": "No active membership period — this bill will not affect renewals (use the reactivation flow for lapsed members).",
-          "duplicateWarning": "This member already has an unpaid membership invoice, or their current period runs {periodTo} — another paid bill buys a further year.",
-          "duplicateWarningUnpaidOnly": "This member already has an unpaid membership invoice — another paid bill buys a further year."
+          "firstPayment": "Membership not active yet — paying this bill activates benefits from the payment date; the 12-month period is fixed to the enrolment date.",
+          "notApplicable": "No active membership period — this bill will not affect renewals (use the reactivation flow for lapsed members)."
         }
       },
       "detail": {

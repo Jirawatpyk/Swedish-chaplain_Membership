@@ -24,12 +24,11 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState, useTransition, useMemo } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import { InfoIcon, Loader2Icon, TriangleAlertIcon } from 'lucide-react';
+import { InfoIcon, Loader2Icon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { InlineAlert, InlineAlertDescription } from '@/components/ui/inline-alert';
 import { toast } from 'sonner';
-import { addMonthsUtc, bangkokDateOnly } from '@/lib/dates';
+import { addMonthsUtc } from '@/lib/dates';
 import { Combobox } from '@/components/ui/combobox';
 import type { ComboboxOption } from '@/components/ui/combobox';
 import {
@@ -147,25 +146,6 @@ function renewalContextMessageKey(
 }
 
 /**
- * Duplicate-billing warning condition (spec §3b): an existing unpaid
- * membership invoice, OR (for a renewal-classified member) a current period
- * end more than 6 months away — either way "another paid bill buys a
- * further year", which is legitimate, so this warns but never blocks.
- * `todayIso` is injected (not read via `new Date()` internally) so the
- * threshold is unit-testable without faking the system clock — mirrors
- * `isPastVatFilingDeadline` in `event-fee-form.tsx`.
- */
-export function shouldShowRenewalDuplicateWarning(
-  context: Pick<RenewalContextDto, 'classification' | 'periodTo' | 'hasUnpaidMembershipInvoice'>,
-  todayIso: string,
-): boolean {
-  if (context.hasUnpaidMembershipInvoice) return true;
-  if (context.classification.kind !== 'renewal' || context.periodTo === null) return false;
-  // Lexicographic compare is chronological for YYYY-MM-DD-prefixed strings.
-  return context.periodTo.slice(0, 10) > addMonthsUtc(todayIso, 6).slice(0, 10);
-}
-
-/**
  * Renewal-context informational line + duplicate-billing warning (spec
  * §3b). Presentational-only — the parent owns the fetch; this component
  * just renders a resolved `RenewalContextDto`. Exported so the component
@@ -187,52 +167,20 @@ export function RenewalContextPanel({ context }: { readonly context: RenewalCont
           to: formatPeriodDate(toIso),
         })
       : t(messageKey);
-  // Computed at render, never during SSR — this panel only mounts once the
-  // client-side fetch resolves (see `CreateDraftForm`), so there is no
-  // hydration-mismatch risk from reading the wall clock here.
-  //
-  // FIX-7 (PR #173 review, 2026-07-09) — Asia/Bangkok wall-clock "today",
-  // mirroring the project-wide convention (F4 invoice dates, fiscal-year
-  // boundaries) — a raw UTC ISO instant is already tomorrow in Bangkok
-  // between 17:00-23:59 UTC, which would shift the 6-month duplicate-
-  // billing threshold by a day during that window every render.
-  //
-  // R2-FIX-7 (PR #173 round-2 review, 2026-07-09) — uses the client-safe
-  // `bangkokDateOnly` (plain UTC+7 arithmetic in `@/lib/dates`) instead of
-  // `fiscal-year.ts`'s `bangkokLocalDate`, whose bare `import
-  // '@js-joda/timezone'` dragged the ~700 KB IANA dataset into this
-  // `'use client'` bundle. Bangkok has no DST, so the result is identical.
-  const todayIso = `${bangkokDateOnly(new Date().toISOString())}T00:00:00.000Z`;
-  const showWarning = shouldShowRenewalDuplicateWarning(context, todayIso);
-
+  // Duplicate-billing detection lives on the SERVER now (createInvoiceDraft's
+  // `duplicate_membership_invoice` guard, #243) which shows the real existing
+  // document + a deep link + a typed acknowledgement. The old client-side
+  // "another paid bill buys a further year" soft-warning was removed: it was
+  // wrong under the fixed-anchor model (a second same-year bill is a duplicate,
+  // not "a further year") and contradicted the #243 hard guard.
   return (
-    <div className="flex flex-col gap-2">
-      <p
-        className="flex items-start gap-2 text-xs text-muted-foreground"
-        data-testid="renewal-context-line"
-      >
-        <InfoIcon className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-        <span>{contextText}</span>
-      </p>
-      {showWarning && (
-        <InlineAlert role="status" tone="warning" data-testid="renewal-duplicate-warning">
-          <TriangleAlertIcon className="size-4" aria-hidden="true" />
-          <InlineAlertDescription>
-            {/* FIX-7 (PR #173 review, 2026-07-09) — `periodTo` is null
-                whenever the warning fires purely from `hasUnpaidMembershipInvoice`
-                (non-renewal classifications never carry a periodTo). The
-                original single-key copy rendered the missing-value '—'
-                literally into the sentence next to its own em-dash
-                separator ("...runs — — another paid bill..."). Route to
-                the unpaid-only variant (no {periodTo} placeholder) instead
-                of ever interpolating the missing-value sentinel. */}
-            {context.periodTo !== null
-              ? t('duplicateWarning', { periodTo: formatPeriodDate(context.periodTo) })
-              : t('duplicateWarningUnpaidOnly')}
-          </InlineAlertDescription>
-        </InlineAlert>
-      )}
-    </div>
+    <p
+      className="flex items-start gap-2 text-xs text-muted-foreground"
+      data-testid="renewal-context-line"
+    >
+      <InfoIcon className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+      <span>{contextText}</span>
+    </p>
   );
 }
 
