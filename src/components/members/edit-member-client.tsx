@@ -65,6 +65,38 @@ type Props = {
 
 import { uuid } from '@/lib/uuid';
 
+/**
+ * The billing consequence of a manual plan change, as computed server-side
+ * during the PATCH and returned on `billing_effect.effect`. Mirrors
+ * `PlanChangeBillingEffectKind` from the members port
+ * (src/modules/members/application/ports/plan-change-billing-remediation-port.ts).
+ * Kept as a LOCAL union — not imported — so this client bundle never pulls a
+ * server module (the port file imports `@/lib/db`); the effect arrives as a
+ * plain JSON string. A server effect outside this set degrades gracefully to
+ * the plain success toast (see `isKnownPlanChangeEffect`).
+ */
+type PlanChangeBillingEffectKind =
+  | 'applied_to_open_cycle'
+  | 'deferred_invoice_already_issued'
+  | 'deferred_term_length_change'
+  | 'deferred_immediate_not_enabled'
+  | 'no_open_cycle';
+
+const KNOWN_PLAN_CHANGE_EFFECTS: readonly PlanChangeBillingEffectKind[] = [
+  'applied_to_open_cycle',
+  'deferred_invoice_already_issued',
+  'deferred_term_length_change',
+  'deferred_immediate_not_enabled',
+  'no_open_cycle',
+];
+
+function isKnownPlanChangeEffect(v: unknown): v is PlanChangeBillingEffectKind {
+  return (
+    typeof v === 'string' &&
+    (KNOWN_PLAN_CHANGE_EFFECTS as readonly string[]).includes(v)
+  );
+}
+
 export function EditMemberClient({ member, plans, primaryContact }: Props) {
   const t = useTranslations('admin.members.edit');
   // mapMemberCreateServerError returns i18n keys relative to the
@@ -72,6 +104,9 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
   // them through this translator so the edit form reuses the same messages.
   const tCreate = useTranslations('admin.members.create');
   const tOverride = useTranslations('admin.members.overrideReason');
+  // Effect-specific copy for the post-success plan-change toast (keyed by the
+  // server-computed `billing_effect.effect` discriminator).
+  const tPlanResult = useTranslations('admin.members.planChangeResult');
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
   const [planConfirmState, setPlanConfirmState] =
@@ -173,16 +208,46 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
     return false;
   };
 
-  const handleSuccess = () => {
-    toast.success(t('success'));
+  // Rotate the idempotency key + navigate to the detail page. Shared by the
+  // plain and plan-change success handlers.
+  const redirectAfterSave = () => {
     idemKeyRef.current = uuid();
     router.push(`/admin/members/${member.memberId}`);
     router.refresh();
   };
 
+  const handleSuccess = () => {
+    toast.success(t('success'));
+    redirectAfterSave();
+  };
+
+  /**
+   * Plan-change success. The PATCH response carries a server-computed
+   * `billing_effect` discriminator (applied-now vs applies-next-cycle); when it
+   * is a known effect, describe the ACTUAL billing outcome. An absent / null /
+   * unknown effect (the flag-off default until the Phase-2 renewals dep is
+   * wired) degrades to the plain success toast — no regression.
+   */
+  const handlePlanChangeSuccess = (effect: unknown) => {
+    if (isKnownPlanChangeEffect(effect)) {
+      toast.success(t('success'), { description: tPlanResult(effect) });
+    } else {
+      toast.success(t('success'));
+    }
+    redirectAfterSave();
+  };
+
   const handleResponse = async (res: Response) => {
     if (res.ok) {
-      handleSuccess();
+      // The ok-branch here is reached ONLY from the plan-change paths
+      // (runSubmit step 4, bundle-confirm, override-confirm) — the member-field
+      // / contact steps handle their own success inline and call handleResponse
+      // only on failure. So the response body is the plan-change payload, whose
+      // `billing_effect.effect` drives the toast copy.
+      const body = (await res.json().catch(() => null)) as {
+        billing_effect?: { effect?: unknown } | null;
+      } | null;
+      handlePlanChangeSuccess(body?.billing_effect?.effect ?? null);
       return;
     }
     const body = await res.json().catch(() => ({}));

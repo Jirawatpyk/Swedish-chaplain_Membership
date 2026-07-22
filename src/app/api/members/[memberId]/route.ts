@@ -202,10 +202,22 @@ export async function PATCH(
     };
     const result = await changePlan(memberId, rawBody, meta, planChangeDeps);
     if (result.ok) {
-      // Phase 2 — `changePlan` now returns `{ member, billingEffect }`. The
-      // billingEffect (applied-now vs applies-next-cycle) is threaded for a
-      // later UI task; the response body stays the serialised member for now.
-      const responseBody = serialiseMember(result.value.member);
+      // Phase 2 — `changePlan` returns `{ member, billingEffect }`. Surface the
+      // billing effect (applied-now vs applies-next-cycle) on the plan-change
+      // response so the edit client can toast the ACTUAL outcome. snake_case
+      // wire per the codebase convention; null-safe — `billingEffect` is null
+      // until the Phase-2 renewals dep is wired (the current flag-off default).
+      const { billingEffect } = result.value;
+      const responseBody = {
+        ...serialiseMember(result.value.member),
+        billing_effect: billingEffect
+          ? {
+              effect: billingEffect.effect,
+              cycle_id: billingEffect.cycleId,
+              blocking_invoice_id: billingEffect.blockingInvoiceId,
+            }
+          : null,
+      };
       await rememberIdempotentResponse(tenant, keyCheck.key, bodyHash, {
         status: 200,
         body: responseBody,

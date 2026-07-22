@@ -990,6 +990,13 @@
         "confirm": "Change plan",
         "cancel": "Cancel"
       },
+      "planChangeResult": {
+        "applied_to_open_cycle": "The current renewal period now bills the new plan.",
+        "deferred_invoice_already_issued": "The current renewal's invoice has already been issued, so the new plan applies from the next renewal. To apply it now, void and reissue that invoice.",
+        "deferred_term_length_change": "The plans have different term lengths, so the new plan applies from the next renewal.",
+        "deferred_immediate_not_enabled": "The new plan applies from the next renewal.",
+        "no_open_cycle": "There is no active renewal cycle, so the new plan applies at the next renewal."
+      },
       "subtitle": "Member companies + primary contacts",
       "directory": {
         "managerReadOnlyBanner": "Read-only view — managers can browse and search but cannot edit, archive, or bulk-action members. Contact an admin to make changes.",
