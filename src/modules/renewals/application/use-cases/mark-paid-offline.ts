@@ -152,6 +152,22 @@ export type MarkPaidOfflineError =
    */
   | { readonly kind: 'member_terminated' }
   /**
+   * Duplicate-membership-bill guard (production defect fix) — the member
+   * ALREADY holds a live (`status <> 'void'`) membership bill for this plan
+   * year, so minting another would produce a SECOND numbered §86/4 for one
+   * membership year. Refuse and hand the operator the existing document: the
+   * correct action is to record the payment against THAT invoice (the F4
+   * record-payment dialog is wired to `f8OnPaidCallbacks`, so it completes
+   * this cycle and opens the next one exactly as the offline-mark would).
+   * Distinct from `f4_orphan_invoice` — there an invoice was minted and the
+   * flip failed; here nothing was minted at all.
+   */
+  | {
+      readonly kind: 'membership_bill_already_exists';
+      readonly existingInvoiceId: string;
+      readonly existingStatus: string;
+    }
+  /**
    * Cluster 5 (Finding 2) — a PERMANENT F4 reject (retry will not help). Kept
    * distinct from `f4_failure` (transient/infra faults → "please try again")
    * so the route can surface actionable copy: "add the plan-year", "restore the
@@ -390,6 +406,70 @@ export async function markPaidOffline(
       // for the §86/4 fiscal year across the online + offline rails.
       const planId = lockedCycle.planIdAtCycleStart;
       const planYear = deriveFiscalYear(lockedCycle.periodFrom);
+
+      // ---------------------------------------------------------------
+      // Duplicate-membership-bill guard (production defect fix).
+      //
+      // Cycle STATUS alone is not sufficient authority to mint a §86/4.
+      // The ordinary post-`confirmRenewal` state is `awaiting_payment` WITH
+      // `linked_invoice_id` already pointing at a live bill — so gating on
+      // status only, as this use-case did, let a treasurer's "Mark paid
+      // offline" click mint a SECOND numbered tax document for the same
+      // membership year. Nothing downstream stops it: `createInvoiceDraft`
+      // has no duplicate branch, and the `(tenant_id, member_id, plan_year)`
+      // partial unique index that the `event` subject got in migration 0201
+      // was never added for `membership`.
+      //
+      // Member-scoped, NOT `lockedCycle.linkedInvoiceId`: the codebase has
+      // documented paths that leave a live membership bill UNLINKED to any
+      // cycle (`confirm-renewal` + `admin-renew-lapsed-member` both orphan
+      // their invoice when the post-mint link step loses the race — see
+      // `InvoiceLinkConflictError`). A link-only check would wave those
+      // through, which is exactly the drift this guard exists to stop.
+      //
+      // PLACEMENT — above the first write, deliberately. `err(...)` inside a
+      // `runInTenant` callback does NOT throw: the tx COMMITS. Everything
+      // above this point is a read plus the advisory-lock acquisition (which
+      // releases at tx end), so refusing here persists nothing and emits no
+      // audit row. Do not move it below the F4 chain.
+      //
+      // `planYear` is the LOCKED-cycle-derived value (the split-brain fix
+      // above) handed to `issueAndMarkPaid` ~150 lines below — guarding the
+      // exact key the bridge will mint under, so no gap can open between
+      // check and use.
+      //
+      // NOTE (deliberate duplication, remove on consolidation): the feature
+      // branch `059-membership-suspension` introduces a shared
+      // `findLiveMembershipBill` helper under `use-cases/_lib/`. That file
+      // does not exist on `main` and this is an independently shippable
+      // production fix, so the predicate is inlined here via the F4 read
+      // bridge. When that branch merges, fold this call site onto the shared
+      // helper — four inconsistent copies of this check is what produced the
+      // defect in the first place.
+      const existingBill =
+        await deps.invoiceDueBridge.findLiveMembershipBillInTx(tx, {
+          tenantId: input.tenantId,
+          memberId: lockedCycle.memberId,
+          planYear,
+        });
+      if (existingBill) {
+        logger.warn(
+          {
+            cycleId,
+            memberId: lockedCycle.memberId,
+            tenantId: input.tenantId,
+            planYear,
+            existingInvoiceId: existingBill.invoiceId,
+            existingStatus: existingBill.status,
+          },
+          'markPaidOffline: a live membership bill already exists for this plan year — refusing to mint a duplicate §86/4; settle the existing invoice instead',
+        );
+        return err({
+          kind: 'membership_bill_already_exists' as const,
+          existingInvoiceId: existingBill.invoiceId,
+          existingStatus: existingBill.status,
+        });
+      }
 
       // Rolling-anchor refactor (design 2026-07-08 rev 3, migration 0238),
       // Task 7 (spec §1 consuming-site 3) — classify the payment for the

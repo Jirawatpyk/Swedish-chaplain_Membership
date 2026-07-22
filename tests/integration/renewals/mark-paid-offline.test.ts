@@ -108,6 +108,67 @@ describe('F8 markPaidOffline — integration (T077)', () => {
     );
   }
 
+  /**
+   * Insert an F4 invoice row (status `issued`, all `invoices_non_draft_has_
+   * snapshots` columns stubbed).
+   *
+   * ORDERING MATTERS, and it is why every call site below lives INSIDE the
+   * bridge mock rather than in a `beforeAll`. The real bridge's steps 1+2
+   * (`createInvoiceDraft` → `issueInvoice`) commit in their OWN txs when
+   * `issueAndMarkPaid` is invoked — i.e. AFTER `markPaidOffline`'s pre-chain
+   * guards have run. Pre-seeding the row instead put a live membership bill
+   * for the same (member, plan_year) in place BEFORE the use-case was called,
+   * which is precisely the state the duplicate-membership-bill guard exists to
+   * refuse. Those fixtures modelled the defect, not the happy path, and the
+   * mocks concealed it by returning the pre-seeded id as though it were freshly
+   * minted. Creating it here restores production ordering.
+   */
+  async function insertF4Invoice(opts: {
+    invoiceId: string;
+    memberId: string;
+    sequenceNumber: number;
+    companyName: string;
+    issueDate: string;
+    dueDate: string;
+  }): Promise<void> {
+    await runInTenant(tenantA.ctx, (tx) =>
+      tx.insert(invoices).values({
+        tenantId: tenantA.ctx.slug,
+        invoiceId: opts.invoiceId,
+        memberId: opts.memberId,
+        planYear: 2026,
+        planId: planIdA,
+        status: 'issued',
+        pdfDocKind: 'invoice',
+        draftByUserId: user.userId,
+        fiscalYear: 2026,
+        sequenceNumber: opts.sequenceNumber,
+        documentNumber: `INV-2026-${String(opts.sequenceNumber).padStart(6, '0')}`,
+        issueDate: opts.issueDate,
+        dueDate: opts.dueDate,
+        currency: 'THB',
+        subtotalSatang: asSatang(5_000_000n),
+        vatRateSnapshot: '0.0700',
+        vatSatang: asSatang(350_000n),
+        totalSatang: asSatang(5_350_000n),
+        proRatePolicySnapshot: 'none',
+        netDaysSnapshot: 30,
+        tenantIdentitySnapshot: { legalNameEn: 'Test', taxId: '0' } as unknown,
+        memberIdentitySnapshot: {
+          companyName: opts.companyName,
+          country: 'TH',
+          legal_name: `${opts.companyName} Ltd`,
+          address: '1 Test Road, Bangkok 10110',
+          primary_contact_name: 'Test Contact',
+          primary_contact_email: 'test@example.com',
+        } as unknown,
+        pdfBlobKey: `invoicing/${tenantA.ctx.slug}/2026/${opts.invoiceId}.pdf`,
+        pdfSha256: 'a'.repeat(64),
+        pdfTemplateVersion: 1,
+      }),
+    );
+  }
+
   beforeAll(async () => {
     user = await createActiveTestUser('admin');
     const pair = await createTwoTestTenants();
@@ -245,66 +306,30 @@ describe('F8 markPaidOffline — integration (T077)', () => {
     if (!r.ok) expect(r.error.kind).toBe('invalid_input');
   });
 
-  // Real-DB happy path: pre-seed an `issued` F4 invoice row directly
-  // via Drizzle so the `renewal_cycles_linked_invoice_fk` constraint
-  // resolves when `transitionStatus` flips the cycle to `completed`.
-  // The F4 chain itself (createInvoiceDraft → issueInvoice →
-  // recordPayment) is mocked at the bridge boundary — this test
-  // focuses on the F8 atomic boundary (cycle flip + audit emit inside
-  // the runInTenant tx + onPaid callback wiring).
+  // Real-DB happy path: the mocked bridge CREATES the `issued` F4 invoice row
+  // when it is invoked — mirroring the real bridge, whose steps 1+2 commit in
+  // their own txs — so the `renewal_cycles_linked_invoice_fk` constraint
+  // resolves when `transitionStatus` flips the cycle to `completed`. The F4
+  // chain itself (createInvoiceDraft → issueInvoice → recordPayment) is mocked
+  // at the bridge boundary; this test focuses on the F8 atomic boundary (cycle
+  // flip + audit emit inside the runInTenant tx + onPaid callback wiring).
   it('happy path: cycle flips to completed + audit emitted', async () => {
-    // Step 1: Pre-seed F4 invoice row in 'issued' state (FK target).
-    const seededInvoiceId = randomUUID();
-    await runInTenant(tenantA.ctx, (tx) =>
-      tx.insert(invoices).values({
-        tenantId: tenantA.ctx.slug,
-        invoiceId: seededInvoiceId,
-        memberId: memberIdA,
-        planYear: 2026,
-        planId: planIdA,
-        status: 'issued',
-        pdfDocKind: 'invoice',
-        draftByUserId: user.userId,
-        fiscalYear: 2026,
-        sequenceNumber: 1,
-        documentNumber: 'INV-2026-000001',
-        issueDate: '2026-05-15',
-        dueDate: '2026-06-14',
-        currency: 'THB',
-        subtotalSatang: asSatang(5_000_000n),
-        vatRateSnapshot: '0.0700',
-        vatSatang: asSatang(350_000n),
-        totalSatang: asSatang(5_350_000n),
-        // F4 invariant `invoices_non_draft_has_snapshots` requires
-        // ALL of these fields populated when status != 'draft'.
-        // Minimum stubs for FK satisfaction; F4 production code
-        // populates them from tenant_invoice_settings + render+blob.
-        proRatePolicySnapshot: 'none',
-        netDaysSnapshot: 30,
-        tenantIdentitySnapshot: { legalNameEn: 'Test', taxId: '0' } as unknown,
-        memberIdentitySnapshot: {
-          companyName: 'MPO Co',
-          country: 'TH',
-          legal_name: 'MPO Co Ltd',
-          address: '1 Test Road, Bangkok 10110',
-          primary_contact_name: 'Test Contact',
-          primary_contact_email: 'mpo@example.com',
-        } as unknown,
-        pdfBlobKey: `invoicing/${tenantA.ctx.slug}/2026/${seededInvoiceId}.pdf`,
-        pdfSha256: 'a'.repeat(64),
-        pdfTemplateVersion: 1,
-      }),
-    );
-
-    // Step 2: Mock the F4 bridge to return that real invoice id +
-    // fire onPaid callback so the F8 cycle flip + audit emit run
-    // inside the runInTenant tx.
     const deps = makeRenewalsDeps(tenantA.ctx.slug);
-    const fakeInvoiceId = seededInvoiceId;
+    const fakeInvoiceId = randomUUID();
     const fakePaidAt = new Date().toISOString();
     const bridgeSpy = vi
       .spyOn(deps.f4InvoiceBridge, 'issueAndMarkPaid')
       .mockImplementation(async (input) => {
+        // Steps 1+2 equivalent: mint + commit the invoice, as the real bridge
+        // does, only once the use-case's pre-chain guards have passed.
+        await insertF4Invoice({
+          invoiceId: fakeInvoiceId,
+          memberId: input.memberId,
+          sequenceNumber: 1,
+          companyName: 'MPO Co',
+          issueDate: '2026-05-15',
+          dueDate: '2026-06-14',
+        });
         // Fire onPaid inside the same-tx-equivalent so the F8 cycle
         // flip + audit emit run via deps.cyclesRepo.transitionStatus
         // + deps.auditEmitter.emitInTx with the supplied externalTx.
@@ -450,45 +475,12 @@ describe('F8 markPaidOffline — integration (T077)', () => {
         }),
       );
 
-      // F4 invoice row (issued) — FK target for the cycle completion flip
-      // (`renewal_cycles_linked_invoice_fk`) + the linked-invoice lookup
-      // that createNextCycleOnPaidInTx uses to resolve the prior cycle.
-      await runInTenant(tenantA.ctx, (tx) =>
-        tx.insert(invoices).values({
-          tenantId: tenantA.ctx.slug,
-          invoiceId: seededInvoiceLoopId,
-          memberId: memberIdLoop,
-          planYear: 2026,
-          planId: planIdA,
-          status: 'issued',
-          pdfDocKind: 'invoice',
-          draftByUserId: user.userId,
-          fiscalYear: 2026,
-          sequenceNumber: 2,
-          documentNumber: 'INV-2026-000002',
-          issueDate: '2026-05-15',
-          dueDate: '2026-06-14',
-          currency: 'THB',
-          subtotalSatang: asSatang(5_000_000n),
-          vatRateSnapshot: '0.0700',
-          vatSatang: asSatang(350_000n),
-          totalSatang: asSatang(5_350_000n),
-          proRatePolicySnapshot: 'none',
-          netDaysSnapshot: 30,
-          tenantIdentitySnapshot: { legalNameEn: 'Test', taxId: '0' } as unknown,
-          memberIdentitySnapshot: {
-            companyName: 'Loop Co',
-            country: 'TH',
-            legal_name: 'Loop Co Ltd',
-            address: '1 Loop Road, Bangkok 10110',
-            primary_contact_name: 'Loop Contact',
-            primary_contact_email: 'loop@example.com',
-          } as unknown,
-          pdfBlobKey: `invoicing/${tenantA.ctx.slug}/2026/${seededInvoiceLoopId}.pdf`,
-          pdfSha256: 'b'.repeat(64),
-          pdfTemplateVersion: 1,
-        }),
-      );
+      // NOTE: the F4 invoice row is NOT pre-seeded — `mockBridgeFireOnPaid`
+      // below mints it at bridge-invocation time, matching production
+      // ordering (see `insertF4Invoice`). It is the FK target for the cycle
+      // completion flip (`renewal_cycles_linked_invoice_fk`) and for the
+      // linked-invoice lookup `createNextCycleOnPaidInTx` uses to resolve the
+      // prior cycle, both of which run after the bridge returns.
     }, 120_000);
 
     function mockBridgeFireOnPaid(deps: ReturnType<typeof makeRenewalsDeps>) {
@@ -496,8 +488,18 @@ describe('F8 markPaidOffline — integration (T077)', () => {
       return vi
         .spyOn(deps.f4InvoiceBridge, 'issueAndMarkPaid')
         .mockImplementation(async (input) => {
-          // Fire onPaid against the seeded invoice id so the offline
-          // completion flips `cycleLoopId` →completed (linkedInvoiceId =
+          // Steps 1+2 equivalent — mint + commit the invoice the way the real
+          // bridge does, i.e. only after the use-case's pre-chain guards pass.
+          await insertF4Invoice({
+            invoiceId: seededInvoiceLoopId,
+            memberId: input.memberId,
+            sequenceNumber: 2,
+            companyName: 'Loop Co',
+            issueDate: '2026-05-15',
+            dueDate: '2026-06-14',
+          });
+          // Fire onPaid against that invoice id so the offline completion
+          // flips `cycleLoopId` →completed (linkedInvoiceId =
           // seededInvoiceLoopId) and the next-cycle creation resolves the
           // prior via findByInvoiceIdInTx — all inside the runInTenant tx.
           if (input.onPaid) {
@@ -736,44 +738,11 @@ describe('F8 markPaidOffline — integration (T077)', () => {
         }),
       );
 
-      // F4 invoice row (issued) — `anchor_invoice_id`'s FK target (a
-      // tenant-composite FK to `invoices`, per the migration 0238 schema).
-      await runInTenant(tenantA.ctx, (tx) =>
-        tx.insert(invoices).values({
-          tenantId: tenantA.ctx.slug,
-          invoiceId: seededInvoiceFirstPayId,
-          memberId: memberIdFirstPay,
-          planYear: 2026,
-          planId: planIdA,
-          status: 'issued',
-          pdfDocKind: 'invoice',
-          draftByUserId: user.userId,
-          fiscalYear: 2026,
-          sequenceNumber: 3,
-          documentNumber: 'INV-2026-000003',
-          issueDate: '2026-06-20',
-          dueDate: '2026-07-20',
-          currency: 'THB',
-          subtotalSatang: asSatang(5_000_000n),
-          vatRateSnapshot: '0.0700',
-          vatSatang: asSatang(350_000n),
-          totalSatang: asSatang(5_350_000n),
-          proRatePolicySnapshot: 'none',
-          netDaysSnapshot: 30,
-          tenantIdentitySnapshot: { legalNameEn: 'Test', taxId: '0' } as unknown,
-          memberIdentitySnapshot: {
-            companyName: 'First-Pay Co',
-            country: 'TH',
-            legal_name: 'First-Pay Co Ltd',
-            address: '1 First Pay Road, Bangkok 10110',
-            primary_contact_name: 'First Pay Contact',
-            primary_contact_email: 'firstpay@example.com',
-          } as unknown,
-          pdfBlobKey: `invoicing/${tenantA.ctx.slug}/2026/${seededInvoiceFirstPayId}.pdf`,
-          pdfSha256: 'c'.repeat(64),
-          pdfTemplateVersion: 1,
-        }),
-      );
+      // NOTE: the F4 invoice row is NOT pre-seeded — the bridge mock in the
+      // test below mints it at invocation time, matching production ordering
+      // (see `insertF4Invoice`). It is `anchor_invoice_id`'s FK target (a
+      // tenant-composite FK to `invoices`, per the migration 0238 schema),
+      // stamped by the re-anchor inside `onPaid`, i.e. after the mint.
     }, 120_000);
 
     it('re-anchors the cycle to the payment month instead of completing it', async () => {
@@ -782,6 +751,16 @@ describe('F8 markPaidOffline — integration (T077)', () => {
       const bridgeSpy = vi
         .spyOn(deps.f4InvoiceBridge, 'issueAndMarkPaid')
         .mockImplementation(async (input) => {
+          // Steps 1+2 equivalent — mint + commit the invoice as the real
+          // bridge does, after the use-case's pre-chain guards have passed.
+          await insertF4Invoice({
+            invoiceId: seededInvoiceFirstPayId,
+            memberId: input.memberId,
+            sequenceNumber: 3,
+            companyName: 'First-Pay Co',
+            issueDate: '2026-06-20',
+            dueDate: '2026-07-20',
+          });
           if (input.onPaid) {
             await input.onPaid({
               tenantId: input.tenantId,

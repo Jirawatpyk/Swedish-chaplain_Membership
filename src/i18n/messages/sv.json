@@ -3599,11 +3599,13 @@
           "successReanchored": "Betalning registrerad — medlemsperioden börjar {date}.",
           "successNoEmailWarning": "Ingen e-postadress finns registrerad — kvittot skickades inte. Leverera det till medlemmen manuellt.",
           "viewOrphanInvoice": "Visa faktura",
+          "viewExistingInvoice": "Öppna befintlig faktura",
           "error": {
             "cycle_not_found": "Denna cykel finns inte längre — den kan redan ha tagits bort.",
             "cycle_not_payable": "Denna cykel kan inte längre markeras som betald i sitt nuvarande tillstånd.",
             "member_terminated": "Medlemmens senaste medlemskap har upphört — återaktivera medlemmen innan du registrerar en betalning.",
             "f4_orphan_invoice": "En faktura utfärdades men cykeln kunde inte slutföras. Försök INTE igen — öppna fakturan och fortsätt från fakturalistan.",
+            "membership_bill_already_exists": "Medlemmen har redan en faktura för detta medlemsår, så ingen ny skapades. Öppna den fakturan och registrera betalningen där — det slutför den här cykeln.",
             "f4_failure": "Fakturan kunde inte skapas. Cykeln lämnades oförändrad — försök igen.",
             "plan_not_found": "Den här medlemmens plan för det året finns inte i avgiftskatalogen ännu — lägg till planåret innan du markerar som betald.",
             "settings_missing": "Fakturainställningar har inte konfigurerats för den här organisationen ännu — konfigurera dem innan du markerar som betald.",

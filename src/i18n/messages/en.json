@@ -3599,11 +3599,13 @@
           "successReanchored": "Payment recorded — membership period now starts {date}.",
           "successNoEmailWarning": "No email on file — the receipt was not sent. Deliver it to the member manually.",
           "viewOrphanInvoice": "View invoice",
+          "viewExistingInvoice": "Open existing invoice",
           "error": {
             "cycle_not_found": "This cycle no longer exists — it may have already been removed.",
             "cycle_not_payable": "This cycle can no longer be marked paid in its current state.",
             "member_terminated": "This member's latest membership has lapsed — reactivate the member before recording a payment.",
             "f4_orphan_invoice": "An invoice was issued but the cycle could not be completed. Do NOT retry — open the invoice and resume from the invoice list.",
+            "membership_bill_already_exists": "This member already has an invoice for this membership year, so no new one was created. Open that invoice and record the payment there — it will complete this cycle.",
             "f4_failure": "The invoice could not be created. The cycle was left as-is — please try again.",
             "plan_not_found": "This member's plan for that year isn't in the fee catalogue yet — add the plan-year before marking paid.",
             "settings_missing": "Invoice settings haven't been configured for this organisation yet — set them up before marking paid.",

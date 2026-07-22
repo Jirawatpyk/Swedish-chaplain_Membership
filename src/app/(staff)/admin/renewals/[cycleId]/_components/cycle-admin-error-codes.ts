@@ -72,6 +72,12 @@ export const MARK_PAID_OFFLINE_ERROR_CODES = [
   // "reactivate first" copy, not the generic cycle_not_payable message.
   'member_terminated',
   'f4_orphan_invoice',
+  // Duplicate-membership-bill guard — a live §86/4 for this plan year already
+  // exists, so NOTHING was minted (distinct from `f4_orphan_invoice`, where an
+  // invoice was issued and the cycle flip failed). Gets its own copy plus a
+  // deep-link to the existing invoice, because the operator's next action is
+  // concrete: record the payment against THAT document.
+  'membership_bill_already_exists',
   'f4_failure',
   // Cluster 5 (Finding 2) — permanent F4 rejects (actionable, not "retry").
   'plan_not_found',
@@ -104,6 +110,30 @@ export function resolveOrphanInvoiceHref(err: {
 }): string | null {
   if (err.code === 'f4_orphan_invoice' && err.orphan_invoice_id) {
     return `/admin/invoices/${encodeURIComponent(err.orphan_invoice_id)}`;
+  }
+  return null;
+}
+
+/**
+ * Duplicate-membership-bill routing. When the route returns
+ * `membership_bill_already_exists` (a live §86/4 for this plan year already
+ * exists and NOTHING was minted), the toast must deep-link that invoice: the
+ * operator's correct next step is to record the payment against it via the F4
+ * record-payment dialog, which is wired to the same F8 on-paid callbacks and
+ * so completes this cycle and opens the next one.
+ *
+ * Kept SEPARATE from `resolveOrphanInvoiceHref` rather than generalised: the
+ * two errors carry different ids, different copy, and opposite "did we mint a
+ * document?" semantics — collapsing them would invite exactly the kind of
+ * conflation this guard exists to prevent. Pure, for the same
+ * dialog-free testability reason as its sibling.
+ */
+export function resolveExistingBillHref(err: {
+  readonly code: string;
+  readonly existing_invoice_id?: string;
+}): string | null {
+  if (err.code === 'membership_bill_already_exists' && err.existing_invoice_id) {
+    return `/admin/invoices/${encodeURIComponent(err.existing_invoice_id)}`;
   }
   return null;
 }
