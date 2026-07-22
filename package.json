@@ -42,6 +42,7 @@
     "check:f9-schema": "node --env-file=.env.local --import tsx scripts/check-f9-schema.ts",
     "check:dates": "tsx scripts/check-dates.ts",
     "check:portal-guard": "tsx scripts/check-portal-guard.ts",
+    "check:plan-divergence": "node --env-file=.env.local --import tsx scripts/check-plan-change-divergence.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node --env-file=.env.local --import tsx scripts/run-migrations.ts",
     "db:migrate:prod": "node --env-file=.env.production --import tsx scripts/run-migrations.ts",
