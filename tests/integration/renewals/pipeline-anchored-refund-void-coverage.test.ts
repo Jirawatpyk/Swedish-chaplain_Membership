@@ -223,7 +223,7 @@ async function insertAnchorInvoice(
       : args.status === 'partially_credited'
         ? asSatang(1_000_000n)
         : asSatang(0n);
-  await (tx as typeof db).insert(invoices).values({
+  await tx.insert(invoices).values({
     tenantId: args.tenantSlug,
     invoiceId: args.invoiceId,
     memberId: args.memberId,

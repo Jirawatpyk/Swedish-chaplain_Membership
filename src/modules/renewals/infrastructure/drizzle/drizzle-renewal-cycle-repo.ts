@@ -18,6 +18,7 @@
  * are exercised by Phase 4+ user-stories (cron dispatcher, member portal).
  */
 import { and, asc, eq, ne, sql, inArray, desc, or, isNull, isNotNull, type SQL } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { db, runInTenant } from '@/lib/db';
 import { env } from '@/lib/env';
 import { parseThbDecimal, type ThbDecimal } from '@/lib/money';
@@ -25,6 +26,12 @@ import type { TenantContext } from '@/modules/tenants';
 import { renewalCycles, type RenewalCycleRow } from '../schema-renewal-cycles';
 import { renewalReminderEvents } from '../schema-renewal-reminder-events';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
+// Deep import of the F4 invoices SCHEMA (not the invoicing barrel) — the
+// pipeline "Covered" projection must know the ANCHOR invoice's effective-paid
+// state (see `loadPipelinePage`). Schema-renewal-cycles.ts already deep-imports
+// this same table for its composite FK, so this stays inside the existing
+// dependency graph and avoids the barrel load-cycle that breaks tsx scripts.
+import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import {
   CycleNotFoundError,
   CycleTransitionConflictError,
@@ -1542,6 +1549,17 @@ export function makeDrizzleRenewalCycleRepo(
           .groupBy(renewalReminderEvents.cycleId)
           .as('lr');
 
+        // plan-change-ux L1 — the anchor invoice, joined so the "Covered"
+        // projection reflects whether that invoice is still EFFECTIVELY-PAID.
+        // `anchored_at` is a set-once discriminator that is NOT cleared when the
+        // anchor invoice is later VOIDED (F4) or fully credit-noted / refunded
+        // (F5 → §86/10 → invoice status 'credited'). Keying "Covered" purely on
+        // `anchored_at IS NOT NULL` therefore renders a green "Covered" cell for
+        // a member whose anchoring payment was reversed. The LEFT JOIN is a
+        // PK-indexed seek on `invoices(tenant_id, invoice_id)` (≤1 row per cycle,
+        // page capped at 200), so the cost is negligible. Aliased because the
+        // pipeline query does not otherwise touch `invoices`.
+        const anchorInvoice = alias(invoices, 'anchor_invoice');
         const pageRows = await tx
           .select({
             cycleId: renewalCycles.cycleId,
@@ -1554,12 +1572,14 @@ export function makeDrizzleRenewalCycleRepo(
             lastReminderAt: lastReminderSubq.dispatchedAt,
             lastReminderStepId: lastReminderSubq.stepId,
             linkedInvoiceId: renewalCycles.linkedInvoiceId,
-            // plan-change-ux seam 1(b) — the rolling-anchor "paid coverage"
-            // discriminator. Zero-cost additive projection (already on this
-            // table); mapped to the `anchored` boolean below. NO join to
-            // `invoices` (anchor_invoice_id is forensic-only + NULL for the
-            // R4 backfill, so a document-number join would be fragile).
+            // plan-change-ux seam 1(b) + L1 — the rolling-anchor "paid coverage"
+            // discriminator PLUS the anchor invoice's status, folded into the
+            // `anchored` boolean below. The status is NULL for the R4 backfill
+            // cohort (anchor_invoice_id IS NULL → LEFT JOIN miss) and for a
+            // hard-deleted invoice (never happens for tax docs) — both treated
+            // as still-covered by the null-tolerant predicate in the mapper.
             anchoredAt: renewalCycles.anchoredAt,
+            anchorInvoiceStatus: anchorInvoice.status,
             closedReason: renewalCycles.closedReason,
             // J4-H13: surface members.email_unverified to the UI
             // — already JOIN'd above, so adding the column to the
@@ -1577,6 +1597,15 @@ export function makeDrizzleRenewalCycleRepo(
           .leftJoin(
             lastReminderSubq,
             eq(lastReminderSubq.cycleId, renewalCycles.cycleId),
+          )
+          .leftJoin(
+            anchorInvoice,
+            and(
+              // Explicit tenant predicate = application-layer defence-in-depth
+              // atop the isolating RLS on `invoices` (Principle I two-layer).
+              eq(anchorInvoice.tenantId, renewalCycles.tenantId),
+              eq(anchorInvoice.invoiceId, renewalCycles.anchorInvoiceId),
+            ),
           )
           .where(and(...pageFilters))
           .orderBy(
@@ -1602,10 +1631,19 @@ export function makeDrizzleRenewalCycleRepo(
               : (r.lastReminderAt as string | null),
           lastReminderStepId: r.lastReminderStepId ?? null,
           linkedInvoiceId: r.linkedInvoiceId,
-          // plan-change-ux seam 1(b) — paid-coverage flag from the anchor
-          // discriminator. `!= null` catches both a real payment anchor and
-          // the R4 backfill (both stamp `anchored_at`).
-          anchored: r.anchoredAt != null,
+          // plan-change-ux seam 1(b) + L1 — paid-coverage flag. TRUE only when
+          // the cycle is anchored AND the anchor invoice is still
+          // EFFECTIVELY-PAID. A voided ('void') or FULLY credit-noted /
+          // refunded ('credited') anchor no longer covers the period → not
+          // "Covered". A PARTIAL credit ('partially_credited') still leaves the
+          // period paid-for → still covered. A NULL status (R4 backfill with no
+          // in-system invoice, or a — practically impossible — hard-deleted tax
+          // invoice) is null-tolerant and stays covered: `anchored_at` alone
+          // stands for the backfill cohort.
+          anchored:
+            r.anchoredAt != null &&
+            r.anchorInvoiceStatus !== 'void' &&
+            r.anchorInvoiceStatus !== 'credited',
           closedReason: r.closedReason as ClosedReason | null,
           // J4-H13: defaults to false when the LEFT JOIN didn't match
           // (orphan cycle without a member row — should never happen
