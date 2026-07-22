@@ -35,6 +35,16 @@ describe('routeVoidError (FR-032)', () => {
     }
   });
 
+  it('8A — maps refund_in_progress to a DEDICATED message, NOT concurrent nor a raw code dump', () => {
+    // A refund is settling on this invoice's payment; voiding now would strand
+    // it. The invoice is still voidable (just temporarily blocked), so a
+    // dedicated actionable message — not `concurrent` and not `errors.codeFallback`.
+    expect(routeVoidError('refund_in_progress')).toEqual({
+      kind: 'failure',
+      messageKey: 'errors.refundInProgress',
+    });
+  });
+
   it('a missing code falls back to the generic unknown message', () => {
     expect(routeVoidError(undefined)).toEqual({ kind: 'failure', messageKey: 'errors.unknown' });
     expect(routeVoidError(null)).toEqual({ kind: 'failure', messageKey: 'errors.unknown' });

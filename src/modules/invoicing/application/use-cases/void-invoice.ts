@@ -79,7 +79,13 @@ import { emitNonMemberInvoiceEvent, type AuditPort } from '../ports/audit-port';
 import type { ClockPort } from '../ports/clock-port';
 import type { EmailOutboxPort } from '../ports/email-outbox-port';
 import type { RecipientLocalePort } from '../ports/recipient-locale-port';
+import type { PendingRefundGuardPort } from '../ports/pending-refund-guard-port';
 import { resolveRecipientLocale } from '../lib/resolve-recipient-locale';
+// Bug 10 — the VOID-overlay render construction, shared with the reconcile cron.
+import {
+  buildVoidRenderTargets,
+  type VoidRenderTarget,
+} from '../lib/build-void-render-targets';
 import {
   asInvoiceId,
   type Invoice,
@@ -87,12 +93,11 @@ import {
   type InvoiceStatus,
 } from '@/modules/invoicing/domain/invoice';
 import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
-import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/document-number';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { sha256Hex } from '@/lib/crypto';
 import { TxAbort } from '../lib/tx-abort';
 import { InvoiceApplyConflictError } from '../lib/invoice-apply-conflict-error';
-import { loadTenantLogo } from '../lib/load-tenant-logo';
 
 export const voidInvoiceSchema = z.object({
   tenantId: z.string().min(1),
@@ -117,7 +122,15 @@ export type VoidInvoiceError =
   | { code: 'no_snapshot_on_invoice' }
   | { code: 'settings_missing' }
   | { code: 'pdf_render_failed'; reason: string }
-  | { code: 'concurrent_state_change' };
+  | { code: 'concurrent_state_change' }
+  /**
+   * 8A — a refund is in flight (`status='pending'`) on this invoice's
+   * payment(s). Voiding now flips the invoice to `void`, so the refund's own
+   * Phase-B §86/10 then declines against it and the Stripe-settled refund is
+   * stranded `pending` forever. Refuse (409); the admin retries once the refund
+   * settles. UNCONDITIONAL — a void has no refund-origin variant (unlike a CN).
+   */
+  | { code: 'refund_in_progress' };
 
 class VoidInvoiceInternalError extends TxAbort<VoidInvoiceError> {
   override readonly name = 'VoidInvoiceInternalError';
@@ -133,6 +146,8 @@ export interface VoidInvoiceDeps {
   readonly outbox: EmailOutboxPort;
   /** Email-locale audit 2026-07-16 — member preference for the cancellation email. */
   readonly recipientLocale: RecipientLocalePort;
+  /** 8A — non-locking count of in-flight refunds (guards the void). */
+  readonly pendingRefundGuard: PendingRefundGuardPort;
   /**
    * Plan-change / void-on-reissue unlink (Phase 2, Step 2.4) — OPTIONAL renewals
    * seam. When wired, a MEMBERSHIP invoice void ALSO clears the
@@ -159,20 +174,11 @@ export interface VoidInvoiceDeps {
   ) => Promise<void>;
 }
 
-/**
- * PG-3 — sanitise a potentially PII-laden error message before it lands
- * in a typed error returned across the Application boundary. Truncate
- * to 200 chars and redact 13-digit sequences that could be Thai tax IDs.
- *
- * Exported for unit testing (T-SAN). Callers within the module use it
- * directly; external consumers SHOULD NOT — the return-value semantics
- * ("best-effort redacted, not a security guarantee") are
- * call-site-specific.
- */
-export function sanitiseErrorReason(raw: unknown): string {
-  const s = String(raw).replace(/\d{13}/g, '[REDACTED-TAXID]');
-  return s.length > 200 ? s.slice(0, 200) + '…' : s;
-}
+// `sanitiseErrorReason` moved to `../lib/sanitise-error-reason` so
+// `build-void-render-targets` can share it without an import cycle
+// (void-invoice → build-void-render-targets → void-invoice). Re-exported here
+// to keep the T-SAN unit test's import path valid.
+export { sanitiseErrorReason } from '../lib/sanitise-error-reason';
 
 export async function voidInvoice(
   deps: VoidInvoiceDeps,
@@ -190,22 +196,25 @@ export async function voidInvoice(
   // § 134 — nested `runInTenant` on concurrent voids would deadlock).
   const settings = await deps.tenantSettingsRepo.getForIssue(input.tenantId);
 
+  // 8A — refuse a void while a refund is in flight on this invoice (a
+  // non-locking count; see the port docstring). ABOVE Phase 1 on purpose:
+  // `err()` inside `runInTenant` COMMITS, so a guard below the first write would
+  // leave a phantom row + false audit behind a refusal. UNCONDITIONAL — a void
+  // has no refund-origin variant (unlike a credit note).
+  const pendingRefunds =
+    await deps.pendingRefundGuard.countPendingRefundsForInvoice(
+      input.tenantId,
+      invoiceId,
+    );
+  if (pendingRefunds > 0) {
+    return err({ code: 'refund_in_progress' });
+  }
+
   // Phase 1 — DB-only atomic commit. Render(s) happen inside so the new
   // bytes/shas are available for the audit payload + the Phase 2 upload(s).
-  //
-  // 088 T068 — a void re-render TARGET: one Blob to overwrite. A voided ISSUED
-  // bill / legacy §86/4 / §105 has ONE target (the main `pdf`); a voided PAID
-  // membership has TWO (the ใบแจ้งหนี้ `pdf` bill + the separate §86/4
-  // `receiptPdf`). `persist` selects the sha column to sync in Phase 2;
-  // `syncContext` discriminates the two blobs' Phase-2 failure audit rows.
-  type VoidRenderTarget = {
-    readonly blobKey: string;
-    readonly rendered: { readonly bytes: Uint8Array; readonly sha256: Sha256Hex };
-    readonly persist: 'invoice' | 'receipt';
-    readonly syncContext:
-      | 'invoice_void_phase2_sync'
-      | 'invoice_void_phase2_receipt_sync';
-  };
+  // The render construction (`VoidRenderTarget`) is built by the shared
+  // `buildVoidRenderTargets` helper so the `void-pdf-reconcile` cron re-renders
+  // byte-identical tax content (WHT / §80/1(5) / titling).
   type Phase1Success = {
     readonly voided: Invoice;
     /** Main blob (bill / §86/4 / §105) — always present. */
@@ -296,190 +305,25 @@ export async function voidInvoice(
       }
       if (!settings) return err({ code: 'settings_missing' });
 
-      // 059 / PR-A Task 6b — the retained §87/3 evidence copy must reproduce the
-      // 088 T068 — resolve the number the MAIN blob prints under. It is
-      // whatever number the main document was ORIGINALLY issued with:
-      //   - `documentNumber`         → legacy §87 §86/4 invoice / as-paid TIN combined
-      //   - `billDocumentNumberRaw`  → new-flow ใบแจ้งหนี้ bill (SC)
-      //   - `receiptDocumentNumberRaw` → β no-TIN as-paid §105 (main pdf IS the receipt)
-      // Ordered bill-BEFORE-receipt so a paid new-flow membership (which carries
-      // BOTH raw numbers) resolves the main bill to its SC number, not the RC.
-      let mainDocNum: DocumentNumber;
-      if (loaded.documentNumber !== null) {
-        mainDocNum = loaded.documentNumber;
-      } else if (loaded.billDocumentNumberRaw !== null) {
-        const parsed = DocumentNumber.parse(loaded.billDocumentNumberRaw);
-        if (!parsed.ok) return err({ code: 'no_snapshot_on_invoice' });
-        mainDocNum = parsed.value;
-      } else if (loaded.receiptDocumentNumberRaw !== null) {
-        const parsed = DocumentNumber.parse(loaded.receiptDocumentNumberRaw);
-        if (!parsed.ok) return err({ code: 'no_snapshot_on_invoice' });
-        mainDocNum = parsed.value;
-      } else {
-        return err({ code: 'no_snapshot_on_invoice' });
-      }
-      // The main blob is a NON-tax ใบแจ้งหนี้ bill iff it was ISSUED as a bill:
-      // pdf_doc_kind 'invoice' AND a bill number was allocated. A legacy §86/4
-      // invoice also has pdf_doc_kind 'invoice' but NO bill number → billMode
-      // stays absent → the void re-render keeps the ใบกำกับภาษี title (SC-003).
-      const mainIsBill =
-        loaded.pdfDocKind === 'invoice' && loaded.billDocumentNumberRaw !== null;
-
-      // Zero-rate note inputs — threaded ONLY on a §80/1(5) row so a standard
-      // re-render is byte-identical (undefined omitted from the deterministic
-      // seed, SC-003). Mirrors record-payment / issue-credit-note.
-      const zeroRateSpread =
-        loaded.vatTreatment === 'zero_rated_80_1_5'
-          ? {
-              vatTreatment: loaded.vatTreatment,
-              zeroRateCertNo: loaded.zeroRateCertNo,
-              zeroRateCertDate: loaded.zeroRateCertDate,
-            }
-          : {};
-
-      // D. Re-render the MAIN blob (Target A) with the VOID overlay, using its
-      // PINNED template version per FR-016 / R3-E4 (v1 invoices re-render
-      // byte-identical — logo suppressed for v1).
-      const tenantLogoA = await loadTenantLogo(
-        deps.blob,
-        loaded.tenantIdentitySnapshot.logo_blob_key,
-        loaded.pdf.templateVersion,
+      // D. Build the VOID-overlay render targets — the tax-critical render
+      // construction (WHT / §80/1(5) / kind-true titling), shared with the
+      // `void-pdf-reconcile` cron. `input.voidReason` is the same value
+      // `applyVoid` persists below, so the cron reconstructs byte-identical
+      // inputs from `loaded.voidReason`.
+      const built = await buildVoidRenderTargets(
+        { pdfRender: deps.pdfRender, blob: deps.blob },
+        loaded,
+        input.voidReason,
       );
-      let renderedA;
-      try {
-        renderedA = await deps.pdfRender.render({
-          kind: 'void_stamped_invoice',
-          // 064 W1 S31 — kind-true void title: the template titles the VOID
-          // document by what the ORIGINAL was (persisted at issue, migration
-          // 0211), keeping the VOID watermark. A legacy §105 ใบเสร็จรับเงิน
-          // original must not come back titled ใบกำกับภาษี. `?? 'invoice'`
-          // is defensive only — `invoices_non_draft_has_doc_kind` makes a
-          // null pdfDocKind unrepresentable on an issued row.
-          voidUnderlyingKind: loaded.pdfDocKind ?? 'invoice',
-          templateVersion: loaded.pdf.templateVersion,
-          documentNumber: mainDocNum,
-          issueDate: loaded.issueDate,
-          dueDate: loaded.dueDate,
-          tenant: loaded.tenantIdentitySnapshot,
-          tenantLogo: tenantLogoA,
-          member: loaded.memberIdentitySnapshot,
-          lines: loaded.lines,
-          subtotal: loaded.subtotal,
-          vatRate: loaded.vatRate,
-          vat: loaded.vat,
-          total: loaded.total,
-          voidReason: input.voidReason,
-          // 088 US5 (T041 / FR-012 / SC-007) — a voided membership document is
-          // the retained §87/3 evidence copy of what was cancelled: keep the WHT
-          // note it originally carried (gated v>=7, so pre-v7 voids are byte-stable).
-          invoiceSubject: loaded.invoiceSubject,
-          // 088 T068 H-1 — preserve the VAT-inclusive annotation (event Model B)
-          // on the VOID evidence copy. A one-blob EVENT as-paid receipt (§105
-          // receipt_separate + as-paid-TIN receipt_combined) is stamped HERE by
-          // Target A and carries vatInclusive=true (issue-event-invoice-as-paid);
-          // dropping it would misstate a VAT-inclusive §87/3 retained copy as
-          // VAT-exclusive (SC-003 infidelity). Mirrors Target B + record-payment
-          // + issue-credit-note. Membership is vatInclusive=false (no annotation).
-          vatInclusive: loaded.vatInclusive,
-          // 088 T068 — a voided new-flow ใบแจ้งหนี้ bill keeps its non-tax bill
-          // title (never re-titled "Tax Invoice"). `billMode` disambiguates it
-          // from a legacy §86/4 void (which shares voidUnderlyingKind='invoice');
-          // spread ONLY for a bill so every legacy/§86/4 void is byte-identical.
-          ...(mainIsBill ? { billMode: true } : {}),
-          ...zeroRateSpread,
-        });
-      } catch (e) {
-        throw new VoidInvoiceInternalError({
-          code: 'pdf_render_failed',
-          reason: sanitiseErrorReason(e),
-        });
+      if (!built.ok) {
+        // `no_snapshot_on_invoice` / `pdf_render_failed` — nothing has been
+        // written yet (applyVoid is below), so surfacing it through the
+        // internal-error rollback path preserves the pre-extraction behaviour
+        // (outer catch → `err(e.error)`) exactly.
+        throw new VoidInvoiceInternalError(built.error);
       }
-      const targetA: VoidRenderTarget = {
-        blobKey: loaded.pdf.blobKey,
-        rendered: renderedA,
-        persist: 'invoice',
-        syncContext: 'invoice_void_phase2_sync',
-      };
-
-      // D2. 088 § F.3 / CHK027 — a PAID membership carries a DISTINCT §86/4 tax
-      // receipt blob (`receiptPdf`, the record-payment separate-receipt path).
-      // Stamp it too so a voided sale never leaves an un-stamped downloadable
-      // tax receipt. A one-blob paid row (as-paid combined, legacy combined,
-      // event-no-TIN §105) has `receiptPdf === null` → Target B is skipped and
-      // its single blob is stamped by Target A above. Mirrors issue-credit-note
-      // § J2 (receipt number = RC; date = payment date on the new flow, issue
-      // date on legacy reuse; the separate receipt is always the combined
-      // §86/4+§105ทวิ document → voidUnderlyingKind='receipt_combined').
-      let targetB: VoidRenderTarget | null = null;
-      const originalReceiptPdfSha = loaded.receiptPdf?.sha256 ?? null;
-      if (loaded.receiptPdf !== null) {
-        let receiptDocNum: DocumentNumber;
-        if (loaded.receiptDocumentNumberRaw !== null) {
-          const parsed = DocumentNumber.parse(loaded.receiptDocumentNumberRaw);
-          if (!parsed.ok) return err({ code: 'no_snapshot_on_invoice' });
-          receiptDocNum = parsed.value;
-        } else if (loaded.documentNumber !== null) {
-          receiptDocNum = loaded.documentNumber;
-        } else {
-          return err({ code: 'no_snapshot_on_invoice' });
-        }
-        const receiptIssueDate =
-          loaded.documentNumber === null ? loaded.paymentDate : loaded.issueDate;
-        if (receiptIssueDate === null) {
-          return err({ code: 'no_snapshot_on_invoice' });
-        }
-        const tenantLogoB = await loadTenantLogo(
-          deps.blob,
-          loaded.tenantIdentitySnapshot.logo_blob_key,
-          loaded.receiptPdf.templateVersion,
-        );
-        let renderedB;
-        try {
-          renderedB = await deps.pdfRender.render({
-            kind: 'void_stamped_invoice',
-            // 088 T068 N-1 — Target B ASSUMES the separate `receiptPdf` blob is
-            // always the combined §86/4+§105ทวิ receipt. That holds because the
-            // ONLY path that writes a distinct receipt blob is record-payment
-            // (membership + bill-first TIN event) → `receipt_combined`; the
-            // event-no-TIN §105 `receipt_separate` path never reaches
-            // record-payment (rejected at record-payment.ts as non-payable) and
-            // its §105 doc is the SINGLE main `pdf` (stamped by Target A, not
-            // here). If that guard is ever removed, a §105 separate receipt
-            // would land here and be MIS-TITLED as ใบกำกับภาษี/ใบเสร็จรับเงิน —
-            // gate this branch on the persisted receipt kind instead.
-            voidUnderlyingKind: 'receipt_combined',
-            templateVersion: loaded.receiptPdf.templateVersion,
-            documentNumber: receiptDocNum,
-            issueDate: receiptIssueDate,
-            dueDate: loaded.dueDate,
-            tenant: loaded.tenantIdentitySnapshot,
-            tenantLogo: tenantLogoB,
-            member: loaded.memberIdentitySnapshot,
-            lines: loaded.lines,
-            subtotal: loaded.subtotal,
-            vatRate: loaded.vatRate,
-            vat: loaded.vat,
-            total: loaded.total,
-            voidReason: input.voidReason,
-            invoiceSubject: loaded.invoiceSubject,
-            // Mirror issue-credit-note § J2 receipt re-render: preserve the
-            // VAT-inclusive annotation (event Model B) on the cancelled receipt.
-            vatInclusive: loaded.vatInclusive,
-            ...zeroRateSpread,
-          });
-        } catch (e) {
-          throw new VoidInvoiceInternalError({
-            code: 'pdf_render_failed',
-            reason: sanitiseErrorReason(e),
-          });
-        }
-        targetB = {
-          blobKey: loaded.receiptPdf.blobKey,
-          rendered: renderedB,
-          persist: 'receipt',
-          syncContext: 'invoice_void_phase2_receipt_sync',
-        };
-      }
+      const { mainDocNum, targetA, targetB, originalReceiptPdfSha } =
+        built.value;
 
       // E. applyVoid (does NOT write pdf_sha256 / receipt_pdf_sha256 — both
       // deferred to Phase 2). CAS accepts issued|paid; a concurrent flip →
@@ -517,7 +361,7 @@ export async function voidInvoice(
         document_number: mainDocNum.raw,
         void_reason_sha256: voidReasonHash,
         original_pdf_sha256: loaded.pdf.sha256,
-        new_pdf_sha256: renderedA.sha256,
+        new_pdf_sha256: targetA.rendered.sha256,
         voided_by_user_id: input.actorUserId,
         ...(targetB !== null
           ? {
@@ -607,7 +451,7 @@ export async function voidInvoice(
           // otherwise attach the ORIGINAL un-stamped invoice bytes
           // to a cancellation email. Integrity check preempts that
           // by permanently-failing the row.
-          expectedPdfSha256: renderedA.sha256,
+          expectedPdfSha256: targetA.rendered.sha256,
         });
       }
 
@@ -708,6 +552,89 @@ export async function voidInvoice(
       const phase: 'blob_upload' | 'sha_sync' = blobUploaded
         ? 'sha_sync'
         : 'blob_upload';
+      // Bug 10 — leg-split recovery, per target.
+      let recovered = false;
+      if (blobUploaded) {
+        // sha_sync leg: the blob ALREADY holds the VOID-stamped bytes (sha_P1);
+        // only the DB sha column lags. Retry the exact sha-write up to 3× — a
+        // transient DB blip (brief lock contention / a connection wobble)
+        // usually clears on an immediate retry. NO re-render, NO reconcile
+        // marker: re-rendering would upload a DIFFERENT sha (@react-pdf
+        // randomises the font-subset stream) and break the cancellation email's
+        // sha_P1 integrity check on an otherwise-correct, already-served
+        // document — and no cron covers the sha_sync leg. Residual (tax-safe): a
+        // DB outage lasting past all 3 attempts leaves `pdf_sha256` cosmetically
+        // stale while the served blob, audit, and email all stay correct.
+        const SHA_SYNC_MAX_ATTEMPTS = 3;
+        let lastShaSyncErr: unknown = e;
+        for (let attempt = 1; attempt <= SHA_SYNC_MAX_ATTEMPTS; attempt += 1) {
+          try {
+            await deps.invoiceRepo.withTx(async (tx3) => {
+              if (t.persist === 'invoice') {
+                await deps.invoiceRepo.applyInvoicePdfRegeneration(tx3, {
+                  tenantId: input.tenantId,
+                  invoiceId,
+                  pdfSha256: t.rendered.sha256,
+                });
+              } else {
+                await deps.invoiceRepo.applyReceiptPdfRegeneration(tx3, {
+                  tenantId: input.tenantId,
+                  invoiceId,
+                  receiptPdfSha256: t.rendered.sha256,
+                });
+              }
+            });
+            if (t.persist === 'invoice') syncedSha.invoice = t.rendered.sha256;
+            else syncedSha.receipt = t.rendered.sha256;
+            recovered = true;
+            break;
+          } catch (retryErr) {
+            lastShaSyncErr = retryErr;
+            // No inter-attempt delay: the immediate retry covers the common
+            // serialization-error / lock-blip (Postgres advises retrying those
+            // at once), and a real timer here is both frozen by the suite's
+            // fake clock and pointless against a sustained outage — whose
+            // residual (a cosmetically stale pdf_sha256) is tax-safe anyway.
+          }
+        }
+        if (!recovered) {
+          logger.error(
+            {
+              err: errKind(lastShaSyncErr),
+              invoiceId: input.invoiceId,
+              tenantId: input.tenantId,
+              target: t.persist,
+              attempts: SHA_SYNC_MAX_ATTEMPTS,
+            },
+            'voidInvoice: sha_sync retries exhausted; DB sha column lags (served doc + audit + email stay correct)',
+          );
+        }
+      } else {
+        // blob_upload leg: the VOID-stamped bytes never reached the blob, so the
+        // served §86/4 keeps its ORIGINAL un-stamped bytes on a voided sale
+        // (tax-dangerous, sha-check blind). Set the durable reconcile marker;
+        // the void-pdf-reconcile cron re-renders + re-uploads until the served
+        // doc carries the VOID overlay.
+        try {
+          await deps.invoiceRepo.withTx(async (tx3) => {
+            await deps.invoiceRepo.markVoidPdfReconcilePending(tx3, {
+              tenantId: input.tenantId,
+              invoiceId,
+            });
+          });
+        } catch (markErr) {
+          logger.error(
+            {
+              err: errKind(markErr),
+              invoiceId: input.invoiceId,
+              tenantId: input.tenantId,
+            },
+            'voidInvoice: reconcile-marker write failed; blob_upload gap signalled only via the pdf_render_failed audit below',
+          );
+        }
+      }
+      // sha_sync recovered inline → no persistent gap, skip the failure audit.
+      if (recovered) continue;
       // N-2 — DO NOT log blobKey (PG-1 regression — key embeds tenant +
       // invoice path segments). `invoiceId + tenantId` correlate the row
       // uniquely without leaking the storage layout.

@@ -46,6 +46,9 @@ const ERROR_STATUS: Record<VoidInvoiceError['code'], number> = {
   settings_missing: 422,
   no_snapshot_on_invoice: 422,
   pdf_render_failed: 500,
+  // 8A — a refund is in flight on this invoice. 409 Conflict: transient, the
+  // admin retries once the refund settles.
+  refund_in_progress: 409,
 };
 
 export async function POST(

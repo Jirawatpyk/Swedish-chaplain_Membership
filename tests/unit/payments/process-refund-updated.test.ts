@@ -46,6 +46,10 @@ vi.mock('@/lib/metrics', async (importOriginal) => {
       refundFailedCount: vi.fn(),
       refundSucceededCount: vi.fn(),
       autoRefundFailedNeedsReconcile: vi.fn(),
+      // 8C — the operator page for a PERMANENT F4 credit-note decline on the
+      // refund webhook rail. Must be a spy or the real OTel no-op swallows the
+      // call and the single-owner gate assertion becomes vacuous.
+      refundCreditNoteDeferred: vi.fn(),
     },
   };
 });
@@ -116,6 +120,18 @@ function makeDeps(): ProcessRefundUpdatedDeps {
       // status on the succeeded path. The webhook outcome does not surface it,
       // so the value is inert here; must be present or the real finaliser throws.
       getInvoiceStatus: vi.fn(async () => ok('credited' as const)),
+      // 8B — on a Phase-B credit-note DECLINE the finaliser re-consults F4's
+      // Domain verdict. Default `issue` (invoice NOT void) → the decline still
+      // DEFERS, exactly as before this fix. Without this stub the decline test
+      // below reaches `undefined(...)` and passes via a TypeError instead of
+      // the real defer path.
+      getInvoiceCreditedTotal: vi.fn(async () =>
+        ok({
+          creditedTotalSatang: asSatang(0n),
+          totalSatang: asSatang(100_000n),
+          creditNoteRequirement: { kind: 'issue' as const },
+        }),
+      ),
     } as unknown as ProcessRefundUpdatedDeps['invoicingBridge'],
     audit: {
       emit: vi.fn(async () => undefined),
@@ -152,6 +168,7 @@ describe('processRefundUpdated — A.11 100% branch coverage', () => {
     vi.mocked(paymentsMetrics.outOfBandRefundRejected).mockClear();
     vi.mocked(paymentsMetrics.refundFailedCount).mockClear();
     vi.mocked(paymentsMetrics.refundSucceededCount).mockClear();
+    vi.mocked(paymentsMetrics.refundCreditNoteDeferred).mockClear();
   });
 
   // -------------------------------------------------------------------------
@@ -544,6 +561,168 @@ describe('processRefundUpdated — A.11 100% branch coverage', () => {
     ).toHaveLength(0);
     // No markProcessed → Stripe retries (A.14 sweep is the backstop).
     expect(vi.mocked(deps.processorEventsRepo.markProcessed)).not.toHaveBeenCalled();
+  });
+
+  // ── 8C: terminalise a PERMANENT credit-note decline ──────────────────────
+  //
+  // A permanent F4 decline (`credit_exceeds_remainder` — the remainder is
+  // consumed and no retry can un-consume it) threw here, and the dispatcher
+  // maps every thrown finalise error to `transient` → Stripe retries the same
+  // doomed decline for 72h. Terminalise the WEBHOOK EVENT instead: 200-ack +
+  // 10y forensic, refund row left `pending` for accountant reconciliation
+  // (never flipped `failed` — a money-lie — nor `succeeded` — it holds no CN).
+  it('found + pending + succeeded but CN bridge PERMANENTLY declines (credit_exceeds_remainder) → reconciled_cn_deferred; markProcessed; 10y forensic; refund NOT flipped failed', async () => {
+    vi.mocked(deps.refundsRepo.lockForUpdateByProcessorRefundId).mockResolvedValueOnce(
+      makeRefund({ status: 'pending' }),
+    );
+    vi.mocked(deps.invoicingBridge.issueCreditNoteFromRefund).mockResolvedValueOnce(
+      err({ code: 'credit_exceeds_remainder', detail: 'remainder exhausted' }),
+    );
+
+    const result = await processRefundUpdated(
+      deps,
+      makeInput({ refundStatus: 'succeeded', sourceEventType: 'refund.updated' }),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.kind).toBe('reconciled_cn_deferred');
+    if (result.value.kind !== 'reconciled_cn_deferred') return;
+    expect(result.value.invoiceId).toBe('inv_test_1');
+
+    // Terminalise the event so Stripe stops retrying.
+    expect(vi.mocked(deps.processorEventsRepo.markProcessed)).toHaveBeenCalledTimes(1);
+
+    // 10-year forensic for the accountant's ภ.พ.30 reconciliation.
+    const deferAudit = vi
+      .mocked(deps.audit.emit)
+      .mock.calls.find((c) => c[1].eventType === 'refund_cn_deferred');
+    expect(deferAudit).toBeDefined();
+    expect(deferAudit?.[1].retentionYears).toBe(10);
+    expect(deferAudit?.[1].payload).toMatchObject({
+      refund_id: 'rfnd_01hxxxxxxxxxxxxxxxxxxxxxxx',
+      processor_refund_id: 're_test_1',
+      defer_reason_code: 'f4_bridge_credit_exceeds_remainder',
+    });
+    expect(vi.mocked(paymentsMetrics.refundCreditNoteDeferred)).toHaveBeenCalledWith(
+      TENANT_ID,
+      'f4_bridge_credit_exceeds_remainder',
+    );
+
+    // Stripe DEFINITIVELY confirmed succeeded — never mark the refund failed.
+    expect(
+      vi.mocked(deps.refundsRepo.updateStatus).mock.calls.filter(
+        (c) => c[1].nextStatus === 'failed',
+      ),
+    ).toHaveLength(0);
+  });
+
+  // Over-terminalisation guard: a TRANSIENT decline must STILL throw → retry.
+  // Terminalising this would lose a recoverable §86/10. GREEN both before and
+  // after 8C — it exists to go RED if an implementer widens the permanent set
+  // to include an infra code or defaults unknown → permanent.
+  it('found + pending + succeeded but CN decline is TRANSIENT (pdf_render_failed) → dispatch_failed; markProcessed NOT called; no refund_cn_deferred', async () => {
+    vi.mocked(deps.refundsRepo.lockForUpdateByProcessorRefundId).mockResolvedValueOnce(
+      makeRefund({ status: 'pending' }),
+    );
+    vi.mocked(deps.invoicingBridge.issueCreditNoteFromRefund).mockResolvedValueOnce(
+      err({ code: 'pdf_render_failed', detail: 'render timeout' }),
+    );
+
+    const result = await processRefundUpdated(deps, makeInput({ refundStatus: 'succeeded' }));
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('dispatch_failed');
+    expect(vi.mocked(deps.processorEventsRepo.markProcessed)).not.toHaveBeenCalled();
+    expect(
+      vi.mocked(deps.audit.emit).mock.calls.filter(
+        (c) => c[1].eventType === 'refund_cn_deferred',
+      ),
+    ).toHaveLength(0);
+    expect(vi.mocked(paymentsMetrics.refundCreditNoteDeferred)).not.toHaveBeenCalled();
+  });
+
+  // A SECOND permanent code, to pin the exhaustive set is genuinely consulted
+  // (not just a `credit_exceeds_remainder` special-case).
+  it('found + pending + succeeded but CN declines settings_missing → reconciled_cn_deferred; markProcessed', async () => {
+    vi.mocked(deps.refundsRepo.lockForUpdateByProcessorRefundId).mockResolvedValueOnce(
+      makeRefund({ status: 'pending' }),
+    );
+    vi.mocked(deps.invoicingBridge.issueCreditNoteFromRefund).mockResolvedValueOnce(
+      err({ code: 'settings_missing', detail: 'no tenant_invoice_settings' }),
+    );
+
+    const result = await processRefundUpdated(
+      deps,
+      makeInput({ refundStatus: 'succeeded', sourceEventType: 'refund.updated' }),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.kind).toBe('reconciled_cn_deferred');
+    expect(vi.mocked(deps.processorEventsRepo.markProcessed)).toHaveBeenCalledTimes(1);
+    const deferAudit = vi
+      .mocked(deps.audit.emit)
+      .mock.calls.find((c) => c[1].eventType === 'refund_cn_deferred');
+    expect(deferAudit?.[1].payload).toMatchObject({
+      defer_reason_code: 'f4_bridge_settings_missing',
+    });
+    expect(vi.mocked(paymentsMetrics.refundCreditNoteDeferred)).toHaveBeenCalledWith(
+      TENANT_ID,
+      'f4_bridge_settings_missing',
+    );
+  });
+
+  // The idempotency SERIOUS fix: BOTH the deprecated `charge.refund.updated`
+  // AND the forward `refund.updated` route here, and 8C leaves the row
+  // `pending`, so every delivery re-enters this fork. The 10y forensic is
+  // SPOF-safe → emitted per delivery (deduped on read); the OPERATOR PAGE is
+  // single-owned by `refund.updated` so it fires EXACTLY once per charged
+  // refund, matching the auto_refund_failed metric gate (`:290`).
+  it('charge.refund.updated then refund.updated on the SAME still-pending refund → refund_cn_deferred per delivery, refundCreditNoteDeferred metric EXACTLY once', async () => {
+    vi.mocked(deps.refundsRepo.lockForUpdateByProcessorRefundId).mockResolvedValue(
+      makeRefund({ status: 'pending' }),
+    );
+    vi.mocked(deps.invoicingBridge.issueCreditNoteFromRefund).mockResolvedValue(
+      err({ code: 'credit_exceeds_remainder', detail: 'remainder exhausted' }),
+    );
+
+    const r1 = await processRefundUpdated(
+      deps,
+      makeInput({
+        eventId: 'evt_A',
+        refundStatus: 'succeeded',
+        sourceEventType: 'charge.refund.updated',
+      }),
+    );
+    const r2 = await processRefundUpdated(
+      deps,
+      makeInput({
+        eventId: 'evt_B',
+        refundStatus: 'succeeded',
+        sourceEventType: 'refund.updated',
+      }),
+    );
+
+    expect(r1.ok && r1.value.kind).toBe('reconciled_cn_deferred');
+    expect(r2.ok && r2.value.kind).toBe('reconciled_cn_deferred');
+    // markProcessed once per event id (both deliveries).
+    expect(
+      vi.mocked(deps.processorEventsRepo.markProcessed).mock.calls.map((c) => c[1]),
+    ).toEqual(['evt_A', 'evt_B']);
+    // The forensic is redundant/SPOF-safe → per delivery (deduped on read).
+    expect(
+      vi.mocked(deps.audit.emit).mock.calls.filter(
+        (c) => c[1].eventType === 'refund_cn_deferred',
+      ),
+    ).toHaveLength(2);
+    // The page fires EXACTLY once — single-owned by refund.updated.
+    expect(vi.mocked(paymentsMetrics.refundCreditNoteDeferred)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(paymentsMetrics.refundCreditNoteDeferred)).toHaveBeenCalledWith(
+      TENANT_ID,
+      'f4_bridge_credit_exceeds_remainder',
+    );
   });
 
   it('found + pending + incoming failed → reconciled_failed (no CN); refund_failed audit; markProcessed', async () => {

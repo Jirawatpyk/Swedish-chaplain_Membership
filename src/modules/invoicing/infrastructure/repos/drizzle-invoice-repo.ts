@@ -1495,6 +1495,86 @@ export function makeDrizzleInvoiceRepo(
         );
     },
 
+    // ---- Bug 10: void §86/4 PDF re-stamp reconcile marker --------------------
+    async markVoidPdfReconcilePending(txUnknown, input): Promise<void> {
+      const tx = txUnknown as TenantTx;
+      // COALESCE keeps the FIRST pending timestamp so repeated Phase-2 failures
+      // do not reset the clock. `void_pdf_reconcile_*` are not frozen by the
+      // 0234 immutability trigger, so this lands on a `void` row.
+      await tx
+        .update(invoices)
+        .set({
+          voidPdfReconcilePendingAt: sql`COALESCE(${invoices.voidPdfReconcilePendingAt}, now())`,
+          updatedAt: sql`now()`,
+        })
+        .where(
+          and(
+            eq(invoices.tenantId, input.tenantId),
+            eq(invoices.invoiceId, input.invoiceId),
+          ),
+        );
+    },
+
+    async clearVoidPdfReconcileMarker(txUnknown, input): Promise<void> {
+      const tx = txUnknown as TenantTx;
+      await tx
+        .update(invoices)
+        .set({
+          voidPdfReconcilePendingAt: null,
+          voidPdfReconcileAttempts: 0,
+          voidPdfReconcileParkedAt: null,
+          updatedAt: sql`now()`,
+        })
+        .where(
+          and(
+            eq(invoices.tenantId, input.tenantId),
+            eq(invoices.invoiceId, input.invoiceId),
+          ),
+        );
+    },
+
+    async bumpVoidPdfReconcileAttempts(txUnknown, input): Promise<void> {
+      const tx = txUnknown as TenantTx;
+      // SQL increment (race-safe under overlapping ticks). Conditional on the
+      // row still being pending + un-parked so an overlapping clear/park is
+      // never undone by a stale in-flight tick.
+      await tx
+        .update(invoices)
+        .set({
+          voidPdfReconcileAttempts: sql`${invoices.voidPdfReconcileAttempts} + 1`,
+          updatedAt: sql`now()`,
+        })
+        .where(
+          and(
+            eq(invoices.tenantId, input.tenantId),
+            eq(invoices.invoiceId, input.invoiceId),
+            isNotNull(invoices.voidPdfReconcilePendingAt),
+            isNull(invoices.voidPdfReconcileParkedAt),
+          ),
+        );
+    },
+
+    async parkVoidPdfReconcile(txUnknown, input): Promise<void> {
+      const tx = txUnknown as TenantTx;
+      // Reserved for GENUINE corruption (no snapshot / render fault) — removes
+      // the row from the cron scan. Transient infra failures never reach here
+      // (they retry indefinitely) so a voided doc is never abandoned un-stamped.
+      await tx
+        .update(invoices)
+        .set({
+          voidPdfReconcileParkedAt: sql`now()`,
+          updatedAt: sql`now()`,
+        })
+        .where(
+          and(
+            eq(invoices.tenantId, input.tenantId),
+            eq(invoices.invoiceId, input.invoiceId),
+            isNotNull(invoices.voidPdfReconcilePendingAt),
+            isNull(invoices.voidPdfReconcileParkedAt),
+          ),
+        );
+    },
+
     async applyReceiptPdfRegeneration(txUnknown, input): Promise<void> {
       const tx = txUnknown as TenantTx;
       // 088 US6 — single-column UPDATE, receipt_pdf_sha256 only. Receipt blob

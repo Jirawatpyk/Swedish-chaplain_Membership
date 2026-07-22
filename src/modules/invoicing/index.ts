@@ -546,6 +546,17 @@ export { receiptPdfRenderEnqueueAdapter } from './infrastructure/adapters/receip
 // (instead of a deep `./infrastructure/db/schema-invoices` import) keeps
 // the cross-module dependency at the documented barrel surface.
 export { invoices as invoicesTable } from './infrastructure/db/schema-invoices';
+// Bug 10 — the VOID-overlay render construction, shared by `voidInvoice`
+// (intra-module) AND the `void-pdf-reconcile` cron. The cron lives under
+// `src/app/**`, so per Principle III it MUST reach this Application helper
+// through the barrel, not a deep `application/lib/...` import (enforced by
+// invoicing-presentation-imports.test.ts). Pure Application — no infra pull.
+export {
+  buildVoidRenderTargets,
+  type VoidRenderTarget,
+  type BuildVoidRenderTargetsResult,
+  type BuildVoidRenderTargetsError,
+} from './application/lib/build-void-render-targets';
 // Invoice-auto-email — referenced by the cron outbox dispatcher to
 // render bilingual invoice/CN/receipt issued+resend notifications.
 export {

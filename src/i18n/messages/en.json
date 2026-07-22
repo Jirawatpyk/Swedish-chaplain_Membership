@@ -1910,7 +1910,8 @@
           "receiptNotCreditable": "This payment was issued a Section 105 receipt, not a tax invoice, so no credit note can be issued against it. To refund it, use the Refund action on the payment — it returns the money without a credit note.",
           "receiptNotRendered": "The tax receipt PDF is still being generated, or failed to render. A credit note can only be issued once the §86/4 receipt has rendered. Wait a moment and retry — if it still fails, contact support to regenerate it.",
           "membershipEffectRequired": "Choose what should happen to the membership before issuing this credit note. Reload the page and try again.",
-          "codeFallback": "Error code: {code}"
+          "codeFallback": "Error code: {code}",
+          "refundInProgress": "A refund is currently being processed on this invoice's payment. Issuing a credit note now could conflict with it — wait until the refund settles, then try again."
         }
       },
       "list": {
@@ -2665,7 +2666,8 @@
           "unknown": "An unknown error occurred. Please try again.",
           "concurrent": "This invoice was already voided or changed in another session. Refresh to see the latest status.",
           "refreshAction": "Refresh",
-          "codeFallback": "Error code: {code}"
+          "codeFallback": "Error code: {code}",
+          "refundInProgress": "A refund is currently being processed on this invoice's payment. Voiding now could conflict with it — wait until the refund settles, then try again."
         }
       }
     },

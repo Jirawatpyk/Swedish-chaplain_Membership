@@ -494,6 +494,51 @@ export interface InvoiceRepo {
   ): Promise<void>;
 
   /**
+   * Bug 10 — void §86/4 PDF re-stamp reconcile marker. Set on a Phase-2
+   * blob_upload-leg failure (COALESCE keeps the first pending timestamp). The
+   * void-pdf-reconcile cron re-renders + re-uploads until the served doc carries
+   * the VOID overlay. Writable on a `void` row (0234 does not freeze these).
+   */
+  markVoidPdfReconcilePending(
+    tx: unknown,
+    input: { readonly tenantId: string; readonly invoiceId: InvoiceId },
+  ): Promise<void>;
+
+  /**
+   * Bug 10 — clear the reconcile marker after a successful cron re-stamp
+   * (`pending_at=NULL, attempts=0, parked_at=NULL`).
+   */
+  clearVoidPdfReconcileMarker(
+    tx: unknown,
+    input: { readonly tenantId: string; readonly invoiceId: InvoiceId },
+  ): Promise<void>;
+
+  /**
+   * Bug 10 — SQL-increment the reconcile attempt counter (race-safe under
+   * overlapping cron ticks). Conditional on the row still being pending +
+   * un-parked so an overlapping clear/park is never undone.
+   */
+  bumpVoidPdfReconcileAttempts(
+    tx: unknown,
+    input: { readonly tenantId: string; readonly invoiceId: InvoiceId },
+  ): Promise<void>;
+
+  /**
+   * Bug 10 — park a reconcile row on GENUINE corruption (no snapshot / render
+   * fault); reserved so transient infra failures retry indefinitely and a
+   * voided tax document is never abandoned un-stamped.
+   */
+  parkVoidPdfReconcile(
+    tx: unknown,
+    input: { readonly tenantId: string; readonly invoiceId: InvoiceId },
+  ): Promise<void>;
+  // NOTE: the cross-tenant SCAN of actionable reconcile rows is NOT a repo
+  // method — it is done inline in the void-pdf-reconcile cron route on the
+  // pool-global `db` (RLS-bypass read, then per-row `runInTenant` for the
+  // tenant-scoped writes), verbatim to the receipt-pdf-reconcile precedent. A
+  // pool-global scan does not belong on a tenant-bound repo factory.
+
+  /**
    * T100 / R-1 fix — US5 void transition. Atomic issued|paid → void with
    * void_reason + voided_by_user_id + voided_at. The PDF sha256 is
    * DELIBERATELY NOT written here: the blob upload happens AFTER this

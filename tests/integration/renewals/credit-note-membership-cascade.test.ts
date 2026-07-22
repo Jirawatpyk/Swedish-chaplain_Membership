@@ -174,6 +174,7 @@ async function seedMemberWithCycleAndPaidInvoice(
 
 function makeCreditNoteDeps(tenantId: string): IssueCreditNoteDeps {
   return {
+    pendingRefundGuard: { countPendingRefundsForInvoice: async () => 0 },
     invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
     creditNoteRepo: makeDrizzleCreditNoteRepo(tenantId),
     tenantSettingsRepo: drizzleTenantSettingsRepo,

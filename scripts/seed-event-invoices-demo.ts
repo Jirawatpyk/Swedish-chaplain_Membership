@@ -175,6 +175,7 @@ function makeIssueInvoiceDeps(tenantId: string): IssueInvoiceDeps {
 
 function makeVoidInvoiceDeps(tenantId: string): VoidInvoiceDeps {
   return {
+    pendingRefundGuard: { countPendingRefundsForInvoice: async () => 0 },
     invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
     tenantSettingsRepo: drizzleTenantSettingsRepo,
     pdfRender: reactPdfRenderAdapter,

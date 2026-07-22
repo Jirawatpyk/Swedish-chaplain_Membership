@@ -157,6 +157,10 @@ function makeDeps(
       applyCreditNoteRollup: vi.fn(),
       applyInvoicePdfRegeneration: vi.fn(),
       applyReceiptPdfRegeneration: vi.fn(),
+      markVoidPdfReconcilePending: vi.fn(async () => {}),
+      clearVoidPdfReconcileMarker: vi.fn(async () => {}),
+      bumpVoidPdfReconcileAttempts: vi.fn(async () => {}),
+      parkVoidPdfReconcile: vi.fn(async () => {}),
       applyVoid: vi.fn(),
       applyIssueAsPaid: vi.fn(),
       applyReceiptPdf: vi.fn(async () =>

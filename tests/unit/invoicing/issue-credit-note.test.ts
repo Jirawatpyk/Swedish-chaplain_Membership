@@ -355,6 +355,11 @@ function makeDeps(
       getMemberEmailLocale: vi.fn(async () => null),
     },
     currentTemplateVersion: 1,
+    // 8A — default: no refund in flight → the guard never fires on the existing
+    // happy paths. Guard tests override with a positive count.
+    pendingRefundGuard: {
+      countPendingRefundsForInvoice: vi.fn(async () => 0),
+    },
     ...overrides,
   };
 }
@@ -371,6 +376,89 @@ describe('issueCreditNote — event-fee (non-member + matched-member) Task 8', (
 
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  // ── 8A: pending-refund guard (manual credit note) ────────────────────────
+  //
+  // A manual §86/10 issued while a refund is settling consumes the creditable
+  // remainder the refund's own credit note needs, stranding that Stripe-settled
+  // refund `pending` forever. The guard refuses (409) ABOVE the first write and
+  // is SKIPPED for a refund-origin CN (which IS that refund's own §86/10).
+  it('blocks a MANUAL credit note with refund_in_progress when a pending refund exists', async () => {
+    const invoice = makeIssuedEventInvoice();
+    const guard = vi.fn(async () => 1);
+    const deps = makeDeps(invoice, makeSettings(), {
+      pendingRefundGuard: { countPendingRefundsForInvoice: guard },
+    });
+
+    const r = await issueCreditNote(deps, {
+      ...baseInput,
+      creditTotalSatang: 25_000n,
+      reason: 'manual credit while a refund is in flight',
+    });
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('refund_in_progress');
+    // ABOVE the first write — no tx, no §87 number, no render, no insert.
+    expect(deps.invoiceRepo.withTx).not.toHaveBeenCalled();
+    expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+    expect(deps.pdfRender.render).not.toHaveBeenCalled();
+    expect(deps.creditNoteRepo.insertCreditNote).not.toHaveBeenCalled();
+    expect(guard).toHaveBeenCalledWith('test-swecham', INVOICE_ID);
+  });
+
+  it('does NOT block a refund-origin credit note (sourceRefundId set), never consulting the guard', async () => {
+    const invoice = makeIssuedEventInvoice();
+    const sameCn: CreditNote = {
+      ...makeCreditNote(
+        Money.fromSatangUnsafe(1_000n),
+        Money.fromSatangUnsafe(70n),
+        Money.fromSatangUnsafe(1_070n),
+        null,
+      ),
+      originalInvoiceId: asInvoiceId(INVOICE_ID),
+      sourceRefundId: 'rfnd-match',
+    };
+    const guard = vi.fn(async () => 1); // would block IF consulted
+    const deps = makeDeps(invoice, makeSettings(), {
+      creditNoteRepo: {
+        insertCreditNote: vi.fn(),
+        findById: vi.fn(),
+        findByOriginalInvoice: vi.fn(),
+        findByOriginalInvoiceInTx: vi.fn(async () => []),
+        listPaged: vi.fn(),
+        findBySourceRefundId: vi.fn(async () => sameCn),
+      } as unknown as IssueCreditNoteDeps['creditNoteRepo'],
+      pendingRefundGuard: { countPendingRefundsForInvoice: guard },
+    });
+
+    const r = await issueCreditNote(deps, {
+      ...baseInput,
+      creditTotalSatang: 1_000n,
+      reason: "the refund's own §86/10",
+      sourceRefundId: 'rfnd-match',
+    });
+
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
+    // The gate is `sourceRefundId === undefined` — a refund-origin CN skips it.
+    expect(guard).not.toHaveBeenCalled();
+  });
+
+  it('consults the guard on a manual-CN happy path (count 0 → proceeds)', async () => {
+    const invoice = makeIssuedEventInvoice();
+    const deps = makeDeps(invoice, makeSettings());
+
+    const r = await issueCreditNote(deps, {
+      ...baseInput,
+      creditTotalSatang: 25_000n,
+      reason: 'manual credit, no refund pending',
+    });
+
+    expect(r.ok).toBe(true);
+    expect(deps.pendingRefundGuard.countPendingRefundsForInvoice).toHaveBeenCalledWith(
+      'test-swecham',
+      INVOICE_ID,
+    );
   });
 
   it('full credit on NON-member event invoice → succeeds, NON-timeline audit (no member_id, has event_registration_id), VAT reconciles to stored split', async () => {

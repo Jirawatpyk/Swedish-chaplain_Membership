@@ -26,7 +26,9 @@
  *     - status = pending + incoming succeeded ..... `reconciled_succeeded`
  *         (via the shared `finalizeSucceededRefund`, `path:
  *          'webhook_refund_updated'`; a sibling-won null-race →
- *          `already_finalized`)
+ *          `already_finalized`; a PERMANENT F4 credit-note decline →
+ *          `reconciled_cn_deferred` — 8C, terminalise the event, leave the row
+ *          pending; a TRANSIENT decline still throws → `dispatch_failed`/retry)
  *     - status = pending + incoming failed/canceled `reconciled_failed`
  *         (flip refund→failed; NO credit note — no §86/4 receipt to reduce)
  *     - status = pending + incoming pending/other .. `still_pending`
@@ -75,6 +77,11 @@ import { finalizeSucceededRefund } from './_finalize-succeeded-refund';
 import { recogniseAppInitiatedRefund } from './_recognise-app-initiated-refund';
 import { paymentsMetrics } from '@/lib/metrics';
 import type { Satang } from '@/lib/money';
+// 8C — the F4 CREDIT-NOTE error union (distinct from RecordPaymentError, which
+// `classifyDispatchPermanence` covers for the record-payment rail). Used only
+// to key the exhaustive permanence table below, so a NEW F4 CN code is a BUILD
+// failure here rather than a silent default.
+import type { IssueCreditNoteError } from '@/modules/invoicing';
 
 const OOB_RUNBOOK_URL = 'docs/runbooks/out-of-band-refund.md';
 
@@ -152,7 +159,17 @@ export type ProcessRefundUpdatedOutcome =
    * makes it matchable again. Deliberately NOT finalised here — see the
    * suppression block for why.
    */
-  | { readonly kind: 'app_refund_backfilled'; readonly invoiceId: string };
+  | { readonly kind: 'app_refund_backfilled'; readonly invoiceId: string }
+  /**
+   * 8C — the refund settled at Stripe but its F4 credit note is PERMANENTLY
+   * un-bookable (e.g. `credit_exceeds_remainder`). The WEBHOOK EVENT is
+   * finalised (markProcessed + a 10y `refund_cn_deferred` forensic) so Stripe
+   * stops the 72h retry storm; the refund ROW is left `pending` for accountant
+   * reconciliation (no terminal row-state exists for "money moved, CN owed but
+   * un-bookable" — the sweep and 8A carry the row side). Carries `invoiceId`,
+   * so the dispatcher's `'invoiceId' in value` forwards it unchanged.
+   */
+  | { readonly kind: 'reconciled_cn_deferred'; readonly invoiceId: string };
 
 /**
  * Single error class mirrors `processChargeRefunded` — the dispatcher maps
@@ -208,6 +225,44 @@ function classifyIncoming(status: string | null): IncomingRefundClass {
     return { kind: 'failed', status };
   }
   return { kind: 'pending' };
+}
+
+/**
+ * 8C — is an F4 credit-note-bridge decline PERMANENT (retry is futile) as it
+ * arrives on the refund-updated webhook rail?
+ *
+ * A total `Record` over `IssueCreditNoteError['code']` so a NEW F4 CN code is a
+ * BUILD failure here, not a silent default. Conservative bias (HARD
+ * CONSTRAINT): terminalising a TRANSIENT decline would lose a recoverable
+ * refund's §86/10 credit note, so ONLY proven-permanent codes are `true`; the
+ * `?? false` fallback keeps any unknown/malformed code (e.g. summariseF4Error's
+ * 'f4_error'/'bridge_error') TRANSIENT — a bounded, logged retry the operator
+ * sees, never a silent terminalisation. Every verdict is justified against
+ * `issue-credit-note.ts`'s error union.
+ */
+const PERMANENT_CN_DECLINE: Readonly<Record<IssueCreditNoteError['code'], boolean>> = {
+  credit_exceeds_remainder: true, // remainder permanently exhausted — never clears
+  invoice_not_found: true, // invoice hard-deleted / bad id — will not reappear
+  no_snapshot_on_invoice: true, // data-invariant violation — needs an operator
+  invalid_event_invoice: true, // data-invariant violation — needs an operator
+  receipt_not_creditable: true, // §105 legal verdict — a receipt is NEVER creditable
+  settings_missing: true, // F4 config gap — no Stripe retry can supply it
+  overflow: true, // §87 sequence exhausted for the FY — needs an operator
+  invalid_status: false, // optimistic race indistinguishable from wrong status → retry
+  receipt_not_rendered: false, // explicitly "retry once the receipt render completes"
+  pdf_render_failed: false, // transient infra
+  blob_upload_failed: false, // transient infra
+  concurrent_state_change: false, // optimistic-lock race — retry may win
+  membership_effect_required: false, // unreachable via refund (bridge hardcodes 'keep')
+  // 8A — UNREACHABLE on the refund path: the pending-refund guard is gated on
+  // `sourceRefundId === undefined`, and a refund-origin CN always carries one,
+  // so `issueCreditNoteFromRefund` never returns this. Classified transient
+  // (conservative default) purely to keep the Record exhaustive.
+  refund_in_progress: false,
+};
+
+function isPermanentCreditNoteDecline(code: string): boolean {
+  return PERMANENT_CN_DECLINE[code as IssueCreditNoteError['code']] ?? false;
 }
 
 export async function processRefundUpdated(
@@ -501,12 +556,64 @@ export async function processRefundUpdated(
             path: 'webhook_refund_updated',
           });
           if (!finalized.ok) {
-            // F4 credit-note bridge declined. Stripe DEFINITIVELY confirmed
-            // succeeded, so we must NOT mark the refund failed. Throw to roll
-            // back the whole tx (NO markProcessed) → Stripe retries; the CN
-            // bridge is idempotent so the retry reconciles cleanly, and the
-            // A.14 sweep is the last-resort backstop.
-            throw new WebhookRefundFinalizeError(finalized.error.code);
+            const code = finalized.error.code;
+            if (isPermanentCreditNoteDecline(code)) {
+              // 8C — a PERMANENT F4 decline (e.g. `credit_exceeds_remainder`).
+              // Stripe DEFINITIVELY confirmed succeeded (money moved), and
+              // retrying the bridge can NEVER clear this code — so throwing
+              // would 72h-retry a decline that cannot self-heal. Terminalise
+              // the WEBHOOK EVENT instead: a 10-year `refund_cn_deferred`
+              // forensic + markProcessed inside this tx, 200-ack. The refund
+              // row STAYS `pending` (money moved, CN reconciliation owed) —
+              // never flipped `failed` (a money-lie) nor `succeeded` (it holds
+              // no CN / waiver), matching the admin-leg deferRefundCreditNote +
+              // sweep precedent, and keeping 8A's pending-refund guard armed so
+              // no double payout is un-blocked.
+              const deferReasonCode = `f4_bridge_${code}`;
+              await deps.audit.emit(tx, {
+                tenantId: input.tenantId,
+                requestId: input.requestId,
+                eventType: 'refund_cn_deferred',
+                actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
+                summary:
+                  `Refund ${refund.id} settled at the processor (${input.processorRefundId}) ` +
+                  `but the F4 credit note is permanently un-bookable (${deferReasonCode}); ` +
+                  `row left pending — accountant reconciliation required`,
+                payload: {
+                  refund_id: refund.id,
+                  payment_id: refund.paymentId,
+                  invoice_id: refund.invoiceId,
+                  amount_satang: refund.amountSatang.toString(),
+                  processor_refund_id: input.processorRefundId,
+                  defer_reason_code: deferReasonCode,
+                  detail: finalized.error.detail,
+                  runbook_url: 'docs/runbooks/stale-pending-refund-sweep.md',
+                },
+                retentionYears: retentionFor('refund_cn_deferred'),
+              });
+              // SINGLE-OWNER the operator page: BOTH the deprecated
+              // `charge.refund.updated` AND the forward `refund.updated` route
+              // here, and 8C leaves the row `pending`, so every delivery
+              // re-enters this fork. The 10y forensic above is redundant/
+              // SPOF-safe (deduped on read by `processor_refund_id`), but the
+              // metric must fire ONCE per charged refund — gate it exactly as
+              // the auto_refund_failed page does (`:290`) so `refund.updated`
+              // owns it.
+              if (input.sourceEventType !== 'charge.refund.updated') {
+                paymentsMetrics.refundCreditNoteDeferred(
+                  input.tenantId,
+                  deferReasonCode,
+                );
+              }
+              await deps.processorEventsRepo.markProcessed(tx, input.eventId);
+              return { kind: 'reconciled_cn_deferred', invoiceId: refund.invoiceId };
+            }
+            // TRANSIENT F4 decline (infra / optimistic race / unknown code).
+            // Stripe DEFINITIVELY confirmed succeeded, so we must NOT mark the
+            // refund failed. Throw to roll back the whole tx (NO markProcessed)
+            // → Stripe retries; the CN bridge is idempotent so the retry
+            // reconciles cleanly, and the A.14 sweep is the last-resort backstop.
+            throw new WebhookRefundFinalizeError(code);
           }
           await deps.processorEventsRepo.markProcessed(tx, input.eventId);
           if (finalized.value.siblingWon) {

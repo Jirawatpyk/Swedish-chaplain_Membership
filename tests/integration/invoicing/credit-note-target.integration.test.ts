@@ -166,6 +166,7 @@ function makeCreditNoteDeps(tenantSlug: string): {
   const captured: PdfRenderInput[] = [];
   const uploads: Array<{ key: string; allowOverwrite: boolean | undefined }> = [];
   const deps: IssueCreditNoteDeps = {
+    pendingRefundGuard: { countPendingRefundsForInvoice: async () => 0 },
     invoiceRepo: makeDrizzleInvoiceRepo(tenantSlug),
     creditNoteRepo: makeDrizzleCreditNoteRepo(tenantSlug),
     tenantSettingsRepo: drizzleTenantSettingsRepo,

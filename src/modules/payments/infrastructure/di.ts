@@ -28,6 +28,7 @@ import type { CancelPaymentDeps } from '../application/use-cases/cancel-payment'
 import type { HandleCancelEventDeps } from '../application/use-cases/handle-cancel-event';
 import type { ListSucceededPaymentMethodsDeps } from '../application/use-cases/list-succeeded-payment-methods';
 import type { ListWaivedRefundTotalsByInvoiceDeps } from '../application/use-cases/list-waived-refund-totals-by-invoice';
+import type { CountPendingRefundsForInvoiceDeps } from '../application/use-cases/count-pending-refunds-for-invoice';
 import type { LoadInvoicePaymentActivityDeps } from '../application/use-cases/load-invoice-payment-activity';
 import type { IssueRefundDeps } from '../application/use-cases/issue-refund';
 import type { ResolveFailedAutoRefundDeps } from '../application/use-cases/resolve-failed-auto-refund';
@@ -292,6 +293,15 @@ export function makeListSucceededPaymentMethodsDeps(
 export function makeListWaivedRefundTotalsByInvoiceDeps(
   tenantId: string,
 ): ListWaivedRefundTotalsByInvoiceDeps {
+  return {
+    refundsRepo: makeDrizzleRefundsRepo(tenantId),
+  };
+}
+
+// 8A — the payments-side count behind the invoicing PendingRefundGuardPort.
+export function makeCountPendingRefundsForInvoiceDeps(
+  tenantId: string,
+): CountPendingRefundsForInvoiceDeps {
   return {
     refundsRepo: makeDrizzleRefundsRepo(tenantId),
   };

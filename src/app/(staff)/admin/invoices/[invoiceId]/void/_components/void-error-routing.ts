@@ -43,6 +43,12 @@ export function routeVoidError(
   code: string | undefined | null,
 ): VoidErrorRouting {
   if (code && CONCURRENT_CODES.has(code)) return { kind: 'concurrent' };
+  // 8A — a refund is settling on this invoice; voiding now would strand it.
+  // A dedicated actionable message, NOT `concurrent` (the invoice is still
+  // voidable, just temporarily blocked) nor a raw code dump.
+  if (code === 'refund_in_progress') {
+    return { kind: 'failure', messageKey: 'errors.refundInProgress' };
+  }
   if (code) return { kind: 'failure', messageKey: 'errors.codeFallback', codeArg: code };
   return { kind: 'failure', messageKey: 'errors.unknown' };
 }

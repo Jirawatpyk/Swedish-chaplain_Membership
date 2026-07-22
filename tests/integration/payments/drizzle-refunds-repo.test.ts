@@ -328,6 +328,96 @@ describe('DrizzleRefundsRepo — live Neon', () => {
     expect(ctxFromB.nextSeq).toBe(1);
   });
 
+  it('8A — countPendingByInvoice counts only PENDING rows for (tenant, invoice), RLS-scoped', async () => {
+    const repo = makeDrizzleRefundsRepo(tenantA.ctx.slug);
+    // A fresh invoice + payment so the count is deterministic (isolated from the
+    // shared paymentIdA partition the aggregate tests accumulate on).
+    const invoiceX = randomUUID();
+    const paymentX = makePaymentUlid() as PaymentId;
+    const paymentsRepoA = makeDrizzlePaymentsRepo(tenantA.ctx.slug);
+
+    await runInTenant(tenantA.ctx, async (tx) => {
+      await tx.insert(invoices).values({
+        tenantId: tenantA.ctx.slug,
+        invoiceId: invoiceX,
+        memberId,
+        planYear: 2026,
+        planId: 'rfnd-plan',
+        draftByUserId: user.userId,
+      });
+    });
+    await paymentsRepoA.withTx(async (tx) =>
+      paymentsRepoA.insert(tx, {
+        id: paymentX,
+        tenantId: tenantA.ctx.slug,
+        invoiceId: invoiceX,
+        memberId,
+        method: 'promptpay',
+        amountSatang: asSatang(5_350_000n),
+        processorPaymentIntentId: `pi_test_${randomUUID().slice(0, 8)}`,
+        processorEnvironment: 'test',
+        attemptSeq: 1,
+        initiatedAt: new Date(),
+        actorUserId: user.userId,
+        correlationId: 'corr-rfnd-X',
+      }),
+    );
+
+    // Seed 2 PENDING + 1 FAILED refund on invoiceX.
+    await runInTenant(tenantA.ctx, async (tx) => {
+      for (let i = 0; i < 2; i += 1) {
+        await repo.insert(tx, {
+          id: makeRefundUlid(),
+          tenantId: tenantA.ctx.slug,
+          paymentId: paymentX,
+          invoiceId: invoiceX,
+          amountSatang: asSatang(25_000n),
+          reason: `pending-${i}`,
+          status: 'pending',
+          processorRefundId: null,
+          creditNoteWaiverReason: null,
+          initiatorUserId: user.userId,
+          correlationId: `corr-cnt-${i}`,
+          initiatedAt: new Date(),
+        });
+      }
+      const failedId = makeRefundUlid();
+      await repo.insert(tx, {
+        id: failedId,
+        tenantId: tenantA.ctx.slug,
+        paymentId: paymentX,
+        invoiceId: invoiceX,
+        amountSatang: asSatang(10_000n),
+        reason: 'failed-one',
+        status: 'pending',
+        processorRefundId: null,
+        creditNoteWaiverReason: null,
+        initiatorUserId: user.userId,
+        correlationId: 'corr-cnt-failed',
+        initiatedAt: new Date(),
+      });
+      await repo.updateStatus(tx, {
+        refundId: failedId,
+        tenantId: tenantA.ctx.slug,
+        nextStatus: 'failed',
+        rejectionProof: proveProcessorSettledFailed('failed'),
+        failureReasonCode: 'retryable',
+        completedAt: new Date(),
+      });
+    });
+
+    // Counts ONLY the 2 pending — the failed row is excluded.
+    expect(await repo.countPendingByInvoice(tenantA.ctx.slug, invoiceX)).toBe(2);
+    // Invoice-scoped: a different invoice id with no refunds is 0 (invoiceX's
+    // pending refunds do not leak across the invoice_id filter).
+    expect(await repo.countPendingByInvoice(tenantA.ctx.slug, randomUUID())).toBe(0);
+    // RLS defence-in-depth: tenant B's repo, even handed tenant A's invoiceX,
+    // sees ZERO — `app.current_tenant` filters every foreign-tenant row (mirror
+    // of the getRefundContextForUpdate cross-tenant test above).
+    const repoB = makeDrizzleRefundsRepo(tenantB.ctx.slug);
+    expect(await repoB.countPendingByInvoice(tenantA.ctx.slug, invoiceX)).toBe(0);
+  });
+
   // --- RR-1 / H-b: optimistic-concurrency guard returns null on miss ------
   // Placed LAST so the succeeded row seeded here does not perturb the
   // cumulative-partition assertions in the aggregates test above.

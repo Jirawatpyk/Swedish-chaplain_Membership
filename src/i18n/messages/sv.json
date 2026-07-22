@@ -1910,7 +1910,8 @@
           "receiptNotCreditable": "För denna betalning utfärdades ett kvitto enligt paragraf 105, inte en skattefaktura, så ingen kreditnota kan utfärdas för den. För att återbetala den, använd återbetalningsåtgärden på betalningen — den återför pengarna utan en kreditnota.",
           "receiptNotRendered": "Skattekvittots PDF genereras fortfarande, eller kunde inte skapas. En kreditnota kan utfärdas först när §86/4-kvittot har genererats. Vänta en stund och försök igen — om det fortfarande misslyckas, kontakta supporten för att återskapa det.",
           "membershipEffectRequired": "Välj vad som ska hända med medlemskapet innan du utfärdar denna kreditnota. Ladda om sidan och försök igen.",
-          "codeFallback": "Felkod: {code}"
+          "codeFallback": "Felkod: {code}",
+          "refundInProgress": "En återbetalning behandlas för denna fakturas betalning. Att utfärda en kreditnota nu kan skapa en konflikt – vänta tills återbetalningen är klar och försök igen."
         }
       },
       "list": {
@@ -2665,7 +2666,8 @@
           "unknown": "Ett okänt fel inträffade. Försök igen.",
           "concurrent": "Denna faktura har redan annullerats eller ändrats i en annan session. Uppdatera för att se den senaste statusen.",
           "refreshAction": "Uppdatera",
-          "codeFallback": "Felkod: {code}"
+          "codeFallback": "Felkod: {code}",
+          "refundInProgress": "En återbetalning behandlas för denna fakturas betalning. Att makulera nu kan skapa en konflikt – vänta tills återbetalningen är klar och försök igen."
         }
       }
     },

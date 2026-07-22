@@ -163,6 +163,11 @@ function makeDeps(): SweepStalePendingRefundsDeps {
       issueCreditNoteFromRefund: vi.fn(async () =>
         ok({ creditNoteId: 'cn-1', creditNoteNumber: 'TC-1' }),
       ),
+      // 8B note — this suite MOCKS `finalizeSucceededRefund` (top of file), so
+      // the finaliser's new Phase-B re-check (`getInvoiceCreditedTotal`) never
+      // runs from here; no stub is needed. The real conversion is proven by the
+      // finaliser's own callers: issue-refund unit + the concurrent-void
+      // live-Neon integration test.
     } as unknown as SweepStalePendingRefundsDeps['invoicingBridge'],
     audit: { emit: vi.fn(async () => undefined) },
     clock: { nowIso: () => new Date(NOW_MS).toISOString(), nowMs: () => NOW_MS },

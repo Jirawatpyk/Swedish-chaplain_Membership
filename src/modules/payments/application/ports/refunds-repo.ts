@@ -42,6 +42,16 @@ interface UpdateRefundStatusBase {
    * violate the biconditional after Stripe has already moved the money.
    */
   readonly creditNoteWaivedAt?: Date | null;
+  /**
+   * Track B / 8B — the waiver REASON, written alongside `creditNoteWaivedAt`.
+   * On the ordinary pre-pinned-waive path Phase A already wrote it at insert,
+   * so the succeeded flip re-writes the same value (idempotent). On a Phase-B
+   * CONVERTED waive (a void raced the credit note; Phase A pinned it NULL on
+   * the `issue` arm) this write is load-bearing: the DB CHECK
+   * `refunds_waived_at_requires_reason` rejects a `creditNoteWaivedAt` with a
+   * NULL reason.
+   */
+  readonly creditNoteWaiverReason?: CreditNoteWaiverReason | null;
   readonly completedAt: Date;
   /**
    * Optional optimistic-concurrency guard (S5 / RR-1). When set, the
@@ -367,4 +377,20 @@ export interface RefundsRepo {
    * held is the deadlock shape this codebase has already paid for once.
    */
   sumWaivedByInvoice(tenantId: string): Promise<ReadonlyMap<string, bigint>>;
+
+  /**
+   * 8A — count `status='pending'` refunds for `(tenantId, invoiceId)`. Powers
+   * the invoicing-side `PendingRefundGuardPort` (issueCreditNote / voidInvoice
+   * refuse while a refund is in flight).
+   *
+   * NON-LOCKING — a plain `COUNT(*)`, and this is a HARD CONTRACT, not a style
+   * choice: rebinding it to a `FOR UPDATE`/`FOR SHARE` read inverts the refund
+   * finaliser's `refunds FOR NO KEY UPDATE → invoices FOR UPDATE` acquisition
+   * order (the finaliser locks the refund row, then the CN bridge locks the
+   * invoice) and DEADLOCKS. Opens its own `runInTenant` (mirrors
+   * `sumWaivedByInvoice`): the caller is the invoicing module, which has no F5
+   * `tx` to thread, and nesting one inside the caller's own tx while it holds
+   * row locks is the deadlock shape this codebase has already paid for once.
+   */
+  countPendingByInvoice(tenantId: string, invoiceId: string): Promise<number>;
 }

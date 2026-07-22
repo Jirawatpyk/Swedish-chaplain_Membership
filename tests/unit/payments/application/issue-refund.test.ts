@@ -798,6 +798,134 @@ describe('issueRefund (T108) — Stripe + F4 failure paths', () => {
     );
   });
 
+  // ── 8B (money-remediation): TOCTOU void race ────────────────────────────
+  //
+  // A refund pre-flighted while the invoice was `paid` (verdict `issue`), so
+  // Phase A pinned NO waiver and proceeded to Stripe. Between that commit and
+  // the Phase-B credit note, a concurrent `voidInvoice` committed. The §86/10
+  // bridge now refuses (a void invoice takes no credit note), and the pre-fix
+  // finaliser DEFERRED — money out of Stripe, row `pending` forever, sweep
+  // retrying into the same permanent refusal, and every future refund on the
+  // payment blocked by `ctx.pendingCount > 0`.
+  //
+  // The fix RE-CONSULTS F4's Domain verdict on the decline. When it has flipped
+  // to `waive` (the invoice is now void → owes no §86/10), the refund is a
+  // clean waived-success, not a dead-end. The row is stamped waived and the
+  // envelope reports the invoice's REAL post-void status.
+  it('Phase B CN declines because invoice voided after pre-flight → WAIVE succeeded, reports void', async () => {
+    const deps = makeDeps();
+    // Phase A pre-flight — invoice still `paid`, a credit note is owed.
+    asMock(deps.invoicingBridge.getInvoiceCreditedTotal).mockResolvedValueOnce(
+      ok({
+        creditedTotalSatang: asSatang(0n),
+        totalSatang: PAYMENT_AMOUNT_SATANG,
+        creditNoteRequirement: { kind: 'issue' as const },
+      }),
+    );
+    // Phase B re-check — the concurrent void has landed; F4's verdict is now
+    // `waive` (no §86/10 owed on a voided invoice).
+    asMock(deps.invoicingBridge.getInvoiceCreditedTotal).mockResolvedValueOnce(
+      ok({
+        creditedTotalSatang: asSatang(0n),
+        totalSatang: PAYMENT_AMOUNT_SATANG,
+        creditNoteRequirement: {
+          kind: 'waive' as const,
+          reason: 'invoice_voided' as const,
+          invoiceStatus: 'void' as const,
+        },
+      }),
+    );
+    // The void made the credit note un-issuable.
+    asMock(deps.invoicingBridge.issueCreditNoteFromRefund).mockResolvedValueOnce(
+      err({ code: 'invalid_status', detail: 'void' }),
+    );
+
+    const r = await issueRefund(deps, baseInput());
+
+    expect(r.ok).toBe(true);
+    if (r.ok && r.value.kind === 'succeeded') {
+      expect(r.value.refund.creditNote.kind).toBe('waived');
+      if (r.value.refund.creditNote.kind === 'waived') {
+        expect(r.value.refund.creditNote.reason).toBe('invoice_voided');
+      }
+      // The concurrency fix — the envelope reports the invoice's REAL
+      // post-void status, not the `paid` placeholder pinned at pre-flight.
+      expect(r.value.invoice.status).toBe('void');
+    } else {
+      throw new Error('expected kind=succeeded');
+    }
+
+    // The succeeded flip stamps waived with BOTH the completion timestamp AND
+    // the reason. The reason is load-bearing here: Phase A pinned it NULL on
+    // the `issue` arm, so the conversion must write it or the
+    // `refunds_waived_at_requires_reason` CHECK aborts Phase B (→ row stays
+    // pending — the same red, caught only by the live-Neon integration test).
+    const waivedFlip = asMock(deps.refundsRepo.updateStatus).mock.calls.find(
+      (c) => c[1].nextStatus === 'succeeded',
+    );
+    expect(waivedFlip?.[1].creditNoteWaivedAt).toBeInstanceOf(Date);
+    expect(waivedFlip?.[1].creditNoteWaiverReason).toBe('invoice_voided');
+    expect(waivedFlip?.[1].creditNoteId).toBeUndefined();
+
+    // The 10-year forensic — a refund carrying no credit note is booked for
+    // the accountant's ภ.พ.30 reconciliation, counter ↔ audit 1:1.
+    const waivedAudit = asMock(deps.audit.emit).mock.calls.filter(
+      (c) => c[1].eventType === 'refund_credit_note_waived',
+    );
+    expect(waivedAudit).toHaveLength(1);
+    expect(waivedAudit[0]?.[1].payload).toMatchObject({
+      waiver_reason: 'invoice_voided',
+      invoice_status: 'void',
+    });
+    expect(metricsMocks.refundCreditNoteWaivedCount).toHaveBeenCalledWith(
+      TENANT_ID,
+      'invoice_voided',
+    );
+
+    // NOT deferred, NOT failed — the dead-end is gone.
+    const deferred = asMock(deps.audit.emit).mock.calls.filter(
+      (c) => c[1].eventType === 'refund_cn_deferred',
+    );
+    expect(deferred).toEqual([]);
+  });
+
+  // Narrowness guard: a GENUINE over-credit decline (the invoice is NOT void —
+  // F4's verdict stays `issue`/`blocked`) must still DEFER. The conversion may
+  // not fire on every decline, only when the invoice legitimately owes no CN.
+  it('Phase B CN declines but invoice NOT voided (verdict still issue) → still defers', async () => {
+    const deps = makeDeps();
+    // Phase A pre-flight — issue.
+    asMock(deps.invoicingBridge.getInvoiceCreditedTotal).mockResolvedValueOnce(
+      ok({
+        creditedTotalSatang: asSatang(0n),
+        totalSatang: PAYMENT_AMOUNT_SATANG,
+        creditNoteRequirement: { kind: 'issue' as const },
+      }),
+    );
+    // Phase B re-check — still `issue` (no void; a transient/over-credit decline).
+    asMock(deps.invoicingBridge.getInvoiceCreditedTotal).mockResolvedValueOnce(
+      ok({
+        creditedTotalSatang: asSatang(0n),
+        totalSatang: PAYMENT_AMOUNT_SATANG,
+        creditNoteRequirement: { kind: 'issue' as const },
+      }),
+    );
+    asMock(deps.invoicingBridge.issueCreditNoteFromRefund).mockResolvedValueOnce(
+      err({ code: 'remainder_credit_exceeded', detail: 'CN sum > invoice total' }),
+    );
+
+    const r = await issueRefund(deps, baseInput());
+
+    expect(r.ok).toBe(false);
+    expect(r.ok === false && r.error.code).toBe('f4_bridge_deferred');
+    // Never waived — no `credit_note_waived_at` write.
+    const waivedFlip = asMock(deps.refundsRepo.updateStatus).mock.calls.filter(
+      (c) => c[1].creditNoteWaivedAt !== undefined,
+    );
+    expect(waivedFlip).toEqual([]);
+    expect(metricsMocks.refundCreditNoteWaivedCount).not.toHaveBeenCalled();
+  });
+
   it('Phase-B throw after Stripe success DEFERS too — same rule, other exit', async () => {
     // Both post-Stripe-success failure exits have to obey the rule, or the
     // fix only covers whichever one a reviewer happened to look at.

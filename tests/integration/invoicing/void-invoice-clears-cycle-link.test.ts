@@ -255,6 +255,9 @@ function makeDeps(
     clock: { nowIso: () => '2026-03-15T10:00:00Z' },
     outbox: { enqueue: vi.fn(async () => {}) },
     recipientLocale: { getMemberEmailLocale: vi.fn(async () => null) },
+    // 8A (merge) — non-locking pending-refund guard; this suite never seeds a
+    // refund, so a constant 0 keeps the void unblocked.
+    pendingRefundGuard: { countPendingRefundsForInvoice: async () => 0 },
   };
   return opts.wireUnlink
     ? { ...base, onMembershipInvoiceVoidedInTx: makeVoidInvoiceCycleUnlink(tenantId) }

@@ -194,6 +194,12 @@ export function makeDrizzleRefundsRepo(tenantId: string): RefundsRepo {
       if (input.creditNoteWaivedAt !== undefined) {
         patch.creditNoteWaivedAt = input.creditNoteWaivedAt;
       }
+      // Track B / 8B — the waiver reason. Paired with `creditNoteWaivedAt` to
+      // satisfy `refunds_waived_at_requires_reason`; load-bearing on a Phase-B
+      // converted waive where Phase A left it NULL.
+      if (input.creditNoteWaiverReason !== undefined) {
+        patch.creditNoteWaiverReason = input.creditNoteWaiverReason;
+      }
 
       const whereClauses = [
         eq(refunds.tenantId, input.tenantId),
@@ -583,6 +589,26 @@ export function makeDrizzleRefundsRepo(tenantId: string): RefundsRepo {
           out.set(row.invoice_id, BigInt(raw));
         }
         return out;
+      });
+    },
+
+    async countPendingByInvoice(
+      inputTenantId: string,
+      invoiceId: string,
+    ): Promise<number> {
+      // 8A — NON-LOCKING plain COUNT. A `FOR UPDATE`/`FOR SHARE` here would
+      // invert the finaliser's refunds→invoices lock order and deadlock (see
+      // the port docstring). Own `runInTenant` — the invoicing caller has no F5
+      // `tx` to borrow. `tenant_id = …` is defence-in-depth alongside RLS+FORCE.
+      return runInTenant(ctx, async (tx) => {
+        const rows = (await tx.execute(sql`
+          SELECT COUNT(*)::int AS c
+            FROM refunds
+           WHERE tenant_id = ${inputTenantId}
+             AND invoice_id = ${invoiceId}
+             AND status = 'pending'
+        `)) as unknown as Array<{ c: number | string }>;
+        return Number(rows[0]?.c ?? 0);
       });
     },
   };

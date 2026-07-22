@@ -25,6 +25,7 @@ import {
   pgEnum,
   primaryKey,
   check,
+  index,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
 
@@ -229,6 +230,22 @@ export const invoices = pgTable(
     // `member_identity_snapshot`.
     piiBlobPurgedAt: timestamp('pii_blob_purged_at', { withTimezone: true }),
 
+    // Bug 10 — void §86/4 PDF re-stamp reconcile marker (migration 0270). Set on
+    // a Phase-2 blob_upload-leg failure; the void-pdf-reconcile cron re-renders
+    // + re-uploads the VOID overlay until the served doc carries it. `attempts`
+    // is SQL-incremented (race-safe); `parked_at` is reserved for genuine
+    // corruption (transient infra retries indefinitely — never abandon a
+    // voided tax document un-stamped).
+    voidPdfReconcilePendingAt: timestamp('void_pdf_reconcile_pending_at', {
+      withTimezone: true,
+    }),
+    voidPdfReconcileAttempts: smallint('void_pdf_reconcile_attempts')
+      .notNull()
+      .default(0),
+    voidPdfReconcileParkedAt: timestamp('void_pdf_reconcile_parked_at', {
+      withTimezone: true,
+    }),
+
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -402,6 +419,12 @@ export const invoices = pgTable(
     //   The cross-tenant integration test (Task 5) + RLS remain the
     //   primary isolation guarantees; this FK is referential-integrity
     //   defence-in-depth.
+    // Bug 10 — the void-pdf-reconcile cron scans only actionable rows.
+    index('invoices_void_pdf_reconcile_pending_idx')
+      .on(table.voidPdfReconcilePendingAt)
+      .where(
+        sql`void_pdf_reconcile_pending_at IS NOT NULL AND void_pdf_reconcile_parked_at IS NULL`,
+      ),
   ],
 );
 
