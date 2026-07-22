@@ -78,4 +78,34 @@ describe('DowngradeConfirmDialogBody (WP5)', () => {
     renderDialog({ eblast: { from: 12, to: 4, used: 2 } });
     expect(screen.queryByText(/You have already used/)).toBeNull();
   });
+
+  // C4 a11y (WCAG 4.1.3) — a `role="status"` region already present at open
+  // does NOT re-announce, so the over-quota fact must live in the dialog's
+  // accessible description. We reference the over-quota region from the
+  // popup's `aria-describedby` so a screen reader hears it when the dialog
+  // opens (alongside the base description).
+  function popup(): HTMLElement {
+    const el = document.querySelector('[data-slot="alert-dialog-content"]');
+    if (!el) throw new Error('alert-dialog-content not rendered');
+    return el as HTMLElement;
+  }
+
+  it('references BOTH the base description and the over-quota region from aria-describedby when over quota (C4/WCAG 4.1.3)', () => {
+    renderDialog({ eblast: { from: 12, to: 4, used: 6 } });
+    const ids = (popup().getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean);
+    expect(ids).toEqual(
+      expect.arrayContaining(['downgrade-dialog-desc', 'downgrade-dialog-overquota']),
+    );
+    const region = document.getElementById('downgrade-dialog-overquota');
+    expect(region).not.toBeNull();
+    expect(region!.textContent).toContain('You have already used 6 of');
+  });
+
+  it('keeps aria-describedby on the base description only when NOT over quota (C4)', () => {
+    renderDialog({ eblast: { from: 12, to: 4, used: 2 } });
+    const describedby = popup().getAttribute('aria-describedby') ?? '';
+    expect(describedby).toContain('downgrade-dialog-desc');
+    expect(describedby).not.toContain('downgrade-dialog-overquota');
+    expect(document.getElementById('downgrade-dialog-overquota')).toBeNull();
+  });
 });
