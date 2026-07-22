@@ -40,6 +40,7 @@ import {
   invoices,
   invoiceLines,
   creditNotes,
+  liveMembershipBillWhere,
   type InvoiceRow,
   type InvoiceLineRow,
 } from '../db';
@@ -596,19 +597,16 @@ export function makeDrizzleInvoiceRepo(
           totalSatang: invoices.totalSatang,
         })
         .from(invoices)
+        // "Live membership bill" (status <> 'void') via the shared
+        // `liveMembershipBillWhere` — the SAME predicate the renewals
+        // offline mark-paid guard uses, so the two duplicate-§86/4 checks
+        // cannot drift. This method owns only its projection + ordering.
         .where(
-          and(
-            eq(invoices.tenantId, input.tenantId),
-            eq(invoices.memberId, input.memberId),
-            eq(invoices.invoiceSubject, 'membership'),
-            eq(invoices.planYear, input.planYear),
-            // `ne(status,'void')` rather than an IN-list of the live statuses:
-            // a future `invoiceStatusEnum` addition then defaults to BLOCKING
-            // (safe — ask before minting a second tax document) instead of
-            // silently falling through the guard. A voided invoice must NOT
-            // block: one voided for correction has to stay re-issuable.
-            ne(invoices.status, 'void'),
-          ),
+          liveMembershipBillWhere({
+            tenantId: input.tenantId,
+            memberId: input.memberId,
+            planYear: input.planYear,
+          }),
         )
         // Deterministic pick so the invoice surfaced to the operator (and the
         // deep-link they are asked to inspect) is stable across retries:
@@ -770,8 +768,11 @@ export function makeDrizzleInvoiceRepo(
      * DESIGN — it never matches the bound (newest) bill itself, so the newest
      * bill is never voidable → never zero survivors; exactly one for the
      * reactivation shape (older bill pre-committed), but two brand-new
-     * concurrent same-member issues may leave two — closed by sub-project #2's
-     * content guard.
+     * concurrent same-member issues may leave two. The interactive guards
+     * (admin `createInvoiceDraft` + renewals `markPaidOffline`, via the shared
+     * `liveMembershipBillWhere`) refuse accidental duplicates on their paths;
+     * two concurrent automated issues here remain a soft residual (no
+     * member/plan_year unique index, by design).
      */
     async listSupersedableMembershipBills(tenantIdArg, memberId, bound) {
       return runInTenant(ctx, async (tx) => {

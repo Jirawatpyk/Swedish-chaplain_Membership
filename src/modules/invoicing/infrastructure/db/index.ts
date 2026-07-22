@@ -37,3 +37,7 @@ export {
   type CreditNoteRow,
   type NewCreditNoteRow,
 } from './schema-credit-notes';
+export {
+  liveMembershipBillWhere,
+  type LiveMembershipBillKey,
+} from './live-membership-bill-predicate';

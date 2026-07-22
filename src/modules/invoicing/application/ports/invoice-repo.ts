@@ -234,7 +234,11 @@ export interface InvoiceRepo {
    * NULL, (created_at, invoice_id) < bound). Asymmetric ordering makes the newest
    * bill un-voidable → never zero survivors; exactly one for the reactivation
    * shape (older bill pre-committed), but two brand-new concurrent same-member
-   * issues may leave two — closed by sub-project #2's content guard.
+   * issues may leave two. The interactive guards (admin `createInvoiceDraft`
+   * + renewals `markPaidOffline`, via the shared `liveMembershipBillWhere`)
+   * refuse accidental duplicates on their paths; two concurrent automated
+   * issues here remain a soft residual (no member/plan_year unique index for
+   * membership, by design).
    */
   listSupersedableMembershipBills(
     tenantId: string,
