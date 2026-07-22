@@ -151,6 +151,10 @@ export const invoiceSourceAdapter: InvoiceSource = {
     const settings = await drizzleTenantSettingsRepo.getForIssue(ctx.slug);
     const rawStart = settings?.fiscalYearStartMonth ?? 1;
     const startMonth = (rawStart >= 1 && rawStart <= 12 ? rawStart : 1) as FiscalYearStartMonth;
+    // SAFE-PIN (rolling-anchor axis) — revenue windows by invoices.fiscal_year
+    // (issue-date FY, via listInvoices below), NEVER invoices.plan_year: an
+    // anchored renewal's plan_year can lag the printed coverage by one period,
+    // so plan_year is the catalogue FK key, not a revenue axis.
     const fiscalYear: number = deriveFiscalYear(nowIso, startMonth);
 
     const deps = makeListInvoicesDeps(ctx.slug);
