@@ -89,6 +89,8 @@ export function extractAlterTypeAddValueStatements(sql: string): string[] {
  *                        += 'refund_credit_note_waived' (0268, task-7)
  *                        += 'payment_settlement_rolled_back' (0269, task-4 — renumbered
  *                           from 0267 at stack assembly so it follows task-7's 0268)
+ *                        += 'member_plan_change_billing_effect' (0270, renumbered from
+ *                           0259 at rebase so it follows the task-7 stack's 0269)
  */
 export const REQUIRED_ENUM_VALUES: Readonly<Record<string, readonly string[]>> = {
   document_type: ['invoice', 'receipt', 'credit_note', 'bill', 'receipt_105'],
@@ -104,6 +106,7 @@ export const REQUIRED_ENUM_VALUES: Readonly<Record<string, readonly string[]>> =
     'payment_on_terminated_member',
     'refund_credit_note_waived',
     'payment_settlement_rolled_back',
+    'member_plan_change_billing_effect',
   ],
 };
 

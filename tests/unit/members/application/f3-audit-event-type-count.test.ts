@@ -24,6 +24,10 @@ const F3_AUDIT_EVENTS: readonly F3AuditEventType[] = [
   'member_updated',
   'member_plan_changed',
   'member_plan_manually_changed',
+  // Plan-change → billing remediation (Package A, migration 0259) — forensic
+  // billing-effect event; members-owned, emitted from the F8 renewals seed
+  // seams via a narrow renewals-owned audit port. 5y retention.
+  'member_plan_change_billing_effect',
   'member_primary_contact_changed',
   'member_status_changed',
   'member_archived',
@@ -70,9 +74,9 @@ type _AssertF3Coverage = typeof F3_AUDIT_EVENTS extends
 const _: _AssertF3Coverage = true;
 
 describe('F3AuditEventType count guard', () => {
-  it('F3 audit event type count is 32 (31 prior + subprocessor_erasure_propagated)', () => {
+  it('F3 audit event type count is 33 (32 prior + member_plan_change_billing_effect)', () => {
     // Reference `_` so the compile-time proof is not tree-shaken / unused.
     expect(_).toBe(true);
-    expect(F3_AUDIT_EVENTS.length).toBe(32);
+    expect(F3_AUDIT_EVENTS.length).toBe(33);
   });
 });

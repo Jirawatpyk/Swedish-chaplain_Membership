@@ -971,7 +971,31 @@
         "affectedCount": "{count, plural, =0 {Inga medlemmar påverkas} one {# medlem påverkas} other {# medlemmar påverkas}}",
         "confirm": "Bekräfta paketändring",
         "cancel": "Avbryt",
-        "loading": "Beräknar berörda medlemmar…"
+        "loading": "Beräknar berörda medlemmar…",
+        "noBundle": "Inget"
+      },
+      "planChangeConfirm": {
+        "title": "Bekräfta byte av medlemsplan",
+        "description": "Du håller på att ändra medlemmens plan. Granska ändringen innan du sparar.",
+        "currentPlan": "Nuvarande plan",
+        "newPlan": "Ny plan",
+        "feeLabel": "Årsavgift (exkl. moms)",
+        "feeUnknown": "Ej tillgänglig",
+        "yearOnlyNotice": "Endast planåret ändras. Själva planen är oförändrad.",
+        "billingNoteHeading": "Vad som ändras och inte ändras",
+        "billingNoteRecord": "Medlemmens registrerade plan ändras omedelbart.",
+        "billingNoteCurrentInvoice": "Redan utfärdade fakturor ändras inte. Om beloppet nu är fel, utfärda på nytt eller kreditera separat.",
+        "billingNoteFutureCycles": "Förnyelsedebiteringen uppdateras inte automatiskt. Nästa förnyelsefaktura använder fortfarande den tidigare registrerade planen tills förnyelsecykeln ändras separat.",
+        "billingNoteFutureCyclesAutomatic": "Framtida förnyelsecykler debiteras automatiskt enligt den nya planen. Den nuvarande förnyelseperioden behåller sitt registrerade pris tills den förnyas.",
+        "confirm": "Byt plan",
+        "cancel": "Avbryt"
+      },
+      "planChangeResult": {
+        "applied_to_open_cycle": "Den nuvarande förnyelseperioden debiteras nu enligt den nya planen.",
+        "deferred_invoice_already_issued": "Fakturan för den nuvarande förnyelsen är redan utfärdad, så den nya planen gäller från nästa förnyelse. För att tillämpa den nu, makulera och utfärda fakturan på nytt.",
+        "deferred_term_length_change": "Planerna har olika löptider, så den nya planen gäller från nästa förnyelse.",
+        "deferred_immediate_not_enabled": "Den nya planen gäller från nästa förnyelse.",
+        "no_open_cycle": "Det finns ingen aktiv förnyelsecykel, så den nya planen gäller vid nästa förnyelse."
       },
       "subtitle": "Medlemsföretag + primära kontakter",
       "directory": {
@@ -1430,6 +1454,7 @@
           "turnoverHint": "Används för att placera medlemmen i planens omsättningsintervall.",
           "registeredCapitalThb": "Registrerat kapital (THB)",
           "plan": "Paket",
+          "planAnnualFee": "Årsavgift",
           "planPlaceholder": "Välj paket…",
           "billingCycle": "Faktureringscykel",
           "billingCyclePlaceholder": "Välj faktureringscykel…",
@@ -3670,6 +3695,12 @@
           "paid_invoice_volume_above_threshold": "Fakturavolym över tröskelvärde",
           "multi_signal": "Flera signaler"
         },
+        "evidence": {
+          "declared_turnover_above_threshold": "Deklarerad omsättning {turnover} · tröskel nådd {date}",
+          "paid_invoice_volume_above_threshold": "Betalda fakturor (12 mån) {volume} · tröskel nådd {date}",
+          "multi_signal": "Deklarerad omsättning {turnover} · betalda fakturor (12 mån) {volume} · tröskel nådd {date}",
+          "unavailable": "Underlag saknas — verifiera manuellt innan du accepterar"
+        },
         "empty_state": {
           "title": "Inga uppgraderingskandidater denna vecka",
           "subtitle": "Den veckovisa utvärderingen hittade inga medlemmar som passerar uppgraderingströskeln.",
@@ -3691,20 +3722,41 @@
             "dialog_title": "Acceptera nivåhöjning?",
             "confirm": "Uppgraderingen träder i kraft vid medlemmens nästa förnyelse. Medlemmen meddelas via e-post och en verifieringsuppgift schemaläggs om förnyelsen är mer än 180 dagar bort.",
             "success": "Nivåhöjning accepterad",
-            "error": "Kunde inte acceptera nivåhöjning"
+            "error": "Kunde inte acceptera nivåhöjning",
+            "evidence_restated": "Underlag: {evidence}. Detta flyttar medlemmen från {fromPlan} till {toPlan} — årsavgiften ändras på nästa förnyelsefaktura.",
+            "submitting": "Accepterar…"
           },
           "dismiss": {
             "label": "Avvisa",
             "dialog_title": "Avvisa förslaget om nivåhöjning?",
             "confirm": "Förslaget stängs och nya förslag undertrycks i 90 dagar. Denna åtgärd kan inte ångras.",
             "success": "Förslag avvisat",
-            "error": "Kunde inte avvisa förslag"
+            "error": "Kunde inte avvisa förslag",
+            "submitting": "Avvisar…"
           },
           "escalate": {
             "label": "Eskalera",
             "success": "Utkast till uppsökande skapat",
             "error": "Kunde inte skapa utkast"
           }
+        },
+        "loading": "Laddar kön för nivåuppgraderingar…",
+        "action_errors": {
+          "unknown": "Något gick fel. Försök igen.",
+          "network_error": "Vi kunde inte nå servern. Kontrollera din anslutning och försök igen.",
+          "http_error": "Servern gav ett oväntat svar. Försök igen.",
+          "read_only_mode": "Systemet är i underhållsläge och ändringar är pausade. Försök igen om en stund.",
+          "csrf_rejected": "Sidan är inaktuell. Ladda om sidan och försök igen.",
+          "feature_disabled": "Förnyelsefunktionerna är avstängda just nu. Kontakta en administratör.",
+          "no_session": "Din session har gått ut. Logga in igen för att fortsätta.",
+          "forbidden": "Du har inte behörighet att utföra den här åtgärden.",
+          "server_error": "Något gick fel på vår sida. Försök igen.",
+          "invalid_body": "Begäran godtogs inte. Ladda om sidan och försök igen.",
+          "invalid_input": "Begäran godtogs inte. Ladda om sidan och försök igen.",
+          "suggestion_not_found": "Det här förslaget finns inte längre. Uppdatera kön för att se aktuell lista.",
+          "suggestion_not_open": "Någon har redan hanterat det här förslaget. Uppdatera kön för att se aktuell lista.",
+          "no_active_cycle": "Den här medlemmen har ingen aktiv förnyelsecykel, så uppgraderingen kan inte schemaläggas än.",
+          "plan_change_failed": "Planändringen kunde inte tillämpas. Försök igen, eller kontakta supporten om det kvarstår."
         }
       },
       "tasks": {
@@ -5611,13 +5663,32 @@
         "errorPlanUnavailable": "Den valda planen är inte längre tillgänglig.",
         "errorInvoiceFailed": "Vi kunde inte skapa din faktura. Försök igen eller kontakta support.",
         "errorRateLimited": "För många förnyelseförsök. Vänta en stund och försök igen.",
-        "errorNetwork": "Anslutningsproblem. Kontrollera din internetanslutning och försök igen."
+        "errorNetwork": "Anslutningsproblem. Kontrollera din internetanslutning och försök igen.",
+        "errorDowngradeNotAcknowledged": "Bekräfta bytet till en plan med lägre pris innan du fortsätter."
       },
       "planChange": {
         "label": "Välj en plan",
         "placeholder": "{defaultLabel}",
         "currentSuffix": "nuvarande",
-        "changeNotice": "Att byta till en annan plan låser det nya priset på din förnyelsefaktura."
+        "changeNotice": "Att byta till en annan plan låser det nya priset på din förnyelsefaktura.",
+        "groupUpgrade": "Planer med högre pris",
+        "groupCurrent": "Din nuvarande plan",
+        "groupDowngrade": "Planer med lägre pris",
+        "optionWithPrice": "{label} — {price}",
+        "priceHeading": "Prisändring",
+        "priceCurrent": "Nuvarande låst pris",
+        "priceNew": "Nytt pris",
+        "priceDelta": "Skillnad"
+      },
+      "downgrade": {
+        "title": "Bekräfta en plan med lägre pris",
+        "description": "Du byter från {currentLabel} till {newLabel}. Det sänker ditt förnyelsepris och minskar vissa medlemsförmåner.",
+        "losesHeading": "Detta ändras",
+        "quotaEblast": "E-Blast per år: {from} → {to}",
+        "quotaCulturalTickets": "Kulturbiljetter per år: {from} → {to}",
+        "overQuotaWarning": "Du har redan använt {used} av {benefitName} denna period — mer än de {quota} som ingår i den nya planen.",
+        "confirmCta": "Ja, byt till denna plan",
+        "cancelCta": "Behåll min nuvarande plan"
       },
       "onboarding": {
         "heading": "Välkommen till din första förnyelse",
@@ -5793,6 +5864,7 @@
       "plan_cross_tenant_probe": "Obehörigt åtkomstförsök från annan organisation (paket)",
       "fee_config_updated": "Avgiftskonfiguration uppdaterad",
       "member_plan_manually_changed": "Paket ändrat manuellt",
+      "member_plan_change_billing_effect": "Faktureringseffekt av planändring",
       "plan_change_scheduled": "Paketbyte schemalagt",
       "plan_change_superseded": "Paketbyte ersatt",
       "plan_change_cancelled": "Paketbyte avbrutet",

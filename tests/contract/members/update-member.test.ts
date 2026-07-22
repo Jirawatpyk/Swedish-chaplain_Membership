@@ -146,7 +146,8 @@ describe('contract: PATCH /api/members/[memberId] (T071 / T090)', () => {
   it('200 on plan change happy path', async () => {
     requireAdminContextMock.mockResolvedValueOnce(adminContext);
     changePlanMock.mockResolvedValueOnce(
-      ok({ ...stubMember, planId: 'premium' }),
+      // Phase 2 — changePlan's ok payload is `{ member, billingEffect }`.
+      ok({ member: { ...stubMember, planId: 'premium' }, billingEffect: null }),
     );
     const { PATCH } = await import('@/app/api/members/[memberId]/route');
     const res = await PATCH(
@@ -156,6 +157,35 @@ describe('contract: PATCH /api/members/[memberId] (T071 / T090)', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.plan_id).toBe('premium');
+    // Phase 2 UI wiring — the plan-change response surfaces `billing_effect`.
+    // Null until the renewals dep is wired (flag-off default).
+    expect(body.billing_effect).toBeNull();
+  });
+
+  it('200 plan change surfaces a non-null billing_effect (snake_case wire)', async () => {
+    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    changePlanMock.mockResolvedValueOnce(
+      ok({
+        member: { ...stubMember, planId: 'premium' },
+        billingEffect: {
+          effect: 'deferred_invoice_already_issued',
+          cycleId: 'cyc-1',
+          blockingInvoiceId: 'inv-9',
+        },
+      }),
+    );
+    const { PATCH } = await import('@/app/api/members/[memberId]/route');
+    const res = await PATCH(
+      makeRequest({ new_plan_id: 'premium', new_plan_year: 2026 }),
+      { params: routeParams() },
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.billing_effect).toEqual({
+      effect: 'deferred_invoice_already_issued',
+      cycle_id: 'cyc-1',
+      blocking_invoice_id: 'inv-9',
+    });
   });
 
   it('409 bundle_change_requires_confirmation', async () => {

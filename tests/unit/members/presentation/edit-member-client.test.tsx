@@ -22,6 +22,9 @@ const h = vi.hoisted(() => ({
 
 vi.mock('next-intl', () => ({
   useTranslations: (ns: string) => (k: string) => `${ns}.${k}`,
+  // The (closed) PlanChangeConfirmDialog rendered by EditMemberClient calls
+  // useLocale at the top of its body regardless of `open`.
+  useLocale: () => 'en',
 }));
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: h.push, refresh: h.refresh }),

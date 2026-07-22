@@ -1,49 +1,56 @@
 /**
  * F8 Phase 5 Wave C · T128 + T129 — renewal confirm flow (client).
  *
- * Combines the plan-change selector (T128) with the confirm CTA (T129)
- * in a single client component so they share local React state. When
- * the member picks a different plan from the dropdown, the `newPlanId`
- * is threaded into the POST body (`/api/portal/renewal/[memberId]/confirm`,
- * T130) — the confirmRenewal use-case's plan-change branch (FR-021b)
- * atomically updates the cycle's frozen-plan fields before issuing the
- * F4 invoice.
+ * Combines the plan-change selector (T128) with the confirm CTA (T129) in a
+ * single client component so they share local React state.
  *
- * Why a single component (vs two siblings):
- *   - Selecting a plan in T128 is meaningless without a downstream CTA
- *     to confirm. Coupling them locally keeps the state surface small.
- *   - Server-passed `availablePlans` list is the only async dependency;
- *     the client reads/writes selection in `useState`.
- *
- * MVP scope: single-tier upgrade (current plan + 1 alternative). When
- * F2 has multiple active plans for the year, the dropdown surfaces all
- * of them; selecting "current plan" clears the change.
+ * WP5 (plan-change UX):
+ *   - The price panel (`<PriceDiffPanel>`) renders ALWAYS, outside the
+ *     `hasAlternatives` gate (C-6), so the current locked-in price never
+ *     vanishes for a single-plan tenant or a `listPlans` failure.
+ *   - The plan options are grouped into higher-priced / current / lower-priced
+ *     blocks and each shows its price.
+ *   - Choosing a LOWER-priced plan and pressing Confirm opens a
+ *     downgrade-acknowledgement dialog instead of submitting; only after the
+ *     member confirms does the POST carry `acknowledgeDowngrade: true`. This
+ *     mirrors the server gate (`confirmRenewal` → 409), classified by the
+ *     SAME `classifyPlanPriceChange` predicate so the two cannot diverge.
  */
 'use client';
 
-import { useState, useTransition } from 'react';
-import { useTranslations } from 'next-intl';
+import { useEffect, useRef, useState, useTransition } from 'react';
+import { useFormatter, useTranslations } from 'next-intl';
+import {
+  classifyPlanPriceChange,
+  requiresDowngradeAck,
+} from '@/modules/renewals/client';
 import { Button } from '@/components/ui/button';
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   TranslatedSelectValue,
 } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
+import { AlertDialog } from '@/components/ui/alert-dialog';
+import { InlineAlert, InlineAlertDescription } from '@/components/ui/inline-alert';
+import { groupPlanOptions } from '../_lib/group-plan-options';
+import { formatThbMinorUnits } from '../_lib/format-thb';
+import { PriceDiffPanel } from './price-diff-panel';
+import { DowngradeConfirmDialogBody } from './downgrade-confirm-dialog-body';
 
 /**
- * C6 review-fix (2026-05-07): map raw backend error codes to user-
- * friendly i18n keys so the UI never shows "server_error" /
- * "invoice_creation_failed" verbatim to the member. Unknown codes
- * fall through to the generic message; the raw code is logged via
- * console.warn so support can correlate.
+ * Map raw backend error codes to user-friendly i18n keys so the UI never
+ * shows a raw code to the member. Unknown codes fall through to the generic
+ * message; the raw code is logged for support correlation.
  *
  * Codes match the route handler (`confirm/route.ts`) error envelope:
  *   feature_disabled, invalid_body, invalid_input, cycle_not_found,
- *   cycle_not_payable, plan_not_found, plan_inactive,
- *   invoice_creation_failed, rate_limited, server_error
+ *   cycle_not_payable, plan_not_found, plan_inactive, invoice_creation_failed,
+ *   downgrade_not_acknowledged, rate_limited, server_error
  *   (+ client-side: network_error, missing_pay_url, http_<status>)
  */
 const ERROR_CODE_TO_I18N_KEY: Readonly<Record<string, string>> = {
@@ -52,8 +59,9 @@ const ERROR_CODE_TO_I18N_KEY: Readonly<Record<string, string>> = {
   plan_not_found: 'errorPlanUnavailable',
   plan_inactive: 'errorPlanUnavailable',
   invoice_creation_failed: 'errorInvoiceFailed',
-  // W0-17 — the confirm endpoint now rate-limits (10/1h); surface a clear
-  // "too many attempts" message instead of the generic server-error fallback.
+  // WP4/WP5 — a 409 when the member reached the server with a lower-priced
+  // plan but no ack (e.g. a stale client, or the ack lost in flight).
+  downgrade_not_acknowledged: 'errorDowngradeNotAcknowledged',
   rate_limited: 'errorRateLimited',
   network_error: 'errorNetwork',
 };
@@ -62,34 +70,39 @@ export interface RenewalPlanOption {
   readonly planId: string;
   readonly label: string;
   readonly annualFeeMinorUnits: number;
+  // WP5 — per-plan yearly benefit quotas for the downgrade dialog's "what
+  // changes" deltas. OPTIONAL: `listPlans` (the page's source) does not
+  // project `benefit_matrix`, so alternatives currently carry no quotas and
+  // the dialog shows only the price change (the concrete fact). Populated the
+  // moment the page has a benefit_matrix source. `null` = unlimited.
+  readonly quotas?: {
+    readonly eblast: number | null;
+    readonly culturalTickets: number | null;
+  };
 }
 
 interface RenewalConfirmFlowProps {
   readonly memberId: string;
   readonly cycleId: string;
-  // 070 (FR-022 / L2 security) — `planYear` removed. The §86/4 fiscal year
-  // is now derived SERVER-SIDE from the cycle (confirmRenewal →
-  // deriveFiscalYear(cycle.period_from)); the client no longer posts it, so
-  // it must not be a prop here (a client-supplied year cannot reach the tax
-  // document).
   readonly currentPlanId: string;
   readonly currentPlanLabel: string;
   readonly availablePlans: ReadonlyArray<RenewalPlanOption>;
+  // WP5 — the cycle's current frozen price (THB minor units). The price panel
+  // + the downgrade classification compare against this, NOT a live catalogue
+  // price, so what the member sees matches what the server bills.
+  readonly frozenPriceMinorUnits: number;
+  // WP5 — the member's current-cycle benefit consumption + current-plan quota,
+  // for the downgrade dialog's over-quota warning.
+  readonly benefitUsage: {
+    readonly eblast: { readonly used: number; readonly quota: number | null };
+    readonly culturalTickets: { readonly used: number; readonly quota: number | null };
+  };
 }
 
 /**
- * Round 4 simplify (post-K20): the original Round 2 fix added a single
- * sendBeacon block in the error path; K20 (Round 3 R3-S3) added a 2nd
- * structurally-identical block in the malformed-response path. Two
- * 22-LOC near-clones differing only by `code` is the DRY threshold
- * where extraction wins — Round 3 simplifier explicitly deferred this
- * with "1 callsite" rationale, no longer applies.
- *
- * Fire-and-forget beacon to `/api/internal/client-error` for SRE +
- * support correlation. All failures (no `navigator`, sendBeacon throw
- * on too-large/quota-exhausted) are silently swallowed — the visible
- * console.warn / console.error at the callsite + the `setError` UI
- * update are the user-visible handles.
+ * Fire-and-forget beacon to `/api/internal/client-error` for SRE + support
+ * correlation. All failures are swallowed — the console.warn/error at the
+ * callsite + the `setError` UI update are the user-visible handles.
  */
 function reportClientError(payload: {
   tag: string;
@@ -114,29 +127,53 @@ export function RenewalConfirmFlow({
   currentPlanId,
   currentPlanLabel,
   availablePlans,
+  frozenPriceMinorUnits,
+  benefitUsage,
 }: RenewalConfirmFlowProps) {
   const t = useTranslations('portal.renewal.confirm');
   const tSelector = useTranslations('portal.renewal.planChange');
-  // Default selection = current plan (no plan-change). The selector
-  // lists current + alternatives; selecting current is a no-op
-  // matching `newPlanId === cycle.planIdAtCycleStart` in T122.
+  const format = useFormatter();
+  // Default selection = current plan (no plan-change).
   const [selectedPlanId, setSelectedPlanId] = useState(currentPlanId);
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [downgradeDialogOpen, setDowngradeDialogOpen] = useState(false);
+  const errorRef = useRef<HTMLDivElement>(null);
 
-  const onConfirm = () => {
+  // Move focus to the error alert when it appears so a keyboard/SR user is
+  // taken straight to the failure (the alert is not an aria-live region — it
+  // is `role="alert"` + programmatically focused, C-7-adjacent).
+  useEffect(() => {
+    if (error) errorRef.current?.focus();
+  }, [error]);
+
+  const selectedPlan = availablePlans.find((p) => p.planId === selectedPlanId);
+  const newPriceMinorUnits = selectedPlan?.annualFeeMinorUnits ?? frozenPriceMinorUnits;
+  const isChange = selectedPlanId !== currentPlanId;
+  const isDowngrade =
+    isChange &&
+    requiresDowngradeAck(
+      classifyPlanPriceChange({
+        currentMinorUnits: frozenPriceMinorUnits,
+        targetMinorUnits: newPriceMinorUnits,
+      }),
+    );
+
+  const submitConfirm = (acknowledge: boolean) => {
+    setDowngradeDialogOpen(false);
     setError(null);
     startTransition(async () => {
       try {
-        // 070 — `planYear` is NOT posted: the server derives the §86/4
-        // fiscal year from the cycle. Only the cycleId (+ optional plan
-        // change) is client input.
         const body: {
           cycleId: string;
           newPlanId?: string;
+          acknowledgeDowngrade?: true;
         } = { cycleId };
         if (selectedPlanId !== currentPlanId) {
           body.newPlanId = selectedPlanId;
+        }
+        if (acknowledge) {
+          body.acknowledgeDowngrade = true;
         }
         const r = await fetch(
           `/api/portal/renewal/${encodeURIComponent(memberId)}/confirm`,
@@ -151,8 +188,6 @@ export function RenewalConfirmFlow({
             error?: { code?: string };
           };
           const code = payload.error?.code ?? `http_${r.status}`;
-          // C6 review-fix: log raw code for support correlation; user
-          // sees mapped i18n message (see ERROR_CODE_TO_I18N_KEY).
           console.warn('[renewal-confirm] error', { code, status: r.status });
           reportClientError({
             tag: 'renewal-confirm',
@@ -163,15 +198,6 @@ export function RenewalConfirmFlow({
           setError(code);
           return;
         }
-        // Round 3 review-fix (R3-S3): wrap success-path JSON parse so
-        // a malformed body (proxy injecting an HTML error page on a
-        // mid-deploy edge race, server bug emitting non-JSON 200, etc.)
-        // surfaces as a distinct `malformed_response` code instead of
-        // being mislabelled as `network_error` by the outer catch.
-        // The user-visible string still falls through to `errorGeneric`
-        // (no dedicated i18n key — the distinction matters for support
-        // correlation, not for the member's confusion-vs-confusion
-        // experience), but the beacon ships the precise tag.
         let payload: { pay_url?: string };
         try {
           payload = (await r.json()) as { pay_url?: string };
@@ -192,18 +218,54 @@ export function RenewalConfirmFlow({
           setError('missing_pay_url');
         }
       } catch (e) {
-        // Round 2 review-fix S-6: bind the caught error so a
-        // CSP / TypeError / abort distinction lands in the console
-        // instead of all looking like generic "network_error".
         console.error('[renewal-confirm] network error', e);
         setError('network_error');
       }
     });
   };
 
-  // Plans dropdown only renders when there is more than one option
-  // (otherwise there's nothing to "change" to).
+  const onConfirm = () => {
+    // A lower-priced switch requires the explicit two-step acknowledgement:
+    // open the dialog instead of posting. Every other case (upgrade, sidegrade,
+    // no change) submits immediately with no ack.
+    if (isDowngrade) {
+      setDowngradeDialogOpen(true);
+      return;
+    }
+    submitConfirm(false);
+  };
+
   const hasAlternatives = availablePlans.length > 1;
+  const grouped = groupPlanOptions({
+    plans: availablePlans,
+    currentPlanId,
+    currentPriceMinorUnits: frozenPriceMinorUnits,
+  });
+
+  const renderOption = (p: RenewalPlanOption) => (
+    <SelectItem key={p.planId} value={p.planId}>
+      {tSelector('optionWithPrice', {
+        label: p.label,
+        price: formatThbMinorUnits(format, p.annualFeeMinorUnits),
+      })}
+    </SelectItem>
+  );
+
+  // Downgrade dialog quota deltas — only when the (target) plan carries quotas.
+  const bodyQuotaProps = selectedPlan?.quotas
+    ? {
+        eblast: {
+          from: benefitUsage.eblast.quota,
+          to: selectedPlan.quotas.eblast,
+          used: benefitUsage.eblast.used,
+        },
+        culturalTickets: {
+          from: benefitUsage.culturalTickets.quota,
+          to: selectedPlan.quotas.culturalTickets,
+          used: benefitUsage.culturalTickets.used,
+        },
+      }
+    : {};
 
   return (
     <div className="flex flex-col gap-4">
@@ -220,14 +282,10 @@ export function RenewalConfirmFlow({
             disabled={isPending}
           >
             <SelectTrigger id="renewal-plan-select" className="w-full">
-              {/*
-                067 fix — Base UI's <Select.Value> renders the raw `value` (the
-                plan id, e.g. "regular"), NOT the selected item's text. Map the
-                id back to the localised plan name via the project's
-                TranslatedSelectValue so the collapsed trigger shows the name.
-                (The open dropdown options already render the name correctly —
-                this was a trigger-only defect.)
-              */}
+              {/* Base UI's <Select.Value> renders the raw value (plan id); map
+                  it back to the localised name via TranslatedSelectValue so the
+                  collapsed trigger shows the NAME only (prices live in the open
+                  list). */}
               <TranslatedSelectValue
                 placeholder={tSelector('placeholder', {
                   defaultLabel: currentPlanLabel,
@@ -238,54 +296,71 @@ export function RenewalConfirmFlow({
               />
             </SelectTrigger>
             <SelectContent>
-              {availablePlans.map((p) => (
-                <SelectItem key={p.planId} value={p.planId}>
-                  {p.label}
-                  {p.planId === currentPlanId
-                    ? ` · ${tSelector('currentSuffix')}`
-                    : ''}
-                </SelectItem>
-              ))}
+              {grouped.upgrade.length > 0 && (
+                <SelectGroup>
+                  <SelectLabel>{tSelector('groupUpgrade')}</SelectLabel>
+                  {grouped.upgrade.map(renderOption)}
+                </SelectGroup>
+              )}
+              {grouped.current.length > 0 && (
+                <SelectGroup>
+                  <SelectLabel>{tSelector('groupCurrent')}</SelectLabel>
+                  {grouped.current.map(renderOption)}
+                </SelectGroup>
+              )}
+              {grouped.downgrade.length > 0 && (
+                <SelectGroup>
+                  <SelectLabel>{tSelector('groupDowngrade')}</SelectLabel>
+                  {grouped.downgrade.map(renderOption)}
+                </SelectGroup>
+              )}
             </SelectContent>
           </Select>
-          {selectedPlanId !== currentPlanId && (
-            <p
-              className="text-xs text-muted-foreground"
-              aria-live="polite"
-            >
-              {tSelector('changeNotice')}
-            </p>
-          )}
         </div>
       )}
-      <Button
-        onClick={onConfirm}
-        disabled={isPending}
-        // S-6 polish: announce the loading state to assistive tech so a
-        // screen reader user hears "busy" while the F4 invoice is being
-        // issued (the network round-trip is typically 200-800ms — long
-        // enough that silence is jarring).
-        aria-busy={isPending}
-      >
+
+      {/* C-6 — mounted ALWAYS (outside `hasAlternatives`) so the price never
+          disappears for a single-plan tenant or a listPlans failure. */}
+      <PriceDiffPanel
+        currentPriceMinorUnits={frozenPriceMinorUnits}
+        newPriceMinorUnits={newPriceMinorUnits}
+      />
+
+      {isChange && (
+        <InlineAlert tone="warning" role="status">
+          <InlineAlertDescription>{tSelector('changeNotice')}</InlineAlertDescription>
+        </InlineAlert>
+      )}
+
+      <Button onClick={onConfirm} disabled={isPending} aria-busy={isPending}>
         {isPending ? t('busy') : t('cta')}
       </Button>
-      {/*
-        S-7 polish: when `selectedPlanId !== currentPlanId` the change
-        notice already lives above the CTA. The plan-change-notice
-        paragraph below the Select gets `aria-live='polite'` so a
-        screen reader hears the price-lock warning the moment the user
-        switches plans, instead of having to navigate back up.
-      */}
+
       {error && (
-        <p
-          role="alert"
-          aria-live="assertive"
-          className="text-sm text-destructive"
+        <InlineAlert
+          ref={errorRef}
+          tone="destructive"
+          tabIndex={-1}
           data-testid="confirm-error"
         >
-          {t(ERROR_CODE_TO_I18N_KEY[error] ?? 'errorGeneric')}
-        </p>
+          <InlineAlertDescription>
+            {t(ERROR_CODE_TO_I18N_KEY[error] ?? 'errorGeneric')}
+          </InlineAlertDescription>
+        </InlineAlert>
       )}
+
+      <AlertDialog open={downgradeDialogOpen} onOpenChange={setDowngradeDialogOpen}>
+        <DowngradeConfirmDialogBody
+          currentLabel={currentPlanLabel}
+          newLabel={selectedPlan?.label ?? selectedPlanId}
+          currentPriceMinorUnits={frozenPriceMinorUnits}
+          newPriceMinorUnits={newPriceMinorUnits}
+          submitting={isPending}
+          onConfirm={() => submitConfirm(true)}
+          onCancel={() => setDowngradeDialogOpen(false)}
+          {...bodyQuotaProps}
+        />
+      </AlertDialog>
     </div>
   );
 }

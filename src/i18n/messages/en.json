@@ -971,7 +971,31 @@
         "affectedCount": "{count, plural, =0 {No members affected} one {# member affected} other {# members affected}}",
         "confirm": "Confirm bundle change",
         "cancel": "Cancel",
-        "loading": "Calculating affected members…"
+        "loading": "Calculating affected members…",
+        "noBundle": "None"
+      },
+      "planChangeConfirm": {
+        "title": "Confirm plan change",
+        "description": "You are changing this member's membership plan. Review the change before saving.",
+        "currentPlan": "Current plan",
+        "newPlan": "New plan",
+        "feeLabel": "Annual fee (excl. VAT)",
+        "feeUnknown": "Not available",
+        "yearOnlyNotice": "Only the plan year changes. The plan itself stays the same.",
+        "billingNoteHeading": "What this does and does not change",
+        "billingNoteRecord": "The member's plan on record changes immediately.",
+        "billingNoteCurrentInvoice": "Invoices that have already been issued are not changed. If the amount is now wrong, reissue or credit them separately.",
+        "billingNoteFutureCycles": "Renewal billing is not updated automatically. The next renewal invoice will still use the previously recorded plan until the renewal cycle is changed separately.",
+        "billingNoteFutureCyclesAutomatic": "Future renewal cycles will bill the new plan automatically. The current renewal period keeps its recorded price until it renews.",
+        "confirm": "Change plan",
+        "cancel": "Cancel"
+      },
+      "planChangeResult": {
+        "applied_to_open_cycle": "The current renewal period now bills the new plan.",
+        "deferred_invoice_already_issued": "The current renewal's invoice has already been issued, so the new plan applies from the next renewal. To apply it now, void and reissue that invoice.",
+        "deferred_term_length_change": "The plans have different term lengths, so the new plan applies from the next renewal.",
+        "deferred_immediate_not_enabled": "The new plan applies from the next renewal.",
+        "no_open_cycle": "There is no active renewal cycle, so the new plan applies at the next renewal."
       },
       "subtitle": "Member companies + primary contacts",
       "directory": {
@@ -1430,6 +1454,7 @@
           "turnoverHint": "Used to place the member in a plan's turnover band.",
           "registeredCapitalThb": "Registered capital (THB)",
           "plan": "Plan",
+          "planAnnualFee": "Annual fee",
           "planPlaceholder": "Select a plan…",
           "billingCycle": "Billing cycle",
           "billingCyclePlaceholder": "Select a billing cycle…",
@@ -3670,6 +3695,12 @@
           "paid_invoice_volume_above_threshold": "Invoice volume above threshold",
           "multi_signal": "Multiple signals"
         },
+        "evidence": {
+          "declared_turnover_above_threshold": "Declared turnover {turnover} · threshold met {date}",
+          "paid_invoice_volume_above_threshold": "Paid invoices (12 mo) {volume} · threshold met {date}",
+          "multi_signal": "Declared turnover {turnover} · paid invoices (12 mo) {volume} · threshold met {date}",
+          "unavailable": "Evidence unavailable — verify manually before accepting"
+        },
         "empty_state": {
           "title": "No upgrade candidates this week",
           "subtitle": "The weekly evaluation cron found no members crossing an upgrade threshold.",
@@ -3691,20 +3722,41 @@
             "dialog_title": "Accept tier upgrade?",
             "confirm": "The upgrade will apply at the member's next renewal. The member will be notified by email and a verification task will be scheduled if the renewal is more than 180 days away.",
             "success": "Tier upgrade accepted",
-            "error": "Failed to accept tier upgrade"
+            "error": "Failed to accept tier upgrade",
+            "evidence_restated": "Evidence: {evidence}. This moves the member from {fromPlan} to {toPlan} — their annual fee changes on the next renewal invoice.",
+            "submitting": "Accepting…"
           },
           "dismiss": {
             "label": "Dismiss",
             "dialog_title": "Dismiss tier upgrade suggestion?",
             "confirm": "The suggestion will be closed and re-suggestion suppressed for 90 days. This action cannot be undone.",
             "success": "Suggestion dismissed",
-            "error": "Failed to dismiss suggestion"
+            "error": "Failed to dismiss suggestion",
+            "submitting": "Dismissing…"
           },
           "escalate": {
             "label": "Escalate",
             "success": "Outreach drafted",
             "error": "Failed to draft outreach"
           }
+        },
+        "loading": "Loading tier upgrade queue…",
+        "action_errors": {
+          "unknown": "Something went wrong. Please try again.",
+          "network_error": "We couldn't reach the server. Check your connection and try again.",
+          "http_error": "The server returned an unexpected response. Please try again.",
+          "read_only_mode": "The system is in maintenance mode and changes are paused. Please try again shortly.",
+          "csrf_rejected": "Your page is out of date. Reload the page and try again.",
+          "feature_disabled": "Renewal features are currently turned off. Contact an administrator.",
+          "no_session": "Your session has expired. Sign in again to continue.",
+          "forbidden": "You don't have permission to perform this action.",
+          "server_error": "Something went wrong on our side. Please try again.",
+          "invalid_body": "That request wasn't accepted. Reload the page and try again.",
+          "invalid_input": "That request wasn't accepted. Reload the page and try again.",
+          "suggestion_not_found": "This suggestion no longer exists. Refresh the queue to see the current list.",
+          "suggestion_not_open": "Someone already actioned this suggestion. Refresh the queue to see the current list.",
+          "no_active_cycle": "This member has no active renewal cycle, so the upgrade can't be scheduled yet.",
+          "plan_change_failed": "The plan change couldn't be applied. Please try again, or contact support if this continues."
         }
       },
       "tasks": {
@@ -5611,13 +5663,32 @@
         "errorPlanUnavailable": "The selected plan is no longer available.",
         "errorInvoiceFailed": "We couldn't generate your invoice. Please try again or contact support.",
         "errorRateLimited": "Too many renewal attempts. Please wait a few minutes and try again.",
-        "errorNetwork": "Connection issue. Please check your internet and try again."
+        "errorNetwork": "Connection issue. Please check your internet and try again.",
+        "errorDowngradeNotAcknowledged": "Please confirm the lower-priced plan change before continuing."
       },
       "planChange": {
         "label": "Choose a plan",
         "placeholder": "{defaultLabel}",
         "currentSuffix": "current",
-        "changeNotice": "Switching to a different plan will lock the new price on your renewal invoice."
+        "changeNotice": "Switching to a different plan will lock the new price on your renewal invoice.",
+        "groupUpgrade": "Higher-priced plans",
+        "groupCurrent": "Your current plan",
+        "groupDowngrade": "Lower-priced plans",
+        "optionWithPrice": "{label} — {price}",
+        "priceHeading": "Price change",
+        "priceCurrent": "Current locked-in price",
+        "priceNew": "New price",
+        "priceDelta": "Difference"
+      },
+      "downgrade": {
+        "title": "Confirm a lower-priced plan",
+        "description": "You are switching from {currentLabel} to {newLabel}. This lowers your renewal price and reduces some membership benefits.",
+        "losesHeading": "What changes",
+        "quotaEblast": "E-Blasts per year: {from} → {to}",
+        "quotaCulturalTickets": "Cultural event tickets per year: {from} → {to}",
+        "overQuotaWarning": "You have already used {used} of {benefitName} this cycle — more than the {quota} included in the new plan.",
+        "confirmCta": "Yes, switch to this plan",
+        "cancelCta": "Keep my current plan"
       },
       "onboarding": {
         "heading": "Welcome to your first renewal",
@@ -5793,6 +5864,7 @@
       "plan_cross_tenant_probe": "Cross-tenant probe (plans)",
       "fee_config_updated": "Fee configuration updated",
       "member_plan_manually_changed": "Plan changed manually",
+      "member_plan_change_billing_effect": "Plan change billing effect",
       "plan_change_scheduled": "Plan change scheduled",
       "plan_change_superseded": "Plan change superseded",
       "plan_change_cancelled": "Plan change cancelled",

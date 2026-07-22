@@ -450,6 +450,17 @@ export interface ProcessWebhookEventDeps {
       tx?: unknown,
     ) => Promise<void>
   >;
+  /**
+   * F8 cross-module POST-COMMIT hooks. Forwarded into the inner
+   * `confirmPayment` deps for the `payment_intent.succeeded` branch so the
+   * F2 scheduled-plan-change finaliser runs AFTER the settlement tx commits
+   * (it cannot run in-tx — self-deadlocks against the member-row lock).
+   * Composition root injects via `f8AfterCommitCallbacks(tenantId)` when
+   * `FEATURE_F8_RENEWALS=true`.
+   */
+  readonly onAfterCommitCallbacks?: ReadonlyArray<
+    (invoiceId: string) => Promise<void>
+  >;
 }
 
 /**
@@ -661,6 +672,13 @@ async function processWebhookEventBody(
            * unit-test paths exercise the absent-callbacks branch. */
           ...(deps.onPaidCallbacks !== undefined
             ? { onPaidCallbacks: deps.onPaidCallbacks }
+            : {}),
+          // F8 POST-COMMIT hooks (F2 finaliser) — fired after confirmPayment's
+          // settlement tx commits. `undefined` when FEATURE_F8_RENEWALS=false.
+          /* v8 ignore next 3 — F8 after-commit conditional spread; F4-only
+           * unit-test paths exercise the absent-callbacks branch. */
+          ...(deps.onAfterCommitCallbacks !== undefined
+            ? { onAfterCommitCallbacks: deps.onAfterCommitCallbacks }
             : {}),
         },
         {

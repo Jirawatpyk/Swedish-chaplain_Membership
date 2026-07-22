@@ -73,6 +73,20 @@ async function f8CallbacksFor(tenantId: string) {
 }
 
 /**
+ * F8 POST-COMMIT callbacks (the F2 scheduled-plan-change finaliser). Wired
+ * alongside the in-tx `f8CallbacksFor` on the webhook + confirm composition
+ * roots; the settlement-commit owner (`confirmPayment`) fires these AFTER its
+ * tx commits so the finaliser's `plan_change_applied` audit cannot deadlock
+ * against the member-row lock the settlement held. Same dynamic-import
+ * cold-start amortisation as `f8CallbacksFor`.
+ */
+async function f8AfterCommitFor(tenantId: string) {
+  if (!env.features.f8Renewals) return undefined;
+  const { f8AfterCommitCallbacks } = await import('@/modules/renewals');
+  return f8AfterCommitCallbacks(tenantId);
+}
+
+/**
  * Generate a fresh F5 Refund ID of the form `rfnd_<hex>` (mirrors
  * `generatePaymentId`). Stripped UUIDv4 → 32 hex chars inside the
  * Domain regex's allowed set; the `rfnd_` prefix is the F5 Refund
@@ -150,6 +164,7 @@ export async function makeProcessWebhookEventDeps(
   // async to await the dynamic F8 barrel import. Caller is
   // already async (Stripe webhook route handler).
   const f8Callbacks = await f8CallbacksFor(tenantId);
+  const f8AfterCommit = await f8AfterCommitFor(tenantId);
   return {
     paymentsRepo: makeDrizzlePaymentsRepo(tenantId),
     // CR-3 (review 2026-04-27): wire real refunds-repo so the
@@ -174,6 +189,9 @@ export async function makeProcessWebhookEventDeps(
     // through pino instead of console.warn.
     logger: paymentsLogger,
     ...(f8Callbacks !== undefined ? { onPaidCallbacks: f8Callbacks } : {}),
+    ...(f8AfterCommit !== undefined
+      ? { onAfterCommitCallbacks: f8AfterCommit }
+      : {}),
   };
 }
 
@@ -185,6 +203,7 @@ export async function makeConfirmPaymentDeps(
 ): Promise<ConfirmPaymentDeps> {
   // async to await the dynamic F8 barrel import.
   const f8Callbacks = await f8CallbacksFor(tenantId);
+  const f8AfterCommit = await f8AfterCommitFor(tenantId);
   return {
     paymentsRepo: makeDrizzlePaymentsRepo(tenantId),
     tenantSettingsRepo: makeDrizzleTenantPaymentSettingsRepo(),
@@ -202,6 +221,9 @@ export async function makeConfirmPaymentDeps(
     // dispatch tx can fold markProcessed in atomically.
     processorEventsRepo: makeDrizzleProcessorEventsRepo(),
     ...(f8Callbacks !== undefined ? { onPaidCallbacks: f8Callbacks } : {}),
+    ...(f8AfterCommit !== undefined
+      ? { onAfterCommitCallbacks: f8AfterCommit }
+      : {}),
     // review-20260428-102639.md H2 closure — structured logger for
     // Phase B catch on stale-refund path.
     logger: {

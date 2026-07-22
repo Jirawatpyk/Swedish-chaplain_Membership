@@ -28,6 +28,10 @@ import type { Member, MemberId } from '../../domain/member';
 import type { MemberRepo } from '../ports/member-repo';
 import type { AuditPort } from '../ports/audit-port';
 import type { PlanLookupPort } from '../ports/plan-lookup-port';
+import type {
+  PlanChangeBillingEffect,
+  PlanChangeBillingRemediationPort,
+} from '../ports/plan-change-billing-remediation-port';
 
 export const changePlanSchema = z.object({
   new_plan_id: z.string().min(1),
@@ -121,6 +125,19 @@ export type ChangePlanDeps = {
    * suggestions defensively).
    */
   manualPlanChangeListeners?: ReadonlyArray<ManualPlanChangeListener>;
+  /**
+   * Plan-change → billing remediation (Phase 2) — OPTIONAL renewals adapter
+   * that re-freezes the member's OPEN (not-yet-invoiced) renewal cycle to the
+   * new plan IN THE SAME tx as the plan flip. When undefined (unwired) OR the
+   * FEATURE_PLAN_CHANGE_IMMEDIATE_REFREEZE flag baked into the adapter is off,
+   * change-plan behaves exactly as Phase 1 (the change defers to the next
+   * cycle) — the cycle's frozen §86/4 fields are byte-identical. When set, it
+   * runs on the caller's `tx` (never a nested runInTenant) and returns the
+   * observed `BillingEffect`, threaded onto the ok payload for the UI. A throw
+   * from it rolls back the entire plan flip (atomic; Constitution Principle
+   * VIII).
+   */
+  applyPlanChangeToBilling?: PlanChangeBillingRemediationPort;
 };
 
 export type ChangePlanCallMeta = {
@@ -128,12 +145,24 @@ export type ChangePlanCallMeta = {
   requestId: string;
 };
 
+/**
+ * `changePlan` ok payload. `member` is the flipped member row; `billingEffect`
+ * is the Phase-2 open-cycle remediation outcome (null when the remediation dep
+ * is unwired, or on the no-op short-circuit). A later UI task renders "applied
+ * now" (`applied_to_open_cycle`) vs "applies next cycle" (the `deferred_*` /
+ * `no_open_cycle` variants).
+ */
+export type ChangePlanSuccess = {
+  member: Member;
+  billingEffect: PlanChangeBillingEffect | null;
+};
+
 export async function changePlan(
   memberId: MemberId,
   input: unknown,
   meta: ChangePlanCallMeta,
   deps: ChangePlanDeps,
-): Promise<Result<Member, ChangePlanError>> {
+): Promise<Result<ChangePlanSuccess, ChangePlanError>> {
   const parsed = changePlanSchema.safeParse(input);
   if (!parsed.success) {
     return err({
@@ -169,12 +198,12 @@ export async function changePlan(
   }
   const current = currentResult.value;
 
-  // Short-circuit: no-op plan change
+  // Short-circuit: no-op plan change (nothing to re-freeze either).
   if (
     (current.planId as string) === data.new_plan_id &&
     current.planYear === data.new_plan_year
   ) {
-    return ok(current);
+    return ok({ member: current, billingEffect: null });
   }
 
   // Load new + old plan metadata
@@ -246,6 +275,10 @@ export async function changePlan(
   // is hoisted here so the POST-COMMIT F8 listener event (dispatched
   // after this tx returns) can carry the exact pre-flip plan id.
   let lockedOldPlanId = '';
+  // Phase 2 — the open-cycle remediation outcome, captured inside the tx so it
+  // can be threaded onto the ok payload after COMMIT. Null when the remediation
+  // dep is unwired (Phase-1 behaviour).
+  let billingEffect: PlanChangeBillingEffect | null = null;
   try {
     const updatedMember = await runInTenant(deps.tenant, async (tx) => {
       // W0-02 — acquire the shared soft-delete advisory lock on the NEW plan
@@ -379,6 +412,30 @@ export async function changePlan(
         }
       }
 
+      // Phase 2 — immediate mid-cycle re-freeze of the member's OPEN
+      // (not-yet-invoiced) renewal cycle to the just-flipped plan. Runs on THIS
+      // tx (never a nested runInTenant) so the re-freeze + its
+      // `member_plan_change_billing_effect` audit commit ATOMICALLY with the
+      // plan flip + the F3 audits above (Constitution Principle VIII). A throw
+      // rolls the whole plan flip back. Optional dep — when unwired, Phase-1
+      // behaviour is byte-identical (the change defers to the next cycle).
+      // `locked.planId` is the pre-flip plan id (read under the FOR UPDATE
+      // lock), so the audit records the exact old plan even under a race.
+      if (deps.applyPlanChangeToBilling) {
+        billingEffect = await deps.applyPlanChangeToBilling.applyPlanChangeToBillingInTx(
+          tx,
+          {
+            tenantId: deps.tenant.slug,
+            memberId: memberId as string,
+            oldPlanId: locked.planId as string,
+            newPlanId: data.new_plan_id,
+            newPlanYear: data.new_plan_year,
+            actorUserId: meta.actorUserId,
+            correlationId: meta.requestId,
+          },
+        );
+      }
+
       return updated.value;
     });
 
@@ -430,7 +487,7 @@ export async function changePlan(
       }
     }
 
-    return ok(updatedMember);
+    return ok({ member: updatedMember, billingEffect });
   } catch (e) {
     if (e instanceof TxAbort) {
       if (e.detail.type === 'not_found') {

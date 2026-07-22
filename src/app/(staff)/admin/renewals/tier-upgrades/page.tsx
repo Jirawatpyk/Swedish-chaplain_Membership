@@ -21,11 +21,14 @@ import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { formatLocalisedDate } from '@/lib/format-date-localised';
 import { makeRenewalsDeps } from '@/modules/renewals';
 import { TierUpgradeQueueClient } from './_components/tier-upgrade-queue';
+import { parseTierUpgradeEvidenceView } from './_lib/tier-upgrade-queue-item';
 import { RenewalsErrorRetry } from '../_components/renewals-error-retry';
 import { RenewalsSectionTabs } from '../_components/renewals-section-tabs';
 import { fetchPlanDisplay } from '../[cycleId]/_lib/cycle-detail-fetchers';
+import { fetchPendingReviewCompanyNames } from '../_lib/pending-review-enrichment';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.renewals.tier_upgrades');
@@ -80,31 +83,60 @@ export default async function TierUpgradeQueuePage() {
   // ≤10 items, so N queries is acceptable; no batch-plan endpoint
   // exists yet — matches the cycle-detail-fetchers pattern).
   const planNameMap = new Map<string, string>();
+  // P1-9 — resolve each suggestion's member COMPANY NAME in ONE batched,
+  // RLS-scoped read (reuses the pending-review enrichment helper), so the
+  // queue links a human name to `/admin/members/[id]` instead of a raw
+  // 8-char UUID slice. A member absent from the map (archived / hidden)
+  // degrades to the id, exactly as the escalation-task queue does.
+  let companyNames: ReadonlyMap<string, string> = new Map<string, string>();
   if (!hasError && queueItems.length > 0) {
     const uniquePlanIds = new Set<string>();
     for (const s of queueItems) {
       uniquePlanIds.add(s.fromPlanId);
       uniquePlanIds.add(s.toPlanId);
     }
-    await Promise.allSettled(
-      Array.from(uniquePlanIds).map(async (planId) => {
-        try {
-          const display = await fetchPlanDisplay({
-            tenantSlug: tenantCtx.slug,
-            planId,
-            locale,
-          });
-          if (display) planNameMap.set(planId, display.localisedName);
-        } catch (e) {
-          // Non-fatal: fall back to rendering the ID.
-          logger.warn(
-            { planId, err: e instanceof Error ? e : new Error(String(e)) },
-            'admin.renewals.tier-upgrades.plan_name_lookup_failed',
-          );
-        }
+    const [, companyNamesResult] = await Promise.all([
+      Promise.allSettled(
+        Array.from(uniquePlanIds).map(async (planId) => {
+          try {
+            const display = await fetchPlanDisplay({
+              tenantSlug: tenantCtx.slug,
+              planId,
+              locale,
+            });
+            if (display) planNameMap.set(planId, display.localisedName);
+          } catch (e) {
+            // Non-fatal: fall back to rendering the ID.
+            logger.warn(
+              { planId, err: e instanceof Error ? e : new Error(String(e)) },
+              'admin.renewals.tier-upgrades.plan_name_lookup_failed',
+            );
+          }
+        }),
+      ),
+      fetchPendingReviewCompanyNames({
+        tenantSlug: tenantCtx.slug,
+        memberIds: queueItems.map((s) => s.memberId),
+      }).catch((e: unknown) => {
+        // Non-fatal: fall back to rendering the member-id slice.
+        logger.warn(
+          { err: e instanceof Error ? e : new Error(String(e)) },
+          'admin.renewals.tier-upgrades.company_name_lookup_failed',
+        );
+        return new Map<string, string>();
       }),
-    );
+    ]);
+    companyNames = companyNamesResult;
   }
+
+  // Format the threshold date SERVER-side (locale + Buddhist-Era + Bangkok TZ)
+  // so the client never receives a raw ISO instant to reformat. Bound to
+  // `locale` here; `Asia/Bangkok` avoids an off-by-one near UTC midnight.
+  const formatThresholdDate = (iso: string): string =>
+    formatLocalisedDate(iso, locale, {
+      dateStyle: 'medium',
+      timeZone: 'Asia/Bangkok',
+    });
 
   return (
     <TableContainer>
@@ -147,6 +179,15 @@ export default async function TierUpgradeQueuePage() {
           items={queueItems.map((s) => {
             const fromPlanName = planNameMap.get(s.fromPlanId);
             const toPlanName = planNameMap.get(s.toPlanId);
+            const companyName = companyNames.get(s.memberId);
+            // Validate + pre-format the evidence at the presentation
+            // boundary; a malformed/mismatched shape becomes `null` → the
+            // client renders the localised "verify manually" line.
+            const evidence = parseTierUpgradeEvidenceView(
+              s.reasonCode,
+              s.evidence,
+              formatThresholdDate,
+            );
             return {
               suggestionId: s.suggestionId,
               memberId: s.memberId,
@@ -158,7 +199,9 @@ export default async function TierUpgradeQueuePage() {
               ...(fromPlanName !== undefined ? { fromPlanName } : {}),
               toPlanId: s.toPlanId,
               ...(toPlanName !== undefined ? { toPlanName } : {}),
+              ...(companyName !== undefined ? { companyName } : {}),
               reasonCode: s.reasonCode,
+              evidence,
               createdAt: s.createdAt,
             };
           })}

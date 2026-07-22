@@ -420,7 +420,20 @@ export function makeGetCreditNotePdfSignedUrlDeps(
   };
 }
 
-export function makeVoidInvoiceDeps(tenantId: string): VoidInvoiceDeps {
+/**
+ * @param tenantId - tenant slug the deps are bound to.
+ * @param onMembershipInvoiceVoidedInTx - OPTIONAL Phase-2 Step-2.4 renewals
+ *   seam. When supplied (the void route wires the renewals
+ *   `makeVoidInvoiceCycleUnlink` closure through the barrel when
+ *   FEATURE_F8_RENEWALS is on), a membership void ALSO clears the cycle's
+ *   `linked_invoice_id` on the void's Phase-1 tx. Omitted → the void behaves
+ *   exactly as before (no clear); the `issueMembershipBill` void-on-reissue
+ *   composition leaves it unwired.
+ */
+export function makeVoidInvoiceDeps(
+  tenantId: string,
+  onMembershipInvoiceVoidedInTx?: VoidInvoiceDeps['onMembershipInvoiceVoidedInTx'],
+): VoidInvoiceDeps {
   return {
     invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
     tenantSettingsRepo: drizzleTenantSettingsRepo,
@@ -434,6 +447,9 @@ export function makeVoidInvoiceDeps(tenantId: string): VoidInvoiceDeps {
     // `requireStatus:'issued'` (an unpaid bill → no payment → guard reads 0),
     // so void-on-reissue is never blocked.
     pendingRefundGuard: makePendingRefundGuard(),
+    ...(onMembershipInvoiceVoidedInTx !== undefined
+      ? { onMembershipInvoiceVoidedInTx }
+      : {}),
   };
 }
 

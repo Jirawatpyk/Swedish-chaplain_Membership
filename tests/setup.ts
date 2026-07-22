@@ -42,6 +42,26 @@ const TEST_PLACEHOLDERS: Record<string, string> = {
   // forced-flag block below the loop.
   EVENTCREATE_PII_PSEUDONYM_SALT:
     'dGVzdC1mNi1zYWx0LXBsYWNlaG9sZGVyLWF0LWxlYXN0LTMyLWJ5dGVzLWxvbmctZW5vdWdoLWFhYQo=',
+  // Single-tenant deployment slug (F1+) — matches env.ts's [a-z0-9-]{1,63}.
+  TENANT_SLUG: 'test-tenant',
+  // F5 Payments (Stripe). Test-mode placeholders satisfy the
+  // sk_test_/pk_test_/whsec_ prefix refines in src/lib/env.ts; a suite that
+  // needs real Stripe behaviour overrides these locally. Required at boot
+  // once any barrel that transitively imports env.ts is loaded (e.g. the
+  // architecture barrel-guard suite, which runs with NO .env.local in CI).
+  STRIPE_SECRET_KEY: 'sk_test_placeholder',
+  NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: 'pk_test_placeholder',
+  STRIPE_WEBHOOK_SECRET: 'whsec_test_placeholder',
+  STRIPE_ACCOUNT_ID_SWECHAM: 'acct_test_placeholder',
+  // F7 Broadcasts (Resend Broadcasts) — a separate key/secret/from-address
+  // pool from the F1/F4 transactional Resend above.
+  RESEND_BROADCASTS_API_KEY: 're_test_broadcasts_placeholder',
+  RESEND_BROADCASTS_WEBHOOK_SECRET:
+    'test-broadcasts-webhook-secret-at-least-32-chars-pad',
+  BROADCASTS_FROM_EMAIL: 'broadcasts@zyncdata.app',
+  // ≥32 bytes AND distinct from AUTH_COOKIE_SIGNING_SECRET above.
+  UNSUBSCRIBE_TOKEN_SECRET:
+    'test-unsubscribe-token-secret-32-chars-min-distinct',
 };
 
 for (const [key, value] of Object.entries(TEST_PLACEHOLDERS)) {

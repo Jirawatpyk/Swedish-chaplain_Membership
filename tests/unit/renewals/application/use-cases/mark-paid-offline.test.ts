@@ -195,6 +195,26 @@ function fakeDeps(
       currency: 'THB' as const,
     },
   }));
+  // Package A — the next-cycle seed now reads the member's live plan. Return
+  // the (prior) cycle's plan so livePlanId === priorPlanId (no divergence),
+  // keeping the on-paid next-cycle creation unchanged for these tests.
+  const loadMemberPlanInTxMock = vi.fn(async () => ({
+    planId: (cycle?.planIdAtCycleStart as string) ?? 'plan-x',
+    isArchived: false,
+  }));
+  // Package B1 — tier-upgrade apply flips members.plan_id via this writer.
+  // Default no-op echo (the apply path only runs when a pending suggestion is
+  // driven; unrelated tests never touch it).
+  const memberPlanWriterMock = vi.fn(
+    async (
+      _tx: unknown,
+      _tenantId: string,
+      _memberId: string,
+      planId: string,
+      planYear: number,
+    ) => ({ planId, planYear }),
+  );
+  const planChangeBillingEffectEmitMock = vi.fn(async () => {});
   // 070 Item D — tier-upgrade apply (in-tx) seam. Default: no pending
   // suggestion for the cycle, so the apply is a clean no-op (the existing
   // happy-path / error-path tests stay green). A targeted test overrides
@@ -318,6 +338,17 @@ function fakeDeps(
     // cycle-id generator from `deps.cycleIdFactory` (was an inline literal).
     // Provide a deterministic generator so the next-cycle insert resolves.
     cycleIdFactory: { cycleId: () => asCycleId(VALID_UUID) },
+    // Package A — seed-next-cycle-from-member-plan deps.
+    memberPlanLookup: {
+      loadMemberPlanInTx: loadMemberPlanInTxMock,
+    } as unknown as RenewalsDeps['memberPlanLookup'],
+    // Package B1 — tier-upgrade apply flips members.plan_id via this writer.
+    memberPlanWriter: {
+      writePlanIdInTx: memberPlanWriterMock,
+    } as unknown as RenewalsDeps['memberPlanWriter'],
+    planChangeBillingEffectAudit: {
+      emitInTx: planChangeBillingEffectEmitMock,
+    } as unknown as RenewalsDeps['planChangeBillingEffectAudit'],
   } as unknown as RenewalsDeps;
   return {
     deps,
@@ -1128,6 +1159,44 @@ describe('markPaidOffline — error paths', () => {
       // would have given 2028-06-01 if the regression returned.
       expect(r.value.newExpiresAt).toBe('2028-09-01T00:00:00.000Z');
     }
+  });
+
+  // Split-brain guard — the §86/4's plan identity + fiscal year MUST come from
+  // the SAME (locked) snapshot as its price. Before this fix `planId`/`planYear`
+  // were read from the PRE-LOCK snapshot (mark-paid-offline.ts:345-346) while
+  // `frozenPlanPriceThb` was read from the LOCKED cycle (:644), so a plan change
+  // landing between the pre-lock read and the lock acquisition would mint a tax
+  // document carrying one plan's identity/year and another plan's price. Sibling
+  // of the W-05 newExpiresAt guard above.
+  it('sources planId + planYear from the LOCKED cycle, coherent with the frozen price (split-brain)', async () => {
+    const preLoadCycle = buildCycle({
+      planIdAtCycleStart: 'regular',
+      periodFrom: '2025-06-01T00:00:00Z', // fiscal year 2025
+      periodTo: '2026-06-01T00:00:00Z',
+      frozenPlanPriceThb: '18000.00' as ThbDecimal,
+    });
+    const lockedCycle = buildCycle({
+      planIdAtCycleStart: 'premium',
+      periodFrom: '2026-06-01T00:00:00Z', // fiscal year 2026 (concurrent shift)
+      periodTo: '2027-06-01T00:00:00Z',
+      frozenPlanPriceThb: '60000.00' as ThbDecimal,
+    });
+    const { deps, bridgeMock } = fakeDeps(preLoadCycle);
+    (
+      deps.cyclesRepo.findByIdInTx as ReturnType<typeof vi.fn>
+    ).mockResolvedValueOnce(lockedCycle);
+
+    await markPaidOffline(deps, baseInput);
+
+    // All three cycle-sourced §86/4 inputs come from the locked snapshot —
+    // never a mix of pre-lock identity with post-lock price.
+    expect(bridgeMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        planId: 'premium',
+        planYear: 2026,
+        frozenPlanPriceThb: '60000.00',
+      }),
+    );
   });
 
   // Round 3 IM2 regression-detector — guards against a future F4 contract

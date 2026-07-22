@@ -20,6 +20,8 @@ vi.mock('next-intl', () => ({
   // mock above is a full replace (not `importOriginal` partial), so it
   // must also stub this export or the render throws.
   useLocale: () => 'en',
+  // WP2 — MembershipSection now calls useFormatter() for the plan fee.
+  useFormatter: () => ({ number: (value: number) => String(value) }),
 }));
 
 import {

@@ -50,6 +50,20 @@ vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },
 }));
 
+// F8 flag OFF — the Step-2.4 cycle-unlink seam is only wired when
+// FEATURE_F8_RENEWALS is on, and this suite pins the HTTP boundary only. Keep
+// the route off the @/modules/renewals dynamic import (pay-route-guard parity).
+vi.mock('@/lib/env', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/env')>();
+  return {
+    ...actual,
+    env: {
+      ...actual.env,
+      features: { ...actual.env.features, f8Renewals: false },
+    },
+  };
+});
+
 vi.mock('@/modules/invoicing', async (importOriginal) => {
   // Keep the real schema + parseInvoiceId so the route's validation boundary is
   // exercised for real; override only the use-case + deps factory.

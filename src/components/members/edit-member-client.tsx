@@ -47,6 +47,12 @@ import {
   type MemberInitialValues,
   type EditablePrimaryContact,
 } from './edit-member-payloads';
+import {
+  buildPlanChangeSummary,
+  type PlanChangeSummary,
+} from './plan-change-summary';
+import { PlanChangeConfirmDialog } from './plan-change-confirm-dialog';
+import { resolveBundlePlanLabel } from './resolve-bundle-plan-label';
 
 // MemberInitialValues + EditablePrimaryContact are defined alongside the
 // pure payload builders in ./edit-member-payloads (imported above).
@@ -59,6 +65,38 @@ type Props = {
 
 import { uuid } from '@/lib/uuid';
 
+/**
+ * The billing consequence of a manual plan change, as computed server-side
+ * during the PATCH and returned on `billing_effect.effect`. Mirrors
+ * `PlanChangeBillingEffectKind` from the members port
+ * (src/modules/members/application/ports/plan-change-billing-remediation-port.ts).
+ * Kept as a LOCAL union — not imported — so this client bundle never pulls a
+ * server module (the port file imports `@/lib/db`); the effect arrives as a
+ * plain JSON string. A server effect outside this set degrades gracefully to
+ * the plain success toast (see `isKnownPlanChangeEffect`).
+ */
+type PlanChangeBillingEffectKind =
+  | 'applied_to_open_cycle'
+  | 'deferred_invoice_already_issued'
+  | 'deferred_term_length_change'
+  | 'deferred_immediate_not_enabled'
+  | 'no_open_cycle';
+
+const KNOWN_PLAN_CHANGE_EFFECTS: readonly PlanChangeBillingEffectKind[] = [
+  'applied_to_open_cycle',
+  'deferred_invoice_already_issued',
+  'deferred_term_length_change',
+  'deferred_immediate_not_enabled',
+  'no_open_cycle',
+];
+
+function isKnownPlanChangeEffect(v: unknown): v is PlanChangeBillingEffectKind {
+  return (
+    typeof v === 'string' &&
+    (KNOWN_PLAN_CHANGE_EFFECTS as readonly string[]).includes(v)
+  );
+}
+
 export function EditMemberClient({ member, plans, primaryContact }: Props) {
   const t = useTranslations('admin.members.edit');
   // mapMemberCreateServerError returns i18n keys relative to the
@@ -66,8 +104,13 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
   // them through this translator so the edit form reuses the same messages.
   const tCreate = useTranslations('admin.members.create');
   const tOverride = useTranslations('admin.members.overrideReason');
+  // Effect-specific copy for the post-success plan-change toast (keyed by the
+  // server-computed `billing_effect.effect` discriminator).
+  const tPlanResult = useTranslations('admin.members.planChangeResult');
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
+  const [planConfirmState, setPlanConfirmState] =
+    useState<PlanChangeSummary | null>(null);
   const [bundleState, setBundleState] = useState<BundleChangePayload | null>(null);
   const [overrideState, setOverrideState] = useState<{ message: string } | null>(
     null,
@@ -165,27 +208,69 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
     return false;
   };
 
-  const handleSuccess = () => {
-    toast.success(t('success'));
+  // Rotate the idempotency key + navigate to the detail page. Shared by the
+  // plain and plan-change success handlers.
+  const redirectAfterSave = () => {
     idemKeyRef.current = uuid();
     router.push(`/admin/members/${member.memberId}`);
     router.refresh();
   };
 
+  const handleSuccess = () => {
+    toast.success(t('success'));
+    redirectAfterSave();
+  };
+
+  /**
+   * Plan-change success. The PATCH response carries a server-computed
+   * `billing_effect` discriminator (applied-now vs applies-next-cycle); when it
+   * is a known effect, describe the ACTUAL billing outcome. An absent / null /
+   * unknown effect (the flag-off default until the Phase-2 renewals dep is
+   * wired) degrades to the plain success toast — no regression.
+   */
+  const handlePlanChangeSuccess = (effect: unknown) => {
+    if (isKnownPlanChangeEffect(effect)) {
+      toast.success(t('success'), { description: tPlanResult(effect) });
+    } else {
+      toast.success(t('success'));
+    }
+    redirectAfterSave();
+  };
+
   const handleResponse = async (res: Response) => {
     if (res.ok) {
-      handleSuccess();
+      // The ok-branch here is reached ONLY from the plan-change paths
+      // (runSubmit step 4, bundle-confirm, override-confirm) — the member-field
+      // / contact steps handle their own success inline and call handleResponse
+      // only on failure. So the response body is the plan-change payload, whose
+      // `billing_effect.effect` drives the toast copy.
+      const body = (await res.json().catch(() => null)) as {
+        billing_effect?: { effect?: unknown } | null;
+      } | null;
+      handlePlanChangeSuccess(body?.billing_effect?.effect ?? null);
       return;
     }
     const body = await res.json().catch(() => ({}));
     const code = body?.error?.code;
     if (res.status === 409 && code === 'bundle_change_requires_confirmation') {
       const details = body.error.details ?? {};
+      const oldBundleId = details.oldBundleCorporatePlanId ?? null;
+      const newBundleId = details.newBundleCorporatePlanId ?? null;
+      // BP5 item 6 — resolve the corporate bundle slugs to human names so the
+      // warning dialog isn't a pair of font-mono UUIDs. Old bundle is matched
+      // in the member's current plan year; new bundle in the year being saved.
+      const newPlanYear = lastValuesRef.current?.plan_year ?? member.planYear;
       setBundleState({
-        oldBundleCorporatePlanId: details.oldBundleCorporatePlanId ?? null,
-        newBundleCorporatePlanId: details.newBundleCorporatePlanId ?? null,
+        oldBundleCorporatePlanId: oldBundleId,
+        newBundleCorporatePlanId: newBundleId,
         oldPlanId: member.planId,
         oldPlanYear: member.planYear,
+        oldBundleLabel: resolveBundlePlanLabel(
+          plans,
+          oldBundleId,
+          member.planYear,
+        ),
+        newBundleLabel: resolveBundlePlanLabel(plans, newBundleId, newPlanYear),
       });
       return;
     }
@@ -272,7 +357,12 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
     return body;
   };
 
-  const onSubmit = async (values: MemberFormValues) => {
+  /**
+   * The full member-edit submit sequence (member fields → contact fields →
+   * contact email → plan change LAST). Reached ONLY after the plan-change
+   * confirm gate for a plan change, or directly for a non-plan edit.
+   */
+  const runSubmit = async (values: MemberFormValues) => {
     lastValuesRef.current = values;
     setServerFieldError(null);
     setSubmitting(true);
@@ -351,6 +441,38 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  /**
+   * Thin form-submit gate. A plan change (new plan_id OR plan_year) is gated
+   * behind an unconditional confirm dialog BEFORE any network request; a
+   * non-plan edit submits immediately. This gate returns before `setSubmitting`
+   * / any fetch, so it composes cleanly with the server-driven 409 bundle /
+   * 422 override dialogs — those open post-request from inside `runSubmit` and
+   * therefore can never race or double-prompt with this pre-request gate.
+   */
+  const onSubmit = async (values: MemberFormValues) => {
+    if (planChanged(values)) {
+      lastValuesRef.current = values;
+      setPlanConfirmState(
+        buildPlanChangeSummary(
+          plans,
+          member.planId,
+          member.planYear,
+          values.plan_id,
+          values.plan_year,
+        ),
+      );
+      return;
+    }
+    await runSubmit(values);
+  };
+
+  /** Admin confirmed the plan change → run the real submit with the same values. */
+  const onPlanConfirm = async () => {
+    if (!lastValuesRef.current) return;
+    setPlanConfirmState(null);
+    await runSubmit(lastValuesRef.current);
   };
 
   const onBundleConfirm = async () => {
@@ -456,6 +578,15 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
         onCancel={() => router.push(`/admin/members/${member.memberId}`)}
         mode="edit"
         serverFieldError={serverFieldError}
+      />
+      <PlanChangeConfirmDialog
+        open={planConfirmState !== null}
+        onOpenChange={(next) => {
+          if (!next) setPlanConfirmState(null);
+        }}
+        summary={planConfirmState}
+        onConfirm={onPlanConfirm}
+        submitting={submitting}
       />
       <BundleChangeWarningDialog
         open={bundleState !== null}

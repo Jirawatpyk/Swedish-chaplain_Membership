@@ -148,6 +148,30 @@ export interface VoidInvoiceDeps {
   readonly recipientLocale: RecipientLocalePort;
   /** 8A — non-locking count of in-flight refunds (guards the void). */
   readonly pendingRefundGuard: PendingRefundGuardPort;
+  /**
+   * Plan-change / void-on-reissue unlink (Phase 2, Step 2.4) — OPTIONAL renewals
+   * seam. When wired, a MEMBERSHIP invoice void ALSO clears the
+   * `renewal_cycles.linked_invoice_id` that pointed at the just-voided invoice,
+   * so a subsequent re-issue can re-link a fresh invoice id (the voided invoice
+   * no longer validly links the cycle; `linkInvoice`'s
+   * `WHERE linked_invoice_id IS NULL OR = $new` guard would otherwise refuse).
+   *
+   * Invoicing OWNS the contract (a plain closure, not a full port) so the
+   * dependency arrow points renewals → invoicing (Constitution Principle III);
+   * the IMPLEMENTATION is a renewals adapter (`makeVoidInvoiceCycleUnlink`)
+   * reaching the F8 cycle repo. Invoked INSIDE the Phase-1 `withTx` (threading
+   * that same `tx`) so the clear commits ATOMICALLY with the void + the
+   * `invoice_voided` audit.
+   *
+   * `undefined` for non-renewals / unwired callers (e.g. the `issueMembershipBill`
+   * void-on-reissue path) → the void behaves EXACTLY as before (no clear). NOT
+   * gated on FEATURE_PLAN_CHANGE_IMMEDIATE_REFREEZE — a voided invoice never
+   * validly links a cycle regardless of that flag.
+   */
+  readonly onMembershipInvoiceVoidedInTx?: (
+    tx: unknown,
+    args: { readonly tenantId: string; readonly invoiceId: string },
+  ) => Promise<void>;
 }
 
 // `sanitiseErrorReason` moved to `../lib/sanitise-error-reason` so
@@ -428,6 +452,27 @@ export async function voidInvoice(
           // to a cancellation email. Integrity check preempts that
           // by permanently-failing the row.
           expectedPdfSha256: targetA.rendered.sha256,
+        });
+      }
+
+      // H. Plan-change / void-on-reissue unlink (Phase 2, Step 2.4). For a
+      // MEMBERSHIP void, clear any `renewal_cycles.linked_invoice_id` that
+      // pointed at this now-voided §86/4 so a reissue can re-link a fresh
+      // invoice id. Runs on THIS Phase-1 tx (threaded) so the clear commits
+      // atomically with the void + the invoice_voided audit above. The seam
+      // touches only `renewal_cycles` (not `members`), so it does NOT contend
+      // with the member-row lock the invoice_voided audit trigger just took on
+      // this same tx — no deadlock. A renewals infra failure THROWS → the whole
+      // void rolls back (fail-safe). Skipped for EVENT / non-member invoices
+      // (they never link a renewal cycle) and for unwired callers (the seam is
+      // OPTIONAL — the void-on-reissue path leaves it undefined).
+      if (
+        deps.onMembershipInvoiceVoidedInTx &&
+        loaded.invoiceSubject === 'membership'
+      ) {
+        await deps.onMembershipInvoiceVoidedInTx(tx, {
+          tenantId: input.tenantId,
+          invoiceId,
         });
       }
 

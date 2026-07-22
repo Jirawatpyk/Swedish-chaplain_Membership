@@ -19,8 +19,13 @@
  *     `_internal.finaliseF2ScheduledPlanChangeForCycle` in
  *     `src/modules/renewals/infrastructure/_lib/apply-tier-upgrade-on-paid-callback.ts:41-164`
  *     (F2 state apply lives there).
- *   - F4 invoice-creation hook reads the effective plan via
- *     `getEffectivePlanForRenewal` (no write).
+ *
+ * The next renewal invoice is priced against the member's effective plan by
+ * reading `members.plan_id` at next-cycle seed time — the plan-change apply
+ * paths keep that column current. (An earlier design routed this through a
+ * `getEffectivePlanForRenewal` resolver, removed as dead code in Package B2;
+ * it had zero call sites and required an un-implementable plans→members
+ * dependency inversion.)
  *
  * Pure Application code — no framework imports (Constitution Principle III).
  */

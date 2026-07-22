@@ -184,6 +184,16 @@ export {
   type MembershipPaymentClassification,
 } from './domain/classify-membership-payment';
 
+// WP3 — plan price-change classifier (shared by the portal client grouping/
+// downgrade gate + the server confirmRenewal refusal). Also re-exported from
+// `client.ts` (matches the TIER_BUCKETS precedent) so the client bundle picks
+// it up without dragging the server graph.
+export {
+  classifyPlanPriceChange,
+  requiresDowngradeAck,
+  type PlanPriceChange,
+} from './domain/plan-price-change';
+
 // --- Application ports (Wave E T041-T051) -----------------------------------
 // Pure interfaces — no adapter implementations until Wave G+.
 export {
@@ -717,8 +727,10 @@ export {
 // invoice-paid callback + the offline admin mark-paid path.
 export {
   finaliseF2PlanChangeOnPaid,
+  finaliseF2PlanChangeForPaidInvoiceOnline,
   defaultOnlineF2Actor,
   type FinaliseF2Actor,
+  type FinaliseF2PaidTarget,
 } from './application/use-cases/finalise-f2-plan-change-on-paid';
 
 export {
@@ -785,6 +797,23 @@ export {
 export {
   f8OnManualPlanChangeCallbacks,
 } from './infrastructure/ports-adapters/f2-plan-change-bridge';
+
+// Plan-change → billing remediation (Phase 2) — renewals adapter implementing
+// the MEMBERS-owned `PlanChangeBillingRemediationPort`. The route + members
+// deps wire it (gated on FEATURE_PLAN_CHANGE_IMMEDIATE_REFREEZE) into
+// `changePlan` so a manual plan change ALSO re-freezes the OPEN cycle.
+export {
+  makePlanChangeBillingRemediation,
+} from './infrastructure/ports-adapters/plan-change-billing-remediation-drizzle';
+
+// Void-invoice → renewal-cycle unlink (Phase 2, Step 2.4) — renewals adapter for
+// the INVOICING-owned `onMembershipInvoiceVoidedInTx` void seam. The void route
+// wires it (when FEATURE_F8_RENEWALS is on) so a membership void ALSO clears the
+// `renewal_cycles.linked_invoice_id` that pointed at the voided §86/4 — freeing
+// a reissue to re-link a fresh invoice id.
+export {
+  makeVoidInvoiceCycleUnlink,
+} from './infrastructure/ports-adapters/void-invoice-cycle-unlink-drizzle';
 
 // F8-completion Slice 1 · Task 1.6 — F3 → F8 create-member onboarding
 // bridge (factory for the listener array consumed by F3's `createMember`
@@ -870,5 +899,6 @@ export {
   // on the directory hot path).
   makeMembersMembershipStatusDeps,
   f8OnPaidCallbacks,
+  f8AfterCommitCallbacks,
 } from './infrastructure/renewals-deps';
 export type { RenewalsDeps } from './infrastructure/renewals-deps';

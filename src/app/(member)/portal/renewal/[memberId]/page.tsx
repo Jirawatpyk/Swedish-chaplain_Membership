@@ -22,6 +22,11 @@ import { Card, CardContent } from '@/components/ui/card';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { deriveFiscalYear } from '@/lib/fiscal-year';
+import {
+  parseThbDecimal,
+  parseThbDecimalToSatang,
+  satangToProcessorAmount,
+} from '@/lib/money';
 import { logger } from '@/lib/logger';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { asPlanYear, listPlans } from '@/modules/plans';
@@ -33,7 +38,8 @@ import { RenewalConfirmFlow, type RenewalPlanOption } from './_components/renewa
 // Round-3 test-coverage I1 fix: locale fallback resolver extracted
 // to a testable utility module so the en/th/sv branching is covered
 // by a unit test instead of relying on E2E for behavioural pinning.
-import { resolvePlanName } from './_lib/resolve-plan-name';
+// Promoted to `@/lib/` (plan-change UX P1-8) so admin surfaces share it.
+import { resolvePlanName } from '@/lib/resolve-plan-name';
 // 059-membership-suspension Task 9 item 4 — payability-gate predicate,
 // extracted for unit-testability (see `_lib/is-renewal-payable.ts`).
 import { isRenewalPayable } from './_lib/is-renewal-payable';
@@ -170,13 +176,39 @@ export default async function RenewalPortalPage({
   const tierKey = summary.tierAtCycleStart;
   const tierLabel = tTier.has(tierKey) ? tTier(tierKey) : `${tierKey} (untranslated)`;
 
-  // UX R5/C1: format the frozen plan price via Intl currency rather
-  // than emitting `36000.00 THB` raw — this is the price shown right
-  // before the renewal CTA, so it must read as money to the member.
-  const frozenPriceFormatted = formatter.number(Number(summary.frozenPlanPriceThb), {
-    style: 'currency',
-    currency: summary.frozenPlanCurrency ?? 'THB',
-  });
+  // WP5 — the frozen price now renders inside the confirm flow's
+  // <PriceDiffPanel> (client), so the page passes it as THB minor units. The
+  // summary DTO carries `frozenPlanPriceThb` as a BARE decimal string (C-3),
+  // so re-validate + convert through the audited money helpers. Guarded
+  // (B6): a malformed value (should be impossible — the DB CHECK enforces
+  // decimal(12,2)) falls back to 0 so the panel still renders.
+  let frozenPriceMinorUnits = 0;
+  try {
+    frozenPriceMinorUnits = satangToProcessorAmount(
+      parseThbDecimalToSatang(parseThbDecimal(summary.frozenPlanPriceThb)),
+    );
+  } catch {
+    logger.warn(
+      {
+        cycleId: summary.cycleId,
+        frozenPlanPriceThb: summary.frozenPlanPriceThb,
+      },
+      '[renewal-page] malformed frozenPlanPriceThb — price panel shows 0',
+    );
+  }
+
+  // WP5 — the member's current-cycle benefit consumption + current-plan quota,
+  // for the downgrade dialog's over-quota warning. `summary.benefits` is the
+  // F9 consumption reader's per-key (used, quota) view of the CURRENT plan.
+  const eblastEntry = summary.benefits.find((b) => b.key === 'eblast');
+  const culturalEntry = summary.benefits.find((b) => b.key === 'cultural_ticket');
+  const benefitUsage = {
+    eblast: { used: eblastEntry?.used ?? 0, quota: eblastEntry?.quota ?? null },
+    culturalTickets: {
+      used: culturalEntry?.used ?? 0,
+      quota: culturalEntry?.quota ?? null,
+    },
+  };
 
   return (
     <DetailContainer>
@@ -208,8 +240,8 @@ export default async function RenewalPortalPage({
             <dd>{currentPlanLabel}</dd>
             <dt className="text-muted-foreground">{tField('tier')}</dt>
             <dd>{tierLabel}</dd>
-            <dt className="text-muted-foreground">{tField('frozenPrice')}</dt>
-            <dd>{frozenPriceFormatted}</dd>
+            {/* WP5 — the frozen price moved to the confirm flow's
+                <PriceDiffPanel>, where it reads as current-vs-new money. */}
             <dt className="text-muted-foreground">{tField('term')}</dt>
             <dd>{tField('termMonths', { count: summary.frozenPlanTermMonths })}</dd>
             <dt className="text-muted-foreground">{tField('expiry')}</dt>
@@ -260,6 +292,8 @@ export default async function RenewalPortalPage({
               currentPlanId={summary.planIdAtCycleStart}
               currentPlanLabel={currentPlanLabel}
               availablePlans={availablePlans}
+              frozenPriceMinorUnits={frozenPriceMinorUnits}
+              benefitUsage={benefitUsage}
             />
           </CardContent>
         </Card>
