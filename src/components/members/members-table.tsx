@@ -559,7 +559,17 @@ export function MembersTable({
         const row = info.row.original;
         const label = displayName ?? row.plan_id;
         return (
-          <span title={row.plan_id} className="text-sm whitespace-nowrap">
+          // 057 overflow fix — `whitespace-normal break-words` replaces
+          // `whitespace-nowrap`. Under `table-fixed` + <colgroup>, nowrap
+          // content wider than the 150px column PAINTS OVER the next column
+          // (td is overflow:visible). Wrapping keeps a long plan name inside
+          // its column; short names still render on one line, so row density
+          // is unchanged for the common case. `break-words` covers a single
+          // long token with no spaces.
+          <span
+            title={row.plan_id}
+            className="text-sm whitespace-normal break-words"
+          >
             {label}
             <span aria-hidden="true"> · </span>
             {row.plan_year}
@@ -613,7 +623,13 @@ export function MembersTable({
       // InlineStatusCell <button>. Inside the button it would fire the status
       // toggle on click and pollute the button's accessible name.
       cell: (info) => (
-        <span className="inline-flex items-center gap-1.5">
+        // 057 overflow fix — the status control plus a Lapsed/Suspended badge
+        // exceeds the 130px column when laid out horizontally and painted over
+        // the Engagement column. Stacking drops the badge onto its own line.
+        // The badge MUST stay a sibling of InlineStatusCell (never a child) —
+        // inside the <button> it would fire the status toggle and pollute the
+        // button's accessible name.
+        <span className="flex flex-col items-start gap-1">
           {enableSelection ? (
             <InlineStatusCell
               memberId={info.row.original.member_id}
