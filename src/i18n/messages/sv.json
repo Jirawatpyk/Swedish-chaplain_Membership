@@ -1071,6 +1071,11 @@
           "notInvited": "Ej inbjuden",
           "notInvitedSr": "Ingen portalinbjudan har skickats"
         },
+        "portalChip": {
+          "label": "Behöver portalinbjudan",
+          "aria": "Behöver portalinbjudan, {count} medlemmar",
+          "unavailable": "Portalstatus ej tillgänglig"
+        },
         "tableCaption": "Medlemsregister"
       },
       "emptyStates": {
@@ -1083,6 +1088,11 @@
           "title": "Inga medlemmar matchar filtren",
           "description": "Försök rensa ett eller flera filter.",
           "cta": "Rensa filter"
+        },
+        "allInvited": {
+          "title": "Alla har blivit inbjudna",
+          "description": "Alla medlemmar som matchar dessa filter har redan en portalinbjudan.",
+          "cta": "Visa alla medlemmar"
         },
         "error": {
           "title": "Kunde inte ladda medlemmar",

@@ -892,6 +892,12 @@ export function MembersTable({
 
   return (
     <div className="flex flex-col gap-4" ref={tableContainerRef}>
+      {/* Result-count live region — announces the row count on ANY filter
+          change (not only the selection count above), so screen-reader users
+          hear the table update after e.g. toggling the needs-invite chip. */}
+      <div className="sr-only" role="status">
+        {t('resultsCount', { count: rows.length })}
+      </div>
       {enableSelection && selectedCount > 0 && (
         <div
           className="sr-only"

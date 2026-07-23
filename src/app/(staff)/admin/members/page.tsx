@@ -60,6 +60,7 @@ import { MembersTableSkeleton } from '@/components/members/members-table-skeleto
 import {
   MembersZeroState,
   MembersFilteredEmptyState,
+  MembersAllInvitedEmptyState,
   MembersErrorState,
 } from '@/components/members/empty-states';
 import { DirectoryWithBulk } from './_components/directory-with-bulk';
@@ -403,11 +404,18 @@ export async function MembersDirectoryBody({
     return (
       <>
         <DirectoryFilters plans={planOptions} portalInviteCount={portalInviteCount} />
-        {/* Task 11 adds the dedicated "all invited" empty state for
-            portalNeedsInvite; until then `hasFilters` (which folds in
-            portalNeedsInvite) at least keeps this OFF the "no members
-            yet" onboarding screen for a filtered-to-zero directory. */}
-        {hasFilters ? <MembersFilteredEmptyState /> : <MembersZeroState />}
+        {/* Task 11 — the needs-invite chip filtered to zero rows gets its own
+            "everyone has been invited" state (design doc §3.6/§3.7), distinct
+            from the generic "no members match these filters" state used by
+            every other filter combination. `hasFilters` (which folds in
+            portalNeedsInvite) still gates the zero-members onboarding screen. */}
+        {portalNeedsInvite ? (
+          <MembersAllInvitedEmptyState />
+        ) : hasFilters ? (
+          <MembersFilteredEmptyState />
+        ) : (
+          <MembersZeroState />
+        )}
       </>
     );
   }

@@ -1071,6 +1071,11 @@
           "notInvited": "Not invited",
           "notInvitedSr": "No portal invitation sent yet"
         },
+        "portalChip": {
+          "label": "Needs portal invite",
+          "aria": "Needs portal invite, {count} members",
+          "unavailable": "Portal status unavailable"
+        },
         "tableCaption": "Members directory"
       },
       "emptyStates": {
@@ -1083,6 +1088,11 @@
           "title": "No members match these filters",
           "description": "Try clearing one or more filters.",
           "cta": "Clear filters"
+        },
+        "allInvited": {
+          "title": "Everyone has been invited",
+          "description": "Every member matching these filters already has a portal invitation.",
+          "cta": "Show all members"
         },
         "error": {
           "title": "Could not load members",

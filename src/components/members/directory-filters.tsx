@@ -13,7 +13,7 @@
 import { useCallback, useRef, useState, useTransition } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { SearchIcon, XIcon } from 'lucide-react';
+import { MailWarningIcon, SearchIcon, XIcon } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { FilterBar } from '@/components/ui/filter-bar';
@@ -53,14 +53,14 @@ export type PlanOption = {
 type Props = {
   readonly plans?: readonly PlanOption[];
   /**
-   * Needs-invite chip count (design doc §3.7). `null` = read failed
-   * (unavailable), `number` = live count. Task 11 renders the chip itself —
-   * this task only threads the value through.
+   * Members matching the current filters that still need a portal invite.
+   * `null` = the count could not be read; the chip renders disabled rather
+   * than claiming zero (an absent chip means "no work left").
    */
   readonly portalInviteCount?: number | null;
 };
 
-export function DirectoryFilters({ plans = [] }: Props) {
+export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
   const t = useTranslations('admin.members.directory');
   const router = useRouter();
   const pathname = usePathname();
@@ -72,6 +72,20 @@ export function DirectoryFilters({ plans = [] }: Props) {
   const currentStatus = searchParams.get('status') ?? 'all';
   const currentPlan = searchParams.get('plan_id') ?? 'all';
   const currentRisk = searchParams.get('risk_band') ?? 'all';
+
+  const portalActive = searchParams.get('portal') === 'needs_invite';
+  // The chip must survive its own click: turning the filter off at count 0
+  // would otherwise unmount the button that was just pressed, dropping focus
+  // to <body> — a failure axe never catches.
+  const [chipWasVisible, setChipWasVisible] = useState(
+    portalActive || (portalInviteCount ?? 0) > 0,
+  );
+  const showChip =
+    portalActive ||
+    portalInviteCount === null ||
+    (portalInviteCount ?? 0) > 0 ||
+    chipWasVisible;
+  if (!showChip && chipWasVisible) setChipWasVisible(false);
 
   // The search box is a CONTROLLED input (Base UI's FieldControl warns on
   // uncontrolled defaultValue being mutated — the previous `key={currentQ}` +
@@ -130,11 +144,14 @@ export function DirectoryFilters({ plans = [] }: Props) {
     Boolean(currentQ) ||
     currentStatus !== 'all' ||
     currentPlan !== 'all' ||
-    currentRisk !== 'all';
+    currentRisk !== 'all' ||
+    // Without this the Clear button never renders when the chip is the only
+    // active filter — and clearAll() below becomes unreachable.
+    portalActive;
   const clearAll = () => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     setSearchValue('');
-    pushUrl({ q: null, status: null, plan_id: null, risk_band: null });
+    pushUrl({ q: null, status: null, plan_id: null, risk_band: null, portal: null });
   };
 
   return (
@@ -236,6 +253,32 @@ export function DirectoryFilters({ plans = [] }: Props) {
           ))}
         </SelectContent>
       </Select>
+
+      {showChip && (
+        <Button
+          type="button"
+          variant={portalActive ? 'secondary' : 'outline'}
+          size="sm"
+          aria-pressed={portalActive}
+          disabled={portalInviteCount === null}
+          // Always toggle through pushUrl — it strips `cursor`/`page` and uses
+          // scroll:false. Setting ?portal= directly from page 3 would land on
+          // page 3 of a one-page result: an empty table with no explanation.
+          onClick={() => pushUrl({ portal: portalActive ? null : 'needs_invite' })}
+          aria-label={
+            portalInviteCount === null
+              ? t('portalChip.unavailable')
+              : t('portalChip.aria', { count: portalInviteCount ?? 0 })
+          }
+          className="whitespace-nowrap"
+        >
+          <MailWarningIcon className="size-4" aria-hidden />
+          <span aria-hidden="true">
+            {t('portalChip.label')}
+            {portalInviteCount !== null ? ` · ${portalInviteCount}` : ''}
+          </span>
+        </Button>
+      )}
 
       {hasAnyFilter && (
         <Button
