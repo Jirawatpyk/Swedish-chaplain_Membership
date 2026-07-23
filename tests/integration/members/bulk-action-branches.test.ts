@@ -65,6 +65,7 @@ function stubDeps(overrides?: Partial<BulkActionDeps>): BulkActionDeps {
       updateFieldsInTx: vi.fn().mockResolvedValue(ok(stubMember)),
       searchDirectory: vi.fn(),
       searchDirectoryWithCount: vi.fn(),
+      countMembersNeedingPortalInvite: vi.fn(),
       // F7 Batch C extensions (T029) — interface compliance stubs.
       findMembersBySegmentForBroadcast: vi.fn(),
       findMembersHaltedForBroadcast: vi.fn(),

@@ -243,6 +243,9 @@ function buildDirectoryWhere(
     isNull(members.erasedAt),
     or(...statuses.map((s) => eq(members.status, s)))!,
     ...(filter.q ? [directoryQFilter(filter.q)] : []),
+    ...(filter.portalNeedsInvite
+      ? [portalNeedsInviteFilter(filter.portalNeedsInvite.now)]
+      : []),
     ...buildDirectoryConds(filter),
   )!;
 }
@@ -268,6 +271,47 @@ function directoryQFilter(q: string) {
                       OR c.email ILIKE ${like}))`,
     ...(num !== null ? [eq(members.memberNumber, num)] : []),
   )!;
+}
+
+/**
+ * "Primary contact needs a portal invite" — never invited, or holding only
+ * expired unconsumed invitations (design doc §3.7).
+ *
+ * Raw `sql` template with every column table-qualified. Do NOT rebuild this
+ * with the query builder unless every table is `alias()`-ed: unqualified
+ * columns in a builder subquery resolve against the inner FROM and collapse
+ * the WHERE to always-true (see directoryPlanNameSubquery, git 8e71812).
+ *
+ * Only `user_id` / `consumed_at` / `expires_at` are referenced — the columns
+ * `chamber_app` may read (migration 0017). Referencing `id` raises 42501.
+ */
+function portalNeedsInviteFilter(now: Date): SQL {
+  const nowIso = now.toISOString();
+  return sql`
+    EXISTS (
+      SELECT 1 FROM contacts c
+       WHERE c.tenant_id = ${members.tenantId}
+         AND c.member_id = ${members.memberId}
+         AND c.is_primary = true
+         AND c.removed_at IS NULL
+         AND (
+               c.linked_user_id IS NULL
+            OR (
+                  EXISTS (SELECT 1 FROM invitations i
+                           WHERE i.user_id = c.linked_user_id
+                             AND i.consumed_at IS NULL)
+              AND NOT EXISTS (SELECT 1 FROM invitations i2
+                               WHERE i2.user_id = c.linked_user_id
+                                 AND i2.consumed_at IS NULL
+                                 AND i2.expires_at > ${nowIso}::timestamptz)
+              AND NOT EXISTS (SELECT 1 FROM invitations ci
+                               WHERE ci.user_id = c.linked_user_id
+                                 AND ci.consumed_at IS NOT NULL)
+            )
+         )
+    )
+    AND ${members.status} <> 'archived'
+  `;
 }
 
 /**
@@ -1049,6 +1093,25 @@ export const drizzleMemberRepo: MemberRepo = {
       );
 
       return ok({ items, total: result.total });
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
+
+  async countMembersNeedingPortalInvite(ctx, filter) {
+    try {
+      const n = await runInTenant(ctx, async (tx) => {
+        const whereClause = buildDirectoryWhere({
+          ...filter,
+          portalNeedsInvite: filter.portalNeedsInvite ?? { now: new Date() },
+        });
+        const rows = await tx
+          .select({ n: sql<number>`count(*)::int` })
+          .from(members)
+          .where(whereClause);
+        return rows[0]?.n ?? 0;
+      });
+      return ok(n);
     } catch (e) {
       return err(unexpected(e));
     }

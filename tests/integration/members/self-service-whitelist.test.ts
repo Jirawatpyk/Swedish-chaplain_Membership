@@ -101,6 +101,7 @@ function makeStubDeps(): MemberSelfUpdateDeps {
       ok({ ...baseMember, ...patch } as Member),
     searchDirectory: async () => ok({ items: [], nextCursor: null }),
     searchDirectoryWithCount: async () => ok({ items: [], total: 0 }),
+    countMembersNeedingPortalInvite: async () => ok(0),
     // F7 Batch C extensions (T029) — interface compliance stubs.
     findMembersBySegmentForBroadcast: async () => ok([]),
     findMembersHaltedForBroadcast: async () => ok([]),

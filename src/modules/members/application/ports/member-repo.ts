@@ -31,6 +31,19 @@ export type DirectoryFilter = {
    * excluded from the filtered result.
    */
   readonly riskBand?: RiskBand | readonly RiskBand[];
+  /**
+   * Needs-invite chip (design doc 2026-07-23 §3.7, D5/D6). When present,
+   * restricts the result to members whose PRIMARY contact either was never
+   * invited or holds only expired unconsumed invitations.
+   *
+   * Modelled as an object carrying `now` rather than a boolean plus a separate
+   * optional timestamp so the compiler enforces D8: the badge and this filter
+   * must judge expiry against the same instant.
+   *
+   * MUST be declared on BOTH filter types — they are independent declarations
+   * and the admin page uses only the offset one.
+   */
+  readonly portalNeedsInvite?: { readonly now: Date };
   readonly limit: number;
   readonly cursor?: string;
 };
@@ -48,6 +61,19 @@ export type DirectoryOffsetFilter = {
   readonly country?: string;
   readonly planId?: string;
   readonly riskBand?: RiskBand | readonly RiskBand[];
+  /**
+   * Needs-invite chip (design doc 2026-07-23 §3.7, D5/D6). When present,
+   * restricts the result to members whose PRIMARY contact either was never
+   * invited or holds only expired unconsumed invitations.
+   *
+   * Modelled as an object carrying `now` rather than a boolean plus a separate
+   * optional timestamp so the compiler enforces D8: the badge and this filter
+   * must judge expiry against the same instant.
+   *
+   * MUST be declared on BOTH filter types — they are independent declarations
+   * and the admin page uses only the offset one.
+   */
+  readonly portalNeedsInvite?: { readonly now: Date };
   /**
    * Sort column (FR-007a). `engagement` orders by the F8 risk score inverted
    * (engagement = 100 − risk): `desc` (default) = healthiest first; `asc` =
@@ -566,6 +592,17 @@ export interface MemberRepo {
       RepoError
     >
   >;
+
+  /**
+   * COUNT(*) of members matching `filter` AND needing a portal invite.
+   * Backs the directory's needs-invite chip. `limit`/`offset`/`sort` on the
+   * filter are ignored. `portalNeedsInvite` is forced on internally, so the
+   * count is always scoped to the same filters the visible list uses (D7).
+   */
+  countMembersNeedingPortalInvite(
+    ctx: TenantContext,
+    filter: DirectoryOffsetFilter,
+  ): Promise<Result<number, RepoError>>;
 
   /**
    * F7 US3 AS2 — most-recent `member_plan_changed` audit timestamp
