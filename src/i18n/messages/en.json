@@ -1004,7 +1004,7 @@
         "searchSrLabel": "Search members",
         "clearFilters": "Clear filters",
         "activeFilters": "Active filters",
-        "removeFilter": "Remove filter: {filter}",
+        "removeFilter": "Remove {filter}",
         "filterChip": {
           "search": "Search: {q}",
           "status": "Status: {value}",

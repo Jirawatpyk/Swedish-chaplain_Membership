@@ -1004,7 +1004,7 @@
         "searchSrLabel": "ค้นหาสมาชิก",
         "clearFilters": "ล้างตัวกรอง",
         "activeFilters": "ตัวกรองที่ใช้อยู่",
-        "removeFilter": "เอาตัวกรองออก: {filter}",
+        "removeFilter": "เอา {filter} ออก",
         "filterChip": {
           "search": "ค้นหา: {q}",
           "status": "สถานะ: {value}",

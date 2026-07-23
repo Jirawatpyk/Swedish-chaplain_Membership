@@ -71,7 +71,7 @@ describe('active-filter chips', () => {
   it('clicking a chip × clears ONLY that filter, keeping the others', () => {
     renderFilters('status=active&plan_id=p1');
     fireEvent.click(
-      screen.getByRole('button', { name: /remove filter: status: active/i }),
+      screen.getByRole('button', { name: /remove status: active/i }),
     );
     expect(nav.replaceMock).toHaveBeenCalledTimes(1);
     const url = nav.replaceMock.mock.calls[0]?.[0] as string;

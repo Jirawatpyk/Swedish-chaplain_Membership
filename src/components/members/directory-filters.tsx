@@ -362,7 +362,11 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
     </FilterBar>
 
     {activeChips.length > 0 && (
-      <div className="flex flex-wrap items-center gap-2" aria-label={t('activeFilters')}>
+      <div
+        role="group"
+        aria-label={t('activeFilters')}
+        className="flex flex-wrap items-center gap-2"
+      >
         {activeChips.map((chip) => (
           <span
             key={chip.key}
@@ -375,8 +379,11 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
               type="button"
               // Removing a chip unmounts it; move focus to the always-present
               // search input first so it never drops to <body> (mirrors
-              // `onPortalToggle`'s focus handling).
+              // `onPortalToggle`'s focus handling). Also cancel any in-flight
+              // debounced keystroke so removing the search chip can't be
+              // re-pushed ~300ms later (harmless no-op for the other chips).
               onClick={() => {
+                if (debounceRef.current) clearTimeout(debounceRef.current);
                 chip.onRemove();
                 searchInputRef.current?.focus();
               }}

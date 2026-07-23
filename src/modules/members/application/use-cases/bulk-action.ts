@@ -316,10 +316,20 @@ export async function bulkAction(
           case 'unarchive': {
             // Inverse of `archive` — restores archived → active within the
             // 90-day undelete window (domain `undelete`). Symmetric with the
-            // bulk archive arm above (status + audit only; like bulk archive it
-            // does NOT run the single-undelete session/renewal-cascade, because
-            // bulk archive did not run the matching cascade either). Powers the
-            // "Undo" on the bulk-archive success toast.
+            // bulk archive arm above: status + audit ONLY.
+            //
+            // ⚠️ UNDO-OF-BULK-ARCHIVE ONLY. This arm intentionally omits the
+            // renewals-RESTORE cascade that the single `undeleteMember` use case
+            // runs (`renewalsCascade.restoreForMember`). That is correct here
+            // because bulk `archive` never CANCELS a renewal cycle (it has no
+            // `sessions`/`renewalsCascade` deps), so there is nothing to restore
+            // when undoing it. The only caller today is the bulk-archive success
+            // toast's Undo, which posts exactly the ids it just bulk-archived.
+            // DO NOT surface this arm as a general "Restore" (e.g. a standalone
+            // bulk-restore button) without first wiring the renewals-restore
+            // cascade — a member archived via the SINGLE archive path (which
+            // DOES cancel the cycle) would otherwise come back `active` with no
+            // active renewal cycle (silent pipeline drop). See undelete-member.ts.
             const undeleteResult = undelete(current, now);
             if (!undeleteResult.ok) {
               throw new BulkStateError(memberId, undeleteResult.error.code);
@@ -349,6 +359,13 @@ export async function bulkAction(
             break;
           }
 
+          default: {
+            // Exhaustiveness guard: a future action added to the zod enum
+            // without a case here would otherwise fall through and be recorded
+            // in `updatedIds` below as a phantom success (no write, no audit).
+            const _never: never = data.action;
+            throw new Error(`unhandled bulk action: ${String(_never)}`);
+          }
         }
 
         // Every member that reaches here transitioned successfully (any
