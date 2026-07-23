@@ -130,7 +130,17 @@ export type VoidInvoiceError =
    * stranded `pending` forever. Refuse (409); the admin retries once the refund
    * settles. UNCONDITIONAL — a void has no refund-origin variant (unlike a CN).
    */
-  | { code: 'refund_in_progress' };
+  | { code: 'refund_in_progress' }
+  /**
+   * H1 — a PAID membership §86/4 tax invoice may NOT be voided. Voiding a paid
+   * §86/4 writes NOTHING to `payments` (the settled money is stranded) and,
+   * combined with the effective-paid retract (#24), double-charges the member on
+   * restore/comeback. The correct reversal is a §86/10 CREDIT NOTE (→ `credited`,
+   * real refund). Refuse (409). MEMBERSHIP-ONLY: event/non-member rows drive no
+   * renewal cycle (no double-charge) and the legacy no-TIN remediation runbook
+   * (Step 2.1) must still void event rows.
+   */
+  | { code: 'paid_membership_requires_credit_note' };
 
 class VoidInvoiceInternalError extends TxAbort<VoidInvoiceError> {
   override readonly name = 'VoidInvoiceInternalError';
