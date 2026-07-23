@@ -2682,7 +2682,7 @@
           "refreshAction": "Refresh",
           "codeFallback": "Error code: {code}",
           "refundInProgress": "A refund is currently being processed on this invoice's payment. Voiding now could conflict with it — wait until the refund settles, then try again.",
-          "paidMembershipRequiresCreditNote": "This paid membership invoice can't be voided. To reverse it and refund the member, issue a credit note instead."
+          "paidMembershipRequiresCreditNote": "This paid membership invoice can't be voided. To reverse it, issue a credit note instead."
         }
       }
     },
