@@ -1102,6 +1102,28 @@ describe('issueCreditNote — M1 retains_coverage derivation (Option 1b)', () =>
     expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
     expect(insertedRetainsCoverage(deps)).toBe(false);
   });
+
+  it('membership + FULL credit + UNEXPECTED membershipEffect (defence-in-depth) → retains_coverage FALSE', async () => {
+    // The TRUE arm is a strict `=== 'keep'`, NOT a bare `: true`. Today only
+    // 'keep' can reach it (the `membership_effect_required` gate rejects
+    // undefined, and the enum is 2-value), so this is behaviour-preserving — but
+    // if an unexpected/future effect ever bypasses the enum, the safe direction
+    // is to NOT retain coverage (a spurious retract is far less harmful than a
+    // silent under-bill). The route's zod (issueCreditNoteSchema) rejects this
+    // at the boundary; the use-case consumes the input directly, so we cast past
+    // the 2-value enum to pin the guard. With the old `: true` this derived TRUE.
+    const invoice = makeMembershipInvoice();
+    const deps = makeDeps(invoice, makeSettings());
+    const r = await issueCreditNote(deps, {
+      ...baseInput,
+      requestId: 'req-m1-unknown',
+      creditTotalSatang: 25_000n, // full
+      reason: 'defence-in-depth: an unexpected membership effect must not retain coverage',
+      membershipEffect: 'unexpected_future_effect' as unknown as 'keep',
+    });
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
+    expect(insertedRetainsCoverage(deps)).toBe(false);
+  });
 });
 
 // ---- 088 US6 — CREDITED annotation re-targets the §86/4 TAX RECEIPT ----------

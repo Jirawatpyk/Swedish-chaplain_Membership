@@ -53,6 +53,9 @@ const { GET: reconcileCron } = await import(
 const { vercelBlobAdapter } = await import(
   '@/modules/invoicing/infrastructure/adapters/vercel-blob-adapter'
 );
+const { reactPdfRenderAdapter } = await import(
+  '@/modules/invoicing/infrastructure/adapters/react-pdf-render-adapter'
+);
 
 const MATRIX: BenefitMatrix = {
   eblast_per_year: 1,
@@ -554,5 +557,99 @@ describe('void-pdf-reconcile cron (bug 10)', () => {
     const row = await readMarker(invoiceId);
     expect(row?.attempts).toBe(1); // timeout → throw → catch → bump
     expect(row?.pendingAt).not.toBeNull();
+  }, 60_000);
+
+  // ── Two-blob (paid §86/4 + §105 receipt) FAILURE legs ────────────────────
+  // H1 refuses a void-of-paid-membership, so the two-blob VOID-stamp path is now
+  // reachable ONLY here — the cron re-rendering LEGACY pre-H1 voided-paid rows.
+  // The deleted void-invoice unit tests "e2" (receipt render fail) + "e4"
+  // (Phase-2 receipt upload fail) covered that path on the (now-refused)
+  // use-case; D11/D12 restore that coverage through the surviving cron entry
+  // point. D10 above is the two-blob HAPPY path; these are its failure legs.
+
+  it('D11 — two-blob void: a receipt (targetB) UPLOAD failure rolls back BOTH sha syncs, bumps, stays pending (all-or-nothing per tick)', async () => {
+    // Mirrors the deleted "e4" (Phase-2 receipt upload failure) — but the cron's
+    // semantic is STRICTER: both targets sync inside ONE tx, so a targetB upload
+    // failure ALSO rolls back targetA's sha sync (never signal "stamped" while
+    // the receipt copy is still un-stamped). See route § "All-or-nothing per tick".
+    const invoiceId = await seedMarkedVoid({
+      voidReason: 'two-blob receipt upload fails',
+      seq: 13,
+      attempts: 1,
+      receipt: { docNumberRaw: 'VPRC-2026-000913' },
+    });
+    const upload = vercelBlobAdapter.uploadPdf as ReturnType<typeof vi.fn>;
+    upload.mockClear();
+    // Key-based (contamination-proof regardless of scan order): the main §86/4
+    // blob (`_v1.pdf`) uploads fine; the separate §86/4 receipt blob
+    // (`_receipt.pdf` — targetB) throws.
+    upload.mockImplementation(async (i: { key: string }) => {
+      if (i.key.includes('_receipt.pdf')) throw new Error('receipt blob outage');
+      return { key: i.key, url: `https://blob.test/${i.key}` };
+    });
+    try {
+      const res = await reconcileCron(cronReq());
+      expect(res.status).toBe(200);
+
+      const row = await readMarker(invoiceId);
+      // All-or-nothing: targetA's sha sync REVERTED with targetB's — NEITHER the
+      // main nor the receipt sha advanced to the freshly-rendered value.
+      expect(row?.pdfSha256).toBe('a'.repeat(64)); // main sha unchanged (rolled back)
+      expect(row?.receiptPdfSha256).toBe('c'.repeat(64)); // receipt sha never synced
+      expect(row?.attempts).toBe(2); // 1 → 2 (catch-block bump in a fresh tx)
+      expect(row?.pendingAt).not.toBeNull(); // still retrying — never abandoned
+      expect(row?.parkedAt).toBeNull(); // NEVER park a voided tax doc
+    } finally {
+      // Restore the default success impl so no later test inherits the failure.
+      upload.mockImplementation(async (i: { key: string }) => ({
+        key: i.key,
+        url: `https://blob.test/${i.key}`,
+      }));
+    }
+  }, 60_000);
+
+  it('D12 — two-blob void: a receipt (targetB) RENDER failure → pdf_render_failed bumps, stays pending, never parks, no sha advance', async () => {
+    // Mirrors the deleted "e2" (Target B receipt render failure).
+    // buildVoidRenderTargets renders targetA (main §86/4) then targetB
+    // (receipt_combined); a targetB render throw surfaces as pdf_render_failed →
+    // the cron BUMPS (a possibly-transient render fault) and keeps the row
+    // pending — a voided tax doc is never parked on a transient render error.
+    // Also covers the otherwise-untested pdf_render_failed bump leg (route
+    // `!built.ok` branch), distinct from the upload-throw catch leg (D2/D8/D11).
+    const invoiceId = await seedMarkedVoid({
+      voidReason: 'two-blob receipt render fails',
+      seq: 14,
+      receipt: { docNumberRaw: 'VPRC-2026-000914' },
+    });
+    const render = reactPdfRenderAdapter.render as ReturnType<typeof vi.fn>;
+    // Kind-based (contamination-proof): targetA (voidUnderlyingKind='invoice')
+    // renders fine; targetB (voidUnderlyingKind='receipt_combined') throws.
+    render.mockImplementation(async (input: { voidUnderlyingKind?: string }) => {
+      if (input.voidUnderlyingKind === 'receipt_combined') {
+        throw new Error('receipt render boom');
+      }
+      return {
+        bytes: new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x56]),
+        sha256: 'f'.repeat(64),
+      };
+    });
+    try {
+      const res = await reconcileCron(cronReq());
+      expect(res.status).toBe(200);
+
+      const row = await readMarker(invoiceId);
+      // Render failed BEFORE any upload/sync — neither sha advanced.
+      expect(row?.pdfSha256).toBe('a'.repeat(64));
+      expect(row?.receiptPdfSha256).toBe('c'.repeat(64));
+      expect(row?.attempts).toBe(1); // 0 → 1 (pdf_render_failed bump)
+      expect(row?.pendingAt).not.toBeNull(); // retries — never abandoned
+      expect(row?.parkedAt).toBeNull(); // pdf_render_failed is NOT parked (only null_reason / no_snapshot park)
+    } finally {
+      // Restore the default success render impl.
+      render.mockImplementation(async () => ({
+        bytes: new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x56]),
+        sha256: 'f'.repeat(64),
+      }));
+    }
   }, 60_000);
 });

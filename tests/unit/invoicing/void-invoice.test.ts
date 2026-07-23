@@ -682,7 +682,9 @@ describe('voidInvoice — 088 T068 new-flow bill + paid two-blob void', () => {
   // NOTE (H1): the former "e2 — Target B render failure on a paid two-blob void"
   // was removed — a paid membership can no longer be voided (refused above the
   // first render), so the two-blob render-rollback path is unreachable via this
-  // use case. Target-A render rollback stays covered by test "e1" (issued bill).
+  // use case. Target-A render rollback stays covered by test "e1" (issued bill);
+  // the two-blob (targetB) render-failure leg is now covered on the surviving
+  // path by void-pdf-reconcile-cron "D12" (legacy pre-H1 voided-paid rows).
 
   it('e3 — concurrent state change: applyVoid conflict → concurrent_state_change', async () => {
     const deps = makeDeps(makeIssuedBill());
@@ -699,7 +701,9 @@ describe('voidInvoice — 088 T068 new-flow bill + paid two-blob void', () => {
   // committed; bill sha still synced" was removed — it exercised the two-blob
   // Phase-2 sync independence, only reachable by voiding a PAID membership, which
   // is now refused. Single-blob Phase-2 failure stays covered by "bug 10 M1"
-  // (blob_upload leg → reconcile marker) below and the integration T-PH2 test.
+  // (blob_upload leg → reconcile marker) below and the integration T-PH2 test;
+  // the two-blob (targetB) upload-failure leg is now covered on the surviving
+  // path by void-pdf-reconcile-cron "D11" (all-or-nothing per-tick rollback).
 
   // ── bug 10: Phase-2 leg-split recovery ───────────────────────────────────
   it('bug 10 M1 — blob_upload leg failure sets the reconcile marker (cron re-renders)', async () => {
