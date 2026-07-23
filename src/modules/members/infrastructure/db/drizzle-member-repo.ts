@@ -46,6 +46,7 @@ import { contacts } from './schema-contacts';
 import { rowToContact } from './drizzle-contact-repo';
 import type {
   DirectoryFilter,
+  DirectoryOffsetFilter,
   DirectoryRow,
   MemberPatch,
   MemberRepo,
@@ -184,9 +185,7 @@ function applyMemberPatch(
 // `searchDirectory` (cursor) and `searchDirectoryWithCount` (offset+count)
 // previously duplicated these SQL fragments verbatim. Extracted so the
 // q-filter EXISTS subquery and the `alias()` plan-name subquery (whose gotcha
-// is documented below) live in ONE place. The status OR-set + the `and(...)`
-// assembly stay inline in each caller (they differ — cursor vs offset — and
-// keeping them inline guarantees byte-identical WHERE composition).
+// is documented below) live in ONE place.
 
 type RepoTx = Parameters<Parameters<typeof runInTenant>[1]>[0];
 
@@ -222,6 +221,28 @@ function buildDirectoryConds(filter: DirectoryFilter): SQL[] {
     }
   }
   return conds;
+}
+
+/**
+ * The complete directory WHERE clause, shared by every caller that must agree
+ * on "which members are in the directory": the cursor search, the offset
+ * search + its COUNT, and the needs-invite chip count. Previously the erased
+ * exclusion, status OR-set and q-filter were hand-assembled per caller; a
+ * third caller made that a drift risk with a GDPR-shaped failure mode (a
+ * count that includes erased tombstones).
+ */
+function buildDirectoryWhere(
+  filter: DirectoryFilter | DirectoryOffsetFilter,
+): SQL {
+  const statuses = filter.status ?? ['active', 'inactive'];
+  return and(
+    // COMP-1 H4 — erasure keeps `status` and stamps only `erased_at`, so the
+    // status OR-set does NOT hide an erased row.
+    isNull(members.erasedAt),
+    or(...statuses.map((s) => eq(members.status, s)))!,
+    ...(filter.q ? [directoryQFilter(filter.q)] : []),
+    ...buildDirectoryConds(filter),
+  )!;
 }
 
 /** Substring `q` across company_name + non-removed primary-contact name/email,
@@ -846,10 +867,10 @@ export const drizzleMemberRepo: MemberRepo = {
   >
 > {
   try {
-    const statuses = filter.status ?? ['active', 'inactive'];
     const rows = await runInTenant(ctx, async (tx) => {
-      // Scalar filters (RLS handles tenant scoping); cursor predicate appended below.
-      const conds = buildDirectoryConds(filter);
+      // Cursor predicates are specific to this (cursor) caller, so they stay
+      // outside buildDirectoryWhere and are and()-combined with it below.
+      const cursorConds: SQL[] = [];
 
       // Cursor: decode base64 → "<iso>|<memberId>" or "NULL|<memberId>"
       if (filter.cursor) {
@@ -860,7 +881,7 @@ export const drizzleMemberRepo: MemberRepo = {
             if (iso === 'NULL') {
               // NULL lastActivityAt — compare only by memberId within the
               // NULLS LAST tail segment (DESC ordering).
-              conds.push(
+              cursorConds.push(
                 sql`(${members.lastActivityAt} IS NULL AND ${members.memberId} > ${memberIdPart})`,
               );
             } else if (iso) {
@@ -872,7 +893,7 @@ export const drizzleMemberRepo: MemberRepo = {
               // contradicts the ASC tie-break and silently drops tied rows with
               // member_id > cursorId across the page boundary. Cast the ISO
               // string inside SQL so postgres-js doesn't serialize a JS Date.
-              conds.push(
+              cursorConds.push(
                 sql`(${members.lastActivityAt} < ${iso}::timestamptz OR (${members.lastActivityAt} = ${iso}::timestamptz AND ${members.memberId} > ${memberIdPart}))`,
               );
             }
@@ -882,15 +903,7 @@ export const drizzleMemberRepo: MemberRepo = {
         }
       }
 
-      const whereClause = and(
-        // COMP-1 H4 — exclude GDPR-erased tombstones from the directory.
-        // Erasure keeps `status` (orthogonal to archive) and stamps only
-        // `erased_at`, so the status OR-set above does NOT hide an erased row.
-        isNull(members.erasedAt),
-        or(...statuses.map((s) => eq(members.status, s)))!,
-        ...(filter.q ? [directoryQFilter(filter.q)] : []),
-        ...conds,
-      );
+      const whereClause = and(buildDirectoryWhere(filter), ...cursorConds)!;
 
       const planNameSubquery = directoryPlanNameSubquery(tx);
 
@@ -959,19 +972,8 @@ export const drizzleMemberRepo: MemberRepo = {
   // with what the page shows (same RLS-scoped snapshot).
   async searchDirectoryWithCount(ctx, filter) {
     try {
-      const statuses = filter.status ?? ['active', 'inactive'];
       const result = await runInTenant(ctx, async (tx) => {
-        const conds = buildDirectoryConds(filter);
-
-        const whereClause = and(
-          // COMP-1 H4 — exclude GDPR-erased tombstones (keeps `status`,
-          // stamps only `erased_at`). Applied to BOTH the count and the page
-          // so the total stays consistent with the rows shown.
-          isNull(members.erasedAt),
-          or(...statuses.map((s) => eq(members.status, s)))!,
-          ...(filter.q ? [directoryQFilter(filter.q)] : []),
-          ...conds,
-        );
+        const whereClause = buildDirectoryWhere(filter);
 
         // Count query — same filters, tenant-scoped via RLS
         const countRows = await tx
