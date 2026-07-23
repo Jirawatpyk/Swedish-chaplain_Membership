@@ -90,6 +90,7 @@ const testRows: MembersTableRow[] = [
     status: 'active',
     membership_lapsed: false,
     membership_suspended: false,
+    portal_state: null,
     engagement: null,
     last_activity_at: '2026-04-10T00:00:00Z',
     primary_contact: {
@@ -110,6 +111,7 @@ const testRows: MembersTableRow[] = [
     status: 'active',
     membership_lapsed: false,
     membership_suspended: false,
+    portal_state: null,
     engagement: null,
     last_activity_at: null,
     primary_contact: null,

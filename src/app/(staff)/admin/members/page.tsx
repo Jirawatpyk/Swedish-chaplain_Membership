@@ -22,8 +22,10 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import {
   directorySearchWithCount,
   formatMemberNumber,
+  loadMembersPortalStatus,
   MEMBER_STATUSES,
   resolveMemberNumberPrefix,
+  type PortalState,
 } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { listPlans } from '@/modules/plans';
@@ -147,6 +149,40 @@ async function loadMembersMembershipStatusSafe(
       '[members-lapsed] loadMembersMembershipStatus threw — badges suppressed',
     );
     return EMPTY_MEMBERSHIP_STATUS;
+  }
+}
+
+/**
+ * Best-effort portal-status enrichment. A failure must NEVER take down the
+ * directory — but it must also never look like an answer: on failure every
+ * member degrades to 'unknown' (renders nothing), never to 'not_invited',
+ * which would claim they still need inviting.
+ */
+async function loadMembersPortalStatusSafe(
+  tenant: ReturnType<typeof resolveTenantFromRequest>,
+  memberRepo: ReturnType<typeof buildMembersDeps>['memberRepo'],
+  membersOnPage: readonly {
+    readonly memberId: string;
+    readonly linkedUserId: string | null;
+  }[],
+  now: Date,
+): Promise<ReadonlyMap<string, PortalState> | null> {
+  try {
+    const res = await loadMembersPortalStatus(
+      { tenant, memberRepo },
+      { members: membersOnPage, now },
+    );
+    return res.ok ? res.value : null;
+  } catch (e) {
+    logger.warn(
+      {
+        tenantId: tenant.slug,
+        errKind: errKind(e),
+        memberIdsCount: membersOnPage.length,
+      },
+      '[members-portal] loadMembersPortalStatus threw — portal badges suppressed',
+    );
+    return null;
   }
 }
 
@@ -317,9 +353,20 @@ export async function MembersDirectoryBody({
   // so run them together. The read is best-effort (degrades to both sets
   // empty → no badges).
   const memberIds = result.value.items.map((row) => row.member.memberId);
-  const [memberPrefix, membershipStatus] = await Promise.all([
+  // D8 — ONE instant for every expiry decision on this render.
+  const now = new Date();
+  const [memberPrefix, membershipStatus, portalStatus] = await Promise.all([
     resolveMemberNumberPrefix(tenant, deps.memberSettings),
     loadMembersMembershipStatusSafe(tenant, memberIds),
+    loadMembersPortalStatusSafe(
+      tenant,
+      deps.memberRepo,
+      result.value.items.map((row) => ({
+        memberId: row.member.memberId,
+        linkedUserId: row.primaryContact?.linkedUserId ?? null,
+      })),
+      now,
+    ),
   ]);
 
   const rows: MembersTableRow[] = result.value.items.map((row) => {
@@ -342,6 +389,12 @@ export async function MembersDirectoryBody({
     status: row.member.status,
     membership_lapsed: membershipStatus.lapsed.has(row.member.memberId),
     membership_suspended: membershipStatus.suspended.has(row.member.memberId),
+    portal_state:
+      row.primaryContact === null
+        ? null
+        : portalStatus === null
+          ? 'unknown'
+          : (portalStatus.get(row.member.memberId) ?? 'unknown'),
     // 056-members-table-compact — engagement (the positive-framed inverse of
     // the F8 risk score) is now the sole at-risk surface in the table; the raw
     // risk score is no longer wired into the row (the Risk column was dropped).

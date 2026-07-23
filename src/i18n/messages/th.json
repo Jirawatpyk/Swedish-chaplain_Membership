@@ -1061,6 +1061,16 @@
         "membershipLapsedSr": "สมาชิกภาพหมดอายุ — ต้องต่ออายุ",
         "membershipSuspended": "ระงับชั่วคราว",
         "membershipSuspendedSr": "สมาชิกภาพถูกระงับชั่วคราว — สิทธิประโยชน์หยุดชั่วคราว",
+        "portal": {
+          "linked": "พอร์ทัล",
+          "linkedSr": "ใช้งานบัญชีพอร์ทัลแล้ว",
+          "invited": "เชิญแล้ว",
+          "invitedSr": "ส่งคำเชิญพอร์ทัลแล้ว รอผู้รับตอบรับ",
+          "expired": "หมดอายุ",
+          "expiredSr": "คำเชิญพอร์ทัลหมดอายุ ต้องส่งใหม่",
+          "notInvited": "ยังไม่เชิญ",
+          "notInvitedSr": "ยังไม่ได้ส่งคำเชิญพอร์ทัล"
+        },
         "tableCaption": "รายชื่อสมาชิก"
       },
       "emptyStates": {

@@ -1061,6 +1061,16 @@
         "membershipLapsedSr": "Medlemskap förfallet — kräver förnyelse",
         "membershipSuspended": "Pausad",
         "membershipSuspendedSr": "Medlemskap pausat — förmåner tillfälligt stoppade",
+        "portal": {
+          "linked": "Portal",
+          "linkedSr": "Portalkontot är aktivt",
+          "invited": "Inbjuden",
+          "invitedSr": "Portalinbjudan skickad, väntar på svar",
+          "expired": "Utgången",
+          "expiredSr": "Portalinbjudan har gått ut — behöver skickas om",
+          "notInvited": "Ej inbjuden",
+          "notInvitedSr": "Ingen portalinbjudan har skickats"
+        },
         "tableCaption": "Medlemsregister"
       },
       "emptyStates": {

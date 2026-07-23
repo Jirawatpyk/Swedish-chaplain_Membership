@@ -1061,6 +1061,16 @@
         "membershipLapsedSr": "Membership lapsed — needs renewal",
         "membershipSuspended": "Suspended",
         "membershipSuspendedSr": "Membership suspended — benefits paused",
+        "portal": {
+          "linked": "Portal",
+          "linkedSr": "Portal account active",
+          "invited": "Invited",
+          "invitedSr": "Portal invitation sent, awaiting acceptance",
+          "expired": "Expired",
+          "expiredSr": "Portal invitation expired — needs re-sending",
+          "notInvited": "Not invited",
+          "notInvitedSr": "No portal invitation sent yet"
+        },
         "tableCaption": "Members directory"
       },
       "emptyStates": {

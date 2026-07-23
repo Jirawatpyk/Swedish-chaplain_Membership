@@ -96,6 +96,7 @@ const row: MembersTableRow = {
   status: 'active',
   membership_lapsed: false,
   membership_suspended: false,
+  portal_state: null,
   engagement: null,
   last_activity_at: null,
   primary_contact: null,

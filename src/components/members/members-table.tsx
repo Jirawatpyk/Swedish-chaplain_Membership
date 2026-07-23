@@ -65,6 +65,9 @@ import { toast } from 'sonner';
 // Type-only import (erased at compile time → no runtime/client-bundle coupling
 // to the insights server graph). The engagement value is projected server-side.
 import type { EngagementBand } from '@/modules/insights';
+// Type-only import (erased at compile time → no runtime/client-bundle coupling
+// to the members server graph). The portal state is derived server-side.
+import type { PortalState } from '@/modules/members';
 // C4 round-10 ui-design-specialist — flag emoji + localised country name.
 // 056-members-table-compact — the flag now leads the Company cell.
 import { CountryDisplay } from './country-display';
@@ -116,6 +119,14 @@ export type MembersTableRow = {
    * (never optional) to match the row-builder's exhaustive map.
    */
   readonly membership_suspended: boolean;
+  /**
+   * Portal state of the PRIMARY contact (design doc 2026-07-23 §3.5).
+   * `null`  = the member has no primary contact (nothing to render).
+   * 'unknown' = the batch read failed; renders nothing, but is deliberately
+   * distinct from 'not_invited' so a DB hiccup is never displayed as
+   * "this member still needs inviting".
+   */
+  readonly portal_state: PortalState | 'unknown' | null;
   /**
    * F9 (T034 / G1) — engagement score = positive-framed inverse of the F8 risk
    * band. PROJECTED SERVER-SIDE in the members page row-mapping via the
