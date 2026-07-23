@@ -57,6 +57,8 @@ import {
   ArrowDownIcon,
   ArrowUpDownIcon,
   ArrowUpIcon,
+  CheckIcon,
+  MailWarning,
   PauseCircle,
   PencilIcon,
   TriangleAlert,
@@ -400,6 +402,55 @@ function InlineStatusCell({
   );
 }
 
+/**
+ * Portal-state badge for the Contact cell (design doc 2026-07-23 §3.5).
+ *
+ * Short visible label + sr-only sentence — `Badge` is overflow-hidden,
+ * nowrap and shrink-0, so a long label cannot wrap and would paint over the
+ * next column. Every state pairs an icon and text with its colour, so nothing
+ * is encoded by colour alone (WCAG 1.4.1).
+ *
+ * `active` uses `secondary`, not `default`: the solid primary token would make
+ * the most common and least actionable state the loudest thing on a 50-row
+ * page, and it is the same token as the detail page's "Primary" contact badge.
+ */
+function PortalBadge({ state }: { state: MembersTableRow['portal_state'] }) {
+  const t = useTranslations('admin.members.directory');
+  if (state === null || state === 'unknown') return null;
+  if (state === 'active') {
+    return (
+      <Badge variant="secondary" className="gap-1">
+        <CheckIcon aria-hidden="true" className="size-3" />
+        <span aria-hidden="true">{t('portal.linked')}</span>
+        <span className="sr-only">{t('portal.linkedSr')}</span>
+      </Badge>
+    );
+  }
+  if (state === 'not_invited') {
+    return (
+      <Badge variant="outline" className="text-muted-foreground">
+        <span aria-hidden="true">{t('portal.notInvited')}</span>
+        <span className="sr-only">{t('portal.notInvitedSr')}</span>
+      </Badge>
+    );
+  }
+  const expired = state === 'invite_expired';
+  return (
+    <Badge
+      variant="outline"
+      className={
+        expired
+          ? 'gap-1 border-destructive/40 text-destructive'
+          : 'gap-1 border-warning/40 text-warning'
+      }
+    >
+      <MailWarning aria-hidden="true" className="size-3" />
+      <span aria-hidden="true">{t(expired ? 'portal.expired' : 'portal.invited')}</span>
+      <span className="sr-only">{t(expired ? 'portal.expiredSr' : 'portal.invitedSr')}</span>
+    </Badge>
+  );
+}
+
 export function MembersTable({
   rows,
   nextCursor,
@@ -601,31 +652,50 @@ export function MembersTable({
         if (!c) return <span className="text-muted-foreground">{t('noPrimary')}</span>;
         const fullName = `${c.first_name} ${c.last_name}`.trim();
         return (
-          <span className="flex items-start gap-1.5">
-            {/* Name shows in FULL and WRAPS (min-w-0 + break-words); a long name
-                grows DOWN, not across, so it never widens the table. The bounce
-                badge stays a fixed, non-shrinking sibling. */}
-            <span
-              className="min-w-0 max-w-[18ch] break-words whitespace-normal"
-              title={fullName}
-            >
-              {fullName}
-            </span>
-            {/* Edge Case "Invitation email bounce" (spec §613-620) — surface a
-                row-level bounce signal in the directory, not only on the detail
-                page. Copy lives under admin.members.detail.inviteBounced. */}
-            {c.invite_bounced ? (
-              <Badge
-                variant="outline"
-                className="shrink-0 gap-1 border-destructive/40 text-destructive"
+          <span className="flex flex-col gap-1">
+            <span className="flex items-start gap-1.5">
+              {/* Name shows in FULL and WRAPS (min-w-0 + break-words); a long name
+                  grows DOWN, not across, so it never widens the table. */}
+              <span
+                className="min-w-0 max-w-[18ch] break-words whitespace-normal"
+                title={fullName}
               >
-                <TriangleAlert aria-hidden="true" className="size-3" />
-                <span aria-hidden="true">{tContact('inviteBounced.badge')}</span>
-                <span className="sr-only">
-                  {tContact('inviteBounced.badgeAria')}
-                </span>
-              </Badge>
-            ) : null}
+                {fullName}
+              </span>
+            </span>
+            {/* flex-wrap is required: Badge is shrink-0, so without it the
+                badge row overflows the 175px column instead of wrapping. */}
+            <span className="flex flex-wrap items-center gap-1">
+              <PortalBadge
+                state={
+                  // Suppress ALL portal badges on archived rows — mirrors the
+                  // Lapsed/Suspended badge suppression on the Status cell below.
+                  info.row.original.status === 'archived'
+                    ? null
+                    : info.row.original.portal_state
+                }
+              />
+              {/* Edge Case "Invitation email bounce" (spec §613-620) — surface a
+                  row-level bounce signal in the directory, not only on the detail
+                  page. Copy lives under admin.members.detail.inviteBounced.
+                  Bounce badge suppressed when the invitation ALSO expired or
+                  the contact is already active — one root cause, one recovery
+                  (mirrors admin/members/[memberId]/page.tsx:415-417). */}
+              {c.invite_bounced &&
+              info.row.original.portal_state !== 'invite_expired' &&
+              info.row.original.portal_state !== 'active' ? (
+                <Badge
+                  variant="outline"
+                  className="shrink-0 gap-1 border-destructive/40 text-destructive"
+                >
+                  <TriangleAlert aria-hidden="true" className="size-3" />
+                  <span aria-hidden="true">{tContact('inviteBounced.badge')}</span>
+                  <span className="sr-only">
+                    {tContact('inviteBounced.badgeAria')}
+                  </span>
+                </Badge>
+              ) : null}
+            </span>
           </span>
         );
       },

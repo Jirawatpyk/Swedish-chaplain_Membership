@@ -61,7 +61,13 @@ export function MembersTableSkeleton({
           style={{ gridTemplateColumns: gridTemplate }}
         >
           {Array.from({ length: cols }).map((__, c) => (
-            <Skeleton key={c} className="h-5 w-full" />
+            <div key={c} className="flex flex-col gap-1">
+              <Skeleton className="h-5 w-full" />
+              {/* 057 — the real Contact cell now stacks a badge under the
+                  name, so the shimmer needs the same height or every row
+                  jumps when data lands (CLS, ux-standards § 2.1). */}
+              <Skeleton className="h-3 w-2/3" />
+            </div>
           ))}
         </div>
       ))}

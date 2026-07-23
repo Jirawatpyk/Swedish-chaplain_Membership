@@ -1,6 +1,6 @@
 /**
  * Regression guard for the `/admin/members` directory's fixed-width columns
- * bleeding into their neighbours (Plan 150px, Status 130px).
+ * bleeding into their neighbours (Plan 185px, Contact 175px, Status 130px).
  *
  * `table-fixed` + an explicit `<colgroup>` pin each `<td>`'s BOX to the
  * column's declared width, but `TableCell` (`src/components/ui/table.tsx`)
@@ -15,6 +15,17 @@
  * tolerate an empty table, and there is no other members seed helper — a
  * generic iteration would pass vacuously against an empty/short-content
  * table, guarding nothing.
+ *
+ * Task 7 (057-members-portal-status): extended to `sv`/`th` and to the
+ * Contact column (index 4), which now carries the portal-state badge row
+ * (`PortalBadge`, `members-table.tsx`). `Badge` is overflow-hidden/nowrap/
+ * shrink-0 and cannot wrap, and the portal + bounce labels are longest in
+ * `sv`/`th`, so those locales are where a too-long label bleeds first — this
+ * closes the residual the Task 2 skeleton doc flagged (stacking rows already
+ * exceeded the old fixed skeleton height). Locale switch follows
+ * `members-i18n.spec.ts`: next-intl reads the `NEXT_LOCALE` cookie (no
+ * middleware path-prefix in this project), so the switch is a cookie write,
+ * not a URL path segment.
  *
  * Dev-profiler pageerror (DEV-ONLY noise — NARROW scoped opt-out below,
  * mirrors `tests/e2e/portal/account-hub-route-safety.spec.ts`): under
@@ -44,6 +55,7 @@
  * page errors on this page": it ignores exactly one known, deterministic,
  * dev-only, engine-specific noise source and nothing else.
  */
+import type { BrowserContext, Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { signInAsAdmin } from './helpers/admin-session';
 import {
@@ -53,6 +65,53 @@ import {
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
+
+const LOCALES = ['en', 'sv', 'th'] as const;
+type Locale = (typeof LOCALES)[number];
+
+// Mirrors `members-i18n.spec.ts`'s `setLocale`: next-intl reads the active
+// locale from the `NEXT_LOCALE` cookie (no middleware path-prefix here).
+async function setLocale(context: BrowserContext, locale: Locale): Promise<void> {
+  await context.addCookies([
+    { name: 'NEXT_LOCALE', value: locale, url: 'http://localhost:3100' },
+  ]);
+}
+
+/**
+ * Shared assertion, extracted from the original English-only "Plan and
+ * Status" test so Task 7's `sv`/`th` + Contact-column extension isn't a
+ * copy-paste of the per-cell measurement three times over.
+ *
+ * Admin session → `enableSelection` is on, so the rendered column order is:
+ * select(0), Member No.(1), Company(2), Plan(3), Contact(4), Status(5),
+ * Engagement(6), Last activity(7) — verified against `members-table.tsx`'s
+ * `columns` array. Company + Contact's name already wrap (`break-words
+ * whitespace-normal` + a `max-w`) so the column indices under test are the
+ * ones with `whitespace-nowrap` (fixed-width Badge) content: Plan, Contact
+ * (badge row), and Status.
+ */
+async function expectNoCellBleed(
+  page: Page,
+  companyName: string,
+  columnIndices: readonly number[],
+): Promise<void> {
+  const row = page.getByRole('row').filter({ hasText: companyName });
+  await expect(row).toBeVisible();
+
+  for (const columnIndex of columnIndices) {
+    const cell = row.getByRole('cell').nth(columnIndex);
+    const bleed = await cell.evaluate((td) => {
+      const cellRight = td.getBoundingClientRect().right;
+      let worst = 0;
+      for (const child of Array.from(td.querySelectorAll('*'))) {
+        worst = Math.max(worst, child.getBoundingClientRect().right - cellRight);
+      }
+      return worst;
+    });
+    // 1px tolerance for sub-pixel rounding.
+    expect(bleed, `column ${columnIndex} content bleed past its cell`).toBeLessThanOrEqual(1);
+  }
+}
 
 test.describe('members directory — column overflow @a11y', () => {
   test.skip(
@@ -83,35 +142,18 @@ test.describe('members directory — column overflow @a11y', () => {
     await cleanupLongContentMember();
   });
 
-  test('Plan and Status cell content stays inside its column', async ({ page }) => {
-    const seed = await seedLongContentMember();
-    test.skip(seed === null, 'seed unavailable (no DATABASE_URL or no active plan to clone)');
+  for (const locale of LOCALES) {
+    test(`content stays inside its column in ${locale} @i18n`, async ({ page, context }) => {
+      const seed = await seedLongContentMember();
+      test.skip(seed === null, 'seed unavailable (no DATABASE_URL or no active plan to clone)');
 
-    await signInAsAdmin(page);
-    await page.goto(`/admin/members?q=${encodeURIComponent(seed!.companyName)}`);
-    await page.waitForLoadState('networkidle');
+      await signInAsAdmin(page);
+      await setLocale(context, locale);
+      await page.goto(`/admin/members?q=${encodeURIComponent(seed!.companyName)}`);
+      await page.waitForLoadState('networkidle');
 
-    const row = page.getByRole('row').filter({ hasText: seed!.companyName });
-    await expect(row).toBeVisible();
-
-    // Admin session → `enableSelection` is on, so the rendered column order
-    // is: select(0), Member No.(1), Company(2), Plan(3), Contact(4),
-    // Status(5), Engagement(6), Last activity(7) — verified against
-    // `members-table.tsx`'s `columns` array. Company + Contact already wrap
-    // (`break-words whitespace-normal` + a `max-w`) so only Plan + Status
-    // are vulnerable to the `whitespace-nowrap` overflow bug.
-    for (const columnIndex of [/* Plan */ 3, /* Status */ 5]) {
-      const cell = row.getByRole('cell').nth(columnIndex);
-      const bleed = await cell.evaluate((td) => {
-        const cellRight = td.getBoundingClientRect().right;
-        let worst = 0;
-        for (const child of Array.from(td.querySelectorAll('*'))) {
-          worst = Math.max(worst, child.getBoundingClientRect().right - cellRight);
-        }
-        return worst;
-      });
-      // 1px tolerance for sub-pixel rounding.
-      expect(bleed, `column ${columnIndex} content bleed past its cell`).toBeLessThanOrEqual(1);
-    }
-  });
+      // Plan(3), Contact(4, portal + bounce badge row), Status(5).
+      await expectNoCellBleed(page, seed!.companyName, [3, 4, 5]);
+    });
+  }
 });
