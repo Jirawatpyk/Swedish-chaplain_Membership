@@ -74,7 +74,7 @@ interface DepsResult {
   insertMock: ReturnType<typeof vi.fn>;
   loadPlanFrozenMock: ReturnType<typeof vi.fn>;
   acquireLockMock: ReturnType<typeof vi.fn>;
-  linkInvoiceMock: ReturnType<typeof vi.fn>;
+  linkAndReconcileMock: ReturnType<typeof vi.fn>;
   emitInTxMock: ReturnType<typeof vi.fn>;
   bridgeMock: ReturnType<typeof vi.fn>;
   countCyclesForMemberMock: ReturnType<typeof vi.fn>;
@@ -182,7 +182,22 @@ function makeDeps(opts?: {
       : { status: planFrozenStatus },
   );
   const acquireLockMock = vi.fn(async () => {});
-  const linkInvoiceMock = vi.fn(async () => buildCycle());
+  // PR #249 H1 — Step-3 now links + reconciles the frozen snapshot in ONE call
+  // (`linkInvoiceAndReconcileFrozenPlanInTx`), returning `{ cycle, previous }`
+  // (mirrors confirm-renewal's `linkAndReconcileMock`). `previous` = the
+  // cycle's PRE-LINK frozen snapshot; the use-case emits the corrective
+  // `renewal_cycle_price_frozen` audit ONLY when `previous` diverges from the
+  // billed snapshot (`frozenPlanSnapshotsDiffer`). The default `previous` mirrors
+  // the fresh Step-1 cycle's own frozen fields (identical `buildCycle()` — same
+  // plan/tier/price/term/currency), so no divergence is healed and no corrective
+  // audit fires — the common admin-renew path (a concurrent change-plan refreeze
+  // is the live-Neon interleave integration test's concern, not this unit mock).
+  // Only `previous` is load-bearing here: the use-case reads `linkResult.previous`
+  // (never `linkResult.cycle`) — the returned `cycle` just satisfies the shape.
+  const linkAndReconcileMock = vi.fn(async () => ({
+    cycle: buildCycle(),
+    previous: buildCycle(),
+  }));
   const emitInTxMock = vi.fn(async () => {});
   const bridgeMock = vi.fn(
     async (_input: IssueInvoiceForRenewalInput) => bridgeResult,
@@ -205,7 +220,9 @@ function makeDeps(opts?: {
       findActiveForMemberInTx: findActiveMock,
       insert: insertMock,
       acquireCycleLockInTx: acquireLockMock,
-      linkInvoice: linkInvoiceMock,
+      // PR #249 H1 — Step-3 links + reconciles the frozen snapshot in one call
+      // (was the plain `linkInvoice`, now dead in this use-case).
+      linkInvoiceAndReconcileFrozenPlanInTx: linkAndReconcileMock,
       countCyclesForMemberInTx: countCyclesForMemberMock,
       countSettledCyclesForMemberInTx: countSettledCyclesForMemberMock,
       findMaxPaidThroughForMemberInTx: findMaxPaidThroughMock,
@@ -235,7 +252,7 @@ function makeDeps(opts?: {
     insertMock,
     loadPlanFrozenMock,
     acquireLockMock,
-    linkInvoiceMock,
+    linkAndReconcileMock,
     emitInTxMock,
     bridgeMock,
     countCyclesForMemberMock,
@@ -288,13 +305,20 @@ describe('adminRenewLapsedMember (Slice 3 / Task 3.1)', () => {
     expect(bridgeArg.planYear).toBe(EXPECTED_DERIVED_PLAN_YEAR);
     expect(bridgeArg.autoEmailOnIssue).toBe(true);
 
-    // Link ran under the per-cycle advisory lock (orphan-window guard).
+    // Link ran under the per-cycle advisory lock (orphan-window guard). The
+    // link+reconcile is passed the billed snapshot the §86/4 was issued from —
+    // the fresh cycle's OWN frozen fields (FROZEN price + current plan) — so the
+    // reconcile can never rewrite the cycle to a price the member did not confirm.
     expect(t.acquireLockMock).toHaveBeenCalled();
-    expect(t.linkInvoiceMock).toHaveBeenCalledWith(
+    expect(t.linkAndReconcileMock).toHaveBeenCalledWith(
       expect.anything(),
       TENANT_ID,
       asCycleId(CYCLE_UUID),
       'inv-1',
+      expect.objectContaining({
+        planIdAtCycleStart: PLAN_ID,
+        frozenPlanPriceThb: FROZEN_THB,
+      }),
     );
   });
 
@@ -572,9 +596,9 @@ describe('adminRenewLapsedMember (Slice 3 / Task 3.1)', () => {
     // The cycle WAS created (tx1 committed) but NO invoice linked — this is
     // the documented recoverable state (the admin can retry; the cycle is
     // awaiting_payment with no linked invoice, identical to a member who
-    // abandons the pay page). We must NOT have called linkInvoice.
+    // abandons the pay page). We must NOT have reached the link+reconcile step.
     expect(t.insertMock).toHaveBeenCalledTimes(1);
-    expect(t.linkInvoiceMock).not.toHaveBeenCalled();
+    expect(t.linkAndReconcileMock).not.toHaveBeenCalled();
   });
 
   /** Count `renewal_invoice_created` emit calls (the tx2 link audit). */
@@ -586,7 +610,7 @@ describe('adminRenewLapsedMember (Slice 3 / Task 3.1)', () => {
 
   it('link race — CycleNotFoundError: cycle vanished between create + link → server_error (orphan invoice logged)', async () => {
     const t = makeDeps();
-    t.linkInvoiceMock.mockRejectedValueOnce(new CycleNotFoundError(CYCLE_UUID));
+    t.linkAndReconcileMock.mockRejectedValueOnce(new CycleNotFoundError(CYCLE_UUID));
     const result = await adminRenewLapsedMember(t.deps, VALID_INPUT);
 
     expect(result.ok).toBe(false);
@@ -600,7 +624,7 @@ describe('adminRenewLapsedMember (Slice 3 / Task 3.1)', () => {
 
   it('link race — InvoiceLinkConflictError: a concurrent link won → server_error (our invoice orphaned)', async () => {
     const t = makeDeps();
-    t.linkInvoiceMock.mockRejectedValueOnce(
+    t.linkAndReconcileMock.mockRejectedValueOnce(
       new InvoiceLinkConflictError(CYCLE_UUID, 'inv-1', 'inv-other'),
     );
     const result = await adminRenewLapsedMember(t.deps, VALID_INPUT);
@@ -613,7 +637,7 @@ describe('adminRenewLapsedMember (Slice 3 / Task 3.1)', () => {
 
   it('link step rethrows an unexpected error → propagates (tx rolls back)', async () => {
     const t = makeDeps();
-    t.linkInvoiceMock.mockRejectedValueOnce(new Error('connection reset'));
+    t.linkAndReconcileMock.mockRejectedValueOnce(new Error('connection reset'));
     await expect(adminRenewLapsedMember(t.deps, VALID_INPUT)).rejects.toThrow(
       'connection reset',
     );
@@ -634,7 +658,7 @@ describe('adminRenewLapsedMember (Slice 3 / Task 3.1)', () => {
       'audit enum drift',
     );
     // The link DID run before the audit emit failed.
-    expect(t.linkInvoiceMock).toHaveBeenCalledTimes(1);
+    expect(t.linkAndReconcileMock).toHaveBeenCalledTimes(1);
   });
 
   it('create-failed bridge result maps to invoice_issue_failed stage=create', async () => {
@@ -777,6 +801,6 @@ describe('adminRenewLapsedMember (Slice 3 / Task 3.1)', () => {
     await expect(adminRenewLapsedMember(t.deps, VALID_INPUT)).rejects.toBe(
       'audit string failure',
     );
-    expect(t.linkInvoiceMock).toHaveBeenCalledTimes(1);
+    expect(t.linkAndReconcileMock).toHaveBeenCalledTimes(1);
   });
 });
