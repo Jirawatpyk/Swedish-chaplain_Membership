@@ -193,6 +193,16 @@ A new branch precedes the existing empty-state fork: chip active + zero rows →
 
 ### 3.5 Table rendering — `src/components/members/members-table.tsx`
 
+> **AS-BUILT (revised during implementation, 2026-07-23):** this section
+> originally specified a two-line STACK — name on top, badge row beneath. At the
+> user's request the badges were changed to flow INLINE right after the contact
+> name (`flex flex-wrap items-center`), wrapping to a new line only when the
+> 175px column is too narrow, so the common "name + one short badge" case stays a
+> single line and rows stay compact. The skeleton was correspondingly kept at one
+> shimmer line (see the skeleton note below), which accepts a minor CLS on the
+> minority of rows that wrap rather than reserving two lines for every row. The
+> prose below is left as originally written for provenance.
+
 **Contact cell** (`:572`) becomes name on top and a badge row beneath
 (`flex flex-wrap items-center gap-1` — `Badge` is `shrink-0`, so without
 `flex-wrap` the row overflows instead of wrapping).
@@ -264,6 +274,14 @@ trading a layout bug for an a11y bug.
 the Contact cell so the shimmer height matches the real rows; otherwise every
 row jumps on hydration (`loading.tsx` and the `Suspense` fallback at `:383`
 share it). CLS must stay 0 per ux-standards § 2.1.
+
+> **AS-BUILT (2026-07-23):** superseded by the inline badge layout (see the §3.5
+> AS-BUILT note). With the badge inline, the common row is a single line again, so
+> the skeleton was kept at ONE shimmer line to track the majority of rows.
+> Rows that wrap (a long plan name, a stacked Lapsed/Suspended status badge, or a
+> multi-badge Contact cell) settle one line taller — a smaller aggregate CLS than
+> reserving two lines for every row, but NOT the strict CLS-0 this paragraph
+> originally required. Flagged for enterprise-ux sign-off at PR review.
 
 **Live region.** Toggling the chip changes the table from 131 rows to 12 with no
 announcement (the only live region today is `selectedCount`, `:786`). Add a

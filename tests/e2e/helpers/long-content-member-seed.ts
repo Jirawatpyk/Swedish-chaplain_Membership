@@ -27,8 +27,8 @@
  * 'invited'`, which does NOT suppress the bounce badge (only `active` /
  * `invite_expired` do — see the Contact-cell condition in
  * `members-table.tsx`). So the Contact cell renders BOTH an icon+text
- * PortalBadge ("Invited"/"Inbjudan" — longest in `sv`) AND the bounce badge
- * ("Inbjudan studsade" in `sv` is the worst-case width) on the SAME row —
+ * PortalBadge ("Invited"/"Inbjuden" — the sv portal-invited label) AND the
+ * bounce badge ("Inbjudan studsade" in `sv` is the worst-case width) on the SAME row —
  * the multi-badge case `flex-wrap` exists for, and the one a single-badge
  * fixture cannot exercise.
  *
