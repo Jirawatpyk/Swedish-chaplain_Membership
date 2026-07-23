@@ -161,6 +161,13 @@ export type InlineEditResult =
 type Props = {
   readonly rows: readonly MembersTableRow[];
   readonly nextCursor: string | null;
+  /**
+   * Total rows matching the current filters across ALL pages. When provided,
+   * the sr-only result-count live region announces "Showing N of M members"
+   * (this page's count vs the full filtered total) so screen-reader users hear
+   * how a filter change narrowed the set, not just the current page size.
+   */
+  readonly total?: number | undefined;
   /** Admin-only: enable multi-row selection + inline edit. */
   readonly enableSelection?: boolean | undefined;
   /** Callback when selection changes — used by BulkActionBar. */
@@ -454,6 +461,7 @@ function PortalBadge({ state }: { state: MembersTableRow['portal_state'] }) {
 export function MembersTable({
   rows,
   nextCursor,
+  total,
   enableSelection = false,
   onSelectionChange,
   onInlineEdit,
@@ -894,9 +902,12 @@ export function MembersTable({
     <div className="flex flex-col gap-4" ref={tableContainerRef}>
       {/* Result-count live region — announces the row count on ANY filter
           change (not only the selection count above), so screen-reader users
-          hear the table update after e.g. toggling the needs-invite chip. */}
+          hear the table update after e.g. toggling the needs-invite chip. When
+          the full filtered total is known it announces "N of M" for context. */}
       <div className="sr-only" role="status">
-        {t('resultsCount', { count: rows.length })}
+        {total !== undefined
+          ? t('resultsCountOfTotal', { count: rows.length, total })
+          : t('resultsCount', { count: rows.length })}
       </div>
       {enableSelection && selectedCount > 0 && (
         <div

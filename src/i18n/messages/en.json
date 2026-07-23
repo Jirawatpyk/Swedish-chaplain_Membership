@@ -1025,6 +1025,7 @@
           }
         },
         "resultsCount": "{count, plural, =0 {No members} one {# member} other {# members}}",
+        "resultsCountOfTotal": "Showing {count} of {total, plural, one {# member} other {# members}}",
         "sortByEngagement": "Sort by engagement",
         "sortByMemberNumber": "Sort by member number",
         "columns": {
@@ -1092,7 +1093,7 @@
         "allInvited": {
           "title": "Everyone has been invited",
           "description": "Every member matching these filters already has a portal invitation.",
-          "cta": "Show all members"
+          "cta": "Clear portal filter"
         },
         "error": {
           "title": "Could not load members",

@@ -1025,6 +1025,7 @@
           }
         },
         "resultsCount": "{count, plural, =0 {ไม่มีสมาชิก} other {# ราย}}",
+        "resultsCountOfTotal": "แสดง {count} จาก {total} ราย",
         "sortByEngagement": "เรียงตามการมีส่วนร่วม",
         "sortByMemberNumber": "เรียงตามหมายเลขสมาชิก",
         "columns": {
@@ -1092,7 +1093,7 @@
         "allInvited": {
           "title": "เชิญครบทุกคนแล้ว",
           "description": "สมาชิกทุกรายที่ตรงกับตัวกรองนี้ได้รับคำเชิญเข้าพอร์ทัลแล้ว",
-          "cta": "แสดงสมาชิกทั้งหมด"
+          "cta": "ล้างตัวกรองพอร์ทัล"
         },
         "error": {
           "title": "โหลดข้อมูลสมาชิกไม่สำเร็จ",

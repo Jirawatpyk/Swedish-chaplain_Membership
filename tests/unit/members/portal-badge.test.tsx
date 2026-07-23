@@ -53,10 +53,14 @@ function row(overrides: Partial<MembersTableRow>): MembersTableRow {
   };
 }
 
-function renderTable(rows: MembersTableRow[]) {
+function renderTable(rows: MembersTableRow[], total?: number) {
   return render(
     <NextIntlClientProvider locale="en" messages={messages}>
-      <MembersTable rows={rows} nextCursor={null} />
+      <MembersTable
+        rows={rows}
+        nextCursor={null}
+        {...(total !== undefined ? { total } : {})}
+      />
     </NextIntlClientProvider>,
   );
 }
@@ -79,6 +83,17 @@ describe('portal status badge', () => {
     renderTable([row({ member_id: 'm5', portal_state: 'unknown' })]);
     expect(screen.queryByText('Portal')).not.toBeInTheDocument();
     expect(screen.queryByText('Not invited')).not.toBeInTheDocument();
+  });
+
+  it('announces "Showing N of M members" in the live region when the total is given', () => {
+    renderTable([row({ member_id: 'm1' }), row({ member_id: 'm2' })], 131);
+    expect(screen.getByText('Showing 2 of 131 members')).toBeInTheDocument();
+  });
+
+  it('falls back to the page-only result count when no total is given', () => {
+    renderTable([row({ member_id: 'm1' }), row({ member_id: 'm2' })]);
+    expect(screen.getByText('2 members')).toBeInTheDocument();
+    expect(screen.queryByText(/Showing 2 of/)).not.toBeInTheDocument();
   });
 
   it('renders no portal badge when the member has no primary contact', () => {
