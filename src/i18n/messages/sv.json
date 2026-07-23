@@ -1003,6 +1003,14 @@
         "searchPlaceholder": "Sök på företag, kontakt, e-post eller medlemsnummer",
         "searchSrLabel": "Sök medlemmar",
         "clearFilters": "Rensa filter",
+        "activeFilters": "Aktiva filter",
+        "removeFilter": "Ta bort {filter}",
+        "filterChip": {
+          "search": "Sök: {q}",
+          "status": "Status: {value}",
+          "plan": "Paket: {value}",
+          "risk": "Risk: {value}"
+        },
         "filters": {
           "status": {
             "label": "Status",
@@ -1622,6 +1630,8 @@
         "confirmInviteDescription": "Inbjudningsmejl till portalen skickas till de valda medlemmarna så att de kan komma åt medlemsportalen.",
         "confirmInviteAction": "Skicka inbjudningar",
         "success": "{count, plural, one {# medlem} other {# medlemmar}} {action}",
+        "undo": "Ångra",
+        "unarchiveSuccess": "{count, plural, one {# medlem återställd} other {# medlemmar återställda}}",
         "inviteQueued": "{invited, plural, one {# inbjudan köad} other {# inbjudningar köade}}",
         "inviteResent": "{resent, plural, one {# omskickad} other {# omskickade}}",
         "inviteSkipped": "{skipped, plural, one {# hoppades över} other {# hoppades över}}",
@@ -1642,6 +1652,7 @@
       },
       "inlineEdit": {
         "statusUpdated": "Status uppdaterad",
+        "undo": "Ångra",
         "saveFailed": "Kunde inte spara. Återställd.",
         "saving": "Sparar…",
         "saved": "Sparat",

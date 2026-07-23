@@ -315,6 +315,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const body = {
       updated_count: result.value.updatedCount,
       audit_event_count: result.value.auditEventCount,
+      // The transitioned member ids — the client's archive success toast posts
+      // an `unarchive` bulk action with exactly these for a precise Undo.
+      updated_ids: result.value.updatedIds,
     };
     // Round-6 S-3: wrap in try/catch so a Redis/cache failure doesn't
     // prevent the client from receiving its 200 — the mutation already

@@ -28,6 +28,7 @@ import {
   archive,
   asMemberId,
   asPlanId,
+  undelete,
 } from '../../domain/member';
 import type { MemberRepo } from '../ports/member-repo';
 import type { AuditPort } from '../ports/audit-port';
@@ -49,7 +50,7 @@ export const BULK_RATE_WINDOW_SECONDS = 600; // 10 minutes
 // `invalid_body` (400).
 export const bulkActionSchema = z
   .object({
-    action: z.enum(['change_plan', 'archive']),
+    action: z.enum(['change_plan', 'archive', 'unarchive']),
     member_ids: z
       .array(z.string().uuid())
       .min(1, 'At least one member_id is required')
@@ -131,6 +132,12 @@ export type BulkActionMeta = {
 export type BulkActionOutput = {
   updatedCount: number;
   auditEventCount: number;
+  /**
+   * The member IDs actually transitioned by this batch. Powers a precise Undo
+   * on the client (e.g. archive → "Undo" posts `unarchive` with exactly these
+   * ids), so undo never touches members the batch skipped or a race changed.
+   */
+  updatedIds: string[];
 };
 
 // --- Implementation ----------------------------------------------------------
@@ -177,6 +184,7 @@ export async function bulkAction(
     const result = await runInTenant(deps.tenant, async (tx) => {
       let updatedCount = 0;
       let auditEventCount = 0;
+      const updatedIds: string[] = [];
 
       const memberIds = data.member_ids.map(asMemberId);
 
@@ -305,10 +313,67 @@ export async function bulkAction(
             break;
           }
 
+          case 'unarchive': {
+            // Inverse of `archive` — restores archived → active within the
+            // 90-day undelete window (domain `undelete`). Symmetric with the
+            // bulk archive arm above: status + audit ONLY.
+            //
+            // ⚠️ UNDO-OF-BULK-ARCHIVE ONLY. This arm intentionally omits the
+            // renewals-RESTORE cascade that the single `undeleteMember` use case
+            // runs (`renewalsCascade.restoreForMember`). That is correct here
+            // because bulk `archive` never CANCELS a renewal cycle (it has no
+            // `sessions`/`renewalsCascade` deps), so there is nothing to restore
+            // when undoing it. The only caller today is the bulk-archive success
+            // toast's Undo, which posts exactly the ids it just bulk-archived.
+            // DO NOT surface this arm as a general "Restore" (e.g. a standalone
+            // bulk-restore button) without first wiring the renewals-restore
+            // cascade — a member archived via the SINGLE archive path (which
+            // DOES cancel the cycle) would otherwise come back `active` with no
+            // active renewal cycle (silent pipeline drop). See undelete-member.ts.
+            const undeleteResult = undelete(current, now);
+            if (!undeleteResult.ok) {
+              throw new BulkStateError(memberId, undeleteResult.error.code);
+            }
+            const persistResult = await deps.memberRepo.updateStatusInTx(
+              tx,
+              memberId,
+              undeleteResult.value,
+            );
+            if (!persistResult.ok) {
+              throw new Error(`persist:${persistResult.error.code}`);
+            }
+            const auditResult = await deps.audit.recordInTx(tx, deps.tenant, {
+              type: 'member_undeleted',
+              actorUserId: meta.actorUserId,
+              requestId: meta.requestId,
+              summary: `bulk unarchive member ${memberId}`,
+              payload: {
+                member_id: memberId,
+                action: 'unarchive',
+                bulk_request_id: meta.requestId,
+              },
+            });
+            if (!auditResult.ok) throw new Error('audit_failed');
+            updatedCount++;
+            auditEventCount++;
+            break;
+          }
+
+          default: {
+            // Exhaustiveness guard: a future action added to the zod enum
+            // without a case here would otherwise fall through and be recorded
+            // in `updatedIds` below as a phantom success (no write, no audit).
+            const _never: never = data.action;
+            throw new Error(`unhandled bulk action: ${String(_never)}`);
+          }
         }
+
+        // Every member that reaches here transitioned successfully (any
+        // failure throws out of the loop). Record its id for a precise Undo.
+        updatedIds.push(memberId);
       }
 
-      return { updatedCount, auditEventCount };
+      return { updatedCount, auditEventCount, updatedIds };
     });
 
     return ok(result);

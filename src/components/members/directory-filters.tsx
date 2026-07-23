@@ -166,7 +166,49 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
     pushUrl({ q: null, status: null, plan_id: null, risk_band: null, portal: null });
   };
 
+  // Active-filter chips (ux-standards §9.4) — a consolidated, dismissible summary
+  // of the filters currently hidden inside the Selects (q / status / plan / risk).
+  // The needs-invite chip stays its own toggle above; it is NOT duplicated here.
+  // Each chip reuses the same `pushUrl({ key: null })` clear the Selects use, so
+  // there is no new URL wiring.
+  const activeChips: { key: string; label: string; onRemove: () => void }[] = [];
+  if (currentQ) {
+    activeChips.push({
+      key: 'q',
+      label: t('filterChip.search', { q: currentQ }),
+      onRemove: () => {
+        setSearchValue('');
+        pushUrl({ q: null });
+      },
+    });
+  }
+  if (currentStatus !== 'all') {
+    const vk = STATUS_LABEL_KEYS[currentStatus];
+    activeChips.push({
+      key: 'status',
+      label: t('filterChip.status', { value: vk ? t(vk) : currentStatus }),
+      onRemove: () => pushUrl({ status: null }),
+    });
+  }
+  if (currentPlan !== 'all') {
+    const plan = plans.find((p) => p.id === currentPlan);
+    activeChips.push({
+      key: 'plan',
+      label: t('filterChip.plan', { value: plan?.label ?? currentPlan }),
+      onRemove: () => pushUrl({ plan_id: null }),
+    });
+  }
+  if (currentRisk !== 'all') {
+    const vk = RISK_LABEL_KEYS[currentRisk];
+    activeChips.push({
+      key: 'risk',
+      label: t('filterChip.risk', { value: vk ? t(vk) : currentRisk }),
+      onRemove: () => pushUrl({ risk_band: null }),
+    });
+  }
+
   return (
+    <div className="flex flex-col gap-2">
     <FilterBar>
       <div className="relative sm:flex-1 min-w-0">
         <SearchIcon
@@ -318,5 +360,42 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
         </Button>
       )}
     </FilterBar>
+
+    {activeChips.length > 0 && (
+      <div
+        role="group"
+        aria-label={t('activeFilters')}
+        className="flex flex-wrap items-center gap-2"
+      >
+        {activeChips.map((chip) => (
+          <span
+            key={chip.key}
+            className="inline-flex items-center gap-1 rounded-md border bg-secondary py-0.5 pl-2 pr-1 text-xs text-secondary-foreground"
+          >
+            <span className="max-w-[24ch] truncate" title={chip.label}>
+              {chip.label}
+            </span>
+            <button
+              type="button"
+              // Removing a chip unmounts it; move focus to the always-present
+              // search input first so it never drops to <body> (mirrors
+              // `onPortalToggle`'s focus handling). Also cancel any in-flight
+              // debounced keystroke so removing the search chip can't be
+              // re-pushed ~300ms later (harmless no-op for the other chips).
+              onClick={() => {
+                if (debounceRef.current) clearTimeout(debounceRef.current);
+                chip.onRemove();
+                searchInputRef.current?.focus();
+              }}
+              aria-label={t('removeFilter', { filter: chip.label })}
+              className="rounded-sm p-0.5 hover:bg-secondary-foreground/10 focus-visible:outline-2 focus-visible:outline-ring"
+            >
+              <XIcon className="size-3" aria-hidden />
+            </button>
+          </span>
+        ))}
+      </div>
+    )}
+    </div>
   );
 }

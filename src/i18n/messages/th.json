@@ -1003,6 +1003,14 @@
         "searchPlaceholder": "ค้นหาด้วยชื่อบริษัท ผู้ติดต่อ อีเมล หรือหมายเลขสมาชิก",
         "searchSrLabel": "ค้นหาสมาชิก",
         "clearFilters": "ล้างตัวกรอง",
+        "activeFilters": "ตัวกรองที่ใช้อยู่",
+        "removeFilter": "เอา {filter} ออก",
+        "filterChip": {
+          "search": "ค้นหา: {q}",
+          "status": "สถานะ: {value}",
+          "plan": "แพ็กเกจ: {value}",
+          "risk": "ความเสี่ยง: {value}"
+        },
         "filters": {
           "status": {
             "label": "สถานะ",
@@ -1622,6 +1630,8 @@
         "confirmInviteDescription": "ระบบจะส่งอีเมลคำเชิญเข้าพอร์ทัลให้สมาชิกที่เลือก เพื่อให้เข้าใช้งานพอร์ทัลสมาชิกได้",
         "confirmInviteAction": "ส่งคำเชิญ",
         "success": "ดำเนินการ {action} สำเร็จ {count} สมาชิก",
+        "undo": "เลิกทำ",
+        "unarchiveSuccess": "กู้คืน {count} สมาชิกแล้ว",
         "inviteQueued": "จัดคิวคำเชิญ {invited} รายการ",
         "inviteResent": "{resent, plural, other {ส่งซ้ำ #}}",
         "inviteSkipped": "ข้าม {skipped} รายการ",
@@ -1642,6 +1652,7 @@
       },
       "inlineEdit": {
         "statusUpdated": "อัปเดตสถานะแล้ว",
+        "undo": "เลิกทำ",
         "saveFailed": "บันทึกไม่สำเร็จ ย้อนกลับแล้ว",
         "saving": "กำลังบันทึก…",
         "saved": "บันทึกแล้ว",

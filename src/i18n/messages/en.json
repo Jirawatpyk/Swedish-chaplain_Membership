@@ -1003,6 +1003,14 @@
         "searchPlaceholder": "Search by company, contact name, email, or member number",
         "searchSrLabel": "Search members",
         "clearFilters": "Clear filters",
+        "activeFilters": "Active filters",
+        "removeFilter": "Remove {filter}",
+        "filterChip": {
+          "search": "Search: {q}",
+          "status": "Status: {value}",
+          "plan": "Plan: {value}",
+          "risk": "Risk: {value}"
+        },
         "filters": {
           "status": {
             "label": "Status",
@@ -1622,6 +1630,8 @@
         "confirmInviteDescription": "Portal invitation emails will be sent to the selected members so they can access the member portal.",
         "confirmInviteAction": "Send invitations",
         "success": "{count, plural, one {# member} other {# members}} {action}",
+        "undo": "Undo",
+        "unarchiveSuccess": "{count, plural, one {# member} other {# members}} restored",
         "inviteQueued": "{invited, plural, one {# invitation queued} other {# invitations queued}}",
         "inviteResent": "{resent, plural, one {# re-sent} other {# re-sent}}",
         "inviteSkipped": "{skipped, plural, one {# skipped} other {# skipped}}",
@@ -1642,6 +1652,7 @@
       },
       "inlineEdit": {
         "statusUpdated": "Status updated",
+        "undo": "Undo",
         "saveFailed": "Save failed. Reverted.",
         "saving": "Saving…",
         "saved": "Saved",

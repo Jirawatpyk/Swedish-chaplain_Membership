@@ -188,3 +188,45 @@ describe('BulkActionBar — send_portal_invite result toast', () => {
     vi.unstubAllGlobals();
   });
 });
+
+describe('BulkActionBar — bulk archive Undo', () => {
+  it('archive success shows an Undo that restores exactly the server-returned ids', async () => {
+    const archivedIds = ['aaaa-1', 'bbbb-2'];
+    const fetchMock = vi
+      .fn()
+      // 1) the archive POST → returns the ids it archived
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ updated_count: 2, updated_ids: archivedIds }),
+      })
+      // 2) the Undo POST → unarchive
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ updated_count: 2 }),
+      });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { getByTestId } = renderBar();
+    fireEvent.click(getByTestId('confirm-archive'));
+
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalled());
+    const [, opts] = toastSuccess.mock.calls[0] as [
+      string,
+      { action?: { label: string; onClick: () => void | Promise<void> } },
+    ];
+    expect(opts?.action?.label).toBe('Undo');
+
+    // Invoking Undo posts `unarchive` with the RESPONSE ids (not the selection).
+    await opts!.action!.onClick();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    const undoBody = JSON.parse(
+      (fetchMock.mock.calls[1]?.[1] as { body: string }).body,
+    );
+    expect(undoBody.action).toBe('unarchive');
+    expect(undoBody.member_ids).toEqual(archivedIds);
+
+    vi.unstubAllGlobals();
+  });
+});

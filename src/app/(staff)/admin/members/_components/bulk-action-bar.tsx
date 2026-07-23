@@ -61,6 +61,42 @@ export function BulkActionBar({
   const count = selectedIds.length;
   const overCap = count > BULK_CAP;
 
+  // Undo for a bulk archive — restores exactly the ids the archive returned via
+  // the `unarchive` bulk action (domain `undelete`, 90-day window). Slim by
+  // design: no confirm dialog, no selection changes (the selection was already
+  // cleared), just restore + a confirmation toast + refresh. Wired to the
+  // archive success toast's action button below.
+  const undoArchive = useCallback(
+    async (ids: string[]) => {
+      try {
+        const res = await fetch('/api/members/bulk', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Idempotency-Key': crypto.randomUUID(),
+          },
+          body: JSON.stringify({ action: 'unarchive', member_ids: ids }),
+        });
+        const body = await res.json();
+        if (res.ok) {
+          toast.success(
+            t('unarchiveSuccess', { count: body.updated_count ?? ids.length }),
+          );
+          router.refresh();
+        } else if (res.status === 429) {
+          toast.error(t('rateLimited'));
+        } else {
+          const code = body.error?.code;
+          const key = typeof code === 'string' ? `errors.${code}` : null;
+          toast.error(key && t.has(key) ? t(key) : t('unknownError'));
+        }
+      } catch {
+        toast.error(t('networkError'));
+      }
+    },
+    [router, t],
+  );
+
   const executeBulk = useCallback(
     async (action: BulkAction, params?: Record<string, unknown>) => {
       if (overCap) return;
@@ -106,11 +142,28 @@ export function BulkActionBar({
             else if (c.invited > 0 || c.resent > 0) toast.success(message);
             else toast.info(message);
           } else {
+            const canUndo =
+              action === 'archive' &&
+              Array.isArray(body.updated_ids) &&
+              body.updated_ids.length > 0;
             toast.success(
               t('success', {
                 count: body.updated_count,
                 action: t(`actions.${action}`),
               }),
+              // 10-second Undo on bulk archive (ux-patterns §2.3) — restores the
+              // exact ids the server just archived. Complementary to the confirm
+              // dialog, which stays for accident-prevention on the way in.
+              canUndo
+                ? {
+                    duration: 10_000,
+                    action: {
+                      label: t('undo'),
+                      onClick: () =>
+                        undoArchive(body.updated_ids as string[]),
+                    },
+                  }
+                : undefined,
             );
           }
           onClear();
@@ -133,7 +186,7 @@ export function BulkActionBar({
         setProgress(null);
       }
     },
-    [selectedIds, count, overCap, onClear, router, t],
+    [selectedIds, count, overCap, onClear, router, t, undoArchive],
   );
 
   // H7: keep dialog open (with pending spinner) while archive is in-flight

@@ -369,14 +369,32 @@ function InlineStatusCell({
 
   const handleToggle = useCallback(async () => {
     if (!onSave || status === 'archived') return;
-    const next = optimistic === 'active' ? 'inactive' : 'active';
+    const previous = optimistic;
+    const next = previous === 'active' ? 'inactive' : 'active';
     setOptimistic(next);
     setSaving(true);
     const result = await onSave(memberId, 'status', next);
     setSaving(false);
     if (result.ok) {
       setSavedFlash(true);
-      toast.success(t('statusUpdated'));
+      // 10-second Undo (ux-patterns §2.3) — re-run the same inline-edit handler
+      // with the PREVIOUS value. Pure client re-call; no new backend surface.
+      toast.success(t('statusUpdated'), {
+        duration: 10_000,
+        action: {
+          label: t('undo'),
+          onClick: async () => {
+            setOptimistic(previous);
+            const undoResult = await onSave(memberId, 'status', previous);
+            if (undoResult.ok) {
+              toast.success(t('statusUpdated'));
+            } else {
+              setOptimistic(next); // undo failed — keep the applied value
+              toast.error(undoResult.error);
+            }
+          },
+        },
+      });
     } else {
       setOptimistic(status); // rollback
       // Discriminated union — `error` is guaranteed string when !ok.
