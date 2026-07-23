@@ -210,9 +210,11 @@ describe('needs-invite directory filter', () => {
   });
 
   it('count equals the filtered row count under a compound filter', async () => {
-    // This is the test that catches the third-WHERE drift: the count method
-    // assembles its own clause, so an omitted erased/archived/q predicate shows
-    // up here as count ≠ rows.
+    // Count and the visible list currently share ONE `buildDirectoryWhere`
+    // (Task 8), so they cannot drift today. This test is the regression guard
+    // that keeps it that way: if the count is ever given its own WHERE assembly
+    // and drops the erased / archived / q predicate, a decoy row seeded below
+    // inflates the count and this assertion (count ≠ rows) catches it.
     const marker = `CompoundCo-${randomUUID().slice(0, 8)}`;
     const matching: string[] = [];
     for (let i = 0; i < 2; i++) {

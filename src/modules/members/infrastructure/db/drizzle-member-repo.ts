@@ -297,13 +297,32 @@ function portalNeedsInviteFilter(now: Date): SQL {
          AND (
                c.linked_user_id IS NULL
             OR (
+                  -- (a) at least one UNCONSUMED invitation exists. Given the
+                  -- invariant that linked_user_id is only ever set atomically
+                  -- with an invitation row (F1 createUser saga; prune deletes
+                  -- the user + cascades the invitation + nulls linked_user_id
+                  -- together), this is redundant with (c) TODAY. It is kept
+                  -- deliberately: it is what makes this filter agree with the
+                  -- Task-4 batch read, whose JOIN structurally requires an
+                  -- unconsumed invitation to exist — so a hypothetical
+                  -- linked-user-with-zero-invitations row derives to 'active'
+                  -- (badge) AND is excluded here (filter), instead of the two
+                  -- surfaces disagreeing. Do not drop without re-checking that
+                  -- agreement.
                   EXISTS (SELECT 1 FROM invitations i
                            WHERE i.user_id = c.linked_user_id
                              AND i.consumed_at IS NULL)
+              -- (b) …but NONE of them is still live (all expired). A member
+              -- re-invited after an expiry holds an expired AND a live invite;
+              -- this excludes them so the filter matches the 'invited' badge.
               AND NOT EXISTS (SELECT 1 FROM invitations i2
                                WHERE i2.user_id = c.linked_user_id
                                  AND i2.consumed_at IS NULL
                                  AND i2.expires_at > ${nowIso}::timestamptz)
+              -- (c) …and the user has NEVER redeemed any invitation. SQL twin
+              -- of the Task-4 batch-read anti-join: a reissue mints a new row
+              -- without invalidating the old one, so an ACTIVE user keeps a
+              -- stale unconsumed row forever — this excludes them.
               AND NOT EXISTS (SELECT 1 FROM invitations ci
                                WHERE ci.user_id = c.linked_user_id
                                  AND ci.consumed_at IS NOT NULL)
