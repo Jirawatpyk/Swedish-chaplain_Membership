@@ -184,13 +184,16 @@ export interface AdminRenewLapsedMemberDeps
  *     this cycle's `period_to` — so the anchor chosen here is FINAL and flows
  *     onto the printed §86/4 window + the next cycle's anchor.
  *
- * `findMaxPaidThroughForMemberInTx` uses the SAME "settled" predicate
- * (`status='completed' OR anchored_at IS NOT NULL`) as
- * `countSettledCyclesForMemberInTx`, so `frontier !== null` ⟺ the §86/4 gate's
- * `settledCycleCountForMember >= 1` (the fresh awaiting_payment cycle is never
- * settled, so excluding it does not change the count) — the anchor branch and
- * the window-print branch partition the member set identically, and the printed
- * window always matches the stored anchor whenever it is printed.
+ * `findMaxPaidThroughForMemberInTx` uses the SAME EFFECTIVE-PAID predicate
+ * (`effectivePaidCoverageSql` — settled AND settling invoice not fully
+ * refunded/voided/credited, task #24) as `countSettledCyclesForMemberInTx`, so
+ * `frontier !== null` ⟺ the §86/4 gate's `settledCycleCountForMember >= 1` (the
+ * fresh awaiting_payment cycle is never settled, so excluding it does not change
+ * the count) — the anchor branch and the window-print branch partition the
+ * member set identically, and the printed window always matches the stored
+ * anchor whenever it is printed. A member whose only settled predecessor was
+ * fully REFUNDED therefore correctly falls into the `frontier === null`
+ * (first_payment / no-§86/4-window) branch.
  */
 async function resolveComebackPeriodFrom(
   deps: Pick<AdminRenewLapsedMemberDeps, 'cyclesRepo' | 'planLookupForRenewal'>,

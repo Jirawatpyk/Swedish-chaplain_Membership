@@ -607,18 +607,21 @@ export interface RenewalCycleRepo {
 
   /**
    * Cluster 4 review-fix (money BLOCKER) — the member's PAID-THROUGH
-   * frontier: `MAX(period_to)` across the cycles that represent SETTLED /
-   * paid coverage, i.e. `status = 'completed' OR anchored_at IS NOT NULL`.
-   * This is the SAME "paid" predicate `countSettledCyclesForMemberInTx`
-   * uses (the single canonical notion of "coverage was paid for" in F8).
+   * frontier: `MAX(period_to)` across the cycles that represent EFFECTIVE-PAID
+   * coverage. A cycle counts as paid coverage only when its SETTLING invoice
+   * (linked for a completed cycle, anchor for an open one) has NOT been fully
+   * reversed: a fully refunded / voided / credit-noted ('void'/'credited')
+   * settling invoice retracts the cycle (plan-change-ux task #24); a partial
+   * credit or a NULL settling id (backfill) still counts. This is the SAME
+   * predicate `countSettledCyclesForMemberInTx` uses — the single canonical
+   * notion of "coverage was paid for and NOT refunded" in F8.
    *
-   * Status is INTENTIONALLY not otherwise filtered: a cycle that was later
-   * CANCELLED by the archive cascade still counts when it was anchored to a
-   * real payment (cancel does NOT un-pay the coverage — `anchored_at`
-   * survives the cancel). An UNPAID cancelled/lapsed cycle (never completed,
-   * never anchored) is excluded by construction because it satisfies
-   * neither positive predicate. Returns `null` when the member has no paid
-   * coverage at all (a fresh import).
+   * A cycle that was later CANCELLED by the archive cascade still counts when
+   * it was anchored to a real (unreversed) payment (cancel does NOT un-pay the
+   * coverage — `anchored_at` survives the cancel). An UNPAID cancelled/lapsed
+   * cycle (never completed, never anchored) is excluded by construction. Returns
+   * `null` when the member has no effective-paid coverage at all (a fresh
+   * import, OR every prior cycle's settling invoice was refunded/voided).
    *
    * Used by the undelete-restore (`restoreCycleForMember`) to anchor the
    * re-created cycle AT the frontier rather than at the registration
@@ -636,12 +639,14 @@ export interface RenewalCycleRepo {
 
   /**
    * Count of the member's cycles — EXCLUDING `excludeCycleId` (the
-   * caller's current open cycle) — that represent a SETTLED renewal:
-   * status `'completed'` OR `anchored_at IS NOT NULL`. F2 fix
+   * caller's current open cycle) — that represent EFFECTIVE-PAID coverage
+   * (the SAME predicate `findMaxPaidThroughForMemberInTx` uses: settled AND
+   * its settling invoice not fully refunded/voided/credited — task #24). F2 fix
    * (final-review, 2026-07-09) — feeds `classifyMembershipPayment`'s
    * `settledCycleCountForMember` so a member whose only prior cycles are
-   * cancelled/lapsed WITHOUT ever anchoring (never actually paid) still
-   * classifies `first_payment` on their first real payment, even though
+   * cancelled/lapsed WITHOUT ever anchoring (never actually paid) — OR whose
+   * only settled cycle was later fully REFUNDED — still classifies
+   * `first_payment` on their next real payment, even though
    * `countCyclesForMemberInTx` is > 0 for them. In-tx (classification
    * must see uncommitted writes, same rationale as
    * `countCyclesForMemberInTx`).
