@@ -21,6 +21,7 @@ import { and, asc, eq, ne, sql, inArray, desc, or, isNull, isNotNull, type SQL }
 import { alias, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import { db, runInTenant } from '@/lib/db';
 import { env } from '@/lib/env';
+import { logger } from '@/lib/logger';
 import { parseThbDecimal, type ThbDecimal } from '@/lib/money';
 import type { TenantContext } from '@/modules/tenants';
 import { renewalCycles, type RenewalCycleRow } from '../schema-renewal-cycles';
@@ -128,6 +129,22 @@ function effectivePaidCoverageSql(
        AND ${anchorInv.status} IS DISTINCT FROM 'void'
        AND ${anchorInv.status} IS DISTINCT FROM 'credited')
   )`;
+}
+
+/**
+ * The PRE-task-#24 RAW coverage predicate (`status = 'completed' OR
+ * anchored_at IS NOT NULL`), kept ONLY as an observability yardstick: computed
+ * in the SAME aggregate pass as `effectivePaidCoverageSql` (a second FILTER, no
+ * extra scan / round-trip) so `findMaxPaidThroughForMemberInTx` can log when the
+ * effective-paid rule RETRACTS the frontier a refund/void reversed — making the
+ * first prod occurrences of this silent money-behaviour change visible. This is
+ * NOT a billing predicate; do NOT reintroduce it as a coverage filter.
+ */
+function rawPaidCoverageSql(cycle: {
+  readonly status: AnyPgColumn;
+  readonly anchoredAt: AnyPgColumn;
+}): SQL {
+  return sql`(${cycle.status} = 'completed' OR ${cycle.anchoredAt} IS NOT NULL)`;
 }
 
 // ---------------------------------------------------------------------------
@@ -1794,7 +1811,7 @@ export function makeDrizzleRenewalCycleRepo(
      */
     async findMaxPaidThroughForMemberInTx(
       tx: unknown,
-      _tenantId: string,
+      tenantId: string,
       memberId: string,
     ): Promise<string | null> {
       const txDb = tx as typeof db;
@@ -1805,11 +1822,18 @@ export function makeDrizzleRenewalCycleRepo(
       // join (application-layer defence-in-depth atop RLS, Principle I).
       const linkedInvoice = alias(invoices, 'linked_invoice');
       const anchorInvoice = alias(invoices, 'anchor_invoice');
+      // Both frontiers in ONE pass over the member's cycles (no extra scan or
+      // round-trip): `effectiveMax` is the returned billing frontier; `rawMax`
+      // (the pre-task-#24 predicate) is compared to it purely to LOG a refund
+      // retraction of the frontier — see rawPaidCoverageSql.
       const rows = await txDb
         .select({
-          maxPeriodTo: sql<
+          effectiveMax: sql<
             Date | string | null
-          >`max(${renewalCycles.periodTo})`,
+          >`max(${renewalCycles.periodTo}) FILTER (WHERE ${effectivePaidCoverageSql(renewalCycles, linkedInvoice, anchorInvoice)})`,
+          rawMax: sql<
+            Date | string | null
+          >`max(${renewalCycles.periodTo}) FILTER (WHERE ${rawPaidCoverageSql(renewalCycles)})`,
         })
         .from(renewalCycles)
         .leftJoin(
@@ -1826,20 +1850,31 @@ export function makeDrizzleRenewalCycleRepo(
             eq(anchorInvoice.invoiceId, renewalCycles.anchorInvoiceId),
           ),
         )
-        .where(
-          and(
-            eq(renewalCycles.memberId, memberId),
-            effectivePaidCoverageSql(
-              renewalCycles,
-              linkedInvoice,
-              anchorInvoice,
-            ),
-          ),
-        );
-      const raw = rows[0]?.maxPeriodTo ?? null;
+        .where(eq(renewalCycles.memberId, memberId));
       // `MAX(timestamptz)` comes back as a Date from postgres.js (like the
       // other timestamptz columns); coerce defensively for a string too.
-      return raw === null ? null : new Date(raw).toISOString();
+      const effectiveRaw = rows[0]?.effectiveMax ?? null;
+      const rawRaw = rows[0]?.rawMax ?? null;
+      const effectiveIso =
+        effectiveRaw === null ? null : new Date(effectiveRaw).toISOString();
+      const rawIso = rawRaw === null ? null : new Date(rawRaw).toISOString();
+      // Effective ⊆ raw always, so any divergence ⟺ a void/credited settling
+      // invoice retracted the frontier (a silent money-behaviour change: the
+      // restore/comeback now re-bills a period the old rule treated as paid).
+      // Log it so the first prod occurrences are visible. No PII — tenant/member
+      // ids + ISO instants only.
+      if (rawIso !== effectiveIso) {
+        logger.info(
+          {
+            tenantId,
+            memberId,
+            effectivePaidThrough: effectiveIso,
+            rawPaidThrough: rawIso,
+          },
+          'renewals.effective_paid_frontier_retracted',
+        );
+      }
+      return effectiveIso;
     },
 
     /**
