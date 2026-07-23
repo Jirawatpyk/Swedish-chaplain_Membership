@@ -1003,6 +1003,14 @@
         "searchPlaceholder": "Search by company, contact name, email, or member number",
         "searchSrLabel": "Search members",
         "clearFilters": "Clear filters",
+        "activeFilters": "Active filters",
+        "removeFilter": "Remove filter: {filter}",
+        "filterChip": {
+          "search": "Search: {q}",
+          "status": "Status: {value}",
+          "plan": "Plan: {value}",
+          "risk": "Risk: {value}"
+        },
         "filters": {
           "status": {
             "label": "Status",

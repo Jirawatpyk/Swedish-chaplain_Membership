@@ -1003,6 +1003,14 @@
         "searchPlaceholder": "Sök på företag, kontakt, e-post eller medlemsnummer",
         "searchSrLabel": "Sök medlemmar",
         "clearFilters": "Rensa filter",
+        "activeFilters": "Aktiva filter",
+        "removeFilter": "Ta bort filter: {filter}",
+        "filterChip": {
+          "search": "Sök: {q}",
+          "status": "Status: {value}",
+          "plan": "Paket: {value}",
+          "risk": "Risk: {value}"
+        },
         "filters": {
           "status": {
             "label": "Status",

@@ -1003,6 +1003,14 @@
         "searchPlaceholder": "ค้นหาด้วยชื่อบริษัท ผู้ติดต่อ อีเมล หรือหมายเลขสมาชิก",
         "searchSrLabel": "ค้นหาสมาชิก",
         "clearFilters": "ล้างตัวกรอง",
+        "activeFilters": "ตัวกรองที่ใช้อยู่",
+        "removeFilter": "เอาตัวกรองออก: {filter}",
+        "filterChip": {
+          "search": "ค้นหา: {q}",
+          "status": "สถานะ: {value}",
+          "plan": "แพ็กเกจ: {value}",
+          "risk": "ความเสี่ยง: {value}"
+        },
         "filters": {
           "status": {
             "label": "สถานะ",
