@@ -17,8 +17,14 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
 }));
 const toastError = vi.fn();
+const toastSuccess = vi.fn();
+const toastInfo = vi.fn();
 vi.mock('sonner', () => ({
-  toast: { success: vi.fn(), error: (...a: unknown[]) => toastError(...a), info: vi.fn() },
+  toast: {
+    success: (...a: unknown[]) => toastSuccess(...a),
+    error: (...a: unknown[]) => toastError(...a),
+    info: (...a: unknown[]) => toastInfo(...a),
+  },
 }));
 
 // Stand-in for the archive confirm dialog: a plain button that fires the
@@ -33,8 +39,14 @@ vi.mock('@/app/(staff)/admin/members/_components/archive-confirm-dialog', () => 
 vi.mock('@/app/(staff)/admin/members/_components/bulk-progress-indicator', () => ({
   BulkProgressIndicator: () => null,
 }));
+// Stand-in for the send-portal-invite confirm dialog: a plain button that
+// fires the component's `onConfirm` (== executeBulk('send_portal_invite')).
 vi.mock('@/components/shell/confirmation-dialog', () => ({
-  ConfirmationDialog: () => null,
+  ConfirmationDialog: ({ onConfirm }: { onConfirm: () => void }) => (
+    <button type="button" data-testid="confirm-invite" onClick={() => onConfirm()}>
+      confirm invite
+    </button>
+  ),
 }));
 
 import { BulkActionBar } from '@/app/(staff)/admin/members/_components/bulk-action-bar';
@@ -44,6 +56,8 @@ const MEMBER_UUID = '11111111-2222-3333-4444-555555555555';
 beforeEach(() => {
   vi.useRealTimers();
   toastError.mockClear();
+  toastSuccess.mockClear();
+  toastInfo.mockClear();
 });
 
 function renderBar() {
@@ -114,6 +128,62 @@ describe('BulkActionBar — server error code mapping', () => {
     // Neither the raw message nor a dangling key path.
     expect(arg).not.toContain('Internal server error');
     expect(arg).not.toContain('errors.server_error');
+
+    vi.unstubAllGlobals();
+  });
+});
+
+describe('BulkActionBar — send_portal_invite result toast', () => {
+  function mockBulkResult(counts: {
+    invited: number;
+    resent: number;
+    skipped: number;
+    failed: number;
+  }) {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        invited: [],
+        resent: [],
+        skipped: [],
+        failed: [],
+        counts,
+      }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+  }
+
+  it('a resent-only run shows a SUCCESS toast (not the neutral "nothing happened" info)', async () => {
+    // The bug this guards: with `else if (c.invited > 0)` a run that only
+    // re-sent invitations (invited 0, resent > 0) fell through to toast.info,
+    // telling the admin nothing happened while real emails were queued. The
+    // success branch must include `c.resent > 0`.
+    mockBulkResult({ invited: 0, resent: 2, skipped: 0, failed: 0 });
+
+    const { getByTestId } = renderBar();
+    fireEvent.click(getByTestId('confirm-invite'));
+
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalled());
+    expect(toastInfo).not.toHaveBeenCalled();
+    expect(toastError).not.toHaveBeenCalled();
+    expect(toastSuccess.mock.calls[0]?.[0]).toContain('2 re-sent');
+
+    vi.unstubAllGlobals();
+  });
+
+  it('a skipped-only run still shows the neutral INFO toast (unchanged branch)', async () => {
+    // Locks the other side: an all-already-active run did nothing, so it must
+    // stay a neutral info toast — the success condition must NOT over-broaden
+    // to include skipped.
+    mockBulkResult({ invited: 0, resent: 0, skipped: 3, failed: 0 });
+
+    const { getByTestId } = renderBar();
+    fireEvent.click(getByTestId('confirm-invite'));
+
+    await waitFor(() => expect(toastInfo).toHaveBeenCalled());
+    expect(toastSuccess).not.toHaveBeenCalled();
+    expect(toastError).not.toHaveBeenCalled();
 
     vi.unstubAllGlobals();
   });
