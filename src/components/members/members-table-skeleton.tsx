@@ -60,14 +60,15 @@ export function MembersTableSkeleton({
           className="grid gap-3 border-b px-4 py-3 last:border-b-0"
           style={{ gridTemplateColumns: gridTemplate }}
         >
+          {/* 057 badge-inline — the portal badge renders INLINE after the
+              contact name (wrapping only when the column is too narrow), so the
+              common row is a single line again. A one-line shimmer matches the
+              majority of rows; the minority that wrap (long plan name, or a
+              Lapsed/Suspended badge stacked in the Status cell) settle one line
+              taller, which is a smaller aggregate CLS than over-reserving two
+              lines for every row (ux-standards § 2.1). */}
           {Array.from({ length: cols }).map((__, c) => (
-            <div key={c} className="flex flex-col gap-1">
-              <Skeleton className="h-5 w-full" />
-              {/* 057 — the real Contact cell now stacks a badge under the
-                  name, so the shimmer needs the same height or every row
-                  jumps when data lands (CLS, ux-standards § 2.1). */}
-              <Skeleton className="h-3 w-2/3" />
-            </div>
+            <Skeleton key={c} className="h-5 w-full" />
           ))}
         </div>
       ))}

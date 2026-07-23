@@ -652,50 +652,52 @@ export function MembersTable({
         if (!c) return <span className="text-muted-foreground">{t('noPrimary')}</span>;
         const fullName = `${c.first_name} ${c.last_name}`.trim();
         return (
-          <span className="flex flex-col gap-1">
-            <span className="flex items-start gap-1.5">
-              {/* Name shows in FULL and WRAPS (min-w-0 + break-words); a long name
-                  grows DOWN, not across, so it never widens the table. */}
-              <span
-                className="min-w-0 max-w-[18ch] break-words whitespace-normal"
-                title={fullName}
+          // 057 badge-inline (user request 2026-07-23): the portal + bounce
+          // badges flow INLINE after the contact name on the SAME line, and
+          // wrap to a new line only when the column is too narrow. Name and
+          // badges are siblings of ONE `flex flex-wrap` container (not a
+          // stacked name-row + badge-row), so the common "name + one short
+          // badge" case stays a single line and keeps the row compact.
+          // `flex-wrap` is required because Badge is `shrink-0` — without it a
+          // long name + badge would overflow the 175px column instead of
+          // wrapping. The name span keeps its own `max-w`/`break-words`, so a
+          // very long name wraps within itself and pushes the badges down.
+          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span
+              className="min-w-0 max-w-[18ch] break-words whitespace-normal"
+              title={fullName}
+            >
+              {fullName}
+            </span>
+            <PortalBadge
+              state={
+                // Suppress ALL portal badges on archived rows — mirrors the
+                // Lapsed/Suspended badge suppression on the Status cell below.
+                info.row.original.status === 'archived'
+                  ? null
+                  : info.row.original.portal_state
+              }
+            />
+            {/* Edge Case "Invitation email bounce" (spec §613-620) — surface a
+                row-level bounce signal in the directory, not only on the detail
+                page. Copy lives under admin.members.detail.inviteBounced.
+                Bounce badge suppressed when the invitation ALSO expired or
+                the contact is already active — one root cause, one recovery
+                (mirrors admin/members/[memberId]/page.tsx:415-417). */}
+            {c.invite_bounced &&
+            info.row.original.portal_state !== 'invite_expired' &&
+            info.row.original.portal_state !== 'active' ? (
+              <Badge
+                variant="outline"
+                className="shrink-0 gap-1 border-destructive/40 text-destructive"
               >
-                {fullName}
-              </span>
-            </span>
-            {/* flex-wrap is required: Badge is shrink-0, so without it the
-                badge row overflows the 175px column instead of wrapping. */}
-            <span className="flex flex-wrap items-center gap-1">
-              <PortalBadge
-                state={
-                  // Suppress ALL portal badges on archived rows — mirrors the
-                  // Lapsed/Suspended badge suppression on the Status cell below.
-                  info.row.original.status === 'archived'
-                    ? null
-                    : info.row.original.portal_state
-                }
-              />
-              {/* Edge Case "Invitation email bounce" (spec §613-620) — surface a
-                  row-level bounce signal in the directory, not only on the detail
-                  page. Copy lives under admin.members.detail.inviteBounced.
-                  Bounce badge suppressed when the invitation ALSO expired or
-                  the contact is already active — one root cause, one recovery
-                  (mirrors admin/members/[memberId]/page.tsx:415-417). */}
-              {c.invite_bounced &&
-              info.row.original.portal_state !== 'invite_expired' &&
-              info.row.original.portal_state !== 'active' ? (
-                <Badge
-                  variant="outline"
-                  className="shrink-0 gap-1 border-destructive/40 text-destructive"
-                >
-                  <TriangleAlert aria-hidden="true" className="size-3" />
-                  <span aria-hidden="true">{tContact('inviteBounced.badge')}</span>
-                  <span className="sr-only">
-                    {tContact('inviteBounced.badgeAria')}
-                  </span>
-                </Badge>
-              ) : null}
-            </span>
+                <TriangleAlert aria-hidden="true" className="size-3" />
+                <span aria-hidden="true">{tContact('inviteBounced.badge')}</span>
+                <span className="sr-only">
+                  {tContact('inviteBounced.badgeAria')}
+                </span>
+              </Badge>
+            ) : null}
           </span>
         );
       },
