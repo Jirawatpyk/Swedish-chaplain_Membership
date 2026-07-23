@@ -1896,10 +1896,12 @@
         "membershipEffect": {
           "legend": "What should happen to the membership?",
           "keep": {
-            "label": "Document correction / duplicate refund — membership unaffected"
+            "label": "Keep membership — document correction",
+            "description": "The member was NOT refunded for this period, so their membership coverage is retained."
           },
           "cancelMembership": {
-            "label": "Refund and cancel membership — active renewal cycles will be cancelled"
+            "label": "Refund and cancel membership",
+            "description": "The member is refunded and their active renewal cycles are cancelled."
           }
         },
         "errors": {

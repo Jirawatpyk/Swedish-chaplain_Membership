@@ -1896,10 +1896,12 @@
         "membershipEffect": {
           "legend": "Vad ska hända med medlemskapet?",
           "keep": {
-            "label": "Dokumentkorrigering / dubbelbetalning — medlemskapet påverkas inte"
+            "label": "Behåll medlemskapet — dokumentkorrigering",
+            "description": "Medlemmen återbetalades INTE för denna period, så medlemskapets täckning behålls."
           },
           "cancelMembership": {
-            "label": "Återbetala och avsluta medlemskapet — aktiva förnyelsecykler avbryts"
+            "label": "Återbetala och avsluta medlemskapet",
+            "description": "Medlemmen återbetalas och deras aktiva förnyelsecykler avbryts."
           }
         },
         "errors": {

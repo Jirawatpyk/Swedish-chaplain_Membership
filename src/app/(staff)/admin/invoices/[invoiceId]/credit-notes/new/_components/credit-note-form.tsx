@@ -320,6 +320,7 @@ export function CreditNoteForm({
                 value="keep"
                 className="mt-0.5"
                 aria-labelledby="cn-membership-effect-keep-label"
+                aria-describedby="cn-membership-effect-keep-desc"
               />
               <Label
                 htmlFor="cn-membership-effect-keep"
@@ -327,6 +328,15 @@ export function CreditNoteForm({
               >
                 <span id="cn-membership-effect-keep-label" className="font-medium">
                   {t('membershipEffect.keep.label')}
+                </span>
+                {/* Option 1b — make the coverage meaning explicit: a 'keep' is a
+                    paperwork correction where the member was NOT refunded, so
+                    renewal coverage is retained. */}
+                <span
+                  id="cn-membership-effect-keep-desc"
+                  className="text-xs text-muted-foreground"
+                >
+                  {t('membershipEffect.keep.description')}
                 </span>
               </Label>
             </div>
@@ -336,6 +346,7 @@ export function CreditNoteForm({
                 value="cancel_membership"
                 className="mt-0.5"
                 aria-labelledby="cn-membership-effect-cancel-label"
+                aria-describedby="cn-membership-effect-cancel-desc"
               />
               <Label
                 htmlFor="cn-membership-effect-cancel"
@@ -348,6 +359,12 @@ export function CreditNoteForm({
                   className="font-medium text-amber-900 dark:text-amber-200"
                 >
                   {t('membershipEffect.cancelMembership.label')}
+                </span>
+                <span
+                  id="cn-membership-effect-cancel-desc"
+                  className="text-xs text-muted-foreground"
+                >
+                  {t('membershipEffect.cancelMembership.description')}
                 </span>
               </Label>
             </div>
