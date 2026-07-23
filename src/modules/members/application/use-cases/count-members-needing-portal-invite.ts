@@ -4,6 +4,13 @@
  * (Principle III) and so the "same filter as the list" contract (D7) lives in
  * one place: callers hand in the SAME DirectoryOffsetFilter they gave the
  * search, and this forces `portalNeedsInvite` on.
+ *
+ * A repo failure is THROWN, never coerced to a number. Coercing `!ok` to `0`
+ * would tell the chip "0 members need inviting" on a DB outage, which hides the
+ * chip and reads as "everyone has been invited" — a lie. The caller
+ * (`countMembersNeedingPortalInviteSafe` on the page) catches this throw and
+ * degrades to `null`, which renders a disabled "unavailable" chip instead. Same
+ * contract as the sibling `loadMembersPortalStatus` use case.
  */
 import { ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
@@ -17,5 +24,10 @@ export async function countMembersNeedingPortalInvite(
     deps.tenant,
     filter,
   );
-  return ok(res.ok ? res.value : 0);
+  if (!res.ok) {
+    throw new Error(
+      `countMembersNeedingPortalInvite failed: ${res.error.code}`,
+    );
+  }
+  return ok(res.value);
 }
