@@ -52,6 +52,12 @@ export type PlanOption = {
 
 type Props = {
   readonly plans?: readonly PlanOption[];
+  /**
+   * Needs-invite chip count (design doc §3.7). `null` = read failed
+   * (unavailable), `number` = live count. Task 11 renders the chip itself —
+   * this task only threads the value through.
+   */
+  readonly portalInviteCount?: number | null;
 };
 
 export function DirectoryFilters({ plans = [] }: Props) {

@@ -163,6 +163,10 @@ export {
   type LoadMembersPortalStatusDeps,
 } from './application/use-cases/load-members-portal-status';
 
+export {
+  countMembersNeedingPortalInvite,
+} from './application/use-cases/count-members-needing-portal-invite';
+
 // --- US3 use cases ----------------------------------------------------------
 
 export {
