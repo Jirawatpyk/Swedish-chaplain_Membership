@@ -117,6 +117,20 @@ describe('effective-paid frontier + settled-count — refund/void coverage (live
       mkCase('completed-credited', 'completed', 'credited', false),
       mkCase('completed-void', 'completed', 'void', false),
       mkCase('completed-partial', 'completed', 'partially_credited', true),
+      // NO `completed-backfill` case (fin-review L1): the completed arm's
+      // NULL-settling-invoice branch is STRUCTURALLY UNREACHABLE, so its absence
+      // is a coverage NON-gap, not a hole. Two DB invariants make a completed
+      // cycle's `linkedInv.status` never NULL: (1) CHECK
+      // `renewal_cycles_completed_requires_invoice_check` (migration 0087) forbids
+      // a `completed` cycle with NULL `linked_invoice_id`; (2) the composite FK
+      // `(tenant_id, linked_invoice_id) → invoices` (NO ACTION on delete) forbids
+      // a dangling id, so the completed arm's LEFT JOIN can never miss. The
+      // `IS DISTINCT FROM NULL` NULL-tolerance of the SHARED
+      // `effectivePaidCoverageSql` helper (identical operator on both arms) is
+      // therefore exercised via the ANCHORED arm's `anchored-backfill` case below
+      // (anchor_invoice_id NULL → join miss → status NULL → covered) — the only
+      // lifecycle position where a cycle legitimately has a NULL settling-invoice
+      // id (R4 pre-system-payment cohort).
       // --- ANCHORED-open arm (settling invoice = anchor_invoice_id) ---
       mkCase('anchored-paid', 'anchored', 'paid', true),
       mkCase('anchored-credited', 'anchored', 'credited', false),
