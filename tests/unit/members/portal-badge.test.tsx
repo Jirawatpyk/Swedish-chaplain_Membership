@@ -127,10 +127,30 @@ describe('portal status badge', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('renders no portal badge on an archived row', () => {
+  it('renders neither the portal badge nor the bounce badge on an archived row', () => {
+    // Regression guard for the archived-suppression rule: an archived row is
+    // "out", so NO portal-related badge shows — not the PortalBadge and not the
+    // bounce badge. `invite_bounced: true` here is the combination the
+    // suppression fix targets; without this assertion a refactor that drops the
+    // `&& status !== 'archived'` clause from the bounce condition would regress
+    // silently (no other test renders archived + bounced together).
     renderTable([
-      row({ member_id: 'm9', status: 'archived', portal_state: 'not_invited' }),
+      row({
+        member_id: 'm9',
+        status: 'archived',
+        portal_state: 'not_invited',
+        primary_contact: {
+          contact_id: 'c9',
+          first_name: 'Archived',
+          last_name: 'Bounced',
+          email: 'archived@example.com',
+          invite_bounced: true,
+        },
+      }),
     ]);
     expect(screen.queryByText('Not invited')).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(messages.admin.members.detail.inviteBounced.badge),
+    ).not.toBeInTheDocument();
   });
 });
