@@ -33,6 +33,11 @@ import { members } from '@/modules/members/infrastructure/db/schema-members';
 // this same table for its composite FK, so this stays inside the existing
 // dependency graph and avoids the barrel load-cycle that breaks tsx scripts.
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
+// M1 (plan-change-ux, Option 1b) — deep import of the F4 credit_notes SCHEMA
+// (not the invoicing barrel) so the effective-paid predicate + L1 pipeline can
+// consult `retains_coverage` via a correlated EXISTS. Same deep-import discipline
+// as `invoices` above — avoids the barrel load-cycle that breaks tsx scripts.
+import { creditNotes } from '@/modules/invoicing/infrastructure/db/schema-credit-notes';
 import {
   CycleNotFoundError,
   CycleTransitionConflictError,
@@ -107,27 +112,74 @@ import type { RenewalMonthAggregation } from '../../domain/renewal-month-bucket'
  * is reason-agnostic and invoice-status-only (NO `closed_reason`, NO
  * `refunds`/`payments` join).
  *
+ * *** M1 (plan-change-ux, Option 1b) — COVERAGE-RETAINED ESCAPE ***
+ * A 'credited' settling invoice normally RETRACTS the period, but NOT when the
+ * completing credit note was an F4-manual FULL membership 'keep' — a paperwork
+ * correction where the member was NOT refunded, so coverage is RETAINED. That
+ * intent is persisted on `credit_notes.retains_coverage`; the `credited` arm of
+ * BOTH clauses below carries a correlated `EXISTS` escape (NOT a JOIN — the call
+ * sites are MAX/COUNT aggregates and a credit_notes JOIN is 1..N per invoice,
+ * which would inflate COUNT; `retains_coverage=TRUE` only ever lands on the ONE
+ * completing full-membership retention note, so EXISTS is ≤1 per invoice and
+ * preserves the ≤1-row-per-cycle aggregate). Each EXISTS carries an EXPLICIT
+ * `credit_notes.tenant_id = <settling invoice>.tenant_id` predicate
+ * (application-layer defence-in-depth atop the isolating RLS on `credit_notes`,
+ * Principle I two-layer).
+ *
  * *** DISPLAY + BILLING USE THE SAME EFFECTIVE-PAID RULE ***
  * The pipeline "Covered" cell derives the same notion in `loadPipelinePage`
  * (the `anchored` projection — anchor-only there, since the pipeline shows only
- * OPEN cycles). If you add or change a gate HERE, mirror it THERE, and vice
- * versa: the moment two sites answer "was this period paid for?" independently
- * they drift, and the cost of drift here is paid in money (mirrors the
- * `refund-credit-note-requirement.ts` cross-reference discipline).
+ * OPEN cycles), INCLUDING the M1 retains-coverage escape. If you add or change a
+ * gate HERE, mirror it THERE, and vice versa: the moment two sites answer "was
+ * this period paid for?" independently they drift, and the cost of drift here is
+ * paid in money (mirrors the `refund-credit-note-requirement.ts` cross-reference
+ * discipline).
  */
 function effectivePaidCoverageSql(
   cycle: { readonly status: AnyPgColumn; readonly anchoredAt: AnyPgColumn },
-  linkedInv: { readonly status: AnyPgColumn },
-  anchorInv: { readonly status: AnyPgColumn },
+  linkedInv: {
+    readonly status: AnyPgColumn;
+    readonly tenantId: AnyPgColumn;
+    readonly invoiceId: AnyPgColumn;
+  },
+  anchorInv: {
+    readonly status: AnyPgColumn;
+    readonly tenantId: AnyPgColumn;
+    readonly invoiceId: AnyPgColumn;
+  },
 ): SQL {
   return sql`(
     (${cycle.status} = 'completed'
        AND ${linkedInv.status} IS DISTINCT FROM 'void'
-       AND ${linkedInv.status} IS DISTINCT FROM 'credited')
+       AND (${linkedInv.status} IS DISTINCT FROM 'credited'
+            OR ${coverageRetainedExistsSql(linkedInv)}))
     OR
     (${cycle.anchoredAt} IS NOT NULL
        AND ${anchorInv.status} IS DISTINCT FROM 'void'
-       AND ${anchorInv.status} IS DISTINCT FROM 'credited')
+       AND (${anchorInv.status} IS DISTINCT FROM 'credited'
+            OR ${coverageRetainedExistsSql(anchorInv)}))
+  )`;
+}
+
+/**
+ * M1 (plan-change-ux, Option 1b) — correlated `EXISTS` that is TRUE when the
+ * settling invoice `inv` has a credit note with `retains_coverage = TRUE` (an
+ * F4-manual FULL membership 'keep' retention note — member not refunded).
+ * Correlated on the outer settling-invoice alias, so it stays ≤1 boolean per
+ * outer row and never inflates the MAX/COUNT aggregates the predicate feeds.
+ * The explicit `tenant_id` equality is application-layer defence-in-depth atop
+ * the RLS on `credit_notes` (Principle I two-layer). Shared by the billing
+ * predicate above AND the L1 pipeline read model so the two never diverge.
+ */
+function coverageRetainedExistsSql(inv: {
+  readonly tenantId: AnyPgColumn;
+  readonly invoiceId: AnyPgColumn;
+}): SQL<boolean> {
+  return sql<boolean>`EXISTS (
+    SELECT 1 FROM ${creditNotes}
+    WHERE ${creditNotes.tenantId} = ${inv.tenantId}
+      AND ${creditNotes.originalInvoiceId} = ${inv.invoiceId}
+      AND ${creditNotes.retainsCoverage} = TRUE
   )`;
 }
 
@@ -1657,6 +1709,13 @@ export function makeDrizzleRenewalCycleRepo(
             // as still-covered by the null-tolerant predicate in the mapper.
             anchoredAt: renewalCycles.anchoredAt,
             anchorInvoiceStatus: anchorInvoice.status,
+            // M1 (plan-change-ux, Option 1b) — the SAME correlated EXISTS the
+            // billing predicate uses (coverageRetainedExistsSql), on the aliased
+            // anchor invoice. TRUE when a coverage-retaining F4-manual 'keep' CN
+            // exists → the `anchored` mapper below keeps "Covered" even on a
+            // 'credited' anchor. Explicit tenant predicate = two-layer isolation.
+            anchorRetainsCoverage:
+              coverageRetainedExistsSql(anchorInvoice).as('anchor_retains_coverage'),
             closedReason: renewalCycles.closedReason,
             // J4-H13: surface members.email_unverified to the UI
             // — already JOIN'd above, so adding the column to the
@@ -1718,16 +1777,23 @@ export function makeDrizzleRenewalCycleRepo(
           // invoice) is null-tolerant and stays covered: `anchored_at` alone
           // stands for the backfill cohort.
           //
+          // M1 (plan-change-ux, Option 1b) — the 'credited' retraction is ESCAPED
+          // when the completing credit note was an F4-manual FULL membership
+          // 'keep' (member NOT refunded → coverage retained): `anchorRetainsCoverage`
+          // is the SAME correlated EXISTS the billing predicate uses, so a
+          // coverage-retaining 'credited' anchor still reads "Covered".
+          //
           // DISPLAY + BILLING USE THE SAME EFFECTIVE-PAID RULE. This is the
-          // ANCHOR-only projection of `effectivePaidCoverageSql` (task #24) —
-          // the pipeline only shows OPEN cycles, so it never needs the
+          // ANCHOR-only projection of `effectivePaidCoverageSql` (task #24 + M1)
+          // — the pipeline only shows OPEN cycles, so it never needs the
           // completed→linked arm. If you add or change a coverage gate HERE,
           // mirror it in `effectivePaidCoverageSql` (billing frontier + settled
           // count), and vice versa — the two must not drift.
           anchored:
             r.anchoredAt != null &&
             r.anchorInvoiceStatus !== 'void' &&
-            r.anchorInvoiceStatus !== 'credited',
+            (r.anchorInvoiceStatus !== 'credited' ||
+              r.anchorRetainsCoverage === true),
           closedReason: r.closedReason as ClosedReason | null,
           // J4-H13: defaults to false when the LEFT JOIN didn't match
           // (orphan cycle without a member row — should never happen
