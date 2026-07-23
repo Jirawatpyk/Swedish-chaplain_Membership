@@ -41,6 +41,13 @@ export function MembersTableSkeleton({
   withSelection = false,
 }: MembersTableSkeletonProps = {}) {
   const cols = withSelection ? 8 : 7;
+  // Render enough shimmer rows to fill a typical viewport (was 8): a real page
+  // holds up to PAGE_SIZE (50) rows, so a short skeleton let the content below
+  // the table (pagination) jump up during load and back down when data landed —
+  // a visible CLS. 15 rows fills most laptop viewports so that shift happens
+  // below the fold (where it no longer counts toward CLS) without rendering all
+  // 50 heavy shimmer rows.
+  const skeletonRows = 15;
   // Build a grid template where the select column (when present) is
   // narrow to match the real `size: 40` checkbox column — visual
   // alignment is closer to the live table than uniform fractions.
@@ -58,7 +65,7 @@ export function MembersTableSkeleton({
           <Skeleton key={i} className="h-3 w-full" />
         ))}
       </div>
-      {Array.from({ length: 8 }).map((_, r) => (
+      {Array.from({ length: skeletonRows }).map((_, r) => (
         <div
           key={r}
           className="grid gap-3 border-b px-4 py-3 last:border-b-0"

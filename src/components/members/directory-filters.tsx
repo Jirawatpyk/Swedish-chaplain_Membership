@@ -286,6 +286,11 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
               ? t('portalChip.unavailable')
               : t('portalChip.aria', { count: portalInviteCount ?? 0 })
           }
+          // Hover hint on the unavailable state so it reads as a transient read
+          // failure ("refresh to try again"), not a permanent empty count.
+          {...(portalInviteCount === null
+            ? { title: t('portalChip.unavailableHint') }
+            : {})}
           className="whitespace-nowrap"
         >
           <MailWarningIcon className="size-4" aria-hidden />

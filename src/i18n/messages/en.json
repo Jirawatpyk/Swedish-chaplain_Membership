@@ -1075,7 +1075,8 @@
         "portalChip": {
           "label": "Needs portal invite",
           "aria": "Needs portal invite, {count} members",
-          "unavailable": "Portal status unavailable"
+          "unavailable": "Portal status unavailable",
+          "unavailableHint": "Couldn't load the count — refresh to try again"
         },
         "tableCaption": "Members directory"
       },

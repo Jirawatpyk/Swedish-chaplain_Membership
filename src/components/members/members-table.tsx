@@ -653,7 +653,10 @@ export function MembersTable({
     // 056-members-table-compact — Contact shows the name only (the email
     // second line was dropped to keep the column compact).
     columnHelper.accessor('primary_contact', {
-      size: 175,
+      // Widened 175→205 (user request, 2026-07-23): the cell holds the contact
+      // name plus the portal/bounce badges inline, so the extra width keeps the
+      // common "name + one badge" case on a single line before it wraps.
+      size: 205,
       header: () => t('columns.primaryContact'),
       cell: (info) => {
         const c = info.getValue();

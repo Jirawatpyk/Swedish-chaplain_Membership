@@ -1075,7 +1075,8 @@
         "portalChip": {
           "label": "Behöver portalinbjudan",
           "aria": "Behöver portalinbjudan, {count} medlemmar",
-          "unavailable": "Portalstatus ej tillgänglig"
+          "unavailable": "Portalstatus ej tillgänglig",
+          "unavailableHint": "Kunde inte läsa antalet — uppdatera för att försöka igen"
         },
         "tableCaption": "Medlemsregister"
       },

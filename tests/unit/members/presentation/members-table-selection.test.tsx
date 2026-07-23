@@ -44,19 +44,25 @@ const messages = {
         selectedCount: '{count} selected',
         selectAllMatchingHint: 'All {count} selected. <loadMore>Load next</loadMore>',
         tableCaption: 'Members',
+        // Live-region result count (no `total` prop passed here → the page-only
+        // `resultsCount` branch) + the two sortable-column headers, so the table
+        // renders without MISSING_MESSAGE noise.
+        resultsCount: '{count, plural, =0 {No members} one {# member} other {# members}}',
+        sortByMemberNumber: 'Sort by member number',
+        sortByEngagement: 'Sort by engagement',
         columns: {
+          memberNumber: 'Member No.',
           company: 'Company',
           plan: 'Plan',
           primaryContact: 'Primary contact',
           status: 'Status',
+          engagement: 'Engagement',
           lastActivity: 'Last activity',
         },
-        // `StatusBadge` (members-table.tsx) reads `filters.status.<status>`,
-        // not the flat `status*` keys below — this fixture only exercises
-        // `status: 'active'` rows, so only that one key is needed.
         filters: {
           status: {
             active: 'Active',
+            archived: 'Archived',
           },
         },
         statusActive: 'Active',
