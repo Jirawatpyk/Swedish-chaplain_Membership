@@ -90,7 +90,9 @@ const testRows: MembersTableRow[] = [
     status: 'active',
     membership_lapsed: false,
     membership_suspended: false,
-    portal_state: null,
+    // A row WITH a primary contact never has portal_state null — that's
+    // reserved for members with no primary contact. Use a real state.
+    portal_state: 'not_invited',
     engagement: null,
     last_activity_at: '2026-04-10T00:00:00Z',
     primary_contact: {

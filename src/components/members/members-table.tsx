@@ -562,8 +562,11 @@ export function MembersTable({
     }),
     // 056-members-table-compact — merged "Plan · Year" cell (the standalone
     // Year column was removed). Middot separator is a locale-neutral literal.
+    // Widened 150→185 (user request, 2026-07-23): after the 057 overflow fix
+    // long plan names wrap instead of overflowing, so a wider column keeps the
+    // common "<plan name> · <year>" on one line and reduces two-line rows.
     columnHelper.accessor('plan_display_name', {
-      size: 150,
+      size: 185,
       header: () => t('columns.plan'),
       cell: (info) => {
         const displayName = info.getValue();
