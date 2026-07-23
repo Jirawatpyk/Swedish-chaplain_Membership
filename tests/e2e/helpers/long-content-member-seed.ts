@@ -1,8 +1,8 @@
 /**
  * E2E seed — a DUMMY member whose plan name and renewal state are long/wide
  * enough to overflow the `/admin/members` directory's fixed column widths
- * (Plan 150px, Status 130px — see `members-table.tsx`'s `columnHelper`
- * `size` values).
+ * (Plan 185px, Contact 175px, Status 130px — see `members-table.tsx`'s
+ * `columnHelper` `size` values).
  *
  * Modeled on `tests/e2e/helpers/lapsed-member-seed.ts` (same owner-role
  * postgres client via `openSeedClient`, same "no real PII" rule, same
@@ -19,6 +19,25 @@
  * — see `src/modules/renewals/domain/renewal-cycle.ts`), regardless of
  * `expires_at`, so a single lapsed cycle is sufficient.
  *
+ * Task 7 review Finding 2 (057-members-portal-status) — the primary contact
+ * is ALSO linked to a dummy `users` row with a LIVE unconsumed invitation
+ * (`consumed_at IS NULL`, `expires_at` in the future) AND `invite_bounced_at`
+ * set. Per `derivePortalState` (src/modules/members/domain/portal-state.ts)
+ * a linked user + a live pending invitation resolves to `portal_state:
+ * 'invited'`, which does NOT suppress the bounce badge (only `active` /
+ * `invite_expired` do — see the Contact-cell condition in
+ * `members-table.tsx`). So the Contact cell renders BOTH an icon+text
+ * PortalBadge ("Invited"/"Inbjudan" — longest in `sv`) AND the bounce badge
+ * ("Inbjudan studsade" in `sv` is the worst-case width) on the SAME row —
+ * the multi-badge case `flex-wrap` exists for, and the one a single-badge
+ * fixture cannot exercise.
+ *
+ * `users`/`invitations` are cross-tenant (auth) tables with no `tenant_id`
+ * column; `invited_by_user_id` self-references the same dummy user (a
+ * synthetic self-invite) purely to satisfy the FK — `derivePortalState`
+ * never reads it, and it keeps this seed from depending on a lookup of some
+ * other user's id.
+ *
  * No-op (returns null) when `DATABASE_URL` is missing or the tenant has no
  * active membership plan to clone.
  */
@@ -31,6 +50,9 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 const DUMMY_MEMBER_ID = '00000000-0000-4000-8000-0000010ec001';
 const DUMMY_CONTACT_ID = '00000000-0000-4000-8000-0000010ec011';
+const DUMMY_USER_ID = '00000000-0000-4000-8000-0000010ec021';
+const DUMMY_INVITATION_ID = 'e2e-overflow-fixture-0000010ec021';
+const DUMMY_USER_EMAIL = 'overflow.fixture.user@e2e.invalid';
 const DUMMY_PLAN_ID = 'e2e-long-name-plan';
 // 46 chars -- comfortably wider than the 150px Plan column once rendered
 // with " · <year>" appended.
@@ -50,6 +72,13 @@ export interface LongContentMemberSeed {
  * didn't reach its `afterAll` (e.g. an interrupted run), in FK order.
  * Shared by both the seed's own pre-insert cleanup and the exported
  * `cleanupLongContentMember`.
+ *
+ * `invitations` (child of `users` via both `user_id` CASCADE and
+ * `invited_by_user_id` RESTRICT) is deleted BEFORE `users` — the dummy
+ * invitation self-references the dummy user as its inviter, so `users`
+ * cannot be deleted first. `contacts.linked_user_id` is `ON DELETE SET
+ * NULL`, so it never blocks the `users` delete either way, but `contacts`
+ * is deleted well before `users` regardless (member-row FK order).
  */
 async function deleteLongContentMemberRows(sql: SeedClient['sql']): Promise<void> {
   await sql`
@@ -65,6 +94,10 @@ async function deleteLongContentMemberRows(sql: SeedClient['sql']): Promise<void
     WHERE tenant_id = ${TENANT_ID} AND member_id = ${DUMMY_MEMBER_ID}::uuid
   `;
   await sql`
+    DELETE FROM invitations
+    WHERE user_id = ${DUMMY_USER_ID}::uuid
+  `;
+  await sql`
     DELETE FROM contacts
     WHERE tenant_id = ${TENANT_ID} AND member_id = ${DUMMY_MEMBER_ID}::uuid
   `;
@@ -76,6 +109,10 @@ async function deleteLongContentMemberRows(sql: SeedClient['sql']): Promise<void
     DELETE FROM membership_plans
     WHERE tenant_id = ${TENANT_ID} AND plan_id = ${DUMMY_PLAN_ID}
   `;
+  await sql`
+    DELETE FROM users
+    WHERE id = ${DUMMY_USER_ID}::uuid
+  `;
 }
 
 export async function seedLongContentMember(): Promise<LongContentMemberSeed | null> {
@@ -83,7 +120,11 @@ export async function seedLongContentMember(): Promise<LongContentMemberSeed | n
   if (!client) return null;
   const { sql, end } = client;
   try {
-    const planYear = new Date().getUTCFullYear();
+    // D8-style single instant (see portal-state.ts) for every timestamp this
+    // seed derives below — the bounce timestamp, the invitation's expiry, AND
+    // the renewal cycle's expiry all read off the same `now`.
+    const now = new Date();
+    const planYear = now.getUTCFullYear();
 
     // Clone a real active plan row so every NOT NULL column on
     // `membership_plans` is satisfied, then override plan_id/plan_year/
@@ -138,21 +179,51 @@ export async function seedLongContentMember(): Promise<LongContentMemberSeed | n
         ${DUMMY_PLAN_ID}, ${planYear}, 'active'
       )
     `;
+    // Dummy invited user — inserted BEFORE contacts (FK: contacts.linked_user_id
+    // -> users.id, declared at the migration layer per schema-contacts.ts).
+    // 'pending' status (never redeemed) mirrors a real invited-not-yet-accepted
+    // account; `derivePortalState` never reads user.status, only
+    // linkedUserId + the invitations row below.
+    await sql`
+      INSERT INTO users (id, email, role, status)
+      VALUES (${DUMMY_USER_ID}::uuid, ${DUMMY_USER_EMAIL}, 'member', 'pending')
+    `;
+
+    // Task 7 review Finding 2 — linked_user_id + invite_bounced_at turn on
+    // BOTH the PortalBadge ("Invited") and the bounce badge for this row (see
+    // the module doc comment for the exact derivePortalState reasoning).
+    const bouncedAt = new Date(now.getTime() - 3 * MS_PER_DAY);
     await sql`
       INSERT INTO contacts (
-        tenant_id, contact_id, member_id, first_name, last_name, email, is_primary
+        tenant_id, contact_id, member_id, first_name, last_name, email, is_primary,
+        linked_user_id, invite_bounced_at
       )
       VALUES (
         ${TENANT_ID}, ${DUMMY_CONTACT_ID}::uuid, ${DUMMY_MEMBER_ID}::uuid,
         ${DUMMY_CONTACT_FIRST}, ${DUMMY_CONTACT_LAST},
-        'overflow.fixture@e2e.invalid', true
+        'overflow.fixture@e2e.invalid', true,
+        ${DUMMY_USER_ID}::uuid, ${bouncedAt.toISOString()}::timestamptz
+      )
+    `;
+
+    // LIVE unconsumed invitation (consumed_at NULL, expires_at in the future)
+    // -> `findPendingInvitationsForPrimaryContacts` surfaces it ->
+    // `derivePortalState` resolves 'invited' (not 'invite_expired'/'active'),
+    // which does NOT suppress the bounce badge above.
+    const invitationExpiresAt = new Date(now.getTime() + 7 * MS_PER_DAY);
+    await sql`
+      INSERT INTO invitations (
+        id, user_id, invited_by_user_id, intended_role, created_at, expires_at, consumed_at
+      )
+      VALUES (
+        ${DUMMY_INVITATION_ID}, ${DUMMY_USER_ID}::uuid, ${DUMMY_USER_ID}::uuid, 'member',
+        ${now.toISOString()}::timestamptz, ${invitationExpiresAt.toISOString()}::timestamptz, NULL
       )
     `;
 
     // The member's ONLY cycle is `lapsed` — drives the Status-cell "Lapsed"
     // badge (see the module doc comment for why this is required for the
     // Status half of the overflow assertion).
-    const now = new Date();
     const expiresAt = new Date(now.getTime() - 120 * MS_PER_DAY);
     const periodFrom = new Date(now.getTime() - 485 * MS_PER_DAY);
     await sql`

@@ -51,12 +51,27 @@ const messages = {
           status: 'Status',
           lastActivity: 'Last activity',
         },
+        // `StatusBadge` (members-table.tsx) reads `filters.status.<status>`,
+        // not the flat `status*` keys below — this fixture only exercises
+        // `status: 'active'` rows, so only that one key is needed.
+        filters: {
+          status: {
+            active: 'Active',
+          },
+        },
         statusActive: 'Active',
         statusInactive: 'Inactive',
         statusArchived: 'Archived',
         rowAriaLabel: 'Open {company}',
         noPrimary: 'No primary',
         loadMore: 'Load more',
+        // `PortalBadge` (members-table.tsx) renders for the first fixture
+        // row (`portal_state: 'not_invited'`) — needs both the visible label
+        // and the sr-only sentence (real English strings from en.json).
+        portal: {
+          notInvited: 'Not invited',
+          notInvitedSr: 'No portal invitation sent yet',
+        },
       },
       inlineEdit: {
         columnHeaderHintTooltip: 'edit',

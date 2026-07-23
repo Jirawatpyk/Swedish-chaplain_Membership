@@ -1,9 +1,13 @@
 /**
  * Shimmer skeleton for the members directory table.
  *
- * Renders the EXACT shape of the real table (same column count, same
- * row height, same grid) so the shell does NOT shift when the real
- * data lands — CLS 0 per ux-standards § 2.1.
+ * Approximates the real table's common-case shape (same column count, one
+ * row height, same grid). Not an exact shape match: Plan/Status/Contact cells
+ * can each wrap one line taller than this skeleton reserves (long plan name,
+ * a stacked Lapsed/Suspended badge, or — since 057 badge-inline — a wrapped
+ * portal/bounce badge row), so some rows settle one line taller once the real
+ * data lands. See the inline comment below for why that tradeoff (smaller
+ * aggregate CLS than over-reserving two lines for every row) is accepted.
  *
  * Round-10 ui-design-specialist C1 fix (2026-05-14): the skeleton
  * previously hard-coded 8 columns but the real table emits 9 (no

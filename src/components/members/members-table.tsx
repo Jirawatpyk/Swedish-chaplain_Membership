@@ -662,7 +662,12 @@ export function MembersTable({
           // long name + badge would overflow the 175px column instead of
           // wrapping. The name span keeps its own `max-w`/`break-words`, so a
           // very long name wraps within itself and pushes the badges down.
-          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          // `items-start` (not `items-center`): when a long name wraps to two
+          // lines, `items-center` would vertically centre the one-line badges
+          // against the whole two-line name block, reading oddly. `items-start`
+          // sits the badges on the name's first line, which is correct for the
+          // wrapped case and unchanged for the common single-line case.
+          <span className="flex flex-wrap items-start gap-x-2 gap-y-1">
             <span
               className="min-w-0 max-w-[18ch] break-words whitespace-normal"
               title={fullName}
@@ -683,10 +688,14 @@ export function MembersTable({
                 page. Copy lives under admin.members.detail.inviteBounced.
                 Bounce badge suppressed when the invitation ALSO expired or
                 the contact is already active — one root cause, one recovery
-                (mirrors admin/members/[memberId]/page.tsx:415-417). */}
+                (mirrors admin/members/[memberId]/page.tsx:415-417). Also
+                suppressed on archived rows — mirrors the PortalBadge suppression
+                above and the Status cell's Lapsed/Suspended suppression: "no
+                portal-related badge shows on an archived row" (Task 7). */}
             {c.invite_bounced &&
             info.row.original.portal_state !== 'invite_expired' &&
-            info.row.original.portal_state !== 'active' ? (
+            info.row.original.portal_state !== 'active' &&
+            info.row.original.status !== 'archived' ? (
               <Badge
                 variant="outline"
                 className="shrink-0 gap-1 border-destructive/40 text-destructive"
