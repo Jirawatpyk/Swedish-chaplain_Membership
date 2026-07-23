@@ -46,6 +46,7 @@ import { db, runInTenant } from '@/lib/db';
 import { asSatang, type Satang } from '@/lib/money';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
+import { creditNotes } from '@/modules/invoicing/infrastructure/db/schema-credit-notes';
 import { renewalCycles } from '@/modules/renewals/infrastructure/schema-renewal-cycles';
 import { makeRenewalsDeps } from '@/modules/renewals';
 import { loadMemberRenewalContext } from '@/app/(staff)/admin/invoices/_lib/member-renewal-context';
@@ -76,6 +77,15 @@ interface CoverageCase {
   /** null → BACKFILL cohort (settling invoice id NULL, no in-system invoice). */
   readonly invoiceStatus: SettlingInvoiceStatus | null;
   readonly expectedCovered: boolean;
+  /**
+   * M1 (plan-change-ux, Option 1b) — when non-null, seed a `credit_notes` row
+   * against the settling invoice with `retains_coverage = <this>`. TRUE
+   * simulates an F4-manual FULL membership 'keep' (member NOT refunded →
+   * coverage retained); FALSE simulates an F5 refund CN (money returned). null =
+   * no credit_notes row at all (the pre-existing defaulted / no-CN 'credited'
+   * cohort). Only meaningful on a 'credited' settling invoice.
+   */
+  readonly creditNoteRetains: boolean | null;
   memberId: string;
   cycleId: string;
   invoiceId: string | null;
@@ -88,12 +98,14 @@ function mkCase(
   arm: Arm,
   invoiceStatus: SettlingInvoiceStatus | null,
   expectedCovered: boolean,
+  creditNoteRetains: boolean | null = null,
 ): CoverageCase {
   return {
     key,
     arm,
     invoiceStatus,
     expectedCovered,
+    creditNoteRetains,
     memberId: randomUUID(),
     cycleId: randomUUID(),
     invoiceId: invoiceStatus === null ? null : randomUUID(),
@@ -105,6 +117,8 @@ describe('effective-paid frontier + settled-count — refund/void coverage (live
   let user: TestUser;
   let planId: string;
   const cases: CoverageCase[] = [];
+  // M1 — monotone per-(tenant, fiscal_year) credit-note sequence number.
+  let cnSeqCounter = 0;
 
   beforeAll(async () => {
     user = await createActiveTestUser('admin');
@@ -117,6 +131,13 @@ describe('effective-paid frontier + settled-count — refund/void coverage (live
       mkCase('completed-credited', 'completed', 'credited', false),
       mkCase('completed-void', 'completed', 'void', false),
       mkCase('completed-partial', 'completed', 'partially_credited', true),
+      // M1 (Option 1b) — a fully-credited invoice with an F4-manual 'keep'
+      // retention CN (retains_coverage=TRUE) still COVERS the period (member not
+      // refunded); an F5-refund CN (retains_coverage=FALSE) RETRACTS it. The
+      // existing `completed-credited` above (no CN row) is the pre-existing
+      // defaulted / no-CN 'credited' cohort → retracted.
+      mkCase('completed-credited-retains', 'completed', 'credited', true, true),
+      mkCase('completed-credited-refund', 'completed', 'credited', false, false),
       // NO `completed-backfill` case (fin-review L1): the completed arm's
       // NULL-settling-invoice branch is STRUCTURALLY UNREACHABLE, so its absence
       // is a coverage NON-gap, not a hole. Two DB invariants make a completed
@@ -136,6 +157,9 @@ describe('effective-paid frontier + settled-count — refund/void coverage (live
       mkCase('anchored-credited', 'anchored', 'credited', false),
       mkCase('anchored-void', 'anchored', 'void', false),
       mkCase('anchored-partial', 'anchored', 'partially_credited', true),
+      // M1 (Option 1b) — mirror the completed arm on the anchor arm.
+      mkCase('anchored-credited-retains', 'anchored', 'credited', true, true),
+      mkCase('anchored-credited-refund', 'anchored', 'credited', false, false),
       // R4 backfill — anchored, NO in-system invoice → NULL-tolerant → covered.
       mkCase('anchored-backfill', 'anchored', null, true),
     );
@@ -170,6 +194,19 @@ describe('effective-paid frontier + settled-count — refund/void coverage (live
             planId,
             status: c.invoiceStatus,
           });
+          // M1 — seed the coverage-retention CN against the (now-present)
+          // invoice. FK `credit_notes_original_invoice_fk` requires the invoice
+          // to exist first. sequence_number is per (tenant, fiscal_year) unique.
+          if (c.creditNoteRetains !== null) {
+            cnSeqCounter += 1;
+            await insertRetentionCreditNote(tx, {
+              tenantSlug: tenant.ctx.slug,
+              userId: user.userId,
+              invoiceId: c.invoiceId,
+              sequenceNumber: cnSeqCounter,
+              retainsCoverage: c.creditNoteRetains,
+            });
+          }
         }
         if (c.arm === 'completed') {
           await tx.insert(renewalCycles).values({
@@ -217,7 +254,11 @@ describe('effective-paid frontier + settled-count — refund/void coverage (live
   }, 180_000);
 
   afterAll(async () => {
-    // renewal_cycles (composite FK → invoices) BEFORE invoices.
+    // credit_notes + renewal_cycles (both composite FK → invoices) BEFORE invoices.
+    await db
+      .delete(creditNotes)
+      .where(eq(creditNotes.tenantId, tenant.ctx.slug))
+      .catch(() => {});
     await db
       .delete(renewalCycles)
       .where(eq(renewalCycles.tenantId, tenant.ctx.slug))
@@ -392,6 +433,47 @@ describe('classifyMembershipPayment via loadMemberRenewalContext — refund retr
     expect(ctxOut.classification.kind).toBe('renewal');
   });
 });
+
+/**
+ * M1 — seed a `credit_notes` row against a settling invoice with an explicit
+ * `retains_coverage`. Mirrors the production insert shape (all NOT-NULL columns
+ * present). The renewal effective-paid predicate reads only `tenant_id`,
+ * `original_invoice_id`, and `retains_coverage` via a correlated EXISTS, so the
+ * snapshot/PDF fields are placeholder-valid.
+ */
+async function insertRetentionCreditNote(
+  tx: Parameters<Parameters<typeof runInTenant>[1]>[0],
+  args: {
+    readonly tenantSlug: string;
+    readonly userId: string;
+    readonly invoiceId: string;
+    readonly sequenceNumber: number;
+    readonly retainsCoverage: boolean;
+  },
+): Promise<void> {
+  await tx.insert(creditNotes).values({
+    tenantId: args.tenantSlug,
+    creditNoteId: randomUUID(),
+    originalInvoiceId: args.invoiceId,
+    fiscalYear: 2026,
+    sequenceNumber: args.sequenceNumber,
+    documentNumber: `CN-2026-${String(args.sequenceNumber).padStart(6, '0')}`,
+    issueDate: '2026-02-01',
+    issuedByUserId: args.userId,
+    reason: args.retainsCoverage
+      ? 'paperwork correction — member not refunded, coverage retained'
+      : 'refund — money returned',
+    creditAmountSatang: asSatang(5_000_000n),
+    vatSatang: asSatang(350_000n),
+    totalSatang: TOTAL_SATANG,
+    tenantIdentitySnapshot: { legalNameEn: 'Test', taxId: '0' } as unknown,
+    memberIdentitySnapshot: { legal_name: 'Eff Co Ltd' } as unknown,
+    pdfBlobKey: `invoicing/${args.tenantSlug}/2026/cn-${args.sequenceNumber}.pdf`,
+    pdfSha256: 'c'.repeat(64),
+    pdfTemplateVersion: 1,
+    retainsCoverage: args.retainsCoverage,
+  });
+}
 
 async function insertSettlingInvoice(
   tx: Parameters<Parameters<typeof runInTenant>[1]>[0],

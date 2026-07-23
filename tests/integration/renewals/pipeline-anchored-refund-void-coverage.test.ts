@@ -36,6 +36,7 @@ import { db, runInTenant } from '@/lib/db';
 import { asSatang, type Satang } from '@/lib/money';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
+import { creditNotes } from '@/modules/invoicing/infrastructure/db/schema-credit-notes';
 import { renewalCycles } from '@/modules/renewals/infrastructure/schema-renewal-cycles';
 import { loadPipeline, makeRenewalsDeps } from '@/modules/renewals';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
@@ -61,6 +62,14 @@ interface Scenario {
   readonly invoiceId: string | null;
   readonly invoiceStatus: AnchorInvoiceStatus | null;
   readonly expectedAnchored: boolean;
+  /**
+   * M1 (plan-change-ux, Option 1b) — when non-null, seed a `credit_notes` row
+   * against the anchor invoice with `retains_coverage = <this>`. TRUE simulates
+   * an F4-manual FULL membership 'keep' (member NOT refunded → coverage
+   * retained → still "Covered"); FALSE simulates an F5 refund CN. null = no
+   * credit_notes row (the pre-existing defaulted / no-CN 'credited' cohort).
+   */
+  readonly creditNoteRetains: boolean | null;
 }
 
 const TOTAL_SATANG = asSatang(5_350_000n);
@@ -70,11 +79,14 @@ describe('loadPipeline `anchored` — anchor invoice void/refund coverage (live 
   let user: TestUser;
   let planId: string;
   const scenarios: Scenario[] = [];
+  // M1 — monotone per-(tenant, fiscal_year) credit-note sequence number.
+  let cnSeqCounter = 0;
 
   function mkScenario(
     key: string,
     invoiceStatus: AnchorInvoiceStatus | null,
     expectedAnchored: boolean,
+    creditNoteRetains: boolean | null = null,
   ): Scenario {
     return {
       key,
@@ -83,6 +95,7 @@ describe('loadPipeline `anchored` — anchor invoice void/refund coverage (live 
       invoiceId: invoiceStatus === null ? null : randomUUID(),
       invoiceStatus,
       expectedAnchored,
+      creditNoteRetains,
     };
   }
 
@@ -100,6 +113,12 @@ describe('loadPipeline `anchored` — anchor invoice void/refund coverage (live 
       mkScenario('partial', 'partially_credited', true),
       // Happy path — a live paid anchor covers the period.
       mkScenario('paid', 'paid', true),
+      // M1 (Option 1b) — a fully-credited anchor with an F4-manual 'keep'
+      // retention CN (retains_coverage=TRUE) still renders "Covered"; an
+      // F5-refund CN (retains_coverage=FALSE) does not. The `credited` scenario
+      // above (no CN row) is the pre-existing defaulted / no-CN cohort.
+      mkScenario('credited-retains', 'credited', true, true),
+      mkScenario('credited-refund', 'credited', false, false),
       // R4 backfill — no in-system invoice to refund; anchored_at stands alone.
       mkScenario('backfill', null, true),
     );
@@ -135,6 +154,18 @@ describe('loadPipeline `anchored` — anchor invoice void/refund coverage (live 
             planId,
             status: s.invoiceStatus,
           });
+          // M1 — seed the coverage-retention CN against the anchor invoice
+          // (FK requires the invoice to exist first).
+          if (s.creditNoteRetains !== null) {
+            cnSeqCounter += 1;
+            await insertRetentionCreditNote(tx, {
+              tenantSlug: tenant.ctx.slug,
+              userId: user.userId,
+              invoiceId: s.invoiceId,
+              sequenceNumber: cnSeqCounter,
+              retainsCoverage: s.creditNoteRetains,
+            });
+          }
         }
         await tx.insert(renewalCycles).values({
           tenantId: tenant.ctx.slug,
@@ -161,6 +192,11 @@ describe('loadPipeline `anchored` — anchor invoice void/refund coverage (live 
   }, 180_000);
 
   afterAll(async () => {
+    // credit_notes + renewal_cycles (both composite FK → invoices) BEFORE invoices.
+    await db
+      .delete(creditNotes)
+      .where(eq(creditNotes.tenantId, tenant.ctx.slug))
+      .catch(() => {});
     await db
       .delete(renewalCycles)
       .where(eq(renewalCycles.tenantId, tenant.ctx.slug))
@@ -205,6 +241,46 @@ describe('loadPipeline `anchored` — anchor invoice void/refund coverage (live 
     }
   });
 });
+
+/**
+ * M1 — seed a `credit_notes` row against the anchor invoice with an explicit
+ * `retains_coverage`. The L1 pipeline read model reads only `tenant_id`,
+ * `original_invoice_id`, and `retains_coverage` via a correlated EXISTS, so the
+ * snapshot/PDF fields are placeholder-valid.
+ */
+async function insertRetentionCreditNote(
+  tx: Parameters<Parameters<typeof runInTenant>[1]>[0],
+  args: {
+    readonly tenantSlug: string;
+    readonly userId: string;
+    readonly invoiceId: string;
+    readonly sequenceNumber: number;
+    readonly retainsCoverage: boolean;
+  },
+): Promise<void> {
+  await tx.insert(creditNotes).values({
+    tenantId: args.tenantSlug,
+    creditNoteId: randomUUID(),
+    originalInvoiceId: args.invoiceId,
+    fiscalYear: 2026,
+    sequenceNumber: args.sequenceNumber,
+    documentNumber: `CN-2026-${String(args.sequenceNumber).padStart(6, '0')}`,
+    issueDate: '2026-02-01',
+    issuedByUserId: args.userId,
+    reason: args.retainsCoverage
+      ? 'paperwork correction — member not refunded, coverage retained'
+      : 'refund — money returned',
+    creditAmountSatang: asSatang(5_000_000n),
+    vatSatang: asSatang(350_000n),
+    totalSatang: TOTAL_SATANG,
+    tenantIdentitySnapshot: { legalNameEn: 'Test', taxId: '0' } as unknown,
+    memberIdentitySnapshot: { legal_name: 'Anchor Co Ltd' } as unknown,
+    pdfBlobKey: `invoicing/${args.tenantSlug}/2026/cn-${args.sequenceNumber}.pdf`,
+    pdfSha256: 'c'.repeat(64),
+    pdfTemplateVersion: 1,
+    retainsCoverage: args.retainsCoverage,
+  });
+}
 
 async function insertAnchorInvoice(
   tx: Parameters<Parameters<typeof runInTenant>[1]>[0],
