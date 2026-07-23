@@ -104,6 +104,18 @@ describe('needs-invite chip', () => {
     ).toBeDisabled();
   });
 
+  it('stays CLICKABLE when the count is unavailable but the filter is active (no trap)', () => {
+    // R1: if the count read fails while the filter is on, the chip must NOT be
+    // disabled — the user has to be able to toggle it back off. Disabling it
+    // there would trap them in the filtered view (only Clear would escape).
+    renderFilters({ portalInviteCount: null, searchParams: 'portal=needs_invite' });
+    const chip = screen.getByRole('button', {
+      name: /portal status unavailable/i,
+    });
+    expect(chip).toBeEnabled();
+    expect(chip).toHaveAttribute('aria-pressed', 'true');
+  });
+
   it('shows the Clear button when the chip is the only active filter', () => {
     renderFilters({ portalInviteCount: 3, searchParams: 'portal=needs_invite' });
     expect(screen.getByRole('button', { name: /clear/i })).toBeInTheDocument();

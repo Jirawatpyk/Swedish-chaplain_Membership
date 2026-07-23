@@ -273,7 +273,11 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
           variant={portalActive ? 'secondary' : 'outline'}
           size="sm"
           aria-pressed={portalActive}
-          disabled={portalInviteCount === null}
+          // Disable only when the count is unavailable AND the filter is OFF —
+          // i.e. the user would be entering the filter blind. When the filter is
+          // already ON, a failed count must NOT trap them in the filtered view:
+          // keep the chip clickable so they can always toggle it back off.
+          disabled={portalInviteCount === null && !portalActive}
           // Toggles through `onPortalToggle` → `pushUrl` (strips cursor/page,
           // scroll:false) and moves focus off the chip before it can unmount.
           onClick={onPortalToggle}
