@@ -839,4 +839,166 @@ describe('adminRenewLapsedMember — integration (Slice 3 / Task 3.1)', () => {
       await tenantB.cleanup().catch(() => {});
     }
   }, 180_000);
+
+  // plan-change-ux task #24 (MONEY) — effective-paid frontier on COMEBACK. A
+  // member with TWO gapless completed periods: an earlier one still PAID and a
+  // later one fully REFUNDED ('credited'). The comeback anchor + the printed
+  // §86/4 window must derive from the REAL last-paid period, not the refunded
+  // one — so the refunded period is RE-BILLED. Pre-fix (raw status='completed'
+  // predicate) the frontier reached the refunded period's period_to and the
+  // comeback skipped forward, under-billing the refunded coverage.
+  it('refunded frontier: comeback anchor + §86/4 window move BACK to the real last-paid period (fully-credited later period is re-billed)', async () => {
+    const memberId = await seedLapsedMember();
+
+    // Gapless chain of two completed periods. now-relative so the gapless-LIVE
+    // branch fires on any run date (both P1_to+12mo and P2_to+12mo are future).
+    const now = new Date();
+    const P1_FROM = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 15, 1));
+    const P1_TO = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 3, 1)); // REAL last-paid frontier
+    const P2_TO = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 9, 1)); // refunded period end
+    const paidInvoiceId = randomUUID();
+    const creditedInvoiceId = randomUUID();
+
+    async function insertPredecessor(
+      invoiceId: string,
+      invoiceStatus: 'paid' | 'credited',
+      periodFrom: Date,
+      periodTo: Date,
+    ): Promise<void> {
+      await runInTenant(tenant.ctx, async (tx) => {
+        await tx.insert(invoices).values({
+          tenantId: tenant.ctx.slug,
+          invoiceId,
+          memberId,
+          planYear: 2026,
+          planId,
+          status: invoiceStatus,
+          pdfDocKind: 'invoice',
+          draftByUserId: user.userId,
+          fiscalYear: 2026,
+          sequenceNumber: Math.floor(Math.random() * 1_000_000) + 1,
+          documentNumber: `INV-2026-${String(Math.floor(Math.random() * 900000) + 100000)}`,
+          issueDate: periodFrom.toISOString().slice(0, 10),
+          dueDate: periodFrom.toISOString().slice(0, 10),
+          currency: 'THB',
+          subtotalSatang: asSatang(5_000_000n),
+          vatRateSnapshot: VAT_RATE,
+          vatSatang: asSatang(350_000n),
+          totalSatang: asSatang(5_350_000n),
+          creditedTotalSatang:
+            invoiceStatus === 'credited' ? asSatang(5_350_000n) : asSatang(0n),
+          proRatePolicySnapshot: 'none',
+          netDaysSnapshot: 30,
+          tenantIdentitySnapshot: { legalNameEn: 'Test', taxId: '0' } as unknown,
+          memberIdentitySnapshot: {
+            companyName: 'Comeback Co',
+            country: 'TH',
+            legal_name: 'Comeback Co Ltd',
+            address: '1 Test Road, Bangkok 10110',
+            primary_contact_name: 'Test Contact',
+            primary_contact_email: 'comeback@example.com',
+          } as unknown,
+          pdfBlobKey: `invoicing/${tenant.ctx.slug}/2026/${invoiceId}.pdf`,
+          pdfSha256: 'a'.repeat(64),
+          pdfTemplateVersion: 1,
+          receiptPdfStatus: 'rendered',
+          // Payment provenance — 'paid'/'credited' invoices carry payment fields
+          // (CHECK invoices_paid_has_payment + invoices_paid_has_receipt_status);
+          // a 'credited' invoice was paid THEN credit-noted, so it too carries a
+          // settled payment + receipt.
+          paymentMethod: 'bank_transfer',
+          paymentReference: 'COMEBACK-TEST-PAY',
+          paymentRecordedByUserId: user.userId,
+          paymentDate: periodFrom.toISOString().slice(0, 10),
+          paidAt: periodFrom,
+        });
+        await tx.insert(renewalCycles).values({
+          tenantId: tenant.ctx.slug,
+          cycleId: randomUUID(),
+          memberId,
+          status: 'completed',
+          periodFrom,
+          periodTo,
+          expiresAt: periodTo,
+          cycleLengthMonths: 12,
+          tierAtCycleStart: 'regular',
+          planIdAtCycleStart: planId,
+          frozenPlanPriceThb: EXPECTED_FROZEN_THB,
+          frozenPlanTermMonths: 12,
+          frozenPlanCurrency: 'THB',
+          linkedInvoiceId: invoiceId,
+          closedAt: periodTo,
+          closedReason: 'paid',
+        });
+      });
+    }
+
+    // Earlier period — REAL paid coverage (the effective frontier).
+    await insertPredecessor(paidInvoiceId, 'paid', P1_FROM, P1_TO);
+    // Later period — fully credit-noted / refunded (retracted by effective-paid).
+    await insertPredecessor(creditedInvoiceId, 'credited', P1_TO, P2_TO);
+
+    // Price FY2027 too: the PRE-FIX (buggy) path anchors the comeback at the
+    // refunded period end (P2_TO, next fiscal year), so the §86/4 draft resolves
+    // the plan for FY2027 — without this the pre-fix path would fail with
+    // plan_not_found instead of failing cleanly on the periodFrom assertion. The
+    // fixed path anchors at P1_TO (this FY) and never consults FY2027.
+    await runInTenant(tenant.ctx, (tx) =>
+      seedF8MembershipPlan(tx, {
+        tenantSlug: tenant.ctx.slug,
+        planId,
+        planName: { en: 'Lapsed Comeback Plan 2027' },
+        benefitMatrix: DEFAULT_TEST_BENEFIT_MATRIX,
+        createdBy: user.userId,
+        annualFeeMinorUnits: ANNUAL_FEE_MINOR,
+        planYear: 2027,
+      }),
+    );
+
+    const result = await adminRenewLapsedMember(makeDeps(tenant.ctx.slug), {
+      tenantId: tenant.ctx.slug,
+      memberId,
+      actorUserId: user.userId,
+      actorRole: 'admin',
+      correlationId: `admin-renew-refunded-frontier-${memberId}`,
+      requestId: `req-rf-${memberId.slice(0, 8)}`,
+    });
+    if (!result.ok) {
+      throw new Error(`admin renew failed: ${JSON.stringify(result.error)}`);
+    }
+
+    const freshCycle = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({
+          periodFrom: renewalCycles.periodFrom,
+          periodTo: renewalCycles.periodTo,
+        })
+        .from(renewalCycles)
+        .where(eq(renewalCycles.cycleId, result.value.cycleId))
+        .limit(1),
+    );
+    // CRUX: the comeback anchors at the REAL last-paid frontier (P1_TO), NOT the
+    // refunded period's end (P2_TO) — re-billing the refunded coverage. RED
+    // pre-fix: periodFrom would be P2_TO (the credited period counted).
+    expect(freshCycle[0]?.periodFrom.toISOString()).toBe(P1_TO.toISOString());
+
+    // The §86/4 membership line prints the moved-back window (this cycle
+    // classifies `renewal` on the still-paid predecessor, so `membershipCoverage`
+    // is the printed window).
+    const membershipLine = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({ descriptionEn: invoiceLines.descriptionEn })
+        .from(invoiceLines)
+        .where(eq(invoiceLines.invoiceId, result.value.invoiceId)),
+    );
+    const fromDate = freshCycle[0]!.periodFrom.toISOString().slice(0, 10);
+    const toDate = freshCycle[0]!.periodTo.toISOString().slice(0, 10);
+    expect(
+      membershipLine.some((l) =>
+        l.descriptionEn.includes(
+          `(${formatTaxDocMonthYear(fromDate, 'en')} - ${formatTaxDocMonthYear(addMonthsUtc(toDate, -1).slice(0, 10), 'en')})`,
+        ),
+      ),
+    ).toBe(true);
+  }, 180_000);
 });

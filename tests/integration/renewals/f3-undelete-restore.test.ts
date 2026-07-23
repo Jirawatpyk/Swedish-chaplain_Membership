@@ -473,4 +473,145 @@ describe('F3 undelete → F8 cycle restore — Cluster 4', () => {
     // (d) The restored cycle is anchored to a LIVE period (not already expired).
     expect(restored!.periodTo.getTime()).toBeGreaterThan(Date.now());
   });
+
+  // plan-change-ux task #24 (MONEY) — effective-paid frontier on RESTORE. The
+  // complement of the paid-ahead test above: there the completed cycle's linked
+  // invoice was 'issued' (a non-reversed status → still covers → anchor at the
+  // frontier, NO re-bill). Here it is fully REFUNDED ('credited'), so the paid
+  // frontier RETRACTS to null → the restore falls back to registration_date and
+  // `anchorToCurrentPeriod` lands the re-created cycle back on the refunded
+  // period, RE-BILLING it (the correct money behaviour — the member's payment
+  // was returned, so the coverage is owed again). Pre-fix (raw
+  // status='completed' predicate) the credited invoice was ignored, the frontier
+  // stayed at the completed cycle's period_to, and the restore skipped forward a
+  // year the member should be re-billed for (under-bill).
+  it('refunded completed cycle: restore RE-BILLS the refunded period (frontier retracts on full credit note)', async () => {
+    const refundedMemberId = randomUUID();
+    const completedCycleId = randomUUID();
+    const creditedInvoiceId = randomUUID();
+
+    // Completed cycle covering the CURRENT period [now-6mo, now+6mo] (paid-ahead
+    // shape), but its settling invoice is fully credit-noted → NOT effective-paid.
+    const now = new Date();
+    const C_FROM = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 6, 1));
+    const C_TO = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 6, 1));
+    const REG_DATE = C_FROM.toISOString().slice(0, 10);
+
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(members).values({
+        tenantId: tenant.ctx.slug,
+        memberId: refundedMemberId,
+        memberNumber: nextSeedMemberNumber(),
+        companyName: 'Refunded Restore Co',
+        country: 'TH',
+        planId,
+        planYear: 2026,
+        // Registration = the refunded period's start → once the frontier
+        // retracts to null, `anchorToCurrentPeriod` from here re-lands on
+        // [C_FROM, C_TO], re-billing the refunded period.
+        registrationDate: REG_DATE,
+        status: 'active',
+      });
+      // Fully credit-noted (refunded) settling invoice. `credited` → the
+      // effective-paid predicate retracts the completed cycle.
+      await tx.insert(invoices).values({
+        tenantId: tenant.ctx.slug,
+        invoiceId: creditedInvoiceId,
+        memberId: refundedMemberId,
+        planYear: 2026,
+        planId,
+        status: 'credited',
+        pdfDocKind: 'invoice',
+        draftByUserId: admin.userId,
+        fiscalYear: 2026,
+        sequenceNumber: Math.floor(Math.random() * 1_000_000) + 1,
+        documentNumber: `INV-2026-${String(Math.floor(Math.random() * 900000) + 100000)}`,
+        issueDate: C_FROM.toISOString().slice(0, 10),
+        dueDate: C_FROM.toISOString().slice(0, 10),
+        currency: 'THB',
+        subtotalSatang: asSatang(5_000_000n),
+        vatRateSnapshot: '0.0700',
+        vatSatang: asSatang(350_000n),
+        totalSatang: asSatang(5_350_000n),
+        creditedTotalSatang: asSatang(5_350_000n),
+        proRatePolicySnapshot: 'none',
+        netDaysSnapshot: 30,
+        tenantIdentitySnapshot: { legalNameEn: 'Test', taxId: '0' } as unknown,
+        memberIdentitySnapshot: {
+          companyName: 'Refunded Restore Co',
+          country: 'TH',
+          legal_name: 'Refunded Restore Co Ltd',
+          address: '1 Test Road, Bangkok 10110',
+          primary_contact_name: 'Test Contact',
+          primary_contact_email: 'refunded@example.com',
+        } as unknown,
+        pdfBlobKey: `invoicing/${tenant.ctx.slug}/2026/${creditedInvoiceId}.pdf`,
+        pdfSha256: 'a'.repeat(64),
+        pdfTemplateVersion: 1,
+      });
+      await tx.insert(renewalCycles).values({
+        tenantId: tenant.ctx.slug,
+        cycleId: completedCycleId,
+        memberId: refundedMemberId,
+        status: 'completed',
+        periodFrom: C_FROM,
+        periodTo: C_TO,
+        expiresAt: C_TO,
+        cycleLengthMonths: 12,
+        tierAtCycleStart: 'regular',
+        planIdAtCycleStart: planId,
+        frozenPlanPriceThb: '50000.00',
+        frozenPlanTermMonths: 12,
+        frozenPlanCurrency: 'THB',
+        linkedInvoiceId: creditedInvoiceId,
+        closedAt: C_TO,
+        closedReason: 'paid',
+      });
+    });
+
+    // Archive → undelete (the real cascade that restores the cycle).
+    await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .update(members)
+        .set({ status: 'archived', archivedAt: new Date() })
+        .where(
+          and(
+            eq(members.tenantId, tenant.ctx.slug),
+            eq(members.memberId, refundedMemberId),
+          ),
+        ),
+    );
+    const deps = buildMembersDeps(tenant.ctx);
+    const result = await undeleteMember(
+      asMemberId(refundedMemberId),
+      { actorUserId: admin.userId, requestId: randomUUID() },
+      deps,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const allCycles = await db
+      .select({
+        cycleId: renewalCycles.cycleId,
+        status: renewalCycles.status,
+        periodFrom: renewalCycles.periodFrom,
+      })
+      .from(renewalCycles)
+      .where(
+        and(
+          eq(renewalCycles.tenantId, tenant.ctx.slug),
+          eq(renewalCycles.memberId, refundedMemberId),
+        ),
+      );
+    const restored = allCycles.find(
+      (c) => !isTerminalCycleStatus(c.status as CycleStatus),
+    );
+    expect(restored).toBeDefined();
+    expect(restored!.cycleId).not.toBe(completedCycleId);
+    // The frontier RETRACTED to null (credited) → the restore re-bills the
+    // refunded period: periodFrom is the refunded period's start, NOT the
+    // completed cycle's period_to (which is what the pre-fix raw predicate
+    // would have anchored at). RED pre-fix: periodFrom would be C_TO.
+    expect(restored!.periodFrom.getTime()).toBe(C_FROM.getTime());
+  });
 });
