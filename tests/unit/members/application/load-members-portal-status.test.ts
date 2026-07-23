@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { loadMembersPortalStatus } from '@/modules/members/application/use-cases/load-members-portal-status';
-import { ok } from '@/lib/result';
+import { ok, err } from '@/lib/result';
 
 const NOW = new Date('2026-07-23T10:00:00.000Z');
 const ctx = { slug: 'swecham' } as never;
@@ -67,9 +67,9 @@ describe('loadMembersPortalStatus', () => {
     expect(res.ok && res.value.get(M2)).toBe('invite_expired');
   });
 
-  it('only queries for members that actually have a linked user', async () => {
+  it('only queries for members that actually have a linked user, and merges both populations into one map', async () => {
     const memberRepo = repoWith([]);
-    await loadMembersPortalStatus(
+    const res = await loadMembersPortalStatus(
       { tenant: ctx, memberRepo },
       {
         members: [
@@ -83,5 +83,19 @@ describe('loadMembersPortalStatus', () => {
       findPendingInvitationsForPrimaryContacts: ReturnType<typeof vi.fn>;
     }).findPendingInvitationsForPrimaryContacts;
     expect(spy).toHaveBeenCalledWith(ctx, [M1]);
+    expect(res.ok && res.value.get(M2)).toBe('not_invited');
+    expect(res.ok && res.value.get(M1)).toBe('active');
+  });
+
+  it('propagates a repo failure as a throw — never silently maps a linked member to active', async () => {
+    const memberRepo = {
+      findPendingInvitationsForPrimaryContacts: vi.fn().mockResolvedValue(err({ code: 'repo.unexpected' })),
+    } as never;
+    await expect(
+      loadMembersPortalStatus(
+        { tenant: ctx, memberRepo },
+        { members: [{ memberId: M1, linkedUserId: U1 }], now: NOW },
+      ),
+    ).rejects.toThrow();
   });
 });

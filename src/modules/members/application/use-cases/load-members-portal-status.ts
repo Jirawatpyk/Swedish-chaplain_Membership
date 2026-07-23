@@ -14,8 +14,14 @@
  * means "the read failed" — the caller owns the degrade path and represents
  * failure as 'unknown', so a DB hiccup can never be rendered as "not invited".
  *
- * `Result<…, never>`: there is no domain error, only a thrown repo call, which
- * the caller catches.
+ * `Result<…, never>`: `findPendingInvitationsForPrimaryContacts` itself
+ * returns a `Result` and does NOT throw on an ordinary DB error — its
+ * concrete (Drizzle) adapter catches and resolves `err(unexpected(e))`. This
+ * use-case explicitly converts a `!ok` result into a thrown `Error` (rather
+ * than swallowing it), so the outer caller's try/catch degrades to
+ * `'unknown'` exactly like `loadMembersMembershipStatusSafe` does for the
+ * renewals sibling — a DB outage must never read as "everyone's portal is
+ * fine".
  */
 import { ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
@@ -56,10 +62,13 @@ export async function loadMembersPortalStatus(
     deps.tenant,
     linked.map((m) => m.memberId as MemberId),
   );
-  const byMember = new Map<string, Date>();
-  if (pending.ok) {
-    for (const row of pending.value) byMember.set(row.memberId, row.expiresAt);
+  if (!pending.ok) {
+    throw new Error(
+      `findPendingInvitationsForPrimaryContacts failed: ${pending.error.code}`,
+    );
   }
+  const byMember = new Map<string, Date>();
+  for (const row of pending.value) byMember.set(row.memberId, row.expiresAt);
 
   for (const m of linked) {
     const expiresAt = byMember.get(m.memberId);
