@@ -1621,6 +1621,7 @@
         "confirmInviteAction": "ส่งคำเชิญ",
         "success": "ดำเนินการ {action} สำเร็จ {count} สมาชิก",
         "inviteQueued": "จัดคิวคำเชิญ {invited} รายการ",
+        "inviteResent": "{resent, plural, other {ส่งซ้ำ #}}",
         "inviteSkipped": "ข้าม {skipped} รายการ",
         "inviteFailed": "ล้มเหลว {failed} รายการ",
         "rateLimited": "ดำเนินการเป็นชุดมากเกินไป รอสักครู่แล้วลองใหม่",

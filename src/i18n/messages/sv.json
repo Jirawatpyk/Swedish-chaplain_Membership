@@ -1621,6 +1621,7 @@
         "confirmInviteAction": "Skicka inbjudningar",
         "success": "{count, plural, one {# medlem} other {# medlemmar}} {action}",
         "inviteQueued": "{invited, plural, one {# inbjudan köad} other {# inbjudningar köade}}",
+        "inviteResent": "{resent, plural, one {# omskickad} other {# omskickade}}",
         "inviteSkipped": "{skipped, plural, one {# hoppades över} other {# hoppades över}}",
         "inviteFailed": "{failed, plural, one {# misslyckades} other {# misslyckades}}",
         "rateLimited": "För många massåtgärder. Vänta och försök igen.",

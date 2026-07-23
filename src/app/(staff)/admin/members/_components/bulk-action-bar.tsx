@@ -88,17 +88,22 @@ export function BulkActionBar({
             // P1-17 — per-member buckets (queued / skipped / failed). Partial
             // success is still 200; surface the breakdown + use an error toast
             // only when at least one member failed (bad data / transient).
-            const c = body.counts ?? { invited: 0, skipped: 0, failed: 0 };
+            const c = body.counts ?? { invited: 0, resent: 0, skipped: 0, failed: 0 };
             const parts = [t('inviteQueued', { invited: c.invited })];
+            // Re-sent = a fresh token minted for a member whose previous
+            // invitation expired. Named separately so the admin can tell it
+            // apart from a first-time invite.
+            if (c.resent > 0) parts.push(t('inviteResent', { resent: c.resent }));
             if (c.skipped > 0) parts.push(t('inviteSkipped', { skipped: c.skipped }));
             if (c.failed > 0) parts.push(t('inviteFailed', { failed: c.failed }));
             const message = parts.join(' · ');
-            // Only a green success when at least one invite was actually queued.
-            // If every member was skipped (e.g. all already linked → invited=0,
-            // failed=0) nothing was done, so use a neutral info toast — a success
-            // tick on a no-op misleads the admin into thinking invites were sent.
+            // Only a green success when at least one invite was actually queued
+            // OR re-sent. If every member was skipped (e.g. all already linked
+            // → invited=0, resent=0, failed=0) nothing was done, so use a
+            // neutral info toast — a success tick on a no-op misleads the admin
+            // into thinking invites were sent.
             if (c.failed > 0) toast.error(message);
-            else if (c.invited > 0) toast.success(message);
+            else if (c.invited > 0 || c.resent > 0) toast.success(message);
             else toast.info(message);
           } else {
             toast.success(

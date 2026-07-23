@@ -213,9 +213,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         deleteInvitedUser: deps.deleteInvitedUser,
         // Phase D / Task 13 — the already_linked arm now falls through to
         // resendBouncedInvite, which needs these; all already provided by
-        // buildMembersDeps. (Response-body mapping of the new `resent` bucket
-        // + UI copy is Task 14 — `counts.resent` already flows through via
-        // the `counts` spread below.)
+        // buildMembersDeps. (Response-body mapping of the `resent` bucket +
+        // UI copy landed in Task 14 below.)
         reissueInvitation: deps.reissueInvitation,
         userEmails: deps.userEmails,
         audit: deps.audit,
@@ -230,6 +229,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           contact_id: i.contactId,
           user_id: i.userId,
           email: i.email,
+        })),
+        resent: inviteResult.value.resent.map((r) => ({
+          member_id: r.memberId,
+          contact_id: r.contactId,
         })),
         skipped: inviteResult.value.skipped.map((s) => ({
           member_id: s.memberId,

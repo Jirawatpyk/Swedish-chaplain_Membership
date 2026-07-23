@@ -1621,6 +1621,7 @@
         "confirmInviteAction": "Send invitations",
         "success": "{count, plural, one {# member} other {# members}} {action}",
         "inviteQueued": "{invited, plural, one {# invitation queued} other {# invitations queued}}",
+        "inviteResent": "{resent, plural, one {# re-sent} other {# re-sent}}",
         "inviteSkipped": "{skipped, plural, one {# skipped} other {# skipped}}",
         "inviteFailed": "{failed, plural, one {# failed} other {# failed}}",
         "rateLimited": "Too many bulk actions. Wait a few minutes and try again.",
