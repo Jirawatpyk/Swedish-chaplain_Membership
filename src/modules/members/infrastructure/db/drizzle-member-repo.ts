@@ -1119,11 +1119,19 @@ export const drizzleMemberRepo: MemberRepo = {
 
   async countMembersNeedingPortalInvite(ctx, filter) {
     try {
+      // D8 — this count MUST judge expiry against the SAME instant as the badge
+      // and the visible list, so `now` is supplied by the caller. Refuse rather
+      // than fabricate a fresh `new Date()` here: a silent second clock would
+      // let the count disagree with the badge around an `expires_at` boundary.
+      // The `countMembersNeedingPortalInvite` use case forces `portalNeedsInvite`
+      // on, so this only fires if a future caller bypasses it.
+      if (!filter.portalNeedsInvite) {
+        throw new Error(
+          'countMembersNeedingPortalInvite: filter.portalNeedsInvite.now is required (D8)',
+        );
+      }
       const n = await runInTenant(ctx, async (tx) => {
-        const whereClause = buildDirectoryWhere({
-          ...filter,
-          portalNeedsInvite: filter.portalNeedsInvite ?? { now: new Date() },
-        });
+        const whereClause = buildDirectoryWhere(filter);
         const rows = await tx
           .select({ n: sql<number>`count(*)::int` })
           .from(members)

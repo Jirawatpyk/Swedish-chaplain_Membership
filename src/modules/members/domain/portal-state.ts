@@ -12,6 +12,7 @@
  * leaving a dangling id. (The Drizzle schema declares the column without the
  * reference — read the migration, not schema-contacts.ts.)
  */
+import { isInvitationExpired } from '@/lib/invitation-expiry';
 
 export type PortalState =
   | 'active'
@@ -34,10 +35,12 @@ export interface DerivePortalStateInput {
 export function derivePortalState(input: DerivePortalStateInput): PortalState {
   if (input.linkedUserId === null) return 'not_invited';
   if (input.pendingInvitation === null) return 'active';
-  // `<=` matches the detail page's inline expiry test
-  // (admin/members/[memberId]/page.tsx:270-276) so the two surfaces cannot
-  // disagree on a borderline invitation.
-  return input.pendingInvitation.expiresAt.getTime() <= input.now.getTime()
+  // Shared `isInvitationExpired` (@/lib) is the SINGLE implementation of the
+  // expiry boundary — the member detail page's pending-invitation mapping calls
+  // the same helper, so the badge and that page cannot disagree on a borderline
+  // invitation. The `<=` boundary (expiry exactly at `now` = expired) lives in
+  // that helper.
+  return isInvitationExpired(input.pendingInvitation.expiresAt, input.now)
     ? 'invite_expired'
     : 'invited';
 }

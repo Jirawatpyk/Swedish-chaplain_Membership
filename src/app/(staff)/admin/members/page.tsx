@@ -354,7 +354,7 @@ export async function MembersDirectoryBody({
     offset,
   };
 
-  const [result, plansResult, portalInviteCount] = await Promise.all([
+  const [result, plansResult, portalInviteCountRaw] = await Promise.all([
     directorySearchWithCount(
       { tenant, memberRepo: deps.memberRepo },
       {
@@ -371,14 +371,42 @@ export async function MembersDirectoryBody({
         clock: plansDeps.clock,
       },
     ),
-    // Needs-invite chip count (design doc §3.7, D7) — SAME directoryFilter
-    // as the visible list, `portalNeedsInvite` forced on so the count is
-    // never a stray "all members" total.
-    countMembersNeedingPortalInviteSafe(tenant, deps.memberRepo, {
-      ...directoryFilter,
-      portalNeedsInvite: { now },
-    }),
+    // Needs-invite chip count (design doc §3.7, D7).
+    //
+    // When the chip filter is ACTIVE the visible list is ALREADY the
+    // needs-invite set, so its total (`result.value.total`) IS the chip count —
+    // issuing a second, identical `count(*)` here would just duplicate it, so we
+    // skip it and derive the count from the list total below. When the chip is
+    // INACTIVE the two genuinely differ (all-members list vs needs-invite
+    // subset), so the count runs.
+    //
+    // The count consumes only the WHERE-shaping fields; `sort`/`order` and the
+    // page `offset` are irrelevant to a `count(*)`, so pass a filter without
+    // them (limit/offset are still required by DirectoryOffsetFilter's type and
+    // are ignored by the count query).
+    portalNeedsInvite
+      ? Promise.resolve(null)
+      : countMembersNeedingPortalInviteSafe(tenant, deps.memberRepo, {
+          ...(query.q?.trim() ? { q: query.q.trim() } : {}),
+          ...(query.plan_id && query.plan_id !== 'all'
+            ? { planId: query.plan_id }
+            : {}),
+          ...(riskBand ? { riskBand } : {}),
+          status: [...statuses],
+          limit: PAGE_SIZE,
+          offset: 0,
+          portalNeedsInvite: { now },
+        }),
   ]);
+
+  // #2 — reuse the list total as the chip count when the chip filtered the list
+  // (see the Promise.all comment). On a search error the chip degrades to
+  // `null` (unavailable), consistent with the badge/count degrade contract.
+  const portalInviteCount = portalNeedsInvite
+    ? result.ok
+      ? result.value.total
+      : null
+    : portalInviteCountRaw;
 
   // Build plan options for the filter dropdown
   const planOptions: PlanOption[] = plansResult.ok

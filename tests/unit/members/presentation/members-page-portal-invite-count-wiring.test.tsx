@@ -218,7 +218,7 @@ describe('MembersDirectoryBody — ?portal=needs_invite reaches the search filte
     expect(passedInput.portalNeedsInvite).toBeUndefined();
   });
 
-  it('the count use case ALWAYS receives portalNeedsInvite:{now}, even when the param is absent (D7 — count is always scoped)', async () => {
+  it('when the chip is INACTIVE the count use case is called with portalNeedsInvite:{now} (D7 — count is scoped to needs-invite even with no filter)', async () => {
     seedZeroRows();
     countMembersNeedingPortalInviteMock.mockResolvedValue({
       ok: true,
@@ -231,5 +231,39 @@ describe('MembersDirectoryBody — ?portal=needs_invite reaches the search filte
     const [, passedFilter] = countMembersNeedingPortalInviteMock.mock
       .calls[0] as [unknown, { portalNeedsInvite?: { now: Date } }];
     expect(passedFilter.portalNeedsInvite?.now).toBeInstanceOf(Date);
+  });
+
+  it('when the chip is ACTIVE the chip count is the list total — the redundant count query is skipped', async () => {
+    // The filtered list total IS the needs-invite count, so page.tsx reuses
+    // `result.value.total` instead of issuing a second identical count(*).
+    directorySearchWithCount.mockResolvedValue({
+      ok: true,
+      value: { total: 3, items: [] },
+    });
+
+    const result = await MembersDirectoryBody({
+      query: { portal: 'needs_invite' },
+      isAdmin: true,
+    });
+
+    // Count use case is NOT called on the active path…
+    expect(countMembersNeedingPortalInviteMock).not.toHaveBeenCalled();
+    // …and the chip receives the list total.
+    expect(JSON.stringify(result)).toContain('"portalInviteCount":3');
+  });
+
+  it('when the chip is ACTIVE but the search errors, the chip count degrades to null', async () => {
+    directorySearchWithCount.mockResolvedValue({
+      ok: false,
+      error: { code: 'repo.unexpected' },
+    });
+
+    const result = await MembersDirectoryBody({
+      query: { portal: 'needs_invite' },
+      isAdmin: true,
+    });
+
+    expect(countMembersNeedingPortalInviteMock).not.toHaveBeenCalled();
+    expect(JSON.stringify(result)).toContain('"portalInviteCount":null');
   });
 });
