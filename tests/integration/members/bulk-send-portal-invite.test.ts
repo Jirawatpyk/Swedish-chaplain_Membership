@@ -152,6 +152,12 @@ describe('F3 bulkSendPortalInvite — integration (P1-17, live Neon)', () => {
       contactRepo: d.contactRepo,
       createUser: d.createUser,
       deleteInvitedUser: d.deleteInvitedUser,
+      // Phase D / Task 13 — the already_linked arm now falls through to
+      // resendBouncedInvite, which needs these; all provided by buildMembersDeps.
+      reissueInvitation: d.reissueInvitation,
+      userEmails: d.userEmails,
+      audit: d.audit,
+      clock: d.clock,
     };
   }
   const meta = (rid: string) => ({ actorUserId: admin.userId, requestId: rid, sourceIp: '203.0.113.9' });
@@ -164,7 +170,9 @@ describe('F3 bulkSendPortalInvite — integration (P1-17, live Neon)', () => {
     );
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.value.counts).toEqual({ invited: 2, skipped: 0, failed: 0 });
+    // Phase D / Task 13 added the `resent` bucket — assert its presence (0
+    // here, both contacts are unlinked) rather than dropping it silently.
+    expect(r.value.counts).toEqual({ invited: 2, resent: 0, skipped: 0, failed: 0 });
 
     const outbox = await db
       .select()

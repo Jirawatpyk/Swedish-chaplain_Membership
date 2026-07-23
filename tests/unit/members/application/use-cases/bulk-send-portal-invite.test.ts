@@ -1,11 +1,13 @@
 /**
  * Unit — bulkSendPortalInvite (go-live P1-17 / FR-018).
  *
- * Mocks the reused `invitePortal` use case + the repos so the orchestration
- * logic is tested in isolation: the 3-bucket mapping (invited / skipped /
- * failed), per-member best-effort (one member's error never aborts the loop),
- * idempotent already_linked → skipped, member-level skips (not_found / archived /
- * no_invitable_contact), and input validation.
+ * Mocks the reused `invitePortal` + `resendBouncedInvite` use cases + the
+ * repos so the orchestration logic is tested in isolation: the 4-bucket
+ * mapping (invited / resent / skipped / failed), per-member best-effort (one
+ * member's error never aborts the loop), idempotent already_linked → skipped
+ * (or → resent when the linked user's invite merely expired — Phase D / Task
+ * 13), member-level skips (not_found / archived / no_invitable_contact), and
+ * input validation.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { TenantContext } from '@/modules/tenants';
@@ -13,6 +15,17 @@ import type { TenantContext } from '@/modules/tenants';
 const invitePortalMock = vi.fn();
 vi.mock('@/modules/members/application/use-cases/invite-portal', () => ({
   invitePortal: (...args: unknown[]) => invitePortalMock(...args),
+}));
+
+// Phase D / Task 13 — the `already_linked` arm now falls through to
+// resendBouncedInvite. Mocked here (like invitePortal above) so this file
+// stays a pure orchestration test; `resend-bounced-invite-*.test.ts` (unit +
+// integration) covers the real use case's own behaviour. Defaults to
+// not_eligible/already_active so the pre-existing already_linked assertions
+// below are unaffected unless a test overrides it.
+const resendBouncedInviteMock = vi.fn();
+vi.mock('@/modules/members/application/use-cases/resend-bounced-invite', () => ({
+  resendBouncedInvite: (...args: unknown[]) => resendBouncedInviteMock(...args),
 }));
 
 import {
@@ -54,6 +67,12 @@ function makeDeps(): BulkSendPortalInviteDeps {
     // invitePortal is fully mocked here, so the SAGA compensation port is never
     // invoked from this use case directly — a no-op stub keeps the type honest.
     deleteInvitedUser: (async () => ({ ok: true })) as unknown as BulkSendPortalInviteDeps['deleteInvitedUser'],
+    // Phase D / Task 13 — resendBouncedInvite is fully mocked above, so these
+    // ports are never actually invoked; stubs keep the type honest.
+    reissueInvitation: {} as unknown as BulkSendPortalInviteDeps['reissueInvitation'],
+    userEmails: {} as unknown as BulkSendPortalInviteDeps['userEmails'],
+    audit: {} as unknown as BulkSendPortalInviteDeps['audit'],
+    clock: { now: () => new Date() } as BulkSendPortalInviteDeps['clock'],
   };
 }
 
@@ -68,6 +87,10 @@ beforeEach(() => {
   invitePortalMock.mockImplementation(async (_deps: unknown, input: { contactId: string }) => {
     return INVITE[input.contactId] ?? okR({ contactId: input.contactId, userId: `user-${input.contactId}`, email: `${input.contactId}@x.test` });
   });
+  resendBouncedInviteMock.mockReset();
+  // Default: the linked user has already activated — preserves the
+  // pre-Task-13 already_linked -> skipped behaviour unless a test overrides it.
+  resendBouncedInviteMock.mockResolvedValue(errR({ code: 'not_eligible', reason: 'already_active' }));
 });
 
 const uuids = (n: number) => Array.from({ length: n }, (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`);
@@ -103,7 +126,7 @@ describe('bulkSendPortalInvite — 3-bucket per-member outcomes', () => {
     const r = await bulkSendPortalInvite({ action: 'send_portal_invite', member_ids: [m1!, m2!, m3!] }, meta, makeDeps());
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.value.counts).toEqual({ invited: 3, skipped: 0, failed: 0 });
+    expect(r.value.counts).toEqual({ invited: 3, resent: 0, skipped: 0, failed: 0 });
     expect(r.value.invited.map((i) => i.memberId)).toEqual([m1, m2, m3]);
   });
 
@@ -126,7 +149,7 @@ describe('bulkSendPortalInvite — 3-bucket per-member outcomes', () => {
     );
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.value.counts).toEqual({ invited: 1, skipped: 5, failed: 3 });
+    expect(r.value.counts).toEqual({ invited: 1, resent: 0, skipped: 5, failed: 3 });
     expect(r.value.invited.map((i) => i.memberId)).toEqual([mOk]);
     const skip = new Map(r.value.skipped.map((s) => [s.memberId, s.reason]));
     expect(skip.get(mLinked!)).toBe('already_linked');
@@ -183,7 +206,7 @@ describe('bulkSendPortalInvite — 3-bucket per-member outcomes', () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.value.failed).toEqual([{ memberId: m, code: 'link_failed' }]);
-    expect(r.value.counts).toEqual({ invited: 0, skipped: 0, failed: 1 });
+    expect(r.value.counts).toEqual({ invited: 0, resent: 0, skipped: 0, failed: 1 });
   });
 
   // go-live /code-review #1 (HIGH): F1 createUser RE-RAISES unexpected DB/network
@@ -210,6 +233,64 @@ describe('bulkSendPortalInvite — 3-bucket per-member outcomes', () => {
     if (!r.ok) return;
     expect(r.value.failed).toEqual([{ memberId: mThrow, code: 'server_error' }]);
     expect(r.value.invited.map((i) => i.memberId)).toEqual([mOk]); // mOk still attempted
-    expect(r.value.counts).toEqual({ invited: 1, skipped: 0, failed: 1 });
+    expect(r.value.counts).toEqual({ invited: 1, resent: 0, skipped: 0, failed: 1 });
+  });
+});
+
+describe('bulkSendPortalInvite — resent bucket (Phase D / Task 13 fall-through)', () => {
+  it('already_linked + resendBouncedInvite ok → resent, not skipped', async () => {
+    const [m] = uuids(1);
+    MEMBERS[m!] = { status: 'active' };
+    CONTACTS[m!] = [{ contactId: 'cExpired', isPrimary: true }];
+    INVITE['cExpired'] = errR({ code: 'already_linked' });
+    resendBouncedInviteMock.mockResolvedValue(okR({ contactId: 'cExpired', invitationId: 'inv-1' }));
+
+    const r = await bulkSendPortalInvite({ action: 'send_portal_invite', member_ids: [m!] }, meta, makeDeps());
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.counts).toEqual({ invited: 0, resent: 1, skipped: 0, failed: 0 });
+    expect(r.value.resent).toEqual([{ memberId: m, contactId: 'cExpired' }]);
+    expect(r.value.skipped).toEqual([]);
+  });
+
+  it('already_linked + resendBouncedInvite not_eligible(already_active) → skipped(already_linked), unchanged', async () => {
+    const [m] = uuids(1);
+    MEMBERS[m!] = { status: 'active' };
+    CONTACTS[m!] = [{ contactId: 'cActive', isPrimary: true }];
+    INVITE['cActive'] = errR({ code: 'already_linked' });
+    resendBouncedInviteMock.mockResolvedValue(errR({ code: 'not_eligible', reason: 'already_active' }));
+
+    const r = await bulkSendPortalInvite({ action: 'send_portal_invite', member_ids: [m!] }, meta, makeDeps());
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.counts).toEqual({ invited: 0, resent: 0, skipped: 1, failed: 0 });
+    expect(r.value.skipped).toEqual([{ memberId: m, reason: 'already_linked' }]);
+  });
+
+  it('already_linked + resendBouncedInvite not_found → skipped(already_linked), unchanged', async () => {
+    const [m] = uuids(1);
+    MEMBERS[m!] = { status: 'active' };
+    CONTACTS[m!] = [{ contactId: 'cGone', isPrimary: true }];
+    INVITE['cGone'] = errR({ code: 'already_linked' });
+    resendBouncedInviteMock.mockResolvedValue(errR({ code: 'not_found' }));
+
+    const r = await bulkSendPortalInvite({ action: 'send_portal_invite', member_ids: [m!] }, meta, makeDeps());
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.skipped).toEqual([{ memberId: m, reason: 'already_linked' }]);
+  });
+
+  it('already_linked + resendBouncedInvite server_error → failed(server_error), not skipped', async () => {
+    const [m] = uuids(1);
+    MEMBERS[m!] = { status: 'active' };
+    CONTACTS[m!] = [{ contactId: 'cBoom', isPrimary: true }];
+    INVITE['cBoom'] = errR({ code: 'already_linked' });
+    resendBouncedInviteMock.mockResolvedValue(errR({ code: 'server_error', cause: new Error('boom') }));
+
+    const r = await bulkSendPortalInvite({ action: 'send_portal_invite', member_ids: [m!] }, meta, makeDeps());
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.counts).toEqual({ invited: 0, resent: 0, skipped: 0, failed: 1 });
+    expect(r.value.failed).toEqual([{ memberId: m, code: 'server_error' }]);
   });
 });
