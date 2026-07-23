@@ -761,7 +761,7 @@ export async function issueCreditNote(
             ? false // F5 real refund → money returned → retract
             : input.membershipEffect === 'cancel_membership'
               ? false // withdrawal → retract
-              : true // F4-manual full 'keep' (Option 1b): assume no refund → RETAIN
+              : input.membershipEffect === 'keep' // F4-manual full 'keep' (Option 1b): assume no refund → RETAIN. A strict `=== 'keep'` (NOT a bare `: true`) so an unexpected/future effect derives FALSE — the safe direction (a spurious retract beats a silent under-bill).
           : false; // partial / event / non-full — predicate never consulted
 
       // --- POST-SEQUENCE zone begins. Every error path below MUST
