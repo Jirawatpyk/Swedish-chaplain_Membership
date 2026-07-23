@@ -67,6 +67,9 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
   const searchParams = useSearchParams();
   const [, startTransition] = useTransition();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Stable focus target for when the chip unmounts on its own toggle-off (see
+  // `onPortalToggle`). The search input is always rendered.
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const currentQ = searchParams.get('q') ?? '';
   const currentStatus = searchParams.get('status') ?? 'all';
@@ -74,23 +77,27 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
   const currentRisk = searchParams.get('risk_band') ?? 'all';
 
   const portalActive = searchParams.get('portal') === 'needs_invite';
-  // The chip is "naturally" visible when there is work to show, the filter is
-  // on, or the count could not be read (unavailable). It ALSO survives the one
-  // render in which it was just clicked off, so its own click can't unmount the
-  // focused button out from under the pointer/keyboard (a focus-to-<body> drop
-  // axe never catches).
-  const naturallyVisible =
+  // The chip is visible when there is work to show, the filter is on, or the
+  // count could not be read (unavailable). A `chipWasVisible` latch used to
+  // live here to "keep the chip mounted for the render it was clicked off" —
+  // it was removed because it can't work: React's adjust-state-during-render
+  // collapses the would-be one extra frame before commit, so the latch was
+  // provably always equal to this expression and never painted a difference.
+  // Focus on toggle-off is handled imperatively in `onPortalToggle` instead.
+  const showChip =
     portalActive ||
     portalInviteCount === null ||
     (portalInviteCount ?? 0) > 0;
-  const [chipWasVisible, setChipWasVisible] = useState(naturallyVisible);
-  const showChip = naturallyVisible || chipWasVisible;
-  // Reconcile against `naturallyVisible`, NOT `showChip`: `showChip` already
-  // includes `chipWasVisible`, so `!showChip && chipWasVisible` is a tautology
-  // (always false) and the latch would never release — the chip would stay
-  // mounted forever once shown, even after the count genuinely returns to 0
-  // with the filter off. Comparing to `naturallyVisible` lets it turn back off.
-  if (naturallyVisible !== chipWasVisible) setChipWasVisible(naturallyVisible);
+
+  // Toggle the needs-invite filter. When turning it OFF at count 0, the chip
+  // unmounts in the same commit that processes the navigation — so move focus
+  // to the always-present search input FIRST, or it falls back to <body> (a
+  // focus-loss class axe never catches). `pushUrl` handles the URL + reset.
+  function onPortalToggle() {
+    const willUnmount = portalActive && portalInviteCount === 0;
+    if (willUnmount) searchInputRef.current?.focus();
+    pushUrl({ portal: portalActive ? null : 'needs_invite' });
+  }
 
   // The search box is a CONTROLLED input (Base UI's FieldControl warns on
   // uncontrolled defaultValue being mutated — the previous `key={currentQ}` +
@@ -167,6 +174,7 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
           aria-hidden
         />
         <Input
+          ref={searchInputRef}
           type="search"
           value={searchValue}
           onChange={(e) => onSearchChange(e.target.value)}
@@ -266,10 +274,9 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
           size="sm"
           aria-pressed={portalActive}
           disabled={portalInviteCount === null}
-          // Always toggle through pushUrl — it strips `cursor`/`page` and uses
-          // scroll:false. Setting ?portal= directly from page 3 would land on
-          // page 3 of a one-page result: an empty table with no explanation.
-          onClick={() => pushUrl({ portal: portalActive ? null : 'needs_invite' })}
+          // Toggles through `onPortalToggle` → `pushUrl` (strips cursor/page,
+          // scroll:false) and moves focus off the chip before it can unmount.
+          onClick={onPortalToggle}
           aria-label={
             portalInviteCount === null
               ? t('portalChip.unavailable')

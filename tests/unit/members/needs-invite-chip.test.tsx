@@ -15,7 +15,7 @@
  * `tests/unit/members/portal-badge.test.tsx`.
  */
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import messages from '@/i18n/messages/en.json';
 import { DirectoryFilters } from '@/components/members/directory-filters';
@@ -136,5 +136,33 @@ describe('needs-invite chip', () => {
     expect(
       screen.queryByRole('button', { name: /needs portal invite/i }),
     ).toBeNull();
+  });
+
+  it('moves focus to the search box (not <body>) when toggled off at count 0', () => {
+    // The chip unmounts on this toggle-off (count still 0), so its click must
+    // move focus to a stable element first — otherwise focus falls back to
+    // <body>, a focus-loss class axe never catches. Keeping the chip "mounted
+    // for one render" cannot do this (React collapses the extra frame before
+    // commit), so the handler moves focus imperatively.
+    const { rerender } = renderFilters({
+      portalInviteCount: 0,
+      searchParams: 'portal=needs_invite',
+    });
+    fireEvent.click(
+      screen.getByRole('button', { name: /needs portal invite/i }),
+    );
+
+    // Simulate the post-toggle navigation: ?portal= cleared, count still 0.
+    nav.searchParams.current = new URLSearchParams('');
+    rerender(
+      <NextIntlClientProvider locale="en" messages={messages}>
+        <DirectoryFilters portalInviteCount={0} />
+      </NextIntlClientProvider>,
+    );
+
+    expect(
+      screen.queryByRole('button', { name: /needs portal invite/i }),
+    ).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole('searchbox'));
   });
 });
