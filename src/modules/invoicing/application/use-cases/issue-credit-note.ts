@@ -848,6 +848,9 @@ export async function issueCreditNote(
             sha256: rendered.sha256,
             templateVersion: deps.currentTemplateVersion,
           },
+          // M1 (plan-change-ux, Option 1b) — RED placeholder; the real
+          // `sourceRefundId`-first derivation lands in the GREEN commit.
+          retainsCoverage: false,
           ...(input.sourceRefundId !== undefined
             ? { sourceRefundId: input.sourceRefundId }
             : {}),
