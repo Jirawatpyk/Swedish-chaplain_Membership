@@ -277,6 +277,17 @@ export async function bulkSendPortalInvite(
             },
           );
           if (resend.ok) {
+            // ACCEPTED TRADEOFF (product decision 2026-07-23): unlike the
+            // `invited` bucket above — which deliberately emits NO member-scoped
+            // F3 audit so a bulk invite doesn't reset the at-risk clock —
+            // `resendBouncedInvite` emits `member_portal_invite_queued`, and the
+            // migration-0009 trigger bumps `members.last_activity_at` for that
+            // member. So a bulk re-send DOES reset the at-risk clock of every
+            // re-sent member. This matches the existing single-resend flow (the
+            // detail-page "Re-send invitation" button routes through the same
+            // use case), so bulk and single stay consistent rather than
+            // diverging; F8 recompute re-derives risk from the other signals on
+            // its next cycle. Chosen over building a non-bumping resend variant.
             resent.push({ memberId: rawId, contactId: primary.contactId as string });
             break;
           }

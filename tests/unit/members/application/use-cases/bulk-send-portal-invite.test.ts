@@ -293,4 +293,61 @@ describe('bulkSendPortalInvite — resent bucket (Phase D / Task 13 fall-through
     expect(r.value.counts).toEqual({ invited: 0, resent: 0, skipped: 0, failed: 1 });
     expect(r.value.failed).toEqual([{ memberId: m, code: 'server_error' }]);
   });
+
+  it('a THROW from resendBouncedInvite → failed(server_error); the loop continues (best-effort)', async () => {
+    // All the resent tests above use mockResolvedValue (a returned error
+    // Result). resendBouncedInvite can also THROW (e.g. the reissue port
+    // rejects) — the per-member try/catch must map that to failed(server_error)
+    // and still process the next member. "Mock-only tests miss throw paths" is
+    // a known trap in this repo, so exercise the rejection explicitly.
+    const [mThrow, mOk] = uuids(2);
+    MEMBERS[mThrow!] = { status: 'active' };
+    CONTACTS[mThrow!] = [{ contactId: 'cThrow', isPrimary: true }];
+    INVITE['cThrow'] = errR({ code: 'already_linked' });
+    MEMBERS[mOk!] = { status: 'active' };
+    CONTACTS[mOk!] = [{ contactId: 'cOk', isPrimary: true }];
+    // cOk has no INVITE entry → invitePortal default → invited (happy path).
+    resendBouncedInviteMock.mockRejectedValue(new Error('reissue exploded'));
+
+    const r = await bulkSendPortalInvite(
+      { action: 'send_portal_invite', member_ids: [mThrow!, mOk!] },
+      meta,
+      makeDeps(),
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.counts).toEqual({ invited: 1, resent: 0, skipped: 0, failed: 1 });
+    expect(r.value.failed).toEqual([{ memberId: mThrow, code: 'server_error' }]);
+    expect(r.value.invited.map((i) => i.memberId)).toEqual([mOk]);
+  });
+
+  it('mixed already_linked batch: one re-sent, one still-active skipped — best-effort across members', async () => {
+    // Two already_linked members in ONE batch with DIFFERENT resend outcomes,
+    // proving the fall-through is applied per-member (not batch-wide): the
+    // expired-pending one is re-sent, the genuinely-active one still skips.
+    const [mExpired, mActive] = uuids(2);
+    MEMBERS[mExpired!] = { status: 'active' };
+    CONTACTS[mExpired!] = [{ contactId: 'cExpired', isPrimary: true }];
+    INVITE['cExpired'] = errR({ code: 'already_linked' });
+    MEMBERS[mActive!] = { status: 'active' };
+    CONTACTS[mActive!] = [{ contactId: 'cActive', isPrimary: true }];
+    INVITE['cActive'] = errR({ code: 'already_linked' });
+    resendBouncedInviteMock.mockImplementation(
+      async (_deps: unknown, input: { contactId: string }) =>
+        input.contactId === 'cExpired'
+          ? okR({ contactId: 'cExpired', invitationId: 'inv-x' })
+          : errR({ code: 'not_eligible', reason: 'already_active' }),
+    );
+
+    const r = await bulkSendPortalInvite(
+      { action: 'send_portal_invite', member_ids: [mExpired!, mActive!] },
+      meta,
+      makeDeps(),
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.counts).toEqual({ invited: 0, resent: 1, skipped: 1, failed: 0 });
+    expect(r.value.resent).toEqual([{ memberId: mExpired, contactId: 'cExpired' }]);
+    expect(r.value.skipped).toEqual([{ memberId: mActive, reason: 'already_linked' }]);
+  });
 });
