@@ -1849,6 +1849,13 @@
       "when": 1798540000000,
       "tag": "0272_credit_notes_retains_coverage",
       "breakpoints": true
+    },
+    {
+      "idx": 274,
+      "version": "7",
+      "when": 1798540100000,
+      "tag": "0273_credit_notes_lock_retains_coverage",
+      "breakpoints": true
     }
   ]
 }
