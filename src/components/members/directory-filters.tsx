@@ -74,18 +74,23 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
   const currentRisk = searchParams.get('risk_band') ?? 'all';
 
   const portalActive = searchParams.get('portal') === 'needs_invite';
-  // The chip must survive its own click: turning the filter off at count 0
-  // would otherwise unmount the button that was just pressed, dropping focus
-  // to <body> — a failure axe never catches.
-  const [chipWasVisible, setChipWasVisible] = useState(
-    portalActive || (portalInviteCount ?? 0) > 0,
-  );
-  const showChip =
+  // The chip is "naturally" visible when there is work to show, the filter is
+  // on, or the count could not be read (unavailable). It ALSO survives the one
+  // render in which it was just clicked off, so its own click can't unmount the
+  // focused button out from under the pointer/keyboard (a focus-to-<body> drop
+  // axe never catches).
+  const naturallyVisible =
     portalActive ||
     portalInviteCount === null ||
-    (portalInviteCount ?? 0) > 0 ||
-    chipWasVisible;
-  if (!showChip && chipWasVisible) setChipWasVisible(false);
+    (portalInviteCount ?? 0) > 0;
+  const [chipWasVisible, setChipWasVisible] = useState(naturallyVisible);
+  const showChip = naturallyVisible || chipWasVisible;
+  // Reconcile against `naturallyVisible`, NOT `showChip`: `showChip` already
+  // includes `chipWasVisible`, so `!showChip && chipWasVisible` is a tautology
+  // (always false) and the latch would never release — the chip would stay
+  // mounted forever once shown, even after the count genuinely returns to 0
+  // with the filter off. Comparing to `naturallyVisible` lets it turn back off.
+  if (naturallyVisible !== chipWasVisible) setChipWasVisible(naturallyVisible);
 
   // The search box is a CONTROLLED input (Base UI's FieldControl warns on
   // uncontrolled defaultValue being mutated — the previous `key={currentQ}` +
@@ -273,9 +278,13 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
           className="whitespace-nowrap"
         >
           <MailWarningIcon className="size-4" aria-hidden />
+          {/* Visible text must echo the accessible name (WCAG 2.5.3 Label in
+              Name): when the count is unavailable, show the SAME "unavailable"
+              copy the aria-label uses, not the generic label with no number. */}
           <span aria-hidden="true">
-            {t('portalChip.label')}
-            {portalInviteCount !== null ? ` · ${portalInviteCount}` : ''}
+            {portalInviteCount === null
+              ? t('portalChip.unavailable')
+              : `${t('portalChip.label')} · ${portalInviteCount}`}
           </span>
         </Button>
       )}

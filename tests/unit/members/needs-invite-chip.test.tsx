@@ -108,4 +108,33 @@ describe('needs-invite chip', () => {
     renderFilters({ portalInviteCount: 3, searchParams: 'portal=needs_invite' });
     expect(screen.getByRole('button', { name: /clear/i })).toBeInTheDocument();
   });
+
+  it('releases once the filter is toggled off at count 0 (latch does not stick)', () => {
+    // Regression guard for the OR-clause self-referential latch: the chip was
+    // visible (active, count 0), then the user toggles the filter off and the
+    // recomputed count is still 0. The chip MUST disappear — nobody needs an
+    // invite. The buggy reconcile (`!showChip && chipWasVisible`, a tautology)
+    // left it mounted forever once shown; a plain re-mount at inactive+0 can't
+    // catch that because `chipWasVisible` initialises false there. Only a
+    // visible→toggled-off transition exercises the latch.
+    const { rerender } = renderFilters({
+      portalInviteCount: 0,
+      searchParams: 'portal=needs_invite',
+    });
+    expect(
+      screen.getByRole('button', { name: /needs portal invite/i }),
+    ).toBeInTheDocument();
+
+    // Simulate the post-toggle navigation: ?portal= cleared, count still 0.
+    nav.searchParams.current = new URLSearchParams('');
+    rerender(
+      <NextIntlClientProvider locale="en" messages={messages}>
+        <DirectoryFilters portalInviteCount={0} />
+      </NextIntlClientProvider>,
+    );
+
+    expect(
+      screen.queryByRole('button', { name: /needs portal invite/i }),
+    ).toBeNull();
+  });
 });
