@@ -24,7 +24,7 @@
  * PDF/Blob/outbox are stubbed (fast); DB + RLS + audit are real.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
 import { voidInvoice } from '@/modules/invoicing/application/use-cases/void-invoice';
@@ -397,11 +397,12 @@ describe('Step 2.4 — void-invoice clears renewal_cycles.linked_invoice_id', ()
     ).rejects.toBeInstanceOf(InvoiceLinkConflictError);
   }, 60_000);
 
-  it('voiding a PAID membership whose cycle is COMPLETED does NOT clear the link (CHECK-safe) and the void still succeeds', async () => {
-    // 088 § F.3 edge path: voiding a PAID membership. Its cycle is `completed`,
-    // and the completed-requires-invoice CHECK forbids a NULL linked_invoice_id.
-    // The clear is guarded on the OPEN cycle statuses, so a completed cycle is a
-    // no-op — the void must NOT roll back on a CHECK violation.
+  it('H1 — REFUSES to void a PAID membership (use a §86/10 credit note); cycle link + invoice untouched', async () => {
+    // Post-H1: a paid membership §86/4 can no longer be voided (a void strands the
+    // settled payment and, with the effective-paid retract (#24), double-charges
+    // on restore). The refusal is READ-ONLY — the cycle-unlink seam never fires,
+    // so the cycle keeps its linked_invoice_id, the invoice stays `paid`, and no
+    // invoice_voided audit is written.
     const memberId = await seedMember(tenantA);
     const invoiceId = await seedMembershipInvoice(tenantA, user, memberId, 'paid', 5);
     const cycleId = await seedCycle(tenantA, memberId, invoiceId, 'completed');
@@ -413,14 +414,41 @@ describe('Step 2.4 — void-invoice clears renewal_cycles.linked_invoice_id', ()
       voidReason: 'Duplicate payment recorded',
     });
 
-    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
-    if (!r.ok) return;
-    expect(r.value.status).toBe('void');
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.code).toBe('paid_membership_requires_credit_note');
 
-    // Completed cycle keeps its link (clear was a no-op — status guard).
+    // Invoice untouched: still paid, not voided.
+    const [inv] = await runInTenant(tenantA.ctx, (tx) =>
+      tx
+        .select({ status: invoices.status, voidedAt: invoices.voidedAt })
+        .from(invoices)
+        .where(eq(invoices.invoiceId, invoiceId)),
+    );
+    expect(inv?.status).toBe('paid');
+    expect(inv?.voidedAt).toBeNull();
+
+    // Cycle link intact (the unlink seam never ran).
     const row = await readCycle(cycleId);
     expect(row.status).toBe('completed');
     expect(row.linkedInvoiceId).toBe(invoiceId);
+
+    // No invoice_voided audit was written for this invoice.
+    const voided = await runInTenant(tenantA.ctx, (tx) =>
+      tx
+        .select({ payload: auditLog.payload })
+        .from(auditLog)
+        .where(
+          and(
+            eq(auditLog.tenantId, tenantA.ctx.slug),
+            eq(auditLog.eventType, 'invoice_voided'),
+          ),
+        ),
+    );
+    const forThisInvoice = voided.filter(
+      (a) => (a.payload as Record<string, unknown>).invoice_id === invoiceId,
+    );
+    expect(forThisInvoice).toHaveLength(0);
   }, 60_000);
 
   it('clearLinkedInvoiceForVoidInTx: CAS on the expected invoice id — a wrong id clears nothing', async () => {

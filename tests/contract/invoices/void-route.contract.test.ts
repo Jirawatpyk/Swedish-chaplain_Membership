@@ -190,6 +190,20 @@ describe('contract: POST /api/invoices/[invoiceId]/void', () => {
     expect(voidInvoiceMock).not.toHaveBeenCalled();
   });
 
+  it('H1 — maps paid_membership_requires_credit_note to 409 (wiring pin)', async () => {
+    // A paid membership §86/4 must be reversed via a §86/10 credit note, not
+    // voided. The use-case refuses with this code; the route surfaces it as 409.
+    voidInvoiceMock.mockResolvedValueOnce(
+      err({ code: 'paid_membership_requires_credit_note' }),
+    );
+
+    const res = await callRoute(VALID_INVOICE_ID, { voidReason: 'legit reason' });
+
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('paid_membership_requires_credit_note');
+  });
+
   it('returns 403 for a non-admin (manager) actor', async () => {
     requireAdminContextMock.mockResolvedValueOnce({
       ...adminContext,

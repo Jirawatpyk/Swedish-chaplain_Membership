@@ -1,0 +1,25 @@
+-- ---------------------------------------------------------------------------
+-- M1 (plan-change-ux, business decision Option 1b) — persist whether a credit
+-- note LEAVES the member's membership coverage intact for the credited period.
+--
+-- Set ONLY by the issue-credit-note use case, WRITE-ONCE at INSERT (credit_notes
+-- is immutable — no UPDATE path). TRUE only for an F4-manual FULL membership
+-- credit note issued with `membershipEffect: 'keep'` — a paperwork correction
+-- where the member was NOT refunded, so the renewal coverage predicate must NOT
+-- retract the period even though the settling invoice flips to 'credited' for
+-- §86/10 paperwork. FALSE for every other credit note: F5 real refunds (money
+-- returned → retract), `cancel_membership` withdrawals, partial credits, and
+-- event credits.
+--
+-- Additive, backfill-free: DEFAULT FALSE reproduces today's #24 behaviour. Every
+-- existing membership credit note is an F5 refund (money returned) → FALSE is the
+-- correct historical value, so NO data migration is needed. NO §87 / PDF /
+-- tax-content impact.
+--
+-- The existing composite index `credit_notes_tenant_original_idx`
+-- (tenant_id, original_invoice_id) — migration 0019 — already serves the
+-- correlated EXISTS lookup the renewal `effectivePaidCoverageSql` predicate + the
+-- L1 pipeline read model issue against this column, so NO new index is added.
+-- ---------------------------------------------------------------------------
+ALTER TABLE "credit_notes"
+  ADD COLUMN "retains_coverage" boolean NOT NULL DEFAULT false;

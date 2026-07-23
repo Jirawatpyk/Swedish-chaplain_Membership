@@ -46,6 +46,17 @@ export interface CreditNoteRepo {
        * Omitted / undefined for F4-manual issues.
        */
       readonly sourceRefundId?: string;
+      /**
+       * M1 (plan-change-ux, Option 1b) — persists `credit_notes.retains_coverage`.
+       * TRUE only for an F4-manual FULL membership credit note issued with
+       * `membershipEffect: 'keep'` (paperwork correction, member NOT refunded →
+       * coverage retained). FALSE for F5 real refunds, `cancel_membership`
+       * withdrawals, partial credits, and event credits. Required (never
+       * defaulted at the port) so the caller's intent is always explicit — the
+       * use case derives it from `sourceRefundId` / `membershipEffect` /
+       * full-vs-partial / subject and threads it here.
+       */
+      readonly retainsCoverage: boolean;
     },
   ): Promise<CreditNote>;
 

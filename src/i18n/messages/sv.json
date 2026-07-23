@@ -1896,10 +1896,12 @@
         "membershipEffect": {
           "legend": "Vad ska hända med medlemskapet?",
           "keep": {
-            "label": "Dokumentkorrigering / dubbelbetalning — medlemskapet påverkas inte"
+            "label": "Behåll medlemskapet — dokumentkorrigering",
+            "description": "Medlemmen återbetalades INTE för denna period, så medlemskapets täckning behålls."
           },
           "cancelMembership": {
-            "label": "Återbetala och avsluta medlemskapet — aktiva förnyelsecykler avbryts"
+            "label": "Återbetala och avsluta medlemskapet",
+            "description": "Medlemmen återbetalas och deras aktiva förnyelsecykler avbryts."
           }
         },
         "errors": {
@@ -2679,7 +2681,8 @@
           "concurrent": "Denna faktura har redan annullerats eller ändrats i en annan session. Uppdatera för att se den senaste statusen.",
           "refreshAction": "Uppdatera",
           "codeFallback": "Felkod: {code}",
-          "refundInProgress": "En återbetalning behandlas för denna fakturas betalning. Att makulera nu kan skapa en konflikt – vänta tills återbetalningen är klar och försök igen."
+          "refundInProgress": "En återbetalning behandlas för denna fakturas betalning. Att makulera nu kan skapa en konflikt – vänta tills återbetalningen är klar och försök igen.",
+          "paidMembershipRequiresCreditNote": "Den här betalda medlemsfakturan kan inte makuleras. För att återföra den, utfärda en kreditnota i stället."
         }
       }
     },

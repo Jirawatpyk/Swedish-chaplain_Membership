@@ -526,10 +526,12 @@ describe('F4 US5 — void-invoice (T098)', () => {
     expect(row?.parkedAt).toBeNull();
   }, 60_000);
 
-  it('088 T068 — voids a PAID single-blob invoice (legacy combined): status→void, ONE blob re-stamped', async () => {
-    // Paid legacy-shape row: documentNumber set, pdf_doc_kind 'invoice', NO
-    // separate receipt blob (receiptPdf null). Voiding a paid membership is the
-    // 088 § F.3 edge path — it stamps its single blob (Target A only).
+  it('H1 — REFUSES to void a PAID single-blob membership (legacy combined): must use a §86/10 credit note', async () => {
+    // A paid membership §86/4 (single-blob legacy combined) is reversed via a
+    // §86/10 CREDIT NOTE, never a void — a void writes nothing to `payments` and,
+    // with the effective-paid retract (#24), double-charges the member. Refuse
+    // (409) with NO state change: status stays `paid`, sha unchanged, no render,
+    // no upload, no invoice_voided audit.
     const { invoiceId } = await seedInvoice(tenant, user, planId, 'paid');
     const deps = makeDeps(tenant.ctx.slug);
 
@@ -539,30 +541,41 @@ describe('F4 US5 — void-invoice (T098)', () => {
       invoiceId,
       voidReason: 'Duplicate payment recorded',
     });
-    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
-    if (!r.ok) return;
-    expect(r.value.status).toBe('void');
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.code).toBe('paid_membership_requires_credit_note');
 
+    // Row untouched: still paid, original sha, still NOT voided.
     const [row] = await runInTenant(tenant.ctx, (tx) =>
       tx
-        .select({ status: invoices.status, pdfSha256: invoices.pdfSha256 })
+        .select({
+          status: invoices.status,
+          pdfSha256: invoices.pdfSha256,
+          voidedAt: invoices.voidedAt,
+        })
         .from(invoices)
         .where(eq(invoices.invoiceId, invoiceId)),
     );
-    expect(row?.status).toBe('void');
-    expect(row?.pdfSha256).toBe(RERENDERED_SHA);
+    expect(row?.status).toBe('paid');
+    expect(row?.pdfSha256).toBe(ORIGINAL_SHA);
+    expect(row?.voidedAt).toBeNull();
 
-    // Exactly ONE blob stamped — no separate receipt to re-render.
-    expect(deps.renderCalls).toHaveLength(1);
-    const renderIn = deps.renderCalls[0] as {
-      kind: string;
-      voidUnderlyingKind?: string;
-      billMode?: boolean;
-    };
-    expect(renderIn.kind).toBe('void_stamped_invoice');
-    expect(renderIn.voidUnderlyingKind).toBe('invoice');
-    expect(renderIn.billMode).toBeUndefined();
-    expect(deps.uploadCalls).toHaveLength(1);
+    // Read-only refusal ABOVE the first write: no render, no upload, no audit.
+    expect(deps.renderCalls).toHaveLength(0);
+    expect(deps.uploadCalls).toHaveLength(0);
+    const voidedAudits = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({ payload: auditLog.payload })
+        .from(auditLog)
+        .where(
+          and(
+            eq(auditLog.tenantId, tenant.ctx.slug),
+            eq(auditLog.eventType, 'invoice_voided'),
+            sql`${auditLog.payload}->>'invoice_id' = ${invoiceId}`,
+          ),
+        ),
+    );
+    expect(voidedAudits).toHaveLength(0);
   }, 60_000);
 
   it('088 T068 — voids an UNPAID new-flow ใบแจ้งหนี้ bill: documentNumber NULL → bill number + billMode, ONE blob', async () => {
@@ -622,8 +635,8 @@ describe('F4 US5 — void-invoice (T098)', () => {
     );
   }, 60_000);
 
-  it('088 T068 / CHK027 — voids a PAID membership with a separate §86/4 receipt: BOTH pdf_sha256 AND receipt_pdf_sha256 change, both blobs re-stamped', async () => {
-    const { invoiceId, memberId, receiptBlobKey } = await seedNewFlowRow(
+  it('H1 / CHK027 — REFUSES to void a PAID membership with a separate §86/4 receipt (use §86/10 credit note; BOTH blobs untouched)', async () => {
+    const { invoiceId } = await seedNewFlowRow(
       tenant,
       user,
       planId,
@@ -639,53 +652,33 @@ describe('F4 US5 — void-invoice (T098)', () => {
       invoiceId,
       voidReason: 'Sale cancelled after payment',
     });
-    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
-    if (!r.ok) return;
-    expect(r.value.status).toBe('void');
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.code).toBe('paid_membership_requires_credit_note');
 
-    // BOTH sha columns updated off their originals.
+    // BOTH sha columns untouched (originals), row still paid + not voided.
     const [row] = await runInTenant(tenant.ctx, (tx) =>
       tx
         .select({
           status: invoices.status,
           pdfSha256: invoices.pdfSha256,
           receiptPdfSha256: invoices.receiptPdfSha256,
+          voidedAt: invoices.voidedAt,
         })
         .from(invoices)
         .where(eq(invoices.invoiceId, invoiceId)),
     );
-    expect(row?.status).toBe('void');
-    expect(row?.pdfSha256).toBe(RERENDERED_SHA);
-    expect(row?.receiptPdfSha256).toBe(RERENDERED_RECEIPT_SHA);
+    expect(row?.status).toBe('paid');
+    expect(row?.pdfSha256).toBe(ORIGINAL_SHA);
+    expect(row?.receiptPdfSha256).toBe(RECEIPT_SHA);
+    expect(row?.voidedAt).toBeNull();
 
-    // TWO renders: [0] bill (billMode, SC), [1] §86/4 receipt (RC, payment-dated).
-    expect(deps.renderCalls).toHaveLength(2);
-    const billRender = deps.renderCalls[0] as {
-      voidUnderlyingKind?: string;
-      billMode?: boolean;
-      documentNumber?: { raw: string };
-    };
-    const receiptRender = deps.renderCalls[1] as {
-      voidUnderlyingKind?: string;
-      billMode?: boolean;
-      documentNumber?: { raw: string };
-      issueDate?: string;
-    };
-    expect(billRender.voidUnderlyingKind).toBe('invoice');
-    expect(billRender.billMode).toBe(true);
-    expect(billRender.documentNumber?.raw).toBe('SC-2026-000200');
-    expect(receiptRender.voidUnderlyingKind).toBe('receipt_combined');
-    expect(receiptRender.billMode).toBeUndefined();
-    expect(receiptRender.documentNumber?.raw).toBe('RC-2026-000200');
-    expect(receiptRender.issueDate).toBe('2026-02-01'); // payment date (D7)
+    // Read-only refusal: neither blob re-rendered or overwritten.
+    expect(deps.renderCalls).toHaveLength(0);
+    expect(deps.uploadCalls).toHaveLength(0);
 
-    // BOTH blobs overwritten at their own keys.
-    expect(deps.uploadCalls).toHaveLength(2);
-    const uploadKeys = (deps.uploadCalls as { key: string }[]).map((u) => u.key);
-    expect(uploadKeys).toContain(receiptBlobKey);
-
-    // Audit carries BOTH before/after shas + member_id.
-    const [voidedRow] = await runInTenant(tenant.ctx, (tx) =>
+    // No invoice_voided audit was written for this invoice.
+    const voidedAudits = await runInTenant(tenant.ctx, (tx) =>
       tx
         .select({ payload: auditLog.payload })
         .from(auditLog)
@@ -697,23 +690,18 @@ describe('F4 US5 — void-invoice (T098)', () => {
           ),
         ),
     );
-    const payload = voidedRow!.payload as Record<string, unknown>;
-    expect(payload.member_id).toBe(memberId);
-    expect(payload.document_number).toBe('SC-2026-000200');
-    expect(payload.original_pdf_sha256).toBe(ORIGINAL_SHA);
-    expect(payload.new_pdf_sha256).toBe(RERENDERED_SHA);
-    expect(payload.original_receipt_pdf_sha256).toBe(RECEIPT_SHA);
-    expect(payload.new_receipt_pdf_sha256).toBe(RERENDERED_RECEIPT_SHA);
-
-    // Returned in-memory Invoice reflects BOTH freshly-synced shas.
-    expect(r.value.pdf?.sha256).toBe(RERENDERED_SHA);
-    expect(r.value.receiptPdf?.sha256).toBe(RERENDERED_RECEIPT_SHA);
+    expect(voidedAudits).toHaveLength(0);
   }, 60_000);
 
   it('088 T068 (async TOCTOU) — a receipt render CANNOT land on a VOID row: applyReceiptPdf is a NO-OP, no un-stamped receipt served', async () => {
-    // Race Case B: a paid membership is voided while its async §86/4 receipt is
-    // still 'pending' (receiptPdf=null → Target B skipped, only the bill
-    // stamped). A late worker then tries to write the un-stamped receipt bytes.
+    // Repo-level guarantee (applyReceiptPdf WHERE `status != 'void'`): a late
+    // async §86/4 receipt worker must NOT land un-stamped bytes on a VOID row.
+    // Post-H1 a paid membership can no longer be voided via the use case, so the
+    // VOID row is created directly here (all void columns per
+    // `invoices_void_has_reason`), leaving receiptPdfStatus='pending' — the
+    // realistic TOCTOU shape (models a legacy pre-guard voided-paid row that still
+    // has a pending receipt slot). The guarantee is independent of HOW the row
+    // became void.
     const { invoiceId } = await seedNewFlowRow(
       tenant,
       user,
@@ -722,19 +710,17 @@ describe('F4 US5 — void-invoice (T098)', () => {
       'SC-2026-000300',
       'RC-2026-000300',
     );
-    const deps = makeDeps(tenant.ctx.slug);
-
-    const r = await voidInvoice(deps, {
-      tenantId: tenant.ctx.slug,
-      actorUserId: user.userId,
-      invoiceId,
-      voidReason: 'Voided before async receipt rendered',
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.execute(sql`
+        UPDATE invoices
+           SET status = 'void',
+               voided_at = now(),
+               void_reason = 'legacy pre-H1 voided-paid row',
+               voided_by_user_id = ${user.userId}
+         WHERE tenant_id = ${tenant.ctx.slug}
+           AND invoice_id = ${invoiceId}
+      `);
     });
-    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
-    if (!r.ok) return;
-    expect(r.value.status).toBe('void');
-    // Only the bill was stamped — the pending receipt had no blob to stamp.
-    expect(deps.renderCalls).toHaveLength(1);
 
     // The late async worker attempts to land the (un-stamped) receipt bytes.
     const repo = makeDrizzleInvoiceRepo(tenant.ctx.slug);

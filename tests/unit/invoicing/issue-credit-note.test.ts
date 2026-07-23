@@ -306,6 +306,10 @@ function makeDeps(
       ),
       findById: vi.fn(),
       findByOriginalInvoice: vi.fn(),
+      // M1 — default: no sibling CN exists for the refund yet, so a
+      // `sourceRefundId`-carrying call proceeds to insert (the F5-real-refund
+      // derivation path). Refund-race / idempotency tests override this.
+      findBySourceRefundId: vi.fn(async () => null),
       // Return the just-inserted CN for the AS4 annotation re-render.
       findByOriginalInvoiceInTx: vi.fn(async () => [
         makeCreditNote(
@@ -987,6 +991,116 @@ describe('issueCreditNote — F-2 membership-effect intent capture', () => {
     expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
     if (!r.ok) throw new Error('unreachable');
     expect(r.value.membershipCancellationRequested).toBe(false);
+  });
+});
+
+// ---- M1 (plan-change-ux, Option 1b) — retains_coverage derivation -----------
+// The use case derives `credit_notes.retains_coverage` and threads it to the
+// repo insert. The formula CHECKS `sourceRefundId` FIRST: an F5 refund-origin CN
+// hard-codes `membershipEffect: 'keep'` at issue-credit-note-from-refund.ts while
+// genuinely RETURNING money, so `membershipEffect === 'keep'` alone is NOT the
+// retention signal. TRUE only for an F4-manual (no sourceRefundId) FULL
+// membership credit with `membershipEffect: 'keep'` (paperwork correction, member
+// NOT refunded → coverage retained). FALSE for F5 refunds, cancel_membership,
+// partial credits, and event credits.
+describe('issueCreditNote — M1 retains_coverage derivation (Option 1b)', () => {
+  function makeMembershipInvoice(overrides: InvoiceFixtureOverrides = {}): Invoice {
+    return makeIssuedEventInvoice({
+      invoiceSubject: 'membership',
+      memberId: 'member-m1',
+      planId: 'plan-m1',
+      planYear: 2026,
+      eventId: null,
+      eventRegistrationId: null,
+      vatInclusive: false,
+      ...overrides,
+    });
+  }
+
+  const baseInput = {
+    tenantId: 'test-swecham',
+    actorUserId: 'actor-user',
+    invoiceId: INVOICE_ID,
+  };
+
+  /** Reads the `retainsCoverage` arg of the single insertCreditNote call. */
+  function insertedRetainsCoverage(deps: IssueCreditNoteDeps): boolean {
+    const mock = deps.creditNoteRepo.insertCreditNote as ReturnType<typeof vi.fn>;
+    expect(mock).toHaveBeenCalledTimes(1);
+    return mock.mock.calls[0]![1].retainsCoverage as boolean;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('membership + FULL credit + membershipEffect="keep" + NO sourceRefundId (F4-manual) → retains_coverage TRUE', async () => {
+    const invoice = makeMembershipInvoice(); // total 25,000n, creditedTotal 0
+    const deps = makeDeps(invoice, makeSettings());
+    const r = await issueCreditNote(deps, {
+      ...baseInput,
+      requestId: 'req-m1-keep',
+      creditTotalSatang: 25_000n, // full
+      reason: 'membership refund — paperwork correction, member not refunded',
+      membershipEffect: 'keep',
+    });
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
+    expect(insertedRetainsCoverage(deps)).toBe(true);
+  });
+
+  it('membership + FULL credit + membershipEffect="keep" + sourceRefundId SET (F5 real refund) → retains_coverage FALSE (sourceRefundId-first)', async () => {
+    const invoice = makeMembershipInvoice();
+    const deps = makeDeps(invoice, makeSettings());
+    const r = await issueCreditNote(deps, {
+      ...baseInput,
+      requestId: 'req-m1-refund',
+      creditTotalSatang: 25_000n, // full
+      reason: 'stripe refund',
+      membershipEffect: 'keep', // F5 bridge hard-codes this while returning money
+      sourceRefundId: 'rfnd-m1',
+    });
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
+    expect(insertedRetainsCoverage(deps)).toBe(false);
+  });
+
+  it('membership + FULL credit + membershipEffect="cancel_membership" (withdrawal) → retains_coverage FALSE', async () => {
+    const invoice = makeMembershipInvoice();
+    const deps = makeDeps(invoice, makeSettings());
+    const r = await issueCreditNote(deps, {
+      ...baseInput,
+      requestId: 'req-m1-cancel',
+      creditTotalSatang: 25_000n, // full
+      reason: 'membership refund + withdrawal',
+      membershipEffect: 'cancel_membership',
+    });
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
+    expect(insertedRetainsCoverage(deps)).toBe(false);
+  });
+
+  it('membership + PARTIAL credit → retains_coverage FALSE (never a completing full-membership retention note)', async () => {
+    const invoice = makeMembershipInvoice(); // total 25,000n
+    const deps = makeDeps(invoice, makeSettings());
+    const r = await issueCreditNote(deps, {
+      ...baseInput,
+      requestId: 'req-m1-partial',
+      creditTotalSatang: 12_500n, // partial — remainder stays > 0
+      reason: 'partial refund',
+    });
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
+    expect(insertedRetainsCoverage(deps)).toBe(false);
+  });
+
+  it('event invoice + FULL credit → retains_coverage FALSE (never consulted for event coverage)', async () => {
+    const invoice = makeIssuedEventInvoice(); // invoiceSubject 'event', total 25,000n
+    const deps = makeDeps(invoice, makeSettings());
+    const r = await issueCreditNote(deps, {
+      ...baseInput,
+      requestId: 'req-m1-event',
+      creditTotalSatang: 25_000n, // full
+      reason: 'event cancelled',
+    });
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
+    expect(insertedRetainsCoverage(deps)).toBe(false);
   });
 });
 

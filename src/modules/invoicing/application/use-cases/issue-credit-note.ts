@@ -741,6 +741,29 @@ export async function issueCreditNote(
         isFullCredit &&
         input.membershipEffect === 'cancel_membership';
 
+      // M1 (plan-change-ux, business decision Option 1b) — does this credit note
+      // LEAVE the member's membership coverage intact for the credited period?
+      // Persisted on `credit_notes.retains_coverage`; the renewal effective-paid
+      // predicate + L1 pipeline read it via a correlated EXISTS on the settling
+      // invoice so a coverage-retaining note does NOT retract the period even
+      // though the invoice flips to 'credited'.
+      //
+      // ORDER MATTERS — check `sourceRefundId` FIRST. The F5 refund bridge
+      // (issue-credit-note-from-refund.ts) hard-codes `membershipEffect: 'keep'`
+      // while GENUINELY returning money, so `membershipEffect === 'keep'` alone is
+      // NOT the retention signal. Only an F4-manual (no sourceRefundId) FULL
+      // membership 'keep' — a paperwork correction where the member was NOT
+      // refunded — retains coverage. Partial credits + event invoices never reach
+      // the true arm (isFullCredit / isMembershipInvoice false) → always FALSE.
+      const retainsCoverage =
+        isMembershipInvoice && isFullCredit
+          ? input.sourceRefundId !== undefined
+            ? false // F5 real refund → money returned → retract
+            : input.membershipEffect === 'cancel_membership'
+              ? false // withdrawal → retract
+              : true // F4-manual full 'keep' (Option 1b): assume no refund → RETAIN
+          : false; // partial / event / non-full — predicate never consulted
+
       // --- POST-SEQUENCE zone begins. Every error path below MUST
       // throw IssueCreditNoteInternalError so withTx rolls back.
 
@@ -848,6 +871,9 @@ export async function issueCreditNote(
             sha256: rendered.sha256,
             templateVersion: deps.currentTemplateVersion,
           },
+          // M1 (plan-change-ux, Option 1b) — coverage-retention intent derived
+          // above (sourceRefundId-first). Write-once at INSERT.
+          retainsCoverage,
           ...(input.sourceRefundId !== undefined
             ? { sourceRefundId: input.sourceRefundId }
             : {}),

@@ -1,7 +1,9 @@
 /**
  * T100 — void-invoice use case (F4 / US5 · 088 T068).
  *
- * Transitions an ISSUED or PAID invoice → `void` with a required reason.
+ * Transitions an ISSUED invoice (any subject) or a PAID non-membership invoice
+ * → `void` with a required reason. A PAID MEMBERSHIP §86/4 is REFUSED (H1) —
+ * reverse it via a §86/10 credit note instead (see Refusals).
  * Void is terminal: the invoice keeps its sequential tax-document
  * number (§87 no-gap — never reused), the PDF(s) are re-rendered with a
  * diagonal "VOID / ยกเลิก" overlay at the SAME content-addressed
@@ -15,18 +17,26 @@
  * plus, for a bill, `billMode` (a new-flow bill carries a `billDocumentNumberRaw`).
  *
  * ROW-SHAPE dispatch (NOT flag-gated — the flag only decides which shape a row
- * was issued in; void handles all shapes so legacy + new-flow both cancel):
+ * was issued in; void handles every shape EXCEPT a paid membership §86/4, which
+ * H1 refuses — legacy + new-flow both cancel otherwise):
  *   - ISSUED bill (new-flow): documentNumber NULL, billDocumentNumberRaw set,
  *     one blob (the bill). Void re-renders the bill under ใบแจ้งหนี้.
  *   - ISSUED §86/4 (legacy) / §105 as-paid: one blob. Byte-identical re-render.
  *   - PAID membership (record-payment path): TWO distinct blobs — the ใบแจ้งหนี้
- *     `pdf` bill AND the §86/4 tax-receipt `receiptPdf`. Both are VOID-stamped so a
- *     voided sale never leaves an un-stamped downloadable document (§ F.3 / CHK027;
- *     both stay downloadable per FR-015). Normally an issued §86/4 is cancelled via
- *     a §86/10 credit note — void is the EDGE path.
- *   - PAID as-paid / legacy combined (ONE blob): stamps its single blob.
+ *     `pdf` bill AND the §86/4 tax-receipt `receiptPdf`. H1 — the void use case
+ *     now REFUSES this shape (a paid §86/4 is reversed via a §86/10 credit note;
+ *     a void strands the settled payment). The two-blob VOID-stamp construction
+ *     below survives ONLY for the void-pdf-reconcile cron re-rendering LEGACY
+ *     pre-H1 voided-paid rows (both blobs stamped so a voided sale never leaves an
+ *     un-stamped downloadable document — § F.3 / CHK027 / FR-015).
+ *   - PAID as-paid / legacy combined (ONE blob, EVENT / non-member): stamps its
+ *     single blob. Still voidable (drives no renewal cycle).
  *
  * Refusals:
+ *   - PAID membership §86/4 → reverse via a §86/10 credit note, not a void
+ *                              (`paid_membership_requires_credit_note`; H1). A void
+ *                              strands the settled payment + double-charges on
+ *                              restore. EVENT / non-member paid rows stay voidable.
  *   - `void` / `credited` / `partially_credited` → terminal / already-adjusted,
  *                              re-void / edit blocked (`invalid_status`).
  *   - `draft`               → can't void a draft; use deleteInvoiceDraft.
@@ -130,7 +140,17 @@ export type VoidInvoiceError =
    * stranded `pending` forever. Refuse (409); the admin retries once the refund
    * settles. UNCONDITIONAL — a void has no refund-origin variant (unlike a CN).
    */
-  | { code: 'refund_in_progress' };
+  | { code: 'refund_in_progress' }
+  /**
+   * H1 — a PAID membership §86/4 tax invoice may NOT be voided. Voiding a paid
+   * §86/4 writes NOTHING to `payments` (the settled money is stranded) and,
+   * combined with the effective-paid retract (#24), double-charges the member on
+   * restore/comeback. The correct reversal is a §86/10 CREDIT NOTE (→ `credited`,
+   * real refund). Refuse (409). MEMBERSHIP-ONLY: event/non-member rows drive no
+   * renewal cycle (no double-charge) and the legacy no-TIN remediation runbook
+   * (Step 2.1) must still void event rows.
+   */
+  | { code: 'paid_membership_requires_credit_note' };
 
 class VoidInvoiceInternalError extends TxAbort<VoidInvoiceError> {
   override readonly name = 'VoidInvoiceInternalError';
@@ -248,10 +268,10 @@ export async function voidInvoice(
         return err({ code: 'invoice_not_found' });
       }
 
-      // B. `issued` OR `paid` is voidable. Voiding a PAID membership is the
-      // 088 § F.3 edge path (normal cancellation of a §86/4 is a §86/10 credit
-      // note); it must still stamp VOID on both the bill + tax-receipt blobs.
-      // void / credited / partially_credited / draft stay refused.
+      // B. `issued` OR `paid` clears the status gate here; a PAID MEMBERSHIP is
+      // then refused by the H1 guard below (reverse via a §86/10 credit note) —
+      // only a PAID EVENT / non-member row proceeds past it. void / credited /
+      // partially_credited / draft stay refused as `invalid_status`.
       if (lockedStatus !== 'issued' && lockedStatus !== 'paid') {
         return err({ code: 'invalid_status', status: lockedStatus });
       }
@@ -304,6 +324,23 @@ export async function voidInvoice(
         return err({ code: 'no_snapshot_on_invoice' });
       }
       if (!settings) return err({ code: 'settings_missing' });
+
+      // H1 — a PAID membership §86/4 may NOT be voided: it must be reversed via a
+      // §86/10 CREDIT NOTE (→ `credited`, real refund). A void writes NOTHING to
+      // `payments` (the settled money is stranded) and, combined with the
+      // effective-paid retract (#24), double-charges the member on restore. Refuse
+      // (409) ABOVE the first write (`applyVoid` below) — `err()` inside
+      // `runInTenant` COMMITS, so a guard below a write would leave a phantom
+      // half-void + false audit; consistent with the read-only refusals above
+      // (:not-found / :no-snapshot / :settings-missing). MEMBERSHIP-ONLY,
+      // deliberately: an EVENT / non-member row drives no renewal cycle (no
+      // double-charge) and the legacy no-TIN remediation runbook (Step 2.1) MUST
+      // still be able to void it. The void-on-reissue path is unaffected — its
+      // `requireStatus:'issued'` gate above already refuses a paid row
+      // (`invalid_status`), so it never reaches here.
+      if (lockedStatus === 'paid' && loaded.invoiceSubject === 'membership') {
+        return err({ code: 'paid_membership_requires_credit_note' });
+      }
 
       // D. Build the VOID-overlay render targets — the tax-critical render
       // construction (WHT / §80/1(5) / kind-true titling), shared with the
