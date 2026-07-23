@@ -46,6 +46,7 @@ import { contacts } from './schema-contacts';
 import { rowToContact } from './drizzle-contact-repo';
 import type {
   DirectoryFilter,
+  DirectoryOffsetFilter,
   DirectoryRow,
   MemberPatch,
   MemberRepo,
@@ -184,16 +185,16 @@ function applyMemberPatch(
 // `searchDirectory` (cursor) and `searchDirectoryWithCount` (offset+count)
 // previously duplicated these SQL fragments verbatim. Extracted so the
 // q-filter EXISTS subquery and the `alias()` plan-name subquery (whose gotcha
-// is documented below) live in ONE place. The status OR-set + the `and(...)`
-// assembly stay inline in each caller (they differ — cursor vs offset — and
-// keeping them inline guarantees byte-identical WHERE composition).
+// is documented below) live in ONE place.
 
 type RepoTx = Parameters<Parameters<typeof runInTenant>[1]>[0];
 
 /**
  * Scalar directory filters (planYear / country / planId / riskBand). Returns
- * `SQL[]` (not `ReturnType<typeof eq>[]`) because the cursor caller also pushes
- * raw `sql\`...\`` predicates onto the returned array.
+ * `SQL[]` (not `ReturnType<typeof eq>[]`) for a uniform element type across the
+ * `eq()` / `inArray()` results. (The cursor path's own pagination predicates are
+ * kept in a separate `cursorConds` array by `searchDirectory` and are NOT pushed
+ * onto this one — see `buildDirectoryWhere` below.)
  */
 function buildDirectoryConds(filter: DirectoryFilter): SQL[] {
   const conds: SQL[] = [];
@@ -224,6 +225,31 @@ function buildDirectoryConds(filter: DirectoryFilter): SQL[] {
   return conds;
 }
 
+/**
+ * The complete directory WHERE clause, shared by every caller that must agree
+ * on "which members are in the directory": the cursor search, the offset
+ * search + its COUNT, and the needs-invite chip count. Previously the erased
+ * exclusion, status OR-set and q-filter were hand-assembled per caller; a
+ * third caller made that a drift risk with a GDPR-shaped failure mode (a
+ * count that includes erased tombstones).
+ */
+function buildDirectoryWhere(
+  filter: DirectoryFilter | DirectoryOffsetFilter,
+): SQL {
+  const statuses = filter.status ?? ['active', 'inactive'];
+  return and(
+    // COMP-1 H4 — erasure keeps `status` and stamps only `erased_at`, so the
+    // status OR-set does NOT hide an erased row.
+    isNull(members.erasedAt),
+    or(...statuses.map((s) => eq(members.status, s)))!,
+    ...(filter.q ? [directoryQFilter(filter.q)] : []),
+    ...(filter.portalNeedsInvite
+      ? [portalNeedsInviteFilter(filter.portalNeedsInvite.now)]
+      : []),
+    ...buildDirectoryConds(filter),
+  )!;
+}
+
 /** Substring `q` across company_name + non-removed primary-contact name/email,
  *  plus an exact member-number match when `q` parses to a positive integer
  *  (`SCCM-0042` / `0042` / `42`). The integer branch uses the
@@ -245,6 +271,66 @@ function directoryQFilter(q: string) {
                       OR c.email ILIKE ${like}))`,
     ...(num !== null ? [eq(members.memberNumber, num)] : []),
   )!;
+}
+
+/**
+ * "Primary contact needs a portal invite" — never invited, or holding only
+ * expired unconsumed invitations (design doc §3.7).
+ *
+ * Raw `sql` template with every column table-qualified. Do NOT rebuild this
+ * with the query builder unless every table is `alias()`-ed: unqualified
+ * columns in a builder subquery resolve against the inner FROM and collapse
+ * the WHERE to always-true (see directoryPlanNameSubquery, git 8e71812).
+ *
+ * Only `user_id` / `consumed_at` / `expires_at` are referenced — the columns
+ * `chamber_app` may read (migration 0017). Referencing `id` raises 42501.
+ */
+function portalNeedsInviteFilter(now: Date): SQL {
+  const nowIso = now.toISOString();
+  return sql`
+    EXISTS (
+      SELECT 1 FROM contacts c
+       WHERE c.tenant_id = ${members.tenantId}
+         AND c.member_id = ${members.memberId}
+         AND c.is_primary = true
+         AND c.removed_at IS NULL
+         AND (
+               c.linked_user_id IS NULL
+            OR (
+                  -- (a) at least one UNCONSUMED invitation exists. Given the
+                  -- invariant that linked_user_id is only ever set atomically
+                  -- with an invitation row (F1 createUser saga; prune deletes
+                  -- the user + cascades the invitation + nulls linked_user_id
+                  -- together), this is redundant with (c) TODAY. It is kept
+                  -- deliberately: it is what makes this filter agree with the
+                  -- Task-4 batch read, whose JOIN structurally requires an
+                  -- unconsumed invitation to exist — so a hypothetical
+                  -- linked-user-with-zero-invitations row derives to 'active'
+                  -- (badge) AND is excluded here (filter), instead of the two
+                  -- surfaces disagreeing. Do not drop without re-checking that
+                  -- agreement.
+                  EXISTS (SELECT 1 FROM invitations i
+                           WHERE i.user_id = c.linked_user_id
+                             AND i.consumed_at IS NULL)
+              -- (b) …but NONE of them is still live (all expired). A member
+              -- re-invited after an expiry holds an expired AND a live invite;
+              -- this excludes them so the filter matches the 'invited' badge.
+              AND NOT EXISTS (SELECT 1 FROM invitations i2
+                               WHERE i2.user_id = c.linked_user_id
+                                 AND i2.consumed_at IS NULL
+                                 AND i2.expires_at > ${nowIso}::timestamptz)
+              -- (c) …and the user has NEVER redeemed any invitation. SQL twin
+              -- of the Task-4 batch-read anti-join: a reissue mints a new row
+              -- without invalidating the old one, so an ACTIVE user keeps a
+              -- stale unconsumed row forever — this excludes them.
+              AND NOT EXISTS (SELECT 1 FROM invitations ci
+                               WHERE ci.user_id = c.linked_user_id
+                                 AND ci.consumed_at IS NOT NULL)
+            )
+         )
+    )
+    AND ${members.status} <> 'archived'
+  `;
 }
 
 /**
@@ -846,10 +932,10 @@ export const drizzleMemberRepo: MemberRepo = {
   >
 > {
   try {
-    const statuses = filter.status ?? ['active', 'inactive'];
     const rows = await runInTenant(ctx, async (tx) => {
-      // Scalar filters (RLS handles tenant scoping); cursor predicate appended below.
-      const conds = buildDirectoryConds(filter);
+      // Cursor predicates are specific to this (cursor) caller, so they stay
+      // outside buildDirectoryWhere and are and()-combined with it below.
+      const cursorConds: SQL[] = [];
 
       // Cursor: decode base64 → "<iso>|<memberId>" or "NULL|<memberId>"
       if (filter.cursor) {
@@ -860,7 +946,7 @@ export const drizzleMemberRepo: MemberRepo = {
             if (iso === 'NULL') {
               // NULL lastActivityAt — compare only by memberId within the
               // NULLS LAST tail segment (DESC ordering).
-              conds.push(
+              cursorConds.push(
                 sql`(${members.lastActivityAt} IS NULL AND ${members.memberId} > ${memberIdPart})`,
               );
             } else if (iso) {
@@ -872,7 +958,7 @@ export const drizzleMemberRepo: MemberRepo = {
               // contradicts the ASC tie-break and silently drops tied rows with
               // member_id > cursorId across the page boundary. Cast the ISO
               // string inside SQL so postgres-js doesn't serialize a JS Date.
-              conds.push(
+              cursorConds.push(
                 sql`(${members.lastActivityAt} < ${iso}::timestamptz OR (${members.lastActivityAt} = ${iso}::timestamptz AND ${members.memberId} > ${memberIdPart}))`,
               );
             }
@@ -882,15 +968,7 @@ export const drizzleMemberRepo: MemberRepo = {
         }
       }
 
-      const whereClause = and(
-        // COMP-1 H4 — exclude GDPR-erased tombstones from the directory.
-        // Erasure keeps `status` (orthogonal to archive) and stamps only
-        // `erased_at`, so the status OR-set above does NOT hide an erased row.
-        isNull(members.erasedAt),
-        or(...statuses.map((s) => eq(members.status, s)))!,
-        ...(filter.q ? [directoryQFilter(filter.q)] : []),
-        ...conds,
-      );
+      const whereClause = and(buildDirectoryWhere(filter), ...cursorConds)!;
 
       const planNameSubquery = directoryPlanNameSubquery(tx);
 
@@ -959,19 +1037,8 @@ export const drizzleMemberRepo: MemberRepo = {
   // with what the page shows (same RLS-scoped snapshot).
   async searchDirectoryWithCount(ctx, filter) {
     try {
-      const statuses = filter.status ?? ['active', 'inactive'];
       const result = await runInTenant(ctx, async (tx) => {
-        const conds = buildDirectoryConds(filter);
-
-        const whereClause = and(
-          // COMP-1 H4 — exclude GDPR-erased tombstones (keeps `status`,
-          // stamps only `erased_at`). Applied to BOTH the count and the page
-          // so the total stays consistent with the rows shown.
-          isNull(members.erasedAt),
-          or(...statuses.map((s) => eq(members.status, s)))!,
-          ...(filter.q ? [directoryQFilter(filter.q)] : []),
-          ...conds,
-        );
+        const whereClause = buildDirectoryWhere(filter);
 
         // Count query — same filters, tenant-scoped via RLS
         const countRows = await tx
@@ -1045,6 +1112,33 @@ export const drizzleMemberRepo: MemberRepo = {
       );
 
       return ok({ items, total: result.total });
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
+
+  async countMembersNeedingPortalInvite(ctx, filter) {
+    try {
+      // D8 — this count MUST judge expiry against the SAME instant as the badge
+      // and the visible list, so `now` is supplied by the caller. Refuse rather
+      // than fabricate a fresh `new Date()` here: a silent second clock would
+      // let the count disagree with the badge around an `expires_at` boundary.
+      // The `countMembersNeedingPortalInvite` use case forces `portalNeedsInvite`
+      // on, so this only fires if a future caller bypasses it.
+      if (!filter.portalNeedsInvite) {
+        throw new Error(
+          'countMembersNeedingPortalInvite: filter.portalNeedsInvite.now is required (D8)',
+        );
+      }
+      const n = await runInTenant(ctx, async (tx) => {
+        const whereClause = buildDirectoryWhere(filter);
+        const rows = await tx
+          .select({ n: sql<number>`count(*)::int` })
+          .from(members)
+          .where(whereClause);
+        return rows[0]?.n ?? 0;
+      });
+      return ok(n);
     } catch (e) {
       return err(unexpected(e));
     }
@@ -1456,6 +1550,58 @@ export const drizzleMemberRepo: MemberRepo = {
           contactFirstName: r.firstName,
           contactLastName: r.lastName,
           contactEmail: r.email as Email,
+          expiresAt: r.expiresAt,
+        })),
+      );
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
+
+  async findPendingInvitationsForPrimaryContacts(ctx, memberIds) {
+    if (memberIds.length === 0) return ok([]);
+    try {
+      const rows = await runInTenant(ctx, async (tx) => {
+        // Second reference to `invitations` for the active-user anti-join,
+        // aliased so the correlated user_id refs resolve unambiguously.
+        const consumedInv = alias(invitations, 'consumed_inv');
+        return tx
+          .selectDistinctOn([contacts.memberId], {
+            memberId: contacts.memberId,
+            expiresAt: invitations.expiresAt,
+          })
+          .from(invitations)
+          .innerJoin(contacts, eq(contacts.linkedUserId, invitations.userId))
+          .where(
+            and(
+              inArray(contacts.memberId, [...memberIds]),
+              eq(contacts.isPrimary, true),
+              isNull(contacts.removedAt),
+              // An expired-but-unconsumed invite MUST surface (it is the
+              // re-invite signal), so there is deliberately no expires_at
+              // filter here.
+              isNull(invitations.consumedAt),
+              // Never-redeemed anti-join — see the port doc, guard 1.
+              notExists(
+                tx
+                  .select({ one: sql`1` })
+                  .from(consumedInv)
+                  .where(
+                    and(
+                      eq(consumedInv.userId, invitations.userId),
+                      isNotNull(consumedInv.consumedAt),
+                    ),
+                  ),
+              ),
+            ),
+          )
+          // DISTINCT ON (member_id) requires member_id to lead ORDER BY;
+          // expires_at DESC then keeps the freshest unconsumed invite.
+          .orderBy(contacts.memberId, desc(invitations.expiresAt));
+      });
+      return ok(
+        rows.map((r) => ({
+          memberId: r.memberId as MemberId,
           expiresAt: r.expiresAt,
         })),
       );

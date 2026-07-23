@@ -1025,6 +1025,7 @@
           }
         },
         "resultsCount": "{count, plural, =0 {No members} one {# member} other {# members}}",
+        "resultsCountOfTotal": "Showing {count} of {total, plural, one {# member} other {# members}}",
         "sortByEngagement": "Sort by engagement",
         "sortByMemberNumber": "Sort by member number",
         "columns": {
@@ -1061,6 +1062,22 @@
         "membershipLapsedSr": "Membership lapsed — needs renewal",
         "membershipSuspended": "Suspended",
         "membershipSuspendedSr": "Membership suspended — benefits paused",
+        "portal": {
+          "linked": "Portal",
+          "linkedSr": "Portal account active",
+          "invited": "Invited",
+          "invitedSr": "Portal invitation sent, awaiting acceptance",
+          "expired": "Expired",
+          "expiredSr": "Portal invitation expired — needs re-sending",
+          "notInvited": "Not invited",
+          "notInvitedSr": "No portal invitation sent yet"
+        },
+        "portalChip": {
+          "label": "Needs portal invite",
+          "aria": "Needs portal invite, {count} members",
+          "unavailable": "Portal status unavailable",
+          "unavailableHint": "Couldn't load the count — refresh to try again"
+        },
         "tableCaption": "Members directory"
       },
       "emptyStates": {
@@ -1073,6 +1090,11 @@
           "title": "No members match these filters",
           "description": "Try clearing one or more filters.",
           "cta": "Clear filters"
+        },
+        "allInvited": {
+          "title": "Everyone has been invited",
+          "description": "Every member matching these filters already has a portal invitation.",
+          "cta": "Clear portal filter"
         },
         "error": {
           "title": "Could not load members",
@@ -1601,6 +1623,7 @@
         "confirmInviteAction": "Send invitations",
         "success": "{count, plural, one {# member} other {# members}} {action}",
         "inviteQueued": "{invited, plural, one {# invitation queued} other {# invitations queued}}",
+        "inviteResent": "{resent, plural, one {# re-sent} other {# re-sent}}",
         "inviteSkipped": "{skipped, plural, one {# skipped} other {# skipped}}",
         "inviteFailed": "{failed, plural, one {# failed} other {# failed}}",
         "rateLimited": "Too many bulk actions. Wait a few minutes and try again.",

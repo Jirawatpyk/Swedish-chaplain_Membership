@@ -108,6 +108,7 @@ export function DirectoryWithBulk({
       <MembersTable
         rows={rows}
         nextCursor={null}
+        total={total}
         enableSelection={isAdmin}
         onSelectionChange={isAdmin ? setSelectedIds : undefined}
         onInlineEdit={isAdmin ? handleInlineEdit : undefined}

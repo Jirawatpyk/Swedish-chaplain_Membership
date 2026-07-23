@@ -101,6 +101,7 @@ function makeStubDeps(): MemberSelfUpdateDeps {
       ok({ ...baseMember, ...patch } as Member),
     searchDirectory: async () => ok({ items: [], nextCursor: null }),
     searchDirectoryWithCount: async () => ok({ items: [], total: 0 }),
+    countMembersNeedingPortalInvite: async () => ok(0),
     // F7 Batch C extensions (T029) — interface compliance stubs.
     findMembersBySegmentForBroadcast: async () => ok([]),
     findMembersHaltedForBroadcast: async () => ok([]),
@@ -113,6 +114,8 @@ function makeStubDeps(): MemberSelfUpdateDeps {
     findMemberByPrimaryContactEmailInTx: async () => ok(null),
     findLastPlanChangedAt: async () => ok(null),
     findPendingInvitationsForMember: async () => ok([]),
+    // Task 4 (feat/members-portal-status) — interface compliance stub.
+    findPendingInvitationsForPrimaryContacts: async () => ok([]),
     // COMP-1 (Task 3) — interface compliance stub.
     scrubPiiInTx: async () => ok(undefined),
     // COMP-1 (erase pre-flight) — interface compliance stub.

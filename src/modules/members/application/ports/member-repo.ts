@@ -31,6 +31,19 @@ export type DirectoryFilter = {
    * excluded from the filtered result.
    */
   readonly riskBand?: RiskBand | readonly RiskBand[];
+  /**
+   * Needs-invite chip (design doc 2026-07-23 §3.7, D5/D6). When present,
+   * restricts the result to members whose PRIMARY contact either was never
+   * invited or holds only expired unconsumed invitations.
+   *
+   * Modelled as an object carrying `now` rather than a boolean plus a separate
+   * optional timestamp so the compiler enforces D8: the badge and this filter
+   * must judge expiry against the same instant.
+   *
+   * MUST be declared on BOTH filter types — they are independent declarations
+   * and the admin page uses only the offset one.
+   */
+  readonly portalNeedsInvite?: { readonly now: Date };
   readonly limit: number;
   readonly cursor?: string;
 };
@@ -48,6 +61,19 @@ export type DirectoryOffsetFilter = {
   readonly country?: string;
   readonly planId?: string;
   readonly riskBand?: RiskBand | readonly RiskBand[];
+  /**
+   * Needs-invite chip (design doc 2026-07-23 §3.7, D5/D6). When present,
+   * restricts the result to members whose PRIMARY contact either was never
+   * invited or holds only expired unconsumed invitations.
+   *
+   * Modelled as an object carrying `now` rather than a boolean plus a separate
+   * optional timestamp so the compiler enforces D8: the badge and this filter
+   * must judge expiry against the same instant.
+   *
+   * MUST be declared on BOTH filter types — they are independent declarations
+   * and the admin page uses only the offset one.
+   */
+  readonly portalNeedsInvite?: { readonly now: Date };
   /**
    * Sort column (FR-007a). `engagement` orders by the F8 risk score inverted
    * (engagement = 100 − risk): `desc` (default) = healthiest first; `asc` =
@@ -375,6 +401,45 @@ export interface MemberRepo {
     >
   >;
 
+  /**
+   * Directory batch read (design doc 2026-07-23 §3.2) — for each supplied
+   * member, the FRESHEST unconsumed invitation held by its PRIMARY contact.
+   * A member with no such invitation is simply absent from the result.
+   *
+   * Same two guards as `findPendingInvitationsForMember`, and they are
+   * load-bearing:
+   *   1. never-redeemed anti-join — `reissueInvitation` mints a new row
+   *      without invalidating the old one, so a user who activated keeps a
+   *      stale unconsumed row forever. Without the anti-join that member is
+   *      reported as still needing an invite, permanently.
+   *   2. DISTINCT ON (member_id) ORDER BY expires_at DESC — one contact can
+   *      hold several unconsumed invitations; without this the caller's Map
+   *      is last-write-wins over an unordered result and invited vs
+   *      invite_expired becomes non-deterministic.
+   *
+   * NO `LIMIT`: the single-member method caps at 50 contacts, which is safe
+   * for one member but would silently truncate a 50-member page.
+   *
+   * Tenant scope: `contacts` is RLS-bound inside `runInTenant`; the auth
+   * `invitations` table is cross-tenant by design, so the join through
+   * `contacts` is what enforces the boundary. Only `user_id`, `consumed_at`
+   * and `expires_at` may be referenced (migration 0017 column grants).
+   *
+   * Callers MUST pass a page-bounded id list (directory PAGE_SIZE = 50).
+   */
+  findPendingInvitationsForPrimaryContacts(
+    ctx: TenantContext,
+    memberIds: readonly MemberId[],
+  ): Promise<
+    Result<
+      ReadonlyArray<{
+        readonly memberId: MemberId;
+        readonly expiresAt: Date;
+      }>,
+      RepoError
+    >
+  >;
+
   /** US2 directory search — substring across company, contact name, email. */
   searchDirectory(
     ctx: TenantContext,
@@ -527,6 +592,17 @@ export interface MemberRepo {
       RepoError
     >
   >;
+
+  /**
+   * COUNT(*) of members matching `filter` AND needing a portal invite.
+   * Backs the directory's needs-invite chip. `limit`/`offset`/`sort` on the
+   * filter are ignored. `portalNeedsInvite` is forced on internally, so the
+   * count is always scoped to the same filters the visible list uses (D7).
+   */
+  countMembersNeedingPortalInvite(
+    ctx: TenantContext,
+    filter: DirectoryOffsetFilter,
+  ): Promise<Result<number, RepoError>>;
 
   /**
    * F7 US3 AS2 — most-recent `member_plan_changed` audit timestamp

@@ -35,6 +35,7 @@ function stubDeps(): BulkActionDeps {
       updateFieldsInTx: vi.fn(),
       searchDirectory: vi.fn(),
       searchDirectoryWithCount: vi.fn(),
+      countMembersNeedingPortalInvite: vi.fn(),
       // F7 Batch C extensions (T029) — required by MemberRepo interface;
       // bulk-action does not exercise these paths so vi.fn() stubs suffice.
       findMembersBySegmentForBroadcast: vi.fn(),
@@ -47,6 +48,7 @@ function stubDeps(): BulkActionDeps {
       findMemberByPrimaryContactEmailInTx: vi.fn(),
     findLastPlanChangedAt: vi.fn(),
     findPendingInvitationsForMember: vi.fn(),
+    findPendingInvitationsForPrimaryContacts: vi.fn(),
     scrubPiiInTx: vi.fn(),
     findErasedAtById: vi.fn(),
     findStuckErasuresInTx: vi.fn(),

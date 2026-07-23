@@ -30,6 +30,7 @@ import { requestIdFromHeaders } from '@/lib/request-id';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
+import { isInvitationExpired } from '@/lib/invitation-expiry';
 import { safeExternalHref } from '@/lib/safe-url';
 import { headers } from 'next/headers';
 import {
@@ -272,6 +273,11 @@ type PendingInvitation = {
    * dropped its `expires_at > NOW()` filter) so the UI can show an
    * "Invitation expired" badge + a re-invite affordance instead of a
    * false "Portal linked" dead-end.
+   *
+   * This flag and the directory's portal badge (`derivePortalState`) now share
+   * ONE boundary implementation — `isInvitationExpired` (`@/lib/invitation-expiry`)
+   * — so they cannot drift. That helper's `<=` boundary is pinned by
+   * tests/unit/lib/invitation-expiry.test.ts.
    */
   readonly expired: boolean;
 };
@@ -635,12 +641,12 @@ export default async function MemberDetailPage({
           if (pendingRes.ok) {
             // Round-11 review fix — compute `daysUntilExpiry` once per
             // request rather than inside ContactBlock. Server component
-            // renders once per HTTP request so `Date.now()` returns a single
-            // stable value for the duration of this render pass — the
-            // react-hooks/purity rule's general concern (re-render
-            // instability) does not apply to RSC. Disable inline.
-            // eslint-disable-next-line react-hooks/purity -- RSC: single render per request
-            const nowMs = Date.now();
+            // renders once per HTTP request so this `new Date()` is a single
+            // stable instant for the whole render pass; `nowMs` feeds the
+            // day-count and `now` feeds the shared `isInvitationExpired` helper
+            // so both use the same instant.
+            const now = new Date();
+            const nowMs = now.getTime();
             const dayMs = 1000 * 60 * 60 * 24;
             return new Map(
               pendingRes.value.map((row) => [
@@ -652,8 +658,10 @@ export default async function MemberDetailPage({
                     Math.ceil((row.expiresAt.getTime() - nowMs) / dayMs),
                   ),
                   // Cluster 3 — expired-unaccepted invite (drives the
-                  // "Invitation expired" badge + re-invite affordance).
-                  expired: row.expiresAt.getTime() <= nowMs,
+                  // "Invitation expired" badge + re-invite affordance). Uses the
+                  // shared `isInvitationExpired` helper so this page and the
+                  // directory badge (`derivePortalState`) share ONE boundary.
+                  expired: isInvitationExpired(row.expiresAt, now),
                 },
               ]),
             );

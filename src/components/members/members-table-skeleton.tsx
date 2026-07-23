@@ -1,9 +1,13 @@
 /**
  * Shimmer skeleton for the members directory table.
  *
- * Renders the EXACT shape of the real table (same column count, same
- * row height, same grid) so the shell does NOT shift when the real
- * data lands — CLS 0 per ux-standards § 2.1.
+ * Approximates the real table's common-case shape (same column count, one
+ * row height, same grid). Not an exact shape match: Plan/Status/Contact cells
+ * can each wrap one line taller than this skeleton reserves (long plan name,
+ * a stacked Lapsed/Suspended badge, or — since 057 badge-inline — a wrapped
+ * portal/bounce badge row), so some rows settle one line taller once the real
+ * data lands. See the inline comment below for why that tradeoff (smaller
+ * aggregate CLS than over-reserving two lines for every row) is accepted.
  *
  * Round-10 ui-design-specialist C1 fix (2026-05-14): the skeleton
  * previously hard-coded 8 columns but the real table emits 9 (no
@@ -37,6 +41,13 @@ export function MembersTableSkeleton({
   withSelection = false,
 }: MembersTableSkeletonProps = {}) {
   const cols = withSelection ? 8 : 7;
+  // Render enough shimmer rows to fill a typical viewport (was 8): a real page
+  // holds up to PAGE_SIZE (50) rows, so a short skeleton let the content below
+  // the table (pagination) jump up during load and back down when data landed —
+  // a visible CLS. 15 rows fills most laptop viewports so that shift happens
+  // below the fold (where it no longer counts toward CLS) without rendering all
+  // 50 heavy shimmer rows.
+  const skeletonRows = 15;
   // Build a grid template where the select column (when present) is
   // narrow to match the real `size: 40` checkbox column — visual
   // alignment is closer to the live table than uniform fractions.
@@ -54,12 +65,19 @@ export function MembersTableSkeleton({
           <Skeleton key={i} className="h-3 w-full" />
         ))}
       </div>
-      {Array.from({ length: 8 }).map((_, r) => (
+      {Array.from({ length: skeletonRows }).map((_, r) => (
         <div
           key={r}
           className="grid gap-3 border-b px-4 py-3 last:border-b-0"
           style={{ gridTemplateColumns: gridTemplate }}
         >
+          {/* 057 badge-inline — the portal badge renders INLINE after the
+              contact name (wrapping only when the column is too narrow), so the
+              common row is a single line again. A one-line shimmer matches the
+              majority of rows; the minority that wrap (long plan name, or a
+              Lapsed/Suspended badge stacked in the Status cell) settle one line
+              taller, which is a smaller aggregate CLS than over-reserving two
+              lines for every row (ux-standards § 2.1). */}
           {Array.from({ length: cols }).map((__, c) => (
             <Skeleton key={c} className="h-5 w-full" />
           ))}

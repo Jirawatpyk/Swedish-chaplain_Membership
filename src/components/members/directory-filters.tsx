@@ -13,7 +13,7 @@
 import { useCallback, useRef, useState, useTransition } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { SearchIcon, XIcon } from 'lucide-react';
+import { MailWarningIcon, SearchIcon, XIcon } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { FilterBar } from '@/components/ui/filter-bar';
@@ -52,20 +52,52 @@ export type PlanOption = {
 
 type Props = {
   readonly plans?: readonly PlanOption[];
+  /**
+   * Members matching the current filters that still need a portal invite.
+   * `null` = the count could not be read; the chip renders disabled rather
+   * than claiming zero (an absent chip means "no work left").
+   */
+  readonly portalInviteCount?: number | null;
 };
 
-export function DirectoryFilters({ plans = [] }: Props) {
+export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
   const t = useTranslations('admin.members.directory');
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [, startTransition] = useTransition();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Stable focus target for when the chip unmounts on its own toggle-off (see
+  // `onPortalToggle`). The search input is always rendered.
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const currentQ = searchParams.get('q') ?? '';
   const currentStatus = searchParams.get('status') ?? 'all';
   const currentPlan = searchParams.get('plan_id') ?? 'all';
   const currentRisk = searchParams.get('risk_band') ?? 'all';
+
+  const portalActive = searchParams.get('portal') === 'needs_invite';
+  // The chip is visible when there is work to show, the filter is on, or the
+  // count could not be read (unavailable). A `chipWasVisible` latch used to
+  // live here to "keep the chip mounted for the render it was clicked off" —
+  // it was removed because it can't work: React's adjust-state-during-render
+  // collapses the would-be one extra frame before commit, so the latch was
+  // provably always equal to this expression and never painted a difference.
+  // Focus on toggle-off is handled imperatively in `onPortalToggle` instead.
+  const showChip =
+    portalActive ||
+    portalInviteCount === null ||
+    (portalInviteCount ?? 0) > 0;
+
+  // Toggle the needs-invite filter. When turning it OFF at count 0, the chip
+  // unmounts in the same commit that processes the navigation — so move focus
+  // to the always-present search input FIRST, or it falls back to <body> (a
+  // focus-loss class axe never catches). `pushUrl` handles the URL + reset.
+  function onPortalToggle() {
+    const willUnmount = portalActive && portalInviteCount === 0;
+    if (willUnmount) searchInputRef.current?.focus();
+    pushUrl({ portal: portalActive ? null : 'needs_invite' });
+  }
 
   // The search box is a CONTROLLED input (Base UI's FieldControl warns on
   // uncontrolled defaultValue being mutated — the previous `key={currentQ}` +
@@ -124,11 +156,14 @@ export function DirectoryFilters({ plans = [] }: Props) {
     Boolean(currentQ) ||
     currentStatus !== 'all' ||
     currentPlan !== 'all' ||
-    currentRisk !== 'all';
+    currentRisk !== 'all' ||
+    // Without this the Clear button never renders when the chip is the only
+    // active filter — and clearAll() below becomes unreachable.
+    portalActive;
   const clearAll = () => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     setSearchValue('');
-    pushUrl({ q: null, status: null, plan_id: null, risk_band: null });
+    pushUrl({ q: null, status: null, plan_id: null, risk_band: null, portal: null });
   };
 
   return (
@@ -139,6 +174,7 @@ export function DirectoryFilters({ plans = [] }: Props) {
           aria-hidden
         />
         <Input
+          ref={searchInputRef}
           type="search"
           value={searchValue}
           onChange={(e) => onSearchChange(e.target.value)}
@@ -230,6 +266,44 @@ export function DirectoryFilters({ plans = [] }: Props) {
           ))}
         </SelectContent>
       </Select>
+
+      {showChip && (
+        <Button
+          type="button"
+          variant={portalActive ? 'secondary' : 'outline'}
+          size="sm"
+          aria-pressed={portalActive}
+          // Disable only when the count is unavailable AND the filter is OFF —
+          // i.e. the user would be entering the filter blind. When the filter is
+          // already ON, a failed count must NOT trap them in the filtered view:
+          // keep the chip clickable so they can always toggle it back off.
+          disabled={portalInviteCount === null && !portalActive}
+          // Toggles through `onPortalToggle` → `pushUrl` (strips cursor/page,
+          // scroll:false) and moves focus off the chip before it can unmount.
+          onClick={onPortalToggle}
+          aria-label={
+            portalInviteCount === null
+              ? t('portalChip.unavailable')
+              : t('portalChip.aria', { count: portalInviteCount ?? 0 })
+          }
+          // Hover hint on the unavailable state so it reads as a transient read
+          // failure ("refresh to try again"), not a permanent empty count.
+          {...(portalInviteCount === null
+            ? { title: t('portalChip.unavailableHint') }
+            : {})}
+          className="whitespace-nowrap"
+        >
+          <MailWarningIcon className="size-4" aria-hidden />
+          {/* Visible text must echo the accessible name (WCAG 2.5.3 Label in
+              Name): when the count is unavailable, show the SAME "unavailable"
+              copy the aria-label uses, not the generic label with no number. */}
+          <span aria-hidden="true">
+            {portalInviteCount === null
+              ? t('portalChip.unavailable')
+              : `${t('portalChip.label')} · ${portalInviteCount}`}
+          </span>
+        </Button>
+      )}
 
       {hasAnyFilter && (
         <Button

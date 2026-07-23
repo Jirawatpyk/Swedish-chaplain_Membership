@@ -1025,6 +1025,7 @@
           }
         },
         "resultsCount": "{count, plural, =0 {ไม่มีสมาชิก} other {# ราย}}",
+        "resultsCountOfTotal": "แสดง {count} จาก {total} ราย",
         "sortByEngagement": "เรียงตามการมีส่วนร่วม",
         "sortByMemberNumber": "เรียงตามหมายเลขสมาชิก",
         "columns": {
@@ -1061,6 +1062,22 @@
         "membershipLapsedSr": "สมาชิกภาพหมดอายุ — ต้องต่ออายุ",
         "membershipSuspended": "ระงับชั่วคราว",
         "membershipSuspendedSr": "สมาชิกภาพถูกระงับชั่วคราว — สิทธิประโยชน์หยุดชั่วคราว",
+        "portal": {
+          "linked": "พอร์ทัล",
+          "linkedSr": "ใช้งานบัญชีพอร์ทัลแล้ว",
+          "invited": "เชิญแล้ว",
+          "invitedSr": "ส่งคำเชิญพอร์ทัลแล้ว รอผู้รับตอบรับ",
+          "expired": "หมดอายุ",
+          "expiredSr": "คำเชิญพอร์ทัลหมดอายุ ต้องส่งใหม่",
+          "notInvited": "ยังไม่เชิญ",
+          "notInvitedSr": "ยังไม่ได้ส่งคำเชิญพอร์ทัล"
+        },
+        "portalChip": {
+          "label": "ต้องเชิญเข้าพอร์ทัล",
+          "aria": "ต้องเชิญเข้าพอร์ทัล {count} ราย",
+          "unavailable": "ไม่ทราบสถานะพอร์ทัล",
+          "unavailableHint": "โหลดจำนวนไม่สำเร็จ — รีเฟรชเพื่อลองใหม่"
+        },
         "tableCaption": "รายชื่อสมาชิก"
       },
       "emptyStates": {
@@ -1073,6 +1090,11 @@
           "title": "ไม่พบสมาชิกตามตัวกรอง",
           "description": "ลองล้างตัวกรองบางส่วน",
           "cta": "ล้างตัวกรอง"
+        },
+        "allInvited": {
+          "title": "เชิญครบทุกคนแล้ว",
+          "description": "สมาชิกทุกรายที่ตรงกับตัวกรองนี้ได้รับคำเชิญเข้าพอร์ทัลแล้ว",
+          "cta": "ล้างตัวกรองพอร์ทัล"
         },
         "error": {
           "title": "โหลดข้อมูลสมาชิกไม่สำเร็จ",
@@ -1601,6 +1623,7 @@
         "confirmInviteAction": "ส่งคำเชิญ",
         "success": "ดำเนินการ {action} สำเร็จ {count} สมาชิก",
         "inviteQueued": "จัดคิวคำเชิญ {invited} รายการ",
+        "inviteResent": "{resent, plural, other {ส่งซ้ำ #}}",
         "inviteSkipped": "ข้าม {skipped} รายการ",
         "inviteFailed": "ล้มเหลว {failed} รายการ",
         "rateLimited": "ดำเนินการเป็นชุดมากเกินไป รอสักครู่แล้วลองใหม่",
