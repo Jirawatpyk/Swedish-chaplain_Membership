@@ -191,8 +191,10 @@ type RepoTx = Parameters<Parameters<typeof runInTenant>[1]>[0];
 
 /**
  * Scalar directory filters (planYear / country / planId / riskBand). Returns
- * `SQL[]` (not `ReturnType<typeof eq>[]`) because the cursor caller also pushes
- * raw `sql\`...\`` predicates onto the returned array.
+ * `SQL[]` (not `ReturnType<typeof eq>[]`) for a uniform element type across the
+ * `eq()` / `inArray()` results. (The cursor path's own pagination predicates are
+ * kept in a separate `cursorConds` array by `searchDirectory` and are NOT pushed
+ * onto this one — see `buildDirectoryWhere` below.)
  */
 function buildDirectoryConds(filter: DirectoryFilter): SQL[] {
   const conds: SQL[] = [];
