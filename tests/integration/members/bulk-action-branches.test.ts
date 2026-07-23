@@ -379,3 +379,83 @@ describe('integration: bulk change_plan FK-safety (Package B2 regression guard)'
     expect(deps.memberRepo.updateFieldsInTx).not.toHaveBeenCalled();
   });
 });
+
+// --- Bulk archive Undo: the `unarchive` action (057 UX #1) -------------------
+
+describe('integration: bulk unarchive branch (archive Undo)', () => {
+  const ID = '11111111-2222-3333-4444-555555555555';
+  // clock.now() in stubDeps is 2026-04-16T10:00:00Z → archived 1 day earlier is
+  // well within the 90-day undelete window.
+  const archived = {
+    ...stubMember,
+    status: 'archived' as const,
+    archivedAt: new Date('2026-04-15T10:00:00Z'),
+  };
+
+  it('restores an archived member, records member_undeleted, returns the id for a precise undo', async () => {
+    const deps = stubDeps();
+    (deps.memberRepo.findManyByIdsInTx as ReturnType<typeof vi.fn>).mockResolvedValue(
+      ok(new Map([[ID, archived]])),
+    );
+
+    const result = await bulkAction(
+      { action: 'unarchive', member_ids: [ID] },
+      meta,
+      deps,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.updatedCount).toBe(1);
+    expect(result.value.updatedIds).toEqual([ID]);
+
+    // Persisted back to `active` (domain undelete).
+    const persistArgs = (deps.memberRepo.updateStatusInTx as ReturnType<typeof vi.fn>)
+      .mock.calls[0];
+    expect(persistArgs?.[2].status).toBe('active');
+    expect(persistArgs?.[2].archivedAt).toBeNull();
+
+    // Audit is `member_undeleted`, not `member_archived`.
+    const auditArgs = (deps.audit.recordInTx as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(auditArgs?.[2].type).toBe('member_undeleted');
+  });
+
+  it('unarchive of a non-archived member → state_error, no writes', async () => {
+    const deps = stubDeps(); // stubMember is active
+    const result = await bulkAction(
+      { action: 'unarchive', member_ids: [ID] },
+      meta,
+      deps,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.type).toBe('state_error');
+    if (result.error.type === 'state_error') {
+      expect(result.error.code).toBe('state.undelete_only_from_archived');
+    }
+    expect(deps.memberRepo.updateStatusInTx).not.toHaveBeenCalled();
+    expect(deps.audit.recordInTx).not.toHaveBeenCalled();
+  });
+
+  it('unarchive past the 90-day window → state_error (window_expired), no writes', async () => {
+    const deps = stubDeps();
+    (deps.memberRepo.findManyByIdsInTx as ReturnType<typeof vi.fn>).mockResolvedValue(
+      ok(new Map([[ID, { ...archived, archivedAt: new Date('2026-01-01T10:00:00Z') }]])),
+    );
+
+    const result = await bulkAction(
+      { action: 'unarchive', member_ids: [ID] },
+      meta,
+      deps,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.type).toBe('state_error');
+    if (result.error.type === 'state_error') {
+      expect(result.error.code).toBe('state.undelete_window_expired');
+    }
+    expect(deps.memberRepo.updateStatusInTx).not.toHaveBeenCalled();
+  });
+});
