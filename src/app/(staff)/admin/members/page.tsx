@@ -255,7 +255,13 @@ export default async function MembersListPage({
         }
       />
 
-      <Card>
+      {/* #7 sticky-header reserve: the members directory carries the tallest
+          above-table chrome in the app (PageHeader + DirectoryFilters + the
+          active-filter chip row), so it overrides the global `--table-max-block`
+          default with a larger reserve — otherwise the bounded table region
+          would push the pagination below the fold. Cascades to the inner
+          `Table` container (components/ui/table.tsx). */}
+      <Card className="[--table-max-block:calc(100dvh-21rem)]">
         <CardContent className="flex flex-col gap-4">
           <MembersDirectoryBody
             query={query}

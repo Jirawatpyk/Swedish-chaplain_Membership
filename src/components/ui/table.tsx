@@ -23,7 +23,17 @@ function Table({ className, 'aria-label': ariaLabel, ...props }: React.Component
   return (
     <div
       data-slot="table-container"
-      className="relative w-full overflow-x-auto focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring"
+      // `--table-max-block` is an OPT-IN vertical-sticky-header hook (default
+      // `none` → unbounded → identical to the previous `overflow-x-auto`
+      // behaviour, so every table is unchanged unless it opts in). A page that
+      // wants its header to stay visible while the body scrolls sets a bounded
+      // value (e.g. the members directory: `[--table-max-block:calc(100dvh-21rem)]`
+      // on its card) — that makes THIS wrapper the vertical scroll container, so
+      // the sticky `<TableHeader>` below actually sticks (a `position: sticky`
+      // header needs a scrolling ancestor that scrolls). `overflow-auto` behaves
+      // exactly like the old `overflow-x-auto` when unbounded (no vertical
+      // overflow to scroll) and enables the internal vertical scroll when bound.
+      className="relative w-full max-h-[var(--table-max-block,none)] overflow-auto focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring"
       tabIndex={0}
       role="region"
       // strict-aria-ignore-next-line — the literal is only the fallback for
