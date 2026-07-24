@@ -115,6 +115,52 @@ describe('bulkSendRenewalReminder', () => {
     expect(res.value.counts).toEqual({ sent: 0, skipped: 3, failed: 2 });
   });
 
+  it('buckets a failed_transient outcome into `failed`', async () => {
+    mockSend.mockResolvedValueOnce(
+      ok({ kind: 'failed_transient', reminderEventId: 'r', reason: 'smtp 421' }),
+    );
+    const res = await bulkSendRenewalReminder(makeDeps(), {
+      ...base,
+      memberIds: [M1],
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.value.failed).toEqual([{ memberId: M1, code: 'failed_transient' }]);
+  });
+
+  it('isolates a per-member throw: buckets the thrower as failed, keeps going, and never re-invokes dispatch for it', async () => {
+    // Regression guard for the best-effort loop: a transient Neon fault on ONE
+    // member must not abort the batch after earlier members were already emailed.
+    const deps = {
+      cyclesRepo: {
+        findActiveForMember: vi.fn(async (_t: string, memberId: string) => {
+          if (memberId === M2) throw new Error('neon: deadlock detected');
+          return { cycleId: `cycle-${memberId}` };
+        }),
+      },
+    } as unknown as Parameters<typeof bulkSendRenewalReminder>[0];
+    mockSend.mockResolvedValue(
+      ok({
+        kind: 'sent',
+        reminderEventId: 'r',
+        deliveryId: 'd',
+        dispatchedAt: '2026-07-24T00:00:00Z',
+      }),
+    );
+
+    const res = await bulkSendRenewalReminder(deps, {
+      ...base,
+      memberIds: [M1, M2, M3],
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.value.sent).toEqual([M1, M3]);
+    expect(res.value.failed).toEqual([{ memberId: M2, code: 'server_error' }]);
+    expect(res.value.counts).toEqual({ sent: 2, skipped: 0, failed: 1 });
+    // Dispatch ran for M1 + M3 only — M2 threw before it was reached.
+    expect(mockSend).toHaveBeenCalledTimes(2);
+  });
+
   it('rejects invalid input (empty member list)', async () => {
     const res = await bulkSendRenewalReminder(makeDeps(), {
       ...base,

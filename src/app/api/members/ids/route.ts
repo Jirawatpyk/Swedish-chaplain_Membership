@@ -23,7 +23,11 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
 import { directorySearchWithCount } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
-import { parseDirectoryFilterFromParams } from '@/lib/members-directory-filter';
+import {
+  parseDirectoryFilterFromParams,
+  parseDirectorySort,
+  parseDirectoryOrder,
+} from '@/lib/members-directory-filter';
 import { BULK_CAP } from '@/lib/members-bulk-constants';
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
@@ -50,6 +54,13 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const deps = buildMembersDeps(tenant);
   const now = new Date();
 
+  // Forward the active sort/order so the capped set matches the FIRST 100 of the
+  // admin's visible order (e.g. engagement ASC = most at-risk first) — otherwise
+  // a >100-match "select all matching" would email members in the repo default
+  // order, not the ones the admin sees checked. Below the cap it is moot.
+  const sort = parseDirectorySort(raw.sort);
+  const order = parseDirectoryOrder(raw.order);
+
   const result = await directorySearchWithCount(
     { tenant, memberRepo: deps.memberRepo },
     {
@@ -57,6 +68,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       ...(filter.planId !== undefined ? { planId: filter.planId } : {}),
       ...(filter.riskBand !== undefined ? { riskBand: filter.riskBand } : {}),
       ...(filter.portalNeedsInvite ? { portalNeedsInvite: { now } } : {}),
+      ...(sort ? { sort, ...(order ? { order } : {}) } : {}),
       status: selectableStatus,
       limit: BULK_CAP,
       offset: 0,

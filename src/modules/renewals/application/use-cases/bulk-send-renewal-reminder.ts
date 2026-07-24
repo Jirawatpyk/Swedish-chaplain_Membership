@@ -19,6 +19,8 @@
  */
 import { z } from 'zod';
 import { ok, err, type Result } from '@/lib/result';
+import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import { sendReminderNow } from './send-reminder-now';
 
@@ -75,54 +77,84 @@ export async function bulkSendRenewalReminder(
   // rate primitives, so concurrency would only add contention without changing
   // the ≤100-member wall-clock materially.
   for (const memberId of input.memberIds) {
-    const cycle = await deps.cyclesRepo.findActiveForMember(
-      input.tenantId,
-      memberId,
-    );
-    if (!cycle) {
-      skipped.push({ memberId, reason: 'no_active_cycle' });
-      continue;
-    }
-
-    const res = await sendReminderNow(deps, {
-      tenantId: input.tenantId,
-      cycleId: cycle.cycleId,
-      actorUserId: input.actorUserId,
-      actorRole: 'admin',
-      correlationId: input.correlationId,
-      requestId: input.requestId ?? null,
-      nowIso,
-    });
-
-    if (!res.ok) {
-      // `cycle_not_found` here is a race (the cycle went terminal between the
-      // findActive read and the dispatch) — report it as no-active-cycle, not a
-      // hard failure. Everything else is a genuine failure bucket.
-      if (res.error.kind === 'cycle_not_found') {
+    // Per-member isolation (mirrors bulkSendPortalInvite): `findActiveForMember`
+    // is a bare `runInTenant` SQL call and `sendReminderNow` reads its candidate
+    // BEFORE its own try/catch, so a transient Neon fault (deadlock / pooler
+    // statement_timeout drop / reset) REJECTS here. Without this catch one
+    // mid-batch throw would abort the whole loop AFTER real reminder emails were
+    // already dispatched — and the caller would 500 with no breakdown, unable to
+    // tell which members were already emailed. Bucket the thrower as failed and
+    // keep going so the batch stays best-effort.
+    try {
+      const cycle = await deps.cyclesRepo.findActiveForMember(
+        input.tenantId,
+        memberId,
+      );
+      if (!cycle) {
         skipped.push({ memberId, reason: 'no_active_cycle' });
-      } else {
-        failed.push({ memberId, code: res.error.kind });
+        continue;
       }
-      continue;
-    }
 
-    const outcome = res.value;
-    switch (outcome.kind) {
-      case 'sent':
-        sent.push(memberId);
-        break;
-      case 'skipped':
-        skipped.push({ memberId, reason: outcome.reason });
-        break;
-      case 'task_created':
-        // The ladder created an escalation task instead of emailing — no
-        // reminder was sent, so report it as skipped (honest for the toast).
-        skipped.push({ memberId, reason: 'task_created' });
-        break;
-      case 'failed_transient':
-      case 'failed_permanent':
-        failed.push({ memberId, code: outcome.kind });
-        break;
+      const res = await sendReminderNow(deps, {
+        tenantId: input.tenantId,
+        cycleId: cycle.cycleId,
+        actorUserId: input.actorUserId,
+        actorRole: 'admin',
+        correlationId: input.correlationId,
+        requestId: input.requestId ?? null,
+        nowIso,
+      });
+
+      if (!res.ok) {
+        // `cycle_not_found` here is a race (the cycle went terminal between the
+        // findActive read and the dispatch) — report it as no-active-cycle, not
+        // a hard failure. Everything else is a genuine failure bucket.
+        if (res.error.kind === 'cycle_not_found') {
+          skipped.push({ memberId, reason: 'no_active_cycle' });
+        } else {
+          failed.push({ memberId, code: res.error.kind });
+        }
+        continue;
+      }
+
+      const outcome = res.value;
+      switch (outcome.kind) {
+        case 'sent':
+          sent.push(memberId);
+          break;
+        case 'skipped':
+          skipped.push({ memberId, reason: outcome.reason });
+          break;
+        case 'task_created':
+          // The ladder created an escalation task instead of emailing — no
+          // reminder was sent, so report it as skipped (honest for the toast).
+          skipped.push({ memberId, reason: 'task_created' });
+          break;
+        case 'failed_transient':
+        case 'failed_permanent':
+          failed.push({ memberId, code: outcome.kind });
+          break;
+        default: {
+          // Exhaustiveness guard: a future 6th outcome kind must not silently
+          // drop a member (counts would then sum < memberIds.length).
+          const _never: never = outcome;
+          failed.push({ memberId, code: 'unhandled_outcome' });
+          void _never;
+          break;
+        }
+      }
+    } catch (e) {
+      logger.error(
+        {
+          err: errKind(e),
+          tenantId: input.tenantId,
+          memberId,
+          correlationId: input.correlationId,
+        },
+        'bulk-reminder: member threw — bucketed as failed, batch continues',
+      );
+      failed.push({ memberId, code: 'server_error' });
+      continue;
     }
   }
 

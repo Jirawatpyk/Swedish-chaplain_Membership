@@ -23,9 +23,11 @@
  * T112 (US4): Inline-edit Status cell with aria-live save/rollback
  * announcements + 24×24 min target size (ADOPT-01 / WCAG 2.2 SC 2.5.8).
  *
- * Pagination is cursor-based at the server level; this component exposes
- * a "Load more" button that the parent wires to re-fetch with the echoed
- * cursor.
+ * Pagination is numbered/offset at the server level (the parent renders
+ * `TablePagination`). When the whole visible page is selected and more rows
+ * match beyond it (`total > rows.length`), this component surfaces the
+ * "Select all N matching" banner; the parent fetches the matching ids and
+ * drives the cross-page bulk selection.
  */
 
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
@@ -511,6 +513,22 @@ export function MembersTable({
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const lastSelectedRef = useRef<number | null>(null);
   const tableContainerRef = useRef<HTMLDivElement>(null);
+  // #2 focus management — the offer/active banner is a DOM-swapping ternary, so
+  // clicking a control unmounts it and focus would drop to <body> (this repo's
+  // documented focus-loss class). On the offer→active transition move focus to
+  // the active banner's Clear; on active→offer (Clear pressed) move it back to
+  // the offer button so keyboard/SR users are never stranded.
+  const selectAllMatchingBtnRef = useRef<HTMLButtonElement>(null);
+  const clearMatchingBtnRef = useRef<HTMLButtonElement>(null);
+  const prevMatchingActiveRef = useRef(matchingActive);
+  useEffect(() => {
+    if (matchingActive && !prevMatchingActiveRef.current) {
+      clearMatchingBtnRef.current?.focus();
+    } else if (!matchingActive && prevMatchingActiveRef.current) {
+      selectAllMatchingBtnRef.current?.focus();
+    }
+    prevMatchingActiveRef.current = matchingActive;
+  }, [matchingActive]);
 
   // WCAG 1.3.1 / 4.1.2 — `aria-sort` belongs on the `role=columnheader`
   // (the `<th>`/TableHead), not on the inner sort button. Derive the
@@ -975,6 +993,7 @@ export function MembersTable({
           </span>
           {onClearMatching && (
             <button
+              ref={clearMatchingBtnRef}
               type="button"
               className="font-medium underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-ring"
               onClick={onClearMatching}
@@ -993,6 +1012,7 @@ export function MembersTable({
           >
             <span>{t('allPageSelected', { count: selectedCount })}</span>
             <button
+              ref={selectAllMatchingBtnRef}
               type="button"
               className="font-medium underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-ring"
               onClick={onSelectAllMatching}

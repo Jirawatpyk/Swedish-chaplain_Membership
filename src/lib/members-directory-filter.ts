@@ -66,6 +66,25 @@ export function parsePortalFilter(raw: string | undefined): boolean {
   return raw === 'needs_invite';
 }
 
+/**
+ * Sort allow-list (F9 FR-007a engagement + 055 member-number). Any other value
+ * falls back to the repo's default recency order. Shared so the select-all-
+ * matching ids endpoint orders its capped set the SAME way the visible page
+ * does — otherwise, above the cap, the 100 selected would be default-ordered
+ * while the admin sees their sorted view.
+ */
+export function parseDirectorySort(
+  raw: string | undefined,
+): 'engagement' | 'memberNumber' | undefined {
+  return raw === 'engagement' || raw === 'memberNumber' ? raw : undefined;
+}
+
+export function parseDirectoryOrder(
+  raw: string | undefined,
+): 'asc' | 'desc' | undefined {
+  return raw === 'asc' ? 'asc' : raw === 'desc' ? 'desc' : undefined;
+}
+
 export function parseDirectoryFilterFromParams(
   params: DirectoryFilterParams,
 ): ParsedDirectoryFilter {

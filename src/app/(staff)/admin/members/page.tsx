@@ -27,10 +27,16 @@ import {
   resolveMemberNumberPrefix,
   type PortalState,
 } from '@/modules/members';
-import { parseDirectoryFilterFromParams } from '@/lib/members-directory-filter';
+import {
+  parseDirectoryFilterFromParams,
+  parseDirectorySort,
+} from '@/lib/members-directory-filter';
 // Re-exported so existing page-boundary wiring tests keep importing the
 // allow-list from this route module (canonical source now lives in the lib).
-export { parsePortalFilter } from '@/lib/members-directory-filter';
+export {
+  parsePortalFilter,
+  parseDirectorySort,
+} from '@/lib/members-directory-filter';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { listPlans } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
@@ -91,25 +97,6 @@ interface SearchParams {
 }
 
 const PAGE_SIZE = 50;
-
-/**
- * Parse the `?sort=` URL param into the typed sort column the directory
- * use-case understands. Two server-side sortable columns exist today:
- *   - `engagement` (F9 FR-007a) — orders by the inverted F8 risk score.
- *   - `memberNumber` (055-member-number) — orders by the human-readable
- *     member number (ASC NULLS LAST; `desc` reverses).
- * Any other value (or absent) falls back to the default recency order.
- *
- * Exported + pure so the allow-list is unit-testable in isolation: this
- * boundary previously dropped `memberNumber`, leaving the "Member No."
- * column header a dead control (the arrow/aria-sort toggled but the rows
- * never re-ordered because the value never reached the search).
- */
-export function parseDirectorySort(
-  raw: string | undefined,
-): 'engagement' | 'memberNumber' | undefined {
-  return raw === 'engagement' || raw === 'memberNumber' ? raw : undefined;
-}
 
 /** Empty membership-status result — used by the degrade path below. */
 const EMPTY_MEMBERSHIP_STATUS: MembersMembershipStatus = {
@@ -242,14 +229,19 @@ export default async function MembersListPage({
       />
 
       {/* #7 sticky header — members-directory ONLY (opt-in). Setting
-          `--table-max-block` bounds the inner Table container's height so it
-          becomes the vertical scroll container and its sticky header stays
-          visible while the body scrolls (components/ui/table.tsx). The reserve
-          (~21rem) accounts for this page's tall above-table chrome — PageHeader
-          + DirectoryFilters + the active-filter chip row — so the pagination
-          below the table stays on-screen. No other table is affected (the
-          global default is `none`). */}
-      <Card className="[--table-max-block:calc(100dvh-21rem)]">
+          `--table-max-block` bounds the inner Table container so IT becomes the
+          vertical scroll container and its sticky header stays visible while the
+          body scrolls (components/ui/table.tsx). The reserve is intentionally
+          GENEROUS (~26rem) — it must cover everything OUTSIDE the table region
+          (top bar + breadcrumb + PageHeader + card padding + DirectoryFilters +
+          the active-filter chip row + the pagination below) so the PAGE itself
+          never needs to scroll: under-reserving leaves a second, outer
+          scrollbar next to the table's own (the double-scrollbar this replaces).
+          Over-reserving only leaves a little unused space at tall viewports —
+          preferable to a nested scroll. The `max(18rem, …)` floor keeps the
+          region usable at 400% zoom / short viewports (WCAG 1.4.10). No other
+          table is affected (the global default is `none`). */}
+      <Card className="[--table-max-block:max(18rem,calc(100dvh-26rem))]">
         <CardContent className="flex flex-col gap-4">
           <MembersDirectoryBody
             query={query}

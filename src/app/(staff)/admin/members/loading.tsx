@@ -20,7 +20,9 @@ export default async function Loading() {
         // Placeholder for the admin-only "Add your first member" CTA
         actions={<Skeleton className="h-9 w-32" />}
       />
-      <Card>
+      {/* Mirror the real page's #7 sticky-header bound so the skeleton→table
+          swap doesn't shift layout (CLS 0). */}
+      <Card className="[--table-max-block:max(18rem,calc(100dvh-26rem))]">
         <CardContent className="flex flex-col gap-4">
           {/* Filter bar — matches DirectoryFilters: search + status select + plan select */}
           <FilterBar aria-hidden>

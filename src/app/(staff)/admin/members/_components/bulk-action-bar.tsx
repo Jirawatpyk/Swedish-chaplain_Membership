@@ -222,7 +222,7 @@ export function BulkActionBar({
         role="toolbar"
         aria-label={t('toolbarLabel')}
       >
-        <div className="mx-auto flex max-w-screen-xl items-center justify-between gap-4 px-4 py-3">
+        <div className="mx-auto flex max-w-screen-xl flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
           {/* Left: selection count */}
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium" aria-live="polite">
@@ -249,8 +249,10 @@ export function BulkActionBar({
             )}
           </div>
 
-          {/* Center: action buttons */}
-          <div className="flex items-center gap-2">
+          {/* Center: action buttons — wrap so 3 buttons (worst case the long
+              Swedish "Skicka förnyelsepåminnelse") never overflow on narrow /
+              tablet widths. */}
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               variant="destructive-outline"
               size="sm"
