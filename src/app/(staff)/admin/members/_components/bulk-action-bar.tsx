@@ -14,7 +14,7 @@
 import { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { ArchiveIcon, MailIcon, XIcon } from 'lucide-react';
+import { ArchiveIcon, BellIcon, MailIcon, XIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { ArchiveConfirmDialog } from './archive-confirm-dialog';
@@ -28,7 +28,7 @@ import { BULK_CAP } from '@/lib/members-bulk-constants';
 // dead code; if reintroduced, add both the button AND the union entry
 // in the same diff. The i18n string `admin.members.bulk.actions.change_plan`
 // is preserved for if/when the button lands.
-type BulkAction = 'archive' | 'send_portal_invite';
+type BulkAction = 'archive' | 'send_portal_invite' | 'send_renewal_reminder';
 
 type Props = {
   readonly selectedIds: string[];
@@ -52,6 +52,7 @@ export function BulkActionBar({
   const router = useRouter();
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
+  const [reminderDialogOpen, setReminderDialogOpen] = useState(false);
   const [executing, setExecuting] = useState(false);
   const [progress, setProgress] = useState<{
     action: string;
@@ -140,6 +141,20 @@ export function BulkActionBar({
             // into thinking invites were sent.
             if (c.failed > 0) toast.error(message);
             else if (c.invited > 0 || c.resent > 0) toast.success(message);
+            else toast.info(message);
+          } else if (action === 'send_renewal_reminder') {
+            // #4 — per-member buckets (sent / skipped / failed). Members with no
+            // active cycle, no step due, or opted out are SKIPPED (no email).
+            // Error toast only when at least one genuinely failed; info (not a
+            // green tick) when nothing was sent so a no-op never reads as success.
+            const c = body.counts ?? { sent: 0, skipped: 0, failed: 0 };
+            const parts = [t('reminderSent', { sent: c.sent })];
+            if (c.skipped > 0)
+              parts.push(t('reminderSkipped', { skipped: c.skipped }));
+            if (c.failed > 0) parts.push(t('reminderFailed', { failed: c.failed }));
+            const message = parts.join(' · ');
+            if (c.failed > 0) toast.error(message);
+            else if (c.sent > 0) toast.success(message);
             else toast.info(message);
           } else {
             const canUndo =
@@ -256,6 +271,16 @@ export function BulkActionBar({
               <MailIcon className="mr-1.5 h-4 w-4" />
               {t('actions.send_portal_invite')}
             </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={executing || overCap}
+              onClick={() => setReminderDialogOpen(true)}
+              className="min-h-[36px]"
+            >
+              <BellIcon className="mr-1.5 h-4 w-4" />
+              {t('actions.send_renewal_reminder')}
+            </Button>
           </div>
 
           {/* Right: clear */}
@@ -292,6 +317,17 @@ export function BulkActionBar({
         cancelLabel={t('cancel')}
         confirmDisabled={executing}
         onConfirm={() => executeBulk('send_portal_invite')}
+      />
+
+      <ConfirmationDialog
+        open={reminderDialogOpen}
+        onOpenChange={setReminderDialogOpen}
+        title={t('confirmReminderTitle', { count })}
+        description={t('confirmReminderDescription')}
+        confirmLabel={t('confirmReminderAction')}
+        cancelLabel={t('cancel')}
+        confirmDisabled={executing}
+        onConfirm={() => executeBulk('send_renewal_reminder')}
       />
 
       {progress && (

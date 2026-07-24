@@ -1620,7 +1620,8 @@
         "actions": {
           "archive": "Arkivera",
           "change_plan": "Byt plan",
-          "send_portal_invite": "Skicka inbjudan"
+          "send_portal_invite": "Skicka inbjudan",
+          "send_renewal_reminder": "Skicka förnyelsepåminnelse"
         },
         "clear": "Rensa urval",
         "archiveTitle": "Arkivera {count, plural, one {# medlem} other {# medlemmar}}",
@@ -1634,6 +1635,12 @@
         "confirmInviteTitle": "Skicka {count, plural, one {# inbjudan} other {# inbjudningar}}",
         "confirmInviteDescription": "Inbjudningsmejl till portalen skickas till de valda medlemmarna så att de kan komma åt medlemsportalen.",
         "confirmInviteAction": "Skicka inbjudningar",
+        "confirmReminderTitle": "Skicka en förnyelsepåminnelse till {count, plural, one {# medlem} other {# medlemmar}}?",
+        "confirmReminderDescription": "Varje markerad medlem med en aktiv förnyelsecykel får sitt nästa schemalagda påminnelsemejl nu. Medlemmar utan påminnelse att skicka, eller som avregistrerat sig, hoppas över.",
+        "confirmReminderAction": "Skicka påminnelser",
+        "reminderSent": "{sent, plural, one {# påminnelse skickad} other {# påminnelser skickade}}",
+        "reminderSkipped": "{skipped, plural, one {# överhoppad} other {# överhoppade}}",
+        "reminderFailed": "{failed, plural, one {# misslyckades} other {# misslyckades}}",
         "success": "{count, plural, one {# medlem} other {# medlemmar}} {action}",
         "undo": "Ångra",
         "unarchiveSuccess": "{count, plural, one {# medlem återställd} other {# medlemmar återställda}}",

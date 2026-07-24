@@ -424,6 +424,14 @@ export {
   type SendReminderNowError,
 } from './application/use-cases/send-reminder-now';
 
+export {
+  bulkSendRenewalReminder,
+  bulkSendRenewalReminderInputSchema,
+  type BulkSendRenewalReminderInput,
+  type BulkSendRenewalReminderOutput,
+  type BulkSendRenewalReminderError,
+} from './application/use-cases/bulk-send-renewal-reminder';
+
 // --- Phase 6 Wave B (T154 + T155 + T156) at-risk use-cases ---------------
 export {
   computeAtRiskScore,

@@ -39,12 +39,25 @@ vi.mock('@/app/(staff)/admin/members/_components/archive-confirm-dialog', () => 
 vi.mock('@/app/(staff)/admin/members/_components/bulk-progress-indicator', () => ({
   BulkProgressIndicator: () => null,
 }));
-// Stand-in for the send-portal-invite confirm dialog: a plain button that
-// fires the component's `onConfirm` (== executeBulk('send_portal_invite')).
+// Stand-in for the shared ConfirmationDialog. The bulk bar now mounts TWO of
+// them (send-portal-invite + send-renewal-reminder), so the testid is keyed off
+// `confirmLabel` — the reminder dialog gets `confirm-reminder`, everything else
+// keeps `confirm-invite` (the existing invite tests). Each button fires its own
+// `onConfirm` (== executeBulk('send_portal_invite' | 'send_renewal_reminder')).
 vi.mock('@/components/shell/confirmation-dialog', () => ({
-  ConfirmationDialog: ({ onConfirm }: { onConfirm: () => void }) => (
-    <button type="button" data-testid="confirm-invite" onClick={() => onConfirm()}>
-      confirm invite
+  ConfirmationDialog: ({
+    onConfirm,
+    confirmLabel = '',
+  }: {
+    onConfirm: () => void;
+    confirmLabel?: string;
+  }) => (
+    <button
+      type="button"
+      data-testid={/reminder/i.test(confirmLabel) ? 'confirm-reminder' : 'confirm-invite'}
+      onClick={() => onConfirm()}
+    >
+      {confirmLabel}
     </button>
   ),
 }));
@@ -184,6 +197,69 @@ describe('BulkActionBar — send_portal_invite result toast', () => {
     await waitFor(() => expect(toastInfo).toHaveBeenCalled());
     expect(toastSuccess).not.toHaveBeenCalled();
     expect(toastError).not.toHaveBeenCalled();
+
+    vi.unstubAllGlobals();
+  });
+});
+
+describe('BulkActionBar — send_renewal_reminder result toast', () => {
+  function mockReminderResult(counts: {
+    sent: number;
+    skipped: number;
+    failed: number;
+  }) {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ sent: [], skipped: [], failed: [], counts }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
+  }
+
+  it('posts action=send_renewal_reminder and shows a SUCCESS toast with the sent+skipped breakdown', async () => {
+    const fetchMock = mockReminderResult({ sent: 3, skipped: 2, failed: 0 });
+
+    const { getByTestId } = renderBar();
+    fireEvent.click(getByTestId('confirm-reminder'));
+
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalled());
+    expect(toastInfo).not.toHaveBeenCalled();
+    expect(toastError).not.toHaveBeenCalled();
+    const msg = toastSuccess.mock.calls[0]?.[0] as string;
+    expect(msg).toContain('3 reminders sent');
+    expect(msg).toContain('2 skipped');
+
+    // The POST carried the reminder action.
+    const body = JSON.parse((fetchMock.mock.calls[0]?.[1] as { body: string }).body);
+    expect(body.action).toBe('send_renewal_reminder');
+
+    vi.unstubAllGlobals();
+  });
+
+  it('shows a neutral INFO toast when everything was skipped (nothing sent)', async () => {
+    mockReminderResult({ sent: 0, skipped: 5, failed: 0 });
+
+    const { getByTestId } = renderBar();
+    fireEvent.click(getByTestId('confirm-reminder'));
+
+    await waitFor(() => expect(toastInfo).toHaveBeenCalled());
+    expect(toastSuccess).not.toHaveBeenCalled();
+    expect(toastError).not.toHaveBeenCalled();
+
+    vi.unstubAllGlobals();
+  });
+
+  it('shows an ERROR toast when at least one member failed', async () => {
+    mockReminderResult({ sent: 1, skipped: 0, failed: 2 });
+
+    const { getByTestId } = renderBar();
+    fireEvent.click(getByTestId('confirm-reminder'));
+
+    await waitFor(() => expect(toastError).toHaveBeenCalled());
+    expect(toastSuccess).not.toHaveBeenCalled();
+    const msg = toastError.mock.calls[0]?.[0] as string;
+    expect(msg).toContain('2 failed');
 
     vi.unstubAllGlobals();
   });

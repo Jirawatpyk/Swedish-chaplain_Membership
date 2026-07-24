@@ -1620,7 +1620,8 @@
         "actions": {
           "archive": "Archive",
           "change_plan": "Change plan",
-          "send_portal_invite": "Send invite"
+          "send_portal_invite": "Send invite",
+          "send_renewal_reminder": "Send renewal reminder"
         },
         "clear": "Clear selection",
         "archiveTitle": "Archive {count, plural, one {# member} other {# members}}",
@@ -1634,6 +1635,12 @@
         "confirmInviteTitle": "Send {count, plural, one {# invitation} other {# invitations}}",
         "confirmInviteDescription": "Portal invitation emails will be sent to the selected members so they can access the member portal.",
         "confirmInviteAction": "Send invitations",
+        "confirmReminderTitle": "Send a renewal reminder to {count, plural, one {# member} other {# members}}?",
+        "confirmReminderDescription": "Each selected member with an active renewal cycle gets their next scheduled reminder email now. Members with no reminder due, or who opted out, are skipped.",
+        "confirmReminderAction": "Send reminders",
+        "reminderSent": "{sent, plural, one {# reminder sent} other {# reminders sent}}",
+        "reminderSkipped": "{skipped, plural, one {# skipped} other {# skipped}}",
+        "reminderFailed": "{failed, plural, one {# failed} other {# failed}}",
         "success": "{count, plural, one {# member} other {# members}} {action}",
         "undo": "Undo",
         "unarchiveSuccess": "{count, plural, one {# member} other {# members}} restored",
