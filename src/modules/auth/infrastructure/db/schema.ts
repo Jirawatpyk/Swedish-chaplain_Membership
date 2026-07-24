@@ -439,23 +439,23 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   //     F4_AUDIT_RETENTION_YEARS (invoicing audit port) — the F4
   //     enum↔retention parity test enforces it. ---
   'invoice_buyer_identity_invalid',
-  // --- 107-auto-invoice Task 2 (migration 0260) — proactive renewal-
+  // --- 107-auto-invoice Task 2 (migration 0275) — proactive renewal-
   //     invoice drafting cron's create/discard forensic events. Keep in
   //     lockstep with F8_AUDIT_EVENT_TYPES (renewals audit port) — the
   //     F8 audit-count parity tests enforce it. ---
   'renewal_auto_drafted',
   'renewal_auto_draft_discarded',
-  // --- 107-auto-invoice Task 11 (review Important-2 fix, migration 0262)
+  // --- 107-auto-invoice Task 11 (review Important-2 fix, migration 0277)
   //     — reconcile-issued-orphans cron's link-repair forensic event.
   //     Keep in lockstep with F8_AUDIT_EVENT_TYPES. ---
   'renewal_orphan_invoice_relinked',
-  // --- 107-auto-invoice Task 15 (migration 0263) — an F3 (members) event,
+  // --- 107-auto-invoice Task 15 (migration 0278) — an F3 (members) event,
   //     not F8: it records an admin stamping `members.auto_invoice_
   //     enrolled_at`, the third and final auto-invoice gating key. Keep in
   //     lockstep with F3AuditEventType in
   //     `src/modules/members/application/ports/audit-port.ts`. ---
   'member_auto_invoice_enrolled',
-  // --- 107-auto-invoice Task 18 (migration 0265) — the OFF direction of
+  // --- 107-auto-invoice Task 18 (migration 0280) — the OFF direction of
   //     the same gating key. Clearing `auto_invoice_enrolled_at` erases
   //     its own evidence, so the un-enrolment needs its own event for the
   //     trail to answer "who stopped auto-billing this member". ---

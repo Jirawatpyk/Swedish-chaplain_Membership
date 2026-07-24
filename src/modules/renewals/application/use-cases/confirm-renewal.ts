@@ -437,7 +437,14 @@ export async function confirmRenewal(
       }
     }
 
-    // WP4 (b) + (c) — DOWNGRADE PRE-FLIGHT (read-only), BEFORE any state write.
+    // WP4 (b) + (c) — DOWNGRADE PRE-FLIGHT (read-only). The preflight itself
+    // writes nothing, but note the merge placed ONE preceding write above it:
+    // the stale-linked-invoice cleanup (clearStaleLinkedInvoiceInTx). That write
+    // is deliberately benign — audit-free (logger.info only) and idempotent
+    // (CAS-clears a pointer to a non-live/voided bill) — so a downgrade refusal
+    // here still leaves no partial state. NOTE: err() inside runInTenant COMMITS
+    // earlier writes, so any NEW err()-returning guard added in this block is
+    // safe ONLY while that preceding write stays audit-free and idempotent.
     // Resolve the target plan for THIS cycle's fiscal year (`mode:'offer'` —
     // same lookup the plan-change branch performs), classify the price move,
     // and refuse a lower-priced switch that lacks the member's explicit

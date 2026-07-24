@@ -689,7 +689,7 @@ Recovery:
 
 ## Migration path: Pro plan (DONE — 2026-07-17)
 
-SweCham upgraded to Vercel Pro and **all 37 cron jobs now run on native
+SweCham upgraded to Vercel Pro and **all 39 cron jobs now run on native
 Vercel Cron** via `vercel.json`. This section is the authoritative
 mapping. cron-job.org is a **paused standby** (kept, not deleted).
 
@@ -713,12 +713,12 @@ on cron-job.org in **Asia/Bangkok** (UTC+7) are shifted **−7h** in
 uniformly. Weekly F8 jobs also shift day-of-week (Sun ICT → Sat UTC;
 Sat ICT → Fri UTC).
 
-### Authoritative `vercel.json` ↔ logical-schedule mapping (37 jobs)
+### Authoritative `vercel.json` ↔ logical-schedule mapping (39 jobs)
 
-Pro plan limit is 40 cron jobs/project — **37 used, 3 headroom** (verified by
-counting `vercel.json` on 2026-07-23: the 34-job money/plan-change base plus
+Pro plan limit is 40 cron jobs/project — **39 used, 1 headroom** (verified by
+counting `vercel.json` on 2026-07-24: main's 36-job money/plan-change base plus
 this branch's 3 auto-invoice crons — auto-draft-coordinator, prune-auto-drafts,
-reconcile-issued-orphans). **Re-count before adding a cron.**
+reconcile-issued-orphans = 39). **Re-count before adding a cron — only 1 slot remains.**
 
 | `vercel.json` path | UTC schedule | Logical time / cadence | Verb |
 |---|---|---|---|
