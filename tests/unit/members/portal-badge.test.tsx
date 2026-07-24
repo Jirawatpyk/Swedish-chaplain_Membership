@@ -58,7 +58,6 @@ function renderTable(rows: MembersTableRow[], total?: number) {
     <NextIntlClientProvider locale="en" messages={messages}>
       <MembersTable
         rows={rows}
-        nextCursor={null}
         {...(total !== undefined ? { total } : {})}
       />
     </NextIntlClientProvider>,

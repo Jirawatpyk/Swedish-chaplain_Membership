@@ -80,9 +80,7 @@ describe('inline status Undo', () => {
     render(
       <NextIntlClientProvider locale="en" messages={messages}>
         <MembersTable
-          rows={[row()]}
-          nextCursor={null}
-          enableSelection
+          rows={[row()]}          enableSelection
           onInlineEdit={onInlineEdit}
         />
       </NextIntlClientProvider>,

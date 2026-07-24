@@ -26,6 +26,7 @@ import {
 import { logger } from '@/lib/logger';
 import { bulkAction, bulkSendPortalInvite } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
+import { bulkSendRenewalReminder, makeRenewalsDeps } from '@/modules/renewals';
 import { rateLimiter } from '@/modules/auth';
 import {
   BULK_CAP,
@@ -291,6 +292,77 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       logger.warn(
         { err: e, requestId: ctx.requestId },
         'bulk-invite: rememberIdempotentResponse (error path) failed (non-fatal)',
+      );
+    }
+    return NextResponse.json(errorResponse.body, { status: errorResponse.status });
+  }
+
+  // 6b. send_renewal_reminder — #4 members-ux. Like send_portal_invite this is
+  //     best-effort per member (a queued reminder email cannot be un-queued), so
+  //     it is a SEPARATE cross-module call into F8's dispatch (reusing
+  //     sendReminderNow per member), NOT bulkAction's all-or-nothing tx. Returns
+  //     200 with per-member buckets even when some members are skipped/failed.
+  if (
+    rawBody &&
+    typeof rawBody === 'object' &&
+    (rawBody as Record<string, unknown>).action === 'send_renewal_reminder'
+  ) {
+    const memberIds = (rawBody as Record<string, unknown>).member_ids;
+    const renewalsDeps = makeRenewalsDeps(tenant.slug);
+    const reminderResult = await bulkSendRenewalReminder(renewalsDeps, {
+      tenantId: tenant.slug,
+      memberIds: Array.isArray(memberIds) ? (memberIds as string[]) : [],
+      actorUserId: ctx.current.user.id,
+      correlationId: ctx.requestId,
+      requestId: ctx.requestId,
+    });
+
+    if (reminderResult.ok) {
+      const body = {
+        sent: reminderResult.value.sent,
+        skipped: reminderResult.value.skipped.map((s) => ({
+          member_id: s.memberId,
+          reason: s.reason,
+        })),
+        failed: reminderResult.value.failed.map((f) => ({
+          member_id: f.memberId,
+          code: f.code,
+        })),
+        counts: reminderResult.value.counts,
+      };
+      try {
+        await rememberIdempotentResponse(tenant, keyCheck.key, bodyHash, {
+          status: 200,
+          body,
+        });
+      } catch (e) {
+        logger.warn(
+          { err: e, requestId: ctx.requestId },
+          'bulk-reminder: rememberIdempotentResponse failed (non-fatal)',
+        );
+      }
+      return NextResponse.json(body, { status: 200 });
+    }
+
+    // invalid_input — remember the 400 so a same-key retry replays it
+    // deterministically instead of getting a stuck reservation (parity with the
+    // invite branch).
+    const errorResponse = {
+      status: 400 as const,
+      body: {
+        error: {
+          code: 'invalid_body' as const,
+          message: 'Body failed validation.',
+          details: { message: reminderResult.error.message },
+        },
+      },
+    };
+    try {
+      await rememberIdempotentResponse(tenant, keyCheck.key, bodyHash, errorResponse);
+    } catch (e) {
+      logger.warn(
+        { err: e, requestId: ctx.requestId },
+        'bulk-reminder: rememberIdempotentResponse (error path) failed (non-fatal)',
       );
     }
     return NextResponse.json(errorResponse.body, { status: errorResponse.status });

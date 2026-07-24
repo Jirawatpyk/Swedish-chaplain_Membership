@@ -24,10 +24,19 @@ import {
   directorySearchWithCount,
   formatMemberNumber,
   loadMembersPortalStatus,
-  MEMBER_STATUSES,
   resolveMemberNumberPrefix,
   type PortalState,
 } from '@/modules/members';
+import {
+  parseDirectoryFilterFromParams,
+  parseDirectorySort,
+} from '@/lib/members-directory-filter';
+// Re-exported so existing page-boundary wiring tests keep importing the
+// allow-list from this route module (canonical source now lives in the lib).
+export {
+  parsePortalFilter,
+  parseDirectorySort,
+} from '@/lib/members-directory-filter';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { listPlans } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
@@ -87,43 +96,7 @@ interface SearchParams {
   readonly portal?: string;
 }
 
-const VALID_STATUSES = new Set<string>(MEMBER_STATUSES);
-const VALID_RISK_BANDS = new Set([
-  'healthy',
-  'warning',
-  'at-risk',
-  'critical',
-]);
-
 const PAGE_SIZE = 50;
-
-/**
- * Parse the `?sort=` URL param into the typed sort column the directory
- * use-case understands. Two server-side sortable columns exist today:
- *   - `engagement` (F9 FR-007a) — orders by the inverted F8 risk score.
- *   - `memberNumber` (055-member-number) — orders by the human-readable
- *     member number (ASC NULLS LAST; `desc` reverses).
- * Any other value (or absent) falls back to the default recency order.
- *
- * Exported + pure so the allow-list is unit-testable in isolation: this
- * boundary previously dropped `memberNumber`, leaving the "Member No."
- * column header a dead control (the arrow/aria-sort toggled but the rows
- * never re-ordered because the value never reached the search).
- */
-export function parseDirectorySort(
-  raw: string | undefined,
-): 'engagement' | 'memberNumber' | undefined {
-  return raw === 'engagement' || raw === 'memberNumber' ? raw : undefined;
-}
-
-/**
- * Allow-list for the needs-invite chip param. An unrecognised value is
- * ignored AND must not count as an active filter — otherwise `?portal=xyz`
- * would render the "no members match these filters" state on a full directory.
- */
-export function parsePortalFilter(raw: string | undefined): boolean {
-  return raw === 'needs_invite';
-}
 
 /** Empty membership-status result — used by the degrade path below. */
 const EMPTY_MEMBERSHIP_STATUS: MembersMembershipStatus = {
@@ -235,7 +208,18 @@ export default async function MembersListPage({
   const t = await getTranslations('admin.members');
 
   return (
-    <TableContainer>
+    // #7 sticky header (members-directory ONLY). The page is bounded to the
+    // viewport height BELOW the app top bar (BreadcrumbNav renders nothing on
+    // this route — it needs ≥2 path segments — so the top bar is the only chrome
+    // above the page). Everything inside then distributes with flexbox: the
+    // table's scroll region (MembersTable → the `containerClassName="flex-1
+    // min-h-0"` Table wrapper) grows to fill exactly the space left by the
+    // PageHeader + filters + optional chip row + pagination, so the PAGE never
+    // scrolls (no outer scrollbar beside the table's own) and there is no dead
+    // space regardless of whether the filter-chip row is shown — no magic
+    // reserve constant to keep in sync. `min-h-0` at each level lets the table
+    // shrink instead of forcing the column past the viewport.
+    <TableContainer className="h-[calc(100dvh-var(--top-bar-height))] min-h-0 overflow-hidden">
       <PageHeader
         title={t('title')}
         subtitle={t('subtitle')}
@@ -255,8 +239,8 @@ export default async function MembersListPage({
         }
       />
 
-      <Card>
-        <CardContent className="flex flex-col gap-4">
+      <Card className="flex min-h-0 flex-1 flex-col">
+        <CardContent className="flex min-h-0 flex-1 flex-col gap-4">
           <MembersDirectoryBody
             query={query}
             isAdmin={currentUser.role === 'admin'}
@@ -279,45 +263,20 @@ export async function MembersDirectoryBody({
 }) {
   const tenant = resolveTenantFromRequest();
 
-  // Resolve status filter — support new ?status= param + legacy ?show_archived=
-  let statuses: readonly ('active' | 'inactive' | 'archived')[];
-  if (query.status && VALID_STATUSES.has(query.status)) {
-    statuses = [query.status as 'active' | 'inactive' | 'archived'];
-  } else if (query.show_archived === '1') {
-    statuses = ['active', 'inactive', 'archived'];
-  } else {
-    statuses = ['active', 'inactive'];
-  }
-
-  // S1-P1-6: accept a comma-separated band list (the dashboard "needs
-  // attention" KPI drills into critical,at-risk,warning so the count matches
-  // the destination). Each value is validated; a single value stays scalar.
-  type RiskBandValue = 'healthy' | 'warning' | 'at-risk' | 'critical';
-  const riskBandList = (query.risk_band ?? '')
-    .split(',')
-    .map((b) => b.trim())
-    .filter((b): b is RiskBandValue => VALID_RISK_BANDS.has(b));
-  const riskBand: RiskBandValue | readonly RiskBandValue[] | undefined =
-    riskBandList.length === 0
-      ? undefined
-      : riskBandList.length === 1
-        ? riskBandList[0]
-        : riskBandList;
-
-  // Needs-invite chip param (design doc §3.6) — allow-listed the same way
-  // as parseDirectorySort: an unrecognised value is ignored, not honoured.
-  const portalNeedsInvite = parsePortalFilter(query.portal);
-
-  const hasFilters =
-    (query.q !== undefined && query.q.trim().length > 0) ||
-    (query.status !== undefined && query.status !== 'all') ||
-    (query.plan_id !== undefined && query.plan_id !== 'all') ||
-    query.show_archived === '1' ||
-    riskBand !== undefined ||
-    // Without this, filtering to zero rows renders MembersZeroState — the
-    // "no members yet, add your first member" onboarding screen — to a
-    // tenant with 131 members.
-    portalNeedsInvite;
+  // WHERE-shaping filter (status / risk band / needs-invite / q / planId +
+  // hasFilters) — parsed by the shared allow-list so the visible page and the
+  // select-all-matching ids endpoint (src/app/api/members/ids/route.ts) can
+  // never disagree on what the filter matches. `hasFilters` folding in
+  // portalNeedsInvite is what keeps a filtered-to-zero directory from rendering
+  // the "add your first member" onboarding screen to a 131-member tenant.
+  const {
+    q: filterQ,
+    planId: filterPlanId,
+    status: statuses,
+    riskBand,
+    portalNeedsInvite,
+    hasFilters,
+  } = parseDirectoryFilterFromParams(query);
 
   // Sort allow-list: F9 FR-007a engagement column + 055-member-number's
   // "Member No." column (see parseDirectorySort). Both are server-side sorts
@@ -343,10 +302,8 @@ export async function MembersDirectoryBody({
   const now = new Date();
 
   const directoryFilter = {
-    ...(query.q?.trim() ? { q: query.q.trim() } : {}),
-    ...(query.plan_id && query.plan_id !== 'all'
-      ? { planId: query.plan_id }
-      : {}),
+    ...(filterQ !== undefined ? { q: filterQ } : {}),
+    ...(filterPlanId !== undefined ? { planId: filterPlanId } : {}),
     ...(riskBand ? { riskBand } : {}),
     ...(sort ? { sort, ...(order ? { order } : {}) } : {}),
     status: [...statuses],
@@ -387,10 +344,8 @@ export async function MembersDirectoryBody({
     portalNeedsInvite
       ? Promise.resolve(null)
       : countMembersNeedingPortalInviteSafe(tenant, deps.memberRepo, {
-          ...(query.q?.trim() ? { q: query.q.trim() } : {}),
-          ...(query.plan_id && query.plan_id !== 'all'
-            ? { planId: query.plan_id }
-            : {}),
+          ...(filterQ !== undefined ? { q: filterQ } : {}),
+          ...(filterPlanId !== undefined ? { planId: filterPlanId } : {}),
           ...(riskBand ? { riskBand } : {}),
           status: [...statuses],
           limit: PAGE_SIZE,

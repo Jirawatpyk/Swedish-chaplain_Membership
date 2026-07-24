@@ -13,15 +13,17 @@ import { MembersTableSkeleton } from '@/components/members/members-table-skeleto
 export default async function Loading() {
   const t = await getTranslations('admin.members');
   return (
-    <TableContainer>
+    // Mirror the real page's #7 flex layout (viewport-bounded column, table
+    // region flex-fills) so the loading→page swap doesn't shift layout (CLS 0).
+    <TableContainer className="h-[calc(100dvh-var(--top-bar-height))] min-h-0 overflow-hidden">
       <PageHeader
         title={t('title')}
         subtitle={t('subtitle')}
         // Placeholder for the admin-only "Add your first member" CTA
         actions={<Skeleton className="h-9 w-32" />}
       />
-      <Card>
-        <CardContent className="flex flex-col gap-4">
+      <Card className="flex min-h-0 flex-1 flex-col">
+        <CardContent className="flex min-h-0 flex-1 flex-col gap-4">
           {/* Filter bar — matches DirectoryFilters: search + status select + plan select */}
           <FilterBar aria-hidden>
             <Skeleton className="h-9 sm:flex-1" />

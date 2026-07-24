@@ -42,7 +42,12 @@ const messages = {
         selectAll: 'Select all',
         selectRow: 'Select {company}',
         selectedCount: '{count} selected',
-        selectAllMatchingHint: 'All {count} selected. <loadMore>Load next</loadMore>',
+        allPageSelected: 'All {count} on this page selected.',
+        selectAllMatching: 'Select all {count} matching',
+        matchingSelected: 'All {count} matching selected.',
+        matchingSelectedCapped: 'First {count} of {total} matching selected.',
+        clearMatching: 'Clear',
+        selectAllMatchingError: 'Could not load matching set.',
         tableCaption: 'Members',
         // Live-region result count (no `total` prop passed here → the page-only
         // `resultsCount` branch) + the two sortable-column headers, so the table
@@ -151,9 +156,7 @@ describe('MembersTable selection (T108 regression)', () => {
     render(
       <NextIntlClientProvider locale="en" messages={messages}>
         <MembersTable
-          rows={testRows}
-          nextCursor={null}
-          enableSelection={true}
+          rows={testRows}          enableSelection={true}
           onSelectionChange={selectionSpy}
         />
       </NextIntlClientProvider>,
@@ -186,9 +189,7 @@ describe('MembersTable selection (T108 regression)', () => {
     render(
       <NextIntlClientProvider locale="en" messages={messages}>
         <MembersTable
-          rows={testRows}
-          nextCursor={null}
-          enableSelection={true}
+          rows={testRows}          enableSelection={true}
           onSelectionChange={selectionSpy}
         />
       </NextIntlClientProvider>,
@@ -214,8 +215,8 @@ describe('MembersTable selection (T108 regression)', () => {
   it('shows the cross-page "select all matching" banner on a mixed archived page when every selectable row is chosen', async () => {
     const { MembersTable } = await import('@/components/members/members-table');
 
-    // 1 active (selectable) + 1 archived (non-selectable); a next cursor makes
-    // the cross-page banner eligible.
+    // 1 active (selectable) + 1 archived (non-selectable); a total greater than
+    // the rows on this page makes the cross-page banner eligible.
     const mixedRows: MembersTableRow[] = [
       testRows[0]!,
       { ...testRows[1]!, member_id: 'eeee-5555-ffff-6666', status: 'archived' },
@@ -225,21 +226,27 @@ describe('MembersTable selection (T108 regression)', () => {
       <NextIntlClientProvider locale="en" messages={messages}>
         <MembersTable
           rows={mixedRows}
-          nextCursor="cursor-xyz"
+          total={3}
           enableSelection={true}
           onSelectionChange={vi.fn()}
+          onSelectAllMatching={vi.fn()}
         />
       </NextIntlClientProvider>,
     );
 
     // No banner before any selection.
-    expect(screen.queryByRole('button', { name: 'Load next' })).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: 'Select all 3 matching' }),
+    ).toBeNull();
 
     // Select-all on the page: only the active row is selectable, so
-    // selectedCount (1) < rows.length (2). The banner must STILL appear.
+    // selectedCount (1) < rows.length (2). The banner must STILL appear because
+    // it keys off the table's all-page-selected state, not selectedCount.
     fireEvent.click(screen.getAllByRole('checkbox')[0]!);
 
-    expect(screen.getByRole('button', { name: 'Load next' })).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: 'Select all 3 matching' }),
+    ).toBeTruthy();
   });
 
   it('no checkboxes when enableSelection is false', async () => {
@@ -248,9 +255,7 @@ describe('MembersTable selection (T108 regression)', () => {
     render(
       <NextIntlClientProvider locale="en" messages={messages}>
         <MembersTable
-          rows={testRows}
-          nextCursor={null}
-          enableSelection={false}
+          rows={testRows}          enableSelection={false}
         />
       </NextIntlClientProvider>,
     );
@@ -268,9 +273,7 @@ describe('MembersTable inline-edit rendering (round-2 review I-6)', () => {
     render(
       <NextIntlClientProvider locale="en" messages={messages}>
         <MembersTable
-          rows={testRows}
-          nextCursor={null}
-          enableSelection={true}
+          rows={testRows}          enableSelection={true}
           onInlineEdit={successSave}
         />
       </NextIntlClientProvider>,
@@ -287,9 +290,7 @@ describe('MembersTable inline-edit rendering (round-2 review I-6)', () => {
     render(
       <NextIntlClientProvider locale="en" messages={messages}>
         <MembersTable
-          rows={testRows}
-          nextCursor={null}
-          enableSelection={true}
+          rows={testRows}          enableSelection={true}
           // onInlineEdit intentionally undefined — manager read-only path
         />
       </NextIntlClientProvider>,
@@ -298,5 +299,54 @@ describe('MembersTable inline-edit rendering (round-2 review I-6)', () => {
     // Manager sees status badge (no button)
     const statusButtons = screen.queryAllByRole('button', { name: /Toggle/ });
     expect(statusButtons).toHaveLength(0);
+  });
+});
+
+// #2 — the cross-page matching-selection banner in its ACTIVE state (the parent
+// holds a fetched, possibly-capped id set). The OFFER state is covered above.
+describe('MembersTable select-all-matching (active state)', () => {
+  it('shows the "all N matching selected" copy + a Clear that calls onClearMatching', async () => {
+    const { MembersTable } = await import('@/components/members/members-table');
+    const onClearMatching = vi.fn();
+
+    render(
+      <NextIntlClientProvider locale="en" messages={messages}>
+        <MembersTable
+          rows={testRows}
+          total={120}
+          enableSelection={true}
+          matchingActive={true}
+          matchingCount={120}
+          matchingTotal={120}
+          matchingCapped={false}
+          onClearMatching={onClearMatching}
+        />
+      </NextIntlClientProvider>,
+    );
+
+    expect(screen.getByText('All 120 matching selected.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    expect(onClearMatching).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the capped copy (First N of M) when the set was clamped to BULK_CAP', async () => {
+    const { MembersTable } = await import('@/components/members/members-table');
+
+    render(
+      <NextIntlClientProvider locale="en" messages={messages}>
+        <MembersTable
+          rows={testRows}
+          total={131}
+          enableSelection={true}
+          matchingActive={true}
+          matchingCount={100}
+          matchingTotal={131}
+          matchingCapped={true}
+          onClearMatching={vi.fn()}
+        />
+      </NextIntlClientProvider>,
+    );
+
+    expect(screen.getByText('First 100 of 131 matching selected.')).toBeTruthy();
   });
 });
