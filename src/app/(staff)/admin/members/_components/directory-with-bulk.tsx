@@ -7,7 +7,7 @@
  * Manager users get a read-only table (FR-018 AS5: hidden, not disabled).
  */
 
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { InfoIcon } from 'lucide-react';
@@ -50,9 +50,16 @@ export function DirectoryWithBulk({
   const [matching, setMatching] = useState<
     { ids: string[]; total: number; capped: boolean } | null
   >(null);
-  useEffect(() => {
+  // Reset the cross-page selection whenever a fresh server render arrives (a new
+  // filter/page, or a router.refresh after a mutation) — the fetched ids are
+  // only valid for the exact rows they were fetched against. React's documented
+  // "adjust state during render" pattern (NOT an effect): it drops the stale set
+  // before this render commits and avoids the cascading-render an effect causes.
+  const [rowsSnapshot, setRowsSnapshot] = useState(rows);
+  if (rows !== rowsSnapshot) {
+    setRowsSnapshot(rows);
     setMatching(null);
-  }, [rows]);
+  }
 
   // The effective bulk target: the cross-page matching set when active,
   // otherwise the per-page checkbox selection.
