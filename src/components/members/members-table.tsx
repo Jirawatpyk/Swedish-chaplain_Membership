@@ -50,7 +50,6 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   ArchiveIcon,
@@ -160,7 +159,6 @@ export type InlineEditResult =
 
 type Props = {
   readonly rows: readonly MembersTableRow[];
-  readonly nextCursor: string | null;
   /**
    * Total rows matching the current filters across ALL pages. When provided,
    * the sr-only result-count live region announces "Showing N of M members"
@@ -168,6 +166,23 @@ type Props = {
    * how a filter change narrowed the set, not just the current page size.
    */
   readonly total?: number | undefined;
+  // #2 select-all-matching. When the whole visible page is selected and more
+  // matching rows exist across pages, the table offers "Select all N matching";
+  // clicking it calls `onSelectAllMatching` and the PARENT fetches the matching
+  // ids (/api/members/ids, capped at BULK_CAP) + drives the effective bulk
+  // selection. The table only renders the banner + reports the intent.
+  /** Offer handler — fetch + apply the cross-page matching selection. */
+  readonly onSelectAllMatching?: (() => void) | undefined;
+  /** True once the parent holds an active cross-page matching selection. */
+  readonly matchingActive?: boolean | undefined;
+  /** Ids actually selected (≤ BULK_CAP). */
+  readonly matchingCount?: number | undefined;
+  /** Total matching across pages (may exceed matchingCount when capped). */
+  readonly matchingTotal?: number | undefined;
+  /** True when the matching set was capped at BULK_CAP. */
+  readonly matchingCapped?: boolean | undefined;
+  /** Clear the cross-page matching selection. */
+  readonly onClearMatching?: (() => void) | undefined;
   /** Admin-only: enable multi-row selection + inline edit. */
   readonly enableSelection?: boolean | undefined;
   /** Callback when selection changes — used by BulkActionBar. */
@@ -478,17 +493,20 @@ function PortalBadge({ state }: { state: MembersTableRow['portal_state'] }) {
 
 export function MembersTable({
   rows,
-  nextCursor,
   total,
   enableSelection = false,
   onSelectionChange,
   onInlineEdit,
+  onSelectAllMatching,
+  matchingActive = false,
+  matchingCount,
+  matchingTotal,
+  matchingCapped = false,
+  onClearMatching,
 }: Props) {
   const t = useTranslations('admin.members.directory');
   const tContact = useTranslations('admin.members.detail');
   const locale = useLocale();
-  const router = useRouter();
-  const pathname = usePathname();
   const searchParams = useSearchParams();
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const lastSelectedRef = useRef<number | null>(null);
@@ -872,13 +890,6 @@ export function MembersTable({
     getRowId: (row) => row.member_id,
   });
 
-  const onLoadMore = () => {
-    if (!nextCursor) return;
-    const params = new URLSearchParams(searchParams.toString());
-    params.set('cursor', nextCursor);
-    router.replace(`${pathname}?${params.toString()}`);
-  };
-
   const selectedCount = Object.keys(rowSelection).filter(
     (k) => rowSelection[k],
   ).length;
@@ -890,7 +901,10 @@ export function MembersTable({
   // contradicting the header select-all checkbox (which also uses this).
   const allPageSelected =
     enableSelection && rows.length > 0 && table.getIsAllPageRowsSelected();
-  const hasMorePages = enableSelection && nextCursor !== null;
+  // #2 — numbered/offset pagination has no cursor; "more matching exist beyond
+  // this page" is simply the full filtered total exceeding the rows shown here.
+  const hasMoreMatching =
+    enableSelection && total !== undefined && total > rows.length;
 
   // Round-6 W-3: store table in a ref so the Ctrl+A effect has a stable
   // dependency (table object is rebuilt every render by useReactTable).
@@ -939,32 +953,54 @@ export function MembersTable({
           {t('selectedCount', { count: selectedCount })}
         </div>
       )}
-      {/* Staff-review SW-4: "Select all N matching" affordance when the
-          whole current page is selected AND more matching rows exist on
-          subsequent pages. Clicking the text loads the next page — full
-          cross-page ids batch-select requires an API endpoint (deferred). */}
-      {allPageSelected && hasMorePages && (
+      {/* #2 cross-page "Select all N matching". Two states:
+          (a) OFFER — whole visible page selected + more matching rows exist
+              beyond it: clicking asks the parent to fetch the matching ids
+              (capped at BULK_CAP) so a bulk action reaches the whole filtered
+              set, not just this page.
+          (b) ACTIVE — the parent holds the cross-page selection: show the count
+              (capped copy when the set was clamped to BULK_CAP) + a Clear. */}
+      {matchingActive ? (
         <div
-          className="rounded-md border border-accent bg-accent/40 px-4 py-2 text-sm"
+          className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-accent bg-accent/40 px-4 py-2 text-sm"
           role="status"
         >
-          {t.rich('selectAllMatchingHint', {
-            count: selectedCount,
-            loadMore: (chunks) => (
-              <button
-                type="button"
-                className="ml-2 font-medium underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-ring"
-                onClick={() => {
-                  const params = new URLSearchParams(searchParams.toString());
-                  if (nextCursor) params.set('cursor', nextCursor);
-                  router.replace(`${pathname}?${params.toString()}`);
-                }}
-              >
-                {chunks}
-              </button>
-            ),
-          })}
+          <span>
+            {matchingCapped
+              ? t('matchingSelectedCapped', {
+                  count: matchingCount ?? 0,
+                  total: matchingTotal ?? matchingCount ?? 0,
+                })
+              : t('matchingSelected', { count: matchingCount ?? 0 })}
+          </span>
+          {onClearMatching && (
+            <button
+              type="button"
+              className="font-medium underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-ring"
+              onClick={onClearMatching}
+            >
+              {t('clearMatching')}
+            </button>
+          )}
         </div>
+      ) : (
+        allPageSelected &&
+        hasMoreMatching &&
+        onSelectAllMatching && (
+          <div
+            className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-accent bg-accent/40 px-4 py-2 text-sm"
+            role="status"
+          >
+            <span>{t('allPageSelected', { count: selectedCount })}</span>
+            <button
+              type="button"
+              className="font-medium underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-ring"
+              onClick={onSelectAllMatching}
+            >
+              {t('selectAllMatching', { count: total ?? 0 })}
+            </button>
+          </div>
+        )
       )}
       {/* WCAG 1.3.1 — visually-hidden caption identifies the table for
           screen reader users who navigate table landmarks. */}
@@ -1065,13 +1101,6 @@ export function MembersTable({
         </TableBody>
       </Table>
 
-      {nextCursor && (
-        <div className="flex justify-center">
-          <Button type="button" variant="outline" size="sm" onClick={onLoadMore}>
-            {t('loadMore')}
-          </Button>
-        </div>
-      )}
     </div>
   );
 }

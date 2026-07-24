@@ -7,8 +7,9 @@
  * Manager users get a read-only table (FR-018 AS5: hidden, not disabled).
  */
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 import { InfoIcon } from 'lucide-react';
 import {
   MembersTable,
@@ -35,22 +36,80 @@ export function DirectoryWithBulk({
   isAdmin,
 }: Props) {
   const t = useTranslations('admin.members.inlineEdit');
+  const tDir = useTranslations('admin.members.directory');
   const router = useRouter();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
+  // #2 — cross-page "Select all N matching" selection, fetched from
+  // /api/members/ids (capped at BULK_CAP). When set it OVERRIDES the per-page
+  // selection so a bulk action reaches the whole filtered set, not just the 50
+  // visible rows. It is only valid for the EXACT current view, so any fresh
+  // server render (filter change, page change, router.refresh after a mutation)
+  // drops it — otherwise a stale id set from the previous filter could act on
+  // the wrong members.
+  const [matching, setMatching] = useState<
+    { ids: string[]; total: number; capped: boolean } | null
+  >(null);
+  useEffect(() => {
+    setMatching(null);
+  }, [rows]);
+
+  // The effective bulk target: the cross-page matching set when active,
+  // otherwise the per-page checkbox selection.
+  const effectiveIds = matching?.ids ?? selectedIds;
+
   // Staff-review SS-1: memoise to avoid O(N·M) recomputation on every render.
-  // Also index rows by id for O(1) lookup during mapping.
+  // Also index rows by id for O(1) lookup during mapping. Off-page matching ids
+  // simply resolve to no name (the archive confirm dialog then lists the names
+  // it can + shows the full count separately — acceptable).
   const selectedCompanyNames = useMemo(() => {
     const byId = new Map<string, string>();
     for (const row of rows) {
       byId.set(row.member_id, row.company_name);
     }
-    return selectedIds
+    return effectiveIds
       .map((id) => byId.get(id))
       .filter((name): name is string => Boolean(name));
-  }, [rows, selectedIds]);
+  }, [rows, effectiveIds]);
 
-  const handleClear = useCallback(() => setSelectedIds([]), []);
+  const handleClear = useCallback(() => {
+    setSelectedIds([]);
+    setMatching(null);
+  }, []);
+
+  // Banner "Select all N matching" — fetch the whole matching id set (capped at
+  // BULK_CAP) for the current filter and switch to the cross-page selection.
+  const handleSelectAllMatching = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/members/ids${window.location.search}`);
+      if (!res.ok) {
+        toast.error(tDir('selectAllMatchingError'));
+        return;
+      }
+      const body = (await res.json()) as {
+        ids?: unknown;
+        total?: unknown;
+        capped?: unknown;
+      };
+      if (
+        !Array.isArray(body.ids) ||
+        body.ids.length === 0 ||
+        typeof body.total !== 'number'
+      ) {
+        toast.error(tDir('selectAllMatchingError'));
+        return;
+      }
+      setMatching({
+        ids: body.ids as string[],
+        total: body.total,
+        capped: body.capped === true,
+      });
+    } catch {
+      toast.error(tDir('selectAllMatchingError'));
+    }
+  }, [tDir]);
+
+  const handleClearMatching = useCallback(() => setMatching(null), []);
 
   const handleInlineEdit = useCallback(
     async (
@@ -107,16 +166,21 @@ export function DirectoryWithBulk({
       {!isAdmin && <ManagerReadOnlyBanner />}
       <MembersTable
         rows={rows}
-        nextCursor={null}
         total={total}
         enableSelection={isAdmin}
         onSelectionChange={isAdmin ? setSelectedIds : undefined}
         onInlineEdit={isAdmin ? handleInlineEdit : undefined}
+        onSelectAllMatching={isAdmin ? handleSelectAllMatching : undefined}
+        matchingActive={matching !== null}
+        matchingCount={matching?.ids.length}
+        matchingTotal={matching?.total}
+        matchingCapped={matching?.capped ?? false}
+        onClearMatching={isAdmin ? handleClearMatching : undefined}
       />
       <TablePagination page={page} pageSize={pageSize} total={total} />
       {isAdmin && (
         <BulkActionBar
-          selectedIds={selectedIds}
+          selectedIds={effectiveIds}
           selectedCompanyNames={selectedCompanyNames}
           totalMatching={total}
           onClear={handleClear}

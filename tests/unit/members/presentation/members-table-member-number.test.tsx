@@ -105,7 +105,7 @@ const row: MembersTableRow = {
 function renderTable() {
   return render(
     <NextIntlClientProvider locale="en" messages={messages}>
-      <MembersTable rows={[row]} nextCursor={null} />
+      <MembersTable rows={[row]} />
     </NextIntlClientProvider>,
   );
 }
