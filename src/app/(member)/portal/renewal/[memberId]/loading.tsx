@@ -123,11 +123,27 @@ export default async function RenewalPortalLoading() {
           </CardContent>
         </Card>
         {/* RenewalConfirmFlow card — no heading (the real card is an action
-            group: plan select label + select + confirm CTA). */}
+            group: plan select label + select + PriceDiffPanel + confirm CTA). */}
         <Card>
           <CardContent className="flex flex-col gap-3">
             <Skeleton className="h-4 w-32" />
             <Skeleton className="h-9 w-full" />
+            {/* enterprise-ux B1 — the real PriceDiffPanel renders ALWAYS (C-6,
+                outside the alternatives gate): a bordered box with a heading +
+                3 dl rows (current / new price / delta). Reserve its footprint
+                so the Confirm CTA below does not jump ~110px at hydration on
+                this money-decision screen (CLS = 0, ux-standards § 2.1). */}
+            <div className="rounded-md border p-3">
+              <Skeleton className="mb-3 h-4 w-40" />
+              <div className="space-y-2">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="flex items-center justify-between">
+                    <Skeleton className="h-4 w-24" />
+                    <Skeleton className="h-4 w-20" />
+                  </div>
+                ))}
+              </div>
+            </div>
             <Skeleton className="h-9 w-full sm:w-40" />
           </CardContent>
         </Card>

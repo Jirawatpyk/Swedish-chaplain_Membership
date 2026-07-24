@@ -44,12 +44,26 @@ const messages = {
         selectedCount: '{count} selected',
         selectAllMatchingHint: 'All {count} selected. <loadMore>Load next</loadMore>',
         tableCaption: 'Members',
+        // Live-region result count (no `total` prop passed here → the page-only
+        // `resultsCount` branch) + the two sortable-column headers, so the table
+        // renders without MISSING_MESSAGE noise.
+        resultsCount: '{count, plural, =0 {No members} one {# member} other {# members}}',
+        sortByMemberNumber: 'Sort by member number',
+        sortByEngagement: 'Sort by engagement',
         columns: {
+          memberNumber: 'Member No.',
           company: 'Company',
           plan: 'Plan',
           primaryContact: 'Primary contact',
           status: 'Status',
+          engagement: 'Engagement',
           lastActivity: 'Last activity',
+        },
+        filters: {
+          status: {
+            active: 'Active',
+            archived: 'Archived',
+          },
         },
         statusActive: 'Active',
         statusInactive: 'Inactive',
@@ -57,6 +71,13 @@ const messages = {
         rowAriaLabel: 'Open {company}',
         noPrimary: 'No primary',
         loadMore: 'Load more',
+        // `PortalBadge` (members-table.tsx) renders for the first fixture
+        // row (`portal_state: 'not_invited'`) — needs both the visible label
+        // and the sr-only sentence (real English strings from en.json).
+        portal: {
+          notInvited: 'Not invited',
+          notInvitedSr: 'No portal invitation sent yet',
+        },
       },
       inlineEdit: {
         columnHeaderHintTooltip: 'edit',
@@ -90,6 +111,9 @@ const testRows: MembersTableRow[] = [
     status: 'active',
     membership_lapsed: false,
     membership_suspended: false,
+    // A row WITH a primary contact never has portal_state null — that's
+    // reserved for members with no primary contact. Use a real state.
+    portal_state: 'not_invited',
     engagement: null,
     last_activity_at: '2026-04-10T00:00:00Z',
     primary_contact: {
@@ -110,6 +134,7 @@ const testRows: MembersTableRow[] = [
     status: 'active',
     membership_lapsed: false,
     membership_suspended: false,
+    portal_state: null,
     engagement: null,
     last_activity_at: null,
     primary_contact: null,

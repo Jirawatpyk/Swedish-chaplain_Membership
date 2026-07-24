@@ -5,6 +5,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { asSatang } from '@/lib/money';
 import { ok, err } from '@/lib/result';
+import {
+  makeFakeTxRunner,
+  recordWrite,
+  expectRolledBack,
+} from '../../../support/fake-tx';
 import { confirmPayment, type ConfirmPaymentDeps } from '@/modules/payments';
 import { asPaymentId, type Payment } from '../../../../src/modules/payments/domain/payment';
 import type { TenantPaymentSettings } from '../../../../src/modules/payments/domain/tenant-payment-settings';
@@ -127,6 +132,9 @@ function makeDeps(): ConfirmPaymentDeps {
     // reaches the (stubbed) payability read. The webhook read sets
     // reconciliationPath:true, so the guard would be dormant regardless.
     taxAtPayment: 'off' as const,
+    // money-remediation Task 4 — flag OFF preserves the pre-remediation
+    // commit-on-bridge-decline behaviour this suite was written against.
+    settlementAbort: false,
   };
 }
 
@@ -176,6 +184,74 @@ describe('confirmPayment (T057)', () => {
     expect(succeededCall?.[1].retentionYears).toBe(10);
   });
 
+  // POST-COMMIT F8 finalise hook — fired by invoice id AFTER the settlement tx
+  // commits, on `processed` ONLY. This is where the F2 scheduled-plan-change
+  // finaliser runs (it CANNOT run in-tx — self-deadlocks against the member-row
+  // lock). Without coverage a regression dropping the invocation (or moving it
+  // in-tx) would redden nothing.
+  it('post-commit — onAfterCommitCallbacks fired with the invoice id on processed', async () => {
+    const deps = makeDeps();
+    const afterCommit = vi.fn(async () => undefined);
+    const result = await confirmPayment(
+      { ...deps, onAfterCommitCallbacks: [afterCommit] },
+      INPUT,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.kind).toBe('processed');
+    expect(afterCommit).toHaveBeenCalledTimes(1);
+    expect(afterCommit).toHaveBeenCalledWith(PENDING_PAYMENT.invoiceId);
+  });
+
+  it('post-commit — an onAfterCommitCallbacks throw is swallowed; the payment stays processed (never downgraded)', async () => {
+    const deps = makeDeps();
+    const afterCommit = vi.fn(async () => {
+      throw new Error('F2 finalise blew up post-commit');
+    });
+    const result = await confirmPayment(
+      { ...deps, onAfterCommitCallbacks: [afterCommit] },
+      INPUT,
+    );
+    // The payment already committed — a finalise throw must NOT downgrade it.
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.kind).toBe('processed');
+    expect(afterCommit).toHaveBeenCalledTimes(1);
+  });
+
+  // Task 4 (review I-1) — the CAS-mismatch guard on the succeeded flip. When
+  // `updateStatus` returns null (its `expectedCurrentStatus` no longer matched),
+  // it must ROLL BACK, not continue: the UPDATE matched zero rows, so continuing
+  // would let F4's `markPaidFromProcessor` flip the invoice to `paid` against a
+  // payment row that was never advanced — a silent inconsistent commit, the
+  // exact class this branch exists to prevent. The mismatch is unreachable under
+  // the row lock in normal operation, which is precisely why it was untested;
+  // that also means a refactor deleting the guard (or flipping rollbackTx →
+  // commitTxWithRefusal) would redden nothing without this test.
+  it('Task 4 I-1 — updateStatus CAS mismatch (null) rolls back; F4 markPaid NOT called', async () => {
+    const deps = makeDeps();
+    (deps.paymentsRepo.updateStatus as ReturnType<typeof vi.fn>).mockResolvedValueOnce(null);
+
+    const result = await confirmPayment(deps, INPUT);
+
+    // Surfaces a transient decline so the webhook is retried, not 200-acked into
+    // silence (a captured payment on a still-`pending` row).
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('processor_unavailable');
+      if (result.error.code === 'processor_unavailable') {
+        expect(result.error.reason).toBe('payment_row_cas_mismatch');
+      }
+    }
+    // THE money assertion: the invoice was NOT flipped to paid.
+    expect(deps.invoicingBridge.markPaidFromProcessor).not.toHaveBeenCalled();
+    // And no payment_succeeded audit was emitted for a flip that did not happen.
+    const succeededEmit = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.find(
+      (c) => c[1].eventType === 'payment_succeeded',
+    );
+    expect(succeededEmit).toBeUndefined();
+  });
+
   // R2 CRIT-1 (2026-04-27): pins audit-chain ordering across F5+F4 for
   // US1 AS1. The full chain `payment_initiated → payment_succeeded →
   // invoice_paid` spans 2 use-cases (initiate-payment.test.ts asserts
@@ -206,6 +282,13 @@ describe('confirmPayment (T057)', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe('bridge_error');
+    // Task 5 — the `.detail` is the PRODUCER half of the webhook-permanence
+    // contract: `classifyDispatchPermanence` special-cases exactly this string
+    // to `permanent`. Asserting only `.code` let a rename of the detail silently
+    // reclassify an unconfigured-tenant capture as transient (→ 48h retries).
+    if (result.error.code === 'bridge_error') {
+      expect(result.error.detail).toBe('tenant_settings_missing');
+    }
   });
 
   it('unknown intent — unknown_intent outcome', async () => {
@@ -992,5 +1075,184 @@ describe('confirmPayment (T057)', () => {
     const bridgeCall = (deps.invoicingBridge.markPaidFromProcessor as ReturnType<typeof vi.fn>)
       .mock.calls[0]?.[0];
     expect(bridgeCall?.method).toBe('stripe_promptpay');
+  });
+  // ─── money-remediation Task 4 (F-1) — the settlement-abort flag ──────────
+  //
+  // These two pin WHY the rest of this file could stay green through a change
+  // to commit semantics, and stop that from being mistaken for coverage.
+  //
+  // Every `paymentsRepo` double in this file stubs `withTx` as
+  // `vi.fn(async (fn) => fn({}))` — a function that runs the callback and
+  // neither commits nor rolls back. It cannot observe finding F-1 and it
+  // cannot observe the fix. The real assertion lives in
+  // `tests/integration/payments/confirm-payment-bridge-rollback.integration.test.ts`
+  // against live Neon.
+  describe('settlement abort on a bridge decline', () => {
+    it('flag OFF — a bridge decline still returns bridge_error (behaviour preserved)', async () => {
+      const deps = makeDeps();
+      (deps.invoicingBridge.markPaidFromProcessor as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce(err({ code: 'pdf_render_failed', reason: 'boom' }));
+
+      const result = await confirmPayment(deps, INPUT);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.code).toBe('bridge_error');
+      // No forensic row: the flag-off arm commits, so there is no rollback to
+      // describe and nothing would outlive it.
+      const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+      expect(
+        auditCalls.some((c) => c[1].eventType === 'payment_settlement_rolled_back'),
+      ).toBe(false);
+    });
+
+    it('flag ON — the payment-row write is ATTEMPTED and then DISCARDED', async () => {
+      // Uses Task 2's rollback-capable double (`tests/support/fake-tx.ts`).
+      // The suite's own `withTx: vi.fn(async (fn) => fn({}))` CANNOT express
+      // this: it has no notion of a write, so it cannot discard one, and every
+      // transactional assertion made against it passes whether or not anything
+      // rolls back. That double is why finding F-1 sat green under this file.
+      //
+      // Note what it does NOT do: it does not trip `runTxDecided`'s
+      // "runner does not roll back on throw" guard. That guard fires only for
+      // a double that SWALLOWS the rollback throw and resolves anyway; every
+      // double in this repo re-throws, so the signal propagates and
+      // `runTxDecided` reports `committed: false` — a rollback it never
+      // actually performed. Unit-level green here is therefore necessary but
+      // never sufficient; the load-bearing proof is the live-Neon test at
+      // tests/integration/payments/confirm-payment-bridge-rollback.integration.test.ts.
+      const runner = makeFakeTxRunner();
+      const deps = { ...makeDeps(), settlementAbort: true };
+      (deps.paymentsRepo as { withTx: unknown }).withTx = runner.withTx.bind(runner);
+      (deps.paymentsRepo.updateStatus as ReturnType<typeof vi.fn>).mockImplementation(
+        async (tx: unknown) => {
+          recordWrite(tx, 'payments.updateStatus', { nextStatus: 'succeeded' });
+          return PENDING_PAYMENT;
+        },
+      );
+      (deps.invoicingBridge.markPaidFromProcessor as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce(err({ code: 'pdf_render_failed', reason: 'boom' }));
+
+      const result = await confirmPayment(deps, INPUT);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.code).toBe('bridge_error');
+      // Both halves: the write really was attempted (proving the fake was
+      // wired through) AND it did not survive.
+      expectRolledBack(runner, 'payments.updateStatus');
+
+      // The forensic emit runs BEFORE the rollback decision and on a `null`
+      // tx, so it is the one thing that outlives the transaction.
+      const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+      const forensic = auditCalls.find(
+        (c) => c[1].eventType === 'payment_settlement_rolled_back',
+      );
+      expect(forensic, 'forensic must be emitted before the decision').toBeDefined();
+      expect(forensic?.[0], 'forensic MUST use a null tx so it survives').toBeNull();
+      expect(forensic?.[1].payload.money_captured).toBe(true);
+      expect(forensic?.[1].payload.bridge_error_code).toBe('pdf_render_failed');
+      expect(forensic?.[1].retentionYears).toBe(10);
+    });
+
+    it('flag ON — a FAILED forensic emit is swallowed; the decline still returns bridge_error and rolls back (task-4 S-2)', async () => {
+      // The forensic `emitSettlementRollbackForensic` wraps its `audit.emit` in
+      // `.catch(() => {})`. That swallow is load-bearing: letting it throw would
+      // escape `runTxDecided` as a raw 500 AND lose the rollback (the whole point
+      // of the F-1 fix). Nothing tested it — removing the `.catch()` reddened
+      // nothing — so this pins it: an audit-table outage during the forensic
+      // must not turn a clean decline-and-rollback into a thrown 500.
+      const runner = makeFakeTxRunner();
+      const deps = { ...makeDeps(), settlementAbort: true };
+      (deps.paymentsRepo as { withTx: unknown }).withTx = runner.withTx.bind(runner);
+      (deps.paymentsRepo.updateStatus as ReturnType<typeof vi.fn>).mockImplementation(
+        async (tx: unknown) => {
+          recordWrite(tx, 'payments.updateStatus', { nextStatus: 'succeeded' });
+          return PENDING_PAYMENT;
+        },
+      );
+      (deps.invoicingBridge.markPaidFromProcessor as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce(err({ code: 'pdf_render_failed', reason: 'boom' }));
+      // The forensic emit (null tx, `payment_settlement_rolled_back`) REJECTS.
+      (deps.audit.emit as ReturnType<typeof vi.fn>).mockImplementation(
+        async (_tx: unknown, event: { eventType: string }) => {
+          if (event.eventType === 'payment_settlement_rolled_back') {
+            throw new Error('audit table unavailable');
+          }
+          return undefined;
+        },
+      );
+
+      // MUST NOT throw — resolves the same decline as the happy-forensic case.
+      const result = await confirmPayment(deps, INPUT);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.code).toBe('bridge_error');
+      // The rollback still held despite the failed forensic.
+      expectRolledBack(runner, 'payments.updateStatus');
+      // And the invoice was never flipped to paid.
+      expect(deps.invoicingBridge.markPaidFromProcessor).toHaveBeenCalledTimes(1);
+    });
+  });
+});
+
+/**
+ * I4 (money-remediation Task 7) — a failed payability READ must never be
+ * mistaken for an unpayable invoice.
+ *
+ * `getInvoiceForPayment` newly accepts `externalTx`, which arms the invoice
+ * repo's runtime tenant-mismatch guard — a raw `throw new Error`. Running on
+ * the caller's connection also means an already-aborted tx throws here. So the
+ * bridge now returns a typed `read_failed` where it previously let the throw
+ * escape.
+ *
+ * Adding that union member WITHOUT an explicit branch here is a customer-money
+ * bug, and a silent one. The Step-2 handling is an if-CHAIN, not a switch, and
+ * it deliberately falls through for `not_payable`. An unhandled code therefore
+ * reaches the `invoiceStatus` resolver, whose final arm is `: undefined` →
+ * `inPayableStatus` false → `causeForInvoiceStatus(undefined)` hits its
+ * `default:` arm → the stale-invoice branch AUTO-REFUNDS a customer who
+ * legitimately paid, because a database read hiccuped. TypeScript flags none
+ * of it: the ternary's `: undefined` arm and the `default:` arm both absorb a
+ * new code silently.
+ */
+describe('confirmPayment — I4: bridge read_failed must not auto-refund', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('returns invoice_read_failed and refunds NOTHING when the payability read throws', async () => {
+    const deps = makeDeps();
+    (deps.invoicingBridge.getInvoiceForPayment as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      err({ code: 'read_failed' }),
+    );
+
+    const result = await confirmPayment(deps, INPUT);
+
+    // THE ASSERTION THAT MATTERS. A read hiccup must not move the customer's
+    // money. Everything else in this test is secondary to this line.
+    expect(deps.processorGateway.createRefund).not.toHaveBeenCalled();
+
+    // Transient err, not ok(...): the dispatcher must classify this as
+    // retryable so the route 500s and Stripe keeps retrying until the read
+    // recovers. Returning ok/markProcessed would DROP a real payment
+    // confirmation permanently — strictly worse than a retry storm.
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('invoice_read_failed');
+
+    // A DISTINCT code, not `bridge_error`. `bridge_error` sits in
+    // PERMANENT_SUB_USE_CASE_DETAILS, so reusing it would 200 the webhook and
+    // stop Stripe retrying — leaving the invoice `issued` forever with the
+    // customer's money captured.
+    expect(result.error.code).not.toBe('bridge_error');
+
+    // The invoice was never flipped, and no auto-refund audit was written.
+    expect(deps.invoicingBridge.markPaidFromProcessor).not.toHaveBeenCalled();
+    const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+    expect(
+      auditCalls.some((c) =>
+        String(c[1]?.eventType ?? '').startsWith('payment_auto_refunded'),
+      ),
+    ).toBe(false);
   });
 });

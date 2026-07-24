@@ -971,7 +971,31 @@
         "affectedCount": "{count, plural, =0 {Inga medlemmar påverkas} one {# medlem påverkas} other {# medlemmar påverkas}}",
         "confirm": "Bekräfta paketändring",
         "cancel": "Avbryt",
-        "loading": "Beräknar berörda medlemmar…"
+        "loading": "Beräknar berörda medlemmar…",
+        "noBundle": "Inget"
+      },
+      "planChangeConfirm": {
+        "title": "Bekräfta byte av medlemsplan",
+        "description": "Du håller på att ändra medlemmens plan. Granska ändringen innan du sparar.",
+        "currentPlan": "Nuvarande plan",
+        "newPlan": "Ny plan",
+        "feeLabel": "Årsavgift (exkl. moms)",
+        "feeUnknown": "Ej tillgänglig",
+        "yearOnlyNotice": "Endast planåret ändras. Själva planen är oförändrad.",
+        "billingNoteHeading": "Vad som ändras och inte ändras",
+        "billingNoteRecord": "Medlemmens registrerade plan ändras omedelbart.",
+        "billingNoteCurrentInvoice": "Redan utfärdade fakturor ändras inte. Om beloppet nu är fel, utfärda på nytt eller kreditera separat.",
+        "billingNoteFutureCycles": "Förnyelsedebiteringen uppdateras inte automatiskt. Nästa förnyelsefaktura använder fortfarande den tidigare registrerade planen tills förnyelsecykeln ändras separat.",
+        "billingNoteFutureCyclesAutomatic": "Framtida förnyelsecykler debiteras automatiskt enligt den nya planen. Den nuvarande förnyelseperioden behåller sitt registrerade pris tills den förnyas.",
+        "confirm": "Byt plan",
+        "cancel": "Avbryt"
+      },
+      "planChangeResult": {
+        "applied_to_open_cycle": "Den nuvarande förnyelseperioden debiteras nu enligt den nya planen.",
+        "deferred_invoice_already_issued": "Fakturan för den nuvarande förnyelsen är redan utfärdad, så den nya planen gäller från nästa förnyelse. För att tillämpa den nu, makulera och utfärda fakturan på nytt.",
+        "deferred_term_length_change": "Planerna har olika löptider, så den nya planen gäller från nästa förnyelse.",
+        "deferred_immediate_not_enabled": "Den nya planen gäller från nästa förnyelse.",
+        "no_open_cycle": "Det finns ingen aktiv förnyelsecykel, så den nya planen gäller vid nästa förnyelse."
       },
       "subtitle": "Medlemsföretag + primära kontakter",
       "directory": {
@@ -1001,6 +1025,7 @@
           }
         },
         "resultsCount": "{count, plural, =0 {Inga medlemmar} one {# medlem} other {# medlemmar}}",
+        "resultsCountOfTotal": "Visar {count} av {total, plural, one {# medlem} other {# medlemmar}}",
         "sortByEngagement": "Sortera efter engagemang",
         "sortByMemberNumber": "Sortera efter medlemsnummer",
         "columns": {
@@ -1037,6 +1062,22 @@
         "membershipLapsedSr": "Medlemskap förfallet — kräver förnyelse",
         "membershipSuspended": "Pausad",
         "membershipSuspendedSr": "Medlemskap pausat — förmåner tillfälligt stoppade",
+        "portal": {
+          "linked": "Portal",
+          "linkedSr": "Portalkontot är aktivt",
+          "invited": "Inbjuden",
+          "invitedSr": "Portalinbjudan skickad, väntar på svar",
+          "expired": "Utgången",
+          "expiredSr": "Portalinbjudan har gått ut — behöver skickas om",
+          "notInvited": "Ej inbjuden",
+          "notInvitedSr": "Ingen portalinbjudan har skickats"
+        },
+        "portalChip": {
+          "label": "Behöver portalinbjudan",
+          "aria": "Behöver portalinbjudan, {count} medlemmar",
+          "unavailable": "Portalstatus ej tillgänglig",
+          "unavailableHint": "Kunde inte läsa antalet — uppdatera för att försöka igen"
+        },
         "tableCaption": "Medlemsregister"
       },
       "emptyStates": {
@@ -1049,6 +1090,11 @@
           "title": "Inga medlemmar matchar filtren",
           "description": "Försök rensa ett eller flera filter.",
           "cta": "Rensa filter"
+        },
+        "allInvited": {
+          "title": "Alla har blivit inbjudna",
+          "description": "Alla medlemmar som matchar dessa filter har redan en portalinbjudan.",
+          "cta": "Rensa portalfilter"
         },
         "error": {
           "title": "Kunde inte ladda medlemmar",
@@ -1432,6 +1478,7 @@
           "turnoverHint": "Används för att placera medlemmen i planens omsättningsintervall.",
           "registeredCapitalThb": "Registrerat kapital (THB)",
           "plan": "Paket",
+          "planAnnualFee": "Årsavgift",
           "planPlaceholder": "Välj paket…",
           "billingCycle": "Faktureringscykel",
           "billingCyclePlaceholder": "Välj faktureringscykel…",
@@ -1586,6 +1633,7 @@
         "confirmUnenrolAction": "Stoppa autofakturering",
         "success": "{count, plural, one {# medlem} other {# medlemmar}} {action}",
         "inviteQueued": "{invited, plural, one {# inbjudan köad} other {# inbjudningar köade}}",
+        "inviteResent": "{resent, plural, one {# omskickad} other {# omskickade}}",
         "inviteSkipped": "{skipped, plural, one {# hoppades över} other {# hoppades över}}",
         "inviteFailed": "{failed, plural, one {# misslyckades} other {# misslyckades}}",
         "enrolSucceeded": "{enrolled, plural, one {# medlem anmäld} other {# medlemmar anmälda}}",
@@ -1887,10 +1935,12 @@
         "membershipEffect": {
           "legend": "Vad ska hända med medlemskapet?",
           "keep": {
-            "label": "Dokumentkorrigering / dubbelbetalning — medlemskapet påverkas inte"
+            "label": "Behåll medlemskapet — dokumentkorrigering",
+            "description": "Medlemmen återbetalades INTE för denna period, så medlemskapets täckning behålls."
           },
           "cancelMembership": {
-            "label": "Återbetala och avsluta medlemskapet — aktiva förnyelsecykler avbryts"
+            "label": "Återbetala och avsluta medlemskapet",
+            "description": "Medlemmen återbetalas och deras aktiva förnyelsecykler avbryts."
           }
         },
         "errors": {
@@ -1898,10 +1948,11 @@
           "refreshAction": "Uppdatera",
           "failed": "Kreditnotan kunde inte utfärdas.",
           "unknown": "Ett okänt fel uppstod. Försök igen.",
-          "receiptNotCreditable": "Kvitton som utfärdats till en köpare utan momsregistreringsnummer kan inte krediteras. Använd en direkt återbetalning eller makulering i stället.",
-          "receiptNotRendered": "Skattekvittots PDF genereras fortfarande (eller kunde inte skapas). En kreditnota kan utfärdas först när §86/4-kvittot har genererats — vänta en stund och försök igen, eller återskapa kvittot från fakturasidan.",
+          "receiptNotCreditable": "För denna betalning utfärdades ett kvitto enligt paragraf 105, inte en skattefaktura, så ingen kreditnota kan utfärdas för den. För att återbetala den, använd återbetalningsåtgärden på betalningen — den återför pengarna utan en kreditnota.",
+          "receiptNotRendered": "Skattekvittots PDF genereras fortfarande, eller kunde inte skapas. En kreditnota kan utfärdas först när §86/4-kvittot har genererats. Vänta en stund och försök igen — om det fortfarande misslyckas, kontakta supporten för att återskapa det.",
           "membershipEffectRequired": "Välj vad som ska hända med medlemskapet innan du utfärdar denna kreditnota. Ladda om sidan och försök igen.",
-          "codeFallback": "Felkod: {code}"
+          "codeFallback": "Felkod: {code}",
+          "refundInProgress": "En återbetalning behandlas för denna fakturas betalning. Att utfärda en kreditnota nu kan skapa en konflikt – vänta tills återbetalningen är klar och försök igen."
         }
       },
       "list": {
@@ -2393,12 +2444,24 @@
           "annualFee": "Årsavgift: {amount} THB (före moms)",
           "changePlan": "Ändra medlemmens plan →"
         },
+        "duplicateConfirm": {
+          "title": "Medlemmen har redan en faktura för {year}",
+          "description": "En andra faktura för samma medlemsår är tillåten, men den skapar ytterligare ett skattedokument. Granska den befintliga innan du fortsätter.",
+          "fields": {
+            "documentNumber": "Dokumentnummer",
+            "status": "Status",
+            "amount": "Belopp"
+          },
+          "notYetNumbered": "Ännu inte numrerad (utkast)",
+          "notYetTotalled": "Ännu inte summerad (utkast)",
+          "viewExisting": "Öppna den befintliga fakturan i en ny flik",
+          "cancel": "Avbryt",
+          "createAnyway": "Skapa en andra faktura"
+        },
         "renewalContext": {
           "renewal": "Nuvarande period slutar {periodTo} — betalning av denna faktura förnyar medlemskapet ({from} till {to}).",
-          "firstPayment": "Medlemsperioden har inte börjat — betalning startar 12-månadersperioden från betalningsdatumet.",
-          "notApplicable": "Ingen aktiv medlemsperiod — denna faktura påverkar inte förnyelser (använd återaktiveringsflödet för utgångna medlemmar).",
-          "duplicateWarning": "Medlemmen har redan en obetald medlemsfaktura, eller så löper nuvarande period till {periodTo} — ytterligare en betald faktura köper ett år till.",
-          "duplicateWarningUnpaidOnly": "Medlemmen har redan en obetald medlemsfaktura — ytterligare en betald faktura köper ett år till."
+          "firstPayment": "Medlemskapet är inte aktivt än — betala fakturan för att aktivera förmåner från betalningsdagen; 12-månadersperioden är fast enligt inskrivningsdatumet.",
+          "notApplicable": "Ingen aktiv medlemsperiod — denna faktura påverkar inte förnyelser (använd återaktiveringsflödet för utgångna medlemmar)."
         }
       },
       "detail": {
@@ -2729,7 +2792,9 @@
           "unknown": "Ett okänt fel inträffade. Försök igen.",
           "concurrent": "Denna faktura har redan annullerats eller ändrats i en annan session. Uppdatera för att se den senaste statusen.",
           "refreshAction": "Uppdatera",
-          "codeFallback": "Felkod: {code}"
+          "codeFallback": "Felkod: {code}",
+          "refundInProgress": "En återbetalning behandlas för denna fakturas betalning. Att makulera nu kan skapa en konflikt – vänta tills återbetalningen är klar och försök igen.",
+          "paidMembershipRequiresCreditNote": "Den här betalda medlemsfakturan kan inte makuleras. För att återföra den, utfärda en kreditnota i stället."
         }
       }
     },
@@ -3185,12 +3250,12 @@
         "no_invoice_backstop": "Ingen förnyelsefaktura utfärdades någonsin"
       },
       "urgencyPill": {
-        "t_90": "Förfaller om 90 d",
-        "t_60": "Förfaller om 60 d",
-        "t_30": "Förfaller om 30 d",
-        "t_14": "Förfaller om 14 d",
-        "t_7": "Förfaller om 7 d",
-        "t_0": "Förfaller idag",
+        "t_90": "Förnyas om 90 d",
+        "t_60": "Förnyas om 60 d",
+        "t_30": "Förnyas om 30 d",
+        "t_14": "Förnyas om 14 d",
+        "t_7": "Förnyas om 7 d",
+        "t_0": "Förnyas idag",
         "grace": "Respitperiod",
         "lapsed": "Förfallen"
       },
@@ -3247,6 +3312,8 @@
           "pending_admin_reactivation": "Väntar på återaktivering"
         },
         "viewInvoice": "Visa faktura",
+        "invoiceCoveredLabel": "Täckt",
+        "invoiceCoveredTitle": "Denna förnyelseperiod täcks redan av en tidigare betalning — ingen förnyelsefaktura är kopplad ännu.",
         "noRows": "Inga medlemmar i detta intervall.",
         "noRowsInBucket": "Inga medlemmar ska förnya i detta intervall. Växla till en annan brådskeflik för att se väntande förnyelser.",
         "noRowsInMonth": "Inga medlemmar förnyas i {month}.",
@@ -3644,14 +3711,16 @@
           "cancel": "Avbryt",
           "submitting": "Registrerar…",
           "successToast": "Offlinebetalning registrerad — cykeln är nu slutförd.",
-          "successReanchored": "Betalning registrerad — medlemsperioden börjar {date}.",
+          "successReanchored": "Betalning registrerad — medlemskapet aktiverat (period från {date}).",
           "successNoEmailWarning": "Ingen e-postadress finns registrerad — kvittot skickades inte. Leverera det till medlemmen manuellt.",
           "viewOrphanInvoice": "Visa faktura",
+          "viewExistingInvoice": "Öppna befintlig faktura",
           "error": {
             "cycle_not_found": "Denna cykel finns inte längre — den kan redan ha tagits bort.",
             "cycle_not_payable": "Denna cykel kan inte längre markeras som betald i sitt nuvarande tillstånd.",
             "member_terminated": "Medlemmens senaste medlemskap har upphört — återaktivera medlemmen innan du registrerar en betalning.",
             "f4_orphan_invoice": "En faktura utfärdades men cykeln kunde inte slutföras. Försök INTE igen — öppna fakturan och fortsätt från fakturalistan.",
+            "membership_bill_already_exists": "Medlemmen har redan en faktura för detta medlemsår, så ingen ny skapades. Öppna den fakturan och registrera betalningen där — det slutför den här cykeln.",
             "f4_failure": "Fakturan kunde inte skapas. Cykeln lämnades oförändrad — försök igen.",
             "plan_not_found": "Den här medlemmens plan för det året finns inte i avgiftskatalogen ännu — lägg till planåret innan du markerar som betald.",
             "settings_missing": "Fakturainställningar har inte konfigurerats för den här organisationen ännu — konfigurera dem innan du markerar som betald.",
@@ -3757,6 +3826,12 @@
           "paid_invoice_volume_above_threshold": "Fakturavolym över tröskelvärde",
           "multi_signal": "Flera signaler"
         },
+        "evidence": {
+          "declared_turnover_above_threshold": "Deklarerad omsättning {turnover} · tröskel nådd {date}",
+          "paid_invoice_volume_above_threshold": "Betalda fakturor (12 mån) {volume} · tröskel nådd {date}",
+          "multi_signal": "Deklarerad omsättning {turnover} · betalda fakturor (12 mån) {volume} · tröskel nådd {date}",
+          "unavailable": "Underlag saknas — verifiera manuellt innan du accepterar"
+        },
         "empty_state": {
           "title": "Inga uppgraderingskandidater denna vecka",
           "subtitle": "Den veckovisa utvärderingen hittade inga medlemmar som passerar uppgraderingströskeln.",
@@ -3778,20 +3853,42 @@
             "dialog_title": "Acceptera nivåhöjning?",
             "confirm": "Uppgraderingen träder i kraft vid medlemmens nästa förnyelse. Medlemmen meddelas via e-post och en verifieringsuppgift schemaläggs om förnyelsen är mer än 180 dagar bort.",
             "success": "Nivåhöjning accepterad",
-            "error": "Kunde inte acceptera nivåhöjning"
+            "error": "Kunde inte acceptera nivåhöjning",
+            "evidence_restated": "Underlag: {evidence}. Detta flyttar medlemmen från {fromPlan} ({fromFee}) till {toPlan} ({toFee}) — årsavgiften ändras på nästa förnyelsefaktura.",
+            "fee_unknown": "avgift saknas",
+            "submitting": "Accepterar…"
           },
           "dismiss": {
             "label": "Avvisa",
             "dialog_title": "Avvisa förslaget om nivåhöjning?",
             "confirm": "Förslaget stängs och nya förslag undertrycks i 90 dagar. Denna åtgärd kan inte ångras.",
             "success": "Förslag avvisat",
-            "error": "Kunde inte avvisa förslag"
+            "error": "Kunde inte avvisa förslag",
+            "submitting": "Avvisar…"
           },
           "escalate": {
             "label": "Eskalera",
             "success": "Utkast till uppsökande skapat",
             "error": "Kunde inte skapa utkast"
           }
+        },
+        "loading": "Laddar kön för nivåuppgraderingar…",
+        "action_errors": {
+          "unknown": "Något gick fel. Försök igen.",
+          "network_error": "Vi kunde inte nå servern. Kontrollera din anslutning och försök igen.",
+          "http_error": "Servern gav ett oväntat svar. Försök igen.",
+          "read_only_mode": "Systemet är i underhållsläge och ändringar är pausade. Försök igen om en stund.",
+          "csrf_rejected": "Sidan är inaktuell. Ladda om sidan och försök igen.",
+          "feature_disabled": "Förnyelsefunktionerna är avstängda just nu. Kontakta en administratör.",
+          "no_session": "Din session har gått ut. Logga in igen för att fortsätta.",
+          "forbidden": "Du har inte behörighet att utföra den här åtgärden.",
+          "server_error": "Något gick fel på vår sida. Försök igen.",
+          "invalid_body": "Begäran godtogs inte. Ladda om sidan och försök igen.",
+          "invalid_input": "Begäran godtogs inte. Ladda om sidan och försök igen.",
+          "suggestion_not_found": "Det här förslaget finns inte längre. Uppdatera kön för att se aktuell lista.",
+          "suggestion_not_open": "Någon har redan hanterat det här förslaget. Uppdatera kön för att se aktuell lista.",
+          "no_active_cycle": "Den här medlemmen har ingen aktiv förnyelsecykel, så uppgraderingen kan inte schemaläggas än.",
+          "plan_change_failed": "Planändringen kunde inte tillämpas. Försök igen, eller kontakta supporten om det kvarstår."
         }
       },
       "tasks": {
@@ -4005,8 +4102,15 @@
         }
       },
       "success": {
-        "toast": "Återbetalning utförd — kreditnota {number} utfärdad och skickad till medlemmen",
-        "pendingToast": "Återbetalning inskickad — inväntar bekräftelse från betalningsleverantören. Kreditnotan utfärdas när återbetalningen har genomförts."
+        "toast": "Återbetalning utförd — kreditnota {number} utfärdad",
+        "pendingToast": "Återbetalning inskickad — inväntar bekräftelse från betalningsleverantören. Kreditnotan utfärdas när återbetalningen har genomförts.",
+        "deferredToast": "Återbetalningen är skickad — pengarna är på väg tillbaka till medlemmen. Kreditnotan slutförs automatiskt; ingen åtgärd behövs.",
+        "waivedToast": "Återbetalning utförd — ingen kreditnota utfärdades",
+        "pendingWaivedToast": "Återbetalning skickad — inväntar betalleverantören. Ingen kreditnota kommer att utfärdas.",
+        "waivedReason": {
+          "section105Receipt": "Originalhandlingen var ett kvitto enligt § 105, inte en momsfaktura enligt § 86/4, så det finns ingen faktura som en kreditnota enligt § 86/10 kan hänvisa till. Den utgående moms som redan deklarerats för denna försäljning har inte justerats — lämna över återbetalningen till revisorn vid månadsavslut.",
+          "invoiceVoided": "Fakturan makulerades, så det finns ingen momsfaktura kvar att kreditera. Om fakturan hade betalats och dess utgående moms redan deklarerats, lämna över återbetalningen till revisorn vid månadsavslut."
+        }
       },
       "error": {
         "title": "Det gick inte att utfärda återbetalningen",
@@ -4017,6 +4121,17 @@
         "processor_unavailable": "Betalningssystemet är tillfälligt otillgängligt. Försök igen.",
         "f4_bridge_error": "Utfärdande av kreditnota misslyckades. Driften har meddelats.",
         "f4_preflight_read_error": "Det gick inte att verifiera det återbetalningsbara saldot just nu. Inga pengar flyttades — försök igen.",
+        "f4_preflight_gate_underivable": "Det gick inte att avgöra om denna betalning kan krediteras, så återbetalningen genomfördes inte. Inga pengar flyttades. Detta kräver en rättning från vår sida — kontakta supporten.",
+        "f4_preflight_invalid_status": "Denna faktura kan inte längre krediteras och kan därför inte återbetalas. Inga pengar flyttades. Kontrollera fakturan — den kan ha makulerats eller redan krediterats i sin helhet.",
+        "f4_preflight_not_creditable": "För denna betalning utfärdades endast ett kvitto, inte en skattefaktura, så ingen kreditnota kan utfärdas för den. Inga pengar flyttades. Återbetalning kräver manuell hantering — kontakta supporten.",
+        "f4_preflight_receipt_rendering": "Kvittot för denna betalning håller fortfarande på att skapas. Inga pengar flyttades — försök återbetala igen om några minuter.",
+        "invoice_data_corrupt": "Denna faktura saknar de köparuppgifter som registrerades vid utfärdandet, så återbetalningens skattemässiga hantering kan inte fastställas säkert. Inga pengar flyttades. Detta är ett datafel som inte kan åtgärdas från den här vyn — kontakta supporten.",
+        "f4_preflight_receipt_render_stuck": "Kvittot för denna betalning skapades inte, och det slutförs inte av sig själv. Inga pengar flyttades. Supporten behöver skapa om kvittot innan återbetalningen kan genomföras — kontakta supporten.",
+        "tenant_settings_incomplete": "Betalningsinställningarna är ofullständiga, så återbetalningar kan inte behandlas. Inga pengar flyttades. Be en administratör komplettera betalningsinställningarna.",
+        "invalid_input": "Återbetalningsbegäran avvisades som ogiltig. Inga pengar flyttades. Kontrollera belopp och orsak och försök igen.",
+        "rate_limited": "För många återbetalningsförsök. Inga pengar flyttades — vänta en stund och försök igen.",
+        "f4_bridge_deferred": "Återbetalningen är skickad — pengarna är på väg tillbaka till medlemmen. Kreditnotan utfärdas fortfarande och slutförs automatiskt. Ingen åtgärd behövs, och du får inte försöka återbetala igen.",
+        "refund_needs_reconciliation": "En tidigare återbetalning på denna betalning genomfördes hos betalningsleverantören men registrerades som misslyckad, så fler återbetalningar är blockerade tills den har stämts av manuellt. Inga pengar flyttades av detta försök. Kontakta supporten för avstämning.",
         "internal_error": "Ett oväntat fel uppstod. Försök igen."
       },
       "cmdk": {
@@ -4923,6 +5038,7 @@
         "label": "Medlemskap",
         "activeValue": "Aktivt",
         "renewDueValue": "Förnya snart",
+        "renewUpcomingValue": "Förnyelse närmar sig",
         "overdueValue": "Förnyelse försenad",
         "activeSub": "Ditt medlemskap är i gott skick.",
         "daysRemainingSub": "Förnyas om {days} dagar",
@@ -5680,13 +5796,32 @@
         "errorPlanUnavailable": "Den valda planen är inte längre tillgänglig.",
         "errorInvoiceFailed": "Vi kunde inte skapa din faktura. Försök igen eller kontakta support.",
         "errorRateLimited": "För många förnyelseförsök. Vänta en stund och försök igen.",
-        "errorNetwork": "Anslutningsproblem. Kontrollera din internetanslutning och försök igen."
+        "errorNetwork": "Anslutningsproblem. Kontrollera din internetanslutning och försök igen.",
+        "errorDowngradeNotAcknowledged": "Bekräfta bytet till en plan med lägre pris innan du fortsätter."
       },
       "planChange": {
         "label": "Välj en plan",
         "placeholder": "{defaultLabel}",
         "currentSuffix": "nuvarande",
-        "changeNotice": "Att byta till en annan plan låser det nya priset på din förnyelsefaktura."
+        "changeNotice": "Att byta till en annan plan låser det nya priset på din förnyelsefaktura.",
+        "groupUpgrade": "Planer med högre pris",
+        "groupCurrent": "Din nuvarande plan",
+        "groupDowngrade": "Planer med lägre pris",
+        "optionWithPrice": "{label} — {price}",
+        "priceHeading": "Prisändring",
+        "priceCurrent": "Nuvarande låst pris",
+        "priceNew": "Nytt pris",
+        "priceDelta": "Skillnad"
+      },
+      "downgrade": {
+        "title": "Bekräfta en plan med lägre pris",
+        "description": "Du byter från {currentLabel} till {newLabel}. Det sänker ditt förnyelsepris och minskar vissa medlemsförmåner.",
+        "losesHeading": "Detta ändras",
+        "quotaEblast": "E-Blast per år: {from} → {to}",
+        "quotaCulturalTickets": "Kulturbiljetter per år: {from} → {to}",
+        "overQuotaWarning": "Du har redan använt {used} av {benefitName} denna period — mer än de {quota} som ingår i den nya planen.",
+        "confirmCta": "Ja, byt till denna plan",
+        "cancelCta": "Behåll min nuvarande plan"
       },
       "onboarding": {
         "heading": "Välkommen till din första förnyelse",
@@ -5787,7 +5922,7 @@
       "renewal_reminder_sent": "Förnyelsepåminnelse skickad",
       "renewal_reminder_skipped": "Förnyelsepåminnelse hoppad",
       "renewal_schedule_policy_updated": "Förnyelseschemapolicy uppdaterad",
-      "renewal_schedule_rescheduled": "Förnyelse omplanerad",
+      "renewal_schedule_rescheduled": "Förnyelseomplanering utvärderad",
       "renewal_schedule_reschedule_skipped": "Förnyelseomplanering hoppad",
       "renewal_self_service_initiated": "Medlemsinitierad förnyelse",
       "renewal_skipped_no_joined_at": "Förnyelse hoppad — inget anslutningsdatum",
@@ -5865,6 +6000,7 @@
       "plan_cross_tenant_probe": "Obehörigt åtkomstförsök från annan organisation (paket)",
       "fee_config_updated": "Avgiftskonfiguration uppdaterad",
       "member_plan_manually_changed": "Paket ändrat manuellt",
+      "member_plan_change_billing_effect": "Faktureringseffekt av planändring",
       "plan_change_scheduled": "Paketbyte schemalagt",
       "plan_change_superseded": "Paketbyte ersatt",
       "plan_change_cancelled": "Paketbyte avbrutet",
@@ -5903,11 +6039,14 @@
       "payment_processor_retrieve_failed": "Uppslag hos betalningsleverantör misslyckades",
       "payment_invoice_not_found": "Betalning — faktura hittades inte",
       "stale_pending_refund_detected": "Inaktuell väntande återbetalning upptäckt",
+      "refund_cn_deferred": "Kreditnota för återbetalning uppskjuten",
+      "refund_credit_note_waived": "Kreditnota för återbetalning efterskänkt",
       "payment_acknowledged_terminal_state": "Betalning redan i slutläge",
       "dispute_created": "Betalningstvist öppnad",
       "refund_amount_mismatch_detected": "Avvikande återbetalningsbelopp upptäckt",
       "auto_refund_failed_needs_manual_reconcile": "Automatisk återbetalning misslyckades — kräver manuell avstämning",
       "auto_refund_reconciled": "Automatisk återbetalning manuellt avstämd",
+      "payment_settlement_rolled_back": "Avräkning återställd — betalning mottagen men inte bokförd",
       "webhook_dispatch_permanent_failure": "Webhook-bearbetning permanent misslyckad",
       "registration_cross_tenant_probe": "Obehörigt åtkomstförsök från annan organisation (evenemangsregistreringar)",
       "event_buyer_pii_redacted": "Personuppgifter för biljettköpare maskerade",

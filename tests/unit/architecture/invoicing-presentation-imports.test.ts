@@ -91,8 +91,8 @@ const FORBIDDEN_DYNAMIC_MULTILINE_PATTERNS: readonly RegExp[] = [
 /**
  * Allowlist of CURRENT deep imports (captured 2026-06-11, 065 item 6;
  * refreshed 065 QC S10/S11).
- * Total: 12 entries — 1 application leaf + 11 infrastructure
- * composition-root sites across 9 consumer files. src/components/** is
+ * Total: 13 entries — 1 application leaf + 12 infrastructure
+ * composition-root sites across 10 consumer files. src/components/** is
  * CLEAN (zero entries) — keep it that way.
  *
  * 065 QC S11 note: the LAST infra entry below (admin/invoices/page.tsx's
@@ -138,6 +138,12 @@ const KNOWN_ALLOWLIST: ReadonlySet<string> = new Set([
   "src/app/api/cron/invoicing/redact-expired-member-invoices/route.ts::@/modules/invoicing/infrastructure/adapters/vercel-blob-adapter",
   // Cron: receipt-PDF reconcile — direct schema read for the sweep query.
   "src/app/api/internal/cron/receipt-pdf-reconcile/route.ts::@/modules/invoicing/infrastructure/db/schema-invoices",
+  // Cron: void-PDF reconcile (bug 10) — the render adapter is deliberately NOT
+  // barrel-exported (keeps @react-pdf coupling out of product code), so this
+  // operational-infra route deep-imports it. Every other invoicing symbol it
+  // needs (buildVoidRenderTargets, asInvoiceId, repo/adapters, invoicesTable)
+  // is routed through the public barrel.
+  "src/app/api/internal/cron/void-pdf-reconcile/route.ts::@/modules/invoicing/infrastructure/adapters/react-pdf-render-adapter",
   // Admin invoice LIST — dynamic `await import(...)` of the CN schema for
   // the credit-note-count GROUP BY (N+1 avoidance). Multi-line dynamic
   // import surfaced by the 065 QC S11 scanner extension (see header note).

@@ -18,7 +18,7 @@
  * MUST NOT leak into Application or Domain (Constitution Principle
  * III). The use-case calls these methods only through the port.
  */
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { asSatang, type Satang } from '@/lib/money';
 import type {
   RefundsRepo,
@@ -27,8 +27,13 @@ import type {
 } from '../../application/ports/refunds-repo';
 import { asPaymentId, type PaymentId } from '../../domain/payment';
 import { asRefundId, REFUND_STATUSES, type Refund } from '../../domain/refund';
-import { refunds, type RefundRow } from '../schema';
+import { payments, refunds, type RefundRow } from '../schema';
 import { runInTenant, type TenantTx } from '@/lib/db';
+import { asTenantContext } from '@/modules/tenants';
+import {
+  CREDIT_NOTE_WAIVER_REASONS,
+  type CreditNoteWaiverReason,
+} from '@/modules/invoicing';
 import { logger } from '@/lib/logger';
 
 // H-9 / H-10 (review 2026-04-27): defensive boundary guards mirroring
@@ -37,6 +42,26 @@ import { logger } from '@/lib/logger';
 function assertRefundStatus(s: string, rowId: string): RefundStatus {
   if ((REFUND_STATUSES as readonly string[]).includes(s)) return s as RefundStatus;
   throw new Error(`drizzle-refunds-repo: unknown refund status '${s}' on row ${rowId}`);
+}
+
+// Track B — narrow the waiver reason at the DB→Domain seam, same H-9/H-10
+// principle this file already applies to `status` and `amountSatang`: a value
+// the Domain vocabulary does not recognise (a dropped CHECK, an out-of-band SQL
+// write, a future enum value this build predates) is a corrupt row, and it must
+// surface as a loud throw here rather than a bare `as` cast that lets an unknown
+// string flow into the aggregate. `null` is a legitimate value (no waiver), so
+// it passes through.
+function assertCreditNoteWaiverReason(
+  s: string | null,
+  rowId: string,
+): CreditNoteWaiverReason | null {
+  if (s === null) return null;
+  if ((CREDIT_NOTE_WAIVER_REASONS as readonly string[]).includes(s)) {
+    return s as CreditNoteWaiverReason;
+  }
+  throw new Error(
+    `drizzle-refunds-repo: unknown credit_note_waiver_reason '${s}' on row ${rowId}`,
+  );
 }
 
 // F5R3 H-5 (2026-05-16) — return `Satang` brand at DB→Domain boundary.
@@ -80,6 +105,11 @@ function toRefundDomain(row: RefundRow): Refund {
     processorRefundId: row.processorRefundId,
     failureReasonCode: row.failureReasonCode,
     creditNoteId: row.creditNoteId,
+    creditNoteWaiverReason: assertCreditNoteWaiverReason(
+      row.creditNoteWaiverReason,
+      row.id,
+    ),
+    creditNoteWaivedAt: row.creditNoteWaivedAt,
     initiatedAt: row.initiatedAt,
     completedAt: row.completedAt,
     initiatorUserId: row.initiatorUserId,
@@ -87,12 +117,13 @@ function toRefundDomain(row: RefundRow): Refund {
   };
 }
 
-export function makeDrizzleRefundsRepo(_tenantId: string): RefundsRepo {
-  // tenantId currently unused — every method receives `tx` from its
-  // caller's `runInTenant` scope, RLS+FORCE handles isolation. Kept
-  // in the factory signature for symmetry with `makeDrizzlePaymentsRepo`
-  // (DI wiring stays uniform). Reintroduce `asTenantContext(tenantId)`
-  // when a standalone read path is added.
+export function makeDrizzleRefundsRepo(tenantId: string): RefundsRepo {
+  // Almost every method receives `tx` from its caller's `runInTenant` scope and
+  // relies on RLS+FORCE for isolation. `sumWaivedByInvoice` is the exception
+  // this comment used to anticipate ("reintroduce `asTenantContext(tenantId)`
+  // when a standalone read path is added") — F9's snapshot cron calls it with
+  // no enclosing tenant scope, so it opens its own.
+  const ctx = asTenantContext(tenantId);
   return {
     async insert(txUnknown, input): Promise<DomainRefundRow> {
       const tx = txUnknown as TenantTx;
@@ -107,6 +138,11 @@ export function makeDrizzleRefundsRepo(_tenantId: string): RefundsRepo {
           reason: input.reason,
           status: input.status,
           processorRefundId: input.processorRefundId,
+          // Track B — waiver INTENT only. `creditNoteWaivedAt` is deliberately
+          // NOT written here: the completeness CHECK keys on that timestamp, so
+          // stamping it on a still-`pending` row would violate the
+          // biconditional before Stripe has even been called.
+          creditNoteWaiverReason: input.creditNoteWaiverReason,
           initiatorUserId: input.initiatorUserId,
           correlationId: input.correlationId,
           initiatedAt: input.initiatedAt,
@@ -151,6 +187,18 @@ export function makeDrizzleRefundsRepo(_tenantId: string): RefundsRepo {
       }
       if (input.creditNoteId !== undefined) {
         patch.creditNoteId = input.creditNoteId;
+      }
+      // Track B — the waiver COMPLETION stamp, written only on the succeeded
+      // flip of a refund that owes no §86/10. Mutually exclusive with
+      // `creditNoteId` at the DB level (`refunds_cn_xor_waived`).
+      if (input.creditNoteWaivedAt !== undefined) {
+        patch.creditNoteWaivedAt = input.creditNoteWaivedAt;
+      }
+      // Track B / 8B — the waiver reason. Paired with `creditNoteWaivedAt` to
+      // satisfy `refunds_waived_at_requires_reason`; load-bearing on a Phase-B
+      // converted waive where Phase A left it NULL.
+      if (input.creditNoteWaiverReason !== undefined) {
+        patch.creditNoteWaiverReason = input.creditNoteWaiverReason;
       }
 
       const whereClauses = [
@@ -280,6 +328,72 @@ export function makeDrizzleRefundsRepo(_tenantId: string): RefundsRepo {
       return row ? toRefundDomain(row as RefundRow) : null;
     },
 
+    // Money-remediation Task 9 (F-9). Full rationale on the port docstring;
+    // the security-critical points restated here because this is the SQL a
+    // reviewer actually reads:
+    //
+    //   · `isNull(refunds.processorRefundId)` is NOT an optimisation and NOT
+    //     defence-in-depth. It is what stops an attacker-supplied
+    //     `metadata.refundId` from ever addressing an already-matched refund.
+    //     Removing it converts a false-alarm fix into an alarm-suppression
+    //     primitive for the very actor the alarm watches.
+    //   · BOTH tables carry an explicit `tenantId` filter on top of the RLS
+    //     the `tx` already enforces (Principle I two-layer isolation). The
+    //     payments-side filter is not redundant: it keeps the join from
+    //     being the seam where a cross-tenant marker resolves a PI.
+    //
+    // INNER join — a refund with no visible parent payment yields null, which
+    // routes the caller to the forensic rather than to a suppression with an
+    // unverifiable PI.
+    async findAwaitingAttachByAppRefundId(
+      txUnknown,
+      tenantIdArg: string,
+      appRefundId: string,
+    ): Promise<{
+      readonly id: string;
+      readonly paymentId: PaymentId;
+      readonly invoiceId: string;
+      readonly amountSatang: Satang;
+      readonly status: RefundStatus;
+      readonly parentProcessorPaymentIntentId: string;
+    } | null> {
+      const tx = txUnknown as TenantTx;
+      const [row] = await tx
+        .select({
+          id: refunds.id,
+          paymentId: refunds.paymentId,
+          invoiceId: refunds.invoiceId,
+          amountSatang: refunds.amountSatang,
+          status: refunds.status,
+          parentProcessorPaymentIntentId: payments.processorPaymentIntentId,
+        })
+        .from(refunds)
+        .innerJoin(
+          payments,
+          and(
+            eq(payments.id, refunds.paymentId),
+            eq(payments.tenantId, tenantIdArg),
+          ),
+        )
+        .where(
+          and(
+            eq(refunds.tenantId, tenantIdArg),
+            eq(refunds.id, appRefundId),
+            isNull(refunds.processorRefundId),
+          ),
+        )
+        .limit(1);
+      if (!row) return null;
+      return {
+        id: row.id,
+        paymentId: asPaymentId(row.paymentId),
+        invoiceId: row.invoiceId,
+        amountSatang: toBigintSatang(row.amountSatang, row.id),
+        status: assertRefundStatus(row.status, row.id),
+        parentProcessorPaymentIntentId: row.parentProcessorPaymentIntentId,
+      };
+    },
+
     async listPendingOlderThan(
       txUnknown,
       tenantIdArg: string,
@@ -355,6 +469,7 @@ export function makeDrizzleRefundsRepo(_tenantId: string): RefundsRepo {
       readonly pendingCount: number;
       readonly succeededSumSatang: Satang;
       readonly nextSeq: number;
+      readonly settledUnbookedCount: number;
     }> {
       const tx = txUnknown as TenantTx;
       // Single index scan over `refunds_tenant_payment_status_idx`
@@ -369,11 +484,46 @@ export function makeDrizzleRefundsRepo(_tenantId: string): RefundsRepo {
       // Drizzle + postgres.js returns COUNT/SUM as JS strings (BIGINT-
       // safe). Coerce to Number/BigInt at the boundary; matches the
       // pattern in `drizzle-payments-repo.nextAttemptSeq`.
+      //
+      // `settled_unbooked_count` — the F-3 casualty shape. All THREE
+      // predicates are load-bearing; broadening this is a live regression,
+      // not a hardening.
+      //
+      //   TARGETS (the only two writers that produce it), both in
+      //   `issue-refund.ts` BEFORE this remediation:
+      //     :633  failure_reason_code = 'f4_bridge_phase_b_db_error'
+      //     :698  failure_reason_code = `f4_bridge_${code}`
+      //   Both fired AFTER Stripe confirmed the refund succeeded, so the row
+      //   says `failed` while the customer's money is gone.
+      //
+      //   MUST NOT CATCH — `stripe_refund_%` rows are EXPECTED and benign.
+      //   Three writers produce `failed` WITH a non-null processor_refund_id
+      //   from a processor-confirmed NON-settlement (no money moved; the id
+      //   is kept for forensics and webhook matching):
+      //     issue-refund.ts:548          `stripe_refund_${refundStatus}`
+      //     process-refund-updated.ts:455 `stripe_refund_${incoming.status}`
+      //     sweep-stale-pending-refunds.ts:551 `stripe_refund_${cls.status}`
+      //   Dropping the reason-code predicate — "it looks redundant next to
+      //   processor_refund_id IS NOT NULL" — 409-blocks every future refund
+      //   on any payment whose Stripe refund ever settled failed or canceled.
+      //   That is unrecoverable by runbook because the data is not corrupt.
+      //   Measured on the dev branch when this was written: 18 such rows, and
+      //   zero `f4_bridge_%` rows.
+      //
+      //   KNOWN COUPLING: this keys on a reason-code PREFIX, so an F4 bridge
+      //   failure written under a different prefix would slip past. Accepted
+      //   — `f4_bridge_${code}` is interpolated, so the codes cannot be
+      //   enumerated. If you add an F4-decline writer, keep the prefix.
       const rows = (await tx.execute(sql`
         SELECT
           COUNT(*) FILTER (WHERE status = 'pending')                      AS pending_count,
           COALESCE(SUM(amount_satang) FILTER (WHERE status = 'succeeded'), 0) AS succeeded_sum_satang,
-          COUNT(*)                                                         AS total_count
+          COUNT(*)                                                         AS total_count,
+          COUNT(*) FILTER (
+            WHERE status = 'failed'
+              AND processor_refund_id IS NOT NULL
+              AND failure_reason_code LIKE 'f4_bridge_%'
+          )                                                                AS settled_unbooked_count
         FROM refunds
         WHERE tenant_id = ${tenantIdArg}
           AND payment_id = ${paymentId}
@@ -381,13 +531,85 @@ export function makeDrizzleRefundsRepo(_tenantId: string): RefundsRepo {
         pending_count: number | string;
         succeeded_sum_satang: number | string;
         total_count: number | string;
+        settled_unbooked_count: number | string;
       }>;
       const row = rows[0];
       return {
         pendingCount: Number(row?.pending_count ?? 0),
         succeededSumSatang: asSatang(BigInt(row?.succeeded_sum_satang ?? 0)),
         nextSeq: Number(row?.total_count ?? 0) + 1,
+        settledUnbookedCount: Number(row?.settled_unbooked_count ?? 0),
       };
+    },
+
+    async sumWaivedByInvoice(
+      inputTenantId: string,
+    ): Promise<ReadonlyMap<string, bigint>> {
+      // The ONE standalone read on this repo, and the reason the factory's
+      // `tenantId` stopped being unused — see the note above `return {`.
+      // Every other method takes its caller's `tx`; F9's snapshot cron has no
+      // enclosing tenant scope to borrow, so this opens its own.
+      //
+      // `tenant_id = …` is defence-in-depth ALONGSIDE RLS+FORCE, not instead
+      // of it: `runInTenant` sets `app.current_tenant` and the policy is what
+      // actually isolates, but an explicit predicate keeps the query correct
+      // if it is ever read or copied outside that scope.
+      return runInTenant(ctx, async (tx) => {
+        const rows = (await tx.execute(sql`
+          SELECT invoice_id, SUM(amount_satang) AS waived_satang
+            FROM refunds
+           WHERE tenant_id = ${inputTenantId}
+             AND status = 'succeeded'
+             -- The TIMESTAMP, never the reason. The reason is written at
+             -- Phase-A insert while the row is still pending and survives a
+             -- FAILED settlement; only the succeeded flip stamps this column.
+             -- Keying on the reason would net money that never moved.
+             AND credit_note_waived_at IS NOT NULL
+           GROUP BY invoice_id
+        `)) as unknown as Array<{
+          invoice_id: string;
+          waived_satang: string | number | bigint | null;
+        }>;
+
+        const out = new Map<string, bigint>();
+        for (const row of rows) {
+          const raw = row.waived_satang;
+          // `SUM(bigint)` returns numeric; the driver may hand it back as a
+          // string or a bigint depending on version. A `number` would be a
+          // precision bug above 2^53 satang and `BigInt()` would throw on a
+          // non-integer, so assert the shape rather than cast through it —
+          // this is money, and a silent narrowing here is unrecoverable.
+          if (raw === null) continue;
+          if (typeof raw === 'number') {
+            throw new Error(
+              'sumWaivedByInvoice: SUM(amount_satang) came back as a JS number; ' +
+                'refusing to risk precision loss on a money aggregate',
+            );
+          }
+          out.set(row.invoice_id, BigInt(raw));
+        }
+        return out;
+      });
+    },
+
+    async countPendingByInvoice(
+      inputTenantId: string,
+      invoiceId: string,
+    ): Promise<number> {
+      // 8A — NON-LOCKING plain COUNT. A `FOR UPDATE`/`FOR SHARE` here would
+      // invert the finaliser's refunds→invoices lock order and deadlock (see
+      // the port docstring). Own `runInTenant` — the invoicing caller has no F5
+      // `tx` to borrow. `tenant_id = …` is defence-in-depth alongside RLS+FORCE.
+      return runInTenant(ctx, async (tx) => {
+        const rows = (await tx.execute(sql`
+          SELECT COUNT(*)::int AS c
+            FROM refunds
+           WHERE tenant_id = ${inputTenantId}
+             AND invoice_id = ${invoiceId}
+             AND status = 'pending'
+        `)) as unknown as Array<{ c: number | string }>;
+        return Number(rows[0]?.c ?? 0);
+      });
     },
   };
 }

@@ -61,6 +61,7 @@ import { emitNonMemberInvoiceEvent, type AuditPort } from '../ports/audit-port';
 import type { ClockPort } from '../ports/clock-port';
 import type { EmailOutboxPort } from '../ports/email-outbox-port';
 import type { RecipientLocalePort } from '../ports/recipient-locale-port';
+import type { PendingRefundGuardPort } from '../ports/pending-refund-guard-port';
 import { resolveRecipientLocale } from '../lib/resolve-recipient-locale';
 import {
   asInvoiceId,
@@ -232,7 +233,16 @@ export type IssueCreditNoteError =
    * §87 sequence number burned) — same pre-allocation discipline as every
    * other guard in this file.
    */
-  | { code: 'membership_effect_required' };
+  | { code: 'membership_effect_required' }
+  /**
+   * 8A — a refund is in flight (`status='pending'`) on this invoice's
+   * payment(s). Issuing a MANUAL credit note now would consume the creditable
+   * remainder the refund's own §86/10 needs, stranding that Stripe-settled
+   * refund `pending` forever. Refuse (409); the admin retries once the refund
+   * settles. NOT raised for a refund-origin CN (`sourceRefundId` set) — that CN
+   * IS the refund's own, so blocking it on its own pending row is nonsensical.
+   */
+  | { code: 'refund_in_progress' };
 
 class IssueCreditNoteInternalError extends TxAbort<IssueCreditNoteError> {
   override readonly name = 'IssueCreditNoteInternalError';
@@ -305,6 +315,8 @@ export interface IssueCreditNoteDeps {
   /** Email-locale audit 2026-07-16 — member preference for the credit-note email. */
   readonly recipientLocale: RecipientLocalePort;
   readonly currentTemplateVersion: number;
+  /** 8A — non-locking count of in-flight refunds (guards a manual CN). */
+  readonly pendingRefundGuard: PendingRefundGuardPort;
 }
 
 export async function issueCreditNote(
@@ -325,6 +337,24 @@ export async function issueCreditNote(
   // of the row make a mid-race mutation a no-op), so reading outside
   // the tx is safe.
   const settings = await deps.tenantSettingsRepo.getForIssue(input.tenantId);
+
+  // 8A — refuse a MANUAL credit note while a refund is in flight on this
+  // invoice (a non-locking count; see the port docstring). ABOVE the withTx on
+  // purpose: `err()` inside `runInTenant` COMMITS, so a guard below the first
+  // write would leave a phantom row + false audit behind a refusal. Gated on
+  // `sourceRefundId === undefined` — a refund-origin CN IS the refund's own
+  // §86/10, so blocking it on its own pending row is nonsensical (and would
+  // deadlock the refund it belongs to).
+  if (input.sourceRefundId === undefined) {
+    const pendingRefunds =
+      await deps.pendingRefundGuard.countPendingRefundsForInvoice(
+        input.tenantId,
+        invoiceId,
+      );
+    if (pendingRefunds > 0) {
+      return err({ code: 'refund_in_progress' });
+    }
+  }
 
   // T122 — track which render invocation was in-flight when a
   // `pdf_render_failed` is thrown so the post-rollback audit can
@@ -427,9 +457,27 @@ export async function issueCreditNote(
 
       // §86/10 doc-type gate (final-review HIGH 1) — BLOCK crediting a §105
       // ใบเสร็จรับเงิน (`receipt_separate`). A credit note can only adjust a
-      // §86/4 tax invoice (ใบกำกับภาษี, kind='invoice'); a buyer who never
-      // received a TIN-bearing tax invoice has no input VAT to reverse, so a
-      // §86/10 ใบลดหนี้ against their §105 receipt is legally void.
+      // §86/4 tax invoice (ใบกำกับภาษี, kind='invoice'), because §86/10
+      // วรรคสอง requires the ใบลดหนี้ to carry THE NUMBER AND DATE OF THE
+      // ORIGINAL ใบกำกับภาษี. A §105 receipt supplies neither, so there is
+      // nothing lawful to cite and the credit note would be void.
+      //
+      // THE RULE IS SELLER-SIDE, NOT BUYER-SIDE. §86/10 binds the
+      // VAT-REGISTERED SELLER who issued the original tax invoice; it does
+      // NOT require the BUYER to be a VAT registrant. Do not restate this
+      // gate as "the buyer has no input VAT to reverse" — that framing is
+      // wrong and, applied consistently, would break the membership path,
+      // which issues a valid §86/4 (and therefore valid credit notes) to
+      // non-registrant buyers with no TIN line at all under the 066 relax.
+      // Production currently holds 11 such membership invoices. See
+      // `document-kind.ts` — `inferEventDocumentKind` returns 'invoice' for
+      // EVERY membership row regardless of `buyerIsVatRegistrant`.
+      //
+      // Separately: "no credit note can be issued" does NOT mean "no VAT
+      // adjustment is needed". Output VAT already remitted on a refunded
+      // §105 sale still has to be adjusted for that tax month by another
+      // instrument. That is an accounting procedure, not something this
+      // use-case can do.
       //
       // ORDER (064 Task 10) — this gate runs BEFORE the snapshot-completeness
       // guard below: a β as-paid no-TIN row (issueEventInvoiceAsPaid,
@@ -693,6 +741,29 @@ export async function issueCreditNote(
         isFullCredit &&
         input.membershipEffect === 'cancel_membership';
 
+      // M1 (plan-change-ux, business decision Option 1b) — does this credit note
+      // LEAVE the member's membership coverage intact for the credited period?
+      // Persisted on `credit_notes.retains_coverage`; the renewal effective-paid
+      // predicate + L1 pipeline read it via a correlated EXISTS on the settling
+      // invoice so a coverage-retaining note does NOT retract the period even
+      // though the invoice flips to 'credited'.
+      //
+      // ORDER MATTERS — check `sourceRefundId` FIRST. The F5 refund bridge
+      // (issue-credit-note-from-refund.ts) hard-codes `membershipEffect: 'keep'`
+      // while GENUINELY returning money, so `membershipEffect === 'keep'` alone is
+      // NOT the retention signal. Only an F4-manual (no sourceRefundId) FULL
+      // membership 'keep' — a paperwork correction where the member was NOT
+      // refunded — retains coverage. Partial credits + event invoices never reach
+      // the true arm (isFullCredit / isMembershipInvoice false) → always FALSE.
+      const retainsCoverage =
+        isMembershipInvoice && isFullCredit
+          ? input.sourceRefundId !== undefined
+            ? false // F5 real refund → money returned → retract
+            : input.membershipEffect === 'cancel_membership'
+              ? false // withdrawal → retract
+              : input.membershipEffect === 'keep' // F4-manual full 'keep' (Option 1b): assume no refund → RETAIN. A strict `=== 'keep'` (NOT a bare `: true`) so an unexpected/future effect derives FALSE — the safe direction (a spurious retract beats a silent under-bill).
+          : false; // partial / event / non-full — predicate never consulted
+
       // --- POST-SEQUENCE zone begins. Every error path below MUST
       // throw IssueCreditNoteInternalError so withTx rolls back.
 
@@ -800,6 +871,9 @@ export async function issueCreditNote(
             sha256: rendered.sha256,
             templateVersion: deps.currentTemplateVersion,
           },
+          // M1 (plan-change-ux, Option 1b) — coverage-retention intent derived
+          // above (sourceRefundId-first). Write-once at INSERT.
+          retainsCoverage,
           ...(input.sourceRefundId !== undefined
             ? { sourceRefundId: input.sourceRefundId }
             : {}),

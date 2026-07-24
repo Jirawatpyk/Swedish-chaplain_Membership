@@ -78,7 +78,7 @@ test.describe('rolling-anchor admin flow @renewals', () => {
     'E2E_X_TENANT_HEADER_ENABLED=1 required for throwaway-tenant',
   );
 
-  test('first payment anchors the cycle at the payment month; second invoice warns', async ({
+  test('first payment ACTIVATES the cycle keeping its registration period; second invoice shows renewal context', async ({
     page,
   }) => {
     test.setTimeout(240_000); // 5-step chained flow on a dev server
@@ -136,7 +136,7 @@ test.describe('rolling-anchor admin flow @renewals', () => {
       await expect(contextLine).toBeVisible({ timeout: 20_000 });
       // firstPayment copy (spec §3b — also covers the heal_no_cycle
       // grouping, so a slow cold-start cycle listener can't flake this).
-      await expect(contextLine).toContainText(/membership period has not started/i);
+      await expect(contextLine).toContainText(/membership not active yet/i);
       await expect(page.getByTestId('renewal-duplicate-warning')).toHaveCount(0);
 
       // Draft creation still works with the context panel present.
@@ -144,6 +144,22 @@ test.describe('rolling-anchor admin flow @renewals', () => {
       await expect(submitButton).toBeEnabled({ timeout: 15_000 });
       await submitButton.click();
       await page.waitForURL(/\/admin\/invoices\/[0-9a-f-]{36}$/, { timeout: 20_000 });
+
+      // FIXED-ANCHOR: capture the cycle's registration-anchored period BEFORE
+      // payment — the first payment must ACTIVATE the cycle without moving it.
+      const [preCycle] = await runInTenant(tenant.ctx, (tx) =>
+        tx
+          .select()
+          .from(renewalCycles)
+          .where(
+            and(
+              eq(renewalCycles.memberId, memberId),
+              inArray(renewalCycles.status, ['upcoming', 'reminded', 'awaiting_payment']),
+            ),
+          ),
+      );
+      const initialPeriodFrom = preCycle!.periodFrom.toISOString();
+      const initialPeriodTo = preCycle!.periodTo.toISOString();
 
       // ── Step 3: backdated payment ──────────────────────────────────────
       // Payment ~2 months ago. record-payment enforces
@@ -153,7 +169,6 @@ test.describe('rolling-anchor admin flow @renewals', () => {
       const payMonthStart = monthStartUtc(addMonthsUtc(nowIso, -2));
       const paymentDate = `${payMonthStart.slice(0, 8)}08`; // the 8th
       const issueDate = payMonthStart.slice(0, 10); // the 1st
-      const expectedPeriodTo = addMonthsUtc(payMonthStart, 12);
 
       const invoiceId = randomUUID();
       const adminUserId = await resolveAdminUserId();
@@ -261,15 +276,17 @@ test.describe('rolling-anchor admin flow @renewals', () => {
             ),
           ),
       );
-      expect(cycles, 'exactly one open cycle after the anchoring payment').toHaveLength(1);
+      expect(cycles, 'exactly one open cycle after the activating payment').toHaveLength(1);
       const cycle = cycles[0]!;
-      expect(cycle.periodFrom.toISOString()).toBe(payMonthStart);
-      expect(cycle.periodTo.toISOString()).toBe(expectedPeriodTo);
+      // FIXED-ANCHOR: period STAYS at the registration anchor — the backdated
+      // payment does NOT move it to the payment month; only anchored_at is set.
+      expect(cycle.periodFrom.toISOString()).toBe(initialPeriodFrom);
+      expect(cycle.periodTo.toISOString()).toBe(initialPeriodTo);
       expect(cycle.anchoredAt, 'cycle is stamped anchored').not.toBeNull();
       expect(cycle.anchorInvoiceId).toBe(invoiceId);
 
-      // Renewal & Health card shows the re-anchored expiry (payment month
-      // start + 12 months), not the registration-date expiry.
+      // Renewal & Health card shows the fixed registration-anchored expiry
+      // (unchanged by the payment), NOT a payment-month-derived one.
       await page.goto(`/admin/members/${memberId}`);
       const healthCard = page
         .locator('section')
@@ -279,10 +296,10 @@ test.describe('rolling-anchor admin flow @renewals', () => {
         year: 'numeric',
         month: 'short',
         day: '2-digit',
-      }).format(new Date(expectedPeriodTo));
+      }).format(new Date(initialPeriodTo));
       await expect(healthCard).toContainText(expectedExpiryText, { timeout: 20_000 });
 
-      // ── Step 5: second invoice → duplicate warning ─────────────────────
+      // ── Step 5: second invoice → renewal context (no client warning) ───
       const secondInvoiceLink = page
         .getByRole('link', { name: /create (new|first) invoice|new invoice/i })
         .first();
@@ -293,10 +310,9 @@ test.describe('rolling-anchor admin flow @renewals', () => {
       const contextLine2 = page.getByTestId('renewal-context-line');
       await expect(contextLine2).toBeVisible({ timeout: 20_000 });
       await expect(contextLine2).toContainText(/current period ends/i);
-      // periodTo ≈ 10 months out (> 6-month threshold) → warning shows.
-      await expect(page.getByTestId('renewal-duplicate-warning')).toBeVisible({
-        timeout: 20_000,
-      });
+      // The old client-side duplicate-billing warning was REMOVED (the server
+      // #243 guard owns duplicate UX now) — the element no longer exists.
+      await expect(page.getByTestId('renewal-duplicate-warning')).toHaveCount(0);
     } finally {
       await tenant.cleanup().catch(() => {});
     }

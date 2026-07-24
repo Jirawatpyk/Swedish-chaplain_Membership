@@ -268,6 +268,7 @@ describe('F8 confirm-renewal lazy self-transition (B-lazy, Task 2.5)', () => {
       clock: realDeps.clock,
       planLookupForRenewal: realDeps.planLookupForRenewal,
       memberRenewalFlagsRepo: realDeps.memberRenewalFlagsRepo,
+      memberPlanWriter: realDeps.memberPlanWriter,
       f4InvoicingBridge: makeTestRenewalBridge(),
     };
   }

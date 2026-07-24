@@ -74,22 +74,16 @@ test.describe('F8 — member self-service renewal portal (US3 AS1+AS2+AS3+AS6, T
     ).toBeVisible();
 
     // AS2 — frozen plan summary card visible. The seed uses 50000.00 THB /
-    // 12 months / regular tier. The page formats the locked-in price as a
-    // currency (UX R5/C1: `formatter.number(..., {style:'currency',
-    // currency:'THB'})` → "THB 50,000.00" for the EN member), NOT the raw
-    // "50000.00" — assert the rendered, comma-grouped value.
+    // 12 months / regular tier.
     await expect(
       page.getByRole('heading', { name: /membership plan/i }),
     ).toBeVisible();
-    // S8 — ICU currency formatting uses a NARROW NO-BREAK SPACE (U+202F) or
-    // NO-BREAK SPACE (U+00A0) as the group/spacing separator depending on the
-    // Node ICU build, NOT an ASCII space. A literal `'THB 50,000.00'` (ASCII
-    // space) is brittle across runtimes — match the digits with a separator
-    // class tolerant of ASCII space / U+00A0 / U+202F between "THB" and the
-    // amount.
-    await expect(
-      page.getByText(/THB[\s  ]?50,000\.00/),
-    ).toBeVisible();
+    // WP5 — the frozen price moved out of the summary <dl> into the confirm
+    // flow price panel, where it renders as money with a narrow ฿ symbol
+    // (currencyDisplay:'narrowSymbol'), not the "THB" currency code. Assert the
+    // panel's current-price row; match only the comma-grouped digits so ICU's
+    // narrow/no-break separators + the ฿ symbol stay tolerant across builds.
+    await expect(page.getByTestId('price-current')).toContainText(/50,000\.00/);
     await expect(page.getByText('12 months')).toBeVisible();
 
     // Benefit summary fallback (benefitsAvailable=false in MVP).

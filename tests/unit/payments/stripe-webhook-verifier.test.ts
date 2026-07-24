@@ -73,6 +73,13 @@ describe('stripeWebhookVerifier — verify + project', () => {
       'amountSatang',
       'refundStatus',
       'amountProjectionFailed',
+      // Money-remediation Task 9 (F-9) — app-initiated refund marker map +
+      // the PaymentIntent id it is cross-checked against. Absent from THIS
+      // `payment_intent.succeeded` fixture (neither is projected on the
+      // payment_intent arm), but listed so the allow-list stays a complete
+      // statement of the envelope rather than an artefact of one event shape.
+      'appRefundIds',
+      'paymentIntentId',
     ]);
     for (const k of Object.keys(envelope.dataObject)) {
       expect(allowedKeys.has(k), `disallowed key '${k}' leaked into envelope`).toBe(true);
@@ -536,7 +543,10 @@ describe('stripeWebhookVerifier — refund envelope (PCI-1, A.10)', () => {
     expect(envelope.dataObject.latestChargeId).toBe('ch_x');
     expect(envelope.dataObject.amountSatang).toBe(50_000n);
     // Allow-list hygiene — the refund arm must not leak any other key.
-    const allowedKeys = new Set(['id', 'type', 'refundStatus', 'latestChargeId', 'amountSatang']);
+    // F-9: the refund arm now also projects `paymentIntentId` (null when the
+    // fixture carries no `payment_intent`) and `appRefundIds` (absent unless
+    // the Refund carries a well-formed `metadata.refundId`).
+    const allowedKeys = new Set(['id', 'type', 'refundStatus', 'latestChargeId', 'amountSatang', 'appRefundIds', 'paymentIntentId']);
     for (const k of Object.keys(envelope.dataObject)) {
       expect(allowedKeys.has(k), `disallowed key '${k}' leaked into refund envelope`).toBe(true);
     }
@@ -637,7 +647,10 @@ describe('stripeWebhookVerifier — modern refund.updated event (async refund fo
     expect(envelope.dataObject.latestChargeId).toBe('ch_async_pp');
     expect(envelope.dataObject.amountSatang).toBe(53_500n);
     // Same allow-list hygiene as the charge.refund.updated arm.
-    const allowedKeys = new Set(['id', 'type', 'refundStatus', 'latestChargeId', 'amountSatang']);
+    // F-9: the refund arm now also projects `paymentIntentId` (null when the
+    // fixture carries no `payment_intent`) and `appRefundIds` (absent unless
+    // the Refund carries a well-formed `metadata.refundId`).
+    const allowedKeys = new Set(['id', 'type', 'refundStatus', 'latestChargeId', 'amountSatang', 'appRefundIds', 'paymentIntentId']);
     for (const k of Object.keys(envelope.dataObject)) {
       expect(allowedKeys.has(k), `disallowed key '${k}' leaked into refund.updated envelope`).toBe(true);
     }

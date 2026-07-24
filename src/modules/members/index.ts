@@ -54,6 +54,11 @@ export {
 } from './domain/portal-self-update-fields';
 
 export {
+  derivePortalState,
+  type PortalState,
+} from './domain/portal-state';
+
+export {
   assertNeverAuditEvent,
   type F3AuditEventType,
   type F3AuditEvent,
@@ -152,6 +157,16 @@ export {
   type DirectoryRow,
 } from './application/use-cases/directory-search';
 
+export {
+  loadMembersPortalStatus,
+  type LoadMembersPortalStatusInput,
+  type LoadMembersPortalStatusDeps,
+} from './application/use-cases/load-members-portal-status';
+
+export {
+  countMembersNeedingPortalInvite,
+} from './application/use-cases/count-members-needing-portal-invite';
+
 // --- US3 use cases ----------------------------------------------------------
 
 export {
@@ -168,7 +183,19 @@ export {
   type ChangePlanInput,
   type ChangePlanError,
   type ChangePlanDeps,
+  type ChangePlanSuccess,
 } from './application/use-cases/change-plan';
+
+// Plan-change -> billing remediation (Phase 2) — MEMBERS-owned port implemented
+// by a renewals adapter. Exported so the renewals adapter can import the
+// contract (renewals -> members, type-only) + the route/deps can reference the
+// BillingEffect surface.
+export type {
+  PlanChangeBillingEffect,
+  PlanChangeBillingEffectKind,
+  PlanChangeBillingRemediationContext,
+  PlanChangeBillingRemediationPort,
+} from './application/ports/plan-change-billing-remediation-port';
 
 export {
   addContact,

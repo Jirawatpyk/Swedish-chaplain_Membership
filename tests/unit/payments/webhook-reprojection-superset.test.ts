@@ -59,6 +59,12 @@ const SYNTHETIC_DATA_OBJECT: Record<string, unknown> = {
   // The route's `reprojectDataObject` MUST copy it so the later
   // `charge.refund.updated` arm (A.10) never needs to re-add the copy.
   refundStatus: 'succeeded',
+  // Money-remediation Task 9 (F-9) — `appRefundIds` + `paymentIntentId` added
+  // to VerifiedStripeEvent['dataObject']. If the route drops either, the F-9
+  // fallback goes inert in production ONLY (use-case unit tests build their
+  // input directly and would stay green) — precisely the Bug #5 / #6 shape.
+  appRefundIds: { re_test_superset_1: 'rfnd_0123456789abcdef0123456789abcdef' },
+  paymentIntentId: 'pi_test_superset_1',
 };
 
 describe('reprojectDataObject — superset regression guard (M-f)', () => {
@@ -99,5 +105,23 @@ describe('reprojectDataObject — superset regression guard (M-f)', () => {
     expect(result).not.toHaveProperty('amountSatang');
     expect(result).not.toHaveProperty('amountProjectionFailed');
     expect(result).not.toHaveProperty('refundStatus');
+    expect(result).not.toHaveProperty('appRefundIds');
+    expect(result).not.toHaveProperty('paymentIntentId');
+  });
+
+  // F-9 — `paymentIntentId: null` is MEANINGFUL (verifier could not extract a
+  // PI → consumers must NOT suppress the OOB forensic). A truthy-guarded copy
+  // would drop it and leave the field `undefined`; both read as "cannot
+  // cross-check" today, but the distinction is the difference between "absent
+  // field" and "verifier looked and found nothing", and the handler's
+  // suppression gate depends on never seeing a stale value here.
+  it('preserves an explicit null paymentIntentId (not truthy-dropped)', () => {
+    const result = reprojectDataObject({
+      id: 're_x',
+      type: 'refund',
+      paymentIntentId: null,
+    });
+
+    expect(result).toHaveProperty('paymentIntentId', null);
   });
 });

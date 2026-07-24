@@ -57,6 +57,10 @@ function makeDeps(o: Overrides = {}): ComputeDashboardSnapshotDeps {
       // 067 — not under test here; the use-case still calls it in the batch.
       getInvoiceStatusDistribution: async () => ({ buckets: [], draftCount: 0 }),
     },
+    // Track B — the snapshot fetches waived-refund totals once and threads
+    // them into the three revenue reads. Empty here: these cases assert chart
+    // and quota shape, not netting arithmetic.
+    waivedRefundSource: { sumWaivedByInvoice: async () => new Map() },
     broadcastSource: { countAwaitingApproval: async () => 0 },
     memberEnumeration: {
       listActiveWithPlan: async () => o.activeMembers ?? [],

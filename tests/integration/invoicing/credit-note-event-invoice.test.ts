@@ -124,6 +124,7 @@ function makeCreditNoteDeps(tenantSlug: string): {
 } {
   const outboxEnqueue = vi.fn(async () => {});
   const deps: IssueCreditNoteDeps = {
+    pendingRefundGuard: { countPendingRefundsForInvoice: async () => 0 },
     invoiceRepo: makeDrizzleInvoiceRepo(tenantSlug),
     creditNoteRepo: makeDrizzleCreditNoteRepo(tenantSlug),
     tenantSettingsRepo: drizzleTenantSettingsRepo,

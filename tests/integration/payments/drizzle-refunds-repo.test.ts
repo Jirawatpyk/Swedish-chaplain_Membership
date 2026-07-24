@@ -26,11 +26,21 @@ import { randomUUID } from 'node:crypto';
 import { runInTenant } from '@/lib/db';
 import { makeDrizzlePaymentsRepo } from '@/modules/payments/infrastructure/repos/drizzle-payments-repo';
 import { makeDrizzleRefundsRepo } from '@/modules/payments/infrastructure/repos/drizzle-refunds-repo';
+// Money-remediation Task 6: writing `failed` requires evidence. These cases
+// simulate a processor-confirmed failed settlement, so they mint the proof
+// from the real Domain function. The REJECTION_PROOF brand stays private —
+// exporting it to make a stub compile would turn the guard into decoration.
+import { proveProcessorSettledFailed } from '@/modules/payments/domain/settlement/money-moved';
 import {
+  payments,
   refunds,
   tenantPaymentSettings,
   type NewTenantPaymentSettingsRow,
 } from '@/modules/payments/infrastructure/schema';
+import {
+  CREDIT_NOTE_WAIVER_REASONS,
+  type CreditNoteWaiverReason,
+} from '@/modules/invoicing';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
 import { tenantDocumentSequences } from '@/modules/invoicing/infrastructure/db/schema-tenant-document-sequences';
@@ -204,6 +214,7 @@ describe('DrizzleRefundsRepo — live Neon', () => {
         reason: 'first partial',
         status: 'pending',
         processorRefundId: null,
+        creditNoteWaiverReason: null,
         initiatorUserId: user.userId,
         correlationId: 'corr-rfnd-1',
         initiatedAt,
@@ -232,6 +243,7 @@ describe('DrizzleRefundsRepo — live Neon', () => {
         reason: 'will fail',
         status: 'pending',
         processorRefundId: null,
+        creditNoteWaiverReason: null,
         initiatorUserId: user.userId,
         correlationId: 'corr-rfnd-fail',
         initiatedAt,
@@ -243,6 +255,7 @@ describe('DrizzleRefundsRepo — live Neon', () => {
         refundId,
         tenantId: tenantA.ctx.slug,
         nextStatus: 'failed',
+        rejectionProof: proveProcessorSettledFailed('failed'),
         failureReasonCode: 'retryable',
         completedAt: failedAt,
       });
@@ -273,6 +286,7 @@ describe('DrizzleRefundsRepo — live Neon', () => {
           processorRefundId: null,
           initiatorUserId: user.userId,
           correlationId: `corr-bulk-${i}`,
+          creditNoteWaiverReason: null,
           initiatedAt: new Date(),
         });
       }
@@ -312,6 +326,96 @@ describe('DrizzleRefundsRepo — live Neon', () => {
     expect(ctxFromB.pendingCount).toBe(0);
     expect(ctxFromB.succeededSumSatang).toBe(0n);
     expect(ctxFromB.nextSeq).toBe(1);
+  });
+
+  it('8A — countPendingByInvoice counts only PENDING rows for (tenant, invoice), RLS-scoped', async () => {
+    const repo = makeDrizzleRefundsRepo(tenantA.ctx.slug);
+    // A fresh invoice + payment so the count is deterministic (isolated from the
+    // shared paymentIdA partition the aggregate tests accumulate on).
+    const invoiceX = randomUUID();
+    const paymentX = makePaymentUlid() as PaymentId;
+    const paymentsRepoA = makeDrizzlePaymentsRepo(tenantA.ctx.slug);
+
+    await runInTenant(tenantA.ctx, async (tx) => {
+      await tx.insert(invoices).values({
+        tenantId: tenantA.ctx.slug,
+        invoiceId: invoiceX,
+        memberId,
+        planYear: 2026,
+        planId: 'rfnd-plan',
+        draftByUserId: user.userId,
+      });
+    });
+    await paymentsRepoA.withTx(async (tx) =>
+      paymentsRepoA.insert(tx, {
+        id: paymentX,
+        tenantId: tenantA.ctx.slug,
+        invoiceId: invoiceX,
+        memberId,
+        method: 'promptpay',
+        amountSatang: asSatang(5_350_000n),
+        processorPaymentIntentId: `pi_test_${randomUUID().slice(0, 8)}`,
+        processorEnvironment: 'test',
+        attemptSeq: 1,
+        initiatedAt: new Date(),
+        actorUserId: user.userId,
+        correlationId: 'corr-rfnd-X',
+      }),
+    );
+
+    // Seed 2 PENDING + 1 FAILED refund on invoiceX.
+    await runInTenant(tenantA.ctx, async (tx) => {
+      for (let i = 0; i < 2; i += 1) {
+        await repo.insert(tx, {
+          id: makeRefundUlid(),
+          tenantId: tenantA.ctx.slug,
+          paymentId: paymentX,
+          invoiceId: invoiceX,
+          amountSatang: asSatang(25_000n),
+          reason: `pending-${i}`,
+          status: 'pending',
+          processorRefundId: null,
+          creditNoteWaiverReason: null,
+          initiatorUserId: user.userId,
+          correlationId: `corr-cnt-${i}`,
+          initiatedAt: new Date(),
+        });
+      }
+      const failedId = makeRefundUlid();
+      await repo.insert(tx, {
+        id: failedId,
+        tenantId: tenantA.ctx.slug,
+        paymentId: paymentX,
+        invoiceId: invoiceX,
+        amountSatang: asSatang(10_000n),
+        reason: 'failed-one',
+        status: 'pending',
+        processorRefundId: null,
+        creditNoteWaiverReason: null,
+        initiatorUserId: user.userId,
+        correlationId: 'corr-cnt-failed',
+        initiatedAt: new Date(),
+      });
+      await repo.updateStatus(tx, {
+        refundId: failedId,
+        tenantId: tenantA.ctx.slug,
+        nextStatus: 'failed',
+        rejectionProof: proveProcessorSettledFailed('failed'),
+        failureReasonCode: 'retryable',
+        completedAt: new Date(),
+      });
+    });
+
+    // Counts ONLY the 2 pending — the failed row is excluded.
+    expect(await repo.countPendingByInvoice(tenantA.ctx.slug, invoiceX)).toBe(2);
+    // Invoice-scoped: a different invoice id with no refunds is 0 (invoiceX's
+    // pending refunds do not leak across the invoice_id filter).
+    expect(await repo.countPendingByInvoice(tenantA.ctx.slug, randomUUID())).toBe(0);
+    // RLS defence-in-depth: tenant B's repo, even handed tenant A's invoiceX,
+    // sees ZERO — `app.current_tenant` filters every foreign-tenant row (mirror
+    // of the getRefundContextForUpdate cross-tenant test above).
+    const repoB = makeDrizzleRefundsRepo(tenantB.ctx.slug);
+    expect(await repoB.countPendingByInvoice(tenantA.ctx.slug, invoiceX)).toBe(0);
   });
 
   // --- RR-1 / H-b: optimistic-concurrency guard returns null on miss ------
@@ -365,6 +469,7 @@ describe('DrizzleRefundsRepo — live Neon', () => {
         reason: 'RR-1 race target',
         status: 'pending',
         processorRefundId: null,
+        creditNoteWaiverReason: null,
         initiatorUserId: user.userId,
         correlationId: 'corr-rr1',
         initiatedAt,
@@ -391,6 +496,7 @@ describe('DrizzleRefundsRepo — live Neon', () => {
         refundId,
         tenantId: tenantA.ctx.slug,
         nextStatus: 'failed',
+        rejectionProof: proveProcessorSettledFailed('failed'),
         failureReasonCode: 'stale_pending_sweep',
         completedAt: new Date(completedAt.getTime() + 5_000),
         expectedCurrentStatus: 'pending',
@@ -410,6 +516,7 @@ describe('DrizzleRefundsRepo — live Neon', () => {
           refundId: makeRefundUlid(), // never inserted
           tenantId: tenantA.ctx.slug,
           nextStatus: 'failed',
+          rejectionProof: proveProcessorSettledFailed('failed'),
           failureReasonCode: 'retryable',
           completedAt: new Date(),
         }),
@@ -443,6 +550,7 @@ describe('DrizzleRefundsRepo — live Neon', () => {
         processorRefundId: null,
         initiatorUserId: user.userId,
         correlationId: 'corr-attach-1',
+        creditNoteWaiverReason: null,
         initiatedAt: new Date(),
       });
 
@@ -504,6 +612,7 @@ describe('DrizzleRefundsRepo — live Neon', () => {
         reason: 'lock test',
         status: 'pending',
         processorRefundId: null,
+        creditNoteWaiverReason: null,
         initiatorUserId: user.userId,
         correlationId: 'corr-lock-1',
         initiatedAt,
@@ -566,6 +675,7 @@ describe('DrizzleRefundsRepo — live Neon', () => {
         processorRefundId,
         initiatorUserId: user.userId,
         correlationId: 'corr-xtenant-1',
+        creditNoteWaiverReason: null,
         initiatedAt: new Date(),
       });
     });
@@ -640,6 +750,7 @@ describe('DrizzleRefundsRepo — live Neon', () => {
           reason: 'a14-order',
           status: 'pending',
           processorRefundId: null,
+          creditNoteWaiverReason: null,
           initiatorUserId: user.userId,
           correlationId: 'corr-a14-order',
           initiatedAt,
@@ -656,4 +767,702 @@ describe('DrizzleRefundsRepo — live Neon', () => {
       expect(mine).toEqual([idOldest, idMiddle, idNewest]);
     });
   });
+  // ── money-remediation Task 6, change 5 ────────────────────────────────────
+  //
+  // `settledUnbookedCount` gates a 409 that PERMANENTLY blocks further refunds
+  // on the payment, so which rows it counts is the whole safety property.
+  //
+  // The remediation plan originally specified the predicate as
+  // `status='failed' AND processor_refund_id IS NOT NULL` — which also
+  // matches every refund Stripe legitimately settled `failed`/`canceled`
+  // (three writers produce exactly that shape, keeping the `re_…` id for
+  // forensics). Measured on the dev branch when this was written: 18 such
+  // rows, and zero real F-3 casualties. Shipping that predicate would have
+  // 409-blocked all of them forever, unrecoverable by runbook because the
+  // data is not corrupt.
+  //
+  // The two halves below are therefore inseparable. A test that only asserted
+  // the F-3 row IS counted would pass under the over-broad predicate.
+  it('settledUnbookedCount counts ONLY the F-3 casualty shape, never a benign Stripe-settled failure', async () => {
+    const repo = makeDrizzleRefundsRepo(tenantA.ctx.slug);
+    // Own invoice + payment: `payments_one_active_per_invoice` forbids a
+    // second active payment on the shared fixture invoice, and an isolated
+    // partition also keeps the absolute counts below immune to whatever the
+    // sibling tests in this file leave behind.
+    const backstopInvoiceId = randomUUID();
+    const paymentId = makePaymentUlid() as PaymentId;
+    const paymentsRepo = makeDrizzlePaymentsRepo(tenantA.ctx.slug);
+    await runInTenant(tenantA.ctx, async (tx) => {
+      await tx.insert(invoices).values({
+        tenantId: tenantA.ctx.slug,
+        invoiceId: backstopInvoiceId,
+        memberId,
+        planYear: 2026,
+        planId: 'rfnd-plan',
+        draftByUserId: user.userId,
+      });
+    });
+    await paymentsRepo.withTx(async (tx) =>
+      paymentsRepo.insert(tx, {
+        id: paymentId,
+        tenantId: tenantA.ctx.slug,
+        invoiceId: backstopInvoiceId,
+        memberId,
+        method: 'card',
+        amountSatang: asSatang(5_350_000n),
+        processorPaymentIntentId: `pi_test_${randomUUID().slice(0, 8)}`,
+        processorEnvironment: 'test',
+        attemptSeq: 1,
+        initiatedAt: new Date(),
+        actorUserId: user.userId,
+        correlationId: 'corr-backstop',
+      }),
+    );
+
+    const seedFailed = async (reasonCode: string): Promise<void> => {
+      const refundId = makeRefundUlid();
+      await runInTenant(tenantA.ctx, async (tx) => {
+        await repo.insert(tx, {
+          id: refundId,
+          tenantId: tenantA.ctx.slug,
+          paymentId,
+          invoiceId: backstopInvoiceId,
+          amountSatang: asSatang(100_000n),
+          reason: `seed ${reasonCode}`,
+          status: 'pending',
+          processorRefundId: null,
+          initiatorUserId: user.userId,
+          correlationId: 'corr-backstop',
+          creditNoteWaiverReason: null,
+          initiatedAt: new Date(),
+        });
+        await repo.updateStatus(tx, {
+          refundId,
+          tenantId: tenantA.ctx.slug,
+          nextStatus: 'failed',
+          rejectionProof: proveProcessorSettledFailed('failed'),
+          failureReasonCode: reasonCode,
+          // Non-null processor id on BOTH rows — that is precisely why the
+          // reason-code predicate has to carry the discrimination.
+          processorRefundId: `re_test_${randomUUID().slice(0, 8)}`,
+          completedAt: new Date(),
+        });
+      });
+    };
+
+    // (a) BENIGN — Stripe created the refund and then settled it failed. No
+    //     money moved; the id is kept so a late webhook can match. This must
+    //     NOT block future refunds.
+    await seedFailed('stripe_refund_failed');
+    const afterBenign = await runInTenant(tenantA.ctx, (tx) =>
+      repo.getRefundContextForUpdate(tx, tenantA.ctx.slug, paymentId),
+    );
+    expect(afterBenign.settledUnbookedCount).toBe(0);
+
+    // (b) BENIGN — the canceled variant, same reasoning.
+    await seedFailed('stripe_refund_canceled');
+    const afterCanceled = await runInTenant(tenantA.ctx, (tx) =>
+      repo.getRefundContextForUpdate(tx, tenantA.ctx.slug, paymentId),
+    );
+    expect(afterCanceled.settledUnbookedCount).toBe(0);
+
+    // (c) THE REAL THING — written by the pre-remediation `issue-refund.ts`
+    //     AFTER Stripe confirmed the refund succeeded. Money left; the row
+    //     lies. Both interpolated variants of the reason code are covered by
+    //     the `f4_bridge_%` prefix.
+    await seedFailed('f4_bridge_phase_b_db_error');
+    const afterCasualty = await runInTenant(tenantA.ctx, (tx) =>
+      repo.getRefundContextForUpdate(tx, tenantA.ctx.slug, paymentId),
+    );
+    expect(afterCasualty.settledUnbookedCount).toBe(1);
+
+    await seedFailed('f4_bridge_remainder_credit_exceeded');
+    const afterSecond = await runInTenant(tenantA.ctx, (tx) =>
+      repo.getRefundContextForUpdate(tx, tenantA.ctx.slug, paymentId),
+    );
+    expect(afterSecond.settledUnbookedCount).toBe(2);
+
+    // The benign rows must not have leaked into the money aggregate either —
+    // `succeededSumSatang` drives the remaining-refundable invariant, and the
+    // plan explicitly warns against folding this count into it (webhook-mode
+    // `finalizeSucceededRefund` reads the same aggregate and would flip a
+    // payment to `refunded` on money that never settled).
+    expect(afterSecond.succeededSumSatang).toBe(asSatang(0n));
+  });
+
+
+  // -------------------------------------------------------------------------
+  // Money-remediation Task 9 (F-9) — findAwaitingAttachByAppRefundId.
+  //
+  // Resolves a refund by the marker `issueRefund` stamps on Stripe BEFORE the
+  // external call, closing the window where `charge.refunded` overtakes
+  // `attachProcessorRefundId` and fires a false 10-year OOB forensic.
+  //
+  // These run against live Neon on purpose: the `IS NULL` predicate, the
+  // two-table tenant filter and the INNER join are SQL-level guarantees that a
+  // mock cannot demonstrate, and RLS only exists here.
+  // -------------------------------------------------------------------------
+  it('F-9: resolves an unattached pending refund + returns the parent PI', async () => {
+    const repo = makeDrizzleRefundsRepo(tenantA.ctx.slug);
+    const refundId = makeRefundUlid();
+
+    await runInTenant(tenantA.ctx, async (tx) => {
+      await repo.insert(tx, {
+        id: refundId,
+        tenantId: tenantA.ctx.slug,
+        paymentId: paymentIdA,
+        invoiceId,
+        amountSatang: asSatang(70_000n),
+        reason: 'f9 awaiting attach',
+        status: 'pending',
+        processorRefundId: null,
+        initiatorUserId: user.userId,
+        correlationId: 'corr-f9-1',
+        creditNoteWaiverReason: null,
+        initiatedAt: new Date(),
+      });
+    });
+
+    // Read the parent payment's real PI so the assertion pins the JOIN rather
+    // than merely "some non-empty string".
+    const [parent] = await runInTenant(tenantA.ctx, (tx) =>
+      tx
+        .select({ pi: payments.processorPaymentIntentId })
+        .from(payments)
+        .where(eq(payments.id, paymentIdA))
+        .limit(1),
+    );
+
+    const found = await runInTenant(tenantA.ctx, (tx) =>
+      repo.findAwaitingAttachByAppRefundId(tx, tenantA.ctx.slug, refundId),
+    );
+
+    expect(found).not.toBeNull();
+    expect(found?.id).toBe(refundId);
+    expect(found?.status).toBe('pending');
+    expect(found?.amountSatang).toBe(70_000n);
+    expect(found?.invoiceId).toBe(invoiceId);
+    expect(found?.parentProcessorPaymentIntentId).toBe(parent?.pi);
+  });
+
+  /**
+   * THE LOAD-BEARING PREDICATE. A row that already carries a
+   * `processor_refund_id` must be unreachable through this method — that is
+   * what stops an attacker-supplied `metadata.refundId` from addressing an
+   * already-matched refund and laundering it. Structural, not advisory.
+   */
+  it('F-9: returns null once processor_refund_id is attached (IS NULL predicate)', async () => {
+    const repo = makeDrizzleRefundsRepo(tenantA.ctx.slug);
+    const refundId = makeRefundUlid();
+    const processorRefundId = `re_f9_attached_${randomUUID().slice(0, 8)}`;
+
+    await runInTenant(tenantA.ctx, async (tx) => {
+      await repo.insert(tx, {
+        id: refundId,
+        tenantId: tenantA.ctx.slug,
+        paymentId: paymentIdA,
+        invoiceId,
+        amountSatang: asSatang(11_000n),
+        reason: 'f9 already attached',
+        status: 'pending',
+        processorRefundId: null,
+        initiatorUserId: user.userId,
+        correlationId: 'corr-f9-2',
+        creditNoteWaiverReason: null,
+        initiatedAt: new Date(),
+      });
+    });
+
+    // Before the attach it IS reachable — proving the null below is caused by
+    // the attach and not by an unrelated seeding failure.
+    const before = await runInTenant(tenantA.ctx, (tx) =>
+      repo.findAwaitingAttachByAppRefundId(tx, tenantA.ctx.slug, refundId),
+    );
+    expect(before).not.toBeNull();
+
+    await runInTenant(tenantA.ctx, (tx) =>
+      repo.attachProcessorRefundId(tx, {
+        refundId,
+        tenantId: tenantA.ctx.slug,
+        processorRefundId,
+      }),
+    );
+
+    const after = await runInTenant(tenantA.ctx, (tx) =>
+      repo.findAwaitingAttachByAppRefundId(tx, tenantA.ctx.slug, refundId),
+    );
+    expect(after).toBeNull();
+  });
+
+  /**
+   * Principle I, Review-Gate blocker. A forged `metadata.refundId` naming
+   * another tenant's row must not resolve — probed the hard way, with tenant
+   * A's id passed explicitly as the app-layer filter so the DB-layer RLS
+   * backstop is tested independently of the WHERE clause.
+   */
+  it('F-9 cross-tenant: tenant B cannot resolve tenant A unattached refund', async () => {
+    const repo = makeDrizzleRefundsRepo(tenantA.ctx.slug);
+    const refundId = makeRefundUlid();
+
+    await runInTenant(tenantA.ctx, async (tx) => {
+      await repo.insert(tx, {
+        id: refundId,
+        tenantId: tenantA.ctx.slug,
+        paymentId: paymentIdA,
+        invoiceId,
+        amountSatang: asSatang(9_000n),
+        reason: 'f9 cross-tenant probe target',
+        status: 'pending',
+        processorRefundId: null,
+        initiatorUserId: user.userId,
+        correlationId: 'corr-f9-xtenant',
+        creditNoteWaiverReason: null,
+        initiatedAt: new Date(),
+      });
+    });
+
+    // Sanity: it IS resolvable from its own tenant, so a null from B is
+    // isolation and not a broken fixture.
+    const fromA = await runInTenant(tenantA.ctx, (tx) =>
+      repo.findAwaitingAttachByAppRefundId(tx, tenantA.ctx.slug, refundId),
+    );
+    expect(fromA).not.toBeNull();
+
+    const repoB = makeDrizzleRefundsRepo(tenantB.ctx.slug);
+    // (a) B's session, A's tenantId as the filter -> RLS must block.
+    const probeWithATenantId = await runInTenant(tenantB.ctx, (tx) =>
+      repoB.findAwaitingAttachByAppRefundId(tx, tenantA.ctx.slug, refundId),
+    );
+    expect(probeWithATenantId).toBeNull();
+
+    // (b) B's session, B's own tenantId -> the WHERE clause must block.
+    const probeWithBTenantId = await runInTenant(tenantB.ctx, (tx) =>
+      repoB.findAwaitingAttachByAppRefundId(tx, tenantB.ctx.slug, refundId),
+    );
+    expect(probeWithBTenantId).toBeNull();
+  });
+
+  /**
+   * PINS THE APP-LAYER TENANT FILTER, INDEPENDENTLY OF RLS.
+   *
+   * The cross-tenant test above runs from tenant B's session, so RLS alone
+   * blocks it — deleting the WHERE-clause tenant filter leaves that test GREEN
+   * (verified by mutation). Principle I requires BOTH layers, so one of them
+   * being untested is a real gap, not a stylistic one.
+   *
+   * This probes from tenant A's OWN session (RLS permits the row) while passing
+   * a DIFFERENT tenantId as the argument. Only the app-layer predicate can
+   * produce null here, so the mutation that removes it dies on this test.
+   */
+  it('F-9: app-layer tenant filter blocks a mismatched tenantId within a permitted session', async () => {
+    const repo = makeDrizzleRefundsRepo(tenantA.ctx.slug);
+    const refundId = makeRefundUlid();
+
+    await runInTenant(tenantA.ctx, async (tx) => {
+      await repo.insert(tx, {
+        id: refundId,
+        tenantId: tenantA.ctx.slug,
+        paymentId: paymentIdA,
+        invoiceId,
+        amountSatang: asSatang(8_000n),
+        reason: 'f9 app-layer filter probe',
+        status: 'pending',
+        processorRefundId: null,
+        initiatorUserId: user.userId,
+        correlationId: 'corr-f9-applayer',
+        creditNoteWaiverReason: null,
+        initiatedAt: new Date(),
+      });
+    });
+
+    // Same session, correct tenantId -> resolves. Anchors the null below.
+    const withOwnTenantId = await runInTenant(tenantA.ctx, (tx) =>
+      repo.findAwaitingAttachByAppRefundId(tx, tenantA.ctx.slug, refundId),
+    );
+    expect(withOwnTenantId).not.toBeNull();
+
+    // Same session (RLS satisfied), WRONG tenantId -> only the WHERE clause
+    // can reject this.
+    const withForeignTenantId = await runInTenant(tenantA.ctx, (tx) =>
+      repo.findAwaitingAttachByAppRefundId(tx, tenantB.ctx.slug, refundId),
+    );
+    expect(withForeignTenantId).toBeNull();
+  });
+
+  it('F-9: returns null for an unknown marker', async () => {
+    const repo = makeDrizzleRefundsRepo(tenantA.ctx.slug);
+    const result = await runInTenant(tenantA.ctx, (tx) =>
+      repo.findAwaitingAttachByAppRefundId(tx, tenantA.ctx.slug, makeRefundUlid()),
+    );
+    expect(result).toBeNull();
+  });
+
+
+  // -------------------------------------------------------------------------
+  // Track B — migration 0268 completeness CHECKs, against live Postgres
+  // -------------------------------------------------------------------------
+  //
+  // These pin a DESIGN DECISION, not just DDL. The completeness CHECK keys on
+  // `credit_note_waived_at` (a settlement fact) and NOT on
+  // `credit_note_waiver_reason` (a Phase-A intent). The reason-keyed variant
+  // looks equivalent and is not: it REJECTS the two states below, and both are
+  // reached only AFTER Stripe has already moved the money — leaving the row
+  // stuck `pending` forever, which then blocks every future refund on that
+  // payment.
+  //
+  // A unit test cannot make this argument. Only the database can say which
+  // shapes it will actually accept.
+  describe('0268 — waiver completeness CHECKs', () => {
+    /** Raw insert so a constraint can be violated deliberately. */
+    async function insertRefund(cols: Record<string, unknown>): Promise<void> {
+      await runInTenant(tenantA.ctx, async (tx) => {
+        await tx.insert(refunds).values({
+          id: makeRefundUlid(),
+          tenantId: tenantA.ctx.slug,
+          paymentId: paymentIdA,
+          invoiceId,
+          amountSatang: asSatang(1_000n),
+          reason: '0268 constraint probe',
+          status: 'pending',
+          processorRefundId: null,
+          creditNoteId: null,
+          creditNoteWaivedAt: null,
+          creditNoteWaiverReason: null,
+          initiatorUserId: user.userId,
+          correlationId: 'corr-0268',
+          initiatedAt: new Date(),
+          ...cols,
+        } as never);
+      });
+    }
+
+    /**
+     * Drizzle wraps a driver error as `Failed query: <sql>`, so the CHECK's name
+     * is not in `.message` — it is on the postgres.js cause. Asserting the NAME
+     * (not merely "it threw") is what makes these tests prove WHICH constraint
+     * fired; any bad insert throws, and a test that only asserts rejection would
+     * pass even if the constraint under test had been dropped.
+     */
+    async function expectConstraintViolation(
+      run: Promise<void>,
+      constraint: string,
+    ): Promise<void> {
+      let caught: unknown;
+      try {
+        await run;
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught, `expected ${constraint} to reject the insert`).toBeDefined();
+      const cause = (caught as { cause?: { constraint_name?: string } }).cause;
+      const name =
+        cause?.constraint_name ??
+        (caught as { constraint_name?: string }).constraint_name;
+      expect(name).toBe(constraint);
+    }
+
+    it('ACCEPTS a pending row that already carries the waiver reason AND a processor id', async () => {
+      // THE case that decided the design. This is the real Phase-A → Stripe
+      // sequence: the reason is stamped at insert while the row is pending,
+      // then the processor id is attached once Stripe responds. A CHECK keyed
+      // on the reason would reject this — after the money had already moved.
+      await expect(
+        insertRefund({
+          status: 'pending',
+          processorRefundId: `re_0268_${Date.now()}`,
+          creditNoteWaiverReason: 'section_105_receipt',
+          creditNoteWaivedAt: null,
+        }),
+      ).resolves.toBeUndefined();
+    });
+
+    it('a FAILED settlement KEEPS the waiver reason (intent survives outcome)', async () => {
+      // The second state reason-keying would break. Driven through the repo's
+      // real failure path rather than a raw insert, because writing `failed`
+      // requires rejection proof — a raw insert would be rejected for an
+      // unrelated reason and prove nothing about the waiver constraints.
+      const repo = makeDrizzleRefundsRepo(tenantA.ctx.slug);
+      const refundId = makeRefundUlid();
+      await runInTenant(tenantA.ctx, async (tx) => {
+        await repo.insert(tx, {
+          id: refundId,
+          tenantId: tenantA.ctx.slug,
+          paymentId: paymentIdA,
+          invoiceId,
+          amountSatang: asSatang(1_000n),
+          reason: '0268 failed-keeps-reason probe',
+          status: 'pending',
+          processorRefundId: null,
+          initiatorUserId: user.userId,
+          correlationId: 'corr-0268f',
+          creditNoteWaiverReason: 'invoice_voided',
+          initiatedAt: new Date(),
+        });
+      });
+
+      const updated = await runInTenant(tenantA.ctx, async (tx) =>
+        repo.updateStatus(tx, {
+          refundId,
+          tenantId: tenantA.ctx.slug,
+          nextStatus: 'failed',
+          rejectionProof: proveProcessorSettledFailed('failed'),
+          failureReasonCode: 'retryable',
+          completedAt: new Date(),
+        }),
+      );
+
+      expect(updated?.status).toBe('failed');
+
+      // Read the waiver columns straight from Postgres: `RefundRow` (the repo's
+      // return shape) does not carry them, so the assertion has to go to the
+      // source rather than trust a projection that cannot see the fields.
+      const row = await runInTenant(tenantA.ctx, async (tx) => {
+        const rows = (await tx.execute(sql`
+          SELECT credit_note_waiver_reason, credit_note_waived_at
+            FROM refunds
+           WHERE tenant_id = ${tenantA.ctx.slug} AND id = ${refundId}
+        `)) as unknown as Array<{
+          credit_note_waiver_reason: string | null;
+          credit_note_waived_at: Date | null;
+        }>;
+        return rows[0];
+      });
+
+      // The decision is retained; only the OUTCOME column stayed null. This is
+      // precisely why the completeness CHECK cannot key on the reason.
+      expect(row?.credit_note_waiver_reason).toBe('invoice_voided');
+      expect(row?.credit_note_waived_at).toBeNull();
+    });
+
+    it('REJECTS succeeded with neither a credit note nor a waiver (refunds_succeeded_iff_documented)', async () => {
+      await expectConstraintViolation(
+        insertRefund({
+          status: 'succeeded',
+          processorRefundId: `re_0268u_${Date.now()}`,
+          completedAt: new Date(),
+          creditNoteId: null,
+          creditNoteWaivedAt: null,
+        }),
+        'refunds_succeeded_iff_documented',
+      );
+    });
+
+    it('REJECTS a waiver stamped without a reason (refunds_waived_at_requires_reason)', async () => {
+      // The reason is the only field telling the accountant WHY no §86/10
+      // exists. A waiver without one is an unexplained hole in the tax trail.
+      await expectConstraintViolation(
+        insertRefund({
+          status: 'succeeded',
+          processorRefundId: `re_0268r_${Date.now()}`,
+          completedAt: new Date(),
+          creditNoteWaivedAt: new Date(),
+          creditNoteWaiverReason: null,
+        }),
+        'refunds_waived_at_requires_reason',
+      );
+    });
+
+    it('REJECTS an unknown waiver reason (refunds_waiver_reason_enum)', async () => {
+      // The reason strings are a STORAGE contract — renaming one needs a
+      // migration, not just an edit to the Domain union.
+      await expectConstraintViolation(
+        insertRefund({
+          status: 'pending',
+          creditNoteWaiverReason: 'invoice_cancelled',
+        }),
+        'refunds_waiver_reason_enum',
+      );
+    });
+
+    it('REJECTS a row carrying BOTH a credit note and a waiver (refunds_cn_xor_waived)', async () => {
+      // The one CHECK the other four tests did not pin by name, and the one F9's
+      // no-double-subtract correctness leans on: `invoice-source-adapter.ts`
+      // subtracts BOTH `credited_total_satang` (the credit-noted reversals) and
+      // `sumWaivedByInvoice` (the waived ones), safe ONLY because this XOR makes
+      // them mutually exclusive per refund row. If it were dropped, a single row
+      // carrying both instruments would be netted twice and revenue would
+      // understate by the refund amount. `credit_note_id` is a real FK, so seed a
+      // credit note first, then try to also stamp `credit_note_waived_at`.
+      const cnId = await runInTenant(tenantA.ctx, async (tx) => {
+        const id = randomUUID();
+        await tx.execute(sql`
+          INSERT INTO credit_notes (
+            tenant_id, credit_note_id, original_invoice_id, fiscal_year,
+            sequence_number, document_number, issue_date, issued_by_user_id,
+            reason, credit_amount_satang, vat_satang, total_satang,
+            tenant_identity_snapshot, member_identity_snapshot,
+            pdf_blob_key, pdf_sha256, pdf_template_version
+          ) VALUES (
+            ${tenantA.ctx.slug}, ${id}, ${invoiceId}, 2026,
+            90000, 'TC-2026-090000', '2026-04-16', ${user.userId},
+            'xor probe', 1000, 70, 1070,
+            '{}'::jsonb, '{}'::jsonb,
+            'invoicing/xor/seed.pdf', ${'a'.repeat(64)}, 1
+          )`);
+        return id;
+      });
+
+      await expectConstraintViolation(
+        insertRefund({
+          status: 'succeeded',
+          processorRefundId: `re_0268x_${Date.now()}`,
+          completedAt: new Date(),
+          creditNoteId: cnId,
+          creditNoteWaivedAt: new Date(),
+          creditNoteWaiverReason: 'section_105_receipt',
+        }),
+        'refunds_cn_xor_waived',
+      );
+    });
+
+    it('the DB CHECK enumerates EXACTLY the Domain waiver reasons (no drift)', async () => {
+      // `credit_note_waiver_reason` is a TEXT column + CHECK, not a pg_enum, so
+      // `assert-enum-parity.ts` does not cover it and the `as const satisfies`
+      // in Domain checks assignability, not that the DB agrees. This closes that
+      // gap: add a third ground and forget the migration → the CHECK silently
+      // rejects it at Phase-A insert (money-safe, but the ground is dead and no
+      // other test notices). Assert the live constraint mentions every reason.
+      const def = await runInTenant(tenantA.ctx, async (tx) => {
+        const rows = (await tx.execute(sql`
+          SELECT pg_get_constraintdef(oid) AS def
+            FROM pg_constraint
+           WHERE conname = 'refunds_waiver_reason_enum'
+             AND conrelid = 'refunds'::regclass
+        `)) as unknown as Array<{ def: string }>;
+        return rows[0]?.def ?? '';
+      });
+      expect(def).not.toBe('');
+      for (const reason of CREDIT_NOTE_WAIVER_REASONS) {
+        expect(def).toContain(`'${reason}'`);
+      }
+      // And the CHECK lists no MORE than the Domain knows — a reason in the DB
+      // but not the union is the same drift in the other direction.
+      const dbReasons = [...def.matchAll(/'([a-z0-9_]+)'/g)].map((m) => m[1]);
+      expect(new Set(dbReasons)).toEqual(new Set(CREDIT_NOTE_WAIVER_REASONS));
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Track B — sumWaivedByInvoice (the F9 netting read) against live Postgres
+  // -------------------------------------------------------------------------
+  //
+  // The whole F9 revenue correction rests on this aggregate, and until now it
+  // ran only on the empty table or through a structural typeof check. This
+  // seeds every row class it must discriminate and asserts the exact satang:
+  //   - two SUCCEEDED WAIVED refunds on one invoice  → summed, INCLUDED
+  //   - a SUCCEEDED CREDIT-NOTED refund               → EXCLUDED (double-count guard)
+  //   - a PENDING refund carrying a waiver reason      → EXCLUDED (proves the
+  //       filter keys on `credit_note_waived_at`, the settlement timestamp, and
+  //       NOT on `credit_note_waiver_reason`, the Phase-A intent)
+  //   - a cross-tenant probe                           → tenant B's aggregate
+  //       sees none of tenant A's waived money (RLS + the explicit tenant_id
+  //       predicate; a repo reaching the global `db` would leak here).
+  describe('sumWaivedByInvoice — F9 waived-refund netting read', () => {
+    // Drizzle builder (not a raw `sql` template) — the postgres.js driver
+    // rejects a bigint JS value passed as a raw parameter, so amount_satang
+    // must go through `asSatang`, exactly as the 0268-block `insertRefund` does.
+    async function rawInsertRefund(cols: {
+      status: 'pending' | 'succeeded' | 'failed';
+      amountSatang: bigint;
+      processorRefundId?: string | null;
+      creditNoteId?: string | null;
+      creditNoteWaiverReason?: CreditNoteWaiverReason | null;
+      creditNoteWaivedAt?: Date | null;
+      completedAt?: Date | null;
+    }): Promise<void> {
+      await runInTenant(tenantA.ctx, async (tx) => {
+        await tx.insert(refunds).values({
+          id: randomUUID(),
+          tenantId: tenantA.ctx.slug,
+          paymentId: paymentIdA,
+          invoiceId,
+          amountSatang: asSatang(cols.amountSatang),
+          reason: 'sumWaived probe',
+          status: cols.status,
+          processorRefundId: cols.processorRefundId ?? null,
+          creditNoteId: cols.creditNoteId ?? null,
+          creditNoteWaiverReason: cols.creditNoteWaiverReason ?? null,
+          creditNoteWaivedAt: cols.creditNoteWaivedAt ?? null,
+          initiatedAt: new Date(),
+          completedAt: cols.completedAt ?? null,
+          initiatorUserId: user.userId,
+          correlationId: 'corr-sumwaived',
+        });
+      });
+    }
+
+    it('sums SUCCEEDED WAIVED rows per invoice, excluding credit-noted, pending, and cross-tenant', async () => {
+      // A real credit note so the credit-noted refund's FK is satisfiable.
+      const cnId = await runInTenant(tenantA.ctx, async (tx) => {
+        const id = randomUUID();
+        await tx.execute(sql`
+          INSERT INTO credit_notes (
+            tenant_id, credit_note_id, original_invoice_id, fiscal_year,
+            sequence_number, document_number, issue_date, issued_by_user_id,
+            reason, credit_amount_satang, vat_satang, total_satang,
+            tenant_identity_snapshot, member_identity_snapshot,
+            pdf_blob_key, pdf_sha256, pdf_template_version
+          ) VALUES (
+            ${tenantA.ctx.slug}, ${id}, ${invoiceId}, 2026,
+            90001, 'TC-2026-090001', '2026-04-16', ${user.userId},
+            'sumWaived cn', 1000, 70, 1070,
+            '{}'::jsonb, '{}'::jsonb,
+            'invoicing/sumwaived/seed.pdf', ${'b'.repeat(64)}, 1
+          )`);
+        return id;
+      });
+
+      // INCLUDED: two succeeded waived refunds on the fixture invoice → summed.
+      await rawInsertRefund({
+        status: 'succeeded',
+        amountSatang: 30_000n,
+        processorRefundId: `re_sw_1_${Date.now()}`,
+        creditNoteWaiverReason: 'section_105_receipt',
+        creditNoteWaivedAt: new Date(),
+        completedAt: new Date(),
+      });
+      await rawInsertRefund({
+        status: 'succeeded',
+        amountSatang: 10_000n,
+        processorRefundId: `re_sw_2_${Date.now()}`,
+        creditNoteWaiverReason: 'invoice_voided',
+        creditNoteWaivedAt: new Date(),
+        completedAt: new Date(),
+      });
+      // EXCLUDED: a succeeded refund documented by a CREDIT NOTE (waived_at NULL)
+      // — the double-count guard: it is already netted via credited_total_satang.
+      await rawInsertRefund({
+        status: 'succeeded',
+        amountSatang: 20_000n,
+        processorRefundId: `re_sw_cn_${Date.now()}`,
+        creditNoteId: cnId,
+        completedAt: new Date(),
+      });
+      // EXCLUDED: a PENDING refund that already carries the waiver reason but no
+      // timestamp — proves the filter is on the timestamp, not the reason.
+      await rawInsertRefund({
+        status: 'pending',
+        amountSatang: 50_000n,
+        creditNoteWaiverReason: 'invoice_voided',
+      });
+
+      const map = await makeDrizzleRefundsRepo(
+        tenantA.ctx.slug,
+      ).sumWaivedByInvoice(tenantA.ctx.slug);
+
+      // Only the invoice with waived refunds appears, keyed by invoiceId, summed
+      // to 40,000 (30,000 + 10,000) — never 60,000 (would mean the credit-noted
+      // row leaked in) and never 90,000 (the pending row too).
+      expect(map.size).toBe(1);
+      expect(map.get(invoiceId)).toBe(40_000n);
+
+      // Cross-tenant: tenant B's aggregate sees none of tenant A's waived money.
+      const mapB = await makeDrizzleRefundsRepo(
+        tenantB.ctx.slug,
+      ).sumWaivedByInvoice(tenantB.ctx.slug);
+      expect(mapB.has(invoiceId)).toBe(false);
+      expect(mapB.size).toBe(0);
+    }, 60_000);
+  });
+
 });

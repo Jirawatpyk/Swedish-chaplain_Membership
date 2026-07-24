@@ -971,7 +971,31 @@
         "affectedCount": "{count, plural, =0 {No members affected} one {# member affected} other {# members affected}}",
         "confirm": "Confirm bundle change",
         "cancel": "Cancel",
-        "loading": "Calculating affected members…"
+        "loading": "Calculating affected members…",
+        "noBundle": "None"
+      },
+      "planChangeConfirm": {
+        "title": "Confirm plan change",
+        "description": "You are changing this member's membership plan. Review the change before saving.",
+        "currentPlan": "Current plan",
+        "newPlan": "New plan",
+        "feeLabel": "Annual fee (excl. VAT)",
+        "feeUnknown": "Not available",
+        "yearOnlyNotice": "Only the plan year changes. The plan itself stays the same.",
+        "billingNoteHeading": "What this does and does not change",
+        "billingNoteRecord": "The member's plan on record changes immediately.",
+        "billingNoteCurrentInvoice": "Invoices that have already been issued are not changed. If the amount is now wrong, reissue or credit them separately.",
+        "billingNoteFutureCycles": "Renewal billing is not updated automatically. The next renewal invoice will still use the previously recorded plan until the renewal cycle is changed separately.",
+        "billingNoteFutureCyclesAutomatic": "Future renewal cycles will bill the new plan automatically. The current renewal period keeps its recorded price until it renews.",
+        "confirm": "Change plan",
+        "cancel": "Cancel"
+      },
+      "planChangeResult": {
+        "applied_to_open_cycle": "The current renewal period now bills the new plan.",
+        "deferred_invoice_already_issued": "The current renewal's invoice has already been issued, so the new plan applies from the next renewal. To apply it now, void and reissue that invoice.",
+        "deferred_term_length_change": "The plans have different term lengths, so the new plan applies from the next renewal.",
+        "deferred_immediate_not_enabled": "The new plan applies from the next renewal.",
+        "no_open_cycle": "There is no active renewal cycle, so the new plan applies at the next renewal."
       },
       "subtitle": "Member companies + primary contacts",
       "directory": {
@@ -1001,6 +1025,7 @@
           }
         },
         "resultsCount": "{count, plural, =0 {No members} one {# member} other {# members}}",
+        "resultsCountOfTotal": "Showing {count} of {total, plural, one {# member} other {# members}}",
         "sortByEngagement": "Sort by engagement",
         "sortByMemberNumber": "Sort by member number",
         "columns": {
@@ -1037,6 +1062,22 @@
         "membershipLapsedSr": "Membership lapsed — needs renewal",
         "membershipSuspended": "Suspended",
         "membershipSuspendedSr": "Membership suspended — benefits paused",
+        "portal": {
+          "linked": "Portal",
+          "linkedSr": "Portal account active",
+          "invited": "Invited",
+          "invitedSr": "Portal invitation sent, awaiting acceptance",
+          "expired": "Expired",
+          "expiredSr": "Portal invitation expired — needs re-sending",
+          "notInvited": "Not invited",
+          "notInvitedSr": "No portal invitation sent yet"
+        },
+        "portalChip": {
+          "label": "Needs portal invite",
+          "aria": "Needs portal invite, {count} members",
+          "unavailable": "Portal status unavailable",
+          "unavailableHint": "Couldn't load the count — refresh to try again"
+        },
         "tableCaption": "Members directory"
       },
       "emptyStates": {
@@ -1049,6 +1090,11 @@
           "title": "No members match these filters",
           "description": "Try clearing one or more filters.",
           "cta": "Clear filters"
+        },
+        "allInvited": {
+          "title": "Everyone has been invited",
+          "description": "Every member matching these filters already has a portal invitation.",
+          "cta": "Clear portal filter"
         },
         "error": {
           "title": "Could not load members",
@@ -1432,6 +1478,7 @@
           "turnoverHint": "Used to place the member in a plan's turnover band.",
           "registeredCapitalThb": "Registered capital (THB)",
           "plan": "Plan",
+          "planAnnualFee": "Annual fee",
           "planPlaceholder": "Select a plan…",
           "billingCycle": "Billing cycle",
           "billingCyclePlaceholder": "Select a billing cycle…",
@@ -1586,6 +1633,7 @@
         "confirmUnenrolAction": "Stop auto-invoicing",
         "success": "{count, plural, one {# member} other {# members}} {action}",
         "inviteQueued": "{invited, plural, one {# invitation queued} other {# invitations queued}}",
+        "inviteResent": "{resent, plural, one {# re-sent} other {# re-sent}}",
         "inviteSkipped": "{skipped, plural, one {# skipped} other {# skipped}}",
         "inviteFailed": "{failed, plural, one {# failed} other {# failed}}",
         "enrolSucceeded": "{enrolled, plural, one {# member enrolled} other {# members enrolled}}",
@@ -1887,10 +1935,12 @@
         "membershipEffect": {
           "legend": "What should happen to the membership?",
           "keep": {
-            "label": "Document correction / duplicate refund — membership unaffected"
+            "label": "Keep membership — document correction",
+            "description": "The member was NOT refunded for this period, so their membership coverage is retained."
           },
           "cancelMembership": {
-            "label": "Refund and cancel membership — active renewal cycles will be cancelled"
+            "label": "Refund and cancel membership",
+            "description": "The member is refunded and their active renewal cycles are cancelled."
           }
         },
         "errors": {
@@ -1898,10 +1948,11 @@
           "unknown": "An unknown error occurred. Please try again.",
           "concurrent": "This invoice was already credited or voided in another session. Refresh to see the latest status.",
           "refreshAction": "Refresh",
-          "receiptNotCreditable": "Receipts issued to a buyer without a Tax ID cannot be credited. Use a direct refund or void instead.",
-          "receiptNotRendered": "The tax receipt PDF is still being generated (or failed to render). A credit note can only be issued once the §86/4 receipt has rendered — wait a moment and retry, or re-render the receipt from the invoice page.",
+          "receiptNotCreditable": "This payment was issued a Section 105 receipt, not a tax invoice, so no credit note can be issued against it. To refund it, use the Refund action on the payment — it returns the money without a credit note.",
+          "receiptNotRendered": "The tax receipt PDF is still being generated, or failed to render. A credit note can only be issued once the §86/4 receipt has rendered. Wait a moment and retry — if it still fails, contact support to regenerate it.",
           "membershipEffectRequired": "Choose what should happen to the membership before issuing this credit note. Reload the page and try again.",
-          "codeFallback": "Error code: {code}"
+          "codeFallback": "Error code: {code}",
+          "refundInProgress": "A refund is currently being processed on this invoice's payment. Issuing a credit note now could conflict with it — wait until the refund settles, then try again."
         }
       },
       "list": {
@@ -2393,12 +2444,24 @@
           "annualFee": "Annual fee: {amount} THB (before VAT)",
           "changePlan": "Change member's plan →"
         },
+        "duplicateConfirm": {
+          "title": "This member already has an invoice for {year}",
+          "description": "A second invoice for the same membership year is allowed, but it creates another tax document. Review the existing one before you continue.",
+          "fields": {
+            "documentNumber": "Document number",
+            "status": "Status",
+            "amount": "Amount"
+          },
+          "notYetNumbered": "Not yet numbered (draft)",
+          "notYetTotalled": "Not yet totalled (draft)",
+          "viewExisting": "Open the existing invoice in a new tab",
+          "cancel": "Cancel",
+          "createAnyway": "Create a second invoice"
+        },
         "renewalContext": {
           "renewal": "Current period ends {periodTo} — paying this bill renews the membership ({from} to {to}).",
-          "firstPayment": "Membership period has not started — paying this bill starts the 12-month period from the payment date.",
-          "notApplicable": "No active membership period — this bill will not affect renewals (use the reactivation flow for lapsed members).",
-          "duplicateWarning": "This member already has an unpaid membership invoice, or their current period runs {periodTo} — another paid bill buys a further year.",
-          "duplicateWarningUnpaidOnly": "This member already has an unpaid membership invoice — another paid bill buys a further year."
+          "firstPayment": "Membership not active yet — paying this bill activates benefits from the payment date; the 12-month period is fixed to the enrolment date.",
+          "notApplicable": "No active membership period — this bill will not affect renewals (use the reactivation flow for lapsed members)."
         }
       },
       "detail": {
@@ -2729,7 +2792,9 @@
           "unknown": "An unknown error occurred. Please try again.",
           "concurrent": "This invoice was already voided or changed in another session. Refresh to see the latest status.",
           "refreshAction": "Refresh",
-          "codeFallback": "Error code: {code}"
+          "codeFallback": "Error code: {code}",
+          "refundInProgress": "A refund is currently being processed on this invoice's payment. Voiding now could conflict with it — wait until the refund settles, then try again.",
+          "paidMembershipRequiresCreditNote": "This paid membership invoice can't be voided. To reverse it, issue a credit note instead."
         }
       }
     },
@@ -3185,12 +3250,12 @@
         "no_invoice_backstop": "No renewal invoice was ever issued"
       },
       "urgencyPill": {
-        "t_90": "Due in 90d",
-        "t_60": "Due in 60d",
-        "t_30": "Due in 30d",
-        "t_14": "Due in 14d",
-        "t_7": "Due in 7d",
-        "t_0": "Due today",
+        "t_90": "Renews in 90d",
+        "t_60": "Renews in 60d",
+        "t_30": "Renews in 30d",
+        "t_14": "Renews in 14d",
+        "t_7": "Renews in 7d",
+        "t_0": "Renews today",
         "grace": "Grace period",
         "lapsed": "Lapsed"
       },
@@ -3247,6 +3312,8 @@
           "pending_admin_reactivation": "Pending admin reactivation"
         },
         "viewInvoice": "View invoice",
+        "invoiceCoveredLabel": "Covered",
+        "invoiceCoveredTitle": "This renewal period is already covered by an earlier payment — no renewal invoice is linked yet.",
         "noRows": "No members in this bucket.",
         "noRowsInBucket": "No members are due to renew in this window. Switch to another urgency tab to see pending renewals.",
         "noRowsInMonth": "No members renew in {month}.",
@@ -3644,14 +3711,16 @@
           "cancel": "Cancel",
           "submitting": "Recording…",
           "successToast": "Offline payment recorded — the cycle is now completed.",
-          "successReanchored": "Payment recorded — membership period now starts {date}.",
+          "successReanchored": "Payment recorded — membership activated (period from {date}).",
           "successNoEmailWarning": "No email on file — the receipt was not sent. Deliver it to the member manually.",
           "viewOrphanInvoice": "View invoice",
+          "viewExistingInvoice": "Open existing invoice",
           "error": {
             "cycle_not_found": "This cycle no longer exists — it may have already been removed.",
             "cycle_not_payable": "This cycle can no longer be marked paid in its current state.",
             "member_terminated": "This member's latest membership has lapsed — reactivate the member before recording a payment.",
             "f4_orphan_invoice": "An invoice was issued but the cycle could not be completed. Do NOT retry — open the invoice and resume from the invoice list.",
+            "membership_bill_already_exists": "This member already has an invoice for this membership year, so no new one was created. Open that invoice and record the payment there — it will complete this cycle.",
             "f4_failure": "The invoice could not be created. The cycle was left as-is — please try again.",
             "plan_not_found": "This member's plan for that year isn't in the fee catalogue yet — add the plan-year before marking paid.",
             "settings_missing": "Invoice settings haven't been configured for this organisation yet — set them up before marking paid.",
@@ -3757,6 +3826,12 @@
           "paid_invoice_volume_above_threshold": "Invoice volume above threshold",
           "multi_signal": "Multiple signals"
         },
+        "evidence": {
+          "declared_turnover_above_threshold": "Declared turnover {turnover} · threshold met {date}",
+          "paid_invoice_volume_above_threshold": "Paid invoices (12 mo) {volume} · threshold met {date}",
+          "multi_signal": "Declared turnover {turnover} · paid invoices (12 mo) {volume} · threshold met {date}",
+          "unavailable": "Evidence unavailable — verify manually before accepting"
+        },
         "empty_state": {
           "title": "No upgrade candidates this week",
           "subtitle": "The weekly evaluation cron found no members crossing an upgrade threshold.",
@@ -3778,20 +3853,42 @@
             "dialog_title": "Accept tier upgrade?",
             "confirm": "The upgrade will apply at the member's next renewal. The member will be notified by email and a verification task will be scheduled if the renewal is more than 180 days away.",
             "success": "Tier upgrade accepted",
-            "error": "Failed to accept tier upgrade"
+            "error": "Failed to accept tier upgrade",
+            "evidence_restated": "Evidence: {evidence}. This moves the member from {fromPlan} ({fromFee}) to {toPlan} ({toFee}) — their annual fee changes on the next renewal invoice.",
+            "fee_unknown": "fee unavailable",
+            "submitting": "Accepting…"
           },
           "dismiss": {
             "label": "Dismiss",
             "dialog_title": "Dismiss tier upgrade suggestion?",
             "confirm": "The suggestion will be closed and re-suggestion suppressed for 90 days. This action cannot be undone.",
             "success": "Suggestion dismissed",
-            "error": "Failed to dismiss suggestion"
+            "error": "Failed to dismiss suggestion",
+            "submitting": "Dismissing…"
           },
           "escalate": {
             "label": "Escalate",
             "success": "Outreach drafted",
             "error": "Failed to draft outreach"
           }
+        },
+        "loading": "Loading tier upgrade queue…",
+        "action_errors": {
+          "unknown": "Something went wrong. Please try again.",
+          "network_error": "We couldn't reach the server. Check your connection and try again.",
+          "http_error": "The server returned an unexpected response. Please try again.",
+          "read_only_mode": "The system is in maintenance mode and changes are paused. Please try again shortly.",
+          "csrf_rejected": "Your page is out of date. Reload the page and try again.",
+          "feature_disabled": "Renewal features are currently turned off. Contact an administrator.",
+          "no_session": "Your session has expired. Sign in again to continue.",
+          "forbidden": "You don't have permission to perform this action.",
+          "server_error": "Something went wrong on our side. Please try again.",
+          "invalid_body": "That request wasn't accepted. Reload the page and try again.",
+          "invalid_input": "That request wasn't accepted. Reload the page and try again.",
+          "suggestion_not_found": "This suggestion no longer exists. Refresh the queue to see the current list.",
+          "suggestion_not_open": "Someone already actioned this suggestion. Refresh the queue to see the current list.",
+          "no_active_cycle": "This member has no active renewal cycle, so the upgrade can't be scheduled yet.",
+          "plan_change_failed": "The plan change couldn't be applied. Please try again, or contact support if this continues."
         }
       },
       "tasks": {
@@ -4005,8 +4102,15 @@
         }
       },
       "success": {
-        "toast": "Refund processed — credit note {number} issued and emailed to member",
-        "pendingToast": "Refund submitted — awaiting confirmation from the payment processor. The credit note is issued once the refund settles."
+        "toast": "Refund processed — credit note {number} issued",
+        "pendingToast": "Refund submitted — awaiting confirmation from the payment processor. The credit note is issued once the refund settles.",
+        "deferredToast": "Refund sent — the money is on its way back to the member. The credit note completes automatically; no action is needed.",
+        "waivedToast": "Refund processed — no credit note (ใบลดหนี้) was issued",
+        "pendingWaivedToast": "Refund submitted — awaiting the payment processor. No credit note will be issued.",
+        "waivedReason": {
+          "section105Receipt": "The original document was a Section 105 receipt (ใบเสร็จรับเงิน), not a Section 86/4 tax invoice, so there is no tax invoice for a Section 86/10 credit note to reference. The output VAT already filed on this sale has not been adjusted — pass this refund to the accountant at month close.",
+          "invoiceVoided": "The invoice was voided, so there is no tax invoice left to credit. If this invoice had been paid and its output VAT already filed, pass this refund to the accountant at month close."
+        }
       },
       "error": {
         "title": "Couldn't issue the refund",
@@ -4017,6 +4121,17 @@
         "processor_unavailable": "Payment processor temporarily unavailable. Please retry.",
         "f4_bridge_error": "Credit-note issuance failed. Operations have been notified.",
         "f4_preflight_read_error": "Couldn't verify the refundable balance right now. No money was moved — please retry.",
+        "f4_preflight_gate_underivable": "Could not determine whether this payment can be credited, so the refund was not attempted. No money was moved. This needs a fix on our side — please contact support.",
+        "f4_preflight_invalid_status": "This invoice can no longer be credited, so it can't be refunded. No money was moved. Check the invoice — it may have been voided or already fully credited.",
+        "f4_preflight_not_creditable": "This payment was issued a Section 105 receipt, not a tax invoice/receipt, so no credit note can be issued against it. No money was moved. Refunding it needs a manual process — please contact support.",
+        "f4_preflight_receipt_rendering": "The receipt for this payment is still being generated. No money was moved — try the refund again in a few minutes.",
+        "invoice_data_corrupt": "This invoice is missing the buyer details recorded at issue time, so the tax treatment of a refund cannot be determined safely. No money was moved. This is a data fault, not something you can resolve from this screen — please contact support.",
+        "f4_preflight_receipt_render_stuck": "The receipt for this payment was not generated, and it will not complete on its own. No money was moved. This needs support to regenerate the receipt before the refund can go through — please contact support.",
+        "tenant_settings_incomplete": "Payment settings are incomplete, so refunds cannot be processed. No money was moved. Ask an administrator to complete the payment settings.",
+        "invalid_input": "The refund request was rejected as invalid. No money was moved. Check the amount and reason, then try again.",
+        "rate_limited": "Too many refund attempts. No money was moved — wait a moment and try again.",
+        "f4_bridge_deferred": "Refund sent — the money is on its way back to the member. The credit note is still being issued and completes automatically. No action is needed, and you must not retry this refund.",
+        "refund_needs_reconciliation": "An earlier refund on this payment settled at the payment processor but was recorded as failed, so further refunds are blocked until it has been reconciled manually. No money was moved by this attempt. Contact support to reconcile it.",
         "internal_error": "An unexpected error occurred. Please try again."
       },
       "cmdk": {
@@ -4923,6 +5038,7 @@
         "label": "Membership",
         "activeValue": "Active",
         "renewDueValue": "Renew soon",
+        "renewUpcomingValue": "Renewal upcoming",
         "overdueValue": "Renewal overdue",
         "activeSub": "Your membership is in good standing.",
         "daysRemainingSub": "Renews in {days} days",
@@ -5680,13 +5796,32 @@
         "errorPlanUnavailable": "The selected plan is no longer available.",
         "errorInvoiceFailed": "We couldn't generate your invoice. Please try again or contact support.",
         "errorRateLimited": "Too many renewal attempts. Please wait a few minutes and try again.",
-        "errorNetwork": "Connection issue. Please check your internet and try again."
+        "errorNetwork": "Connection issue. Please check your internet and try again.",
+        "errorDowngradeNotAcknowledged": "Please confirm the lower-priced plan change before continuing."
       },
       "planChange": {
         "label": "Choose a plan",
         "placeholder": "{defaultLabel}",
         "currentSuffix": "current",
-        "changeNotice": "Switching to a different plan will lock the new price on your renewal invoice."
+        "changeNotice": "Switching to a different plan will lock the new price on your renewal invoice.",
+        "groupUpgrade": "Higher-priced plans",
+        "groupCurrent": "Your current plan",
+        "groupDowngrade": "Lower-priced plans",
+        "optionWithPrice": "{label} — {price}",
+        "priceHeading": "Price change",
+        "priceCurrent": "Current locked-in price",
+        "priceNew": "New price",
+        "priceDelta": "Difference"
+      },
+      "downgrade": {
+        "title": "Confirm a lower-priced plan",
+        "description": "You are switching from {currentLabel} to {newLabel}. This lowers your renewal price and reduces some membership benefits.",
+        "losesHeading": "What changes",
+        "quotaEblast": "E-Blasts per year: {from} → {to}",
+        "quotaCulturalTickets": "Cultural event tickets per year: {from} → {to}",
+        "overQuotaWarning": "You have already used {used} of {benefitName} this cycle — more than the {quota} included in the new plan.",
+        "confirmCta": "Yes, switch to this plan",
+        "cancelCta": "Keep my current plan"
       },
       "onboarding": {
         "heading": "Welcome to your first renewal",
@@ -5787,7 +5922,7 @@
       "renewal_reminder_sent": "Renewal reminder sent",
       "renewal_reminder_skipped": "Renewal reminder skipped",
       "renewal_schedule_policy_updated": "Renewal schedule policy updated",
-      "renewal_schedule_rescheduled": "Renewal rescheduled",
+      "renewal_schedule_rescheduled": "Renewal reschedule evaluated",
       "renewal_schedule_reschedule_skipped": "Renewal reschedule skipped",
       "renewal_self_service_initiated": "Member-initiated renewal",
       "renewal_skipped_no_joined_at": "Renewal skipped — no join date",
@@ -5865,6 +6000,7 @@
       "plan_cross_tenant_probe": "Cross-tenant probe (plans)",
       "fee_config_updated": "Fee configuration updated",
       "member_plan_manually_changed": "Plan changed manually",
+      "member_plan_change_billing_effect": "Plan change billing effect",
       "plan_change_scheduled": "Plan change scheduled",
       "plan_change_superseded": "Plan change superseded",
       "plan_change_cancelled": "Plan change cancelled",
@@ -5903,11 +6039,14 @@
       "payment_processor_retrieve_failed": "Payment processor lookup failed",
       "payment_invoice_not_found": "Payment — invoice not found",
       "stale_pending_refund_detected": "Stale pending refund detected",
+      "refund_cn_deferred": "Refund credit note deferred",
+      "refund_credit_note_waived": "Refund credit note waived",
       "payment_acknowledged_terminal_state": "Payment already in final state",
       "dispute_created": "Payment dispute opened",
       "refund_amount_mismatch_detected": "Refund amount mismatch detected",
       "auto_refund_failed_needs_manual_reconcile": "Auto-refund failed — needs manual reconciliation",
       "auto_refund_reconciled": "Auto-refund reconciled manually",
+      "payment_settlement_rolled_back": "Settlement rolled back — payment captured but not applied",
       "webhook_dispatch_permanent_failure": "Webhook processing permanently failed",
       "registration_cross_tenant_probe": "Cross-tenant probe (event registrations)",
       "event_buyer_pii_redacted": "Event buyer PII redacted",

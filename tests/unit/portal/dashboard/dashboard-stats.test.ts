@@ -4,7 +4,9 @@ import {
   deriveMembershipStat,
   deriveOutstandingStat,
   deriveBenefitsStat,
+  shouldOfferRenewNow,
 } from '@/app/(member)/portal/_lib/dashboard-stats';
+import { isRenewalPayable } from '@/app/(member)/portal/_lib/is-renewal-payable';
 import { isMembershipLapsed } from '@/modules/renewals';
 import type { RenewalCycle } from '@/modules/renewals';
 import type { BenefitUsage } from '@/modules/insights';
@@ -272,6 +274,100 @@ describe('deriveMembershipStat non-terminal past-expiry regression (post-059-ref
     expect(stat.kind).not.toBe('lapsed');
     expect(stat.reason).toBe('unpaid');
   });
+});
+
+describe('shouldOfferRenewNow (dashboard CTA ⟺ renewal-page payable gate)', () => {
+  // plan-change-ux seam 2 — the portal dashboard "Renew now" button and the
+  // renewal page's Confirm gate MUST agree. They now share ONE predicate
+  // (`isRenewalPayable`), so the CTA is offered EXACTLY when the page would
+  // render the payable Confirm flow. Before this, a `due` card always linked
+  // to a page that answered "renewal window not yet open" — a dead end.
+
+  it('does NOT offer Renew now for a `due` (upcoming, not-yet-expired) cycle — the old dead-end', () => {
+    // The entire `due` cohort is `upcoming`/`reminded` with a FUTURE expiry
+    // (deriveMembershipAccess only returns `full` for those when not yet
+    // expired). isRenewalPayable is false for exactly that shape, so the CTA
+    // must be withheld and the card shows only the informational countdown.
+    const c = cycle({ status: 'upcoming', expiresAt: '2026-06-16T00:00:00.000Z' }); // +10d
+    const stat = deriveMembershipStat(c, NOW);
+    expect(stat.kind).toBe('due');
+    expect(shouldOfferRenewNow(stat, NOW)).toBe(false);
+    // …and the CTA decision AGREES with the page gate on the same inputs.
+    expect(isRenewalPayable(stat.status!, stat.expiryIso!, NOW)).toBe(false);
+  });
+
+  it('offers Renew now exactly when the cycle is payable (delegates to isRenewalPayable)', () => {
+    // deriveMembershipStat never emits `due` for a payable status (an
+    // awaiting_payment cycle is `suspended`), but the helper must still
+    // delegate correctly — this pins the TRUE branch wiring so a future
+    // classification change that DID produce a payable `due`/`overdue` stat
+    // would light the CTA rather than silently withhold it.
+    const payableStat = {
+      kind: 'due' as const,
+      variant: 'warning' as const,
+      daysRemaining: 5,
+      status: 'awaiting_payment' as const,
+      expiryIso: '2026-06-11T00:00:00.000Z',
+      reason: null,
+    };
+    expect(isRenewalPayable(payableStat.status, payableStat.expiryIso, NOW)).toBe(true);
+    expect(shouldOfferRenewNow(payableStat, NOW)).toBe(true);
+  });
+
+  it('never offers Renew now for non-renewable kinds (active / suspended / lapsed / empty / error)', () => {
+    const active = deriveMembershipStat(
+      cycle({ status: 'completed', expiresAt: '2026-12-31T00:00:00.000Z' }),
+      NOW,
+    );
+    // `awaiting_payment` is `suspended` — it carries its OWN "pay to restore"
+    // CTA (resolveSuspendedCtaTarget), never the "Renew now" button.
+    const suspended = deriveMembershipStat(
+      cycle({ status: 'awaiting_payment', expiresAt: '2026-12-31T00:00:00.000Z' }),
+      NOW,
+    );
+    const lapsed = deriveMembershipStat(
+      cycle({ status: 'lapsed', closedAt: '2026-01-01T00:00:00.000Z', closedReason: 'lapsed', expiresAt: '2026-01-01T00:00:00.000Z' }),
+      NOW,
+    );
+    expect(shouldOfferRenewNow(active, NOW)).toBe(false);
+    expect(shouldOfferRenewNow(suspended, NOW)).toBe(false);
+    expect(shouldOfferRenewNow(lapsed, NOW)).toBe(false);
+    expect(shouldOfferRenewNow(deriveMembershipStat(null, NOW), NOW)).toBe(false);
+    expect(shouldOfferRenewNow(deriveMembershipStat('error', NOW), NOW)).toBe(false);
+  });
+
+  // The core anti-drift invariant: for EVERY (status × expiry) shape, the
+  // dashboard CTA fires iff the page gate would render the Confirm flow.
+  const PAST = '2026-01-01T00:00:00.000Z';
+  const SOON = '2026-06-16T00:00:00.000Z'; // +10d from NOW
+  const FAR = '2026-12-31T00:00:00.000Z';
+  const invariantCases: ReadonlyArray<Partial<RenewalCycle>> = [
+    { status: 'upcoming', expiresAt: PAST },
+    { status: 'upcoming', expiresAt: SOON },
+    { status: 'upcoming', expiresAt: FAR },
+    { status: 'reminded', expiresAt: PAST },
+    { status: 'reminded', expiresAt: SOON },
+    { status: 'reminded', expiresAt: FAR },
+    { status: 'awaiting_payment', expiresAt: PAST },
+    { status: 'awaiting_payment', expiresAt: FAR },
+    { status: 'completed', closedAt: PAST, closedReason: 'paid', linkedInvoiceId: 'inv1', expiresAt: PAST },
+    { status: 'completed', closedAt: PAST, closedReason: 'paid', linkedInvoiceId: 'inv1', expiresAt: FAR },
+    { status: 'lapsed', closedAt: PAST, closedReason: 'lapsed', expiresAt: PAST },
+    { status: 'cancelled', closedAt: PAST, closedReason: 'cancelled', expiresAt: FAR },
+    { status: 'pending_admin_reactivation', enteredPendingAt: PAST, expiresAt: PAST },
+  ];
+  it.each(invariantCases)(
+    'CTA ⟺ (kind∈{due,overdue} ∧ isRenewalPayable) for %o',
+    (override) => {
+      const stat = deriveMembershipStat(cycle(override), NOW);
+      const expected =
+        (stat.kind === 'due' || stat.kind === 'overdue') &&
+        stat.status !== null &&
+        stat.expiryIso !== null &&
+        isRenewalPayable(stat.status, stat.expiryIso, NOW);
+      expect(shouldOfferRenewNow(stat, NOW)).toBe(expected);
+    },
+  );
 });
 
 describe('deriveOutstandingStat', () => {

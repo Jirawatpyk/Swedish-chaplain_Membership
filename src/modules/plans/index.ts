@@ -310,7 +310,6 @@ export {
 // contract tests at `tests/contract/f2-scheduled-plan-change.contract.test.ts`
 // (in-memory mock for shape pinning).
 export { scheduleNextRenewalPlanChange } from './application/schedule-next-renewal-plan-change';
-export { getEffectivePlanForRenewal } from './application/get-effective-plan-for-renewal';
 // `cancelScheduledPlanChange` closes the `plan_change_cancelled`
 // deferred-emitter TODO. Ready-to-call use-case
 // with no API route yet; future admin "cancel scheduled change" surface
@@ -323,12 +322,7 @@ export type {
   CancelScheduledPlanChangeDeps,
 } from './application/cancel-scheduled-plan-change';
 export type {
-  GetEffectivePlanForRenewalDeps,
-  GetEffectivePlanForRenewalInput,
-} from './application/get-effective-plan-for-renewal';
-export type {
   ScheduledPlanChangeRepo,
-  CurrentPlanResolverPort,
 } from './application/ports';
 // Round 6 W-008 — REVERTED inline barrel re-export of
 // `drizzleScheduledPlanChangeRepo`. Adding a concrete Drizzle adapter
@@ -369,8 +363,6 @@ export type {
   ScheduleNextRenewalPlanChangeError,
   CancelScheduledPlanChangeInput,
   CancelScheduledPlanChangeError,
-  EffectivePlanForRenewal,
-  GetEffectivePlanForRenewalError,
 } from './domain/scheduled-plan-change';
 
 // F7 bridge — concrete `PlanRepo` instance moved out of the public barrel

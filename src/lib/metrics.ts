@@ -946,6 +946,61 @@ export const erasureMetrics = {
 //   - `outcome` ∈ {ok, retryable, permanent, idempotency_conflict}
 //   - NO user/member id labels (high-cardinality forbidden)
 
+/**
+ * Money-remediation Task 1 — the alertable roll-up behind the five
+ * F4/F5 "Stripe and the ledger now disagree" counters.
+ *
+ * Each of those five counters stays exactly as it is: they are the
+ * dashboard inputs that say WHICH divergence happened. This roll-up is the
+ * single series an alert rule binds to, so a sixth divergence site added
+ * later inherits paging instead of needing a sixth rule nobody writes.
+ *
+ * It is emitted from inside those five helpers rather than from their call
+ * sites deliberately. The call sites live in `confirm-payment.ts`,
+ * `issue-refund.ts` and the stale-pending-refund sweep — money-path files
+ * that Task 1 is specifically supposed to leave alone. Emitting here also
+ * makes it structurally impossible to bump a specific counter without
+ * bumping the roll-up, which no amount of call-site discipline guarantees.
+ *
+ * `permanence` answers one mechanical question — does an automated
+ * mechanism exist that will re-drive this divergence?
+ *   - `transient`: yes. `refundFinaliseDoubleFault` leaves a `pending`
+ *     refund row, which the stale-pending-refund sweep re-reads.
+ *   - `permanent`: no. The three `confirm-payment` Phase-B counters all sit
+ *     on paths that answer Stripe 200, and Stripe does not redeliver a 2xx;
+ *     `stalePendingRefundEscalated` fires only once the sweep has already
+ *     tried and given up. These require a human.
+ *
+ * `tenant` is `'unresolved'` where the emitting path has no tenant in hand,
+ * matching `webhookReceiveCount`'s existing convention — a consistent label
+ * set keeps the series aggregable in PromQL.
+ */
+/**
+ * Why the stale-pending-refund sweep could not terminalise a row. Mirrors the
+ * `reason` argument of `maybeEscalate` in `sweep-stale-pending-refunds.ts`;
+ * it decides the roll-up's `permanence` (see `stalePendingRefundEscalated`).
+ */
+export type StalePendingRefundEscalationReason =
+  | 'stripe_pending'
+  | 'missing_processor_refund_id'
+  | 'credit_note_bridge_declined';
+
+function bumpUnreconciled(
+  path:
+    | 'confirm_payment_give_up_phase_b'
+    | 'confirm_payment_stale_refund_phase_b'
+    | 'confirm_payment_late_charge_phase_b'
+    | 'refund_finalise_double_fault'
+    | 'stale_pending_refund_escalated',
+  permanence: 'transient' | 'permanent',
+  tenantId?: string,
+): void {
+  counter(
+    'payments_unreconciled_total',
+    'Roll-up of every F4/F5 divergence where Stripe and the local ledger disagree — page on this, break it down by `path`',
+  ).add(1, { path, permanence, tenant: tenantId ?? 'unresolved' });
+}
+
 export const paymentsMetrics = {
   /**
    * Latency of `/api/payments/initiate` end-to-end including Stripe
@@ -1094,13 +1149,46 @@ export const paymentsMetrics = {
   },
 
   /**
-   * `refunds.succeeded.count{tenant}` — refund → CN throughput.
+   * `refunds.succeeded.count{tenant}` — refund settlement throughput.
+   *
+   * Track B — counts EVERY succeeded refund, whether it was documented by a
+   * §86/10 credit note or by a recorded waiver. The description previously said
+   * "with credit-note issued", which stopped being true when credit-note-less
+   * refunds became possible; `refunds_credit_note_waived_count` below is the
+   * subset that carried no credit note.
    */
   refundSucceededCount(tenantId: string): void {
     counter(
       'refunds_succeeded_count',
-      'Refunds reaching succeeded state with credit-note issued',
+      'Refunds reaching succeeded state (credit note issued OR waiver recorded)',
     ).add(1, { tenant: tenantId });
+  },
+
+  /**
+   * `refunds.credit_note_waived.count{tenant, reason}` — refunds that returned
+   * money while legitimately issuing NO §86/10 ใบลดหนี้.
+   *
+   * A COUNTER, not a gauge, and deliberately so: nothing can ever decrement it.
+   * There is no "handled" or "filed" flag on a waived refund — the outstanding
+   * output-VAT adjustment lives in the accountant's process, not in this
+   * system — so a gauge would only ever climb and would read as a leak.
+   *
+   * Emitted in Phase A alongside the `refund_credit_note_waived` audit row, so
+   * the counter and the 10-year forensic agree 1:1 and either can be used to
+   * cross-check the other. That means it counts the DECISION, not the
+   * settlement: a refund that later fails at Stripe still increments it. That
+   * is the right basis for the alarm this feeds (an unexpected surge means the
+   * §105 gate is firing where it should not), and the wrong basis for counting
+   * money returned — for that, query the rows.
+   *
+   * ALARM, never page: the correct response is a month-close review, not a
+   * 3am wake-up. See docs/runbooks/refund-without-credit-note.md.
+   */
+  refundCreditNoteWaivedCount(tenantId: string, reason: string): void {
+    counter(
+      'refunds_credit_note_waived_count',
+      'Refunds recorded as owing no §86/10 credit note, by waiver ground',
+    ).add(1, { tenant: tenantId, reason });
   },
 
   /**
@@ -1255,6 +1343,7 @@ export const paymentsMetrics = {
       'payments_confirm_payment_give_up_phase_b_mark_processed_failed_total',
       'Auto-refund give-up Phase B markProcessed throw — processor_events.processed_at left NULL',
     ).add(1);
+    bumpUnreconciled('confirm_payment_give_up_phase_b', 'permanent');
   },
 
   /**
@@ -1284,6 +1373,7 @@ export const paymentsMetrics = {
       'payments_confirm_payment_stale_refund_phase_b_mark_failed_total',
       'Stale-refund Phase B markProcessed throw — processor_events.processed_at left NULL',
     ).add(1);
+    bumpUnreconciled('confirm_payment_stale_refund_phase_b', 'permanent');
   },
 
   /**
@@ -1303,6 +1393,11 @@ export const paymentsMetrics = {
       'payments_confirm_payment_late_charge_phase_b_mark_failed_total',
       'Late-charge (#8) Phase B mark throw — processor_events.processed_at left NULL',
     ).add(1);
+    // NB: this helper's docstring above claims recovery is automatic via
+    // Stripe retry idempotency. That is finding F-2 part 2 — the path
+    // answers 200 and Stripe does not redeliver a 2xx, so nothing retries.
+    // The label follows the mechanism; correcting the prose is Task 3.
+    bumpUnreconciled('confirm_payment_late_charge_phase_b', 'permanent');
   },
 
   /**
@@ -1317,6 +1412,9 @@ export const paymentsMetrics = {
       'payments_refund_finalise_double_fault_total',
       'issueRefund Phase B + finaliseFailedRefund both threw — money moved, local row stuck pending',
     ).add(1, { tenant: tenantId });
+    // `transient`: the row is left `pending`, which the stale-pending-refund
+    // sweep re-reads and reconciles against Stripe.
+    bumpUnreconciled('refund_finalise_double_fault', 'transient', tenantId);
   },
 
   /**
@@ -1429,6 +1527,36 @@ export const paymentsMetrics = {
   },
 
   /**
+   * `payments.unprocessed_events_count{tenant}` — async gauge over
+   * `processor_events` rows the webhook dispatcher STARTED and never
+   * finished: `outcome='processed'` (written optimistically in the step-6
+   * ingest tx) AND `processed_at IS NULL` (written only at the tail of the
+   * dispatch tx) AND older than the in-flight window.
+   *
+   * This is the only instrument that can observe an F-1-class divergence —
+   * money-side state committed while the event was 200-acked and never
+   * marked reconciled, so Stripe never redelivers and no sweep looks at it
+   * (`sweepStalePendingRefunds` scans `refunds`, not `processor_events`).
+   *
+   * Rows that are unprocessed BY DESIGN are excluded by the `outcome`
+   * predicate: unknown-processor-account acknowledgements and the three
+   * `rejected_*` audit rows never get a `processed_at` and would otherwise
+   * pin this gauge at a large constant.
+   *
+   * Emitted by `/api/internal/metrics/unprocessed-events-count` at 5-min
+   * cadence. `tenant='unresolved'` for rows whose tenant was never resolved.
+   * Alert threshold: > 0 for any tenant sustained over 15 min.
+   */
+  unprocessedEventsCount(tenantId: string, count: number): void {
+    observeGauge(
+      'payments_unprocessed_events_count',
+      'processor_events rows the dispatcher started and never marked processed, past the in-flight window',
+      { tenant: tenantId },
+      count,
+    );
+  },
+
+  /**
    * `payments_stale_pending_refund_escalated_total{tenant}` — counter
    * incremented (A.14 / M-i) by the Stripe-aware stale-pending-refund
    * sweep for each stale refund it could NOT terminalise this run because
@@ -1440,11 +1568,38 @@ export const paymentsMetrics = {
    * has been stuck beyond the async settlement window and ops must
    * intervene. Fires alongside a structured `logger.warn`.
    */
-  stalePendingRefundEscalated(tenantId: string): void {
+  stalePendingRefundEscalated(
+    tenantId: string,
+    reason: StalePendingRefundEscalationReason,
+  ): void {
     counter(
       'payments_stale_pending_refund_escalated_total',
       'Stale pending refunds the sweep could not terminalise past the escalation age (retrieve pending / no processor id) — ops manual-reconciliation signal',
     ).add(1, { tenant: tenantId });
+    // Permanence is per-REASON, not per-counter. `maybeEscalate` has no
+    // once-only latch: it fires on EVERY sweep pass while the row is aged and
+    // still `pending`, and the next pass re-reads that row. So for two of the
+    // three reasons an automated mechanism genuinely will re-drive it:
+    //
+    //   stripe_pending              → Stripe may settle later; the next sweep
+    //                                 retrieves the real status → transient
+    //   credit_note_bridge_declined → the next sweep retries the idempotent
+    //                                 CN bridge → transient
+    //   missing_processor_refund_id → the sweep can never reconcile a row it
+    //                                 has no Stripe id for; it is skipped
+    //                                 forever and ops must work it by hand
+    //                                 via the dashboard → permanent
+    //
+    // Labelling all three `permanent` would page on two classes that heal
+    // themselves; labelling all three `transient` would let the one that
+    // never heals sit unattended. Reason is NOT added as a label on the
+    // existing counter — that series predates this change and dashboards key
+    // on its current shape.
+    bumpUnreconciled(
+      'stale_pending_refund_escalated',
+      reason === 'missing_processor_refund_id' ? 'permanent' : 'transient',
+      tenantId,
+    );
   },
 
   /**
@@ -1476,6 +1631,27 @@ export const paymentsMetrics = {
       'payments_refund_pending_awaiting_processor_total',
       'Refund awaiting the async charge.refund.updated webhook (issue-refund pending return + sweep still-pending) — alert on sustained rate>0: subscription likely disabled (H-e)',
     ).add(1, { tenant: tenantId });
+  },
+
+  /**
+   * `payments_refund_cn_deferred_total{tenant, reason_code}` — money-remediation
+   * F-3. The processor settled the refund but the F4 credit-note bridge could
+   * not book it, so the row was left `pending` for the stale-pending sweep
+   * instead of being terminalised `failed`.
+   *
+   * This is the counter that replaces the `refundFailedCount` volume those two
+   * paths used to produce — if a dashboard or alert keyed on refund-failure
+   * rate to detect F4 bridge trouble, it must move here or it goes quiet.
+   *
+   * Not itself a page: a transient decline clears on the next sweep. Alert on
+   * sustained `rate(...[1h]) > 0`, which means the bridge is durably failing
+   * and §86/10 credit notes are accumulating unbooked against refunded money.
+   */
+  refundCreditNoteDeferred(tenantId: string, reasonCode: string): void {
+    counter(
+      'payments_refund_cn_deferred_total',
+      'Refund settled at the processor but its F4 credit note could not be booked; row left pending for the sweep (money-remediation F-3)',
+    ).add(1, { tenant: tenantId, reason_code: reasonCode });
   },
 } as const;
 
@@ -3117,6 +3293,49 @@ export const renewalsMetrics = {
         'renewals_self_service_failed_total',
         'F8 member self-service renewal confirm failed (US3)',
       ).add(1, { tenant, reason });
+    });
+  },
+
+  /**
+   * Finding #20 (Phase 2 #238) — the LIVE guard fired: confirm-renewal's Step-4
+   * link detected that a concurrent admin change-plan immediate-refreeze had
+   * refrozen the open cycle to a DIFFERENT price than the §86/4 it just issued,
+   * and reconciled the cycle back to the billed (confirmed) price. A non-zero
+   * rate is expected only under genuine concurrent-write races; a sustained
+   * spike signals an admin repeatedly changing plans while members self-renew.
+   * Paired with the standing `plan_change_divergence_detected` scan gauge — the
+   * reconcile counter is the guard firing, the scan is the on-disk residual
+   * (which should stay 0 precisely because this guard fires).
+   *
+   * Emitted INSIDE the Step-4 tx via `safeMetric` (an @vercel/otel exporter
+   * throw must never roll back the committed-in-tx link) — parity with
+   * `selfServiceCompleted`.
+   */
+  planChangeDivergenceReconciled(tenant: string): void {
+    safeMetric(() => {
+      counter(
+        'renewals_plan_change_divergence_reconciled_total',
+        'confirm-renewal reconciled a cycle whose frozen price a concurrent change-plan diverged from the billed §86/4 (Finding #20 guard)',
+      ).add(1, { tenant });
+    });
+  },
+
+  /**
+   * Finding #20 defense-in-depth — the standing divergence scan
+   * (`checkPlanChangeDivergence`, wired to a Vercel cron) found `count`
+   * renewal_cycle↔linked-§86/4 price disagreements for `tenant` on this pass.
+   * A COUNTER (rate is the signal, mirrors `outboxMetrics.stuckRows`), not a
+   * gauge: a tenant with 0 divergences is never emitted, so a gauge would go
+   * stale at its last non-zero value. Expected to stay flat at 0 once the
+   * reconcile-at-link guard ships. Any non-zero rate is stop-the-line (the cron
+   * route also returns non-2xx so Vercel cron alerting fires independently).
+   */
+  planChangeDivergenceDetected(tenant: string, count: number): void {
+    safeMetric(() => {
+      counter(
+        'renewals_plan_change_divergence_detected_total',
+        'Standing renewal_cycle↔§86/4 frozen-price divergences found by the scan cron (should stay 0)',
+      ).add(count, { tenant });
     });
   },
 

@@ -46,6 +46,15 @@ export type PlanListItem = {
   readonly updated_at: string;
   readonly sort_order: number;
   readonly missing_translations: ReadonlyArray<Exclude<LocaleKey, 'en'>>;
+  // C4 — additive OPTIONAL projection of the two quantifiable yearly benefit
+  // quotas from `benefit_matrix`. Consumed by the portal renewal downgrade
+  // dialog (quota-delta rows + over-quota warning for the TARGET plan). Kept
+  // optional so existing admin plans-list consumers (contract §1, plans-table,
+  // build-plan-options) are unaffected — they read a structural subset and
+  // never break on additive fields. `null` = unlimited / unknown (a legacy or
+  // partial JSONB `benefit_matrix` row missing the field).
+  readonly eblast_quota_per_year?: number | null;
+  readonly cultural_tickets_quota_per_year?: number | null;
 };
 
 export type ListPlansSuccess = {
@@ -149,6 +158,13 @@ export async function listPlans(
         updated_at: p.updated_at.toISOString(),
         sort_order: p.sort_order,
         missing_translations: hasMissingTranslations(p.plan_name),
+        // C4 — mirror the extraction shape used by the F9 plan-source adapter
+        // (`benefit_matrix.eblast_per_year` / `.cultural_tickets_per_year`).
+        // `?? null` guards a legacy/partial JSONB row lacking the field so the
+        // projected value is always `number | null`, never `undefined`.
+        eblast_quota_per_year: p.benefit_matrix.eblast_per_year ?? null,
+        cultural_tickets_quota_per_year:
+          p.benefit_matrix.cultural_tickets_per_year ?? null,
       };
     });
 

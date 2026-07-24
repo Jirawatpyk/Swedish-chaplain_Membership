@@ -27,6 +27,8 @@ import type { FailPaymentDeps } from '../application/use-cases/fail-payment';
 import type { CancelPaymentDeps } from '../application/use-cases/cancel-payment';
 import type { HandleCancelEventDeps } from '../application/use-cases/handle-cancel-event';
 import type { ListSucceededPaymentMethodsDeps } from '../application/use-cases/list-succeeded-payment-methods';
+import type { ListWaivedRefundTotalsByInvoiceDeps } from '../application/use-cases/list-waived-refund-totals-by-invoice';
+import type { CountPendingRefundsForInvoiceDeps } from '../application/use-cases/count-pending-refunds-for-invoice';
 import type { LoadInvoicePaymentActivityDeps } from '../application/use-cases/load-invoice-payment-activity';
 import type { IssueRefundDeps } from '../application/use-cases/issue-refund';
 import type { ResolveFailedAutoRefundDeps } from '../application/use-cases/resolve-failed-auto-refund';
@@ -68,6 +70,20 @@ async function f8CallbacksFor(tenantId: string) {
   if (!env.features.f8Renewals) return undefined;
   const { f8OnPaidCallbacks } = await import('@/modules/renewals');
   return f8OnPaidCallbacks(tenantId);
+}
+
+/**
+ * F8 POST-COMMIT callbacks (the F2 scheduled-plan-change finaliser). Wired
+ * alongside the in-tx `f8CallbacksFor` on the webhook + confirm composition
+ * roots; the settlement-commit owner (`confirmPayment`) fires these AFTER its
+ * tx commits so the finaliser's `plan_change_applied` audit cannot deadlock
+ * against the member-row lock the settlement held. Same dynamic-import
+ * cold-start amortisation as `f8CallbacksFor`.
+ */
+async function f8AfterCommitFor(tenantId: string) {
+  if (!env.features.f8Renewals) return undefined;
+  const { f8AfterCommitCallbacks } = await import('@/modules/renewals');
+  return f8AfterCommitCallbacks(tenantId);
 }
 
 /**
@@ -148,6 +164,7 @@ export async function makeProcessWebhookEventDeps(
   // async to await the dynamic F8 barrel import. Caller is
   // already async (Stripe webhook route handler).
   const f8Callbacks = await f8CallbacksFor(tenantId);
+  const f8AfterCommit = await f8AfterCommitFor(tenantId);
   return {
     paymentsRepo: makeDrizzlePaymentsRepo(tenantId),
     // CR-3 (review 2026-04-27): wire real refunds-repo so the
@@ -165,10 +182,16 @@ export async function makeProcessWebhookEventDeps(
     // (which sets reconciliationPath: true → guard dormant). Mirrors
     // makeInitiatePaymentDeps; no magic value.
     taxAtPayment: taxAtPaymentFlag(env.features.f088TaxAtPayment),
+    // money-remediation Task 4 (F-1) — FEATURE_F5_SETTLEMENT_ABORT: roll back
+    // the settlement tx when the F4 bridge declines. Default false (ships dark).
+    settlementAbort: env.features.f5SettlementAbort,
     // Audit 2026-04-25 finding #5: route Application-layer warn lines
     // through pino instead of console.warn.
     logger: paymentsLogger,
     ...(f8Callbacks !== undefined ? { onPaidCallbacks: f8Callbacks } : {}),
+    ...(f8AfterCommit !== undefined
+      ? { onAfterCommitCallbacks: f8AfterCommit }
+      : {}),
   };
 }
 
@@ -180,6 +203,7 @@ export async function makeConfirmPaymentDeps(
 ): Promise<ConfirmPaymentDeps> {
   // async to await the dynamic F8 barrel import.
   const f8Callbacks = await f8CallbacksFor(tenantId);
+  const f8AfterCommit = await f8AfterCommitFor(tenantId);
   return {
     paymentsRepo: makeDrizzlePaymentsRepo(tenantId),
     tenantSettingsRepo: makeDrizzleTenantPaymentSettingsRepo(),
@@ -190,10 +214,16 @@ export async function makeConfirmPaymentDeps(
     // 088 SEC-MED — thread the honest flow flag into the confirm read (which
     // sets reconciliationPath: true → guard dormant). No magic value.
     taxAtPayment: taxAtPaymentFlag(env.features.f088TaxAtPayment),
+    // money-remediation Task 4 (F-1) — FEATURE_F5_SETTLEMENT_ABORT: roll back
+    // the settlement tx when the F4 bridge declines. Default false (ships dark).
+    settlementAbort: env.features.f5SettlementAbort,
     // Audit 2026-04-25 finding #4: pass processorEventsRepo so the
     // dispatch tx can fold markProcessed in atomically.
     processorEventsRepo: makeDrizzleProcessorEventsRepo(),
     ...(f8Callbacks !== undefined ? { onPaidCallbacks: f8Callbacks } : {}),
+    ...(f8AfterCommit !== undefined
+      ? { onAfterCommitCallbacks: f8AfterCommit }
+      : {}),
     // review-20260428-102639.md H2 closure — structured logger for
     // Phase B catch on stale-refund path.
     logger: {
@@ -252,6 +282,28 @@ export function makeListSucceededPaymentMethodsDeps(
 ): ListSucceededPaymentMethodsDeps {
   return {
     paymentsRepo: makeDrizzlePaymentsRepo(tenantId),
+  };
+}
+
+/**
+ * Track B — deps for F9's waived-refund netting read. `makeDrizzleRefundsRepo`
+ * now binds a tenant context because `sumWaivedByInvoice` is the repo's one
+ * standalone read (no caller-supplied `tx`).
+ */
+export function makeListWaivedRefundTotalsByInvoiceDeps(
+  tenantId: string,
+): ListWaivedRefundTotalsByInvoiceDeps {
+  return {
+    refundsRepo: makeDrizzleRefundsRepo(tenantId),
+  };
+}
+
+// 8A — the payments-side count behind the invoicing PendingRefundGuardPort.
+export function makeCountPendingRefundsForInvoiceDeps(
+  tenantId: string,
+): CountPendingRefundsForInvoiceDeps {
+  return {
+    refundsRepo: makeDrizzleRefundsRepo(tenantId),
   };
 }
 

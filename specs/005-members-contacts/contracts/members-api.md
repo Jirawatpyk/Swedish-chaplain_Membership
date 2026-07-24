@@ -270,11 +270,31 @@ Tenant context is resolved server-side from the session — clients never send a
 - All members must belong to current tenant (RLS); cross-tenant IDs silently filtered out via RLS, then if any IDs are missing the server returns `404 not_found` for the entire request (all-or-nothing per FR-019).
 
 **Response 200**:
+
+`change_plan` / `archive` (atomic all-or-nothing):
 ```json
 { "updated_count": 100, "audit_event_count": 100 }
 ```
 
-**Audit**: per-member event of the matching type (e.g., 100 × `member_plan_changed`).
+`send_portal_invite` (best-effort per member — partial success is still 200;
+the invite is queued per member, so it cannot be rolled back as a batch):
+```json
+{
+  "invited": [{ "member_id": "...", "contact_id": "...", "user_id": "...", "email": "..." }],
+  "resent":  [{ "member_id": "...", "contact_id": "..." }],
+  "skipped": [{ "member_id": "...", "reason": "already_linked" | "no_email" | "no_invitable_contact" | "member_archived" | "member_not_found" }],
+  "failed":  [{ "member_id": "...", "code": "invalid_email" | "email_taken" | "link_failed" | "server_error" }],
+  "counts":  { "invited": 0, "resent": 0, "skipped": 0, "failed": 0 }
+}
+```
+`resent` = a member whose primary contact was already linked but whose portal
+invitation had expired unaccepted; a fresh token was minted via the re-send path
+(057-members-portal-status). `already_linked` in `skipped` therefore now means an
+*active* portal user (nothing to do), not an expired one.
+
+**Audit**: per-member event of the matching type (e.g., 100 × `member_plan_changed`;
+`send_portal_invite` records `account_created` per new invite and
+`member_portal_invite_queued` per re-send).
 
 ---
 

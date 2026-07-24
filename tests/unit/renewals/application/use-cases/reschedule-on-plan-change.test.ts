@@ -176,6 +176,14 @@ describe('rescheduleOnPlanChangeInTx (R4 regression)', () => {
     expect((event as { type?: string } | undefined)?.type).toBe(
       'renewal_schedule_rescheduled',
     );
+    // Truthful-semantics fix — this listener EVALUATES the reschedule but
+    // PERSISTS NOTHING (the dispatcher joins the cycle's frozen
+    // `tier_at_cycle_start`, which this use-case never modifies). The payload
+    // records `applied: false` so a dashboard reading the raw event is not
+    // misled into counting it as a reschedule that was performed.
+    const payload = (event as { payload?: { applied?: unknown } } | undefined)
+      ?.payload;
+    expect(payload?.applied).toBe(false);
   });
 
   it('R5-CRIT-3 — success-path audit emit failure SWALLOWED (caller tx not tainted)', async () => {

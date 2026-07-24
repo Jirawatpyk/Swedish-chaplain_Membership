@@ -281,6 +281,10 @@ function makeDeps(
       withTx: vi.fn(async (fn) => fn(OPAQUE_TX)),
       insertDraft: vi.fn(),
       getOrigin: vi.fn(),
+      // Duplicate guard read — unused by this use case (only
+      // `createInvoiceDraft` calls it, and only when a caller opts in via
+      // `duplicatePolicy`). Present to satisfy the `InvoiceRepo` contract.
+      findLiveMembershipBillInTx: vi.fn(async () => null),
       findByIdInTx: vi.fn(async () => draft),
       // Wave-4 S28 — the use case takes the row lock + draft load in ONE
       // combined read now: null fixture → invoice_not_found probe; a
@@ -300,6 +304,10 @@ function makeDeps(
       applyCreditNoteRollup: vi.fn(),
       applyInvoicePdfRegeneration: vi.fn(),
       applyReceiptPdfRegeneration: vi.fn(),
+      markVoidPdfReconcilePending: vi.fn(async () => {}),
+      clearVoidPdfReconcileMarker: vi.fn(async () => {}),
+      bumpVoidPdfReconcileAttempts: vi.fn(async () => {}),
+      parkVoidPdfReconcile: vi.fn(async () => {}),
       applyVoid: vi.fn(),
       applyReceiptPdf: vi.fn(),
       applyReceiptPdfFailure: vi.fn(),

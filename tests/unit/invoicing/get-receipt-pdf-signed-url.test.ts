@@ -203,6 +203,10 @@ function makeDeps(invoice: Invoice | null) {
       getOrigin: vi.fn(),
       withTx: vi.fn(),
       insertDraft: vi.fn(),
+      // Duplicate guard read — unused by this use case (only
+      // `createInvoiceDraft` calls it, and only when a caller opts in via
+      // `duplicatePolicy`). Present to satisfy the `InvoiceRepo` contract.
+      findLiveMembershipBillInTx: vi.fn(async () => null),
       findByIdInTx: vi.fn(),
       list: vi.fn(),
       listPaged: vi.fn(),
@@ -217,6 +221,10 @@ function makeDeps(invoice: Invoice | null) {
       applyCreditNoteRollup: vi.fn(),
       applyInvoicePdfRegeneration: vi.fn(),
       applyReceiptPdfRegeneration: vi.fn(),
+      markVoidPdfReconcilePending: vi.fn(async () => {}),
+      clearVoidPdfReconcileMarker: vi.fn(async () => {}),
+      bumpVoidPdfReconcileAttempts: vi.fn(async () => {}),
+      parkVoidPdfReconcile: vi.fn(async () => {}),
       applyVoid: vi.fn(),
       applyReceiptPdf: vi.fn(),
       applyReceiptPdfFailure: vi.fn(),

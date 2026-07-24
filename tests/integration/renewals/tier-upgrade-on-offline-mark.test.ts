@@ -56,11 +56,12 @@
  *      row→applied, both audits emitted) AND still completes the cycle + creates
  *      the next cycle.
  *
- * NOTE: the next cycle inherits the prior cycle's `planIdAtCycleStart`
- * regardless of the tier-upgrade (apply does NOT flip the cycle's plan nor
- * `members.plan_id` — see `apply-pending-tier-upgrade.ts` docstring). So the
- * end-state asserted here is the SUGGESTION + F2 plan-change lifecycle, NOT a
- * "next cycle at upgraded tier" — the original brief's phrasing.
+ * NOTE: this file asserts the SUGGESTION + F2 plan-change lifecycle only
+ * (suggestion→applied, F2 row→applied, both audits). Package B1 now ALSO flips
+ * `members.plan_id` in the apply so the next cycle follows the upgraded tier —
+ * that plan-flip → next-cycle-billing reach is pinned separately by
+ * tier-upgrade-reaches-billing.test.ts (both rails). This file does not
+ * re-assert it.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';
@@ -191,6 +192,16 @@ describe('F8 tier-upgrade on OFFLINE mark-paid — 070 Item D (live Neon)', () =
         closedAt: new Date(now - 365 * MS_PER_DAY),
         closedReason: 'cancelled',
       });
+    });
+    // tx2 — the awaiting_payment cycle in a STRICTLY LATER tx than the
+    // cancelled predecessor above. `findLatestCycleForMember` orders by
+    // `created_at DESC, cycle_id DESC`; both cycles inserted in ONE tx share
+    // `created_at`, so the cancelled predecessor's random cycle_id could win
+    // the tiebreaker and be picked as "latest" — tripping markPaidOffline's
+    // terminated-gate (`member_terminated`) on ~50% of runs (a flaky failure).
+    // Separate txs make the awaiting cycle deterministically latest. (Same fix
+    // as tier-upgrade-reaches-billing.test.ts lines 108-114.)
+    await runInTenant(tenant.ctx, async (tx) => {
       await tx.insert(renewalCycles).values({
         tenantId: tenant.ctx.slug,
         cycleId,

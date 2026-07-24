@@ -303,6 +303,9 @@ describe('confirmPayment stale-invoice auto-refund — live Neon (T122 / A.13)',
           clock: systemClock,
           // Inert for the confirm READ (reconciliationPath:true → dormant).
           taxAtPayment: 'off',
+          // money-remediation Task 4 — flag OFF preserves the pre-remediation
+          // commit-on-bridge-decline behaviour this suite was written against.
+          settlementAbort: false,
         },
         {
           tenantId: tenant.ctx.slug,

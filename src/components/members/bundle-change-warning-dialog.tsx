@@ -29,6 +29,14 @@ export type BundleChangePayload = {
   /** The plan_id of the OLD partnership tier — we count members on THIS plan. */
   readonly oldPlanId: string;
   readonly oldPlanYear: number;
+  /**
+   * BP5 item 6 — resolved human display names for the bundle corporate plans.
+   * `null`/absent → the dialog falls back to the raw font-mono id (the
+   * pre-existing behaviour), so the caller can leave these off when the plan
+   * can't be resolved (inactive / prior-year).
+   */
+  readonly oldBundleLabel?: string | null;
+  readonly newBundleLabel?: string | null;
 };
 
 type Props = {
@@ -47,6 +55,26 @@ export function BundleChangeWarningDialog({
   const t = useTranslations('admin.members.bundleChangeWarning');
   const [loading, setLoading] = useState(false);
   const [count, setCount] = useState<number | null>(null);
+
+  // BP5 item 6 — render the resolved plan name when available; fall back to
+  // the raw font-mono id (with a tooltip), and to the localised "None" when
+  // there is no bundle at all (never a bare em-dash that reads as missing data).
+  const renderBundle = (
+    label: string | null | undefined,
+    id: string | null,
+  ) => {
+    if (label) return <span className="text-sm font-medium">{label}</span>;
+    if (id) {
+      return (
+        <span className="font-mono text-xs" title={id}>
+          {id}
+        </span>
+      );
+    }
+    return (
+      <span className="text-sm text-muted-foreground">{t('noBundle')}</span>
+    );
+  };
 
   /* eslint-disable react-hooks/set-state-in-effect --
    * Fetch the affected-member count when the dialog opens against a
@@ -94,16 +122,22 @@ export function BundleChangeWarningDialog({
               <div className="text-xs text-muted-foreground">
                 {t('oldBundle')}
               </div>
-              <div className="font-mono text-xs">
-                {payload.oldBundleCorporatePlanId ?? '—'}
+              <div>
+                {renderBundle(
+                  payload.oldBundleLabel,
+                  payload.oldBundleCorporatePlanId,
+                )}
               </div>
             </div>
             <div>
               <div className="text-xs text-muted-foreground">
                 {t('newBundle')}
               </div>
-              <div className="font-mono text-xs">
-                {payload.newBundleCorporatePlanId ?? '—'}
+              <div>
+                {renderBundle(
+                  payload.newBundleLabel,
+                  payload.newBundleCorporatePlanId,
+                )}
               </div>
             </div>
           </div>

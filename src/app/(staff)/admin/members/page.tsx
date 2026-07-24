@@ -20,10 +20,13 @@ import { PlusIcon } from 'lucide-react';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import {
+  countMembersNeedingPortalInvite,
   directorySearchWithCount,
   formatMemberNumber,
+  loadMembersPortalStatus,
   MEMBER_STATUSES,
   resolveMemberNumberPrefix,
+  type PortalState,
 } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { listPlans } from '@/modules/plans';
@@ -57,6 +60,7 @@ import { MembersTableSkeleton } from '@/components/members/members-table-skeleto
 import {
   MembersZeroState,
   MembersFilteredEmptyState,
+  MembersAllInvitedEmptyState,
   MembersErrorState,
 } from '@/components/members/empty-states';
 import { DirectoryWithBulk } from './_components/directory-with-bulk';
@@ -79,6 +83,8 @@ interface SearchParams {
   /** F9 FR-007a — engagement column sort. */
   readonly sort?: string;
   readonly order?: string;
+  /** Needs-invite chip (design doc §3.6). Only 'needs_invite' is honoured. */
+  readonly portal?: string;
 }
 
 const VALID_STATUSES = new Set<string>(MEMBER_STATUSES);
@@ -108,6 +114,15 @@ export function parseDirectorySort(
   raw: string | undefined,
 ): 'engagement' | 'memberNumber' | undefined {
   return raw === 'engagement' || raw === 'memberNumber' ? raw : undefined;
+}
+
+/**
+ * Allow-list for the needs-invite chip param. An unrecognised value is
+ * ignored AND must not count as an active filter — otherwise `?portal=xyz`
+ * would render the "no members match these filters" state on a full directory.
+ */
+export function parsePortalFilter(raw: string | undefined): boolean {
+  return raw === 'needs_invite';
 }
 
 /** Empty membership-status result — used by the degrade path below. */
@@ -147,6 +162,66 @@ async function loadMembersMembershipStatusSafe(
       '[members-lapsed] loadMembersMembershipStatus threw — badges suppressed',
     );
     return EMPTY_MEMBERSHIP_STATUS;
+  }
+}
+
+/**
+ * Best-effort portal-status enrichment. A failure must NEVER take down the
+ * directory — but it must also never look like an answer: on failure every
+ * member degrades to 'unknown' (renders nothing), never to 'not_invited',
+ * which would claim they still need inviting.
+ */
+async function loadMembersPortalStatusSafe(
+  tenant: ReturnType<typeof resolveTenantFromRequest>,
+  memberRepo: ReturnType<typeof buildMembersDeps>['memberRepo'],
+  membersOnPage: readonly {
+    readonly memberId: string;
+    readonly linkedUserId: string | null;
+  }[],
+  now: Date,
+): Promise<ReadonlyMap<string, PortalState> | null> {
+  try {
+    const res = await loadMembersPortalStatus(
+      { tenant, memberRepo },
+      { members: membersOnPage, now },
+    );
+    return res.ok ? res.value : null;
+  } catch (e) {
+    logger.warn(
+      {
+        tenantId: tenant.slug,
+        errKind: errKind(e),
+        memberIdsCount: membersOnPage.length,
+      },
+      '[members-portal] loadMembersPortalStatus threw — portal badges suppressed',
+    );
+    return null;
+  }
+}
+
+/**
+ * Best-effort chip count. Returns `null` — NOT 0 — on failure: an absent chip
+ * means "everyone has been invited" (D5), so rendering 0 after a failed read
+ * would tell the operator the work is done while 12 members are still waiting.
+ * The chip renders a disabled "unavailable" state for null.
+ */
+async function countMembersNeedingPortalInviteSafe(
+  tenant: ReturnType<typeof resolveTenantFromRequest>,
+  memberRepo: ReturnType<typeof buildMembersDeps>['memberRepo'],
+  filter: Parameters<typeof countMembersNeedingPortalInvite>[1],
+): Promise<number | null> {
+  try {
+    const res = await countMembersNeedingPortalInvite(
+      { tenant, memberRepo },
+      filter,
+    );
+    return res.ok ? res.value : null;
+  } catch (e) {
+    logger.warn(
+      { tenantId: tenant.slug, errKind: errKind(e) },
+      '[members-portal] chip count threw — chip shows unavailable',
+    );
+    return null;
   }
 }
 
@@ -229,12 +304,20 @@ export async function MembersDirectoryBody({
         ? riskBandList[0]
         : riskBandList;
 
+  // Needs-invite chip param (design doc §3.6) — allow-listed the same way
+  // as parseDirectorySort: an unrecognised value is ignored, not honoured.
+  const portalNeedsInvite = parsePortalFilter(query.portal);
+
   const hasFilters =
     (query.q !== undefined && query.q.trim().length > 0) ||
     (query.status !== undefined && query.status !== 'all') ||
     (query.plan_id !== undefined && query.plan_id !== 'all') ||
     query.show_archived === '1' ||
-    riskBand !== undefined;
+    riskBand !== undefined ||
+    // Without this, filtering to zero rows renders MembersZeroState — the
+    // "no members yet, add your first member" onboarding screen — to a
+    // tenant with 131 members.
+    portalNeedsInvite;
 
   // Sort allow-list: F9 FR-007a engagement column + 055-member-number's
   // "Member No." column (see parseDirectorySort). Both are server-side sorts
@@ -253,19 +336,30 @@ export async function MembersDirectoryBody({
   const plansDeps = buildPlansDeps(tenant);
   const deps = buildMembersDeps(tenant);
 
-  const [result, plansResult] = await Promise.all([
+  // D8 — ONE instant for every expiry decision on this render. Hoisted above
+  // the first `Promise.all` (rather than declared beside the badge read
+  // below) so the needs-invite chip COUNT and the visible badges judge
+  // invitation expiry against the same moment.
+  const now = new Date();
+
+  const directoryFilter = {
+    ...(query.q?.trim() ? { q: query.q.trim() } : {}),
+    ...(query.plan_id && query.plan_id !== 'all'
+      ? { planId: query.plan_id }
+      : {}),
+    ...(riskBand ? { riskBand } : {}),
+    ...(sort ? { sort, ...(order ? { order } : {}) } : {}),
+    status: [...statuses],
+    limit: PAGE_SIZE,
+    offset,
+  };
+
+  const [result, plansResult, portalInviteCountRaw] = await Promise.all([
     directorySearchWithCount(
       { tenant, memberRepo: deps.memberRepo },
       {
-        ...(query.q?.trim() ? { q: query.q.trim() } : {}),
-        ...(query.plan_id && query.plan_id !== 'all'
-          ? { planId: query.plan_id }
-          : {}),
-        ...(riskBand ? { riskBand } : {}),
-        ...(sort ? { sort, ...(order ? { order } : {}) } : {}),
-        status: [...statuses],
-        limit: PAGE_SIZE,
-        offset,
+        ...directoryFilter,
+        ...(portalNeedsInvite ? { portalNeedsInvite: { now } } : {}),
       },
     ),
     listPlans(
@@ -277,7 +371,42 @@ export async function MembersDirectoryBody({
         clock: plansDeps.clock,
       },
     ),
+    // Needs-invite chip count (design doc §3.7, D7).
+    //
+    // When the chip filter is ACTIVE the visible list is ALREADY the
+    // needs-invite set, so its total (`result.value.total`) IS the chip count —
+    // issuing a second, identical `count(*)` here would just duplicate it, so we
+    // skip it and derive the count from the list total below. When the chip is
+    // INACTIVE the two genuinely differ (all-members list vs needs-invite
+    // subset), so the count runs.
+    //
+    // The count consumes only the WHERE-shaping fields; `sort`/`order` and the
+    // page `offset` are irrelevant to a `count(*)`, so pass a filter without
+    // them (limit/offset are still required by DirectoryOffsetFilter's type and
+    // are ignored by the count query).
+    portalNeedsInvite
+      ? Promise.resolve(null)
+      : countMembersNeedingPortalInviteSafe(tenant, deps.memberRepo, {
+          ...(query.q?.trim() ? { q: query.q.trim() } : {}),
+          ...(query.plan_id && query.plan_id !== 'all'
+            ? { planId: query.plan_id }
+            : {}),
+          ...(riskBand ? { riskBand } : {}),
+          status: [...statuses],
+          limit: PAGE_SIZE,
+          offset: 0,
+          portalNeedsInvite: { now },
+        }),
   ]);
+
+  // #2 — reuse the list total as the chip count when the chip filtered the list
+  // (see the Promise.all comment). On a search error the chip degrades to
+  // `null` (unavailable), consistent with the badge/count degrade contract.
+  const portalInviteCount = portalNeedsInvite
+    ? result.ok
+      ? result.value.total
+      : null
+    : portalInviteCountRaw;
 
   // Build plan options for the filter dropdown
   const planOptions: PlanOption[] = plansResult.ok
@@ -293,7 +422,7 @@ export async function MembersDirectoryBody({
   if (!result.ok) {
     return (
       <>
-        <DirectoryFilters plans={planOptions} />
+        <DirectoryFilters plans={planOptions} portalInviteCount={portalInviteCount} />
         <MembersErrorState />
       </>
     );
@@ -302,8 +431,19 @@ export async function MembersDirectoryBody({
   if (result.value.items.length === 0) {
     return (
       <>
-        <DirectoryFilters plans={planOptions} />
-        {hasFilters ? <MembersFilteredEmptyState /> : <MembersZeroState />}
+        <DirectoryFilters plans={planOptions} portalInviteCount={portalInviteCount} />
+        {/* Task 11 — the needs-invite chip filtered to zero rows gets its own
+            "everyone has been invited" state (design doc §3.6/§3.7), distinct
+            from the generic "no members match these filters" state used by
+            every other filter combination. `hasFilters` (which folds in
+            portalNeedsInvite) still gates the zero-members onboarding screen. */}
+        {portalNeedsInvite ? (
+          <MembersAllInvitedEmptyState />
+        ) : hasFilters ? (
+          <MembersFilteredEmptyState />
+        ) : (
+          <MembersZeroState />
+        )}
       </>
     );
   }
@@ -317,9 +457,18 @@ export async function MembersDirectoryBody({
   // so run them together. The read is best-effort (degrades to both sets
   // empty → no badges).
   const memberIds = result.value.items.map((row) => row.member.memberId);
-  const [memberPrefix, membershipStatus] = await Promise.all([
+  const [memberPrefix, membershipStatus, portalStatus] = await Promise.all([
     resolveMemberNumberPrefix(tenant, deps.memberSettings),
     loadMembersMembershipStatusSafe(tenant, memberIds),
+    loadMembersPortalStatusSafe(
+      tenant,
+      deps.memberRepo,
+      result.value.items.map((row) => ({
+        memberId: row.member.memberId,
+        linkedUserId: row.primaryContact?.linkedUserId ?? null,
+      })),
+      now,
+    ),
   ]);
 
   const rows: MembersTableRow[] = result.value.items.map((row) => {
@@ -342,6 +491,12 @@ export async function MembersDirectoryBody({
     status: row.member.status,
     membership_lapsed: membershipStatus.lapsed.has(row.member.memberId),
     membership_suspended: membershipStatus.suspended.has(row.member.memberId),
+    portal_state:
+      row.primaryContact === null
+        ? null
+        : portalStatus === null
+          ? 'unknown'
+          : (portalStatus.get(row.member.memberId) ?? 'unknown'),
     // 056-members-table-compact — engagement (the positive-framed inverse of
     // the F8 risk score) is now the sole at-risk surface in the table; the raw
     // risk score is no longer wired into the row (the Risk column was dropped).
@@ -378,7 +533,7 @@ export async function MembersDirectoryBody({
   // hydration transitions.
   return (
     <>
-      <DirectoryFilters plans={planOptions} />
+      <DirectoryFilters plans={planOptions} portalInviteCount={portalInviteCount} />
       {/* C1 round-10 — pass `withSelection={isAdmin}` so the
           shimmer-skeleton column count matches the real table for the
           current role. 056-members-table-compact: admin 8 cols incl.

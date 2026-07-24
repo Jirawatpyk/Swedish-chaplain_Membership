@@ -9,8 +9,10 @@ import {
   parseCycleId,
   assertCycleInvariants,
   cycleFrozenPriceSatang,
+  frozenPlanSnapshotsDiffer,
   isOverdue,
   daysUntilExpiry,
+  type FrozenPlanSnapshot,
   type RenewalCycle,
 } from '@/modules/renewals/domain/renewal-cycle';
 
@@ -416,5 +418,73 @@ describe('cycleFrozenPriceSatang', () => {
     expect(() =>
       cycleFrozenPriceSatang(buildCycle({ frozenPlanPriceThb: '1e6' })),
     ).toThrow(/malformed/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// frozenPlanSnapshotsDiffer — M1 corrective-audit gate predicate.
+// One assertion per operand of the 5-way OR so every branch is exercised
+// (Domain 100% coverage); plus the satang-normalization + throw edges.
+// ---------------------------------------------------------------------------
+describe('frozenPlanSnapshotsDiffer', () => {
+  const base: FrozenPlanSnapshot = {
+    planIdAtCycleStart: 'plan-A',
+    tierAtCycleStart: 'regular',
+    frozenPlanPriceThb: parseThbDecimal('50000.00'),
+    frozenPlanTermMonths: 12,
+    frozenPlanCurrency: 'THB',
+  };
+
+  it('returns false when all 5 frozen fields are equal', () => {
+    expect(frozenPlanSnapshotsDiffer(base, { ...base })).toBe(false);
+  });
+
+  it('returns true when plan_id differs (same price — the M1 case)', () => {
+    expect(
+      frozenPlanSnapshotsDiffer(base, { ...base, planIdAtCycleStart: 'plan-B' }),
+    ).toBe(true);
+  });
+
+  it('returns true when tier differs (same price — the M1 case)', () => {
+    expect(
+      frozenPlanSnapshotsDiffer(base, { ...base, tierAtCycleStart: 'premium' }),
+    ).toBe(true);
+  });
+
+  it('returns true when term differs', () => {
+    expect(
+      frozenPlanSnapshotsDiffer(base, { ...base, frozenPlanTermMonths: 24 }),
+    ).toBe(true);
+  });
+
+  it('returns true when currency differs', () => {
+    expect(
+      frozenPlanSnapshotsDiffer(base, { ...base, frozenPlanCurrency: 'SEK' }),
+    ).toBe(true);
+  });
+
+  it('returns true when only the price differs', () => {
+    expect(
+      frozenPlanSnapshotsDiffer(base, {
+        ...base,
+        frozenPlanPriceThb: parseThbDecimal('180000.00'),
+      }),
+    ).toBe(true);
+  });
+
+  it('normalizes the price to satang — "50000" ≡ "50000.00" is NOT a difference', () => {
+    expect(
+      frozenPlanSnapshotsDiffer(
+        { ...base, frozenPlanPriceThb: parseThbDecimal('50000') },
+        { ...base, frozenPlanPriceThb: parseThbDecimal('50000.00') },
+      ),
+    ).toBe(false);
+  });
+
+  it('throws on a malformed price decimal (rolls back the caller tx)', () => {
+    // Widen the price field to a bare string so the malformed value bypasses
+    // parseThbDecimal at construction — mirrors the cycleFrozenPriceSatang tests.
+    const malformed = { ...base, frozenPlanPriceThb: 'abc' } as unknown as FrozenPlanSnapshot;
+    expect(() => frozenPlanSnapshotsDiffer(base, malformed)).toThrow(/malformed/);
   });
 });

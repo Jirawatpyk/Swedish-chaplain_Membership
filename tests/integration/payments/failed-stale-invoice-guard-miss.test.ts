@@ -326,6 +326,9 @@ describe('confirmPayment failed-row + non-payable invoice stale Step-3 marker â€
           audit: f5AuditAdapter,
           clock: systemClock,
           taxAtPayment: 'off',
+          // money-remediation Task 4 â€” flag OFF preserves the pre-remediation
+          // commit-on-bridge-decline behaviour this suite was written against.
+          settlementAbort: false,
         },
         {
           tenantId: tenant.ctx.slug,

@@ -7,11 +7,15 @@
  * (`docs/Membership Database_Since 2025.xlsx` — PII, git-ignored, never
  * committed). Migration 0238 (Task 1) added `renewal_cycles.anchored_at` /
  * `.anchor_invoice_id` so a cycle created at member-registration time (a
- * provisional anchor) can later be re-anchored to the member's REAL first
- * payment date. For members onboarded BEFORE this feature shipped, that
- * re-anchor never happened automatically (there was no live F4 payment event
- * to trigger it) — this script performs that re-anchor retroactively from an
- * operator-supplied CSV of historical payment dates.
+ * PLACEHOLDER anchor, not the member's real enrolment date) can later be
+ * corrected. Under the FIXED-ANCHOR model (2026-07-22) the live payment hook
+ * only ACTIVATES a cycle — it no longer moves the period to the payment month
+ * (the reverted #173 bug). For members onboarded BEFORE the system existed
+ * TSCC never recorded a real enrolment date; the only historical signal is
+ * their recorded PAYMENT date, so this ONE-OFF import uses that as the proxy
+ * anchor, re-anchoring their open cycles retroactively from an
+ * operator-supplied CSV. This is a DATA-IMPORT correction of placeholder
+ * anchors, NOT the live payment-time re-anchor.
  *
  * This module holds ONLY pure, side-effect-free logic (CSV parsing, name
  * normalisation, period derivation, plan building) so it is fully unit

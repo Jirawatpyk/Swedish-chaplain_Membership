@@ -47,6 +47,15 @@ export interface MemberDisplay {
 
 export interface PlanDisplay {
   readonly localisedName: string;
+  /**
+   * Annual fee in currency minor units (satang for THB). Optional — present
+   * only when the runner projected the column (production does; unit-test
+   * stubs that return `{ planName }` alone legitimately omit it, so callers
+   * that don't need the fee — e.g. the cycle-detail page — are unaffected).
+   * Consumed by the tier-upgrade Accept dialog to restate the old→new fee
+   * (plan-change UX C2).
+   */
+  readonly annualFeeMinorUnits?: number;
 }
 
 /**
@@ -118,7 +127,7 @@ export async function fetchMemberDisplay(
 export type PlanDisplayRunner = (args: {
   readonly tenantSlug: string;
   readonly planId: string;
-}) => Promise<ReadonlyArray<{ planName: unknown }>>;
+}) => Promise<ReadonlyArray<{ planName: unknown; annualFeeMinorUnits?: unknown }>>;
 
 const defaultPlanDisplayRunner: PlanDisplayRunner = async ({
   tenantSlug,
@@ -127,7 +136,10 @@ const defaultPlanDisplayRunner: PlanDisplayRunner = async ({
   const tenantContext = asTenantContext(tenantSlug);
   return runInTenant(tenantContext, async (tx: TenantTx) =>
     tx
-      .select({ planName: membershipPlans.planName })
+      .select({
+        planName: membershipPlans.planName,
+        annualFeeMinorUnits: membershipPlans.annualFeeMinorUnits,
+      })
       .from(membershipPlans)
       .where(
         and(
@@ -181,5 +193,15 @@ export async function fetchPlanDisplay(
     (args.locale === 'th' && parsed.data.th) ||
     (args.locale === 'sv' && parsed.data.sv) ||
     parsed.data.en;
-  return { localisedName };
+  // The fee is optional on the row (see PlanDisplayRunner) — coerce a finite
+  // number through and omit it otherwise, so a stub that returns only
+  // `planName` (or a malformed fee) degrades to a name-only view rather than
+  // surfacing `NaN`/`undefined` on a money surface.
+  const feeRaw = row.annualFeeMinorUnits;
+  const annualFeeMinorUnits =
+    typeof feeRaw === 'number' && Number.isFinite(feeRaw) ? feeRaw : undefined;
+  return {
+    localisedName,
+    ...(annualFeeMinorUnits !== undefined ? { annualFeeMinorUnits } : {}),
+  };
 }

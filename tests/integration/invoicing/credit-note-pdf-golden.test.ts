@@ -160,6 +160,7 @@ function makeDepsWithRenderSpy(
   captured: PdfRenderInput[],
 ): IssueCreditNoteDeps {
   return {
+    pendingRefundGuard: { countPendingRefundsForInvoice: async () => 0 },
     invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
     creditNoteRepo: makeDrizzleCreditNoteRepo(tenantId),
     tenantSettingsRepo: drizzleTenantSettingsRepo,

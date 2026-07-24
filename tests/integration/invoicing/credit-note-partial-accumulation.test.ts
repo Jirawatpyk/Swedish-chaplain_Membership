@@ -159,6 +159,7 @@ async function seedInvoiceInStatus(
 
 function makeDeps(tenantId: string): IssueCreditNoteDeps {
   return {
+    pendingRefundGuard: { countPendingRefundsForInvoice: async () => 0 },
     invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
     creditNoteRepo: makeDrizzleCreditNoteRepo(tenantId),
     tenantSettingsRepo: drizzleTenantSettingsRepo,

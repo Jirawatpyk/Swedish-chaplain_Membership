@@ -43,6 +43,18 @@ export function routeVoidError(
   code: string | undefined | null,
 ): VoidErrorRouting {
   if (code && CONCURRENT_CODES.has(code)) return { kind: 'concurrent' };
+  // 8A — a refund is settling on this invoice; voiding now would strand it.
+  // A dedicated actionable message, NOT `concurrent` (the invoice is still
+  // voidable, just temporarily blocked) nor a raw code dump.
+  if (code === 'refund_in_progress') {
+    return { kind: 'failure', messageKey: 'errors.refundInProgress' };
+  }
+  // H1 — a paid membership §86/4 must be reversed via a §86/10 credit note, not
+  // voided. A dedicated actionable message directing the operator to the
+  // credit-note workflow, NOT a raw `errors.codeFallback` code dump.
+  if (code === 'paid_membership_requires_credit_note') {
+    return { kind: 'failure', messageKey: 'errors.paidMembershipRequiresCreditNote' };
+  }
   if (code) return { kind: 'failure', messageKey: 'errors.codeFallback', codeArg: code };
   return { kind: 'failure', messageKey: 'errors.unknown' };
 }

@@ -167,7 +167,7 @@ describe('Integration — changeMemberPlan runs F8 listeners POST-COMMIT (063)',
         );
       }
       // The returned member reflects the new plan.
-      expect(r.value.planId as string).toBe(newPlanId);
+      expect(r.value.member.planId as string).toBe(newPlanId);
 
       // The listener actually ran (proves we exercised the post-commit
       // path, not a no-op short-circuit).
@@ -268,7 +268,7 @@ describe('Integration — changeMemberPlan runs F8 listeners POST-COMMIT (063)',
 
       expect(r.ok).toBe(true);
       if (!r.ok) throw new Error(JSON.stringify(r.error));
-      expect(r.value.planId as string).toBe(newPlanId);
+      expect(r.value.member.planId as string).toBe(newPlanId);
 
       // Both listeners ran post-commit with the correct event payload
       // (old = the row's pre-flip plan, new = the requested plan).

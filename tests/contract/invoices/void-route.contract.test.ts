@@ -50,6 +50,20 @@ vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },
 }));
 
+// F8 flag OFF — the Step-2.4 cycle-unlink seam is only wired when
+// FEATURE_F8_RENEWALS is on, and this suite pins the HTTP boundary only. Keep
+// the route off the @/modules/renewals dynamic import (pay-route-guard parity).
+vi.mock('@/lib/env', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/env')>();
+  return {
+    ...actual,
+    env: {
+      ...actual.env,
+      features: { ...actual.env.features, f8Renewals: false },
+    },
+  };
+});
+
 vi.mock('@/modules/invoicing', async (importOriginal) => {
   // Keep the real schema + parseInvoiceId so the route's validation boundary is
   // exercised for real; override only the use-case + deps factory.
@@ -174,6 +188,20 @@ describe('contract: POST /api/invoices/[invoiceId]/void', () => {
 
     expect(res.status).toBe(400);
     expect(voidInvoiceMock).not.toHaveBeenCalled();
+  });
+
+  it('H1 — maps paid_membership_requires_credit_note to 409 (wiring pin)', async () => {
+    // A paid membership §86/4 must be reversed via a §86/10 credit note, not
+    // voided. The use-case refuses with this code; the route surfaces it as 409.
+    voidInvoiceMock.mockResolvedValueOnce(
+      err({ code: 'paid_membership_requires_credit_note' }),
+    );
+
+    const res = await callRoute(VALID_INVOICE_ID, { voidReason: 'legit reason' });
+
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('paid_membership_requires_credit_note');
   });
 
   it('returns 403 for a non-admin (manager) actor', async () => {

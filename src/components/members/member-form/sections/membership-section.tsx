@@ -15,8 +15,9 @@
  * schema with the plan's conditional DOB requirement) — so the `planId`
  * state itself stays in the root rather than living here.
  */
-import { useTranslations } from 'next-intl';
+import { useTranslations, useLocale } from 'next-intl';
 import { Controller, useFormContext } from 'react-hook-form';
+import { formatSatangThb } from '@/lib/format-thb';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RequiredMark } from '@/components/ui/required-mark';
@@ -41,11 +42,33 @@ export function MembershipSection({
 }) {
   const t = useTranslations('admin.members.create');
   const tf = useTranslations('admin.members.create.fields');
+  // Locale for the canonical `formatSatangThb` money formatter — the SAME
+  // suffix-style "36,000.00 THB" the plan-change confirm dialog renders
+  // (`plan-change-summary.ts` → `format-thb.ts`), so the picker and the confirm
+  // dialog read identically within the member-edit flow (enterprise-ux C1).
+  // `formatSatangThb` is pure/client-safe; the plans-domain `formatMoney` lives
+  // behind the server-heavy `@/modules/plans` barrel and can't be imported here.
+  const locale = useLocale();
   const {
     register,
     control,
     formState: { errors },
   } = useFormContext<MemberFormValues>();
+
+  function planFeeLabel(p: PlanOption): string | null {
+    if (
+      p.annual_fee_minor_units === undefined ||
+      p.currency_code === undefined ||
+      !Number.isInteger(p.annual_fee_minor_units)
+    ) {
+      return null;
+    }
+    return formatSatangThb(
+      BigInt(p.annual_fee_minor_units),
+      locale,
+      p.currency_code,
+    );
+  }
 
   return (
     <fieldset className="flex flex-col gap-4 rounded-md border p-4">
@@ -94,11 +117,23 @@ export function MembershipSection({
                   />
                 </SelectTrigger>
                 <SelectContent>
-                  {plans.map((p) => (
-                    <SelectItem key={p.plan_id} value={p.plan_id}>
-                      {p.display_name}
-                    </SelectItem>
-                  ))}
+                  {plans.map((p) => {
+                    const fee = planFeeLabel(p);
+                    return (
+                      <SelectItem key={p.plan_id} value={p.plan_id}>
+                        <span>{p.display_name}</span>
+                        {fee !== null && (
+                          <span className="ml-auto text-xs text-muted-foreground">
+                            {/* sr-only prefix so a screen reader hears
+                                "Annual fee: …" rather than a bare number
+                                trailing the plan name. */}
+                            <span className="sr-only">{tf('planAnnualFee')}: </span>
+                            {fee}
+                          </span>
+                        )}
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
             )}

@@ -32,6 +32,13 @@ vi.mock('next-intl', () => ({
   // mock above is a full replace (not `importOriginal` partial), so it
   // must also stub this export or the render throws.
   useLocale: () => 'en',
+  // WP2 — MembershipSection now calls useFormatter() to render the plan
+  // annual fee. Same full-replace mock, so it must stub this too. The
+  // number() shape mirrors next-intl's formatter (this test asserts
+  // required-field wiring, not the fee value).
+  useFormatter: () => ({
+    number: (value: number) => String(value),
+  }),
 }));
 
 import { MemberForm, type PlanOption } from '@/components/members/member-form';

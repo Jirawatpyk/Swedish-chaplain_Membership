@@ -6,11 +6,18 @@
  *
  * Members onboarded BEFORE the rolling-anchor feature shipped have renewal
  * cycles provisionally anchored at `members.registration_date` (the F8
- * onboarding default). TSCC's actual policy is 12 months rolling from the
- * REAL first payment date. For live members the payment hook re-anchors
- * automatically at the next payment; for the pre-system cohort there is no
- * such payment event — this script re-anchors their open cycles from an
- * operator-supplied CSV of TSCC's recorded payment dates.
+ * onboarding default) — a PLACEHOLDER, not their real enrolment date. Under
+ * the FIXED-ANCHOR model (2026-07-22) a cycle's 12-month period is fixed at
+ * the member's enrolment anchor and payment only ACTIVATES it; the live
+ * payment hook no longer moves the period to the payment month (the reverted
+ * #173 payment-anchor bug). For the pre-system cohort TSCC never recorded a
+ * real enrolment date — the only historical signal is their recorded PAYMENT
+ * date, so this ONE-OFF import uses that as the best proxy for their true
+ * anchor, re-anchoring each open cycle from an operator-supplied CSV of
+ * TSCC's recorded payment dates. This is a DATA-IMPORT correction of
+ * placeholder anchors, NOT the live payment-time re-anchor — do not conflate
+ * the two (the derived period below intentionally keys on the CSV payment
+ * date because that IS the proxy anchor for these historical members).
  *
  * ## Input CSV (operator-authored — treat as PII, keep OUT of the repo)
  *

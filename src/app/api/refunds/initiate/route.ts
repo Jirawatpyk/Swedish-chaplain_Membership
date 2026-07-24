@@ -98,10 +98,14 @@ const InitiateRefundBody = z.object({
  * future variant addition fails the build instead of silently falling
  * through to `internal_error`.
  */
-function httpStatusForUseCaseError(code: IssueRefundError['code']): {
+function httpStatusForUseCaseError(error: IssueRefundError): {
   status: number;
   routeCode: F5RouteErrorCode;
 } {
+  // Track B — takes the whole error, not just its code, because
+  // `f4_preflight_credit_note_blocked` carries F4's Domain reason and the copy
+  // must follow the REASON's retryability, not the outer code.
+  const code = error.code;
   switch (code) {
     case 'invalid_payment_id':
       // Path-shape validation failure; surface as 400 invalid_input
@@ -128,12 +132,105 @@ function httpStatusForUseCaseError(code: IssueRefundError['code']): {
       // on-call does NOT hunt a non-existent orphaned refund via the
       // out-of-band-refund runbook. Retrying the same request is the fix.
       return { status: 502, routeCode: 'f4_preflight_read_error' };
+    // I1 (Task 7) — 502 like its read-failure sibling (the fault is ours, not
+    // the request's), but a DISTINCT code because the copy must not say
+    // "retry". The gate axes could not be computed at all, so every identical
+    // retry fails identically; the admin is told to contact support while the
+    // bridge's dedicated metric pages SRE.
+    case 'f4_preflight_gate_underivable':
+      return { status: 502, routeCode: 'f4_preflight_gate_underivable' };
+    // F-4 (money-remediation Task 7) — all three are 409, NEVER 502. The
+    // refund was refused BEFORE Stripe: no money moved, no orphaned refund
+    // exists, and retrying the identical request changes nothing. A 502 here
+    // would read as "try again", which is exactly the click F-3 proved
+    // expensive.
+    //
+    // Track B — one use-case code carrying F4's Domain reason. The route code
+    // (and therefore the copy) is chosen by the REASON, because retryability
+    // differs per arm and route codes are the i18n keys: one code cannot carry
+    // two call-to-actions.
+    //
+    // 409 throughout — money did not move and no orphaned Stripe refund
+    // exists. 409 does NOT mean "never retry"; `receipt_render_pending` clears
+    // on its own and its copy says to wait.
+    case 'f4_preflight_credit_note_blocked':
+      switch (error.reason.code) {
+        case 'invoice_not_creditable':
+          // Look at the invoice: already fully credited, or an anomalous
+          // status. (A VOIDED invoice no longer lands here — it waives.)
+          return { status: 409, routeCode: 'f4_preflight_invalid_status' };
+        case 'identity_snapshot_missing':
+          // A corrupt row, not a business state. Reuses the existing
+          // corrupt-data envelope rather than minting a code whose copy would
+          // say the same thing; 422 because the request is well-formed and the
+          // stored data is not.
+          return { status: 422, routeCode: 'invoice_data_corrupt' };
+        case 'receipt_render_pending':
+          // TRANSIENT, and the only receipt state that is: the reconcile cron
+          // sweeps stuck `pending` rows, so "wait" is honest here.
+          return { status: 409, routeCode: 'f4_preflight_receipt_rendering' };
+        case 'receipt_render_failed':
+        case 'receipt_render_not_started':
+          // Deliberately SHARE one route code and one copy: the two are
+          // distinct in Domain for telemetry (a NULL spike means a broken
+          // enqueue path, a `failed` spike means a broken renderer) but the
+          // remedy an admin is given is identical, so splitting the copy would
+          // be a distinction without a difference.
+          return { status: 409, routeCode: 'f4_preflight_receipt_render_stuck' };
+        // Same S3 reasoning as the OUTER switch's default, and load-bearing for
+        // the same reason: this inner switch has no return after it, so a NEW
+        // `RefundCreditNoteBlockReason` (the Domain union invites exactly that)
+        // would match no case and FALL THROUGH to `f4_bridge_error` below —
+        // answering a Phase-A block, where no money moved, with a 502 that reads
+        // as retryable. `noImplicitReturns` does not catch it because the outer
+        // arm still returns. The `never` assignment turns "added a reason,
+        // forgot the route mapping" into a compile error that NAMES the reason.
+        default: {
+          const exhaustiveReason: never = error.reason;
+          throw new Error(
+            `httpStatusForUseCaseError: unhandled RefundCreditNoteBlockReason ${JSON.stringify(exhaustiveReason)}`,
+          );
+        }
+      }
     case 'f4_bridge_error':
       // Q3: distinct route code so monitoring + UI can distinguish a
       // Stripe outage (re-try later) from an F4 CN-issuance failure
       // (Stripe refund DID succeed; ops follow up via the out-of-
       // band-refund runbook).
       return { status: 502, routeCode: 'f4_bridge_error' };
+    case 'f4_bridge_deferred':
+      // Money-remediation F-3. Stripe SETTLED the refund; only the credit note
+      // is outstanding and the stale-pending sweep retries it. Still 502
+      // (the request did not fully complete) but a DISTINCT route code, and
+      // therefore distinct copy: `f4_bridge_error`'s "issuance failed" reads
+      // as retryable, and the admin retrying is precisely what turned this
+      // into a double refund before the row stopped being marked `failed`.
+      return { status: 502, routeCode: 'f4_bridge_deferred' };
+    case 'refund_needs_reconciliation':
+      // 409, NOT 502 — retrying changes nothing. A prior refund on this
+      // payment settled at Stripe but was recorded `failed`, so the
+      // remaining-refundable maths is blind to money that already left.
+      // A human must reconcile via `docs/runbooks/out-of-band-refund.md`.
+      return { status: 409, routeCode: 'refund_needs_reconciliation' };
+    // S3 (Task 7 remediation) — exhaustiveness, asserted rather than implied.
+    //
+    // Today this switch is already total by structure: it has no `default:`,
+    // the return type excludes `undefined`, and `noImplicitReturns` is on, so
+    // a missing case fails the build. But that guarantee is one keystroke from
+    // gone — anyone adding `default: return { status: 500, routeCode:
+    // 'internal_error' }` (which reads as defensive hardening and would pass
+    // review) silently converts every FUTURE missing case into a 500 on a
+    // money surface.
+    //
+    // This arm survives that edit: there is already a default, so adding
+    // another is a duplicate-case error, and the compile failure now NAMES the
+    // unhandled variant instead of the opaque "lacks ending return statement".
+    default: {
+      const exhaustive: never = code;
+      throw new Error(
+        `httpStatusForUseCaseError: unhandled IssueRefundError code ${JSON.stringify(exhaustive)}`,
+      );
+    }
   }
 }
 
@@ -247,6 +344,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
               id: v.refund.id,
               status: v.refund.status,
               processorRefundId: v.refund.processorRefundId,
+              // Track B — known at pre-flight, so the 202 can say truthfully
+              // whether a §86/10 will ever follow this refund. Null on the
+              // ordinary path (the webhook books one when Stripe settles).
+              creditNoteWaiverReason: v.refund.creditNoteWaiverReason,
             },
             message: REFUND_PENDING_MESSAGE_EN,
             messageThai: REFUND_PENDING_MESSAGE_TH,
@@ -269,8 +370,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             reason: v.refund.reason,
             status: v.refund.status,
             processorRefundId: v.refund.processorRefundId,
-            creditNoteId: v.refund.creditNoteId,
-            creditNoteNumber: v.refund.creditNoteNumber,
+            // Track B — a discriminated shape, so a client cannot render
+            // "credit note  issued" with an empty number. The legacy flat
+            // fields are still emitted on the issued path for backwards
+            // compatibility with anything reading them; they are NULL when the
+            // refund carries a waiver instead.
+            creditNote: v.refund.creditNote,
+            creditNoteId:
+              v.refund.creditNote.kind === 'issued' ? v.refund.creditNote.id : null,
+            creditNoteNumber:
+              v.refund.creditNote.kind === 'issued'
+                ? v.refund.creditNote.number
+                : null,
             completedAt: v.refund.completedAt,
           },
           payment: {
@@ -290,7 +401,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     const errCode = result.error.code;
-    const { status, routeCode } = httpStatusForUseCaseError(errCode);
+    const { status, routeCode } = httpStatusForUseCaseError(result.error);
     // PCI: log ONLY the bounded `kind` discriminator + closed-union
     // `reason` literal — never raw Stripe SDK text.
     const { processorErrorKind, processorErrorReason, retryAfterSeconds } =
@@ -306,6 +417,25 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         routeCode,
         ...(processorErrorKind ? { processorErrorKind } : {}),
         ...(processorErrorReason ? { processorErrorReason } : {}),
+        // I8 (Task 7 remediation) — the `status` payload on
+        // `f4_preflight_invalid_status` was documented as letting ops tell a
+        // voided invoice from a fully-credited one "without a second query",
+        // and then was never logged, never returned, and never read anywhere.
+        // The docstring promised on-call a field that did not exist. Emit it.
+        // Bounded enum (`draft|issued|paid|void|credited|partially_credited`)
+        // — no PII, nothing to redact.
+        ...(result.error.code === 'f4_preflight_credit_note_blocked'
+          ? {
+              // I8 — the block reason and how it clears, so a triager can tell
+              // a self-healing render from a permanently uncreditable invoice
+              // without a second query. Bounded literals; no PII.
+              gateReason: result.error.reason.code,
+              gateRetryability: result.error.reason.retryability,
+              ...(result.error.reason.code === 'invoice_not_creditable'
+                ? { invoiceStatus: result.error.reason.status }
+                : {}),
+            }
+          : {}),
       },
       'refunds.initiate.use_case_error',
     );

@@ -29,15 +29,21 @@ import {
 import { directorySearchWithCount } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { makeBroadcastApprovalCounter } from '@/modules/broadcasts';
+import {
+  listWaivedRefundTotalsByInvoice,
+  makeListWaivedRefundTotalsByInvoiceDeps,
+} from '@/modules/payments';
 
 // The F9 adapters under contract + the F9-owned ports they must satisfy.
 import { invoiceSourceAdapter } from '@/modules/insights/infrastructure/sources/invoice-source-adapter';
 import { memberSourceAdapter } from '@/modules/insights/infrastructure/sources/member-source-adapter';
 import { broadcastSourceAdapter } from '@/modules/insights/infrastructure/sources/broadcast-source-adapter';
+import { waivedRefundSourceAdapter } from '@/modules/insights/infrastructure/sources/waived-refund-source-adapter';
 import type {
   InvoiceSource,
   MemberSource,
   BroadcastConsumptionSource,
+  WaivedRefundSource,
 } from '@/modules/insights/application/ports/source-ports';
 
 const SLUG = 'test-tenant';
@@ -120,6 +126,22 @@ describe('F9 inter-module boundary contract [T017a / analyze R2-M1]', () => {
       const port: Pick<BroadcastConsumptionSource, 'countAwaitingApproval'> =
         broadcastSourceAdapter;
       expect(typeof port.countAwaitingApproval).toBe('function');
+    });
+  });
+
+  // Track B — the ONE seam where insights reads F5. This file exists to fail
+  // when a new sibling dependency lands, so a new source belongs here or the
+  // guard silently stops covering the module it names.
+  describe('payments barrel → WaivedRefundSource', () => {
+    it('exposes listWaivedRefundTotalsByInvoice + its deps factory', () => {
+      expect(typeof listWaivedRefundTotalsByInvoice).toBe('function');
+      // Constructing deps must not touch the DB — the factory only wires a repo.
+      expect(typeof makeListWaivedRefundTotalsByInvoiceDeps(SLUG)).toBe('object');
+    });
+
+    it('waivedRefundSourceAdapter satisfies the port', () => {
+      const port: WaivedRefundSource = waivedRefundSourceAdapter;
+      expect(typeof port.sumWaivedByInvoice).toBe('function');
     });
   });
 

@@ -19,8 +19,53 @@
  * earlier session but had not actually run on live Neon. The parity
  * test surfaced it before runtime.
  */
+import { readdirSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
+
+const MIGRATIONS_DIR = resolve(process.cwd(), 'drizzle', 'migrations');
+
+/**
+ * Every value THIS working tree's migrations declare for `typeName`.
+ *
+ * Needed because the dev Neon branch is SHARED across feature branches. A
+ * sibling branch that applies its own migration adds enum values the current
+ * tree has never heard of, and the SQL→TS direction then reports drift that
+ * the current branch cannot fix — the value belongs to someone else's TS
+ * union, and adding it here would ship a TS reference to an enum value that
+ * this branch's migrations do not create (fine on the shared dev DB, broken
+ * the moment this branch merges to main alone).
+ *
+ * Comparing against the tree's own migrations separates the two cases:
+ *   - declared here + missing from TS  → REAL drift, this branch's bug
+ *   - not declared here                → a sibling branch's value, not ours
+ *
+ * Matches both declaration forms used in this repo:
+ *   ALTER TYPE "x" ADD VALUE [IF NOT EXISTS] 'value'
+ *   CREATE TYPE "x" AS ENUM ('a', 'b', …)
+ */
+export function enumValuesDeclaredByMigrations(typeName: string): Set<string> {
+  const out = new Set<string>();
+  const files = readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith('.sql'));
+  const q = `"?${typeName}"?`;
+  const addValue = new RegExp(
+    `ALTER\\s+TYPE\\s+${q}\\s+ADD\\s+VALUE\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?'([^']+)'`,
+    'gi',
+  );
+  const createEnum = new RegExp(
+    `CREATE\\s+TYPE\\s+${q}\\s+AS\\s+ENUM\\s*\\(([^)]*)\\)`,
+    'gi',
+  );
+  for (const f of files) {
+    const sqlText = readFileSync(resolve(MIGRATIONS_DIR, f), 'utf8');
+    for (const m of sqlText.matchAll(addValue)) out.add(m[1]!);
+    for (const m of sqlText.matchAll(createEnum)) {
+      for (const lit of m[1]!.matchAll(/'([^']+)'/g)) out.add(lit[1]!);
+    }
+  }
+  return out;
+}
 
 export interface EnumParityOpts {
   /** Postgres enum type name (e.g. `'audit_event_type'`, `'notification_type'`). */
@@ -127,6 +172,19 @@ export function resolveScopeFilter(
 export interface EnumParityResult {
   readonly missingInSql: ReadonlyArray<string>; // TS values not in pg_enum
   readonly missingInTs: ReadonlyArray<string>; // pg_enum values not in TS (post-filter)
+  /**
+   * `missingInTs` values that a migration IN THIS TREE declares — genuine
+   * drift the current branch owns and must fix. Assert on THIS, not on
+   * `missingInTs`, when running against the shared dev Neon branch.
+   */
+  readonly missingInTsDeclaredHere: ReadonlyArray<string>;
+  /**
+   * `missingInTs` values with NO declaring migration in this tree: a sibling
+   * feature branch applied its migration to the shared dev database. Not
+   * actionable here — adding them to this branch's TS union would reference an
+   * enum value this branch's migrations never create.
+   */
+  readonly missingInTsForeign: ReadonlyArray<string>;
   readonly tsCount: number;
   readonly sqlCount: number; // post-filter
 }
@@ -168,9 +226,27 @@ export async function getEnumParity(
     if (!tsValues.has(sv)) missingInTs.push(sv);
   }
 
+  const declaredHere = enumValuesDeclaredByMigrations(opts.typeName);
+  const missingInTsDeclaredHere = missingInTs.filter((v) => declaredHere.has(v));
+  const missingInTsForeign = missingInTs.filter((v) => !declaredHere.has(v));
+
+  if (missingInTsForeign.length > 0) {
+    console.warn(
+      `[assertEnumParity] "${opts.typeName}": the shared dev database carries ` +
+        `${missingInTsForeign.length} in-scope value(s) that NO migration in this ` +
+        `tree declares — ${JSON.stringify(missingInTsForeign)}. A sibling feature ` +
+        `branch applied its migration to the same database. Not drift in THIS ` +
+        `branch, and not fixable here: adding them to this TS union would ` +
+        `reference enum values this branch's migrations never create. They will ` +
+        `resolve when the owning branch merges.`,
+    );
+  }
+
   return {
     missingInSql,
     missingInTs,
+    missingInTsDeclaredHere,
+    missingInTsForeign,
     tsCount: tsValues.size,
     sqlCount: sqlValues.size,
   };

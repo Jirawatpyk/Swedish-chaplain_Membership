@@ -121,11 +121,19 @@ describe('payments barrel — public API contract', () => {
         'clock',
         'invoicingBridge',
         'logger',
+        // F2 finaliser deadlock fix — POST-commit F8 hook (f8AfterCommitCallbacks),
+        // present under FEATURE_F8_RENEWALS=true alongside onPaidCallbacks. Its
+        // absence would silently un-wire the post-commit F2 finalise.
+        'onAfterCommitCallbacks',
         'onPaidCallbacks',
         'paymentsRepo',
         'processorEventsRepo',
         'processorGateway',
         'refundsRepo',
+        // money-remediation Task 4 (F-1) — FEATURE_F5_SETTLEMENT_ABORT, a pure
+        // passthrough into the inner confirmPayment deps. Its absence would
+        // silently un-wire the settlement rollback on the webhook path.
+        'settlementAbort',
         // 088 SEC-MED (T2 structural decouple) — the honest flow flag threaded so
         // the inner confirm read carries it (reconciliationPath:true → dormant).
         'taxAtPayment',
@@ -145,10 +153,17 @@ describe('payments barrel — public API contract', () => {
         'clock',
         'invoicingBridge',
         'logger',
+        // F2 finaliser deadlock fix — POST-commit F8 hook, fired after the
+        // settlement tx commits on the `processed` outcome (present under
+        // FEATURE_F8_RENEWALS=true alongside onPaidCallbacks).
+        'onAfterCommitCallbacks',
         'onPaidCallbacks',
         'paymentsRepo',
         'processorEventsRepo',
         'processorGateway',
+        // money-remediation Task 4 (F-1) — FEATURE_F5_SETTLEMENT_ABORT gates
+        // whether a bridge decline rolls the settlement tx back.
+        'settlementAbort',
         // 088 SEC-MED (T2 structural decouple) — honest flow flag threaded into
         // the confirm read (reconciliationPath:true → dormant); no magic value.
         'taxAtPayment',

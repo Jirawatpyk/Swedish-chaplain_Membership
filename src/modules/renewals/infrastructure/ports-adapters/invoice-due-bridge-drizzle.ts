@@ -17,17 +17,60 @@
  * (Constitution Principle I § 1).
  */
 import { and, eq, gte, isNotNull, sql } from 'drizzle-orm';
-import { runInTenant } from '@/lib/db';
+import { db, runInTenant, type TenantTx } from '@/lib/db';
 import type { TenantContext } from '@/modules/tenants';
-import { invoicesTable } from '@/modules/invoicing';
+import { invoicesTable, liveMembershipBillWhere } from '@/modules/invoicing';
 import type {
   HasUnpaidNotYetDueMembershipInvoiceInput,
   InvoiceDueBridge,
+  LiveMembershipBill,
+  LiveMembershipBillInput,
   OldestUnpaidMembershipInvoiceDueDateInput,
 } from '../../application/ports/invoice-due-bridge';
 
 export function makeInvoiceDueBridgeDrizzle(ctx: TenantContext): InvoiceDueBridge {
   return {
+    async findLiveMembershipBillInTx(
+      tx: unknown,
+      input: LiveMembershipBillInput,
+    ): Promise<LiveMembershipBill | null> {
+      // Uses the CALLER's tx (the `*InTx` convention — see the port note):
+      // the caller holds a per-(tenant, cycle) advisory lock on that tx, and
+      // `runInTenant` here would take a second pooled connection that neither
+      // sees the lock's snapshot nor is safe to open mid-transaction.
+      // Tenant scope therefore rides the caller's `SET LOCAL
+      // app.current_tenant` GUC; the explicit `tenantId` predicate (inside the
+      // shared helper) is application-layer defence-in-depth alongside RLS
+      // (Constitution Principle I § 1), matching the sibling reads below.
+      //
+      // "Live membership bill" (status <> 'void') via the shared
+      // `liveMembershipBillWhere` from the invoicing barrel — the SAME
+      // predicate the admin-create guard (`createInvoiceDraft`) uses, so the
+      // two duplicate-§86/4 checks read one rule and cannot drift. This method
+      // owns only its projection + ordering.
+      const txDb = tx as typeof db;
+      const rows = await txDb
+        .select({
+          invoiceId: invoicesTable.invoiceId,
+          status: invoicesTable.status,
+        })
+        .from(invoicesTable)
+        .where(
+          liveMembershipBillWhere({
+            tenantId: input.tenantId,
+            memberId: input.memberId,
+            planYear: input.planYear,
+          }),
+        )
+        // Deterministic pick so the id surfaced to the operator (and the
+        // deep-link in the toast) is stable across retries: newest first, so
+        // they land on the document they most recently dealt with.
+        .orderBy(sql`${invoicesTable.createdAt} DESC`)
+        .limit(1);
+      const row = rows[0];
+      return row ? { invoiceId: row.invoiceId, status: row.status } : null;
+    },
+
     async hasUnpaidNotYetDueMembershipInvoice(
       input: HasUnpaidNotYetDueMembershipInvoiceInput,
     ): Promise<boolean> {
@@ -48,6 +91,36 @@ export function makeInvoiceDueBridgeDrizzle(ctx: TenantContext): InvoiceDueBridg
           .limit(1);
         return rows.length > 0;
       });
+    },
+
+    async hasIssuedMembershipInvoiceForMemberInTx(
+      tx: TenantTx,
+      tenantId: string,
+      memberId: string,
+    ): Promise<{ readonly invoiceId: string } | null> {
+      // Plan-change immediate re-freeze (Phase 2, Step 2.5). Runs on the
+      // CALLER's `tx` (NOT its own `runInTenant`) so the re-freeze can consult
+      // it while `change-plan` holds the member FOR UPDATE lock in one tx —
+      // opening a second pooled connection here would risk a cross-connection
+      // stall under the pooler's dropped `statement_timeout`. `status='issued'`
+      // = unpaid-but-billed; paid / draft / void / credited / partially_credited
+      // never count (a paid or voided §86/4 does NOT block the re-freeze). RLS
+      // scopes the read to `tx`'s tenant GUC; the explicit `tenant_id` predicate
+      // is defence-in-depth (Constitution Principle I § 1).
+      const rows = await tx
+        .select({ invoiceId: invoicesTable.invoiceId })
+        .from(invoicesTable)
+        .where(
+          and(
+            eq(invoicesTable.tenantId, tenantId),
+            eq(invoicesTable.memberId, memberId),
+            eq(invoicesTable.invoiceSubject, 'membership'),
+            eq(invoicesTable.status, 'issued'),
+          ),
+        )
+        .limit(1);
+      const row = rows[0];
+      return row ? { invoiceId: row.invoiceId } : null;
     },
 
     async oldestUnpaidMembershipInvoiceDueDate(

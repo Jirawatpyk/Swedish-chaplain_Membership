@@ -7,6 +7,7 @@ import { requireAdminContext } from '@/lib/admin-context';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { addMonthsUtc } from '@/lib/dates';
+import { bangkokLocalDate } from '@/lib/fiscal-year';
 import {
   createInvoiceDraft,
   createInvoiceDraftSchema,
@@ -19,6 +20,19 @@ import {
 import { logger } from '@/lib/logger';
 import { serialiseInvoice } from './_serialise';
 import { loadMemberRenewalContext } from '@/app/(staff)/admin/invoices/_lib/member-renewal-context';
+
+/**
+ * First day of the CURRENT Bangkok month as a naive UTC-midnight ISO stamp
+ * (`YYYY-MM-01T00:00:00.000Z`) — the SAME month-start basis the renewal
+ * settlement core stores anchors on (`paymentAnchorMonthStartUtc`), so the
+ * "has this cycle's period already expired at issue time?" check compares
+ * like-for-like against a stored `period_to`. Used only for the first-payment
+ * comeback carve-out in POST below.
+ */
+function currentBangkokMonthStartUtc(): string {
+  const today = bangkokLocalDate(new Date().toISOString()); // YYYY-MM-DD (Bangkok)
+  return `${today.slice(0, 7)}-01T00:00:00.000Z`;
+}
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const ctx = await requireAdminContext(request, { resource: 'invoice', action: 'read' });
@@ -61,6 +75,24 @@ const createBodySchema = z.object({
   plan_id: z.string().min(1),
   plan_year: z.number().int(),
   auto_email_on_issue: z.boolean().nullable().optional(),
+  /**
+   * Deliberate-duplicate acknowledgement. A member CAN legitimately hold two
+   * live membership invoices in the same plan year — this is the one surface
+   * where that is a decision a human is allowed to make, so the refusal is
+   * overridable here and nowhere else (the renewal/automated paths refuse
+   * hard with no override; a duplicate there is always a bug).
+   *
+   * `z.literal(true)` — the ONLY accepted value is the JSON boolean `true`.
+   * A string `"true"`, `1`, `"1"` or any other truthy value is a 400, so the
+   * override cannot be set by a coercion accident or smuggled through a
+   * form/query encoding. There is no default-on path: absent means refuse.
+   *
+   * The client may only send it after the admin has SEEN the existing
+   * invoice's details (see the duplicate-confirmation dialog in
+   * `invoice-form.tsx`) — the point is an informed decision, not a reflexive
+   * click-through.
+   */
+  acknowledge_duplicate: z.literal(true).optional(),
 });
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
@@ -93,7 +125,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   //   - 064: a FIRST payment (or any member with an open cycle) bills the
   //     CURRENT period `[currentPeriodFrom, currentPeriodTo)` — so an imported
   //     member's first §86/4 prints their real membership dates, not the generic
-  //     "12 months from payment" wording (which regressed in PR #173).
+  //     "12 months from payment" wording (which regressed in PR #173) — UNLESS
+  //     that current period has ALREADY expired (see the comeback carve-out
+  //     below).
   let membershipCoverage: CreateInvoiceDraftInput['membershipCoverage'];
   try {
     const renewalContext = await loadMemberRenewalContext(tenantCtx.slug, parsed.data.member_id);
@@ -109,7 +143,25 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       };
     } else if (
       renewalContext.currentPeriodFrom &&
-      renewalContext.currentPeriodTo
+      renewalContext.currentPeriodTo &&
+      // FIXED-ANCHOR comeback carve-out (2026-07-22, hardened at review M-1) —
+      // print the cycle's CURRENT period as the concrete §86/4 window only when
+      // it will still be the member's period AFTER payment. The invoice's
+      // coverage line is baked at issue time and the receipt reuses it verbatim
+      // (never re-derived), so if paying this bill later triggers the settlement
+      // comeback exception (reanchor-first-payment.ts re-anchors an expired
+      // period to the PAYMENT month), a concrete window printed now would
+      // contradict the period actually granted. We cannot know the payment date
+      // at issue time, so we are conservative: only commit to the concrete
+      // window when the period extends beyond the NEXT Bangkok month — i.e. a
+      // normal-timing payment (this month or next) cannot cross `period_to` and
+      // comeback. When the period ends this month or next, fall through to the
+      // `from_payment` default ("12 months, effective from the month of
+      // payment") — the honest wording when the real anchor is only fixed at
+      // payment. (Residual: a payment 2+ months late on a period ending exactly
+      // two months out can still comeback — bounded and rare.)
+      Date.parse(renewalContext.currentPeriodTo) >=
+        Date.parse(addMonthsUtc(currentBangkokMonthStartUtc(), 2))
     ) {
       membershipCoverage = {
         kind: 'window',
@@ -133,10 +185,57 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     planYear: parsed.data.plan_year,
     autoEmailOnIssue: parsed.data.auto_email_on_issue ?? null,
     ...(membershipCoverage ? { membershipCoverage } : {}),
+    // This route is the one INTERACTIVE membership-invoice surface — there is
+    // a human here to ask — so it always opts into the duplicate check.
+    // `'acknowledged'` only when the client sent the literal boolean `true`,
+    // which the form does solely from the confirmation dialog after showing
+    // the operator the existing document. Everything else is `'refuse'`.
+    duplicatePolicy:
+      parsed.data.acknowledge_duplicate === true ? ('acknowledged' as const) : ('refuse' as const),
   });
 
   const result = await createInvoiceDraft(makeCreateInvoiceDraftDeps(tenantCtx.slug), input);
   if (!result.ok) {
+    // A duplicate refusal is a 409 that the client is EXPECTED to recover
+    // from, so unlike every other error code it carries a detail body: the
+    // admin has to see which document already exists (and be able to open it)
+    // before deciding whether a second one is deliberate. Sending back only
+    // `{ code }` here would reduce the confirmation dialog to a bare "are you
+    // sure?", which is the reflexive click-through this guard exists to
+    // prevent. No PII is added — an invoice id, its number, status and total
+    // for a member the caller already named in the request body.
+    if (result.error.code === 'duplicate_membership_invoice') {
+      logger.warn(
+        {
+          tenantSlug: tenantCtx.slug,
+          memberId: parsed.data.member_id,
+          planYear: parsed.data.plan_year,
+          existingInvoiceId: result.error.existingInvoiceId,
+          existingStatus: result.error.existingStatus,
+        },
+        'invoice draft create refused — a live membership invoice already exists for this member and plan year',
+      );
+      return NextResponse.json(
+        {
+          error: {
+            code: result.error.code,
+            existing: {
+              invoice_id: result.error.existingInvoiceId,
+              status: result.error.existingStatus,
+              document_number: result.error.existingDocumentNumber,
+              // bigint is not JSON-serialisable — send satang as a string and
+              // let the client format it (the same treatment money gets on
+              // every other F4 wire surface).
+              total_satang:
+                result.error.existingTotalSatang === null
+                  ? null
+                  : String(result.error.existingTotalSatang),
+            },
+          },
+        },
+        { status: 409 },
+      );
+    }
     const status =
       result.error.code === 'settings_missing' || result.error.code === 'plan_not_found'
         ? 409

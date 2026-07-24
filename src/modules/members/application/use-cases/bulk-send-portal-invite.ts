@@ -15,8 +15,12 @@
  * BEST-EFFORT per member (a queued invite cannot be un-queued), the opposite of
  * archive/change_plan's atomic semantics — so they must not share a transaction.
  *
- * Per-member outcomes (3 buckets, no abort-on-error):
+ * Per-member outcomes (4 buckets, no abort-on-error):
  *   - invited — F1 user + invitation queued; the contact is linked.
+ *   - resent  — the contact was already linked to a `pending` F1 user whose
+ *       invitation expired unaccepted: `resendBouncedInvite` minted a FRESH
+ *       token (Phase D / Task 13). Separate from `invited` because no user
+ *       was created.
  *   - skipped — an EXPECTED precondition the admin can resolve:
  *       already_linked · no_email · no_invitable_contact · member_archived ·
  *       member_not_found.
@@ -25,12 +29,16 @@
  *       (link_failed = the contact link faulted AFTER createUser committed; the
  *        invite was rolled back by SAGA compensation so no orphan persists.)
  *
- * Idempotent: re-running on an already-invited member returns `already_linked`
- * → skipped (no duplicate user / outbox row). Tenant-scoped: every repo read is
- * RLS-bound via `deps.tenant`; a cross-tenant member id misses → member_not_found.
+ * Idempotent: re-running on an already-invited member with an ACTIVE portal
+ * user returns `already_linked` → skipped (no duplicate user / outbox row).
+ * A member whose invitation expired while still `pending` falls through to
+ * `resendBouncedInvite` instead of being skipped — the needs-invite chip
+ * counts exactly these members, so skipping them all would promise work the
+ * bulk action refuses to do. Tenant-scoped: every repo read is RLS-bound via
+ * `deps.tenant`; a cross-tenant member id misses → member_not_found.
  *
- * Pure Application — orchestrates ports + the `invitePortal` use case; zero
- * drizzle/next/react imports.
+ * Pure Application — orchestrates ports + the `invitePortal` /
+ * `resendBouncedInvite` use cases; zero drizzle/next/react imports.
  */
 import { z } from 'zod';
 import { err, ok, type Result } from '@/lib/result';
@@ -40,7 +48,12 @@ import type { TenantContext } from '@/modules/tenants';
 import { asMemberId } from '../../domain/member';
 import type { MemberRepo } from '../ports/member-repo';
 import type { ContactRepo } from '../ports/contact-repo';
+import type { AuditPort } from '../ports/audit-port';
+import type { ClockPort } from '../ports/clock-port';
+import type { UserEmailPort } from '../ports/user-email-port';
+import type { ReissueInvitationPort } from '../ports/reissue-invitation-port';
 import { invitePortal, type CreateUserPort, type DeleteInvitedUserPort } from './invite-portal';
+import { resendBouncedInvite } from './resend-bounced-invite';
 import { BULK_CAP } from './bulk-action';
 
 export const bulkSendPortalInviteSchema = z
@@ -82,10 +95,18 @@ export type BulkSendPortalInviteOutput = {
     readonly userId: string;
     readonly email: string;
   }>;
+  /**
+   * Members whose primary contact already had a pending user with a dead
+   * (expired) invitation: a FRESH token was minted via resendBouncedInvite.
+   * Separate from `invited` because no user was created — the API response
+   * gains a field and removes none, so existing consumers keep working.
+   */
+  readonly resent: ReadonlyArray<{ readonly memberId: string; readonly contactId: string }>;
   readonly skipped: ReadonlyArray<{ readonly memberId: string; readonly reason: InviteSkipReason }>;
   readonly failed: ReadonlyArray<{ readonly memberId: string; readonly code: InviteFailCode }>;
   readonly counts: {
     readonly invited: number;
+    readonly resent: number;
     readonly skipped: number;
     readonly failed: number;
   };
@@ -103,6 +124,15 @@ export type BulkSendPortalInviteDeps = {
   readonly createUser: CreateUserPort;
   /** SAGA compensation for the invite orphan window (go-live #12-13). */
   readonly deleteInvitedUser: DeleteInvitedUserPort;
+  /**
+   * Phase D / Task 13 — deps `resendBouncedInvite` needs when the
+   * `already_linked` arm falls through to it for an expired-but-pending
+   * invitation. All already provided by `buildMembersDeps`.
+   */
+  readonly reissueInvitation: ReissueInvitationPort;
+  readonly userEmails: UserEmailPort;
+  readonly audit: AuditPort;
+  readonly clock: ClockPort;
 };
 
 export type BulkSendPortalInviteMeta = {
@@ -134,6 +164,7 @@ export async function bulkSendPortalInvite(
   }
 
   const invited: Array<{ memberId: string; contactId: string; userId: string; email: string }> = [];
+  const resent: Array<{ memberId: string; contactId: string }> = [];
   const skipped: Array<{ memberId: string; reason: InviteSkipReason }> = [];
   const failed: Array<{ memberId: string; code: InviteFailCode }> = [];
 
@@ -219,9 +250,60 @@ export async function bulkSendPortalInvite(
       }
 
       switch (res.error.code) {
-        case 'already_linked':
+        case 'already_linked': {
+          // The contact is linked, but that covers two very different states:
+          // an ACTIVE portal user (nothing to do) and a PENDING user whose
+          // invitation expired unaccepted (needs a fresh token). The chip
+          // counts the latter, so skipping them all would promise work the
+          // bulk action refuses to do.
+          //
+          // resendBouncedInvite distinguishes them for us: it returns
+          // not_eligible/already_active when the user has activated.
+          const resend = await resendBouncedInvite(
+            {
+              tenant: deps.tenant,
+              contactRepo: deps.contactRepo,
+              userEmails: deps.userEmails,
+              reissueInvitation: deps.reissueInvitation,
+              audit: deps.audit,
+              clock: deps.clock,
+            },
+            {
+              contactId: primary.contactId,
+              memberId: rawId,
+              actorUserId: meta.actorUserId,
+              requestId: meta.requestId,
+              ...(meta.locale !== undefined ? { locale: meta.locale } : {}),
+            },
+          );
+          if (resend.ok) {
+            // ACCEPTED TRADEOFF (product decision 2026-07-23): unlike the
+            // `invited` bucket above — which deliberately emits NO member-scoped
+            // F3 audit so a bulk invite doesn't reset the at-risk clock —
+            // `resendBouncedInvite` emits `member_portal_invite_queued`, and the
+            // migration-0009 trigger bumps `members.last_activity_at` for that
+            // member. So a bulk re-send DOES reset the at-risk clock of every
+            // re-sent member. This matches the existing single-resend flow (the
+            // detail-page "Re-send invitation" button routes through the same
+            // use case), so bulk and single stay consistent rather than
+            // diverging; F8 recompute re-derives risk from the other signals on
+            // its next cycle. Chosen over building a non-bumping resend variant.
+            resent.push({ memberId: rawId, contactId: primary.contactId as string });
+            break;
+          }
+          if (resend.error.code === 'server_error') {
+            logger.error(
+              { requestId: meta.requestId, memberId: rawId },
+              'bulk-invite: re-send failed',
+            );
+            failed.push({ memberId: rawId, code: 'server_error' });
+            break;
+          }
+          // not_found / not_eligible (already_active | no_linked_user) →
+          // the pre-existing behaviour.
           skipped.push({ memberId: rawId, reason: 'already_linked' });
           break;
+        }
         case 'no_email':
           skipped.push({ memberId: rawId, reason: 'no_email' });
           break;
@@ -266,8 +348,14 @@ export async function bulkSendPortalInvite(
 
   return ok({
     invited,
+    resent,
     skipped,
     failed,
-    counts: { invited: invited.length, skipped: skipped.length, failed: failed.length },
+    counts: {
+      invited: invited.length,
+      resent: resent.length,
+      skipped: skipped.length,
+      failed: failed.length,
+    },
   });
 }

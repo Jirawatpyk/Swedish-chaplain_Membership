@@ -288,19 +288,26 @@ describe('F8 offline mark-paid frozen-price §86/4 billing (cluster A)', () => {
     // Rolling-anchor refactor (design 2026-07-08 rev 3 §3, Task 8) — this
     // member has a TERMINAL predecessor cycle (seeded above), so the
     // payment classifies as `renewal` (not `first_payment`). `mark-paid-
-    // offline` must thread the LOCKED cycle's exact NEXT-period window
+    // offline` threads the LOCKED cycle's exact NEXT-period window
     // (`periodTo` 2027-06-01 → `periodTo + frozenPlanTermMonths` (12) =
     // 2028-06-01) into `createInvoiceDraft`'s `membershipCoverage`, so the
-    // §86/4 line prints the EXACT window — not the generic "from payment"
-    // text (which would print if the coverage signal were dropped) and
-    // NOT the old FY-boundary "ปี {year}" text (dropped by this refactor).
+    // §86/4 line prints that window.
+    //
+    // Format: since the 088 invoice-tax redesign (commits 7eb4cf3 / a8aae52 /
+    // c852a5c, all AFTER this test's #173 origin) the §86/4 membership line
+    // renders the window as MONTH-YEAR with a WINDOW-START "ปี {year}" token —
+    // `ค่าสมาชิก … ปี 2570\n(มิถุนายน 2570 - พฤษภาคม 2571)` — NOT the older
+    // raw-ISO "(ระยะเวลา …)" wording this test originally asserted. The
+    // canonical assertion of this exact format is green in
+    // `tests/unit/invoicing/create-invoice-draft.test.ts` (~line 420) and
+    // `tests/integration/invoicing/membership-line-period.integration.test.ts`;
+    // this test was simply left stale when 088 landed. (toIso is exclusive: the
+    // printed end month is `toIso − 1 month` = พฤษภาคม / May.)
     expect(membershipLine!.descriptionTh).toContain(
-      '(ระยะเวลา 2027-06-01 ถึง 2028-06-01)',
+      '(มิถุนายน 2570 - พฤษภาคม 2571)',
     );
-    expect(membershipLine!.descriptionEn).toContain(
-      '(coverage 2027-06-01 to 2028-06-01)',
-    );
-    expect(membershipLine!.descriptionTh).not.toContain('ปี ');
+    expect(membershipLine!.descriptionTh).toContain('ปี 2570');
+    expect(membershipLine!.descriptionEn).toContain('(June 2027 - May 2028)');
 
     // (2) NO registration_fee line on the renewal path (suppressed) even
     // though registrationFeePaid=false + the tenant has a non-zero reg fee.

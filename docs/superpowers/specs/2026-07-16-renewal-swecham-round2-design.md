@@ -1,5 +1,10 @@
 # Renewal SweCham Alignment — Round 2 (F-4 / F-5 / S3) — Design
 
+> **⚠️ PARTIALLY SUPERSEDED (2026-07-22).** Any statement here that a first
+> payment re-anchors the membership period to the payment month reflects the OLD
+> payment-anchor model, which was REVERSED to fixed-anchor. See
+> **`docs/Bug/2026-07-22-fixed-anchor-shipped-and-residuals.md`** (PR #246).
+
 **Date:** 2026-07-16 (rev 2 — post 4-lens formal review, see §9)
 **Branch:** `066-renewal-swecham-round2` (off `origin/main` @ `c6d3453a5`, which carries #205 + #210)
 **Predecessor:** Round 1 = `065-renewal-swecham-alignment` (PR #205, merged `8ae1a8242`) + statutory wording fix (PR #210, `c6d3453a5`). This design closes the three residuals that Round 1 explicitly deferred as tracked follow-ups (design §12 table F-4 / F-5 + sweep item S3).

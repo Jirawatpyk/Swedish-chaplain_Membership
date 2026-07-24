@@ -132,6 +132,10 @@ describe('findMissingEnumValues', () => {
           'member_auto_invoice_enrolled',
           // 0265 (107-auto-invoice Task 18):
           'member_auto_invoice_unenrolled',
+          // money-remediation (0268/0269/0270):
+          'refund_credit_note_waived',
+          'payment_settlement_rolled_back',
+          'member_plan_change_billing_effect',
         ]),
       ],
     ]);
@@ -163,6 +167,10 @@ describe('findMissingEnumValues', () => {
           'renewal_orphan_invoice_relinked',
           'member_auto_invoice_enrolled',
           'member_auto_invoice_unenrolled',
+          // money-remediation (0268/0269/0270):
+          'refund_credit_note_waived',
+          'payment_settlement_rolled_back',
+          'member_plan_change_billing_effect',
         ]),
       ],
     ]);
@@ -202,6 +210,10 @@ describe('findMissingEnumValues', () => {
           'member_auto_invoice_enrolled',
           // 0265 (107-auto-invoice Task 18):
           'member_auto_invoice_unenrolled',
+          // money-remediation (0268/0269/0270):
+          'refund_credit_note_waived',
+          'payment_settlement_rolled_back',
+          'member_plan_change_billing_effect',
         ],
       },
     ]);

@@ -1,14 +1,14 @@
 /**
- * F8 Phase 6 round-3 I1 fix — `resolvePlanName` locale fallback unit tests.
+ * `resolvePlanName` locale fallback unit tests.
  *
- * Pins the branch matrix that the portal renewal page (T125) relies on
- * to render the member's plan name in TH/SV with EN canonical fallback.
- * The original logic was inlined in the page module so the fallback
- * chain was only exercised under E2E. Round-3 review surfaced this as
- * a critical untested branch (3-locale × empty-string × null-rawName).
+ * Pins the branch matrix the portal renewal page + admin invoice-create
+ * + member-form surfaces rely on to render a plan name in TH/SV with EN
+ * canonical fallback. Promoted from the portal route `_lib/` to `src/lib/`
+ * (plan-change UX remediation P1-8) alongside the resolver itself — all
+ * 14 cases moved verbatim.
  */
 import { describe, expect, it } from 'vitest';
-import { resolvePlanName } from '@/app/(member)/portal/renewal/[memberId]/_lib/resolve-plan-name';
+import { resolvePlanName } from '@/lib/resolve-plan-name';
 
 describe('resolvePlanName (Phase 6 round-3 I1)', () => {
   it('returns en when locale=en and rawName has en', () => {

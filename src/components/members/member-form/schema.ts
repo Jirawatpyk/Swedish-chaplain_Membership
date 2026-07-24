@@ -8,6 +8,9 @@
 
 import { z } from 'zod';
 import type { Path } from 'react-hook-form';
+// Type-only barrel import (erased at build — no server graph dragged into
+// the client bundle). WP2: PlanOption now carries the F2 plan category.
+import type { PlanCategory } from '@/modules/plans';
 // Deep import (NOT the `@/modules/members` barrel) — phone.ts is pure TS
 // (pulls only `@/lib/result`) so it is safe in this client component and
 // keeps the E.164 rule single-sourced with the domain value object.
@@ -466,4 +469,14 @@ export type PlanOption = {
   readonly display_name: string;
   /** When set, the plan requires DOB on the primary contact (Thai Alumni etc.). */
   readonly requires_date_of_birth?: boolean;
+  // WP2 — annual fee surfaced in the plan picker so an admin sees the price
+  // they are assigning. All three are OPTIONAL: only `buildPlanOptions`
+  // populates them; the other PlanOption construction sites (invoice-form,
+  // directory filters) omit them and the picker simply renders no fee.
+  /** F2 annual fee in currency minor units (satang for THB). */
+  readonly annual_fee_minor_units?: number;
+  /** Tenant currency for the fee — pairs with `annual_fee_minor_units`. */
+  readonly currency_code?: string;
+  /** F2 plan category (corporate / partnership). */
+  readonly plan_category?: PlanCategory;
 };

@@ -12,7 +12,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
-import { getTranslations } from 'next-intl/server';
+import { getTranslations, getLocale } from 'next-intl/server';
 import { ArrowLeftIcon } from 'lucide-react';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
@@ -28,7 +28,7 @@ import { buttonVariants } from '@/components/ui/button';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { CreateMemberClient } from '@/components/members/create-member-client';
-import type { PlanOption } from '@/components/members/member-form';
+import { buildPlanOptions, type PlanOption } from '@/components/members/member-form';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.members.create');
@@ -59,6 +59,7 @@ export default async function NewMemberPage() {
   );
 
   const t = await getTranslations('admin.members.create');
+  const locale = await getLocale();
 
   if (!plansResult.ok) {
     return (
@@ -75,17 +76,13 @@ export default async function NewMemberPage() {
     );
   }
 
-  const plans: PlanOption[] = plansResult.value.data.map((p) => ({
-    plan_id: p.plan_id,
-    plan_year: p.plan_year,
-    // Compose display: EN plan name + plan year
-    display_name: `${p.plan_name.en ?? p.plan_id} — ${p.plan_year}`,
-    // Individual-scoped plans (e.g. Thai Alumni) require DOB. This is a
-    // proxy because PlanListItem doesn't project max_member_age; the
-    // server-side policy (age-eligibility-policy) is the authoritative
-    // gate — this UI hint only prompts for DOB upfront.
-    requires_date_of_birth: p.member_type_scope === 'individual',
-  }));
+  // WP2 / P1-8 — locale-aware name + annual fee threaded through the shared
+  // mapper (was a hardcoded `.en`, dropping TH/SV on the plan label).
+  const plans: PlanOption[] = buildPlanOptions(
+    plansResult.value.data,
+    locale,
+    plansResult.value.meta.currency_code,
+  );
 
   const defaultPlanYear =
     plansResult.value.meta.year ?? new Date().getUTCFullYear();

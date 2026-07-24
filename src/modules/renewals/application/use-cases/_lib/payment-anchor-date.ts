@@ -28,8 +28,26 @@ export function paymentAnchorMonthStartUtc(evt: {
   readonly paymentDate: string | null;
   readonly paidAt: string;
 }): string {
-  const dateOnly = evt.paymentDate ?? bangkokLocalDate(evt.paidAt);
+  const dateOnly = paymentDateOnly(evt);
   const y = dateOnly.slice(0, 4);
   const m = dateOnly.slice(5, 7);
   return `${y}-${m}-01T00:00:00.000Z`;
+}
+
+/**
+ * The payment's Bangkok CALENDAR DATE (`YYYY-MM-DD`) — the admin-entered
+ * `paymentDate` when present, else `paidAt` converted to Asia/Bangkok. This is
+ * the ACTUAL day the fee was paid (not snapped to a month start), so it is the
+ * correct basis for "has the cycle's period already expired at payment?" — a
+ * cycle period can end mid-month (an onboarded member's period runs from their
+ * registration day-of-month, not the 1st), so comparing against the month-start
+ * anchor would misjudge a same-month-but-after-period-end payment. The re-anchor
+ * itself still snaps the NEW period to the month start via
+ * `paymentAnchorMonthStartUtc`; only the expiry DECISION uses this raw date.
+ */
+export function paymentDateOnly(evt: {
+  readonly paymentDate: string | null;
+  readonly paidAt: string;
+}): string {
+  return evt.paymentDate ?? bangkokLocalDate(evt.paidAt);
 }

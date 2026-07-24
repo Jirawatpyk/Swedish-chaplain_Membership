@@ -100,8 +100,11 @@ describe('f5RefundBridge outcome mapping (F8-RP)', () => {
         kind: 'succeeded',
         refund: {
           id: 'rfnd-9',
-          creditNoteId: 'cn-9',
-          creditNoteNumber: 'CN/2026/00009',
+          creditNote: {
+            kind: 'issued',
+            id: 'cn-9',
+            number: 'CN/2026/00009',
+          },
         },
       }),
     );
@@ -110,6 +113,31 @@ describe('f5RefundBridge outcome mapping (F8-RP)', () => {
     if (result.status === 'refunded') {
       expect(result.refundId).toBe('rfnd-9');
       expect(result.creditNoteId).toBe('cn-9');
+    }
+  });
+
+  // Track B — the F8 counterpart of the case above. The money moved and there
+  // is simply no §86/10 to reference, so the outcome MUST still be `refunded`
+  // with a null credit-note id. Mapping this to anything else is the F-E defect:
+  // F8's escalation gate would read "no credit note" as "no refund happened"
+  // and skip the finance review on exactly the population that owes a manual
+  // output-VAT adjustment.
+  it('kind:succeeded with a WAIVED credit note → still refunded, creditNoteId null', async () => {
+    issueRefundMock.mockResolvedValue(
+      ok({
+        kind: 'succeeded',
+        refund: {
+          id: 'rfnd-10',
+          creditNote: { kind: 'waived', reason: 'section_105_receipt' },
+        },
+      }),
+    );
+    const result = await f5RefundBridge.issueRefundForInvoice(INPUT);
+    expect(result.status).toBe('refunded');
+    if (result.status === 'refunded') {
+      expect(result.refundId).toBe('rfnd-10');
+      expect(result.creditNoteId).toBeNull();
+      expect(result.creditNoteNumber).toBeNull();
     }
   });
 

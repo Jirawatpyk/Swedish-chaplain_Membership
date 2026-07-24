@@ -194,6 +194,8 @@ export function makeDrizzleCreditNoteRepo(tenantId: string): CreditNoteRepo {
           pdfBlobKey: input.pdf.blobKey,
           pdfSha256: input.pdf.sha256,
           pdfTemplateVersion: input.pdf.templateVersion,
+          // M1 (plan-change-ux, Option 1b) — write-once coverage-retention intent.
+          retainsCoverage: input.retainsCoverage,
           ...(input.sourceRefundId !== undefined
             ? { sourceRefundId: input.sourceRefundId }
             : {}),

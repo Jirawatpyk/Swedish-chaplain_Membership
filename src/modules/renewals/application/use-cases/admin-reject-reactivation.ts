@@ -207,6 +207,18 @@ export async function adminRejectReactivation(
 
   // Step 3: refund via F5 bridge (outside F8 tx — Stripe is external).
   let refundCreditNoteId: string | null = null;
+  /**
+   * Track B — did money actually go back? DISTINCT from "is there a credit
+   * note", and the two stopped being the same thing when refunds that owe no
+   * §86/10 became possible (a voided invoice, or a §105 receipt).
+   *
+   * Everything below that means "a refund happened" must key on THIS, not on
+   * `refundCreditNoteId !== null`. A waived refund has a null credit note and
+   * is the class MOST in need of finance follow-up, because it returns money
+   * while leaving an output-VAT adjustment for a human to make.
+   */
+  let refundIssued = false;
+  let refundWaiverReason: string | null = null;
   if (lockedCycle.linkedInvoiceId === null) {
     // Cycle has no linked invoice — cannot refund. Treat as
     // no-payment-found path (audit refund_credit_note_id stays null).
@@ -379,8 +391,13 @@ export async function adminRejectReactivation(
     }
     if (refundResult.status === 'refunded') {
       refundCreditNoteId = refundResult.creditNoteId;
+      refundIssued = true;
+      // Null credit note on a `refunded` outcome means the refund carried a
+      // waiver. Recorded so the escalation task and the metric can say why.
+      refundWaiverReason =
+        refundResult.creditNoteId === null ? 'credit_note_waived' : null;
     }
-    // status === 'no_payment_found' → refundCreditNoteId stays null
+    // status === 'no_payment_found' → nothing was refunded
   }
 
   // Step 4-5: transition cycle + emit audit atomically.
@@ -486,9 +503,10 @@ export async function adminRejectReactivation(
           cycleId,
           tenantId: input.tenantId,
           refundCreditNoteId,
-          refundIssuedRequiresReconciliation: refundCreditNoteId !== null,
+          refundWaiverReason,
+          refundIssuedRequiresReconciliation: refundIssued,
         },
-        '[admin-reject-reactivation] audit emit failed inside tx — rolling back; refund stays issued, manual reconciliation required when refundCreditNoteId is set',
+        '[admin-reject-reactivation] audit emit failed inside tx — rolling back; refund stays issued, manual reconciliation required whenever refundIssuedRequiresReconciliation is true',
       );
       throw e;
     }
@@ -499,7 +517,12 @@ export async function adminRejectReactivation(
     // double-click) finds the open row + reuses it instead of stacking
     // duplicates. Only insert when a refund actually issued —
     // `no_payment_found` cycles need no finance follow-up.
-    if (refundCreditNoteId !== null) {
+    //
+    // Track B — gated on whether MONEY MOVED, not on credit-note presence.
+    // Those were the same thing until refunds that owe no §86/10 became
+    // possible; keying on the credit note would now skip finance review for
+    // exactly the refunds that create a manual output-VAT obligation.
+    if (refundIssued) {
       // R2-W3: derive dueAt from the same `now` used for closedAt so
       // the audit trail is consistent (review queue shows the same
       // reference clock as the cycle-close timestamp).
@@ -548,10 +571,13 @@ export async function adminRejectReactivation(
         // Same Principle VIII reverse-direction as the prior emit —
         // throwing rolls back the cycle transition + the lapsed-member
         // audit, preserving state↔audit↔task atomicity.
-        // Round-3 silent-failure F7 fix: log refundCreditNoteId loud
-        // (we're inside `if (refundCreditNoteId !== null)` so it's
-        // guaranteed set here) so SRE sees the orphaned refund in the
-        // alert payload.
+        // Round-3 silent-failure F7 fix: log refundCreditNoteId loud so SRE
+        // sees the orphaned refund in the alert payload.
+        //
+        // Track B — it is NO LONGER guaranteed set here. The enclosing guard
+        // now keys on `refundIssued`, and a waived refund returns money with a
+        // null credit note. Null in this payload means "refunded, no §86/10
+        // owed", not "no refund happened" — `refundWaiverReason` disambiguates.
         logger.error(
           {
             err: e instanceof Error ? e.message : String(e),
@@ -568,7 +594,10 @@ export async function adminRejectReactivation(
 
     renewalsMetrics.adminRejectCompleted(
       input.tenantId,
-      refundCreditNoteId === null ? 'no_payment' : 'refunded',
+      // Track B — same correction: a waived refund DID refund. Reporting it as
+      // `no_payment` would under-count refunds in the dashboard by exactly the
+      // population that needs the most attention.
+      refundIssued ? 'refunded' : 'no_payment',
     );
 
     return ok({

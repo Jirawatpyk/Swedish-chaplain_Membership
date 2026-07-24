@@ -3,18 +3,26 @@
  *
  * Separate listener concern from `supersedePendingTierUpgrade` (T184).
  * When F2 fires `member_plan_manually_changed` the member's
- * tier-bucket may shift (e.g. Regular → Premium), which means the
- * not-yet-fired schedule steps under the OLD bucket no longer apply
- * — the new bucket's schedule steps take over from the next render.
+ * tier-bucket may shift (e.g. Regular → Premium), which WOULD mean the
+ * not-yet-fired schedule steps under the OLD bucket no longer apply.
  *
  * Per spec.md Edge Cases: **already-sent reminders are NOT recalled**;
- * only the not-yet-fired remaining steps for the active cycle change
- * cadence.
+ * only the not-yet-fired remaining steps for the active cycle would
+ * change cadence.
  *
- * This use-case computes the diff (cancelled vs new step ids) and
- * emits a single audit `renewal_schedule_rescheduled` carrying the
- * forensic chain so dashboards can attribute schedule changes to
- * mid-cycle plan flips.
+ * **Advisory-only — this use-case persists NOTHING schedule-related.**
+ * It computes the would-be step diff (cancelled vs new step ids) and
+ * emits a single audit `renewal_schedule_rescheduled` (payload
+ * `applied: false`) carrying the forensic chain. It does NOT itself
+ * reschedule anything: the reminder dispatcher joins its schedule policy
+ * on the cycle's FROZEN `renewal_cycles.tier_at_cycle_start` (see
+ * `drizzle-dispatch-candidate-repo.ts`), which this listener never
+ * modifies — so the cadence actually in effect is unchanged by this emit.
+ * (The cadence only shifts if a SEPARATE path re-freezes
+ * `tier_at_cycle_start` — the immediate-refreeze flow behind
+ * `FEATURE_PLAN_CHANGE_IMMEDIATE_REFREEZE`.) The event name is retained
+ * (renaming the append-only `audit_event_type` enum value was rejected as
+ * disproportionate); `applied: false` + this doc keep the semantics honest.
  *
  * **Failure semantics** (Round 4 CRIT-1 — both emits fire-and-forget):
  *
@@ -320,6 +328,10 @@ export async function rescheduleOnPlanChangeInTx(
           new_tier_bucket: newBucket,
           cancelled_step_ids: cancelled,
           new_step_ids: added,
+          // Truthful-semantics: this listener EVALUATED the reschedule but
+          // did NOT apply it — the dispatcher's cadence follows the cycle's
+          // frozen `tier_at_cycle_start`, which this use-case never mutates.
+          applied: false,
         },
       },
       {
@@ -357,7 +369,10 @@ export async function rescheduleOnPlanChangeInTx(
       newStepIds: added,
       cycleId: activeCycle.cycleId,
     },
-    '[reschedule-on-plan-change] schedule diff committed',
+    // NOT "committed" — this listener evaluates the diff + emits an advisory
+    // audit; it persists NOTHING. The reminder cadence follows the cycle's
+    // frozen tier_at_cycle_start (unchanged here).
+    '[reschedule-on-plan-change] schedule diff evaluated (advisory audit only — not persisted)',
   );
   return {
     cancelledStepIds: cancelled,

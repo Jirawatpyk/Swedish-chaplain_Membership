@@ -898,7 +898,7 @@ Every span carries `tenant.id`, `invoice.id`, `payment.id`, `payment.method`,
 `Stripe-Signature` header value is ever attributed** — those are in pino's
 redact list (see § 21.4).
 
-### 21.1 Metrics catalogue (18 metrics — T166 added 3)
+### 21.1 Metrics catalogue (22 metrics — recounted at money-remediation Task 5, which added `f4_bridge_unknown_error_shape`; Task 7 Track B added `refunds.credit_note_waived.count`)
 
 | Metric | Type | Labels | Purpose |
 |---|---|---|---|
@@ -908,7 +908,8 @@ redact list (see § 21.4).
 | `payments.failed.count` | counter | `tenant`, `method`, `reason_code` | decline-rate alert (excluding bank-decline codes) |
 | `payments.auto_refunded_stale.count` | counter | `tenant` | guard-rail anomaly (overpaid invoice flagged for auto-refund) |
 | `refunds.initiate.count` | counter | `tenant`, `method`, `partial:bool` | refund volume |
-| `refunds.succeeded.count` | counter | `tenant` | refund → CN throughput |
+| `refunds.succeeded.count` | counter | `tenant` | refund settlement throughput (credit note **or** waiver) |
+| `refunds.credit_note_waived.count` | counter | `tenant`, `reason` | refunds that returned money owing NO §86/10 ใบลดหนี้ |
 | `refunds.failed.count` | counter | `tenant`, `reason_code` | refund-failure forensics |
 | `webhook.receive.count` | counter | `tenant`, `event_type` | per-type ingest rate |
 | `webhook.duplicate_ignored.count` | counter | `tenant`, `event_type` | idempotency guard hit-rate (FR-008) |
@@ -917,9 +918,12 @@ redact list (see § 21.4).
 | `out_of_band_refund_rejected_total` | counter | `tenant`, `processor_env` | FR-011a leading indicator (admin refunded via Stripe Dashboard, not in-app) |
 | `member_invite_to_payment_funnel_dropoff` | counter | `tenant`, `step` | F5.1 promotion KPI (FR-016a) — **⚠️ NOT EMITTED, see § 21.1b** |
 | `payments.stale_pending_count` | gauge | `tenant` | post-critique X1+E3 — pending > 24h zombies |
+| `payments.unprocessed_events_count` | gauge | `tenant` | money-remediation Task 1 — `processor_events` the dispatcher started and never marked processed (`outcome='processed'` + `processed_at IS NULL` + age > 15 min). The only instrument that scans this table. Production baseline is **0**. |
+| `payments_unreconciled_total` | counter | `path`, `permanence`, `tenant` | money-remediation Task 1 — roll-up over the five F4/F5 Stripe-vs-ledger divergence counters. Alert on this; break down by `path`. `permanence='permanent'` means no automated mechanism will re-drive it. The `stale_pending_refund_escalated` path emits BOTH values: `permanent` only for `missing_processor_refund_id` (the sweep can never reconcile a row with no Stripe id), `transient` for `stripe_pending` and `credit_note_bridge_declined` (the next sweep re-drives both). |
 | `receipt_pdf_render_duration_ms` | histogram | `tenant`, `outcome` (rendered\|failed) | T166 async receipt render — worker p95 budget — **⚠️ NOT EMITTED, see § 21.1b** |
 | `receipt_pdf_render_failures_total` | counter | `tenant`, `cause` (render_failed\|blob_upload_failed\|invalid_state\|invoice_not_found\|settings_missing) | T166 — render-pipeline forensics by failure cause — **⚠️ NOT EMITTED, see § 21.1b** |
 | `receipt_pdf_pending_count` | gauge | `tenant` | T166 — paid invoices stuck in `receipt_pdf_status='pending'` (sampled by reconciliation cron) — **⚠️ NOT EMITTED, see § 21.1b** |
+| `f4_bridge_unknown_error_shape` | counter | `bridge_op` | **NOISY BY CONSTRUCTION — do not alert on the raw series.** `summariseF4Error` (`invoicing-bridge.ts`) bumps it whenever the F4 `detail` fallback fires, and that fallback fires for EVERY `RecordPaymentError` variant except `pdf_render_failed` / `blob_upload_failed` — the only two that carry a `detail` field at all. A healthy F4 decline therefore increments it. The half worth paging on is the other trigger: `code` itself falling through to the literal `'f4_error'`, which is genuine F4 error-shape drift. Recorded here after money-remediation Task 5, whose classification table keys on the F4 **code**, not this detail. |
 
 **Cardinality**: `reason_code` and `event_type` are bounded enums; `tenant` is
 small-cardinality (≤ a few hundred over project lifetime). `step` is enum from
@@ -1030,18 +1034,22 @@ runbook's own SQL already does this correctly.
 | SLO-F5-006 webhook idempotency | 100 % zero double-paid / double-credited | T150 30-day soak harness (`scripts/perf/webhook-idempotency-soak.ts`) |
 | SLO-F5-007 receipt email delivery time-to-first-attempt p95 (post T166 async) | ≤ 60 s post-webhook-ack | distributed trace `payment_intent.succeeded webhook_receive → receipt_email_outbox_dispatched` (added 2026-04-28 per review-20260428-102639.md S3 closure). Outbox cron cadence 5 min in dev / 1 min in prod; 60 s p95 budget assumes prod cadence + worker first-attempt success on the happy path. `pdf_render_permanently_failed` page (§ 21.3 below) is the alert on the failure tail. |
 
-### 21.3 Alert rules (11 alerts — T166 added `pdf_render_permanently_failed`; review-20260428-102639.md added `slo_f5_002b_breach`)
+### 21.3 Alert rules (15 alerts — Task 5 added the transient-dispatch-failure alarm and recounted; Track B added `refund_credit_note_waived`)
 
 | Alert | Severity | Threshold | Runbook |
 |---|---|---|---|
 | `webhook_signature_rejected` ≥ 1 / 5 min | **alarm** | possible abuse / misconfig | `docs/runbooks/webhook-signature-rejected.md` (TODO) |
 | `webhook_api_version_mismatch_total` > 0 | **alarm** | Stripe API version drift — Q5 monitoring | `docs/runbooks/api-version-mismatch.md` (TODO) |
 | `payment_cross_tenant_probe` ≥ 1 / 5 min | **alarm** | Constitution Principle I breach attempt | `docs/runbooks/cross-tenant-probe.md` |
+| `refunds.credit_note_waived.count` > 0 in a tax month | **alarm** (never page) | each one leaves an output-VAT adjustment for a human; the real control is the month-close checklist, not this alert | `docs/runbooks/refund-without-credit-note.md` |
 | webhook span p99 > 2 s | **alarm** | Stripe → us latency or DB stall | observe + diagnose; auto-recovers if Stripe transient |
 | webhook backlog > 5 min | **page** | event delivery queue unhealthy | check Vercel function execution + Stripe webhook UI |
 | payment-success rate < 95 % (1 h, ex bank-decline) | **alarm** | feature regression or processor outage | check Stripe status + `payments.failed.count` per `reason_code` |
 | `payments.stale_pending_count` > 5 for any tenant | **alarm** | post-critique X1+E3 — zombie pending | `docs/runbooks/stale-pending-refund-sweep.md` (covers payment+refund both) |
+| `payments.unprocessed_events_count` > 0 for any tenant, sustained ≥ 15 min | **alarm** | webhook dispatch started and never completed — F-1 divergence class; production baseline is 0, so any non-zero is new | `docs/runbooks/unprocessed-events-count.md` |
+| `payments_unreconciled_total{permanence='permanent'}` > 0 | **alarm** | a Stripe-vs-ledger divergence landed on a path nothing will retry — a human must reconcile | `docs/runbooks/unprocessed-events-count.md` § Triage |
 | `out_of_band_refund_rejected_total` > 0 / day | **alarm** | admin used Stripe Dashboard instead of in-app refund | `docs/runbooks/out-of-band-refund.md` (FR-011a) |
+| `payments.webhook_dispatch_failed{permanence='transient'}` sustained > 30 min | **alarm** | money-remediation Task 5 — transient F4 declines now return **500**, and **Stripe disables endpoints that fail persistently**. A systemic F4/Blob outage that runs long enough becomes "webhook endpoint disabled", which is strictly worse than the outage and needs a human in the Stripe Dashboard to undo. The in-code backstop is `TRANSIENT_RETRY_CEILING_SECONDS` (48 h, `process-webhook-event.ts`), after which the event is 200-acked with a `webhook_dispatch_permanent_failure` row carrying `dispatch_failure_retry_ceiling_exceeded: true`. **This row is NOT yet wired to any alerting backend** — see § 21.7. | Check Stripe Dashboard → Webhooks for endpoint health FIRST, then F4/Blob status. |
 | `payments.auto_refunded_stale.count` > 0 | **alarm** | overpaid invoice — guard-rail fired | check invoice state + manual reconciliation |
 | `pdf_render_permanently_failed` ≥ 1 (any tenant) | **page** | T166 receipt PDF worker exhausted 3 attempts — invoice `paid` with no receipt PDF available to member | `docs/runbooks/receipt-pdf-permanently-failed.md` |
 | `slo_f5_002b_breach` — webhook span p95 (succeeded) > 1000 ms sustained 30 min | **alarm** | post-T166 async-PDF SLO regression — implies the F4 markPaid + outbox-enqueue tail is creeping back into the hot path, OR Neon/Vercel network latency degraded. Block T167 (optimistic-UI overlay deletion) — the gate condition is "prod p95 < 1000 ms for 7 consecutive days"; sustained breach resets the 7-day timer. | Dashboard panel: `webhook_span_duration_ms{event_type="payment_intent.succeeded"}`. Query: `histogram_quantile(0.95, rate(webhook_span_duration_ms_bucket{event_type="payment_intent.succeeded"}[30m]))`. Triage: check Vercel function timing breakdown + Neon connection pool wait + receipt outbox enqueue duration. Rollback: re-enable `FEATURE_F5_ASYNC_RECEIPT_PDF=true` if the breach correlates with the kill-switch flipping to false. |
@@ -1145,9 +1153,11 @@ Plus full webhook body → redacted to `event_id` + `event_type` + `api_version`
 - `docs/runbooks/out-of-band-refund.md` — FR-011a admin used Stripe Dashboard instead of in-app refund
 - `docs/runbooks/stale-pending-refund-sweep.md` — pending refund > 24h recovery
 - `docs/runbooks/stale-pending-count.md` — cron-job.org configuration for `payments.stale_pending_count` gauge (T138)
+- `docs/runbooks/unprocessed-events-count.md` — unreconciled `processor_events` gauge + the `payments_unreconciled_total` roll-up (money-remediation Task 1)
 - `docs/runbooks/receipt-pdf-permanently-failed.md` — T166 receipt PDF worker exhausted 3 attempts (page on-call)
 - `docs/runbooks/receipt-pdf-async-rollback.md` — T166 async receipt PDF kill-switch flip (`FEATURE_F5_ASYNC_RECEIPT_PDF=false`)
 - `docs/runbooks/cross-tenant-probe.md` — `payment_cross_tenant_probe` investigation. **Backs the only Principle I alert in F5.** Referenced from § 21.3 since the F5 catalogue was written but not created on disk until 2026-07-19; the § 21.3 link dangled until then
+- `docs/runbooks/refund-without-credit-note.md` — a refund succeeded owing no §86/10 ใบลดหนี้ (invoice voided, or §105 receipt); month-close discovery + accountant handover. Referenced as `runbook_url` in the 10-year `refund_credit_note_waived` audit payload.
 
 ### 21.6 Dashboard — F5 Online Payment (Vercel Analytics)
 
@@ -1167,6 +1177,20 @@ Plus full webhook body → redacted to `event_id` + `event_type` + `api_version`
 - **alarm** → `#oncall-payments` Slack + on-call email digest
 - **page** → PagerDuty primary on-call rotation
 - **info** (cross-tenant probe at low frequency) → audit log only; alarm at ≥1/5min escalation
+
+> **Routing is ASPIRATIONAL, not wired.** As of money-remediation Task 5
+> (2026-07-20) this repository has **no alerting backend**: no Prometheus,
+> no Grafana, no PagerDuty integration, and no configured OTel metric
+> reader. Every counter in § 21.1 increments into a collector nothing
+> reads, and every rule in § 21.3 describes a query no scheduler runs.
+>
+> This is why money-remediation Task 5 put its transient-retry bound in the
+> code path (`TRANSIENT_RETRY_CEILING_SECONDS`) rather than behind an alert:
+> "ship it behind an alert" is unsatisfiable here, so a design that depends
+> on someone being paged is a design that fails silently. Treat that as the
+> standing constraint when reviewing any new failure mode on the money path
+> — the durable signal is the **audit row**, which persists 5–10 years, not
+> the metric.
 
 ---
 

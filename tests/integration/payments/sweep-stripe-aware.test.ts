@@ -368,6 +368,7 @@ describe('sweepStalePendingRefunds — Stripe-aware, live Neon (A.14)', () => {
         processorRefundId: reSucc,
         initiatorUserId: user.userId,
         correlationId: 'corr-succ',
+        creditNoteWaiverReason: null,
         initiatedAt: STALE_INITIATED,
       });
       await repo.insert(tx, {
@@ -381,6 +382,7 @@ describe('sweepStalePendingRefunds — Stripe-aware, live Neon (A.14)', () => {
         processorRefundId: reFail,
         initiatorUserId: user.userId,
         correlationId: 'corr-fail',
+        creditNoteWaiverReason: null,
         initiatedAt: STALE_INITIATED,
       });
       await repo.insert(tx, {
@@ -394,6 +396,7 @@ describe('sweepStalePendingRefunds — Stripe-aware, live Neon (A.14)', () => {
         processorRefundId: rePend,
         initiatorUserId: user.userId,
         correlationId: 'corr-pend',
+        creditNoteWaiverReason: null,
         initiatedAt: STALE_INITIATED,
       });
       await repo.insert(tx, {
@@ -407,6 +410,7 @@ describe('sweepStalePendingRefunds — Stripe-aware, live Neon (A.14)', () => {
         processorRefundId: null,
         initiatorUserId: user.userId,
         correlationId: 'corr-null',
+        creditNoteWaiverReason: null,
         initiatedAt: AGED_INITIATED,
       });
       // Fresh row (initiated now, well within the default 24h cutoff) — MUST
@@ -423,6 +427,7 @@ describe('sweepStalePendingRefunds — Stripe-aware, live Neon (A.14)', () => {
         processorRefundId: reFresh,
         initiatorUserId: user.userId,
         correlationId: 'corr-fresh',
+        creditNoteWaiverReason: null,
         initiatedAt: new Date(),
       });
     });
@@ -561,6 +566,7 @@ describe('sweepStalePendingRefunds — Stripe-aware, live Neon (A.14)', () => {
         processorRefundId: raceRe,
         initiatorUserId: user.userId,
         correlationId: 'corr-raced',
+        creditNoteWaiverReason: null,
         initiatedAt: STALE_INITIATED,
       });
     });

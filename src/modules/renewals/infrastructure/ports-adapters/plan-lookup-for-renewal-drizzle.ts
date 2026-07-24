@@ -27,11 +27,12 @@
  * the port interface (no framework / Application-layer imports).
  */
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
-import { runInTenant } from '@/lib/db';
+import { runInTenant, type TenantTx } from '@/lib/db';
 import { parseThbDecimal } from '@/lib/money';
 import type { TenantContext } from '@/modules/tenants';
 import { membershipPlans } from '@/modules/plans';
 import type {
+  LoadPlanFrozenFieldsInput,
   PlanFrozenFields,
   PlanLookupForRenewalPort,
   PlanLookupForRenewalResult,
@@ -89,18 +90,19 @@ function frozenResultFromRow(row: PlanRow): PlanLookupForRenewalResult {
   };
 }
 
-export function makeDrizzlePlanLookupForRenewal(
-  tenant: TenantContext,
-): PlanLookupForRenewalPort {
-  return {
-    async loadPlanFrozenFields(input: {
-      readonly tenantId: string;
-      readonly planId: string;
-      readonly fiscalYear: number;
-      readonly mode: 'freeze' | 'offer';
-    }): Promise<PlanLookupForRenewalResult> {
-      return runInTenant(tenant, async (tx) => {
-        // A `plan_id` is shared across `plan_year`s — the composite PK is
+/**
+ * The EXACT-YEAR-FIRST resolution query, on a supplied `tx`. Shared verbatim by
+ * both `loadPlanFrozenFields` (which opens its own `runInTenant`) and
+ * `loadPlanFrozenFieldsInTx` (which threads the caller's tx — Finding #21), so
+ * the two variants can never drift in which row they resolve. Tenant scope comes
+ * from the tx's inherited GUC (RLS); the explicit `tenantId` on `input` is
+ * defence-in-depth only (this query filters by planId + planYear, not tenant_id).
+ */
+async function queryPlanFrozenFieldsInTx(
+  tx: TenantTx,
+  input: LoadPlanFrozenFieldsInput,
+): Promise<PlanLookupForRenewalResult> {
+  // A `plan_id` is shared across `plan_year`s — the composite PK is
         // `(tenant_id, plan_id, plan_year)` and a planId carries one row
         // per year (e.g. 2026 + a pre-opened 2027 catalogue). MORE THAN
         // ONE year can be `is_active` at once. RLS scopes tenant;
@@ -213,7 +215,27 @@ export function makeDrizzlePlanLookupForRenewal(
             : { status: 'not_found' };
         }
         return frozenResultFromRow(activeRow);
-      });
+}
+
+export function makeDrizzlePlanLookupForRenewal(
+  tenant: TenantContext,
+): PlanLookupForRenewalPort {
+  return {
+    async loadPlanFrozenFields(
+      input: LoadPlanFrozenFieldsInput,
+    ): Promise<PlanLookupForRenewalResult> {
+      // Connection-fresh: open a tenant tx, then delegate to the shared query.
+      return runInTenant(tenant, (tx) => queryPlanFrozenFieldsInTx(tx, input));
+    },
+
+    async loadPlanFrozenFieldsInTx(
+      tx: TenantTx,
+      input: LoadPlanFrozenFieldsInput,
+    ): Promise<PlanLookupForRenewalResult> {
+      // Finding #21 — resolves the SAME rows on the CALLER's tx (no nested
+      // runInTenant / 2nd pooled connection). Used by the plan-change billing
+      // remediation while `change-plan` holds the member FOR UPDATE + cycle lock.
+      return queryPlanFrozenFieldsInTx(tx, input);
     },
   };
 }

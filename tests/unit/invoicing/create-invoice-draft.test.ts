@@ -115,6 +115,14 @@ function makeDeps(
       }),
       findByIdInTx: vi.fn(),
       findById: vi.fn(),
+      // Deliberate-duplicate guard: these fixtures each bill a member who
+      // holds NO live membership invoice for the plan year, so null is the
+      // honest answer, not a paper-over. The guard's own behaviour (refuse /
+      // acknowledge / audit) is covered in
+      // create-invoice-draft-duplicate-guard.test.ts; overriding this to a
+      // non-null row here would silently convert every case below into a
+      // duplicate-refusal test.
+      findLiveMembershipBillInTx: vi.fn(async () => null),
       list: vi.fn(),
         listPaged: vi.fn(),
       applyIssue: vi.fn(),

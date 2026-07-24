@@ -19,6 +19,11 @@
  *   3. On 201: sonner.success with credit-note number; close dialog;
  *      router.refresh() to update payment timeline + status badges.
  *   4. On 4xx/5xx: inline alert above buttons (FR-029(g)) + sonner.
+ *
+ * Track B — a refund can legitimately carry NO §86/10 ใบลดหนี้ (the invoice was
+ * voided, or the buyer holds a §105 receipt). Both success arms above therefore
+ * branch on what actually documented the refund; rendering the credit-note copy
+ * unconditionally is what produced "credit note  issued" with an empty number.
  */
 import { useEffect, useRef, useState, useId, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
@@ -28,6 +33,11 @@ import { type SubmitHandler, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { toast } from 'sonner';
 import { Loader2Icon } from 'lucide-react';
+// TYPE-ONLY, and it must stay that way. The invoicing barrel reaches
+// server-only modules; a value import here would drag them into a client
+// bundle. `import type` is erased at compile time, so this costs nothing at
+// runtime while still binding the copy to F4's Domain vocabulary.
+import type { CreditNoteWaiverReason } from '@/modules/invoicing';
 import {
   AlertDialogCancel,
   AlertDialogFooter,
@@ -46,6 +56,26 @@ import { formatSatangThb } from '@/lib/format-thb';
 import { TypedPhraseConfirm } from './typed-phrase-confirm';
 
 const REASON_MAX = 500;
+
+/**
+ * Track B — the grounds on which a refund carries no §86/10 ใบลดหนี้.
+ *
+ * Typed against F4 Domain's `CreditNoteWaiverReason` rather than restated as a
+ * loose string, so adding a reason there is a COMPILE error here instead of a
+ * toast that silently renders the raw i18n key — next-intl does not throw on a
+ * missing message, it returns `admin.refund.success.waivedReason.whatever`.
+ */
+type WaiverReason = CreditNoteWaiverReason;
+
+/**
+ * `snake_case` storage contract → `camelCase` i18n leaf. Mechanical on purpose:
+ * `scripts/check-i18n-coverage.ts` derives the required key set from the same
+ * Domain constant using this same transform, so a reason without copy fails the
+ * build rather than reaching an admin.
+ */
+function waiverKey(reason: WaiverReason): string {
+  return reason.replace(/_([a-z0-9])/g, (_, c: string) => c.toUpperCase());
+}
 
 // THB amount accepted as decimal string (e.g. "5350" or "5350.00").
 // Server-side zod gates the satang upper bound (2_000_000_000); client
@@ -190,6 +220,23 @@ export function RefundForm({
           error?: { code?: string };
         };
         const code = body.error?.code ?? 'internal_error';
+        // Money-remediation F-3 — NOT a failure. Stripe SETTLED this refund;
+        // only the credit note is outstanding, and the stale-pending sweep
+        // retries it automatically. The generic branch below would render it
+        // inside a destructive InlineAlert titled "Couldn't issue the refund"
+        // (`error.title`), which is false and is exactly the read that made an
+        // admin click again and double-refund the member. Terminate the dialog
+        // the same way the 202 pending path does — no retry affordance at all.
+        // `admin.refund.error.f4_bridge_deferred` is still REQUIRED to exist
+        // (the check:i18n route-code gate enforces it) as the fallback if this
+        // special case is ever removed.
+        if (code === 'f4_bridge_deferred') {
+          toast.success(t('success.deferredToast'));
+          succeeded = true;
+          onClose();
+          router.refresh();
+          return;
+        }
         // Surface the localised message inline + as a toast so the
         // admin sees it whether their focus is in or out of the
         // dialog.
@@ -225,7 +272,18 @@ export function RefundForm({
         return;
       }
       const body = (await res.json()) as {
-        refund: { status?: string; creditNoteNumber?: string };
+        refund: {
+          status?: string;
+          creditNoteNumber?: string | null;
+          // Track B — the 201 reports what documented the refund as a union,
+          // so a waived refund cannot be rendered as an issued credit note
+          // with an empty number. Optional here because the 202 arm has no
+          // credit note yet and sends the decision as a bare reason instead.
+          creditNote?:
+            | { kind: 'issued'; id: string; number: string }
+            | { kind: 'waived'; reason: WaiverReason };
+          creditNoteWaiverReason?: WaiverReason | null;
+        };
       };
       // #1 (2026-07-11) — an async Stripe refund returns 202 with a
       // `pending` row (no credit note yet). Show an "awaiting confirmation"
@@ -233,7 +291,47 @@ export function RefundForm({
       // once the refund settles. A synchronous `succeeded` refund (201)
       // carries the credit-note number.
       if (res.status === 202 || body.refund.status === 'pending') {
-        toast.success(t('success.pendingToast'));
+        // Track B — the waiver decision is made at pre-flight, so even a
+        // still-settling refund knows whether a §86/10 will ever follow.
+        // Telling this admin "the credit note is issued once the refund
+        // settles" would be false for the whole life of that refund.
+        const pendingWaiver = body.refund.creditNoteWaiverReason ?? null;
+        if (pendingWaiver) {
+          // `warning`, not `success`: the money went back, but the message is a
+          // CAUTION — an output-VAT adjustment is now owed. The green check of
+          // `toast.success` reads as "all done"; the triangle of `toast.warning`
+          // matches "succeeded, but act". `closeButton` is REQUIRED alongside
+          // `duration: Infinity` — a toast that never auto-dismisses and has no
+          // focusable dismiss control strands a keyboard/screen-reader admin
+          // under it on every subsequent screen (WCAG 2.1.1 / ux-standards §4.2).
+          toast.warning(t('success.pendingWaivedToast'), {
+            description: t(`success.waivedReason.${waiverKey(pendingWaiver)}`),
+            duration: Infinity,
+            closeButton: true,
+          });
+        } else {
+          toast.success(t('success.pendingToast'));
+        }
+      } else if (body.refund.creditNote?.kind === 'waived') {
+        // No credit note exists and none ever will. The description carries
+        // the ground AND the consequence — an output-VAT adjustment is now
+        // owed that nothing in this system performs. It does NOT tell the
+        // admin how to file: whether that VAT may be reduced at all, by what
+        // instrument, and in which ภ.พ.30 month are open questions for the
+        // chamber's accountant. Turning an unanswered tax question into an
+        // instruction would be a worse lie than the one being removed here.
+        //
+        // `warning` + persistent + `closeButton`: this is a caution, it is the
+        // only moment the admin is told, and it must be dismissible by keyboard
+        // and screen reader — see the pending-waived arm above for the full
+        // reasoning.
+        toast.warning(t('success.waivedToast'), {
+          description: t(
+            `success.waivedReason.${waiverKey(body.refund.creditNote.reason)}`,
+          ),
+          duration: Infinity,
+          closeButton: true,
+        });
       } else {
         toast.success(
           t('success.toast', { number: body.refund.creditNoteNumber ?? '' }),

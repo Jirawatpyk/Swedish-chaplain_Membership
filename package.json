@@ -44,6 +44,7 @@
     "check:portal-guard": "tsx scripts/check-portal-guard.ts",
     "check:env-example": "tsx scripts/check-env-example.ts",
     "check:env-boot": "tsx scripts/check-env-boot.mts",
+    "check:plan-divergence": "node --env-file=.env.local --import tsx scripts/check-plan-change-divergence.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node --env-file=.env.local --import tsx scripts/run-migrations.ts",
     "db:migrate:prod": "node --env-file=.env.production --import tsx scripts/run-migrations.ts",

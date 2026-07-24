@@ -1,22 +1,26 @@
 'use client';
 
 /**
- * FR-034 — three distinct empty states for the members directory.
+ * FR-034 — four distinct empty states for the members directory.
  *
  * (a) zero-members — onboarding CTA "Add your first member" + illustration
  * (b) filtered — "No members match these filters" + Clear-filters CTA
- * (c) server-error — retry + localized message
+ * (c) all-invited — needs-invite chip filtered to zero rows (design doc
+ *     2026-07-23 §3.6/§3.7) — "Everyone has been invited" + a CTA that
+ *     clears only the `portal` param, preserving other active filters
+ * (d) server-error — retry + localized message
  *
  * ARIA live-region on the error state so screen readers announce the
  * failure without a page change (ux-standards § 7.3).
  */
 
-import { useRouter, usePathname } from 'next/navigation';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import {
   BuildingIcon,
   SearchXIcon,
+  MailCheckIcon,
   AlertTriangleIcon,
   PlusIcon,
   XIcon,
@@ -76,6 +80,45 @@ export function MembersFilteredEmptyState() {
         variant="outline"
         size="sm"
         onClick={() => router.replace(pathname)}
+      >
+        <XIcon className="size-4" />
+        {t('cta')}
+      </Button>
+    </div>
+  );
+}
+
+export function MembersAllInvitedEmptyState() {
+  const t = useTranslations('admin.members.emptyStates.allInvited');
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  return (
+    <div
+      className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-10 text-center"
+      role="status"
+    >
+      <div className="flex size-14 items-center justify-center rounded-full bg-muted" aria-hidden>
+        <MailCheckIcon className="size-7 text-muted-foreground" />
+      </div>
+      <div className="space-y-1">
+        <h2 className="text-h3 text-lg font-semibold">{t('title')}</h2>
+        <p className="text-sm text-muted-foreground">{t('description')}</p>
+      </div>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={() => {
+          // Clear ONLY the chip — router.replace(pathname) (what the filtered
+          // empty state does) would also throw away the user's Plan filter.
+          const params = new URLSearchParams(searchParams.toString());
+          params.delete('portal');
+          params.delete('page');
+          params.delete('cursor');
+          const qs = params.toString();
+          router.replace(qs ? `${pathname}?${qs}` : pathname);
+        }}
       >
         <XIcon className="size-4" />
         {t('cta')}

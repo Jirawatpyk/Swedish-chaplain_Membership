@@ -169,6 +169,10 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   'payment_invoice_not_found',
   // --- F5 stale-pending-refund sweep added by migration 0050 (T130a) ---
   'stale_pending_refund_detected',
+  // --- F5 refund credit-note deferral added by migration 0266
+  //     (money-remediation Task 6 / finding F-3) ---
+  'refund_cn_deferred',
+  'refund_credit_note_waived',
   // --- F5 confirm-step terminal-state ack added by migration 0052 (H-11
   //     review 2026-04-27) — emitted on illegal_transition and
   //     invariant_violation_duplicate_succeeded ack paths instead of
@@ -190,6 +194,13 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   //     events drive the F2 scheduled-plan-change lifecycle audit
   //     trail (Wave B G1 verify-run remediation). ---
   'member_plan_manually_changed',
+  // --- Plan-change → billing remediation (Package A, migration 0259) ---
+  //     Forensic record of the billing consequence when a member's live
+  //     `members.plan_id` diverges from a renewal cycle's frozen plan.
+  //     Owned by F3 members (F3AuditEventType union); emitted from the F8
+  //     renewals seed seams via a narrow renewals-owned audit port. 5y
+  //     retention (NOT a tax-document event — retention trigger untouched).
+  'member_plan_change_billing_effect',
   'plan_change_scheduled',
   'plan_change_superseded',
   'plan_change_cancelled',
@@ -449,6 +460,17 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   //     its own evidence, so the un-enrolment needs its own event for the
   //     trail to answer "who stopped auto-billing this member". ---
   'member_auto_invoice_unenrolled',
+  // --- money-remediation Task 4 / finding F-1 (migration 0267, 2026-07-20) —
+  //     the F5 settlement transaction was ROLLED BACK because the F4
+  //     invoicing bridge declined. Emitted by `confirmPayment` on a `null`
+  //     tx (its own connection) so the forensic row SURVIVES the rollback it
+  //     describes — a rolled-back tx otherwise erases every trace that a
+  //     captured payment failed to settle. Payload carries the F4 refusal
+  //     code + `money_captured: true` (Stripe's capture is NOT undone by a DB
+  //     rollback). 10y retention (money-trail, Thai RD §87/3). Keep in
+  //     lockstep with F5AuditEventType + F5_AUDIT_RETENTION_YEARS; the F5
+  //     parity test's `payment_` prefix already covers it. ---
+  'payment_settlement_rolled_back',
 ]);
 
 /**

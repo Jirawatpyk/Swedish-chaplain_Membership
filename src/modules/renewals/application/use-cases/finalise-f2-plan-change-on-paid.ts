@@ -1,23 +1,30 @@
 /**
  * F2 scheduled-plan-change finalisation — the POST-commit half of the
  * tier-upgrade-apply cascade. Single source of truth for both:
- *   - the ONLINE F4 invoice-paid callback (`f8OnPaidCallbacks[1]` via
- *     `infrastructure/_lib/apply-tier-upgrade-on-paid-callback.ts`), and
+ *   - the ONLINE F4 invoice-paid rail (the F5 webhook `confirmPayment` +
+ *     the admin F4 manual-pay route), via `finaliseF2PlanChangeForPaidInvoiceOnline`
+ *     wired as an after-commit callback (`f8AfterCommitCallbacks`), and
  *   - the OFFLINE admin mark-paid path (070 Item D, `mark-paid-offline.ts`).
  *
  * Runs in its OWN `runInTenant` tx — SEPARATE from the F4/offline state
- * tx. By the time this runs the caller's state tx has already committed
- * (suggestion → applied + cycle flipped + next cycle created), so this
- * F2 flip is eventual-consistent + non-rollback: any failure here is
- * logged + swallowed (the caller's state is durable; the F2 row stays
- * `pending`). Self-healing depends on the CALLER: the ONLINE F4
- * invoice-paid webhook re-fires this whole cascade via Stripe at-least-
- * once redelivery, so a transient failure heals on retry; the OFFLINE
- * admin mark-paid path has NO automatic retry (one-shot synchronous
- * click — no webhook, no reconcile cron over `scheduled_plan_changes`),
- * so a stranded F2 row there needs MANUAL operator replay (grep the
- * `F2.PLAN_CHANGE.*` errorIds in the structured logs). Mirrors the
- * post-tx F2 emit pattern in `accept-tier-upgrade.ts`.
+ * tx, and CRUCIALLY only AFTER that state tx has committed. That ordering
+ * is load-bearing: this finaliser's `plan_change_applied` audit INSERT
+ * re-fires the `members_audit_bump_last_activity` trigger (an `UPDATE
+ * members`), so running it WHILE the settlement tx still holds the
+ * member-row lock (the historical in-callback bug) is a self-deadlock —
+ * the settlement tx is parked in a JS `await`, so Postgres can't detect
+ * it and it resolves only at `statement_timeout`. Post-commit the lock is
+ * released, so the audit INSERT can never deadlock. The F2 flip is
+ * eventual-consistent + non-rollback: any failure here is logged +
+ * swallowed (the caller's state is durable; the F2 row stays `pending`).
+ * Self-healing depends on the CALLER: the ONLINE F4 invoice-paid webhook
+ * re-fires the whole settlement on Stripe at-least-once redelivery so a
+ * transient failure heals on retry; the OFFLINE admin mark-paid path has
+ * NO automatic retry (one-shot synchronous click — no webhook, no
+ * reconcile cron over `scheduled_plan_changes`), so a stranded F2 row
+ * there needs MANUAL operator replay (grep the `F2.PLAN_CHANGE.*`
+ * errorIds in the structured logs). Mirrors the post-tx F2 emit pattern
+ * in `accept-tier-upgrade.ts`.
  *
  * Two-phase money-safety gate (065 Fix A precision — preserved verbatim
  * from the Infrastructure helper this extraction replaces):
@@ -34,9 +41,23 @@
  */
 import { logger } from '@/lib/logger';
 import { renewalsMetrics } from '@/lib/metrics';
-import type { F4InvoicePaidEvent } from '@/modules/invoicing';
+import { runInTenant } from '@/lib/db';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 import { parseSuggestionIdFromReason } from '../../domain/tier-upgrade-suggestion';
+
+/**
+ * The minimal identity the finaliser needs off a paid invoice. A
+ * structural subset of F4's `F4InvoicePaidEvent`, so the OFFLINE caller
+ * (`mark-paid-offline.ts`) can still pass its captured paid event
+ * verbatim, while the ONLINE re-resolve path passes just what it recovered
+ * from the invoice id. Kept a fresh interface (not a `Pick<...>`) so the
+ * finaliser carries no compile-time dependency on the invoicing barrel.
+ */
+export interface FinaliseF2PaidTarget {
+  readonly tenantId: string;
+  readonly memberId: string;
+  readonly invoiceId: string;
+}
 
 /**
  * Actor for the F2 `plan_change_applied` audit. The F2 `AuditPort` has
@@ -56,20 +77,68 @@ export interface FinaliseF2Actor {
  * the F1 audit `'system:webhook'` / `'system:cron'` sentinel pattern;
  * the F2 `AuditContext.actorUserId` is a required `string`.
  */
-export function defaultOnlineF2Actor(evt: F4InvoicePaidEvent): FinaliseF2Actor {
+export function defaultOnlineF2Actor(paid: FinaliseF2PaidTarget): FinaliseF2Actor {
   return {
     actorUserId: 'system:f8-on-paid-webhook',
-    requestId: `f8-onPaid:${evt.invoiceId}`,
+    requestId: `f8-onPaid:${paid.invoiceId}`,
   };
+}
+
+/**
+ * POST-commit entry point for the ONLINE F4 invoice-paid rails (the F5
+ * webhook `confirmPayment` + the admin F4 manual-pay route). Runs AFTER
+ * the settlement tx has committed, so the member-row lock is released and
+ * the finaliser's audit INSERT can no longer self-deadlock (the bug this
+ * replaces ran the finaliser IN-CALLBACK, inside the still-open
+ * settlement tx). Re-resolves the renewal cycle linked to `invoiceId` in
+ * its OWN fresh tx — the settlement tx captured no cycle id up to this
+ * layer, and re-resolving is idempotent + cheap. A non-renewal invoice
+ * (no linked cycle) is a clean no-op.
+ *
+ * Best-effort + non-rollback: a re-resolve failure is logged + swallowed
+ * (the payment is already durable; the F2 row stays `pending` and the
+ * Stripe at-least-once redelivery re-runs the cascade). The finaliser it
+ * delegates to is itself swallow-only.
+ */
+export async function finaliseF2PlanChangeForPaidInvoiceOnline(
+  deps: RenewalsDeps,
+  args: { readonly tenantId: string; readonly invoiceId: string },
+): Promise<void> {
+  let cycle;
+  try {
+    cycle = await runInTenant(deps.tenant, (tx) =>
+      deps.cyclesRepo.findByInvoiceIdInTx(tx, args.tenantId, args.invoiceId),
+    );
+  } catch (e) {
+    logger.error(
+      {
+        err: e instanceof Error ? e.message : String(e),
+        tenantId: args.tenantId,
+        invoiceId: args.invoiceId,
+        errorId: 'F2.PLAN_CHANGE.CYCLE_RESOLVE_FAILED',
+      },
+      '[on-paid] F2 finaliser cycle re-resolve failed — payment already committed; online path self-heals on webhook redelivery',
+    );
+    return;
+  }
+  // Non-renewal invoices (event fees, ad-hoc invoices) have no linked cycle.
+  if (!cycle) return;
+
+  const paid: FinaliseF2PaidTarget = {
+    tenantId: args.tenantId,
+    memberId: cycle.memberId,
+    invoiceId: args.invoiceId,
+  };
+  await finaliseF2PlanChangeOnPaid(deps, paid, cycle.cycleId, defaultOnlineF2Actor(paid));
 }
 
 export async function finaliseF2PlanChangeOnPaid(
   deps: RenewalsDeps,
-  evt: F4InvoicePaidEvent,
+  paid: FinaliseF2PaidTarget,
   cycleId: string,
   actor: FinaliseF2Actor,
 ): Promise<void> {
-  const memberId = evt.memberId;
+  const memberId = paid.memberId;
 
   let pending;
   try {
@@ -82,10 +151,10 @@ export async function finaliseF2PlanChangeOnPaid(
     logger.error(
       {
         err: e instanceof Error ? e.message : String(e),
-        tenantId: evt.tenantId,
+        tenantId: paid.tenantId,
         memberId,
         cycleId,
-        invoiceId: evt.invoiceId,
+        invoiceId: paid.invoiceId,
         errorId: 'F2.PLAN_CHANGE.FIND_PENDING_FAILED',
       },
       '[on-paid] F2 scheduled-plan-change findPendingForCycle failed — caller state already committed; manual replay needed',
@@ -119,7 +188,7 @@ export async function finaliseF2PlanChangeOnPaid(
     let linkedSuggestion;
     try {
       linkedSuggestion = await deps.tierUpgradeRepo.findById(
-        evt.tenantId,
+        paid.tenantId,
         linkedSuggestionId,
       );
     } catch (e) {
@@ -131,12 +200,12 @@ export async function finaliseF2PlanChangeOnPaid(
       logger.error(
         {
           err: e instanceof Error ? e.message : String(e),
-          tenantId: evt.tenantId,
+          tenantId: paid.tenantId,
           memberId,
           cycleId,
           scheduledChangeId: pending.scheduledChangeId,
           suggestionId: linkedSuggestionId,
-          invoiceId: evt.invoiceId,
+          invoiceId: paid.invoiceId,
           errorId: 'F2.PLAN_CHANGE.SUGGESTION_STATUS_LOOKUP_FAILED',
         },
         '[on-paid] F2 finaliser suggestion-status lookup failed — skipping finalise (money-safe); online path self-heals on webhook redelivery, offline path needs manual replay',
@@ -156,7 +225,7 @@ export async function finaliseF2PlanChangeOnPaid(
   // The finaliser is about to flip the pending row → applied. Bump the SRE
   // signal HERE (co-located with the actual transition now that the skip
   // decision is per-row + needs the pending row in hand).
-  renewalsMetrics.f2FinaliseBeforeF4Commit(evt.tenantId);
+  renewalsMetrics.f2FinaliseBeforeF4Commit(paid.tenantId);
 
   let transitioned;
   try {
@@ -169,11 +238,11 @@ export async function finaliseF2PlanChangeOnPaid(
     logger.error(
       {
         err: e instanceof Error ? e.message : String(e),
-        tenantId: evt.tenantId,
+        tenantId: paid.tenantId,
         memberId,
         cycleId,
         scheduledChangeId: pending.scheduledChangeId,
-        invoiceId: evt.invoiceId,
+        invoiceId: paid.invoiceId,
         errorId: 'F2.PLAN_CHANGE.TRANSITION_APPLIED_FAILED',
       },
       '[on-paid] F2 scheduled-plan-change transitionStatus("applied") failed — caller state already committed; manual replay needed',
@@ -204,7 +273,7 @@ export async function finaliseF2PlanChangeOnPaid(
           effective_at_cycle_id: cycleId,
           from_plan_id: pending.fromPlanId,
           to_plan_id: pending.toPlanId,
-          applied_at_invoice_id: evt.invoiceId,
+          applied_at_invoice_id: paid.invoiceId,
         },
       },
     );
@@ -217,11 +286,11 @@ export async function finaliseF2PlanChangeOnPaid(
           event: 'f8_onPaid.f2_audit_emit_failed',
           audit_event: 'plan_change_applied',
           err: auditResult.error,
-          tenantId: evt.tenantId,
+          tenantId: paid.tenantId,
           memberId,
           cycleId,
           scheduledChangeId: transitioned.scheduledChangeId,
-          invoiceId: evt.invoiceId,
+          invoiceId: paid.invoiceId,
         },
         '[on-paid] F2 plan_change_applied audit emit failed — F2+caller state committed; operator backfill needed',
       );
@@ -236,11 +305,11 @@ export async function finaliseF2PlanChangeOnPaid(
         // extraction (the f8-onPaid-f2-finalise unit test asserts it).
         event: 'f8_onPaid.f2_audit_emit_threw',
         err: auditErr instanceof Error ? auditErr.message : String(auditErr),
-        tenantId: evt.tenantId,
+        tenantId: paid.tenantId,
         memberId,
         cycleId,
         scheduledChangeId: transitioned.scheduledChangeId,
-        invoiceId: evt.invoiceId,
+        invoiceId: paid.invoiceId,
         errorId: 'F2.PLAN_CHANGE.APPLIED_AUDIT_EMIT_THREW',
       },
       '[on-paid] F2 plan_change_applied audit emit threw — manual replay needed',

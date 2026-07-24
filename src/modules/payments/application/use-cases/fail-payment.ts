@@ -19,6 +19,7 @@ import {
   emitTerminalStateAck,
   emitWebhookUnknownIntent,
   markProcessedIfPresent,
+  F5_SETTINGS_MISSING_DETAIL,
 } from './_shared';
 import { paymentsMetrics } from '@/lib/metrics';
 import { paymentsTracer } from '@/lib/otel-tracer';
@@ -62,12 +63,16 @@ export type FailPaymentError =
    * F5R2-CRIT-2 — dedicated permanent code for tenant-settings-missing.
    * Mirrors the confirm-payment pattern (`bridge_error` /
    * `tenant_settings_missing` detail). The dispatcher's
-   * `categorisePermanence` reads `error.code`, so reusing
-   * `'processor_unavailable'` for this configuration gap caused the
-   * dispatcher to classify it as transient → Stripe retries 72h on a
-   * config gap that cannot self-heal. The dedicated `bridge_error`
-   * code is in `PERMANENT_SUB_USE_CASE_DETAILS` → permanent → Stripe
+   * The dispatcher classifies on `(error.code, error.detail)`, so reusing
+   * `'processor_unavailable'` for this configuration gap caused it to
+   * classify as transient → Stripe retries 72h on a config gap that cannot
+   * self-heal. The dedicated `bridge_error` + `tenant_settings_missing`
+   * detail classifies permanent (`classifyDispatchPermanence`) → Stripe
    * stops retrying + ops sees a forensic 200-ack audit row.
+   *
+   * money-remediation Task 5 — this pairing is load-bearing. The DETAIL is
+   * now what carries the permanence, not the code; changing either half
+   * silently re-opens the 72h retry storm.
    */
   | { readonly code: 'bridge_error'; readonly detail: string };
 
@@ -126,12 +131,14 @@ async function failPaymentBody(
 ): Promise<Result<FailPaymentOutcome, FailPaymentError>> {
   const settings = await deps.tenantSettingsRepo.getByTenantId(input.tenantId);
   if (!settings) {
-    // F5R2-CRIT-2 — return dedicated bridge_error code (in PERMANENT
-    // sub-use-case-details set) so dispatcher classifies as permanent
-    // → route returns 200 + forensic audit instead of 500 → Stripe
-    // stops retrying. Pre-fix this path triggered a 72h Stripe retry
-    // storm on a configuration gap.
-    return err({ code: 'bridge_error', detail: 'tenant_settings_missing' });
+    // F5R2-CRIT-2 — refuse an unconfigured tenant with `bridge_error` +
+    // `F5_SETTINGS_MISSING_DETAIL`, which `classifyDispatchPermanence`
+    // special-cases to PERMANENT (Task 5 replaced the old
+    // `PERMANENT_SUB_USE_CASE_DETAILS` set with that classifier) → route returns
+    // 200 + forensic audit instead of 500 → Stripe stops retrying. Pre-fix this
+    // path triggered a 72h Stripe retry storm on a configuration gap. The detail
+    // is the shared const so this producer and the consumer rename in lockstep.
+    return err({ code: 'bridge_error', detail: F5_SETTINGS_MISSING_DETAIL });
   }
 
   return await deps.paymentsRepo.withTx(async (tx) => {

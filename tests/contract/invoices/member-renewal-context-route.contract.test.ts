@@ -80,7 +80,6 @@ describe('contract: GET /api/invoices/member-renewal-context (Task 9)', () => {
       classification: { kind: 'renewal' },
       periodTo: '2027-06-01',
       termMonths: 12,
-      hasUnpaidMembershipInvoice: false,
     });
 
     const { GET } = (await importRoute()) as { GET: (req: NextRequest) => Promise<Response> };
@@ -92,7 +91,6 @@ describe('contract: GET /api/invoices/member-renewal-context (Task 9)', () => {
       classification: { kind: 'renewal' },
       period_to: '2027-06-01',
       term_months: 12,
-      has_unpaid_membership_invoice: false,
     });
     expect(loadMemberRenewalContextMock).toHaveBeenCalledWith('test-swecham', MEMBER_ID);
   });

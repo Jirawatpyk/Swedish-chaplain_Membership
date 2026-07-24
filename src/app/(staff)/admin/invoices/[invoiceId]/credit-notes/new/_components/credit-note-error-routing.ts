@@ -63,6 +63,11 @@ const DEDICATED_MESSAGE_KEYS: Readonly<Record<string, string>> = {
   // unreachable in practice; kept as a dedicated actionable message (not a
   // raw code dump) in case a stale render or a non-form API caller omits it.
   membership_effect_required: 'errors.membershipEffectRequired',
+  // 8A — a refund is settling on this invoice's payment; a manual credit note
+  // now would strand it. NOT a `concurrent` "already credited — refresh" (that
+  // copy is misleading: the invoice is still creditable, just temporarily
+  // blocked). Dedicated "a refund is in progress — retry once it settles".
+  refund_in_progress: 'errors.refundInProgress',
 };
 
 export function routeCreditNoteError(

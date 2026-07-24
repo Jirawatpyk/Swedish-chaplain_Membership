@@ -59,6 +59,41 @@ export type F5RouteErrorCode =
   // succeed → out-of-band-refund runbook) so on-call does not chase a
   // non-existent refund. Both currently map to 502.
   | 'f4_preflight_read_error'
+  // I1 (Task 7) — the credit-gate axes could not be DERIVED (a code/shape
+  // fault). Distinct from `f4_preflight_read_error` because that copy says to
+  // retry, which is false here: no retry can compute a verdict the code cannot
+  // compute. Money did not move on either.
+  | 'f4_preflight_gate_underivable'
+  // F-4 (money-remediation Task 7) — the refund was refused in Phase A
+  // because F4's credit-note gates would decline it. Money did NOT move.
+  // All three are 409, and DELIBERATELY not collapsed into one code: the
+  // operator response differs per axis (fix the invoice / permanent, use a
+  // different instrument / just wait for the receipt render).
+  | 'f4_preflight_invalid_status'
+  // RESERVED / UNREACHABLE (Track B) — no producer. The refund route no longer
+  // emits this: a §105 receipt is now handled by the WAIVE arm (the refund
+  // succeeds without a credit note), not refused, so the "not creditable" block
+  // it named cannot occur. Kept, not deleted, so the id stays stable for the
+  // historical audit rows that carry it and so a future re-introduction reuses
+  // the same string. Its copy in messages/*.json is likewise dormant.
+  | 'f4_preflight_not_creditable'
+  // C2 (Task 7) — split from a single `f4_preflight_receipt_not_rendered`,
+  // whose copy told every admin to wait a few minutes. True only for
+  // `pending`; `failed` and NULL never clear on their own.
+  | 'f4_preflight_receipt_rendering'
+  | 'f4_preflight_receipt_render_stuck'
+  // Money-remediation F-3 — the refund SETTLED at the processor; only the
+  // credit note is outstanding, and the stale-pending sweep retries it. MUST
+  // stay distinct from `f4_bridge_error`, whose copy ("issuance failed") reads
+  // as retryable. That read is the click F-3 needed: the old code also marked
+  // the row `failed`, so the retry minted a fresh idempotency key and refunded
+  // the customer twice. Nothing is expected of the admin here.
+  | 'f4_bridge_deferred'
+  // Money-remediation F-3 backstop — this payment carries a refund row left
+  // in the F-3 casualty state (settled at Stripe, recorded `failed`). The
+  // refundable-remainder maths cannot see that money, so further refunds are
+  // blocked until a human reconciles.
+  | 'refund_needs_reconciliation'
   // CF-2 — the "mark failed auto-refund as reconciled" surface found NO
   // `auto_refund_failed_needs_manual_reconcile` forensic for the invoice, so
   // there is nothing to reconcile (409 conflict; the alert only offers the
@@ -171,6 +206,74 @@ export const F5_ERROR_MESSAGES: Record<F5RouteErrorCode, Bilingual> = {
   f4_preflight_read_error: {
     message: 'Could not verify the refundable balance right now. No money was moved — please retry.',
     messageThai: 'ไม่สามารถตรวจสอบยอดที่คืนได้ในขณะนี้ ยังไม่มีการเคลื่อนไหวของเงิน กรุณาลองใหม่อีกครั้ง',
+  },
+  f4_preflight_invalid_status: {
+    // Explicitly states that no money moved. The admin's next step is the
+    // invoice, not the refund screen or the payment processor.
+    message:
+      "This invoice can no longer be credited, so it cannot be refunded. No money was moved. Check the invoice — it may have been voided or already fully credited.",
+    messageThai:
+      'ใบแจ้งหนี้นี้ไม่สามารถออกใบลดหนี้ได้แล้ว จึงไม่สามารถคืนเงินได้ ยังไม่มีการเคลื่อนไหวของเงิน กรุณาตรวจสอบใบแจ้งหนี้ อาจถูกยกเลิกหรือออกใบลดหนี้เต็มจำนวนไปแล้ว',
+  },
+  f4_preflight_gate_underivable: {
+    // Deliberately does NOT say "retry". The verdict could not be computed at
+    // all, so an identical retry fails identically — the same
+    // retryable-looking-but-permanent copy this remediation removes elsewhere.
+    message:
+      'Could not determine whether this payment can be credited, so the refund was not attempted. No money was moved. This needs a fix on our side — please contact support.',
+    messageThai:
+      'ระบบไม่สามารถระบุได้ว่าการชำระเงินนี้ออกใบลดหนี้ได้หรือไม่ จึงยังไม่ได้ดำเนินการคืนเงิน ยังไม่มีการเคลื่อนไหวของเงิน กรณีนี้ต้องแก้ไขที่ระบบ กรุณาติดต่อฝ่ายสนับสนุน',
+  },
+  f4_preflight_not_creditable: {
+    // Permanent by law, so the copy must not imply retrying: a §105
+    // ใบเสร็จรับเงิน has no ใบกำกับภาษี number and date for a §86/10 ใบลดหนี้
+    // to cite (§86/10 วรรคสอง). Seller-side rule — not "the buyer has no
+    // input VAT to reverse", which would wrongly implicate the membership
+    // path's non-registrant buyers, who ARE creditable under the 066 relax.
+    message:
+      'This payment was receipted without a tax invoice, so no credit note can be issued against it. No money was moved. Refunding it requires a manual process — please contact finance.',
+    messageThai:
+      'การชำระเงินนี้ออกเป็นใบเสร็จรับเงินตามมาตรา 105 ไม่ใช่ใบกำกับภาษี/ใบเสร็จรับเงิน จึงออกใบลดหนี้ไม่ได้ ยังไม่มีการเคลื่อนไหวของเงิน การคืนเงินต้องดำเนินการด้วยเจ้าหน้าที่ กรุณาติดต่อฝ่ายสนับสนุน',
+  },
+  f4_preflight_receipt_rendering: {
+    // The ONE receipt state that clears itself. Say "wait", not "escalate" —
+    // an admin told to escalate a self-healing state files a ticket that
+    // resolves before anyone reads it.
+    message:
+      'The receipt for this payment is still being generated. No money was moved — please try the refund again in a few minutes.',
+    messageThai:
+      'ระบบกำลังสร้างใบเสร็จสำหรับการชำระเงินนี้ ยังไม่มีการเคลื่อนไหวของเงิน กรุณาลองคืนเงินอีกครั้งในอีก 2-3 นาที',
+  },
+  f4_preflight_receipt_render_stuck: {
+    // The opposite instruction, deliberately. This receipt is `failed` or has
+    // no status at all; no worker reliably picks it up, so "wait" would strand
+    // the member's money with nobody alerted.
+    //
+    // It must NOT name a re-render action either: there is no admin-facing
+    // re-render control anywhere in the invoice UI (verified — the only
+    // re-render is the reconcile cron, which never scans a NULL status at
+    // all). Naming a button that does not exist is the same defect as telling
+    // someone to wait for a render that will never happen. Support has the
+    // runbook; the admin has nothing to click, so say so.
+    message:
+      'The receipt for this payment was not generated, and it will not complete on its own. No money was moved. This needs support to regenerate the receipt before the refund can go through — please contact support.',
+    messageThai:
+      'ระบบไม่ได้สร้างใบเสร็จสำหรับการชำระเงินนี้ และจะไม่ดำเนินการต่อเอง ยังไม่มีการเคลื่อนไหวของเงิน ต้องให้ฝ่ายสนับสนุนสร้างใบเสร็จใหม่ก่อนจึงจะคืนเงินได้ กรุณาติดต่อฝ่ายสนับสนุน',
+  },
+  f4_bridge_deferred: {
+    // Deliberately reassuring and explicitly non-actionable. The admin has
+    // just been told a refund "failed" by every previous version of this
+    // screen, and acted on it by clicking again.
+    message:
+      'Refund sent — the credit note is still being issued. No action needed; it completes automatically.',
+    messageThai:
+      'ส่งคำสั่งคืนเงินเรียบร้อยแล้ว กำลังออกใบลดหนี้ ไม่ต้องดำเนินการใดๆ ระบบจะทำให้เสร็จโดยอัตโนมัติ',
+  },
+  refund_needs_reconciliation: {
+    message:
+      'This payment has a refund awaiting manual reconciliation. Further refunds are blocked until it is resolved.',
+    messageThai:
+      'การชำระเงินนี้มีรายการคืนเงินที่รอการกระทบยอดด้วยเจ้าหน้าที่ ไม่สามารถคืนเงินเพิ่มได้จนกว่าจะดำเนินการเสร็จ',
   },
   no_failed_auto_refund: {
     message: 'There is no failed auto-refund to reconcile for this invoice.',

@@ -5,7 +5,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { headers } from 'next/headers';
-import { getTranslations } from 'next-intl/server';
+import { getTranslations, getLocale } from 'next-intl/server';
 import { ArrowLeftIcon } from 'lucide-react';
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -25,6 +25,7 @@ import { listPlans } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
 import { directorySearch } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
+import { resolvePlanName } from '@/lib/resolve-plan-name';
 import { type MemberOption, type PlanOption } from '../_components/invoice-form';
 import { InvoiceCreateSwitcher } from './_components/invoice-create-switcher';
 import type { EventOption } from './_components/event-fee-form';
@@ -40,6 +41,7 @@ export default async function NewInvoiceDraftPage({
   >;
 }) {
   const t = await getTranslations('admin.invoices.new');
+  const locale = await getLocale();
   const { user } = await requireSession('staff');
   if (user.role !== 'admin') notFound();
 
@@ -70,17 +72,13 @@ export default async function NewInvoiceDraftPage({
     { filter: { year: currentYear as never, activeOnly: true } },
     plansDeps,
   );
-  function resolvePlanName(rawName: unknown, fallback: string): string {
-    if (typeof rawName === 'object' && rawName !== null) {
-      return (rawName as { en?: string }).en ?? fallback;
-    }
-    return String(rawName ?? fallback);
-  }
 
   const plans: readonly PlanOption[] = plansResult.ok
     ? plansResult.value.data.map((p) => ({
         planId: p.plan_id,
-        label: resolvePlanName(p.plan_name, p.plan_id),
+        // P1-8 — locale-aware (was hardcoded `.en`, silently dropping TH/SV
+        // on the tax-document plan label for a Thai/Swedish admin session).
+        label: resolvePlanName(p.plan_name, p.plan_id, locale),
         annualFeeMinorUnits: Number(p.annual_fee_minor_units),
       }))
     : [];

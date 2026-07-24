@@ -1,0 +1,40 @@
+-- ---------------------------------------------------------------------------
+-- F5 audit_event_type enum extension (money-remediation Task 6 / finding F-3)
+--
+-- Adds `refund_cn_deferred`, emitted by `issueRefund` when the processor
+-- CONFIRMED a refund succeeded but the F4 credit-note bridge could not book
+-- it (bridge decline, or a Phase-B throw after the bridge committed).
+--
+-- Before this change both of those paths flipped the refund row to `failed`.
+-- That is a false claim — `failed` is read downstream as "no money left the
+-- account", so it cleared the `refund_in_progress` guard and zeroed the
+-- settled-sum cap, and the admin's retry on the retryable-looking 502 minted a
+-- fresh Stripe idempotency key and paid the customer a second time on any
+-- partial refund. The row now stays `pending` with its `processor_refund_id`
+-- so the stale-pending sweep can retry the idempotent bridge, and this event
+-- is the record of the gap.
+--
+-- Retention: 10 years — it documents a window in which money was returned to
+-- a customer with NO §86/10 credit note booked against it. That is precisely
+-- what an auditor reconciling output VAT for the period needs to see, and it
+-- is not reconstructible from an absence.
+--
+-- Migration number: `main` is at 0258 and a concurrent branch holds 0259-0265,
+-- so this takes 0266 to avoid a collision on merge.
+--
+-- Pattern: idempotent `DO $$ ALTER TYPE ... ADD VALUE ...` (matches 0046-0050).
+-- Forward-only: enum values cannot be removed.
+--
+-- NOTE: `ALTER TYPE ... ADD VALUE` is silently a no-op against a branch that
+-- already has the value, and `db:migrate` prints a success tick either way.
+-- Verify with `SELECT unnest(enum_range(NULL::audit_event_type))` rather than
+-- trusting the tick.
+--
+-- Keep synced with:
+--   - `auditEventTypeEnum` in `src/modules/auth/infrastructure/db/schema.ts`
+--   - `F5AuditEventType` in `src/modules/payments/application/ports/audit-port.ts`
+--   - `F5_AUDIT_EVENT_PAYLOADS` + `F5_AUDIT_RETENTION_YEARS` in `audit-port.ts`
+--   - `auditEvent.<type>` labels in `src/i18n/messages/{en,th,sv}.json`
+-- ---------------------------------------------------------------------------
+
+DO $$ BEGIN ALTER TYPE "audit_event_type" ADD VALUE 'refund_cn_deferred'; EXCEPTION WHEN duplicate_object THEN NULL; END $$;

@@ -109,6 +109,8 @@ function makeLockedRefund(overrides: Partial<Refund> = {}): Refund {
     processorRefundId: 're_stale1',
     failureReasonCode: null,
     creditNoteId: null,
+    creditNoteWaivedAt: null,
+    creditNoteWaiverReason: null,
     initiatedAt: new Date(NOW_MS - 30 * HOUR_MS),
     completedAt: null,
     initiatorUserId: 'user-admin-1',
@@ -161,6 +163,11 @@ function makeDeps(): SweepStalePendingRefundsDeps {
       issueCreditNoteFromRefund: vi.fn(async () =>
         ok({ creditNoteId: 'cn-1', creditNoteNumber: 'TC-1' }),
       ),
+      // 8B note — this suite MOCKS `finalizeSucceededRefund` (top of file), so
+      // the finaliser's new Phase-B re-check (`getInvoiceCreditedTotal`) never
+      // runs from here; no stub is needed. The real conversion is proven by the
+      // finaliser's own callers: issue-refund unit + the concurrent-void
+      // live-Neon integration test.
     } as unknown as SweepStalePendingRefundsDeps['invoicingBridge'],
     audit: { emit: vi.fn(async () => undefined) },
     clock: { nowIso: () => new Date(NOW_MS).toISOString(), nowMs: () => NOW_MS },
@@ -177,6 +184,10 @@ describe('sweepStalePendingRefunds — Stripe-aware (A.14)', () => {
   beforeEach(() => {
     mockFinalize.mockResolvedValue(
       ok({
+        // Track B — the finaliser result is discriminated on WHAT documented
+        // the refund. The sweep only ever settles credit-noted refunds through
+        // this stub; the waived arm carries no `invoiceStatus` at all.
+        documentation: 'credit_note' as const,
         creditNoteId: 'cn-1',
         creditNoteNumber: 'TC-1',
         paymentNextStatus: 'refunded',
@@ -241,6 +252,10 @@ describe('sweepStalePendingRefunds — Stripe-aware (A.14)', () => {
     );
     mockFinalize.mockResolvedValueOnce(
       ok({
+        // Track B — the finaliser result is discriminated on WHAT documented
+        // the refund. The sweep only ever settles credit-noted refunds through
+        // this stub; the waived arm carries no `invoiceStatus` at all.
+        documentation: 'credit_note' as const,
         creditNoteId: 'cn-1',
         creditNoteNumber: 'TC-1',
         paymentNextStatus: 'refunded',
@@ -307,7 +322,7 @@ describe('sweepStalePendingRefunds — Stripe-aware (A.14)', () => {
     }
     expect(
       asMock(paymentsMetrics.stalePendingRefundEscalated),
-    ).toHaveBeenCalledWith(TENANT_ID);
+    ).toHaveBeenCalledWith(TENANT_ID, 'credit_note_bridge_declined');
     expect(asMock(deps.logger!.warn)).toHaveBeenCalledWith(
       'sweep_stale_pending_refunds.escalation',
       expect.objectContaining({ reason: 'credit_note_bridge_declined' }),
@@ -430,7 +445,7 @@ describe('sweepStalePendingRefunds — Stripe-aware (A.14)', () => {
     }
     expect(
       asMock(paymentsMetrics.stalePendingRefundEscalated),
-    ).toHaveBeenCalledWith(TENANT_ID);
+    ).toHaveBeenCalledWith(TENANT_ID, 'stripe_pending');
     // A.16 (H-e) — a Stripe-still-pending stale refund is awaiting the async
     // charge.refund.updated webhook → the monitoring signal fires (independent
     // of the aged-escalation signal above).
@@ -465,7 +480,7 @@ describe('sweepStalePendingRefunds — Stripe-aware (A.14)', () => {
     expect(asMock(deps.audit.emit)).not.toHaveBeenCalled();
     expect(
       asMock(paymentsMetrics.stalePendingRefundEscalated),
-    ).toHaveBeenCalledWith(TENANT_ID);
+    ).toHaveBeenCalledWith(TENANT_ID, 'missing_processor_refund_id');
     expect(asMock(deps.logger!.warn)).toHaveBeenCalledWith(
       'sweep_stale_pending_refunds.escalation',
       expect.objectContaining({ reason: 'missing_processor_refund_id' }),
@@ -555,6 +570,8 @@ describe('sweepStalePendingRefunds — Stripe-aware (A.14)', () => {
       makeLockedRefund({
         status: 'succeeded',
         creditNoteId: 'cn-existing',
+        creditNoteWaivedAt: null,
+        creditNoteWaiverReason: null,
         completedAt: new Date(NOW_MS),
       }),
     );

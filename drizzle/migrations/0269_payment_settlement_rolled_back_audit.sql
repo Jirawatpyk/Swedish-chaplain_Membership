@@ -1,0 +1,53 @@
+-- ---------------------------------------------------------------------------
+-- F5 audit_event_type enum extension (money-remediation Task 4 / finding F-1)
+--
+-- Adds `payment_settlement_rolled_back`, emitted by `confirmPayment` when the
+-- F4 invoicing bridge declines and the settlement transaction is UNWOUND
+-- rather than committed.
+--
+-- Why a new value rather than reuse. Before this change a bridge decline
+-- `return err(...)`-ed straight out of the `withTx` callback, and
+-- `runInTenant` commits whenever the callback returns — so the refusal
+-- persisted every write it was refusing: the payments row flipped
+-- `succeeded`, F4's `members.registration_fee_paid` flip, and, for failures
+-- after `sequenceAllocator.allocateNext`, a CONSUMED §87 receipt sequence
+-- number with no document behind it (a §87 register gap). Nothing in the
+-- existing union describes this: the two `payment_auto_refunded_*` values
+-- assert a Stripe refund, and no refund happens here — a DB rollback does not
+-- reach Stripe, so the customer's money is still captured. Reusing one would
+-- write a materially false 10-year money-trail row.
+--
+-- Why the event must exist at all: a rollback erases its own evidence. After
+-- it, the payment row is back to `pending`, the invoice is still `issued`, and
+-- there is no `payment_succeeded` row — nothing distinguishes "settlement was
+-- unwound" from "the webhook never arrived". The emit therefore runs on a
+-- `null` tx (its own connection) so it SURVIVES the transaction it describes.
+--
+-- Retention: 10 years — it is the sole durable record that a processor
+-- captured money against an invoice this system then declined to settle.
+-- Same money-trail class as `payment_succeeded` (Thai RD §87/3), and not
+-- reconstructible from an absence.
+--
+-- Migration number: 0266 is money-remediation Task 6; this takes the next
+-- free number, 0267.
+--
+-- Pattern: idempotent `DO $$ ALTER TYPE ... ADD VALUE ...` (matches 0046-0050,
+-- 0244, 0266). Forward-only: enum values cannot be removed.
+--
+-- NOTE: `ALTER TYPE ... ADD VALUE` is silently a no-op against a branch that
+-- already has the value, and `db:migrate` prints a success tick either way.
+-- Verify with `SELECT unnest(enum_range(NULL::audit_event_type))` rather than
+-- trusting the tick. This value is also registered in
+-- `scripts/lib/enum-migration-guard.ts` (`REQUIRED_ENUM_VALUES`) so a value
+-- that fails to persist through the transactional migrator fails the build
+-- loudly instead of surfacing as a runtime insert error on the settlement path.
+--
+-- Keep synced with:
+--   - `auditEventTypeEnum` in `src/modules/auth/infrastructure/db/schema.ts`
+--   - `F5AuditEventType` in `src/modules/payments/application/ports/audit-port.ts`
+--   - `F5_AUDIT_EVENT_PAYLOADS` + `F5_AUDIT_RETENTION_YEARS` in `audit-port.ts`
+--   - `audit.eventType.<type>` labels in `src/i18n/messages/{en,th,sv}.json`
+--   - `REQUIRED_ENUM_VALUES.audit_event_type` in `scripts/lib/enum-migration-guard.ts`
+-- ---------------------------------------------------------------------------
+
+DO $$ BEGIN ALTER TYPE "audit_event_type" ADD VALUE 'payment_settlement_rolled_back'; EXCEPTION WHEN duplicate_object THEN NULL; END $$;

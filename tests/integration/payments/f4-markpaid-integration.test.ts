@@ -471,6 +471,9 @@ describe('F4 receipt-email path verification (T128 / US6 / FR-004)', () => {
           // Inert for the confirm READ (reconciliationPath:true → dormant); the
           // WRITE flag is pinned 'off' by the invoicing-deps mock above.
           taxAtPayment: 'off',
+          // money-remediation Task 4 — flag OFF preserves the pre-remediation
+          // commit-on-bridge-decline behaviour this suite was written against.
+          settlementAbort: false,
         },
         {
           tenantId: tenant.ctx.slug,

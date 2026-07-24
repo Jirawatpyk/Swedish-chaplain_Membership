@@ -470,6 +470,7 @@ describe('concurrent admin-refund + webhook → exactly ONE credit note (A.18 #1
         processorRefundId: reId,
         initiatorUserId: user.userId,
         correlationId: 'corr-cc-guard-seed',
+        creditNoteWaiverReason: null,
         initiatedAt: new Date(),
       });
     });

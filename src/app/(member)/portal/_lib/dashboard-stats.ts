@@ -14,6 +14,11 @@ import {
   type RenewalCycle,
 } from '@/modules/renewals';
 import type { BenefitUsage } from '@/modules/insights';
+// plan-change-ux seam 2 — the SAME payability predicate the renewal page
+// gates its Confirm flow on. Sharing it here guarantees the dashboard
+// "Renew now" CTA and the page gate can never disagree (a `due` card must
+// not offer a button that dead-ends on "renewal window not yet open").
+import { isRenewalPayable } from './is-renewal-payable';
 
 /** Visual emphasis for a stat chip — never colour-alone (a text label always pairs it). */
 export type StatVariant = 'neutral' | 'warning' | 'destructive';
@@ -126,6 +131,33 @@ export function deriveMembershipStat(
   // Far off, completed (paid up), or a cancelled/lapsed cycle still within
   // its period → show membership status, not a stale countdown.
   return { kind: 'active', variant: 'neutral', daysRemaining: days, status, expiryIso: cycle.expiresAt, reason: null };
+}
+
+/**
+ * plan-change-ux seam 2 — decide whether the membership stat card should
+ * offer the actionable "Renew now" CTA (deep-links to
+ * `/portal/renewal/[memberId]`).
+ *
+ * Gated on the SAME `isRenewalPayable` predicate the renewal page uses for
+ * its Confirm-flow gate, so the dashboard button can never dead-end on the
+ * page's "renewal window not yet open" card. Only the renewable kinds
+ * (`due`/`overdue`) are candidates; when the cycle is not yet payable the
+ * card falls back to the informational countdown (the "Renews in {days}
+ * days" sub-line) with NO button.
+ *
+ * NOTE: `deriveMembershipStat` only emits `due` for a `upcoming`/`reminded`
+ * cycle that is NOT yet expired — for which `isRenewalPayable` is false — so
+ * TODAY this correctly withholds the button for the whole `due` cohort. The
+ * predicate is shared (not re-derived) precisely so that if a future
+ * classification change DID surface a payable `due`/`overdue` stat, the CTA
+ * and the page gate would light up together rather than drift apart.
+ * `overdue` is retained for parity with the `MembershipStat` union even
+ * though it is no longer produced.
+ */
+export function shouldOfferRenewNow(stat: MembershipStat, now: Date): boolean {
+  if (stat.kind !== 'due' && stat.kind !== 'overdue') return false;
+  if (stat.status === null || stat.expiryIso === null) return false;
+  return isRenewalPayable(stat.status, stat.expiryIso, now);
 }
 
 /** The minimal invoice shape the outstanding stat needs (decoupled from the F4 domain row). */

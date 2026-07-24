@@ -283,8 +283,8 @@ export type PlansDeps = {
 };
 
 // ---------------------------------------------------------------------------
-// ScheduledPlanChangeRepo + CurrentPlanResolverPort
-// (cross-module F2↔F8 ports; table defined at
+// ScheduledPlanChangeRepo
+// (cross-module F2↔F8 port; table defined at
 // `specs/011-renewal-reminders/data-model.md § 2.9`)
 // ---------------------------------------------------------------------------
 
@@ -391,17 +391,4 @@ export interface ScheduledPlanChangeRepo {
     tenant: TenantContext,
     memberId: string,
   ): Promise<readonly ScheduledPlanChange[]>;
-}
-
-/**
- * Bridge port back to F3 to resolve a member's CURRENT plan_id when
- * `getEffectivePlanForRenewal` falls through (no pending row for the
- * cycle). F3 wires this to `getMember` at composition time — F2 stays
- * uni-directional with respect to F3 dependency.
- */
-export interface CurrentPlanResolverPort {
-  resolveCurrentPlanId(
-    tenant: TenantContext,
-    memberId: string,
-  ): Promise<string>;
 }

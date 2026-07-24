@@ -35,6 +35,26 @@ describe('routeVoidError (FR-032)', () => {
     }
   });
 
+  it('8A — maps refund_in_progress to a DEDICATED message, NOT concurrent nor a raw code dump', () => {
+    // A refund is settling on this invoice's payment; voiding now would strand
+    // it. The invoice is still voidable (just temporarily blocked), so a
+    // dedicated actionable message — not `concurrent` and not `errors.codeFallback`.
+    expect(routeVoidError('refund_in_progress')).toEqual({
+      kind: 'failure',
+      messageKey: 'errors.refundInProgress',
+    });
+  });
+
+  it('H1 — maps paid_membership_requires_credit_note to a DEDICATED message (redirect to the credit-note workflow)', () => {
+    // A paid membership §86/4 can't be voided — it must be reversed via a §86/10
+    // credit note. A dedicated actionable message, not `concurrent` (it is not a
+    // stale-write) and not a raw `errors.codeFallback` code dump.
+    expect(routeVoidError('paid_membership_requires_credit_note')).toEqual({
+      kind: 'failure',
+      messageKey: 'errors.paidMembershipRequiresCreditNote',
+    });
+  });
+
   it('a missing code falls back to the generic unknown message', () => {
     expect(routeVoidError(undefined)).toEqual({ kind: 'failure', messageKey: 'errors.unknown' });
     expect(routeVoidError(null)).toEqual({ kind: 'failure', messageKey: 'errors.unknown' });

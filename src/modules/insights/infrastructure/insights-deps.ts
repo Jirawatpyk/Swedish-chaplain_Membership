@@ -27,6 +27,7 @@ import { planSourceAdapter } from './sources/plan-source-adapter';
 import { memberEnumerationAdapter } from './sources/member-enumeration-adapter';
 import { benefitConsumptionAggregateAdapter } from './sources/benefit-consumption-aggregate-adapter';
 import { invoiceSourceAdapter } from './sources/invoice-source-adapter';
+import { waivedRefundSourceAdapter } from './sources/waived-refund-source-adapter';
 import { broadcastSourceAdapter } from './sources/broadcast-source-adapter';
 import { eventSourceAdapter } from './sources/event-source-adapter';
 import { activityFeedSourceAdapter } from './sources/activity-feed-adapter';
@@ -83,6 +84,7 @@ export function makeComputeDashboardSnapshotDeps(
   return {
     memberSource: memberSourceAdapter,
     invoiceSource: invoiceSourceAdapter,
+    waivedRefundSource: waivedRefundSourceAdapter,
     broadcastSource: broadcastSourceAdapter,
     // P1-4 / FR-004 — cross-member quota roll-up sources.
     memberEnumeration: memberEnumerationAdapter,

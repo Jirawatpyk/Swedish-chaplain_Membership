@@ -330,6 +330,9 @@ describe('confirmPayment failed→succeeded late-charge reconcile — live Neon 
           audit: f5AuditAdapter,
           clock: systemClock,
           taxAtPayment: 'off',
+          // money-remediation Task 4 — flag OFF preserves the pre-remediation
+          // commit-on-bridge-decline behaviour this suite was written against.
+          settlementAbort: false,
         },
         {
           tenantId: tenant.ctx.slug,

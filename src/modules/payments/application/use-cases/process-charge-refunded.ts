@@ -63,6 +63,7 @@ import type {
 } from '../ports';
 import { retentionFor } from '../ports/audit-port';
 import { SYSTEM_ACTOR_STRIPE_WEBHOOK } from '../../domain/system-actors';
+import { recogniseAppInitiatedRefund } from './_recognise-app-initiated-refund';
 import { paymentsMetrics } from '@/lib/metrics';
 
 const RUNBOOK_URL = 'docs/runbooks/out-of-band-refund.md';
@@ -96,6 +97,22 @@ export interface ProcessChargeRefundedInput {
    * forensics (FR-011a alert pivots on live-mode only).
    */
   readonly processorEnv: 'test' | 'live';
+  /**
+   * Money-remediation Task 9 (F-9) — app-initiated refund markers for THIS
+   * charge, keyed by Stripe refund id (`re_…` → our `refunds.id`), projected
+   * from each `refunds.data[i].metadata.refundId`. A charge can carry several
+   * refunds that are independently app- or Dashboard-initiated, hence a map.
+   *
+   * Optional: absent for every pre-Task-9 caller and for any refund with no
+   * marker, in which case the OOB forensic fires exactly as before.
+   */
+  readonly appRefundIds?: Readonly<Record<string, string>>;
+  /**
+   * Money-remediation Task 9 (F-9) — the charge's PaymentIntent id, used ONLY
+   * to cross-check a marker against the matched row's parent payment. Absent
+   * or null means the check is unsatisfiable, which must NOT suppress.
+   */
+  readonly paymentIntentId?: string | null;
 }
 
 /**
@@ -306,6 +323,52 @@ export async function processChargeRefunded(
             });
             continue;
           }
+          // F-9 (Task 9) — second durable app-initiated marker, same shape as
+          // the auto-refund lookup above but keyed on `metadata.refundId`,
+          // which `issueRefund` stamps BEFORE the external call. Covers the
+          // ADMIN refund path, whose `processor_refund_id` is written in a
+          // SEPARATE tx afterwards: a delivery landing in that window (or after
+          // the attach failed outright, which strands the row NULL forever)
+          // otherwise fires a FALSE 10-year forensic + page for a refund we
+          // initiated. All four mitigations live in the helper — read its
+          // docstring before touching this, over-suppression is the dangerous
+          // direction here.
+          const recognition = await recogniseAppInitiatedRefund(
+            { refundsRepo: deps.refundsRepo, ...(deps.logger ? { logger: deps.logger } : {}) },
+            tx,
+            {
+              tenantId: input.tenantId,
+              appRefundId: input.appRefundIds?.[refundId],
+              processorRefundId: refundId,
+              paymentIntentId: input.paymentIntentId,
+            },
+          );
+          if (recognition.kind === 'recognised') {
+            // Suppress the FALSE OOB. Audit-SILENT + PCI-clean ops log, exactly
+            // like the auto-refund arm: the money-trail for this refund was
+            // already recorded by `refund_initiated` at Phase A.
+            //
+            // NO finalisation — `charge.refunded` carries no per-refund status,
+            // so it cannot tell succeeded from failed. The back-fill alone
+            // restores the row to the ordinary path: the sibling
+            // `charge.refund.updated` / `refund.updated` will now match it by
+            // `processor_refund_id` and finalise it (A.11/A.12), and the
+            // stale-pending sweep can finally see it.
+            deps.logger?.info('process_charge_refunded.app_refund_recognized', {
+              tenantId: input.tenantId,
+              refundId: recognition.refundId,
+              invoiceId: recognition.invoiceId,
+              processorRefundId: refundId,
+            });
+            if (refundedInvoiceId === undefined) {
+              refundedInvoiceId = recognition.invoiceId;
+            }
+            continue;
+          }
+          // Every other recognition outcome — no marker, unresolved, PI
+          // mismatch, terminal row — falls through to the forensic BY DESIGN.
+          // A forged marker must not buy silence.
+
           // Branch (b) — genuine out-of-band refund detected. Audit + runbook url.
           // No F4 credit note created (FR-011a — admin must reconcile via
           // Stripe Dashboard + manual CN issuance).

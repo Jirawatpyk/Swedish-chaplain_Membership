@@ -22,7 +22,6 @@
  * table absorbs visual weight on the first paint.
  */
 import { getTranslations } from 'next-intl/server';
-import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
@@ -30,12 +29,27 @@ import { PageHeader } from '@/components/layout/page-header';
 export default async function Loading() {
   const t = await getTranslations('admin.renewals.tasks');
   return (
-    <TableContainer>
+    <TableContainer aria-busy="true">
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
       {/* sr-only AT announcement (I-22 close — WCAG 4.1.3 Status Messages) */}
       <p className="sr-only" role="status" aria-live="polite">
         {t('loading')}
       </p>
+      {/* WP8 — static tab-strip skeleton mirroring <RenewalsSectionTabs> (4
+          tabs); the live component uses useSearchParams() so it can't render
+          in a route-level loading.tsx. Holds CLS=0 with the real page. */}
+      <div
+        data-slot="tab-strip-skeleton"
+        className="flex items-center gap-1.5"
+        aria-hidden
+      >
+        <div className="flex gap-1 rounded-lg bg-muted p-1">
+          <Skeleton className="h-8 w-20" />
+          <Skeleton className="h-8 w-28" />
+          <Skeleton className="h-8 w-16" />
+          <Skeleton className="h-8 w-28" />
+        </div>
+      </div>
       {/* Filter-bar skeleton — 3 status tabs + 3 assignment chips +
           task-type select. Mirrors the live filter row at
           `escalation-task-queue.tsx:240-286`. */}
@@ -55,8 +69,10 @@ export default async function Loading() {
         </div>
         <Skeleton className="ml-auto h-9 w-32" />
       </div>
-      <Card>
-        <CardContent className="flex flex-col gap-4">
+      {/* WP8 — table shell mirrors the live queue's `rounded-md border`
+          wrapper (NOT a Card), so the loaded table doesn't shift the layout. */}
+      <div className="rounded-md border">
+        <div className="flex flex-col gap-4 p-4">
           <div className="grid grid-cols-8 gap-4 border-b py-2" aria-hidden>
             {Array.from({ length: 7 }).map((_, i) => (
               <Skeleton key={i} className="h-4 w-full" />
@@ -81,8 +97,8 @@ export default async function Loading() {
               </div>
             </div>
           ))}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </TableContainer>
   );
 }

@@ -85,14 +85,61 @@ export const f5RefundBridge: F5RefundBridge = {
       if (refundResult.error.code === 'refund_in_progress') {
         return { status: 'refund_pending' };
       }
+      // Money-remediation F-3 (Task 6): `f4_bridge_deferred` joins
+      // `refund_in_progress` on the WAIT side, and for the same reason. The
+      // money HAS gone back to the member — only the §86/10 credit note is
+      // outstanding, and the stale-pending sweep retries the idempotent
+      // bridge. Routing it to `refund_failed` would tell an admin to act on a
+      // refund that is progressing normally, and "act" here means click
+      // refund again. That click is the mechanism F-3 needed to double-refund;
+      // it is fenced now by the row staying `pending`, but presenting a
+      // succeeded refund as a failure is exactly the false alarm this
+      // remediation exists to remove.
+      //
+      // Ids are carried so the cycle is webhook-matchable while it self-heals.
+      if (refundResult.error.code === 'f4_bridge_deferred') {
+        return {
+          status: 'refund_pending',
+          refundId: refundResult.error.refundId,
+          processorRefundId: refundResult.error.processorRefundId,
+        };
+      }
+      // I5 (money-remediation Task 7): `f4_preflight_receipt_rendering` joins
+      // the WAIT side by this adapter's OWN stated rule — do not tell an admin
+      // to act on a self-healing state, because "act" here means clicking
+      // refund again. The receipt PDF is still `pending` and the reconcile
+      // cron sweeps stuck pending rows, so the refund becomes possible on its
+      // own within minutes. Reachable narrowly but really: rejecting a pending
+      // reactivation on a just-paid renewal invoice, inside the render window.
+      //
+      // No ids: money did NOT move on this path (the pre-flight refused before
+      // Stripe), so there is no refund row and nothing webhook-matchable —
+      // unlike `f4_bridge_deferred` above, where the money DID move.
+      //
+      // Its siblings stay on the FAILED side: a `failed`/NULL receipt never
+      // clears on its own, and an uncreditable or corrupt invoice never will
+      // either, so an admin genuinely must act on those.
+      //
+      // Track B — the discriminator is the DOMAIN reason's `retryability`, not
+      // a code list. That is the point of carrying retryability in the type: a
+      // future F4 gate whose block is transient joins the WAIT side by being
+      // typed transient, with no edit here and no chance of being forgotten.
+      if (
+        refundResult.error.code === 'f4_preflight_credit_note_blocked' &&
+        refundResult.error.reason.retryability === 'transient'
+      ) {
+        return { status: 'refund_pending' };
+      }
       return {
         status: 'refund_failed',
         errorCode: refundResult.error.code,
         detail:
           'detail' in refundResult.error
             ? refundResult.error.detail
-            : 'reason' in refundResult.error
-              ? String(refundResult.error.reason)
+            : refundResult.error.code === 'f4_preflight_credit_note_blocked'
+              ? refundResult.error.reason.code
+              : 'reason' in refundResult.error
+                ? String(refundResult.error.reason)
               : refundResult.error.code,
       };
     }
@@ -117,8 +164,19 @@ export const f5RefundBridge: F5RefundBridge = {
     return {
       status: 'refunded',
       refundId: refundResult.value.refund.id,
-      creditNoteId: refundResult.value.refund.creditNoteId,
-      creditNoteNumber: refundResult.value.refund.creditNoteNumber,
+      // Track B — NULL when the refund owed no §86/10. F8 must not treat that
+      // as "no payment was refunded": the money DID go back, there is simply
+      // no credit note to reference. See the escalation gate in
+      // admin-reject-reactivation, which keys on the refund OUTCOME rather
+      // than on credit-note presence for exactly this reason.
+      creditNoteId:
+        refundResult.value.refund.creditNote.kind === 'issued'
+          ? refundResult.value.refund.creditNote.id
+          : null,
+      creditNoteNumber:
+        refundResult.value.refund.creditNote.kind === 'issued'
+          ? refundResult.value.refund.creditNote.number
+          : null,
     };
   },
 
@@ -148,9 +206,13 @@ export const f5RefundBridge: F5RefundBridge = {
     }
     switch (refund.status) {
       case 'succeeded':
-        // F5 domain invariant: status='succeeded' ⟺ credit_note_id NOT NULL.
-        // The DTO surfaces it directly; pass it through (defensively nullable
-        // per the port contract — see GetRefundOutcomeResult.succeeded).
+        // Track B — a succeeded refund is documented by a §86/10 credit note OR
+        // by a recorded waiver, so `credit_note_id` is legitimately NULL on a
+        // waived (voided-invoice / §105) refund. The DTO surfaces whatever the
+        // row holds; pass it through. Do NOT re-add a "succeeded ⟺ credit_note_id
+        // NOT NULL" invariant here — that was true pre-Track-B, and a guard
+        // enforcing it would false-fire on every waived async reject and strand
+        // the cycle `pending` in reconcile.
         return { status: 'succeeded', creditNoteId: refund.creditNoteId };
       case 'failed':
         return {

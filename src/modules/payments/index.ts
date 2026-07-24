@@ -95,6 +95,25 @@ export {
   type LoadInvoicePaymentActivityDeps,
 } from './application/use-cases/load-invoice-payment-activity';
 export type { RefundActivityDto } from './application/ports/payments-repo';
+// Track B — F9 reads waived-refund totals through this, never through the repo
+// port (Principle III: insights composes public barrels only).
+export {
+  listWaivedRefundTotalsByInvoice,
+} from './application/use-cases/list-waived-refund-totals-by-invoice';
+export type {
+  ListWaivedRefundTotalsByInvoiceInput,
+  ListWaivedRefundTotalsByInvoiceOutput,
+  ListWaivedRefundTotalsByInvoiceDeps,
+} from './application/use-cases/list-waived-refund-totals-by-invoice';
+export { makeListWaivedRefundTotalsByInvoiceDeps } from './infrastructure/di';
+// 8A — F4 (issueCreditNote / voidInvoice) reads the pending-refund guard count
+// through this facade, never through the repo port (Principle III).
+export {
+  countPendingRefundsForInvoice,
+  type CountPendingRefundsForInvoiceInput,
+  type CountPendingRefundsForInvoiceDeps,
+} from './application/use-cases/count-pending-refunds-for-invoice';
+export { makeCountPendingRefundsForInvoiceDeps } from './infrastructure/di';
 export {
   issueRefund,
   type IssueRefundInput,

@@ -98,17 +98,19 @@ describe('contract: POST /api/members/bulk send_portal_invite (P1-17)', () => {
       ok: true,
       value: {
         invited: [{ memberId: 'm1', contactId: 'c1', userId: 'u1', email: 'm1@x.test' }],
+        resent: [{ memberId: 'm4', contactId: 'c4' }],
         skipped: [{ memberId: 'm2', reason: 'already_linked' }],
         failed: [{ memberId: 'm3', code: 'email_taken' }],
-        counts: { invited: 1, skipped: 1, failed: 1 },
+        counts: { invited: 1, resent: 1, skipped: 1, failed: 1 },
       },
     });
     const { POST } = await import('@/app/api/members/bulk/route');
-    const res = await POST(makeRequest({ action: 'send_portal_invite', member_ids: ['m1', 'm2', 'm3'] }));
+    const res = await POST(makeRequest({ action: 'send_portal_invite', member_ids: ['m1', 'm2', 'm3', 'm4'] }));
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.counts).toEqual({ invited: 1, skipped: 1, failed: 1 });
+    expect(body.counts).toEqual({ invited: 1, resent: 1, skipped: 1, failed: 1 });
     expect(body.invited).toEqual([{ member_id: 'm1', contact_id: 'c1', user_id: 'u1', email: 'm1@x.test' }]);
+    expect(body.resent).toEqual([{ member_id: 'm4', contact_id: 'c4' }]);
     expect(body.skipped).toEqual([{ member_id: 'm2', reason: 'already_linked' }]);
     expect(body.failed).toEqual([{ member_id: 'm3', code: 'email_taken' }]);
     expect(bulkSendPortalInviteMock).toHaveBeenCalledTimes(1);

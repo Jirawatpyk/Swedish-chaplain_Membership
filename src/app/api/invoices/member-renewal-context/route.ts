@@ -5,8 +5,8 @@
  * Client-side fetch driven by the New-invoice form's member picker (mirrors
  * the F6 attendee-picker's fetch-on-select pattern): resolves the SAME
  * `classifyMembershipPayment` shape the payment-time settlement hooks
- * consume, so the form's context line + duplicate-billing warning describe
- * what will actually happen when this bill is paid. Advisory only — see
+ * consume, so the form's context line describes what will actually happen
+ * when this bill is paid. Advisory only — see
  * `../../../(staff)/admin/invoices/_lib/member-renewal-context.ts` docstring.
  */
 import { NextResponse, type NextRequest } from 'next/server';
@@ -37,7 +37,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       classification: context.classification,
       period_to: context.periodTo,
       term_months: context.termMonths,
-      has_unpaid_membership_invoice: context.hasUnpaidMembershipInvoice,
     });
   } catch (err) {
     // Advisory-only read (design §3b) — never surface a 500 that would make

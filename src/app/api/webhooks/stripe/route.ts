@@ -394,6 +394,35 @@ export function reprojectDataObject(
     ...(typeof rawDataObject?.['refundStatus'] === 'string'
       ? { refundStatus: rawDataObject['refundStatus'] }
       : {}),
+    // Money-remediation Task 9 (F-9) — preserve the verifier-set
+    // app-initiated refund markers + the PaymentIntent id they are
+    // cross-checked against. Both are set by `project()`'s charge + refund
+    // arms; without these copies the F-9 fallback in
+    // `process-charge-refunded` / `process-refund-updated` would never fire
+    // in production while every unit test (which builds the use-case input
+    // directly) stayed green — the EXACT shape of Bugs #5 and #6, which is
+    // why the superset guard covers both keys.
+    //
+    // Deliberately copied AS-IS, with NO re-validation of the marker: the
+    // authoritative `parseRefundId` gate lives at the single trust
+    // perimeter in `stripe-webhook-verifier.ts` (whose docstring claims
+    // that role), and in production `rawDataObject` IS that verifier's
+    // output. Do NOT "harden" this by re-parsing here — a second guard for
+    // the SAME condition makes the perimeter guard's mutation test pass
+    // when the perimeter guard is deleted, blinding the suite to a real
+    // regression.
+    ...(rawDataObject?.['appRefundIds'] !== undefined
+      ? {
+          appRefundIds: rawDataObject['appRefundIds'] as Readonly<
+            Record<string, string>
+          >,
+        }
+      : {}),
+    ...(rawDataObject?.['paymentIntentId'] !== undefined
+      ? {
+          paymentIntentId: rawDataObject['paymentIntentId'] as string | null,
+        }
+      : {}),
   };
 }
 
@@ -832,6 +861,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           requestId,
           dispatchFailureKind: dispatchError.kind,
           dispatchFailureDetail: dispatchError.detail,
+          // money-remediation Task 5 — the F4 sub-code. Pre-Task-5 every F4
+          // decline logged `bridge_error` and nothing more, so this line
+          // could not distinguish "Blob is down" from "this invoice needs
+          // re-issuing". Both are PII-free operational codes.
+          dispatchFailureSubDetail: dispatchError.subDetail,
+          retryCeilingExceeded: dispatchError.retryCeilingExceeded,
           permanence,
         },
         'stripe-webhook.dispatch_failed',
@@ -868,12 +903,21 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           requestId,
           eventType: 'webhook_dispatch_permanent_failure',
           actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
-          summary: `stripe webhook dispatch permanently failed: ${dispatchError.kind}/${dispatchError.detail}`,
+          summary: dispatchError.retryCeilingExceeded
+            ? `stripe webhook dispatch gave up after the transient retry ceiling: ${dispatchError.kind}/${dispatchError.detail}/${dispatchError.subDetail ?? 'none'}`
+            : `stripe webhook dispatch permanently failed: ${dispatchError.kind}/${dispatchError.detail}/${dispatchError.subDetail ?? 'none'}`,
           payload: {
             event_id: evId ?? 'unknown',
             stripe_event_type: evType ?? 'unknown',
             dispatch_failure_kind: dispatchError.kind,
             dispatch_failure_detail: dispatchError.detail,
+            // money-remediation Task 5 — the forensic finally carries the F4
+            // code. `dispatch_failure_detail` alone is `'bridge_error'` for
+            // every F4 decline, so this row could not tell an operator which
+            // invoice state to repair.
+            dispatch_failure_sub_detail: dispatchError.subDetail,
+            dispatch_failure_retry_ceiling_exceeded:
+              dispatchError.retryCeilingExceeded,
           },
           retentionYears: f5RetentionFor('webhook_dispatch_permanent_failure'),
         });

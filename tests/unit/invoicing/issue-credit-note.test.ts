@@ -306,6 +306,10 @@ function makeDeps(
       ),
       findById: vi.fn(),
       findByOriginalInvoice: vi.fn(),
+      // M1 — default: no sibling CN exists for the refund yet, so a
+      // `sourceRefundId`-carrying call proceeds to insert (the F5-real-refund
+      // derivation path). Refund-race / idempotency tests override this.
+      findBySourceRefundId: vi.fn(async () => null),
       // Return the just-inserted CN for the AS4 annotation re-render.
       findByOriginalInvoiceInTx: vi.fn(async () => [
         makeCreditNote(
@@ -355,6 +359,11 @@ function makeDeps(
       getMemberEmailLocale: vi.fn(async () => null),
     },
     currentTemplateVersion: 1,
+    // 8A — default: no refund in flight → the guard never fires on the existing
+    // happy paths. Guard tests override with a positive count.
+    pendingRefundGuard: {
+      countPendingRefundsForInvoice: vi.fn(async () => 0),
+    },
     ...overrides,
   };
 }
@@ -371,6 +380,89 @@ describe('issueCreditNote — event-fee (non-member + matched-member) Task 8', (
 
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  // ── 8A: pending-refund guard (manual credit note) ────────────────────────
+  //
+  // A manual §86/10 issued while a refund is settling consumes the creditable
+  // remainder the refund's own credit note needs, stranding that Stripe-settled
+  // refund `pending` forever. The guard refuses (409) ABOVE the first write and
+  // is SKIPPED for a refund-origin CN (which IS that refund's own §86/10).
+  it('blocks a MANUAL credit note with refund_in_progress when a pending refund exists', async () => {
+    const invoice = makeIssuedEventInvoice();
+    const guard = vi.fn(async () => 1);
+    const deps = makeDeps(invoice, makeSettings(), {
+      pendingRefundGuard: { countPendingRefundsForInvoice: guard },
+    });
+
+    const r = await issueCreditNote(deps, {
+      ...baseInput,
+      creditTotalSatang: 25_000n,
+      reason: 'manual credit while a refund is in flight',
+    });
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('refund_in_progress');
+    // ABOVE the first write — no tx, no §87 number, no render, no insert.
+    expect(deps.invoiceRepo.withTx).not.toHaveBeenCalled();
+    expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+    expect(deps.pdfRender.render).not.toHaveBeenCalled();
+    expect(deps.creditNoteRepo.insertCreditNote).not.toHaveBeenCalled();
+    expect(guard).toHaveBeenCalledWith('test-swecham', INVOICE_ID);
+  });
+
+  it('does NOT block a refund-origin credit note (sourceRefundId set), never consulting the guard', async () => {
+    const invoice = makeIssuedEventInvoice();
+    const sameCn: CreditNote = {
+      ...makeCreditNote(
+        Money.fromSatangUnsafe(1_000n),
+        Money.fromSatangUnsafe(70n),
+        Money.fromSatangUnsafe(1_070n),
+        null,
+      ),
+      originalInvoiceId: asInvoiceId(INVOICE_ID),
+      sourceRefundId: 'rfnd-match',
+    };
+    const guard = vi.fn(async () => 1); // would block IF consulted
+    const deps = makeDeps(invoice, makeSettings(), {
+      creditNoteRepo: {
+        insertCreditNote: vi.fn(),
+        findById: vi.fn(),
+        findByOriginalInvoice: vi.fn(),
+        findByOriginalInvoiceInTx: vi.fn(async () => []),
+        listPaged: vi.fn(),
+        findBySourceRefundId: vi.fn(async () => sameCn),
+      } as unknown as IssueCreditNoteDeps['creditNoteRepo'],
+      pendingRefundGuard: { countPendingRefundsForInvoice: guard },
+    });
+
+    const r = await issueCreditNote(deps, {
+      ...baseInput,
+      creditTotalSatang: 1_000n,
+      reason: "the refund's own §86/10",
+      sourceRefundId: 'rfnd-match',
+    });
+
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
+    // The gate is `sourceRefundId === undefined` — a refund-origin CN skips it.
+    expect(guard).not.toHaveBeenCalled();
+  });
+
+  it('consults the guard on a manual-CN happy path (count 0 → proceeds)', async () => {
+    const invoice = makeIssuedEventInvoice();
+    const deps = makeDeps(invoice, makeSettings());
+
+    const r = await issueCreditNote(deps, {
+      ...baseInput,
+      creditTotalSatang: 25_000n,
+      reason: 'manual credit, no refund pending',
+    });
+
+    expect(r.ok).toBe(true);
+    expect(deps.pendingRefundGuard.countPendingRefundsForInvoice).toHaveBeenCalledWith(
+      'test-swecham',
+      INVOICE_ID,
+    );
   });
 
   it('full credit on NON-member event invoice → succeeds, NON-timeline audit (no member_id, has event_registration_id), VAT reconciles to stored split', async () => {
@@ -899,6 +991,138 @@ describe('issueCreditNote — F-2 membership-effect intent capture', () => {
     expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
     if (!r.ok) throw new Error('unreachable');
     expect(r.value.membershipCancellationRequested).toBe(false);
+  });
+});
+
+// ---- M1 (plan-change-ux, Option 1b) — retains_coverage derivation -----------
+// The use case derives `credit_notes.retains_coverage` and threads it to the
+// repo insert. The formula CHECKS `sourceRefundId` FIRST: an F5 refund-origin CN
+// hard-codes `membershipEffect: 'keep'` at issue-credit-note-from-refund.ts while
+// genuinely RETURNING money, so `membershipEffect === 'keep'` alone is NOT the
+// retention signal. TRUE only for an F4-manual (no sourceRefundId) FULL
+// membership credit with `membershipEffect: 'keep'` (paperwork correction, member
+// NOT refunded → coverage retained). FALSE for F5 refunds, cancel_membership,
+// partial credits, and event credits.
+describe('issueCreditNote — M1 retains_coverage derivation (Option 1b)', () => {
+  function makeMembershipInvoice(overrides: InvoiceFixtureOverrides = {}): Invoice {
+    return makeIssuedEventInvoice({
+      invoiceSubject: 'membership',
+      memberId: 'member-m1',
+      planId: 'plan-m1',
+      planYear: 2026,
+      eventId: null,
+      eventRegistrationId: null,
+      vatInclusive: false,
+      ...overrides,
+    });
+  }
+
+  const baseInput = {
+    tenantId: 'test-swecham',
+    actorUserId: 'actor-user',
+    invoiceId: INVOICE_ID,
+  };
+
+  /** Reads the `retainsCoverage` arg of the single insertCreditNote call. */
+  function insertedRetainsCoverage(deps: IssueCreditNoteDeps): boolean {
+    const mock = deps.creditNoteRepo.insertCreditNote as ReturnType<typeof vi.fn>;
+    expect(mock).toHaveBeenCalledTimes(1);
+    return mock.mock.calls[0]![1].retainsCoverage as boolean;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('membership + FULL credit + membershipEffect="keep" + NO sourceRefundId (F4-manual) → retains_coverage TRUE', async () => {
+    const invoice = makeMembershipInvoice(); // total 25,000n, creditedTotal 0
+    const deps = makeDeps(invoice, makeSettings());
+    const r = await issueCreditNote(deps, {
+      ...baseInput,
+      requestId: 'req-m1-keep',
+      creditTotalSatang: 25_000n, // full
+      reason: 'membership refund — paperwork correction, member not refunded',
+      membershipEffect: 'keep',
+    });
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
+    expect(insertedRetainsCoverage(deps)).toBe(true);
+  });
+
+  it('membership + FULL credit + membershipEffect="keep" + sourceRefundId SET (F5 real refund) → retains_coverage FALSE (sourceRefundId-first)', async () => {
+    const invoice = makeMembershipInvoice();
+    const deps = makeDeps(invoice, makeSettings());
+    const r = await issueCreditNote(deps, {
+      ...baseInput,
+      requestId: 'req-m1-refund',
+      creditTotalSatang: 25_000n, // full
+      reason: 'stripe refund',
+      membershipEffect: 'keep', // F5 bridge hard-codes this while returning money
+      sourceRefundId: 'rfnd-m1',
+    });
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
+    expect(insertedRetainsCoverage(deps)).toBe(false);
+  });
+
+  it('membership + FULL credit + membershipEffect="cancel_membership" (withdrawal) → retains_coverage FALSE', async () => {
+    const invoice = makeMembershipInvoice();
+    const deps = makeDeps(invoice, makeSettings());
+    const r = await issueCreditNote(deps, {
+      ...baseInput,
+      requestId: 'req-m1-cancel',
+      creditTotalSatang: 25_000n, // full
+      reason: 'membership refund + withdrawal',
+      membershipEffect: 'cancel_membership',
+    });
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
+    expect(insertedRetainsCoverage(deps)).toBe(false);
+  });
+
+  it('membership + PARTIAL credit → retains_coverage FALSE (never a completing full-membership retention note)', async () => {
+    const invoice = makeMembershipInvoice(); // total 25,000n
+    const deps = makeDeps(invoice, makeSettings());
+    const r = await issueCreditNote(deps, {
+      ...baseInput,
+      requestId: 'req-m1-partial',
+      creditTotalSatang: 12_500n, // partial — remainder stays > 0
+      reason: 'partial refund',
+    });
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
+    expect(insertedRetainsCoverage(deps)).toBe(false);
+  });
+
+  it('event invoice + FULL credit → retains_coverage FALSE (never consulted for event coverage)', async () => {
+    const invoice = makeIssuedEventInvoice(); // invoiceSubject 'event', total 25,000n
+    const deps = makeDeps(invoice, makeSettings());
+    const r = await issueCreditNote(deps, {
+      ...baseInput,
+      requestId: 'req-m1-event',
+      creditTotalSatang: 25_000n, // full
+      reason: 'event cancelled',
+    });
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
+    expect(insertedRetainsCoverage(deps)).toBe(false);
+  });
+
+  it('membership + FULL credit + UNEXPECTED membershipEffect (defence-in-depth) → retains_coverage FALSE', async () => {
+    // The TRUE arm is a strict `=== 'keep'`, NOT a bare `: true`. Today only
+    // 'keep' can reach it (the `membership_effect_required` gate rejects
+    // undefined, and the enum is 2-value), so this is behaviour-preserving — but
+    // if an unexpected/future effect ever bypasses the enum, the safe direction
+    // is to NOT retain coverage (a spurious retract is far less harmful than a
+    // silent under-bill). The route's zod (issueCreditNoteSchema) rejects this
+    // at the boundary; the use-case consumes the input directly, so we cast past
+    // the 2-value enum to pin the guard. With the old `: true` this derived TRUE.
+    const invoice = makeMembershipInvoice();
+    const deps = makeDeps(invoice, makeSettings());
+    const r = await issueCreditNote(deps, {
+      ...baseInput,
+      requestId: 'req-m1-unknown',
+      creditTotalSatang: 25_000n, // full
+      reason: 'defence-in-depth: an unexpected membership effect must not retain coverage',
+      membershipEffect: 'unexpected_future_effect' as unknown as 'keep',
+    });
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
+    expect(insertedRetainsCoverage(deps)).toBe(false);
   });
 });
 

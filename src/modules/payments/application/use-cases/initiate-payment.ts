@@ -112,6 +112,17 @@ export type InitiatePaymentError =
    */
   | { readonly code: 'invoice_data_corrupt'; readonly invoiceId: string }
   /**
+   * I4 (Task 7 remediation) — the F4 payability read THREW rather than
+   * returning a Result (Neon down / connection reset). TRANSIENT.
+   *
+   * Kept distinct from `invoice_not_payable` because that code asserts a fact
+   * about the INVOICE, and this asserts a fact about our database. Collapsing
+   * them would tell a member their invoice cannot be paid whenever a read
+   * hiccups. Maps to the same 500 the escaping throw produced before this
+   * change, so nothing user-visible moved.
+   */
+  | { readonly code: 'invoice_read_failed' }
+  /**
    * REMOVE-WITH-064-REMEDIATION (online-payment site — master checklist
    * at the guard in record-payment.ts) — the F4 bridge rejected a LEGACY
    * issued no-TIN EVENT invoice. Creating a PI for it would let Stripe
@@ -376,6 +387,21 @@ async function initiatePaymentBody(
     // error-union member for rationale.
     if (e.code === 'new_flow_bill_requires_flag_on') {
       return err({ code: 'new_flow_bill_requires_flag_on' });
+    }
+    // I4 (Task 7 remediation) — the F4 payability read THREW (Neon down).
+    // TRANSIENT, and emphatically NOT `invoice_not_payable`: telling a member
+    // their invoice cannot be paid because a database read hiccuped is a lie
+    // that sends them to support. The bridge already emitted the metric and
+    // the bounded log line; the route maps this to the same 500 the escaping
+    // throw produced before, so the member-visible outcome is unchanged and
+    // only the observability improves.
+    //
+    // This call site was previously "safe" only by accident — it read
+    // `e.status` off the union, so adding `read_failed` broke the build here.
+    // That is the hardening working: the compiler found the second call site
+    // the review never named.
+    if (e.code === 'read_failed') {
+      return err({ code: 'invoice_read_failed' });
     }
     // not_payable
     return err({ code: 'invoice_not_payable', currentStatus: e.status });

@@ -264,6 +264,7 @@ describe('charge.refunded no-op + A.14 sweep backstop — live Neon (A.18 #4)', 
         processorRefundId: reId,
         initiatorUserId: user.userId,
         correlationId: 'corr-backstop-refund',
+        creditNoteWaiverReason: null,
         initiatedAt: STALE_INITIATED,
       });
     });

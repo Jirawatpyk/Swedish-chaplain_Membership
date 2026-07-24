@@ -1,13 +1,21 @@
 /**
- * T015 (F8 Phase 2 Wave B) — Contract test for F2 scheduled-plan-change
- * use-cases (`scheduleNextRenewalPlanChange` + `getEffectivePlanForRenewal`).
+ * T015 (F8 Phase 2 Wave B) — Contract test for the F2 scheduled-plan-change
+ * use-case (`scheduleNextRenewalPlanChange`).
  *
  * Pinned contracts — the `scheduled_plan_changes` table itself ships in
  * Wave C (migration 0086), so this contract test mocks the
- * `ScheduledPlanChangeRepo` port with an in-memory store. The repo
- * adapter (Drizzle) lands in Phase 5+ when US5 wires the F4 hook.
+ * `ScheduledPlanChangeRepo` port with an in-memory store.
  *
- * Six contracts pinned here:
+ * NOTE (Package B2): the former `getEffectivePlanForRenewal` resolver +
+ * `CurrentPlanResolverPort` (originally Contracts 4 + 5 here) were
+ * REMOVED as dead code — they had zero production call sites and their
+ * only possible implementation was an un-implementable plans→members
+ * dependency inversion. The effective plan now reaches renewal billing
+ * directly: plan changes flip `members.plan_id` (+`plan_year`) at
+ * apply/confirm time and the next-cycle seed reads `members.plan_id`.
+ * The Contracts 4 + 5 describe block was deleted with the resolver.
+ *
+ * Contracts pinned here (numbering preserved to match the `it()` names):
  *
  *   1. `scheduleNextRenewalPlanChange` happy path — schedule inserts a
  *      `pending` row with all caller-supplied fields preserved + Domain
@@ -21,21 +29,15 @@
  *      a use-case that drops it should fail at compile time (asserted
  *      indirectly by passing the tenant + verifying the spy receives it).
  *
- *   4. `getEffectivePlanForRenewal` — when a `pending` row exists for
- *      the (member, cycle), return its `to_plan_id`. When NO pending
- *      row exists, return the member's CURRENT plan via the
- *      `currentPlanResolver` port (callback into F2's existing
- *      `getPlanForMember`).
- *
- *   5. Terminal-state safety — `getEffectivePlanForRenewal` ignores rows
- *      in terminal states (`applied`, `superseded`, `cancelled`) and
- *      falls through to the current-plan resolver.
- *
  *   6. Schedule on a member that already has an `applied` row (terminal)
  *      for the SAME cycle — does NOT supersede the terminal row;
  *      inserts a fresh `pending` row alongside (data-model.md § 2.9
  *      partial unique permits multiple terminal rows + at most one
  *      pending per cycle).
+ *
+ *   7. Atomic shape — the repo returns `{inserted, superseded}` so the
+ *      caller never observes a "no pending" intermediate state
+ *      (Constitution Principle VIII).
  *
  * Test style: in-memory repo. No live DB. The contract is at the
  * Application boundary; the Drizzle adapter (Wave C+) will be covered
@@ -47,13 +49,9 @@ import { ok } from '@/lib/result';
 import { asTenantContext, type TenantContext } from '@/modules/tenants';
 import {
   scheduleNextRenewalPlanChange,
-  getEffectivePlanForRenewal,
-  makeScheduledPlanChange,
   type AuditPort,
   type ScheduledPlanChange,
   type ScheduledPlanChangeRepo,
-  type ScheduledPlanChangeStatus,
-  type CurrentPlanResolverPort,
 } from '@/modules/plans';
 
 // Post-ship R6 I2 — stub AuditPort (always succeeds). The contract
@@ -353,113 +351,6 @@ describe('Contract — F2 scheduleNextRenewalPlanChange', () => {
     expect(secondResult.superseded).not.toBeNull();
     expect(secondResult.superseded.status).toBe('superseded');
     expect(secondResult.superseded.toPlanId).toBe('corporate-premier');
-  });
-});
-
-describe('Contract — F2 getEffectivePlanForRenewal', () => {
-  beforeEach(() => vi.clearAllMocks());
-
-  // ── Contract 4 ────────────────────────────────────────────────────
-  it('Contract 4: returns scheduled plan when a pending row exists for the cycle', async () => {
-    const seed: ScheduledPlanChange[] = [
-      {
-        tenantId: 'test-swecham',
-        scheduledChangeId: 's1',
-        memberId: MEMBER_ID,
-        effectiveAtCycleId: CYCLE_ID,
-        fromPlanId: 'corporate-regular',
-        toPlanId: 'corporate-premier',
-        scheduledByUserId: ADMIN_USER_ID,
-        reason: null,
-        status: 'pending',
-        scheduledAt: '2026-05-03T12:00:00Z',
-        appliedAt: null,
-        supersededAt: null,
-        cancelledAt: null,
-      },
-    ];
-    const repo = makeMemoryRepo(seed);
-    const currentPlanResolver: CurrentPlanResolverPort = {
-      resolveCurrentPlanId: vi.fn(async () => 'corporate-regular'),
-    };
-
-    const r = await getEffectivePlanForRenewal(
-      { tenant, repo, currentPlanResolver },
-      { memberId: MEMBER_ID, cycleId: CYCLE_ID },
-    );
-
-    expect(r.ok).toBe(true);
-    if (!r.ok) return;
-    expect(r.value.planId).toBe('corporate-premier');
-    expect(r.value.source).toBe('scheduled');
-    // Did NOT need to fall through to currentPlanResolver
-    expect(currentPlanResolver.resolveCurrentPlanId).not.toHaveBeenCalled();
-  });
-
-  it('Contract 4 (fallthrough): returns current plan when NO pending row exists', async () => {
-    const repo = makeMemoryRepo();
-    const currentPlanResolver: CurrentPlanResolverPort = {
-      resolveCurrentPlanId: vi.fn(async () => 'corporate-regular'),
-    };
-
-    const r = await getEffectivePlanForRenewal(
-      { tenant, repo, currentPlanResolver },
-      { memberId: MEMBER_ID, cycleId: CYCLE_ID },
-    );
-
-    expect(r.ok).toBe(true);
-    if (!r.ok) return;
-    expect(r.value.planId).toBe('corporate-regular');
-    expect(r.value.source).toBe('current');
-    expect(currentPlanResolver.resolveCurrentPlanId).toHaveBeenCalledWith(
-      tenant,
-      MEMBER_ID,
-    );
-  });
-
-  // ── Contract 5 ────────────────────────────────────────────────────
-  it('Contract 5: terminal-status safety — applied/superseded/cancelled rows are ignored, falls through to current plan', async () => {
-    const terminalStatuses: ScheduledPlanChangeStatus[] = [
-      'applied',
-      'superseded',
-      'cancelled',
-    ];
-    for (const status of terminalStatuses) {
-      // R3 Batch 4e (R3-S6) — discriminated union seed via factory.
-      const base = {
-        tenantId: 'test-swecham',
-        scheduledChangeId: `term-${status}`,
-        memberId: MEMBER_ID,
-        effectiveAtCycleId: CYCLE_ID,
-        fromPlanId: 'corporate-regular',
-        toPlanId: 'corporate-premier',
-        scheduledByUserId: ADMIN_USER_ID,
-        reason: null,
-        scheduledAt: '2026-05-03T12:00:00Z',
-      };
-      const TIMESTAMP = '2026-05-03T12:01:00Z';
-      const seedRow: ScheduledPlanChange =
-        status === 'applied'
-          ? makeScheduledPlanChange(base, 'applied', TIMESTAMP)
-          : status === 'superseded'
-            ? makeScheduledPlanChange(base, 'superseded', TIMESTAMP)
-            : makeScheduledPlanChange(base, 'cancelled', TIMESTAMP);
-      const seed: ScheduledPlanChange[] = [seedRow];
-      const repo = makeMemoryRepo(seed);
-      const currentPlanResolver: CurrentPlanResolverPort = {
-        resolveCurrentPlanId: vi.fn(async () => 'corporate-regular'),
-      };
-
-      const r = await getEffectivePlanForRenewal(
-        { tenant, repo, currentPlanResolver },
-        { memberId: MEMBER_ID, cycleId: CYCLE_ID },
-      );
-
-      expect(r.ok).toBe(true);
-      if (!r.ok) return;
-      expect(r.value.planId, `terminal=${status}`).toBe('corporate-regular');
-      expect(r.value.source, `terminal=${status}`).toBe('current');
-    }
   });
 });
 

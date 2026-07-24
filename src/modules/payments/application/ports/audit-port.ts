@@ -83,6 +83,24 @@ export type F5AuditEventType =
   // `docs/runbooks/stale-pending-refund-sweep.md`. 10-year retention
   // because the row touches the F4 credit-note tax-document lineage.
   | 'stale_pending_refund_detected'
+  // Migration 0266 (money-remediation Task 6 / finding F-3) — the processor
+  // settled a refund but the F4 credit-note bridge could not book it, so the
+  // row was left `pending` for the stale-pending sweep instead of being
+  // terminalised `failed`. 10-year retention: it records a window in which
+  // money was returned to a customer with no §86/10 credit note against it,
+  // which is exactly what an auditor reconciling output VAT needs to see.
+  | 'refund_cn_deferred'
+  // Migration 0268 (Task 7 / Track B) — a refund SUCCEEDED and no §86/10
+  // ใบลดหนี้ was owed: the invoice was voided (the void stamp is itself the tax
+  // reversal) or the buyer holds a §105 ใบเสร็จรับเงิน with no original
+  // ใบกำกับภาษี for a credit note to cite.
+  //
+  // 10-year retention, and it is the whole reason this event exists: it is the
+  // ONLY record that money went back to a member with no credit note against
+  // it. An auditor reconciling output VAT, and whoever files ภ.พ.30, have
+  // nothing else to find. Emitted in PHASE A, where the invoice facts are
+  // still in hand — the async settlement paths cannot reconstruct them.
+  | 'refund_credit_note_waived'
   // Migration 0052 (H-11 review 2026-04-27) — emitted from
   // confirmPayment when the state machine acknowledges a permanent
   // terminal-state mismatch (illegal_transition or duplicate-
@@ -140,7 +158,24 @@ export type F5AuditEventType =
   // "being reconciled" banner reverts to the "refunded" copy. 10y retention
   // (mirrors the failure forensic — money-trail-adjacent, Thai RD §87/3). Shares
   // the `auto_refund_` prefix so the parity test already covers it.
-  | 'auto_refund_reconciled';
+  | 'auto_refund_reconciled'
+  // money-remediation Task 4 / finding F-1 (migration 0267, 2026-07-20) —
+  // the settlement transaction was UNWOUND because the F4 invoicing bridge
+  // declined. This is the forensic counterpart to a rollback that, by
+  // construction, erases its own evidence: the payment row is back to
+  // `pending`, the invoice is still `issued`, and no `payment_succeeded` row
+  // exists — so without this event a bridge decline leaves nothing behind but
+  // a log line. Emitted on a `null` tx (its own connection) precisely so it
+  // SURVIVES the rollback it is describing.
+  //
+  // Nothing in the existing 83-value union fits: the two `payment_auto_
+  // refunded_*` values assert a Stripe refund that never happened here (the
+  // money is still captured — Stripe is untouched by a DB rollback), and
+  // reusing one would write a 10-year money-trail row that is materially
+  // false. 10y retention because it is money-trail-adjacent (Thai RD §87/3):
+  // it is the only durable record that a captured payment did NOT settle.
+  // Shares the `payment_` prefix, so `audit-event-type-parity` already covers it.
+  | 'payment_settlement_rolled_back';
 
 /**
  * R2 TD-13 (2026-04-27): typed payload shape per event type.
@@ -239,6 +274,29 @@ export interface F5AuditPayloadByType {
       | 'invoice_unknown_status'
       | 'payment_terminal_failed_late_charge';
     processor_refund_id: string;
+    /**
+     * F-2 (money-remediation Task 3) — set ONLY on the `null`-tx forensic
+     * copy emitted from `confirmPayment`'s Phase-B catches, when the
+     * transaction that was recording an already-settled Stripe refund
+     * failed and rolled its own money-trail row back.
+     *
+     * Absent on the normal in-tx emit. Their presence is the flag that
+     * distinguishes "the auto-refund is recorded" from "the auto-refund
+     * happened and this row is the only thing that knows".
+     *
+     * `recovery` is a closed literal on purpose. It replaced
+     * `awaiting_stripe_retry_idempotency`, which was false: the use-case
+     * returns `ok`, the route 200-acks, and Stripe does not redeliver a
+     * 2xx — so the automatic retry that string promised can never fire.
+     * Widening this back to a free string would let the same false claim
+     * back in silently.
+     */
+    recovery?: 'manual_reconcile_via_runbook';
+    runbook_url?: string;
+    /** Error CLASS name only — never `.message` (PII / SQL fragments). */
+    phase_b_error_kind?: string;
+    /** Stripe's terminal verdict on the refund at creation time. */
+    refund_status?: string;
   };
   payment_auto_refunded_concurrent_manual_mark: Record<string, unknown>;
   payment_environment_mismatch: Record<string, unknown>;
@@ -290,11 +348,26 @@ export interface F5AuditPayloadByType {
         payment_id: string;
         invoice_id: string;
         processor_refund_id: string;
-        credit_note_id: string;
-        credit_note_number: string;
+        /**
+         * Track B — NULL when the refund owes no §86/10 ใบลดหนี้ (the invoice
+         * was voided, or the buyer holds a §105 receipt). The companion
+         * `credit_note_waiver_reason` names the ground on exactly those rows,
+         * and a 10-year `refund_credit_note_waived` forensic carries the full
+         * detail. Nullable rather than a separate event so a reconciler can
+         * read one stream and see every succeeded refund.
+         */
+        credit_note_id: string | null;
+        credit_note_number: string | null;
+        credit_note_waiver_reason?: string;
         amount_satang: string;
         payment_next_status: 'partially_refunded' | 'refunded';
-        invoice_next_status: 'partially_credited' | 'credited';
+        /**
+         * Track B — NULL on a waived refund. No credit note was issued, so the
+         * invoice's status is UNCHANGED by this refund; the credited pair would
+         * assert a transition that never happened. Read it together with
+         * `credit_note_waiver_reason`, which is present on exactly those rows.
+         */
+        invoice_next_status: 'partially_credited' | 'credited' | null;
       }
     | {
         /**
@@ -313,11 +386,26 @@ export interface F5AuditPayloadByType {
         payment_id: string;
         invoice_id: string;
         processor_refund_id: string;
-        credit_note_id: string;
-        credit_note_number: string;
+        /**
+         * Track B — NULL when the refund owes no §86/10 ใบลดหนี้ (the invoice
+         * was voided, or the buyer holds a §105 receipt). The companion
+         * `credit_note_waiver_reason` names the ground on exactly those rows,
+         * and a 10-year `refund_credit_note_waived` forensic carries the full
+         * detail. Nullable rather than a separate event so a reconciler can
+         * read one stream and see every succeeded refund.
+         */
+        credit_note_id: string | null;
+        credit_note_number: string | null;
+        credit_note_waiver_reason?: string;
         amount_satang: string;
         payment_next_status: 'partially_refunded' | 'refunded';
-        invoice_next_status: 'partially_credited' | 'credited';
+        /**
+         * Track B — NULL on a waived refund. No credit note was issued, so the
+         * invoice's status is UNCHANGED by this refund; the credited pair would
+         * assert a transition that never happened. Read it together with
+         * `credit_note_waiver_reason`, which is present on exactly those rows.
+         */
+        invoice_next_status: 'partially_credited' | 'credited' | null;
       }
     | {
         /**
@@ -345,11 +433,26 @@ export interface F5AuditPayloadByType {
         payment_id: string;
         invoice_id: string;
         processor_refund_id: string;
-        credit_note_id: string;
-        credit_note_number: string;
+        /**
+         * Track B — NULL when the refund owes no §86/10 ใบลดหนี้ (the invoice
+         * was voided, or the buyer holds a §105 receipt). The companion
+         * `credit_note_waiver_reason` names the ground on exactly those rows,
+         * and a 10-year `refund_credit_note_waived` forensic carries the full
+         * detail. Nullable rather than a separate event so a reconciler can
+         * read one stream and see every succeeded refund.
+         */
+        credit_note_id: string | null;
+        credit_note_number: string | null;
+        credit_note_waiver_reason?: string;
         amount_satang: string;
         payment_next_status: 'partially_refunded' | 'refunded';
-        invoice_next_status: 'partially_credited' | 'credited';
+        /**
+         * Track B — NULL on a waived refund. No credit note was issued, so the
+         * invoice's status is UNCHANGED by this refund; the credited pair would
+         * assert a transition that never happened. Read it together with
+         * `credit_note_waiver_reason`, which is present on exactly those rows.
+         */
+        invoice_next_status: 'partially_credited' | 'credited' | null;
       };
   refund_failed: {
     refund_id: string;
@@ -406,6 +509,28 @@ export interface F5AuditPayloadByType {
     original_correlation_id: string;
     runbook_url: string;
   };
+  refund_cn_deferred: {
+    refund_id: string;
+    payment_id: string;
+    invoice_id: string;
+    amount_satang: string;
+    processor_refund_id: string;
+    /** `f4_bridge_phase_b_db_error` or `f4_bridge_{f4 error code}`. */
+    defer_reason_code: string;
+    detail: string;
+    runbook_url: string;
+  };
+  refund_credit_note_waived: {
+    refund_id: string;
+    payment_id: string;
+    invoice_id: string;
+    amount_satang: string;
+    /** `invoice_voided` | `section_105_receipt` — the enumerated ground. */
+    waiver_reason: string;
+    /** The invoice status at pre-flight, pinned so the trail is self-contained. */
+    invoice_status: string;
+    runbook_url: string;
+  };
   payment_acknowledged_terminal_state: Record<string, unknown>;
   // Migration 0043 — F-09 rate-limit forensic events. Permissive shape
   // because the F1 generic auditRepo.append path doesn't carry F5-typed
@@ -432,6 +557,29 @@ export interface F5AuditPayloadByType {
     readonly stripe_event_type: string;
     readonly dispatch_failure_kind: string;
     readonly dispatch_failure_detail: string;
+    /**
+     * money-remediation Task 5 — the F4 sub-code behind a `bridge_error`
+     * (`pdf_render_failed`, `legacy_invoice_needs_reissue`, …), or `null` on
+     * branches that have none.
+     *
+     * Added as a NEW field rather than folded into `dispatch_failure_detail`,
+     * which is the coarse dispatcher code and whose meaning must not change
+     * for rows already written. Before Task 5 the sub-code was discarded by
+     * `subUseCaseErr`, so this forensic recorded only `'bridge_error'` — true
+     * of every F4 decline and therefore useless for triage.
+     */
+    readonly dispatch_failure_sub_detail: string | null;
+    /**
+     * money-remediation Task 5 — `true` when this row exists because the
+     * event outlived `TRANSIENT_RETRY_CEILING_SECONDS`, NOT because the
+     * failure was classified permanent.
+     *
+     * The distinction is the whole point of the row at 3am: `false` means an
+     * operator must fix a specific invoice; `true` means F4 or Blob was down
+     * long enough that we stopped asking Stripe to retry, and the underlying
+     * failure may well have cleared on its own since.
+     */
+    readonly dispatch_failure_retry_ceiling_exceeded: boolean;
   };
   // F5 refund-lifecycle bugfix (migration 0241, 2026-07-11, RR-8 allow-list) —
   // CRITICAL-2 failed-auto-refund forensic. ID-refs + refund status + satang
@@ -460,6 +608,24 @@ export interface F5AuditPayloadByType {
     readonly payment_id: string;
     readonly processor_refund_id: string;
     readonly note?: string;
+  };
+  // money-remediation Task 4 (migration 0267) — settlement rolled back on a
+  // bridge decline. ID-refs + the F4 refusal code only. NO card metadata and
+  // NO raw Stripe text — SAQ-A intact. `bridge_error_code` is F4's typed
+  // `RecordPaymentError.code` (e.g. `pdf_render_failed`), which is what tells
+  // an operator whether the payment can simply be retried.
+  //
+  // `money_captured: true` is stated explicitly rather than implied: the
+  // rollback undoes OUR writes, never Stripe's capture. An operator reading
+  // this row must not conclude the customer was made whole.
+  payment_settlement_rolled_back: {
+    readonly payment_id: string;
+    readonly invoice_id: string;
+    readonly payment_intent_id: string;
+    readonly amount_satang: string;
+    readonly bridge_error_code: string;
+    readonly money_captured: true;
+    readonly runbook_url: string;
   };
 }
 
@@ -536,6 +702,8 @@ export const F5_AUDIT_RETENTION_YEARS: Record<F5AuditEventType, 5 | 10> = {
   refund_failed: 10,
   out_of_band_refund_detected: 10,
   stale_pending_refund_detected: 10,
+  refund_cn_deferred: 10,
+  refund_credit_note_waived: 10,
   dispute_created: 10,
 
   payment_environment_mismatch: 5,
@@ -568,6 +736,11 @@ export const F5_AUDIT_RETENTION_YEARS: Record<F5AuditEventType, 5 | 10> = {
   // CF-2 (migration 0244) — manual-reconciliation acknowledgement. 10y to
   // mirror the failure forensic it resolves (same money-trail lineage).
   auto_refund_reconciled: 10,
+  // money-remediation Task 4 (migration 0267) — settlement-rollback forensic.
+  // 10y: it is the sole durable record that Stripe captured money which our
+  // system then declined to settle. Same money-trail class as
+  // `payment_succeeded` (Thai RD §87/3).
+  payment_settlement_rolled_back: 10,
 };
 
 /**

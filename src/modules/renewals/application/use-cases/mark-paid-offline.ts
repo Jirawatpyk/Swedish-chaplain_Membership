@@ -152,6 +152,22 @@ export type MarkPaidOfflineError =
    */
   | { readonly kind: 'member_terminated' }
   /**
+   * Duplicate-membership-bill guard (production defect fix) — the member
+   * ALREADY holds a live (`status <> 'void'`) membership bill for this plan
+   * year, so minting another would produce a SECOND numbered §86/4 for one
+   * membership year. Refuse and hand the operator the existing document: the
+   * correct action is to record the payment against THAT invoice (the F4
+   * record-payment dialog is wired to `f8OnPaidCallbacks`, so it completes
+   * this cycle and opens the next one exactly as the offline-mark would).
+   * Distinct from `f4_orphan_invoice` — there an invoice was minted and the
+   * flip failed; here nothing was minted at all.
+   */
+  | {
+      readonly kind: 'membership_bill_already_exists';
+      readonly existingInvoiceId: string;
+      readonly existingStatus: string;
+    }
+  /**
    * Cluster 5 (Finding 2) — a PERMANENT F4 reject (retry will not help). Kept
    * distinct from `f4_failure` (transient/infra faults → "please try again")
    * so the route can surface actionable copy: "add the plan-year", "restore the
@@ -334,16 +350,10 @@ export async function markPaidOffline(
   // document off the price-tampering surface. The cycle-vs-invoice price
   // assertion lives in the offline mark-paid integration test.
   //
-  // Round 5 S-04 / 070 code-review — Bangkok-local fiscal year via the
-  // SHARED `deriveFiscalYear` (js-joda Asia/Bangkok, honours the tenant's
-  // fiscal-year start-month) — the identical helper confirm-renewal,
-  // admin-renew and the §87 sequential-number allocator use. UTC
-  // `getUTCFullYear()` is wrong at BKK boundaries; the prior local +7h
-  // helper also hardcoded a January start, so it would diverge from every
-  // other billing path for a non-January-start tenant. One source of truth
-  // for the §86/4 fiscal year across the online + offline rails.
-  const planYear = deriveFiscalYear(preLoad.periodFrom);
-  const planId = preLoad.planIdAtCycleStart;
+  // `planId` + `planYear` are derived from the LOCKED cycle inside the tx below
+  // (NOT here from `preLoad`) so all three §86/4 inputs — identity, fiscal year
+  // and price — come from one coherent snapshot. `memberId` is a cycle
+  // invariant (a cycle's member never changes) so the pre-lock read is safe.
   const memberId = preLoad.memberId;
 
   // 070 Item D — hoisted to the use-case scope so the POST-commit F2
@@ -377,6 +387,84 @@ export async function markPaidOffline(
         return err({
           kind: 'cycle_not_payable' as const,
           currentStatus: lockedCycle.status,
+        });
+      }
+
+      // Split-brain fix — derive the §86/4's plan identity + fiscal year from
+      // the LOCKED cycle (the SAME snapshot as its frozen price on the bridge
+      // call below), NOT the pre-lock `preLoad`. A plan change landing between
+      // the pre-lock read and lock acquisition must never mint a tax document
+      // carrying one plan's identity/year with another plan's price.
+      //
+      // Round 5 S-04 / 070 code-review — Bangkok-local fiscal year via the
+      // SHARED `deriveFiscalYear` (js-joda Asia/Bangkok, honours the tenant's
+      // fiscal-year start-month) — the identical helper confirm-renewal,
+      // admin-renew and the §87 sequential-number allocator use. UTC
+      // `getUTCFullYear()` is wrong at BKK boundaries; the prior local +7h
+      // helper also hardcoded a January start, so it would diverge from every
+      // other billing path for a non-January-start tenant. One source of truth
+      // for the §86/4 fiscal year across the online + offline rails.
+      const planId = lockedCycle.planIdAtCycleStart;
+      const planYear = deriveFiscalYear(lockedCycle.periodFrom);
+
+      // ---------------------------------------------------------------
+      // Duplicate-membership-bill guard (production defect fix).
+      //
+      // Cycle STATUS alone is not sufficient authority to mint a §86/4.
+      // The ordinary post-`confirmRenewal` state is `awaiting_payment` WITH
+      // `linked_invoice_id` already pointing at a live bill — so gating on
+      // status only, as this use-case did, let a treasurer's "Mark paid
+      // offline" click mint a SECOND numbered tax document for the same
+      // membership year. Nothing downstream stops it: `createInvoiceDraft`
+      // has no duplicate branch, and the `(tenant_id, member_id, plan_year)`
+      // partial unique index that the `event` subject got in migration 0201
+      // was never added for `membership`.
+      //
+      // Member-scoped, NOT `lockedCycle.linkedInvoiceId`: the codebase has
+      // documented paths that leave a live membership bill UNLINKED to any
+      // cycle (`confirm-renewal` + `admin-renew-lapsed-member` both orphan
+      // their invoice when the post-mint link step loses the race — see
+      // `InvoiceLinkConflictError`). A link-only check would wave those
+      // through, which is exactly the drift this guard exists to stop.
+      //
+      // PLACEMENT — above the first write, deliberately. `err(...)` inside a
+      // `runInTenant` callback does NOT throw: the tx COMMITS. Everything
+      // above this point is a read plus the advisory-lock acquisition (which
+      // releases at tx end), so refusing here persists nothing and emits no
+      // audit row. Do not move it below the F4 chain.
+      //
+      // `planYear` is the LOCKED-cycle-derived value (the split-brain fix
+      // above) handed to `issueAndMarkPaid` ~150 lines below — guarding the
+      // exact key the bridge will mint under, so no gap can open between
+      // check and use.
+      //
+      // The bridge's `findLiveMembershipBillInTx` reads the SAME
+      // `liveMembershipBillWhere` predicate (shared from the invoicing barrel)
+      // that the admin-create guard uses — one definition of "live membership
+      // bill", so the two guards cannot drift. Inconsistent copies of this
+      // check are what produced the defect in the first place.
+      const existingBill =
+        await deps.invoiceDueBridge.findLiveMembershipBillInTx(tx, {
+          tenantId: input.tenantId,
+          memberId: lockedCycle.memberId,
+          planYear,
+        });
+      if (existingBill) {
+        logger.warn(
+          {
+            cycleId,
+            memberId: lockedCycle.memberId,
+            tenantId: input.tenantId,
+            planYear,
+            existingInvoiceId: existingBill.invoiceId,
+            existingStatus: existingBill.status,
+          },
+          'markPaidOffline: a live membership bill already exists for this plan year — refusing to mint a duplicate §86/4; settle the existing invoice instead',
+        );
+        return err({
+          kind: 'membership_bill_already_exists' as const,
+          existingInvoiceId: existingBill.invoiceId,
+          existingStatus: existingBill.status,
         });
       }
 
@@ -622,6 +710,9 @@ export async function markPaidOffline(
             planLookup: deps.planLookupForRenewal,
             auditEmitter: deps.auditEmitter,
             idFactory: deps.cycleIdFactory,
+            // Package A — seed the next cycle from the member's live plan.
+            memberPlanLookup: deps.memberPlanLookup,
+            planChangeBillingEffectAudit: deps.planChangeBillingEffectAudit,
           },
           evt,
           tx,

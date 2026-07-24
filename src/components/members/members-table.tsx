@@ -57,6 +57,8 @@ import {
   ArrowDownIcon,
   ArrowUpDownIcon,
   ArrowUpIcon,
+  CheckIcon,
+  MailWarning,
   PauseCircle,
   PencilIcon,
   TriangleAlert,
@@ -65,6 +67,9 @@ import { toast } from 'sonner';
 // Type-only import (erased at compile time → no runtime/client-bundle coupling
 // to the insights server graph). The engagement value is projected server-side.
 import type { EngagementBand } from '@/modules/insights';
+// Type-only import (erased at compile time → no runtime/client-bundle coupling
+// to the members server graph). The portal state is derived server-side.
+import type { PortalState } from '@/modules/members';
 // C4 round-10 ui-design-specialist — flag emoji + localised country name.
 // 056-members-table-compact — the flag now leads the Company cell.
 import { CountryDisplay } from './country-display';
@@ -117,6 +122,14 @@ export type MembersTableRow = {
    */
   readonly membership_suspended: boolean;
   /**
+   * Portal state of the PRIMARY contact (design doc 2026-07-23 §3.5).
+   * `null`  = the member has no primary contact (nothing to render).
+   * 'unknown' = the batch read failed; renders nothing, but is deliberately
+   * distinct from 'not_invited' so a DB hiccup is never displayed as
+   * "this member still needs inviting".
+   */
+  readonly portal_state: PortalState | 'unknown' | null;
+  /**
    * F9 (T034 / G1) — engagement score = positive-framed inverse of the F8 risk
    * band. PROJECTED SERVER-SIDE in the members page row-mapping via the
    * canonical `projectEngagementScore`; null when unscored. The cell only
@@ -148,6 +161,13 @@ export type InlineEditResult =
 type Props = {
   readonly rows: readonly MembersTableRow[];
   readonly nextCursor: string | null;
+  /**
+   * Total rows matching the current filters across ALL pages. When provided,
+   * the sr-only result-count live region announces "Showing N of M members"
+   * (this page's count vs the full filtered total) so screen-reader users hear
+   * how a filter change narrowed the set, not just the current page size.
+   */
+  readonly total?: number | undefined;
   /** Admin-only: enable multi-row selection + inline edit. */
   readonly enableSelection?: boolean | undefined;
   /** Callback when selection changes — used by BulkActionBar. */
@@ -389,9 +409,59 @@ function InlineStatusCell({
   );
 }
 
+/**
+ * Portal-state badge for the Contact cell (design doc 2026-07-23 §3.5).
+ *
+ * Short visible label + sr-only sentence — `Badge` is overflow-hidden,
+ * nowrap and shrink-0, so a long label cannot wrap and would paint over the
+ * next column. Every state pairs an icon and text with its colour, so nothing
+ * is encoded by colour alone (WCAG 1.4.1).
+ *
+ * `active` uses `secondary`, not `default`: the solid primary token would make
+ * the most common and least actionable state the loudest thing on a 50-row
+ * page, and it is the same token as the detail page's "Primary" contact badge.
+ */
+function PortalBadge({ state }: { state: MembersTableRow['portal_state'] }) {
+  const t = useTranslations('admin.members.directory');
+  if (state === null || state === 'unknown') return null;
+  if (state === 'active') {
+    return (
+      <Badge variant="secondary" className="gap-1">
+        <CheckIcon aria-hidden="true" className="size-3" />
+        <span aria-hidden="true">{t('portal.linked')}</span>
+        <span className="sr-only">{t('portal.linkedSr')}</span>
+      </Badge>
+    );
+  }
+  if (state === 'not_invited') {
+    return (
+      <Badge variant="outline" className="text-muted-foreground">
+        <span aria-hidden="true">{t('portal.notInvited')}</span>
+        <span className="sr-only">{t('portal.notInvitedSr')}</span>
+      </Badge>
+    );
+  }
+  const expired = state === 'invite_expired';
+  return (
+    <Badge
+      variant="outline"
+      className={
+        expired
+          ? 'gap-1 border-destructive/40 text-destructive'
+          : 'gap-1 border-warning/40 text-warning'
+      }
+    >
+      <MailWarning aria-hidden="true" className="size-3" />
+      <span aria-hidden="true">{t(expired ? 'portal.expired' : 'portal.invited')}</span>
+      <span className="sr-only">{t(expired ? 'portal.expiredSr' : 'portal.invitedSr')}</span>
+    </Badge>
+  );
+}
+
 export function MembersTable({
   rows,
   nextCursor,
+  total,
   enableSelection = false,
   onSelectionChange,
   onInlineEdit,
@@ -551,15 +621,28 @@ export function MembersTable({
     }),
     // 056-members-table-compact — merged "Plan · Year" cell (the standalone
     // Year column was removed). Middot separator is a locale-neutral literal.
+    // Widened 150→185 (user request, 2026-07-23): after the 057 overflow fix
+    // long plan names wrap instead of overflowing, so a wider column keeps the
+    // common "<plan name> · <year>" on one line and reduces two-line rows.
     columnHelper.accessor('plan_display_name', {
-      size: 150,
+      size: 185,
       header: () => t('columns.plan'),
       cell: (info) => {
         const displayName = info.getValue();
         const row = info.row.original;
         const label = displayName ?? row.plan_id;
         return (
-          <span title={row.plan_id} className="text-sm whitespace-nowrap">
+          // 057 overflow fix — `whitespace-normal break-words` replaces
+          // `whitespace-nowrap`. Under `table-fixed` + <colgroup>, nowrap
+          // content wider than the 150px column PAINTS OVER the next column
+          // (td is overflow:visible). Wrapping keeps a long plan name inside
+          // its column; short names still render on one line, so row density
+          // is unchanged for the common case. `break-words` covers a single
+          // long token with no spaces.
+          <span
+            title={row.plan_id}
+            className="text-sm whitespace-normal break-words"
+          >
             {label}
             <span aria-hidden="true"> · </span>
             {row.plan_year}
@@ -570,27 +653,60 @@ export function MembersTable({
     // 056-members-table-compact — Contact shows the name only (the email
     // second line was dropped to keep the column compact).
     columnHelper.accessor('primary_contact', {
-      size: 175,
+      // Widened 175→205 (user request, 2026-07-23): the cell holds the contact
+      // name plus the portal/bounce badges inline, so the extra width keeps the
+      // common "name + one badge" case on a single line before it wraps.
+      size: 205,
       header: () => t('columns.primaryContact'),
       cell: (info) => {
         const c = info.getValue();
         if (!c) return <span className="text-muted-foreground">{t('noPrimary')}</span>;
         const fullName = `${c.first_name} ${c.last_name}`.trim();
         return (
-          <span className="flex items-start gap-1.5">
-            {/* Name shows in FULL and WRAPS (min-w-0 + break-words); a long name
-                grows DOWN, not across, so it never widens the table. The bounce
-                badge stays a fixed, non-shrinking sibling. */}
+          // 057 badge-inline (user request 2026-07-23): the portal + bounce
+          // badges flow INLINE after the contact name on the SAME line, and
+          // wrap to a new line only when the column is too narrow. Name and
+          // badges are siblings of ONE `flex flex-wrap` container (not a
+          // stacked name-row + badge-row), so the common "name + one short
+          // badge" case stays a single line and keeps the row compact.
+          // `flex-wrap` is required because Badge is `shrink-0` — without it a
+          // long name + badge would overflow the 175px column instead of
+          // wrapping. The name span keeps its own `max-w`/`break-words`, so a
+          // very long name wraps within itself and pushes the badges down.
+          // `items-start` (not `items-center`): when a long name wraps to two
+          // lines, `items-center` would vertically centre the one-line badges
+          // against the whole two-line name block, reading oddly. `items-start`
+          // sits the badges on the name's first line, which is correct for the
+          // wrapped case and unchanged for the common single-line case.
+          <span className="flex flex-wrap items-start gap-x-2 gap-y-1">
             <span
               className="min-w-0 max-w-[18ch] break-words whitespace-normal"
               title={fullName}
             >
               {fullName}
             </span>
+            <PortalBadge
+              state={
+                // Suppress ALL portal badges on archived rows — mirrors the
+                // Lapsed/Suspended badge suppression on the Status cell below.
+                info.row.original.status === 'archived'
+                  ? null
+                  : info.row.original.portal_state
+              }
+            />
             {/* Edge Case "Invitation email bounce" (spec §613-620) — surface a
                 row-level bounce signal in the directory, not only on the detail
-                page. Copy lives under admin.members.detail.inviteBounced. */}
-            {c.invite_bounced ? (
+                page. Copy lives under admin.members.detail.inviteBounced.
+                Bounce badge suppressed when the invitation ALSO expired or
+                the contact is already active — one root cause, one recovery
+                (mirrors admin/members/[memberId]/page.tsx:415-417). Also
+                suppressed on archived rows — mirrors the PortalBadge suppression
+                above and the Status cell's Lapsed/Suspended suppression: "no
+                portal-related badge shows on an archived row" (Task 7). */}
+            {c.invite_bounced &&
+            info.row.original.portal_state !== 'invite_expired' &&
+            info.row.original.portal_state !== 'active' &&
+            info.row.original.status !== 'archived' ? (
               <Badge
                 variant="outline"
                 className="shrink-0 gap-1 border-destructive/40 text-destructive"
@@ -613,7 +729,12 @@ export function MembersTable({
       // InlineStatusCell <button>. Inside the button it would fire the status
       // toggle on click and pollute the button's accessible name.
       cell: (info) => (
-        <span className="inline-flex items-center gap-1.5">
+        // 057 overflow fix — the status control plus a Lapsed/Suspended badge
+        // exceeds the 130px column when laid out horizontally and paints over
+        // the Engagement column. `flex-col` stacks the badge onto its own
+        // line instead. See the #4 comment above for why the badge must stay
+        // a sibling of InlineStatusCell, not a child.
+        <span className="flex flex-col items-start gap-1">
           {enableSelection ? (
             <InlineStatusCell
               memberId={info.row.original.member_id}
@@ -782,6 +903,15 @@ export function MembersTable({
 
   return (
     <div className="flex flex-col gap-4" ref={tableContainerRef}>
+      {/* Result-count live region — announces the row count on ANY filter
+          change (not only the selection count above), so screen-reader users
+          hear the table update after e.g. toggling the needs-invite chip. When
+          the full filtered total is known it announces "N of M" for context. */}
+      <div className="sr-only" role="status">
+        {total !== undefined
+          ? t('resultsCountOfTotal', { count: rows.length, total })
+          : t('resultsCount', { count: rows.length })}
+      </div>
       {enableSelection && selectedCount > 0 && (
         <div
           className="sr-only"

@@ -46,10 +46,17 @@ import { retentionFor } from '../ports/audit-port';
 // result.value` narrowing only needs the use-case function imports.
 import { confirmPayment } from './confirm-payment';
 import { failPayment } from './fail-payment';
+import { F5_SETTINGS_MISSING_DETAIL } from './_shared';
 import { handleCancelEvent } from './handle-cancel-event';
 import { processChargeRefunded } from './process-charge-refunded';
 import { processRefundUpdated } from './process-refund-updated';
-import type { TaxAtPaymentFlag } from '@/modules/invoicing';
+// money-remediation Task 5 — `RecordPaymentError` types the F4 half of the
+// permanence table. TYPE-ONLY, deliberately: a value import from the F4
+// barrel would be the first runtime payments -> invoicing coupling and would
+// drag F4's composition root (and its Blob adapter) into the webhook bundle.
+// That is also why the predicate lives here rather than being exported from
+// the invoicing barrel.
+import type { RecordPaymentError, TaxAtPaymentFlag } from '@/modules/invoicing';
 import { paymentsMetrics } from '@/lib/metrics';
 import { asSatang } from '@/lib/money';
 import { paymentsTracer } from '@/lib/otel-tracer';
@@ -126,31 +133,115 @@ export type ProcessWebhookEventOutcome =
  *   - `unknown_event_type_threw` → default-branch withTx threw while
  *                                acknowledging an unrecognised event type
  */
+export type DispatchPermanence = 'transient' | 'permanent';
+
 /**
- * F5R1-IMP2 — set of sub-use-case error codes that the dispatcher
- * classifies as `permanent`. Driven by code (not kind) because each
- * sub-use-case Result.err encodes the recoverable/non-recoverable
- * distinction in its code:
- *   - `tenant_settings_missing` — admin must configure F5 in settings
- *   - `bridge_error` — F4 invoice in unexpected state (admin fix)
- *   - `invoice_not_found` — invoice deleted while payment was in flight
- *   - `invoice_shape_invalid` — F4 schema drift (post-deploy fix)
- *   - `invariant_*` — code bug that won't self-heal
- *   - `payment_method_unsupported` — caller passed a method we don't accept
- * Stripe will stop retrying on these (200 from webhook).
+ * money-remediation Task 5 — permanence of each F4 `RecordPaymentError`
+ * code, as it arrives on the webhook rail.
  *
- * Everything else (e.g. `processor_unavailable` for Stripe outage, db
- * transient, generic dispatch_threw) stays `transient` — 500 from
- * webhook → Stripe retries → eventual recovery when the outage clears.
+ * ## How an F4 code gets here
+ *
+ * `confirm-payment.ts` sets `detail: bridgeResult.error.code` on its
+ * `bridge_error`. That `code` is produced by `summariseF4Error`
+ * (`invoicing-bridge.ts`), which reads F4's `error.code`. So the KEY IS THE
+ * F4 CODE, not the F4 detail — `summariseF4Error` produces a meaningful
+ * `.detail` for `pdf_render_failed` / `blob_upload_failed` only; every other
+ * variant falls through to `unknown_f4_error_shape (code=…)` and bumps
+ * `paymentsMetrics.f4BridgeUnknownErrorShape`. That counter is therefore
+ * NOISY BY CONSTRUCTION and must not be alerted on as an anomaly signal.
+ *
+ * ## Exhaustive on purpose
+ *
+ * Typing this as a total `Record` over `RecordPaymentError['code']` means a
+ * new F4 error code is a BUILD failure here, not a silent default. That is
+ * the property the deleted `PERMANENT_SUB_USE_CASE_DETAILS` set lacked, and
+ * why it drifted to naming two codes (`invoice_shape_invalid`,
+ * `payment_method_unsupported`) that exist nowhere in `src/`.
+ *
+ * ## Two entries carry history — read before editing
+ *
+ *   - `settings_missing` (and its F5-side sibling `tenant_settings_missing`,
+ *     handled in the predicate below) is permanent by a DOCUMENTED PRIOR FIX,
+ *     F5R2-CRIT-2. Flipping either to transient is a verbatim regression:
+ *     72h of retries against a configuration gap tenants hit during
+ *     onboarding, which cannot self-heal.
+ *   - `invalid_status` is a judgement call, and reversible. It cannot be
+ *     discriminated from the code alone — `summariseF4Error`'s scalar
+ *     whitelist accepts only code/kind/detail/reason and DROPS the `status`
+ *     field that `record-payment.ts` attaches, so a lost optimistic race
+ *     (retryable) is indistinguishable here from a genuinely wrong status
+ *     (not). Called transient on the plan's own stated bias: a transient
+ *     mislabelled permanent recreates finding F-1 (silent stranded money); a
+ *     permanent mislabelled transient is a bounded, noisy, logged retry storm
+ *     capped by the ceiling below. Choose the loud failure over the silent
+ *     one. Widening that whitelist to carry `status` is what would let us do
+ *     better.
+ *
+ * `membership_terminated` and `payment_date_out_of_range` are classified but
+ * UNREACHABLE on this rail: both sit behind `isAdminDialogRail`
+ * (`record-payment.ts`), and `markPaidFromProcessor` hardcodes
+ * `triggeredBy: 'webhook'`. They are here because the Record is total.
  */
-export const PERMANENT_SUB_USE_CASE_DETAILS: ReadonlySet<string> = new Set([
-  'tenant_settings_missing',
-  'bridge_error',
-  'invoice_not_found',
-  'invoice_shape_invalid',
-  'payment_method_unsupported',
-  'invariant_auto_refunded_missing_invoice_id',
-]);
+const F4_RECORD_PAYMENT_PERMANENCE: Readonly<
+  Record<RecordPaymentError['code'], DispatchPermanence>
+> = {
+  // ── Permanent: needs an operator, an admin edit, or a deploy ──────────
+  settings_missing: 'permanent',
+  invoice_not_found: 'permanent',
+  no_snapshot_on_invoice: 'permanent',
+  legacy_no_tin_event_needs_remediation: 'permanent',
+  legacy_invoice_needs_reissue: 'permanent',
+  // A CONFIG gap, classified with `settings_missing`: it clears only when an
+  // operator flips `FEATURE_088_TAX_AT_PAYMENT` on, which no Stripe retry can
+  // do. Trade-off (task-5 review L-2): if the flag is toggled OFF→ON within
+  // minutes, in-flight PIs captured while OFF get 200-acked here and are not
+  // retried, so an operator reconciles them from the forensic row — accepted,
+  // because treating it transient would instead 72h-retry every capture during
+  // a deliberate flag-OFF window.
+  new_flow_bill_requires_flag_on: 'permanent',
+  overflow: 'permanent',
+  membership_terminated: 'permanent',
+  payment_date_out_of_range: 'permanent',
+  // ── Transient: recovers on its own, well inside Stripe's 72h window ───
+  pdf_render_failed: 'transient',
+  blob_upload_failed: 'transient',
+  concurrent_state_change: 'transient',
+  invalid_status: 'transient',
+};
+
+/**
+ * money-remediation Task 5 / finding F-1 item 3 — the transient-retry
+ * budget, after which a transient is 200-acked with a forensic audit row
+ * instead of retried forever.
+ *
+ * ## Why a ceiling is mandatory here, not a nice-to-have
+ *
+ * Deriving permanence from the sub-code means transient F4 declines now
+ * return 500 where they previously returned 200. That raises the error rate
+ * on the Stripe webhook endpoint — and **Stripe disables endpoints that fail
+ * persistently**. Without a ceiling, a systemic F4 or Blob outage becomes
+ * "webhook endpoint disabled", which is strictly worse than the outage it
+ * came from: recovery then requires a human in the Stripe Dashboard.
+ *
+ * The usual mitigation ("ship it behind an alert") is unsatisfiable in this
+ * repository — there is no alerting backend (no Prometheus, Grafana or
+ * PagerDuty; no configured OTel reader). `paymentsMetrics.webhookDispatchFailed`
+ * increments into a collector nobody reads. So the bound has to be in the
+ * code path.
+ *
+ * 48h mirrors `STALE_REFUND_GIVE_UP_SECONDS` in `confirm-payment.ts`: same
+ * reasoning, same number, and it leaves ~24h of Stripe's 72h window unused
+ * as headroom. Measured against `event.createdAtUnixSeconds` (Stripe's own
+ * creation time, stable across redeliveries) rather than a local attempt
+ * counter, which we do not persist.
+ *
+ * Scoped to `sub_use_case_error` — the branch whose error rate this change
+ * actually raises. The `dispatch_threw` branches were transient before this
+ * commit and stay transient; extending the ceiling to them is a defensible
+ * follow-up but is not this commit's blast radius, and this commit is the
+ * one most likely to need a fast revert.
+ */
+export const TRANSIENT_RETRY_CEILING_SECONDS = 48 * 60 * 60;
 
 export type ProcessWebhookEventError = {
   readonly code: 'dispatch_failed';
@@ -160,6 +251,31 @@ export type ProcessWebhookEventError = {
     | 'unknown_event_type_threw';
   readonly eventType: string;
   readonly detail: string;
+  /**
+   * money-remediation Task 5 — the F4 sub-code behind a `bridge_error`,
+   * or `null` on branches that have none (`dispatch_threw`,
+   * `unknown_event_type_threw`, and the non-`bridge_error` codes).
+   *
+   * Deliberately a NEW field rather than an overload of `detail`: `detail`
+   * is read by the route for its pino line AND — load-bearing — lands in
+   * `webhook_dispatch_permanent_failure`'s audit payload, where
+   * `audit-port.ts` types `dispatch_failure_detail` as a required `string`.
+   * Overloading it would silently change the meaning of rows already
+   * written under the old semantics.
+   */
+  readonly subDetail: string | null;
+  /**
+   * money-remediation Task 5 — `true` when `permanence` is `'permanent'`
+   * ONLY because the event outlived `TRANSIENT_RETRY_CEILING_SECONDS`.
+   *
+   * Kept separate from `permanence` so the forensic audit row can say
+   * "transient class, retry budget exhausted" instead of asserting that F4
+   * is permanently broken. At 3am those are different pages: one means
+   * "F4/Blob was down for two days", the other means "an operator must fix
+   * a row". Always `false` when the pair classified permanent on its own
+   * merits — the ceiling escalates, it never downgrades.
+   */
+  readonly retryCeilingExceeded: boolean;
   /**
    * F5R1-IMP2 — retry semantics discriminator.
    *
@@ -185,12 +301,62 @@ export type ProcessWebhookEventError = {
 };
 
 /**
- * F5R1-IMP2 — classify a sub-use-case error code as permanent or
- * transient for retry semantics. See `PERMANENT_SUB_USE_CASE_DETAILS`
- * above for the permanent list.
+ * money-remediation Task 5 — classify a sub-use-case failure from the
+ * `(code, subDetail)` PAIR. Exported for the table-driven unit test in
+ * `tests/unit/payments/application/webhook-permanence.test.ts`.
+ *
+ * Replaces `categorisePermanence(detail)`, which keyed on `code` alone.
+ * Across both live sub-use-case error unions that value is only ever
+ * `bridge_error`, `processor_unavailable`, or
+ * `invariant_auto_refunded_missing_invoice_id` — and `bridge_error` was in
+ * the permanent set, so EVERY F4 decline was 200-acked and never retried,
+ * transient or not. The discriminating F4 code sat one level down in
+ * `.detail` and was discarded by `subUseCaseErr`. Plumbing it through is
+ * the substance of Task 5.
+ *
+ * (`illegal_transition` is declared on `FailPaymentError` and is the sole
+ * member of `HandleCancelEventError`, but is DEAD on both: the arms that
+ * would produce it ack via `ok({kind:'already_terminal'})` /
+ * `already_canceled` to break Stripe's retry loop. It never reaches here,
+ * so it is not enumerated.)
+ *
+ * Unrecognised input — an unknown code, an unknown sub-detail, or a
+ * `bridge_error` whose sub-detail we could not resolve — defaults to
+ * `transient`. That is the deliberate bias: a transient mislabelled
+ * permanent silently strands captured money (finding F-1); a permanent
+ * mislabelled transient is a bounded, logged retry storm that the ceiling
+ * caps. Prefer the loud failure.
  */
-function categorisePermanence(detail: string): 'transient' | 'permanent' {
-  return PERMANENT_SUB_USE_CASE_DETAILS.has(detail) ? 'permanent' : 'transient';
+export function classifyDispatchPermanence(
+  code: string,
+  subDetail: string | null,
+): DispatchPermanence {
+  switch (code) {
+    case 'processor_unavailable':
+      // Stripe API outage — recovers inside the retry window.
+      return 'transient';
+    case 'invariant_auto_refunded_missing_invoice_id':
+      // A confirmPayment contract violation; a code bug will not self-heal.
+      return 'permanent';
+    case 'bridge_error': {
+      if (subDetail === null) return 'transient';
+      // F5's OWN pre-bridge refusal (confirm-payment + fail-payment settings
+      // guards) — not an F4 code, so it is not in the Record above.
+      // Permanent by F5R2-CRIT-2; see that Record's docstring. The detail
+      // string is the shared `F5_SETTINGS_MISSING_DETAIL` const so this
+      // consumer and its two producers rename in lockstep (a drift here silently
+      // reclassifies an unconfigured-tenant capture as transient → 48h retries).
+      if (subDetail === F5_SETTINGS_MISSING_DETAIL) return 'permanent';
+      return (
+        F4_RECORD_PAYMENT_PERMANENCE[subDetail as RecordPaymentError['code']] ??
+        // `f4_error` (summariseF4Error's code fallback) and anything else we
+        // cannot read land here.
+        'transient'
+      );
+    }
+    default:
+      return 'transient';
+  }
 }
 
 /**
@@ -201,23 +367,39 @@ function categorisePermanence(detail: string): 'transient' | 'permanent' {
  * `payment_intent.canceled` handleCancelEvent branch) had identical
  * 5-line err({...}) blocks differing only in the `detail` value.
  * Centralising:
- *   - Removes the "forget categorisePermanence" bug class on a
+ *   - Removes the "forget to classify permanence" bug class on a
  *     future 4th sub-use-case branch.
  *   - Single anchor point for `'sub_use_case_error'` literal —
  *     dispatcher-error grep is more discoverable.
- *   - `permanence` is derived from `detail` in one place; cannot
- *     drift across call sites.
+ *   - `permanence` is derived in one place; cannot drift across call sites.
+ *
+ * money-remediation Task 5 — takes the ERROR OBJECT, not just its code. The
+ * pre-Task-5 signature was `(eventType, detail: string)` and the three
+ * sub-use-case call sites passed `result.error.code`, so the F4 sub-code in
+ * `.detail` was structurally unable to reach the classifier. `eventAgeSeconds`
+ * arrives from the caller (one clock read per dispatch) so this stays a pure
+ * function of its arguments.
  */
 function subUseCaseErr(
   eventType: string,
-  detail: string,
+  error: { readonly code: string; readonly detail?: string },
+  eventAgeSeconds: number,
 ): ProcessWebhookEventError {
+  const subDetail = error.detail ?? null;
+  const classified = classifyDispatchPermanence(error.code, subDetail);
+  // The ceiling only ever escalates transient -> permanent. A pair that
+  // classified permanent on its own merits keeps `retryCeilingExceeded:
+  // false` so the forensic row does not misattribute it to a give-up.
+  const retryCeilingExceeded =
+    classified === 'transient' && eventAgeSeconds > TRANSIENT_RETRY_CEILING_SECONDS;
   return {
     code: 'dispatch_failed',
     kind: 'sub_use_case_error',
     eventType,
-    detail,
-    permanence: categorisePermanence(detail),
+    detail: error.code,
+    subDetail,
+    retryCeilingExceeded,
+    permanence: retryCeilingExceeded ? 'permanent' : classified,
   };
 }
 
@@ -239,6 +421,14 @@ export interface ProcessWebhookEventDeps {
    */
   readonly taxAtPayment: TaxAtPaymentFlag;
   /**
+   * money-remediation Task 4 / finding F-1 — `FEATURE_F5_SETTLEMENT_ABORT`.
+   * Pure passthrough into the inner `confirmPayment` deps for the
+   * `payment_intent.succeeded` branch; the dispatcher itself does not read it.
+   * See `ConfirmPaymentDeps.settlementAbort` for the semantics. Wired from
+   * `env.features.f5SettlementAbort` at `makeProcessWebhookEventDeps`.
+   */
+  readonly settlementAbort: boolean;
+  /**
    * Optional structured logger. Currently the dispatcher emits via the
    * module-level `paymentsLogger` (see `route.ts`) and OTel spans; this
    * deps slot is reserved for future structured callsites inside the
@@ -259,6 +449,17 @@ export interface ProcessWebhookEventDeps {
       evt: import('@/modules/invoicing').F4InvoicePaidEvent,
       tx?: unknown,
     ) => Promise<void>
+  >;
+  /**
+   * F8 cross-module POST-COMMIT hooks. Forwarded into the inner
+   * `confirmPayment` deps for the `payment_intent.succeeded` branch so the
+   * F2 scheduled-plan-change finaliser runs AFTER the settlement tx commits
+   * (it cannot run in-tx — self-deadlocks against the member-row lock).
+   * Composition root injects via `f8AfterCommitCallbacks(tenantId)` when
+   * `FEATURE_F8_RENEWALS=true`.
+   */
+  readonly onAfterCommitCallbacks?: ReadonlyArray<
+    (invoiceId: string) => Promise<void>
   >;
 }
 
@@ -360,6 +561,15 @@ async function processWebhookEventBody(
   // tenant-resolved dispatcher. Powers dashboard top-row.
   paymentsMetrics.webhookReceiveCount(tenantId, event.type);
 
+  // money-remediation Task 5 — age of the Stripe event, for the
+  // transient-retry ceiling. Read once here (rather than per err-site) so
+  // every branch of one dispatch classifies against the same instant, and
+  // `subUseCaseErr` stays a pure function. Stripe's `created` is stable
+  // across redeliveries, so this genuinely measures how long we have been
+  // failing, not how long this attempt took.
+  const eventAgeSeconds =
+    Math.floor(deps.clock.nowMs() / 1000) - event.createdAtUnixSeconds;
+
   // Step 6 — idempotency insert. Runs on its own tx so a duplicate is
   // observed before we open the dispatch tx (avoids a useless row lock
   // on retry).
@@ -451,6 +661,7 @@ async function processWebhookEventBody(
           // 088 SEC-MED — forward the honest flow flag into the webhook
           // confirm read (which sets reconciliationPath: true → guard dormant).
           taxAtPayment: deps.taxAtPayment,
+          settlementAbort: deps.settlementAbort,
           // Audit 2026-04-25 #4: pass processorEventsRepo so the
           // sub-use-case can fold markProcessed into its own withTx.
           processorEventsRepo: deps.processorEventsRepo,
@@ -461,6 +672,13 @@ async function processWebhookEventBody(
            * unit-test paths exercise the absent-callbacks branch. */
           ...(deps.onPaidCallbacks !== undefined
             ? { onPaidCallbacks: deps.onPaidCallbacks }
+            : {}),
+          // F8 POST-COMMIT hooks (F2 finaliser) — fired after confirmPayment's
+          // settlement tx commits. `undefined` when FEATURE_F8_RENEWALS=false.
+          /* v8 ignore next 3 — F8 after-commit conditional spread; F4-only
+           * unit-test paths exercise the absent-callbacks branch. */
+          ...(deps.onAfterCommitCallbacks !== undefined
+            ? { onAfterCommitCallbacks: deps.onAfterCommitCallbacks }
             : {}),
         },
         {
@@ -473,7 +691,7 @@ async function processWebhookEventBody(
         },
       );
       if (!result.ok) {
-        return err(subUseCaseErr(event.type, result.error.code));
+        return err(subUseCaseErr(event.type, result.error, eventAgeSeconds));
       }
       // R5 canonical fix (2026-04-25): forward `invoiceId` from the
       // sub-use-case outcome up to the route handler so it can fire a
@@ -496,12 +714,16 @@ async function processWebhookEventBody(
          * on auto_refunded_stale_invoice; defence-in-depth for post-
          * compile contract drift. */
         if (confirmInvoiceId === undefined) {
-          // F5R2-S7 — `invariant_auto_refunded_missing_invoice_id` is in
-          // PERMANENT_SUB_USE_CASE_DETAILS so `subUseCaseErr` derives
-          // permanence='permanent' automatically (same value as the
-          // pre-fix literal).
+          // F5R2-S7 — `classifyDispatchPermanence` maps this code to
+          // 'permanent' so `subUseCaseErr` derives it automatically (same
+          // value as the pre-fix literal). No sub-detail: this is the
+          // dispatcher's own invariant, not an F4 decline.
           return err(
-            subUseCaseErr(event.type, 'invariant_auto_refunded_missing_invoice_id'),
+            subUseCaseErr(
+              event.type,
+              { code: 'invariant_auto_refunded_missing_invoice_id' },
+              eventAgeSeconds,
+            ),
           );
         }
         /* v8 ignore stop */
@@ -559,7 +781,7 @@ async function processWebhookEventBody(
         },
       );
       if (!result.ok) {
-        return err(subUseCaseErr(event.type, result.error.code));
+        return err(subUseCaseErr(event.type, result.error, eventAgeSeconds));
       }
       // R5 canonical fix (2026-04-25): forward `invoiceId` for
       // surgical revalidation in the route handler.
@@ -590,7 +812,7 @@ async function processWebhookEventBody(
       );
       /* v8 ignore start -- R4 I-3 (2026-04-26): handleCancelEvent now ack's every error case as ok({kind:'already_canceled'}) to break Stripe's 24h retry loop on permanent mismatches. The err arm here is dead code preserved structurally so the dispatcher matches the other branches' shape; if a future handleCancelEvent revision reintroduces err returns, this guard prevents a silent fall-through to ok(outcome) with `outcome` undefined. */
       if (!result.ok) {
-        return err(subUseCaseErr(event.type, result.error.code));
+        return err(subUseCaseErr(event.type, result.error, eventAgeSeconds));
       }
       /* v8 ignore stop */
       // R5 canonical fix (2026-04-25): forward `invoiceId`.
@@ -635,6 +857,16 @@ async function processWebhookEventBody(
           ...(dataObject.amountProjectionFailed
             ? { amountProjectionFailed: true }
             : {}),
+          // F-9 (Task 9) — app-initiated refund markers + the PaymentIntent
+          // they are cross-checked against. Without BOTH, the fallback cannot
+          // recognise an app refund whose `processor_refund_id` has not been
+          // attached yet, and a false 10-year OOB forensic fires.
+          ...(dataObject.appRefundIds !== undefined
+            ? { appRefundIds: dataObject.appRefundIds }
+            : {}),
+          ...(dataObject.paymentIntentId !== undefined
+            ? { paymentIntentId: dataObject.paymentIntentId }
+            : {}),
           /* v8 ignore start — env-tag ternary; unit-test fixtures pin
            * one livemode value at a time. Cross-livemode coverage
            * lives in the contract tests for /api/webhooks/stripe. */
@@ -652,15 +884,18 @@ async function processWebhookEventBody(
           // pino + audit downstream where leak risk is real.
           detail: formatDispatchErrorDetail(refundResult.error.cause),
           // F5R2 — `formatDispatchErrorDetail` returns the error class
-          // name (e.g. `PostgresError`, `TypeError`), NOT a sub-use-
-          // case code. `categorisePermanence` operates on
-          // PERMANENT_SUB_USE_CASE_DETAILS code strings, so passing
-          // a class name through it would always return 'transient'
-          // anyway. Hardcoded transient is correct for the
-          // dispatch_threw branch — a thrown-error class doesn't carry
-          // the permanent/transient semantics; rely on the route's
-          // retry budget + observability counters to surface chronic
-          // permanent throws (e.g. StripeAuthenticationError storms).
+          // name (e.g. `PostgresError`, `TypeError`), NOT a sub-use-case
+          // code, so routing it through `classifyDispatchPermanence` would
+          // hit the default arm and return 'transient' anyway. Hardcoded
+          // transient is correct for the dispatch_threw branch — a
+          // thrown-error class doesn't carry permanent/transient semantics;
+          // rely on the route's retry budget + observability counters to
+          // surface chronic permanent throws (e.g. StripeAuthenticationError
+          // storms).
+          // Task 5 — a thrown dispatch has no F4 sub-code (`detail` is an
+          // Error class name). Ceiling is scoped to `sub_use_case_error`.
+          subDetail: null,
+          retryCeilingExceeded: false,
           permanence: 'transient',
         });
       }
@@ -725,6 +960,15 @@ async function processWebhookEventBody(
           // sentinel instead of a known-wrong 0 when the verifier could not
           // parse the Refund amount (mirrors the dispute branch). Defaults false.
           amountProjectionFailed: dataObject.amountProjectionFailed ?? false,
+          // F-9 (Task 9) — the Refund object carries its OWN marker, which the
+          // verifier keys by the Refund's own id, plus the PaymentIntent for
+          // the anti-forgery cross-check.
+          ...(dataObject.appRefundIds?.[dataObject.id] !== undefined
+            ? { appRefundId: dataObject.appRefundIds[dataObject.id] as string }
+            : {}),
+          ...(dataObject.paymentIntentId !== undefined
+            ? { paymentIntentId: dataObject.paymentIntentId }
+            : {}),
           /* v8 ignore start — env-tag ternary; unit-test fixtures pin one
            * livemode value at a time. Cross-livemode coverage lives in the
            * contract tests for /api/webhooks/stripe. */
@@ -742,6 +986,10 @@ async function processWebhookEventBody(
           detail: formatDispatchErrorDetail(refundUpdatedResult.error.cause),
           // A thrown-error class doesn't carry permanent/transient semantics;
           // transient lets Stripe retry (the A.14 sweep is the backstop).
+          // Task 5 — a thrown dispatch has no F4 sub-code (`detail` is an
+          // Error class name). Ceiling is scoped to `sub_use_case_error`.
+          subDetail: null,
+          retryCeilingExceeded: false,
           permanence: 'transient',
         });
       }
@@ -810,6 +1058,10 @@ async function processWebhookEventBody(
           // a Neon transient or OTel back-pressure. The route layer
           // can override after inspecting `detail` if a permanent
           // pattern emerges.
+          // Task 5 — a thrown dispatch has no F4 sub-code (`detail` is an
+          // Error class name). Ceiling is scoped to `sub_use_case_error`.
+          subDetail: null,
+          retryCeilingExceeded: false,
           permanence: 'transient',
         });
       }
@@ -842,6 +1094,10 @@ async function processWebhookEventBody(
           // transient on the markProcessed tx (we don't dispatch any
           // business logic for unknown event types). Stripe should
           // retry; the next attempt will succeed cleanly.
+          // Task 5 — a thrown dispatch has no F4 sub-code (`detail` is an
+          // Error class name). Ceiling is scoped to `sub_use_case_error`.
+          subDetail: null,
+          retryCeilingExceeded: false,
           permanence: 'transient',
         });
       }

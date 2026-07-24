@@ -1,9 +1,13 @@
 /**
- * F8 Phase 6 round-3 I1 fix — locale-aware plan-name resolver.
+ * Locale-aware plan-name resolver (promoted from the portal renewal
+ * route `_lib/` so admin + portal surfaces share ONE resolver).
  *
- * Extracted from `page.tsx` (Phase 5 Wave C T125) so the locale
- * fallback chain is unit-testable in isolation. Mirrors the
- * cycle-detail `_lib/cycle-detail-fetchers.ts` pattern.
+ * Originally extracted from the portal renewal `page.tsx` (F8 Phase 6
+ * round-3 I1) so the locale fallback chain is unit-testable in isolation.
+ * Promoted to `src/lib/` (plan-change UX remediation, P1-8) because the
+ * admin invoice-create + member-form surfaces were hardcoding
+ * `plan_name.en` — losing TH/SV for the exact same JSONB shape. One
+ * resolver, one fallback chain, three surfaces.
  *
  * Behaviour:
  *   - locale='th' + th present + non-empty → return th

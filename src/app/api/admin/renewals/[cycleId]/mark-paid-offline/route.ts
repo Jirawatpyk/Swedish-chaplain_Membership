@@ -182,6 +182,32 @@ export async function POST(
             code: 'member_terminated',
             correlationId: ctx.correlationId,
           });
+        case 'membership_bill_already_exists':
+          // Duplicate-membership-bill guard — a live §86/4 for this plan year
+          // already exists, so nothing was minted. 409 (conflict), mirroring
+          // `f4_orphan_invoice`'s "act on the existing invoice" shape: the
+          // invoice id IS safe to echo (it is the operator's own tenant's
+          // document, and the UI deep-links it so they can record the payment
+          // there — that path runs the same F8 on-paid callbacks).
+          logger.warn(
+            {
+              correlationId: ctx.correlationId,
+              cycleId,
+              tenantId: tenantCtx.slug,
+              existingInvoiceId: result.error.existingInvoiceId,
+              existingStatus: result.error.existingStatus,
+            },
+            'mark-paid-offline: refused — live membership bill already exists for this plan year (no duplicate minted)',
+          );
+          return errorResponse({
+            status: 409,
+            code: 'membership_bill_already_exists',
+            correlationId: ctx.correlationId,
+            details: {
+              existing_invoice_id: result.error.existingInvoiceId,
+              existing_status: result.error.existingStatus,
+            },
+          });
         case 'f4_permanent_failure': {
           // Cluster 5 (Finding 2) — a PERMANENT F4 reject (retry never helps).
           // Unlike `f4_failure` (whose free-text reason is scrubbed), `reason`

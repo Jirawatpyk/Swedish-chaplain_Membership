@@ -157,6 +157,11 @@ touch-points.
 
 ## Q-2 (QA follow-up, answered 2026-07-08) — "Should the period count from the latest payment date?"
 
+> **✅ IMPLEMENTED 2026-07-22 (PR #246).** This answer is now the shipped model —
+> fixed-anchor: payment *activates* the cycle but never *defines* the period. It
+> reverses the interim payment-anchor code of #173/#205. See
+> **`docs/Bug/2026-07-22-fixed-anchor-shipped-and-residuals.md`**.
+
 **No.** Payment date should *trigger* the status change (cycle → completed) but never
 *define* the membership period. Counting from payment date would:
 

@@ -365,6 +365,32 @@ const schema = z.object({
   // `allCascadesClean`, or `member_erased` would be withheld forever and the
   // US2d reconciler would re-drive in a loop.
   FEATURE_ERASURE_DISCARD_DRAFTS: booleanFromString.default(false),
+  // plan-change immediate re-freeze (Phase 2) — when a manual admin
+  // change-plan flips `members.plan_id`, ALSO re-freeze the member's OPEN
+  // (not-yet-invoiced) renewal cycle to the new plan/price IMMEDIATELY, so the
+  // change takes effect THIS cycle rather than only the next one (Phase-1
+  // behaviour). An OPEN cycle whose §86/4 has already been issued keeps
+  // deferring — an issued tax invoice is never rewritten (tax-safe). Default
+  // false — ships dark; a plan change deferring to the next cycle is the
+  // pre-existing (Phase-1) behaviour, not a regression.
+  FEATURE_PLAN_CHANGE_IMMEDIATE_REFREEZE: booleanFromString.default(false),
+
+  // money-remediation Task 4 (finding F-1) — settlement-abort on a bridge
+  // decline. When TRUE, a refusal from the F4 invoicing bridge inside
+  // `confirmPayment`'s Phase-A transaction ROLLS BACK that transaction
+  // instead of committing it.
+  //
+  // Why a flag on a bug fix: `paymentsRepo.withTx` commits whenever the
+  // callback returns, so today a bridge decline commits every write the
+  // refusal was refusing — the payment row flipped `succeeded`, F4's
+  // `members.registration_fee_paid` flip, and (post-`allocateNext`
+  // failures) a consumed §87 receipt sequence number against no document.
+  // Rolling back is correct, but it changes commit semantics on the
+  // settlement path for every card and PromptPay payment in production,
+  // so the prod cut-over is a Vercel env flip rather than a redeploy.
+  //
+  // Default FALSE = pre-remediation behaviour, byte-for-byte.
+  FEATURE_F5_SETTLEMENT_ABORT: booleanFromString.default(false),
 
   // --- F7 Email Broadcast (Resend Broadcasts API) ---------------------------
   // Resend Broadcasts API key — separate Resend product surface from the
@@ -1027,6 +1053,12 @@ export const env = {
     // Independent of `autoInvoice`: the cascade hangs off production-live
     // `eraseMember`, not off the auto-invoice queue. See the schema docstring.
     erasureDiscardDrafts: raw.FEATURE_ERASURE_DISCARD_DRAFTS,
+    // plan-change immediate re-freeze (Phase 2) — re-freeze the OPEN
+    // not-yet-invoiced cycle to the new plan/price on a manual change-plan.
+    planChangeImmediateRefreeze: raw.FEATURE_PLAN_CHANGE_IMMEDIATE_REFREEZE,
+    // money-remediation Task 4 (F-1) — roll back the settlement tx when the
+    // F4 bridge declines, instead of committing the refused writes.
+    f5SettlementAbort: raw.FEATURE_F5_SETTLEMENT_ABORT,
   },
 
   // F4 Invoicing

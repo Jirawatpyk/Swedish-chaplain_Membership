@@ -61,7 +61,10 @@ import {
   isMarkPaidIncomplete,
   REASON_MAX,
 } from './cycle-admin-validation';
-import { resolveOrphanInvoiceHref } from './cycle-admin-error-codes';
+import {
+  resolveExistingBillHref,
+  resolveOrphanInvoiceHref,
+} from './cycle-admin-error-codes';
 
 /** Statuses where the Cancel control is offered (matches the route guard). */
 const CANCELLABLE_STATUSES = new Set<CycleStatus>([
@@ -84,26 +87,31 @@ export interface CycleAdminActionsProps {
 }
 
 /**
- * Read `error.code` (+ optional `orphan_invoice_id`) off a non-2xx JSON body.
+ * Read `error.code` (+ optional invoice-id details) off a non-2xx JSON body.
  * The route envelope is `{ error: { code, ...details } }`, so
- * `orphan_invoice_id` lives directly on the `error` object. Falls back to
- * server_error on a malformed body.
+ * `orphan_invoice_id` / `existing_invoice_id` live directly on the `error`
+ * object. Falls back to server_error on a malformed body.
  */
 async function readError(res: Response): Promise<{
   code: string;
   orphan_invoice_id?: string;
+  existing_invoice_id?: string;
 }> {
   try {
     const body = (await res.json()) as {
       error?: {
         code?: string;
         orphan_invoice_id?: string;
+        existing_invoice_id?: string;
       };
     };
     return {
       code: body.error?.code ?? 'server_error',
       ...(body.error?.orphan_invoice_id !== undefined
         ? { orphan_invoice_id: body.error.orphan_invoice_id }
+        : {}),
+      ...(body.error?.existing_invoice_id !== undefined
+        ? { existing_invoice_id: body.error.existing_invoice_id }
         : {}),
     };
   } catch {
@@ -229,13 +237,16 @@ export function CycleAdminActions({ cycleId, status }: CycleAdminActionsProps) {
         },
         'markPaidOffline',
         (data) => {
-          // Task 7 (rolling-anchor refactor) — the member's one-and-only
-          // cycle was re-anchored (not completed) to the actual payment
-          // month. Distinct copy so the admin understands the cycle
-          // stayed `upcoming` instead of completing. The authoritative
-          // new period dates render on the refreshed page below; the
-          // toast's `{date}` is the TRUE period start (first of month)
-          // after re-anchor.
+          // FIXED-ANCHOR (2026-07-22) — the member's one-and-only cycle was
+          // ACTIVATED (not completed): status stays `upcoming` and
+          // `anchored_at` is stamped, but the membership PERIOD keeps its
+          // registration/backfill anchor — it does NOT move to the payment
+          // month (that was the reverted #173 payment-anchor bug). Distinct
+          // copy so the admin understands the cycle stayed `upcoming` instead
+          // of completing. The toast's `{date}` is that fixed period start.
+          // (The rare comeback exception — an already-expired period at
+          // payment — re-anchors to a fresh period, and `{date}` then renders
+          // the new start.)
           const dataObj = data as
             | {
                 outcome?: string;
@@ -289,6 +300,27 @@ export function CycleAdminActions({ cycleId, status }: CycleAdminActionsProps) {
               },
               duration: 30_000,
             });
+            return true;
+          }
+          const existingBillHref = resolveExistingBillHref(err);
+          if (existingBillHref) {
+            // A live membership bill for this plan year already exists and
+            // NOTHING was minted. Point the operator at that invoice — the F4
+            // record-payment dialog there runs the same on-paid callbacks, so
+            // it completes this cycle and opens the next one. Then close +
+            // refresh so the stale action is not re-clicked.
+            toast.error(t('markPaidOffline.error.membership_bill_already_exists'), {
+              action: {
+                label: t('markPaidOffline.viewExistingInvoice'),
+                onClick: () => {
+                  router.push(existingBillHref);
+                },
+              },
+              duration: 30_000,
+            });
+            setMarkPaidOpen(false);
+            resetMarkPaidFields();
+            router.refresh();
             return true;
           }
           if (err.code === 'cycle_not_payable') {

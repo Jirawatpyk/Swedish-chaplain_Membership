@@ -18,14 +18,26 @@
  * are exercised by Phase 4+ user-stories (cron dispatcher, member portal).
  */
 import { and, asc, eq, ne, sql, inArray, desc, or, isNull, isNotNull, type SQL } from 'drizzle-orm';
+import { alias, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import { db, runInTenant } from '@/lib/db';
 import { env } from '@/lib/env';
+import { logger } from '@/lib/logger';
 import { parseThbDecimal, type ThbDecimal } from '@/lib/money';
 import type { TenantContext } from '@/modules/tenants';
 import { renewalCycles, type RenewalCycleRow } from '../schema-renewal-cycles';
 import { renewalReminderEvents } from '../schema-renewal-reminder-events';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
+// Deep import of the F4 invoices SCHEMA (not the invoicing barrel) — the
+// pipeline "Covered" projection must know the ANCHOR invoice's effective-paid
+// state (see `loadPipelinePage`). Schema-renewal-cycles.ts already deep-imports
+// this same table for its composite FK, so this stays inside the existing
+// dependency graph and avoids the barrel load-cycle that breaks tsx scripts.
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
+// M1 (plan-change-ux, Option 1b) — deep import of the F4 credit_notes SCHEMA
+// (not the invoicing barrel) so the effective-paid predicate + L1 pipeline can
+// consult `retains_coverage` via a correlated EXISTS. Same deep-import discipline
+// as `invoices` above — avoids the barrel load-cycle that breaks tsx scripts.
+import { creditNotes } from '@/modules/invoicing/infrastructure/db/schema-credit-notes';
 import {
   CycleNotFoundError,
   CycleTransitionConflictError,
@@ -67,6 +79,129 @@ import {
   bkkMonthStartInstant,
 } from '../../domain/renewal-month-bucket';
 import type { RenewalMonthAggregation } from '../../domain/renewal-month-bucket';
+
+// ---------------------------------------------------------------------------
+// Effective-paid coverage predicate (plan-change-ux task #24, MONEY)
+// ---------------------------------------------------------------------------
+
+/**
+ * The EFFECTIVE-PAID coverage predicate shared by
+ * `findMaxPaidThroughForMemberInTx` (the restore/comeback billing FRONTIER)
+ * and `countSettledCyclesForMemberInTx` (the first_payment-vs-renewal
+ * classifier). A cycle counts as PAID coverage only when its SETTLING invoice
+ * is not fully reversed:
+ *
+ *   ( status = 'completed'    AND linked_inv NOT void/credited )   -- steady-state
+ *   OR
+ *   ( anchored_at IS NOT NULL AND anchor_inv NOT void/credited )   -- open-anchored
+ *
+ * TWO ARMS, because a cycle's settling invoice lives in DIFFERENT columns
+ * across its lifecycle: an OPEN anchored cycle references `anchor_invoice_id`;
+ * a COMPLETED steady-state cycle's settling invoice is stamped on
+ * `linked_invoice_id` (and its `anchored_at` may be NULL). BOTH LEFT JOINs are
+ * therefore required — the linked join is NOT optional, since steady-state
+ * next-cycle rows (`anchored_at = NULL`) are counted ONLY via the
+ * completed+linked arm. Each call site adds both joins with an EXPLICIT
+ * `tenant_id` equality (application-layer defence-in-depth atop the isolating
+ * RLS on `invoices`, Principle I two-layer). Each join is a PK seek on
+ * `invoices(tenant_id, invoice_id)` → ≤1 row, so it never multiplies the
+ * aggregate.
+ *
+ * `IS DISTINCT FROM` makes a NULL invoice status PASS — a LEFT JOIN miss
+ * (R4 backfill: settling invoice id NULL, no in-system invoice; or a — never
+ * happens for tax docs — hard-deleted invoice). HARD GUARDRAIL: never retract a
+ * cycle whose settling invoice id is NULL. A full refund / void / full credit
+ * note lands the settling invoice on 'void'/'credited' → RETRACTED; a PARTIAL
+ * credit ('partially_credited') still PASSES → covered; 'paid' passes. The rule
+ * is reason-agnostic and invoice-status-only (NO `closed_reason`, NO
+ * `refunds`/`payments` join).
+ *
+ * *** M1 (plan-change-ux, Option 1b) — COVERAGE-RETAINED ESCAPE ***
+ * A 'credited' settling invoice normally RETRACTS the period, but NOT when the
+ * completing credit note was an F4-manual FULL membership 'keep' — a paperwork
+ * correction where the member was NOT refunded, so coverage is RETAINED. That
+ * intent is persisted on `credit_notes.retains_coverage`; the `credited` arm of
+ * BOTH clauses below carries a correlated `EXISTS` escape (NOT a JOIN — the call
+ * sites are MAX/COUNT aggregates and a credit_notes JOIN is 1..N per invoice,
+ * which would inflate COUNT; `retains_coverage=TRUE` only ever lands on the ONE
+ * completing full-membership retention note, so EXISTS is ≤1 per invoice and
+ * preserves the ≤1-row-per-cycle aggregate). Each EXISTS carries an EXPLICIT
+ * `credit_notes.tenant_id = <settling invoice>.tenant_id` predicate
+ * (application-layer defence-in-depth atop the isolating RLS on `credit_notes`,
+ * Principle I two-layer).
+ *
+ * *** DISPLAY + BILLING USE THE SAME EFFECTIVE-PAID RULE ***
+ * The pipeline "Covered" cell derives the same notion in `loadPipelinePage`
+ * (the `anchored` projection — anchor-only there, since the pipeline shows only
+ * OPEN cycles), INCLUDING the M1 retains-coverage escape. If you add or change a
+ * gate HERE, mirror it THERE, and vice versa: the moment two sites answer "was
+ * this period paid for?" independently they drift, and the cost of drift here is
+ * paid in money (mirrors the `refund-credit-note-requirement.ts` cross-reference
+ * discipline).
+ */
+function effectivePaidCoverageSql(
+  cycle: { readonly status: AnyPgColumn; readonly anchoredAt: AnyPgColumn },
+  linkedInv: {
+    readonly status: AnyPgColumn;
+    readonly tenantId: AnyPgColumn;
+    readonly invoiceId: AnyPgColumn;
+  },
+  anchorInv: {
+    readonly status: AnyPgColumn;
+    readonly tenantId: AnyPgColumn;
+    readonly invoiceId: AnyPgColumn;
+  },
+): SQL {
+  return sql`(
+    (${cycle.status} = 'completed'
+       AND ${linkedInv.status} IS DISTINCT FROM 'void'
+       AND (${linkedInv.status} IS DISTINCT FROM 'credited'
+            OR ${coverageRetainedExistsSql(linkedInv)}))
+    OR
+    (${cycle.anchoredAt} IS NOT NULL
+       AND ${anchorInv.status} IS DISTINCT FROM 'void'
+       AND (${anchorInv.status} IS DISTINCT FROM 'credited'
+            OR ${coverageRetainedExistsSql(anchorInv)}))
+  )`;
+}
+
+/**
+ * M1 (plan-change-ux, Option 1b) — correlated `EXISTS` that is TRUE when the
+ * settling invoice `inv` has a credit note with `retains_coverage = TRUE` (an
+ * F4-manual FULL membership 'keep' retention note — member not refunded).
+ * Correlated on the outer settling-invoice alias, so it stays ≤1 boolean per
+ * outer row and never inflates the MAX/COUNT aggregates the predicate feeds.
+ * The explicit `tenant_id` equality is application-layer defence-in-depth atop
+ * the RLS on `credit_notes` (Principle I two-layer). Shared by the billing
+ * predicate above AND the L1 pipeline read model so the two never diverge.
+ */
+function coverageRetainedExistsSql(inv: {
+  readonly tenantId: AnyPgColumn;
+  readonly invoiceId: AnyPgColumn;
+}): SQL<boolean> {
+  return sql<boolean>`EXISTS (
+    SELECT 1 FROM ${creditNotes}
+    WHERE ${creditNotes.tenantId} = ${inv.tenantId}
+      AND ${creditNotes.originalInvoiceId} = ${inv.invoiceId}
+      AND ${creditNotes.retainsCoverage} = TRUE
+  )`;
+}
+
+/**
+ * The PRE-task-#24 RAW coverage predicate (`status = 'completed' OR
+ * anchored_at IS NOT NULL`), kept ONLY as an observability yardstick: computed
+ * in the SAME aggregate pass as `effectivePaidCoverageSql` (a second FILTER, no
+ * extra scan / round-trip) so `findMaxPaidThroughForMemberInTx` can log when the
+ * effective-paid rule RETRACTS the frontier a refund/void reversed — making the
+ * first prod occurrences of this silent money-behaviour change visible. This is
+ * NOT a billing predicate; do NOT reintroduce it as a coverage filter.
+ */
+function rawPaidCoverageSql(cycle: {
+  readonly status: AnyPgColumn;
+  readonly anchoredAt: AnyPgColumn;
+}): SQL {
+  return sql`(${cycle.status} = 'completed' OR ${cycle.anchoredAt} IS NOT NULL)`;
+}
 
 // ---------------------------------------------------------------------------
 // Row → Domain translation
@@ -828,6 +963,50 @@ export function makeDrizzleRenewalCycleRepo(
       return rowToDomain(row);
     },
 
+    async refreezeOpenCycleForPlanChangeInTx(
+      tx: unknown,
+      tenantId: string,
+      cycleId: CycleId,
+      args: {
+        readonly planIdAtCycleStart: string;
+        readonly tierAtCycleStart: TierBucket;
+        readonly frozenPlanPriceThb: ThbDecimal;
+        readonly frozenPlanTermMonths: number;
+        readonly frozenPlanCurrency: 'THB' | 'SEK' | 'EUR' | 'USD';
+      },
+    ): Promise<RenewalCycle | null> {
+      // Plan-change immediate re-freeze (Phase 2, Step 2.2). GUARDED single
+      // UPDATE: only an OPEN (upcoming|reminded|awaiting_payment) cycle whose
+      // §86/4 has NOT yet been issued+linked (`linked_invoice_id IS NULL`)
+      // qualifies. 0 rows -> `null` (raced into terminal/linked/issued state);
+      // the caller DEFERS rather than throwing — an issued tax invoice is never
+      // rewritten (tax-safe). The explicit `tenant_id` predicate is
+      // application-layer defence-in-depth alongside RLS (Principle I § 1).
+      // Term-length changes are gated OUT by the caller (period re-derivation is
+      // out of scope), so the frozen fields are written verbatim from `args`.
+      const txDb = tx as typeof db;
+      const updated = await txDb
+        .update(renewalCycles)
+        .set({
+          planIdAtCycleStart: args.planIdAtCycleStart,
+          tierAtCycleStart: args.tierAtCycleStart,
+          frozenPlanPriceThb: args.frozenPlanPriceThb,
+          frozenPlanTermMonths: args.frozenPlanTermMonths,
+          frozenPlanCurrency: args.frozenPlanCurrency,
+        })
+        .where(
+          and(
+            eq(renewalCycles.cycleId, cycleId),
+            eq(renewalCycles.tenantId, tenantId),
+            inArray(renewalCycles.status, [...OPEN_CYCLE_STATUSES]),
+            isNull(renewalCycles.linkedInvoiceId),
+          ),
+        )
+        .returning();
+      const row = updated[0];
+      return row ? rowToDomain(row) : null;
+    },
+
     async linkInvoice(
       tx: unknown,
       _tenantId: string,
@@ -878,6 +1057,115 @@ export function makeDrizzleRenewalCycleRepo(
         );
       }
       return rowToDomain(row);
+    },
+
+    async linkInvoiceAndReconcileFrozenPlanInTx(
+      tx: unknown,
+      tenantId: string,
+      cycleId: CycleId,
+      invoiceId: string,
+      billed: {
+        readonly planIdAtCycleStart: string;
+        readonly tierAtCycleStart: TierBucket;
+        readonly frozenPlanPriceThb: ThbDecimal;
+        readonly frozenPlanTermMonths: number;
+        readonly frozenPlanCurrency: 'THB' | 'SEK' | 'EUR' | 'USD';
+      },
+    ): Promise<{ readonly cycle: RenewalCycle; readonly previous: RenewalCycle }> {
+      // Finding #20 — atomic link + reconcile-frozen-to-billed. The caller
+      // (confirm-renewal Step-4) holds the per-cycle advisory lock, so the
+      // pre-read + guarded UPDATE below are race-free against every other
+      // frozen-price writer (they all take `renewals:<tenant>:<cycle>`). The
+      // pre-read captures the CURRENT (possibly concurrently-refrozen) frozen
+      // fields so the use-case can emit a corrective audit ONLY when a real
+      // divergence was healed. The UPDATE's link CAS mirrors `linkInvoice`
+      // exactly (WHERE linked_invoice_id IS NULL OR = $invoiceId) — 0 rows means
+      // nothing is written (no partial reconcile). The explicit `tenant_id`
+      // predicate is application-layer defence-in-depth alongside RLS (Principle
+      // I § 1).
+      const txDb = tx as typeof db;
+      const beforeRows = await txDb
+        .select()
+        .from(renewalCycles)
+        .where(
+          and(
+            eq(renewalCycles.cycleId, cycleId),
+            eq(renewalCycles.tenantId, tenantId),
+          ),
+        )
+        .limit(1);
+      const before = beforeRows[0];
+      if (!before) {
+        throw new CycleNotFoundError(cycleId);
+      }
+      const updated = await txDb
+        .update(renewalCycles)
+        .set({
+          linkedInvoiceId: invoiceId,
+          planIdAtCycleStart: billed.planIdAtCycleStart,
+          tierAtCycleStart: billed.tierAtCycleStart,
+          frozenPlanPriceThb: billed.frozenPlanPriceThb,
+          frozenPlanTermMonths: billed.frozenPlanTermMonths,
+          frozenPlanCurrency: billed.frozenPlanCurrency,
+        })
+        .where(
+          and(
+            eq(renewalCycles.cycleId, cycleId),
+            eq(renewalCycles.tenantId, tenantId),
+            or(
+              isNull(renewalCycles.linkedInvoiceId),
+              eq(renewalCycles.linkedInvoiceId, invoiceId),
+            ),
+          ),
+        )
+        .returning();
+      const row = updated[0];
+      if (!row) {
+        // The row exists (pre-read succeeded) but the link CAS matched 0 rows —
+        // a concurrent writer already linked a DIFFERENT invoice. Mirror
+        // `linkInvoice`'s conflict shape so the use-case maps it identically.
+        throw new InvoiceLinkConflictError(
+          cycleId,
+          invoiceId,
+          before.linkedInvoiceId ?? '<unexpected-null>',
+        );
+      }
+      return { cycle: rowToDomain(row), previous: rowToDomain(before) };
+    },
+
+    async clearLinkedInvoiceForVoidInTx(
+      tx: unknown,
+      tenantId: string,
+      cycleId: CycleId,
+      expectedInvoiceId: string,
+    ): Promise<boolean> {
+      // Plan-change / void-on-reissue unlink (Phase 2, Step 2.4). GUARDED
+      // single UPDATE — mirrors `clearRejectRefundMarkerInTx`'s CAS shape:
+      //   - CAS on `linked_invoice_id = expectedInvoiceId` so a concurrent
+      //     relink to a DIFFERENT invoice is never clobbered (0 rows → false).
+      //   - Restricted to the OPEN cycle statuses. A `completed` cycle MUST NOT
+      //     be cleared: `renewal_cycles_completed_requires_invoice_check`
+      //     (migration 0087) forbids a NULL `linked_invoice_id` when
+      //     status='completed', so a NULL-write there aborts the whole void tx.
+      //     The reissue workflow this serves only touches an OPEN cycle whose
+      //     §86/4 is issued-but-unpaid — the paid→void edge (completed cycle) is
+      //     a no-op here (returns false; the void proceeds unchanged).
+      // The explicit `tenant_id` predicate is defence-in-depth alongside RLS
+      // (Principle I § 1) — same convention as `refreezeOpenCycleForPlanChangeInTx`.
+      const txDb = tx as typeof db;
+      const updated = await txDb
+        .update(renewalCycles)
+        .set({ linkedInvoiceId: null })
+        .where(
+          and(
+            eq(renewalCycles.cycleId, cycleId),
+            eq(renewalCycles.tenantId, tenantId),
+            inArray(renewalCycles.status, [...OPEN_CYCLE_STATUSES]),
+            eq(renewalCycles.linkedInvoiceId, expectedInvoiceId),
+          ),
+        )
+        .returning({ cycleId: renewalCycles.cycleId });
+      return updated.length > 0;
     },
 
     async acquireCycleLockInTx(
@@ -1835,6 +2123,17 @@ export function makeDrizzleRenewalCycleRepo(
           .groupBy(renewalReminderEvents.cycleId)
           .as('lr');
 
+        // plan-change-ux L1 — the anchor invoice, joined so the "Covered"
+        // projection reflects whether that invoice is still EFFECTIVELY-PAID.
+        // `anchored_at` is a set-once discriminator that is NOT cleared when the
+        // anchor invoice is later VOIDED (F4) or fully credit-noted / refunded
+        // (F5 → §86/10 → invoice status 'credited'). Keying "Covered" purely on
+        // `anchored_at IS NOT NULL` therefore renders a green "Covered" cell for
+        // a member whose anchoring payment was reversed. The LEFT JOIN is a
+        // PK-indexed seek on `invoices(tenant_id, invoice_id)` (≤1 row per cycle,
+        // page capped at 200), so the cost is negligible. Aliased because the
+        // pipeline query does not otherwise touch `invoices`.
+        const anchorInvoice = alias(invoices, 'anchor_invoice');
         const pageRows = await tx
           .select({
             cycleId: renewalCycles.cycleId,
@@ -1847,6 +2146,21 @@ export function makeDrizzleRenewalCycleRepo(
             lastReminderAt: lastReminderSubq.dispatchedAt,
             lastReminderStepId: lastReminderSubq.stepId,
             linkedInvoiceId: renewalCycles.linkedInvoiceId,
+            // plan-change-ux seam 1(b) + L1 — the rolling-anchor "paid coverage"
+            // discriminator PLUS the anchor invoice's status, folded into the
+            // `anchored` boolean below. The status is NULL for the R4 backfill
+            // cohort (anchor_invoice_id IS NULL → LEFT JOIN miss) and for a
+            // hard-deleted invoice (never happens for tax docs) — both treated
+            // as still-covered by the null-tolerant predicate in the mapper.
+            anchoredAt: renewalCycles.anchoredAt,
+            anchorInvoiceStatus: anchorInvoice.status,
+            // M1 (plan-change-ux, Option 1b) — the SAME correlated EXISTS the
+            // billing predicate uses (coverageRetainedExistsSql), on the aliased
+            // anchor invoice. TRUE when a coverage-retaining F4-manual 'keep' CN
+            // exists → the `anchored` mapper below keeps "Covered" even on a
+            // 'credited' anchor. Explicit tenant predicate = two-layer isolation.
+            anchorRetainsCoverage:
+              coverageRetainedExistsSql(anchorInvoice).as('anchor_retains_coverage'),
             closedReason: renewalCycles.closedReason,
             // J4-H13: surface members.email_unverified to the UI
             // — already JOIN'd above, so adding the column to the
@@ -1864,6 +2178,15 @@ export function makeDrizzleRenewalCycleRepo(
           .leftJoin(
             lastReminderSubq,
             eq(lastReminderSubq.cycleId, renewalCycles.cycleId),
+          )
+          .leftJoin(
+            anchorInvoice,
+            and(
+              // Explicit tenant predicate = application-layer defence-in-depth
+              // atop the isolating RLS on `invoices` (Principle I two-layer).
+              eq(anchorInvoice.tenantId, renewalCycles.tenantId),
+              eq(anchorInvoice.invoiceId, renewalCycles.anchorInvoiceId),
+            ),
           )
           .where(and(...pageFilters))
           .orderBy(
@@ -1889,6 +2212,33 @@ export function makeDrizzleRenewalCycleRepo(
               : (r.lastReminderAt as string | null),
           lastReminderStepId: r.lastReminderStepId ?? null,
           linkedInvoiceId: r.linkedInvoiceId,
+          // plan-change-ux seam 1(b) + L1 — paid-coverage flag. TRUE only when
+          // the cycle is anchored AND the anchor invoice is still
+          // EFFECTIVELY-PAID. A voided ('void') or FULLY credit-noted /
+          // refunded ('credited') anchor no longer covers the period → not
+          // "Covered". A PARTIAL credit ('partially_credited') still leaves the
+          // period paid-for → still covered. A NULL status (R4 backfill with no
+          // in-system invoice, or a — practically impossible — hard-deleted tax
+          // invoice) is null-tolerant and stays covered: `anchored_at` alone
+          // stands for the backfill cohort.
+          //
+          // M1 (plan-change-ux, Option 1b) — the 'credited' retraction is ESCAPED
+          // when the completing credit note was an F4-manual FULL membership
+          // 'keep' (member NOT refunded → coverage retained): `anchorRetainsCoverage`
+          // is the SAME correlated EXISTS the billing predicate uses, so a
+          // coverage-retaining 'credited' anchor still reads "Covered".
+          //
+          // DISPLAY + BILLING USE THE SAME EFFECTIVE-PAID RULE. This is the
+          // ANCHOR-only projection of `effectivePaidCoverageSql` (task #24 + M1)
+          // — the pipeline only shows OPEN cycles, so it never needs the
+          // completed→linked arm. If you add or change a coverage gate HERE,
+          // mirror it in `effectivePaidCoverageSql` (billing frontier + settled
+          // count), and vice versa — the two must not drift.
+          anchored:
+            r.anchoredAt != null &&
+            r.anchorInvoiceStatus !== 'void' &&
+            (r.anchorInvoiceStatus !== 'credited' ||
+              r.anchorRetainsCoverage === true),
           closedReason: r.closedReason as ClosedReason | null,
           // J4-H13: defaults to false when the LEFT JOIN didn't match
           // (orphan cycle without a member row — should never happen
@@ -1955,50 +2305,99 @@ export function makeDrizzleRenewalCycleRepo(
 
     /**
      * Cluster 4 review-fix (money BLOCKER) — the member's PAID-THROUGH
-     * frontier: `MAX(period_to)` over cycles that represent SETTLED / paid
-     * coverage (`status = 'completed' OR anchored_at IS NOT NULL` — the same
-     * "paid" predicate `countSettledCyclesForMemberInTx` uses). Status is not
-     * otherwise filtered: a paid cycle later CANCELLED by the archive cascade
-     * still counts (its `anchored_at` survives the cancel), while an unpaid
-     * cancelled/lapsed cycle is excluded because it satisfies neither positive
-     * predicate. Returns null when the member has no paid coverage. In-tx so
-     * the restore reads a consistent snapshot with `createCycleInTx`. See the
-     * port doc for the double-bill rationale.
+     * frontier: `MAX(period_to)` over cycles that represent EFFECTIVE-PAID
+     * coverage (`effectivePaidCoverageSql` — the SAME predicate
+     * `countSettledCyclesForMemberInTx` uses). plan-change-ux task #24: a cycle
+     * whose SETTLING invoice (linked for a completed cycle, anchor for an open
+     * one) was later fully refunded / voided / credit-noted ('void'/'credited')
+     * NO LONGER counts — otherwise the frontier over-reaches the refunded period
+     * and the restore/comeback under-bills it. A partial credit / backfill (NULL
+     * settling id) still counts (see the helper docstring). A paid cycle later
+     * CANCELLED by the archive cascade still counts (its `anchored_at` survives
+     * the cancel + its anchor invoice is unreversed); an unpaid cancelled/lapsed
+     * cycle is excluded because it satisfies neither arm. Returns null when the
+     * member has no effective-paid coverage. In-tx so the restore reads a
+     * consistent snapshot with `createCycleInTx`. See the port doc for the
+     * double-bill rationale.
      */
     async findMaxPaidThroughForMemberInTx(
       tx: unknown,
-      _tenantId: string,
+      tenantId: string,
       memberId: string,
     ): Promise<string | null> {
       const txDb = tx as typeof db;
+      // Two LEFT JOINs — the cycle's settling invoice lives on either
+      // linked_invoice_id (completed steady-state) OR anchor_invoice_id (open
+      // anchored). Each is a PK seek on invoices(tenant_id, invoice_id) → ≤1 row
+      // (no MAX inflation). Explicit tenant_id equality mirrors the L1 pipeline
+      // join (application-layer defence-in-depth atop RLS, Principle I).
+      const linkedInvoice = alias(invoices, 'linked_invoice');
+      const anchorInvoice = alias(invoices, 'anchor_invoice');
+      // Both frontiers in ONE pass over the member's cycles (no extra scan or
+      // round-trip): `effectiveMax` is the returned billing frontier; `rawMax`
+      // (the pre-task-#24 predicate) is compared to it purely to LOG a refund
+      // retraction of the frontier — see rawPaidCoverageSql.
       const rows = await txDb
         .select({
-          maxPeriodTo: sql<
+          effectiveMax: sql<
             Date | string | null
-          >`max(${renewalCycles.periodTo})`,
+          >`max(${renewalCycles.periodTo}) FILTER (WHERE ${effectivePaidCoverageSql(renewalCycles, linkedInvoice, anchorInvoice)})`,
+          rawMax: sql<
+            Date | string | null
+          >`max(${renewalCycles.periodTo}) FILTER (WHERE ${rawPaidCoverageSql(renewalCycles)})`,
         })
         .from(renewalCycles)
-        .where(
+        .leftJoin(
+          linkedInvoice,
           and(
-            eq(renewalCycles.memberId, memberId),
-            or(
-              eq(renewalCycles.status, 'completed'),
-              isNotNull(renewalCycles.anchoredAt),
-            ),
+            eq(linkedInvoice.tenantId, renewalCycles.tenantId),
+            eq(linkedInvoice.invoiceId, renewalCycles.linkedInvoiceId),
           ),
-        );
-      const raw = rows[0]?.maxPeriodTo ?? null;
+        )
+        .leftJoin(
+          anchorInvoice,
+          and(
+            eq(anchorInvoice.tenantId, renewalCycles.tenantId),
+            eq(anchorInvoice.invoiceId, renewalCycles.anchorInvoiceId),
+          ),
+        )
+        .where(eq(renewalCycles.memberId, memberId));
       // `MAX(timestamptz)` comes back as a Date from postgres.js (like the
       // other timestamptz columns); coerce defensively for a string too.
-      return raw === null ? null : new Date(raw).toISOString();
+      const effectiveRaw = rows[0]?.effectiveMax ?? null;
+      const rawRaw = rows[0]?.rawMax ?? null;
+      const effectiveIso =
+        effectiveRaw === null ? null : new Date(effectiveRaw).toISOString();
+      const rawIso = rawRaw === null ? null : new Date(rawRaw).toISOString();
+      // Effective ⊆ raw always, so any divergence ⟺ a void/credited settling
+      // invoice retracted the frontier (a silent money-behaviour change: the
+      // restore/comeback now re-bills a period the old rule treated as paid).
+      // Log it so the first prod occurrences are visible. No PII — tenant/member
+      // ids + ISO instants only.
+      if (rawIso !== effectiveIso) {
+        logger.info(
+          {
+            tenantId,
+            memberId,
+            effectivePaidThrough: effectiveIso,
+            rawPaidThrough: rawIso,
+          },
+          'renewals.effective_paid_frontier_retracted',
+        );
+      }
+      return effectiveIso;
     },
 
     /**
      * F2 fix (final-review, 2026-07-09) — count of the member's cycles,
      * EXCLUDING `excludeCycleId` (the caller's current open cycle), that
-     * represent a SETTLED renewal: status 'completed' OR
-     * anchored_at IS NOT NULL. In-tx for the same uncommitted-visibility
-     * reason as `countCyclesForMemberInTx` above.
+     * represent EFFECTIVE-PAID coverage (`effectivePaidCoverageSql` — the SAME
+     * predicate `findMaxPaidThroughForMemberInTx` uses). plan-change-ux task
+     * #24: a cycle whose settling invoice was fully refunded / voided /
+     * credit-noted no longer counts, so a member whose only prior cycle was
+     * refunded classifies `first_payment` (not `renewal`) on their next
+     * payment. In-tx for the same uncommitted-visibility reason as
+     * `countCyclesForMemberInTx` above.
      */
     async countSettledCyclesForMemberInTx(
       tx: unknown,
@@ -2007,16 +2406,35 @@ export function makeDrizzleRenewalCycleRepo(
       excludeCycleId: string,
     ): Promise<number> {
       const txDb = tx as typeof db;
+      // Same two-arm effective-paid join as findMaxPaidThroughForMemberInTx —
+      // each PK seek yields ≤1 row so count(*) is not inflated.
+      const linkedInvoice = alias(invoices, 'linked_invoice');
+      const anchorInvoice = alias(invoices, 'anchor_invoice');
       const rows = await txDb
         .select({ count: sql<number>`count(*)::int` })
         .from(renewalCycles)
+        .leftJoin(
+          linkedInvoice,
+          and(
+            eq(linkedInvoice.tenantId, renewalCycles.tenantId),
+            eq(linkedInvoice.invoiceId, renewalCycles.linkedInvoiceId),
+          ),
+        )
+        .leftJoin(
+          anchorInvoice,
+          and(
+            eq(anchorInvoice.tenantId, renewalCycles.tenantId),
+            eq(anchorInvoice.invoiceId, renewalCycles.anchorInvoiceId),
+          ),
+        )
         .where(
           and(
             eq(renewalCycles.memberId, memberId),
             ne(renewalCycles.cycleId, excludeCycleId),
-            or(
-              eq(renewalCycles.status, 'completed'),
-              isNotNull(renewalCycles.anchoredAt),
+            effectivePaidCoverageSql(
+              renewalCycles,
+              linkedInvoice,
+              anchorInvoice,
             ),
           ),
         );
@@ -2088,9 +2506,14 @@ export function makeDrizzleRenewalCycleRepo(
      * re-reads and reclassifies rather than treating this as a hard error.
      *
      * Deletes the cycle's `renewal_reminder_events` rows in the SAME tx
-     * (the re-anchored period invalidates any dispatch history logged
-     * against the old period) and returns the deleted count so the caller
-     * can audit `reminderEventsReset`.
+     * ONLY WHEN `period_to` actually moves (the moved period invalidates any
+     * dispatch history logged against the old one, and its stale
+     * `year_in_cycle` keys would collide with — and silently suppress — the
+     * NEW period's reminders). Under fixed-anchor a first payment normally
+     * KEEPS the period, so nothing is deleted; the delete fires only on a
+     * period-moving re-anchor (the comeback exception and the CSV backfill).
+     * Returns the deleted count so the caller can audit `reminderEventsReset`
+     * (review H-1, 2026-07-22).
      */
     async reanchorPeriodInTx(
       tx: unknown,
@@ -2106,6 +2529,17 @@ export function makeDrizzleRenewalCycleRepo(
       },
     ): Promise<{ readonly cycle: RenewalCycle; readonly reminderEventsReset: number } | null> {
       const txDb = tx as typeof db;
+      // Read the CURRENT period_to (same tx) before the UPDATE so we can tell a
+      // period-KEEPING re-anchor (fixed-anchor normal first payment) from a
+      // period-MOVING one (the comeback exception or the CSV backfill). Only
+      // the latter must reset the reminder ladder (review H-1).
+      const existing = await txDb
+        .select({ periodTo: renewalCycles.periodTo })
+        .from(renewalCycles)
+        .where(eq(renewalCycles.cycleId, cycleId))
+        .limit(1);
+      const oldPeriodTo = existing[0]?.periodTo ?? null;
+
       const updated = await txDb
         .update(renewalCycles)
         .set({
@@ -2132,6 +2566,20 @@ export function makeDrizzleRenewalCycleRepo(
         .returning();
       const row = updated[0];
       if (!row) return null;
+
+      // FIXED-ANCHOR (2026-07-22): first payment normally KEEPS the cycle's
+      // registration/backfill period (only stamps `anchored_at` + activates the
+      // status), so its reminder events stay valid and are NOT deleted. But when
+      // the period actually MOVES — the comeback exception grants a fresh period,
+      // or the CSV backfill re-anchors a pre-system member — the old period's
+      // reminder rows must be purged: their `year_in_cycle` keys would otherwise
+      // collide with the new period's reminders and suppress them as
+      // already-sent (silent renewal-lapse; review H-1).
+      const periodMoved =
+        oldPeriodTo === null || oldPeriodTo.getTime() !== new Date(args.periodTo).getTime();
+      if (!periodMoved) {
+        return { cycle: rowToDomain(row), reminderEventsReset: 0 };
+      }
       const deleted = await txDb
         .delete(renewalReminderEvents)
         .where(eq(renewalReminderEvents.cycleId, cycleId))

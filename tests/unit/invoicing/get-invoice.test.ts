@@ -69,6 +69,10 @@ describe('getInvoice', () => {
       invoiceRepo: {
         withTx: vi.fn(),
         insertDraft: vi.fn(),
+        // Duplicate guard read — unused by this use case (only
+        // `createInvoiceDraft` calls it, and only when a caller opts in
+        // via `duplicatePolicy`). Present to satisfy `InvoiceRepo`.
+        findLiveMembershipBillInTx: vi.fn(async () => null),
         findByIdInTx: vi.fn(),
         getOrigin: vi.fn(),
         findById: vi.fn(async () => invoice),
@@ -85,6 +89,10 @@ describe('getInvoice', () => {
       applyCreditNoteRollup: vi.fn(),
       applyInvoicePdfRegeneration: vi.fn(),
       applyReceiptPdfRegeneration: vi.fn(),
+      markVoidPdfReconcilePending: vi.fn(async () => {}),
+      clearVoidPdfReconcileMarker: vi.fn(async () => {}),
+      bumpVoidPdfReconcileAttempts: vi.fn(async () => {}),
+      parkVoidPdfReconcile: vi.fn(async () => {}),
       applyVoid: vi.fn(),
       applyReceiptPdf: vi.fn(),
       applyReceiptPdfFailure: vi.fn(),
@@ -101,6 +109,10 @@ describe('getInvoice', () => {
       invoiceRepo: {
         withTx: vi.fn(),
         insertDraft: vi.fn(),
+        // Duplicate guard read — unused by this use case (only
+        // `createInvoiceDraft` calls it, and only when a caller opts in
+        // via `duplicatePolicy`). Present to satisfy `InvoiceRepo`.
+        findLiveMembershipBillInTx: vi.fn(async () => null),
         findByIdInTx: vi.fn(),
         getOrigin: vi.fn(),
         findById: vi.fn(async () => null),
@@ -117,6 +129,10 @@ describe('getInvoice', () => {
       applyCreditNoteRollup: vi.fn(),
       applyInvoicePdfRegeneration: vi.fn(),
       applyReceiptPdfRegeneration: vi.fn(),
+      markVoidPdfReconcilePending: vi.fn(async () => {}),
+      clearVoidPdfReconcileMarker: vi.fn(async () => {}),
+      bumpVoidPdfReconcileAttempts: vi.fn(async () => {}),
+      parkVoidPdfReconcile: vi.fn(async () => {}),
       applyVoid: vi.fn(),
       applyReceiptPdf: vi.fn(),
       applyReceiptPdfFailure: vi.fn(),
@@ -140,6 +156,10 @@ describe('getInvoice', () => {
       invoiceRepo: {
         withTx: vi.fn(),
         insertDraft: vi.fn(),
+        // Duplicate guard read — unused by this use case (only
+        // `createInvoiceDraft` calls it, and only when a caller opts in
+        // via `duplicatePolicy`). Present to satisfy `InvoiceRepo`.
+        findLiveMembershipBillInTx: vi.fn(async () => null),
         findByIdInTx: vi.fn(),
         getOrigin: vi.fn(),
         findById: vi.fn(async () => invoice),
@@ -156,6 +176,10 @@ describe('getInvoice', () => {
       applyCreditNoteRollup: vi.fn(),
       applyInvoicePdfRegeneration: vi.fn(),
       applyReceiptPdfRegeneration: vi.fn(),
+      markVoidPdfReconcilePending: vi.fn(async () => {}),
+      clearVoidPdfReconcileMarker: vi.fn(async () => {}),
+      bumpVoidPdfReconcileAttempts: vi.fn(async () => {}),
+      parkVoidPdfReconcile: vi.fn(async () => {}),
       applyVoid: vi.fn(),
       applyReceiptPdf: vi.fn(),
       applyReceiptPdfFailure: vi.fn(),
@@ -199,6 +223,10 @@ describe('getInvoice', () => {
       invoiceRepo: {
         withTx: vi.fn(),
         insertDraft: vi.fn(),
+        // Duplicate guard read — unused by this use case (only
+        // `createInvoiceDraft` calls it, and only when a caller opts in
+        // via `duplicatePolicy`). Present to satisfy `InvoiceRepo`.
+        findLiveMembershipBillInTx: vi.fn(async () => null),
         findByIdInTx: vi.fn(),
         getOrigin: vi.fn(),
         findById: vi.fn(async () => invoice),
@@ -215,6 +243,10 @@ describe('getInvoice', () => {
       applyCreditNoteRollup: vi.fn(),
       applyInvoicePdfRegeneration: vi.fn(),
       applyReceiptPdfRegeneration: vi.fn(),
+      markVoidPdfReconcilePending: vi.fn(async () => {}),
+      clearVoidPdfReconcileMarker: vi.fn(async () => {}),
+      bumpVoidPdfReconcileAttempts: vi.fn(async () => {}),
+      parkVoidPdfReconcile: vi.fn(async () => {}),
       applyVoid: vi.fn(),
       applyReceiptPdf: vi.fn(),
       applyReceiptPdfFailure: vi.fn(),

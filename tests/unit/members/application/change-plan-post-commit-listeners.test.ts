@@ -179,7 +179,7 @@ describe('063 — changePlan runs manual-plan-change listeners post-commit (unit
     );
 
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.value.planId as string).toBe('plan-new');
+    if (result.ok) expect(result.value.member.planId as string).toBe('plan-new');
     // Both listeners ran, after the tx writes.
     expect(seen).toHaveLength(2);
     expect(ordering.filter((s) => s === 'listener')).toHaveLength(2);

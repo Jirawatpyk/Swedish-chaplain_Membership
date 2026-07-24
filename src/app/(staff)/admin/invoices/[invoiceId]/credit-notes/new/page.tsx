@@ -60,8 +60,10 @@ export default async function NewCreditNotePage({
   }
   // 088 FIX 5 — mirror `issueCreditNote`'s §86/10 legal gate at the page so a
   // §105 ใบเสร็จรับเงิน (`receipt_separate`) 404s fail-fast instead of rendering
-  // a form that always rejects with `receipt_not_creditable` (a §105 receipt has
-  // no input VAT to reverse — legally uncreditable). Reconstructs the verdict
+  // a form that always rejects with `receipt_not_creditable` (a §105 receipt
+  // carries no ใบกำกับภาษี number and date for a §86/10 ใบลดหนี้ to cite per
+  // §86/10 วรรคสอง — a seller-side rule, NOT "the buyer has no input VAT to
+  // reverse"; non-registrant membership buyers ARE creditable). Reconstructs the verdict
   // from the SAME inputs as the use-case (`invoiceSubject` + the BUYER's
   // VAT-registrant status via the shared Domain helpers), keeping issue-time,
   // pay-time, and credit-time gates in lockstep. Runs BEFORE the total/display-

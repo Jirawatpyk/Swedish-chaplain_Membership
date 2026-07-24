@@ -13,6 +13,7 @@ import {
   smallint,
   integer,
   bigint,
+  boolean,
   date,
   timestamp,
   char,
@@ -56,6 +57,22 @@ export const creditNotes = pgTable(
     // F4-manual credit notes; non-NULL for F5-origin (refund-triggered)
     // credit notes. Projects through row-to-domain mapping.
     sourceRefundId: text('source_refund_id'),
+
+    // M1 (plan-change-ux, business decision Option 1b) — does this credit note
+    // LEAVE the member's membership coverage intact for the credited period?
+    // Set ONLY by the issue-credit-note use case, WRITE-ONCE at INSERT
+    // (credit_notes is immutable — no UPDATE path). TRUE only for an F4-manual
+    // FULL membership credit note with `membershipEffect: 'keep'` — a paperwork
+    // correction where the member was NOT refunded, so their coverage is
+    // RETAINED (the settling invoice flips to 'credited' for §86/10 paperwork,
+    // but the renewal coverage predicate must NOT retract the period). FALSE for
+    // every other credit note: F5 real refunds (money returned → retract),
+    // `cancel_membership` withdrawals, partial credits, and event credits.
+    // DEFAULT FALSE = today's #24 behaviour; every existing membership CN is an
+    // F5-refund, so FALSE is the correct backfill (no data migration needed).
+    // The renewal `effectivePaidCoverageSql` predicate + the L1 pipeline read
+    // model consult this column via a correlated EXISTS on the settling invoice.
+    retainsCoverage: boolean('retains_coverage').notNull().default(false),
 
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

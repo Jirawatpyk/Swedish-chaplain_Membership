@@ -242,6 +242,39 @@ export interface RenewalCycleRepo {
   ): Promise<RenewalCycle>;
 
   /**
+   * Plan-change immediate re-freeze (Phase 2, Step 2.2) — re-freeze the 5
+   * frozen_plan_* columns of a member's OPEN cycle to a NEW plan when a manual
+   * admin change-plan flips `members.plan_id`. DISTINCT from `updateFrozenPlan`:
+   *   - accepts ANY open status (`upcoming|reminded|awaiting_payment`), not
+   *     just `awaiting_payment` (the change can land before the T-0 cron flips
+   *     the cycle to payable);
+   *   - GUARDED by `linked_invoice_id IS NULL` — an OPEN cycle whose §86/4 has
+   *     already been issued+linked is NEVER rewritten (tax-safe: an issued tax
+   *     invoice is immutable);
+   *   - returns `null` (NEVER throws) on 0 rows — the cycle raced into a
+   *     terminal/linked state, and the caller DEFERS rather than erroring.
+   *
+   * The guard predicate mirrors the SQL `WHERE cycle_id = ? AND tenant_id = ?
+   * AND status IN ('upcoming','reminded','awaiting_payment') AND
+   * linked_invoice_id IS NULL RETURNING *`. Term-length changes are handled by
+   * the CALLER (the plan-change billing remediation defers a term change —
+   * period re-derivation is out of scope), so this method rewrites the frozen
+   * fields verbatim from `args`. Thread `tx` from the caller's `runInTenant`.
+   */
+  refreezeOpenCycleForPlanChangeInTx(
+    tx: TenantTx,
+    tenantId: string,
+    cycleId: CycleId,
+    args: {
+      readonly planIdAtCycleStart: string;
+      readonly tierAtCycleStart: TierBucket;
+      readonly frozenPlanPriceThb: ThbDecimal;
+      readonly frozenPlanTermMonths: number;
+      readonly frozenPlanCurrency: 'THB' | 'SEK' | 'EUR' | 'USD';
+    },
+  ): Promise<RenewalCycle | null>;
+
+  /**
    * Phase 5 Wave B (T122) — link an issued F4 invoice to the cycle.
    * Runs after `f4InvoicingBridge.issueInvoiceForRenewal` succeeds; the
    * cycle's `linked_invoice_id` becomes the joining column the F4
@@ -254,6 +287,82 @@ export interface RenewalCycleRepo {
     cycleId: CycleId,
     invoiceId: string,
   ): Promise<RenewalCycle>;
+
+  /**
+   * Finding #20 (Phase 2 #238 adversarial money-path review) — link the issued
+   * §86/4 to the cycle AND (re-)assert the cycle's 5 frozen_plan_* columns to the
+   * `billed` snapshot the invoice was actually issued from, in ONE guarded
+   * statement so the two can never disagree.
+   *
+   * confirm-renewal Step-4 uses this (NOT `linkInvoice`) because its Step-1
+   * frozen-price capture + Step-3 §86/4 issue run OUTSIDE the per-cycle advisory
+   * lock (released at Step-1's commit). A concurrent admin `change-plan`
+   * immediate-refreeze can land in that window and CAS-refreeze the still-open,
+   * still-unlinked cycle to a DIFFERENT plan/price — so at link time the cycle's
+   * frozen fields may no longer match what the (immutable) §86/4 bills. Since the
+   * member already holds an issued tax document at the price they CONFIRMED, the
+   * cycle is reconciled BACK to the billed snapshot (the plan change defers to the
+   * next cycle) rather than the member being rebilled.
+   *
+   * Runs under the caller's Step-4 tx while it holds `acquireCycleLockInTx`, so
+   * the SELECT-before + guarded UPDATE are race-free against other frozen-price
+   * writers (they all take the same lock). Returns BOTH the post-update `cycle`
+   * and the `previous` (pre-update) row so the use-case can decide whether a real
+   * reconciliation occurred (previous frozen fields differ from `billed`) and emit
+   * a truthful corrective audit ONLY then.
+   *
+   * Guard `WHERE cycle_id = ? AND tenant_id = ? AND (linked_invoice_id IS NULL OR
+   * linked_invoice_id = ?)` mirrors `linkInvoice` exactly — idempotent re-link,
+   * `InvoiceLinkConflictError` on a concurrent link to a DIFFERENT invoice (0
+   * rows → nothing written, so no partial reconcile), `CycleNotFoundError` when
+   * the row vanished. Thread `tx` from `runInTenant`; NEVER the global `db`.
+   */
+  linkInvoiceAndReconcileFrozenPlanInTx(
+    tx: TenantTx,
+    tenantId: string,
+    cycleId: CycleId,
+    invoiceId: string,
+    billed: {
+      readonly planIdAtCycleStart: string;
+      readonly tierAtCycleStart: TierBucket;
+      readonly frozenPlanPriceThb: ThbDecimal;
+      readonly frozenPlanTermMonths: number;
+      readonly frozenPlanCurrency: 'THB' | 'SEK' | 'EUR' | 'USD';
+    },
+  ): Promise<{ readonly cycle: RenewalCycle; readonly previous: RenewalCycle }>;
+
+  /**
+   * Plan-change / void-on-reissue unlink (Phase 2, Step 2.4) — clear the
+   * cycle's `linked_invoice_id` when the invoice it points at is VOIDED. A
+   * voided §86/4 no longer validly links the cycle; without this clear a
+   * subsequent re-issue would hit `InvoiceLinkConflictError` from
+   * `linkInvoice`'s `WHERE linked_invoice_id IS NULL OR = $new` guard.
+   *
+   * GUARDED single UPDATE (mirrors `clearRejectRefundMarkerInTx`):
+   *   `WHERE cycle_id = ? AND tenant_id = ? AND status IN
+   *    ('upcoming','reminded','awaiting_payment') AND linked_invoice_id = ?
+   *    RETURNING cycle_id`
+   *
+   *   - CAS on `linked_invoice_id = expectedInvoiceId` — a concurrent relink
+   *     to a DIFFERENT invoice is NEVER clobbered (0 rows → `false`).
+   *   - Restricted to the OPEN cycle statuses. A `completed` cycle is left
+   *     UNTOUCHED: the `renewal_cycles_completed_requires_invoice_check` CHECK
+   *     forbids a NULL `linked_invoice_id` there, so clearing one would abort
+   *     the whole void tx. The reissue workflow only applies to an OPEN cycle
+   *     whose §86/4 is issued-but-unpaid, so this is also the correct scope.
+   *   - `true` when 1 row cleared, `false` on 0 rows (raced / non-open /
+   *     already-cleared / cross-tenant) — NEVER throws on a miss.
+   *
+   * The explicit `tenant_id` predicate is application-layer defence-in-depth
+   * alongside RLS (Principle I § 1). Thread `tx` from the caller's tx (the
+   * void's Phase-1 tx) — NEVER a nested `runInTenant`.
+   */
+  clearLinkedInvoiceForVoidInTx(
+    tx: TenantTx,
+    tenantId: string,
+    cycleId: CycleId,
+    expectedInvoiceId: string,
+  ): Promise<boolean>;
 
   /**
    * Find the unique active cycle for a member (status NOT IN
@@ -838,18 +947,21 @@ export interface RenewalCycleRepo {
 
   /**
    * Cluster 4 review-fix (money BLOCKER) — the member's PAID-THROUGH
-   * frontier: `MAX(period_to)` across the cycles that represent SETTLED /
-   * paid coverage, i.e. `status = 'completed' OR anchored_at IS NOT NULL`.
-   * This is the SAME "paid" predicate `countSettledCyclesForMemberInTx`
-   * uses (the single canonical notion of "coverage was paid for" in F8).
+   * frontier: `MAX(period_to)` across the cycles that represent EFFECTIVE-PAID
+   * coverage. A cycle counts as paid coverage only when its SETTLING invoice
+   * (linked for a completed cycle, anchor for an open one) has NOT been fully
+   * reversed: a fully refunded / voided / credit-noted ('void'/'credited')
+   * settling invoice retracts the cycle (plan-change-ux task #24); a partial
+   * credit or a NULL settling id (backfill) still counts. This is the SAME
+   * predicate `countSettledCyclesForMemberInTx` uses — the single canonical
+   * notion of "coverage was paid for and NOT refunded" in F8.
    *
-   * Status is INTENTIONALLY not otherwise filtered: a cycle that was later
-   * CANCELLED by the archive cascade still counts when it was anchored to a
-   * real payment (cancel does NOT un-pay the coverage — `anchored_at`
-   * survives the cancel). An UNPAID cancelled/lapsed cycle (never completed,
-   * never anchored) is excluded by construction because it satisfies
-   * neither positive predicate. Returns `null` when the member has no paid
-   * coverage at all (a fresh import).
+   * A cycle that was later CANCELLED by the archive cascade still counts when
+   * it was anchored to a real (unreversed) payment (cancel does NOT un-pay the
+   * coverage — `anchored_at` survives the cancel). An UNPAID cancelled/lapsed
+   * cycle (never completed, never anchored) is excluded by construction. Returns
+   * `null` when the member has no effective-paid coverage at all (a fresh
+   * import, OR every prior cycle's settling invoice was refunded/voided).
    *
    * Used by the undelete-restore (`restoreCycleForMember`) to anchor the
    * re-created cycle AT the frontier rather than at the registration
@@ -867,12 +979,14 @@ export interface RenewalCycleRepo {
 
   /**
    * Count of the member's cycles — EXCLUDING `excludeCycleId` (the
-   * caller's current open cycle) — that represent a SETTLED renewal:
-   * status `'completed'` OR `anchored_at IS NOT NULL`. F2 fix
+   * caller's current open cycle) — that represent EFFECTIVE-PAID coverage
+   * (the SAME predicate `findMaxPaidThroughForMemberInTx` uses: settled AND
+   * its settling invoice not fully refunded/voided/credited — task #24). F2 fix
    * (final-review, 2026-07-09) — feeds `classifyMembershipPayment`'s
    * `settledCycleCountForMember` so a member whose only prior cycles are
-   * cancelled/lapsed WITHOUT ever anchoring (never actually paid) still
-   * classifies `first_payment` on their first real payment, even though
+   * cancelled/lapsed WITHOUT ever anchoring (never actually paid) — OR whose
+   * only settled cycle was later fully REFUNDED — still classifies
+   * `first_payment` on their next real payment, even though
    * `countCyclesForMemberInTx` is > 0 for them. In-tx (classification
    * must see uncommitted writes, same rationale as
    * `countCyclesForMemberInTx`).
@@ -975,6 +1089,26 @@ export interface PipelineRow {
   readonly lastReminderAt: string | null;
   readonly lastReminderStepId: string | null;
   readonly linkedInvoiceId: string | null;
+  /**
+   * plan-change-ux seam 1(b) + L1 — TRUE when this cycle's period is already
+   * EFFECTIVELY-PAID coverage, regardless of whether a renewal invoice has
+   * been LINKED yet. An `upcoming` cycle covering an already-paid window
+   * carries the paid anchor on `anchor_invoice_id` (NULL for the R4 backfill
+   * of pre-system payments) — NOT on `linked_invoice_id`, which the read-model
+   * shows in the invoice cell. Without this flag that row renders an empty "—"
+   * invoice cell which, paired with a pre-expiry countdown, reads to staff as
+   * "payment owed / unpaid". The UI shows a "Covered" indicator instead.
+   *
+   * L1 refinement: the flag is `anchored_at IS NOT NULL` AND the anchor
+   * invoice is still effectively-paid — the read-model now LEFT JOINs
+   * `invoices` on `anchor_invoice_id` because `anchored_at` is set-once and is
+   * NOT cleared when the anchor invoice is later VOIDED (F4) or fully
+   * credit-noted / refunded (F5 → §86/10 → status 'credited'). Those two
+   * statuses drop `anchored` to FALSE; a PARTIAL credit
+   * ('partially_credited') stays covered; a NULL anchor status (R4 backfill,
+   * or a practically-impossible hard-deleted tax invoice) stays covered.
+   */
+  readonly anchored: boolean;
   /**
    * Frozen reason on terminal cycles. NULL for non-terminal rows.
    * Surfaced on the lapsed-tab UI so admins see WHY a cycle lapsed

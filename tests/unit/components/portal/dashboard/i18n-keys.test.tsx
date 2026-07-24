@@ -43,6 +43,7 @@ const REQUIRED = [
   'membership.activeValue',
   'membership.activeSub',
   'membership.renewDueValue',
+  'membership.renewUpcomingValue',
   'membership.daysRemainingSub',
   'membership.overdueValue',
   'membership.overdueSub',

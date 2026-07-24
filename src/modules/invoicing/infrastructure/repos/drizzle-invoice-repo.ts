@@ -40,6 +40,7 @@ import {
   invoices,
   invoiceLines,
   creditNotes,
+  liveMembershipBillWhere,
   type InvoiceRow,
   type InvoiceLineRow,
 } from '../db';
@@ -602,6 +603,54 @@ export function makeDrizzleInvoiceRepo(
       });
     },
 
+    async findLiveMembershipBillInTx(txUnknown, input) {
+      // Uses the CALLER's tx (the `*InTx` convention): `createInvoiceDraft`
+      // must read the same snapshot it is about to insert into, and opening a
+      // second pooled connection here would neither see that snapshot nor
+      // carry the caller's `SET LOCAL app.current_tenant`. Tenant scope
+      // therefore rides the caller's GUC; the explicit `tenantId` predicate
+      // is application-layer defence-in-depth alongside RLS (Constitution
+      // Principle I § 1), matching the sibling reads in this file.
+      const tx = txUnknown as TenantTx;
+      const [row] = await tx
+        .select({
+          invoiceId: invoices.invoiceId,
+          status: invoices.status,
+          documentNumber: invoices.documentNumber,
+          billDocumentNumberRaw: invoices.billDocumentNumberRaw,
+          totalSatang: invoices.totalSatang,
+        })
+        .from(invoices)
+        // "Live membership bill" (status <> 'void') via the shared
+        // `liveMembershipBillWhere` — the SAME predicate the renewals
+        // offline mark-paid guard uses, so the two duplicate-§86/4 checks
+        // cannot drift. This method owns only its projection + ordering.
+        .where(
+          liveMembershipBillWhere({
+            tenantId: input.tenantId,
+            memberId: input.memberId,
+            planYear: input.planYear,
+          }),
+        )
+        // Deterministic pick so the invoice surfaced to the operator (and the
+        // deep-link they are asked to inspect) is stable across retries:
+        // newest first, so they land on the document they most recently dealt
+        // with. Ties broken by id so the order is total.
+        .orderBy(desc(invoices.createdAt), desc(invoices.invoiceId))
+        .limit(1);
+      if (!row) return null;
+      return {
+        invoiceId: row.invoiceId,
+        status: row.status,
+        // 088 tax-at-payment issues a pre-payment BILL number and leaves
+        // `document_number` null until the receipt; either is a real number
+        // the admin would recognise on the document, so prefer whichever
+        // exists. Both null = the existing invoice is still a draft.
+        documentNumber: row.documentNumber ?? row.billDocumentNumberRaw ?? null,
+        totalSatang: row.totalSatang,
+      };
+    },
+
     async list(tenantIdArg: string, opts) {
       return runInTenant(ctx, async (tx) => {
         const filters = [eq(invoices.tenantId, tenantIdArg)];
@@ -743,8 +792,11 @@ export function makeDrizzleInvoiceRepo(
      * DESIGN — it never matches the bound (newest) bill itself, so the newest
      * bill is never voidable → never zero survivors; exactly one for the
      * reactivation shape (older bill pre-committed), but two brand-new
-     * concurrent same-member issues may leave two — closed by sub-project #2's
-     * content guard.
+     * concurrent same-member issues may leave two. The interactive guards
+     * (admin `createInvoiceDraft` + renewals `markPaidOffline`, via the shared
+     * `liveMembershipBillWhere`) refuse accidental duplicates on their paths;
+     * two concurrent automated issues here remain a soft residual (no
+     * member/plan_year unique index, by design).
      */
     async listSupersedableMembershipBills(tenantIdArg, memberId, bound) {
       return runInTenant(ctx, async (tx) => {
@@ -1545,6 +1597,86 @@ export function makeDrizzleInvoiceRepo(
           and(
             eq(invoices.tenantId, input.tenantId),
             eq(invoices.invoiceId, input.invoiceId),
+          ),
+        );
+    },
+
+    // ---- Bug 10: void §86/4 PDF re-stamp reconcile marker --------------------
+    async markVoidPdfReconcilePending(txUnknown, input): Promise<void> {
+      const tx = txUnknown as TenantTx;
+      // COALESCE keeps the FIRST pending timestamp so repeated Phase-2 failures
+      // do not reset the clock. `void_pdf_reconcile_*` are not frozen by the
+      // 0234 immutability trigger, so this lands on a `void` row.
+      await tx
+        .update(invoices)
+        .set({
+          voidPdfReconcilePendingAt: sql`COALESCE(${invoices.voidPdfReconcilePendingAt}, now())`,
+          updatedAt: sql`now()`,
+        })
+        .where(
+          and(
+            eq(invoices.tenantId, input.tenantId),
+            eq(invoices.invoiceId, input.invoiceId),
+          ),
+        );
+    },
+
+    async clearVoidPdfReconcileMarker(txUnknown, input): Promise<void> {
+      const tx = txUnknown as TenantTx;
+      await tx
+        .update(invoices)
+        .set({
+          voidPdfReconcilePendingAt: null,
+          voidPdfReconcileAttempts: 0,
+          voidPdfReconcileParkedAt: null,
+          updatedAt: sql`now()`,
+        })
+        .where(
+          and(
+            eq(invoices.tenantId, input.tenantId),
+            eq(invoices.invoiceId, input.invoiceId),
+          ),
+        );
+    },
+
+    async bumpVoidPdfReconcileAttempts(txUnknown, input): Promise<void> {
+      const tx = txUnknown as TenantTx;
+      // SQL increment (race-safe under overlapping ticks). Conditional on the
+      // row still being pending + un-parked so an overlapping clear/park is
+      // never undone by a stale in-flight tick.
+      await tx
+        .update(invoices)
+        .set({
+          voidPdfReconcileAttempts: sql`${invoices.voidPdfReconcileAttempts} + 1`,
+          updatedAt: sql`now()`,
+        })
+        .where(
+          and(
+            eq(invoices.tenantId, input.tenantId),
+            eq(invoices.invoiceId, input.invoiceId),
+            isNotNull(invoices.voidPdfReconcilePendingAt),
+            isNull(invoices.voidPdfReconcileParkedAt),
+          ),
+        );
+    },
+
+    async parkVoidPdfReconcile(txUnknown, input): Promise<void> {
+      const tx = txUnknown as TenantTx;
+      // Reserved for GENUINE corruption (no snapshot / render fault) — removes
+      // the row from the cron scan. Transient infra failures never reach here
+      // (they retry indefinitely) so a voided doc is never abandoned un-stamped.
+      await tx
+        .update(invoices)
+        .set({
+          voidPdfReconcileParkedAt: sql`now()`,
+          updatedAt: sql`now()`,
+        })
+        .where(
+          and(
+            eq(invoices.tenantId, input.tenantId),
+            eq(invoices.invoiceId, input.invoiceId),
+            isNotNull(invoices.voidPdfReconcilePendingAt),
+            isNull(invoices.voidPdfReconcileParkedAt),
           ),
         );
     },

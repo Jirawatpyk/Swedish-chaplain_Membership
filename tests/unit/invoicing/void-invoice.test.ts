@@ -289,6 +289,11 @@ function makeDeps(
       applyCreditNoteRollup: vi.fn(),
       applyInvoicePdfRegeneration: vi.fn(async () => {}),
       applyReceiptPdfRegeneration: vi.fn(async () => {}),
+      // Bug 10 — reconcile-marker repo methods (Phase-2 leg-split).
+      markVoidPdfReconcilePending: vi.fn(async () => {}),
+      clearVoidPdfReconcileMarker: vi.fn(async () => {}),
+      bumpVoidPdfReconcileAttempts: vi.fn(async () => {}),
+      parkVoidPdfReconcile: vi.fn(async () => {}),
       applyVoid: vi.fn(async () =>
         ({
           ...(loaded as Invoice),
@@ -339,6 +344,11 @@ function makeDeps(
     outbox: { enqueue: vi.fn(async () => {}) },
     // Email-locale audit 2026-07-16 — default no stored preference (→ 'en').
     recipientLocale: { getMemberEmailLocale: vi.fn(async () => null) },
+    // 8A — default: no refund in flight → the guard never fires on the existing
+    // void happy paths. The guard test overrides with a positive count.
+    pendingRefundGuard: {
+      countPendingRefundsForInvoice: vi.fn(async () => 0),
+    },
     ...overrides,
   };
 }
@@ -353,6 +363,38 @@ const INPUT = {
 
 describe('voidInvoice — S32 non-member event rows + S31 kind-true re-render', () => {
   beforeEach(() => vi.clearAllMocks());
+
+  // ── 8A: pending-refund guard (void) ──────────────────────────────────────
+  //
+  // Voiding while a refund is settling flips the invoice to `void`, so the
+  // refund's own Phase-B §86/10 then declines against it and the Stripe-settled
+  // refund is stranded `pending` forever. The guard refuses (409) ABOVE the
+  // first write. UNCONDITIONAL — a void has no refund-origin variant.
+  it('blocks a void with refund_in_progress when a pending refund exists', async () => {
+    const guard = vi.fn(async () => 1);
+    const deps = makeDeps(makeIssuedMembership(), {
+      pendingRefundGuard: { countPendingRefundsForInvoice: guard },
+    });
+
+    const r = await voidInvoice(deps, INPUT);
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('refund_in_progress');
+    // ABOVE the first write — no tx, no re-render.
+    expect(deps.invoiceRepo.withTx).not.toHaveBeenCalled();
+    expect(deps.pdfRender.render).not.toHaveBeenCalled();
+    expect(guard).toHaveBeenCalledWith('test-swecham', INVOICE_ID);
+  });
+
+  it('consults the guard on a void happy path (count 0 → proceeds)', async () => {
+    const deps = makeDeps(makeIssuedMembership());
+    const r = await voidInvoice(deps, INPUT);
+    expect(r.ok).toBe(true);
+    expect(deps.pendingRefundGuard.countPendingRefundsForInvoice).toHaveBeenCalledWith(
+      'test-swecham',
+      INVOICE_ID,
+    );
+  });
 
   it('S32 — LEGACY non-member ISSUED event row voids OK (remediation Step 2.1 executable)', async () => {
     const deps = makeDeps(makeLegacyNoTinEvent());
@@ -431,6 +473,43 @@ describe('voidInvoice — S32 non-member event rows + S31 kind-true re-render', 
     expect(renderInput.voidUnderlyingKind).toBe('invoice');
   });
 
+  // ── bug 10: the extraction (buildVoidRenderTargets) threads the tax-critical
+  // render inputs from the loaded row. The adapter goldens
+  // (void-kind-true-golden / zero-rate-pdf-golden) prove those fields RENDER as
+  // text; these pin that the shared helper PASSES them (a dropped WHT/zero-rate
+  // line would ship silently — unit render is mocked).
+  it('bug 10 — render inputs thread invoiceSubject (WHT), vatInclusive, and the §80/1(5) zero-rate spread from the loaded row', async () => {
+    const deps = makeDeps(
+      makeIssuedMembership({
+        vatInclusive: true,
+        vatTreatment: 'zero_rated_80_1_5',
+        zeroRateCertNo: 'MFA-2026-000042',
+        zeroRateCertDate: '2026-03-01',
+      }),
+    );
+    const r = await voidInvoice(deps, INPUT);
+    expect(r.ok).toBe(true);
+    const renderInput = (deps.pdfRender.render as ReturnType<typeof vi.fn>).mock
+      .calls[0]![0] as PdfRenderInput;
+    expect(renderInput.invoiceSubject).toBe('membership');
+    expect(renderInput.vatInclusive).toBe(true);
+    expect(renderInput.vatTreatment).toBe('zero_rated_80_1_5');
+    expect(renderInput.zeroRateCertNo).toBe('MFA-2026-000042');
+    expect(renderInput.zeroRateCertDate).toBe('2026-03-01');
+  });
+
+  it('bug 10 — a standard (non-zero-rate) row OMITS the zero-rate spread (deterministic-seed byte-stability)', async () => {
+    const deps = makeDeps(makeIssuedMembership()); // vatTreatment: 'standard'
+    const r = await voidInvoice(deps, INPUT);
+    expect(r.ok).toBe(true);
+    const renderInput = (deps.pdfRender.render as ReturnType<typeof vi.fn>).mock
+      .calls[0]![0] as PdfRenderInput;
+    // The conditional spread must be ABSENT (undefined), never present-with-null
+    // — the deterministic seed depends on the omission (SC-003).
+    expect('vatTreatment' in renderInput).toBe(false);
+    expect(renderInput.vatInclusive).toBe(false);
+  });
+
   it('member prefers Thai → invoice_voided outbox row carries recipientLocale=th (email-locale audit 2026-07-16)', async () => {
     const deps = makeDeps(makeIssuedMembership());
     deps.recipientLocale.getMemberEmailLocale = vi.fn(async () => 'th' as const);
@@ -500,68 +579,28 @@ describe('voidInvoice — 088 T068 new-flow bill + paid two-blob void', () => {
     expect(outboxCall![1].documentNumber).toBe(BILL_NO);
   });
 
-  // ---- Gap 2: paid membership — BOTH blobs stamped ----
-  it('b — paid membership void: BOTH bill + receipt blobs re-rendered + synced, correct kinds/numbers/overlays', async () => {
+  // ---- H1: paid membership §86/4 void is REFUSED (→ §86/10 credit note) ----
+  it('b — paid membership void is REFUSED with paid_membership_requires_credit_note (no render, no write, no audit)', async () => {
+    // A paid membership §86/4 is reversed via a §86/10 CREDIT NOTE (real refund),
+    // NEVER a void: a void writes nothing to `payments` (settled money stranded)
+    // and, with the effective-paid retract (#24), double-charges on restore. The
+    // two-blob VOID-stamp path (formerly test "b") is now reachable only by the
+    // void-pdf-reconcile cron for legacy pre-guard rows, never a new void.
     const deps = makeDeps(makePaidMembershipTwoBlob());
     const r = await voidInvoice(deps, INPUT);
-    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
-    if (!r.ok) return;
-    expect(r.value.status).toBe('void');
-
-    // TWO renders: [0] = bill (Target A), [1] = §86/4 receipt (Target B).
-    const renderCalls = (deps.pdfRender.render as ReturnType<typeof vi.fn>).mock.calls;
-    expect(renderCalls).toHaveLength(2);
-    const billRender = renderCalls[0]![0] as PdfRenderInput;
-    const receiptRender = renderCalls[1]![0] as PdfRenderInput;
-
-    // Target A — the ใบแจ้งหนี้ bill: SC number, billMode, invoice underlying.
-    expect(billRender.voidUnderlyingKind).toBe('invoice');
-    expect(billRender.billMode).toBe(true);
-    expect(billRender.documentNumber?.raw).toBe(BILL_NO);
-    // Target B — the §86/4 tax receipt: RC number, receipt_combined underlying,
-    // dated at the PAYMENT date (D7), NO billMode.
-    expect(receiptRender.voidUnderlyingKind).toBe('receipt_combined');
-    expect(receiptRender.billMode).toBeUndefined();
-    expect(receiptRender.documentNumber?.raw).toBe(RC_NO);
-    expect(receiptRender.issueDate).toBe('2026-05-01');
-
-    // BOTH blobs uploaded at their own content-addressed keys, overwrite on.
-    const uploadCalls = (deps.blob.uploadPdf as ReturnType<typeof vi.fn>).mock.calls;
-    expect(uploadCalls).toHaveLength(2);
-    const uploadedKeys = uploadCalls.map((c) => (c[0] as { key: string }).key);
-    expect(uploadedKeys).toContain(`invoicing/test-swecham/2026/${INVOICE_ID}_v1.pdf`);
-    expect(uploadedKeys).toContain(RECEIPT_BLOB_KEY);
-    for (const c of uploadCalls) {
-      expect((c[0] as { allowOverwrite?: boolean }).allowOverwrite).toBe(true);
-    }
-
-    // BOTH sha columns synced — bill via applyInvoicePdfRegeneration, receipt
-    // via applyReceiptPdfRegeneration.
-    expect(deps.invoiceRepo.applyInvoicePdfRegeneration).toHaveBeenCalledTimes(1);
-    expect(deps.invoiceRepo.applyReceiptPdfRegeneration).toHaveBeenCalledTimes(1);
-    const invoiceRegenArg = (
-      deps.invoiceRepo.applyInvoicePdfRegeneration as ReturnType<typeof vi.fn>
-    ).mock.calls[0]![1] as { pdfSha256: string };
-    const receiptRegenArg = (
-      deps.invoiceRepo.applyReceiptPdfRegeneration as ReturnType<typeof vi.fn>
-    ).mock.calls[0]![1] as { receiptPdfSha256: string };
-    expect(invoiceRegenArg.pdfSha256).toBe('b'.repeat(64));
-    expect(receiptRegenArg.receiptPdfSha256).toBe('c'.repeat(64));
-
-    // Audit payload carries BOTH before/after shas.
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.code).toBe('paid_membership_requires_credit_note');
+    // Read-only refusal ABOVE the first write: no render, no applyVoid, no upload,
+    // no invoice_voided audit, no cancellation outbox row.
+    expect(deps.pdfRender.render).not.toHaveBeenCalled();
+    expect(deps.invoiceRepo.applyVoid).not.toHaveBeenCalled();
+    expect(deps.blob.uploadPdf).not.toHaveBeenCalled();
+    expect(deps.outbox.enqueue).not.toHaveBeenCalled();
     const voidedCall = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.find(
       (c) => c[1].eventType === 'invoice_voided',
     );
-    const payload = voidedCall![1].payload as Record<string, unknown>;
-    expect(payload.member_id).toBe('member-1');
-    expect(payload.original_pdf_sha256).toBe('a'.repeat(64));
-    expect(payload.new_pdf_sha256).toBe('b'.repeat(64));
-    expect(payload.original_receipt_pdf_sha256).toBe(RECEIPT_ORIGINAL_SHA);
-    expect(payload.new_receipt_pdf_sha256).toBe('c'.repeat(64));
-
-    // Returned Invoice reflects BOTH freshly-synced shas.
-    expect(r.value.pdf?.sha256).toBe('b'.repeat(64));
-    expect(r.value.receiptPdf?.sha256).toBe('c'.repeat(64));
+    expect(voidedCall).toBeUndefined();
   });
 
   // ---- Gap 2: paid single-blob (event-no-TIN §105 as-paid) ----
@@ -640,24 +679,12 @@ describe('voidInvoice — 088 T068 new-flow bill + paid two-blob void', () => {
     expect(deps.invoiceRepo.applyVoid).not.toHaveBeenCalled();
   });
 
-  it('e2 — Target B (receipt) render failure on a paid two-blob void → pdf_render_failed, applyVoid NOT called', async () => {
-    const deps = makeDeps(makePaidMembershipTwoBlob());
-    // First render (Target A / bill) succeeds; second (Target B / receipt) throws.
-    (deps.pdfRender.render as ReturnType<typeof vi.fn>)
-      .mockResolvedValueOnce({
-        bytes: new Uint8Array([0x25, 0x50, 0x44, 0x46]),
-        sha256: Sha256Hex.ofUnsafe('b'.repeat(64)),
-      })
-      .mockRejectedValueOnce(new Error('boom-B'));
-    const r = await voidInvoice(deps, INPUT);
-    expect(r.ok).toBe(false);
-    if (r.ok) return;
-    expect(r.error.code).toBe('pdf_render_failed');
-    // Phase 1 rolled back — neither blob synced.
-    expect(deps.invoiceRepo.applyVoid).not.toHaveBeenCalled();
-    expect(deps.invoiceRepo.applyInvoicePdfRegeneration).not.toHaveBeenCalled();
-    expect(deps.invoiceRepo.applyReceiptPdfRegeneration).not.toHaveBeenCalled();
-  });
+  // NOTE (H1): the former "e2 — Target B render failure on a paid two-blob void"
+  // was removed — a paid membership can no longer be voided (refused above the
+  // first render), so the two-blob render-rollback path is unreachable via this
+  // use case. Target-A render rollback stays covered by test "e1" (issued bill);
+  // the two-blob (targetB) render-failure leg is now covered on the surviving
+  // path by void-pdf-reconcile-cron "D12" (legacy pre-H1 voided-paid rows).
 
   it('e3 — concurrent state change: applyVoid conflict → concurrent_state_change', async () => {
     const deps = makeDeps(makeIssuedBill());
@@ -670,34 +697,98 @@ describe('voidInvoice — 088 T068 new-flow bill + paid two-blob void', () => {
     expect(r.error.code).toBe('concurrent_state_change');
   });
 
-  it('e4 — Phase 2 receipt-blob upload failure keeps void committed; bill sha still synced', async () => {
-    const deps = makeDeps(makePaidMembershipTwoBlob());
-    // Bill blob upload succeeds; receipt blob upload throws (2nd uploadPdf call).
-    (deps.blob.uploadPdf as ReturnType<typeof vi.fn>)
-      .mockResolvedValueOnce({ key: 'bill', url: 'https://blob.test/bill' })
-      .mockRejectedValueOnce(new Error('receipt blob outage'));
-    const r = await voidInvoice(deps, INPUT);
-    // Void IS committed despite the Phase-2 receipt failure.
-    expect(r.ok).toBe(true);
-    if (!r.ok) return;
-    expect(r.value.status).toBe('void');
-    // Bill sha synced; receipt sha sync was never reached (upload threw first).
-    expect(deps.invoiceRepo.applyInvoicePdfRegeneration).toHaveBeenCalledTimes(1);
-    expect(deps.invoiceRepo.applyReceiptPdfRegeneration).not.toHaveBeenCalled();
-    // Return value: bill sha patched, receipt sha left at the Phase-1 value.
-    expect(r.value.pdf?.sha256).toBe('b'.repeat(64));
-    expect(r.value.receiptPdf?.sha256).toBe(RECEIPT_ORIGINAL_SHA);
-    // A pdf_render_failed audit documents the deferred receipt overlay.
-    const syncFail = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.find(
-      (c) =>
-        c[1].eventType === 'pdf_render_failed' &&
-        (c[1].payload as Record<string, unknown>).context ===
-          'invoice_void_phase2_receipt_sync',
+  // NOTE (H1): the former "e4 — Phase 2 receipt-blob upload failure keeps void
+  // committed; bill sha still synced" was removed — it exercised the two-blob
+  // Phase-2 sync independence, only reachable by voiding a PAID membership, which
+  // is now refused. Single-blob Phase-2 failure stays covered by "bug 10 M1"
+  // (blob_upload leg → reconcile marker) below and the integration T-PH2 test;
+  // the two-blob (targetB) upload-failure leg is now covered on the surviving
+  // path by void-pdf-reconcile-cron "D11" (all-or-nothing per-tick rollback).
+
+  // ── bug 10: Phase-2 leg-split recovery ───────────────────────────────────
+  it('bug 10 M1 — blob_upload leg failure sets the reconcile marker (cron re-renders)', async () => {
+    const deps = makeDeps(makeIssuedMembership());
+    (deps.blob.uploadPdf as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error('blob outage'),
     );
-    expect(syncFail).toBeDefined();
-    const pl = syncFail![1].payload as Record<string, unknown>;
-    expect(pl.phase).toBe('blob_upload');
-    expect(pl.blob_bytes_uploaded).toBe(false);
+    const r = await voidInvoice(deps, INPUT);
+    expect(r.ok).toBe(true);
+    expect(deps.invoiceRepo.markVoidPdfReconcilePending).toHaveBeenCalledTimes(1);
+    expect(
+      (deps.invoiceRepo.markVoidPdfReconcilePending as ReturnType<typeof vi.fn>)
+        .mock.calls[0]![1],
+    ).toMatchObject({ tenantId: 'test-swecham', invoiceId: INVOICE_ID });
+    // The blob_upload leg NEVER retries the sha-write (the blob has no stamped
+    // bytes to sync a sha against).
+    expect(deps.invoiceRepo.applyInvoicePdfRegeneration).not.toHaveBeenCalled();
+  });
+
+  it('bug 10 M2 — sha_sync leg failure retries the sha-write inline and sets NO marker', async () => {
+    const deps = makeDeps(makeIssuedMembership());
+    // Upload succeeds; the Phase-2 sha-write throws once, then the inline retry
+    // (a fresh withTx) succeeds — the blob already holds the stamped bytes.
+    (deps.invoiceRepo.applyInvoicePdfRegeneration as ReturnType<typeof vi.fn>)
+      .mockRejectedValueOnce(new Error('sha write outage'))
+      .mockResolvedValueOnce(undefined);
+    const r = await voidInvoice(deps, INPUT);
+    expect(r.ok).toBe(true);
+    // Called twice: the failed Phase-2 write + the successful inline retry.
+    expect(deps.invoiceRepo.applyInvoicePdfRegeneration).toHaveBeenCalledTimes(2);
+    // NEVER handed to the re-render cron (re-rendering would break the email's
+    // sha_P1 integrity check on the already-correct blob).
+    expect(deps.invoiceRepo.markVoidPdfReconcilePending).not.toHaveBeenCalled();
+    // Recovered inline → NO persistent-gap audit.
+    expect(
+      (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.filter(
+        (c) => c[1].eventType === 'pdf_render_failed',
+      ),
+    ).toEqual([]);
+    // The recovered (stamped) sha is patched onto the return.
+    if (r.ok) expect(r.value.pdf?.sha256).toBe('b'.repeat(64));
+  });
+
+  it('bug 10 M2b — sha_sync leg retries the sha-write more than once before giving up', async () => {
+    const deps = makeDeps(makeIssuedMembership());
+    // Original Phase-2 write fails, the FIRST retry fails too, the SECOND retry
+    // succeeds. A single-retry implementation would give up after the first
+    // retry and mis-report a persistent DB-sha gap that never self-heals.
+    (deps.invoiceRepo.applyInvoicePdfRegeneration as ReturnType<typeof vi.fn>)
+      .mockRejectedValueOnce(new Error('sha write outage 1'))
+      .mockRejectedValueOnce(new Error('sha write outage 2'))
+      .mockResolvedValueOnce(undefined);
+    const r = await voidInvoice(deps, INPUT);
+    expect(r.ok).toBe(true);
+    // Original write + 2 retries = 3 calls (single-retry would stop at 2).
+    expect(deps.invoiceRepo.applyInvoicePdfRegeneration).toHaveBeenCalledTimes(3);
+    expect(deps.invoiceRepo.markVoidPdfReconcilePending).not.toHaveBeenCalled();
+    // Recovered inline → NO persistent-gap audit; stamped sha patched on.
+    expect(
+      (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.filter(
+        (c) => c[1].eventType === 'pdf_render_failed',
+      ),
+    ).toEqual([]);
+    if (r.ok) expect(r.value.pdf?.sha256).toBe('b'.repeat(64));
+  });
+
+  it('bug 10 M3 — full Phase-2 success sets no reconcile marker', async () => {
+    const deps = makeDeps(makeIssuedMembership());
+    const r = await voidInvoice(deps, INPUT);
+    expect(r.ok).toBe(true);
+    expect(deps.invoiceRepo.markVoidPdfReconcilePending).not.toHaveBeenCalled();
+  });
+
+  it('bug 10 M4 — a reconcile-marker write failure is swallowed (void still succeeds)', async () => {
+    const deps = makeDeps(makeIssuedMembership());
+    (deps.blob.uploadPdf as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error('blob outage'),
+    );
+    (
+      deps.invoiceRepo.markVoidPdfReconcilePending as ReturnType<typeof vi.fn>
+    ).mockRejectedValueOnce(new Error('marker write outage'));
+    const r = await voidInvoice(deps, INPUT);
+    // The public contract (Result<Invoice, VoidInvoiceError>) holds despite the
+    // double-fault — the pdf_render_failed audit still preserves the signal.
+    expect(r.ok).toBe(true);
   });
 });
 
@@ -804,5 +895,44 @@ describe('void-on-reissue options', () => {
       (voidedEmit?.[1].payload as Record<string, unknown> | undefined)
         ?.superseded_by_invoice_id,
     ).toBe('11111111-1111-1111-1111-111111111111');
+  });
+});
+
+/**
+ * H1 — a PAID membership §86/4 may NOT be voided (a void strands the settled
+ * payment and, with the effective-paid retract (#24), double-charges the member
+ * on restore). It must be reversed via a §86/10 CREDIT NOTE instead. The block
+ * is MEMBERSHIP-ONLY: event / non-member rows drive no renewal cycle and the
+ * legacy no-TIN remediation runbook (Step 2.1) must still be able to void them.
+ * These three controls pin the exact boundary in one place.
+ */
+describe('H1 — paid membership void refusal boundary', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('paid MEMBERSHIP → refused (paid_membership_requires_credit_note), no write', async () => {
+    const deps = makeDeps(makePaidMembershipTwoBlob());
+    const r = await voidInvoice(deps, INPUT);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.code).toBe('paid_membership_requires_credit_note');
+    expect(deps.invoiceRepo.applyVoid).not.toHaveBeenCalled();
+  });
+
+  it('issued MEMBERSHIP → still voids (control — only PAID membership is blocked)', async () => {
+    const deps = makeDeps(makeIssuedMembership()); // status: 'issued'
+    const r = await voidInvoice(deps, INPUT);
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.status).toBe('void');
+    expect(deps.invoiceRepo.applyVoid).toHaveBeenCalledTimes(1);
+  });
+
+  it('paid EVENT (no-TIN §105 as-paid) → still voids (control — no-TIN runbook stays open)', async () => {
+    const deps = makeDeps(makePaidAsPaidNoTinEvent()); // status: 'paid', subject: 'event'
+    const r = await voidInvoice(deps, INPUT);
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.status).toBe('void');
+    expect(deps.invoiceRepo.applyVoid).toHaveBeenCalledTimes(1);
   });
 });

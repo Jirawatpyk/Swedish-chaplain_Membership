@@ -293,6 +293,53 @@ export function cycleFrozenPriceSatang(cycle: RenewalCycle): Satang {
   }
 }
 
+/**
+ * The 5 `frozen_plan_*` fields that identify a cycle's billed plan snapshot —
+ * exactly the fields `linkInvoiceAndReconcileFrozenPlanInTx` overwrites. A
+ * `RenewalCycle` satisfies this structurally, as does the `billed` snapshot
+ * argument the reconcile method takes.
+ */
+export interface FrozenPlanSnapshot {
+  readonly planIdAtCycleStart: string;
+  readonly tierAtCycleStart: TierBucket;
+  readonly frozenPlanPriceThb: ThbDecimal;
+  readonly frozenPlanTermMonths: number;
+  readonly frozenPlanCurrency: 'THB' | 'SEK' | 'EUR' | 'USD';
+}
+
+/**
+ * M1 — TRUE when ANY of the 5 frozen_plan_* fields differ between `a` (a cycle's
+ * pre-reconcile values) and `b` (the `billed` snapshot the §86/4 was issued
+ * from). Price is compared as VAT-exclusive satang (the audited normalization —
+ * "50000" and "50000.00" are the same money, never a false divergence), so a
+ * SAME-PRICE cross-plan swap (A@50,000 → B@50,000) still reports a difference on
+ * plan_id/tier.
+ *
+ * Gates the corrective `renewal_cycle_price_frozen(
+ * reconciled_from_concurrent_plan_change:true)` audit + the reconcile metric on
+ * BOTH confirm-renewal (Step-4) and admin-renew-lapsed-member (Step-3): the
+ * reconcile ALWAYS overwrites all 5 fields, so the corrective audit must be
+ * emitted whenever ANY was actually healed — not only the price. A PRICE-only
+ * gate silently reset plan_id/tier on a same-price cross-plan swap with no audit,
+ * losing the superseded `applied_to_open_cycle` for plan-mix / reporting.
+ */
+export function frozenPlanSnapshotsDiffer(
+  a: FrozenPlanSnapshot,
+  b: FrozenPlanSnapshot,
+): boolean {
+  return (
+    a.planIdAtCycleStart !== b.planIdAtCycleStart ||
+    a.tierAtCycleStart !== b.tierAtCycleStart ||
+    a.frozenPlanTermMonths !== b.frozenPlanTermMonths ||
+    a.frozenPlanCurrency !== b.frozenPlanCurrency ||
+    // Price last: satang-normalized so "50000" ≡ "50000.00" (same audited parse
+    // `cycleFrozenPriceSatang` uses). A malformed decimal throws — the caller
+    // runs inside runInTenant, so a throw rolls the reconcile+link back.
+    parseThbDecimalToSatang(a.frozenPlanPriceThb) !==
+      parseThbDecimalToSatang(b.frozenPlanPriceThb)
+  );
+}
+
 /** True if the cycle is past its expires_at + still non-terminal. */
 export function isOverdue(cycle: RenewalCycle, now: Date): boolean {
   if (isTerminalCycleStatus(cycle.status)) return false;

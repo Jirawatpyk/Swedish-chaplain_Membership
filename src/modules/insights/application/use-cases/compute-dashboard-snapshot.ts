@@ -54,6 +54,7 @@ import type {
   BenefitConsumptionAggregateSource,
   BroadcastConsumptionSource,
   InvoiceSource,
+  WaivedRefundSource,
   MemberEnumerationSource,
   MemberSource,
   PlanSource,
@@ -64,6 +65,12 @@ import type { ClockPort } from '../ports/clock-port';
 export interface ComputeDashboardSnapshotDeps {
   readonly memberSource: MemberSource;
   readonly invoiceSource: InvoiceSource;
+  /**
+   * Track B — money returned by refunds that carried no §86/10 credit note.
+   * Without it every revenue figure below overstates by that amount, because
+   * the invoicing side has no record such a refund happened.
+   */
+  readonly waivedRefundSource: WaivedRefundSource;
   /** Broadcasts awaiting approval (FR-002 / AS-2); only the count is needed at US1. */
   readonly broadcastSource: Pick<BroadcastConsumptionSource, 'countAwaitingApproval'>;
   /** Active-member enumeration for the cross-member quota roll-up (P1-4 / FR-004). */
@@ -102,6 +109,12 @@ export async function computeDashboardSnapshot(
     const monthKeys = lastNMonthKeys(now, deps.tenantTimezone, 12);
 
     // Source reads self-scope (each call runs in its own tenant tx).
+    // Track B — fetched ONCE, BEFORE the batch, and threaded into all three
+    // revenue reads. Fetching it per-method would fire three identical
+    // tenant-wide aggregates concurrently and let the YTD KPI, the trend and
+    // the donut observe different instants — a snapshot that disagrees with
+    // itself is worse than one that is a round-trip staler.
+    const waivedByInvoice = await deps.waivedRefundSource.sumWaivedByInvoice(ctx);
     const [
       statusCounts,
       atRisk,
@@ -119,10 +132,15 @@ export async function computeDashboardSnapshot(
       deps.memberSource.countAtRisk(ctx),
       // Revenue KPI windows by the tenant FISCAL year (derived in the adapter
       // from this instant + fiscalYearStartMonth), not the calendar `year`.
-      deps.invoiceSource.getYtdPaidRevenueSatang(ctx, now.toISOString()),
+      deps.invoiceSource.getYtdPaidRevenueSatang(ctx, now.toISOString(), waivedByInvoice),
       deps.invoiceSource.countOverdue(ctx, now.toISOString()),
       deps.broadcastSource.countAwaitingApproval(ctx),
-      deps.invoiceSource.getMonthlyPaidRevenueSatang(ctx, monthKeys, deps.tenantTimezone),
+      deps.invoiceSource.getMonthlyPaidRevenueSatang(
+        ctx,
+        monthKeys,
+        deps.tenantTimezone,
+        waivedByInvoice,
+      ),
       deps.memberSource.joinDistribution(ctx, monthKeys),
       // P1-4 / FR-004 — cross-member quota roll-up inputs. The two consumption
       // aggregates are ONE GROUP BY each (no N+1); entitlements are resolved
@@ -131,7 +149,7 @@ export async function computeDashboardSnapshot(
       deps.consumptionAggregate.eblastUsedByMember(ctx, year),
       deps.consumptionAggregate.culturalUsedByMember(ctx, year),
       // 067 — invoice-status distribution chart (paid/unpaid/overdue + drafts).
-      deps.invoiceSource.getInvoiceStatusDistribution(ctx, now.toISOString()),
+      deps.invoiceSource.getInvoiceStatusDistribution(ctx, now.toISOString(), waivedByInvoice),
     ]);
     const total = statusCounts.active + statusCounts.inactive + statusCounts.archived;
 

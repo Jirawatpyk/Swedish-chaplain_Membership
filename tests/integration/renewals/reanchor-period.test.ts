@@ -286,7 +286,7 @@ describe('F8 rolling-anchor repo surface — integration (Task 4)', () => {
       expect(result?.cycle.status).toBe('upcoming');
     });
 
-    it("(d) deletes and counts the cycle's seeded renewal_reminder_events rows", async () => {
+    it("(d) fixed-anchor: period UNCHANGED → does NOT delete the cycle's reminder events (reset=0)", async () => {
       const memberId = await seedMember(tenantA);
       const cycleId: CycleId = asCycleId(randomUUID());
       await seedCycle(tenantA, { cycleId, memberId, status: 'upcoming' });
@@ -315,6 +315,66 @@ describe('F8 rolling-anchor repo surface — integration (Task 4)', () => {
       );
 
       const deps = makeRenewalsDeps(tenantA.ctx.slug);
+      // Re-anchor with the SAME period the cycle was seeded on (2026-06 →
+      // 2027-06) — the fixed-anchor normal first payment: only stamp the anchor,
+      // do not move the period. Reminders stay valid.
+      const result = await runInTenant(tenantA.ctx, (tx) =>
+        deps.cyclesRepo.reanchorPeriodInTx(tx, tenantA.ctx.slug, cycleId, {
+          periodFrom: '2026-06-01T00:00:00.000Z',
+          periodTo: '2027-06-01T00:00:00.000Z',
+          anchoredAt: '2026-08-01T00:00:00.000Z',
+          anchorInvoiceId: null,
+          frozenPlanPriceThb: parseThbDecimal('55000.00'),
+          frozenPlanTermMonths: 12,
+        }),
+      );
+
+      expect(result?.reminderEventsReset).toBe(0);
+
+      const remaining = await runInTenant(tenantA.ctx, (tx) =>
+        tx
+          .select()
+          .from(renewalReminderEvents)
+          .where(eq(renewalReminderEvents.cycleId, cycleId)),
+      );
+      // Reminders are KEPT — the period did not move so they are still valid.
+      expect(remaining).toHaveLength(2);
+    });
+
+    it('(f) period MOVED (comeback / CSV backfill re-anchor) → reminder events ARE deleted (reset = count)', async () => {
+      const memberId = await seedMember(tenantA);
+      const cycleId: CycleId = asCycleId(randomUUID());
+      await seedCycle(tenantA, { cycleId, memberId, status: 'upcoming' });
+
+      await runInTenant(tenantA.ctx, (tx) =>
+        tx.insert(renewalReminderEvents).values([
+          {
+            tenantId: tenantA.ctx.slug,
+            cycleId,
+            stepId: 't-30',
+            channel: 'email',
+            templateId: 'renewal-t30-email',
+            status: 'pending',
+            yearInCycle: 1,
+          },
+          {
+            tenantId: tenantA.ctx.slug,
+            cycleId,
+            stepId: 't-14',
+            channel: 'email',
+            templateId: 'renewal-t14-email',
+            status: 'pending',
+            yearInCycle: 1,
+          },
+        ]),
+      );
+
+      const deps = makeRenewalsDeps(tenantA.ctx.slug);
+      // Re-anchor to a DIFFERENT period (2026-08 → 2027-08, moved from the
+      // 2026-06 → 2027-06 seed) — the comeback exception / CSV backfill. The old
+      // period's reminders must be purged: their stale `year_in_cycle` keys would
+      // otherwise collide with the NEW period's reminders and suppress them
+      // (silent renewal-lapse; review H-1).
       const result = await runInTenant(tenantA.ctx, (tx) =>
         deps.cyclesRepo.reanchorPeriodInTx(tx, tenantA.ctx.slug, cycleId, {
           ...REANCHOR_ARGS,
@@ -331,7 +391,7 @@ describe('F8 rolling-anchor repo surface — integration (Task 4)', () => {
           .where(eq(renewalReminderEvents.cycleId, cycleId)),
       );
       expect(remaining).toHaveLength(0);
-    });
+    }, 120_000);
 
     it("(e) cross-tenant: tenant B cannot re-anchor tenant A's cycle (RLS → null)", async () => {
       const memberId = await seedMember(tenantA);

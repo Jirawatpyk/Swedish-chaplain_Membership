@@ -1,0 +1,41 @@
+# money-remediation task-12a (review I-1) — enforce the architecture governance
+# tests on PRs and pushes, not only at pre-push.
+#
+# WHY THIS EXISTS
+# `tests/unit/architecture/` holds the settlement-tx adoption baseline
+# (`settlement-tx-adoption.test.ts`) — the guard that reddens when a new raw
+# `paymentsRepo.withTx(` site (a `return err(...)` that silently COMMITS, finding
+# F-1, a real money bug on the §87-numbered settlement path) is added, and forces
+# a conversion to lower the baseline in the same commit. That guard ran ONLY via
+# `.husky/pre-push`, which `git push --no-verify` bypasses and a merge from a
+# branch that never ran pre-push never triggers. This job closes that hole.
+#
+# DELIBERATELY MINIMAL: the architecture suite is pure — it reads source files
+# from disk, needs NO database, NO secrets, NO env. So this is a fast, hermetic
+# unit run, distinct from the DB-bound nightly readiness jobs. It reports on
+# every PR/push; whether it BLOCKS merge is a branch-protection choice the
+# maintainer owns (adding this file does not, by itself, gate anything).
+name: Architecture guards
+
+on:
+  pull_request:
+  push:
+    branches: ['main']
+
+jobs:
+  architecture:
+    name: Architecture governance tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: pnpm install --frozen-lockfile
+      # No DB / secrets: the architecture tests are fs-based static checks.
+      - name: Architecture governance tests (settlement-tx adoption baseline + peers)
+        run: pnpm vitest run tests/unit/architecture/ --passWithNoTests

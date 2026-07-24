@@ -29,6 +29,13 @@ const metricsMocks = vi.hoisted(() => ({
   // A.16 — emitted on the kind:'pending' return (refund awaiting the async
   // charge.refund.updated webhook). MUST be present or the real call throws.
   refundPendingAwaitingProcessor: vi.fn(),
+  // Money-remediation Task 6 — emitted when a processor-settled refund's F4
+  // credit note could not be booked and the row was deferred, not failed.
+  refundCreditNoteDeferred: vi.fn(),
+  // Track B — emitted in Phase A beside the `refund_credit_note_waived` audit
+  // row, so counter and 10-year forensic agree 1:1. MUST be present or the
+  // real call throws (this stub going stale is how the waive path first broke).
+  refundCreditNoteWaivedCount: vi.fn(),
 }));
 vi.mock('@/lib/metrics', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/metrics')>();
@@ -93,7 +100,20 @@ function baseInput(overrides: Partial<IssueRefundInput> = {}): IssueRefundInput 
 // Build a deps graph where every method is a vi.fn — tests override
 // the ones they exercise. `withTx` runs the callback with a sentinel
 // tx token so we can assert it threads through.
-function makeDeps(overrides: Partial<IssueRefundDeps> = {}): IssueRefundDeps {
+/**
+ * The refund row's simulated current status, shared by the `updateStatus`
+ * stub so it can honour `expectedCurrentStatus` the way the adapter does.
+ * Exposed on the returned deps as `__rowStatus` for tests that need to
+ * simulate a sibling writer winning the race.
+ */
+interface RowStatusRef {
+  current: string;
+}
+
+function makeDeps(
+  overrides: Partial<IssueRefundDeps> = {},
+  rowStatusRef: RowStatusRef = { current: 'pending' },
+): IssueRefundDeps {
   const tx = Symbol('tx');
   const paymentsRepo = {
     withTx: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(tx)),
@@ -120,15 +140,36 @@ function makeDeps(overrides: Partial<IssueRefundDeps> = {}): IssueRefundDeps {
     // A.9: default returns a truthy RefundRow so the finalize helper's
     // `expectedCurrentStatus='pending'` flip is treated as "we won the
     // race" (non-null). The null/sibling-won path overrides this per-test.
-    updateStatus: vi.fn(async () => ({
-      id: 'rfnd_01J',
-      tenantId: TENANT_ID,
-      paymentId: asPaymentId(PAYMENT_ID),
-      invoiceId: 'inv-1',
-      amountSatang: asSatang(350_000n),
-      status: 'succeeded' as const,
-      processorRefundId: 're_test_xxx',
-    })),
+    //
+    // Money-remediation Task 6 (F-10): the stub now EMULATES THE REAL
+    // PREDICATE — `null` iff `expectedCurrentStatus` does not match the row's
+    // current status. A stub that returns a row unconditionally would make
+    // every assertion about the CAS guard vacuous: the guard could be deleted
+    // and the tests would not notice. `rowStatusRef` lets a test simulate a
+    // sibling that already finalised the row.
+    updateStatus: vi.fn(
+      async (
+        _tx: unknown,
+        args: { readonly expectedCurrentStatus?: string; readonly nextStatus: string },
+      ) => {
+        if (
+          args.expectedCurrentStatus !== undefined &&
+          args.expectedCurrentStatus !== rowStatusRef.current
+        ) {
+          return null;
+        }
+        rowStatusRef.current = args.nextStatus;
+        return {
+          id: 'rfnd_01J',
+          tenantId: TENANT_ID,
+          paymentId: asPaymentId(PAYMENT_ID),
+          invoiceId: 'inv-1',
+          amountSatang: asSatang(350_000n),
+          status: args.nextStatus as 'succeeded',
+          processorRefundId: 're_test_xxx',
+        };
+      },
+    ),
     // A.6/guard#1: attach the Stripe refund id in the just-inserted
     // pending window (webhook-matchable). Returns void.
     attachProcessorRefundId: vi.fn(async () => undefined),
@@ -137,6 +178,7 @@ function makeDeps(overrides: Partial<IssueRefundDeps> = {}): IssueRefundDeps {
       pendingCount: 0,
       succeededSumSatang: asSatang(0n),
       nextSeq: 1,
+      settledUnbookedCount: 0,
     })),
   };
   const tenantSettingsRepo = {
@@ -175,8 +217,21 @@ function makeDeps(overrides: Partial<IssueRefundDeps> = {}): IssueRefundDeps {
     // + total===payment.amount so the invoice bound never binds tighter than
     // the payment bound → every existing assertion (payment-cap only) is
     // preserved. Per-test overrides exercise the credit-based cap.
+    // F-4 (money-remediation Task 7) — the read also carries F4's credit-note
+    // verdict. Track B replaced the three hand-ordered axes (`status`,
+    // `creditable`, `receiptRenderState`) with ONE Domain verdict, so the gate
+    // order lives in `resolveRefundCreditNoteRequirement` and cannot be
+    // reordered independently by each caller.
+    //
+    // Default is `issue` — a credit note is owed AND issuable — so every
+    // pre-existing assertion in this file keeps testing what it was written to
+    // test; the F-4 describe block below overrides it per verdict.
     getInvoiceCreditedTotal: vi.fn(async () =>
-      ok({ creditedTotalSatang: asSatang(0n), totalSatang: PAYMENT_AMOUNT_SATANG }),
+      ok({
+        creditedTotalSatang: asSatang(0n),
+        totalSatang: PAYMENT_AMOUNT_SATANG,
+        creditNoteRequirement: { kind: 'issue' as const },
+      }),
     ),
     // tax#5 (B.2) — the shared finaliser now reads the invoice's
     // F4-AUTHORITATIVE post-CN status (not a projection of the F5 payment
@@ -313,31 +368,61 @@ describe('issueRefund (T108) — Stripe + F4 failure paths', () => {
     vi.clearAllMocks();
   });
 
-  it('processor_unavailable retryable — Stripe createRefund fails', async () => {
-    const deps = makeDeps();
-    asMock(deps.processorGateway.createRefund).mockResolvedValueOnce(
-      err({ kind: 'retryable', reason: 'rate_limit' }),
-    );
+  // ── F-3 leg 2: certainty ────────────────────────────────────────────────
+  //
+  // These three cases were ONE behaviour before money-remediation Task 6:
+  // every gateway failure kind flipped the row to `failed`. The old test for
+  // `retryable` asserted exactly that (`{nextStatus:'failed',
+  // failureReasonCode:'retryable'}`) — it pinned the bug in place.
+  //
+  // The assertions below are deliberately NEGATIVE where it matters. Checking
+  // only the returned error code would pass just as happily if someone
+  // re-added the `failed` flip alongside the new behaviour, which is the
+  // regression shape that actually matters: the error code is cosmetic, the
+  // row state is what un-blocks a double refund.
+  it.each([
+    ['retryable', 'rate_limit'],
+    ['idempotency_conflict', 'duplicate_idempotency_key'],
+  ] as const)(
+    'gateway %s leaves the row PENDING — the outcome is unknown, so `failed` would be a lie',
+    async (kind, reason) => {
+      const deps = makeDeps();
+      asMock(deps.processorGateway.createRefund).mockResolvedValueOnce(
+        err({ kind, reason }),
+      );
 
-    const r = await issueRefund(deps, baseInput());
-    expect(r.ok).toBe(false);
-    if (!r.ok && r.error.code === 'processor_unavailable') {
-      expect(r.error.kind).toBe('retryable');
-      // Q1 fix: propagate gateway's `reason` (human-readable) — not the
-      // discriminator. Mock supplies `reason: 'rate_limit'`.
-      expect(r.error.reason).toBe('rate_limit');
-    }
-    // Pending refund row must have been flipped to failed + refund_failed audit emitted.
-    const updateCalls = asMock(deps.refundsRepo.updateStatus).mock.calls;
-    expect(updateCalls.length).toBeGreaterThanOrEqual(1);
-    const lastCall = updateCalls[updateCalls.length - 1];
-    expect(lastCall?.[1]).toMatchObject({ nextStatus: 'failed', failureReasonCode: 'retryable' });
-    const auditCalls = asMock(deps.audit.emit).mock.calls;
-    const failedAudit = auditCalls.find((c) => c[1].eventType === 'refund_failed');
-    expect(failedAudit).toBeDefined();
-  });
+      const r = await issueRefund(deps, baseInput());
+      expect(r.ok).toBe(false);
+      if (!r.ok && r.error.code === 'processor_unavailable') {
+        expect(r.error.kind).toBe(kind);
+        // Q1 fix: propagate the gateway's `reason`, not the discriminator.
+        expect(r.error.reason).toBe(reason);
+      }
 
-  it('processor_unavailable permanent — Stripe createRefund permanent error', async () => {
+      // THE POINT: no terminal write at all. `failed` is read downstream as
+      // "no money left the account" — it clears the refund_in_progress guard
+      // and the settled-sum cap, so a retry can pay the customer twice.
+      const failedWrites = asMock(deps.refundsRepo.updateStatus).mock.calls.filter(
+        (c) => c[1].nextStatus === 'failed',
+      );
+      expect(failedWrites).toEqual([]);
+      // …and no audit claiming the refund failed.
+      const failedAudit = asMock(deps.audit.emit).mock.calls.filter(
+        (c) => c[1].eventType === 'refund_failed',
+      );
+      expect(failedAudit).toEqual([]);
+      expect(metricsMocks.refundFailedCount).not.toHaveBeenCalled();
+      // The row is now the sweep's problem, and that is signalled.
+      expect(metricsMocks.refundPendingAwaitingProcessor).toHaveBeenCalledWith(
+        TENANT_ID,
+      );
+    },
+  );
+
+  it('gateway permanent DOES flip the row to failed — the processor refused, nothing moved', async () => {
+    // The discrimination has to cut both ways. If all three kinds stayed
+    // pending, the guard would be indiscriminate rather than correct, and
+    // every genuinely-refused refund would block that payment until a sweep.
     const deps = makeDeps();
     asMock(deps.processorGateway.createRefund).mockResolvedValueOnce(
       err({ kind: 'permanent', code: 'charge_already_refunded', reason: 'charge_already_refunded' }),
@@ -349,20 +434,21 @@ describe('issueRefund (T108) — Stripe + F4 failure paths', () => {
       expect(r.error.kind).toBe('permanent');
       expect(r.error.reason).toBe('charge_already_refunded');
     }
-  });
-
-  it('processor_unavailable idempotency_conflict — preserved (Q1 fix, no longer collapsed to permanent)', async () => {
-    const deps = makeDeps();
-    asMock(deps.processorGateway.createRefund).mockResolvedValueOnce(
-      err({ kind: 'idempotency_conflict', reason: 'duplicate_idempotency_key' }),
+    const failedWrites = asMock(deps.refundsRepo.updateStatus).mock.calls.filter(
+      (c) => c[1].nextStatus === 'failed',
     );
-
-    const r = await issueRefund(deps, baseInput());
-    expect(r.ok).toBe(false);
-    if (!r.ok && r.error.code === 'processor_unavailable') {
-      expect(r.error.kind).toBe('idempotency_conflict');
-      expect(r.error.reason).toBe('duplicate_idempotency_key');
-    }
+    expect(failedWrites).toHaveLength(1);
+    expect(failedWrites[0]?.[1]).toMatchObject({
+      nextStatus: 'failed',
+      failureReasonCode: 'permanent',
+      // F-10: the CAS predicate must be present, or a sibling that already
+      // finalised the row gets `failed` stamped over its credit note.
+      expectedCurrentStatus: 'pending',
+    });
+    const failedAudit = asMock(deps.audit.emit).mock.calls.filter(
+      (c) => c[1].eventType === 'refund_failed',
+    );
+    expect(failedAudit).toHaveLength(1);
   });
 
   it('f4_preflight_read_error — pre-flight F4 credited-total read fails: distinct code, money NOT moved', async () => {
@@ -419,7 +505,253 @@ describe('issueRefund (T108) — Stripe + F4 failure paths', () => {
     expect(asMock(deps.processorGateway.createRefund)).not.toHaveBeenCalled();
   });
 
-  it('f4_bridge_error — F4 issueCreditNoteFromRefund fails after Stripe success', async () => {
+  // ── F-4: pre-flight parity with F4's other three credit-note gates ───────
+  //
+  // The pre-fix pre-flight mirrored only F4's AMOUNT gate, so a refund F4
+  // would decline on status / §105 creditability / receipt-render still
+  // reached Stripe and moved real money.
+  //
+  // Each case asserts the MONEY fact first. `insert` and the `refund_initiated`
+  // emit are asserted absent as well, and that pair is what pins guard
+  // PLACEMENT rather than mere existence: `err()` inside `runInTenant` COMMITS,
+  // so a guard below either write would leave a phantom `pending` row (which
+  // then blocks every future refund on this payment) plus a false audit trail.
+  // Track B — every rejection now travels under ONE code,
+  // `f4_preflight_credit_note_blocked`, carrying the Domain reason. The reason
+  // (not the code) is what the copy, the route mapping and the F8 bridge branch
+  // on, so each case pins the reason and its `retryability` classification.
+  const preflightRejectionCases = [
+    {
+      name: 'already fully-credited invoice',
+      blockReason: {
+        code: 'invoice_not_creditable' as const,
+        retryability: 'permanent' as const,
+        status: 'credited' as const,
+      },
+    },
+    {
+      // C2 — TRANSIENT arm. The reconcile cron sweeps stuck `pending` rows, so
+      // this genuinely clears itself and the copy may say "wait".
+      name: 'receipt PDF still rendering (pending)',
+      blockReason: {
+        code: 'receipt_render_pending' as const,
+        retryability: 'transient' as const,
+      },
+    },
+    {
+      // C2 — OPERATOR arm: `failed` or NULL. Nothing sweeps these (the cron
+      // resets the attempts counter, and its scan predicate matches NULL not
+      // at all), so telling the admin to wait strands the member's money with
+      // nobody alerted. MUST carry a different reason from its sibling above —
+      // reasons drive the i18n keys, so one reason cannot carry both copies.
+      name: 'receipt PDF failed (stuck)',
+      blockReason: {
+        code: 'receipt_render_failed' as const,
+        retryability: 'operator' as const,
+      },
+    },
+    {
+      name: 'receipt PDF never started (NULL — cron never sweeps it)',
+      blockReason: {
+        code: 'receipt_render_not_started' as const,
+        retryability: 'operator' as const,
+      },
+    },
+    {
+      // Track B — the corrupt row. Kept on the REFUSE side deliberately: the
+      // §105 discriminator is fail-closed, so a missing snapshot would
+      // otherwise WAIVE — moving money and creating an output-VAT obligation
+      // with no credit note recording it.
+      name: 'missing buyer identity snapshot (corrupt row)',
+      blockReason: {
+        code: 'identity_snapshot_missing' as const,
+        retryability: 'permanent' as const,
+      },
+    },
+  ];
+
+  for (const c of preflightRejectionCases) {
+    it(`F-4 — refuses BEFORE Stripe: ${c.name}`, async () => {
+      const deps = makeDeps();
+      asMock(deps.invoicingBridge.getInvoiceCreditedTotal).mockResolvedValueOnce(
+        ok({
+          creditedTotalSatang: asSatang(0n),
+          totalSatang: PAYMENT_AMOUNT_SATANG,
+          creditNoteRequirement: { kind: 'blocked' as const, reason: c.blockReason },
+        }),
+      );
+
+      const r = await issueRefund(deps, baseInput());
+
+      // Money first — before any error-code assertion, so a mutant cannot die
+      // on the cosmetic check before reaching the path that matters.
+      expect(asMock(deps.processorGateway.createRefund)).not.toHaveBeenCalled();
+      expect(asMock(deps.refundsRepo.insert)).not.toHaveBeenCalled();
+      expect(
+        asMock(deps.audit.emit).mock.calls.find(
+          (call) => call[1].eventType === 'refund_initiated',
+        ),
+      ).toBeUndefined();
+
+      expect(r.ok).toBe(false);
+      if (!r.ok) {
+        expect(r.error.code).toBe('f4_preflight_credit_note_blocked');
+        if (r.error.code === 'f4_preflight_credit_note_blocked') {
+          // The reason travels WHOLE. A code-only assertion would pass an
+          // implementation that dropped `retryability`, which is what decides
+          // whether F8 waits or escalates and whether the copy says "retry".
+          expect(r.error.reason).toEqual(c.blockReason);
+        }
+      }
+    });
+  }
+
+  // ── Track B: the two verdicts that INVERTED ─────────────────────────────
+  //
+  // Both of these used to refuse the refund. Refusing was the bug: a voided
+  // invoice and a §105 receipt are precisely the two states where NO §86/10 is
+  // owed, and `void-invoice` writes nothing to payments — so refusing stranded
+  // settled member money behind a gate that could never open.
+  //
+  // These assert the MONEY moved. The waiver's persistence and forensic trail
+  // are asserted separately; what would be catastrophic here is a silent
+  // regression back to refusing, which only a "createRefund WAS called"
+  // assertion catches.
+  const preflightWaiverCases = [
+    {
+      name: 'voided invoice — the void stamp is the tax reversal',
+      reason: 'invoice_voided' as const,
+      invoiceStatus: 'void' as const,
+    },
+    {
+      name: '§105 receipt (non-registrant event buyer) — no ใบกำกับภาษี to cite',
+      reason: 'section_105_receipt' as const,
+      invoiceStatus: 'paid' as const,
+    },
+  ];
+
+  for (const c of preflightWaiverCases) {
+    it(`Track B — PROCEEDS past Stripe on a waiver: ${c.name}`, async () => {
+      const deps = makeDeps();
+      asMock(deps.invoicingBridge.getInvoiceCreditedTotal).mockResolvedValueOnce(
+        ok({
+          creditedTotalSatang: asSatang(0n),
+          totalSatang: PAYMENT_AMOUNT_SATANG,
+          creditNoteRequirement: {
+            kind: 'waive' as const,
+            reason: c.reason,
+            invoiceStatus: c.invoiceStatus,
+          },
+        }),
+      );
+
+      const r = await issueRefund(deps, baseInput());
+
+      // THE assertion: the member's money went back.
+      expect(asMock(deps.processorGateway.createRefund)).toHaveBeenCalledTimes(1);
+      expect(r.ok).toBe(true);
+
+      // The waive arm skips BOTH external calls in Phase B. Skipping
+      // `getInvoiceStatus` is the one that matters most: it errors
+      // `unexpected_status` for exactly `paid`/`void` — the two statuses a waive
+      // produces — and calling it was the original stuck-row bug. The default
+      // mock returns `ok(...)`, so a regression that re-added the call would NOT
+      // throw and would ship silently without this assertion.
+      expect(asMock(deps.invoicingBridge.issueCreditNoteFromRefund)).not.toHaveBeenCalled();
+      expect(asMock(deps.invoicingBridge.getInvoiceStatus)).not.toHaveBeenCalled();
+
+      // The refund flip stamps the waiver timestamp and NO credit note id.
+      const updateArgs = asMock(deps.refundsRepo.updateStatus).mock.calls[0]?.[1] as
+        | { creditNoteWaivedAt?: Date; creditNoteId?: string }
+        | undefined;
+      expect(updateArgs?.creditNoteWaivedAt).toBeInstanceOf(Date);
+      expect(updateArgs?.creditNoteId).toBeUndefined();
+
+      // The success envelope reports the refund as waived with no credit note.
+      // Its `invoice.status` is the invoice's REAL status (the admin-facing
+      // truth), NOT null — that is different from the AUDIT's
+      // `invoice_next_status`, which IS null because this refund caused no
+      // credit-note transition. Two fields, two meanings; both asserted.
+      if (r.ok && r.value.kind === 'succeeded') {
+        expect(r.value.refund.creditNote).toEqual({
+          kind: 'waived',
+          reason: c.reason,
+        });
+        expect(r.value.invoice.status).toBe(c.invoiceStatus);
+      }
+
+      // The refund_succeeded audit carries the null CN + null invoice status.
+      const succeededAudit = asMock(deps.audit.emit).mock.calls.find(
+        (call) => call[1].eventType === 'refund_succeeded',
+      );
+      expect(succeededAudit?.[1].payload).toMatchObject({
+        credit_note_id: null,
+        invoice_next_status: null,
+        credit_note_waiver_reason: c.reason,
+      });
+
+      // The waiver reason is pinned on the row at Phase-A INSERT, not at
+      // settlement — so a refund that later fails at Stripe still carries the
+      // decision that was made about it.
+      // `insert(tx, row)` — the row is the SECOND argument.
+      const inserted = asMock(deps.refundsRepo.insert).mock.calls[0]?.[1] as
+        | Record<string, unknown>
+        | undefined;
+      expect(inserted?.['creditNoteWaiverReason']).toBe(c.reason);
+
+      // 10-year forensic — this is the ONLY durable record that a refund
+      // legitimately carried no §86/10, and the accountant's month-close
+      // discovery query is built on it.
+      const waived = asMock(deps.audit.emit).mock.calls.find(
+        (call) => call[1].eventType === 'refund_credit_note_waived',
+      );
+      expect(waived).toBeDefined();
+      // Counter and forensic are emitted together on the same INTENT basis —
+      // either cross-checks the other, so they must not drift apart.
+      expect(metricsMocks.refundCreditNoteWaivedCount).toHaveBeenCalledWith(
+        TENANT_ID,
+        c.reason,
+      );
+      expect(waived![1].payload).toMatchObject({
+        waiver_reason: c.reason,
+        invoice_status: c.invoiceStatus,
+      });
+    });
+  }
+
+  // The allow-list must be `paid | partially_credited`, mirroring
+  // `issue-credit-note.ts:419`. F4 flips an invoice to `partially_credited`
+  // once the first partial refund's credit note lands, so a `=== 'paid'`
+  // shortcut would break every SECOND partial refund. This test exists solely
+  // to make that shortcut fail here, at unit speed, rather than in production.
+  it('F-4 — ALLOWS a refund on a partially_credited invoice (2nd partial refund)', async () => {
+    const deps = makeDeps();
+    asMock(deps.invoicingBridge.getInvoiceCreditedTotal).mockResolvedValueOnce(
+      ok({
+        creditedTotalSatang: asSatang(0n),
+        totalSatang: PAYMENT_AMOUNT_SATANG,
+        // Track B moved the status allow-list INTO the Domain resolver, which
+        // is where the `paid | partially_credited` pair is now pinned (see
+        // tests/unit/invoicing/domain/refund-credit-note-requirement.test.ts).
+        // From this use-case's side the observable contract is that a verdict
+        // of `issue` proceeds — regardless of which status produced it.
+        creditNoteRequirement: { kind: 'issue' as const },
+      }),
+    );
+
+    const r = await issueRefund(deps, baseInput());
+
+    expect(r.ok).toBe(true);
+    expect(asMock(deps.processorGateway.createRefund)).toHaveBeenCalledTimes(1);
+  });
+
+  // ── F-3 leg 1: deferral ─────────────────────────────────────────────────
+  //
+  // The old form of this test asserted the F4-decline flip
+  // (`failedCall?.[1].failureReasonCode).toMatch(/^f4_bridge_/)`) — i.e. it
+  // pinned the money-lie. Stripe has CONFIRMED the refund succeeded here; a
+  // `failed` row says the opposite, and every downstream guard believes it.
+  it('F4 bridge decline after Stripe success DEFERS — row stays pending, never failed', async () => {
     const deps = makeDeps();
     asMock(deps.invoicingBridge.issueCreditNoteFromRefund).mockResolvedValueOnce(
       err({ code: 'remainder_credit_exceeded', detail: 'CN sum > invoice total' }),
@@ -427,13 +759,276 @@ describe('issueRefund (T108) — Stripe + F4 failure paths', () => {
 
     const r = await issueRefund(deps, baseInput());
     expect(r.ok).toBe(false);
-    if (!r.ok && r.error.code === 'f4_bridge_error') {
+    expect(r.ok === false && r.error.code).toBe('f4_bridge_deferred');
+    if (!r.ok && r.error.code === 'f4_bridge_deferred') {
       expect(r.error.detail).toBe('CN sum > invoice total');
+      // Ids carried so the caller (and F8 renewals) can match the in-flight
+      // refund while the sweep reconciles it.
+      expect(r.error.processorRefundId).toBe('re_test_xxx');
+      expect(r.error.refundId).toBe('rfnd_01JTESTID0000000000000000');
     }
-    // Refund flipped to failed with f4_bridge_ prefix on reason code.
-    const updateCalls = asMock(deps.refundsRepo.updateStatus).mock.calls;
-    const failedCall = updateCalls.find((c) => c[1].nextStatus === 'failed');
-    expect(failedCall?.[1].failureReasonCode).toMatch(/^f4_bridge_/);
+
+    // NEGATIVE — the whole point. Not "the code changed", but "the row was
+    // never terminalised". Without this, re-adding the flip alongside the new
+    // error code passes.
+    const failedWrites = asMock(deps.refundsRepo.updateStatus).mock.calls.filter(
+      (c) => c[1].nextStatus === 'failed',
+    );
+    expect(failedWrites).toEqual([]);
+    const failedAudit = asMock(deps.audit.emit).mock.calls.filter(
+      (c) => c[1].eventType === 'refund_failed',
+    );
+    expect(failedAudit).toEqual([]);
+    expect(metricsMocks.refundFailedCount).not.toHaveBeenCalled();
+
+    // POSITIVE — the gap between "money returned" and "credit note booked" is
+    // on the 10-year record for whoever reconciles output VAT.
+    const deferred = asMock(deps.audit.emit).mock.calls.filter(
+      (c) => c[1].eventType === 'refund_cn_deferred',
+    );
+    expect(deferred).toHaveLength(1);
+    expect(deferred[0]?.[1].retentionYears).toBe(10);
+    expect(deferred[0]?.[1].payload).toMatchObject({
+      processor_refund_id: 're_test_xxx',
+      defer_reason_code: 'f4_bridge_remainder_credit_exceeded',
+    });
+    expect(metricsMocks.refundCreditNoteDeferred).toHaveBeenCalledWith(
+      TENANT_ID,
+      'f4_bridge_remainder_credit_exceeded',
+    );
+  });
+
+  // ── 8B (money-remediation): TOCTOU void race ────────────────────────────
+  //
+  // A refund pre-flighted while the invoice was `paid` (verdict `issue`), so
+  // Phase A pinned NO waiver and proceeded to Stripe. Between that commit and
+  // the Phase-B credit note, a concurrent `voidInvoice` committed. The §86/10
+  // bridge now refuses (a void invoice takes no credit note), and the pre-fix
+  // finaliser DEFERRED — money out of Stripe, row `pending` forever, sweep
+  // retrying into the same permanent refusal, and every future refund on the
+  // payment blocked by `ctx.pendingCount > 0`.
+  //
+  // The fix RE-CONSULTS F4's Domain verdict on the decline. When it has flipped
+  // to `waive` (the invoice is now void → owes no §86/10), the refund is a
+  // clean waived-success, not a dead-end. The row is stamped waived and the
+  // envelope reports the invoice's REAL post-void status.
+  it('Phase B CN declines because invoice voided after pre-flight → WAIVE succeeded, reports void', async () => {
+    const deps = makeDeps();
+    // Phase A pre-flight — invoice still `paid`, a credit note is owed.
+    asMock(deps.invoicingBridge.getInvoiceCreditedTotal).mockResolvedValueOnce(
+      ok({
+        creditedTotalSatang: asSatang(0n),
+        totalSatang: PAYMENT_AMOUNT_SATANG,
+        creditNoteRequirement: { kind: 'issue' as const },
+      }),
+    );
+    // Phase B re-check — the concurrent void has landed; F4's verdict is now
+    // `waive` (no §86/10 owed on a voided invoice).
+    asMock(deps.invoicingBridge.getInvoiceCreditedTotal).mockResolvedValueOnce(
+      ok({
+        creditedTotalSatang: asSatang(0n),
+        totalSatang: PAYMENT_AMOUNT_SATANG,
+        creditNoteRequirement: {
+          kind: 'waive' as const,
+          reason: 'invoice_voided' as const,
+          invoiceStatus: 'void' as const,
+        },
+      }),
+    );
+    // The void made the credit note un-issuable.
+    asMock(deps.invoicingBridge.issueCreditNoteFromRefund).mockResolvedValueOnce(
+      err({ code: 'invalid_status', detail: 'void' }),
+    );
+
+    const r = await issueRefund(deps, baseInput());
+
+    expect(r.ok).toBe(true);
+    if (r.ok && r.value.kind === 'succeeded') {
+      expect(r.value.refund.creditNote.kind).toBe('waived');
+      if (r.value.refund.creditNote.kind === 'waived') {
+        expect(r.value.refund.creditNote.reason).toBe('invoice_voided');
+      }
+      // The concurrency fix — the envelope reports the invoice's REAL
+      // post-void status, not the `paid` placeholder pinned at pre-flight.
+      expect(r.value.invoice.status).toBe('void');
+    } else {
+      throw new Error('expected kind=succeeded');
+    }
+
+    // The succeeded flip stamps waived with BOTH the completion timestamp AND
+    // the reason. The reason is load-bearing here: Phase A pinned it NULL on
+    // the `issue` arm, so the conversion must write it or the
+    // `refunds_waived_at_requires_reason` CHECK aborts Phase B (→ row stays
+    // pending — the same red, caught only by the live-Neon integration test).
+    const waivedFlip = asMock(deps.refundsRepo.updateStatus).mock.calls.find(
+      (c) => c[1].nextStatus === 'succeeded',
+    );
+    expect(waivedFlip?.[1].creditNoteWaivedAt).toBeInstanceOf(Date);
+    expect(waivedFlip?.[1].creditNoteWaiverReason).toBe('invoice_voided');
+    expect(waivedFlip?.[1].creditNoteId).toBeUndefined();
+
+    // The 10-year forensic — a refund carrying no credit note is booked for
+    // the accountant's ภ.พ.30 reconciliation, counter ↔ audit 1:1.
+    const waivedAudit = asMock(deps.audit.emit).mock.calls.filter(
+      (c) => c[1].eventType === 'refund_credit_note_waived',
+    );
+    expect(waivedAudit).toHaveLength(1);
+    expect(waivedAudit[0]?.[1].payload).toMatchObject({
+      waiver_reason: 'invoice_voided',
+      invoice_status: 'void',
+    });
+    expect(metricsMocks.refundCreditNoteWaivedCount).toHaveBeenCalledWith(
+      TENANT_ID,
+      'invoice_voided',
+    );
+
+    // NOT deferred, NOT failed — the dead-end is gone.
+    const deferred = asMock(deps.audit.emit).mock.calls.filter(
+      (c) => c[1].eventType === 'refund_cn_deferred',
+    );
+    expect(deferred).toEqual([]);
+  });
+
+  // Narrowness guard: a GENUINE over-credit decline (the invoice is NOT void —
+  // F4's verdict stays `issue`/`blocked`) must still DEFER. The conversion may
+  // not fire on every decline, only when the invoice legitimately owes no CN.
+  it('Phase B CN declines but invoice NOT voided (verdict still issue) → still defers', async () => {
+    const deps = makeDeps();
+    // Phase A pre-flight — issue.
+    asMock(deps.invoicingBridge.getInvoiceCreditedTotal).mockResolvedValueOnce(
+      ok({
+        creditedTotalSatang: asSatang(0n),
+        totalSatang: PAYMENT_AMOUNT_SATANG,
+        creditNoteRequirement: { kind: 'issue' as const },
+      }),
+    );
+    // Phase B re-check — still `issue` (no void; a transient/over-credit decline).
+    asMock(deps.invoicingBridge.getInvoiceCreditedTotal).mockResolvedValueOnce(
+      ok({
+        creditedTotalSatang: asSatang(0n),
+        totalSatang: PAYMENT_AMOUNT_SATANG,
+        creditNoteRequirement: { kind: 'issue' as const },
+      }),
+    );
+    asMock(deps.invoicingBridge.issueCreditNoteFromRefund).mockResolvedValueOnce(
+      err({ code: 'remainder_credit_exceeded', detail: 'CN sum > invoice total' }),
+    );
+
+    const r = await issueRefund(deps, baseInput());
+
+    expect(r.ok).toBe(false);
+    expect(r.ok === false && r.error.code).toBe('f4_bridge_deferred');
+    // Never waived — no `credit_note_waived_at` write.
+    const waivedFlip = asMock(deps.refundsRepo.updateStatus).mock.calls.filter(
+      (c) => c[1].creditNoteWaivedAt !== undefined,
+    );
+    expect(waivedFlip).toEqual([]);
+    expect(metricsMocks.refundCreditNoteWaivedCount).not.toHaveBeenCalled();
+  });
+
+  it('Phase-B throw after Stripe success DEFERS too — same rule, other exit', async () => {
+    // Both post-Stripe-success failure exits have to obey the rule, or the
+    // fix only covers whichever one a reviewer happened to look at.
+    const deps = makeDeps();
+    let call = 0;
+    asMock(deps.paymentsRepo.withTx).mockImplementation(
+      async (fn: (tx: unknown) => Promise<unknown>) => {
+        call += 1;
+        // 1 = Phase A, 2 = attachProcessorRefundId, 3 = Phase B.
+        if (call === 3) throw new TypeError('neon exploded mid-finalise');
+        return fn(Symbol('tx'));
+      },
+    );
+
+    const r = await issueRefund(deps, baseInput());
+    expect(r.ok).toBe(false);
+    expect(r.ok === false && r.error.code).toBe('f4_bridge_deferred');
+
+    const failedWrites = asMock(deps.refundsRepo.updateStatus).mock.calls.filter(
+      (c) => c[1].nextStatus === 'failed',
+    );
+    expect(failedWrites).toEqual([]);
+    const deferred = asMock(deps.audit.emit).mock.calls.filter(
+      (c) => c[1].eventType === 'refund_cn_deferred',
+    );
+    expect(deferred).toHaveLength(1);
+    expect(deferred[0]?.[1].payload).toMatchObject({
+      defer_reason_code: 'f4_bridge_phase_b_db_error',
+      detail: 'TypeError',
+    });
+  });
+
+  it('F-10 — a sibling that already finalised the row is not overwritten', async () => {
+    // The row is `succeeded` with a credit note by the time our failure path
+    // runs. Blind-writing `failed` over it violates the
+    // `refunds_succeeded_iff_complete` CHECK, aborts the tx, and lands in the
+    // double-fault handler — which then emits a 10-year forensic saying the
+    // refund is stuck pending, about a refund that succeeded.
+    const rowStatus = { current: 'pending' };
+    const deps = makeDeps({}, rowStatus);
+    asMock(deps.processorGateway.createRefund).mockImplementationOnce(async () => {
+      // A sibling webhook wins the race while our Stripe call is in flight.
+      rowStatus.current = 'succeeded';
+      return err({ kind: 'permanent', code: 'charge_already_refunded', reason: 'x' });
+    });
+
+    const r = await issueRefund(deps, baseInput());
+    expect(r.ok).toBe(false);
+
+    // The CAS predicate matched zero rows, so the write is a no-op and the
+    // contradicting audit + metric are suppressed. The sibling owns them.
+    expect(rowStatus.current).toBe('succeeded');
+    const failedAudit = asMock(deps.audit.emit).mock.calls.filter(
+      (c) => c[1].eventType === 'refund_failed',
+    );
+    expect(failedAudit).toEqual([]);
+    expect(metricsMocks.refundFailedCount).not.toHaveBeenCalled();
+  });
+
+  it('F-3 backstop — refuses outright when the payment carries a settled-unbooked row', async () => {
+    const deps = makeDeps();
+    asMock(deps.refundsRepo.getRefundContextForUpdate).mockResolvedValueOnce({
+      pendingCount: 0,
+      succeededSumSatang: asSatang(0n),
+      nextSeq: 2,
+      settledUnbookedCount: 1,
+    });
+
+    const r = await issueRefund(deps, baseInput());
+    expect(r.ok).toBe(false);
+    expect(r.ok === false && r.error.code).toBe('refund_needs_reconciliation');
+
+    // Refused BEFORE the insert and BEFORE the `refund_initiated` emit —
+    // `err()` inside `runInTenant` COMMITS, so a guard below either would
+    // leave a phantom pending row plus a false audit trail behind a refusal.
+    expect(asMock(deps.refundsRepo.insert)).not.toHaveBeenCalled();
+    expect(asMock(deps.audit.emit)).not.toHaveBeenCalled();
+    expect(asMock(deps.processorGateway.createRefund)).not.toHaveBeenCalled();
+  });
+
+  it('F-3 leg 3 — the Stripe idempotency key is derived from the refund id, not a rotating count', async () => {
+    // `rfnd-{paymentId}-{COUNT(*)+1}` changed whenever ANY row existed for the
+    // payment, so a retry after a first attempt sent Stripe a NEW key — which
+    // Stripe correctly honoured as a new request. On a partial refund (charge
+    // cap still has headroom) that is a genuine second payout.
+    //
+    // Asserting the LITERAL key, not just "it was called once": a call-count
+    // assertion proves nothing about dedupe.
+    const deps = makeDeps();
+    asMock(deps.refundsRepo.getRefundContextForUpdate).mockResolvedValueOnce({
+      pendingCount: 0,
+      succeededSumSatang: asSatang(0n),
+      // A prior attempt left rows behind — the old code would mint `…-4` here.
+      nextSeq: 4,
+      settledUnbookedCount: 0,
+    });
+
+    await issueRefund(deps, baseInput());
+
+    const createArgs = asMock(deps.processorGateway.createRefund).mock.calls[0]?.[0];
+    expect(createArgs?.idempotencyKey).toBe('rfnd-rfnd_01JTESTID0000000000000000');
+    expect(createArgs?.idempotencyKey).not.toContain(PAYMENT_ID);
+    expect(createArgs?.idempotencyKey).not.toMatch(/-4$/);
   });
 });
 
@@ -450,8 +1045,15 @@ describe('issueRefund (T108) — happy paths', () => {
     if (r.ok && r.value.kind === 'succeeded') {
       expect(r.value.refund.status).toBe('succeeded');
       expect(r.value.refund.processorRefundId).toBe('re_test_xxx');
-      expect(r.value.refund.creditNoteId).toBe('cn_test_1');
-      expect(r.value.refund.creditNoteNumber).toBe('TC-2026-000001');
+      // Track B — the flat `creditNoteId`/`creditNoteNumber` pair became a
+      // discriminated union so a waived refund cannot present as an issued one
+      // carrying empty strings. Deep-equal the whole arm: asserting only `.id`
+      // would pass a `kind:'waived'` object that happened to carry an id.
+      expect(r.value.refund.creditNote).toEqual({
+        kind: 'issued',
+        id: 'cn_test_1',
+        number: 'TC-2026-000001',
+      });
       expect(r.value.payment.status).toBe('partially_refunded');
       expect(r.value.payment.refundedAmountSatang).toBe(350_000n);
       expect(r.value.payment.remainingRefundableSatang).toBe(5_000_000n);
@@ -463,9 +1065,11 @@ describe('issueRefund (T108) — happy paths', () => {
     // attaches the processor_refund_id in the pending window.
     expect(asMock(deps.refundsRepo.attachProcessorRefundId)).toHaveBeenCalledTimes(1);
     expect(asMock(deps.invoicingBridge.issueCreditNoteFromRefund)).toHaveBeenCalledTimes(1);
-    // Idempotency key uses rfnd-{paymentId}-{seq=1}
+    // F-3 leg 3: the key is `rfnd-{refundId}` — stable for the life of this
+    // logical attempt. It used to be `rfnd-{paymentId}-{COUNT(*)+1}`, which
+    // rotated across retries and let Stripe treat a retry as a new request.
     const stripeCall = asMock(deps.processorGateway.createRefund).mock.calls[0]?.[0] as { idempotencyKey: string };
-    expect(stripeCall.idempotencyKey).toBe(`rfnd-${PAYMENT_ID}-1`);
+    expect(stripeCall.idempotencyKey).toBe('rfnd-rfnd_01JTESTID0000000000000000');
     // refund_initiated + refund_succeeded audit emitted.
     const auditCalls = asMock(deps.audit.emit).mock.calls;
     const eventTypes = auditCalls.map((c) => c[1].eventType);
@@ -658,17 +1262,23 @@ describe('issueRefund (T108) — happy paths', () => {
     }
   });
 
-  it('idempotency key picks up nextSeq from refund context', async () => {
+  it('idempotency key IGNORES nextSeq — the rotation was the F-3 double-refund vector', async () => {
+    // This test used to assert the opposite (`rfnd-{paymentId}-3`). `nextSeq`
+    // is `COUNT(*)+1` over ALL rows regardless of status, so any leftover row
+    // from a first attempt changed the key on the retry — and Stripe honoured
+    // it as a brand-new refund request.
     const deps = makeDeps();
     asMock(deps.refundsRepo.getRefundContextForUpdate).mockResolvedValueOnce({
       pendingCount: 0,
       succeededSumSatang: asSatang(0n),
       nextSeq: 3,
+      settledUnbookedCount: 0,
     });
 
     await issueRefund(deps, baseInput());
     const stripeCall = asMock(deps.processorGateway.createRefund).mock.calls[0]?.[0] as { idempotencyKey: string };
-    expect(stripeCall.idempotencyKey).toBe(`rfnd-${PAYMENT_ID}-3`);
+    expect(stripeCall.idempotencyKey).toBe('rfnd-rfnd_01JTESTID0000000000000000');
+    expect(stripeCall.idempotencyKey).not.toContain('-3');
   });
 
   it('idempotency-key factory wraps the base key (dev salt simulation)', async () => {
@@ -678,7 +1288,9 @@ describe('issueRefund (T108) — happy paths', () => {
 
     await issueRefund(deps, baseInput());
     const stripeCall = asMock(deps.processorGateway.createRefund).mock.calls[0]?.[0] as { idempotencyKey: string };
-    expect(stripeCall.idempotencyKey).toBe(`rfnd-${PAYMENT_ID}-1-dev-salt`);
+    expect(stripeCall.idempotencyKey).toBe(
+      'rfnd-rfnd_01JTESTID0000000000000000-dev-salt',
+    );
   });
 });
 
@@ -813,7 +1425,10 @@ describe('issueRefund (#1) — Stripe refund-status branch', () => {
     expect(r.ok).toBe(true);
     if (r.ok && r.value.kind === 'succeeded') {
       // The idempotent F4 CN read (A.7) still returns the existing CN.
-      expect(r.value.refund.creditNoteId).toBe('cn_test_1');
+      expect(r.value.refund.creditNote).toMatchObject({
+        kind: 'issued',
+        id: 'cn_test_1',
+      });
       expect(r.value.refund.status).toBe('succeeded');
     } else {
       throw new Error('expected kind=succeeded on the sibling-won path');
@@ -833,7 +1448,11 @@ describe('issueRefund (#1) — Stripe refund-status branch', () => {
     expect(metricsMocks.refundSucceededCount).not.toHaveBeenCalled();
   });
 
-  it('succeeded + Phase B DB flip throws → f4_bridge_error (out-of-band recovery)', async () => {
+  it('succeeded + Phase B DB flip throws → f4_bridge_deferred, row NOT failed', async () => {
+    // Was: `f4_bridge_error` + a `failed` flip carrying
+    // `failure_reason_code='f4_bridge_phase_b_db_error'`. Stripe had already
+    // CONFIRMED the refund succeeded at that point, so both halves were false:
+    // the row said no money moved, and the 502 read as retryable.
     const deps = makeDeps();
     // Stripe + F4 CN both succeed; the payment-status flip throws (DB outage).
     asMock(deps.paymentsRepo.updateStatus).mockRejectedValueOnce(
@@ -843,50 +1462,109 @@ describe('issueRefund (#1) — Stripe refund-status branch', () => {
     const r = await issueRefund(deps, baseInput());
     expect(r.ok).toBe(false);
     if (!r.ok) {
-      expect(r.error.code).toBe('f4_bridge_error');
+      expect(r.error.code).toBe('f4_bridge_deferred');
     }
-    // The pending row is flipped to failed with the phase-B discriminator.
-    const failedCall = asMock(deps.refundsRepo.updateStatus).mock.calls.find(
+    const failedWrites = asMock(deps.refundsRepo.updateStatus).mock.calls.filter(
       (c) => c[1].nextStatus === 'failed',
     );
-    expect(failedCall?.[1].failureReasonCode).toBe('f4_bridge_phase_b_db_error');
+    expect(failedWrites).toEqual([]);
+    const deferred = asMock(deps.audit.emit).mock.calls.filter(
+      (c) => c[1].eventType === 'refund_cn_deferred',
+    );
+    expect(deferred).toHaveLength(1);
+    expect(deferred[0]?.[1].payload).toMatchObject({
+      defer_reason_code: 'f4_bridge_phase_b_db_error',
+    });
   });
 
-  it('succeeded + double-fault (Phase B flip AND finaliseFailedRefund both throw) → stale_pending audit', async () => {
+  it('double-fault (Phase B throws AND the deferral forensic throws) → stale_pending audit', async () => {
+    // The deferral's own audit emit is now the thing that can fail. The row is
+    // already in the state we want (pending + processor id) so the sweep still
+    // reconciles it; what is at risk is the RECORD, hence the fallback
+    // forensic. Re-read says still-pending, so it must fire.
     const deps = makeDeps();
-    // Helper's refund flip succeeds (call #1), payment flip throws → caught
-    // → finaliseFailedRefund runs, whose own refund flip (call #2) also
-    // throws → the double-fault `.catch` emits the synchronous
-    // `stale_pending_refund_detected` forensic audit (10y) on a null tx.
-    asMock(deps.refundsRepo.updateStatus)
-      .mockImplementationOnce(async () => ({
-        id: 'rfnd_01J',
-        tenantId: TENANT_ID,
-        paymentId: asPaymentId(PAYMENT_ID),
-        invoiceId: 'inv-1',
-        amountSatang: asSatang(350_000n),
-        status: 'succeeded' as const,
-        processorRefundId: 're_test_xxx',
-      }))
-      .mockImplementationOnce(async () => {
-        throw new Error('failed-flip DB down');
-      });
     asMock(deps.paymentsRepo.updateStatus).mockRejectedValueOnce(
       new Error('phase B DB down'),
     );
+    asMock(deps.audit.emit).mockImplementation(async (_tx, ev) => {
+      if (ev.eventType === 'refund_cn_deferred') throw new Error('audit down');
+      return undefined;
+    });
+    // Re-read for the F-10 terminal check: still pending → do NOT suppress.
+    asMock(deps.refundsRepo.findByProcessorRefundId).mockResolvedValue({
+      id: 'rfnd_01J',
+      tenantId: TENANT_ID,
+      paymentId: asPaymentId(PAYMENT_ID),
+      invoiceId: 'inv-1',
+      amountSatang: asSatang(350_000n),
+      status: 'pending' as const,
+      processorRefundId: 're_test_xxx',
+    });
 
     const r = await issueRefund(deps, baseInput());
     expect(r.ok).toBe(false);
     if (!r.ok) {
-      expect(r.error.code).toBe('f4_bridge_error');
+      expect(r.error.code).toBe('f4_bridge_deferred');
     }
-    // The synchronous double-fault forensic audit fired on a null tx.
     const staleAudit = asMock(deps.audit.emit).mock.calls.find(
       (c) => c[1].eventType === 'stale_pending_refund_detected',
     );
     expect(staleAudit).toBeDefined();
     expect(staleAudit?.[0]).toBeNull();
     expect(staleAudit?.[1].retentionYears).toBe(10);
+    expect(metricsMocks.refundFinaliseDoubleFault).toHaveBeenCalledWith(TENANT_ID);
+  });
+
+  it('double-fault forensic is SUPPRESSED when a sibling already finalised the row', async () => {
+    // F-10 second half. Without the re-read, this emits a 10-year forensic
+    // saying the refund is "stuck pending" about a refund that succeeded and
+    // has a §86/10 credit note — an auditor-facing statement that is false.
+    const deps = makeDeps();
+    asMock(deps.paymentsRepo.updateStatus).mockRejectedValueOnce(
+      new Error('phase B DB down'),
+    );
+    asMock(deps.audit.emit).mockImplementation(async (_tx, ev) => {
+      if (ev.eventType === 'refund_cn_deferred') throw new Error('audit down');
+      return undefined;
+    });
+    asMock(deps.refundsRepo.findByProcessorRefundId).mockResolvedValue({
+      id: 'rfnd_01J',
+      tenantId: TENANT_ID,
+      paymentId: asPaymentId(PAYMENT_ID),
+      invoiceId: 'inv-1',
+      amountSatang: asSatang(350_000n),
+      status: 'succeeded' as const,
+      processorRefundId: 're_test_xxx',
+    });
+
+    await issueRefund(deps, baseInput());
+    const staleAudit = asMock(deps.audit.emit).mock.calls.find(
+      (c) => c[1].eventType === 'stale_pending_refund_detected',
+    );
+    expect(staleAudit).toBeUndefined();
+  });
+
+  it('double-fault forensic STILL fires when the terminal re-read itself throws', async () => {
+    // Bias check, and the one that is easy to get backwards. A false-positive
+    // forensic is noise an operator dismisses; a missing one loses ten years
+    // of coverage on a real money divergence. On read failure: emit.
+    const deps = makeDeps();
+    asMock(deps.paymentsRepo.updateStatus).mockRejectedValueOnce(
+      new Error('phase B DB down'),
+    );
+    asMock(deps.audit.emit).mockImplementation(async (_tx, ev) => {
+      if (ev.eventType === 'refund_cn_deferred') throw new Error('audit down');
+      return undefined;
+    });
+    asMock(deps.refundsRepo.findByProcessorRefundId).mockRejectedValue(
+      new Error('neon still down'),
+    );
+
+    await issueRefund(deps, baseInput());
+    const staleAudit = asMock(deps.audit.emit).mock.calls.find(
+      (c) => c[1].eventType === 'stale_pending_refund_detected',
+    );
+    expect(staleAudit).toBeDefined();
   });
 
   it('double-fault with null requestId + non-Error throws + logger present', async () => {
@@ -897,37 +1575,37 @@ describe('issueRefund (#1) — Stripe refund-status branch', () => {
     const deps = makeDeps({
       logger: { warn, error: vi.fn(), info: vi.fn(), debug: vi.fn() } as unknown as NonNullable<IssueRefundDeps['logger']>,
     });
-    asMock(deps.refundsRepo.updateStatus)
-      .mockImplementationOnce(async () => ({
-        id: 'rfnd_01J',
-        tenantId: TENANT_ID,
-        paymentId: asPaymentId(PAYMENT_ID),
-        invoiceId: 'inv-1',
-        amountSatang: asSatang(350_000n),
-        status: 'succeeded' as const,
-        processorRefundId: 're_test_xxx',
-      }))
-      // finaliseFailedRefund's failed flip throws a NON-Error.
-      .mockImplementationOnce(async () => {
-        throw 'failed-flip string fault';
-      });
     // Phase B payment flip throws a NON-Error.
     asMock(deps.paymentsRepo.updateStatus).mockImplementationOnce(async () => {
       throw 'phase-B string fault';
+    });
+    // The deferral forensic then throws a NON-Error too.
+    asMock(deps.audit.emit).mockImplementation(async (_tx, ev) => {
+      if (ev.eventType === 'refund_cn_deferred') throw 'defer string fault';
+      return undefined;
+    });
+    asMock(deps.refundsRepo.findByProcessorRefundId).mockResolvedValue({
+      id: 'rfnd_01J',
+      tenantId: TENANT_ID,
+      paymentId: asPaymentId(PAYMENT_ID),
+      invoiceId: 'inv-1',
+      amountSatang: asSatang(350_000n),
+      status: 'pending' as const,
+      processorRefundId: 're_test_xxx',
     });
 
     const r = await issueRefund(deps, baseInput({ requestId: null }));
     expect(r.ok).toBe(false);
     if (!r.ok) {
-      expect(r.error.code).toBe('f4_bridge_error');
-      if (r.error.code === 'f4_bridge_error') {
+      expect(r.error.code).toBe('f4_bridge_deferred');
+      if (r.error.code === 'f4_bridge_deferred') {
         // Non-Error throw scrubbed to the constant 'unknown'.
         expect(r.error.detail).toBe('unknown');
       }
     }
     expect(warn).toHaveBeenCalledWith(
-      'issue_refund.finalise_failed_double_fault',
-      expect.objectContaining({ finaliseErrKind: 'unknown' }),
+      'issue_refund.defer_emit_double_fault',
+      expect.objectContaining({ deferErrKind: 'unknown' }),
     );
     const staleAudit = asMock(deps.audit.emit).mock.calls.find(
       (c) => c[1].eventType === 'stale_pending_refund_detected',

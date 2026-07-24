@@ -13,6 +13,7 @@ import type {
   InvoiceStatus,
   F4InvoicePaidEvent,
   TaxAtPaymentFlag,
+  RefundCreditNoteRequirement,
 } from '@/modules/invoicing';
 import type { Satang } from '@/lib/money';
 
@@ -59,7 +60,24 @@ export type GetInvoiceForPaymentBridgeError =
    * `not_payable`) so initiate-payment's warn log + the route's
    * `useCaseErrorCode` keep the flag-rollback discriminator for ops.
    */
-  | { readonly code: 'new_flow_bill_requires_flag_on' };
+  | { readonly code: 'new_flow_bill_requires_flag_on' }
+  /**
+   * I4 (Task 7 remediation) — the underlying F4 read THREW rather than
+   * returning a Result: Neon down, the caller's tx already aborted, or the
+   * invoice repo's runtime tenant-mismatch guard firing (a raw `throw new
+   * Error`, newly reachable here because this method now accepts `externalTx`).
+   *
+   * Mirrors the identical member on `getInvoiceCreditedTotal` and
+   * `getInvoiceStatus`; this was the last of the three tx-threaded F4 reads
+   * without one.
+   *
+   * CALLERS MUST HANDLE THIS EXPLICITLY AND MUST TREAT IT AS TRANSIENT.
+   * It carries NO `status`, so it must never reach `confirm-payment`'s
+   * `invoiceStatus` resolver — falling through there auto-refunds a paying
+   * customer because a database read hiccuped. See the `never` arm in that
+   * resolver, which now makes the mistake a build failure.
+   */
+  | { readonly code: 'read_failed' };
 
 export interface MarkPaidFromProcessorInput {
   readonly tenantId: string;
@@ -121,6 +139,22 @@ export interface InvoicingBridgePort {
      * write-side record-payment guard still enforces the flag). Forwarded verbatim.
      */
     readonly reconciliationPath: boolean;
+    /**
+     * F-1 item 4 / Variant B (money-remediation Task 7) — thread the caller's
+     * tx so the F4 payability read runs on the SAME pooled connection instead
+     * of `makeGetInvoiceDeps` opening a second `runInTenant`.
+     *
+     * `confirm-payment` calls this from inside its Phase-A `withTx` while
+     * holding `FOR UPDATE` on the payment row, so the un-threaded form
+     * acquires a second pooled connection while the first is still held — the
+     * self-deadlock shape `getInvoiceCreditedTotal` (B.1 Fix#2) and
+     * `getInvoiceStatus` already fixed. This closes the last of the three.
+     *
+     * The connection already carries `SET LOCAL app.current_tenant`, so the
+     * read stays tenant-scoped. Omit it for standalone reads (the self-pay
+     * `initiate-payment` path is not inside a tx and passes nothing).
+     */
+    readonly externalTx?: unknown;
   }): Promise<Result<InvoiceForPaymentDTO, GetInvoiceForPaymentBridgeError>>;
 
   /**
@@ -231,8 +265,53 @@ export interface InvoicingBridgePort {
       {
         readonly creditedTotalSatang: Satang;
         readonly totalSatang: Satang;
+        /**
+         * Track B — the F4-authoritative answer to "does this refund owe a
+         * §86/10 ใบลดหนี้, and if so can one be issued right now?".
+         *
+         * Replaces the three flat fields this DTO used to carry (`status`,
+         * `creditable`, `receiptRenderState`). Those were three orthogonal
+         * booleans-and-an-enum that the CALLER had to recombine in F4's exact
+         * gate order to reach a verdict — so the ordering lived as prose in
+         * three files, and adding a FOURTH F4 gate compiled silently
+         * everywhere while changing nothing. That is precisely the bug this
+         * whole task exists to fix, one axis later.
+         *
+         * As a union, a new gate is a new arm, and every consumer that
+         * switches on it fails the build until it handles the arm.
+         *
+         * The verdict is computed by `resolveRefundCreditNoteRequirement` in
+         * F4 DOMAIN, not here and not in the caller: it encodes F4's §86/10
+         * rules, so it belongs where `document-kind.ts` lives, for the same
+         * reason. The adapter's only job is to feed it the invoice facts —
+         * including `isSection105`, composed through the SAME shared
+         * discriminator F4's own credit gate uses, so issue-time, credit-time
+         * and this pre-flight cannot drift apart (059 / PR-A Task 6a).
+         */
+        readonly creditNoteRequirement: RefundCreditNoteRequirement;
       },
-      { readonly code: 'not_found' | 'invalid_total' | 'read_failed' }
+      {
+        readonly code:
+          | 'not_found'
+          | 'invalid_total'
+          | 'read_failed'
+          /**
+           * I1 (Task 7 remediation) — the F4 read SUCCEEDED and the money
+           * fields branded cleanly, but deriving the credit-note gate axes
+           * THREW. Distinct from `invalid_total` on purpose: `invalid_total`
+           * asserts the invoice's MONEY is corrupt and is rendered to the
+           * admin as a retryable failure to read the refundable balance. A
+           * derivation throw is neither — it is a code/shape fault (a barrel
+           * export gone undefined, an F4 aggregate field removed, a
+           * circular-import TDZ), it says nothing about the money, and
+           * retrying an identical request cannot clear it.
+           *
+           * It was reported as `invalid_total` once already (see
+           * tests/unit/payments/invoicing-bridge.test.ts), which is why the
+           * derivation now owns its own try/catch, metric op and log fields.
+           */
+          | 'credit_gate_underivable';
+      }
     >
   >;
 
