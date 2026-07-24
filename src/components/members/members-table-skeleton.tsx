@@ -56,7 +56,14 @@ export function MembersTableSkeleton({
     : 'repeat(7, minmax(0, 1fr))';
 
   return (
-    <div className="flex flex-col gap-4" aria-hidden>
+    // #7 — fill the members page's flex column during load (min-h-0 so it can
+    // shrink; overflow-hidden clips the shimmer rows that don't fit rather than
+    // scrolling), matching the real table's flex-1 scroll region so the
+    // skeleton→table swap doesn't shift layout.
+    <div
+      className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden"
+      aria-hidden
+    >
       <div
         className="grid gap-3 border-b bg-muted/40 px-4 py-3 text-xs font-medium text-muted-foreground"
         style={{ gridTemplateColumns: gridTemplate }}

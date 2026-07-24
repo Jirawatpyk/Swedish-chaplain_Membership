@@ -952,7 +952,12 @@ export function MembersTable({
   }, [enableSelection]);
 
   return (
-    <div className="flex flex-col gap-4" ref={tableContainerRef}>
+    // #7 — `flex-1 min-h-0` so this block fills the space the members page's
+    // flex column leaves after the filters + pagination; the `<Table>` below
+    // then gets `containerClassName="flex-1 min-h-0"` to become the growing
+    // scroll region whose sticky header stays put. `min-h-0` is required or the
+    // flex item refuses to shrink below its content and the page would scroll.
+    <div className="flex min-h-0 flex-1 flex-col gap-4" ref={tableContainerRef}>
       {/* Result-count live region — announces the row count on ANY filter
           change (not only the selection count above), so screen-reader users
           hear the table update after e.g. toggling the needs-invite chip. When
@@ -1040,6 +1045,10 @@ export function MembersTable({
       <Table
         aria-label={t('tableCaption')}
         className="table-fixed"
+        // #7 — the scroll container fills the remaining flex space and scrolls
+        // both axes (vertical for the sticky header, horizontal for the fixed
+        // min-width on narrow viewports).
+        containerClassName="min-h-0 flex-1"
         style={{ minWidth: table.getTotalSize() }}
       >
         <caption className="sr-only">{t('tableCaption')}</caption>

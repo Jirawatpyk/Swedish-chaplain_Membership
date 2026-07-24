@@ -4,7 +4,21 @@ import * as React from 'react';
 
 import { cn } from '@/lib/utils';
 
-function Table({ className, 'aria-label': ariaLabel, ...props }: React.ComponentProps<'table'>) {
+function Table({
+  className,
+  containerClassName,
+  'aria-label': ariaLabel,
+  ...props
+}: React.ComponentProps<'table'> & {
+  /**
+   * Extra classes for the scroll-container `<div>` (not the inner `<table>`).
+   * Opt-in: a page that wants a sticky header while the body scrolls makes the
+   * container a bounded/flex scroll region (e.g. the members directory passes
+   * `flex-1 min-h-0` so the container fills its flex parent and scrolls). Unset
+   * → the container is unbounded, identical to every other table.
+   */
+  containerClassName?: string;
+}) {
   // WCAG 2.1 SC 2.1.1 (Keyboard) + axe-core `scrollable-region-focusable`
   // closure 2026-05-21 (E2E template-library a11y blocker): when the
   // table overflows horizontally on narrow viewports, keyboard users
@@ -23,17 +37,17 @@ function Table({ className, 'aria-label': ariaLabel, ...props }: React.Component
   return (
     <div
       data-slot="table-container"
-      // `--table-max-block` is an OPT-IN vertical-sticky-header hook (default
-      // `none` → unbounded → identical to the previous `overflow-x-auto`
-      // behaviour, so every table is unchanged unless it opts in). A page that
-      // wants its header to stay visible while the body scrolls sets a bounded
-      // value (e.g. the members directory: `[--table-max-block:calc(100dvh-21rem)]`
-      // on its card) — that makes THIS wrapper the vertical scroll container, so
-      // the sticky `<TableHeader>` below actually sticks (a `position: sticky`
-      // header needs a scrolling ancestor that scrolls). `overflow-auto` behaves
-      // exactly like the old `overflow-x-auto` when unbounded (no vertical
-      // overflow to scroll) and enables the internal vertical scroll when bound.
-      className="relative w-full max-h-[var(--table-max-block,none)] overflow-auto focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring"
+      // `overflow-auto` behaves exactly like the old `overflow-x-auto` when the
+      // container is unbounded (no vertical overflow to scroll), and becomes the
+      // vertical scroll container when a caller passes `containerClassName` that
+      // bounds its height (e.g. `flex-1 min-h-0` inside a viewport-height flex
+      // column). That is what lets the sticky `<TableHeader>` below actually
+      // stick while the body scrolls (a `position: sticky` header needs a
+      // scrolling ancestor that scrolls). Default: unbounded, unchanged.
+      className={cn(
+        'relative w-full overflow-auto focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring',
+        containerClassName,
+      )}
       tabIndex={0}
       role="region"
       // strict-aria-ignore-next-line — the literal is only the fallback for

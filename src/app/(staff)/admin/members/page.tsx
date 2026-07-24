@@ -208,7 +208,18 @@ export default async function MembersListPage({
   const t = await getTranslations('admin.members');
 
   return (
-    <TableContainer>
+    // #7 sticky header (members-directory ONLY). The page is bounded to the
+    // viewport height BELOW the app top bar (BreadcrumbNav renders nothing on
+    // this route — it needs ≥2 path segments — so the top bar is the only chrome
+    // above the page). Everything inside then distributes with flexbox: the
+    // table's scroll region (MembersTable → the `containerClassName="flex-1
+    // min-h-0"` Table wrapper) grows to fill exactly the space left by the
+    // PageHeader + filters + optional chip row + pagination, so the PAGE never
+    // scrolls (no outer scrollbar beside the table's own) and there is no dead
+    // space regardless of whether the filter-chip row is shown — no magic
+    // reserve constant to keep in sync. `min-h-0` at each level lets the table
+    // shrink instead of forcing the column past the viewport.
+    <TableContainer className="h-[calc(100dvh-var(--top-bar-height))] min-h-0 overflow-hidden">
       <PageHeader
         title={t('title')}
         subtitle={t('subtitle')}
@@ -228,21 +239,8 @@ export default async function MembersListPage({
         }
       />
 
-      {/* #7 sticky header — members-directory ONLY (opt-in). Setting
-          `--table-max-block` bounds the inner Table container so IT becomes the
-          vertical scroll container and its sticky header stays visible while the
-          body scrolls (components/ui/table.tsx). The reserve is intentionally
-          GENEROUS (~26rem) — it must cover everything OUTSIDE the table region
-          (top bar + breadcrumb + PageHeader + card padding + DirectoryFilters +
-          the active-filter chip row + the pagination below) so the PAGE itself
-          never needs to scroll: under-reserving leaves a second, outer
-          scrollbar next to the table's own (the double-scrollbar this replaces).
-          Over-reserving only leaves a little unused space at tall viewports —
-          preferable to a nested scroll. The `max(18rem, …)` floor keeps the
-          region usable at 400% zoom / short viewports (WCAG 1.4.10). No other
-          table is affected (the global default is `none`). */}
-      <Card className="[--table-max-block:max(18rem,calc(100dvh-26rem))]">
-        <CardContent className="flex flex-col gap-4">
+      <Card className="flex min-h-0 flex-1 flex-col">
+        <CardContent className="flex min-h-0 flex-1 flex-col gap-4">
           <MembersDirectoryBody
             query={query}
             isAdmin={currentUser.role === 'admin'}
