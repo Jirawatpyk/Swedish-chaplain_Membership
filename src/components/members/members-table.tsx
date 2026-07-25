@@ -983,13 +983,19 @@ export function MembersTable({
           ? t('resultsCountOfTotal', { count: rows.length, total })
           : t('resultsCount', { count: rows.length })}
       </div>
-      {enableSelection && selectedCount > 0 && (
+      {enableSelection && (matchingActive || selectedCount > 0) && (
         <div
           className="sr-only"
           aria-live="polite"
           aria-atomic="true"
         >
-          {t('selectedCount', { count: selectedCount })}
+          {/* Announce the EFFECTIVE count: the cross-page matching total when
+              "select all matching" is active (what the bulk action will touch),
+              else the visible-page selection — so SR users don't hear the page
+              count while the visible banner shows the matching count. */}
+          {t('selectedCount', {
+            count: matchingActive ? (matchingCount ?? selectedCount) : selectedCount,
+          })}
         </div>
       )}
       {/* #2 cross-page "Select all N matching". Two states:

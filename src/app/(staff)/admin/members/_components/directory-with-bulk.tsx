@@ -55,15 +55,19 @@ export function DirectoryWithBulk({
   const [matching, setMatching] = useState<
     { ids: string[]; total: number; capped: boolean } | null
   >(null);
-  // Reset the cross-page selection whenever a fresh server render arrives (a new
-  // filter/page, or a router.refresh after a mutation) — the fetched ids are
-  // only valid for the exact rows they were fetched against. React's documented
-  // "adjust state during render" pattern (NOT an effect): it drops the stale set
-  // before this render commits and avoids the cascading-render an effect causes.
+  // Reset the ENTIRE selection whenever a fresh server render arrives (a new
+  // filter/page, or a router.refresh after a mutation): the cross-page matching
+  // set, the per-page mirror, AND the table's own row-selection (via the nonce)
+  // — so a selection made under one filter can never carry over and let a bulk
+  // action hit members that are no longer visible. React's documented "adjust
+  // state during render" pattern (NOT an effect): it drops the stale set before
+  // this render commits and avoids the cascading-render an effect causes.
   const [rowsSnapshot, setRowsSnapshot] = useState(rows);
   if (rows !== rowsSnapshot) {
     setRowsSnapshot(rows);
     setMatching(null);
+    setSelectedIds([]);
+    setClearNonce((n) => n + 1);
   }
 
   // The effective bulk target: the cross-page matching set when active,
@@ -92,6 +96,15 @@ export function DirectoryWithBulk({
     setSelectedIds([]);
     setMatching(null);
     setClearNonce((n) => n + 1);
+  }, []);
+
+  // Any manual checkbox change EXITS the cross-page "select all matching" set:
+  // otherwise `effectiveIds` keeps overriding with the fetched 100 and a row the
+  // admin just UNchecked would still be acted on. Dropping `matching` here hands
+  // control back to the per-page checkboxes (which now drive `effectiveIds`).
+  const handleSelectionChange = useCallback((ids: string[]) => {
+    setSelectedIds(ids);
+    setMatching(null);
   }, []);
 
   // Banner "Select all N matching" — fetch the whole matching id set (capped at
@@ -183,7 +196,7 @@ export function DirectoryWithBulk({
         rows={rows}
         total={total}
         enableSelection={isAdmin}
-        onSelectionChange={isAdmin ? setSelectedIds : undefined}
+        onSelectionChange={isAdmin ? handleSelectionChange : undefined}
         onInlineEdit={isAdmin ? handleInlineEdit : undefined}
         onSelectAllMatching={isAdmin ? handleSelectAllMatching : undefined}
         matchingActive={matching !== null}
