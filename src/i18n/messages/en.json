@@ -1604,7 +1604,7 @@
         "sendReminder": "Send renewal reminder",
         "reminderSending": "Sending reminder…",
         "reminderSent": "Renewal reminder sent",
-        "reminderNoneDue": "No renewal reminder was due for {company}",
+        "reminderNoneDue": "No renewal reminder was sent for {company}",
         "reminderFailed": "Couldn't send the reminder — please try again",
         "rateLimited": "Too many actions. Wait a few minutes and try again.",
         "viewInvoices": "View invoices",

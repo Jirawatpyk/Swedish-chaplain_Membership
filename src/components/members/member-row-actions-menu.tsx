@@ -142,8 +142,16 @@ export function MemberRowActionsMenu({
       const body = (await res.json().catch(() => ({}))) as {
         error?: { code?: string };
       };
+      // The invite route returns snake_case codes (already_linked, email_taken,
+      // invalid_email, contact_removed, not_found, link_failed) but the
+      // invitePortal.errors.* keys are camelCase — convert before lookup so a
+      // specific error isn't silently degraded to the generic toast (parity with
+      // invite-portal-button.tsx's explicit switch).
       const code = body.error?.code;
-      const key = typeof code === 'string' ? `errors.${code}` : null;
+      const key =
+        typeof code === 'string'
+          ? `errors.${code.replace(/_(.)/g, (_m, c: string) => c.toUpperCase())}`
+          : null;
       toast.error(key && tInvite.has(key) ? tInvite(key) : tInvite('errors.serverError'));
     } catch {
       toast.error(tInvite('errors.serverError'));
@@ -197,6 +205,10 @@ export function MemberRowActionsMenu({
     });
     if (res.ok) {
       toast.success(t('restoreSuccess', { company: companyName }));
+      // Restoring drops the row out of an archived-only view → the ⋯ trigger
+      // unmounts; move focus to the #main-content landmark first so it doesn't
+      // fall to <body> (WCAG 2.4.3), mirroring the archive dialog's finalFocus.
+      document.getElementById('main-content')?.focus();
       router.refresh();
       return;
     }
@@ -261,7 +273,12 @@ export function MemberRowActionsMenu({
   }, [memberId, reason, companyName, router, t, tArchive, undelete]);
 
   const handleArchiveOpenChange = useCallback((next: boolean) => {
-    if (!next) {
+    if (next) {
+      // Defense: a fresh open must never inherit a stale success flag (which
+      // would skip the focus-return-to-trigger). The only opener today also
+      // resets it, but any future opener stays safe.
+      closedViaSuccessRef.current = false;
+    } else {
       setReason('');
       setArchiving(false);
     }
@@ -284,7 +301,7 @@ export function MemberRowActionsMenu({
             </Button>
           )}
         />
-        <DropdownMenuContent align="end" className="min-w-48 whitespace-nowrap">
+        <DropdownMenuContent align="end" className="min-w-56 whitespace-nowrap">
           {needsInvite && (
             <DropdownMenuItem onClick={handleInvite}>
               <MailPlusIcon aria-hidden="true" />

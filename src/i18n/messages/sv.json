@@ -1604,7 +1604,7 @@
         "sendReminder": "Skicka förnyelsepåminnelse",
         "reminderSending": "Skickar påminnelse…",
         "reminderSent": "Förnyelsepåminnelse skickad",
-        "reminderNoneDue": "Ingen förnyelsepåminnelse var aktuell för {company}",
+        "reminderNoneDue": "Ingen förnyelsepåminnelse skickades för {company}",
         "reminderFailed": "Det gick inte att skicka påminnelsen — försök igen",
         "rateLimited": "För många åtgärder. Vänta några minuter och försök igen.",
         "viewInvoices": "Visa fakturor",
@@ -1613,7 +1613,7 @@
         "restore": "Återställ",
         "restoreSending": "Återställer…",
         "restoreSuccess": "{company} återställd",
-        "restoreWindowExpired": "Den 90-dagars återställningsperioden har passerat för den här medlemmen.",
+        "restoreWindowExpired": "Återställningsperioden på 90 dagar har passerat för den här medlemmen.",
         "restoreError": "Det gick inte att återställa medlemmen — försök igen.",
         "undo": "Ångra"
       },

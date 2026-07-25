@@ -182,6 +182,41 @@ describe('MemberRowActionsMenu — actions', () => {
     vi.unstubAllGlobals();
   });
 
+  it('Invite maps a snake_case server code to the SPECIFIC localized copy (regression guard)', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(okJson({ error: { code: 'already_linked' } }, 409));
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderMenu({ portalState: 'not_invited' });
+    fireEvent.click(screen.getByText('Invite to portal'));
+
+    await waitFor(() => expect(toastError).toHaveBeenCalled());
+    // The camelCase key (errors.alreadyLinked) must be resolved from the
+    // snake_case server code — not degraded to the generic serverError.
+    expect(toastError.mock.calls[0]?.[0]).toBe(
+      enMessages.admin.members.invitePortal.errors.alreadyLinked,
+    );
+    expect(toastError.mock.calls[0]?.[0]).not.toBe(
+      enMessages.admin.members.invitePortal.errors.serverError,
+    );
+    vi.unstubAllGlobals();
+  });
+
+  it('Send reminder surfaces the rate-limit toast on 429', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okJson({}, 429));
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderMenu();
+    fireEvent.click(screen.getByText('Send renewal reminder'));
+
+    await waitFor(() => expect(toastError).toHaveBeenCalled());
+    expect(toastError.mock.calls[0]?.[0]).toBe(
+      enMessages.admin.members.rowActions.rateLimited,
+    );
+    vi.unstubAllGlobals();
+  });
+
   it('Send reminder POSTs the bulk endpoint with the single id and shows success on sent≥1', async () => {
     const fetchMock = vi
       .fn()
