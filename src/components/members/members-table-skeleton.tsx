@@ -20,10 +20,11 @@
  * 056-members-table-compact: the directory was reduced to a lean 8-column
  * layout (Member No. · Company[flag+name] · Plan·Year · Contact · Status ·
  * Engagement · Last Activity, plus the optional leading select column).
- * The real table now emits 7 (no selection, manager view) or 8 (with
- * selection, admin view). Default is 7 (no selection — manager +
- * first-paint baseline) so a non-admin always sees CLS 0; admins see
- * at-most a 1-column shift (the narrow select column) on first paint.
+ * The real table now emits 7 (no selection, manager view) or 9 (admin: the
+ * narrow leading select column + 7 data columns + the trailing ⋯ actions
+ * column). Default is 7 (no selection — manager + first-paint baseline) so a
+ * non-admin always sees CLS 0; admins see at-most a 2-column shift (the narrow
+ * select + actions columns) on first paint.
  */
 
 import { Skeleton } from '@/components/ui/skeleton';
@@ -40,7 +41,7 @@ interface MembersTableSkeletonProps {
 export function MembersTableSkeleton({
   withSelection = false,
 }: MembersTableSkeletonProps = {}) {
-  const cols = withSelection ? 8 : 7;
+  const cols = withSelection ? 9 : 7;
   // Render enough shimmer rows to fill a typical viewport (was 8): a real page
   // holds up to PAGE_SIZE (50) rows, so a short skeleton let the content below
   // the table (pagination) jump up during load and back down when data landed —
@@ -52,7 +53,7 @@ export function MembersTableSkeleton({
   // narrow to match the real `size: 40` checkbox column — visual
   // alignment is closer to the live table than uniform fractions.
   const gridTemplate = withSelection
-    ? '40px repeat(7, minmax(0, 1fr))'
+    ? '40px repeat(7, minmax(0, 1fr)) 48px'
     : 'repeat(7, minmax(0, 1fr))';
 
   return (

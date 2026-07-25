@@ -1047,7 +1047,8 @@
           "risk": "ความเสี่ยง",
           "engagement": "การมีส่วนร่วม",
           "lastActivity": "กิจกรรมล่าสุด",
-          "notes": "บันทึก"
+          "notes": "บันทึก",
+          "actions": "การดำเนินการ"
         },
         "engagementBand": {
           "healthy": "ดีมาก",
@@ -1597,6 +1598,25 @@
       "exportBackup": "ส่งออกข้อมูลสำรอง",
       "exportBackupSuccess": "ดาวน์โหลดข้อมูลสำรองแล้ว — สมาชิก {members} ราย ผู้ติดต่อ {contacts} คน ใบแจ้งหนี้ {invoices} ใบ",
       "exportBackupError": "ส่งออกข้อมูลสำรองไม่สำเร็จ กรุณาลองใหม่อีกครั้ง",
+      "rowActions": {
+        "moreAria": "การดำเนินการสำหรับ {company}",
+        "invite": "เชิญเข้าใช้พอร์ทัล",
+        "sendReminder": "ส่งการแจ้งเตือนต่ออายุ",
+        "reminderSending": "กำลังส่งการแจ้งเตือน…",
+        "reminderSent": "ส่งการแจ้งเตือนต่ออายุแล้ว",
+        "reminderNoneDue": "ยังไม่ถึงกำหนดแจ้งเตือนต่ออายุสำหรับ {company}",
+        "reminderFailed": "ส่งการแจ้งเตือนไม่สำเร็จ กรุณาลองใหม่",
+        "rateLimited": "ดำเนินการบ่อยเกินไป กรุณารอสักครู่แล้วลองใหม่",
+        "viewInvoices": "ดูใบแจ้งหนี้",
+        "benefits": "สิทธิประโยชน์",
+        "archive": "จัดเก็บ",
+        "restore": "กู้คืน",
+        "restoreSending": "กำลังกู้คืน…",
+        "restoreSuccess": "กู้คืน {company} แล้ว",
+        "restoreWindowExpired": "เลยกำหนด 90 วันสำหรับการกู้คืนสมาชิกรายนี้แล้ว",
+        "restoreError": "กู้คืนสมาชิกรายนี้ไม่สำเร็จ กรุณาลองใหม่",
+        "undo": "เลิกทำ"
+      },
       "invitePortal": {
         "label": "เชิญเข้าพอร์ทัล",
         "submitting": "กำลังส่ง…",

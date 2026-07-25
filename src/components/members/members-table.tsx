@@ -53,6 +53,7 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
+import { MemberRowActionsMenu } from '@/components/members/member-row-actions-menu';
 import {
   ArchiveIcon,
   ArrowDownIcon,
@@ -885,6 +886,36 @@ export function MembersTable({
     }),
     // 056-members-table-compact — the Notes column was removed; notes are
     // edited on the member detail page.
+    // #5 — admin-only per-row ⋯ actions menu (same gate as the select column).
+    ...(enableSelection
+      ? [
+          columnHelper.display({
+            id: 'actions',
+            size: 48,
+            header: () => (
+              <span className="sr-only">{t('columns.actions')}</span>
+            ),
+            cell: ({ row }) => (
+              <div className="flex justify-end">
+                <MemberRowActionsMenu
+                  memberId={row.original.member_id}
+                  companyName={row.original.company_name}
+                  status={row.original.status}
+                  portalState={row.original.portal_state}
+                  primaryContact={
+                    row.original.primary_contact
+                      ? {
+                          contactId: row.original.primary_contact.contact_id,
+                          email: row.original.primary_contact.email,
+                        }
+                      : null
+                  }
+                />
+              </div>
+            ),
+          }),
+        ]
+      : []),
   ], [enableSelection, onInlineEdit, t, tContact, locale, rows, rowSelection, handleRowSelectionChange]);
 
   // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Table v8 hook

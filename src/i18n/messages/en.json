@@ -1047,7 +1047,8 @@
           "risk": "Risk",
           "engagement": "Engagement",
           "lastActivity": "Last activity",
-          "notes": "Notes"
+          "notes": "Notes",
+          "actions": "Actions"
         },
         "engagementBand": {
           "healthy": "Healthy",
@@ -1597,6 +1598,25 @@
       "exportBackup": "Export backup",
       "exportBackupSuccess": "Backup downloaded — {members} members, {contacts} contacts, {invoices} invoices",
       "exportBackupError": "Backup export failed. Please try again.",
+      "rowActions": {
+        "moreAria": "Actions for {company}",
+        "invite": "Invite to portal",
+        "sendReminder": "Send renewal reminder",
+        "reminderSending": "Sending reminder…",
+        "reminderSent": "Renewal reminder sent",
+        "reminderNoneDue": "No renewal reminder was due for {company}",
+        "reminderFailed": "Couldn't send the reminder — please try again",
+        "rateLimited": "Too many actions. Wait a few minutes and try again.",
+        "viewInvoices": "View invoices",
+        "benefits": "Benefits",
+        "archive": "Archive",
+        "restore": "Restore",
+        "restoreSending": "Restoring…",
+        "restoreSuccess": "{company} restored",
+        "restoreWindowExpired": "The 90-day restore window has passed for this member.",
+        "restoreError": "Couldn't restore this member — please try again.",
+        "undo": "Undo"
+      },
       "invitePortal": {
         "label": "Invite to portal",
         "submitting": "Sending…",

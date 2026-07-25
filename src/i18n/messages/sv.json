@@ -1047,7 +1047,8 @@
           "risk": "Risk",
           "engagement": "Engagemang",
           "lastActivity": "Senaste aktivitet",
-          "notes": "Anteckningar"
+          "notes": "Anteckningar",
+          "actions": "Åtgärder"
         },
         "engagementBand": {
           "healthy": "Frisk",
@@ -1597,6 +1598,25 @@
       "exportBackup": "Exportera säkerhetskopia",
       "exportBackupSuccess": "Säkerhetskopia hämtad — {members} medlemmar, {contacts} kontakter, {invoices} fakturor",
       "exportBackupError": "Exporten misslyckades. Försök igen.",
+      "rowActions": {
+        "moreAria": "Åtgärder för {company}",
+        "invite": "Bjud in till portalen",
+        "sendReminder": "Skicka förnyelsepåminnelse",
+        "reminderSending": "Skickar påminnelse…",
+        "reminderSent": "Förnyelsepåminnelse skickad",
+        "reminderNoneDue": "Ingen förnyelsepåminnelse var aktuell för {company}",
+        "reminderFailed": "Det gick inte att skicka påminnelsen — försök igen",
+        "rateLimited": "För många åtgärder. Vänta några minuter och försök igen.",
+        "viewInvoices": "Visa fakturor",
+        "benefits": "Förmåner",
+        "archive": "Arkivera",
+        "restore": "Återställ",
+        "restoreSending": "Återställer…",
+        "restoreSuccess": "{company} återställd",
+        "restoreWindowExpired": "Den 90-dagars återställningsperioden har passerat för den här medlemmen.",
+        "restoreError": "Det gick inte att återställa medlemmen — försök igen.",
+        "undo": "Ångra"
+      },
       "invitePortal": {
         "label": "Bjud in till portalen",
         "submitting": "Skickar…",

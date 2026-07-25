@@ -2,9 +2,10 @@
  * ADMIN-5 (055-member-number) — MembersTableSkeleton column count must match
  * the live table. Guards CLS-0 per ux-standards § 2.1.
  *
- * 056-members-table-compact: the directory was reduced to a lean 8-column
- * layout, so the skeleton now renders 7 cells without selection and 8 with
- * selection (down from 11/12).
+ * 056-members-table-compact: the directory was reduced to a lean layout, so the
+ * skeleton renders 7 cells without selection. #5 added the admin-only ⋯ actions
+ * column, so the admin (with-selection) skeleton now renders 9 (select + 7 data
+ * + actions).
  */
 import { describe, expect, it } from 'vitest';
 import { render } from '@testing-library/react';
@@ -22,8 +23,8 @@ describe('MembersTableSkeleton column count matches the live table', () => {
     expect(headerCellCount(container)).toBe(7);
   });
 
-  it('renders 8 header cells with selection (admin)', () => {
+  it('renders 9 header cells with selection (admin: select + 7 data + actions)', () => {
     const { container } = render(<MembersTableSkeleton withSelection />);
-    expect(headerCellCount(container)).toBe(8);
+    expect(headerCellCount(container)).toBe(9);
   });
 });

@@ -214,7 +214,14 @@ export async function MemberInvoicesSection({
     iso === null ? '—' : format.dateTime(new Date(iso), 'dateMedium2Digit');
 
   return (
-    <section aria-labelledby="member-invoices-heading">
+    // `id="invoices"` is the target of the members-directory ⋯ menu's "View
+    // invoices" deep-link (`/admin/members/[id]#invoices`). `scroll-mt` keeps a
+    // little breathing room above the heading when jumped to.
+    <section
+      id="invoices"
+      aria-labelledby="member-invoices-heading"
+      className="scroll-mt-4"
+    >
       <Card>
         <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
           {/* 056 fix #1 — real <h2> (was a CardTitle <div>) so the section
