@@ -39,6 +39,11 @@ export function DirectoryWithBulk({
   const tDir = useTranslations('admin.members.directory');
   const router = useRouter();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  // Bumped by Clear to command MembersTable to reset its (uncontrolled) TanStack
+  // row-selection. Clearing only the parent mirror left the row checkboxes
+  // checked, and once a cross-page "select all" was active the bar fell back to
+  // the 50 page rows instead of clearing to zero (the reported bug).
+  const [clearNonce, setClearNonce] = useState(0);
 
   // #2 — cross-page "Select all N matching" selection, fetched from
   // /api/members/ids (capped at BULK_CAP). When set it OVERRIDES the per-page
@@ -79,9 +84,14 @@ export function DirectoryWithBulk({
       .filter((name): name is string => Boolean(name));
   }, [rows, effectiveIds]);
 
+  // The single clear path for BOTH the bulk bar's "Clear selection" and the
+  // banner's "Clear": drop the cross-page matching set, drop the parent mirror,
+  // AND bump the nonce so the table unchecks its own row-selection — so Clear
+  // always goes to zero, never leaves the 50 page rows behind.
   const handleClear = useCallback(() => {
     setSelectedIds([]);
     setMatching(null);
+    setClearNonce((n) => n + 1);
   }, []);
 
   // Banner "Select all N matching" — fetch the whole matching id set (capped at
@@ -115,8 +125,6 @@ export function DirectoryWithBulk({
       toast.error(tDir('selectAllMatchingError'));
     }
   }, [tDir]);
-
-  const handleClearMatching = useCallback(() => setMatching(null), []);
 
   const handleInlineEdit = useCallback(
     async (
@@ -182,7 +190,8 @@ export function DirectoryWithBulk({
         matchingCount={matching?.ids.length}
         matchingTotal={matching?.total}
         matchingCapped={matching?.capped ?? false}
-        onClearMatching={isAdmin ? handleClearMatching : undefined}
+        onClearMatching={isAdmin ? handleClear : undefined}
+        clearSelectionNonce={clearNonce}
       />
       <TablePagination page={page} pageSize={pageSize} total={total} />
       {isAdmin && (
