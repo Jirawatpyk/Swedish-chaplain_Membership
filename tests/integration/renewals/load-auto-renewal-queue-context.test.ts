@@ -17,11 +17,15 @@
  *                        (review A1's core complaint).
  *   (b2) billYearStale=true  — "today" (clock override) has rolled into a
  *                        later fiscal year than the stored planYear.
- *   (c1) refusalReason=duplicate_live_bill — a pre-existing LIVE (`issued`)
- *                        membership bill for the same plan_year; a SIBLING
- *                        `auto_renewal` DRAFT for the same (member,
- *                        planYear) must NOT trip it (mirrors the real
- *                        guard's discard-before-check sequence).
+ *   (c1) refusalReason=duplicate_live_bill — a COMMITTED (`issued`) membership
+ *                        bill whose coverage OVERLAPS the charged next-term
+ *                        window (mig 0281 coverage-overlap guard).
+ *   (c1c) refusalReason=null — a COMMITTED prior-term bill sharing the row's
+ *                        plan_year but NOT overlapping the next-term window:
+ *                        the anchored-renewal false-refuse the old
+ *                        plan_year-coarse guard produced, now fixed.
+ *   (c1b) a SIBLING `auto_renewal` DRAFT for the same (member, planYear) must
+ *                        NOT trip it (drafts carry no committed coverage).
  *   (c2) refusalReason=plan_year_drift — the stamped cycle's `periodFrom`
  *                        was re-anchored after the draft was created, so
  *                        its derived fiscal year no longer matches the
@@ -299,7 +303,7 @@ describe('107-auto-invoice Task 13 — loadAutoRenewalQueueContext (live Neon)',
     expect(meta?.billYearStale).toBe(true);
   }, 60_000);
 
-  it('(c1) a pre-existing LIVE membership bill for the same plan_year → refusalReason:duplicate_live_bill', async () => {
+  it('(c1) a COMMITTED membership bill already COVERING the charged next-term window → refusalReason:duplicate_live_bill', async () => {
     const memberId = await seedMember();
     const cycleId = await seedCycle({ memberId, frozenPlanPriceThb: '60000.00' });
     const invoiceId = await seedAutoDraft({
@@ -309,8 +313,11 @@ describe('107-auto-invoice Task 13 — loadAutoRenewalQueueContext (live Neon)',
       cycleId,
     });
 
-    // A pre-existing LIVE (issued) membership invoice for the SAME
-    // (member, planYear) — an orphan/manual bill, not linked to any cycle.
+    // A pre-existing COMMITTED (issued) membership invoice whose coverage window
+    // OVERLAPS the charged next-term window this draft would issue for
+    // (`[cycle.periodTo, +12mo)` = [2026-08-01, 2027-08-01)) — a genuine
+    // duplicate the coverage-overlap guard (mig 0281) must catch. An
+    // orphan/manual bill, not linked to any cycle.
     const conflictingInvoiceId = randomUUID();
     await runInTenant(tenant.ctx, (tx) =>
       tx.insert(invoices).values({
@@ -322,6 +329,8 @@ describe('107-auto-invoice Task 13 — loadAutoRenewalQueueContext (live Neon)',
         planId,
         draftByUserId: user.userId,
         status: 'issued',
+        coverageFrom: new Date(PERIOD_TO_FY2026),
+        coverageTo: new Date('2027-08-01T00:00:00Z'),
         pdfDocKind: 'invoice',
         fiscalYear: PLAN_YEAR,
         sequenceNumber: 1,
@@ -371,6 +380,84 @@ describe('107-auto-invoice Task 13 — loadAutoRenewalQueueContext (live Neon)',
       kind: 'duplicate_live_bill',
       conflictingInvoiceId,
     });
+  }, 60_000);
+
+  it('(c1c) a COMMITTED prior-term bill sharing the row\'s plan_year but NOT overlapping the next-term window → refusalReason:null (the anchored-renewal false-refuse the plan_year-coarse guard produced, now fixed)', async () => {
+    const memberId = await seedMember();
+    const cycleId = await seedCycle({ memberId, frozenPlanPriceThb: '60000.00' });
+    const invoiceId = await seedAutoDraft({
+      memberId,
+      planYear: PLAN_YEAR,
+      frozenPlanPriceThb: '60000.00',
+      cycleId,
+    });
+
+    // The member's COMMITTED (issued) bill for the CURRENT term
+    // `[periodFrom, periodTo)` = [2025-08-01, 2026-08-01) — stands in for the
+    // paid anchor. It shares the row's plan_year (2025), so the OLD
+    // plan_year-coarse `findLiveMembershipBill` wrongly reported "duplicate".
+    // Its coverage is adjacent-but-DISJOINT from the charged next-term window
+    // [2026-08-01, 2027-08-01) (half-open, touch at 2026-08-01), so the
+    // coverage-overlap guard correctly does NOT refuse. (`issued`, not `paid`,
+    // to exercise the same BLOCKING_STATUSES path without the paid-invoice
+    // payment-fields CHECK — the coverage-overlap logic is identical.)
+    await runInTenant(tenant.ctx, (tx) =>
+      tx.insert(invoices).values({
+        tenantId: tenant.ctx.slug,
+        invoiceId: randomUUID(),
+        invoiceSubject: 'membership',
+        memberId,
+        planYear: PLAN_YEAR,
+        planId,
+        draftByUserId: user.userId,
+        status: 'issued',
+        coverageFrom: new Date(PERIOD_FROM_FY2025),
+        coverageTo: new Date(PERIOD_TO_FY2026),
+        pdfDocKind: 'invoice',
+        fiscalYear: PLAN_YEAR,
+        sequenceNumber: 2,
+        documentNumber: `SC-${PLAN_YEAR}-000002`,
+        issueDate: '2025-08-05',
+        dueDate: '2025-09-05',
+        subtotalSatang: 6_000_000n,
+        vatRateSnapshot: '0.0700',
+        vatSatang: 420_000n,
+        totalSatang: 6_420_000n,
+        creditedTotalSatang: 0n,
+        proRatePolicySnapshot: 'monthly',
+        netDaysSnapshot: 30,
+        tenantIdentitySnapshot: {
+          legal_name_th: 'ทดสอบ',
+          legal_name_en: 'Test',
+          tax_id: '0000000000000',
+          address_th: 'Bangkok',
+          address_en: 'Bangkok',
+          logo_blob_key: null,
+        },
+        memberIdentitySnapshot: {
+          legal_name: 'Queue Ctx Co',
+          tax_id: '1234567890123',
+          address: 'Bangkok',
+          primary_contact_name: 'n',
+          primary_contact_email: 'test@example.com',
+        },
+        pdfBlobKey: `invoicing/qc/${PLAN_YEAR}/2.pdf`,
+        pdfSha256: 'b'.repeat(64),
+        pdfTemplateVersion: 1,
+      }),
+    );
+
+    const result = await loadAutoRenewalQueueContext(
+      makeAutoRenewalQueueContextDeps(tenant.ctx.slug),
+      {
+        tenantId: tenant.ctx.slug,
+        rows: [{ invoiceId, memberId, planId, planYear: PLAN_YEAR }],
+      },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(result.value.get(invoiceId)?.refusalReason).toBeNull();
   }, 60_000);
 
   it('(c1b) a SIBLING auto_renewal DRAFT for the same (member, planYear) does NOT trip refusalReason', async () => {

@@ -787,27 +787,6 @@ export interface RenewalCycleRepo {
     invoiceIds: readonly string[],
   ): Promise<ReadonlyMap<string, RenewalCycle>>;
 
-  /**
-   * 107-auto-invoice Task 13 — batched, NON-transactional sibling of
-   * {@link listMembershipInvoicesForPlanYearInTx}, for the admin
-   * review-queue LIST page's "would this be refused?" prediction: given a
-   * page of (memberId, planYear) pairs (one per queue row), returns every
-   * membership invoice matching ANY of those pairs in ONE query, so the
-   * page can group results back per row without an N+1 round-trip.
-   *
-   * Same narrow projection + no-status-filter contract as the tx-scoped
-   * sibling (the caller applies `LIVE_MEMBERSHIP_BILL_STATUSES` itself,
-   * from `_lib/live-membership-bill.ts`, mirroring
-   * `issueAutoDraftedRenewal`'s actual guard). This is a READ-ONLY
-   * PREDICTION for display purposes — it is NOT the authoritative guard
-   * (which re-checks under the per-cycle lock at issue time); a TOCTOU gap
-   * between viewing the queue and clicking Issue is expected and
-   * acceptable here.
-   */
-  listMembershipInvoicesForPlanYearPairs(
-    tenantId: string,
-    pairs: ReadonlyArray<{ readonly memberId: string; readonly planYear: number }>,
-  ): Promise<ReadonlyArray<MembershipInvoiceRef>>;
 
   /**
    * 107-auto-invoice Task 9 — every membership invoice for one
@@ -847,6 +826,23 @@ export interface RenewalCycleRepo {
     tenantId: string,
     memberId: string,
   ): Promise<ReadonlyArray<MembershipBillCoverageRow>>;
+
+  /**
+   * membership-coverage-exclude-guard (mig 0281 — queue-prediction alignment).
+   * The MEMBER-scoped coverage rows for a BATCH of members, keyed by memberId,
+   * so the auto-renewal review queue's `duplicate_live_bill` PREDICTION uses the
+   * SAME coverage-overlap discriminator as the real `issueAutoDraftedRenewal`
+   * guard (which stopped using the plan_year-coarse `findLiveMembershipBill`).
+   * Member-scoped, NOT (member, plan_year)-scoped: the anchored plan_year pin
+   * lags a full term behind the coverage a §86/4 charges, so a plan_year-keyed
+   * read would miss the very bill the overlap check must see. Non-tx, read-only,
+   * no lock (mirrors `findLatestCyclesForMembers`). An empty `memberIds` MUST
+   * short-circuit at the use-case (no DB hit).
+   */
+  listMembershipCoverageForMembers(
+    tenantId: string,
+    memberIds: readonly string[],
+  ): Promise<ReadonlyMap<string, ReadonlyArray<MembershipBillCoverageRow>>>;
 
   /**
    * 107-auto-invoice Task 7 — stamp `renewal_cycles.auto_draft_invoice_id`

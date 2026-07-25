@@ -59,16 +59,19 @@
  *           than filtered out of the queue — the draft still exists, and
  *           Discard (the correct remedy) is a per-row action, so hiding
  *           the row would strand it with no operator affordance.
- *        d. `duplicate_live_bill` — HARD REQ #2: another membership
- *           invoice already exists for (member, planYear) in a live
- *           state (`LIVE_MEMBERSHIP_BILL_STATUSES` via
- *           `findLiveMembershipBill`, `_lib/live-membership-bill.ts`).
- *           Sibling `origin='auto_renewal' status='draft'` rows are
- *           excluded from the candidate set FIRST, mirroring the real
- *           guard's tx1 sequence (Task 9 review Critical-1 fix, where
- *           those siblings are discarded BEFORE the guard runs) —
- *           counting them here would produce a false "refused" for the
- *           routine double-draft case design §5.4 calls harmless.
+ *        d. `duplicate_live_bill` — HARD REQ #2: another COMMITTED membership
+ *           §86/4 (`issued`/`paid`/`partially_credited`) already COVERS the
+ *           charged NEXT-term window `[periodTo, periodTo + term)` — the same
+ *           coverage-overlap discriminator the real guard uses after
+ *           membership-coverage-exclude-guard (mig 0281) replaced the
+ *           plan_year-coarse `findLiveMembershipBill`
+ *           (`findOverlappingMembershipCoverageBill`, `domain/membership-bill-coverage.ts`).
+ *           Drafts do not block (they carry no committed coverage), so sibling
+ *           `origin='auto_renewal' status='draft'` rows and this row's own
+ *           draft (excluded by id) never self-refuse — the routine double-draft
+ *           case design §5.4 calls harmless. Member-scoped, NOT
+ *           (member, planYear)-scoped: the anchored plan_year pin lags a full
+ *           term behind the coverage a §86/4 charges.
  *      This is a best-effort PREDICTION for display, not the authoritative
  *      guard — a TOCTOU gap between viewing the queue and a future Task-14
  *      Issue click is expected and is closed by the real guard re-checking
@@ -81,8 +84,8 @@
  *
  * Batched (no N+1): ONE query for the cycles (keyed by
  * `auto_draft_invoice_id`), ONE query for the members' latest cycles
- * (dedup'd `memberId`s), ONE query for the candidate live bills (dedup'd
- * (memberId, planYear) pairs), and the plan-catalogue lookup is
+ * (dedup'd `memberId`s), ONE query for the members' membership coverage
+ * (dedup'd `memberId`s, keyed by member), and the plan-catalogue lookup is
  * deduplicated by (planId, planYear) — a page of drafts sharing the same
  * plan/year (the common case) pays for exactly one catalogue read per
  * unique pair, not one per row.
@@ -94,11 +97,11 @@
 import { z } from 'zod';
 import { ok, err, type Result } from '@/lib/result';
 import { deriveFiscalYear } from '@/lib/fiscal-year';
+import { addMonthsUtc } from '@/lib/dates';
 import { parseThbDecimalToSatang } from '@/lib/money';
 import { parseInput, type InvalidInputError } from './_lib/parse-input';
-import { findLiveMembershipBill } from './_lib/live-membership-bill';
+import { findOverlappingMembershipCoverageBill } from '../../domain/membership-bill-coverage';
 import { deriveMembershipAccess, type RenewalCycle } from '../../domain/renewal-cycle';
-import type { MembershipInvoiceRef } from '../ports/renewal-cycle-repo';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
 
 export const loadAutoRenewalQueueContextInputSchema = z.object({
@@ -200,27 +203,6 @@ export async function loadAutoRenewalQueueContext(
     return result;
   }
 
-  // Batched candidate live-bill scan for the duplicate_live_bill refusal reason.
-  const dedupedPairs = new Map<string, { readonly memberId: string; readonly planYear: number }>();
-  for (const row of input.rows) {
-    dedupedPairs.set(`${row.memberId}::${row.planYear}`, {
-      memberId: row.memberId,
-      planYear: row.planYear,
-    });
-  }
-  const membershipBills =
-    await deps.cyclesRepo.listMembershipInvoicesForPlanYearPairs(
-      input.tenantId,
-      [...dedupedPairs.values()],
-    );
-  const billsByKey = new Map<string, MembershipInvoiceRef[]>();
-  for (const bill of membershipBills) {
-    const key = `${bill.memberId}::${bill.planYear}`;
-    const bucket = billsByKey.get(key);
-    if (bucket) bucket.push(bill);
-    else billsByKey.set(key, [bill]);
-  }
-
   // Batched "member's current latest cycle" scan for the member_terminated
   // refusal reason — independent of whether THIS draft's own stamped cycle
   // resolved (a member can be terminated regardless of the queue row's
@@ -239,6 +221,14 @@ export async function loadAutoRenewalQueueContext(
   // above provably does NOT cover this, exactly as in the real guard.
   const erasedMemberIds =
     await deps.memberRenewalFlagsRepo.findErasedMemberIds(memberIds);
+
+  // Batched MEMBER-scoped coverage read for the duplicate_live_bill refusal
+  // reason (mig 0281). Member-scoped (not (member, plan_year)) so the check
+  // uses the SAME coverage-overlap discriminator as the real
+  // issueAutoDraftedRenewal guard — a plan_year-keyed read would miss the
+  // anchored bill whose plan_year lags the term it charges.
+  const coverageByMember =
+    await deps.cyclesRepo.listMembershipCoverageForMembers(input.tenantId, memberIds);
 
   for (const row of input.rows) {
     const cycle = cyclesByInvoiceId.get(row.invoiceId) ?? null;
@@ -302,14 +292,26 @@ export async function loadAutoRenewalQueueContext(
       refusalReason = { kind: 'member_erased' };
     }
 
-    // (d) duplicate_live_bill — sibling auto_renewal drafts excluded first
-    // (mirrors the real guard's discard-before-check sequence).
-    if (refusalReason === null) {
-      const key = `${row.memberId}::${row.planYear}`;
-      const candidateBills = (billsByKey.get(key) ?? []).filter(
-        (b) => !(b.origin === 'auto_renewal' && b.status === 'draft'),
+    // (d) duplicate_live_bill — coverage-window overlap (mig 0281), matching
+    // the real issueAutoDraftedRenewal guard (which stopped using the
+    // plan_year-coarse `findLiveMembershipBill`). Only COMMITTED bills
+    // (issued/paid/partially_credited) block — `findOverlappingMembershipCoverageBill`
+    // excludes drafts by default, so sibling auto_renewal drafts and this
+    // row's own draft (also excluded by id) never self-refuse. Needs the
+    // stamped cycle to compute the charged NEXT-term window `[periodTo,
+    // periodTo + term)`; an orphaned draft (cycle === null) fails earlier on
+    // `cycle_not_found` at issue time — deliberately outside this modelled set
+    // (see the head docstring), so it is left unrefused here.
+    if (refusalReason === null && cycle !== null) {
+      const wNew = {
+        from: cycle.periodTo,
+        to: addMonthsUtc(cycle.periodTo, cycle.frozenPlanTermMonths),
+      };
+      const conflict = findOverlappingMembershipCoverageBill(
+        coverageByMember.get(row.memberId) ?? [],
+        wNew,
+        { excludeInvoiceId: row.invoiceId },
       );
-      const conflict = findLiveMembershipBill(candidateBills, row.invoiceId);
       if (conflict) {
         refusalReason = {
           kind: 'duplicate_live_bill',

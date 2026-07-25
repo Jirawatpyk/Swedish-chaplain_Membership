@@ -1573,47 +1573,6 @@ export function makeDrizzleRenewalCycleRepo(
       });
     },
 
-    async listMembershipInvoicesForPlanYearPairs(
-      tenantId: string,
-      pairs: ReadonlyArray<{ readonly memberId: string; readonly planYear: number }>,
-    ): Promise<ReadonlyArray<MembershipInvoiceRef>> {
-      if (pairs.length === 0) return [];
-      return runInTenant(tenant, async (tx) => {
-        const pairConditions = pairs.map((p) =>
-          and(eq(invoices.memberId, p.memberId), eq(invoices.planYear, p.planYear)),
-        );
-        const rows = await tx
-          .select({
-            invoiceId: invoices.invoiceId,
-            memberId: invoices.memberId,
-            planYear: invoices.planYear,
-            status: invoices.status,
-            origin: invoices.origin,
-          })
-          .from(invoices)
-          .where(
-            and(
-              eq(invoices.tenantId, tenantId),
-              eq(invoices.invoiceSubject, 'membership'),
-              or(...pairConditions)!,
-            ),
-          );
-        return rows.flatMap((row) =>
-          row.memberId === null || row.planYear === null
-            ? []
-            : [
-                {
-                  invoiceId: row.invoiceId,
-                  memberId: row.memberId,
-                  planYear: row.planYear,
-                  status: row.status,
-                  origin: row.origin,
-                },
-              ],
-        );
-      });
-    },
-
     async listMembershipInvoicesForPlanYearInTx(
       tx: unknown,
       tenantId: string,
@@ -1691,6 +1650,48 @@ export function makeDrizzleRenewalCycleRepo(
         coverageFrom: row.coverageFrom?.toISOString() ?? null,
         coverageTo: row.coverageTo?.toISOString() ?? null,
       }));
+    },
+
+    async listMembershipCoverageForMembers(
+      tenantId: string,
+      memberIds: readonly string[],
+    ): Promise<ReadonlyMap<string, ReadonlyArray<MembershipBillCoverageRow>>> {
+      const byMember = new Map<string, MembershipBillCoverageRow[]>();
+      if (memberIds.length === 0) return byMember;
+      // MEMBER-scoped (no plan_year filter) — same rationale as
+      // `listMembershipCoverageForMemberInTx`, batched for the review-queue
+      // prediction. `tenantId` is an explicit app-layer WHERE (Principle I
+      // two-layer isolation) on top of the RLS GUC threaded by runInTenant.
+      return runInTenant(tenant, async (tx) => {
+        const rows = await tx
+          .select({
+            invoiceId: invoices.invoiceId,
+            memberId: invoices.memberId,
+            status: invoices.status,
+            coverageFrom: invoices.coverageFrom,
+            coverageTo: invoices.coverageTo,
+          })
+          .from(invoices)
+          .where(
+            and(
+              eq(invoices.tenantId, tenantId),
+              inArray(invoices.memberId, [...memberIds]),
+              eq(invoices.invoiceSubject, 'membership'),
+            ),
+          );
+        for (const row of rows) {
+          if (row.memberId === null) continue;
+          const bucket = byMember.get(row.memberId) ?? [];
+          bucket.push({
+            invoiceId: row.invoiceId,
+            status: row.status,
+            coverageFrom: row.coverageFrom?.toISOString() ?? null,
+            coverageTo: row.coverageTo?.toISOString() ?? null,
+          });
+          byMember.set(row.memberId, bucket);
+        }
+        return byMember;
+      });
     },
 
     async stampAutoDraftInvoiceIdInTx(
