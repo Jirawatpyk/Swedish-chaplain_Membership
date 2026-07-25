@@ -58,6 +58,7 @@ import {
   type RenewalCycleRepo,
   type UrgencyBucket,
 } from '../../application/ports/renewal-cycle-repo';
+import type { MembershipBillCoverageRow } from '../../domain/membership-bill-coverage';
 import {
   asCycleId,
   type ClosedReason,
@@ -1655,6 +1656,41 @@ export function makeDrizzleRenewalCycleRepo(
               },
             ],
       );
+    },
+
+    async listMembershipCoverageForMemberInTx(
+      tx: unknown,
+      tenantId: string,
+      memberId: string,
+    ): Promise<ReadonlyArray<MembershipBillCoverageRow>> {
+      // membership-coverage-exclude-guard (mig 0281) — the pre-flight twin of
+      // the DB EXCLUDE. MEMBER-scoped (no plan_year filter): the anchored
+      // plan_year pin lags a full term behind the coverage a §86/4 charges, so
+      // a plan_year-keyed read would miss the very bill the guard must see.
+      // `tenantId` is an explicit app-layer WHERE (Principle I two-layer
+      // isolation) on top of the RLS GUC threaded by this `tx`.
+      const txDb = tx as typeof db;
+      const rows = await txDb
+        .select({
+          invoiceId: invoices.invoiceId,
+          status: invoices.status,
+          coverageFrom: invoices.coverageFrom,
+          coverageTo: invoices.coverageTo,
+        })
+        .from(invoices)
+        .where(
+          and(
+            eq(invoices.tenantId, tenantId),
+            eq(invoices.memberId, memberId),
+            eq(invoices.invoiceSubject, 'membership'),
+          ),
+        );
+      return rows.map((row) => ({
+        invoiceId: row.invoiceId,
+        status: row.status,
+        coverageFrom: row.coverageFrom?.toISOString() ?? null,
+        coverageTo: row.coverageTo?.toISOString() ?? null,
+      }));
     },
 
     async stampAutoDraftInvoiceIdInTx(

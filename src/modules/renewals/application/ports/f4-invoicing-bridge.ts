@@ -87,6 +87,13 @@ export interface IssueInvoiceForRenewalInput {
    * actual anchor).
    */
   readonly membershipCoverage?: CreateInvoiceDraftInput['membershipCoverage'];
+  /**
+   * membership-coverage-exclude-guard (mig 0281) — the dup-guard coverage
+   * window, set by renewals ALWAYS (incl. first-payment, where
+   * `membershipCoverage` is omitted). See
+   * {@link CreateInvoiceDraftInput.coverageWindow}.
+   */
+  readonly coverageWindow?: CreateInvoiceDraftInput['coverageWindow'];
   /** Auto-email the issued PDF to the member's primary contact. */
   readonly autoEmailOnIssue: boolean;
   readonly actorUserId: string;
@@ -157,6 +164,13 @@ export interface DraftInvoiceForRenewalInput {
   readonly frozenPlanPriceThb: ThbDecimal;
   /** See {@link IssueInvoiceForRenewalInput.membershipCoverage}. */
   readonly membershipCoverage?: CreateInvoiceDraftInput['membershipCoverage'];
+  /**
+   * membership-coverage-exclude-guard (mig 0281) — the dup-guard coverage
+   * window, set by renewals ALWAYS (incl. first-payment, where
+   * `membershipCoverage` is omitted). See
+   * {@link CreateInvoiceDraftInput.coverageWindow}.
+   */
+  readonly coverageWindow?: CreateInvoiceDraftInput['coverageWindow'];
   readonly actorUserId: string;
   readonly requestId: string | null;
 }

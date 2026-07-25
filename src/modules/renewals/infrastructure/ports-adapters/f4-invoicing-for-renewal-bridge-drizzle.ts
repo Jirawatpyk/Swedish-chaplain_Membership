@@ -70,6 +70,12 @@ export const f4InvoicingForRenewalBridge: F4InvoicingForRenewalBridge = {
         ...(input.membershipCoverage !== undefined
           ? { membershipCoverage: input.membershipCoverage }
           : {}),
+        // membership-coverage-exclude-guard (mig 0281) — the dup-guard window,
+        // ALWAYS set by renewals (incl. first-payment), so coverage is stamped
+        // even when the printed `membershipCoverage` is omitted.
+        ...(input.coverageWindow !== undefined
+          ? { coverageWindow: input.coverageWindow }
+          : {}),
       },
     );
     if (!createResult.ok) {
@@ -179,6 +185,12 @@ export const f4InvoicingForRenewalBridge: F4InvoicingForRenewalBridge = {
         renewalSignal: { unitPriceSatang: frozenUnitPriceSatang },
         ...(input.membershipCoverage !== undefined
           ? { membershipCoverage: input.membershipCoverage }
+          : {}),
+        // membership-coverage-exclude-guard (mig 0281) — the dup-guard window,
+        // ALWAYS set by renewals (incl. first-payment), so coverage is stamped
+        // even when the printed `membershipCoverage` is omitted.
+        ...(input.coverageWindow !== undefined
+          ? { coverageWindow: input.coverageWindow }
           : {}),
       },
     );

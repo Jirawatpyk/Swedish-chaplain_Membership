@@ -82,6 +82,18 @@ export interface InvoiceRepo {
        * `membershipCoverage` omit-guard idiom elsewhere in this port.
        */
       readonly origin?: 'manual' | 'auto_renewal';
+      /**
+       * membership-coverage-exclude-guard (mig 0281) — the TRUE charged §86/4
+       * coverage window (ISO `YYYY-MM-DD…`), persisted to `invoices.
+       * coverage_from/coverage_to` so the GiST EXCLUDE constraint can reject a
+       * second OVERLAPPING live membership bill for one (tenant, member).
+       * BOTH-or-NEITHER: pass both for a `{kind:'window'}` membership draft;
+       * OMIT both (never explicit `undefined`) for `from_payment`
+       * (first-payment / erased) and event drafts — the omit-guard idiom, so
+       * the columns stay NULL and the bill never participates in the guard.
+       */
+      readonly coverageFrom?: string;
+      readonly coverageTo?: string;
       readonly lines: readonly InvoiceLine[];
     },
   ): Promise<Invoice>;

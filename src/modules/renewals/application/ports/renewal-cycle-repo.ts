@@ -20,6 +20,7 @@ import type {
 import type { CycleStatus } from '../../domain/value-objects/cycle-status';
 import type { TierBucket } from '../../domain/value-objects/tier-bucket';
 import type { RenewalMonthAggregation } from '../../domain/renewal-month-bucket';
+import type { MembershipBillCoverageRow } from '../../domain/membership-bill-coverage';
 
 export interface NewRenewalCycleInput {
   readonly tenantId: string;
@@ -831,6 +832,21 @@ export interface RenewalCycleRepo {
     memberId: string,
     planYear: number,
   ): Promise<ReadonlyArray<MembershipInvoiceRef>>;
+
+  /**
+   * membership-coverage-exclude-guard (mig 0281) — every membership invoice for
+   * one member with its PERSISTED true charged coverage window
+   * (`invoices.coverage_from/to`) + status, so a mint use-case can run the
+   * pre-flight overlap guard (`findOverlappingMembershipCoverageBill`) that is
+   * the application twin of the DB EXCLUDE constraint. MEMBER-scoped (NOT
+   * plan_year — the anchored pin lags the charged term). `tenantId` is an
+   * explicit app-layer WHERE (Principle I two-layer isolation).
+   */
+  listMembershipCoverageForMemberInTx(
+    tx: TenantTx,
+    tenantId: string,
+    memberId: string,
+  ): Promise<ReadonlyArray<MembershipBillCoverageRow>>;
 
   /**
    * 107-auto-invoice Task 7 — stamp `renewal_cycles.auto_draft_invoice_id`

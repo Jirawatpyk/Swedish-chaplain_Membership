@@ -177,7 +177,8 @@ import { logger } from '@/lib/logger';
 import { deriveFiscalYear } from '@/lib/fiscal-year';
 import { asMemberId } from '@/modules/members';
 import { parseInput } from './_lib/parse-input';
-import { findLiveMembershipBill } from './_lib/live-membership-bill';
+import { addMonthsUtc } from '@/lib/dates';
+import { findOverlappingMembershipCoverageBill } from '../../domain/membership-bill-coverage';
 import { deriveMembershipAccess } from '../../domain/renewal-cycle';
 import type { CycleId } from '../../domain/renewal-cycle';
 import type { RenewalsDeps } from '../../infrastructure/renewals-deps';
@@ -405,14 +406,24 @@ export async function issueAutoDraftedRenewal(
     });
 
     // --- HARD REQ #2: the duplicate-§86/4 barrier -------------------------
-    const siblings =
-      await deps.cyclesRepo.listMembershipInvoicesForPlanYearInTx(
+    // membership-coverage-exclude-guard (mig 0281) — the pre-flight twin of the
+    // DB EXCLUDE, using PERSISTED coverage rather than a plan_year
+    // approximation. `wNew` is THIS draft's own stamped window
+    // ([periodTo, periodTo+term)); the draft is EXCLUDED, so the guard refuses
+    // only when a DIFFERENT live membership bill overlaps it.
+    const wNew = {
+      from: cycle.periodTo,
+      to: addMonthsUtc(cycle.periodTo, cycle.frozenPlanTermMonths),
+    };
+    const coverageBills =
+      await deps.cyclesRepo.listMembershipCoverageForMemberInTx(
         tx,
         input.tenantId,
         cycle.memberId,
-        planYear,
       );
-    const blocking = findLiveMembershipBill(siblings, input.invoiceId);
+    const blocking = findOverlappingMembershipCoverageBill(coverageBills, wNew, {
+      excludeInvoiceId: input.invoiceId,
+    });
     if (blocking) {
       logger.warn(
         {
@@ -421,9 +432,10 @@ export async function issueAutoDraftedRenewal(
           invoiceId: input.invoiceId,
           conflictingInvoiceId: blocking.invoiceId,
           conflictingStatus: blocking.status,
-          planYear,
+          coverageFrom: wNew.from,
+          coverageTo: wNew.to,
         },
-        '[issue-auto-drafted-renewal] refused — a live membership bill already exists for this (member, plan_year)',
+        '[issue-auto-drafted-renewal] refused — a live membership bill already covers this period',
       );
       return err({
         kind: 'duplicate_live_bill' as const,

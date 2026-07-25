@@ -266,6 +266,7 @@ function fakeDeps(args: {
       // cases exercise the unchanged happy path. The refusal branch is
       // covered live-Neon by issue-auto-drafted-renewal.test.ts case (i).
       listMembershipInvoicesForPlanYearInTx: vi.fn(async () => []),
+      listMembershipCoverageForMemberInTx: vi.fn(async () => []),
     } as unknown as ConfirmRenewalDeps['cyclesRepo'],
     auditEmitter: {
       emit: vi.fn(async () => {}),

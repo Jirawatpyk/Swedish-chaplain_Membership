@@ -456,6 +456,17 @@ export function makeDrizzleInvoiceRepo(
           // DEFAULT 'manual' fires (exactOptionalPropertyTypes omit-guard,
           // same idiom as `memberIdentitySnapshot` below).
           ...(input.origin !== undefined ? { origin: input.origin } : {}),
+          // membership-coverage-exclude-guard (mig 0281) — persist the TRUE
+          // charged §86/4 window (both-or-neither; ISO → Date to match the
+          // `paidAt`/`voidedAt` timestamptz convention) so the GiST EXCLUDE
+          // constraint can reject an OVERLAPPING live membership bill for one
+          // (tenant, member). Omitted → columns stay NULL (never block).
+          ...(input.coverageFrom !== undefined && input.coverageTo !== undefined
+            ? {
+                coverageFrom: new Date(input.coverageFrom),
+                coverageTo: new Date(input.coverageTo),
+              }
+            : {}),
           // 054-event-fee-invoices (Task 6b) — pin the BUYER snapshot at draft
           // for NON-MEMBER event attendees (no member row to re-read at issue).
           // `undefined` (membership + matched-member callers) → DB null; the

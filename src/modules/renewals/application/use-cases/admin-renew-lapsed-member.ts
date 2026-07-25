@@ -90,7 +90,7 @@ import {
 } from '../../domain/renewal-cycle';
 import { classifyMembershipPayment } from '../../domain/classify-membership-payment';
 import { loadClassificationCounts } from './_lib/classification-input';
-import { findLiveMembershipBill } from './_lib/live-membership-bill';
+import { findOverlappingMembershipCoverageBill } from '../../domain/membership-bill-coverage';
 import { paymentAnchorMonthStartUtc } from './_lib/payment-anchor-date';
 import {
   CycleNotFoundError,
@@ -362,25 +362,48 @@ export async function adminRenewLapsedMember(
         return err({ kind: 'member_has_active_cycle' as const });
       }
 
-      const guardYear = deriveFiscalYear(periodFrom);
-      const existingBills =
-        await deps.cyclesRepo.listMembershipInvoicesForPlanYearInTx(
+      // membership-coverage-exclude-guard (mig 0281) — the pre-flight twin of
+      // the DB EXCLUDE, using the PERSISTED coverage window rather than a
+      // plan_year approximation. The comeback bills [periodFrom, periodFrom +
+      // term); size the window with the member's plan term (plan-stable, cf
+      // `resolveComebackPeriodFrom`). An unresolvable plan makes the window
+      // moot — `createCycleInTx` below throws `plan_not_found` before any cycle
+      // is written — so the 12-month fallback is never load-bearing.
+      const guardFrozen = await deps.planLookupForRenewal.loadPlanFrozenFields({
+        tenantId: input.tenantId,
+        planId: member.planId,
+        fiscalYear: deriveFiscalYear(periodFrom),
+        mode: 'freeze',
+      });
+      const wNew = {
+        from: periodFrom,
+        to: addMonthsUtc(
+          periodFrom,
+          guardFrozen.status === 'found' ? guardFrozen.plan.termMonths : 12,
+        ),
+      };
+      const coverageBills =
+        await deps.cyclesRepo.listMembershipCoverageForMemberInTx(
           tx,
           input.tenantId,
           input.memberId,
-          guardYear,
         );
-      const liveBill = findLiveMembershipBill(existingBills);
+      const liveBill = findOverlappingMembershipCoverageBill(coverageBills, wNew, {
+        // Consistent with confirmRenewal — a pending auto-draft claiming this
+        // period refuses a new comeback mint (money-safety is the DB EXCLUDE).
+        includeDrafts: true,
+      });
       if (liveBill) {
         logger.warn(
           {
             memberId: input.memberId,
             conflictingInvoiceId: liveBill.invoiceId,
             conflictingStatus: liveBill.status,
-            planYear: guardYear,
+            coverageFrom: wNew.from,
+            coverageTo: wNew.to,
             correlationId: input.correlationId,
           },
-          '[admin-renew-lapsed-member] refused — a live membership bill already exists for this (member, plan_year)',
+          '[admin-renew-lapsed-member] refused — a live membership bill already covers this period',
         );
         return err({
           kind: 'invoice_already_exists' as const,
@@ -566,6 +589,11 @@ export async function adminRenewLapsedMember(
     // key entirely on the first-payment branch rather than assigning an
     // explicit `undefined`.
     ...omitUndefined({ membershipCoverage }),
+    // membership-coverage-exclude-guard (mig 0281) — stamp the dup-guard window
+    // ALWAYS (= the guard's `wNew`, the comeback's [periodFrom, periodTo)),
+    // including first-payment where `membershipCoverage` is omitted; this is
+    // what lets the guard catch a genuine same-period comeback duplicate.
+    coverageWindow: { fromIso: cycle.periodFrom, toIso: cycle.periodTo },
     autoEmailOnIssue: true,
     actorUserId: input.actorUserId,
     correlationId: input.correlationId,

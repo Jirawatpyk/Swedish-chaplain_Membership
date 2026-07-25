@@ -232,6 +232,7 @@ function makeDeps(opts?: {
       // refusal branch is covered live-Neon by
       // `tests/integration/renewals/admin-renew-lapsed-member.test.ts`.
       listMembershipInvoicesForPlanYearInTx: vi.fn(async () => []),
+      listMembershipCoverageForMemberInTx: vi.fn(async () => []),
     } as unknown as AdminRenewLapsedMemberDeps['cyclesRepo'],
     auditEmitter: {
       emitInTx: emitInTxMock,
@@ -497,7 +498,7 @@ describe('adminRenewLapsedMember (Slice 3 / Task 3.1)', () => {
       expect(bridgeArg).not.toHaveProperty('membershipCoverage');
     });
 
-    it('null frontier short-circuits BEFORE the gapless plan-term read (no extra loadPlanFrozenFields)', async () => {
+    it('null frontier short-circuits resolveComebackPeriodFrom\'s gapless term read (guard + createCycle each read the plan once)', async () => {
       const t = makeDeps({
         maxPaidThrough: null,
         countCyclesForMember: 1,
@@ -511,9 +512,13 @@ describe('adminRenewLapsedMember (Slice 3 / Task 3.1)', () => {
         TENANT_ID,
         MEMBER_ID,
       );
-      // A null frontier means the term read is skipped — the only
-      // loadPlanFrozenFields call is createCycleInTx's own freeze.
-      expect(t.loadPlanFrozenMock).toHaveBeenCalledTimes(1);
+      // A null frontier still short-circuits `resolveComebackPeriodFrom`'s OWN
+      // gapless term read. The two loadPlanFrozenFields calls come from
+      // elsewhere: the membership-coverage-exclude-guard (mig 0281) reads the
+      // plan term to size its dup-guard window [periodFrom, periodFrom+term)
+      // ABOVE createCycleInTx (New-3 ordering — refuse before any write), and
+      // createCycleInTx's own freeze reads it again.
+      expect(t.loadPlanFrozenMock).toHaveBeenCalledTimes(2);
     });
   });
 

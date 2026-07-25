@@ -139,6 +139,14 @@ async function seedAutoDraft(opts: {
   readonly cycleId: string | null;
 }): Promise<string> {
   const deps = depsFor(opts.t);
+  // membership-coverage-exclude-guard (mig 0281) — mirror the cron: stamp the
+  // dup-guard window [periodTo, periodTo+term) so the seeded auto-draft carries
+  // `invoices.coverage_from/to` exactly like a production auto-draft, and thus
+  // participates in the overlap guard / EXCLUDE constraint.
+  const covFrom = new Date(PERIOD_FROM);
+  covFrom.setUTCMonth(covFrom.getUTCMonth() + 12);
+  const covTo = new Date(covFrom);
+  covTo.setUTCMonth(covTo.getUTCMonth() + 12);
   const drafted = await deps.f4InvoicingBridge.draftInvoiceForRenewal({
     tenantId: opts.t.ctx.slug,
     memberId: opts.memberId,
@@ -147,6 +155,7 @@ async function seedAutoDraft(opts: {
     frozenPlanPriceThb: '50000.00' as never,
     actorUserId: user.userId,
     requestId: null,
+    coverageWindow: { fromIso: covFrom.toISOString(), toIso: covTo.toISOString() },
   });
   if (drafted.status !== 'drafted') {
     throw new Error(`fixture draft failed: ${JSON.stringify(drafted)}`);

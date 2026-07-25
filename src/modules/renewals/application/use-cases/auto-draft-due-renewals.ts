@@ -543,6 +543,10 @@ async function processOne(
     planYear,
     frozenPlanPriceThb: reread.frozenPlanPriceThb,
     ...omitUndefined({ membershipCoverage }),
+    // membership-coverage-exclude-guard (mig 0281) — stamp the dup-guard window
+    // ALWAYS ([periodTo, periodTo+term)), the SAME window issueAutoDrafted's
+    // guard checks, so an auto-draft participates in the overlap guard.
+    coverageWindow: { fromIso: coverageFromIso, toIso: coverageToIso },
     actorUserId: SYSTEM_ACTOR_AUTO_INVOICE_CRON,
     requestId: null,
   });

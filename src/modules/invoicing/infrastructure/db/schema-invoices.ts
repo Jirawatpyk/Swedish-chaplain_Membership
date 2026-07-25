@@ -162,6 +162,25 @@ export const invoices = pgTable(
 
     autoEmailOnIssue: boolean('auto_email_on_issue'),
 
+    // membership-coverage-exclude-guard (mig 0281) — the TRUE charged §86/4
+    // coverage window (`membershipCoverage`, already computed at every mint:
+    // confirm/auto-draft = [periodTo, periodTo+term); admin-renew comeback =
+    // [periodFrom, periodTo)). Persisted so the GiST EXCLUDE constraint can
+    // reject a second OVERLAPPING live membership bill for one (tenant,
+    // member) — the DB-enforced close no application read-guard can achieve.
+    // NULL for `from_payment` (first-payment / erased) shapes.
+    coverageFrom: timestamp('coverage_from', { withTimezone: true }),
+    coverageTo: timestamp('coverage_to', { withTimezone: true }),
+    // Generated STORED (mig 0281): a bill BLOCKS a same-period re-bill iff it
+    // carries a coverage window AND is live + not-fully-reversed. `void` and
+    // fully `credited` never block (period re-billable). Declared generated so
+    // Drizzle never writes it directly; the DB computes it.
+    blocksCoverage: boolean('blocks_coverage').generatedAlwaysAs(
+      // Postgres generated columns are always STORED (no mode arg — that is
+      // MySQL-only). The DDL in mig 0281 pins `... STORED` explicitly.
+      sql`("coverage_from" IS NOT NULL AND "status" IN ('issued', 'paid', 'partially_credited'))`,
+    ),
+
     // Invoice PDF — frozen at issue time, never overwritten.
     pdfBlobKey: text('pdf_blob_key'),
     pdfSha256: char('pdf_sha256', { length: 64 }),

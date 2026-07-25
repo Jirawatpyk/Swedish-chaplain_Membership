@@ -105,6 +105,12 @@ function makeTestRenewalBridge(): F4InvoicingForRenewalBridge {
           ...(input.membershipCoverage !== undefined
             ? { membershipCoverage: input.membershipCoverage }
             : {}),
+          // membership-coverage-exclude-guard (mig 0281) — forward the dup-guard
+          // window exactly like the production bridge, so the stamped
+          // `invoices.coverage_from/to` (and the overlap guard) behave here too.
+          ...(input.coverageWindow !== undefined
+            ? { coverageWindow: input.coverageWindow }
+            : {}),
         },
       );
       if (!createResult.ok) {

@@ -101,10 +101,8 @@ import {
   requiresDowngradeAck,
 } from '../../domain/plan-price-change';
 import { loadClassificationCounts } from './_lib/classification-input';
-import {
-  LIVE_MEMBERSHIP_BILL_STATUSES,
-  findLiveMembershipBill,
-} from './_lib/live-membership-bill';
+import { LIVE_MEMBERSHIP_BILL_STATUSES } from './_lib/live-membership-bill';
+import { findOverlappingMembershipCoverageBill } from '../../domain/membership-bill-coverage';
 import {
   parseCycleId,
   cycleFrozenPriceSatang,
@@ -326,53 +324,44 @@ export async function confirmRenewal(
       });
     }
 
-    // --- duplicate-bill guard (NO side effects) ---------------------------
-    // 107-auto-invoice Task 9 (review Important 2) — refuse to mint a SECOND
-    // §86/4 when a live membership bill already exists for this
-    // (member, plan_year).
-    //
-    // Task 9 makes "cycle is awaiting_payment AND already linked to an issued
-    // bill" a ROUTINE admin-created state (a treasurer issues from the review
-    // queue), while the member's portal "Confirm & Pay" button stays live. So
-    // the sequence admin-issues → member-confirms is now normal, not rare, and
-    // without this guard it falls straight through to the issue: a second
-    // number is burned, `linkInvoice` then throws InvoiceLinkConflictError,
-    // and the orphan must be voided — producing a phantom cancelled document
-    // in the ภ.พ.30 filing.
-    //
-    // Deliberately a WRITE-PATH guard, not a hidden portal button: the portal
-    // page is cached/soft-navigated and the member may already be mid-flow
-    // when the admin issues.
+    // --- duplicate-bill pre-flight guard (NO side effects) ----------------
+    // membership-coverage-exclude-guard (mig 0281) — refuse to mint a SECOND
+    // §86/4 whose coverage OVERLAPS an existing live membership bill for this
+    // member. The application twin of the DB EXCLUDE constraint, using the
+    // PERSISTED true charged window (`invoices.coverage_from/to`) — never a
+    // plan_year / cycle-window approximation — so it can neither over-block an
+    // anchored renewal (whose §86/4 charges the NEXT term, a full term ahead
+    // of the pinned plan_year) nor under-block a genuine same-term duplicate.
     //
     // review New-3 — this MUST sit above the lazy flip below. Returning
     // `err(...)` from inside `runInTenant` does NOT throw, so tx1 COMMITS:
     // guarding after the flip would leave a refused confirm having still
     // flipped the cycle and emitted `renewal_entered_awaiting_payment
-    // { source:'confirm' }` for a confirm that never happened — a
-    // side-effecting write on a refused path plus an untrue audit row.
-    const existingBillYear = deriveFiscalYear(cycle.periodFrom);
-    const liveBills =
-      await deps.cyclesRepo.listMembershipInvoicesForPlanYearInTx(
+    // { source:'confirm' }` — a side-effecting write on a refused path plus an
+    // untrue audit row. The DB EXCLUDE backstops the concurrency race two
+    // parallel confirms could still slip past this read.
+    //
+    // A NULL-coverage bill (voided-for-correction, first-payment, legacy
+    // pre-backfill) never blocks — matching the constraint's
+    // `WHERE (blocks_coverage)` — so a corrective void can no longer wedge the
+    // member out of renewing (the old New-1 hazard), and `linkedInvoiceId` is
+    // used only to PREFER which id to report, never to decide the refusal.
+    const wNew = {
+      from: cycle.periodTo,
+      to: addMonthsUtc(cycle.periodTo, cycle.frozenPlanTermMonths),
+    };
+    const coverageBills =
+      await deps.cyclesRepo.listMembershipCoverageForMemberInTx(
         tx,
         input.tenantId,
         cycle.memberId,
-        existingBillYear,
       );
-    const liveBill = findLiveMembershipBill(liveBills);
-    // review New-1 — block on `liveBill` ONLY. An earlier revision also
-    // blocked on `cycle.linkedInvoiceId !== null`, which silently
-    // reintroduced exactly the wedge the shared predicate's
-    // `void` exclusion exists to prevent: voiding an invoice does NOT clear
-    // `linked_invoice_id` (the only writer that clears it is
-    // `reanchorPeriodInTx`) and there is no void→renewals callback, so a bill
-    // voided FOR CORRECTION left the member permanently unable to renew —
-    // and the route handed back the VOIDED invoice's id, sending them to
-    // "pay" a cancelled document. `linkedInvoiceId` is now used only to
-    // PREFER which id to report, never to decide the refusal.
+    const liveBill = findOverlappingMembershipCoverageBill(coverageBills, wNew, {
+      // 107 design — a pending auto-draft already claims this period; the
+      // member's Confirm & Pay must refuse rather than mint a rival bill.
+      includeDrafts: true,
+    });
     if (liveBill) {
-      // Prefer the cycle's own link when it actually points at the live bill;
-      // otherwise report the live bill we found (the link may be stale, e.g.
-      // pointing at a voided document or a different plan year).
       const reportInvoiceId =
         cycle.linkedInvoiceId === liveBill.invoiceId
           ? cycle.linkedInvoiceId
@@ -384,9 +373,10 @@ export async function confirmRenewal(
           linkedInvoiceId: cycle.linkedInvoiceId,
           conflictingInvoiceId: liveBill.invoiceId,
           conflictingStatus: liveBill.status,
-          planYear: existingBillYear,
+          coverageFrom: wNew.from,
+          coverageTo: wNew.to,
         },
-        '[confirm-renewal] refused — a live membership bill already exists for this (member, plan_year)',
+        '[confirm-renewal] refused — a live membership bill already covers this period',
       );
       return err({
         kind: 'invoice_already_exists' as const,
@@ -815,6 +805,16 @@ export async function confirmRenewal(
     // key entirely on the first-payment branch rather than assigning an
     // explicit `undefined`.
     ...omitUndefined({ membershipCoverage }),
+    // membership-coverage-exclude-guard (mig 0281) — stamp the dup-guard window
+    // ALWAYS (= the guard's `wNew`, the charged NEXT-term window), even on the
+    // defensive first-payment branch where `membershipCoverage` is omitted.
+    coverageWindow: {
+      fromIso: cycleAfterPlanChange.periodTo,
+      toIso: addMonthsUtc(
+        cycleAfterPlanChange.periodTo,
+        cycleAfterPlanChange.frozenPlanTermMonths,
+      ),
+    },
     autoEmailOnIssue: true,
     actorUserId: input.actorUserId,
     correlationId: input.correlationId,

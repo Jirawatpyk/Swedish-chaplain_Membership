@@ -148,6 +148,25 @@ export const createInvoiceDraftSchema = z.object({
       message: 'membershipCoverage window: fromIso must be before toIso',
     })
     .optional(),
+  /**
+   * membership-coverage-exclude-guard (mig 0281) — the TRUE charged coverage
+   * window persisted to `invoices.coverage_from/to` for the DB EXCLUDE guard,
+   * DECOUPLED from `membershipCoverage` (the PRINTED §86/4 window, which is
+   * OMITTED for a from_payment / first-payment bill even though that bill still
+   * charges a period). Renewals paths pass this ALWAYS — including first
+   * payment — so no membership bill escapes the duplicate-coverage guard. When
+   * absent, coverage falls back to the printed `membershipCoverage` window
+   * (manual F4 callers), else stays NULL (event / no-window drafts).
+   */
+  coverageWindow: z
+    .object({
+      fromIso: z.string().regex(/^\d{4}-\d{2}-\d{2}/),
+      toIso: z.string().regex(/^\d{4}-\d{2}-\d{2}/),
+    })
+    .refine((v) => v.fromIso < v.toIso, {
+      message: 'coverageWindow: fromIso must be before toIso',
+    })
+    .optional(),
 });
 
 export type CreateInvoiceDraftInput = z.infer<typeof createInvoiceDraftSchema>;
@@ -570,6 +589,19 @@ export async function createInvoiceDraft(
       // (exactOptionalPropertyTypes) so the DB DEFAULT 'manual' fires,
       // rather than assigning an explicit `undefined`.
       ...(input.origin !== undefined ? { origin: input.origin } : {}),
+      // membership-coverage-exclude-guard (mig 0281) — persist the TRUE charged
+      // window (both-or-neither). Prefer the EXPLICIT `coverageWindow` (renewals
+      // pass it ALWAYS, including first-payment where the printed
+      // `membershipCoverage` is omitted); fall back to the printed window for
+      // manual F4 callers; else NULL (never participates in the overlap guard).
+      ...(input.coverageWindow !== undefined
+        ? {
+            coverageFrom: input.coverageWindow.fromIso,
+            coverageTo: input.coverageWindow.toIso,
+          }
+        : coverage.kind === 'window'
+          ? { coverageFrom: coverage.fromIso, coverageTo: coverage.toIso }
+          : {}),
       lines,
     });
 
