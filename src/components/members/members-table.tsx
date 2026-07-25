@@ -609,6 +609,13 @@ export function MembersTable({
                 onClick={(e: React.MouseEvent) => {
                   // Shift+Click range selection (FR-040)
                   if (e.shiftKey && lastSelectedRef.current !== null) {
+                    // Apply the CLICKED row's resulting state across the range —
+                    // `preventDefault` below blocks the default toggle, so its
+                    // current state is pre-click; the intended new state is its
+                    // inverse. This lets a shift-click DESELECT a range (click a
+                    // selected row) as well as select one, matching standard
+                    // shift-click semantics instead of only-ever-adding.
+                    const targetState = !row.getIsSelected();
                     const start = Math.min(lastSelectedRef.current, row.index);
                     const end = Math.max(lastSelectedRef.current, row.index);
                     const next = { ...rowSelection };
@@ -619,7 +626,7 @@ export function MembersTable({
                       // this guard it could select a non-selectable row.
                       const rangeRow = rows[i];
                       if (rangeRow && isMemberRowSelectable(rangeRow)) {
-                        next[rangeRow.member_id] = true;
+                        next[rangeRow.member_id] = targetState;
                       }
                     }
                     handleRowSelectionChange(next);
