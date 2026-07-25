@@ -60,6 +60,11 @@ export function BulkActionBar({
   } | null>(null);
 
   const count = selectedIds.length;
+  // Defensive only — currently UNREACHABLE: the effective selection is either the
+  // page (≤ PAGE_SIZE 50) or the select-all-matching set (capped at BULK_CAP by
+  // /api/members/ids), so `count` can't exceed BULK_CAP today, and the server
+  // (route + bulkAction use-case) enforces the real cap regardless. Kept as a
+  // cheap client guard in case a future selection path lifts the client-side cap.
   const overCap = count > BULK_CAP;
 
   // Undo for a bulk archive — restores exactly the ids the archive returned via
