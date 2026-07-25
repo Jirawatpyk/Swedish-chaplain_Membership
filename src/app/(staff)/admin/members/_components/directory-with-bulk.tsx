@@ -39,6 +39,11 @@ export function DirectoryWithBulk({
   const tDir = useTranslations('admin.members.directory');
   const router = useRouter();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  // Bumped by Clear to command MembersTable to reset its (uncontrolled) TanStack
+  // row-selection. Clearing only the parent mirror left the row checkboxes
+  // checked, and once a cross-page "select all" was active the bar fell back to
+  // the 50 page rows instead of clearing to zero (the reported bug).
+  const [clearNonce, setClearNonce] = useState(0);
 
   // #2 — cross-page "Select all N matching" selection, fetched from
   // /api/members/ids (capped at BULK_CAP). When set it OVERRIDES the per-page
@@ -50,15 +55,19 @@ export function DirectoryWithBulk({
   const [matching, setMatching] = useState<
     { ids: string[]; total: number; capped: boolean } | null
   >(null);
-  // Reset the cross-page selection whenever a fresh server render arrives (a new
-  // filter/page, or a router.refresh after a mutation) — the fetched ids are
-  // only valid for the exact rows they were fetched against. React's documented
-  // "adjust state during render" pattern (NOT an effect): it drops the stale set
-  // before this render commits and avoids the cascading-render an effect causes.
+  // Reset the ENTIRE selection whenever a fresh server render arrives (a new
+  // filter/page, or a router.refresh after a mutation): the cross-page matching
+  // set, the per-page mirror, AND the table's own row-selection (via the nonce)
+  // — so a selection made under one filter can never carry over and let a bulk
+  // action hit members that are no longer visible. React's documented "adjust
+  // state during render" pattern (NOT an effect): it drops the stale set before
+  // this render commits and avoids the cascading-render an effect causes.
   const [rowsSnapshot, setRowsSnapshot] = useState(rows);
   if (rows !== rowsSnapshot) {
     setRowsSnapshot(rows);
     setMatching(null);
+    setSelectedIds([]);
+    setClearNonce((n) => n + 1);
   }
 
   // The effective bulk target: the cross-page matching set when active,
@@ -79,8 +88,22 @@ export function DirectoryWithBulk({
       .filter((name): name is string => Boolean(name));
   }, [rows, effectiveIds]);
 
+  // The single clear path for BOTH the bulk bar's "Clear selection" and the
+  // banner's "Clear": drop the cross-page matching set, drop the parent mirror,
+  // AND bump the nonce so the table unchecks its own row-selection — so Clear
+  // always goes to zero, never leaves the 50 page rows behind.
   const handleClear = useCallback(() => {
     setSelectedIds([]);
+    setMatching(null);
+    setClearNonce((n) => n + 1);
+  }, []);
+
+  // Any manual checkbox change EXITS the cross-page "select all matching" set:
+  // otherwise `effectiveIds` keeps overriding with the fetched 100 and a row the
+  // admin just UNchecked would still be acted on. Dropping `matching` here hands
+  // control back to the per-page checkboxes (which now drive `effectiveIds`).
+  const handleSelectionChange = useCallback((ids: string[]) => {
+    setSelectedIds(ids);
     setMatching(null);
   }, []);
 
@@ -115,8 +138,6 @@ export function DirectoryWithBulk({
       toast.error(tDir('selectAllMatchingError'));
     }
   }, [tDir]);
-
-  const handleClearMatching = useCallback(() => setMatching(null), []);
 
   const handleInlineEdit = useCallback(
     async (
@@ -175,14 +196,15 @@ export function DirectoryWithBulk({
         rows={rows}
         total={total}
         enableSelection={isAdmin}
-        onSelectionChange={isAdmin ? setSelectedIds : undefined}
+        onSelectionChange={isAdmin ? handleSelectionChange : undefined}
         onInlineEdit={isAdmin ? handleInlineEdit : undefined}
         onSelectAllMatching={isAdmin ? handleSelectAllMatching : undefined}
         matchingActive={matching !== null}
         matchingCount={matching?.ids.length}
         matchingTotal={matching?.total}
         matchingCapped={matching?.capped ?? false}
-        onClearMatching={isAdmin ? handleClearMatching : undefined}
+        onClearMatching={isAdmin ? handleClear : undefined}
+        clearSelectionNonce={clearNonce}
       />
       <TablePagination page={page} pageSize={pageSize} total={total} />
       {isAdmin && (

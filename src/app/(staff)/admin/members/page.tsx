@@ -208,18 +208,7 @@ export default async function MembersListPage({
   const t = await getTranslations('admin.members');
 
   return (
-    // #7 sticky header (members-directory ONLY). The page is bounded to the
-    // viewport height BELOW the app top bar (BreadcrumbNav renders nothing on
-    // this route — it needs ≥2 path segments — so the top bar is the only chrome
-    // above the page). Everything inside then distributes with flexbox: the
-    // table's scroll region (MembersTable → the `containerClassName="flex-1
-    // min-h-0"` Table wrapper) grows to fill exactly the space left by the
-    // PageHeader + filters + optional chip row + pagination, so the PAGE never
-    // scrolls (no outer scrollbar beside the table's own) and there is no dead
-    // space regardless of whether the filter-chip row is shown — no magic
-    // reserve constant to keep in sync. `min-h-0` at each level lets the table
-    // shrink instead of forcing the column past the viewport.
-    <TableContainer className="h-[calc(100dvh-var(--top-bar-height))] min-h-0 overflow-hidden">
+    <TableContainer>
       <PageHeader
         title={t('title')}
         subtitle={t('subtitle')}
@@ -239,8 +228,8 @@ export default async function MembersListPage({
         }
       />
 
-      <Card className="flex min-h-0 flex-1 flex-col">
-        <CardContent className="flex min-h-0 flex-1 flex-col gap-4">
+      <Card>
+        <CardContent className="flex flex-col gap-4">
           <MembersDirectoryBody
             query={query}
             isAdmin={currentUser.role === 'admin'}

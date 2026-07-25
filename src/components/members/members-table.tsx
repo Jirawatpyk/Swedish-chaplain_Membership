@@ -185,6 +185,12 @@ type Props = {
   readonly matchingCapped?: boolean | undefined;
   /** Clear the cross-page matching selection. */
   readonly onClearMatching?: (() => void) | undefined;
+  /**
+   * Bumped by the parent's Clear to command a full reset of this table's
+   * (uncontrolled) TanStack row-selection — the parent can't reach the checkbox
+   * state otherwise, so without this Clear leaves the page rows checked.
+   */
+  readonly clearSelectionNonce?: number | undefined;
   /** Admin-only: enable multi-row selection + inline edit. */
   readonly enableSelection?: boolean | undefined;
   /** Callback when selection changes — used by BulkActionBar. */
@@ -505,6 +511,7 @@ export function MembersTable({
   matchingTotal,
   matchingCapped = false,
   onClearMatching,
+  clearSelectionNonce,
 }: Props) {
   const t = useTranslations('admin.members.directory');
   const tContact = useTranslations('admin.members.detail');
@@ -951,13 +958,22 @@ export function MembersTable({
     return () => window.removeEventListener('keydown', onKey);
   }, [enableSelection]);
 
+  // Full row-selection reset commanded by the parent's Clear (bulk bar or the
+  // "select all matching" banner) via `clearSelectionNonce`. The table owns
+  // rowSelection UNCONTROLLED, so the parent can't uncheck the boxes directly —
+  // resetting here also fires `onSelectionChange([])`, so the parent mirror
+  // follows to zero. Guarded on a nonce CHANGE (not mount) so it fires only on
+  // an actual Clear.
+  const prevClearNonceRef = useRef(clearSelectionNonce);
+  useEffect(() => {
+    if (clearSelectionNonce !== prevClearNonceRef.current) {
+      prevClearNonceRef.current = clearSelectionNonce;
+      tableRef.current.resetRowSelection();
+    }
+  }, [clearSelectionNonce]);
+
   return (
-    // #7 — `flex-1 min-h-0` so this block fills the space the members page's
-    // flex column leaves after the filters + pagination; the `<Table>` below
-    // then gets `containerClassName="flex-1 min-h-0"` to become the growing
-    // scroll region whose sticky header stays put. `min-h-0` is required or the
-    // flex item refuses to shrink below its content and the page would scroll.
-    <div className="flex min-h-0 flex-1 flex-col gap-4" ref={tableContainerRef}>
+    <div className="flex flex-col gap-4" ref={tableContainerRef}>
       {/* Result-count live region — announces the row count on ANY filter
           change (not only the selection count above), so screen-reader users
           hear the table update after e.g. toggling the needs-invite chip. When
@@ -967,13 +983,19 @@ export function MembersTable({
           ? t('resultsCountOfTotal', { count: rows.length, total })
           : t('resultsCount', { count: rows.length })}
       </div>
-      {enableSelection && selectedCount > 0 && (
+      {enableSelection && (matchingActive || selectedCount > 0) && (
         <div
           className="sr-only"
           aria-live="polite"
           aria-atomic="true"
         >
-          {t('selectedCount', { count: selectedCount })}
+          {/* Announce the EFFECTIVE count: the cross-page matching total when
+              "select all matching" is active (what the bulk action will touch),
+              else the visible-page selection — so SR users don't hear the page
+              count while the visible banner shows the matching count. */}
+          {t('selectedCount', {
+            count: matchingActive ? (matchingCount ?? selectedCount) : selectedCount,
+          })}
         </div>
       )}
       {/* #2 cross-page "Select all N matching". Two states:
@@ -1045,10 +1067,6 @@ export function MembersTable({
       <Table
         aria-label={t('tableCaption')}
         className="table-fixed"
-        // #7 — the scroll container fills the remaining flex space and scrolls
-        // both axes (vertical for the sticky header, horizontal for the fixed
-        // min-width on narrow viewports).
-        containerClassName="min-h-0 flex-1"
         style={{ minWidth: table.getTotalSize() }}
       >
         <caption className="sr-only">{t('tableCaption')}</caption>

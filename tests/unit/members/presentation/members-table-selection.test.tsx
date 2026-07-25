@@ -208,6 +208,43 @@ describe('MembersTable selection (T108 regression)', () => {
     expect(selectedIds).toHaveLength(2);
   });
 
+  it('resets its row selection to zero when clearSelectionNonce changes (parent Clear)', async () => {
+    const selectionSpy = vi.fn();
+    const { MembersTable } = await import('@/components/members/members-table');
+
+    const { rerender } = render(
+      <NextIntlClientProvider locale="en" messages={messages}>
+        <MembersTable
+          rows={testRows}
+          enableSelection={true}
+          onSelectionChange={selectionSpy}
+          clearSelectionNonce={0}
+        />
+      </NextIntlClientProvider>,
+    );
+
+    // Select the whole page → 2 ids.
+    fireEvent.click(screen.getAllByRole('checkbox')[0]!);
+    expect(selectionSpy.mock.calls.at(-1)?.[0] as string[]).toHaveLength(2);
+    selectionSpy.mockClear();
+
+    // Parent Clear bumps the nonce → the table must reset its own (uncontrolled)
+    // selection to ZERO, not leave the page rows checked (the reported bug where
+    // Clear left 50 after a cross-page "select all").
+    rerender(
+      <NextIntlClientProvider locale="en" messages={messages}>
+        <MembersTable
+          rows={testRows}
+          enableSelection={true}
+          onSelectionChange={selectionSpy}
+          clearSelectionNonce={1}
+        />
+      </NextIntlClientProvider>,
+    );
+
+    expect(selectionSpy).toHaveBeenCalledWith([]);
+  });
+
   // BUG-013 follow-up (code-review): once archived rows became non-selectable,
   // the "Select all N matching" banner must key off the table's own
   // all-page-selected state, NOT `selectedCount === rows.length` (which can
