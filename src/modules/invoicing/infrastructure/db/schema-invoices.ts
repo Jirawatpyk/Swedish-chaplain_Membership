@@ -46,6 +46,13 @@ export const invoiceStatusEnum = pgEnum('invoice_status', [
 // its required identity columns. See migration 0201 § invoice_subject.
 export const invoiceSubjectEnum = pgEnum('invoice_subject', ['membership', 'event']);
 
+// 107-auto-invoice (Task 1, migration 0259) — discriminates a manually
+// drafted invoice from one the auto-invoice cron pre-filled ahead of the
+// due date. Defaults 'manual' so every pre-existing row backfills cleanly;
+// foundation-only this round — the cron + review-queue use-cases that WRITE
+// 'auto_renewal' land in later tasks of this plan.
+export const invoiceOriginEnum = pgEnum('invoice_origin', ['manual', 'auto_renewal']);
+
 // T166 — async receipt PDF state machine. Migration 0056.
 export const receiptPdfStatusEnum = pgEnum('receipt_pdf_status_t', [
   'pending',
@@ -96,6 +103,10 @@ export const invoices = pgTable(
 
     status: invoiceStatusEnum('status').notNull().default('draft'),
     draftByUserId: uuid('draft_by_user_id').notNull(),
+    // 107-auto-invoice (Task 1, migration 0259) — 'manual' (default) for
+    // every existing/staff-drafted row; 'auto_renewal' for a row the cron
+    // pre-filled. Foundation-only — no writer sets 'auto_renewal' yet.
+    origin: invoiceOriginEnum('origin').notNull().default('manual'),
 
     // 088 L1 — this is the BILL / issue-time fiscal year by design (derived
     // from the ISSUE date in `issueInvoice`). It is NOT the §87 fiscal year of
@@ -150,6 +161,25 @@ export const invoices = pgTable(
     voidedByUserId: uuid('voided_by_user_id'),
 
     autoEmailOnIssue: boolean('auto_email_on_issue'),
+
+    // membership-coverage-exclude-guard (mig 0281) — the TRUE charged §86/4
+    // coverage window (`membershipCoverage`, already computed at every mint:
+    // confirm/auto-draft = [periodTo, periodTo+term); admin-renew comeback =
+    // [periodFrom, periodTo)). Persisted so the GiST EXCLUDE constraint can
+    // reject a second OVERLAPPING live membership bill for one (tenant,
+    // member) — the DB-enforced close no application read-guard can achieve.
+    // NULL for `from_payment` (first-payment / erased) shapes.
+    coverageFrom: timestamp('coverage_from', { withTimezone: true }),
+    coverageTo: timestamp('coverage_to', { withTimezone: true }),
+    // Generated STORED (mig 0281): a bill BLOCKS a same-period re-bill iff it
+    // carries a coverage window AND is live + not-fully-reversed. `void` and
+    // fully `credited` never block (period re-billable). Declared generated so
+    // Drizzle never writes it directly; the DB computes it.
+    blocksCoverage: boolean('blocks_coverage').generatedAlwaysAs(
+      // Postgres generated columns are always STORED (no mode arg — that is
+      // MySQL-only). The DDL in mig 0281 pins `... STORED` explicitly.
+      sql`("coverage_from" IS NOT NULL AND "status" IN ('issued', 'paid', 'partially_credited'))`,
+    ),
 
     // Invoice PDF — frozen at issue time, never overwritten.
     pdfBlobKey: text('pdf_blob_key'),
@@ -401,6 +431,19 @@ export const invoices = pgTable(
     uniqueIndex('invoices_tenant_bill_raw_uniq')
       .on(table.tenantId, table.billDocumentNumberRaw)
       .where(sql`bill_document_number_raw IS NOT NULL`),
+    // 107-auto-invoice Task 16 review MAJOR-2 (migration 0264) — backs the
+    // auto-renewal review-queue gauges (`renewals_auto_draft_queue_size` +
+    // `renewals_auto_draft_oldest_age_seconds`) emitted daily from the
+    // auto-draft coordinator. The gauge SQL puts this predicate in WHERE
+    // (not COUNT(*) FILTER, which is never index-eligible and measured a
+    // full seq scan: 389 rows discarded, 11.7ms). `created_at` is the
+    // second column so MIN(created_at) is an index-ordered first-row read.
+    // Partial: the qualifying set is a small transient working queue — a
+    // row leaves it the moment a treasurer issues or discards the draft —
+    // so the index stays tiny however large `invoices` grows.
+    index('invoices_auto_renewal_draft_idx')
+      .on(table.tenantId, table.createdAt)
+      .where(sql`origin = 'auto_renewal' AND status = 'draft'`),
     // FK DECISION (054-event-fee-invoices, Task 3+4):
     //   `(tenant_id, event_registration_id)` → `event_registrations
     //   (tenant_id, registration_id) ON DELETE RESTRICT` — a tenant-aware

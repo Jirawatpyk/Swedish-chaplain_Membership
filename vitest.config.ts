@@ -48,6 +48,51 @@ export default defineConfig({
     // bugs (assertion failures + syntax errors land in <100ms
     // regardless) and absorbs the cold-import variance.
     testTimeout: 30_000,
+    // Worker cap — the fix for the DETERMINISTIC (not flaky) timeout that
+    // `tests/contract/members/bulk-enrol-auto-invoice.test.ts` hit whenever it
+    // was co-run with `tests/unit/members/presentation/`.
+    //
+    // Vitest defaults to one worker per CPU. Because `isolate` is on (and must
+    // stay on), every worker transforms and evaluates the module graph in its
+    // OWN registry — nothing is shared. So raising the worker count does not
+    // just divide the work, it MULTIPLIES the transform cost. Measured on the
+    // 44-file repro (12-CPU dev workstation, `pnpm vitest run
+    // tests/contract/members/bulk-enrol-auto-invoice.test.ts
+    // tests/unit/members/presentation/`):
+    //
+    //   workers | transform | collect  | result
+    //   --------|-----------|----------|---------------------------------
+    //   default | 129.63 s  | 516.68 s | FAIL — 2 tests, 84.8 s wall
+    //   4       |  10.64 s  | 137.13 s | PASS — 398/398, 99.2 s wall
+    //
+    // The failing test's cold `await import('@/app/api/members/bulk/route')`
+    // (which additionally `importActual`s two whole module barrels) was
+    // starved to 43_041 ms — past the 30 s ceiling below. It is NOT a hang:
+    // re-running the same combination with `--testTimeout=180000` goes
+    // 398/398 green with that one test reported at 43.0 s. So the cure is to
+    // stop oversubscribing the CPU, not to raise the ceiling again.
+    //
+    // Raising `testTimeout` is the treadmill this repo is already on — 5s →
+    // 10s → 30s, see the comment above, each bump prompted by this same class
+    // of failure. A worker cap fixes the whole class at once and keeps
+    // working when someone adds a fourth bulk contract file, which is the
+    // failure mode a per-file fix would not survive.
+    //
+    // This is a TRADE, not a pure win: read the wall-clock column above — the
+    // capped run is SLOWER end to end (84.8 s → 99.2 s on the repro). What it
+    // buys is determinism; the faster number is a run that FAILED. Accepted on
+    // that basis. If someone later reverts this for speed, they are re-buying
+    // the starvation failure, so re-measure both columns before deciding.
+    //
+    // Scope: this caps the DEFAULT (unit/contract) project only.
+    // `vitest.integration.config.ts` is deliberately untouched — it runs
+    // `pool: 'forks'` with `singleFork: true`, so it is already serialised and
+    // a worker cap there would be meaningless.
+    //
+    // Percentage rather than a hard number so CI runners with a different
+    // core count scale with the box instead of inheriting this laptop's 4.
+    maxWorkers: '50%',
+    minWorkers: 1,
     // Staff-review R3v2 (2026-05-16): hookTimeout was initially bumped
     // from the vitest default 10s to 30s in commit `21888223` to
     // support beforeAll-based route-module pre-warm hooks. **R3v2
@@ -362,6 +407,16 @@ export default defineConfig({
           functions: 100,
         },
         'src/modules/invoicing/application/use-cases/issue-invoice.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+        },
+        // 107-auto-invoice Task 10 — the generic issue route's origin
+        // guard: the paired ship gate closing Task 9's duplicate-§86/4
+        // barrier bypass. Small (one branch), but it directly gates
+        // whether an auto_renewal draft can be minted outside the
+        // renewals queue's guards.
+        'src/modules/invoicing/application/use-cases/guard-generic-route-issue-origin.ts': {
           lines: 100,
           branches: 100,
           functions: 100,

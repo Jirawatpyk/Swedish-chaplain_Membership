@@ -24,7 +24,21 @@
  * line 26 imports F3's `members` schema for the LEFT JOIN to surface
  * `company_name`. This adapter follows the same convention.
  */
-import { and, asc, desc, eq, exists, gte, isNull, lt, notInArray, or, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  exists,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  notInArray,
+  or,
+  sql,
+} from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';
 import { env } from '@/lib/env';
 import type { TenantContext } from '@/modules/tenants';
@@ -275,6 +289,40 @@ export function makeDrizzleMemberRenewalFlagsRepo(
       const row = rows[0];
       if (row === undefined) return null;
       return { blocked: row.blocked, erased: row.erasedAt !== null };
+    },
+
+    async findErasedMemberIds(
+      memberIds: readonly string[],
+    ): Promise<ReadonlySet<string>> {
+      if (memberIds.length === 0) return new Set<string>();
+      // No caller-supplied tx (read-only queue enrichment) — opens its own
+      // `runInTenant` using the closed-over context, mirroring
+      // `hasUnreconciledPaidMembershipInvoice` above. `members` carries a
+      // strict isolating RLS policy, so the SET LOCAL binding is the tenant
+      // fence (see this file's header) — no explicit tenant predicate needed
+      // or used by the sibling `members` reads here.
+      //
+      // NOTE for anyone comparing the two: the members-module twin of this
+      // query, `findErasedIdsInTx` in
+      // `src/modules/members/infrastructure/db/drizzle-member-repo.ts`, DOES
+      // add an explicit `eq(members.tenantId, …)` beside the same RLS GUC.
+      // Neither is wrong — each follows its own file's documented convention
+      // (that file states the explicit predicate as two-layer isolation per
+      // Constitution Principle I; this file's header treats the GUC as the
+      // fence for `members` reads). They were added in one commit, so the
+      // difference is deliberate rather than drift.
+      const rows = await runInTenant(tenant, (tx) =>
+        tx
+          .select({ memberId: members.memberId })
+          .from(members)
+          .where(
+            and(
+              inArray(members.memberId, [...memberIds]),
+              isNotNull(members.erasedAt),
+            ),
+          ),
+      );
+      return new Set(rows.map((r) => r.memberId));
     },
 
     async readRenewalRemindersOptedOut(

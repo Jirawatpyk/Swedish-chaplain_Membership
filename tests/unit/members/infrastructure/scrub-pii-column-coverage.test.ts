@@ -75,6 +75,12 @@ const SCRUBBED = new Set<string>([
   'riskScoreFactors', // jsonb derived behavioral/financial signals
   'riskScoreLastComputedAt', // computed time for a now-deleted score — moot
   'riskSnoozedUntil', // snooze time for a now-deleted score — moot
+  // 107-auto-invoice (migration 0259 column, Task 15 write path) — reset to
+  // NULL on erasure. Classified SCRUBBED for an OPERATIONAL reason rather than
+  // a re-identification one: the scrub leaves `status`/`archived_at` untouched,
+  // so an erased-but-active member would otherwise still pass the auto-draft
+  // cron's member-side gate and get a renewal invoice drafted to `[erased]`.
+  'autoInvoiceEnrolledAt',
   // Stamps written by the scrub itself.
   'erasedAt',
   'updatedAt',

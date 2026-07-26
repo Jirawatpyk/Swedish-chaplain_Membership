@@ -42,10 +42,14 @@ import {
   CycleNotFoundError,
   CycleTransitionConflictError,
   InvoiceLinkConflictError,
+  type AutoDraftEligiblePage,
+  type IssuedAutoInvoiceOrphanRow,
   type ListMembersWithoutCycleOpts,
   type ListRenewalCyclesOpts,
+  type MembershipInvoiceRef,
   type MembersWithoutCyclePage,
   type NewRenewalCycleInput,
+  type StaleAutoDraftRow,
   type PipelineQueryOpts,
   type PipelineQueryResult,
   type PipelineRow,
@@ -54,6 +58,7 @@ import {
   type RenewalCycleRepo,
   type UrgencyBucket,
 } from '../../application/ports/renewal-cycle-repo';
+import type { MembershipBillCoverageRow } from '../../domain/membership-bill-coverage';
 import {
   asCycleId,
   type ClosedReason,
@@ -774,7 +779,7 @@ export function makeDrizzleRenewalCycleRepo(
     },
 
     async findLatestCyclesForMembers(
-      _tenantId: string,
+      tenantId: string,
       memberIds: readonly string[],
     ): Promise<ReadonlyArray<RenewalCycle>> {
       if (memberIds.length === 0) return [];
@@ -782,7 +787,12 @@ export function makeDrizzleRenewalCycleRepo(
         const rows = await tx
           .selectDistinctOn([renewalCycles.memberId])
           .from(renewalCycles)
-          .where(inArray(renewalCycles.memberId, [...memberIds]))
+          .where(
+            and(
+              eq(renewalCycles.tenantId, tenantId),
+              inArray(renewalCycles.memberId, [...memberIds]),
+            ),
+          )
           // DISTINCT ON requires the leading ORDER BY key to match the distinct
           // column; created_at DESC + cycle_id DESC picks the latest, deterministic
           // tiebreak. The single-read path (loadMemberRenewalStatus → list()
@@ -806,16 +816,31 @@ export function makeDrizzleRenewalCycleRepo(
      * `cancelled` row so it can gate access. Same ordering key
      * (`created_at DESC, cycle_id DESC`) as the batch method above so the
      * suspension gate and the admin badge never disagree on "latest".
+     *
+     * 107-auto-invoice Task 14 review (IMPORTANT) — two-layer tenant
+     * isolation (Constitution Principle I, NON-NEGOTIABLE). This is a
+     * system-wide membership-access GATE, not an isolated read: 8 call
+     * sites across `membership-access-bridge.ts` (F3/F4/F6/F7),
+     * `mark-paid-offline.ts`, `lapsed-portal-scope.ts`, and
+     * `load-latest-cycle.ts`. RLS+FORCE already made cross-tenant reads
+     * return nothing, but Principle I requires the explicit app-layer
+     * filter too — same fix already applied to the batched twin
+     * `findLatestCyclesForMembers` above.
      */
     async findLatestCycleForMember(
-      _tenantId: string,
+      tenantId: string,
       memberId: string,
     ): Promise<RenewalCycle | null> {
       return runInTenant(tenant, async (tx) => {
         const rows = await tx
           .select()
           .from(renewalCycles)
-          .where(eq(renewalCycles.memberId, memberId))
+          .where(
+            and(
+              eq(renewalCycles.tenantId, tenantId),
+              eq(renewalCycles.memberId, memberId),
+            ),
+          )
           .orderBy(desc(renewalCycles.createdAt), desc(renewalCycles.cycleId))
           .limit(1);
         return rows[0] ? rowToDomain(rows[0]) : null;
@@ -1323,6 +1348,453 @@ export function makeDrizzleRenewalCycleRepo(
       });
     },
 
+    async listCyclesEligibleForAutoDraft(
+      _tenantId: string,
+      args: {
+        readonly nowIso: string;
+        readonly leadDaysRolling: number;
+        readonly leadDaysCalendar: number;
+        readonly pageSize: number;
+      },
+    ): Promise<AutoDraftEligiblePage> {
+      return runInTenant(tenant, async (tx) => {
+        // 107-auto-invoice Task 6 — see the port doc comment for the full
+        // eligibility predicate + the rationale for each clause. Two
+        // correlated subqueries (rather than an actual SQL JOIN) keep the
+        // row shape flat `renewal_cycles.*` so `rowToDomain` — which
+        // expects a bare `RenewalCycleRow` — stays reusable unchanged; a
+        // real JOIN against `.select()` would nest columns under
+        // per-table keys and break that mapper.
+        //
+        // Member-side gate: enrolled + not archived + within the
+        // member's own lead window (`leadDaysCalendar` for a
+        // `billing_cycle = 'calendar'` member, else `leadDaysRolling`).
+        // The `expires_at` upper bound is correlated to the OUTER
+        // `renewal_cycles` row since the lead-day figure depends on
+        // `members.billing_cycle`.
+        const eligibleMemberSql = sql`EXISTS (
+          SELECT 1 FROM ${members} m
+          WHERE m.tenant_id = ${renewalCycles.tenantId}
+            AND m.member_id = ${renewalCycles.memberId}
+            AND m.auto_invoice_enrolled_at IS NOT NULL
+            AND m.archived_at IS NULL
+            AND m.status <> 'archived'
+            -- Task 15 review (Important) — a GDPR/PDPA-erased member must
+            -- never be auto-billed. scrubPiiInTx now NULLs
+            -- auto_invoice_enrolled_at, but that is a ONE-SHOT fix: nothing
+            -- stops a later bulk enrol from re-stamping an erased row, and
+            -- the scrub deliberately leaves status/archived_at alone
+            -- (erasure is orthogonal to archive), so the two gates above do
+            -- NOT cover this. Filtering at the repo predicate covers every
+            -- present and future enrolment path, where a write-path filter
+            -- would only cover the one that exists today. Same concept as
+            -- excludeErasedMembers in drizzle-member-renewal-flags-repo.ts.
+            -- NOTE: no backticks in this comment — it lives inside a JS
+            -- template literal, where a backtick would terminate the string.
+            AND m.erased_at IS NULL
+            AND ${renewalCycles.expiresAt} <= ${args.nowIso}::timestamptz + (
+              CASE WHEN m.billing_cycle = 'calendar'
+                THEN ${args.leadDaysCalendar}::int
+                ELSE ${args.leadDaysRolling}::int
+              END
+            ) * INTERVAL '1 day'
+        )`;
+
+        // Dedup gate — coarse, MEMBER-scoped (not plan_year-scoped: a
+        // cycle's plan_year is derived, not a column — see port doc).
+        // draft/issued ONLY: `paid`/`credited`/`partially_credited` are
+        // deliberately EXCLUDED from this NOT EXISTS — every eligible
+        // member has a paid prior-cycle membership invoice by
+        // construction (that payment is WHY this cycle is `upcoming`),
+        // so including `paid` here would zero out every candidate.
+        const noLiveMembershipInvoiceSql = sql`NOT EXISTS (
+          SELECT 1 FROM ${invoices} inv
+          WHERE inv.tenant_id = ${renewalCycles.tenantId}
+            AND inv.member_id = ${renewalCycles.memberId}
+            AND inv.invoice_subject = 'membership'
+            AND inv.status IN ('draft', 'issued')
+        )`;
+
+        const rows = await tx
+          .select()
+          .from(renewalCycles)
+          .where(
+            and(
+              sql`${renewalCycles.status} IN ('upcoming','reminded')`,
+              sql`${renewalCycles.expiresAt} > ${args.nowIso}`,
+              eligibleMemberSql,
+              noLiveMembershipInvoiceSql,
+            ),
+          )
+          .orderBy(sql`${renewalCycles.expiresAt} ASC`)
+          .limit(args.pageSize);
+
+        return {
+          cycles: rows.map(rowToDomain),
+          nextCursor: null,
+        };
+      });
+    },
+
+    async hasLiveMembershipInvoiceForPlanYearInTx(
+      tx: unknown,
+      tenantId: string,
+      memberId: string,
+      planYear: number,
+    ): Promise<boolean> {
+      const txDb = tx as typeof db;
+      const rows = await txDb
+        .select({ one: sql<number>`1` })
+        .from(invoices)
+        .where(
+          and(
+            // Review I1 fix — explicit app-layer tenant filter, matching
+            // this same file's `listCyclesEligibleForAutoDraft` sibling
+            // query (Task 6) — Constitution Principle I two-layer
+            // isolation (RLS FORCE + app-layer filter), not RLS alone.
+            eq(invoices.tenantId, tenantId),
+            eq(invoices.memberId, memberId),
+            eq(invoices.invoiceSubject, 'membership'),
+            eq(invoices.planYear, planYear),
+            inArray(invoices.status, ['draft', 'issued']),
+          ),
+        )
+        .limit(1);
+      return rows.length > 0;
+    },
+
+    async findMembershipInvoiceInTx(
+      tx: unknown,
+      tenantId: string,
+      invoiceId: string,
+    ): Promise<(MembershipInvoiceRef & { readonly planId: string | null }) | null> {
+      const txDb = tx as typeof db;
+      const [row] = await txDb
+        .select({
+          invoiceId: invoices.invoiceId,
+          memberId: invoices.memberId,
+          planYear: invoices.planYear,
+          planId: invoices.planId,
+          status: invoices.status,
+          origin: invoices.origin,
+        })
+        .from(invoices)
+        .where(
+          and(
+            // Explicit app-layer tenant filter alongside RLS+FORCE — same
+            // two-layer isolation as the sibling reads in this file.
+            eq(invoices.tenantId, tenantId),
+            eq(invoices.invoiceId, invoiceId),
+            // An event-fee invoice is never an auto-renewal membership draft;
+            // filtering here means the use-case cannot be handed one.
+            eq(invoices.invoiceSubject, 'membership'),
+          ),
+        )
+        .limit(1);
+      if (!row) return null;
+      // `member_id`/`plan_year` are NOT NULL for `invoice_subject='membership'`
+      // (invoices_subject_fields_ck), but Drizzle types them nullable because
+      // the columns are nullable for the event subject. Treat a violation as
+      // "not a usable membership invoice" rather than coercing past it.
+      if (row.memberId === null || row.planYear === null) return null;
+      return {
+        invoiceId: row.invoiceId,
+        memberId: row.memberId,
+        planYear: row.planYear,
+        planId: row.planId,
+        status: row.status,
+        origin: row.origin,
+      };
+    },
+
+    async clearStaleLinkedInvoiceInTx(
+      tx: unknown,
+      tenantId: string,
+      cycleId: CycleId,
+      expectedInvoiceId: string,
+    ): Promise<boolean> {
+      const txDb = tx as typeof db;
+      const cleared = await txDb
+        .update(renewalCycles)
+        .set({ linkedInvoiceId: null })
+        .where(
+          and(
+            eq(renewalCycles.tenantId, tenantId),
+            eq(renewalCycles.cycleId, cycleId),
+            // CAS on the exact id the caller observed — a concurrent writer
+            // that re-linked the cycle since then matches 0 rows and is left
+            // alone rather than silently unlinked.
+            eq(renewalCycles.linkedInvoiceId, expectedInvoiceId),
+          ),
+        )
+        .returning({ cycleId: renewalCycles.cycleId });
+      return cleared.length > 0;
+    },
+
+    async findByAutoDraftInvoiceIdInTx(
+      tx: unknown,
+      tenantId: string,
+      invoiceId: string,
+    ): Promise<RenewalCycle | null> {
+      const txDb = tx as typeof db;
+      const [row] = await txDb
+        .select()
+        .from(renewalCycles)
+        .where(
+          and(
+            eq(renewalCycles.tenantId, tenantId),
+            eq(renewalCycles.autoDraftInvoiceId, invoiceId),
+          ),
+        )
+        .limit(1);
+      return row ? rowToDomain(row) : null;
+    },
+
+    async findCyclesByAutoDraftInvoiceIds(
+      tenantId: string,
+      invoiceIds: readonly string[],
+    ): Promise<ReadonlyMap<string, RenewalCycle>> {
+      const out = new Map<string, RenewalCycle>();
+      if (invoiceIds.length === 0) return out;
+      return runInTenant(tenant, async (tx) => {
+        const rows = await tx
+          .select()
+          .from(renewalCycles)
+          .where(
+            and(
+              eq(renewalCycles.tenantId, tenantId),
+              inArray(renewalCycles.autoDraftInvoiceId, [...invoiceIds]),
+            ),
+          );
+        for (const row of rows) {
+          if (row.autoDraftInvoiceId !== null) {
+            out.set(row.autoDraftInvoiceId, rowToDomain(row));
+          }
+        }
+        return out;
+      });
+    },
+
+    async listMembershipInvoicesForPlanYearInTx(
+      tx: unknown,
+      tenantId: string,
+      memberId: string,
+      planYear: number,
+    ): Promise<ReadonlyArray<MembershipInvoiceRef>> {
+      const txDb = tx as typeof db;
+      const rows = await txDb
+        .select({
+          invoiceId: invoices.invoiceId,
+          memberId: invoices.memberId,
+          planYear: invoices.planYear,
+          status: invoices.status,
+          origin: invoices.origin,
+        })
+        .from(invoices)
+        .where(
+          and(
+            eq(invoices.tenantId, tenantId),
+            eq(invoices.memberId, memberId),
+            eq(invoices.invoiceSubject, 'membership'),
+            eq(invoices.planYear, planYear),
+          ),
+        );
+      // No status filter in SQL — the caller applies TWO different status
+      // predicates to this one result set (the paid-inclusive content guard
+      // and the auto-renewal-draft discard scan). Keeping the classification
+      // in the use-case keeps both tax-critical predicates readable side by
+      // side instead of split across a query and a filter.
+      return rows.flatMap((row) =>
+        row.memberId === null || row.planYear === null
+          ? []
+          : [
+              {
+                invoiceId: row.invoiceId,
+                memberId: row.memberId,
+                planYear: row.planYear,
+                status: row.status,
+                origin: row.origin,
+              },
+            ],
+      );
+    },
+
+    async listMembershipCoverageForMemberInTx(
+      tx: unknown,
+      tenantId: string,
+      memberId: string,
+    ): Promise<ReadonlyArray<MembershipBillCoverageRow>> {
+      // membership-coverage-exclude-guard (mig 0281) — the pre-flight twin of
+      // the DB EXCLUDE. MEMBER-scoped (no plan_year filter): the anchored
+      // plan_year pin lags a full term behind the coverage a §86/4 charges, so
+      // a plan_year-keyed read would miss the very bill the guard must see.
+      // `tenantId` is an explicit app-layer WHERE (Principle I two-layer
+      // isolation) on top of the RLS GUC threaded by this `tx`.
+      const txDb = tx as typeof db;
+      const rows = await txDb
+        .select({
+          invoiceId: invoices.invoiceId,
+          status: invoices.status,
+          coverageFrom: invoices.coverageFrom,
+          coverageTo: invoices.coverageTo,
+        })
+        .from(invoices)
+        .where(
+          and(
+            eq(invoices.tenantId, tenantId),
+            eq(invoices.memberId, memberId),
+            eq(invoices.invoiceSubject, 'membership'),
+          ),
+        );
+      return rows.map((row) => ({
+        invoiceId: row.invoiceId,
+        status: row.status,
+        coverage:
+          row.coverageFrom !== null && row.coverageTo !== null
+            ? { from: row.coverageFrom.toISOString(), to: row.coverageTo.toISOString() }
+            : null,
+      }));
+    },
+
+    async listMembershipCoverageForMembers(
+      tenantId: string,
+      memberIds: readonly string[],
+    ): Promise<ReadonlyMap<string, ReadonlyArray<MembershipBillCoverageRow>>> {
+      const byMember = new Map<string, MembershipBillCoverageRow[]>();
+      if (memberIds.length === 0) return byMember;
+      // MEMBER-scoped (no plan_year filter) — same rationale as
+      // `listMembershipCoverageForMemberInTx`, batched for the review-queue
+      // prediction. `tenantId` is an explicit app-layer WHERE (Principle I
+      // two-layer isolation) on top of the RLS GUC threaded by runInTenant.
+      return runInTenant(tenant, async (tx) => {
+        const rows = await tx
+          .select({
+            invoiceId: invoices.invoiceId,
+            memberId: invoices.memberId,
+            status: invoices.status,
+            coverageFrom: invoices.coverageFrom,
+            coverageTo: invoices.coverageTo,
+          })
+          .from(invoices)
+          .where(
+            and(
+              eq(invoices.tenantId, tenantId),
+              inArray(invoices.memberId, [...memberIds]),
+              eq(invoices.invoiceSubject, 'membership'),
+            ),
+          );
+        for (const row of rows) {
+          if (row.memberId === null) continue;
+          const bucket = byMember.get(row.memberId) ?? [];
+          bucket.push({
+            invoiceId: row.invoiceId,
+            status: row.status,
+            coverage:
+              row.coverageFrom !== null && row.coverageTo !== null
+                ? { from: row.coverageFrom.toISOString(), to: row.coverageTo.toISOString() }
+                : null,
+          });
+          byMember.set(row.memberId, bucket);
+        }
+        return byMember;
+      });
+    },
+
+    async stampAutoDraftInvoiceIdInTx(
+      tx: unknown,
+      _tenantId: string,
+      cycleId: CycleId,
+      invoiceId: string,
+    ): Promise<void> {
+      const txDb = tx as typeof db;
+      await txDb
+        .update(renewalCycles)
+        .set({ autoDraftInvoiceId: invoiceId })
+        .where(eq(renewalCycles.cycleId, cycleId));
+    },
+
+    async listStaleAutoDrafts(
+      tenantId: string,
+    ): Promise<ReadonlyArray<StaleAutoDraftRow>> {
+      return runInTenant(tenant, async (tx) => {
+        // INNER JOIN, not a correlated subquery (unlike
+        // `listCyclesEligibleForAutoDraft`'s sibling EXISTS clauses) — this
+        // query's FROM is `invoices` (an F4 table), so a plain join back to
+        // `renewal_cycles` via the Task 7 `auto_draft_invoice_id` stamp is
+        // the natural shape, and the result needs columns from BOTH sides
+        // (no `rowToDomain` re-mapping constraint applies here, unlike the
+        // pure-`renewal_cycles` queries).
+        const rows = await tx
+          .select({
+            invoiceId: invoices.invoiceId,
+            cycleId: renewalCycles.cycleId,
+            memberId: renewalCycles.memberId,
+          })
+          .from(invoices)
+          .innerJoin(
+            renewalCycles,
+            and(
+              eq(renewalCycles.tenantId, invoices.tenantId),
+              eq(renewalCycles.autoDraftInvoiceId, invoices.invoiceId),
+            ),
+          )
+          .where(
+            and(
+              // Explicit app-layer tenant filter alongside RLS+FORCE on
+              // BOTH tables — Constitution Principle I two-layer isolation,
+              // matching the sibling Task 6/7/9 cross-module queries.
+              eq(invoices.tenantId, tenantId),
+              eq(renewalCycles.tenantId, tenantId),
+              eq(invoices.invoiceSubject, 'membership'),
+              eq(invoices.origin, 'auto_renewal'),
+              eq(invoices.status, 'draft'),
+              sql`${renewalCycles.status} NOT IN ('upcoming','reminded')`,
+            ),
+          );
+        return rows.map((r) => ({
+          invoiceId: r.invoiceId,
+          cycleId: asCycleId(r.cycleId),
+          memberId: r.memberId,
+        }));
+      });
+    },
+
+    async listIssuedAutoInvoiceOrphans(
+      tenantId: string,
+    ): Promise<ReadonlyArray<IssuedAutoInvoiceOrphanRow>> {
+      return runInTenant(tenant, async (tx) => {
+        const rows = await tx
+          .select({
+            invoiceId: invoices.invoiceId,
+            cycleId: renewalCycles.cycleId,
+            memberId: renewalCycles.memberId,
+          })
+          .from(invoices)
+          .innerJoin(
+            renewalCycles,
+            and(
+              eq(renewalCycles.tenantId, invoices.tenantId),
+              eq(renewalCycles.autoDraftInvoiceId, invoices.invoiceId),
+            ),
+          )
+          .where(
+            and(
+              eq(invoices.tenantId, tenantId),
+              eq(renewalCycles.tenantId, tenantId),
+              eq(invoices.invoiceSubject, 'membership'),
+              eq(invoices.origin, 'auto_renewal'),
+              eq(invoices.status, 'issued'),
+              isNull(renewalCycles.linkedInvoiceId),
+            ),
+          );
+        return rows.map((r) => ({
+          invoiceId: r.invoiceId,
+          cycleId: asCycleId(r.cycleId),
+          memberId: r.memberId,
+        }));
+      });
+    },
+
     async transitionStatus(
       tx: unknown,
       _tenantId: string,
@@ -1390,6 +1862,21 @@ export function makeDrizzleRenewalCycleRepo(
         setClause.linkedCreditNoteId = args.linkedCreditNoteId;
       }
 
+      // 107-auto-invoice Task 9 (review Minor 4) — when this call ALSO writes
+      // `linked_invoice_id`, carry `linkInvoice`'s own CAS predicate
+      // (`IS NULL OR = $1`). Both methods write that column, and without this
+      // `transitionStatus` would overwrite an existing, DIFFERENT link blind
+      // (it CASes on status only) while `linkInvoice` refuses — two writers of
+      // one column with contradictory concurrency contracts. A mismatch here
+      // surfaces as a CycleTransitionConflictError rather than a silent
+      // clobber of another invoice's claim on the cycle.
+      const linkGuard =
+        args.linkedInvoiceId !== undefined
+          ? or(
+              isNull(renewalCycles.linkedInvoiceId),
+              eq(renewalCycles.linkedInvoiceId, args.linkedInvoiceId),
+            )
+          : undefined;
       const updated = await txDb
         .update(renewalCycles)
         .set(setClause)
@@ -1397,6 +1884,7 @@ export function makeDrizzleRenewalCycleRepo(
           and(
             eq(renewalCycles.cycleId, cycleId),
             eq(renewalCycles.status, args.from),
+            ...(linkGuard ? [linkGuard] : []),
           ),
         )
         .returning();

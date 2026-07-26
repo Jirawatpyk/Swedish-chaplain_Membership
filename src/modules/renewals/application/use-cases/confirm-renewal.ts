@@ -101,6 +101,8 @@ import {
   requiresDowngradeAck,
 } from '../../domain/plan-price-change';
 import { loadClassificationCounts } from './_lib/classification-input';
+import { LIVE_MEMBERSHIP_BILL_STATUSES } from './_lib/live-membership-bill';
+import { findOverlappingMembershipCoverageBill } from '../../domain/membership-bill-coverage';
 import {
   parseCycleId,
   cycleFrozenPriceSatang,
@@ -166,6 +168,16 @@ export type ConfirmRenewalError =
     }
   | { readonly kind: 'plan_not_found' }
   | { readonly kind: 'plan_inactive' }
+  | {
+      /**
+       * 107-auto-invoice Task 9 (review Important 2) — a live membership bill
+       * already exists for this cycle / (member, plan_year), typically because
+       * a treasurer issued it from the auto-renewal review queue. The member
+       * should PAY that bill, not mint a second one.
+       */
+      readonly kind: 'invoice_already_exists';
+      readonly invoiceId: string | null;
+    }
   | {
       // WP4 — the member chose a lower-priced plan without the explicit
       // acknowledgement flag. Carries both prices (THB satang / minor units)
@@ -277,6 +289,12 @@ export async function confirmRenewal(
         attemptedMemberId: cycle.memberId,
       });
     }
+    // --- status gate (NO side effects) ------------------------------------
+    // 107-auto-invoice Task 9 (review New-3) — hoisted ABOVE the lazy flip so
+    // the duplicate-bill guard below can refuse WITHOUT the cycle having
+    // already been mutated. Terminal / pending_admin_reactivation cycles keep
+    // their `cycle_not_payable` answer and keep it in PRECEDENCE over the
+    // duplicate-bill refusal (a terminal cycle's real problem is its status).
     // WP4 (a) — HOISTED terminal-status guard. A cycle that is neither
     // payable now (`awaiting_payment`) nor lazily-payable (`upcoming|reminded`)
     // is terminal / pending_admin_reactivation and not self-renewable. Hoisted
@@ -295,13 +313,128 @@ export async function confirmRenewal(
       cycle.status !== 'reminded' &&
       cycle.status !== 'awaiting_payment'
     ) {
+      // Terminal (completed/lapsed/cancelled) or pending_admin_reactivation
+      // — not self-renewable here. A `pending_admin_reactivation` cycle is
+      // resolved only by the admin reactivate/reject routes (070 #18),
+      // never by member confirm — so this stays a server-side reject by
+      // design.
       return err({
         kind: 'cycle_not_payable' as const,
         currentStatus: cycle.status,
       });
     }
 
-    // WP4 (b) + (c) — DOWNGRADE PRE-FLIGHT (read-only), BEFORE any state write.
+    // --- duplicate-bill pre-flight guard (NO side effects) ----------------
+    // membership-coverage-exclude-guard (mig 0281) — refuse to mint a SECOND
+    // §86/4 whose coverage OVERLAPS an existing live membership bill for this
+    // member. The application twin of the DB EXCLUDE constraint, using the
+    // PERSISTED true charged window (`invoices.coverage_from/to`) — never a
+    // plan_year / cycle-window approximation — so it can neither over-block an
+    // anchored renewal (whose §86/4 charges the NEXT term, a full term ahead
+    // of the pinned plan_year) nor under-block a genuine same-term duplicate.
+    //
+    // review New-3 — this MUST sit above the lazy flip below. Returning
+    // `err(...)` from inside `runInTenant` does NOT throw, so tx1 COMMITS:
+    // guarding after the flip would leave a refused confirm having still
+    // flipped the cycle and emitted `renewal_entered_awaiting_payment
+    // { source:'confirm' }` — a side-effecting write on a refused path plus an
+    // untrue audit row. The DB EXCLUDE backstops the concurrency race two
+    // parallel confirms could still slip past this read.
+    //
+    // A NULL-coverage bill (voided-for-correction, first-payment, legacy
+    // pre-backfill) never blocks — matching the constraint's
+    // `WHERE (blocks_coverage)` — so a corrective void can no longer wedge the
+    // member out of renewing (the old New-1 hazard), and `linkedInvoiceId` is
+    // used only to PREFER which id to report, never to decide the refusal.
+    const wNew = {
+      from: cycle.periodTo,
+      to: addMonthsUtc(cycle.periodTo, cycle.frozenPlanTermMonths),
+    };
+    const coverageBills =
+      await deps.cyclesRepo.listMembershipCoverageForMemberInTx(
+        tx,
+        input.tenantId,
+        cycle.memberId,
+      );
+    const liveBill = findOverlappingMembershipCoverageBill(coverageBills, wNew, {
+      // 107 design — a pending auto-draft already claims this period; the
+      // member's Confirm & Pay must refuse rather than mint a rival bill.
+      includeDrafts: true,
+    });
+    if (liveBill) {
+      const reportInvoiceId =
+        cycle.linkedInvoiceId === liveBill.invoiceId
+          ? cycle.linkedInvoiceId
+          : liveBill.invoiceId;
+      logger.warn(
+        {
+          cycleId: cycle.cycleId,
+          memberId: cycle.memberId,
+          linkedInvoiceId: cycle.linkedInvoiceId,
+          conflictingInvoiceId: liveBill.invoiceId,
+          conflictingStatus: liveBill.status,
+          coverageFrom: wNew.from,
+          coverageTo: wNew.to,
+        },
+        '[confirm-renewal] refused — a live membership bill already covers this period',
+      );
+      return err({
+        kind: 'invoice_already_exists' as const,
+        invoiceId: reportInvoiceId,
+      });
+    }
+
+    // --- stale-link cleanup (review New-1 follow-through) -----------------
+    // No live bill exists, but the cycle may still carry a `linked_invoice_id`
+    // pointing at one that was VOIDED for correction — nothing clears that
+    // column on void. Left in place it wedges the member one layer deeper than
+    // the guard above: the renewal proceeds, burns a fresh §87 number, and
+    // THEN `linkInvoice`'s `IS NULL OR = $1` guard rejects the link, orphaning
+    // the new bill and returning `server_error`. Clear it here, before
+    // anything is minted.
+    //
+    // Only ever clears a link whose target is verifiably NOT live (voided, or
+    // no longer a membership invoice we can see); the CAS in the repo makes it
+    // a no-op if a concurrent writer re-linked the cycle meanwhile.
+    if (cycle.linkedInvoiceId !== null) {
+      const linkedInvoice = await deps.cyclesRepo.findMembershipInvoiceInTx(
+        tx,
+        input.tenantId,
+        cycle.linkedInvoiceId,
+      );
+      const linkedIsLive =
+        linkedInvoice !== null &&
+        LIVE_MEMBERSHIP_BILL_STATUSES.has(linkedInvoice.status);
+      if (!linkedIsLive) {
+        const staleId = cycle.linkedInvoiceId;
+        const cleared = await deps.cyclesRepo.clearStaleLinkedInvoiceInTx(
+          tx,
+          input.tenantId,
+          cycle.cycleId,
+          staleId,
+        );
+        logger.info(
+          {
+            cycleId: cycle.cycleId,
+            memberId: cycle.memberId,
+            staleInvoiceId: staleId,
+            staleInvoiceStatus: linkedInvoice?.status ?? 'not_found',
+            cleared,
+          },
+          '[confirm-renewal] cleared a stale linked_invoice_id (target is not a live bill) so the renewal can link',
+        );
+        if (cleared) cycle = { ...cycle, linkedInvoiceId: null };
+      }
+    }
+
+    // WP4 (b) + (c) — DOWNGRADE PRE-FLIGHT (read-only). The preflight itself
+    // writes nothing, but note the merge placed ONE preceding write above it:
+    // the stale-linked-invoice cleanup (clearStaleLinkedInvoiceInTx). That write
+    // is deliberately benign — audit-free (logger.info only) and idempotent
+    // (CAS-clears a pointer to a non-live/voided bill) — so a downgrade refusal
+    // here still leaves no partial state. NOTE: err() inside runInTenant COMMITS
+    // earlier writes, so any NEW err()-returning guard added in this block is
+    // safe ONLY while that preceding write stays audit-free and idempotent.
     // Resolve the target plan for THIS cycle's fiscal year (`mode:'offer'` —
     // same lookup the plan-change branch performs), classify the price move,
     // and refuse a lower-priced switch that lacks the member's explicit
@@ -418,6 +551,9 @@ export async function confirmRenewal(
         }
       }
     }
+    // (cycle.status === 'awaiting_payment' falls through unchanged —
+    // already payable, proceed. Non-payable statuses were rejected by the
+    // side-effect-free status gate above.)
     // (cycle.status === 'awaiting_payment' falls through unchanged — already
     // payable, proceed. The terminal / pending_admin_reactivation reject is
     // handled by the hoisted WP4 guard above, before any write.)
@@ -669,6 +805,27 @@ export async function confirmRenewal(
     // key entirely on the first-payment branch rather than assigning an
     // explicit `undefined`.
     ...omitUndefined({ membershipCoverage }),
+    // membership-coverage-exclude-guard (mig 0281) — stamp the charged NEXT-term
+    // window ALWAYS, even on the defensive first-payment branch where
+    // `membershipCoverage` is omitted. Sized from `cycleAfterPlanChange` (the
+    // FINAL frozen term this bill actually charges). This EQUALS the pre-flight
+    // guard's `wNew` (built from `cycle` above, before the plan-change) whenever
+    // the term is unchanged — which is ALWAYS today: every TSCC plan is 12
+    // months. If a future term-VARIABLE plan is introduced AND a member both
+    // renews and switches to a different-term plan in one confirm, the guard
+    // (which runs ABOVE the plan-change and cannot see the post-change term)
+    // could size `wNew` from the old term while this stamp uses the new one; the
+    // DB EXCLUDE (`invoices_membership_coverage_no_overlap`) is the AUTHORITY
+    // that backstops that edge — a 23P01 at mint is mapped to a typed 409, not a
+    // 500. `adminRenewLapsedMember` has no such gap (its guard + stamp resolve
+    // the term from the same `loadPlanFrozenFields(mode:'freeze')`).
+    coverageWindow: {
+      fromIso: cycleAfterPlanChange.periodTo,
+      toIso: addMonthsUtc(
+        cycleAfterPlanChange.periodTo,
+        cycleAfterPlanChange.frozenPlanTermMonths,
+      ),
+    },
     autoEmailOnIssue: true,
     actorUserId: input.actorUserId,
     correlationId: input.correlationId,
@@ -928,6 +1085,11 @@ export function selfServiceFailureReason(
     case 'plan_not_found':
     case 'plan_inactive':
       return 'plan_inactive';
+    case 'invoice_already_exists':
+      // Not a failure of the renewal itself — a bill already exists and the
+      // member should pay it. Bucketed with the terminal/no-op outcomes so it
+      // does not inflate the F4-failure alert.
+      return 'cycle_terminal';
     case 'invalid_input':
       return 'invalid_input';
     case 'cross_member_probe':

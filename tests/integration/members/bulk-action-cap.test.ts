@@ -52,6 +52,14 @@ function stubDeps(): BulkActionDeps {
     scrubPiiInTx: vi.fn(),
     findErasedAtById: vi.fn(),
     findStuckErasuresInTx: vi.fn(),
+    findErasedIdsInTx: vi.fn(
+      async (): ReturnType<BulkActionDeps['memberRepo']['findErasedIdsInTx']> => ({
+        ok: true as const,
+        value: new Set(),
+      }),
+    ),
+    enrolAutoInvoiceInTx: vi.fn(),
+    unenrolAutoInvoiceInTx: vi.fn(),
     },
     audit: {
       record: vi.fn().mockResolvedValue(ok(undefined)),

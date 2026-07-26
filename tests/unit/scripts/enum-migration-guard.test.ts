@@ -123,6 +123,19 @@ describe('findMissingEnumValues', () => {
           'event_attendance_by_suspended_member',
           // 0257 (066-renewal-swecham-round2 §4.4/§6):
           'payment_on_terminated_member',
+          // 0260 (107-auto-invoice Task 2):
+          'renewal_auto_drafted',
+          'renewal_auto_draft_discarded',
+          // 0262 (107-auto-invoice Task 11, review Important-2 fix):
+          'renewal_orphan_invoice_relinked',
+          // 0263 (107-auto-invoice Task 15):
+          'member_auto_invoice_enrolled',
+          // 0265 (107-auto-invoice Task 18):
+          'member_auto_invoice_unenrolled',
+          // money-remediation (0268/0269/0270):
+          'refund_credit_note_waived',
+          'payment_settlement_rolled_back',
+          'member_plan_change_billing_effect',
         ]),
       ],
     ]);
@@ -149,6 +162,15 @@ describe('findMissingEnumValues', () => {
           'renewal_lapse_deferred_invoice_not_due',
           'event_attendance_by_suspended_member',
           'payment_on_terminated_member',
+          'renewal_auto_drafted',
+          'renewal_auto_draft_discarded',
+          'renewal_orphan_invoice_relinked',
+          'member_auto_invoice_enrolled',
+          'member_auto_invoice_unenrolled',
+          // money-remediation (0268/0269/0270):
+          'refund_credit_note_waived',
+          'payment_settlement_rolled_back',
+          'member_plan_change_billing_effect',
         ]),
       ],
     ]);
@@ -179,6 +201,19 @@ describe('findMissingEnumValues', () => {
           'event_attendance_by_suspended_member',
           // 0257 (066-renewal-swecham-round2 §4.4/§6):
           'payment_on_terminated_member',
+          // 0260 (107-auto-invoice Task 2):
+          'renewal_auto_drafted',
+          'renewal_auto_draft_discarded',
+          // 0262 (107-auto-invoice Task 11, review Important-2 fix):
+          'renewal_orphan_invoice_relinked',
+          // 0263 (107-auto-invoice Task 15):
+          'member_auto_invoice_enrolled',
+          // 0265 (107-auto-invoice Task 18):
+          'member_auto_invoice_unenrolled',
+          // money-remediation (0268/0269/0270):
+          'refund_credit_note_waived',
+          'payment_settlement_rolled_back',
+          'member_plan_change_billing_effect',
         ],
       },
     ]);

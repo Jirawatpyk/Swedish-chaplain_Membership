@@ -1116,6 +1116,7 @@
         }
       },
       "detail": {
+        "autoInvoiceEnrolledBadge": "Autofakturering: på",
         "title": "{companyName}",
         "subtitle": "{plan} · År {year}",
         "subtitleArchived": "{plan} · År {year} · Arkiverad",
@@ -1147,7 +1148,7 @@
         "renewLapsed": {
           "trigger": "Förnya medlem",
           "title": "Förnya denna medlem?",
-          "description": "Detta startar ett nytt medlemsår för medlemmen och skapar en förnyelsefaktura som medlemmen ska betala. Priset låses till medlemmens nuvarande plan. Medlemmen blir aktiv igen när fakturan har betalats.",
+          "description": "Detta startar ett nytt medlemsår och skapar en förnyelsefaktura till medlemmens nuvarande planpris (låst för detta år). Fakturan skickas automatiskt till medlemmen via e-post, och medlemskapet blir aktivt igen när den har betalats.",
           "cancel": "Avbryt",
           "confirm": "Skapa förnyelsefaktura",
           "submitting": "Skapar…",
@@ -1159,6 +1160,7 @@
               "member_archived": "Denna medlem är arkiverad. Återställ medlemmen innan du förnyar.",
               "member_has_active_cycle": "Denna medlem har redan en aktiv förnyelsecykel.",
               "plan_not_found": "Medlemmens plan kunde inte hittas.",
+              "invoice_already_exists": "En medlemsfaktura finns redan för detta år. Reglera eller makulera den innan du förnyar igen.",
               "invoice_issue_failed": "Förnyelsefakturan kunde inte utfärdas. Förnyelsen slutfördes inte – försök igen.",
               "rate_limited": "För många förnyelseförsök. Vänta en stund och försök igen.",
               "invalid_body": "Begäran kunde inte behandlas. Uppdatera sidan och försök igen.",
@@ -1621,6 +1623,8 @@
           "archive": "Arkivera",
           "change_plan": "Byt plan",
           "send_portal_invite": "Skicka inbjudan",
+          "enrol_auto_invoice": "Anmäl till autofakturering",
+          "unenrol_auto_invoice": "Stoppa autofakturering",
           "send_renewal_reminder": "Skicka förnyelsepåminnelse"
         },
         "clear": "Rensa urval",
@@ -1635,6 +1639,12 @@
         "confirmInviteTitle": "Skicka {count, plural, one {# inbjudan} other {# inbjudningar}}",
         "confirmInviteDescription": "Inbjudningsmejl till portalen skickas till de valda medlemmarna så att de kan komma åt medlemsportalen.",
         "confirmInviteAction": "Skicka inbjudningar",
+        "confirmEnrolTitle": "Anmäl {count, plural, one {# medlem} other {# medlemmar}} till autofakturering",
+        "confirmEnrolDescription": "Förnyelsefakturor förbereds automatiskt som utkast för dessa medlemmar inför förfallodagen. En kassör granskar och utfärdar fortfarande varje utkast — ingenting skickas utan godkännande. Medlemmar med obetalda eller förfallna fakturor anmäls fortfarande; endast medlemmar vars medlemskap har upphört permanent hoppas över. Du kan ångra detta senare med ”Stoppa autofakturering”.",
+        "confirmEnrolAction": "Anmäl medlemmar",
+        "confirmUnenrolTitle": "Stoppa autofakturering för {count, plural, one {# medlem} other {# medlemmar}}",
+        "confirmUnenrolDescription": "Inga nya utkast till förnyelsefakturor förbereds för dessa medlemmar. Utkast som redan väntar i granskningskön ligger kvar — kassera dem separat om du inte längre vill ha dem. Detta gäller alla valda medlemmar, även de vars medlemskap har upphört eller är pausat.",
+        "confirmUnenrolAction": "Stoppa autofakturering",
         "confirmReminderTitle": "Skicka en förnyelsepåminnelse till {count, plural, one {# medlem} other {# medlemmar}}?",
         "confirmReminderDescription": "Varje markerad medlem med en aktiv förnyelsecykel får sitt nästa schemalagda påminnelsemejl nu. Medlemmar utan påminnelse att skicka, eller som avregistrerat sig, hoppas över.",
         "confirmReminderAction": "Skicka påminnelser",
@@ -1648,6 +1658,12 @@
         "inviteResent": "{resent, plural, one {# omskickad} other {# omskickade}}",
         "inviteSkipped": "{skipped, plural, one {# hoppades över} other {# hoppades över}}",
         "inviteFailed": "{failed, plural, one {# misslyckades} other {# misslyckades}}",
+        "enrolSucceeded": "{enrolled, plural, one {# medlem anmäld} other {# medlemmar anmälda}}",
+        "enrolSkippedAlready": "{skipped, plural, one {# redan anmäld} other {# redan anmälda}}",
+        "enrolSkippedTerminated": "{skipped, plural, one {# hoppades över (medlemskap avslutat)} other {# hoppades över (medlemskap avslutat)}}",
+        "enrolSkippedErased": "{skipped, plural, one {# hoppades över (personuppgifter raderade)} other {# hoppades över (personuppgifter raderade)}}",
+        "unenrolSucceeded": "{unenrolled, plural, one {# medlem autofaktureras inte längre} other {# medlemmar autofaktureras inte längre}}",
+        "unenrolSkippedNotEnrolled": "{skipped, plural, one {# var inte anmäld} other {# var inte anmälda}}",
         "rateLimited": "För många massåtgärder. Vänta och försök igen.",
         "errors": {
           "state_error": "En eller flera valda medlemmar är i ett läge som inte tillåter den här åtgärden. Uppdatera och försök igen.",
@@ -2049,6 +2065,47 @@
       "meta": {
         "title": "Fakturor"
       },
+      "queueView": {
+        "title": "Kö för granskning av automatisk förnyelse",
+        "description": "Förnyelsefakturor som skapats automatiskt av systemet, väntar på granskning innan de utfärdas."
+      },
+      "autoRenewalQueue": {
+        "actions": {
+          "menuAria": "Åtgärder för {member}s förnyelseutkast",
+          "issueAndSend": "Utfärda och skicka",
+          "issueSilently": "Utfärda utan att skicka",
+          "discard": "Ta bort utkast",
+          "cancel": "Avbryt",
+          "sendDialog": {
+            "title": "Utfärda och skicka den här fakturan?",
+            "description": "En medlemsfaktura utfärdas för {member} och skickas till huvudkontaktens e-post."
+          },
+          "silentDialog": {
+            "title": "Utfärda fakturan utan att skicka den?",
+            "description": "En medlemsfaktura utfärdas för {member}. Inget e-postmeddelande skickas — du behöver leverera den på annat sätt."
+          },
+          "discardDialog": {
+            "title": "Ta bort det här utkastet?",
+            "description": "Fakturautkastet för {member} tas bort permanent. Nästa automatiska förnyelsekörning kan skapa ett nytt utkast innan cykeln förfaller."
+          },
+          "toast": {
+            "issuedAndSent": "Faktura {number} utfärdad och skickad.",
+            "issuedSilently": "Faktura {number} utfärdad.",
+            "discarded": "Utkastet togs bort."
+          },
+          "errors": {
+            "draftNotFound": "Utkastet kunde inte hittas — det kan redan ha utfärdats eller tagits bort. Uppdatera sidan.",
+            "cycleNotFound": "Vi kunde inte hitta förnyelseposten för det här utkastet. Själva utkastet är oförändrat — uppdatera sidan och försök igen.",
+            "invalidDraft": "Utkastet är inte längre giltigt. Uppdatera sidan och försök igen.",
+            "discardNotDraft": "Utkastet har redan utfärdats och kan inte längre tas bort. Uppdatera sidan.",
+            "issueFailed": "Fakturan kunde inte utfärdas. Försök igen.",
+            "discardFailed": "Utkastet kunde inte tas bort. Försök igen.",
+            "network": "Ett nätverksfel uppstod. Försök igen.",
+            "rateLimited": "För många åtgärder på kort tid — vänta en stund och försök igen.",
+            "rateLimitedWithSeconds": "För många åtgärder på kort tid — vänta {seconds, plural, one {# sekund} other {# sekunder}} och försök igen."
+          }
+        }
+      },
       "list": {
         "title": "Fakturor",
         "description": "Thailändska momsgilla medlemsfakturor.",
@@ -2078,7 +2135,8 @@
           "actions": "Åtgärder",
           "buyer": "Köpare",
           "method": "Metod",
-          "receiptNumber": "Skattekvittonr."
+          "receiptNumber": "Skattekvittonr.",
+          "queue": "Kö"
         },
         "subjectChip": {
           "event": "Evenemang",
@@ -2129,6 +2187,12 @@
             "all": "All moms",
             "standard": "Standardmoms",
             "zeroRated": "Nollskattesats §80/1(5)"
+          },
+          "origin": {
+            "label": "Ursprung",
+            "all": "Alla ursprung",
+            "manual": "Manuell",
+            "autoRenewal": "Kö för automatisk förnyelse"
           }
         },
         "creditedSuffix": "{count, plural, one {+# kreditnota} other {+# kreditnotor}}",
@@ -2136,7 +2200,32 @@
         "creditedAria": "{count, plural, one {# kreditnota utställd} other {# kreditnotor utställda}} mot denna faktura, {amount} thailändska baht krediterat",
         "receiptNumberCombinedTooltip": "Kombinerat läge — kvittot återanvänder fakturanumret",
         "receiptNumberCombinedAria": "Kvitto använder fakturans dokumentnummer (kombinerat läge)",
-        "tableCaption": "Lista över fakturor för de valda filtren."
+        "tableCaption": "Lista över fakturor för de valda filtren.",
+        "queueTableCaption": "Lista över utkast för automatisk förnyelse som väntar på granskning.",
+        "queue": {
+          "wouldBeRefused": "Skulle nekas",
+          "wouldBeRefusedAria": "Skulle nekas — kan inte utfärdas i nuvarande skick",
+          "refusalReason": {
+            "planYearDrift": "Förnyelseperioden ändrades efter att det här utkastet skapades.",
+            "planDrift": "Medlemmens plan ändrades efter att det här utkastet skapades.",
+            "memberTerminated": "Den här medlemmens medlemskap har upphört.",
+            "memberErased": "Den här medlemmens personuppgifter har raderats på medlemmens begäran. Ingen ny faktura kan utfärdas — ta bort det här utkastet.",
+            "duplicateLiveBill": "En faktura för den här medlemmen och det här verksamhetsåret finns redan."
+          },
+          "viewConflictingInvoice": "Visa befintlig faktura",
+          "unresolved": "Kan inte verifieras",
+          "unresolvedAria": "Kan inte verifiera pris, täckning eller om utkastet skulle nekas",
+          "unresolvedTooltip": "Vi kunde inte bekräfta det här utkastets pris, täckning, eller om det skulle nekas. Granska manuellt innan du utfärdar.",
+          "priceUnverifiable": "Priset kunde inte bekräftas",
+          "priceUnverifiableAria": "Priset kunde inte bekräftas mot en aktiv planpost i katalogen",
+          "priceFrozenOnly": "Låst till {frozen}",
+          "priceChanged": "Priset har ändrats",
+          "priceChangedAria": "Priset har ändrats — låst till {frozen}, nuvarande katalogpris är {current}",
+          "billYearStale": "Verksamhetsåret har ändrats sedan utkastet skapades",
+          "billYearStaleAria": "Verksamhetsåret har ändrats sedan det här utkastet skapades; dagens verksamhetsår är {currentFiscalYear}",
+          "billYearStaleTooltip": "Det här utkastet skapades för verksamhetsår {planYear}; dagens verksamhetsår är {currentFiscalYear}.",
+          "staleness": "{days, plural, =0 {Skapades idag} one {Skapades för # dag sedan} other {Skapades för # dagar sedan}}"
+        }
       },
       "csvExport": {
         "trigger": "Exportera CSV…",
@@ -2620,7 +2709,8 @@
           "temporary": "Ett tillfälligt problem stoppade utfärdandet av fakturan — inget skapades. Försök igen och kontakta supporten om det fortsätter.",
           "codeFallback": "Felkod: {code}",
           "unknown": "Ett okänt fel inträffade. Försök igen.",
-          "overflow": "De löpande dokumentnumren för detta räkenskapsår är slut. Kontakta supporten."
+          "overflow": "De löpande dokumentnumren för detta räkenskapsår är slut. Kontakta supporten.",
+          "origin_auto_renewal_use_queue": "Det här utkastet skapades automatiskt för en medlems förnyelse och måste utfärdas från förnyelseområdet (Renewals), inte härifrån."
         },
         "draftLabel": "Utkast",
         "confirmMismatch": "Frasen måste exakt matcha \"{phrase}\" för att bekräfta."
@@ -5885,6 +5975,9 @@
       "membership_access_fail_open": "Kontroll av medlemsåtkomst misslyckades (fail-open)",
       "renewal_lapse_deferred_invoice_not_due": "Uppsägning uppskjuten — fakturan har inte förfallit än",
       "event_attendance_by_suspended_member": "Närvaro registrerad — medlemmens förmånsåtkomst avstängd eller uppsagd",
+      "renewal_auto_drafted": "Förnyelseutkast skapat automatiskt",
+      "renewal_auto_draft_discarded": "Automatiskt förnyelseutkast kasserat",
+      "renewal_orphan_invoice_relinked": "Förnyelsefaktura återlänkad till cykeln",
       "invoice_draft_created": "Fakturautkast skapat",
       "invoice_draft_updated": "Fakturautkast uppdaterat",
       "invoice_draft_deleted": "Fakturautkast borttaget",
@@ -5996,6 +6089,8 @@
       "member_erasure_requested": "Radering av medlem begärd",
       "member_erased": "Medlemsuppgifter raderade",
       "subprocessor_erasure_propagated": "Radering vidarebefordrad till underbiträde",
+      "member_auto_invoice_enrolled": "Registrerad för automatisk förnyelsefakturering",
+      "member_auto_invoice_unenrolled": "Borttagen från automatisk förnyelsefakturering",
       "user_erased": "Användarkonto raderat",
       "broadcast_content_redacted": "Utskicksinnehåll maskerat",
       "account_created": "Konto skapat",

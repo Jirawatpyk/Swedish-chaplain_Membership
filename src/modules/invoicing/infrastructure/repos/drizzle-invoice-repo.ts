@@ -452,6 +452,21 @@ export function makeDrizzleInvoiceRepo(
           status: 'draft',
           draftByUserId: input.draftByUserId,
           autoEmailOnIssue: input.autoEmailOnIssue,
+          // 107-auto-invoice (Task 5) — omit the key when unset so the DB
+          // DEFAULT 'manual' fires (exactOptionalPropertyTypes omit-guard,
+          // same idiom as `memberIdentitySnapshot` below).
+          ...(input.origin !== undefined ? { origin: input.origin } : {}),
+          // membership-coverage-exclude-guard (mig 0281) — persist the TRUE
+          // charged §86/4 window (both-or-neither; ISO → Date to match the
+          // `paidAt`/`voidedAt` timestamptz convention) so the GiST EXCLUDE
+          // constraint can reject an OVERLAPPING live membership bill for one
+          // (tenant, member). Omitted → columns stay NULL (never block).
+          ...(input.coverageFrom !== undefined && input.coverageTo !== undefined
+            ? {
+                coverageFrom: new Date(input.coverageFrom),
+                coverageTo: new Date(input.coverageTo),
+              }
+            : {}),
           // 054-event-fee-invoices (Task 6b) — pin the BUYER snapshot at draft
           // for NON-MEMBER event attendees (no member row to re-read at issue).
           // `undefined` (membership + matched-member callers) → DB null; the
@@ -548,6 +563,26 @@ export function makeDrizzleInvoiceRepo(
           )
           .orderBy(asc(invoiceLines.position));
         return rowsToInvoice(row as InvoiceRow, lineRows.map(rowToLine));
+      });
+    },
+
+    async getOrigin(
+      invoiceId: InvoiceId,
+      tenantIdArg: string,
+    ): Promise<'manual' | 'auto_renewal' | null> {
+      // 107-auto-invoice Task 10 — narrow single-column read, same
+      // `withTenantConn` seam as `findById` immediately above (inline
+      // against a caller `externalTx` when present, else its own
+      // `runInTenant`). No lock, no line-item join — see the port docstring
+      // for why this is safe (origin is write-once at insertDraft).
+      return withTenantConn(async (txUnknown) => {
+        const tx = txUnknown as TenantTx;
+        const [row] = await tx
+          .select({ origin: invoices.origin })
+          .from(invoices)
+          .where(and(eq(invoices.tenantId, tenantIdArg), eq(invoices.invoiceId, invoiceId)))
+          .limit(1);
+        return row?.origin ?? null;
       });
     },
 
@@ -844,6 +879,11 @@ export function makeDrizzleInvoiceRepo(
           // Maps directly to the stored `invoice_subject` discriminator.
           filters.push(eq(invoices.invoiceSubject, opts.invoiceSubject));
         }
+        if (opts.origin !== undefined) {
+          // 107-auto-invoice Task 13 — admin auto-renewal review queue.
+          // Maps directly to `invoices.origin`.
+          filters.push(eq(invoices.origin, opts.origin));
+        }
         // 088 T065b (FR-031) — tax-document-type filter. Derived from the
         // numbering columns + status (see the port doc + T065b report):
         //   sc → 088 bill still awaiting payment (bill number, no §86/4 receipt).
@@ -1030,12 +1070,37 @@ export function makeDrizzleInvoiceRepo(
       return rowsToInvoice(updated as InvoiceRow, lineRows.map(rowToLine));
     },
 
-    async deleteDraft(txUnknown, invoiceId: InvoiceId, tenantIdArg: string): Promise<void> {
+    async deleteDraft(txUnknown, invoiceId: InvoiceId, tenantIdArg: string): Promise<boolean> {
       const tx = txUnknown as TenantTx;
-      // invoice_lines cascade-deletes via FK
-      await tx
+      // 107-auto-invoice Task 9 — `status = 'draft'` is part of the DELETE
+      // statement itself, NOT merely a caller-side pre-check.
+      //
+      // The caller (`deleteInvoiceDraft`) reads the row, asserts
+      // `status === 'draft'`, then deletes. Under READ COMMITTED that is a
+      // TOCTOU window: a concurrent issue (`issueInvoice`/`issueMembershipBill`)
+      // can promote the row to `issued` between the read and the delete, and
+      // the unguarded DELETE would then destroy an ISSUED tax document —
+      // together with its burned §87 sequence number, leaving a permanent gap
+      // in the numbering stream (Thai RD §87 requires no gaps). The
+      // `invoices_enforce_immutability_trg` trigger does NOT backstop this:
+      // it is `BEFORE UPDATE` only, so it never fires on a DELETE.
+      //
+      // Task 9's `tx3` draft-discard sweeps sibling auto-renewal drafts
+      // concurrently with other queue Issue actions, which widens that window
+      // from "rare" to "routine" — hence the guard moves into the statement.
+      //
+      // invoice_lines cascade-deletes via FK.
+      const deleted = await tx
         .delete(invoices)
-        .where(and(eq(invoices.tenantId, tenantIdArg), eq(invoices.invoiceId, invoiceId)));
+        .where(
+          and(
+            eq(invoices.tenantId, tenantIdArg),
+            eq(invoices.invoiceId, invoiceId),
+            eq(invoices.status, 'draft'),
+          ),
+        )
+        .returning({ invoiceId: invoices.invoiceId });
+      return deleted.length > 0;
     },
 
     async lockForUpdate(txUnknown, invoiceId: InvoiceId, tenantIdArg: string) {

@@ -71,6 +71,9 @@ gone on Pro.
 | **F8 lapse-cycles-on-grace-expiry (coordinator)** | **`POST /api/cron/renewals/lapse-cycles-on-grace-expiry-coordinator`** | **`30 6 * * *`** (daily 06:30 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F8 lapse-cycles) |
 | **F8 prune consumed link tokens** | **`POST /api/cron/renewals/prune-consumed-tokens`** | **`0 4 * * 6`** (Sat 04:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F8 token prune) |
 | **F8 reconcile pending tier-upgrades** | **`POST /api/cron/renewals/reconcile-pending-applications`** | **`0 5 * * 6`** (Sat 05:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F8 reconcile-tier-upgrades) |
+| **auto-invoice auto-draft (coordinator)** (107 Task 8) | **`POST /api/cron/renewals/auto-draft-coordinator`** | **`0 5 * * *`** (daily 05:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § Auto-invoice — auto-draft renewals) — pre-fills renewal invoice **drafts**; also feeds the 3 auto-invoice gauges. Ships dark (3 keys, all default-off) |
+| **auto-invoice prune-auto-drafts** (107 Task 11) | **`POST /api/cron/renewals/prune-auto-drafts`** | **`15 7 * * *`** (daily 07:15 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § Auto-invoice — auto-draft renewals) — discards auto-drafts whose cycle left the eligibility window (self-renewed / lapsed) |
+| **auto-invoice reconcile-issued-orphans** (107 Task 11) | **`POST /api/cron/renewals/reconcile-issued-orphans`** | **`30 7 * * *`** (daily 07:30 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § Auto-invoice — auto-draft renewals) — re-links an `issued` auto-drafted invoice whose `linked_invoice_id` never got stamped |
 | **F6 idempotency sweep** | **`POST /api/internal/retention/sweep-eventcreate-idempotency`** | **`30 3 * * *`** (daily 03:30 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F6 idempotency sweep) |
 | **F6 PII pseudonymisation sweep** | **`POST /api/internal/retention/pseudonymise-eventcreate`** | **`0 4 * * *`** (daily 04:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F6 PII sweep) |
 | **F6.1 error-CSV blob TTL sweep** (T058 — folded into F6 T154 on 2026-05-19) | **`POST /api/internal/retention/sweep-error-csv-blobs`** | **`0 22 * * *`** (= 05:00 Asia/Bangkok daily) | **`Authorization: Bearer ${CRON_SECRET}`** | [eventcreate-csv-import.md § 2](./eventcreate-csv-import.md) |
@@ -686,7 +689,7 @@ Recovery:
 
 ## Migration path: Pro plan (DONE — 2026-07-17)
 
-SweCham upgraded to Vercel Pro and **all 34 cron jobs now run on native
+SweCham upgraded to Vercel Pro and **all 39 cron jobs now run on native
 Vercel Cron** via `vercel.json`. This section is the authoritative
 mapping. cron-job.org is a **paused standby** (kept, not deleted).
 
@@ -710,12 +713,12 @@ on cron-job.org in **Asia/Bangkok** (UTC+7) are shifted **−7h** in
 uniformly. Weekly F8 jobs also shift day-of-week (Sun ICT → Sat UTC;
 Sat ICT → Fri UTC).
 
-### Authoritative `vercel.json` ↔ logical-schedule mapping (34 jobs)
+### Authoritative `vercel.json` ↔ logical-schedule mapping (39 jobs)
 
-Pro plan limit is 40 cron jobs/project — **34 used, 6 headroom** (verified by
-counting `vercel.json` on 2026-07-19, not by trusting this line: it read 32
-while the file already carried 33). A feature branch in flight adds 3 more on
-merge (→ 37/40). **Re-count before adding a cron.**
+Pro plan limit is 40 cron jobs/project — **39 used, 1 headroom** (verified by
+counting `vercel.json` on 2026-07-24: main's 36-job money/plan-change base plus
+this branch's 3 auto-invoice crons — auto-draft-coordinator, prune-auto-drafts,
+reconcile-issued-orphans = 39). **Re-count before adding a cron — only 1 slot remains.**
 
 | `vercel.json` path | UTC schedule | Logical time / cadence | Verb |
 |---|---|---|---|
@@ -734,10 +737,13 @@ merge (→ 37/40). **Re-count before adding a cron.**
 | `/api/cron/insights/process-export-jobs` | `*/5 * * * *` | every 5 min | GET+POST |
 | `/api/cron/members/reconcile-erasures` | `*/30 * * * *` | every 30 min | GET+POST |
 | `/api/internal/observability/recompute-match-rate` | `0 * * * *` | hourly | GET+POST |
+| `/api/cron/renewals/auto-draft-coordinator` | `0 22 * * *` | **05:00 ICT** (107-auto-invoice Task 8 — missing from this table until the Task 11 pass; added here, no schedule change) | GET+POST |
 | `/api/cron/renewals/dispatch-coordinator` | `0 23 * * *` | **06:00 ICT** | GET+POST |
 | `/api/cron/renewals/enter-awaiting-payment-coordinator` | `15 23 * * *` | **06:15 ICT** | GET+POST |
 | `/api/cron/renewals/lapse-cycles-on-grace-expiry-coordinator` | `30 23 * * *` | **06:30 ICT** | GET+POST |
 | `/api/cron/renewals/reconcile-pending-reactivations-coordinator` | `0 0 * * *` | **07:00 ICT** | GET+POST |
+| `/api/cron/renewals/prune-auto-drafts` | `15 0 * * *` | **07:15 ICT** (107-auto-invoice Task 11 — after the 07:00 ICT chain so a same-day self-renew/lapse has already flipped its cycle before the sweep runs) | GET+POST |
+| `/api/cron/renewals/reconcile-issued-orphans` | `30 0 * * *` | **07:30 ICT** (107-auto-invoice Task 11) | GET+POST |
 | `/api/cron/renewals/at-risk-recompute-coordinator` | `0 19 * * 6` | **Sun 02:00 ICT** (Sat 19:00 UTC) | GET+POST |
 | `/api/cron/renewals/tier-upgrade-evaluate-coordinator` | `0 20 * * 6` | **Sun 03:00 ICT** (Sat 20:00 UTC) | GET+POST |
 | `/api/cron/renewals/prune-consumed-tokens` | `0 21 * * 5` | **Sat 04:00 ICT** (Fri 21:00 UTC) | GET+POST |
@@ -1317,6 +1323,168 @@ them via the admin New-invoice form (which does NOT suppress the reg fee)
 instead of Renewals → mark paid offline.** Reserve mark-paid-offline for
 members whose invoice already exists (issued via New-invoice or a renewal
 dispatch) and who simply paid by an offline method (bank transfer, cheque).
+
+## Auto-invoice — auto-draft renewals (107-auto-invoice)
+
+Three daily crons. **None of them bills anybody.** The coordinator
+pre-fills renewal invoices as `status='draft', origin='auto_renewal'` —
+no §87 document number, no PDF, no email — and a treasurer works the
+`/admin/invoices` auto-renewal review queue, choosing *Issue + Send*,
+*Issue silently* or *Discard* per row. Nothing leaves the building until
+a human clicks. The other two crons are housekeeping around that queue.
+
+| Cron | ICT | Does |
+|---|---|---|
+| `auto-draft-coordinator` | 05:00 | Fans out per tenant; creates drafts; feeds the 3 gauges |
+| `prune-auto-drafts` | 07:15 | Discards drafts whose cycle left the `upcoming\|reminded` window |
+| `reconcile-issued-orphans` | 07:30 | Re-links an issued auto-draft whose cycle back-reference is missing |
+
+The coordinator runs **before** the 06:00 ICT reminder-dispatch chain so a
+treasurer working the queue is never racing the dispatcher; the two
+housekeeping jobs run **after** the 07:00 chain so a same-day self-renew or
+lapse has already flipped its cycle before the sweep looks at it.
+
+### Enabling: the three-key procedure
+
+All three keys default to off, and **all three must be on** before a single
+draft is created. They are independent — turning on any one or two changes
+nothing. Enable in this order; each step is separately reversible.
+
+**Step 0 — review `members.billing_cycle` before you touch key 1.** This is a
+data prerequisite, not a switch, and it is the one step that cannot be
+reversed by flipping something back off: once a draft is created against the
+wrong lead window it must be discarded by hand.
+
+`members.billing_cycle` (`'calendar' | 'rolling'`) selects **which lead window
+the auto-draft cron uses** for that member — `auto_invoice_lead_days_calendar`
+vs `auto_invoice_lead_days_rolling` (both tenant columns from key 2, each
+constrained to 1–120 days). A member on the wrong value is drafted on the
+wrong schedule: too early (a draft sits in the queue for weeks, and the
+`plan_year` may re-derive against a different fiscal year) or too late (the
+term lapses before the bill is reviewed).
+
+The column arrived in migration `0255_members_billing_cycle.sql` as a
+**best-effort backfill**, not a clean signal:
+
+- every row was seeded `'rolling'`, then flipped to `'calendar'` where the
+  member's LATEST renewal cycle has `period_from` = 1 January (Asia/Bangkok);
+- the migration's own comment records the failure mode — *"a rolling member
+  whose FIRST payment landed in January has `period_from` = Jan 1 and is
+  indistinguishable by date from a calendar member — it is over-marked
+  `'calendar'`"* — and states that **"the admin-review pass is mandatory
+  before the auto-invoice phase consumes the column."**
+
+That phase is this feature. So the error skews **one way**: expect false
+`'calendar'`, not false `'rolling'`. Concentrate the review on members marked
+`'calendar'` whose January anniversary could be an artefact of a January first
+payment, rather than re-checking every row.
+
+Scope it to who can actually be drafted — only enrolled members are read by
+the cron, so the review only has to cover the cohort you intend to enrol in
+key 3. Reviewing a 2–3 member pilot cohort first, then widening, keeps this
+proportionate.
+
+> **There is no bulk-correct tool for `billing_cycle`** — deliberately
+> deferred, not an oversight. The path today is the **per-member edit form**;
+> `GET /api/members` does serialise `billing_cycle`, so the current values can
+> be read in bulk even though they must be written one at a time. If the
+> review turns up more than a handful of corrections, say so before starting —
+> building the tool may be cheaper than the manual pass, and that is a
+> maintainer call, not a runbook one.
+
+1. **`FEATURE_AUTO_INVOICE=true`** (Vercel env, then redeploy) — the master
+   kill-switch. Off ⇒ all four routes return `200 {skipped,
+   reason:'feature_flag_disabled'}`. Never 503: a cron must not retry-storm.
+   Independent of `FEATURE_F8_RENEWALS`, which must ALSO be true.
+2. **`tenant_invoice_settings.auto_invoice_enabled = true`** for the tenant,
+   plus its cadence columns (`auto_invoice_lead_days_rolling`,
+   `..._calendar`, `auto_invoice_page_size`). Enforced in the **use-case**,
+   not just the route — the cron short-circuits before it even runs the
+   eligibility query. A tenant with **no settings row at all** is treated as
+   disabled (absent ≠ enabled).
+3. **`members.auto_invoice_enrolled_at IS NOT NULL`** per member — set via
+   the Members directory bulk-enrol action. This is the per-member opt-in
+   and the intended blast-radius control: start with a 2–3 member pilot,
+   confirm the queue populates and no email goes out, then widen.
+
+To stand the feature down, reverse any ONE key — key 1 is the fastest
+(env + redeploy, no data change) and stops all three crons at the route.
+
+> **A fourth key exists and is NOT part of this sequence.**
+> `FEATURE_ERASURE_DISCARD_DRAFTS` (env, default false) gates the GDPR Art.17 /
+> PDPA §33 cascade that DELETES an erased member's `draft` invoices. It hangs
+> off `eraseMember`, which is **already production-live** (COMP-1, plus the
+> `reconcile-erasures` cron re-drives it) — so it is reachable with keys 1–3 all
+> off, and standing the auto-invoice feature down does **not** stand this down.
+> Flip it independently, and expect it to take effect on the next erasure or
+> reconciler sweep. Issued documents are never touched (Thai RD §87/3 /
+> Art.17(3)(b)); only `draft` rows are removed, and the deletes are
+> irreversible.
+>
+> OFF is a clean skip, not a failed cascade: the erasure still completes and
+> still emits `member_erased`. Confirm from the log line
+> `members.erase.invoicing_draft_discard_disabled` (info, `cascade:
+> f4_draft_discard`) that the skip is the flag and not an empty draft set.
+
+> **Enrolment is reversible from the admin UI.** The Members directory bulk
+> bar carries both directions — enrol and **un-enrol** (`unenrol_auto_invoice`
+> on `POST /api/members/bulk`, emitting `member_auto_invoice_unenrolled`; the
+> OFF event exists because clearing `auto_invoice_enrolled_at` destroys its own
+> evidence). Un-enrolling a cohort takes effect on the next pass and does not
+> touch any draft already created — discard those from the review queue.
+>
+> To stop drafting for **everyone** immediately, turning off key 2 (tenant) or
+> key 1 (env) remains the fastest route.
+
+### The bill year is NOT the coverage year — do not "correct" it
+
+A renewal invoice's `plan_year` is derived from the cycle's **`period_from`**
+(`deriveFiscalYear(cycle.periodFrom)`), matching how `confirmRenewal` derives
+it for the exact same renewal — the two paths must produce an identical
+§86/4. The **coverage window** the member is buying is the *next* term
+(`period_to` → `period_to + frozen_plan_term_months`).
+
+So for a rolling-anchor member whose cycle began Aug 2025, the queue and the
+document legitimately show a **2025** bill year while the coverage runs
+**Aug 2026 → Aug 2027**, and the document number carries the 2025 fiscal
+sequence (`SC-2025-…`). This is correct and must not be "fixed": changing
+the derivation would make a cron-drafted renewal and a member-self-renewed
+one produce different tax documents for the same renewal.
+
+The queue surfaces this as a `billYearStale` flag when `plan_year` differs
+from *today's* fiscal year — informational, expected for most rows during
+renewal season, and **not** a refusal on its own. A genuine refusal is
+`plan_year_drift`: the invoice's stamped `plan_year` disagrees with the
+year re-derived from its own cycle. That one blocks Issue.
+
+### Alerts: report-only
+
+The **gauge-based** signals ship **un-thresholded on purpose** — no baseline
+exists until the feature has actually run against real data, and a threshold
+guessed before that would either cry wolf or hide the thing it was built to
+catch. AI-A1 is *report-only*; AI-A3 and AI-A4 are *panels with no threshold*.
+Treat them as a dashboard to read during the pilot, not as an on-call signal,
+and set thresholds only from observed steady state.
+
+The one exception is **AI-A2b** (auto-draft errors on two consecutive days, or
+>20 % error share in a pass), which IS an alarm — it is error-rate based, not
+gauge based, so it needs no baseline: a retry that failed to clear is
+actionable on any volume. AI-A2 and AI-A5 are report-level.
+
+The one to watch is `renewals_awaiting_payment_no_invoice` (wedge detector).
+When it IS promoted it must fire on a **sustained** wedge (age-based), never
+on `> 0` — a voided-for-correction invoice puts a member in that population
+briefly and legitimately.
+
+Definitions, the full alert list and the wedge triage steps are **not
+restated here** — see [`docs/observability.md` § 26](../observability.md) and
+[auto-invoice-wedged-cycles.md](./auto-invoice-wedged-cycles.md).
+
+If the gauge feed itself fails, the coordinator drops that tenant's three
+values rather than leaving them frozen, and logs
+`cron.renewals.auto-draft.coordinator.gauge_observe_failed` (query/timeout)
+or `…gauge_emit_failed` (emit rolled back). An **absent** series is the
+honest signal; a stale number is not. Alert on no-data, not on a value.
 
 ## F6 — idempotency sweep (NEW — round-6 staff-review 2026-05-13; handler ships Phase 10 T116)
 

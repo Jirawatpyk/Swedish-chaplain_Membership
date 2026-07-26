@@ -133,6 +133,50 @@ export function isUniqueViolationOnConstraint(
 }
 
 /**
+ * SQLSTATE 23P01 = exclusion_violation. Walks the cause chain so it works with
+ * Drizzle 0.45+ wrapped errors (the original PostgresError sits on `.cause`,
+ * NOT the top-level `Failed query: …` wrapper — reading `.code` off the wrapper
+ * returns `undefined`). Returns true when any link in the chain is a Postgres
+ * error with code 23P01. Used by the membership-coverage EXCLUDE
+ * (`invoices_membership_coverage_no_overlap`, mig 0281) call sites.
+ */
+export function isExclusionViolation(error: unknown): boolean {
+  let cur: unknown = error;
+  while (cur !== null && cur !== undefined) {
+    if (isPostgresError(cur) && cur.code === '23P01') return true;
+    cur = (cur as { cause?: unknown } | null)?.cause;
+  }
+  return false;
+}
+
+/**
+ * True when the thrown value is a Postgres exclusion_violation (23P01) raised by
+ * a SPECIFIC named constraint. Same cause-walking + `constraint_name`-then-message
+ * strategy as {@link isUniqueViolationOnConstraint} (some wrap layers keep the
+ * constraint name only in the joined message). Use this to react to ONE
+ * exclusion constraint while letting every OTHER 23P01 surface normally.
+ *
+ * The `sawExclusion` guard prevents a false positive on a NON-23P01 error whose
+ * message happens to contain the constraint name.
+ */
+export function isExclusionViolationOnConstraint(
+  error: unknown,
+  constraintName: string,
+): boolean {
+  let cur: unknown = error;
+  let sawExclusion = false;
+  while (cur !== null && cur !== undefined) {
+    if (isPostgresError(cur) && cur.code === '23P01') {
+      sawExclusion = true;
+      const cn = (cur as { constraint_name?: unknown }).constraint_name;
+      if (typeof cn === 'string' && cn === constraintName) return true;
+    }
+    cur = (cur as { cause?: unknown } | null)?.cause;
+  }
+  return sawExclusion && errorChainMessage(error).includes(constraintName);
+}
+
+/**
  * Format a storage error for `storage_error.detail` payloads on
  * `Result.err` returns. Lifted from `drizzle-image-allowlist-repo.ts` +
  * `drizzle-broadcast-templates-repo.ts` 2026-05-21 (review finding

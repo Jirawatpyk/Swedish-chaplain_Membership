@@ -105,6 +105,7 @@ import {
 import { bangkokLocalDate, addDays, isValidCalendarDate } from '@/lib/fiscal-year';
 import { logger } from '@/lib/logger';
 import { invoicingMetrics } from '@/lib/metrics';
+import { isExclusionViolationOnConstraint } from '@/lib/db-errors';
 import { TxAbort } from '../lib/tx-abort';
 import { InvoiceApplyConflictError } from '../lib/invoice-apply-conflict-error';
 import { renderAndUploadPdf } from '../lib/render-and-upload';
@@ -139,6 +140,15 @@ export const issueInvoiceSchema = z.object({
     .refine(isValidCalendarDate, { message: 'not a real calendar date' })
     .optional(),
   zeroRateCertBlobKey: z.string().max(1024).optional(),
+  // Task 4 (107-auto-invoice) — per-CALL override for the renewal queue's
+  // "Issue + Send" action. Deliberately a PARAMETER, not a persisted row
+  // patch: a failed issue attempt must leave no persisted
+  // `autoEmailOnIssue=true` behind for a later "Issue silently" retry of
+  // the SAME draft to inherit. `.optional()` (no `.default()`) keeps
+  // `undefined` the no-op value so every existing caller that has never
+  // heard of this field is unaffected — see the resolution order at the
+  // step-L outbox block below.
+  autoEmailOverride: z.boolean().optional(),
 });
 
 export type IssueInvoiceInput = z.infer<typeof issueInvoiceSchema>;
@@ -762,6 +772,23 @@ export async function issueInvoice(
           status: 'issued',
         });
       }
+      // membership-coverage-exclude-guard (mig 0281): the draft→issued flip
+      // makes THIS bill's `blocks_coverage` true, so the DB EXCLUDE
+      // `invoices_membership_coverage_no_overlap` rejects (23P01) when another
+      // COMMITTED membership §86/4 already covers the same period. This is the
+      // concurrency backstop the pre-flight read cannot close (two mints that
+      // both pass the read before either commits — or a void-on-reissue
+      // reactivation of a same-period bill). Map it to the SAME typed
+      // duplicate error the lock-conflict path uses so the route answers 409
+      // `invoice_already_issued` (renewals surface it as "already billed")
+      // instead of a raw 500 — the whole tx rolls back, so no §87 number is
+      // burned. (23P01 is wrapped on `.cause` by Drizzle 0.45 — walk it.)
+      if (isExclusionViolationOnConstraint(e, 'invoices_membership_coverage_no_overlap')) {
+        throw new IssueInvoiceInternalError({
+          code: 'invoice_already_issued',
+          status: 'issued',
+        });
+      }
       throw e;
     }
 
@@ -854,8 +881,12 @@ export async function issueInvoice(
     //   (B) Non-member event privacy footer — when the buyer is a non-member
     //       on an EVENT invoice, thread `privacyFooterKind = 'event_non_member'`
     //       so the auto-email carries the §87/3 PDPA transparency notice.
+    // Task 4 (107-auto-invoice) — `input.autoEmailOverride` outranks BOTH
+    // the persisted per-draft flag and the tenant default. It is a
+    // request-scoped param (see `issueInvoiceSchema` docstring above), so
+    // an override never survives past this single call.
     const shouldAutoEmail =
-      draft.autoEmailOnIssue ?? settings.autoEmailEnabled;
+      input.autoEmailOverride ?? draft.autoEmailOnIssue ?? settings.autoEmailEnabled;
     // Cluster 5 (Finding 1) — observable dispatch outcome. `'disabled'` when
     // auto-email is intentionally off (tenant default or per-invoice override);
     // otherwise the helper reports 'sent' vs 'skipped_no_email'.

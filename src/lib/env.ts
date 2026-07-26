@@ -347,6 +347,24 @@ const schema = z.object({
   // dangling duplicate bill is the pre-existing behaviour, not a regression.
   FEATURE_VOID_ON_REISSUE: booleanFromString.default(false),
 
+  // auto-invoice #2 — master kill-switch (dark-ship key #1 of 3). Default
+  // false — ships dark; independent of FEATURE_F8_RENEWALS (no cross-field
+  // guard, gates no secret). Flip TRUE in Vercel env at ship-day.
+  FEATURE_AUTO_INVOICE: booleanFromString.default(false),
+
+  // auto-invoice #2 — GDPR Art.17 / PDPA §33 erasure cascade that DELETES the
+  // erased member's `draft` invoices (issued documents are retained per Thai RD
+  // §87/3 / Art.17(3)(b)). Default false — ships dark like the rest of the
+  // branch, and unlike the rest of the branch it would otherwise go live the
+  // moment this merges: `eraseMember` is already in production (COMP-1, plus
+  // the reconcile-erasures cron re-drives it), so the cascade is reachable
+  // WITHOUT `FEATURE_AUTO_INVOICE`. The deletes are irreversible, hence its own
+  // key rather than folding into the master switch.
+  //
+  // OFF is a clean no-op, NOT a failed cascade: it must not flip
+  // `allCascadesClean`, or `member_erased` would be withheld forever and the
+  // US2d reconciler would re-drive in a loop.
+  FEATURE_ERASURE_DISCARD_DRAFTS: booleanFromString.default(false),
   // plan-change immediate re-freeze (Phase 2) — when a manual admin
   // change-plan flips `members.plan_id`, ALSO re-freeze the member's OPEN
   // (not-yet-invoiced) renewal cycle to the new plan/price IMMEDIATELY, so the
@@ -1029,6 +1047,12 @@ export const env = {
     f088TaxAtPayment: raw.FEATURE_088_TAX_AT_PAYMENT,
     // 106-void-on-reissue — auto-void superseded membership bills on reissue.
     voidOnReissue: raw.FEATURE_VOID_ON_REISSUE,
+    // auto-invoice #2 — master kill-switch (dark-ship key #1 of 3).
+    autoInvoice: raw.FEATURE_AUTO_INVOICE,
+    // auto-invoice #2 — rollout gate for the erasure draft-discard cascade.
+    // Independent of `autoInvoice`: the cascade hangs off production-live
+    // `eraseMember`, not off the auto-invoice queue. See the schema docstring.
+    erasureDiscardDrafts: raw.FEATURE_ERASURE_DISCARD_DRAFTS,
     // plan-change immediate re-freeze (Phase 2) — re-freeze the OPEN
     // not-yet-invoiced cycle to the new plan/price on a manual change-plan.
     planChangeImmediateRefreeze: raw.FEATURE_PLAN_CHANGE_IMMEDIATE_REFREEZE,

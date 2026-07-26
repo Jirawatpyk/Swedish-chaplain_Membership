@@ -230,6 +230,33 @@ export const F8_AUDIT_EVENT_TYPES = [
   //     (tax-evidence class — explains an anomalous receipt; migration 0257
   //     retention trigger). ---
   'payment_on_terminated_member',
+  // --- 107-auto-invoice Task 2 — proactive renewal-invoice drafting cron.
+  //     `renewal_auto_drafted` fires when the cron pre-fills a DRAFT
+  //     invoice ahead of a cycle's due date (FR-* auto-invoice cadence);
+  //     `renewal_auto_draft_discarded` fires when that draft is discarded
+  //     (a treasurer issues a manual invoice instead, a later cron run
+  //     supersedes it on issue, or a housekeeping sweep prunes it once it
+  //     has left the lead-day window). Migration 0260 adds both pgEnum
+  //     values; SHIPPED (not deferred) in `F8_ENUM_SHIPPED_TUPLE` — the
+  //     emit sites land in this same feature. ---
+  'renewal_auto_drafted',
+  'renewal_auto_draft_discarded',
+  // --- 107-auto-invoice Task 11 (review Important-2 fix) — the
+  //     reconcile-issued-orphans housekeeping cron's repair event. Unlike
+  //     `issueAutoDraftedRenewal`'s own tx2 link (which is NOT separately
+  //     audited — it happens in the SAME operation/second as F4's
+  //     `invoice_issued`, so that row's timestamp already dates it),
+  //     reconcile is a DIFFERENT operation that can run days later to
+  //     repair a link `issueAutoDraftedRenewal` failed to make
+  //     (F8.AUTO_ISSUE.LINK_FAILED). `transitionStatus`/`linkInvoice`
+  //     carry no `actor_user_id`, so without a dedicated event there is
+  //     no append-only record of WHEN the repair happened — a compliance
+  //     gap for a money-linkage mutation. Mirrors the shape of
+  //     `tier_upgrade_pending_orphan_detected` (an orphan-repair event
+  //     with the SAME "detected + fixed in one cron pass" semantics).
+  //     Migration 0262 adds the pgEnum value; SHIPPED (not deferred) in
+  //     `F8_ENUM_SHIPPED_TUPLE` — the emit site lands in this same task. ---
+  'renewal_orphan_invoice_relinked',
 ] as const;
 
 export type F8AuditEventType = (typeof F8_AUDIT_EVENT_TYPES)[number];
@@ -238,9 +265,9 @@ export type F8AuditEventType = (typeof F8_AUDIT_EVENT_TYPES)[number];
  * Compile-time count check — pins the const tuple length so a typo or
  * accidental drop in `F8_AUDIT_EVENT_TYPES` becomes a build error.
  */
-type _AssertF8AuditEventCount = (typeof F8_AUDIT_EVENT_TYPES)['length'] extends 70
+type _AssertF8AuditEventCount = (typeof F8_AUDIT_EVENT_TYPES)['length'] extends 73
   ? true
-  : 'F8_AUDIT_EVENT_TYPES count mismatch — expected 70';
+  : 'F8_AUDIT_EVENT_TYPES count mismatch — expected 73';
 const _assertF8AuditEventCount: _AssertF8AuditEventCount = true;
 // Reference the const so it isn't pruned + so future maintainers see the assertion is wired in.
 void _assertF8AuditEventCount;
@@ -1162,7 +1189,8 @@ export interface F8AuditPayloadShapes {
       | 'lapse'
       | 'enter_awaiting'
       | 'reconcile'
-      | 'tier_upgrade_evaluate';
+      | 'tier_upgrade_evaluate'
+      | 'auto_draft';
     readonly tenants_enqueued: number;
     readonly tenants_succeeded: number;
     readonly tenants_failed: number;
@@ -1215,7 +1243,8 @@ export interface F8AuditPayloadShapes {
             | { readonly kind: 'lapse'; readonly errors: number; readonly grace_expired?: number; readonly payment_failed?: number }
             | { readonly kind: 'enter_awaiting'; readonly errors: number; readonly flipped?: number; readonly race_skipped?: number }
             | { readonly kind: 'reconcile'; readonly refund_failures: number; readonly timed_out?: number }
-            | { readonly kind: 'at_risk_recompute'; readonly members_failed: number; readonly members_skipped_below_tenure?: number };
+            | { readonly kind: 'at_risk_recompute'; readonly members_failed: number; readonly members_skipped_below_tenure?: number }
+            | { readonly kind: 'auto_draft'; readonly errors: number; readonly drafted?: number; readonly skipped?: number };
         }
     >;
   };
@@ -1300,6 +1329,52 @@ export interface F8AuditPayloadShapes {
     readonly triggered_by: string;
     readonly paid_at: string;
     readonly heal_site: 'terminal_only' | 'linked_terminal_skip';
+  };
+  /**
+   * 107-auto-invoice Task 2 — emitted by the auto-invoice cron when it
+   * pre-fills a DRAFT renewal invoice ahead of a cycle's due date.
+   * `frozen_price_thb` mirrors the cycle's frozen plan price at draft
+   * time (F4 invoice line source of truth); `coverage_from`/`coverage_to`
+   * are the drafted invoice's membership-period dates (`YYYY-MM-DD`).
+   */
+  readonly renewal_auto_drafted: {
+    readonly cycle_id: CycleId;
+    readonly member_id: MemberId;
+    readonly plan_year: number;
+    readonly frozen_price_thb: string;
+    readonly coverage_from: string;
+    readonly coverage_to: string;
+  };
+  /**
+   * 107-auto-invoice Task 2 — emitted when a previously auto-drafted
+   * invoice is discarded instead of issued. `reason` discriminates the
+   * three known discard paths: `manual` (a treasurer issued a manual
+   * invoice instead of the draft), `superseded_on_issue` (a later cron
+   * pass replaced the draft before issue), `pruned_left_window` (a
+   * housekeeping sweep removed a draft whose cycle left the lead-day
+   * window without being issued).
+   */
+  readonly renewal_auto_draft_discarded: {
+    readonly cycle_id: CycleId;
+    readonly member_id: MemberId;
+    readonly invoice_id: string;
+    readonly reason: 'manual' | 'superseded_on_issue' | 'pruned_left_window';
+  };
+  /**
+   * 107-auto-invoice Task 11 (review Important-2 fix) — emitted by the
+   * `reconcile-issued-orphans` daily cron when it repairs an `issued`
+   * auto-drafted invoice's cycle link (`linked_invoice_id`) that
+   * `issueAutoDraftedRenewal`'s own tx2 failed to stamp
+   * (`F8.AUTO_ISSUE.LINK_FAILED`). `previous_cycle_status` records what
+   * the cycle's status was BEFORE the repair (`upcoming` | `reminded` |
+   * `awaiting_payment`) — a terminal/conflict/gone candidate is never
+   * force-linked and does not reach this emit site.
+   */
+  readonly renewal_orphan_invoice_relinked: {
+    readonly cycle_id: CycleId;
+    readonly member_id: MemberId;
+    readonly invoice_id: string;
+    readonly previous_cycle_status: 'upcoming' | 'reminded' | 'awaiting_payment';
   };
 }
 

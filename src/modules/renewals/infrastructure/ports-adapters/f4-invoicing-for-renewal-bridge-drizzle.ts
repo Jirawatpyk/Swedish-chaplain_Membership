@@ -24,13 +24,20 @@
 import {
   billFirstDocumentNumber,
   createInvoiceDraft,
+  deleteInvoiceDraft,
   issueMembershipBill,
   makeCreateInvoiceDraftDeps,
+  makeDeleteInvoiceDraftDeps,
   makeIssueMembershipBillDeps,
 } from '@/modules/invoicing';
 import { asSatang, parseThbDecimalToSatang } from '@/lib/money';
 import type {
+  DiscardAutoDraftForRenewalInput,
+  DiscardAutoDraftForRenewalResult,
+  DraftInvoiceForRenewalInput,
+  DraftInvoiceForRenewalResult,
   F4InvoicingForRenewalBridge,
+  IssueExistingDraftForRenewalInput,
   IssueInvoiceForRenewalInput,
   IssueInvoiceForRenewalResult,
 } from '../../application/ports/f4-invoicing-bridge';
@@ -63,6 +70,11 @@ export const f4InvoicingForRenewalBridge: F4InvoicingForRenewalBridge = {
         ...(input.membershipCoverage !== undefined
           ? { membershipCoverage: input.membershipCoverage }
           : {}),
+        // membership-coverage-exclude-guard (mig 0281) — the dup-guard window,
+        // REQUIRED on the bridge input (compiler-enforced), so coverage is
+        // stamped on every renewal mint even when the printed
+        // `membershipCoverage` is omitted (first-payment).
+        coverageWindow: input.coverageWindow,
       },
     );
     if (!createResult.ok) {
@@ -138,5 +150,143 @@ export const f4InvoicingForRenewalBridge: F4InvoicingForRenewalBridge = {
       totalSatang,
       supersedeWarnings: issued.supersedeWarnings,
     };
+  },
+
+  /**
+   * 107-auto-invoice (Task 5) — cron create-half. The `createInvoiceDraft`
+   * twin of `issueInvoiceForRenewal` above, MINUS the issue step: the
+   * auto-invoice cron (Task 7) only needs a draft row to exist ahead of the
+   * due date. Two deliberate differences from `issueInvoiceForRenewal`'s own
+   * create call:
+   *   - `origin: 'auto_renewal'` — stamps the row as cron-drafted (NEVER set
+   *     by `issueInvoiceForRenewal`, whose callers are the online-renewal /
+   *     admin-renew paths, both `origin='manual'` by DB default).
+   *   - `autoEmailOnIssue: false` — the cron cannot know the eventual
+   *     send-vs-silent choice; the review-queue "Issue" action
+   *     (`issueExistingDraftForRenewal` below) resolves it later via
+   *     `autoEmailOverride`, which outranks this stored value regardless.
+   */
+  async draftInvoiceForRenewal(
+    input: DraftInvoiceForRenewalInput,
+  ): Promise<DraftInvoiceForRenewalResult> {
+    const frozenUnitPriceSatang = parseThbDecimalToSatang(input.frozenPlanPriceThb);
+    const createResult = await createInvoiceDraft(
+      makeCreateInvoiceDraftDeps(input.tenantId),
+      {
+        tenantId: input.tenantId,
+        actorUserId: input.actorUserId,
+        requestId: input.requestId,
+        memberId: input.memberId,
+        planId: input.planId,
+        planYear: input.planYear,
+        autoEmailOnIssue: false,
+        origin: 'auto_renewal',
+        renewalSignal: { unitPriceSatang: frozenUnitPriceSatang },
+        ...(input.membershipCoverage !== undefined
+          ? { membershipCoverage: input.membershipCoverage }
+          : {}),
+        // membership-coverage-exclude-guard (mig 0281) — the dup-guard window,
+        // REQUIRED on the bridge input (compiler-enforced), so coverage is
+        // stamped on every renewal mint even when the printed
+        // `membershipCoverage` is omitted (first-payment).
+        coverageWindow: input.coverageWindow,
+      },
+    );
+    if (!createResult.ok) {
+      return {
+        status: 'draft_failed',
+        errorCode: createResult.error.code,
+        detail:
+          'reason' in createResult.error
+            ? String(createResult.error.reason)
+            : createResult.error.code,
+      };
+    }
+    return { status: 'drafted', invoiceId: createResult.value.invoiceId };
+  },
+
+  /**
+   * 107-auto-invoice (Task 5) — review-queue issue-half. Promotes an
+   * already-drafted `origin='auto_renewal'` invoice (created by
+   * `draftInvoiceForRenewal` above) to `issued`, via the SAME
+   * `issueMembershipBill` composition `issueInvoiceForRenewal` uses (void-
+   * on-reissue supersede included).
+   *
+   * `autoEmailOverride: input.autoEmailOnIssue` — the T4 gotcha: this is
+   * ALWAYS a definite send-vs-silent intent here, never a "no opinion"
+   * placeholder. The draft was always created with `autoEmailOnIssue:
+   * false` (see `draftInvoiceForRenewal`), so `issueMembershipBill`'s own
+   * `draft.autoEmailOnIssue ?? settings.autoEmailEnabled` fallback chain
+   * would otherwise resolve to silent regardless of what the operator
+   * actually chose on the review-queue screen — the override is required
+   * to carry that choice through.
+   */
+  async issueExistingDraftForRenewal(
+    input: IssueExistingDraftForRenewalInput,
+  ): Promise<IssueInvoiceForRenewalResult> {
+    const issueResult = await issueMembershipBill(
+      makeIssueMembershipBillDeps(input.tenantId),
+      {
+        tenantId: input.tenantId,
+        actorUserId: input.actorUserId,
+        requestId: input.requestId,
+        invoiceId: input.invoiceId,
+        autoEmailOverride: input.autoEmailOnIssue,
+      },
+    );
+    if (!issueResult.ok) {
+      return {
+        status: 'issue_failed',
+        errorCode: issueResult.error.code,
+        detail:
+          'reason' in issueResult.error
+            ? String(issueResult.error.reason)
+            : issueResult.error.code,
+      };
+    }
+    const issued = issueResult.value;
+    const totalSatang =
+      issued.total !== null ? asSatang(BigInt(issued.total.satang)) : asSatang(0n);
+    const invoiceNumber = billFirstDocumentNumber(issued) ?? '';
+    return {
+      status: 'issued',
+      invoiceId: issued.invoiceId,
+      invoiceNumber,
+      totalSatang,
+      supersedeWarnings: issued.supersedeWarnings,
+    };
+  },
+
+  /**
+   * 107-auto-invoice (Task 9) — discard half. Delegates to F4's own
+   * `deleteInvoiceDraft`, which owns its tx, re-asserts `status='draft'`
+   * inside the DELETE statement, and emits `invoice_draft_deleted`.
+   *
+   * F4's `not_draft` error is mapped to a NON-error result arm here: for the
+   * renewals callers a promoted sibling is an expected concurrent outcome to
+   * leave alone, not a failure to escalate.
+   */
+  async discardAutoDraftForRenewal(
+    input: DiscardAutoDraftForRenewalInput,
+  ): Promise<DiscardAutoDraftForRenewalResult> {
+    const result = await deleteInvoiceDraft(
+      // `input.tx` threads the caller's transaction so the delete runs INLINE
+      // under whatever lock the caller holds (Task 9 runs this inside tx1,
+      // under the per-cycle advisory lock — see the use-case header).
+      makeDeleteInvoiceDraftDeps(input.tenantId, input.tx),
+      {
+        tenantId: input.tenantId,
+        actorUserId: input.actorUserId,
+        requestId: input.requestId,
+        invoiceId: input.invoiceId,
+        ...(input.expectMayHaveVanished !== undefined
+          ? { expectMayHaveVanished: input.expectMayHaveVanished }
+          : {}),
+      },
+    );
+    if (result.ok) return { status: 'discarded' };
+    return result.error.code === 'not_draft'
+      ? { status: 'not_draft' }
+      : { status: 'not_found' };
   },
 };

@@ -202,6 +202,7 @@ function makeDeps(draft: Invoice | null, settings: TenantInvoiceSettingsView | n
     invoiceRepo: {
       withTx: vi.fn(async (fn) => fn(opaqueTx)),
       insertDraft: vi.fn(),
+      getOrigin: vi.fn(),
       // Duplicate guard read — unused by this use case (only
       // `createInvoiceDraft` calls it, and only when a caller opts in via
       // `duplicatePolicy`). Present to satisfy the `InvoiceRepo` contract.
@@ -215,7 +216,7 @@ function makeDeps(draft: Invoice | null, settings: TenantInvoiceSettingsView | n
       applyIssue: vi.fn(async (_tx, input) =>
         ({ ...(draft as Invoice), status: 'issued', fiscalYear: 2026 as never, sequenceNumber: input.sequenceNumber, documentNumber: { raw: input.documentNumber } as never, pdf: input.pdf, pdfDocKind: input.pdfDocKind }) as Invoice,
       ),
-      deleteDraft: vi.fn(),
+      deleteDraft: vi.fn(async () => true),
       applyPayment: vi.fn(),
       applyDraftUpdate: vi.fn(),
       // Default: returns the status of the provided draft fixture so
@@ -377,6 +378,45 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
     const r = await issueInvoice(deps, input);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.code).toBe('invoice_already_issued');
+  });
+
+  it('invoice_already_issued — the mig-0281 coverage EXCLUDE 23P01 at applyIssue maps to the typed 409, not a raw 500', async () => {
+    // membership-coverage-exclude-guard: the draft→issued flip makes this bill's
+    // blocks_coverage true, so the DB EXCLUDE rejects when another committed
+    // membership §86/4 already covers the period. Drizzle 0.45 WRAPS the
+    // PostgresError on `.cause`; the catch must walk it (isExclusionViolationOnConstraint)
+    // and map to the same typed duplicate error, so the tx rolls back and the
+    // route answers 409 — not a raw unexpected_error 500.
+    const deps = makeDeps(makeDraftInvoice(), makeSettings(), makeMember());
+    const pgErr = Object.assign(
+      new Error(
+        'conflicting key value violates exclusion constraint "invoices_membership_coverage_no_overlap"',
+      ),
+      { code: '23P01', constraint_name: 'invoices_membership_coverage_no_overlap' },
+    );
+    deps.invoiceRepo.applyIssue = vi.fn(async () => {
+      throw Object.assign(new Error('Failed query: update "invoices" set "status" = ...'), {
+        cause: pgErr,
+      });
+    });
+    const r = await issueInvoice(deps, input);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('invoice_already_issued');
+  });
+
+  it('a 23P01 on a DIFFERENT exclusion constraint is NOT mapped to invoice_already_issued (constraint-specific)', async () => {
+    // Specificity: only the membership-coverage EXCLUDE maps to the duplicate
+    // error; any other 23P01 must surface through its normal (unexpected) path,
+    // never be silently swallowed as a duplicate.
+    const deps = makeDeps(makeDraftInvoice(), makeSettings(), makeMember());
+    const pgErr = Object.assign(
+      new Error('conflicting key value violates exclusion constraint "some_other_no_overlap"'),
+      { code: '23P01', constraint_name: 'some_other_no_overlap' },
+    );
+    deps.invoiceRepo.applyIssue = vi.fn(async () => {
+      throw Object.assign(new Error('Failed query: update ...'), { cause: pgErr });
+    });
+    await expect(issueInvoice(deps, input)).rejects.toThrow();
   });
 
   it('member_not_found → err', async () => {

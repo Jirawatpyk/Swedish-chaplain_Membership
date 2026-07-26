@@ -194,6 +194,15 @@ export const members = pgTable(
       'blocked_from_auto_reactivation_reason',
     ),
 
+    // 107-auto-invoice (Task 1, migration 0259) — per-member opt-in
+    // timestamp for the proactive renewal-billing cron. NULL = not
+    // enrolled (today's de-facto behaviour — nothing auto-drafts).
+    // Foundation-only this round: the cron that reads this lands in a
+    // later task of this plan.
+    autoInvoiceEnrolledAt: timestamp('auto_invoice_enrolled_at', {
+      withTimezone: true,
+    }),
+
     // Audit metadata
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()

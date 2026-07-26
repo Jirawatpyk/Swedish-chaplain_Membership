@@ -81,6 +81,14 @@ export type StubbedEraseDeps = EraseMemberDeps & {
   // footprint, or the erase ran clean). Tests override to `{ outcome: 'failed' }`
   // → allCascadesClean=false, member_erased withheld.
   directoryErasure: { eraseForMember: ReturnType<typeof vi.fn> };
+  // COMP-1 §6.2 — F4 invoicing draft-discard cascade (post-commit). Discards
+  // the member's `draft` invoices; RETAINS `issued` and beyond (Thai RD §87/3 /
+  // Art.17(3)(b)). A real `vi.fn` so cascade tests can assert the
+  // (tenant, memberId, meta) call args + override the outcome. Default:
+  // `{ outcome: 'ok', discardedCount: 0 }` (member had no pending drafts).
+  // Tests override to `{ outcome: 'failed' }` → allCascadesClean=false,
+  // member_erased withheld.
+  invoicingErasure: { discardDraftsForMember: ReturnType<typeof vi.fn> };
   // COMP-1 US3-C — in-tx Resend audience-contact derivation (FAIL-LOUD, runs
   // inside the scrub tx) + post-commit best-effort sub-processor propagation.
   // Real `vi.fn`s so cascade tests can assert call args + override the
@@ -207,6 +215,16 @@ export function buildEraseDeps(): StubbedEraseDeps {
     // → allCascadesClean=false, member_erased withheld.
     directoryErasure: {
       eraseForMember: vi.fn(async () => ({ outcome: 'ok' })),
+    },
+    // COMP-1 §6.2 — F4 invoicing draft discard. Default clean 'ok' with nothing
+    // discarded (the member had no pending drafts). Tests override to
+    // `{ outcome: 'failed', discardedCount: 0 }` → allCascadesClean=false,
+    // member_erased withheld.
+    invoicingErasure: {
+      discardDraftsForMember: vi.fn(async () => ({
+        outcome: 'ok',
+        discardedCount: 0,
+      })),
     },
     // COMP-1 US3-C. Default in-tx derivation: no audience pairs (member received
     // no audience-bearing broadcasts). Default propagation: clean 'ok' with 0

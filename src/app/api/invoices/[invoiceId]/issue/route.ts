@@ -11,7 +11,13 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requireAdminContext } from '@/lib/admin-context';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
-import { issueInvoice, issueInvoiceSchema, makeIssueInvoiceDeps } from '@/modules/invoicing';
+import {
+  guardGenericRouteIssueOrigin,
+  issueInvoice,
+  issueInvoiceSchema,
+  makeGuardGenericRouteIssueOriginDeps,
+  makeIssueInvoiceDeps,
+} from '@/modules/invoicing';
 import {
   isIssuanceServerFault,
   issueErrorStatus,
@@ -70,6 +76,30 @@ export async function POST(
   });
   if (!parsed.success) {
     return NextResponse.json({ error: { code: 'invalid' } }, { status: 400 });
+  }
+
+  // 107-auto-invoice Task 10 — refuse a queue-owned `auto_renewal` draft
+  // here. `issueAutoDraftedRenewal`'s own guards (origin/shape check,
+  // paid-inclusive content guard, plan-year-drift refusal) live entirely
+  // inside ITS transaction and are bypassed if this bare-issueInvoice route
+  // is called directly on the same draft id — see
+  // guard-generic-route-issue-origin.ts for the full rationale. A `manual`
+  // draft (or a not-found id) passes straight through unaffected.
+  const originGuard = await guardGenericRouteIssueOrigin(
+    makeGuardGenericRouteIssueOriginDeps(tenantCtx.slug),
+    { tenantId: tenantCtx.slug, invoiceId: parsed.data.invoiceId },
+  );
+  if (!originGuard.ok) {
+    logger.warn(
+      {
+        requestId,
+        tenantId: tenantCtx.slug,
+        invoiceId,
+        errorCode: originGuard.error.code,
+      },
+      'POST /api/invoices/[id]/issue refused — auto_renewal draft belongs to the renewals queue',
+    );
+    return NextResponse.json({ error: originGuard.error }, { status: 422 });
   }
 
   const result = await issueInvoice(makeIssueInvoiceDeps(tenantCtx.slug), parsed.data);

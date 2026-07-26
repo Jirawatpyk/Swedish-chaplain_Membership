@@ -45,21 +45,32 @@ vi.mock('@/app/(staff)/admin/members/_components/bulk-progress-indicator', () =>
 // keeps `confirm-invite` (the existing invite tests). Each button fires its own
 // `onConfirm` (== executeBulk('send_portal_invite' | 'send_renewal_reminder')).
 vi.mock('@/components/shell/confirmation-dialog', () => ({
+  // Union stand-in: 107 added enrol/unenrol ConfirmationDialogs and main added
+  // the reminder dialog, alongside the existing invite dialog. Give each a
+  // DISTINCT testid (keyed off the confirm label — the stable en.json string) so
+  // getByTestId never hits "multiple elements". `reminder` is matched first so a
+  // reminder label can't fall through to another branch.
   ConfirmationDialog: ({
-    onConfirm,
     confirmLabel = '',
+    onConfirm,
   }: {
-    onConfirm: () => void;
     confirmLabel?: string;
-  }) => (
-    <button
-      type="button"
-      data-testid={/reminder/i.test(confirmLabel) ? 'confirm-reminder' : 'confirm-invite'}
-      onClick={() => onConfirm()}
-    >
-      {confirmLabel}
-    </button>
-  ),
+    onConfirm: () => void;
+  }) => {
+    const label = String(confirmLabel ?? '');
+    const testid = /reminder/i.test(label)
+      ? 'confirm-reminder'
+      : label.includes('invitation')
+        ? 'confirm-invite'
+        : label.includes('Enrol')
+          ? 'confirm-enrol'
+          : 'confirm-unenrol';
+    return (
+      <button type="button" data-testid={testid} onClick={() => onConfirm()}>
+        {label}
+      </button>
+    );
+  },
 }));
 
 import { BulkActionBar } from '@/app/(staff)/admin/members/_components/bulk-action-bar';

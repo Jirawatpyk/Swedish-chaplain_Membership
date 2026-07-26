@@ -23,6 +23,15 @@ import { err } from '@/lib/result';
 
 const requireAdminContextMock = vi.fn();
 const issueInvoiceMock = vi.fn();
+// 107-auto-invoice Task 10 — the route now calls this guard BEFORE
+// issueInvoice; stub it to always pass through so this file keeps testing
+// exactly what it always tested (issueInvoice's own error mapping), not the
+// new guard (that guard's own contract lives in
+// tests/contract/issue-route-auto-renewal-refusal.contract.test.ts).
+const guardGenericRouteIssueOriginMock = vi.fn(async (..._args: unknown[]) => ({
+  ok: true,
+  value: undefined,
+}));
 
 vi.mock('@/lib/admin-context', () => ({
   requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
@@ -60,6 +69,9 @@ vi.mock('@/modules/invoicing', async (importOriginal) => {
     ...actual,
     issueInvoice: (...args: unknown[]) => issueInvoiceMock(...args),
     makeIssueInvoiceDeps: () => ({}),
+    guardGenericRouteIssueOrigin: (...args: unknown[]) =>
+      guardGenericRouteIssueOriginMock(...args),
+    makeGuardGenericRouteIssueOriginDeps: () => ({}),
   };
 });
 

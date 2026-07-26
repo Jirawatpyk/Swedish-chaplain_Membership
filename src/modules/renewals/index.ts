@@ -686,6 +686,77 @@ export {
   type EnterAwaitingPaymentOnExpiryError,
 } from './application/use-cases/enter-awaiting-payment-on-expiry';
 
+// --- 107-auto-invoice Task 7 — autoDraftDueRenewals (daily auto-draft cron) ---
+export {
+  autoDraftDueRenewals,
+  autoDraftDueRenewalsInputSchema,
+  type AutoDraftDueRenewalsInput,
+  type AutoDraftDueRenewalsOutput,
+  type AutoDraftDueRenewalsError,
+} from './application/use-cases/auto-draft-due-renewals';
+
+// --- 107-auto-invoice Task 9 — issueAutoDraftedRenewal (queue Issue action) ---
+export {
+  issueAutoDraftedRenewal,
+  issueAutoDraftedRenewalInputSchema,
+  type IssueAutoDraftedRenewalInput,
+  type IssueAutoDraftedRenewalOutput,
+  type IssueAutoDraftedRenewalDeps,
+  type IssueAutoDraftError,
+  type InvalidDraftReason,
+} from './application/use-cases/issue-auto-drafted-renewal';
+
+// --- 107-auto-invoice Task 14 — discardAutoDraftedRenewal (queue Discard action) ---
+export {
+  discardAutoDraftedRenewal,
+  discardAutoDraftedRenewalInputSchema,
+  type DiscardAutoDraftedRenewalInput,
+  type DiscardAutoDraftedRenewalOutput,
+  type DiscardAutoDraftedRenewalDeps,
+  type DiscardAutoDraftedRenewalError,
+} from './application/use-cases/discard-auto-drafted-renewal';
+
+// --- 107-auto-invoice Task 11 — pruneAutoDrafts (daily housekeeping cron) ---
+// Discards `origin='auto_renewal' status='draft'` invoices whose cycle
+// left the `upcoming|reminded` eligibility window (self-renewed / lapsed).
+export {
+  pruneAutoDrafts,
+  pruneAutoDraftsInputSchema,
+  type PruneAutoDraftsInput,
+  type PruneAutoDraftsOutput,
+  type PruneAutoDraftsDeps,
+  type PruneAutoDraftsError,
+} from './application/use-cases/prune-auto-drafts';
+
+// --- 107-auto-invoice Task 11 — reconcileIssuedOrphans (daily housekeeping cron) ---
+// Backstop for `issueAutoDraftedRenewal`'s link-step failure
+// (F8.AUTO_ISSUE.LINK_FAILED) — re-links an `issued` auto-drafted invoice
+// to its cycle when `linked_invoice_id` never got stamped.
+export {
+  reconcileIssuedOrphans,
+  reconcileIssuedOrphansInputSchema,
+  type ReconcileIssuedOrphansInput,
+  type ReconcileIssuedOrphansOutput,
+  type ReconcileIssuedOrphansDeps,
+  type ReconcileIssuedOrphansError,
+} from './application/use-cases/reconcile-issued-orphans';
+
+// --- 107-auto-invoice Task 13 — loadAutoRenewalQueueContext (review-queue read) ---
+// READ-ONLY per-row decision context (drift / bill-year vs coverage-year /
+// would-be-refused prediction) for the admin `/admin/invoices` auto-renewal
+// review queue. Composed via the lean `makeAutoRenewalQueueContextDeps`
+// factory below — no mutation, so no advisory lock / audit emit here.
+export {
+  loadAutoRenewalQueueContext,
+  loadAutoRenewalQueueContextInputSchema,
+  type LoadAutoRenewalQueueContextInput,
+  type LoadAutoRenewalQueueContextOutput,
+  type LoadAutoRenewalQueueContextDeps,
+  type LoadAutoRenewalQueueContextError,
+  type AutoRenewalQueueRowMeta,
+  type AutoRenewalRefusalReason,
+} from './application/use-cases/load-auto-renewal-queue-context';
+
 // --- Phase 7 use-cases (T179-T188a US5 Auto Tier-Upgrade Suggestions) -----
 export {
   evaluateTierUpgrade,
@@ -906,7 +977,21 @@ export {
   // `cyclesRepo` + `clock` (067 #4: avoids the ~20-adapter makeRenewalsDeps
   // on the directory hot path).
   makeMembersMembershipStatusDeps,
+  // 107-auto-invoice Task 13 — lean factory for the admin invoices list
+  // page's review-queue context read (`loadAutoRenewalQueueContext`).
+  makeAutoRenewalQueueContextDeps,
+  // 107-auto-invoice Task 14 — lean factories for the queue row actions
+  // (Issue / Discard routes).
+  makeIssueAutoDraftedRenewalDeps,
+  makeDiscardAutoDraftedRenewalDeps,
   f8OnPaidCallbacks,
   f8AfterCommitCallbacks,
 } from './infrastructure/renewals-deps';
 export type { RenewalsDeps } from './infrastructure/renewals-deps';
+
+// 107-auto-invoice Task 16 — aggregate behind the auto-invoice observable
+// gauges, consumed by the auto-draft coordinator cron. Exported through the
+// barrel (not deep-imported) so Presentation touches only the module's public
+// interface, matching how that same route consumes `makeRenewalsDeps`.
+export { readAutoInvoiceGaugeRow } from './infrastructure/auto-invoice-gauge-query';
+export type { AutoInvoiceGaugeRow } from './infrastructure/auto-invoice-gauge-query';

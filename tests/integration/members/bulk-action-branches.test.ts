@@ -10,6 +10,14 @@ import {
   type BulkActionMeta,
 } from '@/modules/members/application/use-cases/bulk-action';
 
+/**
+ * Argument tuple of the real repo port method, so the stub below cannot drift
+ * from it silently. See the comment at the `findManyByIdsInTx` stub.
+ */
+type FindManyArgs = Parameters<
+  BulkActionDeps['memberRepo']['findManyByIdsInTx']
+>;
+
 const meta: BulkActionMeta = {
   actorUserId: 'admin-branches',
   requestId: 'req-branches',
@@ -49,13 +57,37 @@ function stubDeps(overrides?: Partial<BulkActionDeps>): BulkActionDeps {
         .mockResolvedValue(ok({ riskScore: null, riskScoreBand: null })),
       // Staff-review SB-1 + SW-1: batched lookup is the new default path
       // for bulk-action. Returns a Map<MemberId, Member> keyed by id.
-      findManyByIdsInTx: vi.fn().mockImplementation(async (_tx, ids) => {
-        const map = new Map();
-        for (const id of ids) {
-          map.set(id, { ...stubMember, memberId: id });
-        }
-        return ok(map);
-      }),
+      //
+      // The parameters are TYPED deliberately (107-auto-invoice Task 15
+      // re-review). A bare `vi.fn().mockImplementation(async (_tx, ids) =>
+      // …)` infers `any` for every arg, so when `findManyByIdsInTx` gained a
+      // `tenantId` param between `tx` and `memberIds`, `ids` silently began
+      // receiving the tenant SLUG — and because strings are iterable, the
+      // `for…of` did not throw: it iterated CHARACTERS and built a map keyed
+      // 't','e','s','t'… The real member id was then missing, so
+      // `BulkNotFoundError` fired and two tests failed with `not_found`
+      // instead of reaching the assertions they exist to make. Typecheck
+      // could not see any of it. With explicit param types this object is
+      // checked against `MemberRepo`, so the NEXT signature change is a
+      // compile error here instead of a silently wrong fixture.
+      findManyByIdsInTx: vi.fn(
+        async (
+          _tx: FindManyArgs[0],
+          _tenantId: FindManyArgs[1],
+          ids: FindManyArgs[2],
+        ) => {
+          // Map stays INFERRED. `stubMember` is a deliberately partial
+          // fixture (no memberNumber/address/VAT fields), so typing the map
+          // to the real `Member` would force every unrelated field into this
+          // file for no benefit. The teeth are in the PARAMETER types above —
+          // that is what an arg-order change trips.
+          const map = new Map();
+          for (const id of ids) {
+            map.set(id, { ...stubMember, memberId: id });
+          }
+          return ok(map);
+        },
+      ),
       findSoftDuplicate: vi.fn(),
       findByLinkedUserId: vi.fn(),
       createWithPrimaryContactInTx: vi.fn(),
@@ -81,6 +113,16 @@ function stubDeps(overrides?: Partial<BulkActionDeps>): BulkActionDeps {
     scrubPiiInTx: vi.fn(),
     findErasedAtById: vi.fn(),
     findStuckErasuresInTx: vi.fn(),
+    // Typed off the real port (same rationale as `FindManyArgs` above) so
+    // the empty-set default cannot silently drift from the signature.
+    findErasedIdsInTx: vi.fn(
+      async (): ReturnType<BulkActionDeps['memberRepo']['findErasedIdsInTx']> => ({
+        ok: true as const,
+        value: new Set(),
+      }),
+    ),
+    enrolAutoInvoiceInTx: vi.fn(),
+    unenrolAutoInvoiceInTx: vi.fn(),
     },
     audit: {
       record: vi.fn().mockResolvedValue(ok(undefined)),

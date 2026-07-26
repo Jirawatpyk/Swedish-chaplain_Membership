@@ -10,9 +10,17 @@
  *   - membership rows keep the `/admin/members/{id}` link;
  *   - the Event chip appears ONLY on `invoiceSubject === 'event'` rows.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
+
+// 107-auto-invoice Task 14 — `<AutoRenewalQueueActions>` (rendered inside
+// the Actions cell for a draft queue row) calls `useRouter()` from
+// `next/navigation`, which throws outside an App Router context. No
+// existing test in this file exercises `canManageQueueActions`/
+// `canRecordPayment`, so this mock is additive and does not affect any
+// pre-existing assertion.
+vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
 import {
   InvoicesTable,
@@ -33,6 +41,7 @@ const messages = {
           buyer: 'Buyer',
           method: 'Method',
           receiptNumber: 'Receipt No.',
+          queue: 'Queue',
         },
         statuses: {
           draft: 'Draft',
@@ -56,6 +65,31 @@ const messages = {
         receiptNumberCombinedTooltip: 'Combined mode',
         receiptNumberCombinedAria: 'Combined mode',
         tableCaption: 'List of invoices for the selected filters.',
+        queueTableCaption: 'List of auto-renewal drafts awaiting review.',
+        queue: {
+          wouldBeRefused: 'Would be refused',
+          wouldBeRefusedAria: 'Would be refused',
+          refusalReason: {
+            planYearDrift: 'The renewal period changed after this draft was created.',
+            memberTerminated: "This member's coverage has lapsed.",
+            duplicateLiveBill: 'A bill for this member and plan year already exists.',
+          },
+          viewConflictingInvoice: 'View existing bill',
+          unresolved: 'Unable to verify',
+          unresolvedAria: 'Unable to verify this draft',
+          unresolvedTooltip: 'Could not verify.',
+          priceUnverifiable: 'Price could not be confirmed',
+          priceUnverifiableAria: 'Price could not be confirmed',
+          priceFrozenOnly: 'Frozen at {frozen}',
+          priceChanged: 'Price changed',
+          priceChangedAria: 'Price changed — frozen at {frozen}, current is {current}',
+          billYearStale: 'Fiscal year has changed since drafting',
+          billYearStaleAria: 'Fiscal year has changed; today is {currentFiscalYear}',
+          billYearStaleTooltip:
+            'Drafted for fiscal year {planYear}; today is fiscal year {currentFiscalYear}.',
+          staleness:
+            '{days, plural, =0 {Drafted today} one {Drafted # day ago} other {Drafted # days ago}}',
+        },
         actions: {
           download: 'Invoice',
           downloadReceipt: 'Receipt',
@@ -66,6 +100,40 @@ const messages = {
           receiptRenderFailed: 'Receipt render failed',
           receiptRenderFailedAria:
             'Receipt PDF render failed for invoice {number} — open to review',
+        },
+      },
+      autoRenewalQueue: {
+        actions: {
+          menuAria: "Actions for {member}'s renewal draft",
+          issueAndSend: 'Issue and email',
+          issueSilently: 'Issue silently',
+          discard: 'Discard draft',
+          cancel: 'Cancel',
+          sendDialog: {
+            title: 'Issue and email this bill?',
+            description: 'A membership bill will be issued for {member}.',
+          },
+          silentDialog: {
+            title: 'Issue this bill without emailing?',
+            description: 'A membership bill will be issued for {member}.',
+          },
+          discardDialog: {
+            title: 'Discard this draft?',
+            description: 'This draft bill for {member} will be permanently deleted.',
+          },
+          toast: {
+            issuedAndSent: 'Bill {number} issued and emailed.',
+            issuedSilently: 'Bill {number} issued.',
+            discarded: 'Draft discarded.',
+          },
+          errors: {
+            draftNotFound: 'Draft not found.',
+            invalidDraft: 'Invalid draft.',
+            discardNotDraft: 'Already issued.',
+            issueFailed: 'Could not issue.',
+            discardFailed: 'Could not discard.',
+            network: 'Network error.',
+          },
         },
       },
       detail: {
@@ -135,6 +203,22 @@ function renderTableWithLocale(rows: InvoicesTableRow[], locale: string) {
   return render(
     <NextIntlClientProvider locale={locale} messages={messages}>
       <InvoicesTable rows={rows} />
+    </NextIntlClientProvider>,
+  );
+}
+
+function renderQueueTable(
+  rows: InvoicesTableRow[],
+  showQueueMetaColumn: boolean,
+  canManageQueueActions = false,
+) {
+  return render(
+    <NextIntlClientProvider locale="en" messages={messages}>
+      <InvoicesTable
+        rows={rows}
+        showQueueMetaColumn={showQueueMetaColumn}
+        canManageQueueActions={canManageQueueActions}
+      />
     </NextIntlClientProvider>,
   );
 }
@@ -673,5 +757,138 @@ describe('<InvoicesTable> — 088 tax-at-payment disambiguation (A-refined)', ()
     expect(billDownload).toHaveAttribute('aria-label', 'Download invoice SC-2026-000045');
     const receiptDownload = screen.getByTestId('row-download-receipt');
     expect(receiptDownload).toHaveAttribute('aria-label', 'Download receipt RC-2026-000123');
+  });
+});
+
+/**
+ * 107-auto-invoice Task 13 — auto-renewal review-queue column.
+ *
+ * `showQueueMetaColumn` gates a whole extra column so the STANDARD list
+ * view (the default, `showQueueMetaColumn` unset) is byte-identical to
+ * before this task — no header, no cell, regardless of whether a row
+ * happens to carry `queueMeta`. When the column IS shown, a `null`
+ * `queueMeta` (any row outside the queue's own origin filter) renders a
+ * plain em-dash rather than crashing or silently omitting the cell.
+ */
+describe('<InvoicesTable> — auto-renewal review-queue column (107-auto-invoice Task 13)', () => {
+  it('showQueueMetaColumn unset (default) → NO "Queue" column header, even if a row carries queueMeta', () => {
+    renderTable([
+      baseRow({
+        queueMeta: {
+          unresolved: false,
+          stalenessDays: 2,
+          frozenPriceDisplay: '50,000.00 THB',
+          currentCataloguePriceDisplay: '60,000.00 THB',
+          priceChanged: true,
+          priceUnverifiable: false,
+          planYear: 2025,
+          currentFiscalYear: 2026,
+          billYearStale: false,
+          refusalReason: null,
+        },
+      }),
+    ]);
+    expect(screen.queryByTestId('column-header-queue')).toBeNull();
+    expect(screen.queryByTestId('queue-price-changed')).toBeNull();
+    // A8 — the default view keeps the generic table caption, not the queue
+    // one. shadcn's `<Table>` puts the `aria-label` on the OUTER
+    // `role="region"` scroll wrapper, not the `<table>` element itself.
+    expect(
+      screen.getByRole('region', { name: 'List of invoices for the selected filters.' }),
+    ).toBeInTheDocument();
+  });
+
+  it('showQueueMetaColumn=true + queueMeta=null → renders the column with a plain em-dash, and swaps the table caption (review A8)', () => {
+    renderQueueTable([baseRow({ queueMeta: null })], true);
+    expect(screen.getByTestId('column-header-queue')).toHaveTextContent('Queue');
+    const cell = screen.getByTestId('queue-meta-cell');
+    expect(cell).toHaveTextContent('—');
+    expect(
+      screen.getByRole('region', {
+        name: 'List of auto-renewal drafts awaiting review.',
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it('showQueueMetaColumn=true + queueMeta present → renders the badges inside the table (would-be-refused distinct state)', () => {
+    renderQueueTable(
+      [
+        baseRow({
+          invoiceId: 'inv-queue-1',
+          documentNumber: '—',
+          status: 'draft',
+          queueMeta: {
+            unresolved: false,
+            stalenessDays: 7,
+            frozenPriceDisplay: '50,000.00 THB',
+            currentCataloguePriceDisplay: '50,000.00 THB',
+            priceChanged: false,
+            priceUnverifiable: false,
+            planYear: 2025,
+            currentFiscalYear: 2025,
+            billYearStale: false,
+            refusalReason: {
+              kind: 'duplicate_live_bill',
+              conflictingInvoiceId: 'inv-conflict-9',
+            },
+          },
+        }),
+      ],
+      true,
+    );
+    const badge = screen.getByTestId('queue-would-be-refused');
+    expect(badge).toBeInTheDocument();
+    expect(badge).toHaveTextContent('Would be refused');
+    expect(
+      screen.getByRole('link', { name: 'View existing bill' }),
+    ).toHaveAttribute('href', '/admin/invoices/inv-conflict-9');
+    expect(screen.getByTestId('queue-staleness')).toHaveTextContent(
+      'Drafted 7 days ago',
+    );
+  });
+});
+
+describe('<InvoicesTable> — queue row actions (107-auto-invoice Task 14)', () => {
+  const draftRow = baseRow({
+    invoiceId: 'inv-queue-draft-1',
+    documentNumber: '—',
+    status: 'draft',
+    hasPdf: false,
+    queueMeta: {
+      unresolved: false,
+      stalenessDays: 1,
+      frozenPriceDisplay: '50,000.00 THB',
+      currentCataloguePriceDisplay: '50,000.00 THB',
+      priceChanged: false,
+      priceUnverifiable: false,
+      planYear: 2026,
+      currentFiscalYear: 2026,
+      billYearStale: false,
+      refusalReason: null,
+    },
+  });
+
+  it('canManageQueueActions=true + showQueueMetaColumn=true + status=draft → renders the row actions trigger (not the em-dash)', () => {
+    renderQueueTable([draftRow], true, true);
+    expect(screen.getByTestId('queue-row-actions-trigger')).toBeInTheDocument();
+  });
+
+  it('canManageQueueActions=false (manager) → NO trigger', () => {
+    renderQueueTable([draftRow], true, false);
+    expect(screen.queryByTestId('queue-row-actions-trigger')).toBeNull();
+  });
+
+  it('outside the queue view (showQueueMetaColumn=false) → never renders the trigger, even for a draft row + admin', () => {
+    renderQueueTable([draftRow], false, true);
+    expect(screen.queryByTestId('queue-row-actions-trigger')).toBeNull();
+  });
+
+  it('an already-issued auto-renewal row in the queue view (status cleared filter) → NO row-action trigger (draft-only surface)', () => {
+    renderQueueTable(
+      [{ ...draftRow, status: 'issued', documentNumber: 'SC2026-00001', hasPdf: true }],
+      true,
+      true,
+    );
+    expect(screen.queryByTestId('queue-row-actions-trigger')).toBeNull();
   });
 });

@@ -89,6 +89,132 @@ export function __test__clearGaugeValues(): void {
   gaugeValues.clear();
 }
 
+/**
+ * 107-auto-invoice Task 16 — shared implementation for the "one value per
+ * tenant" observable-gauge shape.
+ *
+ * Extracted from the body that `observeCycleStateGauge` and
+ * `observeMembershipSuspendedCountGauge` each hand-roll: bare-tenant-string
+ * inner-Map key (so `__test__readGaugeValues(name).get(tenantId)` works),
+ * lazy one-time instrument registration, and a callback that re-reads
+ * `gaugeValues` at scrape time rather than closing over a snapshot.
+ *
+ * Deliberately NOT the generic `observeGauge` helper, whose inner-Map key
+ * is a JSON-serialised label object — that key shape would break the
+ * established per-tenant inspection contract the F8 gauge tests rely on.
+ *
+ * The two pre-existing gauges are left hand-rolled: rewriting shipped,
+ * reviewed instruments to route through this helper is a behaviour-neutral
+ * refactor with real regression risk (the OTel callback path is not
+ * unit-testable — see `observeCycleStateGauge`'s docstring) and no caller
+ * benefit. New gauges use the helper; old ones stay as they are.
+ *
+ * **This variant PROPAGATES failures** — note the name. Use
+ * {@link observeTenantGauge} instead unless you specifically need to know
+ * whether the emit landed. The only current caller that does is
+ * `observeAutoInvoiceGauges`, which needs a failure signal to roll its
+ * three-gauge set back to absent rather than leave one frozen (Task 17 /
+ * Task 16 review MINOR-2).
+ *
+ * Only the instrument-registration branch can actually throw: the two Map
+ * writes cannot, and registration happens once per gauge name per process.
+ * A caller relying on the failure signal is therefore guarding a
+ * first-observe OTel-SDK failure, not a steady-state one.
+ */
+function observeTenantGaugeOrThrow(
+  gaugeName: string,
+  description: string,
+  tenantId: string,
+  value: number,
+): void {
+  const bucket = gaugeValues.get(gaugeName) ?? new Map<string, number>();
+  bucket.set(tenantId, value);
+  gaugeValues.set(gaugeName, bucket);
+
+  if (!observableGauges.has(gaugeName)) {
+    const gauge = meter().createObservableGauge(gaugeName, { description });
+    observableGauges.set(gaugeName, gauge);
+    gauge.addCallback((result) => {
+      const b = gaugeValues.get(gaugeName);
+      if (!b) return;
+      for (const [tenantLabel, v] of b.entries()) {
+        result.observe(v, { tenant: tenantLabel });
+      }
+    });
+  }
+}
+
+/**
+ * The never-throw wrapper around {@link observeTenantGaugeOrThrow} — the
+ * default entry point, and what every gauge method on the public API uses.
+ *
+ * Wrapped in `safeMetric` here so every caller inherits the never-throw
+ * contract — these run inside cron paths where a metrics failure must
+ * never fail or delay the pass.
+ */
+function observeTenantGauge(
+  gaugeName: string,
+  description: string,
+  tenantId: string,
+  value: number,
+): void {
+  safeMetric(() =>
+    observeTenantGaugeOrThrow(gaugeName, description, tenantId, value),
+  );
+}
+
+/**
+ * 107-auto-invoice Task 16 — the three auto-invoice gauges (name +
+ * description) as ONE table, so the observe, atomic-observe and forget paths
+ * cannot drift apart.
+ *
+ * Task 17 review MINOR-2 widened this from a bare name list to carry the
+ * descriptions too: `observeAutoInvoiceGauges` below needs the same
+ * name/description pairs the three individual methods use, and a second
+ * copy of those strings is exactly the kind of duplication that goes stale
+ * silently (a description edit in one place only, invisible until someone
+ * reads two dashboards side by side).
+ */
+const AUTO_INVOICE_GAUGE_SPECS = {
+  queueSize: {
+    name: 'renewals_auto_draft_queue_size',
+    description:
+      "Auto-renewal invoice drafts awaiting treasurer review (origin='auto_renewal', status='draft'), per tenant (107-auto-invoice)",
+  },
+  oldestAgeSeconds: {
+    name: 'renewals_auto_draft_oldest_age_seconds',
+    description:
+      'Age in seconds of the oldest auto-renewal draft awaiting treasurer review, per tenant (107-auto-invoice)',
+  },
+  awaitingPaymentNoInvoice: {
+    name: 'renewals_awaiting_payment_no_invoice',
+    description:
+      'Renewal cycles awaiting payment with no live membership invoice — wedged, never billed nor chased (107-auto-invoice)',
+  },
+} as const;
+
+const AUTO_INVOICE_GAUGE_NAMES = [
+  AUTO_INVOICE_GAUGE_SPECS.queueSize.name,
+  AUTO_INVOICE_GAUGE_SPECS.oldestAgeSeconds.name,
+  AUTO_INVOICE_GAUGE_SPECS.awaitingPaymentNoInvoice.name,
+] as const;
+
+/**
+ * 107-auto-invoice Task 16 — closed enum for the
+ * `renewals_auto_draft_skipped_total{reason}` label.
+ *
+ * Bounded on purpose: `reason` is a metric label, so an unbounded string
+ * would be a cardinality hazard. Populated exclusively through
+ * `AUTO_DRAFT_SKIP_REASON_LABEL` in
+ * `src/modules/renewals/application/use-cases/auto-draft-due-renewals.ts`,
+ * which maps the use-case's internal outcome names onto these labels — read
+ * that constant's comment before adding or renaming a value here.
+ */
+export type AutoDraftSkipReason =
+  | 'existing_invoice'
+  | 'race_lost'
+  | 'membership_not_full';
+
 function counter(name: string, description: string, unit?: string): Counter {
   let instr = counters.get(name);
   if (!instr) {
@@ -2510,7 +2636,10 @@ export const renewalsMetrics = {
       | 'reconcile'
       | 'tier_upgrade_evaluate'
       | 'tier_upgrade_reconcile'
-      | 'prune_consumed_tokens',
+      | 'prune_consumed_tokens'
+      | 'auto_draft'
+      | 'prune_auto_drafts'
+      | 'reconcile_issued_orphans',
   ): void {
     safeMetric(() => {
       counter(
@@ -2579,6 +2708,71 @@ export const renewalsMetrics = {
       counter(
         'renewals_prune_consumed_tokens_rows_deleted_total',
         'F8 prune-consumed-tokens cron — rows actually deleted from consumed_link_tokens',
+      ).add(rowCount, { tenant_id: tenantId });
+    });
+  },
+
+  /**
+   * `renewals_prune_auto_drafts_runs_total{tenant_id, outcome}` — 107-
+   * auto-invoice Task 11. Run-count counter, one per cron pass, `outcome
+   * ∈ {success, failure}`. Pairs with `pruneAutoDraftsPruned` (row-count
+   * counter). Same split rationale as the `prune_consumed_tokens` pair —
+   * "did the cron run" vs "how many rows did it find to prune" are
+   * independent PromQL signals.
+   */
+  pruneAutoDraftsRunCompleted(tenantId: string, outcome: 'success' | 'failure'): void {
+    safeMetric(() => {
+      counter(
+        'renewals_prune_auto_drafts_runs_total',
+        'F8 prune-auto-drafts cron pass result (1 per invocation)',
+      ).add(1, { tenant_id: tenantId, outcome });
+    });
+  },
+
+  /**
+   * `renewals_prune_auto_drafts_pruned_total{tenant_id}` — 107-auto-
+   * invoice Task 11. Row-count counter: auto-drafted invoices actually
+   * discarded (a `not_draft`/`not_found` skip does NOT increment this).
+   * Success-only emission, same convention as `pruneConsumedTokensRowsPruned`.
+   */
+  pruneAutoDraftsPruned(tenantId: string, rowCount: number): void {
+    safeMetric(() => {
+      counter(
+        'renewals_prune_auto_drafts_pruned_total',
+        'F8 prune-auto-drafts cron — stale auto-renewal drafts actually discarded',
+      ).add(rowCount, { tenant_id: tenantId });
+    });
+  },
+
+  /**
+   * `renewals_reconcile_issued_orphans_runs_total{tenant_id, outcome}` —
+   * 107-auto-invoice Task 11. Run-count counter, one per cron pass.
+   */
+  reconcileIssuedOrphansRunCompleted(
+    tenantId: string,
+    outcome: 'success' | 'failure',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'renewals_reconcile_issued_orphans_runs_total',
+        'F8 reconcile-issued-orphans cron pass result (1 per invocation)',
+      ).add(1, { tenant_id: tenantId, outcome });
+    });
+  },
+
+  /**
+   * `renewals_reconcile_issued_orphans_relinked_total{tenant_id}` — 107-
+   * auto-invoice Task 11. Row-count counter: issued invoices whose
+   * `linked_invoice_id` was actually repaired
+   * (`F8.AUTO_ISSUE.LINK_FAILED` backstop). ANY non-zero rate is a signal
+   * worth watching — it means `issueAutoDraftedRenewal`'s own retry is
+   * failing in production, not just a hypothetical.
+   */
+  reconcileIssuedOrphansRelinked(tenantId: string, rowCount: number): void {
+    safeMetric(() => {
+      counter(
+        'renewals_reconcile_issued_orphans_relinked_total',
+        'F8 reconcile-issued-orphans cron — issued auto-renewal invoices whose cycle link was repaired',
       ).add(rowCount, { tenant_id: tenantId });
     });
   },
@@ -3346,6 +3540,301 @@ export const renewalsMetrics = {
   },
 
   /**
+   * 107-auto-invoice Task 16 — `renewals_auto_draft_created_total{tenant}`.
+   *
+   * One increment per renewal cycle for which the daily auto-draft cron
+   * successfully pre-filled an `origin='auto_renewal'` DRAFT invoice.
+   * Emitted from `autoDraftDueRenewals`'s outcome switch (the same
+   * exhaustive switch that maintains the `drafted + skippedExisting +
+   * skippedRaceLost + skippedTerminated + errors === cyclesProcessed`
+   * invariant), so counter totals reconcile 1:1 with the use-case's
+   * returned aggregate and with the `cron_dispatch_orchestrated` audit row.
+   *
+   * A DRAFT is not a bill: nothing is numbered, rendered or emailed until a
+   * treasurer clicks Issue. So a rising value here is throughput, NOT
+   * spend — pair it with `renewals_auto_draft_queue_size` (below) to see
+   * whether the humans are keeping up with the robot.
+   *
+   * Cardinality: one small-cardinality label (`tenant`).
+   */
+  autoDraftCreated(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'renewals_auto_draft_created_total',
+        'Renewal invoice DRAFTS pre-filled by the daily auto-draft cron (107-auto-invoice)',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * 107-auto-invoice Task 16 — `renewals_auto_draft_skipped_total{tenant,
+   * reason}`.
+   *
+   * One increment per cycle the auto-draft cron examined and deliberately
+   * did NOT draft. `reason` is a closed enum (`AutoDraftSkipReason`) whose
+   * three values map 1:1 onto the use-case's three named skip buckets via
+   * `AUTO_DRAFT_SKIP_REASON_LABEL` — see that constant in
+   * `auto-draft-due-renewals.ts` for why `skipped_terminated` deliberately
+   * does NOT surface as a label called `terminated`.
+   *
+   * Every skip is a normal, expected outcome — this counter is a
+   * composition signal, not an error signal (errors live in
+   * `autoDraftErrors`). What is worth alerting on is a SHIFT in the mix:
+   * e.g. `race_lost` climbing from ~0 suggests the cron is colliding with
+   * member self-service renewals more than it should.
+   *
+   * Cardinality: small tenant count x 3 bounded reasons.
+   */
+  autoDraftSkipped(tenantId: string, reason: AutoDraftSkipReason): void {
+    safeMetric(() => {
+      counter(
+        'renewals_auto_draft_skipped_total',
+        'Cycles the auto-draft cron examined but did not draft, by reason (107-auto-invoice)',
+      ).add(1, { tenant: tenantId, reason });
+    });
+  },
+
+  /**
+   * 107-auto-invoice Task 16 — `renewals_auto_draft_errors_total{tenant}`.
+   *
+   * One increment per cycle whose draft attempt failed — BOTH the typed
+   * F4 `draft_failed` Result and a genuinely thrown exception caught by
+   * the use-case's per-cycle fault isolation. The two are deliberately
+   * folded into one counter because they share an SRE response: the cron
+   * kept going, but somebody's renewal did not get drafted today.
+   *
+   * Unlike the skip counter, sustained non-zero here IS an alert signal.
+   * Correlate with the `F8.AUTO_DRAFT.CYCLE_FAILED` structured log
+   * (carries `cycleId` + the pino-serialised error) for the specific rows.
+   *
+   * Cardinality: one small-cardinality label (`tenant`).
+   */
+  autoDraftErrors(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'renewals_auto_draft_errors_total',
+        'Auto-draft cron per-cycle failures (typed F4 draft_failed + thrown) (107-auto-invoice)',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * 107-auto-invoice Task 16 — `renewals_auto_draft_queue_size{tenant}`
+   * observable gauge.
+   *
+   * Per-tenant count of `origin='auto_renewal' AND status='draft'`
+   * invoices — i.e. the exact population a treasurer sees in the
+   * auto-renewal review queue (the same predicate
+   * `load-auto-renewal-queue-context.ts` uses). This is the human-backlog
+   * signal for the whole feature: the cron drafts, a human must Issue or
+   * Discard, and nothing bills until they do. A monotonically rising
+   * queue means renewals are silently NOT going out.
+   *
+   * Fed once daily from the auto-draft coordinator cron
+   * (`src/app/api/cron/renewals/auto-draft-coordinator/route.ts`), the
+   * same cadence + best-effort pattern `observeCycleStateGauge` uses in
+   * the dispatch coordinator.
+   *
+   * Mirrors `observeMembershipSuspendedCountGauge`'s hand-rolled lazy
+   * registration + bare-tenant-key accumulator (NOT the generic
+   * `observeGauge` helper, whose inner-Map key is a JSON-serialised label
+   * object) so `__test__readGaugeValues` inspection works identically
+   * across all the F8 per-tenant gauges.
+   *
+   * Cardinality: one label dimension (`tenant`).
+   */
+  observeAutoDraftQueueSizeGauge(tenantId: string, count: number): void {
+    observeTenantGauge(
+      AUTO_INVOICE_GAUGE_SPECS.queueSize.name,
+      AUTO_INVOICE_GAUGE_SPECS.queueSize.description,
+      tenantId,
+      count,
+    );
+  },
+
+  /**
+   * 107-auto-invoice Task 16 — `renewals_auto_draft_oldest_age_seconds
+   * {tenant}` observable gauge.
+   *
+   * Age, in seconds, of the OLDEST invoice in the review queue above
+   * (`now() - min(created_at)` over the same predicate). Zero when the
+   * queue is empty.
+   *
+   * The companion to queue size, and the more actionable of the two: a
+   * queue of 40 that fully turns over daily is healthy, a queue of 3 whose
+   * oldest member is 45 days old means three renewals have been quietly
+   * abandoned. Alert on this rather than on depth.
+   *
+   * Unit is SECONDS (named in the instrument, per OTel convention) —
+   * emitted as a gauge rather than a histogram because it describes a
+   * current standing state, not a distribution of completed operations.
+   *
+   * Cardinality: one label dimension (`tenant`).
+   */
+  observeAutoDraftOldestAgeGauge(tenantId: string, seconds: number): void {
+    observeTenantGauge(
+      AUTO_INVOICE_GAUGE_SPECS.oldestAgeSeconds.name,
+      AUTO_INVOICE_GAUGE_SPECS.oldestAgeSeconds.description,
+      tenantId,
+      seconds,
+    );
+  },
+
+  /**
+   * 107-auto-invoice Task 16 — `renewals_awaiting_payment_no_invoice
+   * {tenant}` observable gauge. **Wedged-state detector.**
+   *
+   * Per-tenant count of `renewal_cycles` sitting in `awaiting_payment`
+   * while the member has NO live membership invoice at all (no `draft`,
+   * no `issued`). That combination should be impossible in steady state:
+   * `awaiting_payment` means "we are waiting for this member to pay", but
+   * with no live invoice there is nothing for them to pay and nothing for
+   * a reminder to chase. Such a member is wedged — never billed, never
+   * chased, and invisible on every other panel (they are counted as
+   * `suspended` by `membership_suspended_count`, which looks like the
+   * ordinary unpaid-invoice state and so raises no suspicion).
+   *
+   * This gauge exists because Task 9 documented a real non-recovery
+   * window: a mutual abort near the T-0 boundary can leave the cycle
+   * transitioned but the invoice absent. Task 11's `reconcileIssuedOrphans`
+   * repairs the INVERSE defect (an issued invoice whose cycle link is
+   * missing) and cannot see this one. Steady-state expectation is
+   * therefore 0, and any sustained non-zero warrants a look — this is the
+   * one instrument in the Task 16 set that is a genuine alert candidate
+   * at threshold > 0.
+   *
+   * Note the population deliberately does NOT overlap Task 11's orphans:
+   * an orphan HAS a live `issued` invoice, so the `NOT EXISTS` clause
+   * excludes it. The two signals stay independent.
+   *
+   * Cardinality: one label dimension (`tenant`).
+   */
+  observeAwaitingPaymentNoInvoiceGauge(tenantId: string, count: number): void {
+    observeTenantGauge(
+      AUTO_INVOICE_GAUGE_SPECS.awaitingPaymentNoInvoice.name,
+      AUTO_INVOICE_GAUGE_SPECS.awaitingPaymentNoInvoice.description,
+      tenantId,
+      count,
+    );
+  },
+
+  /**
+   * 107-auto-invoice Task 17 (Task 16 review MINOR-2) — observe all three
+   * auto-invoice gauges for a tenant ALL-OR-NOTHING. Returns `true` when
+   * every gauge landed, `false` when the set was rolled back.
+   *
+   * **The hole this closes.** The three individual observe methods above
+   * each swallow internally via `safeMetric`. The coordinator cron therefore
+   * could not tell an observe failure from a success: its `catch` only fires
+   * for the QUERY (or the timeout), never for the emit. So if the query
+   * succeeded but one `createObservableGauge` threw, the route's catch never
+   * ran, `forgetAutoInvoiceGauges` was never called, and that one gauge kept
+   * re-reporting its previous value at every scrape while the other two went
+   * fresh. A partially-stale triple is worse than a wholly-absent one,
+   * because nothing about it looks wrong.
+   *
+   * The gauge it would strand is the one that matters:
+   * `renewals_awaiting_payment_no_invoice` is the wedge detector, and its
+   * whole design rests on "0 means 0" (see `forgetAutoInvoiceGauges`). A
+   * frozen `0` there hides exactly the members it exists to surface.
+   *
+   * All-or-nothing rather than detect-and-repair on purpose: a partial write
+   * is unobservable from outside (the accumulator write happens BEFORE the
+   * instrument registration inside `observeTenantGaugeOrThrow`, so a
+   * registration failure leaves the value set but unscrapeable). Clearing
+   * the whole tenant triple on any failure converts every partial outcome
+   * into the one state monitoring can express — absent.
+   *
+   * Never throws, matching the contract of everything else in this file:
+   * the caller is a cron path where a metrics failure must not fail the
+   * pass. The `forget` is best-effort too (it is itself `safeMetric`-wrapped).
+   *
+   * Requires an OTel SDK failure to fire at all, so this is a remote path —
+   * but it was the last one left that could freeze a wedge gauge.
+   */
+  observeAutoInvoiceGauges(
+    tenantId: string,
+    values: {
+      readonly queueSize: number;
+      readonly oldestAgeSeconds: number;
+      readonly awaitingPaymentNoInvoice: number;
+    },
+  ): boolean {
+    try {
+      observeTenantGaugeOrThrow(
+        AUTO_INVOICE_GAUGE_SPECS.queueSize.name,
+        AUTO_INVOICE_GAUGE_SPECS.queueSize.description,
+        tenantId,
+        values.queueSize,
+      );
+      observeTenantGaugeOrThrow(
+        AUTO_INVOICE_GAUGE_SPECS.oldestAgeSeconds.name,
+        AUTO_INVOICE_GAUGE_SPECS.oldestAgeSeconds.description,
+        tenantId,
+        values.oldestAgeSeconds,
+      );
+      observeTenantGaugeOrThrow(
+        AUTO_INVOICE_GAUGE_SPECS.awaitingPaymentNoInvoice.name,
+        AUTO_INVOICE_GAUGE_SPECS.awaitingPaymentNoInvoice.description,
+        tenantId,
+        values.awaitingPaymentNoInvoice,
+      );
+      return true;
+    } catch {
+      // Roll the whole tenant triple back to ABSENT — see the docstring.
+      // Inlined rather than delegating to `forgetAutoInvoiceGauges` below:
+      // referencing `renewalsMetrics` from inside its own object literal
+      // makes TS fall back to an implicit `any` for the whole const
+      // (circular inference). Same three-name loop, same `safeMetric`
+      // never-throw guarantee, driven by the same `AUTO_INVOICE_GAUGE_NAMES`
+      // constant, so the two cannot drift.
+      safeMetric(() => {
+        for (const gaugeName of AUTO_INVOICE_GAUGE_NAMES) {
+          gaugeValues.get(gaugeName)?.delete(tenantId);
+        }
+      });
+      return false;
+    }
+  },
+
+  /**
+   * 107-auto-invoice Task 16 review (MAJOR-4) — drop this tenant's last
+   * observed values for all three auto-invoice gauges.
+   *
+   * **Why this exists.** `gaugeValues` is a last-observed-wins accumulator
+   * that nothing ever deletes from, and the observable-gauge callbacks
+   * re-read it at every scrape. So if the feed query starts failing, the
+   * catch swallows the error and the gauges keep re-reporting the LAST
+   * SUCCESSFUL value — forever, at every scrape interval, with no
+   * indication it is frozen. For a backlog gauge that is merely annoying;
+   * for `renewals_awaiting_payment_no_invoice` it is corrosive, because
+   * AI-A1's whole design rests on "0 means 0":
+   *   - a stale `> 0` alerts forever on a wedge that was already repaired;
+   *   - a stale `0` silently masks a real wedge — the exact failure the
+   *     gauge was built to prevent.
+   *
+   * Calling this on the failure path converts a frozen series into an
+   * ABSENT series, which is a condition monitoring can actually express
+   * ("alert on no data"). Absence is honest; a stale number is not.
+   *
+   * Scoped to one tenant: a failure observing tenant A must not blank
+   * tenant B's perfectly good values.
+   *
+   * Note the two PRE-EXISTING gauges (`observeCycleStateGauge`,
+   * `observeMembershipSuspendedCountGauge`) share this staleness
+   * behaviour and are NOT fixed here — deliberately out of scope, and
+   * nothing pages on them today. AI-A1 is the first alert that would page
+   * on a gauge of this shape, which is why the fix lands with it.
+   */
+  forgetAutoInvoiceGauges(tenantId: string): void {
+    safeMetric(() => {
+      for (const gaugeName of AUTO_INVOICE_GAUGE_NAMES) {
+        gaugeValues.get(gaugeName)?.delete(tenantId);
+      }
+    });
+  },
+
+  /**
    * Phase 9 verify-fix close-on-review — F8 cascade outcome counter.
    *
    * Mirrors `broadcastsMetrics.cascadeOutcome` so the F3 ↔ F8 cascade
@@ -3421,7 +3910,16 @@ export const renewalsMetrics = {
    * from outside.
    */
   coordinatorSkippedReadOnly(
-    cron_kind: 'dispatch' | 'at_risk_recompute' | 'lapse' | 'enter_awaiting' | 'reconcile' | 'prune_consumed_tokens',
+    cron_kind:
+      | 'dispatch'
+      | 'at_risk_recompute'
+      | 'lapse'
+      | 'enter_awaiting'
+      | 'reconcile'
+      | 'prune_consumed_tokens'
+      | 'auto_draft'
+      | 'prune_auto_drafts'
+      | 'reconcile_issued_orphans',
   ): void {
     safeMetric(() => {
       counter(

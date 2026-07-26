@@ -58,6 +58,24 @@ export interface ConfirmationDialogProps {
    * flows.
    */
   readonly closeOnConfirm?: boolean;
+  /**
+   * 107-auto-invoice Task 14 review — focus-return target on close.
+   * OPTIONAL escape hatch for callers whose trigger button is NOT
+   * guaranteed to survive a successful action (e.g. a per-row "⋯" menu
+   * whose row leaves the list on `router.refresh()` — Discard is a hard
+   * DELETE; Issue flips the row out of a `status='draft'` filtered view).
+   * Without this, Base UI's default focus-return targets the ORIGINAL
+   * trigger element; if that element has since unmounted, focus silently
+   * drops to `<body>` — a keyboard/SR user must re-Tab from the top of the
+   * page after every single action, which is unacceptable in a row-by-row
+   * batch workflow. Build via `useDialogFinalFocus`
+   * (`@/components/broadcast/reason-confirmation-dialog` — reused
+   * verbatim, not reimplemented; the hook + its resolver are dialog-
+   * agnostic despite living in the broadcast feature folder). Omit for the
+   * common case where the trigger reliably survives every close path
+   * (Base UI's own default — return the trigger — applies).
+   */
+  readonly finalFocus?: () => HTMLElement | null;
 }
 
 export function ConfirmationDialog({
@@ -72,6 +90,7 @@ export function ConfirmationDialog({
   children,
   confirmDisabled = false,
   closeOnConfirm = true,
+  finalFocus,
 }: ConfirmationDialogProps) {
   const cancelRef = useRef<HTMLButtonElement>(null);
   // UX-2 fix (double-fire guard): without this, a fast double-click on
@@ -107,8 +126,11 @@ export function ConfirmationDialog({
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       {/* Explicit initialFocus on Cancel (ux-standards § 6 "safest default") —
-          don't rely on DOM order, which a CSS reorder could silently break. */}
-      <AlertDialogContent initialFocus={cancelRef}>
+          don't rely on DOM order, which a CSS reorder could silently break.
+          `finalFocus` is optional — omitted, Base UI returns focus to the
+          trigger (its own default), which is correct whenever the trigger
+          survives the close. */}
+      <AlertDialogContent initialFocus={cancelRef} finalFocus={finalFocus}>
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription>{description}</AlertDialogDescription>

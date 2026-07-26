@@ -86,6 +86,11 @@ export function extractAlterTypeAddValueStatements(sql: string): string[] {
  *                           'broadcast_membership_suspended_blocked' (0246)
  *                        += 'renewal_lapse_deferred_invoice_not_due' (0247)
  *                        += 'event_attendance_by_suspended_member' (0248)
+ *                        += 'renewal_auto_drafted',
+ *                           'renewal_auto_draft_discarded' (0275)
+ *                        += 'renewal_orphan_invoice_relinked' (0277)
+ *                        += 'member_auto_invoice_enrolled' (0278)
+ *                        += 'member_auto_invoice_unenrolled' (0280)
  *                        += 'refund_credit_note_waived' (0268, task-7)
  *                        += 'payment_settlement_rolled_back' (0269, task-4 — renumbered
  *                           from 0267 at stack assembly so it follows task-7's 0268)
@@ -104,6 +109,11 @@ export const REQUIRED_ENUM_VALUES: Readonly<Record<string, readonly string[]>> =
     'renewal_lapse_deferred_invoice_not_due',
     'event_attendance_by_suspended_member',
     'payment_on_terminated_member',
+    'renewal_auto_drafted',
+    'renewal_auto_draft_discarded',
+    'renewal_orphan_invoice_relinked',
+    'member_auto_invoice_enrolled',
+    'member_auto_invoice_unenrolled',
     'refund_credit_note_waived',
     'payment_settlement_rolled_back',
     'member_plan_change_billing_effect',

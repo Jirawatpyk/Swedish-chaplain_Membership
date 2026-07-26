@@ -99,42 +99,11 @@ describe('confirm-renewal persists the member plan choice (Package B1)', () => {
         closedAt: new Date('2025-01-01T00:00:00.000Z'),
         closedReason: 'cancelled',
       });
-      // Pre-seeded issued invoice — the mocked bridge returns THIS id, and the
-      // paid rail resolves the prior cycle by it.
-      await tx.insert(invoices).values({
-        tenantId: tenant.ctx.slug,
-        invoiceId,
-        memberId,
-        planYear: 2026,
-        planId: 'premium',
-        status: 'issued',
-        pdfDocKind: 'invoice',
-        draftByUserId: admin.userId,
-        fiscalYear: 2026,
-        sequenceNumber: Math.floor(Math.random() * 1_000_000) + 1,
-        documentNumber: `INV-2026-${String(Math.floor(Math.random() * 900000) + 100000)}`,
-        issueDate: '2026-05-15',
-        dueDate: '2026-06-14',
-        currency: 'THB',
-        subtotalSatang: asSatang(9_000_000n),
-        vatRateSnapshot: '0.0700',
-        vatSatang: asSatang(630_000n),
-        totalSatang: asSatang(9_630_000n),
-        proRatePolicySnapshot: 'none',
-        netDaysSnapshot: 30,
-        tenantIdentitySnapshot: { legalNameEn: 'Test', taxId: '0' } as unknown,
-        memberIdentitySnapshot: {
-          companyName: 'Portal Pick Co',
-          country: 'TH',
-          legal_name: 'Portal Pick Co Ltd',
-          address: '1 Test Road, Bangkok 10110',
-          primary_contact_name: 'Portal Pick',
-          primary_contact_email: 'pp@example.com',
-        } as unknown,
-        pdfBlobKey: `invoicing/${tenant.ctx.slug}/2026/${invoiceId}.pdf`,
-        pdfSha256: 'a'.repeat(64),
-        pdfTemplateVersion: 1,
-      });
+      // No membership invoice is pre-seeded: the mocked bridge mints it DURING
+      // `issueInvoiceForRenewal` (which runs AFTER ours' duplicate-bill guard),
+      // and the paid rail below then resolves the cycle by that same id. A
+      // pre-seeded live 2026 bill would (correctly) make the guard refuse with
+      // `invoice_already_exists` before the plan change is ever applied.
       await tx.insert(renewalCycles).values({
         tenantId: tenant.ctx.slug,
         cycleId,
@@ -160,12 +129,63 @@ describe('confirm-renewal persists the member plan choice (Package B1)', () => {
     return {
       ...deps,
       f4InvoicingBridge: {
-        issueInvoiceForRenewal: async () => ({
-          status: 'issued' as const,
-          invoiceId,
-          invoiceNumber: 'INV-2026-CONFIRM',
-          totalSatang: asSatang(9_630_000n),
-        }),
+        draftInvoiceForRenewal: async () => {
+          throw new Error('draftInvoiceForRenewal not used by this test double');
+        },
+        issueExistingDraftForRenewal: async () => {
+          throw new Error('issueExistingDraftForRenewal not used by this test double');
+        },
+        discardAutoDraftForRenewal: async () => {
+          throw new Error('discardAutoDraftForRenewal not used by this test double');
+        },
+        // Faithful to the real F4 bridge: the §86/4 row is CREATED here, DURING
+        // issue — not pre-seeded — so ours' duplicate-bill guard (which runs
+        // before issue) sees no live 2026 bill, while the link step and the
+        // paid-rail resolution below still find the invoice by this id.
+        issueInvoiceForRenewal: async (input) => {
+          await runInTenant(tenant.ctx, async (tx) => {
+            await tx.insert(invoices).values({
+              tenantId: input.tenantId,
+              invoiceId,
+              memberId: input.memberId,
+              planYear: input.planYear,
+              planId: 'premium',
+              status: 'issued',
+              pdfDocKind: 'invoice',
+              draftByUserId: admin.userId,
+              fiscalYear: 2026,
+              sequenceNumber: Math.floor(Math.random() * 1_000_000) + 1,
+              documentNumber: `INV-2026-${String(Math.floor(Math.random() * 900000) + 100000)}`,
+              issueDate: '2026-05-15',
+              dueDate: '2026-06-14',
+              currency: 'THB',
+              subtotalSatang: asSatang(9_000_000n),
+              vatRateSnapshot: '0.0700',
+              vatSatang: asSatang(630_000n),
+              totalSatang: asSatang(9_630_000n),
+              proRatePolicySnapshot: 'none',
+              netDaysSnapshot: 30,
+              tenantIdentitySnapshot: { legalNameEn: 'Test', taxId: '0' } as unknown,
+              memberIdentitySnapshot: {
+                companyName: 'Portal Pick Co',
+                country: 'TH',
+                legal_name: 'Portal Pick Co Ltd',
+                address: '1 Test Road, Bangkok 10110',
+                primary_contact_name: 'Portal Pick',
+                primary_contact_email: 'pp@example.com',
+              } as unknown,
+              pdfBlobKey: `invoicing/${input.tenantId}/2026/${invoiceId}.pdf`,
+              pdfSha256: 'a'.repeat(64),
+              pdfTemplateVersion: 1,
+            });
+          });
+          return {
+            status: 'issued' as const,
+            invoiceId,
+            invoiceNumber: 'INV-2026-CONFIRM',
+            totalSatang: asSatang(9_630_000n),
+          };
+        },
       },
     };
   }

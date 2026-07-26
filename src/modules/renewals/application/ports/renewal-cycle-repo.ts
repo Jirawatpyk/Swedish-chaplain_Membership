@@ -20,6 +20,7 @@ import type {
 import type { CycleStatus } from '../../domain/value-objects/cycle-status';
 import type { TierBucket } from '../../domain/value-objects/tier-bucket';
 import type { RenewalMonthAggregation } from '../../domain/renewal-month-bucket';
+import type { MembershipBillCoverageRow } from '../../domain/membership-bill-coverage';
 
 export interface NewRenewalCycleInput {
   readonly tenantId: string;
@@ -89,6 +90,20 @@ export interface RenewalCyclePage {
   readonly totalCount?: number;
 }
 
+/**
+ * 107-auto-invoice Task 6 — return shape for
+ * `listCyclesEligibleForAutoDraft`. Deliberately a SEPARATE shape from
+ * `RenewalCyclePage` (`cycles` not `items`) — the auto-draft cron
+ * consumer (Task 7) is a fresh call site with no existing `items`-shaped
+ * expectations, and single-page-only (`nextCursor` is always `null`,
+ * never a real cursor) makes that explicit at the type level rather than
+ * reusing a shape that implies cursor pagination is supported.
+ */
+export interface AutoDraftEligiblePage {
+  readonly cycles: ReadonlyArray<RenewalCycle>;
+  readonly nextCursor: null;
+}
+
 // ---------------------------------------------------------------------------
 // DV-18 — "Members without renewal cycle" admin tray
 // ---------------------------------------------------------------------------
@@ -107,6 +122,54 @@ export interface MemberWithoutCycleRow {
 export interface MembersWithoutCyclePage {
   readonly items: ReadonlyArray<MemberWithoutCycleRow>;
   readonly totalCount: number;
+}
+
+/**
+ * 107-auto-invoice Task 9 — the minimal `invoices` projection the issue-time
+ * guards need. Deliberately NOT the F4 `Invoice` aggregate: renewals must not
+ * depend on F4's domain shape (Principle III), and these five fields are the
+ * whole of what the HARD REQ #1 shape check + the content guard read.
+ */
+export interface MembershipInvoiceRef {
+  readonly invoiceId: string;
+  readonly memberId: string;
+  /** F4 `invoices.plan_year` — the fiscal year the document will PRINT. */
+  readonly planYear: number;
+  readonly status:
+    | 'draft'
+    | 'issued'
+    | 'paid'
+    | 'void'
+    | 'partially_credited'
+    | 'credited';
+  readonly origin: 'manual' | 'auto_renewal';
+}
+
+/**
+ * 107-auto-invoice Task 11 — row shape for `listStaleAutoDrafts`. Carries
+ * just enough to discard the F4 draft (`invoiceId`) and emit the F8
+ * `renewal_auto_draft_discarded` audit payload (`cycleId`, `memberId`) —
+ * deliberately NOT the full `MembershipInvoiceRef` or `RenewalCycle`
+ * shapes, mirroring the narrow-projection convention `MemberWithoutCycleRow`
+ * / `StaleAutoDraftRow`'s sibling queries already use.
+ */
+export interface StaleAutoDraftRow {
+  readonly invoiceId: string;
+  readonly cycleId: CycleId;
+  readonly memberId: string;
+}
+
+/**
+ * 107-auto-invoice Task 11 — row shape for `listIssuedAutoInvoiceOrphans`.
+ * Same narrow projection as {@link StaleAutoDraftRow}; the reconcile
+ * cron re-reads the full cycle row itself (under the per-cycle lock)
+ * before deciding how to repair the link, so this candidate row only
+ * needs to name WHICH (invoice, cycle) pair to re-read.
+ */
+export interface IssuedAutoInvoiceOrphanRow {
+  readonly invoiceId: string;
+  readonly cycleId: CycleId;
+  readonly memberId: string;
 }
 
 export interface RenewalCycleRepo {
@@ -545,6 +608,297 @@ export interface RenewalCycleRepo {
       readonly pageSize: number;
     },
   ): Promise<RenewalCyclePage>;
+
+  /**
+   * 107-auto-invoice Task 6 — eligibility cursor for the daily auto-draft
+   * cron (Task 7). Returns cycles the cron should pre-fill a DRAFT
+   * membership invoice for, ahead of the member's due date. A cycle is
+   * eligible when ALL of:
+   *
+   *   1. `status IN ('upcoming', 'reminded')`.
+   *   2. `expires_at > nowIso` AND `expires_at <= nowIso + leadDays` where
+   *      `leadDays` is `leadDaysCalendar` for a `members.billing_cycle =
+   *      'calendar'` member, else `leadDaysRolling` — the per-member lead
+   *      window (design §5.1).
+   *   3. `members.auto_invoice_enrolled_at IS NOT NULL` (opt-in only —
+   *      Task 1).
+   *   4. `members.archived_at IS NULL AND members.status <> 'archived'`.
+   *   4a. `members.erased_at IS NULL` — a GDPR/PDPA-erased member must never
+   *      be auto-billed (Task 15 review). NOT implied by (4): the F3 erasure
+   *      scrub deliberately leaves `status`/`archived_at` untouched
+   *      ("erasure is orthogonal to archive"), so an erased-but-active member
+   *      passes both of those. The scrub also NULLs
+   *      `auto_invoice_enrolled_at`, but that is one-shot — a later bulk
+   *      enrol could re-stamp the row, so the durable guard lives here.
+   *   5. Dedup — NO existing membership invoice for the member with
+   *      `status IN ('draft', 'issued')`. Deliberately narrower than the
+   *      full "live invoice" set (`paid`/`credited`/`partially_credited`
+   *      are NOT excluded): an `upcoming` cycle exists precisely BECAUSE
+   *      the member's prior cycle was paid, so EVERY eligible member has
+   *      at least one `paid` membership invoice on file — including
+   *      `paid` here would exclude everyone and the cron would never
+   *      fire. This dedup is intentionally MEMBER-scoped, not
+   *      `plan_year`-scoped: `plan_year` on a cycle is derived
+   *      (`deriveFiscalYear` from `period_from`), not a column, so it
+   *      cannot be filtered in this set query. The precise per-cycle,
+   *      plan_year-scoped duplicate-§86/4 guard (which DOES include
+   *      `paid`) runs later, under the cycle lock, in Task 9 at DRAFT-
+   *      creation time — this coarse query only decides "worth looking
+   *      at", not "safe to draft".
+   *
+   * Deliberately does NOT gate on membership access
+   * (terminated/suspended) — that predicate lives in
+   * `lapsed-portal-scope`, not on the `members` row, and the Task 7
+   * use-case re-asserts it per-member before drafting.
+   *
+   * Single capped page (`nextCursor` hardwired `null`, same scaling
+   * caveat as `listCyclesEligibleForLapse` — fine at TSCC's member
+   * count). Ordered `expires_at ASC` (soonest-expiring first). Runs
+   * inside `runInTenant` (RLS+FORCE on both `renewal_cycles` and the
+   * joined `members`/`invoices` tables); `tenantId` is threaded
+   * explicitly per the port's compile-enforcement convention (file
+   * header) even though the adapter also closes over the tenant via the
+   * repo factory.
+   */
+  listCyclesEligibleForAutoDraft(
+    tenantId: string,
+    args: {
+      readonly nowIso: string;
+      readonly leadDaysRolling: number;
+      readonly leadDaysCalendar: number;
+      readonly pageSize: number;
+    },
+  ): Promise<AutoDraftEligiblePage>;
+
+  /**
+   * 107-auto-invoice Task 7 — precise per-(member, plan_year) dedup
+   * re-check, run under the per-cycle advisory lock immediately before
+   * drafting. `listCyclesEligibleForAutoDraft`'s own dedup (Task 6) is
+   * coarse + MEMBER-scoped (any draft/issued invoice, any plan_year) —
+   * by the time a cycle reaches this re-check it should already be
+   * true that no such invoice exists, so this is a genuine TOCTOU
+   * guard: did a concurrent writer (a member self-renewing via
+   * `confirmRenewal` in the gap between the list query and this lock)
+   * create one in the race window? `status IN ('draft','issued')`
+   * mirrors Task 6's own dedup predicate — NOT the broader
+   * paid-inclusive content guard (design §5.4) Task 9 uses at ISSUE
+   * time as the primary duplicate-§86/4 barrier; this method only
+   * protects against drafting a second DRAFT.
+   *
+   * `tenantId` is an explicit app-layer WHERE predicate on `invoices`
+   * (Constitution Principle I two-layer isolation), not merely relied
+   * on via the inherited RLS GUC — matches `listCyclesEligibleForAutoDraft`'s
+   * own belt-and-suspenders filter against the same cross-module table.
+   */
+  hasLiveMembershipInvoiceForPlanYearInTx(
+    tx: TenantTx,
+    tenantId: string,
+    memberId: string,
+    planYear: number,
+  ): Promise<boolean>;
+
+  /**
+   * 107-auto-invoice Task 9 — point-read of ONE membership invoice, backing
+   * `issueAutoDraftedRenewal`'s HARD REQ #1 shape check.
+   *
+   * The F4 bridge's `issueExistingDraftForRenewal` will issue ANY invoice id
+   * handed to it — it has no origin/status/ownership check of its own. So the
+   * queue-issue use-case must verify, under the per-cycle lock and BEFORE
+   * issuing, that the target really is the `origin='auto_renewal'`,
+   * `status='draft'` row belonging to the member/cycle it claims. A wrong or
+   * stale invoice id must produce a typed error, never silently issue an
+   * unrelated manual draft.
+   *
+   * Returns `null` for a non-existent id, another tenant's row (RLS + the
+   * app-layer filter), or a non-`membership` invoice (an event-fee invoice is
+   * never an auto-renewal draft and must not resolve here).
+   */
+  findMembershipInvoiceInTx(
+    tx: TenantTx,
+    tenantId: string,
+    invoiceId: string,
+    // `planId` is returned alongside the ref so `issueAutoDraftedRenewal` can
+    // refuse a draft whose stored plan no longer matches the cycle's current
+    // frozen plan (a same-term admin plan-change after drafting — audit: tax).
+  ): Promise<(MembershipInvoiceRef & { readonly planId: string | null }) | null>;
+
+  /**
+   * 107-auto-invoice Task 9 (review New-1 follow-through) — clear a STALE
+   * `linked_invoice_id`, i.e. one pointing at an invoice that is no longer a
+   * live bill (voided for correction).
+   *
+   * Voiding an invoice does not touch the cycle: nothing clears
+   * `linked_invoice_id` on void (the only other writer that clears it is
+   * `reanchorPeriodInTx`) and there is no void→renewals callback. Without this,
+   * a bill voided for correction wedges the member out of renewing —
+   * `linkInvoice`'s `WHERE (linked_invoice_id IS NULL OR = $1)` guard rejects
+   * the replacement bill's link, and by then a NEW §87 number has already been
+   * burned and is orphaned. Relaxing `linkInvoice` itself was rejected: its
+   * guard is what stops two concurrent renewals from silently overwriting each
+   * other's claim, and it cannot distinguish "stale because voided" from
+   * "another writer legitimately won".
+   *
+   * CAS on the exact id the caller observed (`WHERE cycle_id = ? AND
+   * linked_invoice_id = ?`) so a concurrent writer that re-linked the cycle in
+   * the meantime is never clobbered; returns `false` when 0 rows matched.
+   * Callers MUST verify the target invoice is genuinely non-live first — this
+   * method deliberately does not re-check, so it can never be the thing that
+   * unlinks a live bill.
+   */
+  clearStaleLinkedInvoiceInTx(
+    tx: TenantTx,
+    tenantId: string,
+    cycleId: CycleId,
+    expectedInvoiceId: string,
+  ): Promise<boolean>;
+
+  /**
+   * 107-auto-invoice Task 9 — resolve the cycle that Task 7 stamped with this
+   * draft invoice id (`renewal_cycles.auto_draft_invoice_id`).
+   *
+   * Distinct from `findByInvoiceIdInTx`, which matches `linked_invoice_id` —
+   * the ISSUED-and-linked back-reference. An auto-draft is not linked until
+   * `issueAutoDraftedRenewal`'s tx2 stamps it, so the queue-issue path must
+   * traverse the draft-stage column instead.
+   */
+  findByAutoDraftInvoiceIdInTx(
+    tx: TenantTx,
+    tenantId: string,
+    invoiceId: string,
+  ): Promise<RenewalCycle | null>;
+
+  /**
+   * 107-auto-invoice Task 13 — batched, NON-transactional sibling of
+   * {@link findByAutoDraftInvoiceIdInTx}, for the admin review-queue LIST
+   * page: given a page of `origin='auto_renewal'` draft invoiceIds,
+   * resolves each one's originating cycle in ONE query
+   * (`renewal_cycles.auto_draft_invoice_id IN (...)`) instead of an N+1
+   * round-trip per row. Read-only — no lock, no tx (mirrors
+   * `findLatestCyclesForMembers`'s non-tx batched shape).
+   *
+   * Keyed by `invoiceId` (the map key IS the value the caller already has
+   * per row) rather than returning an array + forcing the caller to
+   * re-index. A row with no matching cycle is simply ABSENT from the
+   * result — this is the Task 7 "orphaned after commit" window (see that
+   * module's docstring): tx2 (stamp + audit) can fail AFTER the F4 draft's
+   * own tx already committed, leaving a real draft invoice with no
+   * `auto_draft_invoice_id` back-reference. Callers must treat a missing
+   * entry as "cannot resolve queue context for this row", never throw.
+   */
+  findCyclesByAutoDraftInvoiceIds(
+    tenantId: string,
+    invoiceIds: readonly string[],
+  ): Promise<ReadonlyMap<string, RenewalCycle>>;
+
+  /**
+   * 107-auto-invoice Task 9 — every membership invoice for one
+   * (member, plan_year), any status, any origin.
+   *
+   * A SIBLING of `hasLiveMembershipInvoiceForPlanYearInTx` rather than an
+   * extension of it: that method's narrow `{draft, issued}` predicate is
+   * load-bearing for Task 7's DRAFT-time dedup and must not change, and a
+   * status-set parameter with a default would let a future caller silently
+   * inherit the wrong (narrower) tax guard. Returning the ROWS instead of a
+   * boolean lets ONE query serve both of Task 9's needs — the paid-inclusive
+   * content guard and the tx3 sibling-draft discard scan — and lets the
+   * refusal name the conflicting invoice for forensics.
+   *
+   * `tenantId` is an explicit app-layer `WHERE` predicate on `invoices`
+   * (Constitution Principle I two-layer isolation), not merely the inherited
+   * RLS GUC.
+   */
+  listMembershipInvoicesForPlanYearInTx(
+    tx: TenantTx,
+    tenantId: string,
+    memberId: string,
+    planYear: number,
+  ): Promise<ReadonlyArray<MembershipInvoiceRef>>;
+
+  /**
+   * membership-coverage-exclude-guard (mig 0281) — every membership invoice for
+   * one member with its PERSISTED true charged coverage window
+   * (`invoices.coverage_from/to`) + status, so a mint use-case can run the
+   * pre-flight overlap guard (`findOverlappingMembershipCoverageBill`) that is
+   * the application twin of the DB EXCLUDE constraint. MEMBER-scoped (NOT
+   * plan_year — the anchored pin lags the charged term). `tenantId` is an
+   * explicit app-layer WHERE (Principle I two-layer isolation).
+   */
+  listMembershipCoverageForMemberInTx(
+    tx: TenantTx,
+    tenantId: string,
+    memberId: string,
+  ): Promise<ReadonlyArray<MembershipBillCoverageRow>>;
+
+  /**
+   * membership-coverage-exclude-guard (mig 0281 — queue-prediction alignment).
+   * The MEMBER-scoped coverage rows for a BATCH of members, keyed by memberId,
+   * so the auto-renewal review queue's `duplicate_live_bill` PREDICTION uses the
+   * SAME coverage-overlap discriminator as the real `issueAutoDraftedRenewal`
+   * guard (which stopped using the plan_year-coarse `findLiveMembershipBill`).
+   * Member-scoped, NOT (member, plan_year)-scoped: the anchored plan_year pin
+   * lags a full term behind the coverage a §86/4 charges, so a plan_year-keyed
+   * read would miss the very bill the overlap check must see. Non-tx, read-only,
+   * no lock (mirrors `findLatestCyclesForMembers`). An empty `memberIds` MUST
+   * short-circuit at the use-case (no DB hit).
+   */
+  listMembershipCoverageForMembers(
+    tenantId: string,
+    memberIds: readonly string[],
+  ): Promise<ReadonlyMap<string, ReadonlyArray<MembershipBillCoverageRow>>>;
+
+  /**
+   * 107-auto-invoice Task 7 — stamp `renewal_cycles.auto_draft_invoice_id`
+   * with the cron-created DRAFT invoice's id (Task 1 added the nullable,
+   * no-FK column; this is its first writer). Plain UPDATE, no CAS — the
+   * column is a forensic reference for the review queue (a later task),
+   * not a state-machine field, so a concurrent overwrite is not a race
+   * this method needs to defend against (the per-cycle advisory lock
+   * the caller already holds serialises writers on this cycle anyway).
+   */
+  stampAutoDraftInvoiceIdInTx(
+    tx: TenantTx,
+    tenantId: string,
+    cycleId: CycleId,
+    invoiceId: string,
+  ): Promise<void>;
+
+  /**
+   * 107-auto-invoice Task 11 — candidates for the daily `prune-auto-drafts`
+   * housekeeping cron: every `origin='auto_renewal' status='draft'`
+   * membership invoice whose stamped cycle (`renewal_cycles.auto_draft_
+   * invoice_id = invoices.invoice_id`) has LEFT the `upcoming|reminded`
+   * window — the member self-renewed (their cycle moved to
+   * `awaiting_payment` via a fresh `confirmRenewal`/issue) or the cycle
+   * lapsed after the T-30ish draft (grace-expiry cron wrote `lapsed`). A
+   * draft whose cycle is STILL `upcoming`/`reminded` is a live candidate
+   * for `issueAutoDraftedRenewal` and must never appear here.
+   *
+   * `tenantId` is an explicit app-layer `WHERE` predicate on `invoices`
+   * (Constitution Principle I two-layer isolation) — matches the sibling
+   * Task 6/7/9 queries against this same cross-module table.
+   */
+  listStaleAutoDrafts(
+    tenantId: string,
+  ): Promise<ReadonlyArray<StaleAutoDraftRow>>;
+
+  /**
+   * 107-auto-invoice Task 11 — candidates for the daily
+   * `reconcile-issued-orphans` housekeeping cron: every
+   * `origin='auto_renewal' status='issued'` membership invoice whose
+   * stamped cycle has `linked_invoice_id IS NULL` — the bill was minted
+   * but `issueAutoDraftedRenewal`'s tx2 (flip + link) never ran, or
+   * exhausted its idempotent retry (`F8.AUTO_ISSUE.LINK_FAILED`). The
+   * bill itself is real and payable; only the cycle's forensic linkage is
+   * missing. A `completed` cycle can never appear here — the DB CHECK
+   * `completed → linked_invoice_id NOT NULL` makes `IS NULL` and
+   * `status='completed'` mutually exclusive.
+   *
+   * `tenantId` is an explicit app-layer `WHERE` predicate on `invoices`,
+   * matching the sibling Task 6/7/9 cross-module queries.
+   */
+  listIssuedAutoInvoiceOrphans(
+    tenantId: string,
+  ): Promise<ReadonlyArray<IssuedAutoInvoiceOrphanRow>>;
 
   /**
    * Pipeline dashboard composite query (Phase 3 US1 / FR-046 / SC-003).

@@ -198,6 +198,7 @@ function makeDeps(draft: Invoice, cap: Captured): IssueInvoiceDeps {
     invoiceRepo: {
       withTx: vi.fn(async (fn) => fn(Symbol('tx'))),
       insertDraft: vi.fn(),
+      getOrigin: vi.fn(),
       // Duplicate guard read — unused by this use case (only
       // `createInvoiceDraft` calls it, and only when a caller opts in via
       // `duplicatePolicy`). Present to satisfy the `InvoiceRepo` contract.
@@ -230,7 +231,7 @@ function makeDeps(draft: Invoice, cap: Captured): IssueInvoiceDeps {
           pdfDocKind: input.pdfDocKind as never,
         } as Invoice;
       }),
-      deleteDraft: vi.fn(),
+      deleteDraft: vi.fn(async () => true),
       applyPayment: vi.fn(),
       applyDraftUpdate: vi.fn(),
       findByIdInTxForUpdate: vi.fn(),

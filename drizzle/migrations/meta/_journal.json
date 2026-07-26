@@ -1856,6 +1856,62 @@
       "when": 1798540100000,
       "tag": "0273_credit_notes_lock_retains_coverage",
       "breakpoints": true
+    },
+    {
+      "idx": 275,
+      "version": "7",
+      "when": 1798540200000,
+      "tag": "0274_auto_invoice_columns_and_audit",
+      "breakpoints": true
+    },
+    {
+      "idx": 276,
+      "version": "7",
+      "when": 1798540300000,
+      "tag": "0275_auto_invoice_audit_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 277,
+      "version": "7",
+      "when": 1798540400000,
+      "tag": "0276_seed_auto_invoice_system_actor",
+      "breakpoints": true
+    },
+    {
+      "idx": 278,
+      "version": "7",
+      "when": 1798540500000,
+      "tag": "0277_reconcile_issued_orphans_audit_event",
+      "breakpoints": true
+    },
+    {
+      "idx": 279,
+      "version": "7",
+      "when": 1798540600000,
+      "tag": "0278_member_auto_invoice_enrolled_audit",
+      "breakpoints": true
+    },
+    {
+      "idx": 280,
+      "version": "7",
+      "when": 1798540700000,
+      "tag": "0279_invoices_auto_renewal_draft_idx",
+      "breakpoints": true
+    },
+    {
+      "idx": 281,
+      "version": "7",
+      "when": 1798540800000,
+      "tag": "0280_member_auto_invoice_unenrolled_audit",
+      "breakpoints": true
+    },
+    {
+      "idx": 282,
+      "version": "7",
+      "when": 1798540900000,
+      "tag": "0281_membership_coverage_exclude",
+      "breakpoints": true
     }
   ]
 }

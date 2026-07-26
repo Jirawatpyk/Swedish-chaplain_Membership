@@ -1,0 +1,26 @@
+-- 107-auto-invoice (Task 18) — the counterpart to 0263's
+-- `member_auto_invoice_enrolled`: `member_auto_invoice_unenrolled`.
+--
+-- Why the OFF direction needs its own event: `members.
+-- auto_invoice_enrolled_at` is the third and final gating key for
+-- auto-invoicing, and 0263 made "who turned this ON, and when"
+-- answerable from the append-only trail. Clearing the column leaves no
+-- trace of itself — the stamp simply disappears — so without this event
+-- the question "why did this member stop being auto-drafted, and who
+-- decided that" has no answer at all. A flag that governs whether
+-- someone is billed automatically must be answerable in BOTH directions.
+--
+-- Emitted once per ACTUALLY un-enrolled member (never for a member who
+-- was already un-enrolled) inside the same transaction as the UPDATE,
+-- carrying `action` + `bulk_request_id` in the payload so a bulk run can
+-- be correlated — the same singular-per-member convention as 0263 and as
+-- `bulkAction`'s `member_archived` / `member_plan_changed`.
+--
+-- A NEW migration rather than an append to 0263: that migration is
+-- already applied to the `dev` Neon branch, so editing it in place would
+-- change its content hash after being recorded as applied. See
+-- `scripts/lib/enum-migration-guard.ts` header for why `ALTER TYPE …
+-- ADD VALUE` migrations run in their own autocommit pre-pass and must
+-- stay self-contained.
+
+ALTER TYPE "audit_event_type" ADD VALUE IF NOT EXISTS 'member_auto_invoice_unenrolled';

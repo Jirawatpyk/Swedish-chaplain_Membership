@@ -105,6 +105,12 @@ function makeTestRenewalBridge(): F4InvoicingForRenewalBridge {
           ...(input.membershipCoverage !== undefined
             ? { membershipCoverage: input.membershipCoverage }
             : {}),
+          // membership-coverage-exclude-guard (mig 0281) — forward the dup-guard
+          // window exactly like the production bridge, so the stamped
+          // `invoices.coverage_from/to` (and the overlap guard) behave here too.
+          ...(input.coverageWindow !== undefined
+            ? { coverageWindow: input.coverageWindow }
+            : {}),
         },
       );
       if (!createResult.ok) {
@@ -166,6 +172,18 @@ function makeTestRenewalBridge(): F4InvoicingForRenewalBridge {
             ? asSatang(BigInt(issued.total.satang))
             : asSatang(0n),
       };
+    },
+    // 107-auto-invoice (Task 5) — this suite drives `adminRenewLapsedMember`
+    // only, which never calls either new method; stubbed only to satisfy
+    // the port interface's shape.
+    async draftInvoiceForRenewal() {
+      throw new Error('draftInvoiceForRenewal not used by this test double');
+    },
+    async issueExistingDraftForRenewal() {
+      throw new Error('issueExistingDraftForRenewal not used by this test double');
+    },
+    async discardAutoDraftForRenewal() {
+      throw new Error('discardAutoDraftForRenewal not used by this test double');
     },
   };
 }
@@ -751,6 +769,71 @@ describe('adminRenewLapsedMember — integration (Slice 3 / Task 3.1)', () => {
         .where(eq(invoices.memberId, memberId)),
     );
     expect(memberInvoices).toHaveLength(0);
+  }, 180_000);
+
+  it('107-T9 review: a live membership bill for the same (member, plan_year) → invoice_already_exists + NO second §86/4, NO orphan cycle', async () => {
+    // This is the THIRD path that can mint a membership §86/4 (alongside
+    // confirmRenewal and issueAutoDraftedRenewal) and it had no content guard
+    // at all — the same mint-outside-the-lock shape, unprotected.
+    //
+    // Construction: renew once (mints a real bill), then DELETE the cycle it
+    // created so `member_has_active_cycle` cannot mask the result. The member
+    // is now back to "no cycles" — so `resolveComebackPeriodFrom` resolves
+    // `periodFrom = now` exactly as it did on the first call, i.e. the SAME
+    // fiscal year — but a live bill for that year now exists.
+    const memberId = await seedLapsedMember();
+    const first = await adminRenewLapsedMember(makeDeps(tenant.ctx.slug), {
+      tenantId: tenant.ctx.slug,
+      memberId,
+      actorUserId: user.userId,
+      actorRole: 'admin',
+      correlationId: `admin-renew-dup-1-${memberId}`,
+    });
+    expect(first.ok, first.ok ? 'ok' : JSON.stringify(first)).toBe(true);
+
+    await runInTenant(tenant.ctx, (tx) =>
+      tx.delete(renewalCycles).where(eq(renewalCycles.memberId, memberId)),
+    );
+    const invoicesAfterFirst = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({ invoiceId: invoices.invoiceId })
+        .from(invoices)
+        .where(eq(invoices.memberId, memberId)),
+    );
+    expect(invoicesAfterFirst).toHaveLength(1);
+
+    const second = await adminRenewLapsedMember(makeDeps(tenant.ctx.slug), {
+      tenantId: tenant.ctx.slug,
+      memberId,
+      actorUserId: user.userId,
+      actorRole: 'admin',
+      correlationId: `admin-renew-dup-2-${memberId}`,
+    });
+    expect(second.ok).toBe(false);
+    if (second.ok) return;
+    expect(second.error.kind).toBe('invoice_already_exists');
+
+    // No SECOND §86/4 was minted.
+    const invoicesAfterSecond = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({ invoiceId: invoices.invoiceId })
+        .from(invoices)
+        .where(eq(invoices.memberId, memberId)),
+    );
+    expect(invoicesAfterSecond).toHaveLength(1);
+
+    // And NO orphan cycle: the guard runs BEFORE createCycleInTx, because
+    // returning `err(...)` from inside `runInTenant` does NOT throw — tx1
+    // commits, so a guard placed after the create would have persisted a
+    // stray awaiting_payment cycle and wedged every retry behind
+    // `member_has_active_cycle`.
+    const cyclesAfterSecond = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({ cycleId: renewalCycles.cycleId })
+        .from(renewalCycles)
+        .where(eq(renewalCycles.memberId, memberId)),
+    );
+    expect(cyclesAfterSecond).toHaveLength(0);
   }, 180_000);
 
   it('cross-tenant probe: tenant A admin cannot renew tenant B member → member_not_found (no cross-tenant cycle/invoice)', async () => {

@@ -161,6 +161,7 @@ function makeDeps(
     invoiceRepo: {
       withTx: vi.fn(async (fn) => fn(opaqueTx)),
       insertDraft: vi.fn(),
+      getOrigin: vi.fn(),
       // Duplicate guard read — unused by this use case (only
       // `createInvoiceDraft` calls it, and only when a caller opts in via
       // `duplicatePolicy`). Present to satisfy the `InvoiceRepo` contract.
@@ -172,7 +173,7 @@ function makeDeps(
       listSupersedableMembershipBills: vi.fn(),
       findEventInvoiceIdByRegistration: vi.fn(async () => null),
       applyIssue: vi.fn(),
-      deleteDraft: vi.fn(),
+      deleteDraft: vi.fn(async () => true),
       // applyPayment echoes the input back as the updated invoice —
       // record-payment now uses the RETURNING value directly instead
       // of re-reading.

@@ -227,6 +227,18 @@ function fakeDeps(args: {
   };
   const invoiceBridge: F4InvoicingForRenewalBridge = {
     issueInvoiceForRenewal: invoiceBridgeMock as never,
+    // 107-auto-invoice (Tasks 5 + 9) — confirmRenewal only calls
+    // `issueInvoiceForRenewal`; these three are unused by this use-case,
+    // stubbed only to satisfy the port interface's shape.
+    draftInvoiceForRenewal: vi.fn(async () => {
+      throw new Error('draftInvoiceForRenewal not used by confirmRenewal');
+    }) as never,
+    issueExistingDraftForRenewal: vi.fn(async () => {
+      throw new Error('issueExistingDraftForRenewal not used by confirmRenewal');
+    }) as never,
+    discardAutoDraftForRenewal: vi.fn(async () => {
+      throw new Error('discardAutoDraftForRenewal not used by confirmRenewal');
+    }) as never,
   };
   const deps: ConfirmRenewalDeps = {
     tenant: { slug: TENANT_ID } as ConfirmRenewalDeps['tenant'],
@@ -249,6 +261,12 @@ function fakeDeps(args: {
       countCyclesForMemberInTx: countCyclesForMemberInTxMock,
       // F2 fix (final-review, 2026-07-09) — settled-history discriminator.
       countSettledCyclesForMemberInTx: countSettledCyclesForMemberInTxMock,
+      // 107-auto-invoice Task 9 (review Important 2) — the duplicate-bill
+      // guard's read. Default: no existing live bill, so these pre-existing
+      // cases exercise the unchanged happy path. The refusal branch is
+      // covered live-Neon by issue-auto-drafted-renewal.test.ts case (i).
+      listMembershipInvoicesForPlanYearInTx: vi.fn(async () => []),
+      listMembershipCoverageForMemberInTx: vi.fn(async () => []),
     } as unknown as ConfirmRenewalDeps['cyclesRepo'],
     auditEmitter: {
       emit: vi.fn(async () => {}),

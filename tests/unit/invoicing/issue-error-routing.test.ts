@@ -41,6 +41,8 @@ describe('routeIssueError (FR-032)', () => {
       'invalid_lines',
       // 059 PR-A Task 4 fix — VAT-registrant buyer with no tax_id.
       'buyer_tax_id_required_for_registrant',
+      // 107-auto-invoice Task 10 — auto_renewal draft reached the wrong route.
+      'origin_auto_renewal_use_queue',
     ] as const) {
       expect(routeIssueError(code)).toEqual({
         kind: 'failure',

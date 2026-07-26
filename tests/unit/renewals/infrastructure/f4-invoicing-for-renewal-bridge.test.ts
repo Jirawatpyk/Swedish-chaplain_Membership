@@ -79,6 +79,7 @@ const BASE_INPUT = {
   planId: 'p1',
   planYear: 2026,
   frozenPlanPriceThb: parseThbDecimal('12000.00'),
+  coverageWindow: { fromIso: '2026-01-01T00:00:00.000Z', toIso: '2027-01-01T00:00:00.000Z' },
   autoEmailOnIssue: true,
   actorUserId: 'u1',
   correlationId: 'c1',

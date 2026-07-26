@@ -58,6 +58,12 @@ const DEDICATED_MESSAGE_CODES: ReadonlySet<string> = new Set([
   // admin fix is either field: add the TIN, or clear the VAT-registered
   // checkbox — a raw "Error code:" fallback would give no such guidance.
   'buyer_tax_id_required_for_registrant',
+  // 107-auto-invoice Task 10 — a queue-owned `auto_renewal` draft reached
+  // this route directly (e.g. via the general invoices list, before Task 13
+  // ships a filtered review-queue view). Reachable via the ordinary UI, not
+  // just a crafted request, so it earns dedicated copy pointing the admin at
+  // the Renewals area instead of a bare "Error code:" fallback.
+  'origin_auto_renewal_use_queue',
 ]);
 
 /**

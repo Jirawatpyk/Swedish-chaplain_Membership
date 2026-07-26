@@ -122,6 +122,12 @@ function makeStubDeps(): MemberSelfUpdateDeps {
     findErasedAtById: async () => ok({ erasedAt: null }),
     // COMP-1 US2d (reconciler candidate) — interface compliance stub.
     findStuckErasuresInTx: async () => [],
+    findErasedIdsInTx: async () => ({
+      ok: true as const,
+      value: new Set<MemberId>(),
+    }),
+    enrolAutoInvoiceInTx: async () => ({ ok: true as const, value: [] }),
+    unenrolAutoInvoiceInTx: async () => ({ ok: true as const, value: [] }),
   };
 
   const contactRepo: ContactRepo = {

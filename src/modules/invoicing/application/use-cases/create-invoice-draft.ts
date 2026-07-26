@@ -50,6 +50,17 @@ export const createInvoiceDraftSchema = z.object({
   planYear: z.number().int().min(2000).max(2100),
   autoEmailOnIssue: z.boolean().nullable().optional(),
   /**
+   * 107-auto-invoice (Task 5) — `'manual'` (default, every existing caller —
+   * staff drafting from the admin UI, event-fee drafts, F8's online-renewal
+   * `issueInvoiceForRenewal`) vs `'auto_renewal'` (the auto-invoice cron's
+   * `draftInvoiceForRenewal`, Task 7). `.optional()` mirrors `autoEmailOnIssue`
+   * — omitted entirely (never an explicit `undefined`, per the
+   * `exactOptionalPropertyTypes` omit-guard) so `insertDraft` leaves the
+   * column out of the INSERT and the DB-level `invoices.origin` DEFAULT
+   * `'manual'` fires (pinned by `auto-invoice-schema.test.ts`).
+   */
+  origin: z.enum(['manual', 'auto_renewal']).optional(),
+  /**
    * How this caller wants an existing live membership invoice for the same
    * (tenant, member, plan_year) handled. A member CAN legitimately hold two
    * live membership invoices in one plan year — but on an INTERACTIVE
@@ -135,6 +146,25 @@ export const createInvoiceDraftSchema = z.object({
     // (lexicographic order == chronological order for that format).
     .refine((v) => v.kind !== 'window' || v.fromIso < v.toIso, {
       message: 'membershipCoverage window: fromIso must be before toIso',
+    })
+    .optional(),
+  /**
+   * membership-coverage-exclude-guard (mig 0281) — the TRUE charged coverage
+   * window persisted to `invoices.coverage_from/to` for the DB EXCLUDE guard,
+   * DECOUPLED from `membershipCoverage` (the PRINTED §86/4 window, which is
+   * OMITTED for a from_payment / first-payment bill even though that bill still
+   * charges a period). Renewals paths pass this ALWAYS — including first
+   * payment — so no membership bill escapes the duplicate-coverage guard. When
+   * absent, coverage falls back to the printed `membershipCoverage` window
+   * (manual F4 callers), else stays NULL (event / no-window drafts).
+   */
+  coverageWindow: z
+    .object({
+      fromIso: z.string().regex(/^\d{4}-\d{2}-\d{2}/),
+      toIso: z.string().regex(/^\d{4}-\d{2}-\d{2}/),
+    })
+    .refine((v) => v.fromIso < v.toIso, {
+      message: 'coverageWindow: fromIso must be before toIso',
     })
     .optional(),
 });
@@ -555,6 +585,23 @@ export async function createInvoiceDraft(
       vatInclusive: false,
       draftByUserId: input.actorUserId,
       autoEmailOnIssue: input.autoEmailOnIssue ?? null,
+      // 107-auto-invoice (Task 5) — omit the key entirely when unset
+      // (exactOptionalPropertyTypes) so the DB DEFAULT 'manual' fires,
+      // rather than assigning an explicit `undefined`.
+      ...(input.origin !== undefined ? { origin: input.origin } : {}),
+      // membership-coverage-exclude-guard (mig 0281) — persist the TRUE charged
+      // window (both-or-neither). Prefer the EXPLICIT `coverageWindow` (renewals
+      // pass it ALWAYS, including first-payment where the printed
+      // `membershipCoverage` is omitted); fall back to the printed window for
+      // manual F4 callers; else NULL (never participates in the overlap guard).
+      ...(input.coverageWindow !== undefined
+        ? {
+            coverageFrom: input.coverageWindow.fromIso,
+            coverageTo: input.coverageWindow.toIso,
+          }
+        : coverage.kind === 'window'
+          ? { coverageFrom: coverage.fromIso, coverageTo: coverage.toIso }
+          : {}),
       lines,
     });
 

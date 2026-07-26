@@ -195,6 +195,7 @@ export async function bulkAction(
       // all rows locked in one round-trip; locks released on COMMIT / ROLLBACK.
       const lookupResult = await deps.memberRepo.findManyByIdsInTx(
         tx,
+        deps.tenant.slug,
         memberIds,
       );
       if (!lookupResult.ok) {

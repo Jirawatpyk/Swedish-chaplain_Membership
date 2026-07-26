@@ -12,6 +12,7 @@
 import { useCallback, useRef, useTransition } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { originFilterPatch } from './queue-view';
 import { SearchIcon, XIcon, CheckIcon } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -80,12 +81,23 @@ interface InvoiceFiltersProps {
    * a phantom clear-all button.
    */
   readonly show088Filters?: boolean;
+  /**
+   * 107-auto-invoice Task 13 — render the "Origin" filter (All origins /
+   * Manual / Auto-renewal queue). Defaults to `false` so the member portal
+   * (which never threads `origin`) and a flag-off admin render exactly
+   * today's filter set. The page passes `env.features.autoInvoice`. When
+   * false, a stray `?origin=` URL param is IGNORED here (mirrors the
+   * `show088Filters` guard) so a hand-typed link never surfaces a phantom
+   * clear-all button.
+   */
+  readonly showAutoInvoiceFilter?: boolean;
 }
 
 export function InvoiceFilters({
   statusOptions = STATUS_VALUES,
   showPaidOnlineChip = true,
   show088Filters = false,
+  showAutoInvoiceFilter = false,
 }: InvoiceFiltersProps = {}) {
   const t = useTranslations('admin.invoices.list');
   const tStatus = useTranslations('admin.invoices.list.statuses');
@@ -161,6 +173,14 @@ export function InvoiceFilters({
     (rawVat === 'standard' || rawVat === 'zero_rated_80_1_5')
       ? rawVat
       : 'all';
+  // 107-auto-invoice Task 13 — origin filter (all | manual | auto_renewal).
+  // Gated + clamped the same way as the 088 filters above.
+  const rawOrigin = searchParams.get('origin');
+  const currentOrigin =
+    showAutoInvoiceFilter &&
+    (rawOrigin === 'manual' || rawOrigin === 'auto_renewal')
+      ? rawOrigin
+      : 'all';
 
   const pushUrl = useCallback(
     (patch: Record<string, string | null>) => {
@@ -193,7 +213,8 @@ export function InvoiceFilters({
     paidOnlineActive ||
     currentDocType !== 'all' ||
     currentTaxPoint !== 'all' ||
-    currentVat !== 'all';
+    currentVat !== 'all' ||
+    currentOrigin !== 'all';
 
   const togglePaidOnline = () => {
     pushUrl({ paidOnline: paidOnlineActive ? null : '1' });
@@ -278,6 +299,46 @@ export function InvoiceFilters({
           <SelectItem value="event">{t('filters.subject.event')}</SelectItem>
         </SelectContent>
       </Select>
+      {/* 107-auto-invoice Task 13 — origin filter (All origins / Manual /
+          Auto-renewal queue). Rendered only when FEATURE_AUTO_INVOICE is on.
+          Selecting "Auto-renewal queue" is the review-queue entry point, so it
+          pushes `status=draft` alongside the origin: the queue IS drafts
+          (verdict F1 — keying the queue chrome on origin alone let paid §86/4
+          documents render as work items with a false "would be refused" badge
+          and a false "drafts awaiting review" screen-reader announcement).
+          Leaving the queue clears only that imposed `draft`. */}
+      {showAutoInvoiceFilter && (
+        <Select
+          value={currentOrigin}
+          onValueChange={(v) =>
+            pushUrl(originFilterPatch(v, searchParams.get('status')))
+          }
+        >
+          <SelectTrigger
+            className="sm:w-[13rem]"
+            aria-label={t('filters.origin.label')}
+            data-testid="invoice-origin-filter"
+          >
+            <TranslatedSelectValue
+              placeholder={t('filters.origin.all')}
+              translate={(v) =>
+                v === 'manual'
+                  ? t('filters.origin.manual')
+                  : v === 'auto_renewal'
+                    ? t('filters.origin.autoRenewal')
+                    : t('filters.origin.all')
+              }
+            />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">{t('filters.origin.all')}</SelectItem>
+            <SelectItem value="manual">{t('filters.origin.manual')}</SelectItem>
+            <SelectItem value="auto_renewal">
+              {t('filters.origin.autoRenewal')}
+            </SelectItem>
+          </SelectContent>
+        </Select>
+      )}
       {/* 088 T065b (FR-031) — three ADMIN-only tax-document filters, rendered
           only when the tax-at-payment flag is on. Each mirrors the status +
           subject dropdowns: URL param is the source of truth; resetting to
@@ -439,6 +500,7 @@ export function InvoiceFilters({
               docType: null,
               taxPoint: null,
               vat: null,
+              origin: null,
             })
           }
           aria-label={t('filters.clearAll')}

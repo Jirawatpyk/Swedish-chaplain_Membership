@@ -196,6 +196,15 @@ export {
   type IssueInvoiceSuccess,
 } from './application/use-cases/issue-invoice';
 
+// 107-auto-invoice Task 10 — the generic issue route's guard against a
+// queue-owned `auto_renewal` draft (Task 9's paired ship gate).
+export {
+  guardGenericRouteIssueOrigin,
+  type GuardGenericRouteIssueOriginInput,
+  type GuardGenericRouteIssueOriginError,
+  type GuardGenericRouteIssueOriginDeps,
+} from './application/use-cases/guard-generic-route-issue-origin';
+
 // Cluster 5 (Finding 1) — observable auto-email dispatch outcome surfaced by
 // the issuance + payment use-cases so the admin toast can warn on a silent
 // "no email on file" skip.
@@ -307,6 +316,17 @@ export {
   type DeleteInvoiceDraftInput,
   type DeleteInvoiceDraftError,
 } from './application/use-cases/delete-invoice-draft';
+
+// COMP-1 member-erasure cascade (GDPR Art.17 / PDPA §33) — discards the erased
+// member's `draft` invoices, RETAINS everything `issued` and beyond (Thai RD
+// §87/3 / Art.17(3)(b)). The single allowed F3 → F4 crossing point for erasure;
+// consumed by `members`' `invoicing-erasure-adapter`.
+export {
+  discardMemberDraftInvoices,
+  type DiscardMemberDraftInvoicesInput,
+  type DiscardMemberDraftInvoicesOutput,
+  type DiscardMemberDraftInvoicesDeps,
+} from './application/use-cases/discard-member-draft-invoices';
 
 export {
   getInvoice,
@@ -473,6 +493,7 @@ export {
   makeCreateInvoiceDraftDeps,
   makeCreateEventInvoiceDraftDeps,
   makeIssueInvoiceDeps,
+  makeGuardGenericRouteIssueOriginDeps,
   makeIssueEventInvoiceAsPaidDeps,
   makeListInvoicesDeps,
   makeListTaxDocumentRegisterDeps,
@@ -528,6 +549,12 @@ export { drizzleTenantSettingsRepo } from './infrastructure/repos/drizzle-tenant
 // PR #173 round-2 review — narrow tx-threaded fiscal-year-start read for F8's
 // re-anchor (avoids a nested pooled connection inside the settlement tx).
 export { readFiscalYearStartMonthInTx } from './infrastructure/repos/drizzle-tenant-settings-repo';
+// 107-auto-invoice Task 7 — narrow non-tx read of the auto-invoice
+// three-key gate + cadence config for F8's daily auto-draft cron.
+export {
+  readAutoInvoiceSettingsForTenant,
+  type AutoInvoiceSettingsRow,
+} from './infrastructure/repos/drizzle-tenant-settings-repo';
 export { makeDrizzleCreditNoteRepo } from './infrastructure/repos/drizzle-credit-note-repo';
 export {
   makeDrizzleInvoiceRepo,

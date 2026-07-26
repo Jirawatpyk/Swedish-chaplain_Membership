@@ -118,6 +118,15 @@ function makeInterleavingRenewalBridge(
 ): F4InvoicingForRenewalBridge {
   let fired = false;
   return {
+    async draftInvoiceForRenewal() {
+      throw new Error('draftInvoiceForRenewal not used by this test double');
+    },
+    async issueExistingDraftForRenewal() {
+      throw new Error('issueExistingDraftForRenewal not used by this test double');
+    },
+    async discardAutoDraftForRenewal() {
+      throw new Error('discardAutoDraftForRenewal not used by this test double');
+    },
     async issueInvoiceForRenewal(
       input: IssueInvoiceForRenewalInput,
     ): Promise<IssueInvoiceForRenewalResult> {

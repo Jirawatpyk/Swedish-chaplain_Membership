@@ -252,9 +252,20 @@ export interface MemberRepo {
    * Returns a `Map<MemberId, Member>` for O(1) per-item access in the caller.
    * Missing ids are absent from the Map; caller is responsible for
    * enumerating the expected vs found set and raising `not_found` as needed.
+   *
+   * `tenantId` is filtered EXPLICITLY in the WHERE clause in addition to the
+   * ambient RLS `SET LOCAL app.current_tenant` — Constitution Principle I
+   * two-layer isolation. Added at the 107-auto-invoice Task 15 review
+   * (Minor): the method previously relied on RLS+FORCE alone, which was
+   * defensible while callers only READ display names, but
+   * `bulkEnrolAutoInvoice` makes the returned Map load-bearing for a
+   * Principle I decision on a billing write path (which members exist →
+   * which get enrolled → who gets auto-billed). A cross-tenant test that
+   * passes on RLS alone proves only one of the two required layers.
    */
   findManyByIdsInTx(
     tx: TenantTx,
+    tenantId: string,
     memberIds: readonly MemberId[],
   ): Promise<Result<ReadonlyMap<MemberId, Member>, RepoError>>;
 
@@ -341,6 +352,92 @@ export interface MemberRepo {
     memberId: MemberId,
     patch: MemberPatch,
   ): Promise<Result<Member, RepoError>>;
+
+  /**
+   * 107-auto-invoice Task 15 — stamp `members.auto_invoice_enrolled_at`
+   * for a batch of members in ONE round-trip, and return the ids it
+   * actually wrote.
+   *
+   * Deliberately NOT expressed as N × `updateFieldsInTx`: enrolment is a
+   * bulk operation capped at 100 members, and the serial form would hold
+   * the transaction open for ~100 RTT (the same problem staff-review
+   * SB-1/SW-1 fixed for `findManyByIdsInTx`).
+   *
+   * Only rows whose `auto_invoice_enrolled_at IS NULL` are written, so an
+   * already-enrolled member is never RE-stamped (their original enrolment
+   * timestamp is the audit-relevant one) and a concurrent second enrol
+   * cannot double-write. The RETURNING set is therefore the authoritative
+   * "who did we actually enrol" list the caller must use to decide which
+   * audit events to emit — do NOT assume it equals `memberIds`.
+   *
+   * Rows with `erased_at IS NOT NULL` are likewise never written (GDPR
+   * Art.17 / PDPA §33). That predicate is defence-in-depth only — callers
+   * MUST partition erased ids out FIRST via {@link MemberRepo.findErasedIdsInTx},
+   * because a caller that reconciles RETURNING against its requested set
+   * would otherwise abort the whole batch over one erased member.
+   *
+   * `tenantId` is filtered EXPLICITLY in the WHERE clause in addition to
+   * the ambient RLS `SET LOCAL app.current_tenant` — Constitution
+   * Principle I two-layer isolation. This method WRITES the key that
+   * causes automated billing, so a cross-tenant leak here would be the
+   * highest-severity class of Principle I violation.
+   */
+  enrolAutoInvoiceInTx(
+    tx: TenantTx,
+    tenantId: string,
+    memberIds: readonly MemberId[],
+    enrolledAt: Date,
+  ): Promise<Result<ReadonlyArray<MemberId>, RepoError>>;
+
+  /**
+   * 107-auto-invoice — batched `erased_at IS NOT NULL` probe over a set of
+   * member ids, returning ONLY the erased ones.
+   *
+   * Exists because `erased_at` is deliberately NOT carried on the `Member`
+   * aggregate (see {@link MemberRepo.findErasedAtById}), so a caller holding
+   * `Member` rows from `findManyByIdsInTx` cannot partition on it. In-tx so
+   * it observes the same locked snapshot as that lookup.
+   *
+   * Erasure keeps `members.status` and does NOT archive the member ("erasure
+   * is orthogonal to archive"), so an erased member remains listed,
+   * selectable and classified `full` by `deriveMembershipAccess` — no other
+   * predicate a bulk caller already has will fence one out.
+   */
+  findErasedIdsInTx(
+    tx: TenantTx,
+    tenantId: string,
+    memberIds: readonly MemberId[],
+  ): Promise<Result<ReadonlySet<MemberId>, RepoError>>;
+
+  /**
+   * Clear `auto_invoice_enrolled_at` (set it back to NULL) for a batch of
+   * members in ONE round-trip, and return the ids it actually cleared.
+   *
+   * The exact inverse of `enrolAutoInvoiceInTx`, including the guard: only
+   * rows whose `auto_invoice_enrolled_at IS NOT NULL` are written, so a
+   * member who was never enrolled is a silent no-op and the RETURNING set
+   * is the authoritative "who did we actually un-enrol" list the caller
+   * must use to decide which audit events to emit. That matters more here
+   * than on the enrol side — un-enrolment DESTROYS the only record that
+   * the member was ever enrolled, so an audit row emitted for a member who
+   * was already un-enrolled would be un-disprovable noise in the trail.
+   *
+   * Takes no timestamp parameter: there is no "un-enrolled at" column to
+   * write. The when-and-by-whom lives in the `member_auto_invoice_
+   * unenrolled` audit row, which is the ONLY record of this change.
+   *
+   * `tenantId` is filtered EXPLICITLY in the WHERE clause in addition to
+   * the ambient RLS `SET LOCAL app.current_tenant` — Constitution
+   * Principle I two-layer isolation. A cross-tenant leak here is lower
+   * blast-radius than on the enrol side (it stops billing rather than
+   * starting it) but it is still an unauthorised write to another
+   * tenant's billing configuration.
+   */
+  unenrolAutoInvoiceInTx(
+    tx: TenantTx,
+    tenantId: string,
+    memberIds: readonly MemberId[],
+  ): Promise<Result<ReadonlyArray<MemberId>, RepoError>>;
 
   /**
    * Resolve member by a linked contact's user_id. Used by portal

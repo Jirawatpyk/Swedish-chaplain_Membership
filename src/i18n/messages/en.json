@@ -1116,6 +1116,7 @@
         }
       },
       "detail": {
+        "autoInvoiceEnrolledBadge": "Auto-invoice: on",
         "title": "{companyName}",
         "subtitle": "{plan} · Year {year}",
         "subtitleArchived": "{plan} · Year {year} · Archived",
@@ -1147,7 +1148,7 @@
         "renewLapsed": {
           "trigger": "Renew member",
           "title": "Renew this member?",
-          "description": "This starts a new membership year for this member and creates a renewal invoice for them to pay. The price is frozen at the member's current plan. The member becomes active again once the invoice is paid.",
+          "description": "This starts a new membership year and creates a renewal invoice at the member's current plan price (frozen for this year). The invoice is emailed to the member automatically, and their membership becomes active again once it's paid.",
           "cancel": "Cancel",
           "confirm": "Create renewal invoice",
           "submitting": "Creating…",
@@ -1159,6 +1160,7 @@
               "member_archived": "This member is archived. Restore the member before renewing.",
               "member_has_active_cycle": "This member already has an active renewal cycle.",
               "plan_not_found": "The member's plan could not be resolved.",
+              "invoice_already_exists": "A membership invoice already exists for this year. Settle or void it before renewing again.",
               "invoice_issue_failed": "The renewal invoice could not be issued. The renewal was not completed — please try again.",
               "rate_limited": "Too many renewal attempts. Please wait a moment and try again.",
               "invalid_body": "The request could not be processed. Please refresh the page and try again.",
@@ -1621,6 +1623,8 @@
           "archive": "Archive",
           "change_plan": "Change plan",
           "send_portal_invite": "Send invite",
+          "enrol_auto_invoice": "Enrol in auto-invoicing",
+          "unenrol_auto_invoice": "Stop auto-invoicing",
           "send_renewal_reminder": "Send renewal reminder"
         },
         "clear": "Clear selection",
@@ -1635,6 +1639,12 @@
         "confirmInviteTitle": "Send {count, plural, one {# invitation} other {# invitations}}",
         "confirmInviteDescription": "Portal invitation emails will be sent to the selected members so they can access the member portal.",
         "confirmInviteAction": "Send invitations",
+        "confirmEnrolTitle": "Enrol {count, plural, one {# member} other {# members}} in auto-invoicing",
+        "confirmEnrolDescription": "Renewal invoices will be prepared automatically as a draft for these members ahead of their due date. A treasurer still reviews and issues every draft — nothing is sent without approval. Members with unpaid or overdue invoices are still enrolled; only members whose membership has permanently ended are skipped. You can reverse this later with “Stop auto-invoicing”.",
+        "confirmEnrolAction": "Enrol members",
+        "confirmUnenrolTitle": "Stop auto-invoicing for {count, plural, one {# member} other {# members}}",
+        "confirmUnenrolDescription": "No new renewal invoice drafts will be prepared for these members. Any draft already waiting in the review queue stays there — discard it separately if you no longer want it. This applies to every selected member, including those whose membership has ended or is on hold.",
+        "confirmUnenrolAction": "Stop auto-invoicing",
         "confirmReminderTitle": "Send a renewal reminder to {count, plural, one {# member} other {# members}}?",
         "confirmReminderDescription": "Each selected member with an active renewal cycle gets their next scheduled reminder email now. Members with no reminder due, or who opted out, are skipped.",
         "confirmReminderAction": "Send reminders",
@@ -1648,6 +1658,12 @@
         "inviteResent": "{resent, plural, one {# re-sent} other {# re-sent}}",
         "inviteSkipped": "{skipped, plural, one {# skipped} other {# skipped}}",
         "inviteFailed": "{failed, plural, one {# failed} other {# failed}}",
+        "enrolSucceeded": "{enrolled, plural, one {# member enrolled} other {# members enrolled}}",
+        "enrolSkippedAlready": "{skipped, plural, one {# already enrolled} other {# already enrolled}}",
+        "enrolSkippedTerminated": "{skipped, plural, one {# skipped (membership ended)} other {# skipped (membership ended)}}",
+        "enrolSkippedErased": "{skipped, plural, one {# skipped (personal data erased)} other {# skipped (personal data erased)}}",
+        "unenrolSucceeded": "{unenrolled, plural, one {# member no longer auto-invoiced} other {# members no longer auto-invoiced}}",
+        "unenrolSkippedNotEnrolled": "{skipped, plural, one {# was not enrolled} other {# were not enrolled}}",
         "rateLimited": "Too many bulk actions. Wait a few minutes and try again.",
         "errors": {
           "state_error": "One or more selected members are in a state that doesn't allow this action. Refresh and try again.",
@@ -2049,6 +2065,47 @@
       "meta": {
         "title": "Invoices"
       },
+      "queueView": {
+        "title": "Auto-renewal review queue",
+        "description": "Cron-drafted renewal bills awaiting review before they're issued."
+      },
+      "autoRenewalQueue": {
+        "actions": {
+          "menuAria": "Actions for {member}'s renewal draft",
+          "issueAndSend": "Issue and email",
+          "issueSilently": "Issue silently",
+          "discard": "Discard draft",
+          "cancel": "Cancel",
+          "sendDialog": {
+            "title": "Issue and email this bill?",
+            "description": "A membership bill will be issued for {member} and emailed to their primary contact."
+          },
+          "silentDialog": {
+            "title": "Issue this bill without emailing?",
+            "description": "A membership bill will be issued for {member}. No email will be sent — you'll need to deliver it another way."
+          },
+          "discardDialog": {
+            "title": "Discard this draft?",
+            "description": "This draft bill for {member} will be permanently deleted. The next auto-renewal run may create a new draft before the cycle is due."
+          },
+          "toast": {
+            "issuedAndSent": "Bill {number} issued and emailed.",
+            "issuedSilently": "Bill {number} issued.",
+            "discarded": "Draft discarded."
+          },
+          "errors": {
+            "draftNotFound": "This draft could not be found — it may have already been issued or discarded. Refresh the page.",
+            "cycleNotFound": "We couldn't find this draft's renewal record. The draft itself hasn't changed — refresh the page and try again.",
+            "invalidDraft": "This draft is no longer valid. Refresh the page and try again.",
+            "discardNotDraft": "This draft was already issued and can no longer be discarded. Refresh the page.",
+            "issueFailed": "The bill could not be issued. Please try again.",
+            "discardFailed": "The draft could not be discarded. Please try again.",
+            "network": "A network error occurred. Please try again.",
+            "rateLimited": "Too many actions in a short time — wait a moment and try again.",
+            "rateLimitedWithSeconds": "Too many actions in a short time — wait {seconds, plural, =1 {1 second} other {# seconds}} and try again."
+          }
+        }
+      },
       "list": {
         "title": "Invoices",
         "description": "Thai-tax-compliant membership invoices.",
@@ -2078,7 +2135,8 @@
           "actions": "Actions",
           "buyer": "Buyer",
           "method": "Method",
-          "receiptNumber": "Receipt No."
+          "receiptNumber": "Receipt No.",
+          "queue": "Queue"
         },
         "subjectChip": {
           "event": "Event",
@@ -2129,6 +2187,12 @@
             "all": "All VAT",
             "standard": "Standard VAT",
             "zeroRated": "Zero-rated §80/1(5)"
+          },
+          "origin": {
+            "label": "Origin",
+            "all": "All origins",
+            "manual": "Manual",
+            "autoRenewal": "Auto-renewal queue"
           }
         },
         "creditedSuffix": "{count, plural, one {+# CN} other {+# CN}}",
@@ -2136,7 +2200,32 @@
         "creditedAria": "{count, plural, one {# credit note} other {# credit notes}} issued against this invoice, {amount} Thai baht credited",
         "receiptNumberCombinedTooltip": "Combined mode — receipt reuses the invoice number",
         "receiptNumberCombinedAria": "Receipt uses the invoice document number (combined mode)",
-        "tableCaption": "List of invoices for the selected filters."
+        "tableCaption": "List of invoices for the selected filters.",
+        "queueTableCaption": "List of auto-renewal drafts awaiting review.",
+        "queue": {
+          "wouldBeRefused": "Would be refused",
+          "wouldBeRefusedAria": "Would be refused — the treasurer cannot issue this draft as-is",
+          "refusalReason": {
+            "planYearDrift": "The renewal period changed after this draft was created.",
+            "planDrift": "The member's plan changed after this draft was created.",
+            "memberTerminated": "This member's coverage has lapsed.",
+            "memberErased": "This member's personal data has been erased at their request. No new invoice can be issued for them — discard this draft.",
+            "duplicateLiveBill": "A bill for this member and plan year already exists."
+          },
+          "viewConflictingInvoice": "View existing bill",
+          "unresolved": "Unable to verify",
+          "unresolvedAria": "Unable to verify this draft's price, coverage, or whether it would be refused",
+          "unresolvedTooltip": "We couldn't confirm this draft's price, coverage, or whether it would be refused. Review it manually before issuing.",
+          "priceUnverifiable": "Price could not be confirmed",
+          "priceUnverifiableAria": "Price could not be confirmed against an active plan catalogue entry",
+          "priceFrozenOnly": "Frozen at {frozen}",
+          "priceChanged": "Price changed",
+          "priceChangedAria": "Price changed — frozen at {frozen}, current catalogue price is {current}",
+          "billYearStale": "Fiscal year has changed since drafting",
+          "billYearStaleAria": "Fiscal year has changed since this draft was created; today's fiscal year is {currentFiscalYear}",
+          "billYearStaleTooltip": "This draft was created for fiscal year {planYear}; today's fiscal year is {currentFiscalYear}.",
+          "staleness": "{days, plural, =0 {Drafted today} one {Drafted # day ago} other {Drafted # days ago}}"
+        }
       },
       "csvExport": {
         "trigger": "Export CSV…",
@@ -2620,7 +2709,8 @@
           "temporary": "A temporary problem stopped the invoice from being issued — nothing was created. Please try again, and contact support if it keeps happening.",
           "codeFallback": "Error code: {code}",
           "unknown": "An unknown error occurred. Please try again.",
-          "overflow": "The sequential document numbers for this fiscal year are exhausted. Contact support."
+          "overflow": "The sequential document numbers for this fiscal year are exhausted. Contact support.",
+          "origin_auto_renewal_use_queue": "This draft was created automatically for a member's renewal and must be issued from the Renewals area, not from here."
         },
         "draftLabel": "Draft",
         "confirmMismatch": "Phrase must match \"{phrase}\" exactly to confirm."
@@ -5885,6 +5975,9 @@
       "membership_access_fail_open": "Membership-access check failed open",
       "renewal_lapse_deferred_invoice_not_due": "Lapse deferred — invoice not yet due",
       "event_attendance_by_suspended_member": "Attendance recorded — member benefit access suspended/terminated",
+      "renewal_auto_drafted": "Renewal draft auto-created",
+      "renewal_auto_draft_discarded": "Renewal auto-draft discarded",
+      "renewal_orphan_invoice_relinked": "Renewal invoice re-linked to cycle",
       "invoice_draft_created": "Invoice draft created",
       "invoice_draft_updated": "Invoice draft updated",
       "invoice_draft_deleted": "Invoice draft deleted",
@@ -5996,6 +6089,8 @@
       "member_erasure_requested": "Member erasure requested",
       "member_erased": "Member data erased",
       "subprocessor_erasure_propagated": "Erasure propagated to subprocessor",
+      "member_auto_invoice_enrolled": "Enrolled in automatic renewal invoicing",
+      "member_auto_invoice_unenrolled": "Removed from automatic renewal invoicing",
       "user_erased": "User account erased",
       "broadcast_content_redacted": "Broadcast content redacted",
       "account_created": "Account created",

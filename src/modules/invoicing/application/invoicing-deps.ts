@@ -43,6 +43,7 @@ import { taxAtPaymentFlag } from '../domain/tax-at-payment-flag';
 import type { CreateInvoiceDraftDeps } from './use-cases/create-invoice-draft';
 import type { CreateEventInvoiceDraftDeps } from './use-cases/create-event-invoice-draft';
 import type { IssueInvoiceDeps } from './use-cases/issue-invoice';
+import type { GuardGenericRouteIssueOriginDeps } from './use-cases/guard-generic-route-issue-origin';
 import type { IssueEventInvoiceAsPaidDeps } from './use-cases/issue-event-invoice-as-paid';
 import type { ListInvoicesDeps } from './use-cases/list-invoices';
 import type { GetInvoicePdfSignedUrlDeps } from './use-cases/get-invoice-pdf-signed-url';
@@ -120,6 +121,20 @@ export function makeIssueInvoiceDeps(tenantId: string): IssueInvoiceDeps {
     currentTemplateVersion: CURRENT_TEMPLATE_VERSION,
     // 088 T022 — new bill→§87-at-payment flow when the flag is on.
     taxAtPayment: taxAtPaymentFlag(env.features.f088TaxAtPayment),
+  };
+}
+
+/**
+ * 107-auto-invoice Task 10 — composition for the generic issue route's
+ * origin guard. Only `invoiceRepo` is needed (`getOrigin` is a narrow,
+ * unlocked read — see the use-case's own docstring for why no lock/tx is
+ * required here).
+ */
+export function makeGuardGenericRouteIssueOriginDeps(
+  tenantId: string,
+): GuardGenericRouteIssueOriginDeps {
+  return {
+    invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
   };
 }
 
@@ -317,9 +332,26 @@ export function makePreviewInvoiceDraftDeps(tenantId: string): PreviewInvoiceDra
   };
 }
 
-export function makeDeleteInvoiceDraftDeps(tenantId: string): DeleteInvoiceDraftDeps {
+/**
+ * @param tenantId - tenant slug the deps are bound to.
+ * @param externalTx - optional caller-owned Drizzle tx handle. When supplied,
+ *   the delete runs INLINE against that tx instead of opening its own
+ *   `runInTenant` (same tx-sharing contract as `makeDrizzleInvoiceRepo`'s
+ *   other callers — see the F5 → F4 bridge below). 107-auto-invoice Task 9
+ *   needs this so the auto-draft sweep can run under the renewals per-cycle
+ *   advisory lock: calling a self-opening `runInTenant` while holding a
+ *   transaction-scoped lock would pin a second pooled connection for the
+ *   duration of the outer transaction.
+ *
+ *   Callers that supply `externalTx` MUST already be inside a `runInTenant`
+ *   (so `app.current_tenant` is set on that connection).
+ */
+export function makeDeleteInvoiceDraftDeps(
+  tenantId: string,
+  externalTx?: unknown,
+): DeleteInvoiceDraftDeps {
   return {
-    invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
+    invoiceRepo: makeDrizzleInvoiceRepo(tenantId, externalTx),
     audit: f4AuditAdapter,
   };
 }

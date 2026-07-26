@@ -200,6 +200,7 @@ function makeDeps(invoice: Invoice | null) {
     invoiceRepo: {
       findById: vi.fn(async () => invoice),
       // Stubs for unused methods on the port — keep typing happy.
+      getOrigin: vi.fn(),
       withTx: vi.fn(),
       insertDraft: vi.fn(),
       // Duplicate guard read — unused by this use case (only
@@ -212,7 +213,7 @@ function makeDeps(invoice: Invoice | null) {
       listSupersedableMembershipBills: vi.fn(),
       findEventInvoiceIdByRegistration: vi.fn(async () => null),
       applyIssue: vi.fn(),
-      deleteDraft: vi.fn(),
+      deleteDraft: vi.fn(async () => true),
       applyPayment: vi.fn(),
       applyDraftUpdate: vi.fn(),
       findByIdInTxForUpdate: vi.fn(),

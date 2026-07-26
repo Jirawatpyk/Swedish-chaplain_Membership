@@ -258,6 +258,8 @@ All jobs run on native Vercel Cron (`vercel.json`), registered on the production
 Flip on only after each feature's gates above pass:
 - [ ] `FEATURE_F3_MEMBERS`, `FEATURE_F4_INVOICING`, `FEATURE_F5_ONLINE_PAYMENT` (⚠️ Stripe LIVE only), `FEATURE_F6_EVENTCREATE` (⚠️ requires `EVENTCREATE_PII_PSEUDONYM_SALT` + `ZAPIER_DPA_EXECUTED=true` first, else boot fails), `FEATURE_F7_BROADCASTS`, `FEATURE_F71A_BROADCAST_ADVANCED`, `FEATURE_F8_RENEWALS`, `FEATURE_F9_DASHBOARD`
 - [ ] **F7.1a sub-flags** (staged order, after master): `FEATURE_F71A_US7_TEMPLATES` → `FEATURE_F71A_US2_IMAGES` (needs ClamAV §6.3) → `FEATURE_F71A_US1_PAGINATION` ← was missing
+- [ ] **`FEATURE_ERASURE_DISCARD_DRAFTS=true` — REQUIRED, not optional.** Off is **not** the safe default: it is a known, open **GDPR Art.17 / PDPA §33 gap** — an erased member's `draft` invoices survive erasure. Nothing else closes it; only this flip does. It is **not** part of the auto-invoice three-key sequence (§ 6.8) and standing auto-invoice down does not stand it down — `eraseMember` is already production-live via COMP-1 and the `reconcile-erasures` cron re-drives it, so the gap is open in production **whether or not auto-invoice is ever enabled**. Detail: `docs/runbooks/cron-jobs.md` § "Auto-invoice — auto-draft renewals" (the "fourth key" note) + `.env.example`. ⚠️ The deletes are **irreversible** and issued documents are never touched (Thai RD §87/3 / Art.17(3)(b) carve-out) — take the Neon PITR snapshot (§ 6.5) before flipping. ← **new, lands with `107-auto-invoice`**
+- [ ] **`FEATURE_AUTO_INVOICE`** — env key **1 of 3**; setting it alone produces no drafts. Do **not** flip it from this list — follow § 6.8.
 
 ### 6.5 Safety net
 - [ ] `READ_ONLY_MODE` flip tested (emergency write-freeze, CLAUDE.md § Commands)
@@ -280,6 +282,18 @@ Operator actions specific to the refund-lifecycle bugfix batch (migration 0241/0
 - [ ] **Stripe `charge.refund.updated` delivery** — enable in the Stripe Dashboard endpoint config **only after** the `processRefundUpdated` handler is deployed (it is, on this branch — see § 6.2 above for the same gate in the general cron/webhook checklist). Enabling delivery before the handler ships means an early event lands on the default `acknowledged_only` 200-ack branch and is silently swallowed instead of finalising the pending refund.
 - [ ] **cron-job.org sweep timeout ≥60s** — confirm the per-job request timeout configured for the `sweep-stale-pending-refunds` job is **≥60s** (`docs/runbooks/stale-pending-refund-sweep.md`). The sweep's own total-elapsed budget (`35s` internal budget + ≤8s last Stripe retrieve + `finalizeSucceededRefund` headroom, see `SWEEP_TOTAL_BUDGET_MS` in `sweep-stale-pending-refunds.ts`) is sized against a `≤60s` caller timeout — a shorter cron timeout can abort the sweep mid-finalise.
 - [ ] **If prod was wiped**: run `pnpm seed:system-actors:prod` before resuming any Stripe traffic — the webhook system-actor rows (`…f5001`/`…f5002`) must exist or every refund webhook FK-throws (`docs/runbooks/prod-data-wipe.md`).
+
+### 6.8 107 Auto-invoice — three-key enable procedure (lands with `107-auto-invoice`)
+> **Executable procedure: `docs/runbooks/cron-jobs.md` § "Auto-invoice — auto-draft renewals" → "Enabling: the three-key procedure".** Run that; this is the index entry.
+>
+> **`FEATURE_AUTO_INVOICE=true` alone produces nothing.** Two of the three keys are database state, not env, so an operator who flips only the env var sees a feature that looks broken. The keys are ordered and must not be improvised.
+
+- [ ] **Key 1 — `FEATURE_AUTO_INVOICE=true`** (Vercel env + redeploy). Master kill-switch. `FEATURE_F8_RENEWALS` must **also** be true. Off ⇒ routes return `200 {skipped}`, never 503 (a cron must not retry-storm).
+- [ ] **Key 2 — `tenant_invoice_settings.auto_invoice_enabled = true`** for the tenant, plus its cadence columns. A tenant with **no settings row** counts as disabled (absent ≠ enabled).
+- [ ] **Key 3 — `members.auto_invoice_enrolled_at`** per member, via the Members-directory bulk-enrol action. This is the blast-radius control: **pilot 2–3 members first**, confirm the queue populates and no email goes out, then widen.
+- [ ] **Prerequisite — `billing_cycle` admin-review pass** before enrolling a cohort. Errors skew one way (false `'calendar'`, not false `'rolling'`); there is deliberately **no bulk-correct tool**, so scope the review to the cohort being enrolled. If it turns up more than a handful of corrections, raise it — building the tool may be cheaper than the manual pass, and that is a maintainer call.
+- [ ] **Stand-down**: reverse any ONE key; key 1 is fastest (env + redeploy, no data change). Un-enrolling does not remove drafts already created — discard those from the review queue.
+- [ ] **`FEATURE_ERASURE_DISCARD_DRAFTS` is NOT one of these keys** — see § 6.4. It is independently required, and standing auto-invoice down does not stand it down.
 
 ---
 

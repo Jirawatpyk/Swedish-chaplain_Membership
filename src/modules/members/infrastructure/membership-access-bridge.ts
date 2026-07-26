@@ -47,7 +47,10 @@ import { systemClock } from '@/modules/invoicing/application/ports/clock-port';
 import type { TenantContext } from '@/modules/tenants';
 import { deriveMembershipAccess } from '@/modules/renewals';
 import { makeDrizzleRenewalCycleRepo } from '@/modules/renewals/infrastructure/drizzle/drizzle-renewal-cycle-repo';
-import type { MembershipAccessPort } from '../application/ports/membership-access-port';
+import type {
+  MembershipAccessPort,
+  MembershipAccessSummary,
+} from '../application/ports/membership-access-port';
 
 export const membershipAccessBridge: MembershipAccessPort = {
   async getMembershipAccess(tenant: TenantContext, memberId: string) {
@@ -71,6 +74,53 @@ export const membershipAccessBridge: MembershipAccessPort = {
         },
         '[membership-access-bridge] access lookup failed — failing closed',
       );
+      return err({ kind: 'membership_access.lookup_error' as const });
+    }
+  },
+
+  async getMembershipAccessMany(tenant: TenantContext, memberIds: readonly string[]) {
+    try {
+      if (memberIds.length === 0) {
+        return ok(new Map() as ReadonlyMap<string, MembershipAccessSummary>);
+      }
+      const cyclesRepo = makeDrizzleRenewalCycleRepo(tenant);
+      // ONE `DISTINCT ON (member_id)` query, ordered created_at DESC +
+      // cycle_id DESC — the SAME "latest" key the singular
+      // `findLatestCycleForMember` uses, so this batched path and the
+      // suspension gate can never disagree about which cycle is latest
+      // (documented invariant on the repo port).
+      const cycles = await cyclesRepo.findLatestCyclesForMembers(tenant.slug, memberIds);
+      const byMember = new Map(cycles.map((c) => [c.memberId, c]));
+
+      // Read the clock ONCE for the whole batch so every member in a
+      // single request is classified against the same instant — a
+      // per-member `now` could straddle a grace-expiry boundary and
+      // classify two identical members differently.
+      const now = new Date(systemClock.nowIso());
+      const result = new Map<string, MembershipAccessSummary>();
+      for (const memberId of memberIds) {
+        // `?? null` is load-bearing: members with no cycle are ABSENT
+        // from the query result, and `deriveMembershipAccess(null, now)`
+        // is defined to return `full` — so they must be classified, not
+        // dropped from the map.
+        const { access, reason } = deriveMembershipAccess(
+          byMember.get(memberId) ?? null,
+          now,
+        );
+        result.set(memberId, { access, reason });
+      }
+      return ok(result as ReadonlyMap<string, MembershipAccessSummary>);
+    } catch (e) {
+      logger.warn(
+        {
+          err: e instanceof Error ? e.message : String(e),
+          tenantSlug: tenant.slug,
+          memberCount: memberIds.length,
+        },
+        '[membership-access-bridge] batched access lookup failed — failing closed',
+      );
+      // Fail closed for the WHOLE batch — never a partial map, so a
+      // caller cannot mistake an unresolved member for a permitted one.
       return err({ kind: 'membership_access.lookup_error' as const });
     }
   },

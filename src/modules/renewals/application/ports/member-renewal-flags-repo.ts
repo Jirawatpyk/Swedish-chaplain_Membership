@@ -185,6 +185,26 @@ export interface MemberRenewalFlagsRepo {
   ): Promise<{ readonly blocked: boolean; readonly erased: boolean } | null>;
 
   /**
+   * 107-auto-invoice — batched `erased_at IS NOT NULL` probe for the admin
+   * auto-renewal review queue's `member_erased` refusal PREDICTION
+   * (`loadAutoRenewalQueueContext`).
+   *
+   * Batched (one query for the whole page) because the queue loader is a hot
+   * admin read path whose docstring forbids N+1 — the sibling signals are all
+   * batched the same way. Read-only, so it opens its own `runInTenant` rather
+   * than taking a tx; the authoritative check is
+   * `readReactivationGuardsInTx` under the per-cycle lock at issue time, and
+   * a TOCTOU gap between rendering the queue and clicking Issue is expected
+   * and closed there.
+   *
+   * Returns only the erased ids — a member absent from the result is either
+   * not erased or RLS-hidden, and both mean "no erasure signal to show".
+   */
+  findErasedMemberIds(
+    memberIds: readonly string[],
+  ): Promise<ReadonlySet<string>>;
+
+  /**
    * C7 review-fix (Phase 5 Wave I): SSR-seed the preferences toggle
    * on `/portal/preferences/renewals`. Reads `renewal_reminders_opted_out`
    * directly so members already opted out see the toggle in the

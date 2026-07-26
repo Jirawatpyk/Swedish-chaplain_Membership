@@ -18,6 +18,7 @@ import {
 } from '@/modules/members/application/use-cases/erase-member';
 import { asMemberId } from '@/modules/members';
 import { ok } from '@/lib/result';
+import { logger } from '@/lib/logger';
 import type { MemberErasureReason } from '@/modules/members/application/ports/broadcasts-content-scrub-port';
 import { buildEraseDeps } from './erase-member.fixtures';
 
@@ -347,6 +348,214 @@ describe('eraseMember — requested audit + atomic scrub', () => {
     if (res.ok) expect(res.value.cascadesComplete).toBe(false);
     const types = deps.audit.recordInTx.mock.calls.map((c) => (c[2] as { type: string }).type);
     expect(types).not.toContain('member_erased');
+  });
+
+  // --- COMP-1 §6.2 — the F4 invoicing draft-discard cascade ------------------
+  // Erasure DISCARDS `draft` invoices and RETAINS `issued` and beyond: a draft
+  // carries no §87 sequence number and no statutory retention duty (Art.5(1)(c)
+  // minimisation + Art.17), while an issued document is retained under the Thai
+  // RD §87/3 legal-obligation carve-out (Art.17(3)(b)). Before this cascade
+  // existed the draft simply SURVIVED erasure — the treasurer was told to
+  // discard it by hand and nothing discarded it automatically (the Task 11
+  // prune cron only ever reaches `origin='auto_renewal'` drafts stamped on a
+  // cycle, never a manual or event draft, and never sooner than the next day).
+  it('discards the erased member’s pending invoice drafts on the post-commit cascade', async () => {
+    const deps = buildEraseDeps();
+    const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+    expect(res.ok).toBe(true);
+    expect(deps.invoicingErasure.discardDraftsForMember).toHaveBeenCalledWith(
+      deps.tenant,
+      asMemberId('m-1'),
+      { actorUserId: META.actorUserId, requestId: META.requestId },
+    );
+  });
+
+  it('withholds member_erased when the F4 draft-discard cascade fails', async () => {
+    const deps = buildEraseDeps();
+    deps.invoicingErasure.discardDraftsForMember = vi.fn(
+      async () => ({ outcome: 'failed', discardedCount: 0 }) as const,
+    );
+    const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.cascadesComplete).toBe(false);
+    const types = deps.audit.recordInTx.mock.calls.map((c) => (c[2] as { type: string }).type);
+    expect(types).not.toContain('member_erased');
+  });
+
+  it('a THROW from the F4 draft-discard cascade does not fail the erasure', async () => {
+    // The member row IS erased (the atomic scrub committed). A best-effort
+    // cascade throwing must never turn that into a failed erasure — it must
+    // only withhold the completion proof so the US2d reconciler re-drives.
+    const deps = buildEraseDeps();
+    deps.invoicingErasure.discardDraftsForMember = vi.fn(async () => {
+      throw new Error('boom');
+    });
+    const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.cascadesComplete).toBe(false);
+    const types = deps.audit.recordInTx.mock.calls.map((c) => (c[2] as { type: string }).type);
+    expect(types).not.toContain('member_erased');
+  });
+
+  // The first three cascades previously caught with a bare `catch {}` that set
+  // the flag and logged NOTHING. The comment justifying that pointed at the
+  // adapter owning the cascade-detail log — true for the ordinary path, but
+  // this catch only fires when the adapter threw OUTSIDE its own try/catch (DI
+  // gap, a port later swapped for a throwing one, a failing logger), i.e.
+  // exactly when the adapter logged nothing. The operator was left with an
+  // erasure that never completes, a reconciler re-driving forever, and no
+  // diagnosis — on a path with a statutory deadline.
+  //
+  // The last three DID log, but logged `cascadeErr.message` verbatim — the leak
+  // this table's PII assertion exists to catch. On an Art. 17 path the thrown
+  // text is by definition the data subject's own personal data (a Drizzle error
+  // carries SQL parameter bindings; a Resend/Stripe error carries the address).
+  // Converted to `errKind` so the whole file follows one rule.
+  describe.each([
+    ['invoicingErasure', 'discardDraftsForMember', 'f4_invoice_draft_discard'],
+    ['eventRegistrationErasure', 'eraseAllForMember', 'f6_event_registration_erasure'],
+    ['directoryErasure', 'eraseForMember', 'f9_directory_erasure'],
+    ['broadcastsCascade', 'cancelInFlightForMember', 'f7_in_flight_broadcast_cancel'],
+    ['renewalsCascade', 'cancelInFlightForMember', 'f8_in_flight_cycle_cancel'],
+    ['broadcastsContentScrub', 'scrubContentForMember', 'f7_content_scrub'],
+  ] as const)('a THROW from the %s cascade is logged', (port, method, cascade) => {
+    it(`logs cascade=${cascade} with the error CLASS, never the message`, async () => {
+      const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+      try {
+        const deps = buildEraseDeps();
+        // A message that would be a PII/SQL-leak vector if it were logged.
+        (deps[port] as unknown as Record<string, unknown>)[method] = vi.fn(async () => {
+          throw new Error('boom secret@example.com');
+        });
+
+        const res = await eraseMember(
+          asMemberId('m-1'),
+          { reason: 'gdpr_erasure_request' },
+          META,
+          deps,
+        );
+        expect(res.ok).toBe(true);
+        if (res.ok) expect(res.value.cascadesComplete).toBe(false);
+
+        const call = errorSpy.mock.calls.find(
+          (c) => (c[0] as { cascade?: string } | undefined)?.cascade === cascade,
+        );
+        expect(call).toBeDefined();
+        const ctx = call?.[0] as Record<string, unknown>;
+        expect(ctx.memberId).toBe('m-1');
+        expect(ctx.requestId).toBe(META.requestId);
+        // `errKind` — the error CLASS only. Logging `.message` here would put
+        // adapter-supplied text (Drizzle SQL fragments, member PII) into a log
+        // aggregator; see the rationale on `errKind` in src/lib/log-id.ts.
+        expect(ctx.err).toBe('Error');
+        expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('secret@example.com');
+      } finally {
+        errorSpy.mockRestore();
+      }
+    });
+  });
+
+  // The remaining two `.message` sites need setup the table above cannot express:
+  // F1 needs a linked user to reach the per-user loop, and the subprocessor audit
+  // needs an audience-bearing member plus a type-selective audit throw.
+  it('a THROW from the F1 user-erasure cascade logs the error CLASS, never the message', async () => {
+    const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+    try {
+      const deps = buildEraseDeps();
+      deps.contactRepo.listAllLinkedUserIdsForMemberInTx = vi.fn(async () => ['u-1']);
+      deps.userErasure.eraseUser = vi.fn(async () => {
+        throw new Error('boom secret@example.com');
+      });
+
+      const res = await eraseMember(
+        asMemberId('m-1'),
+        { reason: 'gdpr_erasure_request' },
+        META,
+        deps,
+      );
+      expect(res.ok).toBe(true);
+      if (res.ok) expect(res.value.cascadesComplete).toBe(false);
+
+      const call = errorSpy.mock.calls.find(
+        (c) => (c[0] as { cascade?: string } | undefined)?.cascade === 'f1_user_erasure',
+      );
+      expect(call).toBeDefined();
+      const ctx = call?.[0] as Record<string, unknown>;
+      expect(ctx.memberId).toBe('m-1');
+      expect(ctx.requestId).toBe(META.requestId);
+      // `userId` is the field this site logs on top of the shared three — it
+      // identifies WHICH linked user failed, so the operator can re-drive one
+      // user instead of the whole member. Pinned so the conversion cannot
+      // silently drop it.
+      expect(ctx.userId).toBe('u-1');
+      expect(ctx.err).toBe('Error');
+      expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('secret@example.com');
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('a THROW from the subprocessor audit-emit logs the error CLASS, never the message', async () => {
+    const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+    try {
+      const deps = buildEraseDeps();
+      // An audience-bearing member → the subprocessor cascade does real work and
+      // reaches its audit emit.
+      deps.broadcastsAudienceDerivation.listMemberAudienceContactsInTx = vi.fn(
+        async () => [{ audienceId: 'aud_1', email: 'a@x.io' }],
+      );
+      deps.audit.recordInTx = vi.fn(
+        async (_tx: unknown, _ctx: unknown, event: { type: string }) => {
+          if (event.type === 'subprocessor_erasure_propagated') {
+            throw new Error('boom secret@example.com');
+          }
+          return ok(undefined);
+        },
+      );
+
+      const res = await eraseMember(
+        asMemberId('m-1'),
+        { reason: 'gdpr_erasure_request' },
+        META,
+        deps,
+      );
+      expect(res.ok).toBe(true);
+      // A subprocessor audit failure is NON-BLOCKING (US3-C) — unchanged by the
+      // logging conversion. Asserted here so a control-flow regression in this
+      // catch surfaces as a failure, not as a quietly-still-green log assertion.
+      if (res.ok) expect(res.value.cascadesComplete).toBe(true);
+
+      const call = errorSpy.mock.calls.find(
+        (c) => (c[0] as { cascade?: string } | undefined)?.cascade === 'subprocessor_erasure',
+      );
+      expect(call).toBeDefined();
+      const ctx = call?.[0] as Record<string, unknown>;
+      expect(ctx.memberId).toBe('m-1');
+      expect(ctx.requestId).toBe(META.requestId);
+      expect(ctx.err).toBe('Error');
+      expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('secret@example.com');
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('records the discarded-draft count on the member_erased DPO payload', async () => {
+    // Erasure is a compliance path — a silent discard is not acceptable. F4
+    // emits `invoice_draft_deleted` per document; this count is the DPO-facing
+    // aggregate on the completion proof.
+    const deps = buildEraseDeps();
+    deps.invoicingErasure.discardDraftsForMember = vi.fn(
+      async () => ({ outcome: 'ok', discardedCount: 2 }) as const,
+    );
+    const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+    expect(res.ok).toBe(true);
+    const erased = deps.audit.recordInTx.mock.calls.find(
+      (c) => (c[2] as { type: string }).type === 'member_erased',
+    );
+    expect(erased, 'member_erased was not emitted').toBeDefined();
+    expect((erased?.[2] as { payload: Record<string, unknown> }).payload).toMatchObject({
+      invoice_drafts_discarded_count: 2,
+    });
   });
 
   // Distinct from the prior case (a non-ok OUTCOME): here the cascade adapter
@@ -717,8 +926,8 @@ describe('eraseMember — requested audit + atomic scrub', () => {
   // Renewals cascade THROWS (vs the non-ok outcome above). The post-commit
   // try/catch must catch it, flip allCascadesClean=false, and withhold
   // member_erased — never let a best-effort cascade throw escape. Throws an
-  // Error so the `cascadeErr instanceof Error` true-arm of the catch's
-  // String(cascadeErr) ternary is exercised.
+  // Error so `errKind` resolves the CLASS arm (the log shape itself is pinned
+  // by the `a THROW from the … cascade is logged` table above).
   it('renewals cascade THROW → cascadesComplete:false + no member_erased', async () => {
     const deps = buildEraseDeps();
     deps.renewalsCascade.cancelInFlightForMember = vi.fn(async () => {
@@ -738,12 +947,13 @@ describe('eraseMember — requested audit + atomic scrub', () => {
     expect(types).not.toContain('member_erased');
   });
 
-  // Defensive ternary arm: a cascade can throw a NON-Error value (e.g. a bare
-  // string). The catch logs `String(cascadeErr)` (the false arm of the
-  // `cascadeErr instanceof Error ? cascadeErr.message : String(cascadeErr)`
-  // ternary). Thrown from BOTH cascades so the false arm of each catch's
-  // ternary is covered; still must withhold member_erased.
-  it('a cascade throwing a NON-Error value is handled (String(cascadeErr) arm)', async () => {
+  // Defensive non-Error arm: a cascade can throw a NON-Error value (e.g. a bare
+  // string). `errKind` logs 'unknown' for these rather than the thrown value —
+  // a deliberate trade (the thrown text is arbitrary adapter-supplied content,
+  // so on an Art. 17 path it is exactly what must not reach a log aggregator).
+  // The cascade label + memberId + requestId still identify which port failed
+  // and for whom. Thrown from BOTH cascades; still must withhold member_erased.
+  it('a cascade throwing a NON-Error value is handled (errKind unknown arm)', async () => {
     const deps = buildEraseDeps();
     deps.broadcastsCascade.cancelInFlightForMember = vi.fn(async () => {
       throw 'broadcasts-string-failure';

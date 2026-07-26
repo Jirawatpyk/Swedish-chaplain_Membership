@@ -125,6 +125,55 @@ export async function readFiscalYearStartMonthInTx(
   return rows[0]?.fiscalYearStartMonth ?? null;
 }
 
+/** 107-auto-invoice Task 7 — narrow return shape for {@link readAutoInvoiceSettingsForTenant}. */
+export interface AutoInvoiceSettingsRow {
+  readonly enabled: boolean;
+  readonly leadDaysRolling: number;
+  readonly leadDaysCalendar: number;
+  readonly pageSize: number;
+}
+
+/**
+ * 107-auto-invoice Task 7 — narrow, NON-tx read of the tenant's
+ * auto-invoice three-key gate + cadence config (4 columns added by
+ * migration 0259 / Task 1: `auto_invoice_enabled`,
+ * `auto_invoice_lead_days_rolling/_calendar`, `auto_invoice_page_size`).
+ *
+ * Mirrors `readFiscalYearStartMonthInTx`'s "standalone narrow read,
+ * not a new `TenantSettingsRepo` method" rationale just above — F8's
+ * daily auto-draft cron needs exactly these 4 fields BEFORE it can
+ * even call its own eligibility query (`listCyclesEligibleForAutoDraft`
+ * takes `leadDaysRolling`/`leadDaysCalendar`/`pageSize` as args), and
+ * the full `TenantInvoiceSettingsView` is unrelated overhead + would
+ * force a new field onto every other consumer of that heavier shape.
+ * Unlike the fiscal-year sibling this is a NON-tx variant (opens its
+ * own `runInTenant`) — the auto-draft cron calls it BEFORE any
+ * per-cycle tx exists, so there is no nested-connection risk to avoid.
+ *
+ * Returns `null` when the tenant has no `tenant_invoice_settings` row
+ * yet (pre-F4-setup tenant) — the caller treats this identically to
+ * `enabled: false` (the three-key dark-ship default: no auto-draft
+ * behaviour until every key is explicitly turned on).
+ */
+export async function readAutoInvoiceSettingsForTenant(
+  tenantId: string,
+): Promise<AutoInvoiceSettingsRow | null> {
+  const ctx = asTenantContext(tenantId);
+  const rows = await runInTenant(ctx, (tx) =>
+    tx
+      .select({
+        enabled: tenantInvoiceSettings.autoInvoiceEnabled,
+        leadDaysRolling: tenantInvoiceSettings.autoInvoiceLeadDaysRolling,
+        leadDaysCalendar: tenantInvoiceSettings.autoInvoiceLeadDaysCalendar,
+        pageSize: tenantInvoiceSettings.autoInvoicePageSize,
+      })
+      .from(tenantInvoiceSettings)
+      .where(eq(tenantInvoiceSettings.tenantId, tenantId))
+      .limit(1),
+  );
+  return rows[0] ?? null;
+}
+
 export const drizzleTenantSettingsRepo: TenantSettingsRepo = {
   async getForIssue(tenantId: string): Promise<TenantInvoiceSettingsView | null> {
     const ctx = asTenantContext(tenantId);

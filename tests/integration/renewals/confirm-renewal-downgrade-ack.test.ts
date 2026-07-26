@@ -102,40 +102,11 @@ describe('confirm-renewal downgrade acknowledgement gate (WP4)', () => {
         closedAt: new Date('2025-01-01T00:00:00.000Z'),
         closedReason: 'cancelled',
       });
-      await tx.insert(invoices).values({
-        tenantId: tenant.ctx.slug,
-        invoiceId,
-        memberId,
-        planYear: 2026,
-        planId: 'regular',
-        status: 'issued',
-        pdfDocKind: 'invoice',
-        draftByUserId: admin.userId,
-        fiscalYear: 2026,
-        sequenceNumber: Math.floor(Math.random() * 1_000_000) + 1,
-        documentNumber: `INV-2026-${String(Math.floor(Math.random() * 900000) + 100000)}`,
-        issueDate: '2026-05-15',
-        dueDate: '2026-06-14',
-        currency: 'THB',
-        subtotalSatang: asSatang(5_000_000n),
-        vatRateSnapshot: '0.0700',
-        vatSatang: asSatang(350_000n),
-        totalSatang: asSatang(5_350_000n),
-        proRatePolicySnapshot: 'none',
-        netDaysSnapshot: 30,
-        tenantIdentitySnapshot: { legalNameEn: 'Test', taxId: '0' } as unknown,
-        memberIdentitySnapshot: {
-          companyName: 'Downgrade Co',
-          country: 'TH',
-          legal_name: 'Downgrade Co Ltd',
-          address: '1 Test Road, Bangkok 10110',
-          primary_contact_name: 'Down Grade',
-          primary_contact_email: 'dg@example.com',
-        } as unknown,
-        pdfBlobKey: `invoicing/${tenant.ctx.slug}/2026/${invoiceId}.pdf`,
-        pdfSha256: 'a'.repeat(64),
-        pdfTemplateVersion: 1,
-      });
+      // NOTE: no membership invoice is pre-seeded. The real F4 bridge mints the
+      // §86/4 DURING `issueInvoiceForRenewal` (see `mockInvoicingBridge`), i.e.
+      // AFTER ours' duplicate-bill guard runs — pre-seeding one here would make
+      // the guard (correctly) refuse with `invoice_already_exists` before the
+      // downgrade gate is ever reached.
       // The cycle under test — `upcoming`, so a refusal that leaked past the
       // gate would visibly flip it to `awaiting_payment`.
       await tx.insert(renewalCycles).values({
@@ -162,12 +133,63 @@ describe('confirm-renewal downgrade acknowledgement gate (WP4)', () => {
     return {
       ...deps,
       f4InvoicingBridge: {
-        issueInvoiceForRenewal: async () => ({
-          status: 'issued' as const,
-          invoiceId,
-          invoiceNumber: 'INV-2026-DOWNGRADE',
-          totalSatang: asSatang(5_350_000n),
-        }),
+        draftInvoiceForRenewal: async () => {
+          throw new Error('draftInvoiceForRenewal not used by this test double');
+        },
+        issueExistingDraftForRenewal: async () => {
+          throw new Error('issueExistingDraftForRenewal not used by this test double');
+        },
+        discardAutoDraftForRenewal: async () => {
+          throw new Error('discardAutoDraftForRenewal not used by this test double');
+        },
+        // Faithful to the real F4 bridge: the §86/4 row is CREATED here, DURING
+        // issue — not pre-seeded. Ours' duplicate-bill guard runs BEFORE issue,
+        // so at guard time no live 2026 bill exists (the REFUSAL path never
+        // calls this); the link-step FK is still satisfied on the ACK path.
+        issueInvoiceForRenewal: async (input) => {
+          await runInTenant(tenant.ctx, async (tx) => {
+            await tx.insert(invoices).values({
+              tenantId: input.tenantId,
+              invoiceId,
+              memberId: input.memberId,
+              planYear: input.planYear,
+              planId: 'regular',
+              status: 'issued',
+              pdfDocKind: 'invoice',
+              draftByUserId: admin.userId,
+              fiscalYear: 2026,
+              sequenceNumber: Math.floor(Math.random() * 1_000_000) + 1,
+              documentNumber: `INV-2026-${String(Math.floor(Math.random() * 900000) + 100000)}`,
+              issueDate: '2026-05-15',
+              dueDate: '2026-06-14',
+              currency: 'THB',
+              subtotalSatang: asSatang(5_000_000n),
+              vatRateSnapshot: '0.0700',
+              vatSatang: asSatang(350_000n),
+              totalSatang: asSatang(5_350_000n),
+              proRatePolicySnapshot: 'none',
+              netDaysSnapshot: 30,
+              tenantIdentitySnapshot: { legalNameEn: 'Test', taxId: '0' } as unknown,
+              memberIdentitySnapshot: {
+                companyName: 'Downgrade Co',
+                country: 'TH',
+                legal_name: 'Downgrade Co Ltd',
+                address: '1 Test Road, Bangkok 10110',
+                primary_contact_name: 'Down Grade',
+                primary_contact_email: 'dg@example.com',
+              } as unknown,
+              pdfBlobKey: `invoicing/${input.tenantId}/2026/${invoiceId}.pdf`,
+              pdfSha256: 'a'.repeat(64),
+              pdfTemplateVersion: 1,
+            });
+          });
+          return {
+            status: 'issued' as const,
+            invoiceId,
+            invoiceNumber: 'INV-2026-DOWNGRADE',
+            totalSatang: asSatang(5_350_000n),
+          };
+        },
       },
     };
   }

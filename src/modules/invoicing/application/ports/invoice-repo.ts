@@ -74,6 +74,26 @@ export interface InvoiceRepo {
       readonly draftByUserId: string;
       readonly autoEmailOnIssue: boolean | null;
       readonly memberIdentitySnapshot?: MemberIdentitySnapshot | null;
+      /**
+       * 107-auto-invoice (Task 5) — `'manual'` (default, every existing
+       * caller) vs `'auto_renewal'` (the cron-drafted renewal path, Task 7).
+       * Optional — omitted entirely (never an explicit `undefined`) lets the
+       * DB-level `invoices.origin` DEFAULT 'manual' fire, mirroring the
+       * `membershipCoverage` omit-guard idiom elsewhere in this port.
+       */
+      readonly origin?: 'manual' | 'auto_renewal';
+      /**
+       * membership-coverage-exclude-guard (mig 0281) — the TRUE charged §86/4
+       * coverage window (ISO `YYYY-MM-DD…`), persisted to `invoices.
+       * coverage_from/coverage_to` so the GiST EXCLUDE constraint can reject a
+       * second OVERLAPPING live membership bill for one (tenant, member).
+       * BOTH-or-NEITHER: pass both for a `{kind:'window'}` membership draft;
+       * OMIT both (never explicit `undefined`) for `from_payment`
+       * (first-payment / erased) and event drafts — the omit-guard idiom, so
+       * the columns stay NULL and the bill never participates in the guard.
+       */
+      readonly coverageFrom?: string;
+      readonly coverageTo?: string;
       readonly lines: readonly InvoiceLine[];
     },
   ): Promise<Invoice>;
@@ -112,6 +132,29 @@ export interface InvoiceRepo {
 
   /** Generic loader used by detail / portal / signed-url paths. */
   findById(invoiceId: InvoiceId, tenantId: string): Promise<Invoice | null>;
+
+  /**
+   * 107-auto-invoice Task 10 — read-only `origin` peek, tenant-scoped, no
+   * lock. Deliberately returns the bare enum rather than a full `Invoice` —
+   * `origin` is NOT (yet) a field on the domain `Invoice` type, and adding it
+   * there would touch every one of the ~140 existing call sites that build an
+   * `Invoice` literal, for a single boundary check. This is the ONE
+   * consumer: the generic issue route's guard against a queue-owned
+   * `auto_renewal` draft reaching it directly (bypassing every guard inside
+   * `issueAutoDraftedRenewal` — see `guard-generic-route-issue-origin.ts`).
+   *
+   * No lock is needed: `origin` is written EXACTLY ONCE, at `insertDraft`
+   * (see its `origin?` param above) — no method in this port ever updates
+   * it afterward. A read taken before a later `issueInvoice` call therefore
+   * cannot race a concurrent write to this column; the authoritative
+   * `status` re-check still happens inside `issueInvoice`'s own row lock.
+   *
+   * Returns `null` when no row exists for this tenant — callers MUST treat
+   * that as "not this guard's concern" and let the downstream `issueInvoice`
+   * call produce its own `invoice_not_found` (with its cross-tenant-probe
+   * audit); duplicating that audit here would double-emit it.
+   */
+  getOrigin(invoiceId: InvoiceId, tenantId: string): Promise<'manual' | 'auto_renewal' | null>;
 
   /**
    * 088 (duplicate-CTA) — id of the existing NON-VOID event invoice for a
@@ -225,6 +268,14 @@ export interface InvoiceRepo {
       readonly taxPointState?: 'pre_payment' | 'at_payment' | undefined;
       //   pinned per-invoice §80/1(5) treatment → invoices.vat_treatment = ?
       readonly vatTreatment?: 'standard' | 'zero_rated_80_1_5' | undefined;
+      /**
+       * 107-auto-invoice Task 13 — restrict to invoices drafted by the
+       * cron (`'auto_renewal'`) vs. every human-created draft/issue
+       * (`'manual'`). Absent = no restriction (today's behaviour,
+       * unchanged). Powers the admin auto-renewal review queue —
+       * `origin='auto_renewal'` maps directly to `invoices.origin`.
+       */
+      readonly origin?: 'manual' | 'auto_renewal' | undefined;
     },
   ): Promise<{ readonly rows: readonly Invoice[]; readonly total: number }>;
 
@@ -304,8 +355,16 @@ export interface InvoiceRepo {
     },
   ): Promise<Invoice>;
 
-  /** Delete draft only — enforced at use-case layer + DB check. */
-  deleteDraft(tx: unknown, invoiceId: InvoiceId, tenantId: string): Promise<void>;
+  /**
+   * Delete a DRAFT invoice. `status = 'draft'` is enforced INSIDE the DELETE
+   * statement (not only by the caller's pre-check) — a concurrent issue can
+   * promote the row between a caller's read and this call, and deleting an
+   * `issued` row would destroy a tax document plus its burned §87 sequence
+   * number. Returns `true` when a row was deleted, `false` when the guard
+   * matched nothing (already promoted, already gone, or another tenant).
+   * Callers MUST branch on the result rather than assume success.
+   */
+  deleteDraft(tx: unknown, invoiceId: InvoiceId, tenantId: string): Promise<boolean>;
 
   /**
    * Atomic issued→paid transition + payment fields + receipt PDF metadata.

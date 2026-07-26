@@ -87,6 +87,23 @@ export interface IssueInvoiceForRenewalInput {
    * actual anchor).
    */
   readonly membershipCoverage?: CreateInvoiceDraftInput['membershipCoverage'];
+  /**
+   * membership-coverage-exclude-guard (mig 0281) — the dup-guard coverage
+   * window. REQUIRED (not optional): every mint THROUGH THIS RENEWAL BRIDGE
+   * (confirm-renewal, admin-renew, auto-draft) MUST carry it, incl. first-payment
+   * (where `membershipCoverage` is omitted but the charged window still exists).
+   * (The separate `f4-invoice-bridge` `issueAndMarkPaid` path — mark-paid-offline
+   * — is guarded by its own live-membership-bill check, not this window.)
+   * A NULL coverage row escapes BOTH the pre-flight guard AND the
+   * DB `blocks_coverage` EXCLUDE, so making this non-optional forces the
+   * compiler to hold the money-safety invariant at the renewal boundary — the
+   * DB constraint is NOT a backstop for a forgotten window. (Non-renewal F4
+   * drafts — event/manual — legitimately have none, so
+   * `CreateInvoiceDraftInput.coverageWindow` stays optional; this narrower
+   * bridge input is the right place to demand it.) See
+   * {@link CreateInvoiceDraftInput.coverageWindow}.
+   */
+  readonly coverageWindow: NonNullable<CreateInvoiceDraftInput['coverageWindow']>;
   /** Auto-email the issued PDF to the member's primary contact. */
   readonly autoEmailOnIssue: boolean;
   readonly actorUserId: string;
@@ -138,8 +155,131 @@ export type IssueInvoiceForRenewalResult =
       readonly detail: string;
     };
 
+/**
+ * 107-auto-invoice (Task 5) — the auto-invoice cron's DRAFT-only half.
+ * Mirrors {@link IssueInvoiceForRenewalInput} minus the issue-specific
+ * fields (`autoEmailOnIssue`, `correlationId`) — the cron only drafts; the
+ * review-queue "Issue" action (Task 9, `issueExistingDraftForRenewal`)
+ * resolves the auto-email decision later, at issue time.
+ */
+export interface DraftInvoiceForRenewalInput {
+  readonly tenantId: string;
+  readonly memberId: string;
+  /** F2 plan id — frozen on the cycle row at draft time. */
+  readonly planId: string;
+  /** Calendar year (e.g. 2026) of the membership the invoice covers. */
+  readonly planYear: number;
+  /** See {@link IssueInvoiceForRenewalInput.frozenPlanPriceThb} — same
+   * server-sourced, VAT-EXCLUSIVE, price-tampering-guarded contract. */
+  readonly frozenPlanPriceThb: ThbDecimal;
+  /** See {@link IssueInvoiceForRenewalInput.membershipCoverage}. */
+  readonly membershipCoverage?: CreateInvoiceDraftInput['membershipCoverage'];
+  /**
+   * membership-coverage-exclude-guard (mig 0281) — the dup-guard coverage
+   * window. REQUIRED: see {@link IssueInvoiceForRenewalInput.coverageWindow} for
+   * why every renewal mint must carry it (a NULL coverage row escapes both the
+   * pre-flight guard and the DB EXCLUDE). See
+   * {@link CreateInvoiceDraftInput.coverageWindow}.
+   */
+  readonly coverageWindow: NonNullable<CreateInvoiceDraftInput['coverageWindow']>;
+  readonly actorUserId: string;
+  readonly requestId: string | null;
+}
+
+export type DraftInvoiceForRenewalResult =
+  | { readonly status: 'drafted'; readonly invoiceId: string }
+  | {
+      readonly status: 'draft_failed';
+      readonly errorCode: RenewalInvoiceErrorCode;
+      readonly detail: string;
+    };
+
+/**
+ * 107-auto-invoice (Task 5) — the review-queue "Issue" action's ISSUE-only
+ * half, promoting an already-drafted `origin='auto_renewal'` invoice
+ * (created by {@link DraftInvoiceForRenewalInput}) to `issued`.
+ */
+export interface IssueExistingDraftForRenewalInput {
+  readonly tenantId: string;
+  readonly invoiceId: string;
+  readonly actorUserId: string;
+  /**
+   * The review-queue action's definite send-vs-silent choice at issue time
+   * — always a real decision (never "no opinion"), since the auto-drafted
+   * invoice itself was always created with `autoEmailOnIssue: false`
+   * (deferred — the cron cannot know the eventual choice). Forwarded
+   * verbatim as `issueMembershipBill`'s `autoEmailOverride`.
+   */
+  readonly autoEmailOnIssue: boolean;
+  readonly requestId: string | null;
+}
+
+/**
+ * 107-auto-invoice (Task 9) — discard half. Deletes an auto-drafted invoice
+ * that will never be issued.
+ *
+ * Lives on the bridge rather than on `RenewalCycleRepo` because it WRITES to
+ * F4's `invoices` table: the renewals module may read that table for its own
+ * guards (see `hasLiveMembershipInvoiceForPlanYearInTx`), but mutating another
+ * bounded context's storage directly would breach Constitution Principle III.
+ * Composes F4's own `deleteInvoiceDraft` use-case, so the F4 audit
+ * (`invoice_draft_deleted`) and the status guard both still apply.
+ *
+ * Task 14's manual "Discard" queue action consumes this too — the only
+ * difference between the two callers is the renewals-side
+ * `renewal_auto_draft_discarded.reason` they emit alongside it.
+ */
+export interface DiscardAutoDraftForRenewalInput {
+  readonly tenantId: string;
+  readonly invoiceId: string;
+  readonly actorUserId: string;
+  readonly requestId: string | null;
+  /**
+   * Caller-owned Drizzle tx. REQUIRED for the Task 9 issue path: the sweep runs
+   * under the renewals per-cycle advisory lock, and a self-opening `runInTenant`
+   * there would pin a second pooled connection for the whole outer transaction.
+   * Optional so Task 14's standalone Discard route can omit it.
+   */
+  readonly tx?: unknown;
+  /**
+   * Suppress F4's not-found `invoice_cross_tenant_probe` emit. Set when the id
+   * came from the caller's OWN tenant-scoped read and the row may legitimately
+   * have vanished since (concurrent issue / prune / manual discard). See
+   * `DeleteInvoiceDraftInput.expectMayHaveVanished`.
+   */
+  readonly expectMayHaveVanished?: boolean;
+}
+
+/**
+ * `not_draft` is a first-class, EXPECTED outcome, not an error: a concurrent
+ * issue may have promoted the row since the caller decided to discard it. The
+ * caller must treat it as "leave it alone", never retry-as-delete.
+ */
+export type DiscardAutoDraftForRenewalResult =
+  | { readonly status: 'discarded' }
+  | { readonly status: 'not_draft' }
+  | { readonly status: 'not_found' };
+
 export interface F4InvoicingForRenewalBridge {
   issueInvoiceForRenewal(
     input: IssueInvoiceForRenewalInput,
   ): Promise<IssueInvoiceForRenewalResult>;
+  /** 107-auto-invoice (Task 5) — cron create-half. See {@link draftInvoiceForRenewal}'s
+   * sibling {@link issueExistingDraftForRenewal} for the review-queue issue-half. */
+  draftInvoiceForRenewal(
+    input: DraftInvoiceForRenewalInput,
+  ): Promise<DraftInvoiceForRenewalResult>;
+  /**
+   * 107-auto-invoice (Task 5) — review-queue issue-half. Reuses
+   * {@link IssueInvoiceForRenewalResult} (the existing `'issued' |
+   * 'issue_failed'` arms) — this method never produces the `'create_failed'`
+   * arm since there is no create step here.
+   */
+  issueExistingDraftForRenewal(
+    input: IssueExistingDraftForRenewalInput,
+  ): Promise<IssueInvoiceForRenewalResult>;
+  /** 107-auto-invoice (Task 9) — see {@link DiscardAutoDraftForRenewalInput}. */
+  discardAutoDraftForRenewal(
+    input: DiscardAutoDraftForRenewalInput,
+  ): Promise<DiscardAutoDraftForRenewalResult>;
 }

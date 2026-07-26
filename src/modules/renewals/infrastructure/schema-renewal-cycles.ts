@@ -70,6 +70,15 @@ export const renewalCycles = pgTable(
 
     // F4 lifecycle FKs.
     linkedInvoiceId: uuid('linked_invoice_id'),
+    // 107-auto-invoice (Task 1, migration 0259) — points a cycle at the
+    // DRAFT invoice the auto-invoice cron pre-filled ahead of the due date
+    // (if any). NULL for every cycle that never went through the cron path.
+    // Deliberately a SEPARATE column from `linkedInvoiceId` (which is only
+    // ever set once the bill is ISSUED) so a cron-created draft can be
+    // reviewed/edited without disturbing the issued-invoice linkage
+    // contract. No FK yet — foundation-only; a later task wires the
+    // read/write use-cases.
+    autoDraftInvoiceId: uuid('auto_draft_invoice_id'),
     // Rolling-anchor refactor (design 2026-07-08, migration 0238).
     // `anchoredAt` is the discriminator: "this cycle has been anchored to
     // a real payment" (set by the re-anchor use-case AND by the R4

@@ -123,6 +123,20 @@ export const tenantInvoiceSettings = pgTable(
     paymentInstructionsTh: text('payment_instructions_th'),
     paymentInstructionsEn: text('payment_instructions_en'),
 
+    // 107-auto-invoice (Task 1, migration 0259) — global cron toggle +
+    // lead-day windows (rolling-anchor vs calendar-cycle members read
+    // different columns) + per-run page size. Defaults preserve today's
+    // behaviour (`auto_invoice_enabled=false` ⇒ cron is a no-op for this
+    // tenant until a later task's admin UI flips it on).
+    autoInvoiceEnabled: boolean('auto_invoice_enabled').notNull().default(false),
+    autoInvoiceLeadDaysRolling: integer('auto_invoice_lead_days_rolling')
+      .notNull()
+      .default(30),
+    autoInvoiceLeadDaysCalendar: integer('auto_invoice_lead_days_calendar')
+      .notNull()
+      .default(31),
+    autoInvoicePageSize: integer('auto_invoice_page_size').notNull().default(200),
+
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -141,6 +155,20 @@ export const tenantInvoiceSettings = pgTable(
       'tenant_invoice_settings_seller_branch_ck',
       sql`(${table.sellerIsHeadOffice} = true AND ${table.sellerBranchCode} IS NULL)
         OR (${table.sellerIsHeadOffice} = false AND ${table.sellerBranchCode} IS NOT NULL AND ${table.sellerBranchCode} ~ '^[0-9]{5}$')`,
+    ),
+    // 107-auto-invoice (Task 1, migration 0259) — bound both lead-day
+    // windows to a sane 1..120-day range so a fat-fingered admin value
+    // can never make the cron pre-fill a bill a year early (or 0 days
+    // ahead, i.e. on-the-due-date with zero notice).
+    check(
+      'tenant_invoice_settings_auto_lead_days_ck',
+      sql`${table.autoInvoiceLeadDaysRolling} BETWEEN 1 AND 120 AND ${table.autoInvoiceLeadDaysCalendar} BETWEEN 1 AND 120`,
+    ),
+    // Bound the per-run page size so a misconfigured tenant can't make a
+    // single cron invocation try to draft an unbounded number of invoices.
+    check(
+      'tenant_invoice_settings_auto_page_size_ck',
+      sql`${table.autoInvoicePageSize} BETWEEN 1 AND 5000`,
     ),
   ],
 );

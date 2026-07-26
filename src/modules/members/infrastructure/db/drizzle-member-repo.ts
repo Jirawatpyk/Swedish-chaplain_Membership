@@ -110,6 +110,10 @@ function rowToMember(row: MemberRow): Member {
     // column (DB DEFAULT 'rolling'); the optional aggregate field is for
     // hand-built drafts/fixtures, not for a loaded row.
     billingCycle: row.billingCycle,
+    // 107-auto-invoice Task 15 — always populated from the nullable column
+    // so a loaded Member carries a real `Date | null`; the optional
+    // aggregate field is for hand-built drafts/fixtures only.
+    autoInvoiceEnrolledAt: row.autoInvoiceEnrolledAt,
     website: row.website,
     description: row.description,
     foundedYear: row.foundedYear,
@@ -556,7 +560,7 @@ export const drizzleMemberRepo: MemberRepo = {
     }));
   },
 
-  async findManyByIdsInTx(tx, memberIds) {
+  async findManyByIdsInTx(tx, tenantId, memberIds) {
     try {
       if (memberIds.length === 0) {
         return ok(new Map() as ReadonlyMap<MemberId, Member>);
@@ -568,7 +572,14 @@ export const drizzleMemberRepo: MemberRepo = {
       const rows = await tx
         .select()
         .from(members)
-        .where(inArray(members.memberId, [...memberIds] as string[]))
+        .where(
+          and(
+            // Explicit tenant predicate alongside the ambient RLS GUC —
+            // Constitution Principle I two-layer isolation (see port doc).
+            eq(members.tenantId, tenantId),
+            inArray(members.memberId, [...memberIds] as string[]),
+          ),
+        )
         .for('update');
       const result = new Map<MemberId, Member>();
       for (const row of rows) {
@@ -576,6 +587,100 @@ export const drizzleMemberRepo: MemberRepo = {
         result.set(member.memberId, member);
       }
       return ok(result);
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
+
+  async enrolAutoInvoiceInTx(tx, tenantId, memberIds, enrolledAt) {
+    try {
+      if (memberIds.length === 0) return ok([] as ReadonlyArray<MemberId>);
+      const rows = await tx
+        .update(members)
+        .set({ autoInvoiceEnrolledAt: enrolledAt })
+        .where(
+          and(
+            // Explicit tenant predicate alongside the ambient RLS GUC —
+            // Constitution Principle I two-layer isolation. This UPDATE
+            // writes the key that turns on automated billing.
+            eq(members.tenantId, tenantId),
+            inArray(members.memberId, [...memberIds] as string[]),
+            // Never RE-stamp an already-enrolled member: their original
+            // enrolment timestamp is the audit-relevant one, and this
+            // also makes a concurrent duplicate enrol a no-op.
+            isNull(members.autoInvoiceEnrolledAt),
+            // GDPR Art.17 / PDPA §33 — never (re-)enrol an erased member.
+            // `scrubPiiInTx` resets this exact column to NULL on erasure
+            // ("an erased member MUST NOT stay enrolled in automated
+            // billing"); without this predicate a bulk enrol over the
+            // directory silently reverses that reset, because erasure leaves
+            // `status` alone and the member is still listed and selectable.
+            //
+            // This is defence-in-depth, NOT the primary gate: the caller
+            // partitions erased ids into `skippedErased` first (via
+            // `findErasedIdsInTx`). That ordering matters — the caller
+            // throws `enrol_count_mismatch` when RETURNING is short of what
+            // it asked for, so relying on this predicate ALONE would abort
+            // an otherwise-valid mixed batch instead of skipping one member.
+            isNull(members.erasedAt),
+          ),
+        )
+        .returning({ memberId: members.memberId });
+      return ok(rows.map((r) => r.memberId as MemberId));
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
+
+  async findErasedIdsInTx(tx, tenantId, memberIds) {
+    try {
+      if (memberIds.length === 0) return ok(new Set<MemberId>());
+      const rows = await tx
+        .select({ memberId: members.memberId })
+        .from(members)
+        .where(
+          and(
+            // Explicit tenant predicate alongside the ambient RLS GUC —
+            // Constitution Principle I two-layer isolation, matching the
+            // sibling reads in this file.
+            eq(members.tenantId, tenantId),
+            inArray(members.memberId, [...memberIds] as string[]),
+            isNotNull(members.erasedAt),
+          ),
+        );
+      return ok(new Set(rows.map((r) => r.memberId as MemberId)));
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
+
+  async unenrolAutoInvoiceInTx(tx, tenantId, memberIds) {
+    try {
+      if (memberIds.length === 0) return ok([] as ReadonlyArray<MemberId>);
+      const rows = await tx
+        .update(members)
+        .set({ autoInvoiceEnrolledAt: null })
+        .where(
+          and(
+            // Explicit tenant predicate alongside the ambient RLS GUC —
+            // Constitution Principle I two-layer isolation.
+            eq(members.tenantId, tenantId),
+            inArray(members.memberId, [...memberIds] as string[]),
+            // Only touch rows that are actually enrolled, so an
+            // already-un-enrolled member is a no-op and cannot produce a
+            // spurious audit row (see the port doc).
+            //
+            // Deliberately NO membership-state predicate here: a
+            // terminated, archived, or suspended member is un-enrolled
+            // like any other. Removing a billing preference is always
+            // allowed — refusing would leave an operator trying to STOP
+            // billing someone with no way to do it. See
+            // `bulkUnenrolAutoInvoice`'s header.
+            isNotNull(members.autoInvoiceEnrolledAt),
+          ),
+        )
+        .returning({ memberId: members.memberId });
+      return ok(rows.map((r) => r.memberId as MemberId));
     } catch (e) {
       return err(unexpected(e));
     }
@@ -887,6 +992,17 @@ export const drizzleMemberRepo: MemberRepo = {
           riskScoreFactors: null,
           riskScoreLastComputedAt: null,
           riskSnoozedUntil: null,
+          // 107-auto-invoice — an erased member MUST NOT stay enrolled in
+          // automated billing. This is an operational safety reset more than a
+          // PII scrub: `scrubPiiInTx` deliberately leaves `status`/`archived_at`
+          // alone ("erasure is orthogonal to archive"), so an erased-but-active
+          // member still satisfies the auto-draft cron's member-side gate
+          // (`archived_at IS NULL AND status <> 'archived'`). Left set, the cron
+          // would draft a renewal invoice addressed to `[erased]`.
+          // Pre-existing gap: the column shipped in migration 0259 (Task 1) but
+          // was never classified in scrub-pii-column-coverage.test.ts, which had
+          // been red on this branch since.
+          autoInvoiceEnrolledAt: null,
           // `erased_at` is STICKY — COALESCE preserves the ORIGINAL erasure
           // instant on a US2d reconciler re-drive (erase-member.ts always passes
           // a FRESH `{ erasedAt: now }`). The Art.12/§30 date-of-erasure must not

@@ -1,8 +1,9 @@
 # Runbook — Async Receipt PDF Kill-Switch (T166)
 
 **Severity:** **page-level decision** (operator + on-call lead must agree).
-**Trigger:** broad async-PDF pipeline issue — multiple tenants showing
-`receipt_pdf_pending_count` climbing, or repeated
+**Trigger:** broad async-PDF pipeline issue — multiple tenants showing a growing
+`receipt_pdf_status='pending'` backlog (**query it, see § When to flip — the
+`receipt_pdf_pending_count` gauge does not exist**), or repeated
 `pdf_render_permanently_failed` pages in < 1 hour, or webhook ack p95
 regressing despite `FEATURE_F5_ASYNC_RECEIPT_PDF=true`.
 **Surface:** F5 webhook + F4 invoicing.
@@ -32,12 +33,45 @@ Flipping `true → false` is a **kill-switch**, not a "rollback":
 
 ## When to flip
 
+> ⚠️ **The two metric-based gates below are not queryable.**
+> `receipt_pdf_render_failures_total` and `receipt_pdf_pending_count` are documented in
+> `docs/observability.md` § 21.1 but **have no instrument and no emit site anywhere in
+> `src/`** — verified 2026-07-19. They never shipped. Querying them returns nothing,
+> which looks exactly like a healthy system.
+>
+> The SQL below is the **buildable substitute** and is what you should actually run. The
+> thresholds (10 / 5 min, 50 rows) are carried over unchanged from the original
+> metric-based gates — they were never validated against production traffic (production
+> has zero payments recorded), so treat them as starting points and say so in the
+> incident channel if you act on them.
+
 **Flip to `false` when ANY of these are true:**
 
-- `receipt_pdf_render_failures_total` rate climbs > 10 / 5 min across
-  tenants (broad failure, not a single bad invoice).
-- `receipt_pdf_pending_count` gauge climbs > 50 across tenants AND is
-  still growing after 30 minutes of investigation.
+- **Broad render failure** — the original gate was
+  `receipt_pdf_render_failures_total` rate > 10 / 5 min across tenants (broad failure,
+  not a single bad invoice). Buildable equivalent:
+
+  ```sql
+  -- Failures recorded across ALL tenants in the last 5 minutes.
+  -- >10 ⇒ broad failure, matches the original gate's intent.
+  SELECT COUNT(*) AS failures_5min
+  FROM invoices
+  WHERE receipt_pdf_status = 'failed'
+    AND updated_at >= NOW() - INTERVAL '5 minutes';
+  ```
+
+- **Pending backlog growing** — the original gate was `receipt_pdf_pending_count` > 50
+  across tenants AND still growing after 30 minutes. Buildable equivalent — run it
+  **twice, 30 minutes apart**, and compare (there is no gauge history to look back at):
+
+  ```sql
+  SELECT COUNT(*) AS pending_now
+  FROM invoices
+  WHERE receipt_pdf_status = 'pending';
+  ```
+
+  Flip if `pending_now > 50` on the first reading **and** the second reading is higher.
+
 - `cron.outbox_dispatch.*` is itself unhealthy (worker can't run).
 - A bug in `renderReceiptPdf` is corrupting receipt PDFs (golden
   regression).
@@ -127,9 +161,13 @@ vercel deploy --prod
 Watch:
 
 - Webhook ack p95 should fall back to ≤ 1.5 s within 5 min.
-- `receipt_pdf_render_duration_ms` p95 should track the worker (not the
-  webhook).
-- `receipt_pdf_pending_count` should drift toward zero as the worker drains.
+- ~~`receipt_pdf_render_duration_ms` p95 should track the worker (not the
+  webhook).~~ **Not available** — this metric was never implemented (see
+  § When to flip). Worker timing is visible only in `cron.outbox_dispatch.*`
+  log lines.
+- The `receipt_pdf_status='pending'` backlog should drift toward zero as the
+  worker drains — re-run the `pending_now` query from § When to flip every few
+  minutes. (There is no `receipt_pdf_pending_count` gauge to watch.)
 
 ## Related
 
