@@ -34,28 +34,34 @@
  *     already committed in step 1 and is the source of truth regardless of
  *     whether the old duplicate(s) could be cleaned up.
  *
- * ## Interaction with the mig-0281 coverage EXCLUDE — PRE-FLIP DESIGN ITEM
+ * ## Interaction with the mig-0281 coverage EXCLUDE — verified benign
  *
- * Step 1 issues the new bill BEFORE step 4 voids the superseded one, i.e. it
- * relies on two overlapping live membership bills coexisting transiently. The
- * membership-coverage-exclude-guard (mig 0281) forbids two OVERLAPPING COMMITTED
- * membership bills for one (tenant, member): so if the superseded bill covers
- * the SAME period as the new one (the "reactivation"/correction reissue — the
- * MAIN case this feature targets), step 1's issue now trips the DB EXCLUDE
- * (mapped to a typed `invoice_already_issued` 409, not a 500). And on the
- * renewal paths the coverage PRE-FLIGHT guard in confirmRenewal/adminRenew
- * refuses even earlier — so a same-period reissue never reaches this composition
- * at all. NET: with `FEATURE_VOID_ON_REISSUE` off (today) nothing breaks; once it
- * is flipped ON, same-period supersede is BLOCKED rather than performed.
- *
- * Resolving that (BEFORE flipping the flag) is a deliberate, spec'd change — NOT
- * a mechanical reorder — because (a) it spans the renewal pre-flight guard (it
- * must EXEMPT the bill about to be superseded), this composition (void the old
- * bill and issue the new one ATOMICALLY in one tx so a failed issue rolls the
- * void back — never leaving the member with no bill), AND the §87 numbering
- * lock; and (b) auto-voiding a §86/4 tax document to reissue the same period is
- * a tax/product decision. Tracked in the void-on-reissue design notes; do not
- * flip `FEATURE_VOID_ON_REISSUE=true` until it lands.
+ * Step 1 issues the new bill BEFORE step 4 voids the superseded one, which in
+ * principle relies on two overlapping live membership bills coexisting
+ * transiently — and the coverage EXCLUDE (mig 0281) forbids two OVERLAPPING
+ * COMMITTED membership bills per (tenant, member). Traced through every real
+ * path, this collision NEVER manifests, so no code change is needed here (it was
+ * initially over-flagged as a pre-flip blocker; the financial-integrity review
+ * concluded the same — "no 23P01 can escape to prod, no code change required"):
+ *   - `issueMembershipBill`'s ONLY callers are the two renewal-bridge methods
+ *     (`issueInvoiceForRenewal` / `issueExistingDraftForRenewal`), i.e. NEXT-term
+ *     renewal mints. A next-term bill's coverage does not overlap the member's
+ *     older (prior-term) bills → the EXCLUDE never fires at step 1, and the
+ *     different-period supersede-void proceeds normally.
+ *   - A SAME-period re-mint (the only overlap case) is refused by the coverage
+ *     PRE-FLIGHT guard in confirmRenewal/adminRenew/issueAutoDraftedRenewal
+ *     BEFORE this composition runs — so a same-period overlapping COMMITTED
+ *     older bill can never be present when step 1 issues.
+ *   - A legacy pre-0281 older bill carries NULL coverage → `blocks_coverage` is
+ *     false → it is not in the EXCLUDE index at all → supersede-voiding it still
+ *     works (this is where void-on-reissue's cleanup role actually lives).
+ * Consequence to sign off on before flipping `FEATURE_VOID_ON_REISSUE` (NOT a
+ * bug): for POST-0281 bills the coverage guard PREVENTS a same-period duplicate
+ * rather than letting void-on-reissue clean one up after the fact — the guard
+ * does the job earlier and better. Should a future non-renewal caller ever need
+ * a genuine same-period reissue, that would require exempting the to-be-voided
+ * bill from the pre-flight guard + an atomic void-then-issue — but no such caller
+ * exists today.
  */
 import { ok, type Result } from '@/lib/result';
 import { invoicingMetrics } from '@/lib/metrics';
