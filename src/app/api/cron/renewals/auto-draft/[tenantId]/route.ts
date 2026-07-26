@@ -73,6 +73,15 @@ export async function POST(
       { status: 200 },
     );
   }
+  // Write-freeze parity (audit: financial) — mirror the coordinator / prune /
+  // reconcile routes so a direct authenticated POST during READ_ONLY_MODE
+  // creates no draft rows.
+  if (env.flags.readOnlyMode) {
+    return NextResponse.json(
+      { skipped: true, reason: 'read_only_mode' },
+      { status: 200 },
+    );
+  }
 
   const { tenantId } = await context.params;
 

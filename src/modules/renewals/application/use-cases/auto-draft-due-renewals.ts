@@ -463,8 +463,17 @@ async function processOne(
     // cycle reaching this point is always a genuine renewal (a
     // brand-new member's FIRST cycle is born `awaiting_payment`, never
     // `upcoming`/`reminded` — see design §5.3), but the gate is kept
-    // for parity + to defensively cover the GDPR-erased edge case
-    // confirm-renewal.ts also guards (FIX-7(d)).
+    // for parity with the other settlement sites.
+    //
+    // PDPA note — the GDPR-erased gate for THIS use-case is NOT this
+    // classifier arm; it is the candidate query itself
+    // (`listCyclesEligibleForAutoDraft`, `m.erased_at IS NULL`, "Task 15
+    // review Important"), proved by list-eligible-auto-draft.test.ts case
+    // (h). An erased member is filtered out before `processOne` ever runs,
+    // so `memberErased` here only fires on a TOCTOU race (member erased
+    // AFTER candidate selection, BEFORE this tx1) — in which case it merely
+    // omits coverage, matching confirm-renewal.ts's FIX-7(d) `not_applicable`
+    // shape. Do not treat this classifier call as the erased safeguard.
     const guards = await deps.memberRenewalFlagsRepo.readReactivationGuardsInTx(
       tx,
       tenantId,

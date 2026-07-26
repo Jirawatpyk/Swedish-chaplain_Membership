@@ -423,7 +423,7 @@ describe('107-auto-invoice Task 9 — issueAutoDraftedRenewal (live Neon)', () =
     expect(cyc?.linkedInvoiceId).toBeNull();
   }, 120_000);
 
-  it('(e) HARD REQ #1 — manual origin / cross-member / plan_year drift are all refused, never issued', async () => {
+  it('(e) HARD REQ #1 — manual origin / cross-member / plan_year drift / plan drift are all refused, never issued', async () => {
     // --- e1: origin='manual' (a treasurer's own draft) ------------------
     const manualMember = await seedMember({ t: tenant });
     const { cycleId: manualCycle } = await seedCycle({ t: tenant, memberId: manualMember });
@@ -515,6 +515,47 @@ describe('107-auto-invoice Task 9 — issueAutoDraftedRenewal (live Neon)', () =
     expect(e3.ok).toBe(false);
     if (!e3.ok) expect(e3.error.kind).toBe('invalid_draft');
     expect((await invoiceRow(tenant, drift.invoiceId))?.status).toBe('draft');
+
+    // --- e4: PLAN drift (audit: tax MEDIUM) — a same-term admin plan-change
+    // re-froze the cycle's `planIdAtCycleStart` AFTER the draft was created.
+    // `periodFrom` is untouched, so `plan_year_drift` (e3) still PASSES; only
+    // the `invoice.planId != cycle.planIdAtCycleStart` divergence catches it.
+    // Issuing anyway would mint a §86/4 at the SUPERSEDED plan's price/name.
+    const planId2 = `f8-t9-plan2-${randomUUID().slice(0, 8)}`;
+    await runInTenant(tenant.ctx, (tx) =>
+      seedF8MembershipPlan(tx, {
+        tenantSlug: tenant.ctx.slug,
+        planId: planId2,
+        planYear: PLAN_YEAR,
+        planName: { en: 'Auto-Issue T9 Plan 2' },
+        benefitMatrix: DEFAULT_TEST_BENEFIT_MATRIX,
+        createdBy: user.userId,
+      }),
+    );
+    const planDrift = await seedQueueRow({ t: tenant });
+    await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .update(renewalCycles)
+        .set({ planIdAtCycleStart: planId2 })
+        .where(eq(renewalCycles.cycleId, planDrift.cycleId)),
+    );
+
+    const e4 = await issueAutoDraftedRenewal(depsFor(tenant), {
+      tenantId: tenant.ctx.slug,
+      invoiceId: planDrift.invoiceId,
+      actorUserId: user.userId,
+      sendEmail: false,
+      requestId: null,
+    });
+    expect(e4.ok).toBe(false);
+    if (!e4.ok) {
+      expect(e4.error.kind).toBe('invalid_draft');
+      // Prove THIS guard fired, not another `invalid_draft` reason.
+      if (e4.error.kind === 'invalid_draft') {
+        expect(e4.error.reason).toBe('plan_drift');
+      }
+    }
+    expect((await invoiceRow(tenant, planDrift.invoiceId))?.status).toBe('draft');
   }, 120_000);
 
   it('(f) draft-discard — sibling auto_renewal draft discarded + audited; an issued invoice is NOT clobbered', async () => {
@@ -1029,5 +1070,82 @@ describe('107-auto-invoice Task 9 — issueAutoDraftedRenewal (live Neon)', () =
 
     const sibling = await invoiceRow(tenant, siblingId);
     expect(sibling?.status).toBe('draft');
+  }, 120_000);
+
+  it('(n) ⛔ reliability M1 — a duplicate_live_bill refusal is ABOVE the sibling sweep', async () => {
+    const { memberId, cycleId, invoiceId } = await seedQueueRow({ t: tenant });
+    // A sibling auto-draft for the SAME (member, planYear). Its survival proves
+    // HARD REQ #2 (the coverage guard) sits ABOVE `discardSupersededDrafts`:
+    // `err()` inside `runInTenant` still COMMITS tx1, so a guard placed BELOW
+    // the sweep would delete this row + write a false
+    // `renewal_auto_draft_discarded {superseded_on_issue}` audit for an issue
+    // that never mints a number. (Cases (l)/(m) prove the same for the erasure
+    // / unreadable-member guards; this is the coverage-guard beneficiary of the
+    // Task-9 review-M1 reorder.)
+    const siblingId = await seedAutoDraft({ t: tenant, memberId, cycleId: null });
+
+    // A PAID membership bill for the SAME (member, planYear) whose coverage
+    // window OVERLAPS this draft's [periodTo, periodTo+term) — trips
+    // findOverlappingMembershipCoverageBill. Built through the real F4 issue
+    // path (carries a real number), then marked paid — identical to case (d).
+    const paidId = await seedAutoDraft({ t: tenant, memberId, cycleId: null });
+    const issuedPaid = await depsFor(tenant).f4InvoicingBridge.issueExistingDraftForRenewal({
+      tenantId: tenant.ctx.slug,
+      invoiceId: paidId,
+      actorUserId: user.userId,
+      autoEmailOnIssue: false,
+      requestId: null,
+    });
+    expect(issuedPaid.status).toBe('issued');
+    await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .update(invoices)
+        .set({
+          status: 'paid',
+          paidAt: new Date('2026-07-01T00:00:00Z'),
+          paymentMethod: 'bank_transfer',
+          receiptPdfStatus: 'pending',
+        })
+        .where(and(eq(invoices.tenantId, tenant.ctx.slug), eq(invoices.invoiceId, paidId))),
+    );
+
+    const result = await issueAutoDraftedRenewal(depsFor(tenant), {
+      tenantId: tenant.ctx.slug,
+      invoiceId,
+      actorUserId: user.userId,
+      sendEmail: false,
+      requestId: null,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('duplicate_live_bill');
+
+    // No number burned, cycle untouched.
+    const inv = await invoiceRow(tenant, invoiceId);
+    expect(inv?.status).toBe('draft');
+    expect(inv?.documentNumber).toBeNull();
+    const cyc = await cycleRow(tenant, cycleId);
+    expect(cyc?.status).toBe('upcoming');
+    expect(cyc?.linkedInvoiceId).toBeNull();
+
+    // GUARD-ORDERING ASSERTION — the sibling must still be a live draft…
+    const sibling = await invoiceRow(tenant, siblingId);
+    expect(sibling?.status).toBe('draft');
+
+    // …and no supersede audit row was written for it.
+    const discardRows = await db
+      .select({ payload: auditLog.payload })
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.tenantId, tenant.ctx.slug),
+          eq(auditLog.eventType, 'renewal_auto_draft_discarded' as never),
+        ),
+      );
+    const forSibling = discardRows.filter(
+      (r) => (r.payload as Record<string, unknown> | null)?.invoice_id === siblingId,
+    );
+    expect(forSibling.length).toBe(0);
   }, 120_000);
 });

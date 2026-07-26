@@ -1467,13 +1467,14 @@ export function makeDrizzleRenewalCycleRepo(
       tx: unknown,
       tenantId: string,
       invoiceId: string,
-    ): Promise<MembershipInvoiceRef | null> {
+    ): Promise<(MembershipInvoiceRef & { readonly planId: string | null }) | null> {
       const txDb = tx as typeof db;
       const [row] = await txDb
         .select({
           invoiceId: invoices.invoiceId,
           memberId: invoices.memberId,
           planYear: invoices.planYear,
+          planId: invoices.planId,
           status: invoices.status,
           origin: invoices.origin,
         })
@@ -1500,6 +1501,7 @@ export function makeDrizzleRenewalCycleRepo(
         invoiceId: row.invoiceId,
         memberId: row.memberId,
         planYear: row.planYear,
+        planId: row.planId,
         status: row.status,
         origin: row.origin,
       };

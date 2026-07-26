@@ -717,7 +717,10 @@ export interface RenewalCycleRepo {
     tx: TenantTx,
     tenantId: string,
     invoiceId: string,
-  ): Promise<MembershipInvoiceRef | null>;
+    // `planId` is returned alongside the ref so `issueAutoDraftedRenewal` can
+    // refuse a draft whose stored plan no longer matches the cycle's current
+    // frozen plan (a same-term admin plan-change after drafting — audit: tax).
+  ): Promise<(MembershipInvoiceRef & { readonly planId: string | null }) | null>;
 
   /**
    * 107-auto-invoice Task 9 (review New-1 follow-through) — clear a STALE

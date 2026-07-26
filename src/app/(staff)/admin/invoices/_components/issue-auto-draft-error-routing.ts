@@ -26,6 +26,7 @@ export type IssueAutoDraftErrorRouting =
        * key Task 13's queue badge reads, so wording never drifts. */
       readonly reasonKey:
         | 'planYearDrift'
+        | 'planDrift'
         | 'memberTerminated'
         | 'memberErased'
         | 'duplicateLiveBill';
@@ -67,6 +68,12 @@ export function routeIssueAutoDraftError(
   }
   if (code === 'invalid_draft' && body?.reason === 'plan_year_drift') {
     return { kind: 'refusal_reason', reasonKey: 'planYearDrift' };
+  }
+  // audit: tax — the member's plan changed after this draft was created, so the
+  // draft would mint a §86/4 at the superseded tier. Discard + let the cron
+  // re-draft at the current plan.
+  if (code === 'invalid_draft' && body?.reason === 'plan_drift') {
+    return { kind: 'refusal_reason', reasonKey: 'planDrift' };
   }
   if (code === 'draft_not_found') {
     return { kind: 'generic', messageKey: 'draftNotFound' };

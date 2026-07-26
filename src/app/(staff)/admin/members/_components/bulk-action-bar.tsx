@@ -504,13 +504,18 @@ export function BulkActionBar({
               <FileMinusIcon className="mr-1.5 h-4 w-4" />
               {t('actions.unenrol_auto_invoice')}
             </Button>
-            {/* #4 members-ux — send a renewal reminder (best-effort per member;
-                the reminder dialog does not use finalFocus, matching main). */}
+            {/* #4 members-ux — send a renewal reminder (best-effort per member).
+                Uses the same finalFocus refs as the other four dialogs (audit:
+                ux — WCAG 2.4.3 focus-order consistency). */}
             <Button
               variant="outline"
               size="sm"
               disabled={executing || overCap}
-              onClick={() => setReminderDialogOpen(true)}
+              onClick={(e) => {
+                lastTriggerRef.current = e.currentTarget;
+                closedViaSuccessRef.current = false;
+                setReminderDialogOpen(true);
+              }}
               className="min-h-11"
             >
               <BellIcon className="mr-1.5 h-4 w-4" />
@@ -591,6 +596,7 @@ export function BulkActionBar({
         cancelLabel={t('cancel')}
         confirmDisabled={executing}
         onConfirm={() => executeBulk('send_renewal_reminder')}
+        finalFocus={finalFocus}
       />
 
       {progress && (

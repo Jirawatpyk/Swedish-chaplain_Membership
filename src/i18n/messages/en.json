@@ -2207,6 +2207,7 @@
           "wouldBeRefusedAria": "Would be refused — the treasurer cannot issue this draft as-is",
           "refusalReason": {
             "planYearDrift": "The renewal period changed after this draft was created.",
+            "planDrift": "The member's plan changed after this draft was created.",
             "memberTerminated": "This member's coverage has lapsed.",
             "memberErased": "This member's personal data has been erased at their request. No new invoice can be issued for them — discard this draft.",
             "duplicateLiveBill": "A bill for this member and plan year already exists."

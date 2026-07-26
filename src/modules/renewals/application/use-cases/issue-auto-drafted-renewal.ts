@@ -229,7 +229,8 @@ export type InvalidDraftReason =
   | 'not_auto_renewal'
   | 'not_draft'
   | 'member_mismatch'
-  | 'plan_year_drift';
+  | 'plan_year_drift'
+  | 'plan_drift';
 
 export type IssueAutoDraftError =
   | { readonly kind: 'invalid_input'; readonly message: string }
@@ -348,6 +349,23 @@ export async function issueAutoDraftedRenewal(
         detail: `invoice plan_year ${invoice.planYear} != cycle-derived fiscal year ${planYear} (cycle re-anchored after drafting?)`,
       });
     }
+    // Plan drift (audit: tax MEDIUM). A same-term admin plan-change AFTER this
+    // draft was created re-freezes the cycle (`updateFrozenPlan` rewrites
+    // `planIdAtCycleStart` + `frozenPlanPriceThb`) but leaves `periodFrom`
+    // untouched — so `plan_year_drift` above still passes — and it never touches
+    // the DRAFT's own immutable lines / plan_id. Issuing then mints a §86/4 at
+    // the SUPERSEDED tier's price + name. Refuse on that drift so the draft is
+    // discarded + re-drafted at the fresh plan — the same "fail toward NOT
+    // minting a wrong tax document" direction as `plan_year_drift`. (A same-plan
+    // catalogue re-price without a plan change is surfaced separately by the
+    // queue's `priceChanged` drift flag.)
+    if (invoice.planId !== null && invoice.planId !== cycle.planIdAtCycleStart) {
+      return err({
+        kind: 'invalid_draft' as const,
+        reason: 'plan_drift' as const,
+        detail: `invoice plan '${invoice.planId}' != cycle's current frozen plan '${cycle.planIdAtCycleStart}' (plan changed after drafting)`,
+      });
+    }
 
     // --- membership-access re-assert (terminated only — see header) --------
     const latestCycle = await deps.cyclesRepo.findLatestCycleForMemberInTx(
@@ -393,31 +411,20 @@ export async function issueAutoDraftedRenewal(
       return err({ kind: 'member_erased' as const });
     }
 
-    // --- sweep superseded sibling auto-drafts, THEN guard -----------------
-    // Order is load-bearing (review Critical 1): the sweep removes the drafts
-    // this issue supersedes so they cannot linger as competing claims on a
-    // number. The coverage guard below does NOT block on surviving drafts
-    // (mig 0281 — drafts carry no committed coverage; no `includeDrafts` here);
-    // it blocks only on an overlapping COMMITTED bill. The sweep is a benign
-    // cleanup, so its running before the guard is safe even on a refusal. Both
-    // run under the lock, in THIS transaction, so a concurrent issuer observes
-    // either both or neither.
-    const discardedInvoiceIds = await discardSupersededDrafts(deps, tx, {
-      tenantId: input.tenantId,
-      cycleId: cycle.cycleId,
-      memberId: cycle.memberId,
-      planYear,
-      issuedInvoiceId: input.invoiceId,
-      actorUserId: input.actorUserId,
-      requestId,
-    });
-
-    // --- HARD REQ #2: the duplicate-§86/4 barrier -------------------------
+    // --- HARD REQ #2: the duplicate-§86/4 barrier (runs BEFORE the sweep) --
     // membership-coverage-exclude-guard (mig 0281) — the pre-flight twin of the
     // DB EXCLUDE, using PERSISTED coverage rather than a plan_year
     // approximation. `wNew` is THIS draft's own stamped window
     // ([periodTo, periodTo+term)); the draft is EXCLUDED, so the guard refuses
-    // only when a DIFFERENT live membership bill overlaps it.
+    // only when a DIFFERENT live COMMITTED membership bill overlaps it.
+    //
+    // Order (audit: reliability M1 / financial): this guard is INDEPENDENT of
+    // the sweep (it checks committed coverage, never drafts — no `includeDrafts`
+    // on the issue path), so it runs ABOVE discardSupersededDrafts. A refusal
+    // here must NOT commit the sibling-draft deletions + a (false)
+    // `renewal_auto_draft_discarded {superseded_on_issue}` audit for an issue
+    // that never happens — `err()` inside `runInTenant` still COMMITS tx1
+    // (see [[reference_result_refusal_in_runintenant_commits]]).
     const wNew = {
       from: cycle.periodTo,
       to: addMonthsUtc(cycle.periodTo, cycle.frozenPlanTermMonths),
@@ -450,6 +457,22 @@ export async function issueAutoDraftedRenewal(
         conflictingStatus: blocking.status,
       });
     }
+
+    // --- sweep superseded sibling auto-drafts (only after every guard passed)
+    // Removes the drafts this issue supersedes so they cannot linger as
+    // competing claims on a number. Runs BELOW the guards above, so no sibling
+    // is deleted (and no `superseded_on_issue` audit is written) for an issue
+    // that is then refused. Under the lock, in THIS tx, so a concurrent issuer
+    // observes either both or neither.
+    const discardedInvoiceIds = await discardSupersededDrafts(deps, tx, {
+      tenantId: input.tenantId,
+      cycleId: cycle.cycleId,
+      memberId: cycle.memberId,
+      planYear,
+      issuedInvoiceId: input.invoiceId,
+      actorUserId: input.actorUserId,
+      requestId,
+    });
 
     return ok({
       cycleId: cycle.cycleId,
