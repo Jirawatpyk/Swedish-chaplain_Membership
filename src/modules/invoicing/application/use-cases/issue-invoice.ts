@@ -105,6 +105,7 @@ import {
 import { bangkokLocalDate, addDays, isValidCalendarDate } from '@/lib/fiscal-year';
 import { logger } from '@/lib/logger';
 import { invoicingMetrics } from '@/lib/metrics';
+import { isExclusionViolationOnConstraint } from '@/lib/db-errors';
 import { TxAbort } from '../lib/tx-abort';
 import { InvoiceApplyConflictError } from '../lib/invoice-apply-conflict-error';
 import { renderAndUploadPdf } from '../lib/render-and-upload';
@@ -766,6 +767,23 @@ export async function issueInvoice(
         // Row was 'draft' under the lock but isn't anymore — concurrent
         // re-issue. Surface 'issued' as the inferred new status so
         // callers (and the 409 response) carry useful info.
+        throw new IssueInvoiceInternalError({
+          code: 'invoice_already_issued',
+          status: 'issued',
+        });
+      }
+      // membership-coverage-exclude-guard (mig 0281): the draft→issued flip
+      // makes THIS bill's `blocks_coverage` true, so the DB EXCLUDE
+      // `invoices_membership_coverage_no_overlap` rejects (23P01) when another
+      // COMMITTED membership §86/4 already covers the same period. This is the
+      // concurrency backstop the pre-flight read cannot close (two mints that
+      // both pass the read before either commits — or a void-on-reissue
+      // reactivation of a same-period bill). Map it to the SAME typed
+      // duplicate error the lock-conflict path uses so the route answers 409
+      // `invoice_already_issued` (renewals surface it as "already billed")
+      // instead of a raw 500 — the whole tx rolls back, so no §87 number is
+      // burned. (23P01 is wrapped on `.cause` by Drizzle 0.45 — walk it.)
+      if (isExclusionViolationOnConstraint(e, 'invoices_membership_coverage_no_overlap')) {
         throw new IssueInvoiceInternalError({
           code: 'invoice_already_issued',
           status: 'issued',

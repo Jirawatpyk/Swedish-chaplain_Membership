@@ -434,6 +434,7 @@ describe('107-auto-invoice Task 9 — issueAutoDraftedRenewal (live Neon)', () =
       planId,
       planYear: PLAN_YEAR,
       frozenPlanPriceThb: '50000.00' as never,
+      coverageWindow: { fromIso: '2026-01-01T00:00:00.000Z', toIso: '2027-01-01T00:00:00.000Z' },
       actorUserId: user.userId,
       requestId: null,
     });

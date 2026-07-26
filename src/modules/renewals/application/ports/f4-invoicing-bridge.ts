@@ -89,11 +89,18 @@ export interface IssueInvoiceForRenewalInput {
   readonly membershipCoverage?: CreateInvoiceDraftInput['membershipCoverage'];
   /**
    * membership-coverage-exclude-guard (mig 0281) — the dup-guard coverage
-   * window, set by renewals ALWAYS (incl. first-payment, where
-   * `membershipCoverage` is omitted). See
+   * window. REQUIRED (not optional): every renewal mint MUST carry it, incl.
+   * first-payment (where `membershipCoverage` is omitted but the charged window
+   * still exists). A NULL coverage row escapes BOTH the pre-flight guard AND the
+   * DB `blocks_coverage` EXCLUDE, so making this non-optional forces the
+   * compiler to hold the money-safety invariant at the renewal boundary — the
+   * DB constraint is NOT a backstop for a forgotten window. (Non-renewal F4
+   * drafts — event/manual — legitimately have none, so
+   * `CreateInvoiceDraftInput.coverageWindow` stays optional; this narrower
+   * bridge input is the right place to demand it.) See
    * {@link CreateInvoiceDraftInput.coverageWindow}.
    */
-  readonly coverageWindow?: CreateInvoiceDraftInput['coverageWindow'];
+  readonly coverageWindow: NonNullable<CreateInvoiceDraftInput['coverageWindow']>;
   /** Auto-email the issued PDF to the member's primary contact. */
   readonly autoEmailOnIssue: boolean;
   readonly actorUserId: string;
@@ -166,11 +173,12 @@ export interface DraftInvoiceForRenewalInput {
   readonly membershipCoverage?: CreateInvoiceDraftInput['membershipCoverage'];
   /**
    * membership-coverage-exclude-guard (mig 0281) — the dup-guard coverage
-   * window, set by renewals ALWAYS (incl. first-payment, where
-   * `membershipCoverage` is omitted). See
+   * window. REQUIRED: see {@link IssueInvoiceForRenewalInput.coverageWindow} for
+   * why every renewal mint must carry it (a NULL coverage row escapes both the
+   * pre-flight guard and the DB EXCLUDE). See
    * {@link CreateInvoiceDraftInput.coverageWindow}.
    */
-  readonly coverageWindow?: CreateInvoiceDraftInput['coverageWindow'];
+  readonly coverageWindow: NonNullable<CreateInvoiceDraftInput['coverageWindow']>;
   readonly actorUserId: string;
   readonly requestId: string | null;
 }

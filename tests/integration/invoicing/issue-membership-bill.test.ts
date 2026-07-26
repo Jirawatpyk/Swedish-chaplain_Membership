@@ -539,6 +539,7 @@ describe('issueMembershipBill — void-on-reissue live-Neon e2e (Task 4, 106-voi
       planId,
       planYear: 2026,
       frozenPlanPriceThb: parseThbDecimal('12000.00'),
+      coverageWindow: { fromIso: '2026-01-01T00:00:00.000Z', toIso: '2027-01-01T00:00:00.000Z' },
       autoEmailOnIssue: false,
       actorUserId: user.userId,
       correlationId: randomUUID(),

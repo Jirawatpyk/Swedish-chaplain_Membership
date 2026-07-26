@@ -84,21 +84,25 @@
  * designed barrier for that window, and it is the last check before a number
  * is burned.
  *
- * It refuses when ANY other membership invoice for the same (member, planYear)
- * — excluding the draft being issued — is in a live state:
+ * It refuses when another COMMITTED membership §86/4 already COVERS the charged
+ * next-term window this draft would issue for (`[cycle.periodTo, periodTo +
+ * frozenPlanTermMonths)`) — the coverage-overlap guard shared with the other
+ * mint paths (`findOverlappingMembershipCoverageBill`,
+ * `domain/membership-bill-coverage.ts`, mig 0281), excluding the draft being
+ * issued (`excludeInvoiceId`):
  *
- *   {@link LIVE_MEMBERSHIP_BILL_STATUSES}
- *     = draft | issued | paid | partially_credited | credited
+ *   blocks iff status ∈ BLOCKING_STATUSES = { issued | paid | partially_credited }
+ *   AND its persisted coverage window overlaps (half-open `[from, to)`).
  *
- * `draft` is in the set because a draft is an outstanding claim on a number
- * about to be minted outside the lock (see the topology note above). By the
- * time this guard runs, the sibling auto-draft sweep has already deleted the
- * drafts this issue supersedes, so a remaining `draft` is genuinely competing
- * — in practice a treasurer's own manual bill for the same year.
+ * `draft` does NOT block here (no `includeDrafts`): the ISSUE path mints ONE and
+ * the sibling auto-draft sweep clears the rest, so a coexisting draft is not a
+ * duplicate. Money-safety does not depend on draft-blocking — the DB EXCLUDE on
+ * committed rows rejects any concurrent double-ISSUE regardless (mapped to
+ * `invoice_already_issued`).
  *
- * `void` is excluded by design — a voided document is precisely the one that
- * no longer counts, and blocking on it would permanently wedge a member whose
- * first bill was voided for correction.
+ * `void` + fully-`credited` never block — the refunded period is re-billable —
+ * and a NULL-coverage bill (legacy/first-payment) never participates, exactly
+ * matching the DB `blocks_coverage` predicate.
  *
  * ## Membership-access gate — `terminated` ONLY, not `suspended`
  *

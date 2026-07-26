@@ -805,9 +805,20 @@ export async function confirmRenewal(
     // key entirely on the first-payment branch rather than assigning an
     // explicit `undefined`.
     ...omitUndefined({ membershipCoverage }),
-    // membership-coverage-exclude-guard (mig 0281) — stamp the dup-guard window
-    // ALWAYS (= the guard's `wNew`, the charged NEXT-term window), even on the
-    // defensive first-payment branch where `membershipCoverage` is omitted.
+    // membership-coverage-exclude-guard (mig 0281) — stamp the charged NEXT-term
+    // window ALWAYS, even on the defensive first-payment branch where
+    // `membershipCoverage` is omitted. Sized from `cycleAfterPlanChange` (the
+    // FINAL frozen term this bill actually charges). This EQUALS the pre-flight
+    // guard's `wNew` (built from `cycle` above, before the plan-change) whenever
+    // the term is unchanged — which is ALWAYS today: every TSCC plan is 12
+    // months. If a future term-VARIABLE plan is introduced AND a member both
+    // renews and switches to a different-term plan in one confirm, the guard
+    // (which runs ABOVE the plan-change and cannot see the post-change term)
+    // could size `wNew` from the old term while this stamp uses the new one; the
+    // DB EXCLUDE (`invoices_membership_coverage_no_overlap`) is the AUTHORITY
+    // that backstops that edge — a 23P01 at mint is mapped to a typed 409, not a
+    // 500. `adminRenewLapsedMember` has no such gap (its guard + stamp resolve
+    // the term from the same `loadPlanFrozenFields(mode:'freeze')`).
     coverageWindow: {
       fromIso: cycleAfterPlanChange.periodTo,
       toIso: addMonthsUtc(

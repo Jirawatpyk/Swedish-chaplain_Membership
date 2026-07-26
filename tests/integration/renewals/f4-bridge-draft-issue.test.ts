@@ -189,6 +189,7 @@ describe('f4InvoicingForRenewalBridge — draftInvoiceForRenewal + issueExisting
       planYear: 2026,
       frozenPlanPriceThb: parseThbDecimal('50000.00'),
       actorUserId: user.userId,
+      coverageWindow: { fromIso: '2026-01-01T00:00:00.000Z', toIso: '2027-01-01T00:00:00.000Z' },
       requestId: 't5-draft-1',
     });
 
@@ -229,6 +230,7 @@ describe('f4InvoicingForRenewalBridge — draftInvoiceForRenewal + issueExisting
       planYear: 2026,
       frozenPlanPriceThb: parseThbDecimal('50000.00'),
       actorUserId: user.userId,
+      coverageWindow: { fromIso: '2026-01-01T00:00:00.000Z', toIso: '2027-01-01T00:00:00.000Z' },
       requestId: 't5-draft-2',
     });
     if (draftResult.status !== 'drafted') {
@@ -269,6 +271,7 @@ describe('f4InvoicingForRenewalBridge — draftInvoiceForRenewal + issueExisting
       planYear: 2026,
       frozenPlanPriceThb: parseThbDecimal('50000.00'),
       actorUserId: user.userId,
+      coverageWindow: { fromIso: '2026-01-01T00:00:00.000Z', toIso: '2027-01-01T00:00:00.000Z' },
       requestId: 't5-draft-3',
     });
     if (draftResult.status !== 'drafted') {

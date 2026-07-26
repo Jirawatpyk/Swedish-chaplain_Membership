@@ -154,6 +154,11 @@ async function seedAutoDraft(opts: {
     planId,
     planYear: opts.planYear,
     frozenPlanPriceThb: opts.frozenPlanPriceThb as never,
+    // The charged next-term window [periodTo, +12mo) for the default cycle
+    // ([2025-08-01, 2026-08-01)) — so the seeded draft carries REAL coverage.
+    // (c1b) then isolates draft-exclusion: the sibling draft overlaps in
+    // coverage yet still does not block, because it is a draft.
+    coverageWindow: { fromIso: PERIOD_TO_FY2026, toIso: '2027-08-01T00:00:00Z' },
     actorUserId: user.userId,
     requestId: null,
   });

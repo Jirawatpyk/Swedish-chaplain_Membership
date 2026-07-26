@@ -787,7 +787,6 @@ export interface RenewalCycleRepo {
     invoiceIds: readonly string[],
   ): Promise<ReadonlyMap<string, RenewalCycle>>;
 
-
   /**
    * 107-auto-invoice Task 9 — every membership invoice for one
    * (member, plan_year), any status, any origin.

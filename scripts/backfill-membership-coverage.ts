@@ -4,6 +4,19 @@
  * migration. Those rows carry NULL coverage, so they do not yet participate in
  * the duplicate-coverage EXCLUDE constraint / pre-flight guard.
  *
+ * ── DEPLOY ORDERING (money-safety) ─────────────────────────────────────────
+ *   Between the 0281 deploy and this backfill completing, the legacy cohort is
+ *   a coverage BLIND SPOT: the new guard SKIPS NULL-coverage bills (matching the
+ *   DB `WHERE (blocks_coverage)` predicate), whereas the guard it replaced
+ *   (plan_year-coarse `findLiveMembershipBill`) blocked EVERY live bill by
+ *   (member, plan_year). So a legacy bill will NOT block a re-mint of the same
+ *   period until it is backfilled. This is a NARROW window (it requires a
+ *   re-bill of an already-billed period), but on live prod treat it as: run
+ *   this backfill in the SAME maintenance window as the deploy, and verify
+ *   `SELECT count(*) FROM invoices WHERE invoice_subject='membership' AND
+ *   coverage_from IS NULL AND status IN ('issued','paid','partially_credited')`
+ *   reaches 0 before considering the migration fully live.
+ *
  * ── WHY THIS IS OPERATOR-CURATED, NOT AUTO-DERIVED ─────────────────────────
  *   A membership bill's TRUE charged window is NOT reliably recoverable from
  *   its linked renewal cycle alone. `confirm-renewal.ts` (see its lines around
@@ -67,6 +80,7 @@ if (existsSync('.env.local')) {
 }
 
 import { runInTenant } from '@/lib/db';
+import { isExclusionViolation } from '@/lib/db-errors';
 import { asTenantContext, TENANT_SLUG_PATTERN } from '@/modules/tenants';
 import { addMonthsUtc } from '@/lib/dates';
 // Deep imports (not module barrels): the invoicing barrel transitively pulls
@@ -228,15 +242,37 @@ function parseCsv(path: string): readonly CsvRow[] {
   return out;
 }
 
-async function apply(slug: string, rows: readonly CsvRow[]): Promise<void> {
+/** @returns exit code (0 = clean; 1 = a row could not be resolved / overlapped). */
+async function apply(slug: string, rows: readonly CsvRow[]): Promise<number> {
   const ctx = asTenantContext(slug);
   let stamped = 0;
   let already = 0;
+  const notFound: string[] = [];
   const overlaps: string[] = [];
   console.error(`backfill-membership-coverage: applying ${rows.length} rows (idempotent; coverage_from IS NULL guard)…`);
   for (const r of rows) {
+    // Pre-check: distinguish "already stamped" from "no such invoice" (a
+    // hand-typo in the operator-edited CSV). A silent conflation would let a
+    // mistyped id skip stamping with no signal on a money-path backfill.
+    const existing = await runInTenant(ctx, async (tx) =>
+      tx
+        .select({ coverageFrom: invoices.coverageFrom })
+        .from(invoices)
+        .where(and(eq(invoices.tenantId, slug), eq(invoices.invoiceId, r.invoiceId)))
+        .limit(1),
+    );
+    if (existing.length === 0) {
+      notFound.push(r.invoiceId);
+      console.error(`  ✗ ${r.invoiceId}  NOT FOUND — id not in this tenant (CSV typo?); nothing stamped`);
+      continue;
+    }
+    if (existing[0]!.coverageFrom !== null) {
+      already += 1;
+      console.error(`  · ${r.invoiceId}  already stamped — skipped (idempotent)`);
+      continue;
+    }
     try {
-      const updated = await runInTenant(ctx, async (tx) =>
+      await runInTenant(ctx, async (tx) =>
         tx
           .update(invoices)
           .set({ coverageFrom: new Date(r.from), coverageTo: new Date(r.to) })
@@ -246,19 +282,16 @@ async function apply(slug: string, rows: readonly CsvRow[]): Promise<void> {
               eq(invoices.invoiceId, r.invoiceId),
               isNull(invoices.coverageFrom),
             ),
-          )
-          .returning({ id: invoices.invoiceId }),
+          ),
       );
-      if (updated.length > 0) {
-        stamped += 1;
-        console.error(`  ✓ ${r.invoiceId}  [${r.from} .. ${r.to})`);
-      } else {
-        already += 1;
-        console.error(`  · ${r.invoiceId}  already stamped or not found — skipped`);
-      }
+      stamped += 1;
+      console.error(`  ✓ ${r.invoiceId}  [${r.from} .. ${r.to})`);
     } catch (e) {
-      const code = (e as { code?: string } | null)?.code;
-      if (code === '23P01') {
+      // The EXCLUDE rejects a genuine pre-existing overlapping pair (a
+      // double-bill from the no-guard era). Drizzle 0.45 wraps the 23P01 on
+      // `.cause`, so `isExclusionViolation` walks the chain — a flat `.code`
+      // read on the wrapper would be `undefined` and re-throw, aborting the run.
+      if (isExclusionViolation(e)) {
         overlaps.push(r.invoiceId);
         console.error(`  ⚠ OVERLAP (23P01) ${r.invoiceId} — pre-existing double-bill; needs human resolution`);
       } else {
@@ -266,30 +299,53 @@ async function apply(slug: string, rows: readonly CsvRow[]): Promise<void> {
       }
     }
   }
-  console.error(`\nbackfill summary: stamped ${stamped}, skipped ${already}, overlap ${overlaps.length}`);
+  console.error(
+    `\nbackfill summary: stamped ${stamped}, already ${already}, not-found ${notFound.length}, overlap ${overlaps.length}`,
+  );
+  if (notFound.length > 0) console.error(`  NOT FOUND (fix the CSV ids): ${notFound.join(', ')}`);
   if (overlaps.length > 0) console.error(`  OVERLAPS NEEDING RESOLUTION: ${overlaps.join(', ')}`);
+  return notFound.length > 0 || overlaps.length > 0 ? 1 : 0;
 }
 
-async function main(): Promise<void> {
+async function main(): Promise<number> {
   const flags = parseArgs(process.argv.slice(2));
   const slug = resolveTenantSlug();
 
   if (flags.applyCsv === null) {
     inventory(await loadGap(slug));
-    return;
+    return 0;
   }
 
   // Write path — require explicit confirmation.
   if (!flags.confirm) {
     console.error('backfill-membership-coverage: --apply requires --confirm (writes to invoices). Aborting.');
-    process.exit(1);
+    return 1;
   }
-  const usingProdEnv = (process.env.DATABASE_URL ?? '').length > 0 && !existsSync('.env.local');
-  if (usingProdEnv && !flags.confirmProd) {
-    console.error('backfill-membership-coverage: production target detected — add --confirm-prod to proceed.');
-    process.exit(1);
+  // Prod-safety: identify the target from the RESOLVED DATABASE_URL host, not
+  // from `.env.local` presence (a dev checkout ALWAYS has `.env.local`, so the
+  // old file-existence check never fired — the gate was inert). Reuse
+  // `TEST_DB_HOST_BLOCKLIST` (comma-separated prod host substrings — the same
+  // env the integration guard uses to identify prod). Fail-safe: if the
+  // blocklist is UNSET we cannot rule out prod, so still demand --confirm-prod.
+  const dbUrl =
+    process.env.DATABASE_URL_UNPOOLED ??
+    process.env.POSTGRES_URL_NON_POOLING ??
+    process.env.DATABASE_URL ??
+    '';
+  const blocklist = (process.env.TEST_DB_HOST_BLOCKLIST ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const looksProd = blocklist.length === 0 || blocklist.some((needle) => dbUrl.includes(needle));
+  if (looksProd && !flags.confirmProd) {
+    console.error(
+      'backfill-membership-coverage: target may be PRODUCTION (DATABASE_URL host ' +
+        'matched TEST_DB_HOST_BLOCKLIST, or the blocklist is unset so prod cannot be ' +
+        'ruled out) — re-run with --confirm-prod once you have verified the target.',
+    );
+    return 1;
   }
-  await apply(slug, parseCsv(flags.applyCsv));
+  return apply(slug, parseCsv(flags.applyCsv));
 }
 
 const runAsScript =
@@ -300,7 +356,7 @@ const runAsScript =
 
 if (runAsScript) {
   main()
-    .then(() => process.exit(0))
+    .then((code) => process.exit(code))
     .catch((e) => {
       console.error('backfill-membership-coverage: crashed:', e instanceof Error ? (e.stack ?? e.message) : String(e));
       process.exit(1);

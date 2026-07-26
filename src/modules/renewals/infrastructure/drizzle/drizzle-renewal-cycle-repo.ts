@@ -1647,8 +1647,10 @@ export function makeDrizzleRenewalCycleRepo(
       return rows.map((row) => ({
         invoiceId: row.invoiceId,
         status: row.status,
-        coverageFrom: row.coverageFrom?.toISOString() ?? null,
-        coverageTo: row.coverageTo?.toISOString() ?? null,
+        coverage:
+          row.coverageFrom !== null && row.coverageTo !== null
+            ? { from: row.coverageFrom.toISOString(), to: row.coverageTo.toISOString() }
+            : null,
       }));
     },
 
@@ -1685,8 +1687,10 @@ export function makeDrizzleRenewalCycleRepo(
           bucket.push({
             invoiceId: row.invoiceId,
             status: row.status,
-            coverageFrom: row.coverageFrom?.toISOString() ?? null,
-            coverageTo: row.coverageTo?.toISOString() ?? null,
+            coverage:
+              row.coverageFrom !== null && row.coverageTo !== null
+                ? { from: row.coverageFrom.toISOString(), to: row.coverageTo.toISOString() }
+                : null,
           });
           byMember.set(row.memberId, bucket);
         }

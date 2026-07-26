@@ -5,9 +5,11 @@
 -- over-blocks → refuses a migrated member's legitimate first renewal).
 --
 -- Root cause: `invoices` never stored the TRUE charged coverage window.
--- The window is ALREADY computed at every mint as `membershipCoverage`
--- (confirm-renewal.ts:797 + auto-draft:501 = [periodTo, periodTo+term);
--- admin-renew:551 = [periodFrom, periodTo); first_payment/erased OMIT it).
+-- The charged window is stamped at every mint via `coverageWindow`
+-- (confirm-renewal + auto-draft = [periodTo, periodTo+term);
+-- admin-renew-lapsed-member ~:596 = [periodFrom, periodTo);
+-- first_payment/erased still stamp the charged window even when the PRINTED
+-- `membershipCoverage` line is omitted).
 -- This migration persists that window and lets Postgres reject a second
 -- OVERLAPPING live membership bill for the same (tenant, member) at INSERT
 -- time with SQLSTATE 23P01 — path-agnostic, concurrency-safe (no advisory
@@ -22,6 +24,13 @@
 -- double-bill from the no-guard era) surfaces there as a 23P01 for human
 -- resolution rather than crashing the deploy. See docs/superpowers/plans/
 -- 2026-07-25-membership-coverage-exclude-guard.md.
+--
+-- DEPLOY ORDERING (money-safety): until the backfill runs, legacy NULL-coverage
+-- bills are a blind spot — the new guard skips them (matching `WHERE
+-- (blocks_coverage)`), so they will NOT block a same-period re-mint the way the
+-- retired plan_year guard did. Run scripts/backfill-membership-coverage.ts in
+-- the SAME maintenance window as this deploy and confirm the NULL-coverage
+-- committed-membership count reaches 0 before treating the guard as fully live.
 
 CREATE EXTENSION IF NOT EXISTS btree_gist;
 --> statement-breakpoint

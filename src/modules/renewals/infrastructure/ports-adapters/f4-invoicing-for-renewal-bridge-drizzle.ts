@@ -71,11 +71,10 @@ export const f4InvoicingForRenewalBridge: F4InvoicingForRenewalBridge = {
           ? { membershipCoverage: input.membershipCoverage }
           : {}),
         // membership-coverage-exclude-guard (mig 0281) — the dup-guard window,
-        // ALWAYS set by renewals (incl. first-payment), so coverage is stamped
-        // even when the printed `membershipCoverage` is omitted.
-        ...(input.coverageWindow !== undefined
-          ? { coverageWindow: input.coverageWindow }
-          : {}),
+        // REQUIRED on the bridge input (compiler-enforced), so coverage is
+        // stamped on every renewal mint even when the printed
+        // `membershipCoverage` is omitted (first-payment).
+        coverageWindow: input.coverageWindow,
       },
     );
     if (!createResult.ok) {
@@ -187,11 +186,10 @@ export const f4InvoicingForRenewalBridge: F4InvoicingForRenewalBridge = {
           ? { membershipCoverage: input.membershipCoverage }
           : {}),
         // membership-coverage-exclude-guard (mig 0281) — the dup-guard window,
-        // ALWAYS set by renewals (incl. first-payment), so coverage is stamped
-        // even when the printed `membershipCoverage` is omitted.
-        ...(input.coverageWindow !== undefined
-          ? { coverageWindow: input.coverageWindow }
-          : {}),
+        // REQUIRED on the bridge input (compiler-enforced), so coverage is
+        // stamped on every renewal mint even when the printed
+        // `membershipCoverage` is omitted (first-payment).
+        coverageWindow: input.coverageWindow,
       },
     );
     if (!createResult.ok) {

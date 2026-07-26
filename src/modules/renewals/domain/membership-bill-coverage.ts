@@ -4,24 +4,36 @@
  * 0281).
  *
  * Why a read-guard AND a DB constraint:
- *   - The three membership-mint paths (confirmRenewal, adminRenewLapsedMember,
- *     issueAutoDraftedRenewal) do side-effecting writes (the cycle lazy-flip +
- *     its `renewal_entered_awaiting_payment` audit) BEFORE the F4 mint. If the
- *     ONLY guard were the DB constraint, a duplicate would fail at mint time —
- *     AFTER those writes committed — leaving a refused confirm that still
- *     flipped the cycle and emitted an untrue audit row (the "New-3" hazard).
- *     So a pre-flight refusal that runs ABOVE the first write is required.
+ *   - The create-then-issue mint paths (confirmRenewal, adminRenewLapsedMember)
+ *     do side-effecting writes BEFORE the F4 mint — confirmRenewal flips the
+ *     cycle to `awaiting_payment` and emits `renewal_entered_awaiting_payment`
+ *     ahead of the bill. If the ONLY guard were the DB constraint, a duplicate
+ *     would fail at mint time — AFTER those writes committed — leaving a refused
+ *     confirm that still flipped the cycle and emitted an untrue audit row (the
+ *     "New-3" hazard). So a pre-flight refusal that runs ABOVE the first write
+ *     is required on those paths. (issueAutoDraftedRenewal is the ISSUE path: it
+ *     emits no `renewal_entered_awaiting_payment`, its cycle flip happens in tx2
+ *     AFTER the mint, and its only pre-mint write is the sibling-draft discard;
+ *     it still runs this guard above that discard for symmetry + to avoid a
+ *     wasted mint.)
  *   - The DB constraint remains the AUTHORITY: it is orphan-safe, path-agnostic
  *     and closes the read-decide-write concurrency race the read-guard cannot
- *     (two mints that both pass the read before either commits).
+ *     (two mints that both pass the read before either commits, or a
+ *     void-on-reissue reactivation of a same-period bill). A 23P01 from the
+ *     EXCLUDE at mint time is mapped to the typed `invoice_already_issued`
+ *     (issue-invoice.ts) so the caller sees a 409, not a raw 500.
  *
  * Correctness (vs the two rejected read-guard designs): those approximated a
  * bill's coverage from its cycle window / plan_year and were refuted by
  * red-team (anchored-lag double-bill, migrated-cohort false refusal). This guard
  * reads the TRUE charged window PERSISTED on `invoices.coverage_from/to`
- * (mig 0281), so it does NOT approximate. Its blocking rule is byte-identical to
- * the DB `blocks_coverage` generated column + the half-open `tstzrange('[)')`
- * overlap, so the guard and the constraint can never disagree:
+ * (mig 0281), so it does NOT approximate. Its blocking rule is identical to the
+ * DB `blocks_coverage` generated column ON COMMITTED ROWS + the half-open
+ * `tstzrange('[)')` overlap, so the guard and the constraint agree on every
+ * committed bill; the app guard may ADDITIONALLY refuse drafts on the
+ * create-then-issue paths (`includeDrafts`, see below) — a deliberate,
+ * one-directional strictness, never a disagreement that would let a committed
+ * double-bill through:
  *   - blocks iff status ∈ {issued, paid, partially_credited} — a COMMITTED
  *     membership document. `void` + fully-credited never block (the refunded
  *     period is re-billable). `draft` does NOT block: multiple provisional
@@ -35,24 +47,52 @@
  *     exactly matching the constraint's `WHERE (blocks_coverage)` predicate.
  */
 
-/** The blocking status set — MUST mirror `blocks_coverage` in mig 0281. */
-const BLOCKING_STATUSES: ReadonlySet<string> = new Set([
+/**
+ * The six `invoice_status` values, redefined locally — Domain must NOT import
+ * F4's `InvoiceStatus` (Principle III forbids a cross-context Domain import).
+ * Identical to the sibling `MembershipInvoiceRef.status` union and the DB enum.
+ */
+export type InvoiceStatusLiteral =
+  | 'draft'
+  | 'issued'
+  | 'paid'
+  | 'void'
+  | 'partially_credited'
+  | 'credited';
+
+/**
+ * The blocking status set — MUST mirror `blocks_coverage` in mig 0281 AND the
+ * Drizzle generated-column SQL in `schema-invoices.ts`. Those three
+ * representations are pinned to one oracle by the live-Neon parity assertion in
+ * `tests/integration/invoicing/membership-coverage-exclude.test.ts` (one row per
+ * enum value → `blocks_coverage` must equal `BLOCKING_STATUSES.has(status)`), so
+ * a drift in any one of them fails a test rather than silently letting the app
+ * guard and the DB constraint disagree. Typed against `InvoiceStatusLiteral` so
+ * a typo (`'issed'`) cannot compile.
+ */
+const BLOCKING_STATUSES: ReadonlySet<InvoiceStatusLiteral> = new Set([
   'issued',
   'paid',
   'partially_credited',
 ]);
 
-export interface MembershipBillCoverageRow {
-  readonly invoiceId: string;
-  readonly status: string;
-  /** ISO-8601, or null for from_payment / legacy-unbackfilled / event bills. */
-  readonly coverageFrom: string | null;
-  readonly coverageTo: string | null;
+export interface CoverageWindow {
+  /** ISO-8601 UTC. */
+  readonly from: string;
+  /** ISO-8601 UTC. */
+  readonly to: string;
 }
 
-export interface CoverageWindow {
-  readonly from: string;
-  readonly to: string;
+export interface MembershipBillCoverageRow {
+  readonly invoiceId: string;
+  readonly status: InvoiceStatusLiteral;
+  /**
+   * The charged window, or `null` for from_payment / legacy-unbackfilled /
+   * event bills. Collapsed into a single `CoverageWindow | null` so the DB
+   * CHECK `invoices_coverage_window_wellformed` (both-or-neither) is expressed
+   * at the type level — an illegal half-set `{from, null}` is unrepresentable.
+   */
+  readonly coverage: CoverageWindow | null;
 }
 
 /**
@@ -71,6 +111,15 @@ export function findOverlappingMembershipCoverageBill(
 ): MembershipBillCoverageRow | null {
   const newFrom = Date.parse(wNew.from);
   const newTo = Date.parse(wNew.to);
+  // Fail LOUD on a malformed window. `Date.parse` returns NaN for a bad string
+  // and every comparison with NaN is false → "no overlap" → a silent
+  // under-block (the UNSAFE direction — it would let a double-bill through).
+  // Callers pass server-derived ISO today, so this only trips on a future bug.
+  if (Number.isNaN(newFrom) || Number.isNaN(newTo)) {
+    throw new Error(
+      `findOverlappingMembershipCoverageBill: malformed coverage window [${wNew.from}, ${wNew.to})`,
+    );
+  }
   for (const bill of bills) {
     if (opts?.excludeInvoiceId !== undefined && bill.invoiceId === opts.excludeInvoiceId) {
       continue;
@@ -87,9 +136,9 @@ export function findOverlappingMembershipCoverageBill(
       BLOCKING_STATUSES.has(bill.status) ||
       (opts?.includeDrafts === true && bill.status === 'draft');
     if (!blocks) continue;
-    if (bill.coverageFrom === null || bill.coverageTo === null) continue;
-    const billFrom = Date.parse(bill.coverageFrom);
-    const billTo = Date.parse(bill.coverageTo);
+    if (bill.coverage === null) continue;
+    const billFrom = Date.parse(bill.coverage.from);
+    const billTo = Date.parse(bill.coverage.to);
     if (billFrom < newTo && newFrom < billTo) return bill;
   }
   return null;

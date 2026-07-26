@@ -8,8 +8,9 @@
  * designed to answer "what will actually happen if this row is clicked
  * right now" — not merely "does something look unusual" — per the Task 13
  * review round that found the first cut's bill-year note fired on 100% of
- * rows and its would-be-refused prediction missed two of
- * `issueAutoDraftedRenewal`'s three refusal reasons.
+ * rows and its would-be-refused prediction missed two of the (then-)three
+ * refusal reasons — the predictor now models all FOUR (see the enumeration
+ * below; `member_erased` was the fourth, added later).
  *
  *   1. **Price** — does the cycle's frozen §86/4 price still match the
  *      CURRENT active plan-catalogue price for (planId, planYear)?
@@ -85,10 +86,10 @@
  * Batched (no N+1): ONE query for the cycles (keyed by
  * `auto_draft_invoice_id`), ONE query for the members' latest cycles
  * (dedup'd `memberId`s), ONE query for the members' membership coverage
- * (dedup'd `memberId`s, keyed by member), and the plan-catalogue lookup is
- * deduplicated by (planId, planYear) — a page of drafts sharing the same
- * plan/year (the common case) pays for exactly one catalogue read per
- * unique pair, not one per row.
+ * (dedup'd `memberId`s, keyed by member), ONE query for the erased-member ids
+ * (dedup'd `memberId`s), and the plan-catalogue lookup is deduplicated by
+ * (planId, planYear) — a page of drafts sharing the same plan/year (the common
+ * case) pays for exactly one catalogue read per unique pair, not one per row.
  *
  * NEVER throws / NEVER returns `err` from a resolvable failure. Only a
  * malformed INPUT shape (never expected from the page's own typed
@@ -153,7 +154,7 @@ export interface AutoRenewalQueueRowMeta {
   readonly currentFiscalYear: number;
   readonly billYearStale: boolean;
 
-  // --- would-be-refused (review A2: 3 reasons, first-match-wins) ---
+  // --- would-be-refused (review A2: 4 reasons, first-match-wins) ---
   readonly refusalReason: AutoRenewalRefusalReason | null;
 }
 
