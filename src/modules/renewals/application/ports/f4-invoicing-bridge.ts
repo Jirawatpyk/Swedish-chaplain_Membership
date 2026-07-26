@@ -89,9 +89,12 @@ export interface IssueInvoiceForRenewalInput {
   readonly membershipCoverage?: CreateInvoiceDraftInput['membershipCoverage'];
   /**
    * membership-coverage-exclude-guard (mig 0281) — the dup-guard coverage
-   * window. REQUIRED (not optional): every renewal mint MUST carry it, incl.
-   * first-payment (where `membershipCoverage` is omitted but the charged window
-   * still exists). A NULL coverage row escapes BOTH the pre-flight guard AND the
+   * window. REQUIRED (not optional): every mint THROUGH THIS RENEWAL BRIDGE
+   * (confirm-renewal, admin-renew, auto-draft) MUST carry it, incl. first-payment
+   * (where `membershipCoverage` is omitted but the charged window still exists).
+   * (The separate `f4-invoice-bridge` `issueAndMarkPaid` path — mark-paid-offline
+   * — is guarded by its own live-membership-bill check, not this window.)
+   * A NULL coverage row escapes BOTH the pre-flight guard AND the
    * DB `blocks_coverage` EXCLUDE, so making this non-optional forces the
    * compiler to hold the money-safety invariant at the renewal boundary — the
    * DB constraint is NOT a backstop for a forgotten window. (Non-renewal F4

@@ -396,9 +396,12 @@ export async function issueAutoDraftedRenewal(
     // --- sweep superseded sibling auto-drafts, THEN guard -----------------
     // Order is load-bearing (review Critical 1): the sweep removes the drafts
     // this issue supersedes so they cannot linger as competing claims on a
-    // number, and the guard below then treats ANY surviving draft as blocking.
-    // Both run under the lock, in THIS transaction, so a concurrent issuer
-    // observes either both or neither.
+    // number. The coverage guard below does NOT block on surviving drafts
+    // (mig 0281 — drafts carry no committed coverage; no `includeDrafts` here);
+    // it blocks only on an overlapping COMMITTED bill. The sweep is a benign
+    // cleanup, so its running before the guard is safe even on a refusal. Both
+    // run under the lock, in THIS transaction, so a concurrent issuer observes
+    // either both or neither.
     const discardedInvoiceIds = await discardSupersededDrafts(deps, tx, {
       tenantId: input.tenantId,
       cycleId: cycle.cycleId,

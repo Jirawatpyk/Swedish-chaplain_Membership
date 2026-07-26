@@ -13,9 +13,10 @@
  *     "New-3" hazard). So a pre-flight refusal that runs ABOVE the first write
  *     is required on those paths. (issueAutoDraftedRenewal is the ISSUE path: it
  *     emits no `renewal_entered_awaiting_payment`, its cycle flip happens in tx2
- *     AFTER the mint, and its only pre-mint write is the sibling-draft discard;
- *     it still runs this guard above that discard for symmetry + to avoid a
- *     wasted mint.)
+ *     AFTER the mint, and its only pre-mint write is the sibling-draft discard —
+ *     which runs BEFORE this guard, but is a BENIGN cleanup, so a post-discard
+ *     refusal is harmless (no cycle flip, no untrue audit) unlike the
+ *     create-then-issue paths above.)
  *   - The DB constraint remains the AUTHORITY: it is orphan-safe, path-agnostic
  *     and closes the read-decide-write concurrency race the read-guard cannot
  *     (two mints that both pass the read before either commits, or a
@@ -62,13 +63,18 @@ export type InvoiceStatusLiteral =
 
 /**
  * The blocking status set — MUST mirror `blocks_coverage` in mig 0281 AND the
- * Drizzle generated-column SQL in `schema-invoices.ts`. Those three
- * representations are pinned to one oracle by the live-Neon parity assertion in
- * `tests/integration/invoicing/membership-coverage-exclude.test.ts` (one row per
- * enum value → `blocks_coverage` must equal `BLOCKING_STATUSES.has(status)`), so
- * a drift in any one of them fails a test rather than silently letting the app
- * guard and the DB constraint disagree. Typed against `InvoiceStatusLiteral` so
- * a typo (`'issed'`) cannot compile.
+ * Drizzle generated-column SQL in `schema-invoices.ts`. Coverage of that
+ * cross-representation invariant is split (this const is module-private, so no
+ * test can iterate it directly):
+ *   - the DB side: case (D) in
+ *     `tests/integration/invoicing/membership-coverage-exclude.test.ts` asserts
+ *     `blocks_coverage` is TRUE for all three COMMITTED statuses
+ *     (issued/paid/partially_credited) and FALSE for draft + NULL-coverage — so a
+ *     DDL drift that DROPS a committed status (a same-period double-bill
+ *     regression) fails there;
+ *   - the domain side: the unit suite asserts this set blocks issued/paid/
+ *     partially_credited and never void/credited/draft.
+ * Typed against `InvoiceStatusLiteral` so a typo (`'issed'`) cannot compile.
  */
 const BLOCKING_STATUSES: ReadonlySet<InvoiceStatusLiteral> = new Set([
   'issued',

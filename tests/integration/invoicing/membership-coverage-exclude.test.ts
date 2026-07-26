@@ -244,16 +244,26 @@ describe('membership-coverage-exclude-guard — DB enforcement (mig 0281, live N
   }, 60_000);
 
   it('(D) generated column blocks_coverage == (coverage set AND status ∈ committed set)', async () => {
-    const m = await seedMember();
-    const issued = await seedCommittedBill(m, 'issued', Y2026);
-    expect(await selectBlocksCoverage(issued), 'issued + coverage → true').toBe(true);
+    // The THREE committed statuses → blocks_coverage true. This pins the DB
+    // generated column against a DDL drift that DROPS one of them (a same-period
+    // double-bill regression). Each on its OWN member so their identical
+    // coverage windows never trip the EXCLUDE against each other.
+    for (const status of ['issued', 'paid', 'partially_credited'] as const) {
+      const m = await seedMember();
+      const id = await seedCommittedBill(m, status, Y2026);
+      expect(await selectBlocksCoverage(id), `${status} + coverage → true`).toBe(true);
+    }
 
-    const draft = await seedDraftBill(m, Y2027); // non-overlapping window so it inserts
+    // draft + coverage → false (drafts never block at the DB layer).
+    const mDraft = await seedMember();
+    const draft = await seedDraftBill(mDraft, Y2026);
     expect(await selectBlocksCoverage(draft), 'draft + coverage → false').toBe(false);
 
-    const m2 = await seedMember();
-    const issuedNoCov = await seedCommittedBill(m2, 'issued', null);
-    expect(await selectBlocksCoverage(issuedNoCov), 'issued + NULL coverage → false').toBe(false);
+    // committed + NULL coverage → false (legacy/first-payment/erased never
+    // participate — matches the constraint's WHERE (blocks_coverage) predicate).
+    const mNull = await seedMember();
+    const issuedNull = await seedCommittedBill(mNull, 'issued', null);
+    expect(await selectBlocksCoverage(issuedNull), 'issued + NULL coverage → false').toBe(false);
   }, 60_000);
 
   it('(E) rejects a half-set coverage window — invoices_coverage_window_wellformed CHECK', async () => {
