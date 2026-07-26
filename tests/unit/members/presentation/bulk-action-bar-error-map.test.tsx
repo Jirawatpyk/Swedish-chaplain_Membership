@@ -39,20 +39,32 @@ vi.mock('@/app/(staff)/admin/members/_components/archive-confirm-dialog', () => 
 vi.mock('@/app/(staff)/admin/members/_components/bulk-progress-indicator', () => ({
   BulkProgressIndicator: () => null,
 }));
-// Stand-in for the send-portal-invite confirm dialog: a plain button that
-// fires the component's `onConfirm` (== executeBulk('send_portal_invite')).
+// Stand-in for the shared ConfirmationDialog. The bulk bar now mounts TWO of
+// them (send-portal-invite + send-renewal-reminder), so the testid is keyed off
+// `confirmLabel` — the reminder dialog gets `confirm-reminder`, everything else
+// keeps `confirm-invite` (the existing invite tests). Each button fires its own
+// `onConfirm` (== executeBulk('send_portal_invite' | 'send_renewal_reminder')).
 vi.mock('@/components/shell/confirmation-dialog', () => ({
-  // 107 added enrol/unenrol ConfirmationDialogs alongside main's invite
-  // dialog, so the stand-in must give each a DISTINCT testid (keyed off the
-  // confirm label) — otherwise all three render confirm-invite and getByTestId
-  // throws "multiple elements". The label is the stable en.json string.
-  ConfirmationDialog: ({ confirmLabel, onConfirm }: { confirmLabel: string; onConfirm: () => void }) => {
+  // Union stand-in: 107 added enrol/unenrol ConfirmationDialogs and main added
+  // the reminder dialog, alongside the existing invite dialog. Give each a
+  // DISTINCT testid (keyed off the confirm label — the stable en.json string) so
+  // getByTestId never hits "multiple elements". `reminder` is matched first so a
+  // reminder label can't fall through to another branch.
+  ConfirmationDialog: ({
+    confirmLabel = '',
+    onConfirm,
+  }: {
+    confirmLabel?: string;
+    onConfirm: () => void;
+  }) => {
     const label = String(confirmLabel ?? '');
-    const testid = label.includes('invitation')
-      ? 'confirm-invite'
-      : label.includes('Enrol')
-        ? 'confirm-enrol'
-        : 'confirm-unenrol';
+    const testid = /reminder/i.test(label)
+      ? 'confirm-reminder'
+      : label.includes('invitation')
+        ? 'confirm-invite'
+        : label.includes('Enrol')
+          ? 'confirm-enrol'
+          : 'confirm-unenrol';
     return (
       <button type="button" data-testid={testid} onClick={() => onConfirm()}>
         {label}
@@ -196,6 +208,111 @@ describe('BulkActionBar — send_portal_invite result toast', () => {
     await waitFor(() => expect(toastInfo).toHaveBeenCalled());
     expect(toastSuccess).not.toHaveBeenCalled();
     expect(toastError).not.toHaveBeenCalled();
+
+    vi.unstubAllGlobals();
+  });
+});
+
+describe('BulkActionBar — send_renewal_reminder result toast', () => {
+  function mockReminderResult(counts: {
+    sent: number;
+    skipped: number;
+    failed: number;
+  }) {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ sent: [], skipped: [], failed: [], counts }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
+  }
+
+  it('posts action=send_renewal_reminder and shows a SUCCESS toast with the sent+skipped breakdown', async () => {
+    const fetchMock = mockReminderResult({ sent: 3, skipped: 2, failed: 0 });
+
+    const { getByTestId } = renderBar();
+    fireEvent.click(getByTestId('confirm-reminder'));
+
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalled());
+    expect(toastInfo).not.toHaveBeenCalled();
+    expect(toastError).not.toHaveBeenCalled();
+    const msg = toastSuccess.mock.calls[0]?.[0] as string;
+    expect(msg).toContain('3 reminders sent');
+    expect(msg).toContain('2 skipped');
+
+    // The POST carried the reminder action.
+    const body = JSON.parse((fetchMock.mock.calls[0]?.[1] as { body: string }).body);
+    expect(body.action).toBe('send_renewal_reminder');
+
+    vi.unstubAllGlobals();
+  });
+
+  it('shows a neutral INFO toast when everything was skipped (nothing sent)', async () => {
+    mockReminderResult({ sent: 0, skipped: 5, failed: 0 });
+
+    const { getByTestId } = renderBar();
+    fireEvent.click(getByTestId('confirm-reminder'));
+
+    await waitFor(() => expect(toastInfo).toHaveBeenCalled());
+    expect(toastSuccess).not.toHaveBeenCalled();
+    expect(toastError).not.toHaveBeenCalled();
+
+    vi.unstubAllGlobals();
+  });
+
+  it('shows an ERROR toast when at least one member failed', async () => {
+    mockReminderResult({ sent: 1, skipped: 0, failed: 2 });
+
+    const { getByTestId } = renderBar();
+    fireEvent.click(getByTestId('confirm-reminder'));
+
+    await waitFor(() => expect(toastError).toHaveBeenCalled());
+    expect(toastSuccess).not.toHaveBeenCalled();
+    const msg = toastError.mock.calls[0]?.[0] as string;
+    expect(msg).toContain('2 failed');
+
+    vi.unstubAllGlobals();
+  });
+});
+
+describe('BulkActionBar — bulk archive Undo', () => {
+  it('archive success shows an Undo that restores exactly the server-returned ids', async () => {
+    const archivedIds = ['aaaa-1', 'bbbb-2'];
+    const fetchMock = vi
+      .fn()
+      // 1) the archive POST → returns the ids it archived
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ updated_count: 2, updated_ids: archivedIds }),
+      })
+      // 2) the Undo POST → unarchive
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ updated_count: 2 }),
+      });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { getByTestId } = renderBar();
+    fireEvent.click(getByTestId('confirm-archive'));
+
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalled());
+    const [, opts] = toastSuccess.mock.calls[0] as [
+      string,
+      { action?: { label: string; onClick: () => void | Promise<void> } },
+    ];
+    expect(opts?.action?.label).toBe('Undo');
+
+    // Invoking Undo posts `unarchive` with the RESPONSE ids (not the selection).
+    await opts!.action!.onClick();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    const undoBody = JSON.parse(
+      (fetchMock.mock.calls[1]?.[1] as { body: string }).body,
+    );
+    expect(undoBody.action).toBe('unarchive');
+    expect(undoBody.member_ids).toEqual(archivedIds);
 
     vi.unstubAllGlobals();
   });

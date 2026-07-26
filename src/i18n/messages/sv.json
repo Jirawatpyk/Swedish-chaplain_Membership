@@ -1003,6 +1003,14 @@
         "searchPlaceholder": "Sök på företag, kontakt, e-post eller medlemsnummer",
         "searchSrLabel": "Sök medlemmar",
         "clearFilters": "Rensa filter",
+        "activeFilters": "Aktiva filter",
+        "removeFilter": "Ta bort {filter}",
+        "filterChip": {
+          "search": "Sök: {q}",
+          "status": "Status: {value}",
+          "plan": "Paket: {value}",
+          "risk": "Risk: {value}"
+        },
         "filters": {
           "status": {
             "label": "Status",
@@ -1057,7 +1065,12 @@
         "selectAll": "Markera alla rader",
         "selectRow": "Markera {company}",
         "selectedCount": "{count, plural, one {# rad vald} other {# rader valda}}",
-        "selectAllMatchingHint": "{count} markerade på denna sida. <loadMore>Ladda nästa sida</loadMore> för att utöka markeringen.",
+        "allPageSelected": "Alla {count} på denna sida markerade.",
+        "selectAllMatching": "Markera alla {count} matchande",
+        "matchingSelected": "Alla {count} matchande medlemmar markerade.",
+        "matchingSelectedCapped": "Första {count} av {total} matchande markerade (gräns per massåtgärd).",
+        "clearMatching": "Rensa",
+        "selectAllMatchingError": "Kunde inte läsa in hela matchande urvalet. Försök igen.",
         "membershipLapsed": "Förfallen",
         "membershipLapsedSr": "Medlemskap förfallet — kräver förnyelse",
         "membershipSuspended": "Pausad",
@@ -1611,7 +1624,8 @@
           "change_plan": "Byt plan",
           "send_portal_invite": "Skicka inbjudan",
           "enrol_auto_invoice": "Anmäl till autofakturering",
-          "unenrol_auto_invoice": "Stoppa autofakturering"
+          "unenrol_auto_invoice": "Stoppa autofakturering",
+          "send_renewal_reminder": "Skicka förnyelsepåminnelse"
         },
         "clear": "Rensa urval",
         "archiveTitle": "Arkivera {count, plural, one {# medlem} other {# medlemmar}}",
@@ -1631,7 +1645,15 @@
         "confirmUnenrolTitle": "Stoppa autofakturering för {count, plural, one {# medlem} other {# medlemmar}}",
         "confirmUnenrolDescription": "Inga nya utkast till förnyelsefakturor förbereds för dessa medlemmar. Utkast som redan väntar i granskningskön ligger kvar — kassera dem separat om du inte längre vill ha dem. Detta gäller alla valda medlemmar, även de vars medlemskap har upphört eller är pausat.",
         "confirmUnenrolAction": "Stoppa autofakturering",
+        "confirmReminderTitle": "Skicka en förnyelsepåminnelse till {count, plural, one {# medlem} other {# medlemmar}}?",
+        "confirmReminderDescription": "Varje markerad medlem med en aktiv förnyelsecykel får sitt nästa schemalagda påminnelsemejl nu. Medlemmar utan påminnelse att skicka, eller som avregistrerat sig, hoppas över.",
+        "confirmReminderAction": "Skicka påminnelser",
+        "reminderSent": "{sent, plural, one {# påminnelse skickad} other {# påminnelser skickade}}",
+        "reminderSkipped": "{skipped, plural, one {# överhoppad} other {# överhoppade}}",
+        "reminderFailed": "{failed, plural, one {# misslyckades} other {# misslyckades}}",
         "success": "{count, plural, one {# medlem} other {# medlemmar}} {action}",
+        "undo": "Ångra",
+        "unarchiveSuccess": "{count, plural, one {# medlem återställd} other {# medlemmar återställda}}",
         "inviteQueued": "{invited, plural, one {# inbjudan köad} other {# inbjudningar köade}}",
         "inviteResent": "{resent, plural, one {# omskickad} other {# omskickade}}",
         "inviteSkipped": "{skipped, plural, one {# hoppades över} other {# hoppades över}}",
@@ -1658,6 +1680,7 @@
       },
       "inlineEdit": {
         "statusUpdated": "Status uppdaterad",
+        "undo": "Ångra",
         "saveFailed": "Kunde inte spara. Återställd.",
         "saving": "Sparar…",
         "saved": "Sparat",

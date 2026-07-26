@@ -1003,6 +1003,14 @@
         "searchPlaceholder": "ค้นหาด้วยชื่อบริษัท ผู้ติดต่อ อีเมล หรือหมายเลขสมาชิก",
         "searchSrLabel": "ค้นหาสมาชิก",
         "clearFilters": "ล้างตัวกรอง",
+        "activeFilters": "ตัวกรองที่ใช้อยู่",
+        "removeFilter": "เอา {filter} ออก",
+        "filterChip": {
+          "search": "ค้นหา: {q}",
+          "status": "สถานะ: {value}",
+          "plan": "แพ็กเกจ: {value}",
+          "risk": "ความเสี่ยง: {value}"
+        },
         "filters": {
           "status": {
             "label": "สถานะ",
@@ -1057,7 +1065,12 @@
         "selectAll": "เลือกทุกแถว",
         "selectRow": "เลือก {company}",
         "selectedCount": "เลือกแล้ว {count} แถว",
-        "selectAllMatchingHint": "เลือก {count} รายการในหน้านี้ <loadMore>โหลดหน้าถัดไป</loadMore> เพื่อเลือกเพิ่ม",
+        "allPageSelected": "เลือกครบ {count} รายการในหน้านี้แล้ว",
+        "selectAllMatching": "เลือกทั้งหมด {count} รายการที่ตรงเงื่อนไข",
+        "matchingSelected": "เลือกสมาชิกที่ตรงเงื่อนไขครบ {count} รายการแล้ว",
+        "matchingSelectedCapped": "เลือก {count} จาก {total} รายการที่ตรงเงื่อนไข (สูงสุดต่อการทำแบบกลุ่ม)",
+        "clearMatching": "ล้าง",
+        "selectAllMatchingError": "โหลดรายการที่ตรงเงื่อนไขทั้งหมดไม่สำเร็จ กรุณาลองใหม่",
         "membershipLapsed": "หมดอายุ",
         "membershipLapsedSr": "สมาชิกภาพหมดอายุ — ต้องต่ออายุ",
         "membershipSuspended": "ระงับชั่วคราว",
@@ -1611,7 +1624,8 @@
           "change_plan": "เปลี่ยนแพ็กเกจ",
           "send_portal_invite": "ส่งคำเชิญ",
           "enrol_auto_invoice": "เปิดใช้ใบแจ้งหนี้อัตโนมัติ",
-          "unenrol_auto_invoice": "หยุดใบแจ้งหนี้อัตโนมัติ"
+          "unenrol_auto_invoice": "หยุดใบแจ้งหนี้อัตโนมัติ",
+          "send_renewal_reminder": "ส่งการแจ้งเตือนต่ออายุ"
         },
         "clear": "ล้างการเลือก",
         "archiveTitle": "ย้าย {count} สมาชิก ไปถังเก็บ",
@@ -1631,7 +1645,15 @@
         "confirmUnenrolTitle": "หยุดใบแจ้งหนี้อัตโนมัติสำหรับสมาชิก {count} ราย",
         "confirmUnenrolDescription": "ระบบจะไม่จัดเตรียมร่างใบแจ้งหนี้ต่ออายุใหม่ให้สมาชิกเหล่านี้อีก ร่างที่รออยู่ในคิวตรวจสอบแล้วจะยังคงอยู่ — หากไม่ต้องการโปรดยกเลิกร่างนั้นแยกต่างหาก การดำเนินการนี้มีผลกับสมาชิกที่เลือกทุกราย รวมถึงผู้ที่สิ้นสุดสถานะสมาชิกหรือถูกระงับชั่วคราว",
         "confirmUnenrolAction": "หยุดใบแจ้งหนี้อัตโนมัติ",
+        "confirmReminderTitle": "ส่งการแจ้งเตือนต่ออายุถึง {count, plural, other {# สมาชิก}} ใช่ไหม?",
+        "confirmReminderDescription": "สมาชิกที่เลือกซึ่งมีรอบต่ออายุที่ใช้งานอยู่ จะได้รับอีเมลแจ้งเตือนตามกำหนดถัดไปทันที สมาชิกที่ยังไม่ถึงกำหนดหรือขอไม่รับจะถูกข้าม",
+        "confirmReminderAction": "ส่งการแจ้งเตือน",
+        "reminderSent": "{sent, plural, other {ส่งแล้ว # รายการ}}",
+        "reminderSkipped": "{skipped, plural, other {ข้าม # รายการ}}",
+        "reminderFailed": "{failed, plural, other {ล้มเหลว # รายการ}}",
         "success": "ดำเนินการ {action} สำเร็จ {count} สมาชิก",
+        "undo": "เลิกทำ",
+        "unarchiveSuccess": "กู้คืน {count} สมาชิกแล้ว",
         "inviteQueued": "จัดคิวคำเชิญ {invited} รายการ",
         "inviteResent": "{resent, plural, other {ส่งซ้ำ #}}",
         "inviteSkipped": "ข้าม {skipped} รายการ",
@@ -1658,6 +1680,7 @@
       },
       "inlineEdit": {
         "statusUpdated": "อัปเดตสถานะแล้ว",
+        "undo": "เลิกทำ",
         "saveFailed": "บันทึกไม่สำเร็จ ย้อนกลับแล้ว",
         "saving": "กำลังบันทึก…",
         "saved": "บันทึกแล้ว",

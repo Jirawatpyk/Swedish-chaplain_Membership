@@ -130,7 +130,7 @@ function baseRow(overrides: Partial<MembersTableRow> = {}): MembersTableRow {
 function renderTable(rows: MembersTableRow[]) {
   return render(
     <NextIntlClientProvider locale="en" messages={messages}>
-      <MembersTable rows={rows} nextCursor={null} />
+      <MembersTable rows={rows} />
     </NextIntlClientProvider>,
   );
 }
@@ -170,9 +170,7 @@ describe('MembersTable suspended badge', () => {
     render(
       <NextIntlClientProvider locale="en" messages={messages}>
         <MembersTable
-          rows={[baseRow({ membership_suspended: true })]}
-          nextCursor={null}
-          enableSelection
+          rows={[baseRow({ membership_suspended: true })]}          enableSelection
           onInlineEdit={vi.fn().mockResolvedValue({ ok: true })}
         />
       </NextIntlClientProvider>,

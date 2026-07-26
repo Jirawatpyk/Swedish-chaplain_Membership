@@ -51,7 +51,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { ArchiveIcon, FileTextIcon, FileMinusIcon, MailIcon, XIcon } from 'lucide-react';
+import { ArchiveIcon, BellIcon, FileTextIcon, FileMinusIcon, MailIcon, XIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { ArchiveConfirmDialog } from './archive-confirm-dialog';
@@ -70,7 +70,8 @@ type BulkAction =
   | 'archive'
   | 'send_portal_invite'
   | 'enrol_auto_invoice'
-  | 'unenrol_auto_invoice';
+  | 'unenrol_auto_invoice'
+  | 'send_renewal_reminder';
 
 type Props = {
   readonly selectedIds: string[];
@@ -96,6 +97,7 @@ export function BulkActionBar({
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
   const [enrolDialogOpen, setEnrolDialogOpen] = useState(false);
   const [unenrolDialogOpen, setUnenrolDialogOpen] = useState(false);
+  const [reminderDialogOpen, setReminderDialogOpen] = useState(false);
   const [executing, setExecuting] = useState(false);
   const [progress, setProgress] = useState<{
     action: string;
@@ -103,6 +105,11 @@ export function BulkActionBar({
   } | null>(null);
 
   const count = selectedIds.length;
+  // Defensive only — currently UNREACHABLE: the effective selection is either the
+  // page (≤ PAGE_SIZE 50) or the select-all-matching set (capped at BULK_CAP by
+  // /api/members/ids), so `count` can't exceed BULK_CAP today, and the server
+  // (route + bulkAction use-case) enforces the real cap regardless. Kept as a
+  // cheap client guard in case a future selection path lifts the client-side cap.
   const overCap = count > BULK_CAP;
 
   // Focus-on-close (see module header). One ref pair serves all four
@@ -149,6 +156,42 @@ export function BulkActionBar({
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+
+  // Undo for a bulk archive — restores exactly the ids the archive returned via
+  // the `unarchive` bulk action (domain `undelete`, 90-day window). Slim by
+  // design: no confirm dialog, no selection changes (the selection was already
+  // cleared), just restore + a confirmation toast + refresh. Wired to the
+  // archive success toast's action button below.
+  const undoArchive = useCallback(
+    async (ids: string[]) => {
+      try {
+        const res = await fetch('/api/members/bulk', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Idempotency-Key': crypto.randomUUID(),
+          },
+          body: JSON.stringify({ action: 'unarchive', member_ids: ids }),
+        });
+        const body = await res.json();
+        if (res.ok) {
+          toast.success(
+            t('unarchiveSuccess', { count: body.updated_count ?? ids.length }),
+          );
+          router.refresh();
+        } else if (res.status === 429) {
+          toast.error(t('rateLimited'));
+        } else {
+          const code = body.error?.code;
+          const key = typeof code === 'string' ? `errors.${code}` : null;
+          toast.error(key && t.has(key) ? t(key) : t('unknownError'));
+        }
+      } catch {
+        toast.error(t('networkError'));
+      }
+    },
+    [router, t],
+  );
 
   const executeBulk = useCallback(
     async (action: BulkAction, params?: Record<string, unknown>) => {
@@ -253,12 +296,43 @@ export function BulkActionBar({
             const message = parts.join(' · ');
             if (c.unenrolled > 0) toast.success(message);
             else toast.info(message);
+          } else if (action === 'send_renewal_reminder') {
+            // #4 — per-member buckets (sent / skipped / failed). Members with no
+            // active cycle, no step due, or opted out are SKIPPED (no email).
+            // Error toast only when at least one genuinely failed; info (not a
+            // green tick) when nothing was sent so a no-op never reads as success.
+            const c = body.counts ?? { sent: 0, skipped: 0, failed: 0 };
+            const parts = [t('reminderSent', { sent: c.sent })];
+            if (c.skipped > 0)
+              parts.push(t('reminderSkipped', { skipped: c.skipped }));
+            if (c.failed > 0) parts.push(t('reminderFailed', { failed: c.failed }));
+            const message = parts.join(' · ');
+            if (c.failed > 0) toast.error(message);
+            else if (c.sent > 0) toast.success(message);
+            else toast.info(message);
           } else {
+            const canUndo =
+              action === 'archive' &&
+              Array.isArray(body.updated_ids) &&
+              body.updated_ids.length > 0;
             toast.success(
               t('success', {
                 count: body.updated_count,
                 action: t(`actions.${action}`),
               }),
+              // 10-second Undo on bulk archive (ux-patterns §2.3) — restores the
+              // exact ids the server just archived. Complementary to the confirm
+              // dialog, which stays for accident-prevention on the way in.
+              canUndo
+                ? {
+                    duration: 10_000,
+                    action: {
+                      label: t('undo'),
+                      onClick: () =>
+                        undoArchive(body.updated_ids as string[]),
+                    },
+                  }
+                : undefined,
             );
           }
           // Raise BEFORE onClear(): `onClear` is what unmounts this whole
@@ -285,7 +359,7 @@ export function BulkActionBar({
         setProgress(null);
       }
     },
-    [selectedIds, count, overCap, onClear, router, t],
+    [selectedIds, count, overCap, onClear, router, t, undoArchive],
   );
 
   // H7: keep dialog open (with pending spinner) while archive is in-flight
@@ -310,7 +384,7 @@ export function BulkActionBar({
         aria-label={t('toolbarLabel')}
       >
         {/* `flex-wrap` on BOTH rows (Task 15 review, UX-5). `Button` carries
-            `whitespace-nowrap`, and the four action labels are long in every
+            `whitespace-nowrap`, and the five action labels are long in every
             locale (EN "Enrol in auto-invoicing" / SV "Anmäl till
             autofakturering" / TH "เปิดใช้ใบแจ้งหนี้อัตโนมัติ"), so without
             wrapping the bar's min-content width far exceeds the 320px floor in
@@ -345,7 +419,9 @@ export function BulkActionBar({
             )}
           </div>
 
-          {/* Center: action buttons */}
+          {/* Center: action buttons — flex-wrap so all five (worst case the long
+              Swedish "Skicka förnyelsepåminnelse" / "Anmäl till autofakturering")
+              never overflow on narrow / tablet widths. */}
           <div className="flex flex-wrap items-center gap-2">
             <Button
               variant="destructive-outline"
@@ -382,9 +458,9 @@ export function BulkActionBar({
               {t('actions.send_portal_invite')}
             </Button>
             {/* 107-auto-invoice Task 15 — non-destructive (it only turns ON a
-                billing preference and has no un-enrol counterpart yet), so
-                `variant="outline"` + the generic ConfirmationDialog, matching
-                the invite button rather than the destructive archive one. */}
+                billing preference), so `variant="outline"` + the generic
+                ConfirmationDialog, matching the invite button rather than the
+                destructive archive one. */}
             <Button
               variant="outline"
               size="sm"
@@ -402,39 +478,43 @@ export function BulkActionBar({
               {/* FileTextIcon, NOT ReceiptTextIcon: this action drafts an
                   INVOICE (ใบแจ้งหนี้), and invoice/receipt/tax-invoice are
                   legally distinct documents in Thai tax law — an icon that
-                  reads "receipt" on an invoice action is a real hazard here.
-                  ReceiptTextIcon appears nowhere else in the codebase. */}
+                  reads "receipt" on an invoice action is a real hazard here. */}
               <FileTextIcon className="mr-1.5 h-4 w-4" />
               {t('actions.enrol_auto_invoice')}
             </Button>
-            {/* 107-auto-invoice Task 18 — the way back out of the button
-                above. Also `variant="outline"`, NOT destructive: it destroys
-                no data and issues no document; it only stops FUTURE drafts
-                being prepared, and any draft already in the review queue is
-                deliberately left alone (see the confirm copy). Styling it
-                destructive would overstate what it does and discourage the
-                operator from using the off switch at all. */}
+            {/* 107-auto-invoice Task 18 — the off switch for the button above.
+                Also `variant="outline"`, NOT destructive: it destroys no data
+                and issues no document; it only stops FUTURE drafts being
+                prepared, and any draft already in the review queue is left
+                alone (see the confirm copy). */}
             <Button
               variant="outline"
               size="sm"
               disabled={executing || overCap}
               onClick={(e) => {
                 lastTriggerRef.current = e.currentTarget;
-                // "How did THIS dialog close" — reset on OPEN so Cancel/ESC
-                // after an earlier SUCCESS still returns focus to the
-                // trigger. The fiber (and this ref) survives `return null`.
                 closedViaSuccessRef.current = false;
                 setUnenrolDialogOpen(true);
               }}
               className="min-h-11"
             >
               {/* FileMinusIcon mirrors the enrol action's FileTextIcon with a
-                  "remove" affordance. Same reasoning as there: this is about
-                  an INVOICE (ใบแจ้งหนี้), and invoice / receipt / tax-invoice
-                  are legally distinct documents in Thai tax law, so a
-                  receipt-shaped icon here would be a real hazard. */}
+                  "remove" affordance — same invoice≠receipt≠tax-invoice
+                  legal-distinctness reasoning. */}
               <FileMinusIcon className="mr-1.5 h-4 w-4" />
               {t('actions.unenrol_auto_invoice')}
+            </Button>
+            {/* #4 members-ux — send a renewal reminder (best-effort per member;
+                the reminder dialog does not use finalFocus, matching main). */}
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={executing || overCap}
+              onClick={() => setReminderDialogOpen(true)}
+              className="min-h-11"
+            >
+              <BellIcon className="mr-1.5 h-4 w-4" />
+              {t('actions.send_renewal_reminder')}
             </Button>
           </div>
 
@@ -500,6 +580,17 @@ export function BulkActionBar({
         confirmDisabled={executing}
         onConfirm={() => executeBulk('unenrol_auto_invoice')}
         finalFocus={finalFocus}
+      />
+
+      <ConfirmationDialog
+        open={reminderDialogOpen}
+        onOpenChange={setReminderDialogOpen}
+        title={t('confirmReminderTitle', { count })}
+        description={t('confirmReminderDescription')}
+        confirmLabel={t('confirmReminderAction')}
+        cancelLabel={t('cancel')}
+        confirmDisabled={executing}
+        onConfirm={() => executeBulk('send_renewal_reminder')}
       />
 
       {progress && (

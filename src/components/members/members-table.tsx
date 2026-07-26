@@ -23,9 +23,11 @@
  * T112 (US4): Inline-edit Status cell with aria-live save/rollback
  * announcements + 24×24 min target size (ADOPT-01 / WCAG 2.2 SC 2.5.8).
  *
- * Pagination is cursor-based at the server level; this component exposes
- * a "Load more" button that the parent wires to re-fetch with the echoed
- * cursor.
+ * Pagination is numbered/offset at the server level (the parent renders
+ * `TablePagination`). When the whole visible page is selected and more rows
+ * match beyond it (`total > rows.length`), this component surfaces the
+ * "Select all N matching" banner; the parent fetches the matching ids and
+ * drives the cross-page bulk selection.
  */
 
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
@@ -50,7 +52,6 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   ArchiveIcon,
@@ -160,7 +161,6 @@ export type InlineEditResult =
 
 type Props = {
   readonly rows: readonly MembersTableRow[];
-  readonly nextCursor: string | null;
   /**
    * Total rows matching the current filters across ALL pages. When provided,
    * the sr-only result-count live region announces "Showing N of M members"
@@ -168,6 +168,29 @@ type Props = {
    * how a filter change narrowed the set, not just the current page size.
    */
   readonly total?: number | undefined;
+  // #2 select-all-matching. When the whole visible page is selected and more
+  // matching rows exist across pages, the table offers "Select all N matching";
+  // clicking it calls `onSelectAllMatching` and the PARENT fetches the matching
+  // ids (/api/members/ids, capped at BULK_CAP) + drives the effective bulk
+  // selection. The table only renders the banner + reports the intent.
+  /** Offer handler — fetch + apply the cross-page matching selection. */
+  readonly onSelectAllMatching?: (() => void) | undefined;
+  /** True once the parent holds an active cross-page matching selection. */
+  readonly matchingActive?: boolean | undefined;
+  /** Ids actually selected (≤ BULK_CAP). */
+  readonly matchingCount?: number | undefined;
+  /** Total matching across pages (may exceed matchingCount when capped). */
+  readonly matchingTotal?: number | undefined;
+  /** True when the matching set was capped at BULK_CAP. */
+  readonly matchingCapped?: boolean | undefined;
+  /** Clear the cross-page matching selection. */
+  readonly onClearMatching?: (() => void) | undefined;
+  /**
+   * Bumped by the parent's Clear to command a full reset of this table's
+   * (uncontrolled) TanStack row-selection — the parent can't reach the checkbox
+   * state otherwise, so without this Clear leaves the page rows checked.
+   */
+  readonly clearSelectionNonce?: number | undefined;
   /** Admin-only: enable multi-row selection + inline edit. */
   readonly enableSelection?: boolean | undefined;
   /** Callback when selection changes — used by BulkActionBar. */
@@ -369,14 +392,32 @@ function InlineStatusCell({
 
   const handleToggle = useCallback(async () => {
     if (!onSave || status === 'archived') return;
-    const next = optimistic === 'active' ? 'inactive' : 'active';
+    const previous = optimistic;
+    const next = previous === 'active' ? 'inactive' : 'active';
     setOptimistic(next);
     setSaving(true);
     const result = await onSave(memberId, 'status', next);
     setSaving(false);
     if (result.ok) {
       setSavedFlash(true);
-      toast.success(t('statusUpdated'));
+      // 10-second Undo (ux-patterns §2.3) — re-run the same inline-edit handler
+      // with the PREVIOUS value. Pure client re-call; no new backend surface.
+      toast.success(t('statusUpdated'), {
+        duration: 10_000,
+        action: {
+          label: t('undo'),
+          onClick: async () => {
+            setOptimistic(previous);
+            const undoResult = await onSave(memberId, 'status', previous);
+            if (undoResult.ok) {
+              toast.success(t('statusUpdated'));
+            } else {
+              setOptimistic(next); // undo failed — keep the applied value
+              toast.error(undoResult.error);
+            }
+          },
+        },
+      });
     } else {
       setOptimistic(status); // rollback
       // Discriminated union — `error` is guaranteed string when !ok.
@@ -460,21 +501,41 @@ function PortalBadge({ state }: { state: MembersTableRow['portal_state'] }) {
 
 export function MembersTable({
   rows,
-  nextCursor,
   total,
   enableSelection = false,
   onSelectionChange,
   onInlineEdit,
+  onSelectAllMatching,
+  matchingActive = false,
+  matchingCount,
+  matchingTotal,
+  matchingCapped = false,
+  onClearMatching,
+  clearSelectionNonce,
 }: Props) {
   const t = useTranslations('admin.members.directory');
   const tContact = useTranslations('admin.members.detail');
   const locale = useLocale();
-  const router = useRouter();
-  const pathname = usePathname();
   const searchParams = useSearchParams();
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const lastSelectedRef = useRef<number | null>(null);
   const tableContainerRef = useRef<HTMLDivElement>(null);
+  // #2 focus management — the offer/active banner is a DOM-swapping ternary, so
+  // clicking a control unmounts it and focus would drop to <body> (this repo's
+  // documented focus-loss class). On the offer→active transition move focus to
+  // the active banner's Clear; on active→offer (Clear pressed) move it back to
+  // the offer button so keyboard/SR users are never stranded.
+  const selectAllMatchingBtnRef = useRef<HTMLButtonElement>(null);
+  const clearMatchingBtnRef = useRef<HTMLButtonElement>(null);
+  const prevMatchingActiveRef = useRef(matchingActive);
+  useEffect(() => {
+    if (matchingActive && !prevMatchingActiveRef.current) {
+      clearMatchingBtnRef.current?.focus();
+    } else if (!matchingActive && prevMatchingActiveRef.current) {
+      selectAllMatchingBtnRef.current?.focus();
+    }
+    prevMatchingActiveRef.current = matchingActive;
+  }, [matchingActive]);
 
   // WCAG 1.3.1 / 4.1.2 — `aria-sort` belongs on the `role=columnheader`
   // (the `<th>`/TableHead), not on the inner sort button. Derive the
@@ -548,6 +609,13 @@ export function MembersTable({
                 onClick={(e: React.MouseEvent) => {
                   // Shift+Click range selection (FR-040)
                   if (e.shiftKey && lastSelectedRef.current !== null) {
+                    // Apply the CLICKED row's resulting state across the range —
+                    // `preventDefault` below blocks the default toggle, so its
+                    // current state is pre-click; the intended new state is its
+                    // inverse. This lets a shift-click DESELECT a range (click a
+                    // selected row) as well as select one, matching standard
+                    // shift-click semantics instead of only-ever-adding.
+                    const targetState = !row.getIsSelected();
                     const start = Math.min(lastSelectedRef.current, row.index);
                     const end = Math.max(lastSelectedRef.current, row.index);
                     const next = { ...rowSelection };
@@ -558,7 +626,7 @@ export function MembersTable({
                       // this guard it could select a non-selectable row.
                       const rangeRow = rows[i];
                       if (rangeRow && isMemberRowSelectable(rangeRow)) {
-                        next[rangeRow.member_id] = true;
+                        next[rangeRow.member_id] = targetState;
                       }
                     }
                     handleRowSelectionChange(next);
@@ -854,13 +922,6 @@ export function MembersTable({
     getRowId: (row) => row.member_id,
   });
 
-  const onLoadMore = () => {
-    if (!nextCursor) return;
-    const params = new URLSearchParams(searchParams.toString());
-    params.set('cursor', nextCursor);
-    router.replace(`${pathname}?${params.toString()}`);
-  };
-
   const selectedCount = Object.keys(rowSelection).filter(
     (k) => rowSelection[k],
   ).length;
@@ -872,7 +933,10 @@ export function MembersTable({
   // contradicting the header select-all checkbox (which also uses this).
   const allPageSelected =
     enableSelection && rows.length > 0 && table.getIsAllPageRowsSelected();
-  const hasMorePages = enableSelection && nextCursor !== null;
+  // #2 — numbered/offset pagination has no cursor; "more matching exist beyond
+  // this page" is simply the full filtered total exceeding the rows shown here.
+  const hasMoreMatching =
+    enableSelection && total !== undefined && total > rows.length;
 
   // Round-6 W-3: store table in a ref so the Ctrl+A effect has a stable
   // dependency (table object is rebuilt every render by useReactTable).
@@ -901,6 +965,20 @@ export function MembersTable({
     return () => window.removeEventListener('keydown', onKey);
   }, [enableSelection]);
 
+  // Full row-selection reset commanded by the parent's Clear (bulk bar or the
+  // "select all matching" banner) via `clearSelectionNonce`. The table owns
+  // rowSelection UNCONTROLLED, so the parent can't uncheck the boxes directly —
+  // resetting here also fires `onSelectionChange([])`, so the parent mirror
+  // follows to zero. Guarded on a nonce CHANGE (not mount) so it fires only on
+  // an actual Clear.
+  const prevClearNonceRef = useRef(clearSelectionNonce);
+  useEffect(() => {
+    if (clearSelectionNonce !== prevClearNonceRef.current) {
+      prevClearNonceRef.current = clearSelectionNonce;
+      tableRef.current.resetRowSelection();
+    }
+  }, [clearSelectionNonce]);
+
   return (
     <div className="flex flex-col gap-4" ref={tableContainerRef}>
       {/* Result-count live region — announces the row count on ANY filter
@@ -912,41 +990,71 @@ export function MembersTable({
           ? t('resultsCountOfTotal', { count: rows.length, total })
           : t('resultsCount', { count: rows.length })}
       </div>
-      {enableSelection && selectedCount > 0 && (
+      {enableSelection && (matchingActive || selectedCount > 0) && (
         <div
           className="sr-only"
           aria-live="polite"
           aria-atomic="true"
         >
-          {t('selectedCount', { count: selectedCount })}
-        </div>
-      )}
-      {/* Staff-review SW-4: "Select all N matching" affordance when the
-          whole current page is selected AND more matching rows exist on
-          subsequent pages. Clicking the text loads the next page — full
-          cross-page ids batch-select requires an API endpoint (deferred). */}
-      {allPageSelected && hasMorePages && (
-        <div
-          className="rounded-md border border-accent bg-accent/40 px-4 py-2 text-sm"
-          role="status"
-        >
-          {t.rich('selectAllMatchingHint', {
-            count: selectedCount,
-            loadMore: (chunks) => (
-              <button
-                type="button"
-                className="ml-2 font-medium underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-ring"
-                onClick={() => {
-                  const params = new URLSearchParams(searchParams.toString());
-                  if (nextCursor) params.set('cursor', nextCursor);
-                  router.replace(`${pathname}?${params.toString()}`);
-                }}
-              >
-                {chunks}
-              </button>
-            ),
+          {/* Announce the EFFECTIVE count: the cross-page matching total when
+              "select all matching" is active (what the bulk action will touch),
+              else the visible-page selection — so SR users don't hear the page
+              count while the visible banner shows the matching count. */}
+          {t('selectedCount', {
+            count: matchingActive ? (matchingCount ?? selectedCount) : selectedCount,
           })}
         </div>
+      )}
+      {/* #2 cross-page "Select all N matching". Two states:
+          (a) OFFER — whole visible page selected + more matching rows exist
+              beyond it: clicking asks the parent to fetch the matching ids
+              (capped at BULK_CAP) so a bulk action reaches the whole filtered
+              set, not just this page.
+          (b) ACTIVE — the parent holds the cross-page selection: show the count
+              (capped copy when the set was clamped to BULK_CAP) + a Clear. */}
+      {matchingActive ? (
+        <div
+          className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-accent bg-accent/40 px-4 py-2 text-sm"
+          role="status"
+        >
+          <span>
+            {matchingCapped
+              ? t('matchingSelectedCapped', {
+                  count: matchingCount ?? 0,
+                  total: matchingTotal ?? matchingCount ?? 0,
+                })
+              : t('matchingSelected', { count: matchingCount ?? 0 })}
+          </span>
+          {onClearMatching && (
+            <button
+              ref={clearMatchingBtnRef}
+              type="button"
+              className="font-medium underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-ring"
+              onClick={onClearMatching}
+            >
+              {t('clearMatching')}
+            </button>
+          )}
+        </div>
+      ) : (
+        allPageSelected &&
+        hasMoreMatching &&
+        onSelectAllMatching && (
+          <div
+            className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-accent bg-accent/40 px-4 py-2 text-sm"
+            role="status"
+          >
+            <span>{t('allPageSelected', { count: selectedCount })}</span>
+            <button
+              ref={selectAllMatchingBtnRef}
+              type="button"
+              className="font-medium underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-ring"
+              onClick={onSelectAllMatching}
+            >
+              {t('selectAllMatching', { count: total ?? 0 })}
+            </button>
+          </div>
+        )
       )}
       {/* WCAG 1.3.1 — visually-hidden caption identifies the table for
           screen reader users who navigate table landmarks. */}
@@ -1047,13 +1155,6 @@ export function MembersTable({
         </TableBody>
       </Table>
 
-      {nextCursor && (
-        <div className="flex justify-center">
-          <Button type="button" variant="outline" size="sm" onClick={onLoadMore}>
-            {t('loadMore')}
-          </Button>
-        </div>
-      )}
     </div>
   );
 }
