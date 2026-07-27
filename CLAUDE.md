@@ -145,13 +145,13 @@ pnpm db:verify                 # assert the live schema matches expectations (pr
 pnpm build                     # production build
 ```
 
-Full gate list — **the local run IS the gate.** GitHub Actions only runs 4 narrow workflows (`architecture-guards` on PR · nightly F7+F8 multi-tenant readiness · template-seed drift · Neon preview cleanup); **no CI job runs lint, typecheck, unit, integration, or e2e.** Budget >1 h end-to-end:
+Full gate list — run this before shipping anything non-trivial. **CI covers the hermetic half only**: `quality-gates.yml` runs `lint` + `next typegen` + `typecheck` + `check:i18n`/`layout`/`fixme`/`dates`/`env-example`/`env-boot` + the unit+contract suite (sharded ×2) on every PR and push to `main`; the other workflows are `architecture-guards`, nightly F7+F8 multi-tenant readiness, template-seed drift, Neon preview cleanup. **Integration, e2e and coverage have no CI job** — those remain local-only, so budget >1 h end-to-end here:
 
 ```bash
 pnpm lint && pnpm typecheck && pnpm test:coverage && pnpm check:i18n && pnpm check:layout && pnpm check:fixme && pnpm check:template-seed && pnpm test:integration && pnpm test:e2e
 ```
 
-Pre-push (**~4–5 min, not 30 s** — the vitest step runs the whole `tests/contract/` + `tests/unit/architecture/` subset, ≈1.8k tests) runs `check:layout` + `check:template-seed` + `check:fixme` + `check:dates` + `check:env-example` + `check:env-boot` + that vitest subset, plus a **conditional per-module integration gate** when `src/modules/<m>/**` is touched (emergency override: `SKIP_INTEGRATION_PREPUSH=1 git push`). Additional `check:*` gates available: `check:strict-aria`, `check:audit-events`, `check:audit-counts`, `check:bundle-budgets`, `check:multi-tenant`, `check:portal-guard`, `check:plan-divergence`, `check:f71a-schema`, `check:f9-schema`.
+Pre-push (**~35–40 s** since 2026-07-28) runs `check:layout` + `check:template-seed` + `check:fixme` + `check:dates` + `check:env-example` + `check:env-boot` + `tests/unit/architecture/` (24 s — the settlement-tx money guard), plus a **conditional per-module integration gate** when `src/modules/<m>/**` is touched (emergency override: `SKIP_INTEGRATION_PREPUSH=1 git push`). The 190-file `tests/contract/` run moved to CI; run it locally with `pnpm vitest run tests/contract/` (~4.3 min) before opening a PR. Additional `check:*` gates available: `check:strict-aria`, `check:audit-events`, `check:audit-counts`, `check:bundle-budgets`, `check:multi-tenant`, `check:portal-guard`, `check:plan-divergence`, `check:f71a-schema`, `check:f9-schema`.
 
 Coverage thresholds (enforced in `vitest.config.ts`): Domain 100% line; Application 80% line + 80% branch; **100% branch on security-critical use cases** (sign-in, change-password, reset-password, role policy, sign-out).
 

@@ -1,0 +1,112 @@
+# Quality gates — the deterministic, hermetic half of the pipeline.
+#
+# WHY THIS EXISTS
+# Until this file landed, GitHub Actions ran only three narrow jobs
+# (architecture guards, nightly F7+F8 multi-tenant readiness, template-seed
+# drift). Nothing in CI ran `pnpm lint` or `pnpm typecheck` — and neither is in
+# `.husky/pre-push` either, so a lint error or a type error could reach `main`
+# with no gate having ever looked at it. With prod live on real members and real
+# money, and no second human reviewer (Constitution IX solo-maintainer
+# substitute), that hole is the one worth closing first.
+#
+# It also lets `.husky/pre-push` get its speed back: the ~190-file
+# `tests/contract/` run that made every push cost ~4.3 min moved HERE, so the
+# hook is back to ~35 s of cheap invariant checks + the architecture guard.
+#
+# DELIBERATELY DB-FREE. Every gate below is hermetic:
+#   - `pnpm lint` / `pnpm typecheck` / `check:*` are static (fs + AST only).
+#   - `pnpm test` (tests/unit + tests/contract) needs NO secrets: when
+#     `.env.local` is absent, `tests/setup.ts` injects schema-satisfying
+#     placeholders (see its TEST_PLACEHOLDERS map). Contract tests mock every
+#     boundary; nothing dials Neon, Stripe, Resend or Upstash.
+# Integration + e2e stay OUT of this workflow — they need a disposable Neon
+# branch (`CI_DATABASE_URL`, F7.1b backlog B10) and a booted app. Integration
+# coverage remains the per-module pre-push gate + the nightly readiness jobs.
+#
+# NOTE: this workflow REPORTS. Whether a red run blocks a merge is a branch
+# protection setting the maintainer owns in GitHub — adding this file does not,
+# by itself, gate anything.
+name: Quality gates
+
+on:
+  pull_request:
+  push:
+    branches: ['main']
+
+# A force-push or a rapid second push supersedes the previous run.
+concurrency:
+  group: quality-gates-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static:
+    name: Lint · typecheck · static gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      # No `version:` — pnpm/action-setup reads `packageManager` in
+      # package.json (pnpm@10.0.0), so CI can never drift from the lockfile.
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+
+      - name: ESLint
+        run: pnpm lint
+
+      # `next-env.d.ts` is gitignored (it does not exist in a fresh checkout)
+      # and it `import`s `.next/dev/types/routes.d.ts`, so `tsc` has no Next
+      # route/global types until the typegen has run. `next typegen` produces
+      # exactly those files without a full `next build` (seconds, not minutes).
+      - name: Next route typegen (produces next-env.d.ts + .next types)
+        run: pnpm exec next typegen
+
+      - name: TypeScript (strict, --noEmit)
+        run: pnpm typecheck
+
+      - name: i18n key coverage (EN canonical; TH/SV parity)
+        run: pnpm check:i18n
+
+      - name: Single-page → single-container invariant
+        run: pnpm check:layout
+
+      - name: Zero test.fixme / bare test.skip in e2e + contract
+        run: pnpm check:fixme
+
+      - name: Buddhist-Era / date-handling guard
+        run: pnpm check:dates
+
+      - name: env.ts schema ↔ .env.example key parity
+        run: pnpm check:env-example
+
+      - name: .env.example boots the env.ts schema verbatim
+        run: pnpm check:env-boot
+
+  unit:
+    # Sharded because `vitest.config.ts` caps `maxWorkers: '50%'` for
+    # determinism (see the starvation trade-off documented there). On a 2-core
+    # runner that is a single worker, so the ~1,800-test suite is split across
+    # two runners instead of serialised on one.
+    name: Unit + contract (shard ${{ matrix.shard }}/2)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+
+      # tests/unit/** + tests/contract/** per vitest.config.ts `include`.
+      # No DATABASE_URL / no secrets — tests/setup.ts fills placeholders.
+      - name: Vitest (unit + contract)
+        run: pnpm vitest run --shard=${{ matrix.shard }}/2 --passWithNoTests
