@@ -118,9 +118,13 @@ describe('F8 pipeline + pending-review reads exclude erased members (COMP-1 H4)'
     const deps = makeRenewalsDeps(tenant.ctx.slug);
     const result = await loadPipeline(deps, {
       tenantId: tenant.ctx.slug,
-      // 't-30' activates the 90-day non-lapsed window; both seeded cycles
-      // (expiry +20d) fall inside it.
-      urgency: 't-30',
+      // Both seeded cycles are 'pending_admin_reactivation' → the 'suspended'
+      // access bucket (URGENCY_CASE_SQL is status-first, mirroring
+      // deriveMembershipAccess; the +20d expiry is irrelevant once status
+      // routes it). Query that bucket so the kept cycle is in-window. (Before
+      // the grace→suspended rename this queried 't-30' — a pending cycle used
+      // to fall through to the expiry countdown; it no longer does.)
+      urgency: 'suspended',
       limit: 100,
     });
     expect(result.ok).toBe(true);
