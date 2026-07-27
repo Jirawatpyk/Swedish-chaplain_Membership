@@ -3240,10 +3240,13 @@
         "ariaLabel": "Renewals sections",
         "pipeline": "Pipeline",
         "tasks": "Tasks",
-        "tierUpgrades": "Tier upgrades"
+        "tasksCountSr": "{count, plural, one {# open task} other {# open tasks}}",
+        "tierUpgrades": "Tier upgrades",
+        "tierUpgradesCountSr": "{count, plural, one {# tier-upgrade suggestion} other {# tier-upgrade suggestions}}"
       },
       "pendingReview": {
         "tab": "Pending review",
+        "tabCountSr": "{count, plural, one {# cycle awaiting review} other {# cycles awaiting review}}",
         "sectionTitle": "Reactivations awaiting your decision",
         "sectionSubtitle": "These members paid to reactivate a lapsed membership but auto-reactivation is blocked. Open each one to approve or reject with a refund.",
         "emptyTitle": "Nothing awaiting review",

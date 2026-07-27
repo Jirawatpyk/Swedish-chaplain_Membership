@@ -3240,10 +3240,13 @@
         "ariaLabel": "Förnyelsesektioner",
         "pipeline": "Pipeline",
         "tasks": "Uppgifter",
-        "tierUpgrades": "Nivåhöjningar"
+        "tasksCountSr": "{count, plural, one {# öppen uppgift} other {# öppna uppgifter}}",
+        "tierUpgrades": "Nivåhöjningar",
+        "tierUpgradesCountSr": "{count, plural, one {# nivåhöjningsförslag} other {# nivåhöjningsförslag}}"
       },
       "pendingReview": {
         "tab": "Väntar på granskning",
+        "tabCountSr": "{count, plural, one {# cykel väntar på granskning} other {# cykler väntar på granskning}}",
         "sectionTitle": "Återaktiveringar som väntar på ditt beslut",
         "sectionSubtitle": "Dessa medlemmar betalade för att återaktivera ett utgånget medlemskap, men automatisk återaktivering är spärrad. Öppna varje post för att godkänna eller avslå med återbetalning.",
         "emptyTitle": "Inget väntar på granskning",
