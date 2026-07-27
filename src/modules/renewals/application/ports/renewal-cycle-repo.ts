@@ -1065,6 +1065,15 @@ export interface RenewalCycleRepo {
 // Pipeline-specific shapes (Phase 3 US1)
 // ---------------------------------------------------------------------------
 
+// The six `t-*` values are the pre-deadline URGENCY countdown (access = full).
+// The two tail values mirror `deriveMembershipAccess` (renewal-cycle.ts) — the
+// benefit-access SSOT — so the pill never contradicts the member's real access:
+//   'suspended'  = benefits paused, member can still pay (awaiting_payment /
+//                  pending_admin_reactivation, or an expired non-terminal cycle)
+//   'terminated' = membership ended (status = 'lapsed')
+// Renamed from 'grace'/'lapsed' (065 policy 059 removed benefit-bearing grace;
+// the old label wrongly implied benefits were still on). The `grace_period_days`
+// config + 'grace_expired' closed-reason INFRA are a separate axis and unchanged.
 export type UrgencyBucket =
   | 't-90'
   | 't-60'
@@ -1072,8 +1081,8 @@ export type UrgencyBucket =
   | 't-14'
   | 't-7'
   | 't-0'
-  | 'grace'
-  | 'lapsed';
+  | 'suspended'
+  | 'terminated';
 
 export interface PipelineQueryOpts {
   readonly tier?: TierBucket;

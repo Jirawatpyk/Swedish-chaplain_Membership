@@ -3229,11 +3229,11 @@
       "pipelineHelp": {
         "ariaLabel": "Om förnyelsepipelinen",
         "title": "Förnyelsepipeline",
-        "body": "Varje medlems aktuella förnyelsecykel, grupperad efter angelägenhet — från T-90 (förfaller om 90 dagar) ner till T-0 (förfaller idag), sedan Grace och Lapsed. Filtrera på nivå eller månad för att avgränsa listan.",
-        "graceTerm": "Grace (respitperiod)",
-        "graceDef": "Förfallen men fortfarande inom respitperioden — förmånerna är pausade, men medlemmen kan betala för att behålla sitt medlemskap.",
-        "lapsedTerm": "Lapsed (upphört)",
-        "lapsedDef": "Respitperioden har löpt ut — medlemskapet har upphört och behöver återaktiveras av en administratör."
+        "body": "Varje medlems aktuella förnyelsecykel, grupperad efter angelägenhet — från T-90 (förfaller om 90 dagar) ner till T-0 (förfaller idag), sedan Suspenderad och Avslutad. Filtrera på nivå eller månad för att avgränsa listan.",
+        "suspendedTerm": "Suspenderad",
+        "suspendedDef": "Förfallen — förmånerna är pausade, men medlemmen kan fortfarande betala för att återställa dem utan att förlora sitt medlemskap.",
+        "terminatedTerm": "Avslutad",
+        "terminatedDef": "Medlemskapet har upphört och behöver återaktiveras av en administratör."
       },
       "subtitle": "Aktiva medlemmar efter förnyelsedatum och nivå.",
       "tabs": {
@@ -3293,8 +3293,8 @@
         "t_14": "Förnyas om 14 d",
         "t_7": "Förnyas om 7 d",
         "t_0": "Förnyas idag",
-        "grace": "Respitperiod",
-        "lapsed": "Förfallen"
+        "suspended": "Suspenderad",
+        "terminated": "Avslutad"
       },
       "urgencyBuckets": {
         "aria_label": "Filtrera efter förnyelsebrådska",
@@ -3306,8 +3306,8 @@
         "t_14": "T-14",
         "t_7": "T-7",
         "t_0": "T-0",
-        "grace": "Respit",
-        "lapsed": "Förfallen"
+        "suspended": "Suspenderad",
+        "terminated": "Avslutad"
       },
       "byMonth": {
         "title": "Förnyelser per månad",
@@ -3402,8 +3402,8 @@
       },
       "lapsed": {
         "banner": {
-          "title": "Förfallna medlemmar",
-          "description": "Dessa medlemmar har passerat respitperioden. Återaktivera eller arkivera när du återupprättar kontakten."
+          "title": "Avslutade medlemmar",
+          "description": "Dessa medlemmars medlemskap har upphört. Återaktivera eller arkivera när du återupprättar kontakten."
         },
         "columns": {
           "reason": "Orsak"
@@ -3574,7 +3574,7 @@
           "snoozeAriaLabel": "Pausa {company}",
           "retry": "Försök igen",
           "viewAllMembers": "Visa alla medlemmar",
-          "reviewLapsed": "Granska förfallna medlemmar"
+          "reviewLapsed": "Granska avslutade medlemmar"
         },
         "scoreBadge": {
           "band": {

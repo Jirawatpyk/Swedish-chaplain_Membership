@@ -18,7 +18,7 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams('month=2027-02'),
 }));
 
-const COUNTS = { 't-90': 1, 't-60': 2, 't-30': 3, 't-14': 4, 't-7': 5, 't-0': 6, grace: 7, lapsed: 0 };
+const COUNTS = { 't-90': 1, 't-60': 2, 't-30': 3, 't-14': 4, 't-7': 5, 't-0': 6, suspended: 7, terminated: 0 };
 
 function renderTabs(current: 't-30' | null) {
   return render(

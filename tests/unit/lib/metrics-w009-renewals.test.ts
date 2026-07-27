@@ -405,17 +405,17 @@ describe('W0-09 — renewalsMetrics missing § 23.1 instruments', () => {
 
     it('different urgency_band values produce independent keys', () => {
       renewalsMetrics.pipelineRowCount('tenant-rg3', 't-30', 100);
-      renewalsMetrics.pipelineRowCount('tenant-rg3', 'lapsed', 5);
+      renewalsMetrics.pipelineRowCount('tenant-rg3', 'terminated', 5);
       const bucket = __test__readGaugeValues('renewals.pipeline.row_count')!;
       expect(bucket.get(gaugeKey('tenant-rg3', 't-30'))).toBe(100);
-      expect(bucket.get(gaugeKey('tenant-rg3', 'lapsed'))).toBe(5);
+      expect(bucket.get(gaugeKey('tenant-rg3', 'terminated'))).toBe(5);
     });
 
     it('zero row count is observable', () => {
-      renewalsMetrics.pipelineRowCount('tenant-rg4', 'grace', 0);
+      renewalsMetrics.pipelineRowCount('tenant-rg4', 'suspended', 0);
       const bucket = __test__readGaugeValues('renewals.pipeline.row_count')!;
-      expect(bucket.has(gaugeKey('tenant-rg4', 'grace'))).toBe(true);
-      expect(bucket.get(gaugeKey('tenant-rg4', 'grace'))).toBe(0);
+      expect(bucket.has(gaugeKey('tenant-rg4', 'suspended'))).toBe(true);
+      expect(bucket.get(gaugeKey('tenant-rg4', 'suspended'))).toBe(0);
     });
 
     it('never throws — safeMetric swallow contract holds', () => {

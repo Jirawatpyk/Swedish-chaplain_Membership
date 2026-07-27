@@ -7,7 +7,7 @@ function makeDeps() {
     nextCursor: null,
     summary: {
       totalInWindow: 0,
-      byUrgency: { 't-90': 0, 't-60': 0, 't-30': 0, 't-14': 0, 't-7': 0, 't-0': 0, grace: 0, lapsed: 0 },
+      byUrgency: { 't-90': 0, 't-60': 0, 't-30': 0, 't-14': 0, 't-7': 0, 't-0': 0, suspended: 0, terminated: 0 },
       lapsedCount: 0,
     },
   });

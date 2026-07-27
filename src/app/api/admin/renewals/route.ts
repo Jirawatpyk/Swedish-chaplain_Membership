@@ -34,8 +34,8 @@ const URGENCY_VALUES = [
   't-14',
   't-7',
   't-0',
-  'grace',
-  'lapsed',
+  'suspended',
+  'terminated',
 ] as const;
 
 const ListQuerySchema = z.object({

@@ -1,5 +1,6 @@
 /**
- * `LapsedTab` panel — renders when `?urgency=lapsed`.
+ * `LapsedTab` panel — renders when `?urgency=terminated` (the bucket was
+ * renamed from `lapsed`; this panel still lists status='lapsed' cycles).
  *
  * Shows lapsed cycles with reason badges + a row actions dropdown.
  *

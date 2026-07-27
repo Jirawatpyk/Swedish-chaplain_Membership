@@ -25,8 +25,8 @@ const TAB_ORDER: ReadonlyArray<UrgencyBucket> = [
   't-14',
   't-7',
   't-0',
-  'grace',
-  'lapsed',
+  'suspended',
+  'terminated',
 ];
 
 /**
@@ -114,8 +114,12 @@ export function UrgencyBucketTabs({
             same WCAG outcome via different implementations. */}
         <TabsList className="min-w-max gap-1" aria-label={t('aria_label')}>
           {TAB_ORDER.map((bucket) => {
+          // The 'terminated' tab shows the whole-tenant status='lapsed' count
+          // (`lapsedCount`, no 90-day window) — the field keeps its status-keyed
+          // name because it counts lapsed-STATUS cycles; only the user-facing
+          // bucket vocabulary was renamed 'lapsed'→'terminated'.
           const count =
-            bucket === 'lapsed' ? lapsedCount : (counts[bucket] ?? 0);
+            bucket === 'terminated' ? lapsedCount : (counts[bucket] ?? 0);
           // Phase 6 review-round 2 UX-M3 — replaceAll is future-proof
           // for multi-hyphen bucket strings (current set has at most
           // one hyphen, so behaviour is identical today).
@@ -132,7 +136,7 @@ export function UrgencyBucketTabs({
               key={bucket}
               value={bucket}
               className={cn(
-                bucket === 'lapsed' && 'ml-2 border-l border-border pl-3',
+                bucket === 'terminated' && 'ml-2 border-l border-border pl-3',
               )}
             >
               <span>{label}</span>

@@ -37,8 +37,8 @@ const URGENCY_BUCKETS: ReadonlyArray<UrgencyBucket> = [
   't-14',
   't-7',
   't-0',
-  'grace',
-  'lapsed',
+  'suspended',
+  'terminated',
 ];
 
 export const loadPipelineInputSchema = z.object({
