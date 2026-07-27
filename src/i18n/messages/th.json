@@ -3371,6 +3371,7 @@
         "open": "เปิดรอบการต่ออายุ",
         "openAriaLabel": "เปิดรอบการต่ออายุของ {company}",
         "sendReminder": "ส่งเตือน",
+        "sendReminderAriaLabel": "ส่งการแจ้งเตือนถึง {company}",
         "markContacted": "ทำเครื่องหมายว่าติดต่อแล้ว",
         "markContactedComingSoon": "ฟีเจอร์นี้จะเปิดใช้งานในเฟสถัดไป — ผู้ดูแลสามารถบันทึกการติดต่อสมาชิกได้เอง",
         "rowMenu": "การดำเนินการสำหรับ {company}"

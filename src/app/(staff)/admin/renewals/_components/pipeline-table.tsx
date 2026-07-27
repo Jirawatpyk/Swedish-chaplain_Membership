@@ -11,11 +11,13 @@
  * WCAG 2.1 AA: keyboard-navigable rows, focus ring, screen-reader
  * dates via `<time dateTime>`, the icon-only row-actions trigger uses
  * the native `title` attribute (no `Tooltip` primitive — it collides
- * with the DropdownMenu popup positioning). Action menu items: "Send
- * reminder" is wired (manager mutations are blocked server-side at the
- * route handler, not via a client-disabled item); "Open" deep-links to
- * cycle detail; "Mark contacted" is reserved for US4 at-risk follow-
- * on. Cancel + mark-paid-offline live on the cycle detail page.
+ * with the DropdownMenu popup positioning). Row actions: "Send
+ * reminder" is a one-click visible button (manager mutations are
+ * blocked server-side at the route handler, not via a client-disabled
+ * item); the ⋯ menu keeps "Open" (deep-links to cycle detail) and
+ * "Mark contacted" (opens the shared `OutreachDialog`, lifted to this
+ * component so it survives the menu closing). Cancel + mark-paid-
+ * offline live on the cycle detail page.
  */
 'use client';
 
@@ -30,7 +32,7 @@
  * smart-features backlog.
  */
 
-import { useMemo, useTransition } from 'react';
+import { useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations, useLocale } from 'next-intl';
@@ -64,6 +66,7 @@ import {
   CycleExpiresCell,
 } from '@/components/renewals/cycle-cells';
 import { RelativeTime } from '@/components/ui/relative-time';
+import { OutreachDialog } from './outreach-dialog';
 // Client-safe sub-barrel — see `tier-filter-select.tsx` for the
 // rationale (Turbopack 16 + F8 barrel + server-only deps).
 import type { CycleStatus, PipelineRow } from '@/modules/renewals/client';
@@ -83,6 +86,13 @@ export interface PipelineTableProps {
 
 export function PipelineTable({ rows, monthLabel, monthKind }: PipelineTableProps) {
   const t = useTranslations('admin.renewals.table');
+  // Item ② — outreach state lifted up from the row-level menu so the
+  // `OutreachDialog` survives the ⋯ menu closing (same lifted-state
+  // pattern as lapsed-tab.tsx + at-risk-widget.tsx).
+  const [outreachFor, setOutreachFor] = useState<{
+    memberId: string;
+    companyName: string;
+  } | null>(null);
 
   const columns = useMemo<ColumnDef<PipelineRow>[]>(
     () => [
@@ -186,9 +196,11 @@ export function PipelineTable({ rows, monthLabel, monthKind }: PipelineTableProp
         id: 'actions',
         header: () => <span className="sr-only">{t('columns.actions')}</span>,
         cell: ({ row }) => (
-          <RowActionsMenu
+          <RowActions
             cycleId={row.original.cycleId}
+            memberId={row.original.memberId}
             companyName={row.original.companyName}
+            onRecordOutreach={setOutreachFor}
           />
         ),
       },
@@ -218,86 +230,105 @@ export function PipelineTable({ rows, monthLabel, monthKind }: PipelineTableProp
   });
 
   return (
-    <Table>
-      <TableHeader>
-        {table.getHeaderGroups().map((hg) => (
-          <TableRow key={hg.id}>
-            {hg.headers.map((h) => (
-              <TableHead key={h.id}>
-                {h.isPlaceholder
-                  ? null
-                  : flexRender(h.column.columnDef.header, h.getContext())}
-              </TableHead>
-            ))}
-          </TableRow>
-        ))}
-      </TableHeader>
-      <TableBody>
-        {table.getRowModel().rows.length === 0 ? (
-          <TableRow>
-            {/*
-             * J8-M30: extended the bare "No members in this bucket"
-             * placeholder with an actionable hint pointing admins at
-             * the urgency-tab switcher. Keeps the table-cell skin
-             * (vs upgrading to <EmptyState> — that would break the
-             * single-cell-row table pattern).
-             */}
-            <TableCell
-              colSpan={columns.length}
-              className="text-center text-muted-foreground py-8"
-            >
-              {monthKind === 'overdue' ? (
-                <p className="text-sm font-medium text-foreground">
-                  {t('noRowsOverdue')}
-                </p>
-              ) : monthKind === 'later' && monthLabel !== undefined ? (
-                <p className="text-sm font-medium text-foreground">
-                  {t('noRowsLater', { month: monthLabel })}
-                </p>
-              ) : (monthKind === 'month' || monthKind === undefined) &&
-                monthLabel !== undefined ? (
-                <p className="text-sm font-medium text-foreground">
-                  {t('noRowsInMonth', { month: monthLabel })}
-                </p>
-              ) : (
-                <>
-                  <p className="text-sm font-medium text-foreground">{t('noRows')}</p>
-                  <p className="mt-1 text-xs">{t('noRowsInBucket')}</p>
-                </>
-              )}
-            </TableCell>
-          </TableRow>
-        ) : (
-          table.getRowModel().rows.map((row) => (
-            <TableRow key={row.id}>
-              {row.getVisibleCells().map((c) => (
-                <TableCell key={c.id}>
-                  {flexRender(c.column.columnDef.cell, c.getContext())}
-                </TableCell>
+    <>
+      <Table>
+        <TableHeader>
+          {table.getHeaderGroups().map((hg) => (
+            <TableRow key={hg.id}>
+              {hg.headers.map((h) => (
+                <TableHead key={h.id}>
+                  {h.isPlaceholder
+                    ? null
+                    : flexRender(h.column.columnDef.header, h.getContext())}
+                </TableHead>
               ))}
             </TableRow>
-          ))
-        )}
-      </TableBody>
-    </Table>
+          ))}
+        </TableHeader>
+        <TableBody>
+          {table.getRowModel().rows.length === 0 ? (
+            <TableRow>
+              {/*
+               * J8-M30: extended the bare "No members in this bucket"
+               * placeholder with an actionable hint pointing admins at
+               * the urgency-tab switcher. Keeps the table-cell skin
+               * (vs upgrading to <EmptyState> — that would break the
+               * single-cell-row table pattern).
+               */}
+              <TableCell
+                colSpan={columns.length}
+                className="text-center text-muted-foreground py-8"
+              >
+                {monthKind === 'overdue' ? (
+                  <p className="text-sm font-medium text-foreground">
+                    {t('noRowsOverdue')}
+                  </p>
+                ) : monthKind === 'later' && monthLabel !== undefined ? (
+                  <p className="text-sm font-medium text-foreground">
+                    {t('noRowsLater', { month: monthLabel })}
+                  </p>
+                ) : (monthKind === 'month' || monthKind === undefined) &&
+                  monthLabel !== undefined ? (
+                  <p className="text-sm font-medium text-foreground">
+                    {t('noRowsInMonth', { month: monthLabel })}
+                  </p>
+                ) : (
+                  <>
+                    <p className="text-sm font-medium text-foreground">{t('noRows')}</p>
+                    <p className="mt-1 text-xs">{t('noRowsInBucket')}</p>
+                  </>
+                )}
+              </TableCell>
+            </TableRow>
+          ) : (
+            table.getRowModel().rows.map((row) => (
+              <TableRow key={row.id}>
+                {row.getVisibleCells().map((c) => (
+                  <TableCell key={c.id}>
+                    {flexRender(c.column.columnDef.cell, c.getContext())}
+                  </TableCell>
+                ))}
+              </TableRow>
+            ))
+          )}
+        </TableBody>
+      </Table>
+      {outreachFor ? (
+        <OutreachDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setOutreachFor(null);
+          }}
+          memberId={outreachFor.memberId}
+          memberCompanyName={outreachFor.companyName}
+        />
+      ) : null}
+    </>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Wave I6+I7 · T108 — RowActionsMenu
+// Wave I6+I7 · T108 — RowActions
 // ---------------------------------------------------------------------------
 
 /**
- * Row-level actions dropdown. Owns its own `useTransition` state so the
- * pipeline table's columns memo stays stable across renders. Mark
- * contacted remains disabled until US4 (Wave J).
+ * Row-level actions. Owns its own `useTransition` state so the
+ * pipeline table's columns memo stays stable across renders. Item ②:
+ * "Send reminder" is promoted out of the ⋯ menu to a one-click visible
+ * button; the ⋯ menu keeps "Open" + "Mark contacted" (the latter now
+ * opens the shared `OutreachDialog` via `onRecordOutreach`, lifted to
+ * `PipelineTable` so the dialog survives this menu closing).
  */
-function RowActionsMenu({
+function RowActions({
   cycleId,
+  memberId,
   companyName,
+  onRecordOutreach,
 }: {
   readonly cycleId: string;
+  readonly memberId: string;
   readonly companyName: string;
+  readonly onRecordOutreach: (t: { memberId: string; companyName: string }) => void;
 }): React.JSX.Element {
   const tActions = useTranslations('admin.renewals.actions');
   const tToast = useTranslations('admin.renewals.sendReminderNow.toast');
@@ -385,108 +416,106 @@ function RowActionsMenu({
   };
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={(props) => (
-          <Button
-            {...props}
-            variant="ghost"
-            size="icon"
-            // 44×44px tap target — WCAG 2.5.5 Target Size (AAA) +
-            // iOS HIG 44pt minimum. F3 baseline adopted WCAG 2.5.8
-            // (24×24, AA); F8 row-action triggers go a step further
-            // because they sit inside a dense data table where
-            // mis-taps would route to the wrong row.
-            className="h-11 w-11"
-            aria-label={tActions('rowMenu', { company: companyName })}
-            // J8-M31: native browser tooltip on hover (sighted-mouse
-            // users) complementing the aria-label that SR users get
-            // on focus. Wrapping in `<Tooltip>` primitive would
-            // collide with the DropdownMenu popup positioning; the
-            // native `title` attr is simpler + universally supported
-            // for an icon-only trigger like this row-actions button.
-            title={tActions('rowMenu', { company: companyName })}
-          >
-            <MoreHorizontal className="h-4 w-4" />
-          </Button>
-        )}
-      />
-      {/*
-       * J7-H15: `min-w-56 whitespace-nowrap` per ux-standards § 19.
-       * Without this the dropdown's default `min-w-32` (128px) wraps
-       * the long Thai/Swedish action labels mid-word
-       * ("ส่งอีเมลเตือนการต่ออายุ" / "Skicka förnyelsepåminnelse").
-       */}
-      <DropdownMenuContent align="end" className="min-w-56 whitespace-nowrap">
-        <DropdownMenuItem
-          disabled={isPending}
-          onClick={handleSendReminder}
-        >
-          {tActions('sendReminder')}
-        </DropdownMenuItem>
-        {/* UX R5 / Mobile #5: contextual `aria-label` so screen-reader
-            users hear which company's cycle they're opening (the
-            bare label "Open" on every row was indistinguishable in
-            a long pipeline).
-            Round-3 UX M3 fix: use `router.push()` for soft client-
-            side navigation. The previous `<a href>` form was kept
-            for type-compat with Base UI's `render`-prop pattern but
-            forced full-page reloads that lost the admin's tab+tier
-            filter URL state on every row jump. Now the visible
-            anchor is a real `<a>` that retains right-click + open-
-            in-new-tab affordances, but `onClick` calls
-            `router.push()` + `e.preventDefault()` for the standard
-            Next.js soft-nav path. */}
-        <DropdownMenuItem
+    <div className="flex items-center justify-end gap-1">
+      {/* Item ② — primary outreach action promoted to a one-click visible
+          button. Labelled text button → h-9 is an adequate target
+          (WCAG 2.5.8 AA, ≥24px); the icon-only ⋯ trigger keeps its 44px. */}
+      <Button
+        variant="outline"
+        size="sm"
+        className="h-9"
+        disabled={isPending}
+        onClick={handleSendReminder}
+        aria-label={tActions('sendReminderAriaLabel', { company: companyName })}
+      >
+        {tActions('sendReminder')}
+      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger
           render={(props) => (
-            <a
+            <Button
               {...props}
-              href={`/admin/renewals/${cycleId}`}
-              aria-label={tActions('openAriaLabel', { company: companyName })}
-              onClick={(event: React.MouseEvent<HTMLAnchorElement>) => {
-                // Honour the user's intent for new-tab / new-window
-                // affordances (cmd/ctrl + click, middle-click) by
-                // letting the browser take the native path.
-                if (
-                  event.defaultPrevented ||
-                  event.metaKey ||
-                  event.ctrlKey ||
-                  event.shiftKey ||
-                  event.altKey ||
-                  event.button !== 0
-                ) {
-                  return;
-                }
-                event.preventDefault();
-                router.push(`/admin/renewals/${cycleId}`);
-              }}
+              variant="ghost"
+              size="icon"
+              // 44×44px tap target — WCAG 2.5.5 Target Size (AAA) +
+              // iOS HIG 44pt minimum. F3 baseline adopted WCAG 2.5.8
+              // (24×24, AA); F8 row-action triggers go a step further
+              // because they sit inside a dense data table where
+              // mis-taps would route to the wrong row.
+              className="h-11 w-11"
+              aria-label={tActions('rowMenu', { company: companyName })}
+              // J8-M31: native browser tooltip on hover (sighted-mouse
+              // users) complementing the aria-label that SR users get
+              // on focus. Wrapping in `<Tooltip>` primitive would
+              // collide with the DropdownMenu popup positioning; the
+              // native `title` attr is simpler + universally supported
+              // for an icon-only trigger like this row-actions button.
+              title={tActions('rowMenu', { company: companyName })}
             >
-              {tActions('open')}
-            </a>
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
           )}
         />
         {/*
-         * J8-M21: disabled DropdownMenuItem renders without context
-         * for screen-reader users — they hear "Mark contacted, dimmed"
-         * but no explanation why the action is disabled. The
-         * `aria-describedby` + sr-only span exposes the reason
-         * (per WCAG 4.1.2 Name/Role/Value) without affecting
-         * sighted UX.
+         * J7-H15: `min-w-56 whitespace-nowrap` per ux-standards § 19.
+         * Without this the dropdown's default `min-w-32` (128px) wraps
+         * the long Thai/Swedish action labels mid-word
+         * ("ส่งอีเมลเตือนการต่ออายุ" / "Skicka förnyelsepåminnelse").
          */}
-        <DropdownMenuItem
-          disabled
-          aria-describedby={`mark-contacted-hint-${cycleId}`}
-        >
-          {tActions('markContacted')}
-        </DropdownMenuItem>
-        <span
-          id={`mark-contacted-hint-${cycleId}`}
-          className="sr-only"
-        >
-          {tActions('markContactedComingSoon')}
-        </span>
-      </DropdownMenuContent>
-    </DropdownMenu>
+        <DropdownMenuContent align="end" className="min-w-56 whitespace-nowrap">
+          {/* UX R5 / Mobile #5: contextual `aria-label` so screen-reader
+              users hear which company's cycle they're opening (the
+              bare label "Open" on every row was indistinguishable in
+              a long pipeline).
+              Round-3 UX M3 fix: use `router.push()` for soft client-
+              side navigation. The previous `<a href>` form was kept
+              for type-compat with Base UI's `render`-prop pattern but
+              forced full-page reloads that lost the admin's tab+tier
+              filter URL state on every row jump. Now the visible
+              anchor is a real `<a>` that retains right-click + open-
+              in-new-tab affordances, but `onClick` calls
+              `router.push()` + `e.preventDefault()` for the standard
+              Next.js soft-nav path. */}
+          <DropdownMenuItem
+            render={(props) => (
+              <a
+                {...props}
+                href={`/admin/renewals/${cycleId}`}
+                aria-label={tActions('openAriaLabel', { company: companyName })}
+                onClick={(event: React.MouseEvent<HTMLAnchorElement>) => {
+                  // Honour the user's intent for new-tab / new-window
+                  // affordances (cmd/ctrl + click, middle-click) by
+                  // letting the browser take the native path.
+                  if (
+                    event.defaultPrevented ||
+                    event.metaKey ||
+                    event.ctrlKey ||
+                    event.shiftKey ||
+                    event.altKey ||
+                    event.button !== 0
+                  ) {
+                    return;
+                  }
+                  event.preventDefault();
+                  router.push(`/admin/renewals/${cycleId}`);
+                }}
+              >
+                {tActions('open')}
+              </a>
+            )}
+          />
+          {/* Item ② — was a permanently-disabled US4 stub; now opens the
+              already-shipped OutreachDialog (same "Mark contacted" label +
+              wiring as lapsed-tab.tsx:254). State is lifted to PipelineTable
+              so the dialog outlives this menu closing. */}
+          <DropdownMenuItem
+            onClick={() => onRecordOutreach({ memberId, companyName })}
+          >
+            {tActions('markContacted')}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
   );
 }
 
