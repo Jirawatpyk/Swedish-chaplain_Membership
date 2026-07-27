@@ -27,6 +27,7 @@ import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import { tenantRenewalSettings } from '@/modules/renewals/infrastructure/schema-tenant-renewal-config';
 import { renewalCycles } from '@/modules/renewals/infrastructure/schema-renewal-cycles';
+import { renewalReminderEvents } from '@/modules/renewals/infrastructure/schema-renewal-reminder-events';
 import {
   deriveMembershipAccess,
   lapseCyclesOnGraceExpiry,
@@ -158,11 +159,12 @@ describe('065 §5.2 — termination at invoice due_date + 60 (integration)', () 
   /** Seeds an `awaiting_payment` cycle with an explicit `expires_at`.
    *  `linkedInvoiceId` is intentionally left NULL — the lapse clock is
    *  member-scoped, NOT anchored on the cycle's linked invoice. */
-  async function seedAwaitingCycle(memberId: string, expiresAt: Date): Promise<void> {
+  async function seedAwaitingCycle(memberId: string, expiresAt: Date): Promise<string> {
+    const cycleId = randomUUID();
     await runInTenant(tenant.ctx, (tx) =>
       tx.insert(renewalCycles).values({
         tenantId: tenant.ctx.slug,
-        cycleId: randomUUID(),
+        cycleId,
         memberId,
         status: 'awaiting_payment',
         periodFrom: new Date(expiresAt.getTime() - 365 * 86_400_000),
@@ -174,6 +176,29 @@ describe('065 §5.2 — termination at invoice due_date + 60 (integration)', () 
         frozenPlanPriceThb: '50000.00',
         frozenPlanTermMonths: 12,
         frozenPlanCurrency: 'THB',
+      }),
+    );
+    return cycleId;
+  }
+
+  /**
+   * Seeds a SENT statutory-warning email (`due+30.email`) for a cycle so the
+   * 066 §3.2(3) dormancy guard in `lapseCyclesOnGraceExpiry` is satisfied and a
+   * due+60 termination is allowed (the guard was added by #212 and requires a
+   * warning dispatched ≥ MIN_WARNING_NOTICE_DAYS (14) before the terminate
+   * `now`). Only the four due_plus_60 terminate scenarios need it — the
+   * no-invoice-backstop path is deliberately unguarded.
+   */
+  async function seedSentWarning(cycleId: string, dispatchedAt: Date): Promise<void> {
+    await runInTenant(tenant.ctx, (tx) =>
+      tx.insert(renewalReminderEvents).values({
+        tenantId: tenant.ctx.slug,
+        cycleId,
+        stepId: 'due+30.email',
+        channel: 'email',
+        templateId: 'test-due30-warning',
+        status: 'sent',
+        dispatchedAt,
       }),
     );
   }
@@ -216,7 +241,9 @@ describe('065 §5.2 — termination at invoice due_date + 60 (integration)', () 
   it('terminates at due_date + 60, not before', async () => {
     const m = await seedMember();
     await seedMembershipInvoice(m, '2026-01-01'); // due+60 = 2026-03-02
-    await seedAwaitingCycle(m, bkk('2026-01-01')); // expires_at in the past
+    const cyc1 = await seedAwaitingCycle(m, bkk('2026-01-01')); // expires_at in the past
+    // 066 dormancy guard: a sent warning ≥14d before the due+61 terminate.
+    await seedSentWarning(cyc1, bkk('2026-02-01'));
 
     // due+59 (2026-03-01): past due but inside the 60-day window → stay
     // suspended, no transition.
@@ -254,7 +281,9 @@ describe('065 §5.2 — termination at invoice due_date + 60 (integration)', () 
     // must not.
     const m = await seedMember();
     await seedMembershipInvoice(m, '2026-06-01'); // due+60 = 2026-07-31
-    await seedAwaitingCycle(m, bkk('2026-01-01')); // expires_at+grace = 2026-03-02
+    const cyc2 = await seedAwaitingCycle(m, bkk('2026-01-01')); // expires_at+grace = 2026-03-02
+    // 066 dormancy guard: a sent warning ≥14d before the due+61 (2026-08-01) terminate.
+    await seedSentWarning(cyc2, bkk('2026-07-01'));
 
     // 2026-04-01 is PAST expires_at+grace but the invoice is not yet due →
     // deferred (059 not-yet-due guard), decisively NOT terminated on the old
@@ -283,7 +312,9 @@ describe('065 §5.2 — termination at invoice due_date + 60 (integration)', () 
     // WELL within the `sinceDueDate = period_from − 60d` floor (2025-11-02),
     // i.e. this is a real CURRENT-period invoice that must still anchor the
     // clock and terminate (065 §5.2 review floor does not exclude it).
-    await seedAwaitingCycle(m, bkk('2027-01-01')); // expires_at ~9mo AFTER the run
+    const cyc3 = await seedAwaitingCycle(m, bkk('2027-01-01')); // expires_at ~9mo AFTER the run
+    // 066 dormancy guard: a sent warning ≥14d before the due+61 terminate.
+    await seedSentWarning(cyc3, bkk('2026-02-01'));
 
     const r = await runLapse(bkk('2026-03-03')); // due+61, expires_at still far future
     expect(r.graceExpired).toBe(1);
@@ -326,7 +357,12 @@ describe('065 §5.2 — termination at invoice due_date + 60 (integration)', () 
     const m = await seedMember();
     await seedMembershipInvoice(m, '2025-05-01'); // stale (excluded by the floor)
     await seedMembershipInvoice(m, '2026-06-01'); // current: due+60 = 2026-07-31
-    await seedAwaitingCycle(m, bkk('2027-06-01')); // period_from 2026-06-01
+    const cyc4 = await seedAwaitingCycle(m, bkk('2027-06-01')); // period_from 2026-06-01
+    // 066 dormancy guard: a sent warning ≥14d before the current due+61
+    // (2026-08-01) terminate. The mid checkpoint (2026-07-15) defers via the
+    // within-window branch, which returns before the dormancy guard, so the
+    // warning does not affect it.
+    await seedSentWarning(cyc4, bkk('2026-07-01'));
 
     // Discriminating checkpoint (regression guard for the floor): at 2026-07-15
     // the STALE invoice's due+60 (2025-06-30) is long past, but the CURRENT

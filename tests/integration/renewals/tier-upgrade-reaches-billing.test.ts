@@ -316,6 +316,14 @@ describe('tier-upgrade reaches billing — ONLINE + OFFLINE rails (Package B1)',
           return { ok: true, value: { invoiceId, paidAt, emailDispatch: 'sent' as const } };
         },
       },
+      invoiceDueBridge: {
+        ...deps.invoiceDueBridge,
+        // #244/#245 duplicate-membership-bill guard: mocked F4 bridge mints no
+        // real §86/4, so the seeded 'issued' fixture invoice must NOT count as a
+        // pre-existing live bill — stub the guard to null so markPaidOffline
+        // reaches the onPaid chain under test (billing), not the refusal path.
+        findLiveMembershipBillInTx: async () => null,
+      },
     };
   }
 

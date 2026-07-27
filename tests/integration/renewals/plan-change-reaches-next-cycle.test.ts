@@ -175,10 +175,19 @@ describe('plan-change reaches the next cycle — ONLINE + OFFLINE rails (Package
    * the member's LIVE plan to B via a direct UPDATE (the diverged state).
    * Returns { memberId, invoiceId }.
    */
-  async function seedMemberFrozenOnADivergedToB(): Promise<{
+  async function seedMemberFrozenOnADivergedToB(
+    opts: { seedLiveBill?: boolean } = {},
+  ): Promise<{
     memberId: string;
     invoiceId: string;
   }> {
+    // #244/#245 duplicate-membership-bill guard: the OFFLINE rail passes
+    // `seedLiveBill: false` so NO pre-existing live §86/4 is seeded — the awaiting
+    // cycle carries no linked bill, and markPaidOffline mints its own (the real
+    // offline flow). The ONLINE rail keeps it (its paid-event references this
+    // invoiceId). Seeding a live bill AND marking-paid-offline is exactly the
+    // double-bill state the guard correctly refuses in production.
+    const seedLiveBill = opts.seedLiveBill ?? true;
     const memberId = randomUUID();
     const invoiceId = randomUUID();
     // tx1 — member, contact, terminal predecessor, invoice. The predecessor
@@ -231,7 +240,10 @@ describe('plan-change reaches the next cycle — ONLINE + OFFLINE rails (Package
         closedReason: 'cancelled',
       });
       // Invoice for the prior awaiting_payment cycle (FK for linkedInvoiceId).
-      await tx.insert(invoices).values({
+      // OFFLINE rail (`seedLiveBill: false`) omits it so markPaidOffline mints
+      // its own §86/4 without tripping the #244/#245 duplicate-bill guard.
+      if (seedLiveBill)
+        await tx.insert(invoices).values({
         tenantId: tenant.ctx.slug,
         invoiceId,
         memberId,
@@ -284,7 +296,7 @@ describe('plan-change reaches the next cycle — ONLINE + OFFLINE rails (Package
         frozenPlanPriceThb: PLAN_A_PRICE_THB,
         frozenPlanTermMonths: 12,
         frozenPlanCurrency: 'THB',
-        linkedInvoiceId: invoiceId,
+        linkedInvoiceId: seedLiveBill ? invoiceId : null,
       });
       // DIVERGE: the member's LIVE plan is now B (post-change state). FK
       // members_plan_tenant_year_fk is satisfied — plan B has a 2026 row.
@@ -349,7 +361,11 @@ describe('plan-change reaches the next cycle — ONLINE + OFFLINE rails (Package
 
   /** OFFLINE rail: admin marks the awaiting cycle paid via markPaidOffline. */
   async function runOfflineRail(): Promise<NextCycle> {
-    const { memberId } = await seedMemberFrozenOnADivergedToB();
+    // `seedLiveBill: false` — no pre-existing §86/4, so markPaidOffline mints
+    // its own (the real offline flow the duplicate-bill guard permits).
+    const { memberId } = await seedMemberFrozenOnADivergedToB({
+      seedLiveBill: false,
+    });
     // The awaiting_payment cycle for this member is the one to mark paid.
     const openRows = await runInTenant(tenant.ctx, (tx) =>
       tx
