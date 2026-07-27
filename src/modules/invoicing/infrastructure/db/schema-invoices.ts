@@ -431,7 +431,7 @@ export const invoices = pgTable(
     uniqueIndex('invoices_tenant_bill_raw_uniq')
       .on(table.tenantId, table.billDocumentNumberRaw)
       .where(sql`bill_document_number_raw IS NOT NULL`),
-    // 107-auto-invoice Task 16 review MAJOR-2 (migration 0264) — backs the
+    // 107-auto-invoice Task 16 review MAJOR-2 (migration 0279) — backs the
     // auto-renewal review-queue gauges (`renewals_auto_draft_queue_size` +
     // `renewals_auto_draft_oldest_age_seconds`) emitted daily from the
     // auto-draft coordinator. The gauge SQL puts this predicate in WHERE

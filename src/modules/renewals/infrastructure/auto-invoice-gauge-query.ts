@@ -21,7 +21,7 @@
  * See the calling function's JSDoc in the coordinator route for the full
  * rationale on each column: why the queue predicate matches the treasurer's
  * screen verbatim, why the aggregates are scalar subqueries rather than
- * `COUNT(*) FILTER` (index-eligibility — migration 0264), why the member-side
+ * `COUNT(*) FILTER` (index-eligibility — migration 0279), why the member-side
  * gate is load-bearing, and why enrolment is deliberately NOT part of it.
  */
 import { sql } from 'drizzle-orm';

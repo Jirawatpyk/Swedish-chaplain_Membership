@@ -55,6 +55,7 @@ import {
 } from '@/modules/renewals';
 import { issueErrorStatus, isIssuanceServerFault } from '../../_serialise';
 import { logger } from '@/lib/logger';
+import { renewalsMetrics } from '@/lib/metrics';
 import { rateLimitedJson } from '@/lib/rate-limit-helpers';
 import { rateLimiter } from '@/lib/auth-deps';
 
@@ -195,9 +196,22 @@ export async function POST(
     } else {
       logger.warn(failureLog, 'POST /api/invoices/[id]/issue-auto-drafted failed');
     }
+    renewalsMetrics.autoDraftIssueFailed(tenantCtx.slug, result.error.kind);
     return NextResponse.json(
       { error: serialiseError(result.error) },
       { status: statusForError(result.error) },
+    );
+  }
+
+  // Observability (107 follow-up) — a §86/4 was minted, and the tx1 sibling
+  // sweep may have superseded 0+ competing drafts. Emit AFTER the ok result
+  // so a refusal above never counts as an issue.
+  renewalsMetrics.autoDraftIssued(tenantCtx.slug);
+  if (result.value.discardedInvoiceIds.length > 0) {
+    renewalsMetrics.autoDraftDiscarded(
+      tenantCtx.slug,
+      'superseded_on_issue',
+      result.value.discardedInvoiceIds.length,
     );
   }
 

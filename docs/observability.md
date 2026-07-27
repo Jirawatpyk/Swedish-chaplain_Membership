@@ -1863,6 +1863,20 @@ applies, including its log-scrape requirement).
 | `renewals_auto_draft_queue_size` | gauge | `tenant` | auto-draft coordinator cron (daily) | Treasurer review-queue depth (`origin='auto_renewal' AND status='draft'`) — the same predicate the queue screen selects on. |
 | `renewals_auto_draft_oldest_age_seconds` | gauge | `tenant` | same | Age of the head of that queue. 0 when empty. |
 | `renewals_awaiting_payment_no_invoice` | gauge | `tenant` | same | **Wedged-state detector.** Cycles `awaiting_payment` with no live membership invoice. Steady state is 0. |
+| `renewals_auto_draft_issued_total` | counter | `tenant` | `/issue-auto-drafted` route (on ok) | A treasurer issued a §86/4 from an auto-draft. The drafted→issued conversion numerator (pair with `_created_total`). This is where a tax document is actually numbered. |
+| `renewals_auto_draft_issue_failed_total` | counter | `tenant`, `error_kind` | same route (on refusal/fail) | `error_kind` = the typed `IssueAutoDraftError.kind` (bounded ~8). A `duplicate_live_bill` / `invalid_draft` refusal is a normal guard firing; a rising `issue_failed` is the alert signal. |
+| `renewals_auto_draft_discarded_total` | counter | `tenant`, `kind` | `/discard-auto-draft` route (`manual`) + `/issue-auto-drafted` sweep (`superseded_on_issue`) | Drafted→discarded. `kind` = `manual` (treasurer Discard) or `superseded_on_issue` (sibling swept on issue, `count` = swept). High manual = cron drafting unwanted rows; high superseded = double-drafting. |
+| `renewals_prune_auto_drafts_runs_total` | counter | `tenant`, `outcome` | prune-auto-drafts cron | 1 per pass, `outcome ∈ {success, failure}`. |
+| `renewals_prune_auto_drafts_pruned_total` | counter | `tenant` | same | Stale auto-drafts actually discarded (row count). |
+| `renewals_prune_auto_drafts_errors_total` | counter | `tenant` | same (on success path) | Per-row prune failures within an otherwise-successful pass — else invisible behind `runs_total{outcome=success}`. No-op at 0. |
+| `renewals_reconcile_issued_orphans_runs_total` | counter | `tenant`, `outcome` | reconcile-issued-orphans cron | 1 per pass. |
+| `renewals_reconcile_issued_orphans_relinked_total` | counter | `tenant` | same | Issued auto-renewal invoices whose cycle link was repaired. ANY non-zero = `issueAutoDraftedRenewal`'s own retry is failing in prod. |
+| `renewals_reconcile_issued_orphans_errors_total` | counter | `tenant` | same (on success path) | Per-row relink failures within a successful pass — a cycle still orphaned after the backstop. No-op at 0. |
+
+> **Label key `tenant` is uniform across the whole 107 family.** The Task-11
+> prune/reconcile counters originally emitted `tenant_id`; they were unified to
+> `tenant` (2026-07 observability audit) so one PromQL `by (tenant)` covers the
+> entire feature. `metrics-auto-invoice.test.ts` pins the key to fail a drift.
 
 Cardinality: `tenant` is small-cardinality (single-tenant today, bounded by the
 tenants table post-F10); `reason` is a closed 3-value enum
@@ -1871,7 +1885,7 @@ tenants table post-F10); `reason` is a closed 3-value enum
 
 Query cost: the three gauges come from ONE aggregate
 (`readAutoInvoiceGaugeRow`, `src/modules/renewals/infrastructure/`), backed by
-the partial index `invoices_auto_renewal_draft_idx` (migration 0264). Measured
+the partial index `invoices_auto_renewal_draft_idx` (migration 0279). Measured
 on the dev branch: 11.7 ms full seq scan before the index + `WHERE`
 restructure, 0.37 ms index-only after. The feed runs after the coordinator's
 audit row and duration metric so its latency is never folded into
@@ -1917,6 +1931,8 @@ renewal draft at 9am is how an alert channel earns the mute button.
 | AI-A3 | `renewals_auto_draft_oldest_age_seconds{tenant}` — **panel, no threshold** | 📊 panel | `#chamber-ops` review. Deliberately un-thresholded: 14 days was a guess about treasurer working rhythm, and no baseline exists yet. Watch **age**, not depth — a queue of 40 that turns over daily is healthy; a queue of 3 whose head is 45 days old means three renewals were quietly abandoned. Set a threshold once a real turnover rhythm is observed. |
 | AI-A4 | `renewals_auto_draft_skipped_total{reason="race_lost"}` share vs baseline | 📊 panel, unset | The cron colliding with member self-service renewals more than expected. No threshold until there is a baseline. |
 | AI-A5 | `renewals_auto_draft_created_total{tenant}` == 0 for 7 consecutive days | 📉 report | `#chamber-ops` — **not yet implementable as stated.** The useful form is "0 drafts created *while enrolled members exist*", but there is no enrolled-member gauge to express the guard, so this would fire every day the feature ships dark. Either add `renewals_auto_invoice_enrolled_members{tenant}` and gate on it, or restate as a manual weekly check after flag-flip. Tracked in § 26.6. |
+| AI-A6 | `renewals_auto_draft_issue_failed_total{tenant, error_kind="issue_failed"}` ≥ 1 in 24 h | ⚠ alarm | `#chamber-ops` — the F4 mint itself broke on Issue (not a guard refusal). `duplicate_live_bill` / `invalid_draft` / `member_erased` kinds are NORMAL guards firing and must NOT alert; scope the query to `error_kind="issue_failed"`. Correlate with the `POST …/issue-auto-drafted failed` log. |
+| AI-A7 | `renewals_prune_auto_drafts_errors_total{tenant}` ≥ 1 on **two consecutive days**, OR `renewals_reconcile_issued_orphans_errors_total{tenant}` ≥ 1 on two consecutive days | ⚠ alarm | `#chamber-ops` — a housekeeping cron ran (`runs_total{outcome=success}`) but individual rows persistently fail: stale auto-drafts accumulating (prune), or an issued invoice's cycle still orphaned after the backstop (reconcile). Single-day is report-only (next pass retries). |
 
 **Gauge absence is a distinct condition.** All three gauges are *deleted* for a
 tenant when their feed query fails (`forgetAutoInvoiceGauges`), rather than
