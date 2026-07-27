@@ -157,3 +157,22 @@ off **`FEATURE_AUTO_INVOICE`** (the daily cron then short-circuits to
 `200 {skipped}`) and/or the tenant flag `auto_invoice_enabled`; drafts already
 in the queue remain issuable/discardable unless a blanket switch above is also
 set.
+
+## 8. Known blind spot — 81 legacy bills with NULL coverage (accepted)
+
+The mig-0281 coverage EXCLUDE guard only acts on bills that carry a
+`coverage_from/to` (`blocks_coverage`). The **81 launch-import §86/4 bills**
+(all `plan_year=2026`, paid 70 + issued 11) predate the migration and carry
+NULL coverage. A prod inventory (`scripts/backfill-membership-coverage.ts`,
+2026-07-27) found all 81 are ORPHANS (no `linked_invoice_id`), so their true
+charged windows are not auto-derivable — and stamping a wrong window on a paid
+tax document would false-block the member's real next renewal. **Decision:
+leave them NULL** (sign-off doc §"ENABLE-GATES" item 6).
+
+Operational consequence: these 81 members lose ONLY the same-period-duplicate
+protection, and only against a **manual** re-bill — the daily cron drafts the
+*next* period (2027), never a same-period 2026 duplicate, so normal flows never
+trip it. If you must re-bill one of these members for 2026, check for an
+existing paid 2026 bill by hand first. To close the gap later, hand-curate a
+coverage CSV (each member's current-cycle `[periodFrom, periodTo)`) and run the
+backfill's `--apply --confirm --confirm-prod`.
