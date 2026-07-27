@@ -63,3 +63,38 @@ describe('UrgencyBucketTabs colour + All state', () => {
     expect(url).toContain('urgency=t-30');
   });
 });
+
+function renderDimmed() {
+  return render(
+    <NextIntlClientProvider locale="en" messages={en}>
+      <UrgencyBucketTabs current={null} counts={COUNTS} lapsedCount={9} monthLensActive />
+    </NextIntlClientProvider>,
+  );
+}
+
+describe('UrgencyBucketTabs month-lens dimming (item ③)', () => {
+  it('visibly dims the urgency region + exposes an explanatory hint while a month lens is active', () => {
+    const { container } = renderDimmed();
+    const region = container.querySelector('[role="region"]') as HTMLElement;
+    expect(region.className).toMatch(/opacity-60/);
+    const hintId = region.getAttribute('aria-describedby');
+    expect(hintId).toBeTruthy();
+    expect(document.getElementById(hintId!)?.textContent).toMatch(/month filter/i);
+  });
+
+  it('a dimmed tab is still clickable and exits the month lens (URL logic preserved)', () => {
+    push.mockClear();
+    renderDimmed();
+    fireEvent.click(screen.getByText('T-30'));
+    const url = push.mock.calls[0]![0] as string;
+    expect(url).not.toContain('month=');
+    expect(url).toContain('urgency=t-30');
+  });
+
+  it('applies NO dimming when monthLensActive is absent', () => {
+    const { container } = renderTabs('t-30');
+    const region = container.querySelector('[role="region"]') as HTMLElement;
+    expect(region.className).not.toMatch(/opacity-60/);
+    expect(region.getAttribute('aria-describedby')).toBeNull();
+  });
+});
