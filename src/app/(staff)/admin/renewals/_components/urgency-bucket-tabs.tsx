@@ -183,7 +183,11 @@ export function UrgencyBucketTabs({
                   >
                     {count}
                   </span>
+                  {/* Leading space so the tab's accessible name reads
+                      "T-90 0 members", never a run-together "T-900 members" —
+                      matches the section-tab TabCountBadge sr-only idiom. */}
                   <span className="sr-only">
+                    {' '}
                     {t('countSr', { count })}
                   </span>
                 </TabsTrigger>
