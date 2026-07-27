@@ -72,17 +72,28 @@ function renderDimmed() {
   );
 }
 
-describe('UrgencyBucketTabs month-lens dimming (item ③)', () => {
-  it('visibly dims the urgency region + exposes an explanatory hint while a month lens is active', () => {
+describe('UrgencyBucketTabs month-lens paused state (item ③ — WCAG 1.4.3 review-fix)', () => {
+  it('does NOT dim the urgency region (no opacity-60) while a month lens is active', () => {
     const { container } = renderDimmed();
     const region = container.querySelector('[role="region"]') as HTMLElement;
-    expect(region.className).toMatch(/opacity-60/);
+    expect(region.className).not.toMatch(/opacity-60/);
+  });
+
+  it('exposes a visible "Paused" badge (aria-hidden) while a month lens is active', () => {
+    renderDimmed();
+    const badge = screen.getByText(en.admin.renewals.urgencyBuckets.monthLensBadge);
+    expect(badge.closest('[aria-hidden]')).not.toBeNull();
+  });
+
+  it('still exposes the aria-describedby hint (screen-reader channel) while a month lens is active', () => {
+    const { container } = renderDimmed();
+    const region = container.querySelector('[role="region"]') as HTMLElement;
     const hintId = region.getAttribute('aria-describedby');
     expect(hintId).toBeTruthy();
     expect(document.getElementById(hintId!)?.textContent).toMatch(/month filter/i);
   });
 
-  it('a dimmed tab is still clickable and exits the month lens (URL logic preserved)', () => {
+  it('a paused tab is still clickable and exits the month lens (URL logic preserved)', () => {
     push.mockClear();
     renderDimmed();
     fireEvent.click(screen.getByText('T-30'));
@@ -91,10 +102,13 @@ describe('UrgencyBucketTabs month-lens dimming (item ③)', () => {
     expect(url).toContain('urgency=t-30');
   });
 
-  it('applies NO dimming when monthLensActive is absent', () => {
+  it('renders NO badge and NO aria-describedby when monthLensActive is absent', () => {
     const { container } = renderTabs('t-30');
     const region = container.querySelector('[role="region"]') as HTMLElement;
     expect(region.className).not.toMatch(/opacity-60/);
     expect(region.getAttribute('aria-describedby')).toBeNull();
+    expect(
+      screen.queryByText(en.admin.renewals.urgencyBuckets.monthLensBadge),
+    ).toBeNull();
   });
 });
