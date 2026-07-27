@@ -21,7 +21,7 @@
  */
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertCircle, MoreHorizontal } from 'lucide-react';
@@ -46,6 +46,7 @@ import {
   CycleExpiresCell,
 } from '@/components/renewals/cycle-cells';
 import { cn } from '@/lib/utils';
+import { mergeRefs } from '@/lib/merge-refs';
 import { OutreachDialog } from './outreach-dialog';
 // Client-safe sub-barrel — see `tier-filter-select.tsx` for rationale.
 import type { PipelineRow } from '@/modules/renewals/client';
@@ -106,6 +107,19 @@ export function LapsedTab({ rows }: LapsedTabProps) {
     memberId: string;
     companyName: string | null;
   } | null>(null);
+  // Review fix #5 (WCAG 2.1 AA SC 2.4.3) — this table has ONE shared
+  // `OutreachDialog` instance but MANY rows, each with its own ⋯ trigger.
+  // `rowTriggerRefs` captures every row's trigger button (keyed by
+  // cycleId, written via the `mergeRefs` callback below — merging, not
+  // overriding, Base UI's own DropdownMenuTrigger ref). `activeTriggerRef`
+  // is a SEPARATE ref snapshotted only at "Mark contacted" click time (not
+  // continuously, which would just point at whichever row mounted last) —
+  // it is what gets handed to `OutreachDialog` as `finalFocus`, so Base UI
+  // returns focus to the SPECIFIC row that opened the dialog.
+  const rowTriggerRefs = useRef<Map<string, HTMLButtonElement | null>>(
+    new Map(),
+  );
+  const activeTriggerRef = useRef<HTMLButtonElement | null>(null);
 
   return (
     // Round-3 UX M1 fix: wrap in <section aria-labelledby> so SR
@@ -211,9 +225,19 @@ export function LapsedTab({ rows }: LapsedTabProps) {
                        * minimum (24px) but inconsistent.
                        */}
                       <DropdownMenuTrigger
-                        render={(props) => (
+                        render={({ ref: baseRef, ...props }) => (
                           <Button
                             {...props}
+                            // Base UI passes its OWN ref inside `props`
+                            // (React 19) — a bare `ref=` here would
+                            // override it and the menu would stop
+                            // anchoring. `mergeRefs` forwards Base UI's
+                            // ref AND records this row's button (keyed by
+                            // cycleId) for the review-fix-#5 finalFocus
+                            // wiring below.
+                            ref={mergeRefs(baseRef, (el: HTMLButtonElement | null) => {
+                              rowTriggerRefs.current.set(r.cycleId, el);
+                            })}
                             variant="ghost"
                             size="icon"
                             className="h-11 w-11"
@@ -253,6 +277,8 @@ export function LapsedTab({ rows }: LapsedTabProps) {
                         />
                         <DropdownMenuItem
                           onClick={() => {
+                            activeTriggerRef.current =
+                              rowTriggerRefs.current.get(r.cycleId) ?? null;
                             setOutreachFor({
                               memberId: r.memberId,
                               companyName: r.companyName,
@@ -278,6 +304,7 @@ export function LapsedTab({ rows }: LapsedTabProps) {
           }}
           memberId={outreachFor.memberId}
           memberCompanyName={outreachFor.companyName}
+          finalFocus={activeTriggerRef}
         />
       ) : null}
     </section>

@@ -63,6 +63,18 @@ export interface OutreachDialogProps {
   readonly onOpenChange: (open: boolean) => void;
   readonly memberId: string;
   readonly memberCompanyName: string | null;
+  /**
+   * Review fix #5 (WCAG 2.1 AA SC 2.4.3) — focus-return target on close.
+   * `OutreachDialog` is opened from a row/menu-item trigger that can itself
+   * unmount when the menu closes (Base UI's default focus-restore would
+   * then drop focus to `<body>`). Callers pass a ref to a PERSISTENT
+   * element in the row — typically the ⋯ trigger button, which survives
+   * the menu closing — via `mergeRefs` where that trigger is a Base UI
+   * `DropdownMenuTrigger` render-prop element. Optional: `lapsed-tab.tsx`
+   * / `at-risk-widget.tsx` / `pipeline-table.tsx` all pass one; omitting it
+   * falls back to Base UI's own default restore-focus behaviour.
+   */
+  readonly finalFocus?: React.RefObject<HTMLElement | null>;
 }
 
 export function OutreachDialog({
@@ -70,6 +82,7 @@ export function OutreachDialog({
   onOpenChange,
   memberId,
   memberCompanyName,
+  finalFocus,
 }: OutreachDialogProps) {
   const t = useTranslations('admin.renewals.atRisk.outreach');
   const router = useRouter();
@@ -139,7 +152,11 @@ export function OutreachDialog({
     // as Dialog is a stylistic choice, not a technical limitation.
     // See snooze-dialog.tsx for full rationale (same pattern).
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent initialFocus={cancelRef} role="alertdialog">
+      <DialogContent
+        initialFocus={cancelRef}
+        role="alertdialog"
+        finalFocus={finalFocus}
+      >
         <DialogHeader>
           <DialogTitle>{t('title')}</DialogTitle>
           <DialogDescription>

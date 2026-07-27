@@ -32,7 +32,7 @@
  * smart-features backlog.
  */
 
-import { useMemo, useState, useTransition } from 'react';
+import { useMemo, useRef, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations, useLocale } from 'next-intl';
@@ -58,7 +58,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { MoreHorizontal } from 'lucide-react';
+import { Loader2Icon, MoreHorizontal } from 'lucide-react';
+import { mergeRefs } from '@/lib/merge-refs';
 import { UrgencyPill } from '@/components/renewals/urgency-pill';
 import {
   CycleTierCell,
@@ -88,10 +89,15 @@ export function PipelineTable({ rows, monthLabel, monthKind }: PipelineTableProp
   const t = useTranslations('admin.renewals.table');
   // Item ② — outreach state lifted up from the row-level menu so the
   // `OutreachDialog` survives the ⋯ menu closing (same lifted-state
-  // pattern as lapsed-tab.tsx + at-risk-widget.tsx).
+  // pattern as lapsed-tab.tsx + at-risk-widget.tsx). Review fix #5:
+  // `finalFocus` carries a ref to the row's own ⋯ trigger (set by
+  // `RowActions`) so Base UI returns focus there when the dialog closes,
+  // instead of the default focus-restore target (the now-unmounted
+  // "Mark contacted" menu item) dropping focus to `<body>`.
   const [outreachFor, setOutreachFor] = useState<{
     memberId: string;
     companyName: string;
+    finalFocus: React.RefObject<HTMLElement | null>;
   } | null>(null);
 
   const columns = useMemo<ColumnDef<PipelineRow>[]>(
@@ -301,6 +307,7 @@ export function PipelineTable({ rows, monthLabel, monthKind }: PipelineTableProp
           }}
           memberId={outreachFor.memberId}
           memberCompanyName={outreachFor.companyName}
+          finalFocus={outreachFor.finalFocus}
         />
       ) : null}
     </>
@@ -328,7 +335,11 @@ function RowActions({
   readonly cycleId: string;
   readonly memberId: string;
   readonly companyName: string;
-  readonly onRecordOutreach: (t: { memberId: string; companyName: string }) => void;
+  readonly onRecordOutreach: (t: {
+    memberId: string;
+    companyName: string;
+    finalFocus: React.RefObject<HTMLElement | null>;
+  }) => void;
 }): React.JSX.Element {
   const tActions = useTranslations('admin.renewals.actions');
   const tToast = useTranslations('admin.renewals.sendReminderNow.toast');
@@ -340,6 +351,15 @@ function RowActions({
   // preserves admin filter state (?urgency, ?tier) and avoids the
   // ~300ms blank-screen flash on every row jump.
   const router = useRouter();
+  // Review fix #5 — persistent ref to this row's ⋯ trigger button.
+  // Merged (not overridden) with Base UI's own DropdownMenuTrigger ref
+  // below (see `mergeRefs` docstring: a bare `ref=` on the render-prop
+  // element replaces Base UI's ref and the menu stops anchoring). Handed
+  // to `onRecordOutreach` as `finalFocus` so the shared `OutreachDialog`
+  // returns focus to this row's ⋯ button on close, rather than the
+  // default target (the "Mark contacted" menu item, which has just
+  // unmounted — dropping focus to `<body>`).
+  const rowMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
 
   const handleSendReminder = (): void => {
     startTransition(async () => {
@@ -418,23 +438,44 @@ function RowActions({
   return (
     <div className="flex items-center justify-end gap-1">
       {/* Item ② — primary outreach action promoted to a one-click visible
-          button. Labelled text button → h-9 is an adequate target
-          (WCAG 2.5.8 AA, ≥24px); the icon-only ⋯ trigger keeps its 44px. */}
+          button. h-9 matches the app's text-button convention (Button
+          `default` size — also used by the at-risk widget's Contact
+          button on this same page and the broadcasts primary CTA); the
+          44px (`h-11 w-11`) treatment below is reserved for icon-only ⋯
+          row-triggers, where a mis-tap routes to the wrong row — a
+          different concern than a wide labelled text button. */}
       <Button
         variant="outline"
         size="sm"
         className="h-9"
         disabled={isPending}
+        aria-busy={isPending}
         onClick={handleSendReminder}
         aria-label={tActions('sendReminderAriaLabel', { company: companyName })}
       >
+        {/* Review fix #4 — progress affordance now that this action is a
+            persistent button (was a one-shot menu item). Icon is
+            `aria-hidden`; `aria-busy` on the Button itself is what SR
+            users get, mirroring the `Loader2` + `aria-busy` pattern used
+            across the app's other pending-submit buttons (e.g.
+            invoice-settings-form.tsx). */}
+        {isPending && (
+          <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden />
+        )}
         {tActions('sendReminder')}
       </Button>
       <DropdownMenu>
         <DropdownMenuTrigger
-          render={(props) => (
+          render={({ ref: baseRef, ...props }) => (
             <Button
               {...props}
+              // Base UI passes its OWN ref inside `props` (React 19). A bare
+              // `ref={rowMenuTriggerRef}` here would OVERRIDE that ref (only
+              // the rightmost ref survives a plain assignment) and the
+              // Positioner would lose its anchor — the menu would stop
+              // opening. `mergeRefs` forwards both. See that helper's
+              // docstring for the full "Base UI render-prop ref trap".
+              ref={mergeRefs(baseRef, rowMenuTriggerRef)}
               variant="ghost"
               size="icon"
               // 44×44px tap target — WCAG 2.5.5 Target Size (AAA) +
@@ -509,7 +550,13 @@ function RowActions({
               wiring as lapsed-tab.tsx:254). State is lifted to PipelineTable
               so the dialog outlives this menu closing. */}
           <DropdownMenuItem
-            onClick={() => onRecordOutreach({ memberId, companyName })}
+            onClick={() =>
+              onRecordOutreach({
+                memberId,
+                companyName,
+                finalFocus: rowMenuTriggerRef,
+              })
+            }
           >
             {tActions('markContacted')}
           </DropdownMenuItem>
