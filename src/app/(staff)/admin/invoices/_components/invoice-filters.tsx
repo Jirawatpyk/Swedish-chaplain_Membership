@@ -15,8 +15,15 @@
  * SECONDARY filters (Subject / Document type / Tax point / VAT / Paid-online)
  * collapse into a "Filters" popover with an active-count badge, and the
  * applied ones surface as removable chips below the bar. Every OTHER call
- * site (member portal, or a flag-off admin) renders EXACTLY the prior layout
- * — no popover, no chips, secondary filters inline.
+ * site (member portal, or a flag-off admin) renders EXACTLY the prior LAYOUT
+ * — no popover, no chips, secondary filters inline (same DOM order + widths).
+ *
+ * Two shared-search BEHAVIOURS changed for ALL paths (portal included), both
+ * net-positive and mirroring `directory-filters.tsx`: the search input is now
+ * CONTROLLED with an URL→state reconcile (so Clear-all empties the visible box
+ * instead of stranding the typed text), and `pushUrl` passes `{ scroll: false }`
+ * (refining a filter no longer jumps the list to the top). Visual layout is
+ * unchanged; only these two search interactions differ from the prior version.
  */
 
 import { useCallback, useRef, useState, useTransition } from 'react';
@@ -532,10 +539,12 @@ export function InvoiceFilters({
     </Button>
   ) : null;
 
-  // --- Inline layout (member portal / flag-off admin) — unchanged ----------
-  // Byte-for-byte today's layout: Subject + Paid-online inline, no popover,
+  // --- Inline layout (member portal / flag-off admin) — layout unchanged ----
+  // Byte-for-byte today's LAYOUT: Subject + Paid-online inline, no popover,
   // no chips. (`show088Filters` is false here, so the three 088 selects that
-  // used to sit inline never render — nothing to collapse.)
+  // used to sit inline never render — nothing to collapse.) The shared
+  // `searchField` behaviour differs from the prior version (controlled input +
+  // `scroll:false`) — see the file header; the DOM/order/widths are identical.
   if (!collapseSecondary) {
     return (
       <FilterBar>
@@ -568,9 +577,18 @@ export function InvoiceFilters({
                 type="button"
                 variant="outline"
                 size="sm"
-                aria-label={t('filters.more.ariaOpen', {
-                  count: secondaryActiveCount,
-                })}
+                // When no secondary filter is applied the count badge is
+                // hidden, so the "(N active)" suffix would make the SR name
+                // read "Filters (0 active)" — noise. Fall back to the plain
+                // visible label ("Filters") in that case; only annotate the
+                // count when there IS something to announce.
+                aria-label={
+                  secondaryActiveCount > 0
+                    ? t('filters.more.ariaOpen', {
+                        count: secondaryActiveCount,
+                      })
+                    : t('filters.more.button')
+                }
                 data-testid="invoice-more-filters-trigger"
               >
                 <SlidersHorizontalIcon className="size-4" aria-hidden="true" />

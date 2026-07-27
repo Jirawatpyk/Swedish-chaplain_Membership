@@ -734,8 +734,10 @@ export default async function AdminInvoicesPage({
               the empty/non-empty branch below) so the node persists across
               re-renders and only its text changes → announced. `total` is the
               full match count across pages (the same value the pagination uses),
-              not just this page's rows. Mirrors the members directory page.
-              Initial render is not announced (aria-live only speaks changes). */}
+              not just this page's rows. Mirrors the audit / directory /
+              erasure-log list pages (the members directory does not render
+              this region). Initial render is not announced (aria-live only
+              speaks changes). */}
           <p role="status" className="sr-only">
             {t('list.resultCount', { count: total })}
           </p>
