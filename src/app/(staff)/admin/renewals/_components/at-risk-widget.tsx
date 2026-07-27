@@ -127,6 +127,10 @@ export function AtRiskWidget({ actorRole }: AtRiskWidgetProps) {
   // returns focus there on close instead of the default target dropping to
   // `<body>`.
   const outreachTriggerRef = useRef<HTMLButtonElement | null>(null);
+  // a11y fix (mirrors outreachTriggerRef above, same rationale) — the
+  // "Snooze" button is likewise a plain visible button, so it needs its
+  // own snapshot ref handed to `SnoozeDialog` as `finalFocus`.
+  const snoozeTriggerRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -411,12 +415,13 @@ export function AtRiskWidget({ actorRole }: AtRiskWidgetProps) {
                               company:
                                 m.company_name ?? t('table.unknownCompany'),
                             })}
-                            onClick={() =>
+                            onClick={(e) => {
+                              snoozeTriggerRef.current = e.currentTarget;
                               setSnoozeFor({
                                 memberId: m.member_id,
                                 companyName: m.company_name,
-                              })
-                            }
+                              });
+                            }}
                           >
                             {t('actions.snooze')}
                           </Button>
@@ -439,6 +444,7 @@ export function AtRiskWidget({ actorRole }: AtRiskWidgetProps) {
           }}
           memberId={snoozeFor.memberId}
           memberCompanyName={snoozeFor.companyName}
+          finalFocus={snoozeTriggerRef}
         />
       ) : null}
       {outreachFor ? (

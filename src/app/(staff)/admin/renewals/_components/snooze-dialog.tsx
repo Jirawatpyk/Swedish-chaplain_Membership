@@ -37,6 +37,15 @@ export interface SnoozeDialogProps {
   readonly onOpenChange: (open: boolean) => void;
   readonly memberId: string;
   readonly memberCompanyName: string | null;
+  /**
+   * a11y fix — focus-return target on close (WCAG 2.1 AA SC 2.4.3).
+   * `SnoozeDialog` is opened from a plain visible "Snooze" button in
+   * `at-risk-widget.tsx` (mirrors `OutreachDialog`'s `finalFocus`
+   * pattern for its "Contact" button). Without this, Base UI's default
+   * focus-restore drops focus to `<body>` on close. Optional: omitting
+   * it falls back to Base UI's own default restore-focus behaviour.
+   */
+  readonly finalFocus?: React.RefObject<HTMLElement | null>;
 }
 
 export function SnoozeDialog({
@@ -44,6 +53,7 @@ export function SnoozeDialog({
   onOpenChange,
   memberId,
   memberCompanyName,
+  finalFocus,
 }: SnoozeDialogProps) {
   const t = useTranslations('admin.renewals.atRisk.snooze');
   const router = useRouter();
@@ -106,7 +116,11 @@ export function SnoozeDialog({
     // Base UI auto-wires aria-labelledby/describedby on both primitives.
     // Match: `outreach-dialog.tsx` (same form-bearing-confirm pattern).
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent initialFocus={cancelRef} role="alertdialog">
+      <DialogContent
+        initialFocus={cancelRef}
+        role="alertdialog"
+        finalFocus={finalFocus}
+      >
         <DialogHeader>
           <DialogTitle>{t('title')}</DialogTitle>
           <DialogDescription>
