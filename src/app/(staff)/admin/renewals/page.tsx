@@ -330,20 +330,6 @@ export default async function RenewalsPipelinePage({
 
   return (
     <RenewalsPageShell title={t('title')} subtitle={t('subtitle')}>
-      {/* Renewals-by-month year view. Rendered ABOVE the urgency pipeline on
-          the main view and NOT gated behind `showEmptyState`: the urgency
-          window can be empty while the 14-month chart still shows future
-          renewals. Suspense-wrapped so its aggregation streams in without
-          blocking the pipeline render; `nowIso` is the SAME instant threaded
-          into `loadPipeline` above so the chart buckets and any
-          month-filtered pipeline rows reconcile exactly. */}
-      <Suspense fallback={<RenewalsByMonthSectionSkeleton />}>
-        <RenewalsByMonthSection
-          tenantSlug={tenantCtx.slug}
-          nowIso={nowIso}
-          selectedMonth={month}
-        />
-      </Suspense>
       <Card>
         <CardContent className="flex flex-col gap-4">
           {/* 070 F8 item #18 (extended, nav-orphans follow-up) — section
@@ -431,6 +417,20 @@ export default async function RenewalsPipelinePage({
           )}
         </CardContent>
       </Card>
+      {/* Renewals-by-month year view. Rendered BELOW the pipeline as a
+          secondary lens and NOT gated behind `showEmptyState`: the urgency
+          window can be empty while the 14-month chart still shows future
+          renewals. Suspense-wrapped so its aggregation streams in without
+          blocking the pipeline render; `nowIso` is the SAME instant threaded
+          into `loadPipeline` above so the chart buckets and any
+          month-filtered pipeline rows reconcile exactly. */}
+      <Suspense fallback={<RenewalsByMonthSectionSkeleton />}>
+        <RenewalsByMonthSection
+          tenantSlug={tenantCtx.slug}
+          nowIso={nowIso}
+          selectedMonth={month}
+        />
+      </Suspense>
       <AtRiskWidget actorRole={widgetActorRole} />
       {/* DV-18 — read-only "Members without renewal cycle" tray. Best-effort:
           the sub-component catches an infra throw + renders a load-error card,
