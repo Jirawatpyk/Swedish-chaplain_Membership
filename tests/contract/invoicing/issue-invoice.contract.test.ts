@@ -141,6 +141,7 @@ function member(): MemberIdentityView {
     memberId: 'member-1',
     isActive: true,
     isArchived: false,
+    isErased: false,
     memberTypeScope: 'company',
     registrationDate: '2026-01-15',
     registrationFeePaid: true,

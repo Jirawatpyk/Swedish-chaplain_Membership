@@ -42,6 +42,20 @@ export async function resolveInvoiceBuyerForIssue(
     );
     if (!member) return err({ code: 'member_not_found' });
     if (member.isArchived) return err({ code: 'member_archived' });
+    // COMP-1 / PDPA Art.17 (2026-07 audit) — a GDPR-erased member (`erased_at`
+    // set) whose `status`/`archived_at` the scrub left untouched slips PAST the
+    // archive gate above; minting a §86/4 off the resulting `[erased]` buyer
+    // snapshot would re-materialise redacted PII into a permanent tax record.
+    // Defence-in-depth alongside `FEATURE_ERASURE_DISCARD_DRAFTS` (which now
+    // discards such drafts at erasure) and `issueAutoDraftedRenewal`'s own
+    // `member_erased` gate — this closes the GENERIC/manual issue path
+    // (`issueInvoice` + `issueEventInvoiceAsPaid`, the two callers of this
+    // helper). Deliberately reuses `member_not_found` (a redacted identity is
+    // not a valid buyer) rather than adding a new error code + route/i18n
+    // surface — the row fails CLOSED, which is the whole requirement. Credit
+    // notes are unaffected: they render from the ORIGINAL invoice's frozen
+    // snapshot and never re-read member identity through this resolver.
+    if (member.isErased) return err({ code: 'member_not_found' });
     return ok(member.snapshot);
   }
   // Non-member event buyer — the snapshot was pinned at draft. Validate it
