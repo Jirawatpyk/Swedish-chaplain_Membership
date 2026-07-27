@@ -61,8 +61,15 @@ async function seedMember(
       country: 'TH',
       planId,
       planYear: 2026,
-      // Backdate so the member clears the FR-035 min-tenure gate and lands
-      // in `computed` (not skippedBelowTenure).
+      // Backdate the tenure anchor so the member clears the FR-035 min-tenure
+      // gate and lands in `computed` (not skippedBelowTenure). Since #187 (G6)
+      // the tenure clock anchors on `registration_date` (COALESCE with
+      // created_at), and that column defaults to TODAY — so a backdated
+      // `createdAt` alone no longer clears the gate; `registrationDate` must be
+      // set explicitly. `date` column → 'YYYY-MM-DD'.
+      registrationDate: new Date(NOW_MS - 400 * MS_PER_DAY)
+        .toISOString()
+        .slice(0, 10),
       createdAt: new Date(NOW_MS - 60 * MS_PER_DAY),
       // >365d aged so FR-029 line 7 contributes a non-zero score.
       lastActivityAt: new Date(NOW_MS - 400 * MS_PER_DAY),

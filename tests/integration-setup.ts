@@ -22,6 +22,19 @@ process.env['STRIPE_API_VERSION'] = '2024-06-20';
 // + vi.resetModules()` (mirrors `feature-flag-kill-switch.test.ts`).
 process.env['FEATURE_F5_ASYNC_RECEIPT_PDF'] = 'true';
 
+// Mirror tests/setup.ts:89-91 — FORCE the feature flags the integration suite
+// asserts the flag-ON wiring for, rather than inheriting a per-developer
+// `.env.local` (a test whose result depends on the contents of one machine's
+// `.env.local` is not a test). This gap silently reddened the F8 at-risk
+// event-attendance / cultural-quota factor integration tests whenever
+// `.env.local` carried `FEATURE_F6_EVENTCREATE=false` (renewals-deps binds the
+// no-op event-attendees stub, so those factors never fire). Must run BEFORE
+// `src/lib/env.ts` is imported transitively (top-level executes first). A test
+// that wants a flag-OFF path mocks `@/lib/env` for itself.
+process.env['FEATURE_F4_INVOICING'] = 'true';
+process.env['FEATURE_F8_RENEWALS'] = 'true';
+process.env['FEATURE_F6_EVENTCREATE'] = 'true';
+
 beforeAll(() => {
   const dbUrl =
     process.env.DATABASE_URL_UNPOOLED ??

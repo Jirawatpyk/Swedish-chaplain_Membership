@@ -322,6 +322,15 @@ describe('F8 tier-upgrade on OFFLINE mark-paid — 070 Item D (live Neon)', () =
           };
         },
       },
+      invoiceDueBridge: {
+        ...deps.invoiceDueBridge,
+        // #244/#245 duplicate-membership-bill guard: in this MOCKED world the F4
+        // bridge is stubbed and never mints a real §86/4, so the seeded 'issued'
+        // fixture invoice must NOT count as a pre-existing live bill — stub the
+        // guard to null so markPaidOffline proceeds to the onPaid chain under
+        // test (tier-upgrade application), not the guard-refusal path.
+        findLiveMembershipBillInTx: async () => null,
+      },
     };
   }
 
