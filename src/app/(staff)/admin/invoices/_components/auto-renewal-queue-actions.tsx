@@ -86,6 +86,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { InlineAlert, InlineAlertDescription } from '@/components/ui/inline-alert';
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { mergeRefs } from '@/lib/merge-refs';
 import Link from 'next/link';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
 import { useDialogFinalFocus } from '@/components/broadcast/reason-confirmation-dialog';
@@ -354,10 +355,14 @@ export function AutoRenewalQueueActions({
     <>
       <DropdownMenu>
         <DropdownMenuTrigger
-          render={(props) => (
+          render={({ ref: baseRef, ...props }) => (
             <Button
               {...props}
-              ref={triggerRef}
+              // Base UI passes its OWN ref in `props` (React 19). Merge it with
+              // our `triggerRef` — a bare `ref={triggerRef}` here would override
+              // Base UI's ref and the menu would never open (its Positioner
+              // loses the anchor). See mergeRefs' docstring.
+              ref={mergeRefs(baseRef, triggerRef)}
               variant="ghost"
               size="icon"
               aria-label={t('menuAria', { member: memberName })}
