@@ -137,3 +137,23 @@ AI-A1 ships **report-only** on purpose. Two things must happen first:
 Also note the gauge goes **absent**, not stale, if its query fails
 (`forgetAutoInvoiceGauges`). Whatever monitor you build should treat *no data*
 as a distinct, investigable condition — not as 0.
+
+## 7. Emergency stop — how to halt issuing/drafting
+
+The treasurer's **Issue / Discard** routes
+(`POST /api/invoices/[id]/issue-auto-drafted` + `.../discard-auto-draft`) do
+NOT re-check `FEATURE_AUTO_INVOICE` themselves (2026-07 audit, security LOW —
+by design). They are already covered by two blanket kill-switches that 503
+every state-changing `/api/invoices/**` write:
+
+- **`READ_ONLY_MODE=true`** (Vercel env + redeploy, ~30 s, reversible) — the
+  fastest global write-freeze; halts Issue/Discard along with every other money
+  mutation while keeping reads + sign-in alive.
+- **`FEATURE_F4_INVOICING=false`** — disables the whole F4 invoicing surface
+  (path-based) including these routes.
+
+To stop only the *proactive drafting* without freezing manual invoicing, turn
+off **`FEATURE_AUTO_INVOICE`** (the daily cron then short-circuits to
+`200 {skipped}`) and/or the tenant flag `auto_invoice_enabled`; drafts already
+in the queue remain issuable/discardable unless a blanket switch above is also
+set.

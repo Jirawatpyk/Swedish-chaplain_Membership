@@ -403,6 +403,18 @@ export const invoices = pgTable(
       'invoices_membership_is_standard',
       sql`invoice_subject <> 'membership' OR vat_treatment = 'standard'`,
     ),
+    // membership-coverage-exclude-guard (migration 0281) — schema-fidelity
+    // mirror of the DB CHECK, added for parity with the other 8 checks here
+    // (2026-07 audit). Both coverage bounds are NULL together, and a populated
+    // window is a strictly-forward half-open range. Its companion GiST EXCLUDE
+    // (invoices_membership_coverage_no_overlap) is legitimately un-expressible
+    // in drizzle-kit (hand-authored, like the RLS/GIN objects), so only the
+    // CHECK is mirrored. No functional impact — db:generate is abandoned on
+    // this repo (migrations are hand-written), so there is no generation diff.
+    check(
+      'invoices_coverage_window_wellformed',
+      sql`("coverage_from" IS NULL) = ("coverage_to" IS NULL) AND ("coverage_from" IS NULL OR "coverage_from" < "coverage_to")`,
+    ),
     // 054-event-fee-invoices — one non-void event invoice per registration.
     // Predicate uses `status <> 'void'` because the void status value is
     // literally 'void' in `invoiceStatusEnum` (there is NO 'voided' value).

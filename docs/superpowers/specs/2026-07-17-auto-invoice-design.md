@@ -272,3 +272,42 @@ exists to avoid. The rationale is recorded in the route docstring
 withdrawn, and test #16 as satisfied by its inverted form. Nothing else in
 §5.4's layered defence changes — the per-cycle lock, the content-based dedup
 and the pre-issue content guard all ship as specified.
+
+### †2 — prose-vs-code drift closed by the 2026-07 whole-feature audit
+
+**Status:** the shipped code is correct in every case below; these are stale
+spec *descriptions*, recorded here (per the Spec Kit traceability requirement)
+rather than rewritten inline. The full audit sign-off is
+`docs/superpowers/specs/2026-07-26-auto-invoice-audit-signoff.md`.
+
+- **§5.1 coordinator gate (LOGIC ERROR in the prose).** Line ~56 reads
+  short-circuit "when `!f8Renewals && !autoInvoice`". That is backwards — it
+  would RUN the cron whenever F8 alone is on with `FEATURE_AUTO_INVOICE=false`,
+  defeating the dark-ship. The code correctly requires BOTH keys on, i.e. skip
+  when **`!f8Renewals || !autoInvoice`** (`auto-draft-coordinator/route.ts` +
+  `auto-draft/[tenantId]/route.ts`). Read §5.1's gate as `||`.
+- **§5.1 eligibility dedup status-set.** As literally written
+  (`{draft,issued,paid,partially_credited,credited}`, member-scoped) it is
+  unimplementable — every eligible member holds a paid prior-cycle bill, so it
+  would exclude everyone. Shipped as a two-layer check: coarse member-scoped
+  `{draft,issued}` in the candidate query + a precise plan_year `{draft,issued}`
+  re-check under lock + the issue-time coverage guard.
+- **§5.2 / §5.4 `planYear` + coverage anchor.** The prose derives them from
+  `cycle.periodTo`; the code derives `planYear` from
+  **`deriveFiscalYear(cycle.periodFrom)`** (the 070 / FR-022 calendar-edge fix,
+  consistent across auto-draft, `issueAutoDraftedRenewal` and `confirm-renewal`
+  — the plan's Global Constraints already mandate `periodFrom`).
+- **§5.4 content-based pre-issue guard superseded.** The `(member, plan_year)`
+  content guard is now the coverage-window-overlap guard
+  (`findOverlappingMembershipCoverageBill`, migration 0281) — blocks only on
+  COMMITTED bills and lets the tx1 sweep clear sibling drafts. See
+  `docs/superpowers/specs/2026-07-25-membership-coverage-exclude-guard.md`.
+- **§7 audit taxonomy under-counts.** §7 declares TWO new events
+  (`renewal_auto_drafted` + `renewal_auto_draft_discarded`); FIVE ship — those
+  two plus `renewal_orphan_invoice_relinked` (0277, reconcile cron),
+  `member_auto_invoice_enrolled` (0278) and `member_auto_invoice_unenrolled`
+  (0280). All carry EN/TH/SV labels and the 7-place lockstep.
+- **Additive scope not in the spec:** `bulk-unenrol-auto-invoice` (§5.7
+  describes enrol only), the `member_erased` issue-time gate, and the
+  `skipped_opt_out`→`skipped_race_lost` counter rename. All additive/clarifying;
+  none contradict a shipped decision.
