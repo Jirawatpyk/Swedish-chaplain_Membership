@@ -2088,6 +2088,11 @@
             "title": "Discard this draft?",
             "description": "This draft bill for {member} will be permanently deleted. The next auto-renewal run may create a new draft before the cycle is due."
           },
+          "issueCaution": {
+            "unresolved": "We couldn't fully load this row — its price and drift checks may be incomplete. Verify the amount before issuing this tax document.",
+            "priceUnverifiable": "This row's price couldn't be confirmed against the plan catalogue. Verify the amount before issuing.",
+            "priceChanged": "The plan price changed after this draft was created. Check the amount before issuing."
+          },
           "toast": {
             "issuedAndSent": "Bill {number} issued and emailed.",
             "issuedSilently": "Bill {number} issued.",

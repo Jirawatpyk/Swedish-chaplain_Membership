@@ -720,6 +720,21 @@ export function InvoicesTable({
                     canManageQueueActions &&
                     showQueueMetaColumn &&
                     r.status === 'draft';
+                  // 2026-07 UX audit — the highest-priority PRICE/enrichment
+                  // caution for this row, surfaced inside the Issue dialog at
+                  // the §87-mint commit point. `refusalReason` is deliberately
+                  // NOT a caution (the server refuses those outright). Priority
+                  // unresolved > priceUnverifiable > priceChanged.
+                  const qm = r.queueMeta;
+                  const issueCaution = qm == null
+                    ? null
+                    : qm.unresolved
+                      ? ('unresolved' as const)
+                      : qm.priceUnverifiable
+                        ? ('priceUnverifiable' as const)
+                        : qm.priceChanged
+                          ? ('priceChanged' as const)
+                          : null;
                   // 088 A-refined — the MAIN download serves the issue-time PDF =
                   // the SC bill on a paid 088 bill. `documentNumber` already IS the
                   // SC number (the row identity), so the control names it directly;
@@ -746,6 +761,7 @@ export function InvoicesTable({
                           invoiceId={r.invoiceId}
                           memberName={r.memberName}
                           status={r.status}
+                          issueCaution={issueCaution}
                         />
                       )}
                       {showRecordPayment && todayIso !== undefined && (

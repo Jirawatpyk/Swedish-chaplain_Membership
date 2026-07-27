@@ -538,3 +538,33 @@ describe('<AutoRenewalQueueActions> — focus-on-close (review round 1 BLOCKING)
     await waitFor(() => expect(trigger).toHaveFocus());
   });
 });
+
+describe('<AutoRenewalQueueActions> — Issue-dialog caution (2026-07 UX audit)', () => {
+  it('shows a warning caution inside the Issue dialog for a priceChanged row', () => {
+    renderActions({ issueCaution: 'priceChanged' });
+    openMenuAndClick('queue-row-issue-silent');
+    const caution = screen.getByTestId('queue-row-issue-caution');
+    expect(caution).toHaveTextContent(t.issueCaution.priceChanged);
+    expect(caution).toHaveAttribute('data-tone', 'warning');
+  });
+
+  it('shows the priceUnverifiable / unresolved copy for those kinds', () => {
+    renderActions({ issueCaution: 'priceUnverifiable' });
+    openMenuAndClick('queue-row-issue-send');
+    expect(screen.getByTestId('queue-row-issue-caution')).toHaveTextContent(
+      t.issueCaution.priceUnverifiable,
+    );
+  });
+
+  it('renders NO caution for a clean row (issueCaution null/omitted)', () => {
+    renderActions();
+    openMenuAndClick('queue-row-issue-silent');
+    expect(screen.queryByTestId('queue-row-issue-caution')).toBeNull();
+  });
+
+  it('does NOT show the caution in the Discard dialog — discarding a flagged row is the safe action', () => {
+    renderActions({ issueCaution: 'unresolved' });
+    openMenuAndClick('queue-row-discard');
+    expect(screen.queryByTestId('queue-row-issue-caution')).toBeNull();
+  });
+});
