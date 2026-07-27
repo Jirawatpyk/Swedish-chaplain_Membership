@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Folder name caveat**: the directory is historically `Swedish chaplain_membership`. "chaplain" is a typo for "chamber". Refer to the product as **Chamber-OS** (platform) or **SweCham / TSCC** (first tenant), never "chaplain". Rename is tracked as R6 in `docs/phases-plan.md` (manual action — cannot be done from inside the active working directory).
 
-**Repository status (as of 2026-07-23)**: **F1–F9 SHIPPED + member-number (055, PR #70) SHIPPED — SweCham/TSCC is LAUNCHING (prod live with real members + money; money/tax paths are live-stakes).** F1 Auth & RBAC (PR #1) · F2 Membership Plans · F3 Members & Contacts · F4 Invoices & Receipts · F5 Online Payment / Stripe + PromptPay (PR #16) · F6 EventCreate Integration (PR #26, flag-flipped to production 2026-05-19) · F7 Email Broadcast / E-Blast (PR #23) · F8 Renewal Tracking + Smart Reminders (PR #24). Member numbers (055, PR #70): per-tenant `SCCM-NNNN` surfaced across the Members directory, command palette, portal badge, and F4 tax PDFs. **Active workstream (post-launch): auto-invoice on payment + void-on-reissue**, plus observability / env-boot / go-live-readiness hardening; other in-flight work: money-remediation, plan-change billing, fixed-anchor renewals, members portal-status. (Run `git branch --show-current` for the live branch — feature branches rotate faster than this doc, so this section names the workstream, not a branch.) The **F9 launch gate is CLEARED** — `015-admin-dashboard` merged to `main` (PR #29, `1056d5a2`, 2026-05-31). `docs/go-live-readiness.md` (the master launch plan) locks launch scope at F1–F9 (all merged); remaining work is operational/data readiness + flag-flips, NOT feature work. See § Recent Changes for full per-feature provenance and the human-gated residuals on each feature. Source modules: `src/modules/auth/**` (F1) · `src/modules/tenants/**` + `src/modules/plans/**` (F2) · `src/modules/members/**` (F3) · `src/modules/invoicing/**` (F4) · `src/modules/payments/**` (F5) · `src/modules/events/**` (F6) · `src/modules/broadcasts/**` (F7/F7.1) · `src/modules/renewals/**` (F8) · `src/modules/insights/**` (F9 — admin dashboard, audit viewer, timeline, benefit usage, directory + E-Book/JSON export; shipped PR #29) · presentation in `src/app/(staff)/admin/**` + `src/app/(member)/portal/**` + `src/components/layout/**`.
+**Repository status (as of 2026-07-28)**: **F1–F9 SHIPPED + member-number (055, PR #70) SHIPPED — SweCham/TSCC is LAUNCHING (prod live with real members + money; money/tax paths are live-stakes).** F1 Auth & RBAC (PR #1) · F2 Membership Plans · F3 Members & Contacts · F4 Invoices & Receipts · F5 Online Payment / Stripe + PromptPay (PR #16) · F6 EventCreate Integration (PR #26, flag-flipped to production 2026-05-19) · F7 Email Broadcast / E-Blast (PR #23) · F8 Renewal Tracking + Smart Reminders (PR #24). Member numbers (055, PR #70): per-tenant `SCCM-NNNN` surfaced across the Members directory, command palette, portal badge, and F4 tax PDFs. **As of 2026-07-28: auto-invoice on payment + void-on-reissue are SHIPPED** (#261–#263 — migration `0281` adds `coverage_from/to` + a GiST EXCLUDE guard; 3 env flags ON in prod + tenant `auto_invoice_enabled`); most recent work = renewals urgency pill/tabs aligned to true benefit-access (#266–#268) + invoices filter UX redesign (#264–#265). Migrations are at `0282`. Still in flight: observability / env-boot / go-live-readiness hardening, money-remediation residuals, plan-change billing Phase 2. (Run `git branch --show-current` for the live branch — feature branches rotate faster than this doc, so this section names the workstream, not a branch.) The **F9 launch gate is CLEARED** — `015-admin-dashboard` merged to `main` (PR #29, `1056d5a2`, 2026-05-31). `docs/go-live-readiness.md` (the master launch plan) locks launch scope at F1–F9 (all merged); remaining work is operational/data readiness + flag-flips, NOT feature work. See § Recent Changes for full per-feature provenance and the human-gated residuals on each feature. Source modules: `src/modules/auth/**` (F1) · `src/modules/tenants/**` + `src/modules/plans/**` (F2) · `src/modules/members/**` (F3) · `src/modules/invoicing/**` (F4) · `src/modules/payments/**` (F5) · `src/modules/events/**` (F6) · `src/modules/broadcasts/**` (F7/F7.1) · `src/modules/renewals/**` (F8) · `src/modules/insights/**` (F9 — admin dashboard, audit viewer, timeline, benefit usage, directory + E-Book/JSON export; shipped PR #29) · presentation in `src/app/(staff)/admin/**` + `src/app/(member)/portal/**` + `src/components/layout/**`.
 
 ## Language for AI sessions
 
@@ -59,21 +59,22 @@ User prefers **Thai** for conversational turns. Code, specs, commit messages, an
 - **i18n**: next-intl — **EN default + TH + SV**. Missing EN key fails the build; missing TH/SV falls back to EN with a dev warning and CI failure on release branches. **TH is mandatory for Thai tax-compliant invoices/receipts** (F4).
 - **Forms**: react-hook-form + zod (zod also validates every system boundary and `process.env` via `src/lib/env.ts`)
 - **Email**: Resend (transactional), `@react-email/components` for templates
-- **Payments**: Stripe — **planned for F5, no code yet**. Stripe Elements / Payment Intents to preserve SAQ-A.
+- **Payments**: Stripe `^22` + Elements / Payment Intents (SAQ-A preserved) + PromptPay QR — **live in prod** (F5, PR #16). `STRIPE_API_VERSION` is env-pinned.
 - **Testing**: Vitest + Playwright + `@axe-core/playwright` (WCAG 2.1 AA) + MSW + `@testing-library/react`
 - **Observability**: `pino` JSON logs + `@vercel/otel` traces + Vercel Analytics / Speed Insights
 - **Hosting**: Vercel (`sin1` Singapore) — documented deviation from "Thailand primary" (no major cloud has a TH region)
 
-## Planned source layout (F1)
+## Source layout (F1 skeleton — still accurate for F1–F9)
 
 ```text
 src/
-├── app/                               # Presentation (Next.js routes, server actions, middleware)
+├── app/                               # Presentation (Next.js routes, server actions)
 │   ├── (staff)/                       # Route group: admin + manager portal → /admin/**
 │   ├── (member)/                      # Route group: member self-service → /portal/**
 │   ├── (auth-public)/                 # Shared: /forgot-password, /reset-password/[token], /invite/[token]
-│   ├── api/auth/**                    # route.ts handlers for every auth endpoint
-│   └── middleware.ts                  # session lookup + route guards + CSRF Origin allow-list + HSTS
+│   └── api/**                         # route.ts handlers: auth, cron/**, internal/** (metrics, retention), webhooks
+├── config/                            # runtime config objects (nav, feature maps)
+├── hooks/                             # shared client hooks
 ├── modules/<context>/                 # Bounded contexts (auth, then members, invoices, …)
 │   ├── domain/                        # Pure types + policies — NO framework imports
 │   ├── application/                   # Use cases — NO drizzle/next/react imports
@@ -92,17 +93,21 @@ src/
 │   ├── otel.ts                        # @vercel/otel setup
 │   ├── env.ts                         # zod-validated process.env, runs at boot
 │   └── result.ts                      # Result<T,E> helper for explicit error handling
-└── middleware.ts
+└── proxy.ts                           # Next.js 16 renamed middleware→proxy — there is NO src/middleware.ts.
+                                       # session lookup + route guards + CSRF Origin allow-list + HSTS
+                                       # + per-request nonce header + tenant header
 
-drizzle/migrations/                    # SQL migrations from drizzle-kit
+drizzle/migrations/                    # HAND-WRITTEN SQL from 0019 onwards + meta/_journal.json (see Gotchas)
+docs/runbooks/                         # ~60 incident runbooks (cron-jobs, db-environment-branching, void-on-reissue, …)
 tests/
-├── contract/                          # One file per auth API endpoint
-├── integration/auth/                  # Real Postgres (Docker), use cases end-to-end
-├── unit/auth/                         # Domain + pure logic
-└── e2e/                               # Playwright + axe-core; includes i18n coverage and reduced-motion specs
+├── contract/                          # One file per API / inter-module boundary
+├── integration/<module>/              # Real Postgres (live Neon `dev` branch), use cases end-to-end
+├── unit/<module>/                     # Domain + pure logic (+ unit/architecture/ barrel guards)
+├── e2e/                               # Playwright + axe-core; includes i18n coverage and reduced-motion specs
+└── helpers/, stubs/, support/, load/  # shared fixtures, test doubles, k6/perf harnesses
 scripts/
 ├── seed-bootstrap-admin.ts            # One-off: first admin account (refuses if any admin exists)
-└── check-i18n-coverage.ts             # CI: every auth key present in every locale
+└── check-i18n-coverage.ts             # gate: every key present in every locale (pnpm check:i18n)
 specs/<nnn-feature>/                   # Spec Kit artefacts — one dir per feature branch
 ```
 
@@ -134,18 +139,19 @@ pnpm test:e2e                  # Playwright, all suites
 pnpm test:e2e --grep "@a11y"   # axe-core WCAG 2.1 AA scan only
 pnpm test:e2e --grep "@i18n"   # locale coverage only
 pnpm check:i18n                # fails on missing EN keys; warns (CI-blocks on release) on TH/SV
-pnpm db:generate               # generate migration from Drizzle schema
+# pnpm db:generate             # DO NOT USE — snapshots stop at 0018; migrations are hand-written SQL (see Gotchas)
 pnpm db:migrate                # apply to the DEV branch (.env.local); prod auto-migrates on deploy (vercel-build)
+pnpm db:verify                 # assert the live schema matches expectations (prod: pnpm db:verify:prod)
 pnpm build                     # production build
 ```
 
-Full CI pipeline — reproduce locally before pushing:
+Full gate list — **the local run IS the gate.** GitHub Actions only runs 4 narrow workflows (`architecture-guards` on PR · nightly F7+F8 multi-tenant readiness · template-seed drift · Neon preview cleanup); **no CI job runs lint, typecheck, unit, integration, or e2e.** Budget >1 h end-to-end:
 
 ```bash
 pnpm lint && pnpm typecheck && pnpm test:coverage && pnpm check:i18n && pnpm check:layout && pnpm check:fixme && pnpm check:template-seed && pnpm test:integration && pnpm test:e2e
 ```
 
-Pre-push (fast subset, ~30s) runs `check:layout` + `check:template-seed` + `check:fixme` + the contract/architecture vitest subset, plus a **conditional per-module integration gate** when `src/modules/<m>/**` is touched (emergency override: `SKIP_INTEGRATION_PREPUSH=1 git push`). Additional `check:*` gates available: `check:strict-aria`, `check:audit-events`, `check:audit-counts`, `check:bundle-budgets`, `check:multi-tenant`, `check:f71a-schema`.
+Pre-push (**~4–5 min, not 30 s** — the vitest step runs the whole `tests/contract/` + `tests/unit/architecture/` subset, ≈1.8k tests) runs `check:layout` + `check:template-seed` + `check:fixme` + `check:dates` + `check:env-example` + `check:env-boot` + that vitest subset, plus a **conditional per-module integration gate** when `src/modules/<m>/**` is touched (emergency override: `SKIP_INTEGRATION_PREPUSH=1 git push`). Additional `check:*` gates available: `check:strict-aria`, `check:audit-events`, `check:audit-counts`, `check:bundle-budgets`, `check:multi-tenant`, `check:portal-guard`, `check:plan-divergence`, `check:f71a-schema`, `check:f9-schema`.
 
 Coverage thresholds (enforced in `vitest.config.ts`): Domain 100% line; Application 80% line + 80% branch; **100% branch on security-critical use cases** (sign-in, change-password, reset-password, role policy, sign-out).
 
@@ -174,13 +180,15 @@ All feature work flows through the 10 gates (Constitution § Development Workflo
 
 Each gate blocks the next until its exit criteria pass. Skipping requires a `plan.md` Complexity Tracking entry **and** ≥2 maintainer approvals. Auth, RBAC, payment, PII, audit log, and GDPR surfaces require **≥2 reviewers** at the Review gate, one of whom signs the security checklist (`security.md § 5` for F1).
 
+Dispatch the **24 project subagents in `.claude/agents/`** (`chamber-os-architect`, `financial-integrity-reviewer`, `thai-tax-compliance-auditor`, `senior-tester`, `enterprise-ux-designer`, `security-engineer`, …) for gate work — not `general-purpose`. Any UI-touching task or PR also gets an `enterprise-ux-designer` pass. File-mutating agents run **sequentially**; read-only reviewers may run concurrently.
+
 Use `[Spec Kit]` prefix on commits that move a feature through a gate (`[Spec Kit] F1 spec + clarify`, `[Spec Kit] F1 tasks + close /speckit.analyze findings`, etc.). Conventional Commits are enforced by the commit-msg hook.
 
 ## Testing discipline (Principle II, NON-NEGOTIABLE)
 
 - **TDD**: failing test → commit red → implement → commit green. Every user story in a spec MUST have ≥1 acceptance test authored before implementation starts.
 - **Contract tests** at every external and inter-module boundary (`tests/contract/`).
-- **Integration tests hit real Postgres** (local dev: live Neon Singapore via `DATABASE_URL` in `.env.local`; CI: Docker Postgres or a Neon branch), not mocks — catches SQL, migration, and transaction bugs that mocks hide. Run with `pnpm test:integration` (config `vitest.integration.config.ts`); the historical "Docker on port 55432" note is superseded.
+- **Integration tests hit real Postgres** (local dev: live Neon Singapore `dev` branch via `DATABASE_URL` in `.env.local`; in CI only the nightly F7+F8 readiness workflow runs them, against the `CI_DATABASE_URL` Neon-branch secret), not mocks — catches SQL, migration, and transaction bugs that mocks hide. Run with `pnpm test:integration` (config `vitest.integration.config.ts`); the historical "Docker on port 55432" note is superseded.
 - A red test suite on `main` is a stop-the-line event — no new work until green.
 
 ## Conventions
@@ -209,6 +217,12 @@ Use `[Spec Kit]` prefix on commits that move a feature through a gate (`[Spec Ki
 - **Tenant-scoped repos MUST thread `tx` from `runInTenant`, never the global `db` singleton.** A repo method on a `tenant_id`-scoped table that reaches for the pool-global `db` gets a fresh connection without `SET LOCAL app.current_tenant`, silently bypassing RLS (it can read/write across tenants and the RLS+FORCE policies won't save you). Every query inside a `runInTenant(ctx, async (tx) => …)` block must use that `tx`. (F7.1a US2 incident, 2026-05-20.)
 - **Apply the migration + run integration tests before committing schema changes.** When a commit adds a new Drizzle migration *and* code that references the new enum/column, run `pnpm drizzle-kit migrate` then `pnpm test:integration` first. Unit-test mocks hide the schema gap — the failure only surfaces against live Neon. (F4 R8 incident, 2026-05-15.)
 - **Buddhist Era is display-only.** Storing BE (CE + 543) anywhere in the DB is an off-by-543-years ship blocker — see § Conventions.
+- **`db:generate` is abandoned — migrations 0019+ are HAND-WRITTEN SQL.** Drizzle snapshots stop at `0018`, so `drizzle-kit generate` cannot produce a correct diff (it also blocks on a TTY prompt). Write the `.sql` file by hand and register it in `drizzle/migrations/meta/_journal.json`; apply with `pnpm db:migrate` (`scripts/run-migrations.ts`).
+- **A duplicate `when` timestamp makes `db:migrate` a silent no-op** — it prints "✓ applied" while applying nothing. Verify the DDL landed via `information_schema`, then bump `when` by +100000 ms. When two branches add migrations in parallel, merge the other branch first and renumber yours.
+- **`pnpm test:integration -- <pattern>` runs the WHOLE suite (~40 min).** Pass the file PATH positionally instead: `pnpm test:integration tests/integration/renewals/foo.test.ts`. Running a whole 80-file folder dies around "Worker exited" — batch it.
+- **`pnpm typecheck` is in NO gate** (not pre-push, not CI). Run it as the final step after the last edit, before committing — and run full `pnpm lint` too, it catches errors typecheck + vitest miss.
+- **Never run `pnpm format` / `prettier --write`** even though the script exists — it reformats unrelated files. Hand-format to match the surrounding code.
+- **All cron triggers are native Vercel Cron** (`vercel.json`, 40+ jobs) since the 2026-07-17 Pro migration: **UTC-only** (Asia/Bangkok schedules are −7 h) and invoked with **GET**, so POST handlers need `export const GET = POST`. cron-job.org is a paused standby — any "cron-job.org external" note in § Active Technologies below is superseded. See `docs/runbooks/cron-jobs.md`.
 - **DB is Neon-branched: `pnpm db:migrate` → the `dev` branch, NOT prod (since 2026-06-23).** `.env.local` points at the `dev` Neon branch (prod backup: `.env.local.bak.prod`, gitignored). Prod + preview migrate **automatically on Vercel deploy** via the `vercel-build` script (`run-migrations.ts && next build`); manual prod = `pnpm db:migrate:prod` (`.env.production`). Integration tests **refuse to run against prod** (guard in `tests/integration-setup.ts` keyed on `TEST_DB_HOST_BLOCKLIST`). Branches: `main`=prod · `dev`=local/tests · `preview/*`=per-PR (auto). Full map: `docs/runbooks/db-environment-branching.md`.
 
 <!-- The block below is regenerated by `.specify/scripts/powershell/update-agent-context.ps1`. -->
