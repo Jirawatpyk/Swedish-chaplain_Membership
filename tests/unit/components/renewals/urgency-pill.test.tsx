@@ -59,11 +59,22 @@ describe('<UrgencyPill>', () => {
     expect(container.querySelector('span')!.className).toMatch(/bg-red-100/);
   });
 
-  it('uses dashed-border amber for suspended (benefits paused, recoverable)', () => {
-    const { container } = renderPill('suspended');
-    const className = container.querySelector('span')!.className;
-    expect(className).toMatch(/ring-dashed/);
-    expect(className).toMatch(/bg-amber-100/);
+  it('uses a deeper amber for suspended, distinct from the t-14 countdown', () => {
+    const suspended = renderPill('suspended');
+    const suspendedClass =
+      suspended.container.querySelector('span')!.className;
+    // The real differentiator is the fill/ring shade (Tailwind rings can't be
+    // dashed). Suspended is amber-200/ring-amber-500; t-14 is amber-100.
+    expect(suspendedClass).toMatch(/bg-amber-200/);
+    expect(suspendedClass).toMatch(/ring-amber-500/);
+    suspended.unmount();
+
+    const t14 = renderPill('t-14');
+    const t14Class = t14.container.querySelector('span')!.className;
+    // Guard the collision the review caught: the two amber pills must NOT
+    // share a fill class.
+    expect(t14Class).not.toMatch(/bg-amber-200/);
+    t14.unmount();
   });
 
   it('uses gray for terminated (membership ended)', () => {

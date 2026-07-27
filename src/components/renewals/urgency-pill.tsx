@@ -6,8 +6,8 @@
  * is computed DB-side per FR-046 and passed in.
  *
  * Bucket→colour gradient: slate (low urgency) → amber → orange → red
- * (urgent countdown) → amber+dashed-border (suspended — benefits paused,
- * still recoverable) → gray (terminated — membership ended).
+ * (urgent countdown) → deep amber (suspended — benefits paused, still
+ * recoverable) → gray (terminated — membership ended).
  */
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
@@ -28,12 +28,15 @@ export const VARIANT_CLASSES: Record<UrgencyBucket, string> = {
   't-0':
     'bg-red-100 text-red-900 ring-red-300 dark:bg-red-950 dark:text-red-200 dark:ring-red-800',
   // PLACEHOLDER colours pending enterprise-ux sign-off at PR review.
-  // suspended = amber + dashed ring: "benefits paused, still recoverable" —
-  // echoes the members-directory amber 'Suspended' badge (same
-  // deriveMembershipAccess axis); the dashed ring distinguishes it from the
-  // solid-amber t-30/t-14 countdown pills.
+  // suspended = a DEEPER amber than the t-30/t-14 countdown (bg-amber-200 +
+  // amber-500 ring vs their amber-50/100 + amber-300 ring) so it stays
+  // distinguishable from the countdown ramp, while keeping amber's
+  // "attention, recoverable" read that echoes the members-directory amber
+  // 'Suspended' badge (same deriveMembershipAccess axis). (NB: Tailwind rings
+  // compile to box-shadows and cannot be dashed — an earlier `ring-dashed`
+  // here was an inert no-op, so the fill/ring shade carries the distinction.)
   suspended:
-    'bg-amber-100 text-amber-900 ring-amber-400 ring-dashed dark:bg-amber-950 dark:text-amber-200 dark:ring-amber-700',
+    'bg-amber-200 text-amber-950 ring-amber-500 dark:bg-amber-900 dark:text-amber-100 dark:ring-amber-500',
   // terminated = muted gray: membership ended (kept from the old 'lapsed').
   terminated:
     'bg-gray-100 text-gray-700 ring-gray-300 dark:bg-gray-900 dark:text-gray-400 dark:ring-gray-700',

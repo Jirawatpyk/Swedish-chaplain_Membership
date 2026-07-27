@@ -516,8 +516,14 @@ function buildNextCursor(
  *   t-14:  expires_at  > NOW() +  7 days     (7..14 days)
  *   t-7:   expires_at  > NOW() +  1 day      (1..7 days)
  *   t-0:   expires_at  > NOW()               (0..1 day, due today/tomorrow)
- *   grace: expires_at >= NOW() - 30 days     (post-expiry, in grace window)
- *   lapsed: status='lapsed' OR > 30 days past expiry
+ *
+ * The two access-state tail buckets are STATUS-first (no date window) and
+ * mirror deriveMembershipAccess (renewal-cycle.ts) — the old 30-day 'grace'
+ * window was removed (policy 059/065 dropped benefit-bearing grace):
+ *   suspended:  status IN ('awaiting_payment','pending_admin_reactivation'),
+ *               OR an expired non-terminal cycle (upcoming/reminded past
+ *               expiry — the CASE ELSE arm)
+ *   terminated: status='lapsed'
  */
 /**
  * COMP-1 H4 — correlated "member is NOT GDPR-erased" predicate for the
