@@ -728,6 +728,19 @@ export default async function AdminInvoicesPage({
             show088Filters={f088TaxAtPayment}
             showAutoInvoiceFilter={autoInvoiceEnabled}
           />
+          {/* SC 4.1.3 (Status Messages) — announce the filtered result count to
+              screen readers after a filter/page change WITHOUT moving focus.
+              `role="status"` (aria-live=polite) + a STABLE tree position (outside
+              the empty/non-empty branch below) so the node persists across
+              re-renders and only its text changes → announced. `total` is the
+              full match count across pages (the same value the pagination uses),
+              not just this page's rows. Mirrors the audit / directory /
+              erasure-log list pages (the members directory does not render
+              this region). Initial render is not announced (aria-live only
+              speaks changes). */}
+          <p role="status" className="sr-only">
+            {t('list.resultCount', { count: total })}
+          </p>
           {payIntent && isAdmin && rows.length > 0 ? (
             // FR-035 — realise the palette `?pay=1` deep-link: guide the admin
             // to the per-row Record payment button (role=status = polite, this
