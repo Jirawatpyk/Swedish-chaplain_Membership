@@ -3373,7 +3373,6 @@
         "sendReminder": "Skicka påminnelse",
         "sendReminderAriaLabel": "Skicka påminnelse till {company}",
         "markContacted": "Markera kontaktad",
-        "markContactedComingSoon": "Kommer i en framtida fas — administratörer kommer att kunna registrera kontaktförsök",
         "rowMenu": "Åtgärder för {company}"
       },
       "sendReminderNow": {

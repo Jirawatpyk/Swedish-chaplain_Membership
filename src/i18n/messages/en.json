@@ -3373,7 +3373,6 @@
         "sendReminder": "Send reminder",
         "sendReminderAriaLabel": "Send reminder to {company}",
         "markContacted": "Mark contacted",
-        "markContactedComingSoon": "Coming in a future phase — admin can manually log contact attempts",
         "rowMenu": "Actions for {company}"
       },
       "sendReminderNow": {
