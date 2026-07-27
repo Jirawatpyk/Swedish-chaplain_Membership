@@ -3303,6 +3303,7 @@
         "aria_label": "Filter by renewal urgency",
         "aria_label_scroll": "Renewal urgency tabs, scrollable",
         "countSr": "{count, plural, one {# member} other {# members}}",
+        "monthLensHint": "Urgency filters are paused while a month filter is active. Clear the month filter to use them.",
         "t_90": "T-90",
         "t_60": "T-60",
         "t_30": "T-30",
