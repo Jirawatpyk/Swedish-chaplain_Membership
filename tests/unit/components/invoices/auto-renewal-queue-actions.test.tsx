@@ -32,6 +32,12 @@ import { NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
 import { toast } from 'sonner';
 
+// Simulate Base UI's React-19 contract: the Menu.Trigger passes its OWN ref
+// inside the render callback's `props`. The component MUST forward it (merge,
+// not override) or the popup can't anchor and the menu never opens — the exact
+// bug this file now guards against.
+const { baseUiTriggerRef } = vi.hoisted(() => ({ baseUiTriggerRef: vi.fn() }));
+
 vi.mock('sonner', () => ({
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), loading: vi.fn(), dismiss: vi.fn() },
 }));
@@ -52,7 +58,9 @@ vi.mock('@/components/ui/dropdown-menu', () => {
   }: {
     render?: (props: Record<string, unknown>) => React.ReactNode;
   }) {
-    return <>{renderProp ? renderProp({}) : null}</>;
+    // Pass Base UI's own ref through `props` (React-19 shape) so the test can
+    // assert the component forwards it to the real <button>.
+    return <>{renderProp ? renderProp({ ref: baseUiTriggerRef }) : null}</>;
   }
   function DropdownMenuContent({ children }: { children?: React.ReactNode }) {
     return <div role="menu">{children}</div>;
@@ -120,6 +128,7 @@ beforeEach(() => {
   // test relying on the default no-op must not inherit a stale one.
   refreshSpy.mockReset();
   (toast.success as ReturnType<typeof vi.fn>).mockClear();
+  baseUiTriggerRef.mockClear();
 });
 
 afterEach(() => {
@@ -137,6 +146,18 @@ describe('<AutoRenewalQueueActions> — visibility gate', () => {
   it('renders the actions trigger for a draft row', () => {
     renderActions();
     expect(screen.getByTestId('queue-row-actions-trigger')).toBeInTheDocument();
+  });
+
+  it("forwards Base UI's own trigger ref to the <button> (menu-anchor regression)", () => {
+    // The bug: `render={(props) => <Button {...props} ref={triggerRef} />}`
+    // dropped Base UI's ref (only the rightmost ref survives), so the popup's
+    // Positioner lost its anchor and the menu never opened. mergeRefs must
+    // forward Base UI's ref too — assert it reached the real button element.
+    renderActions();
+    expect(baseUiTriggerRef).toHaveBeenCalled();
+    const el = baseUiTriggerRef.mock.calls.at(-1)?.[0] as HTMLElement | null;
+    expect(el).toBeInstanceOf(HTMLElement);
+    expect(el?.getAttribute('data-testid')).toBe('queue-row-actions-trigger');
   });
 
   it('the menu lists all three actions, each with an icon (mirrors invoice-more-menu.tsx)', () => {
