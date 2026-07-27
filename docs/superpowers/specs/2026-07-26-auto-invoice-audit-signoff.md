@@ -70,6 +70,18 @@ Post-fix gates: **typecheck 0 · lint clean · check:i18n 4959×3 · issue-auto-
 
 Owner: **operator**, at the flag-flip window — NOT dark-merge blockers.
 
+> **Status update (2026-07-27) — feature is READY to activate.** The env flags
+> `FEATURE_AUTO_INVOICE` / `FEATURE_ERASURE_DISCARD_DRAFTS` / `FEATURE_VOID_ON_REISSUE`
+> are ON in prod. Gate **#1 (erasure-discard)** is satisfied. Gates **#3
+> (observability instrumentation)** and **#5 (auto_draft_invoice_id index,
+> migration 0282)** were completed in PR #262 and are live. Gate **#6 (legacy
+> coverage backfill, below)** is RESOLVED as *leave-NULL* — no longer a blocker.
+> The only remaining pre-heavy-use advisory is **#2 (record p95 baselines)**,
+> which does not block enabling. To activate: turn on the tenant flag
+> `tenant_invoice_settings.auto_invoice_enabled` and enrol members
+> (`members.auto_invoice_enrolled_at`); the daily cron then drafts and the
+> treasurer works the review queue.
+
 1. **[pdpa LOW / REQUIRED] `FEATURE_ERASURE_DISCARD_DRAFTS=true`** — independent
    of `FEATURE_AUTO_INVOICE`; without it an erased member's drafts survive
    (Art.5(1)(c) data-minimisation gap). Already marked REQUIRED in
@@ -93,7 +105,24 @@ Owner: **operator**, at the flag-flip window — NOT dark-merge blockers.
    member from re-drafting.
 5. **[perf/migration LOW] Before onboarding a LARGE tenant** — add
    `CREATE INDEX renewal_cycles_auto_draft_invoice_id_idx ON renewal_cycles (tenant_id, auto_draft_invoice_id) WHERE auto_draft_invoice_id IS NOT NULL`.
-   Benign at SweCham's ~131 members.
+   Benign at SweCham's ~131 members. **DONE — migration 0282, PR #262.**
+6. **[money LOW] Legacy coverage backfill — RESOLVED as *leave-NULL* (2026-07-27).**
+   `scripts/backfill-membership-coverage.ts` inventory against **prod** found
+   **81** committed membership §86/4 bills with NULL coverage — **all
+   `plan_year=2026`, all ORPHANS** (no `linked_invoice_id`; paid 70 + issued 11,
+   the launch-import cohort). The script cannot auto-derive their windows, and a
+   wrong stamp on a **paid tax document** would make the EXCLUDE *false-block the
+   member's real next renewal* — worse than the gap it closes. **Decision: leave
+   them NULL** (the script's sanctioned orphan handling). The residual blind spot
+   is narrow and **not reachable by any normal flow**: the auto-draft cron drafts
+   the member's *next* period (2027), never a same-period 2026 duplicate, and a
+   normal renewal's new bill carries its own coverage on a non-overlapping
+   window. Only a **manual same-period re-bill** of a 2026 legacy bill would go
+   unblocked — a rare operator action. The go-forward guard protects every NEW
+   bill. If zero-blind-spot is later required, stamp each bill with that member's
+   actual 2026 membership period (their current cycle's `[periodFrom, periodTo)`)
+   via `--apply --confirm --confirm-prod`, curated by hand for the lapsed /
+   no-cycle members.
 
 ## Deferred — doc / spec back-documentation (before `/speckit.ship`)
 
