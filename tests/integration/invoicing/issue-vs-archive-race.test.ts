@@ -363,4 +363,62 @@ describe('F4 FR-037 — issue-vs-archive race guard (T099)', () => {
     expect(r.value.status).toBe('issued');
     expect(r.value.documentNumber).not.toBeNull();
   }, 60_000);
+
+  it('COMP-1/PDPA (2026-07 audit) — issue on an ERASED (not archived) member → member_not_found, consumes NO sequence (real adapter reads erased_at)', async () => {
+    // Erasure is ORTHOGONAL to archive: `scrubPiiInTx` stamps `erased_at` but
+    // leaves `status`/`archived_at` untouched, so this member is
+    // status='active', archived_at=NULL, erased_at=SET — the exact shape that
+    // slips PAST the `member_archived` gate. The audit gate in
+    // `resolve-invoice-buyer.ts` must fail it closed so a §86/4 is never minted
+    // off an anonymised ('[erased]') buyer identity. Reuses `member_not_found`
+    // (a redacted identity is not a valid buyer). Exercises the REAL adapter —
+    // proving `getForIssue` actually SELECTs `erased_at` in both arms.
+    const invoiceId = randomUUID();
+    const memberId = randomUUID();
+    await runInTenant(tenant.ctx, (tx) =>
+      seedActiveCompanyDraft(tx, { invoiceId, memberId, taxId: '0105536000020' }),
+    );
+    // Stamp erased_at ONLY (no archive) — the post-erasure state the scrub leaves.
+    await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .update(members)
+        .set({ erasedAt: new Date('2026-04-17T09:00:00Z') })
+        .where(and(eq(members.tenantId, tenant.ctx.slug), eq(members.memberId, memberId))),
+    );
+
+    const r = await issueInvoice(makeDeps(tenant.ctx.slug), {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      invoiceId,
+    });
+
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.code).toBe('member_not_found');
+
+    // No §87 number burned — the buyer-resolve gate runs BEFORE allocateNext.
+    const seqRows = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select()
+        .from(tenantDocumentSequences)
+        .where(
+          and(
+            eq(tenantDocumentSequences.tenantId, tenant.ctx.slug),
+            eq(tenantDocumentSequences.documentType, 'invoice'),
+            eq(tenantDocumentSequences.fiscalYear, 2026),
+          ),
+        ),
+    );
+    expect(seqRows).toHaveLength(0);
+
+    // Draft untouched — still a draft, no number.
+    const [after] = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({ status: invoices.status, documentNumber: invoices.documentNumber })
+        .from(invoices)
+        .where(eq(invoices.invoiceId, invoiceId)),
+    );
+    expect(after?.status).toBe('draft');
+    expect(after?.documentNumber).toBeNull();
+  }, 60_000);
 });

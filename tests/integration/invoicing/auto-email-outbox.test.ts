@@ -226,6 +226,7 @@ function makeIssueDeps(tenant: TestTenant): IssueInvoiceDeps {
         memberId,
         isActive: true,
         isArchived: false,
+        isErased: false,
         memberTypeScope: 'company' as const, // S1-P1-16 (snapshot has tax_id → gate passes)
         registrationFeePaid: true,
         registrationDate: '2026-01-01',
@@ -499,6 +500,7 @@ describe('T105 — F4 auto-email outbox + T107 manual resend (live Neon)', () =>
           memberId,
           isActive: true,
           isArchived: false,
+          isErased: false,
           memberTypeScope: 'company' as const,
           registrationFeePaid: true,
           registrationDate: '2026-01-01',

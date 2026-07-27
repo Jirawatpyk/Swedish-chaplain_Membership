@@ -173,6 +173,7 @@ function makeMember(overrides: Partial<MemberIdentityView> = {}): MemberIdentity
     memberId: 'member-1',
     isActive: true,
     isArchived: false,
+    isErased: false,
     memberTypeScope: 'company', // S1-P1-16 default — snapshot has a tax_id so the gate passes
     registrationDate: '2026-01-15',
     registrationFeePaid: true,
@@ -453,6 +454,7 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
           memberId: 'member-1',
           isActive: true,
           isArchived: false,
+          isErased: false,
           memberTypeScope: 'company' as const,
           registrationDate: '2026-01-15',
           registrationFeePaid: true,

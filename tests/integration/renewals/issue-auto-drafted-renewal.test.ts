@@ -1148,4 +1148,56 @@ describe('107-auto-invoice Task 9 — issueAutoDraftedRenewal (live Neon)', () =
     );
     expect(forSibling.length).toBe(0);
   }, 120_000);
+
+  it("(o) ⛔ cross-tenant (spec §10 #17) — issuing a PEER tenant's auto-draft under THIS tenant's ctx is refused, no §86/4 minted", async () => {
+    // Principle I two-layer tenant isolation on the §86/4-MINTING path. RLS +
+    // the explicit tenant filter in `findMembershipInvoiceInTx` must scope the
+    // read to THIS tenant, so a peer tenant's real auto_renewal draft is
+    // invisible → `draft_not_found`, and nothing is minted in the peer. The
+    // draft/enrol paths carry this coverage (dark-ship §C, bulk-enrol (g)); the
+    // issue/discard tax-mint path did not until now.
+    const peer = await createTestTenant('test-chamber');
+    try {
+      // Seed the SAME planId string under the peer so the shared seed helpers'
+      // (tenant, plan_id, plan_year) FK resolves against the PEER's own plan row.
+      await runInTenant(peer.ctx, (tx) =>
+        seedF8MembershipPlan(tx, {
+          tenantSlug: peer.ctx.slug,
+          planId,
+          planYear: PLAN_YEAR,
+          planName: { en: 'Peer Plan' },
+          benefitMatrix: DEFAULT_TEST_BENEFIT_MATRIX,
+          createdBy: user.userId,
+        }),
+      );
+      // The F4 create-draft half reads tenant invoice settings (else
+      // `settings_missing`) — the peer needs its own fiscal config row.
+      await seedTenantFiscal({
+        tenant: peer,
+        invoiceNumberPrefix: 'PR',
+        receiptNumberPrefix: 'PC',
+      });
+      const peerRow = await seedQueueRow({ t: peer });
+
+      // THIS tenant's deps + ctx, the PEER's invoiceId — the isolation probe.
+      const result = await issueAutoDraftedRenewal(depsFor(tenant), {
+        tenantId: tenant.ctx.slug,
+        invoiceId: peerRow.invoiceId,
+        actorUserId: user.userId,
+        sendEmail: false,
+        requestId: null,
+      });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.kind).toBe('draft_not_found');
+
+      // The peer's draft is untouched — still a draft, no §86/4 number.
+      const peerInv = await invoiceRow(peer, peerRow.invoiceId);
+      expect(peerInv?.status).toBe('draft');
+      expect(peerInv?.documentNumber).toBeNull();
+    } finally {
+      await peer.cleanup().catch(() => {});
+    }
+  }, 120_000);
 });

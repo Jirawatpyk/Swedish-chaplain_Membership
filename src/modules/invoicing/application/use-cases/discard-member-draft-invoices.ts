@@ -17,9 +17,11 @@
  *   - a `draft` carries no §87 sequence number and no statutory retention duty.
  *     It is a pending billing INSTRUCTION for a data subject who has asked to be
  *     forgotten — Art. 5(1)(c) data-minimisation and Art. 17 apply cleanly, so
- *     it goes. It is also, post-erasure, an un-issuable work item: the branch's
- *     `erased_at` gates refuse to issue it, so left alone it becomes a
- *     permanently stuck red row in the treasurer's review queue.
+ *     it goes. It is also, post-erasure, an un-issuable work item: the issue-time
+ *     buyer resolver (`resolve-invoice-buyer.ts`) fails closed on the member's
+ *     `erased_at` (2026-07 audit — it previously gated only `archived_at`, which
+ *     erasure leaves untouched), so left alone the draft becomes a permanently
+ *     stuck red row in the treasurer's review queue.
  *   - an `issued` document (and every status after it) is a legally-final Thai
  *     tax record retained under the RD §87/3 legal-obligation carve-out —
  *     GDPR Art. 17(3)(b). This use-case NEVER deletes, voids, or alters one.

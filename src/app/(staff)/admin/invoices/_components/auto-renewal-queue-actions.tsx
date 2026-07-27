@@ -83,6 +83,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { InlineAlert, InlineAlertDescription } from '@/components/ui/inline-alert';
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
@@ -94,6 +95,25 @@ import {
 } from './issue-auto-draft-error-routing';
 
 type ActiveAction = 'send' | 'silent' | 'discard' | null;
+
+/**
+ * The row's queue-prediction state that warrants a CAUTION at the Issue
+ * commit point (2026-07 UX audit). These are the states where an Issue would
+ * SUCCEED but might mint a §86/4 at a wrong/unverified amount — as opposed to
+ * a `refusalReason` (plan-year drift / duplicate bill / terminated / erased),
+ * which the server guards REFUSE outright, so no caution is needed for those.
+ *   - `unresolved` — whole-row enrichment failed; every prediction is suspect.
+ *   - `priceUnverifiable` — the price could not be confirmed vs the catalogue.
+ *   - `priceChanged` — the plan price changed after the draft was created.
+ * `null` = a clean row, no caution. The Queue column already badges these
+ * (AutoRenewalQueueBadges); this repeats the highest-priority one at the
+ * irreversible commit point, where the badge is 3 columns away under scroll.
+ */
+export type IssueCautionKind =
+  | 'unresolved'
+  | 'priceUnverifiable'
+  | 'priceChanged'
+  | null;
 
 /**
  * 107-auto-invoice Task 14 review (MINOR) — a 429 from either route must
@@ -128,12 +148,18 @@ export interface AutoRenewalQueueActionsProps {
   /** Only `'draft'` rows are actionable — every other status renders
    * nothing (mirrors `InvoiceMoreMenu`'s `visibleCount === 0 → null`). */
   readonly status: string;
+  /** The highest-priority queue-prediction caution for this row, or `null`
+   * for a clean row. Surfaced inside the Issue confirmation dialog so the
+   * treasurer sees it at the irreversible §87-minting commit point, not only
+   * in the (scroll-distant) Queue column. Does NOT gate the action. */
+  readonly issueCaution?: IssueCautionKind;
 }
 
 export function AutoRenewalQueueActions({
   invoiceId,
   memberName,
   status,
+  issueCaution = null,
 }: AutoRenewalQueueActionsProps) {
   const t = useTranslations('admin.invoices.autoRenewalQueue.actions');
   const tQueue = useTranslations('admin.invoices.list.queue');
@@ -280,6 +306,19 @@ export function AutoRenewalQueueActions({
     router.refresh();
   }
 
+  // 2026-07 UX audit — a warning shown INSIDE the Issue dialog for a row the
+  // Queue column flagged (unverified/changed price, or unresolved enrichment),
+  // so the irreversible §87 mint carries the caution at the commit point. Not
+  // rendered for Discard (discarding a flagged row is exactly the safe action).
+  const cautionAlert = issueCaution && (
+    <InlineAlert tone="warning" data-testid="queue-row-issue-caution">
+      <AlertTriangleIcon className="size-4" aria-hidden="true" />
+      <InlineAlertDescription>
+        {t(`issueCaution.${issueCaution}`)}
+      </InlineAlertDescription>
+    </InlineAlert>
+  );
+
   const errorAlert = error && (
     <Alert
       ref={errorRef}
@@ -379,6 +418,7 @@ export function AutoRenewalQueueActions({
         onConfirm={() => handleIssue(active === 'send')}
         finalFocus={finalFocus}
       >
+        {cautionAlert}
         {errorAlert}
       </ConfirmationDialog>
 

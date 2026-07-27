@@ -62,6 +62,7 @@ function makeMember(overrides: Partial<MemberIdentityView> = {}): MemberIdentity
     memberId: MEMBER_ID,
     isActive: true,
     isArchived: false,
+    isErased: false,
     memberTypeScope: 'company',
     registrationDate: '2024-06-01',
     registrationFeePaid: true,

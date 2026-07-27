@@ -107,6 +107,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
     renewalsMetrics.pruneAutoDraftsRunCompleted(tenantId, 'success');
     renewalsMetrics.pruneAutoDraftsPruned(tenantId, result.value.pruned);
+    // Per-row failures within a successful pass are otherwise invisible —
+    // the run-completed(success) counter reports "ran" regardless. No-op at 0.
+    renewalsMetrics.pruneAutoDraftsErrors(tenantId, result.value.errors);
     return NextResponse.json(body);
   } catch (e) {
     logger.error(

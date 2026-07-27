@@ -23,6 +23,7 @@ import {
   type DiscardAutoDraftedRenewalError,
 } from '@/modules/renewals';
 import { logger } from '@/lib/logger';
+import { renewalsMetrics } from '@/lib/metrics';
 import { rateLimitedJson } from '@/lib/rate-limit-helpers';
 import { rateLimiter } from '@/lib/auth-deps';
 
@@ -85,6 +86,9 @@ export async function POST(
       { status: STATUS_BY_KIND[result.error.kind] },
     );
   }
+
+  // Observability (107 follow-up) — a treasurer discarded one auto-draft.
+  renewalsMetrics.autoDraftDiscarded(tenantCtx.slug, 'manual');
 
   return NextResponse.json(
     {

@@ -11,6 +11,14 @@ export interface MemberIdentityView {
   readonly memberId: string;
   readonly isActive: boolean;
   readonly isArchived: boolean;
+  /**
+   * COMP-1 / PDPA Art.17 — the member's row carries a non-null `erased_at`.
+   * Erasure is ORTHOGONAL to archive (the scrub leaves `status`/`archived_at`
+   * untouched), so `isArchived` does NOT imply this. The issue-time buyer
+   * resolver (`resolveInvoiceBuyerForIssue`) fails closed on it: a §86/4 must
+   * never be minted off an anonymised (`[erased]`) buyer identity.
+   */
+  readonly isErased: boolean;
   readonly snapshot: MemberIdentitySnapshot;
   /**
    * The member's plan `memberTypeScope` (S1-P1-16): `'company'` / `'individual'`

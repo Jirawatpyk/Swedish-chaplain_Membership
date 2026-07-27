@@ -2713,24 +2713,29 @@ export const renewalsMetrics = {
   },
 
   /**
-   * `renewals_prune_auto_drafts_runs_total{tenant_id, outcome}` — 107-
+   * `renewals_prune_auto_drafts_runs_total{tenant, outcome}` — 107-
    * auto-invoice Task 11. Run-count counter, one per cron pass, `outcome
    * ∈ {success, failure}`. Pairs with `pruneAutoDraftsPruned` (row-count
    * counter). Same split rationale as the `prune_consumed_tokens` pair —
    * "did the cron run" vs "how many rows did it find to prune" are
    * independent PromQL signals.
+   *
+   * Label key is `tenant` (not `tenant_id`) — unified across the whole 107
+   * auto-invoice metric family (the Task-16 auto-draft counters + all three
+   * auto-invoice gauges already use `tenant`) so a single PromQL `by (tenant)`
+   * aggregates the entire feature. (observability audit, 2026-07.)
    */
   pruneAutoDraftsRunCompleted(tenantId: string, outcome: 'success' | 'failure'): void {
     safeMetric(() => {
       counter(
         'renewals_prune_auto_drafts_runs_total',
         'F8 prune-auto-drafts cron pass result (1 per invocation)',
-      ).add(1, { tenant_id: tenantId, outcome });
+      ).add(1, { tenant: tenantId, outcome });
     });
   },
 
   /**
-   * `renewals_prune_auto_drafts_pruned_total{tenant_id}` — 107-auto-
+   * `renewals_prune_auto_drafts_pruned_total{tenant}` — 107-auto-
    * invoice Task 11. Row-count counter: auto-drafted invoices actually
    * discarded (a `not_draft`/`not_found` skip does NOT increment this).
    * Success-only emission, same convention as `pruneConsumedTokensRowsPruned`.
@@ -2740,13 +2745,33 @@ export const renewalsMetrics = {
       counter(
         'renewals_prune_auto_drafts_pruned_total',
         'F8 prune-auto-drafts cron — stale auto-renewal drafts actually discarded',
-      ).add(rowCount, { tenant_id: tenantId });
+      ).add(rowCount, { tenant: tenantId });
     });
   },
 
   /**
-   * `renewals_reconcile_issued_orphans_runs_total{tenant_id, outcome}` —
+   * `renewals_prune_auto_drafts_errors_total{tenant}` — 107-auto-invoice
+   * observability follow-up. Per-row failures inside a prune pass (the
+   * use-case's own `errors` aggregate). Emitted on the SUCCESS path with the
+   * pass's error count so a partially-failed pass is visible: without it
+   * `pruneAutoDraftsRunCompleted(success)` reports "the cron ran" while
+   * individual rows silently failed to prune. Sustained non-zero here means
+   * stale auto-drafts are accumulating despite the cron running.
+   */
+  pruneAutoDraftsErrors(tenantId: string, rowCount: number): void {
+    if (rowCount <= 0) return;
+    safeMetric(() => {
+      counter(
+        'renewals_prune_auto_drafts_errors_total',
+        'F8 prune-auto-drafts cron — per-row prune failures within an otherwise-successful pass',
+      ).add(rowCount, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * `renewals_reconcile_issued_orphans_runs_total{tenant, outcome}` —
    * 107-auto-invoice Task 11. Run-count counter, one per cron pass.
+   * Label key `tenant` (unified 107 family — see `pruneAutoDraftsRunCompleted`).
    */
   reconcileIssuedOrphansRunCompleted(
     tenantId: string,
@@ -2756,12 +2781,12 @@ export const renewalsMetrics = {
       counter(
         'renewals_reconcile_issued_orphans_runs_total',
         'F8 reconcile-issued-orphans cron pass result (1 per invocation)',
-      ).add(1, { tenant_id: tenantId, outcome });
+      ).add(1, { tenant: tenantId, outcome });
     });
   },
 
   /**
-   * `renewals_reconcile_issued_orphans_relinked_total{tenant_id}` — 107-
+   * `renewals_reconcile_issued_orphans_relinked_total{tenant}` — 107-
    * auto-invoice Task 11. Row-count counter: issued invoices whose
    * `linked_invoice_id` was actually repaired
    * (`F8.AUTO_ISSUE.LINK_FAILED` backstop). ANY non-zero rate is a signal
@@ -2773,7 +2798,26 @@ export const renewalsMetrics = {
       counter(
         'renewals_reconcile_issued_orphans_relinked_total',
         'F8 reconcile-issued-orphans cron — issued auto-renewal invoices whose cycle link was repaired',
-      ).add(rowCount, { tenant_id: tenantId });
+      ).add(rowCount, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * `renewals_reconcile_issued_orphans_errors_total{tenant}` — 107-auto-
+   * invoice observability follow-up. Per-row failures inside a reconcile
+   * pass (the use-case's own `errors` aggregate), emitted on the SUCCESS
+   * path. Same rationale as `pruneAutoDraftsErrors`: a non-zero here means
+   * an issued auto-renewal invoice's cycle link could NOT be repaired even
+   * by the backstop cron — the member's cycle is still orphaned and needs
+   * manual attention.
+   */
+  reconcileIssuedOrphansErrors(tenantId: string, rowCount: number): void {
+    if (rowCount <= 0) return;
+    safeMetric(() => {
+      counter(
+        'renewals_reconcile_issued_orphans_errors_total',
+        'F8 reconcile-issued-orphans cron — per-row relink failures within an otherwise-successful pass',
+      ).add(rowCount, { tenant: tenantId });
     });
   },
 
@@ -3615,6 +3659,82 @@ export const renewalsMetrics = {
         'renewals_auto_draft_errors_total',
         'Auto-draft cron per-cycle failures (typed F4 draft_failed + thrown) (107-auto-invoice)',
       ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * 107-auto-invoice observability follow-up —
+   * `renewals_auto_draft_issued_total{tenant}`.
+   *
+   * One increment each time a treasurer's Issue action mints a §86/4 from an
+   * auto-drafted renewal (`issueAutoDraftedRenewal` returns ok). This is the
+   * throughput counter for the human review queue: pair with
+   * `autoDraftCreated` to see the drafted→issued conversion, and with
+   * `autoDraftDiscarded` to see the drafted→discarded rate. A DRAFT costs
+   * nothing; THIS event is where a tax document is actually numbered.
+   *
+   * Cardinality: one small-cardinality label (`tenant`).
+   */
+  autoDraftIssued(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'renewals_auto_draft_issued_total',
+        'Auto-drafted renewals a treasurer issued (§86/4 minted) (107-auto-invoice)',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * 107-auto-invoice observability follow-up —
+   * `renewals_auto_draft_issue_failed_total{tenant, error_kind}`.
+   *
+   * One increment per REFUSED / failed Issue attempt, labelled by the typed
+   * `IssueAutoDraftError.kind` (bounded enum: invalid_input / draft_not_found
+   * / cycle_not_found / invalid_draft / member_terminated / member_erased /
+   * duplicate_live_bill / issue_failed). The inner F4 `errorCode` of
+   * `issue_failed` is deliberately NOT a label (unbounded) — correlate via
+   * the `POST …/issue-auto-drafted failed` structured log for that detail.
+   *
+   * A duplicate_live_bill / plan-drift refusal here is a NORMAL guard firing;
+   * a rising `issue_failed` is the alert signal (the F4 mint itself broke).
+   *
+   * Cardinality: small tenant count × ~8 bounded kinds.
+   */
+  autoDraftIssueFailed(tenantId: string, errorKind: string): void {
+    safeMetric(() => {
+      counter(
+        'renewals_auto_draft_issue_failed_total',
+        'Auto-drafted-renewal Issue attempts that were refused or failed, by error kind (107-auto-invoice)',
+      ).add(1, { tenant: tenantId, error_kind: errorKind });
+    });
+  },
+
+  /**
+   * 107-auto-invoice observability follow-up —
+   * `renewals_auto_draft_discarded_total{tenant, kind}`.
+   *
+   * Auto-drafted renewals that were discarded rather than issued.
+   * `kind ∈ {manual, superseded_on_issue}`:
+   *   - `manual` — a treasurer clicked Discard (one row).
+   *   - `superseded_on_issue` — siblings swept by `discardSupersededDrafts`
+   *     when a DIFFERENT draft for the same (member, plan_year) was issued
+   *     (`count` = how many were swept in that one Issue).
+   * A high manual rate means the cron is drafting things the treasurer does
+   * not want; a high superseded rate means the cron is double-drafting.
+   *
+   * Cardinality: small tenant count × 2 bounded kinds.
+   */
+  autoDraftDiscarded(
+    tenantId: string,
+    kind: 'manual' | 'superseded_on_issue',
+    count = 1,
+  ): void {
+    if (count <= 0) return;
+    safeMetric(() => {
+      counter(
+        'renewals_auto_draft_discarded_total',
+        'Auto-drafted renewals discarded (manual Discard or superseded-on-issue sweep) (107-auto-invoice)',
+      ).add(count, { tenant: tenantId, kind });
     });
   },
 

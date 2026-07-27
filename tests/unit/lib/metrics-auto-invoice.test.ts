@@ -523,4 +523,100 @@ describe('107-auto-invoice Task 16 — auto-invoice metrics', () => {
       });
     });
   });
+
+  // -----------------------------------------------------------------------
+  // Observability follow-up (2026-07 audit) — queue-action counters +
+  // per-row cron error counters + the 107-family `tenant` label UNIFY.
+  // -----------------------------------------------------------------------
+  //
+  // The load-bearing assertion of this block is the LABEL KEY: the Task-11
+  // prune/reconcile counters historically emitted `tenant_id` while the rest
+  // of the 107 family emitted `tenant`. They were unified to `tenant`; these
+  // tests pin that so a future drift back to `tenant_id` fails here rather
+  // than silently splitting a dashboard's `by (tenant)` aggregation.
+  describe('queue-action + cron-error counters (107 follow-up)', () => {
+    it('autoDraftIssued → `renewals_auto_draft_issued_total{tenant}`, +1/call', () => {
+      renewalsMetrics.autoDraftIssued(TENANT);
+      renewalsMetrics.autoDraftIssued(TENANT);
+      const bucket = counterAddsByName.get('renewals_auto_draft_issued_total')!;
+      expect(bucket).toHaveLength(2);
+      expect(bucket.every((b) => b.value === 1 && b.attrs.tenant === TENANT)).toBe(true);
+    });
+
+    it('autoDraftIssueFailed → `{tenant, error_kind}`, distinct kinds are distinct series', () => {
+      renewalsMetrics.autoDraftIssueFailed(TENANT, 'duplicate_live_bill');
+      renewalsMetrics.autoDraftIssueFailed(TENANT, 'issue_failed');
+      const bucket = counterAddsByName.get('renewals_auto_draft_issue_failed_total')!;
+      expect(bucket[0]).toEqual({ value: 1, attrs: { tenant: TENANT, error_kind: 'duplicate_live_bill' } });
+      expect(bucket[1]!.attrs.error_kind).toBe('issue_failed');
+    });
+
+    it('autoDraftDiscarded manual → `{tenant, kind:"manual"}` value 1', () => {
+      renewalsMetrics.autoDraftDiscarded(TENANT, 'manual');
+      const bucket = counterAddsByName.get('renewals_auto_draft_discarded_total')!;
+      expect(bucket[0]).toEqual({ value: 1, attrs: { tenant: TENANT, kind: 'manual' } });
+    });
+
+    it('autoDraftDiscarded superseded → adds the swept COUNT, and is a no-op at 0', () => {
+      renewalsMetrics.autoDraftDiscarded(TENANT, 'superseded_on_issue', 3);
+      renewalsMetrics.autoDraftDiscarded(TENANT, 'superseded_on_issue', 0);
+      const bucket = counterAddsByName.get('renewals_auto_draft_discarded_total')!;
+      expect(bucket).toHaveLength(1);
+      expect(bucket[0]).toEqual({ value: 3, attrs: { tenant: TENANT, kind: 'superseded_on_issue' } });
+    });
+
+    it('autoDraftIssued swallows a THROWING meter (safeMetric)', () => {
+      meterShouldThrow = true;
+      expect(() => renewalsMetrics.autoDraftIssued(TENANT)).not.toThrow();
+      expect(counterAddsByName.get('renewals_auto_draft_issued_total')).toBeUndefined();
+    });
+
+    // The UNIFY pins — prune/reconcile counters must emit `tenant`, not the
+    // old `tenant_id`, for the whole 107 family to aggregate under one key.
+    it('pruneAutoDraftsRunCompleted → `{tenant, outcome}` (NOT tenant_id)', () => {
+      renewalsMetrics.pruneAutoDraftsRunCompleted(TENANT, 'success');
+      const bucket = counterAddsByName.get('renewals_prune_auto_drafts_runs_total')!;
+      expect(bucket[0]).toEqual({ value: 1, attrs: { tenant: TENANT, outcome: 'success' } });
+      expect('tenant_id' in bucket[0]!.attrs).toBe(false);
+    });
+
+    it('pruneAutoDraftsPruned → `{tenant}` (NOT tenant_id)', () => {
+      renewalsMetrics.pruneAutoDraftsPruned(TENANT, 4);
+      const bucket = counterAddsByName.get('renewals_prune_auto_drafts_pruned_total')!;
+      expect(bucket[0]).toEqual({ value: 4, attrs: { tenant: TENANT } });
+    });
+
+    it('pruneAutoDraftsErrors → `{tenant}`, no-op at 0', () => {
+      renewalsMetrics.pruneAutoDraftsErrors(TENANT, 0);
+      expect(counterAddsByName.get('renewals_prune_auto_drafts_errors_total')).toBeUndefined();
+      renewalsMetrics.pruneAutoDraftsErrors(TENANT, 2);
+      expect(counterAddsByName.get('renewals_prune_auto_drafts_errors_total')![0]).toEqual({
+        value: 2,
+        attrs: { tenant: TENANT },
+      });
+    });
+
+    it('reconcileIssuedOrphansRunCompleted → `{tenant, outcome}` (NOT tenant_id)', () => {
+      renewalsMetrics.reconcileIssuedOrphansRunCompleted(TENANT, 'failure');
+      const bucket = counterAddsByName.get('renewals_reconcile_issued_orphans_runs_total')!;
+      expect(bucket[0]).toEqual({ value: 1, attrs: { tenant: TENANT, outcome: 'failure' } });
+      expect('tenant_id' in bucket[0]!.attrs).toBe(false);
+    });
+
+    it('reconcileIssuedOrphansRelinked → `{tenant}` (NOT tenant_id)', () => {
+      renewalsMetrics.reconcileIssuedOrphansRelinked(TENANT, 1);
+      const bucket = counterAddsByName.get('renewals_reconcile_issued_orphans_relinked_total')!;
+      expect(bucket[0]).toEqual({ value: 1, attrs: { tenant: TENANT } });
+    });
+
+    it('reconcileIssuedOrphansErrors → `{tenant}`, no-op at 0', () => {
+      renewalsMetrics.reconcileIssuedOrphansErrors(TENANT, 0);
+      expect(counterAddsByName.get('renewals_reconcile_issued_orphans_errors_total')).toBeUndefined();
+      renewalsMetrics.reconcileIssuedOrphansErrors(TENANT, 1);
+      expect(counterAddsByName.get('renewals_reconcile_issued_orphans_errors_total')![0]).toEqual({
+        value: 1,
+        attrs: { tenant: TENANT },
+      });
+    });
+  });
 });

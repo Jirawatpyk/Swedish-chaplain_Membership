@@ -51,7 +51,7 @@ export const memberIdentityAdapter: MemberIdentityPort = {
         ? sql`
             SELECT m.member_id, m.company_name, m.tax_id, m.country, m.status,
                    m.address_line1, m.address_line2, m.sub_district, m.city, m.province, m.postal_code,
-                   m.archived_at, m.registration_date, m.registration_fee_paid,
+                   m.archived_at, m.erased_at, m.registration_date, m.registration_fee_paid,
                    m.member_number,
                    m.is_vat_registered, m.is_head_office, m.branch_code,
                    COALESCE(
@@ -72,7 +72,7 @@ export const memberIdentityAdapter: MemberIdentityPort = {
         : sql`
             SELECT m.member_id, m.company_name, m.tax_id, m.country, m.status,
                    m.address_line1, m.address_line2, m.sub_district, m.city, m.province, m.postal_code,
-                   m.archived_at, m.registration_date, m.registration_fee_paid,
+                   m.archived_at, m.erased_at, m.registration_date, m.registration_fee_paid,
                    m.member_number,
                    m.is_vat_registered, m.is_head_office, m.branch_code,
                    COALESCE(
@@ -102,6 +102,11 @@ export const memberIdentityAdapter: MemberIdentityPort = {
       postal_code: string | null;
       status: string;
       archived_at: Date | null;
+      // COMP-1 / PDPA — erasure is ORTHOGONAL to archive (`scrubPiiInTx` stamps
+      // `erased_at` but deliberately leaves `status`/`archived_at` untouched), so
+      // the `isArchived` gate below does NOT catch an erased member. Read it here
+      // so the issue path can fail closed on a redacted buyer identity.
+      erased_at: Date | null;
       registration_date: Date | string;
       registration_fee_paid: boolean;
       member_number: number | null;
@@ -170,6 +175,7 @@ export const memberIdentityAdapter: MemberIdentityPort = {
       memberId,
       isActive: m.status === 'active',
       isArchived: m.archived_at !== null,
+      isErased: m.erased_at !== null,
       memberTypeScope: m.member_type_scope ?? null,
       registrationDate: regDate,
       registrationFeePaid: m.registration_fee_paid,

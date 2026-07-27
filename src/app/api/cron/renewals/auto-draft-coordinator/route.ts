@@ -81,7 +81,7 @@ export const dynamic = 'force-dynamic';
  * Filter: 389, Execution Time: 11.7 ms` — for a query whose answer is
  * almost always 0. With the predicate in `WHERE`, the partial index
  * `invoices_auto_renewal_draft_idx (tenant_id, created_at) WHERE
- * origin='auto_renewal' AND status='draft'` (migration 0264) serves both,
+ * origin='auto_renewal' AND status='draft'` (migration 0279) serves both,
  * and `MIN(created_at)` becomes an index-ordered first-row read.
  *
  * The restructure also removes a whole BUG CLASS. The previous shape needed

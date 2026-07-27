@@ -2088,6 +2088,11 @@
             "title": "Ta bort det här utkastet?",
             "description": "Fakturautkastet för {member} tas bort permanent. Nästa automatiska förnyelsekörning kan skapa ett nytt utkast innan cykeln förfaller."
           },
+          "issueCaution": {
+            "unresolved": "Vi kunde inte läsa in hela raden — pris- och avvikelsekontrollerna kan vara ofullständiga. Kontrollera beloppet innan du utfärdar detta skattedokument.",
+            "priceUnverifiable": "Radens pris kunde inte bekräftas mot plankatalogen. Kontrollera beloppet innan du utfärdar.",
+            "priceChanged": "Planpriset ändrades efter att utkastet skapades. Kontrollera beloppet innan du utfärdar."
+          },
           "toast": {
             "issuedAndSent": "Faktura {number} utfärdad och skickad.",
             "issuedSilently": "Faktura {number} utfärdad.",

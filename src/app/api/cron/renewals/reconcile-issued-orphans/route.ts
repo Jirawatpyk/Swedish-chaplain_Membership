@@ -106,6 +106,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
     renewalsMetrics.reconcileIssuedOrphansRunCompleted(tenantId, 'success');
     renewalsMetrics.reconcileIssuedOrphansRelinked(tenantId, result.value.relinked);
+    // Per-row relink failures within a successful pass — otherwise invisible.
+    // No-op at 0.
+    renewalsMetrics.reconcileIssuedOrphansErrors(tenantId, result.value.errors);
     return NextResponse.json(body);
   } catch (e) {
     logger.error(
