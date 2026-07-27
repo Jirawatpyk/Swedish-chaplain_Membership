@@ -162,3 +162,97 @@ describe('<RenewalsSectionTabs> pipeline-help popover visibility', () => {
     ).toBeInTheDocument();
   });
 });
+
+/**
+ * Item ④ (plan-wide decision) — count badges on Pending review / Tasks /
+ * Tier upgrades tabs, so an admin sees pending work at a glance without
+ * opening each tab. Pipeline is deliberately excluded (default view, not a
+ * work queue).
+ *
+ * `renderTabsWithCount` takes an OPTIONS OBJECT (not three positional args)
+ * and omits absent keys entirely rather than assigning `undefined` — this
+ * repo's `exactOptionalPropertyTypes: true` rejects `{ pendingReviewCount:
+ * undefined }` against a `pendingReviewCount?: number` prop (verified via a
+ * standalone tsc repro before writing these tests), so the "undefined"
+ * case below calls `renderTabsWithCount({})` rather than passing the key
+ * with an explicit `undefined` value.
+ */
+function renderTabsWithCount(
+  counts: {
+    readonly pendingReviewCount?: number;
+    readonly tasksCount?: number;
+    readonly tierUpgradeCount?: number;
+  } = {},
+) {
+  return render(
+    <NextIntlClientProvider locale="en" messages={en}>
+      <RenewalsSectionTabs showPipelineHelp {...counts} />
+    </NextIntlClientProvider>,
+  );
+}
+
+describe('<RenewalsSectionTabs> pending-review count badge (item ④)', () => {
+  it('renders the count badge on the Pending review tab when count > 0', () => {
+    renderTabsWithCount({ pendingReviewCount: 4 });
+    const pendingTab = screen.getByRole('tab', { name: /pending review/i });
+    expect(pendingTab.textContent).toContain('4');
+    expect(screen.getByText(/4 cycles awaiting review/i)).toBeInTheDocument();
+  });
+
+  it('renders NO badge when count is 0 or undefined', () => {
+    renderTabsWithCount({ pendingReviewCount: 0 });
+    expect(screen.queryByText(/awaiting review/i)).not.toBeInTheDocument();
+    renderTabsWithCount({});
+    expect(screen.queryByText(/awaiting review/i)).not.toBeInTheDocument();
+  });
+});
+
+describe('<RenewalsSectionTabs> tasks count badge (item ④ plan-wide decision)', () => {
+  it('renders the count badge on the Tasks tab when count > 0', () => {
+    renderTabsWithCount({ tasksCount: 7 });
+    const tasksTab = screen.getByRole('tab', { name: /tasks/i });
+    expect(tasksTab.textContent).toContain('7');
+    expect(screen.getByText(/7 open tasks/i)).toBeInTheDocument();
+  });
+
+  it('renders NO badge when count is 0 or undefined', () => {
+    renderTabsWithCount({ tasksCount: 0 });
+    expect(screen.queryByText(/open tasks?/i)).not.toBeInTheDocument();
+    renderTabsWithCount({});
+    expect(screen.queryByText(/open tasks?/i)).not.toBeInTheDocument();
+  });
+});
+
+describe('<RenewalsSectionTabs> tier-upgrade count badge (item ④ plan-wide decision)', () => {
+  it('renders the count badge on the Tier upgrades tab when count > 0', () => {
+    renderTabsWithCount({ tierUpgradeCount: 2 });
+    const tierTab = screen.getByRole('tab', { name: /tier upgrades/i });
+    expect(tierTab.textContent).toContain('2');
+    expect(
+      screen.getByText(/2 tier-upgrade suggestions/i),
+    ).toBeInTheDocument();
+  });
+
+  it('renders NO badge when count is 0 or undefined', () => {
+    renderTabsWithCount({ tierUpgradeCount: 0 });
+    expect(
+      screen.queryByText(/tier-upgrade suggestion/i),
+    ).not.toBeInTheDocument();
+    renderTabsWithCount({});
+    expect(
+      screen.queryByText(/tier-upgrade suggestion/i),
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe('<RenewalsSectionTabs> Pipeline tab is never badged', () => {
+  it('Pipeline tab shows no count badge even when the other three counts are set', () => {
+    renderTabsWithCount({
+      pendingReviewCount: 4,
+      tasksCount: 7,
+      tierUpgradeCount: 2,
+    });
+    const pipelineTab = screen.getByRole('tab', { name: /^pipeline$/i });
+    expect(pipelineTab.textContent).toBe('Pipeline');
+  });
+});
