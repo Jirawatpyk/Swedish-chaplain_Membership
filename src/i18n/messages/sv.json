@@ -3304,7 +3304,7 @@
         "aria_label_scroll": "Flikar för förnyelsebrådska, rullningsbara",
         "countSr": "{count, plural, one {# medlem} other {# medlemmar}}",
         "monthLensHint": "Brådskefilter är pausade när ett månadsfilter är aktivt. Rensa månadsfiltret för att använda dem.",
-        "monthLensBadge": "Pausad",
+        "monthLensBadge": "Pausad av månadsfilter",
         "t_90": "T-90",
         "t_60": "T-60",
         "t_30": "T-30",

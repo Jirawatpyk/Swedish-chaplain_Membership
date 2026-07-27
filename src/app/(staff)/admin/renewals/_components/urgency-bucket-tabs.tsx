@@ -205,7 +205,7 @@ export function UrgencyBucketTabs({
         {monthLensActive ? (
           <span
             aria-hidden
-            className="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-foreground"
+            className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-foreground ring-1 ring-inset ring-border"
           >
             <PauseCircle className="h-3 w-3" aria-hidden />
             {t('monthLensBadge')}
