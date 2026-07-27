@@ -68,7 +68,6 @@ import {
 import { fetchPendingReviewCompanyNames } from './_lib/pending-review-enrichment';
 import { ResultCountAnnouncer } from '@/components/renewals/result-count-announcer';
 import { ResultCountLabel } from '@/components/renewals/result-count-label';
-import { MonthFilterChip } from '@/components/renewals/month-filter-chip';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.renewals');
@@ -374,15 +373,7 @@ export default async function RenewalsPipelinePage({
                   lapsedCount={summary.lapsedCount}
                   monthLensActive={monthLensActive}
                 />
-                <div className="flex items-center gap-2">
-                  {monthLensActive && monthKind !== undefined ? (
-                    <MonthFilterChip
-                      monthKind={monthKind}
-                      {...(monthLabel !== undefined ? { monthLabel } : {})}
-                    />
-                  ) : null}
-                  <TierFilterSelect current={tier ?? 'all'} />
-                </div>
+                <TierFilterSelect current={tier ?? 'all'} />
               </div>
               <ResultCountAnnouncer
                 count={rows.length}
