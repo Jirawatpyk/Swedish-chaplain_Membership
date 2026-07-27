@@ -57,6 +57,18 @@ const messages = {
         searchPlaceholder: 'Search',
         searchSrLabel: 'Search members',
         clearFilters: 'Clear',
+        // Active-filter chip keys — required whenever a chip renders (any test
+        // with a non-empty `q`/status/plan/risk). Mirrors the real en.json
+        // values so the component resolves cleanly instead of emitting
+        // MISSING_MESSAGE fallbacks to stderr.
+        activeFilters: 'Active filters',
+        removeFilter: 'Remove {filter}',
+        filterChip: {
+          search: 'Search: {q}',
+          status: 'Status: {value}',
+          plan: 'Plan: {value}',
+          risk: 'Risk: {value}',
+        },
         filters: {
           status: {
             label: 'Status',

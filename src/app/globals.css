@@ -483,6 +483,20 @@ body {
   }
 }
 
+/* Base UI overlays (Popover / Menu / Select / Tooltip / Dialog) use the
+   tw-animate `data-[open]:animate-in` / `data-[closed]:animate-out` keyframes,
+   which carry no motion-safe guard of their own — so the fade/zoom/slide would
+   still play under reduced-motion. Collapse their duration to imperceptible
+   (not `animation: none`) so the exit `animationend` still fires and Base UI
+   unmounts the popup on close. SC 2.3.3 / ux-standards §10.1. */
+@media (prefers-reduced-motion: reduce) {
+  [data-open],
+  [data-closed] {
+    animation-duration: 0.001ms !important;
+    animation-delay: 0ms !important;
+  }
+}
+
 /* --- Skeleton shimmer base + reduced-motion fallback --- */
 .skeleton-shimmer {
   background: linear-gradient(

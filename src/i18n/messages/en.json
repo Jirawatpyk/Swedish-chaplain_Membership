@@ -2163,6 +2163,7 @@
         "searchLabel": "Search invoices",
         "loadMore": "Load more",
         "filteredEmpty": "No invoices match the current filters.",
+        "resultCount": "{count, plural, =0 {No invoices match the filters} one {# invoice matches the filters} other {# invoices match the filters}}",
         "recordPaymentIntentHint": "Choose a bill below and use its Record payment button (Actions column) to record a payment.",
         "filters": {
           "allStatuses": "All statuses",
@@ -2198,6 +2199,13 @@
             "all": "All origins",
             "manual": "Manual",
             "autoRenewal": "Auto-renewal queue"
+          },
+          "more": {
+            "button": "Filters",
+            "ariaOpen": "Filters ({count} active)",
+            "title": "More filters",
+            "removeAria": "Remove filter: {label}",
+            "activeGroup": "Active filters"
           }
         },
         "creditedSuffix": "{count, plural, one {+# CN} other {+# CN}}",

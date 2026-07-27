@@ -2163,6 +2163,7 @@
         "searchLabel": "Sök fakturor",
         "loadMore": "Ladda fler",
         "filteredEmpty": "Inga fakturor matchar filtren.",
+        "resultCount": "{count, plural, =0 {Inga fakturor matchar filtren} one {# faktura matchar filtren} other {# fakturor matchar filtren}}",
         "recordPaymentIntentHint": "Välj en faktura nedan och använd dess knapp 'Registrera betalning' (kolumnen Åtgärder) för att registrera betalning.",
         "filters": {
           "allStatuses": "Alla status",
@@ -2198,6 +2199,13 @@
             "all": "Alla ursprung",
             "manual": "Manuell",
             "autoRenewal": "Kö för automatisk förnyelse"
+          },
+          "more": {
+            "button": "Filter",
+            "ariaOpen": "Filter ({count} aktiva)",
+            "title": "Fler filter",
+            "removeAria": "Ta bort filter: {label}",
+            "activeGroup": "Aktiva filter"
           }
         },
         "creditedSuffix": "{count, plural, one {+# kreditnota} other {+# kreditnotor}}",

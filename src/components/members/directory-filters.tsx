@@ -388,7 +388,10 @@ export function DirectoryFilters({ plans = [], portalInviteCount }: Props) {
                 searchInputRef.current?.focus();
               }}
               aria-label={t('removeFilter', { filter: chip.label })}
-              className="rounded-sm p-0.5 hover:bg-secondary-foreground/10 focus-visible:outline-2 focus-visible:outline-ring"
+              // `-my-1 p-1.5` gives a 24×24 hit target (WCAG 2.5.8 baseline)
+              // around the 12px icon WITHOUT growing the chip's height. Kept in
+              // lock-step with the invoices filter chips (same pattern).
+              className="-my-1 rounded-sm p-1.5 hover:bg-secondary-foreground/10 focus-visible:outline-2 focus-visible:outline-ring"
             >
               <XIcon className="size-3" aria-hidden />
             </button>
