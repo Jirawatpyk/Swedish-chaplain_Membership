@@ -59,13 +59,15 @@ describe('<UrgencyPill>', () => {
     expect(container.querySelector('span')!.className).toMatch(/bg-red-100/);
   });
 
-  it('uses a deeper amber for suspended, distinct from the t-14 countdown', () => {
+  it('uses a solid amber fill for suspended, distinct from the t-14 countdown', () => {
     const suspended = renderPill('suspended');
     const suspendedClass =
       suspended.container.querySelector('span')!.className;
     // The real differentiator is the fill/ring shade (Tailwind rings can't be
-    // dashed). Suspended is amber-200/ring-amber-500; t-14 is amber-100.
-    expect(suspendedClass).toMatch(/bg-amber-200/);
+    // dashed). Suspended is the enterprise-ux-signed-off amber-300 solid fill
+    // (dark amber-800) + ring-amber-500; t-14 is the pale amber-100 tint.
+    expect(suspendedClass).toMatch(/bg-amber-300/);
+    expect(suspendedClass).toMatch(/dark:bg-amber-800/);
     expect(suspendedClass).toMatch(/ring-amber-500/);
     suspended.unmount();
 
@@ -73,7 +75,7 @@ describe('<UrgencyPill>', () => {
     const t14Class = t14.container.querySelector('span')!.className;
     // Guard the collision the review caught: the two amber pills must NOT
     // share a fill class.
-    expect(t14Class).not.toMatch(/bg-amber-200/);
+    expect(t14Class).not.toMatch(/bg-amber-300/);
     t14.unmount();
   });
 

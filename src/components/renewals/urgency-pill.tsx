@@ -27,16 +27,17 @@ export const VARIANT_CLASSES: Record<UrgencyBucket, string> = {
     'bg-orange-100 text-orange-900 ring-orange-300 dark:bg-orange-950 dark:text-orange-200 dark:ring-orange-800',
   't-0':
     'bg-red-100 text-red-900 ring-red-300 dark:bg-red-950 dark:text-red-200 dark:ring-red-800',
-  // PLACEHOLDER colours pending enterprise-ux sign-off at PR review.
-  // suspended = a DEEPER amber than the t-30/t-14 countdown (bg-amber-200 +
-  // amber-500 ring vs their amber-50/100 + amber-300 ring) so it stays
-  // distinguishable from the countdown ramp, while keeping amber's
-  // "attention, recoverable" read that echoes the members-directory amber
-  // 'Suspended' badge (same deriveMembershipAccess axis). (NB: Tailwind rings
-  // compile to box-shadows and cannot be dashed — an earlier `ring-dashed`
-  // here was an inert no-op, so the fill/ring shade carries the distinction.)
+  // suspended = a SOLID amber chip (amber-300 fill / amber-500 ring; dark
+  // amber-800) — a deliberate tint→solid-fill "category jump" away from the pale
+  // amber countdown tints (t-30 amber-50, t-14 amber-100) so it reads as the
+  // loudest chip of the past-deadline group, while keeping amber's "paused,
+  // recoverable" hue in step with the members-directory 'Suspended' badge (same
+  // deriveMembershipAccess axis). Palette signed off by enterprise-ux — contrast
+  // AA both themes (amber-950 on amber-300 ≈10.3:1; amber-100 on amber-800
+  // ≈6.4:1). NB: Tailwind rings compile to box-shadows and cannot be dashed —
+  // the distinction is by hue/shade, never a dashed ring.
   suspended:
-    'bg-amber-200 text-amber-950 ring-amber-500 dark:bg-amber-900 dark:text-amber-100 dark:ring-amber-500',
+    'bg-amber-300 text-amber-950 ring-amber-500 dark:bg-amber-800 dark:text-amber-100 dark:ring-amber-500',
   // terminated = muted gray: membership ended (kept from the old 'lapsed').
   terminated:
     'bg-gray-100 text-gray-700 ring-gray-300 dark:bg-gray-900 dark:text-gray-400 dark:ring-gray-700',
