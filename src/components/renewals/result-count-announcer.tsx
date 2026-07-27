@@ -32,8 +32,8 @@ export interface ResultCountAnnouncerProps {
     | 't-14'
     | 't-7'
     | 't-0'
-    | 'grace'
-    | 'lapsed';
+    | 'suspended'
+    | 'terminated';
   /** When set, announces the month lens instead of the urgency bucket. */
   readonly monthLabel?: string;
   /**

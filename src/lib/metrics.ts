@@ -4361,10 +4361,12 @@ export const renewalsMetrics = {
   /**
    * `renewals.pipeline.lapsed_tab_visit_total{tenant_id}` — § 23.1.1.
    *
-   * Incremented when the admin visits the pipeline page with `urgency=lapsed`
-   * (the Lapsed tab). Emitted from the route handler (page.tsx server
-   * component) where the `urgency` search param is known. Powers the lapsed-
-   * tab engagement panel in the SLO dashboard.
+   * Incremented when the admin visits the pipeline page with the terminal
+   * tab — URL `urgency=terminated` (renamed from `lapsed`; the metric NAME is
+   * retained to avoid SLO-dashboard churn, since it keys on the unchanged
+   * status='lapsed' tab semantics). Emitted from the route handler (page.tsx
+   * server component) where the `urgency` search param is known. Powers the
+   * terminated-tab engagement panel in the SLO dashboard.
    */
   pipelineLapsedTabVisit(tenantId: string): void {
     safeMetric(() => {

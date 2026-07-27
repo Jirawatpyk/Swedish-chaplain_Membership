@@ -205,7 +205,7 @@ describe.skipIf(!RUN_PERF)(
 
       // Measured samples — alternate urgency tabs to exercise filter
       // permutations the dashboard issues during admin browsing.
-      const URGENCY_TABS = ['t-90', 't-30', 't-7', 'lapsed'] as const;
+      const URGENCY_TABS = ['t-90', 't-30', 't-7', 'terminated'] as const;
       const samples: number[] = [];
       for (let i = 0; i < SAMPLE_COUNT; i++) {
         const urgency = URGENCY_TABS[i % URGENCY_TABS.length]!;
@@ -221,8 +221,8 @@ describe.skipIf(!RUN_PERF)(
         // regression (cycles seeded outside the urgency window OR a query-filter
         // mismatch) cannot silently pass. The seed populates all 4 measured tabs:
         // in-window 'upcoming' rows span t-90/t-30/t-7 (offsetDays 5..84), and the
-        // remainder are REAL terminal 'lapsed' rows for the status-filtered lapsed
-        // tab — so every measured tab MUST return ≥1 row.
+        // remainder are REAL terminal 'lapsed'-status rows for the status-filtered
+        // 'terminated' tab — so every measured tab MUST return ≥1 row.
         if (r.ok) expect(r.value.rows.length).toBeGreaterThan(0);
         samples.push(elapsed);
       }

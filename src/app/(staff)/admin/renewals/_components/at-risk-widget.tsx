@@ -309,10 +309,10 @@ export function AtRiskWidget({ actorRole }: AtRiskWidgetProps) {
           ) : !data || data.items.length === 0 ? (
             // Phase 6 review S8 — illustration + secondary CTA per
             // FR-046a + ux-standards § 5 empty-state pattern.
-            // UX R5 / S2: empty-state CTA points at the lapsed urgency
-            // tab on this same page rather than away to /admin/members
-            // — admins working the at-risk widget care about lapsed
-            // recovery next, not the full membership list.
+            // UX R5 / S2: empty-state CTA points at the 'terminated' urgency
+            // tab (renamed from 'lapsed') on this same page rather than away to
+            // /admin/members — admins working the at-risk widget care about
+            // terminated-membership recovery next, not the full membership list.
             <div className="flex flex-col items-center gap-3 py-6 text-center">
               <ShieldCheck
                 className="h-8 w-8 text-success"
@@ -322,7 +322,7 @@ export function AtRiskWidget({ actorRole }: AtRiskWidgetProps) {
                 {t('emptyState')}
               </p>
               <Link
-                href="/admin/renewals?urgency=lapsed"
+                href="/admin/renewals?urgency=terminated"
                 className="text-sm text-primary underline-offset-4 hover:underline"
               >
                 {t('actions.reviewLapsed')}

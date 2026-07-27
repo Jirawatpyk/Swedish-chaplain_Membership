@@ -159,18 +159,18 @@ export function RenewalsSectionTabs({
             <dl className="mt-2 space-y-1.5">
               <div>
                 <dt className="font-medium text-foreground">
-                  {t('pipelineHelp.graceTerm')}
+                  {t('pipelineHelp.suspendedTerm')}
                 </dt>
                 <dd className="text-muted-foreground">
-                  {t('pipelineHelp.graceDef')}
+                  {t('pipelineHelp.suspendedDef')}
                 </dd>
               </div>
               <div>
                 <dt className="font-medium text-foreground">
-                  {t('pipelineHelp.lapsedTerm')}
+                  {t('pipelineHelp.terminatedTerm')}
                 </dt>
                 <dd className="text-muted-foreground">
-                  {t('pipelineHelp.lapsedDef')}
+                  {t('pipelineHelp.terminatedDef')}
                 </dd>
               </div>
             </dl>

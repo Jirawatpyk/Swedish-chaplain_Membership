@@ -28,8 +28,8 @@ describe('<UrgencyPill>', () => {
       ['t-14', 'Renews in 14d'],
       ['t-7', 'Renews in 7d'],
       ['t-0', 'Renews today'],
-      ['grace', 'Grace period'],
-      ['lapsed', 'Lapsed'],
+      ['suspended', 'Suspended'],
+      ['terminated', 'Terminated'],
     ];
     for (const [urgency, label] of urgencies) {
       const { unmount } = renderPill(urgency);
@@ -42,8 +42,8 @@ describe('<UrgencyPill>', () => {
   // MUST read as a renewal countdown, never a payment-due demand — the
   // pipeline pairs them with an empty invoice cell, and "Due in Xd" +
   // blank invoice read to staff as "payment owed / unpaid". Only these
-  // pre-expiry buckets are reworded; `grace` (post-expiry) + `lapsed`
-  // (terminal) are genuine overdue/terminal states and stay unchanged.
+  // pre-expiry buckets are reworded; `suspended` (benefits paused) +
+  // `terminated` (membership ended) are genuine access states and stay as-is.
   it('phrases the pre-expiry buckets as a renewal countdown, not a payment demand', () => {
     for (const urgency of ['t-90', 't-60', 't-30', 't-14', 't-7', 't-0'] as const) {
       const { container, unmount } = renderPill(urgency);
@@ -59,13 +59,15 @@ describe('<UrgencyPill>', () => {
     expect(container.querySelector('span')!.className).toMatch(/bg-red-100/);
   });
 
-  it('uses dashed-border red for grace', () => {
-    const { container } = renderPill('grace');
-    expect(container.querySelector('span')!.className).toMatch(/ring-dashed/);
+  it('uses dashed-border amber for suspended (benefits paused, recoverable)', () => {
+    const { container } = renderPill('suspended');
+    const className = container.querySelector('span')!.className;
+    expect(className).toMatch(/ring-dashed/);
+    expect(className).toMatch(/bg-amber-100/);
   });
 
-  it('uses gray for lapsed (terminal)', () => {
-    const { container } = renderPill('lapsed');
+  it('uses gray for terminated (membership ended)', () => {
+    const { container } = renderPill('terminated');
     expect(container.querySelector('span')!.className).toMatch(/bg-gray-100/);
   });
 

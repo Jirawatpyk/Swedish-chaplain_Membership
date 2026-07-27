@@ -3229,11 +3229,11 @@
       "pipelineHelp": {
         "ariaLabel": "About the renewal pipeline",
         "title": "Renewal pipeline",
-        "body": "Every member's current renewal cycle, grouped by urgency — from T-90 (due in 90 days) down to T-0 (due today), then Grace and Lapsed. Filter by tier or month to narrow the list.",
-        "graceTerm": "Grace",
-        "graceDef": "Past due but still inside the grace period — benefits are paused, but the member can pay to stay on without losing their membership.",
-        "lapsedTerm": "Lapsed",
-        "lapsedDef": "The grace period has run out — the membership has ended and needs admin reactivation."
+        "body": "Every member's current renewal cycle, grouped by urgency — from T-90 (due in 90 days) down to T-0 (due today), then Suspended and Terminated. Filter by tier or month to narrow the list.",
+        "suspendedTerm": "Suspended",
+        "suspendedDef": "Past due — benefits are paused, but the member can still pay to restore them without losing their membership.",
+        "terminatedTerm": "Terminated",
+        "terminatedDef": "The membership has ended (lapsed) and needs admin reactivation."
       },
       "subtitle": "Active members by renewal date and tier.",
       "tabs": {
@@ -3293,8 +3293,8 @@
         "t_14": "Renews in 14d",
         "t_7": "Renews in 7d",
         "t_0": "Renews today",
-        "grace": "Grace period",
-        "lapsed": "Lapsed"
+        "suspended": "Suspended",
+        "terminated": "Terminated"
       },
       "urgencyBuckets": {
         "aria_label": "Filter by renewal urgency",
@@ -3306,8 +3306,8 @@
         "t_14": "T-14",
         "t_7": "T-7",
         "t_0": "T-0",
-        "grace": "Grace",
-        "lapsed": "Lapsed"
+        "suspended": "Suspended",
+        "terminated": "Terminated"
       },
       "byMonth": {
         "title": "Renewals by month",
@@ -3402,8 +3402,8 @@
       },
       "lapsed": {
         "banner": {
-          "title": "Lapsed members",
-          "description": "These members are past their grace period. Reactivate or archive them as you reconnect."
+          "title": "Terminated members",
+          "description": "These members' memberships have ended. Reactivate or archive them as you reconnect."
         },
         "columns": {
           "reason": "Reason"
@@ -3574,7 +3574,7 @@
           "snoozeAriaLabel": "Snooze {company}",
           "retry": "Retry",
           "viewAllMembers": "View all members",
-          "reviewLapsed": "Review lapsed members"
+          "reviewLapsed": "Review terminated members"
         },
         "scoreBadge": {
           "band": {

@@ -19,11 +19,17 @@ import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { renewalCycles } from '@/modules/renewals/infrastructure/schema-renewal-cycles';
-import { loadPipeline, makeRenewalsDeps } from '@/modules/renewals';
+import {
+  loadPipeline,
+  makeRenewalsDeps,
+  deriveMembershipAccess,
+  type RenewalCycle,
+} from '@/modules/renewals';
 import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
 import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
 
 import {
+  createTestTenant,
   createTwoTestTenants,
   type TestTenant,
 } from '../helpers/test-tenant';
@@ -99,7 +105,10 @@ describe('F8 loadPipeline — integration (T075)', () => {
     const now = Date.now();
     // 5 cycles in tenantA at varying urgencies
     for (let i = 0; i < 5; i += 1) {
-      const days = [85, 50, 25, 5, -10][i]!; // t-90, t-60, t-30, t-7, grace
+      // The -10d cycle is an EXPIRED 'upcoming' → access 'suspended' (was the
+      // old 'grace' bucket; deriveMembershipAccess maps an expired non-terminal
+      // cycle to suspended).
+      const days = [85, 50, 25, 5, -10][i]!; // t-90, t-60, t-30, t-7, suspended
       seedA.push({
         cycleId: randomUUID(),
         memberId: randomUUID(),
@@ -148,9 +157,15 @@ describe('F8 loadPipeline — integration (T075)', () => {
     expect(ours.length).toBeGreaterThan(0);
     for (const row of ours) {
       expect(row.companyName).toContain('Co ');
-      expect(['t-90', 't-60', 't-30', 't-14', 't-7', 't-0', 'grace']).toContain(
-        row.urgency,
-      );
+      expect([
+        't-90',
+        't-60',
+        't-30',
+        't-14',
+        't-7',
+        't-0',
+        'suspended',
+      ]).toContain(row.urgency);
     }
   });
 
@@ -170,9 +185,10 @@ describe('F8 loadPipeline — integration (T075)', () => {
       result.value.summary.byUrgency['t-14'] +
       result.value.summary.byUrgency['t-7'] +
       result.value.summary.byUrgency['t-0'] +
-      result.value.summary.byUrgency.grace;
+      result.value.summary.byUrgency.suspended +
+      result.value.summary.byUrgency.terminated;
     expect(total).toBe(result.value.summary.totalInWindow);
-    // Our 5 seeded rows fall in [t-90, t-60, t-30, t-7, grace]
+    // Our 5 seeded rows fall in [t-90, t-60, t-30, t-7, suspended]
     expect(result.value.summary.totalInWindow).toBeGreaterThanOrEqual(5);
   });
 
@@ -251,4 +267,128 @@ describe('F8 loadPipeline — integration (T075)', () => {
     );
     expect(plainRow?.anchored).toBe(false);
   });
+
+  // Anti-drift SSOT lock. `URGENCY_CASE_SQL` (drizzle-renewal-cycle-repo.ts) is
+  // a hand-written SQL encoding of the domain predicate `deriveMembershipAccess`
+  // (renewal-cycle.ts) — the benefit-access source of truth. The two are NOT
+  // type-linked (SQL string literals), so they can silently drift. This test
+  // seeds one cycle per (status × expiry) the pipeline surfaces and asserts the
+  // SQL-derived urgency bucket lands where deriveMembershipAccess says the
+  // access is: 'suspended' → suspended bucket, 'terminated' → terminated bucket,
+  // 'full' → some t-* countdown bucket. Change one side without the other and
+  // the counts diverge → this fails. A fresh tenant isolates the summary counts.
+  it('urgency buckets agree with deriveMembershipAccess (anti-drift SSOT lock)', async () => {
+    const driftTenant = await createTestTenant('test');
+    try {
+      const now = Date.now();
+      // All offsets are within the 90-day pipeline window so every row lands in
+      // the summary aggregate. The FUTURE awaiting_payment / pending rows are
+      // the crux: access is 'suspended' regardless of a far-off expiry, so they
+      // must NOT read as a t-* countdown.
+      const cases: ReadonlyArray<{
+        status:
+          | 'awaiting_payment'
+          | 'pending_admin_reactivation'
+          | 'upcoming'
+          | 'reminded'
+          | 'lapsed';
+        offsetDays: number;
+      }> = [
+        { status: 'awaiting_payment', offsetDays: 40 }, // future but unpaid → suspended
+        { status: 'pending_admin_reactivation', offsetDays: 40 }, // held → suspended
+        { status: 'upcoming', offsetDays: -10 }, // expired non-terminal → suspended
+        { status: 'reminded', offsetDays: -10 }, // expired non-terminal → suspended
+        { status: 'upcoming', offsetDays: 40 }, // future, not expired → full (t-*)
+        { status: 'lapsed', offsetDays: -5 }, // terminal → terminated
+      ];
+
+      const planId = `f8-drift-${randomUUID().slice(0, 8)}`;
+      await runInTenant(driftTenant.ctx, (tx) =>
+        seedF8MembershipPlan(tx, {
+          tenantSlug: driftTenant.ctx.slug,
+          planId,
+          planName: { en: 'F8 Drift Plan' },
+          benefitMatrix: DEFAULT_TEST_BENEFIT_MATRIX,
+          createdBy: user.userId,
+        }),
+      );
+      for (const c of cases) {
+        const memberId = randomUUID();
+        const expiresAt = new Date(now + c.offsetDays * 86_400_000);
+        await runInTenant(driftTenant.ctx, (tx) =>
+          tx.insert(members).values({
+            tenantId: driftTenant.ctx.slug,
+            memberId,
+            memberNumber: nextSeedMemberNumber(),
+            companyName: `Drift ${c.status}`,
+            country: 'TH',
+            planId,
+            planYear: 2026,
+          }),
+        );
+        await runInTenant(driftTenant.ctx, (tx) =>
+          tx.insert(renewalCycles).values({
+            tenantId: driftTenant.ctx.slug,
+            cycleId: randomUUID(),
+            memberId,
+            status: c.status,
+            periodFrom: new Date(expiresAt.getTime() - 365 * 86_400_000),
+            periodTo: expiresAt,
+            expiresAt,
+            cycleLengthMonths: 12,
+            tierAtCycleStart: 'regular',
+            planIdAtCycleStart: randomUUID(),
+            frozenPlanPriceThb: '50000.00',
+            frozenPlanTermMonths: 12,
+            frozenPlanCurrency: 'THB',
+            // CHECK `pending_at_iff_pending_status`: entered_pending_at must be
+            // set iff status is pending_admin_reactivation, null otherwise.
+            ...(c.status === 'pending_admin_reactivation'
+              ? { enteredPendingAt: new Date() }
+              : {}),
+            // CHECK `closed_at_iff_terminal`: closed_at must be set iff status is
+            // terminal (completed/lapsed/cancelled), null otherwise.
+            ...(c.status === 'lapsed' ? { closedAt: new Date() } : {}),
+          }),
+        );
+      }
+
+      // Expected access per row from the REAL domain predicate — the drift anchor.
+      const nowDate = new Date(now);
+      const expected = cases.map((c) => {
+        const cycleLike = {
+          status: c.status,
+          expiresAt: new Date(now + c.offsetDays * 86_400_000).toISOString(),
+        } as unknown as RenewalCycle;
+        return deriveMembershipAccess(cycleLike, nowDate).access;
+      });
+      const expectSuspended = expected.filter((a) => a === 'suspended').length;
+      const expectTerminated = expected.filter((a) => a === 'terminated').length;
+      const expectFull = expected.filter((a) => a === 'full').length;
+
+      const deps = makeRenewalsDeps(driftTenant.ctx.slug);
+      // Any non-'terminated' urgency activates the whole-window summary.
+      const result = await loadPipeline(deps, {
+        tenantId: driftTenant.ctx.slug,
+        urgency: 't-90',
+        limit: 50,
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const by = result.value.summary.byUrgency;
+      // The two access-state tail buckets must match deriveMembershipAccess.
+      expect(by.suspended).toBe(expectSuspended);
+      expect(by.terminated).toBe(expectTerminated);
+      // Every access='full' row lands in a t-* countdown bucket, never the tail.
+      const tStarSum =
+        by['t-90'] + by['t-60'] + by['t-30'] + by['t-14'] + by['t-7'] + by['t-0'];
+      expect(tStarSum).toBe(expectFull);
+    } finally {
+      await db
+        .delete(renewalCycles)
+        .where(eq(renewalCycles.tenantId, driftTenant.ctx.slug))
+        .catch(() => {});
+      await driftTenant.cleanup().catch(() => {});
+    }
+  }, 120_000);
 });

@@ -80,8 +80,8 @@ const URGENCY_VALUES: ReadonlySet<UrgencyBucket> = new Set([
   't-14',
   't-7',
   't-0',
-  'grace',
-  'lapsed',
+  'suspended',
+  'terminated',
 ]);
 
 const DEFAULT_URGENCY: UrgencyBucket = 't-30';
@@ -201,8 +201,11 @@ export default async function RenewalsPipelinePage({
   }
 
   // W0-09: § 23.1.1 lapsed_tab_visit counter — emitted before the data
-  // fetch so the visit is recorded even when loadPipeline errors.
-  if (urgency === 'lapsed') {
+  // fetch so the visit is recorded even when loadPipeline errors. The URL
+  // bucket is now 'terminated' (renamed from 'lapsed'); the metric name is
+  // retained (it keys on the same status='lapsed' tab semantics) to avoid
+  // dashboard churn — only the user-facing bucket vocabulary changed.
+  if (urgency === 'terminated') {
     renewalsMetrics.pipelineLapsedTabVisit(tenantCtx.slug);
   }
 
@@ -370,7 +373,7 @@ export default async function RenewalsPipelinePage({
                     }
                   : { urgencyKey: urgency })}
               />
-              {urgency === 'lapsed' ? (
+              {urgency === 'terminated' ? (
                 <LapsedTab rows={rows} />
               ) : (
                 <PipelineTable

@@ -495,9 +495,10 @@ function buildNextCursor(
 
 /**
  * Build the SQL CASE expression that maps `(status, expires_at)` to one
- * of 8 urgency buckets. `lapsed` short-circuits on status; everything
- * else is derived from days-until-expiry by direct interval comparison
- * (sargable — uses `expires_at` index instead of EPOCH math per branch).
+ * of 8 urgency buckets. The access-state tail ('terminated'/'suspended')
+ * short-circuits on status (mirroring deriveMembershipAccess); the pre-deadline
+ * `t-*` countdown is derived from days-until-expiry by direct interval
+ * comparison (sargable — uses `expires_at` index instead of EPOCH math).
  *
  * Bucket boundaries (FR-046, half-open windows so each cycle lands in
  * exactly one bucket):
@@ -580,17 +581,34 @@ function monthBoundPredicate(key: string, nowIso: string): SQL {
   )!;
 }
 
+// The post-deadline tail of this CASE is a hand-written SQL encoding of the
+// benefit-access SSOT `deriveMembershipAccess(cycle, now)` (renewal-cycle.ts
+// :399-436). It is checked STATUS-FIRST, exactly as the domain predicate does,
+// so the urgency pill/tabs never contradict the member's REAL access:
+//   status='lapsed'                                   → 'terminated'
+//   status IN (awaiting_payment, pending_admin_react) → 'suspended'
+//   expired non-terminal (upcoming/reminded)          → 'suspended'  (ELSE)
+//   not-yet-expired non-terminal (access = full)      → 't-*' countdown
+// COLUMN PARITY (the anti-drift contract): deriveMembershipAccess reads ONLY
+// `status` + `expiresAt` — the same two columns bound here — so this SQL can
+// mirror it faithfully. A live-Neon reconciliation test seeds a status×expiry
+// matrix and asserts this CASE agrees with deriveMembershipAccess, locking the
+// two against silent drift (the CASE string literals are NOT type-checked).
+// NB: 'completed'/'cancelled' never reach this CASE — the pipeline baseFilters
+// exclude them (status NOT IN ('cancelled','completed')), the terminated tab is
+// eq(status,'lapsed'), and the month lens uses OPEN_CYCLE_STATUSES — so the five
+// statuses above are the entire domain of this expression.
 const URGENCY_CASE_SQL = sql<UrgencyBucket>`
   CASE
-    WHEN ${renewalCycles.status} = 'lapsed' THEN 'lapsed'
+    WHEN ${renewalCycles.status} = 'lapsed' THEN 'terminated'
+    WHEN ${renewalCycles.status} IN ('awaiting_payment','pending_admin_reactivation') THEN 'suspended'
     WHEN ${renewalCycles.expiresAt} > NOW() + INTERVAL '60 days' THEN 't-90'
     WHEN ${renewalCycles.expiresAt} > NOW() + INTERVAL '30 days' THEN 't-60'
     WHEN ${renewalCycles.expiresAt} > NOW() + INTERVAL '14 days' THEN 't-30'
     WHEN ${renewalCycles.expiresAt} > NOW() + INTERVAL '7 days'  THEN 't-14'
     WHEN ${renewalCycles.expiresAt} > NOW() + INTERVAL '1 day'   THEN 't-7'
     WHEN ${renewalCycles.expiresAt} > NOW()                       THEN 't-0'
-    WHEN ${renewalCycles.expiresAt} >= NOW() - INTERVAL '30 days' THEN 'grace'
-    ELSE 'lapsed'
+    ELSE 'suspended'
   END
 `;
 
@@ -2036,7 +2054,12 @@ export function makeDrizzleRenewalCycleRepo(
           // are actively pushed into this window without this filter.
           MEMBER_NOT_ERASED_SQL,
         ];
-        if (opts.urgency === 'lapsed') {
+        if (opts.urgency === 'terminated') {
+          // The 'terminated' urgency bucket ⟺ status='lapsed' within this
+          // pipeline window: 'cancelled'/'completed' are excluded upstream, and
+          // deriveMembershipAccess only returns 'terminated' for status='lapsed'
+          // here — so the row filter stays keyed on the cycle STATUS (the DB
+          // enum is unchanged; only the user-facing bucket label was renamed).
           baseFilters.push(eq(renewalCycles.status, 'lapsed'));
         } else {
           baseFilters.push(
@@ -2101,8 +2124,8 @@ export function makeDrizzleRenewalCycleRepo(
           't-14': 0,
           't-7': 0,
           't-0': 0,
-          grace: 0,
-          lapsed: 0,
+          suspended: 0,
+          terminated: 0,
         };
         let totalInWindow = 0;
         for (const r of summaryRows) {
@@ -2132,7 +2155,7 @@ export function makeDrizzleRenewalCycleRepo(
           ];
         } else {
           pageFilters = baseFilters.slice();
-          if (opts.urgency && opts.urgency !== 'lapsed') {
+          if (opts.urgency && opts.urgency !== 'terminated') {
             pageFilters.push(eq(URGENCY_CASE_SQL, opts.urgency));
           }
         }

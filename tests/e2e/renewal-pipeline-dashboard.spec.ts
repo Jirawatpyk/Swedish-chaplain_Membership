@@ -4,13 +4,13 @@
  * Walks AS1–AS5 from `specs/011-renewal-reminders/spec.md`:
  *   - AS1: pipeline renders with tier badge + urgency pill + last reminder
  *   - AS2: tier filter narrows result + URL updates with `?tier=premium`
- *   - AS3: lapsed members appear in "Lapsed" tab with reason badges
+ *   - AS3: lapsed members appear in the "Terminated" tab with reason badges
  *   - AS4: cross-tenant probe via `?member_id=…` → 404 + audit (server-
  *     side; verified separately by integration test T076. E2E asserts
  *     the page does not leak cross-tenant rows in the visible UI.)
  *   - AS5: render under p95 500ms with seed dataset (smoke; full
  *     5k-member perf benchmark in `pnpm test:perf`)
- *   - axe accessibility scan — 0 violations on default tab + lapsed tab
+ *   - axe accessibility scan — 0 violations on default tab + terminated tab
  *
  * Gate: skips entire suite when `FEATURE_F8_RENEWALS=false` (Phase 3
  * MVP ships dark) or when E2E_ADMIN_EMAIL is missing.
@@ -66,7 +66,7 @@ test.describe('F8 — /admin/renewals pipeline dashboard (US1)', () => {
     ).toBeVisible();
 
     // 8 urgency tabs render (T-90 / T-60 / T-30 / T-14 / T-7 / T-0 /
-    // Grace / Lapsed). Scope to the urgency tablist by its accessible name:
+    // Suspended / Terminated). Scope to the urgency tablist by its name:
     // the page ALSO renders the at-risk-widget's "Filter by risk band"
     // tablist (3 role=tab band buttons), so a bare getByRole('tab') matches
     // 11, not 8 (the original assertion was over-broad — it caught both
@@ -117,7 +117,7 @@ test.describe('F8 — /admin/renewals pipeline dashboard (US1)', () => {
     expect(page.url()).toContain('tier=premium');
   });
 
-  test('AS3: lapsed tab is reachable + shows reason column', async ({
+  test('AS3: terminated tab is reachable + shows reason column', async ({
     page,
   }) => {
     await signInAsAdmin(page);
@@ -132,17 +132,17 @@ test.describe('F8 — /admin/renewals pipeline dashboard (US1)', () => {
       page.getByRole('heading', { name: /renewal pipeline/i }),
     ).toBeVisible({ timeout: 10_000 });
 
-    // Click the "Lapsed" tab (last in the tablist). Using
-    // `waitForURL` instead of `networkidle` because RSC streaming
-    // races the URL push under Turbopack dev.
-    const lapsedTab = page.getByRole('tab', { name: /^lapsed/i });
-    await lapsedTab.click();
-    await page.waitForURL(/[?&]urgency=lapsed\b/, { timeout: 10_000 });
-    expect(page.url()).toContain('urgency=lapsed');
+    // Click the "Terminated" tab (last in the tablist; renamed from
+    // "Lapsed"). Using `waitForURL` instead of `networkidle` because RSC
+    // streaming races the URL push under Turbopack dev.
+    const terminatedTab = page.getByRole('tab', { name: /^terminated/i });
+    await terminatedTab.click();
+    await page.waitForURL(/[?&]urgency=terminated\b/, { timeout: 10_000 });
+    expect(page.url()).toContain('urgency=terminated');
 
-    // Lapsed banner + Reason column header visible (regardless of row count)
+    // Terminated banner + Reason column header visible (regardless of row count)
     await expect(
-      page.getByText(/lapsed members/i).first(),
+      page.getByText(/terminated members/i).first(),
     ).toBeVisible();
     // Reason column header — present even on empty state via TableHead
     // (the empty-state row spans columns so headers always render).
@@ -191,11 +191,11 @@ test.describe('F8 — /admin/renewals pipeline dashboard (US1)', () => {
     expect(results.violations).toEqual([]);
   });
 
-  test('a11y: axe scan returns 0 violations on lapsed tab', async ({
+  test('a11y: axe scan returns 0 violations on terminated tab', async ({
     page,
   }) => {
     await signInAsAdmin(page);
-    await page.goto('/admin/renewals?urgency=lapsed');
+    await page.goto('/admin/renewals?urgency=terminated');
     await page.waitForLoadState('networkidle');
     const results = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa'])

@@ -6,7 +6,8 @@
  * is computed DB-side per FR-046 and passed in.
  *
  * Bucket→colour gradient: slate (low urgency) → amber → orange → red
- * (urgent) → red+dashed-border (grace) → gray (lapsed).
+ * (urgent countdown) → amber+dashed-border (suspended — benefits paused,
+ * still recoverable) → gray (terminated — membership ended).
  */
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
@@ -26,9 +27,15 @@ export const VARIANT_CLASSES: Record<UrgencyBucket, string> = {
     'bg-orange-100 text-orange-900 ring-orange-300 dark:bg-orange-950 dark:text-orange-200 dark:ring-orange-800',
   't-0':
     'bg-red-100 text-red-900 ring-red-300 dark:bg-red-950 dark:text-red-200 dark:ring-red-800',
-  grace:
-    'bg-red-50 text-red-900 ring-red-300 ring-dashed dark:bg-red-950/50 dark:text-red-200',
-  lapsed:
+  // PLACEHOLDER colours pending enterprise-ux sign-off at PR review.
+  // suspended = amber + dashed ring: "benefits paused, still recoverable" —
+  // echoes the members-directory amber 'Suspended' badge (same
+  // deriveMembershipAccess axis); the dashed ring distinguishes it from the
+  // solid-amber t-30/t-14 countdown pills.
+  suspended:
+    'bg-amber-100 text-amber-900 ring-amber-400 ring-dashed dark:bg-amber-950 dark:text-amber-200 dark:ring-amber-700',
+  // terminated = muted gray: membership ended (kept from the old 'lapsed').
+  terminated:
     'bg-gray-100 text-gray-700 ring-gray-300 dark:bg-gray-900 dark:text-gray-400 dark:ring-gray-700',
 };
 
@@ -43,7 +50,17 @@ export function UrgencyPill({ urgency, className }: UrgencyPillProps) {
   // trip JSON parsers in some IDE plugins); we map dashes to friendly
   // tokens at the boundary.
   const i18nKey = urgency.replace('-', '_');
-  const label = t(i18nKey as 't_90' | 't_60' | 't_30' | 't_14' | 't_7' | 't_0' | 'grace' | 'lapsed');
+  const label = t(
+    i18nKey as
+      | 't_90'
+      | 't_60'
+      | 't_30'
+      | 't_14'
+      | 't_7'
+      | 't_0'
+      | 'suspended'
+      | 'terminated',
+  );
   // K12-2 (UX-K-6): no aria-label — the visible text serves as the
   // accessible name for this non-interactive `<span>`. Setting both
   // causes older VoiceOver versions to double-announce; WCAG 1.1 +
