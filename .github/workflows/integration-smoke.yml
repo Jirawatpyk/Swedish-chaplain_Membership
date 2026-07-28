@@ -13,13 +13,19 @@
 #     ignore red — which is precisely how the nightly readiness gate stayed
 #     dead for twelve days without anyone noticing.
 #
-# So: the invariants that must never regress silently (tenant isolation per
-# Constitution Principle I, RBAC defence-in-depth, §87 numbering, void/refund
-# interaction, audit-enum ↔ migration parity) run on every PR in ~3 min. Broad
-# per-module coverage belongs in the nightly, and per-PR ephemeral Neon
-# branches are the prerequisite for anything wider than this.
+# So: only the invariants that must never regress silently, and only the ones
+# that stay cheap in CI. Broad per-module coverage belongs in the nightly, and
+# per-PR ephemeral Neon branches are the prerequisite for anything wider.
 #
-# Measured 2026-07-28 on the dev branch: 7 files / 41 tests / 95 s.
+# SIZED FROM MEASURED CI TIME, NOT LOCAL TIME (2026-07-28). The first version
+# of this file carried seven suites because they ran in 95 s locally; on a
+# runner the same set took 547 s, because GitHub runs in the US and Neon lives
+# in ap-southeast-1 (~200 ms per statement against ~25 ms from Bangkok). Per
+# file, CI vs local: void-invoice 179 s / 22 s · bill-receipt-numbering 170 s /
+# 28 s · broadcasts tenant-isolation 78 s / 10 s · refund-vs-voided 46 s / 6 s ·
+# payments cross-tenant-probe 42 s / 7 s · rbac-defence-in-depth 22 s / 3 s ·
+# audit-parity 0.7 s. The three heaviest moved to the nightly's money job; what
+# remains is ~110 s of tests.
 name: Integration smoke
 
 on:
@@ -83,9 +89,6 @@ jobs:
         run: |
           pnpm test:integration \
             tests/integration/payments/cross-tenant-probe.test.ts \
-            tests/integration/broadcasts/tenant-isolation.test.ts \
             tests/integration/renewals/rbac-defence-in-depth.test.ts \
-            tests/integration/invoicing/bill-receipt-numbering-invariants.integration.test.ts \
-            tests/integration/invoicing/void-invoice.test.ts \
             tests/integration/payments/refund-vs-voided-invoice.test.ts \
             tests/integration/broadcasts/audit-event-type-parity.test.ts

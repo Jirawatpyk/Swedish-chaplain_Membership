@@ -38,8 +38,18 @@ export default defineConfig({
     setupFiles: ['./tests/integration-setup.ts'],
     include: ['tests/integration/**/*.test.ts'],
     exclude: ['node_modules', '.next', 'tests/unit/**', 'tests/e2e/**'],
-    testTimeout: 30_000,
-    hookTimeout: 30_000,
+    // Cross-region latency makes CI a different machine class, not just a
+    // slower one. GitHub's runners sit in the US; Neon sits in
+    // ap-southeast-1. Every statement pays ~200 ms RTT there against ~25 ms
+    // from Bangkok, so a fixture teardown that finishes in 3 s locally can
+    // need 40 s on a runner. Measured 2026-07-28: the same 7-file smoke set
+    // took 95 s locally and 547 s in CI, and
+    // `bill-receipt-numbering-invariants`' afterAll blew the 30 s ceiling
+    // while all four of its tests passed — a green suite reported as a red
+    // file. The ceiling is a runaway-guard, not a budget, so raising it in CI
+    // costs nothing when things are healthy.
+    testTimeout: process.env.CI ? 120_000 : 30_000,
+    hookTimeout: process.env.CI ? 120_000 : 30_000,
     // Integration tests touch a real DB — run sequentially to avoid flakes.
     pool: 'forks',
     poolOptions: {
