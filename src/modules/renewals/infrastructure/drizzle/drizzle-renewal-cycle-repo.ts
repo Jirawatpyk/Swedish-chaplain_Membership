@@ -54,6 +54,7 @@ import {
   type PipelineQueryOpts,
   type PipelineQueryResult,
   type PipelineRow,
+  type PipelineSort,
   type PipelineSummary,
   type RenewalCyclePage,
   type RenewalCycleRepo,
@@ -73,7 +74,8 @@ import {
   OPEN_CYCLE_STATUSES_SQL_LIST,
   type CycleStatus,
 } from '../../domain/value-objects/cycle-status';
-import type { TierBucket } from '../../domain/value-objects/tier-bucket';
+import { TIER_BUCKETS, type TierBucket } from '../../domain/value-objects/tier-bucket';
+import { tierBucketOrdinalCaseSql } from './tier-bucket-ordinal-sql';
 import {
   foldRawMonths,
   bkkYearMonth,
@@ -400,6 +402,16 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 interface CursorPayload {
   readonly expiresAt: string;
   readonly cycleId: string;
+  /**
+   * Task 8 — the row's tier ordinal, carried ONLY for the tier sorts
+   * (`tier_asc`/`tier_desc`) so the keyset comparison can be a lexicographic
+   * `(tier_ord, expires_at, cycle_id)`. Absent for the expiry sorts (whose
+   * key is just `(expires_at, cycle_id)`) and for `list()` /
+   * `listEligibleForDispatch()` cursors — those callers pass a payload
+   * without it, `encodeCursor` omits the field, and they never read it, so
+   * their wire format is byte-unchanged.
+   */
+  readonly tierOrd?: number;
 }
 
 const CURSOR_MAC_BYTES = 16; // 128-bit truncation — tampering detection only
@@ -456,7 +468,15 @@ export function decodeCursor(
     ) {
       return null;
     }
-    return { expiresAt: parsed.expiresAt, cycleId: parsed.cycleId };
+    const base = { expiresAt: parsed.expiresAt, cycleId: parsed.cycleId };
+    // Carry `tierOrd` only when the payload actually had a finite one — a
+    // legacy (pre-Task-8) cursor never encodes it, so the tier-sort keyset
+    // guard in `loadPipelinePage` treats such a cursor as sort-incompatible
+    // and resets to the first page rather than mis-comparing (exactOptional:
+    // never attach an `undefined` field).
+    return typeof parsed.tierOrd === 'number' && Number.isFinite(parsed.tierOrd)
+      ? { ...base, tierOrd: parsed.tierOrd }
+      : base;
   } catch {
     return null;
   }
@@ -487,6 +507,124 @@ function buildNextCursor(
   return encodeCursor({
     expiresAt: lastRow.expiresAt.toISOString(),
     cycleId: lastRow.cycleId,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Task 8 — sort-aware ORDER BY + keyset cursor for `loadPipelinePage`
+// ---------------------------------------------------------------------------
+//
+// The pipeline keyset cursor MUST match the ACTIVE sort in all three places
+// or "Next 50" dups/skips rows: the ORDER BY, the WHERE comparison, and the
+// emitted next-cursor key. These three helpers are the single source of that
+// agreement — change one, change all three.
+
+/**
+ * Raw `CASE tier … END` ordinal expression over `renewal_cycles.tier_at_cycle_start`,
+ * built ONCE from the drift-guarded `tierBucketOrdinalCaseSql` (which mirrors
+ * the Domain `TIER_BUCKETS` tuple). Reused verbatim in the tier ORDER BY and
+ * the tier keyset WHERE so they can never disagree.
+ */
+const PIPELINE_TIER_ORDINAL_SQL = tierBucketOrdinalCaseSql(
+  'renewal_cycles.tier_at_cycle_start',
+);
+
+/**
+ * JS mirror of {@link PIPELINE_TIER_ORDINAL_SQL} — the tier ordinal for a bucket
+ * value, with the SAME high sentinel (tuple length) the SQL CASE uses for an
+ * unknown/NULL bucket. Feeds `buildPipelineNextCursor` so the encoded cursor
+ * ordinal equals what the DB CASE would compute for that row.
+ */
+function pipelineTierOrdinal(bucket: string): number {
+  const i = (TIER_BUCKETS as readonly string[]).indexOf(bucket);
+  return i === -1 ? TIER_BUCKETS.length : i;
+}
+
+/** True for the two sorts whose keyset key includes the tier ordinal. */
+function isTierSort(sort: PipelineSort): boolean {
+  return sort === 'tier_asc' || sort === 'tier_desc';
+}
+
+/** ORDER BY clause for the active sort. Tiebreak is always `(expires_at, cycle_id)`. */
+function pipelineOrderBySql(sort: PipelineSort): SQL {
+  switch (sort) {
+    case 'expires_at_desc':
+      return sql`${renewalCycles.expiresAt} DESC, ${renewalCycles.cycleId} DESC`;
+    case 'tier_asc':
+      return sql`${sql.raw(PIPELINE_TIER_ORDINAL_SQL)} ASC, ${renewalCycles.expiresAt} ASC, ${renewalCycles.cycleId} ASC`;
+    case 'tier_desc':
+      return sql`${sql.raw(PIPELINE_TIER_ORDINAL_SQL)} DESC, ${renewalCycles.expiresAt} ASC, ${renewalCycles.cycleId} ASC`;
+    case 'expires_at_asc':
+    default:
+      return sql`${renewalCycles.expiresAt} ASC, ${renewalCycles.cycleId} ASC`;
+  }
+}
+
+/**
+ * Keyset predicate: "this row sorts STRICTLY AFTER `cursor` under `sort`".
+ * Direction-correct per column (a mixed-direction tier sort has a DESC
+ * primary but an ASC tiebreak), so paginating a non-default sort never
+ * dups/skips. The caller (`loadPipelinePage`) guarantees `cursor.tierOrd`
+ * is present whenever `sort` is a tier sort.
+ */
+function pipelineKeysetWhereSql(sort: PipelineSort, cursor: CursorPayload): SQL {
+  const expiresAtDate = new Date(cursor.expiresAt);
+  // Shared `(expires_at, cycle_id)` ASC tiebreak — used by expires_at_asc AND
+  // by both tier sorts (whose tiebreak the ORDER BY pins ASC).
+  const expiresCycleAsc = or(
+    sql`${renewalCycles.expiresAt} > ${cursor.expiresAt}`,
+    and(
+      eq(renewalCycles.expiresAt, expiresAtDate),
+      sql`${renewalCycles.cycleId} > ${cursor.cycleId}`,
+    ),
+  )!;
+  switch (sort) {
+    case 'expires_at_desc':
+      return or(
+        sql`${renewalCycles.expiresAt} < ${cursor.expiresAt}`,
+        and(
+          eq(renewalCycles.expiresAt, expiresAtDate),
+          sql`${renewalCycles.cycleId} < ${cursor.cycleId}`,
+        ),
+      )!;
+    case 'tier_asc': {
+      const tierOrd = cursor.tierOrd ?? 0;
+      return or(
+        sql`${sql.raw(PIPELINE_TIER_ORDINAL_SQL)} > ${tierOrd}`,
+        and(sql`${sql.raw(PIPELINE_TIER_ORDINAL_SQL)} = ${tierOrd}`, expiresCycleAsc),
+      )!;
+    }
+    case 'tier_desc': {
+      const tierOrd = cursor.tierOrd ?? 0;
+      return or(
+        sql`${sql.raw(PIPELINE_TIER_ORDINAL_SQL)} < ${tierOrd}`,
+        and(sql`${sql.raw(PIPELINE_TIER_ORDINAL_SQL)} = ${tierOrd}`, expiresCycleAsc),
+      )!;
+    }
+    case 'expires_at_asc':
+    default:
+      return expiresCycleAsc;
+  }
+}
+
+/**
+ * Emit the next-cursor for the pipeline, sort-aware: it carries the tier
+ * ordinal (computed to match {@link PIPELINE_TIER_ORDINAL_SQL}) for tier sorts
+ * so the next page's keyset comparison has the full lexicographic key.
+ */
+function buildPipelineNextCursor(
+  pageRows: ReadonlyArray<{ expiresAt: Date; cycleId: string; tierBucket: string }>,
+  hasNextPage: boolean,
+  sort: PipelineSort,
+): string | null {
+  if (!hasNextPage || pageRows.length === 0) return null;
+  const lastRow = pageRows[pageRows.length - 1]!;
+  return encodeCursor({
+    expiresAt: lastRow.expiresAt.toISOString(),
+    cycleId: lastRow.cycleId,
+    ...(isTierSort(sort)
+      ? { tierOrd: pipelineTierOrdinal(lastRow.tierBucket) }
+      : {}),
   });
 }
 
@@ -2153,6 +2291,8 @@ export function makeDrizzleRenewalCycleRepo(
       return runInTenant(tenant, async (tx) => {
         const cursor = decodeCursor(opts.cursor);
         const limit = Math.max(1, Math.min(opts.limit, 200));
+        // Task 8 — additive sort; absent ⇒ the pre-existing `expires_at_asc`.
+        const sort: PipelineSort = opts.sort ?? 'expires_at_asc';
 
         // Window definition: active cycles only EXCEPT lapsed tab which
         // explicitly returns lapsed cycles. The window is "next 90 days"
@@ -2291,16 +2431,18 @@ export function makeDrizzleRenewalCycleRepo(
             pageFilters.push(eq(URGENCY_CASE_SQL, opts.urgency));
           }
         }
-        if (cursor) {
-          pageFilters.push(
-            or(
-              sql`${renewalCycles.expiresAt} > ${cursor.expiresAt}`,
-              and(
-                eq(renewalCycles.expiresAt, new Date(cursor.expiresAt)),
-                sql`${renewalCycles.cycleId} > ${cursor.cycleId}`,
-              ),
-            )!,
-          );
+        // Sort-aware keyset (Task 8). The WHERE comparison, the ORDER BY below,
+        // and the emitted next-cursor all derive from `sort`, so paging "Next
+        // 50" under a non-default sort never dups/skips. A tier sort needs the
+        // cursor's tier ordinal; a legacy/expiry cursor lacks it, so such a
+        // cursor is treated as sort-incompatible and dropped (reset to page 1)
+        // rather than mis-paging — the page layer already deletes the cursor on
+        // a sort change, so a live tier-sort cursor always carries `tierOrd`.
+        const cursorMatchesSort =
+          cursor !== null &&
+          (!isTierSort(sort) || cursor.tierOrd !== undefined);
+        if (cursorMatchesSort) {
+          pageFilters.push(pipelineKeysetWhereSql(sort, cursor));
         }
 
         // Lateral subquery for last reminder
@@ -2387,14 +2529,12 @@ export function makeDrizzleRenewalCycleRepo(
             ),
           )
           .where(and(...pageFilters))
-          .orderBy(
-            sql`${renewalCycles.expiresAt} ASC, ${renewalCycles.cycleId} ASC`,
-          )
+          .orderBy(pipelineOrderBySql(sort))
           .limit(limit + 1);
 
         const hasNextPage = pageRows.length > limit;
         const slicedRows = hasNextPage ? pageRows.slice(0, limit) : pageRows;
-        const nextCursor = buildNextCursor(slicedRows, hasNextPage);
+        const nextCursor = buildPipelineNextCursor(slicedRows, hasNextPage, sort);
 
         const rowsOut: PipelineRow[] = slicedRows.map((r) => ({
           cycleId: asCycleId(r.cycleId),
