@@ -3373,11 +3373,6 @@
           "ascending": "Sorted ascending",
           "descending": "Sorted descending"
         },
-        "density": {
-          "label": "Row density",
-          "comfortable": "Comfortable",
-          "compact": "Compact"
-        },
         "status": {
           "upcoming": "Upcoming",
           "reminded": "Reminded",

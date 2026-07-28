@@ -3373,11 +3373,6 @@
           "ascending": "Sorterat stigande",
           "descending": "Sorterat fallande"
         },
-        "density": {
-          "label": "Radtäthet",
-          "comfortable": "Bekväm",
-          "compact": "Kompakt"
-        },
         "status": {
           "upcoming": "Kommande",
           "reminded": "Påmind",

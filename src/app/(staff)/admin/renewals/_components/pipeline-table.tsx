@@ -47,7 +47,7 @@
  */
 
 import type { ReactNode } from 'react';
-import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
+import { useMemo, useRef, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations, useLocale } from 'next-intl';
@@ -139,10 +139,6 @@ export interface PipelineTableProps {
   readonly resultCount?: React.ReactNode;
 }
 
-/** `localStorage` key for the client row-density preference (Task 8). */
-const DENSITY_STORAGE_KEY = 'renewals.pipeline.density';
-type Density = 'comfortable' | 'compact';
-
 /** `aria-sort` token for a sortable column under the active sort (WCAG 1.3.1). */
 function ariaSortForColumn(
   columnId: 'tier' | 'expires',
@@ -212,42 +208,6 @@ export function PipelineTable({
 }: PipelineTableProps) {
   const t = useTranslations('admin.renewals.table');
 
-  // Task 8 — client row-density preference. Defaults to `comfortable` on the
-  // server + first client render (no localStorage read during render → no
-  // hydration mismatch), then a mount effect syncs the stored choice. Same
-  // post-hydration pattern as the theme/sidebar toggles.
-  const [density, setDensity] = useState<Density>('comfortable');
-  useEffect(() => {
-    try {
-      const stored = window.localStorage.getItem(DENSITY_STORAGE_KEY);
-      if (stored === 'compact' || stored === 'comfortable') setDensity(stored);
-    } catch {
-      /* localStorage unavailable (private mode / SSR) — keep the default */
-    }
-  }, []);
-  const toggleDensity = (): void => {
-    setDensity((prev) => {
-      const next: Density = prev === 'compact' ? 'comfortable' : 'compact';
-      try {
-        window.localStorage.setItem(DENSITY_STORAGE_KEY, next);
-      } catch {
-        /* best-effort persistence */
-      }
-      return next;
-    });
-  };
-  // Fix round 1 I-1 — drive the shared `--table-cell-padding-y` design token
-  // (globals.css, consumed by `TableCell`'s `py-[var(--table-cell-padding-y)]`)
-  // instead of hardcoding `[&_td]:py-*`. The prior hardcoded classes silently
-  // changed the DEFAULT/comfortable row height from the token's 8px baseline
-  // to 12px and desynced this table from every other token-driven admin table
-  // (members, invoices). Comfortable now reproduces the UNCHANGED 8px
-  // baseline; compact narrows it to 6px. Set as a CSS custom property on
-  // `<Table>` (forwarded to the `<table>` element — see `ui/table.tsx`), which
-  // every `<TableCell>` inside inherits via the CSS cascade.
-  const densityStyle = {
-    '--table-cell-padding-y': density === 'compact' ? '0.375rem' : '0.5rem',
-  } as React.CSSProperties;
   // Item ② — outreach state lifted up from the row-level menu so the
   // `OutreachDialog` survives the ⋯ menu closing (same lifted-state
   // pattern as lapsed-tab.tsx + at-risk-widget.tsx). Review fix #5:
@@ -419,31 +379,13 @@ export function PipelineTable({
 
   return (
     // Single wrapping block so the page's pipeline `gap-3` treats the table as
-    // ONE unit — the toolbar row hugs the rows instead of floating 12px above
-    // them. The portaled dialogs at the end contribute no layout.
-    <div>
-      {/* Toolbar row above the table: the sighted result-count caption (left,
-          passed by the page as `resultCount`) + the client row-density toggle
-          (right). `justify-between` keeps the toggle right-aligned even when
-          `resultCount` is absent — the empty `<span />` holds the left slot.
-          WCAG 2.5.3 (Label in Name) — the toggle's accessible name IS the
-          visible mode text; `title` names its purpose, `aria-pressed` exposes
-          the compact state. */}
-      <div className="flex items-center justify-between gap-2">
-        {resultCount ?? <span />}
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-9"
-          aria-pressed={density === 'compact'}
-          title={t('density.label')}
-          onClick={toggleDensity}
-        >
-          {density === 'compact' ? t('density.compact') : t('density.comfortable')}
-        </Button>
-      </div>
-      <Table style={densityStyle} data-density={density}>
+    // ONE unit; the inner `gap-2` gives the result-count caption breathing room
+    // above the rows. The portaled dialogs at the end contribute no layout.
+    <div className="flex flex-col gap-2">
+      {/* Sighted result-count caption (passed by the page as `resultCount`),
+          rendered directly above the rows it describes. */}
+      {resultCount}
+      <Table>
         <TableHeader>
           {table.getHeaderGroups().map((hg) => (
             <TableRow key={hg.id}>
