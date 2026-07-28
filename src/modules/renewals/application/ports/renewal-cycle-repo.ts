@@ -1108,9 +1108,28 @@ export type UrgencyBucket =
   | 'suspended'
   | 'terminated';
 
+/**
+ * Wave 2 Task 8 — server-side pipeline sort key (additive `?sort` param).
+ *
+ * Default `expires_at_asc` (most-urgent-first) preserves the pre-existing
+ * order. Tier sorts order by the Domain `TIER_BUCKETS` ordinal (via the
+ * drift-guarded `tierBucketOrdinalCaseSql`), NOT the enum text. For EVERY
+ * value the keyset-pagination cursor is sort-aware — the emitted cursor key,
+ * the WHERE comparison, and the ORDER BY all match this ordering, so paging
+ * "Next 50" under a non-default sort never dups/skips a row (see
+ * `pipelineOrderBySql` / `pipelineKeysetWhereSql` in the Drizzle adapter).
+ */
+export type PipelineSort =
+  | 'expires_at_asc'
+  | 'expires_at_desc'
+  | 'tier_asc'
+  | 'tier_desc';
+
 export interface PipelineQueryOpts {
   readonly tier?: TierBucket;
   readonly urgency?: UrgencyBucket;
+  /** Additive sort key (Task 8). Absent ⇒ `expires_at_asc` (unchanged order). */
+  readonly sort?: PipelineSort;
   /**
    * Renewals-by-month lens — `'overdue' | 'YYYY-MM' | 'later'` (validated
    * upstream by the use-case). When present the row query is rebuilt from

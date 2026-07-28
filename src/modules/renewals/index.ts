@@ -300,6 +300,7 @@ export type {
   PipelineQueryOpts,
   PipelineQueryResult,
   PipelineRow,
+  PipelineSort,
   PipelineSummary,
   // DV-Wave2 ⑥ — money KPI band roll-up shape. `PipelineMoneyRaw` + the
   // waived port stay INTERNAL (not exported) — the use-case is the only
