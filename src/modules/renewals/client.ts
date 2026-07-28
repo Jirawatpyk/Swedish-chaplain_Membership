@@ -53,6 +53,9 @@ export type {
   PipelineRow,
   PipelineSort,
   UrgencyBucket,
+  // 059-membership-suspension Task 9 — settlement-preview row shape, needed
+  // by the future bulk "Mark paid" confirm dialog client component.
+  SettlementPreviewRow,
 } from './application/ports/renewal-cycle-repo';
 
 // Renewals-by-month view-model types — pure Domain (client-bundle-safe).

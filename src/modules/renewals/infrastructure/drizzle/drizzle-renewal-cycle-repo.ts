@@ -58,6 +58,7 @@ import {
   type PipelineSummary,
   type RenewalCyclePage,
   type RenewalCycleRepo,
+  type SettlementPreviewRow,
   type UrgencyBucket,
 } from '../../application/ports/renewal-cycle-repo';
 import type { MembershipBillCoverageRow } from '../../domain/membership-bill-coverage';
@@ -2061,6 +2062,76 @@ export function makeDrizzleRenewalCycleRepo(
             netOfCreditSatang: BigInt(r.netOfCredit),
           })),
         };
+      });
+    },
+
+    /**
+     * 059-membership-suspension Task 9 — settlement-preview join for the
+     * bulk "Mark paid" confirm dialog. Mirrors `loadPipelinePage`'s
+     * members/invoices LEFT JOIN shape (tenant-scoped predicates on both
+     * cross-module tables — Principle I two-layer isolation), but keyed
+     * by `linked_invoice_id` (the LINKED, issue-time invoice) rather than
+     * `anchor_invoice_id` (the paid-coverage anchor `loadPipelinePage`
+     * reads) — settlement preview is about "what does this cycle still
+     * owe", not "is this period already covered".
+     */
+    async loadSettlementPreview(input: {
+      readonly tenantId: string;
+      readonly cycleIds: ReadonlyArray<string>;
+    }): Promise<ReadonlyArray<SettlementPreviewRow>> {
+      if (input.cycleIds.length === 0) return [];
+      return runInTenant(tenant, async (tx) => {
+        const rows = await tx
+          .select({
+            cycleId: renewalCycles.cycleId,
+            companyName: members.companyName,
+            invoiceId: invoices.invoiceId,
+            invoiceStatus: invoices.status,
+            totalSatang: invoices.totalSatang,
+            creditedTotalSatang: invoices.creditedTotalSatang,
+            currency: invoices.currency,
+          })
+          .from(renewalCycles)
+          .leftJoin(
+            members,
+            and(
+              eq(members.tenantId, renewalCycles.tenantId),
+              eq(members.memberId, renewalCycles.memberId),
+            ),
+          )
+          .leftJoin(
+            invoices,
+            and(
+              // Explicit tenant predicate = application-layer
+              // defence-in-depth atop RLS on this cross-module table
+              // (Principle I two-layer isolation) — matches
+              // `loadPipelinePage`'s anchorInvoice join.
+              eq(invoices.tenantId, renewalCycles.tenantId),
+              eq(invoices.invoiceId, renewalCycles.linkedInvoiceId),
+            ),
+          )
+          .where(inArray(renewalCycles.cycleId, input.cycleIds));
+
+        return rows.map((r): SettlementPreviewRow => {
+          // The ONLY previewable gate: a real linked invoice whose status
+          // is still 'issued' — i.e. a truthful, still-collectible total.
+          // 'draft' has no finalised total; 'paid'/'void'/'credited'/
+          // 'partially_credited' are STALE (settled, reversed, or
+          // superseded) — a stale link must never surface its amount
+          // (money-safety fix; see `SettlementPreviewRow.previewable`).
+          const previewable =
+            r.invoiceId !== null && r.invoiceStatus === 'issued';
+          return {
+            cycleId: asCycleId(r.cycleId),
+            companyName: r.companyName ?? '',
+            invoiceId: previewable ? r.invoiceId : null,
+            amountThbMinor: previewable
+              ? Number((r.totalSatang ?? 0n) - (r.creditedTotalSatang ?? 0n))
+              : null,
+            currency: previewable ? r.currency : null,
+            previewable,
+          };
+        });
       });
     },
 
