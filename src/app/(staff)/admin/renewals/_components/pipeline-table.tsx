@@ -16,8 +16,10 @@
  * blocked server-side at the route handler, not via a client-disabled
  * item); the ⋯ menu keeps "Open" (deep-links to cycle detail) and
  * "Mark contacted" (opens the shared `OutreachDialog`, lifted to this
- * component so it survives the menu closing). Cancel + mark-paid-
- * offline live on the cycle detail page.
+ * component so it survives the menu closing), and — Task 5 (Wave 2) —
+ * now ALSO "Mark paid" (opens the shared `MarkPaidOfflineDialog`,
+ * offered only when `shouldOfferMarkPaid(status)`). Cancel is still
+ * NOT a row action; it lives only on the cycle detail page.
  */
 'use client';
 

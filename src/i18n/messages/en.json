@@ -3244,12 +3244,12 @@
         "pastDue": {
           "label": "Past due",
           "basis": "membership dues past due · this fiscal year · incl. VAT",
-          "ariaLabel": "Past due — view overdue renewals"
+          "ariaLabel": "Past due {amount} — view overdue renewals"
         },
         "collected": {
           "label": "Collected this month",
           "basis": "membership dues · this calendar month · incl. VAT · operational cash, not a period-close total",
-          "ariaLabel": "Collected this month — view paid membership invoices"
+          "ariaLabel": "Collected this month {amount} — view paid membership invoices"
         },
         "collectionRate": {
           "label": "Collection rate",
@@ -3257,8 +3257,7 @@
         },
         "dueSoon": {
           "label": "Due soon",
-          "basis": "membership dues due within {days, plural, one {# day} other {# days}} · not yet overdue · incl. VAT",
-          "ariaLabel": "Due soon — view renewals due in the next 30 days"
+          "basis": "membership dues due within {days, plural, one {# day} other {# days}} · not yet overdue · incl. VAT"
         }
       },
       "tabs": {
@@ -3328,7 +3327,7 @@
         "aria_label": "Filter by renewal urgency",
         "aria_label_scroll": "Renewal urgency tabs, scrollable",
         "countSr": "{count, plural, one {# member} other {# members}}",
-        "monthLensHint": "Urgency filters are paused while a month filter is active. Clear the month filter to use them.",
+        "monthLensHint": "Urgency filters are paused while a month filter is active. Select an urgency tab above to switch, or clear the month filter below.",
         "monthLensBadge": "Paused by month filter",
         "t_90": "T-90",
         "t_60": "T-60",

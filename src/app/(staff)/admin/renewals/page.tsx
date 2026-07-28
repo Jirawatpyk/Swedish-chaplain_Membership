@@ -7,9 +7,10 @@
  *
  * Authz: admin OR manager. Manager is read-only — manager mutations are
  * blocked server-side at the route handlers (403 + `f8_role_violation_blocked`
- * audit), not via client-disabled menu items. The pipeline row menu only
- * exposes Send reminder + Open; Cancel + Mark-paid-offline are not row actions
- * at all (they live on the cycle-detail page).
+ * audit), not via client-disabled menu items. The pipeline row menu exposes
+ * Send reminder + Open + Mark paid offline (Task 5, opens the guarded
+ * `MarkPaidOfflineDialog`); Cancel is still NOT a row action — it lives only
+ * on the cycle-detail page.
  * Kill-switch: when `FEATURE_F8_RENEWALS=false`, the dashboard route
  * returns 404 with audit `renewal_kill_switch_blocked` (FR-052b).
  */
@@ -622,7 +623,17 @@ async function PipelineMoneyBandSection({
     return (
       <section className="flex flex-col gap-3">
         <h2 className="text-base font-semibold">{tMoney('title')}</h2>
-        <LoadErrorCard tone="muted" message={tMoney('loadFailed')} />
+        {/* Fix round 2 final-polish #5 (minors) — the skeleton above reserves
+            the full 4-tile grid's height; this collapsed error card is much
+            shorter, so without a floor the (rare) load-failure path yanks the
+            rest of the pipeline up a CLS-visible amount. `min-h-36`
+            approximates one tile row's real footprint (Card py-4 padding +
+            the 4 skeleton bars ≈ 136px) — not pixel-exact at every
+            breakpoint, but enough to keep the failure path from visibly
+            shrinking the band. */}
+        <div className="min-h-36">
+          <LoadErrorCard tone="muted" message={tMoney('loadFailed')} />
+        </div>
       </section>
     );
   }

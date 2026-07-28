@@ -58,6 +58,18 @@ function PipelineMoneyBandContent({
     </>
   );
 
+  // Fix round 2 final-polish #5 (minors) — deep-linked KPI aria-labels now
+  // fold in the THB figure itself (`formatSatangThb`'s own `'THB'` suffix is
+  // fine here, unlike `moneyHero` above: an aria-label is announced once, not
+  // paired with a second visible currency word), so a screen-reader user
+  // Tab-navigating by link hears the amount, not only the tile's purpose.
+  const pastDueAriaLabel = t('pastDue.ariaLabel', {
+    amount: formatSatangThb(money.overdueSatang, locale),
+  });
+  const collectedAriaLabel = t('collected.ariaLabel', {
+    amount: formatSatangThb(money.collectedThisPeriodSatang, locale),
+  });
+
   const rate = collectionRatePct(money.settledDueToDateSatang, money.overdueSatang);
   const rateHero = rate === null ? t('rateNone') : `${rate.toFixed(1)}%`;
 
@@ -85,7 +97,7 @@ function PipelineMoneyBandContent({
           value={moneyHero(money.overdueSatang)}
           caption={t('pastDue.basis')}
           href="/admin/renewals?month=overdue"
-          ariaLabel={t('pastDue.ariaLabel')}
+          ariaLabel={pastDueAriaLabel}
         />
         <KpiCard
           label={t('collected.label')}
@@ -97,26 +109,22 @@ function PipelineMoneyBandContent({
           // net-of-credits, while the invoice list below is all-time gross
           // — the two numbers will not reconcile 1:1 even after the filter.
           href="/admin/invoices?status=paid&subject=membership"
-          ariaLabel={t('collected.ariaLabel')}
+          ariaLabel={collectedAriaLabel}
         />
         <KpiCard
           label={t('dueSoon.label')}
           value={moneyHero(money.dueSoonSatang)}
           caption={t('dueSoon.basis', { days: windowDays })}
-          // Fix round 2 #4 — documented residual mismatch: the hero figure
-          // + visible caption above are a CUMULATIVE `windowDays` (90)
-          // invoice-DUE-DATE window (`invoices.due_date`, F4). This link's
-          // target instead filters on `renewalCycles.expires_at` — a
-          // DIFFERENT dimension entirely — and `t-30` is a narrow 14–30-day
-          // BAND (see `URGENCY_CASE_SQL`), not a 0–90-day cumulative window.
-          // No pipeline/invoice-list URL param filters by invoice-due-date
-          // range today, so no exact-match drill-down target exists yet
-          // (adding one is out of scope for this fix round). Rather than
-          // silently leave the mismatch implicit, `ariaLabel` states the
-          // LINK's true, narrower scope instead of parroting the visible
-          // 90-day caption.
-          href="/admin/renewals?urgency=t-30"
-          ariaLabel={t('dueSoon.ariaLabel')}
+          // Fix round 2 final-polish #1 — this tile is now DISPLAY-ONLY (no
+          // `href`/`ariaLabel`), matching the `collectionRate` tile above.
+          // It previously linked to `?urgency=t-30` (a narrow 14–30-day
+          // CYCLE-EXPIRY band) while the visible caption states a
+          // cumulative 0–90-day invoice-DUE-DATE window — a self-
+          // contradiction between what a sighted admin reads and where the
+          // link actually goes, on a money surface. No pipeline/invoice-list
+          // URL param filters by invoice-due-date range today, so no
+          // exact-match drill-down target exists to fix the link TO; dropping
+          // it removes the contradiction without adding one.
         />
       </div>
     </section>

@@ -3244,21 +3244,20 @@
         "pastDue": {
           "label": "Förfallna",
           "basis": "förfallna medlemsavgifter · innevarande räkenskapsår · inkl. moms",
-          "ariaLabel": "Förfallna — visa förfallna förnyelser"
+          "ariaLabel": "Förfallna {amount} — visa förfallna förnyelser"
         },
         "collected": {
-          "label": "Inkasserat denna månad",
+          "label": "Influtet denna månad",
           "basis": "medlemsavgifter · innevarande kalendermånad · inkl. moms · operativt kassaflöde, inte en periodavslutssumma",
-          "ariaLabel": "Inkasserat denna månad — visa betalda medlemsfakturor"
+          "ariaLabel": "Influtet denna månad {amount} — visa betalda medlemsfakturor"
         },
         "collectionRate": {
           "label": "Inkasseringsgrad",
-          "basis": "medlemsavgifter · räkenskapsår hittills · endast förfallna poster · inkl. moms"
+          "basis": "medlemsavgifter · räkenskapsår hittills · endast poster som nått förfallodagen · inkl. moms"
         },
         "dueSoon": {
           "label": "Förfaller snart",
-          "basis": "medlemsavgifter som förfaller inom {days, plural, one {# dag} other {# dagar}} · ännu ej förfallna · inkl. moms",
-          "ariaLabel": "Förfaller snart — visa förnyelser som förfaller inom 30 dagar"
+          "basis": "medlemsavgifter som förfaller inom {days, plural, one {# dag} other {# dagar}} · ännu ej förfallna · inkl. moms"
         }
       },
       "tabs": {
@@ -3328,7 +3327,7 @@
         "aria_label": "Filtrera efter förnyelsebrådska",
         "aria_label_scroll": "Flikar för förnyelsebrådska, rullningsbara",
         "countSr": "{count, plural, one {# medlem} other {# medlemmar}}",
-        "monthLensHint": "Brådskefilter är pausade när ett månadsfilter är aktivt. Rensa månadsfiltret för att använda dem.",
+        "monthLensHint": "Brådskefilter är pausade när ett månadsfilter är aktivt. Välj en brådskeflik ovan för att byta, eller rensa månadsfiltret nedan.",
         "monthLensBadge": "Pausad av månadsfilter",
         "t_90": "T-90",
         "t_60": "T-60",

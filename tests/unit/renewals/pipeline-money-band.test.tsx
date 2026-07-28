@@ -88,7 +88,7 @@ describe('PipelineMoneyBand', () => {
     expect(screen.getByText('Past due')).toBeInTheDocument();
   });
 
-  it('deep-links each money tile to the existing URL contract; rate is display-only', () => {
+  it('deep-links each money tile to the existing URL contract; rate + dueSoon are display-only', () => {
     renderBand();
     expect(screen.getByRole('link', { name: /past due/i })).toHaveAttribute(
       'href',
@@ -100,12 +100,13 @@ describe('PipelineMoneyBand', () => {
       'href',
       '/admin/invoices?status=paid&subject=membership',
     );
-    expect(screen.getByRole('link', { name: /due soon/i })).toHaveAttribute(
-      'href',
-      '/admin/renewals?urgency=t-30',
-    );
     // The collection-rate tile carries no link (display-only).
     expect(screen.queryByRole('link', { name: /collection rate/i })).toBeNull();
+    // Fix round 2 final-polish #1 — dueSoon dropped its `href` (it used to
+    // point at a narrower, different-dimension `?urgency=t-30` band that
+    // contradicted the tile's own visible 90-day caption). Display-only now,
+    // matching collectionRate.
+    expect(screen.queryByRole('link', { name: /due soon/i })).toBeNull();
   });
 
   it('renders "—" for the rate when nothing has come due this fiscal year', () => {
@@ -128,16 +129,25 @@ describe('PipelineMoneyBand', () => {
   it('#2 — gives each linked tile a concise, purpose-stating aria-label distinct from the full label+value+basis sentence', () => {
     renderBand();
     expect(
-      screen.getByRole('link', { name: 'Past due — view overdue renewals' }),
+      screen.getByRole('link', { name: /— view overdue renewals$/ }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole('link', {
-        name: 'Collected this month — view paid membership invoices',
+        name: /— view paid membership invoices$/,
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it('Fix round 2 final-polish #5 — linked tile aria-labels fold in the THB figure so a screen-reader user hears the amount, not only the purpose', () => {
+    renderBand();
+    expect(
+      screen.getByRole('link', {
+        name: 'Past due 500.00 THB — view overdue renewals',
       }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole('link', {
-        name: 'Due soon — view renewals due in the next 30 days',
+        name: 'Collected this month 1,000.00 THB — view paid membership invoices',
       }),
     ).toBeInTheDocument();
   });
