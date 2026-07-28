@@ -14,6 +14,21 @@
  *   - month-boundary invariance (the rate is identical across a BKK month
  *     rollover — directly refutes the flow÷stock trap)
  *
+ * Fix round 2 #10 adds two more regression guards to the SAME tenant-A seed:
+ *   - #9 an `invoice_subject='event'` PAID invoice (dueDate + paidAt chosen
+ *     to land squarely inside BOTH the settled-FY window and the July
+ *     collected window) proves the repo's `invoice_subject = 'membership'`
+ *     predicate — if it were ever dropped, this row would silently inflate
+ *     BOTH `settledDueToDateSatang` and `collectedThisPeriodSatang`.
+ *   - a §105 waived refund on invoice #1 (the due-soon, unpaid, OUTSIDE the
+ *     settled/collected cohort) proves the per-invoice waived intersection in
+ *     `netLeg` (`load-pipeline-money.ts`) — if a future change summed the
+ *     WHOLE tenant-wide waived map instead of per-row, this waiver would
+ *     wrongly bleed into `settledDueToDateSatang` even though invoice #1 was
+ *     never a settled row.
+ * Both guards assert the SAME sums as the first test below — unchanged by
+ * either addition when the code is correct.
+ *
  * Seeding: direct-insert full-snapshot invoice rows (the proven idiom from
  * `issue-membership-bill.test.ts` / `refund-vs-voided-invoice.test.ts`), which
  * satisfies `invoices_non_draft_has_snapshots`. The §105 waived refund is a
@@ -31,6 +46,12 @@ import { db, runInTenant } from '@/lib/db';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { payments, refunds } from '@/modules/payments/infrastructure/schema';
+import {
+  events,
+  eventRegistrations,
+  type NewEventRow,
+  type NewEventRegistrationRow,
+} from '@/modules/events/infrastructure/schema';
 import { collectionRatePct, loadPipelineMoney, makeRenewalsDeps } from '@/modules/renewals';
 import { createTestTenant, createTwoTestTenants, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
@@ -57,6 +78,16 @@ const SNAP_MEMBER = {
   address: 'Bangkok',
   primary_contact_name: 'n',
   primary_contact_email: 'test@example.com',
+};
+// #10 fix round 2 — buyer snapshot for the non-membership (event) invoice;
+// event invoices have no `member_id` so they carry a walk-in buyer snapshot
+// instead of `SNAP_MEMBER` (mirrors `invoice-subject-filter.test.ts`).
+const SNAP_BUYER = {
+  legal_name: 'Walk-in Guest Ltd',
+  tax_id: null,
+  address: 'Bangkok',
+  primary_contact_name: 'Guest',
+  primary_contact_email: 'guest@example.com',
 };
 
 interface SeedInvoiceSpec {
@@ -120,6 +151,93 @@ async function seedMembershipInvoice(
       voidedAt: isVoid ? new Date('2026-06-02T00:00:00Z') : null,
       voidReason: isVoid ? 'seed void' : null,
       voidedByUserId: isVoid ? user.userId : null,
+      autoEmailOnIssue: true,
+    });
+  });
+  return invoiceId;
+}
+
+/**
+ * #10 fix round 2 — seed a PAID `invoice_subject='event'` invoice, to prove
+ * the repo's `invoice_subject = 'membership'` predicate excludes it from
+ * every leg. `dueDate` sits inside the FY2026-before-today window
+ * (settledRows' predicate) and `paidAtIso` sits inside July BKK (collected
+ * window) — chosen so that IF the subject predicate were ever dropped, this
+ * row would inflate BOTH `settledDueToDateSatang` and
+ * `collectedThisPeriodSatang` by a nonzero, easily-noticed amount.
+ *
+ * Needs a real `events` + `event_registrations` row for the composite FK
+ * (`invoices_subject_fields_ck` requires `event_id` + `event_registration_id`
+ * for the event subject) — same shape as
+ * `tests/integration/invoicing/invoice-subject-filter.test.ts`.
+ */
+async function seedEventInvoice(
+  tenant: TestTenant,
+  user: TestUser,
+  spec: { readonly dueDate: string; readonly paidAtIso: string; readonly totalSatang: bigint; readonly seq: number },
+): Promise<string> {
+  const invoiceId = randomUUID();
+  const eventId = randomUUID();
+  const regId = randomUUID();
+  const vat = (spec.totalSatang * 7n) / 107n;
+  await runInTenant(tenant.ctx, async (tx) => {
+    await tx.insert(events).values({
+      tenantId: tenant.ctx.slug,
+      eventId,
+      source: 'eventcreate',
+      externalId: `evt_money_band_${invoiceId.slice(0, 8)}`,
+      name: 'Money Band Subject-Filter Gala',
+      startDate: new Date('2026-09-10T11:00:00Z'),
+    } satisfies NewEventRow);
+    await tx.insert(eventRegistrations).values({
+      tenantId: tenant.ctx.slug,
+      registrationId: regId,
+      eventId,
+      externalId: `att_money_band_${invoiceId.slice(0, 8)}`,
+      attendeeEmail: 'walkin@example.com',
+      attendeeName: 'Walk-in Guest',
+      attendeeCompany: 'Walk-in Guest Ltd',
+      matchType: 'non_member',
+      ticketType: 'General',
+      ticketPriceThb: Number(spec.totalSatang / 100n),
+      paymentStatus: 'paid',
+      registeredAt: new Date(spec.paidAtIso),
+    } satisfies NewEventRegistrationRow);
+    await tx.insert(invoices).values({
+      tenantId: tenant.ctx.slug,
+      invoiceId,
+      invoiceSubject: 'event',
+      eventId,
+      eventRegistrationId: regId,
+      vatInclusive: true,
+      memberId: null,
+      planId: null,
+      planYear: null,
+      draftByUserId: user.userId,
+      status: 'paid',
+      pdfDocKind: 'invoice',
+      fiscalYear: 2026,
+      sequenceNumber: spec.seq,
+      documentNumber: `SC-2026-${String(spec.seq).padStart(6, '0')}`,
+      issueDate: spec.dueDate,
+      dueDate: spec.dueDate,
+      subtotalSatang: spec.totalSatang - vat,
+      vatRateSnapshot: '0.0700',
+      vatSatang: vat,
+      totalSatang: spec.totalSatang,
+      creditedTotalSatang: 0n,
+      proRatePolicySnapshot: null,
+      netDaysSnapshot: 30,
+      tenantIdentitySnapshot: SNAP_TENANT,
+      memberIdentitySnapshot: SNAP_BUYER,
+      pdfBlobKey: `invoicing/${tenant.ctx.slug}/2026/${invoiceId}.pdf`,
+      pdfSha256: 'c'.repeat(64),
+      pdfTemplateVersion: 1,
+      paymentMethod: 'bank_transfer',
+      paymentReference: 'seed-ref-event',
+      paymentRecordedByUserId: user.userId,
+      paidAt: new Date(spec.paidAtIso),
+      receiptPdfStatus: 'rendered',
       autoEmailOnIssue: true,
     });
   });
@@ -219,8 +337,11 @@ describe('DV-Wave2 ⑥ loadPipelineMoney — integration (live Neon)', () => {
 
     // #1 dueSoon; #2 overdue; #3 settled+collected; #4 settled only (May);
     // #5 partially_credited settled(30000)+collected(30000); #6 §105-waived
-    // settled(0); #7 prior-FY DROPS; #8 void excluded.
-    await seedMembershipInvoice(a, user, planA, memberA, {
+    // settled(0); #7 prior-FY DROPS; #8 void excluded; #9 event-subject
+    // PAID (fix round 2 #10a, below) DROPS despite landing inside both
+    // windows; a §105-waived refund on #1 (fix round 2 #10b, below) proves
+    // waived netting never leaks outside the settled/collected cohort.
+    const inv1 = await seedMembershipInvoice(a, user, planA, memberA, {
       status: 'issued', totalSatang: 30000n, creditedTotalSatang: 0n, dueDate: '2026-08-01', paidAtIso: null, seq: 1,
     });
     await seedMembershipInvoice(a, user, planA, memberA, {
@@ -245,6 +366,21 @@ describe('DV-Wave2 ⑥ loadPipelineMoney — integration (live Neon)', () => {
     await seedMembershipInvoice(a, user, planA, memberA, {
       status: 'void', totalSatang: 99999n, creditedTotalSatang: 0n, dueDate: '2026-06-01', paidAtIso: '2026-06-02T03:00:00Z', seq: 8,
     });
+
+    // #10 fix round 2 (a) — event-subject PAID invoice; due 2026-05-10 (FY,
+    // before "today") + paid 2026-07-18 (July) so it would inflate BOTH
+    // settled AND collected if `invoice_subject = 'membership'` were ever
+    // dropped from the repo's `membership` predicate.
+    await seedEventInvoice(a, user, {
+      dueDate: '2026-05-10', paidAtIso: '2026-07-18T03:00:00Z', totalSatang: 214000n, seq: 9,
+    });
+    // #10 fix round 2 (b) — §105 waived refund on #1 (due-soon, UNPAID,
+    // OUTSIDE the settled/collected cohort). `netLeg` (load-pipeline-money.ts)
+    // must intersect the waived map PER-ROW against settledRows/collectedRows
+    // only; #1 never appears in either list, so this waiver must NOT reduce
+    // settledDueToDateSatang (guards against a future "sum the whole
+    // tenant-wide waived map" regression).
+    await seedWaivedRefund(a, user, memberA, inv1, 10000n);
 
     // --- Tenant B: cross-tenant leak guard — one issued invoice, ฿0.11 ---
     const planB = `pm-plan-${randomUUID().slice(0, 8)}`;
@@ -295,12 +431,17 @@ describe('DV-Wave2 ⑥ loadPipelineMoney — integration (live Neon)', () => {
     if (!res.ok) return;
 
     // settled = 70000 + 90000 + (40000−10000) + (25000−25000 waived) = 190000
+    // — UNCHANGED by #9 (event-subject, excluded by invoice_subject filter)
+    // and by #1's waived refund (outside this cohort, never intersected).
     expect(res.value.settledDueToDateSatang).toBe(190000n);
     // overdue = #2 only; #7 prior-FY excluded, #8 void excluded
     expect(res.value.overdueSatang).toBe(50000n);
-    // collected (July) = #3 (70000) + #5 net (30000); #4 May, #6 April excluded
+    // collected (July) = #3 (70000) + #5 net (30000); #4 May, #6 April
+    // excluded — UNCHANGED by #9 despite #9 also being paid in July.
     expect(res.value.collectedThisPeriodSatang).toBe(100000n);
-    // dueSoon = #1 only
+    // dueSoon = #1 only, at its FULL 30000 (§105-waived refunds are never
+    // netted against the scalar dueSoon/overdue legs — only settled/collected
+    // go through `netLeg`).
     expect(res.value.dueSoonSatang).toBe(30000n);
 
     // rate = 190000·10000 / 240000 = 7916 → 79.16 → "79.2%"
@@ -310,6 +451,29 @@ describe('DV-Wave2 ⑥ loadPipelineMoney — integration (live Neon)', () => {
     );
     expect(rate).not.toBeNull();
     expect(rate?.toFixed(1)).toBe('79.2');
+  }, 60_000);
+
+  it('#10 fix round 2 — event-subject invoice excluded from every leg, and its neighbour\'s waived refund never leaks into a membership leg', async () => {
+    const res = await loadPipelineMoney(makeRenewalsDeps(a.ctx.slug), {
+      tenantId: a.ctx.slug,
+      nowIso: NOW,
+      windowDays: 90,
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+
+    // Same four sums as the test above — restated here as an explicit,
+    // independently-named regression guard for the #10(a)/(b) seed rows (an
+    // event-subject PAID invoice due 2026-05-10/paid 2026-07-18, and a §105
+    // waived refund on the due-soon invoice #1). If `invoice_subject =
+    // 'membership'` were dropped from the repo's `membership` predicate, OR
+    // `netLeg` summed the WHOLE tenant-wide waived map instead of
+    // intersecting it per-row against settledRows/collectedRows, these sums
+    // would move.
+    expect(res.value.settledDueToDateSatang).toBe(190000n);
+    expect(res.value.overdueSatang).toBe(50000n);
+    expect(res.value.collectedThisPeriodSatang).toBe(100000n);
+    expect(res.value.dueSoonSatang).toBe(30000n);
   }, 60_000);
 
   it('cross-tenant: B money never appears in A sums, and B reads only its own', async () => {

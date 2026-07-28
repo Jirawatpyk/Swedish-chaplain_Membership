@@ -11,6 +11,13 @@
  * thousands grouping) to the canonical `formatSatangThb`. `1,000.00` below
  * (was `1000.00`) pins the grouped output; a dedicated large-value test pins
  * multi-comma grouping (e.g. millions) explicitly.
+ *
+ * Fix round 2 — tiles now render via the shared `KpiCard`; the existing
+ * role/text queries below are unaffected (KpiCard renders the same visible
+ * label/value/caption text, and `PipelineMoneyBand`'s new `ErrorBoundary`
+ * wrapper adds no DOM of its own). New assertions cover the round-2
+ * additions: concise per-tile `aria-label`s (#2) and the ICU-plural
+ * `dueSoon.basis` (#5).
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
@@ -116,5 +123,40 @@ describe('PipelineMoneyBand', () => {
       </NextIntlClientProvider>,
     );
     expect(screen.getByText('—')).toBeInTheDocument();
+  });
+
+  it('#2 — gives each linked tile a concise, purpose-stating aria-label distinct from the full label+value+basis sentence', () => {
+    renderBand();
+    expect(
+      screen.getByRole('link', { name: 'Past due — view overdue renewals' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', {
+        name: 'Collected this month — view paid membership invoices',
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', {
+        name: 'Due soon — view renewals due in the next 30 days',
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it('#5 — uses ICU plural for the dueSoon window ("1 day", not "1 days")', () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <PipelineMoneyBand
+          money={{
+            settledDueToDateSatang: 0n,
+            overdueSatang: 0n,
+            collectedThisPeriodSatang: 0n,
+            dueSoonSatang: 0n,
+          }}
+          windowDays={1}
+        />
+      </NextIntlClientProvider>,
+    );
+    expect(screen.getByText(/within 1 day\b/i)).toBeInTheDocument();
+    expect(screen.queryByText(/within 1 days/i)).toBeNull();
   });
 });
