@@ -15,10 +15,18 @@
  * Purely additive: both props are optional and every existing F9 dashboard
  * call site (`admin/(home)/page.tsx`) omits them, rendering byte-identical to
  * before.
+ *
+ * renewals-money-band-compact4 — `compact`/`tone` added for the same reason:
+ * the money band went from 4 hero tiles → a 2-KPI strip → back to all 4 KPIs,
+ * this time as a shorter COMPACT tile instead of the original hero card.
+ * Both new props default to the pre-existing look (`compact = false`,
+ * `tone = 'default'`), so every other call site (F9 dashboard) renders
+ * byte-identical to before.
  */
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
 
 export function KpiCard({
   label,
@@ -26,6 +34,8 @@ export function KpiCard({
   caption,
   href,
   ariaLabel,
+  compact = false,
+  tone = 'default',
 }: {
   readonly label: string;
   readonly value: ReactNode;
@@ -48,18 +58,41 @@ export function KpiCard({
    * Ignored when `href` is absent.
    */
   readonly ariaLabel?: string;
+  /**
+   * Shrinks the tile: `Card size="sm"` (tighter `py-3`/`px-3`, the existing
+   * shadcn/ui compact-card variant) + a `text-2xl` value instead of the
+   * `text-3xl` hero. For bands that need every KPI to fit one balanced row
+   * without reading as oversized (renewals money band). Defaults to `false`
+   * (current hero look, unchanged for every existing caller).
+   */
+  readonly compact?: boolean;
+  /**
+   * Colours the VALUE only (never the label or the card chrome) via the
+   * app's semantic tokens. `'success'` → `text-success`, `'warning'` →
+   * `text-warning`; both measured ≥5:1 against `bg-card` in light AND dark
+   * theme (comfortably clears WCAG AA's 4.5:1 floor for normal text) — the
+   * same token pair `StatCard` and the invoice payment timeline already use
+   * for status text on a card background. Defaults to `'default'` (no
+   * colour override, current behaviour).
+   */
+  readonly tone?: 'default' | 'success' | 'warning';
 }) {
+  const toneClass =
+    tone === 'success' ? 'text-success' : tone === 'warning' ? 'text-warning' : undefined;
+
   const header = (
     <CardHeader className="pb-2">
       <CardDescription>{label}</CardDescription>
-      <CardTitle className="text-3xl tabular-nums">{value}</CardTitle>
+      <CardTitle className={cn(compact ? 'text-2xl' : 'text-3xl', 'tabular-nums', toneClass)}>
+        {value}
+      </CardTitle>
       {caption ? <p className="mt-1 text-caption text-muted-foreground">{caption}</p> : null}
     </CardHeader>
   );
 
   if (href) {
     return (
-      <Card>
+      <Card size={compact ? 'sm' : 'default'}>
         <Link
           href={href}
           aria-label={ariaLabel}
@@ -70,5 +103,5 @@ export function KpiCard({
       </Card>
     );
   }
-  return <Card>{header}</Card>;
+  return <Card size={compact ? 'sm' : 'default'}>{header}</Card>;
 }

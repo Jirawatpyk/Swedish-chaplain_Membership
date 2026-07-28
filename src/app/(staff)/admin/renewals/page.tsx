@@ -634,17 +634,19 @@ async function PipelineMoneyBandSection({
     return (
       <section className="flex flex-col gap-3">
         <h2 className="text-base font-semibold">{tMoney('title')}</h2>
-        {/* renewals-money-band-slim — the skeleton above now reserves the
-            compact 2-KPI strip's footprint (`Card size="sm"` + one KPI row +
-            one caption line), not the old 4-tile grid; this collapsed error
-            card is shorter still, so without a floor the (rare) load-failure
-            path yanks the rest of the pipeline up a CLS-visible amount.
-            `min-h-24` (96px) approximates the strip's real footprint
-            (`size="sm"` Card py-3 + a ~32px KPI row + a ~17px caption line,
-            with headroom for the caption wrapping to 2 lines on very narrow
-            widths) — not pixel-exact at every breakpoint, but enough to keep
-            the failure path from visibly shrinking the band. */}
-        <div className="min-h-24">
+        {/* renewals-money-band-compact4 — the skeleton above now reserves
+            the compact 4-tile grid's footprint (one row of `Card size="sm"`
+            tiles on desktop; 4 stacked rows on mobile), not the 2-KPI
+            strip's single card; this collapsed error card is shorter still,
+            so without a floor the (rare) load-failure path yanks the rest of
+            the pipeline up a CLS-visible amount. `min-h-32` (128px)
+            approximates one compact tile row's real footprint (`size="sm"`
+            Card py-3 + a label line + a ~32px `text-2xl` value + a
+            caption line, with headroom for the caption wrapping to 2 lines)
+            — not pixel-exact at every breakpoint (mobile stacks 4 tiles
+            taller than this floor), but enough to keep the failure path from
+            visibly shrinking the band on the common desktop case. */}
+        <div className="min-h-32">
           <LoadErrorCard tone="muted" message={tMoney('loadFailed')} />
         </div>
       </section>
