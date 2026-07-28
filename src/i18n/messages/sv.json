@@ -3413,6 +3413,60 @@
         "markPaid": "Markera betald",
         "rowMenu": "Åtgärder för {company}"
       },
+      "bulk": {
+        "toolbarLabel": "Massåtgärder",
+        "selectedCount": "{count, plural, one {# vald} other {# valda}}",
+        "overCap": "Högst {max} förnyelser per omgång. Dela upp urvalet.",
+        "overCapHelper": "{count} av {total} valda — endast {max} kan bearbetas åt gången. Avmarkera rader efter rad {max}, eller använd filter för att begränsa listan innan du väljer på nytt.",
+        "clear": "Rensa markering",
+        "cancel": "Avbryt",
+        "actions": {
+          "sendReminder": "Skicka påminnelse",
+          "markPaid": "Markera betald",
+          "markContacted": "Markera kontaktad"
+        },
+        "confirmReminderTitle": "Skicka en förnyelsepåminnelse till {count, plural, one {# förnyelse} other {# förnyelser}}?",
+        "confirmReminderDescription": "Varje vald förnyelsecykel med ett aktivt schema får sitt nästa schemalagda påminnelsemejl nu. Cykler utan väntande påminnelse, eller vars medlem tackat nej, hoppas över.",
+        "confirmReminderAction": "Skicka påminnelser",
+        "confirmMarkPaidTitle": "Registrera en samlad betalning utanför systemet",
+        "confirmMarkPaidDescription": "Ett betalningsreferensnummer gäller för varje förhandsgranskningsbar förnyelse nedan — ange det en gång för att registrera en enda banköverföring, kontantinsättning eller check som täcker alla tillsammans.",
+        "confirmMarkPaidAction": "Markera alla som betalda",
+        "paymentMethodLabel": "Betalningsmetod",
+        "paymentMethod": {
+          "bank_transfer": "Banköverföring",
+          "cash": "Kontant",
+          "cheque": "Check"
+        },
+        "paymentReferenceLabel": "Betalningsreferens",
+        "paymentReferencePlaceholder": "t.ex. banktransaktionsnummer eller checknummer",
+        "paymentDateLabel": "Betalningsdatum",
+        "previewLoading": "Läser in belopp att registrera…",
+        "previewError": "Kunde inte läsa in beloppen. Försök igen.",
+        "previewGrandTotalLabel": "Totalt att registrera",
+        "previewRowUnpriced": "Kan inte betalas i grupp — hantera individuellt",
+        "previewNotBulkPayableHeading": "Ingår inte i denna omgång",
+        "reminderSent": "{sent, plural, one {# påminnelse skickad} other {# påminnelser skickade}}",
+        "reminderSkipped": "{skipped, plural, one {# överhoppad} other {# överhoppade}}",
+        "reminderFailed": "{failed, plural, one {# misslyckad} other {# misslyckade}}",
+        "reminderRateLimited": "{count, plural, one {# hastighetsbegränsad — försök igen senare} other {# hastighetsbegränsade — försök igen senare}}",
+        "markPaidSucceeded": "{count, plural, one {# förnyelse markerad betald} other {# förnyelser markerade betalda}}",
+        "markPaidSkipped": "{count, plural, one {# överhoppad} other {# överhoppade}}",
+        "markPaidFailed": "{count, plural, one {# misslyckad} other {# misslyckade}}",
+        "markPaidOrphan": "{count, plural, one {# behöver manuell uppföljning} other {# behöver manuell uppföljning}}",
+        "resultsHeadingReminder": "Resultat för påminnelseutskick",
+        "resultsHeadingMarkPaid": "Resultat för betalningsregistrering",
+        "resultsDismiss": "Stäng",
+        "resultLabels": {
+          "ok": "Lyckades",
+          "skipped": "Överhoppade",
+          "failed": "Misslyckades",
+          "rateLimited": "Hastighetsbegränsade — försök igen senare",
+          "orphan": "Behöver manuell uppföljning"
+        },
+        "rateLimited": "För många massåtgärder. Vänta några minuter och försök igen.",
+        "unknownError": "Något gick fel.",
+        "networkError": "Nätverksfel. Kontrollera din anslutning."
+      },
       "sendReminderNow": {
         "toast": {
           "sent": {
