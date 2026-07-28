@@ -103,6 +103,8 @@ jobs:
             echo
             echo "- If the CI branch's **parent is the production branch**, do NOT 'reset from parent': that refills it with production data (real member PII) instead of emptying it. Re-parent it to \`dev\` first, or clean fixtures with SQL instead."
             echo "- Growth in **logical size** month over month is the signal that accumulated test fixtures are worth clearing."
-          } >> "$GITHUB_STEP_SUMMARY"
-
-          echo "Report written to the job summary."
+          # `tee`, not `>>`: the job summary renders nicely for humans but is not
+          # retrievable through the API, so the same table goes to the log where
+          # it can be read without opening a browser. Nothing here is secret —
+          # the only sensitive value, the endpoint host, is masked above.
+          } | tee -a "$GITHUB_STEP_SUMMARY"
