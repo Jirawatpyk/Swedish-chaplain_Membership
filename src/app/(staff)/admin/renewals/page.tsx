@@ -63,7 +63,7 @@ import {
   PipelineMoneyBand,
   PipelineMoneyBandSkeleton,
 } from './_components/pipeline-money-band';
-import { PipelineTable } from './_components/pipeline-table';
+import { PipelineWithBulk } from './_components/pipeline-with-bulk';
 import { LoadErrorCard } from './_components/load-error-card';
 import { LapsedTab } from './_components/lapsed-tab';
 import { TierFilterSelect } from './_components/tier-filter-select';
@@ -497,9 +497,16 @@ export default async function RenewalsPipelinePage({
                       <LapsedTab rows={rows} />
                     </div>
                   ) : (
-                    <PipelineTable
+                    // Task 10 (US3 scaffolding) — PipelineWithBulk wraps
+                    // PipelineTable, layering admin-only row selection on
+                    // top (foundation for Task 11's bulk action bar). Pure
+                    // render-order change: forwards the same props
+                    // PipelineTable took directly before, plus
+                    // isAdmin={canMutate} for the selection gate. No URL
+                    // param name/default/semantics touched.
+                    <PipelineWithBulk
                       rows={rows}
-                      canMutate={canMutate}
+                      isAdmin={canMutate}
                       sort={sort}
                       sortHrefs={sortHrefs}
                       resultCount={resultCountLabel}
