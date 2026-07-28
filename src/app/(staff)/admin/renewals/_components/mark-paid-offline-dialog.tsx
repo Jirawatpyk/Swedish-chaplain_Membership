@@ -76,6 +76,19 @@ export interface MarkPaidOfflineDialogProps {
    * (the cycle-detail caller's shape, unchanged from pre-extraction).
    */
   readonly finalFocus?: React.RefObject<HTMLElement | null>;
+  /**
+   * Review fix I-1 (enterprise-ux, Wave 2 Task 5) — when this dialog is
+   * opened from the pipeline table's row ⋯ menu, a dense table gives the
+   * admin no other on-screen confirmation of WHICH member a money
+   * mutation (mints a §86/4 tax invoice + completes the cycle) is about
+   * to settle. Passing the row's `companyName` renders a prominent
+   * "For {company}" line, mirroring the sibling `OutreachDialog` ("Mark
+   * contacted") in the same ⋯ menu, which already shows it. The
+   * cycle-detail caller omits this prop entirely — the member is already
+   * unambiguous from the page itself — so the dialog body there is
+   * unchanged from pre-fix.
+   */
+  readonly companyName?: string | null;
 }
 
 /**
@@ -117,6 +130,7 @@ export function MarkPaidOfflineDialog({
   onOpenChange,
   onPaid,
   finalFocus,
+  companyName,
 }: MarkPaidOfflineDialogProps) {
   const t = useTranslations('admin.renewals.cycleDetail');
   const format = useFormatter();
@@ -336,6 +350,16 @@ export function MarkPaidOfflineDialog({
       <DialogContent initialFocus={cancelRef} finalFocus={resolvedFinalFocus}>
         <DialogHeader>
           <DialogTitle>{t('markPaidOffline.dialogTitle')}</DialogTitle>
+          {/* I-1 — trust-safety line naming the settlement target on the
+              dense pipeline table. Only rendered when the caller passes a
+              non-empty `companyName` (the pipeline row menu); the
+              cycle-detail caller omits the prop, so its dialog body is
+              unchanged from pre-fix. */}
+          {companyName ? (
+            <p className="font-medium text-foreground">
+              {t('markPaidOffline.forMember', { company: companyName })}
+            </p>
+          ) : null}
           <DialogDescription>{t('markPaidOffline.dialogBody')}</DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">

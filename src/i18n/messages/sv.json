@@ -3740,6 +3740,7 @@
         "markPaidOffline": {
           "button": "Markera betald offline",
           "dialogTitle": "Registrera en offlinebetalning?",
+          "forMember": "För {company}",
           "dialogBody": "Använd detta när medlemmen har betalat utanför systemet (banköverföring, kontant eller check). En faktura utfärdas och cykeln slutförs.",
           "paymentMethodLabel": "Betalningsmetod",
           "paymentMethod": {

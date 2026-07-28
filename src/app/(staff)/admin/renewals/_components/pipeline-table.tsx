@@ -109,8 +109,14 @@ export function PipelineTable({ rows, monthLabel, monthKind }: PipelineTableProp
   // set by `RowActions` to its own ⋯ trigger; the dialog falls back to
   // `#main-content` when a settlement's `router.refresh()` unmounts the row
   // (see `mark-paid-offline-dialog.tsx`'s docstring).
+  //
+  // I-1 review-fix — `companyName` rides along so the dialog can show
+  // "For {company}" (same value already passed to the ⋯ trigger's
+  // aria-label + to `OutreachDialog`), giving the admin an in-dialog
+  // confirmation of WHICH member this money mutation settles.
   const [markPaidFor, setMarkPaidFor] = useState<{
     cycleId: string;
+    companyName: string;
     finalFocus: React.RefObject<HTMLElement | null>;
   } | null>(null);
 
@@ -333,6 +339,7 @@ export function PipelineTable({ rows, monthLabel, monthKind }: PipelineTableProp
             if (!open) setMarkPaidFor(null);
           }}
           cycleId={markPaidFor.cycleId}
+          companyName={markPaidFor.companyName}
           finalFocus={markPaidFor.finalFocus}
         />
       ) : null}
@@ -374,6 +381,7 @@ function RowActions({
   }) => void;
   readonly onMarkPaid: (t: {
     cycleId: string;
+    companyName: string;
     finalFocus: React.RefObject<HTMLElement | null>;
   }) => void;
 }): React.JSX.Element {
@@ -608,6 +616,7 @@ function RowActions({
               onClick={() =>
                 onMarkPaid({
                   cycleId,
+                  companyName,
                   finalFocus: rowMenuTriggerRef,
                 })
               }

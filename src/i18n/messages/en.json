@@ -3740,6 +3740,7 @@
         "markPaidOffline": {
           "button": "Mark paid offline",
           "dialogTitle": "Record an offline payment?",
+          "forMember": "For {company}",
           "dialogBody": "Use this when the member has paid outside the system (bank transfer, cash, or cheque). An invoice is issued and the cycle is completed.",
           "paymentMethodLabel": "Payment method",
           "paymentMethod": {
