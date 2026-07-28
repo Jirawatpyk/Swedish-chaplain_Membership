@@ -2147,12 +2147,10 @@ export function makeDrizzleRenewalCycleRepo(
         // for non-lapsed urgency buckets.
         const baseFilters: SQL[] = [
           // COMP-1 H4 — exclude GDPR-erased members from the pipeline
-          // window. Drives BOTH the summary aggregate below AND the page
-          // query (via `pageFilters = baseFilters.slice()`), so the badge
-          // counts always agree with the rows shown. `markCycleComplete-
-          // FromInvoicePaid` routes a paid erased member's cycle to the
-          // NON-terminal `pending_admin_reactivation`, so erased members
-          // are actively pushed into this window without this filter.
+          // window. `markCycleCompleteFromInvoicePaid` routes a paid erased
+          // member's cycle to the NON-terminal `pending_admin_reactivation`,
+          // so erased members are actively pushed into this window without
+          // this filter.
           MEMBER_NOT_ERASED_SQL,
         ];
         if (opts.urgency === 'terminated') {
@@ -2174,6 +2172,26 @@ export function makeDrizzleRenewalCycleRepo(
         if (opts.tier) {
           baseFilters.push(eq(renewalCycles.tierAtCycleStart, opts.tier));
         }
+        // `baseFilters` above is PAGE-ROWS-ONLY from here on (feeds
+        // `pageFilters` further down) — it is intentionally tab-dependent
+        // (terminated ⇒ status='lapsed' only).
+
+        // Fix #63 — the tab-badge summary must be a STABLE navigation count,
+        // independent of which urgency tab is currently selected. It used to
+        // share `baseFilters` with the page-rows query above, so selecting
+        // the Terminated tab (which restricts rows to status='lapsed') also
+        // restricted the summary aggregate: every non-terminated badge
+        // (t-90…t-0, suspended) silently computed to 0 while that tab was
+        // active. `summaryFilters` is therefore ALWAYS the non-lapsed 90-day
+        // window shape (+ tier), never the terminated-specific restriction.
+        const summaryFilters: SQL[] = [
+          MEMBER_NOT_ERASED_SQL,
+          sql`${renewalCycles.status} NOT IN ('cancelled','completed')`,
+          sql`${renewalCycles.expiresAt} <= NOW() + INTERVAL '90 days'`,
+        ];
+        if (opts.tier) {
+          summaryFilters.push(eq(renewalCycles.tierAtCycleStart, opts.tier));
+        }
 
         // The summary is computed BEFORE the pagination cursor — admins
         // see accurate totals across the whole window even when paging.
@@ -2189,7 +2207,7 @@ export function makeDrizzleRenewalCycleRepo(
             count: sql<number>`count(*)::int`,
           })
           .from(renewalCycles)
-          .where(and(...baseFilters))
+          .where(and(...summaryFilters))
           .groupBy(URGENCY_CASE_SQL);
 
         // Lapsed count is queried separately because the window filter
@@ -2244,9 +2262,10 @@ export function makeDrizzleRenewalCycleRepo(
         //    carries `status NOT IN (cancelled,completed)` (keeps lapsed) AND
         //    the 90-day ceiling; the month bounds ARE the window and lapsed
         //    must not leak into an `overdue` click. Tier is intentionally
-        //    ignored (the chart aggregation is whole-tenant). Summary +
-        //    lapsedCount above stay on `baseFilters` → urgency badges are
-        //    unchanged by a month filter (F3, "two independent lenses").
+        //    ignored (the chart aggregation is whole-tenant). Summary
+        //    (`summaryFilters`) + lapsedCount are independent queries computed
+        //    above and never rebuilt here → urgency badges are unchanged by a
+        //    month filter (F3, "two independent lenses").
         //  - URGENCY lens (default): unchanged — slice baseFilters + urgency.
         let pageFilters: SQL[];
         if (opts.monthFilter && opts.nowIso) {

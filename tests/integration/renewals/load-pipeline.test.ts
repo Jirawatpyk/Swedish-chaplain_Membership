@@ -391,4 +391,130 @@ describe('F8 loadPipeline — integration (T075)', () => {
       await driftTenant.cleanup().catch(() => {});
     }
   }, 120_000);
+
+  // Bugfix #63 — the "Terminated" tab badge collapse. Selecting the
+  // Terminated tab (opts.urgency: 'terminated') restricted the SUMMARY
+  // aggregate's own filters to status='lapsed' only (it reused the
+  // page-rows `baseFilters`), so every non-terminated badge (t-90…t-0,
+  // suspended) silently computed to 0 while that tab was active. The
+  // badge counts must be a STABLE navigation total, independent of which
+  // tab is currently selected.
+  it('terminated-tab selection does not collapse the other urgency badges to 0', async () => {
+    const fixTenant = await createTestTenant('test');
+    try {
+      const now = Date.now();
+      const planId = `f8-fix63-${randomUUID().slice(0, 8)}`;
+      await runInTenant(fixTenant.ctx, (tx) =>
+        seedF8MembershipPlan(tx, {
+          tenantSlug: fixTenant.ctx.slug,
+          planId,
+          planName: { en: 'F8 Fix63 Plan' },
+          benefitMatrix: DEFAULT_TEST_BENEFIT_MATRIX,
+          createdBy: user.userId,
+        }),
+      );
+
+      // 2 cycles landing in the t-30 bucket (25 days out, active 'upcoming').
+      for (let i = 0; i < 2; i += 1) {
+        const memberId = randomUUID();
+        const expiresAt = new Date(now + 25 * 86_400_000);
+        await runInTenant(fixTenant.ctx, (tx) =>
+          tx.insert(members).values({
+            tenantId: fixTenant.ctx.slug,
+            memberId,
+            memberNumber: nextSeedMemberNumber(),
+            companyName: `Fix63 t30 ${memberId.slice(0, 4)}`,
+            country: 'TH',
+            planId,
+            planYear: 2026,
+          }),
+        );
+        await runInTenant(fixTenant.ctx, (tx) =>
+          tx.insert(renewalCycles).values({
+            tenantId: fixTenant.ctx.slug,
+            cycleId: randomUUID(),
+            memberId,
+            status: 'upcoming',
+            periodFrom: new Date(expiresAt.getTime() - 365 * 86_400_000),
+            periodTo: expiresAt,
+            expiresAt,
+            cycleLengthMonths: 12,
+            tierAtCycleStart: 'regular',
+            planIdAtCycleStart: randomUUID(),
+            frozenPlanPriceThb: '50000.00',
+            frozenPlanTermMonths: 12,
+            frozenPlanCurrency: 'THB',
+          }),
+        );
+      }
+
+      // 1 lapsed cycle (terminated bucket) — the tab we're about to select.
+      const lapsedMemberId = randomUUID();
+      const lapsedExpiresAt = new Date(now - 5 * 86_400_000);
+      await runInTenant(fixTenant.ctx, (tx) =>
+        tx.insert(members).values({
+          tenantId: fixTenant.ctx.slug,
+          memberId: lapsedMemberId,
+          memberNumber: nextSeedMemberNumber(),
+          companyName: 'Fix63 lapsed',
+          country: 'TH',
+          planId,
+          planYear: 2026,
+        }),
+      );
+      await runInTenant(fixTenant.ctx, (tx) =>
+        tx.insert(renewalCycles).values({
+          tenantId: fixTenant.ctx.slug,
+          cycleId: randomUUID(),
+          memberId: lapsedMemberId,
+          status: 'lapsed',
+          periodFrom: new Date(lapsedExpiresAt.getTime() - 365 * 86_400_000),
+          periodTo: lapsedExpiresAt,
+          expiresAt: lapsedExpiresAt,
+          cycleLengthMonths: 12,
+          tierAtCycleStart: 'regular',
+          planIdAtCycleStart: randomUUID(),
+          frozenPlanPriceThb: '50000.00',
+          frozenPlanTermMonths: 12,
+          frozenPlanCurrency: 'THB',
+          closedAt: new Date(),
+        }),
+      );
+
+      const deps = makeRenewalsDeps(fixTenant.ctx.slug);
+
+      // Clicking the Terminated tab must NOT zero out the other badges.
+      const terminatedTab = await loadPipeline(deps, {
+        tenantId: fixTenant.ctx.slug,
+        urgency: 'terminated',
+        limit: 50,
+      });
+      expect(terminatedTab.ok).toBe(true);
+      if (!terminatedTab.ok) return;
+      expect(terminatedTab.value.summary.byUrgency['t-30']).toBe(2);
+      expect(terminatedTab.value.summary.lapsedCount).toBe(1);
+      // The terminated badge itself was never broken — it reads from the
+      // separate `lapsedCount` query, not `byUrgency`. Pinned here so a
+      // future refactor can't silently invert this.
+      expect(terminatedTab.value.summary.byUrgency.terminated).toBe(1);
+
+      // Regression guard: any other tab must report the SAME stable counts —
+      // the summary must not depend on which tab is currently selected.
+      const t30Tab = await loadPipeline(deps, {
+        tenantId: fixTenant.ctx.slug,
+        urgency: 't-30',
+        limit: 50,
+      });
+      expect(t30Tab.ok).toBe(true);
+      if (!t30Tab.ok) return;
+      expect(t30Tab.value.summary.byUrgency['t-30']).toBe(2);
+      expect(t30Tab.value.summary.lapsedCount).toBe(1);
+    } finally {
+      await db
+        .delete(renewalCycles)
+        .where(eq(renewalCycles.tenantId, fixTenant.ctx.slug))
+        .catch(() => {});
+      await fixTenant.cleanup().catch(() => {});
+    }
+  }, 120_000);
 });
