@@ -83,6 +83,7 @@ import { renewalLinkTokenSigner } from './renewal-link-token/hmac-signer';
 import { renewalLinkTokenVerifier } from './renewal-link-token/hmac-verifier';
 import { makeDrizzleConsumedLinkTokensRepo } from './drizzle/drizzle-consumed-link-tokens-repo';
 import { makeDrizzleRenewalCycleRepo } from './drizzle/drizzle-renewal-cycle-repo';
+import { makeWaivedRefundTotalsAdapter } from './drizzle/waived-refund-totals-adapter';
 import { makeDrizzleRenewalAuditEmitter } from './drizzle/drizzle-renewal-audit-emitter';
 import { makeDrizzleTenantRenewalSchedulePolicyRepo } from './drizzle/drizzle-tenant-renewal-schedule-policy-repo';
 import { makeDrizzleAtRiskOutreachReadRepo } from './drizzle/drizzle-at-risk-outreach-read-repo';
@@ -141,6 +142,7 @@ import type { MemberPlanWriterPort } from '../application/ports/member-plan-writ
 import type { BenefitConsumptionReader } from '../application/ports/benefit-consumption-reader';
 import type { CreateCycleInTxDeps } from '../application/use-cases/create-cycle-in-tx';
 import type { RenewalCycleRepo } from '../application/ports/renewal-cycle-repo';
+import type { WaivedRefundTotalsPort } from '../application/ports/waived-refund-totals-port';
 import type { RenewalLinkTokenSigner } from '../application/ports/renewal-link-token-signer';
 import type { RenewalLinkTokenVerifier } from '../application/ports/renewal-link-token-verifier';
 import type { TenantRenewalSchedulePolicyRepo } from '../application/ports/tenant-renewal-schedule-policy-repo';
@@ -185,6 +187,13 @@ export interface RenewalsDeps {
    * `mark-paid-offline` use-cases.
    */
   readonly cyclesRepo: RenewalCycleRepo;
+  /**
+   * DV-Wave2 ⑥ — F8 → F5 waived-refund read for the `loadPipelineMoney`
+   * money band. The ONE place renewals reads F5 §105/void waived refunds
+   * (Track B). Consumed by `loadPipelineMoney` to net the collected/settled
+   * legs per-invoice. Adapter goes through the payments public barrel only.
+   */
+  readonly waivedRefundTotals: WaivedRefundTotalsPort;
   /**
    * Phase 3 H1 (T061) — F8 → F4 cross-module bridge composing
    * `createInvoiceDraft` + `issueInvoice` + `recordPayment` for the
@@ -459,6 +468,7 @@ export function makeRenewalsDeps(tenantId: string): RenewalsDeps {
     tenant,
     scheduledPlanChangeRepo: drizzleScheduledPlanChangeRepo,
     cyclesRepo: makeDrizzleRenewalCycleRepo(tenant),
+    waivedRefundTotals: makeWaivedRefundTotalsAdapter(tenantId),
     f4InvoiceBridge,
     auditEmitter: makeDrizzleRenewalAuditEmitter(tenant),
     tokenSigner: renewalLinkTokenSigner,

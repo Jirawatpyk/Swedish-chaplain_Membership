@@ -50,6 +50,7 @@ import {
   type MembersWithoutCyclePage,
   type NewRenewalCycleInput,
   type StaleAutoDraftRow,
+  type PipelineMoneyRaw,
   type PipelineQueryOpts,
   type PipelineQueryResult,
   type PipelineRow,
@@ -1816,6 +1817,100 @@ export function makeDrizzleRenewalCycleRepo(
           cycleId: asCycleId(r.cycleId),
           memberId: r.memberId,
         }));
+      });
+    },
+
+    async loadPipelineMoneyRaw(
+      _tenantId: string,
+      opts: {
+        readonly nowIso: string;
+        readonly windowDays: number;
+        readonly fiscalYearStartMonth: number;
+      },
+    ): Promise<PipelineMoneyRaw> {
+      return runInTenant(tenant, async (tx) => {
+        // ---- BKK boundaries, all derived from nowIso (deterministic) ----
+        const nowBkk = sql`(${opts.nowIso}::timestamptz AT TIME ZONE 'Asia/Bangkok')`;
+        const today = sql`(${nowBkk})::date`;
+        const windowEnd = sql`((${today}) + (${opts.windowDays} * INTERVAL '1 day'))::date`;
+        const monthStart = sql`date_trunc('month', ${nowBkk})`;
+        const nextMonth = sql`(date_trunc('month', ${nowBkk}) + INTERVAL '1 month')`;
+        // Replicates deriveFiscalYear() (src/lib/fiscal-year.ts) IN SQL: FY n
+        // starts on the 1st of `startMonth` of CE year n (Bangkok wall time);
+        // a `today` before `startMonth` belongs to the previous FY. NEVER use
+        // `invoices.fiscal_year` — that column is ISSUE-date-based (schema
+        // comment ~L111), and this is a DUE-date cohort.
+        const fyStart = sql`make_date(
+          CASE WHEN EXTRACT(MONTH FROM ${today})::int >= ${opts.fiscalYearStartMonth}
+               THEN EXTRACT(YEAR FROM ${today})::int
+               ELSE EXTRACT(YEAR FROM ${today})::int - 1 END,
+          ${opts.fiscalYearStartMonth}, 1)`;
+
+        // Explicit tenant_id predicate = two-layer isolation on top of RLS.
+        const membership = and(
+          eq(invoices.tenantId, tenant.slug),
+          eq(invoices.invoiceSubject, 'membership'),
+        )!;
+
+        // ---- Scalar legs (overdue + dueSoon): raw Σ(total), FY-scoped ----
+        const [scalars] = await tx
+          .select({
+            overdue: sql<string>`COALESCE(SUM(${invoices.totalSatang}) FILTER (
+              WHERE ${invoices.status} = 'issued'
+                AND ${invoices.dueDate} IS NOT NULL
+                AND ${invoices.dueDate} >= ${fyStart}
+                AND ${invoices.dueDate} <  ${today}), 0)`,
+            dueSoon: sql<string>`COALESCE(SUM(${invoices.totalSatang}) FILTER (
+              WHERE ${invoices.status} = 'issued'
+                AND ${invoices.dueDate} IS NOT NULL
+                AND ${invoices.dueDate} >= ${today}
+                AND ${invoices.dueDate} <= ${windowEnd}), 0)`,
+          })
+          .from(invoices)
+          .where(membership);
+
+        // ---- Settled rows (due-cohort this FY): (id, total − credited) ----
+        const settledRows = await tx
+          .select({
+            invoiceId: invoices.invoiceId,
+            netOfCredit: sql<string>`(${invoices.totalSatang} - ${invoices.creditedTotalSatang})`,
+          })
+          .from(invoices)
+          .where(sql`
+            ${invoices.tenantId} = ${tenant.slug}
+            AND ${invoices.invoiceSubject} = 'membership'
+            AND ${invoices.status} IN ('paid','partially_credited','credited')
+            AND ${invoices.dueDate} IS NOT NULL
+            AND ${invoices.dueDate} >= ${fyStart}
+            AND ${invoices.dueDate} <  ${today}`);
+
+        // ---- Collected rows (paid this BKK month): (id, total − credited) ----
+        const collectedRows = await tx
+          .select({
+            invoiceId: invoices.invoiceId,
+            netOfCredit: sql<string>`(${invoices.totalSatang} - ${invoices.creditedTotalSatang})`,
+          })
+          .from(invoices)
+          .where(sql`
+            ${invoices.tenantId} = ${tenant.slug}
+            AND ${invoices.invoiceSubject} = 'membership'
+            AND ${invoices.status} IN ('paid','partially_credited','credited')
+            AND ${invoices.paidAt} IS NOT NULL
+            AND (${invoices.paidAt} AT TIME ZONE 'Asia/Bangkok') >= ${monthStart}
+            AND (${invoices.paidAt} AT TIME ZONE 'Asia/Bangkok') <  ${nextMonth}`);
+
+        return {
+          overdueSatang: BigInt(scalars?.overdue ?? '0'),
+          dueSoonSatang: BigInt(scalars?.dueSoon ?? '0'),
+          settledRows: settledRows.map((r) => ({
+            invoiceId: r.invoiceId,
+            netOfCreditSatang: BigInt(r.netOfCredit),
+          })),
+          collectedRows: collectedRows.map((r) => ({
+            invoiceId: r.invoiceId,
+            netOfCreditSatang: BigInt(r.netOfCredit),
+          })),
+        };
       });
     },
 

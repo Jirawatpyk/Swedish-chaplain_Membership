@@ -301,6 +301,10 @@ export type {
   PipelineQueryResult,
   PipelineRow,
   PipelineSummary,
+  // DV-Wave2 ⑥ — money KPI band roll-up shape. `PipelineMoneyRaw` + the
+  // waived port stay INTERNAL (not exported) — the use-case is the only
+  // public entry point.
+  PipelineMoneySummary,
   UrgencyBucket,
   // DV-18 — members-without-cycle tray shapes.
   ListMembersWithoutCycleOpts,
@@ -335,6 +339,17 @@ export {
   type LoadPipelineInput,
   type LoadPipelineError,
 } from './application/use-cases/load-pipeline';
+
+// DV-Wave2 ⑥ — THB money KPI band use-case + its input schema. The pure
+// due-cohort rate helper is re-exported alongside so Presentation (the band)
+// and tests never deep-import `./domain/**` (blocked by the barrel rule).
+export {
+  loadPipelineMoney,
+  loadPipelineMoneyInputSchema,
+  type LoadPipelineMoneyInput,
+  type LoadPipelineMoneyError,
+} from './application/use-cases/load-pipeline-money';
+export { collectionRatePct } from './domain/collection-rate';
 
 export {
   loadRenewalMonthSummary,
