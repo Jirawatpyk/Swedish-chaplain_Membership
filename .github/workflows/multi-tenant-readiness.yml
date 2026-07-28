@@ -30,6 +30,18 @@
 # 2026-05-11). Once the operator configures the secret, the readiness
 # suite runs for real.
 #
+# **Env drift fix (2026-07-28)**: both jobs used to declare their whole
+# env inline. `src/lib/env.ts` kept gaining required keys (F5 Stripe, F7
+# broadcasts from-address, Vercel Blob, TENANT_SLUG, …); the inline lists
+# never followed. Every run from at least 2026-07-16 onward therefore died
+# at BOOT — `Environment validation failed … 14 × Required`, `Tests: no
+# tests` — so the tenant-isolation gate reported red nightly while
+# executing nothing. The jobs now seed `.env.local` from `.env.example`,
+# the one key-list two gates keep honest (`check:env-example` = no key
+# missing, `check:env-boot` = the file boots the schema VERBATIM). The
+# job-level `env:` below still wins wherever a real value is needed:
+# `process.loadEnvFile` does NOT override an already-set variable.
+#
 # Failure of either job = ship blocker for the next F7.x or F8.x
 # amendment of the failing feature only.
 name: F7 + F8 Multi-tenant readiness (nightly)
@@ -63,14 +75,19 @@ jobs:
       TEST_DB_HOST_BLOCKLIST: ${{ vars.TEST_DB_HOST_BLOCKLIST }}
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v3
-        with:
-          version: 9
+      # No `version:` — reads `packageManager` (pnpm@10.0.0), so the runner
+      # cannot drift from the lockfile the way the env list did.
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+
+      # See § "Env drift fix" in the header. The job-level `env:` above still
+      # overrides anything here that must be real (DATABASE_URL, flags).
+      - name: Seed .env.local from .env.example (gate-verified key list)
+        run: cp .env.example .env.local
 
       - name: Notice — CI_DATABASE_URL not configured (DB steps skipped)
         if: ${{ env.DATABASE_URL == '' }}
@@ -113,14 +130,19 @@ jobs:
       TEST_DB_HOST_BLOCKLIST: ${{ vars.TEST_DB_HOST_BLOCKLIST }}
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v3
-        with:
-          version: 9
+      # No `version:` — reads `packageManager` (pnpm@10.0.0), so the runner
+      # cannot drift from the lockfile the way the env list did.
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+
+      # See § "Env drift fix" in the header. The job-level `env:` above still
+      # overrides anything here that must be real (DATABASE_URL, flags).
+      - name: Seed .env.local from .env.example (gate-verified key list)
+        run: cp .env.example .env.local
 
       - name: Notice — CI_DATABASE_URL not configured (DB steps skipped)
         if: ${{ env.DATABASE_URL == '' }}
