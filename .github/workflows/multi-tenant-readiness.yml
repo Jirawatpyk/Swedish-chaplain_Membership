@@ -30,6 +30,18 @@
 # 2026-05-11). Once the operator configures the secret, the readiness
 # suite runs for real.
 #
+# **Env drift fix (2026-07-28)**: both jobs used to declare their whole
+# env inline. `src/lib/env.ts` kept gaining required keys (F5 Stripe, F7
+# broadcasts from-address, Vercel Blob, TENANT_SLUG, …); the inline lists
+# never followed. Every run from at least 2026-07-16 onward therefore died
+# at BOOT — `Environment validation failed … 14 × Required`, `Tests: no
+# tests` — so the tenant-isolation gate reported red nightly while
+# executing nothing. The jobs now seed `.env.local` from `.env.example`,
+# the one key-list two gates keep honest (`check:env-example` = no key
+# missing, `check:env-boot` = the file boots the schema VERBATIM). The
+# job-level `env:` below still wins wherever a real value is needed:
+# `process.loadEnvFile` does NOT override an already-set variable.
+#
 # Failure of either job = ship blocker for the next F7.x or F8.x
 # amendment of the failing feature only.
 name: F7 + F8 Multi-tenant readiness (nightly)
@@ -41,8 +53,66 @@ on:
   workflow_dispatch: {}
 
 jobs:
+  # Migrations first, once, for both readiness jobs (2026-07-28). Nothing ever
+  # migrated the CI branch, so it sat at whatever schema it had when the
+  # secret was configured: the first run after the env fix failed with
+  # `SQL missing TS values: ["broadcast_membership_suspended_blocked"]` — an
+  # enum the TS tuple has and that branch's `audit_event_type` did not. A
+  # single serialised job also avoids two parallel `db:migrate` calls racing
+  # for the same migration lock, and warms a suspended Neon compute before the
+  # test jobs dial in.
+  migrate:
+    name: Migrate the CI Neon branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
+      TEST_DB_HOST_BLOCKLIST: ${{ vars.TEST_DB_HOST_BLOCKLIST }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Every DB URL is stripped out of the seed. `.env.example` ships real
+      # KEYS with fake HOSTS, and `scripts/run-migrations.ts` (line ~55)
+      # prefers DATABASE_URL_UNPOOLED / POSTGRES_URL_NON_POOLING over
+      # DATABASE_URL — so seeding the file whole made the migrate job dial
+      # `host.aws.neon.tech` and die on ENOTFOUND while the real branch URL sat
+      # unused in the job env. Removing the URLs leaves the job env as the only
+      # source of a connection string, for every consumer.
+      - name: Seed .env.local from .env.example (gate-verified key list, DB URLs stripped)
+        run: grep -vE '^(DATABASE_URL|DATABASE_URL_UNPOOLED|POSTGRES_URL_NON_POOLING)=' .env.example > .env.local
+
+      # `tests/integration-setup.ts` refuses to run against a blocklisted host,
+      # but `scripts/run-migrations.ts` has no such guard — and this job WRITES
+      # DDL. Re-assert the guard here so a mis-set CI_DATABASE_URL can never
+      # migrate production from CI.
+      - name: Refuse to migrate a blocklisted (production) host
+        if: ${{ env.DATABASE_URL != '' }}
+        run: |
+          IFS=',' read -ra BLOCKED <<< "${TEST_DB_HOST_BLOCKLIST}"
+          for host in "${BLOCKED[@]}"; do
+            trimmed="$(echo "$host" | xargs)"
+            [ -z "$trimmed" ] && continue
+            case "$DATABASE_URL" in
+              *"$trimmed"*)
+                echo "::error title=Refusing to migrate::DATABASE_URL matches blocklisted host \"$trimmed\" (TEST_DB_HOST_BLOCKLIST). CI must point at a disposable Neon branch, never production."
+                exit 1
+                ;;
+            esac
+          done
+          echo "DATABASE_URL host is not blocklisted — proceeding."
+
+      - name: Apply migrations
+        if: ${{ env.DATABASE_URL != '' }}
+        run: pnpm db:migrate
+
   f7:
     name: F7 broadcasts readiness
+    needs: migrate
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -63,14 +133,26 @@ jobs:
       TEST_DB_HOST_BLOCKLIST: ${{ vars.TEST_DB_HOST_BLOCKLIST }}
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v3
-        with:
-          version: 9
+      # No `version:` — reads `packageManager` (pnpm@10.0.0), so the runner
+      # cannot drift from the lockfile the way the env list did.
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+
+      # See § "Env drift fix" in the header. The job-level `env:` above still
+      # overrides anything here that must be real (DATABASE_URL, flags).
+      # Every DB URL is stripped out of the seed. `.env.example` ships real
+      # KEYS with fake HOSTS, and `scripts/run-migrations.ts` (line ~55)
+      # prefers DATABASE_URL_UNPOOLED / POSTGRES_URL_NON_POOLING over
+      # DATABASE_URL — so seeding the file whole made the migrate job dial
+      # `host.aws.neon.tech` and die on ENOTFOUND while the real branch URL sat
+      # unused in the job env. Removing the URLs leaves the job env as the only
+      # source of a connection string, for every consumer.
+      - name: Seed .env.local from .env.example (gate-verified key list, DB URLs stripped)
+        run: grep -vE '^(DATABASE_URL|DATABASE_URL_UNPOOLED|POSTGRES_URL_NON_POOLING)=' .env.example > .env.local
 
       - name: Notice — CI_DATABASE_URL not configured (DB steps skipped)
         if: ${{ env.DATABASE_URL == '' }}
@@ -94,6 +176,7 @@ jobs:
 
   f8:
     name: F8 renewals readiness
+    needs: migrate
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -113,14 +196,26 @@ jobs:
       TEST_DB_HOST_BLOCKLIST: ${{ vars.TEST_DB_HOST_BLOCKLIST }}
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v3
-        with:
-          version: 9
+      # No `version:` — reads `packageManager` (pnpm@10.0.0), so the runner
+      # cannot drift from the lockfile the way the env list did.
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+
+      # See § "Env drift fix" in the header. The job-level `env:` above still
+      # overrides anything here that must be real (DATABASE_URL, flags).
+      # Every DB URL is stripped out of the seed. `.env.example` ships real
+      # KEYS with fake HOSTS, and `scripts/run-migrations.ts` (line ~55)
+      # prefers DATABASE_URL_UNPOOLED / POSTGRES_URL_NON_POOLING over
+      # DATABASE_URL — so seeding the file whole made the migrate job dial
+      # `host.aws.neon.tech` and die on ENOTFOUND while the real branch URL sat
+      # unused in the job env. Removing the URLs leaves the job env as the only
+      # source of a connection string, for every consumer.
+      - name: Seed .env.local from .env.example (gate-verified key list, DB URLs stripped)
+        run: grep -vE '^(DATABASE_URL|DATABASE_URL_UNPOOLED|POSTGRES_URL_NON_POOLING)=' .env.example > .env.local
 
       - name: Notice — CI_DATABASE_URL not configured (DB steps skipped)
         if: ${{ env.DATABASE_URL == '' }}

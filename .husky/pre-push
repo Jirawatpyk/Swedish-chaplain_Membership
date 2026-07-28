@@ -1,7 +1,9 @@
 #!/usr/bin/env sh
-# Pre-push guards — kept fast (~30 sec for guard tests) so the dev
-# loop stays tight. Heavier suites (full contract, e2e, coverage)
-# run in CI only. Per-module integration tests run conditionally
+# Pre-push guards — ~35-40 sec total (6 static checks + the 24 s
+# architecture suite) so the dev loop stays tight. Heavier suites
+# (full contract, lint, typecheck) run in CI on every PR + push to
+# main — see .github/workflows/quality-gates.yml; e2e + coverage stay
+# manual. Per-module integration tests run conditionally
 # when the push touches that module (see § Spec Coverage Gate below).
 #
 # Rationale per check (all derived from 2026-05-17 polish retrospective):
@@ -39,20 +41,22 @@
 #                       zod schema in-process against a scratch copy
 #                       in the OS temp dir).
 #
-#   - vitest payments contract : F5R3 H-5 contract drift class —
-#                       webhook Result<T,E> envelope +
-#                       WebhookSignatureError mock importActual.
-#                       Catches surface promise changes BEFORE merge.
-#                       ~12 sec on Neon Singapore.
-#
 #   - vitest architecture     : Principle III Clean-Architecture
 #                       barrel guard — events module barrel rule
 #                       (e815caa9 F6 Phase 10 leaked raw infra).
-#                       ~10 sec.
+#                       8 files / 63 tests, ~24 sec measured.
 #
-# Other tests/contract/* dirs (auth, broadcasts, events, members,
-# plans, portal, renewals) run in full CI only — they're stable
-# surfaces with no recent drift class to guard against in pre-push.
+# MOVED OUT 2026-07-28: the whole `tests/contract/` directory used to
+# run here too (190 files / 1787 tests, measured 258 s), which made
+# every push — including docs-only ones — cost ~4.3 min and get
+# SIGTERM-killed by short tool timeouts. It now runs on every PR and
+# every push to main in `.github/workflows/quality-gates.yml`, which
+# ALSO adds the `pnpm lint` + `pnpm typecheck` gates that no hook and
+# no workflow previously ran. Run it locally before opening a PR with:
+#   pnpm vitest run tests/contract/
+# The architecture suite deliberately stays here as well as in CI: it
+# is the settlement-tx money guard, it costs 24 s, and a hook that
+# fires BEFORE the push is worth more than a report that arrives after.
 
 pnpm check:layout
 pnpm check:template-seed
@@ -60,7 +64,7 @@ pnpm check:fixme
 pnpm check:dates
 pnpm check:env-example
 pnpm check:env-boot
-pnpm vitest run tests/contract/ tests/unit/architecture/ --passWithNoTests
+pnpm vitest run tests/unit/architecture/ --passWithNoTests
 
 # ===========================================================================
 # Spec Coverage Gate — per-module integration tests (R10 retrospective HIGH-1)
