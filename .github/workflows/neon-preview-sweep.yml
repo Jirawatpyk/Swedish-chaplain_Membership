@@ -1,0 +1,181 @@
+# Age-based sweep of leftover `preview/*` Neon branches. DRY RUN BY DEFAULT.
+#
+# WHY, ON TOP OF neon-preview-cleanup.yml
+# That workflow deletes `preview/<head_ref>` when a PR closes, and it has
+# existed since 2026-06-24. On 2026-07-28 the branch inventory still showed
+# leftovers from PRs closed on 07-06, 07-09 and 07-23 — so it is failing
+# silently (`continue-on-error: true` swallows whatever goes wrong) — plus two
+# branches with no PR at all (`preview/chore/import-invoices-script`,
+# `preview/058-finance-dashboard`), which a `pull_request: closed` trigger can
+# never reach. An age-based sweep covers both holes without needing to know why
+# the event-based one missed.
+#
+# WHY IT MATTERS: every `preview/*` branch is a copy-on-write branch of `main`,
+# i.e. a full copy of PRODUCTION member data. Leaving them lying around for
+# weeks is a data-retention problem, not a tidiness one.
+#
+# SAFETY (this workflow can delete data, so the guards are the point):
+#   - Only names matching `^preview/` are ever candidates.
+#   - An explicit denylist rejects main / dev / ci / *backup* on top of that.
+#   - The branch behind CI_DATABASE_URL is excluded by id, whatever it is named.
+#   - Branches belonging to an OPEN pull request are kept regardless of age.
+#   - Nothing deletes until an operator opts in. A PR run is always a dry run; a
+#     manual run deletes only with `dry_run: false`; a SCHEDULED run deletes
+#     only once the repo variable `NEON_PREVIEW_SWEEP_ENABLED` is set to
+#     `true`. Read a dry-run report first, then set the variable — no code
+#     change needed to arm or disarm it.
+name: Neon preview branch sweep
+
+on:
+  schedule:
+    # 21:00 UTC = 04:00 Bangkok, after the integration sweep's window.
+    - cron: '0 21 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Report only, delete nothing'
+        type: boolean
+        default: true
+      max_age_days:
+        description: 'Delete preview branches older than this many days'
+        default: '7'
+  # Self-test on the PR that edits this file — always a dry run (see below).
+  pull_request:
+    paths:
+      - '.github/workflows/neon-preview-sweep.yml'
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  sweep:
+    name: Sweep stale preview branches
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+      NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+      CI_DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
+      GH_TOKEN: ${{ github.token }}
+      MAX_AGE_DAYS: ${{ inputs.max_age_days || '7' }}
+      # Resolved in bash below rather than in a nested GitHub expression —
+      # whether this workflow deletes data should be readable at a glance.
+      EVENT_NAME: ${{ github.event_name }}
+      INPUT_DRY_RUN: ${{ inputs.dry_run }}
+      SWEEP_ENABLED: ${{ vars.NEON_PREVIEW_SWEEP_ENABLED }}
+    steps:
+      - name: Notice — not configured
+        if: ${{ env.NEON_API_KEY == '' || env.NEON_PROJECT_ID == '' }}
+        run: |
+          echo "::notice title=Sweep skipped::NEON_API_KEY secret or NEON_PROJECT_ID variable is not set." | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Sweep
+        if: ${{ env.NEON_API_KEY != '' && env.NEON_PROJECT_ID != '' }}
+        run: |
+          set -uo pipefail
+
+          # Arming, in one place. A PR run can never delete; a manual run
+          # deletes only when explicitly asked; a scheduled run deletes only
+          # while the operator keeps NEON_PREVIEW_SWEEP_ENABLED=true.
+          case "$EVENT_NAME" in
+            pull_request)      DRY_RUN=true ;;
+            workflow_dispatch) [ "${INPUT_DRY_RUN}" = 'false' ] && DRY_RUN=false || DRY_RUN=true ;;
+            *)                 [ "${SWEEP_ENABLED}" = 'true' ]  && DRY_RUN=false || DRY_RUN=true ;;
+          esac
+          echo "event=${EVENT_NAME} dry_run=${DRY_RUN} max_age_days=${MAX_AGE_DAYS}"
+
+          api() {
+            method="$1"; path="$2"
+            curl -sS -X "$method" -H "Authorization: Bearer ${NEON_API_KEY}" \
+              "https://console.neon.tech/api/v2/projects/${NEON_PROJECT_ID}${path}"
+          }
+
+          ci_host=''
+          if [ -n "${CI_DATABASE_URL}" ]; then
+            ci_host="$(printf '%s' "${CI_DATABASE_URL}" | sed -E 's|^[^@]*@||; s|[:/?].*$||; s|-pooler||')"
+            echo "::add-mask::${ci_host}"
+          fi
+
+          branches="$(api GET /branches)"
+          endpoints="$(api GET /endpoints)"
+          if ! printf '%s' "$branches" | jq -e '.branches' >/dev/null 2>&1; then
+            echo "::error title=Neon API call failed::The branches endpoint did not return a branch list."
+            exit 1
+          fi
+
+          ci_branch_id="$(printf '%s' "$endpoints" \
+            | jq -r --arg h "$ci_host" '[.endpoints[]? | select(($h != "") and (.host | sub("-pooler";"")) == $h) | .branch_id] | first // ""')"
+
+          # Preview branches of OPEN PRs stay, however old: deleting one breaks
+          # a live preview deployment.
+          open_previews="$(gh pr list --state open --limit 200 --json headRefName --jq '.[].headRefName' 2>/dev/null | sed 's|^|preview/|' || true)"
+
+          cutoff_epoch=$(( $(date -u +%s) - (MAX_AGE_DAYS * 86400) ))
+
+          echo "## Neon preview sweep (dry_run=${DRY_RUN}, older than ${MAX_AGE_DAYS}d)" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "| branch | age (d) | verdict |" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|---|" | tee -a "$GITHUB_STEP_SUMMARY"
+
+          deleted=0; kept=0; failed=0
+          while IFS=$'\t' read -r id name created; do
+            [ -z "$name" ] && continue
+            age_days=$(( ( $(date -u +%s) - $(date -u -d "$created" +%s) ) / 86400 ))
+
+            # Allowlist first: anything not named `preview/…` is out of scope
+            # and is not even reported, so the table stays about this job.
+            case "$name" in
+              preview/*) ;;
+              *) continue ;;
+            esac
+
+            verdict=''
+            # Belt to the allowlist's braces: a branch called `preview/ci` or
+            # `preview/…backup…` would still be refused.
+            case "$name" in
+              */main|*/dev|*/ci|*backup*) verdict='SKIP — protected name' ;;
+            esac
+            if [ -z "$verdict" ] && [ -n "$ci_branch_id" ] && [ "$id" = "$ci_branch_id" ]; then
+              verdict='SKIP — this is CI_DATABASE_URL'
+            fi
+            if [ -z "$verdict" ] && printf '%s\n' "$open_previews" | grep -Fxq "$name"; then
+              verdict='keep — open PR'
+            fi
+            if [ -z "$verdict" ] && [ "$(date -u -d "$created" +%s)" -ge "$cutoff_epoch" ]; then
+              verdict="keep — younger than ${MAX_AGE_DAYS}d"
+            fi
+
+            if [ -n "$verdict" ]; then
+              echo "| \`$name\` | $age_days | $verdict |" | tee -a "$GITHUB_STEP_SUMMARY"
+              kept=$((kept+1))
+              continue
+            fi
+
+            if [ "$DRY_RUN" = 'true' ]; then
+              echo "| \`$name\` | $age_days | WOULD DELETE |" | tee -a "$GITHUB_STEP_SUMMARY"
+              deleted=$((deleted+1))
+            else
+              if api DELETE "/branches/${id}" | jq -e '.branch.id' >/dev/null 2>&1; then
+                echo "| \`$name\` | $age_days | DELETED |" | tee -a "$GITHUB_STEP_SUMMARY"
+                deleted=$((deleted+1))
+              else
+                echo "| \`$name\` | $age_days | **DELETE FAILED** |" | tee -a "$GITHUB_STEP_SUMMARY"
+                echo "::warning title=Delete failed::${name}"
+                failed=$((failed+1))
+              fi
+            fi
+          done < <(printf '%s' "$branches" | jq -r '.branches[] | [.id, .name, .created_at] | @tsv')
+
+          {
+            echo ""
+            if [ "$DRY_RUN" = 'true' ]; then
+              echo "**Dry run** — ${deleted} branch(es) would be deleted, ${kept} kept. Re-run with \`dry_run: false\` to act."
+            else
+              echo "${deleted} deleted, ${kept} kept, ${failed} failed."
+            fi
+            echo ""
+            echo "Non-preview leftovers (e.g. \`prewipe-prod-backup\`) are never touched here — deleting a backup is an operator decision, not a cron's."
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+          [ "$failed" -eq 0 ]
