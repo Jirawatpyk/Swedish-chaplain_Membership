@@ -23,6 +23,14 @@ export interface EmptyStateProps {
    * placeholder, the original behaviour).
    */
   readonly bordered?: boolean;
+  /**
+   * Fix round 1 M-3 — override the icon's colour class. Defaults to
+   * `text-muted-foreground` (unchanged for every existing consumer). Lets a
+   * deliberate positive-affirmation empty state (e.g. the at-risk widget's
+   * "no one at risk" `ShieldCheck`) keep its `text-success` green after
+   * routing through this shared primitive.
+   */
+  readonly iconClassName?: string;
   /** Optional test hook (e.g. list-empty E2E assertions). */
   readonly 'data-testid'?: string;
 }
@@ -34,6 +42,7 @@ export function EmptyState({
   action,
   className,
   bordered = true,
+  iconClassName,
   'data-testid': dataTestId,
 }: EmptyStateProps) {
   return (
@@ -46,7 +55,9 @@ export function EmptyState({
       )}
       role="status"
     >
-      {Icon ? <Icon className="size-10 text-muted-foreground" aria-hidden /> : null}
+      {Icon ? (
+        <Icon className={cn('size-10 text-muted-foreground', iconClassName)} aria-hidden />
+      ) : null}
       <div className="space-y-1">
         <p className="text-base font-medium">{title}</p>
         {description ? (

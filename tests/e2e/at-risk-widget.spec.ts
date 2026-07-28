@@ -19,9 +19,17 @@
  * `FEATURE_F8_AT_RISK_DISABLED=true` (granular kill-switch path is
  * tested separately in unit / integration).
  *
+ * Wave 2 Task 7 — `AtRiskWidget` is now the "Needs action" lens of the
+ * `WorkQueueTabs` 2-lens control (the pipeline lens is active by default),
+ * so every test that asserts on the widget's DOM must first switch lenses
+ * via `openNeedsActionLens`. AS5 (member cannot reach the surface at all)
+ * is unaffected — the widget heading assertion there is a negative
+ * (never rendered) that holds regardless of which lens is default.
+ *
  * Run with: `pnpm test:e2e --grep "at-risk-widget" --workers=1`
  * (workers=1 mandatory per memory feedback_e2e_workers).
  */
+import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { signInAsAdmin } from './helpers/admin-session';
 import { signInAsMember } from './helpers/member-session';
@@ -30,6 +38,27 @@ import {
   type SeededAtRiskMember,
 } from './helpers/seed-at-risk-member';
 import AxeBuilder from '@axe-core/playwright';
+
+/**
+ * Wave 2 Task 7 — clicks the `WorkQueueTabs` "Needs action" tab so the
+ * `AtRiskWidget` lens mounts. EN canonical accessible name (`i18n key
+ * admin.renewals.workQueue.needsAction`) — the E2E session signs in in
+ * English, mirroring every other role-name assertion in this suite.
+ *
+ * Hydration hardening (review round 1 minor) — several call sites click
+ * this tab immediately after `page.goto`, before `WorkQueueTabs` (a client
+ * component) has hydrated. The SSR-rendered `<button>` is already in the
+ * DOM and passes Playwright's actionability checks, so a click can land
+ * before React attaches the `onClick` handler — a silent no-op that leaves
+ * the pipeline lens mounted and times out every assertion downstream.
+ * Waiting for the page heading first gives hydration time to complete.
+ */
+async function openNeedsActionLens(page: Page): Promise<void> {
+  await page
+    .getByRole('heading', { name: /renewal pipeline/i })
+    .waitFor({ state: 'visible', timeout: 10_000 });
+  await page.getByRole('tab', { name: /needs action/i }).click();
+}
 
 const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL;
 const MEMBER_PASSWORD = process.env.E2E_MEMBER_PASSWORD;
@@ -83,6 +112,10 @@ test.describe('F8 — at-risk widget (US4)', () => {
       page.getByRole('heading', { name: /renewal pipeline/i }),
     ).toBeVisible({ timeout: 10_000 });
 
+    // Wave 2 Task 7 — AtRiskWidget is the WorkQueueTabs "Needs action"
+    // lens; the pipeline lens is active by default.
+    await openNeedsActionLens(page);
+
     // Widget Card has heading "At-risk members" (EN) — i18n key
     // admin.renewals.atRisk.title.
     await expect(
@@ -99,6 +132,9 @@ test.describe('F8 — at-risk widget (US4)', () => {
   }) => {
     await signInAsAdmin(page);
     await page.goto('/admin/renewals');
+    // Wave 2 Task 7 — AtRiskWidget is the WorkQueueTabs "Needs action"
+    // lens; the pipeline lens is active by default.
+    await openNeedsActionLens(page);
     await expect(
       page.getByRole('heading', { name: /at-risk members/i }),
     ).toBeVisible({ timeout: 10_000 });
@@ -145,6 +181,9 @@ test.describe('F8 — at-risk widget (US4)', () => {
   }) => {
     await signInAsAdmin(page);
     await page.goto('/admin/renewals');
+    // Wave 2 Task 7 — AtRiskWidget is the WorkQueueTabs "Needs action"
+    // lens; the pipeline lens is active by default.
+    await openNeedsActionLens(page);
     await expect(
       page.getByRole('heading', { name: /at-risk members/i }),
     ).toBeVisible({ timeout: 10_000 });
@@ -182,6 +221,9 @@ test.describe('F8 — at-risk widget (US4)', () => {
   test('axe-core a11y — widget passes 0 violations', async ({ page }) => {
     await signInAsAdmin(page);
     await page.goto('/admin/renewals');
+    // Wave 2 Task 7 — AtRiskWidget is the WorkQueueTabs "Needs action"
+    // lens; the pipeline lens is active by default.
+    await openNeedsActionLens(page);
     await expect(
       page.getByRole('heading', { name: /at-risk members/i }),
     ).toBeVisible({ timeout: 10_000 });
@@ -253,6 +295,9 @@ test.describe('F8 — at-risk widget (US4)', () => {
     try {
       await signInAsAdmin(page);
       await page.goto('/admin/renewals');
+      // Wave 2 Task 7 — AtRiskWidget is the WorkQueueTabs "Needs action"
+      // lens; the pipeline lens is active by default.
+      await openNeedsActionLens(page);
       await expect(
         page.getByRole('heading', { name: /at-risk members/i }),
       ).toBeVisible({ timeout: 10_000 });

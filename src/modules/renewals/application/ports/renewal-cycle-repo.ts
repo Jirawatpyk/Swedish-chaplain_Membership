@@ -917,6 +917,30 @@ export interface RenewalCycleRepo {
   ): Promise<PipelineQueryResult>;
 
   /**
+   * DV-Wave2 ⑥ — RAW money legs over F4 `invoices` for the pipeline KPI
+   * band. Tenant-isolated via RLS on the surrounding `runInTenant` PLUS an
+   * explicit `tenant_id` predicate on `invoices` (Principle I two-layer
+   * isolation — matches every sibling F4 cross-module read). All BKK date
+   * boundaries (`today`, `fyStart`, month window, due-soon window) are
+   * derived IN SQL from `nowIso` + `fiscalYearStartMonth`, so the result is
+   * deterministic per instant (the integration test pins `nowIso`).
+   *
+   * Returns RAW rows (not the netted summary): the two settled legs carry
+   * per-invoice `(id, total − credited)` because their §105/void waived
+   * netting can only be applied per-invoice in the use-case — the F5
+   * waived-refund total is a cross-module `Map<invoiceId, satang>`, not a
+   * joinable table (Constitution Principle III). See `load-pipeline-money.ts`.
+   */
+  loadPipelineMoneyRaw(
+    tenantId: string,
+    opts: {
+      readonly nowIso: string;
+      readonly windowDays: number;
+      readonly fiscalYearStartMonth: number;
+    },
+  ): Promise<PipelineMoneyRaw>;
+
+  /**
    * DV-18 — members that have NO `renewal_cycles` row at all (the renewal
    * gap the admin tray surfaces). Anti-join LEADS from `members` with a
    * correlated `NOT EXISTS` against the cycle table, EXCLUDING
@@ -1084,9 +1108,28 @@ export type UrgencyBucket =
   | 'suspended'
   | 'terminated';
 
+/**
+ * Wave 2 Task 8 — server-side pipeline sort key (additive `?sort` param).
+ *
+ * Default `expires_at_asc` (most-urgent-first) preserves the pre-existing
+ * order. Tier sorts order by the Domain `TIER_BUCKETS` ordinal (via the
+ * drift-guarded `tierBucketOrdinalCaseSql`), NOT the enum text. For EVERY
+ * value the keyset-pagination cursor is sort-aware — the emitted cursor key,
+ * the WHERE comparison, and the ORDER BY all match this ordering, so paging
+ * "Next 50" under a non-default sort never dups/skips a row (see
+ * `pipelineOrderBySql` / `pipelineKeysetWhereSql` in the Drizzle adapter).
+ */
+export type PipelineSort =
+  | 'expires_at_asc'
+  | 'expires_at_desc'
+  | 'tier_asc'
+  | 'tier_desc';
+
 export interface PipelineQueryOpts {
   readonly tier?: TierBucket;
   readonly urgency?: UrgencyBucket;
+  /** Additive sort key (Task 8). Absent ⇒ `expires_at_asc` (unchanged order). */
+  readonly sort?: PipelineSort;
   /**
    * Renewals-by-month lens — `'overdue' | 'YYYY-MM' | 'later'` (validated
    * upstream by the use-case). When present the row query is rebuilt from
@@ -1156,6 +1199,78 @@ export interface PipelineSummary {
   readonly totalInWindow: number;
   readonly byUrgency: Readonly<Record<UrgencyBucket, number>>;
   readonly lapsedCount: number;
+}
+
+/**
+ * DV-Wave2 ⑥ — THB money roll-up for the renewals pipeline KPI band.
+ *
+ * ALL fields are satang (bigint), VAT-INCLUSIVE, membership-invoices-only,
+ * with Asia/Bangkok period boundaries. Credit notes AND Track-B §105/void
+ * waived refunds are NETTED per-invoice (see `load-pipeline-money.ts`) —
+ * mirrors F9's `netBalanceSatang` gross/AR basis, NOT `netPaidRevenueSatang`
+ * (ex-VAT). The collection rate is DERIVED (Domain `collectionRatePct`) from
+ * `settledDueToDateSatang` + `overdueSatang`; it is not a field here.
+ *
+ * Reconciliation anchor: the membership subset of the F4 invoices register
+ * (status + due_date + total/credited − waived). NOT ภ.พ.30 (VAT by payment
+ * date) and NOT the paid-invoices CSV (`status='paid'` only).
+ */
+export interface PipelineMoneySummary {
+  /**
+   * Collection-rate NUMERATOR leg. Σ per-invoice max(0, total − credited −
+   * waived) over membership invoices with status ∈ {paid, partially_credited,
+   * credited} AND due_date in [fiscalYearStart, today) BKK. "What we HAVE
+   * collected of dues that came due this fiscal year."
+   */
+  readonly settledDueToDateSatang: bigint;
+  /**
+   * Collection-rate DENOMINATOR's other leg. Σ(total) — NO netting — over
+   * membership invoices with status = 'issued' AND due_date in
+   * [fiscalYearStart, today) BKK. An unpaid `issued` invoice can never be
+   * credited and has no succeeded payment (so no waived refund) → the raw
+   * SUM is exactly correct. "Dues that came due this fiscal year, still owed."
+   * Caption is always "Past due", never bare "Overdue".
+   */
+  readonly overdueSatang: bigint;
+  /**
+   * STANDALONE operational tile — NOT part of the rate. Σ per-invoice
+   * max(0, total − credited − waived) over membership invoices with status ∈
+   * {paid, partially_credited, credited} keyed by paid_at in the CURRENT
+   * Asia/Bangkok calendar month [monthStart, nextMonthStart). Matches the
+   * monthly bank-statement reconciliation cadence. Operational cash, NOT a
+   * period-close/tax total.
+   */
+  readonly collectedThisPeriodSatang: bigint;
+  /**
+   * Informational forward-look tile — NOT part of the rate. Σ(total) — no
+   * netting — over membership invoices with status = 'issued' AND due_date in
+   * [today, today + windowDays] BKK. "Dues coming due in the next N days, not
+   * yet overdue." Cash the treasurer can expect soon.
+   */
+  readonly dueSoonSatang: bigint;
+}
+
+/**
+ * DV-Wave2 ⑥ — pre-waived RAW legs returned by `loadPipelineMoneyRaw`.
+ * Internal to the repo↔use-case boundary — NOT barrel-exported (the use-case
+ * turns it into `PipelineMoneySummary` after applying the cross-module
+ * §105/void waived netting per-invoice).
+ */
+export interface PipelineMoneyRaw {
+  /** Σ(total) issued, due in [fyStart, today). Final — no netting possible. */
+  readonly overdueSatang: bigint;
+  /** Σ(total) issued, due in [today, today+window]. Final — no netting. */
+  readonly dueSoonSatang: bigint;
+  /** Per-invoice (id, total−credited) for settled statuses, due in [fyStart, today). */
+  readonly settledRows: ReadonlyArray<{
+    readonly invoiceId: string;
+    readonly netOfCreditSatang: bigint;
+  }>;
+  /** Per-invoice (id, total−credited) for settled statuses, paid_at in the current BKK month. */
+  readonly collectedRows: ReadonlyArray<{
+    readonly invoiceId: string;
+    readonly netOfCreditSatang: bigint;
+  }>;
 }
 
 export interface PipelineQueryResult {

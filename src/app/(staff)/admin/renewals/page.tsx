@@ -7,9 +7,13 @@
  *
  * Authz: admin OR manager. Manager is read-only — manager mutations are
  * blocked server-side at the route handlers (403 + `f8_role_violation_blocked`
- * audit), not via client-disabled menu items. The pipeline row menu only
- * exposes Send reminder + Open; Cancel + Mark-paid-offline are not row actions
- * at all (they live on the cycle-detail page).
+ * audit) AND (fix round 3) hidden client-side via `canMutate` on
+ * `<PipelineTable>`: "Send reminder" and "Mark paid offline" (Task 5, opens
+ * the guarded `MarkPaidOfflineDialog`) are admin-only affordances — a manager
+ * would otherwise see a CTA that only 403s on submit. "Mark contacted" stays
+ * visible for both roles (FR-033 + FR-052a's manager-mutation exception,
+ * never 403s for manager — see `pipeline-table.tsx`'s docstring). Cancel is
+ * still NOT a row action — it lives only on the cycle-detail page.
  * Kill-switch: when `FEATURE_F8_RENEWALS=false`, the dashboard route
  * returns 404 with audit `renewal_kill_switch_blocked` (FR-052b).
  */
@@ -20,7 +24,6 @@ import { redirect } from 'next/navigation';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { headers } from 'next/headers';
 import { randomUUID } from 'node:crypto';
-import { AlertTriangle } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { buttonVariants } from '@/components/ui/button';
 import { TableContainer } from '@/components/layout';
@@ -31,8 +34,11 @@ import { logger } from '@/lib/logger';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
+import { runInTenant } from '@/lib/db';
+import { asTenantContext } from '@/modules/tenants';
 import {
   loadPipeline,
+  loadPipelineMoney,
   loadPendingReactivationReview,
   makeRenewalsDeps,
   parseMonthParam,
@@ -41,7 +47,9 @@ import {
   TIER_BUCKETS,
   type TierBucket,
   type UrgencyBucket,
+  type PipelineSort,
   type LoadPendingReactivationReviewOutput,
+  type PipelineMoneySummary,
 } from '@/modules/renewals';
 import { formatMonthKeyLabel } from '@/components/renewals/month-bucket-label';
 import {
@@ -51,16 +59,25 @@ import {
 import { RenewalsEmptyState } from './_components/empty-state';
 import { shouldShowRenewalsEmptyState } from './_lib/should-show-empty-state';
 import { UrgencyBucketTabs } from './_components/urgency-bucket-tabs';
+import {
+  PipelineMoneyBand,
+  PipelineMoneyBandSkeleton,
+} from './_components/pipeline-money-band';
 import { PipelineTable } from './_components/pipeline-table';
+import { LoadErrorCard } from './_components/load-error-card';
 import { LapsedTab } from './_components/lapsed-tab';
 import { TierFilterSelect } from './_components/tier-filter-select';
 import { ErrorCardActions } from './_components/error-card-actions';
 import { AtRiskWidget } from './_components/at-risk-widget';
+import { WorkQueueTabs } from './_components/work-queue-tabs';
 import {
   MembersWithoutCycleTray,
   MembersWithoutCycleTraySkeleton,
 } from './_components/members-without-cycle-tray';
-import { RenewalsSectionTabs } from './_components/renewals-section-tabs';
+import {
+  RenewalsSectionTabs,
+  TabCountBadge,
+} from './_components/renewals-section-tabs';
 import {
   PendingReviewList,
   type PendingReviewRow,
@@ -87,10 +104,21 @@ const URGENCY_VALUES: ReadonlySet<UrgencyBucket> = new Set([
 
 const DEFAULT_URGENCY: UrgencyBucket = 't-30';
 
+const SORT_VALUES: ReadonlySet<PipelineSort> = new Set([
+  'expires_at_asc',
+  'expires_at_desc',
+  'tier_asc',
+  'tier_desc',
+]);
+
+const DEFAULT_SORT: PipelineSort = 'expires_at_asc';
+
 interface SearchParams {
   readonly tier?: string;
   readonly urgency?: string;
   readonly cursor?: string;
+  /** Task 8 — additive server-side sort (`expires`/`tier`, both directions). */
+  readonly sort?: string;
   /** `'pending-review'` selects the reactivation-review discovery view. */
   readonly view?: string;
   /** Renewals-by-month lens — `'overdue' | 'YYYY-MM' | 'later'`. */
@@ -149,6 +177,14 @@ export default async function RenewalsPipelinePage({
       ? (query.urgency as UrgencyBucket)
       : DEFAULT_URGENCY;
   const cursor = typeof query.cursor === 'string' ? query.cursor : undefined;
+  // Task 8 — additive sort. Invalid/absent falls back to the pre-existing
+  // `expires_at_asc` (so a bookmarked / hand-edited `?sort` never 400s or
+  // mis-pages). Purely additive: `?urgency`/`?month`/`?tier`/`?view` are
+  // untouched.
+  const sort: PipelineSort =
+    query.sort && SORT_VALUES.has(query.sort as PipelineSort)
+      ? (query.sort as PipelineSort)
+      : DEFAULT_SORT;
   const isPendingReviewView = query.view === 'pending-review';
 
   // Renewals-by-month lens. A present + VALID month wins over urgency
@@ -216,6 +252,7 @@ export default async function RenewalsPipelinePage({
     urgency,
     ...(monthLensActive ? { month: month as string, nowIso } : {}),
     ...(cursor !== undefined ? { cursor } : {}),
+    sort,
     limit: 50,
   });
 
@@ -271,11 +308,40 @@ export default async function RenewalsPipelinePage({
   } else {
     paginationParams.set('urgency', urgency);
   }
+  // Task 8 — CRITICAL: carry the active sort across "Next 50" so page 2
+  // decodes the sort-aware keyset cursor under the SAME sort it was minted
+  // under. Without this, page 2 would revert to `expires_at_asc` while the
+  // cursor encodes a tier/desc key → dup/skip. Omitted when default so the
+  // pre-Task-8 URL shape is unchanged.
+  if (sort !== DEFAULT_SORT) paginationParams.set('sort', sort);
   if (nextCursor !== null) paginationParams.set('cursor', nextCursor);
   const nextHref =
     nextCursor !== null
       ? `/admin/renewals?${paginationParams.toString()}`
       : null;
+
+  // Task 8 — header sort links. Same param-preservation discipline as
+  // `paginationParams` (preserve tier + the active lens) but ALWAYS reset
+  // pagination: DELETE `cursor` (and its `nowIso` companion — never set here)
+  // on a sort change so a stale keyset cursor from the previous sort can never
+  // mis-page the newly-sorted list. Each column link toggles its own direction.
+  const buildSortHref = (nextSort: PipelineSort): string => {
+    const p = new URLSearchParams();
+    if (tier !== undefined) p.set('tier', tier);
+    if (monthLensActive) {
+      p.set('month', month as string);
+    } else {
+      p.set('urgency', urgency);
+    }
+    p.set('sort', nextSort);
+    return `/admin/renewals?${p.toString()}`;
+  };
+  const sortHrefs: Record<'expires' | 'tier', string> = {
+    expires: buildSortHref(
+      sort === 'expires_at_asc' ? 'expires_at_desc' : 'expires_at_asc',
+    ),
+    tier: buildSortHref(sort === 'tier_asc' ? 'tier_desc' : 'tier_asc'),
+  };
 
   // Renewals-by-month lens — dedicated-copy fix-wave-2 #4: `monthKind`
   // discriminates overdue / later / a concrete month so the table empty
@@ -328,8 +394,25 @@ export default async function RenewalsPipelinePage({
   const widgetActorRole: 'admin' | 'manager' =
     currentUser.role === 'manager' ? 'manager' : 'admin';
 
+  // Fix round 3 (manager money-CTA gating) — threaded into `<PipelineTable>`
+  // to hide the admin-only row mutation affordances ("Send reminder" /
+  // "Mark paid") from a read-only manager. Server-side 403 guards on those
+  // routes stay in place as defence-in-depth; this only fixes the client
+  // affordance so a manager never sees a CTA that would just 403.
+  const canMutate = currentUser.role === 'admin';
+
   return (
     <RenewalsPageShell title={t('title')} subtitle={t('subtitle')}>
+      {/* DV-Wave2 ⑥ — THB money KPI band. Best-effort Suspense island: it
+          streams in independently of the pipeline table and a load throw
+          degrades it to nothing (never crashes the pipeline). Reuses the
+          already-computed `nowIso` so its FY/BKK boundaries reconcile with the
+          month lens. Fix round 1 #1 — the fallback was `null`, so the band
+          appearing pushed the whole pipeline card down (a real CLS hit);
+          `PipelineMoneyBandSkeleton` reserves the identical footprint. */}
+      <Suspense fallback={<PipelineMoneyBandSkeleton />}>
+        <PipelineMoneyBandSection tenantSlug={tenantCtx.slug} nowIso={nowIso} />
+      </Suspense>
       <Card>
         <CardContent className="flex flex-col gap-4">
           {/* 070 F8 item #18 (extended, nav-orphans follow-up) — section
@@ -348,82 +431,107 @@ export default async function RenewalsPipelinePage({
           <Suspense fallback={<RenewalsSectionTabs showPipelineHelp />}>
             <PipelineSectionTabsWithCount tenantSlug={tenantCtx.slug} />
           </Suspense>
-          {showEmptyState ? (
-            <RenewalsEmptyState />
-          ) : (
-            <>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <UrgencyBucketTabs
-                  current={monthLensActive ? null : urgency}
-                  counts={summary.byUrgency}
-                  lapsedCount={summary.lapsedCount}
-                  monthLensActive={monthLensActive}
-                />
-                <TierFilterSelect current={tier ?? 'all'} />
-              </div>
-              <ResultCountAnnouncer
-                count={rows.length}
-                {...(monthLensActive
-                  ? {
-                      monthKind: monthKind as 'overdue' | 'later' | 'month',
-                      ...(monthLabel !== undefined ? { monthLabel } : {}),
-                    }
-                  : { urgencyKey: urgency })}
-              />
-              {/* Item ④ — sighted twin of the announcer above, next to the
-                  filter row so a mouse/keyboard admin sees the result
-                  count without a screen reader. aria-hidden — the
-                  announcer keeps owning the SR channel. */}
-              <ResultCountLabel
-                count={rows.length}
-                {...(monthLensActive
-                  ? {
-                      monthKind: monthKind as 'overdue' | 'later' | 'month',
-                      ...(monthLabel !== undefined ? { monthLabel } : {}),
-                    }
-                  : { urgencyKey: urgency })}
-              />
-              {urgency === 'terminated' ? (
-                <LapsedTab rows={rows} />
+          {/* Wave 2 Task 7 — the pipeline body + `AtRiskWidget` are now the
+              two lenses of ONE `WorkQueueTabs` control (below the section
+              tabs above) instead of two stacked cards. `pipeline` carries
+              the SAME filter-row/urgency-tabs/table/pagination block that
+              used to render directly here; `needsAction` mounts the
+              unchanged `AtRiskWidget` — its own nested 3-band tablist is
+              preserved intact (a valid nested-tablist per WAI-ARIA). Pure
+              client state (no URL param), so the `admin-pipeline-route` /
+              `renewal-pipeline-dashboard` / `renewal-i18n` contracts are
+              untouched. */}
+          <WorkQueueTabs
+            pipeline={
+              showEmptyState ? (
+                <RenewalsEmptyState />
               ) : (
-                <PipelineTable
-                  rows={rows}
-                  {...(monthKind !== undefined ? { monthKind } : {})}
-                  {...(monthLabel !== undefined ? { monthLabel } : {})}
-                />
-              )}
-              {nextHref ? (
-                // Keyset cursor pagination: when the repo returns
-                // nextCursor != null the page was capped at 50 rows.
-                // Render a "Next 50 →" link (same pattern as
-                // /admin/audit) + a visible "Showing first 50" hint
-                // so all users know the list is truncated. The
-                // UrgencyBucketTabs already deletes the cursor param
-                // on tab switch (line 63), so stale cursors are
-                // auto-cleared on urgency change.
-                <div className="flex items-center justify-between gap-4 pt-1">
-                  <p className="text-xs text-muted-foreground">
-                    {t('table.pagination.showingFirst')}
-                  </p>
-                  <a
-                    href={nextHref}
-                    className={buttonVariants({ variant: 'outline' })}
-                  >
-                    {t('table.pagination.next')}
-                  </a>
-                </div>
-              ) : null}
-            </>
-          )}
+                <>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <UrgencyBucketTabs
+                      current={monthLensActive ? null : urgency}
+                      counts={summary.byUrgency}
+                      lapsedCount={summary.lapsedCount}
+                      monthLensActive={monthLensActive}
+                    />
+                    <TierFilterSelect current={tier ?? 'all'} />
+                  </div>
+                  <ResultCountAnnouncer
+                    count={rows.length}
+                    {...(monthLensActive
+                      ? {
+                          monthKind: monthKind as 'overdue' | 'later' | 'month',
+                          ...(monthLabel !== undefined ? { monthLabel } : {}),
+                        }
+                      : { urgencyKey: urgency })}
+                  />
+                  {/* Item ④ — sighted twin of the announcer above, next to the
+                      filter row so a mouse/keyboard admin sees the result
+                      count without a screen reader. aria-hidden — the
+                      announcer keeps owning the SR channel. */}
+                  <ResultCountLabel
+                    count={rows.length}
+                    {...(monthLensActive
+                      ? {
+                          monthKind: monthKind as 'overdue' | 'later' | 'month',
+                          ...(monthLabel !== undefined ? { monthLabel } : {}),
+                        }
+                      : { urgencyKey: urgency })}
+                  />
+                  {urgency === 'terminated' ? (
+                    <LapsedTab rows={rows} />
+                  ) : (
+                    <PipelineTable
+                      rows={rows}
+                      canMutate={canMutate}
+                      sort={sort}
+                      sortHrefs={sortHrefs}
+                      {...(monthKind !== undefined ? { monthKind } : {})}
+                      {...(monthLabel !== undefined ? { monthLabel } : {})}
+                    />
+                  )}
+                  {nextHref ? (
+                    // Keyset cursor pagination: when the repo returns
+                    // nextCursor != null the page was capped at 50 rows.
+                    // Render a "Next 50 →" link (same pattern as
+                    // /admin/audit) + a visible "Showing first 50" hint
+                    // so all users know the list is truncated. The
+                    // UrgencyBucketTabs already deletes the cursor param
+                    // on tab switch (line 63), so stale cursors are
+                    // auto-cleared on urgency change.
+                    <div className="flex items-center justify-between gap-4 pt-1">
+                      <p className="text-xs text-muted-foreground">
+                        {t('table.pagination.showingFirst')}
+                      </p>
+                      <a
+                        href={nextHref}
+                        className={buttonVariants({ variant: 'outline' })}
+                      >
+                        {t('table.pagination.next')}
+                      </a>
+                    </div>
+                  ) : null}
+                </>
+              )
+            }
+            needsAction={<AtRiskWidget actorRole={widgetActorRole} />}
+            needsActionBadge={
+              <Suspense fallback={null}>
+                <NeedsActionCountBadge tenantSlug={tenantCtx.slug} />
+              </Suspense>
+            }
+          />
         </CardContent>
       </Card>
-      {/* Renewals-by-month year view. Rendered BELOW the pipeline as a
+      {/* Renewals-by-month year view. Rendered BELOW the work-queue Card as a
           secondary lens and NOT gated behind `showEmptyState`: the urgency
           window can be empty while the 14-month chart still shows future
           renewals. Suspense-wrapped so its aggregation streams in without
           blocking the pipeline render; `nowIso` is the SAME instant threaded
           into `loadPipeline` above so the chart buckets and any
-          month-filtered pipeline rows reconcile exactly. */}
+          month-filtered pipeline rows reconcile exactly. Wave 2 Task 7 moved
+          this block below `WorkQueueTabs` (previously it sat between the
+          pipeline Card and `AtRiskWidget`) so the two lenses stay adjacent. */}
       <Suspense fallback={<RenewalsByMonthSectionSkeleton />}>
         <RenewalsByMonthSection
           tenantSlug={tenantCtx.slug}
@@ -431,7 +539,6 @@ export default async function RenewalsPipelinePage({
           selectedMonth={month}
         />
       </Suspense>
-      <AtRiskWidget actorRole={widgetActorRole} />
       {/* DV-18 — read-only "Members without renewal cycle" tray. Best-effort:
           the sub-component catches an infra throw + renders a load-error card,
           so it NEVER crashes the pipeline page. Mounted on the pipeline view
@@ -442,6 +549,158 @@ export default async function RenewalsPipelinePage({
         <MembersWithoutCycleTray tenantSlug={tenantCtx.slug} />
       </Suspense>
     </RenewalsPageShell>
+  );
+}
+
+/**
+ * DV-Wave2 ⑥ — best-effort THB money KPI band section (Suspense island).
+ *
+ * Calls `loadPipelineMoney` and renders `<PipelineMoneyBand>`. Per-section
+ * isolation: a money-query throw (F4 `invoices` read, or the cross-module F5
+ * waived-refund read) or an unexpected `invalid_input` never crashes the
+ * pipeline itself.
+ *
+ * `windowDays = 90` matches the pipeline's own T-90 planning window and drives
+ * the "due soon within N days" caption.
+ *
+ * Fix round 1 #3 — `fiscalYearStartMonth` is now resolved from the tenant's
+ * REAL `tenant_invoice_settings` row via `deps.fiscalYearSettings` (the same
+ * `FiscalYearStartMonthPort` F9's revenue adapter and the F8 re-anchor path
+ * already read), not silently defaulted to January. A non-January-FY tenant's
+ * due-cohort boundary now shifts correctly. `getFiscalYearStartMonthInTx` is
+ * tx-bound (mirrors every other F8 cross-tx read) — this Suspense island has
+ * no tx of its own, so it opens ONE short-lived `runInTenant` purely to read
+ * this single column; the adapter itself falls back to January (with a
+ * warning log) when the tenant has no settings row yet.
+ *
+ * Fix round 1 I-2 — a load failure used to `return null`, silently vanishing
+ * the whole KPI band. On a live money surface a treasurer reads "no band" as
+ * "no dues owed / all collected" (a false-clear) and the Suspense skeleton's
+ * CLS reservation was wasted. Now renders the REAL section title (scoping the
+ * failure to "membership dues", not the whole page) + a MUTED
+ * `role="status"`/`aria-live="polite"` notice (`LoadErrorCard tone="muted"` —
+ * deliberately NOT the destructive `role="alert"`/`aria-live="assertive"`
+ * skin, which would be disproportionate for one auxiliary band and would
+ * interrupt the screen reader mid-announcement of the working pipeline).
+ */
+async function PipelineMoneyBandSection({
+  tenantSlug,
+  nowIso,
+}: {
+  readonly tenantSlug: string;
+  readonly nowIso: string;
+}) {
+  const WINDOW_DAYS = 90;
+  // Resolve the data inside try/catch, but construct the JSX AFTER it — a
+  // render error from <PipelineMoneyBand> must reach the Suspense error
+  // boundary, not this best-effort data catch (react-hooks/error-boundaries).
+  let money: PipelineMoneySummary | null = null;
+  try {
+    const deps = makeRenewalsDeps(tenantSlug);
+    const fiscalYearStartMonth = await runInTenant(
+      asTenantContext(tenantSlug),
+      (tx) => deps.fiscalYearSettings.getFiscalYearStartMonthInTx(tx, tenantSlug),
+    );
+    const result = await loadPipelineMoney(deps, {
+      tenantId: tenantSlug,
+      nowIso,
+      windowDays: WINDOW_DAYS,
+      fiscalYearStartMonth,
+    });
+    if (result.ok) {
+      money = result.value;
+    } else {
+      logger.error(
+        {
+          errorId: 'F8.ADMIN.MONEY_BAND',
+          tenantId: tenantSlug,
+          error: result.error.kind,
+        },
+        '[admin/renewals] money band load returned an error',
+      );
+    }
+  } catch (e) {
+    logger.error(
+      {
+        errorId: 'F8.ADMIN.MONEY_BAND',
+        err: e instanceof Error ? e.message : String(e),
+        tenantId: tenantSlug,
+      },
+      '[admin/renewals] money band load failed',
+    );
+  }
+  if (money === null) {
+    const tMoney = await getTranslations('admin.renewals.money');
+    return (
+      <section className="flex flex-col gap-3">
+        <h2 className="text-base font-semibold">{tMoney('title')}</h2>
+        {/* Fix round 2 final-polish #5 (minors) — the skeleton above reserves
+            the full 4-tile grid's height; this collapsed error card is much
+            shorter, so without a floor the (rare) load-failure path yanks the
+            rest of the pipeline up a CLS-visible amount. `min-h-36`
+            approximates one tile row's real footprint (Card py-4 padding +
+            the 4 skeleton bars ≈ 136px) — not pixel-exact at every
+            breakpoint, but enough to keep the failure path from visibly
+            shrinking the band. */}
+        <div className="min-h-36">
+          <LoadErrorCard tone="muted" message={tMoney('loadFailed')} />
+        </div>
+      </section>
+    );
+  }
+  return <PipelineMoneyBand money={money} windowDays={WINDOW_DAYS} />;
+}
+
+/**
+ * Fix I-1 (review round 1) — best-effort count badge for the `WorkQueueTabs`
+ * "Needs action" tab, streamed in a Suspense island so it never blocks the
+ * pipeline render. Restores the at-risk discoverability that regressed when
+ * Task 7 folded the always-visible `AtRiskWidget` behind an inactive tab:
+ * without a count, an admin has no signal that the "Needs action" lens has
+ * work in it.
+ *
+ * Reuses the SAME whole-tenant summary the `/api/admin/renewals/at-risk`
+ * route already reads — `memberRenewalFlagsRepo.listAtRiskWidgetMembers`
+ * with `limit: 1` (the widget's own default fetch never varies this
+ * summary by page size or band filter, so `limit: 1` costs the same
+ * aggregate query as any other limit). Deliberately NOT a new use-case —
+ * the summary is already a cheap band-count aggregate, band-independent of
+ * the paginated `items`. Count = `critical + atRisk` (the "actionable now"
+ * set) — `warning` is intentionally excluded, matching the widget's own
+ * default band tab of `at-risk` rather than `warning`.
+ *
+ * Best-effort: a read failure logs a distinct errorId and renders `null` —
+ * the tab itself always renders regardless (never crashes the page).
+ */
+async function NeedsActionCountBadge({
+  tenantSlug,
+}: {
+  readonly tenantSlug: string;
+}) {
+  const t = await getTranslations('admin.renewals.workQueue');
+  let count: number;
+  try {
+    const deps = makeRenewalsDeps(tenantSlug);
+    const page = await runInTenant(asTenantContext(tenantSlug), (tx) =>
+      deps.memberRenewalFlagsRepo.listAtRiskWidgetMembers(tx, tenantSlug, {
+        limit: 1,
+      }),
+    );
+    count = page.summary.critical + page.summary.atRisk;
+  } catch (e) {
+    logger.error(
+      {
+        errorId: 'F8.ADMIN.NEEDS_ACTION_BADGE',
+        err: e instanceof Error ? e.message : String(e),
+        tenantId: tenantSlug,
+      },
+      '[admin/renewals] needs-action badge count load failed',
+    );
+    return null;
+  }
+  if (count <= 0) return null;
+  return (
+    <TabCountBadge count={count} label={t('needsActionCountSr', { count })} />
   );
 }
 
@@ -664,36 +923,5 @@ function RenewalsPageShell({
       <PageHeader title={title} subtitle={subtitle} />
       {children}
     </TableContainer>
-  );
-}
-
-/**
- * Centered destructive "couldn't load" alert card — shared by the pipeline
- * load-failure and the pending-review load-failure (070 speckit-review
- * simplify S-2). `children` slots optional actions (e.g. retry / go-back)
- * below the message.
- */
-function LoadErrorCard({
-  message,
-  children,
-}: {
-  readonly message: string;
-  readonly children?: ReactNode;
-}) {
-  return (
-    <Card>
-      <CardContent
-        role="alert"
-        aria-live="assertive"
-        className="flex flex-col items-center gap-4 py-12 text-center"
-      >
-        <AlertTriangle
-          aria-hidden="true"
-          className="h-10 w-10 text-destructive"
-        />
-        <div className="text-base font-medium text-destructive">{message}</div>
-        {children}
-      </CardContent>
-    </Card>
   );
 }

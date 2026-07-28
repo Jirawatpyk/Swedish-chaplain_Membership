@@ -53,6 +53,13 @@ export const loadPipelineInputSchema = z.object({
   nowIso: z.string().datetime().optional(),
   cursor: z.string().nullable().optional(),
   limit: z.number().int().min(1).max(200).optional(),
+  // Task 8 — additive sort key. The enum guard is load-bearing: without it
+  // zod would strip an unknown `?sort` value and silently fall back to the
+  // default order, whereas an INVALID value must not reach the sort-aware
+  // keyset cursor at all. Absent ⇒ server default `expires_at_asc`.
+  sort: z
+    .enum(['expires_at_asc', 'expires_at_desc', 'tier_asc', 'tier_desc'])
+    .optional(),
 });
 
 export type LoadPipelineInput = z.infer<typeof loadPipelineInputSchema>;
@@ -98,6 +105,7 @@ export async function loadPipeline(
       'tenant.id': input.tenantId,
       'renewals.tier_filter': input.tier ?? 'all',
       'renewals.urgency_filter': input.urgency ?? 'all',
+      'renewals.sort': input.sort ?? 'expires_at_asc',
       'renewals.page_limit': input.limit ?? 50,
     },
     async (span) => {
@@ -114,6 +122,10 @@ export async function loadPipeline(
         ...(input.cursor !== undefined && input.cursor !== null
           ? { cursor: input.cursor }
           : {}),
+        // Additive sort — spread conditionally (exactOptionalPropertyTypes:
+        // never assign `sort: undefined`). Absent ⇒ adapter default
+        // `expires_at_asc`, so pre-Task-8 callers are byte-unchanged.
+        ...(input.sort !== undefined ? { sort: input.sort } : {}),
         limit: input.limit ?? 50,
       });
       // Round 9 W-R8-4 — bucket exact counts to coarse ranges. Combined

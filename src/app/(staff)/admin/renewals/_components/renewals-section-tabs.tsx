@@ -100,8 +100,17 @@ export interface RenewalsSectionTabsProps {
  * that's the default view, not a work queue). Renders nothing when `count`
  * is `0` or `undefined` so an empty section never shows a hollow badge.
  * Styling mirrors `UrgencyBucketTabs`' per-bucket count badge.
+ *
+ * Exported (review round 1, Fix I-1) — `/admin/renewals` `page.tsx` reuses
+ * this exact idiom for the `WorkQueueTabs` "Needs action" tab badge instead
+ * of duplicating the pill markup. `page.tsx` renders it from a Server
+ * Component (`NeedsActionCountBadge`); this module carries `'use client'`
+ * but has no interactivity of its own, so a Server Component rendering it
+ * directly is a normal Server→Client composition (same shape as `pipeline`
+ * / `needsAction` already being server-streamed `ReactNode` props into the
+ * client `WorkQueueTabs`).
  */
-function TabCountBadge({
+export function TabCountBadge({
   count,
   label,
 }: {

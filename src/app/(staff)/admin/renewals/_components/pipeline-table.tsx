@@ -12,12 +12,26 @@
  * dates via `<time dateTime>`, the icon-only row-actions trigger uses
  * the native `title` attribute (no `Tooltip` primitive — it collides
  * with the DropdownMenu popup positioning). Row actions: "Send
- * reminder" is a one-click visible button (manager mutations are
- * blocked server-side at the route handler, not via a client-disabled
- * item); the ⋯ menu keeps "Open" (deep-links to cycle detail) and
- * "Mark contacted" (opens the shared `OutreachDialog`, lifted to this
- * component so it survives the menu closing). Cancel + mark-paid-
- * offline live on the cycle detail page.
+ * reminder" is a one-click visible button; the ⋯ menu keeps "Open"
+ * (deep-links to cycle detail) and "Mark contacted" (opens the shared
+ * `OutreachDialog`, lifted to this component so it survives the menu
+ * closing), and — Task 5 (Wave 2) — now ALSO "Mark paid" (opens the
+ * shared `MarkPaidOfflineDialog`, offered only when
+ * `shouldOfferMarkPaid(status)`). Cancel is still NOT a row action; it
+ * lives only on the cycle detail page.
+ *
+ * Fix round 3 (manager money-CTA gating) — `canMutate` (required prop,
+ * threaded from the page's `currentUser.role === 'admin'`) hides "Send
+ * reminder" and "Mark paid" for a read-only manager: both are
+ * admin-only at the route (403 + `f8_role_violation_blocked` audit —
+ * kept as defence-in-depth), so showing them to a manager was a
+ * mint-a-403 UX wart on a money surface. "Mark contacted" is
+ * DELIBERATELY NOT gated by `canMutate` — `record-at-risk-outreach` is
+ * FR-033 + FR-052a's ONE manager-mutation exception (the route accepts
+ * `admin OR manager`; see `contracts/admin-renewals-api.md` § "one
+ * mutation exception"), so hiding it would remove a legitimate,
+ * already-shipped manager capability rather than fix a 403 trap. "Open"
+ * is always visible (pure read).
  */
 'use client';
 
@@ -32,7 +46,8 @@
  * smart-features backlog.
  */
 
-import { useMemo, useRef, useState, useTransition } from 'react';
+import type { ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations, useLocale } from 'next-intl';
@@ -58,7 +73,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Loader2Icon, MoreHorizontal } from 'lucide-react';
+import {
+  ArrowDownIcon,
+  ArrowUpDownIcon,
+  ArrowUpIcon,
+  Loader2Icon,
+  MoreHorizontal,
+} from 'lucide-react';
 import { mergeRefs } from '@/lib/merge-refs';
 import { UrgencyPill } from '@/components/renewals/urgency-pill';
 import {
@@ -68,12 +89,23 @@ import {
 } from '@/components/renewals/cycle-cells';
 import { RelativeTime } from '@/components/ui/relative-time';
 import { OutreachDialog } from './outreach-dialog';
+import { MarkPaidOfflineDialog } from './mark-paid-offline-dialog';
+import { shouldOfferMarkPaid } from '../_lib/mark-paid-gate';
 // Client-safe sub-barrel — see `tier-filter-select.tsx` for the
 // rationale (Turbopack 16 + F8 barrel + server-only deps).
-import type { CycleStatus, PipelineRow } from '@/modules/renewals/client';
+import type { CycleStatus, PipelineRow, PipelineSort } from '@/modules/renewals/client';
 
 export interface PipelineTableProps {
   readonly rows: ReadonlyArray<PipelineRow>;
+  /**
+   * Fix round 3 (manager money-CTA gating) — `true` for `admin`, `false` for
+   * a read-only `manager`. Gates the row's MUTATION affordances ("Send
+   * reminder" button + "Mark paid" menu item — both 403 for manager at the
+   * route). Required (not optional): every caller must state its actor's
+   * role explicitly rather than silently defaulting to admin behaviour. See
+   * the module docstring for why "Mark contacted" is NOT gated by this prop.
+   */
+  readonly canMutate: boolean;
   /** When set, the empty state reads "No members renew in {month}" (month lens). */
   readonly monthLabel?: string;
   /**
@@ -83,10 +115,129 @@ export interface PipelineTableProps {
    * (undefined) preserves the pre-existing `monthLabel`-only behaviour.
    */
   readonly monthKind?: 'overdue' | 'later' | 'month';
+  /**
+   * Task 8 — the ACTIVE server-side sort. Drives the `aria-sort` state + the
+   * direction chevron on the `tier`/`expires` headers. Present together with
+   * `sortHrefs` (both come from the page); absent ⇒ headers render as plain
+   * text (backwards-compatible with callers that don't wire sorting).
+   */
+  readonly sort?: PipelineSort;
+  /**
+   * Task 8 — precomputed header sort links (built server-side in the page so
+   * they preserve `tier`/`urgency`/`month`, toggle direction, and DELETE the
+   * pagination `cursor` on a sort change). Keyed by the sortable column id.
+   */
+  readonly sortHrefs?: Record<'expires' | 'tier', string>;
 }
 
-export function PipelineTable({ rows, monthLabel, monthKind }: PipelineTableProps) {
+/** `localStorage` key for the client row-density preference (Task 8). */
+const DENSITY_STORAGE_KEY = 'renewals.pipeline.density';
+type Density = 'comfortable' | 'compact';
+
+/** `aria-sort` token for a sortable column under the active sort (WCAG 1.3.1). */
+function ariaSortForColumn(
+  columnId: 'tier' | 'expires',
+  sort: PipelineSort | undefined,
+): 'ascending' | 'descending' | 'none' {
+  if (columnId === 'expires') {
+    return sort === 'expires_at_asc'
+      ? 'ascending'
+      : sort === 'expires_at_desc'
+        ? 'descending'
+        : 'none';
+  }
+  return sort === 'tier_asc'
+    ? 'ascending'
+    : sort === 'tier_desc'
+      ? 'descending'
+      : 'none';
+}
+
+/**
+ * A sortable column header rendered as a plain anchor (`sortHrefs` are built
+ * server-side, so sorting works without JS — same discipline as the "Next 50"
+ * pagination link). The `aria-sort` state lives on the `<TableHead>`
+ * columnheader (never on this link — WCAG 1.3.1 / 4.1.2), so the link only
+ * needs an action label + the direction chevron.
+ */
+function SortHeaderLink({
+  href,
+  label,
+  state,
+  actionLabel,
+  activeStateLabel,
+}: {
+  readonly href: string;
+  readonly label: ReactNode;
+  readonly state: 'ascending' | 'descending' | 'none';
+  readonly actionLabel: string;
+  readonly activeStateLabel: string | undefined;
+}) {
+  const Icon =
+    state === 'ascending'
+      ? ArrowUpIcon
+      : state === 'descending'
+        ? ArrowDownIcon
+        : ArrowUpDownIcon;
+  return (
+    <a
+      href={href}
+      aria-label={actionLabel}
+      {...(activeStateLabel !== undefined ? { title: activeStateLabel } : {})}
+      className="inline-flex items-center gap-1 whitespace-nowrap hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2"
+    >
+      {label}
+      <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+    </a>
+  );
+}
+
+export function PipelineTable({
+  rows,
+  canMutate,
+  monthLabel,
+  monthKind,
+  sort,
+  sortHrefs,
+}: PipelineTableProps) {
   const t = useTranslations('admin.renewals.table');
+
+  // Task 8 — client row-density preference. Defaults to `comfortable` on the
+  // server + first client render (no localStorage read during render → no
+  // hydration mismatch), then a mount effect syncs the stored choice. Same
+  // post-hydration pattern as the theme/sidebar toggles.
+  const [density, setDensity] = useState<Density>('comfortable');
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(DENSITY_STORAGE_KEY);
+      if (stored === 'compact' || stored === 'comfortable') setDensity(stored);
+    } catch {
+      /* localStorage unavailable (private mode / SSR) — keep the default */
+    }
+  }, []);
+  const toggleDensity = (): void => {
+    setDensity((prev) => {
+      const next: Density = prev === 'compact' ? 'comfortable' : 'compact';
+      try {
+        window.localStorage.setItem(DENSITY_STORAGE_KEY, next);
+      } catch {
+        /* best-effort persistence */
+      }
+      return next;
+    });
+  };
+  // Fix round 1 I-1 — drive the shared `--table-cell-padding-y` design token
+  // (globals.css, consumed by `TableCell`'s `py-[var(--table-cell-padding-y)]`)
+  // instead of hardcoding `[&_td]:py-*`. The prior hardcoded classes silently
+  // changed the DEFAULT/comfortable row height from the token's 8px baseline
+  // to 12px and desynced this table from every other token-driven admin table
+  // (members, invoices). Comfortable now reproduces the UNCHANGED 8px
+  // baseline; compact narrows it to 6px. Set as a CSS custom property on
+  // `<Table>` (forwarded to the `<table>` element — see `ui/table.tsx`), which
+  // every `<TableCell>` inside inherits via the CSS cascade.
+  const densityStyle = {
+    '--table-cell-padding-y': density === 'compact' ? '0.375rem' : '0.5rem',
+  } as React.CSSProperties;
   // Item ② — outreach state lifted up from the row-level menu so the
   // `OutreachDialog` survives the ⋯ menu closing (same lifted-state
   // pattern as lapsed-tab.tsx + at-risk-widget.tsx). Review fix #5:
@@ -96,6 +247,24 @@ export function PipelineTable({ rows, monthLabel, monthKind }: PipelineTableProp
   // "Mark contacted" menu item) dropping focus to `<body>`.
   const [outreachFor, setOutreachFor] = useState<{
     memberId: string;
+    companyName: string;
+    finalFocus: React.RefObject<HTMLElement | null>;
+  } | null>(null);
+
+  // Task 5 (Wave 2) — same lifted-state pattern as `outreachFor` above, so
+  // the shared `MarkPaidOfflineDialog` (the SAME dialog/route the cycle-
+  // detail page's "Mark paid offline" button opens — Principle IV, no
+  // second settlement path) survives the ⋯ menu closing. `finalFocus` is
+  // set by `RowActions` to its own ⋯ trigger; the dialog falls back to
+  // `#main-content` when a settlement's `router.refresh()` unmounts the row
+  // (see `mark-paid-offline-dialog.tsx`'s docstring).
+  //
+  // I-1 review-fix — `companyName` rides along so the dialog can show
+  // "For {company}" (same value already passed to the ⋯ trigger's
+  // aria-label + to `OutreachDialog`), giving the admin an in-dialog
+  // confirmation of WHICH member this money mutation settles.
+  const [markPaidFor, setMarkPaidFor] = useState<{
+    cycleId: string;
     companyName: string;
     finalFocus: React.RefObject<HTMLElement | null>;
   } | null>(null);
@@ -206,12 +375,15 @@ export function PipelineTable({ rows, monthLabel, monthKind }: PipelineTableProp
             cycleId={row.original.cycleId}
             memberId={row.original.memberId}
             companyName={row.original.companyName}
+            status={row.original.status}
+            canMutate={canMutate}
             onRecordOutreach={setOutreachFor}
+            onMarkPaid={setMarkPaidFor}
           />
         ),
       },
     ],
-    [t],
+    [t, canMutate],
   );
 
   // Round 5 S-05 — memoise the data array reference so TanStack Table
@@ -237,17 +409,72 @@ export function PipelineTable({ rows, monthLabel, monthKind }: PipelineTableProp
 
   return (
     <>
-      <Table>
+      {/* Task 8 — client row-density toggle, top-right of the table. Its
+          accessible name IS the visible mode text (WCAG 2.5.3 Label in Name);
+          `title` names the control's purpose, `aria-pressed` exposes the
+          compact state. */}
+      <div className="flex items-center justify-end">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-9"
+          aria-pressed={density === 'compact'}
+          title={t('density.label')}
+          onClick={toggleDensity}
+        >
+          {density === 'compact' ? t('density.compact') : t('density.comfortable')}
+        </Button>
+      </div>
+      <Table style={densityStyle} data-density={density}>
         <TableHeader>
           {table.getHeaderGroups().map((hg) => (
             <TableRow key={hg.id}>
-              {hg.headers.map((h) => (
-                <TableHead key={h.id}>
-                  {h.isPlaceholder
-                    ? null
-                    : flexRender(h.column.columnDef.header, h.getContext())}
-                </TableHead>
-              ))}
+              {hg.headers.map((h) => {
+                const colId = h.column.id;
+                const sortColId =
+                  colId === 'tier' || colId === 'expires' ? colId : null;
+                const sortable = sortHrefs !== undefined && sortColId !== null;
+                const ariaSort =
+                  sortable && sortColId !== null
+                    ? ariaSortForColumn(sortColId, sort)
+                    : undefined;
+                return (
+                  <TableHead
+                    key={h.id}
+                    {...(ariaSort !== undefined ? { 'aria-sort': ariaSort } : {})}
+                  >
+                    {h.isPlaceholder ? null : sortable &&
+                      sortColId !== null &&
+                      sortHrefs ? (
+                      <SortHeaderLink
+                        href={sortHrefs[sortColId]}
+                        label={
+                          sortColId === 'tier'
+                            ? t('columns.tier')
+                            : t('columns.expires')
+                        }
+                        state={ariaSort ?? 'none'}
+                        actionLabel={t('sort.sortBy', {
+                          column:
+                            sortColId === 'tier'
+                              ? t('columns.tier')
+                              : t('columns.expires'),
+                        })}
+                        activeStateLabel={
+                          ariaSort === 'ascending'
+                            ? t('sort.ascending')
+                            : ariaSort === 'descending'
+                              ? t('sort.descending')
+                              : undefined
+                        }
+                      />
+                    ) : (
+                      flexRender(h.column.columnDef.header, h.getContext())
+                    )}
+                  </TableHead>
+                );
+              })}
             </TableRow>
           ))}
         </TableHeader>
@@ -310,6 +537,17 @@ export function PipelineTable({ rows, monthLabel, monthKind }: PipelineTableProp
           finalFocus={outreachFor.finalFocus}
         />
       ) : null}
+      {markPaidFor ? (
+        <MarkPaidOfflineDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setMarkPaidFor(null);
+          }}
+          cycleId={markPaidFor.cycleId}
+          companyName={markPaidFor.companyName}
+          finalFocus={markPaidFor.finalFocus}
+        />
+      ) : null}
     </>
   );
 }
@@ -324,19 +562,36 @@ export function PipelineTable({ rows, monthLabel, monthKind }: PipelineTableProp
  * "Send reminder" is promoted out of the ⋯ menu to a one-click visible
  * button; the ⋯ menu keeps "Open" + "Mark contacted" (the latter now
  * opens the shared `OutreachDialog` via `onRecordOutreach`, lifted to
- * `PipelineTable` so the dialog survives this menu closing).
+ * `PipelineTable` so the dialog survives this menu closing) + Task 5's
+ * "Mark paid" (offered only when `shouldOfferMarkPaid(status)` — mirrors
+ * the mark-paid-offline route's own state-machine guard so this row never
+ * offers a control the API would reject).
+ *
+ * Fix round 3 — `canMutate` additionally gates "Send reminder" and "Mark
+ * paid" (both admin-only at the route) to `false` for a read-only manager.
+ * "Open" and "Mark contacted" are unconditional — see the module docstring.
  */
 function RowActions({
   cycleId,
   memberId,
   companyName,
+  status,
+  canMutate,
   onRecordOutreach,
+  onMarkPaid,
 }: {
   readonly cycleId: string;
   readonly memberId: string;
   readonly companyName: string;
+  readonly status: CycleStatus;
+  readonly canMutate: boolean;
   readonly onRecordOutreach: (t: {
     memberId: string;
+    companyName: string;
+    finalFocus: React.RefObject<HTMLElement | null>;
+  }) => void;
+  readonly onMarkPaid: (t: {
+    cycleId: string;
     companyName: string;
     finalFocus: React.RefObject<HTMLElement | null>;
   }) => void;
@@ -443,27 +698,35 @@ function RowActions({
           button on this same page and the broadcasts primary CTA); the
           44px (`h-11 w-11`) treatment below is reserved for icon-only ⋯
           row-triggers, where a mis-tap routes to the wrong row — a
-          different concern than a wide labelled text button. */}
-      <Button
-        variant="outline"
-        size="sm"
-        className="h-9"
-        disabled={isPending}
-        aria-busy={isPending}
-        onClick={handleSendReminder}
-        aria-label={tActions('sendReminderAriaLabel', { company: companyName })}
-      >
-        {/* Review fix #4 — progress affordance now that this action is a
-            persistent button (was a one-shot menu item). Icon is
-            `aria-hidden`; `aria-busy` on the Button itself is what SR
-            users get, mirroring the `Loader2` + `aria-busy` pattern used
-            across the app's other pending-submit buttons (e.g.
-            invoice-settings-form.tsx). */}
-        {isPending && (
-          <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden />
-        )}
-        {tActions('sendReminder')}
-      </Button>
+          different concern than a wide labelled text button.
+
+          Fix round 3 — admin-only (`canMutate`): the route 403s a manager,
+          so this was a mint-a-403 CTA on a read-only surface. Not rendered
+          at all for manager (vs disabled-with-tooltip) — matches F8's
+          existing "absent, not disabled" convention for manager-blocked
+          affordances (spec FR-052a / `docs/ux-standards.md`). */}
+      {canMutate ? (
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-9"
+          disabled={isPending}
+          aria-busy={isPending}
+          onClick={handleSendReminder}
+          aria-label={tActions('sendReminderAriaLabel', { company: companyName })}
+        >
+          {/* Review fix #4 — progress affordance now that this action is a
+              persistent button (was a one-shot menu item). Icon is
+              `aria-hidden`; `aria-busy` on the Button itself is what SR
+              users get, mirroring the `Loader2` + `aria-busy` pattern used
+              across the app's other pending-submit buttons (e.g.
+              invoice-settings-form.tsx). */}
+          {isPending && (
+            <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden />
+          )}
+          {tActions('sendReminder')}
+        </Button>
+      ) : null}
       <DropdownMenu>
         <DropdownMenuTrigger
           render={({ ref: baseRef, ...props }) => (
@@ -560,6 +823,31 @@ function RowActions({
           >
             {tActions('markContacted')}
           </DropdownMenuItem>
+          {/* Task 5 (Wave 2) — brings COLLECT onto the pipeline: opens the
+              SAME mark-paid-offline dialog/route the cycle-detail page uses
+              (Principle IV, no second settlement path), lifted to
+              PipelineTable so it survives this menu closing. `finalFocus`
+              carries this row's own ⋯ trigger — see mark-paid-offline-
+              dialog.tsx for why the dialog falls back to #main-content
+              instead when a settlement's refresh unmounts this row.
+
+              Fix round 3 — additionally admin-only (`canMutate`): mints a
+              §86/4 tax invoice + completes the cycle (a money mutation),
+              and the route 403s a manager — same mint-a-403 rationale as
+              the "Send reminder" button above. */}
+          {canMutate && shouldOfferMarkPaid(status) ? (
+            <DropdownMenuItem
+              onClick={() =>
+                onMarkPaid({
+                  cycleId,
+                  companyName,
+                  finalFocus: rowMenuTriggerRef,
+                })
+              }
+            >
+              {tActions('markPaid')}
+            </DropdownMenuItem>
+          ) : null}
         </DropdownMenuContent>
       </DropdownMenu>
     </div>

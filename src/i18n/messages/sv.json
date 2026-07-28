@@ -3236,6 +3236,30 @@
         "terminatedDef": "Medlemskapet har upphört och behöver återaktiveras av en administratör."
       },
       "subtitle": "Aktiva medlemmar efter förnyelsedatum och nivå.",
+      "money": {
+        "title": "Medlemsavgifter — ekonomi",
+        "currency": "THB",
+        "rateNone": "—",
+        "loadFailed": "Kunde inte läsa in siffrorna just nu.",
+        "pastDue": {
+          "label": "Förfallna",
+          "basis": "förfallna medlemsavgifter · innevarande räkenskapsår · inkl. moms",
+          "ariaLabel": "Förfallna {amount} — visa förfallna förnyelser"
+        },
+        "collected": {
+          "label": "Influtet denna månad",
+          "basis": "medlemsavgifter · innevarande kalendermånad · inkl. moms · operativt kassaflöde, inte en periodavsluts- eller skattedeklarationssumma",
+          "ariaLabel": "Influtet denna månad {amount} — visa betalda medlemsfakturor"
+        },
+        "collectionRate": {
+          "label": "Inkasseringsgrad",
+          "basis": "medlemsavgifter · räkenskapsår hittills · endast poster som nått förfallodagen · inkl. moms"
+        },
+        "dueSoon": {
+          "label": "Förfaller snart",
+          "basis": "medlemsavgifter som förfaller inom {days, plural, one {# dag} other {# dagar}} · ännu ej förfallna · inkl. moms"
+        }
+      },
       "tabs": {
         "ariaLabel": "Förnyelsesektioner",
         "pipeline": "Pipeline",
@@ -3303,7 +3327,7 @@
         "aria_label": "Filtrera efter förnyelsebrådska",
         "aria_label_scroll": "Flikar för förnyelsebrådska, rullningsbara",
         "countSr": "{count, plural, one {# medlem} other {# medlemmar}}",
-        "monthLensHint": "Brådskefilter är pausade när ett månadsfilter är aktivt. Rensa månadsfiltret för att använda dem.",
+        "monthLensHint": "Brådskefilter är pausade när ett månadsfilter är aktivt. Välj en brådskeflik ovan för att byta, eller rensa månadsfiltret nedan.",
         "monthLensBadge": "Pausad av månadsfilter",
         "t_90": "T-90",
         "t_60": "T-60",
@@ -3344,6 +3368,16 @@
           "invoice": "Faktura",
           "actions": "Åtgärder"
         },
+        "sort": {
+          "sortBy": "Sortera efter {column}",
+          "ascending": "Sorterat stigande",
+          "descending": "Sorterat fallande"
+        },
+        "density": {
+          "label": "Radtäthet",
+          "comfortable": "Bekväm",
+          "compact": "Kompakt"
+        },
         "status": {
           "upcoming": "Kommande",
           "reminded": "Påmind",
@@ -3378,6 +3412,7 @@
         "sendReminder": "Skicka påminnelse",
         "sendReminderAriaLabel": "Skicka påminnelse till {company}",
         "markContacted": "Markera kontaktad",
+        "markPaid": "Markera betald",
         "rowMenu": "Åtgärder för {company}"
       },
       "sendReminderNow": {
@@ -3545,6 +3580,12 @@
           "lastSaved": "Senast sparad {date}",
           "stepCount": "{count, plural, =0 {Inga steg} one {1 steg} other {{count} steg}}"
         }
+      },
+      "workQueue": {
+        "label": "Arbetskö",
+        "pipeline": "Alla förnyelser",
+        "needsAction": "Kräver åtgärd",
+        "needsActionCountSr": "{count, plural, one {# medlem kräver åtgärd} other {# medlemmar kräver åtgärd}}"
       },
       "atRisk": {
         "title": "Medlemmar i riskzon",
@@ -3739,6 +3780,7 @@
         "markPaidOffline": {
           "button": "Markera betald offline",
           "dialogTitle": "Registrera en offlinebetalning?",
+          "forMember": "För {company}",
           "dialogBody": "Använd detta när medlemmen har betalat utanför systemet (banköverföring, kontant eller check). En faktura utfärdas och cykeln slutförs.",
           "paymentMethodLabel": "Betalningsmetod",
           "paymentMethod": {

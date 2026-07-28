@@ -50,9 +50,11 @@ import {
   type MembersWithoutCyclePage,
   type NewRenewalCycleInput,
   type StaleAutoDraftRow,
+  type PipelineMoneyRaw,
   type PipelineQueryOpts,
   type PipelineQueryResult,
   type PipelineRow,
+  type PipelineSort,
   type PipelineSummary,
   type RenewalCyclePage,
   type RenewalCycleRepo,
@@ -72,7 +74,8 @@ import {
   OPEN_CYCLE_STATUSES_SQL_LIST,
   type CycleStatus,
 } from '../../domain/value-objects/cycle-status';
-import type { TierBucket } from '../../domain/value-objects/tier-bucket';
+import { TIER_BUCKETS, type TierBucket } from '../../domain/value-objects/tier-bucket';
+import { tierBucketOrdinalCaseSql } from './tier-bucket-ordinal-sql';
 import {
   foldRawMonths,
   bkkYearMonth,
@@ -399,6 +402,16 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 interface CursorPayload {
   readonly expiresAt: string;
   readonly cycleId: string;
+  /**
+   * Task 8 — the row's tier ordinal, carried ONLY for the tier sorts
+   * (`tier_asc`/`tier_desc`) so the keyset comparison can be a lexicographic
+   * `(tier_ord, expires_at, cycle_id)`. Absent for the expiry sorts (whose
+   * key is just `(expires_at, cycle_id)`) and for `list()` /
+   * `listEligibleForDispatch()` cursors — those callers pass a payload
+   * without it, `encodeCursor` omits the field, and they never read it, so
+   * their wire format is byte-unchanged.
+   */
+  readonly tierOrd?: number;
 }
 
 const CURSOR_MAC_BYTES = 16; // 128-bit truncation — tampering detection only
@@ -455,7 +468,15 @@ export function decodeCursor(
     ) {
       return null;
     }
-    return { expiresAt: parsed.expiresAt, cycleId: parsed.cycleId };
+    const base = { expiresAt: parsed.expiresAt, cycleId: parsed.cycleId };
+    // Carry `tierOrd` only when the payload actually had a finite one — a
+    // legacy (pre-Task-8) cursor never encodes it, so the tier-sort keyset
+    // guard in `loadPipelinePage` treats such a cursor as sort-incompatible
+    // and resets to the first page rather than mis-comparing (exactOptional:
+    // never attach an `undefined` field).
+    return typeof parsed.tierOrd === 'number' && Number.isFinite(parsed.tierOrd)
+      ? { ...base, tierOrd: parsed.tierOrd }
+      : base;
   } catch {
     return null;
   }
@@ -486,6 +507,124 @@ function buildNextCursor(
   return encodeCursor({
     expiresAt: lastRow.expiresAt.toISOString(),
     cycleId: lastRow.cycleId,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Task 8 — sort-aware ORDER BY + keyset cursor for `loadPipelinePage`
+// ---------------------------------------------------------------------------
+//
+// The pipeline keyset cursor MUST match the ACTIVE sort in all three places
+// or "Next 50" dups/skips rows: the ORDER BY, the WHERE comparison, and the
+// emitted next-cursor key. These three helpers are the single source of that
+// agreement — change one, change all three.
+
+/**
+ * Raw `CASE tier … END` ordinal expression over `renewal_cycles.tier_at_cycle_start`,
+ * built ONCE from the drift-guarded `tierBucketOrdinalCaseSql` (which mirrors
+ * the Domain `TIER_BUCKETS` tuple). Reused verbatim in the tier ORDER BY and
+ * the tier keyset WHERE so they can never disagree.
+ */
+const PIPELINE_TIER_ORDINAL_SQL = tierBucketOrdinalCaseSql(
+  'renewal_cycles.tier_at_cycle_start',
+);
+
+/**
+ * JS mirror of {@link PIPELINE_TIER_ORDINAL_SQL} — the tier ordinal for a bucket
+ * value, with the SAME high sentinel (tuple length) the SQL CASE uses for an
+ * unknown/NULL bucket. Feeds `buildPipelineNextCursor` so the encoded cursor
+ * ordinal equals what the DB CASE would compute for that row.
+ */
+function pipelineTierOrdinal(bucket: string): number {
+  const i = (TIER_BUCKETS as readonly string[]).indexOf(bucket);
+  return i === -1 ? TIER_BUCKETS.length : i;
+}
+
+/** True for the two sorts whose keyset key includes the tier ordinal. */
+function isTierSort(sort: PipelineSort): boolean {
+  return sort === 'tier_asc' || sort === 'tier_desc';
+}
+
+/** ORDER BY clause for the active sort. Tiebreak is always `(expires_at, cycle_id)`. */
+function pipelineOrderBySql(sort: PipelineSort): SQL {
+  switch (sort) {
+    case 'expires_at_desc':
+      return sql`${renewalCycles.expiresAt} DESC, ${renewalCycles.cycleId} DESC`;
+    case 'tier_asc':
+      return sql`${sql.raw(PIPELINE_TIER_ORDINAL_SQL)} ASC, ${renewalCycles.expiresAt} ASC, ${renewalCycles.cycleId} ASC`;
+    case 'tier_desc':
+      return sql`${sql.raw(PIPELINE_TIER_ORDINAL_SQL)} DESC, ${renewalCycles.expiresAt} ASC, ${renewalCycles.cycleId} ASC`;
+    case 'expires_at_asc':
+    default:
+      return sql`${renewalCycles.expiresAt} ASC, ${renewalCycles.cycleId} ASC`;
+  }
+}
+
+/**
+ * Keyset predicate: "this row sorts STRICTLY AFTER `cursor` under `sort`".
+ * Direction-correct per column (a mixed-direction tier sort has a DESC
+ * primary but an ASC tiebreak), so paginating a non-default sort never
+ * dups/skips. The caller (`loadPipelinePage`) guarantees `cursor.tierOrd`
+ * is present whenever `sort` is a tier sort.
+ */
+function pipelineKeysetWhereSql(sort: PipelineSort, cursor: CursorPayload): SQL {
+  const expiresAtDate = new Date(cursor.expiresAt);
+  // Shared `(expires_at, cycle_id)` ASC tiebreak — used by expires_at_asc AND
+  // by both tier sorts (whose tiebreak the ORDER BY pins ASC).
+  const expiresCycleAsc = or(
+    sql`${renewalCycles.expiresAt} > ${cursor.expiresAt}`,
+    and(
+      eq(renewalCycles.expiresAt, expiresAtDate),
+      sql`${renewalCycles.cycleId} > ${cursor.cycleId}`,
+    ),
+  )!;
+  switch (sort) {
+    case 'expires_at_desc':
+      return or(
+        sql`${renewalCycles.expiresAt} < ${cursor.expiresAt}`,
+        and(
+          eq(renewalCycles.expiresAt, expiresAtDate),
+          sql`${renewalCycles.cycleId} < ${cursor.cycleId}`,
+        ),
+      )!;
+    case 'tier_asc': {
+      const tierOrd = cursor.tierOrd ?? 0;
+      return or(
+        sql`${sql.raw(PIPELINE_TIER_ORDINAL_SQL)} > ${tierOrd}`,
+        and(sql`${sql.raw(PIPELINE_TIER_ORDINAL_SQL)} = ${tierOrd}`, expiresCycleAsc),
+      )!;
+    }
+    case 'tier_desc': {
+      const tierOrd = cursor.tierOrd ?? 0;
+      return or(
+        sql`${sql.raw(PIPELINE_TIER_ORDINAL_SQL)} < ${tierOrd}`,
+        and(sql`${sql.raw(PIPELINE_TIER_ORDINAL_SQL)} = ${tierOrd}`, expiresCycleAsc),
+      )!;
+    }
+    case 'expires_at_asc':
+    default:
+      return expiresCycleAsc;
+  }
+}
+
+/**
+ * Emit the next-cursor for the pipeline, sort-aware: it carries the tier
+ * ordinal (computed to match {@link PIPELINE_TIER_ORDINAL_SQL}) for tier sorts
+ * so the next page's keyset comparison has the full lexicographic key.
+ */
+function buildPipelineNextCursor(
+  pageRows: ReadonlyArray<{ expiresAt: Date; cycleId: string; tierBucket: string }>,
+  hasNextPage: boolean,
+  sort: PipelineSort,
+): string | null {
+  if (!hasNextPage || pageRows.length === 0) return null;
+  const lastRow = pageRows[pageRows.length - 1]!;
+  return encodeCursor({
+    expiresAt: lastRow.expiresAt.toISOString(),
+    cycleId: lastRow.cycleId,
+    ...(isTierSort(sort)
+      ? { tierOrd: pipelineTierOrdinal(lastRow.tierBucket) }
+      : {}),
   });
 }
 
@@ -1819,6 +1958,112 @@ export function makeDrizzleRenewalCycleRepo(
       });
     },
 
+    async loadPipelineMoneyRaw(
+      _tenantId: string,
+      opts: {
+        readonly nowIso: string;
+        readonly windowDays: number;
+        readonly fiscalYearStartMonth: number;
+      },
+    ): Promise<PipelineMoneyRaw> {
+      return runInTenant(tenant, async (tx) => {
+        // ---- BKK boundaries, all derived from nowIso (deterministic) ----
+        const nowBkk = sql`(${opts.nowIso}::timestamptz AT TIME ZONE 'Asia/Bangkok')`;
+        const today = sql`(${nowBkk})::date`;
+        const windowEnd = sql`((${today}) + (${opts.windowDays} * INTERVAL '1 day'))::date`;
+        const monthStart = sql`date_trunc('month', ${nowBkk})`;
+        const nextMonth = sql`(date_trunc('month', ${nowBkk}) + INTERVAL '1 month')`;
+        // Replicates deriveFiscalYear() (src/lib/fiscal-year.ts) IN SQL: FY n
+        // starts on the 1st of `startMonth` of CE year n (Bangkok wall time);
+        // a `today` before `startMonth` belongs to the previous FY. NEVER use
+        // `invoices.fiscal_year` — that column is ISSUE-date-based (schema
+        // comment ~L111), and this is a DUE-date cohort.
+        const fyStart = sql`make_date(
+          CASE WHEN EXTRACT(MONTH FROM ${today})::int >= ${opts.fiscalYearStartMonth}
+               THEN EXTRACT(YEAR FROM ${today})::int
+               ELSE EXTRACT(YEAR FROM ${today})::int - 1 END,
+          ${opts.fiscalYearStartMonth}, 1)`;
+
+        // Explicit tenant_id predicate = two-layer isolation on top of RLS.
+        const membership = and(
+          eq(invoices.tenantId, tenant.slug),
+          eq(invoices.invoiceSubject, 'membership'),
+        )!;
+
+        // Fix round 2 #9 — reconciliation note: `status` is filtered to
+        // 'issued' (overdue/dueSoon) or 'paid'/'partially_credited'/'credited'
+        // (settledRows/collectedRows) in every leg below, so 'void' is
+        // excluded from ALL FOUR. A membership invoice that was PAID and then
+        // voided therefore drops out of every leg of this money band
+        // entirely — it is neither "collected" nor "settled" nor "overdue"
+        // any more, even though real cash may still be sitting unrefunded
+        // (voiding a paid invoice writes nothing to `payments`/`refunds` —
+        // see memory `project_void_paid_invoice_money_dead_end`). This is a
+        // KNOWN, documented interaction of an existing money dead-end, not a
+        // gap introduced by this band — noted here so a future reader
+        // doesn't mistake the drop for a bug in this query.
+        // ---- Scalar legs (overdue + dueSoon): raw Σ(total), FY-scoped ----
+        const [scalars] = await tx
+          .select({
+            overdue: sql<string>`COALESCE(SUM(${invoices.totalSatang}) FILTER (
+              WHERE ${invoices.status} = 'issued'
+                AND ${invoices.dueDate} IS NOT NULL
+                AND ${invoices.dueDate} >= ${fyStart}
+                AND ${invoices.dueDate} <  ${today}), 0)`,
+            dueSoon: sql<string>`COALESCE(SUM(${invoices.totalSatang}) FILTER (
+              WHERE ${invoices.status} = 'issued'
+                AND ${invoices.dueDate} IS NOT NULL
+                AND ${invoices.dueDate} >= ${today}
+                AND ${invoices.dueDate} <= ${windowEnd}), 0)`,
+          })
+          .from(invoices)
+          .where(membership);
+
+        // ---- Settled rows (due-cohort this FY): (id, total − credited) ----
+        const settledRows = await tx
+          .select({
+            invoiceId: invoices.invoiceId,
+            netOfCredit: sql<string>`(${invoices.totalSatang} - ${invoices.creditedTotalSatang})`,
+          })
+          .from(invoices)
+          .where(sql`
+            ${invoices.tenantId} = ${tenant.slug}
+            AND ${invoices.invoiceSubject} = 'membership'
+            AND ${invoices.status} IN ('paid','partially_credited','credited')
+            AND ${invoices.dueDate} IS NOT NULL
+            AND ${invoices.dueDate} >= ${fyStart}
+            AND ${invoices.dueDate} <  ${today}`);
+
+        // ---- Collected rows (paid this BKK month): (id, total − credited) ----
+        const collectedRows = await tx
+          .select({
+            invoiceId: invoices.invoiceId,
+            netOfCredit: sql<string>`(${invoices.totalSatang} - ${invoices.creditedTotalSatang})`,
+          })
+          .from(invoices)
+          .where(sql`
+            ${invoices.tenantId} = ${tenant.slug}
+            AND ${invoices.invoiceSubject} = 'membership'
+            AND ${invoices.status} IN ('paid','partially_credited','credited')
+            AND ${invoices.paidAt} IS NOT NULL
+            AND (${invoices.paidAt} AT TIME ZONE 'Asia/Bangkok') >= ${monthStart}
+            AND (${invoices.paidAt} AT TIME ZONE 'Asia/Bangkok') <  ${nextMonth}`);
+
+        return {
+          overdueSatang: BigInt(scalars?.overdue ?? '0'),
+          dueSoonSatang: BigInt(scalars?.dueSoon ?? '0'),
+          settledRows: settledRows.map((r) => ({
+            invoiceId: r.invoiceId,
+            netOfCreditSatang: BigInt(r.netOfCredit),
+          })),
+          collectedRows: collectedRows.map((r) => ({
+            invoiceId: r.invoiceId,
+            netOfCreditSatang: BigInt(r.netOfCredit),
+          })),
+        };
+      });
+    },
+
     async transitionStatus(
       tx: unknown,
       _tenantId: string,
@@ -2046,18 +2291,18 @@ export function makeDrizzleRenewalCycleRepo(
       return runInTenant(tenant, async (tx) => {
         const cursor = decodeCursor(opts.cursor);
         const limit = Math.max(1, Math.min(opts.limit, 200));
+        // Task 8 — additive sort; absent ⇒ the pre-existing `expires_at_asc`.
+        const sort: PipelineSort = opts.sort ?? 'expires_at_asc';
 
         // Window definition: active cycles only EXCEPT lapsed tab which
         // explicitly returns lapsed cycles. The window is "next 90 days"
         // for non-lapsed urgency buckets.
         const baseFilters: SQL[] = [
           // COMP-1 H4 — exclude GDPR-erased members from the pipeline
-          // window. Drives BOTH the summary aggregate below AND the page
-          // query (via `pageFilters = baseFilters.slice()`), so the badge
-          // counts always agree with the rows shown. `markCycleComplete-
-          // FromInvoicePaid` routes a paid erased member's cycle to the
-          // NON-terminal `pending_admin_reactivation`, so erased members
-          // are actively pushed into this window without this filter.
+          // window. `markCycleCompleteFromInvoicePaid` routes a paid erased
+          // member's cycle to the NON-terminal `pending_admin_reactivation`,
+          // so erased members are actively pushed into this window without
+          // this filter.
           MEMBER_NOT_ERASED_SQL,
         ];
         if (opts.urgency === 'terminated') {
@@ -2079,6 +2324,26 @@ export function makeDrizzleRenewalCycleRepo(
         if (opts.tier) {
           baseFilters.push(eq(renewalCycles.tierAtCycleStart, opts.tier));
         }
+        // `baseFilters` above is PAGE-ROWS-ONLY from here on (feeds
+        // `pageFilters` further down) — it is intentionally tab-dependent
+        // (terminated ⇒ status='lapsed' only).
+
+        // Fix #63 — the tab-badge summary must be a STABLE navigation count,
+        // independent of which urgency tab is currently selected. It used to
+        // share `baseFilters` with the page-rows query above, so selecting
+        // the Terminated tab (which restricts rows to status='lapsed') also
+        // restricted the summary aggregate: every non-terminated badge
+        // (t-90…t-0, suspended) silently computed to 0 while that tab was
+        // active. `summaryFilters` is therefore ALWAYS the non-lapsed 90-day
+        // window shape (+ tier), never the terminated-specific restriction.
+        const summaryFilters: SQL[] = [
+          MEMBER_NOT_ERASED_SQL,
+          sql`${renewalCycles.status} NOT IN ('cancelled','completed')`,
+          sql`${renewalCycles.expiresAt} <= NOW() + INTERVAL '90 days'`,
+        ];
+        if (opts.tier) {
+          summaryFilters.push(eq(renewalCycles.tierAtCycleStart, opts.tier));
+        }
 
         // The summary is computed BEFORE the pagination cursor — admins
         // see accurate totals across the whole window even when paging.
@@ -2094,7 +2359,7 @@ export function makeDrizzleRenewalCycleRepo(
             count: sql<number>`count(*)::int`,
           })
           .from(renewalCycles)
-          .where(and(...baseFilters))
+          .where(and(...summaryFilters))
           .groupBy(URGENCY_CASE_SQL);
 
         // Lapsed count is queried separately because the window filter
@@ -2149,9 +2414,10 @@ export function makeDrizzleRenewalCycleRepo(
         //    carries `status NOT IN (cancelled,completed)` (keeps lapsed) AND
         //    the 90-day ceiling; the month bounds ARE the window and lapsed
         //    must not leak into an `overdue` click. Tier is intentionally
-        //    ignored (the chart aggregation is whole-tenant). Summary +
-        //    lapsedCount above stay on `baseFilters` → urgency badges are
-        //    unchanged by a month filter (F3, "two independent lenses").
+        //    ignored (the chart aggregation is whole-tenant). Summary
+        //    (`summaryFilters`) + lapsedCount are independent queries computed
+        //    above and never rebuilt here → urgency badges are unchanged by a
+        //    month filter (F3, "two independent lenses").
         //  - URGENCY lens (default): unchanged — slice baseFilters + urgency.
         let pageFilters: SQL[];
         if (opts.monthFilter && opts.nowIso) {
@@ -2165,16 +2431,18 @@ export function makeDrizzleRenewalCycleRepo(
             pageFilters.push(eq(URGENCY_CASE_SQL, opts.urgency));
           }
         }
-        if (cursor) {
-          pageFilters.push(
-            or(
-              sql`${renewalCycles.expiresAt} > ${cursor.expiresAt}`,
-              and(
-                eq(renewalCycles.expiresAt, new Date(cursor.expiresAt)),
-                sql`${renewalCycles.cycleId} > ${cursor.cycleId}`,
-              ),
-            )!,
-          );
+        // Sort-aware keyset (Task 8). The WHERE comparison, the ORDER BY below,
+        // and the emitted next-cursor all derive from `sort`, so paging "Next
+        // 50" under a non-default sort never dups/skips. A tier sort needs the
+        // cursor's tier ordinal; a legacy/expiry cursor lacks it, so such a
+        // cursor is treated as sort-incompatible and dropped (reset to page 1)
+        // rather than mis-paging — the page layer already deletes the cursor on
+        // a sort change, so a live tier-sort cursor always carries `tierOrd`.
+        const cursorMatchesSort =
+          cursor !== null &&
+          (!isTierSort(sort) || cursor.tierOrd !== undefined);
+        if (cursorMatchesSort) {
+          pageFilters.push(pipelineKeysetWhereSql(sort, cursor));
         }
 
         // Lateral subquery for last reminder
@@ -2261,14 +2529,12 @@ export function makeDrizzleRenewalCycleRepo(
             ),
           )
           .where(and(...pageFilters))
-          .orderBy(
-            sql`${renewalCycles.expiresAt} ASC, ${renewalCycles.cycleId} ASC`,
-          )
+          .orderBy(pipelineOrderBySql(sort))
           .limit(limit + 1);
 
         const hasNextPage = pageRows.length > limit;
         const slicedRows = hasNextPage ? pageRows.slice(0, limit) : pageRows;
-        const nextCursor = buildNextCursor(slicedRows, hasNextPage);
+        const nextCursor = buildPipelineNextCursor(slicedRows, hasNextPage, sort);
 
         const rowsOut: PipelineRow[] = slicedRows.map((r) => ({
           cycleId: asCycleId(r.cycleId),

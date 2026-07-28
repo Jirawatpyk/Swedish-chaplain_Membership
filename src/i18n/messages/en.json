@@ -3236,6 +3236,30 @@
         "terminatedDef": "The membership has ended (lapsed) and needs admin reactivation."
       },
       "subtitle": "Active members by renewal date and tier.",
+      "money": {
+        "title": "Membership dues — money",
+        "currency": "THB",
+        "rateNone": "—",
+        "loadFailed": "Couldn't load these figures right now.",
+        "pastDue": {
+          "label": "Past due",
+          "basis": "membership dues past due · this fiscal year · incl. VAT",
+          "ariaLabel": "Past due {amount} — view overdue renewals"
+        },
+        "collected": {
+          "label": "Collected this month",
+          "basis": "membership dues · this calendar month · incl. VAT · operational cash, not a period-close or tax-filing (ภ.พ.30) total",
+          "ariaLabel": "Collected this month {amount} — view paid membership invoices"
+        },
+        "collectionRate": {
+          "label": "Collection rate",
+          "basis": "membership · fiscal-year-to-date · due-cohort · incl. VAT"
+        },
+        "dueSoon": {
+          "label": "Due soon",
+          "basis": "membership dues due within {days, plural, one {# day} other {# days}} · not yet overdue · incl. VAT"
+        }
+      },
       "tabs": {
         "ariaLabel": "Renewals sections",
         "pipeline": "Pipeline",
@@ -3303,7 +3327,7 @@
         "aria_label": "Filter by renewal urgency",
         "aria_label_scroll": "Renewal urgency tabs, scrollable",
         "countSr": "{count, plural, one {# member} other {# members}}",
-        "monthLensHint": "Urgency filters are paused while a month filter is active. Clear the month filter to use them.",
+        "monthLensHint": "Urgency filters are paused while a month filter is active. Select an urgency tab above to switch, or clear the month filter below.",
         "monthLensBadge": "Paused by month filter",
         "t_90": "T-90",
         "t_60": "T-60",
@@ -3344,6 +3368,16 @@
           "invoice": "Invoice",
           "actions": "Actions"
         },
+        "sort": {
+          "sortBy": "Sort by {column}",
+          "ascending": "Sorted ascending",
+          "descending": "Sorted descending"
+        },
+        "density": {
+          "label": "Row density",
+          "comfortable": "Comfortable",
+          "compact": "Compact"
+        },
         "status": {
           "upcoming": "Upcoming",
           "reminded": "Reminded",
@@ -3378,6 +3412,7 @@
         "sendReminder": "Send reminder",
         "sendReminderAriaLabel": "Send reminder to {company}",
         "markContacted": "Mark contacted",
+        "markPaid": "Mark paid",
         "rowMenu": "Actions for {company}"
       },
       "sendReminderNow": {
@@ -3545,6 +3580,12 @@
           "lastSaved": "Last saved {date}",
           "stepCount": "{count, plural, =0 {No steps} one {1 step} other {{count} steps}}"
         }
+      },
+      "workQueue": {
+        "label": "Work queue",
+        "pipeline": "All renewals",
+        "needsAction": "Needs action",
+        "needsActionCountSr": "{count, plural, one {# member needs action} other {# members need action}}"
       },
       "atRisk": {
         "title": "At-risk members",
@@ -3739,6 +3780,7 @@
         "markPaidOffline": {
           "button": "Mark paid offline",
           "dialogTitle": "Record an offline payment?",
+          "forMember": "For {company}",
           "dialogBody": "Use this when the member has paid outside the system (bank transfer, cash, or cheque). An invoice is issued and the cycle is completed.",
           "paymentMethodLabel": "Payment method",
           "paymentMethod": {

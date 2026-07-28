@@ -51,6 +51,7 @@ export {
 
 export type {
   PipelineRow,
+  PipelineSort,
   UrgencyBucket,
 } from './application/ports/renewal-cycle-repo';
 

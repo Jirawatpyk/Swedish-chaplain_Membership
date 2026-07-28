@@ -67,11 +67,11 @@ test.describe('F8 — /admin/renewals pipeline dashboard (US1)', () => {
 
     // 8 urgency tabs render (T-90 / T-60 / T-30 / T-14 / T-7 / T-0 /
     // Suspended / Terminated). Scope to the urgency tablist by its name:
-    // the page ALSO renders the at-risk-widget's "Filter by risk band"
-    // tablist (3 role=tab band buttons), so a bare getByRole('tab') matches
-    // 11, not 8 (the original assertion was over-broad — it caught both
-    // tablists). EN canonical label — the E2E session signs in in English,
-    // mirroring the tier-filter assertion below (line ~81).
+    // the page also renders `RenewalsSectionTabs` (4 tabs) + `WorkQueueTabs`
+    // (2 lenses, Wave 2 Task 7) on the same view, so a bare getByRole('tab')
+    // would over-match every tablist on the page. EN canonical label — the
+    // E2E session signs in in English, mirroring the tier-filter assertion
+    // below (line ~81).
     const tabs = page
       .getByRole('tablist', { name: /filter by renewal urgency/i })
       .getByRole('tab');
