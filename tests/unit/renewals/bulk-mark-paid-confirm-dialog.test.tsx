@@ -18,6 +18,7 @@ import en from '@/i18n/messages/en.json';
 import {
   BulkMarkPaidConfirmDialog,
   selectPreviewableBatch,
+  selectNotBulkPayableBatch,
 } from '@/app/(staff)/admin/renewals/_components/bulk-mark-paid-confirm-dialog';
 
 function wrap(ui: React.ReactNode) {
@@ -69,6 +70,45 @@ describe('selectPreviewableBatch (Decision 3 — pure, no rendering)', () => {
       ]),
     ).toEqual([]);
   });
+
+  // Review round 1 (SHOULD 3) — a row can be `previewable: true` and STILL
+  // carry a null amount (the wire contract allows it even though Task 9
+  // rows always populate one today). Such a row must never be bulk-payable
+  // — no money-mutating action may be shown/settled without a legible figure.
+  it('excludes a previewable row with no legible amount (defensive money-safety line)', () => {
+    const batch = selectPreviewableBatch([
+      { cycleId: 'c1', companyName: 'Acme', amountThbMinor: 5000, currency: 'THB', previewable: true },
+      { cycleId: 'c2', companyName: 'Beta', amountThbMinor: null, currency: null, previewable: true },
+    ]);
+    expect(batch).toEqual([{ cycleId: 'c1', companyName: 'Acme' }]);
+  });
+});
+
+describe('selectNotBulkPayableBatch (review round 1 SHOULD 4 — pure, no rendering)', () => {
+  it('captures both non-previewable rows AND previewable rows with no legible amount', () => {
+    const batch = selectNotBulkPayableBatch([
+      { cycleId: 'c1', companyName: 'Acme', amountThbMinor: 5000, currency: 'THB', previewable: true },
+      { cycleId: 'c2', companyName: 'Beta', amountThbMinor: null, currency: null, previewable: false },
+      { cycleId: 'c3', companyName: 'Gamma', amountThbMinor: null, currency: null, previewable: true },
+    ]);
+    expect(batch).toEqual([
+      { cycleId: 'c2', companyName: 'Beta' },
+      { cycleId: 'c3', companyName: 'Gamma' },
+    ]);
+  });
+
+  it('is the exact complement of selectPreviewableBatch over the same input', () => {
+    const items = [
+      { cycleId: 'c1', companyName: 'Acme', amountThbMinor: 5000, currency: 'THB', previewable: true },
+      { cycleId: 'c2', companyName: 'Beta', amountThbMinor: null, currency: null, previewable: false },
+    ];
+    const payable = selectPreviewableBatch(items);
+    const notPayable = selectNotBulkPayableBatch(items);
+    expect(payable.length + notPayable.length).toBe(items.length);
+    expect(new Set([...payable, ...notPayable].map((i) => i.cycleId))).toEqual(
+      new Set(items.map((i) => i.cycleId)),
+    );
+  });
 });
 
 describe('BulkMarkPaidConfirmDialog — settlement preview rendering', () => {
@@ -116,6 +156,53 @@ describe('BulkMarkPaidConfirmDialog — settlement preview rendering', () => {
     // Appears twice: the single previewable row's own amount AND the grand
     // total happen to be the same figure in this fixture (one row).
     expect(screen.getAllByText('฿1,070.00')).toHaveLength(2);
+    expect(screen.getByText('Beta')).toBeInTheDocument();
+    expect(screen.getByText(en.admin.renewals.bulk.previewRowUnpriced)).toBeInTheDocument();
+  });
+
+  // Review round 1 (SHOULD 3) — a previewable row with a null amount must
+  // render on the SAME side of the line as the batch it feeds: the
+  // not-bulk-payable list, never the priced list with an em-dash stand-in.
+  it('treats a previewable row with no legible amount as not-bulk-payable in the rendered lists too', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        settlementPreviewResponse({
+          items: [
+            {
+              cycle_id: 'c1',
+              company_name: 'Acme',
+              invoice_id: 'inv1',
+              amount_thb_minor: 5000,
+              currency: 'THB',
+              previewable: true,
+            },
+            {
+              cycle_id: 'c2',
+              company_name: 'Beta',
+              invoice_id: 'inv2',
+              amount_thb_minor: null,
+              currency: null,
+              previewable: true,
+            },
+          ],
+          total_thb_minor: 5000,
+        }),
+      ),
+    );
+
+    render(
+      wrap(
+        <BulkMarkPaidConfirmDialog
+          open
+          onOpenChange={vi.fn()}
+          cycleIds={['c1', 'c2']}
+          onConfirm={vi.fn(async () => {})}
+        />,
+      ),
+    );
+
+    await screen.findByText('Acme');
     expect(screen.getByText('Beta')).toBeInTheDocument();
     expect(screen.getByText(en.admin.renewals.bulk.previewRowUnpriced)).toBeInTheDocument();
   });
@@ -231,5 +318,101 @@ describe('BulkMarkPaidConfirmDialog — settlement preview rendering', () => {
     expect(
       screen.getByRole('button', { name: en.admin.renewals.bulk.confirmMarkPaidAction }),
     ).toBeDisabled();
+  });
+});
+
+/**
+ * Review round 1 (SHOULD 5) — the ONE place a non-bulk-payable cycle could
+ * enter the batch and mint a §86/4 is `handleConfirm` calling
+ * `selectPreviewableBatch(preview.items)` → `onConfirm`. Both this file's
+ * OTHER tests (render-only, never click Confirm) and
+ * `pipeline-bulk-action-bar.test.tsx` (mocks this whole component out) skip
+ * that wiring entirely. This is a REAL click-through — `handleConfirm` has
+ * NO `useTransition`/`startTransition` (plain `useState` submitting flag,
+ * per the module docstring), so unlike the AlertDialog-based confirm
+ * dialogs elsewhere in this repo, a plain click here is expected to be safe
+ * under jsdom + React 19.
+ */
+describe('BulkMarkPaidConfirmDialog — handleConfirm wiring (Decision 3, real click path)', () => {
+  it('passes onConfirm ONLY the bulk-payable cycleIds, plus the shared body and the excluded rows', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        settlementPreviewResponse({
+          items: [
+            {
+              cycle_id: 'c1',
+              company_name: 'Acme',
+              invoice_id: 'inv1',
+              amount_thb_minor: 5000,
+              currency: 'THB',
+              previewable: true,
+            },
+            {
+              cycle_id: 'c2',
+              company_name: 'Beta',
+              invoice_id: null,
+              amount_thb_minor: null,
+              currency: null,
+              previewable: false,
+            },
+            {
+              cycle_id: 'c3',
+              company_name: 'Gamma',
+              invoice_id: 'inv3',
+              amount_thb_minor: null,
+              currency: null,
+              previewable: true,
+            },
+          ],
+          total_thb_minor: 5000,
+        }),
+      ),
+    );
+    const onConfirm = vi.fn(
+      async (
+        _batch: readonly { cycleId: string; companyName: string }[],
+        _body: { payment_method: string; payment_reference: string; payment_date: string },
+        _notBulkPayable: readonly { cycleId: string; companyName: string }[],
+      ): Promise<void> => {},
+    );
+
+    render(
+      wrap(
+        <BulkMarkPaidConfirmDialog
+          open
+          onOpenChange={vi.fn()}
+          cycleIds={['c1', 'c2', 'c3']}
+          onConfirm={onConfirm}
+        />,
+      ),
+    );
+
+    await screen.findByText('Acme');
+    fireEvent.change(screen.getByLabelText(en.admin.renewals.bulk.paymentReferenceLabel), {
+      target: { value: 'REF-1' },
+    });
+    fireEvent.change(screen.getByLabelText(en.admin.renewals.bulk.paymentDateLabel), {
+      target: { value: '2026-07-29' },
+    });
+
+    const confirmButton = screen.getByRole('button', {
+      name: en.admin.renewals.bulk.confirmMarkPaidAction,
+    });
+    await waitFor(() => expect(confirmButton).not.toBeDisabled());
+    fireEvent.click(confirmButton);
+
+    await waitFor(() => expect(onConfirm).toHaveBeenCalledTimes(1));
+    const [batch, body, notBulkPayable] = onConfirm.mock.calls[0]!;
+    expect(batch).toEqual([{ cycleId: 'c1', companyName: 'Acme' }]);
+    expect(body).toEqual({
+      payment_method: 'bank_transfer',
+      payment_reference: 'REF-1',
+      payment_date: '2026-07-29',
+    });
+    expect(notBulkPayable).toEqual([
+      { cycleId: 'c2', companyName: 'Beta' },
+      { cycleId: 'c3', companyName: 'Gamma' },
+    ]);
   });
 });

@@ -3453,6 +3453,7 @@
         "markPaidSkipped": "{count, plural, one {# överhoppad} other {# överhoppade}}",
         "markPaidFailed": "{count, plural, one {# misslyckad} other {# misslyckade}}",
         "markPaidOrphan": "{count, plural, one {# behöver manuell uppföljning} other {# behöver manuell uppföljning}}",
+        "markPaidNeedsAction": "{count, plural, one {# kräver åtgärd — återaktivera medlemmen och registrera sedan betalningen} other {# kräver åtgärd — återaktivera medlemmen och registrera sedan betalningen}}",
         "resultsHeadingReminder": "Resultat för påminnelseutskick",
         "resultsHeadingMarkPaid": "Resultat för betalningsregistrering",
         "resultsDismiss": "Stäng",
@@ -3461,7 +3462,9 @@
           "skipped": "Överhoppade",
           "failed": "Misslyckades",
           "rateLimited": "Hastighetsbegränsade — försök igen senare",
-          "orphan": "Behöver manuell uppföljning"
+          "orphan": "Behöver manuell uppföljning",
+          "needsAction": "Kräver åtgärd — återaktivera och registrera sedan betalningen",
+          "notBulkPayable": "Hantera individuellt"
         },
         "rateLimited": "För många massåtgärder. Vänta några minuter och försök igen.",
         "unknownError": "Något gick fel.",

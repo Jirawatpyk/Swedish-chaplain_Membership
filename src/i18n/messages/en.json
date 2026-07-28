@@ -3453,6 +3453,7 @@
         "markPaidSkipped": "{count, plural, one {# skipped} other {# skipped}}",
         "markPaidFailed": "{count, plural, one {# failed} other {# failed}}",
         "markPaidOrphan": "{count, plural, one {# needs manual follow-up} other {# need manual follow-up}}",
+        "markPaidNeedsAction": "{count, plural, one {# needs action — reactivate the member, then record the payment} other {# need action — reactivate the member, then record the payment}}",
         "resultsHeadingReminder": "Send-reminder results",
         "resultsHeadingMarkPaid": "Mark-paid results",
         "resultsDismiss": "Dismiss",
@@ -3461,7 +3462,9 @@
           "skipped": "Skipped",
           "failed": "Failed",
           "rateLimited": "Rate-limited — retry later",
-          "orphan": "Needs manual follow-up"
+          "orphan": "Needs manual follow-up",
+          "needsAction": "Needs action — reactivate, then record payment",
+          "notBulkPayable": "Settle individually"
         },
         "rateLimited": "Too many bulk actions. Wait a few minutes and try again.",
         "unknownError": "Something went wrong.",

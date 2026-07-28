@@ -3453,6 +3453,7 @@
         "markPaidSkipped": "{count, plural, other {ข้าม # รายการ}}",
         "markPaidFailed": "{count, plural, other {ล้มเหลว # รายการ}}",
         "markPaidOrphan": "{count, plural, other {ต้องติดตามด้วยตนเอง # รายการ}}",
+        "markPaidNeedsAction": "{count, plural, other {ต้องดำเนินการ # รายการ — เปิดใช้งานสมาชิกอีกครั้งก่อน แล้วจึงบันทึกการชำระเงิน}}",
         "resultsHeadingReminder": "ผลลัพธ์การส่งการแจ้งเตือน",
         "resultsHeadingMarkPaid": "ผลลัพธ์การบันทึกการชำระเงิน",
         "resultsDismiss": "ปิด",
@@ -3461,7 +3462,9 @@
           "skipped": "ข้าม",
           "failed": "ล้มเหลว",
           "rateLimited": "ถูกจำกัดอัตรา — ลองใหม่ภายหลัง",
-          "orphan": "ต้องติดตามด้วยตนเอง"
+          "orphan": "ต้องติดตามด้วยตนเอง",
+          "needsAction": "ต้องดำเนินการ — เปิดใช้งานสมาชิกก่อน แล้วจึงบันทึกการชำระเงิน",
+          "notBulkPayable": "ชำระทีละรายการ"
         },
         "rateLimited": "ดำเนินการเป็นชุดมากเกินไป รอสักครู่แล้วลองใหม่",
         "unknownError": "เกิดข้อผิดพลาด",

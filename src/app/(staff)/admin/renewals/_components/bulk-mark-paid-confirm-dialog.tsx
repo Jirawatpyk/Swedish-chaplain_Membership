@@ -16,24 +16,36 @@
  *    dialog hands back to the caller. `selectPreviewableBatch` is the pure
  *    function that draws that line — unit-tested directly (no rendering)
  *    so Decision 3 is pinned without touching Base UI Dialog interaction.
+ *    Review round 1 (SHOULD 3) tightened the line: a row can be
+ *    `previewable: true` and STILL carry a null `amountThbMinor` (the API
+ *    contract allows it even though Task 9 rows always populate one today)
+ *    — `isBulkPayable` requires BOTH, so a row with no legible figure is
+ *    never shown/settled without one. `selectNotBulkPayableBatch` is the
+ *    complementary pure function (review round 1, SHOULD 4) — it hands the
+ *    excluded rows (non-previewable + previewable-but-unpriced) back to the
+ *    caller too, so `PipelineBulkActionBar` can keep them visible in the
+ *    persistent results panel after the run, not just in this dialog.
  *  - **Decision 4** — ONE shared `payment_method` / `payment_reference` /
  *    `payment_date` applies to every row in the batch (models a single bank
  *    transfer covering many members at once). The copy says so explicitly.
  *
  * This component OWNS the settlement-preview fetch + the shared payment
  * fields + the previewable/non-previewable split. It does NOT execute the
- * mark-paid batch itself — `onConfirm(batch, body)` hands the previewable
- * `{cycleId, companyName}` pairs + the shared body to the caller
- * (`PipelineBulkActionBar`), which owns the actual per-cycle fan-out,
- * outcome bucketing, toasts, and the persistent results panel (Decision 5).
- * This split keeps the money-mutating fan-out testable via fetch-mocking
- * WITHOUT ever needing a click-through submit on a live Base UI Dialog (the
- * documented jsdom + React 19 `startTransition` hang — see
- * `mark-paid-offline-dialog.tsx`'s test docstring). This component itself
- * uses NO `useTransition`/`startTransition` (plain `useState` submitting
- * flag, same shape as `ConfirmationDialog`), so a plain-click confirm test
- * is expected to be safe, but the bar's OWN test suite mocks this component
- * out anyway for consistency with the repo's established convention
+ * mark-paid batch itself — `onConfirm(batch, body, notBulkPayable)` hands
+ * the bulk-payable `{cycleId, companyName}` pairs + the shared body + the
+ * excluded rows to the caller (`PipelineBulkActionBar`), which owns the
+ * actual per-cycle fan-out, outcome bucketing, toasts, and the persistent
+ * results panel (Decision 5). This split keeps the money-mutating fan-out
+ * testable via fetch-mocking WITHOUT ever needing a click-through submit on
+ * a live Base UI Dialog (the documented jsdom + React 19 `startTransition`
+ * hang — see `mark-paid-offline-dialog.tsx`'s test docstring). This
+ * component itself uses NO `useTransition`/`startTransition` (plain
+ * `useState` submitting flag, same shape as `ConfirmationDialog`), so a
+ * plain-click confirm test is expected to be safe — review round 1
+ * (SHOULD 5) added exactly that: a real click-through `handleConfirm` test
+ * pinning that only bulk-payable cycleIds ever reach `onConfirm`. The bar's
+ * OWN test suite still mocks this component out for the fan-out/bucketing
+ * tests, for consistency with the repo's established convention
  * (`bulk-action-bar-enrol-toast.test.tsx`).
  *
  * Reuses `isMarkPaidIncomplete` from the single-row mark-paid-offline
@@ -108,27 +120,58 @@ export interface BulkMarkPaidConfirmDialogProps {
    *  dialog fetches the preview for all of them and shows both groups. */
   readonly cycleIds: readonly string[];
   /**
-   * Caller-owned execution: receives ONLY the previewable batch (Decision
-   * 3) + the shared payment body (Decision 4). The caller runs the actual
-   * per-cycle fan-out and reports outcomes; this dialog always closes once
-   * the returned promise settles (mirrors `MarkPaidOfflineDialog`'s
-   * always-resolve-then-close shape, simplified — Decision 5's persistent
-   * failure/skip visibility lives in the caller's results panel, not here).
+   * Caller-owned execution: receives the bulk-payable batch (Decision 3,
+   * tightened by review round 1 SHOULD 3 — previewable AND a legible
+   * amount) + the shared payment body (Decision 4) + the excluded
+   * not-bulk-payable rows (review round 1 SHOULD 4 — so the caller can
+   * keep them visible after the run, not just in this dialog). The caller
+   * runs the actual per-cycle fan-out and reports outcomes; this dialog
+   * always closes once the returned promise settles (mirrors
+   * `MarkPaidOfflineDialog`'s always-resolve-then-close shape, simplified —
+   * Decision 5's persistent failure/skip visibility lives in the caller's
+   * results panel, not here).
    */
   readonly onConfirm: (
     batch: readonly BulkMarkPaidBatchEntry[],
     body: MarkPaidBatchBody,
+    notBulkPayable: readonly BulkMarkPaidBatchEntry[],
   ) => Promise<void>;
   readonly finalFocus?: () => HTMLElement | null;
 }
 
-/** Decision 3 — the ONLY rows a bulk mark-paid batch may act on. Pure
- *  (no I/O, no rendering) so it is unit-testable without a Base UI Dialog. */
+/**
+ * Decision 3 (tightened by review round 1, SHOULD 3) — the ONLY rows a bulk
+ * mark-paid batch may act on: `previewable` AND a legible THB amount. A row
+ * with `previewable: true` but a null `amountThbMinor` renders an em-dash
+ * and must NEVER be money-mutated blind — defensive today (Task 9 rows
+ * always carry an amount), but on the correct side of a money decision.
+ */
+function isBulkPayable(item: PreviewItem): boolean {
+  return item.previewable && item.amountThbMinor !== null;
+}
+
+/** Pure (no I/O, no rendering) so it is unit-testable without a Base UI Dialog. */
 export function selectPreviewableBatch(
   items: readonly PreviewItem[],
 ): BulkMarkPaidBatchEntry[] {
   return items
-    .filter((i) => i.previewable)
+    .filter(isBulkPayable)
+    .map((i) => ({ cycleId: i.cycleId, companyName: i.companyName }));
+}
+
+/**
+ * Review round 1 (SHOULD 4) — the complement of {@link selectPreviewableBatch}:
+ * every row EXCLUDED from the batch (non-previewable `upcoming` cycles AND
+ * previewable-but-unpriced rows), handed to the caller so it can keep them
+ * visible in the persistent results panel under "settle individually" —
+ * otherwise `onClear()` + `router.refresh()` drop them from view entirely
+ * and the treasurer forgets the still-unbilled members.
+ */
+export function selectNotBulkPayableBatch(
+  items: readonly PreviewItem[],
+): BulkMarkPaidBatchEntry[] {
+  return items
+    .filter((i) => !isBulkPayable(i))
     .map((i) => ({ cycleId: i.cycleId, companyName: i.companyName }));
 }
 
@@ -222,12 +265,15 @@ export function BulkMarkPaidConfirmDialog({
     };
   }, [open, cycleIds]);
 
+  // Mirrors `isBulkPayable`/`selectPreviewableBatch` exactly — a row shown
+  // here as priced-and-included must be the SAME set the batch acts on
+  // (review round 1, SHOULD 3).
   const previewableItems = useMemo(
-    () => (preview.kind === 'ready' ? preview.items.filter((i) => i.previewable) : []),
+    () => (preview.kind === 'ready' ? preview.items.filter(isBulkPayable) : []),
     [preview],
   );
   const nonPreviewableItems = useMemo(
-    () => (preview.kind === 'ready' ? preview.items.filter((i) => !i.previewable) : []),
+    () => (preview.kind === 'ready' ? preview.items.filter((i) => !isBulkPayable(i)) : []),
     [preview],
   );
 
@@ -239,13 +285,18 @@ export function BulkMarkPaidConfirmDialog({
   const handleConfirm = async (): Promise<void> => {
     if (confirmDisabled || preview.kind !== 'ready') return;
     const batch = selectPreviewableBatch(preview.items);
+    const notBulkPayable = selectNotBulkPayableBatch(preview.items);
     setSubmitting(true);
     try {
-      await onConfirm(batch, {
-        payment_method: paymentMethod,
-        payment_reference: trimmedReference,
-        payment_date: paymentDate,
-      });
+      await onConfirm(
+        batch,
+        {
+          payment_method: paymentMethod,
+          payment_reference: trimmedReference,
+          payment_date: paymentDate,
+        },
+        notBulkPayable,
+      );
     } finally {
       setSubmitting(false);
       onOpenChange(false);
