@@ -6,6 +6,11 @@
  * `NextIntlClientProvider` (the established next-intl unit-test pattern).
  * `vi.useRealTimers()` — the shared harness installs fake timers that would
  * hang React rendering (memory: component test harness fake timers).
+ *
+ * Fix round 1 #2 — hero numbers switched from `formatSatangAsBaht` (no
+ * thousands grouping) to the canonical `formatSatangThb`. `1,000.00` below
+ * (was `1000.00`) pins the grouped output; a dedicated large-value test pins
+ * multi-comma grouping (e.g. millions) explicitly.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
@@ -35,8 +40,25 @@ describe('PipelineMoneyBand', () => {
   it('renders THB hero numbers for each money tile', () => {
     renderBand();
     expect(screen.getByText('500.00')).toBeInTheDocument(); // overdue / past due
-    expect(screen.getByText('1000.00')).toBeInTheDocument(); // collected this month
+    expect(screen.getByText('1,000.00')).toBeInTheDocument(); // collected this month
     expect(screen.getByText('300.00')).toBeInTheDocument(); // due soon
+  });
+
+  it('groups large hero numbers with thousands separators (formatSatangThb, not formatSatangAsBaht)', () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <PipelineMoneyBand
+          money={{
+            settledDueToDateSatang: 0n,
+            overdueSatang: 440000000n, // 4,400,000.00 THB
+            collectedThisPeriodSatang: 0n,
+            dueSoonSatang: 0n,
+          }}
+          windowDays={90}
+        />
+      </NextIntlClientProvider>,
+    );
+    expect(screen.getByText('4,400,000.00')).toBeInTheDocument();
   });
 
   it('derives the collection rate (79.2%) from settled + overdue, not a stored field', () => {
@@ -65,9 +87,11 @@ describe('PipelineMoneyBand', () => {
       'href',
       '/admin/renewals?month=overdue',
     );
+    // Fix round 1 #4 — scoped to `&subject=membership` so the drill-down
+    // matches the tile's membership-only scope.
     expect(screen.getByRole('link', { name: /collected this month/i })).toHaveAttribute(
       'href',
-      '/admin/invoices?status=paid',
+      '/admin/invoices?status=paid&subject=membership',
     );
     expect(screen.getByRole('link', { name: /due soon/i })).toHaveAttribute(
       'href',

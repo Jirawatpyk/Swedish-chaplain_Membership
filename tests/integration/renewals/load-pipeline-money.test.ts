@@ -32,7 +32,7 @@ import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices'
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { payments, refunds } from '@/modules/payments/infrastructure/schema';
 import { collectionRatePct, loadPipelineMoney, makeRenewalsDeps } from '@/modules/renewals';
-import { createTwoTestTenants, type TestTenant } from '../helpers/test-tenant';
+import { createTestTenant, createTwoTestTenants, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
@@ -366,5 +366,96 @@ describe('DV-Wave2 ⑥ loadPipelineMoney — integration (live Neon)', () => {
     // in the rate: July has #3 + #5 (100000), August has none.
     expect(july31.value.collectedThisPeriodSatang).toBe(100000n);
     expect(aug1.value.collectedThisPeriodSatang).toBe(0n);
+  }, 60_000);
+});
+
+/**
+ * Fix round 1 #3 — `admin/renewals` page.tsx now resolves the tenant's REAL
+ * `fiscalYearStartMonth` (via `deps.fiscalYearSettings`) instead of silently
+ * defaulting to January. This proves `loadPipelineMoney`'s SQL cohort
+ * boundary actually MOVES when a non-default value is passed through — the
+ * invariant that fix depends on — guarding against a regression where the
+ * param is silently ignored or the default re-creeps in.
+ *
+ * A single issued (unpaid) invoice due 2026-02-15 sits inside FY2026 under a
+ * January-start fiscal year, but inside the PRIOR fiscal year (Apr2025–
+ * Mar2026) under an April-start one — same row, same `nowIso`, different
+ * cohort membership depending solely on `fiscalYearStartMonth`.
+ */
+describe('DV-Wave2 ⑥ / Fix round 1 #3 — fiscalYearStartMonth shifts the due-cohort boundary', () => {
+  let fy: TestTenant;
+  let fyUser: TestUser;
+
+  // "today" = 2026-07-15 BKK — same pinned instant as the suite above (month
+  // 7 sits after both candidate fiscal-year-start months, so `fyStart` for
+  // fiscalYearStartMonth=4 lands on 2026-04-01, not 2025-04-01).
+  const FY_NOW = '2026-07-15T03:00:00.000Z';
+
+  beforeAll(async () => {
+    fyUser = await createActiveTestUser('admin');
+    fy = await createTestTenant('test-swecham');
+
+    const planId = `pm-plan-${randomUUID().slice(0, 8)}`;
+    const memberId = randomUUID();
+    await runInTenant(fy.ctx, (tx) =>
+      seedF8MembershipPlan(tx, {
+        tenantSlug: fy.ctx.slug,
+        planId,
+        planName: { en: 'FY Boundary Plan' },
+        benefitMatrix: DEFAULT_TEST_BENEFIT_MATRIX,
+        createdBy: fyUser.userId,
+      }),
+    );
+    await runInTenant(fy.ctx, (tx) =>
+      tx.insert(members).values({
+        tenantId: fy.ctx.slug,
+        memberId,
+        memberNumber: nextSeedMemberNumber(),
+        companyName: 'FY Boundary Co',
+        country: 'TH',
+        planId,
+        planYear: 2026,
+      }),
+    );
+
+    await seedMembershipInvoice(fy, fyUser, planId, memberId, {
+      status: 'issued',
+      totalSatang: 1234500n,
+      creditedTotalSatang: 0n,
+      dueDate: '2026-02-15',
+      paidAtIso: null,
+      seq: 1,
+    });
+  }, 120_000);
+
+  afterAll(async () => {
+    if (fy) {
+      await db.delete(invoices).where(eq(invoices.tenantId, fy.ctx.slug)).catch(() => {});
+    }
+    await fy?.cleanup().catch(() => {});
+  }, 120_000);
+
+  it('counts the Feb-due invoice as overdue under a January fiscal year', async () => {
+    const res = await loadPipelineMoney(makeRenewalsDeps(fy.ctx.slug), {
+      tenantId: fy.ctx.slug,
+      nowIso: FY_NOW,
+      windowDays: 90,
+      fiscalYearStartMonth: 1,
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.value.overdueSatang).toBe(1234500n);
+  }, 60_000);
+
+  it('drops the SAME Feb-due invoice from the cohort under an April fiscal year (prior-FY)', async () => {
+    const res = await loadPipelineMoney(makeRenewalsDeps(fy.ctx.slug), {
+      tenantId: fy.ctx.slug,
+      nowIso: FY_NOW,
+      windowDays: 90,
+      fiscalYearStartMonth: 4,
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.value.overdueSatang).toBe(0n);
   }, 60_000);
 });

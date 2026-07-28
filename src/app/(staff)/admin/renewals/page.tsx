@@ -31,6 +31,8 @@ import { logger } from '@/lib/logger';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
+import { runInTenant } from '@/lib/db';
+import { asTenantContext } from '@/modules/tenants';
 import {
   loadPipeline,
   loadPipelineMoney,
@@ -53,7 +55,10 @@ import {
 import { RenewalsEmptyState } from './_components/empty-state';
 import { shouldShowRenewalsEmptyState } from './_lib/should-show-empty-state';
 import { UrgencyBucketTabs } from './_components/urgency-bucket-tabs';
-import { PipelineMoneyBand } from './_components/pipeline-money-band';
+import {
+  PipelineMoneyBand,
+  PipelineMoneyBandSkeleton,
+} from './_components/pipeline-money-band';
 import { PipelineTable } from './_components/pipeline-table';
 import { LapsedTab } from './_components/lapsed-tab';
 import { TierFilterSelect } from './_components/tier-filter-select';
@@ -337,8 +342,10 @@ export default async function RenewalsPipelinePage({
           streams in independently of the pipeline table and a load throw
           degrades it to nothing (never crashes the pipeline). Reuses the
           already-computed `nowIso` so its FY/BKK boundaries reconcile with the
-          month lens. `fallback={null}` — CLS-safe, the band simply appears. */}
-      <Suspense fallback={null}>
+          month lens. Fix round 1 #1 — the fallback was `null`, so the band
+          appearing pushed the whole pipeline card down (a real CLS hit);
+          `PipelineMoneyBandSkeleton` reserves the identical footprint. */}
+      <Suspense fallback={<PipelineMoneyBandSkeleton />}>
         <PipelineMoneyBandSection tenantSlug={tenantCtx.slug} nowIso={nowIso} />
       </Suspense>
       <Card>
@@ -465,9 +472,17 @@ export default async function RenewalsPipelinePage({
  * nothing — the pipeline itself must never crash on the money aggregate.
  *
  * `windowDays = 90` matches the pipeline's own T-90 planning window and drives
- * the "due soon within N days" caption. `fiscalYearStartMonth` defaults to 1
- * (SweCham); a non-January-FY tenant onboarding must resolve the real value
- * from tenant settings and thread it in here.
+ * the "due soon within N days" caption.
+ *
+ * Fix round 1 #3 — `fiscalYearStartMonth` is now resolved from the tenant's
+ * REAL `tenant_invoice_settings` row via `deps.fiscalYearSettings` (the same
+ * `FiscalYearStartMonthPort` F9's revenue adapter and the F8 re-anchor path
+ * already read), not silently defaulted to January. A non-January-FY tenant's
+ * due-cohort boundary now shifts correctly. `getFiscalYearStartMonthInTx` is
+ * tx-bound (mirrors every other F8 cross-tx read) — this Suspense island has
+ * no tx of its own, so it opens ONE short-lived `runInTenant` purely to read
+ * this single column; the adapter itself falls back to January (with a
+ * warning log) when the tenant has no settings row yet.
  */
 async function PipelineMoneyBandSection({
   tenantSlug,
@@ -482,10 +497,16 @@ async function PipelineMoneyBandSection({
   // boundary, not this best-effort data catch (react-hooks/error-boundaries).
   let money: PipelineMoneySummary | null = null;
   try {
-    const result = await loadPipelineMoney(makeRenewalsDeps(tenantSlug), {
+    const deps = makeRenewalsDeps(tenantSlug);
+    const fiscalYearStartMonth = await runInTenant(
+      asTenantContext(tenantSlug),
+      (tx) => deps.fiscalYearSettings.getFiscalYearStartMonthInTx(tx, tenantSlug),
+    );
+    const result = await loadPipelineMoney(deps, {
       tenantId: tenantSlug,
       nowIso,
       windowDays: WINDOW_DAYS,
+      fiscalYearStartMonth,
     });
     if (result.ok) {
       money = result.value;
