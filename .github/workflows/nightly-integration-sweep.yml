@@ -29,6 +29,14 @@ name: Nightly integration sweep (rotating)
 on:
   schedule:
     - cron: '0 19 * * *'
+  # Self-test: a PR that edits this file runs it against `plans` (21 files —
+  # enough to exercise the 20-file chunk boundary). `workflow_dispatch` cannot
+  # target a branch until the file exists on the default branch, so without
+  # this the first real execution would be the first scheduled one.
+  pull_request:
+    paths:
+      - '.github/workflows/nightly-integration-sweep.yml'
+      - '.github/actions/ci-neon-env/action.yml'
   workflow_dispatch:
     inputs:
       modules:
@@ -71,6 +79,10 @@ jobs:
         id: pick
         run: |
           MODULES='${{ inputs.modules }}'
+          if [ -z "$MODULES" ] && [ "${{ github.event_name }}" = 'pull_request' ]; then
+            MODULES='plans'
+            echo "::notice title=Self-test::PR run — sweeping 'plans' only to validate the runner mechanics, not the rotation."
+          fi
           if [ -z "$MODULES" ]; then
             case "$(date -u +%u)" in
               1) MODULES='invoicing' ;;                          # [111]
