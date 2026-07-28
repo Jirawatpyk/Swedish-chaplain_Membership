@@ -3,8 +3,9 @@
  * `loadPipeline` use-case.
  *
  * Phase 3.5 S-06 added `withActiveSpan('admin_pipeline_load', ...)`
- * wrapping the repo composite query with 8 attributes:
- *   - 4 upfront: tenant.id, tier_filter, urgency_filter, page_limit
+ * wrapping the repo composite query with 9 attributes:
+ *   - 5 upfront: tenant.id, tier_filter, urgency_filter, sort (Task 8),
+ *                page_limit
  *   - 4 post-repo: total_in_window_bucket (Round 9 W-R8-4),
  *                  lapsed_count_bucket  (Round 9 W-R8-4),
  *                  page_size,
@@ -91,7 +92,7 @@ describe('loadPipeline OTel span attributes (S-06 + W-R8-4)', () => {
     recordExceptionMock.mockClear();
   });
 
-  it('sets all 8 attributes on the span (4 upfront + 4 post-repo)', async () => {
+  it('sets all 9 attributes on the span (5 upfront + 4 post-repo)', async () => {
     const deps = fakeDeps({
       rows: [],
       nextCursor: null,
@@ -103,12 +104,12 @@ describe('loadPipeline OTel span attributes (S-06 + W-R8-4)', () => {
       urgency: 't-30',
     });
     // Round 10 I3 — fakeTracer now applies opts.attributes via
-    // setAttribute, so all 8 attributes are visible to the mock:
-    // 4 upfront (tenant.id, tier_filter, urgency_filter, page_limit)
+    // setAttribute, so all 9 attributes are visible to the mock:
+    // 5 upfront (tenant.id, tier_filter, urgency_filter, sort, page_limit)
     // + 4 post-repo (total_in_window_bucket, lapsed_count_bucket,
     // page_size, month_filter).
-    expect(setAttributeMock).toHaveBeenCalledTimes(8);
-    // 4 upfront attrs.
+    expect(setAttributeMock).toHaveBeenCalledTimes(9);
+    // 5 upfront attrs.
     expect(setAttributeMock).toHaveBeenCalledWith('tenant.id', 'tenantA');
     expect(setAttributeMock).toHaveBeenCalledWith(
       'renewals.tier_filter',
@@ -117,6 +118,11 @@ describe('loadPipeline OTel span attributes (S-06 + W-R8-4)', () => {
     expect(setAttributeMock).toHaveBeenCalledWith(
       'renewals.urgency_filter',
       't-30',
+    );
+    // Task 8 — no `sort` in this input ⇒ the default `expires_at_asc`.
+    expect(setAttributeMock).toHaveBeenCalledWith(
+      'renewals.sort',
+      'expires_at_asc',
     );
     expect(setAttributeMock).toHaveBeenCalledWith('renewals.page_limit', 50);
     // 4 post-repo attrs.
