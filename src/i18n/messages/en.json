@@ -3236,6 +3236,27 @@
         "terminatedDef": "The membership has ended (lapsed) and needs admin reactivation."
       },
       "subtitle": "Active members by renewal date and tier.",
+      "money": {
+        "title": "Membership dues — money",
+        "currency": "THB",
+        "rateNone": "—",
+        "pastDue": {
+          "label": "Past due",
+          "basis": "membership dues past due · this fiscal year · incl. VAT"
+        },
+        "collected": {
+          "label": "Collected this month",
+          "basis": "membership dues · this calendar month · incl. VAT · operational cash, not a period-close total"
+        },
+        "collectionRate": {
+          "label": "Collection rate",
+          "basis": "membership · fiscal-year-to-date · due-cohort · incl. VAT"
+        },
+        "dueSoon": {
+          "label": "Due soon",
+          "basis": "membership dues due within {days} days · not yet overdue · incl. VAT"
+        }
+      },
       "tabs": {
         "ariaLabel": "Renewals sections",
         "pipeline": "Pipeline",

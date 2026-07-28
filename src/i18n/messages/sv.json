@@ -3236,6 +3236,27 @@
         "terminatedDef": "Medlemskapet har upphört och behöver återaktiveras av en administratör."
       },
       "subtitle": "Aktiva medlemmar efter förnyelsedatum och nivå.",
+      "money": {
+        "title": "Medlemsavgifter — ekonomi",
+        "currency": "THB",
+        "rateNone": "—",
+        "pastDue": {
+          "label": "Förfallna",
+          "basis": "förfallna medlemsavgifter · innevarande räkenskapsår · inkl. moms"
+        },
+        "collected": {
+          "label": "Inkasserat denna månad",
+          "basis": "medlemsavgifter · innevarande kalendermånad · inkl. moms · operativt kassaflöde, inte en periodavslutssumma"
+        },
+        "collectionRate": {
+          "label": "Inkasseringsgrad",
+          "basis": "medlemsavgifter · räkenskapsår hittills · förfallokohort · inkl. moms"
+        },
+        "dueSoon": {
+          "label": "Förfaller snart",
+          "basis": "medlemsavgifter som förfaller inom {days} dagar · ännu ej förfallna · inkl. moms"
+        }
+      },
       "tabs": {
         "ariaLabel": "Förnyelsesektioner",
         "pipeline": "Pipeline",

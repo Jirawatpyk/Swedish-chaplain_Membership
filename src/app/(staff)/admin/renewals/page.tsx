@@ -33,6 +33,7 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
 import {
   loadPipeline,
+  loadPipelineMoney,
   loadPendingReactivationReview,
   makeRenewalsDeps,
   parseMonthParam,
@@ -42,6 +43,7 @@ import {
   type TierBucket,
   type UrgencyBucket,
   type LoadPendingReactivationReviewOutput,
+  type PipelineMoneySummary,
 } from '@/modules/renewals';
 import { formatMonthKeyLabel } from '@/components/renewals/month-bucket-label';
 import {
@@ -51,6 +53,7 @@ import {
 import { RenewalsEmptyState } from './_components/empty-state';
 import { shouldShowRenewalsEmptyState } from './_lib/should-show-empty-state';
 import { UrgencyBucketTabs } from './_components/urgency-bucket-tabs';
+import { PipelineMoneyBand } from './_components/pipeline-money-band';
 import { PipelineTable } from './_components/pipeline-table';
 import { LapsedTab } from './_components/lapsed-tab';
 import { TierFilterSelect } from './_components/tier-filter-select';
@@ -330,6 +333,14 @@ export default async function RenewalsPipelinePage({
 
   return (
     <RenewalsPageShell title={t('title')} subtitle={t('subtitle')}>
+      {/* DV-Wave2 ⑥ — THB money KPI band. Best-effort Suspense island: it
+          streams in independently of the pipeline table and a load throw
+          degrades it to nothing (never crashes the pipeline). Reuses the
+          already-computed `nowIso` so its FY/BKK boundaries reconcile with the
+          month lens. `fallback={null}` — CLS-safe, the band simply appears. */}
+      <Suspense fallback={null}>
+        <PipelineMoneyBandSection tenantSlug={tenantCtx.slug} nowIso={nowIso} />
+      </Suspense>
       <Card>
         <CardContent className="flex flex-col gap-4">
           {/* 070 F8 item #18 (extended, nav-orphans follow-up) — section
@@ -443,6 +454,63 @@ export default async function RenewalsPipelinePage({
       </Suspense>
     </RenewalsPageShell>
   );
+}
+
+/**
+ * DV-Wave2 ⑥ — best-effort THB money KPI band section (Suspense island).
+ *
+ * Calls `loadPipelineMoney` and renders `<PipelineMoneyBand>`. Per-section
+ * isolation: a money-query throw (F4 `invoices` read, or the cross-module F5
+ * waived-refund read) or an unexpected `invalid_input` degrades the band to
+ * nothing — the pipeline itself must never crash on the money aggregate.
+ *
+ * `windowDays = 90` matches the pipeline's own T-90 planning window and drives
+ * the "due soon within N days" caption. `fiscalYearStartMonth` defaults to 1
+ * (SweCham); a non-January-FY tenant onboarding must resolve the real value
+ * from tenant settings and thread it in here.
+ */
+async function PipelineMoneyBandSection({
+  tenantSlug,
+  nowIso,
+}: {
+  readonly tenantSlug: string;
+  readonly nowIso: string;
+}) {
+  const WINDOW_DAYS = 90;
+  // Resolve the data inside try/catch, but construct the JSX AFTER it — a
+  // render error from <PipelineMoneyBand> must reach the Suspense error
+  // boundary, not this best-effort data catch (react-hooks/error-boundaries).
+  let money: PipelineMoneySummary | null = null;
+  try {
+    const result = await loadPipelineMoney(makeRenewalsDeps(tenantSlug), {
+      tenantId: tenantSlug,
+      nowIso,
+      windowDays: WINDOW_DAYS,
+    });
+    if (result.ok) {
+      money = result.value;
+    } else {
+      logger.error(
+        {
+          errorId: 'F8.ADMIN.MONEY_BAND',
+          tenantId: tenantSlug,
+          error: result.error.kind,
+        },
+        '[admin/renewals] money band load returned an error',
+      );
+    }
+  } catch (e) {
+    logger.error(
+      {
+        errorId: 'F8.ADMIN.MONEY_BAND',
+        err: e instanceof Error ? e.message : String(e),
+        tenantId: tenantSlug,
+      },
+      '[admin/renewals] money band load failed',
+    );
+  }
+  if (money === null) return null;
+  return <PipelineMoneyBand money={money} windowDays={WINDOW_DAYS} />;
 }
 
 /**
