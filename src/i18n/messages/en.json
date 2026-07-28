@@ -3368,8 +3368,9 @@
           "invoice": "Invoice",
           "actions": "Actions"
         },
-        "selectAll": "Select all rows",
+        "selectAll": "Select all rows on this page",
         "selectRow": "Select {company}",
+        "selectRowGeneric": "Select this member",
         "sort": {
           "sortBy": "Sort by {column}",
           "ascending": "Sorted ascending",

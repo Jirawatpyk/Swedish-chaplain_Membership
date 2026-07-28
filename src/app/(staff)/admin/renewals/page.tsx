@@ -462,14 +462,12 @@ export default async function RenewalsPipelinePage({
               showEmptyState ? (
                 <RenewalsEmptyState />
               ) : (
-                // Table-toolbar layout — the sighted result-count is the LEFT
-                // item of the pipeline table's own toolbar row (sharing it with
-                // the density toggle on the right), so it reads as the table's
-                // caption directly above the rows instead of a bare line
-                // stranded between the urgency tabs (cramped above) and the
-                // right-aligned density band (empty gap below). `gap-3` gives
-                // the filter row / table block / pagination even vertical
-                // rhythm matching the tabs' own `pt-3`/`mb-3`.
+                // Table-caption layout — the sighted result-count renders as
+                // the pipeline table's own caption directly above the rows
+                // (the toolbar it used to share with the row-density toggle
+                // is gone; the toggle itself was removed). `gap-3` gives the
+                // filter row / table block / pagination even vertical rhythm
+                // matching the tabs' own `pt-3`/`mb-3`.
                 <div className="flex flex-col gap-3">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <UrgencyBucketTabs

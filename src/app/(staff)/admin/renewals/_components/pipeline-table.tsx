@@ -138,12 +138,11 @@ export interface PipelineTableProps {
    */
   readonly sortHrefs?: Record<'expires' | 'tier', string>;
   /**
-   * Optional sighted result-count node ("Showing N members in T-30") rendered
-   * as the LEFT item of the table's toolbar row, sharing it with the density
-   * toggle (right). The page passes `ResultCountLabel` here so the count reads
-   * as the table's caption directly above the rows instead of a bare line
-   * stranded between the urgency tabs (cramped above) and the right-aligned
-   * density band (empty gap below). Absent ⇒ the toolbar holds only the toggle.
+   * Optional sighted result-count node ("Showing N members in T-30"). The
+   * page passes `ResultCountLabel` here so the count renders as the table's
+   * own caption directly above the rows (the row-density toggle this
+   * originally shared a toolbar with has since been removed — there is no
+   * toolbar row anymore). Absent ⇒ no caption is rendered.
    */
   readonly resultCount?: React.ReactNode;
   /**
@@ -296,11 +295,13 @@ export function PipelineTable({
       // Task 10 (US3 scaffolding) — admin-only selection column. Header +
       // row checkbox use `@/components/ui/checkbox` with an `aria-label`
       // from `admin.renewals.table.selectRow`/`selectAll` (mirrors
-      // `members-table.tsx`'s selection column). `min-h-11 min-w-11`
-      // (44px) keeps the tap target at least as large as the row's own ⋯
-      // trigger below — this table has no smaller 24px selection
-      // precedent to match, so it defaults to the row's existing largest
-      // target rather than risking a mis-tap in a dense data table.
+      // `members-table.tsx`'s selection column). Review fix I-1:
+      // `min-h-[24px] min-w-[24px]` (matches `members-table.tsx`'s own
+      // selection checkbox), NOT the row's 44px ⋯ trigger — the 44px WCAG
+      // 2.5.5 touch target is already provided by the Checkbox primitive's
+      // own `::after -inset-x-3/-inset-y-2` hit-area extension
+      // (`checkbox.tsx`), so a 44px VISIBLE box was redundant and, on this
+      // dense table, let the hit-area spill 8px into the adjacent row.
       ...(enableSelection
         ? [
             {
@@ -316,7 +317,7 @@ export function PipelineTable({
                     table.toggleAllPageRowsSelected(!!checked)
                   }
                   aria-label={t('selectAll')}
-                  className="min-h-11 min-w-11"
+                  className="min-h-[24px] min-w-[24px]"
                 />
               ),
               cell: ({ row }) => (
@@ -325,13 +326,18 @@ export function PipelineTable({
                   onCheckedChange={(checked: boolean) =>
                     row.toggleSelected(!!checked)
                   }
-                  aria-label={t('selectRow', {
-                    company: row.original.companyName,
-                  })}
-                  className="min-h-11 min-w-11"
+                  // Review fix M-3: an empty `companyName` would otherwise
+                  // interpolate to "Select " (a dangling trailing space,
+                  // no context for a screen-reader user). Fall back to a
+                  // generic localized label in that case.
+                  aria-label={
+                    row.original.companyName
+                      ? t('selectRow', { company: row.original.companyName })
+                      : t('selectRowGeneric')
+                  }
+                  className="min-h-[24px] min-w-[24px]"
                 />
               ),
-              size: 48,
             } satisfies ColumnDef<PipelineRow>,
           ]
         : []),
@@ -594,7 +600,16 @@ export function PipelineTable({
             </TableRow>
           ) : (
             table.getRowModel().rows.map((row) => (
-              <TableRow key={row.id}>
+              // Review fix M-1: `data-state="selected"` lets the shared
+              // `TableRow` primitive's own `data-[state=selected]:bg-muted`
+              // style apply — mirrors `members-table.tsx:1115`. Safe when
+              // selection is disabled: `row.getIsSelected()` is always
+              // `false` (TanStack's `enableRowSelection` is off), so this
+              // never sets `data-state` for a manager's read-only table.
+              <TableRow
+                key={row.id}
+                data-state={row.getIsSelected() ? 'selected' : undefined}
+              >
                 {row.getVisibleCells().map((c) => (
                   <TableCell key={c.id}>
                     {flexRender(c.column.columnDef.cell, c.getContext())}

@@ -3368,8 +3368,9 @@
           "invoice": "Faktura",
           "actions": "Åtgärder"
         },
-        "selectAll": "Markera alla rader",
+        "selectAll": "Markera alla rader på sidan",
         "selectRow": "Markera {company}",
+        "selectRowGeneric": "Markera denna medlem",
         "sort": {
           "sortBy": "Sortera efter {column}",
           "ascending": "Sorterat stigande",

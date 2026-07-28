@@ -110,6 +110,37 @@ describe('<PipelineWithBulk> (Task 10 — US3 scaffolding)', () => {
     );
   });
 
+  it('forwards sort + sortHrefs unchanged to PipelineTable\'s sortable headers (review-fix test hardening)', () => {
+    // Guards against a future dropped `sort`/`sortHrefs` prop silently
+    // degrading the pipeline headers back to plain text (no sort link, no
+    // `aria-sort`) — the brief flagged this exact regression class.
+    render(
+      wrap(
+        <PipelineWithBulk
+          rows={ROWS}
+          isAdmin
+          sort="tier_asc"
+          sortHrefs={{
+            expires: '/admin/renewals?sort=expires_at_asc',
+            tier: '/admin/renewals?sort=tier_desc',
+          }}
+        />,
+      ),
+    );
+
+    const tierSortLink = screen.getByRole('link', { name: 'Sort by Tier' });
+    expect(tierSortLink).toHaveAttribute(
+      'href',
+      '/admin/renewals?sort=tier_desc',
+    );
+    // `aria-sort` lives on the enclosing `<th>` (columnheader), not the link
+    // itself — WCAG 1.3.1 / 4.1.2 (see `pipeline-table.tsx`'s own rationale).
+    expect(tierSortLink.closest('th')).toHaveAttribute(
+      'aria-sort',
+      'ascending',
+    );
+  });
+
   it('forwards monthKind + monthLabel unchanged to PipelineTable\'s empty-state copy', () => {
     render(
       wrap(
