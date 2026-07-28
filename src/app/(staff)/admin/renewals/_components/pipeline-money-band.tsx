@@ -19,52 +19,28 @@
  * locale-appropriate `money.currency` word (e.g. Thai "บาท") as a separate
  * muted suffix, not the hardcoded ISO code. Deep-links reuse the EXISTING
  * URL contract only.
+ *
+ * Fix round 2 — tiles now render via the shared `KpiCard`
+ * (`@/components/dashboard/kpi-card.tsx`, F9 admin dashboard) instead of the
+ * bespoke `MoneyTile`, so tokens/structure match the rest of the admin
+ * surface (Reusable-Components principle); `KpiCard`'s caption already uses
+ * `text-muted-foreground` on `bg-card` (measured ≥5.6:1 in both themes — AA
+ * 4.5:1-compliant, so the shared component changes nothing here) — the
+ * refactor is a structural/tokens win, not a contrast fix. The whole render
+ * is also now wrapped in a small `ErrorBoundary`: the page's own try/catch
+ * (see `PipelineMoneyBandSection` in `page.tsx`) only covers the DATA fetch —
+ * a throw during THIS component's own render must also never crash the
+ * pipeline.
  */
-import type { ReactNode } from 'react';
-import Link from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
 import { formatSatangThb } from '@/lib/format-thb';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { KpiCard } from '@/components/dashboard/kpi-card';
+import { ErrorBoundary } from '@/components/shell/error-boundary';
 import { collectionRatePct, type PipelineMoneySummary } from '@/modules/renewals';
 
-function MoneyTile({
-  label,
-  hero,
-  basis,
-  href,
-}: {
-  readonly label: string;
-  readonly hero: ReactNode;
-  readonly basis: string;
-  readonly href?: string;
-}) {
-  const body = (
-    <>
-      <p className="text-sm font-medium text-muted-foreground">{label}</p>
-      <p className="text-3xl font-semibold tabular-nums">{hero}</p>
-      <p className="text-sm text-muted-foreground">{basis}</p>
-    </>
-  );
-  return (
-    <Card>
-      <CardContent className="py-4">
-        {href ? (
-          <Link
-            href={href}
-            className="block rounded-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-          >
-            {body}
-          </Link>
-        ) : (
-          body
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-export function PipelineMoneyBand({
+function PipelineMoneyBandContent({
   money,
   windowDays,
 }: {
@@ -97,36 +73,64 @@ export function PipelineMoneyBand({
         {t('title')}
       </h2>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <MoneyTile
+        {/* Display-only — no href, no link, no aria-label (matches the
+            original "no <Link> for the rate tile" contract). */}
+        <KpiCard
           label={t('collectionRate.label')}
-          hero={rateHero}
-          basis={t('collectionRate.basis')}
+          value={rateHero}
+          caption={t('collectionRate.basis')}
         />
-        <MoneyTile
+        <KpiCard
           label={t('pastDue.label')}
-          hero={moneyHero(money.overdueSatang)}
-          basis={t('pastDue.basis')}
+          value={moneyHero(money.overdueSatang)}
+          caption={t('pastDue.basis')}
           href="/admin/renewals?month=overdue"
+          ariaLabel={t('pastDue.ariaLabel')}
         />
-        <MoneyTile
+        <KpiCard
           label={t('collected.label')}
-          hero={moneyHero(money.collectedThisPeriodSatang)}
-          basis={t('collected.basis')}
+          value={moneyHero(money.collectedThisPeriodSatang)}
+          caption={t('collected.basis')}
           // Fix round 1 #4 — scope the drill-down to membership so it at
           // least matches this tile's subject scope. Residual mismatch
           // (deferred, not fixed here): this tile is BKK-calendar-month +
           // net-of-credits, while the invoice list below is all-time gross
           // — the two numbers will not reconcile 1:1 even after the filter.
           href="/admin/invoices?status=paid&subject=membership"
+          ariaLabel={t('collected.ariaLabel')}
         />
-        <MoneyTile
+        <KpiCard
           label={t('dueSoon.label')}
-          hero={moneyHero(money.dueSoonSatang)}
-          basis={t('dueSoon.basis', { days: windowDays })}
+          value={moneyHero(money.dueSoonSatang)}
+          caption={t('dueSoon.basis', { days: windowDays })}
+          // Fix round 2 #4 — documented residual mismatch: the hero figure
+          // + visible caption above are a CUMULATIVE `windowDays` (90)
+          // invoice-DUE-DATE window (`invoices.due_date`, F4). This link's
+          // target instead filters on `renewalCycles.expires_at` — a
+          // DIFFERENT dimension entirely — and `t-30` is a narrow 14–30-day
+          // BAND (see `URGENCY_CASE_SQL`), not a 0–90-day cumulative window.
+          // No pipeline/invoice-list URL param filters by invoice-due-date
+          // range today, so no exact-match drill-down target exists yet
+          // (adding one is out of scope for this fix round). Rather than
+          // silently leave the mismatch implicit, `ariaLabel` states the
+          // LINK's true, narrower scope instead of parroting the visible
+          // 90-day caption.
           href="/admin/renewals?urgency=t-30"
+          ariaLabel={t('dueSoon.ariaLabel')}
         />
       </div>
     </section>
+  );
+}
+
+export function PipelineMoneyBand(props: {
+  readonly money: PipelineMoneySummary;
+  readonly windowDays: number;
+}) {
+  return (
+    <ErrorBoundary>
+      <PipelineMoneyBandContent {...props} />
+    </ErrorBoundary>
   );
 }
 
