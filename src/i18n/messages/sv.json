@@ -3240,6 +3240,7 @@
         "title": "Medlemsavgifter — ekonomi",
         "currency": "THB",
         "rateNone": "—",
+        "loadFailed": "Kunde inte läsa in siffrorna just nu.",
         "pastDue": {
           "label": "Förfallna",
           "basis": "förfallna medlemsavgifter · innevarande räkenskapsår · inkl. moms",

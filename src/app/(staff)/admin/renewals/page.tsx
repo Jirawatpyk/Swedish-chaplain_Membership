@@ -545,8 +545,8 @@ export default async function RenewalsPipelinePage({
  *
  * Calls `loadPipelineMoney` and renders `<PipelineMoneyBand>`. Per-section
  * isolation: a money-query throw (F4 `invoices` read, or the cross-module F5
- * waived-refund read) or an unexpected `invalid_input` degrades the band to
- * nothing — the pipeline itself must never crash on the money aggregate.
+ * waived-refund read) or an unexpected `invalid_input` never crashes the
+ * pipeline itself.
  *
  * `windowDays = 90` matches the pipeline's own T-90 planning window and drives
  * the "due soon within N days" caption.
@@ -560,6 +560,16 @@ export default async function RenewalsPipelinePage({
  * no tx of its own, so it opens ONE short-lived `runInTenant` purely to read
  * this single column; the adapter itself falls back to January (with a
  * warning log) when the tenant has no settings row yet.
+ *
+ * Fix round 1 I-2 — a load failure used to `return null`, silently vanishing
+ * the whole KPI band. On a live money surface a treasurer reads "no band" as
+ * "no dues owed / all collected" (a false-clear) and the Suspense skeleton's
+ * CLS reservation was wasted. Now renders the REAL section title (scoping the
+ * failure to "membership dues", not the whole page) + a MUTED
+ * `role="status"`/`aria-live="polite"` notice (`LoadErrorCard tone="muted"` —
+ * deliberately NOT the destructive `role="alert"`/`aria-live="assertive"`
+ * skin, which would be disproportionate for one auxiliary band and would
+ * interrupt the screen reader mid-announcement of the working pipeline).
  */
 async function PipelineMoneyBandSection({
   tenantSlug,
@@ -607,7 +617,15 @@ async function PipelineMoneyBandSection({
       '[admin/renewals] money band load failed',
     );
   }
-  if (money === null) return null;
+  if (money === null) {
+    const tMoney = await getTranslations('admin.renewals.money');
+    return (
+      <section className="flex flex-col gap-3">
+        <h2 className="text-base font-semibold">{tMoney('title')}</h2>
+        <LoadErrorCard tone="muted" message={tMoney('loadFailed')} />
+      </section>
+    );
+  }
   return <PipelineMoneyBand money={money} windowDays={WINDOW_DAYS} />;
 }
 

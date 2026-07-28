@@ -202,7 +202,18 @@ export function PipelineTable({
       return next;
     });
   };
-  const densityClass = density === 'compact' ? '[&_td]:py-1.5' : '[&_td]:py-3';
+  // Fix round 1 I-1 — drive the shared `--table-cell-padding-y` design token
+  // (globals.css, consumed by `TableCell`'s `py-[var(--table-cell-padding-y)]`)
+  // instead of hardcoding `[&_td]:py-*`. The prior hardcoded classes silently
+  // changed the DEFAULT/comfortable row height from the token's 8px baseline
+  // to 12px and desynced this table from every other token-driven admin table
+  // (members, invoices). Comfortable now reproduces the UNCHANGED 8px
+  // baseline; compact narrows it to 6px. Set as a CSS custom property on
+  // `<Table>` (forwarded to the `<table>` element — see `ui/table.tsx`), which
+  // every `<TableCell>` inside inherits via the CSS cascade.
+  const densityStyle = {
+    '--table-cell-padding-y': density === 'compact' ? '0.375rem' : '0.5rem',
+  } as React.CSSProperties;
   // Item ② — outreach state lifted up from the row-level menu so the
   // `OutreachDialog` survives the ⋯ menu closing (same lifted-state
   // pattern as lapsed-tab.tsx + at-risk-widget.tsx). Review fix #5:
@@ -390,7 +401,7 @@ export function PipelineTable({
           {density === 'compact' ? t('density.compact') : t('density.comfortable')}
         </Button>
       </div>
-      <Table className={densityClass} data-density={density}>
+      <Table style={densityStyle} data-density={density}>
         <TableHeader>
           {table.getHeaderGroups().map((hg) => (
             <TableRow key={hg.id}>

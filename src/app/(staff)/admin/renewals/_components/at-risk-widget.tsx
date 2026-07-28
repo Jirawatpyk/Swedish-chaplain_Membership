@@ -327,10 +327,15 @@ export function AtRiskWidget({ actorRole }: AtRiskWidgetProps) {
             // comes from EmptyState. UX R5 / S2: the CTA points at the
             // 'terminated' urgency tab on this same page (terminated-membership
             // recovery is the admin's next action), not away to /admin/members.
+            // Fix round 1 M-3 — `iconClassName="text-success"` restores the
+            // deliberate positive-affirmation green ("no one at risk") that
+            // this empty state had before it was routed through the shared
+            // `<EmptyState>` primitive (which defaults to a neutral grey icon).
             <EmptyState
               icon={ShieldCheck}
               title={t('emptyState')}
               bordered={false}
+              iconClassName="text-success"
               action={
                 <Link
                   href="/admin/renewals?urgency=terminated"

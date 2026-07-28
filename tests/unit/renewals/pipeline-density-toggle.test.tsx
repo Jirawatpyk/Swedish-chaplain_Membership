@@ -2,9 +2,14 @@
  * Wave 2 Task 8 — `<PipelineTable>` client density toggle.
  *
  * The toggle persists to `localStorage['renewals.pipeline.density']`
- * (default `comfortable`) and applies `[&_td]:py-3` (comfortable) vs
- * `[&_td]:py-1.5` (compact) to the table. A remount reads the stored value
- * so the admin's choice survives navigation.
+ * (default `comfortable`). Fix round 1 I-1: density now drives the shared
+ * `--table-cell-padding-y` design token (globals.css, consumed by
+ * `TableCell`'s `py-[var(--table-cell-padding-y)]`) via an inline CSS custom
+ * property on `<Table>`, instead of hardcoded `[&_td]:py-*` classes — so
+ * these assertions read the applied `style` value, not a class name.
+ * Comfortable = `0.5rem` (the token's unchanged 8px baseline); compact =
+ * `0.375rem` (6px). A remount reads the stored value so the admin's choice
+ * survives navigation.
  *
  * Harness note: the shared `tests/setup.ts` installs FAKE timers; this suite
  * calls `vi.useRealTimers()` so the mount effect that reads localStorage
@@ -42,11 +47,15 @@ describe('<PipelineTable> density toggle', () => {
 
   it('defaults to comfortable padding with no stored preference', () => {
     renderTable();
-    expect(screen.getByRole('table')).toHaveClass('[&_td]:py-3');
+    const table = screen.getByRole('table');
+    // Comfortable === the token's unchanged 8px baseline (globals.css).
+    expect(table.style.getPropertyValue('--table-cell-padding-y')).toBe(
+      '0.5rem',
+    );
     expect(localStorage.getItem(DENSITY_KEY)).toBeNull();
   });
 
-  it('toggling to compact persists to localStorage and applies the compact class', async () => {
+  it('toggling to compact persists to localStorage and drives the token to 6px', async () => {
     renderTable();
     const toggle = screen.getByRole('button', {
       name: en.admin.renewals.table.density.comfortable,
@@ -56,15 +65,20 @@ describe('<PipelineTable> density toggle', () => {
     await waitFor(() =>
       expect(localStorage.getItem(DENSITY_KEY)).toBe('compact'),
     );
-    expect(screen.getByRole('table')).toHaveClass('[&_td]:py-1.5');
-    expect(screen.getByRole('table')).not.toHaveClass('[&_td]:py-3');
+    expect(
+      screen.getByRole('table').style.getPropertyValue('--table-cell-padding-y'),
+    ).toBe('0.375rem');
   });
 
   it('a remount reads the stored compact preference', async () => {
     localStorage.setItem(DENSITY_KEY, 'compact');
     renderTable();
     await waitFor(() =>
-      expect(screen.getByRole('table')).toHaveClass('[&_td]:py-1.5'),
+      expect(
+        screen
+          .getByRole('table')
+          .style.getPropertyValue('--table-cell-padding-y'),
+      ).toBe('0.375rem'),
     );
   });
 });

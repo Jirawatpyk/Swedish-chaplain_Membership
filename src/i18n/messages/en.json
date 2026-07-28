@@ -3240,6 +3240,7 @@
         "title": "Membership dues — money",
         "currency": "THB",
         "rateNone": "—",
+        "loadFailed": "Couldn't load these figures right now.",
         "pastDue": {
           "label": "Past due",
           "basis": "membership dues past due · this fiscal year · incl. VAT",
