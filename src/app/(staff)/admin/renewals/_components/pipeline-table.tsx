@@ -68,6 +68,8 @@ import {
 } from '@/components/renewals/cycle-cells';
 import { RelativeTime } from '@/components/ui/relative-time';
 import { OutreachDialog } from './outreach-dialog';
+import { MarkPaidOfflineDialog } from './mark-paid-offline-dialog';
+import { shouldOfferMarkPaid } from '../_lib/mark-paid-gate';
 // Client-safe sub-barrel — see `tier-filter-select.tsx` for the
 // rationale (Turbopack 16 + F8 barrel + server-only deps).
 import type { CycleStatus, PipelineRow } from '@/modules/renewals/client';
@@ -97,6 +99,18 @@ export function PipelineTable({ rows, monthLabel, monthKind }: PipelineTableProp
   const [outreachFor, setOutreachFor] = useState<{
     memberId: string;
     companyName: string;
+    finalFocus: React.RefObject<HTMLElement | null>;
+  } | null>(null);
+
+  // Task 5 (Wave 2) — same lifted-state pattern as `outreachFor` above, so
+  // the shared `MarkPaidOfflineDialog` (the SAME dialog/route the cycle-
+  // detail page's "Mark paid offline" button opens — Principle IV, no
+  // second settlement path) survives the ⋯ menu closing. `finalFocus` is
+  // set by `RowActions` to its own ⋯ trigger; the dialog falls back to
+  // `#main-content` when a settlement's `router.refresh()` unmounts the row
+  // (see `mark-paid-offline-dialog.tsx`'s docstring).
+  const [markPaidFor, setMarkPaidFor] = useState<{
+    cycleId: string;
     finalFocus: React.RefObject<HTMLElement | null>;
   } | null>(null);
 
@@ -206,7 +220,9 @@ export function PipelineTable({ rows, monthLabel, monthKind }: PipelineTableProp
             cycleId={row.original.cycleId}
             memberId={row.original.memberId}
             companyName={row.original.companyName}
+            status={row.original.status}
             onRecordOutreach={setOutreachFor}
+            onMarkPaid={setMarkPaidFor}
           />
         ),
       },
@@ -310,6 +326,16 @@ export function PipelineTable({ rows, monthLabel, monthKind }: PipelineTableProp
           finalFocus={outreachFor.finalFocus}
         />
       ) : null}
+      {markPaidFor ? (
+        <MarkPaidOfflineDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setMarkPaidFor(null);
+          }}
+          cycleId={markPaidFor.cycleId}
+          finalFocus={markPaidFor.finalFocus}
+        />
+      ) : null}
     </>
   );
 }
@@ -324,20 +350,30 @@ export function PipelineTable({ rows, monthLabel, monthKind }: PipelineTableProp
  * "Send reminder" is promoted out of the ⋯ menu to a one-click visible
  * button; the ⋯ menu keeps "Open" + "Mark contacted" (the latter now
  * opens the shared `OutreachDialog` via `onRecordOutreach`, lifted to
- * `PipelineTable` so the dialog survives this menu closing).
+ * `PipelineTable` so the dialog survives this menu closing) + Task 5's
+ * "Mark paid" (offered only when `shouldOfferMarkPaid(status)` — mirrors
+ * the mark-paid-offline route's own state-machine guard so this row never
+ * offers a control the API would reject).
  */
 function RowActions({
   cycleId,
   memberId,
   companyName,
+  status,
   onRecordOutreach,
+  onMarkPaid,
 }: {
   readonly cycleId: string;
   readonly memberId: string;
   readonly companyName: string;
+  readonly status: CycleStatus;
   readonly onRecordOutreach: (t: {
     memberId: string;
     companyName: string;
+    finalFocus: React.RefObject<HTMLElement | null>;
+  }) => void;
+  readonly onMarkPaid: (t: {
+    cycleId: string;
     finalFocus: React.RefObject<HTMLElement | null>;
   }) => void;
 }): React.JSX.Element {
@@ -560,6 +596,25 @@ function RowActions({
           >
             {tActions('markContacted')}
           </DropdownMenuItem>
+          {/* Task 5 (Wave 2) — brings COLLECT onto the pipeline: opens the
+              SAME mark-paid-offline dialog/route the cycle-detail page uses
+              (Principle IV, no second settlement path), lifted to
+              PipelineTable so it survives this menu closing. `finalFocus`
+              carries this row's own ⋯ trigger — see mark-paid-offline-
+              dialog.tsx for why the dialog falls back to #main-content
+              instead when a settlement's refresh unmounts this row. */}
+          {shouldOfferMarkPaid(status) ? (
+            <DropdownMenuItem
+              onClick={() =>
+                onMarkPaid({
+                  cycleId,
+                  finalFocus: rowMenuTriggerRef,
+                })
+              }
+            >
+              {tActions('markPaid')}
+            </DropdownMenuItem>
+          ) : null}
         </DropdownMenuContent>
       </DropdownMenu>
     </div>

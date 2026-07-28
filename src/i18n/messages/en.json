@@ -3378,6 +3378,7 @@
         "sendReminder": "Send reminder",
         "sendReminderAriaLabel": "Send reminder to {company}",
         "markContacted": "Mark contacted",
+        "markPaid": "Mark paid",
         "rowMenu": "Actions for {company}"
       },
       "sendReminderNow": {

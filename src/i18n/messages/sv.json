@@ -3378,6 +3378,7 @@
         "sendReminder": "Skicka påminnelse",
         "sendReminderAriaLabel": "Skicka påminnelse till {company}",
         "markContacted": "Markera kontaktad",
+        "markPaid": "Markera betald",
         "rowMenu": "Åtgärder för {company}"
       },
       "sendReminderNow": {
