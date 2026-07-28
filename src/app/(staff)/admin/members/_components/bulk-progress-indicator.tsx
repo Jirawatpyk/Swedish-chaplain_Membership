@@ -22,6 +22,13 @@
  *     correct shimmer + reduced-motion support built in.
  *   - Added role="progressbar" + aria-busy + aria-valuenow/min/max for
  *     indeterminate state per ARIA 1.2 spec.
+ *
+ * 059-membership-suspension Task 11 — `namespace` prop (optional, defaults
+ * to the original `admin.members.bulk`) so the renewals pipeline's bulk
+ * action bar can reuse this component for its OWN `admin.renewals.bulk`
+ * copy (`actions.sendReminder` / `actions.markPaid`, not the members
+ * `actions.archive` / … union) instead of forking a near-identical
+ * component. Existing members callers are unaffected — they omit the prop.
  */
 
 import { useEffect, useState } from 'react';
@@ -31,10 +38,15 @@ import { Progress } from '@/components/ui/progress';
 type Props = {
   readonly action: string;
   readonly total: number;
+  readonly namespace?: string;
 };
 
-export function BulkProgressIndicator({ action, total }: Props) {
-  const t = useTranslations('admin.members.bulk');
+export function BulkProgressIndicator({
+  action,
+  total,
+  namespace = 'admin.members.bulk',
+}: Props) {
+  const t = useTranslations(namespace);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   // Tick once per second while the indicator is mounted. Unmounts as
