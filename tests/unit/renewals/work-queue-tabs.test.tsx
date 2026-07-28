@@ -7,6 +7,13 @@
  * mounted — `pipeline` is server-streamed content passed as a `ReactNode`
  * prop, so mounting/unmounting it is cheap.
  *
+ * Review round 1 Fix I-1 — `needsActionBadge` is an optional `ReactNode`
+ * slot rendered inside the "Needs action" tab, right after its label. The
+ * page passes a server-streamed count badge; these tests only verify the
+ * slot itself (present vs absent), not the page's data-fetch (that half is
+ * a server component, covered by typecheck/lint per the review — see
+ * `page.tsx`'s `NeedsActionCountBadge`).
+ *
  * `vi.useRealTimers()` — the shared harness installs fake timers that would
  * hang React rendering / `userEvent` (memory: component test harness fake
  * timers).
@@ -16,16 +23,20 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
-import { WorkQueueTabs } from '@/app/(staff)/admin/renewals/_components/work-queue-tabs';
+import {
+  WorkQueueTabs,
+  type WorkQueueTabsProps,
+} from '@/app/(staff)/admin/renewals/_components/work-queue-tabs';
 
 beforeEach(() => vi.useRealTimers());
 
-function setup() {
+function setup(extraProps: Partial<WorkQueueTabsProps> = {}) {
   return render(
     <NextIntlClientProvider locale="en" messages={en}>
       <WorkQueueTabs
         pipeline={<div data-testid="pipeline-panel">PIPELINE</div>}
         needsAction={<div data-testid="needs-action-panel">NEEDS ACTION</div>}
+        {...extraProps}
       />
     </NextIntlClientProvider>,
   );
@@ -47,5 +58,24 @@ describe('WorkQueueTabs', () => {
     expect(tabs[1]).toHaveAttribute('tabindex', '0');
     expect(tabs[0]).toHaveAttribute('tabindex', '-1');
     expect(await screen.findByTestId('needs-action-panel')).toBeVisible();
+  });
+
+  it('renders needsActionBadge inside the Needs action tab when provided', () => {
+    setup({
+      needsActionBadge: <span data-testid="needs-action-badge">3</span>,
+    });
+    const needsActionTab = screen.getByRole('tab', { name: /needs action/i });
+    const badge = screen.getByTestId('needs-action-badge');
+    expect(badge).toBeVisible();
+    // Slotted INSIDE the tab button, not floated elsewhere on the page.
+    expect(needsActionTab).toContainElement(badge);
+  });
+
+  it('renders no badge in either tab when needsActionBadge is absent', () => {
+    setup();
+    expect(screen.queryByTestId('needs-action-badge')).toBeNull();
+    const pipelineTab = screen.getByRole('tab', { name: /pipeline|all renewals/i });
+    // The pipeline tab never gets a badge slot at all, present or absent.
+    expect(pipelineTab.querySelector('[data-testid]')).toBeNull();
   });
 });

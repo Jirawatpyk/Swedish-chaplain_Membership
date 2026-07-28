@@ -38,7 +38,7 @@
 
 import { useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { CalendarClock, AlertTriangle } from 'lucide-react';
+import { CalendarClock, ListChecks } from 'lucide-react';
 
 const LENSES = ['pipeline', 'needsAction'] as const;
 type Lens = (typeof LENSES)[number];
@@ -48,9 +48,22 @@ export interface WorkQueueTabsProps {
   readonly pipeline: React.ReactNode;
   /** Needs-action lens — the unchanged `AtRiskWidget` (its own nested 3-band tablist is preserved). */
   readonly needsAction: React.ReactNode;
+  /**
+   * Fix I-1 (review round 1) — count badge streamed in server-side by the
+   * page (mirrors the `RenewalsSectionTabs` `TabCountBadge` idiom), shown
+   * INSIDE the "Needs action" tab right after its label. Restores at-risk
+   * discoverability now that `AtRiskWidget` is hidden behind an inactive
+   * tab by default (it used to render always-visible). Absent renders
+   * nothing — the "pipeline" tab never gets a badge slot.
+   */
+  readonly needsActionBadge?: React.ReactNode;
 }
 
-export function WorkQueueTabs({ pipeline, needsAction }: WorkQueueTabsProps) {
+export function WorkQueueTabs({
+  pipeline,
+  needsAction,
+  needsActionBadge,
+}: WorkQueueTabsProps) {
   const t = useTranslations('admin.renewals.workQueue');
   const [active, setActive] = useState<Lens>('pipeline');
   const refs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -105,17 +118,30 @@ export function WorkQueueTabs({ pipeline, needsAction }: WorkQueueTabsProps) {
               {lens === 'pipeline' ? (
                 <CalendarClock className="size-3.5" aria-hidden="true" />
               ) : (
-                <AlertTriangle className="size-3.5" aria-hidden="true" />
+                // M-2 (review round 1) — distinct from the `AlertTriangle`
+                // used by the at-risk band tab AND the pipeline's own
+                // load-error card, so the lens icon no longer shares a
+                // glyph with content nested inside it.
+                <ListChecks className="size-3.5" aria-hidden="true" />
               )}
               {t(lens)}
+              {lens === 'needsAction' ? needsActionBadge : null}
             </button>
           );
         })}
       </div>
+      {/* M-1 (review round 1) — `pt-3` separates this tablist from the
+          nested urgency/band tablist that opens the active panel, so the
+          two tab bars read as distinct controls rather than one continuous
+          strip. M-3 — a modest `min-height` softens the reflow when
+          switching from the (tall) pipeline table to the (shorter)
+          at-risk widget, without leaving a large empty gap on the
+          shorter lens. */}
       <div
         id="work-queue-panel"
         role="tabpanel"
         aria-labelledby={`work-queue-tab-${active}`}
+        className="pt-3 min-h-[320px]"
       >
         {active === 'pipeline' ? pipeline : needsAction}
       </div>

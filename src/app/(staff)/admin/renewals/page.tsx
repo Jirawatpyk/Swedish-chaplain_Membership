@@ -69,7 +69,10 @@ import {
   MembersWithoutCycleTray,
   MembersWithoutCycleTraySkeleton,
 } from './_components/members-without-cycle-tray';
-import { RenewalsSectionTabs } from './_components/renewals-section-tabs';
+import {
+  RenewalsSectionTabs,
+  TabCountBadge,
+} from './_components/renewals-section-tabs';
 import {
   PendingReviewList,
   type PendingReviewRow,
@@ -448,6 +451,11 @@ export default async function RenewalsPipelinePage({
               )
             }
             needsAction={<AtRiskWidget actorRole={widgetActorRole} />}
+            needsActionBadge={
+              <Suspense fallback={null}>
+                <NeedsActionCountBadge tenantSlug={tenantCtx.slug} />
+              </Suspense>
+            }
           />
         </CardContent>
       </Card>
@@ -549,6 +557,59 @@ async function PipelineMoneyBandSection({
   }
   if (money === null) return null;
   return <PipelineMoneyBand money={money} windowDays={WINDOW_DAYS} />;
+}
+
+/**
+ * Fix I-1 (review round 1) — best-effort count badge for the `WorkQueueTabs`
+ * "Needs action" tab, streamed in a Suspense island so it never blocks the
+ * pipeline render. Restores the at-risk discoverability that regressed when
+ * Task 7 folded the always-visible `AtRiskWidget` behind an inactive tab:
+ * without a count, an admin has no signal that the "Needs action" lens has
+ * work in it.
+ *
+ * Reuses the SAME whole-tenant summary the `/api/admin/renewals/at-risk`
+ * route already reads — `memberRenewalFlagsRepo.listAtRiskWidgetMembers`
+ * with `limit: 1` (the widget's own default fetch never varies this
+ * summary by page size or band filter, so `limit: 1` costs the same
+ * aggregate query as any other limit). Deliberately NOT a new use-case —
+ * the summary is already a cheap band-count aggregate, band-independent of
+ * the paginated `items`. Count = `critical + atRisk` (the "actionable now"
+ * set) — `warning` is intentionally excluded, matching the widget's own
+ * default band tab of `at-risk` rather than `warning`.
+ *
+ * Best-effort: a read failure logs a distinct errorId and renders `null` —
+ * the tab itself always renders regardless (never crashes the page).
+ */
+async function NeedsActionCountBadge({
+  tenantSlug,
+}: {
+  readonly tenantSlug: string;
+}) {
+  const t = await getTranslations('admin.renewals.workQueue');
+  let count: number;
+  try {
+    const deps = makeRenewalsDeps(tenantSlug);
+    const page = await runInTenant(asTenantContext(tenantSlug), (tx) =>
+      deps.memberRenewalFlagsRepo.listAtRiskWidgetMembers(tx, tenantSlug, {
+        limit: 1,
+      }),
+    );
+    count = page.summary.critical + page.summary.atRisk;
+  } catch (e) {
+    logger.error(
+      {
+        errorId: 'F8.ADMIN.NEEDS_ACTION_BADGE',
+        err: e instanceof Error ? e.message : String(e),
+        tenantId: tenantSlug,
+      },
+      '[admin/renewals] needs-action badge count load failed',
+    );
+    return null;
+  }
+  if (count <= 0) return null;
+  return (
+    <TabCountBadge count={count} label={t('needsActionCountSr', { count })} />
+  );
 }
 
 /**

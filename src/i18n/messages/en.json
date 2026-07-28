@@ -3573,8 +3573,9 @@
       },
       "workQueue": {
         "label": "Work queue",
-        "pipeline": "Renewals pipeline",
-        "needsAction": "Needs action"
+        "pipeline": "All renewals",
+        "needsAction": "Needs action",
+        "needsActionCountSr": "{count, plural, one {# member needs action} other {# members need action}}"
       },
       "atRisk": {
         "title": "At-risk members",

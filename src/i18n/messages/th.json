@@ -3573,8 +3573,9 @@
       },
       "workQueue": {
         "label": "คิวงาน",
-        "pipeline": "ไปป์ไลน์การต่ออายุ",
-        "needsAction": "ต้องดำเนินการ"
+        "pipeline": "การต่ออายุทั้งหมด",
+        "needsAction": "ต้องดำเนินการ",
+        "needsActionCountSr": "{count, plural, other {สมาชิก # รายต้องดำเนินการ}}"
       },
       "atRisk": {
         "title": "สมาชิกกลุ่มเสี่ยง",

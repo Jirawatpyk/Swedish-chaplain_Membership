@@ -44,8 +44,19 @@ import AxeBuilder from '@axe-core/playwright';
  * `AtRiskWidget` lens mounts. EN canonical accessible name (`i18n key
  * admin.renewals.workQueue.needsAction`) — the E2E session signs in in
  * English, mirroring every other role-name assertion in this suite.
+ *
+ * Hydration hardening (review round 1 minor) — several call sites click
+ * this tab immediately after `page.goto`, before `WorkQueueTabs` (a client
+ * component) has hydrated. The SSR-rendered `<button>` is already in the
+ * DOM and passes Playwright's actionability checks, so a click can land
+ * before React attaches the `onClick` handler — a silent no-op that leaves
+ * the pipeline lens mounted and times out every assertion downstream.
+ * Waiting for the page heading first gives hydration time to complete.
  */
 async function openNeedsActionLens(page: Page): Promise<void> {
+  await page
+    .getByRole('heading', { name: /renewal pipeline/i })
+    .waitFor({ state: 'visible', timeout: 10_000 });
   await page.getByRole('tab', { name: /needs action/i }).click();
 }
 

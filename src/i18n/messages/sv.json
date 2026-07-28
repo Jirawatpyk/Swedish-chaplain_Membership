@@ -3573,8 +3573,9 @@
       },
       "workQueue": {
         "label": "Arbetskö",
-        "pipeline": "Förnyelsepipeline",
-        "needsAction": "Kräver åtgärd"
+        "pipeline": "Alla förnyelser",
+        "needsAction": "Kräver åtgärd",
+        "needsActionCountSr": "{count, plural, one {# medlem kräver åtgärd} other {# medlemmar kräver åtgärd}}"
       },
       "atRisk": {
         "title": "Medlemmar i riskzon",
