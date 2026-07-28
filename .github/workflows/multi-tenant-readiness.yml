@@ -52,6 +52,12 @@ on:
     - cron: '0 4 * * 1-5'
   workflow_dispatch: {}
 
+# Shared with `integration-smoke.yml`: both write to the same CI Neon branch,
+# so a nightly run and a PR run queue instead of fighting over tenant fixtures.
+concurrency:
+  group: shared-ci-neon
+  cancel-in-progress: false
+
 jobs:
   # Migrations first, once, for both readiness jobs (2026-07-28). Nothing ever
   # migrated the CI branch, so it sat at whatever schema it had when the
@@ -76,39 +82,11 @@ jobs:
           node-version: '22'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # Every DB URL is stripped out of the seed. `.env.example` ships real
-      # KEYS with fake HOSTS, and `scripts/run-migrations.ts` (line ~55)
-      # prefers DATABASE_URL_UNPOOLED / POSTGRES_URL_NON_POOLING over
-      # DATABASE_URL — so seeding the file whole made the migrate job dial
-      # `host.aws.neon.tech` and die on ENOTFOUND while the real branch URL sat
-      # unused in the job env. Removing the URLs leaves the job env as the only
-      # source of a connection string, for every consumer.
-      - name: Seed .env.local from .env.example (gate-verified key list, DB URLs stripped)
-        run: grep -vE '^(DATABASE_URL|DATABASE_URL_UNPOOLED|POSTGRES_URL_NON_POOLING)=' .env.example > .env.local
-
-      # `tests/integration-setup.ts` refuses to run against a blocklisted host,
-      # but `scripts/run-migrations.ts` has no such guard — and this job WRITES
-      # DDL. Re-assert the guard here so a mis-set CI_DATABASE_URL can never
-      # migrate production from CI.
-      - name: Refuse to migrate a blocklisted (production) host
-        if: ${{ env.DATABASE_URL != '' }}
-        run: |
-          IFS=',' read -ra BLOCKED <<< "${TEST_DB_HOST_BLOCKLIST}"
-          for host in "${BLOCKED[@]}"; do
-            trimmed="$(echo "$host" | xargs)"
-            [ -z "$trimmed" ] && continue
-            case "$DATABASE_URL" in
-              *"$trimmed"*)
-                echo "::error title=Refusing to migrate::DATABASE_URL matches blocklisted host \"$trimmed\" (TEST_DB_HOST_BLOCKLIST). CI must point at a disposable Neon branch, never production."
-                exit 1
-                ;;
-            esac
-          done
-          echo "DATABASE_URL host is not blocklisted — proceeding."
-
-      - name: Apply migrations
-        if: ${{ env.DATABASE_URL != '' }}
-        run: pnpm db:migrate
+      - uses: ./.github/actions/ci-neon-env
+        with:
+          database-url: ${{ secrets.CI_DATABASE_URL }}
+          blocklist: ${{ vars.TEST_DB_HOST_BLOCKLIST }}
+          migrate: 'true'
 
   f7:
     name: F7 broadcasts readiness
@@ -144,15 +122,10 @@ jobs:
 
       # See § "Env drift fix" in the header. The job-level `env:` above still
       # overrides anything here that must be real (DATABASE_URL, flags).
-      # Every DB URL is stripped out of the seed. `.env.example` ships real
-      # KEYS with fake HOSTS, and `scripts/run-migrations.ts` (line ~55)
-      # prefers DATABASE_URL_UNPOOLED / POSTGRES_URL_NON_POOLING over
-      # DATABASE_URL — so seeding the file whole made the migrate job dial
-      # `host.aws.neon.tech` and die on ENOTFOUND while the real branch URL sat
-      # unused in the job env. Removing the URLs leaves the job env as the only
-      # source of a connection string, for every consumer.
-      - name: Seed .env.local from .env.example (gate-verified key list, DB URLs stripped)
-        run: grep -vE '^(DATABASE_URL|DATABASE_URL_UNPOOLED|POSTGRES_URL_NON_POOLING)=' .env.example > .env.local
+      - uses: ./.github/actions/ci-neon-env
+        with:
+          database-url: ${{ secrets.CI_DATABASE_URL }}
+          blocklist: ${{ vars.TEST_DB_HOST_BLOCKLIST }}
 
       - name: Notice — CI_DATABASE_URL not configured (DB steps skipped)
         if: ${{ env.DATABASE_URL == '' }}
@@ -207,15 +180,10 @@ jobs:
 
       # See § "Env drift fix" in the header. The job-level `env:` above still
       # overrides anything here that must be real (DATABASE_URL, flags).
-      # Every DB URL is stripped out of the seed. `.env.example` ships real
-      # KEYS with fake HOSTS, and `scripts/run-migrations.ts` (line ~55)
-      # prefers DATABASE_URL_UNPOOLED / POSTGRES_URL_NON_POOLING over
-      # DATABASE_URL — so seeding the file whole made the migrate job dial
-      # `host.aws.neon.tech` and die on ENOTFOUND while the real branch URL sat
-      # unused in the job env. Removing the URLs leaves the job env as the only
-      # source of a connection string, for every consumer.
-      - name: Seed .env.local from .env.example (gate-verified key list, DB URLs stripped)
-        run: grep -vE '^(DATABASE_URL|DATABASE_URL_UNPOOLED|POSTGRES_URL_NON_POOLING)=' .env.example > .env.local
+      - uses: ./.github/actions/ci-neon-env
+        with:
+          database-url: ${{ secrets.CI_DATABASE_URL }}
+          blocklist: ${{ vars.TEST_DB_HOST_BLOCKLIST }}
 
       - name: Notice — CI_DATABASE_URL not configured (DB steps skipped)
         if: ${{ env.DATABASE_URL == '' }}

@@ -1,0 +1,91 @@
+# Integration smoke — the DB-bound half of the PR gate.
+#
+# WHY THIS SHAPE (2026-07-28)
+# `quality-gates.yml` is deliberately hermetic; this workflow is deliberately
+# NOT, so the two stay separately diagnosable. It runs a small, curated set
+# rather than "every suite for the module the diff touched", because:
+#
+#   - `tests/integration/**` is 592 files and `vitest.integration.config.ts`
+#     runs them in ONE fork (`pool: 'forks'`, `singleFork: true`). A single
+#     touch of `src/modules/renewals/**` would pull in 132 serialised files.
+#   - There is exactly one CI Neon branch. Concurrent PRs writing the same
+#     tenant fixtures flake, and a flaky required check trains everyone to
+#     ignore red — which is precisely how the nightly readiness gate stayed
+#     dead for twelve days without anyone noticing.
+#
+# So: the invariants that must never regress silently (tenant isolation per
+# Constitution Principle I, RBAC defence-in-depth, §87 numbering, void/refund
+# interaction, audit-enum ↔ migration parity) run on every PR in ~3 min. Broad
+# per-module coverage belongs in the nightly, and per-PR ephemeral Neon
+# branches are the prerequisite for anything wider than this.
+#
+# Measured 2026-07-28 on the dev branch: 7 files / 41 tests / 95 s.
+name: Integration smoke
+
+on:
+  pull_request:
+  push:
+    branches: ['main']
+
+# Repo-wide, NOT per-ref, and never cancelled mid-run: every job in this group
+# writes to the same Neon branch, so they queue instead of colliding. The
+# nightly readiness workflow shares this group name for the same reason.
+concurrency:
+  group: shared-ci-neon
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    name: Integration smoke (tenant isolation + money invariants)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
+      TEST_DB_HOST_BLOCKLIST: ${{ vars.TEST_DB_HOST_BLOCKLIST }}
+      # Kill-switches the exercised paths sit behind. Everything else comes
+      # from .env.example via the composite action below.
+      FEATURE_F7_BROADCASTS: 'true'
+      FEATURE_F8_RENEWALS: 'true'
+      CRON_SECRET: synthetic-ci-cron-secret
+      RENEWAL_LINK_TOKEN_SECRET_PRIMARY: synthetic-ci-renewal-token-secret-32-chars-padding
+      RESEND_BROADCASTS_API_KEY: re_synthetic_ci_placeholder_DO_NOT_USE
+      RESEND_BROADCASTS_WEBHOOK_SECRET: synthetic-ci-secret-32-chars-padding-padding
+      UNSUBSCRIBE_TOKEN_SECRET: synthetic-ci-token-secret-32-chars-padding
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # Secrets are not exposed to pull requests from forks, so DATABASE_URL is
+      # empty there and every DB step below skips with a notice instead of a
+      # confusing red.
+      - name: Notice — CI_DATABASE_URL not available (DB steps skipped)
+        if: ${{ env.DATABASE_URL == '' }}
+        run: |
+          echo "::notice title=Integration smoke skipped::CI_DATABASE_URL is not available for this run (fork PR, or the secret is unset). The hermetic quality-gates workflow still covers this change." | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - uses: ./.github/actions/ci-neon-env
+        with:
+          database-url: ${{ secrets.CI_DATABASE_URL }}
+          blocklist: ${{ vars.TEST_DB_HOST_BLOCKLIST }}
+          # A PR that adds a migration must be tested against the schema it
+          # introduces, so this workflow migrates rather than assuming.
+          migrate: 'true'
+
+      # One vitest invocation: `singleFork` serialises the files anyway, and a
+      # single process pays the ~15 s collect cost once.
+      - name: Run smoke suites
+        if: ${{ env.DATABASE_URL != '' }}
+        run: |
+          pnpm test:integration \
+            tests/integration/payments/cross-tenant-probe.test.ts \
+            tests/integration/broadcasts/tenant-isolation.test.ts \
+            tests/integration/renewals/rbac-defence-in-depth.test.ts \
+            tests/integration/invoicing/bill-receipt-numbering-invariants.integration.test.ts \
+            tests/integration/invoicing/void-invoice.test.ts \
+            tests/integration/payments/refund-vs-voided-invoice.test.ts \
+            tests/integration/broadcasts/audit-event-type-parity.test.ts
