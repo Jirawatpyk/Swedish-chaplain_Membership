@@ -1,0 +1,68 @@
+# Shared setup for every CI job that talks to the disposable Neon branch.
+#
+# WHY A COMPOSITE ACTION
+# The F7+F8 readiness workflow was dead from ~2026-07-16 to 2026-07-28 because
+# each job hand-maintained its own copy of the env key list and `src/lib/env.ts`
+# outgrew it. The lesson is not "fix the list" but "stop keeping a second copy".
+# Every DB-bound job now shares these three steps, so the next required key,
+# the next blocklist rule, and the next migration convention land in ONE place.
+name: 'CI Neon env'
+description: 'Seed .env.local from .env.example (DB URLs stripped), refuse blocklisted hosts, optionally migrate the branch.'
+
+inputs:
+  database-url:
+    description: 'Connection string for the disposable CI Neon branch. Empty string = DB steps skip (the established "secret not configured" behaviour).'
+    required: false
+    default: ''
+  blocklist:
+    description: 'Comma-separated host fragments that must never be written to. Mirrors TEST_DB_HOST_BLOCKLIST.'
+    required: false
+    default: ''
+  migrate:
+    description: 'Apply pending migrations after the guard passes. Only one job per run should do this.'
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    # `.env.example` is the one key-list two gates keep honest
+    # (`check:env-example` = no schema key missing, `check:env-boot` = it boots
+    # the schema verbatim). The DB URLs are stripped because the file ships real
+    # KEYS with fake HOSTS, and `scripts/run-migrations.ts` prefers
+    # DATABASE_URL_UNPOOLED / POSTGRES_URL_NON_POOLING over DATABASE_URL — a
+    # whole-file copy made the migrate job dial `host.aws.neon.tech`. With the
+    # URLs gone, the job env is the only source of a connection string.
+    - name: Seed .env.local from .env.example (DB URLs stripped)
+      shell: bash
+      run: grep -vE '^(DATABASE_URL|DATABASE_URL_UNPOOLED|POSTGRES_URL_NON_POOLING)=' .env.example > .env.local
+
+    # `tests/integration-setup.ts` refuses a blocklisted host, but
+    # `scripts/run-migrations.ts` has no such check and emits DDL. Re-assert it
+    # here so no CI job can ever write to production.
+    - name: Refuse a blocklisted (production) host
+      if: inputs.database-url != ''
+      shell: bash
+      env:
+        DATABASE_URL: ${{ inputs.database-url }}
+        TEST_DB_HOST_BLOCKLIST: ${{ inputs.blocklist }}
+      run: |
+        IFS=',' read -ra BLOCKED <<< "${TEST_DB_HOST_BLOCKLIST}"
+        for host in "${BLOCKED[@]}"; do
+          trimmed="$(echo "$host" | xargs)"
+          [ -z "$trimmed" ] && continue
+          case "$DATABASE_URL" in
+            *"$trimmed"*)
+              echo "::error title=Refusing to touch this database::DATABASE_URL matches blocklisted host \"$trimmed\" (TEST_DB_HOST_BLOCKLIST). CI must point at a disposable Neon branch, never production."
+              exit 1
+              ;;
+          esac
+        done
+        echo "DATABASE_URL host is not blocklisted — proceeding."
+
+    - name: Apply migrations
+      if: inputs.migrate == 'true' && inputs.database-url != ''
+      shell: bash
+      env:
+        DATABASE_URL: ${{ inputs.database-url }}
+      run: pnpm db:migrate

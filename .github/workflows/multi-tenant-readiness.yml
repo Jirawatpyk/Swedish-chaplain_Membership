@@ -44,13 +44,19 @@
 #
 # Failure of either job = ship blocker for the next F7.x or F8.x
 # amendment of the failing feature only.
-name: F7 + F8 Multi-tenant readiness (nightly)
+name: Nightly deep gates (F7 + F8 readiness · money invariants)
 
 on:
   schedule:
     # 04:00 UTC = 11:00 Bangkok = quiet window
     - cron: '0 4 * * 1-5'
   workflow_dispatch: {}
+
+# Shared with `integration-smoke.yml`: both write to the same CI Neon branch,
+# so a nightly run and a PR run queue instead of fighting over tenant fixtures.
+concurrency:
+  group: shared-ci-neon
+  cancel-in-progress: false
 
 jobs:
   # Migrations first, once, for both readiness jobs (2026-07-28). Nothing ever
@@ -76,39 +82,11 @@ jobs:
           node-version: '22'
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # Every DB URL is stripped out of the seed. `.env.example` ships real
-      # KEYS with fake HOSTS, and `scripts/run-migrations.ts` (line ~55)
-      # prefers DATABASE_URL_UNPOOLED / POSTGRES_URL_NON_POOLING over
-      # DATABASE_URL — so seeding the file whole made the migrate job dial
-      # `host.aws.neon.tech` and die on ENOTFOUND while the real branch URL sat
-      # unused in the job env. Removing the URLs leaves the job env as the only
-      # source of a connection string, for every consumer.
-      - name: Seed .env.local from .env.example (gate-verified key list, DB URLs stripped)
-        run: grep -vE '^(DATABASE_URL|DATABASE_URL_UNPOOLED|POSTGRES_URL_NON_POOLING)=' .env.example > .env.local
-
-      # `tests/integration-setup.ts` refuses to run against a blocklisted host,
-      # but `scripts/run-migrations.ts` has no such guard — and this job WRITES
-      # DDL. Re-assert the guard here so a mis-set CI_DATABASE_URL can never
-      # migrate production from CI.
-      - name: Refuse to migrate a blocklisted (production) host
-        if: ${{ env.DATABASE_URL != '' }}
-        run: |
-          IFS=',' read -ra BLOCKED <<< "${TEST_DB_HOST_BLOCKLIST}"
-          for host in "${BLOCKED[@]}"; do
-            trimmed="$(echo "$host" | xargs)"
-            [ -z "$trimmed" ] && continue
-            case "$DATABASE_URL" in
-              *"$trimmed"*)
-                echo "::error title=Refusing to migrate::DATABASE_URL matches blocklisted host \"$trimmed\" (TEST_DB_HOST_BLOCKLIST). CI must point at a disposable Neon branch, never production."
-                exit 1
-                ;;
-            esac
-          done
-          echo "DATABASE_URL host is not blocklisted — proceeding."
-
-      - name: Apply migrations
-        if: ${{ env.DATABASE_URL != '' }}
-        run: pnpm db:migrate
+      - uses: ./.github/actions/ci-neon-env
+        with:
+          database-url: ${{ secrets.CI_DATABASE_URL }}
+          blocklist: ${{ vars.TEST_DB_HOST_BLOCKLIST }}
+          migrate: 'true'
 
   f7:
     name: F7 broadcasts readiness
@@ -144,15 +122,10 @@ jobs:
 
       # See § "Env drift fix" in the header. The job-level `env:` above still
       # overrides anything here that must be real (DATABASE_URL, flags).
-      # Every DB URL is stripped out of the seed. `.env.example` ships real
-      # KEYS with fake HOSTS, and `scripts/run-migrations.ts` (line ~55)
-      # prefers DATABASE_URL_UNPOOLED / POSTGRES_URL_NON_POOLING over
-      # DATABASE_URL — so seeding the file whole made the migrate job dial
-      # `host.aws.neon.tech` and die on ENOTFOUND while the real branch URL sat
-      # unused in the job env. Removing the URLs leaves the job env as the only
-      # source of a connection string, for every consumer.
-      - name: Seed .env.local from .env.example (gate-verified key list, DB URLs stripped)
-        run: grep -vE '^(DATABASE_URL|DATABASE_URL_UNPOOLED|POSTGRES_URL_NON_POOLING)=' .env.example > .env.local
+      - uses: ./.github/actions/ci-neon-env
+        with:
+          database-url: ${{ secrets.CI_DATABASE_URL }}
+          blocklist: ${{ vars.TEST_DB_HOST_BLOCKLIST }}
 
       - name: Notice — CI_DATABASE_URL not configured (DB steps skipped)
         if: ${{ env.DATABASE_URL == '' }}
@@ -207,15 +180,10 @@ jobs:
 
       # See § "Env drift fix" in the header. The job-level `env:` above still
       # overrides anything here that must be real (DATABASE_URL, flags).
-      # Every DB URL is stripped out of the seed. `.env.example` ships real
-      # KEYS with fake HOSTS, and `scripts/run-migrations.ts` (line ~55)
-      # prefers DATABASE_URL_UNPOOLED / POSTGRES_URL_NON_POOLING over
-      # DATABASE_URL — so seeding the file whole made the migrate job dial
-      # `host.aws.neon.tech` and die on ENOTFOUND while the real branch URL sat
-      # unused in the job env. Removing the URLs leaves the job env as the only
-      # source of a connection string, for every consumer.
-      - name: Seed .env.local from .env.example (gate-verified key list, DB URLs stripped)
-        run: grep -vE '^(DATABASE_URL|DATABASE_URL_UNPOOLED|POSTGRES_URL_NON_POOLING)=' .env.example > .env.local
+      - uses: ./.github/actions/ci-neon-env
+        with:
+          database-url: ${{ secrets.CI_DATABASE_URL }}
+          blocklist: ${{ vars.TEST_DB_HOST_BLOCKLIST }}
 
       - name: Notice — CI_DATABASE_URL not configured (DB steps skipped)
         if: ${{ env.DATABASE_URL == '' }}
@@ -249,3 +217,56 @@ jobs:
         if: always()
         run: |
           echo "F8 renewals readiness: ${{ job.status }}" >> "$GITHUB_STEP_SUMMARY"
+
+  # The suites that are too slow to sit on a PR (2026-07-28). Measured on a
+  # runner: void-invoice 179 s, bill-receipt-numbering 170 s, broadcasts
+  # tenant-isolation 78 s — against 22 s / 28 s / 10 s locally, because the
+  # runner is in the US and Neon is in ap-southeast-1. Nightly is the right
+  # home for them: Actions minutes are free on a public repo, and nobody is
+  # waiting on the result. `integration-smoke.yml` keeps the cheap half.
+  money:
+    name: Money invariants + isolation depth
+    needs: migrate
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
+      TEST_DB_HOST_BLOCKLIST: ${{ vars.TEST_DB_HOST_BLOCKLIST }}
+      FEATURE_F7_BROADCASTS: 'true'
+      FEATURE_F8_RENEWALS: 'true'
+      CRON_SECRET: synthetic-ci-cron-secret
+      RENEWAL_LINK_TOKEN_SECRET_PRIMARY: synthetic-ci-renewal-token-secret-32-chars-padding
+      RESEND_BROADCASTS_API_KEY: re_synthetic_ci_placeholder_DO_NOT_USE
+      RESEND_BROADCASTS_WEBHOOK_SECRET: synthetic-ci-secret-32-chars-padding-padding
+      UNSUBSCRIBE_TOKEN_SECRET: synthetic-ci-token-secret-32-chars-padding
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/ci-neon-env
+        with:
+          database-url: ${{ secrets.CI_DATABASE_URL }}
+          blocklist: ${{ vars.TEST_DB_HOST_BLOCKLIST }}
+
+      - name: Notice — CI_DATABASE_URL not configured (DB steps skipped)
+        if: ${{ env.DATABASE_URL == '' }}
+        run: |
+          echo "::notice title=Money invariants skipped::CI_DATABASE_URL secret is not set." | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # §87 gapless numbering + void state machine + F7 RLS depth.
+      - name: Run money + isolation suites
+        if: ${{ env.DATABASE_URL != '' }}
+        run: |
+          pnpm test:integration \
+            tests/integration/invoicing/bill-receipt-numbering-invariants.integration.test.ts \
+            tests/integration/invoicing/void-invoice.test.ts \
+            tests/integration/broadcasts/tenant-isolation.test.ts
+
+      - name: Money status badge
+        if: always()
+        run: |
+          echo "Money invariants + isolation depth: ${{ job.status }}" >> "$GITHUB_STEP_SUMMARY"
