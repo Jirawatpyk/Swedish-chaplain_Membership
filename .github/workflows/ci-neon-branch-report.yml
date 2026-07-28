@@ -1,0 +1,108 @@
+# What is actually behind CI_DATABASE_URL? Report only — this workflow never
+# writes to Neon.
+#
+# WHY THIS EXISTS BEFORE ANY CLEANUP AUTOMATION
+# The CI branch has been accumulating test fixtures since the secret was
+# configured on 2026-06-24 and nothing has ever cleaned it. The obvious fix —
+# Neon's "reset from parent" — is only safe if we know two things we currently
+# cannot see from a laptop, because the connection string is a secret:
+#
+#   1. WHICH branch it is. Resetting the wrong one is unrecoverable, and one of
+#      the candidates is production.
+#   2. WHAT its parent is. `preview/*` branches in this project are
+#      copy-on-write from `main`, i.e. they carry real member PII (see
+#      neon-preview-cleanup.yml). If the CI branch's parent is production, then
+#      "reset from parent" would REFILL it with production data rather than
+#      emptying it — the opposite of the intent, and a PII exposure in CI.
+#
+# So: look first. Once this has printed the branch name, its parent, and its
+# size, we can decide between a reset, a targeted fixture cleanup, or nothing.
+#
+# The endpoint host is masked before anything is printed: this repository is
+# public, and so are its workflow logs.
+name: CI Neon branch report
+
+on:
+  workflow_dispatch:
+  # Self-report on the PR that introduces or edits this file — `workflow_dispatch`
+  # cannot target a branch before the file is on the default branch.
+  pull_request:
+    paths:
+      - '.github/workflows/ci-neon-branch-report.yml'
+  schedule:
+    # 20:00 UTC on the 1st = 03:00 Bangkok. Monthly visibility on growth.
+    - cron: '0 20 1 * *'
+
+permissions:
+  contents: read
+
+jobs:
+  report:
+    name: Report Neon branches
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+      NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+      CI_DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
+    steps:
+      - name: Notice — not configured
+        if: ${{ env.NEON_API_KEY == '' || env.NEON_PROJECT_ID == '' }}
+        run: |
+          echo "::notice title=Report skipped::NEON_API_KEY secret or NEON_PROJECT_ID variable is not set." | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Inventory
+        if: ${{ env.NEON_API_KEY != '' && env.NEON_PROJECT_ID != '' }}
+        run: |
+          set -uo pipefail
+          api() { curl -sS -H "Authorization: Bearer ${NEON_API_KEY}" \
+            "https://console.neon.tech/api/v2/projects/${NEON_PROJECT_ID}$1"; }
+
+          # Host of the CI branch, derived from the secret. Masked immediately —
+          # public repo, public logs.
+          ci_host=''
+          if [ -n "${CI_DATABASE_URL}" ]; then
+            ci_host="$(printf '%s' "${CI_DATABASE_URL}" | sed -E 's|^[^@]*@||; s|[:/?].*$||; s|-pooler||')"
+            echo "::add-mask::${ci_host}"
+          fi
+
+          branches="$(api /branches)"
+          endpoints="$(api /endpoints)"
+
+          if ! printf '%s' "$branches" | jq -e '.branches' >/dev/null 2>&1; then
+            echo "::error title=Neon API call failed::The branches endpoint did not return a branch list. Check NEON_API_KEY validity and NEON_PROJECT_ID."
+            exit 1
+          fi
+
+          # branch_id of the endpoint whose host matches the CI connection string.
+          ci_branch_id="$(printf '%s' "$endpoints" \
+            | jq -r --arg h "$ci_host" '[.endpoints[]? | select(($h != "") and (.host | sub("-pooler";"")) == $h) | .branch_id] | first // ""')"
+
+          {
+            echo "## Neon branches in project \`${NEON_PROJECT_ID}\`"
+            echo
+            echo "| branch | parent | created | logical size | role |"
+            echo "|---|---|---|---|---|"
+            printf '%s' "$branches" | jq -r --arg ci "$ci_branch_id" '
+              (.branches | map({key: .id, value: .name}) | from_entries) as $names
+              | .branches
+              | sort_by(.created_at)
+              | .[]
+              | [ .name
+                , ((.parent_id // "") | if . == "" then "—" else ($names[.] // .) end)
+                , (.created_at // "" | split("T")[0])
+                , ((.logical_size // 0) / 1048576 | floor | tostring + " MiB")
+                , (if .id == $ci then "**CI_DATABASE_URL**" elif .default then "default (production)" else "" end)
+                ] | "| " + join(" | ") + " |"'
+            echo
+            if [ -z "$ci_branch_id" ]; then
+              echo "> CI_DATABASE_URL did not match any endpoint in this project — it may point at a branch in a different project, or the secret is unset for this run."
+            fi
+            echo
+            echo "### What to read here"
+            echo
+            echo "- If the CI branch's **parent is the production branch**, do NOT 'reset from parent': that refills it with production data (real member PII) instead of emptying it. Re-parent it to \`dev\` first, or clean fixtures with SQL instead."
+            echo "- Growth in **logical size** month over month is the signal that accumulated test fixtures are worth clearing."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "Report written to the job summary."
