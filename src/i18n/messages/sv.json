@@ -3241,7 +3241,6 @@
         "currency": "THB",
         "rateNone": "—",
         "loadFailed": "Kunde inte läsa in siffrorna just nu.",
-        "stripBasis": "medlemsavgifter · innevarande räkenskapsår · inkl. moms",
         "pastDue": {
           "label": "Förfallna",
           "basis": "förfallna medlemsavgifter · innevarande räkenskapsår · inkl. moms",

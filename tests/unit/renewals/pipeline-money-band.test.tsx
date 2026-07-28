@@ -1,13 +1,12 @@
 /**
- * `PipelineMoneyBand` unit test (formatting, basis caption, derived rate,
- * filter-shortcut hrefs).
+ * `PipelineMoneyBand` unit test (formatting, basis captions, derived rate,
+ * filter-shortcut hrefs, tone tokens).
  *
- * renewals-money-band-slim — the band was slimmed from 4 hero `KpiCard`
- * tiles down to a compact 2-KPI strip (Collection rate + Past due only;
- * Collected-this-month and Due-soon dropped from the RENDER, not the query —
- * `PipelineMoneySummary` still carries all 4 legs so tiles can be restored
- * without a query change). This file was rewritten test-first: the
- * assertions below were updated to describe the strip BEFORE
+ * renewals-money-band-compact4 — the band went 4 hero `KpiCard` tiles →
+ * `renewals-money-band-slim`'s 2-KPI strip → back to all 4 KPIs, this time
+ * as a shorter COMPACT tile (Card `size="sm"` + `text-2xl` value) instead of
+ * the original `text-3xl` hero. This file was rewritten test-first: the
+ * assertions below were updated to describe the compact 4-tile band BEFORE
  * `pipeline-money-band.tsx` was edited to match (red → green).
  *
  * The band is a server presentational component; rendered here via
@@ -40,9 +39,11 @@ function renderBand() {
 }
 
 describe('PipelineMoneyBand', () => {
-  it('renders the grouped THB hero number for past due', () => {
+  it('renders THB hero numbers for all 4 tiles', () => {
     renderBand();
     expect(screen.getByText('500.00')).toBeInTheDocument(); // overdue / past due
+    expect(screen.getByText('1,000.00')).toBeInTheDocument(); // collected this month
+    expect(screen.getByText('300.00')).toBeInTheDocument(); // due soon
   });
 
   it('groups large hero numbers with thousands separators (formatSatangThb, not formatSatangAsBaht)', () => {
@@ -68,13 +69,15 @@ describe('PipelineMoneyBand', () => {
     expect(screen.getByText('79.2%')).toBeInTheDocument();
   });
 
-  it('shows exactly ONE shared basis caption for the strip (not a per-tile caption each)', () => {
+  it('shows all 4 labels with their OWN basis caption each (not one shared strip caption)', () => {
     renderBand();
-    // The strip's single caption reads "membership · this fiscal year ·
-    // incl. VAT" — assert there is exactly one "incl. VAT" occurrence (the
-    // 4-tile predecessor had ≥4).
-    expect(screen.getAllByText(/incl\. VAT/i)).toHaveLength(1);
-    expect(screen.getByText(/this fiscal year/i)).toBeInTheDocument();
+    expect(screen.getByText('Collection rate')).toBeInTheDocument();
+    expect(screen.getByText('Past due')).toBeInTheDocument();
+    expect(screen.getByText('Collected this month')).toBeInTheDocument();
+    expect(screen.getByText('Due soon')).toBeInTheDocument();
+    // 4 distinct per-tile "incl. VAT" basis captions, not a single shared one.
+    expect(screen.getAllByText(/incl\. VAT/i)).toHaveLength(4);
+    expect(screen.getByText(/within 90 days/i)).toBeInTheDocument();
   });
 
   it('never labels a tile the bare word "Overdue" (F9 owns another overdue)', () => {
@@ -83,25 +86,18 @@ describe('PipelineMoneyBand', () => {
     expect(screen.getByText('Past due')).toBeInTheDocument();
   });
 
-  it('does not render the Collected-this-month or Due-soon KPIs (slimmed to 2 actionable KPIs)', () => {
-    renderBand();
-    expect(screen.queryByText('Collected this month')).toBeNull();
-    expect(screen.queryByText('Due soon')).toBeNull();
-    // Their money values must not leak into the strip either.
-    expect(screen.queryByText('1,000.00')).toBeNull(); // collected leg
-    expect(screen.queryByText('300.00')).toBeNull(); // due-soon leg
-  });
-
-  it('deep-links Past due to the existing URL contract; Collection rate stays display-only', () => {
+  it('deep-links Past due and Collected this month; Collection rate + Due soon stay display-only', () => {
     renderBand();
     expect(screen.getByRole('link', { name: /past due/i })).toHaveAttribute(
       'href',
       '/admin/renewals?month=overdue',
     );
-    // The collection-rate KPI carries no link (display-only).
+    expect(screen.getByRole('link', { name: /collected this month/i })).toHaveAttribute(
+      'href',
+      '/admin/invoices?status=paid&subject=membership',
+    );
+    // Display-only tiles carry no link.
     expect(screen.queryByRole('link', { name: /collection rate/i })).toBeNull();
-    // No leftover links for the dropped KPIs.
-    expect(screen.queryByRole('link', { name: /collected this month/i })).toBeNull();
     expect(screen.queryByRole('link', { name: /due soon/i })).toBeNull();
   });
 
@@ -122,19 +118,62 @@ describe('PipelineMoneyBand', () => {
     expect(screen.getByText('—')).toBeInTheDocument();
   });
 
-  it('gives the Past-due link a concise, purpose-stating aria-label distinct from the label+value sentence', () => {
+  it('gives each linked tile a concise, purpose-stating aria-label distinct from the full label+value+basis sentence', () => {
     renderBand();
+    expect(screen.getByRole('link', { name: /— view overdue renewals$/ })).toBeInTheDocument();
     expect(
-      screen.getByRole('link', { name: /— view overdue renewals$/ }),
+      screen.getByRole('link', { name: /— view paid membership invoices$/ }),
     ).toBeInTheDocument();
   });
 
-  it('folds the THB figure into the Past-due aria-label so a screen-reader user hears the amount, not only the purpose', () => {
+  it('folds the THB figure into each linked tile aria-label so a screen-reader user hears the amount, not only the purpose', () => {
     renderBand();
     expect(
+      screen.getByRole('link', { name: 'Past due 500.00 THB — view overdue renewals' }),
+    ).toBeInTheDocument();
+    expect(
       screen.getByRole('link', {
-        name: 'Past due 500.00 THB — view overdue renewals',
+        name: 'Collected this month 1,000.00 THB — view paid membership invoices',
       }),
     ).toBeInTheDocument();
+  });
+
+  it('uses ICU plural for the dueSoon window ("1 day", not "1 days")', () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <PipelineMoneyBand
+          money={{
+            settledDueToDateSatang: 0n,
+            overdueSatang: 0n,
+            collectedThisPeriodSatang: 0n,
+            dueSoonSatang: 0n,
+          }}
+          windowDays={1}
+        />
+      </NextIntlClientProvider>,
+    );
+    expect(screen.getByText(/within 1 day\b/i)).toBeInTheDocument();
+    expect(screen.queryByText(/within 1 days/i)).toBeNull();
+  });
+
+  it('colours Collection rate success (an attention-free "how are we doing" signal) and Past due warning (needs attention)', () => {
+    renderBand();
+    expect(screen.getByText('79.2%')).toHaveClass('text-success');
+    // The past-due value is inside the deep-link; find the hero figure text node.
+    const pastDueLink = screen.getByRole('link', { name: /past due/i });
+    expect(pastDueLink.querySelector('.text-warning')).not.toBeNull();
+  });
+
+  it('does NOT tone-colour the neutral tiles (Collected this month, Due soon)', () => {
+    renderBand();
+    const collectedLink = screen.getByRole('link', { name: /collected this month/i });
+    expect(collectedLink.querySelector('.text-success')).toBeNull();
+    expect(collectedLink.querySelector('.text-warning')).toBeNull();
+  });
+
+  it('renders each compact tile value at text-2xl, not the text-3xl hero size', () => {
+    renderBand();
+    expect(screen.getByText('79.2%')).toHaveClass('text-2xl');
+    expect(screen.getByText('79.2%')).not.toHaveClass('text-3xl');
   });
 });

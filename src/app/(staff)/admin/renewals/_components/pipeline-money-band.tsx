@@ -1,39 +1,41 @@
 /**
  * DV-Wave2 ⑥ — THB money KPI band above the renewals pipeline.
  *
- * renewals-money-band-slim — slimmed from 4 hero `KpiCard` tiles down to a
- * compact 2-KPI strip: **Collection rate** (derived, display-only) and
- * **Past due** (deep-links to the overdue bucket) — the two KPIs a treasurer
- * actually acts on. Collected-this-month and Due-soon are dropped from the
- * RENDER only; `PipelineMoneySummary` still carries all 4 legs (the query in
- * `page.tsx`'s `PipelineMoneyBandSection` is untouched) so those tiles can be
- * restored later without a query change. A lone 2-tile grid reads as sparse
- * on a page whose primary work surface is the pipeline table below it — an
- * inline summary strip reads as an intentional "at a glance" header instead.
+ * renewals-money-band-compact4 — reverts the brief 2-KPI-strip experiment
+ * (`renewals-money-band-slim`) back to all 4 KPIs, but as a COMPACT 4-tile
+ * grid rather than the original 4 HERO `KpiCard` tiles: the strip read too
+ * sparse for a money surface, and the original hero cards read too tall next
+ * to the pipeline table that is this page's actual primary work surface. The
+ * compact grid is the middle ground the user picked from a mockup review —
+ * every KPI a treasurer needs, in a ~30-35% shorter footprint than the hero
+ * version.
  *
- * Every KPI still carries a `basis` (spec § 5) so a treasurer never mistakes
- * it for F9's all-time overdue or the ภ.พ.30 VAT register — collapsed here
- * into ONE shared strip caption (`money.stripBasis`) since both remaining
- * KPIs share the same basis (membership · this fiscal year · incl. VAT).
+ * Tiles render via the shared `KpiCard` (Reusable-Components principle)
+ * using its two additive props: `compact` (`Card size="sm"` + a `text-2xl`
+ * value instead of the `text-3xl` hero) and `tone` (colours the value only,
+ * via the app's semantic success/warning tokens — Collection rate is a "how
+ * are we doing" success signal, Past due is the amber "needs attention"
+ * signal; Collected + Due soon stay neutral). Both props default to the
+ * pre-existing look, so F9's dashboard `KpiCard` call sites are unaffected.
+ *
+ * Every KPI carries its own `basis` caption again (spec § 5) — the strip's
+ * single shared `stripBasis` caption is gone (removed from all 3 locales);
+ * each tile states its own scope so a treasurer never mistakes it for F9's
+ * all-time overdue or the ภ.พ.30 VAT register.
  *
  * The collection rate is DERIVED (Domain `collectionRatePct`) from the
  * settled + overdue legs — never a stored field, never the banned
- * flow÷stock rate. The past-due hero uses `formatSatangThb` — the canonical
- * grouped/locale-aware THB formatter every other money surface uses — +
- * the localised `money.currency` label (ux-standards §1.3). `formatSatangThb`
+ * flow÷stock rate. Money heroes use `formatSatangThb` — the canonical
+ * grouped/locale-aware THB formatter every other money surface uses — + the
+ * localised `money.currency` label (ux-standards §1.3). `formatSatangThb`
  * bakes in its OWN `'THB'` suffix, so it is called with an explicit empty
  * `currency` + `.trimEnd()` here to avoid double-rendering the unit: the
- * strip shows the locale-appropriate `money.currency` word (e.g. Thai
- * "บาท") as a separate muted suffix, not the hardcoded ISO code. The
- * deep-link reuses the EXISTING `?month=overdue` URL contract only.
- *
- * `Card size="sm"` (the shadcn/ui compact-card variant: `py-3`/`gap-3`/
- * `px-3` instead of the default `py-6`/`gap-4`/`px-6`) is reused rather than
- * a bespoke borderless block — it gives the "slim strip" footprint for free
- * while keeping the same bordered-Card chrome every other pipeline
- * sub-section uses (`renewals-by-month-section.tsx`, the at-risk widget,
- * `LoadErrorCard`), so the strip reads as one more section in a consistent
- * page, not a one-off treatment.
+ * tiles show the locale-appropriate `money.currency` word (e.g. Thai "บาท")
+ * as a separate muted suffix, not the hardcoded ISO code. Deep-links reuse
+ * the EXISTING URL contracts only (`?month=overdue`,
+ * `?status=paid&subject=membership`) — Due soon stays DISPLAY-ONLY per the
+ * Wave 2 final review (no invoice-due-date-range filter exists to link it to
+ * without contradicting its own 0–90-day caption).
  *
  * The whole render stays wrapped in a small `ErrorBoundary`: the page's own
  * try/catch (see `PipelineMoneyBandSection` in `page.tsx`) only covers the
@@ -41,26 +43,20 @@
  * crash the pipeline.
  */
 import type { ReactNode } from 'react';
-import Link from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
 import { formatSatangThb } from '@/lib/format-thb';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { KpiCard } from '@/components/dashboard/kpi-card';
 import { ErrorBoundary } from '@/components/shell/error-boundary';
 import { collectionRatePct, type PipelineMoneySummary } from '@/modules/renewals';
 
 function PipelineMoneyBandContent({
   money,
+  windowDays,
 }: {
   readonly money: PipelineMoneySummary;
-  /**
-   * Kept for call-site/API stability and for a future restore of the
-   * dropped Due-soon tile (its `basis` caption interpolates this) — the
-   * slimmed strip's shared `stripBasis` caption does not need it, so it is
-   * intentionally not destructured/read below. `PipelineMoneyBandSection`
-   * in `page.tsx` still computes and passes `WINDOW_DAYS = 90` unchanged.
-   */
-  readonly windowDays?: number;
+  readonly windowDays: number;
 }) {
   const t = useTranslations('admin.renewals.money');
   const locale = useLocale();
@@ -73,13 +69,16 @@ function PipelineMoneyBandContent({
     </>
   );
 
-  // The deep-linked KPI's aria-label folds in the THB figure itself
+  // The deep-linked KPIs' aria-labels fold in the THB figure itself
   // (`formatSatangThb`'s own `'THB'` suffix is fine here, unlike `moneyHero`
-  // above: an aria-label is announced once, not paired with a second
-  // visible currency word), so a screen-reader user Tab-navigating by link
-  // hears the amount, not only the strip's purpose.
+  // above: an aria-label is announced once, not paired with a second visible
+  // currency word), so a screen-reader user Tab-navigating by link hears the
+  // amount, not only the tile's purpose.
   const pastDueAriaLabel = t('pastDue.ariaLabel', {
     amount: formatSatangThb(money.overdueSatang, locale),
+  });
+  const collectedAriaLabel = t('collected.ariaLabel', {
+    amount: formatSatangThb(money.collectedThisPeriodSatang, locale),
   });
 
   const rate = collectionRatePct(money.settledDueToDateSatang, money.overdueSatang);
@@ -94,44 +93,52 @@ function PipelineMoneyBandContent({
       <h2 id="pipeline-money-band-heading" className="text-base font-semibold">
         {t('title')}
       </h2>
-      <Card size="sm">
-        <CardContent className="flex flex-col gap-1.5">
-          <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1.5">
-            {/* Display-only — no href, no link, no aria-label (matches the
-                original "no <Link> for the rate tile" contract). */}
-            <div className="flex items-baseline gap-2">
-              <span className="text-sm text-muted-foreground">
-                {t('collectionRate.label')}
-              </span>
-              <span className="text-2xl font-semibold tabular-nums">{rateHero}</span>
-            </div>
-            <span aria-hidden="true" className="text-muted-foreground">
-              ·
-            </span>
-            <Link
-              href="/admin/renewals?month=overdue"
-              aria-label={pastDueAriaLabel}
-              className="flex items-baseline gap-2 rounded-sm text-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-            >
-              <span className="text-sm text-muted-foreground">{t('pastDue.label')}</span>
-              <span className="text-2xl font-semibold tabular-nums">
-                {moneyHero(money.overdueSatang)}
-              </span>
-            </Link>
-          </div>
-          {/* One shared basis caption for the whole strip — both remaining
-              KPIs are on the same basis, so a per-tile caption each (the
-              4-tile predecessor's design) would just repeat itself. */}
-          <p className="text-caption text-muted-foreground">{t('stripBasis')}</p>
-        </CardContent>
-      </Card>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {/* Display-only — no href/ariaLabel (matches the original "no
+            <Link> for the rate tile" contract). `tone="success"` reads as
+            the "how are we doing" signal. */}
+        <KpiCard
+          compact
+          tone="success"
+          label={t('collectionRate.label')}
+          value={rateHero}
+          caption={t('collectionRate.basis')}
+        />
+        <KpiCard
+          compact
+          tone="warning"
+          label={t('pastDue.label')}
+          value={moneyHero(money.overdueSatang)}
+          caption={t('pastDue.basis')}
+          href="/admin/renewals?month=overdue"
+          ariaLabel={pastDueAriaLabel}
+        />
+        <KpiCard
+          compact
+          label={t('collected.label')}
+          value={moneyHero(money.collectedThisPeriodSatang)}
+          caption={t('collected.basis')}
+          href="/admin/invoices?status=paid&subject=membership"
+          ariaLabel={collectedAriaLabel}
+        />
+        {/* DISPLAY-ONLY (Wave 2 final review) — this tile's own caption
+            states a cumulative 0–90-day invoice-due-date window, and no
+            pipeline/invoice-list URL param filters by that dimension today;
+            linking it anywhere would contradict what the tile visibly says. */}
+        <KpiCard
+          compact
+          label={t('dueSoon.label')}
+          value={moneyHero(money.dueSoonSatang)}
+          caption={t('dueSoon.basis', { days: windowDays })}
+        />
+      </div>
     </section>
   );
 }
 
 export function PipelineMoneyBand(props: {
   readonly money: PipelineMoneySummary;
-  readonly windowDays?: number;
+  readonly windowDays: number;
 }) {
   return (
     <ErrorBoundary>
@@ -141,37 +148,41 @@ export function PipelineMoneyBand(props: {
 }
 
 /**
- * Suspense fallback — reserves the strip's exact footprint (heading + the
- * compact `Card size="sm"` KPI row + caption line) so the money band
- * streaming in does NOT push the pipeline card down (CLS 0). The heading is
- * the REAL static title (no data dependency, so no shimmer needed — mirrors
- * how `RenewalsSectionTabs`'s fallback renders the real tab strip and only
- * skeleton-defers the data-dependent badges); only the KPI values + basis
- * caption — which depend on `loadPipelineMoney` — show shimmer placeholders.
+ * Suspense fallback — reserves the compact 4-tile grid's footprint (heading +
+ * one row of 4 `Card size="sm"` tiles) so the money band streaming in does
+ * NOT push the pipeline card down (CLS 0). The heading is the REAL static
+ * title (no data dependency, so no shimmer needed — mirrors how
+ * `RenewalsSectionTabs`'s fallback renders the real tab strip and only
+ * skeleton-defers the data-dependent badges); only the 4 tiles' content —
+ * which depends on `loadPipelineMoney` — show shimmer placeholders.
  */
 export function PipelineMoneyBandSkeleton() {
   const t = useTranslations('admin.renewals.money');
+  // Slightly varied placeholder widths per tile so the skeleton reads as 4
+  // distinct labels/values, not one bar repeated 4×.
+  const shapes = [
+    { label: 'h-4 w-28', value: 'h-7 w-16' }, // Collection rate — short "NN.N%"
+    { label: 'h-4 w-20', value: 'h-7 w-28' }, // Past due
+    { label: 'h-4 w-32', value: 'h-7 w-28' }, // Collected this month
+    { label: 'h-4 w-20', value: 'h-7 w-24' }, // Due soon
+  ] as const;
   return (
     // No `aria-hidden` — the heading is REAL text (mirrors
     // `RenewalsByMonthSectionSkeleton`'s un-hidden fallback); the shimmer
     // bars underneath carry no text for a screen reader to announce.
     <section className="flex flex-col gap-3">
       <h2 className="text-base font-semibold">{t('title')}</h2>
-      <Card size="sm">
-        <CardContent className="flex flex-col gap-1.5">
-          <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1.5">
-            <div className="flex items-baseline gap-2">
-              <Skeleton className="h-4 w-24" />
-              <Skeleton className="h-7 w-16" />
-            </div>
-            <div className="flex items-baseline gap-2">
-              <Skeleton className="h-4 w-16" />
-              <Skeleton className="h-7 w-28" />
-            </div>
-          </div>
-          <Skeleton className="h-3.5 w-56" />
-        </CardContent>
-      </Card>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {shapes.map((shape, i) => (
+          <Card key={i} size="sm">
+            <CardContent className="flex flex-col gap-1.5">
+              <Skeleton className={shape.label} />
+              <Skeleton className={shape.value} />
+              <Skeleton className="h-3.5 w-full" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
     </section>
   );
 }
