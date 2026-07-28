@@ -3240,10 +3240,13 @@
         "ariaLabel": "Renewals sections",
         "pipeline": "Pipeline",
         "tasks": "Tasks",
-        "tierUpgrades": "Tier upgrades"
+        "tasksCountSr": "{count, plural, one {# open task} other {# open tasks}}",
+        "tierUpgrades": "Tier upgrades",
+        "tierUpgradesCountSr": "{count, plural, one {# tier-upgrade suggestion} other {# tier-upgrade suggestions}}"
       },
       "pendingReview": {
         "tab": "Pending review",
+        "tabCountSr": "{count, plural, one {# cycle awaiting review} other {# cycles awaiting review}}",
         "sectionTitle": "Reactivations awaiting your decision",
         "sectionSubtitle": "These members paid to reactivate a lapsed membership but auto-reactivation is blocked. Open each one to approve or reject with a refund.",
         "emptyTitle": "Nothing awaiting review",
@@ -3300,6 +3303,8 @@
         "aria_label": "Filter by renewal urgency",
         "aria_label_scroll": "Renewal urgency tabs, scrollable",
         "countSr": "{count, plural, one {# member} other {# members}}",
+        "monthLensHint": "Urgency filters are paused while a month filter is active. Clear the month filter to use them.",
+        "monthLensBadge": "Paused by month filter",
         "t_90": "T-90",
         "t_60": "T-60",
         "t_30": "T-30",
@@ -3371,8 +3376,8 @@
         "open": "Open cycle",
         "openAriaLabel": "Open cycle for {company}",
         "sendReminder": "Send reminder",
+        "sendReminderAriaLabel": "Send reminder to {company}",
         "markContacted": "Mark contacted",
-        "markContactedComingSoon": "Coming in a future phase — admin can manually log contact attempts",
         "rowMenu": "Actions for {company}"
       },
       "sendReminderNow": {

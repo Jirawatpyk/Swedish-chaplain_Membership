@@ -118,6 +118,19 @@ export function AtRiskWidget({ actorRole }: AtRiskWidgetProps) {
     memberId: string;
     companyName: string | null;
   } | null>(null);
+  // Review fix #5 (WCAG 2.1 AA SC 2.4.3) — the "Contact" button that opens
+  // `OutreachDialog` is a plain visible button (not behind a menu), so a
+  // single shared ref suffices: snapshot the exact button element that was
+  // clicked via `e.currentTarget` at open time (mirrors
+  // tier-upgrade-queue.tsx's `triggerRef.current = e.currentTarget`
+  // pattern), then hand it to `OutreachDialog` as `finalFocus` so Base UI
+  // returns focus there on close instead of the default target dropping to
+  // `<body>`.
+  const outreachTriggerRef = useRef<HTMLButtonElement | null>(null);
+  // a11y fix (mirrors outreachTriggerRef above, same rationale) — the
+  // "Snooze" button is likewise a plain visible button, so it needs its
+  // own snapshot ref handed to `SnoozeDialog` as `finalFocus`.
+  const snoozeTriggerRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -384,12 +397,13 @@ export function AtRiskWidget({ actorRole }: AtRiskWidgetProps) {
                             company:
                               m.company_name ?? t('table.unknownCompany'),
                           })}
-                          onClick={() =>
+                          onClick={(e) => {
+                            outreachTriggerRef.current = e.currentTarget;
                             setOutreachFor({
                               memberId: m.member_id,
                               companyName: m.company_name,
-                            })
-                          }
+                            });
+                          }}
                         >
                           {t('actions.contact')}
                         </Button>
@@ -401,12 +415,13 @@ export function AtRiskWidget({ actorRole }: AtRiskWidgetProps) {
                               company:
                                 m.company_name ?? t('table.unknownCompany'),
                             })}
-                            onClick={() =>
+                            onClick={(e) => {
+                              snoozeTriggerRef.current = e.currentTarget;
                               setSnoozeFor({
                                 memberId: m.member_id,
                                 companyName: m.company_name,
-                              })
-                            }
+                              });
+                            }}
                           >
                             {t('actions.snooze')}
                           </Button>
@@ -429,6 +444,7 @@ export function AtRiskWidget({ actorRole }: AtRiskWidgetProps) {
           }}
           memberId={snoozeFor.memberId}
           memberCompanyName={snoozeFor.companyName}
+          finalFocus={snoozeTriggerRef}
         />
       ) : null}
       {outreachFor ? (
@@ -439,6 +455,7 @@ export function AtRiskWidget({ actorRole }: AtRiskWidgetProps) {
           }}
           memberId={outreachFor.memberId}
           memberCompanyName={outreachFor.companyName}
+          finalFocus={outreachTriggerRef}
         />
       ) : null}
     </Card>

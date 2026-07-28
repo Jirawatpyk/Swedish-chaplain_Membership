@@ -77,10 +77,56 @@ export interface RenewalsSectionTabsProps {
    * The Tasks / Tier-upgrades pages render the bare strip.
    */
   readonly showPipelineHelp?: boolean;
+  /**
+   * Item ④ — count of cycles in `pending_admin_reactivation`; badge shown
+   * only when `> 0`.
+   */
+  readonly pendingReviewCount?: number;
+  /**
+   * Item ④ (plan-wide decision) — count of open escalation tasks; badge
+   * shown only when `> 0`.
+   */
+  readonly tasksCount?: number;
+  /**
+   * Item ④ (plan-wide decision) — count of open + accepted-pending-apply
+   * tier-upgrade suggestions; badge shown only when `> 0`.
+   */
+  readonly tierUpgradeCount?: number;
+}
+
+/**
+ * Item ④ — visible count pill + sr-only text, shared by the Pending-review
+ * / Tasks / Tier-upgrades tab triggers (deliberately NOT the Pipeline tab —
+ * that's the default view, not a work queue). Renders nothing when `count`
+ * is `0` or `undefined` so an empty section never shows a hollow badge.
+ * Styling mirrors `UrgencyBucketTabs`' per-bucket count badge.
+ */
+function TabCountBadge({
+  count,
+  label,
+}: {
+  readonly count: number | undefined;
+  readonly label: string;
+}) {
+  if (count === undefined || count <= 0) return null;
+  return (
+    <>
+      <span
+        aria-hidden
+        className="ml-1.5 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-primary/10 px-1.5 text-xs font-medium tabular-nums text-primary ring-1 ring-inset ring-primary/20"
+      >
+        {count}
+      </span>
+      <span className="sr-only"> {label}</span>
+    </>
+  );
 }
 
 export function RenewalsSectionTabs({
   showPipelineHelp = false,
+  pendingReviewCount,
+  tasksCount,
+  tierUpgradeCount,
 }: RenewalsSectionTabsProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -126,10 +172,28 @@ export function RenewalsSectionTabs({
           <TabsTrigger value={PIPELINE_VALUE}>{t('tabs.pipeline')}</TabsTrigger>
           <TabsTrigger value={PENDING_REVIEW_VALUE}>
             {t('pendingReview.tab')}
+            <TabCountBadge
+              count={pendingReviewCount}
+              label={t('pendingReview.tabCountSr', {
+                count: pendingReviewCount ?? 0,
+              })}
+            />
           </TabsTrigger>
-          <TabsTrigger value={TASKS_VALUE}>{t('tabs.tasks')}</TabsTrigger>
+          <TabsTrigger value={TASKS_VALUE}>
+            {t('tabs.tasks')}
+            <TabCountBadge
+              count={tasksCount}
+              label={t('tabs.tasksCountSr', { count: tasksCount ?? 0 })}
+            />
+          </TabsTrigger>
           <TabsTrigger value={TIER_UPGRADES_VALUE}>
             {t('tabs.tierUpgrades')}
+            <TabCountBadge
+              count={tierUpgradeCount}
+              label={t('tabs.tierUpgradesCountSr', {
+                count: tierUpgradeCount ?? 0,
+              })}
+            />
           </TabsTrigger>
         </TabsList>
       </Tabs>

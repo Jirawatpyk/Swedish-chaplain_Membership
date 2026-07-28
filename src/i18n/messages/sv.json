@@ -3240,10 +3240,13 @@
         "ariaLabel": "Förnyelsesektioner",
         "pipeline": "Pipeline",
         "tasks": "Uppgifter",
-        "tierUpgrades": "Nivåhöjningar"
+        "tasksCountSr": "{count, plural, one {# öppen uppgift} other {# öppna uppgifter}}",
+        "tierUpgrades": "Nivåhöjningar",
+        "tierUpgradesCountSr": "{count, plural, one {# nivåhöjningsförslag} other {# nivåhöjningsförslag}}"
       },
       "pendingReview": {
         "tab": "Väntar på granskning",
+        "tabCountSr": "{count, plural, one {# cykel väntar på granskning} other {# cykler väntar på granskning}}",
         "sectionTitle": "Återaktiveringar som väntar på ditt beslut",
         "sectionSubtitle": "Dessa medlemmar betalade för att återaktivera ett utgånget medlemskap, men automatisk återaktivering är spärrad. Öppna varje post för att godkänna eller avslå med återbetalning.",
         "emptyTitle": "Inget väntar på granskning",
@@ -3300,6 +3303,8 @@
         "aria_label": "Filtrera efter förnyelsebrådska",
         "aria_label_scroll": "Flikar för förnyelsebrådska, rullningsbara",
         "countSr": "{count, plural, one {# medlem} other {# medlemmar}}",
+        "monthLensHint": "Brådskefilter är pausade när ett månadsfilter är aktivt. Rensa månadsfiltret för att använda dem.",
+        "monthLensBadge": "Pausad av månadsfilter",
         "t_90": "T-90",
         "t_60": "T-60",
         "t_30": "T-30",
@@ -3371,8 +3376,8 @@
         "open": "Öppna cykel",
         "openAriaLabel": "Öppna cykel för {company}",
         "sendReminder": "Skicka påminnelse",
+        "sendReminderAriaLabel": "Skicka påminnelse till {company}",
         "markContacted": "Markera kontaktad",
-        "markContactedComingSoon": "Kommer i en framtida fas — administratörer kommer att kunna registrera kontaktförsök",
         "rowMenu": "Åtgärder för {company}"
       },
       "sendReminderNow": {

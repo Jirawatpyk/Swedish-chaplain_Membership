@@ -202,4 +202,42 @@ test.describe('F8 — /admin/renewals pipeline dashboard (US1)', () => {
       .analyze();
     expect(results.violations).toEqual([]);
   });
+
+  test('item ②: row exposes a visible Send reminder button + Mark contacted opens the outreach dialog', async ({
+    page,
+  }) => {
+    await signInAsAdmin(page);
+    await page.goto('/admin/renewals');
+    await expect(
+      page.getByRole('heading', { name: /renewal pipeline/i }),
+    ).toBeVisible({ timeout: 10_000 });
+    // Visible primary action (not behind the ⋯ menu):
+    const sendBtns = page.getByRole('button', { name: /^send reminder to /i });
+    await expect(sendBtns.first()).toBeVisible();
+    // Tertiary: open ⋯ → Mark contacted → dialog:
+    await page.getByRole('button', { name: /^actions for /i }).first().click();
+    await page.getByRole('menuitem', { name: /mark contacted/i }).click();
+    await expect(page.getByRole('alertdialog')).toBeVisible();
+  });
+
+  test('item ①: pipeline table is the dominant first surface, month chart is below it', async ({
+    page,
+  }) => {
+    await signInAsAdmin(page);
+    await page.goto('/admin/renewals');
+    await expect(
+      page.getByRole('heading', { name: /renewal pipeline/i }),
+    ).toBeVisible({ timeout: 10_000 });
+    const urgencyTablist = page.getByRole('tablist', {
+      name: /filter by renewal urgency/i,
+    });
+    const monthHeading = page.getByRole('heading', {
+      name: /renewals by month/i,
+    });
+    await expect(urgencyTablist).toBeVisible();
+    await expect(monthHeading).toBeVisible();
+    const tablistY = (await urgencyTablist.boundingBox())!.y;
+    const monthY = (await monthHeading.boundingBox())!.y;
+    expect(tablistY).toBeLessThan(monthY); // pipeline sits above the month chart
+  });
 });
