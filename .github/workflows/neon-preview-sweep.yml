@@ -113,10 +113,10 @@ jobs:
 
           cutoff_epoch=$(( $(date -u +%s) - (MAX_AGE_DAYS * 86400) ))
 
-          echo "## Neon preview sweep (dry_run=${DRY_RUN}, older than ${MAX_AGE_DAYS}d)" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "| branch | age (d) | verdict |" >> "$GITHUB_STEP_SUMMARY"
-          echo "|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Neon preview sweep (dry_run=${DRY_RUN}, older than ${MAX_AGE_DAYS}d)" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "| branch | age (d) | verdict |" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|---|" | tee -a "$GITHUB_STEP_SUMMARY"
 
           deleted=0; kept=0; failed=0
           while IFS=$'\t' read -r id name created; do
@@ -147,20 +147,20 @@ jobs:
             fi
 
             if [ -n "$verdict" ]; then
-              echo "| \`$name\` | $age_days | $verdict |" >> "$GITHUB_STEP_SUMMARY"
+              echo "| \`$name\` | $age_days | $verdict |" | tee -a "$GITHUB_STEP_SUMMARY"
               kept=$((kept+1))
               continue
             fi
 
             if [ "$DRY_RUN" = 'true' ]; then
-              echo "| \`$name\` | $age_days | WOULD DELETE |" >> "$GITHUB_STEP_SUMMARY"
+              echo "| \`$name\` | $age_days | WOULD DELETE |" | tee -a "$GITHUB_STEP_SUMMARY"
               deleted=$((deleted+1))
             else
               if api DELETE "/branches/${id}" | jq -e '.branch.id' >/dev/null 2>&1; then
-                echo "| \`$name\` | $age_days | DELETED |" >> "$GITHUB_STEP_SUMMARY"
+                echo "| \`$name\` | $age_days | DELETED |" | tee -a "$GITHUB_STEP_SUMMARY"
                 deleted=$((deleted+1))
               else
-                echo "| \`$name\` | $age_days | **DELETE FAILED** |" >> "$GITHUB_STEP_SUMMARY"
+                echo "| \`$name\` | $age_days | **DELETE FAILED** |" | tee -a "$GITHUB_STEP_SUMMARY"
                 echo "::warning title=Delete failed::${name}"
                 failed=$((failed+1))
               fi
@@ -176,6 +176,6 @@ jobs:
             fi
             echo ""
             echo "Non-preview leftovers (e.g. \`prewipe-prod-backup\`) are never touched here — deleting a backup is an operator decision, not a cron's."
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
           [ "$failed" -eq 0 ]
