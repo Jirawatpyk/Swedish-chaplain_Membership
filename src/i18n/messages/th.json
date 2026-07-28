@@ -3368,6 +3368,8 @@
           "invoice": "ใบแจ้งหนี้",
           "actions": "การดำเนินการ"
         },
+        "selectAll": "เลือกทุกแถว",
+        "selectRow": "เลือก {company}",
         "sort": {
           "sortBy": "เรียงตาม{column}",
           "ascending": "เรียงจากน้อยไปมาก",

@@ -47,7 +47,14 @@
  */
 
 import type { ReactNode } from 'react';
-import { useMemo, useRef, useState, useTransition } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations, useLocale } from 'next-intl';
@@ -57,6 +64,7 @@ import {
   getCoreRowModel,
   useReactTable,
   type ColumnDef,
+  type RowSelectionState,
 } from '@tanstack/react-table';
 import {
   Table,
@@ -67,6 +75,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -137,6 +146,26 @@ export interface PipelineTableProps {
    * density band (empty gap below). Absent ⇒ the toolbar holds only the toggle.
    */
   readonly resultCount?: React.ReactNode;
+  /**
+   * Task 10 (US3 scaffolding) — admin-only row selection, the foundation for
+   * Task 11's bulk action bar. Names + semantics copied verbatim from
+   * `MembersTable`'s `enableSelection`/`onSelectionChange`/
+   * `clearSelectionNonce` trio so the pattern reads identically across the
+   * two directories. Unlike `MembersTable`, there is no "select all N
+   * matching" cross-page selection here (that is a members-only feature,
+   * FR-040) — `PipelineWithBulk` is the simpler per-page-only shape.
+   */
+  readonly enableSelection?: boolean;
+  /** Callback when the selected set changes — receives cycleIds (this
+   *  table's `getRowId`), NOT memberIds. */
+  readonly onSelectionChange?: (cycleIds: string[]) => void;
+  /**
+   * Bumped by the parent (`PipelineWithBulk`) to command a full reset of
+   * this table's (uncontrolled) TanStack row-selection — the parent can't
+   * reach the checkbox state otherwise, so without this a parent-side Clear
+   * would leave the page rows checked.
+   */
+  readonly clearSelectionNonce?: number;
 }
 
 /** `aria-sort` token for a sortable column under the active sort (WCAG 1.3.1). */
@@ -205,8 +234,31 @@ export function PipelineTable({
   sort,
   sortHrefs,
   resultCount,
+  enableSelection = false,
+  onSelectionChange,
+  clearSelectionNonce,
 }: PipelineTableProps) {
   const t = useTranslations('admin.renewals.table');
+
+  // Task 10 — uncontrolled TanStack row-selection, keyed by cycleId (see
+  // `getRowId` on the table config below). Shape copied verbatim from
+  // `members-table.tsx`'s `rowSelection`/`handleRowSelectionChange` pair.
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+  const handleRowSelectionChange = useCallback(
+    (
+      updater: RowSelectionState | ((old: RowSelectionState) => RowSelectionState),
+    ) => {
+      const next = typeof updater === 'function' ? updater(rowSelection) : updater;
+      setRowSelection(next);
+      if (onSelectionChange) {
+        // With getRowId set to cycleId, keys in RowSelectionState ARE
+        // cycleIds directly (not numeric indices).
+        const selectedIds = Object.keys(next).filter((k) => next[k]);
+        onSelectionChange(selectedIds);
+      }
+    },
+    [rowSelection, onSelectionChange],
+  );
 
   // Item ② — outreach state lifted up from the row-level menu so the
   // `OutreachDialog` survives the ⋯ menu closing (same lifted-state
@@ -241,6 +293,48 @@ export function PipelineTable({
 
   const columns = useMemo<ColumnDef<PipelineRow>[]>(
     () => [
+      // Task 10 (US3 scaffolding) — admin-only selection column. Header +
+      // row checkbox use `@/components/ui/checkbox` with an `aria-label`
+      // from `admin.renewals.table.selectRow`/`selectAll` (mirrors
+      // `members-table.tsx`'s selection column). `min-h-11 min-w-11`
+      // (44px) keeps the tap target at least as large as the row's own ⋯
+      // trigger below — this table has no smaller 24px selection
+      // precedent to match, so it defaults to the row's existing largest
+      // target rather than risking a mis-tap in a dense data table.
+      ...(enableSelection
+        ? [
+            {
+              id: 'select',
+              header: ({ table }) => (
+                <Checkbox
+                  checked={table.getIsAllPageRowsSelected()}
+                  indeterminate={
+                    table.getIsSomePageRowsSelected() &&
+                    !table.getIsAllPageRowsSelected()
+                  }
+                  onCheckedChange={(checked: boolean) =>
+                    table.toggleAllPageRowsSelected(!!checked)
+                  }
+                  aria-label={t('selectAll')}
+                  className="min-h-11 min-w-11"
+                />
+              ),
+              cell: ({ row }) => (
+                <Checkbox
+                  checked={row.getIsSelected()}
+                  onCheckedChange={(checked: boolean) =>
+                    row.toggleSelected(!!checked)
+                  }
+                  aria-label={t('selectRow', {
+                    company: row.original.companyName,
+                  })}
+                  className="min-h-11 min-w-11"
+                />
+              ),
+              size: 48,
+            } satisfies ColumnDef<PipelineRow>,
+          ]
+        : []),
       {
         id: 'tier',
         header: t('columns.tier'),
@@ -353,7 +447,7 @@ export function PipelineTable({
         ),
       },
     ],
-    [t, canMutate],
+    [t, canMutate, enableSelection],
   );
 
   // Round 5 S-05 — memoise the data array reference so TanStack Table
@@ -375,7 +469,33 @@ export function PipelineTable({
     data,
     columns,
     getCoreRowModel: getCoreRowModel(),
+    enableRowSelection: enableSelection,
+    onRowSelectionChange: handleRowSelectionChange,
+    state: {
+      rowSelection,
+    },
+    // Task 10 — select by cycleId (not memberId): the bulk action Task 11
+    // builds on top of this operates on renewal CYCLES, and a member can
+    // have more than one cycle across the table's lifetime.
+    getRowId: (row) => row.cycleId,
   });
+
+  // Full row-selection reset commanded by the parent (`PipelineWithBulk`)
+  // via `clearSelectionNonce` — same pattern as `members-table.tsx`. The
+  // table owns `rowSelection` UNCONTROLLED, so the parent can't uncheck the
+  // boxes directly; resetting here also fires `onSelectionChange([])`, so
+  // the parent mirror follows to zero. Guarded on a nonce CHANGE (not
+  // mount) so it fires only on an actual Clear. `tableRef` keeps the
+  // dependency stable across the per-render `useReactTable` rebuild.
+  const tableRef = useRef(table);
+  tableRef.current = table;
+  const prevClearNonceRef = useRef(clearSelectionNonce);
+  useEffect(() => {
+    if (clearSelectionNonce !== prevClearNonceRef.current) {
+      prevClearNonceRef.current = clearSelectionNonce;
+      tableRef.current.resetRowSelection();
+    }
+  }, [clearSelectionNonce]);
 
   return (
     // Single wrapping block so the page's pipeline `gap-3` treats the table as
