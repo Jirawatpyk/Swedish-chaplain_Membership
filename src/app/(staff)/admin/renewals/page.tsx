@@ -64,6 +64,7 @@ import { LapsedTab } from './_components/lapsed-tab';
 import { TierFilterSelect } from './_components/tier-filter-select';
 import { ErrorCardActions } from './_components/error-card-actions';
 import { AtRiskWidget } from './_components/at-risk-widget';
+import { WorkQueueTabs } from './_components/work-queue-tabs';
 import {
   MembersWithoutCycleTray,
   MembersWithoutCycleTraySkeleton,
@@ -366,82 +367,99 @@ export default async function RenewalsPipelinePage({
           <Suspense fallback={<RenewalsSectionTabs showPipelineHelp />}>
             <PipelineSectionTabsWithCount tenantSlug={tenantCtx.slug} />
           </Suspense>
-          {showEmptyState ? (
-            <RenewalsEmptyState />
-          ) : (
-            <>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <UrgencyBucketTabs
-                  current={monthLensActive ? null : urgency}
-                  counts={summary.byUrgency}
-                  lapsedCount={summary.lapsedCount}
-                  monthLensActive={monthLensActive}
-                />
-                <TierFilterSelect current={tier ?? 'all'} />
-              </div>
-              <ResultCountAnnouncer
-                count={rows.length}
-                {...(monthLensActive
-                  ? {
-                      monthKind: monthKind as 'overdue' | 'later' | 'month',
-                      ...(monthLabel !== undefined ? { monthLabel } : {}),
-                    }
-                  : { urgencyKey: urgency })}
-              />
-              {/* Item ④ — sighted twin of the announcer above, next to the
-                  filter row so a mouse/keyboard admin sees the result
-                  count without a screen reader. aria-hidden — the
-                  announcer keeps owning the SR channel. */}
-              <ResultCountLabel
-                count={rows.length}
-                {...(monthLensActive
-                  ? {
-                      monthKind: monthKind as 'overdue' | 'later' | 'month',
-                      ...(monthLabel !== undefined ? { monthLabel } : {}),
-                    }
-                  : { urgencyKey: urgency })}
-              />
-              {urgency === 'terminated' ? (
-                <LapsedTab rows={rows} />
+          {/* Wave 2 Task 7 — the pipeline body + `AtRiskWidget` are now the
+              two lenses of ONE `WorkQueueTabs` control (below the section
+              tabs above) instead of two stacked cards. `pipeline` carries
+              the SAME filter-row/urgency-tabs/table/pagination block that
+              used to render directly here; `needsAction` mounts the
+              unchanged `AtRiskWidget` — its own nested 3-band tablist is
+              preserved intact (a valid nested-tablist per WAI-ARIA). Pure
+              client state (no URL param), so the `admin-pipeline-route` /
+              `renewal-pipeline-dashboard` / `renewal-i18n` contracts are
+              untouched. */}
+          <WorkQueueTabs
+            pipeline={
+              showEmptyState ? (
+                <RenewalsEmptyState />
               ) : (
-                <PipelineTable
-                  rows={rows}
-                  {...(monthKind !== undefined ? { monthKind } : {})}
-                  {...(monthLabel !== undefined ? { monthLabel } : {})}
-                />
-              )}
-              {nextHref ? (
-                // Keyset cursor pagination: when the repo returns
-                // nextCursor != null the page was capped at 50 rows.
-                // Render a "Next 50 →" link (same pattern as
-                // /admin/audit) + a visible "Showing first 50" hint
-                // so all users know the list is truncated. The
-                // UrgencyBucketTabs already deletes the cursor param
-                // on tab switch (line 63), so stale cursors are
-                // auto-cleared on urgency change.
-                <div className="flex items-center justify-between gap-4 pt-1">
-                  <p className="text-xs text-muted-foreground">
-                    {t('table.pagination.showingFirst')}
-                  </p>
-                  <a
-                    href={nextHref}
-                    className={buttonVariants({ variant: 'outline' })}
-                  >
-                    {t('table.pagination.next')}
-                  </a>
-                </div>
-              ) : null}
-            </>
-          )}
+                <>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <UrgencyBucketTabs
+                      current={monthLensActive ? null : urgency}
+                      counts={summary.byUrgency}
+                      lapsedCount={summary.lapsedCount}
+                      monthLensActive={monthLensActive}
+                    />
+                    <TierFilterSelect current={tier ?? 'all'} />
+                  </div>
+                  <ResultCountAnnouncer
+                    count={rows.length}
+                    {...(monthLensActive
+                      ? {
+                          monthKind: monthKind as 'overdue' | 'later' | 'month',
+                          ...(monthLabel !== undefined ? { monthLabel } : {}),
+                        }
+                      : { urgencyKey: urgency })}
+                  />
+                  {/* Item ④ — sighted twin of the announcer above, next to the
+                      filter row so a mouse/keyboard admin sees the result
+                      count without a screen reader. aria-hidden — the
+                      announcer keeps owning the SR channel. */}
+                  <ResultCountLabel
+                    count={rows.length}
+                    {...(monthLensActive
+                      ? {
+                          monthKind: monthKind as 'overdue' | 'later' | 'month',
+                          ...(monthLabel !== undefined ? { monthLabel } : {}),
+                        }
+                      : { urgencyKey: urgency })}
+                  />
+                  {urgency === 'terminated' ? (
+                    <LapsedTab rows={rows} />
+                  ) : (
+                    <PipelineTable
+                      rows={rows}
+                      {...(monthKind !== undefined ? { monthKind } : {})}
+                      {...(monthLabel !== undefined ? { monthLabel } : {})}
+                    />
+                  )}
+                  {nextHref ? (
+                    // Keyset cursor pagination: when the repo returns
+                    // nextCursor != null the page was capped at 50 rows.
+                    // Render a "Next 50 →" link (same pattern as
+                    // /admin/audit) + a visible "Showing first 50" hint
+                    // so all users know the list is truncated. The
+                    // UrgencyBucketTabs already deletes the cursor param
+                    // on tab switch (line 63), so stale cursors are
+                    // auto-cleared on urgency change.
+                    <div className="flex items-center justify-between gap-4 pt-1">
+                      <p className="text-xs text-muted-foreground">
+                        {t('table.pagination.showingFirst')}
+                      </p>
+                      <a
+                        href={nextHref}
+                        className={buttonVariants({ variant: 'outline' })}
+                      >
+                        {t('table.pagination.next')}
+                      </a>
+                    </div>
+                  ) : null}
+                </>
+              )
+            }
+            needsAction={<AtRiskWidget actorRole={widgetActorRole} />}
+          />
         </CardContent>
       </Card>
-      {/* Renewals-by-month year view. Rendered BELOW the pipeline as a
+      {/* Renewals-by-month year view. Rendered BELOW the work-queue Card as a
           secondary lens and NOT gated behind `showEmptyState`: the urgency
           window can be empty while the 14-month chart still shows future
           renewals. Suspense-wrapped so its aggregation streams in without
           blocking the pipeline render; `nowIso` is the SAME instant threaded
           into `loadPipeline` above so the chart buckets and any
-          month-filtered pipeline rows reconcile exactly. */}
+          month-filtered pipeline rows reconcile exactly. Wave 2 Task 7 moved
+          this block below `WorkQueueTabs` (previously it sat between the
+          pipeline Card and `AtRiskWidget`) so the two lenses stay adjacent. */}
       <Suspense fallback={<RenewalsByMonthSectionSkeleton />}>
         <RenewalsByMonthSection
           tenantSlug={tenantCtx.slug}
@@ -449,7 +467,6 @@ export default async function RenewalsPipelinePage({
           selectedMonth={month}
         />
       </Suspense>
-      <AtRiskWidget actorRole={widgetActorRole} />
       {/* DV-18 — read-only "Members without renewal cycle" tray. Best-effort:
           the sub-component catches an infra throw + renders a load-error card,
           so it NEVER crashes the pipeline page. Mounted on the pipeline view
