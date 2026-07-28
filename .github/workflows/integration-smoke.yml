@@ -33,12 +33,24 @@ on:
   push:
     branches: ['main']
 
-# Repo-wide, NOT per-ref, and never cancelled mid-run: every job in this group
-# writes to the same Neon branch, so they queue instead of colliding. The
-# nightly readiness workflow shares this group name for the same reason.
+# PER-REF, not the repo-wide `shared-ci-neon` group the nightly workflows use.
+#
+# It was in that group for one day, and the day showed why it cannot be: GitHub
+# keeps at most ONE pending run per concurrency group, so a newly queued run
+# CANCELS the one already waiting. With this workflow as a required status
+# check, a cancelled run is a check that never reports — and on 2026-07-28 that
+# left PR #273 permanently BLOCKED behind two cancelled smoke runs while three
+# PRs and a dispatched nightly contended for the group. A soft risk (two runs
+# touching the same database) does not justify a hard one (a PR that can never
+# merge).
+#
+# What is given up: a PR smoke run may now overlap another PR's, or a nightly.
+# The suites build their own tenant fixtures, so the real exposure is two
+# concurrent `db:migrate` calls — which the composite action now retries once,
+# turning a collision into a delay instead of a red.
 concurrency:
-  group: shared-ci-neon
-  cancel-in-progress: false
+  group: integration-smoke-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   smoke:
