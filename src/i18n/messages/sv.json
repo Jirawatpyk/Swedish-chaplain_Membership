@@ -3368,6 +3368,16 @@
           "invoice": "Faktura",
           "actions": "Åtgärder"
         },
+        "sort": {
+          "sortBy": "Sortera efter {column}",
+          "ascending": "Sorterat stigande",
+          "descending": "Sorterat fallande"
+        },
+        "density": {
+          "label": "Radtäthet",
+          "comfortable": "Bekväm",
+          "compact": "Kompakt"
+        },
         "status": {
           "upcoming": "Kommande",
           "reminded": "Påmind",

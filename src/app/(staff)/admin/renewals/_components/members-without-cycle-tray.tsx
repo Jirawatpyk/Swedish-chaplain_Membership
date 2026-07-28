@@ -18,8 +18,9 @@
  */
 import Link from 'next/link';
 import { getLocale, getTranslations } from 'next-intl/server';
-import { AlertTriangle, UserCheck } from 'lucide-react';
+import { UserCheck } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
+import { LoadErrorCard } from './load-error-card';
 import {
   Table,
   TableBody,
@@ -66,23 +67,7 @@ export async function MembersWithoutCycleTray({
       },
       '[admin/renewals] members-without-cycle tray load failed',
     );
-    return (
-      <Card>
-        <CardContent
-          role="alert"
-          aria-live="assertive"
-          className="flex flex-col items-center gap-4 py-12 text-center"
-        >
-          <AlertTriangle
-            aria-hidden="true"
-            className="h-10 w-10 text-destructive"
-          />
-          <div className="text-base font-medium text-destructive">
-            {t('loadFailed')}
-          </div>
-        </CardContent>
-      </Card>
-    );
+    return <LoadErrorCard message={t('loadFailed')} />;
   }
 
   return (

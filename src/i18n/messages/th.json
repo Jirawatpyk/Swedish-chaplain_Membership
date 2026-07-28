@@ -3368,6 +3368,16 @@
           "invoice": "ใบแจ้งหนี้",
           "actions": "การดำเนินการ"
         },
+        "sort": {
+          "sortBy": "เรียงตาม{column}",
+          "ascending": "เรียงจากน้อยไปมาก",
+          "descending": "เรียงจากมากไปน้อย"
+        },
+        "density": {
+          "label": "ความหนาแน่นของแถว",
+          "comfortable": "สบายตา",
+          "compact": "กะทัดรัด"
+        },
         "status": {
           "upcoming": "ใกล้ครบกำหนด",
           "reminded": "ส่งแจ้งเตือนแล้ว",

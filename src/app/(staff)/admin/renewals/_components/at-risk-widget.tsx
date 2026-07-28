@@ -56,8 +56,10 @@ import {
   RiskScoreBadge,
   type RiskBand,
 } from '@/components/renewals/risk-score-badge';
+import { EmptyState } from '@/components/shell/empty-state';
 import { SnoozeDialog } from './snooze-dialog';
 import { OutreachDialog } from './outreach-dialog';
+import { LoadErrorCard } from './load-error-card';
 
 const BANDS = ['warning', 'at-risk', 'critical'] as const;
 type Band = (typeof BANDS)[number];
@@ -306,11 +308,11 @@ export function AtRiskWidget({ actorRole }: AtRiskWidgetProps) {
           {loading ? (
             <WidgetSkeleton />
           ) : error ? (
-            // Phase 6 review C5 — role="alert" announces error to SR
-            // (WCAG SC 4.1.3); retry button bumps refetchKey to re-run
-            // the effect.
-            <div role="alert" className="flex flex-col items-center gap-3 py-6 text-center">
-              <p className="text-sm text-destructive">{t('errorLoading')}</p>
+            // Task 8 — shared "couldn't load" skin (bare `card={false}` so it
+            // does not nest a second Card inside this widget's own Card).
+            // Keeps role="alert" + adds aria-live="assertive" (WCAG SC 4.1.3);
+            // the retry button bumps refetchKey to re-run the effect.
+            <LoadErrorCard card={false} message={t('errorLoading')}>
               <Button
                 size="sm"
                 variant="outline"
@@ -318,29 +320,26 @@ export function AtRiskWidget({ actorRole }: AtRiskWidgetProps) {
               >
                 {t('actions.retry')}
               </Button>
-            </div>
+            </LoadErrorCard>
           ) : !data || data.items.length === 0 ? (
-            // Phase 6 review S8 — illustration + secondary CTA per
-            // FR-046a + ux-standards § 5 empty-state pattern.
-            // UX R5 / S2: empty-state CTA points at the 'terminated' urgency
-            // tab (renamed from 'lapsed') on this same page rather than away to
-            // /admin/members — admins working the at-risk widget care about
-            // terminated-membership recovery next, not the full membership list.
-            <div className="flex flex-col items-center gap-3 py-6 text-center">
-              <ShieldCheck
-                className="h-8 w-8 text-success"
-                aria-hidden="true"
-              />
-              <p className="text-sm text-muted-foreground">
-                {t('emptyState')}
-              </p>
-              <Link
-                href="/admin/renewals?urgency=terminated"
-                className="text-sm text-primary underline-offset-4 hover:underline"
-              >
-                {t('actions.reviewLapsed')}
-              </Link>
-            </div>
+            // Task 8 — shared `EmptyState` skin (`bordered={false}` — this
+            // widget's Card already supplies the surface). `role="status"`
+            // comes from EmptyState. UX R5 / S2: the CTA points at the
+            // 'terminated' urgency tab on this same page (terminated-membership
+            // recovery is the admin's next action), not away to /admin/members.
+            <EmptyState
+              icon={ShieldCheck}
+              title={t('emptyState')}
+              bordered={false}
+              action={
+                <Link
+                  href="/admin/renewals?urgency=terminated"
+                  className="text-sm text-primary underline-offset-4 hover:underline"
+                >
+                  {t('actions.reviewLapsed')}
+                </Link>
+              }
+            />
           ) : (
             <Table>
               <TableHeader>

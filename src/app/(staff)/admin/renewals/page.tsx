@@ -20,7 +20,6 @@ import { redirect } from 'next/navigation';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { headers } from 'next/headers';
 import { randomUUID } from 'node:crypto';
-import { AlertTriangle } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { buttonVariants } from '@/components/ui/button';
 import { TableContainer } from '@/components/layout';
@@ -44,6 +43,7 @@ import {
   TIER_BUCKETS,
   type TierBucket,
   type UrgencyBucket,
+  type PipelineSort,
   type LoadPendingReactivationReviewOutput,
   type PipelineMoneySummary,
 } from '@/modules/renewals';
@@ -60,6 +60,7 @@ import {
   PipelineMoneyBandSkeleton,
 } from './_components/pipeline-money-band';
 import { PipelineTable } from './_components/pipeline-table';
+import { LoadErrorCard } from './_components/load-error-card';
 import { LapsedTab } from './_components/lapsed-tab';
 import { TierFilterSelect } from './_components/tier-filter-select';
 import { ErrorCardActions } from './_components/error-card-actions';
@@ -99,10 +100,21 @@ const URGENCY_VALUES: ReadonlySet<UrgencyBucket> = new Set([
 
 const DEFAULT_URGENCY: UrgencyBucket = 't-30';
 
+const SORT_VALUES: ReadonlySet<PipelineSort> = new Set([
+  'expires_at_asc',
+  'expires_at_desc',
+  'tier_asc',
+  'tier_desc',
+]);
+
+const DEFAULT_SORT: PipelineSort = 'expires_at_asc';
+
 interface SearchParams {
   readonly tier?: string;
   readonly urgency?: string;
   readonly cursor?: string;
+  /** Task 8 — additive server-side sort (`expires`/`tier`, both directions). */
+  readonly sort?: string;
   /** `'pending-review'` selects the reactivation-review discovery view. */
   readonly view?: string;
   /** Renewals-by-month lens — `'overdue' | 'YYYY-MM' | 'later'`. */
@@ -161,6 +173,14 @@ export default async function RenewalsPipelinePage({
       ? (query.urgency as UrgencyBucket)
       : DEFAULT_URGENCY;
   const cursor = typeof query.cursor === 'string' ? query.cursor : undefined;
+  // Task 8 — additive sort. Invalid/absent falls back to the pre-existing
+  // `expires_at_asc` (so a bookmarked / hand-edited `?sort` never 400s or
+  // mis-pages). Purely additive: `?urgency`/`?month`/`?tier`/`?view` are
+  // untouched.
+  const sort: PipelineSort =
+    query.sort && SORT_VALUES.has(query.sort as PipelineSort)
+      ? (query.sort as PipelineSort)
+      : DEFAULT_SORT;
   const isPendingReviewView = query.view === 'pending-review';
 
   // Renewals-by-month lens. A present + VALID month wins over urgency
@@ -228,6 +248,7 @@ export default async function RenewalsPipelinePage({
     urgency,
     ...(monthLensActive ? { month: month as string, nowIso } : {}),
     ...(cursor !== undefined ? { cursor } : {}),
+    sort,
     limit: 50,
   });
 
@@ -283,11 +304,40 @@ export default async function RenewalsPipelinePage({
   } else {
     paginationParams.set('urgency', urgency);
   }
+  // Task 8 — CRITICAL: carry the active sort across "Next 50" so page 2
+  // decodes the sort-aware keyset cursor under the SAME sort it was minted
+  // under. Without this, page 2 would revert to `expires_at_asc` while the
+  // cursor encodes a tier/desc key → dup/skip. Omitted when default so the
+  // pre-Task-8 URL shape is unchanged.
+  if (sort !== DEFAULT_SORT) paginationParams.set('sort', sort);
   if (nextCursor !== null) paginationParams.set('cursor', nextCursor);
   const nextHref =
     nextCursor !== null
       ? `/admin/renewals?${paginationParams.toString()}`
       : null;
+
+  // Task 8 — header sort links. Same param-preservation discipline as
+  // `paginationParams` (preserve tier + the active lens) but ALWAYS reset
+  // pagination: DELETE `cursor` (and its `nowIso` companion — never set here)
+  // on a sort change so a stale keyset cursor from the previous sort can never
+  // mis-page the newly-sorted list. Each column link toggles its own direction.
+  const buildSortHref = (nextSort: PipelineSort): string => {
+    const p = new URLSearchParams();
+    if (tier !== undefined) p.set('tier', tier);
+    if (monthLensActive) {
+      p.set('month', month as string);
+    } else {
+      p.set('urgency', urgency);
+    }
+    p.set('sort', nextSort);
+    return `/admin/renewals?${p.toString()}`;
+  };
+  const sortHrefs: Record<'expires' | 'tier', string> = {
+    expires: buildSortHref(
+      sort === 'expires_at_asc' ? 'expires_at_desc' : 'expires_at_asc',
+    ),
+    tier: buildSortHref(sort === 'tier_asc' ? 'tier_desc' : 'tier_asc'),
+  };
 
   // Renewals-by-month lens — dedicated-copy fix-wave-2 #4: `monthKind`
   // discriminates overdue / later / a concrete month so the table empty
@@ -422,6 +472,8 @@ export default async function RenewalsPipelinePage({
                   ) : (
                     <PipelineTable
                       rows={rows}
+                      sort={sort}
+                      sortHrefs={sortHrefs}
                       {...(monthKind !== undefined ? { monthKind } : {})}
                       {...(monthLabel !== undefined ? { monthLabel } : {})}
                     />
@@ -831,36 +883,5 @@ function RenewalsPageShell({
       <PageHeader title={title} subtitle={subtitle} />
       {children}
     </TableContainer>
-  );
-}
-
-/**
- * Centered destructive "couldn't load" alert card — shared by the pipeline
- * load-failure and the pending-review load-failure (070 speckit-review
- * simplify S-2). `children` slots optional actions (e.g. retry / go-back)
- * below the message.
- */
-function LoadErrorCard({
-  message,
-  children,
-}: {
-  readonly message: string;
-  readonly children?: ReactNode;
-}) {
-  return (
-    <Card>
-      <CardContent
-        role="alert"
-        aria-live="assertive"
-        className="flex flex-col items-center gap-4 py-12 text-center"
-      >
-        <AlertTriangle
-          aria-hidden="true"
-          className="h-10 w-10 text-destructive"
-        />
-        <div className="text-base font-medium text-destructive">{message}</div>
-        {children}
-      </CardContent>
-    </Card>
   );
 }

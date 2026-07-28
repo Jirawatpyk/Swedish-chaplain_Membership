@@ -32,7 +32,8 @@
  * smart-features backlog.
  */
 
-import { useMemo, useRef, useState, useTransition } from 'react';
+import type { ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations, useLocale } from 'next-intl';
@@ -58,7 +59,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Loader2Icon, MoreHorizontal } from 'lucide-react';
+import {
+  ArrowDownIcon,
+  ArrowUpDownIcon,
+  ArrowUpIcon,
+  Loader2Icon,
+  MoreHorizontal,
+} from 'lucide-react';
 import { mergeRefs } from '@/lib/merge-refs';
 import { UrgencyPill } from '@/components/renewals/urgency-pill';
 import {
@@ -72,7 +79,7 @@ import { MarkPaidOfflineDialog } from './mark-paid-offline-dialog';
 import { shouldOfferMarkPaid } from '../_lib/mark-paid-gate';
 // Client-safe sub-barrel — see `tier-filter-select.tsx` for the
 // rationale (Turbopack 16 + F8 barrel + server-only deps).
-import type { CycleStatus, PipelineRow } from '@/modules/renewals/client';
+import type { CycleStatus, PipelineRow, PipelineSort } from '@/modules/renewals/client';
 
 export interface PipelineTableProps {
   readonly rows: ReadonlyArray<PipelineRow>;
@@ -85,10 +92,117 @@ export interface PipelineTableProps {
    * (undefined) preserves the pre-existing `monthLabel`-only behaviour.
    */
   readonly monthKind?: 'overdue' | 'later' | 'month';
+  /**
+   * Task 8 — the ACTIVE server-side sort. Drives the `aria-sort` state + the
+   * direction chevron on the `tier`/`expires` headers. Present together with
+   * `sortHrefs` (both come from the page); absent ⇒ headers render as plain
+   * text (backwards-compatible with callers that don't wire sorting).
+   */
+  readonly sort?: PipelineSort;
+  /**
+   * Task 8 — precomputed header sort links (built server-side in the page so
+   * they preserve `tier`/`urgency`/`month`, toggle direction, and DELETE the
+   * pagination `cursor` on a sort change). Keyed by the sortable column id.
+   */
+  readonly sortHrefs?: Record<'expires' | 'tier', string>;
 }
 
-export function PipelineTable({ rows, monthLabel, monthKind }: PipelineTableProps) {
+/** `localStorage` key for the client row-density preference (Task 8). */
+const DENSITY_STORAGE_KEY = 'renewals.pipeline.density';
+type Density = 'comfortable' | 'compact';
+
+/** `aria-sort` token for a sortable column under the active sort (WCAG 1.3.1). */
+function ariaSortForColumn(
+  columnId: 'tier' | 'expires',
+  sort: PipelineSort | undefined,
+): 'ascending' | 'descending' | 'none' {
+  if (columnId === 'expires') {
+    return sort === 'expires_at_asc'
+      ? 'ascending'
+      : sort === 'expires_at_desc'
+        ? 'descending'
+        : 'none';
+  }
+  return sort === 'tier_asc'
+    ? 'ascending'
+    : sort === 'tier_desc'
+      ? 'descending'
+      : 'none';
+}
+
+/**
+ * A sortable column header rendered as a plain anchor (`sortHrefs` are built
+ * server-side, so sorting works without JS — same discipline as the "Next 50"
+ * pagination link). The `aria-sort` state lives on the `<TableHead>`
+ * columnheader (never on this link — WCAG 1.3.1 / 4.1.2), so the link only
+ * needs an action label + the direction chevron.
+ */
+function SortHeaderLink({
+  href,
+  label,
+  state,
+  actionLabel,
+  activeStateLabel,
+}: {
+  readonly href: string;
+  readonly label: ReactNode;
+  readonly state: 'ascending' | 'descending' | 'none';
+  readonly actionLabel: string;
+  readonly activeStateLabel: string | undefined;
+}) {
+  const Icon =
+    state === 'ascending'
+      ? ArrowUpIcon
+      : state === 'descending'
+        ? ArrowDownIcon
+        : ArrowUpDownIcon;
+  return (
+    <a
+      href={href}
+      aria-label={actionLabel}
+      {...(activeStateLabel !== undefined ? { title: activeStateLabel } : {})}
+      className="inline-flex items-center gap-1 whitespace-nowrap hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2"
+    >
+      {label}
+      <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+    </a>
+  );
+}
+
+export function PipelineTable({
+  rows,
+  monthLabel,
+  monthKind,
+  sort,
+  sortHrefs,
+}: PipelineTableProps) {
   const t = useTranslations('admin.renewals.table');
+
+  // Task 8 — client row-density preference. Defaults to `comfortable` on the
+  // server + first client render (no localStorage read during render → no
+  // hydration mismatch), then a mount effect syncs the stored choice. Same
+  // post-hydration pattern as the theme/sidebar toggles.
+  const [density, setDensity] = useState<Density>('comfortable');
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(DENSITY_STORAGE_KEY);
+      if (stored === 'compact' || stored === 'comfortable') setDensity(stored);
+    } catch {
+      /* localStorage unavailable (private mode / SSR) — keep the default */
+    }
+  }, []);
+  const toggleDensity = (): void => {
+    setDensity((prev) => {
+      const next: Density = prev === 'compact' ? 'comfortable' : 'compact';
+      try {
+        window.localStorage.setItem(DENSITY_STORAGE_KEY, next);
+      } catch {
+        /* best-effort persistence */
+      }
+      return next;
+    });
+  };
+  const densityClass = density === 'compact' ? '[&_td]:py-1.5' : '[&_td]:py-3';
   // Item ② — outreach state lifted up from the row-level menu so the
   // `OutreachDialog` survives the ⋯ menu closing (same lifted-state
   // pattern as lapsed-tab.tsx + at-risk-widget.tsx). Review fix #5:
@@ -259,17 +373,72 @@ export function PipelineTable({ rows, monthLabel, monthKind }: PipelineTableProp
 
   return (
     <>
-      <Table>
+      {/* Task 8 — client row-density toggle, top-right of the table. Its
+          accessible name IS the visible mode text (WCAG 2.5.3 Label in Name);
+          `title` names the control's purpose, `aria-pressed` exposes the
+          compact state. */}
+      <div className="flex items-center justify-end">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-9"
+          aria-pressed={density === 'compact'}
+          title={t('density.label')}
+          onClick={toggleDensity}
+        >
+          {density === 'compact' ? t('density.compact') : t('density.comfortable')}
+        </Button>
+      </div>
+      <Table className={densityClass} data-density={density}>
         <TableHeader>
           {table.getHeaderGroups().map((hg) => (
             <TableRow key={hg.id}>
-              {hg.headers.map((h) => (
-                <TableHead key={h.id}>
-                  {h.isPlaceholder
-                    ? null
-                    : flexRender(h.column.columnDef.header, h.getContext())}
-                </TableHead>
-              ))}
+              {hg.headers.map((h) => {
+                const colId = h.column.id;
+                const sortColId =
+                  colId === 'tier' || colId === 'expires' ? colId : null;
+                const sortable = sortHrefs !== undefined && sortColId !== null;
+                const ariaSort =
+                  sortable && sortColId !== null
+                    ? ariaSortForColumn(sortColId, sort)
+                    : undefined;
+                return (
+                  <TableHead
+                    key={h.id}
+                    {...(ariaSort !== undefined ? { 'aria-sort': ariaSort } : {})}
+                  >
+                    {h.isPlaceholder ? null : sortable &&
+                      sortColId !== null &&
+                      sortHrefs ? (
+                      <SortHeaderLink
+                        href={sortHrefs[sortColId]}
+                        label={
+                          sortColId === 'tier'
+                            ? t('columns.tier')
+                            : t('columns.expires')
+                        }
+                        state={ariaSort ?? 'none'}
+                        actionLabel={t('sort.sortBy', {
+                          column:
+                            sortColId === 'tier'
+                              ? t('columns.tier')
+                              : t('columns.expires'),
+                        })}
+                        activeStateLabel={
+                          ariaSort === 'ascending'
+                            ? t('sort.ascending')
+                            : ariaSort === 'descending'
+                              ? t('sort.descending')
+                              : undefined
+                        }
+                      />
+                    ) : (
+                      flexRender(h.column.columnDef.header, h.getContext())
+                    )}
+                  </TableHead>
+                );
+              })}
             </TableRow>
           ))}
         </TableHeader>
