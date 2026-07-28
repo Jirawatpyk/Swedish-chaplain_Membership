@@ -44,8 +44,16 @@ export async function loadSettlementPreview(
     tenantId: input.tenantId,
     cycleIds: input.cycleIds,
   });
+  // Review round 1 fix F — `total_thb_minor` asserts THB; require
+  // `currency === 'THB'` alongside `previewable`/non-null as defence-in-
+  // depth. Every live row today IS THB (the repo doesn't populate
+  // non-THB currencies yet), so this guards a FUTURE non-THB invoice from
+  // ever being summed as satang, not a bug reachable today.
   const totalThbMinor = items.reduce(
-    (sum, r) => (r.previewable && r.amountThbMinor !== null ? sum + r.amountThbMinor : sum),
+    (sum, r) =>
+      r.previewable && r.amountThbMinor !== null && r.currency === 'THB'
+        ? sum + r.amountThbMinor
+        : sum,
     0,
   );
   return ok({ items, totalThbMinor });

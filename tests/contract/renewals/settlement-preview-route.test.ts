@@ -73,6 +73,13 @@ const ADMIN_CTX = {
   correlationId: 'corr-1',
 };
 
+// Review round 1 fix A/D — the route now rejects non-UUID cycle_ids with
+// 400 before reaching the use-case, so every fixture that must reach the
+// mocked use-case needs well-formed UUIDs (not the opaque 'c1'/'c2'
+// labels used before the hardening).
+const CYCLE_ID_1 = '11111111-1111-4111-8111-111111111111';
+const CYCLE_ID_2 = '22222222-2222-4222-8222-222222222222';
+
 function makeReq(query = ''): NextRequest {
   return new NextRequest(
     `http://localhost/api/admin/renewals/settlement-preview${query}`,
@@ -123,7 +130,7 @@ describe('GET /api/admin/renewals/settlement-preview — contract', () => {
       ok({
         items: [
           {
-            cycleId: 'c1',
+            cycleId: CYCLE_ID_1,
             companyName: 'Acme Co',
             invoiceId: 'inv1',
             amountThbMinor: 1070_00,
@@ -131,7 +138,7 @@ describe('GET /api/admin/renewals/settlement-preview — contract', () => {
             previewable: true,
           },
           {
-            cycleId: 'c2',
+            cycleId: CYCLE_ID_2,
             companyName: 'Beta Co',
             invoiceId: null,
             amountThbMinor: null,
@@ -143,10 +150,10 @@ describe('GET /api/admin/renewals/settlement-preview — contract', () => {
       }),
     );
     const GET = await loadHandler();
-    const res = await GET(makeReq('?cycle_ids=c1,c2'));
+    const res = await GET(makeReq(`?cycle_ids=${CYCLE_ID_1},${CYCLE_ID_2}`));
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.items[0].cycle_id).toBe('c1');
+    expect(body.items[0].cycle_id).toBe(CYCLE_ID_1);
     expect(body.items[0].company_name).toBe('Acme Co');
     expect(body.items[0].invoice_id).toBe('inv1');
     expect(body.items[0].amount_thb_minor).toBe(1070_00);
@@ -158,7 +165,30 @@ describe('GET /api/admin/renewals/settlement-preview — contract', () => {
 
     // The route must have parsed the comma-list into an array.
     const call = loadSettlementPreviewMock.mock.calls[0]!;
-    expect(call[1].cycleIds).toEqual(['c1', 'c2']);
+    expect(call[1].cycleIds).toEqual([CYCLE_ID_1, CYCLE_ID_2]);
+
+    // Review round 1 fix D — a mutation of
+    // `requireRenewalAdminContext(request, 'read')` → `'write'` would 403
+    // every manager (this is a read-only surface: admin OR manager). Pin
+    // the exact authz mode requested so that mutation can't survive.
+    expect(requireRenewalAdminContextMock).toHaveBeenCalledWith(
+      expect.anything(),
+      'read',
+    );
+  });
+
+  it('de-duplicates repeated cycle_ids before calling the use-case', async () => {
+    requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
+    loadSettlementPreviewMock.mockResolvedValueOnce(
+      ok({ items: [], totalThbMinor: 0 }),
+    );
+    const GET = await loadHandler();
+    const res = await GET(
+      makeReq(`?cycle_ids=${CYCLE_ID_1},${CYCLE_ID_1},${CYCLE_ID_2}`),
+    );
+    expect(res.status).toBe(200);
+    const call = loadSettlementPreviewMock.mock.calls[0]!;
+    expect(call[1].cycleIds).toEqual([CYCLE_ID_1, CYCLE_ID_2]);
   });
 
   it('400 invalid_query when cycle_ids is missing', async () => {
@@ -186,13 +216,26 @@ describe('GET /api/admin/renewals/settlement-preview — contract', () => {
     expect((await res.json()).error.code).toBe('invalid_query');
   });
 
+  // Review round 1 fix A/D — a malformed id must fail fast as 400
+  // invalid_query BEFORE any DB work, not reach Postgres and surface as a
+  // 500 on `22P02 invalid input syntax for type uuid`.
+  it('400 invalid_query when a cycle_id is not a well-formed UUID', async () => {
+    requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
+    const GET = await loadHandler();
+    const res = await GET(makeReq('?cycle_ids=not-a-uuid'));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.code).toBe('invalid_query');
+    // Must never have reached the use-case.
+    expect(loadSettlementPreviewMock).not.toHaveBeenCalled();
+  });
+
   it('400 invalid_input when use-case returns invalid_input', async () => {
     requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
     loadSettlementPreviewMock.mockResolvedValueOnce(
       err({ kind: 'invalid_input', message: 'cycleIds must be 1..100' }),
     );
     const GET = await loadHandler();
-    const res = await GET(makeReq('?cycle_ids=c1'));
+    const res = await GET(makeReq(`?cycle_ids=${CYCLE_ID_1}`));
     expect(res.status).toBe(400);
     expect((await res.json()).error.code).toBe('invalid_input');
   });
@@ -201,7 +244,7 @@ describe('GET /api/admin/renewals/settlement-preview — contract', () => {
     requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
     loadSettlementPreviewMock.mockRejectedValueOnce(new Error('db down'));
     const GET = await loadHandler();
-    const res = await GET(makeReq('?cycle_ids=c1'));
+    const res = await GET(makeReq(`?cycle_ids=${CYCLE_ID_1}`));
     expect(res.status).toBe(500);
     expect((await res.json()).error.code).toBe('server_error');
   });

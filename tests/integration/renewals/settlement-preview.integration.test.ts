@@ -11,8 +11,8 @@
  * `linked_invoice_id` resolves to a real, tenant-owned invoice with
  * `status = 'issued'`.
  *
- * Three seeded cases (the third is the Decision-3 hardening the task
- * brief omitted):
+ * Five seeded cases ((c)-(e) are money-safety hardening beyond the task
+ * brief's original two-case sketch):
  *   (a) an `awaiting_payment` cycle linked to a real `status='issued'`
  *       invoice with a known total → previewable:true, amountThbMinor =
  *       the seeded total net of credited (credited=0 here).
@@ -24,6 +24,16 @@
  *       task brief omitted. Without this guard an operator bulk-marking
  *       a batch that includes an already-settled cycle would see an
  *       inflated bank-transfer total.
+ *   (d) review round 1 fix C — a cycle linked to a `status='draft'`
+ *       invoice with a non-zero total. 107-auto-invoice pre-drafts renewal
+ *       invoices ahead of the due date (status='draft', linked via
+ *       `linked_invoice_id`) — a state reachable in prod. previewable must
+ *       be FALSE (a draft has no finalised, collectible total) and its
+ *       amount must be excluded from `total_thb_minor`.
+ *   (e) review round 1 fix E — a cycle linked to a `status='void'`
+ *       invoice (highest-stake exclusion: a voided invoice's amount must
+ *       NEVER appear in a bulk bank-transfer total). previewable must be
+ *       FALSE and its amount excluded from `total_thb_minor`.
  *
  * Plus cross-tenant isolation: tenant B's own request never sees tenant
  * A's cycle, even when A's cycleId is explicitly included in the batch.
@@ -61,7 +71,7 @@ const SNAP_MEMBER = {
 };
 
 interface SeedInvoiceSpec {
-  readonly status: 'issued' | 'paid';
+  readonly status: 'draft' | 'issued' | 'paid' | 'void';
   readonly totalSatang: bigint;
   readonly creditedTotalSatang: bigint;
   readonly seq: number;
@@ -77,6 +87,11 @@ async function seedMembershipInvoice(
 ): Promise<string> {
   const invoiceId = randomUUID();
   const hasPaidAt = spec.status === 'paid';
+  // `invoices_void_has_reason` (hand-authored DB CHECK, not mirrored in
+  // schema.ts) requires void_reason IS NOT NULL whenever status='void' —
+  // discovered live when seeding the (e) void-linked case (review round 1
+  // fix E).
+  const isVoid = spec.status === 'void';
   const subtotal = (spec.totalSatang * 100n) / 107n;
   await runInTenant(tenant.ctx, async (tx) => {
     await tx.insert(invoices).values({
@@ -110,6 +125,9 @@ async function seedMembershipInvoice(
       paymentRecordedByUserId: hasPaidAt ? user.userId : null,
       paidAt: hasPaidAt ? new Date('2026-06-15T03:00:00Z') : null,
       receiptPdfStatus: hasPaidAt ? 'rendered' : null,
+      voidReason: isVoid ? 'seed: settlement-preview void-link test case' : null,
+      voidedByUserId: isVoid ? user.userId : null,
+      voidedAt: isVoid ? new Date('2026-06-20T03:00:00Z') : null,
       autoEmailOnIssue: true,
     });
   });
@@ -175,8 +193,12 @@ describe('loadSettlementPreview — integration (live Neon)', () => {
   let cycleLive: string; // (a) awaiting_payment, linked to 'issued' invoice
   let cycleNoInvoice: string; // (b) upcoming, no invoice
   let cycleStaleLink: string; // (c) linked to an already-'paid' invoice
+  let cycleDraftLink: string; // (d) linked to a 'draft' invoice
+  let cycleVoidLink: string; // (e) linked to a 'void' invoice
   let liveInvoiceId: string;
   let staleInvoiceId: string;
+  let draftInvoiceId: string;
+  let voidInvoiceId: string;
 
   let cycleB: string; // tenant B's own cycle (cross-tenant control)
   let invoiceB: string;
@@ -190,6 +212,8 @@ describe('loadSettlementPreview — integration (live Neon)', () => {
     const memberLive = randomUUID();
     const memberNoInvoice = randomUUID();
     const memberStale = randomUUID();
+    const memberDraft = randomUUID();
+    const memberVoid = randomUUID();
     await runInTenant(a.ctx, (tx) =>
       seedF8MembershipPlan(tx, {
         tenantSlug: a.ctx.slug,
@@ -203,6 +227,8 @@ describe('loadSettlementPreview — integration (live Neon)', () => {
     await seedMember(a, planA, memberLive, 'Acme Co');
     await seedMember(a, planA, memberNoInvoice, 'Beta Co');
     await seedMember(a, planA, memberStale, 'Gamma Co');
+    await seedMember(a, planA, memberDraft, 'Delta Co');
+    await seedMember(a, planA, memberVoid, 'Epsilon Co');
 
     liveInvoiceId = await seedMembershipInvoice(a, user, planA, memberLive, {
       status: 'issued',
@@ -243,6 +269,43 @@ describe('loadSettlementPreview — integration (live Neon)', () => {
       linkedInvoiceId: staleInvoiceId,
     });
 
+    // (d) Review round 1 fix C — the linked invoice is still 'draft'
+    // (107-auto-invoice pre-drafts renewal bills ahead of the due date,
+    // linked via linked_invoice_id, before the treasurer issues them — a
+    // state reachable in prod). previewable must be FALSE even though the
+    // draft carries a non-zero total, and that total must NOT contribute
+    // to total_thb_minor.
+    draftInvoiceId = await seedMembershipInvoice(a, user, planA, memberDraft, {
+      status: 'draft',
+      totalSatang: 55555n,
+      creditedTotalSatang: 0n,
+      seq: 3,
+    });
+    cycleDraftLink = randomUUID();
+    await seedCycle(a, {
+      cycleId: cycleDraftLink,
+      memberId: memberDraft,
+      status: 'awaiting_payment',
+      linkedInvoiceId: draftInvoiceId,
+    });
+
+    // (e) Review round 1 fix E — the linked invoice is 'void' (the
+    // highest-stake exclusion: a voided invoice's amount must NEVER
+    // surface on a bulk bank-transfer total). previewable must be FALSE.
+    voidInvoiceId = await seedMembershipInvoice(a, user, planA, memberVoid, {
+      status: 'void',
+      totalSatang: 44444n,
+      creditedTotalSatang: 0n,
+      seq: 4,
+    });
+    cycleVoidLink = randomUUID();
+    await seedCycle(a, {
+      cycleId: cycleVoidLink,
+      memberId: memberVoid,
+      status: 'awaiting_payment',
+      linkedInvoiceId: voidInvoiceId,
+    });
+
     // --- Tenant B (cross-tenant leak guard) ---
     const planB = `sp-plan-${randomUUID().slice(0, 8)}`;
     const memberB = randomUUID();
@@ -276,14 +339,23 @@ describe('loadSettlementPreview — integration (live Neon)', () => {
     await b?.cleanup().catch(() => {});
   }, 120_000);
 
-  it('previews a live-invoice cycle, a no-invoice cycle, and a stale-link cycle correctly', async () => {
+  it('previews a live-invoice cycle, a no-invoice cycle, a stale-link cycle, a draft-link cycle, and a void-link cycle correctly', async () => {
     const res = await loadSettlementPreview(
       { renewalCycleRepo: makeRenewalsDeps(a.ctx.slug).cyclesRepo },
-      { tenantId: a.ctx.slug, cycleIds: [cycleLive, cycleNoInvoice, cycleStaleLink] },
+      {
+        tenantId: a.ctx.slug,
+        cycleIds: [
+          cycleLive,
+          cycleNoInvoice,
+          cycleStaleLink,
+          cycleDraftLink,
+          cycleVoidLink,
+        ],
+      },
     );
     expect(res.ok).toBe(true);
     if (!res.ok) return;
-    expect(res.value.items).toHaveLength(3);
+    expect(res.value.items).toHaveLength(5);
 
     const live = res.value.items.find((r) => r.cycleId === cycleLive);
     expect(live?.previewable).toBe(true);
@@ -306,8 +378,25 @@ describe('loadSettlementPreview — integration (live Neon)', () => {
     expect(stale?.amountThbMinor).toBeNull();
     expect(stale?.currency).toBeNull();
 
-    // total excludes both the no-invoice AND the stale-link (99999) rows —
-    // only the live 107000 contributes.
+    // (d) Review round 1 fix C — a draft-linked cycle. A draft has no
+    // finalised, collectible total; previewable must be FALSE regardless
+    // of whatever total the draft row happens to carry.
+    const draft = res.value.items.find((r) => r.cycleId === cycleDraftLink);
+    expect(draft?.previewable).toBe(false);
+    expect(draft?.invoiceId).toBeNull();
+    expect(draft?.amountThbMinor).toBeNull();
+    expect(draft?.currency).toBeNull();
+
+    // (e) Review round 1 fix E — a void-linked cycle. A voided invoice's
+    // amount must NEVER surface — highest-stake exclusion of the set.
+    const voided = res.value.items.find((r) => r.cycleId === cycleVoidLink);
+    expect(voided?.previewable).toBe(false);
+    expect(voided?.invoiceId).toBeNull();
+    expect(voided?.amountThbMinor).toBeNull();
+    expect(voided?.currency).toBeNull();
+
+    // total excludes the no-invoice, stale-paid (99999), draft (55555),
+    // AND void (44444) rows — only the live 107000 contributes.
     expect(res.value.totalThbMinor).toBe(107000);
   });
 

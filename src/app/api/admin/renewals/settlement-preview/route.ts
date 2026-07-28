@@ -36,6 +36,13 @@ const QuerySchema = z.object({
   cycle_ids: z.string().min(1),
 });
 
+// Review round 1 fix A — every id in the comma-list must be a well-formed
+// UUID. Without this, `?cycle_ids=not-a-uuid` sailed past the old
+// count-only guard, reached Postgres, and threw `22P02 invalid input
+// syntax for type uuid` — surfacing as a 500 `server_error` instead of a
+// 400 `invalid_query`.
+const CycleIdSchema = z.string().uuid();
+
 export async function GET(request: NextRequest) {
   if (!env.features.f8Renewals) {
     // Mirrors GET /api/admin/renewals (FR-052b): 404 (not 503) + a
@@ -91,16 +98,30 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  const cycleIds = parsed.data.cycle_ids
+  const rawCycleIds = parsed.data.cycle_ids
     .split(',')
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
-  if (cycleIds.length === 0 || cycleIds.length > MAX_CYCLE_IDS) {
+  // De-dupe BEFORE validating/querying — a repeated id is not an error, it
+  // is just redundant work (and would otherwise double-count nothing today,
+  // but a future caller must not be able to inflate `items.length` by
+  // repetition).
+  const cycleIds = [...new Set(rawCycleIds)];
+  const allValidUuids = cycleIds.every(
+    (id) => CycleIdSchema.safeParse(id).success,
+  );
+  if (
+    cycleIds.length === 0 ||
+    cycleIds.length > MAX_CYCLE_IDS ||
+    !allValidUuids
+  ) {
     return errorResponse({
       status: 400,
       code: 'invalid_query',
       correlationId: ctx.correlationId,
-      details: { message: `cycle_ids must be 1..${MAX_CYCLE_IDS}` },
+      details: {
+        message: `cycle_ids must be 1..${MAX_CYCLE_IDS} unique, well-formed UUIDs`,
+      },
     });
   }
 

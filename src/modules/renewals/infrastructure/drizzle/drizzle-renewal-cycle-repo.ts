@@ -2125,6 +2125,12 @@ export function makeDrizzleRenewalCycleRepo(
             cycleId: asCycleId(r.cycleId),
             companyName: r.companyName ?? '',
             invoiceId: previewable ? r.invoiceId : null,
+            // `- creditedTotalSatang` is DEFENSIVE, not load-bearing: a
+            // genuine `issued` invoice always has creditedTotalSatang = 0
+            // (crediting requires status 'paid'/'partially_credited', both
+            // excluded by the `previewable` gate above), so for every row
+            // that reaches this branch today the term is always 0 — it
+            // exists only to stay correct if the gate is ever widened.
             amountThbMinor: previewable
               ? Number((r.totalSatang ?? 0n) - (r.creditedTotalSatang ?? 0n))
               : null,
