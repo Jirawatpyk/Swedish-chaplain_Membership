@@ -34,7 +34,7 @@ describe('<PipelineTable> sortable headers', () => {
   it('renders tier/expires headers as sort links with the precomputed hrefs', () => {
     render(
       <NextIntlClientProvider locale="en" messages={en}>
-        <PipelineTable rows={EMPTY_ROWS} sort="tier_desc" sortHrefs={SORT_HREFS} />
+        <PipelineTable rows={EMPTY_ROWS} canMutate sort="tier_desc" sortHrefs={SORT_HREFS} />
       </NextIntlClientProvider>,
     );
     const tierLink = screen.getByRole('link', { name: 'Sort by Tier' });
@@ -46,7 +46,7 @@ describe('<PipelineTable> sortable headers', () => {
   it('stamps aria-sort on the active columnheader (descending) and none on the other sortable column', () => {
     render(
       <NextIntlClientProvider locale="en" messages={en}>
-        <PipelineTable rows={EMPTY_ROWS} sort="tier_desc" sortHrefs={SORT_HREFS} />
+        <PipelineTable rows={EMPTY_ROWS} canMutate sort="tier_desc" sortHrefs={SORT_HREFS} />
       </NextIntlClientProvider>,
     );
     expect(columnHeader('Tier')).toHaveAttribute('aria-sort', 'descending');
@@ -60,6 +60,7 @@ describe('<PipelineTable> sortable headers', () => {
       <NextIntlClientProvider locale="en" messages={en}>
         <PipelineTable
           rows={EMPTY_ROWS}
+          canMutate
           sort="expires_at_asc"
           sortHrefs={SORT_HREFS}
         />
@@ -72,7 +73,7 @@ describe('<PipelineTable> sortable headers', () => {
   it('renders plain headers with no links or aria-sort when sortHrefs is absent', () => {
     render(
       <NextIntlClientProvider locale="en" messages={en}>
-        <PipelineTable rows={EMPTY_ROWS} />
+        <PipelineTable rows={EMPTY_ROWS} canMutate />
       </NextIntlClientProvider>,
     );
     expect(screen.queryByRole('link', { name: /sort by/i })).toBeNull();

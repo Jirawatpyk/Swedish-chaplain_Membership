@@ -88,7 +88,7 @@ describe('<PipelineTable> empty state', () => {
   it('renders the month-aware empty copy when monthLabel is set', () => {
     render(
       <NextIntlClientProvider locale="en" messages={en}>
-        <PipelineTable rows={EMPTY_ROWS} monthLabel="December 2026" />
+        <PipelineTable rows={EMPTY_ROWS} canMutate monthLabel="December 2026" />
       </NextIntlClientProvider>,
     );
     expect(screen.getByText('No members renew in December 2026.')).toBeDefined();
@@ -97,7 +97,7 @@ describe('<PipelineTable> empty state', () => {
   it('renders the default bucket empty copy when monthLabel is absent', () => {
     render(
       <NextIntlClientProvider locale="en" messages={en}>
-        <PipelineTable rows={EMPTY_ROWS} />
+        <PipelineTable rows={EMPTY_ROWS} canMutate />
       </NextIntlClientProvider>,
     );
     expect(screen.getByText('No members in this bucket.')).toBeDefined();
@@ -111,7 +111,7 @@ describe('<PipelineTable> empty state', () => {
   it('renders dedicated overdue empty copy when monthKind="overdue"', () => {
     render(
       <NextIntlClientProvider locale="en" messages={en}>
-        <PipelineTable rows={EMPTY_ROWS} monthKind="overdue" />
+        <PipelineTable rows={EMPTY_ROWS} canMutate monthKind="overdue" />
       </NextIntlClientProvider>,
     );
     expect(screen.getByText('No overdue renewals.')).toBeDefined();
@@ -122,6 +122,7 @@ describe('<PipelineTable> empty state', () => {
       <NextIntlClientProvider locale="en" messages={en}>
         <PipelineTable
           rows={EMPTY_ROWS}
+          canMutate
           monthKind="later"
           monthLabel="August 2028"
         />
@@ -168,7 +169,7 @@ describe('<PipelineTable> row actions (item ②)', () => {
 
     render(
       <NextIntlClientProvider locale="en" messages={en}>
-        <PipelineTable rows={ONE_ROW} />
+        <PipelineTable rows={ONE_ROW} canMutate />
       </NextIntlClientProvider>,
     );
 
@@ -190,7 +191,7 @@ describe('<PipelineTable> row actions (item ②)', () => {
   it('sizes the visible button at h-9 (app text-button convention), NOT h-11', () => {
     render(
       <NextIntlClientProvider locale="en" messages={en}>
-        <PipelineTable rows={ONE_ROW} />
+        <PipelineTable rows={ONE_ROW} canMutate />
       </NextIntlClientProvider>,
     );
     const btn = screen.getByRole('button', { name: 'Send reminder to Acme Co' });
@@ -213,7 +214,7 @@ describe('<PipelineTable> row actions (item ②)', () => {
 
     render(
       <NextIntlClientProvider locale="en" messages={en}>
-        <PipelineTable rows={ONE_ROW} />
+        <PipelineTable rows={ONE_ROW} canMutate />
       </NextIntlClientProvider>,
     );
 
@@ -253,7 +254,7 @@ describe('<PipelineTable> row actions — finalFocus after "Mark contacted" (rev
   it("forwards Base UI's own trigger ref to the real ⋯ button (mergeRefs regression guard)", () => {
     render(
       <NextIntlClientProvider locale="en" messages={en}>
-        <PipelineTable rows={ONE_ROW} />
+        <PipelineTable rows={ONE_ROW} canMutate />
       </NextIntlClientProvider>,
     );
     expect(baseUiTriggerRef).toHaveBeenCalled();
@@ -265,7 +266,7 @@ describe('<PipelineTable> row actions — finalFocus after "Mark contacted" (rev
   it('returns focus to the row\'s ⋯ trigger (not <body>) after the outreach dialog is CANCELLED', async () => {
     render(
       <NextIntlClientProvider locale="en" messages={en}>
-        <PipelineTable rows={ONE_ROW} />
+        <PipelineTable rows={ONE_ROW} canMutate />
       </NextIntlClientProvider>,
     );
 
@@ -290,7 +291,7 @@ describe('<PipelineTable> row actions — finalFocus after "Mark contacted" (rev
 
     render(
       <NextIntlClientProvider locale="en" messages={en}>
-        <PipelineTable rows={ONE_ROW} />
+        <PipelineTable rows={ONE_ROW} canMutate />
       </NextIntlClientProvider>,
     );
 
@@ -306,5 +307,95 @@ describe('<PipelineTable> row actions — finalFocus after "Mark contacted" (rev
     expect(document.activeElement).not.toBe(document.body);
 
     vi.unstubAllGlobals();
+  });
+});
+
+// Fix round 3 (manager money-CTA gating) — `canMutate` hides the pipeline
+// row's MUTATION affordances (Send reminder button + Mark-paid item) from a
+// read-only manager, while keeping Open (read-only navigation) AND Mark
+// contacted (`record-at-risk-outreach` — FR-033 + FR-052a's ONE manager
+// mutation exception, never 403s for manager) visible regardless of role.
+// `status: 'awaiting_payment'` (a PAYABLE_STATUSES member — see
+// `mark-paid-gate.ts`) so "Mark paid" would render under `canMutate={true}`,
+// proving its absence under `canMutate={false}` is the prop gate and not the
+// status gate.
+const PAYABLE_ROW: ReadonlyArray<PipelineRow> = [
+  {
+    cycleId: 'cyc-2' as PipelineRow['cycleId'],
+    memberId: 'mem-2',
+    companyName: 'Beta Co',
+    tierBucket: 'premium' as PipelineRow['tierBucket'],
+    expiresAt: '2026-12-01T00:00:00.000Z',
+    urgency: 't-30',
+    status: 'awaiting_payment' as PipelineRow['status'],
+    lastReminderAt: null,
+    lastReminderStepId: null,
+    linkedInvoiceId: null,
+    anchored: false,
+    closedReason: null,
+    emailUnverified: false,
+  },
+];
+
+describe('<PipelineTable> canMutate gating (manager money-CTA hiding)', () => {
+  // Same real-timers discipline as the finalFocus suite above: the shared
+  // Vitest setup installs fake timers, under which `screen.findByRole`'s
+  // internal `waitFor` polling never resolves and the test spins to the 30s
+  // timeout (30s-timeout-is-harness-not-component gotcha).
+  beforeEach(() => {
+    vi.useRealTimers();
+  });
+  afterEach(() => {
+    vi.useFakeTimers();
+  });
+
+  it('canMutate={false}: hides the visible Send-reminder button + the Mark-paid menu item, keeps Open + Mark contacted', async () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <PipelineTable rows={PAYABLE_ROW} canMutate={false} />
+      </NextIntlClientProvider>,
+    );
+
+    // The one-click "Send reminder" button is not rendered at all for a
+    // read-only manager (not merely disabled).
+    expect(
+      screen.queryByRole('button', { name: /send reminder/i }),
+    ).toBeNull();
+
+    const trigger = screen.getByRole('button', { name: /actions for beta co/i });
+    fireEvent.click(trigger);
+
+    expect(
+      await screen.findByRole('menuitem', { name: /open/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('menuitem', { name: /mark contacted/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: /mark paid/i })).toBeNull();
+  });
+
+  it('canMutate={true}: shows Send-reminder, Mark paid, Mark contacted, and Open', async () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <PipelineTable rows={PAYABLE_ROW} canMutate />
+      </NextIntlClientProvider>,
+    );
+
+    expect(
+      screen.getByRole('button', { name: /send reminder/i }),
+    ).toBeInTheDocument();
+
+    const trigger = screen.getByRole('button', { name: /actions for beta co/i });
+    fireEvent.click(trigger);
+
+    expect(
+      await screen.findByRole('menuitem', { name: /open/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('menuitem', { name: /mark contacted/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('menuitem', { name: /mark paid/i }),
+    ).toBeInTheDocument();
   });
 });

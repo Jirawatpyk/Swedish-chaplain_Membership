@@ -12,14 +12,26 @@
  * dates via `<time dateTime>`, the icon-only row-actions trigger uses
  * the native `title` attribute (no `Tooltip` primitive — it collides
  * with the DropdownMenu popup positioning). Row actions: "Send
- * reminder" is a one-click visible button (manager mutations are
- * blocked server-side at the route handler, not via a client-disabled
- * item); the ⋯ menu keeps "Open" (deep-links to cycle detail) and
- * "Mark contacted" (opens the shared `OutreachDialog`, lifted to this
- * component so it survives the menu closing), and — Task 5 (Wave 2) —
- * now ALSO "Mark paid" (opens the shared `MarkPaidOfflineDialog`,
- * offered only when `shouldOfferMarkPaid(status)`). Cancel is still
- * NOT a row action; it lives only on the cycle detail page.
+ * reminder" is a one-click visible button; the ⋯ menu keeps "Open"
+ * (deep-links to cycle detail) and "Mark contacted" (opens the shared
+ * `OutreachDialog`, lifted to this component so it survives the menu
+ * closing), and — Task 5 (Wave 2) — now ALSO "Mark paid" (opens the
+ * shared `MarkPaidOfflineDialog`, offered only when
+ * `shouldOfferMarkPaid(status)`). Cancel is still NOT a row action; it
+ * lives only on the cycle detail page.
+ *
+ * Fix round 3 (manager money-CTA gating) — `canMutate` (required prop,
+ * threaded from the page's `currentUser.role === 'admin'`) hides "Send
+ * reminder" and "Mark paid" for a read-only manager: both are
+ * admin-only at the route (403 + `f8_role_violation_blocked` audit —
+ * kept as defence-in-depth), so showing them to a manager was a
+ * mint-a-403 UX wart on a money surface. "Mark contacted" is
+ * DELIBERATELY NOT gated by `canMutate` — `record-at-risk-outreach` is
+ * FR-033 + FR-052a's ONE manager-mutation exception (the route accepts
+ * `admin OR manager`; see `contracts/admin-renewals-api.md` § "one
+ * mutation exception"), so hiding it would remove a legitimate,
+ * already-shipped manager capability rather than fix a 403 trap. "Open"
+ * is always visible (pure read).
  */
 'use client';
 
@@ -85,6 +97,15 @@ import type { CycleStatus, PipelineRow, PipelineSort } from '@/modules/renewals/
 
 export interface PipelineTableProps {
   readonly rows: ReadonlyArray<PipelineRow>;
+  /**
+   * Fix round 3 (manager money-CTA gating) — `true` for `admin`, `false` for
+   * a read-only `manager`. Gates the row's MUTATION affordances ("Send
+   * reminder" button + "Mark paid" menu item — both 403 for manager at the
+   * route). Required (not optional): every caller must state its actor's
+   * role explicitly rather than silently defaulting to admin behaviour. See
+   * the module docstring for why "Mark contacted" is NOT gated by this prop.
+   */
+  readonly canMutate: boolean;
   /** When set, the empty state reads "No members renew in {month}" (month lens). */
   readonly monthLabel?: string;
   /**
@@ -173,6 +194,7 @@ function SortHeaderLink({
 
 export function PipelineTable({
   rows,
+  canMutate,
   monthLabel,
   monthKind,
   sort,
@@ -354,13 +376,14 @@ export function PipelineTable({
             memberId={row.original.memberId}
             companyName={row.original.companyName}
             status={row.original.status}
+            canMutate={canMutate}
             onRecordOutreach={setOutreachFor}
             onMarkPaid={setMarkPaidFor}
           />
         ),
       },
     ],
-    [t],
+    [t, canMutate],
   );
 
   // Round 5 S-05 — memoise the data array reference so TanStack Table
@@ -543,12 +566,17 @@ export function PipelineTable({
  * "Mark paid" (offered only when `shouldOfferMarkPaid(status)` — mirrors
  * the mark-paid-offline route's own state-machine guard so this row never
  * offers a control the API would reject).
+ *
+ * Fix round 3 — `canMutate` additionally gates "Send reminder" and "Mark
+ * paid" (both admin-only at the route) to `false` for a read-only manager.
+ * "Open" and "Mark contacted" are unconditional — see the module docstring.
  */
 function RowActions({
   cycleId,
   memberId,
   companyName,
   status,
+  canMutate,
   onRecordOutreach,
   onMarkPaid,
 }: {
@@ -556,6 +584,7 @@ function RowActions({
   readonly memberId: string;
   readonly companyName: string;
   readonly status: CycleStatus;
+  readonly canMutate: boolean;
   readonly onRecordOutreach: (t: {
     memberId: string;
     companyName: string;
@@ -669,27 +698,35 @@ function RowActions({
           button on this same page and the broadcasts primary CTA); the
           44px (`h-11 w-11`) treatment below is reserved for icon-only ⋯
           row-triggers, where a mis-tap routes to the wrong row — a
-          different concern than a wide labelled text button. */}
-      <Button
-        variant="outline"
-        size="sm"
-        className="h-9"
-        disabled={isPending}
-        aria-busy={isPending}
-        onClick={handleSendReminder}
-        aria-label={tActions('sendReminderAriaLabel', { company: companyName })}
-      >
-        {/* Review fix #4 — progress affordance now that this action is a
-            persistent button (was a one-shot menu item). Icon is
-            `aria-hidden`; `aria-busy` on the Button itself is what SR
-            users get, mirroring the `Loader2` + `aria-busy` pattern used
-            across the app's other pending-submit buttons (e.g.
-            invoice-settings-form.tsx). */}
-        {isPending && (
-          <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden />
-        )}
-        {tActions('sendReminder')}
-      </Button>
+          different concern than a wide labelled text button.
+
+          Fix round 3 — admin-only (`canMutate`): the route 403s a manager,
+          so this was a mint-a-403 CTA on a read-only surface. Not rendered
+          at all for manager (vs disabled-with-tooltip) — matches F8's
+          existing "absent, not disabled" convention for manager-blocked
+          affordances (spec FR-052a / `docs/ux-standards.md`). */}
+      {canMutate ? (
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-9"
+          disabled={isPending}
+          aria-busy={isPending}
+          onClick={handleSendReminder}
+          aria-label={tActions('sendReminderAriaLabel', { company: companyName })}
+        >
+          {/* Review fix #4 — progress affordance now that this action is a
+              persistent button (was a one-shot menu item). Icon is
+              `aria-hidden`; `aria-busy` on the Button itself is what SR
+              users get, mirroring the `Loader2` + `aria-busy` pattern used
+              across the app's other pending-submit buttons (e.g.
+              invoice-settings-form.tsx). */}
+          {isPending && (
+            <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden />
+          )}
+          {tActions('sendReminder')}
+        </Button>
+      ) : null}
       <DropdownMenu>
         <DropdownMenuTrigger
           render={({ ref: baseRef, ...props }) => (
@@ -792,8 +829,13 @@ function RowActions({
               PipelineTable so it survives this menu closing. `finalFocus`
               carries this row's own ⋯ trigger — see mark-paid-offline-
               dialog.tsx for why the dialog falls back to #main-content
-              instead when a settlement's refresh unmounts this row. */}
-          {shouldOfferMarkPaid(status) ? (
+              instead when a settlement's refresh unmounts this row.
+
+              Fix round 3 — additionally admin-only (`canMutate`): mints a
+              §86/4 tax invoice + completes the cycle (a money mutation),
+              and the route 403s a manager — same mint-a-403 rationale as
+              the "Send reminder" button above. */}
+          {canMutate && shouldOfferMarkPaid(status) ? (
             <DropdownMenuItem
               onClick={() =>
                 onMarkPaid({

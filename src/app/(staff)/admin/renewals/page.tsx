@@ -7,10 +7,13 @@
  *
  * Authz: admin OR manager. Manager is read-only — manager mutations are
  * blocked server-side at the route handlers (403 + `f8_role_violation_blocked`
- * audit), not via client-disabled menu items. The pipeline row menu exposes
- * Send reminder + Open + Mark paid offline (Task 5, opens the guarded
- * `MarkPaidOfflineDialog`); Cancel is still NOT a row action — it lives only
- * on the cycle-detail page.
+ * audit) AND (fix round 3) hidden client-side via `canMutate` on
+ * `<PipelineTable>`: "Send reminder" and "Mark paid offline" (Task 5, opens
+ * the guarded `MarkPaidOfflineDialog`) are admin-only affordances — a manager
+ * would otherwise see a CTA that only 403s on submit. "Mark contacted" stays
+ * visible for both roles (FR-033 + FR-052a's manager-mutation exception,
+ * never 403s for manager — see `pipeline-table.tsx`'s docstring). Cancel is
+ * still NOT a row action — it lives only on the cycle-detail page.
  * Kill-switch: when `FEATURE_F8_RENEWALS=false`, the dashboard route
  * returns 404 with audit `renewal_kill_switch_blocked` (FR-052b).
  */
@@ -391,6 +394,13 @@ export default async function RenewalsPipelinePage({
   const widgetActorRole: 'admin' | 'manager' =
     currentUser.role === 'manager' ? 'manager' : 'admin';
 
+  // Fix round 3 (manager money-CTA gating) — threaded into `<PipelineTable>`
+  // to hide the admin-only row mutation affordances ("Send reminder" /
+  // "Mark paid") from a read-only manager. Server-side 403 guards on those
+  // routes stay in place as defence-in-depth; this only fixes the client
+  // affordance so a manager never sees a CTA that would just 403.
+  const canMutate = currentUser.role === 'admin';
+
   return (
     <RenewalsPageShell title={t('title')} subtitle={t('subtitle')}>
       {/* DV-Wave2 ⑥ — THB money KPI band. Best-effort Suspense island: it
@@ -473,6 +483,7 @@ export default async function RenewalsPipelinePage({
                   ) : (
                     <PipelineTable
                       rows={rows}
+                      canMutate={canMutate}
                       sort={sort}
                       sortHrefs={sortHrefs}
                       {...(monthKind !== undefined ? { monthKind } : {})}

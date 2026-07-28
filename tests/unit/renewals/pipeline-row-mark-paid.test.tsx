@@ -52,7 +52,7 @@ function row(status: PipelineRow['status']): PipelineRow {
 function renderTable(status: PipelineRow['status']) {
   return render(
     <NextIntlClientProvider locale="en" messages={en}>
-      <PipelineTable rows={[row(status)]} />
+      <PipelineTable rows={[row(status)]} canMutate />
     </NextIntlClientProvider>,
   );
 }

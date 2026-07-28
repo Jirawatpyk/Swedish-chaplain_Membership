@@ -29,7 +29,7 @@ const DENSITY_KEY = 'renewals.pipeline.density';
 function renderTable() {
   return render(
     <NextIntlClientProvider locale="en" messages={en}>
-      <PipelineTable rows={EMPTY_ROWS} />
+      <PipelineTable rows={EMPTY_ROWS} canMutate />
     </NextIntlClientProvider>,
   );
 }
