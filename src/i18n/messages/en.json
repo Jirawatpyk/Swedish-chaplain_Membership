@@ -3248,7 +3248,7 @@
         },
         "collected": {
           "label": "Collected this month",
-          "basis": "membership dues · this calendar month · incl. VAT · operational cash, not a period-close total",
+          "basis": "membership dues · this calendar month · incl. VAT · operational cash, not a period-close or tax-filing (ภ.พ.30) total",
           "ariaLabel": "Collected this month {amount} — view paid membership invoices"
         },
         "collectionRate": {

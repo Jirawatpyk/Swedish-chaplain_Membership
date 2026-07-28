@@ -3248,7 +3248,7 @@
         },
         "collected": {
           "label": "Influtet denna månad",
-          "basis": "medlemsavgifter · innevarande kalendermånad · inkl. moms · operativt kassaflöde, inte en periodavslutssumma",
+          "basis": "medlemsavgifter · innevarande kalendermånad · inkl. moms · operativt kassaflöde, inte en periodavsluts- eller skattedeklarationssumma",
           "ariaLabel": "Influtet denna månad {amount} — visa betalda medlemsfakturor"
         },
         "collectionRate": {
