@@ -1,0 +1,154 @@
+# Rotating deep sweep of `tests/integration/**` — one module group per night.
+#
+# WHY A ROTATION AND NOT "RUN EVERYTHING"
+# 592 integration files, executed in ONE fork (`vitest.integration.config.ts`
+# sets `pool: 'forks'` + `singleFork: true`), against a Neon branch that is a
+# Pacific away from the runner (~200 ms per statement vs ~25 ms from Bangkok —
+# measured 2026-07-28: a 7-file set took 95 s locally and 547 s in CI). A
+# single all-modules job would run for hours AND hold the `shared-ci-neon`
+# concurrency lock the whole time, starving the PR smoke gate. One module group
+# per night keeps each run bounded and the lock free for most of the day.
+#
+# WHY CHUNKED WITHIN A MODULE
+# Handing vitest a whole 80+ file directory has historically died around the
+# 42nd file with "Worker exited". The runner below feeds files in batches of 20
+# and keeps going after a failing batch, so one bad suite costs you that batch's
+# signal, not the rest of the module's.
+#
+# SCHEDULE: 19:00 UTC = 02:00 Bangkok, deliberately NOT the 04:00 UTC slot the
+# deep-gates workflow uses — that one lands at 11:00 Bangkok, mid-workday, and
+# a long sweep there would queue behind/ahead of PR runs when they matter most.
+#
+# EXPECT RED AT FIRST. These suites have never run on a runner: some are
+# env-coupled to a maintainer's `.env.local`, some assume flag states, some
+# assume fixtures left by a previous local run. Triage the first weeks' output
+# rather than treating it as a regression signal — and keep this workflow OUT of
+# branch protection until a full rotation has been green once.
+name: Nightly integration sweep (rotating)
+
+on:
+  schedule:
+    - cron: '0 19 * * *'
+  # Self-test: a PR that edits this file runs it against `plans` (21 files —
+  # enough to exercise the 20-file chunk boundary). `workflow_dispatch` cannot
+  # target a branch until the file exists on the default branch, so without
+  # this the first real execution would be the first scheduled one.
+  pull_request:
+    paths:
+      - '.github/workflows/nightly-integration-sweep.yml'
+      - '.github/actions/ci-neon-env/action.yml'
+  workflow_dispatch:
+    inputs:
+      modules:
+        description: 'Space-separated module dirs under tests/integration (default: today''s rotation)'
+        required: false
+        default: ''
+
+# Same database as the smoke gate and the deep gates: queue, never collide.
+concurrency:
+  group: shared-ci-neon
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    name: Integration sweep
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
+      TEST_DB_HOST_BLOCKLIST: ${{ vars.TEST_DB_HOST_BLOCKLIST }}
+      FEATURE_F7_BROADCASTS: 'true'
+      FEATURE_F8_RENEWALS: 'true'
+      CRON_SECRET: synthetic-ci-cron-secret
+      RENEWAL_LINK_TOKEN_SECRET_PRIMARY: synthetic-ci-renewal-token-secret-32-chars-padding
+      RESEND_BROADCASTS_API_KEY: re_synthetic_ci_placeholder_DO_NOT_USE
+      RESEND_BROADCASTS_WEBHOOK_SECRET: synthetic-ci-secret-32-chars-padding-padding
+      UNSUBSCRIBE_TOKEN_SECRET: synthetic-ci-token-secret-32-chars-padding
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # Rotation is by ISO weekday so the heavy modules never share a night.
+      # File counts as of 2026-07-28 in brackets.
+      - name: Pick tonight's modules
+        id: pick
+        run: |
+          MODULES='${{ inputs.modules }}'
+          if [ -z "$MODULES" ] && [ "${{ github.event_name }}" = 'pull_request' ]; then
+            MODULES='plans'
+            echo "::notice title=Self-test::PR run — sweeping 'plans' only to validate the runner mechanics, not the rotation."
+          fi
+          if [ -z "$MODULES" ]; then
+            case "$(date -u +%u)" in
+              1) MODULES='invoicing' ;;                          # [111]
+              2) MODULES='renewals' ;;                           # [132]
+              3) MODULES='members' ;;                            # [89]
+              4) MODULES='broadcasts events' ;;                  # [59 + 56]
+              5) MODULES='payments plans' ;;                     # [45 + 21]
+              6) MODULES='auth insights portal middleware' ;;    # [28 + 22 + 4 + 4]
+              *) MODULES='audit scripts' ;;                      # [3 + 11] — light Sunday
+            esac
+          fi
+          echo "modules=$MODULES" | tee -a "$GITHUB_OUTPUT"
+
+      - uses: ./.github/actions/ci-neon-env
+        with:
+          database-url: ${{ secrets.CI_DATABASE_URL }}
+          blocklist: ${{ vars.TEST_DB_HOST_BLOCKLIST }}
+          migrate: 'true'
+
+      - name: Notice — CI_DATABASE_URL not configured (sweep skipped)
+        if: ${{ env.DATABASE_URL == '' }}
+        run: |
+          echo "::notice title=Sweep skipped::CI_DATABASE_URL is not set." | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Sweep ${{ steps.pick.outputs.modules }}
+        if: ${{ env.DATABASE_URL != '' }}
+        env:
+          MODULES: ${{ steps.pick.outputs.modules }}
+          CHUNK: '20'
+        run: |
+          set -uo pipefail
+          overall=0
+          for module in $MODULES; do
+            dir="tests/integration/${module}"
+            if [ ! -d "$dir" ]; then
+              echo "::warning title=No such module::${dir} does not exist — skipping."
+              continue
+            fi
+            mapfile -t files < <(find "$dir" -name '*.test.ts' | sort)
+            total=${#files[@]}
+            echo "### ${module}: ${total} files" >> "$GITHUB_STEP_SUMMARY"
+            [ "$total" -eq 0 ] && continue
+
+            batch=()
+            done_count=0
+            module_fail=0
+            for f in "${files[@]}"; do
+              batch+=("$f")
+              done_count=$((done_count + 1))
+              if [ "${#batch[@]}" -eq "$CHUNK" ] || [ "$done_count" -eq "$total" ]; then
+                echo "::group::${module} — files $((done_count - ${#batch[@]} + 1))-${done_count} of ${total}"
+                # A failing batch must not abort the remaining batches: the point
+                # of a sweep is a complete picture, not a first-failure stack.
+                if ! pnpm test:integration "${batch[@]}"; then
+                  module_fail=1
+                  overall=1
+                  echo "::error title=${module} batch failed::files $((done_count - ${#batch[@]} + 1))-${done_count}"
+                fi
+                echo "::endgroup::"
+                batch=()
+              fi
+            done
+            if [ "$module_fail" -eq 0 ]; then
+              echo "- ${module}: PASS (${total} files)" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "- ${module}: FAIL — see the grouped logs" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
+          exit $overall
