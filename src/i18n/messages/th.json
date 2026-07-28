@@ -3465,7 +3465,10 @@
         },
         "rateLimited": "ดำเนินการเป็นชุดมากเกินไป รอสักครู่แล้วลองใหม่",
         "unknownError": "เกิดข้อผิดพลาด",
-        "networkError": "เครือข่ายมีปัญหา ตรวจสอบการเชื่อมต่อ"
+        "networkError": "เครือข่ายมีปัญหา ตรวจสอบการเชื่อมต่อ",
+        "progressLabel": "กำลังดำเนินการเป็นชุด",
+        "progressMessage": "กำลัง{action} {count, plural, other {# รายการ}}…",
+        "elapsedSeconds": "เวลาที่ใช้ไป: {seconds} วินาที"
       },
       "sendReminderNow": {
         "toast": {

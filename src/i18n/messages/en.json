@@ -3465,7 +3465,10 @@
         },
         "rateLimited": "Too many bulk actions. Wait a few minutes and try again.",
         "unknownError": "Something went wrong.",
-        "networkError": "Network error. Check your connection."
+        "networkError": "Network error. Check your connection.",
+        "progressLabel": "Bulk operation in progress",
+        "progressMessage": "{action} {count, plural, one {# renewal} other {# renewals}}…",
+        "elapsedSeconds": "Elapsed: {seconds}s"
       },
       "sendReminderNow": {
         "toast": {

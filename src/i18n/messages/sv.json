@@ -3465,7 +3465,10 @@
         },
         "rateLimited": "För många massåtgärder. Vänta några minuter och försök igen.",
         "unknownError": "Något gick fel.",
-        "networkError": "Nätverksfel. Kontrollera din anslutning."
+        "networkError": "Nätverksfel. Kontrollera din anslutning.",
+        "progressLabel": "Massåtgärd pågår",
+        "progressMessage": "{action} {count, plural, one {# förnyelse} other {# förnyelser}}…",
+        "elapsedSeconds": "Förfluten tid: {seconds}s"
       },
       "sendReminderNow": {
         "toast": {
