@@ -64,6 +64,12 @@ vi.mock('@/lib/rate-limit-helpers', () => ({
 
 const runCompletedMock = vi.hoisted(() => vi.fn());
 const relinkedMock = vi.hoisted(() => vi.fn());
+// The route's success path also emits the per-row error counter. Omitting it
+// here made `renewalsMetrics.reconcileIssuedOrphansErrors` undefined, so the
+// success path threw into the route's own catch and answered 500 — the test
+// read as a route bug when it was a stale stub. (Surfaced 2026-07-28 by the
+// new quality-gates CI job; pre-push never ran tests/unit/**.)
+const errorsMock = vi.hoisted(() => vi.fn());
 const skippedReadOnlyMock = vi.hoisted(() => vi.fn());
 const auditEmitFailedMock = vi.hoisted(() => vi.fn());
 const redisFallbackMock = vi.hoisted(() => vi.fn());
@@ -73,6 +79,7 @@ vi.mock('@/lib/metrics', () => ({
   renewalsMetrics: {
     reconcileIssuedOrphansRunCompleted: runCompletedMock,
     reconcileIssuedOrphansRelinked: relinkedMock,
+    reconcileIssuedOrphansErrors: errorsMock,
     coordinatorSkippedReadOnly: skippedReadOnlyMock,
     coordinatorAuditEmitFailed: auditEmitFailedMock,
     redisFallback: redisFallbackMock,
@@ -224,6 +231,10 @@ describe('cron reconcile-issued-orphans route (107-auto-invoice Task 11)', () =>
     expect(runCompletedMock).toHaveBeenCalledWith(TENANT_SLUG, 'success');
     expect(relinkedMock).toHaveBeenCalledTimes(1);
     expect(relinkedMock).toHaveBeenCalledWith(TENANT_SLUG, 1);
+    // Emitted unconditionally (no-op at 0) so a run with per-row failures is
+    // not reported as a clean success by the run-completed counter alone.
+    expect(errorsMock).toHaveBeenCalledTimes(1);
+    expect(errorsMock).toHaveBeenCalledWith(TENANT_SLUG, 0);
   });
 
   it('mapped-error path (Result.err from use-case) → 500 + ONLY runCompleted("failure")', async () => {

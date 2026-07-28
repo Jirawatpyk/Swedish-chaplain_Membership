@@ -11,7 +11,21 @@
  * E2E throwaway-tenant fixtures; here we cover the helper's input-
  * normalisation behaviour and the default fall-through.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+/**
+ * Hermetic env (2026-07-28). The `X-Tenant` override branch is gated on
+ * `env.tenant.xHeaderEnabled` ← `E2E_X_TENANT_HEADER_ENABLED`, which the
+ * maintainer's `.env.local` sets for the Playwright throwaway-tenant flow.
+ * A clean checkout has no `.env.local`, so `tests/setup.ts` placeholders
+ * leave the gate SHUT and the two override cases below silently asserted
+ * the wrong branch — green locally, red the moment CI ran them. Mocking the
+ * env keeps both branches reachable for whoever runs the suite.
+ */
+vi.mock('@/lib/env', () => ({
+  env: { tenant: { slug: 'test-tenant', xHeaderEnabled: true } },
+}));
+
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 
 /**
@@ -54,11 +68,10 @@ describe('resolveTenantFromHeaders', () => {
   });
 
   it('honours valid X-Tenant header when xHeaderEnabled is true (T115t test-tenant flow)', () => {
-    // `.env.local` sets `E2E_X_TENANT_HEADER_ENABLED=1` for the
-    // throwaway-tenant E2E flow. When that gate is open + a header
-    // is present + the slug passes `asTenantContext` validation,
-    // the helper MUST honour the override (Playwright fixtures
-    // depend on this path).
+    // With the gate open (mocked above; in real runs
+    // `E2E_X_TENANT_HEADER_ENABLED=1`) + a header present + the slug
+    // passing `asTenantContext` validation, the helper MUST honour the
+    // override (Playwright throwaway-tenant fixtures depend on this path).
     const headers = makeHeaders([
       ['x-tenant', 'test-throwaway-tenant'],
       ['host', 'localhost:3100'],
