@@ -26,7 +26,7 @@
  * `pipeline-table-selection.test.tsx` / `members-table-selection.test.tsx`.
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import { useState } from 'react';
 import {
@@ -144,6 +144,81 @@ describe('<PipelineCardList>', () => {
 
     // Only one card renders for one row.
     expect(screen.getAllByRole('group')).toHaveLength(1);
+  });
+
+  it('review round 1 (FIX 3 / I-2, WCAG 1.3.1): labels the expires date, unlike the bare <time> the table renders', () => {
+    render(<Harness rows={ROWS} />);
+    const card = screen.getByRole('group', { name: 'Acme Co' });
+    // The card passes `columns.expires` ("Expires") as a visible label
+    // preceding the <time> — the table gets its "Expires" meaning from
+    // the column <th> instead (see `cycle-cells.tsx`'s `CycleExpiresCell`
+    // `label` prop docstring).
+    expect(within(card).getByText('Expires')).toBeInTheDocument();
+  });
+
+  it('review round 1 (FIX 2 / I-1 parity): restores status, last-reminder (—), and invoice (—) fields the card previously dropped', () => {
+    render(<Harness rows={ROWS} />);
+    const card = screen.getByRole('group', { name: 'Acme Co' });
+
+    // Status — same `admin.renewals.table.status.*` i18n keys as the
+    // table's status column. The label + translated value share one <p>
+    // (three text nodes: label, a space, value), so the exact combined
+    // string is asserted rather than the label alone.
+    expect(within(card).getByText('Status Upcoming')).toBeInTheDocument();
+
+    // Last reminder — ROWS[0].lastReminderAt is null → em-dash sentinel,
+    // same as the table's last_reminder column when null.
+    expect(within(card).getByText('Last reminder —')).toBeInTheDocument();
+
+    // Invoice — ROWS[0].linkedInvoiceId is null and anchored is false →
+    // em-dash sentinel, same as the table's invoice column in that state.
+    expect(within(card).getByText('Invoice —')).toBeInTheDocument();
+    expect(within(card).queryByRole('link', { name: 'View invoice' })).toBeNull();
+    expect(within(card).queryByText('Covered')).toBeNull();
+  });
+
+  it('review round 1 (FIX 2 / I-1 parity): renders the "View invoice" link when linkedInvoiceId is set', () => {
+    const rowsWithInvoice: ReadonlyArray<PipelineRow> = [
+      { ...ROWS[0]!, linkedInvoiceId: 'inv-123' },
+    ];
+    render(<Harness rows={rowsWithInvoice} />);
+    const card = screen.getByRole('group', { name: 'Acme Co' });
+    const link = within(card).getByRole('link', { name: 'View invoice' });
+    expect(link).toHaveAttribute('href', '/admin/invoices/inv-123');
+  });
+
+  it('review round 1 (FIX 2 / I-1 parity): renders the "Covered" label + sr-only reason when anchored and no invoice is linked yet', () => {
+    const anchoredRows: ReadonlyArray<PipelineRow> = [
+      { ...ROWS[0]!, linkedInvoiceId: null, anchored: true },
+    ];
+    render(<Harness rows={anchoredRows} />);
+    const card = screen.getByRole('group', { name: 'Acme Co' });
+    // Text label carries the meaning (WCAG 1.4.1); the sr-only span
+    // exposes the SAME reason text the table's `title` attr gives sighted
+    // mouse users — same "Covered" treatment as the table's invoice cell.
+    expect(within(card).getByText('Covered')).toBeInTheDocument();
+    expect(
+      within(card).getByText(
+        /This renewal period is already covered by an earlier payment/,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('review round 1 (FIX 2 / I-1 parity): renders the last-reminder RelativeTime when lastReminderAt is set', () => {
+    const remindedRows: ReadonlyArray<PipelineRow> = [
+      { ...ROWS[0]!, lastReminderAt: '2020-01-01T00:00:00.000Z' },
+    ];
+    render(<Harness rows={remindedRows} />);
+    const card = screen.getByRole('group', { name: 'Acme Co' });
+    // Two <time> elements now render in the card: CycleExpiresCell's
+    // (expires) and RelativeTime's (last reminder). Assert the SECOND one
+    // carries the reminder's ISO instant (RelativeTime's exact rendered
+    // TEXT is real-clock-dependent — "X years ago" — so we assert the
+    // machine-stable `dateTime` attribute instead, same discipline as the
+    // expires assertion above).
+    const times = card.querySelectorAll('time');
+    expect(times).toHaveLength(2);
+    expect(times[1]).toHaveAttribute('dateTime', '2020-01-01T00:00:00.000Z');
   });
 
   it('does not render a selection checkbox when enableSelection is absent', () => {
