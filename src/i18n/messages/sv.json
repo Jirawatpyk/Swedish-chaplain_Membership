@@ -3242,19 +3242,22 @@
         "rateNone": "—",
         "pastDue": {
           "label": "Förfallna",
-          "basis": "förfallna medlemsavgifter · innevarande räkenskapsår · inkl. moms"
+          "basis": "förfallna medlemsavgifter · innevarande räkenskapsår · inkl. moms",
+          "ariaLabel": "Förfallna — visa förfallna förnyelser"
         },
         "collected": {
           "label": "Inkasserat denna månad",
-          "basis": "medlemsavgifter · innevarande kalendermånad · inkl. moms · operativt kassaflöde, inte en periodavslutssumma"
+          "basis": "medlemsavgifter · innevarande kalendermånad · inkl. moms · operativt kassaflöde, inte en periodavslutssumma",
+          "ariaLabel": "Inkasserat denna månad — visa betalda medlemsfakturor"
         },
         "collectionRate": {
           "label": "Inkasseringsgrad",
-          "basis": "medlemsavgifter · räkenskapsår hittills · förfallokohort · inkl. moms"
+          "basis": "medlemsavgifter · räkenskapsår hittills · endast förfallna poster · inkl. moms"
         },
         "dueSoon": {
           "label": "Förfaller snart",
-          "basis": "medlemsavgifter som förfaller inom {days} dagar · ännu ej förfallna · inkl. moms"
+          "basis": "medlemsavgifter som förfaller inom {days, plural, one {# dag} other {# dagar}} · ännu ej förfallna · inkl. moms",
+          "ariaLabel": "Förfaller snart — visa förnyelser som förfaller inom 30 dagar"
         }
       },
       "tabs": {

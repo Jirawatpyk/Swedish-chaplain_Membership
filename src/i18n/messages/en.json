@@ -3242,11 +3242,13 @@
         "rateNone": "—",
         "pastDue": {
           "label": "Past due",
-          "basis": "membership dues past due · this fiscal year · incl. VAT"
+          "basis": "membership dues past due · this fiscal year · incl. VAT",
+          "ariaLabel": "Past due — view overdue renewals"
         },
         "collected": {
           "label": "Collected this month",
-          "basis": "membership dues · this calendar month · incl. VAT · operational cash, not a period-close total"
+          "basis": "membership dues · this calendar month · incl. VAT · operational cash, not a period-close total",
+          "ariaLabel": "Collected this month — view paid membership invoices"
         },
         "collectionRate": {
           "label": "Collection rate",
@@ -3254,7 +3256,8 @@
         },
         "dueSoon": {
           "label": "Due soon",
-          "basis": "membership dues due within {days} days · not yet overdue · incl. VAT"
+          "basis": "membership dues due within {days, plural, one {# day} other {# days}} · not yet overdue · incl. VAT",
+          "ariaLabel": "Due soon — view renewals due in the next 30 days"
         }
       },
       "tabs": {
