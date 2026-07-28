@@ -53,8 +53,59 @@ on:
   workflow_dispatch: {}
 
 jobs:
+  # Migrations first, once, for both readiness jobs (2026-07-28). Nothing ever
+  # migrated the CI branch, so it sat at whatever schema it had when the
+  # secret was configured: the first run after the env fix failed with
+  # `SQL missing TS values: ["broadcast_membership_suspended_blocked"]` — an
+  # enum the TS tuple has and that branch's `audit_event_type` did not. A
+  # single serialised job also avoids two parallel `db:migrate` calls racing
+  # for the same migration lock, and warms a suspended Neon compute before the
+  # test jobs dial in.
+  migrate:
+    name: Migrate the CI Neon branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
+      TEST_DB_HOST_BLOCKLIST: ${{ vars.TEST_DB_HOST_BLOCKLIST }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Seed .env.local from .env.example (gate-verified key list)
+        run: cp .env.example .env.local
+
+      # `tests/integration-setup.ts` refuses to run against a blocklisted host,
+      # but `scripts/run-migrations.ts` has no such guard — and this job WRITES
+      # DDL. Re-assert the guard here so a mis-set CI_DATABASE_URL can never
+      # migrate production from CI.
+      - name: Refuse to migrate a blocklisted (production) host
+        if: ${{ env.DATABASE_URL != '' }}
+        run: |
+          IFS=',' read -ra BLOCKED <<< "${TEST_DB_HOST_BLOCKLIST}"
+          for host in "${BLOCKED[@]}"; do
+            trimmed="$(echo "$host" | xargs)"
+            [ -z "$trimmed" ] && continue
+            case "$DATABASE_URL" in
+              *"$trimmed"*)
+                echo "::error title=Refusing to migrate::DATABASE_URL matches blocklisted host \"$trimmed\" (TEST_DB_HOST_BLOCKLIST). CI must point at a disposable Neon branch, never production."
+                exit 1
+                ;;
+            esac
+          done
+          echo "DATABASE_URL host is not blocklisted — proceeding."
+
+      - name: Apply migrations
+        if: ${{ env.DATABASE_URL != '' }}
+        run: pnpm db:migrate
+
   f7:
     name: F7 broadcasts readiness
+    needs: migrate
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -111,6 +162,7 @@ jobs:
 
   f8:
     name: F8 renewals readiness
+    needs: migrate
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
