@@ -32,19 +32,18 @@
  * mutation exception"), so hiding it would remove a legitimate,
  * already-shipped manager capability rather than fix a 403 trap. "Open"
  * is always visible (pure read).
+ *
+ * Task 12 — closes J8-M34 (`docs/ux-standards.md` § 9.4): the desktop
+ * `<table>` is wrapped `hidden md:block`; `PipelineCardList` renders
+ * `md:hidden` and takes over the mobile presentation. Same dual-render
+ * shape as `060-member-portal-d4`'s `PortalInvoiceCardList` — the card
+ * list is handed the SAME `useReactTable` instance (`table` prop) this
+ * component builds below, so row selection + the lifted outreach/
+ * mark-paid dialog state are shared uncontrolled state, never
+ * re-implemented. `RowActions` is exported and reused verbatim per
+ * card so a company's row actions are identical in both presentations.
  */
 'use client';
-
-/*
- * J8-M34 — mobile responsive treatment deferred. Per
- * `docs/ux-standards.md` § 9.4, data tables should collapse to a
- * card stack at ≤md breakpoints. The pipeline table currently uses
- * `overflow-x-auto` (WCAG 1.4.10 Reflow exception for data tables).
- * The admin renewals dashboard is staff-only — sized at lg+ in
- * production usage — so the card-stack layout is a post-J wave
- * polish item rather than a ship blocker. Tracked alongside the
- * smart-features backlog.
- */
 
 import type { ReactNode } from 'react';
 import {
@@ -99,10 +98,30 @@ import {
 import { RelativeTime } from '@/components/ui/relative-time';
 import { OutreachDialog } from './outreach-dialog';
 import { MarkPaidOfflineDialog } from './mark-paid-offline-dialog';
+import { PipelineCardList } from './pipeline-card-list';
 import { shouldOfferMarkPaid } from '../_lib/mark-paid-gate';
 // Client-safe sub-barrel — see `tier-filter-select.tsx` for the
 // rationale (Turbopack 16 + F8 barrel + server-only deps).
 import type { CycleStatus, PipelineRow, PipelineSort } from '@/modules/renewals/client';
+
+/**
+ * Task 12 — shared shape for the lifted "Record outreach" dialog target.
+ * Exported so `PipelineCardList` can type its `onRecordOutreach` prop
+ * identically to `RowActions`' own callback without re-declaring the
+ * shape (both ultimately feed the SAME `setOutreachFor` state below).
+ */
+export interface OutreachTarget {
+  readonly memberId: string;
+  readonly companyName: string;
+  readonly finalFocus: React.RefObject<HTMLElement | null>;
+}
+
+/** Task 12 — same rationale as {@link OutreachTarget}, for "Mark paid". */
+export interface MarkPaidTarget {
+  readonly cycleId: string;
+  readonly companyName: string;
+  readonly finalFocus: React.RefObject<HTMLElement | null>;
+}
 
 export interface PipelineTableProps {
   readonly rows: ReadonlyArray<PipelineRow>;
@@ -225,6 +244,49 @@ function SortHeaderLink({
   );
 }
 
+/**
+ * Task 12 — the "no rows in this bucket" copy, extracted verbatim out of
+ * the `<table>`'s empty `<TableCell>` (was inline JSX there) so
+ * `PipelineCardList`'s own empty state renders the EXACT same
+ * month-lens-aware copy without re-deriving the `monthKind`/`monthLabel`
+ * branching a second time. Pure text — no table-specific markup — so it
+ * drops into either presentation's empty-state container unchanged.
+ */
+export function PipelineEmptyMessage({
+  monthKind,
+  monthLabel,
+}: {
+  readonly monthKind?: 'overdue' | 'later' | 'month';
+  readonly monthLabel?: string;
+}): React.JSX.Element {
+  const t = useTranslations('admin.renewals.table');
+  if (monthKind === 'overdue') {
+    return (
+      <p className="text-sm font-medium text-foreground">{t('noRowsOverdue')}</p>
+    );
+  }
+  if (monthKind === 'later' && monthLabel !== undefined) {
+    return (
+      <p className="text-sm font-medium text-foreground">
+        {t('noRowsLater', { month: monthLabel })}
+      </p>
+    );
+  }
+  if ((monthKind === 'month' || monthKind === undefined) && monthLabel !== undefined) {
+    return (
+      <p className="text-sm font-medium text-foreground">
+        {t('noRowsInMonth', { month: monthLabel })}
+      </p>
+    );
+  }
+  return (
+    <>
+      <p className="text-sm font-medium text-foreground">{t('noRows')}</p>
+      <p className="mt-1 text-xs">{t('noRowsInBucket')}</p>
+    </>
+  );
+}
+
 export function PipelineTable({
   rows,
   canMutate,
@@ -266,11 +328,7 @@ export function PipelineTable({
   // `RowActions`) so Base UI returns focus there when the dialog closes,
   // instead of the default focus-restore target (the now-unmounted
   // "Mark contacted" menu item) dropping focus to `<body>`.
-  const [outreachFor, setOutreachFor] = useState<{
-    memberId: string;
-    companyName: string;
-    finalFocus: React.RefObject<HTMLElement | null>;
-  } | null>(null);
+  const [outreachFor, setOutreachFor] = useState<OutreachTarget | null>(null);
 
   // Task 5 (Wave 2) — same lifted-state pattern as `outreachFor` above, so
   // the shared `MarkPaidOfflineDialog` (the SAME dialog/route the cycle-
@@ -284,11 +342,7 @@ export function PipelineTable({
   // "For {company}" (same value already passed to the ⋯ trigger's
   // aria-label + to `OutreachDialog`), giving the admin an in-dialog
   // confirmation of WHICH member this money mutation settles.
-  const [markPaidFor, setMarkPaidFor] = useState<{
-    cycleId: string;
-    companyName: string;
-    finalFocus: React.RefObject<HTMLElement | null>;
-  } | null>(null);
+  const [markPaidFor, setMarkPaidFor] = useState<MarkPaidTarget | null>(null);
 
   const columns = useMemo<ColumnDef<PipelineRow>[]>(
     () => [
@@ -511,115 +565,118 @@ export function PipelineTable({
       {/* Sighted result-count caption (passed by the page as `resultCount`),
           rendered directly above the rows it describes. */}
       {resultCount}
-      <Table>
-        <TableHeader>
-          {table.getHeaderGroups().map((hg) => (
-            <TableRow key={hg.id}>
-              {hg.headers.map((h) => {
-                const colId = h.column.id;
-                const sortColId =
-                  colId === 'tier' || colId === 'expires' ? colId : null;
-                const sortable = sortHrefs !== undefined && sortColId !== null;
-                const ariaSort =
-                  sortable && sortColId !== null
-                    ? ariaSortForColumn(sortColId, sort)
-                    : undefined;
-                return (
-                  <TableHead
-                    key={h.id}
-                    {...(ariaSort !== undefined ? { 'aria-sort': ariaSort } : {})}
-                  >
-                    {h.isPlaceholder ? null : sortable &&
-                      sortColId !== null &&
-                      sortHrefs ? (
-                      <SortHeaderLink
-                        href={sortHrefs[sortColId]}
-                        label={
-                          sortColId === 'tier'
-                            ? t('columns.tier')
-                            : t('columns.expires')
-                        }
-                        state={ariaSort ?? 'none'}
-                        actionLabel={t('sort.sortBy', {
-                          column:
+      {/* Task 12 — dual-render. `overflow-x-auto` already lives on the
+          shared `<Table>` primitive itself (`table.tsx`'s wrapping
+          `role="region"` div), so this wrapper only needs the breakpoint
+          class. `PipelineCardList` below consumes the SAME `table`
+          instance (shared row-selection + dialog callbacks — see the
+          module docstring). */}
+      <div className="hidden md:block">
+        <Table>
+          <TableHeader>
+            {table.getHeaderGroups().map((hg) => (
+              <TableRow key={hg.id}>
+                {hg.headers.map((h) => {
+                  const colId = h.column.id;
+                  const sortColId =
+                    colId === 'tier' || colId === 'expires' ? colId : null;
+                  const sortable = sortHrefs !== undefined && sortColId !== null;
+                  const ariaSort =
+                    sortable && sortColId !== null
+                      ? ariaSortForColumn(sortColId, sort)
+                      : undefined;
+                  return (
+                    <TableHead
+                      key={h.id}
+                      {...(ariaSort !== undefined ? { 'aria-sort': ariaSort } : {})}
+                    >
+                      {h.isPlaceholder ? null : sortable &&
+                        sortColId !== null &&
+                        sortHrefs ? (
+                        <SortHeaderLink
+                          href={sortHrefs[sortColId]}
+                          label={
                             sortColId === 'tier'
                               ? t('columns.tier')
-                              : t('columns.expires'),
-                        })}
-                        activeStateLabel={
-                          ariaSort === 'ascending'
-                            ? t('sort.ascending')
-                            : ariaSort === 'descending'
-                              ? t('sort.descending')
-                              : undefined
-                        }
-                      />
-                    ) : (
-                      flexRender(h.column.columnDef.header, h.getContext())
-                    )}
-                  </TableHead>
-                );
-              })}
-            </TableRow>
-          ))}
-        </TableHeader>
-        <TableBody>
-          {table.getRowModel().rows.length === 0 ? (
-            <TableRow>
-              {/*
-               * J8-M30: extended the bare "No members in this bucket"
-               * placeholder with an actionable hint pointing admins at
-               * the urgency-tab switcher. Keeps the table-cell skin
-               * (vs upgrading to <EmptyState> — that would break the
-               * single-cell-row table pattern).
-               */}
-              <TableCell
-                colSpan={columns.length}
-                className="text-center text-muted-foreground py-8"
-              >
-                {monthKind === 'overdue' ? (
-                  <p className="text-sm font-medium text-foreground">
-                    {t('noRowsOverdue')}
-                  </p>
-                ) : monthKind === 'later' && monthLabel !== undefined ? (
-                  <p className="text-sm font-medium text-foreground">
-                    {t('noRowsLater', { month: monthLabel })}
-                  </p>
-                ) : (monthKind === 'month' || monthKind === undefined) &&
-                  monthLabel !== undefined ? (
-                  <p className="text-sm font-medium text-foreground">
-                    {t('noRowsInMonth', { month: monthLabel })}
-                  </p>
-                ) : (
-                  <>
-                    <p className="text-sm font-medium text-foreground">{t('noRows')}</p>
-                    <p className="mt-1 text-xs">{t('noRowsInBucket')}</p>
-                  </>
-                )}
-              </TableCell>
-            </TableRow>
-          ) : (
-            table.getRowModel().rows.map((row) => (
-              // Review fix M-1: `data-state="selected"` lets the shared
-              // `TableRow` primitive's own `data-[state=selected]:bg-muted`
-              // style apply — mirrors `members-table.tsx:1115`. Safe when
-              // selection is disabled: `row.getIsSelected()` is always
-              // `false` (TanStack's `enableRowSelection` is off), so this
-              // never sets `data-state` for a manager's read-only table.
-              <TableRow
-                key={row.id}
-                data-state={row.getIsSelected() ? 'selected' : undefined}
-              >
-                {row.getVisibleCells().map((c) => (
-                  <TableCell key={c.id}>
-                    {flexRender(c.column.columnDef.cell, c.getContext())}
-                  </TableCell>
-                ))}
+                              : t('columns.expires')
+                          }
+                          state={ariaSort ?? 'none'}
+                          actionLabel={t('sort.sortBy', {
+                            column:
+                              sortColId === 'tier'
+                                ? t('columns.tier')
+                                : t('columns.expires'),
+                          })}
+                          activeStateLabel={
+                            ariaSort === 'ascending'
+                              ? t('sort.ascending')
+                              : ariaSort === 'descending'
+                                ? t('sort.descending')
+                                : undefined
+                          }
+                        />
+                      ) : (
+                        flexRender(h.column.columnDef.header, h.getContext())
+                      )}
+                    </TableHead>
+                  );
+                })}
               </TableRow>
-            ))
-          )}
-        </TableBody>
-      </Table>
+            ))}
+          </TableHeader>
+          <TableBody>
+            {table.getRowModel().rows.length === 0 ? (
+              <TableRow>
+                {/*
+                 * J8-M30: extended the bare "No members in this bucket"
+                 * placeholder with an actionable hint pointing admins at
+                 * the urgency-tab switcher. Keeps the table-cell skin
+                 * (vs upgrading to <EmptyState> — that would break the
+                 * single-cell-row table pattern).
+                 */}
+                <TableCell
+                  colSpan={columns.length}
+                  className="text-center text-muted-foreground py-8"
+                >
+                  <PipelineEmptyMessage
+                    {...(monthKind !== undefined ? { monthKind } : {})}
+                    {...(monthLabel !== undefined ? { monthLabel } : {})}
+                  />
+                </TableCell>
+              </TableRow>
+            ) : (
+              table.getRowModel().rows.map((row) => (
+                // Review fix M-1: `data-state="selected"` lets the shared
+                // `TableRow` primitive's own `data-[state=selected]:bg-muted`
+                // style apply — mirrors `members-table.tsx:1115`. Safe when
+                // selection is disabled: `row.getIsSelected()` is always
+                // `false` (TanStack's `enableRowSelection` is off), so this
+                // never sets `data-state` for a manager's read-only table.
+                <TableRow
+                  key={row.id}
+                  data-state={row.getIsSelected() ? 'selected' : undefined}
+                >
+                  {row.getVisibleCells().map((c) => (
+                    <TableCell key={c.id}>
+                      {flexRender(c.column.columnDef.cell, c.getContext())}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+      <PipelineCardList
+        table={table}
+        canMutate={canMutate}
+        enableSelection={enableSelection}
+        onRecordOutreach={setOutreachFor}
+        onMarkPaid={setMarkPaidFor}
+        {...(monthKind !== undefined ? { monthKind } : {})}
+        {...(monthLabel !== undefined ? { monthLabel } : {})}
+        className="md:hidden"
+      />
       {outreachFor ? (
         <OutreachDialog
           open
@@ -664,8 +721,12 @@ export function PipelineTable({
  * Fix round 3 — `canMutate` additionally gates "Send reminder" and "Mark
  * paid" (both admin-only at the route) to `false` for a read-only manager.
  * "Open" and "Mark contacted" are unconditional — see the module docstring.
+ *
+ * Task 12 — exported so `PipelineCardList` can reuse this UNCHANGED per
+ * card instead of re-implementing the ⋯ menu / send-reminder button /
+ * finalFocus contract for the mobile presentation.
  */
-function RowActions({
+export function RowActions({
   cycleId,
   memberId,
   companyName,
@@ -679,16 +740,8 @@ function RowActions({
   readonly companyName: string;
   readonly status: CycleStatus;
   readonly canMutate: boolean;
-  readonly onRecordOutreach: (t: {
-    memberId: string;
-    companyName: string;
-    finalFocus: React.RefObject<HTMLElement | null>;
-  }) => void;
-  readonly onMarkPaid: (t: {
-    cycleId: string;
-    companyName: string;
-    finalFocus: React.RefObject<HTMLElement | null>;
-  }) => void;
+  readonly onRecordOutreach: (t: OutreachTarget) => void;
+  readonly onMarkPaid: (t: MarkPaidTarget) => void;
 }): React.JSX.Element {
   const tActions = useTranslations('admin.renewals.actions');
   const tToast = useTranslations('admin.renewals.sendReminderNow.toast');

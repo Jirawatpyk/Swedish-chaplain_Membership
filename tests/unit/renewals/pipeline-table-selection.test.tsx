@@ -18,7 +18,7 @@
  * `members-table-selection.test.tsx`.
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
 import { PipelineTable } from '@/app/(staff)/admin/renewals/_components/pipeline-table';
@@ -93,8 +93,14 @@ describe('<PipelineTable> row selection (Task 10 — US3 scaffolding)', () => {
       ),
     );
 
+    // Task 12 — `<PipelineTable>` now dual-renders the desktop `<table>`
+    // (`hidden md:block`) AND `<PipelineCardList>` (`md:hidden`); both
+    // mount unconditionally in jsdom (no CSS media queries), so scope to
+    // the desktop `<table>` to keep addressing the SAME 2 checkboxes
+    // (header "select all" + the one row) this test pinned before the
+    // mobile card-stack existed.
     // [0] is the header "select all" checkbox; [1] is the first row.
-    const checkboxes = screen.getAllByRole('checkbox');
+    const checkboxes = within(screen.getByRole('table')).getAllByRole('checkbox');
     expect(checkboxes).toHaveLength(2);
     fireEvent.click(checkboxes[1]!);
 

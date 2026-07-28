@@ -30,7 +30,7 @@
  * jsdom-reliable shape for Base UI's portal focus management.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import { PipelineTable } from '@/app/(staff)/admin/renewals/_components/pipeline-table';
 import en from '@/i18n/messages/en.json';
@@ -82,6 +82,21 @@ vi.mock('@/components/ui/dropdown-menu', () => {
   return { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem };
 });
 
+/**
+ * Task 12 — `<PipelineTable>` now dual-renders: the desktop `<table>`
+ * (`hidden md:block`) AND `<PipelineCardList>` (`md:hidden`) both mount
+ * unconditionally — real CSS media queries (absent in jsdom) are what
+ * decide which one a user actually sees in a browser. Every row-level
+ * query below (RowActions trigger / menu items / Send-reminder button)
+ * is scoped to the desktop `<table>` via `within(desktopTable())` so it
+ * keeps addressing the SAME element it did before the mobile card-stack
+ * existed, instead of throwing on the new (correct, by design) duplicate
+ * accessible node the card list now also contributes for the same row.
+ */
+function desktopTable(): HTMLElement {
+  return screen.getByRole('table');
+}
+
 const EMPTY_ROWS: ReadonlyArray<PipelineRow> = [];
 
 describe('<PipelineTable> empty state', () => {
@@ -91,7 +106,14 @@ describe('<PipelineTable> empty state', () => {
         <PipelineTable rows={EMPTY_ROWS} canMutate monthLabel="December 2026" />
       </NextIntlClientProvider>,
     );
-    expect(screen.getByText('No members renew in December 2026.')).toBeDefined();
+    // Task 12 — `<PipelineCardList>`'s own empty state renders this SAME
+    // month-lens copy (`PipelineEmptyMessage`, shared with the table) for
+    // its `md:hidden` presentation, so the un-scoped `screen.getByText`
+    // now has two matches. Scope to the desktop `<table>` — see
+    // `desktopTable()`'s docstring above.
+    expect(
+      within(desktopTable()).getByText('No members renew in December 2026.'),
+    ).toBeDefined();
   });
 
   it('renders the default bucket empty copy when monthLabel is absent', () => {
@@ -100,8 +122,10 @@ describe('<PipelineTable> empty state', () => {
         <PipelineTable rows={EMPTY_ROWS} canMutate />
       </NextIntlClientProvider>,
     );
-    expect(screen.getByText('No members in this bucket.')).toBeDefined();
-    expect(screen.getByText(/Switch to another urgency tab/)).toBeDefined();
+    expect(within(desktopTable()).getByText('No members in this bucket.')).toBeDefined();
+    expect(
+      within(desktopTable()).getByText(/Switch to another urgency tab/),
+    ).toBeDefined();
   });
 
   // Deferred fix-wave-2 #4 — dedicated overdue/later empty copy. The bug
@@ -114,7 +138,7 @@ describe('<PipelineTable> empty state', () => {
         <PipelineTable rows={EMPTY_ROWS} canMutate monthKind="overdue" />
       </NextIntlClientProvider>,
     );
-    expect(screen.getByText('No overdue renewals.')).toBeDefined();
+    expect(within(desktopTable()).getByText('No overdue renewals.')).toBeDefined();
   });
 
   it('renders dedicated later empty copy with a SINGLE "or later" when monthKind="later"', () => {
@@ -131,7 +155,7 @@ describe('<PipelineTable> empty state', () => {
     // Exact string — proves the copy is NOT doubled
     // ("…August 2028 or later or later").
     expect(
-      screen.getByText('No members renew August 2028 or later.'),
+      within(desktopTable()).getByText('No members renew August 2028 or later.'),
     ).toBeDefined();
     expect(screen.queryByText(/or later or later/)).toBeNull();
   });
@@ -173,7 +197,9 @@ describe('<PipelineTable> row actions (item ②)', () => {
       </NextIntlClientProvider>,
     );
 
-    const btn = screen.getByRole('button', { name: 'Send reminder to Acme Co' });
+    const btn = within(desktopTable()).getByRole('button', {
+      name: 'Send reminder to Acme Co',
+    });
     fireEvent.click(btn);
     // startTransition schedules the async fetch on a microtask.
     await vi.waitFor(() =>
@@ -194,7 +220,9 @@ describe('<PipelineTable> row actions (item ②)', () => {
         <PipelineTable rows={ONE_ROW} canMutate />
       </NextIntlClientProvider>,
     );
-    const btn = screen.getByRole('button', { name: 'Send reminder to Acme Co' });
+    const btn = within(desktopTable()).getByRole('button', {
+      name: 'Send reminder to Acme Co',
+    });
     expect(btn.className).toContain('h-9');
     expect(btn.className).not.toContain('h-11');
   });
@@ -218,7 +246,9 @@ describe('<PipelineTable> row actions (item ②)', () => {
       </NextIntlClientProvider>,
     );
 
-    const btn = screen.getByRole('button', { name: 'Send reminder to Acme Co' });
+    const btn = within(desktopTable()).getByRole('button', {
+      name: 'Send reminder to Acme Co',
+    });
     expect(btn).toHaveAttribute('aria-busy', 'false');
     expect(btn.querySelector('svg')).toBeNull();
 
@@ -270,9 +300,13 @@ describe('<PipelineTable> row actions — finalFocus after "Mark contacted" (rev
       </NextIntlClientProvider>,
     );
 
-    const trigger = screen.getByRole('button', { name: 'Actions for Acme Co' });
+    const trigger = within(desktopTable()).getByRole('button', {
+      name: 'Actions for Acme Co',
+    });
     fireEvent.click(trigger);
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Mark contacted' }));
+    fireEvent.click(
+      within(desktopTable()).getByRole('menuitem', { name: 'Mark contacted' }),
+    );
 
     expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
 
@@ -295,9 +329,13 @@ describe('<PipelineTable> row actions — finalFocus after "Mark contacted" (rev
       </NextIntlClientProvider>,
     );
 
-    const trigger = screen.getByRole('button', { name: 'Actions for Acme Co' });
+    const trigger = within(desktopTable()).getByRole('button', {
+      name: 'Actions for Acme Co',
+    });
     fireEvent.click(trigger);
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Mark contacted' }));
+    fireEvent.click(
+      within(desktopTable()).getByRole('menuitem', { name: 'Mark contacted' }),
+    );
     expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Record outreach' }));
@@ -362,16 +400,20 @@ describe('<PipelineTable> canMutate gating (manager money-CTA hiding)', () => {
       screen.queryByRole('button', { name: /send reminder/i }),
     ).toBeNull();
 
-    const trigger = screen.getByRole('button', { name: /actions for beta co/i });
+    const trigger = within(desktopTable()).getByRole('button', {
+      name: /actions for beta co/i,
+    });
     fireEvent.click(trigger);
 
     expect(
-      await screen.findByRole('menuitem', { name: /open/i }),
+      await within(desktopTable()).findByRole('menuitem', { name: /open/i }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole('menuitem', { name: /mark contacted/i }),
+      within(desktopTable()).getByRole('menuitem', { name: /mark contacted/i }),
     ).toBeInTheDocument();
-    expect(screen.queryByRole('menuitem', { name: /mark paid/i })).toBeNull();
+    expect(
+      within(desktopTable()).queryByRole('menuitem', { name: /mark paid/i }),
+    ).toBeNull();
   });
 
   it('canMutate={true}: shows Send-reminder, Mark paid, Mark contacted, and Open', async () => {
@@ -382,20 +424,22 @@ describe('<PipelineTable> canMutate gating (manager money-CTA hiding)', () => {
     );
 
     expect(
-      screen.getByRole('button', { name: /send reminder/i }),
+      within(desktopTable()).getByRole('button', { name: /send reminder/i }),
     ).toBeInTheDocument();
 
-    const trigger = screen.getByRole('button', { name: /actions for beta co/i });
+    const trigger = within(desktopTable()).getByRole('button', {
+      name: /actions for beta co/i,
+    });
     fireEvent.click(trigger);
 
     expect(
-      await screen.findByRole('menuitem', { name: /open/i }),
+      await within(desktopTable()).findByRole('menuitem', { name: /open/i }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole('menuitem', { name: /mark contacted/i }),
+      within(desktopTable()).getByRole('menuitem', { name: /mark contacted/i }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole('menuitem', { name: /mark paid/i }),
+      within(desktopTable()).getByRole('menuitem', { name: /mark paid/i }),
     ).toBeInTheDocument();
   });
 });
