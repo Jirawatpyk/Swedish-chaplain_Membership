@@ -32,6 +32,16 @@ export function makeWaivedRefundTotalsAdapter(
       // over-stating collected/settled is the exact bug this port removes
       // (F9's rationale). Failing the money band is the safe direction: the
       // page's best-effort wrapper renders nothing rather than a wrong number.
+      //
+      // Fix round 2 #8 — this branch is effectively DEAD today:
+      // `ListWaivedRefundTotalsByInvoiceError` is `never` (the use-case can
+      // only ever return `ok`), and a genuine DB/repo fault throws INSIDE
+      // `listWaivedRefundTotalsByInvoice` — that throw propagates through
+      // this `await` and is never caught here, so `result.ok` is `true`
+      // whenever this line is even reached. Kept anyway: it is defensive-only
+      // against a future widening of that error union, and it mirrors F9's
+      // own `waived-refund-source-adapter.ts` verbatim (this adapter's stated
+      // contract) for parity between the two call sites.
       if (!result.ok) {
         throw new Error('renewals: waived-refund total read failed');
       }

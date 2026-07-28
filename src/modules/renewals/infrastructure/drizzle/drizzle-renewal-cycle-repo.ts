@@ -1852,6 +1852,18 @@ export function makeDrizzleRenewalCycleRepo(
           eq(invoices.invoiceSubject, 'membership'),
         )!;
 
+        // Fix round 2 #9 — reconciliation note: `status` is filtered to
+        // 'issued' (overdue/dueSoon) or 'paid'/'partially_credited'/'credited'
+        // (settledRows/collectedRows) in every leg below, so 'void' is
+        // excluded from ALL FOUR. A membership invoice that was PAID and then
+        // voided therefore drops out of every leg of this money band
+        // entirely — it is neither "collected" nor "settled" nor "overdue"
+        // any more, even though real cash may still be sitting unrefunded
+        // (voiding a paid invoice writes nothing to `payments`/`refunds` —
+        // see memory `project_void_paid_invoice_money_dead_end`). This is a
+        // KNOWN, documented interaction of an existing money dead-end, not a
+        // gap introduced by this band — noted here so a future reader
+        // doesn't mistake the drop for a bug in this query.
         // ---- Scalar legs (overdue + dueSoon): raw Σ(total), FY-scoped ----
         const [scalars] = await tx
           .select({

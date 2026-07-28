@@ -21,7 +21,17 @@ import type { PipelineMoneySummary } from '../ports/renewal-cycle-repo';
 
 export const loadPipelineMoneyInputSchema = z.object({
   tenantId: z.string().min(1),
-  nowIso: z.string().datetime(),
+  // Fix round 2 #7 — relaxed from `z.string().datetime()` (strict RFC3339,
+  // rejects a bare `YYYY-MM-DD`) to a `Date.parse` refinement so this schema
+  // accepts EXACTLY the same `nowIso` shapes the `/admin/renewals` page's own
+  // gate accepts (`page.tsx` validates with `!Number.isNaN(Date.parse(v))`,
+  // not `.datetime()`). Without this, a hand-crafted date-only `?nowIso=
+  // 2026-07-15` would pass the page's gate but fail THIS schema, silently
+  // degrading the money band to nothing (the best-effort catch in
+  // `PipelineMoneyBandSection` swallows the `invalid_input` error).
+  nowIso: z.string().refine((v) => !Number.isNaN(Date.parse(v)), {
+    message: 'nowIso must be a value Date.parse() can parse',
+  }),
   windowDays: z.number().int().min(1).max(365).optional(),
   fiscalYearStartMonth: z.number().int().min(1).max(12).optional(),
 });
