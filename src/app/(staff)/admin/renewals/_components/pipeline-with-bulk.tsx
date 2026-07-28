@@ -21,17 +21,21 @@
  * checkbox column entirely (read-only surface, matching
  * `DirectoryWithBulk`'s FR-018 AS5 precedent).
  *
- * Task 10 stubs the bulk action bar as `null` so this wrapper is
- * independently testable ahead of Task 11, which mounts the real
- * `PipelineBulkActionBar` in its place (wiring `selectedIds` + `onClear`).
- * Both are kept ready below (`_selectedIds`/`_handleClear`, underscore-
- * prefixed per this repo's ESLint convention for intentional
- * kept-for-API-stability placeholders — eslint.config.mjs's
- * `no-unused-vars` comment) so Task 11 only needs to mount the bar, not
- * touch this state.
+ * Task 11 mounts the real `PipelineBulkActionBar` here (wiring `selectedIds`
+ * + `onClear`, both already prepared by Task 10). `selectedCompanyNames` is
+ * resolved from the CURRENT PAGE's rows by cycleId — the same `Map`-lookup
+ * shape `directory-with-bulk.tsx` uses for `selectedCompanyNames`, minus its
+ * `.filter(Boolean)` drop: this wrapper has no cross-page "select all
+ * matching" set, so every selected id always resolves to a row on the
+ * current page, and dropping misses would silently break the index-parity
+ * `PipelineBulkActionBar` relies on to attribute a fan-out outcome back to
+ * a company name (Decision 5's "kept visible" results panel). `totalMatching`
+ * is `rows.length` (the current page count) rather than a server-side total
+ * across all pages — there is no such total here (see the module docstring).
  */
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { PipelineTable } from './pipeline-table';
+import { PipelineBulkActionBar } from './pipeline-bulk-action-bar';
 import type { PipelineRow, PipelineSort } from '@/modules/renewals/client';
 
 type Props = {
@@ -58,7 +62,7 @@ export function PipelineWithBulk({
   monthKind,
   monthLabel,
 }: Props) {
-  const [_selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   // Bumped to command PipelineTable to reset its (uncontrolled) TanStack
   // row-selection — the parent can't reach the checkbox state otherwise.
   const [clearNonce, setClearNonce] = useState(0);
@@ -82,13 +86,22 @@ export function PipelineWithBulk({
     setSelectedIds(cycleIds);
   }, []);
 
-  // Task 11 wires this to `PipelineBulkActionBar`'s "Clear selection". Kept
-  // ready now (same shape as `directory-with-bulk.tsx`'s `handleClear`) so
-  // Task 11 only needs to mount the bar, not touch this state.
-  const _handleClear = useCallback(() => {
+  // Wired to `PipelineBulkActionBar`'s "Clear selection" (same shape as
+  // `directory-with-bulk.tsx`'s `handleClear`).
+  const handleClear = useCallback(() => {
     setSelectedIds([]);
     setClearNonce((n) => n + 1);
   }, []);
+
+  // Staff-review SS-1 precedent (`directory-with-bulk.tsx`) — memoise so
+  // this doesn't recompute on every unrelated re-render. Index-PARALLEL to
+  // `selectedIds` (see module docstring for why this wrapper does NOT
+  // `.filter(Boolean)` a miss away like the members wrapper does).
+  const selectedCompanyNames = useMemo(() => {
+    const byId = new Map<string, string>();
+    for (const row of rows) byId.set(row.cycleId, row.companyName);
+    return selectedIds.map((id) => byId.get(id) ?? '');
+  }, [rows, selectedIds]);
 
   return (
     <>
@@ -104,10 +117,14 @@ export function PipelineWithBulk({
         {...(isAdmin ? { onSelectionChange: handleSelectionChange } : {})}
         clearSelectionNonce={clearNonce}
       />
-      {/* Task 11 mounts <PipelineBulkActionBar selectedIds={selectedIds}
-          onClear={handleClear} /> here. Stubbed as null so this wrapper
-          renders and is independently testable ahead of that task. */}
-      {null}
+      {isAdmin && (
+        <PipelineBulkActionBar
+          selectedCycleIds={selectedIds}
+          selectedCompanyNames={selectedCompanyNames}
+          totalMatching={rows.length}
+          onClear={handleClear}
+        />
+      )}
     </>
   );
 }
