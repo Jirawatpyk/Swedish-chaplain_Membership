@@ -128,6 +128,15 @@ export interface PipelineTableProps {
    * pagination `cursor` on a sort change). Keyed by the sortable column id.
    */
   readonly sortHrefs?: Record<'expires' | 'tier', string>;
+  /**
+   * Optional sighted result-count node ("Showing N members in T-30") rendered
+   * as the LEFT item of the table's toolbar row, sharing it with the density
+   * toggle (right). The page passes `ResultCountLabel` here so the count reads
+   * as the table's caption directly above the rows instead of a bare line
+   * stranded between the urgency tabs (cramped above) and the right-aligned
+   * density band (empty gap below). Absent ⇒ the toolbar holds only the toggle.
+   */
+  readonly resultCount?: React.ReactNode;
 }
 
 /** `localStorage` key for the client row-density preference (Task 8). */
@@ -199,6 +208,7 @@ export function PipelineTable({
   monthKind,
   sort,
   sortHrefs,
+  resultCount,
 }: PipelineTableProps) {
   const t = useTranslations('admin.renewals.table');
 
@@ -408,12 +418,19 @@ export function PipelineTable({
   });
 
   return (
-    <>
-      {/* Task 8 — client row-density toggle, top-right of the table. Its
-          accessible name IS the visible mode text (WCAG 2.5.3 Label in Name);
-          `title` names the control's purpose, `aria-pressed` exposes the
-          compact state. */}
-      <div className="flex items-center justify-end">
+    // Single wrapping block so the page's pipeline `gap-3` treats the table as
+    // ONE unit — the toolbar row hugs the rows instead of floating 12px above
+    // them. The portaled dialogs at the end contribute no layout.
+    <div>
+      {/* Toolbar row above the table: the sighted result-count caption (left,
+          passed by the page as `resultCount`) + the client row-density toggle
+          (right). `justify-between` keeps the toggle right-aligned even when
+          `resultCount` is absent — the empty `<span />` holds the left slot.
+          WCAG 2.5.3 (Label in Name) — the toggle's accessible name IS the
+          visible mode text; `title` names its purpose, `aria-pressed` exposes
+          the compact state. */}
+      <div className="flex items-center justify-between gap-2">
+        {resultCount ?? <span />}
         <Button
           type="button"
           variant="outline"
@@ -548,7 +565,7 @@ export function PipelineTable({
           finalFocus={markPaidFor.finalFocus}
         />
       ) : null}
-    </>
+    </div>
   );
 }
 

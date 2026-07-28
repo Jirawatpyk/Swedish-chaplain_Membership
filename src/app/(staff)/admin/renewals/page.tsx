@@ -401,6 +401,22 @@ export default async function RenewalsPipelinePage({
   // affordance so a manager never sees a CTA that would just 403.
   const canMutate = currentUser.role === 'admin';
 
+  // Sighted result-count (aria-hidden twin of `ResultCountAnnouncer`). Computed
+  // once so the same element can be the LEFT item of the pipeline table's
+  // toolbar row (see `PipelineTable resultCount`) and the standalone caption
+  // above the terminated `LapsedTab` (which has no toolbar of its own).
+  const resultCountLabel = (
+    <ResultCountLabel
+      count={rows.length}
+      {...(monthLensActive
+        ? {
+            monthKind: monthKind as 'overdue' | 'later' | 'month',
+            ...(monthLabel !== undefined ? { monthLabel } : {}),
+          }
+        : { urgencyKey: urgency })}
+    />
+  );
+
   return (
     <RenewalsPageShell title={t('title')} subtitle={t('subtitle')}>
       {/* DV-Wave2 ⑥ — THB money KPI band. Best-effort Suspense island: it
@@ -446,7 +462,15 @@ export default async function RenewalsPipelinePage({
               showEmptyState ? (
                 <RenewalsEmptyState />
               ) : (
-                <>
+                // Table-toolbar layout — the sighted result-count is the LEFT
+                // item of the pipeline table's own toolbar row (sharing it with
+                // the density toggle on the right), so it reads as the table's
+                // caption directly above the rows instead of a bare line
+                // stranded between the urgency tabs (cramped above) and the
+                // right-aligned density band (empty gap below). `gap-3` gives
+                // the filter row / table block / pagination even vertical
+                // rhythm matching the tabs' own `pt-3`/`mb-3`.
+                <div className="flex flex-col gap-3">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <UrgencyBucketTabs
                       current={monthLensActive ? null : urgency}
@@ -465,27 +489,20 @@ export default async function RenewalsPipelinePage({
                         }
                       : { urgencyKey: urgency })}
                   />
-                  {/* Item ④ — sighted twin of the announcer above, next to the
-                      filter row so a mouse/keyboard admin sees the result
-                      count without a screen reader. aria-hidden — the
-                      announcer keeps owning the SR channel. */}
-                  <ResultCountLabel
-                    count={rows.length}
-                    {...(monthLensActive
-                      ? {
-                          monthKind: monthKind as 'overdue' | 'later' | 'month',
-                          ...(monthLabel !== undefined ? { monthLabel } : {}),
-                        }
-                      : { urgencyKey: urgency })}
-                  />
                   {urgency === 'terminated' ? (
-                    <LapsedTab rows={rows} />
+                    // LapsedTab has no toolbar of its own, so the sighted count
+                    // stays a standalone caption hugging the table above it.
+                    <div className="flex flex-col gap-2">
+                      {resultCountLabel}
+                      <LapsedTab rows={rows} />
+                    </div>
                   ) : (
                     <PipelineTable
                       rows={rows}
                       canMutate={canMutate}
                       sort={sort}
                       sortHrefs={sortHrefs}
+                      resultCount={resultCountLabel}
                       {...(monthKind !== undefined ? { monthKind } : {})}
                       {...(monthLabel !== undefined ? { monthLabel } : {})}
                     />
@@ -511,7 +528,7 @@ export default async function RenewalsPipelinePage({
                       </a>
                     </div>
                   ) : null}
-                </>
+                </div>
               )
             }
             needsAction={<AtRiskWidget actorRole={widgetActorRole} />}
