@@ -222,10 +222,12 @@ describe('PipelineBulkActionBar — mark paid outcome bucketing (Decision 5)', (
       { cycleId: 'c2', companyName: 'Beta', invoiceId: 'inv2' },
     ];
     const calls: string[] = [];
+    const inits: RequestInit[] = [];
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (url: string) => {
+      vi.fn(async (url: string, init: RequestInit) => {
         calls.push(String(url));
+        inits.push(init);
         return jsonResponse({ status: 'paid' });
       }),
     );
@@ -251,6 +253,22 @@ describe('PipelineBulkActionBar — mark paid outcome bucketing (Decision 5)', (
     expect(calls).toContain('/api/invoices/inv2/pay');
     // Never the old mint-and-pay route.
     expect(calls.some((u) => u.includes('mark-paid-offline'))).toBe(false);
+
+    // Guards against a silent GET/casing/dropped-header regression that
+    // would only surface as a prod 400 — every fanned-out request must be a
+    // POST, carry the JSON content-type header, and serialise exactly the
+    // shared payment body the confirm dialog handed to `onConfirm` (Decision
+    // 4 — one payment_method/reference/date applies to the whole batch).
+    for (const init of inits) {
+      expect(init.method).toBe('POST');
+      const headers = new Headers(init.headers);
+      expect(headers.get('Content-Type')).toBe('application/json');
+      expect(JSON.parse(String(init.body))).toStrictEqual({
+        paymentMethod: 'bank_transfer',
+        paymentReference: 'REF-1',
+        paymentDate: '2026-07-29',
+      });
+    }
   });
 
   // 409 splits by code: invalid_status / concurrent_state_change are benign
@@ -454,6 +472,62 @@ describe('PipelineBulkActionBar — mark paid outcome bucketing (Decision 5)', (
     // No retry — exactly one POST per row.
     expect(calls.filter((u) => u.includes('/pay'))).toHaveLength(2);
     expect(screen.getByText('Beta')).toBeInTheDocument();
+  });
+
+  // Companion to the bad-STATUS (429) continue-on-error test above: this
+  // pins the THROW path specifically (a rejected `fetch` — network drop,
+  // AbortController, a bug upstream of `classify`), which the outer
+  // `runFanOut` catch handles separately from a resolved-but-bad-status
+  // response. One row throwing must not stop its siblings, must still land
+  // in `failed` (visible, not silently dropped), and must now be logged
+  // (the K1-E5-style forensic `console.error` this branch restores) instead
+  // of the previous bare `catch {}`.
+  it('a client-side fetch throw for one row lands in failed, logs it, and every sibling still POSTs', async () => {
+    markPaidBatchOverride = [
+      { cycleId: 'c1', companyName: 'Acme', invoiceId: 'inv1' },
+      { cycleId: 'c2', companyName: 'Beta', invoiceId: 'inv2' },
+    ];
+    const calls: string[] = [];
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const u = String(url);
+        calls.push(u);
+        if (u.includes('/inv1/pay')) {
+          throw new TypeError('network drop');
+        }
+        return jsonResponse({ status: 'paid' });
+      }),
+    );
+
+    render(
+      wrap(
+        <PipelineBulkActionBar
+          selectedCycleIds={['c1', 'c2']}
+          selectedCompanyNames={['Acme', 'Beta']}
+          totalMatching={2}
+          onClear={vi.fn()}
+        />,
+      ),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: B.actions.markPaid }));
+    fireEvent.click(screen.getByRole('button', { name: B.confirmMarkPaidAction }));
+
+    await waitFor(() => {
+      expect(screen.getByText(B.resultLabels.failed)).toBeInTheDocument();
+    });
+    // Continue-on-error (Decision 5) — the sibling row still fanned out
+    // despite the thrown row, and there was no retry of the thrown one.
+    expect(calls.filter((u) => u.includes('/pay'))).toHaveLength(2);
+    expect(screen.getByText('Acme')).toBeInTheDocument();
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      '[F8] bulk mark-paid: client handler failed',
+      expect.any(TypeError),
+    );
+
+    consoleErrorSpy.mockRestore();
   });
 
   it('reports a fully successful mark-paid batch (200, incl. idempotent already-paid) with a plain success toast and no persisted panel', async () => {

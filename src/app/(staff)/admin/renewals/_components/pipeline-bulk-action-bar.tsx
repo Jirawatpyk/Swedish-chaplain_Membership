@@ -233,12 +233,16 @@ function classifyMarkPaidOutcome(res: Response, body: unknown): BulkOutcomeBucke
  * requests behind it. Continue-on-error (Decision 5): one entry
  * throwing/failing never stops the rest. `request` receives the WHOLE entry
  * so mark-paid can key its POST on `invoiceId` while send-reminder keys on
- * `cycleId`.
+ * `cycleId`. `logLabel` identifies WHICH bulk action a throw belongs to in
+ * the console (this helper is shared by both `handleSendReminders` and
+ * `handleMarkPaidConfirm` — a single hardcoded label would mislabel one of
+ * the two callers' failures).
  */
 async function runFanOut<E extends { cycleId: string; companyName: string }>(
   entries: readonly E[],
   request: (entry: E) => Promise<Response>,
   classify: (res: Response, body: unknown) => BulkOutcomeBucket,
+  logLabel: string,
 ): Promise<BulkOutcomeItem[]> {
   const items: BulkOutcomeItem[] = [];
   for (const entry of entries) {
@@ -255,7 +259,13 @@ async function runFanOut<E extends { cycleId: string; companyName: string }>(
         companyName: entry.companyName,
         bucket: classify(res, body),
       });
-    } catch {
+    } catch (e) {
+      // K1-E5 precedent (row-actions.tsx) — a bare `catch {}` swallows every
+      // non-network throw (TypeError, AbortController, a bug in `classify`)
+      // and leaves the admin with only a silent "failed" row and nothing in
+      // the browser console to diagnose it. Log + keep continuing (Decision
+      // 5 — one entry throwing never stops the rest).
+      console.error(`[F8] ${logLabel}: client handler failed`, e);
       items.push({ cycleId: entry.cycleId, companyName: entry.companyName, bucket: 'failed' });
     }
   }
@@ -378,6 +388,8 @@ export function PipelineBulkActionBar({
         if (buckets.ok.length) parts.push(t('markPaidSucceeded', { count: buckets.ok.length }));
         if (buckets.skipped.length)
           parts.push(t('markPaidSkipped', { count: buckets.skipped.length }));
+        if (buckets.rateLimited.length)
+          parts.push(t('markPaidRateLimited', { count: buckets.rateLimited.length }));
         if (buckets.needsAction.length)
           parts.push(t('markPaidNeedsAction', { count: buckets.needsAction.length }));
         if (buckets.failed.length)
@@ -432,6 +444,7 @@ export function PipelineBulkActionBar({
             method: 'POST',
           }),
         classifySendReminderOutcome,
+        'bulk send-reminder',
       );
       reportOutcome('sendReminder', items);
     } finally {
@@ -463,6 +476,7 @@ export function PipelineBulkActionBar({
               body: JSON.stringify(body),
             }),
           classifyMarkPaidOutcome,
+          'bulk mark-paid',
         );
         reportOutcome('markPaid', items, notBulkPayable);
       } finally {

@@ -3451,6 +3451,7 @@
         "reminderRateLimited": "{count, plural, one {# rate-limited — retry later} other {# rate-limited — retry later}}",
         "markPaidSucceeded": "{count, plural, one {# renewal marked paid} other {# renewals marked paid}}",
         "markPaidSkipped": "{count, plural, one {# already settled or changed} other {# already settled or changed}}",
+        "markPaidRateLimited": "{count, plural, one {# payment rate-limited — wait a minute and retry the rest} other {# payments rate-limited — wait a minute and retry the rest}}",
         "markPaidFailed": "{count, plural, one {# failed} other {# failed}}",
         "markPaidNeedsAction": "{count, plural, one {# needs attention before it can be recorded} other {# need attention before they can be recorded}}",
         "resultsHeadingReminder": "Send-reminder results",

@@ -3451,6 +3451,7 @@
         "reminderRateLimited": "{count, plural, one {# hastighetsbegränsad — försök igen senare} other {# hastighetsbegränsade — försök igen senare}}",
         "markPaidSucceeded": "{count, plural, one {# förnyelse markerad betald} other {# förnyelser markerade betalda}}",
         "markPaidSkipped": "{count, plural, one {# redan reglerad eller ändrad} other {# redan reglerade eller ändrade}}",
+        "markPaidRateLimited": "{count, plural, one {# betalning hastighetsbegränsad — vänta en minut och försök igen med resten} other {# betalningar hastighetsbegränsade — vänta en minut och försök igen med resten}}",
         "markPaidFailed": "{count, plural, one {# misslyckad} other {# misslyckade}}",
         "markPaidNeedsAction": "{count, plural, one {# kräver åtgärd innan den kan registreras} other {# kräver åtgärd innan de kan registreras}}",
         "resultsHeadingReminder": "Resultat för påminnelseutskick",

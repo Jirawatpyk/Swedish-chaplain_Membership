@@ -51,9 +51,14 @@
  * Reuses `isMarkPaidIncomplete` from the single-row mark-paid-offline
  * validation (same required-field gate — reference + date must be
  * non-empty) and the same three `payment_method` choices as
- * `MarkPaidOfflineDialog`, VERBATIM route (`POST …/mark-paid-offline`,
- * called by the caller, never here) — no second settlement path
- * (Constitution Principle IV).
+ * `MarkPaidOfflineDialog` — that is ALL that is shared with the single-row
+ * dialog. The route is NOT shared: per the C1 fix (see the caller's module
+ * docstring), the batch this dialog hands back settles via the F4
+ * record-payment route (`POST /api/invoices/[invoiceId]/pay`), never the
+ * mint-and-pay `POST …/mark-paid-offline` route — that route 409s on every
+ * previewable row here (they all already have a live membership bill). The
+ * fan-out itself happens in the caller, never in this component — no second
+ * settlement path (Constitution Principle IV).
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';

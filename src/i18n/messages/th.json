@@ -3451,6 +3451,7 @@
         "reminderRateLimited": "{count, plural, other {ถูกจำกัดอัตรา # รายการ — ลองใหม่ภายหลัง}}",
         "markPaidSucceeded": "{count, plural, other {บันทึกว่าชำระแล้ว # รายการ}}",
         "markPaidSkipped": "{count, plural, other {ชำระหรือเปลี่ยนสถานะไปแล้ว # รายการ}}",
+        "markPaidRateLimited": "{count, plural, other {การชำระเงิน # รายการถูกจำกัดอัตรา — รอสักครู่แล้วลองใหม่กับรายการที่เหลือ}}",
         "markPaidFailed": "{count, plural, other {ล้มเหลว # รายการ}}",
         "markPaidNeedsAction": "{count, plural, other {ต้องดำเนินการก่อนจึงจะบันทึกได้ # รายการ}}",
         "resultsHeadingReminder": "ผลลัพธ์การส่งการแจ้งเตือน",
