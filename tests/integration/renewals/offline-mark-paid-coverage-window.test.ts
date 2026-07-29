@@ -11,9 +11,13 @@
  *   2. that window is IDENTICAL to the one the ONLINE renewal bridge
  *      (`issueInvoiceForRenewal`) stamps for the SAME cycle inputs — no drift
  *      between the two rails;
- *   3. a genuine FIRST-PAYMENT bill (single unanchored cycle → re-anchor) gets
- *      `coverage_from/to` NULL — it legitimately does not participate in the
- *      duplicate-coverage EXCLUDE (its re-anchored period is unknown at issue).
+ *   3. a genuine FIRST-PAYMENT bill (single unanchored cycle → re-anchor) stamps
+ *      `coverage_from/to` = the cycle's CURRENT period `[periodFrom, periodTo)`
+ *      (A-1 — unified with confirm-renewal L3 + admin-renew-lapsed-member:596),
+ *      so it participates in the duplicate-coverage EXCLUDE as a 2nd dup-authority
+ *      layer; and that current-period window is half-open ADJACENT to the next
+ *      renewal window `[periodTo, periodTo + term)`, so it does NOT over-block a
+ *      later renewal (asserted via `findOverlappingMembershipCoverageBill`).
  *
  * Test seam: drives the REAL `markPaidOffline` + the REAL online bridge
  * end-to-end (NO bridge mock — the coverage-window threading IS the unit under
@@ -80,6 +84,10 @@ import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices'
 import { renewalCycles } from '@/modules/renewals/infrastructure/schema-renewal-cycles';
 import { markPaidOffline, makeRenewalsDeps } from '@/modules/renewals';
 import { f4InvoicingForRenewalBridge } from '@/modules/renewals/infrastructure/ports-adapters/f4-invoicing-for-renewal-bridge-drizzle';
+import {
+  findOverlappingMembershipCoverageBill,
+  type MembershipBillCoverageRow,
+} from '@/modules/renewals/domain/membership-bill-coverage';
 import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
 import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
 import { seedTenantFiscal } from '../helpers/seed-tenant-fiscal';
@@ -96,6 +104,13 @@ const TERM_MONTHS = 12;
 // The window both rails must stamp for this cycle: [2027-06-01, 2028-06-01).
 const EXPECTED_COVERAGE_FROM = PERIOD_TO_ISO; // '2027-06-01T00:00:00.000Z'
 const EXPECTED_COVERAGE_TO = addMonthsUtc(PERIOD_TO_ISO, TERM_MONTHS); // '2028-06-01T00:00:00.000Z'
+// A-1 — a genuine first-payment offline settlement now stamps the cycle's
+// CURRENT period [periodFrom, periodTo) (mirroring confirm-renewal L3 + admin-
+// renew-lapsed-member:596), NOT NULL and NOT the next-period renewal window. For
+// this normal (non-comeback) cohort the fixed-anchor re-anchor KEEPS the period
+// (periodTo is after the payment date), so the stamped window == pre-anchor.
+const EXPECTED_FIRSTPAY_COVERAGE_FROM = PERIOD_FROM_ISO; // '2026-06-01T00:00:00.000Z'
+const EXPECTED_FIRSTPAY_COVERAGE_TO = PERIOD_TO_ISO; // '2027-06-01T00:00:00.000Z'
 
 describe('F8 offline mark-paid — coverage_from/to window threading (mig 0281, L1)', () => {
   let tenant: TestTenant;
@@ -319,7 +334,7 @@ describe('F8 offline mark-paid — coverage_from/to window threading (mig 0281, 
     expect(onlineCov.to?.toISOString()).toBe(EXPECTED_COVERAGE_TO);
   }, 120_000);
 
-  it('a genuine FIRST-PAYMENT bill gets coverage_from/to NULL (does not participate in the EXCLUDE)', async () => {
+  it('a genuine FIRST-PAYMENT bill stamps coverage_from/to = [periodFrom, periodTo) (current period) — participates in the EXCLUDE, no over-block', async () => {
     const deps = makeRenewalsDeps(tenant.ctx.slug);
     const r = await markPaidOffline(deps, {
       tenantId: tenant.ctx.slug,
@@ -337,8 +352,36 @@ describe('F8 offline mark-paid — coverage_from/to window threading (mig 0281, 
     // The member's only-ever, never-anchored cycle re-anchors (stays upcoming).
     expect(r.value.outcome).toBe('reanchored');
 
+    // A-1 — the offline first-payment now stamps the cycle's CURRENT period
+    // [periodFrom, periodTo) (unified with confirm-renewal L3 + admin-renew:596),
+    // so the bill participates in the DB EXCLUDE as a 2nd dup-authority layer
+    // alongside the plan_year guard (was NULL → single-layer). The re-anchor
+    // (inside onPaid, AFTER the bridge consumes coverageWindow) keeps the period
+    // for this normal cohort, so pre==post == [PERIOD_FROM_ISO, PERIOD_TO_ISO).
     const cov = await readCoverage(r.value.invoiceId);
-    expect(cov.from, 'first-payment coverage_from must be NULL').toBeNull();
-    expect(cov.to, 'first-payment coverage_to must be NULL').toBeNull();
+    if (cov.from === null || cov.to === null) {
+      throw new Error('first-payment coverage_from/to must be stamped (A-1)');
+    }
+    expect(cov.from.toISOString()).toBe(EXPECTED_FIRSTPAY_COVERAGE_FROM);
+    expect(cov.to.toISOString()).toBe(EXPECTED_FIRSTPAY_COVERAGE_TO);
+
+    // No over-block: the stamped current-period window is half-open ADJACENT to
+    // the next renewal window [periodTo, periodTo + term), so a subsequent
+    // legitimate renewal that bills the next period is NOT refused by the coverage
+    // guard. Proven against the PERSISTED window via the domain twin of the DB
+    // EXCLUDE (status 'paid' — a committed blocking bill, the strongest case).
+    const stampedBill: MembershipBillCoverageRow = {
+      invoiceId: r.value.invoiceId,
+      status: 'paid',
+      coverage: { from: cov.from.toISOString(), to: cov.to.toISOString() },
+    };
+    const overlap = findOverlappingMembershipCoverageBill([stampedBill], {
+      from: EXPECTED_COVERAGE_FROM, // next renewal window from = periodTo
+      to: EXPECTED_COVERAGE_TO, //     next renewal window to   = periodTo + term
+    });
+    expect(
+      overlap,
+      'stamped [periodFrom, periodTo) must NOT over-block the next renewal window [periodTo, periodTo + term)',
+    ).toBeNull();
   }, 120_000);
 });
