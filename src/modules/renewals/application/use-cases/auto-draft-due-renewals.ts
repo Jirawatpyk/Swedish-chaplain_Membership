@@ -469,11 +469,19 @@ async function processOne(
 
     // Step 4 — coverage-omit gate, mirroring confirm-renewal.ts's
     // classifyMembershipPayment → omitMembershipCoverage exactly (same
-    // shared classifier every settlement site consumes). In practice a
-    // cycle reaching this point is always a genuine renewal (a
-    // brand-new member's FIRST cycle is born `awaiting_payment`, never
-    // `upcoming`/`reminded` — see design §5.3), but the gate is kept
-    // for parity with the other settlement sites.
+    // shared classifier every settlement site consumes). This gate is
+    // LOAD-BEARING, not parity-only: an imported active member's cycle is
+    // created `upcoming` + un-anchored (`anchored_at IS NULL`; the R4
+    // name-matched backfill SKIPS unmatched/ambiguous/out-of-scope members),
+    // so with no settled predecessor it classifies `first_payment` WHILE
+    // `upcoming` and IS auto-draftable — the candidate query filters on
+    // enrolment + status, never `anchored_at`. Gating the persisted
+    // `coverageWindow` below on this classification (A-2) is what stops a
+    // first-payment auto-draft from stamping the NEXT period and
+    // over-blocking the member's own first renewal at ISSUE (the same
+    // confirm-renewal L3 / M-1 hazard). (An earlier comment here claimed
+    // "always a genuine renewal ... first cycle born awaiting_payment" —
+    // false for imported members; corrected under A-2.)
     //
     // PDPA note — the GDPR-erased gate for THIS use-case is NOT this
     // classifier arm; it is the candidate query itself
