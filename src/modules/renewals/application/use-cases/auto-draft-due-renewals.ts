@@ -398,6 +398,16 @@ interface ReadyToDraft {
   readonly membershipCoverage:
     | { readonly kind: 'window'; readonly fromIso: string; readonly toIso: string }
     | undefined;
+  /**
+   * membership-coverage-exclude-guard (mig 0281) — the classification-gated
+   * dup-guard window (`invoices.coverage_from/to`), ALWAYS non-null. Renewal →
+   * next-period [periodTo, +term); first-payment / non-`renewal` → current
+   * period [periodFrom, periodTo). See the tx1 derivation.
+   */
+  readonly dupGuardCoverageWindow: {
+    readonly fromIso: string;
+    readonly toIso: string;
+  };
 }
 
 async function processOne(
@@ -459,11 +469,19 @@ async function processOne(
 
     // Step 4 — coverage-omit gate, mirroring confirm-renewal.ts's
     // classifyMembershipPayment → omitMembershipCoverage exactly (same
-    // shared classifier every settlement site consumes). In practice a
-    // cycle reaching this point is always a genuine renewal (a
-    // brand-new member's FIRST cycle is born `awaiting_payment`, never
-    // `upcoming`/`reminded` — see design §5.3), but the gate is kept
-    // for parity with the other settlement sites.
+    // shared classifier every settlement site consumes). This gate is
+    // LOAD-BEARING, not parity-only: an imported active member's cycle is
+    // created `upcoming` + un-anchored (`anchored_at IS NULL`; the R4
+    // name-matched backfill SKIPS unmatched/ambiguous/out-of-scope members),
+    // so with no settled predecessor it classifies `first_payment` WHILE
+    // `upcoming` and IS auto-draftable — the candidate query filters on
+    // enrolment + status, never `anchored_at`. Gating the persisted
+    // `coverageWindow` below on this classification (A-2) is what stops a
+    // first-payment auto-draft from stamping the NEXT period and
+    // over-blocking the member's own first renewal at ISSUE (the same
+    // confirm-renewal L3 / M-1 hazard). (An earlier comment here claimed
+    // "always a genuine renewal ... first cycle born awaiting_payment" —
+    // false for imported members; corrected under A-2.)
     //
     // PDPA note — the GDPR-erased gate for THIS use-case is NOT this
     // classifier arm; it is the candidate query itself
@@ -516,20 +534,71 @@ async function processOne(
       ? undefined
       : ({ kind: 'window' as const, fromIso: coverageFromIso, toIso: coverageToIso });
 
+    // membership-coverage-exclude-guard (mig 0281) — the dup-guard window
+    // persisted to `invoices.coverage_from/to` is ALWAYS stamped (a NULL-coverage
+    // bill escapes BOTH the pre-flight guard AND the DB `blocks_coverage`
+    // EXCLUDE); only WHICH window differs by classification, EXACTLY mirroring
+    // confirm-renewal.ts:831-835 / admin-renew-lapsed-member.ts:596 / the offline
+    // A-1 rail:
+    //   - RENEWAL: the NEXT-term window [periodTo, periodTo+frozenTerm) — the
+    //     period this renewal charges. UNCHANGED (byte-identical) from the prior
+    //     unconditional stamp for every reachable renewal case.
+    //   - first-payment / non-`renewal`: the cycle's OWN CURRENT period
+    //     [periodFrom, periodTo). The next-period window would false-refuse the
+    //     member's genuine first renewal once THIS draft is issued (the L2/L3
+    //     over-block); [periodFrom, periodTo) is half-open ADJACENT to the next
+    //     renewal → no over-block, and a duplicate first-payment stamps the SAME
+    //     window → the DB EXCLUDE still rejects it at issue.
+    const dupGuardCoverageWindow = omitMembershipCoverage
+      ? { fromIso: reread.periodFrom, toIso: reread.periodTo }
+      : { fromIso: coverageFromIso, toIso: coverageToIso };
+
+    if (omitMembershipCoverage) {
+      // A non-`renewal` classification reaching auto-draft is EXPECTED for an
+      // imported active member (scripts/import-members.ts → born `upcoming`,
+      // anchored_at NULL) whose row the one-off R4 backfill
+      // (scripts/backfill-cycle-anchors.ts) skipped (unmatched / ambiguous
+      // company name, missing CSV row, future-dated payment). Design §5.3's
+      // "born awaiting_payment" invariant covers ONLY the admin "New member"
+      // onboarding path, NOT the import path — so this is not necessarily an
+      // invariant break. Logged (greppable + alertable) so an operator can
+      // confirm the un-reanchored import (benign) vs a genuine §5.3 leak. Do NOT
+      // throw: the auto-draft must still succeed with the money-safe
+      // current-period stamp above.
+      logger.warn(
+        {
+          tenantId,
+          cycleId,
+          memberId: reread.memberId,
+          classificationKind: classification.kind,
+        },
+        '[auto-draft-due-renewals] non-renewal classification reached auto-draft — ' +
+          'stamping current-period coverage [periodFrom, periodTo) defensively (not next-period); ' +
+          'expected for an imported member not re-anchored by the R4 backfill (design §5.3 covers admin-onboarding only)',
+      );
+    }
+
     return ok<ReadyToDraft>({
       reread,
       planYear,
       coverageFromIso,
       coverageToIso,
       membershipCoverage,
+      dupGuardCoverageWindow,
     });
   });
 
   if (!tx1Result.ok) {
     return tx1Result.error;
   }
-  const { reread, planYear, coverageFromIso, coverageToIso, membershipCoverage } =
-    tx1Result.value;
+  const {
+    reread,
+    planYear,
+    coverageFromIso,
+    coverageToIso,
+    membershipCoverage,
+    dupGuardCoverageWindow,
+  } = tx1Result.value;
 
   // --- F4 call: STANDALONE, no F8 tx/lock open (Review I2 fix) ------------
   // The per-cycle lock is deliberately released here (tx1 already closed
@@ -552,10 +621,14 @@ async function processOne(
     planYear,
     frozenPlanPriceThb: reread.frozenPlanPriceThb,
     ...omitUndefined({ membershipCoverage }),
-    // membership-coverage-exclude-guard (mig 0281) — stamp the dup-guard window
-    // ALWAYS ([periodTo, periodTo+term)), the SAME window issueAutoDrafted's
-    // guard checks, so an auto-draft participates in the overlap guard.
-    coverageWindow: { fromIso: coverageFromIso, toIso: coverageToIso },
+    // membership-coverage-exclude-guard (mig 0281) — the classification-gated
+    // dup-guard window computed in tx1 (`dupGuardCoverageWindow`): a RENEWAL
+    // stamps the NEXT-term window [periodTo, periodTo+term) (the SAME window
+    // issueAutoDrafted's guard checks); a first-payment / non-`renewal` stamps
+    // the cycle's OWN current period [periodFrom, periodTo). Always non-null so
+    // the auto-draft participates in the overlap guard. See the tx1 derivation
+    // for the L2/L3 over-block rationale.
+    coverageWindow: dupGuardCoverageWindow,
     actorUserId: SYSTEM_ACTOR_AUTO_INVOICE_CRON,
     requestId: null,
   });

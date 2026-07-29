@@ -110,6 +110,17 @@ interface SeedEligibleCycleOpts {
   /** Defaults to `periodFrom` — the rolling-anchor shape (anchored=renewal, not first_payment). */
   readonly anchoredAt?: string;
   /**
+   * A-2 defensive-gate coverage — when true, insert the cycle UN-anchored
+   * (`anchored_at = NULL`) with no settled predecessor, so
+   * `classifyMembershipPayment` resolves `'first_payment'`
+   * (`settledCycleCount===0 && anchoredAt===null`). This is the shape an
+   * imported active member has when the R4 backfill
+   * (`scripts/backfill-cycle-anchors.ts`) skipped their row (unmatched /
+   * ambiguous company name, no CSV row, future-dated payment). Wins over
+   * `anchoredAt`.
+   */
+  readonly firstPayment?: boolean;
+  /**
    * Explicit `created_at` override. Omitted → DB default (`now()` = real
    * wall-clock test-run time, which can be LATER than a fixture's other
    * explicit-dated rows) — pass this whenever a test needs deterministic
@@ -124,7 +135,8 @@ interface SeedEligibleCycleOpts {
  * real auto-draft candidate has (it exists BECAUSE a prior payment
  * anchored it) — `anchoredAt` non-null so `classifyMembershipPayment`
  * resolves `'renewal'` (not `'first_payment'`), exercising the
- * `membershipCoverage` window path.
+ * `membershipCoverage` window path. Pass `firstPayment: true` to instead
+ * seed the UN-anchored first-payment shape (see `SeedEligibleCycleOpts`).
  */
 async function seedEligibleCycle(
   opts: SeedEligibleCycleOpts,
@@ -148,7 +160,9 @@ async function seedEligibleCycle(
       frozenPlanPriceThb: opts.frozenPlanPriceThb ?? '50000.00',
       frozenPlanTermMonths: 12,
       frozenPlanCurrency: 'THB',
-      anchoredAt: new Date(opts.anchoredAt ?? opts.periodFrom),
+      anchoredAt: opts.firstPayment
+        ? null
+        : new Date(opts.anchoredAt ?? opts.periodFrom),
       ...(opts.createdAt ? { createdAt: new Date(opts.createdAt) } : {}),
     }),
   );
@@ -305,6 +319,25 @@ describe('107-auto-invoice Task 7 — autoDraftDueRenewals (live Neon)', () => {
       coverage_from: expectedCoverageFrom,
       coverage_to: expectedCoverageTo,
     });
+
+    // --- A-2 renewal regression: dup-guard window on invoices.coverage_from/to --
+    // A renewal-classified (ANCHORED) cycle stamps the NEXT-period window
+    // [periodTo, periodTo+term) — the period this renewal charges. This is the
+    // branch the A-2 gate leaves UNCHANGED (byte-identical before/after the fix);
+    // asserting it here guards against the gate accidentally regressing renewals.
+    const [covRowA] = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({
+          coverageFrom: invoices.coverageFrom,
+          coverageTo: invoices.coverageTo,
+        })
+        .from(invoices)
+        .where(and(eq(invoices.tenantId, tenant.ctx.slug), eq(invoices.memberId, memberA))),
+    );
+    expect(covRowA?.coverageFrom?.toISOString()).toBe(periodToA.toISOString());
+    expect(covRowA?.coverageTo?.toISOString()).toBe(
+      addMonthsUtc(periodToA.toISOString(), 12),
+    );
 
     // --- no email --------------------------------------------------
     expect(await outboxCountForInvoice(tenant, invoiceIdA)).toBe(0);
@@ -575,6 +608,86 @@ describe('107-auto-invoice Task 7 — autoDraftDueRenewals (live Neon)', () => {
       expect(invRows.length).toBe(0);
     } finally {
       await raceTenant.cleanup().catch(() => {});
+    }
+  }, 60_000);
+
+  it('(f) A-2 — first-payment upcoming cycle (imported member not re-anchored) → dup-guard window is the CURRENT period [periodFrom, periodTo), NOT next-period', async () => {
+    // A brand-new member created via the admin "New member" form is born
+    // `awaiting_payment` (design §5.3) and can NEVER be auto-drafted while
+    // first-payment. But an IMPORTED active member (scripts/import-members.ts)
+    // is born `upcoming` with `anchored_at NULL`; if the one-off R4 backfill
+    // (scripts/backfill-cycle-anchors.ts) skipped their row — unmatched /
+    // ambiguous company name, missing CSV row, future-dated payment — the cycle
+    // STAYS un-anchored and `classifyMembershipPayment` resolves `first_payment`
+    // while the cycle is `upcoming`. That real production path reaches the
+    // auto-draft cron, exercising the A-2 defensive gate directly.
+    const fpTenant = await createTestTenant('test-chamber');
+    try {
+      const fpPlanId = `f8-t7-fp-${randomUUID().slice(0, 8)}`;
+      await runInTenant(fpTenant.ctx, (tx) =>
+        seedF8MembershipPlan(tx, {
+          tenantSlug: fpTenant.ctx.slug,
+          planId: fpPlanId,
+          planYear: 2025,
+          planName: { en: 'Auto-Draft T7 First-Payment Plan' },
+          benefitMatrix: DEFAULT_TEST_BENEFIT_MATRIX,
+          createdBy: user.userId,
+        }),
+      );
+      await enableAutoInvoice(fpTenant);
+
+      const memberF = await seedMember({ t: fpTenant, planId: fpPlanId });
+      const periodFromF = '2025-08-01T00:00:00Z'; // period_to = 2026-08-01, ~17d from NOW → within 30d rolling lead window
+      const seededF = await seedEligibleCycle({
+        t: fpTenant,
+        memberId: memberF,
+        planId: fpPlanId,
+        periodFrom: periodFromF,
+        firstPayment: true, // anchored_at NULL, no predecessor → classifies first_payment
+      });
+
+      const realDeps = makeRenewalsDeps(fpTenant.ctx.slug);
+      const deps = { ...realDeps, clock: { now: () => NOW } };
+
+      const result = await autoDraftDueRenewals(deps, {
+        tenantId: fpTenant.ctx.slug,
+        correlationId: randomUUID(),
+      });
+      expect(result.ok, result.ok ? 'ok' : `err: ${JSON.stringify(result)}`).toBe(true);
+      if (!result.ok) return;
+      // full-access upcoming cycle → drafts (the defensive gate does not skip it,
+      // it only changes WHICH coverage window is stamped).
+      expect(result.value.cyclesProcessed).toBe(1);
+      expect(result.value.drafted).toBe(1);
+      expect(result.value.skippedTerminated).toBe(0);
+      expect(result.value.errors).toBe(0);
+
+      const [covRow] = await runInTenant(fpTenant.ctx, (tx) =>
+        tx
+          .select({
+            status: invoices.status,
+            origin: invoices.origin,
+            coverageFrom: invoices.coverageFrom,
+            coverageTo: invoices.coverageTo,
+          })
+          .from(invoices)
+          .where(and(eq(invoices.tenantId, fpTenant.ctx.slug), eq(invoices.memberId, memberF))),
+      );
+      expect(covRow).toBeDefined();
+      if (!covRow) return;
+      expect(covRow.status).toBe('draft');
+      expect(covRow.origin).toBe('auto_renewal');
+      // A-2 — the dup-guard window is the cycle's OWN current period
+      // [periodFrom, periodTo), MIRRORING confirm-renewal L3 /
+      // admin-renew-lapsed-member:596 / offline A-1 — NOT the next-period
+      // [periodTo, periodTo+term) window (which, once this draft is ISSUED,
+      // would false-refuse the member's genuine first renewal at the DB EXCLUDE:
+      // the L2/L3 over-block). Half-open [periodFrom, periodTo) is adjacent to
+      // the next renewal window, so it never over-blocks.
+      expect(covRow.coverageFrom?.toISOString()).toBe(new Date(periodFromF).toISOString());
+      expect(covRow.coverageTo?.toISOString()).toBe(seededF.periodTo.toISOString());
+    } finally {
+      await fpTenant.cleanup().catch(() => {});
     }
   }, 60_000);
 });
