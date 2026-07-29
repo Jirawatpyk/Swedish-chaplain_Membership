@@ -84,7 +84,9 @@ export function buildColumnMap(headers: readonly string[]): ColumnMap {
   return { index, fullNameIndex: fullNameIndex === -1 ? null : fullNameIndex, unmappedHeaders, missingRequired };
 }
 
-function cellToString(v: unknown): string {
+/** Exported for the Round-3 finalized-sheet reader — the single source of the
+ *  local-component date fix below (never duplicate a toISOString variant). */
+export function cellToString(v: unknown): string {
   if (v == null) return '';
   if (v instanceof Date) {
     // SheetJS cellDates builds dates at LOCAL midnight. Use LOCAL components (NOT

@@ -138,12 +138,30 @@ async function loadTierResolver(ctx: TenantContext, planYear: number) {
  * A contact whose email matches a SOFT-DELETED row is skipped+counted on BOTH the
  * new-member and existing-member paths (operator decision: skip+warn, not reactivate).
  */
+/** Round-3 (ROUND3_PLAN.md) — optional commit behaviour overrides. Both default
+ *  to the historical behaviour so every existing caller is unchanged. */
+export interface CommitMembersOptions {
+  /** Create the initial renewal cycle per ACTIVE member (default true). The
+   *  Round-3 import passes false — its invoice importer creates each cycle
+   *  itself, anchored at the imported invoice's coverage window rather than at
+   *  the registration date. */
+  readonly createCycles?: boolean;
+  /** Per-member plan-year for the members INSERT (default: the uniform
+   *  `planYear` argument). Round-3 members carry the calendar year of their
+   *  anchor invoice (2024/2025/2026) so the (plan_id, plan_year) FK matches the
+   *  seeded catalogue year. */
+  readonly planYearOf?: (m: ValidatedMember) => number;
+}
+
 export async function commitMembers(
   ctx: TenantContext,
   actorUserId: string,
   validMembers: readonly ValidatedMember[],
   planYear: number,
+  options?: CommitMembersOptions,
 ): Promise<CommitOutcome> {
+  const createCycles = options?.createCycles ?? true;
+  const planYearOf = options?.planYearOf;
   // F8-completion Slice 1 · Task 1.7 — deps for the shared createCycleInTx
   // helper, built once from the F8 composition root (tenant-bound). Mirrors
   // the online on-paid path (renewals-deps.ts): cyclesRepo + planLookup +
@@ -281,6 +299,7 @@ export async function commitMembers(
       }
 
       const memberId = randomUUID();
+      const memberPlanYear = planYearOf ? planYearOf(m) : planYear;
       // Allocate the next human-readable member number under the tenant RLS
       // session (tx-bound — never the pool-global db). Advisory-lock
       // serialised inside the allocator; gaps on rollback are acceptable.
@@ -298,7 +317,7 @@ export async function commitMembers(
         country: m.country,
         taxId: m.taxId,
         planId: m.planId,
-        planYear,
+        planYear: memberPlanYear,
         registrationDate: m.registrationDate.toISOString().slice(0, 10),
         registrationFeePaid: true,
         status: m.status,
@@ -320,7 +339,7 @@ export async function commitMembers(
         summary: `import-members: created member (${m.planId})`,
         requestId: `import-members-${randomUUID()}`,
         tenantId: ctx.slug,
-        payload: { member_id: memberId, plan_id: m.planId, plan_year: planYear, source: 'import-members' },
+        payload: { member_id: memberId, plan_id: m.planId, plan_year: memberPlanYear, source: 'import-members' },
       });
       membersCreated += 1;
 
@@ -344,7 +363,9 @@ export async function commitMembers(
       // PR-C — only an ACTIVE member joins the renewal pipeline. An imported
       // inactive member is a directory record only; creating a cycle would
       // resurface it in the F8 at-risk / reminder flows.
-      if (m.status === 'active') {
+      // Round-3: options.createCycles=false skips this entirely — the invoice
+      // importer creates each cycle itself, anchored at the invoice coverage.
+      if (createCycles && m.status === 'active') {
         try {
           await createCycleInTx(cycleDeps, tx, {
             tenantId: ctx.slug,
