@@ -63,7 +63,7 @@ import {
   PipelineMoneyBand,
   PipelineMoneyBandSkeleton,
 } from './_components/pipeline-money-band';
-import { PipelineTable } from './_components/pipeline-table';
+import { PipelineWithBulk } from './_components/pipeline-with-bulk';
 import { LoadErrorCard } from './_components/load-error-card';
 import { LapsedTab } from './_components/lapsed-tab';
 import { TierFilterSelect } from './_components/tier-filter-select';
@@ -401,6 +401,22 @@ export default async function RenewalsPipelinePage({
   // affordance so a manager never sees a CTA that would just 403.
   const canMutate = currentUser.role === 'admin';
 
+  // Sighted result-count (aria-hidden twin of `ResultCountAnnouncer`). Computed
+  // once so the same element can be the LEFT item of the pipeline table's
+  // toolbar row (see `PipelineTable resultCount`) and the standalone caption
+  // above the terminated `LapsedTab` (which has no toolbar of its own).
+  const resultCountLabel = (
+    <ResultCountLabel
+      count={rows.length}
+      {...(monthLensActive
+        ? {
+            monthKind: monthKind as 'overdue' | 'later' | 'month',
+            ...(monthLabel !== undefined ? { monthLabel } : {}),
+          }
+        : { urgencyKey: urgency })}
+    />
+  );
+
   return (
     <RenewalsPageShell title={t('title')} subtitle={t('subtitle')}>
       {/* DV-Wave2 ⑥ — THB money KPI band. Best-effort Suspense island: it
@@ -446,7 +462,13 @@ export default async function RenewalsPipelinePage({
               showEmptyState ? (
                 <RenewalsEmptyState />
               ) : (
-                <>
+                // Table-caption layout — the sighted result-count renders as
+                // the pipeline table's own caption directly above the rows
+                // (the toolbar it used to share with the row-density toggle
+                // is gone; the toggle itself was removed). `gap-3` gives the
+                // filter row / table block / pagination even vertical rhythm
+                // matching the tabs' own `pt-3`/`mb-3`.
+                <div className="flex flex-col gap-3">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <UrgencyBucketTabs
                       current={monthLensActive ? null : urgency}
@@ -465,27 +487,27 @@ export default async function RenewalsPipelinePage({
                         }
                       : { urgencyKey: urgency })}
                   />
-                  {/* Item ④ — sighted twin of the announcer above, next to the
-                      filter row so a mouse/keyboard admin sees the result
-                      count without a screen reader. aria-hidden — the
-                      announcer keeps owning the SR channel. */}
-                  <ResultCountLabel
-                    count={rows.length}
-                    {...(monthLensActive
-                      ? {
-                          monthKind: monthKind as 'overdue' | 'later' | 'month',
-                          ...(monthLabel !== undefined ? { monthLabel } : {}),
-                        }
-                      : { urgencyKey: urgency })}
-                  />
                   {urgency === 'terminated' ? (
-                    <LapsedTab rows={rows} />
+                    // LapsedTab has no toolbar of its own, so the sighted count
+                    // stays a standalone caption hugging the table above it.
+                    <div className="flex flex-col gap-2">
+                      {resultCountLabel}
+                      <LapsedTab rows={rows} />
+                    </div>
                   ) : (
-                    <PipelineTable
+                    // Task 10 (US3 scaffolding) — PipelineWithBulk wraps
+                    // PipelineTable, layering admin-only row selection on
+                    // top (foundation for Task 11's bulk action bar). Pure
+                    // render-order change: forwards the same props
+                    // PipelineTable took directly before, plus
+                    // isAdmin={canMutate} for the selection gate. No URL
+                    // param name/default/semantics touched.
+                    <PipelineWithBulk
                       rows={rows}
-                      canMutate={canMutate}
+                      isAdmin={canMutate}
                       sort={sort}
                       sortHrefs={sortHrefs}
+                      resultCount={resultCountLabel}
                       {...(monthKind !== undefined ? { monthKind } : {})}
                       {...(monthLabel !== undefined ? { monthLabel } : {})}
                     />
@@ -511,7 +533,7 @@ export default async function RenewalsPipelinePage({
                       </a>
                     </div>
                   ) : null}
-                </>
+                </div>
               )
             }
             needsAction={<AtRiskWidget actorRole={widgetActorRole} />}

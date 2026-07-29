@@ -126,6 +126,48 @@ test.describe('@a11y T267 — F8 axe-core scan', () => {
       });
     }
 
+    test('059-membership-suspension Task 11 — PipelineBulkActionBar toolbar has an accessible name + 44px targets', async ({
+      page,
+    }) => {
+      await signInAsAdmin(page);
+      await page.goto('/admin/renewals');
+      await page.waitForLoadState('domcontentloaded');
+
+      // Selection checkboxes only render for isAdmin AND at least one row on
+      // the current page — if the seeded tenant has zero pipeline rows in
+      // the default (all-urgency) view, there is nothing to select. Skip
+      // with a clear message rather than a confusing timeout (mirrors the
+      // #renewal-prefs R2-9 guard above).
+      const rowCheckboxes = page.getByRole('checkbox');
+      const checkboxCount = await rowCheckboxes.count();
+      test.skip(
+        checkboxCount < 2,
+        'No pipeline rows on the seeded tenant\'s default view — seed at least one renewal cycle to run the bulk-toolbar a11y scan',
+      );
+
+      // Index 0 is the header "select all" checkbox; index 1 is the first
+      // row's own checkbox (same convention as pipeline-table-selection
+      // component tests).
+      await rowCheckboxes.nth(1).click();
+
+      const toolbar = page.getByRole('toolbar', { name: 'Bulk actions' });
+      await expect(toolbar).toBeVisible();
+
+      // WCAG 2.5.5 — every actionable control inside the toolbar (the two
+      // action buttons + Clear) meets the 44px minimum target size.
+      const targets = toolbar.getByRole('button');
+      const targetCount = await targets.count();
+      for (let i = 0; i < targetCount; i++) {
+        const box = await targets.nth(i).boundingBox();
+        expect(box, `toolbar button ${i} has a bounding box`).not.toBeNull();
+        if (box) {
+          expect(box.height, `toolbar button ${i} height >= 44px`).toBeGreaterThanOrEqual(44);
+        }
+      }
+
+      await expectNoAxeViolations(page, '/admin/renewals (bulk toolbar open)');
+    });
+
     test('admin pipeline with prefers-reduced-motion', async ({ browser }) => {
       // axe doesn't directly assert reduced-motion behaviour, but the
       // emulated context lets us verify pages don't ship motion-only

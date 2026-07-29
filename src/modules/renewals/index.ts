@@ -311,6 +311,8 @@ export type {
   ListMembersWithoutCycleOpts,
   MemberWithoutCycleRow,
   MembersWithoutCyclePage,
+  // 059-membership-suspension Task 9 — settlement-preview row shape.
+  SettlementPreviewRow,
 } from './application/ports/renewal-cycle-repo';
 
 // Renewals-by-month view-model types (pure Domain).
@@ -351,6 +353,15 @@ export {
   type LoadPipelineMoneyError,
 } from './application/use-cases/load-pipeline-money';
 export { collectionRatePct } from './domain/collection-rate';
+
+// 059-membership-suspension Task 9 — read-only settlement-preview use-case,
+// backing the future bulk "Mark paid" confirm dialog (⑨).
+export {
+  loadSettlementPreview,
+  type LoadSettlementPreviewInput,
+  type SettlementPreviewResult,
+  type LoadSettlementPreviewError,
+} from './application/use-cases/load-settlement-preview';
 
 export {
   loadRenewalMonthSummary,

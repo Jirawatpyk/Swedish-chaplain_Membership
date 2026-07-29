@@ -11,6 +11,7 @@
 import Link from 'next/link';
 import { MailX } from 'lucide-react';
 import { useFormatter, useTranslations } from 'next-intl';
+import { cn } from '@/lib/utils';
 import { TierBadge } from './tier-badge';
 // Client-safe sub-barrel — see `tier-filter-select.tsx` for rationale.
 import type { TierBucket } from '@/modules/renewals/client';
@@ -23,6 +24,7 @@ export function CycleCompanyCell({
   memberId,
   companyName,
   emailUnverified = false,
+  linkClassName,
 }: {
   readonly memberId: string;
   readonly companyName: string;
@@ -35,6 +37,15 @@ export function CycleCompanyCell({
    * rendering unchanged.
    */
   readonly emailUnverified?: boolean;
+  /**
+   * Task 12 review round 1 (FIX 4a / M-3) — extra classes appended to the
+   * company-name `<Link>`. `PipelineCardList` passes `truncate` so a long
+   * single-word company name ellipsizes instead of hard-clipping against
+   * the card's bounded width; the table (which has more horizontal room
+   * and no reported clipping) omits this and keeps its existing rendering.
+   * Absent (undefined) preserves the pre-existing behaviour everywhere.
+   */
+  readonly linkClassName?: string;
 }) {
   const t = useTranslations('admin.renewals.table');
   // Fall back to a localised "unknown" placeholder when companyName
@@ -43,10 +54,13 @@ export function CycleCompanyCell({
   const display = companyName || t('unknownCompany');
   const unverifiedHint = t('emailUnverifiedHint');
   return (
-    <span className="inline-flex items-center gap-1.5">
+    <span className="inline-flex min-w-0 items-center gap-1.5">
       <Link
         href={`/admin/members/${memberId}`}
-        className="font-medium text-foreground hover:text-primary hover:underline"
+        className={cn(
+          'font-medium text-foreground hover:text-primary hover:underline',
+          linkClassName,
+        )}
       >
         {display}
       </Link>
@@ -74,16 +88,33 @@ export function CycleCompanyCell({
 
 export function CycleExpiresCell({
   expiresAt,
+  label,
 }: {
   readonly expiresAt: string;
+  /**
+   * Task 12 review round 1 (FIX 3 / I-2, WCAG 1.3.1) — optional visible
+   * label rendered before the `<time>`. In the `<table>`, the "Expires"
+   * meaning comes from the column `<th>`; a card has no such header
+   * association, so `PipelineCardList` passes
+   * `admin.renewals.table.columns.expires` here to give the date a label
+   * for sighted-mobile AND screen-reader users. Absent (undefined, the
+   * table's usage) preserves the exact pre-existing bare-`<time>` output.
+   */
+  readonly label?: string;
 }) {
   const fmt = useFormatter();
-  return (
-    <time
-      dateTime={expiresAt}
-      className="tabular-nums text-foreground/80"
-    >
+  const time = (
+    <time dateTime={expiresAt} className="tabular-nums text-foreground/80">
       {fmt.dateTime(new Date(expiresAt), 'dateMedium')}
     </time>
+  );
+  if (label === undefined) {
+    return time;
+  }
+  return (
+    <p className="text-sm text-muted-foreground">
+      <span className="mr-1">{label}</span>
+      {time}
+    </p>
   );
 }

@@ -3368,15 +3368,13 @@
           "invoice": "Invoice",
           "actions": "Actions"
         },
+        "selectAll": "Select all rows on this page",
+        "selectRow": "Select {company}",
+        "selectRowGeneric": "Select this member",
         "sort": {
           "sortBy": "Sort by {column}",
           "ascending": "Sorted ascending",
           "descending": "Sorted descending"
-        },
-        "density": {
-          "label": "Row density",
-          "comfortable": "Comfortable",
-          "compact": "Compact"
         },
         "status": {
           "upcoming": "Upcoming",
@@ -3414,6 +3412,66 @@
         "markContacted": "Mark contacted",
         "markPaid": "Mark paid",
         "rowMenu": "Actions for {company}"
+      },
+      "bulk": {
+        "toolbarLabel": "Bulk actions",
+        "selectedCount": "{count, plural, one {# selected} other {# selected}}",
+        "overCap": "Maximum {max} renewals per batch. Split the selection.",
+        "overCapHelper": "{count} of {total} selected — only {max} can be processed at once. Deselect rows past row {max}, or use filters to narrow the list before re-selecting.",
+        "clear": "Clear selection",
+        "cancel": "Cancel",
+        "actions": {
+          "sendReminder": "Send reminder",
+          "markPaid": "Mark paid",
+          "markContacted": "Mark contacted"
+        },
+        "confirmReminderTitle": "Send a renewal reminder to {count, plural, one {# renewal} other {# renewals}}?",
+        "confirmReminderDescription": "Each selected renewal cycle with an active schedule gets its next scheduled reminder email now. Cycles with no reminder due, or whose member opted out, are skipped.",
+        "confirmReminderAction": "Send reminders",
+        "confirmMarkPaidTitle": "Record a bulk offline payment",
+        "confirmMarkPaidDescription": "One payment reference applies to every previewable renewal below — enter it once to record a single bank transfer, cash deposit, or cheque covering all of them together.",
+        "confirmMarkPaidAction": "Mark all paid",
+        "paymentMethodLabel": "Payment method",
+        "paymentMethod": {
+          "bank_transfer": "Bank transfer",
+          "cash": "Cash",
+          "cheque": "Cheque"
+        },
+        "paymentReferenceLabel": "Payment reference",
+        "paymentReferencePlaceholder": "e.g. bank slip number or cheque number",
+        "paymentDateLabel": "Payment date",
+        "previewLoading": "Loading settlement amounts…",
+        "previewError": "Couldn't load settlement amounts. Try again.",
+        "previewGrandTotalLabel": "Total to record",
+        "previewRowUnpriced": "Not bulk-payable — settle individually",
+        "previewNotBulkPayableHeading": "Not included in this batch",
+        "reminderSent": "{sent, plural, one {# reminder sent} other {# reminders sent}}",
+        "reminderSkipped": "{skipped, plural, one {# skipped} other {# skipped}}",
+        "reminderFailed": "{failed, plural, one {# failed} other {# failed}}",
+        "reminderRateLimited": "{count, plural, one {# rate-limited — retry later} other {# rate-limited — retry later}}",
+        "markPaidSucceeded": "{count, plural, one {# renewal marked paid} other {# renewals marked paid}}",
+        "markPaidSkipped": "{count, plural, one {# already settled or changed} other {# already settled or changed}}",
+        "markPaidRateLimited": "{count, plural, one {# payment rate-limited — wait a minute and retry the rest} other {# payments rate-limited — wait a minute and retry the rest}}",
+        "markPaidFailed": "{count, plural, one {# failed} other {# failed}}",
+        "markPaidNeedsAction": "{count, plural, one {# needs attention before it can be recorded} other {# need attention before they can be recorded}}",
+        "markPaidNoEmail": "{count, plural, one {# receipt could not be emailed (no contact email on file)} other {# receipts could not be emailed (no contact email on file)}}",
+        "resultsHeadingReminder": "Send-reminder results",
+        "resultsHeadingMarkPaid": "Mark-paid results",
+        "resultsDismiss": "Dismiss",
+        "resultLabels": {
+          "ok": "Succeeded",
+          "skipped": "Skipped",
+          "failed": "Failed",
+          "rateLimited": "Rate-limited — retry later",
+          "needsAction": "Needs attention before payment can be recorded",
+          "notBulkPayable": "Settle individually"
+        },
+        "rateLimited": "Too many bulk actions. Wait a few minutes and try again.",
+        "unknownError": "Something went wrong.",
+        "networkError": "Network error. Check your connection.",
+        "progressLabel": "Bulk operation in progress",
+        "progressMessage": "{action} {count, plural, one {# renewal} other {# renewals}}…",
+        "elapsedSeconds": "Elapsed: {seconds}s"
       },
       "sendReminderNow": {
         "toast": {

@@ -58,6 +58,7 @@ import {
   type PipelineSummary,
   type RenewalCyclePage,
   type RenewalCycleRepo,
+  type SettlementPreviewRow,
   type UrgencyBucket,
 } from '../../application/ports/renewal-cycle-repo';
 import type { MembershipBillCoverageRow } from '../../domain/membership-bill-coverage';
@@ -2061,6 +2062,102 @@ export function makeDrizzleRenewalCycleRepo(
             netOfCreditSatang: BigInt(r.netOfCredit),
           })),
         };
+      });
+    },
+
+    /**
+     * 059-membership-suspension Task 9 — settlement-preview join for the
+     * bulk "Mark paid" confirm dialog. Mirrors `loadPipelinePage`'s
+     * members/invoices LEFT JOIN shape (tenant-scoped predicates on both
+     * cross-module tables — Principle I two-layer isolation), but keyed
+     * by `linked_invoice_id` (the LINKED, issue-time invoice) rather than
+     * `anchor_invoice_id` (the paid-coverage anchor `loadPipelinePage`
+     * reads) — settlement preview is about "what does this cycle still
+     * owe", not "is this period already covered".
+     */
+    async loadSettlementPreview(input: {
+      readonly tenantId: string;
+      readonly cycleIds: ReadonlyArray<string>;
+    }): Promise<ReadonlyArray<SettlementPreviewRow>> {
+      if (input.cycleIds.length === 0) return [];
+      return runInTenant(tenant, async (tx) => {
+        const rows = await tx
+          .select({
+            cycleId: renewalCycles.cycleId,
+            companyName: members.companyName,
+            invoiceId: invoices.invoiceId,
+            invoiceStatus: invoices.status,
+            totalSatang: invoices.totalSatang,
+            creditedTotalSatang: invoices.creditedTotalSatang,
+            currency: invoices.currency,
+          })
+          .from(renewalCycles)
+          .leftJoin(
+            members,
+            and(
+              eq(members.tenantId, renewalCycles.tenantId),
+              eq(members.memberId, renewalCycles.memberId),
+            ),
+          )
+          .leftJoin(
+            invoices,
+            and(
+              // Explicit tenant predicate = application-layer
+              // defence-in-depth atop RLS on this cross-module table
+              // (Principle I two-layer isolation) — matches
+              // `loadPipelinePage`'s anchorInvoice join.
+              eq(invoices.tenantId, renewalCycles.tenantId),
+              eq(invoices.invoiceId, renewalCycles.linkedInvoiceId),
+            ),
+          )
+          .where(inArray(renewalCycles.cycleId, input.cycleIds));
+
+        return rows.map((r): SettlementPreviewRow => {
+          const cycleId = asCycleId(r.cycleId);
+          const companyName = r.companyName ?? '';
+          // The ONLY previewable gate: a real linked invoice whose status
+          // is still 'issued' — i.e. a truthful, still-collectible total.
+          // 'draft' has no finalised total; 'paid'/'void'/'credited'/
+          // 'partially_credited' are STALE (settled, reversed, or
+          // superseded) — a stale link must never surface its amount
+          // (money-safety fix; see `SettlementPreviewRow.previewable`).
+          //
+          // speckit-review #4 — build the correct discriminated-union arm.
+          // Inlining the gate into the `if` narrows `r.invoiceId` to a
+          // non-null `string` for the previewable arm (no const-alias
+          // narrowing dependency).
+          if (r.invoiceId !== null && r.invoiceStatus === 'issued') {
+            return {
+              cycleId,
+              companyName,
+              previewable: true,
+              invoiceId: r.invoiceId,
+              // `- creditedTotalSatang` is DEFENSIVE, not load-bearing: a
+              // genuine `issued` invoice always has creditedTotalSatang = 0
+              // (crediting requires status 'paid'/'partially_credited', both
+              // excluded by the gate above), so for every row that reaches
+              // this branch today the term is always 0 — it exists only to
+              // stay correct if the gate is ever widened.
+              amountThbMinor: Number(
+                (r.totalSatang ?? 0n) - (r.creditedTotalSatang ?? 0n),
+              ),
+              // `invoices.currency` is a notNull column, so a matched
+              // 'issued' invoice row always carries a real 3-char code. The
+              // `!` only bridges Drizzle's LEFT-JOIN `string | null` typing
+              // to the union arm's `currency: string` — it compiles away, so
+              // the runtime value is identical (never a fallback).
+              currency: r.currency!,
+            };
+          }
+          return {
+            cycleId,
+            companyName,
+            previewable: false,
+            invoiceId: null,
+            amountThbMinor: null,
+            currency: null,
+          };
+        });
       });
     },
 

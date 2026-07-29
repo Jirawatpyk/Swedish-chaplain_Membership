@@ -172,6 +172,51 @@ export interface IssuedAutoInvoiceOrphanRow {
   readonly memberId: string;
 }
 
+/**
+ * 059-membership-suspension Task 9 — a settlement-preview row for ONE
+ * requested cycle, backing the bulk "Mark paid" confirm dialog (⑨).
+ *
+ * Discriminated union on `previewable` (speckit-review #4). The
+ * `previewable ⇒ (invoiceId / amountThbMinor / currency all non-null)`
+ * invariant is encoded in the TYPE, not in JSDoc + defensive null re-checks
+ * at every consumer: a `previewable: true` row carries a real, still-
+ * collectible total; a `previewable: false` row NULLS all three money
+ * fields together — the row never carries a money figure the dialog cannot
+ * truthfully display.
+ *
+ * `previewable` is TRUE only when `linked_invoice_id` resolves to a real,
+ * tenant-owned invoice with `status = 'issued'` — i.e. a truthful, still-
+ * collectible total exists. It is FALSE when either:
+ *   - no invoice is linked yet (an `upcoming` cycle mints its bill on
+ *     mark-paid, not before), or
+ *   - the linked invoice is STALE relative to this preview — already
+ *     `paid`, `void`, `credited`, or `partially_credited` (settled,
+ *     reversed, or superseded), or still `draft` (no finalised §87 total,
+ *     not yet a real charge). A stale link's amount is EXCLUDED from
+ *     `total_thb_minor` at the use-case layer (financial-integrity fix):
+ *     showing it would let an operator enter the WRONG amount on a bulk
+ *     bank-transfer for a batch that includes an already-resolved cycle.
+ */
+export type SettlementPreviewRow =
+  | {
+      readonly cycleId: CycleId;
+      readonly companyName: string;
+      readonly previewable: true;
+      /** Live linked bill for this cycle (`status='issued'`). */
+      readonly invoiceId: string;
+      /** Bill total NET of credits (`total_satang - credited_total_satang`), in satang (THB minor units). */
+      readonly amountThbMinor: number;
+      readonly currency: string;
+    }
+  | {
+      readonly cycleId: CycleId;
+      readonly companyName: string;
+      readonly previewable: false;
+      readonly invoiceId: null;
+      readonly amountThbMinor: null;
+      readonly currency: null;
+    };
+
 export interface RenewalCycleRepo {
   /** Insert a new cycle (typically called from F4 invoice-paid hook in Phase 5+). */
   insert(
@@ -939,6 +984,22 @@ export interface RenewalCycleRepo {
       readonly fiscalYearStartMonth: number;
     },
   ): Promise<PipelineMoneyRaw>;
+
+  /**
+   * 059-membership-suspension Task 9 — read-only settlement-preview join for
+   * the bulk "Mark paid" confirm dialog. LEFT JOINs `renewal_cycles` →
+   * `members` (company name) → `invoices` (via `linked_invoice_id`), scoped
+   * to the requested `cycleIds`. See `SettlementPreviewRow.previewable` for
+   * the live-invoice gate that decides whether the money fields are
+   * populated. A `cycleId` with no matching `renewal_cycles` row (wrong
+   * tenant, or a typo'd id) is simply ABSENT from the result — this method
+   * never synthesizes a placeholder row for it; the caller decides how to
+   * treat a missing id.
+   */
+  loadSettlementPreview(input: {
+    readonly tenantId: string;
+    readonly cycleIds: ReadonlyArray<string>;
+  }): Promise<ReadonlyArray<SettlementPreviewRow>>;
 
   /**
    * DV-18 — members that have NO `renewal_cycles` row at all (the renewal
