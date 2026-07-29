@@ -2130,7 +2130,7 @@
           "recordPaymentAria": "Registrera betalning för faktura {number}",
           "clearFilters": "Rensa filter",
           "configureInvoicing": "Konfigurera fakturering",
-          "openDraftAria": "Öppna utkast för {name}"
+          "openDraftAria": "Öppna fakturautkast för {name}"
         },
         "columns": {
           "documentNumber": "Fakturanr.",

@@ -2130,7 +2130,7 @@
           "recordPaymentAria": "บันทึกการชำระเงินสำหรับใบแจ้งหนี้ {number}",
           "clearFilters": "ล้างตัวกรอง",
           "configureInvoicing": "ตั้งค่าการออกใบแจ้งหนี้",
-          "openDraftAria": "เปิดใบร่างของ {name}"
+          "openDraftAria": "เปิดใบแจ้งหนี้ฉบับร่างของ {name}"
         },
         "columns": {
           "documentNumber": "เลขที่ใบแจ้งหนี้",

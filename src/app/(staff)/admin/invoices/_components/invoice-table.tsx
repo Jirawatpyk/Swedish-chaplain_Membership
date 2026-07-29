@@ -245,6 +245,16 @@ function formatSatang(satang: string): string {
 
 const headCls = 'text-xs uppercase tracking-wide text-muted-foreground';
 
+// Shared base for the Number-column open-detail link (both the real-number
+// row and the draft placeholder row). `inline-flex min-h-6 items-center`
+// guarantees a ≥24px vertical hit target (WCAG 2.5.8) — the ~20px `text-sm`
+// line-box alone is short of it — matching the combined-mode receipt span's
+// `min-h-6` elsewhere in this file. The real-number branch appends
+// `font-medium`; the draft branch stays normal-weight `text-foreground`
+// (see the Number-cell comment for why it is neither italic nor muted).
+const numberLinkBase =
+  'inline-flex min-h-6 items-center cursor-pointer underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-ring rounded-sm';
+
 function MethodBadge({ method }: { method: 'card' | 'promptpay' }) {
   const t = useTranslations('admin.paymentReconciliation.methodBadge');
   const tCol = useTranslations('admin.invoices.list.columns');
@@ -469,10 +479,16 @@ export function InvoicesTable({
                     target) and 2.4.4 (empty link name). Gate on the semantic
                     `status === 'draft'` (never string-match "—" — other
                     non-issued states never carry this sentinel) and render a
-                    localised "Draft" placeholder link instead: italic +
-                    muted (NOT `font-medium`, so it never reads as a real
-                    document number) but keeps the underline + focus ring so
-                    it still looks/behaves like a link, with an aria-label
+                    localised "Draft" placeholder link instead — normal-weight
+                    `text-foreground` via `numberLinkBase` (NOT `font-medium`, so
+                    it never reads as a real document number; NOT italic — Thai
+                    has no true italic, and the browser's faux-oblique bends
+                    "ร่าง"'s tone/vowel marks; NOT muted — that colour is this
+                    table's "empty / non-actionable" sentinel used by the adjacent
+                    "—" cells, so a muted link would blend into them). The visible
+                    "Draft" word + the Status=Draft badge carry the placeholder
+                    meaning; the shared underline + focus ring + `min-h-6` keep it
+                    a real, ≥24px-target link (WCAG 2.5.8), with an aria-label
                     naming the member for screen readers. `r.documentNumber`
                     itself is left untouched — the record-payment gate at
                     `documentNumber === '—'` (issued/overdue-only) never sees
@@ -481,14 +497,14 @@ export function InvoicesTable({
                   <Link
                     href={`/admin/invoices/${r.invoiceId}`}
                     aria-label={t('actions.openDraftAria', { name: r.memberName })}
-                    className="cursor-pointer italic text-muted-foreground underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
+                    className={numberLinkBase}
                   >
                     {t('draftNumberLabel')}
                   </Link>
                 ) : (
                   <Link
                     href={`/admin/invoices/${r.invoiceId}`}
-                    className="cursor-pointer font-medium underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
+                    className={cn(numberLinkBase, 'font-medium')}
                   >
                     {r.documentNumber}
                   </Link>

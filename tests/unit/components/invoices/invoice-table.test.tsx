@@ -915,8 +915,10 @@ describe('<InvoicesTable> — queue row actions (107-auto-invoice Task 14)', () 
  * bare em-dash as the ONLY click-to-open link failed WCAG 2.5.8 (target <
  * 24px) and 2.4.4 (empty link name, "—, link"). The fix gates on the
  * semantic `status === 'draft'` and swaps in a localised "Draft" placeholder
- * link (italic + muted, not `font-medium` — so it never reads as a real
- * document number) with an aria-label naming the member.
+ * link — normal-weight `text-foreground`, not `font-medium` (so it never reads
+ * as a real document number), and deliberately neither italic (Thai has no true
+ * italic — faux-oblique bends "ร่าง") nor muted (that colour is the table's
+ * "empty / non-actionable" sentinel) — with an aria-label naming the member.
  *
  * These two tests render against the REAL, shipped `en.json` (via
  * `renderTableRealMessages`) rather than the hand-picked `messages` stub
