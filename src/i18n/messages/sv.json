@@ -3464,7 +3464,8 @@
           "failed": "Misslyckades",
           "rateLimited": "Hastighetsbegränsade — försök igen senare",
           "needsAction": "Kräver åtgärd innan betalningen kan registreras",
-          "notBulkPayable": "Hantera individuellt"
+          "notBulkPayable": "Hantera individuellt",
+          "noEmail": "Kvitto inte skickat via e-post"
         },
         "rateLimited": "För många massåtgärder. Vänta några minuter och försök igen.",
         "unknownError": "Något gick fel.",

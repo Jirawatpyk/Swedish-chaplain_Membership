@@ -431,9 +431,18 @@ export function PipelineBulkActionBar({
           parts.push(t('markPaidNoEmail', { count: noEmailCount }));
       }
       const message = parts.join(' · ');
-      const hasError =
-        buckets.failed.length > 0 || buckets.needsAction.length > 0;
+      // Code-review fix — a HARD failure (`failed`) is the only tier that
+      // reads as "the batch failed"; `needsAction` rows are real settled
+      // money still owed pending a human step (reactivate / restore a flag /
+      // re-issue), not a failure, so a partially-successful run (e.g. 8
+      // settled + 2 needs-action) must not show the same red error toast as
+      // a run with zero successes. Tiers: hard failure → error; else
+      // needs-action (no hard failure) → warning; else any success → success;
+      // else (nothing happened at all, e.g. a fully skipped/rate-limited
+      // run) → info.
+      const hasError = buckets.failed.length > 0;
       if (hasError) toast.error(message);
+      else if (buckets.needsAction.length > 0) toast.warning(message);
       else if (buckets.ok.length > 0) toast.success(message);
       else toast.info(message);
 
@@ -444,7 +453,11 @@ export function PipelineBulkActionBar({
           buckets.rateLimited.length >
         0;
       const hasNotBulkPayable = notBulkPayable.length > 0;
-      const shouldPersist = hasIssues || hasNotBulkPayable;
+      // Code-review fix — a settled-but-not-emailed row (`ok` bucket,
+      // `noEmail: true`) must also persist: which members need a manual
+      // §86/4 receipt would otherwise be lost the moment the ~4s toast
+      // fades, since `ok` rows are never rendered in a bucket section below.
+      const shouldPersist = hasIssues || hasNotBulkPayable || noEmailCount > 0;
       setLastRunResult(shouldPersist ? { action, items, notBulkPayable } : null);
 
       // MUST-FIX (review round 1) — only claim "closed via success" (skip
@@ -651,6 +664,10 @@ export function PipelineBulkActionBar({
  * / restore a flag / re-issue, then record the payment). `notBulkPayable`
  * (review round 1, SHOULD 4) is a separate list entirely — those rows never
  * even fanned out, so they are never in `result.items`/`groupByBucket` at all.
+ * Code-review fix — `noEmailItems` is ALSO a separate list read straight off
+ * `result.items` (never a `groupByBucket` bucket key): a settled-but-not-
+ * emailed row stays in the `ok` bucket (the payment DID succeed), so
+ * `groupByBucket`'s per-bucket sections would never surface it.
  *
  * `panelRef` + `tabIndex={-1}` (review round 1, MUST-FIX) make this
  * container a valid script-focus target — see the double-RAF effect in
@@ -673,8 +690,11 @@ function BulkRunResultsPanel({
     .map((key) => ({ key, items: buckets[key] }))
     .filter((s) => s.items.length > 0);
   const notBulkPayable = result.notBulkPayable;
+  const noEmailItems = result.items.filter((i) => i.noEmail);
 
-  if (sections.length === 0 && notBulkPayable.length === 0) return null;
+  if (sections.length === 0 && notBulkPayable.length === 0 && noEmailItems.length === 0) {
+    return null;
+  }
 
   return (
     <div
@@ -709,6 +729,18 @@ function BulkRunResultsPanel({
           </h3>
           <ul className="flex flex-wrap gap-x-3 gap-y-1 text-sm">
             {notBulkPayable.map((item) => (
+              <li key={item.cycleId}>{item.companyName || item.cycleId}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {noEmailItems.length > 0 && (
+        <div className="space-y-1">
+          <h3 className="text-xs font-medium text-muted-foreground">
+            {t('resultLabels.noEmail')}
+          </h3>
+          <ul className="flex flex-wrap gap-x-3 gap-y-1 text-sm">
+            {noEmailItems.map((item) => (
               <li key={item.cycleId}>{item.companyName || item.cycleId}</li>
             ))}
           </ul>

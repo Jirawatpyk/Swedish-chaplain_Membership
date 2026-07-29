@@ -31,11 +31,13 @@ vi.mock('next/navigation', () => ({
 const toastSuccess = vi.fn();
 const toastError = vi.fn();
 const toastInfo = vi.fn();
+const toastWarning = vi.fn();
 vi.mock('sonner', () => ({
   toast: {
     success: (...a: unknown[]) => toastSuccess(...a),
     error: (...a: unknown[]) => toastError(...a),
     info: (...a: unknown[]) => toastInfo(...a),
+    warning: (...a: unknown[]) => toastWarning(...a),
   },
 }));
 
@@ -116,6 +118,7 @@ beforeEach(() => {
   toastSuccess.mockClear();
   toastError.mockClear();
   toastInfo.mockClear();
+  toastWarning.mockClear();
   markPaidBatchOverride = [];
   notBulkPayableOverride = [];
 });
@@ -372,8 +375,12 @@ describe('PipelineBulkActionBar — mark paid outcome bucketing (Decision 5)', (
     expect(screen.getByText(B.resultLabels.skipped)).toBeInTheDocument();
     expect(screen.getByText('Acme')).toBeInTheDocument();
     expect(screen.getByText('Beta')).toBeInTheDocument();
-    // needs-action is treated as needing attention — error-level toast.
-    expect(toastError).toHaveBeenCalled();
+    // Code-review fix — needs-action rows are real settled money still owed
+    // pending a human step, not a hard failure: with zero `failed` rows this
+    // is a WARNING toast, never the red error toast (which would read as
+    // "the batch failed" despite nothing being lost).
+    expect(toastWarning).toHaveBeenCalled();
+    expect(toastError).not.toHaveBeenCalled();
   });
 
   // membership_terminated + the config/legacy codes are all 409s with no money
@@ -405,7 +412,9 @@ describe('PipelineBulkActionBar — mark paid outcome bucketing (Decision 5)', (
       });
       expect(screen.queryByText(B.resultLabels.skipped)).toBeNull();
       expect(screen.getByText('Acme')).toBeInTheDocument();
-      expect(toastError).toHaveBeenCalled();
+      // Code-review fix — needs-action-only run: warning, not error.
+      expect(toastWarning).toHaveBeenCalled();
+      expect(toastError).not.toHaveBeenCalled();
     },
   );
 
@@ -453,7 +462,9 @@ describe('PipelineBulkActionBar — mark paid outcome bucketing (Decision 5)', (
     });
     expect(screen.queryByText(B.resultLabels.failed)).toBeNull();
     expect(screen.getByText('Acme')).toBeInTheDocument();
-    expect(toastError).toHaveBeenCalled();
+    // Code-review fix — needs-action-only run: warning, not error.
+    expect(toastWarning).toHaveBeenCalled();
+    expect(toastError).not.toHaveBeenCalled();
   });
 
   // The sibling of the above: every OTHER 422 code is a real data/
@@ -645,6 +656,15 @@ describe('PipelineBulkActionBar — mark paid outcome bucketing (Decision 5)', (
     // Both the settled count AND the additive no-email note are surfaced.
     expect(message).toContain('marked paid');
     expect(message).toContain('could not be emailed');
+
+    // Code-review fix (#3) — the settled-but-not-emailed row must persist in
+    // the results panel too, not just the transient (~4s) toast: which
+    // members need a manual §86/4 receipt would otherwise be lost once the
+    // toast fades. The row is `ok` (not an issue bucket), so it renders
+    // under its own dedicated "receipt not emailed" section.
+    expect(screen.getByText(B.resultsHeadingMarkPaid)).toBeInTheDocument();
+    expect(screen.getByText(B.resultLabels.noEmail)).toBeInTheDocument();
+    expect(screen.getByText('Acme')).toBeInTheDocument();
   });
 
   // Review round 1 (SHOULD 4) — rows `BulkMarkPaidConfirmDialog` excludes

@@ -95,6 +95,19 @@ describe('selectPreviewableBatch (Decision 3 — pure, no rendering)', () => {
     ]);
     expect(batch).toEqual([{ cycleId: 'c1', companyName: 'Acme', invoiceId: 'inv1' }]);
   });
+
+  // Code-review fix — a previewable, priced, invoiced row that is NOT THB
+  // must never be bulk-settled: the server's own `totalThbMinor` gate
+  // (`load-settlement-preview.ts`) excludes non-THB rows from the total, so
+  // including one here would let the confirmed grand total understate the
+  // money actually settled. It falls to `selectNotBulkPayableBatch` instead.
+  it('excludes a previewable, priced, invoiced row that is not THB', () => {
+    const batch = selectPreviewableBatch([
+      { cycleId: 'c1', companyName: 'Acme', invoiceId: 'inv1', amountThbMinor: 5000, currency: 'THB', previewable: true },
+      { cycleId: 'c2', companyName: 'Beta', invoiceId: 'inv2', amountThbMinor: 3000, currency: 'USD', previewable: true },
+    ]);
+    expect(batch).toEqual([{ cycleId: 'c1', companyName: 'Acme', invoiceId: 'inv1' }]);
+  });
 });
 
 describe('selectNotBulkPayableBatch (review round 1 SHOULD 4 — pure, no rendering)', () => {
@@ -108,6 +121,18 @@ describe('selectNotBulkPayableBatch (review round 1 SHOULD 4 — pure, no render
       { cycleId: 'c2', companyName: 'Beta' },
       { cycleId: 'c3', companyName: 'Gamma' },
     ]);
+  });
+
+  // Code-review fix — the complement side of the new currency gate: a
+  // previewable, priced, invoiced but non-THB row is excluded from the batch
+  // (see the sibling test in the `selectPreviewableBatch` block above) and
+  // must show up here instead.
+  it('captures a previewable, priced, invoiced row that is not THB', () => {
+    const batch = selectNotBulkPayableBatch([
+      { cycleId: 'c1', companyName: 'Acme', invoiceId: 'inv1', amountThbMinor: 5000, currency: 'THB', previewable: true },
+      { cycleId: 'c2', companyName: 'Beta', invoiceId: 'inv2', amountThbMinor: 3000, currency: 'USD', previewable: true },
+    ]);
+    expect(batch).toEqual([{ cycleId: 'c2', companyName: 'Beta' }]);
   });
 
   it('is the exact complement of selectPreviewableBatch over the same input', () => {
@@ -218,6 +243,63 @@ describe('BulkMarkPaidConfirmDialog — settlement preview rendering', () => {
     await screen.findByText('Acme');
     expect(screen.getByText('Beta')).toBeInTheDocument();
     expect(screen.getByText(en.admin.renewals.bulk.previewRowUnpriced)).toBeInTheDocument();
+  });
+
+  // Code-review fix (#1) — a non-THB previewable row must be excluded from
+  // the priced list/batch, AND the grand total must be the CLIENT-SIDE sum
+  // of the rows actually shown/settled, never the server-supplied
+  // `total_thb_minor` (deliberately set to a bogus value here to prove the
+  // dialog never reads it for display).
+  it('excludes a non-THB previewable row from the batch and renders the client-computed total, ignoring the server total_thb_minor', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        settlementPreviewResponse({
+          items: [
+            {
+              cycle_id: 'c1',
+              company_name: 'Acme',
+              invoice_id: 'inv1',
+              amount_thb_minor: 107000,
+              currency: 'THB',
+              previewable: true,
+            },
+            {
+              cycle_id: 'c2',
+              company_name: 'Beta',
+              invoice_id: 'inv2',
+              amount_thb_minor: 300000,
+              currency: 'USD',
+              previewable: true,
+            },
+          ],
+          // Deliberately wrong — the dialog must NEVER display this figure.
+          total_thb_minor: 999999,
+        }),
+      ),
+    );
+
+    render(
+      wrap(
+        <BulkMarkPaidConfirmDialog
+          open
+          onOpenChange={vi.fn()}
+          cycleIds={['c1', 'c2']}
+          onConfirm={vi.fn(async () => {})}
+        />,
+      ),
+    );
+
+    expect(await screen.findByText('Acme')).toBeInTheDocument();
+    // The USD row lands under "not included in this batch", not the priced
+    // list — it never contributes to the batch or the displayed total.
+    expect(screen.getByText('Beta')).toBeInTheDocument();
+    expect(screen.getByText(en.admin.renewals.bulk.previewRowUnpriced)).toBeInTheDocument();
+    // Grand total = the client-side sum of ONLY the THB previewable row
+    // (appears twice: the row's own amount + the grand total, since there is
+    // only one previewable row) — never the bogus server total.
+    expect(screen.getAllByText('฿1,070.00')).toHaveLength(2);
+    expect(screen.queryByText('฿9,999.99')).toBeNull();
   });
 
   it('shows previewError when the fetch fails', async () => {

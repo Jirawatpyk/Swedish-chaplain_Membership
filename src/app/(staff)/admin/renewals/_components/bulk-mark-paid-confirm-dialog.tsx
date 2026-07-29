@@ -135,7 +135,6 @@ type PreviewState =
   | {
       readonly kind: 'ready';
       readonly items: readonly PreviewItem[];
-      readonly totalThbMinor: number;
     };
 
 export interface BulkMarkPaidConfirmDialogProps {
@@ -166,19 +165,34 @@ export interface BulkMarkPaidConfirmDialogProps {
 
 /**
  * Decision 3 (tightened by review round 1, SHOULD 3; C1 fix adds the
- * invoiceId gate) — the ONLY rows a bulk mark-paid batch may act on:
- * `previewable` AND a legible THB amount AND a linked issued `invoiceId`
- * (the id the caller POSTs `/api/invoices/{invoiceId}/pay` against). A
+ * invoiceId gate; code-review fix adds the currency gate) — the ONLY rows a
+ * bulk mark-paid batch may act on: `previewable` AND a legible THB amount AND
+ * a linked issued `invoiceId` (the id the caller POSTs
+ * `/api/invoices/{invoiceId}/pay` against) AND `currency === 'THB'`. A
  * previewable row is ALWAYS one whose linked invoice is `status='issued'`
  * (Task 9), so it always carries an `invoiceId` today — the null-guard is
  * defensive, but a batch row with no invoice id could not be settled at all,
  * so it must never be shown as payable.
+ *
+ * The currency gate mirrors `loadSettlementPreview`'s own
+ * `previewable && currency === 'THB'` gate on `totalThbMinor`
+ * (`load-settlement-preview.ts`) EXACTLY — before this fix, a previewable
+ * non-THB row satisfied this guard (no currency check) but was excluded from
+ * the server's total, so it could be POSTed into the settled batch while the
+ * dialog showed a grand total that understated the money actually settled.
+ * A non-THB row now falls to `selectNotBulkPayableBatch` and is shown under
+ * "settle individually", same as an unpriced row.
  */
-function isBulkPayable(
-  item: PreviewItem,
-): item is PreviewItem & { readonly invoiceId: string; readonly amountThbMinor: number } {
+function isBulkPayable(item: PreviewItem): item is PreviewItem & {
+  readonly invoiceId: string;
+  readonly amountThbMinor: number;
+  readonly currency: string;
+} {
   return (
-    item.previewable && item.amountThbMinor !== null && item.invoiceId !== null
+    item.previewable &&
+    item.amountThbMinor !== null &&
+    item.invoiceId !== null &&
+    item.currency === 'THB'
   );
 }
 
@@ -271,13 +285,15 @@ export function BulkMarkPaidConfirmDialog({
             currency: string | null;
             previewable: boolean;
           }>;
-          total_thb_minor?: number;
+          // `total_thb_minor` is still on the wire (the settlement-preview
+          // route's own server-computed total — untouched by this fix) but
+          // is intentionally NOT read here: the grand total this dialog
+          // shows is now the CLIENT-SIDE sum over `previewableItems` (see
+          // `clientTotalThbMinor` below), so it is always ≡ the batch this
+          // dialog hands back to the caller, by construction — independent
+          // of the server's separately-gated total.
         } | null;
-        if (
-          !body ||
-          !Array.isArray(body.items) ||
-          typeof body.total_thb_minor !== 'number'
-        ) {
+        if (!body || !Array.isArray(body.items)) {
           if (!cancelled) setPreview({ kind: 'error' });
           return;
         }
@@ -292,7 +308,6 @@ export function BulkMarkPaidConfirmDialog({
             currency: r.currency,
             previewable: r.previewable,
           })),
-          totalThbMinor: body.total_thb_minor,
         });
       } catch {
         if (!cancelled) setPreview({ kind: 'error' });
@@ -313,6 +328,16 @@ export function BulkMarkPaidConfirmDialog({
   const nonPreviewableItems = useMemo(
     () => (preview.kind === 'ready' ? preview.items.filter((i) => !isBulkPayable(i)) : []),
     [preview],
+  );
+  // Code-review fix — the grand total is the CLIENT-SIDE sum of the exact
+  // rows shown/settled above (`previewableItems`, already narrowed by
+  // `isBulkPayable` to a non-null `amountThbMinor`), NOT the server's
+  // separately-gated `total_thb_minor`. This makes the displayed total ≡ the
+  // settled batch by construction — it can never drift from what gets
+  // POSTed, regardless of how the server's own gate is defined.
+  const clientTotalThbMinor = useMemo(
+    () => previewableItems.reduce((sum, item) => sum + item.amountThbMinor, 0),
+    [previewableItems],
   );
 
   const trimmedReference = paymentReference.trim();
@@ -382,7 +407,7 @@ export function BulkMarkPaidConfirmDialog({
               <div className="flex items-center justify-between border-t pt-2 text-sm font-semibold">
                 <span>{t('previewGrandTotalLabel')}</span>
                 <span className="tabular-nums">
-                  {formatThbMinor(preview.totalThbMinor, locale, 'THB')}
+                  {formatThbMinor(clientTotalThbMinor, locale, 'THB')}
                 </span>
               </div>
               {nonPreviewableItems.length > 0 && (
