@@ -45,15 +45,19 @@ export async function loadSettlementPreview(
     cycleIds: input.cycleIds,
   });
   // Review round 1 fix F — `total_thb_minor` asserts THB; require
-  // `currency === 'THB'` alongside `previewable`/non-null as defence-in-
-  // depth. Every live row today IS THB (the repo doesn't populate
-  // non-THB currencies yet), so this guards a FUTURE non-THB invoice from
-  // ever being summed as satang, not a bug reachable today.
+  // `currency === 'THB'` alongside `previewable` as defence-in-depth. Every
+  // live row today IS THB (the repo doesn't populate non-THB currencies
+  // yet), so this guards a FUTURE non-THB invoice from ever being summed as
+  // satang, not a bug reachable today.
+  //
+  // speckit-review #4 — `SettlementPreviewRow` is now a discriminated union
+  // on `previewable`, so the former `amountThbMinor !== null` re-check
+  // COLLAPSES: `r.previewable` narrows `r` to the arm where `amountThbMinor`
+  // is a non-null `number` and `currency` a non-null `string`. The
+  // `currency === 'THB'` check stays — it is a VALUE guard (never sum a
+  // non-THB total as satang), not a null-guard.
   const totalThbMinor = items.reduce(
-    (sum, r) =>
-      r.previewable && r.amountThbMinor !== null && r.currency === 'THB'
-        ? sum + r.amountThbMinor
-        : sum,
+    (sum, r) => (r.previewable && r.currency === 'THB' ? sum + r.amountThbMinor : sum),
     0,
   );
   return ok({ items, totalThbMinor });

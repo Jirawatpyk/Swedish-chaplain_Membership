@@ -22,16 +22,18 @@
  * `DirectoryWithBulk`'s FR-018 AS5 precedent).
  *
  * Task 11 mounts the real `PipelineBulkActionBar` here (wiring `selectedIds`
- * + `onClear`, both already prepared by Task 10). `selectedCompanyNames` is
- * resolved from the CURRENT PAGE's rows by cycleId — the same `Map`-lookup
- * shape `directory-with-bulk.tsx` uses for `selectedCompanyNames`, minus its
- * `.filter(Boolean)` drop: this wrapper has no cross-page "select all
- * matching" set, so every selected id always resolves to a row on the
- * current page, and dropping misses would silently break the index-parity
- * `PipelineBulkActionBar` relies on to attribute a fan-out outcome back to
- * a company name (Decision 5's "kept visible" results panel). `totalMatching`
- * is `rows.length` (the current page count) rather than a server-side total
- * across all pages — there is no such total here (see the module docstring).
+ * + `onClear`, both already prepared by Task 10). `selectedCycles` pairs each
+ * selected cycleId with its company name, resolved from the CURRENT PAGE's
+ * rows by cycleId (a `Map` lookup, same shape `directory-with-bulk.tsx`
+ * uses), minus that wrapper's `.filter(Boolean)` drop: this wrapper has no
+ * cross-page "select all matching" set, so every selected id always resolves
+ * to a row on the current page, producing exactly one {cycleId, companyName}
+ * pair the bar uses to attribute a fan-out outcome back to a company name
+ * (Decision 5's "kept visible" results panel). speckit-review #5 replaced the
+ * former two index-parallel arrays with these pairs, so a name can no longer
+ * drift from its id. `totalMatching` is `rows.length` (the current page
+ * count) rather than a server-side total across all pages — there is no such
+ * total here (see the module docstring).
  */
 import { useCallback, useMemo, useState } from 'react';
 import { PipelineTable } from './pipeline-table';
@@ -94,13 +96,15 @@ export function PipelineWithBulk({
   }, []);
 
   // Staff-review SS-1 precedent (`directory-with-bulk.tsx`) — memoise so
-  // this doesn't recompute on every unrelated re-render. Index-PARALLEL to
-  // `selectedIds` (see module docstring for why this wrapper does NOT
-  // `.filter(Boolean)` a miss away like the members wrapper does).
-  const selectedCompanyNames = useMemo(() => {
+  // this doesn't recompute on every unrelated re-render. speckit-review #5 —
+  // build {cycleId, companyName} PAIRS (was two index-parallel arrays). One
+  // object per selected id (no `.filter(Boolean)` drop) so a name can never
+  // drift from its id — the index-parity fragility the module docstring
+  // warned about is gone.
+  const selectedCycles = useMemo(() => {
     const byId = new Map<string, string>();
     for (const row of rows) byId.set(row.cycleId, row.companyName);
-    return selectedIds.map((id) => byId.get(id) ?? '');
+    return selectedIds.map((id) => ({ cycleId: id, companyName: byId.get(id) ?? '' }));
   }, [rows, selectedIds]);
 
   return (
@@ -119,8 +123,7 @@ export function PipelineWithBulk({
       />
       {isAdmin && (
         <PipelineBulkActionBar
-          selectedCycleIds={selectedIds}
-          selectedCompanyNames={selectedCompanyNames}
+          selectedCycles={selectedCycles}
           totalMatching={rows.length}
           onClear={handleClear}
         />

@@ -3454,6 +3454,7 @@
         "markPaidRateLimited": "{count, plural, one {# betalning hastighetsbegränsad — vänta en minut och försök igen med resten} other {# betalningar hastighetsbegränsade — vänta en minut och försök igen med resten}}",
         "markPaidFailed": "{count, plural, one {# misslyckad} other {# misslyckade}}",
         "markPaidNeedsAction": "{count, plural, one {# kräver åtgärd innan den kan registreras} other {# kräver åtgärd innan de kan registreras}}",
+        "markPaidNoEmail": "{count, plural, one {# kvitto kunde inte mejlas (ingen kontaktmejl registrerad)} other {# kvitton kunde inte mejlas (ingen kontaktmejl registrerad)}}",
         "resultsHeadingReminder": "Resultat för påminnelseutskick",
         "resultsHeadingMarkPaid": "Resultat för betalningsregistrering",
         "resultsDismiss": "Stäng",

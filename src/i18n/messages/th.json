@@ -3454,6 +3454,7 @@
         "markPaidRateLimited": "{count, plural, other {การชำระเงิน # รายการถูกจำกัดอัตรา — รอสักครู่แล้วลองใหม่กับรายการที่เหลือ}}",
         "markPaidFailed": "{count, plural, other {ล้มเหลว # รายการ}}",
         "markPaidNeedsAction": "{count, plural, other {ต้องดำเนินการก่อนจึงจะบันทึกได้ # รายการ}}",
+        "markPaidNoEmail": "{count, plural, other {ส่งใบเสร็จทางอีเมลไม่ได้ # รายการ (ไม่มีอีเมลติดต่อในระบบ)}}",
         "resultsHeadingReminder": "ผลลัพธ์การส่งการแจ้งเตือน",
         "resultsHeadingMarkPaid": "ผลลัพธ์การบันทึกการชำระเงิน",
         "resultsDismiss": "ปิด",

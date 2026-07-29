@@ -3454,6 +3454,7 @@
         "markPaidRateLimited": "{count, plural, one {# payment rate-limited — wait a minute and retry the rest} other {# payments rate-limited — wait a minute and retry the rest}}",
         "markPaidFailed": "{count, plural, one {# failed} other {# failed}}",
         "markPaidNeedsAction": "{count, plural, one {# needs attention before it can be recorded} other {# need attention before they can be recorded}}",
+        "markPaidNoEmail": "{count, plural, one {# receipt could not be emailed (no contact email on file)} other {# receipts could not be emailed (no contact email on file)}}",
         "resultsHeadingReminder": "Send-reminder results",
         "resultsHeadingMarkPaid": "Mark-paid results",
         "resultsDismiss": "Dismiss",

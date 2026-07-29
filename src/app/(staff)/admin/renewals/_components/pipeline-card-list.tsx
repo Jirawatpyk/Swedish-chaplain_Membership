@@ -192,13 +192,14 @@ export function PipelineCardList({
                         (`pipeline-table.tsx`'s `status`/`last_reminder`/
                         `invoice` columns), each prefixed with its existing
                         column label — same inline-label pattern the sibling
-                        `PortalInvoiceCardList` uses for its "Dates" line. */}
-                    <p className="text-sm text-muted-foreground">
-                      {t('columns.status')}{' '}
+                        `PortalInvoiceCardList` uses for its "Dates" line.
+                        speckit-review #6 — the three near-identical label+value
+                        `<p>` blocks now share the `LabeledRow` helper (below);
+                        rendered output is unchanged. */}
+                    <LabeledRow label={t('columns.status')}>
                       {t(`status.${original.status}` as `status.${CycleStatus}`)}
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      {t('columns.lastReminder')}{' '}
+                    </LabeledRow>
+                    <LabeledRow label={t('columns.lastReminder')}>
                       {original.lastReminderAt ? (
                         <RelativeTime
                           iso={original.lastReminderAt}
@@ -207,9 +208,8 @@ export function PipelineCardList({
                       ) : (
                         '—'
                       )}
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      {t('columns.invoice')}{' '}
+                    </LabeledRow>
+                    <LabeledRow label={t('columns.invoice')}>
                       {original.linkedInvoiceId ? (
                         <Link
                           href={`/admin/invoices/${original.linkedInvoiceId}`}
@@ -233,7 +233,7 @@ export function PipelineCardList({
                       ) : (
                         '—'
                       )}
-                    </p>
+                    </LabeledRow>
                     <div className="flex justify-end">
                       <RowActions
                         cycleId={original.cycleId}
@@ -253,5 +253,26 @@ export function PipelineCardList({
         </ul>
       )}
     </div>
+  );
+}
+
+/**
+ * speckit-review #6 — the card's status / last-reminder / invoice rows were
+ * three near-identical hand-rolled label+value `<p>` blocks. This extracts
+ * the shared `text-sm text-muted-foreground` `<p>` with an inline label; the
+ * rendered output — the label, one space, then the value node — is identical
+ * to the previous inline blocks (`{label}{' '}{value}`). Pure markup DRY.
+ */
+function LabeledRow({
+  label,
+  children,
+}: {
+  readonly label: string;
+  readonly children: React.ReactNode;
+}): React.JSX.Element {
+  return (
+    <p className="text-sm text-muted-foreground">
+      {label} {children}
+    </p>
   );
 }

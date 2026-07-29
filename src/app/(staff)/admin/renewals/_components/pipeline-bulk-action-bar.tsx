@@ -64,7 +64,7 @@
  * refresh()` always resets `PipelineWithBulk`'s selection on the next
  * server render regardless of what this component does, so the ONLY way
  * to keep a failed/skipped row's identity visible is this component's OWN
- * `lastRunResult` state, independent of the live `selectedCycleIds` prop).
+ * `lastRunResult` state, independent of the live `selectedCycles` prop).
  * Review round 1 (SHOULD 4) extended this to the not-bulk-payable rows
  * `BulkMarkPaidConfirmDialog` excludes from the batch — those never even
  * fan out, so they are carried into `lastRunResult` separately (never
@@ -83,7 +83,7 @@
  * commit reliably runs after Base UI's own close-focus attempt, which
  * no-ops anyway since the trigger it would have targeted is detached).
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { BanknoteIcon, BellIcon, XIcon } from 'lucide-react';
@@ -112,6 +112,17 @@ interface BulkOutcomeItem {
   readonly cycleId: string;
   readonly companyName: string;
   readonly bucket: BulkOutcomeBucket;
+  /**
+   * speckit-review #1 — set on a SETTLED mark-paid row (2xx) whose `/pay`
+   * response body carried `email_dispatch: 'skipped_no_email'`: the payment
+   * DID settle, but the §86/4 receipt could not be emailed (the member has no
+   * contact email on file). Informational only — the row stays in the `ok`
+   * bucket; this flag drives an additive toast note, mirroring the single-row
+   * `mark-paid-offline-dialog` / `payment-form` `successNoEmailWarning`.
+   * `send-reminder` responses never carry `email_dispatch`, so it is always
+   * absent for that action.
+   */
+  readonly noEmail?: boolean;
 }
 
 interface RunResult {
@@ -254,10 +265,19 @@ async function runFanOut<E extends { cycleId: string; companyName: string }>(
       } catch {
         body = null;
       }
+      // speckit-review #1 — the F4 `/pay` route echoes the auto-email
+      // dispatch outcome on a 2xx settle; `skipped_no_email` means the
+      // payment settled but the receipt couldn't be emailed. Read generically
+      // here (send-reminder bodies never carry `email_dispatch`, so this is
+      // always false for that action) and carry it as an informational flag —
+      // it never changes the bucket.
+      const noEmail =
+        (body as { email_dispatch?: string } | null)?.email_dispatch === 'skipped_no_email';
       items.push({
         cycleId: entry.cycleId,
         companyName: entry.companyName,
         bucket: classify(res, body),
+        ...(noEmail ? { noEmail: true } : {}),
       });
     } catch (e) {
       // K1-E5 precedent (row-actions.tsx) — a bare `catch {}` swallows every
@@ -273,15 +293,23 @@ async function runFanOut<E extends { cycleId: string; companyName: string }>(
 }
 
 export interface PipelineBulkActionBarProps {
-  readonly selectedCycleIds: string[];
-  readonly selectedCompanyNames: string[];
+  /**
+   * The current page's selection as {cycleId, companyName} PAIRS
+   * (speckit-review #5 — replaced the two index-parallel `selectedCycleIds`
+   * + `selectedCompanyNames` arrays whose index-parity was a load-bearing
+   * money-screen invariant; pairing them in one object makes a name unable
+   * to drift from its id).
+   */
+  readonly selectedCycles: ReadonlyArray<{
+    readonly cycleId: string;
+    readonly companyName: string;
+  }>;
   readonly totalMatching: number;
   readonly onClear: () => void;
 }
 
 export function PipelineBulkActionBar({
-  selectedCycleIds,
-  selectedCompanyNames,
+  selectedCycles,
   totalMatching,
   onClear,
 }: PipelineBulkActionBarProps) {
@@ -294,11 +322,18 @@ export function PipelineBulkActionBar({
   const [progress, setProgress] = useState<{ action: BulkAction; total: number } | null>(null);
   // Decision 5 — persists across a run so failed/skipped/needs-action
   // company names stay visible even after `onClear()` empties
-  // `selectedCycleIds` and `router.refresh()` reloads the table. Independent
+  // `selectedCycles` and `router.refresh()` reloads the table. Independent
   // of the live selection on purpose (see the module docstring).
   const [lastRunResult, setLastRunResult] = useState<RunResult | null>(null);
 
-  const count = selectedCycleIds.length;
+  const count = selectedCycles.length;
+  // The plain id list — the mark-paid confirm dialog fetches its settlement
+  // preview by cycleId. Memoised so its identity is stable across unrelated
+  // re-renders (the dialog re-fetches on `cycleIds` identity change).
+  const selectedCycleIds = useMemo(
+    () => selectedCycles.map((c) => c.cycleId),
+    [selectedCycles],
+  );
   // Defensive only — like the members bar, currently unreachable in
   // practice (Task 10 selection is page-only, well under BULK_CAP), but
   // the server-side route + BULK_CAP=100 settlement-preview cap are the
@@ -360,14 +395,6 @@ export function PipelineBulkActionBar({
     return () => ro.disconnect();
   }, [visible]);
 
-  const companyNameOf = useCallback(
-    (cycleId: string): string => {
-      const idx = selectedCycleIds.indexOf(cycleId);
-      return idx >= 0 ? (selectedCompanyNames[idx] ?? cycleId) : cycleId;
-    },
-    [selectedCycleIds, selectedCompanyNames],
-  );
-
   const reportOutcome = useCallback(
     (
       action: BulkAction,
@@ -375,6 +402,9 @@ export function PipelineBulkActionBar({
       notBulkPayable: readonly BulkMarkPaidBatchEntry[] = [],
     ) => {
       const buckets = groupByBucket(items);
+      // speckit-review #1 — settled rows whose receipt could not be emailed
+      // (no contact email on file). Only mark-paid rows ever carry this flag.
+      const noEmailCount = items.filter((i) => i.noEmail).length;
       const parts: string[] = [];
       if (action === 'sendReminder') {
         if (buckets.ok.length) parts.push(t('reminderSent', { sent: buckets.ok.length }));
@@ -394,6 +424,11 @@ export function PipelineBulkActionBar({
           parts.push(t('markPaidNeedsAction', { count: buckets.needsAction.length }));
         if (buckets.failed.length)
           parts.push(t('markPaidFailed', { count: buckets.failed.length }));
+        // speckit-review #1 — additive informational note; the rows still
+        // settled (they are in `ok`), the receipt just needs manual delivery.
+        // Does NOT escalate the toast to error (see `hasError` below).
+        if (noEmailCount > 0)
+          parts.push(t('markPaidNoEmail', { count: noEmailCount }));
       }
       const message = parts.join(' · ');
       const hasError =
@@ -433,7 +468,13 @@ export function PipelineBulkActionBar({
   );
 
   const handleSendReminders = useCallback(async () => {
-    const entries = selectedCycleIds.map((id) => ({ cycleId: id, companyName: companyNameOf(id) }));
+    // The {cycleId, companyName} pairs are already carried by the prop
+    // (speckit-review #5) — no id→name lookup needed. A copy keeps the fan-out
+    // entry type independent of the readonly prop array.
+    const entries = selectedCycles.map((c) => ({
+      cycleId: c.cycleId,
+      companyName: c.companyName,
+    }));
     setExecuting(true);
     setProgress({ action: 'sendReminder', total: entries.length });
     try {
@@ -451,7 +492,7 @@ export function PipelineBulkActionBar({
       setExecuting(false);
       setProgress(null);
     }
-  }, [selectedCycleIds, companyNameOf, reportOutcome]);
+  }, [selectedCycles, reportOutcome]);
 
   const handleMarkPaidConfirm = useCallback(
     async (

@@ -2113,29 +2113,49 @@ export function makeDrizzleRenewalCycleRepo(
           .where(inArray(renewalCycles.cycleId, input.cycleIds));
 
         return rows.map((r): SettlementPreviewRow => {
+          const cycleId = asCycleId(r.cycleId);
+          const companyName = r.companyName ?? '';
           // The ONLY previewable gate: a real linked invoice whose status
           // is still 'issued' — i.e. a truthful, still-collectible total.
           // 'draft' has no finalised total; 'paid'/'void'/'credited'/
           // 'partially_credited' are STALE (settled, reversed, or
           // superseded) — a stale link must never surface its amount
           // (money-safety fix; see `SettlementPreviewRow.previewable`).
-          const previewable =
-            r.invoiceId !== null && r.invoiceStatus === 'issued';
+          //
+          // speckit-review #4 — build the correct discriminated-union arm.
+          // Inlining the gate into the `if` narrows `r.invoiceId` to a
+          // non-null `string` for the previewable arm (no const-alias
+          // narrowing dependency).
+          if (r.invoiceId !== null && r.invoiceStatus === 'issued') {
+            return {
+              cycleId,
+              companyName,
+              previewable: true,
+              invoiceId: r.invoiceId,
+              // `- creditedTotalSatang` is DEFENSIVE, not load-bearing: a
+              // genuine `issued` invoice always has creditedTotalSatang = 0
+              // (crediting requires status 'paid'/'partially_credited', both
+              // excluded by the gate above), so for every row that reaches
+              // this branch today the term is always 0 — it exists only to
+              // stay correct if the gate is ever widened.
+              amountThbMinor: Number(
+                (r.totalSatang ?? 0n) - (r.creditedTotalSatang ?? 0n),
+              ),
+              // `invoices.currency` is a notNull column, so a matched
+              // 'issued' invoice row always carries a real 3-char code. The
+              // `!` only bridges Drizzle's LEFT-JOIN `string | null` typing
+              // to the union arm's `currency: string` — it compiles away, so
+              // the runtime value is identical (never a fallback).
+              currency: r.currency!,
+            };
+          }
           return {
-            cycleId: asCycleId(r.cycleId),
-            companyName: r.companyName ?? '',
-            invoiceId: previewable ? r.invoiceId : null,
-            // `- creditedTotalSatang` is DEFENSIVE, not load-bearing: a
-            // genuine `issued` invoice always has creditedTotalSatang = 0
-            // (crediting requires status 'paid'/'partially_credited', both
-            // excluded by the `previewable` gate above), so for every row
-            // that reaches this branch today the term is always 0 — it
-            // exists only to stay correct if the gate is ever widened.
-            amountThbMinor: previewable
-              ? Number((r.totalSatang ?? 0n) - (r.creditedTotalSatang ?? 0n))
-              : null,
-            currency: previewable ? r.currency : null,
-            previewable,
+            cycleId,
+            companyName,
+            previewable: false,
+            invoiceId: null,
+            amountThbMinor: null,
+            currency: null,
           };
         });
       });

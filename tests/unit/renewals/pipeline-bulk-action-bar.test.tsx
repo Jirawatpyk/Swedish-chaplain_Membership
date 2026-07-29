@@ -127,8 +127,10 @@ describe('PipelineBulkActionBar — send reminder fan-out', () => {
     render(
       wrap(
         <PipelineBulkActionBar
-          selectedCycleIds={['c1', 'c2']}
-          selectedCompanyNames={['Acme', 'Beta']}
+          selectedCycles={[
+            { cycleId: 'c1', companyName: 'Acme' },
+            { cycleId: 'c2', companyName: 'Beta' },
+          ]}
           totalMatching={2}
           onClear={vi.fn()}
         />,
@@ -156,8 +158,7 @@ describe('PipelineBulkActionBar — send reminder fan-out', () => {
     render(
       wrap(
         <PipelineBulkActionBar
-          selectedCycleIds={['c1']}
-          selectedCompanyNames={['Acme']}
+          selectedCycles={[{ cycleId: 'c1', companyName: 'Acme' }]}
           totalMatching={1}
           onClear={onClear}
         />,
@@ -189,8 +190,11 @@ describe('PipelineBulkActionBar — send reminder fan-out', () => {
     render(
       wrap(
         <PipelineBulkActionBar
-          selectedCycleIds={['c1', 'c2', 'c3']}
-          selectedCompanyNames={['Acme', 'Beta', 'Gamma']}
+          selectedCycles={[
+            { cycleId: 'c1', companyName: 'Acme' },
+            { cycleId: 'c2', companyName: 'Beta' },
+            { cycleId: 'c3', companyName: 'Gamma' },
+          ]}
           totalMatching={3}
           onClear={vi.fn()}
         />,
@@ -210,6 +214,56 @@ describe('PipelineBulkActionBar — send reminder fan-out', () => {
     // results panel, under its own bucket — a bare count is not enough.
     expect(await screen.findByText(B.resultLabels.rateLimited)).toBeInTheDocument();
     expect(screen.getByText('Beta')).toBeInTheDocument();
+  });
+
+  // speckit-review #3 — pin the send-reminder classifier's two `skipped`
+  // branches, which were un-pinned (asymmetric with the exhaustively-covered
+  // mark-paid classifier): (1) a `200` whose body `outcome.kind === 'skipped'`
+  // (the 200-trap's benign side), and (2) a bare `409 already_sent` (idempotent
+  // replay). Each must land under `resultLabels.skipped` with NO error toast.
+  it('buckets a 200 with outcome.kind=skipped as skipped, with no error toast', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ outcome: { kind: 'skipped' } })));
+
+    render(
+      wrap(
+        <PipelineBulkActionBar
+          selectedCycles={[{ cycleId: 'c1', companyName: 'Acme' }]}
+          totalMatching={1}
+          onClear={vi.fn()}
+        />,
+      ),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: B.actions.sendReminder }));
+    fireEvent.click(screen.getByRole('button', { name: B.confirmReminderAction }));
+
+    expect(await screen.findByText(B.resultLabels.skipped)).toBeInTheDocument();
+    expect(screen.getByText('Acme')).toBeInTheDocument();
+    expect(toastError).not.toHaveBeenCalled();
+  });
+
+  it('buckets a bare 409 already_sent as skipped (idempotent replay), with no error toast', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse({ error: { code: 'already_sent' } }, 409)),
+    );
+
+    render(
+      wrap(
+        <PipelineBulkActionBar
+          selectedCycles={[{ cycleId: 'c1', companyName: 'Acme' }]}
+          totalMatching={1}
+          onClear={vi.fn()}
+        />,
+      ),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: B.actions.sendReminder }));
+    fireEvent.click(screen.getByRole('button', { name: B.confirmReminderAction }));
+
+    expect(await screen.findByText(B.resultLabels.skipped)).toBeInTheDocument();
+    expect(screen.getByText('Acme')).toBeInTheDocument();
+    expect(toastError).not.toHaveBeenCalled();
   });
 });
 
@@ -235,8 +289,10 @@ describe('PipelineBulkActionBar — mark paid outcome bucketing (Decision 5)', (
     render(
       wrap(
         <PipelineBulkActionBar
-          selectedCycleIds={['c1', 'c2']}
-          selectedCompanyNames={['Acme', 'Beta']}
+          selectedCycles={[
+            { cycleId: 'c1', companyName: 'Acme' },
+            { cycleId: 'c2', companyName: 'Beta' },
+          ]}
           totalMatching={2}
           onClear={vi.fn()}
         />,
@@ -297,8 +353,10 @@ describe('PipelineBulkActionBar — mark paid outcome bucketing (Decision 5)', (
     render(
       wrap(
         <PipelineBulkActionBar
-          selectedCycleIds={['c1', 'c2']}
-          selectedCompanyNames={['Acme', 'Beta']}
+          selectedCycles={[
+            { cycleId: 'c1', companyName: 'Acme' },
+            { cycleId: 'c2', companyName: 'Beta' },
+          ]}
           totalMatching={2}
           onClear={vi.fn()}
         />,
@@ -332,8 +390,7 @@ describe('PipelineBulkActionBar — mark paid outcome bucketing (Decision 5)', (
       render(
         wrap(
           <PipelineBulkActionBar
-            selectedCycleIds={['c1']}
-            selectedCompanyNames={['Acme']}
+            selectedCycles={[{ cycleId: 'c1', companyName: 'Acme' }]}
             totalMatching={1}
             onClear={vi.fn()}
           />,
@@ -381,8 +438,7 @@ describe('PipelineBulkActionBar — mark paid outcome bucketing (Decision 5)', (
     render(
       wrap(
         <PipelineBulkActionBar
-          selectedCycleIds={['c1']}
-          selectedCompanyNames={['Acme']}
+          selectedCycles={[{ cycleId: 'c1', companyName: 'Acme' }]}
           totalMatching={1}
           onClear={vi.fn()}
         />,
@@ -414,8 +470,7 @@ describe('PipelineBulkActionBar — mark paid outcome bucketing (Decision 5)', (
     render(
       wrap(
         <PipelineBulkActionBar
-          selectedCycleIds={['c1']}
-          selectedCompanyNames={['Acme']}
+          selectedCycles={[{ cycleId: 'c1', companyName: 'Acme' }]}
           totalMatching={1}
           onClear={vi.fn()}
         />,
@@ -455,8 +510,10 @@ describe('PipelineBulkActionBar — mark paid outcome bucketing (Decision 5)', (
     render(
       wrap(
         <PipelineBulkActionBar
-          selectedCycleIds={['c1', 'c2']}
-          selectedCompanyNames={['Acme', 'Beta']}
+          selectedCycles={[
+            { cycleId: 'c1', companyName: 'Acme' },
+            { cycleId: 'c2', companyName: 'Beta' },
+          ]}
           totalMatching={2}
           onClear={vi.fn()}
         />,
@@ -504,8 +561,10 @@ describe('PipelineBulkActionBar — mark paid outcome bucketing (Decision 5)', (
     render(
       wrap(
         <PipelineBulkActionBar
-          selectedCycleIds={['c1', 'c2']}
-          selectedCompanyNames={['Acme', 'Beta']}
+          selectedCycles={[
+            { cycleId: 'c1', companyName: 'Acme' },
+            { cycleId: 'c2', companyName: 'Beta' },
+          ]}
           totalMatching={2}
           onClear={vi.fn()}
         />,
@@ -538,8 +597,7 @@ describe('PipelineBulkActionBar — mark paid outcome bucketing (Decision 5)', (
     render(
       wrap(
         <PipelineBulkActionBar
-          selectedCycleIds={['c1']}
-          selectedCompanyNames={['Acme']}
+          selectedCycles={[{ cycleId: 'c1', companyName: 'Acme' }]}
           totalMatching={1}
           onClear={vi.fn()}
         />,
@@ -552,6 +610,41 @@ describe('PipelineBulkActionBar — mark paid outcome bucketing (Decision 5)', (
     await waitFor(() => expect(toastSuccess).toHaveBeenCalled());
     expect(toastError).not.toHaveBeenCalled();
     expect(screen.queryByText(B.resultsHeadingMarkPaid)).toBeNull();
+  });
+
+  // speckit-review #1 — a SETTLED (2xx) mark-paid row whose `/pay` response
+  // carried `email_dispatch: 'skipped_no_email'` (the payment settled but the
+  // §86/4 receipt could not be emailed — no contact email on file) still
+  // counts as settled (bucket `ok`), AND the additive "receipt not emailed"
+  // note is surfaced in the success toast — mirroring the single-row
+  // `mark-paid-offline-dialog` / `payment-form` `successNoEmailWarning`.
+  it('surfaces a "receipt not emailed" note on a 2xx with email_dispatch=skipped_no_email, still counting it as settled', async () => {
+    markPaidBatchOverride = [{ cycleId: 'c1', companyName: 'Acme', invoiceId: 'inv1' }];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse({ status: 'paid', email_dispatch: 'skipped_no_email' })),
+    );
+
+    render(
+      wrap(
+        <PipelineBulkActionBar
+          selectedCycles={[{ cycleId: 'c1', companyName: 'Acme' }]}
+          totalMatching={1}
+          onClear={vi.fn()}
+        />,
+      ),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: B.actions.markPaid }));
+    fireEvent.click(screen.getByRole('button', { name: B.confirmMarkPaidAction }));
+
+    // Still settled — a success toast, never an error.
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalled());
+    expect(toastError).not.toHaveBeenCalled();
+    const message = toastSuccess.mock.calls[0]?.[0] as string;
+    // Both the settled count AND the additive no-email note are surfaced.
+    expect(message).toContain('marked paid');
+    expect(message).toContain('could not be emailed');
   });
 
   // Review round 1 (SHOULD 4) — rows `BulkMarkPaidConfirmDialog` excludes
@@ -568,8 +661,10 @@ describe('PipelineBulkActionBar — mark paid outcome bucketing (Decision 5)', (
     render(
       wrap(
         <PipelineBulkActionBar
-          selectedCycleIds={['c1', 'c2']}
-          selectedCompanyNames={['Acme', 'Beta']}
+          selectedCycles={[
+            { cycleId: 'c1', companyName: 'Acme' },
+            { cycleId: 'c2', companyName: 'Beta' },
+          ]}
           totalMatching={2}
           onClear={vi.fn()}
         />,
@@ -590,8 +685,7 @@ describe('PipelineBulkActionBar — accessibility + selection wiring', () => {
     render(
       wrap(
         <PipelineBulkActionBar
-          selectedCycleIds={[]}
-          selectedCompanyNames={[]}
+          selectedCycles={[]}
           totalMatching={0}
           onClear={vi.fn()}
         />,
@@ -604,8 +698,7 @@ describe('PipelineBulkActionBar — accessibility + selection wiring', () => {
     render(
       wrap(
         <PipelineBulkActionBar
-          selectedCycleIds={['c1']}
-          selectedCompanyNames={['Acme']}
+          selectedCycles={[{ cycleId: 'c1', companyName: 'Acme' }]}
           totalMatching={1}
           onClear={vi.fn()}
         />,
@@ -624,8 +717,7 @@ describe('PipelineBulkActionBar — accessibility + selection wiring', () => {
     render(
       wrap(
         <PipelineBulkActionBar
-          selectedCycleIds={['c1']}
-          selectedCompanyNames={['Acme']}
+          selectedCycles={[{ cycleId: 'c1', companyName: 'Acme' }]}
           totalMatching={1}
           onClear={onClear}
         />,
@@ -642,14 +734,14 @@ describe('PipelineBulkActionBar — accessibility + selection wiring', () => {
 
   // Review round 1 (SHOULD 2) — locks the Decision-5 invariant: the results
   // panel is sourced from THIS component's own `lastRunResult` state, never
-  // from the live `selectedCycleIds` prop. Every OTHER test in this file
+  // from the live `selectedCycles` prop. Every OTHER test in this file
   // keeps a fixed, populated selection throughout — a refactor that
   // (re-)derived the panel from the selection instead would blank the
   // do-not-retry list while every one of THOSE tests stayed green. This
   // test re-renders with the REAL post-run shape: `onClear()` + `router.
   // refresh()` emptying the parent's live selection on the next server
   // render.
-  it('keeps the results panel visible after the parent empties selectedCycleIds post-run (Decision 5)', async () => {
+  it('keeps the results panel visible after the parent empties selectedCycles post-run (Decision 5)', async () => {
     markPaidBatchOverride = [{ cycleId: 'c1', companyName: 'Acme', invoiceId: 'inv1' }];
     vi.stubGlobal(
       'fetch',
@@ -659,8 +751,7 @@ describe('PipelineBulkActionBar — accessibility + selection wiring', () => {
     const { rerender } = render(
       wrap(
         <PipelineBulkActionBar
-          selectedCycleIds={['c1']}
-          selectedCompanyNames={['Acme']}
+          selectedCycles={[{ cycleId: 'c1', companyName: 'Acme' }]}
           totalMatching={1}
           onClear={vi.fn()}
         />,
@@ -675,8 +766,7 @@ describe('PipelineBulkActionBar — accessibility + selection wiring', () => {
     rerender(
       wrap(
         <PipelineBulkActionBar
-          selectedCycleIds={[]}
-          selectedCompanyNames={[]}
+          selectedCycles={[]}
           totalMatching={0}
           onClear={vi.fn()}
         />,
@@ -727,8 +817,7 @@ describe('PipelineBulkActionBar — results panel focus (a11y, review round 1 MU
     render(
       wrap(
         <PipelineBulkActionBar
-          selectedCycleIds={['c1']}
-          selectedCompanyNames={['Acme']}
+          selectedCycles={[{ cycleId: 'c1', companyName: 'Acme' }]}
           totalMatching={1}
           onClear={vi.fn()}
         />,
