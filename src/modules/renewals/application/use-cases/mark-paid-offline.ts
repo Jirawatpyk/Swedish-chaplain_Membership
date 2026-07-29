@@ -545,6 +545,29 @@ export async function markPaidOffline(
             toIso: newExpiresAt,
           });
 
+      // membership-coverage-exclude-guard (mig 0281), L1 hardening — forward
+      // the TRUE charged coverage window EXPLICITLY on the RENEWAL branch,
+      // decoupled from the printed `membershipCoverage`, exactly as the online
+      // renewal bridge does (`f4-invoicing-for-renewal-bridge-drizzle.ts` →
+      // `createInvoiceDraft.coverageWindow`; the online caller computes the
+      // identical `[periodTo, periodTo + frozenPlanTermMonths)` in
+      // `confirm-renewal.ts`). Same locked-cycle window as `membershipCoverage`
+      // and the SAME `newExpiresAt` (= `addMonthsUtc(periodTo,
+      // frozenPlanTermMonths)`) — never re-derived, so the two rails persist a
+      // byte-identical `coverage_from/to` for the same cycle.
+      //
+      // FIRST-PAYMENT keeps coverage NULL (omitted): its re-anchored period is
+      // not known at issue time, so it legitimately does not participate in the
+      // EXCLUDE. Over-stamping a provisional window here would OVER-BLOCK a later
+      // renewal (the confirm-renewal first-payment hazard the L2 property probes)
+      // — so the offline path never stamps it. Passing it explicitly (vs relying
+      // on `createInvoiceDraft`'s `coverageWindow → membershipCoverage` fallback)
+      // means a FUTURE renewal shape that omits `membershipCoverage` can no
+      // longer silently mint a NULL-coverage renewal bill (a duplicate gap).
+      const coverageWindow = isFirstPayment
+        ? undefined
+        : ({ fromIso: lockedCycle.periodTo, toIso: newExpiresAt });
+
       // F4 chain — bridge composes createInvoiceDraft + issueInvoice +
       // recordPayment(externalTx=tx). The `onPaid` callback fires inside
       // F4's recordPayment tx (which IS our outer tx via externalTx),
@@ -736,8 +759,10 @@ export async function markPaidOffline(
         // FIX-8(c) (PR #173 review, 2026-07-09) — `omitUndefined` replaces
         // the conditional-spread idiom; exactOptionalPropertyTypes still
         // omits the key entirely on the first-payment branch rather than
-        // assigning an explicit `undefined`.
-        ...omitUndefined({ membershipCoverage }),
+        // assigning an explicit `undefined`. L1 hardening — `coverageWindow`
+        // rides the SAME omit-guard: both are set together on the renewal
+        // branch and both undefined (omitted → NULL coverage) on first-payment.
+        ...omitUndefined({ membershipCoverage, coverageWindow }),
         paymentMethod: input.paymentMethod,
         paymentReference: input.paymentReference,
         paymentDate: input.paymentDate,

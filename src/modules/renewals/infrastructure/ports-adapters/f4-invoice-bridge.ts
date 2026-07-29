@@ -77,6 +77,24 @@ export interface IssueAndMarkPaidInput {
    * exist yet).
    */
   readonly membershipCoverage?: CreateInvoiceDraftInput['membershipCoverage'];
+  /**
+   * membership-coverage-exclude-guard (mig 0281) — the TRUE charged coverage
+   * window persisted to `invoices.coverage_from/to` for the DB EXCLUDE guard,
+   * DECOUPLED from the PRINTED `membershipCoverage` above. `mark-paid-offline.ts`
+   * supplies `{ fromIso, toIso }` (the LOCKED cycle's `periodTo → periodTo +
+   * frozenPlanTermMonths`) when the payment classifies as a RENEWAL — the SAME
+   * window it also passes as `membershipCoverage`, and the SAME window the online
+   * renewal bridge (`f4-invoicing-for-renewal-bridge-drizzle.ts`) forwards for the
+   * same cycle. It OMITS the field entirely (undefined) on a first-payment
+   * classification, so `createInvoiceDraft` persists NULL coverage — a
+   * first-payment / from_payment bill legitimately does not participate in the
+   * EXCLUDE (its re-anchored period is not known at issue time). Forwarding it
+   * EXPLICITLY on the renewal branch removes the offline path's dependence on
+   * `createInvoiceDraft`'s `coverageWindow → membershipCoverage` fallback: a
+   * future renewal payment shape that omits the printed `membershipCoverage`
+   * can no longer silently mint a NULL-coverage bill (a duplicate gap).
+   */
+  readonly coverageWindow?: CreateInvoiceDraftInput['coverageWindow'];
   readonly paymentMethod: F4OfflinePaymentMethod;
   readonly paymentReference: string;
   /** YYYY-MM-DD Bangkok-local. */
@@ -173,6 +191,13 @@ export const f4InvoiceBridge: F4InvoiceBridge = {
       // inside `createInvoiceDraft`).
       ...(input.membershipCoverage !== undefined
         ? { membershipCoverage: input.membershipCoverage }
+        : {}),
+      // membership-coverage-exclude-guard (mig 0281) — forward the EXPLICIT
+      // dup-guard window (renewal branch supplies it; first-payment omits it →
+      // NULL coverage), mirroring the online renewal bridge at :88/:203. Same
+      // exactOptionalPropertyTypes omit-guard as `membershipCoverage` above.
+      ...(input.coverageWindow !== undefined
+        ? { coverageWindow: input.coverageWindow }
         : {}),
     });
     if (!created.ok) {
