@@ -2016,6 +2016,20 @@ export function makeDrizzleRenewalCycleRepo(
                 AND ${invoices.dueDate} IS NOT NULL
                 AND ${invoices.dueDate} >= ${today}
                 AND ${invoices.dueDate} <= ${windowEnd}), 0)`,
+            // renewals-overdue-prior-fy-subline — unpaid bills whose due_date
+            // pre-dates the CURRENT fiscal year (no lower bound; `< fyStart`
+            // is inherently `< today` since fyStart ≤ today by construction).
+            // Deliberately DISJOINT from the FY-scoped `overdue` leg above so
+            // the Past-due tile's reviewed definition stays untouched — this
+            // pair only feeds the "+ overdue from prior years" sub-line.
+            overdueBeforeFy: sql<string>`COALESCE(SUM(${invoices.totalSatang}) FILTER (
+              WHERE ${invoices.status} = 'issued'
+                AND ${invoices.dueDate} IS NOT NULL
+                AND ${invoices.dueDate} < ${fyStart}), 0)`,
+            overdueBeforeFyCount: sql<number>`(COUNT(*) FILTER (
+              WHERE ${invoices.status} = 'issued'
+                AND ${invoices.dueDate} IS NOT NULL
+                AND ${invoices.dueDate} < ${fyStart}))::int`,
           })
           .from(invoices)
           .where(membership);
@@ -2053,6 +2067,8 @@ export function makeDrizzleRenewalCycleRepo(
         return {
           overdueSatang: BigInt(scalars?.overdue ?? '0'),
           dueSoonSatang: BigInt(scalars?.dueSoon ?? '0'),
+          overdueBeforeFySatang: BigInt(scalars?.overdueBeforeFy ?? '0'),
+          overdueBeforeFyCount: Number(scalars?.overdueBeforeFyCount ?? 0),
           settledRows: settledRows.map((r) => ({
             invoiceId: r.invoiceId,
             netOfCreditSatang: BigInt(r.netOfCredit),

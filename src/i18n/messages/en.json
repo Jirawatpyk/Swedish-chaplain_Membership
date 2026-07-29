@@ -3244,7 +3244,8 @@
         "pastDue": {
           "label": "Past due",
           "basis": "membership dues past due · this fiscal year · incl. VAT",
-          "ariaLabel": "Past due {amount} — view overdue renewals"
+          "ariaLabel": "Past due {amount} — view overdue renewals",
+          "priorYears": "+ {amount} overdue from prior years ({count, plural, one {# bill} other {# bills}})"
         },
         "collected": {
           "label": "Collected this month",
@@ -3253,7 +3254,9 @@
         },
         "collectionRate": {
           "label": "Collection rate",
-          "basis": "membership · fiscal-year-to-date · due-cohort · incl. VAT"
+          "basis": "membership · fiscal-year-to-date · due-cohort · incl. VAT",
+          "hintAriaLabel": "How this differs from the dashboard's Paid revenue",
+          "hint": "Counts membership bills DUE in the current fiscal year. The dashboard's Paid revenue counts by the year a bill was ISSUED — the two can legitimately differ."
         },
         "dueSoon": {
           "label": "Due soon",

@@ -31,6 +31,10 @@ function renderBand() {
           overdueSatang: 50000n,
           collectedThisPeriodSatang: 100000n,
           dueSoonSatang: 30000n,
+          // renewals-overdue-prior-fy-subline — the real prod case that
+          // motivated the sub-line: 1 bill, ฿38,520, due Aug 2025.
+          overdueBeforeFySatang: 3852000n,
+          overdueBeforeFyCount: 1,
         }}
         windowDays={90}
       />
@@ -55,6 +59,8 @@ describe('PipelineMoneyBand', () => {
             overdueSatang: 440000000n, // 4,400,000.00 THB
             collectedThisPeriodSatang: 0n,
             dueSoonSatang: 0n,
+            overdueBeforeFySatang: 0n,
+            overdueBeforeFyCount: 0,
           }}
           windowDays={90}
         />
@@ -110,6 +116,8 @@ describe('PipelineMoneyBand', () => {
             overdueSatang: 0n,
             collectedThisPeriodSatang: 0n,
             dueSoonSatang: 0n,
+            overdueBeforeFySatang: 0n,
+            overdueBeforeFyCount: 0,
           }}
           windowDays={90}
         />
@@ -147,6 +155,8 @@ describe('PipelineMoneyBand', () => {
             overdueSatang: 0n,
             collectedThisPeriodSatang: 0n,
             dueSoonSatang: 0n,
+            overdueBeforeFySatang: 0n,
+            overdueBeforeFyCount: 0,
           }}
           windowDays={1}
         />
@@ -175,5 +185,68 @@ describe('PipelineMoneyBand', () => {
     renderBand();
     expect(screen.getByText('79.2%')).toHaveClass('text-2xl');
     expect(screen.getByText('79.2%')).not.toHaveClass('text-3xl');
+  });
+
+  // ---- renewals-overdue-prior-fy-subline ----
+
+  it('shows the prior-years sub-line under Past due when overdueBeforeFySatang > 0, with ICU plural ("1 bill", not "1 bills")', () => {
+    renderBand();
+    expect(
+      screen.getByText('+ 38,520.00 THB overdue from prior years (1 bill)'),
+    ).toBeInTheDocument();
+  });
+
+  it('hides the prior-years sub-line entirely when overdueBeforeFySatang is 0 (tile byte-identical to before)', () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <PipelineMoneyBand
+          money={{
+            settledDueToDateSatang: 190000n,
+            overdueSatang: 50000n,
+            collectedThisPeriodSatang: 100000n,
+            dueSoonSatang: 30000n,
+            overdueBeforeFySatang: 0n,
+            overdueBeforeFyCount: 0,
+          }}
+          windowDays={90}
+        />
+      </NextIntlClientProvider>,
+    );
+    expect(screen.queryByText(/overdue from prior years/i)).toBeNull();
+  });
+
+  it('keeps the prior-years sub-line OUTSIDE the Past-due deep-link (its aria-label would swallow nested text for screen readers)', () => {
+    renderBand();
+    const subline = screen.getByText('+ 38,520.00 THB overdue from prior years (1 bill)');
+    const pastDueLink = screen.getByRole('link', { name: /past due/i });
+    expect(pastDueLink).not.toContainElement(subline);
+  });
+
+  it('does not change the Past-due tile main figure or aria-label when the sub-line is present', () => {
+    renderBand();
+    expect(screen.getByText('500.00')).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: 'Past due 500.00 THB — view overdue renewals' }),
+    ).toBeInTheDocument();
+  });
+
+  it('renders a keyboard-focusable info-tooltip trigger on the Collection-rate tile explaining the basis divergence from the dashboard', () => {
+    renderBand();
+    const trigger = screen.getByRole('button', {
+      name: "How this differs from the dashboard's Paid revenue",
+    });
+    expect(trigger).toBeInTheDocument();
+    // Native <button> trigger (Base UI default) — actually focusable, unlike
+    // a span-rendered trigger. Tooltip opens on focus per Base UI semantics.
+    trigger.focus();
+    expect(trigger).toHaveFocus();
+  });
+
+  it('does NOT nest the info-tooltip trigger inside any deep-link (no nested interactive control)', () => {
+    renderBand();
+    const trigger = screen.getByRole('button', {
+      name: "How this differs from the dashboard's Paid revenue",
+    });
+    expect(trigger.closest('a')).toBeNull();
   });
 });

@@ -95,5 +95,11 @@ export async function loadPipelineMoney(
     overdueSatang: raw.overdueSatang,
     collectedThisPeriodSatang: netLeg(raw.collectedRows, waived),
     dueSoonSatang: raw.dueSoonSatang,
+    // renewals-overdue-prior-fy-subline — pure pass-through, mirroring
+    // `overdueSatang`: an unpaid `issued` invoice can never be credited and
+    // has no succeeded payment (so no §105/void waived refund) → no
+    // credit/waived netting applies to the prior-FY scalar pair either.
+    overdueBeforeFySatang: raw.overdueBeforeFySatang,
+    overdueBeforeFyCount: raw.overdueBeforeFyCount,
   });
 }

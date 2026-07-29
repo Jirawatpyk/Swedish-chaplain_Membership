@@ -3244,7 +3244,8 @@
         "pastDue": {
           "label": "Förfallna",
           "basis": "förfallna medlemsavgifter · innevarande räkenskapsår · inkl. moms",
-          "ariaLabel": "Förfallna {amount} — visa förfallna förnyelser"
+          "ariaLabel": "Förfallna {amount} — visa förfallna förnyelser",
+          "priorYears": "+ {amount} förfallet från tidigare år ({count, plural, one {# faktura} other {# fakturor}})"
         },
         "collected": {
           "label": "Influtet denna månad",
@@ -3253,7 +3254,9 @@
         },
         "collectionRate": {
           "label": "Inkasseringsgrad",
-          "basis": "medlemsavgifter · räkenskapsår hittills · endast poster som nått förfallodagen · inkl. moms"
+          "basis": "medlemsavgifter · räkenskapsår hittills · endast poster som nått förfallodagen · inkl. moms",
+          "hintAriaLabel": "Hur denna siffra skiljer sig från instrumentpanelens Betalda intäkter",
+          "hint": "Räknar medlemsavgifter som FÖRFALLER till betalning under innevarande räkenskapsår. Instrumentpanelens Betalda intäkter räknas efter det år fakturan STÄLLDES UT — siffrorna kan därför helt korrekt skilja sig åt."
         },
         "dueSoon": {
           "label": "Förfaller snart",

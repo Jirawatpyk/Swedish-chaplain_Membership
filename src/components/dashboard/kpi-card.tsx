@@ -22,10 +22,22 @@
  * Both new props default to the pre-existing look (`compact = false`,
  * `tone = 'default'`), so every other call site (F9 dashboard) renders
  * byte-identical to before.
+ *
+ * renewals-overdue-prior-fy-subline — `subline`/`labelHint` added (same
+ * additive pattern, both optional, absent = byte-identical render) so the
+ * money band can (a) append a muted secondary line under the Past-due tile
+ * and (b) attach an info-tooltip affordance next to the Collection-rate
+ * label. See each prop's doc for the placement constraints.
  */
 import type { ReactNode } from 'react';
 import Link from 'next/link';
-import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 
 export function KpiCard({
@@ -36,6 +48,8 @@ export function KpiCard({
   ariaLabel,
   compact = false,
   tone = 'default',
+  subline,
+  labelHint,
 }: {
   readonly label: string;
   readonly value: ReactNode;
@@ -76,19 +90,51 @@ export function KpiCard({
    * colour override, current behaviour).
    */
   readonly tone?: 'default' | 'success' | 'warning';
+  /**
+   * Optional muted secondary line rendered BELOW the header — and, on a
+   * linked tile, OUTSIDE the `Link` subtree. Load-bearing for a11y: the
+   * link's `aria-label` REPLACES its descendant text in the accessible-name
+   * computation, so a note nested inside the link would be unreachable for
+   * screen-reader users; as a sibling it stays in normal document flow.
+   * (Renewals money band: the "+ overdue from prior years" note.)
+   */
+  readonly subline?: ReactNode;
+  /**
+   * Optional inline affordance appended after the label (e.g. an info-
+   * tooltip trigger). Only combine with a NON-linked tile — nesting an
+   * interactive trigger inside the `href` link would produce a nested-
+   * interactive control AND the link's `aria-label` would swallow it.
+   */
+  readonly labelHint?: ReactNode;
 }) {
   const toneClass =
     tone === 'success' ? 'text-success' : tone === 'warning' ? 'text-warning' : undefined;
 
   const header = (
     <CardHeader className="pb-2">
-      <CardDescription>{label}</CardDescription>
+      <CardDescription>
+        {labelHint ? (
+          <span className="flex items-center gap-1">
+            {label}
+            {labelHint}
+          </span>
+        ) : (
+          label
+        )}
+      </CardDescription>
       <CardTitle className={cn(compact ? 'text-2xl' : 'text-3xl', 'tabular-nums', toneClass)}>
         {value}
       </CardTitle>
       {caption ? <p className="mt-1 text-caption text-muted-foreground">{caption}</p> : null}
     </CardHeader>
   );
+
+  // Pulls the note up against the caption: the Card's own flex gap (gap-4,
+  // sm: gap-3) minus -mt-2 nets ~8px hero / ~4px compact — reads as part of
+  // the tile, not a detached footer row.
+  const sublineBlock = subline ? (
+    <CardContent className="-mt-2 text-caption text-muted-foreground">{subline}</CardContent>
+  ) : null;
 
   if (href) {
     return (
@@ -100,8 +146,14 @@ export function KpiCard({
         >
           {header}
         </Link>
+        {sublineBlock}
       </Card>
     );
   }
-  return <Card size={compact ? 'sm' : 'default'}>{header}</Card>;
+  return (
+    <Card size={compact ? 'sm' : 'default'}>
+      {header}
+      {sublineBlock}
+    </Card>
+  );
 }
