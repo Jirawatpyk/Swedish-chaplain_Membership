@@ -1309,6 +1309,20 @@ export interface PipelineMoneySummary {
    * yet overdue." Cash the treasurer can expect soon.
    */
   readonly dueSoonSatang: bigint;
+  /**
+   * renewals-overdue-prior-fy-subline — Σ(total) — no netting (an unpaid
+   * `issued` invoice can never be credited/waived, same argument as
+   * `overdueSatang`) — over membership invoices with status = 'issued' AND
+   * due_date < fiscalYearStart BKK (any prior year — no lower bound).
+   * NOT part of the FY-scoped Past-due tile (that definition passed review
+   * FY-scoped and is unchanged) and NOT in the collection rate — rendered
+   * only as a muted "+ overdue from prior years" sub-line under the Past-due
+   * tile, hidden when zero, so pre-FY debt never silently vanishes from the
+   * band (real prod case: 1 bill, ฿38,520, due Aug 2025).
+   */
+  readonly overdueBeforeFySatang: bigint;
+  /** COUNT of the `overdueBeforeFySatang` cohort rows (sub-line "({count})"). */
+  readonly overdueBeforeFyCount: number;
 }
 
 /**
@@ -1322,6 +1336,10 @@ export interface PipelineMoneyRaw {
   readonly overdueSatang: bigint;
   /** Σ(total) issued, due in [today, today+window]. Final — no netting. */
   readonly dueSoonSatang: bigint;
+  /** Σ(total) issued, due BEFORE fyStart (prior FYs, unbounded). Final — no netting. */
+  readonly overdueBeforeFySatang: bigint;
+  /** COUNT of the prior-FY issued cohort above. */
+  readonly overdueBeforeFyCount: number;
   /** Per-invoice (id, total−credited) for settled statuses, due in [fyStart, today). */
   readonly settledRows: ReadonlyArray<{
     readonly invoiceId: string;

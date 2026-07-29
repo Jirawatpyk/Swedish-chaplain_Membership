@@ -29,3 +29,46 @@ describe('KpiCard', () => {
     expect(container.querySelector('p')).toBeNull();
   });
 });
+
+/**
+ * UX-review follow-up F2 — `href` × `labelHint` mutual exclusion.
+ *
+ * The discriminated union must make "linked tile with an interactive label
+ * hint" a COMPILE-TIME error (nested interactive control + the link's
+ * `aria-label` swallows descendant text for screen readers). The
+ * `@ts-expect-error` pins are the proof the union actually rejects the bad
+ * combinations — if a refactor ever widens the props back to a plain
+ * optional bag, the pragmas become unused and `pnpm typecheck` fails with
+ * TS2578. Runtime render behaviour is intentionally unchanged; the
+ * valid-branch renders pin that every pre-existing call-site shape still
+ * works.
+ */
+describe('KpiCard href × labelHint union (F2)', () => {
+  it('still renders a linked tile (href branch) and a hinted tile (labelHint branch)', () => {
+    render(
+      <>
+        <KpiCard label="Past due" value="500.00" href="/admin/renewals" ariaLabel="Past due" />
+        <KpiCard label="Rate" value="79.2%" labelHint={<span data-testid="hint" />} />
+      </>,
+    );
+    expect(screen.getByRole('link', { name: 'Past due' })).toBeInTheDocument();
+    expect(screen.getByTestId('hint')).toBeInTheDocument();
+  });
+
+  it('type-level: passing BOTH href and labelHint is a compile error', () => {
+    const bad = (
+      // @ts-expect-error — F2 union: labelHint is `never` on the href branch
+      <KpiCard label="x" value="y" href="/x" labelHint={<span />} />
+    );
+    // Never rendered — the JSX expression exists only to host the pragma.
+    expect(bad).toBeTruthy();
+  });
+
+  it('type-level: ariaLabel without href is also rejected (it only names the link)', () => {
+    const bad = (
+      // @ts-expect-error — F2 union: ariaLabel is `never` on the non-href branch
+      <KpiCard label="x" value="y" ariaLabel="orphan label" />
+    );
+    expect(bad).toBeTruthy();
+  });
+});

@@ -43,6 +43,7 @@
  * crash the pipeline.
  */
 import type { ReactNode } from 'react';
+import Link from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
 import { formatSatangThb } from '@/lib/format-thb';
 import { Card, CardContent } from '@/components/ui/card';
@@ -50,6 +51,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { KpiCard } from '@/components/dashboard/kpi-card';
 import { ErrorBoundary } from '@/components/shell/error-boundary';
 import { collectionRatePct, type PipelineMoneySummary } from '@/modules/renewals';
+import { MoneyBasisHint } from './money-basis-hint';
 
 function PipelineMoneyBandContent({
   money,
@@ -84,6 +86,36 @@ function PipelineMoneyBandContent({
   const rate = collectionRatePct(money.settledDueToDateSatang, money.overdueSatang);
   const rateHero = rate === null ? t('rateNone') : `${rate.toFixed(1)}%`;
 
+  // renewals-overdue-prior-fy-subline — unpaid bills due BEFORE this fiscal
+  // year, which the FY-scoped Past-due tile deliberately excludes (its
+  // reviewed definition is unchanged). Rendered only when nonzero so the
+  // tile is byte-identical for the common no-prior-debt case; the localised
+  // `money.currency` word keeps the amount's unit consistent with the hero
+  // figure above it. Passed as `subline` (NOT caption/label) so KpiCard
+  // keeps it OUTSIDE the tile's deep-link — see the prop's a11y note; that
+  // sibling position is also what makes it safe to be a link ITSELF
+  // (UX-review follow-up F3) with no nested-interactive risk.
+  //
+  // Drill-down target: `status=overdue` is the DERIVED invoices-list filter
+  // (repo translates it to issued AND BKK-today > due_date — S1-P1-8), the
+  // closest expressible superset of "prior-FY overdue membership bills":
+  // the list page has no due-date-range/fiscal-year URL param, so the
+  // prior-FY rows can't be isolated further without inventing params. The
+  // muted colour comes from KpiCard's subline wrapper; hover underline +
+  // focus ring keep the affordance subtle but discoverable.
+  const priorYearsSubline =
+    money.overdueBeforeFySatang > 0n ? (
+      <Link
+        href="/admin/invoices?status=overdue&subject=membership"
+        className="rounded-xs underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+      >
+        {t('pastDue.priorYears', {
+          amount: formatSatangThb(money.overdueBeforeFySatang, locale, currency),
+          count: money.overdueBeforeFyCount,
+        })}
+      </Link>
+    ) : undefined;
+
   return (
     <section aria-labelledby="pipeline-money-band-heading" className="flex flex-col gap-3">
       {/* Visible `<h2>` (not just a screen-reader-only `aria-label`) so
@@ -96,11 +128,21 @@ function PipelineMoneyBandContent({
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {/* Display-only — no href/ariaLabel (matches the original "no
             <Link> for the rate tile" contract). `tone="success"` reads as
-            the "how are we doing" signal. */}
+            the "how are we doing" signal. `labelHint` explains why this
+            tile's settled (due-FY) basis legitimately diverges from the F9
+            dashboard's Paid revenue (issue-year) — users compare the two
+            pages. Safe here precisely BECAUSE the tile is non-linked (see
+            the KpiCard prop doc's nested-interactive warning). */}
         <KpiCard
           compact
           tone="success"
           label={t('collectionRate.label')}
+          labelHint={
+            <MoneyBasisHint
+              ariaLabel={t('collectionRate.hintAriaLabel')}
+              tooltipText={t('collectionRate.hint')}
+            />
+          }
           value={rateHero}
           caption={t('collectionRate.basis')}
         />
@@ -112,6 +154,7 @@ function PipelineMoneyBandContent({
           caption={t('pastDue.basis')}
           href="/admin/renewals?month=overdue"
           ariaLabel={pastDueAriaLabel}
+          subline={priorYearsSubline}
         />
         <KpiCard
           compact
@@ -150,11 +193,17 @@ export function PipelineMoneyBand(props: {
 /**
  * Suspense fallback — reserves the compact 4-tile grid's footprint (heading +
  * one row of 4 `Card size="sm"` tiles) so the money band streaming in does
- * NOT push the pipeline card down (CLS 0). The heading is the REAL static
- * title (no data dependency, so no shimmer needed — mirrors how
- * `RenewalsSectionTabs`'s fallback renders the real tab strip and only
- * skeleton-defers the data-dependent badges); only the 4 tiles' content —
- * which depends on `loadPipelineMoney` — show shimmer placeholders.
+ * NOT push the pipeline card down. CLS 0 holds for the no-prior-FY-debt case;
+ * when the "+ overdue from prior years" sub-line renders (prod's CURRENT
+ * state — see renewals-overdue-prior-fy-subline), the real band is ~20px
+ * taller than this fallback, a known small shift accepted at UX review:
+ * always over-reserving the sub-line's row would leave a permanent hole under
+ * the Past-due tile in the common zero case, which was judged worse than a
+ * one-time ~20px settle for tenants that DO carry prior-FY debt. The heading
+ * is the REAL static title (no data dependency, so no shimmer needed —
+ * mirrors how `RenewalsSectionTabs`'s fallback renders the real tab strip and
+ * only skeleton-defers the data-dependent badges); only the 4 tiles' content
+ * — which depends on `loadPipelineMoney` — show shimmer placeholders.
  */
 export function PipelineMoneyBandSkeleton() {
   const t = useTranslations('admin.renewals.money');

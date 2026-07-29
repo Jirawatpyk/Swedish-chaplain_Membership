@@ -22,21 +22,28 @@
  * Both new props default to the pre-existing look (`compact = false`,
  * `tone = 'default'`), so every other call site (F9 dashboard) renders
  * byte-identical to before.
+ *
+ * renewals-overdue-prior-fy-subline — `subline`/`labelHint` added (same
+ * additive pattern, both optional, absent = byte-identical render) so the
+ * money band can (a) append a muted secondary line under the Past-due tile
+ * and (b) attach an info-hint affordance next to the Collection-rate
+ * label. See each prop's doc for the placement constraints. UX-review
+ * follow-up F2 hardened the `labelHint`×`href` prose warning into a
+ * DISCRIMINATED UNION — passing both is now a compile-time error (nested
+ * interactive control + the link's `aria-label` would swallow the hint).
  */
 import type { ReactNode } from 'react';
 import Link from 'next/link';
-import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 
-export function KpiCard({
-  label,
-  value,
-  caption,
-  href,
-  ariaLabel,
-  compact = false,
-  tone = 'default',
-}: {
+interface KpiCardBaseProps {
   readonly label: string;
   readonly value: ReactNode;
   /**
@@ -46,18 +53,6 @@ export function KpiCard({
    * label short while a viewer can still tell why two tiles don't tie out.
    */
   readonly caption?: string;
-  /**
-   * Optional deep-link. When present, the whole card header becomes a
-   * `next/link` `Link` (full-tile click target) instead of a static block.
-   */
-  readonly href?: string;
-  /**
-   * Short accessible name for the link (e.g. "Past due — view overdue
-   * renewals") so screen-reader link/Tab navigation announces a concise
-   * purpose instead of the full concatenated label+value+caption sentence.
-   * Ignored when `href` is absent.
-   */
-  readonly ariaLabel?: string;
   /**
    * Shrinks the tile: `Card size="sm"` (tighter `py-3`/`px-3`, the existing
    * shadcn/ui compact-card variant) + a `text-2xl` value instead of the
@@ -76,19 +71,95 @@ export function KpiCard({
    * colour override, current behaviour).
    */
   readonly tone?: 'default' | 'success' | 'warning';
-}) {
+  /**
+   * Optional muted secondary line rendered BELOW the header — and, on a
+   * linked tile, OUTSIDE the `Link` subtree. Load-bearing for a11y: the
+   * link's `aria-label` REPLACES its descendant text in the accessible-name
+   * computation, so a note nested inside the link would be unreachable for
+   * screen-reader users; as a sibling it stays in normal document flow.
+   * (Renewals money band: the "+ overdue from prior years" note.)
+   */
+  readonly subline?: ReactNode;
+}
+
+/**
+ * UX-review follow-up F2 — `href` and `labelHint` are MUTUALLY EXCLUSIVE at
+ * the type level. A linked tile wraps its whole header in a `next/link` with
+ * an `aria-label`, so an interactive hint inside it would be (a) a nested
+ * interactive control and (b) invisible to screen readers (the label
+ * replaces descendant text). `?: never` (not `?: undefined`) so under
+ * `exactOptionalPropertyTypes` the disallowed prop can only be OMITTED —
+ * every pre-existing call site (F9 dashboard: neither; band: one or the
+ * other) still typechecks unchanged, and runtime behaviour is identical.
+ */
+type KpiCardProps = KpiCardBaseProps &
+  (
+    | {
+        /**
+         * Deep-link: the whole card header becomes a `next/link` `Link`
+         * (full-tile click target) instead of a static block.
+         */
+        readonly href: string;
+        /**
+         * Short accessible name for the link (e.g. "Past due — view overdue
+         * renewals") so screen-reader link/Tab navigation announces a concise
+         * purpose instead of the full concatenated label+value+caption
+         * sentence.
+         */
+        readonly ariaLabel?: string;
+        readonly labelHint?: never;
+      }
+    | {
+        readonly href?: never;
+        readonly ariaLabel?: never;
+        /**
+         * Optional inline affordance appended after the label (e.g. an
+         * `InfoHint` popover trigger). Non-linked tiles only — enforced by
+         * this union branch.
+         */
+        readonly labelHint?: ReactNode;
+      }
+  );
+
+export function KpiCard({
+  label,
+  value,
+  caption,
+  href,
+  ariaLabel,
+  compact = false,
+  tone = 'default',
+  subline,
+  labelHint,
+}: KpiCardProps) {
   const toneClass =
     tone === 'success' ? 'text-success' : tone === 'warning' ? 'text-warning' : undefined;
 
   const header = (
     <CardHeader className="pb-2">
-      <CardDescription>{label}</CardDescription>
+      <CardDescription>
+        {labelHint ? (
+          <span className="flex items-center gap-1">
+            {label}
+            {labelHint}
+          </span>
+        ) : (
+          label
+        )}
+      </CardDescription>
       <CardTitle className={cn(compact ? 'text-2xl' : 'text-3xl', 'tabular-nums', toneClass)}>
         {value}
       </CardTitle>
       {caption ? <p className="mt-1 text-caption text-muted-foreground">{caption}</p> : null}
     </CardHeader>
   );
+
+  // Pulls the note up against the caption: the Card's own flex gap (gap-4,
+  // sm: gap-3) minus -mt-2 nets ~8px hero / ~4px compact — reads as part of
+  // the tile, not a detached footer row.
+  const sublineBlock = subline ? (
+    <CardContent className="-mt-2 text-caption text-muted-foreground">{subline}</CardContent>
+  ) : null;
 
   if (href) {
     return (
@@ -100,8 +171,14 @@ export function KpiCard({
         >
           {header}
         </Link>
+        {sublineBlock}
       </Card>
     );
   }
-  return <Card size={compact ? 'sm' : 'default'}>{header}</Card>;
+  return (
+    <Card size={compact ? 'sm' : 'default'}>
+      {header}
+      {sublineBlock}
+    </Card>
+  );
 }

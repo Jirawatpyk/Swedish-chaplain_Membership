@@ -15,7 +15,8 @@
  * hang React rendering (memory: component test harness fake timers).
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
 import { PipelineMoneyBand } from '@/app/(staff)/admin/renewals/_components/pipeline-money-band';
@@ -31,6 +32,10 @@ function renderBand() {
           overdueSatang: 50000n,
           collectedThisPeriodSatang: 100000n,
           dueSoonSatang: 30000n,
+          // renewals-overdue-prior-fy-subline — the real prod case that
+          // motivated the sub-line: 1 bill, ฿38,520, due Aug 2025.
+          overdueBeforeFySatang: 3852000n,
+          overdueBeforeFyCount: 1,
         }}
         windowDays={90}
       />
@@ -55,6 +60,8 @@ describe('PipelineMoneyBand', () => {
             overdueSatang: 440000000n, // 4,400,000.00 THB
             collectedThisPeriodSatang: 0n,
             dueSoonSatang: 0n,
+            overdueBeforeFySatang: 0n,
+            overdueBeforeFyCount: 0,
           }}
           windowDays={90}
         />
@@ -110,6 +117,8 @@ describe('PipelineMoneyBand', () => {
             overdueSatang: 0n,
             collectedThisPeriodSatang: 0n,
             dueSoonSatang: 0n,
+            overdueBeforeFySatang: 0n,
+            overdueBeforeFyCount: 0,
           }}
           windowDays={90}
         />
@@ -147,6 +156,8 @@ describe('PipelineMoneyBand', () => {
             overdueSatang: 0n,
             collectedThisPeriodSatang: 0n,
             dueSoonSatang: 0n,
+            overdueBeforeFySatang: 0n,
+            overdueBeforeFyCount: 0,
           }}
           windowDays={1}
         />
@@ -175,5 +186,116 @@ describe('PipelineMoneyBand', () => {
     renderBand();
     expect(screen.getByText('79.2%')).toHaveClass('text-2xl');
     expect(screen.getByText('79.2%')).not.toHaveClass('text-3xl');
+  });
+
+  // ---- renewals-overdue-prior-fy-subline ----
+
+  it('shows the prior-years sub-line under Past due when overdueBeforeFySatang > 0, with ICU plural ("1 bill", not "1 bills")', () => {
+    renderBand();
+    expect(
+      screen.getByText('+ 38,520.00 THB overdue from prior years (1 bill)'),
+    ).toBeInTheDocument();
+  });
+
+  it('renders the sub-line as a drill-down link to the overdue membership invoices list (UX follow-up F3)', () => {
+    renderBand();
+    // `status=overdue` is the DERIVED filter (issued + past-due) — the most
+    // precise filter the invoices list exposes via URL; no due-date-range
+    // param exists to isolate the prior-FY rows further.
+    expect(
+      screen.getByRole('link', {
+        name: '+ 38,520.00 THB overdue from prior years (1 bill)',
+      }),
+    ).toHaveAttribute('href', '/admin/invoices?status=overdue&subject=membership');
+  });
+
+  it('hides the prior-years sub-line entirely when overdueBeforeFySatang is 0 (tile byte-identical to before)', () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <PipelineMoneyBand
+          money={{
+            settledDueToDateSatang: 190000n,
+            overdueSatang: 50000n,
+            collectedThisPeriodSatang: 100000n,
+            dueSoonSatang: 30000n,
+            overdueBeforeFySatang: 0n,
+            overdueBeforeFyCount: 0,
+          }}
+          windowDays={90}
+        />
+      </NextIntlClientProvider>,
+    );
+    expect(screen.queryByText(/overdue from prior years/i)).toBeNull();
+  });
+
+  it('keeps the prior-years sub-line OUTSIDE the Past-due deep-link (its aria-label would swallow nested text for screen readers)', () => {
+    renderBand();
+    const subline = screen.getByText('+ 38,520.00 THB overdue from prior years (1 bill)');
+    const pastDueLink = screen.getByRole('link', { name: /past due/i });
+    expect(pastDueLink).not.toContainElement(subline);
+  });
+
+  it('does not change the Past-due tile main figure or aria-label when the sub-line is present', () => {
+    renderBand();
+    expect(screen.getByText('500.00')).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: 'Past due 500.00 THB — view overdue renewals' }),
+    ).toBeInTheDocument();
+  });
+
+  it('renders a keyboard-focusable info-hint trigger on the Collection-rate tile explaining the basis divergence from the dashboard', () => {
+    renderBand();
+    const trigger = screen.getByRole('button', {
+      name: "How this differs from the dashboard's Paid revenue",
+    });
+    expect(trigger).toBeInTheDocument();
+    // Native <button> trigger (Base UI default) — actually focusable, unlike
+    // the span-rendered trigger of the T160 regression.
+    trigger.focus();
+    expect(trigger).toHaveFocus();
+  });
+
+  it('opens the basis popover on click and closes it on ESC (touch + keyboard reachable, not hover-only)', async () => {
+    const user = userEvent.setup();
+    renderBand();
+    const trigger = screen.getByRole('button', {
+      name: "How this differs from the dashboard's Paid revenue",
+    });
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+
+    await user.click(trigger);
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    expect(
+      await screen.findByText(/Counts membership bills DUE in the current fiscal year/),
+    ).toBeInTheDocument();
+
+    await user.keyboard('{Escape}');
+    await waitFor(() =>
+      expect(
+        screen.queryByText(/Counts membership bills DUE in the current fiscal year/),
+      ).toBeNull(),
+    );
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('opens the basis popover with the keyboard (Enter on the focused trigger)', async () => {
+    const user = userEvent.setup();
+    renderBand();
+    const trigger = screen.getByRole('button', {
+      name: "How this differs from the dashboard's Paid revenue",
+    });
+    trigger.focus();
+    await user.keyboard('{Enter}');
+    expect(
+      await screen.findByText(/Counts membership bills DUE in the current fiscal year/),
+    ).toBeInTheDocument();
+  });
+
+  it('does NOT nest the info-hint trigger inside any deep-link (no nested interactive control)', () => {
+    renderBand();
+    const trigger = screen.getByRole('button', {
+      name: "How this differs from the dashboard's Paid revenue",
+    });
+    expect(trigger.closest('a')).toBeNull();
   });
 });

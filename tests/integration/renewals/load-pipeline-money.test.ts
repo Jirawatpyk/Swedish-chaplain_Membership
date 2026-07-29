@@ -337,10 +337,15 @@ describe('DV-Wave2 ⑥ loadPipelineMoney — integration (live Neon)', () => {
 
     // #1 dueSoon; #2 overdue; #3 settled+collected; #4 settled only (May);
     // #5 partially_credited settled(30000)+collected(30000); #6 §105-waived
-    // settled(0); #7 prior-FY DROPS; #8 void excluded; #9 event-subject
-    // PAID (fix round 2 #10a, below) DROPS despite landing inside both
-    // windows; a §105-waived refund on #1 (fix round 2 #10b, below) proves
-    // waived netting never leaks outside the settled/collected cohort.
+    // settled(0); #7 prior-FY DROPS from the FY legs but now LANDS in the
+    // overdueBeforeFy pair (renewals-overdue-prior-fy-subline); #8 void
+    // excluded; #9 event-subject PAID (fix round 2 #10a, below) DROPS
+    // despite landing inside both windows; a §105-waived refund on #1 (fix
+    // round 2 #10b, below) proves waived netting never leaks outside the
+    // settled/collected cohort; #11 (seq 10) a SECOND prior-FY issued bill
+    // due 2024-12-15 proves the overdueBeforeFy pair aggregates across
+    // MULTIPLE prior years (no lower date bound) and that COUNT counts rows,
+    // not years.
     const inv1 = await seedMembershipInvoice(a, user, planA, memberA, {
       status: 'issued', totalSatang: 30000n, creditedTotalSatang: 0n, dueDate: '2026-08-01', paidAtIso: null, seq: 1,
     });
@@ -365,6 +370,11 @@ describe('DV-Wave2 ⑥ loadPipelineMoney — integration (live Neon)', () => {
     });
     await seedMembershipInvoice(a, user, planA, memberA, {
       status: 'void', totalSatang: 99999n, creditedTotalSatang: 0n, dueDate: '2026-06-01', paidAtIso: '2026-06-02T03:00:00Z', seq: 8,
+    });
+    // #11 (renewals-overdue-prior-fy-subline) — second prior-FY issued bill,
+    // TWO fiscal years back: overdueBeforeFy = #7 (88000) + #11 (12000).
+    await seedMembershipInvoice(a, user, planA, memberA, {
+      status: 'issued', totalSatang: 12000n, creditedTotalSatang: 0n, dueDate: '2024-12-15', paidAtIso: null, seq: 10,
     });
 
     // #10 fix round 2 (a) — event-subject PAID invoice; due 2026-05-10 (FY,
@@ -434,8 +444,13 @@ describe('DV-Wave2 ⑥ loadPipelineMoney — integration (live Neon)', () => {
     // — UNCHANGED by #9 (event-subject, excluded by invoice_subject filter)
     // and by #1's waived refund (outside this cohort, never intersected).
     expect(res.value.settledDueToDateSatang).toBe(190000n);
-    // overdue = #2 only; #7 prior-FY excluded, #8 void excluded
+    // overdue = #2 only; #7 + #11 prior-FY excluded, #8 void excluded
     expect(res.value.overdueSatang).toBe(50000n);
+    // renewals-overdue-prior-fy-subline — #7 (88000, due 2025-11-01) + #11
+    // (12000, due 2024-12-15) land in the prior-FY pair instead of silently
+    // vanishing; NOT double-counted in the FY overdue leg above.
+    expect(res.value.overdueBeforeFySatang).toBe(100000n);
+    expect(res.value.overdueBeforeFyCount).toBe(2);
     // collected (July) = #3 (70000) + #5 net (30000); #4 May, #6 April
     // excluded — UNCHANGED by #9 despite #9 also being paid in July.
     expect(res.value.collectedThisPeriodSatang).toBe(100000n);
@@ -474,6 +489,8 @@ describe('DV-Wave2 ⑥ loadPipelineMoney — integration (live Neon)', () => {
     expect(res.value.overdueSatang).toBe(50000n);
     expect(res.value.collectedThisPeriodSatang).toBe(100000n);
     expect(res.value.dueSoonSatang).toBe(30000n);
+    expect(res.value.overdueBeforeFySatang).toBe(100000n);
+    expect(res.value.overdueBeforeFyCount).toBe(2);
   }, 60_000);
 
   it('cross-tenant: B money never appears in A sums, and B reads only its own', async () => {
@@ -486,6 +503,7 @@ describe('DV-Wave2 ⑥ loadPipelineMoney — integration (live Neon)', () => {
     // Not 50011n — B's ฿0.11 due-2026-08-01 issued invoice must not leak.
     expect(forA.value.overdueSatang).toBe(50000n);
     expect(forA.value.dueSoonSatang).toBe(30000n); // #1 only, not #1 + B's 11
+    expect(forA.value.overdueBeforeFySatang).toBe(100000n); // #7 + #11 only
 
     const forB = await loadPipelineMoney(makeRenewalsDeps(b.ctx.slug), {
       tenantId: b.ctx.slug,
@@ -498,6 +516,9 @@ describe('DV-Wave2 ⑥ loadPipelineMoney — integration (live Neon)', () => {
     expect(forB.value.overdueSatang).toBe(0n);
     expect(forB.value.settledDueToDateSatang).toBe(0n);
     expect(forB.value.collectedThisPeriodSatang).toBe(0n);
+    // A's two prior-FY bills (#7 + #11) must never leak into B's pair.
+    expect(forB.value.overdueBeforeFySatang).toBe(0n);
+    expect(forB.value.overdueBeforeFyCount).toBe(0);
   }, 60_000);
 
   it('rate is invariant across a BKK month rollover (refutes flow÷stock)', async () => {
@@ -609,9 +630,12 @@ describe('DV-Wave2 ⑥ / Fix round 1 #3 — fiscalYearStartMonth shifts the due-
     expect(res.ok).toBe(true);
     if (!res.ok) return;
     expect(res.value.overdueSatang).toBe(1234500n);
+    // In the FY leg → NOT in the prior-FY pair (mutually exclusive cohorts).
+    expect(res.value.overdueBeforeFySatang).toBe(0n);
+    expect(res.value.overdueBeforeFyCount).toBe(0);
   }, 60_000);
 
-  it('drops the SAME Feb-due invoice from the cohort under an April fiscal year (prior-FY)', async () => {
+  it('drops the SAME Feb-due invoice from the cohort under an April fiscal year (prior-FY) — and it lands in the overdueBeforeFy pair instead of vanishing', async () => {
     const res = await loadPipelineMoney(makeRenewalsDeps(fy.ctx.slug), {
       tenantId: fy.ctx.slug,
       nowIso: FY_NOW,
@@ -621,5 +645,10 @@ describe('DV-Wave2 ⑥ / Fix round 1 #3 — fiscalYearStartMonth shifts the due-
     expect(res.ok).toBe(true);
     if (!res.ok) return;
     expect(res.value.overdueSatang).toBe(0n);
+    // renewals-overdue-prior-fy-subline — the money that used to silently
+    // vanish from the band when its due date fell before fyStart is now
+    // carried by the prior-FY pair (the sub-line under the Past-due tile).
+    expect(res.value.overdueBeforeFySatang).toBe(1234500n);
+    expect(res.value.overdueBeforeFyCount).toBe(1);
   }, 60_000);
 });
