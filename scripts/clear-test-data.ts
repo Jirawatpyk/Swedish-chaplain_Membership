@@ -233,6 +233,31 @@ export async function clearTestData(): Promise<ClearTestDataReport> {
   // matching the `audit_log` posture explained at the bottom of the
   // file. Documented here so future maintainers don't waste time
   // chasing a "missed cascade".
+  // refunds ↔ credit_notes is a MUTUAL ON DELETE RESTRICT cycle
+  // (refunds.credit_note_id → credit_notes per mig 0034 AND
+  // credit_notes.source_refund_id → refunds per mig 0038) — no pure
+  // delete order works once an F5 refund-origin credit note exists.
+  // Unlink the refunds side first (waiver-stamped so the 0268 CHECK
+  // `refunds_succeeded_iff_documented` stays satisfied in the transient
+  // state; the CN side is locked by the 0273 trigger and must NOT be
+  // nulled), then delete credit_notes BEFORE refunds. Mirrors the
+  // Round-3 wipe fix (scripts/import-round3/wipe-core.ts, 2026-07-29).
+  await db.execute(
+    sql`UPDATE refunds
+        SET credit_note_id = NULL,
+            credit_note_waived_at = COALESCE(credit_note_waived_at, now()),
+            credit_note_waiver_reason = COALESCE(credit_note_waiver_reason, 'invoice_voided')
+        WHERE tenant_id LIKE 'test-%' AND credit_note_id IS NOT NULL`,
+  );
+  // F4 invoicing cascade — credit_notes → invoice_lines → invoices.
+  // invoices.draft_by_user_id / paid_by_user_id / voided_by_user_id
+  // reference users(id) with ON DELETE restrict to preserve tax audit
+  // trails; test users cannot be deleted while any test-tenant invoice
+  // row still references them. Must happen BEFORE the users DELETE.
+  // credit_notes must ALSO precede refunds (source_refund_id RESTRICT).
+  await db.execute(
+    sql`DELETE FROM credit_notes WHERE tenant_id LIKE 'test-%'`,
+  );
   await db.execute(
     sql`DELETE FROM refunds WHERE tenant_id LIKE 'test-%'`,
   );
@@ -241,14 +266,6 @@ export async function clearTestData(): Promise<ClearTestDataReport> {
   );
   await db.execute(
     sql`DELETE FROM tenant_payment_settings WHERE tenant_id LIKE 'test-%'`,
-  );
-  // F4 invoicing cascade — credit_notes → invoice_lines → invoices.
-  // invoices.draft_by_user_id / paid_by_user_id / voided_by_user_id
-  // reference users(id) with ON DELETE restrict to preserve tax audit
-  // trails; test users cannot be deleted while any test-tenant invoice
-  // row still references them. Must happen BEFORE the users DELETE.
-  await db.execute(
-    sql`DELETE FROM credit_notes WHERE tenant_id LIKE 'test-%'`,
   );
   await db.execute(
     sql`DELETE FROM invoice_lines WHERE tenant_id LIKE 'test-%'`,
@@ -303,9 +320,19 @@ export async function clearTestData(): Promise<ClearTestDataReport> {
   // F5 cascade: payments + refunds reference invoices via
   // `payments_invoice_tenant_fk`. Must purge BEFORE the invoice
   // cascade or the DELETE blocks with "violates FK constraint".
+  //
+  // refunds ↔ credit_notes mutual-RESTRICT cycle (same as the tenant
+  // pass above): unlink the refunds side (waiver-stamped for the 0268
+  // CHECK) and drop any credit note DERIVED from these refunds first —
+  // the later credit_notes step in this pass selects by issuing user
+  // and may not cover a CN whose only tie is source_refund_id.
   await db.execute(
-    sql`DELETE FROM refunds
-        WHERE payment_id IN (
+    sql`UPDATE refunds
+        SET credit_note_id = NULL,
+            credit_note_waived_at = COALESCE(credit_note_waived_at, now()),
+            credit_note_waiver_reason = COALESCE(credit_note_waiver_reason, 'invoice_voided')
+        WHERE credit_note_id IS NOT NULL
+          AND payment_id IN (
           SELECT id FROM payments
           WHERE invoice_id IN (
             SELECT invoice_id FROM invoices
@@ -321,21 +348,11 @@ export async function clearTestData(): Promise<ClearTestDataReport> {
           )
         )`,
   );
-  await db.execute(
-    sql`DELETE FROM payments
-        WHERE invoice_id IN (
-          SELECT invoice_id FROM invoices
-          WHERE draft_by_user_id IN (
-            SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
-          )
-          OR payment_recorded_by_user_id IN (
-            SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
-          )
-          OR voided_by_user_id IN (
-            SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
-          )
-        )`,
-  );
+  // NOTE: the refunds + payments DELETEs for this orphan scope now run
+  // AFTER the cycle purge + credit_notes step below — a refund-derived
+  // CN can also be cycle-linked (`renewal_cycles_linked_credit_note_fk`),
+  // so CNs can only go once the orphan cycles are gone, and refunds can
+  // only go once those CNs are gone (`credit_notes_source_refund_fk`).
   // 068 cluster E — F8 renewal_cycles orphan purge in the TEST-USER pass.
   // The tenant-scoped pass (above, `tenant_id LIKE 'test-%'`) deletes
   // renewal_cycles, but this test-USER pass deletes orphan invoices + members
@@ -480,6 +497,59 @@ export async function clearTestData(): Promise<ClearTestDataReport> {
           SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
         )
         OR original_invoice_id IN (
+          SELECT invoice_id FROM invoices
+          WHERE draft_by_user_id IN (
+            SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+          )
+          OR payment_recorded_by_user_id IN (
+            SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+          )
+          OR voided_by_user_id IN (
+            SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+          )
+        )
+        OR source_refund_id IN (
+          SELECT id FROM refunds WHERE payment_id IN (
+            SELECT id FROM payments
+            WHERE invoice_id IN (
+              SELECT invoice_id FROM invoices
+              WHERE draft_by_user_id IN (
+                SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+              )
+              OR payment_recorded_by_user_id IN (
+                SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+              )
+              OR voided_by_user_id IN (
+                SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+              )
+            )
+          )
+        )`,
+  );
+  // refunds AFTER credit_notes (credit_notes_source_refund_fk RESTRICT),
+  // payments AFTER refunds (refunds.payment_id RESTRICT), both BEFORE the
+  // orphan invoice delete (payments_invoice_tenant_fk).
+  await db.execute(
+    sql`DELETE FROM refunds
+        WHERE payment_id IN (
+          SELECT id FROM payments
+          WHERE invoice_id IN (
+            SELECT invoice_id FROM invoices
+            WHERE draft_by_user_id IN (
+              SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+            )
+            OR payment_recorded_by_user_id IN (
+              SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+            )
+            OR voided_by_user_id IN (
+              SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
+            )
+          )
+        )`,
+  );
+  await db.execute(
+    sql`DELETE FROM payments
+        WHERE invoice_id IN (
           SELECT invoice_id FROM invoices
           WHERE draft_by_user_id IN (
             SELECT id FROM users WHERE email LIKE 'test-%@swecham.test'
