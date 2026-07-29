@@ -3464,7 +3464,8 @@
           "failed": "Failed",
           "rateLimited": "Rate-limited — retry later",
           "needsAction": "Needs attention before payment can be recorded",
-          "notBulkPayable": "Settle individually"
+          "notBulkPayable": "Settle individually",
+          "noEmail": "Receipt not emailed"
         },
         "rateLimited": "Too many bulk actions. Wait a few minutes and try again.",
         "unknownError": "Something went wrong.",
