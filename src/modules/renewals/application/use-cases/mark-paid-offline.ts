@@ -771,12 +771,20 @@ export async function markPaidOffline(
         // suppresses the reg-fee re-bill. Mirrors the online confirm-renewal
         // path. (cluster A, 068 code-review fix.)
         frozenPlanPriceThb: lockedCycle.frozenPlanPriceThb,
-        // FIX-8(c) (PR #173 review, 2026-07-09) — `omitUndefined` replaces
-        // the conditional-spread idiom; exactOptionalPropertyTypes still
-        // omits the key entirely on the first-payment branch rather than
-        // assigning an explicit `undefined`. L1 hardening — `coverageWindow`
-        // rides the SAME omit-guard: both are set together on the renewal
-        // branch and both undefined (omitted → NULL coverage) on first-payment.
+        // FIX-8(c) (PR #173 review, 2026-07-09) — `omitUndefined` replaces the
+        // conditional-spread idiom; exactOptionalPropertyTypes still omits any
+        // key whose value is `undefined` rather than assigning an explicit
+        // `undefined`. A-1 (offline-coverage-unify) — the two keys no longer
+        // ride the omit-guard together: on a RENEWAL both are defined (the
+        // printed next-period window + the dup-guard window). On a FIRST-PAYMENT
+        // only `membershipCoverage` is `undefined` — the re-anchored printed
+        // period is unknown at issue time, so `omitUndefined` drops it and the
+        // bridge defaults the printed coverage to `from_payment`; but
+        // `coverageWindow` is ALWAYS defined (the cycle's CURRENT period
+        // `[periodFrom, periodTo)`, set by the ternary above) and IS forwarded,
+        // so the offline first-payment bill still participates in the mig-0281
+        // coverage EXCLUDE. Net: `coverageWindow` forwards on BOTH branches;
+        // `membershipCoverage` only on renewal.
         ...omitUndefined({ membershipCoverage, coverageWindow }),
         paymentMethod: input.paymentMethod,
         paymentReference: input.paymentReference,
