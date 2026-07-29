@@ -794,6 +794,42 @@ export async function confirmRenewal(
           cycleAfterPlanChange.frozenPlanTermMonths,
         ),
       });
+
+  // membership-coverage-exclude-guard (mig 0281) — the DB-EXCLUDE
+  // `invoices.coverage_from/to` dup-guard window, DECOUPLED from the printed
+  // `membershipCoverage` above and REQUIRED (non-null) on this renewal bridge by
+  // design (a NULL row escapes BOTH the pre-flight guard AND the DB
+  // `blocks_coverage` EXCLUDE — see `f4-invoicing-bridge.ts` coverageWindow
+  // docstring). So it is ALWAYS stamped; only WHICH window differs by
+  // classification (`omitMembershipCoverage === classification.kind !== 'renewal'`):
+  //   - RENEWAL: the NEXT-term window `[periodTo, periodTo + frozenPlanTermMonths)`
+  //     — the period this bill charges (the current cycle completes on payment; the
+  //     §86/4 covers the cycle created next). Equals the pre-flight guard's `wNew`
+  //     when the term is unchanged (always today — every TSCC plan is 12mo).
+  //   - FIRST-PAYMENT (or any non-`renewal` shape): the cycle's OWN CURRENT period
+  //     `[periodFrom, periodTo)` — the first membership year the member is actually
+  //     paying for. A first-payment cycle does NOT bill the next period: the
+  //     fixed-anchor re-anchor KEEPS `[periodFrom, periodTo)` (normal) or snaps it
+  //     forward (comeback). Stamping the NEXT period here would EQUAL the member's
+  //     correctly-computed FIRST renewal window, so
+  //     `findOverlappingMembershipCoverageBill` would FALSE-REFUSE that legit
+  //     renewal (the L2 over-block). `[periodFrom, periodTo)` is ADJACENT (half-open)
+  //     to the next renewal → no over-block; and a duplicate first-payment
+  //     (double-confirm) stamps the SAME window → the DB EXCLUDE rejects it at issue
+  //     (23P01 → `invoice_already_issued` → 409), so no dedup is lost. Matches
+  //     `admin-renew-lapsed-member.ts:596`. (coverage-hardening-report.md § L2/L3.)
+  const coverageWindow = omitMembershipCoverage
+    ? {
+        fromIso: cycleAfterPlanChange.periodFrom,
+        toIso: cycleAfterPlanChange.periodTo,
+      }
+    : {
+        fromIso: cycleAfterPlanChange.periodTo,
+        toIso: addMonthsUtc(
+          cycleAfterPlanChange.periodTo,
+          cycleAfterPlanChange.frozenPlanTermMonths,
+        ),
+      };
   const invoiceResult = await deps.f4InvoicingBridge.issueInvoiceForRenewal({
     tenantId: input.tenantId,
     memberId: input.memberId,
@@ -805,27 +841,21 @@ export async function confirmRenewal(
     // key entirely on the first-payment branch rather than assigning an
     // explicit `undefined`.
     ...omitUndefined({ membershipCoverage }),
-    // membership-coverage-exclude-guard (mig 0281) — stamp the charged NEXT-term
-    // window ALWAYS, even on the defensive first-payment branch where
-    // `membershipCoverage` is omitted. Sized from `cycleAfterPlanChange` (the
-    // FINAL frozen term this bill actually charges). This EQUALS the pre-flight
-    // guard's `wNew` (built from `cycle` above, before the plan-change) whenever
-    // the term is unchanged — which is ALWAYS today: every TSCC plan is 12
-    // months. If a future term-VARIABLE plan is introduced AND a member both
-    // renews and switches to a different-term plan in one confirm, the guard
-    // (which runs ABOVE the plan-change and cannot see the post-change term)
-    // could size `wNew` from the old term while this stamp uses the new one; the
-    // DB EXCLUDE (`invoices_membership_coverage_no_overlap`) is the AUTHORITY
-    // that backstops that edge — a 23P01 at mint is mapped to a typed 409, not a
-    // 500. `adminRenewLapsedMember` has no such gap (its guard + stamp resolve
-    // the term from the same `loadPlanFrozenFields(mode:'freeze')`).
-    coverageWindow: {
-      fromIso: cycleAfterPlanChange.periodTo,
-      toIso: addMonthsUtc(
-        cycleAfterPlanChange.periodTo,
-        cycleAfterPlanChange.frozenPlanTermMonths,
-      ),
-    },
+    // membership-coverage-exclude-guard (mig 0281) — the classification-gated
+    // dup-guard window computed above (`coverageWindow`): a RENEWAL bills the
+    // NEXT term `[periodTo, periodTo + frozenTerm)`; a first-payment (or any
+    // non-`renewal` shape) bills the cycle's OWN CURRENT period
+    // `[periodFrom, periodTo)` — NEVER the next-period window (which would
+    // false-refuse the member's first renewal, the L2 over-block). Always
+    // non-null: the renewal bridge requires a window (a NULL row escapes both the
+    // pre-flight guard and the DB EXCLUDE), and on the RENEWAL branch it equals
+    // the pre-flight `wNew` when the term is unchanged (always today — every TSCC
+    // plan is 12 months). If a future term-VARIABLE plan both renews and switches
+    // term in one confirm, the guard (running ABOVE the plan-change) could size
+    // `wNew` from the old term while this stamp uses the new one; the DB EXCLUDE
+    // (`invoices_membership_coverage_no_overlap`) backstops that edge — a 23P01 at
+    // mint maps to a typed 409, not a 500.
+    coverageWindow,
     autoEmailOnIssue: true,
     actorUserId: input.actorUserId,
     correlationId: input.correlationId,

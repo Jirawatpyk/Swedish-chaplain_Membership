@@ -1,33 +1,40 @@
 /**
- * L2 hardening (renewals-coverage-window-hardening) — first-payment
- * over-block property.
+ * L2/L3 hardening (renewals-coverage-window-hardening) — first-payment
+ * over-block REGRESSION GUARD.
  *
- * HAZARD (from the auto-invoice × renewal §86/4 investigation): the ONLINE
- * `confirm-renewal.ts` stamps a PROVISIONAL dup-guard `coverageWindow` on a
- * first-payment bill computed from the PRE-re-anchor cycle —
- * `[cycle.periodTo, cycle.periodTo + frozenPlanTermMonths)` (confirm-renewal.ts
- * ~822-828, UNCONDITIONAL, even when `membershipCoverage` is omitted for a
- * first_payment classification). But a first-payment cycle RE-ANCHORS its period
- * at payment (`_lib/reanchor-first-payment.ts`, FIXED-ANCHOR): normally it KEEPS
- * `[periodFrom, periodTo)`; only if the fixed period already elapsed by the
- * payment date (comeback) does it snap to the payment month.
+ * BACKGROUND (the L2 over-block, now FIXED at L3): the ONLINE
+ * `confirm-renewal.ts` used to stamp a first-payment bill's DB-EXCLUDE
+ * `coverageWindow` with the RENEWAL formula `[periodTo, periodTo + term)` (the
+ * NEXT period), UNCONDITIONALLY — even when `membershipCoverage` was omitted for a
+ * first-payment classification. But a first-payment cycle KEEPS its own period
+ * under the fixed-anchor re-anchor (`_lib/reanchor-first-payment.ts`; normal =
+ * keep `[periodFrom, periodTo)`, comeback = snap forward), so the member's
+ * correctly-computed FIRST renewal ALSO covered `[periodTo, periodTo+term)` —
+ * IDENTICAL to the stamped window — and `findOverlappingMembershipCoverageBill`
+ * (domain/membership-bill-coverage.ts) FALSE-REFUSED that legit first renewal
+ * (money-safe: it blocks, never mints a duplicate, but a legit renewal shouldn't
+ * be blocked).
  *
- * If the provisional window overlaps the member's CORRECTLY-computed next
- * renewal window, `findOverlappingMembershipCoverageBill` FALSE-REFUSES that
- * legit later renewal (money-safe — it blocks, never mints a duplicate — but a
- * legit renewal shouldn't be blocked).
+ * THE FIX (L3): confirm-renewal now stamps the first-payment branch with the
+ * cycle's OWN CURRENT period `[periodFrom, periodTo)` (matching
+ * `admin-renew-lapsed-member.ts:596`), NOT the next-period window. That window is
+ * ADJACENT (half-open) to the member's next renewal `[periodTo, periodTo+term)`
+ * → no overlap → no over-block. It is still NON-NULL (the renewal bridge requires
+ * a coverage window by design), so a duplicate first-payment (double-confirm)
+ * stamps the SAME `[periodFrom, periodTo)` and is rejected by the DB EXCLUDE at
+ * issue — no dedup protection is lost. See
+ * `.superpowers/sdd/coverage-hardening-report.md` § L2/L3.
  *
- * This property asserts the desired invariant: a PAID first-payment bill's
- * provisional coverage window does NOT over-block the correctly-computed next
- * renewal window. It is a PURE reproduction of the two window formulas
- * (confirm-renewal's stamp + reanchor-first-payment's period math), so it
- * characterises the SHIPPED behaviour without a live DB.
+ * This property is the REGRESSION GUARD for that fix: it PURELY reproduces the
+ * FIXED stamp formula (`[periodFrom, periodTo)`) + the re-anchor period math and
+ * asserts the first-payment bill's coverage NEVER over-blocks the member's
+ * correctly-computed next renewal — for BOTH the normal and comeback re-anchor
+ * branches. It characterises the SHIPPED behaviour without a live DB.
  *
- * NOTE (the OFFLINE `mark-paid-offline` rail is NOT affected): it stamps NULL
- * coverage on first-payment (L1), so its first-payment bill never participates
- * in the guard. `admin-renew-lapsed-member` stamps the CURRENT period
- * `[periodFrom, periodTo)` (adjacent to the next renewal → half-open, no
- * overlap). Only confirm-renewal stamps the NEXT-period provisional window.
+ * NOTE (the sibling rails): OFFLINE `mark-paid-offline` stamps NULL on
+ * first-payment (safe via its own plan_year guard, L1); `admin-renew-lapsed-member`
+ * stamps `[periodFrom, periodTo)` (the same current-period window this fix adopts).
+ * All three first-payment rails are now over-block-safe.
  */
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
@@ -46,25 +53,31 @@ const isoUtc = (y: number, m: number, d: number): string =>
   new Date(Date.UTC(y, m - 1, d)).toISOString();
 
 /**
- * Reproduce, purely, what happens to a genuine first-payment member:
- *   - confirm-renewal STAMPS the provisional window `[periodTo, periodTo+term)`
- *     on the paid first-payment bill;
+ * Reproduce, purely, what happens to a genuine first-payment member AFTER the L3
+ * fix:
+ *   - confirm-renewal STAMPS the CURRENT-period window `[periodFrom, periodTo)`
+ *     on the paid first-payment bill (the FIXED formula);
  *   - the first payment RE-ANCHORS the cycle (fixed-anchor + comeback);
  *   - the member's later renewal covers `[activePeriodTo, activePeriodTo+term)`.
- * Returns `null` when the provisional window does NOT over-block the renewal.
+ * Returns the two computed windows + the guard's verdict (`hit` is `null` when
+ * there is no over-block — the desired invariant).
  */
-function overBlockedRenewal(input: {
+function firstPaymentOverBlockProbe(input: {
   periodFromIso: string;
   termMonths: number;
   paymentYmd: string;
-}): MembershipBillCoverageRow | null {
+}): {
+  firstPaymentCoverage: CoverageWindow;
+  nextRenewal: CoverageWindow;
+  hit: MembershipBillCoverageRow | null;
+} {
   const { periodFromIso, termMonths, paymentYmd } = input;
   const periodToIso = addMonthsUtc(periodFromIso, termMonths);
 
-  // (1) confirm-renewal.ts:822-828 — first-payment provisional stamp.
-  const provisional: CoverageWindow = {
-    from: periodToIso,
-    to: addMonthsUtc(periodToIso, termMonths),
+  // (1) confirm-renewal.ts (L3 fix) — first-payment stamps the CURRENT period.
+  const firstPaymentCoverage: CoverageWindow = {
+    from: periodFromIso,
+    to: periodToIso,
   };
 
   // (2) reanchor-first-payment.ts — fixed-anchor keeps [periodFrom, periodTo)
@@ -89,103 +102,98 @@ function overBlockedRenewal(input: {
   const paidFirstPaymentBill: MembershipBillCoverageRow = {
     invoiceId: 'first-payment-bill',
     status: 'paid',
-    coverage: provisional,
+    coverage: firstPaymentCoverage,
   };
 
-  return findOverlappingMembershipCoverageBill(
-    [paidFirstPaymentBill],
+  return {
+    firstPaymentCoverage,
     nextRenewal,
-  );
+    hit: findOverlappingMembershipCoverageBill(
+      [paidFirstPaymentBill],
+      nextRenewal,
+    ),
+  };
 }
 
-describe('first-payment provisional coverage — over-block property (L2)', () => {
-  // ────────────────────────────────────────────────────────────────────────
-  // FINDING (2026-07-29): this SAFETY property does NOT hold on the ONLINE
-  // confirm-renewal rail. In the NORMAL (pay-before-expiry) first-payment case
-  // the fixed-anchor re-anchor KEEPS the period, so the member's next renewal
-  // window is `[periodTo, periodTo+term)` — EXACTLY the provisional window
-  // confirm-renewal stamped on the paid first-payment bill. The guard therefore
-  // FALSE-REFUSES the legit later renewal. Money-safe (it blocks, never mints a
-  // duplicate), but a legit renewal shouldn't be blocked.
-  //
-  // Shrunk counterexample: periodFrom 2024-01-01, term 1mo, paid same day →
-  // provisional [2024-02-01, 2024-03-01) == next renewal [2024-02-01, 2024-03-01).
-  //
-  // Per the hardening brief this is STOP-AND-REPORT, not fix-here: the fix
-  // (confirm-renewal / any online first-payment mint must stamp NULL — like
-  // `mark-paid-offline` after L1 — or the CURRENT period `[periodFrom, periodTo)`
-  // like `admin-renew-lapsed-member`, NEVER the next-period provisional window)
-  // touches the online renewal path this brief must not change, so it belongs in
-  // a follow-up spec. See `.superpowers/sdd/coverage-hardening-report.md` (L2).
-  //
-  // `it.fails` = committed-RED: the inner assertion is the UNWEAKENED safety
-  // property (`toBeNull()` — no over-block). It is EXPECTED to fail today and
-  // must be flipped back to a plain `it` (dropping `.fails`) when the online
-  // first-payment stamp is fixed — at which point it becomes the regression guard.
-  // ────────────────────────────────────────────────────────────────────────
-  it.fails(
-    'a paid first-payment provisional window does NOT over-block the next renewal — CURRENTLY FAILS (documents the confirm-renewal over-block, see coverage-hardening-report.md)',
-    () => {
-      fc.assert(
-        fc.property(
-          fc.integer({ min: 2024, max: 2030 }), // periodFrom year
-          fc.integer({ min: 1, max: 12 }), // periodFrom month
-          fc.integer({ min: 1, max: 28 }), // periodFrom day (day-of-month safe)
-          fc.constantFrom(1, 3, 6, 12, 24), // frozen term months
-          fc.integer({ min: 0, max: 900 }), // first-payment offset (days after periodFrom)
-          (y, m, d, termMonths, payOffsetDays) => {
-            const periodFromIso = isoUtc(y, m, d);
-            const paymentYmd = new Date(
-              Date.parse(periodFromIso) + payOffsetDays * 86_400_000,
-            )
-              .toISOString()
-              .slice(0, 10);
+describe('first-payment current-period coverage — over-block regression guard (L2/L3)', () => {
+  it('a paid first-payment CURRENT-period window never over-blocks the next renewal (normal + comeback)', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 2024, max: 2030 }), // periodFrom year
+        fc.integer({ min: 1, max: 12 }), // periodFrom month
+        fc.integer({ min: 1, max: 28 }), // periodFrom day (day-of-month safe)
+        fc.constantFrom(1, 3, 6, 12, 24), // frozen term months
+        fc.integer({ min: 0, max: 900 }), // first-payment offset (days after periodFrom)
+        (y, m, d, termMonths, payOffsetDays) => {
+          const periodFromIso = isoUtc(y, m, d);
+          const paymentYmd = new Date(
+            Date.parse(periodFromIso) + payOffsetDays * 86_400_000,
+          )
+            .toISOString()
+            .slice(0, 10);
 
-            const hit = overBlockedRenewal({
-              periodFromIso,
-              termMonths,
-              paymentYmd,
-            });
-            // Safety property: no over-block (the guard returns null).
-            expect(hit).toBeNull();
-          },
-        ),
-        { numRuns: 500 },
-      );
-    },
-  );
+          const { hit } = firstPaymentOverBlockProbe({
+            periodFromIso,
+            termMonths,
+            paymentYmd,
+          });
+          // Safety property (now HOLDS after the L3 fix): no over-block.
+          expect(hit).toBeNull();
+        },
+      ),
+      { numRuns: 500 },
+    );
+  });
 
-  // Deterministic, RNG-free characterisation of the exact over-block, so the
-  // finding is pinned even if the fast-check seed changes. NORMAL re-anchor:
-  // periodFrom 2024-01-01 + 12mo → periodTo 2025-01-01; paid 2024-06-05 (before
-  // expiry) keeps the period, so the next renewal window and the provisional
-  // window are the identical [2025-01-01, 2026-01-01) → guard blocks.
-  it('DOCUMENTS the over-block concretely: provisional window == next-renewal window in the normal re-anchor case', () => {
-    const hit = overBlockedRenewal({
-      periodFromIso: '2024-01-01T00:00:00.000Z',
-      termMonths: 12,
-      paymentYmd: '2024-06-05',
+  // Deterministic, RNG-free characterisation of the NORMAL re-anchor case (the one
+  // the OLD next-period stamp got wrong — the L2 over-block). periodFrom 2024-01-01
+  // + 12mo → periodTo 2025-01-01; paid 2024-06-05 (before expiry) KEEPS the period,
+  // so the first-payment bill covers [2024-01-01, 2025-01-01) and the next renewal
+  // covers [2025-01-01, 2026-01-01) — exactly ADJACENT (half-open) → no overlap.
+  it('normal re-anchor: current-period bill is adjacent to the next renewal → no over-block', () => {
+    const { firstPaymentCoverage, nextRenewal, hit } =
+      firstPaymentOverBlockProbe({
+        periodFromIso: '2024-01-01T00:00:00.000Z',
+        termMonths: 12,
+        paymentYmd: '2024-06-05',
+      });
+    expect(firstPaymentCoverage).toEqual({
+      from: '2024-01-01T00:00:00.000Z',
+      to: '2025-01-01T00:00:00.000Z',
     });
-    expect(hit).not.toBeNull();
-    expect(hit?.coverage).toEqual({
+    expect(nextRenewal).toEqual({
       from: '2025-01-01T00:00:00.000Z',
       to: '2026-01-01T00:00:00.000Z',
     });
+    // The bill's coverage ends EXACTLY where the next renewal begins, so the two
+    // half-open [from, to) intervals do not overlap. This is precisely what the
+    // old next-period stamp (== the next renewal window) violated.
+    expect(firstPaymentCoverage.to).toBe(nextRenewal.from);
+    expect(hit).toBeNull();
   });
 
-  // The COMEBACK branch is safe: when the fixed period already elapsed by the
-  // payment date, the re-anchor snaps the active period to the payment month, so
-  // the next renewal window sits AFTER the provisional window (no overlap). This
-  // pins that the over-block is specific to the normal (pay-before-expiry) case.
-  it('does NOT over-block on the comeback branch (period already expired at payment → re-anchor moves it forward)', () => {
-    const hit = overBlockedRenewal({
-      periodFromIso: '2024-01-01T00:00:00.000Z',
-      termMonths: 12,
-      // Paid well AFTER periodTo (2025-01-01) → comeback → period snaps to
-      // 2026-03-01, next renewal [2026-03-01, 2027-03-01) is clear of the
-      // provisional [2025-01-01, 2026-01-01).
-      paymentYmd: '2026-03-10',
+  // Deterministic COMEBACK case (period already expired at payment): the re-anchor
+  // snaps the active period to the payment month, so the next renewal sits AFTER
+  // the current-period bill — still no overlap. Pins that the fix is safe on both
+  // re-anchor branches.
+  it('comeback re-anchor: next renewal moves forward, current-period bill stays behind → no over-block', () => {
+    const { firstPaymentCoverage, nextRenewal, hit } =
+      firstPaymentOverBlockProbe({
+        periodFromIso: '2024-01-01T00:00:00.000Z',
+        termMonths: 12,
+        // Paid well AFTER periodTo (2025-01-01) → comeback → active period snaps to
+        // the 2026-03 payment month, pushing the next renewal clear of the
+        // current-period bill [2024-01-01, 2025-01-01).
+        paymentYmd: '2026-03-10',
+      });
+    expect(firstPaymentCoverage).toEqual({
+      from: '2024-01-01T00:00:00.000Z',
+      to: '2025-01-01T00:00:00.000Z',
     });
+    // Next renewal starts strictly after the current-period bill's window ends.
+    expect(Date.parse(nextRenewal.from)).toBeGreaterThan(
+      Date.parse(firstPaymentCoverage.to),
+    );
     expect(hit).toBeNull();
   });
 });
