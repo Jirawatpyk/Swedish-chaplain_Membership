@@ -9,9 +9,14 @@
  * → recordPayment 'admin_offline_mark' (RC receipt at FY(paymentDate)) /
  * voidInvoice, plus createCycleInTx + reanchorPeriodInTx / linkInvoice.
  *
- * SYNTHETIC fixture only (never real company names — PII rule): 5 docs across
- * 5 members: paid-coverage-future · paid-coverage-ended · issued · void ·
- * inactive-member issued.
+ * SYNTHETIC fixture only (never real company names — PII rule): 7 docs across
+ * 7 members: paid-coverage-future · paid-coverage-ended · issued · void ·
+ * inactive-member issued · a payment-date-vs-issue-date DISORDER pair
+ * (payLate issues first but pays last; payEarly issues later but pays first)
+ * proving RC receipt numbers follow PAYMENT-date order within an FY while SC
+ * bill numbers follow ISSUE-date order (R3-4 two-phase execution).
+ * Also covers the R3-3 commit pre-flight: one unresolvable doc refuses the
+ * WHOLE commit with zero writes.
  *
  * SUBSTITUTION (documented): ONLY the Blob adapter is replaced via the
  * `overrides.blob` seam (the PR #280 `InvoicingAdapterOverrides` contract) —
@@ -105,7 +110,10 @@ function mkDoc(over: Partial<Round3InvoiceDoc> & { contactEmail: string; rowInde
 describe('Round-3 invoice import — end-to-end money path (live Neon)', () => {
   let tenant: TestTenant;
   let user: TestUser;
-  let fixtures: Record<'paidFuture' | 'paidEnded' | 'issued' | 'voided' | 'inactiveIssued', Fixture>;
+  let fixtures: Record<
+    'paidFuture' | 'paidEnded' | 'issued' | 'voided' | 'inactiveIssued' | 'payLate' | 'payEarly',
+    Fixture
+  >;
   const uploadedKeys: string[] = [];
 
   const importInput = () => ({
@@ -236,6 +244,8 @@ describe('Round-3 invoice import — end-to-end money path (live Neon)', () => {
     const issued = await mk('issued', true, 2026);
     const voided = await mk('void', true, 2026);
     const inactiveIssued = await mk('inactive', false, 2026);
+    const payLate = await mk('paylate', true, 2026);
+    const payEarly = await mk('payearly', true, 2026);
 
     fixtures = {
       // Coverage [2026-03-01, 2027-03-01) — still running.
@@ -301,6 +311,38 @@ describe('Round-3 invoice import — end-to-end money path (live Neon)', () => {
           dueDateExcel: '2026-06-30',
         }),
       },
+      // R3-4 disorder pair (same FY 2026): payLate ISSUES first (07-05) but
+      // PAYS last (07-20); payEarly issues later (07-10) but pays first
+      // (07-12). SC numbers must follow issue order (payLate < payEarly);
+      // RC numbers must follow payment order (payEarly < payLate).
+      payLate: {
+        ...payLate,
+        active: true,
+        doc: mkDoc({
+          contactEmail: payLate.email,
+          rowIndex: 15,
+          targetStatus: 'paid',
+          issueDate: '2026-07-05',
+          dueDateExcel: '2026-08-04',
+          paymentDate: '2026-07-20',
+          origBillNo: 'MB2026-015',
+          origReceiptNo: 'RC2026-015',
+        }),
+      },
+      payEarly: {
+        ...payEarly,
+        active: true,
+        doc: mkDoc({
+          contactEmail: payEarly.email,
+          rowIndex: 16,
+          targetStatus: 'paid',
+          issueDate: '2026-07-10',
+          dueDateExcel: '2026-08-09',
+          paymentDate: '2026-07-12',
+          origBillNo: 'MB2026-016',
+          origReceiptNo: 'RC2026-016',
+        }),
+      },
     };
   }, 120_000);
 
@@ -308,15 +350,45 @@ describe('Round-3 invoice import — end-to-end money path (live Neon)', () => {
     await tenant.cleanup().catch(() => {});
   });
 
-  it('imports all 5 docs — statuses, backdated dates, coverage, SC/RC numbers, money, cycles, audit', async () => {
-    const { report } = await runInvoiceImport(importInput());
+  it('commit pre-flight REFUSES on any plan-stage error — zero writes (R3-3)', async () => {
+    // One unresolvable doc (no such member) among the valid ones: executing
+    // around the hole would mint SC/RC numbers whose gaps get filled
+    // out-of-chronology on the fix-up re-run — the core must refuse instead.
+    const bogus = mkDoc({
+      contactEmail: `r3-nobody-${randomUUID().slice(0, 8)}@import.test`,
+      rowIndex: 99,
+      targetStatus: 'issued',
+      issueDate: '2026-07-15',
+    });
+    const input = importInput();
+    const { report, commitRefused } = await runInvoiceImport({
+      ...input,
+      docs: [...input.docs, bogus],
+    });
+
+    expect(commitRefused).toBe(true);
+    expect(report.mode).toBe('dry-run'); // honest: nothing executed
+    expect(report.totals.errors).toBe(1);
+    expect(report.errors).toEqual([{ rowIndex: 99, code: 'member_not_found' }]);
+    expect(report.totals.planned).toBe(7); // every valid doc stays plan-only
+
+    // ZERO writes — no invoices, no cycles, no audit rows, no blobs.
+    expect(await invoiceRows()).toHaveLength(0);
+    expect(await cycleRows()).toHaveLength(0);
+    expect(await auditCount('invoice_issued')).toBe(0);
+    expect(uploadedKeys).toHaveLength(0);
+  }, 120_000);
+
+  it('imports all 7 docs — statuses, backdated dates, coverage, SC/RC numbers, money, cycles, audit', async () => {
+    const { report, commitRefused } = await runInvoiceImport(importInput());
 
     expect(report.totals.errors, JSON.stringify(report.errors)).toBe(0);
-    expect(report.totals.imported).toBe(5);
+    expect(commitRefused).toBe(false);
+    expect(report.totals.imported).toBe(7);
     expect(report.mode).toBe('commit');
 
     const rows = await invoiceRows();
-    expect(rows).toHaveLength(5);
+    expect(rows).toHaveLength(7);
     const byMember = new Map(rows.map((r) => [r.memberId, r]));
 
     // --- paid, coverage in the future ------------------------------------
@@ -388,6 +460,22 @@ describe('Round-3 invoice import — end-to-end money path (live Neon)', () => {
     expect(ii.status).toBe('issued');
     expect(ii.billDocumentNumberRaw).toBe('SC-2026-000003');
 
+    // --- R3-4: SC follows ISSUE-date order, RC follows PAYMENT-date order --
+    const pl = byMember.get(fixtures.payLate.memberId)!;
+    const pe2 = byMember.get(fixtures.payEarly.memberId)!;
+    // payLate issued 07-05 (before payEarly 07-10) → earlier SC number…
+    expect(pl.billDocumentNumberRaw).toBe('SC-2026-000005');
+    expect(pe2.billDocumentNumberRaw).toBe('SC-2026-000006');
+    // …but payEarly PAID first (07-12 < 07-20) → earlier RC number. The old
+    // single-pass execution minted RC in issue order (payLate would have
+    // taken RC-2026-000002) — this pair is the regression anchor.
+    expect(pe2.receiptDocumentNumberRaw).toBe('RC-2026-000002');
+    expect(pl.receiptDocumentNumberRaw).toBe('RC-2026-000003');
+    expect(pl.status).toBe('paid');
+    expect(pe2.status).toBe('paid');
+    expect(pl.paymentDate).toBe('2026-07-20');
+    expect(pe2.paymentDate).toBe('2026-07-12');
+
     // --- report: mapping table + operator attention -----------------------
     expect(report.mintedNumberMap).toContainEqual([
       10,
@@ -404,7 +492,7 @@ describe('Round-3 invoice import — end-to-end money path (live Neon)', () => {
 
     // --- cycles ------------------------------------------------------------
     const cycles = await cycleRows();
-    expect(cycles).toHaveLength(3); // paid ×2 + issued(active); void + inactive get none
+    expect(cycles).toHaveLength(5); // paid ×4 + issued(active); void + inactive get none
     const cByMember = new Map(cycles.map((c) => [c.memberId, c]));
 
     const cPf = cByMember.get(fixtures.paidFuture.memberId)!;
@@ -431,6 +519,15 @@ describe('Round-3 invoice import — end-to-end money path (live Neon)', () => {
     expect(cIs.anchoredAt).toBeNull();
     expect(cIs.linkedInvoiceId).toBe(is.invoiceId);
 
+    const cPl = cByMember.get(fixtures.payLate.memberId)!;
+    expect(cPl.status).toBe('upcoming');
+    expect(cPl.anchoredAt?.toISOString()).toBe('2026-07-20T00:00:00.000Z');
+    expect(cPl.anchorInvoiceId).toBe(pl.invoiceId);
+    const cPe2 = cByMember.get(fixtures.payEarly.memberId)!;
+    expect(cPe2.status).toBe('upcoming');
+    expect(cPe2.anchoredAt?.toISOString()).toBe('2026-07-12T00:00:00.000Z');
+    expect(cPe2.anchorInvoiceId).toBe(pe2.invoiceId);
+
     expect(cByMember.has(fixtures.voided.memberId)).toBe(false);
     expect(cByMember.has(fixtures.inactiveIssued.memberId)).toBe(false);
 
@@ -442,12 +539,12 @@ describe('Round-3 invoice import — end-to-end money path (live Neon)', () => {
     expect(resolved?.cycleId).toBe(cIs.cycleId);
 
     // --- audit -------------------------------------------------------------
-    expect(await auditCount('invoice_issued')).toBe(5);
-    expect(await auditCount('invoice_paid')).toBe(2);
-    expect(await auditCount('tax_receipt_issued')).toBe(2);
+    expect(await auditCount('invoice_issued')).toBe(7);
+    expect(await auditCount('invoice_paid')).toBe(4);
+    expect(await auditCount('tax_receipt_issued')).toBe(4);
     expect(await auditCount('invoice_voided')).toBe(1);
-    expect(await auditCount('renewal_cycle_created')).toBe(3);
-    expect(await auditCount('renewal_cycle_reanchored')).toBe(2);
+    expect(await auditCount('renewal_cycle_created')).toBe(5);
+    expect(await auditCount('renewal_cycle_reanchored')).toBe(4);
   }, 240_000);
 
   it('re-run is idempotent — zero new rows, cycles no-op via findActiveForMemberInTx', async () => {
@@ -458,22 +555,26 @@ describe('Round-3 invoice import — end-to-end money path (live Neon)', () => {
       paidAudit: await auditCount('invoice_paid'),
     };
 
-    const { report } = await runInvoiceImport(importInput());
+    const { report, commitRefused } = await runInvoiceImport(importInput());
 
     expect(report.totals.errors, JSON.stringify(report.errors)).toBe(0);
+    expect(commitRefused).toBe(false);
     expect(report.totals.imported).toBe(0);
     expect(report.totals.resumed).toBe(0);
-    expect(report.totals.skippedAlreadyImported).toBe(5);
-    expect(report.cycles.skippedActiveExists).toBe(3);
+    expect(report.totals.skippedAlreadyImported).toBe(7);
+    expect(report.cycles.skippedActiveExists).toBe(5);
     expect(report.cycles.noneVoid).toBe(1);
     expect(report.cycles.noneInactiveMember).toBe(1);
-    // The mapping table stays complete on a re-run (numbers read from the DB).
+    // The mapping table stays complete on a re-run (numbers read from the DB;
+    // sorted by rowIndex 10..16).
     expect(report.mintedNumberMap.map((r) => r[3])).toEqual([
       'SC-2026-000001',
       'SC-2025-000001',
       'SC-2026-000004',
       'SC-2026-000002',
       'SC-2026-000003',
+      'SC-2026-000005',
+      'SC-2026-000006',
     ]);
 
     expect((await invoiceRows()).length).toBe(before.invoices);

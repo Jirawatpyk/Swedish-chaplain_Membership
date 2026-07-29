@@ -13,14 +13,29 @@
  *   1. renewals children (reminder events / escalation tasks / scheduled
  *      plan changes) → renewal_cycles. Cycles FK-reference invoices via
  *      linked_invoice_id + anchor_invoice_id (mig 0238; composite FK is
- *      effectively RESTRICT) + auto_draft_invoice_id (mig 0259), so cycles
- *      MUST be deleted BEFORE invoices.
- *   2. F5 money cascade: refunds → payments → (F4) credit_notes →
- *      invoice_lines → invoices. payments also FK members.
+ *      effectively RESTRICT) + auto_draft_invoice_id (mig 0259) AND
+ *      credit_notes via linked_credit_note_id (mig 0087), so cycles MUST be
+ *      deleted BEFORE invoices AND before credit_notes.
+ *   2. F4/F5 money cascade — `refunds ↔ credit_notes` is a genuine FK CYCLE
+ *      (refunds.credit_note_id → credit_notes ON DELETE RESTRICT, mig 0034;
+ *      credit_notes.source_refund_id → refunds ON DELETE RESTRICT, mig 0038),
+ *      so NO pure delete ordering can succeed once a refund-origin credit
+ *      note exists. Pre-step (REFUND_CREDIT_NOTE_UNLINK_STEP): UPDATE refunds
+ *      SET credit_note_id = NULL, breaking the refunds→credit_notes edge —
+ *      with a transient waiver stamp, because the 0268
+ *      `refunds_succeeded_iff_documented` CHECK forbids a bare NULL on a
+ *      succeeded refund (the rows are deleted two steps later in the SAME
+ *      tx, so the stamp never escapes). The reverse edge is NOT breakable:
+ *      the 0273 redaction-lock trigger forbids touching
+ *      credit_notes.source_refund_id on every write path. Delete order is
+ *      therefore credit_notes → refunds → payments → invoice_lines →
+ *      invoices. payments also FK members.
  *   3. Remaining member/tenant leaves: directory_listings (FK members),
- *      csv_import_records + event_registrations (tenant-scoped; likely 0
- *      rows — included for completeness; the F6 `events` table itself is
- *      KEPT), email_change_tokens + notifications_outbox (tenant rows).
+ *      dashboard_metrics_cache (F9 derived per-tenant cache — stale after a
+ *      wipe, safe to rebuild), csv_import_records + event_registrations
+ *      (tenant-scoped; likely 0 rows — included for completeness; the F6
+ *      `events` table itself is KEPT), email_change_tokens +
+ *      notifications_outbox (tenant rows).
  *   4. Member-PORTAL users: resolved via contacts BEFORE contacts are
  *      deleted (read-before-scrub), children first — sessions →
  *      password_reset_tokens → invitations (invitee rows only; admin
@@ -35,6 +50,14 @@
  *      tenant_member_settings is also kept).
  */
 
+/**
+ * FK-cycle-breaker pre-step (see header § 2): runs BEFORE the table deletes.
+ * `UPDATE refunds SET credit_note_id = NULL …` for the target tenant — the
+ * only way to open the refunds ↔ credit_notes RESTRICT cycle. Reported under
+ * this label in the wipe report (dry-run counts the rows that would unlink).
+ */
+export const REFUND_CREDIT_NOTE_UNLINK_STEP = 'refunds.credit_note_id_unlink';
+
 /** Tenant-scoped tables deleted (in order) BEFORE the member-user pass. */
 export const TENANT_TABLES_BEFORE_USERS = [
   'renewal_reminder_events',
@@ -44,12 +67,18 @@ export const TENANT_TABLES_BEFORE_USERS = [
   'consumed_link_tokens',
   'scheduled_plan_changes',
   'renewal_cycles',
+  // credit_notes FIRST — deletable only because the unlink pre-step nulled
+  // every refunds.credit_note_id (the RESTRICT edge that blocks this delete).
+  // refunds SECOND — deletable only because the credit_notes rows holding
+  // source_refund_id references are now gone (that edge is trigger-locked
+  // and can never be nulled). payments THIRD (refunds.payment_id RESTRICT).
+  'credit_notes',
   'refunds',
   'payments',
-  'credit_notes',
   'invoice_lines',
   'invoices',
   'directory_listings',
+  'dashboard_metrics_cache',
   'csv_import_records',
   'event_registrations',
   'email_change_tokens',

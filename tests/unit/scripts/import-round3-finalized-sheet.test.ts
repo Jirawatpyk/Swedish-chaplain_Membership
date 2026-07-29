@@ -15,9 +15,10 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const { readFinalizedMemberWorkbook } = await import(
+const { readFinalizedMemberWorkbook, OPERATOR_MONEY_CORRECTIONS } = await import(
   '@/../scripts/import-round3/finalized-sheet'
 );
+const { sheetMoneyErrors } = await import('@/../scripts/import-round3/money');
 const { validateRows } = await import('@/../scripts/import-members/validate');
 const { buildTierResolver } = await import('@/../scripts/import-members/tier-resolution');
 
@@ -112,10 +113,17 @@ function withFixture<T>(
   rows: readonly (readonly unknown[])[],
   fn: (parsed: ReturnType<typeof readFinalizedMemberWorkbook>) => T,
   headers: readonly string[] = HEADERS,
+  // Synthetic fixtures never reach Excel row 172, so the REAL default map
+  // would fail every fixture with operator_money_correction_row_not_found
+  // (by design — that guard is the re-sort tripwire). Tests therefore run
+  // with NO corrections unless a case injects its own; the real map's
+  // content + wiring are pinned by the dedicated describe below and by the
+  // real-workbook dry-run gate.
+  corrections: Parameters<typeof readFinalizedMemberWorkbook>[1] = new Map(),
 ): T {
   const { file, cleanup } = writeFixture(rows, headers);
   try {
-    return fn(readFinalizedMemberWorkbook(file));
+    return fn(readFinalizedMemberWorkbook(file, corrections));
   } finally {
     cleanup();
   }
@@ -504,7 +512,7 @@ describe('planYear derivation (calendar year of Inv Date — fiscal year starts 
   });
 });
 
-describe('money invariants (amount+vat≈total ±0.02 · vat≈7% ±0.5)', () => {
+describe('money invariants — SATANG-EXACT (R3-2: vat === half-away-from-zero(amount×7%) · amount+vat === total)', () => {
   it('flags a total that does not equal amount+vat', () => {
     withFixture(
       [fxRow({ inv: 'MB2026-001', invDate: new Date(2026, 0, 5), official: 'ANON A CO., LTD.', amount: 16000, vat: 1120, total: 18000 })],
@@ -523,6 +531,27 @@ describe('money invariants (amount+vat≈total ±0.02 · vat≈7% ±0.5)', () =>
     );
   });
 
+  it('flags a 1-satang VAT drift as an ERROR (the old ±0.5-THB tolerance accepted it)', () => {
+    withFixture(
+      [fxRow({ inv: 'MB2026-001', invDate: new Date(2026, 0, 5), official: 'ANON A CO., LTD.', amount: 16000, vat: 1120.01, total: 17120.01 })],
+      (parsed) => {
+        expect(parsed.errors.some((e) => e.code === 'money_vat_not_7pct' && e.rowIndex === 2)).toBe(true);
+        // total == amount+vat holds, so ONLY the vat check fires.
+        expect(parsed.errors.some((e) => e.code === 'money_total_mismatch')).toBe(false);
+      },
+    );
+  });
+
+  it('flags a 1-satang total drift as an ERROR (the old ±0.02-THB tolerance accepted it)', () => {
+    withFixture(
+      [fxRow({ inv: 'MB2026-001', invDate: new Date(2026, 0, 5), official: 'ANON A CO., LTD.', amount: 16000, vat: 1120, total: 17120.01 })],
+      (parsed) => {
+        expect(parsed.errors.some((e) => e.code === 'money_total_mismatch' && e.rowIndex === 2)).toBe(true);
+        expect(parsed.errors.some((e) => e.code === 'money_vat_not_7pct')).toBe(false);
+      },
+    );
+  });
+
   it('accepts a consistent 7%-VAT row (zero errors)', () => {
     withFixture(
       [fxRow({ inv: 'MB2026-001', invDate: new Date(2026, 0, 5), official: 'ANON A CO., LTD.', amount: 36000, vat: 2520, total: 38520 })],
@@ -530,6 +559,115 @@ describe('money invariants (amount+vat≈total ±0.02 · vat≈7% ±0.5)', () =>
         expect(parsed.errors).toEqual([]);
       },
     );
+  });
+
+  it('accepts the half-satang boundary only at the half-away-from-zero value (calculateVat parity)', () => {
+    // amount 12,345.50 → 7% = 864.185 satang-halves → mints 864.19.
+    withFixture(
+      [fxRow({ inv: 'MB2026-001', invDate: new Date(2026, 0, 5), official: 'ANON A CO., LTD.', amount: 12345.5, vat: 864.19, total: 13209.69 })],
+      (parsed) => {
+        expect(parsed.errors).toEqual([]);
+      },
+    );
+    withFixture(
+      [fxRow({ inv: 'MB2026-002', invDate: new Date(2026, 0, 6), official: 'ANON B CO., LTD.', amount: 12345.5, vat: 864.18, total: 13209.68 })],
+      (parsed) => {
+        expect(parsed.errors.some((e) => e.code === 'money_vat_not_7pct' && e.rowIndex === 2)).toBe(true);
+      },
+    );
+  });
+});
+
+describe('OPERATOR_MONEY_CORRECTIONS (operator decision 2026-07-29 — in-memory, sheet never edited)', () => {
+  // The row-172 shape: back-computed from a round 27,000.00 incl-VAT total,
+  // which no 2-dp amount can reach under total-level 7% HALF_AWAY rounding.
+  const UNREACHABLE = { amount: 25233.65, vat: 1766.35, total: 27000 };
+  const CORRECTION = {
+    sheet: { amountThb: 25233.65, vatThb: 1766.35, totalThb: 27000 },
+    corrected: { amountThb: 25233.64, vatThb: 1766.35, totalThb: 26999.99 },
+  };
+  const rowAt2 = () =>
+    fxRow({
+      inv: 'MB2026-086',
+      invDate: new Date(2026, 4, 1),
+      official: 'ANON ROUND-TOTAL CO., LTD.',
+      ...UNREACHABLE,
+    });
+
+  it('applies the correction BEFORE the satang-exact guard and records a WARNING (no names)', () => {
+    const { file, cleanup } = writeFixture([rowAt2()]);
+    try {
+      const parsed = readFinalizedMemberWorkbook(file, new Map([[2, CORRECTION]]));
+      expect(parsed.errors).toEqual([]); // strict guard passes on the corrected triple
+      expect(
+        parsed.warnings.filter((w) => w.code === 'operator_money_correction'),
+      ).toEqual([{ rowIndex: 2, field: 'amount', code: 'operator_money_correction' }]);
+      // The doc carries the CORRECTED triple (what the system will mint).
+      expect(parsed.invoices).toHaveLength(1);
+      expect(parsed.invoices[0]!.amountThb).toBe(25233.64);
+      expect(parsed.invoices[0]!.vatThb).toBe(1766.35);
+      expect(parsed.invoices[0]!.totalThb).toBe(26999.99);
+      expect(JSON.stringify(parsed.warnings)).not.toContain('ANON');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('without the correction the same row is a satang-exact ERROR (the guard is the reason the map exists)', () => {
+    const { file, cleanup } = writeFixture([rowAt2()]);
+    try {
+      const parsed = readFinalizedMemberWorkbook(file, new Map());
+      expect(parsed.errors.some((e) => e.code === 'money_vat_not_7pct' && e.rowIndex === 2)).toBe(true);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('a listed rowIndex with a DIFFERENT sheet triple → structural ERROR, correction NOT applied (re-sort guard)', () => {
+    const { file, cleanup } = writeFixture([
+      fxRow({ inv: 'MB2026-001', invDate: new Date(2026, 4, 1), official: 'ANON OTHER CO., LTD.' }), // clean 16k triple
+    ]);
+    try {
+      const parsed = readFinalizedMemberWorkbook(file, new Map([[2, CORRECTION]]));
+      expect(
+        parsed.errors.some(
+          (e) => e.code === 'operator_money_correction_mismatch' && e.rowIndex === 2,
+        ),
+      ).toBe(true);
+      // The doc keeps the SHEET values — no silent replacement.
+      expect(parsed.invoices[0]!.amountThb).toBe(16000);
+      // and no not-found error for a row that WAS seen
+      expect(
+        parsed.errors.some((e) => e.code === 'operator_money_correction_row_not_found'),
+      ).toBe(false);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('a listed rowIndex that never meets a selected doc → loud structural ERROR (re-sorted workbook guard)', () => {
+    const { file, cleanup } = writeFixture([rowAt2()]);
+    try {
+      const parsed = readFinalizedMemberWorkbook(file, new Map([[99, CORRECTION]]));
+      expect(
+        parsed.errors.some(
+          (e) => e.code === 'operator_money_correction_row_not_found' && e.rowIndex === 99,
+        ),
+      ).toBe(true);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('the REAL map: row 172, corrected triple passes the guard, sheet triple does not', () => {
+    const real = OPERATOR_MONEY_CORRECTIONS.get(172)!;
+    expect(real.corrected).toEqual({ amountThb: 25233.64, vatThb: 1766.35, totalThb: 26999.99 });
+    // Every recorded correction must itself satisfy the satang-exact guard…
+    for (const [, c] of OPERATOR_MONEY_CORRECTIONS) {
+      expect(sheetMoneyErrors(c.corrected)).toEqual([]);
+      // …and must actually be NEEDED (the sheet triple fails it).
+      expect(sheetMoneyErrors(c.sheet)).not.toEqual([]);
+    }
   });
 });
 

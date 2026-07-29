@@ -193,16 +193,16 @@ describe('buildInvoiceImportReport — shape, counts, attention lists, PII-freed
     targetStatus: 'issued',
     paymentDate: null,
     origReceiptNo: null,
-    issueDate: '2026-01-10',
-    dueDateExcel: '2026-02-10', // +60 = 2026-04-11 < TODAY → lapse-list
+    issueDate: '2026-01-10', // system due 2026-02-09; +60 = 2026-04-10 < TODAY → lapse-list
+    dueDateExcel: '2026-02-10',
   });
   const issuedInactive = doc({
     rowIndex: 13,
     targetStatus: 'issued',
     paymentDate: null,
     origReceiptNo: null,
-    issueDate: '2026-06-01',
-    dueDateExcel: '2026-07-15', // +60 = 2026-09-13 > TODAY → NOT in the lapse list
+    issueDate: '2026-06-01', // system due 2026-07-01; +60 = 2026-08-30 > TODAY → NOT listed
+    dueDateExcel: '2026-07-15',
   });
   const voided = doc({
     rowIndex: 14,
@@ -211,12 +211,35 @@ describe('buildInvoiceImportReport — shape, counts, attention lists, PII-freed
     origReceiptNo: null,
     origBillNo: 'MB2025-089',
   });
+  // R3-5 discriminators — the list is keyed on the SYSTEM due date
+  // (issue + defaultNetDays), never the sheet's Due Date cell:
+  //   row 15: sheet due is ANCIENT (sheet+60 < TODAY → the old keying would
+  //           list it) but the system due is recent → must NOT be listed.
+  const issuedSheetDueOld = doc({
+    rowIndex: 15,
+    targetStatus: 'issued',
+    paymentDate: null,
+    origReceiptNo: null,
+    issueDate: '2026-06-20', // system due 2026-07-20; +60 = 2026-09-18 > TODAY
+    dueDateExcel: '2026-03-01', // sheet+60 = 2026-04-30 < TODAY
+  });
+  //   row 16: sheet due is FUTURE-ish (sheet+60 > TODAY → the old keying
+  //           would skip it) but the system due is ancient → MUST be listed.
+  const issuedSheetDueNew = doc({
+    rowIndex: 16,
+    targetStatus: 'issued',
+    paymentDate: null,
+    origReceiptNo: null,
+    issueDate: '2026-01-05', // system due 2026-02-04; +60 = 2026-04-05 < TODAY
+    dueDateExcel: '2026-07-01', // sheet+60 = 2026-08-30 > TODAY
+  });
 
   const report = buildInvoiceImportReport({
     mode: 'commit',
     generatedAt: '2026-07-29T04:00:00.000Z',
     runId: 'test-run',
     todayBangkok: TODAY,
+    defaultNetDays: 30,
     pairs: [
       { doc: paidFuture, outcome: outcome({}) },
       {
@@ -255,6 +278,24 @@ describe('buildInvoiceImportReport — shape, counts, attention lists, PII-freed
           cycle: 'none_void',
         }),
       },
+      {
+        doc: issuedSheetDueOld,
+        outcome: outcome({
+          mintedBillNo: 'SC-2026-000005',
+          mintedReceiptNo: null,
+          memberNumber: 900128,
+          cycle: 'linked_awaiting',
+        }),
+      },
+      {
+        doc: issuedSheetDueNew,
+        outcome: outcome({
+          mintedBillNo: 'SC-2026-000006',
+          mintedReceiptNo: null,
+          memberNumber: 900129,
+          cycle: 'linked_awaiting',
+        }),
+      },
     ],
   });
 
@@ -275,27 +316,33 @@ describe('buildInvoiceImportReport — shape, counts, attention lists, PII-freed
       null,
       900125,
     ]);
-    expect(report.mintedNumberMap).toHaveLength(5);
+    expect(report.mintedNumberMap).toHaveLength(7);
   });
 
   it('counts per status + action + cycles', () => {
-    expect(report.totals.docs).toBe(5);
-    expect(report.totals.byTargetStatus).toEqual({ paid: 2, issued: 2, void: 1 });
-    expect(report.totals.imported).toBe(5);
+    expect(report.totals.docs).toBe(7);
+    expect(report.totals.byTargetStatus).toEqual({ paid: 2, issued: 4, void: 1 });
+    expect(report.totals.imported).toBe(7);
     expect(report.totals.errors).toBe(0);
     expect(report.cycles).toEqual({
       anchoredUpcoming: 2,
-      linkedAwaiting: 1,
+      linkedAwaiting: 3,
       skippedActiveExists: 0,
       noneInactiveMember: 1,
       noneVoid: 1,
     });
   });
 
-  it('operator-attention: issued docs past sheet-due+60 (will lapse on the first cron)', () => {
+  it('operator-attention: lapse list keyed on SYSTEM due (issue+netDays)+60 — never the sheet due (R3-5)', () => {
     expect(report.operatorAttention.issuedPastDuePlus60).toEqual([
+      // row 12: both keyings agree (listed) — the sheet due rides along for
+      // display only. rows 15/16 are the discriminators (fixture comments).
       { rowIndex: 12, dueDateExcel: '2026-02-10', systemDueDate: '2026-02-09' },
+      { rowIndex: 16, dueDateExcel: '2026-07-01', systemDueDate: '2026-02-04' },
     ]);
+    const listed = report.operatorAttention.issuedPastDuePlus60.map((a) => a.rowIndex);
+    expect(listed).not.toContain(15); // ancient SHEET due alone must not list
+    expect(listed).toContain(16); // ancient SYSTEM due must list
   });
 
   it('operator-attention: paid docs whose coverage already ended (enters COLLECT immediately)', () => {

@@ -62,7 +62,12 @@ if (existsSync('.env.local')) {
 import type { TenantContext } from '@/modules/tenants';
 import { asPlanYear } from '@/modules/plans/domain/plan';
 import { buildTierResolver, type PlanLite } from './import-members/tier-resolution';
-import { readFinalizedMemberWorkbook } from './import-round3/finalized-sheet';
+import {
+  readFinalizedMemberWorkbook,
+  type Round3InvoiceDoc,
+  type Round3Issue,
+} from './import-round3/finalized-sheet';
+import { thbToSatang } from './import-round3/money';
 import {
   renderInvoiceImportText,
   runInvoiceImport,
@@ -134,6 +139,71 @@ async function loadTierResolver(ctx: TenantContext, planYear: number) {
   return buildTierResolver(lite);
 }
 
+// --- Catalogue-price cross-check (review finding R3-7) -----------------------
+
+interface CataloguePriceMismatch {
+  readonly rowIndex: number;
+  readonly planYear: number;
+}
+
+interface CataloguePriceSection {
+  readonly count: number;
+  readonly rows: readonly CataloguePriceMismatch[];
+}
+
+/**
+ * Compare each doc's sheet Amount (satang) against the seeded catalogue's
+ * `annual_fee_minor_units` for (resolved planId, doc.planYear). A mismatch is
+ * NOT an error — historical prices legitimately differ — but the operator must
+ * know: the NEXT renewal bills at the catalogue price, not the imported one.
+ * Plan-years with no seeded catalogue are skipped (commit would refuse on the
+ * FK anyway); unresolved tiers are skipped (already a per-doc plan error).
+ */
+async function findCataloguePriceMismatches(
+  ctx: TenantContext,
+  docs: readonly Round3InvoiceDoc[],
+  resolvePlanId: (planTier: string) => string | null,
+): Promise<CataloguePriceSection> {
+  const { planRepo } = await import('@/modules/plans/infrastructure/db/plan-repo').catch(
+    rethrowWithServerOnlyHint,
+  );
+  const years = [...new Set(docs.map((d) => d.planYear))].sort();
+  const feeByYearAndPlanId = new Map<number, ReadonlyMap<string, number>>();
+  for (const year of years) {
+    const plans = await planRepo.findByTenantAndYear(ctx, {
+      year: asPlanYear(year),
+      showDeleted: false,
+    });
+    feeByYearAndPlanId.set(
+      year,
+      new Map(plans.map((p) => [p.plan_id, p.annual_fee_minor_units])),
+    );
+  }
+  const rows: CataloguePriceMismatch[] = [];
+  for (const doc of docs) {
+    const planId = resolvePlanId(doc.planTier);
+    if (planId === null) continue;
+    const fee = feeByYearAndPlanId.get(doc.planYear)?.get(planId);
+    if (fee === undefined) continue;
+    if (thbToSatang(doc.amountThb) !== BigInt(fee)) {
+      rows.push({ rowIndex: doc.rowIndex, planYear: doc.planYear });
+    }
+  }
+  rows.sort((a, b) => a.rowIndex - b.rowIndex);
+  return { count: rows.length, rows };
+}
+
+function renderCataloguePriceMismatches(section: CataloguePriceSection): string {
+  if (section.count === 0) return '';
+  const lines: string[] = [];
+  lines.push(
+    `OPERATOR — ${section.count} doc(s) whose historical price differs from the ` +
+      `catalogue — next renewal bills at catalogue price (row · planYear):`,
+  );
+  for (const r of section.rows) lines.push(`  ${r.rowIndex} · ${r.planYear}`);
+  return lines.join('\n');
+}
+
 /** Dry-run detail: PII-free per-doc plan lines (rowIndex + steps + member#). */
 function renderPlannedSteps(pairs: readonly DocReportPair[]): string {
   const lines: string[] = [];
@@ -153,7 +223,14 @@ function renderPlannedSteps(pairs: readonly DocReportPair[]): string {
   return lines.join('\n');
 }
 
-function writeReportFile(report: InvoiceImportReportDoc, dir: string): string {
+/** Written JSON = core report + CLI-level extras (catalogue cross-check +
+ *  sheet warnings, e.g. `operator_money_correction` — must show in EVERY report). */
+type WrittenReportDoc = InvoiceImportReportDoc & {
+  readonly cataloguePriceMismatches: CataloguePriceSection;
+  readonly sheetWarnings: readonly Round3Issue[];
+};
+
+function writeReportFile(report: WrittenReportDoc, dir: string): string {
   const safeTs = report.generatedAt.replace(/[:.]/g, '-');
   const path = join(dir, `round3-invoice-import-report-${report.mode}-${safeTs}.json`);
   writeFileSync(path, JSON.stringify(report, null, 2), 'utf8');
@@ -175,6 +252,11 @@ async function main(): Promise<void> {
     console.error(`[import-round3-invoices] sheet ERRORS (rowIndex · field · code):`);
     for (const e of parsed.errors) console.error(`  ${e.rowIndex} · ${e.field} · ${e.code}`);
   }
+  if (parsed.warnings.length > 0) {
+    // Includes every applied operator_money_correction — visible in EVERY run.
+    console.log(`[import-round3-invoices] sheet warnings (rowIndex · field · code):`);
+    for (const w of parsed.warnings) console.log(`  ${w.rowIndex} · ${w.field} · ${w.code}`);
+  }
 
   const tierResolver = await loadTierResolver(ctx, TIER_CATALOGUE_YEAR);
   const resolvePlanId = (label: string): string | null => {
@@ -182,9 +264,13 @@ async function main(): Promise<void> {
     return r.ok ? r.value.planId : null;
   };
 
-  // Part-1 discipline: any sheet-structural error blocks --commit outright
-  // (per-DOC problems found during the import itself are handled per-doc:
-  // recorded + skipped, the run continues — see core § Failure semantics).
+  // Two-stage commit gate:
+  //   1. Part-1 discipline — any sheet-STRUCTURAL error blocks --commit here.
+  //   2. Core pre-flight (R3-3) — the core plans EVERY doc first and refuses
+  //      (zero writes, `commitRefused`) when any doc fails planning
+  //      (member_not_found, plan_tier_unresolved, date guard, …), because
+  //      executing around holes would mint SC/RC numbers whose gaps get
+  //      filled out-of-chronology on the fix-up re-run.
   const commitAllowed = args.commit && parsed.errors.length === 0;
   if (args.commit && !commitAllowed) {
     console.error(
@@ -194,21 +280,39 @@ async function main(): Promise<void> {
   }
   const actorUserId = commitAllowed ? await findActorUserId(ctx) : null;
 
-  const { report, pairs } = await runInvoiceImport({
+  const { report, pairs, commitRefused } = await runInvoiceImport({
     ctx,
     docs: parsed.invoices,
     resolvePlanId,
     commit: commitAllowed,
     actorUserId,
   });
+  if (commitRefused) {
+    console.error(
+      `[import-round3-invoices] --commit REFUSED by the pre-flight gate (see plan ` +
+        `errors above) — ZERO writes were performed; the output below is the plan.`,
+    );
+  }
 
-  if (!commitAllowed) console.log(renderPlannedSteps(pairs));
+  // R3-7 — historical price vs catalogue cross-check (warning, never blocking).
+  const priceMismatches = await findCataloguePriceMismatches(
+    ctx,
+    parsed.invoices,
+    resolvePlanId,
+  );
+
+  if (!commitAllowed || commitRefused) console.log(renderPlannedSteps(pairs));
   console.log(renderInvoiceImportText(report));
-  const reportPath = writeReportFile(report, args.reportDir);
+  const priceText = renderCataloguePriceMismatches(priceMismatches);
+  if (priceText.length > 0) console.log(priceText);
+  const reportPath = writeReportFile(
+    { ...report, cataloguePriceMismatches: priceMismatches, sheetWarnings: parsed.warnings },
+    args.reportDir,
+  );
   console.log(`\n[import-round3-invoices] report written: ${reportPath}`);
 
   const totalErrors = parsed.errors.length + report.totals.errors;
-  process.exit(totalErrors > 0 ? 1 : 0);
+  process.exit(totalErrors > 0 || commitRefused ? 1 : 0);
 }
 
 // Only run when invoked directly (not when imported by a test).

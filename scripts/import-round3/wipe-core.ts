@@ -44,6 +44,7 @@ import { sql, type SQL } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { TENANT_SLUG_PATTERN } from '@/modules/tenants';
 import {
+  REFUND_CREDIT_NOTE_UNLINK_STEP,
   TENANT_TABLES_AFTER_USERS,
   TENANT_TABLES_BEFORE_USERS,
   assertCommitConfirmed,
@@ -183,6 +184,42 @@ async function runSteps(
   // Read-before-scrub: resolve the member-user set while contacts still exist.
   const memberUserIds = await resolveMemberPortalUserIds(exec, tenantId);
 
+  // FK-cycle breaker (wipe-plan header § 2): refunds ↔ credit_notes are
+  // MUTUALLY ON DELETE RESTRICT (0034 refunds.credit_note_id → credit_notes;
+  // 0038 credit_notes.source_refund_id → refunds), so no pure delete order
+  // can succeed once a refund-origin credit note exists. Null the ONE edge
+  // that is legally writable: refunds.credit_note_id.
+  //
+  // The bare NULL would violate the 0268 `refunds_succeeded_iff_documented`
+  // CHECK on a succeeded refund ("succeeded ⟺ processor id AND (credit note
+  // OR waiver)"), so the same UPDATE stamps the waiver columns — a TRANSIENT
+  // state that satisfies every refunds CHECK (verified against 0034 + 0268)
+  // and never escapes: the rows are deleted two steps later in the SAME tx
+  // (dry-run performs a SELECT count only — zero writes). The other edge
+  // (credit_notes.source_refund_id) is NOT an option: the 0227/0273
+  // redaction-lock trigger raises on any change to it, on every write path.
+  const unlinkWhere = sql`tenant_id = ${tenantId} AND credit_note_id IS NOT NULL`;
+  const unlinkResult =
+    mode === 'commit'
+      ? await exec.execute(
+          sql`UPDATE refunds
+              SET credit_note_id = NULL,
+                  credit_note_waived_at = COALESCE(credit_note_waived_at, now()),
+                  credit_note_waiver_reason = COALESCE(credit_note_waiver_reason, 'invoice_voided'),
+                  updated_at = now()
+              WHERE ${unlinkWhere} RETURNING 1`,
+        )
+      : await exec.execute(
+          sql`SELECT count(*)::int AS n FROM refunds WHERE ${unlinkWhere}`,
+        );
+  counts.push({
+    table: REFUND_CREDIT_NOTE_UNLINK_STEP,
+    rows:
+      mode === 'commit'
+        ? unwrap(unlinkResult).length
+        : unwrap<{ n: number }>(unlinkResult)[0]?.n ?? 0,
+  });
+
   for (const table of TENANT_TABLES_BEFORE_USERS) {
     const rows =
       mode === 'commit'
@@ -318,9 +355,13 @@ export function renderWipeReportText(report: WipeReport): string {
         ? report.mode === 'commit'
           ? 'reset-to-0'
           : 'would reset'
-        : report.mode === 'commit'
-          ? 'deleted'
-          : 'would delete';
+        : c.table === REFUND_CREDIT_NOTE_UNLINK_STEP
+          ? report.mode === 'commit'
+            ? 'unlinked'
+            : 'would unlink'
+          : report.mode === 'commit'
+            ? 'deleted'
+            : 'would delete';
     lines.push(`  ${c.table.padEnd(width)}  ${verb}  ${c.rows}`);
   }
   lines.push('');

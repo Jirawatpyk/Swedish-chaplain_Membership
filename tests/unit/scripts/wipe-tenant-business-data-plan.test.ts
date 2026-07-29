@@ -5,9 +5,14 @@
  * The FK-precedence pairs pinned here are the hard-won ordering rules from
  * scripts/clear-test-data.ts + the Round-3 ops research:
  *   - renewal_cycles FK-references invoices via linked_invoice_id /
- *     anchor_invoice_id / auto_draft_invoice_id → cycles BEFORE invoices.
- *   - refunds → payments → invoices (F5 cascade).
- *   - credit_notes / invoice_lines → invoices (F4 cascade).
+ *     anchor_invoice_id / auto_draft_invoice_id → cycles BEFORE invoices,
+ *     and credit_notes via linked_credit_note_id (0087) → cycles BEFORE
+ *     credit_notes.
+ *   - refunds ↔ credit_notes is a MUTUAL ON DELETE RESTRICT cycle (0034 +
+ *     0038): the core first nulls refunds.credit_note_id (the only writable
+ *     edge — 0273 trigger-locks source_refund_id), then deletes
+ *     credit_notes BEFORE refunds BEFORE payments.
+ *   - invoice_lines → invoices (F4 cascade).
  *   - every member FK child (contacts, invoices, payments, cycles,
  *     at_risk_outreach, tier_upgrade_suggestions, renewal_escalation_tasks,
  *     directory_listings) BEFORE members.
@@ -40,7 +45,13 @@ describe('WIPE_STEP_ORDER — FK-safe deletion precedence', () => {
     ['scheduled_plan_changes', 'renewal_cycles'],
     // cycles reference invoices (linked/anchor/auto_draft FKs) — MUST precede
     ['renewal_cycles', 'invoices'],
-    // F5 money cascade
+    // cycles also reference credit_notes (linked_credit_note_id, mig 0087)
+    ['renewal_cycles', 'credit_notes'],
+    // refunds ↔ credit_notes FK CYCLE (0034 + 0038): after the
+    // refunds.credit_note_id unlink pre-step, credit_notes MUST go first —
+    // the credit_notes.source_refund_id → refunds edge is trigger-locked
+    // (0273) and can only be cleared by deleting the credit-note rows.
+    ['credit_notes', 'refunds'],
     ['refunds', 'payments'],
     ['payments', 'invoices'],
     // F4 cascade
@@ -82,6 +93,10 @@ describe('WIPE_STEP_ORDER — FK-safe deletion precedence', () => {
     expect(idx(child), `${child} missing from WIPE_STEP_ORDER`).toBeGreaterThanOrEqual(0);
     expect(idx(parent), `${parent} missing from WIPE_STEP_ORDER`).toBeGreaterThanOrEqual(0);
     expect(idx(child), `${child} must run before ${parent}`).toBeLessThan(idx(parent));
+  });
+
+  it('wipes the F9 dashboard cache (stale after a wipe — R3-8)', () => {
+    expect(idx('dashboard_metrics_cache')).toBeGreaterThanOrEqual(0);
   });
 
   it('never touches a protected table', () => {

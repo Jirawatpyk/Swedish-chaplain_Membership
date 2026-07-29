@@ -1,14 +1,23 @@
 /**
  * Round-3 member importer CLI (docs/import/ROUND3_PLAN.md, 2026-07-29).
  *
- *   # dry-run (safe, default — validate + report, ZERO writes)
+ *   # dry-run (safe, default — validate + report, ZERO writes; .env.local is
+ *   # auto-filled below, so a fresh shell works)
  *   TSX_TSCONFIG_PATH=tsconfig.scripts.json TENANT_SLUG=swecham pnpm tsx \
  *       scripts/import-round3-members.ts --file "./docs/import/Round 3/….xlsx"
  *
- *   # real import (only after a clean dry-run + the wipe + 2024-plan seed)
+ *   # real import (only after a clean dry-run + the wipe + 2024-plan seed).
+ *   # PROD: use --env-file so DATABASE_URL points at prod BEFORE this file
+ *   # loads (run-scripts runbook; the .env.local fill-in never overrides it).
  *   TSX_TSCONFIG_PATH=tsconfig.scripts.json TENANT_SLUG=swecham \
- *       BOOTSTRAP_ADMIN_EMAIL=admin@… pnpm tsx \
+ *       BOOTSTRAP_ADMIN_EMAIL=<admin email> \
+ *       node --env-file=.env.production --import tsx \
  *       scripts/import-round3-members.ts --file "./docs/import/Round 3/….xlsx" --commit
+ *
+ * BOOTSTRAP_ADMIN_EMAIL is REQUIRED for --commit on a freshly-wiped tenant:
+ * `findActorUserId` otherwise resolves the actor via an admin user linked from
+ * a tenant CONTACT — and the wipe removed every contact link, so the lookup
+ * fails. The env var pins the actor by exact email instead.
  *
  * TSX_TSCONFIG_PATH is REQUIRED in both modes: the tier resolver (plan-repo →
  * members barrel) and commitMembers (renewals barrel) both transitively reach
@@ -16,6 +25,13 @@
  * under plain tsx; tsconfig.scripts.json aliases it to
  * scripts/lib/server-only-stub.ts. Forgetting it fails LOUD with this exact
  * remediation (never a silent partial run).
+ *
+ * Env loading (R3-6 — parity with import-round3-invoices.ts): `.env.local` is
+ * filled in below (never overriding vars already in the environment). Every
+ * env-reaching module (`./seed-demo-members` → '@/lib/db' → src/lib/env.ts,
+ * plan-repo, commitMembers) is imported LAZILY inside main() — under tsx a
+ * statement between static imports does NOT run before later static imports,
+ * so a static env-reaching import would validate an EMPTY environment.
  *
  * Reads the 'Finalized Member' sheet (1 row = 1 historical invoice) via the
  * fixed-index reader, collapses it to one RawRow per company (latest row wins),
@@ -29,20 +45,31 @@
  * written report is PII-free (counts + row indices only — spec § 7); the
  * Round-3 additions carry rule/series/status COUNTS and rowIndex refs only.
  */
-import { writeFileSync } from 'node:fs';
+import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+
+// Fill in any vars the operator's shell / --env-file did not already supply
+// (loadEnvFile never overrides existing vars). Static imports in THIS file are
+// env-free by design — everything env-reaching is imported lazily in main().
+if (existsSync('.env.local')) {
+  process.loadEnvFile?.('.env.local');
+}
+
 import type { TenantContext } from '@/modules/tenants';
 import { asPlanYear } from '@/modules/plans/domain/plan';
-import { requireSwechamTenant, findActorUserId } from './seed-demo-members';
 import { buildTierResolver, type PlanLite } from './import-members/tier-resolution';
 import { validateRows, type ValidatedMember } from './import-members/validate';
-// NOTE: `planRepo` and `commitMembers` are imported LAZILY (inside
-// loadTierResolver / the --commit branch). Both graphs reach the Next-vendored
-// `server-only` marker under plain tsx (plan-repo → members barrel → renewals →
-// invoicing → payments; import-members → renewals barrel → same) — a static
-// import would crash at load time with a bare MODULE_NOT_FOUND. The dynamic
-// imports let us catch that and print the TSX_TSCONFIG_PATH remediation
-// (tsconfig.scripts.json aliases server-only to scripts/lib/server-only-stub.ts).
+// NOTE: `requireSwechamTenant`/`findActorUserId` (seed-demo-members → '@/lib/db'
+// → src/lib/env.ts), `planRepo` and `commitMembers` are ALL imported LAZILY
+// (inside main() / loadTierResolver / the --commit branch), for two reasons:
+//   1. env: they must not evaluate before the .env.local fill-in above (tsx
+//      hoists static imports past it — R3-6);
+//   2. server-only: both graphs reach the Next-vendored `server-only` marker
+//      under plain tsx (plan-repo → members barrel → renewals → invoicing →
+//      payments; import-members → renewals barrel → same) — a static import
+//      would crash at load time with a bare MODULE_NOT_FOUND. The dynamic
+//      imports let us catch that and print the TSX_TSCONFIG_PATH remediation
+//      (tsconfig.scripts.json aliases server-only to scripts/lib/server-only-stub.ts).
 import {
   buildReportDocument,
   renderReportText,
@@ -203,6 +230,12 @@ function writeRound3ReportFile(doc: Round3ReportDocument, dir: string): string {
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
+
+  // Lazy — reaches '@/lib/db' → src/lib/env.ts (validated AFTER the
+  // .env.local fill-in above). Mirrors import-round3-invoices.ts.
+  const { requireSwechamTenant, findActorUserId } = await import('./seed-demo-members').catch(
+    rethrowWithServerOnlyHint,
+  );
   const ctx = requireSwechamTenant();
 
   const parsed = readFinalizedMemberWorkbook(args.file);

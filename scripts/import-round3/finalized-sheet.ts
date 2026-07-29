@@ -17,8 +17,14 @@
  *      `<company-slug>@pending.swecham.zyncdata.app` (domain has no MX — mail
  *      never actually delivers; admin verifies + replaces post-import);
  *   4. selects the Part-2 invoice documents (all 2026-series rows + the
- *      2025-series row of Active companies with no 2026 row) and validates the
- *      money invariants (amount+vat≈total ±0.02 · vat≈7%·amount ±0.5).
+ *      2025-series row of Active companies with no 2026 row), applies any
+ *      OPERATOR_MONEY_CORRECTIONS (operator-decided replacement triples for
+ *      rows whose sheet money is unrepresentable — each application is a
+ *      report WARNING; the operator's Excel file is never edited), and
+ *      validates the money invariants SATANG-EXACT (vat ===
+ *      half-away-from-zero(amount×7%), amount+vat === total — see ./money.ts;
+ *      a passing row is guaranteed to mint byte-identical numbers through
+ *      issueInvoice).
  *
  * PII: company names/emails live ONLY in the in-memory RawRow/Round3InvoiceDoc
  * structures (like ValidatedMember). `countryDefaults`, `warnings` and `errors`
@@ -28,6 +34,7 @@ import * as XLSX from 'xlsx';
 import { cellToString } from '../import-members/columns';
 import { countryNameToCode } from '../import-members/coerce';
 import type { RawRow } from '../import-members/validate';
+import { sheetMoneyErrors, thbToSatang } from './money';
 
 export const FINALIZED_SHEET_NAME = 'Finalized Member';
 
@@ -249,6 +256,58 @@ function parseMoney(raw: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+// ---------------------------------------------------------------------------
+// Operator money corrections (decision 2026-07-29 — the workbook itself is
+// the operator's file and is NEVER edited by us; corrections apply in-memory
+// BEFORE the satang-exact guard).
+// ---------------------------------------------------------------------------
+
+export interface MoneyTriple {
+  readonly amountThb: number;
+  readonly vatThb: number;
+  readonly totalThb: number;
+}
+
+export interface OperatorMoneyCorrection {
+  /** The EXACT triple the sheet carries at that row — the correction only
+   *  applies when it matches satang-for-satang (re-sort/typo guard). */
+  readonly sheet: MoneyTriple;
+  /** The operator-decided triple the system document must carry. */
+  readonly corrected: MoneyTriple;
+}
+
+/**
+ * Keyed by 1-based Excel rowIndex.
+ *
+ * Row 172 (MB2026-086, paid) — operator decision 2026-07-29: the sheet triple
+ * 25,233.65 / 1,766.35 / 27,000.00 was back-computed from a round 27,000.00
+ * incl-VAT total, which is UNREACHABLE under total-level 7% half-away-from-
+ * zero rounding (amount 25,233.64 → total 26,999.99; amount 25,233.65 →
+ * total 27,000.01 — no 2-dp amount lands on 27,000.00 exactly). The system
+ * document carries 25,233.64 / 1,766.35 / 26,999.99 — one satang UNDER the
+ * cash received, because a receipt must never exceed cash. Logged in
+ * docs/import/ROUND3_PLAN.md § Operator data corrections.
+ */
+export const OPERATOR_MONEY_CORRECTIONS: ReadonlyMap<number, OperatorMoneyCorrection> =
+  new Map([
+    [
+      172,
+      {
+        sheet: { amountThb: 25_233.65, vatThb: 1_766.35, totalThb: 27_000.0 },
+        corrected: { amountThb: 25_233.64, vatThb: 1_766.35, totalThb: 26_999.99 },
+      },
+    ],
+  ]);
+
+/** Satang-exact triple equality (float-literal-safe). */
+function tripleEquals(a: MoneyTriple, b: MoneyTriple): boolean {
+  return (
+    thbToSatang(a.amountThb) === thbToSatang(b.amountThb) &&
+    thbToSatang(a.vatThb) === thbToSatang(b.vatThb) &&
+    thbToSatang(a.totalThb) === thbToSatang(b.totalThb)
+  );
+}
+
 interface SheetRow {
   /** 1-based Excel row number (header is row 1). */
   readonly rowIndex: number;
@@ -269,8 +328,14 @@ const INVOICE_STATUS_MAP: Readonly<Record<string, Round3InvoiceStatus>> = {
  * Read + transform the 'Finalized Member' sheet. Throws on header drift;
  * collects per-row problems into `errors` / `warnings` (rowIndex + code only)
  * so the CLI can render a complete PII-free dry-run report and refuse --commit.
+ *
+ * `corrections` defaults to the operator-decided OPERATOR_MONEY_CORRECTIONS
+ * (parameter exists as a unit-test seam only — production callers pass one arg).
  */
-export function readFinalizedMemberWorkbook(file: string): FinalizedMemberWorkbook {
+export function readFinalizedMemberWorkbook(
+  file: string,
+  corrections: ReadonlyMap<number, OperatorMoneyCorrection> = OPERATOR_MONEY_CORRECTIONS,
+): FinalizedMemberWorkbook {
   const wb = XLSX.readFile(file, { cellDates: true });
   const ws = wb.Sheets[FINALIZED_SHEET_NAME];
   if (!ws) {
@@ -366,6 +431,8 @@ export function readFinalizedMemberWorkbook(file: string): FinalizedMemberWorkbo
   const invoices: Round3InvoiceDoc[] = [];
   const planYearByCompanyKey = new Map<string, number>();
   const countryDefaults: CountryDefault[] = [];
+  /** Correction rowIndexes buildDoc actually encountered (match OR mismatch). */
+  const correctionRowsSeen = new Set<number>();
 
   const buildDoc = (
     row: SheetRow,
@@ -405,12 +472,29 @@ export function readFinalizedMemberWorkbook(file: string): FinalizedMemberWorkbo
       err(row.rowIndex, 'amount', 'money_not_numeric');
       return null;
     }
-    // Money invariants (currently zero violations in the real sheet — keep the guard).
-    if (Math.abs(amountThb + vatThb - totalThb) > 0.02) {
-      err(row.rowIndex, 'total', 'money_total_mismatch');
+
+    // Operator money correction (decision 2026-07-29) — applied BEFORE the
+    // satang-exact guard, only when the sheet triple matches the recorded
+    // original EXACTLY (re-sort guard); every application is a WARNING so it
+    // shows in every report. A mismatch is a structural ERROR: the row no
+    // longer carries the triple the operator decided about.
+    let money: MoneyTriple = { amountThb, vatThb, totalThb };
+    const correction = corrections.get(row.rowIndex);
+    if (correction !== undefined) {
+      correctionRowsSeen.add(row.rowIndex);
+      if (tripleEquals(money, correction.sheet)) {
+        money = correction.corrected;
+        warn(row.rowIndex, 'amount', 'operator_money_correction');
+      } else {
+        err(row.rowIndex, 'amount', 'operator_money_correction_mismatch');
+      }
     }
-    if (Math.abs(vatThb - amountThb * 0.07) > 0.5) {
-      err(row.rowIndex, 'vat', 'money_vat_not_7pct');
+
+    // Money invariants — SATANG-EXACT (review finding R3-2; formerly ±0.02/±0.5
+    // tolerances). A passing row mints byte-identical vat/total through
+    // issueInvoice; any violation is an ERROR that blocks --commit.
+    for (const code of sheetMoneyErrors(money)) {
+      err(row.rowIndex, code === 'money_vat_not_7pct' ? 'vat' : 'total', code);
     }
 
     return {
@@ -422,9 +506,9 @@ export function readFinalizedMemberWorkbook(file: string): FinalizedMemberWorkbo
       issueDate,
       dueDateExcel,
       paymentDate,
-      amountThb,
-      vatThb,
-      totalThb,
+      amountThb: money.amountThb,
+      vatThb: money.vatThb,
+      totalThb: money.totalThb,
       targetStatus,
       planTier: fixupPlanLabel(at(row, 21)),
       planYear: Number(issueDate.slice(0, 4)),
@@ -529,6 +613,16 @@ export function readFinalizedMemberWorkbook(file: string): FinalizedMemberWorkbo
     for (const [row, series] of selected) {
       const doc = buildDoc(row, series, companyKey, contactEmail);
       if (doc) invoices.push(doc);
+    }
+  }
+
+  // Every listed correction MUST have met its row among the SELECTED invoice
+  // docs — a leftover key means the workbook was re-sorted / re-filtered and
+  // the correction would land on the wrong document. Loud structural ERROR
+  // (blocks --commit in both CLIs).
+  for (const rowIndex of corrections.keys()) {
+    if (!correctionRowsSeen.has(rowIndex)) {
+      err(rowIndex, 'amount', 'operator_money_correction_row_not_found');
     }
   }
 

@@ -5,11 +5,22 @@
  * WHY: 19 inactive Round-3 members carry 2024 registration anchors, so the
  * member import writes `members.plan_year = 2024` and the composite FK
  * `members_plan_tenant_year_fk (tenant_id, plan_id, plan_year)` needs a
- * catalogue row for EVERY 2024 plan_id. No invoices or renewal cycles will
- * ever reference 2024 — the rows exist ONLY to satisfy that FK, so they are
- * cloned `is_active = false` (never offered; mirrors the
- * clone-plans-to-next-year.ts rationale). 2025 + 2026 are ALREADY seeded in
- * prod — this script never touches them (hard-pinned source/target years).
+ * catalogue row for EVERY 2024 plan_id.
+ *
+ * The 2024 rows are ALSO load-bearing for any 2024-ISSUED document the sheet
+ * produces: a bill whose Inv Date falls in calendar 2024 inserts
+ * `invoices.plan_year = 2024` (SC-2024 stream; `invoices_plan_fk` RESTRICT),
+ * and its renewal cycle would freeze plan price against the FY2024 catalogue
+ * (plan-lookup-for-renewal resolves the exact-year row in 'freeze' mode
+ * REGARDLESS of `is_active` — only 'offer' mode filters on it; neither FK
+ * checks activity). Cloning `is_active = false` is therefore safe AND keeps
+ * 2024 out of every offer surface (mirrors the clone-plans-to-next-year.ts
+ * rationale). Measured against the v2 workbook 2026-07-29: all 125 selected
+ * invoice docs land in 2025/2026, so today only the members FK actually
+ * references 2024 — but the bill/freeze paths above are what make this seed
+ * remain correct if a sheet correction ever moves an Inv Date into 2024.
+ * 2025 + 2026 are ALREADY seeded in prod — this script never touches them
+ * (hard-pinned source/target years).
  *
  * Behaviour (per-plan_id idempotent — unlike seed-swecham-2026-plans.ts's
  * all-or-nothing stage B):

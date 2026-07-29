@@ -4,26 +4,42 @@
  * (`scripts/import-round3-invoices.ts`) and by the live-Neon integration test
  * (`tests/integration/scripts/import-round3-invoices.test.ts`).
  *
- * ── What it does (per document, ascending Inv Date so minted numbers run
- *    chronologically per fiscal year) ──────────────────────────────────────────
- *   1. resolve the member via the Part-1 mockup contact email
- *      (tenant-scoped, lower(email), removed_at IS NULL);
- *   2. `createInvoiceDraft` with `renewalSignal{unitPriceSatang}` (VAT-exclusive
- *      frozen price — suppresses the registration-fee auto-line + pro-rating)
- *      and the TRUE half-open coverage window `[issueDate, issueDate+12mo)`
- *      (both the printed §86/4 `membershipCoverage` and the mig-0281
- *      `coverageWindow` EXCLUDE-guard axis);
- *   3. `issueInvoice` with a PER-DOC injected ClockPort at `issueDate`T05:00Z
- *      (midday Bangkok — same Bangkok calendar day + correct bill fiscal year)
- *      → mints `bill_document_number_raw` SC-{FY}-{NNNNNN} + renders the PDF;
- *   4. paid → `recordPayment` (bank_transfer, sheet payment date, triggeredBy
- *      'admin_offline_mark') → mints RC-{FY(paymentDate)}-{NNNNNN} + receipt
- *      PDF (forced SYNCHRONOUS via the `asyncReceiptPdf:false` deps override);
- *      void → `voidInvoice` (issue-then-void; bill-stream gaps are legal);
- *   5. renewal cycle for ACTIVE members only: paid → `createCycleInTx`
+ * ── What it does (THREE PHASES so both tax-number streams stay date-ordered —
+ *    review finding R3-4) ─────────────────────────────────────────────────────
+ *   0. PRE-FLIGHT (commit mode only, R3-3): plan EVERY doc first (member
+ *      resolution, plan-tier resolution, date guard, resume decision). If ANY
+ *      doc has a plan-stage error the run REFUSES to execute — zero writes —
+ *      because executing around holes would mint SC/RC numbers whose gaps get
+ *      filled out-of-chronology on the fix-up re-run. The refused run returns
+ *      the full dry-run-style plan (`commitRefused: true`).
+ *   A. ISSUE phase — every doc in ascending Inv Date (rowIndex tiebreak):
+ *      1. resolve the member via the Part-1 mockup contact email
+ *         (tenant-scoped, lower(email), removed_at IS NULL);
+ *      2. `createInvoiceDraft` with `renewalSignal{unitPriceSatang}`
+ *         (VAT-exclusive frozen price — suppresses the registration-fee
+ *         auto-line + pro-rating) and the TRUE half-open coverage window
+ *         `[issueDate, issueDate+12mo)` (both the printed §86/4
+ *         `membershipCoverage` and the mig-0281 `coverageWindow`
+ *         EXCLUDE-guard axis);
+ *      3. `issueInvoice` with a PER-DOC injected ClockPort at
+ *         `issueDate`T05:00Z (midday Bangkok — same Bangkok calendar day +
+ *         correct bill fiscal year) → mints `bill_document_number_raw`
+ *         SC-{FY}-{NNNNNN} + renders the PDF. SC numbers therefore run in
+ *         ISSUE-date order within each FY.
+ *   B. PAYMENT phase — every PAID doc in ascending PAYMENT date (rowIndex
+ *      tiebreak): `recordPayment` (bank_transfer, sheet payment date,
+ *      triggeredBy 'admin_offline_mark') → mints RC-{FY(paymentDate)}-{NNNNNN}
+ *      + receipt PDF (forced SYNCHRONOUS via `asyncReceiptPdf:false`). RC
+ *      numbers therefore run in PAYMENT-date order within each FY — the
+ *      tax-register ordering an auditor checks (the old single-pass execution
+ *      minted RC in issue-date order, which can disagree). The doc's renewal
+ *      cycle (ACTIVE members only) rides this phase: `createCycleInTx`
  *      ('upcoming') + `reanchorPeriodInTx` stamp (`anchored_at`=payment date,
  *      `anchor_invoice_id`=the invoice — NEVER `linked_invoice_id`, schema
- *      comment 0238); issued → `createCycleInTx` ('awaiting_payment') +
+ *      comment 0238).
+ *   C. VOID + ISSUED-CYCLE phase — ascending Inv Date: void docs →
+ *      `voidInvoice` (issue-then-void; bill-stream gaps are legal); issued
+ *      docs of ACTIVE members → `createCycleInTx` ('awaiting_payment') +
  *      `linkInvoice` so a later record-payment auto-completes the cycle.
  *
  * ── Flag pinning (deterministic regardless of env) ───────────────────────────
@@ -50,10 +66,13 @@
  *     not reuse — a reused draft would need field-by-field re-verification).
  *
  * ── Failure semantics ────────────────────────────────────────────────────────
- *   Each doc is its own use-case tx sequence; an error is recorded and the run
- *   CONTINUES (the CLI exits 1 when any error occurred in --commit mode). The
- *   use-cases are individually transactional, so a doc can never be
- *   half-written; a doc that issued but failed later resumes on re-run.
+ *   Plan-stage errors REFUSE the whole commit before any write (phase 0 above).
+ *   Once execution starts, each doc is its own use-case tx sequence within each
+ *   phase; an EXECUTION error is recorded, the doc skips its remaining phases,
+ *   and the run CONTINUES for the other docs (the CLI exits 1 when any error
+ *   occurred). The use-cases are individually transactional, so a doc can never
+ *   be half-written; a doc that issued but failed later resumes on re-run
+ *   (already-issued docs skip phase A; already-paid docs skip phase B; etc.).
  *
  * ── PII ──────────────────────────────────────────────────────────────────────
  *   The report document carries rowIndex + document numbers + member numbers +
@@ -75,6 +94,11 @@ import { addMonthsUtc, bangkokDateOnly } from '@/lib/dates';
 import type { TenantContext } from '@/modules/tenants';
 import type { BlobStoragePort } from '@/modules/invoicing/application/ports/blob-storage-port';
 import type { Round3InvoiceDoc, Round3InvoiceStatus } from './finalized-sheet';
+import { thbToSatang } from './money';
+
+// Satang conversion lives in ./money since the exact-guard review fix (R3-2);
+// re-exported so existing consumers (unit tests) keep their import path.
+export { thbToSatang, vat7Satang } from './money';
 
 // ---------------------------------------------------------------------------
 // Pure helpers (unit-tested — tests/unit/scripts/import-round3-invoices.test.ts)
@@ -109,11 +133,6 @@ export function coverageWindowFor(issueDate: string): {
 } {
   const fromIso = midnightUtcIso(issueDate);
   return { fromIso, toIso: addMonthsUtc(fromIso, 12) };
-}
-
-/** THB (possibly float-noisy Excel number) → exact satang bigint. */
-export function thbToSatang(thb: number): bigint {
-  return BigInt(Math.round(thb * 100));
 }
 
 /** Date-only + N days (UTC arithmetic — Bangkok has no DST). */
@@ -242,12 +261,20 @@ export interface InvoiceImportReportDoc {
   readonly errors: ReadonlyArray<{ readonly rowIndex: number; readonly code: string }>;
   /** ROUND3_PLAN.md § "จุดที่ต้องเล่าให้ operator" — the three call-out lists. */
   readonly operatorAttention: {
-    /** Issued docs already > sheet-due+60 → the first lapse cron after F8 re-enable terminates them. */
+    /**
+     * Issued docs already > SYSTEM-due+60 → the first lapse cron after F8
+     * re-enable terminates them. Keyed on the SYSTEM due date
+     * (issueDate + tenant_invoice_settings.default_net_days) because that is
+     * the clock the lapse cron actually reads — the sheet's own due date is
+     * shown alongside for the operator but never drives the predicate
+     * (review finding R3-5).
+     */
     readonly issuedPastDuePlus60: ReadonlyArray<{
       readonly rowIndex: number;
+      /** The sheet's own Due Date cell (report-only). */
       readonly dueDateExcel: string;
-      /** The due date the SYSTEM minted (issue+30) — differs from the sheet's. */
-      readonly systemDueDate: string | null;
+      /** The due date the SYSTEM mints: issueDate + default_net_days. */
+      readonly systemDueDate: string;
     }>;
     /** Paid docs whose coverage already ended → enter-awaiting flips them to COLLECT immediately. */
     readonly paidCoverageEnded: ReadonlyArray<{
@@ -264,9 +291,12 @@ export function buildInvoiceImportReport(input: {
   readonly generatedAt: string;
   readonly runId: string;
   readonly todayBangkok: string;
+  /** tenant_invoice_settings.default_net_days — drives the SYSTEM due date
+   *  (issue + netDays) that the lapse-cron call-out list is keyed on. */
+  readonly defaultNetDays: number;
   readonly pairs: readonly DocReportPair[];
 }): InvoiceImportReportDoc {
-  const { pairs, todayBangkok } = input;
+  const { pairs, todayBangkok, defaultNetDays } = input;
 
   const byTargetStatus: Record<string, number> = {};
   let imported = 0;
@@ -287,7 +317,7 @@ export function buildInvoiceImportReport(input: {
   const issuedPastDuePlus60: Array<{
     rowIndex: number;
     dueDateExcel: string;
-    systemDueDate: string | null;
+    systemDueDate: string;
   }> = [];
   const paidCoverageEnded: Array<{ rowIndex: number; coverageTo: string }> = [];
   const issuedInactiveMember: Array<{ rowIndex: number }> = [];
@@ -347,14 +377,15 @@ export function buildInvoiceImportReport(input: {
     // but never for a doc that errored — it does not exist in the system).
     if (outcome.action !== 'error' && ISO_DATE_RE.test(doc.issueDate)) {
       if (doc.targetStatus === 'issued') {
-        if (
-          ISO_DATE_RE.test(doc.dueDateExcel) &&
-          addDaysDateOnly(doc.dueDateExcel, 60) < todayBangkok
-        ) {
+        // The lapse cron's clock is the SYSTEM due date (issue + net days
+        // snapshot), never the sheet's Due Date cell — key the predicate on it
+        // (R3-5). Both dates are still shown to the operator.
+        const systemDueDate = addDaysDateOnly(doc.issueDate, defaultNetDays);
+        if (addDaysDateOnly(systemDueDate, 60) < todayBangkok) {
           issuedPastDuePlus60.push({
             rowIndex: doc.rowIndex,
             dueDateExcel: doc.dueDateExcel,
-            systemDueDate: addDaysDateOnly(doc.issueDate, 30),
+            systemDueDate,
           });
         }
         if (outcome.memberActive === false) {
@@ -437,10 +468,10 @@ export function renderInvoiceImportText(report: InvoiceImportReportDoc): string 
   }
   const att = report.operatorAttention;
   if (att.issuedPastDuePlus60.length > 0) {
-    lines.push('OPERATOR — issued bills already past sheet-due+60 (first lapse cron will TERMINATE):');
+    lines.push('OPERATOR — issued bills already past SYSTEM-due+60 (first lapse cron will TERMINATE):');
     for (const a of att.issuedPastDuePlus60) {
       lines.push(
-        `  row ${a.rowIndex} · sheet due ${a.dueDateExcel} · system due ${a.systemDueDate ?? '-'}`,
+        `  row ${a.rowIndex} · system due ${a.systemDueDate} · sheet due ${a.dueDateExcel || '-'}`,
       );
     }
   }
@@ -482,6 +513,13 @@ export interface RunInvoiceImportInput {
 export interface RunInvoiceImportResult {
   readonly report: InvoiceImportReportDoc;
   readonly pairs: readonly DocReportPair[];
+  /**
+   * TRUE when `commit: true` was requested but the pre-flight found ≥1
+   * plan-stage error (R3-3): NOTHING was written and `report.mode` is
+   * 'dry-run' (an honest description of what actually ran — the full
+   * per-doc plan is in `pairs`). The CLI must exit non-zero.
+   */
+  readonly commitRefused: boolean;
 }
 
 /** Step-tagged typed error — becomes the PII-free `errorCode` in the report. */
@@ -521,6 +559,9 @@ async function loadDbModules() {
     const membersSchema = await import('@/modules/members/infrastructure/db/schema-members');
     const contactsSchema = await import('@/modules/members/infrastructure/db/schema-contacts');
     const invoicesSchema = await import('@/modules/invoicing/infrastructure/db/schema-invoices');
+    const settingsSchema = await import(
+      '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings'
+    );
     const draftUc = await import('@/modules/invoicing/application/use-cases/create-invoice-draft');
     const issueUc = await import('@/modules/invoicing/application/use-cases/issue-invoice');
     const payUc = await import('@/modules/invoicing/application/use-cases/record-payment');
@@ -537,6 +578,7 @@ async function loadDbModules() {
       members: membersSchema.members,
       contacts: contactsSchema.contacts,
       invoices: invoicesSchema.invoices,
+      tenantInvoiceSettings: settingsSchema.tenantInvoiceSettings,
       createInvoiceDraft: draftUc.createInvoiceDraft,
       issueInvoice: issueUc.issueInvoice,
       recordPayment: payUc.recordPayment,
@@ -577,9 +619,13 @@ interface ExistingInvoiceRef {
 interface PlanContext {
   readonly memberByEmail: ReadonlyMap<string, MemberRef>;
   readonly invoicesByMember: ReadonlyMap<string, readonly ExistingInvoiceRef[]>;
+  /** tenant_invoice_settings.default_net_days (30 when no settings row yet) —
+   *  the SYSTEM due-date clock the operator lapse call-out is keyed on. */
+  readonly defaultNetDays: number;
 }
 
-/** One tenant-scoped read pass: mockup-email → member, member → membership invoices. */
+/** One tenant-scoped read pass: mockup-email → member, member → membership
+ *  invoices, tenant default_net_days. */
 async function loadPlanContext(
   mods: DbModules,
   ctx: TenantContext,
@@ -589,7 +635,18 @@ async function loadPlanContext(
   return mods.runInTenant(ctx, async (tx) => {
     const memberByEmail = new Map<string, MemberRef>();
     const invoicesByMember = new Map<string, ExistingInvoiceRef[]>();
-    if (emails.length === 0) return { memberByEmail, invoicesByMember };
+
+    // issueInvoice snapshots settings.defaultNetDays into net_days_snapshot —
+    // read the same column so the report's "system due" matches what will be
+    // minted (schema default 30 when the tenant has no settings row yet; in
+    // that state issueInvoice would refuse anyway).
+    const settingsRows = await tx
+      .select({ defaultNetDays: mods.tenantInvoiceSettings.defaultNetDays })
+      .from(mods.tenantInvoiceSettings)
+      .where(eq(mods.tenantInvoiceSettings.tenantId, ctx.slug));
+    const defaultNetDays = settingsRows[0]?.defaultNetDays ?? 30;
+
+    if (emails.length === 0) return { memberByEmail, invoicesByMember, defaultNetDays };
 
     const memberRows = await tx
       .select({
@@ -657,7 +714,7 @@ async function loadPlanContext(
       }
     }
 
-    return { memberByEmail, invoicesByMember };
+    return { memberByEmail, invoicesByMember, defaultNetDays };
   });
 }
 
@@ -962,145 +1019,296 @@ async function voidDoc(
   if (!voided.ok) throw new DocStepError('void', voided.error.code);
 }
 
-async function importDoc(
+// ---------------------------------------------------------------------------
+// Phased execution (R3-4) — one mutable record per doc, filled across phases.
+// ---------------------------------------------------------------------------
+
+interface DocExecState {
+  readonly doc: Round3InvoiceDoc;
+  readonly plan: DocPlan;
+  /** Set on the first phase error — the doc skips its remaining phases. */
+  failed: boolean;
+  errorCode: string | null;
+  mintedBillNo: string | null;
+  mintedReceiptNo: string | null;
+  cycle: CycleOutcome;
+  invoiceId: string | null;
+  coverageFromIso: string | null;
+  coverageToIso: string | null;
+}
+
+function initDocState(doc: Round3InvoiceDoc, plan: DocPlan): DocExecState {
+  const state: DocExecState = {
+    doc,
+    plan,
+    failed: false,
+    errorCode: null,
+    mintedBillNo: null,
+    mintedReceiptNo: null,
+    cycle: 'none',
+    invoiceId: null,
+    coverageFromIso: null,
+    coverageToIso: null,
+  };
+  switch (plan.kind) {
+    case 'error':
+      // Defensive — the commit pre-flight refuses before execution when any
+      // plan errored, so this only carries dry-run-style bookkeeping.
+      state.failed = true;
+      state.errorCode = plan.code;
+      break;
+    case 'skip_already_imported':
+      state.invoiceId = plan.existing.invoiceId;
+      state.mintedBillNo = plan.existing.billNo;
+      state.mintedReceiptNo = plan.existing.receiptNo;
+      state.coverageFromIso = plan.existing.coverageFromIso;
+      state.coverageToIso = plan.existing.coverageToIso;
+      break;
+    case 'resume':
+      state.invoiceId = plan.existing.invoiceId;
+      state.mintedBillNo = plan.existing.billNo;
+      state.coverageFromIso = plan.existing.coverageFromIso;
+      state.coverageToIso = plan.existing.coverageToIso;
+      break;
+    case 'import':
+      break;
+  }
+  return state;
+}
+
+function markDocFailed(state: DocExecState, e: unknown): void {
+  state.failed = true;
+  state.errorCode =
+    e instanceof DocStepError ? e.message : `exception:${e instanceof Error ? e.name : 'unknown'}`;
+  // Full message to the operator terminal only (never into the report).
+  console.error(
+    `[import-round3-invoices] row ${state.doc.rowIndex} FAILED: ` +
+      (e instanceof Error ? e.message : String(e)),
+  );
+}
+
+/** Renewal-cycle step for one doc (no-ops for void docs / inactive members). */
+async function ensureCycleForState(
+  mods: DbModules,
+  cycleRt: CycleRuntime,
+  ctx: TenantContext,
+  actorUserId: string,
+  runId: string,
+  state: DocExecState,
+): Promise<void> {
+  const { doc, plan } = state;
+  if (plan.kind === 'error') return;
+  if (doc.targetStatus === 'void') {
+    state.cycle = 'none_void';
+    return;
+  }
+  if (!plan.member.active) {
+    state.cycle = 'none_inactive_member';
+    return;
+  }
+  if (state.invoiceId === null) throw new DocStepError('cycle', 'invoice_id_missing');
+  if (state.coverageFromIso === null || state.coverageToIso === null) {
+    throw new DocStepError('cycle', 'existing_invoice_missing_coverage');
+  }
+  state.cycle = await ensureCycleForDoc(mods, cycleRt, ctx, actorUserId, runId, doc, {
+    memberId: plan.member.memberId,
+    planId: plan.planId,
+    invoiceId: state.invoiceId,
+    coverageFromIso: state.coverageFromIso,
+    coverageToIso: state.coverageToIso,
+  });
+}
+
+/**
+ * Phase A — ISSUE. `states` arrives in ascending Inv Date order, so
+ * SC-{FY}-{NNNNNN} bill numbers run in issue-date order within each FY.
+ * Resume/skip docs already hold their bill number and skip the phase.
+ */
+async function runIssuePhase(
+  mods: DbModules,
+  deps: DepsBuilders,
+  ctx: TenantContext,
+  actorUserId: string,
+  runId: string,
+  states: readonly DocExecState[],
+): Promise<void> {
+  for (const state of states) {
+    if (state.failed) continue;
+    const { doc, plan } = state;
+    // Progress breadcrumb (PII-free) — the prod run is ~125 sequential docs
+    // with a real PDF render each; the operator needs to see it moving.
+    console.log(
+      `[import-round3-invoices] phase A row ${doc.rowIndex} (${doc.issueDate} · ${doc.targetStatus}) → ${plan.kind}`,
+    );
+    if (plan.kind !== 'import') continue;
+    try {
+      // 0. Stale drafts from a crashed run — DELETE, then import fresh.
+      for (const draftId of plan.draftsToDelete) {
+        const del = await mods.deleteInvoiceDraft(deps.deleteDraft(), {
+          tenantId: ctx.slug,
+          actorUserId,
+          requestId: `r3inv:${runId}:row${doc.rowIndex}:delete-draft`,
+          invoiceId: draftId,
+        });
+        if (!del.ok && del.error.code !== 'invoice_not_found') {
+          throw new DocStepError('delete_stale_draft', del.error.code);
+        }
+      }
+
+      // 1. Draft — frozen VAT-exclusive price + true half-open coverage window.
+      const draft = await mods.createInvoiceDraft(deps.draft(doc.issueDate), {
+        tenantId: ctx.slug,
+        actorUserId,
+        requestId: `r3inv:${runId}:row${doc.rowIndex}:draft`,
+        memberId: plan.member.memberId,
+        planId: plan.planId,
+        planYear: doc.planYear,
+        autoEmailOnIssue: false,
+        renewalSignal: { unitPriceSatang: thbToSatang(doc.amountThb) },
+        membershipCoverage: {
+          kind: 'window',
+          fromIso: plan.coverage.fromIso,
+          toIso: plan.coverage.toIso,
+        },
+        coverageWindow: { fromIso: plan.coverage.fromIso, toIso: plan.coverage.toIso },
+      });
+      if (!draft.ok) throw new DocStepError('draft', draft.error.code);
+      state.invoiceId = draft.value.invoiceId;
+      state.coverageFromIso = plan.coverage.fromIso;
+      state.coverageToIso = plan.coverage.toIso;
+
+      // 2. Issue — per-doc clock backdates issue/due dates + the SC bill FY.
+      const issued = await mods.issueInvoice(deps.issue(doc.issueDate), {
+        tenantId: ctx.slug,
+        actorUserId,
+        requestId: `r3inv:${runId}:row${doc.rowIndex}:issue`,
+        invoiceId: state.invoiceId,
+        autoEmailOverride: false,
+      });
+      if (!issued.ok) throw new DocStepError('issue', issued.error.code);
+      state.mintedBillNo = issued.value.billDocumentNumberRaw;
+    } catch (e) {
+      markDocFailed(state, e);
+    }
+  }
+}
+
+/**
+ * Phase B — PAYMENT. Every PAID doc in ascending PAYMENT date (rowIndex
+ * tiebreak), so RC-{FY(paymentDate)}-{NNNNNN} receipt numbers run in
+ * payment-date order within each FY (the tax-register ordering — R3-4).
+ * Already-paid docs skip the payment call but still ensure their cycle.
+ */
+async function runPaymentPhase(
   mods: DbModules,
   deps: DepsBuilders,
   cycleRt: CycleRuntime,
   ctx: TenantContext,
   actorUserId: string,
   runId: string,
-  doc: Round3InvoiceDoc,
-  plan: DocPlan,
-): Promise<DocOutcome> {
+  states: readonly DocExecState[],
+): Promise<void> {
+  const paidStates = states
+    .filter((s) => s.doc.targetStatus === 'paid')
+    .sort((a, b) => {
+      const pa = a.doc.paymentDate ?? '';
+      const pb = b.doc.paymentDate ?? '';
+      return pa < pb ? -1 : pa > pb ? 1 : a.doc.rowIndex - b.doc.rowIndex;
+    });
+  for (const state of paidStates) {
+    if (state.failed) continue;
+    const { doc, plan } = state;
+    const needsPayment =
+      plan.kind === 'import' || (plan.kind === 'resume' && plan.step === 'pay');
+    console.log(
+      `[import-round3-invoices] phase B row ${doc.rowIndex} (pay ${doc.paymentDate}) → ` +
+        (needsPayment ? 'record_payment' : 'ensure_cycle'),
+    );
+    try {
+      if (needsPayment) {
+        if (state.invoiceId === null) throw new DocStepError('pay', 'invoice_id_missing');
+        state.mintedReceiptNo = await payDoc(mods, deps, ctx, actorUserId, runId, doc, state.invoiceId);
+      }
+      await ensureCycleForState(mods, cycleRt, ctx, actorUserId, runId, state);
+    } catch (e) {
+      markDocFailed(state, e);
+    }
+  }
+}
+
+/**
+ * Phase C — VOID + ISSUED-CYCLE. Ascending Inv Date (voids mint nothing, so
+ * ordering is cosmetic). Void docs issue-then-void; issued docs of active
+ * members get their awaiting_payment cycle + linkInvoice.
+ */
+async function runVoidAndCyclePhase(
+  mods: DbModules,
+  deps: DepsBuilders,
+  cycleRt: CycleRuntime,
+  ctx: TenantContext,
+  actorUserId: string,
+  runId: string,
+  states: readonly DocExecState[],
+): Promise<void> {
+  for (const state of states) {
+    if (state.failed) continue;
+    const { doc, plan } = state;
+    if (doc.targetStatus === 'paid') continue; // fully handled in phase B
+    try {
+      if (doc.targetStatus === 'void') {
+        const needsVoid =
+          plan.kind === 'import' || (plan.kind === 'resume' && plan.step === 'void');
+        console.log(
+          `[import-round3-invoices] phase C row ${doc.rowIndex} (void) → ` +
+            (needsVoid ? 'void' : 'already_void'),
+        );
+        if (needsVoid) {
+          if (state.invoiceId === null) throw new DocStepError('void', 'invoice_id_missing');
+          await voidDoc(mods, deps, ctx, actorUserId, runId, doc, state.invoiceId);
+        }
+        state.cycle = 'none_void';
+      } else {
+        console.log(
+          `[import-round3-invoices] phase C row ${doc.rowIndex} (issued) → ensure_cycle`,
+        );
+        await ensureCycleForState(mods, cycleRt, ctx, actorUserId, runId, state);
+      }
+    } catch (e) {
+      markDocFailed(state, e);
+    }
+  }
+}
+
+function stateToOutcome(state: DocExecState): DocOutcome {
+  const { doc, plan } = state;
   const member = plan.kind === 'error' ? null : plan.member;
-  let mintedBillNo: string | null = null;
-  let mintedReceiptNo: string | null = null;
-  let cycle: CycleOutcome = 'none';
-  const base = {
+  const action: DocOutcome['action'] = state.failed
+    ? 'error'
+    : plan.kind === 'import'
+      ? 'imported'
+      : plan.kind === 'resume'
+        ? 'resumed'
+        : 'skipped_already_imported';
+  return {
+    action,
+    errorCode: state.errorCode,
+    mintedBillNo: state.mintedBillNo,
+    mintedReceiptNo: state.mintedReceiptNo,
     memberNumber: member?.memberNumber ?? null,
     memberActive: member?.active ?? null,
+    cycle: state.cycle,
     plannedSteps: plannedStepsFor(doc, plan),
   };
-
-  const ensureCycle = async (invoiceId: string, fromIso: string | null, toIso: string | null) => {
-    if (doc.targetStatus === 'void') return (cycle = 'none_void');
-    if (!member!.active) return (cycle = 'none_inactive_member');
-    if (fromIso === null || toIso === null) {
-      throw new DocStepError('cycle', 'existing_invoice_missing_coverage');
-    }
-    cycle = await ensureCycleForDoc(mods, cycleRt, ctx, actorUserId, runId, doc, {
-      memberId: member!.memberId,
-      planId: (plan as Extract<DocPlan, { planId: string }>).planId,
-      invoiceId,
-      coverageFromIso: fromIso,
-      coverageToIso: toIso,
-    });
-    return cycle;
-  };
-
-  try {
-    switch (plan.kind) {
-      case 'error':
-        return { ...base, action: 'error', errorCode: plan.code, mintedBillNo, mintedReceiptNo, cycle: 'none' };
-
-      case 'skip_already_imported': {
-        mintedBillNo = plan.existing.billNo;
-        mintedReceiptNo = plan.existing.receiptNo;
-        await ensureCycle(plan.existing.invoiceId, plan.existing.coverageFromIso, plan.existing.coverageToIso);
-        return { ...base, action: 'skipped_already_imported', errorCode: null, mintedBillNo, mintedReceiptNo, cycle };
-      }
-
-      case 'resume': {
-        mintedBillNo = plan.existing.billNo;
-        if (plan.step === 'pay') {
-          mintedReceiptNo = await payDoc(mods, deps, ctx, actorUserId, runId, doc, plan.existing.invoiceId);
-          await ensureCycle(plan.existing.invoiceId, plan.existing.coverageFromIso, plan.existing.coverageToIso);
-        } else {
-          await voidDoc(mods, deps, ctx, actorUserId, runId, doc, plan.existing.invoiceId);
-          cycle = 'none_void';
-        }
-        return { ...base, action: 'resumed', errorCode: null, mintedBillNo, mintedReceiptNo, cycle };
-      }
-
-      case 'import': {
-        // 0. Stale drafts from a crashed run — DELETE, then import fresh.
-        for (const draftId of plan.draftsToDelete) {
-          const del = await mods.deleteInvoiceDraft(deps.deleteDraft(), {
-            tenantId: ctx.slug,
-            actorUserId,
-            requestId: `r3inv:${runId}:row${doc.rowIndex}:delete-draft`,
-            invoiceId: draftId,
-          });
-          if (!del.ok && del.error.code !== 'invoice_not_found') {
-            throw new DocStepError('delete_stale_draft', del.error.code);
-          }
-        }
-
-        // 1. Draft — frozen VAT-exclusive price + true half-open coverage window.
-        const draft = await mods.createInvoiceDraft(deps.draft(doc.issueDate), {
-          tenantId: ctx.slug,
-          actorUserId,
-          requestId: `r3inv:${runId}:row${doc.rowIndex}:draft`,
-          memberId: member!.memberId,
-          planId: plan.planId,
-          planYear: doc.planYear,
-          autoEmailOnIssue: false,
-          renewalSignal: { unitPriceSatang: thbToSatang(doc.amountThb) },
-          membershipCoverage: {
-            kind: 'window',
-            fromIso: plan.coverage.fromIso,
-            toIso: plan.coverage.toIso,
-          },
-          coverageWindow: { fromIso: plan.coverage.fromIso, toIso: plan.coverage.toIso },
-        });
-        if (!draft.ok) throw new DocStepError('draft', draft.error.code);
-        const invoiceId = draft.value.invoiceId;
-
-        // 2. Issue — per-doc clock backdates issue/due dates + the SC bill FY.
-        const issued = await mods.issueInvoice(deps.issue(doc.issueDate), {
-          tenantId: ctx.slug,
-          actorUserId,
-          requestId: `r3inv:${runId}:row${doc.rowIndex}:issue`,
-          invoiceId,
-          autoEmailOverride: false,
-        });
-        if (!issued.ok) throw new DocStepError('issue', issued.error.code);
-        mintedBillNo = issued.value.billDocumentNumberRaw;
-
-        // 3. Target status.
-        if (doc.targetStatus === 'paid') {
-          mintedReceiptNo = await payDoc(mods, deps, ctx, actorUserId, runId, doc, invoiceId);
-        } else if (doc.targetStatus === 'void') {
-          await voidDoc(mods, deps, ctx, actorUserId, runId, doc, invoiceId);
-        }
-
-        // 4. Renewal cycle.
-        await ensureCycle(invoiceId, plan.coverage.fromIso, plan.coverage.toIso);
-
-        return { ...base, action: 'imported', errorCode: null, mintedBillNo, mintedReceiptNo, cycle };
-      }
-    }
-  } catch (e) {
-    const code =
-      e instanceof DocStepError ? e.message : `exception:${e instanceof Error ? e.name : 'unknown'}`;
-    // Full message to the operator terminal only (never into the report).
-    console.error(
-      `[import-round3-invoices] row ${doc.rowIndex} FAILED: ` +
-        (e instanceof Error ? e.message : String(e)),
-    );
-    return { ...base, action: 'error', errorCode: code, mintedBillNo, mintedReceiptNo, cycle };
-  }
 }
 
 /**
  * Run the Round-3 invoice import. Dry-run (`commit:false`) performs tenant-
  * scoped READS only (member/invoice resolution) and reports the full per-doc
- * plan; `commit:true` executes. Docs are processed in ascending Inv Date order
- * (rowIndex tiebreak) so SC numbers run chronologically per fiscal year.
- * (RC receipt numbers follow the SAME doc order keyed on FY(paymentDate) —
- * within one FY they can be minted slightly out of payment-date order when the
- * sheet's payment dates are not monotonic in Inv Date; the mapping report
- * preserves the linkage.)
+ * plan. `commit:true` first plans EVERY doc and REFUSES (zero writes,
+ * `commitRefused: true`) if any doc has a plan-stage error (R3-3), then
+ * executes in three phases (module docstring): A issue (ascending Inv Date →
+ * SC numbers issue-date-ordered per FY) · B payment (ascending payment date →
+ * RC numbers payment-date-ordered per FY) · C voids + issued-doc cycles.
  */
 export async function runInvoiceImport(
   input: RunInvoiceImportInput,
@@ -1115,60 +1323,75 @@ export async function runInvoiceImport(
   const sorted = [...input.docs].sort((a, b) =>
     a.issueDate < b.issueDate ? -1 : a.issueDate > b.issueDate ? 1 : a.rowIndex - b.rowIndex,
   );
+  const planned = sorted.map((doc) => ({
+    doc,
+    plan: planDoc(doc, planCtx, input.resolvePlanId, todayBangkok),
+  }));
 
-  const pairs: DocReportPair[] = [];
-
-  if (!input.commit) {
-    for (const doc of sorted) {
-      const plan = planDoc(doc, planCtx, input.resolvePlanId, todayBangkok);
+  const buildPlannedPairs = (): DocReportPair[] =>
+    planned.map(({ doc, plan }) => {
       const member = plan.kind === 'error' ? null : plan.member;
-      pairs.push({
+      return {
         doc,
         outcome: {
-          action: plan.kind === 'error' ? 'error' : 'planned',
+          action: plan.kind === 'error' ? ('error' as const) : ('planned' as const),
           errorCode: plan.kind === 'error' ? plan.code : null,
           mintedBillNo: null,
           mintedReceiptNo: null,
           memberNumber: member?.memberNumber ?? null,
           memberActive: member?.active ?? null,
-          cycle: 'none',
+          cycle: 'none' as const,
           plannedSteps: plannedStepsFor(doc, plan),
         },
-      });
-    }
-  } else {
-    if (input.actorUserId === null) {
-      throw new Error('runInvoiceImport: actorUserId is required in commit mode');
-    }
-    const deps = buildDeps(mods, input.ctx.slug, input.overrides);
-    const cycleRt = buildCycleRuntime(mods, input.ctx.slug);
-    for (const doc of sorted) {
-      const plan = planDoc(doc, planCtx, input.resolvePlanId, todayBangkok);
-      // Progress breadcrumb (PII-free) — the prod run is ~125 sequential docs
-      // with a real PDF render each; the operator needs to see it moving.
-      console.log(
-        `[import-round3-invoices] row ${doc.rowIndex} (${doc.issueDate} · ${doc.targetStatus}) → ${plan.kind}`,
-      );
-      const outcome = await importDoc(
-        mods,
-        deps,
-        cycleRt,
-        input.ctx,
-        input.actorUserId,
-        runId,
-        doc,
-        plan,
-      );
-      pairs.push({ doc, outcome });
-    }
+      };
+    });
+
+  const finish = (
+    mode: 'dry-run' | 'commit',
+    pairs: readonly DocReportPair[],
+    commitRefused: boolean,
+  ): RunInvoiceImportResult => ({
+    report: buildInvoiceImportReport({
+      mode,
+      generatedAt: nowIso,
+      runId,
+      todayBangkok,
+      defaultNetDays: planCtx.defaultNetDays,
+      pairs,
+    }),
+    pairs,
+    commitRefused,
+  });
+
+  if (!input.commit) return finish('dry-run', buildPlannedPairs(), false);
+
+  if (input.actorUserId === null) {
+    throw new Error('runInvoiceImport: actorUserId is required in commit mode');
   }
 
-  const report = buildInvoiceImportReport({
-    mode: input.commit ? 'commit' : 'dry-run',
-    generatedAt: nowIso,
-    runId,
-    todayBangkok,
-    pairs,
-  });
-  return { report, pairs };
+  // PRE-FLIGHT GATE (R3-3): a doc that fails planning would leave a hole the
+  // fix-up re-run fills with out-of-chronology SC/RC numbers. Refuse the whole
+  // commit instead — zero writes, full plan reported, CLI exits 1.
+  const planErrors = planned.flatMap((p) =>
+    p.plan.kind === 'error' ? [{ rowIndex: p.doc.rowIndex, code: p.plan.code }] : [],
+  );
+  if (planErrors.length > 0) {
+    console.error(
+      `[import-round3-invoices] REFUSING --commit: ${planErrors.length} doc(s) failed ` +
+        `planning — NOTHING was written. Fix these and re-run (rowIndex · code):`,
+    );
+    for (const e of planErrors) console.error(`  ${e.rowIndex} · ${e.code}`);
+    return finish('dry-run', buildPlannedPairs(), true);
+  }
+
+  const deps = buildDeps(mods, input.ctx.slug, input.overrides);
+  const cycleRt = buildCycleRuntime(mods, input.ctx.slug);
+  const states = planned.map(({ doc, plan }) => initDocState(doc, plan));
+
+  await runIssuePhase(mods, deps, input.ctx, input.actorUserId, runId, states);
+  await runPaymentPhase(mods, deps, cycleRt, input.ctx, input.actorUserId, runId, states);
+  await runVoidAndCyclePhase(mods, deps, cycleRt, input.ctx, input.actorUserId, runId, states);
+
+  const pairs = states.map((s) => ({ doc: s.doc, outcome: stateToOutcome(s) }));
+  return finish('commit', pairs, false);
 }

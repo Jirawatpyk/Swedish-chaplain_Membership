@@ -6,8 +6,12 @@
  * SAME core the operator CLI wraps — against a THROWAWAY test tenant on the
  * dev Neon branch. Fixture: member + contacts + linked member-portal user
  * (session + invitation) + PENDING member user (email-matched) + issued
- * invoice(+line) + awaiting_payment renewal cycle(+reminder event) +
- * document/member sequences + outbox + email-change token + audit row.
+ * invoice(+line) + a FULLY-LINKED money chain payment → succeeded refund
+ * (credit_note_id set) → credit note (source_refund_id set) — the mutual
+ * ON-DELETE-RESTRICT refunds ↔ credit_notes cycle that deadlocked the
+ * pre-R3-1 delete order (0034 + 0038; broken by the unlink pre-step) —
+ * + awaiting_payment renewal cycle(+reminder event) + F9 dashboard cache row
+ * + document/member sequences + outbox + email-change token + audit row.
  *
  * Discriminators deliberately seeded so exclusion logic is what saves them:
  *   - a '00000000-…' system-actor-STYLE user linked via a tenant contact
@@ -22,7 +26,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';
 import {
   auditLog,
@@ -39,6 +43,9 @@ import { tenantMemberSettings } from '@/modules/members/infrastructure/db/schema
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import { invoiceLines } from '@/modules/invoicing/infrastructure/db/schema-invoice-lines';
+import { creditNotes } from '@/modules/invoicing/infrastructure/db/schema-credit-notes';
+import { payments, refunds } from '@/modules/payments/infrastructure/schema';
+import { dashboardMetricsCache } from '@/modules/insights/infrastructure/db/schema-insights';
 import { tenantDocumentSequences } from '@/modules/invoicing/infrastructure/db/schema-tenant-document-sequences';
 import { renewalCycles } from '@/modules/renewals/infrastructure/schema-renewal-cycles';
 import { renewalReminderEvents } from '@/modules/renewals/infrastructure/schema-renewal-reminder-events';
@@ -87,6 +94,9 @@ describe('wipeTenantBusinessData — live Neon', () => {
   const member2Id = randomUUID();
   const invoiceId = randomUUID();
   const cycleId = randomUUID();
+  const paymentId = `pay_wipe_${randomBytes(8).toString('hex')}`;
+  const refundId = `re_wipe_${randomBytes(8).toString('hex')}`;
+  const creditNoteId = randomUUID();
   const adminSessionId = randomBytes(32).toString('hex');
   const memberSessionId = randomBytes(32).toString('hex');
   const adminInvitationId = `wipe-admin-inv-${randomBytes(16).toString('hex')}`;
@@ -285,6 +295,77 @@ describe('wipeTenantBusinessData — live Neon', () => {
         totalSatang: 1_600_000n,
         position: 1,
       });
+      // FULLY-LINKED money chain (R3-1): payment → refund → credit note, with
+      // BOTH cycle edges populated (refunds.credit_note_id AND
+      // credit_notes.source_refund_id). This is the exact shape that
+      // deadlocked the old refunds → payments → credit_notes delete order —
+      // the commit-wipe test below is the regression proof for the unlink
+      // pre-step. Inserted the way production does (refund starts 'pending',
+      // flips 'succeeded' AFTER the credit note exists — the 0034/0268
+      // refund CHECKs forbid any other insert order).
+      await tx.insert(payments).values({
+        id: paymentId,
+        tenantId: slugA,
+        invoiceId,
+        memberId: member1Id,
+        method: 'promptpay',
+        status: 'succeeded',
+        amountSatang: 1_712_000n,
+        currency: 'THB',
+        processorPaymentIntentId: `pi_wipe_${randomBytes(10).toString('hex')}`,
+        processorEnvironment: 'test',
+        initiatedAt: new Date('2026-06-01T03:00:00Z'),
+        completedAt: new Date('2026-06-01T03:05:00Z'),
+        actorUserId: admin.userId,
+        correlationId: `wipe-test-${randomUUID()}`,
+      });
+      await tx.insert(refunds).values({
+        id: refundId,
+        tenantId: slugA,
+        paymentId,
+        invoiceId,
+        amountSatang: 100_000n,
+        reason: 'wipe integration fixture — refund-origin credit note (synthetic)',
+        status: 'pending',
+        initiatedAt: new Date('2026-06-02T03:00:00Z'),
+        initiatorUserId: admin.userId,
+        correlationId: `wipe-test-${randomUUID()}`,
+      });
+      await tx.insert(creditNotes).values({
+        tenantId: slugA,
+        creditNoteId,
+        originalInvoiceId: invoiceId,
+        fiscalYear: 2026,
+        sequenceNumber: 1,
+        documentNumber: 'CN-2026-000001',
+        issueDate: '2026-06-02',
+        issuedByUserId: admin.userId,
+        reason: 'wipe integration fixture (synthetic)',
+        creditAmountSatang: 100_000n,
+        vatSatang: 7_000n,
+        totalSatang: 107_000n,
+        tenantIdentitySnapshot: { legalNameEn: 'Test' } as unknown,
+        memberIdentitySnapshot: { companyName: 'Wipe Synth One Co' } as unknown,
+        pdfBlobKey: `invoicing/${slugA}/2026/cn-${creditNoteId}.pdf`,
+        pdfSha256: 'b'.repeat(64),
+        pdfTemplateVersion: 1,
+        sourceRefundId: refundId,
+      });
+      await tx
+        .update(refunds)
+        .set({
+          status: 'succeeded',
+          processorRefundId: `re_stripe_wipe_${randomBytes(10).toString('hex')}`,
+          creditNoteId,
+          completedAt: new Date('2026-06-02T04:00:00Z'),
+        })
+        .where(and(eq(refunds.tenantId, slugA), eq(refunds.id, refundId)));
+      // F9 derived cache row — stale after a wipe, must be deleted (R3-8).
+      await tx.insert(dashboardMetricsCache).values({
+        tenantId: slugA,
+        metrics: {},
+        computedAt: new Date('2026-06-03T00:00:00Z'),
+      });
       // awaiting_payment cycle linking the issued bill + one reminder event.
       await tx.insert(renewalCycles).values({
         tenantId: slugA,
@@ -421,8 +502,13 @@ describe('wipeTenantBusinessData — live Neon', () => {
     const rows = rowsOf(report);
     expect(rows.get('renewal_reminder_events')).toBe(1);
     expect(rows.get('renewal_cycles')).toBe(1);
+    expect(rows.get('refunds.credit_note_id_unlink')).toBe(1); // cycle-breaker pre-step
+    expect(rows.get('credit_notes')).toBe(1);
+    expect(rows.get('refunds')).toBe(1);
+    expect(rows.get('payments')).toBe(1);
     expect(rows.get('invoice_lines')).toBe(1);
     expect(rows.get('invoices')).toBe(1);
+    expect(rows.get('dashboard_metrics_cache')).toBe(1);
     expect(rows.get('email_change_tokens')).toBe(1);
     expect(rows.get('notifications_outbox')).toBe(1);
     expect(rows.get('sessions')).toBe(1); // member session only — never the admin's
@@ -433,10 +519,16 @@ describe('wipeTenantBusinessData — live Neon', () => {
     expect(rows.get('tenant_document_sequences')).toBe(1);
     expect(rows.get('tenant_member_sequences')).toBe(1);
 
-    // ZERO writes — everything still present.
+    // ZERO writes — everything still present, and the refund is STILL linked
+    // to its credit note (the dry-run must not perform the unlink UPDATE).
     expect(await count(sql`SELECT count(*)::int AS n FROM members WHERE tenant_id = ${slugA}`)).toBe(2);
     expect(await count(sql`SELECT count(*)::int AS n FROM contacts WHERE tenant_id = ${slugA}`)).toBe(4);
     expect(await count(sql`SELECT count(*)::int AS n FROM invoices WHERE tenant_id = ${slugA}`)).toBe(1);
+    expect(
+      await count(
+        sql`SELECT count(*)::int AS n FROM refunds WHERE id = ${refundId} AND credit_note_id = ${creditNoteId}::uuid`,
+      ),
+    ).toBe(1);
     expect(await count(sql`SELECT count(*)::int AS n FROM users WHERE id = ${memberUser.userId}::uuid`)).toBe(1);
     expect(await count(sql`SELECT count(*)::int AS n FROM users WHERE id = ${pendingUserId}::uuid`)).toBe(1);
     expect(
@@ -468,8 +560,15 @@ describe('wipeTenantBusinessData — live Neon', () => {
     const rows = rowsOf(report);
     expect(rows.get('renewal_reminder_events')).toBe(1);
     expect(rows.get('renewal_cycles')).toBe(1);
+    // The mutual-RESTRICT cycle survived the delete ONLY because the unlink
+    // pre-step ran — this line is the R3-1 regression anchor.
+    expect(rows.get('refunds.credit_note_id_unlink')).toBe(1);
+    expect(rows.get('credit_notes')).toBe(1);
+    expect(rows.get('refunds')).toBe(1);
+    expect(rows.get('payments')).toBe(1);
     expect(rows.get('invoice_lines')).toBe(1);
     expect(rows.get('invoices')).toBe(1);
+    expect(rows.get('dashboard_metrics_cache')).toBe(1);
     expect(rows.get('sessions')).toBe(1);
     expect(rows.get('invitations')).toBe(1);
     expect(rows.get('users')).toBe(2);
@@ -482,8 +581,12 @@ describe('wipeTenantBusinessData — live Neon', () => {
     for (const table of [
       'renewal_reminder_events',
       'renewal_cycles',
+      'credit_notes',
+      'refunds',
+      'payments',
       'invoice_lines',
       'invoices',
+      'dashboard_metrics_cache',
       'email_change_tokens',
       'notifications_outbox',
       'contacts',
