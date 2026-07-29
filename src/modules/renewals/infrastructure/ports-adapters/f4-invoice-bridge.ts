@@ -193,9 +193,13 @@ export const f4InvoiceBridge: F4InvoiceBridge = {
         ? { membershipCoverage: input.membershipCoverage }
         : {}),
       // membership-coverage-exclude-guard (mig 0281) — forward the EXPLICIT
-      // dup-guard window (renewal branch supplies it; first-payment omits it →
-      // NULL coverage), mirroring the online renewal bridge at :88/:203. Same
-      // exactOptionalPropertyTypes omit-guard as `membershipCoverage` above.
+      // dup-guard window whenever the caller supplies one, mirroring the online
+      // renewal bridge at :88/:203. The offline caller (mark-paid-offline) now
+      // stamps it on BOTH the renewal branch (`[periodTo, +term)`) AND the
+      // first-payment branch (current period `[periodFrom, periodTo)`, A-1) — so
+      // the first-payment §86/4 participates in the DB EXCLUDE too (was NULL
+      // pre-A-1). Same exactOptionalPropertyTypes omit-guard as
+      // `membershipCoverage` above, retained for any caller that passes none.
       ...(input.coverageWindow !== undefined
         ? { coverageWindow: input.coverageWindow }
         : {}),

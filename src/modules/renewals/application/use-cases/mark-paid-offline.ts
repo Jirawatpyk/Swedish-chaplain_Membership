@@ -546,26 +546,41 @@ export async function markPaidOffline(
           });
 
       // membership-coverage-exclude-guard (mig 0281), L1 hardening — forward
-      // the TRUE charged coverage window EXPLICITLY on the RENEWAL branch,
-      // decoupled from the printed `membershipCoverage`, exactly as the online
-      // renewal bridge does (`f4-invoicing-for-renewal-bridge-drizzle.ts` →
-      // `createInvoiceDraft.coverageWindow`; the online caller computes the
-      // identical `[periodTo, periodTo + frozenPlanTermMonths)` in
-      // `confirm-renewal.ts`). Same locked-cycle window as `membershipCoverage`
-      // and the SAME `newExpiresAt` (= `addMonthsUtc(periodTo,
-      // frozenPlanTermMonths)`) — never re-derived, so the two rails persist a
-      // byte-identical `coverage_from/to` for the same cycle.
-      //
-      // FIRST-PAYMENT keeps coverage NULL (omitted): its re-anchored period is
-      // not known at issue time, so it legitimately does not participate in the
-      // EXCLUDE. Over-stamping a provisional window here would OVER-BLOCK a later
-      // renewal (the confirm-renewal first-payment hazard the L2 property probes)
-      // — so the offline path never stamps it. Passing it explicitly (vs relying
-      // on `createInvoiceDraft`'s `coverageWindow → membershipCoverage` fallback)
-      // means a FUTURE renewal shape that omits `membershipCoverage` can no
-      // longer silently mint a NULL-coverage renewal bill (a duplicate gap).
+      // the TRUE charged coverage window EXPLICITLY, decoupled from the printed
+      // `membershipCoverage`, exactly as the online renewal bridge does
+      // (`f4-invoicing-for-renewal-bridge-drizzle.ts` →
+      // `createInvoiceDraft.coverageWindow`). Both arms are ALWAYS stamped
+      // (non-null), so the offline bill always participates in the DB EXCLUDE
+      // `invoices_membership_coverage_no_overlap`; only WHICH window differs by
+      // classification:
+      //   - RENEWAL: the NEXT-term window `[periodTo, periodTo +
+      //     frozenPlanTermMonths)` (= `newExpiresAt`). Same locked-cycle window
+      //     as `membershipCoverage` and the SAME `newExpiresAt` (never
+      //     re-derived), so this rail and the online renewal bridge (which
+      //     computes the identical window in `confirm-renewal.ts`) persist a
+      //     byte-identical `coverage_from/to` for the same cycle.
+      //   - FIRST-PAYMENT (A-1): the cycle's CURRENT period `[periodFrom,
+      //     periodTo)`, mirroring `confirm-renewal.ts` (L3) +
+      //     `admin-renew-lapsed-member.ts:596` EXACTLY. This is the LOCKED
+      //     cycle's current period (the same locked snapshot the renewal arm
+      //     reads) — the re-anchor that may move it happens later INSIDE
+      //     `onPaid` (AFTER the bridge consumes `coverageWindow`), identical
+      //     timing to confirm-renewal, so the stamp is the pre-anchor current
+      //     period on both rails. Stamping the CURRENT period (NOT the
+      //     next-period window) does NOT over-block a later renewal: it is
+      //     half-open ADJACENT to the next renewal `[periodTo, +term)`, while a
+      //     same-period duplicate stamps the SAME window → the DB EXCLUDE rejects
+      //     it (23P01 → typed 409). So the offline first-payment bill now has a
+      //     2nd dup-authority layer (the EXCLUDE) alongside the plan_year
+      //     `findLiveMembershipBillInTx` guard — was NULL (single-layer). For a
+      //     NORMAL first-payment pre==post → full EXCLUDE coverage; for a
+      //     comeback-snap the plan_year guard stays the backstop (the same
+      //     accepted limitation as confirm-renewal). The PRINTED
+      //     `membershipCoverage` stays OMITTED above: the re-anchored printed
+      //     period is unknown at issue time; only the decoupled dup-guard
+      //     `coverageWindow` is stamped.
       const coverageWindow = isFirstPayment
-        ? undefined
+        ? ({ fromIso: lockedCycle.periodFrom, toIso: lockedCycle.periodTo })
         : ({ fromIso: lockedCycle.periodTo, toIso: newExpiresAt });
 
       // F4 chain — bridge composes createInvoiceDraft + issueInvoice +
@@ -756,12 +771,20 @@ export async function markPaidOffline(
         // suppresses the reg-fee re-bill. Mirrors the online confirm-renewal
         // path. (cluster A, 068 code-review fix.)
         frozenPlanPriceThb: lockedCycle.frozenPlanPriceThb,
-        // FIX-8(c) (PR #173 review, 2026-07-09) — `omitUndefined` replaces
-        // the conditional-spread idiom; exactOptionalPropertyTypes still
-        // omits the key entirely on the first-payment branch rather than
-        // assigning an explicit `undefined`. L1 hardening — `coverageWindow`
-        // rides the SAME omit-guard: both are set together on the renewal
-        // branch and both undefined (omitted → NULL coverage) on first-payment.
+        // FIX-8(c) (PR #173 review, 2026-07-09) — `omitUndefined` replaces the
+        // conditional-spread idiom; exactOptionalPropertyTypes still omits any
+        // key whose value is `undefined` rather than assigning an explicit
+        // `undefined`. A-1 (offline-coverage-unify) — the two keys no longer
+        // ride the omit-guard together: on a RENEWAL both are defined (the
+        // printed next-period window + the dup-guard window). On a FIRST-PAYMENT
+        // only `membershipCoverage` is `undefined` — the re-anchored printed
+        // period is unknown at issue time, so `omitUndefined` drops it and the
+        // bridge defaults the printed coverage to `from_payment`; but
+        // `coverageWindow` is ALWAYS defined (the cycle's CURRENT period
+        // `[periodFrom, periodTo)`, set by the ternary above) and IS forwarded,
+        // so the offline first-payment bill still participates in the mig-0281
+        // coverage EXCLUDE. Net: `coverageWindow` forwards on BOTH branches;
+        // `membershipCoverage` only on renewal.
         ...omitUndefined({ membershipCoverage, coverageWindow }),
         paymentMethod: input.paymentMethod,
         paymentReference: input.paymentReference,
