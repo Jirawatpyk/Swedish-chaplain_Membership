@@ -49,6 +49,16 @@ import { confirmRenewal, makeRenewalsDeps } from '@/modules/renewals';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { nextSeedMemberNumber } from '../helpers/seed-member-number';
+import { createInMemoryBlobStorage } from '../../helpers/in-memory-blob-storage';
+/**
+ * This suite drives the real F4 issue path, which uploads a rendered PDF.
+ * Injected rather than left to the production adapter: CI's
+ * `BLOB_READ_WRITE_TOKEN` is an `.env.example` placeholder pointing at no
+ * store, which is what reddened the first nightly renewals sweep — and a local
+ * run was writing test PDFs into the dev store.
+ */
+const testBlob = createInMemoryBlobStorage();
+
 
 // Anchor the scenario to the run's OWN fiscal year so the pin never flakes
 // across a calendar boundary. `CURRENT_YEAR` is the FY the invoice is ISSUED
@@ -281,7 +291,7 @@ describe('confirm-renewal anchored plan_year pin — rolling-anchor axis (live N
       });
     });
 
-    const r = await confirmRenewal(makeRenewalsDeps(tenant.ctx.slug), {
+    const r = await confirmRenewal(makeRenewalsDeps(tenant.ctx.slug, { blob: testBlob }), {
       tenantId: tenant.ctx.slug,
       cycleId,
       memberId,

@@ -522,6 +522,11 @@ export {
   makeF4AuditPort,
   isTenantInvoiceSetupComplete,
 } from './application/invoicing-deps';
+// Composition seam for swapping an external adapter (blob today) out of a
+// build. Consumed by the renewals→F4 bridge so its integration suites can run
+// without a live Vercel Blob store. See `InvoicingAdapterOverrides`' docstring.
+export type { InvoicingAdapterOverrides } from './application/invoicing-deps';
+export type { BlobStoragePort } from './application/ports/blob-storage-port';
 
 // `makeUploadTenantLogoDeps` is intentionally NOT re-exported from this
 // barrel. It pulls in the Node-only `sharp` native dep (libvips →

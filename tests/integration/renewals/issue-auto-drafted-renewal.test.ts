@@ -50,6 +50,16 @@ import { seedTenantFiscal } from '../helpers/seed-tenant-fiscal';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { nextSeedMemberNumber } from '../helpers/seed-member-number';
+import { createInMemoryBlobStorage } from '../../helpers/in-memory-blob-storage';
+/**
+ * This suite drives the real F4 issue path, which uploads a rendered PDF.
+ * Injected rather than left to the production adapter: CI's
+ * `BLOB_READ_WRITE_TOKEN` is an `.env.example` placeholder pointing at no
+ * store, which is what reddened the first nightly renewals sweep — and a local
+ * run was writing test PDFs into the dev store.
+ */
+const testBlob = createInMemoryBlobStorage();
+
 
 const NOW = new Date('2026-07-15T00:00:00.000Z');
 /** Every fixture cycle starts here → `deriveFiscalYear(periodFrom)` = 2025. */
@@ -61,7 +71,7 @@ let user: TestUser;
 let planId: string;
 
 function depsFor(t: TestTenant) {
-  const real = makeRenewalsDeps(t.ctx.slug);
+  const real = makeRenewalsDeps(t.ctx.slug, { blob: testBlob });
   return { ...real, clock: { now: () => NOW } };
 }
 
@@ -688,7 +698,7 @@ describe('107-auto-invoice Task 9 — issueAutoDraftedRenewal (live Neon)', () =
       }),
     );
 
-    const real = makeRenewalsDeps(tenant.ctx.slug);
+    const real = makeRenewalsDeps(tenant.ctx.slug, { blob: testBlob });
     let arrived = 0;
     let releaseBarrier: () => void = () => {};
     const barrier = new Promise<void>((resolve) => {
@@ -909,7 +919,7 @@ describe('107-auto-invoice Task 9 — issueAutoDraftedRenewal (live Neon)', () =
   it('(g) orphan recovery — link forced to fail once → idempotent retry re-links', async () => {
     const { cycleId, invoiceId } = await seedQueueRow({ t: tenant });
 
-    const real = makeRenewalsDeps(tenant.ctx.slug);
+    const real = makeRenewalsDeps(tenant.ctx.slug, { blob: testBlob });
     let failures = 0;
     const flakyCyclesRepo: typeof real.cyclesRepo = {
       ...real.cyclesRepo,

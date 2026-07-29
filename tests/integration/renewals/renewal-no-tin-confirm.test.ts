@@ -29,6 +29,16 @@ import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
+import { createInMemoryBlobStorage } from '../../helpers/in-memory-blob-storage';
+/**
+ * This suite drives the real F4 issue path, which uploads a rendered PDF.
+ * Injected rather than left to the production adapter: CI's
+ * `BLOB_READ_WRITE_TOKEN` is an `.env.example` placeholder pointing at no
+ * store, which is what reddened the first nightly renewals sweep — and a local
+ * run was writing test PDFs into the dev store.
+ */
+const testBlob = createInMemoryBlobStorage();
+
 
 const MATRIX: BenefitMatrix = {
   eblast_per_year: 1,
@@ -174,7 +184,7 @@ describe('066 — no-TIN member self-service renewal issues a §86/4 (live Neon)
       });
     });
 
-    const r = await confirmRenewal(makeRenewalsDeps(tenant.ctx.slug), {
+    const r = await confirmRenewal(makeRenewalsDeps(tenant.ctx.slug, { blob: testBlob }), {
       tenantId: tenant.ctx.slug,
       cycleId,
       memberId,

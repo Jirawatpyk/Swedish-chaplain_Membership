@@ -68,7 +68,11 @@ import { env } from '@/lib/env';
 const eventAttendeesPort = env.features.f6EventCreate
   ? drizzleEventAttendeesAdapter
   : eventAttendeesStub;
-import { f4InvoicingForRenewalBridge } from './ports-adapters/f4-invoicing-for-renewal-bridge-drizzle';
+import {
+  f4InvoicingForRenewalBridge,
+  makeF4InvoicingForRenewalBridge,
+} from './ports-adapters/f4-invoicing-for-renewal-bridge-drizzle';
+import type { InvoicingAdapterOverrides } from '@/modules/invoicing';
 import { autoInvoiceSettingsBridge } from './ports-adapters/auto-invoice-settings-bridge-drizzle';
 import { f5RefundBridge } from './ports-adapters/f5-refund-bridge-drizzle';
 import { benefitConsumptionReaderInsights } from './ports-adapters/benefit-consumption-reader-insights';
@@ -457,12 +461,29 @@ export interface RenewalsDeps {
 }
 
 /**
+ * Reuse the production singleton unless a caller actually asked for a
+ * different external adapter — building a fresh bridge per call would be
+ * wasted work on every request, and the singleton is what production wants.
+ */
+function bridgeFor(overrides: InvoicingAdapterOverrides) {
+  return overrides.blob === undefined
+    ? f4InvoicingForRenewalBridge
+    : makeF4InvoicingForRenewalBridge(overrides);
+}
+
+/**
  * Per-call composition factory. Each invocation binds a fresh
  * `TenantContext` so concurrent requests for different tenants stay
  * isolated. Stateless adapters (audit, signer, verifier, F6 stub)
  * are reused across calls — they don't capture tenant state.
+ *
+ * `overrides` exists for integration suites that must run without a live
+ * Vercel Blob store; production passes nothing and gets the singleton bridge.
  */
-export function makeRenewalsDeps(tenantId: string): RenewalsDeps {
+export function makeRenewalsDeps(
+  tenantId: string,
+  overrides: InvoicingAdapterOverrides = {},
+): RenewalsDeps {
   const tenant = asTenantContext(tenantId);
   return {
     tenant,
@@ -475,7 +496,7 @@ export function makeRenewalsDeps(tenantId: string): RenewalsDeps {
     tokenVerifier: renewalLinkTokenVerifier,
     consumedLinkTokensRepo: makeDrizzleConsumedLinkTokensRepo(tenant),
     f5RefundBridge,
-    f4InvoicingBridge: f4InvoicingForRenewalBridge,
+    f4InvoicingBridge: bridgeFor(overrides),
     autoInvoiceSettings: autoInvoiceSettingsBridge,
     planLookupForRenewal: makeDrizzlePlanLookupForRenewal(tenant),
     fiscalYearSettings: makeDrizzleFiscalYearStartMonth(),
@@ -574,6 +595,7 @@ export function makeAutoRenewalQueueContextDeps(
  */
 export function makeIssueAutoDraftedRenewalDeps(
   tenantId: string,
+  overrides: InvoicingAdapterOverrides = {},
 ): Pick<
   RenewalsDeps,
   | 'tenant'
@@ -589,7 +611,7 @@ export function makeIssueAutoDraftedRenewalDeps(
     cyclesRepo: makeDrizzleRenewalCycleRepo(tenant),
     auditEmitter: makeDrizzleRenewalAuditEmitter(tenant),
     clock: wallClock,
-    f4InvoicingBridge: f4InvoicingForRenewalBridge,
+    f4InvoicingBridge: bridgeFor(overrides),
     // GDPR Art.17 erasure gate — reads `members.erased_at` under the lock,
     // above the first write. See the use-case header's erasure note.
     memberRenewalFlagsRepo: makeDrizzleMemberRenewalFlagsRepo(tenant),
@@ -604,13 +626,14 @@ export function makeIssueAutoDraftedRenewalDeps(
  */
 export function makeDiscardAutoDraftedRenewalDeps(
   tenantId: string,
+  overrides: InvoicingAdapterOverrides = {},
 ): Pick<RenewalsDeps, 'tenant' | 'cyclesRepo' | 'auditEmitter' | 'f4InvoicingBridge'> {
   const tenant = asTenantContext(tenantId);
   return {
     tenant,
     cyclesRepo: makeDrizzleRenewalCycleRepo(tenant),
     auditEmitter: makeDrizzleRenewalAuditEmitter(tenant),
-    f4InvoicingBridge: f4InvoicingForRenewalBridge,
+    f4InvoicingBridge: bridgeFor(overrides),
   };
 }
 
