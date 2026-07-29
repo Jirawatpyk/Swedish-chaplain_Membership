@@ -2129,7 +2129,8 @@
           "recordPayment": "บันทึกการชำระเงิน…",
           "recordPaymentAria": "บันทึกการชำระเงินสำหรับใบแจ้งหนี้ {number}",
           "clearFilters": "ล้างตัวกรอง",
-          "configureInvoicing": "ตั้งค่าการออกใบแจ้งหนี้"
+          "configureInvoicing": "ตั้งค่าการออกใบแจ้งหนี้",
+          "openDraftAria": "เปิดใบแจ้งหนี้ฉบับร่างของ {name}"
         },
         "columns": {
           "documentNumber": "เลขที่ใบแจ้งหนี้",
@@ -2159,6 +2160,7 @@
           "partially_credited": "ลดหนี้บางส่วน",
           "overdue": "เกินกำหนด"
         },
+        "draftNumberLabel": "ร่าง",
         "searchPlaceholder": "ค้นหาเลขที่ใบแจ้งหนี้…",
         "searchLabel": "ค้นหาใบแจ้งหนี้",
         "loadMore": "โหลดเพิ่ม",

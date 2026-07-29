@@ -13,6 +13,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
+import enMessages from '@/i18n/messages/en.json';
 
 // 107-auto-invoice Task 14 — `<AutoRenewalQueueActions>` (rendered inside
 // the Actions cell for a draft queue row) calls `useRouter()` from
@@ -64,6 +65,7 @@ const messages = {
         creditedAria: '{count} credit notes, {amount} credited',
         receiptNumberCombinedTooltip: 'Combined mode',
         receiptNumberCombinedAria: 'Combined mode',
+        draftNumberLabel: 'Draft',
         tableCaption: 'List of invoices for the selected filters.',
         queueTableCaption: 'List of auto-renewal drafts awaiting review.',
         queue: {
@@ -100,6 +102,7 @@ const messages = {
           receiptRenderFailed: 'Receipt render failed',
           receiptRenderFailedAria:
             'Receipt PDF render failed for invoice {number} — open to review',
+          openDraftAria: 'Open draft invoice for {name}',
         },
       },
       autoRenewalQueue: {
@@ -202,6 +205,17 @@ function renderTable(rows: InvoicesTableRow[]) {
 function renderTableWithLocale(rows: InvoicesTableRow[], locale: string) {
   return render(
     <NextIntlClientProvider locale={locale} messages={messages}>
+      <InvoicesTable rows={rows} />
+    </NextIntlClientProvider>,
+  );
+}
+
+// draft-number-label — renders against the REAL, shipped en.json (not the
+// hand-picked `messages` stub above) so these tests catch a missing/typo'd
+// key at test time rather than a silent MISSING_MESSAGE at runtime.
+function renderTableRealMessages(rows: InvoicesTableRow[]) {
+  return render(
+    <NextIntlClientProvider locale="en" messages={enMessages}>
       <InvoicesTable rows={rows} />
     </NextIntlClientProvider>,
   );
@@ -890,5 +904,52 @@ describe('<InvoicesTable> — queue row actions (107-auto-invoice Task 14)', () 
       true,
     );
     expect(screen.queryByTestId('queue-row-actions-trigger')).toBeNull();
+  });
+});
+
+/**
+ * draft-number-label — Number column click affordance for draft rows.
+ *
+ * A draft correctly has NO §87 document number (Thai RD §87 allocates only
+ * at ISSUE), so `documentNumber` arrives as the sentinel "—". Rendering that
+ * bare em-dash as the ONLY click-to-open link failed WCAG 2.5.8 (target <
+ * 24px) and 2.4.4 (empty link name, "—, link"). The fix gates on the
+ * semantic `status === 'draft'` and swaps in a localised "Draft" placeholder
+ * link — normal-weight `text-foreground`, not `font-medium` (so it never reads
+ * as a real document number), and deliberately neither italic (Thai has no true
+ * italic — faux-oblique bends "ร่าง") nor muted (that colour is the table's
+ * "empty / non-actionable" sentinel) — with an aria-label naming the member.
+ *
+ * These two tests render against the REAL, shipped `en.json` (via
+ * `renderTableRealMessages`) rather than the hand-picked `messages` stub
+ * used by the rest of this file, so a missing/typo'd `draftNumberLabel` or
+ * `actions.openDraftAria` key fails the test instead of silently rendering
+ * the dotted key at runtime.
+ */
+describe('<InvoicesTable> — draft row Number-cell label', () => {
+  it('draft row: Number cell is a "Draft" link named for the member, not the bare "—"', () => {
+    renderTableRealMessages([
+      baseRow({
+        status: 'draft',
+        documentNumber: '—',
+        memberName: 'Acme Co., Ltd.',
+      }),
+    ]);
+    // Visible text is the localised placeholder, not the em-dash sentinel.
+    const link = screen.getByRole('link', {
+      name: 'Open draft invoice for Acme Co., Ltd.',
+    });
+    expect(link).toHaveTextContent('Draft');
+    expect(link).toHaveAttribute('href', '/admin/invoices/inv-1');
+    // No bare "—" link — the WCAG 2.4.4 empty-link-name regression this fixes.
+    expect(screen.queryByRole('link', { name: '—' })).toBeNull();
+  });
+
+  it('non-draft (issued) row: Number cell still renders documentNumber as the link text (regression)', () => {
+    renderTableRealMessages([
+      baseRow({ status: 'issued', documentNumber: 'INV-2026-0001' }),
+    ]);
+    const link = screen.getByRole('link', { name: 'INV-2026-0001' });
+    expect(link).toHaveAttribute('href', '/admin/invoices/inv-1');
   });
 });
