@@ -179,9 +179,20 @@ function classifySendReminderOutcome(res: Response, body: unknown): BulkOutcomeB
  *                                                                 → needsAction
  *     (a human must reactivate / restore a flag / re-issue before the same
  *     real payment can be recorded — payment still owed)
+ *   - 422 `payment_date_out_of_range`                              → needsAction
+ *     (review round 2, L1 — the bulk confirm dialog collects ONE
+ *     `payment_date` for the WHOLE batch, but each invoice has its own
+ *     issue date; a date that predates one invoice's `issue_date` fails
+ *     ONLY that invoice's §87 server-side guard in `recordPayment`. The
+ *     `/pay` route has no explicit status-map case for this code, so it
+ *     falls through to the route's generic `422` default — but the
+ *     payment is still owed and a human just needs to pick a valid date
+ *     and retry, so it belongs in needsAction, not a hard failure.)
  *   - 429 rate_limited                                            → rateLimited
  *     (20 pays / 5 min per (tenant, actor); a bulk of >20 hits it mid-batch)
- *   - 404 / 422 / 500 (+ any unmapped status / network throw)     → failed
+ *   - 404 / 422 (any OTHER code — `no_snapshot_on_invoice`, `overflow`,
+ *     an unmapped code) / 500 (+ any unmapped status / network throw)
+ *                                                                 → failed
  */
 function classifyMarkPaidOutcome(res: Response, body: unknown): BulkOutcomeBucket {
   if (res.ok) return 'ok';
@@ -198,7 +209,18 @@ function classifyMarkPaidOutcome(res: Response, body: unknown): BulkOutcomeBucke
     // payment can be recorded. Payment is still owed, so NOT a benign skip.
     return 'needsAction';
   }
-  // 404 / 422 / 500 (+ any unmapped status) — hard failure, kept visible.
+  // Review round 2 (L1) — a batch-wide payment date before THIS invoice's
+  // issue date is a "pick a different date and retry" problem, not a hard
+  // error: the payment is still owed. Reuses the needsAction bucket's
+  // existing generic copy (never surfaces a reason string per-row today —
+  // see `BulkRunResultsPanel`), so no dedicated i18n line is needed. Every
+  // OTHER 422 code (`no_snapshot_on_invoice`, `overflow`, unmapped) is a
+  // real data/allocation error and stays FAILED.
+  if (res.status === 422 && code === 'payment_date_out_of_range') {
+    return 'needsAction';
+  }
+  // 404 / 422 (other codes) / 500 (+ any unmapped status) — hard failure,
+  // kept visible.
   return 'failed';
 }
 

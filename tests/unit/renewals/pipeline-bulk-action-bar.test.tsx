@@ -334,6 +334,85 @@ describe('PipelineBulkActionBar — mark paid outcome bucketing (Decision 5)', (
     },
   );
 
+  // Review round 2 (L1) — the bulk confirm dialog collects ONE payment_date
+  // for the WHOLE batch, but each invoice has its own issue date. A date
+  // that predates one invoice's issue date fails ONLY that invoice's §87
+  // server-side guard in recordPayment with `payment_date_out_of_range`,
+  // which the /pay route has no explicit status-map case for — it falls
+  // through to the route's generic 422. This is NOT a hard failure: the
+  // payment is still owed, the admin just needs to pick a valid date and
+  // retry, so it must land in needsAction, not failed.
+  it('buckets a 422 payment_date_out_of_range as needs-action, not failed', async () => {
+    markPaidBatchOverride = [{ cycleId: 'c1', companyName: 'Acme', invoiceId: 'inv1' }];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse(
+          {
+            error: {
+              code: 'payment_date_out_of_range',
+              min: '2026-06-01',
+              max: '2026-07-29',
+            },
+          },
+          422,
+        ),
+      ),
+    );
+
+    render(
+      wrap(
+        <PipelineBulkActionBar
+          selectedCycleIds={['c1']}
+          selectedCompanyNames={['Acme']}
+          totalMatching={1}
+          onClear={vi.fn()}
+        />,
+      ),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: B.actions.markPaid }));
+    fireEvent.click(screen.getByRole('button', { name: B.confirmMarkPaidAction }));
+
+    await waitFor(() => {
+      expect(screen.getByText(B.resultLabels.needsAction)).toBeInTheDocument();
+    });
+    expect(screen.queryByText(B.resultLabels.failed)).toBeNull();
+    expect(screen.getByText('Acme')).toBeInTheDocument();
+    expect(toastError).toHaveBeenCalled();
+  });
+
+  // The sibling of the above: every OTHER 422 code is a real data/
+  // allocation error (not a bad date pick) and must stay FAILED — locks
+  // the classifier's `code === 'payment_date_out_of_range'` narrowing so a
+  // future refactor can't widen the whole 422 status back into needsAction.
+  it('buckets a 422 no_snapshot_on_invoice as failed, not needs-action', async () => {
+    markPaidBatchOverride = [{ cycleId: 'c1', companyName: 'Acme', invoiceId: 'inv1' }];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse({ error: { code: 'no_snapshot_on_invoice' } }, 422)),
+    );
+
+    render(
+      wrap(
+        <PipelineBulkActionBar
+          selectedCycleIds={['c1']}
+          selectedCompanyNames={['Acme']}
+          totalMatching={1}
+          onClear={vi.fn()}
+        />,
+      ),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: B.actions.markPaid }));
+    fireEvent.click(screen.getByRole('button', { name: B.confirmMarkPaidAction }));
+
+    await waitFor(() => {
+      expect(screen.getByText(B.resultLabels.failed)).toBeInTheDocument();
+    });
+    expect(screen.queryByText(B.resultLabels.needsAction)).toBeNull();
+  });
+
   // 429: record-payment rate-limits 20 pays / 5 min per (tenant, actor); a
   // large bulk hits it mid-batch. It lands in its own bucket, is never
   // retried (exactly one POST per row), and the affected row stays visible.
