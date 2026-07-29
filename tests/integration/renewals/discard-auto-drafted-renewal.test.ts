@@ -16,14 +16,7 @@
  *       (`auditEmitted:false`); no `renewal_auto_draft_discarded` row is
  *       written (there is no cycle to attach it to), but the row IS gone.
  */
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-// CI has no Vercel Blob store: `BLOB_READ_WRITE_TOKEN` there comes from
-// `.env.example`, so the real F4 issue path this suite drives fails with
-// `blob_upload_failed` — while passing on a laptop whose `.env.local` holds a
-// live dev-store token (and quietly uploading test PDFs into it). Mocked at the
-// SDK boundary, so the adapter's own conflict/overwrite/read logic stays under
-// test. First nightly renewals sweep, 2026-07-28.
-vi.mock('@vercel/blob', () => import('../../helpers/vercel-blob-memory'));
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { runInTenant } from '@/lib/db';
@@ -44,6 +37,16 @@ import { seedTenantFiscal } from '../helpers/seed-tenant-fiscal';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { nextSeedMemberNumber } from '../helpers/seed-member-number';
+import { createInMemoryBlobStorage } from '../../helpers/in-memory-blob-storage';
+/**
+ * This suite drives the real F4 issue path, which uploads a rendered PDF.
+ * Injected rather than left to the production adapter: CI's
+ * `BLOB_READ_WRITE_TOKEN` is an `.env.example` placeholder pointing at no
+ * store, which is what reddened the first nightly renewals sweep — and a local
+ * run was writing test PDFs into the dev store.
+ */
+const testBlob = createInMemoryBlobStorage();
+
 
 /** Every fixture cycle starts here → `deriveFiscalYear(periodFrom)` = 2025. */
 const PERIOD_FROM = '2025-08-01T00:00:00Z';
@@ -54,7 +57,7 @@ let user: TestUser;
 let planId: string;
 
 function depsFor(t: TestTenant) {
-  return makeRenewalsDeps(t.ctx.slug);
+  return makeRenewalsDeps(t.ctx.slug, { blob: testBlob });
 }
 
 async function seedMember(t: TestTenant): Promise<string> {

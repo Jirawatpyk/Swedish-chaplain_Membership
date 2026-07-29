@@ -70,6 +70,24 @@ import type { IssueMembershipBillDeps } from './use-cases/issue-membership-bill'
 import type { GetCreditNoteDeps } from './use-cases/get-credit-note';
 import type { GetCreditNotePdfSignedUrlDeps } from './use-cases/get-credit-note-pdf-signed-url';
 import type { ResendPdfDeps } from './use-cases/resend-pdf';
+import type { BlobStoragePort } from './ports/blob-storage-port';
+
+/**
+ * The one seam for swapping an EXTERNAL service out of a composition.
+ *
+ * Added 2026-07-29 after the first nightly `renewals` sweep failed 19 tests on
+ * `Vercel Blob: This store does not exist.` — those suites go through
+ * `makeRenewalsDeps()`, which had no way to reach the blob port, so the only
+ * way to test them off a live store was mocking the `@vercel/blob` SDK module
+ * itself. Every invoicing suite that already passes in CI injects its own
+ * double; this gives the renewals bridge the same option.
+ *
+ * Omit it and you get exactly the previous wiring — the production adapters.
+ * Production code never passes it.
+ */
+export interface InvoicingAdapterOverrides {
+  readonly blob?: BlobStoragePort;
+}
 
 export function makeCreateInvoiceDraftDeps(tenantId: string): CreateInvoiceDraftDeps {
   return {
@@ -104,7 +122,10 @@ export function makeCreateEventInvoiceDraftDeps(
   };
 }
 
-export function makeIssueInvoiceDeps(tenantId: string): IssueInvoiceDeps {
+export function makeIssueInvoiceDeps(
+  tenantId: string,
+  overrides: InvoicingAdapterOverrides = {},
+): IssueInvoiceDeps {
   return {
     invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
     tenantSettingsRepo: drizzleTenantSettingsRepo,
@@ -113,7 +134,7 @@ export function makeIssueInvoiceDeps(tenantId: string): IssueInvoiceDeps {
     eventRegistrationLookup: eventRegistrationLookupAdapter,
     sequenceAllocator: postgresSequenceAllocator,
     pdfRender: reactPdfRenderAdapter,
-    blob: vercelBlobAdapter,
+    blob: overrides.blob ?? vercelBlobAdapter,
     audit: f4AuditAdapter,
     clock: systemClock,
     outbox: resendEmailOutboxAdapter,
@@ -465,12 +486,13 @@ export function makeGetCreditNotePdfSignedUrlDeps(
 export function makeVoidInvoiceDeps(
   tenantId: string,
   onMembershipInvoiceVoidedInTx?: VoidInvoiceDeps['onMembershipInvoiceVoidedInTx'],
+  overrides: InvoicingAdapterOverrides = {},
 ): VoidInvoiceDeps {
   return {
     invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
     tenantSettingsRepo: drizzleTenantSettingsRepo,
     pdfRender: reactPdfRenderAdapter,
-    blob: vercelBlobAdapter,
+    blob: overrides.blob ?? vercelBlobAdapter,
     audit: f4AuditAdapter,
     clock: systemClock,
     outbox: resendEmailOutboxAdapter,
@@ -492,10 +514,13 @@ export function makeVoidInvoiceDeps(
  * `invoiceRepo` for the `listSupersedableMembershipBills` read. Flag default
  * false (ships dark) — see `env.ts` schema docstring.
  */
-export function makeIssueMembershipBillDeps(tenantId: string): IssueMembershipBillDeps {
+export function makeIssueMembershipBillDeps(
+  tenantId: string,
+  overrides: InvoicingAdapterOverrides = {},
+): IssueMembershipBillDeps {
   return {
-    issueDeps: makeIssueInvoiceDeps(tenantId),
-    voidDeps: makeVoidInvoiceDeps(tenantId),
+    issueDeps: makeIssueInvoiceDeps(tenantId, overrides),
+    voidDeps: makeVoidInvoiceDeps(tenantId, undefined, overrides),
     invoiceRepo: makeDrizzleInvoiceRepo(tenantId),
     voidOnReissueEnabled: env.features.voidOnReissue,
   };

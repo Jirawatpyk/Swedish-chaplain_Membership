@@ -13,14 +13,7 @@
  * Distinct from renewal-confirm-perf.test.ts, which STUBS the F4 bridge (it
  * measures F8-only latency and never exercises real issuance).
  */
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-// CI has no Vercel Blob store: `BLOB_READ_WRITE_TOKEN` there comes from
-// `.env.example`, so the real F4 issue path this suite drives fails with
-// `blob_upload_failed` — while passing on a laptop whose `.env.local` holds a
-// live dev-store token (and quietly uploading test PDFs into it). Mocked at the
-// SDK boundary, so the adapter's own conflict/overwrite/read logic stays under
-// test. First nightly renewals sweep, 2026-07-28.
-vi.mock('@vercel/blob', () => import('../../helpers/vercel-blob-memory'));
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { runInTenant } from '@/lib/db';
@@ -36,6 +29,16 @@ import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
+import { createInMemoryBlobStorage } from '../../helpers/in-memory-blob-storage';
+/**
+ * This suite drives the real F4 issue path, which uploads a rendered PDF.
+ * Injected rather than left to the production adapter: CI's
+ * `BLOB_READ_WRITE_TOKEN` is an `.env.example` placeholder pointing at no
+ * store, which is what reddened the first nightly renewals sweep — and a local
+ * run was writing test PDFs into the dev store.
+ */
+const testBlob = createInMemoryBlobStorage();
+
 
 const MATRIX: BenefitMatrix = {
   eblast_per_year: 1,
@@ -181,7 +184,7 @@ describe('066 — no-TIN member self-service renewal issues a §86/4 (live Neon)
       });
     });
 
-    const r = await confirmRenewal(makeRenewalsDeps(tenant.ctx.slug), {
+    const r = await confirmRenewal(makeRenewalsDeps(tenant.ctx.slug, { blob: testBlob }), {
       tenantId: tenant.ctx.slug,
       cycleId,
       memberId,

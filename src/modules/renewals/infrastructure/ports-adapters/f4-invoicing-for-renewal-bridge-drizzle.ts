@@ -30,6 +30,7 @@ import {
   makeDeleteInvoiceDraftDeps,
   makeIssueMembershipBillDeps,
 } from '@/modules/invoicing';
+import type { InvoicingAdapterOverrides } from '@/modules/invoicing';
 import { asSatang, parseThbDecimalToSatang } from '@/lib/money';
 import type {
   DiscardAutoDraftForRenewalInput,
@@ -42,7 +43,17 @@ import type {
   IssueInvoiceForRenewalResult,
 } from '../../application/ports/f4-invoicing-bridge';
 
-export const f4InvoicingForRenewalBridge: F4InvoicingForRenewalBridge = {
+/**
+ * Factory rather than a bare singleton so a caller can hand the F4 issue path
+ * a different external adapter — in practice only integration suites do, to
+ * run without a live Vercel Blob store (added 2026-07-29 after the first
+ * nightly renewals sweep failed 19 tests on `blob_upload_failed`). Passing
+ * nothing yields the production wiring, which is what
+ * `f4InvoicingForRenewalBridge` below is.
+ */
+export const makeF4InvoicingForRenewalBridge = (
+  overrides: InvoicingAdapterOverrides = {},
+): F4InvoicingForRenewalBridge => ({
   async issueInvoiceForRenewal(
     input: IssueInvoiceForRenewalInput,
   ): Promise<IssueInvoiceForRenewalResult> {
@@ -104,7 +115,7 @@ export const f4InvoicingForRenewalBridge: F4InvoicingForRenewalBridge = {
     // this bridge now cleans up the member's stale duplicate bill(s) the
     // same way an admin-triggered reissue does.
     const issueResult = await issueMembershipBill(
-      makeIssueMembershipBillDeps(input.tenantId),
+      makeIssueMembershipBillDeps(input.tenantId, overrides),
       {
         tenantId: input.tenantId,
         actorUserId: input.actorUserId,
@@ -225,7 +236,7 @@ export const f4InvoicingForRenewalBridge: F4InvoicingForRenewalBridge = {
     input: IssueExistingDraftForRenewalInput,
   ): Promise<IssueInvoiceForRenewalResult> {
     const issueResult = await issueMembershipBill(
-      makeIssueMembershipBillDeps(input.tenantId),
+      makeIssueMembershipBillDeps(input.tenantId, overrides),
       {
         tenantId: input.tenantId,
         actorUserId: input.actorUserId,
@@ -289,4 +300,8 @@ export const f4InvoicingForRenewalBridge: F4InvoicingForRenewalBridge = {
       ? { status: 'not_draft' }
       : { status: 'not_found' };
   },
-};
+});
+
+/** Production wiring — the adapters `invoicing-deps` defaults to. */
+export const f4InvoicingForRenewalBridge: F4InvoicingForRenewalBridge =
+  makeF4InvoicingForRenewalBridge();
