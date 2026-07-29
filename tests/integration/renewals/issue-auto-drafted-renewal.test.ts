@@ -28,7 +28,14 @@
  *   (g) Orphan recovery — the link step is forced to fail ONCE; the
  *       idempotent retry re-links, no duplicate invoice.
  */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+// CI has no Vercel Blob store: `BLOB_READ_WRITE_TOKEN` there comes from
+// `.env.example`, so the real F4 issue path this suite drives fails with
+// `blob_upload_failed` — while passing on a laptop whose `.env.local` holds a
+// live dev-store token (and quietly uploading test PDFs into it). Mocked at the
+// SDK boundary, so the adapter's own conflict/overwrite/read logic stays under
+// test. First nightly renewals sweep, 2026-07-28.
+vi.mock('@vercel/blob', () => import('../../helpers/vercel-blob-memory'));
 import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
