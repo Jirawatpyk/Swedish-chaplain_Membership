@@ -686,6 +686,30 @@ describe('107-auto-invoice Task 7 — autoDraftDueRenewals (live Neon)', () => {
       // the next renewal window, so it never over-blocks.
       expect(covRow.coverageFrom?.toISOString()).toBe(new Date(periodFromF).toISOString());
       expect(covRow.coverageTo?.toISOString()).toBe(seededF.periodTo.toISOString());
+
+      // L2 — the `renewal_auto_drafted` AUDIT payload's coverage MUST match the
+      // PERSISTED invoice window asserted just above (the A-2 dup-guard window),
+      // NOT the next-period [periodTo, periodTo+term). Before the L2 fix the
+      // audit recorded coverageFromIso/coverageToIso (next-period) even for a
+      // first-payment draft — divergent from invoices.coverage_from/to. A
+      // money-mutation audit event must not misreport the coverage it stamped.
+      const fpAudit = await runInTenant(fpTenant.ctx, (tx) =>
+        tx
+          .select({ payload: auditLog.payload })
+          .from(auditLog)
+          .where(
+            and(
+              eq(auditLog.tenantId, fpTenant.ctx.slug),
+              eq(auditLog.eventType, 'renewal_auto_drafted' as never),
+            ),
+          ),
+      );
+      expect(fpAudit.length).toBe(1);
+      expect(fpAudit[0]?.payload).toMatchObject({
+        // date-only slice, mirroring the persisted [periodFrom, periodTo) window.
+        coverage_from: new Date(periodFromF).toISOString().slice(0, 10),
+        coverage_to: seededF.periodTo.toISOString().slice(0, 10),
+      });
     } finally {
       await fpTenant.cleanup().catch(() => {});
     }

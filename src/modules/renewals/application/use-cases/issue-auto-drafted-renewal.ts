@@ -413,10 +413,20 @@ export async function issueAutoDraftedRenewal(
 
     // --- HARD REQ #2: the duplicate-§86/4 barrier (runs BEFORE the sweep) --
     // membership-coverage-exclude-guard (mig 0281) — the pre-flight twin of the
-    // DB EXCLUDE, using PERSISTED coverage rather than a plan_year
-    // approximation. `wNew` is THIS draft's own stamped window
-    // ([periodTo, periodTo+term)); the draft is EXCLUDED, so the guard refuses
-    // only when a DIFFERENT live COMMITTED membership bill overlaps it.
+    // DB EXCLUDE, using PERSISTED coverage rather than a plan_year approximation.
+    // `wNew` MUST be THIS draft's OWN persisted `coverage_from/to` — the exact
+    // window the DB EXCLUDE will enforce on the row once it commits — NOT a
+    // re-derived one. A-2 (#284) made a first-payment auto-draft persist its
+    // CURRENT period [periodFrom, periodTo) while a renewal persists
+    // [periodTo, periodTo+term); a hardcoded next-period window would therefore
+    // check a DIFFERENT window than the DB EXCLUDE enforces for a first-payment
+    // draft (the same M-1-class inconsistency confirm-renewal was fixed for).
+    // The draft is already loaded in `coverageBills` (member-scoped, includes
+    // drafts) with its persisted window; use that row directly — self-consistent
+    // by construction, no re-derivation. The draft is EXCLUDED from the overlap
+    // scan, so the guard refuses only when a DIFFERENT live COMMITTED membership
+    // bill overlaps its persisted window. (A renewal draft's persisted window IS
+    // [periodTo, +term), so the renewal path stays byte-identical.)
     //
     // Order (audit: reliability M1 / financial): this guard is INDEPENDENT of
     // the sweep (it checks committed coverage, never drafts — no `includeDrafts`
@@ -425,16 +435,25 @@ export async function issueAutoDraftedRenewal(
     // `renewal_auto_draft_discarded {superseded_on_issue}` audit for an issue
     // that never happens — `err()` inside `runInTenant` still COMMITS tx1
     // (see [[reference_result_refusal_in_runintenant_commits]]).
-    const wNew = {
-      from: cycle.periodTo,
-      to: addMonthsUtc(cycle.periodTo, cycle.frozenPlanTermMonths),
-    };
     const coverageBills =
       await deps.cyclesRepo.listMembershipCoverageForMemberInTx(
         tx,
         input.tenantId,
         cycle.memberId,
       );
+    // Every auto_renewal draft carries a non-null persisted coverage window (both
+    // mint paths stamp one since mig 0281 / A-2), so `persistedSelf.coverage` is
+    // present for every reachable draft. The `?? { … }` fallback preserves the
+    // prior next-period derivation ONLY for the unreachable NULL/absent case — so
+    // this can never become MORE permissive than before (no weakening of the
+    // guard); for every reachable draft `wNew` IS the exact persisted window.
+    const persistedSelf = coverageBills.find(
+      (bill) => bill.invoiceId === input.invoiceId,
+    );
+    const wNew = persistedSelf?.coverage ?? {
+      from: cycle.periodTo,
+      to: addMonthsUtc(cycle.periodTo, cycle.frozenPlanTermMonths),
+    };
     const blocking = findOverlappingMembershipCoverageBill(coverageBills, wNew, {
       excludeInvoiceId: input.invoiceId,
     });

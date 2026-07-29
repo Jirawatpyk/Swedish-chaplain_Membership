@@ -147,6 +147,13 @@ async function seedAutoDraft(opts: {
   readonly t: TestTenant;
   readonly memberId: string;
   readonly cycleId: string | null;
+  /**
+   * Override the persisted `invoices.coverage_from/to` window. Defaults to the
+   * RENEWAL window [periodTo, periodTo+term) — the shape a production renewal
+   * auto-draft carries. Pass the CURRENT period [periodFrom, periodTo) to seed
+   * the A-2 first-payment shape (case (p) — the L1 persisted-window pre-flight).
+   */
+  readonly coverageWindow?: { readonly fromIso: string; readonly toIso: string };
 }): Promise<string> {
   const deps = depsFor(opts.t);
   // membership-coverage-exclude-guard (mig 0281) — mirror the cron: stamp the
@@ -165,7 +172,10 @@ async function seedAutoDraft(opts: {
     frozenPlanPriceThb: '50000.00' as never,
     actorUserId: user.userId,
     requestId: null,
-    coverageWindow: { fromIso: covFrom.toISOString(), toIso: covTo.toISOString() },
+    coverageWindow: opts.coverageWindow ?? {
+      fromIso: covFrom.toISOString(),
+      toIso: covTo.toISOString(),
+    },
   });
   if (drafted.status !== 'drafted') {
     throw new Error(`fixture draft failed: ${JSON.stringify(drafted)}`);
@@ -1209,5 +1219,64 @@ describe('107-auto-invoice Task 9 — issueAutoDraftedRenewal (live Neon)', () =
     } finally {
       await peer.cleanup().catch(() => {});
     }
+  }, 120_000);
+
+  it("(p) L1 — a first-payment draft ([periodFrom, periodTo)) issues even when a committed bill covers the NEXT period; the pre-flight uses the draft's OWN persisted coverage window, not a hardcoded next-period one", async () => {
+    // A-2 made a first-payment auto-draft PERSIST its CURRENT period
+    // [periodFrom, periodTo) to invoices.coverage_from/to (a renewal persists
+    // [periodTo, periodTo+term)). L1 makes the issue-time HARD REQ #2 pre-flight
+    // read THAT persisted window as `wNew` — the exact window the DB EXCLUDE
+    // enforces on the row once issued — instead of the old hardcoded
+    // [periodTo, +term). This is the discriminating fixture: a committed bill
+    // sits in the NEXT period, which the OLD hardcoded wNew OVERLAPPED (a false
+    // `duplicate_live_bill` refuse) but the PERSISTED wNew — adjacent, half-open
+    // [periodFrom, periodTo) — does not. The draft carries the first-payment
+    // window via the seed override (exactly what a real A-2 first-payment draft
+    // persists); the guard reads persisted coverage, not classification, so the
+    // cycle's anchoring is deliberately irrelevant here.
+    const memberId = await seedMember({ t: tenant });
+    const { cycleId, periodTo } = await seedCycle({ t: tenant, memberId });
+
+    // A — the queue draft, persisted CURRENT-period coverage [periodFrom, periodTo).
+    const aInvoiceId = await seedAutoDraft({
+      t: tenant,
+      memberId,
+      cycleId,
+      coverageWindow: { fromIso: PERIOD_FROM, toIso: periodTo.toISOString() },
+    });
+
+    // B1 — a committed (issued) membership bill covering the NEXT period
+    // [periodTo, periodTo+term) (seedAutoDraft's default window), issued through
+    // the real F4 path so it is a live, BLOCKING §86/4.
+    const b1 = await seedAutoDraft({ t: tenant, memberId, cycleId: null });
+    const issuedB1 = await depsFor(tenant).f4InvoicingBridge.issueExistingDraftForRenewal({
+      tenantId: tenant.ctx.slug,
+      invoiceId: b1,
+      actorUserId: user.userId,
+      autoEmailOnIssue: false,
+      requestId: null,
+    });
+    expect(issuedB1.status).toBe('issued');
+
+    const result = await issueAutoDraftedRenewal(depsFor(tenant), {
+      tenantId: tenant.ctx.slug,
+      invoiceId: aInvoiceId,
+      actorUserId: user.userId,
+      sendEmail: false,
+      requestId: null,
+    });
+
+    // NEW (persisted-window pre-flight): A's [periodFrom, periodTo) does NOT
+    // overlap B1's [periodTo, +term) → A issues. OLD (hardcoded [periodTo, +term))
+    // overlapped B1 → a false `duplicate_live_bill`. This is the RED→GREEN.
+    expect(result.ok, result.ok ? 'ok' : JSON.stringify(result)).toBe(true);
+    if (!result.ok) return;
+    expect((await invoiceRow(tenant, aInvoiceId))?.status).toBe('issued');
+    // Current-period + next-period bills coexist — both committed, adjacent
+    // half-open windows, no §86/4 collision (the DB EXCLUDE agrees).
+    expect((await invoiceRow(tenant, b1))?.status).toBe('issued');
+    const cyc = await cycleRow(tenant, cycleId);
+    expect(cyc?.status).toBe('awaiting_payment');
+    expect(cyc?.linkedInvoiceId).toBe(aInvoiceId);
   }, 120_000);
 });
