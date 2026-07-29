@@ -43,6 +43,7 @@
  * crash the pipeline.
  */
 import type { ReactNode } from 'react';
+import Link from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
 import { formatSatangThb } from '@/lib/format-thb';
 import { Card, CardContent } from '@/components/ui/card';
@@ -91,14 +92,29 @@ function PipelineMoneyBandContent({
   // tile is byte-identical for the common no-prior-debt case; the localised
   // `money.currency` word keeps the amount's unit consistent with the hero
   // figure above it. Passed as `subline` (NOT caption/label) so KpiCard
-  // keeps it OUTSIDE the tile's deep-link — see the prop's a11y note.
+  // keeps it OUTSIDE the tile's deep-link — see the prop's a11y note; that
+  // sibling position is also what makes it safe to be a link ITSELF
+  // (UX-review follow-up F3) with no nested-interactive risk.
+  //
+  // Drill-down target: `status=overdue` is the DERIVED invoices-list filter
+  // (repo translates it to issued AND BKK-today > due_date — S1-P1-8), the
+  // closest expressible superset of "prior-FY overdue membership bills":
+  // the list page has no due-date-range/fiscal-year URL param, so the
+  // prior-FY rows can't be isolated further without inventing params. The
+  // muted colour comes from KpiCard's subline wrapper; hover underline +
+  // focus ring keep the affordance subtle but discoverable.
   const priorYearsSubline =
-    money.overdueBeforeFySatang > 0n
-      ? t('pastDue.priorYears', {
+    money.overdueBeforeFySatang > 0n ? (
+      <Link
+        href="/admin/invoices?status=overdue&subject=membership"
+        className="rounded-xs underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+      >
+        {t('pastDue.priorYears', {
           amount: formatSatangThb(money.overdueBeforeFySatang, locale, currency),
           count: money.overdueBeforeFyCount,
-        })
-      : undefined;
+        })}
+      </Link>
+    ) : undefined;
 
   return (
     <section aria-labelledby="pipeline-money-band-heading" className="flex flex-col gap-3">

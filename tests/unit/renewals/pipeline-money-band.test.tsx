@@ -15,7 +15,8 @@
  * hang React rendering (memory: component test harness fake timers).
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
 import { PipelineMoneyBand } from '@/app/(staff)/admin/renewals/_components/pipeline-money-band';
@@ -196,6 +197,18 @@ describe('PipelineMoneyBand', () => {
     ).toBeInTheDocument();
   });
 
+  it('renders the sub-line as a drill-down link to the overdue membership invoices list (UX follow-up F3)', () => {
+    renderBand();
+    // `status=overdue` is the DERIVED filter (issued + past-due) — the most
+    // precise filter the invoices list exposes via URL; no due-date-range
+    // param exists to isolate the prior-FY rows further.
+    expect(
+      screen.getByRole('link', {
+        name: '+ 38,520.00 THB overdue from prior years (1 bill)',
+      }),
+    ).toHaveAttribute('href', '/admin/invoices?status=overdue&subject=membership');
+  });
+
   it('hides the prior-years sub-line entirely when overdueBeforeFySatang is 0 (tile byte-identical to before)', () => {
     render(
       <NextIntlClientProvider locale="en" messages={en}>
@@ -230,19 +243,55 @@ describe('PipelineMoneyBand', () => {
     ).toBeInTheDocument();
   });
 
-  it('renders a keyboard-focusable info-tooltip trigger on the Collection-rate tile explaining the basis divergence from the dashboard', () => {
+  it('renders a keyboard-focusable info-hint trigger on the Collection-rate tile explaining the basis divergence from the dashboard', () => {
     renderBand();
     const trigger = screen.getByRole('button', {
       name: "How this differs from the dashboard's Paid revenue",
     });
     expect(trigger).toBeInTheDocument();
     // Native <button> trigger (Base UI default) — actually focusable, unlike
-    // a span-rendered trigger. Tooltip opens on focus per Base UI semantics.
+    // the span-rendered trigger of the T160 regression.
     trigger.focus();
     expect(trigger).toHaveFocus();
   });
 
-  it('does NOT nest the info-tooltip trigger inside any deep-link (no nested interactive control)', () => {
+  it('opens the basis popover on click and closes it on ESC (touch + keyboard reachable, not hover-only)', async () => {
+    const user = userEvent.setup();
+    renderBand();
+    const trigger = screen.getByRole('button', {
+      name: "How this differs from the dashboard's Paid revenue",
+    });
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+
+    await user.click(trigger);
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    expect(
+      await screen.findByText(/Counts membership bills DUE in the current fiscal year/),
+    ).toBeInTheDocument();
+
+    await user.keyboard('{Escape}');
+    await waitFor(() =>
+      expect(
+        screen.queryByText(/Counts membership bills DUE in the current fiscal year/),
+      ).toBeNull(),
+    );
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('opens the basis popover with the keyboard (Enter on the focused trigger)', async () => {
+    const user = userEvent.setup();
+    renderBand();
+    const trigger = screen.getByRole('button', {
+      name: "How this differs from the dashboard's Paid revenue",
+    });
+    trigger.focus();
+    await user.keyboard('{Enter}');
+    expect(
+      await screen.findByText(/Counts membership bills DUE in the current fiscal year/),
+    ).toBeInTheDocument();
+  });
+
+  it('does NOT nest the info-hint trigger inside any deep-link (no nested interactive control)', () => {
     renderBand();
     const trigger = screen.getByRole('button', {
       name: "How this differs from the dashboard's Paid revenue",

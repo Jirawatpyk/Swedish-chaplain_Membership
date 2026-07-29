@@ -1,28 +1,24 @@
-'use client';
-
 /**
  * F4 portal-invoices `combined-mode` receipt-number hint.
  *
- * For combined-mode tenants the receipt PDF reuses the invoice
- * document number, so the receipt-number cell shows an em-dash with
- * an inline tooltip explaining the convention. The whole Radix
- * tooltip subtree needs to live in a Client Component because
- * `Tooltip.Trigger`'s `render` prop is a function — passing a
- * function from a Server Component to a Client Component throws the
- * "Functions cannot be passed directly to Client Components" error
- * under React 19 + Next.js 16 strict SC/CC boundaries.
+ * For combined-mode tenants the receipt PDF reuses the invoice document
+ * number, so the receipt-number cell shows an em-dash with an inline ⓘ
+ * explaining the convention.
  *
- * Pre-fix this whole subtree was inlined in `page.tsx` (Server
- * Component) — caused /portal/invoices to render the global error
- * boundary instead of the table on every request.
+ * UX-review follow-up F1 (T160 regression fix) — ported to the shared
+ * `InfoHint` system pattern (Base UI Popover). The previous implementation
+ * overrode the Tooltip trigger with `render={<span/>}`, which lost native
+ * focusability entirely: keyboard users could never reach the hint, and a
+ * hover-only tooltip is unreachable on touch anyway. `InfoHint`'s native
+ * `<button>` trigger opens on click/tap/Enter/Space, closes on ESC +
+ * outside click, and Base UI wires the ARIA state. Public props and the
+ * caller's i18n keys (`receiptNumberCombinedAria` / …`Tooltip`) are
+ * unchanged; `ariaLabel` now names the BUTTON (the em-dash stays plain
+ * visible text beside it, same as before for sighted users). No
+ * 'use client' needed any more — `InfoHint` owns the client boundary and
+ * only serialisable string props cross it.
  */
-import { InfoIcon } from 'lucide-react';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+import { InfoHint } from '@/components/ui/info-hint';
 
 export interface CombinedReceiptHintProps {
   readonly ariaLabel: string;
@@ -34,22 +30,11 @@ export function CombinedReceiptHint({
   tooltipText,
 }: CombinedReceiptHintProps): React.ReactElement {
   return (
-    <TooltipProvider delay={200}>
-      <Tooltip>
-        <TooltipTrigger
-          render={(props) => (
-            <span
-              {...props}
-              className="inline-flex min-h-6 items-center gap-1 text-sm text-muted-foreground cursor-help"
-              aria-label={ariaLabel}
-            >
-              —
-              <InfoIcon className="size-3.5" aria-hidden="true" />
-            </span>
-          )}
-        />
-        <TooltipContent>{tooltipText}</TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <span className="inline-flex min-h-6 items-center gap-1 text-sm text-muted-foreground">
+      —
+      <InfoHint ariaLabel={ariaLabel} triggerClassName="-my-1">
+        {tooltipText}
+      </InfoHint>
+    </span>
   );
 }
