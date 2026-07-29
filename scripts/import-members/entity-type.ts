@@ -10,10 +10,16 @@
  * column here mis-assigns the entity type. Pure + framework-free (spec § 8).
  */
 import { err, ok, type Result } from '@/lib/result';
+// Deep import (NOT the `@/modules/members` barrel): the barrel transitively
+// pulls members→renewals→invoicing→payments, whose infrastructure imports
+// `server-only` (a Next-vendored marker absent from node_modules) and dies
+// under plain tsx — which broke every `pnpm tsx scripts/import-*.ts` run.
+// Scripts follow the established deep-import convention (066 lesson; see
+// backfill-cycle-anchors.ts).
 import {
   isLegalEntityTypeCode,
   type LegalEntityTypeCode,
-} from '@/modules/members';
+} from '@/modules/members/domain/value-objects/legal-entity-type';
 
 export type EntityTypeResolveError = {
   readonly code: 'entityType.unmapped';

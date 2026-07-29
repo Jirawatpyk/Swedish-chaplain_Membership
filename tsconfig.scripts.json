@@ -1,0 +1,14 @@
+{
+  "//": "tsx-only resolution config for operator CLI scripts (never used by `pnpm typecheck`). Next vendors the `server-only` marker package, so it does not exist in node_modules; scripts whose import graph reaches payments/invoicing infrastructure die with MODULE_NOT_FOUND under plain tsx. Invoke such scripts with TSX_TSCONFIG_PATH=tsconfig.scripts.json so tsx resolves `server-only` to the no-op stub. `paths` is NOT merged by `extends` — the parent `@/*` mapping must be repeated here.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "@/*": [
+        "./src/*"
+      ],
+      "server-only": [
+        "./scripts/lib/server-only-stub.ts"
+      ]
+    }
+  }
+}

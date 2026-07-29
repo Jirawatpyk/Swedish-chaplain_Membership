@@ -26,7 +26,12 @@ import {
   type PreferredLanguage,
 } from './coerce';
 import { coerceLegalEntityType } from './entity-type';
-import { VAT_DEFAULT_BY_CODE, type LegalEntityTypeCode } from '@/modules/members';
+// Deep import (NOT the `@/modules/members` barrel) — same rationale as
+// entity-type.ts: the barrel reaches `server-only` and dies under plain tsx.
+import {
+  VAT_DEFAULT_BY_CODE,
+  type LegalEntityTypeCode,
+} from '@/modules/members/domain/value-objects/legal-entity-type';
 import type { MemberTypeScope, TierResolver } from './tier-resolution';
 
 export interface RawRow {
