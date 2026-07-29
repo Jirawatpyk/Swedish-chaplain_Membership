@@ -2129,7 +2129,8 @@
           "recordPayment": "Record payment…",
           "recordPaymentAria": "Record payment for invoice {number}",
           "clearFilters": "Clear filters",
-          "configureInvoicing": "Configure Invoicing"
+          "configureInvoicing": "Configure Invoicing",
+          "openDraftAria": "Open draft invoice for {name}"
         },
         "columns": {
           "documentNumber": "Invoice No.",
@@ -2159,6 +2160,7 @@
           "partially_credited": "Partially credited",
           "overdue": "Overdue"
         },
+        "draftNumberLabel": "Draft",
         "searchPlaceholder": "Search invoice number…",
         "searchLabel": "Search invoices",
         "loadMore": "Load more",

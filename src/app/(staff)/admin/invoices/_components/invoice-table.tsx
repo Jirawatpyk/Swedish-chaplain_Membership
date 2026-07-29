@@ -460,13 +460,39 @@ export function InvoicesTable({
                     unpaid — page.tsx resolves it), the §87 invoice number for
                     legacy rows. The "SC-/IN-" prefix + the renamed "Invoice No."
                     column header are self-documenting; the RC §86/4 tax receipt is
-                    a clickable link in the Receipt No. column. No per-row tag. */}
-                <Link
-                  href={`/admin/invoices/${r.invoiceId}`}
-                  className="cursor-pointer font-medium underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
-                >
-                  {r.documentNumber}
-                </Link>
+                    a clickable link in the Receipt No. column. No per-row tag.
+
+                    draft-number-label — a draft correctly has NO §87 number
+                    (Thai RD §87 allocates only at ISSUE), so `documentNumber`
+                    is the sentinel "—" here. Rendering that bare em-dash as the
+                    ONLY click-to-open affordance failed WCAG 2.5.8 (sub-24px
+                    target) and 2.4.4 (empty link name). Gate on the semantic
+                    `status === 'draft'` (never string-match "—" — other
+                    non-issued states never carry this sentinel) and render a
+                    localised "Draft" placeholder link instead: italic +
+                    muted (NOT `font-medium`, so it never reads as a real
+                    document number) but keeps the underline + focus ring so
+                    it still looks/behaves like a link, with an aria-label
+                    naming the member for screen readers. `r.documentNumber`
+                    itself is left untouched — the record-payment gate at
+                    `documentNumber === '—'` (issued/overdue-only) never sees
+                    a draft row, but the data value stays as-is regardless. */}
+                {r.status === 'draft' ? (
+                  <Link
+                    href={`/admin/invoices/${r.invoiceId}`}
+                    aria-label={t('actions.openDraftAria', { name: r.memberName })}
+                    className="cursor-pointer italic text-muted-foreground underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
+                  >
+                    {t('draftNumberLabel')}
+                  </Link>
+                ) : (
+                  <Link
+                    href={`/admin/invoices/${r.invoiceId}`}
+                    className="cursor-pointer font-medium underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
+                  >
+                    {r.documentNumber}
+                  </Link>
+                )}
               </TableCell>
               <TableCell className="align-middle whitespace-nowrap">
                 {r.taxDocumentKind === 'tax_receipt' && r.receiptDocumentNumberRaw ? (

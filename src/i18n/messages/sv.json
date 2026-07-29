@@ -2129,7 +2129,8 @@
           "recordPayment": "Registrera betalning…",
           "recordPaymentAria": "Registrera betalning för faktura {number}",
           "clearFilters": "Rensa filter",
-          "configureInvoicing": "Konfigurera fakturering"
+          "configureInvoicing": "Konfigurera fakturering",
+          "openDraftAria": "Öppna utkast för {name}"
         },
         "columns": {
           "documentNumber": "Fakturanr.",
@@ -2159,6 +2160,7 @@
           "partially_credited": "Delvis krediterad",
           "overdue": "Förfallen"
         },
+        "draftNumberLabel": "Utkast",
         "searchPlaceholder": "Sök fakturanummer…",
         "searchLabel": "Sök fakturor",
         "loadMore": "Ladda fler",
