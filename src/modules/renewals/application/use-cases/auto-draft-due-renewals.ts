@@ -393,8 +393,6 @@ export const AUTO_DRAFT_SKIP_REASON_LABEL: Readonly<
 interface ReadyToDraft {
   readonly reread: RenewalCycle;
   readonly planYear: number;
-  readonly coverageFromIso: string;
-  readonly coverageToIso: string;
   readonly membershipCoverage:
     | { readonly kind: 'window'; readonly fromIso: string; readonly toIso: string }
     | undefined;
@@ -581,8 +579,6 @@ async function processOne(
     return ok<ReadyToDraft>({
       reread,
       planYear,
-      coverageFromIso,
-      coverageToIso,
       membershipCoverage,
       dupGuardCoverageWindow,
     });
@@ -591,14 +587,8 @@ async function processOne(
   if (!tx1Result.ok) {
     return tx1Result.error;
   }
-  const {
-    reread,
-    planYear,
-    coverageFromIso,
-    coverageToIso,
-    membershipCoverage,
-    dupGuardCoverageWindow,
-  } = tx1Result.value;
+  const { reread, planYear, membershipCoverage, dupGuardCoverageWindow } =
+    tx1Result.value;
 
   // --- F4 call: STANDALONE, no F8 tx/lock open (Review I2 fix) ------------
   // The per-cycle lock is deliberately released here (tx1 already closed
@@ -703,8 +693,16 @@ async function processOne(
             member_id: asMemberId(reread.memberId),
             plan_year: planYear,
             frozen_price_thb: reread.frozenPlanPriceThb,
-            coverage_from: coverageFromIso.slice(0, 10),
-            coverage_to: coverageToIso.slice(0, 10),
+            // L2 — record the window ACTUALLY persisted to
+            // `invoices.coverage_from/to` (the classification-gated
+            // `dupGuardCoverageWindow`: renewal → [periodTo, +term),
+            // first-payment / non-`renewal` → [periodFrom, periodTo)), NOT the
+            // unconditional next-period `coverageFromIso`/`coverageToIso`. For a
+            // renewal the two are byte-identical; for a first-payment auto-draft
+            // the audit previously misreported the next period. Same date-only
+            // slice as before — only the value SOURCE changes.
+            coverage_from: dupGuardCoverageWindow.fromIso.slice(0, 10),
+            coverage_to: dupGuardCoverageWindow.toIso.slice(0, 10),
           },
         },
         {
