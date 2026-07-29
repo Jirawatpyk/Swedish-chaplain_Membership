@@ -43,11 +43,12 @@ afterEach(() => {
 });
 
 describe('selectPreviewableBatch (Decision 3 — pure, no rendering)', () => {
-  it('keeps only previewable rows, dropping their money fields down to {cycleId, companyName}', () => {
+  it('keeps only previewable rows, carrying {cycleId, companyName, invoiceId} for the /pay fan-out', () => {
     const batch = selectPreviewableBatch([
       {
         cycleId: 'c1',
         companyName: 'Acme',
+        invoiceId: 'inv1',
         amountThbMinor: 5000,
         currency: 'THB',
         previewable: true,
@@ -55,18 +56,19 @@ describe('selectPreviewableBatch (Decision 3 — pure, no rendering)', () => {
       {
         cycleId: 'c2',
         companyName: 'Beta',
+        invoiceId: null,
         amountThbMinor: null,
         currency: null,
         previewable: false,
       },
     ]);
-    expect(batch).toEqual([{ cycleId: 'c1', companyName: 'Acme' }]);
+    expect(batch).toEqual([{ cycleId: 'c1', companyName: 'Acme', invoiceId: 'inv1' }]);
   });
 
   it('returns an empty batch when nothing is previewable', () => {
     expect(
       selectPreviewableBatch([
-        { cycleId: 'c1', companyName: 'Acme', amountThbMinor: null, currency: null, previewable: false },
+        { cycleId: 'c1', companyName: 'Acme', invoiceId: null, amountThbMinor: null, currency: null, previewable: false },
       ]),
     ).toEqual([]);
   });
@@ -77,19 +79,30 @@ describe('selectPreviewableBatch (Decision 3 — pure, no rendering)', () => {
   // — no money-mutating action may be shown/settled without a legible figure.
   it('excludes a previewable row with no legible amount (defensive money-safety line)', () => {
     const batch = selectPreviewableBatch([
-      { cycleId: 'c1', companyName: 'Acme', amountThbMinor: 5000, currency: 'THB', previewable: true },
-      { cycleId: 'c2', companyName: 'Beta', amountThbMinor: null, currency: null, previewable: true },
+      { cycleId: 'c1', companyName: 'Acme', invoiceId: 'inv1', amountThbMinor: 5000, currency: 'THB', previewable: true },
+      { cycleId: 'c2', companyName: 'Beta', invoiceId: 'inv2', amountThbMinor: null, currency: null, previewable: true },
     ]);
-    expect(batch).toEqual([{ cycleId: 'c1', companyName: 'Acme' }]);
+    expect(batch).toEqual([{ cycleId: 'c1', companyName: 'Acme', invoiceId: 'inv1' }]);
+  });
+
+  // C1 fix — the /pay fan-out keys on `invoiceId`; a row with no invoice id
+  // could not be settled at all, so it must never enter the batch (defensive:
+  // a previewable row always has one today, since previewable ⇔ issued invoice).
+  it('excludes a previewable, priced row that somehow carries no invoiceId', () => {
+    const batch = selectPreviewableBatch([
+      { cycleId: 'c1', companyName: 'Acme', invoiceId: 'inv1', amountThbMinor: 5000, currency: 'THB', previewable: true },
+      { cycleId: 'c2', companyName: 'Beta', invoiceId: null, amountThbMinor: 6000, currency: 'THB', previewable: true },
+    ]);
+    expect(batch).toEqual([{ cycleId: 'c1', companyName: 'Acme', invoiceId: 'inv1' }]);
   });
 });
 
 describe('selectNotBulkPayableBatch (review round 1 SHOULD 4 — pure, no rendering)', () => {
   it('captures both non-previewable rows AND previewable rows with no legible amount', () => {
     const batch = selectNotBulkPayableBatch([
-      { cycleId: 'c1', companyName: 'Acme', amountThbMinor: 5000, currency: 'THB', previewable: true },
-      { cycleId: 'c2', companyName: 'Beta', amountThbMinor: null, currency: null, previewable: false },
-      { cycleId: 'c3', companyName: 'Gamma', amountThbMinor: null, currency: null, previewable: true },
+      { cycleId: 'c1', companyName: 'Acme', invoiceId: 'inv1', amountThbMinor: 5000, currency: 'THB', previewable: true },
+      { cycleId: 'c2', companyName: 'Beta', invoiceId: null, amountThbMinor: null, currency: null, previewable: false },
+      { cycleId: 'c3', companyName: 'Gamma', invoiceId: 'inv3', amountThbMinor: null, currency: null, previewable: true },
     ]);
     expect(batch).toEqual([
       { cycleId: 'c2', companyName: 'Beta' },
@@ -99,8 +112,8 @@ describe('selectNotBulkPayableBatch (review round 1 SHOULD 4 — pure, no render
 
   it('is the exact complement of selectPreviewableBatch over the same input', () => {
     const items = [
-      { cycleId: 'c1', companyName: 'Acme', amountThbMinor: 5000, currency: 'THB', previewable: true },
-      { cycleId: 'c2', companyName: 'Beta', amountThbMinor: null, currency: null, previewable: false },
+      { cycleId: 'c1', companyName: 'Acme', invoiceId: 'inv1', amountThbMinor: 5000, currency: 'THB', previewable: true },
+      { cycleId: 'c2', companyName: 'Beta', invoiceId: null, amountThbMinor: null, currency: null, previewable: false },
     ];
     const payable = selectPreviewableBatch(items);
     const notPayable = selectNotBulkPayableBatch(items);
@@ -371,8 +384,8 @@ describe('BulkMarkPaidConfirmDialog — handleConfirm wiring (Decision 3, real c
     );
     const onConfirm = vi.fn(
       async (
-        _batch: readonly { cycleId: string; companyName: string }[],
-        _body: { payment_method: string; payment_reference: string; payment_date: string },
+        _batch: readonly { cycleId: string; companyName: string; invoiceId: string }[],
+        _body: { paymentMethod: string; paymentReference: string; paymentDate: string },
         _notBulkPayable: readonly { cycleId: string; companyName: string }[],
       ): Promise<void> => {},
     );
@@ -404,11 +417,15 @@ describe('BulkMarkPaidConfirmDialog — handleConfirm wiring (Decision 3, real c
 
     await waitFor(() => expect(onConfirm).toHaveBeenCalledTimes(1));
     const [batch, body, notBulkPayable] = onConfirm.mock.calls[0]!;
-    expect(batch).toEqual([{ cycleId: 'c1', companyName: 'Acme' }]);
+    // Only the previewable+priced+invoiced row reaches the batch, carrying its
+    // invoiceId for the /pay fan-out. c2 (non-previewable) + c3 (previewable but
+    // unpriced) are excluded.
+    expect(batch).toEqual([{ cycleId: 'c1', companyName: 'Acme', invoiceId: 'inv1' }]);
+    // Body maps to recordPaymentSchema (camelCase) — the shape /pay expects.
     expect(body).toEqual({
-      payment_method: 'bank_transfer',
-      payment_reference: 'REF-1',
-      payment_date: '2026-07-29',
+      paymentMethod: 'bank_transfer',
+      paymentReference: 'REF-1',
+      paymentDate: '2026-07-29',
     });
     expect(notBulkPayable).toEqual([
       { cycleId: 'c2', companyName: 'Beta' },

@@ -81,15 +81,34 @@ import { isMarkPaidIncomplete } from '../[cycleId]/_components/cycle-admin-valid
 const PAYMENT_METHODS = ['bank_transfer', 'cash', 'cheque'] as const;
 type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 
+/**
+ * The record-payment request body shared across every row in the batch
+ * (Decision 4 — one bank transfer covering many members). C1 fix: the batch
+ * now settles the EXISTING issued invoice via F4 `POST /api/invoices/
+ * [invoiceId]/pay`, so these field names mirror `recordPaymentSchema`
+ * (camelCase) EXACTLY — the caller spreads this straight into the POST body
+ * and the route pins `tenantId`/`actorUserId`/`requestId`/`invoiceId`/
+ * `triggeredBy` on top.
+ */
 export interface MarkPaidBatchBody {
-  readonly payment_method: PaymentMethod;
-  readonly payment_reference: string;
-  readonly payment_date: string;
+  readonly paymentMethod: PaymentMethod;
+  readonly paymentReference: string;
+  readonly paymentDate: string;
 }
 
+/** A row shown in the dialog / results panel (display identity only). */
 export interface BulkMarkPaidBatchEntry {
   readonly cycleId: string;
   readonly companyName: string;
+}
+
+/**
+ * A bulk-payable row: previewable, priced, AND carrying its issued invoice's
+ * id — the caller POSTs `/api/invoices/{invoiceId}/pay` per entry (C1 fix:
+ * record payment against the EXISTING issued invoice, never mint-and-pay).
+ */
+export interface BulkMarkPaidPayableEntry extends BulkMarkPaidBatchEntry {
+  readonly invoiceId: string;
 }
 
 /** Client-side mirror of `SettlementPreviewRow` (application-layer, branded
@@ -98,6 +117,7 @@ export interface BulkMarkPaidBatchEntry {
 interface PreviewItem {
   readonly cycleId: string;
   readonly companyName: string;
+  readonly invoiceId: string | null;
   readonly amountThbMinor: number | null;
   readonly currency: string | null;
   readonly previewable: boolean;
@@ -132,7 +152,7 @@ export interface BulkMarkPaidConfirmDialogProps {
    * results panel, not here).
    */
   readonly onConfirm: (
-    batch: readonly BulkMarkPaidBatchEntry[],
+    batch: readonly BulkMarkPaidPayableEntry[],
     body: MarkPaidBatchBody,
     notBulkPayable: readonly BulkMarkPaidBatchEntry[],
   ) => Promise<void>;
@@ -140,23 +160,34 @@ export interface BulkMarkPaidConfirmDialogProps {
 }
 
 /**
- * Decision 3 (tightened by review round 1, SHOULD 3) — the ONLY rows a bulk
- * mark-paid batch may act on: `previewable` AND a legible THB amount. A row
- * with `previewable: true` but a null `amountThbMinor` renders an em-dash
- * and must NEVER be money-mutated blind — defensive today (Task 9 rows
- * always carry an amount), but on the correct side of a money decision.
+ * Decision 3 (tightened by review round 1, SHOULD 3; C1 fix adds the
+ * invoiceId gate) — the ONLY rows a bulk mark-paid batch may act on:
+ * `previewable` AND a legible THB amount AND a linked issued `invoiceId`
+ * (the id the caller POSTs `/api/invoices/{invoiceId}/pay` against). A
+ * previewable row is ALWAYS one whose linked invoice is `status='issued'`
+ * (Task 9), so it always carries an `invoiceId` today — the null-guard is
+ * defensive, but a batch row with no invoice id could not be settled at all,
+ * so it must never be shown as payable.
  */
-function isBulkPayable(item: PreviewItem): boolean {
-  return item.previewable && item.amountThbMinor !== null;
+function isBulkPayable(
+  item: PreviewItem,
+): item is PreviewItem & { readonly invoiceId: string; readonly amountThbMinor: number } {
+  return (
+    item.previewable && item.amountThbMinor !== null && item.invoiceId !== null
+  );
 }
 
 /** Pure (no I/O, no rendering) so it is unit-testable without a Base UI Dialog. */
 export function selectPreviewableBatch(
   items: readonly PreviewItem[],
-): BulkMarkPaidBatchEntry[] {
+): BulkMarkPaidPayableEntry[] {
   return items
     .filter(isBulkPayable)
-    .map((i) => ({ cycleId: i.cycleId, companyName: i.companyName }));
+    .map((i) => ({
+      cycleId: i.cycleId,
+      companyName: i.companyName,
+      invoiceId: i.invoiceId,
+    }));
 }
 
 /**
@@ -230,6 +261,7 @@ export function BulkMarkPaidConfirmDialog({
           items?: ReadonlyArray<{
             cycle_id: string;
             company_name: string;
+            invoice_id: string | null;
             amount_thb_minor: number | null;
             currency: string | null;
             previewable: boolean;
@@ -250,6 +282,7 @@ export function BulkMarkPaidConfirmDialog({
           items: body.items.map((r) => ({
             cycleId: r.cycle_id,
             companyName: r.company_name,
+            invoiceId: r.invoice_id,
             amountThbMinor: r.amount_thb_minor,
             currency: r.currency,
             previewable: r.previewable,
@@ -291,9 +324,9 @@ export function BulkMarkPaidConfirmDialog({
       await onConfirm(
         batch,
         {
-          payment_method: paymentMethod,
-          payment_reference: trimmedReference,
-          payment_date: paymentDate,
+          paymentMethod,
+          paymentReference: trimmedReference,
+          paymentDate,
         },
         notBulkPayable,
       );

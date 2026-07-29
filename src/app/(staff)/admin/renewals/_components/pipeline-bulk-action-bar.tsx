@@ -10,16 +10,29 @@
  * chain (reused verbatim from `@/components/broadcast/reason-confirmation-
  * dialog`), `BulkProgressIndicator`, and the `BULK_CAP` (100) guard.
  *
- * Two actions, both fanning out over the EXISTING per-cycle routes (no new
- * settlement path — Constitution Principle IV):
- *   - **Send reminder** — `POST …/[cycleId]/send-reminder-now`, over the
- *     WHOLE selection (no previewable restriction).
- *   - **Mark paid** — `POST …/[cycleId]/mark-paid-offline`, over ONLY the
- *     previewable subset `BulkMarkPaidConfirmDialog` hands back (Decision 3).
+ * Two actions, both fanning out over EXISTING routes (no new settlement
+ * path — Constitution Principle IV):
+ *   - **Send reminder** — `POST …/renewals/[cycleId]/send-reminder-now`,
+ *     over the WHOLE selection (no previewable restriction).
+ *   - **Mark paid** — `POST /api/invoices/[invoiceId]/pay` (the F4
+ *     record-payment route), over ONLY the previewable subset
+ *     `BulkMarkPaidConfirmDialog` hands back, keyed by each row's linked
+ *     issued `invoiceId` (Decision 3). C1 fix (whole-branch review): the
+ *     fan-out used to POST `…/[cycleId]/mark-paid-offline`, which is a
+ *     MINT-AND-PAY route — it REFUSES any cycle that already has a live
+ *     membership bill (`membership_bill_already_exists`), and every
+ *     previewable row HAS one (previewable ⇔ the linked invoice is
+ *     `issued`), so the whole batch 409'd and marked NOTHING paid. The F4
+ *     record-payment route settles the EXISTING issued invoice (issued →
+ *     paid, allocates the receipt, and — F8-flag on — fires the same
+ *     `f8OnPaidCallbacks` the online rail does: completes the cycle, opens
+ *     the next, applies any tier upgrade). It NEVER mints a second §86/4,
+ *     and is IDEMPOTENT (an already-`paid` invoice short-circuits), so a
+ *     retry is always safe.
  *
  * The Task 11 brief's own `fanOut` sketch (`res.ok ? ok : 409/422 ? skipped
- * : failed`) is TOO COARSE and is SUPERSEDED by the financial-integrity
- * review's Decisions — the real route bodies must be parsed:
+ * : failed`) is TOO COARSE and is SUPERSEDED — the real route bodies must
+ * be parsed:
  *
  *   - `send-reminder-now` — a `200` does NOT mean success: the body carries
  *     `{ outcome: { kind } }` where `kind` is `sent`/`task_created` (ok),
@@ -29,18 +42,19 @@
  *     bucket — the route rate-limits 30/5min per (tenant, admin) and
  *     `BULK_CAP` is 100, so a bulk of >30 WILL hit this mid-batch; it is
  *     surfaced, never auto-retried.
- *   - `mark-paid-offline` — `409` is used for THREE semantically different
- *     things the body `error.code` must disambiguate: a benign not-payable
- *     state (`cycle_not_payable`, no money moved) vs a NEEDS-ACTION state
- *     (`member_terminated` / `member_archived` — no money moved, but the
- *     member must be reactivated/restored before the SAME real payment can
- *     be recorded; review round 1 SHOULD 1 split this out of `skipped` so a
- *     treasurer never silently drops a member whose bank transfer still
- *     needs recording) vs an ORPHAN (`f4_orphan_invoice` /
- *     `membership_bill_already_exists` — a §87 document number is already
- *     burned; retrying would MINT A DUPLICATE). Orphans and needs-action
- *     rows each get their own bucket, kept visible, never auto-retried.
- *     `422`/`404`/`502`/`500`/a network throw all land in `failed`.
+ *   - `/api/invoices/[invoiceId]/pay` — idempotent record-payment, so the
+ *     old mint-and-pay orphan / §87-already-burned / do-not-retry class is
+ *     GONE. `200` = paid (or an idempotent already-paid replay) → `ok`.
+ *     `409` splits by `error.code`: `invalid_status`/`concurrent_state_
+ *     change` (the invoice already moved on — voided/credited/paid by
+ *     someone else; no action lost) → `skipped`; `membership_terminated` +
+ *     the config/legacy codes (`settings_missing`,
+ *     `legacy_no_tin_event_needs_remediation`, `legacy_invoice_needs_
+ *     reissue`, `new_flow_bill_requires_flag_on`) → `needsAction` (a human
+ *     must reactivate / restore a flag / re-issue before the same real
+ *     payment can be recorded). `429` → `rateLimited` (20 pays / 5 min per
+ *     (tenant, actor); a bulk of >20 hits it mid-batch). `404`/`422`/`500`/
+ *     a network throw all land in `failed`.
  *
  * Decision 5 (continue-on-error, no auto-retry, failed/skipped rows kept
  * VISIBLE — "a bare count is not enough on a money screen") is why the
@@ -82,6 +96,7 @@ import { BULK_CAP } from '@/lib/members-bulk-constants';
 import {
   BulkMarkPaidConfirmDialog,
   type BulkMarkPaidBatchEntry,
+  type BulkMarkPaidPayableEntry,
   type MarkPaidBatchBody,
 } from './bulk-mark-paid-confirm-dialog';
 
@@ -89,7 +104,6 @@ type BulkOutcomeBucket =
   | 'ok'
   | 'skipped'
   | 'failed'
-  | 'orphan'
   | 'rateLimited'
   | 'needsAction';
 type BulkAction = 'sendReminder' | 'markPaid';
@@ -118,7 +132,6 @@ function groupByBucket(items: readonly BulkOutcomeItem[]): BucketGroups {
     ok: [],
     skipped: [],
     failed: [],
-    orphan: [],
     rateLimited: [],
     needsAction: [],
   };
@@ -148,50 +161,67 @@ function classifySendReminderOutcome(res: Response, body: unknown): BulkOutcomeB
 }
 
 /**
- * `mark-paid-offline`'s outcome → bucket mapping. `f4_orphan_invoice` and
- * `membership_bill_already_exists` are 409s that must NEVER be retried (a
- * §87 document number is already burned) — kept in their own `orphan`
- * bucket. `member_terminated` and `member_archived` are ALSO 409s with no
- * money moved, but they are NOT benign "nothing to do" — the same real
- * bank transfer still needs recording once the member is
- * reactivated/restored, so review round 1 (SHOULD 1) gives them their own
- * `needsAction` bucket rather than folding them into the truly-benign
- * `cycle_not_payable` 409 that lands in `skipped`.
+ * `/api/invoices/[invoiceId]/pay` (F4 record-payment) outcome → bucket
+ * mapping. C1 fix: bulk mark-paid records payment on the EXISTING issued
+ * invoice instead of the mint-and-pay `mark-paid-offline` route, so the
+ * whole orphan / §87-already-burned / do-not-retry class is GONE —
+ * record-payment is idempotent (an already-`paid` invoice short-circuits)
+ * and never mints a second §86/4, so every failure here is safe to surface
+ * and re-run.
+ *
+ *   - 200 (fresh pay OR idempotent already-paid replay)          → ok
+ *   - 409 `invalid_status` / `concurrent_state_change`            → skipped
+ *     (the invoice already moved on — voided / credited / paid by someone
+ *     else; no action was lost)
+ *   - 409 `membership_terminated` / `settings_missing` /
+ *     `legacy_no_tin_event_needs_remediation` /
+ *     `legacy_invoice_needs_reissue` / `new_flow_bill_requires_flag_on`
+ *                                                                 → needsAction
+ *     (a human must reactivate / restore a flag / re-issue before the same
+ *     real payment can be recorded — payment still owed)
+ *   - 429 rate_limited                                            → rateLimited
+ *     (20 pays / 5 min per (tenant, actor); a bulk of >20 hits it mid-batch)
+ *   - 404 / 422 / 500 (+ any unmapped status / network throw)     → failed
  */
 function classifyMarkPaidOutcome(res: Response, body: unknown): BulkOutcomeBucket {
   if (res.ok) return 'ok';
+  if (res.status === 429) return 'rateLimited';
   const code = (body as { error?: { code?: string } } | null)?.error?.code;
   if (res.status === 409) {
-    if (code === 'f4_orphan_invoice' || code === 'membership_bill_already_exists') {
-      return 'orphan';
+    // The invoice already moved on (voided / credited / paid by someone
+    // else) — benign, no action lost.
+    if (code === 'invalid_status' || code === 'concurrent_state_change') {
+      return 'skipped';
     }
-    if (code === 'member_terminated' || code === 'member_archived') {
-      return 'needsAction';
-    }
-    return 'skipped';
+    // membership_terminated + the config/legacy codes — a human must resolve
+    // it (reactivate / restore a flag / void + re-issue) before the same real
+    // payment can be recorded. Payment is still owed, so NOT a benign skip.
+    return 'needsAction';
   }
-  // 422 (+404) permanent/actionable and 502/500 transient both surface as
-  // `failed` — Decision 5 only requires the orphan/needsAction buckets be
-  // kept distinct from these, not a further permanent/transient split.
+  // 404 / 422 / 500 (+ any unmapped status) — hard failure, kept visible.
   return 'failed';
 }
 
 /**
- * Sequential (not `Promise.all`) fan-out over an existing per-cycle route.
- * Mark-paid mints an invoice + holds a per-(tenant, invoice) advisory lock
- * per row; serialising bounds DB/lock contention and keeps
- * `BulkProgressIndicator`'s elapsed-time feedback meaningful. Continue-
- * on-error (Decision 5): one entry throwing/failing never stops the rest.
+ * Sequential (not `Promise.all`) fan-out over an existing route. Mark-paid's
+ * record-payment holds a per-(tenant, invoice) advisory lock and is
+ * rate-limited (20 / 5 min per (tenant, actor)); serialising bounds DB/lock
+ * contention, keeps `BulkProgressIndicator`'s elapsed-time feedback
+ * meaningful, and lets a mid-batch 429 be surfaced without racing more
+ * requests behind it. Continue-on-error (Decision 5): one entry
+ * throwing/failing never stops the rest. `request` receives the WHOLE entry
+ * so mark-paid can key its POST on `invoiceId` while send-reminder keys on
+ * `cycleId`.
  */
-async function runFanOut(
-  entries: ReadonlyArray<{ cycleId: string; companyName: string }>,
-  request: (cycleId: string) => Promise<Response>,
+async function runFanOut<E extends { cycleId: string; companyName: string }>(
+  entries: readonly E[],
+  request: (entry: E) => Promise<Response>,
   classify: (res: Response, body: unknown) => BulkOutcomeBucket,
 ): Promise<BulkOutcomeItem[]> {
   const items: BulkOutcomeItem[] = [];
   for (const entry of entries) {
     try {
-      const res = await request(entry.cycleId);
+      const res = await request(entry);
       let body: unknown = null;
       try {
         body = await res.json();
@@ -230,10 +260,10 @@ export function PipelineBulkActionBar({
   const [markPaidDialogOpen, setMarkPaidDialogOpen] = useState(false);
   const [executing, setExecuting] = useState(false);
   const [progress, setProgress] = useState<{ action: BulkAction; total: number } | null>(null);
-  // Decision 5 — persists across a run so failed/skipped/orphan company
-  // names stay visible even after `onClear()` empties `selectedCycleIds`
-  // and `router.refresh()` reloads the table. Independent of the live
-  // selection on purpose (see the module docstring).
+  // Decision 5 — persists across a run so failed/skipped/needs-action
+  // company names stay visible even after `onClear()` empties
+  // `selectedCycleIds` and `router.refresh()` reloads the table. Independent
+  // of the live selection on purpose (see the module docstring).
   const [lastRunResult, setLastRunResult] = useState<RunResult | null>(null);
 
   const count = selectedCycleIds.length;
@@ -328,14 +358,12 @@ export function PipelineBulkActionBar({
           parts.push(t('markPaidSkipped', { count: buckets.skipped.length }));
         if (buckets.needsAction.length)
           parts.push(t('markPaidNeedsAction', { count: buckets.needsAction.length }));
-        if (buckets.orphan.length)
-          parts.push(t('markPaidOrphan', { count: buckets.orphan.length }));
         if (buckets.failed.length)
           parts.push(t('markPaidFailed', { count: buckets.failed.length }));
       }
       const message = parts.join(' · ');
       const hasError =
-        buckets.failed.length > 0 || buckets.orphan.length > 0 || buckets.needsAction.length > 0;
+        buckets.failed.length > 0 || buckets.needsAction.length > 0;
       if (hasError) toast.error(message);
       else if (buckets.ok.length > 0) toast.success(message);
       else toast.info(message);
@@ -343,7 +371,6 @@ export function PipelineBulkActionBar({
       const hasIssues =
         buckets.skipped.length +
           buckets.failed.length +
-          buckets.orphan.length +
           buckets.needsAction.length +
           buckets.rateLimited.length >
         0;
@@ -378,8 +405,8 @@ export function PipelineBulkActionBar({
     try {
       const items = await runFanOut(
         entries,
-        (cycleId) =>
-          fetch(`/api/admin/renewals/${encodeURIComponent(cycleId)}/send-reminder-now`, {
+        (entry) =>
+          fetch(`/api/admin/renewals/${encodeURIComponent(entry.cycleId)}/send-reminder-now`, {
             method: 'POST',
           }),
         classifySendReminderOutcome,
@@ -393,17 +420,22 @@ export function PipelineBulkActionBar({
 
   const handleMarkPaidConfirm = useCallback(
     async (
-      batch: readonly BulkMarkPaidBatchEntry[],
+      batch: readonly BulkMarkPaidPayableEntry[],
       body: MarkPaidBatchBody,
       notBulkPayable: readonly BulkMarkPaidBatchEntry[],
     ) => {
       setExecuting(true);
       setProgress({ action: 'markPaid', total: batch.length });
       try {
+        // C1 fix — settle the EXISTING issued invoice via the F4
+        // record-payment route (issued → paid + F8 cycle completion), keyed
+        // on each row's `invoiceId`. NOT the mint-and-pay mark-paid-offline
+        // route, which 409s on every previewable row (they all already have a
+        // live membership bill). The shared `body` maps to `recordPaymentSchema`.
         const items = await runFanOut(
           batch,
-          (cycleId) =>
-            fetch(`/api/admin/renewals/${encodeURIComponent(cycleId)}/mark-paid-offline`, {
+          (entry) =>
+            fetch(`/api/invoices/${encodeURIComponent(entry.invoiceId)}/pay`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(body),
@@ -538,10 +570,10 @@ export function PipelineBulkActionBar({
  * Decision 5 — the persistent post-run breakdown. Renders ONLY the buckets
  * that need the treasurer's attention (never `ok` — a fully-successful run
  * has nothing left to show and clears itself, see `reportOutcome` above).
- * `orphan` and `needsAction` are listed first: both are do-not-retry,
- * needs-a-human buckets. `notBulkPayable` (review round 1, SHOULD 4) is a
- * separate list entirely — those rows never even fanned out, so they are
- * never in `result.items`/`groupByBucket` at all.
+ * `needsAction` is listed first: it is the needs-a-human bucket (reactivate
+ * / restore a flag / re-issue, then record the payment). `notBulkPayable`
+ * (review round 1, SHOULD 4) is a separate list entirely — those rows never
+ * even fanned out, so they are never in `result.items`/`groupByBucket` at all.
  *
  * `panelRef` + `tabIndex={-1}` (review round 1, MUST-FIX) make this
  * container a valid script-focus target — see the double-RAF effect in
@@ -560,7 +592,7 @@ function BulkRunResultsPanel({
   const buckets = groupByBucket(result.items);
   const heading =
     result.action === 'sendReminder' ? t('resultsHeadingReminder') : t('resultsHeadingMarkPaid');
-  const sections = (['orphan', 'needsAction', 'failed', 'rateLimited', 'skipped'] as const)
+  const sections = (['needsAction', 'failed', 'rateLimited', 'skipped'] as const)
     .map((key) => ({ key, items: buckets[key] }))
     .filter((s) => s.items.length > 0);
   const notBulkPayable = result.notBulkPayable;

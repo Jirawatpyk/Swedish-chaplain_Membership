@@ -65,7 +65,7 @@ vi.mock('@/components/shell/confirmation-dialog', () => ({
 // `notBulkPayableOverride` stands in for the dialog's OWN excluded-rows
 // list (review round 1, SHOULD 4) — defaults to empty so existing tests
 // are unaffected.
-let markPaidBatchOverride: Array<{ cycleId: string; companyName: string }> = [];
+let markPaidBatchOverride: Array<{ cycleId: string; companyName: string; invoiceId: string }> = [];
 let notBulkPayableOverride: Array<{ cycleId: string; companyName: string }> = [];
 vi.mock('@/app/(staff)/admin/renewals/_components/bulk-mark-paid-confirm-dialog', () => ({
   BulkMarkPaidConfirmDialog: ({
@@ -74,8 +74,8 @@ vi.mock('@/app/(staff)/admin/renewals/_components/bulk-mark-paid-confirm-dialog'
   }: {
     open: boolean;
     onConfirm: (
-      batch: Array<{ cycleId: string; companyName: string }>,
-      body: { payment_method: string; payment_reference: string; payment_date: string },
+      batch: Array<{ cycleId: string; companyName: string; invoiceId: string }>,
+      body: { paymentMethod: string; paymentReference: string; paymentDate: string },
       notBulkPayable: Array<{ cycleId: string; companyName: string }>,
     ) => Promise<void>;
   }) =>
@@ -86,9 +86,9 @@ vi.mock('@/app/(staff)/admin/renewals/_components/bulk-mark-paid-confirm-dialog'
           onConfirm(
             markPaidBatchOverride,
             {
-              payment_method: 'bank_transfer',
-              payment_reference: 'REF-1',
-              payment_date: '2026-07-29',
+              paymentMethod: 'bank_transfer',
+              paymentReference: 'REF-1',
+              paymentDate: '2026-07-29',
             },
             notBulkPayableOverride,
           )
@@ -214,23 +214,63 @@ describe('PipelineBulkActionBar — send reminder fan-out', () => {
 });
 
 describe('PipelineBulkActionBar — mark paid outcome bucketing (Decision 5)', () => {
-  it('buckets f4_orphan_invoice separately from a benign cycle_not_payable, keeping BOTH company names visible', async () => {
+  // C1 fix — the fan-out now POSTs the F4 record-payment route keyed on each
+  // row's invoiceId, NOT the mint-and-pay `…/[cycleId]/mark-paid-offline`.
+  it('POSTs /api/invoices/[invoiceId]/pay once per previewable row (not mark-paid-offline)', async () => {
     markPaidBatchOverride = [
-      { cycleId: 'c1', companyName: 'Acme' },
-      { cycleId: 'c2', companyName: 'Beta' },
+      { cycleId: 'c1', companyName: 'Acme', invoiceId: 'inv1' },
+      { cycleId: 'c2', companyName: 'Beta', invoiceId: 'inv2' },
+    ];
+    const calls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        calls.push(String(url));
+        return jsonResponse({ status: 'paid' });
+      }),
+    );
+
+    render(
+      wrap(
+        <PipelineBulkActionBar
+          selectedCycleIds={['c1', 'c2']}
+          selectedCompanyNames={['Acme', 'Beta']}
+          totalMatching={2}
+          onClear={vi.fn()}
+        />,
+      ),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: B.actions.markPaid }));
+    fireEvent.click(screen.getByRole('button', { name: B.confirmMarkPaidAction }));
+
+    await waitFor(() => {
+      expect(calls.filter((u) => u.includes('/pay'))).toHaveLength(2);
+    });
+    expect(calls).toContain('/api/invoices/inv1/pay');
+    expect(calls).toContain('/api/invoices/inv2/pay');
+    // Never the old mint-and-pay route.
+    expect(calls.some((u) => u.includes('mark-paid-offline'))).toBe(false);
+  });
+
+  // 409 splits by code: invalid_status / concurrent_state_change are benign
+  // "the invoice already moved on" skips (no action lost), while
+  // membership_terminated is a needs-a-human bucket (payment still owed). Both
+  // stay visible under their own bucket — a bare count is not enough on money.
+  it('buckets a membership_terminated 409 as needs-action and an invalid_status 409 as skipped, keeping BOTH visible', async () => {
+    markPaidBatchOverride = [
+      { cycleId: 'c1', companyName: 'Acme', invoiceId: 'inv1' },
+      { cycleId: 'c2', companyName: 'Beta', invoiceId: 'inv2' },
     ];
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: string) => {
         const u = String(url);
-        if (u.includes('/c1/mark-paid-offline')) {
-          return jsonResponse(
-            { error: { code: 'f4_orphan_invoice', orphan_invoice_id: 'inv-orphan' } },
-            409,
-          );
+        if (u.includes('/inv1/pay')) {
+          return jsonResponse({ error: { code: 'membership_terminated' } }, 409);
         }
-        if (u.includes('/c2/mark-paid-offline')) {
-          return jsonResponse({ error: { code: 'cycle_not_payable' } }, 409);
+        if (u.includes('/inv2/pay')) {
+          return jsonResponse({ error: { code: 'invalid_status' } }, 409);
         }
         throw new Error(`unexpected fetch ${u}`);
       }),
@@ -251,25 +291,24 @@ describe('PipelineBulkActionBar — mark paid outcome bucketing (Decision 5)', (
     fireEvent.click(screen.getByRole('button', { name: B.confirmMarkPaidAction }));
 
     await waitFor(() => {
-      expect(screen.getByText(B.resultLabels.orphan)).toBeInTheDocument();
+      expect(screen.getByText(B.resultLabels.needsAction)).toBeInTheDocument();
     });
     expect(screen.getByText(B.resultLabels.skipped)).toBeInTheDocument();
     expect(screen.getByText('Acme')).toBeInTheDocument();
     expect(screen.getByText('Beta')).toBeInTheDocument();
-    // Orphan is treated as needing attention — error-level toast, not a
-    // green tick, even though nothing here is a hard "failed".
+    // needs-action is treated as needing attention — error-level toast.
     expect(toastError).toHaveBeenCalled();
   });
 
-  // Review round 1 (SHOULD 1) — `member_terminated`/`member_archived` are
-  // 409s with no money moved, but they are NOT "nothing to do": the same
-  // real bank transfer still needs recording once the member is
-  // reactivated/restored. They must land in their OWN `needsAction`
-  // bucket, never silently folded into the benign `skipped` bucket.
-  it.each(['member_terminated', 'member_archived'])(
+  // membership_terminated + the config/legacy codes are all 409s with no money
+  // moved, but they are NOT "nothing to do": the same real bank transfer still
+  // needs recording once a human reactivates / restores a flag / re-issues.
+  // They must land in their OWN `needsAction` bucket, never folded into the
+  // benign `skipped` bucket.
+  it.each(['membership_terminated', 'settings_missing'])(
     'buckets a %s 409 as needs-action, not skipped',
     async (code) => {
-      markPaidBatchOverride = [{ cycleId: 'c1', companyName: 'Acme' }];
+      markPaidBatchOverride = [{ cycleId: 'c1', companyName: 'Acme', invoiceId: 'inv1' }];
       vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ error: { code } }, 409)));
 
       render(
@@ -295,12 +334,53 @@ describe('PipelineBulkActionBar — mark paid outcome bucketing (Decision 5)', (
     },
   );
 
-  it('reports a fully successful mark-paid batch with a plain success toast and no persisted panel', async () => {
-    markPaidBatchOverride = [{ cycleId: 'c1', companyName: 'Acme' }];
+  // 429: record-payment rate-limits 20 pays / 5 min per (tenant, actor); a
+  // large bulk hits it mid-batch. It lands in its own bucket, is never
+  // retried (exactly one POST per row), and the affected row stays visible.
+  it('buckets a 429 mid-batch as rate-limited, never retries it, and keeps the row visible', async () => {
+    markPaidBatchOverride = [
+      { cycleId: 'c1', companyName: 'Acme', invoiceId: 'inv1' },
+      { cycleId: 'c2', companyName: 'Beta', invoiceId: 'inv2' },
+    ];
+    const calls: string[] = [];
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => jsonResponse({ outcome: 'completed', cycle_status: 'completed' })),
+      vi.fn(async (url: string) => {
+        const u = String(url);
+        calls.push(u);
+        if (u.includes('/inv2/pay')) {
+          return jsonResponse({ error: { code: 'rate_limited' } }, 429);
+        }
+        return jsonResponse({ status: 'paid' });
+      }),
     );
+
+    render(
+      wrap(
+        <PipelineBulkActionBar
+          selectedCycleIds={['c1', 'c2']}
+          selectedCompanyNames={['Acme', 'Beta']}
+          totalMatching={2}
+          onClear={vi.fn()}
+        />,
+      ),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: B.actions.markPaid }));
+    fireEvent.click(screen.getByRole('button', { name: B.confirmMarkPaidAction }));
+
+    await waitFor(() => {
+      expect(screen.getByText(B.resultLabels.rateLimited)).toBeInTheDocument();
+    });
+    // No retry — exactly one POST per row.
+    expect(calls.filter((u) => u.includes('/pay'))).toHaveLength(2);
+    expect(screen.getByText('Beta')).toBeInTheDocument();
+  });
+
+  it('reports a fully successful mark-paid batch (200, incl. idempotent already-paid) with a plain success toast and no persisted panel', async () => {
+    markPaidBatchOverride = [{ cycleId: 'c1', companyName: 'Acme', invoiceId: 'inv1' }];
+    // A 200 (fresh pay OR idempotent already-paid replay) → ok.
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ status: 'paid' })));
 
     render(
       wrap(
@@ -328,12 +408,9 @@ describe('PipelineBulkActionBar — mark paid outcome bucketing (Decision 5)', (
   // would drop them from view and the treasurer would forget the
   // still-unbilled members.
   it('carries not-bulk-payable rows into the results panel under "settle individually", even on an otherwise clean run', async () => {
-    markPaidBatchOverride = [{ cycleId: 'c1', companyName: 'Acme' }];
+    markPaidBatchOverride = [{ cycleId: 'c1', companyName: 'Acme', invoiceId: 'inv1' }];
     notBulkPayableOverride = [{ cycleId: 'c2', companyName: 'Beta' }];
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => jsonResponse({ outcome: 'completed', cycle_status: 'completed' })),
-    );
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ status: 'paid' })));
 
     render(
       wrap(
@@ -420,10 +497,10 @@ describe('PipelineBulkActionBar — accessibility + selection wiring', () => {
   // refresh()` emptying the parent's live selection on the next server
   // render.
   it('keeps the results panel visible after the parent empties selectedCycleIds post-run (Decision 5)', async () => {
-    markPaidBatchOverride = [{ cycleId: 'c1', companyName: 'Acme' }];
+    markPaidBatchOverride = [{ cycleId: 'c1', companyName: 'Acme', invoiceId: 'inv1' }];
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => jsonResponse({ error: { code: 'f4_orphan_invoice' } }, 409)),
+      vi.fn(async () => jsonResponse({ error: { code: 'membership_terminated' } }, 409)),
     );
 
     const { rerender } = render(
@@ -454,7 +531,7 @@ describe('PipelineBulkActionBar — accessibility + selection wiring', () => {
     );
 
     expect(screen.getByText('Acme')).toBeInTheDocument();
-    expect(screen.getByText(B.resultLabels.orphan)).toBeInTheDocument();
+    expect(screen.getByText(B.resultLabels.needsAction)).toBeInTheDocument();
   });
 });
 
