@@ -409,20 +409,40 @@ export function makeDrizzleRenewalEscalationTaskRepo(
         // actually has (RLS-scoped) so the queue's task-type filter control
         // derives a stable, COMPLETE option list regardless of which 50-row
         // page is loaded. Scoped to the current status tab when supplied so
-        // the options match what a chosen filter would return. No `members`
-        // join: task_type is not PII, and an option that maps only to a
-        // GDPR-erased member simply yields an empty (already-handled)
-        // result — cheaper than mirroring the erased-member exclusion here.
+        // the options match what a chosen filter would return.
+        //
+        // R1 — LEFT JOIN `members` + `AND members.erased_at IS NULL` so a
+        // task_type whose tasks all belong to GDPR-erased members is NOT
+        // offered. `listForAdminQueue` + `countMatching` both DROP erased
+        // members; without mirroring that exclusion here the dropdown could
+        // list a type that returns 0 rows the instant it is selected (a
+        // dead-end option). AND-ed at the top-level WHERE (not inside the JOIN
+        // ON) so it removes the row rather than null-blanking columns; LEFT-
+        // JOIN-safe because a genuinely-absent member (cycle-less / member-less
+        // task) left-extends to `erased_at = NULL`, which `isNull` KEEPS. NO
+        // `membership_plans` join — distinct task_types need no plan data, and
+        // the per-fiscal-year-cloned plans would fan out (see listForAdminQueue).
         const statusFilter = opts?.statusFilter;
-        const base = tx
-          .selectDistinct({ taskType: renewalEscalationTasks.taskType })
-          .from(renewalEscalationTasks);
-        const rows =
+        const erasedGuard = isNull(members.erasedAt);
+        const whereExpr =
           statusFilter && statusFilter.length > 0
-            ? await base
-                .where(sql`${renewalEscalationTasks.status} IN ${statusFilter}`)
-                .orderBy(asc(renewalEscalationTasks.taskType))
-            : await base.orderBy(asc(renewalEscalationTasks.taskType));
+            ? and(
+                sql`${renewalEscalationTasks.status} IN ${statusFilter}`,
+                erasedGuard,
+              )
+            : erasedGuard;
+        const rows = await tx
+          .selectDistinct({ taskType: renewalEscalationTasks.taskType })
+          .from(renewalEscalationTasks)
+          .leftJoin(
+            members,
+            and(
+              eq(members.tenantId, renewalEscalationTasks.tenantId),
+              eq(members.memberId, renewalEscalationTasks.memberId),
+            ),
+          )
+          .where(whereExpr)
+          .orderBy(asc(renewalEscalationTasks.taskType));
         return rows.map((r) => r.taskType);
       });
     },

@@ -57,6 +57,9 @@ describe('F8 escalation-task admin queue — membership_plans plan_year fan-out'
   // the taskTypeFilter has something to exclude (proves it returns ONLY the
   // requested type) and listDistinctTaskTypes has >1 type to enumerate.
   let memberId2: string;
+  // R1 — a THIRD member, GDPR-erased, carrying a task_type unique to it, so
+  // listDistinctTaskTypes can be shown to EXCLUDE an erased-only type.
+  let memberId3: string;
 
   beforeAll(async () => {
     user = await createActiveTestUser('admin');
@@ -165,6 +168,35 @@ describe('F8 escalation-task admin queue — membership_plans plan_year fan-out'
         dueAt: new Date(Date.now() + 5 * MS_PER_DAY),
         status: 'open',
       });
+
+      // R1 — a THIRD member that is GDPR-erased (erased_at stamped, company
+      // scrubbed) carrying a task_type unique to it ('phone_call'). Because
+      // listForAdminQueue + countMatching drop erased members, listDistinct-
+      // TaskTypes MUST also exclude this type — otherwise the filter would
+      // offer a dead-end option that returns 0 rows the instant it is picked.
+      memberId3 = randomUUID();
+      await tx.insert(members).values({
+        tenantId: tenant.ctx.slug,
+        memberId: memberId3,
+        memberNumber: nextSeedMemberNumber(),
+        companyName: '[erased]',
+        country: 'TH',
+        planId,
+        planYear: MEMBER_PLAN_YEAR,
+        status: 'active',
+        erasedAt: new Date(),
+      });
+      await tx.insert(renewalEscalationTasks).values({
+        tenantId: tenant.ctx.slug,
+        taskId: randomUUID(),
+        memberId: memberId3,
+        cycleId: null,
+        taskType: 'phone_call',
+        assignedToRole: 'admin',
+        assignedToUserId: null,
+        dueAt: new Date(Date.now() + 3 * MS_PER_DAY),
+        status: 'open',
+      });
     });
   }, 120_000);
 
@@ -261,8 +293,32 @@ describe('F8 escalation-task admin queue — membership_plans plan_year fan-out'
     const types = await repo.listDistinctTaskTypes(tenant.ctx.slug, {
       statusFilter: ['open'],
     });
-    // Freshly-created tenant → only the two seeded open types, each once,
-    // ordered ascending (drives the filter control's stable option list).
+    // THREE open types are seeded, but one ('phone_call') belongs to a
+    // GDPR-erased member and is excluded (R1) — leaving the two live-member
+    // types, each once, ordered ascending (drives the filter's stable option
+    // list).
     expect([...types]).toEqual(['director_call', 'manual_outreach_required']);
+  });
+
+  it('listDistinctTaskTypes excludes a task_type whose only task belongs to a GDPR-erased member (R1)', async () => {
+    const repo = makeDrizzleRenewalEscalationTaskRepo(tenant.ctx);
+    const types = await repo.listDistinctTaskTypes(tenant.ctx.slug, {
+      statusFilter: ['open'],
+    });
+    // The erased member's open 'phone_call' task must NOT surface as a filter
+    // option — selecting it would return 0 rows (listForAdminQueue +
+    // countMatching both drop erased members), a dead-end.
+    expect(types).not.toContain('phone_call');
+    // The two live-member types are still enumerated.
+    expect(types).toContain('director_call');
+    expect(types).toContain('manual_outreach_required');
+
+    // And the erased member itself never appears in the queue rows (the list
+    // path's own erased-member exclusion — kept consistent with the filter).
+    const page = await repo.listForAdminQueue(tenant.ctx.slug, {
+      pageSize: 100,
+      sort: 'due_at_asc',
+    });
+    expect(page.items.some((task) => task.memberId === memberId3)).toBe(false);
   });
 });
