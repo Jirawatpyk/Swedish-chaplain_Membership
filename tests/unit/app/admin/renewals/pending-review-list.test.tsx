@@ -33,6 +33,8 @@ function renderList(rows: ReadonlyArray<PendingReviewRow>) {
 const UNMARKED: PendingReviewRow = {
   cycleId: '33333333-3333-3333-3333-333333333333',
   companyName: 'Undecided Co',
+  memberId: 'member-undecided',
+  memberNumberDisplay: 'SCCM-0042',
   pendingSinceLabel: '1 April 2026',
   expiryLabel: '1 January 2027',
   refundSettling: false,
@@ -41,6 +43,8 @@ const UNMARKED: PendingReviewRow = {
 const MARKED: PendingReviewRow = {
   cycleId: '44444444-4444-4444-4444-444444444444',
   companyName: 'Rejected Co',
+  memberId: 'member-rejected',
+  memberNumberDisplay: 'SCCM-0043',
   pendingSinceLabel: '5 April 2026',
   expiryLabel: '1 January 2027',
   refundSettling: true,
@@ -79,5 +83,35 @@ describe('<PendingReviewList> — UX-A Bug 2 marked-row rendering', () => {
     expect(
       within(unmarkedRow as HTMLElement).getByRole('link', { name: 'Review' }),
     ).toBeInTheDocument();
+  });
+});
+
+describe('<PendingReviewList> — B4 member link + SCCM cell', () => {
+  afterEach(() => cleanup());
+
+  it('renders the company as a member link with the SCCM number when memberId is present', () => {
+    renderList([UNMARKED]);
+    const link = screen.getByRole('link', { name: 'Undecided Co' });
+    expect(link).toHaveAttribute('href', '/admin/members/member-undecided');
+    // SCCM number shows in muted secondary text next to the company link.
+    expect(screen.getByText('SCCM-0042')).toBeInTheDocument();
+  });
+
+  it('renders the company as plain text (no link, no SCCM) when memberId is absent', () => {
+    const orphan: PendingReviewRow = {
+      cycleId: '55555555-5555-5555-5555-555555555555',
+      companyName: '55555555',
+      memberId: null,
+      memberNumberDisplay: null,
+      pendingSinceLabel: '1 April 2026',
+      expiryLabel: '1 January 2027',
+      refundSettling: false,
+    };
+    renderList([orphan]);
+    // The fallback short-id renders as text, never as a /admin/members/ link.
+    expect(
+      screen.queryByRole('link', { name: '55555555' }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText('55555555')).toBeInTheDocument();
   });
 });

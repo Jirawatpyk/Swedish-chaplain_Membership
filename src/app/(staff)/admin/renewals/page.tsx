@@ -37,6 +37,11 @@ import { getDateFormatLocale } from '@/lib/format-date-localised';
 import { runInTenant } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
 import {
+  resolveMemberNumberPrefix,
+  formatMemberNumber,
+  drizzleMemberSettingsRepo,
+} from '@/modules/members';
+import {
   loadPipeline,
   loadPipelineMoney,
   loadPendingReactivationReview,
@@ -83,7 +88,10 @@ import {
   PendingReviewList,
   type PendingReviewRow,
 } from './_components/pending-review-list';
-import { fetchPendingReviewCompanyNames } from './_lib/pending-review-enrichment';
+import {
+  fetchPendingReviewCompanyNames,
+  type PendingReviewMemberInfo,
+} from './_lib/pending-review-enrichment';
 import { countOpenPendingReviewCycles } from './_lib/pending-review-open-count';
 import { ResultCountAnnouncer } from '@/components/renewals/result-count-announcer';
 import { ResultCountLabel } from '@/components/renewals/result-count-label';
@@ -899,8 +907,12 @@ async function PendingReviewSection({
   const deps = makeRenewalsDeps(tenantSlug);
 
   let cycles: LoadPendingReactivationReviewOutput['cycles'];
-  // memberId → companyName, resolved in ONE batched member read (no N+1).
-  let companyNames: ReadonlyMap<string, string>;
+  // memberId → {companyName, memberNumber, memberId}, resolved in ONE batched
+  // member read (no N+1). B4 — richer shape drives the company LINK + SCCM cell.
+  let memberInfo: ReadonlyMap<string, PendingReviewMemberInfo>;
+  // 055 member-number — per-tenant SCCM prefix, resolved once via the shared
+  // RLS-safe helper (mirrors the admin members list).
+  let memberPrefix: string;
   try {
     const result = await loadPendingReactivationReview(deps, {
       tenantId: tenantSlug,
@@ -917,14 +929,21 @@ async function PendingReviewSection({
     }
     cycles = result.value.cycles;
 
-    // Batch-enrich company names in a SINGLE tenant-scoped read. A throw
-    // here (RLS reject / connection / timeout) is caught below and renders
-    // the same "couldn't load" alert as a cycle-load failure — never a
-    // silently blank list.
-    companyNames = await fetchPendingReviewCompanyNames({
-      tenantSlug,
-      memberIds: cycles.map((c) => c.memberId),
-    });
+    // Batch-enrich member facts (company + member-number) in a SINGLE
+    // tenant-scoped read AND resolve the SCCM prefix (a separate RLS-safe
+    // read), overlapped. Either throw (RLS reject / connection / timeout) is
+    // caught below and renders the same "couldn't load" alert as a cycle-load
+    // failure — never a silently blank list.
+    [memberInfo, memberPrefix] = await Promise.all([
+      fetchPendingReviewCompanyNames({
+        tenantSlug,
+        memberIds: cycles.map((c) => c.memberId),
+      }),
+      resolveMemberNumberPrefix(
+        asTenantContext(tenantSlug),
+        drizzleMemberSettingsRepo,
+      ),
+    ]);
   } catch (e) {
     // B1 (UX-audit PR-B #3) — pending-review previously rendered a DEAD-END
     // LoadErrorCard (no retry), while the SAME page gives the pipeline error
@@ -962,19 +981,29 @@ async function PendingReviewSection({
   const fmtDateOnly = (s: string | null | undefined): string =>
     s ? dtFmtDay.format(new Date(s)) : '—';
 
-  // A member absent from the batch map (archived / cross-tenant-hidden)
-  // degrades to the cycle short-id — same graceful fallback as before, now
-  // without a per-row query.
-  const rows: PendingReviewRow[] = cycles.map((c) => ({
-    cycleId: c.cycleId,
-    companyName: companyNames.get(c.memberId) ?? c.cycleId.slice(0, 8),
-    pendingSinceLabel: fmtDateOnly(c.enteredPendingAt),
-    expiryLabel: fmtDateOnly(c.expiresAt),
-    // UX-A Bug 2: thread the async reject-with-refund marker into the row so a
-    // decided (refund-settling) cycle shows the "Refund settling" pill + "View"
-    // CTA instead of overstating open review work.
-    refundSettling: c.rejectRefundInitiatedAt !== null,
-  }));
+  const rows: PendingReviewRow[] = cycles.map((c) => {
+    const info = memberInfo.get(c.memberId);
+    return {
+      cycleId: c.cycleId,
+      // B4 — a resolved member links to `/admin/members/{id}` with its SCCM
+      // number in muted text (escalation-queue + invoice-table parity). A
+      // member absent from the batch map (archived / cross-tenant-hidden)
+      // degrades to the cycle short-id as PLAIN TEXT (no link, no SCCM) — the
+      // same graceful fallback as before, still without a per-row query.
+      companyName: info?.companyName ?? c.cycleId.slice(0, 8),
+      memberId: info?.memberId ?? null,
+      memberNumberDisplay:
+        info !== undefined
+          ? formatMemberNumber(memberPrefix, info.memberNumber)
+          : null,
+      pendingSinceLabel: fmtDateOnly(c.enteredPendingAt),
+      expiryLabel: fmtDateOnly(c.expiresAt),
+      // UX-A Bug 2: thread the async reject-with-refund marker into the row so a
+      // decided (refund-settling) cycle shows the "Refund settling" pill + "View"
+      // CTA instead of overstating open review work.
+      refundSettling: c.rejectRefundInitiatedAt !== null,
+    };
+  });
 
   return (
     <>
