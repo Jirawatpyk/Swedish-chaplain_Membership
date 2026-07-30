@@ -11,7 +11,13 @@
  * "Review" CTA and shows no pill.
  */
 import { describe, it, expect, afterEach } from 'vitest';
-import { render, screen, within, cleanup } from '@testing-library/react';
+import {
+  render,
+  screen,
+  within,
+  cleanup,
+  fireEvent,
+} from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import {
   PendingReviewList,
@@ -36,8 +42,11 @@ const UNMARKED: PendingReviewRow = {
   memberId: 'member-undecided',
   memberNumberDisplay: 'SCCM-0042',
   pendingSinceLabel: '1 April 2026',
+  pendingSinceEpoch: Date.parse('2026-04-01T00:00:00.000Z'),
   expiryLabel: '1 January 2027',
   refundSettling: false,
+  isAged: false,
+  agingDays: 3,
 };
 
 const MARKED: PendingReviewRow = {
@@ -46,8 +55,11 @@ const MARKED: PendingReviewRow = {
   memberId: 'member-rejected',
   memberNumberDisplay: 'SCCM-0043',
   pendingSinceLabel: '5 April 2026',
+  pendingSinceEpoch: Date.parse('2026-04-05T00:00:00.000Z'),
   expiryLabel: '1 January 2027',
   refundSettling: true,
+  isAged: false,
+  agingDays: 1,
 };
 
 describe('<PendingReviewList> — UX-A Bug 2 marked-row rendering', () => {
@@ -104,8 +116,11 @@ describe('<PendingReviewList> — B4 member link + SCCM cell', () => {
       memberId: null,
       memberNumberDisplay: null,
       pendingSinceLabel: '1 April 2026',
+      pendingSinceEpoch: Date.parse('2026-04-01T00:00:00.000Z'),
       expiryLabel: '1 January 2027',
       refundSettling: false,
+      isAged: false,
+      agingDays: 0,
     };
     renderList([orphan]);
     // The fallback short-id renders as text, never as a /admin/members/ link.
@@ -113,5 +128,76 @@ describe('<PendingReviewList> — B4 member link + SCCM cell', () => {
       screen.queryByRole('link', { name: '55555555' }),
     ).not.toBeInTheDocument();
     expect(screen.getByText('55555555')).toBeInTheDocument();
+  });
+});
+
+describe('<PendingReviewList> — B3 aging chip + sortable "Pending since"', () => {
+  afterEach(() => cleanup());
+
+  const OLDER: PendingReviewRow = {
+    cycleId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+    companyName: 'Older Co',
+    memberId: 'member-older',
+    memberNumberDisplay: 'SCCM-0100',
+    pendingSinceLabel: '1 March 2026',
+    pendingSinceEpoch: Date.parse('2026-03-01T00:00:00.000Z'),
+    expiryLabel: '1 January 2027',
+    refundSettling: false,
+    isAged: true,
+    agingDays: 9,
+  };
+  const NEWER: PendingReviewRow = {
+    cycleId: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+    companyName: 'Newer Co',
+    memberId: 'member-newer',
+    memberNumberDisplay: 'SCCM-0200',
+    pendingSinceLabel: '20 April 2026',
+    pendingSinceEpoch: Date.parse('2026-04-20T00:00:00.000Z'),
+    expiryLabel: '1 January 2027',
+    refundSettling: false,
+    isAged: false,
+    agingDays: 2,
+  };
+
+  function companyOrder(): string[] {
+    return screen
+      .getAllByRole('row')
+      // drop the header row (has no data cells with company links)
+      .slice(1)
+      .map((tr) => within(tr).getByRole('link', { name: /Co$/ }).textContent!);
+  }
+
+  it('defaults to oldest-first so the most-aged row leads', () => {
+    // Pass NEWER first to prove the component sorts (not just preserves input).
+    renderList([NEWER, OLDER]);
+    expect(companyOrder()).toEqual(['Older Co', 'Newer Co']);
+  });
+
+  it('toggles to newest-first when the header button is clicked', () => {
+    renderList([NEWER, OLDER]);
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Sort by pending since, newest first',
+      }),
+    );
+    expect(companyOrder()).toEqual(['Newer Co', 'Older Co']);
+  });
+
+  it('marks the columnheader aria-sort state (ascending by default)', () => {
+    renderList([NEWER, OLDER]);
+    const header = screen
+      .getByRole('button', { name: 'Sort by pending since, newest first' })
+      .closest('th');
+    expect(header).toHaveAttribute('aria-sort', 'ascending');
+  });
+
+  it('renders the amber "Aged {n}d" chip only on an aged row', () => {
+    renderList([OLDER, NEWER]);
+    expect(screen.getByText('Aged 9d')).toBeInTheDocument();
+    // NEWER is not aged → no chip for it.
+    const newerRow = screen.getByText('Newer Co').closest('tr');
+    expect(
+      within(newerRow as HTMLElement).queryByText(/^Aged/),
+    ).not.toBeInTheDocument();
   });
 });

@@ -123,6 +123,15 @@ const SORT_VALUES: ReadonlySet<PipelineSort> = new Set([
 
 const DEFAULT_SORT: PipelineSort = 'expires_at_asc';
 
+/**
+ * B3 (UX-audit PR-B #9) — a pending-review decision lingering this many days
+ * (or more) is stale ops and gets a subtle amber "Aged {n}d" chip so the most
+ * overdue decisions stand out. Computed server-side (`enteredPendingAt` + now).
+ * Proposed 7 (a full week) — enterprise-ux confirms the threshold in review.
+ */
+const PENDING_REVIEW_AGING_DAYS = 7;
+const PENDING_REVIEW_DAY_MS = 24 * 60 * 60 * 1000;
+
 interface SearchParams {
   readonly tier?: string;
   readonly urgency?: string;
@@ -981,8 +990,22 @@ async function PendingReviewSection({
   const fmtDateOnly = (s: string | null | undefined): string =>
     s ? dtFmtDay.format(new Date(s)) : '—';
 
+  // B3 — single wall-clock read for the whole list so every row's aging is
+  // measured against the same instant (no per-row `Date.now()` drift).
+  const now = Date.now();
+
   const rows: PendingReviewRow[] = cycles.map((c) => {
     const info = memberInfo.get(c.memberId);
+    // B3 — aging measured off `enteredPendingAt`. A pending cycle always has it
+    // set (discriminated union), but the array element type is the RenewalCycle
+    // union, so guard the null arm defensively: no timestamp → epoch NaN (sorts
+    // last, never aged).
+    const pendingSinceEpoch = c.enteredPendingAt
+      ? Date.parse(c.enteredPendingAt)
+      : Number.NaN;
+    const agingDays = Number.isFinite(pendingSinceEpoch)
+      ? Math.floor((now - pendingSinceEpoch) / PENDING_REVIEW_DAY_MS)
+      : 0;
     return {
       cycleId: c.cycleId,
       // B4 — a resolved member links to `/admin/members/{id}` with its SCCM
@@ -997,11 +1020,17 @@ async function PendingReviewSection({
           ? formatMemberNumber(memberPrefix, info.memberNumber)
           : null,
       pendingSinceLabel: fmtDateOnly(c.enteredPendingAt),
+      // B3 — raw sort key alongside the pre-formatted display label; the client
+      // sorts on this, never on the localized/BE string.
+      pendingSinceEpoch,
       expiryLabel: fmtDateOnly(c.expiresAt),
       // UX-A Bug 2: thread the async reject-with-refund marker into the row so a
       // decided (refund-settling) cycle shows the "Refund settling" pill + "View"
       // CTA instead of overstating open review work.
       refundSettling: c.rejectRefundInitiatedAt !== null,
+      // B3 — aging chip flag + day count for the amber "Aged {n}d" treatment.
+      isAged: agingDays >= PENDING_REVIEW_AGING_DAYS,
+      agingDays,
     };
   });
 

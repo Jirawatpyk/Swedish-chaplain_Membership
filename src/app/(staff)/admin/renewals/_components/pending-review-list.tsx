@@ -18,9 +18,10 @@
  */
 'use client';
 
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import { BellOff } from 'lucide-react';
+import { ArrowDownIcon, ArrowUpIcon, BellOff } from 'lucide-react';
 import { buttonVariants } from '@/components/ui/button';
 import {
   Table,
@@ -48,6 +49,13 @@ export interface PendingReviewRow {
    */
   readonly memberNumberDisplay: string | null;
   readonly pendingSinceLabel: string;
+  /**
+   * B3 — the raw `enteredPendingAt` epoch (ms) the client sorts on. Kept
+   * separate from `pendingSinceLabel` (which is the localized/BE display
+   * string): sorting a formatted date string is locale-fragile, so the
+   * ordering keys off this numeric value. `NaN` (missing timestamp) sorts last.
+   */
+  readonly pendingSinceEpoch: number;
   readonly expiryLabel: string;
   /**
    * UX-A Bug 2 — true when the cycle carries the async reject-with-refund
@@ -55,6 +63,13 @@ export interface PendingReviewRow {
    * `cancelled`. Drives the "Refund settling" pill + read-only "View" CTA.
    */
   readonly refundSettling: boolean;
+  /**
+   * B3 — true when the cycle has been pending longer than the aging threshold
+   * (`PENDING_REVIEW_AGING_DAYS`). Drives the subtle amber "Aged {n}d" chip.
+   */
+  readonly isAged: boolean;
+  /** B3 — whole days this cycle has been pending (chip label + title). */
+  readonly agingDays: number;
 }
 
 export interface PendingReviewListProps {
@@ -63,6 +78,29 @@ export interface PendingReviewListProps {
 
 export function PendingReviewList({ rows }: PendingReviewListProps) {
   const t = useTranslations('admin.renewals.pendingReview');
+
+  // B3 — client-side sort on the RAW pending-since epoch (never the localized
+  // display string). Default 'asc' = oldest-first so the most-aged decisions
+  // lead. The list is small + fully materialised (no pagination), so a client
+  // toggle is sufficient and adds no server param.
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+
+  const sortedRows = useMemo(() => {
+    const copy = [...rows];
+    copy.sort((a, b) => {
+      const aBad = !Number.isFinite(a.pendingSinceEpoch);
+      const bBad = !Number.isFinite(b.pendingSinceEpoch);
+      // A missing timestamp (NaN) sorts LAST in both directions — it can never
+      // be "the most aged" nor jump the newest-first order.
+      if (aBad && bBad) return 0;
+      if (aBad) return 1;
+      if (bBad) return -1;
+      return sortDir === 'asc'
+        ? a.pendingSinceEpoch - b.pendingSinceEpoch
+        : b.pendingSinceEpoch - a.pendingSinceEpoch;
+    });
+    return copy;
+  }, [rows, sortDir]);
 
   if (rows.length === 0) {
     return (
@@ -74,18 +112,45 @@ export function PendingReviewList({ rows }: PendingReviewListProps) {
     );
   }
 
+  const SortIcon = sortDir === 'asc' ? ArrowUpIcon : ArrowDownIcon;
+
   return (
     <Table>
       <TableHeader>
         <TableRow>
           <TableHead>{t('columns.member')}</TableHead>
-          <TableHead>{t('columns.pendingSince')}</TableHead>
+          {/* B3 — sortable "Pending since". `aria-sort` lives on the
+              columnheader (WCAG 1.3.1 / 4.1.2); the button carries the action
+              label (what the next click does) + the direction caret. Mirrors
+              the pipeline's sortable-header treatment (button/anchor + caret). */}
+          <TableHead
+            aria-sort={sortDir === 'asc' ? 'ascending' : 'descending'}
+          >
+            <button
+              type="button"
+              onClick={() =>
+                setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+              }
+              aria-label={t(
+                sortDir === 'asc'
+                  ? 'sortPendingSinceToNewest'
+                  : 'sortPendingSinceToOldest',
+              )}
+              className="inline-flex items-center gap-1 whitespace-nowrap rounded-sm hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2"
+            >
+              {t('columns.pendingSince')}
+              <SortIcon
+                className="size-3.5 shrink-0 text-muted-foreground"
+                aria-hidden="true"
+              />
+            </button>
+          </TableHead>
           <TableHead>{t('columns.expiry')}</TableHead>
           <TableHead className="text-right">{t('columns.action')}</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
-        {rows.map((row) => (
+        {sortedRows.map((row) => (
           <TableRow key={row.cycleId}>
             <TableCell className="font-medium">
               <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -119,7 +184,22 @@ export function PendingReviewList({ rows }: PendingReviewListProps) {
               </span>
             </TableCell>
             <TableCell className="text-muted-foreground">
-              {row.pendingSinceLabel}
+              <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span>{row.pendingSinceLabel}</span>
+                {/* B3 — subtle amber "Aged {n}d" chip on decisions lingering
+                    past the threshold. Reuses the `settlingPill` amber styling
+                    for visual consistency (never a new colour); placed here (not
+                    the Member cell) so it sits beside the pending date it
+                    describes and never clashes with the "Refund settling" pill. */}
+                {row.isAged && (
+                  <span
+                    title={t('agedChipTitle', { days: row.agingDays })}
+                    className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900 ring-1 ring-inset ring-amber-300 dark:bg-amber-900 dark:text-amber-100 dark:ring-amber-600"
+                  >
+                    {t('agedChip', { days: row.agingDays })}
+                  </span>
+                )}
+              </span>
             </TableCell>
             <TableCell className="text-muted-foreground">
               {row.expiryLabel}

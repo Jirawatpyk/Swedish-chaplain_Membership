@@ -3298,7 +3298,11 @@
         "openAction": "พิจารณา",
         "viewAction": "ดูรายละเอียด",
         "settlingPill": "กำลังคืนเงิน",
-        "loadFailed": "ไม่สามารถโหลดรายการที่รอการพิจารณาได้ กรุณาลองใหม่อีกครั้ง"
+        "loadFailed": "ไม่สามารถโหลดรายการที่รอการพิจารณาได้ กรุณาลองใหม่อีกครั้ง",
+        "sortPendingSinceToOldest": "เรียงตามวันที่รอ เก่าสุดก่อน",
+        "sortPendingSinceToNewest": "เรียงตามวันที่รอ ใหม่สุดก่อน",
+        "agedChip": "ค้าง {days} วัน",
+        "agedChipTitle": "รอการพิจารณามาแล้ว {days} วัน"
       },
       "tierBadge": {
         "thai_alumni": "ศิษย์เก่าไทย",

@@ -3298,7 +3298,11 @@
         "openAction": "Granska",
         "viewAction": "Visa",
         "settlingPill": "Återbetalning behandlas",
-        "loadFailed": "Det gick inte att läsa in listan över väntande granskningar. Försök igen."
+        "loadFailed": "Det gick inte att läsa in listan över väntande granskningar. Försök igen.",
+        "sortPendingSinceToOldest": "Sortera efter väntande sedan, äldst först",
+        "sortPendingSinceToNewest": "Sortera efter väntande sedan, nyast först",
+        "agedChip": "Väntat {days} d",
+        "agedChipTitle": "Väntar på beslut sedan {days} dagar"
       },
       "tierBadge": {
         "thai_alumni": "Thai-alumner",
