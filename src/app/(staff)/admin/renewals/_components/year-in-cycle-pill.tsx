@@ -26,6 +26,7 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
+import { cn } from '@/lib/utils';
 
 export interface YearInCyclePillProps {
   readonly yearInCycle: number;
@@ -33,6 +34,16 @@ export interface YearInCyclePillProps {
   readonly taskTypeLabel: string;
   readonly memberCompanyName?: string | undefined;
   readonly variant?: 'compact' | 'full' | undefined;
+  /**
+   * Escalation-queue table-wrap fix — optional className merged onto the
+   * `compact` variant's label span (e.g. `line-clamp-2 break-words`) so
+   * a caller in a narrow table column can opt into wrapping a long task-
+   * type label to a max of N lines instead of overflowing. Every other
+   * call site that doesn't pass this keeps its exact prior layout.
+   * `full` variant is unaffected — it already renders in a standalone,
+   * non-table context.
+   */
+  readonly labelClassName?: string | undefined;
 }
 
 /**
@@ -47,6 +58,7 @@ export function YearInCyclePill({
   taskTypeLabel,
   memberCompanyName,
   variant = 'compact',
+  labelClassName,
 }: YearInCyclePillProps) {
   const t = useTranslations('admin.renewals.tasks.yearInCycle');
 
@@ -108,8 +120,11 @@ export function YearInCyclePill({
           })
         : taskTypeLabel;
   return (
+    // `items-start` (not `items-center`) — identical when the label is a
+    // single line, but correct once `labelClassName` wraps it to 2 lines
+    // (mirrors the members-table name/badge alignment convention).
     <span
-      className="inline-flex items-center gap-1 text-xs"
+      className="inline-flex items-start gap-1 text-xs"
       aria-label={compactAriaLabel}
     >
       {label !== null && (
@@ -117,7 +132,13 @@ export function YearInCyclePill({
           {label}
         </span>
       )}
-      <span aria-hidden className="text-foreground">{taskTypeLabel}</span>
+      <span
+        aria-hidden
+        title={taskTypeLabel}
+        className={cn('text-foreground', labelClassName)}
+      >
+        {taskTypeLabel}
+      </span>
     </span>
   );
 }

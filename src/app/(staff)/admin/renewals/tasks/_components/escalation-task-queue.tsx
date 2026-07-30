@@ -24,7 +24,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo, useState, useTransition } from 'react';
+import { useId, useMemo, useState, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useFormatter, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
@@ -41,6 +41,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  TranslatedSelectValue,
+} from '@/components/ui/select';
 import {
   Table,
   TableBody,
@@ -132,6 +139,13 @@ export interface EscalationTaskQueueProps {
 
 type AssignmentFilter = 'all' | 'mine' | 'unassigned';
 
+// Radix/Base UI `Select` FORBIDS an empty-string `SelectItem` value (it
+// throws), but `taskTypeFilter` is `''` for "all types" (mirrors the
+// `?task_type=` URL param being absent). `ALL` is the Select-only
+// sentinel: mapped to `''`/`null` at the read/write boundary below, the
+// same pattern as `../../_components/tier-filter-select.tsx`.
+const ALL = 'all' as const;
+
 const OVERDUE_HIGHLIGHT_DAYS = 3;
 const OVERDUE_HIGHLIGHT_MS = OVERDUE_HIGHLIGHT_DAYS * 24 * 60 * 60 * 1000;
 
@@ -176,6 +190,9 @@ export function EscalationTaskQueue({
   const [reassignDialogTaskId, setReassignDialogTaskId] = useState<
     string | null
   >(null);
+  // useId() per-instance, mirroring `TierFilterSelect` — guarantees
+  // uniqueness if this component is ever rendered twice on one page.
+  const taskTypeFilterLabelId = `task-type-filter-label-${useId()}`;
 
   // Filters live in URL search params so the back button + sharing
   // works. Defaults: status='open', assignment='all'.
@@ -475,24 +492,47 @@ export function EscalationTaskQueue({
           ))}
         </div>
         {distinctTaskTypes.length > 1 && (
-          <select
-            className="ml-auto rounded-md border bg-background px-2 py-1 text-sm"
-            value={taskTypeFilter}
-            onChange={(e) =>
-              setSearchParam(
-                'task_type',
-                e.target.value === '' ? null : e.target.value,
-              )
-            }
-            aria-label={t('task_type_filter_aria')}
-          >
-            <option value="">{t('task_type_filter_all')}</option>
-            {distinctTaskTypes.map((tt) => (
-              <option key={tt} value={tt}>
-                {resolveTaskTypeLabel(t, tt)}
-              </option>
-            ))}
-          </select>
+          // Use aria-labelledby + a visually-hidden label, not
+          // aria-label — see `TierFilterSelect`'s identical comment:
+          // aria-label would replace the trigger's accessible NAME,
+          // losing the paired name+value announcement (WCAG 4.1.2).
+          <div className="w-full sm:w-[14rem] ml-auto">
+            <span id={taskTypeFilterLabelId} className="sr-only">
+              {t('task_type_filter_aria')}
+            </span>
+            <Select
+              value={taskTypeFilter === '' ? ALL : taskTypeFilter}
+              onValueChange={(v) =>
+                setSearchParam('task_type', v === ALL ? null : v)
+              }
+            >
+              <SelectTrigger
+                aria-labelledby={taskTypeFilterLabelId}
+                className="w-full"
+              >
+                <TranslatedSelectValue
+                  translate={(value) =>
+                    !value || value === ALL
+                      ? t('task_type_filter_all')
+                      : resolveTaskTypeLabel(t, value)
+                  }
+                />
+              </SelectTrigger>
+              {/* `align="end"` anchors the popup to the trigger's
+                  right edge — this trigger sits on the right side of
+                  the filter row (mirrors TierFilterSelect). */}
+              <SelectContent align="end">
+                <SelectItem value={ALL}>
+                  {t('task_type_filter_all')}
+                </SelectItem>
+                {distinctTaskTypes.map((tt) => (
+                  <SelectItem key={tt} value={tt}>
+                    {resolveTaskTypeLabel(t, tt)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         )}
       </div>
 
@@ -549,7 +589,16 @@ export function EscalationTaskQueue({
             );
           })()
         ) : (
-          <div className="rounded-md border">
+          // Enterprise-ux review fix — `overflow-x-auto` on this wrapper
+          // (not just the inner `<Table>`'s own scroll container) gives
+          // the browser a bounded box whose automatic min-size is 0 in
+          // the surrounding flex/grid layout, so the 8-column table
+          // scrolls WITHIN this box on tablet/mobile instead of forcing
+          // the page body to scroll horizontally (docs/ux-standards.md —
+          // wide content must scroll in its own box). Mirrors
+          // `admin/invoices/_components/invoice-table.tsx`'s scroll
+          // wrapper.
+          <div className="overflow-x-auto rounded-md border">
             <Table>
               {/* R10 S1 close — sr-only caption for richer AT context. */}
               <TableCaption className="sr-only">
@@ -590,38 +639,59 @@ export function EscalationTaskQueue({
                           : undefined
                       }
                     >
-                      <TableCell>
-                        <Link
-                          href={`/admin/members/${task.memberId}`}
-                          className="font-medium text-primary underline-offset-4 hover:underline"
-                        >
-                          {task.memberCompanyName ?? (
-                            <span className="font-mono text-xs">
-                              {task.memberId.slice(0, 8)}
-                            </span>
-                          )}
-                        </Link>
-                        {/* SF-3 close — Timeline jump-link sub-action
-                            (smart-chamber feature #6).
-                            R6 UX-I-4 close — disambiguating aria-label
-                            so each row's timeline link has a unique
-                            announcement when SR users tab through the
-                            queue. */}
-                        <Link
-                          href={`/admin/members/${task.memberId}/timeline`}
-                          className="ml-2 text-xs text-muted-foreground hover:text-foreground hover:underline"
-                          aria-label={t('view_timeline_for', {
-                            company:
-                              task.memberCompanyName ?? task.memberId,
-                          })}
-                        >
-                          {t('view_timeline')}
-                        </Link>
-                        {/* Member-id always available to AT for
-                            unambiguous identification when names collide. */}
-                        <span className="sr-only"> · {task.memberId}</span>
+                      <TableCell className="align-top">
+                        {/* Table-wrap fix — a long company name (e.g.
+                            "SCANIA SIAM COMPANY LIMITED") used to run
+                            on one line and jam against "View timeline".
+                            `whitespace-normal` overrides TableCell's
+                            default `whitespace-nowrap`; the name clamps
+                            to 2 lines (`line-clamp-2` + `break-words`
+                            for a single unbroken long token) within a
+                            `max-w` bound so wrapping actually triggers.
+                            "View timeline" moves to its own line below
+                            the (now up-to-2-line) name. */}
+                        <div className="max-w-[26ch] whitespace-normal">
+                          <Link
+                            href={`/admin/members/${task.memberId}`}
+                            // Enterprise-ux review fix — explicit
+                            // outline-based focus ring (matches sibling
+                            // renewals links, e.g. `[cycleId]/page.tsx`,
+                            // `members-without-cycle-tray.tsx`). Outline
+                            // (unlike a box-shadow `ring`) is not clipped
+                            // by this element's own `overflow: hidden`
+                            // from `line-clamp-2`, so keyboard focus
+                            // stays fully visible on wrapped 2-line rows.
+                            className="line-clamp-2 break-words rounded-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2"
+                            title={task.memberCompanyName ?? undefined}
+                          >
+                            {task.memberCompanyName ?? (
+                              <span className="font-mono text-xs">
+                                {task.memberId.slice(0, 8)}
+                              </span>
+                            )}
+                          </Link>
+                          {/* SF-3 close — Timeline jump-link sub-action
+                              (smart-chamber feature #6).
+                              R6 UX-I-4 close — disambiguating aria-label
+                              so each row's timeline link has a unique
+                              announcement when SR users tab through the
+                              queue. */}
+                          <Link
+                            href={`/admin/members/${task.memberId}/timeline`}
+                            className="mt-0.5 block text-xs text-muted-foreground hover:text-foreground hover:underline"
+                            aria-label={t('view_timeline_for', {
+                              company:
+                                task.memberCompanyName ?? task.memberId,
+                            })}
+                          >
+                            {t('view_timeline')}
+                          </Link>
+                          {/* Member-id always available to AT for
+                              unambiguous identification when names collide. */}
+                          <span className="sr-only"> · {task.memberId}</span>
+                        </div>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="align-top">
                         {task.memberTierBucket !== null ? (
                           <span className="inline-flex items-center rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground">
                             {t(`tierBucket.${task.memberTierBucket}`)}
@@ -632,7 +702,7 @@ export function EscalationTaskQueue({
                           </span>
                         )}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="align-top">
                         {task.cycleExpiresAt !== null ? (
                           <time
                             dateTime={task.cycleExpiresAt}
@@ -646,14 +716,33 @@ export function EscalationTaskQueue({
                           </span>
                         )}
                       </TableCell>
-                      <TableCell>
-                        <YearInCyclePill
-                          yearInCycle={task.yearInCycle}
-                          totalYears={task.totalYears}
-                          taskTypeLabel={resolveTaskTypeLabel(t, task.taskType)}
-                        />
+                      <TableCell className="align-top">
+                        {/* Table-wrap fix — cap long task-type labels
+                            (e.g. "Termination deferred - no statutory
+                            warning..." at 59 chars) to 2 lines instead
+                            of forcing the row wider / overflowing.
+                            Enterprise-ux review fix: the cap moved OFF
+                            this cell (was `max-w-[20ch]` bounding the
+                            chip+label group together, which starved the
+                            label on multi-year rows because the fixed-
+                            width "Year N of M" chip ate the budget
+                            first) and ONTO the pill's label span itself
+                            via `labelClassName` — the year-chip now
+                            renders at its natural width on one line and
+                            only the label wraps/clamps to 2 lines.
+                            `whitespace-normal` overrides TableCell's
+                            default `whitespace-nowrap` so the label can
+                            wrap at all. */}
+                        <div className="whitespace-normal">
+                          <YearInCyclePill
+                            yearInCycle={task.yearInCycle}
+                            totalYears={task.totalYears}
+                            taskTypeLabel={resolveTaskTypeLabel(t, task.taskType)}
+                            labelClassName="line-clamp-2 break-words min-w-0 max-w-[22ch]"
+                          />
+                        </div>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="align-top">
                         <time dateTime={task.dueAt}>
                           {formatShortDate(task.dueAt)}
                         </time>
@@ -663,16 +752,16 @@ export function EscalationTaskQueue({
                           </span>
                         )}
                       </TableCell>
-                      <TableCell className="text-xs">
+                      <TableCell className="align-top text-xs">
                         {renderAssigneeCell(task)}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="align-top">
                         <span className="inline-flex items-center rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium">
                           {t(`status.${task.status}`)}
                         </span>
                       </TableCell>
                       {canMutate && (
-                        <TableCell className="text-right">
+                        <TableCell className="align-top text-right">
                           {/* Desktop: 3 inline buttons */}
                           <div className="hidden md:inline-flex gap-2">
                             <Button
