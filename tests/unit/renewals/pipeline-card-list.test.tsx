@@ -189,7 +189,10 @@ describe('<PipelineCardList>', () => {
 
   it('review round 1 (FIX 2 / I-1 parity): renders the "Covered" label + sr-only reason when anchored and no invoice is linked yet', () => {
     const anchoredRows: ReadonlyArray<PipelineRow> = [
-      { ...ROWS[0]!, linkedInvoiceId: null, anchored: true },
+      // Explicit pre-expiry countdown urgency (mirrors the desktop positive
+      // test) so this "Covered"-shows case is self-documenting and does not
+      // silently depend on ROWS[0]'s default bucket.
+      { ...ROWS[0]!, linkedInvoiceId: null, anchored: true, urgency: 't-30' },
     ];
     render(<Harness rows={anchoredRows} />);
     const card = screen.getByRole('group', { name: 'Acme Co' });

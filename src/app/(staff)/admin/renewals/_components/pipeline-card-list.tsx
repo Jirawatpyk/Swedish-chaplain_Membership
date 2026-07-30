@@ -243,6 +243,11 @@ export function PipelineCardList({
                           <span className="sr-only"> — {t('invoiceCoveredTitle')}</span>
                         </span>
                       ) : (
+                        // "—" inherits its muted colour from LabeledRow's
+                        // `<p className="text-sm text-muted-foreground">`; keep
+                        // in lockstep with the table's explicit
+                        // `text-muted-foreground` "—" so both presentations
+                        // render the empty-invoice cell identically.
                         '—'
                       )}
                     </LabeledRow>
