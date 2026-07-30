@@ -59,6 +59,8 @@ export interface ReassignTaskDropdownProps {
   readonly onOpenChange: (open: boolean) => void;
   readonly currentAssigneeUserId: string | null;
   readonly onSubmit: (toUserId: string) => Promise<void>;
+  /** UX-audit PR-A #5a — focus-return resolver; forwarded to the shared shell. */
+  readonly finalFocus?: (() => HTMLElement | null) | undefined;
 }
 
 export function ReassignTaskDropdown({
@@ -66,8 +68,13 @@ export function ReassignTaskDropdown({
   onOpenChange,
   currentAssigneeUserId,
   onSubmit,
+  finalFocus,
 }: ReassignTaskDropdownProps) {
   const t = useTranslations('admin.renewals.tasks.reassign_dialog');
+  // UX-audit PR-A #5b — the staff-role suffix reuses the shared assigneeRole
+  // keys (same copy the queue's assignee cell renders) instead of printing the
+  // raw enum ('admin'/'manager').
+  const tRole = useTranslations('admin.renewals.tasks');
   const [users, setUsers] = useState<ReadonlyArray<StaffUser> | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
@@ -161,6 +168,7 @@ export function ReassignTaskDropdown({
       isPending={isPending}
       canSubmit={canSubmit}
       onSubmit={handleSubmit}
+      finalFocus={finalFocus}
     >
       <div className="grid gap-2">
         <span id="assignee-label" className="text-sm font-medium">
@@ -204,8 +212,25 @@ export function ReassignTaskDropdown({
                   aria-labelledby="assignee-label"
                   className="w-full justify-between"
                   disabled={isPending || users === null}
+                  aria-busy={isLoadingUsers}
                 >
-                  <span className="truncate">{triggerLabel}</span>
+                  {/* UX-audit PR-A #5b — the trigger showed a bare disabled
+                      state during the initial staff fetch (a "dead" control).
+                      Surface async progress: spinner + "Loading staff…" while
+                      the list loads, then the selected user / placeholder. */}
+                  <span className="flex min-w-0 items-center truncate">
+                    {isLoadingUsers ? (
+                      <>
+                        <Loader2
+                          className="mr-2 size-4 shrink-0 motion-safe:animate-spin"
+                          aria-hidden
+                        />
+                        {t('loading')}
+                      </>
+                    ) : (
+                      triggerLabel
+                    )}
+                  </span>
                   <ChevronsUpDown
                     className="ml-2 size-4 shrink-0 opacity-50"
                     aria-hidden
@@ -249,7 +274,7 @@ export function ReassignTaskDropdown({
                             </span>
                           )}
                           <span className="ml-2 text-xs uppercase tracking-wide text-muted-foreground">
-                            · {u.role}
+                            · {tRole(`assigneeRole.${u.role}`)}
                           </span>
                           {u.id === currentAssigneeUserId && (
                             <span className="ml-2 rounded-full bg-secondary px-1.5 py-0.5 text-xs font-medium text-secondary-foreground">

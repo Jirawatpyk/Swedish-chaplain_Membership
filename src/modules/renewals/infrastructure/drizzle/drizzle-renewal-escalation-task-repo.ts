@@ -358,7 +358,11 @@ export function makeDrizzleRenewalEscalationTaskRepo(
       _tenantId: string,
       opts: Pick<
         ListEscalationTasksOpts,
-        'statusFilter' | 'assignedToUserIdFilter' | 'overdueOnly' | 'overdueThresholdDays'
+        | 'statusFilter'
+        | 'assignedToUserIdFilter'
+        | 'taskTypeFilter'
+        | 'overdueOnly'
+        | 'overdueThresholdDays'
       >,
     ): Promise<number> {
       return runInTenant(tenant, async (tx) => {
@@ -393,6 +397,53 @@ export function makeDrizzleRenewalEscalationTaskRepo(
           )
           .where(whereExpr);
         return Number(rows[0]?.value ?? 0);
+      });
+    },
+
+    async listDistinctTaskTypes(
+      _tenantId: string,
+      opts?: { readonly statusFilter?: ReadonlyArray<EscalationTaskStatus> },
+    ): Promise<ReadonlyArray<string>> {
+      return runInTenant(tenant, async (tx) => {
+        // UX-audit PR-A #2 — enumerate the distinct task_types the tenant
+        // actually has (RLS-scoped) so the queue's task-type filter control
+        // derives a stable, COMPLETE option list regardless of which 50-row
+        // page is loaded. Scoped to the current status tab when supplied so
+        // the options match what a chosen filter would return.
+        //
+        // R1 — LEFT JOIN `members` + `AND members.erased_at IS NULL` so a
+        // task_type whose tasks all belong to GDPR-erased members is NOT
+        // offered. `listForAdminQueue` + `countMatching` both DROP erased
+        // members; without mirroring that exclusion here the dropdown could
+        // list a type that returns 0 rows the instant it is selected (a
+        // dead-end option). AND-ed at the top-level WHERE (not inside the JOIN
+        // ON) so it removes the row rather than null-blanking columns; LEFT-
+        // JOIN-safe because a genuinely-absent member (cycle-less / member-less
+        // task) left-extends to `erased_at = NULL`, which `isNull` KEEPS. NO
+        // `membership_plans` join — distinct task_types need no plan data, and
+        // the per-fiscal-year-cloned plans would fan out (see listForAdminQueue).
+        const statusFilter = opts?.statusFilter;
+        const erasedGuard = isNull(members.erasedAt);
+        const whereExpr =
+          statusFilter && statusFilter.length > 0
+            ? and(
+                sql`${renewalEscalationTasks.status} IN ${statusFilter}`,
+                erasedGuard,
+              )
+            : erasedGuard;
+        const rows = await tx
+          .selectDistinct({ taskType: renewalEscalationTasks.taskType })
+          .from(renewalEscalationTasks)
+          .leftJoin(
+            members,
+            and(
+              eq(members.tenantId, renewalEscalationTasks.tenantId),
+              eq(members.memberId, renewalEscalationTasks.memberId),
+            ),
+          )
+          .where(whereExpr)
+          .orderBy(asc(renewalEscalationTasks.taskType));
+        return rows.map((r) => r.taskType);
       });
     },
 
@@ -599,7 +650,11 @@ export function makeDrizzleRenewalEscalationTaskRepo(
 function buildListWhereExpr(
   opts: Pick<
     ListEscalationTasksOpts,
-    'statusFilter' | 'assignedToUserIdFilter' | 'overdueOnly' | 'overdueThresholdDays'
+    | 'statusFilter'
+    | 'assignedToUserIdFilter'
+    | 'taskTypeFilter'
+    | 'overdueOnly'
+    | 'overdueThresholdDays'
   >,
 ): ReturnType<typeof and> | undefined {
   const conditions: Array<ReturnType<typeof eq>> = [];
@@ -608,6 +663,16 @@ function buildListWhereExpr(
       sql`${renewalEscalationTasks.status} IN ${opts.statusFilter}` as unknown as ReturnType<
         typeof eq
       >,
+    );
+  }
+  // UX-audit PR-A #2 — server-side exact-match task_type filter. Lives in
+  // the SHARED builder so `listForAdminQueue` (rows) and `countMatching`
+  // (badge) apply it identically; without this the client-side re-filter
+  // over the fetched 50 made the count lie and hid the filter control
+  // whenever the current page held only one type.
+  if (opts.taskTypeFilter !== undefined && opts.taskTypeFilter.length > 0) {
+    conditions.push(
+      eq(renewalEscalationTasks.taskType, opts.taskTypeFilter),
     );
   }
   if (opts.assignedToUserIdFilter !== undefined) {

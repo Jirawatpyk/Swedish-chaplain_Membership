@@ -115,7 +115,15 @@ export async function GET(request: NextRequest) {
 
   const overdueOnly = overdueParam === 'true' || overdueParam === '1';
 
+  const taskTypeFilter =
+    taskTypeParam !== null && taskTypeParam.length > 0 ? taskTypeParam : undefined;
+
   try {
+    // UX-audit PR-A #2 — task_type now filters SERVER-side (shared
+    // buildListWhereExpr) so `next_cursor` is minted over the FILTERED set.
+    // The prior client-side `.filter` over the fetched page left the cursor
+    // pointing into the UNFILTERED keyset → a `task_type`-filtered page 2
+    // could skip or duplicate rows.
     const page = await deps.escalationTaskRepo.listForAdminQueue(
       tenantCtx.slug,
       {
@@ -125,18 +133,13 @@ export async function GET(request: NextRequest) {
         ...(assignedToUserIdFilter !== undefined
           ? { assignedToUserIdFilter }
           : {}),
+        ...(taskTypeFilter !== undefined ? { taskTypeFilter } : {}),
         ...(overdueOnly ? { overdueOnly: true } : {}),
         sort: 'due_at_asc',
       },
     );
 
-    // Filter by task_type in the result set (small page; no need for a
-    // dedicated repo arg). Future Phase 9+ optimisation can push the
-    // filter into the repo signature for stable cursor pagination.
-    const items =
-      taskTypeParam !== null && taskTypeParam.length > 0
-        ? page.items.filter((t) => t.taskType === taskTypeParam)
-        : page.items;
+    const items = page.items;
 
     // Overdue count for the queue-top banner (FR-045). Only meaningful
     // when status='open'; closed tabs don't display the banner.

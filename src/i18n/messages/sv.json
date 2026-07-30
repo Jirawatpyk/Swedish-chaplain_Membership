@@ -4063,6 +4063,10 @@
         "assignment_filter_aria": "Filtrera på tilldelning",
         "task_type_filter_aria": "Filtrera på uppgiftstyp",
         "task_type_filter_all": "Alla typer",
+        "pagination": {
+          "showingFirst": "Visar 50 per sida",
+          "next": "Nästa 50 →"
+        },
         "status_tab": {
           "open": "Öppen",
           "done": "Klar",
@@ -4076,9 +4080,9 @@
         "columns": {
           "member": "Medlem",
           "tier": "Nivå",
-          "expiresAt": "Förfallodatum",
+          "expiresAt": "Utgår",
           "taskType": "Uppgiftstyp",
-          "dueAt": "Förfaller",
+          "dueAt": "Ska göras",
           "assignedTo": "Tilldelad",
           "status": "Status",
           "actions": "Åtgärder"
@@ -4139,6 +4143,7 @@
         },
         "actions": {
           "menu_label": "Åtgärder",
+          "row_menu_for": "Åtgärder för {company}",
           "errors": {
             "task_not_open": "En annan administratör har redan stängt denna uppgift — uppdatera sidan för att se aktuellt läge.",
             "task_not_found": "Uppgiften finns inte längre — uppdatera listan.",
@@ -4202,6 +4207,7 @@
           "description": "Välj en annan aktiv medarbetare som ska ta över. Den tidigare tilldelade ser inte längre uppgiften under sitt \"Mina\"-filter.",
           "assignee_label": "Tilldelad",
           "placeholder": "Välj en medarbetare",
+          "loading": "Laddar personal…",
           "search_placeholder": "Sök på namn eller e-post…",
           "no_results": "Ingen medarbetare matchar din sökning.",
           "load_error": "Kunde inte ladda medarbetarlistan. Försök igen.",

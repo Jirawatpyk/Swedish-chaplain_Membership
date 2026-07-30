@@ -41,4 +41,20 @@ describe('<ReassignTaskDropdown> retry surface (R4-C1)', () => {
     const src = ReassignTaskDropdown.toString();
     expect(src.includes('retryToken') || src.includes('useState')).toBe(true);
   });
+
+  // UX-audit PR-A #5b — the same jsdom + Base UI AlertDialog brittleness (see
+  // the file header) blocks a full open-dialog render, so these pin the two
+  // #5b wirings structurally; the visible behaviour is exercised by the E2E
+  // spec + guaranteed to resolve by check:i18n (both keys exist in all locales).
+  it('renders the staff role via the shared assigneeRole i18n keys, not the raw enum (#5b)', () => {
+    const src = ReassignTaskDropdown.toString();
+    // The role suffix goes through t(`assigneeRole.${u.role}`), never `u.role`.
+    expect(src).toContain('assigneeRole');
+  });
+
+  it('drives a loading state on the trigger during the initial staff fetch (#5b)', () => {
+    const src = ReassignTaskDropdown.toString();
+    expect(src).toContain('isLoadingUsers');
+    expect(src).toContain('loading');
+  });
 });

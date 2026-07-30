@@ -4063,6 +4063,10 @@
         "assignment_filter_aria": "Filter by assignment",
         "task_type_filter_aria": "Filter by task type",
         "task_type_filter_all": "All types",
+        "pagination": {
+          "showingFirst": "Showing 50 per page",
+          "next": "Next 50 →"
+        },
         "status_tab": {
           "open": "Open",
           "done": "Done",
@@ -4139,6 +4143,7 @@
         },
         "actions": {
           "menu_label": "Actions",
+          "row_menu_for": "Actions for {company}",
           "errors": {
             "task_not_open": "Another admin already closed this task — refresh to see the latest state.",
             "task_not_found": "This task no longer exists — refresh the list.",
@@ -4202,6 +4207,7 @@
           "description": "Choose another active staff member to take ownership. The previous assignee will lose visibility under their \"Mine\" filter.",
           "assignee_label": "Assignee",
           "placeholder": "Select a staff member",
+          "loading": "Loading staff…",
           "search_placeholder": "Search by name or email…",
           "no_results": "No staff member matches your search.",
           "load_error": "Could not load staff users. Please try again.",

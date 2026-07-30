@@ -24,7 +24,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useId, useMemo, useState, useTransition } from 'react';
+import { useId, useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useFormatter, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
@@ -34,6 +34,8 @@ import {
   Info,
   MoreHorizontal,
 } from 'lucide-react';
+import { mergeRefs } from '@/lib/merge-refs';
+import { useDialogFinalFocus } from '@/components/broadcast/reason-confirmation-dialog';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -134,10 +136,30 @@ export interface EscalationTaskQueueProps {
   readonly actorRole: 'admin' | 'manager';
   readonly actorUserId: string;
   readonly overdueCount: number;
+  /**
+   * UX-audit PR-A #2 — the distinct task-type list, derived by a SERVER
+   * query over the whole tenant (scoped to the current status tab) rather
+   * than computed from the fetched 50-row page. Drives both the task-type
+   * filter control's option list AND its visibility gate (`length > 1`),
+   * so the control is stable + complete regardless of which page is loaded.
+   */
+  readonly distinctTaskTypes: ReadonlyArray<string>;
   readonly items: ReadonlyArray<EscalationTaskQueueItem>;
 }
 
 type AssignmentFilter = 'all' | 'mine' | 'unassigned';
+
+/**
+ * UX-audit PR-A #4/#5 — an action dialog's launch target. `taskId` says which
+ * task the confirm hits; `finalFocus` is the row's ⋯-trigger resolver so focus
+ * returns there on cancel and falls back to `#main-content` when a Done/Skip
+ * success unmounts the row (WCAG 2.1 AA SC 2.4.3). Bundling the resolver with
+ * the target lets the single lifted dialog serve every row.
+ */
+interface DialogTarget {
+  readonly taskId: string;
+  readonly finalFocus: () => HTMLElement | null;
+}
 
 // Radix/Base UI `Select` FORBIDS an empty-string `SelectItem` value (it
 // throws), but `taskTypeFilter` is `''` for "all types" (mirrors the
@@ -177,6 +199,7 @@ export function EscalationTaskQueue({
   actorRole,
   actorUserId,
   overdueCount,
+  distinctTaskTypes,
   items,
 }: EscalationTaskQueueProps) {
   const t = useTranslations('admin.renewals.tasks');
@@ -185,11 +208,22 @@ export function EscalationTaskQueue({
   const searchParams = useSearchParams();
   const [, startTransition] = useTransition();
   const [pendingTaskId, setPendingTaskId] = useState<string | null>(null);
-  const [doneDialogTaskId, setDoneDialogTaskId] = useState<string | null>(null);
-  const [skipDialogTaskId, setSkipDialogTaskId] = useState<string | null>(null);
-  const [reassignDialogTaskId, setReassignDialogTaskId] = useState<
-    string | null
-  >(null);
+  // UX-audit PR-A #4/#5 — the three lifted dialogs now carry a DialogTarget
+  // ({taskId, finalFocus}) instead of a bare taskId, so each one can return
+  // focus to the launching row's ⋯ trigger.
+  const [doneDialogTarget, setDoneDialogTarget] = useState<DialogTarget | null>(
+    null,
+  );
+  const [skipDialogTarget, setSkipDialogTarget] = useState<DialogTarget | null>(
+    null,
+  );
+  const [reassignDialogTarget, setReassignDialogTarget] =
+    useState<DialogTarget | null>(null);
+  // UX-audit PR-A #5a — raised by postAction when a Done/Skip succeeds (the
+  // row then unmounts on refresh). Read by each row's useDialogFinalFocus so
+  // the resolver skips the about-to-unmount ⋯ trigger and lands on
+  // #main-content instead of dropping focus to <body>.
+  const closedViaSuccessRef = useRef(false);
   // useId() per-instance, mirroring `TierFilterSelect` — guarantees
   // uniqueness if this component is ever rendered twice on one page.
   const taskTypeFilterLabelId = `task-type-filter-label-${useId()}`;
@@ -216,18 +250,19 @@ export function EscalationTaskQueue({
 
   const now = Date.now();
 
-  // Note: server already filtered by status/assignment/overdue/taskType
-  // (see page.tsx), but we re-filter client-side for any URL drift
-  // between server SSR and client navigation transition.
+  // Server already filtered by status/assignment/overdue/task_type (see
+  // page.tsx). We keep a client-side re-filter for assignment/overdue only,
+  // to guard the brief window of URL drift between SSR and a client
+  // navigation transition. UX-audit PR-A #2 — task_type is now FULLY
+  // server-side (shared buildListWhereExpr); the redundant client re-filter
+  // over the fetched 50 was removed (it made the count lie + gated the
+  // control on the current page's contents).
   const filteredItems = useMemo(() => {
     return items.filter((task) => {
       if (assignment === 'mine' && task.assignedToUserId !== actorUserId) {
         return false;
       }
       if (assignment === 'unassigned' && task.assignedToUserId !== null) {
-        return false;
-      }
-      if (taskTypeFilter !== '' && task.taskType !== taskTypeFilter) {
         return false;
       }
       if (overdueOnly) {
@@ -241,13 +276,7 @@ export function EscalationTaskQueue({
       }
       return true;
     });
-  }, [items, assignment, taskTypeFilter, overdueOnly, actorUserId, now]);
-
-  const distinctTaskTypes = useMemo(() => {
-    const set = new Set<string>();
-    items.forEach((task) => set.add(task.taskType));
-    return Array.from(set).sort();
-  }, [items]);
+  }, [items, assignment, overdueOnly, actorUserId, now]);
 
   function setSearchParam(name: string, value: string | null): void {
     const params = new URLSearchParams(searchParams.toString());
@@ -256,6 +285,11 @@ export function EscalationTaskQueue({
     } else {
       params.set(name, value);
     }
+    // UX-audit PR-A #1 — any filter change restarts keyset pagination. A stale
+    // `cursor` from a prior "Next 50" would otherwise be decoded under the new
+    // filter set and skip/duplicate rows (the pipeline resets it the same way
+    // on tab/tier/lens change). `cursor` is only ever set by the footer link.
+    params.delete('cursor');
     const qs = params.toString();
     startTransition(() => router.replace(qs.length > 0 ? `?${qs}` : '?'));
   }
@@ -316,6 +350,30 @@ export function EscalationTaskQueue({
         return false;
       }
       toast.success(t(`actions.${action}.success`));
+      // UX-audit PR-A #5a — Done/Skip drops the task out of the Open tab on
+      // refresh, so the launching row (and its ⋯ trigger) unmounts. Raise the
+      // flag so each row's useDialogFinalFocus skips the vanishing trigger and
+      // lands on #main-content.
+      //
+      // S1 follow-up — a reassign ALSO unmounts the row when an assignment
+      // filter is active (?assignment=mine | unassigned | <colleague-uuid>):
+      // the task leaves the active tray, router.refresh() re-queries, and the
+      // row + its ⋯ trigger vanish → resolveDialogFinalFocus would return the
+      // detached trigger node and focus drops to <body>. Raise the flag there
+      // too so focus returns to #main-content instead (WCAG 2.4.3). Under
+      // ?assignment=all a reassign KEEPS the row, so leave the flag false and
+      // let focus return to the surviving ⋯ trigger. Read the RAW param —
+      // the client-side `assignment` var collapses a ?assignment=<uuid>
+      // colleague tray to 'all', which would miss that case.
+      if (action === 'done' || action === 'skip') {
+        closedViaSuccessRef.current = true;
+      } else if (
+        action === 'reassign' &&
+        assignmentRaw !== null &&
+        assignmentRaw !== 'all'
+      ) {
+        closedViaSuccessRef.current = true;
+      }
       startTransition(() => router.refresh());
       return true;
     } catch (e) {
@@ -338,10 +396,26 @@ export function EscalationTaskQueue({
   }
 
   const reassigningTask =
-    reassignDialogTaskId !== null
-      ? items.find((task) => task.taskId === reassignDialogTaskId) ?? null
+    reassignDialogTarget !== null
+      ? items.find((task) => task.taskId === reassignDialogTarget.taskId) ?? null
       : null;
   const canMutate = actorRole === 'admin';
+
+  // UX-audit PR-A #5a — opening any dialog resets the success flag so a plain
+  // Cancel returns focus to the ⋯ trigger (not #main-content). postAction
+  // re-raises it on a Done/Skip success just before the row unmounts.
+  const openDoneDialog = (target: DialogTarget): void => {
+    closedViaSuccessRef.current = false;
+    setDoneDialogTarget(target);
+  };
+  const openSkipDialog = (target: DialogTarget): void => {
+    closedViaSuccessRef.current = false;
+    setSkipDialogTarget(target);
+  };
+  const openReassignDialog = (target: DialogTarget): void => {
+    closedViaSuccessRef.current = false;
+    setReassignDialogTarget(target);
+  };
 
   /**
    * Round 5 I-13 close — render assignee display name (joined from
@@ -767,97 +841,23 @@ export function EscalationTaskQueue({
                       </TableCell>
                       {canMutate && (
                         <TableCell className="align-top text-right">
-                          {/* Desktop: 3 inline buttons */}
-                          <div className="hidden md:inline-flex gap-2">
-                            <Button
-                              size="sm"
-                              variant="default"
-                              disabled={!isOpen || busy}
-                              aria-busy={busy}
-                              onClick={() => setDoneDialogTaskId(task.taskId)}
-                            >
-                              {t('actions.done.label')}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={!isOpen || busy}
-                              aria-busy={busy}
-                              onClick={() => setSkipDialogTaskId(task.taskId)}
-                            >
-                              {t('actions.skip.label')}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              disabled={!isOpen || busy}
-                              aria-busy={busy}
-                              onClick={() =>
-                                setReassignDialogTaskId(task.taskId)
-                              }
-                            >
-                              {t('actions.reassign.label')}
-                            </Button>
-                          </div>
-                          {/* Round 5 I-15 close — mobile: collapse the
-                              3 actions into a DropdownMenu so the row
-                              doesn't horizontal-scroll on narrow
-                              viewports (ux-standards § 9.1).
-                              R6 UX-I-6 close — wrap the entire
-                              DropdownMenu (trigger + portal-rendered
-                              content) in a `md:hidden` div so the
-                              accessibility tree is fully removed at
-                              ≥md breakpoints, not just visually
-                              hidden via the trigger className. */}
-                          <div className="md:hidden inline-block">
-                            <DropdownMenu>
-                              <DropdownMenuTrigger
-                                render={
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    // WP8 (§ 9.1) — 44×44 tap target on mobile
-                                    // (was the size-8 default, below the WCAG
-                                    // 2.5.5 minimum).
-                                    className="h-11 w-11"
-                                    disabled={!isOpen || busy}
-                                    aria-busy={busy}
-                                  >
-                                    <MoreHorizontal
-                                      className="size-4"
-                                      aria-hidden
-                                    />
-                                    <span className="sr-only">
-                                      {t('actions.menu_label')}
-                                    </span>
-                                  </Button>
-                                }
-                              />
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem
-                                  onClick={() =>
-                                    setDoneDialogTaskId(task.taskId)
-                                  }
-                                >
-                                  {t('actions.done.label')}
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onClick={() =>
-                                    setSkipDialogTaskId(task.taskId)
-                                  }
-                                >
-                                  {t('actions.skip.label')}
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onClick={() =>
-                                    setReassignDialogTaskId(task.taskId)
-                                  }
-                                >
-                                  {t('actions.reassign.label')}
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </div>
+                          {/* UX-audit PR-A #4 — one visible primary (Done) +
+                              the ⋯ overflow menu (Skip / Reassign) at ALL
+                              breakpoints. Previously the row rendered THREE
+                              full-width buttons on desktop (up to 150 competing
+                              buttons on a 50-row table) and only collapsed to a
+                              menu below md; this applies the /admin "one
+                              primary + ⋯ overflow" convention everywhere. */}
+                          <TaskRowActions
+                            task={task}
+                            isOpen={isOpen}
+                            busy={busy}
+                            t={t}
+                            closedViaSuccessRef={closedViaSuccessRef}
+                            onDone={openDoneDialog}
+                            onSkip={openSkipDialog}
+                            onReassign={openReassignDialog}
+                          />
                         </TableCell>
                       )}
                     </TableRow>
@@ -869,49 +869,166 @@ export function EscalationTaskQueue({
         )}
       </div>
 
-      {/* Action dialogs. Only one open at a time. */}
+      {/* Action dialogs. Only one open at a time. UX-audit PR-A #5a — each
+          receives the launching row's `finalFocus` resolver so focus returns
+          to the ⋯ trigger on cancel (and #main-content when a Done/Skip
+          success unmounts the row). */}
       <DoneTaskDialog
-        open={doneDialogTaskId !== null}
+        open={doneDialogTarget !== null}
         onOpenChange={(next) => {
-          if (!next) setDoneDialogTaskId(null);
+          if (!next) setDoneDialogTarget(null);
         }}
+        finalFocus={doneDialogTarget?.finalFocus}
         onSubmit={async (note) => {
-          if (doneDialogTaskId === null) return;
-          const ok = await postAction(doneDialogTaskId, 'done', {
+          if (doneDialogTarget === null) return;
+          const ok = await postAction(doneDialogTarget.taskId, 'done', {
             outcome_note: note,
           });
-          if (ok) setDoneDialogTaskId(null);
+          if (ok) setDoneDialogTarget(null);
         }}
       />
 
       <SkipTaskDialog
-        open={skipDialogTaskId !== null}
+        open={skipDialogTarget !== null}
         onOpenChange={(next) => {
-          if (!next) setSkipDialogTaskId(null);
+          if (!next) setSkipDialogTarget(null);
         }}
+        finalFocus={skipDialogTarget?.finalFocus}
         onSubmit={async (reason) => {
-          if (skipDialogTaskId === null) return;
-          const ok = await postAction(skipDialogTaskId, 'skip', {
+          if (skipDialogTarget === null) return;
+          const ok = await postAction(skipDialogTarget.taskId, 'skip', {
             skipped_reason: reason,
           });
-          if (ok) setSkipDialogTaskId(null);
+          if (ok) setSkipDialogTarget(null);
         }}
       />
 
       <ReassignTaskDropdown
-        open={reassignDialogTaskId !== null}
+        open={reassignDialogTarget !== null}
         onOpenChange={(next) => {
-          if (!next) setReassignDialogTaskId(null);
+          if (!next) setReassignDialogTarget(null);
         }}
+        finalFocus={reassignDialogTarget?.finalFocus}
         currentAssigneeUserId={reassigningTask?.assignedToUserId ?? null}
         onSubmit={async (toUserId) => {
-          if (reassignDialogTaskId === null) return;
-          const ok = await postAction(reassignDialogTaskId, 'reassign', {
+          if (reassignDialogTarget === null) return;
+          const ok = await postAction(reassignDialogTarget.taskId, 'reassign', {
             to_user_id: toUserId,
           });
-          if (ok) setReassignDialogTaskId(null);
+          if (ok) setReassignDialogTarget(null);
         }}
       />
     </>
+  );
+}
+
+/**
+ * UX-audit PR-A #4/#5 — per-row action cluster: one visible primary (Done) +
+ * a ⋯ overflow menu carrying Skip + Reassign, at ALL breakpoints. Split out of
+ * the row map so it can own the persistent ⋯-trigger ref + the
+ * `useDialogFinalFocus` resolver (hooks can't live in a `.map()` callback).
+ * Reuses the mobile-menu markup the queue already shipped; Done is promoted to
+ * a visible button and the menu keeps Skip/Reassign. Admin-gated by the caller
+ * (`canMutate`), exactly as before.
+ */
+function TaskRowActions({
+  task,
+  isOpen,
+  busy,
+  t,
+  closedViaSuccessRef,
+  onDone,
+  onSkip,
+  onReassign,
+}: {
+  readonly task: EscalationTaskQueueItem;
+  readonly isOpen: boolean;
+  readonly busy: boolean;
+  readonly t: ReturnType<typeof useTranslations<'admin.renewals.tasks'>>;
+  readonly closedViaSuccessRef: React.RefObject<boolean>;
+  readonly onDone: (target: DialogTarget) => void;
+  readonly onSkip: (target: DialogTarget) => void;
+  readonly onReassign: (target: DialogTarget) => void;
+}) {
+  // Persistent ref to this row's ⋯ trigger — merged (NOT overridden) into Base
+  // UI's own DropdownMenuTrigger ref: a bare `ref=` on the render-prop element
+  // replaces Base UI's ref and the Positioner loses its anchor (the menu stops
+  // opening). See `mergeRefs` + the pipeline `RowActions` precedent.
+  const rowMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
+  // Resolver handed to all three dialogs as `finalFocus`: returns the ⋯ trigger
+  // on cancel, but when `closedViaSuccessRef` is raised (Done/Skip success →
+  // row unmounts) it skips the vanishing trigger and lands on #main-content.
+  const finalFocus = useDialogFinalFocus(
+    rowMenuTriggerRef,
+    undefined,
+    closedViaSuccessRef,
+  );
+  return (
+    <div className="flex items-center justify-end gap-2">
+      <Button
+        // N1 — h-9 (`size="default"`) so this visible primary aligns with the
+        // pipeline's primary height and the 44px ⋯ trigger beside it, instead
+        // of the cramped h-7 `size="sm"`.
+        size="default"
+        variant="default"
+        disabled={!isOpen || busy}
+        aria-busy={busy}
+        onClick={() => onDone({ taskId: task.taskId, finalFocus })}
+      >
+        {t('actions.done.label')}
+      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={({ ref: baseRef, ...props }) => (
+            <Button
+              {...props}
+              ref={mergeRefs(baseRef, rowMenuTriggerRef)}
+              // N2 — `size="icon"` for idiom parity with the pipeline
+              // RowActions trigger (row-actions.tsx:289); `h-11 w-11` still
+              // overrides to the 44px target below.
+              size="icon"
+              variant="ghost"
+              // 44×44 tap target (WCAG 2.5.5 / iOS HIG) — an icon-only trigger
+              // in a dense table where a mis-tap routes to the wrong row.
+              className="h-11 w-11"
+              disabled={!isOpen || busy}
+              aria-busy={busy}
+              // S3 — per-row accessible name so SR users tabbing the 50-row
+              // queue know WHICH member's task they're about to Skip/Reassign
+              // (this ⋯ menu is now the ONLY path to those actions at every
+              // breakpoint). Mirrors the pipeline RowActions gold standard
+              // (row-actions.tsx:296,303): `aria-label` for AT (wins over the
+              // icon content) + native `title` for the sighted-mouse tooltip.
+              aria-label={t('actions.row_menu_for', {
+                company: task.memberCompanyName ?? task.memberId,
+              })}
+              title={t('actions.row_menu_for', {
+                company: task.memberCompanyName ?? task.memberId,
+              })}
+            >
+              <MoreHorizontal className="size-4" aria-hidden />
+            </Button>
+          )}
+        />
+        {/*
+         * S2 — `min-w-56 whitespace-nowrap` per ux-standards § 19 (mirrors the
+         * pipeline RowActions menu, row-actions.tsx:315). Without this the
+         * dropdown's default `min-w-32` (128px) wraps the long Thai Reassign
+         * label "เปลี่ยนผู้รับผิดชอบ" mid-word.
+         */}
+        <DropdownMenuContent align="end" className="min-w-56 whitespace-nowrap">
+          <DropdownMenuItem
+            onClick={() => onSkip({ taskId: task.taskId, finalFocus })}
+          >
+            {t('actions.skip.label')}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() => onReassign({ taskId: task.taskId, finalFocus })}
+          >
+            {t('actions.reassign.label')}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
   );
 }

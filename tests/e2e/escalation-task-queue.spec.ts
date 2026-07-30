@@ -135,10 +135,16 @@ test.describe('F8 — escalation task queue (US6) @a11y', () => {
   }) => {
     await signInAsAdmin(page);
     await page.goto('/admin/renewals/tasks');
-    const reassignBtn = page
-      .getByRole('button', { name: /^reassign$/i })
+    // UX-audit PR-A #4 — Reassign moved from a standalone row button into the
+    // row's ⋯ overflow menu (Done stays the one visible primary). Open the
+    // menu via its ⋯ trigger. S3 gave the trigger a per-row accessible name
+    // (`actions.row_menu_for` → "Actions for {company}") so each row's menu is
+    // distinguishable to AT; match its prefix rather than the old bare
+    // "Actions".
+    const menuTrigger = page
+      .getByRole('button', { name: /^actions for /i })
       .first();
-    if ((await reassignBtn.count()) === 0) {
+    if ((await menuTrigger.count()) === 0) {
       test
         .info()
         .annotations.push({
@@ -148,7 +154,10 @@ test.describe('F8 — escalation task queue (US6) @a11y', () => {
         });
       return;
     }
-    await reassignBtn.click();
+    await menuTrigger.click();
+    await page
+      .getByRole('menuitem', { name: /^reassign$/i })
+      .click();
     await expect(
       page.getByRole('alertdialog').getByRole('heading'),
     ).toBeVisible();
@@ -160,6 +169,74 @@ test.describe('F8 — escalation task queue (US6) @a11y', () => {
       .getByRole('button', { name: /cancel/i })
       .click();
     await expect(page.getByRole('alertdialog')).toHaveCount(0);
+  });
+
+  test('S1: a successful reassign under ?assignment=mine returns focus to a live element (not <body>)', async ({
+    page,
+  }) => {
+    await signInAsAdmin(page);
+    // S1 — under an assignment filter a successful reassign moves the task OUT
+    // of the active tray → router.refresh() re-queries and the launching row +
+    // its ⋯ trigger unmount. The queue raises closedViaSuccessRef for a
+    // filtered reassign so focus lands on the #main-content landmark instead of
+    // the detached trigger (which would drop focus to <body> — WCAG 2.4.3).
+    // Heavily seed-guarded: annotate-and-return at each unmet precondition
+    // (mirrors AS2/AS3), so the suite passes even when the queue is empty.
+    await page.goto('/admin/renewals/tasks?assignment=mine');
+    const menuTrigger = page
+      .getByRole('button', { name: /^actions for /i })
+      .first();
+    if ((await menuTrigger.count()) === 0) {
+      test.info().annotations.push({
+        type: 'note',
+        description:
+          'No tasks assigned to the current admin (?assignment=mine empty) — filtered-reassign focus flow not exercised (S1).',
+      });
+      return;
+    }
+    await menuTrigger.click();
+    await page.getByRole('menuitem', { name: /^reassign$/i }).click();
+    const dialog = page.getByRole('alertdialog');
+    const combobox = dialog.getByRole('combobox');
+    await expect(combobox).toBeVisible();
+    // Open the assignee combobox and pick a colleague OTHER than the current
+    // assignee (the current one carries a "current" badge → filtered out).
+    // Without a second staff user the reassign can't complete (Confirm stays
+    // disabled), so annotate + return.
+    await combobox.click();
+    const otherAssignee = page
+      .getByRole('option')
+      .filter({ hasNotText: /current/i })
+      .first();
+    if ((await otherAssignee.count()) === 0) {
+      test.info().annotations.push({
+        type: 'note',
+        description:
+          'No alternative staff assignee seeded — filtered-reassign focus flow not exercised (S1).',
+      });
+      return;
+    }
+    await otherAssignee.click();
+    const confirm = dialog.getByRole('button', { name: /^reassign$/i });
+    if (await confirm.isDisabled()) {
+      test.info().annotations.push({
+        type: 'note',
+        description:
+          'Reassign Confirm stayed disabled (only the current assignee selectable) — S1 focus flow not exercised.',
+      });
+      return;
+    }
+    await confirm.click();
+    // Dialog closes on success; the reassigned row leaves the ?assignment=mine
+    // tray and unmounts on refresh.
+    await expect(dialog).toHaveCount(0);
+    // WCAG 2.4.3 — focus MUST NOT fall to <body>. The queue steers it to
+    // #main-content when the launching row unmounts under the active filter.
+    await expect
+      .poll(async () =>
+        page.evaluate(() => document.activeElement?.tagName ?? 'BODY'),
+      )
+      .not.toBe('BODY');
   });
 
   test('AS3: ?assignment=mine filter chip pressed-state announces correctly', async ({

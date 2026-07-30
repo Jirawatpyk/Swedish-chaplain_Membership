@@ -116,7 +116,16 @@ function makeTask(
   };
 }
 
-function renderQueue(items: EscalationTaskQueueItem[]) {
+function renderQueue(
+  items: EscalationTaskQueueItem[],
+  // UX-audit PR-A #2 — `distinctTaskTypes` is now a required prop, server-
+  // derived over the whole tenant. Defaults here to the set derived from the
+  // rendered items (ascending) so the pre-existing assertions keep holding;
+  // pass it explicitly to prove the control is DECOUPLED from the page.
+  distinctTaskTypes: string[] = Array.from(
+    new Set(items.map((i) => i.taskType)),
+  ).sort(),
+) {
   return render(
     <NextIntlClientProvider
       locale="en"
@@ -128,6 +137,7 @@ function renderQueue(items: EscalationTaskQueueItem[]) {
         actorRole="admin"
         actorUserId="actor-1"
         overdueCount={0}
+        distinctTaskTypes={distinctTaskTypes}
         items={items}
       />
     </NextIntlClientProvider>,
@@ -146,6 +156,25 @@ describe('<EscalationTaskQueue> — task-type filter (shadcn Select)', () => {
       makeTask({ taskId: 't2', taskType: 'phone_call' }),
     ]);
     expect(screen.queryByRole('combobox')).toBeNull();
+  });
+
+  it('derives the control from the server distinctTaskTypes prop, not the fetched page (UX-audit #2)', () => {
+    // The fetched page holds only ONE type, but the tenant has TWO — the
+    // control must still render, with BOTH options, because it now keys on
+    // the server-derived list rather than what this 50-row page happened to
+    // contain. This is the core decoupling #2 fixes.
+    renderQueue(
+      [makeTask({ taskId: 't1', taskType: 'phone_call' })],
+      ['director_call', 'phone_call'],
+    );
+    expect(
+      screen.getByRole('combobox', { name: 'Filter by task type' }),
+    ).toBeTruthy();
+    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual([
+      'All types',
+      'Director call',
+      'Phone call',
+    ]);
   });
 
   it('renders the shadcn Select trigger defaulting to "All types" when ≥2 distinct types exist', () => {
