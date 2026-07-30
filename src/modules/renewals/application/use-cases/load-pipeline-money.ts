@@ -101,5 +101,8 @@ export async function loadPipelineMoney(
     // credit/waived netting applies to the prior-FY scalar pair either.
     overdueBeforeFySatang: raw.overdueBeforeFySatang,
     overdueBeforeFyCount: raw.overdueBeforeFyCount,
+    // Task 3 — the SQL leg's own fiscal-year boundary, threaded through so
+    // the band's drill-down `?dueBefore=` provably matches the cohort.
+    fyStartDate: raw.fyStartDate,
   });
 }

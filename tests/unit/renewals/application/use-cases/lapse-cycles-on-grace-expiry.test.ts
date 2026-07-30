@@ -551,9 +551,9 @@ describe('lapseCyclesOnGraceExpiry (T115a) — decision branch', () => {
       });
     });
 
-    it('066 §3.2(3): today > due+60 but NO statutory warning → deferred_no_prior_warning (no transition)', async () => {
+    it('066 §3.2(3): today > due+60 but NO statutory warning → deferred_no_prior_warning (no transition) + forensic audit with null warning fields', async () => {
       const cycle = expiredCycle({});
-      const { deps, transitionMock, listForCycleWarningsMock } = fakeDeps({
+      const { deps, transitionMock, listForCycleWarningsMock, emitMock } = fakeDeps({
         cycles: [cycle],
         invoiceDueImpl: async () => PAST_DUE_PLUS_60,
       });
@@ -568,6 +568,60 @@ describe('lapseCyclesOnGraceExpiry (T115a) — decision branch', () => {
         expect(r.value.deferredNoPriorWarningCycles[0]?.cycleId).toBe(cycle.cycleId);
       }
       expect(transitionMock).not.toHaveBeenCalled();
+      // renewals-suspended-visibility-audit — this branch previously emitted
+      // NO audit row (cost a live investigation 2026-07-30). Fire-and-forget
+      // emit() (not emitInTx — no state change to pair with). No warning has
+      // ever been dispatched → both warning fields are null.
+      expect(emitMock).toHaveBeenCalledOnce();
+      expect(emitMock.mock.calls[0]?.[0]).toEqual({
+        type: 'renewal_lapse_deferred_warning_pending',
+        payload: {
+          cycle_id: cycle.cycleId,
+          member_id: cycle.memberId,
+          due_date: PAST_DUE_PLUS_60,
+          warning_sent_at: null,
+          earliest_terminate_on: null,
+        },
+      });
+      expect(emitMock.mock.calls[0]?.[1]).toMatchObject({
+        tenantId: TENANT_ID,
+        actorUserId: null,
+        actorRole: 'cron',
+      });
+    });
+
+    it('066 §3.2(3): warning SENT but not yet matured (14d) → deferred + audit carries warning_sent_at and earliest_terminate_on = sent+14d', async () => {
+      const cycle = expiredCycle({});
+      const { deps, transitionMock, listForCycleWarningsMock, emitMock } = fakeDeps({
+        cycles: [cycle],
+        invoiceDueImpl: async () => PAST_DUE_PLUS_60,
+      });
+      // The 2026-07-30 investigation shape: the due-track dispatcher sent
+      // the FIRST due+30 warning minutes before the lapse run — a
+      // 2-day-old warning here (< MIN_WARNING_NOTICE_DAYS = 14).
+      const sentAt = new Date(NOW.getTime() - 2 * 86_400_000).toISOString();
+      listForCycleWarningsMock.mockResolvedValueOnce([
+        { stepId: 'due+30.email', status: 'sent', channel: 'email', dispatchedAt: sentAt },
+      ]);
+      const r = await lapseCyclesOnGraceExpiry(deps, baseInput);
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.value.deferredNoPriorWarning).toBe(1);
+      expect(transitionMock).not.toHaveBeenCalled();
+      expect(emitMock).toHaveBeenCalledOnce();
+      expect(emitMock.mock.calls[0]?.[0]).toEqual({
+        type: 'renewal_lapse_deferred_warning_pending',
+        payload: {
+          cycle_id: cycle.cycleId,
+          member_id: cycle.memberId,
+          due_date: PAST_DUE_PLUS_60,
+          warning_sent_at: sentAt,
+          // Maturity = the guard's own MIN_WARNING_NOTICE_DAYS (14) after
+          // dispatch — the first instant tomorrow's runs can terminate.
+          earliest_terminate_on: new Date(
+            NOW.getTime() + 12 * 86_400_000,
+          ).toISOString(),
+        },
+      });
     });
 
     it('066 §3.2(3): dormancy-guard read (listForCycle) throws → deferred_guard_error, fail-safe (no transition)', async () => {

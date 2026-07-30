@@ -62,7 +62,7 @@ import {
 describe('F8 audit-port contract (T258)', () => {
   // ── Catalogue invariants ─────────────────────────────────────────────
 
-  it('catalogue contains exactly 73 event types (matches compile-time _AssertF8AuditEventCount)', () => {
+  it('catalogue contains exactly 74 event types (matches compile-time _AssertF8AuditEventCount)', () => {
     // Renewal rolling-anchor refactor (migration 0238): 65 → 66, +1
     // `renewal_cycle_reanchored`.
     // 059-membership-suspension Task 8: 66 → 68, +2
@@ -78,7 +78,10 @@ describe('F8 audit-port contract (T258)', () => {
     // 107-auto-invoice Task 11 (review Important-2 fix): 72 → 73, +1
     // (`renewal_orphan_invoice_relinked` — the reconcile-issued-orphans
     // daily cron's link-repair forensic event).
-    expect(F8_AUDIT_EVENT_TYPES).toHaveLength(73);
+    // renewals-suspended-visibility-audit: 73 → 74, +1
+    // (`renewal_lapse_deferred_warning_pending` — the 066 §3.2(3)
+    // dormancy-guard deferral, previously the only audit-silent branch).
+    expect(F8_AUDIT_EVENT_TYPES).toHaveLength(74);
   });
 
   it('catalogue contains no duplicate event types', () => {

@@ -27,6 +27,7 @@ const raw: Raw = {
   dueSoonSatang: 30000n,
   overdueBeforeFySatang: 3852000n, // the real prod case: ฿38,520 due Aug 2025
   overdueBeforeFyCount: 2,
+  fyStartDate: '2026-01-01',
   settledRows: [{ invoiceId: 'inv-settled', netOfCreditSatang: 70000n }],
   collectedRows: [],
 };
@@ -70,5 +71,9 @@ describe('loadPipelineMoney — prior-FY pair pass-through', () => {
     // The other scalar legs stay pass-through as before.
     expect(res.value.overdueSatang).toBe(50000n);
     expect(res.value.dueSoonSatang).toBe(30000n);
+
+    // Task 3 — the SQL leg's fiscal-year boundary rides through untouched
+    // (the band builds its `?dueBefore=` drill-down from it).
+    expect(res.value.fyStartDate).toBe('2026-01-01');
   });
 });

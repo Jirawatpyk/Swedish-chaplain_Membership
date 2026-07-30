@@ -6,6 +6,13 @@
  * illustration (which tears out the filter controls). Omitting the month lens
  * here blanked the pipeline for the exact tenant the feature targets
  * (renewals clustered outside the 90-day urgency window).
+ *
+ * A2 (renewals-suspended-visibility-audit UX review) — deliberately NOT
+ * gated on `suspendedOutsideWindowCount`: "no renewals due in the window"
+ * stays true for the launch-shaped tenant whose members are all first-bill
+ * collection cases beyond the window. `RenewalsEmptyState` instead ACCEPTS
+ * the suspended counts and renders the bridge strip beneath the card, so
+ * the context is added rather than the empty state torn out.
  */
 export function shouldShowRenewalsEmptyState(args: {
   readonly monthLensActive: boolean;

@@ -928,6 +928,16 @@ export function makeDrizzleInvoiceRepo(
         if (opts.vatTreatment) {
           filters.push(eq(invoices.vatTreatment, opts.vatTreatment));
         }
+        // renewals-suspended-visibility-audit Task 3 — strict due-date upper
+        // bound. `due_date` is a DATE column and `opts.dueBefore` a validated
+        // `YYYY-MM-DD` string, so the comparison is a plain date compare.
+        // NULL due dates (drafts / §105 receipts) can never satisfy a date
+        // bound — excluded explicitly.
+        if (opts.dueBefore) {
+          filters.push(
+            sql`${invoices.dueDate} IS NOT NULL AND ${invoices.dueDate} < ${opts.dueBefore}`,
+          );
+        }
         if (opts.search && opts.search.length > 0) {
           // W1 (064 remediation) — match invoice doc number OR the §105
           // receipt number OR (088 T069/FR-030) the non-§87 SC bill number

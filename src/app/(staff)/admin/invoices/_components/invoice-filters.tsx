@@ -115,6 +115,19 @@ interface InvoiceFiltersProps {
    * clear-all button.
    */
   readonly showAutoInvoiceFilter?: boolean;
+  /**
+   * renewals-suspended-visibility-audit Task 3 — honour the `?dueBefore=
+   * YYYY-MM-DD` URL param (strict `due_date < dueBefore` bound) as an
+   * active filter: counts toward clear-all + renders a removable
+   * "Due before {date}" chip. There is no input CONTROL for it — the param
+   * arrives via drill-down links (first consumer: the renewals money
+   * band's prior-fiscal-year sub-line) or a hand-edited URL. Defaults to
+   * `false` so the member portal (whose server page never threads the
+   * param) ignores a stray value — no phantom clear-all, no split-brain
+   * (mirrors the `show088Filters` / `paidOnlineActive` guards). The admin
+   * page passes `true` unconditionally (generic filter, not flag-gated).
+   */
+  readonly showDueBeforeFilter?: boolean;
 }
 
 export function InvoiceFilters({
@@ -122,6 +135,7 @@ export function InvoiceFilters({
   showPaidOnlineChip = true,
   show088Filters = false,
   showAutoInvoiceFilter = false,
+  showDueBeforeFilter = false,
 }: InvoiceFiltersProps = {}) {
   const t = useTranslations('admin.invoices.list');
   const tStatus = useTranslations('admin.invoices.list.statuses');
@@ -227,6 +241,24 @@ export function InvoiceFilters({
     (rawOrigin === 'manual' || rawOrigin === 'auto_renewal')
       ? rawOrigin
       : 'all';
+  // renewals-suspended-visibility-audit Task 3 — dueBefore clamp: strict
+  // `YYYY-MM-DD` shape + a real calendar date, matching the server page's
+  // `parseDueBeforeParam` so the chip and the data can never split-brain.
+  // V8's lenient parser ROLLS OVER out-of-range days (2026-02-30 → Mar 2)
+  // instead of rejecting them, so the UTC round-trip must reproduce the
+  // input exactly. Gated on `showDueBeforeFilter` (see the prop doc).
+  const rawDueBefore = searchParams.get('dueBefore');
+  const dueBeforeMs =
+    rawDueBefore !== null && /^\d{4}-\d{2}-\d{2}$/.test(rawDueBefore)
+      ? Date.parse(`${rawDueBefore}T00:00:00.000Z`)
+      : Number.NaN;
+  const currentDueBefore =
+    showDueBeforeFilter &&
+    rawDueBefore !== null &&
+    !Number.isNaN(dueBeforeMs) &&
+    new Date(dueBeforeMs).toISOString().slice(0, 10) === rawDueBefore
+      ? rawDueBefore
+      : null;
 
   const pushUrl = useCallback(
     (patch: Record<string, string | null>) => {
@@ -267,7 +299,8 @@ export function InvoiceFilters({
     currentDocType !== 'all' ||
     currentTaxPoint !== 'all' ||
     currentVat !== 'all' ||
-    currentOrigin !== 'all';
+    currentOrigin !== 'all' ||
+    currentDueBefore !== null;
 
   const togglePaidOnline = () => {
     pushUrl({ paidOnline: paidOnlineActive ? null : '1' });
@@ -289,6 +322,13 @@ export function InvoiceFilters({
     readonly key: string;
     readonly label: string;
     readonly clear: () => void;
+    /**
+     * A4 (UX review) — per-chip label width override. The default 24ch is
+     * right for the value-label chips, but the dueBefore chip's payload IS
+     * the date: in SV/TH the localized prefix + `YYYY-MM-DD` overruns 24ch
+     * and truncates the one part that matters.
+     */
+    readonly labelClassName?: string;
   }[] = [];
   if (currentSubject !== 'all') {
     secondaryChips.push({
@@ -334,6 +374,28 @@ export function InvoiceFilters({
       clear: () => pushUrl({ paidOnline: null }),
     });
   }
+  // renewals-suspended-visibility-audit Task 3 — the dueBefore chip. Unlike
+  // the other secondaries it has NO Select control (URL-only filter from
+  // drill-down links), so the chip is its ONLY visible representation +
+  // clear affordance besides clear-all. Pushed into `secondaryChips` for
+  // the collapsed view AND rendered as a standalone chip row in the inline
+  // view below (the inline view otherwise ignores `secondaryChips` — every
+  // other secondary shows its state in its own inline control there).
+  const dueBeforeChip =
+    currentDueBefore !== null
+      ? {
+          key: 'dueBefore',
+          // {date} stays the raw ISO `YYYY-MM-DD` — a technical filter
+          // echo, unambiguous across locales (BE conversion is display-only
+          // for member-facing dates, not for a filter token an admin may
+          // copy back into a URL).
+          label: t('filters.dueBefore.chip', { date: currentDueBefore }),
+          clear: () => pushUrl({ dueBefore: null }),
+          // A4 — see `labelClassName` doc: the DATE must never truncate.
+          labelClassName: 'max-w-[28ch]',
+        }
+      : null;
+  if (dueBeforeChip) secondaryChips.push(dueBeforeChip);
   const secondaryActiveCount = secondaryChips.length;
 
   // --- Shared inline controls (identical in both layouts) -------------------
@@ -526,6 +588,7 @@ export function InvoiceFilters({
           taxPoint: null,
           vat: null,
           origin: null,
+          dueBefore: null,
         });
         // Clearing flips `hasAnyFilter` false → this button unmounts itself;
         // move focus to the always-present search input first so it never
@@ -539,14 +602,57 @@ export function InvoiceFilters({
     </Button>
   ) : null;
 
+  // Shared removable-chip markup (collapsed chips row + the inline
+  // dueBefore chip below) — one renderer so the two can't drift.
+  const renderChip = (chip: {
+    readonly key: string;
+    readonly label: string;
+    readonly clear: () => void;
+    readonly labelClassName?: string;
+  }) => (
+    <span
+      key={chip.key}
+      className="inline-flex items-center gap-1 rounded-md border bg-secondary py-0.5 pl-2 pr-1 text-xs text-secondary-foreground"
+    >
+      <span
+        className={cn('max-w-[24ch] truncate', chip.labelClassName)}
+        title={chip.label}
+      >
+        {chip.label}
+      </span>
+      <button
+        type="button"
+        // Removing a chip unmounts it; move focus to the always-present
+        // search input first so it never drops to <body> (mirrors
+        // `directory-filters.tsx`).
+        onClick={() => {
+          chip.clear();
+          searchInputRef.current?.focus();
+        }}
+        aria-label={t('filters.more.removeAria', { label: chip.label })}
+        // `-my-1 p-1.5` gives a 24×24 hit target (WCAG 2.5.8 baseline)
+        // around the 12px icon WITHOUT growing the chip's height.
+        className="-my-1 rounded-sm p-1.5 hover:bg-secondary-foreground/10 focus-visible:outline-2 focus-visible:outline-ring"
+      >
+        <XIcon className="size-3" aria-hidden="true" />
+      </button>
+    </span>
+  );
+
   // --- Inline layout (member portal / flag-off admin) — layout unchanged ----
   // Byte-for-byte today's LAYOUT: Subject + Paid-online inline, no popover,
   // no chips. (`show088Filters` is false here, so the three 088 selects that
   // used to sit inline never render — nothing to collapse.) The shared
   // `searchField` behaviour differs from the prior version (controlled input +
   // `scroll:false`) — see the file header; the DOM/order/widths are identical.
+  // renewals-suspended-visibility-audit Task 3 — ONE exception: when the
+  // URL-only dueBefore filter is active (flag-off admin following a
+  // drill-down link) a single chip row appears below the bar so the filter
+  // is visible + individually clearable; absent (the common case + always
+  // on the portal, which never enables it) the DOM is exactly the prior
+  // bare `<FilterBar>`.
   if (!collapseSecondary) {
-    return (
+    const bar = (
       <FilterBar>
         {searchField}
         {statusSelect}
@@ -555,6 +661,19 @@ export function InvoiceFilters({
         {paidOnlineToggle}
         {clearButton}
       </FilterBar>
+    );
+    if (!dueBeforeChip) return bar;
+    return (
+      <div className="space-y-2">
+        {bar}
+        <div
+          role="group"
+          aria-label={t('filters.more.activeGroup')}
+          className="flex flex-wrap gap-2"
+        >
+          {renderChip(dueBeforeChip)}
+        </div>
+      </div>
     );
   }
 
@@ -757,38 +876,15 @@ export function InvoiceFilters({
       </FilterBar>
       {secondaryChips.length > 0 && (
         // `role="group"` + label so a screen reader announces this run as the
-        // active filters (parity with directory-filters.tsx).
+        // active filters (parity with directory-filters.tsx). Chip markup
+        // lives in the shared `renderChip` above (also used by the inline
+        // dueBefore chip row).
         <div
           role="group"
           aria-label={t('filters.more.activeGroup')}
           className="flex flex-wrap gap-2"
         >
-          {secondaryChips.map((chip) => (
-            <span
-              key={chip.key}
-              className="inline-flex items-center gap-1 rounded-md border bg-secondary py-0.5 pl-2 pr-1 text-xs text-secondary-foreground"
-            >
-              <span className="max-w-[24ch] truncate" title={chip.label}>
-                {chip.label}
-              </span>
-              <button
-                type="button"
-                // Removing a chip unmounts it; move focus to the always-present
-                // search input first so it never drops to <body> (mirrors
-                // `directory-filters.tsx`).
-                onClick={() => {
-                  chip.clear();
-                  searchInputRef.current?.focus();
-                }}
-                aria-label={t('filters.more.removeAria', { label: chip.label })}
-                // `-my-1 p-1.5` gives a 24×24 hit target (WCAG 2.5.8 baseline)
-                // around the 12px icon WITHOUT growing the chip's height.
-                className="-my-1 rounded-sm p-1.5 hover:bg-secondary-foreground/10 focus-visible:outline-2 focus-visible:outline-ring"
-              >
-                <XIcon className="size-3" aria-hidden="true" />
-              </button>
-            </span>
-          ))}
+          {secondaryChips.map(renderChip)}
         </div>
       )}
     </div>

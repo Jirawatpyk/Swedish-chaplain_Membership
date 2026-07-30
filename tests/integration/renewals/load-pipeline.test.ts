@@ -44,6 +44,8 @@ interface SeedCycle {
   memberId: string;
   expiresAt: Date;
   tier: 'thai_alumni' | 'start_up' | 'regular' | 'premium' | 'partnership';
+  /** Defaults to 'upcoming'. */
+  status?: 'upcoming' | 'awaiting_payment';
 }
 
 describe('F8 loadPipeline — integration (T075)', () => {
@@ -81,7 +83,7 @@ describe('F8 loadPipeline — integration (T075)', () => {
           tenantId: t.ctx.slug,
           cycleId: s.cycleId,
           memberId: s.memberId,
-          status: 'upcoming',
+          status: s.status ?? 'upcoming',
           periodFrom: new Date(s.expiresAt.getTime() - 365 * 86_400_000),
           periodTo: s.expiresAt,
           expiresAt: s.expiresAt,
@@ -117,6 +119,20 @@ describe('F8 loadPipeline — integration (T075)', () => {
       });
     }
     await seedCycles(tenantA, seedA);
+    // renewals-suspended-visibility-audit — a "first-bill collection" case:
+    // benefit-access-suspended (`awaiting_payment`) but expires_at FAR
+    // beyond the 90-day window, so it must appear in NO urgency bucket and
+    // ONLY in `summary.suspendedOutsideWindowCount`. Kept OUT of `seedA`
+    // (the in-window expectations iterate that list).
+    await seedCycles(tenantA, [
+      {
+        cycleId: randomUUID(),
+        memberId: randomUUID(),
+        expiresAt: new Date(now + 120 * 86_400_000),
+        tier: 'regular',
+        status: 'awaiting_payment',
+      },
+    ]);
     await seedCycles(tenantB, [
       {
         cycleId: randomUUID(),
@@ -190,6 +206,35 @@ describe('F8 loadPipeline — integration (T075)', () => {
     expect(total).toBe(result.value.summary.totalInWindow);
     // Our 5 seeded rows fall in [t-90, t-60, t-30, t-7, suspended]
     expect(result.value.summary.totalInWindow).toBeGreaterThanOrEqual(5);
+  });
+
+  it('summary.suspendedOutsideWindowCount counts awaiting_payment beyond the 90-day window — never inside byUrgency (renewals-suspended-visibility-audit)', async () => {
+    const deps = makeRenewalsDeps(tenantA.ctx.slug);
+    const result = await loadPipeline(deps, {
+      tenantId: tenantA.ctx.slug,
+      urgency: 't-90',
+      limit: 50,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // The seeded first-bill collection case (awaiting_payment, +120d).
+    expect(result.value.summary.suspendedOutsideWindowCount).toBe(1);
+    // Additive, never overlapping: the outside-window cycle is in NO
+    // urgency bucket (the sum-vs-totalInWindow invariant above already
+    // pins byUrgency; here we pin the row is also absent from the page).
+    expect(
+      result.value.rows.some((r) => r.urgency === undefined),
+    ).toBe(false);
+
+    // Cross-tenant: B has no outside-window suspended cycles.
+    const forB = await loadPipeline(makeRenewalsDeps(tenantB.ctx.slug), {
+      tenantId: tenantB.ctx.slug,
+      urgency: 't-90',
+      limit: 50,
+    });
+    expect(forB.ok).toBe(true);
+    if (!forB.ok) return;
+    expect(forB.value.summary.suspendedOutsideWindowCount).toBe(0);
   });
 
   it('tier filter narrows to premium cycles', async () => {

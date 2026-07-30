@@ -57,6 +57,7 @@ import {
   RenewalsByMonthSectionSkeleton,
 } from './_components/renewals-by-month-section';
 import { RenewalsEmptyState } from './_components/empty-state';
+import { SuspendedBridgeStrip } from './_components/suspended-bridge-strip';
 import { shouldShowRenewalsEmptyState } from './_lib/should-show-empty-state';
 import { UrgencyBucketTabs } from './_components/urgency-bucket-tabs';
 import {
@@ -460,7 +461,16 @@ export default async function RenewalsPipelinePage({
           <WorkQueueTabs
             pipeline={
               showEmptyState ? (
-                <RenewalsEmptyState />
+                // A2 — the empty state must not swallow the suspended
+                // bridge: the launch-shaped tenant (every member a
+                // first-bill collection case outside the window) hits
+                // exactly this branch.
+                <RenewalsEmptyState
+                  suspendedInWindowCount={summary.byUrgency.suspended}
+                  suspendedOutsideWindowCount={
+                    summary.suspendedOutsideWindowCount
+                  }
+                />
               ) : (
                 // Table-caption layout — the sighted result-count renders as
                 // the pipeline table's own caption directly above the rows
@@ -478,6 +488,18 @@ export default async function RenewalsPipelinePage({
                     />
                     <TierFilterSelect current={tier ?? 'all'} />
                   </div>
+                  {/* renewals-suspended-visibility-audit — the suspended
+                      population bridge, rendered on the Suspended tab only
+                      (the exact surface where the Members-page total vs tab
+                      count mismatch confuses admins). The strip itself
+                      renders nothing when no suspended cycles sit outside
+                      the work window. */}
+                  {!monthLensActive && urgency === 'suspended' ? (
+                    <SuspendedBridgeStrip
+                      inWindowCount={summary.byUrgency.suspended}
+                      outsideWindowCount={summary.suspendedOutsideWindowCount}
+                    />
+                  ) : null}
                   <ResultCountAnnouncer
                     count={rows.length}
                     {...(monthLensActive

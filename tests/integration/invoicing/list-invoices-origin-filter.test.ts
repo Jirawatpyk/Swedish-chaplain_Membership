@@ -78,6 +78,10 @@ describe('listInvoicesPaged — origin filter (107-auto-invoice Task 13, BUG-015
   const autoDraftInv = randomUUID();
   const manualDraftInv = randomUUID();
   const manualIssuedInv = randomUUID();
+  // renewals-suspended-visibility-audit Task 3 — a second ISSUED invoice due
+  // in the PRIOR fiscal year (2025-08-15), the prod shape the money band's
+  // `?dueBefore={fyStart}` drill-down isolates.
+  const priorFyIssuedInv = randomUUID();
 
   beforeAll(async () => {
     user = await createActiveTestUser('admin');
@@ -179,6 +183,40 @@ describe('listInvoicesPaged — origin filter (107-auto-invoice Task 13, BUG-015
           pdfSha256: 'a'.repeat(64),
           pdfTemplateVersion: 1,
         },
+        // Task 3 — origin='manual', status='issued', due in the PRIOR
+        // fiscal year (2025-08-15). Only this row satisfies
+        // `dueBefore: '2026-01-01'`.
+        {
+          tenantId: tenant.ctx.slug,
+          invoiceId: priorFyIssuedInv,
+          invoiceSubject: 'membership',
+          memberId,
+          // planYear stays 2026: the composite `invoices_plan_fk`
+          // (tenant, plan_id, plan_year) points at the ONE seeded plan row.
+          // Only the DUE DATE needs to sit in the prior fiscal year.
+          planYear: 2026,
+          planId: 'origin-plan',
+          draftByUserId: user.userId,
+          status: 'issued',
+          pdfDocKind: 'invoice',
+          fiscalYear: 2025,
+          sequenceNumber: 1,
+          documentNumber: 'OF-2025-000001',
+          issueDate: '2025-07-15',
+          dueDate: '2025-08-15',
+          subtotalSatang: 3_600_000n,
+          vatRateSnapshot: '0.0700',
+          vatSatang: 252_000n,
+          totalSatang: 3_852_000n,
+          creditedTotalSatang: 0n,
+          proRatePolicySnapshot: 'monthly',
+          netDaysSnapshot: 30,
+          tenantIdentitySnapshot: SNAP_TENANT,
+          memberIdentitySnapshot: SNAP_MEMBER,
+          pdfBlobKey: 'invoicing/of/2025/1.pdf',
+          pdfSha256: 'b'.repeat(64),
+          pdfTemplateVersion: 1,
+        },
       ]);
     });
   }, 60_000);
@@ -241,7 +279,10 @@ describe('listInvoicesPaged — origin filter (107-auto-invoice Task 13, BUG-015
     if (!result.ok) return;
 
     const ids = result.value.rows.map((r) => r.invoiceId).sort();
-    expect(ids).toEqual([manualDraftInv, manualIssuedInv].sort());
+    // Task 3 seed addition: the prior-FY issued row is also origin='manual'.
+    expect(ids).toEqual(
+      [manualDraftInv, manualIssuedInv, priorFyIssuedInv].sort(),
+    );
     expect(ids).not.toContain(autoDraftInv);
   });
 
@@ -258,8 +299,69 @@ describe('listInvoicesPaged — origin filter (107-auto-invoice Task 13, BUG-015
     if (!result.ok) return;
 
     const ids = result.value.rows.map((r) => r.invoiceId);
-    expect(ids).toEqual([manualIssuedInv]);
+    // Task 3 seed addition: both ISSUED rows survive the draft exclusion
+    // (ordered issue_date DESC → 2026 first).
+    expect(ids).toEqual([manualIssuedInv, priorFyIssuedInv]);
     expect(ids).not.toContain(autoDraftInv);
     expect(ids).not.toContain(manualDraftInv);
+  });
+
+  // renewals-suspended-visibility-audit Task 3 — `dueBefore` (strict
+  // `due_date < bound`) composes with the existing filters. First consumer:
+  // the renewals money band's prior-FY drill-down
+  // (`status=overdue&subject=membership&dueBefore={fyStart}`).
+  describe('dueBefore filter (Task 3)', () => {
+    it('dueBefore=2026-01-01 → ONLY the prior-FY issued bill (strict bound)', async () => {
+      const result = await listInvoicesPaged(makeListInvoicesDeps(tenant.ctx.slug), {
+        tenantId: tenant.ctx.slug,
+        offset: 0,
+        pageSize: 50,
+        includeDrafts: false,
+        memberId,
+        status: 'all',
+        dueBefore: '2026-01-01',
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.rows.map((r) => r.invoiceId)).toEqual([priorFyIssuedInv]);
+      expect(result.value.total).toBe(1);
+    });
+
+    it('composes with the DERIVED overdue status (the money-band drill-down shape)', async () => {
+      const result = await listInvoicesPaged(makeListInvoicesDeps(tenant.ctx.slug), {
+        tenantId: tenant.ctx.slug,
+        offset: 0,
+        pageSize: 50,
+        includeDrafts: false,
+        memberId,
+        status: 'overdue',
+        invoiceSubject: 'membership',
+        dueBefore: '2026-01-01',
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      // Both issued bills are past due vs BKK-today, but only the prior-FY
+      // one satisfies due_date < 2026-01-01 — the EXACT cohort the band's
+      // sub-line counts (the operator-rejected superset is gone).
+      expect(result.value.rows.map((r) => r.invoiceId)).toEqual([priorFyIssuedInv]);
+    });
+
+    it('a later bound (2026-03-01) admits both issued bills; drafts stay excluded (NULL-safe predicate + draft guard)', async () => {
+      const result = await listInvoicesPaged(makeListInvoicesDeps(tenant.ctx.slug), {
+        tenantId: tenant.ctx.slug,
+        offset: 0,
+        pageSize: 50,
+        includeDrafts: false,
+        memberId,
+        status: 'all',
+        dueBefore: '2026-03-01',
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.rows.map((r) => r.invoiceId)).toEqual([
+        manualIssuedInv,
+        priorFyIssuedInv,
+      ]);
+    });
   });
 });

@@ -276,6 +276,15 @@ export interface InvoiceRepo {
        * `origin='auto_renewal'` maps directly to `invoices.origin`.
        */
       readonly origin?: 'manual' | 'auto_renewal' | undefined;
+      /**
+       * renewals-suspended-visibility-audit Task 3 — strict due-date upper
+       * bound (`due_date IS NOT NULL AND due_date < dueBefore`). Bangkok
+       * calendar date `YYYY-MM-DD` (matches the `due_date` column's F4
+       * convention). Composes with every other filter — e.g.
+       * `status:'overdue' + dueBefore:{fyStart}` = the prior-fiscal-year
+       * overdue cohort. Absent = no restriction.
+       */
+      readonly dueBefore?: string | undefined;
     },
   ): Promise<{ readonly rows: readonly Invoice[]; readonly total: number }>;
 

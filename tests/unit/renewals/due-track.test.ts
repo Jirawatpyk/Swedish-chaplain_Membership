@@ -13,6 +13,7 @@ import {
   findDueTrackStepsDue,
   isStatutoryWarningStepId,
   hasSatisfiedWarningRequirement,
+  newestStatutoryWarningDispatch,
 } from '@/modules/renewals/domain/due-track';
 
 const NOW = '2026-08-15T09:00:00.000Z';
@@ -131,5 +132,53 @@ describe('hasSatisfiedWarningRequirement', () => {
   it('sanity: DUE_TRACK_STEPS is the exact spec pair', () => {
     expect(DUE_TRACK_STEPS.map((s) => s.stepId)).toEqual(['due+7.email', 'due+30.email']);
     expect(MIN_WARNING_NOTICE_DAYS).toBe(14);
+  });
+});
+
+// renewals-suspended-visibility-audit — feeds the dormancy-guard deferral
+// audit (`renewal_lapse_deferred_warning_pending`): same qualifying predicate
+// as hasSatisfiedWarningRequirement, minus the maturity cutoff.
+describe('newestStatutoryWarningDispatch', () => {
+  const sent = (
+    stepId: string,
+    dispatchedAt: string | null,
+    channel = 'email',
+    status = 'sent',
+  ) => ({ stepId, status, channel, dispatchedAt });
+
+  it('returns null when no qualifying warning exists (empty, non-warning steps, wrong channel/status, null dispatchedAt)', () => {
+    expect(newestStatutoryWarningDispatch([])).toBeNull();
+    expect(
+      newestStatutoryWarningDispatch([
+        sent('due+7.email', '2026-07-01T00:00:00.000Z'), // not a statutory warning
+        sent('due+30.email', '2026-07-01T00:00:00.000Z', 'task'), // wrong channel
+        sent('due+30.email', '2026-07-01T00:00:00.000Z', 'email', 'failed'), // not sent
+        sent('due+30.email', null), // never dispatched
+      ]),
+    ).toBeNull();
+  });
+
+  it('picks the NEWEST qualifying dispatch and returns maturity = sent + MIN_WARNING_NOTICE_DAYS', () => {
+    const result = newestStatutoryWarningDispatch([
+      sent('due+30.email', '2026-07-01T06:00:00.000Z'),
+      sent('t+7.email', '2026-07-20T06:00:00.000Z'), // newest qualifying
+      sent('due+30.email', '2026-06-01T06:00:00.000Z'),
+    ]);
+    expect(result).toEqual({
+      sentAtIso: '2026-07-20T06:00:00.000Z',
+      // +14 days exactly (MIN_WARNING_NOTICE_DAYS) — the first instant the
+      // dormancy guard can pass for this cycle.
+      maturesAtIso: '2026-08-03T06:00:00.000Z',
+    });
+  });
+
+  it('agrees with hasSatisfiedWarningRequirement at the maturity boundary', () => {
+    const events = [sent('due+30.email', '2026-07-01T00:00:00.000Z')];
+    const maturity = newestStatutoryWarningDispatch(events)!.maturesAtIso;
+    // One ms before maturity the guard still defers; at maturity it passes.
+    expect(
+      hasSatisfiedWarningRequirement(events, new Date(Date.parse(maturity) - 1).toISOString()),
+    ).toBe(false);
+    expect(hasSatisfiedWarningRequirement(events, maturity)).toBe(true);
   });
 });

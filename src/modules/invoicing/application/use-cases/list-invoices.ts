@@ -105,6 +105,18 @@ export const listInvoicesPagedSchema = z.object({
   // forced-`includeDrafts` note on `listInvoicesPaged` below (BUG-015):
   // an `origin='auto_renewal'` query must never silently drop drafts.
   origin: z.enum(['manual', 'auto_renewal']).optional(),
+  // renewals-suspended-visibility-audit Task 3 — strict due-date upper
+  // bound: `due_date < dueBefore` (Bangkok calendar date, `YYYY-MM-DD`).
+  // Generic date filter (first consumer: the renewals money band's
+  // prior-fiscal-year drill-down, which passes the FY start so
+  // `status=overdue&dueBefore={fyStart}` lands on the EXACT prior-FY
+  // overdue cohort). The page validates shape + calendar-validity and
+  // drops anything malformed BEFORE this schema; the regex here is
+  // defence-in-depth for non-page callers.
+  dueBefore: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
 });
 
 export type ListInvoicesPagedInput = z.infer<typeof listInvoicesPagedSchema>;
@@ -148,6 +160,7 @@ export async function listInvoicesPaged(
     taxPointState: input.taxPointState,
     vatTreatment: input.vatTreatment,
     origin: input.origin,
+    dueBefore: input.dueBefore,
   });
   return ok({ rows, total });
 }

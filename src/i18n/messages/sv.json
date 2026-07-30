@@ -2202,6 +2202,9 @@
             "manual": "Manuell",
             "autoRenewal": "Kö för automatisk förnyelse"
           },
+          "dueBefore": {
+            "chip": "Förfaller före {date}"
+          },
           "more": {
             "button": "Filter",
             "ariaOpen": "Filter ({count} aktiva)",
@@ -3264,6 +3267,9 @@
           "label": "Förfaller snart",
           "basis": "medlemsavgifter som förfaller inom {days, plural, one {# dag} other {# dagar}} · ännu ej förfallna · inkl. moms"
         }
+      },
+      "suspendedBridge": {
+        "line": "Avstängd åtkomst: totalt {total, plural, one {# medlem} other {# medlemmar}} — {inWindow} i denna förnyelsekö · {outside} med obetald första faktura (ännu ej i förnyelsefönstret). <link>Visa alla obetalda medlemsfakturor</link>"
       },
       "tabs": {
         "ariaLabel": "Förnyelsesektioner",
@@ -6098,6 +6104,7 @@
       "membership_suspended_action_blocked": "Åtgärd blockerad — medlemskap avstängt",
       "membership_access_fail_open": "Kontroll av medlemsåtkomst misslyckades (fail-open)",
       "renewal_lapse_deferred_invoice_not_due": "Uppsägning uppskjuten — fakturan har inte förfallit än",
+      "renewal_lapse_deferred_warning_pending": "Uppsägning uppskjuten — varselperioden har inte löpt ut än",
       "event_attendance_by_suspended_member": "Närvaro registrerad — medlemmens förmånsåtkomst avstängd eller uppsagd",
       "renewal_auto_drafted": "Förnyelseutkast skapat automatiskt",
       "renewal_auto_draft_discarded": "Automatiskt förnyelseutkast kasserat",

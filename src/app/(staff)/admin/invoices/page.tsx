@@ -169,6 +169,30 @@ interface SearchParams {
    * visible either way (BUG-015).
    */
   readonly origin?: string;
+  /**
+   * renewals-suspended-visibility-audit Task 3 — `?dueBefore=YYYY-MM-DD`
+   * restricts the list to invoices with `due_date < dueBefore` (strict).
+   * A generic date filter (PII-free), added so drill-downs can express
+   * date-bounded cohorts honestly (first consumer: the renewals money
+   * band's prior-fiscal-year overdue sub-line, which passes the FY start
+   * date). Malformed / non-calendar values are IGNORED (no 500, no
+   * restriction) — mirrors every other param's fall-through posture.
+   */
+  readonly dueBefore?: string;
+}
+
+/**
+ * `?dueBefore` validator — strict `YYYY-MM-DD` shape AND a real calendar
+ * date. V8's lenient parser ROLLS OVER out-of-range days instead of
+ * rejecting them (`2026-02-30T00:00:00Z` parses as Mar 2), so a NaN check
+ * alone is not enough — the UTC round-trip must reproduce the input
+ * exactly. Anything else → undefined (param ignored; never a 500).
+ */
+function parseDueBeforeParam(raw: string | undefined): string | undefined {
+  if (!raw || !/^\d{4}-\d{2}-\d{2}$/.test(raw)) return undefined;
+  const ms = Date.parse(`${raw}T00:00:00.000Z`);
+  if (Number.isNaN(ms)) return undefined;
+  return new Date(ms).toISOString().slice(0, 10) === raw ? raw : undefined;
 }
 
 export default async function AdminInvoicesPage({
@@ -288,6 +312,9 @@ export default async function AdminInvoicesPage({
     (query.vat === 'standard' || query.vat === 'zero_rated_80_1_5')
       ? query.vat
       : undefined;
+  // renewals-suspended-visibility-audit Task 3 — generic due-date upper
+  // bound (NOT flag-gated: a plain date filter any admin can use/bookmark).
+  const dueBeforeFilter = parseDueBeforeParam(query.dueBefore);
   const hasFilters =
     Boolean(qTrim) ||
     Boolean(statusFilter) ||
@@ -296,7 +323,8 @@ export default async function AdminInvoicesPage({
     Boolean(documentTypeFilter) ||
     Boolean(taxPointFilter) ||
     Boolean(vatTreatmentFilter) ||
-    Boolean(originFilter);
+    Boolean(originFilter) ||
+    Boolean(dueBeforeFilter);
 
   const rawPage = Number.parseInt(query.page ?? '1', 10);
   const page = Number.isFinite(rawPage) && rawPage > 0 ? Math.min(rawPage, 10_000) : 1;
@@ -338,6 +366,7 @@ export default async function AdminInvoicesPage({
     ...(taxPointFilter ? { taxPointState: taxPointFilter } : {}),
     ...(vatTreatmentFilter ? { vatTreatment: vatTreatmentFilter } : {}),
     ...(originFilter ? { origin: originFilter } : {}),
+    ...(dueBeforeFilter ? { dueBefore: dueBeforeFilter } : {}),
   });
 
   // G-2 — batched CN count per invoice on the current page. Single
@@ -727,6 +756,8 @@ export default async function AdminInvoicesPage({
           <InvoiceFilters
             show088Filters={f088TaxAtPayment}
             showAutoInvoiceFilter={autoInvoiceEnabled}
+            // Task 3 — generic filter, not flag-gated (see the prop doc).
+            showDueBeforeFilter
           />
           {/* SC 4.1.3 (Status Messages) — announce the filtered result count to
               screen readers after a filter/page change WITHOUT moving focus.

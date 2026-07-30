@@ -257,6 +257,20 @@ export const F8_AUDIT_EVENT_TYPES = [
   //     Migration 0262 adds the pgEnum value; SHIPPED (not deferred) in
   //     `F8_ENUM_SHIPPED_TUPLE` — the emit site lands in this same task. ---
   'renewal_orphan_invoice_relinked',
+  // --- renewals-suspended-visibility-audit — the 066 §3.2(3) DORMANCY
+  //     GUARD's deferral event. Emitted by `lapseCyclesOnGraceExpiry`
+  //     `processOne` when a due+60 termination is deferred because no SENT
+  //     statutory warning email has matured (dispatched >= 14 days before
+  //     the run). Previously the ONLY deferral branch with no audit row
+  //     (cron JSON counter + OTel metric + the route's idempotent
+  //     `termination_warning_blocked` escalation task were the sole traces
+  //     — cost a live investigation 2026-07-30). Same fire-and-forget
+  //     `emit()`-outside-tx pattern as `renewal_lapse_deferred_invoice_
+  //     not_due` (deferring is the absence of a state change; Principle
+  //     VIII pairs audits with STATE CHANGES only). Migration 0283 adds
+  //     the pgEnum value; SHIPPED in `F8_ENUM_SHIPPED_TUPLE` — the emit
+  //     site lands in this same commit. ---
+  'renewal_lapse_deferred_warning_pending',
 ] as const;
 
 export type F8AuditEventType = (typeof F8_AUDIT_EVENT_TYPES)[number];
@@ -265,9 +279,9 @@ export type F8AuditEventType = (typeof F8_AUDIT_EVENT_TYPES)[number];
  * Compile-time count check — pins the const tuple length so a typo or
  * accidental drop in `F8_AUDIT_EVENT_TYPES` becomes a build error.
  */
-type _AssertF8AuditEventCount = (typeof F8_AUDIT_EVENT_TYPES)['length'] extends 73
+type _AssertF8AuditEventCount = (typeof F8_AUDIT_EVENT_TYPES)['length'] extends 74
   ? true
-  : 'F8_AUDIT_EVENT_TYPES count mismatch — expected 73';
+  : 'F8_AUDIT_EVENT_TYPES count mismatch — expected 74';
 const _assertF8AuditEventCount: _AssertF8AuditEventCount = true;
 // Reference the const so it isn't pruned + so future maintainers see the assertion is wired in.
 void _assertF8AuditEventCount;
@@ -1310,6 +1324,36 @@ export interface F8AuditPayloadShapes {
     readonly member_id: MemberId;
     readonly invoice_subject: 'membership';
     readonly due_date_frontier: string;
+  };
+  /**
+   * renewals-suspended-visibility-audit — emitted from
+   * `lapseCyclesOnGraceExpiry`'s `processOne` when the 066 §3.2(3)
+   * dormancy guard defers a due+60 termination because no SENT statutory
+   * warning email has matured (dispatched >= MIN_WARNING_NOTICE_DAYS = 14
+   * days before the run).
+   *
+   *   - `due_date` — the oldest-due unpaid MEMBERSHIP invoice's Bangkok
+   *     calendar date (`YYYY-MM-DD`), the frontier that drove the
+   *     would-be terminate decision (today > due_date + 60).
+   *   - `warning_sent_at` — the NEWEST qualifying statutory warning's
+   *     dispatch instant (ISO UTC), read from the reminder events the
+   *     guard already loaded (NO extra query). `null` when no qualifying
+   *     warning has been sent at all yet (the due-track dispatcher will
+   *     send it on a later run).
+   *   - `earliest_terminate_on` — `warning_sent_at + 14 days` (ISO UTC):
+   *     the first instant the guard can pass. `null` iff
+   *     `warning_sent_at` is null (maturity is undefined until a warning
+   *     exists).
+   *
+   * PII discipline: IDs + dates only — no email addresses, no member
+   * names (mirrors `renewal_lapse_deferred_invoice_not_due`).
+   */
+  readonly renewal_lapse_deferred_warning_pending: {
+    readonly cycle_id: CycleId;
+    readonly member_id: MemberId;
+    readonly due_date: string;
+    readonly warning_sent_at: string | null;
+    readonly earliest_terminate_on: string | null;
   };
   /**
    * 066 §4.4(2) — a payment settled a MEMBERSHIP invoice for a member whose

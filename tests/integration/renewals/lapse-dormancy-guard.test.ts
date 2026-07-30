@@ -296,6 +296,53 @@ describe('066 lapse dormancy guard (live Neon)', () => {
     expect(
       (forBackstop!.payload as { termination_basis?: string }).termination_basis,
     ).toBe('no_invoice_backstop');
+
+    // renewals-suspended-visibility-audit — BOTH guard deferrals now leave a
+    // forensic `renewal_lapse_deferred_warning_pending` row (previously this
+    // was the only audit-silent deferral branch; cost a live investigation
+    // 2026-07-30). Proves the emit lands on live Neon through the real
+    // fire-and-forget adapter path AND that migration 0283's enum value
+    // exists in the DB.
+    const deferredAudits = await runInTenant(tenantA.ctx, (tx) =>
+      tx
+        .select()
+        .from(auditLog)
+        .where(
+          and(
+            eq(auditLog.tenantId, tenantA.ctx.slug),
+            eq(auditLog.eventType, 'renewal_lapse_deferred_warning_pending'),
+          ),
+        ),
+    );
+    expect(deferredAudits).toHaveLength(2);
+    const deferredFor = (cycleId: string) =>
+      deferredAudits.find(
+        (a) => (a.payload as { cycle_id?: string }).cycle_id === cycleId,
+      )?.payload as
+        | {
+            member_id?: string;
+            due_date?: string;
+            warning_sent_at?: string | null;
+            earliest_terminate_on?: string | null;
+          }
+        | undefined;
+    // unwarned: no qualifying warning ever sent → both warning fields null.
+    const unwarnedPayload = deferredFor(unwarned.cycleId);
+    expect(unwarnedPayload).toBeDefined();
+    expect(unwarnedPayload!.member_id).toBe(unwarned.memberId);
+    expect(unwarnedPayload!.due_date).toBe(PAST_DUE_70);
+    expect(unwarnedPayload!.warning_sent_at).toBeNull();
+    expect(unwarnedPayload!.earliest_terminate_on).toBeNull();
+    // warnedLate: due+30.email sent 5d ago → sent_at echoed + maturity at
+    // sent + 14d (i.e. NOW + 9d) — the first instant the guard can pass.
+    const latePayload = deferredFor(warnedLate.cycleId);
+    expect(latePayload).toBeDefined();
+    expect(latePayload!.warning_sent_at).toBe(
+      new Date(NOW.getTime() - 5 * MS_PER_DAY).toISOString(),
+    );
+    expect(latePayload!.earliest_terminate_on).toBe(
+      new Date(NOW.getTime() + 9 * MS_PER_DAY).toISOString(),
+    );
   }, 120_000);
 
   it('T5-review H1: the route escalation args are zod-valid + idempotent across two cron runs', async () => {

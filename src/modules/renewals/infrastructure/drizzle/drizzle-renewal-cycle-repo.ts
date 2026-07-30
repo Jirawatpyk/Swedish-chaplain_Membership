@@ -2030,6 +2030,13 @@ export function makeDrizzleRenewalCycleRepo(
               WHERE ${invoices.status} = 'issued'
                 AND ${invoices.dueDate} IS NOT NULL
                 AND ${invoices.dueDate} < ${fyStart}))::int`,
+            // renewals-suspended-visibility-audit Task 3 — the SAME
+            // `fyStart` boundary the legs above filtered on, surfaced as
+            // `YYYY-MM-DD` so the band's prior-FY drill-down can pass it as
+            // `?dueBefore=`. Selected FROM the SQL expression itself (not
+            // recomputed in JS) so the link's bound can never drift from
+            // the cohort the sub-line counted.
+            fyStartDate: sql<string>`(${fyStart})::text`,
           })
           .from(invoices)
           .where(membership);
@@ -2069,6 +2076,10 @@ export function makeDrizzleRenewalCycleRepo(
           dueSoonSatang: BigInt(scalars?.dueSoon ?? '0'),
           overdueBeforeFySatang: BigInt(scalars?.overdueBeforeFy ?? '0'),
           overdueBeforeFyCount: Number(scalars?.overdueBeforeFyCount ?? 0),
+          // An aggregate query with no GROUP BY always yields exactly one
+          // row, so the fallback is unreachable — kept only for the `?.`
+          // type-narrowing symmetry with the legs above.
+          fyStartDate: scalars?.fyStartDate ?? '',
           settledRows: settledRows.map((r) => ({
             invoiceId: r.invoiceId,
             netOfCreditSatang: BigInt(r.netOfCredit),
@@ -2410,6 +2421,12 @@ export function makeDrizzleRenewalCycleRepo(
         // Window definition: active cycles only EXCEPT lapsed tab which
         // explicitly returns lapsed cycles. The window is "next 90 days"
         // for non-lapsed urgency buckets.
+        //
+        // renewals-suspended-visibility-audit — the FR-046 window boundary
+        // is now a SINGLE fragment shared by the page filter, the summary
+        // filter AND the new outside-window count below, so the "90" can
+        // never fork between the tab badges and the bridge strip.
+        const windowEnd = sql`NOW() + INTERVAL '90 days'`;
         const baseFilters: SQL[] = [
           // COMP-1 H4 — exclude GDPR-erased members from the pipeline
           // window. `markCycleCompleteFromInvoicePaid` routes a paid erased
@@ -2430,9 +2447,7 @@ export function makeDrizzleRenewalCycleRepo(
             sql`${renewalCycles.status} NOT IN ('cancelled','completed')`,
           );
           // 90-day window for the pipeline (FR-046 SC-003 sizing).
-          baseFilters.push(
-            sql`${renewalCycles.expiresAt} <= NOW() + INTERVAL '90 days'`,
-          );
+          baseFilters.push(sql`${renewalCycles.expiresAt} <= ${windowEnd}`);
         }
         if (opts.tier) {
           baseFilters.push(eq(renewalCycles.tierAtCycleStart, opts.tier));
@@ -2452,7 +2467,7 @@ export function makeDrizzleRenewalCycleRepo(
         const summaryFilters: SQL[] = [
           MEMBER_NOT_ERASED_SQL,
           sql`${renewalCycles.status} NOT IN ('cancelled','completed')`,
-          sql`${renewalCycles.expiresAt} <= NOW() + INTERVAL '90 days'`,
+          sql`${renewalCycles.expiresAt} <= ${windowEnd}`,
         ];
         if (opts.tier) {
           summaryFilters.push(eq(renewalCycles.tierAtCycleStart, opts.tier));
@@ -2496,10 +2511,38 @@ export function makeDrizzleRenewalCycleRepo(
           .from(renewalCycles)
           .where(and(...lapsedFilters));
 
-        const [summaryRows, lapsedCountRows] = await Promise.all([
-          summaryQueryPromise,
-          lapsedCountQueryPromise,
-        ]);
+        // renewals-suspended-visibility-audit — the "suspended population
+        // bridge": benefit-access-suspended cycles OUTSIDE the FR-046 work
+        // window (first-bill collection cases whose fixed-anchor expiry is
+        // far in the future — awaiting_payment or pending_admin_
+        // reactivation with expires_at beyond the shared `windowEnd`).
+        // These members show as Suspended on the Members page but appear in
+        // NO urgency bucket, so the pipeline's Suspended tab under-counts
+        // relative to the Members page; the strip on the pipeline page uses
+        // this count to make the two numbers explain themselves. Same tier
+        // filter as the summary (W-06 reasoning: the strip must describe
+        // the SAME slice the badges describe).
+        const suspendedOutsideFilters: SQL[] = [
+          MEMBER_NOT_ERASED_SQL,
+          sql`${renewalCycles.status} IN ('awaiting_payment','pending_admin_reactivation')`,
+          sql`${renewalCycles.expiresAt} > ${windowEnd}`,
+        ];
+        if (opts.tier) {
+          suspendedOutsideFilters.push(
+            eq(renewalCycles.tierAtCycleStart, opts.tier),
+          );
+        }
+        const suspendedOutsideCountQueryPromise = tx
+          .select({ count: sql<number>`count(*)::int` })
+          .from(renewalCycles)
+          .where(and(...suspendedOutsideFilters));
+
+        const [summaryRows, lapsedCountRows, suspendedOutsideRows] =
+          await Promise.all([
+            summaryQueryPromise,
+            lapsedCountQueryPromise,
+            suspendedOutsideCountQueryPromise,
+          ]);
 
         const byUrgency: Record<UrgencyBucket, number> = {
           't-90': 0,
@@ -2701,6 +2744,7 @@ export function makeDrizzleRenewalCycleRepo(
           totalInWindow,
           byUrgency,
           lapsedCount,
+          suspendedOutsideWindowCount: suspendedOutsideRows[0]?.count ?? 0,
         };
 
         return {
