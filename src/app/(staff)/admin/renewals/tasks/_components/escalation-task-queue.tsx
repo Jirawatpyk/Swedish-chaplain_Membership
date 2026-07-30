@@ -589,7 +589,16 @@ export function EscalationTaskQueue({
             );
           })()
         ) : (
-          <div className="rounded-md border">
+          // Enterprise-ux review fix — `overflow-x-auto` on this wrapper
+          // (not just the inner `<Table>`'s own scroll container) gives
+          // the browser a bounded box whose automatic min-size is 0 in
+          // the surrounding flex/grid layout, so the 8-column table
+          // scrolls WITHIN this box on tablet/mobile instead of forcing
+          // the page body to scroll horizontally (docs/ux-standards.md —
+          // wide content must scroll in its own box). Mirrors
+          // `admin/invoices/_components/invoice-table.tsx`'s scroll
+          // wrapper.
+          <div className="overflow-x-auto rounded-md border">
             <Table>
               {/* R10 S1 close — sr-only caption for richer AT context. */}
               <TableCaption className="sr-only">
@@ -630,7 +639,7 @@ export function EscalationTaskQueue({
                           : undefined
                       }
                     >
-                      <TableCell>
+                      <TableCell className="align-top">
                         {/* Table-wrap fix — a long company name (e.g.
                             "SCANIA SIAM COMPANY LIMITED") used to run
                             on one line and jam against "View timeline".
@@ -644,7 +653,15 @@ export function EscalationTaskQueue({
                         <div className="max-w-[26ch] whitespace-normal">
                           <Link
                             href={`/admin/members/${task.memberId}`}
-                            className="line-clamp-2 break-words font-medium text-primary underline-offset-4 hover:underline"
+                            // Enterprise-ux review fix — explicit
+                            // outline-based focus ring (matches sibling
+                            // renewals links, e.g. `[cycleId]/page.tsx`,
+                            // `members-without-cycle-tray.tsx`). Outline
+                            // (unlike a box-shadow `ring`) is not clipped
+                            // by this element's own `overflow: hidden`
+                            // from `line-clamp-2`, so keyboard focus
+                            // stays fully visible on wrapped 2-line rows.
+                            className="line-clamp-2 break-words rounded-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2"
                             title={task.memberCompanyName ?? undefined}
                           >
                             {task.memberCompanyName ?? (
@@ -674,7 +691,7 @@ export function EscalationTaskQueue({
                           <span className="sr-only"> · {task.memberId}</span>
                         </div>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="align-top">
                         {task.memberTierBucket !== null ? (
                           <span className="inline-flex items-center rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground">
                             {t(`tierBucket.${task.memberTierBucket}`)}
@@ -685,7 +702,7 @@ export function EscalationTaskQueue({
                           </span>
                         )}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="align-top">
                         {task.cycleExpiresAt !== null ? (
                           <time
                             dateTime={task.cycleExpiresAt}
@@ -699,25 +716,33 @@ export function EscalationTaskQueue({
                           </span>
                         )}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="align-top">
                         {/* Table-wrap fix — cap long task-type labels
                             (e.g. "Termination deferred - no statutory
                             warning..." at 59 chars) to 2 lines instead
                             of forcing the row wider / overflowing.
+                            Enterprise-ux review fix: the cap moved OFF
+                            this cell (was `max-w-[20ch]` bounding the
+                            chip+label group together, which starved the
+                            label on multi-year rows because the fixed-
+                            width "Year N of M" chip ate the budget
+                            first) and ONTO the pill's label span itself
+                            via `labelClassName` — the year-chip now
+                            renders at its natural width on one line and
+                            only the label wraps/clamps to 2 lines.
                             `whitespace-normal` overrides TableCell's
-                            default `whitespace-nowrap`; `max-w` bounds
-                            the column so short labels still render on
-                            one line unaffected. */}
-                        <div className="max-w-[20ch] whitespace-normal">
+                            default `whitespace-nowrap` so the label can
+                            wrap at all. */}
+                        <div className="whitespace-normal">
                           <YearInCyclePill
                             yearInCycle={task.yearInCycle}
                             totalYears={task.totalYears}
                             taskTypeLabel={resolveTaskTypeLabel(t, task.taskType)}
-                            labelClassName="line-clamp-2 break-words"
+                            labelClassName="line-clamp-2 break-words min-w-0 max-w-[22ch]"
                           />
                         </div>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="align-top">
                         <time dateTime={task.dueAt}>
                           {formatShortDate(task.dueAt)}
                         </time>
@@ -727,16 +752,16 @@ export function EscalationTaskQueue({
                           </span>
                         )}
                       </TableCell>
-                      <TableCell className="text-xs">
+                      <TableCell className="align-top text-xs">
                         {renderAssigneeCell(task)}
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="align-top">
                         <span className="inline-flex items-center rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium">
                           {t(`status.${task.status}`)}
                         </span>
                       </TableCell>
                       {canMutate && (
-                        <TableCell className="text-right">
+                        <TableCell className="align-top text-right">
                           {/* Desktop: 3 inline buttons */}
                           <div className="hidden md:inline-flex gap-2">
                             <Button
