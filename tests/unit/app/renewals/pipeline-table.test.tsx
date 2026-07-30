@@ -375,6 +375,80 @@ const PAYABLE_ROW: ReadonlyArray<PipelineRow> = [
   },
 ];
 
+// 059-membership-suspension covered-gate fix — the invoice column's green
+// "Covered" label previously showed for ANY anchored cycle regardless of
+// urgency, so a PAST-expiry anchored cycle (urgency `suspended`/
+// `terminated`) misleadingly read "Covered" even though its covered period
+// has already ended and a renewal is effectively owed. `lastReminderAt` is
+// overridden to a non-null ISO string in the suspended/terminated cases so
+// the invoice column's "—" is the ONLY em-dash in the row (ONE_ROW's default
+// `lastReminderAt: null` also renders "—" in the last_reminder column,
+// which would make an unscoped "—" query ambiguous).
+describe('<PipelineTable> invoice column — "Covered" gated to pre-expiry urgency (covered-gate fix)', () => {
+  it('shows "Covered" for an anchored cycle with pre-expiry (countdown) urgency and no linked invoice (regression guard)', () => {
+    const rows: ReadonlyArray<PipelineRow> = [
+      { ...ONE_ROW[0]!, anchored: true, urgency: 't-30', linkedInvoiceId: null },
+    ];
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <PipelineTable rows={rows} canMutate />
+      </NextIntlClientProvider>,
+    );
+    expect(within(desktopTable()).getByText('Covered')).toBeInTheDocument();
+  });
+
+  it('falls through to "—", NOT "Covered", for an anchored cycle whose urgency is "suspended" (past-expiry — the bug this fixes)', () => {
+    const rows: ReadonlyArray<PipelineRow> = [
+      {
+        ...ONE_ROW[0]!,
+        anchored: true,
+        urgency: 'suspended',
+        linkedInvoiceId: null,
+        lastReminderAt: '2020-01-01T00:00:00.000Z',
+      },
+    ];
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <PipelineTable rows={rows} canMutate />
+      </NextIntlClientProvider>,
+    );
+    expect(within(desktopTable()).queryByText('Covered')).toBeNull();
+    expect(within(desktopTable()).getByText('—')).toBeInTheDocument();
+  });
+
+  it('falls through to "—", NOT "Covered", for an anchored cycle whose urgency is "terminated" (past-expiry)', () => {
+    const rows: ReadonlyArray<PipelineRow> = [
+      {
+        ...ONE_ROW[0]!,
+        anchored: true,
+        urgency: 'terminated',
+        linkedInvoiceId: null,
+        lastReminderAt: '2020-01-01T00:00:00.000Z',
+      },
+    ];
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <PipelineTable rows={rows} canMutate />
+      </NextIntlClientProvider>,
+    );
+    expect(within(desktopTable()).queryByText('Covered')).toBeNull();
+    expect(within(desktopTable()).getByText('—')).toBeInTheDocument();
+  });
+
+  it('renders "View invoice" when linkedInvoiceId is set, regardless of urgency (unchanged)', () => {
+    const rows: ReadonlyArray<PipelineRow> = [
+      { ...ONE_ROW[0]!, anchored: true, urgency: 'suspended', linkedInvoiceId: 'inv-1' },
+    ];
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <PipelineTable rows={rows} canMutate />
+      </NextIntlClientProvider>,
+    );
+    const link = within(desktopTable()).getByRole('link', { name: 'View invoice' });
+    expect(link).toHaveAttribute('href', '/admin/invoices/inv-1');
+  });
+});
+
 describe('<PipelineTable> canMutate gating (manager money-CTA hiding)', () => {
   // Same real-timers discipline as the finalFocus suite above: the shared
   // Vitest setup installs fake timers, under which `screen.findByRole`'s
