@@ -4076,9 +4076,9 @@
         "columns": {
           "member": "Medlem",
           "tier": "Nivå",
-          "expiresAt": "Förfallodatum",
+          "expiresAt": "Utgår",
           "taskType": "Uppgiftstyp",
-          "dueAt": "Förfaller",
+          "dueAt": "Ska göras",
           "assignedTo": "Tilldelad",
           "status": "Status",
           "actions": "Åtgärder"
