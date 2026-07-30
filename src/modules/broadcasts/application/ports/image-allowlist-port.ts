@@ -141,7 +141,7 @@ export interface ImageAllowlistPort {
    *
    * Typical seed values for a new tenant onboarding (will be Phase
    * 4 T072 responsibility, NOT this port):
-   *   - tenant's own asset domain (e.g. `swecham.zyncdata.app`)
+   *   - tenant's own asset domain (e.g. `swecham.dxtspace.com`)
    *   - email provider CDN (`resend.com`)
    *
    * Idempotent: re-calling with the same hostnames is a no-op

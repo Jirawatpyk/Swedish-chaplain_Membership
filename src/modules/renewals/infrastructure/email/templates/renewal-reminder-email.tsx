@@ -19,7 +19,7 @@
  *       memberCompanyName="Acme Co"
  *       expiresAtIso="2026-08-15T00:00:00Z"
  *       daysUntilExpiry={30}
- *       renewalLinkUrl="https://swecham.zyncdata.app/portal/renewal/{member_id}?token=…"
+ *       renewalLinkUrl="https://swecham.dxtspace.com/portal/renewal/{member_id}?token=…"
  *     />
  *   );
  *

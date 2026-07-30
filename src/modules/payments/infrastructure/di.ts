@@ -129,7 +129,7 @@ export function makeInitiatePaymentDeps(tenantId: string): InitiatePaymentDeps {
     // real dedupe contract (two concurrent retries map to the same
     // Stripe PI; no duplicate real charge). Any test-mode deploy
     // (local dev, CI, and a test-key production/staging box such as
-    // swecham.zyncdata.app): `-d-<ms>` salt, because Stripe caches
+    // swecham.dxtspace.com): `-d-<ms>` salt, because Stripe caches
     // idempotency keys 24h + rejects re-use with mismatched params
     // (StripeIdempotencyError 400 → route 502 processor_unavailable),
     // which permanently blocks manual repeat-testing of an invoice

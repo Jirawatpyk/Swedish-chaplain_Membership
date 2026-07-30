@@ -180,7 +180,7 @@ export function renderBroadcastHtml(input: RenderBroadcastHtmlInput): string {
  *   - Admin "share unsubscribe link" affordance
  *   - Future per-recipient `emails.send` body-injection path
  *
- * `tenantHost` is the recipient-facing host (e.g. `swecham.zyncdata.app`).
+ * `tenantHost` is the recipient-facing host (e.g. `swecham.dxtspace.com`).
  * Production deployments pass a fully-qualified host with TLS; tests pass
  * `localhost:3100`.
  */
