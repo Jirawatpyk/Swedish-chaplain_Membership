@@ -71,6 +71,7 @@ import { useTranslations } from 'next-intl';
 import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { UrgencyPill } from '@/components/renewals/urgency-pill';
+import { isPastDeadlineUrgency } from '@/components/renewals/urgency';
 import { RelativeTime } from '@/components/ui/relative-time';
 import {
   CycleTierCell,
@@ -217,12 +218,23 @@ export function PipelineCardList({
                         >
                           {t('viewInvoice')}
                         </Link>
-                      ) : original.anchored ? (
+                      ) : original.anchored && !isPastDeadlineUrgency(original.urgency) ? (
                         // Same "Covered" coverage-language treatment as the
                         // table's invoice cell — `title` for sighted mouse
                         // users, the `sr-only` span exposes the SAME reason
                         // to keyboard/touch/screen-reader users (WCAG 1.4.1;
                         // text label, not colour alone, carries the meaning).
+                        //
+                        // covered-gate fix (059-membership-suspension) —
+                        // "Covered" is gated to PRE-EXPIRY (countdown-
+                        // urgency) anchored cycles only, via the shared
+                        // `isPastDeadlineUrgency` predicate (same gate as
+                        // the table's invoice column — see its comment for
+                        // the full rationale). An anchored cycle whose
+                        // urgency has already crossed into `suspended`/
+                        // `terminated` falls through to the final "—"
+                        // branch below — there a renewal IS effectively
+                        // owed, so "—" is the honest signal.
                         <span
                           className="font-medium text-success"
                           title={t('invoiceCoveredTitle')}

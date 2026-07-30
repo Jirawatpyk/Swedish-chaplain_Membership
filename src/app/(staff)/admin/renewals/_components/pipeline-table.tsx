@@ -73,6 +73,7 @@ import {
 import { Checkbox } from '@/components/ui/checkbox';
 import { ArrowDownIcon, ArrowUpDownIcon, ArrowUpIcon } from 'lucide-react';
 import { UrgencyPill } from '@/components/renewals/urgency-pill';
+import { isPastDeadlineUrgency } from '@/components/renewals/urgency';
 import {
   CycleTierCell,
   CycleCompanyCell,
@@ -395,7 +396,7 @@ export function PipelineTable({
             >
               {t('viewInvoice')}
             </Link>
-          ) : row.original.anchored ? (
+          ) : row.original.anchored && !isPastDeadlineUrgency(row.original.urgency) ? (
             // plan-change-ux seam 1(b) — the cycle's period is already
             // COVERED (rolling-anchor) but no RENEWAL invoice is linked yet
             // (the paying invoice is the prior/anchor one, which for the R4
@@ -409,6 +410,16 @@ export function PipelineTable({
             // non-interactive span is not reliably announced). Text label
             // (not colour alone) carries the meaning — WCAG 1.4.1; the
             // `--success` design token themes light/dark (ux-standards § 1.2).
+            //
+            // covered-gate fix (059-membership-suspension) — "Covered" is
+            // gated to PRE-EXPIRY (countdown-urgency) anchored cycles only,
+            // via the shared `isPastDeadlineUrgency` predicate
+            // (`@/components/renewals/urgency`). An anchored cycle whose
+            // urgency has already crossed into `suspended`/`terminated`
+            // falls through to the final "—" branch below instead — there a
+            // renewal IS effectively owed, so "—" (read as action-needed) is
+            // the honest signal; the "don't misread — as payment owed"
+            // rationale above only holds pre-expiry.
             <span
               className="text-sm font-medium text-success"
               title={t('invoiceCoveredTitle')}
