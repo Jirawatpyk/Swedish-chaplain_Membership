@@ -67,6 +67,19 @@ export interface TaskActionDialogProps {
    * Default: regular primary button.
    */
   readonly variant?: 'default' | 'destructive';
+  /**
+   * UX-audit PR-A #5a — focus-return target on close (WCAG 2.1 AA SC 2.4.3).
+   * These dialogs launch from a row's ⋯ `DropdownMenuItem` which unmounts on
+   * select, and on a Done/Skip success the whole row unmounts too — Base UI's
+   * default restore would then drop focus to `<body>`. Callers pass the
+   * resolver built by `useDialogFinalFocus` (returns the ⋯ trigger on cancel,
+   * #main-content when the row is gone). Optional — omitting it keeps Base UI's
+   * default restore behaviour. Forwarded to the AlertDialog popup.
+   *
+   * `| undefined` is explicit (exactOptionalPropertyTypes): the always-mounted
+   * lifted dialogs receive `target?.finalFocus`, which is undefined while closed.
+   */
+  readonly finalFocus?: (() => HTMLElement | null) | undefined;
   readonly children: React.ReactNode;
 }
 
@@ -83,6 +96,7 @@ export function TaskActionDialog({
   canSubmit,
   onSubmit,
   variant = 'default',
+  finalFocus,
   children,
 }: TaskActionDialogProps) {
   // ux-standards § 7.2/§ 6.2: focus Cancel on open for dialogs with
@@ -117,7 +131,7 @@ export function TaskActionDialog({
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent initialFocus={cancelRef}>
+      <AlertDialogContent initialFocus={cancelRef} finalFocus={finalFocus}>
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription>{description}</AlertDialogDescription>

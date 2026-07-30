@@ -4206,6 +4206,7 @@
           "description": "Välj en annan aktiv medarbetare som ska ta över. Den tidigare tilldelade ser inte längre uppgiften under sitt \"Mina\"-filter.",
           "assignee_label": "Tilldelad",
           "placeholder": "Välj en medarbetare",
+          "loading": "Laddar personal…",
           "search_placeholder": "Sök på namn eller e-post…",
           "no_results": "Ingen medarbetare matchar din sökning.",
           "load_error": "Kunde inte ladda medarbetarlistan. Försök igen.",

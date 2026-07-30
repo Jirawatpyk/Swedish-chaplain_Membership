@@ -4206,6 +4206,7 @@
           "description": "Choose another active staff member to take ownership. The previous assignee will lose visibility under their \"Mine\" filter.",
           "assignee_label": "Assignee",
           "placeholder": "Select a staff member",
+          "loading": "Loading staff…",
           "search_placeholder": "Search by name or email…",
           "no_results": "No staff member matches your search.",
           "load_error": "Could not load staff users. Please try again.",

@@ -25,6 +25,8 @@ export interface SkipTaskDialogProps {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   readonly onSubmit: (skippedReason: string) => Promise<void>;
+  /** UX-audit PR-A #5a — focus-return resolver; forwarded to the shared shell. */
+  readonly finalFocus?: (() => HTMLElement | null) | undefined;
 }
 
 const MAX_REASON_LENGTH = 500;
@@ -33,6 +35,7 @@ export function SkipTaskDialog({
   open,
   onOpenChange,
   onSubmit,
+  finalFocus,
 }: SkipTaskDialogProps) {
   const t = useTranslations('admin.renewals.tasks.skip_dialog');
   const [skippedReason, setSkippedReason] = useState('');
@@ -77,6 +80,7 @@ export function SkipTaskDialog({
       canSubmit={isValid}
       onSubmit={handleSubmit}
       variant="destructive"
+      finalFocus={finalFocus}
     >
       <div className="grid gap-2">
         <Label htmlFor="skipped-reason">

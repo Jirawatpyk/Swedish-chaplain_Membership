@@ -22,6 +22,8 @@ export interface DoneTaskDialogProps {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   readonly onSubmit: (outcomeNote: string | undefined) => Promise<void>;
+  /** UX-audit PR-A #5a — focus-return resolver; forwarded to the shared shell. */
+  readonly finalFocus?: (() => HTMLElement | null) | undefined;
 }
 
 const MAX_NOTE_LENGTH = 1000;
@@ -30,6 +32,7 @@ export function DoneTaskDialog({
   open,
   onOpenChange,
   onSubmit,
+  finalFocus,
 }: DoneTaskDialogProps) {
   const t = useTranslations('admin.renewals.tasks.done_dialog');
   const [outcomeNote, setOutcomeNote] = useState('');
@@ -57,6 +60,7 @@ export function DoneTaskDialog({
       isPending={isPending}
       canSubmit
       onSubmit={handleSubmit}
+      finalFocus={finalFocus}
     >
       <div className="grid gap-2">
         <Label htmlFor="outcome-note">{t('outcome_note_label')}</Label>
