@@ -135,10 +135,14 @@ test.describe('F8 — escalation task queue (US6) @a11y', () => {
   }) => {
     await signInAsAdmin(page);
     await page.goto('/admin/renewals/tasks');
-    const reassignBtn = page
-      .getByRole('button', { name: /^reassign$/i })
+    // UX-audit PR-A #4 — Reassign moved from a standalone row button into the
+    // row's ⋯ overflow menu (Done stays the one visible primary). Open the
+    // menu via its ⋯ trigger (accessible name = the `actions.menu_label`
+    // "Actions"), then click the Reassign menu item.
+    const menuTrigger = page
+      .getByRole('button', { name: /^actions$/i })
       .first();
-    if ((await reassignBtn.count()) === 0) {
+    if ((await menuTrigger.count()) === 0) {
       test
         .info()
         .annotations.push({
@@ -148,7 +152,10 @@ test.describe('F8 — escalation task queue (US6) @a11y', () => {
         });
       return;
     }
-    await reassignBtn.click();
+    await menuTrigger.click();
+    await page
+      .getByRole('menuitem', { name: /^reassign$/i })
+      .click();
     await expect(
       page.getByRole('alertdialog').getByRole('heading'),
     ).toBeVisible();
