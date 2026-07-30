@@ -84,6 +84,7 @@ import {
   type PendingReviewRow,
 } from './_components/pending-review-list';
 import { fetchPendingReviewCompanyNames } from './_lib/pending-review-enrichment';
+import { countOpenPendingReviewCycles } from './_lib/pending-review-open-count';
 import { ResultCountAnnouncer } from '@/components/renewals/result-count-announcer';
 import { ResultCountLabel } from '@/components/renewals/result-count-label';
 
@@ -799,7 +800,13 @@ async function PipelineSectionTabsWithCount({
   let pendingReviewCount = 0;
   if (pendingReviewResult.status === 'fulfilled') {
     if (pendingReviewResult.value.ok) {
-      pendingReviewCount = pendingReviewResult.value.value.cycles.length;
+      // UX-audit PR-B B5 — count only cycles still awaiting a decision. Cycles
+      // carrying the async reject-with-refund marker are ALREADY decided
+      // (rejected; refund settling) and the list renders them read-only, so
+      // counting them as open work overstates the badge (UX-A Bug 2 parity).
+      pendingReviewCount = countOpenPendingReviewCycles(
+        pendingReviewResult.value.value.cycles,
+      );
     }
   } else {
     logger.error(
