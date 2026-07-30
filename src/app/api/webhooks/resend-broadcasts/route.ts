@@ -323,6 +323,42 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ received: true }, { status: 200 });
     }
 
+    // Single-Resend-account fix (2026-07-30) — the Resend account hosts
+    // BOTH the transactional and broadcasts webhook endpoints, and
+    // Resend fires every email event to every endpoint in the account.
+    // Every transactional email (reset password, renewal reminders,
+    // invitations) therefore reaches this route with a valid signature
+    // + known event type + `email_id` but NO `broadcast_id`. That is
+    // another product's event, NOT a rejection — 200-ack it (same
+    // LOW-G reasoning as `unknown_event_type` above: acking prevents
+    // the ~8-retry/3-day Svix storm that leaves permanent Failed noise
+    // in the Resend dashboard) and do NOT write a
+    // `broadcast_webhook_signature_rejected` audit row (the
+    // `reason:'malformed'` audit spam was masking real failures).
+    //
+    // Security posture unchanged: the verifier runs the Svix HMAC
+    // signature check BEFORE it can throw `not_broadcast_email`, so
+    // this ack is only reachable for authentic Resend traffic —
+    // unsigned/tampered payloads still 401 above on `bad_signature`.
+    // The `ignored` marker in the body is safe to return (unlike the
+    // R8-S1 `unknown_event_type` case, which leaked server-side
+    // event-type knowledge): the distinguishing fact — missing
+    // `broadcast_id` — is entirely caller-supplied, so no server-state
+    // oracle exists; it lets operators see WHY the event was
+    // acked-but-ignored straight from the Resend dashboard's response
+    // body.
+    if (kind === 'not_broadcast_email') {
+      logger.info(
+        { requestId, correlationId },
+        'broadcasts.webhook.non_broadcast_email_acked',
+      );
+      broadcastsMetrics.webhookNonBroadcastAcked();
+      return NextResponse.json(
+        { received: true, ignored: 'not_broadcast_email' },
+        { status: 200, headers: baseHeaders(correlationId) },
+      );
+    }
+
     await auditSignatureReject(kind, requestId, correlationId);
     broadcastsMetrics.webhookSignatureRejected('bad_signature');
     return jsonUnauthorized('bad_signature', correlationId);

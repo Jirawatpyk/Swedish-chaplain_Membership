@@ -128,6 +128,80 @@ describe('resendBroadcastsWebhookVerifier', () => {
     },
   );
 
+  // Single-Resend-account setup (live 2026-07-30): the account hosts BOTH
+  // the transactional and broadcasts webhook endpoints, and Resend fires
+  // every email event to every endpoint. Transactional emails (reset
+  // password, renewal reminders, invitations) therefore reach this
+  // verifier with a valid signature + known event type + `email_id` but
+  // NO `broadcast_id`. They are another product's events — the verifier
+  // must throw the ack-able `not_broadcast_email` kind, NOT `malformed`
+  // (which the route 401s → Svix retry storm + audit spam).
+  describe('non-broadcast (transactional) email events', () => {
+    function buildTransactionalBody(overrides: {
+      broadcast_id?: string;
+      email_id?: string;
+    }): string {
+      return JSON.stringify({
+        type: 'email.delivered',
+        created_at: FROZEN_NOW.toISOString(),
+        data: {
+          ...('broadcast_id' in overrides && {
+            broadcast_id: overrides.broadcast_id,
+          }),
+          ...('email_id' in overrides && { email_id: overrides.email_id }),
+          to: ['alice@example.com'],
+        },
+      });
+    }
+
+    function constructSigned(body: string) {
+      const ts = Math.floor(FROZEN_NOW.getTime() / 1000);
+      const sig = signPayload(body, 'msg_tx', ts, SECRET);
+      return () =>
+        resendBroadcastsWebhookVerifier.constructEvent(
+          body,
+          sig,
+          'msg_tx',
+          String(ts),
+          SECRET,
+        );
+    }
+
+    function expectKind(body: string, expectedKind: string): void {
+      try {
+        constructSigned(body)();
+        expect.unreachable();
+      } catch (e) {
+        expect(e).toBeInstanceOf(WebhookSignatureError);
+        if (e instanceof WebhookSignatureError) {
+          expect(e.kind).toBe(expectedKind);
+        }
+      }
+    }
+
+    it('signed payload with valid email_id but NO broadcast_id → not_broadcast_email (NOT malformed)', () => {
+      expectKind(
+        buildTransactionalBody({ email_id: 'mid-tx-1' }),
+        'not_broadcast_email',
+      );
+    });
+
+    it('signed payload with EMPTY broadcast_id → not_broadcast_email', () => {
+      expectKind(
+        buildTransactionalBody({ broadcast_id: '', email_id: 'mid-tx-1' }),
+        'not_broadcast_email',
+      );
+    });
+
+    it('signed payload missing email_id (broadcast_id present) stays malformed', () => {
+      expectKind(buildTransactionalBody({ broadcast_id: 'rsb-1' }), 'malformed');
+    });
+
+    it('signed payload missing BOTH ids stays malformed (missing email_id wins)', () => {
+      expectKind(buildTransactionalBody({}), 'malformed');
+    });
+  });
+
   it('throws unknown_event_type for unknown event types (R7 LOW-G — was malformed pre-R7)', () => {
     const ts = Math.floor(FROZEN_NOW.getTime() / 1000);
     const body = JSON.stringify({

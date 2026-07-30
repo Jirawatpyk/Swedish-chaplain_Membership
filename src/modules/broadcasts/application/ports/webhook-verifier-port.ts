@@ -47,7 +47,19 @@ export class WebhookSignatureError extends Error {
     // `bad_signature`-class noise. Route handler returns 200-ack +
     // logs at info-level for unknown types, vs 401 for the other
     // kinds.
-    | 'unknown_event_type';
+    | 'unknown_event_type'
+    // Single-Resend-account fix (2026-07-30) — the account hosts BOTH
+    // the transactional and broadcasts webhook endpoints, and Resend
+    // fires every email event to every endpoint. A signature-verified,
+    // known-event-type payload carrying a valid `email_id` but NO/empty
+    // `broadcast_id` is a TRANSACTIONAL email event (reset password,
+    // renewal reminder, invitation) — another product's traffic, not a
+    // broken payload. Separate kind so the route can 200-ack it
+    // (stopping the ~8-retry/3-day Svix storm + the
+    // `broadcast_webhook_signature_rejected{reason:'malformed'}` audit
+    // spam that masks real failures). `malformed` remains reserved for
+    // genuinely broken payloads (missing email_id, missing recipient).
+    | 'not_broadcast_email';
 
   constructor(kind: WebhookSignatureError['kind'], message: string) {
     super(message);
