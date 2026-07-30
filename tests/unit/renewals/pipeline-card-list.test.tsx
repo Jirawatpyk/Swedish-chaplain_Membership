@@ -204,6 +204,30 @@ describe('<PipelineCardList>', () => {
     ).toBeInTheDocument();
   });
 
+  // 059-membership-suspension covered-gate fix — an anchored cycle whose
+  // covered period has ALREADY ended (urgency `suspended`/`terminated`)
+  // must fall through to "—", NOT the green "Covered" label — a renewal
+  // is effectively owed there, so "Covered" would be misleading.
+  it('covered-gate fix: falls through to "Invoice —", NOT "Covered", when anchored but urgency is "suspended" (past-expiry)', () => {
+    const rows: ReadonlyArray<PipelineRow> = [
+      { ...ROWS[0]!, linkedInvoiceId: null, anchored: true, urgency: 'suspended' },
+    ];
+    render(<Harness rows={rows} />);
+    const card = screen.getByRole('group', { name: 'Acme Co' });
+    expect(within(card).queryByText('Covered')).toBeNull();
+    expect(within(card).getByText('Invoice —')).toBeInTheDocument();
+  });
+
+  it('covered-gate fix: falls through to "Invoice —", NOT "Covered", when anchored but urgency is "terminated" (past-expiry)', () => {
+    const rows: ReadonlyArray<PipelineRow> = [
+      { ...ROWS[0]!, linkedInvoiceId: null, anchored: true, urgency: 'terminated' },
+    ];
+    render(<Harness rows={rows} />);
+    const card = screen.getByRole('group', { name: 'Acme Co' });
+    expect(within(card).queryByText('Covered')).toBeNull();
+    expect(within(card).getByText('Invoice —')).toBeInTheDocument();
+  });
+
   it('review round 1 (FIX 2 / I-1 parity): renders the last-reminder RelativeTime when lastReminderAt is set', () => {
     const remindedRows: ReadonlyArray<PipelineRow> = [
       { ...ROWS[0]!, lastReminderAt: '2020-01-01T00:00:00.000Z' },
