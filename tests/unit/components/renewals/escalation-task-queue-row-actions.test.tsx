@@ -12,7 +12,7 @@
  */
 import type { ReactNode } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { buildFormats } from '@/i18n/formats';
@@ -26,6 +26,12 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(),
 }));
 
+// postAction toasts on success/failure — stub sonner so the success path in the
+// close-time regression test below runs without a mounted <Toaster>.
+vi.mock('sonner', () => ({
+  toast: { success: vi.fn(), error: vi.fn() },
+}));
+
 // R3 — a spy standing in for Base UI's OWN trigger ref (arrives inside the
 // render-prop `props` in React 19). The component must forward the DOM node to
 // it via `mergeRefs(baseRef, rowMenuTriggerRef)`; a regression to
@@ -33,6 +39,20 @@ vi.mock('next/navigation', () => ({
 // menu from opening) would never call this spy. Hoisted so the vi.mock factory
 // below can close over it.
 const { baseRefSpy } = vi.hoisted(() => ({ baseRefSpy: vi.fn() }));
+
+// Close-time capture for the Done dialog. Base UI reads `finalFocus` LIVE at
+// close, so the ONLY way to catch a `finalFocus={doneDialogTarget?.finalFocus}`
+// regression (the prop evaporates to `undefined` the instant the dialog closes
+// on success) is to observe the value AFTER close. The mock records `finalFocus`
+// + `onSubmit` on EVERY render, including the `open=false` close render.
+const { doneCapture } = vi.hoisted(() => ({
+  doneCapture: {
+    finalFocus: undefined as unknown,
+    onSubmit: undefined as
+      | ((note: string | undefined) => Promise<void>)
+      | undefined,
+  },
+}));
 
 // Render the ⋯ menu trigger (function render-prop) + content eagerly so both
 // the icon trigger and the Skip/Reassign items are queryable without opening a
@@ -77,16 +97,24 @@ vi.mock(
       DoneTaskDialog: ({
         open,
         finalFocus,
+        onSubmit,
       }: {
         open: boolean;
         finalFocus?: unknown;
-      }) =>
-        open
+        onSubmit?: (note: string | undefined) => Promise<void>;
+      }) => {
+        // Capture on EVERY render (including the close render, open=false) so a
+        // regression to `doneDialogTarget?.finalFocus` — undefined once the
+        // target is nulled on success — is observable at close time.
+        doneCapture.finalFocus = finalFocus;
+        doneCapture.onSubmit = onSubmit;
+        return open
           ? React.createElement('div', {
               'data-testid': 'done-dialog',
               'data-finalfocus-type': typeof finalFocus,
             })
-          : null,
+          : null;
+      },
     };
   },
 );
@@ -166,6 +194,10 @@ function renderQueue(actorRole: 'admin' | 'manager' = 'admin') {
       formats={buildFormats('en')}
       timeZone="Asia/Bangkok"
     >
+      {/* The real staff layout provides `<main id="main-content" tabIndex={-1}>`
+          as the focus-return landmark; mirror it so the finalFocus resolver's
+          `document.getElementById('main-content')` fallback resolves. */}
+      <main id="main-content" tabIndex={-1} />
       <EscalationTaskQueue
         actorRole={actorRole}
         actorUserId="actor-1"
@@ -180,6 +212,8 @@ function renderQueue(actorRole: 'admin' | 'manager' = 'admin') {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  doneCapture.finalFocus = undefined;
+  doneCapture.onSubmit = undefined;
 });
 
 describe('<EscalationTaskQueue> row actions — Done + ⋯ overflow (UX-audit #4/#5a)', () => {
@@ -202,6 +236,49 @@ describe('<EscalationTaskQueue> row actions — Done + ⋯ overflow (UX-audit #4
     fireEvent.click(screen.getByRole('button', { name: 'Done' }));
     const dialog = screen.getByTestId('done-dialog');
     expect(dialog.getAttribute('data-finalfocus-type')).toBe('function');
+  });
+
+  it('keeps a STABLE finalFocus that survives close-on-success and returns #main-content (regression: the prop must not evaporate to undefined at close)', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      renderQueue();
+      // Open the Done dialog — it receives the launching row's focus-return
+      // resolver via the stable `stableFinalFocus` callback.
+      fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+      expect(typeof doneCapture.finalFocus).toBe('function');
+      expect(typeof doneCapture.onSubmit).toBe('function');
+
+      // Simulate a Done SUCCESS. postAction raises `closedViaSuccessRef` and the
+      // queue nulls `doneDialogTarget` in the SAME commit that closes the dialog.
+      await act(async () => {
+        await doneCapture.onSubmit?.(undefined);
+      });
+
+      // The row's Done route was POSTed (proves the success path ran).
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/admin/renewals/tasks/t1/done',
+        expect.objectContaining({ method: 'POST' }),
+      );
+
+      // CLOSE-TIME GUARD. Base UI reads `finalFocus` LIVE at close. With the bug
+      // (`finalFocus={doneDialogTarget?.finalFocus}`) the prop is `undefined` on
+      // the close render, so this reads 'undefined' and FAILS. The fix passes a
+      // stable callback, so it is STILL a function after the dialog closes.
+      expect(typeof doneCapture.finalFocus).toBe('function');
+
+      // ...and invoking it (as Base UI does at close) returns the surviving
+      // #main-content landmark — NOT the now-unmounting ⋯ trigger, NOT
+      // null/<body> — because `closedViaSuccessRef` was raised before close.
+      const mainContent = document.getElementById('main-content');
+      expect(mainContent).not.toBeNull();
+      const resolve = doneCapture.finalFocus as () => HTMLElement | null;
+      expect(resolve()).toBe(mainContent);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('opens the Skip dialog (from the menu) with a finalFocus resolver', () => {

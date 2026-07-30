@@ -24,7 +24,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useId, useMemo, useRef, useState, useTransition } from 'react';
+import { useCallback, useId, useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useFormatter, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
@@ -224,6 +224,15 @@ export function EscalationTaskQueue({
   // the resolver skips the about-to-unmount ⋯ trigger and lands on
   // #main-content instead of dropping focus to <body>.
   const closedViaSuccessRef = useRef(false);
+  // Holds the CURRENTLY-OPEN dialog's focus-return resolver (only one of the
+  // three dialogs is ever open). Kept in a ref so it survives the
+  // `…DialogTarget → null` commit that closes the dialog: Base UI reads its
+  // returnFocus (from the `finalFocus` prop) LIVE at close, not at open — so a
+  // prop of `…DialogTarget?.finalFocus` is already `undefined` by the time it
+  // is read, and Base UI falls back to its default (return to the vanishing ⋯
+  // trigger → focus drops to <body>). Set by all three open handlers below;
+  // read by the stable `stableFinalFocus` callback. No-op default until launch.
+  const activeFinalFocusRef = useRef<() => HTMLElement | null>(() => null);
   // useId() per-instance, mirroring `TierFilterSelect` — guarantees
   // uniqueness if this component is ever rendered twice on one page.
   const taskTypeFilterLabelId = `task-type-filter-label-${useId()}`;
@@ -404,18 +413,38 @@ export function EscalationTaskQueue({
   // UX-audit PR-A #5a — opening any dialog resets the success flag so a plain
   // Cancel returns focus to the ⋯ trigger (not #main-content). postAction
   // re-raises it on a Done/Skip success just before the row unmounts.
+  // Each handler also parks the launching row's resolver in
+  // `activeFinalFocusRef` so the stable `finalFocus` prop can still reach it
+  // after `…DialogTarget` is nulled on close (Base UI reads finalFocus live at
+  // close — see the ref's declaration comment).
   const openDoneDialog = (target: DialogTarget): void => {
     closedViaSuccessRef.current = false;
+    activeFinalFocusRef.current = target.finalFocus;
     setDoneDialogTarget(target);
   };
   const openSkipDialog = (target: DialogTarget): void => {
     closedViaSuccessRef.current = false;
+    activeFinalFocusRef.current = target.finalFocus;
     setSkipDialogTarget(target);
   };
   const openReassignDialog = (target: DialogTarget): void => {
     closedViaSuccessRef.current = false;
+    activeFinalFocusRef.current = target.finalFocus;
     setReassignDialogTarget(target);
   };
+
+  // Stable, ALWAYS-DEFINED focus-return callback shared by all three lifted
+  // dialogs (only one is open at a time). Base UI invokes it once at close and
+  // reads `activeFinalFocusRef` live: on a Done/Skip success — where postAction
+  // raises `closedViaSuccessRef` just before the row unmounts — the parked row
+  // resolver skips the vanishing ⋯ trigger and lands on #main-content; on
+  // Cancel/ESC it returns the still-mounted ⋯ trigger. Passing
+  // `…DialogTarget?.finalFocus` instead would evaporate to `undefined` at the
+  // close commit and leave the whole chain inert (WCAG 2.1 AA SC 2.4.3).
+  const stableFinalFocus = useCallback(
+    (): HTMLElement | null => activeFinalFocusRef.current(),
+    [],
+  );
 
   /**
    * Round 5 I-13 close — render assignee display name (joined from
@@ -870,15 +899,18 @@ export function EscalationTaskQueue({
       </div>
 
       {/* Action dialogs. Only one open at a time. UX-audit PR-A #5a — each
-          receives the launching row's `finalFocus` resolver so focus returns
-          to the ⋯ trigger on cancel (and #main-content when a Done/Skip
-          success unmounts the row). */}
+          receives the STABLE `stableFinalFocus` callback (never
+          `…DialogTarget?.finalFocus`, which evaporates to `undefined` on the
+          close commit because Base UI reads finalFocus LIVE at close). It defers
+          to `activeFinalFocusRef` — the launching row's resolver — so focus
+          returns to the ⋯ trigger on cancel and #main-content when a Done/Skip
+          success unmounts the row. */}
       <DoneTaskDialog
         open={doneDialogTarget !== null}
         onOpenChange={(next) => {
           if (!next) setDoneDialogTarget(null);
         }}
-        finalFocus={doneDialogTarget?.finalFocus}
+        finalFocus={stableFinalFocus}
         onSubmit={async (note) => {
           if (doneDialogTarget === null) return;
           const ok = await postAction(doneDialogTarget.taskId, 'done', {
@@ -893,7 +925,7 @@ export function EscalationTaskQueue({
         onOpenChange={(next) => {
           if (!next) setSkipDialogTarget(null);
         }}
-        finalFocus={skipDialogTarget?.finalFocus}
+        finalFocus={stableFinalFocus}
         onSubmit={async (reason) => {
           if (skipDialogTarget === null) return;
           const ok = await postAction(skipDialogTarget.taskId, 'skip', {
@@ -908,7 +940,7 @@ export function EscalationTaskQueue({
         onOpenChange={(next) => {
           if (!next) setReassignDialogTarget(null);
         }}
-        finalFocus={reassignDialogTarget?.finalFocus}
+        finalFocus={stableFinalFocus}
         currentAssigneeUserId={reassigningTask?.assignedToUserId ?? null}
         onSubmit={async (toUserId) => {
           if (reassignDialogTarget === null) return;
