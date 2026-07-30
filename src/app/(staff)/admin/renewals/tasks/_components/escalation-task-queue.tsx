@@ -134,6 +134,14 @@ export interface EscalationTaskQueueProps {
   readonly actorRole: 'admin' | 'manager';
   readonly actorUserId: string;
   readonly overdueCount: number;
+  /**
+   * UX-audit PR-A #2 — the distinct task-type list, derived by a SERVER
+   * query over the whole tenant (scoped to the current status tab) rather
+   * than computed from the fetched 50-row page. Drives both the task-type
+   * filter control's option list AND its visibility gate (`length > 1`),
+   * so the control is stable + complete regardless of which page is loaded.
+   */
+  readonly distinctTaskTypes: ReadonlyArray<string>;
   readonly items: ReadonlyArray<EscalationTaskQueueItem>;
 }
 
@@ -177,6 +185,7 @@ export function EscalationTaskQueue({
   actorRole,
   actorUserId,
   overdueCount,
+  distinctTaskTypes,
   items,
 }: EscalationTaskQueueProps) {
   const t = useTranslations('admin.renewals.tasks');
@@ -216,18 +225,19 @@ export function EscalationTaskQueue({
 
   const now = Date.now();
 
-  // Note: server already filtered by status/assignment/overdue/taskType
-  // (see page.tsx), but we re-filter client-side for any URL drift
-  // between server SSR and client navigation transition.
+  // Server already filtered by status/assignment/overdue/task_type (see
+  // page.tsx). We keep a client-side re-filter for assignment/overdue only,
+  // to guard the brief window of URL drift between SSR and a client
+  // navigation transition. UX-audit PR-A #2 — task_type is now FULLY
+  // server-side (shared buildListWhereExpr); the redundant client re-filter
+  // over the fetched 50 was removed (it made the count lie + gated the
+  // control on the current page's contents).
   const filteredItems = useMemo(() => {
     return items.filter((task) => {
       if (assignment === 'mine' && task.assignedToUserId !== actorUserId) {
         return false;
       }
       if (assignment === 'unassigned' && task.assignedToUserId !== null) {
-        return false;
-      }
-      if (taskTypeFilter !== '' && task.taskType !== taskTypeFilter) {
         return false;
       }
       if (overdueOnly) {
@@ -241,13 +251,7 @@ export function EscalationTaskQueue({
       }
       return true;
     });
-  }, [items, assignment, taskTypeFilter, overdueOnly, actorUserId, now]);
-
-  const distinctTaskTypes = useMemo(() => {
-    const set = new Set<string>();
-    items.forEach((task) => set.add(task.taskType));
-    return Array.from(set).sort();
-  }, [items]);
+  }, [items, assignment, overdueOnly, actorUserId, now]);
 
   function setSearchParam(name: string, value: string | null): void {
     const params = new URLSearchParams(searchParams.toString());

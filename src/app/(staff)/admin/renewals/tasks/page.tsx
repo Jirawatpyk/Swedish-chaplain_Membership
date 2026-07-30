@@ -122,6 +122,10 @@ export default async function EscalationTaskQueuePage({
   let queueItems: Awaited<
     ReturnType<typeof deps.escalationTaskRepo.listForAdminQueue>
   >['items'] = [];
+  // UX-audit PR-A #2 — the task-type filter's option list + visibility now
+  // come from a SERVER query over the whole tenant (scoped to the current
+  // status tab), not from whatever the fetched 50-row page happened to hold.
+  let distinctTaskTypes: ReadonlyArray<string> = [];
   let overdueCount = 0;
   let hasError = false;
 
@@ -145,23 +149,30 @@ export default async function EscalationTaskQueuePage({
     // E1 close — `listForAdminQueue` JOINs members + renewal_cycles +
     // membership_plans so the AS1-mandated member-name + tier + expiry
     // fields land alongside the task row without an N+1 lookup.
-    const page = await deps.escalationTaskRepo.listForAdminQueue(
-      tenantCtx.slug,
-      {
+    //
+    // UX-audit PR-A #2 — the distinct-task-type query runs IN PARALLEL with
+    // the list so populating the filter's option set doesn't add a third
+    // serial round-trip to the F8-SLO-Esc-1 queue-load budget.
+    const [page, distinctTypes] = await Promise.all([
+      deps.escalationTaskRepo.listForAdminQueue(tenantCtx.slug, {
         pageSize: 50,
         statusFilter: [status],
         ...(assignedToUserIdFilter !== undefined
           ? { assignedToUserIdFilter }
           : {}),
+        // UX-audit PR-A #2 — task_type now filters SERVER-side via the
+        // shared buildListWhereExpr, so the rows + the (future) count agree
+        // and the control no longer hinges on the fetched page's contents.
+        ...(taskTypeFilter ? { taskTypeFilter } : {}),
         ...(overdueOnly ? { overdueOnly: true } : {}),
         sort: 'due_at_asc',
-      },
-    );
-    // Task-type filter applied client-side after fetch (pageSize 50;
-    // small enough to filter in-memory without a repo signature change).
-    queueItems = taskTypeFilter
-      ? page.items.filter((task) => task.taskType === taskTypeFilter)
-      : page.items;
+      }),
+      deps.escalationTaskRepo.listDistinctTaskTypes(tenantCtx.slug, {
+        statusFilter: [status],
+      }),
+    ]);
+    queueItems = page.items;
+    distinctTaskTypes = distinctTypes;
 
     // Overdue banner only meaningful when status='open' and we're not
     // already filtered to overdue-only.
@@ -239,6 +250,7 @@ export default async function EscalationTaskQueuePage({
           actorRole={role}
           actorUserId={session.user.id}
           overdueCount={overdueCount}
+          distinctTaskTypes={distinctTaskTypes}
           items={queueItems.map((task) => ({
             taskId: task.taskId,
             memberId: task.memberId,

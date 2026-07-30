@@ -56,6 +56,17 @@ export interface ListEscalationTasksOpts {
    * supply a userId is through the `kind: 'specific'` arm.
    */
   readonly assignedToUserIdFilter?: AssigneeFilter;
+  /**
+   * UX-audit PR-A #2 — server-side exact-match `task_type` filter.
+   * Previously the queue fetched the first page then filtered by
+   * `task_type` CLIENT-side, so the count lied (badge counted the
+   * unfiltered set) and the filter control only appeared when the
+   * fetched page happened to contain >1 type. Threaded through the
+   * shared `buildListWhereExpr` so BOTH `listForAdminQueue` and
+   * `countMatching` apply it and stay in agreement. Empty string /
+   * `undefined` = no filter (all types).
+   */
+  readonly taskTypeFilter?: string;
   readonly overdueOnly?: boolean;
   /**
    * R10 W4 close — banner-vs-highlight threshold mismatch fix.
@@ -291,12 +302,31 @@ export interface RenewalEscalationTaskRepo {
       ListEscalationTasksOpts,
       | 'statusFilter'
       | 'assignedToUserIdFilter'
+      // UX-audit PR-A #2 — count must apply the same task_type filter as
+      // the list so the badge stays == the rows when a type is selected.
+      | 'taskTypeFilter'
       | 'overdueOnly'
       // R10 W4 close — banner count must use the same threshold as the
       // row-level red highlight (FR-045/AS4 ">3 days past due").
       | 'overdueThresholdDays'
     >,
   ): Promise<number>;
+
+  /**
+   * UX-audit PR-A #2 — distinct `task_type`s present for the tenant
+   * (optionally scoped to a status), so the queue's task-type filter
+   * control derives its options + visibility from the WHOLE dataset
+   * rather than the current 50-row page. Ordered ascending. RLS-scoped
+   * like every other read. `statusFilter` mirrors the current tab so
+   * the options match what a chosen filter would actually return; omit
+   * it to enumerate types across all statuses.
+   */
+  listDistinctTaskTypes(
+    tenantId: string,
+    opts?: {
+      readonly statusFilter?: ReadonlyArray<EscalationTaskStatus>;
+    },
+  ): Promise<ReadonlyArray<string>>;
 
   /**
    * F8 Phase 8 T219 (E1 close) — admin task queue listing enriched with
