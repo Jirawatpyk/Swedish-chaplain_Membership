@@ -219,6 +219,11 @@ describe('F8 loadPipeline — integration (T075)', () => {
     if (!result.ok) return;
     // The seeded first-bill collection case (awaiting_payment, +120d).
     expect(result.value.summary.suspendedOutsideWindowCount).toBe(1);
+    // #292 A3 invariant: with NO tier filter, the global in-window leg
+    // equals the (unfiltered) Suspended badge — same URGENCY_CASE source.
+    expect(result.value.summary.suspendedInWindowGlobalCount).toBe(
+      result.value.summary.byUrgency.suspended,
+    );
     // Additive, never overlapping: the outside-window cycle is in NO
     // urgency bucket (the sum-vs-totalInWindow invariant above already
     // pins byUrgency; here we pin the row is also absent from the page).
@@ -235,6 +240,26 @@ describe('F8 loadPipeline — integration (T075)', () => {
     expect(forB.ok).toBe(true);
     if (!forB.ok) return;
     expect(forB.value.summary.suspendedOutsideWindowCount).toBe(0);
+  });
+
+  it('#292 A3 — the bridge pair stays TENANT-GLOBAL while a tier filter slices the badges', async () => {
+    const deps = makeRenewalsDeps(tenantA.ctx.slug);
+    // tier=premium: the only premium seed is the t-7 cycle — the suspended
+    // (-10d, regular) cycle and the outside-window (+120d, regular) cycle
+    // both fall OUT of the sliced badges…
+    const premium = await loadPipeline(deps, {
+      tenantId: tenantA.ctx.slug,
+      urgency: 't-90',
+      tier: 'premium',
+      limit: 50,
+    });
+    expect(premium.ok).toBe(true);
+    if (!premium.ok) return;
+    expect(premium.value.summary.byUrgency.suspended).toBe(0);
+    // …but the bridge pair ignores the slice: it reconciles against the
+    // Members page's GLOBAL Suspended number, which no tier filter changes.
+    expect(premium.value.summary.suspendedInWindowGlobalCount).toBe(1);
+    expect(premium.value.summary.suspendedOutsideWindowCount).toBe(1);
   });
 
   it('tier filter narrows to premium cycles', async () => {

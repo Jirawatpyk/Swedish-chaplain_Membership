@@ -271,6 +271,28 @@ describe('<InvoiceFilters> — dueBefore chip (Task 3)', () => {
     expect(screen.queryByText(/^Due before/)).toBeNull();
   });
 
+  it('A1 (#292 review) — the popover shows a READ-ONLY dueBefore row whose clear button reuses the chip handler', () => {
+    searchParamsStub = new URLSearchParams('dueBefore=2026-01-01&status=overdue');
+    renderWithDueBefore({});
+    // The badge counts dueBefore…
+    expect(screen.getByTestId('invoice-more-filters-count')).toHaveTextContent('1');
+    // …and opening the popover now surfaces it instead of a dead end.
+    fireEvent.click(screen.getByTestId('invoice-more-filters-trigger'));
+    const content = screen.getByTestId('filters-popover-content');
+    expect(
+      within(content).getByTestId('invoice-due-before-readout'),
+    ).toHaveTextContent('2026-01-01');
+    fireEvent.click(
+      within(content).getByRole('button', {
+        name: 'Remove filter: Due before 2026-01-01',
+      }),
+    );
+    expect(replace).toHaveBeenCalledTimes(1);
+    const url = String(replace.mock.calls[0]?.[0]);
+    expect(url).not.toContain('dueBefore');
+    expect(url).toContain('status=overdue');
+  });
+
   it('gated off by default (portal shape): a stray ?dueBefore renders nothing', () => {
     searchParamsStub = new URLSearchParams('dueBefore=2026-01-01');
     renderWithDueBefore({ showDueBeforeFilter: false });

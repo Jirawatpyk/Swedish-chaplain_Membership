@@ -466,7 +466,10 @@ export default async function RenewalsPipelinePage({
                 // first-bill collection case outside the window) hits
                 // exactly this branch.
                 <RenewalsEmptyState
-                  suspendedInWindowCount={summary.byUrgency.suspended}
+                  // A3 — tenant-global pair (NOT the tier-sliced badge):
+                  // the bridge reconciles against the Members page's
+                  // global Suspended number.
+                  suspendedInWindowCount={summary.suspendedInWindowGlobalCount}
                   suspendedOutsideWindowCount={
                     summary.suspendedOutsideWindowCount
                   }
@@ -495,8 +498,12 @@ export default async function RenewalsPipelinePage({
                       renders nothing when no suspended cycles sit outside
                       the work window. */}
                   {!monthLensActive && urgency === 'suspended' ? (
+                    // A3 — tenant-global pair (NOT the tier-sliced badge):
+                    // the strip's three numbers must keep summing to the
+                    // Members page's global Suspended count even while the
+                    // badges are sliced by tier.
                     <SuspendedBridgeStrip
-                      inWindowCount={summary.byUrgency.suspended}
+                      inWindowCount={summary.suspendedInWindowGlobalCount}
                       outsideWindowCount={summary.suspendedOutsideWindowCount}
                     />
                   ) : null}

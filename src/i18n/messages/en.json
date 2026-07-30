@@ -2203,7 +2203,9 @@
             "autoRenewal": "Auto-renewal queue"
           },
           "dueBefore": {
-            "chip": "Due before {date}"
+            "chip": "Due before {date}",
+            "label": "Due before",
+            "clear": "Clear"
           },
           "more": {
             "button": "Filters",

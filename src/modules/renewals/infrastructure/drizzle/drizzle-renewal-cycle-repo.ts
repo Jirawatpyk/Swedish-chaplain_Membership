@@ -2519,29 +2519,37 @@ export function makeDrizzleRenewalCycleRepo(
         // These members show as Suspended on the Members page but appear in
         // NO urgency bucket, so the pipeline's Suspended tab under-counts
         // relative to the Members page; the strip on the pipeline page uses
-        // this count to make the two numbers explain themselves. Same tier
-        // filter as the summary (W-06 reasoning: the strip must describe
-        // the SAME slice the badges describe).
-        const suspendedOutsideFilters: SQL[] = [
-          MEMBER_NOT_ERASED_SQL,
-          sql`${renewalCycles.status} IN ('awaiting_payment','pending_admin_reactivation')`,
-          sql`${renewalCycles.expiresAt} > ${windowEnd}`,
-        ];
-        if (opts.tier) {
-          suspendedOutsideFilters.push(
-            eq(renewalCycles.tierAtCycleStart, opts.tier),
-          );
-        }
-        const suspendedOutsideCountQueryPromise = tx
-          .select({ count: sql<number>`count(*)::int` })
+        // this pair to make the two numbers explain themselves.
+        //
+        // TENANT-GLOBAL by design (#292 review A3): the strip reconciles the
+        // pipeline against the Members page's GLOBAL Suspended number, so
+        // BOTH its legs deliberately ignore the tier/urgency filters — a
+        // tier-sliced bridge would "explain" the badge with numbers that no
+        // longer sum to what the Members page says (the exact confusion the
+        // strip exists to remove). W-06's slice-consistency reasoning applies
+        // to the BADGES, not this bridge. The in-window leg reuses
+        // `URGENCY_CASE_SQL` (the badge's own bucket derivation) + the same
+        // status/window predicates as `summaryFilters`, so the unfiltered
+        // Suspended badge always equals this leg — pinned by the
+        // load-pipeline integration test.
+        const suspendedGlobalQueryPromise = tx
+          .select({
+            inWindow: sql<number>`(COUNT(*) FILTER (
+              WHERE ${URGENCY_CASE_SQL} = 'suspended'
+                AND ${renewalCycles.status} NOT IN ('cancelled','completed')
+                AND ${renewalCycles.expiresAt} <= ${windowEnd}))::int`,
+            outsideWindow: sql<number>`(COUNT(*) FILTER (
+              WHERE ${renewalCycles.status} IN ('awaiting_payment','pending_admin_reactivation')
+                AND ${renewalCycles.expiresAt} > ${windowEnd}))::int`,
+          })
           .from(renewalCycles)
-          .where(and(...suspendedOutsideFilters));
+          .where(MEMBER_NOT_ERASED_SQL);
 
-        const [summaryRows, lapsedCountRows, suspendedOutsideRows] =
+        const [summaryRows, lapsedCountRows, suspendedGlobalRows] =
           await Promise.all([
             summaryQueryPromise,
             lapsedCountQueryPromise,
-            suspendedOutsideCountQueryPromise,
+            suspendedGlobalQueryPromise,
           ]);
 
         const byUrgency: Record<UrgencyBucket, number> = {
@@ -2744,7 +2752,9 @@ export function makeDrizzleRenewalCycleRepo(
           totalInWindow,
           byUrgency,
           lapsedCount,
-          suspendedOutsideWindowCount: suspendedOutsideRows[0]?.count ?? 0,
+          suspendedInWindowGlobalCount: suspendedGlobalRows[0]?.inWindow ?? 0,
+          suspendedOutsideWindowCount:
+            suspendedGlobalRows[0]?.outsideWindow ?? 0,
         };
 
         return {

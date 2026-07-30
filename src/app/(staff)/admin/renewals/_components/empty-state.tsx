@@ -31,7 +31,9 @@ export function RenewalsEmptyState({
   suspendedInWindowCount = 0,
   suspendedOutsideWindowCount = 0,
 }: {
-  /** `summary.byUrgency.suspended` — 0 by definition when this card shows. */
+  /** `summary.suspendedInWindowGlobalCount` (tenant-global, #292 A3) — 0 by
+   *  definition when this card shows (it requires totalInWindow===0 with no
+   *  tier filter, and the unfiltered badge equals the global count). */
   readonly suspendedInWindowCount?: number;
   /** `summary.suspendedOutsideWindowCount` — first-bill collection cases. */
   readonly suspendedOutsideWindowCount?: number;

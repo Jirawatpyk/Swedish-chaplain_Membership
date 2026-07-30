@@ -870,6 +870,40 @@ export function InvoiceFilters({
             {/* Paid-online toggle — self-labelled ("Paid online"), so it needs
                 no separate field label. Same wiring as the inline chip. */}
             {paidOnlineToggle}
+            {/* #292 review A1 — the "Filters (N active)" badge counts an
+                active dueBefore, but this popover had no control showing it:
+                an admin opening the popover to find the Nth filter met a
+                dead end. READ-ONLY row (the filter is URL-only — it arrives
+                via drill-down links and has no picker control by design)
+                showing the localized label + the date, with a clear button
+                reusing the chip's own clear handler. */}
+            {dueBeforeChip && (
+              <div className="grid gap-1.5">
+                <span className="text-xs font-medium text-foreground">
+                  {t('filters.dueBefore.label')}
+                </span>
+                <div className="flex items-center justify-between gap-2">
+                  <span
+                    className="text-sm tabular-nums"
+                    data-testid="invoice-due-before-readout"
+                  >
+                    {currentDueBefore}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={dueBeforeChip.clear}
+                    aria-label={t('filters.more.removeAria', {
+                      label: dueBeforeChip.label,
+                    })}
+                  >
+                    <XIcon className="size-4" aria-hidden="true" />
+                    {t('filters.dueBefore.clear')}
+                  </Button>
+                </div>
+              </div>
+            )}
           </PopoverContent>
         </Popover>
         {clearButton}
