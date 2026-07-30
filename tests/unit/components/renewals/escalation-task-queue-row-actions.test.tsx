@@ -26,6 +26,14 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(),
 }));
 
+// R3 — a spy standing in for Base UI's OWN trigger ref (arrives inside the
+// render-prop `props` in React 19). The component must forward the DOM node to
+// it via `mergeRefs(baseRef, rowMenuTriggerRef)`; a regression to
+// `ref={rowMenuTriggerRef}` alone (the Base-UI ref-override trap that stops the
+// menu from opening) would never call this spy. Hoisted so the vi.mock factory
+// below can close over it.
+const { baseRefSpy } = vi.hoisted(() => ({ baseRefSpy: vi.fn() }));
+
 // Render the ⋯ menu trigger (function render-prop) + content eagerly so both
 // the icon trigger and the Skip/Reassign items are queryable without opening a
 // Base UI portal.
@@ -42,7 +50,7 @@ vi.mock('@/components/ui/dropdown-menu', async () => {
         | ReactNode;
     }) =>
       typeof render === 'function'
-        ? render({ ref: () => {} })
+        ? render({ ref: baseRefSpy })
         : (render ?? null),
     DropdownMenuContent: ({ children }: { children: ReactNode }) =>
       React.createElement('div', { role: 'menu' }, children),
@@ -214,5 +222,20 @@ describe('<EscalationTaskQueue> row actions — Done + ⋯ overflow (UX-audit #4
     renderQueue('manager');
     expect(screen.queryByRole('button', { name: 'Done' })).toBeNull();
     expect(screen.queryByRole('menuitem', { name: 'Skip' })).toBeNull();
+  });
+
+  it('forwards the trigger node to BOTH the Base UI ref and the row menu ref (mergeRefs regression guard)', () => {
+    renderQueue();
+    // The trigger wires `ref={mergeRefs(baseRef, rowMenuTriggerRef)}`. mergeRefs
+    // forwards the DOM node to EACH ref, so Base UI's own ref (baseRefSpy) must
+    // receive the trigger element. A regression to `ref={rowMenuTriggerRef}`
+    // alone drops baseRef entirely → this spy is never called with a node, and
+    // the menu would stop anchoring in production (the Base-UI ref-override
+    // trap the mocked menu can't otherwise exercise).
+    expect(baseRefSpy).toHaveBeenCalled();
+    const receivedElement = baseRefSpy.mock.calls.some(
+      ([node]) => node instanceof HTMLElement,
+    );
+    expect(receivedElement).toBe(true);
   });
 });

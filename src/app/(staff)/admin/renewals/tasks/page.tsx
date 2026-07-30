@@ -309,8 +309,9 @@ export default async function EscalationTaskQueuePage({
           {/* UX-audit PR-A #1 — keyset "Next 50" footer. Rendered only when
               the repo returned a nextCursor (page capped at 50). A plain
               server-rendered <a> (works without JS) mirroring the pipeline's
-              pagination footer; the visible "Showing first 50" hint tells all
-              users the list is truncated. The queue's `setSearchParam` deletes
+              pagination footer; the visible per-page hint tells all users the
+              list is capped per page (R2 — page-position-neutral copy so it
+              isn't false on page 2+). The queue's `setSearchParam` deletes
               `cursor` on any filter change so a stale cursor can't mis-page. */}
           {nextHref ? (
             <div className="flex items-center justify-between gap-4 pt-1">

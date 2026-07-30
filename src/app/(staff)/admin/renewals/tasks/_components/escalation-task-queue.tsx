@@ -353,9 +353,25 @@ export function EscalationTaskQueue({
       // UX-audit PR-A #5a — Done/Skip drops the task out of the Open tab on
       // refresh, so the launching row (and its ⋯ trigger) unmounts. Raise the
       // flag so each row's useDialogFinalFocus skips the vanishing trigger and
-      // lands on #main-content. Reassign KEEPS the row, so leave it false and
-      // let focus return to the surviving ⋯ trigger.
+      // lands on #main-content.
+      //
+      // S1 follow-up — a reassign ALSO unmounts the row when an assignment
+      // filter is active (?assignment=mine | unassigned | <colleague-uuid>):
+      // the task leaves the active tray, router.refresh() re-queries, and the
+      // row + its ⋯ trigger vanish → resolveDialogFinalFocus would return the
+      // detached trigger node and focus drops to <body>. Raise the flag there
+      // too so focus returns to #main-content instead (WCAG 2.4.3). Under
+      // ?assignment=all a reassign KEEPS the row, so leave the flag false and
+      // let focus return to the surviving ⋯ trigger. Read the RAW param —
+      // the client-side `assignment` var collapses a ?assignment=<uuid>
+      // colleague tray to 'all', which would miss that case.
       if (action === 'done' || action === 'skip') {
+        closedViaSuccessRef.current = true;
+      } else if (
+        action === 'reassign' &&
+        assignmentRaw !== null &&
+        assignmentRaw !== 'all'
+      ) {
         closedViaSuccessRef.current = true;
       }
       startTransition(() => router.refresh());
@@ -950,7 +966,10 @@ function TaskRowActions({
   return (
     <div className="flex items-center justify-end gap-2">
       <Button
-        size="sm"
+        // N1 — h-9 (`size="default"`) so this visible primary aligns with the
+        // pipeline's primary height and the 44px ⋯ trigger beside it, instead
+        // of the cramped h-7 `size="sm"`.
+        size="default"
         variant="default"
         disabled={!isOpen || busy}
         aria-busy={busy}
@@ -964,20 +983,40 @@ function TaskRowActions({
             <Button
               {...props}
               ref={mergeRefs(baseRef, rowMenuTriggerRef)}
-              size="sm"
+              // N2 — `size="icon"` for idiom parity with the pipeline
+              // RowActions trigger (row-actions.tsx:289); `h-11 w-11` still
+              // overrides to the 44px target below.
+              size="icon"
               variant="ghost"
               // 44×44 tap target (WCAG 2.5.5 / iOS HIG) — an icon-only trigger
               // in a dense table where a mis-tap routes to the wrong row.
               className="h-11 w-11"
               disabled={!isOpen || busy}
               aria-busy={busy}
+              // S3 — per-row accessible name so SR users tabbing the 50-row
+              // queue know WHICH member's task they're about to Skip/Reassign
+              // (this ⋯ menu is now the ONLY path to those actions at every
+              // breakpoint). Mirrors the pipeline RowActions gold standard
+              // (row-actions.tsx:296,303): `aria-label` for AT (wins over the
+              // icon content) + native `title` for the sighted-mouse tooltip.
+              aria-label={t('actions.row_menu_for', {
+                company: task.memberCompanyName ?? task.memberId,
+              })}
+              title={t('actions.row_menu_for', {
+                company: task.memberCompanyName ?? task.memberId,
+              })}
             >
               <MoreHorizontal className="size-4" aria-hidden />
-              <span className="sr-only">{t('actions.menu_label')}</span>
             </Button>
           )}
         />
-        <DropdownMenuContent align="end">
+        {/*
+         * S2 — `min-w-56 whitespace-nowrap` per ux-standards § 19 (mirrors the
+         * pipeline RowActions menu, row-actions.tsx:315). Without this the
+         * dropdown's default `min-w-32` (128px) wraps the long Thai Reassign
+         * label "เปลี่ยนผู้รับผิดชอบ" mid-word.
+         */}
+        <DropdownMenuContent align="end" className="min-w-56 whitespace-nowrap">
           <DropdownMenuItem
             onClick={() => onSkip({ taskId: task.taskId, finalFocus })}
           >

@@ -4064,7 +4064,7 @@
         "task_type_filter_aria": "Filter by task type",
         "task_type_filter_all": "All types",
         "pagination": {
-          "showingFirst": "Showing first 50",
+          "showingFirst": "Showing 50 per page",
           "next": "Next 50 →"
         },
         "status_tab": {
@@ -4143,6 +4143,7 @@
         },
         "actions": {
           "menu_label": "Actions",
+          "row_menu_for": "Actions for {company}",
           "errors": {
             "task_not_open": "Another admin already closed this task — refresh to see the latest state.",
             "task_not_found": "This task no longer exists — refresh the list.",

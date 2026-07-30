@@ -4064,7 +4064,7 @@
         "task_type_filter_aria": "กรองตามประเภทของงาน",
         "task_type_filter_all": "ทุกประเภท",
         "pagination": {
-          "showingFirst": "แสดง 50 รายการแรก",
+          "showingFirst": "แสดง 50 รายการต่อหน้า",
           "next": "ถัดไป 50 รายการ →"
         },
         "status_tab": {
@@ -4143,6 +4143,7 @@
         },
         "actions": {
           "menu_label": "การดำเนินการ",
+          "row_menu_for": "การดำเนินการสำหรับ {company}",
           "errors": {
             "task_not_open": "ผู้ดูแลคนอื่นปิดงานนี้ไปแล้ว — โปรดรีเฟรชเพื่อดูสถานะล่าสุด",
             "task_not_found": "ไม่พบงานนี้แล้ว — โปรดรีเฟรชรายการ",

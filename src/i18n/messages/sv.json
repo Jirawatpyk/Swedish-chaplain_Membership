@@ -4064,7 +4064,7 @@
         "task_type_filter_aria": "Filtrera på uppgiftstyp",
         "task_type_filter_all": "Alla typer",
         "pagination": {
-          "showingFirst": "Visar första 50",
+          "showingFirst": "Visar 50 per sida",
           "next": "Nästa 50 →"
         },
         "status_tab": {
@@ -4143,6 +4143,7 @@
         },
         "actions": {
           "menu_label": "Åtgärder",
+          "row_menu_for": "Åtgärder för {company}",
           "errors": {
             "task_not_open": "En annan administratör har redan stängt denna uppgift — uppdatera sidan för att se aktuellt läge.",
             "task_not_found": "Uppgiften finns inte längre — uppdatera listan.",
