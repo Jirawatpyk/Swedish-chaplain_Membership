@@ -96,17 +96,20 @@ function PipelineMoneyBandContent({
   // sibling position is also what makes it safe to be a link ITSELF
   // (UX-review follow-up F3) with no nested-interactive risk.
   //
-  // Drill-down target: `status=overdue` is the DERIVED invoices-list filter
-  // (repo translates it to issued AND BKK-today > due_date — S1-P1-8), the
-  // closest expressible superset of "prior-FY overdue membership bills":
-  // the list page has no due-date-range/fiscal-year URL param, so the
-  // prior-FY rows can't be isolated further without inventing params. The
-  // muted colour comes from KpiCard's subline wrapper; hover underline +
-  // focus ring keep the affordance subtle but discoverable.
+  // Drill-down target (renewals-suspended-visibility-audit Task 3 — the
+  // operator rejected the earlier `status=overdue`-only superset landing):
+  // `status=overdue` (DERIVED: issued AND BKK-today > due_date, S1-P1-8)
+  // PLUS `dueBefore={fyStartDate}` — the SAME fiscal-year boundary the SQL
+  // leg counted with, threaded through `PipelineMoneySummary` FROM the SQL
+  // expression itself (never recomputed here) — lands on EXACTLY the
+  // prior-FY overdue membership cohort this sub-line sums
+  // (`due < fyStart` already implies `due < today`). The muted colour
+  // comes from KpiCard's subline wrapper; hover underline + focus ring
+  // keep the affordance subtle but discoverable.
   const priorYearsSubline =
     money.overdueBeforeFySatang > 0n ? (
       <Link
-        href="/admin/invoices?status=overdue&subject=membership"
+        href={`/admin/invoices?status=overdue&subject=membership&dueBefore=${money.fyStartDate}`}
         className="rounded-xs underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
       >
         {t('pastDue.priorYears', {

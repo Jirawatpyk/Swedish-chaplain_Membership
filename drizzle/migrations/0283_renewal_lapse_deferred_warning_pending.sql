@@ -1,0 +1,30 @@
+-- ---------------------------------------------------------------------------
+-- renewals-suspended-visibility-audit — `audit_event_type` extension (1 value).
+--
+-- Adds `renewal_lapse_deferred_warning_pending` (F8) — emitted by
+-- `lapseCyclesOnGraceExpiry`'s 066 §3.2(3) DORMANCY GUARD when a due+60
+-- termination is deferred because no SENT statutory warning email
+-- (`due+30.email` / `t+N.email`, N>=7) has matured (dispatched >=
+-- MIN_WARNING_NOTICE_DAYS = 14 days before the run). Previously this was
+-- the ONLY deferral branch with no audit row (only a cron JSON counter, an
+-- OTel metric, and the route's `termination_warning_blocked` escalation
+-- task) — which cost a live investigation on 2026-07-30 when three
+-- Round-3-imported cycles "vanished" from the lapse run.
+--
+-- 5-year retention (no tax-document overlap).
+--
+-- Pattern: `ALTER TYPE … ADD VALUE IF NOT EXISTS` (matches 0247 precedent)
+-- so re-running is a no-op. Forward-only: enum values cannot be removed.
+--
+-- Registered in lockstep with:
+--   - `F8_AUDIT_EVENT_TYPES` (renewals audit port) — count 73 -> 74
+--   - `F8_ENUM_SHIPPED_TUPLE` (drizzle-renewal-audit-emitter.ts) — SHIPPED
+--     (the real emit site lands in this same commit,
+--     `lapse-cycles-on-grace-expiry.ts` `processOne` dormancy-guard branch)
+--   - `auditEventTypeEnum` tuple (src/modules/auth/infrastructure/db/schema.ts)
+--   - `scripts/lib/enum-migration-guard.ts` `REQUIRED_ENUM_VALUES`
+--   - i18n `audit.eventType.<name>` (en/th/sv) — enforced by
+--     tests/unit/insights/audit-event-label-coverage.test.ts
+-- ---------------------------------------------------------------------------
+
+ALTER TYPE "audit_event_type" ADD VALUE IF NOT EXISTS 'renewal_lapse_deferred_warning_pending';

@@ -451,6 +451,9 @@ describe('DV-Wave2 ⑥ loadPipelineMoney — integration (live Neon)', () => {
     // vanishing; NOT double-counted in the FY overdue leg above.
     expect(res.value.overdueBeforeFySatang).toBe(100000n);
     expect(res.value.overdueBeforeFyCount).toBe(2);
+    // Task 3 (renewals-suspended-visibility-audit) — the SQL leg's own FY
+    // boundary surfaces for the band's `?dueBefore=` drill-down.
+    expect(res.value.fyStartDate).toBe('2026-01-01');
     // collected (July) = #3 (70000) + #5 net (30000); #4 May, #6 April
     // excluded — UNCHANGED by #9 despite #9 also being paid in July.
     expect(res.value.collectedThisPeriodSatang).toBe(100000n);
@@ -650,5 +653,9 @@ describe('DV-Wave2 ⑥ / Fix round 1 #3 — fiscalYearStartMonth shifts the due-
     // carried by the prior-FY pair (the sub-line under the Past-due tile).
     expect(res.value.overdueBeforeFySatang).toBe(1234500n);
     expect(res.value.overdueBeforeFyCount).toBe(1);
+    // Task 3 — the boundary MOVES with fiscalYearStartMonth, and the
+    // surfaced date moves with it (April-start FY at 2026-07-15 →
+    // 2026-04-01), so the drill-down's dueBefore always matches the leg.
+    expect(res.value.fyStartDate).toBe('2026-04-01');
   }, 60_000);
 });

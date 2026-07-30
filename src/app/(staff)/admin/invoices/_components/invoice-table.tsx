@@ -581,13 +581,28 @@ export function InvoicesTable({
                   <span className="text-sm text-muted-foreground">—</span>
                 )}
               </TableCell>
-              <TableCell className="align-middle">
+              <TableCell className="align-middle whitespace-normal">
                 {/* 054-event-fee-invoices — buyer column. First line: the
                     buyer name (+ Event chip on event rows). Second line
                     (Task 14): the muted subtitle describing the invoice —
-                    event name + CE date, or "Membership {year}". */}
+                    event name + CE date, or "Membership {year}".
+
+                    renewals-suspended-visibility-audit Task 4 — long legal
+                    names (e.g. "TOYOTA MATERIAL HANDLING WAREHOUSE
+                    SOLUTIONS (THAILAND) CO., LTD.") used to ride the
+                    TableCell base `whitespace-nowrap` and stretch the whole
+                    table into a horizontal scrollbar. The cell now opts
+                    into wrapping (`whitespace-normal` override) and the
+                    name is bounded `max-w-[32ch]` + clamped to TWO lines
+                    (`line-clamp-2`); the full name stays reachable via
+                    `title` — the members-directory company-cell convention
+                    (`members-table.tsx` company column: bounded width +
+                    `break-words whitespace-normal` + `title`), plus the
+                    2-line cap this dense table needs. `align-middle` on the
+                    cell is unchanged, so a wrapped 2-line name centres
+                    against its row like every other cell. */}
                 <div className="flex flex-col gap-0.5">
-                  <div className="flex flex-wrap items-center gap-1.5">
+                  <div className="flex flex-wrap items-start gap-1.5">
                     {/* Membership invoices (and matched-member event
                         invoices) link to the F3 member; event NON-member
                         buyers have no member row, so the name renders as
@@ -596,12 +611,18 @@ export function InvoicesTable({
                     {r.buyerHasMemberLink ? (
                       <Link
                         href={`/admin/members/${r.memberId}`}
-                        className="focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
+                        title={r.memberName}
+                        className="max-w-[32ch] break-words line-clamp-2 focus-visible:outline-2 focus-visible:outline-ring rounded-sm"
                       >
                         {r.memberName}
                       </Link>
                     ) : (
-                      <span>{r.memberName}</span>
+                      <span
+                        title={r.memberName}
+                        className="max-w-[32ch] break-words line-clamp-2"
+                      >
+                        {r.memberName}
+                      </span>
                     )}
                     {r.invoiceSubject === 'event' && (
                       // Event chip — surfaces event-fee invoices at a glance.
@@ -620,9 +641,14 @@ export function InvoicesTable({
                   {r.buyerSubtitle !== null && (
                     // Muted detail line. `block` so it stacks under the
                     // name; `text-xs text-muted-foreground` keeps it a
-                    // secondary scan cue. Stacked text reflows cleanly at
-                    // 320px (no fixed width / nowrap).
-                    <span className="block text-xs text-muted-foreground">
+                    // secondary scan cue. Task 4 + A3 — same bound +
+                    // 2-line clamp + `title` treatment as the name above
+                    // (the cell now wraps, so an unbounded subtitle would
+                    // make row heights erratic).
+                    <span
+                      title={r.buyerSubtitle}
+                      className="block max-w-[32ch] line-clamp-2 text-xs text-muted-foreground"
+                    >
                       {r.buyerSubtitle}
                     </span>
                   )}

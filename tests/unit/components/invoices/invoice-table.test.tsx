@@ -273,6 +273,47 @@ describe('<InvoicesTable> buyer column', () => {
     expect(buyerText.closest('a')).toBeNull();
   });
 
+  // renewals-suspended-visibility-audit Task 4 — long legal names used to
+  // ride TableCell's base `whitespace-nowrap` and stretch the whole table
+  // into a horizontal scrollbar. The real prod offenders drive the cases.
+  it('clamps a long buyer name to 2 lines with a bounded width, keeping the full name in title (Task 4)', () => {
+    const LONG =
+      'TOYOTA MATERIAL HANDLING WAREHOUSE SOLUTIONS (THAILAND) CO., LTD.';
+    renderTable([
+      baseRow({ invoiceSubject: 'membership', buyerHasMemberLink: true, memberName: LONG }),
+    ]);
+    const link = screen.getByRole('link', { name: LONG });
+    // 2-line clamp + bounded width so the name grows DOWN, never across
+    // (members-directory company-cell convention + line-clamp).
+    expect(link.className).toContain('line-clamp-2');
+    expect(link.className).toContain('max-w-[32ch]');
+    expect(link.className).toContain('break-words');
+    // Full name stays reachable when visually clamped.
+    expect(link).toHaveAttribute('title', LONG);
+    // The cell opted OUT of the TableCell base nowrap — without this the
+    // clamp can never wrap and the table stretches anyway.
+    const cell = link.closest('td');
+    expect(cell?.className).toContain('whitespace-normal');
+  });
+
+  it('clamps a long NON-member buyer name the same way (plain-text span)', () => {
+    const LONG = 'THE BINARY HOLDINGS (THAILAND) COMPANY LIMITED';
+    renderTable([
+      baseRow({
+        invoiceId: 'inv-evt-long',
+        invoiceSubject: 'event',
+        buyerHasMemberLink: false,
+        memberId: '',
+        memberName: LONG,
+      }),
+    ]);
+    const span = screen.getByText(LONG);
+    expect(span.closest('a')).toBeNull();
+    expect(span.className).toContain('line-clamp-2');
+    expect(span.className).toContain('max-w-[32ch]');
+    expect(span).toHaveAttribute('title', LONG);
+  });
+
   it('shows the Event chip ONLY on event rows', () => {
     renderTable([
       baseRow({ invoiceId: 'inv-m', invoiceSubject: 'membership', documentNumber: 'INV-M' }),
@@ -303,6 +344,25 @@ describe('<InvoicesTable> buyer column', () => {
     // The buyer name and its muted subtitle are distinct text nodes.
     expect(screen.getByText('Acme Co., Ltd.')).toBeInTheDocument();
     expect(screen.getByText('Membership 2026')).toBeInTheDocument();
+  });
+
+  it('clamps the subtitle to 2 lines with the full text in title (A3 — same treatment as the name)', () => {
+    const LONG_SUBTITLE =
+      'Annual General Meeting & Networking Gala Dinner at the Athenee Hotel · 2026-06-15';
+    renderTable([
+      baseRow({
+        invoiceId: 'inv-evt-sub',
+        invoiceSubject: 'event',
+        buyerHasMemberLink: false,
+        memberId: '',
+        memberName: 'Walk-in Guest Co.',
+        buyerSubtitle: LONG_SUBTITLE,
+      }),
+    ]);
+    const subtitle = screen.getByText(LONG_SUBTITLE);
+    expect(subtitle.className).toContain('line-clamp-2');
+    expect(subtitle.className).toContain('max-w-[32ch]');
+    expect(subtitle).toHaveAttribute('title', LONG_SUBTITLE);
   });
 
   it('renders the event-name subtitle under an event buyer name', () => {

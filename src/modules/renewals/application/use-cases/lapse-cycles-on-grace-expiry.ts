@@ -134,6 +134,7 @@ import type {
 import {
   MAX_INVOICE_ISSUANCE_LEAD_DAYS,
   hasSatisfiedWarningRequirement,
+  newestStatutoryWarningDispatch,
 } from '../../domain/due-track';
 import {
   CycleNotFoundError,
@@ -599,6 +600,37 @@ async function processOne(
       return 'deferred_guard_error';
     }
     if (!hasSatisfiedWarningRequirement(reminderEvents, clock.closedAtIso)) {
+      // renewals-suspended-visibility-audit — forensic emit for the ONE
+      // deferral branch that previously had no audit row (only the cron
+      // JSON counter, the OTel metric below, and the route's idempotent
+      // `termination_warning_blocked` escalation task — which cost a live
+      // investigation on 2026-07-30 when three imported cycles "vanished"
+      // from the lapse run). Same fire-and-forget `emit()`-outside-tx
+      // pattern + PII discipline as `emitDeferredNotDue` above: no state
+      // change happens on this branch, so there is no tx to pair the
+      // audit with (Constitution Principle VIII pairs STATE CHANGES).
+      // `newestStatutoryWarningDispatch` reads the reminder events the
+      // guard ALREADY loaded — no extra query; both warning fields are
+      // null when no qualifying warning has been dispatched yet.
+      const newestWarning = newestStatutoryWarningDispatch(reminderEvents);
+      await deps.auditEmitter.emit(
+        {
+          type: 'renewal_lapse_deferred_warning_pending' as const,
+          payload: {
+            cycle_id: cycle.cycleId as CycleId,
+            member_id: asMemberId(cycle.memberId),
+            due_date: dueDate,
+            warning_sent_at: newestWarning?.sentAtIso ?? null,
+            earliest_terminate_on: newestWarning?.maturesAtIso ?? null,
+          },
+        },
+        {
+          tenantId,
+          actorUserId: null,
+          actorRole: 'cron',
+          correlationId,
+        },
+      );
       renewalsMetrics.lapseDeferred.add(1, {
         tenant_id: tenantId,
         reason: 'no_prior_warning',

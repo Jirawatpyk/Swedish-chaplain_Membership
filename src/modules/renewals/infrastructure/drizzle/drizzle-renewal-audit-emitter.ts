@@ -78,6 +78,11 @@ const F8_ENUM_SHIPPED_TUPLE = [
   // this same commit (`lapse-cycles-on-grace-expiry.ts` `processOne`),
   // so SHIPPED from day one — no deferred window.
   'renewal_lapse_deferred_invoice_not_due',
+  // --- renewals-suspended-visibility-audit (migration 0283) — the 066
+  // §3.2(3) dormancy-guard deferral event. The real emit site lands in
+  // this same commit (`lapse-cycles-on-grace-expiry.ts` `processOne`,
+  // `deferred_no_prior_warning` branch), so SHIPPED from day one.
+  'renewal_lapse_deferred_warning_pending',
   // --- F8-completion slice 2 — T-0 payability flip emit site -----------
   // Migration 0215 adds the pgEnum value. Emit sites:
   //   - enter-awaiting-payment-on-expiry.ts (T-0 cron, source:'cron')

@@ -1260,6 +1260,20 @@ export interface PipelineSummary {
   readonly totalInWindow: number;
   readonly byUrgency: Readonly<Record<UrgencyBucket, number>>;
   readonly lapsedCount: number;
+  /**
+   * renewals-suspended-visibility-audit — benefit-access-suspended cycles
+   * OUTSIDE the FR-046 90-day work window: `awaiting_payment` or
+   * `pending_admin_reactivation` with `expires_at > NOW() + 90 days`
+   * (first-bill collection cases — the fixed-anchor period puts expiry far
+   * in the future while the first bill stays unpaid). These members read
+   * "Suspended" on the Members page but appear in NO pipeline urgency
+   * bucket, so `byUrgency.suspended` under-counts relative to the Members
+   * page; the pipeline's bridge strip renders this count so the two
+   * numbers explain themselves. Shares the SAME window boundary fragment
+   * as `byUrgency` in the adapter (single `windowEnd` — cannot fork) and
+   * the same tier filter as the badges.
+   */
+  readonly suspendedOutsideWindowCount: number;
 }
 
 /**
@@ -1323,6 +1337,14 @@ export interface PipelineMoneySummary {
   readonly overdueBeforeFySatang: bigint;
   /** COUNT of the `overdueBeforeFySatang` cohort rows (sub-line "({count})"). */
   readonly overdueBeforeFyCount: number;
+  /**
+   * renewals-suspended-visibility-audit Task 3 — the fiscal-year start
+   * boundary (`YYYY-MM-DD`) the FY-scoped legs filtered on, surfaced from
+   * the SQL expression itself (never recomputed app-side) so the band's
+   * prior-FY drill-down `?dueBefore={fyStartDate}` provably bounds the
+   * SAME cohort the sub-line counted.
+   */
+  readonly fyStartDate: string;
 }
 
 /**
@@ -1340,6 +1362,8 @@ export interface PipelineMoneyRaw {
   readonly overdueBeforeFySatang: bigint;
   /** COUNT of the prior-FY issued cohort above. */
   readonly overdueBeforeFyCount: number;
+  /** The SQL-computed fyStart boundary (`YYYY-MM-DD`) — see the summary's doc. */
+  readonly fyStartDate: string;
   /** Per-invoice (id, total−credited) for settled statuses, due in [fyStart, today). */
   readonly settledRows: ReadonlyArray<{
     readonly invoiceId: string;

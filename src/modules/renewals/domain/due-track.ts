@@ -116,3 +116,43 @@ export function hasSatisfiedWarningRequirement(
     return Number.isFinite(sentMs) && sentMs <= cutoffMs;
   });
 }
+
+/**
+ * renewals-suspended-visibility-audit — the NEWEST qualifying statutory
+ * warning's dispatch instant + its §3.2(3) maturity instant
+ * (`dispatchedAt + MIN_WARNING_NOTICE_DAYS`), for the dormancy-guard
+ * deferral audit (`renewal_lapse_deferred_warning_pending`). Applies the
+ * SAME qualifying predicate as `hasSatisfiedWarningRequirement` (sent
+ * statutory-warning EMAIL) minus the maturity cutoff — sharing
+ * `isStatutoryWarningStepId` keeps the two from drifting. Returns `null`
+ * when no qualifying warning has been dispatched at all (the deferral is
+ * then waiting on the due-track dispatcher's FIRST warning, and no
+ * maturity date exists yet).
+ */
+export function newestStatutoryWarningDispatch(
+  events: ReadonlyArray<{
+    readonly stepId: string;
+    readonly status: string;
+    readonly channel: string;
+    readonly dispatchedAt: string | null;
+  }>,
+): { readonly sentAtIso: string; readonly maturesAtIso: string } | null {
+  let bestMs = Number.NEGATIVE_INFINITY;
+  let bestIso: string | null = null;
+  for (const e of events) {
+    if (e.status !== 'sent' || e.channel !== 'email') continue;
+    if (!isStatutoryWarningStepId(e.stepId)) continue;
+    if (e.dispatchedAt === null) continue;
+    const sentMs = Date.parse(e.dispatchedAt);
+    if (!Number.isFinite(sentMs) || sentMs <= bestMs) continue;
+    bestMs = sentMs;
+    bestIso = e.dispatchedAt;
+  }
+  if (bestIso === null) return null;
+  return {
+    sentAtIso: bestIso,
+    maturesAtIso: new Date(
+      bestMs + MIN_WARNING_NOTICE_DAYS * MS_PER_DAY,
+    ).toISOString(),
+  };
+}

@@ -1919,6 +1919,13 @@
       "when": 1798541000000,
       "tag": "0282_renewal_cycles_auto_draft_invoice_id_idx",
       "breakpoints": true
+    },
+    {
+      "idx": 284,
+      "version": "7",
+      "when": 1798541100000,
+      "tag": "0283_renewal_lapse_deferred_warning_pending",
+      "breakpoints": true
     }
   ]
 }

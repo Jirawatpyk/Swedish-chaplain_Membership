@@ -36,6 +36,7 @@ function renderBand() {
           // motivated the sub-line: 1 bill, ฿38,520, due Aug 2025.
           overdueBeforeFySatang: 3852000n,
           overdueBeforeFyCount: 1,
+          fyStartDate: '2026-01-01',
         }}
         windowDays={90}
       />
@@ -62,6 +63,7 @@ describe('PipelineMoneyBand', () => {
             dueSoonSatang: 0n,
             overdueBeforeFySatang: 0n,
             overdueBeforeFyCount: 0,
+            fyStartDate: '2026-01-01',
           }}
           windowDays={90}
         />
@@ -119,6 +121,7 @@ describe('PipelineMoneyBand', () => {
             dueSoonSatang: 0n,
             overdueBeforeFySatang: 0n,
             overdueBeforeFyCount: 0,
+            fyStartDate: '2026-01-01',
           }}
           windowDays={90}
         />
@@ -158,6 +161,7 @@ describe('PipelineMoneyBand', () => {
             dueSoonSatang: 0n,
             overdueBeforeFySatang: 0n,
             overdueBeforeFyCount: 0,
+            fyStartDate: '2026-01-01',
           }}
           windowDays={1}
         />
@@ -199,14 +203,20 @@ describe('PipelineMoneyBand', () => {
 
   it('renders the sub-line as a drill-down link to the overdue membership invoices list (UX follow-up F3)', () => {
     renderBand();
-    // `status=overdue` is the DERIVED filter (issued + past-due) — the most
-    // precise filter the invoices list exposes via URL; no due-date-range
-    // param exists to isolate the prior-FY rows further.
+    // Task 3 (renewals-suspended-visibility-audit) — `status=overdue`
+    // (DERIVED: issued + past-due) PLUS `dueBefore` at the SAME
+    // SQL-computed fiscal-year boundary the sub-line counted with. The
+    // operator rejected the earlier superset landing (all overdue bills);
+    // this href now bounds the list to due_date < fyStart = EXACTLY the
+    // cohort the sub-line sums.
     expect(
       screen.getByRole('link', {
         name: '+ 38,520.00 THB overdue from prior years (1 bill)',
       }),
-    ).toHaveAttribute('href', '/admin/invoices?status=overdue&subject=membership');
+    ).toHaveAttribute(
+      'href',
+      '/admin/invoices?status=overdue&subject=membership&dueBefore=2026-01-01',
+    );
   });
 
   it('hides the prior-years sub-line entirely when overdueBeforeFySatang is 0 (tile byte-identical to before)', () => {
@@ -220,6 +230,7 @@ describe('PipelineMoneyBand', () => {
             dueSoonSatang: 30000n,
             overdueBeforeFySatang: 0n,
             overdueBeforeFyCount: 0,
+            fyStartDate: '2026-01-01',
           }}
           windowDays={90}
         />

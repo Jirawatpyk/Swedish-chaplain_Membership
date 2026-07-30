@@ -216,3 +216,77 @@ describe('<InvoiceFilters> — active secondary filters surface as removable chi
     ).toBeNull();
   });
 });
+
+// renewals-suspended-visibility-audit Task 3 — the URL-only `?dueBefore=`
+// filter (no Select control; arrives via drill-down links, e.g. the renewals
+// money band's prior-FY sub-line).
+describe('<InvoiceFilters> — dueBefore chip (Task 3)', () => {
+  function renderWithDueBefore(props: {
+    show088Filters?: boolean;
+    showDueBeforeFilter?: boolean;
+  }) {
+    return render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <InvoiceFilters
+          show088Filters={props.show088Filters ?? true}
+          showPaidOnlineChip
+          showDueBeforeFilter={props.showDueBeforeFilter ?? true}
+        />
+      </NextIntlClientProvider>,
+    );
+  }
+
+  it('a valid ?dueBefore surfaces a localized chip whose ✕ clears just that param', () => {
+    searchParamsStub = new URLSearchParams('dueBefore=2026-01-01&status=overdue');
+    renderWithDueBefore({});
+    const chipLabel = screen.getByText('Due before 2026-01-01');
+    expect(chipLabel).toBeInTheDocument();
+    // A4 — the date IS the chip's payload: the default 24ch label bound
+    // truncates it under the longer SV/TH prefixes, so this chip (and only
+    // this chip) widens to 28ch (tailwind-merge lets the override win).
+    expect(chipLabel.className).toContain('max-w-[28ch]');
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Remove filter: Due before 2026-01-01',
+      }),
+    );
+    expect(replace).toHaveBeenCalledTimes(1);
+    const url = String(replace.mock.calls[0]?.[0]);
+    expect(url).not.toContain('dueBefore');
+    // The drill-down's status filter survives the chip removal.
+    expect(url).toContain('status=overdue');
+  });
+
+  it('malformed values are ignored — no chip, no phantom active filter (2026-02-30 is not a calendar date)', () => {
+    searchParamsStub = new URLSearchParams('dueBefore=2026-02-30');
+    renderWithDueBefore({});
+    expect(screen.queryByText(/^Due before/)).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: /^Remove filter:/ }),
+    ).toBeNull();
+
+    searchParamsStub = new URLSearchParams('dueBefore=garbage');
+    renderWithDueBefore({});
+    expect(screen.queryByText(/^Due before/)).toBeNull();
+  });
+
+  it('gated off by default (portal shape): a stray ?dueBefore renders nothing', () => {
+    searchParamsStub = new URLSearchParams('dueBefore=2026-01-01');
+    renderWithDueBefore({ showDueBeforeFilter: false });
+    expect(screen.queryByText(/^Due before/)).toBeNull();
+  });
+
+  it('renders the chip in the INLINE layout too (flag-off admin following a drill-down link)', () => {
+    searchParamsStub = new URLSearchParams('dueBefore=2026-01-01');
+    renderWithDueBefore({ show088Filters: false });
+    // No popover in this layout — the chip is the filter's only visible
+    // representation, rendered in a standalone chips row below the bar.
+    expect(screen.getByText('Due before 2026-01-01')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', {
+        name: 'Remove filter: Due before 2026-01-01',
+      }),
+    ).toBeInTheDocument();
+  });
+});

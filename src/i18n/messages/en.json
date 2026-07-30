@@ -2202,6 +2202,9 @@
             "manual": "Manual",
             "autoRenewal": "Auto-renewal queue"
           },
+          "dueBefore": {
+            "chip": "Due before {date}"
+          },
           "more": {
             "button": "Filters",
             "ariaOpen": "Filters ({count} active)",
@@ -3264,6 +3267,9 @@
           "label": "Due soon",
           "basis": "membership dues due within {days, plural, one {# day} other {# days}} · not yet overdue · incl. VAT"
         }
+      },
+      "suspendedBridge": {
+        "line": "Suspended benefit access: {total, plural, one {# member} other {# members}} in total — {inWindow} in this renewal queue · {outside} with an unpaid first bill (not yet in a renewal window). <link>View all unpaid membership bills</link>"
       },
       "tabs": {
         "ariaLabel": "Renewals sections",
@@ -6098,6 +6104,7 @@
       "membership_suspended_action_blocked": "Action blocked — membership suspended",
       "membership_access_fail_open": "Membership-access check failed open",
       "renewal_lapse_deferred_invoice_not_due": "Lapse deferred — invoice not yet due",
+      "renewal_lapse_deferred_warning_pending": "Lapse deferred — termination warning not yet matured",
       "event_attendance_by_suspended_member": "Attendance recorded — member benefit access suspended/terminated",
       "renewal_auto_drafted": "Renewal draft auto-created",
       "renewal_auto_draft_discarded": "Renewal auto-draft discarded",
