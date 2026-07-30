@@ -517,6 +517,16 @@ export function makeDrizzleRenewalEscalationTaskRepo(
             and(
               eq(membershipPlans.tenantId, members.tenantId),
               eq(membershipPlans.planId, members.planId),
+              // REQUIRED — `membership_plans` is keyed (tenant_id, plan_id,
+              // plan_year) and CLONED per fiscal year, so a member's plan_id
+              // matches EVERY year's clone. Without this predicate the LEFT
+              // JOIN fans out to one row per plan_year clone (each possibly a
+              // different renewal_tier_bucket) → the same escalation task
+              // renders N times with a flipping tier, and the LIST rows exceed
+              // the `countMatching` badge (which joins only `members`).
+              // `members.plan_year` is NOT NULL (the composite FK), so pinning
+              // the join to the member's own plan_year is always safe.
+              eq(membershipPlans.planYear, members.planYear),
             ),
           )
           .leftJoin(
