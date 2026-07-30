@@ -447,9 +447,24 @@ export function proxy(request: NextRequest): NextResponse {
   forwardedHeaders.set(REQUEST_ID_HEADER, requestId);
   // R023: forward the per-request nonce so server components can read it
   // via `headers()` and attach `nonce={nonce}` to any inline <script>
-  // they render. Next.js 16 also reads `x-nonce` automatically for its
-  // own hydration bootstrap scripts.
+  // they render.
   forwardedHeaders.set(NONCE_HEADER, nonce);
+  // Incident 2026-07-30: ALSO mirror the full CSP onto the FORWARDED
+  // REQUEST — the canonical Next.js nonce-middleware pattern
+  // (nextjs.org/docs guides/content-security-policy sets CSP on BOTH the
+  // request and the response). Next.js derives the nonce it stamps onto
+  // its bootstrap AND streamed (Suspense-boundary) scripts from the
+  // request's `Content-Security-Policy` header. Forwarding only `x-nonce`
+  // left streamed / dynamically-loaded chunk scripts intermittently
+  // un-nonced on Suspense-heavy authenticated pages; under prod
+  // `'strict-dynamic'` (which disables `'self'`) those scripts — and the
+  // trust chain they anchor — got CSP-blocked, killing all page JS
+  // (see docs incident notes). Same `nonce` as the response CSP below, so
+  // request-CSP nonce ≡ response-CSP nonce ≡ stamped-script nonce.
+  forwardedHeaders.set(
+    'Content-Security-Policy',
+    buildCsp(env.isDevelopment, nonce),
+  );
 
   // F2: resolve tenant once in the proxy so every downstream consumer
   // (route handlers, server components, logs) sees the same slug. In F2
