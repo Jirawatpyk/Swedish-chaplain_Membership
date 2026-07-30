@@ -6,7 +6,7 @@ condition is now MET. Subsequent F4 event-invoice (§105 redesign, PRs #80/#81) 
 hardening landed on top. Execution (Stage 0 →) may now proceed. · **Owner**: Jirawatpyk ·
 **Created**: 2026-05-30
 **Target**: First production hand-off of Chamber-OS to the SweCham / TSCC tenant
-(`swecham.zyncdata.app`).
+(`swecham.dxtspace.com`).
 **Launch scope (locked)**: **F1–F9 all features — all merged to `main`.** ✅ `015-admin-dashboard`
 (F9) merged. Remaining to launch = operational/data readiness (§ 0+) + flag-flips, NOT feature work.
 
@@ -219,7 +219,7 @@ catalogue). This is the consolidated launch view.
 Required — **app refuses to boot without ALL of these (unconditional)**:
 - [ ] `DATABASE_URL` (Neon `ap-southeast-1`, pooled)
 - [ ] `AUTH_COOKIE_SIGNING_SECRET` (≥32 bytes)
-- [ ] `APP_BASE_URL` (`https://swecham.zyncdata.app`)
+- [ ] `APP_BASE_URL` (`https://swecham.dxtspace.com`)
 - [ ] `APP_ALLOWED_ORIGINS` (CSV; CSRF Origin allow-list) ← **was missing**
 - [ ] `TENANT_SLUG` (`swecham`) ← **was missing**
 - [ ] `TENANT_TIMEZONE` (optional; defaults `Asia/Bangkok` — set explicitly for clarity)
@@ -362,7 +362,7 @@ stage that first needs them.
 
 **Needed for Stage 4 (operator gates):** — answered 2026-05-30
 - [x] **Production env state** → **complete** (all § 6.1 vars set in Vercel).
-- [x] **Domain/DNS/SSL** → **yes**, `swecham.zyncdata.app` live on Vercel prod.
+- [x] **Domain/DNS/SSL** → **yes**, `swecham.dxtspace.com` live on Vercel prod.
 - [x] 🟡 **Stripe** → **still in TEST mode.** F5 online payment cannot truly go live until live keys + products/PromptPay + live webhook are cut over. See risk in § 8.
 - [x] **Resend** → **ready** (domain verified, sending works).
 - [x] **ClamAV** → **done** (F7.1a image scanning ready).

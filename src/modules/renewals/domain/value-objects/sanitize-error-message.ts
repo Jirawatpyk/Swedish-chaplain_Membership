@@ -32,7 +32,7 @@ export function sanitizeResendErrorMessage(message: string): string {
       .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, '[REDACTED_EMAIL]')
       // 3. Domain-like tokens (catches sending domains + bare URLs).
       //    K14-7 (R13-S4): the LHS uses `(?:[A-Za-z0-9-]+\.)+` so
-      //    multi-label hostnames (e.g. `swecham.zyncdata.app`) are
+      //    multi-label hostnames (e.g. `swecham.dxtspace.com`) are
       //    captured whole instead of leaving the leftmost subdomain
       //    label unredacted. Single-label form (`example.com`) still
       //    matches because `+` allows exactly one repetition.

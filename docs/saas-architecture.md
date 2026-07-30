@@ -387,7 +387,7 @@ Tenants on **Pro / Enterprise** plans get white-label:
 
 - F1 deployed (no tenant concept)
 - F2-F9 in development (MTA+STD schemas, hardcoded `tenant_id = 'swecham'`)
-- Single domain: `swecham.chamber-os.app` or `swecham.zyncdata.app`
+- Single domain: `swecham.chamber-os.app` or `swecham.dxtspace.com`
 - One Stripe account (SweCham's)
 - No onboarding flow — SweCham is the only tenant
 

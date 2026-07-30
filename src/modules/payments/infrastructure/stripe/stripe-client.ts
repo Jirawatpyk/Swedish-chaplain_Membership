@@ -94,7 +94,7 @@ export function getStripeClient(): StripeClient {
       appInfo: {
         name: 'Chamber-OS',
         version: '0.1.0',
-        url: 'https://swecham.zyncdata.app',
+        url: 'https://swecham.dxtspace.com',
       },
     };
     _instance = new Stripe(env.stripe.secretKey, {
