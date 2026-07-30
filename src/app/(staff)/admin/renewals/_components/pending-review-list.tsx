@@ -26,7 +26,14 @@
  */
 'use client';
 
-import { useMemo, useRef, useState, useTransition, type RefObject } from 'react';
+import {
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+  type RefObject,
+} from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -152,6 +159,14 @@ export function PendingReviewList({
   // #main-content instead of dropping focus to <body> (WCAG 2.1 AA SC 2.4.3).
   const closedViaSuccessRef = useRef(false);
   const approveCancelRef = useRef<HTMLButtonElement | null>(null);
+  // Holds the CURRENTLY-LAUNCHED row's focus-return resolver so it survives the
+  // `approveTarget → null` commit that closes the dialog. Base UI reads its
+  // returnFocus (from `finalFocus`) LIVE at close, not at open — so a prop of
+  // `approveTarget?.finalFocus` is already `undefined` by the time it is read,
+  // and Base UI falls back to its default (return to the vanishing Approve
+  // trigger → focus drops to <body>). Keeping the resolver here lets the stable
+  // `finalFocus` callback below stay always-defined. No-op default until launch.
+  const activeFinalFocusRef = useRef<() => HTMLElement | null>(() => null);
 
   const sortedRows = useMemo(() => {
     const copy = [...rows];
@@ -175,8 +190,23 @@ export function PendingReviewList({
   // a success / 409 just before the row unmounts.
   const openApprove = (target: ApproveTarget): void => {
     closedViaSuccessRef.current = false;
+    // Capture the launching row's resolver so the dialog's stable `finalFocus`
+    // prop can still reach it after `approveTarget` is nulled on close.
+    activeFinalFocusRef.current = target.finalFocus;
     setApproveTarget(target);
   };
+
+  // Stable, ALWAYS-DEFINED focus-return callback for the confirm dialog. Base UI
+  // invokes it once at close and reads `activeFinalFocusRef` live: on a
+  // success/409 close (where `closedViaSuccessRef` is raised just before the row
+  // unmounts) the row resolver skips the vanishing trigger and lands on
+  // #main-content; on Cancel/ESC it returns the still-mounted Approve trigger.
+  // Passing `approveTarget?.finalFocus` instead would evaporate to `undefined`
+  // at the close commit and leave the whole chain inert (WCAG 2.1 AA SC 2.4.3).
+  const finalFocus = useCallback(
+    (): HTMLElement | null => activeFinalFocusRef.current(),
+    [],
+  );
 
   const onApproveConfirm = (): void => {
     const target = approveTarget;
@@ -369,15 +399,17 @@ export function PendingReviewList({
             if (!open) setApproveTarget(null);
           }}
         >
-          {/* `finalFocus` = the launching row's resolver, captured by Base UI
-              at open. On a success/409 close the row unmounts and
-              `closedViaSuccessRef` (raised before close) makes the resolver skip
-              the vanishing trigger → #main-content; on Cancel/ESC it returns the
-              still-mounted Approve trigger. Without this prop the whole
-              focus-return mechanism is inert (WCAG 2.1 AA SC 2.4.3). */}
+          {/* `finalFocus` is a STABLE, always-defined callback (never
+              `approveTarget?.finalFocus`, which evaporates to `undefined` on the
+              close commit). Base UI reads returnFocus from it LIVE at close: it
+              defers to `activeFinalFocusRef` — the launching row's resolver —
+              which, with `closedViaSuccessRef` raised on a success/409 close,
+              skips the unmounting trigger and lands on #main-content; on
+              Cancel/ESC it returns the still-mounted Approve trigger (WCAG 2.1 AA
+              SC 2.4.3). */}
           <DialogContent
             initialFocus={approveCancelRef}
-            finalFocus={approveTarget?.finalFocus}
+            finalFocus={finalFocus}
             role="alertdialog"
           >
             <DialogHeader>

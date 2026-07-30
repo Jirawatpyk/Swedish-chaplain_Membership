@@ -19,7 +19,7 @@ import {
   fireEvent,
   waitFor,
 } from '@testing-library/react';
-import type { ReactNode } from 'react';
+import { isValidElement, type ReactNode } from 'react';
 import { NextIntlClientProvider } from 'next-intl';
 import {
   PendingReviewList,
@@ -44,25 +44,23 @@ vi.mock('sonner', () => ({
     error: (...a: unknown[]) => toastError(...a),
   },
 }));
+// B2 close-time guard — capture the `finalFocus` prop off the DialogContent
+// CHILD ELEMENT on EVERY parent render, including the close render (open=false).
+// Base UI reads finalFocus LIVE at close, so the ONLY way to catch the
+// `finalFocus={approveTarget?.finalFocus}` regression (prop evaporates to
+// `undefined` when the dialog closes on success) is to observe the value at
+// close time. The `open` gate below skips rendering DialogContent when closed,
+// so we read the prop off the child element here in the Dialog mock instead.
+let capturedDialogFinalFocus: unknown;
 vi.mock('@/components/ui/dialog', () => ({
-  Dialog: ({ open, children }: { open: boolean; children: ReactNode }) =>
-    open ? <div>{children}</div> : null,
-  // Expose the `finalFocus` prop TYPE so a test can assert the focus-return
-  // resolver is actually wired to the dialog (regression guard: the resolver
-  // machinery is inert if the prop is never passed).
-  DialogContent: ({
-    children,
-    finalFocus,
-  }: {
-    children: ReactNode;
-    finalFocus?: unknown;
-  }) => (
-    <div
-      data-testid="approve-dialog-content"
-      data-finalfocus-type={typeof finalFocus}
-    >
-      {children}
-    </div>
+  Dialog: ({ open, children }: { open: boolean; children: ReactNode }) => {
+    capturedDialogFinalFocus = isValidElement(children)
+      ? (children.props as { finalFocus?: unknown }).finalFocus
+      : undefined;
+    return open ? <div>{children}</div> : null;
+  },
+  DialogContent: ({ children }: { children: ReactNode }) => (
+    <div data-testid="approve-dialog-content">{children}</div>
   ),
   DialogHeader: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   DialogTitle: ({ children }: { children: ReactNode }) => <h2>{children}</h2>,
@@ -79,6 +77,10 @@ function renderList(
       locale="en"
       messages={enMessages as Record<string, unknown>}
     >
+      {/* The real staff layout provides `<main id="main-content" tabIndex={-1}>`
+          as the focus-return landmark; mirror it so the finalFocus resolver's
+          `document.getElementById('main-content')` fallback resolves. */}
+      <main id="main-content" tabIndex={-1} />
       <PendingReviewList rows={rows} canApprove={props?.canApprove ?? false} />
     </NextIntlClientProvider>,
   );
@@ -91,6 +93,7 @@ beforeEach(() => {
   refreshMock.mockClear();
   toastSuccess.mockClear();
   toastError.mockClear();
+  capturedDialogFinalFocus = undefined;
 });
 
 const UNMARKED: PendingReviewRow = {
@@ -288,11 +291,42 @@ describe('<PendingReviewList> — B2 inline Approve', () => {
     expect(screen.getByRole('link', { name: 'View' })).toBeInTheDocument();
   });
 
-  it('hands the confirm dialog a finalFocus resolver (focus-return wiring)', () => {
-    renderList([UNMARKED], { canApprove: true });
-    fireEvent.click(screen.getByRole('button', { name: APPROVE_TRIGGER }));
-    const content = screen.getByTestId('approve-dialog-content');
-    expect(content.getAttribute('data-finalfocus-type')).toBe('function');
+  it('keeps a STABLE finalFocus resolver that survives close-on-success and returns #main-content (B2 regression: the prop must not evaporate to undefined at close)', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      renderList([UNMARKED], { canApprove: true });
+      // Open the dialog — it receives the launching row's focus-return resolver.
+      fireEvent.click(screen.getByRole('button', { name: APPROVE_TRIGGER }));
+      expect(typeof capturedDialogFinalFocus).toBe('function');
+
+      // Approve → success. `onApproveConfirm` raises `closedViaSuccessRef` and
+      // nulls `approveTarget` in the SAME commit that closes the dialog.
+      fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+      await waitFor(() => expect(toastSuccess).toHaveBeenCalled());
+      await waitFor(() => expect(refreshMock).toHaveBeenCalled());
+
+      // CLOSE-TIME GUARD. Base UI reads `finalFocus` LIVE at close. With the bug
+      // (`finalFocus={approveTarget?.finalFocus}`) the prop is `undefined` on the
+      // close render, so this stays 'undefined' and the assertion times out and
+      // FAILS. The fix passes a stable callback, so it is STILL a function after
+      // the dialog has closed on success.
+      await waitFor(() =>
+        expect(typeof capturedDialogFinalFocus).toBe('function'),
+      );
+
+      // ...and invoking it (as Base UI does at close) returns the surviving
+      // #main-content landmark — NOT the now-unmounting Approve trigger, NOT
+      // null/<body> — because `closedViaSuccessRef` was raised before close.
+      const mainContent = document.getElementById('main-content');
+      expect(mainContent).not.toBeNull();
+      const resolve = capturedDialogFinalFocus as () => HTMLElement | null;
+      expect(resolve()).toBe(mainContent);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('approves inline: POSTs the reactivate route and toasts success', async () => {
