@@ -893,6 +893,9 @@ async function PendingReviewSection({
   readonly locale: string;
 }) {
   const t = await getTranslations('admin.renewals.pendingReview');
+  // B1 (UX-audit PR-B #3) — error-card copy is shared with the pipeline's own
+  // retry card (`admin.renewals.error.*`), so pending-review reuses it verbatim.
+  const tError = await getTranslations('admin.renewals.error');
   const deps = makeRenewalsDeps(tenantSlug);
 
   let cycles: LoadPendingReactivationReviewOutput['cycles'];
@@ -923,15 +926,34 @@ async function PendingReviewSection({
       memberIds: cycles.map((c) => c.memberId),
     });
   } catch (e) {
+    // B1 (UX-audit PR-B #3) — pending-review previously rendered a DEAD-END
+    // LoadErrorCard (no retry), while the SAME page gives the pipeline error
+    // card a working retry. Reuse the pipeline's `ErrorCardActions`
+    // (router.refresh() in a transition — semantic button, no URL mutation)
+    // with a minted correlationId surfaced for SRE triage + the reference cell.
+    const correlationId = randomUUID();
     logger.error(
       {
         errorId: 'F8.ADMIN.PENDING_REVIEW_LOAD',
         err: e instanceof Error ? e.message : String(e),
         tenantId: tenantSlug,
+        correlationId,
       },
       '[admin/renewals] pending-review load failed',
     );
-    return <LoadErrorCard message={t('loadFailed')} />;
+    return (
+      <LoadErrorCard message={t('loadFailed')}>
+        <ErrorCardActions
+          correlationId={correlationId}
+          goBackHref="/admin/renewals"
+          retryLabel={tError('retry')}
+          pendingLabel={tError('retrying')}
+          retryFailedLabel={tError('retryFailed')}
+          goBackLabel={tError('goBack')}
+          referenceLabel={tError('referenceLabel')}
+        />
+      </LoadErrorCard>
+    );
   }
 
   const dtFmtDay = new Intl.DateTimeFormat(getDateFormatLocale(locale), {
