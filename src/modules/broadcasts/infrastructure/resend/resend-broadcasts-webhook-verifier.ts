@@ -237,15 +237,27 @@ export const resendBroadcastsWebhookVerifier: WebhookVerifierPort = {
 
     const broadcastId = parsed.data.broadcast_id ?? parsed.data.broadcastId;
     const resendMessageId = parsed.data.email_id ?? parsed.data.emailId;
-    if (
-      typeof broadcastId !== 'string' ||
-      broadcastId.length === 0 ||
-      typeof resendMessageId !== 'string' ||
-      resendMessageId.length === 0
-    ) {
+    // Missing `email_id` → genuinely broken payload (every Resend email
+    // event carries one). Checked FIRST so a payload missing both ids
+    // stays `malformed`, not `not_broadcast_email`.
+    if (typeof resendMessageId !== 'string' || resendMessageId.length === 0) {
       throw new WebhookSignatureError(
         'malformed',
-        'Webhook payload missing broadcast_id or email_id',
+        'Webhook payload missing email_id',
+      );
+    }
+    // Single-Resend-account fix (2026-07-30): a signature-verified,
+    // known-event-type payload with a valid `email_id` but NO/empty
+    // `broadcast_id` is a TRANSACTIONAL email event — the account hosts
+    // both the transactional and broadcasts endpoints, and Resend fires
+    // every email event to every endpoint. This is another product's
+    // event, not a broken payload — throw the ack-able kind so the route
+    // 200s instead of 401-ing (which triggered ~8 Svix retries over 3
+    // days per event + `reason:'malformed'` audit spam).
+    if (typeof broadcastId !== 'string' || broadcastId.length === 0) {
+      throw new WebhookSignatureError(
+        'not_broadcast_email',
+        'Signature-verified event carries email_id but no broadcast_id — transactional email event, not a Broadcasts event',
       );
     }
 

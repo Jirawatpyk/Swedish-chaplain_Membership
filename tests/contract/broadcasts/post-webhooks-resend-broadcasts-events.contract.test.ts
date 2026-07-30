@@ -21,6 +21,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { ok, err } from '@/lib/result';
+import { broadcastsMetrics } from '@/lib/metrics';
 
 const processWebhookEventMock = vi.fn();
 const resolveTenantByResendBroadcastIdMock = vi.fn();
@@ -198,6 +199,62 @@ describe('POST /api/webhooks/resend-broadcasts (T149 contract)', () => {
     expect((await res.json()).error.code).toBe('missing_header');
     expect(processWebhookEventMock).not.toHaveBeenCalled();
     expect(f7AuditEmitMock).toHaveBeenCalledTimes(1);
+  });
+
+  // Single-Resend-account setup (live 2026-07-30): the account hosts BOTH
+  // the transactional and broadcasts endpoints, so every transactional
+  // email event (valid signature, known type, email_id but no
+  // broadcast_id) reaches this route. The verifier throws
+  // `not_broadcast_email` for those; the route must 200-ack (Svix stops
+  // retrying) WITHOUT a signature-reject audit row (it is not a
+  // rejection) — mirroring the R7 LOW-G `unknown_event_type` handling.
+  describe('non-broadcast (transactional) email ack', () => {
+    it('verifier throws not_broadcast_email → 200 {received, ignored} + metric, NO audit, NO dispatch', async () => {
+      const metricSpy = vi.spyOn(broadcastsMetrics, 'webhookNonBroadcastAcked');
+      constructEventMock.mockImplementation(() => {
+        throw new WebhookSignatureErrorStub(
+          'not_broadcast_email',
+          'email_id present, broadcast_id absent — transactional email event',
+        );
+      });
+      const route = await importRoute();
+      const res = await route.POST(makeRequest({ body: '{}' }));
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.received).toBe(true);
+      expect(body.ignored).toBe('not_broadcast_email');
+      // NOT a rejection: no signature-reject audit row (prevents the
+      // `broadcast_webhook_signature_rejected{reason:'malformed'}` spam
+      // that masked real failures), and no tenant/dispatch work.
+      expect(f7AuditEmitMock).not.toHaveBeenCalled();
+      expect(resolveTenantByResendBroadcastIdMock).not.toHaveBeenCalled();
+      expect(processWebhookEventMock).not.toHaveBeenCalled();
+      // Bounded observability signal for the acked-but-ignored stream.
+      expect(metricSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('verifier throws malformed (missing email_id) → 401 + audit reject UNCHANGED', async () => {
+      constructEventMock.mockImplementation(() => {
+        throw new WebhookSignatureErrorStub(
+          'malformed',
+          'Webhook payload missing email_id',
+        );
+      });
+      const route = await importRoute();
+      const res = await route.POST(makeRequest({ body: '{}' }));
+
+      expect(res.status).toBe(401);
+      expect((await res.json()).error.code).toBe('bad_signature');
+      expect(processWebhookEventMock).not.toHaveBeenCalled();
+      // Genuinely broken payloads still land the forensic audit row with
+      // the precise kind as reason.
+      expect(f7AuditEmitMock).toHaveBeenCalledTimes(1);
+      const auditInput = f7AuditEmitMock.mock.calls[0]![1] as {
+        payload: { reason: string };
+      };
+      expect(auditInput.payload.reason).toBe('malformed');
+    });
   });
 
   it('invalid signature → 401 bad_signature + audit reject', async () => {

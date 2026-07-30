@@ -1269,6 +1269,7 @@ pino's redact list (see § 22.4).
 | `broadcasts.webhook.receive.count` | counter | `tenant`, `event_type` (delivered\|bounced\|complained\|sent\|delivery_delayed) | Per-event ingest rate |
 | `broadcasts.webhook.duration_ms` | histogram | `tenant` | webhook handler p95 < 250 ms |
 | `broadcasts.webhook_signature_rejected_total` | counter | `reason` (feature_disabled\|body_too_large\|missing_header\|bad_signature) | Abuse / misconfig canary. Round 3 code-reviewer fix: added `reason` label so secret-rotation incidents read distinct from kill-switch blocks on dashboards. NO tenant label (rejected pre-verification). |
+| `broadcasts.webhook_non_broadcast_acked_total` | counter | — | Single-Resend-account fix (2026-07-30): signature-verified TRANSACTIONAL email events (valid `email_id`, no `broadcast_id`) 200-acked without processing. Expected-nonzero baseline (Resend fires every account email event to every endpoint) — NOT part of the signature-rejected abuse canary. A sudden drop to 0 while transactional email volume is nonzero suggests webhook routing changed. |
 | `broadcasts.bounce_rate_per_broadcast` | gauge | `tenant`, `broadcast_id` | Per-broadcast bounce rate; > 2 % warn, > 5 % page. Cardinality ceiling: see § 22.4. |
 | `broadcasts.complaint_rate_per_broadcast` | gauge | `tenant`, `broadcast_id` | Per-broadcast complaint rate; ≥ 0.1 % warn, ≥ 0.5 % page, > 5 % Q14 SC-005 (b) auto-halt. Cardinality ceiling: see § 22.4. |
 | `broadcasts.queue_pending` | gauge | `tenant` | `submitted` + `approved-with-scheduled` count; > 8000 warn |

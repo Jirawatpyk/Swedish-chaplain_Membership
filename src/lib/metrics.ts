@@ -2059,6 +2059,28 @@ export const broadcastsMetrics = {
   },
 
   /**
+   * `broadcasts.webhook_non_broadcast_acked_total` — signature-verified
+   * Resend events that belong to ANOTHER Resend product (transactional
+   * email: valid `email_id`, no `broadcast_id`) and are 200-acked
+   * without processing. Single-account setup (live 2026-07-30): Resend
+   * fires every email event to every webhook endpoint in the account,
+   * so transactional traffic (reset password, renewal reminders,
+   * invitations) hits the broadcasts endpoint constantly — this counter
+   * is the expected-nonzero baseline stream. NOT a rejection: kept
+   * separate from `webhook_signature_rejected_total` so the ≥5/5min
+   * abuse-canary page rule stays clean. NO tenant label (acked before
+   * tenant resolution). No labels — cardinality 1.
+   */
+  webhookNonBroadcastAcked(): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_webhook_non_broadcast_acked_total',
+        'Signature-verified non-broadcast (transactional) Resend events acked without processing',
+      ).add(1);
+    });
+  },
+
+  /**
    * `broadcasts.bounce_rate_per_broadcast{tenant, broadcast_id}` —
    * gauge for sender-reputation watchdog. > 2% warn, > 5% page.
    *
