@@ -76,7 +76,7 @@ export function __setRetryDelaysForTesting(
   RETRY_DELAYS_MS = delays ?? DEFAULT_RETRY_DELAYS_MS;
 }
 
-const FALLBACK_FROM = 'SweCham <noreply@zyncdata.app>';
+const FALLBACK_FROM = 'SweCham <noreply@dxtspace.com>';
 
 let cachedResend: Resend | null = null;
 
