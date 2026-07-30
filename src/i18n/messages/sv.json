@@ -4063,6 +4063,10 @@
         "assignment_filter_aria": "Filtrera på tilldelning",
         "task_type_filter_aria": "Filtrera på uppgiftstyp",
         "task_type_filter_all": "Alla typer",
+        "pagination": {
+          "showingFirst": "Visar första 50",
+          "next": "Nästa 50 →"
+        },
         "status_tab": {
           "open": "Öppen",
           "done": "Klar",

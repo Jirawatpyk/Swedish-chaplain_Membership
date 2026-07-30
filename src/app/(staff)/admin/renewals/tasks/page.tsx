@@ -26,6 +26,7 @@ import { notFound, redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { headers } from 'next/headers';
 import { AlertTriangle } from 'lucide-react';
+import { buttonVariants } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
@@ -42,6 +43,7 @@ import {
   type EscalationTaskStatus,
 } from '@/modules/renewals';
 import { EscalationTaskQueue } from './_components/escalation-task-queue';
+import { buildTasksQueueNextHref } from './_lib/build-tasks-queue-next-href';
 import { RenewalsErrorRetry } from '../_components/renewals-error-retry';
 import { RenewalsSectionTabs } from '../_components/renewals-section-tabs';
 
@@ -105,6 +107,11 @@ export default async function EscalationTaskQueuePage({
   const taskTypeFilter = pickFirst(sp['task_type']) ?? '';
   const overdueRaw = pickFirst(sp['overdue_only']);
   const overdueOnly = overdueRaw === 'true' || overdueRaw === '1';
+  // UX-audit PR-A #1 — keyset pagination. Read the opaque cursor minted by a
+  // prior page's `nextCursor` (the repo validates its shape + throws
+  // InvalidCursorError on garbage, which the load catch renders as the error
+  // card). Absent on page 1.
+  const cursor = pickFirst(sp['cursor']);
 
   // R8 C3-1 close — build a discriminated AssigneeFilter so typos
   // cannot reach the repo. The route handler also runtime-validates
@@ -126,6 +133,8 @@ export default async function EscalationTaskQueuePage({
   // come from a SERVER query over the whole tenant (scoped to the current
   // status tab), not from whatever the fetched 50-row page happened to hold.
   let distinctTaskTypes: ReadonlyArray<string> = [];
+  // UX-audit PR-A #1 — keyset cursor for the "Next 50" footer; null = last page.
+  let nextCursor: string | null = null;
   let overdueCount = 0;
   let hasError = false;
 
@@ -156,6 +165,10 @@ export default async function EscalationTaskQueuePage({
     const [page, distinctTypes] = await Promise.all([
       deps.escalationTaskRepo.listForAdminQueue(tenantCtx.slug, {
         pageSize: 50,
+        // UX-audit PR-A #1 — thread the keyset cursor so rows 51+ are
+        // reachable (SLO target is 200 open tasks/tenant; the prior page
+        // silently dropped everything past the first 50).
+        ...(cursor !== undefined ? { cursor } : {}),
         statusFilter: [status],
         ...(assignedToUserIdFilter !== undefined
           ? { assignedToUserIdFilter }
@@ -173,6 +186,7 @@ export default async function EscalationTaskQueuePage({
     ]);
     queueItems = page.items;
     distinctTaskTypes = distinctTypes;
+    nextCursor = page.nextCursor;
 
     // Overdue banner only meaningful when status='open' and we're not
     // already filtered to overdue-only.
@@ -217,6 +231,17 @@ export default async function EscalationTaskQueuePage({
     );
   }
 
+  // UX-audit PR-A #1 — "Next 50" keyset link, preserving the current filter
+  // state + setting the cursor. null when this is the last page (no footer).
+  // Same discipline as the pipeline's `nextHref` (admin/renewals/page.tsx).
+  const nextHref = buildTasksQueueNextHref({
+    status,
+    assignment: assignmentRaw,
+    taskType: taskTypeFilter,
+    overdueOnly,
+    nextCursor,
+  });
+
   return (
     <TableContainer>
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
@@ -246,40 +271,61 @@ export default async function EscalationTaskQueuePage({
           </CardContent>
         </Card>
       ) : (
-        <EscalationTaskQueue
-          actorRole={role}
-          actorUserId={session.user.id}
-          overdueCount={overdueCount}
-          distinctTaskTypes={distinctTaskTypes}
-          items={queueItems.map((task) => ({
-            taskId: task.taskId,
-            memberId: task.memberId,
-            memberCompanyName: task.memberCompanyName,
-            memberTierBucket: task.memberTierBucket,
-            cycleId: task.cycleId,
-            cycleExpiresAt: task.cycleExpiresAt,
-            taskType: task.taskType,
-            assignedToRole: task.assignedToRole,
-            assignedToUserId: task.assignedToUserId,
-            // R6 C-1 close — wire the I-13 fields through the SSR
-            // projection. The prior commit landed the LEFT JOIN +
-            // API response shape but forgot the page-side mapping,
-            // silently leaving the queue rendering raw 8-char UUID
-            // slices. Verified end-to-end: drizzle adapter returns
-            // → page maps → component renderAssigneeCell consumes.
-            assignedToDisplayName: task.assignedToDisplayName,
-            assignedToEmail: task.assignedToEmail,
-            // R8 R4-IMP-5 close — wire FR-043 yearInCycle/totalYears
-            // through SSR. Prior page projection silently dropped
-            // these (component fell back to ??1 defaults so multi-
-            // year prefix never rendered).
-            yearInCycle: task.yearInCycle,
-            totalYears: task.totalYears,
-            dueAt: task.dueAt,
-            status: task.status,
-            createdAt: task.createdAt,
-          }))}
-        />
+        <>
+          <EscalationTaskQueue
+            actorRole={role}
+            actorUserId={session.user.id}
+            overdueCount={overdueCount}
+            distinctTaskTypes={distinctTaskTypes}
+            items={queueItems.map((task) => ({
+              taskId: task.taskId,
+              memberId: task.memberId,
+              memberCompanyName: task.memberCompanyName,
+              memberTierBucket: task.memberTierBucket,
+              cycleId: task.cycleId,
+              cycleExpiresAt: task.cycleExpiresAt,
+              taskType: task.taskType,
+              assignedToRole: task.assignedToRole,
+              assignedToUserId: task.assignedToUserId,
+              // R6 C-1 close — wire the I-13 fields through the SSR
+              // projection. The prior commit landed the LEFT JOIN +
+              // API response shape but forgot the page-side mapping,
+              // silently leaving the queue rendering raw 8-char UUID
+              // slices. Verified end-to-end: drizzle adapter returns
+              // → page maps → component renderAssigneeCell consumes.
+              assignedToDisplayName: task.assignedToDisplayName,
+              assignedToEmail: task.assignedToEmail,
+              // R8 R4-IMP-5 close — wire FR-043 yearInCycle/totalYears
+              // through SSR. Prior page projection silently dropped
+              // these (component fell back to ??1 defaults so multi-
+              // year prefix never rendered).
+              yearInCycle: task.yearInCycle,
+              totalYears: task.totalYears,
+              dueAt: task.dueAt,
+              status: task.status,
+              createdAt: task.createdAt,
+            }))}
+          />
+          {/* UX-audit PR-A #1 — keyset "Next 50" footer. Rendered only when
+              the repo returned a nextCursor (page capped at 50). A plain
+              server-rendered <a> (works without JS) mirroring the pipeline's
+              pagination footer; the visible "Showing first 50" hint tells all
+              users the list is truncated. The queue's `setSearchParam` deletes
+              `cursor` on any filter change so a stale cursor can't mis-page. */}
+          {nextHref ? (
+            <div className="flex items-center justify-between gap-4 pt-1">
+              <p className="text-xs text-muted-foreground">
+                {t('pagination.showingFirst')}
+              </p>
+              <a
+                href={nextHref}
+                className={buttonVariants({ variant: 'outline' })}
+              >
+                {t('pagination.next')}
+              </a>
+            </div>
+          ) : null}
+        </>
       )}
     </TableContainer>
   );

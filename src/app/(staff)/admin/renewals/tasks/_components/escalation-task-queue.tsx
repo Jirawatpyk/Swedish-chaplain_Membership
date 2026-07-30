@@ -260,6 +260,11 @@ export function EscalationTaskQueue({
     } else {
       params.set(name, value);
     }
+    // UX-audit PR-A #1 — any filter change restarts keyset pagination. A stale
+    // `cursor` from a prior "Next 50" would otherwise be decoded under the new
+    // filter set and skip/duplicate rows (the pipeline resets it the same way
+    // on tab/tier/lens change). `cursor` is only ever set by the footer link.
+    params.delete('cursor');
     const qs = params.toString();
     startTransition(() => router.replace(qs.length > 0 ? `?${qs}` : '?'));
   }

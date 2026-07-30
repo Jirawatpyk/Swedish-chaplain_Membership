@@ -4063,6 +4063,10 @@
         "assignment_filter_aria": "กรองตามผู้รับผิดชอบ",
         "task_type_filter_aria": "กรองตามประเภทของงาน",
         "task_type_filter_all": "ทุกประเภท",
+        "pagination": {
+          "showingFirst": "แสดง 50 รายการแรก",
+          "next": "ถัดไป 50 รายการ →"
+        },
         "status_tab": {
           "open": "เปิดอยู่",
           "done": "เสร็จสิ้น",

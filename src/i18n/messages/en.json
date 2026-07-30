@@ -4063,6 +4063,10 @@
         "assignment_filter_aria": "Filter by assignment",
         "task_type_filter_aria": "Filter by task type",
         "task_type_filter_all": "All types",
+        "pagination": {
+          "showingFirst": "Showing first 50",
+          "next": "Next 50 →"
+        },
         "status_tab": {
           "open": "Open",
           "done": "Done",
