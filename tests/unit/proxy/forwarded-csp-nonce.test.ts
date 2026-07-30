@@ -75,4 +75,30 @@ describe('proxy forwards the CSP nonce onto the request (incident 2026-07-30)', 
     const respNonce = nonceOf(res.headers.get('content-security-policy'));
     expect(res.headers.get('x-middleware-request-x-nonce')).toBe(respNonce);
   });
+
+  it('OVERWRITES a client-spoofed CSP request header with the proxy value', () => {
+    // A client that forges a permissive `Content-Security-Policy` request
+    // header must NOT survive: the proxy does `new Headers(request.headers)`
+    // then `.set()` (not `.append()`), replacing any inbound value.
+    const spoofed = new NextRequest(
+      'http://localhost:3100/admin/renewals/tasks',
+      {
+        method: 'GET',
+        headers: {
+          origin: 'http://localhost:3100',
+          'content-security-policy': "script-src * 'unsafe-inline'",
+        },
+      },
+    );
+    const res = proxy(spoofed);
+    const reqCsp = res.headers.get(
+      'x-middleware-request-content-security-policy',
+    );
+    // The forged wildcard is gone; the forwarded CSP is the proxy's own
+    // (nonce-bearing) value, matching the response CSP nonce.
+    expect(reqCsp).not.toContain('script-src *');
+    expect(nonceOf(reqCsp)).toBe(
+      nonceOf(res.headers.get('content-security-policy')),
+    );
+  });
 });

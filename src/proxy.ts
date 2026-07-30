@@ -6,10 +6,16 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
 
 /**
- * Staff-review R2 R023 (2026-04-28) — per-request nonce header forwarded
- * to server components so they can attach `nonce={nonce}` to any inline
- * `<script>` they render. Next.js 16 picks this up automatically for its
- * own bootstrap scripts when the header is present.
+ * Staff-review R2 R023 (2026-04-28) — per-request nonce forwarded to
+ * server components so they can attach `nonce={nonce}` to any inline
+ * `<script>` THEY author.
+ *
+ * IMPORTANT (incident 2026-07-30): Next.js derives the nonce for its OWN
+ * bootstrap + streamed (Suspense) scripts from the request's
+ * `Content-Security-Policy` header — which `proxy()` also forwards — NOT
+ * from `x-nonce`. Do not remove that CSP-request forward on the
+ * assumption this `x-nonce` header covers the framework scripts; it does
+ * not, and dropping it re-blocks all JS under `'strict-dynamic'`.
  */
 export const NONCE_HEADER = 'x-nonce';
 
