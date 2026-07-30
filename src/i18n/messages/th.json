@@ -3302,7 +3302,9 @@
         "sortPendingSinceToOldest": "เรียงตามวันที่รอ เก่าสุดก่อน",
         "sortPendingSinceToNewest": "เรียงตามวันที่รอ ใหม่สุดก่อน",
         "agedChip": "ค้าง {days} วัน",
-        "agedChipTitle": "รอการพิจารณามาแล้ว {days} วัน"
+        "agedChipTitle": "รอการพิจารณามาแล้ว {days} วัน",
+        "approveAction": "อนุมัติ",
+        "approveRowAria": "อนุมัติการเปิดใช้งานอีกครั้งสำหรับ {company}"
       },
       "tierBadge": {
         "thai_alumni": "ศิษย์เก่าไทย",

@@ -249,6 +249,9 @@ export default async function RenewalsPipelinePage({
             <PendingReviewSection
               tenantSlug={tenantCtx.slug}
               locale={locale}
+              // B2 — manager views this queue read-only; the reactivate route is
+              // admin-only, so only admins get the inline Approve.
+              canApprove={currentUser.role === 'admin'}
             />
           </CardContent>
         </Card>
@@ -905,9 +908,16 @@ async function PipelineSectionTabsWithCount({
 async function PendingReviewSection({
   tenantSlug,
   locale,
+  canApprove,
 }: {
   readonly tenantSlug: string;
   readonly locale: string;
+  /**
+   * B2 — admin-only gate for the inline Approve action. This surface is
+   * viewable by admin AND (read-only) manager; the reactivate route is
+   * admin-only, so a manager gets the read-only list (Review link, no Approve).
+   */
+  readonly canApprove: boolean;
 }) {
   const t = await getTranslations('admin.renewals.pendingReview');
   // B1 (UX-audit PR-B #3) — error-card copy is shared with the pipeline's own
@@ -1040,7 +1050,7 @@ async function PendingReviewSection({
         <h2 className="text-base font-semibold">{t('sectionTitle')}</h2>
         <p className="text-sm text-muted-foreground">{t('sectionSubtitle')}</p>
       </div>
-      <PendingReviewList rows={rows} />
+      <PendingReviewList rows={rows} canApprove={canApprove} />
     </>
   );
 }
