@@ -63,6 +63,15 @@
  *     unconditionally on this view, so reserving all five never creates
  *     the opposite jump. Known ~20px exception: the money band's prior-FY
  *     sub-line (see `PipelineMoneyBandSkeleton`'s own doc).
+ *   - Known 1-line settle on the SUSPENDED tab when the suspended-
+ *     population bridge strip is active (#292): the strip renders between
+ *     the filter row and the table on `?urgency=suspended` only, and a
+ *     route-level loading.tsx receives NO props/searchParams, so it cannot
+ *     know the active tab. Reserving the line unconditionally inside the
+ *     panel mirror was evaluated and REJECTED — it would misalign the
+ *     seven other tabs (including the default t-90, the overwhelmingly
+ *     common landing) and the no-bridge Suspended case, trading a rare
+ *     1-line settle for a permanent gap everywhere else.
  *   - Alternate returns are NOT mirrored, deliberately: the
  *     `?view=pending-review` discovery view (Card + section tabs only),
  *     the feature-disabled card, and the load-error card all render FEWER

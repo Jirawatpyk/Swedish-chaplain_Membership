@@ -29,6 +29,7 @@ function emptyResult(): PipelineQueryResult {
         terminated: 0,
       },
       lapsedCount: 0,
+      suspendedInWindowGlobalCount: 0,
       suspendedOutsideWindowCount: 0,
     },
   };

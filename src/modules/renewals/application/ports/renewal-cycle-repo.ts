@@ -1270,10 +1270,24 @@ export interface PipelineSummary {
    * bucket, so `byUrgency.suspended` under-counts relative to the Members
    * page; the pipeline's bridge strip renders this count so the two
    * numbers explain themselves. Shares the SAME window boundary fragment
-   * as `byUrgency` in the adapter (single `windowEnd` — cannot fork) and
-   * the same tier filter as the badges.
+   * as `byUrgency` in the adapter (single `windowEnd` — cannot fork).
+   *
+   * TENANT-GLOBAL (#292 review A3): deliberately IGNORES the tier/urgency
+   * filters — the strip reconciles against the Members page's global
+   * Suspended number, so its legs must not move when the badges are
+   * sliced by tier.
    */
   readonly suspendedOutsideWindowCount: number;
+  /**
+   * #292 review A3 — the bridge strip's IN-WINDOW leg, also TENANT-GLOBAL
+   * (unlike `byUrgency.suspended`, which honours the active tier filter).
+   * Computed from the same `URGENCY_CASE_SQL` + status/window predicates as
+   * the badge aggregate, so with NO tier filter this always equals
+   * `byUrgency.suspended` (pinned by the load-pipeline integration test);
+   * with a tier filter active it keeps the strip's arithmetic
+   * (`total = inWindow + outside`) reconciling with the Members page.
+   */
+  readonly suspendedInWindowGlobalCount: number;
 }
 
 /**

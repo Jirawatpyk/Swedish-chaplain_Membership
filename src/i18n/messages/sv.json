@@ -2203,7 +2203,9 @@
             "autoRenewal": "Kö för automatisk förnyelse"
           },
           "dueBefore": {
-            "chip": "Förfaller före {date}"
+            "chip": "Förfaller före {date}",
+            "label": "Förfaller före",
+            "clear": "Rensa"
           },
           "more": {
             "button": "Filter",

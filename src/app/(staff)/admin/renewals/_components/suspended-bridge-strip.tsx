@@ -29,9 +29,15 @@ export function SuspendedBridgeStrip({
   inWindowCount,
   outsideWindowCount,
 }: {
-  /** `summary.byUrgency.suspended` — suspended cycles INSIDE the work window. */
+  /**
+   * `summary.suspendedInWindowGlobalCount` — suspended cycles INSIDE the
+   * work window, TENANT-GLOBAL (#292 review A3): NOT the tier-sliced
+   * badge. The copy's "in this renewal queue" reads as the whole queue —
+   * which is exactly what a global number describes — so the sentence
+   * stays correct while a tier filter narrows the badges around it.
+   */
   readonly inWindowCount: number;
-  /** `summary.suspendedOutsideWindowCount` — suspended cycles beyond it. */
+  /** `summary.suspendedOutsideWindowCount` — suspended cycles beyond it (also tenant-global). */
   readonly outsideWindowCount: number;
 }) {
   const t = useTranslations('admin.renewals.suspendedBridge');
