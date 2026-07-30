@@ -717,28 +717,33 @@ export function EscalationTaskQueue({
                         )}
                       </TableCell>
                       <TableCell className="align-top">
-                        {/* Table-wrap fix — cap long task-type labels
+                        {/* Table-wrap fix — long task-type labels wrap
                             (e.g. "Termination deferred - no statutory
-                            warning..." at 59 chars) to 2 lines instead
-                            of forcing the row wider / overflowing.
-                            Enterprise-ux review fix: the cap moved OFF
-                            this cell (was `max-w-[20ch]` bounding the
-                            chip+label group together, which starved the
-                            label on multi-year rows because the fixed-
-                            width "Year N of M" chip ate the budget
-                            first) and ONTO the pill's label span itself
-                            via `labelClassName` — the year-chip now
-                            renders at its natural width on one line and
-                            only the label wraps/clamps to 2 lines.
-                            `whitespace-normal` overrides TableCell's
-                            default `whitespace-nowrap` so the label can
-                            wrap at all. */}
+                            warning ≥14 days" at 59 chars) instead of
+                            forcing the row wider / overflowing. Unlike the
+                            Member column (arbitrary company names → CLAMPED
+                            to 2 lines), task-type is a FIXED i18n enum whose
+                            longest value is a critical LEGAL status, so it
+                            wraps FULLY — NO line-clamp — because clipping it
+                            would hide the load-bearing qualifier; only the
+                            rare termination rows grow taller, and those are
+                            high-stakes rows that should read in full (this
+                            also removes the touch-a11y gap the 2-line clip
+                            had, where the clipped tail was reachable only via
+                            title/aria). Enterprise-ux review fix: the width
+                            cap sits on the pill's LABEL SPAN via
+                            `labelClassName` (not the cell), so the fixed-
+                            width "Year N of M" chip renders at its natural
+                            width on one line and only the label wraps within
+                            `max-w-[22ch]`. `whitespace-normal` overrides
+                            TableCell's default `whitespace-nowrap` so the
+                            label can wrap at all. */}
                         <div className="whitespace-normal">
                           <YearInCyclePill
                             yearInCycle={task.yearInCycle}
                             totalYears={task.totalYears}
                             taskTypeLabel={resolveTaskTypeLabel(t, task.taskType)}
-                            labelClassName="line-clamp-2 break-words min-w-0 max-w-[22ch]"
+                            labelClassName="break-words min-w-0 max-w-[22ch]"
                           />
                         </div>
                       </TableCell>
