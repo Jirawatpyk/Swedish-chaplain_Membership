@@ -12,8 +12,15 @@
  *   1. `PageHeader` (real text — no data dependency)
  *   2. THB money KPI band            → `PipelineMoneyBandSkeleton`
  *   3. Work-queue Card:
- *      a. section tab strip          → real `<RenewalsSectionTabs showPipelineHelp />`
- *         (the page's own Suspense fallback — labels are static i18n)
+ *      a. section tab strip          → STATIC same-footprint shimmer.
+ *         NOT the real `<RenewalsSectionTabs>`: that client component calls
+ *         `useSearchParams()`, which SUSPENDS when rendered inside a
+ *         route-level loading fallback — and a Suspense fallback that itself
+ *         suspends cannot paint, so the whole transition stalls (reported
+ *         2026-07-31: land on /admin/renewals/tasks, hard-refresh, click the
+ *         Renewals tab → navigation frozen on the old page). The page's OWN
+ *         Suspense fallback may keep using the real strip (searchParams
+ *         context exists there); this file must stay hook-free.
  *      b. work-queue lens strip      → same-footprint shimmer (2 tabs,
  *         `WorkQueueTabs` markup mirrored: mb-3/border-b strip + pt-3
  *         min-h-[320px] panel)
@@ -53,9 +60,10 @@
  *     lands below the fold where it cannot displace what the user is
  *     looking at.
  *
- * The three section skeletons + the tab strip are imported from the same
- * modules the page uses as its Suspense fallbacks — single source of truth,
- * so a section redesign updates both surfaces together.
+ * The three section skeletons are imported from the same modules the page
+ * uses as its Suspense fallbacks — single source of truth, so a section
+ * redesign updates both surfaces together. (The tab strip is the one
+ * deliberate exception — see 3a above.)
  *
  * CLS guarantees that actually hold now:
  *   - Default pipeline view: every section resolves IN PLACE (shimmer →
@@ -89,7 +97,6 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { PipelineMoneyBandSkeleton } from './_components/pipeline-money-band';
-import { RenewalsSectionTabs } from './_components/renewals-section-tabs';
 import { RenewalsByMonthSectionSkeleton } from './_components/renewals-by-month-section';
 import { MembersWithoutCycleTraySkeleton } from './_components/members-without-cycle-tray';
 
@@ -101,7 +108,21 @@ export default async function Loading() {
       <PipelineMoneyBandSkeleton />
       <Card>
         <CardContent className="flex flex-col gap-4">
-          <RenewalsSectionTabs showPipelineHelp />
+          {/* Section tab strip — static shimmer mirroring the real strip's
+              footprint (outer flex row · TabsList h-8 rounded-lg p-[3px]
+              track with 4 whitespace-nowrap triggers · sibling 24px help ⓘ).
+              MUST stay hook-free — see the 3a docstring note (the real
+              strip's useSearchParams suspends inside a loading fallback and
+              freezes the route transition). */}
+          <div className="flex items-center gap-1.5" aria-hidden>
+            <div className="inline-flex h-8 w-fit items-center gap-1 rounded-lg p-[3px]">
+              <Skeleton className="h-6 w-20" />
+              <Skeleton className="h-6 w-32" />
+              <Skeleton className="h-6 w-36" />
+              <Skeleton className="h-6 w-28" />
+            </div>
+            <Skeleton className="size-6 rounded-full" />
+          </div>
           <div>
             {/* Work-queue lens strip (Pipeline | Needs action) — mirrors
                 `WorkQueueTabs`' tablist wrapper + `px-3 py-1.5` tab height
