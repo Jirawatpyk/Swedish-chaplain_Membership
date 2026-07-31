@@ -16,13 +16,13 @@ import { EmptyState } from '@/components/shell/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { logger } from '@/lib/logger';
 import {
-  loadRenewalMonthSummary,
-  makeRenewalsDeps,
+  type loadRenewalMonthSummary,
   barWidthPercent,
   addMonthsToYm,
   bkkYearMonth,
   type RenewalMonthSummary,
 } from '@/modules/renewals';
+import type { Settled } from '../_lib/settled';
 import {
   formatMonthKeyLabel,
   formatMonthKeyShort,
@@ -36,18 +36,34 @@ export async function RenewalsByMonthSection({
   tenantSlug,
   nowIso,
   selectedMonth,
+  summaryPromise,
 }: {
   readonly tenantSlug: string;
   readonly nowIso: string;
   readonly selectedMonth: string | null;
+  /**
+   * Waterfall fix (eager-island pattern, `_lib/settled.ts`) — the page
+   * CREATES this `loadRenewalMonthSummary` promise BEFORE its blocking
+   * `await loadPipeline`, so the aggregation runs concurrently with the
+   * pipeline query instead of starting after it. Settled at creation (a
+   * pre-mount rejection can never be an unhandled rejection); the unwrap
+   * below re-throws `e` INSIDE the pre-existing try so the catch renders
+   * the exact same "couldn't load" card as before. The page passes the SAME
+   * `nowIso` into the promise and this prop — the chart/pipeline
+   * reconciliation invariant is unchanged.
+   */
+  readonly summaryPromise: Promise<
+    Settled<Awaited<ReturnType<typeof loadRenewalMonthSummary>>>
+  >;
 }) {
   const t = await getTranslations('admin.renewals.byMonth');
   const locale = await getLocale();
-  const deps = makeRenewalsDeps(tenantSlug);
 
   let summary: RenewalMonthSummary;
   try {
-    const r = await loadRenewalMonthSummary(deps, { tenantId: tenantSlug, nowIso });
+    const settled = await summaryPromise;
+    if (!settled.ok) throw settled.e;
+    const r = settled.v;
     // Error channel is `never` today; THROW if a real variant is ever added so
     // the catch renders "couldn't load" instead of a silently empty chart.
     if (!r.ok) {

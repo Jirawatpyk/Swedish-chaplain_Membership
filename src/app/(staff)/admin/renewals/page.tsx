@@ -45,6 +45,8 @@ import {
   loadPipeline,
   loadPipelineMoney,
   loadPendingReactivationReview,
+  loadRenewalMonthSummary,
+  loadMembersWithoutCycle,
   makeRenewalsDeps,
   parseMonthParam,
   addMonthsToYm,
@@ -56,6 +58,7 @@ import {
   type LoadPendingReactivationReviewOutput,
   type PipelineMoneySummary,
 } from '@/modules/renewals';
+import { settle, type Settled } from './_lib/settled';
 import { formatMonthKeyLabel } from '@/components/renewals/month-bucket-label';
 import {
   RenewalsByMonthSection,
@@ -84,7 +87,10 @@ import {
   RenewalsSectionTabs,
   TabCountBadge,
 } from './_components/renewals-section-tabs';
-import { RenewalsSectionTabsWithCounts } from './_components/renewals-section-tabs-with-counts';
+import {
+  RenewalsSectionTabsWithCounts,
+  loadSectionTabCounts,
+} from './_components/renewals-section-tabs-with-counts';
 import {
   PendingReviewList,
   type PendingReviewRow,
@@ -131,6 +137,15 @@ const DEFAULT_SORT: PipelineSort = 'expires_at_asc';
  */
 const PENDING_REVIEW_AGING_DAYS = 7;
 const PENDING_REVIEW_DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Money-band window — matches the pipeline's own T-90 planning window and
+ * drives the "due soon within N days" caption. Module-level (was local to
+ * `PipelineMoneyBandSection`) because the eager-island waterfall fix creates
+ * the band's data promise in the page body while the band section renders it
+ * — both must read ONE constant.
+ */
+const MONEY_BAND_WINDOW_DAYS = 90;
 
 interface SearchParams {
   readonly tier?: string;
@@ -239,6 +254,13 @@ export default async function RenewalsPipelinePage({
   // active so the urgency-pipeline hot path (SC-003 p95<500ms) takes no
   // extra query. The admin reaches it via the view-tabs toggle; the
   // approve/reject actions live on the cycle-detail page.
+  //
+  // Waterfall audit (eager-island fix): this view is INTENTIONALLY not
+  // converted — its body awaits no data query before returning (only
+  // session/translations/getLocale, all required before any tenant-scoped
+  // promise could be created anyway), so `RenewalsSectionTabsWithCounts`
+  // and `PendingReviewSection` already start their reads concurrently at
+  // first render. There is no waterfall here to remove.
   if (isPendingReviewView) {
     const locale = await getLocale();
     return (
@@ -276,6 +298,64 @@ export default async function RenewalsPipelinePage({
   if (urgency === 'terminated') {
     renewalsMetrics.pipelineLapsedTabVisit(tenantCtx.slug);
   }
+
+  // ---- Eager Suspense-island data (waterfall fix) --------------------------
+  // The `await loadPipeline` below blocks this body from RETURNING its JSX,
+  // so every Suspense island used to START its own queries only AFTER the
+  // pipeline query resolved — a serial waterfall (operator-visible symptom:
+  // the money band double-skeletons and always fills last). Fire each
+  // island's data promise NOW; the island awaits the already-running promise
+  // inside its Suspense boundary. `settle()` (see `_lib/settled.ts`) attaches
+  // the rejection handler AT CREATION so a failure during the pipeline await
+  // can never become an unhandled rejection — each island unwraps and keeps
+  // its exact pre-existing best-effort error semantics.
+  //
+  // Connection-pool note: these ~5 queries already ran CONCURRENTLY with
+  // each other today (all islands mounted together post-body); this only
+  // shifts their START time earlier to overlap `loadPipeline` — no net new
+  // load on the Neon pool.
+  //
+  // `nowIso` threading is unchanged: the SAME instant goes into
+  // `loadPipeline` below, the money band, and the by-month aggregation
+  // (chart/pipeline reconciliation invariant).
+  //
+  // The money band's fiscalYearStartMonth read deliberately stays INSIDE
+  // this promise (sequential with its own loadPipelineMoney): it is that
+  // query's input, and no other consumer on this page needs it — starting
+  // the pair early is the win, not splitting them.
+  const moneyBandPromise = settle(
+    (async () => {
+      const fiscalYearStartMonth = await runInTenant(
+        asTenantContext(tenantCtx.slug),
+        (tx) =>
+          deps.fiscalYearSettings.getFiscalYearStartMonthInTx(
+            tx,
+            tenantCtx.slug,
+          ),
+      );
+      return loadPipelineMoney(deps, {
+        tenantId: tenantCtx.slug,
+        nowIso,
+        windowDays: MONEY_BAND_WINDOW_DAYS,
+        fiscalYearStartMonth,
+      });
+    })(),
+  );
+  // Never rejects (per-read allSettled + logging inside) — no settle needed.
+  const sectionCountsPromise = loadSectionTabCounts(tenantCtx.slug);
+  const needsActionCountPromise = settle(
+    runInTenant(asTenantContext(tenantCtx.slug), (tx) =>
+      deps.memberRenewalFlagsRepo.listAtRiskWidgetMembers(tx, tenantCtx.slug, {
+        limit: 1,
+      }),
+    ),
+  );
+  const byMonthSummaryPromise = settle(
+    loadRenewalMonthSummary(deps, { tenantId: tenantCtx.slug, nowIso }),
+  );
+  const membersWithoutCyclePromise = settle(
+    loadMembersWithoutCycle(deps, { tenantId: tenantCtx.slug }),
+  );
 
   const result = await loadPipeline(deps, {
     tenantId: tenantCtx.slug,
@@ -458,7 +538,10 @@ export default async function RenewalsPipelinePage({
           appearing pushed the whole pipeline card down (a real CLS hit);
           `PipelineMoneyBandSkeleton` reserves the identical footprint. */}
       <Suspense fallback={<PipelineMoneyBandSkeleton />}>
-        <PipelineMoneyBandSection tenantSlug={tenantCtx.slug} nowIso={nowIso} />
+        <PipelineMoneyBandSection
+          tenantSlug={tenantCtx.slug}
+          moneyPromise={moneyBandPromise}
+        />
       </Suspense>
       <Card>
         <CardContent className="flex flex-col gap-4">
@@ -479,6 +562,7 @@ export default async function RenewalsPipelinePage({
             <RenewalsSectionTabsWithCounts
               tenantSlug={tenantCtx.slug}
               showPipelineHelp
+              countsPromise={sectionCountsPromise}
             />
           </Suspense>
           {/* Wave 2 Task 7 — the pipeline body + `AtRiskWidget` are now the
@@ -598,10 +682,18 @@ export default async function RenewalsPipelinePage({
                 </div>
               )
             }
+            // Waterfall audit: `AtRiskWidget` is a CLIENT component that
+            // fetches `/api/admin/renewals/at-risk` on mount — not a server
+            // Suspense island, so the eager-promise pattern does not apply
+            // (its fetch already starts client-side, independent of
+            // `loadPipeline`). Intentionally left as-is.
             needsAction={<AtRiskWidget actorRole={widgetActorRole} />}
             needsActionBadge={
               <Suspense fallback={null}>
-                <NeedsActionCountBadge tenantSlug={tenantCtx.slug} />
+                <NeedsActionCountBadge
+                  tenantSlug={tenantCtx.slug}
+                  countPromise={needsActionCountPromise}
+                />
               </Suspense>
             }
           />
@@ -621,6 +713,7 @@ export default async function RenewalsPipelinePage({
           tenantSlug={tenantCtx.slug}
           nowIso={nowIso}
           selectedMonth={month}
+          summaryPromise={byMonthSummaryPromise}
         />
       </Suspense>
       {/* DV-18 — read-only "Members without renewal cycle" tray. Best-effort:
@@ -630,7 +723,10 @@ export default async function RenewalsPipelinePage({
           anti-join query streams in instead of running as a serial waterfall
           after loadPipeline (keeps it off the pipeline's blocking render). */}
       <Suspense fallback={<MembersWithoutCycleTraySkeleton />}>
-        <MembersWithoutCycleTray tenantSlug={tenantCtx.slug} />
+        <MembersWithoutCycleTray
+          tenantSlug={tenantCtx.slug}
+          resultPromise={membersWithoutCyclePromise}
+        />
       </Suspense>
     </RenewalsPageShell>
   );
@@ -669,28 +765,29 @@ export default async function RenewalsPipelinePage({
  */
 async function PipelineMoneyBandSection({
   tenantSlug,
-  nowIso,
+  moneyPromise,
 }: {
   readonly tenantSlug: string;
-  readonly nowIso: string;
+  /**
+   * Waterfall fix (eager-island pattern, `_lib/settled.ts`) — the page
+   * CREATES the fiscalYearStartMonth-read + `loadPipelineMoney` pair BEFORE
+   * its blocking `await loadPipeline` (the double-skeleton the operator
+   * saw: this band's queries used to start only after the pipeline query
+   * finished). Settled at creation; the unwrap below preserves the exact
+   * pre-existing best-effort branches: result-error → same log + hidden
+   * band with caption, throw → same log + hidden band with caption.
+   */
+  readonly moneyPromise: Promise<
+    Settled<Awaited<ReturnType<typeof loadPipelineMoney>>>
+  >;
 }) {
-  const WINDOW_DAYS = 90;
-  // Resolve the data inside try/catch, but construct the JSX AFTER it — a
-  // render error from <PipelineMoneyBand> must reach the Suspense error
-  // boundary, not this best-effort data catch (react-hooks/error-boundaries).
+  // Unwrap outside any try/catch, then construct the JSX AFTER — a render
+  // error from <PipelineMoneyBand> must reach the Suspense error boundary,
+  // not this best-effort data path (react-hooks/error-boundaries).
   let money: PipelineMoneySummary | null = null;
-  try {
-    const deps = makeRenewalsDeps(tenantSlug);
-    const fiscalYearStartMonth = await runInTenant(
-      asTenantContext(tenantSlug),
-      (tx) => deps.fiscalYearSettings.getFiscalYearStartMonthInTx(tx, tenantSlug),
-    );
-    const result = await loadPipelineMoney(deps, {
-      tenantId: tenantSlug,
-      nowIso,
-      windowDays: WINDOW_DAYS,
-      fiscalYearStartMonth,
-    });
+  const settled = await moneyPromise;
+  if (settled.ok) {
+    const result = settled.v;
     if (result.ok) {
       money = result.value;
     } else {
@@ -703,7 +800,8 @@ async function PipelineMoneyBandSection({
         '[admin/renewals] money band load returned an error',
       );
     }
-  } catch (e) {
+  } else {
+    const e = settled.e;
     logger.error(
       {
         errorId: 'F8.ADMIN.MONEY_BAND',
@@ -736,7 +834,7 @@ async function PipelineMoneyBandSection({
       </section>
     );
   }
-  return <PipelineMoneyBand money={money} windowDays={WINDOW_DAYS} />;
+  return <PipelineMoneyBand money={money} windowDays={MONEY_BAND_WINDOW_DAYS} />;
 }
 
 /**
@@ -762,20 +860,26 @@ async function PipelineMoneyBandSection({
  */
 async function NeedsActionCountBadge({
   tenantSlug,
+  countPromise,
 }: {
   readonly tenantSlug: string;
+  /**
+   * Waterfall fix (eager-island pattern, `_lib/settled.ts`) — the page fires
+   * the `listAtRiskWidgetMembers limit:1` summary read BEFORE `await
+   * loadPipeline`. Settled at creation; a failure keeps the exact
+   * pre-existing best-effort branch (log + render null — the tab itself
+   * always renders regardless).
+   */
+  readonly countPromise: Promise<
+    Settled<{
+      readonly summary: { readonly critical: number; readonly atRisk: number };
+    }>
+  >;
 }) {
   const t = await getTranslations('admin.renewals.workQueue');
-  let count: number;
-  try {
-    const deps = makeRenewalsDeps(tenantSlug);
-    const page = await runInTenant(asTenantContext(tenantSlug), (tx) =>
-      deps.memberRenewalFlagsRepo.listAtRiskWidgetMembers(tx, tenantSlug, {
-        limit: 1,
-      }),
-    );
-    count = page.summary.critical + page.summary.atRisk;
-  } catch (e) {
+  const settled = await countPromise;
+  if (!settled.ok) {
+    const e = settled.e;
     logger.error(
       {
         errorId: 'F8.ADMIN.NEEDS_ACTION_BADGE',
@@ -786,6 +890,7 @@ async function NeedsActionCountBadge({
     );
     return null;
   }
+  const count = settled.v.summary.critical + settled.v.summary.atRisk;
   if (count <= 0) return null;
   return (
     <TabCountBadge count={count} label={t('needsActionCountSr', { count })} />
