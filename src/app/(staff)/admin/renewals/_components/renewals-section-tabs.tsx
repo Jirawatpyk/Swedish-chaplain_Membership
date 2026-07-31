@@ -176,36 +176,68 @@ export function RenewalsSectionTabs({
 
   return (
     <div className="flex items-center gap-1.5">
-      <Tabs value={current} onValueChange={handleChange}>
-        <TabsList aria-label={t('tabs.ariaLabel')}>
-          <TabsTrigger value={PIPELINE_VALUE}>{t('tabs.pipeline')}</TabsTrigger>
-          <TabsTrigger value={PENDING_REVIEW_VALUE}>
-            {t('pendingReview.tab')}
-            <TabCountBadge
-              count={pendingReviewCount}
-              label={t('pendingReview.tabCountSr', {
-                count: pendingReviewCount ?? 0,
-              })}
-            />
-          </TabsTrigger>
-          <TabsTrigger value={TASKS_VALUE}>
-            {t('tabs.tasks')}
-            <TabCountBadge
-              count={tasksCount}
-              label={t('tabs.tasksCountSr', { count: tasksCount ?? 0 })}
-            />
-          </TabsTrigger>
-          <TabsTrigger value={TIER_UPGRADES_VALUE}>
-            {t('tabs.tierUpgrades')}
-            <TabCountBadge
-              count={tierUpgradeCount}
-              label={t('tabs.tierUpgradesCountSr', {
-                count: tierUpgradeCount ?? 0,
-              })}
-            />
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
+      {/* C2 (#4) — horizontal-scroll container. The `inline-flex w-fit` strip
+          with four `whitespace-nowrap` triggers overflows a narrow viewport;
+          scrolling it inside its OWN `overflow-x-auto` box keeps the page body
+          from scrolling horizontally (ux-standards § 9.1) and keeps the help
+          Popover trigger (rendered as a sibling below, NOT inside this box)
+          always reachable. `min-w-0` lets the box shrink below its content
+          width so the overflow actually engages inside a flex row; the `py-1`
+          gives the focus ring room so `overflow-y` (coerced to `auto` when
+          `overflow-x` is `auto`) can't clip it. */}
+      <div className="min-w-0 overflow-x-auto py-1">
+        {/* C1 (#10b) — MANUAL activation. These tabs NAVIGATE (each activation
+            fires router.push), so `activateOnFocus={false}` keeps arrow keys a
+            focus-only rove: Enter / Space / click activate. Without it, arrowing
+            across the strip would fire a route push per keypress (accidental
+            navigation + push storm). The installed Base UI already defaults to
+            false; setting it explicitly documents intent and future-proofs a
+            default flip. */}
+        <Tabs value={current} onValueChange={handleChange}>
+          <TabsList activateOnFocus={false} aria-label={t('tabs.ariaLabel')}>
+            {/* C2 (#4) — `pointer-coarse:min-h-11` raises the tap target to
+                >=44px on touch/coarse pointers only, leaving the compact
+                fine-pointer (desktop) height unchanged. */}
+            <TabsTrigger
+              value={PIPELINE_VALUE}
+              className="pointer-coarse:min-h-11"
+            >
+              {t('tabs.pipeline')}
+            </TabsTrigger>
+            <TabsTrigger
+              value={PENDING_REVIEW_VALUE}
+              className="pointer-coarse:min-h-11"
+            >
+              {t('pendingReview.tab')}
+              <TabCountBadge
+                count={pendingReviewCount}
+                label={t('pendingReview.tabCountSr', {
+                  count: pendingReviewCount ?? 0,
+                })}
+              />
+            </TabsTrigger>
+            <TabsTrigger value={TASKS_VALUE} className="pointer-coarse:min-h-11">
+              {t('tabs.tasks')}
+              <TabCountBadge
+                count={tasksCount}
+                label={t('tabs.tasksCountSr', { count: tasksCount ?? 0 })}
+              />
+            </TabsTrigger>
+            <TabsTrigger
+              value={TIER_UPGRADES_VALUE}
+              className="pointer-coarse:min-h-11"
+            >
+              {t('tabs.tierUpgrades')}
+              <TabCountBadge
+                count={tierUpgradeCount}
+                label={t('tabs.tierUpgradesCountSr', {
+                  count: tierUpgradeCount ?? 0,
+                })}
+              />
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </div>
       {/* Tap-discoverable help explaining what the pipeline lists. A Popover
           (not a hover Tooltip) so it works on touch — same pattern as
           `company-section.tsx`. Placed BESIDE the tab strip, never nested in a
