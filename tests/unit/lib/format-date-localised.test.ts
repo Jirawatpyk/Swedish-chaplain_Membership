@@ -30,11 +30,52 @@ describe('formatLocalisedDate', () => {
     const opts: Intl.DateTimeFormatOptions = { dateStyle: 'medium' };
     const d = new Date(iso);
     const viaHelper = formatLocalisedDate(iso, 'sv', opts);
-    const bareSv = new Intl.DateTimeFormat('sv', opts).format(d);
+    // Compare against the SAME Bangkok zone the helper now defaults to
+    // (2026-07-31 hydration fix), so this locale-mapping pin stays
+    // deterministic on any process TZ.
+    const bareSv = new Intl.DateTimeFormat('sv', {
+      ...opts,
+      timeZone: 'Asia/Bangkok',
+    }).format(d);
     expect(viaHelper).toBe(bareSv);
   });
   it('returns — for an invalid date', () => {
     expect(formatLocalisedDate('not-a-date', 'en')).toBe('—');
+  });
+
+  describe('Bangkok timeZone default (2026-07-31 prod #418 hydration incident)', () => {
+    // 18:30 UTC = 01:30 NEXT DAY in Asia/Bangkok — the shape that used to
+    // format differently on the UTC server vs a Bangkok browser.
+    const eveningUtc = '2026-07-30T18:30:00.000Z';
+
+    it('defaults to Asia/Bangkok when options carry no timeZone (day = Jul 31, independent of process TZ)', () => {
+      const out = formatLocalisedDate(eveningUtc, 'en', { dateStyle: 'medium' });
+      expect(out).toContain('31');
+      expect(out).not.toContain('30');
+    });
+
+    it('the default also pins the HOUR (01:30 Bangkok, never 18:30 UTC)', () => {
+      const out = formatLocalisedDate(eveningUtc, 'en', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      });
+      expect(out).toContain('01:30');
+    });
+
+    it('an EXPLICIT options.timeZone still wins over the default (UTC anchor → Jul 30)', () => {
+      const out = formatLocalisedDate(eveningUtc, 'en', {
+        dateStyle: 'medium',
+        timeZone: 'UTC',
+      });
+      expect(out).toContain('30');
+      expect(out).not.toContain('31');
+    });
+
+    it('date-ONLY ISO strings were already safe either way (UTC midnight = 7am Bangkok, same calendar day)', () => {
+      const out = formatLocalisedDate('2026-07-30', 'en', { dateStyle: 'medium' });
+      expect(out).toContain('30');
+    });
   });
 
   describe('UTC-pin (timeZone: UTC) for date-only Postgres date columns', () => {

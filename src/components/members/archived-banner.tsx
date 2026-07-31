@@ -101,6 +101,10 @@ export function ArchivedBanner({
       year: 'numeric',
       month: 'short',
       day: 'numeric',
+      // Hydration safety (2026-07-31 #418 incident class): pin Bangkok so
+      // SSR (UTC server) and hydration (browser) agree on the calendar
+      // day — see format-date-localised.ts's timezone-default doc.
+      timeZone: 'Asia/Bangkok',
     }).format(archivedDate);
   } catch {
     isoDate = archivedDate.toISOString().slice(0, 10);

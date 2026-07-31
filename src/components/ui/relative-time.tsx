@@ -38,7 +38,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useLocale } from 'next-intl';
+import { useLocale, useTimeZone } from 'next-intl';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
 import { formatRelativeTime } from '@/lib/relative-time';
 
@@ -121,10 +121,28 @@ export interface RelativeTimeProps {
 /**
  * Format the SSR-safe absolute fallback. Used during the server
  * render AND the first client paint (before `useEffect` flips to
- * relative). Output is stable: same `iso` + same `locale` → same
- * string, regardless of when the function runs.
+ * relative). Output is stable: same `iso` + same `locale` + same
+ * `timeZone` → same string, regardless of when OR WHERE the function
+ * runs.
+ *
+ * INCIDENT 2026-07-31 (prod React #418 on /admin/members +
+ * /admin/renewals, operator repro'd in incognito): this formatter used
+ * to omit `timeZone`, so `Intl.DateTimeFormat` fell back to the
+ * RUNTIME's zone — Vercel server = UTC, user browser = Asia/Bangkok —
+ * and SSR emitted DIFFERENT text than hydration for every timestamp
+ * (the hour always differed; the calendar day differed for instants
+ * ≥ 17:00 UTC). The `mounted` gate below only guards CLOCK drift
+ * (`Date.now()` moving between server render and hydration); it cannot
+ * help when the pre-mount label ITSELF is computed differently on the
+ * two sides. Pinning `timeZone` from the next-intl provider — which
+ * supplies the app-global 'Asia/Bangkok' (src/i18n/request.ts) on BOTH
+ * server and client — makes the pre-mount output byte-identical.
  */
-function formatAbsolute(iso: string, locale: string): string {
+function formatAbsolute(
+  iso: string,
+  locale: string,
+  timeZone: string | undefined,
+): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
   try {
@@ -134,6 +152,10 @@ function formatAbsolute(iso: string, locale: string): string {
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
+      // Defensive fallback for provider-less mounts (unit tests without a
+      // timeZone on the provider): matches the app-wide pin +
+      // `formatLocalisedDate`'s own Bangkok default.
+      timeZone: timeZone ?? 'Asia/Bangkok',
     }).format(date);
   } catch {
     return iso.slice(0, 16).replace('T', ' ');
@@ -149,6 +171,10 @@ export function RelativeTime({
 }: RelativeTimeProps) {
   const localeFromContext = useLocale();
   const locale = localeProp ?? localeFromContext;
+  // App-global zone from the next-intl provider ('Asia/Bangkok',
+  // src/i18n/request.ts) — identical on server and client, which is what
+  // makes the pre-mount absolute label hydration-safe (see formatAbsolute).
+  const timeZone = useTimeZone();
 
   // `mounted` flips from false (SSR + first paint) to true (after
   // hydration). The pre-mount path renders the absolute date which
@@ -180,8 +206,12 @@ export function RelativeTime({
   }, [refreshMs]);
 
   const label = mounted
-    ? formatRelativeTime(iso, locale)
-    : formatAbsolute(iso, locale);
+    ? // Post-mount (client-only) — no hydration constraint, but thread the
+      // SAME provider zone into the >30-day absolute-date fallback so an
+      // old timestamp shows the Bangkok calendar day, consistent with the
+      // pre-mount label it replaces.
+      formatRelativeTime(iso, locale, new Date(), timeZone ?? 'Asia/Bangkok')
+    : formatAbsolute(iso, locale, timeZone);
 
   return (
     <time dateTime={iso} className={className} title={title}>
