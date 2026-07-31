@@ -15,7 +15,9 @@ import { logger } from '@/lib/logger';
  * `Content-Security-Policy` header — which `proxy()` also forwards — NOT
  * from `x-nonce`. Do not remove that CSP-request forward on the
  * assumption this `x-nonce` header covers the framework scripts; it does
- * not, and dropping it re-blocks all JS under `'strict-dynamic'`.
+ * not. (Historical: under the since-dropped `'strict-dynamic'` policy the
+ * missing forward blocked ALL page JS; today it would still leave Next's
+ * INLINE bootstrap/flight scripts nonce-less and blocked.)
  */
 export const NONCE_HEADER = 'x-nonce';
 
@@ -98,15 +100,35 @@ export function matchesF7KillSwitchPath(pathname: string): boolean {
 
 const HSTS_VALUE = 'max-age=63072000; includeSubDomains; preload';
 
-// script-src — nonce-based (CSP Level 3) per staff-review R2 R023.
+// script-src — nonce + host allowlist (originally CSP Level 3
+// `'strict-dynamic'` per staff-review R2 R023; downgraded to Level 2
+// semantics by owner decision 2026-07-31, see below).
 //
-// Production: `'nonce-${nonce}'` + `'strict-dynamic'`. The nonce is fresh
-// per request (16 bytes base64). `'unsafe-inline'` is kept ONLY as a
-// fallback for legacy browsers — CSP Level 3 spec says modern browsers
-// ignore `'unsafe-inline'` when a `'nonce-*'` source is present, so this
-// is a defense-in-depth posture. PCI DSS 6.4.1 best practice met because
+// Production: `'self'` + `'nonce-${nonce}'`. The nonce is fresh per
+// request (16 bytes base64) and gates INLINE scripts — the actual XSS
+// injection surface. `'unsafe-inline'` is kept ONLY as a fallback for
+// legacy browsers — CSP spec says modern browsers ignore
+// `'unsafe-inline'` when a `'nonce-*'` source is present, so this is a
+// defense-in-depth posture. PCI DSS 6.4.1 best practice met because
 // inline scripts without the nonce are blocked on every browser shipped
 // in the past 5 years (Chrome 59+, FF 49+, Safari 15.4+).
+//
+// WHY NO `'strict-dynamic'` (2026-07-30/31 incident, owner decision):
+// `'strict-dynamic'` disables `'self'` + host sources entirely, so EVERY
+// parser-inserted `<script src>` must carry the nonce. Next.js 16 cannot
+// guarantee that on our streaming setup: measured live on prod
+// 2026-07-31, 21 of 32 script tags in the document shell (all framework
+// chunk `<script src>` tags, incl. the Turbopack runtime) ship WITHOUT a
+// nonce — deterministically blocked under 'strict-dynamic', with pages
+// only surviving via double-loads through the trusted dynamic path
+// (console CSP violations + hydration races; bundler-independent, see
+// #302/#304). Dropping the single 'strict-dynamic' token re-activates
+// the `'self'` allowlist for file scripts while inline scripts remain
+// nonce-gated (measured: 100% of inline scripts carry the nonce). Risk
+// accepted: `'self'` file scripts are low-risk here — no user-uploaded
+// content is ever served from this origin (uploads live on Vercel
+// Blob's origin). Do NOT re-add 'strict-dynamic' until Next.js nonces
+// every script tag it emits (re-verify with a curl script-tag audit).
 //
 // Development: `'unsafe-inline'` + `'unsafe-eval'` is kept because React
 // DevTools + Turbopack HMR + error-overlay stack reconstruction all call
@@ -152,22 +174,18 @@ export function buildCsp(isDevelopment: boolean, nonce: string): string {
         'https://js.stripe.com',
       ]
     : [
+        // `'self'` is the load path for every Next.js chunk script —
+        // 'strict-dynamic' is deliberately ABSENT (it would disable this
+        // source; see the header comment for the measured evidence).
         "'self'",
         `'nonce-${nonce}'`,
-        // 'strict-dynamic' lets nonce'd scripts load further scripts
-        // without each carrying a nonce — required for Next.js's
-        // hydration bootstrap. Modern browsers prefer this over the
-        // host allowlist for nonce'd scripts.
-        "'strict-dynamic'",
         // Fallback for legacy browsers without CSP3 nonce support.
         // CSP3-aware browsers ignore `'unsafe-inline'` when a `'nonce-*'`
         // source is present (per W3C CSP Level 3 § 6.7.2).
         "'unsafe-inline'",
-        // Stripe must remain in script-src as an explicit host since
-        // 'strict-dynamic' is in play (the nonce'd loader fetches
-        // Stripe.js — strict-dynamic propagates trust, but Stripe's
-        // documented integration relies on the host allowlist as
-        // backwards-compatible defense).
+        // Stripe.js loads via this plain host allowlist entry (with
+        // 'strict-dynamic' gone, host sources are the active mechanism)
+        // — matching Stripe's documented CSP integration.
         'https://js.stripe.com',
       ];
   const frameSrcParts = [
@@ -184,6 +202,10 @@ export function buildCsp(isDevelopment: boolean, nonce: string): string {
 
   return [
     "default-src 'self'",
+    // Standard strict-CSP companion: plugins (<object>/<embed>) have no use
+    // in this app; explicit 'none' beats the 'self' fallback from
+    // default-src (security review 2026-07-31, INFO hardening).
+    "object-src 'none'",
     `script-src ${scriptSrcParts.join(' ')}`,
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: https:",
@@ -530,16 +552,14 @@ export const config = {
       // nonce (`generateNonce()`) is incompatible with prefetch: Next stamps
       // the PREFETCH response's nonce onto the route's chunk `<link
       // rel="preload" as="script" nonce=…>` tags, but the browser enforces the
-      // ORIGINAL document's CSP nonce. The two differ (fresh nonce per request),
-      // so `'strict-dynamic'` blocks the prefetched chunk and the client-side
-      // (soft) navigation to that route silently fails — the nav link "does
-      // nothing" while a hard URL load (single request, matching nonce) works.
-      // First surfaced on `/admin/compliance/erasure-log`, whose route chunk is
-      // not shared with any already-loaded page (incident 2026-07-18).
-      //
-      // Excluding prefetch lets Next load the route's chunks through the
-      // already-trusted runtime (`'strict-dynamic'` propagation) instead of
-      // nonce-stamped preloads. Mirrors the canonical Next.js CSP example
+      // ORIGINAL document's CSP nonce — the two differ (fresh nonce per
+      // request). Under the since-dropped `'strict-dynamic'` policy that
+      // deterministically blocked the prefetched chunk and soft navigation
+      // silently failed (first surfaced on `/admin/compliance/erasure-log`,
+      // incident 2026-07-18). With `'self'` active again (2026-07-31) chunk
+      // loads no longer depend on nonces, but the skip stays: it avoids
+      // minting throwaway nonces for non-document RSC payloads and keeps
+      // prefetch behaviour identical to the canonical Next.js CSP example
       // (vercel/next.js examples/with-strict-csp).
       //
       // Safe for this full proxy: in production tenant resolution is a constant

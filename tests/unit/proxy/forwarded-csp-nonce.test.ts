@@ -6,9 +6,13 @@
  * request's CSP header (canonical nonce-middleware pattern,
  * nextjs.org/docs/.../content-security-policy). Forwarding only `x-nonce`
  * left streamed / dynamically-loaded chunk scripts intermittently
- * un-nonced on Suspense-heavy authenticated pages; under prod
- * `'strict-dynamic'` (which disables `'self'`) those scripts were
- * CSP-blocked, killing all page JS.
+ * un-nonced on Suspense-heavy authenticated pages; under the prod
+ * `'strict-dynamic'` policy of the time (which disables `'self'`) those
+ * scripts were CSP-blocked, killing all page JS. `'strict-dynamic'` has
+ * since been dropped (owner decision 2026-07-31 — see buildCsp), but the
+ * CSP request-forward stays REQUIRED: Next derives the nonce it stamps on
+ * its INLINE bootstrap/flight scripts from the request's CSP header, and
+ * inline scripts are still nonce-gated.
  *
  * `NextResponse.next({ request: { headers } })` encodes the overridden
  * request headers back onto the response as `x-middleware-override-headers`

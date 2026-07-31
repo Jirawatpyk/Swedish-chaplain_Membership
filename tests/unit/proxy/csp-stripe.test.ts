@@ -63,6 +63,7 @@ describe('F5 CSP Stripe allowlist (T033 — global, post-SPA-fix)', () => {
     it('always declares default-src self + frame-ancestors none + base-uri self', () => {
       const csp = buildCsp(false, 'r023-test-nonce');
       expect(csp).toContain("default-src 'self'");
+      expect(csp).toContain("object-src 'none'");
       expect(csp).toContain("frame-ancestors 'none'");
       expect(csp).toContain("base-uri 'self'");
       expect(csp).toContain("form-action 'self'");
@@ -70,14 +71,23 @@ describe('F5 CSP Stripe allowlist (T033 — global, post-SPA-fix)', () => {
   });
 
   // Staff-review R2 R023 (2026-04-28): nonce-based CSP for production.
-  // Locks in the contract that prod ships `'nonce-${nonce}'` +
-  // `'strict-dynamic'` while dev keeps `'unsafe-inline'` + `'unsafe-eval'`
-  // for HMR + DevTools.
+  // Owner decision 2026-07-31: `'strict-dynamic'` is deliberately ABSENT —
+  // Next.js 16 does not nonce every parser-inserted chunk `<script src>`
+  // (measured 21/32 nonce-less on prod), and 'strict-dynamic' disables the
+  // `'self'` source those chunks rely on, deterministically blocking them.
+  // The contract is now: `'self'` (file scripts) + `'nonce-${nonce}'`
+  // (inline scripts) in prod, while dev keeps `'unsafe-inline'` +
+  // `'unsafe-eval'` for HMR + DevTools.
   describe('R023 nonce-based CSP (production)', () => {
     it('production includes the per-request nonce in script-src', () => {
       const csp = buildCsp(false, 'r023-prod-nonce-abc');
       expect(csp).toMatch(/script-src[^;]*'nonce-r023-prod-nonce-abc'/);
-      expect(csp).toMatch(/script-src[^;]*'strict-dynamic'/);
+      expect(csp).toMatch(/script-src[^;]*'self'/);
+    });
+
+    it('production must NOT ship strict-dynamic (it disables self and blocks nonce-less framework chunks)', () => {
+      const csp = buildCsp(false, 'r023-prod-nonce-abc');
+      expect(csp).not.toContain("'strict-dynamic'");
     });
 
     it('production drops unsafe-eval (CSP3-aware browsers ignore unsafe-inline when nonce present)', () => {
