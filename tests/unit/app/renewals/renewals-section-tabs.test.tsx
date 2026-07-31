@@ -129,6 +129,32 @@ describe('<RenewalsSectionTabs> hrefs — Tasks / Tier upgrades (plain route hre
   });
 });
 
+// The old Base UI tablist suppressed clicks on the already-selected tab; the
+// nav refactor keeps that a no-op by pointing the ACTIVE entry at the CURRENT
+// url — so re-clicking the section you're on must NOT drop that page's own
+// filters (the review-flagged regression).
+describe('<RenewalsSectionTabs> hrefs — the ACTIVE entry preserves the current url', () => {
+  it("active Tasks entry links to the current url (keeps its status/assignment/task_type filters)", () => {
+    nav.pathname = '/admin/renewals/tasks';
+    nav.searchParams = new URLSearchParams(
+      'status=open&assignment=mine&task_type=director_call',
+    );
+    renderTabs();
+    expect(href(/^tasks/i)).toBe(
+      '/admin/renewals/tasks?status=open&assignment=mine&task_type=director_call',
+    );
+  });
+
+  it('active Tier-upgrades entry links to the current url (keeps its params)', () => {
+    nav.pathname = '/admin/renewals/tier-upgrades';
+    nav.searchParams = new URLSearchParams('cursor=abc123');
+    renderTabs();
+    expect(href(/tier upgrades/i)).toBe(
+      '/admin/renewals/tier-upgrades?cursor=abc123',
+    );
+  });
+});
+
 describe('<RenewalsSectionTabs> hrefs — Pipeline / Pending review from the pipeline route', () => {
   it('Pending-review href drops tier + urgency + cursor (pending-review has no such filters)', () => {
     nav.searchParams = new URLSearchParams(

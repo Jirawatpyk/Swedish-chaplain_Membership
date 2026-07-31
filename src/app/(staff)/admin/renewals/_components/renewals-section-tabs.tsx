@@ -227,14 +227,27 @@ export function RenewalsSectionTabs({
   const current = deriveCurrentTab(pathname, params.get('view'));
 
   // Four hrefs computed once per render from the current pathname/params.
-  // Pipeline/Pending-review inherit the pipeline's params only when on the
-  // pipeline route (see `buildPipelineHref`); Tasks/Tier-upgrades are plain.
-  const pipelineHref = buildPipelineHref(pathname, params, PIPELINE_VALUE);
-  const pendingReviewHref = buildPipelineHref(
-    pathname,
-    params,
-    PENDING_REVIEW_VALUE,
-  );
+  // The ACTIVE entry links to the CURRENT full URL so clicking the section
+  // you're already on is a faithful no-op — the old Base UI tablist suppressed
+  // same-value activation, so the refactor must NOT start dropping the current
+  // page's params (e.g. clicking the active "Tasks" entry must not clear its
+  // status/assignment/task_type filters). INACTIVE entries use the computed
+  // targets: Pipeline/Pending-review inherit the pipeline's params only when
+  // ALREADY on the pipeline route (see `buildPipelineHref`); Tasks/Tier-upgrades
+  // are plain routes so arriving fresh from elsewhere starts clean.
+  const search = params.toString();
+  const currentUrl = search.length > 0 ? `${pathname}?${search}` : pathname;
+  const pipelineHref =
+    current === PIPELINE_VALUE
+      ? currentUrl
+      : buildPipelineHref(pathname, params, PIPELINE_VALUE);
+  const pendingReviewHref =
+    current === PENDING_REVIEW_VALUE
+      ? currentUrl
+      : buildPipelineHref(pathname, params, PENDING_REVIEW_VALUE);
+  const tasksHref = current === TASKS_VALUE ? currentUrl : TASKS_PATH;
+  const tierUpgradesHref =
+    current === TIER_UPGRADES_VALUE ? currentUrl : TIER_UPGRADES_PATH;
 
   return (
     <div className="flex items-center gap-1.5">
@@ -285,7 +298,7 @@ export function RenewalsSectionTabs({
             />
           </Link>
           <Link
-            href={TASKS_PATH}
+            href={tasksHref}
             aria-current={current === TASKS_VALUE ? 'page' : undefined}
             className={navLinkClass(current === TASKS_VALUE)}
           >
@@ -296,7 +309,7 @@ export function RenewalsSectionTabs({
             />
           </Link>
           <Link
-            href={TIER_UPGRADES_PATH}
+            href={tierUpgradesHref}
             aria-current={current === TIER_UPGRADES_VALUE ? 'page' : undefined}
             className={navLinkClass(current === TIER_UPGRADES_VALUE)}
           >
