@@ -95,15 +95,15 @@ describe('<RenewalsSectionTabsWithCounts> wires the three reads into the badges'
     await renderWithCounts();
 
     expect(
-      screen.getByRole('tab', { name: /pending review/i }).textContent,
+      screen.getByRole('link', { name: /pending review/i }).textContent,
     ).toContain('2');
     expect(screen.getByText(/2 cycles awaiting review/i)).toBeInTheDocument();
     expect(
-      screen.getByRole('tab', { name: /^tasks/i }).textContent,
+      screen.getByRole('link', { name: /^tasks/i }).textContent,
     ).toContain('7');
     expect(screen.getByText(/7 open tasks/i)).toBeInTheDocument();
     expect(
-      screen.getByRole('tab', { name: /tier upgrades/i }).textContent,
+      screen.getByRole('link', { name: /tier upgrades/i }).textContent,
     ).toContain('3');
     expect(screen.getByText(/3 tier-upgrade suggestions/i)).toBeInTheDocument();
   });
