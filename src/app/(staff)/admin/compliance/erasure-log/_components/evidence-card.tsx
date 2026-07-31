@@ -61,7 +61,15 @@ export function EvidenceCard({
   const statusVariant: 'destructive' | 'outline' | 'secondary' = row.isOverdue
     ? 'destructive' : row.halfRun ? 'outline' : 'secondary';
   const statusLabel = row.isOverdue ? t('status.overdue') : row.halfRun ? t('status.halfRun') : t('status.complete');
-  const ref = formatMemberNumber(memberPrefix, asMemberNumber(row.memberNumber));
+  // Defensive: `member_number` is DB-CHECK-guarded (> 0), so `asMemberNumber`
+  // should never throw here — but this card renders inside the page's RSC
+  // tree, so a single malformed row throwing would fail the ENTIRE
+  // accountability list (error boundary), not just this card. Degrade to the
+  // raw value instead of risking a whole-list 500.
+  const ref =
+    Number.isInteger(row.memberNumber) && row.memberNumber > 0
+      ? formatMemberNumber(memberPrefix, asMemberNumber(row.memberNumber))
+      : String(row.memberNumber);
 
   return (
     <Card

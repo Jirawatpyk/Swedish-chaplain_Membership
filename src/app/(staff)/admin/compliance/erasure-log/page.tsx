@@ -137,7 +137,12 @@ export default async function ErasureLogPage({
   // by construction of the filter itself, which would mislead the DPO.
   const unfiltered = status === 'all' && q === '';
   const topBannerPresent = unfiltered && result.summary.overdue > 0;
-  const showAllClear = unfiltered && result.summary.total > 0 && result.summary.inProgress === 0;
+  // `!result.capped`: a capped read only shows the newest `displayCap` rows, so
+  // an org with older, unseen erasures past the cap could have `inProgress === 0`
+  // on the visible slice while older rows are still outstanding — asserting
+  // "no outstanding breaches" here would be a false compliance claim.
+  const showAllClear =
+    unfiltered && result.summary.total > 0 && result.summary.inProgress === 0 && !result.capped;
 
   return (
     <TableContainer>

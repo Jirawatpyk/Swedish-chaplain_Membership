@@ -256,6 +256,39 @@ test.describe('COMP-1 US3-D — erasure-evidence log (admin DPO) @a11y @i18n', (
     ).toBeVisible();
   });
 
+  // --- 1a. Print media force-open (Fix 2 — Article 17 print-to-PDF fallback) -
+
+  test('print media force-opens the collapsed COMPLETE card evidence content', async ({
+    page,
+  }) => {
+    await signInAsAdmin(page);
+    await page.goto(ROUTE, { waitUntil: 'domcontentloaded' });
+
+    const cardHeading = page.getByRole('heading', {
+      name: memberHeadingRe(seed.memberNumber),
+      level: 2,
+    });
+    await expect(cardHeading).toBeVisible();
+    const card = page.locator('details[data-evidence]', { has: cardHeading });
+
+    // The seeded member is COMPLETE, so the <details> renders COLLAPSED — no
+    // click here. That is the whole point: the printed record must be
+    // complete WITHOUT the DPO having to expand every card first.
+    expect(await card.getAttribute('open')).toBeNull();
+
+    await page.emulateMedia({ media: 'print' });
+
+    // Article 17 "printed page = complete record" guarantee: the evidence
+    // section content must be visible under print media without expanding
+    // the <details>. This exercises the `::details-content` force-open CSS
+    // rule (globals.css `@media print`), which defeats Chrome 131+'s
+    // `content-visibility: hidden` on a collapsed <details>' pseudo-element —
+    // without it, this COMPLETE card would print EMPTY.
+    await expect(
+      card.getByRole('heading', { name: /Request & attestation/i, level: 3 }),
+    ).toBeVisible();
+  });
+
   // --- 1b. Status filter tabs ------------------------------------------------
 
   test('status filter tabs render and Overdue navigates to ?status=overdue', async ({

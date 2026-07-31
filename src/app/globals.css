@@ -655,5 +655,12 @@ summary,
    fallback the export-cut relies on). */
 @media print {
   details[data-evidence] > *:not(summary) { display: block !important; }
+  /* Chrome 131+ hides a collapsed <details>' content via the `::details-content`
+     pseudo (`content-visibility: hidden`), which the child `display:block` rule
+     above does not defeat — a collapsed COMPLETE card would print EMPTY,
+     breaking the Article 17 "printed page = complete record" guarantee. Force
+     the pseudo visible too; the rule above still covers older browsers that
+     don't implement `::details-content`. */
+  details[data-evidence]::details-content { content-visibility: visible !important; }
   details[data-evidence] summary .lucide-chevron-down { display: none; }
 }

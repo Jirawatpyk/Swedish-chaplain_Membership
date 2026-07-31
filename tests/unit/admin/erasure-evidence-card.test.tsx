@@ -51,4 +51,9 @@ describe('EvidenceCard', () => {
     expect(summary.querySelector('h2')).not.toBeNull();
     expect(summary.hasAttribute('aria-expanded')).toBe(false);
   });
+
+  it('degrades to the raw value instead of throwing when memberNumber is DB-invalid (0)', () => {
+    expect(() => renderCard(baseRow({ memberNumber: 0 }))).not.toThrow();
+    expect(screen.getByText('Member 0')).toBeInTheDocument();
+  });
 });
