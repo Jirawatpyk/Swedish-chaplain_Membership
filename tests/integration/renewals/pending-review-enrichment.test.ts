@@ -16,6 +16,9 @@
  *   3. Empty id list → no DB round-trip, empty map.
  *   4. Cross-tenant isolation: tenant B's slug cannot resolve tenant A's
  *      members (RLS hides the rows → absent from the map).
+ *   5. B4 — the returned record is the richer `{companyName, memberNumber,
+ *      memberId}` shape (member-number surfaced for the SCCM display), read
+ *      from the SAME single batch read.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
@@ -33,6 +36,7 @@ import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 interface SeededMember {
   readonly memberId: string;
   readonly companyName: string;
+  readonly memberNumber: number;
 }
 
 async function seedMember(
@@ -41,6 +45,7 @@ async function seedMember(
   companyName: string,
 ): Promise<SeededMember> {
   const memberId = randomUUID();
+  const memberNumber = nextSeedMemberNumber();
   const planId = `f8-pre-${randomUUID().slice(0, 8)}`;
   await runInTenant(tenant.ctx, (tx) =>
     seedF8MembershipPlan(tx, {
@@ -55,14 +60,14 @@ async function seedMember(
     tx.insert(members).values({
       tenantId: tenant.ctx.slug,
       memberId,
-      memberNumber: nextSeedMemberNumber(),
+      memberNumber,
       companyName,
       country: 'TH',
       planId,
       planYear: 2026,
     }),
   );
-  return { memberId, companyName };
+  return { memberId, companyName, memberNumber };
 }
 
 describe('F8 pending-review company-name batch enrichment (070 perf)', () => {
@@ -102,8 +107,13 @@ describe('F8 pending-review company-name batch enrichment (070 perf)', () => {
         memberIds: [m1.memberId, m2.memberId, m1.memberId],
       });
 
-      expect(map.get(m1.memberId)).toBe(m1.companyName);
-      expect(map.get(m2.memberId)).toBe(m2.companyName);
+      // B4 — richer record: company + member-number (SCCM source) + id, all
+      // from the ONE batch read.
+      expect(map.get(m1.memberId)?.companyName).toBe(m1.companyName);
+      expect(map.get(m1.memberId)?.memberNumber).toBe(m1.memberNumber);
+      expect(map.get(m1.memberId)?.memberId).toBe(m1.memberId);
+      expect(map.get(m2.memberId)?.companyName).toBe(m2.companyName);
+      expect(map.get(m2.memberId)?.memberNumber).toBe(m2.memberNumber);
 
       // THE N+1 INVARIANT: exactly one batch read for N cycles (not 2N).
       expect(spy).toHaveBeenCalledOnce();
@@ -129,7 +139,7 @@ describe('F8 pending-review company-name batch enrichment (070 perf)', () => {
       memberIds: [m1.memberId, ghostId],
     });
 
-    expect(map.get(m1.memberId)).toBe(m1.companyName);
+    expect(map.get(m1.memberId)?.companyName).toBe(m1.companyName);
     // Missing member is simply absent — caller supplies the cycle-id
     // fallback; the helper does NOT throw or blank the whole result.
     expect(map.has(ghostId)).toBe(false);

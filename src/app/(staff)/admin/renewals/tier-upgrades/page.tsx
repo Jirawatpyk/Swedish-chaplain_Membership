@@ -28,7 +28,10 @@ import { parseTierUpgradeEvidenceView } from './_lib/tier-upgrade-queue-item';
 import { RenewalsErrorRetry } from '../_components/renewals-error-retry';
 import { RenewalsSectionTabs } from '../_components/renewals-section-tabs';
 import { fetchPlanDisplay } from '../[cycleId]/_lib/cycle-detail-fetchers';
-import { fetchPendingReviewCompanyNames } from '../_lib/pending-review-enrichment';
+import {
+  fetchPendingReviewCompanyNames,
+  type PendingReviewMemberInfo,
+} from '../_lib/pending-review-enrichment';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.renewals.tier_upgrades');
@@ -94,7 +97,12 @@ export default async function TierUpgradeQueuePage() {
   // queue links a human name to `/admin/members/[id]` instead of a raw
   // 8-char UUID slice. A member absent from the map (archived / hidden)
   // degrades to the id, exactly as the escalation-task queue does.
-  let companyNames: ReadonlyMap<string, string> = new Map<string, string>();
+  // B4 — the enrichment now returns a richer `{companyName, memberNumber,
+  // memberId}` record; this page reads only `.companyName` (below).
+  let companyNames: ReadonlyMap<string, PendingReviewMemberInfo> = new Map<
+    string,
+    PendingReviewMemberInfo
+  >();
   if (!hasError && queueItems.length > 0) {
     const uniquePlanIds = new Set<string>();
     for (const s of queueItems) {
@@ -134,7 +142,7 @@ export default async function TierUpgradeQueuePage() {
           { err: e instanceof Error ? e : new Error(String(e)) },
           'admin.renewals.tier-upgrades.company_name_lookup_failed',
         );
-        return new Map<string, string>();
+        return new Map<string, PendingReviewMemberInfo>();
       }),
     ]);
     companyNames = companyNamesResult;
@@ -192,7 +200,7 @@ export default async function TierUpgradeQueuePage() {
             const toPlanName = planNameMap.get(s.toPlanId);
             const fromFeeMinorUnits = planFeeMap.get(s.fromPlanId);
             const toFeeMinorUnits = planFeeMap.get(s.toPlanId);
-            const companyName = companyNames.get(s.memberId);
+            const companyName = companyNames.get(s.memberId)?.companyName;
             // Validate + pre-format the evidence at the presentation
             // boundary; a malformed/mismatched shape becomes `null` → the
             // client renders the localised "verify manually" line.

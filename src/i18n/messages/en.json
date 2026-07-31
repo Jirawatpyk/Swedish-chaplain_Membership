@@ -3298,7 +3298,13 @@
         "openAction": "Review",
         "viewAction": "View",
         "settlingPill": "Refund settling",
-        "loadFailed": "Couldn't load the pending-review list. Please try again."
+        "loadFailed": "Couldn't load the pending-review list. Please try again.",
+        "sortPendingSinceToOldest": "Sort by pending since, oldest first",
+        "sortPendingSinceToNewest": "Sort by pending since, newest first",
+        "agedChip": "Aged {days}d",
+        "agedChipTitle": "Pending {days} days — awaiting a decision",
+        "approveAction": "Approve",
+        "approveRowAria": "Approve reactivation for {company}"
       },
       "tierBadge": {
         "thai_alumni": "Thai alumni",

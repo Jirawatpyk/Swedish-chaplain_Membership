@@ -37,6 +37,11 @@ import { getDateFormatLocale } from '@/lib/format-date-localised';
 import { runInTenant } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
 import {
+  resolveMemberNumberPrefix,
+  formatMemberNumber,
+  drizzleMemberSettingsRepo,
+} from '@/modules/members';
+import {
   loadPipeline,
   loadPipelineMoney,
   loadPendingReactivationReview,
@@ -83,7 +88,11 @@ import {
   PendingReviewList,
   type PendingReviewRow,
 } from './_components/pending-review-list';
-import { fetchPendingReviewCompanyNames } from './_lib/pending-review-enrichment';
+import {
+  fetchPendingReviewCompanyNames,
+  type PendingReviewMemberInfo,
+} from './_lib/pending-review-enrichment';
+import { countOpenPendingReviewCycles } from './_lib/pending-review-open-count';
 import { ResultCountAnnouncer } from '@/components/renewals/result-count-announcer';
 import { ResultCountLabel } from '@/components/renewals/result-count-label';
 
@@ -113,6 +122,15 @@ const SORT_VALUES: ReadonlySet<PipelineSort> = new Set([
 ]);
 
 const DEFAULT_SORT: PipelineSort = 'expires_at_asc';
+
+/**
+ * B3 (UX-audit PR-B #9) — a pending-review decision lingering this many days
+ * (or more) is stale ops and gets a subtle amber "Aged {n}d" chip so the most
+ * overdue decisions stand out. Computed server-side (`enteredPendingAt` + now).
+ * Proposed 7 (a full week) — enterprise-ux confirms the threshold in review.
+ */
+const PENDING_REVIEW_AGING_DAYS = 7;
+const PENDING_REVIEW_DAY_MS = 24 * 60 * 60 * 1000;
 
 interface SearchParams {
   readonly tier?: string;
@@ -231,6 +249,9 @@ export default async function RenewalsPipelinePage({
             <PendingReviewSection
               tenantSlug={tenantCtx.slug}
               locale={locale}
+              // B2 — manager views this queue read-only; the reactivate route is
+              // admin-only, so only admins get the inline Approve.
+              canApprove={currentUser.role === 'admin'}
             />
           </CardContent>
         </Card>
@@ -799,7 +820,13 @@ async function PipelineSectionTabsWithCount({
   let pendingReviewCount = 0;
   if (pendingReviewResult.status === 'fulfilled') {
     if (pendingReviewResult.value.ok) {
-      pendingReviewCount = pendingReviewResult.value.value.cycles.length;
+      // UX-audit PR-B B5 — count only cycles still awaiting a decision. Cycles
+      // carrying the async reject-with-refund marker are ALREADY decided
+      // (rejected; refund settling) and the list renders them read-only, so
+      // counting them as open work overstates the badge (UX-A Bug 2 parity).
+      pendingReviewCount = countOpenPendingReviewCycles(
+        pendingReviewResult.value.value.cycles,
+      );
     }
   } else {
     logger.error(
@@ -881,16 +908,30 @@ async function PipelineSectionTabsWithCount({
 async function PendingReviewSection({
   tenantSlug,
   locale,
+  canApprove,
 }: {
   readonly tenantSlug: string;
   readonly locale: string;
+  /**
+   * B2 — admin-only gate for the inline Approve action. This surface is
+   * viewable by admin AND (read-only) manager; the reactivate route is
+   * admin-only, so a manager gets the read-only list (Review link, no Approve).
+   */
+  readonly canApprove: boolean;
 }) {
   const t = await getTranslations('admin.renewals.pendingReview');
+  // B1 (UX-audit PR-B #3) — error-card copy is shared with the pipeline's own
+  // retry card (`admin.renewals.error.*`), so pending-review reuses it verbatim.
+  const tError = await getTranslations('admin.renewals.error');
   const deps = makeRenewalsDeps(tenantSlug);
 
   let cycles: LoadPendingReactivationReviewOutput['cycles'];
-  // memberId → companyName, resolved in ONE batched member read (no N+1).
-  let companyNames: ReadonlyMap<string, string>;
+  // memberId → {companyName, memberNumber, memberId}, resolved in ONE batched
+  // member read (no N+1). B4 — richer shape drives the company LINK + SCCM cell.
+  let memberInfo: ReadonlyMap<string, PendingReviewMemberInfo>;
+  // 055 member-number — per-tenant SCCM prefix, resolved once via the shared
+  // RLS-safe helper (mirrors the admin members list).
+  let memberPrefix: string;
   try {
     const result = await loadPendingReactivationReview(deps, {
       tenantId: tenantSlug,
@@ -907,24 +948,50 @@ async function PendingReviewSection({
     }
     cycles = result.value.cycles;
 
-    // Batch-enrich company names in a SINGLE tenant-scoped read. A throw
-    // here (RLS reject / connection / timeout) is caught below and renders
-    // the same "couldn't load" alert as a cycle-load failure — never a
-    // silently blank list.
-    companyNames = await fetchPendingReviewCompanyNames({
-      tenantSlug,
-      memberIds: cycles.map((c) => c.memberId),
-    });
+    // Batch-enrich member facts (company + member-number) in a SINGLE
+    // tenant-scoped read AND resolve the SCCM prefix (a separate RLS-safe
+    // read), overlapped. Either throw (RLS reject / connection / timeout) is
+    // caught below and renders the same "couldn't load" alert as a cycle-load
+    // failure — never a silently blank list.
+    [memberInfo, memberPrefix] = await Promise.all([
+      fetchPendingReviewCompanyNames({
+        tenantSlug,
+        memberIds: cycles.map((c) => c.memberId),
+      }),
+      resolveMemberNumberPrefix(
+        asTenantContext(tenantSlug),
+        drizzleMemberSettingsRepo,
+      ),
+    ]);
   } catch (e) {
+    // B1 (UX-audit PR-B #3) — pending-review previously rendered a DEAD-END
+    // LoadErrorCard (no retry), while the SAME page gives the pipeline error
+    // card a working retry. Reuse the pipeline's `ErrorCardActions`
+    // (router.refresh() in a transition — semantic button, no URL mutation)
+    // with a minted correlationId surfaced for SRE triage + the reference cell.
+    const correlationId = randomUUID();
     logger.error(
       {
         errorId: 'F8.ADMIN.PENDING_REVIEW_LOAD',
         err: e instanceof Error ? e.message : String(e),
         tenantId: tenantSlug,
+        correlationId,
       },
       '[admin/renewals] pending-review load failed',
     );
-    return <LoadErrorCard message={t('loadFailed')} />;
+    return (
+      <LoadErrorCard message={t('loadFailed')}>
+        <ErrorCardActions
+          correlationId={correlationId}
+          goBackHref="/admin/renewals"
+          retryLabel={tError('retry')}
+          pendingLabel={tError('retrying')}
+          retryFailedLabel={tError('retryFailed')}
+          goBackLabel={tError('goBack')}
+          referenceLabel={tError('referenceLabel')}
+        />
+      </LoadErrorCard>
+    );
   }
 
   const dtFmtDay = new Intl.DateTimeFormat(getDateFormatLocale(locale), {
@@ -933,19 +1000,49 @@ async function PendingReviewSection({
   const fmtDateOnly = (s: string | null | undefined): string =>
     s ? dtFmtDay.format(new Date(s)) : '—';
 
-  // A member absent from the batch map (archived / cross-tenant-hidden)
-  // degrades to the cycle short-id — same graceful fallback as before, now
-  // without a per-row query.
-  const rows: PendingReviewRow[] = cycles.map((c) => ({
-    cycleId: c.cycleId,
-    companyName: companyNames.get(c.memberId) ?? c.cycleId.slice(0, 8),
-    pendingSinceLabel: fmtDateOnly(c.enteredPendingAt),
-    expiryLabel: fmtDateOnly(c.expiresAt),
-    // UX-A Bug 2: thread the async reject-with-refund marker into the row so a
-    // decided (refund-settling) cycle shows the "Refund settling" pill + "View"
-    // CTA instead of overstating open review work.
-    refundSettling: c.rejectRefundInitiatedAt !== null,
-  }));
+  // B3 — single wall-clock read for the whole list so every row's aging is
+  // measured against the same instant (no per-row `Date.now()` drift).
+  const now = Date.now();
+
+  const rows: PendingReviewRow[] = cycles.map((c) => {
+    const info = memberInfo.get(c.memberId);
+    // B3 — aging measured off `enteredPendingAt`. A pending cycle always has it
+    // set (discriminated union), but the array element type is the RenewalCycle
+    // union, so guard the null arm defensively: no timestamp → epoch NaN (sorts
+    // last, never aged).
+    const pendingSinceEpoch = c.enteredPendingAt
+      ? Date.parse(c.enteredPendingAt)
+      : Number.NaN;
+    const agingDays = Number.isFinite(pendingSinceEpoch)
+      ? Math.floor((now - pendingSinceEpoch) / PENDING_REVIEW_DAY_MS)
+      : 0;
+    return {
+      cycleId: c.cycleId,
+      // B4 — a resolved member links to `/admin/members/{id}` with its SCCM
+      // number in muted text (escalation-queue + invoice-table parity). A
+      // member absent from the batch map (archived / cross-tenant-hidden)
+      // degrades to the cycle short-id as PLAIN TEXT (no link, no SCCM) — the
+      // same graceful fallback as before, still without a per-row query.
+      companyName: info?.companyName ?? c.cycleId.slice(0, 8),
+      memberId: info?.memberId ?? null,
+      memberNumberDisplay:
+        info !== undefined
+          ? formatMemberNumber(memberPrefix, info.memberNumber)
+          : null,
+      pendingSinceLabel: fmtDateOnly(c.enteredPendingAt),
+      // B3 — raw sort key alongside the pre-formatted display label; the client
+      // sorts on this, never on the localized/BE string.
+      pendingSinceEpoch,
+      expiryLabel: fmtDateOnly(c.expiresAt),
+      // UX-A Bug 2: thread the async reject-with-refund marker into the row so a
+      // decided (refund-settling) cycle shows the "Refund settling" pill + "View"
+      // CTA instead of overstating open review work.
+      refundSettling: c.rejectRefundInitiatedAt !== null,
+      // B3 — aging chip flag + day count for the amber "Aged {n}d" treatment.
+      isAged: agingDays >= PENDING_REVIEW_AGING_DAYS,
+      agingDays,
+    };
+  });
 
   return (
     <>
@@ -953,7 +1050,7 @@ async function PendingReviewSection({
         <h2 className="text-base font-semibold">{t('sectionTitle')}</h2>
         <p className="text-sm text-muted-foreground">{t('sectionSubtitle')}</p>
       </div>
-      <PendingReviewList rows={rows} />
+      <PendingReviewList rows={rows} canApprove={canApprove} />
     </>
   );
 }

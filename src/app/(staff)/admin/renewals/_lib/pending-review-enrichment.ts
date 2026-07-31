@@ -29,11 +29,34 @@
  */
 import { runInTenant } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
-import { asMemberId, f3DrizzleMemberRepo } from '@/modules/members';
+import {
+  asMemberId,
+  f3DrizzleMemberRepo,
+  type MemberNumber,
+} from '@/modules/members';
 
 /**
- * Resolve a `memberId → companyName` map for the supplied cycle member
- * ids in a SINGLE batched, tenant-scoped read.
+ * UX-audit PR-B B4 — the per-member facts the pending-review list needs to
+ * render a Member cell that matches the escalation-queue + invoice-table: a
+ * company-name LINK to `/admin/members/{memberId}` plus the `SCCM-NNNN`
+ * member number in muted text.
+ *
+ * `memberNumber` is the RAW 055 member-number integer (branded). The caller
+ * (`PendingReviewSection`) resolves the per-tenant prefix ONCE via the shared
+ * RLS-safe `resolveMemberNumberPrefix` helper and formats it with
+ * `formatMemberNumber` server-side, so the client list ships a display string
+ * only — never the raw integer (mirrors `members-table.tsx`'s deliberate
+ * `member_number_display` choice).
+ */
+export interface PendingReviewMemberInfo {
+  readonly companyName: string;
+  readonly memberNumber: MemberNumber;
+  readonly memberId: string;
+}
+
+/**
+ * Resolve a `memberId → {companyName, memberNumber, memberId}` map for the
+ * supplied cycle member ids in a SINGLE batched, tenant-scoped read.
  *
  * @param tenantSlug  RLS tenant slug (validated by `asTenantContext`).
  * @param memberIds   Cycle member ids (duplicates tolerated — deduped here).
@@ -44,12 +67,12 @@ import { asMemberId, f3DrizzleMemberRepo } from '@/modules/members';
 export async function fetchPendingReviewCompanyNames(args: {
   readonly tenantSlug: string;
   readonly memberIds: readonly string[];
-}): Promise<ReadonlyMap<string, string>> {
+}): Promise<ReadonlyMap<string, PendingReviewMemberInfo>> {
   const distinctIds = [...new Set(args.memberIds)];
   // Empty list → no query needed (an `ANY('{}')` would be a wasted
   // round-trip and some drivers choke on the empty-array literal).
   if (distinctIds.length === 0) {
-    return new Map<string, string>();
+    return new Map<string, PendingReviewMemberInfo>();
   }
 
   const tenantContext = asTenantContext(args.tenantSlug);
@@ -70,11 +93,18 @@ export async function fetchPendingReviewCompanyNames(args: {
     );
   }
 
-  const names = new Map<string, string>();
+  const infoByMemberId = new Map<string, PendingReviewMemberInfo>();
   for (const [memberId, member] of result.value) {
     // `MemberId` is a branded string subtype — key the map on the raw
     // string so the caller can look up by the cycle's plain `memberId`.
-    names.set(memberId, member.companyName);
+    // B4 — carry the member-number (raw int) + id so the caller can build the
+    // SCCM display string + `/admin/members/{id}` link. Both are read from the
+    // SAME single batch read above — no extra query, no global `db`.
+    infoByMemberId.set(memberId, {
+      companyName: member.companyName,
+      memberNumber: member.memberNumber,
+      memberId,
+    });
   }
-  return names;
+  return infoByMemberId;
 }
