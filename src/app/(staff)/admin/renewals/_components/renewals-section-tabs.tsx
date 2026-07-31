@@ -183,10 +183,16 @@ export function RenewalsSectionTabs({
           Popover trigger (rendered as a sibling below, NOT inside this box)
           always reachable. `min-w-0` lets the box shrink below its content
           width so the overflow actually engages inside a flex row; the
-          `-my-1 py-1` bleed gives the focus ring room so `overflow-y` (coerced
-          to `auto` when `overflow-x` is `auto`) can't clip it, while the
-          negative margin keeps the strip's outer height unchanged. */}
-      <div className="-my-1 min-w-0 overflow-x-auto py-1">
+          `-my-1 py-1` bleed gives the focus ring vertical room, and
+          `overflow-y-hidden` suppresses the phantom vertical scrollbar/chevron
+          that `overflow-x: auto` would otherwise coerce to `auto` (the `:after`
+          active indicator bleeds ~7px below the box) — same fix as the sibling
+          `urgency-bucket-tabs`. The negative margin keeps the strip's outer
+          height unchanged. No `tabIndex`/`role="region"` is needed on this
+          scroll box: it wraps a `role="tablist"` whose roving tabs are
+          focusable, so WCAG 2.1.1 (scrollable-region-focusable) is satisfied
+          via focusable descendants. */}
+      <div className="-my-1 min-w-0 overflow-x-auto overflow-y-hidden py-1">
         {/* C1 (#10b) — MANUAL activation. These tabs NAVIGATE (each activation
             fires router.push), so `activateOnFocus={false}` keeps arrow keys a
             focus-only rove: Enter / Space / click activate. Without it, arrowing
@@ -195,7 +201,14 @@ export function RenewalsSectionTabs({
             false; setting it explicitly documents intent and future-proofs a
             default flip. */}
         <Tabs value={current} onValueChange={handleChange}>
-          <TabsList activateOnFocus={false} aria-label={t('tabs.ariaLabel')}>
+          <TabsList
+            activateOnFocus={false}
+            aria-label={t('tabs.ariaLabel')}
+            // C2 (#4) — the list track grows to fit the >=44px coarse-pointer
+            // triggers below, so the active pill can't overflow the default
+            // `h-8` track top/bottom on touch. Desktop (fine pointer) stays h-8.
+            className="pointer-coarse:h-auto"
+          >
             {/* C2 (#4) — `pointer-coarse:min-h-11` raises the tap target to
                 >=44px on touch/coarse pointers only, leaving the compact
                 fine-pointer (desktop) height unchanged. */}
@@ -250,7 +263,7 @@ export function RenewalsSectionTabs({
           <PopoverTrigger
             type="button"
             aria-label={t('pipelineHelp.ariaLabel')}
-            className="inline-flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="inline-flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:size-9"
           >
             <HelpCircleIcon className="size-4" aria-hidden="true" />
           </PopoverTrigger>
