@@ -85,7 +85,9 @@ describe('<MonthFilterChip> clear button', () => {
       screen.getByRole('button', { name: /clear month filter/i }),
     );
 
-    expect(nav.push).toHaveBeenCalledWith('/admin/renewals');
+    // `scroll: false` — same-page lens clear must not scroll-reset (it would
+    // also fight the chip's own focus-restore back to the chart region).
+    expect(nav.push).toHaveBeenCalledWith('/admin/renewals', { scroll: false });
   });
 });
 

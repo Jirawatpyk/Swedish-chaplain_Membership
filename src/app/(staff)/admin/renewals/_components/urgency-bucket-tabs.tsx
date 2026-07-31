@@ -76,7 +76,12 @@ export function UrgencyBucketTabs({
     next.delete('month'); // mutually-exclusive lens — exit the month lens
     next.delete('cursor'); // reset pagination on tab switch
     next.delete('nowIso'); // drop the pagination-session anchor (leaves with cursor)
-    router.push(`${pathname}?${next.toString()}`);
+    // `scroll: false` — this is a SAME-PAGE filter, not a page switch: the
+    // router's default scroll-to-top yanked the viewport away from the tab
+    // strip the admin just clicked (operator-reported). The rule across
+    // /admin/renewals: filter/lens/selection navigations preserve scroll;
+    // view switches (section tabs → Tasks/Tier-upgrades) keep the default.
+    router.push(`${pathname}?${next.toString()}`, { scroll: false });
   }
 
   return (

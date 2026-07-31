@@ -131,6 +131,12 @@ export function MonthBarChart({
               {item.interactive ? (
                 <Link
                   href={hrefFor(item.key)}
+                  // Same-page month-lens selection — the chart sits BELOW the
+                  // pipeline table, so the router's default scroll-to-top
+                  // would yank the user away from the chart they just
+                  // clicked. See `urgency-bucket-tabs.tsx` for the page-wide
+                  // filter-vs-view-switch scroll rule.
+                  scroll={false}
                   aria-label={ariaLabel}
                   aria-current={isSelected ? 'true' : undefined}
                   className={cn(

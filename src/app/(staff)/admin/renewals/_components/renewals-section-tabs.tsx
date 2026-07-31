@@ -145,6 +145,12 @@ export function RenewalsSectionTabs({
   const current = deriveCurrentTab(pathname, params.get('view'));
 
   function handleChange(value: string) {
+    // Scroll intentionally DEFAULTS (to top) on every arm here: these tabs
+    // switch VIEWS (Tasks / Tier-upgrades routes; pipeline ↔ pending-review
+    // replaces the whole work surface) — unlike the in-page filter/lens
+    // controls (urgency tabs, tier select, month chart), which pass
+    // `scroll: false`. Pipeline↔pending-review shares a route but reads as
+    // a page switch; kept default for consistency with the sibling tabs.
     if (value === TASKS_VALUE) {
       router.push(TASKS_PATH);
       return;
