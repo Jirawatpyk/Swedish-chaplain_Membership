@@ -77,6 +77,28 @@ describe('<RelativeTime>', () => {
     expect(html.toLowerCase()).toContain(`datetime="${iso.toLowerCase()}"`);
   });
 
+  it('pre-mount absolute label renders the BANGKOK wall time regardless of process TZ (2026-07-31 prod #418 incident)', () => {
+    // 18:30 UTC = 01:30 on Jul 31 in Asia/Bangkok — BOTH the hour and the
+    // calendar day differ from the UTC rendering ("Jul 30, 18:30"), which
+    // is exactly what split SSR (UTC Vercel server) from hydration
+    // (Bangkok browser) before formatAbsolute pinned the provider zone.
+    // The provider supplies timeZone on server AND client, so this
+    // renderToString output is byte-identical to the hydration render.
+    const iso = '2026-07-30T18:30:00.000Z';
+    const html = renderToString(
+      <NextIntlClientProvider
+        locale="en"
+        messages={ENGLISH_MESSAGES}
+        timeZone="Asia/Bangkok"
+      >
+        <RelativeTime iso={iso} />
+      </NextIntlClientProvider>,
+    );
+    expect(html).toContain('Jul 31'); // Bangkok calendar day…
+    expect(html).toContain('01:30'); // …and Bangkok wall clock
+    expect(html).not.toContain('Jul 30'); // never the UTC-runtime rendering
+  });
+
   it('flips to relative-time after useEffect runs (post-hydration)', async () => {
     const iso = '2026-05-09T11:29:00Z'; // 60 seconds ago
 

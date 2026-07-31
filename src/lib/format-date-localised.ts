@@ -58,6 +58,22 @@ function getFormatter(
  * Convenience: format an ISO timestamp with locale-aware calendar.
  * Returns `'—'` for invalid dates (em-dash, NOT empty string, so
  * the UI can render a stable layout).
+ *
+ * TIMEZONE DEFAULT (incident 2026-07-31 — prod React #418 hydration
+ * mismatch on /admin/members + /admin/renewals): when the caller's
+ * `options` carry no `timeZone`, `Intl.DateTimeFormat` formats in the
+ * RUNTIME's zone — Vercel server = UTC, user browser = Asia/Bangkok —
+ * so any 'use client' consumer rendered different SSR vs hydration
+ * text. Default to `'Asia/Bangkok'`, matching the app-wide next-intl
+ * pin (src/i18n/request.ts `timeZone: 'Asia/Bangkok'`) and the "BE
+ * display-only, Bangkok wall-time" convention: output is now
+ * independent of process/browser TZ. An EXPLICIT `options.timeZone`
+ * still wins (e.g. month-bucket-label's deliberate UTC anchors).
+ *
+ * Note: date-ONLY ISO strings ('2026-07-30') were already safe either
+ * way — they parse to UTC midnight = 7am Bangkok, the SAME calendar
+ * day in both zones. Full timestamps were the hazard (hour always
+ * differed; the day differed for instants ≥ 17:00 UTC).
  */
 export function formatLocalisedDate(
   iso: string,
@@ -66,5 +82,9 @@ export function formatLocalisedDate(
 ): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '—';
-  return getFormatter(locale, options).format(d);
+  const withTz: Intl.DateTimeFormatOptions =
+    options.timeZone !== undefined
+      ? options
+      : { ...options, timeZone: 'Asia/Bangkok' };
+  return getFormatter(locale, withTz).format(d);
 }

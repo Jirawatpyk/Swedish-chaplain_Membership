@@ -90,8 +90,15 @@ export interface BenefitUsageCardProps {
 }
 
 function useFormatDate(locale: string): (iso: string) => string {
+  // `timeZone` pinned — hydration safety (2026-07-31 #418 incident class):
+  // a timestamp ≥ 17:00 UTC formats to DIFFERENT calendar days on the UTC
+  // server vs a Bangkok browser. See format-date-localised.ts's
+  // timezone-default doc.
   return (iso: string) =>
-    new Intl.DateTimeFormat(getDateFormatLocale(locale), { dateStyle: 'medium' }).format(new Date(iso));
+    new Intl.DateTimeFormat(getDateFormatLocale(locale), {
+      dateStyle: 'medium',
+      timeZone: 'Asia/Bangkok',
+    }).format(new Date(iso));
 }
 
 export function BenefitUsageCard({

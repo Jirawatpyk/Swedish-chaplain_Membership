@@ -68,6 +68,13 @@ export function formatLocalisedTimestamp(iso: string, locale: string): string {
       hour: '2-digit',
       minute: '2-digit',
       hour12: false,
+      // Hydration safety (2026-07-31 #418 incident class): this module is
+      // imported by 'use client' surfaces (timeline-stream, at-risk-widget,
+      // portal recent-activity), so it formats on BOTH the UTC server and
+      // the Bangkok browser — without a pinned zone the hour always
+      // differed at hydration. See format-date-localised.ts's
+      // timezone-default doc.
+      timeZone: 'Asia/Bangkok',
     }).format(d);
   } catch {
     return iso.replace('T', ' ').slice(0, 16);
