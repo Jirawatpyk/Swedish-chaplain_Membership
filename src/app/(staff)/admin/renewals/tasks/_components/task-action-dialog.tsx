@@ -76,8 +76,14 @@ export interface TaskActionDialogProps {
    * #main-content when the row is gone). Optional — omitting it keeps Base UI's
    * default restore behaviour. Forwarded to the AlertDialog popup.
    *
-   * `| undefined` is explicit (exactOptionalPropertyTypes): the always-mounted
-   * lifted dialogs receive `target?.finalFocus`, which is undefined while closed.
+   * Base UI reads its `returnFocus` (from this `finalFocus` prop) LIVE at close,
+   * not snapshotted at open — so a nullable prop sourced from the dialog's own
+   * open-state (`…DialogTarget?.finalFocus`) would already be `undefined` on the
+   * close render and leave the whole focus-return chain inert. The always-mounted
+   * lifted queue therefore passes a STABLE, always-defined callback that reads
+   * the launching row's resolver from a ref (see `escalation-task-queue.tsx`
+   * `activeFinalFocusRef`). `| undefined` stays explicit
+   * (exactOptionalPropertyTypes) so callers may still omit the prop entirely.
    */
   readonly finalFocus?: (() => HTMLElement | null) | undefined;
   readonly children: React.ReactNode;
