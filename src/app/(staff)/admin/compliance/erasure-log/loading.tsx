@@ -26,9 +26,9 @@ function CollapsedCardSkeleton(): React.JSX.Element {
   return (
     <Card className="p-0">
       <div className="flex flex-wrap items-start justify-between gap-3 border-b px-6 py-4">
-        <div className="flex flex-col gap-2">
-          <Skeleton className="h-5 w-40" />
-          <Skeleton className="h-4 w-56" />
+        <div className="flex flex-col gap-1">
+          <Skeleton className="h-[1.375rem] w-40" />
+          <Skeleton className="h-5 w-56" />
         </div>
         <div className="flex items-center gap-2">
           <Skeleton className="h-6 w-24 rounded-4xl" />
@@ -78,7 +78,7 @@ export default async function Loading(): Promise<React.JSX.Element> {
     <TableContainer aria-busy="true">
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between" aria-hidden>
         <Skeleton className="h-8 w-72 rounded-lg" />
         <Skeleton className="h-9 w-64 rounded-md" />
       </div>
