@@ -1,21 +1,37 @@
 /**
- * COMP-1 US3-D (Task 5) — `@a11y @i18n` E2E for the DPO erasure-evidence log
- * (`/admin/compliance/erasure-log`).
+ * COMP-1 US3-D (Task 5, updated Task 8) — `@a11y @i18n` E2E for the DPO
+ * erasure-evidence log (`/admin/compliance/erasure-log`).
  *
  * The read-only admin page that gives the Data Protection Officer a single,
  * accountable view of every member erasure + its full Art.17 evidence. This
- * spec closes the E2E gap left by the Task 1–4 unit/integration layers:
+ * spec closes the E2E gap left by the Task 1–4 unit/integration layers, and
+ * (Task 8) was updated for the Task 1–7 UX enhancement — the evidence card is
+ * now a native `<details data-evidence>` (complete cards render COLLAPSED by
+ * default), the card heading shows the canonical `Member SCCM-<n>` label
+ * (not the legacy `Member #<n>`), and the page grew a status-filter `<nav>`
+ * + a member-number search form + breach/all-clear banners:
  *
  *   1. ADMIN happy path — a seeded erased member's evidence card renders
- *      (Member #, erased-at, a status badge, the five section headings, the
- *      re-drive note + the tax-redaction badge). M-2: the credential proof
- *      MUST NOT leak a raw actor uuid into the DOM.
- *   2. RBAC denial (CWE-285 carry-forward) — a MANAGER navigating to the page
+ *      (canonical `Member SCCM-<n>` heading, erased-at, a status badge). The
+ *      seeded member is COMPLETE (`halfRun: false` — both the
+ *      `member_erasure_requested` AND `member_erased` rows are seeded), so
+ *      its `<details>` renders collapsed; the spec clicks the `<summary>` to
+ *      expand it BEFORE asserting the five section headings, the re-drive
+ *      note, and the tax-redaction badge. M-2: the credential proof MUST NOT
+ *      leak a raw actor uuid into the DOM.
+ *   2. Status filter tabs — the `<nav aria-label>` renders and clicking
+ *      "Overdue" navigates to `?status=overdue`.
+ *   3. Member-number search — searching a non-existent `SCCM-0000` (member
+ *      number `0` is domain-invalid per `parseMemberNumberQuery`, so it
+ *      deterministically yields zero matches regardless of live tenant data)
+ *      renders the `erasure-log-empty` empty state.
+ *   4. RBAC denial (CWE-285 carry-forward) — a MANAGER navigating to the page
  *      gets `notFound()` (NOT the page content) and the Erasure Log link is
  *      absent from the manager admin sidebar; a MEMBER is denied too.
- *   3. `@a11y` — axe-core WCAG 2.1 + 2.2 AA scan, no violations.
- *   4. `@i18n` — EN/TH/SV render the localised title + key labels with no
- *      `MISSING_MESSAGE` / raw-key leak.
+ *   5. `@a11y` — axe-core WCAG 2.1 + 2.2 AA scan (both the default collapsed
+ *      view AND the expanded `<details>` disclosure content), no violations.
+ *   6. `@i18n` — EN/TH/SV render the localised title + key labels (incl. the
+ *      expanded section heading) with no `MISSING_MESSAGE` / raw-key leak.
  *
  * RBAC note: the page does `requireSession('staff')` THEN
  * `if (user.role !== 'admin') notFound()`. The F9 audit viewer admits manager;
@@ -25,8 +41,11 @@
  *
  * Tenant binding: a normal admin sign-in resolves the tenant to
  * `env.tenant.slug` (= `swecham`), so the evidence is seeded into the real
- * `swecham` tenant (see `helpers/erasure-evidence-seed.ts`). The dummy member
- * row is torn down in `afterAll` (a stray high `member_number` would break the
+ * `swecham` tenant (see `helpers/erasure-evidence-seed.ts`). The
+ * `member_number_prefix` for `swecham` is hard-seeded to `'SCCM'` by
+ * `drizzle/migrations/0209_member_number_schema.sql`, so the card heading's
+ * `SCCM-<n>` prefix is a live-DB fact, not a guess. The dummy member row is
+ * torn down in `afterAll` (a stray high `member_number` would break the
  * `migration-0209-post-apply` contiguity invariant on the shared dev Neon);
  * the append-only audit rows are left as-is (harmless orphans keyed on the
  * dummy's random uuid).
@@ -35,7 +54,7 @@
  */
 import AxeBuilder from '@axe-core/playwright';
 import type { BrowserContext, Page } from '@playwright/test';
-import { expect, test } from './fixtures';
+import { expect, fillField, test } from './fixtures';
 import { signInAsAdmin } from './helpers/admin-session';
 import { signInAsManager } from './helpers/manager-session';
 import { signInAsMember } from './helpers/member-session';
@@ -86,6 +105,16 @@ const COMPLETE_STATUS_RE: Record<Locale, RegExp> = {
   sv: /^Slutförd$/,
 };
 
+/**
+ * Canonical evidence-card heading pattern for a given member number — the
+ * `Member SCCM-<n>` label (`t('memberNumber', { ref })` in `evidence-card.tsx`,
+ * where `ref = formatMemberNumber('SCCM', memberNumber)`). Replaces the legacy
+ * `Member #<n>` label this spec asserted before the UX enhancement.
+ */
+function memberHeadingRe(memberNumber: number): RegExp {
+  return new RegExp(`Member SCCM-${memberNumber}\\b`);
+}
+
 async function setLocale(context: BrowserContext, locale: Locale): Promise<void> {
   await context.addCookies([
     { name: 'NEXT_LOCALE', value: locale, url: 'http://localhost:3100' },
@@ -127,7 +156,7 @@ async function assertErasureLogNotFound(page: Page): Promise<void> {
     page.getByRole('heading', { name: TITLE_RE.en, level: 1 }),
   ).toHaveCount(0);
   await expect(
-    page.getByRole('heading', { name: /Member #\d/ }),
+    page.getByRole('heading', { name: /Member SCCM-\d/ }),
   ).toHaveCount(0);
   await expect(
     page.getByRole('heading', { name: /Request & attestation/i }),
@@ -165,21 +194,29 @@ test.describe('COMP-1 US3-D — erasure-evidence log (admin DPO) @a11y @i18n', (
       page.getByRole('heading', { name: TITLE_RE.en, level: 1 }),
     ).toBeVisible();
 
-    // The seeded member's card heading: `Member #<memberNumber>`. Scope all
-    // further assertions to THIS card (the real tenant may hold other erased
-    // members).
+    // The seeded member's card heading: canonical `Member SCCM-<memberNumber>`
+    // label. Scope all further assertions to THIS card (the real tenant may
+    // hold other erased members).
     const cardHeading = page.getByRole('heading', {
-      name: new RegExp(`Member #${seed.memberNumber}\\b`),
+      name: memberHeadingRe(seed.memberNumber),
       level: 2,
     });
     await expect(cardHeading).toBeVisible();
 
-    // The card is the `<li>` wrapping our heading's section.
-    const card = page.locator('li', { has: cardHeading });
+    // The card is the `<details data-evidence>` wrapping our heading's summary.
+    const card = page.locator('details[data-evidence]', { has: cardHeading });
 
-    // Erased-at line + a status badge (complete — the completion row is seeded).
+    // Erased-at line + a status badge (complete — the completion row is
+    // seeded). Both live inside `<summary>`, so they're visible even collapsed.
     await expect(card.getByText(/Erased/)).toBeVisible();
     await expect(card.getByText(/^Complete$/)).toBeVisible();
+
+    // The seeded member is COMPLETE (`halfRun: false`) → the `<details>`
+    // renders COLLAPSED by default (`open={!isComplete}`). Expand it (click
+    // the native `<summary>` disclosure) BEFORE asserting the section
+    // content, which lives in the collapsed subtree and is invisible to the
+    // accessibility tree (and `getByRole`) until opened.
+    await card.locator('summary').click();
 
     // The five evidence section headings (h3) all present.
     for (const section of [
@@ -217,6 +254,41 @@ test.describe('COMP-1 US3-D — erasure-evidence log (admin DPO) @a11y @i18n', (
     await expect(
       card.getByText(/No linked login credential was erased/i),
     ).toBeVisible();
+  });
+
+  // --- 1b. Status filter tabs ------------------------------------------------
+
+  test('status filter tabs render and Overdue navigates to ?status=overdue', async ({
+    page,
+  }) => {
+    await signInAsAdmin(page);
+    await page.goto(ROUTE, { waitUntil: 'domcontentloaded' });
+
+    await expect(
+      page.getByRole('navigation', { name: /filter erasures by status/i }),
+    ).toBeVisible();
+
+    await page.getByRole('link', { name: /overdue/i }).click();
+    await expect(page).toHaveURL(/status=overdue/);
+  });
+
+  // --- 1c. Member-number search -----------------------------------------------
+
+  test('searching a non-existent member number renders the empty state', async ({
+    page,
+  }) => {
+    await signInAsAdmin(page);
+    await page.goto(ROUTE, { waitUntil: 'domcontentloaded' });
+
+    // `SCCM-0000` parses to member number `0`, which `parseMemberNumberQuery`
+    // treats as domain-invalid (non-positive) → the search always yields zero
+    // matches, deterministically, regardless of what else is seeded in the
+    // live tenant.
+    await fillField(page.getByLabel(/search by member number/i), 'SCCM-0000');
+    await page.getByRole('button', { name: /^search$/i }).click();
+
+    await expect(page).toHaveURL(/[?&]q=SCCM-0000/i);
+    await expect(page.getByTestId('erasure-log-empty')).toBeVisible();
   });
 
   // --- 2. RBAC denial -------------------------------------------------------
@@ -270,17 +342,34 @@ test.describe('COMP-1 US3-D — erasure-evidence log (admin DPO) @a11y @i18n', (
     await page.goto(ROUTE, { waitUntil: 'domcontentloaded' });
     // Wait for the seeded card to be on the page before scanning so axe runs
     // against the populated state (not a loading skeleton).
-    await expect(
-      page.getByRole('heading', {
-        name: new RegExp(`Member #${seed.memberNumber}\\b`),
-        level: 2,
-      }),
-    ).toBeVisible();
+    const cardHeading = page.getByRole('heading', {
+      name: memberHeadingRe(seed.memberNumber),
+      level: 2,
+    });
+    await expect(cardHeading).toBeVisible();
 
-    const results = await new AxeBuilder({ page })
+    // Scan #1: the default landing view — status filter tabs, search form,
+    // any breach/all-clear banner, and the seeded card COLLAPSED (the native
+    // `<details>` default state for a Complete member).
+    const collapsedResults = await new AxeBuilder({ page })
       .withTags([...AXE_TAGS])
       .analyze();
-    expect(results.violations).toEqual([]);
+    expect(collapsedResults.violations).toEqual([]);
+
+    // Scan #2: the expanded `<details>` disclosure content — the Task 3
+    // progressive-disclosure enhancement adds new content (the five evidence
+    // sections) that scan #1 never renders into the accessibility tree while
+    // collapsed, so it needs its own pass to be genuinely covered.
+    const card = page.locator('details[data-evidence]', { has: cardHeading });
+    await card.locator('summary').click();
+    await expect(
+      card.getByRole('heading', { name: /Request & attestation/i, level: 3 }),
+    ).toBeVisible();
+
+    const expandedResults = await new AxeBuilder({ page })
+      .withTags([...AXE_TAGS])
+      .analyze();
+    expect(expandedResults.violations).toEqual([]);
   });
 
   // --- 4. @i18n -------------------------------------------------------------
@@ -309,15 +398,20 @@ test.describe('COMP-1 US3-D — erasure-evidence log (admin DPO) @a11y @i18n', (
       // on mobile, so it is NOT asserted here — its EN label is covered by the
       // manager-denial test instead).
       //
-      // The card heading itself is LOCALISED (`Member #<n>` / `สมาชิกเลขที่
-      // <n>` / `Medlem nr <n>`), so locate it by the member NUMBER alone — the
-      // numeral is the one stable token across all three locales.
+      // The card heading itself is LOCALISED (`Member SCCM-<n>` / `สมาชิกเลขที่
+      // SCCM-<n>` / `Medlem nr SCCM-<n>`), so locate it by the member NUMBER
+      // alone — the numeral is the one stable token across all three locales.
       const cardHeading = page.getByRole('heading', {
         name: new RegExp(`${seed.memberNumber}\\b`),
         level: 2,
       });
       await expect(cardHeading).toBeVisible();
-      const card = page.locator('li', { has: cardHeading });
+      const card = page.locator('details[data-evidence]', { has: cardHeading });
+
+      // The seeded member is COMPLETE → the `<details>` renders COLLAPSED by
+      // default in every locale. Expand it before asserting the section
+      // heading below, which lives in the collapsed subtree.
+      await card.locator('summary').click();
       await expect(
         card.getByRole('heading', { name: REQUESTED_SECTION_RE[locale], level: 3 }),
       ).toBeVisible();
