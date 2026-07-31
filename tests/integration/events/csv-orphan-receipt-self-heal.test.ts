@@ -39,6 +39,11 @@ import {
   deleteTestUser,
   type TestUser,
 } from '../helpers/test-users';
+import { ciScaled } from '../../helpers/ci-latency';
+// Two 57-row fixture imports per test. Locally that is seconds; on a runner
+// ~200 ms per statement it is minutes, and raising F6_IMPORT_TIME_BUDGET_MS so
+// the importer stops short-circuiting made the runs longer still — these three
+// tests then died on their own 120/180 s ceilings in the 2026-07-31 sweep.
 
 const FIXTURE_DIR = join(process.cwd(), 'docs', 'Attendee list');
 const FIXTURE_NAME = 'EventCreate_Guestlist-grant-thornton-workshop.csv';
@@ -64,7 +69,7 @@ describe('F6.1 orphan-receipt self-heal (live Neon)', () => {
     }
   });
 
-  it('re-upload after manual registrations DELETE re-inserts rows (not rowsAlreadyImported)', { timeout: 180_000 }, async () => {
+  it('re-upload after manual registrations DELETE re-inserts rows (not rowsAlreadyImported)', { timeout: ciScaled(180_000) }, async () => {
     const eventId = randomUUID();
     const externalId = `event-${eventId.slice(0, 8)}`;
     await db.insert(events).values({
@@ -339,7 +344,7 @@ describe('F6.1 orphan-receipt self-heal (live Neon)', () => {
       };
     }
 
-    it('D1 — fault injection AFTER orphan-delete rolls back the delete', { timeout: 120_000 }, async () => {
+    it('D1 — fault injection AFTER orphan-delete rolls back the delete', { timeout: ciScaled(120_000) }, async () => {
       const { eventId, externalId, processedFirst, receiptsAfterDelete } =
         await seedOrphanState();
 
@@ -403,7 +408,7 @@ describe('F6.1 orphan-receipt self-heal (live Neon)', () => {
       expect(receiptsNow.length).toBe(receiptsAfterDelete);
     });
 
-    it('D2 — fault injection at receipt re-insert rolls back registration insert + delete', { timeout: 120_000 }, async () => {
+    it('D2 — fault injection at receipt re-insert rolls back registration insert + delete', { timeout: ciScaled(120_000) }, async () => {
       const { eventId, externalId, processedFirst, receiptsAfterDelete } =
         await seedOrphanState();
 
