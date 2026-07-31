@@ -94,7 +94,7 @@ export function EvidenceCard({
           </div>
         </summary>
 
-        <CardContent className="flex flex-col gap-6 pt-6">
+        <CardContent className="flex flex-col gap-6 pt-6 pb-6">
           {/* Half-run note — elapsed time + reconciler escalation guidance. */}
           {row.halfRun && row.requestedAt ? (
             <p
