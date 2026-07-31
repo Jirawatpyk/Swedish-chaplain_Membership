@@ -649,3 +649,11 @@ summary,
     @apply bg-background text-foreground;}
   html {
     @apply font-sans;}}
+
+/* Erasure evidence log — force-open every evidence <details> when printing so a
+   printed page is a COMPLETE Article 17 accountability record (the print-to-PDF
+   fallback the export-cut relies on). */
+@media print {
+  details[data-evidence] > *:not(summary) { display: block !important; }
+  details[data-evidence] summary .lucide-chevron-down { display: none; }
+}
