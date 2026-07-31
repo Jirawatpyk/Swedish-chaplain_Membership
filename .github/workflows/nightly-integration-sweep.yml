@@ -124,9 +124,20 @@ jobs:
       # and `.env.example`'s token is a placeholder pointing at no store. Set
       # only when non-empty — an empty value would shadow the seeded one and
       # break `env.ts` boot instead.
+      # The `secrets` context is NOT available in a step-level `if:` — using it
+      # there does not evaluate false, it makes the whole workflow file
+      # unparseable (`HTTP 422: Unrecognized named-value: 'secrets'`, which is
+      # how this was caught). Read it into `env` and branch in bash instead.
       - name: Prefer a real Blob token when configured
-        if: ${{ secrets.BLOB_READ_WRITE_TOKEN != '' }}
-        run: echo "BLOB_READ_WRITE_TOKEN=${{ secrets.BLOB_READ_WRITE_TOKEN }}" >> "$GITHUB_ENV"
+        env:
+          MAYBE_BLOB_TOKEN: ${{ secrets.BLOB_READ_WRITE_TOKEN }}
+        run: |
+          if [ -n "${MAYBE_BLOB_TOKEN}" ]; then
+            echo "BLOB_READ_WRITE_TOKEN=${MAYBE_BLOB_TOKEN}" >> "$GITHUB_ENV"
+            echo "Using the BLOB_READ_WRITE_TOKEN secret (real store)."
+          else
+            echo "No BLOB_READ_WRITE_TOKEN secret — keeping the .env.example placeholder; the Blob roundtrip suite will skip with an annotation."
+          fi
 
       - uses: ./.github/actions/ci-neon-env
         with:
