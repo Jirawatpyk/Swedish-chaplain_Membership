@@ -46,7 +46,12 @@ export function TaxRegisterForm({
     (e: React.FormEvent<HTMLFormElement>) => {
       e.preventDefault();
       const params = new URLSearchParams({ kind, from, to });
-      router.push(`/admin/invoices/registers?${params.toString()}`);
+      // Same-page register/period selection (the register table re-renders
+      // below this form) → preserve scroll (canonical rule comment:
+      // renewals `urgency-bucket-tabs.tsx` handleChange).
+      router.push(`/admin/invoices/registers?${params.toString()}`, {
+        scroll: false,
+      });
     },
     [router, kind, from, to],
   );

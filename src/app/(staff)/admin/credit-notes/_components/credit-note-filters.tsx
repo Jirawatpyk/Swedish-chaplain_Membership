@@ -41,7 +41,9 @@ export function CreditNoteFilters() {
       next.delete('page');
       const qs = next.toString();
       startTransition(() => {
-        router.push(qs ? `${pathname}?${qs}` : pathname);
+        // Same-page filter → preserve scroll (canonical rule comment:
+        // renewals `urgency-bucket-tabs.tsx` handleChange).
+        router.push(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
       });
     },
     [params, pathname, router],
