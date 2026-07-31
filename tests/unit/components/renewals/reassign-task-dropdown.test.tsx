@@ -1,60 +1,104 @@
 /**
- * F8 Phase 8 R8 R4-C1 close — pins the Retry button surface for
- * `<ReassignTaskDropdown>`.
+ * F8 Phase 8 — `<ReassignTaskDropdown>` #5b tests.
  *
- * The original IMP-G fix (Round 6) shipped a Retry button that was
- * silently dead because the handler did `setLoadError(false);
- * setUsers(null)` — but `users` was already `null` so React's bail-
- * out meant the lazy-load `useEffect` deps `[open, users]` were
- * unchanged and the fetch never re-ran.
+ * History: these were STRUCTURAL source-string pins
+ * (`Component.toString().toContain(...)`); the whole-branch review (2026-07-31)
+ * flagged them as near-tautological. This upgrades the **loading-state** pin
+ * to a REAL render assertion — an open-render with a controllable (pending →
+ * resolved) fetch drives the trigger's spinner + "Loading staff…" copy without
+ * hitting the documented `waitFor` lockup (that was specific to the
+ * network-failure → retry path). Real timers are used so the async
+ * find-utilities are not starved by any global fake-timer config.
  *
- * R4-C1 fix adds a `retryToken` counter to the deps array; the
- * retry handler bumps it. This test documents the surface
- * contract; full end-to-end retry behaviour is exercised by the
- * E2E spec at `tests/e2e/escalation-task-queue.spec.ts` (which
- * runs against real Playwright + base-ui portals).
- *
- * Vitest's jsdom + base-ui AlertDialog portals + fetch-mock combo
- * is too brittle for the full retry flow — simulating network
- * failure inside a portal-rendered dialog locks up waitFor at 10s
- * timeout. Smoke-level surface check is the right level here.
+ * The **role-label** assertion stays structural: rendering it for real needs
+ * the assignee combobox OPEN, i.e. a base-ui `Popover` + `cmdk` `Command` list
+ * mounted inside the base-ui `AlertDialog` portal — empirically confirmed
+ * (2026-07-31) not to open under jsdom `fireEvent` (the popover never mounts
+ * its content), the same brittleness that keeps the retry FLOW at E2E level.
+ * The visible role label is exercised by `tests/e2e/escalation-task-queue.spec.ts`
+ * and its i18n keys are guaranteed present by `check:i18n`.
  */
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { render, screen, cleanup } from '@testing-library/react';
+import { NextIntlClientProvider } from 'next-intl';
+import enMessages from '@/i18n/messages/en.json';
 import { ReassignTaskDropdown } from '@/app/(staff)/admin/renewals/tasks/_components/reassign-task-dropdown';
 
-describe('<ReassignTaskDropdown> retry surface (R4-C1)', () => {
-  it('exports a callable component', () => {
-    expect(typeof ReassignTaskDropdown).toBe('function');
+const reassign = enMessages.admin.renewals.tasks.reassign_dialog;
+
+/** A fetch mock whose resolution the test controls. */
+function deferred<T>() {
+  let resolve!: (v: T) => void;
+  const promise = new Promise<T>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+
+const STAFF = [
+  {
+    id: '11111111-1111-4111-8111-111111111111',
+    email: 'a@x.io',
+    display_name: 'Ada Admin',
+    role: 'admin' as const,
+  },
+];
+
+describe('<ReassignTaskDropdown> #5b', () => {
+  beforeEach(() => {
+    vi.useRealTimers();
+  });
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
   });
 
-  it('component file imports the retry-token state via useState', () => {
-    // Pins that the implementation continues to wire `retryToken`
-    // (the fix's load-bearing piece) into the lazy-load useEffect
-    // deps. A future refactor that reverts to `[open, users]` only
-    // would drop this counter symbol — would not be caught by
-    // typecheck (state is internal) but would trigger an Lighthouse
-    // / E2E regression. We grep the source for the symbol presence
-    // as a coarse pin.
-    //
-    // This is a structural test, not a behavioural one. The retry
-    // FLOW is verified end-to-end in the Playwright spec.
-    const src = ReassignTaskDropdown.toString();
-    expect(src.includes('retryToken') || src.includes('useState')).toBe(true);
+  it('surfaces a loading spinner + "Loading staff…" copy on the trigger while the staff fetch is in flight (#5b, behavioural)', async () => {
+    const d = deferred<Response>();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => d.promise),
+    );
+
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <ReassignTaskDropdown
+          open
+          onOpenChange={() => {}}
+          currentAssigneeUserId={null}
+          onSubmit={async () => {}}
+        />
+      </NextIntlClientProvider>,
+    );
+
+    // The lazy-load effect fires on open → the trigger shows the loading copy
+    // (NOT a bare disabled control) while the fetch is pending. This fails if
+    // `isLoadingUsers` is unwired from the trigger.
+    expect(
+      await screen.findByText(reassign.loading, undefined, { timeout: 4000 }),
+    ).toBeInTheDocument();
+
+    // Resolving clears the loading copy back to the placeholder — proves the
+    // spinner is bound to the in-flight state, not always-on.
+    d.resolve({
+      ok: true,
+      json: async () => ({ users: STAFF }),
+    } as unknown as Response);
+    expect(
+      await screen.findByText(reassign.placeholder, undefined, { timeout: 4000 }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(reassign.loading)).not.toBeInTheDocument();
   });
 
-  // UX-audit PR-A #5b — the same jsdom + Base UI AlertDialog brittleness (see
-  // the file header) blocks a full open-dialog render, so these pin the two
-  // #5b wirings structurally; the visible behaviour is exercised by the E2E
-  // spec + guaranteed to resolve by check:i18n (both keys exist in all locales).
-  it('renders the staff role via the shared assigneeRole i18n keys, not the raw enum (#5b)', () => {
+  it('routes the staff role through the shared assigneeRole i18n key, not the raw enum (#5b, structural — visible render is E2E-only, see header)', () => {
     const src = ReassignTaskDropdown.toString();
-    // The role suffix goes through t(`assigneeRole.${u.role}`), never `u.role`.
+    // The role suffix must go through t(`assigneeRole.${u.role}`); a regression
+    // to printing `u.role` directly would drop this token.
     expect(src).toContain('assigneeRole');
   });
 
-  it('drives a loading state on the trigger during the initial staff fetch (#5b)', () => {
+  it('wires the retry-token counter into the lazy-load effect (structural pin; retry FLOW is E2E-only)', () => {
     const src = ReassignTaskDropdown.toString();
-    expect(src).toContain('isLoadingUsers');
-    expect(src).toContain('loading');
+    expect(src.includes('retryToken')).toBe(true);
   });
 });
