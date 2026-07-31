@@ -55,6 +55,7 @@ import type {
   ErasedMembersCursor,
   ListErasedMembersResult,
 } from '@/modules/members';
+import { parseMemberNumberQuery } from '@/modules/members';
 
 /** 30-day PDPA §30 statutory window (ms). The tighter of Art.12 (1 month) / §30. */
 export const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
@@ -140,18 +141,51 @@ export interface GetErasureEvidenceLogDeps {
   readonly evidenceReader: ErasureEvidenceReader;
 }
 
+export type ErasureStatusFilter = 'all' | 'overdue' | 'in_progress' | 'complete';
+
+export interface ErasureLogSummary {
+  readonly overdue: number;
+  readonly inProgress: number;
+  readonly complete: number;
+  readonly total: number;
+}
+
+/** Display ceiling — the page folds at most this many newest-erased members.
+ *  Erasures are rare, so this never triggers at real volume; it is a safety
+ *  bound, surfaced honestly via `capped` when hit. A truly accurate all-org
+ *  count beyond the cap would need a light per-member status aggregate read
+ *  (deferred). */
+export const DEFAULT_DISPLAY_CAP = 200;
+
 export interface GetErasureEvidenceLogInput {
   readonly ctx: TenantContext;
-  readonly limit: number;
-  readonly cursor?: ErasedMembersCursor;
-  /** Injected wall-clock instant — the overdue comparison uses ONLY this. */
   readonly now: Date;
+  /** Status bucket to display; `undefined`/`'all'` shows every bucket. */
+  readonly filter?: ErasureStatusFilter;
+  /** Member-number query (`SCCM-0042` / `0042` / `42`); `undefined`/blank = no search. */
+  readonly search?: string;
+  readonly displayCap?: number;
 }
 
 export interface GetErasureEvidenceLogResult {
   readonly rows: readonly GroupedEvidence[];
-  readonly nextCursor: ErasedMembersCursor | null;
+  readonly summary: ErasureLogSummary;
+  readonly capped: boolean;
+  readonly loadedCount: number;
 }
+
+/** The row's triage bucket — derived purely from the existing fold flags. */
+function statusOf(row: GroupedEvidence): 'overdue' | 'in_progress' | 'complete' {
+  if (row.isOverdue) return 'overdue';
+  if (row.halfRun) return 'in_progress'; // halfRun && !isOverdue
+  return 'complete';
+}
+
+const URGENCY_RANK: Record<'overdue' | 'in_progress' | 'complete', number> = {
+  overdue: 0,
+  in_progress: 1,
+  complete: 2,
+};
 
 // --- payload field readers (defensive: jsonb is `Record<string, unknown>`) ---
 
@@ -287,25 +321,27 @@ function fold(member: ErasedMemberRow, rows: readonly ErasureEvidenceRow[], now:
 }
 
 /**
- * Page the erased-member list, read+fold each member's evidence, and return
- * the grouped rows + the member-list keyset cursor for "load more".
+ * Load (up to `displayCap`) the tenant's erased members, read+fold each
+ * member's evidence, and triage the folded set into a DPO-friendly page: a
+ * status summary, urgency-first sort, an optional status-bucket filter, and
+ * an optional SCCM member-number search.
  *
- * Reads are issued sequentially per member (the page is small — a keyset
- * `limit` of erased members, each with ≤ a handful of linked logins — and the
- * evidence query is itself low-volume; a parallel fan-out would add no
- * meaningful win and complicate ordering). Order is preserved from
- * `listErasedMembers` (newest-erasure-first).
+ * Reads are issued sequentially per member (the page is small — a bounded
+ * `displayCap` of erased members, each with ≤ a handful of linked logins —
+ * and the evidence query is itself low-volume; a parallel fan-out would add
+ * no meaningful win and complicate ordering).
  */
 export async function getErasureEvidenceLog(
   deps: GetErasureEvidenceLogDeps,
   input: GetErasureEvidenceLogInput,
 ): Promise<GetErasureEvidenceLogResult> {
-  const page = await deps.listErasedMembers(input.ctx, {
-    limit: input.limit,
-    ...(input.cursor ? { cursor: input.cursor } : {}),
-  });
+  const cap = input.displayCap ?? DEFAULT_DISPLAY_CAP;
+  const page = await deps.listErasedMembers(input.ctx, { limit: cap });
+  const capped = page.nextCursor !== null;
 
-  const rows: GroupedEvidence[] = [];
+  // Sequential fold — do NOT parallelise (shared tenant-scoped connection;
+  // concurrent queries on it would throw "another query is already in progress").
+  const folded: GroupedEvidence[] = [];
   for (const member of page.rows) {
     const linkedUserIds = await deps.listMemberLinkedUserIds(input.ctx, member.memberId);
     const evidence = await deps.evidenceReader.readForMember(
@@ -313,8 +349,56 @@ export async function getErasureEvidenceLog(
       member.memberId,
       linkedUserIds,
     );
-    rows.push(fold(member, evidence, input.now));
+    folded.push(fold(member, evidence, input.now));
   }
 
-  return { rows, nextCursor: page.nextCursor };
+  // Search FIRST (member-number). A blank query is a no-op; a non-empty query
+  // that is not a usable member-number (or matches nobody) yields an empty set.
+  const rawQ = input.search?.trim() ?? '';
+  let searched = folded;
+  if (rawQ !== '') {
+    const parsed = parseMemberNumberQuery(rawQ);
+    searched = parsed === null ? [] : folded.filter((r) => r.memberNumber === parsed);
+  }
+
+  // Summary over the searched set (pre status-filter) so tab counts equal
+  // "what this tab shows with the current search".
+  let overdue = 0;
+  let inProgress = 0;
+  let complete = 0;
+  for (const r of searched) {
+    const s = statusOf(r);
+    if (s === 'overdue') overdue++;
+    else if (s === 'in_progress') inProgress++;
+    else complete++;
+  }
+  const summary: ErasureLogSummary = {
+    overdue,
+    inProgress,
+    complete,
+    total: overdue + inProgress + complete,
+  };
+
+  const filter = input.filter ?? 'all';
+  const filtered = filter === 'all' ? searched : searched.filter((r) => statusOf(r) === filter);
+
+  // Urgency-first; overdue bucket by requestedAt ASC (longest-overdue first);
+  // others by erasedAt DESC; final tiebreak memberId DESC (stable).
+  const rows = [...filtered].sort((a, b) => {
+    const ra = URGENCY_RANK[statusOf(a)];
+    const rb = URGENCY_RANK[statusOf(b)];
+    if (ra !== rb) return ra - rb;
+    if (ra === URGENCY_RANK.overdue) {
+      const ta = a.requestedAt?.getTime() ?? Number.POSITIVE_INFINITY;
+      const tb = b.requestedAt?.getTime() ?? Number.POSITIVE_INFINITY;
+      if (ta !== tb) return ta - tb;
+    } else {
+      const ea = a.erasedAt.getTime();
+      const eb = b.erasedAt.getTime();
+      if (ea !== eb) return eb - ea;
+    }
+    return a.memberId < b.memberId ? 1 : a.memberId > b.memberId ? -1 : 0;
+  });
+
+  return { rows, summary, capped, loadedCount: folded.length };
 }
