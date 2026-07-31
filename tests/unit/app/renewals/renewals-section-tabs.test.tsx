@@ -256,3 +256,74 @@ describe('<RenewalsSectionTabs> Pipeline tab is never badged', () => {
     expect(pipelineTab.textContent).toBe('Pipeline');
   });
 });
+
+/**
+ * Enhancement C1 (#10b) — MANUAL tab activation.
+ *
+ * Each tab NAVIGATES (`router.push`) on activation, so arrow-key focus must
+ * NOT activate — otherwise arrowing across the strip fires a route push per
+ * keypress (accidental navigation + push storm). Base UI's `Tabs.List` gates
+ * this on `activateOnFocus`; the strip sets `activateOnFocus={false}` so arrow
+ * keys MOVE focus (roving tabindex) while Enter / Space / click ACTIVATE.
+ *
+ * The load-bearing gate is `fireEvent.focus` on a NON-active tab: Base UI's
+ * per-tab `onFocus` handler only calls `onTabActivation` when `activateOnFocus`
+ * is true, so flipping the prop back to `true` makes the first assertion fail.
+ */
+describe('<RenewalsSectionTabs> C1 — manual activation (arrow moves focus, does not navigate)', () => {
+  it('focusing a non-active tab (arrow-key move) does NOT navigate', () => {
+    renderTabs(); // pipeline route → Pipeline active
+    nav.push.mockClear();
+    const pendingTab = screen.getByRole('tab', { name: /pending review/i });
+    fireEvent.focus(pendingTab);
+    expect(nav.push).not.toHaveBeenCalled();
+  });
+
+  it('activating a focused tab by click DOES navigate', () => {
+    renderTabs();
+    const pendingTab = screen.getByRole('tab', { name: /pending review/i });
+    // Contrast with the focus-only case above: focus alone never navigates,
+    // but an explicit activation (click; Enter/Space route through the same
+    // Base UI onClick) does.
+    fireEvent.focus(pendingTab);
+    expect(nav.push).not.toHaveBeenCalled();
+    fireEvent.click(pendingTab);
+    expect(nav.push).toHaveBeenCalledWith('/admin/renewals?view=pending-review');
+  });
+});
+
+/**
+ * Enhancement C2 (#4) — mobile horizontal scroll + touch targets.
+ *
+ * The four `whitespace-nowrap` triggers overflow a narrow viewport; the strip
+ * must scroll inside its OWN `overflow-x-auto` container (never the page body),
+ * keeping the help Popover trigger visible beside it. Touch targets are raised
+ * to >=44px on coarse pointers (WCAG 2.5.5 / audit goal) while the compact
+ * desktop (fine-pointer) height is left unchanged.
+ */
+describe('<RenewalsSectionTabs> C2 — mobile overflow + touch targets', () => {
+  it('wraps the tablist in a horizontal-scroll container (strip scrolls, not the page)', () => {
+    renderTabs();
+    const tablist = screen.getByRole('tablist');
+    expect(tablist.closest('.overflow-x-auto')).not.toBeNull();
+  });
+
+  it('the help Popover trigger stays beside the scroll container, not inside it', () => {
+    renderTabs(true);
+    const helpTrigger = screen.getByRole('button', {
+      name: 'About the renewal pipeline',
+    });
+    // The scroll container clips the tablist only; the help button must live
+    // OUTSIDE it so it can never be scrolled out of reach.
+    expect(helpTrigger.closest('.overflow-x-auto')).toBeNull();
+  });
+
+  it('raises each tab tap target to >=44px on coarse pointers', () => {
+    renderTabs();
+    const tabs = screen.getAllByRole('tab');
+    expect(tabs).toHaveLength(4);
+    for (const tab of tabs) {
+      expect(tab.className).toContain('pointer-coarse:min-h-11');
+    }
+  });
+});
