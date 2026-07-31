@@ -62,8 +62,30 @@ jobs:
       CRON_SECRET: synthetic-ci-cron-secret
       RENEWAL_LINK_TOKEN_SECRET_PRIMARY: synthetic-ci-renewal-token-secret-32-chars-padding
       RESEND_BROADCASTS_API_KEY: re_synthetic_ci_placeholder_DO_NOT_USE
-      RESEND_BROADCASTS_WEBHOOK_SECRET: synthetic-ci-secret-32-chars-padding-padding
+      # Svix-SHAPED, not merely long enough. The F7 webhook suites sign their
+      # own payloads with this value and the route verifies them, so a secret
+      # that is not `whsec_` + strict base64 makes every valid signature verify
+      # as 401 — three tests reddened that way on 2026-07-30. Decodes to
+      # "ci-only-synthetic-24bytes".
+      RESEND_BROADCASTS_WEBHOOK_SECRET: 'whsec_Y2ktb25seS1zeW50aGV0aWMtMjRieXRlcw=='
       UNSUBSCRIBE_TOKEN_SECRET: synthetic-ci-token-secret-32-chars-padding
+      # Route-level suites reach a specific tenant by sending `X-Tenant`. The
+      # resolver honours that header only when this flag is on (env.ts refuses
+      # it in production), so without it a cron route reconciles the DEPLOYED
+      # tenant instead of the test's: `processed: 0`, `expected +0 to be 1`.
+      # Reproduced locally by unsetting it. Same class as the tenant-context
+      # unit failure fixed on 2026-07-28.
+      E2E_X_TENANT_HEADER_ENABLED: 'true'
+      # The RLS-overhead suite asserts a p95 in MILLISECONDS and already reads
+      # this knob. 200 ms is a laptop number; a runner an ocean from Neon
+      # measured 1387 ms. Raised so the check still guards a runaway (a
+      # missing index would blow past this) without asserting the network.
+      PERF_RLS_P95_MS: '2500'
+      # F6 CSV import short-circuits to `timeout` when its 55 s "may a new
+      # batch start" budget trips; on the runner's link a fixture that finishes
+      # locally returns `timeout` instead of `completed`. 5 minutes here, the
+      # 55 s default stays in production.
+      F6_IMPORT_TIME_BUDGET_MS: '300000'
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -95,6 +117,16 @@ jobs:
             esac
           fi
           echo "modules=$MODULES" | tee -a "$GITHUB_OUTPUT"
+
+      # Prefer a real disposable Blob store when an operator has provided one:
+      # the F6.1 error-CSV roundtrip suite deliberately fails rather than skips
+      # in CI (a past review decided that coverage must not vanish silently),
+      # and `.env.example`'s token is a placeholder pointing at no store. Set
+      # only when non-empty — an empty value would shadow the seeded one and
+      # break `env.ts` boot instead.
+      - name: Prefer a real Blob token when configured
+        if: ${{ secrets.BLOB_READ_WRITE_TOKEN != '' }}
+        run: echo "BLOB_READ_WRITE_TOKEN=${{ secrets.BLOB_READ_WRITE_TOKEN }}" >> "$GITHUB_ENV"
 
       - uses: ./.github/actions/ci-neon-env
         with:

@@ -36,6 +36,7 @@ import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
 import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
+import { ciScaled } from '../../helpers/ci-latency';
 
 describe('change-plan billing remediation — no self-deadlock under member lock', () => {
   let tenant: TestTenant;
@@ -171,6 +172,6 @@ describe('change-plan billing remediation — no self-deadlock under member lock
     expect(
       elapsed,
       `change-plan + billing remediation must complete in a few seconds (took ${elapsed}ms)`,
-    ).toBeLessThan(8_000);
+    ).toBeLessThan(ciScaled(8_000));
   }, 60_000);
 });

@@ -38,6 +38,7 @@ import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { nextSeedMemberNumber } from '../helpers/seed-member-number';
+import { ciScaled } from '../../helpers/ci-latency';
 
 const PLAN_ID = 'test-inv-bounce-plan';
 
@@ -189,7 +190,7 @@ describe('G4 — invitation_bounced edge case (spec § Edge Cases)', () => {
 
   beforeAll(async () => {
     adminUser = await createActiveTestUser('admin');
-  }, 30_000);
+  }, ciScaled(30_000));
 
   it('bounce flips contacts.invite_bounced_at + emits exactly one invitation_bounced audit (owner tenant)', async () => {
     const tenant = await createTestTenant('test');
@@ -221,7 +222,7 @@ describe('G4 — invitation_bounced edge case (spec § Edge Cases)', () => {
     } finally {
       await tenant.cleanup().catch(() => {});
     }
-  }, 30_000);
+  }, ciScaled(30_000));
 
   it('cross-tenant: marks only the OWNER tenant with a LIVE pending invite (Principle I)', async () => {
     // Same email is a contact in BOTH tenants. Tenant A holds a LIVE pending
@@ -263,7 +264,7 @@ describe('G4 — invitation_bounced edge case (spec § Edge Cases)', () => {
       await tenantA.cleanup().catch(() => {});
       await tenantB.cleanup().catch(() => {});
     }
-  }, 40_000);
+  }, ciScaled(40_000));
 
   /**
    * G4.resend — "Re-send invite" use case (spec § Edge Cases, 015-f3-hardening).
@@ -407,5 +408,5 @@ describe('G4 — invitation_bounced edge case (spec § Edge Cases)', () => {
     } finally {
       await tenant.cleanup().catch(() => {});
     }
-  }, 40_000);
+  }, ciScaled(40_000));
 });

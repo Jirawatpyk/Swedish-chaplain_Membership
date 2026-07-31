@@ -33,6 +33,7 @@ import {
   seedPortalMemberWithContact,
   seedPortalPlan,
 } from '../helpers/portal-seed';
+import { ciScaled } from '../../helpers/ci-latency';
 
 const PLAN_ID = 'test-portal-batch-plan';
 const DAY = 86_400_000;
@@ -48,7 +49,7 @@ describe('findPendingInvitationsForPrimaryContacts', () => {
     otherTenant = await createTestTenant('test');
     await seedPortalPlan(tenant.ctx.slug, adminUser.userId, PLAN_ID);
     await seedPortalPlan(otherTenant.ctx.slug, adminUser.userId, PLAN_ID);
-  }, 60_000);
+  }, ciScaled(60_000));
 
   afterAll(async () => {
     await tenant.cleanup().catch(() => {});
@@ -196,7 +197,7 @@ describe('findPendingInvitationsForPrimaryContacts', () => {
     // Confirm the 51st member is present in the result, not silently truncated.
     // This makes the failure message point at the truncation guard specifically.
     expect(res.value.some((r) => r.memberId === _51stMemberId)).toBe(true);
-  }, 150_000);
+  }, ciScaled(150_000));
 
   it('does not leak another tenant’s invitation', async () => {
     const invitee = await createActiveTestUser('member');

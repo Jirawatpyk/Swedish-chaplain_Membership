@@ -20,7 +20,19 @@ import { vercelBlobErrorCsvStore } from '@/modules/events';
 import { asTenantId } from '@/modules/members';
 import { asCsvImportRecordId } from '@/modules/events';
 
-const BLOB_GATE = Boolean(process.env['BLOB_READ_WRITE_TOKEN']);
+/**
+ * 2026-07-30 sweep fix — presence was not enough. CI seeds env from
+ * `.env.example`, whose `BLOB_READ_WRITE_TOKEN` is the documentation
+ * placeholder `vercel_blob_rw_xxxxxxxxxxxxxxxx`. That satisfied a truthiness
+ * check, so all three roundtrip tests ran against a store that does not exist
+ * and failed with a bare `expected false to be true` — a configuration gap
+ * wearing a product failure's clothes. A placeholder now counts as absent, and
+ * the CI gate below says what is actually missing.
+ */
+const RAW_BLOB_TOKEN = process.env['BLOB_READ_WRITE_TOKEN'] ?? '';
+const IS_PLACEHOLDER_TOKEN =
+  RAW_BLOB_TOKEN === '' || /x{4,}|CHANGE-ME|placeholder/i.test(RAW_BLOB_TOKEN);
+const BLOB_GATE = !IS_PLACEHOLDER_TOKEN;
 const IS_CI = process.env['CI'] === 'true' || process.env['CI'] === '1';
 
 /**
@@ -37,10 +49,16 @@ if (IS_CI && !BLOB_GATE) {
   describe('T038 — Vercel Blob roundtrip CI gate', () => {
     it('FAIL — BLOB_READ_WRITE_TOKEN must be present in CI to validate F6.1 US5 AS2', () => {
       throw new Error(
-        '[R6.B3] CI=true but BLOB_READ_WRITE_TOKEN is unset. ' +
-          'The F6.1 US5 AS2 Vercel Blob roundtrip test cannot run. ' +
-          'Add BLOB_READ_WRITE_TOKEN to CI environment (Vercel project settings → Environment Variables) ' +
-          'OR set CI=false for the workflow if running in a dev shell that cannot access Blob.',
+        RAW_BLOB_TOKEN === ''
+          ? '[R6.B3] CI=true but BLOB_READ_WRITE_TOKEN is unset. The F6.1 US5 AS2 ' +
+            'Vercel Blob roundtrip cannot run. Add a BLOB_READ_WRITE_TOKEN repo ' +
+            'secret for a DISPOSABLE Blob store (never the production store — this ' +
+            'suite writes and deletes objects).'
+          : '[R6.B3] CI=true and BLOB_READ_WRITE_TOKEN is set, but to the ' +
+            '`.env.example` PLACEHOLDER, which points at no store — the roundtrip ' +
+            'would fail with "This store does not exist". Add a BLOB_READ_WRITE_TOKEN ' +
+            'repo secret for a DISPOSABLE Blob store; the workflow prefers it over ' +
+            'the seeded placeholder.',
       );
     });
   });

@@ -67,8 +67,16 @@ jobs:
       CRON_SECRET: synthetic-ci-cron-secret
       RENEWAL_LINK_TOKEN_SECRET_PRIMARY: synthetic-ci-renewal-token-secret-32-chars-padding
       RESEND_BROADCASTS_API_KEY: re_synthetic_ci_placeholder_DO_NOT_USE
-      RESEND_BROADCASTS_WEBHOOK_SECRET: synthetic-ci-secret-32-chars-padding-padding
+      # Svix-shaped (`whsec_` + strict base64). A merely-long secret makes the
+      # F7 webhook suites' own valid signatures verify as 401 — see the sweep
+      # workflow's note. Decodes to "ci-only-synthetic-24bytes".
+      RESEND_BROADCASTS_WEBHOOK_SECRET: 'whsec_Y2ktb25seS1zeW50aGV0aWMtMjRieXRlcw=='
       UNSUBSCRIBE_TOKEN_SECRET: synthetic-ci-token-secret-32-chars-padding
+      # Route-level suites address a tenant with `X-Tenant`; the resolver
+      # ignores that header unless this test-harness flag is on (env.ts refuses
+      # it in production), which silently points cron routes at the deployed
+      # tenant instead.
+      E2E_X_TENANT_HEADER_ENABLED: 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

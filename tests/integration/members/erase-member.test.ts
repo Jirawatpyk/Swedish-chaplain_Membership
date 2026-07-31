@@ -52,6 +52,7 @@ import {
 } from '../helpers/test-users';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { nextSeedMemberNumber } from '../helpers/seed-member-number';
+import { ciScaled } from '../../helpers/ci-latency';
 
 // ---- Test scaffold ---------------------------------------------------------
 
@@ -243,7 +244,7 @@ describe('eraseMember — live-Neon PII oracle (production deps)', () => {
     admin = await createActiveTestUser('admin');
     tenant = await createTestTenant('test-swecham');
     await seedPlan(tenant, admin.userId);
-  }, 30_000);
+  }, ciScaled(30_000));
 
   afterAll(async () => {
     await tenant.cleanup().catch(() => {});
@@ -327,7 +328,7 @@ describe('eraseMember — live-Neon PII oracle (production deps)', () => {
     for (const email of contactEmails) {
       expect(auditJson).not.toContain(email);
     }
-  }, 30_000);
+  }, ciScaled(30_000));
 });
 
 describe('eraseMember — sentinel-email collision (production deps)', () => {
@@ -338,7 +339,7 @@ describe('eraseMember — sentinel-email collision (production deps)', () => {
     admin = await createActiveTestUser('admin');
     tenant = await createTestTenant('test-swecham');
     await seedPlan(tenant, admin.userId);
-  }, 30_000);
+  }, ciScaled(30_000));
 
   afterAll(async () => {
     await tenant.cleanup().catch(() => {});
@@ -386,7 +387,7 @@ describe('eraseMember — sentinel-email collision (production deps)', () => {
     expect(csA[0]?.email).toMatch(/^erased\+.*@erased\.invalid$/);
     expect(csB[0]?.email).toMatch(/^erased\+.*@erased\.invalid$/);
     expect(csA[0]?.email).not.toBe(csB[0]?.email);
-  }, 30_000);
+  }, ciScaled(30_000));
 
   it('erases a member who IS A BRANCH — the tightened branch CHECK must not block Art. 17', async () => {
     // 059 / PR-A Task 5 tightened `members_branch_pairing_ck` to require
@@ -444,5 +445,5 @@ describe('eraseMember — sentinel-email collision (production deps)', () => {
     expect(after.is_vat_registered).toBe(false);
     expect(after.tax_id).toBeNull();
     expect(after.company_name).toBe('[erased]');
-  }, 30_000);
+  }, ciScaled(30_000));
 });

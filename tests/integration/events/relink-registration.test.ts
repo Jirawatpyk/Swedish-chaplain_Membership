@@ -62,6 +62,7 @@ import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
 import { createActiveTestUser } from '../helpers/test-users';
 import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
+import { ciScaled } from '../../helpers/ci-latency';
 
 // Diamond partnership matrix — partnership-tickets-per-event = 6, plenty
 // of headroom so both Member A (pre-relink) and Member B (post-relink)
@@ -1652,7 +1653,7 @@ describe('F6 Phase 9 — relinkRegistration (FR-014 / US6)', () => {
       // — if either thread waited that long, the test would have
       // observed it. We bound at 10s to allow slack for cross-region
       // Neon latency without being permissive of pathological cases.
-      expect(elapsed).toBeLessThan(10_000);
+      expect(elapsed).toBeLessThan(ciScaled(10_000));
 
       // Final state: clean swap. R1 → B, R2 → A; both still counted.
       const rows = await runInTenant(tenant.ctx, (tx) =>
