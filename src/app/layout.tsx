@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { headers } from 'next/headers';
 import { Geist, Geist_Mono } from 'next/font/google';
 import { NextIntlClientProvider } from 'next-intl';
 import { getLocale, getMessages, getNow, getTimeZone } from 'next-intl/server';
@@ -84,6 +85,17 @@ export default async function RootLayout({
     getTimeZone(),
   ]);
 
+  // CSP nonce for next-themes' SSR'd inline theme-setter script. The proxy
+  // mints a fresh nonce per request (proxy.ts NONCE_HEADER) and the CSP is
+  // nonce-based CSP Level 3 with 'strict-dynamic': modern browsers IGNORE
+  // the legacy 'unsafe-inline' fallback whenever a nonce source is present,
+  // so without this prop the theme script is BLOCKED — dark-mode users get
+  // a light-theme flash on every load plus a CSP violation in the console.
+  // `next/headers` reads the proxy-forwarded request headers; empty string
+  // (e.g. a context without the proxy, like some tests) degrades to no
+  // nonce attribute, which matches the pre-fix behaviour.
+  const nonce = (await headers()).get('x-nonce') ?? undefined;
+
   return (
     <html
       lang={locale}
@@ -102,6 +114,7 @@ export default async function RootLayout({
             defaultTheme="system"
             enableSystem
             disableTransitionOnChange
+            {...(nonce !== undefined && { nonce })}
           >
             <SkipToContent />
             <div className="min-h-full">
