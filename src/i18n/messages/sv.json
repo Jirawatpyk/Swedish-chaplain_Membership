@@ -366,7 +366,7 @@
           "all": "Alla",
           "overdue": "Försenad",
           "inProgress": "Pågår",
-          "complete": "Klar",
+          "complete": "Slutförd",
           "countSr": "{count, plural, =0 {inga raderingar} one {# radering} other {# raderingar}}"
         },
         "search": {
@@ -376,8 +376,8 @@
           "clear": "Rensa sökning",
           "empty": "Ingen radering matchar {ref}."
         },
-        "breachAlert": "{count, plural, one {# radering} other {# raderingar}} har passerat den lagstadgade 30-dagarsfristen — detta kan vara en rapporteringspliktig incident. Granska nu.",
-        "allClear": "Alla raderingar är klara — inga utestående incidenter.",
+        "breachAlert": "{count, plural, one {# radering} other {# raderingar}} har passerat den lagstadgade 30-dagarsfristen — detta kan vara ett rapporteringspliktigt intrång. Granska nu.",
+        "allClear": "Alla raderingar är klara — inga utestående intrång.",
         "memberNumber": "Medlem {ref}",
         "erasedAt": "Raderad {at}",
         "reDriveNote": "Slutförd via avstämningens omkörning – siffrorna ovan avser endast denna omgång (den ursprungliga körningen återkallade redan sessionerna och inbjudningarna).",
