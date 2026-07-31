@@ -34,23 +34,36 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
 import { logger } from '@/lib/logger';
 import {
-  loadMembersWithoutCycle,
-  makeRenewalsDeps,
+  type loadMembersWithoutCycle,
   type LoadMembersWithoutCycleOutput,
 } from '@/modules/renewals';
+import type { Settled } from '../_lib/settled';
 
 export async function MembersWithoutCycleTray({
   tenantSlug,
+  resultPromise,
 }: {
   readonly tenantSlug: string;
+  /**
+   * Waterfall fix (eager-island pattern, `_lib/settled.ts`) — the page
+   * CREATES this `loadMembersWithoutCycle` promise BEFORE its blocking
+   * `await loadPipeline` so the anti-join runs concurrently with the
+   * pipeline query. Settled at creation (no unhandled rejection window);
+   * the unwrap re-throws INSIDE the pre-existing try so the catch renders
+   * the exact same LoadErrorCard as before.
+   */
+  readonly resultPromise: Promise<
+    Settled<Awaited<ReturnType<typeof loadMembersWithoutCycle>>>
+  >;
 }) {
   const t = await getTranslations('admin.renewals.membersWithoutCycle');
   const locale = await getLocale();
-  const deps = makeRenewalsDeps(tenantSlug);
 
   let result: LoadMembersWithoutCycleOutput;
   try {
-    const r = await loadMembersWithoutCycle(deps, { tenantId: tenantSlug });
+    const settled = await resultPromise;
+    if (!settled.ok) throw settled.e;
+    const r = settled.v;
     // The error channel is `never` today, so `ok` is always true; THROW if a
     // real error variant is ever added so the catch renders the "couldn't
     // load" card instead of silently showing an EMPTY tray.

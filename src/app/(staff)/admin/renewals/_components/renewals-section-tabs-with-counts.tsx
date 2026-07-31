@@ -33,6 +33,12 @@ import { loadPendingReactivationReview, makeRenewalsDeps } from '@/modules/renew
 import { RenewalsSectionTabs } from './renewals-section-tabs';
 import { countOpenPendingReviewCycles } from '../_lib/pending-review-open-count';
 
+export interface SectionTabCounts {
+  readonly pendingReviewCount: number;
+  readonly tasksCount: number;
+  readonly tierUpgradeCount: number;
+}
+
 export interface RenewalsSectionTabsWithCountsProps {
   readonly tenantSlug: string;
   /**
@@ -41,12 +47,28 @@ export interface RenewalsSectionTabsWithCountsProps {
    * Tier-upgrades pages render the bare strip.
    */
   readonly showPipelineHelp?: boolean;
+  /**
+   * Waterfall fix (eager-island pattern, see `_lib/settled.ts`) — an
+   * ALREADY-RUNNING counts promise created by the caller BEFORE its own
+   * blocking awaits (the pipeline page fires it before `await
+   * loadPipeline`). Absent → the component fires `loadSectionTabCounts`
+   * itself at mount (the pre-existing behaviour; the Tasks / Tier-upgrades /
+   * Pending-review callers have no heavy pre-await to overlap with, so they
+   * keep the simple shape). `loadSectionTabCounts` NEVER rejects (per-read
+   * allSettled + logging inside), so no `settle()` wrapper is needed here.
+   */
+  readonly countsPromise?: Promise<SectionTabCounts>;
 }
 
-export async function RenewalsSectionTabsWithCounts({
-  tenantSlug,
-  showPipelineHelp = false,
-}: RenewalsSectionTabsWithCountsProps) {
+/**
+ * The three tab-count reads, run concurrently with per-read degradation —
+ * ONE failure hides ONLY that badge (count 0), logged with a distinct
+ * errorId. Exported so the pipeline page can START this work before its own
+ * blocking `loadPipeline` await (eager-island waterfall fix); never rejects.
+ */
+export async function loadSectionTabCounts(
+  tenantSlug: string,
+): Promise<SectionTabCounts> {
   const deps = makeRenewalsDeps(tenantSlug);
   const [pendingReviewResult, tasksResult, tierUpgradeResult] =
     await Promise.allSettled([
@@ -115,6 +137,17 @@ export async function RenewalsSectionTabsWithCounts({
     );
   }
 
+  return { pendingReviewCount, tasksCount, tierUpgradeCount };
+}
+
+export async function RenewalsSectionTabsWithCounts({
+  tenantSlug,
+  showPipelineHelp = false,
+  countsPromise,
+}: RenewalsSectionTabsWithCountsProps) {
+  const { pendingReviewCount, tasksCount, tierUpgradeCount } = await (
+    countsPromise ?? loadSectionTabCounts(tenantSlug)
+  );
   return (
     <RenewalsSectionTabs
       showPipelineHelp={showPipelineHelp}
