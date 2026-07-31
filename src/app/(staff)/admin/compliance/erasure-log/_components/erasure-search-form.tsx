@@ -39,10 +39,11 @@ export function ErasureSearchForm({
       <Input
         id="erasure-q"
         name="q"
+        type="search"
         defaultValue={q}
         placeholder={t('search.placeholder')}
         className="h-9 w-44"
-        inputMode="numeric"
+        inputMode="search"
       />
       <Button type="submit" variant="outline" size="sm" className="h-9">
         <SearchIcon className="size-4" aria-hidden />

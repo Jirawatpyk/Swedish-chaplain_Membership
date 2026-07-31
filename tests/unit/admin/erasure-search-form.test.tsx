@@ -23,14 +23,23 @@ describe('ErasureSearchForm', () => {
     expect(container.querySelector('input[type="hidden"][name="status"]')).toHaveAttribute('value', 'overdue');
   });
 
+  it('omits the hidden status field when status is "all"', () => {
+    const { container } = renderForm('all');
+    expect(container.querySelector('input[type="hidden"][name="status"]')).not.toBeInTheDocument();
+  });
+
+  it('renders the current q value in the search input', () => {
+    renderForm('all', '42');
+    expect(screen.getByLabelText(/search by member number/i)).toHaveValue('42');
+  });
+
   it('shows a clear-search link only when q is non-empty', () => {
-    const { rerender } = renderForm('all', '42');
+    renderForm('all', '42');
     expect(screen.getByRole('link', { name: /clear search/i })).toBeInTheDocument();
-    rerender(
-      <NextIntlClientProvider locale="en" messages={enMessages}>
-        <ErasureSearchForm status="all" q="" />
-      </NextIntlClientProvider>,
-    );
+  });
+
+  it('hides the clear-search link when q is empty', () => {
+    renderForm('all', '');
     expect(screen.queryByRole('link', { name: /clear search/i })).not.toBeInTheDocument();
   });
 });
