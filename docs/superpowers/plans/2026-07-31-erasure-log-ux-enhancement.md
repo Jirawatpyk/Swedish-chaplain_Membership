@@ -26,6 +26,12 @@
 - **Never `git add -A`** (untracked PII/junk in the tree). Stage explicit paths only.
 - **Pre-push for a touched module** runs the per-module integration gate; this feature touches `src/modules/insights/**` — if push is slow/among renewals churn, `SKIP_INTEGRATION_PREPUSH=1 git push` is the sanctioned override (the use-case change is covered by unit tests; there is no new DB read to integration-test).
 
+## Sequencing & verification note (read before executing)
+
+Task 1 changes the `getErasureEvidenceLog` input/result shape; its only broken consumer is `erasure-log/page.tsx`, which is not rewired until Task 6. **So from the moment Task 1 lands until Task 6 lands, whole-repo `pnpm typecheck` reports errors — and ONLY errors — in `src/app/(staff)/admin/compliance/erasure-log/page.tsx`** (stale `limit`/`cursor` input, `nextCursor`/`decodeCursor`/`encodeCursor` references). This is expected, not a regression.
+
+Per-task verification for Tasks 1–5 is therefore **scoped**: each implementer runs its own `pnpm vitest run <that task's test file>` (must pass) + `pnpm lint` on the files it touched (must pass), and runs `pnpm typecheck` only to confirm **no error line references a file other than `erasure-log/page.tsx`** (i.e. the task introduced no new type error in its own files). The **full green `pnpm typecheck` + `pnpm check:i18n` + `pnpm lint` gate is asserted at Task 6 and again in the Final gates** — that is where the repo returns to fully green. Execution order is the plan order 1→8 (Task 4 needs Task 1's exported types; Tasks 3/4/5 need Task 2's i18n keys for their render tests; Task 6 needs 1–5).
+
 ---
 
 ## File Structure
@@ -365,8 +371,8 @@ In `src/modules/insights/index.ts`, inside the existing erasure export block (li
 
 Run: `pnpm vitest run tests/unit/insights/erasure-evidence.test.ts`
 Expected: PASS (all existing fold tests + new triage tests).
-Run: `pnpm typecheck`
-Expected: PASS.
+Run: `pnpm typecheck` (scoped check per the Sequencing note)
+Expected: the ONLY error lines reference `erasure-log/page.tsx` (its stale `limit`/`cursor`/`nextCursor` usage, fixed in Task 6). No error may reference `erasure-evidence.ts`, the insights barrel, or the test file. If any error is outside `page.tsx`, this task is not done.
 
 - [ ] **Step 7: Commit**
 
