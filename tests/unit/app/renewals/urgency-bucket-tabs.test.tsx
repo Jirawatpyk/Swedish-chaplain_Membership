@@ -61,6 +61,9 @@ describe('UrgencyBucketTabs colour + All state', () => {
     const url = push.mock.calls[0]![0] as string;
     expect(url).not.toContain('month=');
     expect(url).toContain('urgency=t-30');
+    // Same-page filter → viewport must stay put (operator-reported: the
+    // default scroll-to-top yanked the user away from the tab strip).
+    expect(push.mock.calls[0]![1]).toEqual({ scroll: false });
   });
 });
 
@@ -100,6 +103,7 @@ describe('UrgencyBucketTabs month-lens paused state (item ③ — WCAG 1.4.3 rev
     const url = push.mock.calls[0]![0] as string;
     expect(url).not.toContain('month=');
     expect(url).toContain('urgency=t-30');
+    expect(push.mock.calls[0]![1]).toEqual({ scroll: false });
   });
 
   it('renders NO badge and NO aria-describedby when monthLensActive is absent', () => {

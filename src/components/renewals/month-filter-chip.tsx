@@ -29,7 +29,12 @@ export function MonthFilterChip({ monthKind, monthLabel }: MonthFilterChipProps)
     next.delete('cursor');
     next.delete('nowIso'); // drop the pagination-session anchor (leaves with cursor)
     const qs = next.toString();
-    router.push(qs ? `/admin/renewals?${qs}` : '/admin/renewals');
+    // `scroll: false` — same-page lens CLEAR; also load-bearing for the
+    // focus-restore below: a default scroll-to-top would fight the
+    // requestAnimationFrame focus move back to the chart region.
+    router.push(qs ? `/admin/renewals?${qs}` : '/admin/renewals', {
+      scroll: false,
+    });
     // Return focus to the chart region (its row link unmounts on clear).
     requestAnimationFrame(() => {
       // Best-effort focus-restore: if the section re-rendered into its

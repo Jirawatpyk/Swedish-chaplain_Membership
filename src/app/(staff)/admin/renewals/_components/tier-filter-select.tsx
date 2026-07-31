@@ -54,7 +54,12 @@ export function TierFilterSelect({ current }: TierFilterSelectProps) {
       params.delete('nowIso'); // drop the pagination-session anchor (leaves with cursor)
       const query = params.toString();
       startTransition(() => {
-        router.replace(query ? `${pathname}?${query}` : pathname);
+        // `scroll: false` — same-page filter (`router.replace` also
+        // scroll-resets by default); see `urgency-bucket-tabs.tsx` for the
+        // page-wide filter-vs-view-switch rule.
+        router.replace(query ? `${pathname}?${query}` : pathname, {
+          scroll: false,
+        });
       });
     },
     [searchParams, router, pathname],
