@@ -55,6 +55,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { readErrorCode } from '../../_lib/read-error-code';
 
 const REASON_MIN = 1;
 const REASON_MAX = 500;
@@ -72,16 +73,6 @@ export interface PendingReactivationActionsProps {
 
 interface RejectSuccessBody {
   readonly refund_credit_note_id: string | null;
-}
-
-/** Read `error.code` off a non-2xx JSON body; falls back to server_error. */
-async function readErrorCode(res: Response): Promise<string> {
-  try {
-    const body = (await res.json()) as { error?: { code?: string } };
-    return body.error?.code ?? 'server_error';
-  } catch {
-    return 'server_error';
-  }
 }
 
 export function PendingReactivationActions({

@@ -3292,7 +3292,7 @@
         "columns": {
           "member": "Medlem",
           "pendingSince": "Väntande sedan",
-          "expiry": "Förfallodatum",
+          "expiry": "Utgår",
           "action": "Åtgärd"
         },
         "openAction": "Granska",

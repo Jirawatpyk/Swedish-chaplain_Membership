@@ -158,6 +158,27 @@ describe('<RenewalsSectionTabsWithCounts> best-effort degradation (one read thro
       expect.any(String),
     );
   });
+
+  it('a failed tier-upgrade read hides only the Tier upgrades badge and logs its errorId', async () => {
+    mocks.loadPendingReactivationReview.mockResolvedValue(pendingOk(2));
+    mocks.countMatching.mockResolvedValue(4);
+    mocks.listForAdminQueue.mockRejectedValue(new Error('boom'));
+
+    await renderWithCounts();
+
+    // Tier-upgrades badge absent (count degraded to 0)…
+    expect(
+      screen.queryByText(/tier-upgrade suggestions?/i),
+    ).not.toBeInTheDocument();
+    // …while the other two still render.
+    expect(screen.getByText(/2 cycles awaiting review/i)).toBeInTheDocument();
+    expect(screen.getByText(/4 open tasks/i)).toBeInTheDocument();
+    // A distinct errorId is logged for SRE triage.
+    expect(mocks.loggerError).toHaveBeenCalledWith(
+      expect.objectContaining({ errorId: 'F8.ADMIN.TIER_UPGRADE_COUNT' }),
+      expect.any(String),
+    );
+  });
 });
 
 describe('<RenewalsSectionTabsWithCounts> help popover pass-through', () => {

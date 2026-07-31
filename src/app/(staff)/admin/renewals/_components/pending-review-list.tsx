@@ -63,6 +63,7 @@ import {
 } from '@/components/ui/table';
 import { EmptyState } from '@/components/shell/empty-state';
 import { useDialogFinalFocus } from '@/components/broadcast/reason-confirmation-dialog';
+import { readErrorCode } from '../_lib/read-error-code';
 
 export interface PendingReviewRow {
   readonly cycleId: string;
@@ -118,16 +119,6 @@ export interface PendingReviewListProps {
 interface ApproveTarget {
   readonly cycleId: string;
   readonly finalFocus: () => HTMLElement | null;
-}
-
-/** Read `error.code` off a non-2xx JSON body; falls back to server_error. */
-async function readErrorCode(res: Response): Promise<string> {
-  try {
-    const body = (await res.json()) as { error?: { code?: string } };
-    return body.error?.code ?? 'server_error';
-  } catch {
-    return 'server_error';
-  }
 }
 
 export function PendingReviewList({
