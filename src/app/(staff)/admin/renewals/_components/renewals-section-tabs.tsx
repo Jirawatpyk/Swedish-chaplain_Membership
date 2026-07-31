@@ -182,10 +182,11 @@ export function RenewalsSectionTabs({
           from scrolling horizontally (ux-standards § 9.1) and keeps the help
           Popover trigger (rendered as a sibling below, NOT inside this box)
           always reachable. `min-w-0` lets the box shrink below its content
-          width so the overflow actually engages inside a flex row; the `py-1`
-          gives the focus ring room so `overflow-y` (coerced to `auto` when
-          `overflow-x` is `auto`) can't clip it. */}
-      <div className="min-w-0 overflow-x-auto py-1">
+          width so the overflow actually engages inside a flex row; the
+          `-my-1 py-1` bleed gives the focus ring room so `overflow-y` (coerced
+          to `auto` when `overflow-x` is `auto`) can't clip it, while the
+          negative margin keeps the strip's outer height unchanged. */}
+      <div className="-my-1 min-w-0 overflow-x-auto py-1">
         {/* C1 (#10b) — MANUAL activation. These tabs NAVIGATE (each activation
             fires router.push), so `activateOnFocus={false}` keeps arrow keys a
             focus-only rove: Enter / Space / click activate. Without it, arrowing
