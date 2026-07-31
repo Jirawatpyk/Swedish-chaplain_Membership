@@ -84,6 +84,7 @@ import {
   RenewalsSectionTabs,
   TabCountBadge,
 } from './_components/renewals-section-tabs';
+import { RenewalsSectionTabsWithCounts } from './_components/renewals-section-tabs-with-counts';
 import {
   PendingReviewList,
   type PendingReviewRow,
@@ -92,7 +93,6 @@ import {
   fetchPendingReviewCompanyNames,
   type PendingReviewMemberInfo,
 } from './_lib/pending-review-enrichment';
-import { countOpenPendingReviewCycles } from './_lib/pending-review-open-count';
 import { ResultCountAnnouncer } from '@/components/renewals/result-count-announcer';
 import { ResultCountLabel } from '@/components/renewals/result-count-label';
 
@@ -245,7 +245,16 @@ export default async function RenewalsPipelinePage({
       <RenewalsPageShell title={t('title')} subtitle={t('subtitle')}>
         <Card>
           <CardContent className="flex flex-col gap-4">
-            <RenewalsSectionTabs showPipelineHelp />
+            {/* C3 (#8) — the Pending-review view now also carries the sibling-
+                queue count badges (Tasks / Tier upgrades / its own Pending
+                review), streamed in a Suspense island whose fallback is the
+                bare strip (CLS-safe, only the badges appear once resolved). */}
+            <Suspense fallback={<RenewalsSectionTabs showPipelineHelp />}>
+              <RenewalsSectionTabsWithCounts
+                tenantSlug={tenantCtx.slug}
+                showPipelineHelp
+              />
+            </Suspense>
             <PendingReviewSection
               tenantSlug={tenantCtx.slug}
               locale={locale}
@@ -467,7 +476,10 @@ export default async function RenewalsPipelinePage({
               throw degrades that ONE badge to hidden rather than
               blanking all three. */}
           <Suspense fallback={<RenewalsSectionTabs showPipelineHelp />}>
-            <PipelineSectionTabsWithCount tenantSlug={tenantCtx.slug} />
+            <RenewalsSectionTabsWithCounts
+              tenantSlug={tenantCtx.slug}
+              showPipelineHelp
+            />
           </Suspense>
           {/* Wave 2 Task 7 — the pipeline body + `AtRiskWidget` are now the
               two lenses of ONE `WorkQueueTabs` control (below the section
@@ -777,112 +789,6 @@ async function NeedsActionCountBadge({
   if (count <= 0) return null;
   return (
     <TabCountBadge count={count} label={t('needsActionCountSr', { count })} />
-  );
-}
-
-/**
- * Item ④ (Wave 1 Task 2, plan-wide decision) — streams the three tab-count
- * badges (Pending review / Tasks / Tier upgrades) onto the pipeline view's
- * section tabs WITHOUT adding a query to the pipeline hot path (rendered in
- * a Suspense island by the caller). Reuses EXISTING reads — no new
- * use-case or repo method is authored:
- *
- *   - `pendingReviewCount` — `loadPendingReactivationReview` (same
- *     use-case the "Pending review" view itself renders from).
- *   - `tasksCount` — `escalationTaskRepo.countMatching` with the SAME
- *     `statusFilter: ['open']` shape the Tasks page's overdue-banner count
- *     already uses (just without the overdue-only narrowing), so this is
- *     the total open-task queue size.
- *   - `tierUpgradeCount` — `tierUpgradeRepo.listForAdminQueue` (the exact
- *     call the Tier-upgrades page makes), taking `.items.length` — bounded
- *     by the same `limit: 50` the page itself uses.
- *
- * The three reads run concurrently via `Promise.allSettled` so one load
- * failure degrades ONLY that badge to hidden (count 0) rather than
- * blanking all three — each rejection is logged with a distinct errorId
- * for SRE triage.
- */
-async function PipelineSectionTabsWithCount({
-  tenantSlug,
-}: {
-  readonly tenantSlug: string;
-}) {
-  const deps = makeRenewalsDeps(tenantSlug);
-  const [pendingReviewResult, tasksResult, tierUpgradeResult] =
-    await Promise.allSettled([
-      loadPendingReactivationReview(deps, { tenantId: tenantSlug }),
-      deps.escalationTaskRepo.countMatching(tenantSlug, {
-        statusFilter: ['open'],
-      }),
-      deps.tierUpgradeRepo.listForAdminQueue(tenantSlug, { limit: 50 }),
-    ]);
-
-  let pendingReviewCount = 0;
-  if (pendingReviewResult.status === 'fulfilled') {
-    if (pendingReviewResult.value.ok) {
-      // UX-audit PR-B B5 — count only cycles still awaiting a decision. Cycles
-      // carrying the async reject-with-refund marker are ALREADY decided
-      // (rejected; refund settling) and the list renders them read-only, so
-      // counting them as open work overstates the badge (UX-A Bug 2 parity).
-      pendingReviewCount = countOpenPendingReviewCycles(
-        pendingReviewResult.value.value.cycles,
-      );
-    }
-  } else {
-    logger.error(
-      {
-        errorId: 'F8.ADMIN.PENDING_REVIEW_COUNT',
-        err:
-          pendingReviewResult.reason instanceof Error
-            ? pendingReviewResult.reason.message
-            : String(pendingReviewResult.reason),
-        tenantId: tenantSlug,
-      },
-      '[admin/renewals] pending-review count load failed',
-    );
-  }
-
-  let tasksCount = 0;
-  if (tasksResult.status === 'fulfilled') {
-    tasksCount = tasksResult.value;
-  } else {
-    logger.error(
-      {
-        errorId: 'F8.ADMIN.TASKS_COUNT',
-        err:
-          tasksResult.reason instanceof Error
-            ? tasksResult.reason.message
-            : String(tasksResult.reason),
-        tenantId: tenantSlug,
-      },
-      '[admin/renewals] open-tasks count load failed',
-    );
-  }
-
-  let tierUpgradeCount = 0;
-  if (tierUpgradeResult.status === 'fulfilled') {
-    tierUpgradeCount = tierUpgradeResult.value.items.length;
-  } else {
-    logger.error(
-      {
-        errorId: 'F8.ADMIN.TIER_UPGRADE_COUNT',
-        err:
-          tierUpgradeResult.reason instanceof Error
-            ? tierUpgradeResult.reason.message
-            : String(tierUpgradeResult.reason),
-        tenantId: tenantSlug,
-      },
-      '[admin/renewals] tier-upgrade count load failed',
-    );
-  }
-
-  return (
-    <RenewalsSectionTabs
-      showPipelineHelp
-      pendingReviewCount={pendingReviewCount}
-      tasksCount={tasksCount}
-      tierUpgradeCount={tierUpgradeCount}
-    />
   );
 }
 

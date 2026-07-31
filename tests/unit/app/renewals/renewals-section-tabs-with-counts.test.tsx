@@ -18,30 +18,39 @@ import { render, screen } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
 
+// Hoisted so the vi.mock factories (themselves hoisted above module top) can
+// reference these without the "cannot access before initialization" trap.
+const mocks = vi.hoisted(() => ({
+  loggerError: vi.fn(),
+  loadPendingReactivationReview: vi.fn(),
+  countMatching: vi.fn(),
+  listForAdminQueue: vi.fn(),
+}));
+
 // The rendered client strip reads the router hooks; give it a static pipeline
-// location so exactly one tab is active and none of the count badges depend on
-// navigation state.
+// location so exactly one tab is active and no count badge depends on nav state.
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
   usePathname: () => '/admin/renewals',
   useSearchParams: () => new URLSearchParams(),
 }));
 
-const loggerError = vi.fn();
 vi.mock('@/lib/logger', () => ({
-  logger: { error: loggerError, warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
+  logger: {
+    error: mocks.loggerError,
+    warn: vi.fn(),
+    info: vi.fn(),
+    debug: vi.fn(),
+  },
 }));
 
-const loadPendingReactivationReview = vi.fn();
-const countMatching = vi.fn();
-const listForAdminQueue = vi.fn();
 vi.mock('@/modules/renewals', () => ({
   makeRenewalsDeps: () => ({
-    escalationTaskRepo: { countMatching },
-    tierUpgradeRepo: { listForAdminQueue },
+    escalationTaskRepo: { countMatching: mocks.countMatching },
+    tierUpgradeRepo: { listForAdminQueue: mocks.listForAdminQueue },
   }),
   loadPendingReactivationReview: (...args: unknown[]) =>
-    loadPendingReactivationReview(...args),
+    mocks.loadPendingReactivationReview(...args),
 }));
 
 import { RenewalsSectionTabsWithCounts } from '@/app/(staff)/admin/renewals/_components/renewals-section-tabs-with-counts';
@@ -71,17 +80,17 @@ async function renderWithCounts(showPipelineHelp = false) {
 }
 
 beforeEach(() => {
-  loggerError.mockClear();
-  loadPendingReactivationReview.mockReset();
-  countMatching.mockReset();
-  listForAdminQueue.mockReset();
+  mocks.loggerError.mockClear();
+  mocks.loadPendingReactivationReview.mockReset();
+  mocks.countMatching.mockReset();
+  mocks.listForAdminQueue.mockReset();
 });
 
 describe('<RenewalsSectionTabsWithCounts> wires the three reads into the badges', () => {
   it('renders each count badge from its read (pending-review honest open-count excludes refund-settling)', async () => {
-    loadPendingReactivationReview.mockResolvedValue(pendingOk(2, 1)); // 2 open, 1 settling → badge 2
-    countMatching.mockResolvedValue(7);
-    listForAdminQueue.mockResolvedValue({ items: [{}, {}, {}] }); // 3
+    mocks.loadPendingReactivationReview.mockResolvedValue(pendingOk(2, 1)); // 2 open, 1 settling → badge 2
+    mocks.countMatching.mockResolvedValue(7);
+    mocks.listForAdminQueue.mockResolvedValue({ items: [{}, {}, {}] }); // 3
 
     await renderWithCounts();
 
@@ -99,25 +108,27 @@ describe('<RenewalsSectionTabsWithCounts> wires the three reads into the badges'
     expect(screen.getByText(/3 tier-upgrade suggestions/i)).toBeInTheDocument();
   });
 
-  it('passes the pending-review open-count query the open status filter', async () => {
-    loadPendingReactivationReview.mockResolvedValue(pendingOk(0));
-    countMatching.mockResolvedValue(0);
-    listForAdminQueue.mockResolvedValue({ items: [] });
+  it('passes the open status filter + the 50-row queue cap to the reads', async () => {
+    mocks.loadPendingReactivationReview.mockResolvedValue(pendingOk(0));
+    mocks.countMatching.mockResolvedValue(0);
+    mocks.listForAdminQueue.mockResolvedValue({ items: [] });
 
     await renderWithCounts();
 
-    expect(countMatching).toHaveBeenCalledWith('tenant-a', {
+    expect(mocks.countMatching).toHaveBeenCalledWith('tenant-a', {
       statusFilter: ['open'],
     });
-    expect(listForAdminQueue).toHaveBeenCalledWith('tenant-a', { limit: 50 });
+    expect(mocks.listForAdminQueue).toHaveBeenCalledWith('tenant-a', {
+      limit: 50,
+    });
   });
 });
 
 describe('<RenewalsSectionTabsWithCounts> best-effort degradation (one read throws)', () => {
   it('a failed tasks read hides only the Tasks badge and logs its errorId; other badges survive', async () => {
-    loadPendingReactivationReview.mockResolvedValue(pendingOk(2));
-    countMatching.mockRejectedValue(new Error('boom'));
-    listForAdminQueue.mockResolvedValue({ items: [{}] });
+    mocks.loadPendingReactivationReview.mockResolvedValue(pendingOk(2));
+    mocks.countMatching.mockRejectedValue(new Error('boom'));
+    mocks.listForAdminQueue.mockResolvedValue({ items: [{}] });
 
     await renderWithCounts();
 
@@ -127,22 +138,22 @@ describe('<RenewalsSectionTabsWithCounts> best-effort degradation (one read thro
     expect(screen.getByText(/2 cycles awaiting review/i)).toBeInTheDocument();
     expect(screen.getByText(/1 tier-upgrade suggestion/i)).toBeInTheDocument();
     // A distinct errorId is logged for SRE triage.
-    expect(loggerError).toHaveBeenCalledWith(
+    expect(mocks.loggerError).toHaveBeenCalledWith(
       expect.objectContaining({ errorId: 'F8.ADMIN.TASKS_COUNT' }),
       expect.any(String),
     );
   });
 
   it('a failed pending-review read hides only the Pending review badge and logs its errorId', async () => {
-    loadPendingReactivationReview.mockRejectedValue(new Error('boom'));
-    countMatching.mockResolvedValue(4);
-    listForAdminQueue.mockResolvedValue({ items: [] });
+    mocks.loadPendingReactivationReview.mockRejectedValue(new Error('boom'));
+    mocks.countMatching.mockResolvedValue(4);
+    mocks.listForAdminQueue.mockResolvedValue({ items: [] });
 
     await renderWithCounts();
 
     expect(screen.queryByText(/awaiting review/i)).not.toBeInTheDocument();
     expect(screen.getByText(/4 open tasks/i)).toBeInTheDocument();
-    expect(loggerError).toHaveBeenCalledWith(
+    expect(mocks.loggerError).toHaveBeenCalledWith(
       expect.objectContaining({ errorId: 'F8.ADMIN.PENDING_REVIEW_COUNT' }),
       expect.any(String),
     );
@@ -151,9 +162,9 @@ describe('<RenewalsSectionTabsWithCounts> best-effort degradation (one read thro
 
 describe('<RenewalsSectionTabsWithCounts> help popover pass-through', () => {
   it('forwards showPipelineHelp so the help trigger only renders when asked', async () => {
-    loadPendingReactivationReview.mockResolvedValue(pendingOk(0));
-    countMatching.mockResolvedValue(0);
-    listForAdminQueue.mockResolvedValue({ items: [] });
+    mocks.loadPendingReactivationReview.mockResolvedValue(pendingOk(0));
+    mocks.countMatching.mockResolvedValue(0);
+    mocks.listForAdminQueue.mockResolvedValue({ items: [] });
 
     await renderWithCounts(true);
 

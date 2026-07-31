@@ -22,6 +22,7 @@
  * Kill-switch: when `FEATURE_F8_RENEWALS=false`, returns 404.
  */
 import type { Metadata } from 'next';
+import { Suspense } from 'react';
 import { notFound, redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { headers } from 'next/headers';
@@ -46,6 +47,7 @@ import { EscalationTaskQueue } from './_components/escalation-task-queue';
 import { buildTasksQueueNextHref } from './_lib/build-tasks-queue-next-href';
 import { RenewalsErrorRetry } from '../_components/renewals-error-retry';
 import { RenewalsSectionTabs } from '../_components/renewals-section-tabs';
+import { RenewalsSectionTabsWithCounts } from '../_components/renewals-section-tabs-with-counts';
 
 const VALID_STATUSES = new Set(ESCALATION_TASK_STATUSES);
 const VALID_ASSIGNMENTS = new Set(['all', 'mine', 'unassigned'] as const);
@@ -245,7 +247,13 @@ export default async function EscalationTaskQueuePage({
   return (
     <TableContainer>
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
-      <RenewalsSectionTabs />
+      {/* C3 (#8) — carry the sibling-queue count badges (Pending review /
+          Tasks / Tier upgrades) here too, streamed in a Suspense island whose
+          fallback is the bare strip. showPipelineHelp is omitted (defaults
+          false): the Tasks page renders the strip without the help button. */}
+      <Suspense fallback={<RenewalsSectionTabs />}>
+        <RenewalsSectionTabsWithCounts tenantSlug={tenantCtx.slug} />
+      </Suspense>
       {hasError ? (
         <Card
           className="border-destructive/40 bg-destructive/5"
