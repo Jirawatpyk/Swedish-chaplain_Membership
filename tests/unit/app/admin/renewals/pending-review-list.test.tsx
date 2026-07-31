@@ -373,4 +373,56 @@ describe('<PendingReviewList> — B2 inline Approve', () => {
       vi.unstubAllGlobals();
     }
   });
+
+  it('closes the dialog on a 409 reject_refund_in_progress: specific toast, refresh, and finalFocus returns #main-content (opposite of the generic-error keep-row path)', async () => {
+    // A 409 means the cycle was rejected (async refund in flight) between render
+    // and click. Unlike the generic-500 path (dialog stays open, row survives),
+    // the component fires the SPECIFIC reject-in-progress toast, raises
+    // `closedViaSuccessRef`, closes the dialog, and refreshes so the row
+    // re-renders into the settling (read-only) state.
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: async () => ({ error: { code: 'reject_refund_in_progress' } }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      renderList([UNMARKED], { canApprove: true });
+      fireEvent.click(screen.getByRole('button', { name: APPROVE_TRIGGER }));
+      // Dialog is open (its mocked content is mounted) before the confirm.
+      expect(screen.getByTestId('approve-dialog-content')).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+
+      // The SPECIFIC reject-in-progress toast fires — NOT the generic
+      // "Couldn't approve" copy (proves the 409 branch, not the fallthrough).
+      await waitFor(() =>
+        expect(toastError).toHaveBeenCalledWith(
+          'This reactivation was already rejected — a refund is settling, so it can no longer be approved.',
+        ),
+      );
+      expect(toastSuccess).not.toHaveBeenCalled();
+
+      // The dialog CLOSES (approveTarget nulled → the mocked Dialog renders null),
+      // and the page refreshes so the row re-renders read-only.
+      await waitFor(() =>
+        expect(
+          screen.queryByTestId('approve-dialog-content'),
+        ).not.toBeInTheDocument(),
+      );
+      expect(refreshMock).toHaveBeenCalled();
+
+      // `closedViaSuccessRef` was raised on the 409 close path, so the STABLE
+      // finalFocus resolver (read LIVE by Base UI at close) skips the vanishing
+      // Approve trigger and lands on #main-content — NOT the trigger, NOT
+      // null/<body> (WCAG 2.1 AA SC 2.4.3).
+      const mainContent = document.getElementById('main-content');
+      expect(mainContent).not.toBeNull();
+      expect(typeof capturedDialogFinalFocus).toBe('function');
+      const resolve = capturedDialogFinalFocus as () => HTMLElement | null;
+      expect(resolve()).toBe(mainContent);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });
