@@ -48,8 +48,12 @@ export default defineConfig({
     // while all four of its tests passed — a green suite reported as a red
     // file. The ceiling is a runaway-guard, not a budget, so raising it in CI
     // costs nothing when things are healthy.
-    testTimeout: process.env.CI ? 120_000 : 30_000,
-    hookTimeout: process.env.CI ? 120_000 : 30_000,
+    // 2026-07-30 sweep: `eventcreate-csv-real-fixtures` blew the 120 s CI
+    // ceiling on a real fixture import — 300+ statements, each paying the
+    // trans-Pacific round-trip. Raised to 240 s rather than trimming the
+    // fixture, because the fixture size is the point of that suite.
+    testTimeout: process.env.CI ? 240_000 : 30_000,
+    hookTimeout: process.env.CI ? 240_000 : 30_000,
     // Integration tests touch a real DB — run sequentially to avoid flakes.
     pool: 'forks',
     poolOptions: {

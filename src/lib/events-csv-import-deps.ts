@@ -182,10 +182,27 @@ export type RunImportCsvOutcome = ImportCsvOutcome;
  * union verbatim — the route handler maps each kind to its HTTP
  * status (200 / 400 / 504 / 500).
  */
+/**
+ * `F6_IMPORT_TIME_BUDGET_MS`, when set to a positive integer, replaces the
+ * use-case's 55 s default. Parsed here rather than in `src/lib/env.ts` because
+ * it is an operational escape hatch for slow-link environments (CI), not part
+ * of the deployment contract — a missing or malformed value simply means "use
+ * the default", never a boot failure.
+ */
+function importTimeBudgetMsFromEnv(): number | undefined {
+  const raw = process.env.F6_IMPORT_TIME_BUDGET_MS;
+  if (raw === undefined) return undefined;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
 export async function runImportCsv(
   input: RunImportCsvInput,
 ): Promise<RunImportCsvOutcome> {
   const deps = makeImportCsvDeps();
+  // Read once: under `exactOptionalPropertyTypes` a second call would widen
+  // back to `number | undefined` and the conditional spread would not narrow.
+  const timeBudgetOverrideMs = importTimeBudgetMsFromEnv();
   // F6.1 (T024 sub-task e) — brand the validated-string event_id to
   // `EventId` at the composition layer. Route stays framework-aware
   // (no `@/modules/events` domain imports for branding); composition
@@ -220,6 +237,16 @@ export async function runImportCsv(
       // Read once at composition time so a flag flip drains in seconds
       // for new requests; in-flight imports complete normally per E14.
       adapterEnabled: env.features.f6EventCreateAdapter,
+      // Operational override for the use-case's 55 s default "may a new batch
+      // start" gate. Exists because that default is sized for a caller ~25 ms
+      // from Neon: on a GitHub runner (~200 ms per statement) a fixture import
+      // that finishes comfortably on a laptop trips the budget and returns
+      // `timeout`, which is what reddened the 2026-07-30 events sweep. Unset in
+      // production, where the default is the right guard against outliving the
+      // function's own limit.
+      ...(timeBudgetOverrideMs !== undefined && {
+        timeBudgetMs: timeBudgetOverrideMs,
+      }),
     },
     deps,
   );

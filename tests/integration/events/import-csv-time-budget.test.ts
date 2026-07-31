@@ -31,6 +31,7 @@ import { asUserId } from '@/modules/auth';
 import { asTenantId } from '@/modules/members';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { f6CsvTestSelectedEventStub } from '../../unit/events/_helpers/f6-csv-test-fixtures';
+import { ciScaled } from '../../helpers/ci-latency';
 
 function buildBudgetCsv(rows: number): Uint8Array {
   const header =
@@ -83,11 +84,20 @@ describe('H-10 — time-budget short-circuit semantics', () => {
     async () => {
       // Strategy: `batchSize=1` + large ROW_COUNT + small budget makes
       // the test deterministic across runner-region tiers:
-      //   - cross-region Neon (~50-100ms/row RTT): budget=400ms allows
-      //     ~3-8 rows before the wall-clock check trips, ROW_COUNT
+      //   - cross-region Neon (~50-100ms/row RTT): the budget allows a
+      //     handful of rows before the wall-clock check trips, ROW_COUNT
       //     stays well above the persist count.
-      //   - intra-region prod (~5-10ms/row RTT): budget=400ms allows
-      //     ~30-50 rows before trip, ROW_COUNT=500 stays well above.
+      //   - intra-region prod (~5-10ms/row RTT): dozens of rows before
+      //     trip, ROW_COUNT=500 stays well above.
+      //
+      // 2026-07-30 — the budget was 400 ms flat, which assumed ≥1 row always
+      // fits inside it. The check runs BEFORE each batch, so when one row costs
+      // more than the whole budget, ZERO rows commit and the persistence
+      // assertion below fails with `expected 0 to be greater than 0`. That is
+      // what the first CI sweep hit, and it then reproduced locally twice on a
+      // dev branch under load. Widened to 1.5 s, and `ciScaled` takes it to 9 s
+      // on a runner: at ~1 s/row there that is still ~9 of 500 rows, so both
+      // halves of the contract (some commit, not all) keep their margin.
       // On every runner: SOME rows commit (proves cross-tx persistence
       // invariant) AND not all rows commit (proves the timeout
       // short-circuit actually fires). NEW-L unit test pins the
@@ -109,7 +119,7 @@ describe('H-10 — time-budget short-circuit semantics', () => {
           },
           batchSize: BATCH_SIZE,
           batchConcurrency: 1,
-          timeBudgetMs: 400,
+          timeBudgetMs: ciScaled(1_500),
         },
         deps,
       );
