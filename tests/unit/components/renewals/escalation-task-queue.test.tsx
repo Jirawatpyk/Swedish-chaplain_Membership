@@ -210,6 +210,8 @@ describe('<EscalationTaskQueue> — task-type filter (shadcn Select)', () => {
 
     expect(replace).toHaveBeenCalledTimes(1);
     expect(String(replace.mock.calls[0]?.[0])).toBe('?task_type=director_call');
+    // Same-page filter → viewport stays put (admin-filters-scroll-preserve).
+    expect(replace.mock.calls[0]?.[1]).toEqual({ scroll: false });
   });
 
   it('choosing "All types" (the ALL sentinel) clears the task_type param, not sets it literally', () => {

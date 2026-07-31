@@ -300,7 +300,11 @@ export function EscalationTaskQueue({
     // on tab/tier/lens change). `cursor` is only ever set by the footer link.
     params.delete('cursor');
     const qs = params.toString();
-    startTransition(() => router.replace(qs.length > 0 ? `?${qs}` : '?'));
+    // Same-page filter → preserve scroll (canonical rule comment: renewals
+    // `urgency-bucket-tabs.tsx` handleChange).
+    startTransition(() =>
+      router.replace(qs.length > 0 ? `?${qs}` : '?', { scroll: false }),
+    );
   }
 
   /**

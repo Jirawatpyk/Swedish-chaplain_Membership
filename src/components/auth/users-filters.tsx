@@ -53,7 +53,11 @@ export function UsersFilters() {
       params.delete('page');
       const query = params.toString();
       startTransition(() => {
-        router.replace(query ? `${pathname}?${query}` : pathname);
+        // Same-page filter → preserve scroll (canonical rule comment:
+        // renewals `urgency-bucket-tabs.tsx` handleChange).
+        router.replace(query ? `${pathname}?${query}` : pathname, {
+          scroll: false,
+        });
       });
     },
     [searchParams, router, pathname],

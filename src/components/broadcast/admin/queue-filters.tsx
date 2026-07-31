@@ -142,7 +142,11 @@ export function QueueFilters({
       params.delete('cursor');
       const query = params.toString();
       startTransition(() => {
-        router.replace(query ? `${pathname}?${query}` : pathname);
+        // Same-page filter → preserve scroll (canonical rule comment:
+        // renewals `urgency-bucket-tabs.tsx` handleChange).
+        router.replace(query ? `${pathname}?${query}` : pathname, {
+          scroll: false,
+        });
       });
     },
     [searchParams, router, pathname],
@@ -208,7 +212,9 @@ export function QueueFilters({
   const clearAll = useCallback(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     startTransition(() => {
-      router.replace(pathname);
+      // Reset is a same-page filter change too — treated consistently with
+      // `pushUrl` above (scroll preserved).
+      router.replace(pathname, { scroll: false });
     });
   }, [router, pathname]);
 
