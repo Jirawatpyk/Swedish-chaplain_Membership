@@ -2,9 +2,13 @@
  * T117 — Admin review queue table (server async wrapper).
  *
  * Pre-formats every i18n string + locale-aware date so the client-side
- * `QueueTableClient` (TanStack Table v8 + react-virtual) renders without
- * needing locale or i18n at runtime. Activates virtualization above 100
- * rows (perf.md CHK039).
+ * `QueueTableClient` (TanStack Table v8) renders without needing locale or
+ * i18n at runtime. Task 2 (2026-08-01-broadcast-review-queue-pr2) removed
+ * row virtualization (`@tanstack/react-virtual`, threshold 100 rows,
+ * perf.md CHK039) — the queue query pages at 50 rows, so the threshold
+ * never fired in production. Task 3 switched the desktop table to the
+ * shared `@/components/ui/table.tsx` primitive, matching the
+ * members/renewals lists.
  */
 import { Inbox } from 'lucide-react';
 import { getLocale, getTranslations } from 'next-intl/server';

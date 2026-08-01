@@ -176,4 +176,19 @@ describe('QueueTableClient a11y + ICU', () => {
       expect(tr).not.toHaveAttribute('aria-hidden');
     });
   });
+
+  // Task 3 (2026-08-01-broadcast-review-queue-pr2) — the desktop table now
+  // renders through the shared `@/components/ui/table.tsx` primitive
+  // instead of a hand-rolled `<table>`, for consistency with the
+  // members/renewals lists. Asserts the primitive's data-slot markers +
+  // sticky header + focusable scroll region, rather than re-testing the
+  // primitive's own internals (covered by its own test suite).
+  it('renders through the shared Table primitive (focusable region + sticky header)', () => {
+    const { container } = renderTable();
+    expect(container.querySelector('[data-slot="table"]')).not.toBeNull();
+    const region = container.querySelector('[data-slot="table-container"]');
+    expect(region).toHaveAttribute('tabindex', '0');
+    expect(region).toHaveAttribute('role', 'region');
+    expect(container.querySelector('[data-slot="table-header"]')).toHaveClass('sticky');
+  });
 });

@@ -9,6 +9,13 @@
  * fired in production. Dead code removed to unblock the shared `<Table>`
  * adoption (Task 3).
  *
+ * Task 3 — the desktop table markup now renders through the shared
+ * `@/components/ui/table.tsx` primitive (focusable `role="region"` scroll
+ * container, sticky `bg-card` header, `--table-row-height` rows) instead
+ * of a hand-rolled `<table>`, matching the members/renewals lists. Wrapped
+ * in `hidden md:block` to prepare Task 4's mobile card dual-render (the
+ * card list itself is out of scope here).
+ *
  * Smart-2 (2026-04-30): admins can multi-select `submitted` rows and
  * bulk-approve in one click via Promise.allSettled (catalogue Feature #7).
  *
@@ -36,6 +43,14 @@ import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 import { ReviewActions } from './review-actions';
 
@@ -384,29 +399,6 @@ export function QueueTableClient({
     });
   };
 
-  const headerRow = (
-    <tr>
-      {table.getHeaderGroups()[0]?.headers.map((header) => {
-        const alignRight = header.column.id === 'recipientCount';
-        const narrow = header.column.id === 'select';
-        return (
-          <th
-            key={header.id}
-            scope="col"
-            className={cn(
-              'px-3 py-2',
-              alignRight && 'text-right',
-              !alignRight && !narrow && 'text-left',
-              narrow && 'w-10',
-            )}
-          >
-            {flexRender(header.column.columnDef.header, header.getContext())}
-          </th>
-        );
-      })}
-    </tr>
-  );
-
   // UX-R2-5 (round-3) + Round-4 CRIT-D — sticky bar uses the staff
   // shell's `--top-bar-height` CSS variable (defined globally and
   // applied at `src/app/(staff)/admin/layout.tsx` header). The bar sits
@@ -468,29 +460,45 @@ export function QueueTableClient({
     <>
       {selectionAnnouncer}
       {bulkBar}
-      <div className="overflow-x-auto rounded-md border">
-        <table className="w-full min-w-[920px] text-sm">
-          <thead className="bg-muted/50 text-xs uppercase tracking-wide">
-            {headerRow}
-          </thead>
-          <tbody>
+      {/* Desktop only — Task 4 adds the mobile card dual-render below md. */}
+      <div className="hidden md:block">
+        <Table aria-label={columnLabels.tableAria}>
+          <TableHeader>
+            {table.getHeaderGroups().map((headerGroup) => (
+              <TableRow key={headerGroup.id}>
+                {headerGroup.headers.map((header) => {
+                  const alignRight = header.column.id === 'recipientCount';
+                  const narrow = header.column.id === 'select';
+                  return (
+                    <TableHead
+                      key={header.id}
+                      scope="col"
+                      className={cn(alignRight && 'text-right', narrow && 'w-10')}
+                    >
+                      {header.isPlaceholder
+                        ? null
+                        : flexRender(header.column.columnDef.header, header.getContext())}
+                    </TableHead>
+                  );
+                })}
+              </TableRow>
+            ))}
+          </TableHeader>
+          <TableBody>
             {rowModel.rows.map((row) => (
-              <tr key={row.id} className="border-t">
+              <TableRow key={row.id} data-state={row.getIsSelected() ? 'selected' : undefined}>
                 {row.getVisibleCells().map((cell) => {
                   const alignRight = cell.column.id === 'recipientCount';
                   return (
-                    <td
-                      key={cell.id}
-                      className={`px-3 py-2 ${alignRight ? 'text-right' : ''}`}
-                    >
+                    <TableCell key={cell.id} className={cn(alignRight && 'text-right')}>
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </td>
+                    </TableCell>
                   );
                 })}
-              </tr>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
     </>
   );
