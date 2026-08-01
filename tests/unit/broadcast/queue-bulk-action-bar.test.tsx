@@ -21,9 +21,18 @@
  * `fetch` is stubbed per-test (renewals `pipeline-bulk-action-bar.test.tsx`
  * convention) for the fan-out tests; the render/spacer/cap/empty tests never
  * click Approve, so no network call happens in them.
+ *
+ * Task 4 (2026-08-02-broadcast-review-queue-pr3) — "Approve selected" no
+ * longer fans out directly; it opens `BulkApproveConfirmDialog` (Task 3),
+ * so every fan-out test below now clicks through the send-now confirm
+ * button first. `userEvent` (not `fireEvent.click`) is required for the
+ * dialog's own RadioGroup interactions — Base UI Radio dispatches via
+ * PointerEvent internally, which jsdom does not implement, hence the
+ * polyfill below (copied from `bulk-approve-confirm-dialog.test.tsx`).
  */
-import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, within, act, fireEvent, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { BULK_CAP } from '@/lib/members-bulk-constants';
@@ -44,6 +53,23 @@ vi.mock('sonner', () => ({
     warning: (...a: unknown[]) => toastWarning(...a),
   },
 }));
+
+// Base UI Radio (inside BulkApproveConfirmDialog) dispatches via
+// PointerEvent, which jsdom does not implement — polyfill copied from
+// tests/unit/broadcast/bulk-approve-confirm-dialog.test.tsx /
+// tests/unit/broadcast/queue-with-bulk.test.tsx.
+beforeAll(() => {
+  if (typeof globalThis.PointerEvent === 'undefined') {
+    // @ts-expect-error — minimal polyfill for jsdom
+    globalThis.PointerEvent = class PointerEvent extends MouseEvent {
+      readonly pointerId: number;
+      constructor(type: string, params?: PointerEventInit) {
+        super(type, params);
+        this.pointerId = params?.pointerId ?? 0;
+      }
+    };
+  }
+});
 
 type RoCallback = (entries: ReadonlyArray<Record<string, unknown>>) => void;
 let roCb: RoCallback | undefined;
@@ -75,6 +101,14 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
 });
+
+/** Opens the confirm dialog via "Approve selected" and confirms send-now. */
+async function approveViaSendNowConfirm(): Promise<void> {
+  await userEvent.click(screen.getByRole('button', { name: 'Approve selected' }));
+  await userEvent.click(
+    await screen.findByRole('button', { name: /Approve & send now/ }),
+  );
+}
 
 function Provider({ children }: { children: React.ReactNode }) {
   return (
@@ -226,6 +260,26 @@ describe('QueueBulkActionBar — recipientByIdRows', () => {
     // only assert the prop typechecks and the bar still renders the toolbar.
     expect(screen.getByRole('toolbar')).toBeInTheDocument();
   });
+
+  it('the confirm dialog shows the CORRECT sum over the capped set — 10 + 5 = 15 across 2 broadcasts', async () => {
+    render(
+      <Provider>
+        <QueueBulkActionBar
+          selectedIds={['b1', 'b2']}
+          readOnly={false}
+          onClear={vi.fn()}
+          recipientByIdRows={[
+            { broadcastId: 'b1', recipientCount: 10 },
+            { broadcastId: 'b2', recipientCount: 5 },
+          ]}
+        />
+      </Provider>,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Approve selected' }));
+    expect(
+      await screen.findByText(/Reaches ~15 recipients across 2 broadcasts/),
+    ).toBeInTheDocument();
+  });
 });
 
 describe('QueueBulkActionBar — hidden states', () => {
@@ -258,6 +312,83 @@ describe('QueueBulkActionBar — hidden states', () => {
   });
 });
 
+describe('QueueBulkActionBar — bulk-approve confirm gate', () => {
+  it('opens the confirm dialog instead of approving immediately', async () => {
+    const fetchMock = fetchMockOf(async () => jsonResponse({ ok: true }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <Provider>
+        <QueueBulkActionBar
+          selectedIds={['b1']}
+          onClear={vi.fn()}
+          readOnly={false}
+          recipientByIdRows={[]}
+        />
+      </Provider>,
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Approve selected' }));
+    expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled(); // no POST before confirm
+  });
+
+  it('send-now confirm posts exactly {decision:"send_now"} — NO recipient/total field (tamper-safety)', async () => {
+    const fetchMock = fetchMockOf(async () => jsonResponse({ ok: true }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <Provider>
+        <QueueBulkActionBar
+          selectedIds={['b1']}
+          onClear={vi.fn()}
+          readOnly={false}
+          recipientByIdRows={[{ broadcastId: 'b1', recipientCount: 99 }]}
+        />
+      </Provider>,
+    );
+
+    await approveViaSendNowConfirm();
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const body = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string);
+    // Tamper-safety: the fan-out body must carry ONLY `decision` — never a
+    // recipient count or total, no matter how large `recipientByIdRows`
+    // says the true audience is.
+    expect(body).toEqual({ decision: 'send_now' });
+  });
+
+  it('schedule confirm posts {decision:"schedule", scheduledFor:<Bangkok-resolved ISO>}', async () => {
+    const fetchMock = fetchMockOf(async () => jsonResponse({ ok: true }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <Provider>
+        <QueueBulkActionBar
+          selectedIds={['b1']}
+          onClear={vi.fn()}
+          readOnly={false}
+          recipientByIdRows={[]}
+        />
+      </Provider>,
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Approve selected' }));
+    await userEvent.click(await screen.findByRole('radio', { name: /Schedule/ }));
+    fireEvent.change(screen.getByLabelText(/Send at/), {
+      target: { value: '2099-01-01T09:00' },
+    });
+    await userEvent.click(screen.getByRole('button', { name: /Approve & schedule/ }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const body = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string);
+    expect(body).toEqual({
+      decision: 'schedule',
+      scheduledFor: '2099-01-01T02:00:00.000Z',
+    });
+  });
+});
+
 describe('QueueBulkActionBar — bulk-approve fan-out', () => {
   it('POSTs {decision: send_now} to the approve endpoint for every selected id, clears selection, and refreshes on full success', async () => {
     const fetchMock = fetchMockOf(async () => jsonResponse({ ok: true }));
@@ -275,7 +406,7 @@ describe('QueueBulkActionBar — bulk-approve fan-out', () => {
       </Provider>,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Approve selected' }));
+    await approveViaSendNowConfirm();
 
     await waitFor(() => expect(onClear).toHaveBeenCalledTimes(1));
 
@@ -309,7 +440,7 @@ describe('QueueBulkActionBar — bulk-approve fan-out', () => {
       </Provider>,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Approve selected' }));
+    await approveViaSendNowConfirm();
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(BULK_CAP));
     const urls = fetchMock.mock.calls.map(([u]) => String(u));
@@ -332,7 +463,7 @@ describe('QueueBulkActionBar — bulk-approve fan-out', () => {
       </Provider>,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Approve selected' }));
+    await approveViaSendNowConfirm();
 
     await waitFor(() => expect(toastError).toHaveBeenCalledTimes(1));
     expect(onClear).not.toHaveBeenCalled();
@@ -361,7 +492,7 @@ describe('QueueBulkActionBar — bulk-approve fan-out', () => {
       </Provider>,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Approve selected' }));
+    await approveViaSendNowConfirm();
 
     await waitFor(() => expect(toastWarning).toHaveBeenCalledTimes(1));
     expect(toastWarning).toHaveBeenCalledWith('1 approved, 1 failed.');

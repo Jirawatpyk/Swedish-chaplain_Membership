@@ -61,14 +61,28 @@
  * explicit: `cappedIds = selectedIds.slice(0, BULK_CAP)` and the button
  * "runs the fan-out over cappedIds", i.e. truncate-and-still-run rather
  * than block-until-split. The over-cap alert communicates the truncation.
+ *
+ * Task 4 (2026-08-02-broadcast-review-queue-pr3) — the "Approve selected"
+ * button no longer fans out directly. It opens `BulkApproveConfirmDialog`
+ * (Task 3), which is the ONLY caller of `handleBulkApprove` now that the
+ * handler takes a `BulkApproveDecision` param. This is the load-bearing
+ * tamper-safety seam: `BulkApproveDecision` structurally carries only
+ * `type` (+ `scheduledFor` for schedule) — never a recipient count — so the
+ * per-row request body built from it cannot include `totalRecipients`
+ * even by accident. The dialog itself never fetches; it is purely a
+ * confirmation gate in front of this component's existing fan-out.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { XIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { BULK_CAP } from '@/lib/members-bulk-constants';
+import {
+  BulkApproveConfirmDialog,
+  type BulkApproveDecision,
+} from '@/components/broadcast/admin/bulk-approve-confirm-dialog';
 
 const BULK_CHUNK = 5;
 
@@ -114,6 +128,12 @@ export function QueueBulkActionBar({
   const router = useRouter();
   const [executing, setExecuting] = useState(false);
 
+  // Task 4 — the confirm dialog's own open state + the "Approve selected"
+  // trigger ref (F7-A11Y-1 finalFocus target, per `review-actions.tsx`'s
+  // approve/reject-trigger precedent).
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const approveBtnRef = useRef<HTMLButtonElement | null>(null);
+
   // Sticky-bar spacer — verbatim copy of `bulk-action-bar.tsx:138-158`.
   const barRef = useRef<HTMLDivElement | null>(null);
   const [barHeight, setBarHeight] = useState(64);
@@ -144,25 +164,35 @@ export function QueueBulkActionBar({
   // (the actually-actioned set), never raw `selectedIds`: the total must
   // match what the fan-out below will actually approve, not what's merely
   // checked past the cap.
-  const recipientById = new Map(
-    recipientByIdRows.map((r) => [r.broadcastId, r.recipientCount]),
-  );
-  // Consumed by the confirm dialog in Task 4
-  // (`<BulkApproveConfirmDialog totalRecipients={totalRecipients} …>`) — not
-  // read yet in this task.
-  const totalRecipients = cappedIds.reduce(
-    (sum, id) => sum + (recipientById.get(id) ?? 0),
-    0,
-  );
+  //
+  // Task 4 — memoized: consumed on every render by the confirm dialog
+  // below, so without this the Map + reduce would be rebuilt on every
+  // keystroke inside that dialog's own schedule input (a sibling state
+  // update in this same component tree re-renders the bar too).
+  const totalRecipients = useMemo(() => {
+    const recipientById = new Map(
+      recipientByIdRows.map((r) => [r.broadcastId, r.recipientCount]),
+    );
+    return cappedIds.reduce((sum, id) => sum + (recipientById.get(id) ?? 0), 0);
+  }, [recipientByIdRows, cappedIds]);
 
   // IMP-1 (queue-table-client.tsx round-3) — chunked Promise.allSettled,
   // moved verbatim in spirit (see module docstring for what could not
   // carry over unchanged). Each chunk awaits before the next so we never
   // exceed BULK_CHUNK concurrent requests against the approve endpoint.
-  const handleBulkApprove = useCallback(async () => {
+  //
+  // Task 4 — parameterized on the confirm dialog's `BulkApproveDecision`.
+  // `rowBody` is built ONLY from `decision`'s own fields — `decision` has
+  // no `totalRecipients`/recipient field to leak, so this is the
+  // tamper-safety guarantee made structural rather than just reviewed-by-eye.
+  const handleBulkApprove = useCallback(async (decision: BulkApproveDecision) => {
     if (cappedIds.length === 0 || executing) return;
     setExecuting(true);
     try {
+      const rowBody =
+        decision.type === 'send_now'
+          ? { decision: 'send_now' as const }
+          : { decision: 'schedule' as const, scheduledFor: decision.scheduledFor };
       const outcomes: Outcome[] = [];
 
       for (let i = 0; i < cappedIds.length; i += BULK_CHUNK) {
@@ -173,7 +203,7 @@ export function QueueBulkActionBar({
               method: 'POST',
               credentials: 'same-origin',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ decision: 'send_now' }),
+              body: JSON.stringify(rowBody),
             });
             return { res, id };
           }),
@@ -282,9 +312,10 @@ export function QueueBulkActionBar({
               {t('clear')}
             </Button>
             <Button
+              ref={approveBtnRef}
               size="sm"
               disabled={executing}
-              onClick={handleBulkApprove}
+              onClick={() => setConfirmOpen(true)}
               className="min-h-11 whitespace-nowrap"
             >
               {t('approveSelected')}
@@ -297,6 +328,17 @@ export function QueueBulkActionBar({
           wrapped multi-row bar can never cover the last table row or the
           pagination control. */}
       <div data-testid="queue-bulk-spacer" style={{ height: barHeight }} aria-hidden="true" />
+
+      <BulkApproveConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        broadcastCount={cappedIds.length}
+        selectedCount={selectedIds.length}
+        cap={BULK_CAP}
+        totalRecipients={totalRecipients}
+        onConfirm={(d) => handleBulkApprove(d)}
+        triggerRef={approveBtnRef}
+      />
     </>
   );
 }
