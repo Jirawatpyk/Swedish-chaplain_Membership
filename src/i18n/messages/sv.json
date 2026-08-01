@@ -2897,7 +2897,7 @@
             "sendNow": "Skicka nu",
             "schedule": "Schemalägg",
             "sendNowWarning": "E-post skickas omedelbart och kan inte återkallas.",
-            "scheduleLabel": "Skicka",
+            "scheduleLabel": "Sändtid",
             "scheduleHelp": "Minst 5 minuter från nu. Tidszon: Asia/Bangkok.",
             "schedulePreviewLabel": "Skickas den:",
             "confirmSendNow": "Godkänn & skicka nu",
