@@ -29,6 +29,7 @@ const green: SlaStats = {
   bannerSeverity: 'green',
 };
 const red: SlaStats = { ...green, p95TimeToDecisionHours: 60, bannerSeverity: 'red' };
+const amber: SlaStats = { ...green, p95TimeToDecisionHours: 42, bannerSeverity: 'amber' };
 
 afterEach(() => {
   cleanup();
@@ -49,6 +50,14 @@ describe('SlaBanner', () => {
     const { container } = render(ui);
     expect(container.querySelector('[role="alert"]')).not.toBeNull();
     expect(container.innerHTML).toContain('destructive');
+  });
+
+  it('amber severity uses the semantic warning token, not raw amber', async () => {
+    const ui = await SlaBanner({ stats: amber });
+    const { container } = render(ui);
+    expect(container.innerHTML).toMatch(/bg-warning-surface/);
+    expect(container.innerHTML).toMatch(/text-warning/);
+    expect(container.innerHTML).not.toMatch(/amber-/);
   });
 
   it('compact renders an inline stat, not a full coloured banner (no region role, no severity bg)', async () => {

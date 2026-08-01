@@ -28,9 +28,9 @@ const SEVERITY_STYLES: Record<SlaStats['bannerSeverity'], string> = {
 };
 
 const PILL_STYLES: Record<SlaStats['bannerSeverity'], string> = {
-  green: 'bg-success/15',
-  amber: 'bg-warning/15',
-  red: 'bg-destructive/15',
+  green: 'bg-success text-success-foreground',
+  amber: 'bg-warning text-warning-foreground',
+  red: 'bg-destructive text-destructive-foreground',
 };
 
 export interface SlaBannerProps {
@@ -54,7 +54,8 @@ export async function SlaBanner({
   if (compact) {
     return (
       <p className="text-xs text-muted-foreground tabular-nums">
-        {t('medianRolling30d', { hours: fmt(stats.medianTimeToDecisionHours) })} ·{' '}
+        {t('medianRolling30d', { hours: fmt(stats.medianTimeToDecisionHours) })}{' '}
+        <span aria-hidden="true">·</span>{' '}
         {t('p95Rolling30d', { hours: fmt(stats.p95TimeToDecisionHours) })}
       </p>
     );
