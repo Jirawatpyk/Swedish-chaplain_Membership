@@ -2888,7 +2888,34 @@
           "overCapHelper": "Du valde {count} — endast de första {max} åtgärdas.",
           "successAll": "Alla markerade utskick godkända.",
           "failureAll": "Massgodkännande misslyckades. Försök igen eller godkänn ett i taget.",
-          "partial": "{ok} godkända, {fail} misslyckades."
+          "partial": "{ok} godkända, {fail} misslyckades.",
+          "confirm": {
+            "title": "Godkänn {count, plural, one {# utskick} other {# utskick}}?",
+            "recipientTotal": "Når ~{recipients, plural, one {# mottagare} other {# mottagare}} över {count, plural, one {# utskick} other {# utskick}}.",
+            "overCapNote": "Endast de första {max} av {selected} valda godkänns.",
+            "decisionLabel": "När ska det skickas",
+            "sendNow": "Skicka nu",
+            "schedule": "Schemalägg",
+            "sendNowWarning": "E-post skickas omedelbart och kan inte återkallas.",
+            "scheduleLabel": "Skicka",
+            "scheduleHelp": "Minst 5 minuter från nu. Tidszon: Asia/Bangkok.",
+            "schedulePreviewLabel": "Skickas den:",
+            "confirmSendNow": "Godkänn & skicka nu",
+            "confirmSchedule": "Godkänn & schemalägg",
+            "cancel": "Avbryt"
+          },
+          "undo": {
+            "sendingSendNow": "Skickar {count, plural, one {# utskick} other {# utskick}} om 60 s.",
+            "action": "Ångra",
+            "reason": "Ångrat av administratör från granskningskön",
+            "success": "Avbröt {count, plural, one {# utskick} other {# utskick}}.",
+            "tooLate": "Skickar redan — för sent att ångra {count, plural, one {# utskick} other {# utskick}}.",
+            "failed": "Kunde inte ångra {count, plural, one {# utskick} other {# utskick}} — fortfarande godkända."
+          },
+          "progress": {
+            "label": "Godkänner…",
+            "message": "Godkände {done} av {total}…"
+          }
         },
         "card": {
           "actionsLabel": "Åtgärder",

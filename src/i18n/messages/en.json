@@ -2888,7 +2888,34 @@
           "overCapHelper": "You selected {count} — only the first {max} will be actioned.",
           "successAll": "All selected broadcasts approved.",
           "failureAll": "Bulk approve failed. Try again or approve individually.",
-          "partial": "{ok} approved, {fail} failed."
+          "partial": "{ok} approved, {fail} failed.",
+          "confirm": {
+            "title": "Approve {count, plural, one {# broadcast} other {# broadcasts}}?",
+            "recipientTotal": "Reaches ~{recipients, plural, one {# recipient} other {# recipients}} across {count, plural, one {# broadcast} other {# broadcasts}}.",
+            "overCapNote": "Only the first {max} of {selected} selected will be approved.",
+            "decisionLabel": "When to send",
+            "sendNow": "Send now",
+            "schedule": "Schedule",
+            "sendNowWarning": "Emails send immediately and cannot be recalled.",
+            "scheduleLabel": "Send at",
+            "scheduleHelp": "At least 5 minutes from now. Time zone: Asia/Bangkok.",
+            "schedulePreviewLabel": "Will be sent on:",
+            "confirmSendNow": "Approve & send now",
+            "confirmSchedule": "Approve & schedule",
+            "cancel": "Cancel"
+          },
+          "undo": {
+            "sendingSendNow": "Sending {count, plural, one {# broadcast} other {# broadcasts}} in 60s.",
+            "action": "Undo",
+            "reason": "Undone by admin from the review queue",
+            "success": "Cancelled {count, plural, one {# broadcast} other {# broadcasts}}.",
+            "tooLate": "Already sending — too late to undo {count, plural, one {# broadcast} other {# broadcasts}}.",
+            "failed": "Couldn't undo {count, plural, one {# broadcast} other {# broadcasts}} — still approved."
+          },
+          "progress": {
+            "label": "Approving…",
+            "message": "Approving {done} of {total}…"
+          }
         },
         "card": {
           "actionsLabel": "Actions",
