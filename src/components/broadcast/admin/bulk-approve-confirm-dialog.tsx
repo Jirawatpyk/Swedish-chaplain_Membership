@@ -7,7 +7,7 @@
  * this dialog instead of firing the fan-out directly.
  *
  * Mirrors `approve-dialog.tsx`'s AlertDialog + RadioGroup structure (same
- * send-now/schedule choice + irreversible warning), with two deliberate
+ * send-now/schedule choice + irreversible warning), with three deliberate
  * differences:
  *
  *   - Uses the SHARED `bangkok-datetime.ts` helper (`bangkokInputToIso` /
@@ -20,7 +20,15 @@
  *     only disables on `scheduledFor === ''`; a too-soon-but-non-empty
  *     schedule stays clickable there and is only rejected inside the click
  *     handler. Here the button itself stays disabled until the schedule is
- *     both present AND past the 5-minute floor.
+ *     both present AND past the 5-minute floor. `handleConfirm` ALSO
+ *     re-validates the lead time fresh at click time (not the cached
+ *     `leadTimeOk`), so a button left visually-enabled while the admin
+ *     hesitated across the 5-minute boundary still cannot submit.
+ *   - Shows a resolved Bangkok wall-time preview under the schedule field
+ *     (`schedulePreviewLabel`, parity with `approve-dialog.tsx:267-298`) —
+ *     the bulk gate has a larger blast radius, so the admin should see the
+ *     RESOLVED send time, not just the raw text they typed, before
+ *     confirming an irreversible schedule.
  *
  * The recipient total is DISPLAY-ONLY: this component never fetches — it
  * only calls `props.onConfirm(decision)`. `BulkApproveDecision` structurally
@@ -30,7 +38,7 @@
  * Task 4's fan-out test).
  */
 import { useRef, useState } from 'react';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -49,6 +57,7 @@ import {
   bangkokMinInputAfterMinutes,
 } from '@/components/broadcast/bangkok-datetime';
 import { useDialogFinalFocus } from '@/components/broadcast/reason-confirmation-dialog';
+import { getDateFormatLocale } from '@/lib/format-date-localised';
 
 const MIN_LEAD_MS = 5 * 60 * 1000;
 
@@ -78,6 +87,7 @@ export function BulkApproveConfirmDialog(
   props: BulkApproveConfirmDialogProps,
 ): React.JSX.Element {
   const t = useTranslations('admin.broadcasts.queue.bulk.confirm');
+  const locale = useLocale();
   const [decision, setDecision] = useState<'send_now' | 'schedule'>('send_now');
   const [scheduledInput, setScheduledInput] = useState('');
   // Whether the CURRENTLY TYPED schedule clears the >5min lead-time floor.
@@ -112,11 +122,33 @@ export function BulkApproveConfirmDialog(
   // freezing at the value from the render that first opened it.
   const minInput = bangkokMinInputAfterMinutes(6);
 
+  // Pure — `bangkokInputToIso` only parses/re-zones the given string, it never
+  // reads the clock, so recomputing this every render does not trip the
+  // components-and-hooks-must-be-pure rule (unlike `isFarEnoughAhead` below,
+  // which reads `Date.now()` and must stay confined to event handlers).
+  // Reused for both the schedule preview and the `scheduledFor` payload.
+  const scheduledIso =
+    decision === 'schedule' ? bangkokInputToIso(scheduledInput) : null;
+
   function isFarEnoughAhead(iso: string | null): boolean {
     return iso !== null && Date.parse(iso) > Date.now() + MIN_LEAD_MS;
   }
 
   const scheduleValid = decision === 'send_now' || leadTimeOk;
+
+  // Resolved Bangkok wall-time preview shown under the schedule field once a
+  // parseable time is entered (Fix round 1 — parity with
+  // `approve-dialog.tsx:267-298`'s preview, but for the bulk gate's larger
+  // blast radius: the admin should see the RESOLVED send time, not just the
+  // raw text they typed, before confirming an irreversible schedule).
+  const schedulePreview =
+    scheduledIso !== null
+      ? new Intl.DateTimeFormat(getDateFormatLocale(locale), {
+          dateStyle: 'medium',
+          timeStyle: 'short',
+          timeZone: 'Asia/Bangkok',
+        }).format(new Date(scheduledIso))
+      : null;
 
   // F7-A11Y-1 — the "Approve selected" trigger unmounts once the bulk bar
   // clears on a successful approve, so closedViaSuccessRef makes the
@@ -133,9 +165,9 @@ export function BulkApproveConfirmDialog(
     // Re-validate at click time (rather than trusting the cached
     // `leadTimeOk`) — a send-safety gate must not let a schedule that
     // drifted below the 5-minute floor while the admin hesitated slip
-    // through on a stale check.
-    const scheduledIso =
-      decision === 'schedule' ? bangkokInputToIso(scheduledInput) : null;
+    // through on a stale check. `scheduledIso` itself is pure/current (it
+    // only re-parses `scheduledInput`, unaffected by elapsed time); only
+    // `isFarEnoughAhead`'s internal `Date.now()` needs a fresh call here.
     if (decision === 'schedule' && !isFarEnoughAhead(scheduledIso)) return;
     closedViaSuccessRef.current = true;
     props.onConfirm(
@@ -218,6 +250,11 @@ export function BulkApproveConfirmDialog(
                 }}
                 aria-describedby="bulk-approve-scheduled-for-help"
               />
+              {schedulePreview !== null ? (
+                <p className="text-sm text-muted-foreground">
+                  {t('schedulePreviewLabel')} <span>{schedulePreview}</span>
+                </p>
+              ) : null}
               <p
                 id="bulk-approve-scheduled-for-help"
                 className="text-xs text-muted-foreground"

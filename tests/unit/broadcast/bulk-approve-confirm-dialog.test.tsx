@@ -23,6 +23,17 @@
  *     `bangkok-datetime.ts` helper, not `new Date(localString)` (which
  *     would use the test runner's own TZ): a `09:00` Bangkok (UTC+7)
  *     input must yield `02:00:00.000Z`.
+ *   - a resolved Bangkok-wall-time preview renders once the schedule is
+ *     parseable (Fix round 1 — parity with `approve-dialog.tsx`'s preview),
+ *     showing a FORMATTED date, not the raw `datetime-local` string echoed
+ *     back.
+ *   - (Fix round 1, MOST IMPORTANT) `handleConfirm`'s fresh `Date.now()`
+ *     re-check is exercised directly via `vi.spyOn(Date, 'now')`: a button
+ *     left visually-enabled (`leadTimeOk` computed when the lead time was
+ *     still OK) must NOT let `onConfirm` fire once the clock advances past
+ *     the 5-minute floor without the input being re-touched. This guards
+ *     against a future "simplification" that trusts the cached boolean and
+ *     silently reopens the too-soon-schedule gap this dialog exists to close.
  *
  * Base UI Radio dispatches via PointerEvent, which jsdom does not
  * implement — polyfill copied from
@@ -48,6 +59,7 @@ import {
   BulkApproveConfirmDialog,
   type BulkApproveConfirmDialogProps,
 } from '@/components/broadcast/admin/bulk-approve-confirm-dialog';
+import { bangkokInputToIso } from '@/components/broadcast/bangkok-datetime';
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
@@ -69,7 +81,12 @@ beforeAll(() => {
 beforeEach(() => {
   vi.useRealTimers();
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  // Restores any `vi.spyOn(Date, 'now')` from the stale-guard test below so
+  // a failure there can't poison the clock for later tests in this file.
+  vi.restoreAllMocks();
+});
 
 function renderDialog(
   overrides: Partial<BulkApproveConfirmDialogProps> = {},
@@ -138,5 +155,59 @@ describe('BulkApproveConfirmDialog', () => {
       type: 'schedule',
       scheduledFor: expect.stringMatching(/^2099-01-01T02:00:00\.000Z$/),
     });
+  });
+
+  it('shows a formatted Bangkok-time preview once a valid schedule is entered', async () => {
+    renderDialog({});
+    await userEvent.click(screen.getByRole('radio', { name: /Schedule/ }));
+    const input = screen.getByLabelText(/Send at/);
+    fireEvent.change(input, { target: { value: '2099-01-01T09:00' } });
+
+    expect(screen.getByText(/Will be sent on:/)).toBeInTheDocument();
+
+    // The preview must show a FORMATTED date resolved from the shared TZ
+    // helper — not the raw datetime-local string echoed back verbatim.
+    const expectedPreview = new Intl.DateTimeFormat('en', {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+      timeZone: 'Asia/Bangkok',
+    }).format(new Date('2099-01-01T02:00:00.000Z'));
+    expect(screen.getByText(expectedPreview)).toBeInTheDocument();
+    expect(screen.queryByText('2099-01-01T09:00')).not.toBeInTheDocument();
+  });
+
+  it('re-validates lead time at click time — a stale-enabled button cannot submit a too-soon schedule', async () => {
+    const onConfirm = vi.fn();
+    renderDialog({ onConfirm });
+    // Base UI Radio dispatches via PointerEvent internally — `userEvent.click`
+    // (not `fireEvent.click`) is required to actually flip the selection, per
+    // the polyfill note above.
+    await userEvent.click(screen.getByRole('radio', { name: /Schedule/ }));
+
+    const targetLocal = '2099-01-01T09:00';
+    const targetIso = bangkokInputToIso(targetLocal);
+    expect(targetIso).not.toBeNull();
+    const xMs = Date.parse(targetIso!);
+
+    const nowSpy = vi.spyOn(Date, 'now');
+
+    // 6 minutes before the target — clears the 5-minute floor, so typing it
+    // now enables the button.
+    nowSpy.mockReturnValue(xMs - 6 * 60 * 1000);
+    const input = screen.getByLabelText(/Send at/);
+    fireEvent.change(input, { target: { value: targetLocal } });
+    const confirm = screen.getByRole('button', { name: /Approve & schedule/ });
+    expect(confirm).toBeEnabled();
+
+    // The clock advances to only 4 minutes before the target — below the
+    // 5-minute floor — WITHOUT re-touching the input, so the cached
+    // `leadTimeOk` state (computed at the 6-minute mark) stays stale-true
+    // and the button remains visually enabled.
+    nowSpy.mockReturnValue(xMs - 4 * 60 * 1000);
+    expect(confirm).toBeEnabled();
+    fireEvent.click(confirm);
+
+    // The fresh re-check inside `handleConfirm` must still block the submit.
+    expect(onConfirm).not.toHaveBeenCalled();
   });
 });
