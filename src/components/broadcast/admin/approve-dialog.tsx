@@ -84,6 +84,13 @@ export interface ApproveDialogProps {
    * layout's #main-content landmark when omitted.
    */
   readonly fallbackFocusRef?: React.RefObject<HTMLElement | null>;
+  /**
+   * Task 6 (2026-08-01-broadcast-review-queue-pr1) — estimated recipient
+   * count from `EnrichedQueueRow`, threaded via `ReviewActions` so the
+   * admin sees who a broadcast reaches before approving. Undefined
+   * omits the line entirely (e.g. call sites that don't yet have it).
+   */
+  readonly recipientCount?: number;
 }
 
 export function ApproveDialog({
@@ -92,6 +99,7 @@ export function ApproveDialog({
   onOpenChange,
   triggerRef,
   fallbackFocusRef,
+  recipientCount,
 }: ApproveDialogProps): React.ReactElement {
   const t = useTranslations('admin.broadcasts.approveDialog');
   const tToast = useTranslations('admin.broadcasts.toast');
@@ -201,6 +209,11 @@ export function ApproveDialog({
         <AlertDialogHeader>
           <AlertDialogTitle>{t('title')}</AlertDialogTitle>
           <AlertDialogDescription>{t('description')}</AlertDialogDescription>
+          {recipientCount !== undefined ? (
+            <p className="text-sm text-muted-foreground">
+              {t('recipientCount', { count: recipientCount })}
+            </p>
+          ) : null}
         </AlertDialogHeader>
         {/* C3 UX hardening — removed `aria-disabled` on the fieldset.
             HTML `disabled` on a `<fieldset>` disables all descendant

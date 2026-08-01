@@ -47,6 +47,7 @@ export async function QueueTable({
   const t = await getTranslations('admin.broadcasts.queue');
   const tActor = await getTranslations('admin.broadcasts.queue.actorRole');
   const tStatus = await getTranslations('admin.broadcasts.queue.status');
+  const tSegment = await getTranslations('admin.broadcasts.review.segmentType');
   const locale = await getLocale();
   const dateFormatter = new Intl.DateTimeFormat(
     getDateFormatLocale(locale),
@@ -116,7 +117,7 @@ export async function QueueTable({
         row.actorRole !== 'member_self_service'
           ? tActor(row.actorRole as Parameters<typeof tActor>[0])
           : null,
-      segmentLabel: row.segmentType,
+      segmentLabel: tSegment(row.segmentType as Parameters<typeof tSegment>[0]),
       recipientCount: row.estimatedRecipientCount,
       submittedAtFormatted: submittedAt,
       ageBadge,
@@ -143,13 +144,6 @@ export async function QueueTable({
         status: t('columns.status'),
         actions: t('columns.actions'),
         select: t('bulk.selectAria'),
-        bulkApprove: t('bulk.approveSelected'),
-        bulkClear: t('bulk.clear'),
-        // Raw templates — client substitutes {count}/{ok}/{fail} via .replace()
-        bulkSelected: t.raw('bulk.selected') as string,
-        bulkSuccess: t('bulk.successAll'),
-        bulkFailure: t('bulk.failureAll'),
-        bulkPartial: t.raw('bulk.partial') as string,
         tableAria: t('tableAria'),
       }}
     />

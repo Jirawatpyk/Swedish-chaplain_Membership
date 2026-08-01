@@ -9,6 +9,8 @@ import { buttonVariants } from '@/components/ui/button';
 import { QueueTable, type QueueRow } from '@/components/broadcast/admin/queue-table';
 import { QueueFilters } from '@/components/broadcast/admin/queue-filters';
 import { SlaBanner, type SlaStats } from '@/components/broadcast/admin/sla-banner';
+import { OverdueBanner } from '@/components/broadcast/admin/overdue-banner';
+import { isDefaultBroadcastView } from './_lib/is-default-view';
 import { HaltStateBanner } from '@/components/broadcast/admin/halt-state-banner';
 import { ManagerReadonlyBanner } from '@/components/broadcast/admin/manager-readonly-banner';
 import { isF71aUs7Enabled } from '@/modules/broadcasts';
@@ -259,6 +261,34 @@ export default async function AdminBroadcastsPage({
   )) as unknown as Array<{ n: number }>;
   const totalPending = pendingRows[0]?.n ?? 0;
 
+  // Overdue-now count — `submitted` broadcasts waiting > 48h. Distinct
+  // from `slaStats`'s 30-day rolling median/p95 (decided broadcasts
+  // only): this is a point-in-time CURRENT-backlog count over the
+  // still-`submitted` queue, so a healthy 30-day trend can't mask a
+  // pile-up sitting in the queue right now. Routed through
+  // `runInTenant` for the same RLS+FORCE reason as `totalPending`.
+  const overdueRows = (await runInTenant(tenant, async (tx) =>
+    tx.execute(sql`
+      SELECT COUNT(*)::int AS n FROM broadcasts
+      WHERE tenant_id = ${tenant.slug}
+        AND status = 'submitted'
+        AND submitted_at < NOW() - INTERVAL '48 hours'
+    `),
+  )) as unknown as Array<{ n: number }>;
+  const overdueCount = overdueRows[0]?.n ?? 0;
+
+  // Overdue banner + truncation note only on the default `submitted`
+  // view — a filtered/searched subset would mislead (mirror
+  // erasure-log unfiltered gating in
+  // `compliance/erasure-log/page.tsx`). Delegated to a pure helper
+  // (`_lib/is-default-view.ts`) that mirrors `queue-filters.tsx`'s
+  // `hasAnyFilter` — including `fromDate`/`toDate` — so this gate can
+  // never drift from what the filter bar's "Reset" button considers
+  // an active filter (Task 3 review fix, Important).
+  const isDefaultView = isDefaultBroadcastView(params);
+  const showOverdue = isDefaultView && overdueCount > 0;
+  const truncated = isDefaultView && listResult.nextCursor !== null;
+
   // F7.1a US7 (T112+) — surface admin templates entry-point on the
   // queue header. Gated by isF71aUs7Enabled so when the flag is OFF
   // the link doesn't render a path that would 404 via notFound() on
@@ -309,7 +339,11 @@ export default async function AdminBroadcastsPage({
           ) : null}
         </div>
       </div>
-      <SlaBanner stats={slaStats} />
+      <OverdueBanner count={showOverdue ? overdueCount : 0} />
+      <SlaBanner stats={slaStats} compact={showOverdue} />
+      {truncated ? (
+        <p className="text-xs text-muted-foreground">{t('truncationNote')}</p>
+      ) : null}
       <HaltStateBanner halted={haltedSerialised} readOnly={isReadOnlyManager} />
       {isReadOnlyManager ? <ManagerReadonlyBanner /> : null}
       <QueueFilters memberOptions={memberOptions} />
