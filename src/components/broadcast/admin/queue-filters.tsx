@@ -49,6 +49,21 @@ const DEBOUNCE_MS = 300;
 // constant so memo deps stay stable across renders.
 const DEFAULT_STATUS: ReadonlyArray<BroadcastStatus> = ['submitted'];
 
+// WS-G: the status chip strip is split into two visually-grouped
+// clusters so admins can scan "still needs attention" separately from
+// "already resolved" instead of parsing a flat 10-chip row. TERMINAL
+// is DERIVED by filtering BROADCAST_STATUSES against IN_REVIEW (not
+// hand-listed) so a newly-added status can't silently vanish from
+// both groups.
+const IN_REVIEW_STATUSES: ReadonlyArray<BroadcastStatus> = [
+  'submitted',
+  'approved',
+  'sending',
+  'draft',
+];
+const TERMINAL_STATUSES: ReadonlyArray<BroadcastStatus> =
+  BROADCAST_STATUSES.filter((s) => !IN_REVIEW_STATUSES.includes(s));
+
 export interface QueueFiltersProps {
   readonly memberOptions: ReadonlyArray<{
     readonly memberId: string;
@@ -61,6 +76,7 @@ export function QueueFilters({
 }: QueueFiltersProps): React.ReactElement {
   const t = useTranslations('admin.broadcasts.queue.filters');
   const tStatus = useTranslations('admin.broadcasts.queue.status');
+  const tStatusGroup = useTranslations('admin.broadcasts.queue.statusGroup');
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -234,23 +250,51 @@ export function QueueFilters({
         <legend className="mb-[var(--field-label-gap)] text-[length:var(--font-size-body)] font-medium">
           {t('statusLabel')}
         </legend>
-        <div className="flex flex-wrap gap-2">
-          {BROADCAST_STATUSES.map((s) => (
-            <label
-              key={s}
-              className="flex min-h-[44px] cursor-pointer items-center gap-1.5 rounded-full border bg-background px-3 py-2 text-xs hover:bg-muted/40 has-[:checked]:bg-primary/10 has-[:checked]:border-primary/40"
-            >
-              <input
-                type="checkbox"
-                name="status"
-                value={s}
-                checked={isStatusChecked(s)}
-                onChange={(e) => toggleStatus(s, e.target.checked)}
-                className="h-4 w-4 accent-primary"
-              />
-              <span>{tStatus(s)}</span>
-            </label>
-          ))}
+        <div className="flex flex-wrap gap-3">
+          <div
+            role="group"
+            aria-label={tStatusGroup('inReview')}
+            className="flex flex-wrap gap-2"
+          >
+            {IN_REVIEW_STATUSES.map((s) => (
+              <label
+                key={s}
+                className="flex min-h-[44px] cursor-pointer items-center gap-1.5 rounded-full border bg-background px-3 py-2 text-xs hover:bg-muted/40 has-[:checked]:bg-primary/10 has-[:checked]:border-primary/40"
+              >
+                <input
+                  type="checkbox"
+                  name="status"
+                  value={s}
+                  checked={isStatusChecked(s)}
+                  onChange={(e) => toggleStatus(s, e.target.checked)}
+                  className="h-4 w-4 accent-primary"
+                />
+                <span>{tStatus(s)}</span>
+              </label>
+            ))}
+          </div>
+          <div
+            role="group"
+            aria-label={tStatusGroup('terminal')}
+            className="flex flex-wrap gap-2"
+          >
+            {TERMINAL_STATUSES.map((s) => (
+              <label
+                key={s}
+                className="flex min-h-[44px] cursor-pointer items-center gap-1.5 rounded-full border bg-background px-3 py-2 text-xs hover:bg-muted/40 has-[:checked]:bg-primary/10 has-[:checked]:border-primary/40"
+              >
+                <input
+                  type="checkbox"
+                  name="status"
+                  value={s}
+                  checked={isStatusChecked(s)}
+                  onChange={(e) => toggleStatus(s, e.target.checked)}
+                  className="h-4 w-4 accent-primary"
+                />
+                <span>{tStatus(s)}</span>
+              </label>
+            ))}
+          </div>
         </div>
       </fieldset>
 
@@ -320,7 +364,7 @@ export function QueueFilters({
           variant="ghost"
           size="sm"
           onClick={clearAll}
-          className="ml-auto whitespace-nowrap"
+          className="whitespace-nowrap"
         >
           <XIcon className="size-4" aria-hidden="true" />
           {t('reset')}

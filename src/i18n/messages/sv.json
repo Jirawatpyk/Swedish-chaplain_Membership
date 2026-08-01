@@ -2927,6 +2927,10 @@
           "partially_sent": "Delvis skickad",
           "partial_delivery_accepted": "Godkänd partiell leverans"
         },
+        "statusGroup": {
+          "inReview": "Under granskning",
+          "terminal": "Avslutade"
+        },
         "actorRole": {
           "member_self_service": "Medlem",
           "admin_proxy": "Admin (ombud)",

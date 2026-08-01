@@ -2927,6 +2927,10 @@
           "partially_sent": "Partially sent",
           "partial_delivery_accepted": "Partial delivery accepted"
         },
+        "statusGroup": {
+          "inReview": "In review",
+          "terminal": "Completed"
+        },
         "actorRole": {
           "member_self_service": "Member",
           "admin_proxy": "Admin (proxy)",

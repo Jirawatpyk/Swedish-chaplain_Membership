@@ -2880,7 +2880,7 @@
         "bulk": {
           "selectAria": "เลือก E-Blast",
           "selected": "{count, plural, other {เลือกแล้ว # รายการ}}",
-          "toolbarLabel": "การดำเนินการแบบกลุ่มสำหรับบรอดแคสต์ที่เลือก",
+          "toolbarLabel": "การดำเนินการแบบกลุ่มสำหรับ E-Blast ที่เลือก",
           "selectedCount": "{count, plural, other {เลือกแล้ว # รายการ}}",
           "approveSelected": "อนุมัติรายการที่เลือก",
           "clear": "ล้าง",
@@ -2926,6 +2926,10 @@
           "failed_to_dispatch": "ส่งไม่สำเร็จ",
           "partially_sent": "ส่งสำเร็จบางส่วน",
           "partial_delivery_accepted": "ยอมรับการส่งบางส่วนแล้ว"
+        },
+        "statusGroup": {
+          "inReview": "กำลังตรวจสอบ",
+          "terminal": "เสร็จสิ้น"
         },
         "actorRole": {
           "member_self_service": "สมาชิก",
