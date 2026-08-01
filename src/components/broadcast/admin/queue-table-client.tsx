@@ -53,6 +53,7 @@ import {
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 import { ReviewActions } from './review-actions';
+import { QueueCardList } from './queue-card-list';
 
 type BadgeVariant =
   | 'default'
@@ -460,7 +461,10 @@ export function QueueTableClient({
     <>
       {selectionAnnouncer}
       {bulkBar}
-      {/* Desktop only — Task 4 adds the mobile card dual-render below md. */}
+      {/* Task 4 — dual-render: desktop `<table>` hidden below `md`, mobile
+          `QueueCardList` hidden at/above `md`. Both read from the SAME
+          `table` instance built above, so a selection made in one
+          presentation is visible in the other across a breakpoint resize. */}
       <div className="hidden md:block">
         <Table aria-label={columnLabels.tableAria}>
           <TableHeader>
@@ -516,6 +520,12 @@ export function QueueTableClient({
           </TableBody>
         </Table>
       </div>
+      <QueueCardList
+        table={table}
+        readOnly={readOnly}
+        columnLabels={columnLabels}
+        className="md:hidden"
+      />
     </>
   );
 }

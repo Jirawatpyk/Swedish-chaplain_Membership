@@ -216,14 +216,23 @@ describe('QueueTableClient a11y + ICU', () => {
         />
       </NextIntlClientProvider>,
     );
-    const subjectLink = within(container).getByRole('link', { name: longSubject });
+    // Task 4 (2026-08-01-broadcast-review-queue-pr2) — the mobile
+    // `QueueCardList` dual-render also shows the subject (as a link with
+    // the same accessible name), so this desktop-only assertion must be
+    // scoped to the `<table>` itself, not the whole container. jsdom
+    // applies no real CSS, so the `hidden md:block` / `md:hidden` wrapper
+    // classes don't hide either tree from queries — only the `[data-slot=
+    // "table"]` scope disambiguates which one is desktop.
+    const desktopTable = container.querySelector<HTMLElement>('[data-slot="table"]');
+    expect(desktopTable).not.toBeNull();
+    const subjectLink = within(desktopTable!).getByRole('link', { name: longSubject });
     const subjectCell = subjectLink.closest('[data-slot="table-cell"]');
     expect(subjectCell).not.toBeNull();
     expect(subjectCell).toHaveClass('whitespace-normal');
     expect(subjectCell).toHaveClass('break-words');
     // Other columns are unaffected — recipientCount stays nowrap (inherited
     // from the shared primitive's default) and right-aligned.
-    const recipientCell = within(container).getByText('5').closest('[data-slot="table-cell"]');
+    const recipientCell = within(desktopTable!).getByText('5').closest('[data-slot="table-cell"]');
     expect(recipientCell).not.toHaveClass('whitespace-normal');
   });
 });
