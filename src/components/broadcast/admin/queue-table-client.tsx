@@ -489,8 +489,24 @@ export function QueueTableClient({
               <TableRow key={row.id} data-state={row.getIsSelected() ? 'selected' : undefined}>
                 {row.getVisibleCells().map((cell) => {
                   const alignRight = cell.column.id === 'recipientCount';
+                  // Review round 1, I-1 — `TableCell` applies `whitespace-nowrap`
+                  // to every cell. `subject` is free-text up to ~200 chars (F7
+                  // sanitiser cap) and the primary column admins scan; under
+                  // table auto-layout an un-wrapped long subject widens the
+                  // whole table past its container. Restore wrapping on this
+                  // column only, capped so one very long word/subject can't
+                  // still blow out the column width. Precedent:
+                  // `members-table.tsx` "057 overflow fix" (`whitespace-normal
+                  // break-words` replacing `whitespace-nowrap`).
+                  const wrapSubject = cell.column.id === 'subject';
                   return (
-                    <TableCell key={cell.id} className={cn(alignRight && 'text-right')}>
+                    <TableCell
+                      key={cell.id}
+                      className={cn(
+                        alignRight && 'text-right',
+                        wrapSubject && 'max-w-[40ch] whitespace-normal break-words',
+                      )}
+                    >
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </TableCell>
                   );

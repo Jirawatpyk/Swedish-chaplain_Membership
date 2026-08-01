@@ -183,12 +183,47 @@ describe('QueueTableClient a11y + ICU', () => {
   // members/renewals lists. Asserts the primitive's data-slot markers +
   // sticky header + focusable scroll region, rather than re-testing the
   // primitive's own internals (covered by its own test suite).
+  //
+  // Review round 1, M-1 — also assert `aria-label={columnLabels.tableAria}`
+  // actually reaches the region. Without this, a regression in that wiring
+  // would silently fall back to the primitive's hardcoded English
+  // `'Data table'` default and no test would fail.
   it('renders through the shared Table primitive (focusable region + sticky header)', () => {
     const { container } = renderTable();
     expect(container.querySelector('[data-slot="table"]')).not.toBeNull();
     const region = container.querySelector('[data-slot="table-container"]');
     expect(region).toHaveAttribute('tabindex', '0');
     expect(region).toHaveAttribute('role', 'region');
+    expect(region).toHaveAttribute('aria-label', columnLabels.tableAria);
     expect(container.querySelector('[data-slot="table-header"]')).toHaveClass('sticky');
+  });
+
+  // Review round 1, I-1 — the shared `TableCell` applies `whitespace-nowrap`
+  // to every cell by default. `subject` is free-text up to ~200 chars (F7
+  // sanitiser cap) and the primary column admins scan; left un-wrapped, a
+  // long subject widens the whole table past its container on every wide
+  // row. Guards the fix (`whitespace-normal break-words` on the subject
+  // cell only — precedent: `members-table.tsx` "057 overflow fix") against
+  // regression.
+  it('wraps a long subject instead of forcing table overflow', () => {
+    const longSubject =
+      'A'.repeat(60) + ' ' + 'B'.repeat(60) + ' very long broadcast subject line for review';
+    const { container } = render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <QueueTableClient
+          rows={[{ ...base, subject: longSubject }]}
+          columnLabels={columnLabels}
+        />
+      </NextIntlClientProvider>,
+    );
+    const subjectLink = within(container).getByRole('link', { name: longSubject });
+    const subjectCell = subjectLink.closest('[data-slot="table-cell"]');
+    expect(subjectCell).not.toBeNull();
+    expect(subjectCell).toHaveClass('whitespace-normal');
+    expect(subjectCell).toHaveClass('break-words');
+    // Other columns are unaffected — recipientCount stays nowrap (inherited
+    // from the shared primitive's default) and right-aligned.
+    const recipientCell = within(container).getByText('5').closest('[data-slot="table-cell"]');
+    expect(recipientCell).not.toHaveClass('whitespace-normal');
   });
 });
