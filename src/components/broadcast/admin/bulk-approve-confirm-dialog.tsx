@@ -37,7 +37,7 @@
  * `totalRecipients` even by accident (tamper-safety, verified end-to-end by
  * Task 4's fan-out test).
  */
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import {
   AlertDialog,
@@ -100,6 +100,17 @@ export function BulkApproveConfirmDialog(
   // time); recomputing on every keystroke keeps `disabled` live instead.
   const [leadTimeOk, setLeadTimeOk] = useState(false);
 
+  // F7-A11Y-1 — the "Approve selected" trigger unmounts once the bulk bar
+  // clears on a successful approve, so closedViaSuccessRef makes the
+  // resolver skip the about-to-unmount trigger and land on #main-content
+  // instead. WCAG 2.1 AA SC 2.4.3. Declared here (ahead of both reset blocks
+  // below) so a fresh open can reset it alongside the other fields — see Fix
+  // round 2: without this reset, a confirm that raises the ref, followed by a
+  // re-open (e.g. the Task 6 partial-failure retry) and then a Cancel/ESC
+  // with NO new confirm, would wrongly send focus to #main-content instead of
+  // back to the still-present trigger.
+  const closedViaSuccessRef = useRef(false);
+
   // Reset on OPEN (not close) so a re-open is always fresh regardless of how
   // the previous interaction closed — mirrors reason-confirmation-dialog.tsx's
   // fix for the "stale state on programmatic close" class of bug: the
@@ -116,6 +127,18 @@ export function BulkApproveConfirmDialog(
       setLeadTimeOk(false);
     }
   }
+
+  // closedViaSuccessRef's reset CANNOT join the render-time block above —
+  // it's a ref, and `react-hooks/refs` (this repo's ESLint config) forbids
+  // mutating `.current` during render (only state may be "adjusted" that
+  // way). A ref write doesn't trigger a re-render, so unlike the state reset
+  // above there is no set-state-in-effect cascade to dodge here: a plain
+  // effect keyed on `props.open` is the correct, lint-clean home for it.
+  useEffect(() => {
+    if (props.open) {
+      closedViaSuccessRef.current = false;
+    }
+  }, [props.open]);
 
   // Cheap (a few LocalDateTime field reads) — recomputed every render so the
   // floor keeps creeping forward while the dialog stays open, rather than
@@ -150,11 +173,6 @@ export function BulkApproveConfirmDialog(
         }).format(new Date(scheduledIso))
       : null;
 
-  // F7-A11Y-1 — the "Approve selected" trigger unmounts once the bulk bar
-  // clears on a successful approve, so closedViaSuccessRef makes the
-  // resolver skip the about-to-unmount trigger and land on #main-content
-  // instead. WCAG 2.1 AA SC 2.4.3.
-  const closedViaSuccessRef = useRef(false);
   const finalFocus = useDialogFinalFocus(
     props.triggerRef,
     undefined,
@@ -234,7 +252,9 @@ export function BulkApproveConfirmDialog(
           </RadioGroup>
 
           {decision === 'send_now' ? (
-            <p className="text-sm text-destructive">{t('sendNowWarning')}</p>
+            <p id="bulk-confirm-sendnow-warning" className="text-sm text-destructive">
+              {t('sendNowWarning')}
+            </p>
           ) : (
             <div className="ml-6 space-y-2">
               <Label htmlFor="bulk-approve-scheduled-for">{t('scheduleLabel')}</Label>
@@ -269,6 +289,9 @@ export function BulkApproveConfirmDialog(
           <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
           <AlertDialogAction
             disabled={!scheduleValid}
+            aria-describedby={
+              decision === 'send_now' ? 'bulk-confirm-sendnow-warning' : undefined
+            }
             onClick={(e) => {
               e.preventDefault();
               handleConfirm();

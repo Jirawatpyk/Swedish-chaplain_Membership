@@ -49,7 +49,19 @@
  * though this presentational dialog does not call `useRouter()` itself
  * (unlike `ApproveDialog`) — kept for harness parity with the sibling
  * dialog tests in this directory.
+ *
+ * Final PR3 review-fix-wave additions (2 Minor a11y/focus findings):
+ *   - the send-now irreversible warning is now tied to the confirm action via
+ *     `aria-describedby`, so a screen-reader user tabbing to the action hears
+ *     the warning as its description, not just the button label.
+ *   - `closedViaSuccessRef` (see `useDialogFinalFocus` above) now resets on
+ *     every fresh open, not just at mount — closing the gap where a Task 6
+ *     partial-failure retry re-opens the dialog with the ref still raised
+ *     from the PRIOR confirm, so a Cancel/ESC on the re-opened dialog (no new
+ *     confirm) would wrongly skip the still-present trigger and land on
+ *     #main-content instead.
  */
+import type { ComponentProps } from 'react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -64,6 +76,40 @@ import { bangkokInputToIso } from '@/components/broadcast/bangkok-datetime';
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
 }));
+
+// Fix round 2 (closedViaSuccessRef reset) — captures the `finalFocus`
+// resolver `BulkApproveConfirmDialog` hands to `AlertDialogContent` on every
+// render. `useDialogFinalFocus` returns a `useCallback` memoized on stable ref
+// identities, so this is the SAME function reference the whole time the
+// component stays mounted; calling it later reflects the LIVE
+// `closedViaSuccessRef.current` at call time, exactly as Base UI would at
+// close. `AlertDialogContent` itself is delegated to the real implementation
+// unchanged — every other test in this file still exercises the real Base UI
+// dialog content; this only taps the one prop.
+const { alertDialogCapture } = vi.hoisted(() => ({
+  alertDialogCapture: {
+    finalFocus: undefined as (() => HTMLElement | null) | undefined,
+  },
+}));
+
+vi.mock('@/components/ui/alert-dialog', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@/components/ui/alert-dialog')>();
+  return {
+    ...actual,
+    AlertDialogContent: (
+      props: ComponentProps<typeof actual.AlertDialogContent>,
+    ) => {
+      // `finalFocus` on Base UI's Popup is a wider union (bool | RefObject |
+      // callback) — `BulkApproveConfirmDialog` only ever passes the
+      // `useDialogFinalFocus` callback shape, so narrow it for the capture.
+      alertDialogCapture.finalFocus = props.finalFocus as
+        | (() => HTMLElement | null)
+        | undefined;
+      return <actual.AlertDialogContent {...props} />;
+    },
+  };
+});
 
 beforeAll(() => {
   if (typeof globalThis.PointerEvent === 'undefined') {
@@ -80,6 +126,7 @@ beforeAll(() => {
 
 beforeEach(() => {
   vi.useRealTimers();
+  alertDialogCapture.finalFocus = undefined;
 });
 afterEach(() => {
   cleanup();
@@ -209,5 +256,76 @@ describe('BulkApproveConfirmDialog', () => {
 
     // The fresh re-check inside `handleConfirm` must still block the submit.
     expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it('describes the send-now confirm action with the irreversible warning (aria-describedby)', () => {
+    renderDialog({});
+    const confirm = screen.getByRole('button', { name: /Approve & send now/ });
+    const describedById = confirm.getAttribute('aria-describedby');
+    expect(describedById).toBeTruthy();
+    const warning = document.getElementById(describedById!);
+    expect(warning).not.toBeNull();
+    expect(warning).toHaveTextContent(/send immediately and cannot be recalled/);
+  });
+
+  it('does not carry the send-now aria-describedby once switched to schedule mode', async () => {
+    renderDialog({});
+    await userEvent.click(screen.getByRole('radio', { name: /Schedule/ }));
+    const confirm = screen.getByRole('button', { name: /Approve & schedule/ });
+    expect(confirm).not.toHaveAttribute('aria-describedby');
+  });
+
+  it('resets closedViaSuccessRef on reopen — a Cancel/ESC after a prior confirm returns focus to the still-present trigger, not #main-content (Fix round 2)', async () => {
+    const onConfirm = vi.fn();
+    const onOpenChange = vi.fn();
+    // A plain object (not `useRef`, this lives in the TEST, not a component)
+    // standing in for the parent's real trigger-button ref — identity must
+    // stay stable across the rerenders below so `useDialogFinalFocus`'s
+    // memoized callback doesn't get recreated for the wrong reason.
+    const triggerRef = { current: document.createElement('button') };
+
+    const tree = (open: boolean) => (
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <BulkApproveConfirmDialog
+          open={open}
+          onOpenChange={onOpenChange}
+          broadcastCount={3}
+          selectedCount={3}
+          cap={100}
+          totalRecipients={42}
+          onConfirm={onConfirm}
+          triggerRef={triggerRef}
+        />
+      </NextIntlClientProvider>
+    );
+
+    const { rerender } = render(tree(true));
+    expect(alertDialogCapture.finalFocus).toBeInstanceOf(Function);
+
+    // Confirm send-now — `handleConfirm` raises `closedViaSuccessRef` BEFORE
+    // calling `onOpenChange(false)`.
+    await userEvent.click(
+      screen.getByRole('button', { name: /Approve & send now/ }),
+    );
+    expect(onConfirm).toHaveBeenCalledWith({ type: 'send_now' });
+
+    // Parent closes the dialog (mirrors the bulk bar clearing the selection
+    // on a successful approve).
+    rerender(tree(false));
+
+    // While the ref is still raised, `finalFocus` SKIPS the trigger — this is
+    // the correct behaviour for THIS close (the real bulk bar's trigger is
+    // about to unmount on success), and also the shape of the bug this fix
+    // closes if the reset below were missing.
+    expect(alertDialogCapture.finalFocus?.()).not.toBe(triggerRef.current);
+
+    // Task 6's partial-failure retry re-opens the SAME dialog with the
+    // trigger still mounted (a partial failure does not clear the selection).
+    rerender(tree(true));
+
+    // The render-time reset-on-open block must have cleared
+    // `closedViaSuccessRef` back to `false` — a Cancel/ESC from here (no new
+    // confirm) must return focus to the still-present trigger, not skip it.
+    expect(alertDialogCapture.finalFocus?.()).toBe(triggerRef.current);
   });
 });
