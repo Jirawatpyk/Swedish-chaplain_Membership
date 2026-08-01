@@ -26,7 +26,7 @@
  * implement — minimal polyfill copied from `pipeline-card-list.test.tsx`.
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import { useState } from 'react';
 import {
@@ -116,8 +116,22 @@ describe('<QueueCardList>', () => {
     expect(within(list).getByText('Q3 Newsletter')).toBeInTheDocument();
     expect(within(list).getByText(/Audience/)).toBeInTheDocument();
     expect(within(list).getByText(/Recipients/)).toBeInTheDocument();
+    // Fix round 1 (Important, desktop/mobile parity) — WHO submitted the
+    // broadcast must be visible on the card, mirroring the desktop
+    // `member` column. `makeRow()` defaults `actorRoleLabel` to null, so
+    // just the bare member name renders (no " · role" suffix).
+    expect(within(list).getByText('Acme Co')).toBeInTheDocument();
 
     expect(within(list).getAllByRole('group')).toHaveLength(1);
+  });
+
+  it('renders the member name with the actor role suffix when set', () => {
+    render(
+      <Harness
+        rows={[makeRow({ memberDisplayName: 'Bob Lee', actorRoleLabel: 'Manager' })]}
+      />,
+    );
+    expect(screen.getByText('Bob Lee · Manager')).toBeInTheDocument();
   });
 
   it('renders one role="group" card per row for multiple rows', () => {
@@ -170,6 +184,26 @@ describe('<QueueCardList>', () => {
     render(<Harness rows={[makeRow({ actionable: true })]} />);
     const checkbox = screen.getByRole('checkbox', { name: 'Select broadcast' });
     expect(checkbox).toHaveAttribute('aria-checked', 'false');
+  });
+
+  // Fix round 1 (Minor) — behavioral, not just initial-state: clicking the
+  // card's checkbox must flip `row.toggleSelected()` on the SAME TanStack
+  // row the table would see — the one property this whole task guarantees.
+  // The harness's real `useReactTable` (with `state.rowSelection` +
+  // `onRowSelectionChange`) round-trips this exactly as `queue-table-
+  // client.tsx`'s own selection column does.
+  it('toggles the shared row selection state when the checkbox is clicked', () => {
+    render(<Harness rows={[makeRow({ broadcastId: 'b1', actionable: true })]} />);
+    const checkbox = screen.getByRole('checkbox', { name: 'Select broadcast' });
+    expect(checkbox).toHaveAttribute('aria-checked', 'false');
+
+    fireEvent.click(checkbox);
+
+    expect(checkbox).toHaveAttribute('aria-checked', 'true');
+    // The card's `data-state="selected"` styling hook (Card root) also
+    // flips, confirming the row API — not just the checkbox's own local
+    // visual state — drove the change.
+    expect(screen.getByRole('group')).toHaveAttribute('data-state', 'selected');
   });
 
   it('does not render a select checkbox when readOnly is true', () => {

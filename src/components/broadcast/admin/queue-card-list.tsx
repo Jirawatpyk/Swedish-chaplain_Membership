@@ -18,15 +18,25 @@
  * each with its own trigger ref (`ReviewActions` already scopes that
  * per-instance, exactly as it does per table row).
  *
- * Card anatomy:
+ * Card anatomy (fix round 1 — desktop/mobile parity gap: the desktop table's
+ * `member` column, rendering who SUBMITTED the broadcast, was missing from
+ * the card entirely — an admin couldn't tell whose e-blast they were
+ * approving on mobile):
  *   ┌───────────────────────────────────────────┐
  *   │ [ ] Q3 Newsletter               [Awaiting]  │  select checkbox (if actionable+!readOnly) · subject link · status badge
+ *   │     Acme Co · Member                        │  memberDisplayName + actorRoleLabel, unlabelled subtitle (no i18n key — mirrors the bare subject)
  *   │ Audience  All members                       │
  *   │ Recipients  42                              │
  *   │ Submitted  1 Aug 2026, 07:00  [Waiting 30h] │  age badge only when SLA-flagged (Smart-3)
  *   │ ─────────────────────────────────────────  │
  *   │                        [Approve] [Reject]  │  ReviewActions (unchanged), actionable + !readOnly only
  *   └───────────────────────────────────────────┘
+ *
+ * The member subtitle mirrors the desktop `member` column cell verbatim
+ * (`queue-table-client.tsx:190-204`: bold name stacked over xs-muted role
+ * label) and `PipelineCardList`'s tier-under-company-name stacking — an
+ * unlabelled subtitle, same as the subject line above it, so no new i18n
+ * key was needed.
  *
  * `EnrichedQueueRow` is the parent server component's pre-formatted view
  * model (`queue-table.tsx`) — this list never recomputes a label or date
@@ -100,12 +110,23 @@ export function QueueCardList({
                           className="mt-1 min-h-[24px] min-w-[24px]"
                         />
                       ) : null}
-                      <Link
-                        href={`/admin/broadcasts/${original.broadcastId}`}
-                        className="min-w-0 truncate font-medium text-primary hover:underline"
-                      >
-                        {original.subject}
-                      </Link>
+                      <div className="flex min-w-0 flex-col">
+                        <Link
+                          href={`/admin/broadcasts/${original.broadcastId}`}
+                          className="truncate font-medium text-primary hover:underline"
+                        >
+                          {original.subject}
+                        </Link>
+                        {/* Fix round 1 (Important) — who submitted this
+                            broadcast, mirroring the desktop `member` column
+                            cell (`queue-table-client.tsx:190-204`)
+                            verbatim. Unlabelled, like the subject above it —
+                            no new i18n key. */}
+                        <span className="truncate text-sm text-muted-foreground">
+                          {original.memberDisplayName}
+                          {original.actorRoleLabel ? ` · ${original.actorRoleLabel}` : ''}
+                        </span>
+                      </div>
                     </div>
                     <Badge
                       variant={original.statusBadgeVariant}
