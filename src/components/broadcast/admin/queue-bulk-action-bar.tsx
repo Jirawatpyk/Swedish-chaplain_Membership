@@ -3,12 +3,12 @@
 /**
  * Task 5 (2026-08-01-broadcast-review-queue-pr2) — `QueueBulkActionBar`.
  *
- * STANDALONE for this task — not yet wired into `queue-table-client.tsx`.
- * Task 6 builds a `QueueWithBulk` wrapper that owns `selectedIds`/`onClear`
- * state and mounts this bar alongside the table, then removes the client's
- * OLD sticky-top bar (`queue-table-client.tsx` lines ~429-458) in the same
- * change. Until then this component is unused dead code by design (planned
- * staged build) — do not delete the old bar from THIS task.
+ * Task 6 wires this in: `QueueWithBulk` owns `selectedIds` (mirrored from
+ * `QueueTableClient`'s `onSelectionChange`) + a `clearNonce` counter, mounts
+ * this bar as a SIBLING of the table, and the client's OLD sticky-top
+ * `role="region"` bar + `handleBulkApprove` are deleted from
+ * `queue-table-client.tsx` in the same change — this is now the only
+ * bulk-action surface for the queue.
  *
  * Fixed-bottom `role="toolbar"` + measured-height `ResizeObserver` spacer,
  * mirroring `admin/members/_components/bulk-action-bar.tsx` (`:138-158` the
@@ -32,14 +32,18 @@
  *     toast (with `{ok, fail}` counts) is kept verbatim; only the
  *     `.description` addendum is gone.
  *   - No `rowSelection` to mutate — selection ownership lives in the
- *     wrapper (Task 6) via the `selectedIds`/`onClear` props. On full
- *     success this calls `onClear()` (mirrors `setRowSelection({})`). On
- *     any failure (partial or total) it does NOT call `onClear()`, which
- *     keeps the bar mounted with the SAME selection still selected — the
- *     brief's "for THIS task, on partial failure keep the bar mounted and
- *     toast the failed count" behaviour. Re-selecting ONLY the failed ids
- *     (dropping the succeeded ones from the retry set) needs the wrapper's
- *     selection setter and is Task 6's job.
+ *     wrapper (Task 6) via the `selectedIds`/`onClear`/`onPartialFailure`
+ *     props. On full success this calls `onClear()` (mirrors
+ *     `setRowSelection({})`). On a TOTAL failure (nothing succeeded) it
+ *     calls neither — the existing selection already equals the failed
+ *     set, so there's nothing to reconcile, and the admin can retry
+ *     without re-selecting. On a PARTIAL failure (CF-2, Task 5 review
+ *     carry-forward) it calls `onPartialFailure(failedIds)` — see
+ *     `queue-with-bulk.tsx`'s module docstring for why the wrapper's
+ *     current handling of that is "clear everything" rather than "narrow
+ *     to the failed ids" (the latter needs a prop surface beyond this
+ *     task's contract and risks desyncing the toolbar from the table's
+ *     actual checkboxes).
  *
  * `BulkProgressIndicator` (the members/renewals bars' in-flight indicator)
  * is intentionally NOT reused here: it requires `progressLabel` /
@@ -72,6 +76,16 @@ export interface QueueBulkActionBarProps {
   readonly selectedIds: string[];
   readonly onClear: () => void;
   readonly readOnly: boolean;
+  /**
+   * Task 6 CF-2 — called (instead of `onClear`) after a PARTIAL fan-out
+   * failure (some approvals succeeded, some didn't), with the list of ids
+   * that did NOT succeed. On a FULL failure (nothing succeeded) neither
+   * this nor `onClear` is called — the existing selection already equals
+   * the failed set, so there's nothing to reconcile. See
+   * `queue-with-bulk.tsx`'s module docstring for how the caller currently
+   * handles this (acceptable-minimum: clears the whole selection).
+   */
+  readonly onPartialFailure?: (failedIds: string[]) => void;
 }
 
 type Outcome =
@@ -81,6 +95,7 @@ type Outcome =
 export function QueueBulkActionBar({
   selectedIds,
   onClear,
+  onPartialFailure,
   readOnly,
 }: QueueBulkActionBarProps): React.JSX.Element | null {
   const t = useTranslations('admin.broadcasts.queue.bulk');
@@ -177,14 +192,16 @@ export function QueueBulkActionBar({
         // without re-selecting.
       } else {
         toast.warning(t('partial', { ok: succeeded, fail: failures.length }));
-        // Partial success — Task 6's wrapper owns re-selecting only the
-        // failed ids; this task leaves the whole selection as-is.
+        // Task 6 CF-2 — tell the caller which ids failed so it can decide
+        // what to do with the selection (see queue-with-bulk.tsx's module
+        // docstring for the caller's current acceptable-minimum handling).
+        onPartialFailure?.(failures.map((f) => f.id));
       }
       router.refresh();
     } finally {
       setExecuting(false);
     }
-  }, [cappedIds, executing, onClear, router, t]);
+  }, [cappedIds, executing, onClear, onPartialFailure, router, t]);
 
   if (readOnly || selectedIds.length === 0) return null;
 
@@ -206,7 +223,12 @@ export function QueueBulkActionBar({
             </span>
             {overCap && (
               <div className="flex flex-col gap-0.5" role="alert">
-                <span className="text-xs font-medium text-destructive">
+                {/* CF-4 (Task 5 review carry-forward) — bumped from `text-xs`
+                    to `text-sm` so the pre-send truncate-and-run warning
+                    can't be missed. PR2 keeps truncate-and-run (the button
+                    still runs the fan-out over `cappedIds`); PR3's confirm
+                    dialog is the hard guard. */}
+                <span className="text-sm font-medium text-destructive">
                   {t('overCap', { max: BULK_CAP })}
                 </span>
                 <span className="text-xs text-muted-foreground">
