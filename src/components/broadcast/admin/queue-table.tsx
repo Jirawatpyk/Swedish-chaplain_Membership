@@ -47,6 +47,7 @@ export async function QueueTable({
   const t = await getTranslations('admin.broadcasts.queue');
   const tActor = await getTranslations('admin.broadcasts.queue.actorRole');
   const tStatus = await getTranslations('admin.broadcasts.queue.status');
+  const tSegment = await getTranslations('admin.broadcasts.review.segmentType');
   const locale = await getLocale();
   const dateFormatter = new Intl.DateTimeFormat(
     getDateFormatLocale(locale),
@@ -116,7 +117,7 @@ export async function QueueTable({
         row.actorRole !== 'member_self_service'
           ? tActor(row.actorRole as Parameters<typeof tActor>[0])
           : null,
-      segmentLabel: row.segmentType,
+      segmentLabel: tSegment(row.segmentType as Parameters<typeof tSegment>[0]),
       recipientCount: row.estimatedRecipientCount,
       submittedAtFormatted: submittedAt,
       ageBadge,
