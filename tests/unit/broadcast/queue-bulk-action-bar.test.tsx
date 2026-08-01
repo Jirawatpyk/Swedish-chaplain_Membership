@@ -43,15 +43,24 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), refresh: routerRefresh }),
 }));
 
+const toastFn = vi.fn();
 const toastSuccess = vi.fn();
 const toastError = vi.fn();
 const toastWarning = vi.fn();
+// Task 5 (2026-08-02-broadcast-review-queue-pr3) — `toast` is now called
+// BOTH as a bare function (the new 60s send-now Undo toast) and via its
+// `.success`/`.error`/`.warning` statics (the pre-existing outcome
+// toasts), mirroring real sonner's shape (a callable function with
+// methods attached), not just an object of methods.
 vi.mock('sonner', () => ({
-  toast: {
-    success: (...a: unknown[]) => toastSuccess(...a),
-    error: (...a: unknown[]) => toastError(...a),
-    warning: (...a: unknown[]) => toastWarning(...a),
-  },
+  toast: Object.assign(
+    (...a: unknown[]) => toastFn(...a),
+    {
+      success: (...a: unknown[]) => toastSuccess(...a),
+      error: (...a: unknown[]) => toastError(...a),
+      warning: (...a: unknown[]) => toastWarning(...a),
+    },
+  ),
 }));
 
 // Base UI Radio (inside BulkApproveConfirmDialog) dispatches via
@@ -80,6 +89,7 @@ beforeEach(() => {
   roCb = undefined;
   disconnectCount = 0;
   routerRefresh.mockClear();
+  toastFn.mockClear();
   toastSuccess.mockClear();
   toastError.mockClear();
   toastWarning.mockClear();
@@ -513,5 +523,114 @@ describe('QueueBulkActionBar — bulk-approve fan-out', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: 'Clear' }));
     expect(onClear).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('QueueBulkActionBar — 60s send-now Undo toast (Task 5, 2026-08-02-broadcast-review-queue-pr3)', () => {
+  it('after an all-success send-now confirm, shows an Undo toast whose action cancels every approved id with the canned reason', async () => {
+    const cancelMock = vi.fn(async () => jsonResponse({ status: 'cancelled' }));
+    const fetchMock = fetchMockOf(async (url) =>
+      String(url).endsWith('/cancel') ? cancelMock() : jsonResponse({ ok: true }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <Provider>
+        <QueueBulkActionBar
+          selectedIds={['b1', 'b2']}
+          onClear={vi.fn()}
+          readOnly={false}
+          recipientByIdRows={[]}
+        />
+      </Provider>,
+    );
+
+    await approveViaSendNowConfirm();
+
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalledTimes(1)); // the pre-existing successAll toast
+    // The new bare `toast(...)` call is the Undo toast, IN ADDITION to
+    // the successAll toast above.
+    expect(toastFn).toHaveBeenCalledTimes(1);
+    const [message, opts] = toastFn.mock.calls[0] as [
+      string,
+      { duration?: number; action?: { label: string; onClick: () => Promise<void> } },
+    ];
+    expect(message).toBe('Sending 2 broadcasts in 60s.');
+    expect(opts.duration).toBe(60_000);
+    expect(opts.action?.label).toBe('Undo');
+
+    await opts.action!.onClick();
+
+    expect(cancelMock).toHaveBeenCalledTimes(2);
+    const cancelFetchCalls = fetchMock.mock.calls.filter(([u]) =>
+      String(u).endsWith('/cancel'),
+    );
+    expect(cancelFetchCalls).toHaveLength(2);
+    for (const [url, init] of cancelFetchCalls) {
+      expect(String(url)).toMatch(/^\/api\/admin\/broadcasts\/b[12]\/cancel$/);
+      expect(JSON.parse(init?.body as string)).toEqual({
+        cancellationReason: 'Undone by admin from the review queue',
+      });
+    }
+    await waitFor(() =>
+      expect(toastSuccess).toHaveBeenCalledWith('Cancelled 2 broadcasts.'),
+    );
+  });
+
+  it('a schedule confirm shows NO Undo toast', async () => {
+    vi.stubGlobal('fetch', fetchMockOf(async () => jsonResponse({ ok: true })));
+
+    render(
+      <Provider>
+        <QueueBulkActionBar
+          selectedIds={['b1']}
+          onClear={vi.fn()}
+          readOnly={false}
+          recipientByIdRows={[]}
+        />
+      </Provider>,
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Approve selected' }));
+    await userEvent.click(await screen.findByRole('radio', { name: /Schedule/ }));
+    fireEvent.change(screen.getByLabelText(/Send at/), {
+      target: { value: '2099-01-01T09:00' },
+    });
+    await userEvent.click(screen.getByRole('button', { name: /Approve & schedule/ }));
+
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalledTimes(1));
+    // Negative assertion — a scheduled broadcast hasn't been dispatched at
+    // all yet, so it's already cancellable via the normal per-row action;
+    // Undo is specifically the "sent now" escape.
+    expect(toastFn).not.toHaveBeenCalled();
+  });
+
+  it('on a partial failure, still shows the Undo toast scoped to ONLY the approved ids', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) =>
+        String(url).includes('b2') && String(url).endsWith('/approve')
+          ? jsonResponse({ error: { code: 'broadcast_concurrent_action_blocked' } }, 409)
+          : jsonResponse({ ok: true }),
+      ),
+    );
+
+    render(
+      <Provider>
+        <QueueBulkActionBar
+          selectedIds={['b1', 'b2']}
+          onClear={vi.fn()}
+          readOnly={false}
+          recipientByIdRows={[]}
+        />
+      </Provider>,
+    );
+
+    await approveViaSendNowConfirm();
+
+    await waitFor(() => expect(toastWarning).toHaveBeenCalledTimes(1)); // partial toast
+    expect(toastFn).toHaveBeenCalledTimes(1);
+    const [message] = toastFn.mock.calls[0] as [string];
+    expect(message).toBe('Sending 1 broadcast in 60s.'); // only b1 succeeded
   });
 });

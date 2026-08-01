@@ -29,6 +29,7 @@ import { LocalDateTime, ZoneId } from '@js-joda/core';
 import '@js-joda/timezone';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
 import { useDialogFinalFocus } from '@/components/broadcast/reason-confirmation-dialog';
+import { cancelApprovedBroadcasts } from '@/components/broadcast/admin/send-now-undo';
 
 const MIN_LEAD_MS = 5 * 60 * 1000;
 const BANGKOK_ZONE = ZoneId.of('Asia/Bangkok');
@@ -103,6 +104,9 @@ export function ApproveDialog({
 }: ApproveDialogProps): React.ReactElement {
   const t = useTranslations('admin.broadcasts.approveDialog');
   const tToast = useTranslations('admin.broadcasts.toast');
+  // Task 5 (2026-08-02-broadcast-review-queue-pr3) — same 60s send-now Undo
+  // toast as the bulk bar, reusing its i18n namespace verbatim.
+  const tUndo = useTranslations('admin.broadcasts.queue.bulk.undo');
   const locale = useLocale();
   const router = useRouter();
   const [decision, setDecision] = useState<'send_now' | 'schedule'>('send_now');
@@ -173,6 +177,36 @@ export function ApproveDialog({
         if (res.ok) {
           closedViaSuccessRef.current = true;
           toast.success(tToast('approved'));
+          // Task 5 (2026-08-02-broadcast-review-queue-pr3) — 60s send-now
+          // "Undo", shown IN ADDITION to the toast above. ONLY for
+          // send_now: a scheduled broadcast hasn't been dispatched at all
+          // yet, so it's already cancellable via the normal per-row
+          // action — Undo is specifically the "oops, sent now" escape for
+          // the ≤60s window before the dispatch cron picks it up.
+          if (decision === 'send_now') {
+            toast(tUndo('sendingSendNow', { count: 1 }), {
+              duration: 60_000,
+              action: {
+                label: tUndo('action'),
+                onClick: async () => {
+                  const r = await cancelApprovedBroadcasts(
+                    [broadcastId],
+                    tUndo('reason'),
+                  );
+                  if (r.cancelled > 0) {
+                    toast.success(tUndo('success', { count: r.cancelled }));
+                  }
+                  if (r.tooLate > 0) {
+                    toast.warning(tUndo('tooLate', { count: r.tooLate }));
+                  }
+                  if (r.failed > 0) {
+                    toast.error(tUndo('failed', { count: r.failed }));
+                  }
+                  router.refresh();
+                },
+              },
+            });
+          }
           onOpenChange(false);
           router.refresh();
         } else if (res.status === 409) {

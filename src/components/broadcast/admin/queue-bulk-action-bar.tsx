@@ -83,6 +83,7 @@ import {
   BulkApproveConfirmDialog,
   type BulkApproveDecision,
 } from '@/components/broadcast/admin/bulk-approve-confirm-dialog';
+import { cancelApprovedBroadcasts } from '@/components/broadcast/admin/send-now-undo';
 
 const BULK_CHUNK = 5;
 
@@ -125,6 +126,7 @@ export function QueueBulkActionBar({
   recipientByIdRows,
 }: QueueBulkActionBarProps): React.JSX.Element | null {
   const t = useTranslations('admin.broadcasts.queue.bulk');
+  const tUndo = useTranslations('admin.broadcasts.queue.bulk.undo');
   const router = useRouter();
   const [executing, setExecuting] = useState(false);
 
@@ -157,7 +159,19 @@ export function QueueBulkActionBar({
     return () => ro.disconnect();
   }, []);
 
-  const cappedIds = selectedIds.slice(0, BULK_CAP);
+  // Task 5 review carry-forward (Task 4) — memoized on `selectedIds` so the
+  // `totalRecipients` memo below (keyed on this array's REFERENCE) actually
+  // holds across renders. Before this fix `cappedIds` was a plain
+  // `selectedIds.slice(...)` re-evaluated every render, producing a fresh
+  // array reference each time — `useMemo([recipientByIdRows, cappedIds])`
+  // was therefore a no-op that recomputed on every render regardless of
+  // whether either input had actually changed (e.g. a sibling state update
+  // from the confirm dialog's own schedule input re-rendering this bar).
+  // Pure perf fix — no behaviour change.
+  const cappedIds = useMemo(
+    () => selectedIds.slice(0, BULK_CAP),
+    [selectedIds],
+  );
   const overCap = selectedIds.length > BULK_CAP;
 
   // Task 2 (2026-08-02-broadcast-review-queue-pr3) — sum over `cappedIds`
@@ -254,11 +268,48 @@ export function QueueBulkActionBar({
         // docstring for the caller's current acceptable-minimum handling).
         onPartialFailure?.(failures.map((f) => f.id));
       }
+
+      // Task 5 (2026-08-02-broadcast-review-queue-pr3) — 60s send-now
+      // "Undo". Shown IN ADDITION to the successAll/partial/failureAll
+      // toast above (that one reports the approve outcome; this one is
+      // the actionable escape hatch for the ≤60s window before the
+      // dispatch cron picks the broadcast up). Schedule decisions get NO
+      // Undo toast — an already-scheduled broadcast is cancellable via
+      // the normal per-row action, so there's no "oops, sent now" race to
+      // rescue.
+      if (decision.type === 'send_now' && succeeded > 0) {
+        const approvedIds = outcomes
+          .filter((o): o is Extract<Outcome, { ok: true }> => o.ok)
+          .map((o) => o.id);
+        toast(tUndo('sendingSendNow', { count: approvedIds.length }), {
+          duration: 60_000,
+          action: {
+            label: tUndo('action'),
+            onClick: async () => {
+              const r = await cancelApprovedBroadcasts(
+                approvedIds,
+                tUndo('reason'),
+              );
+              if (r.cancelled > 0) {
+                toast.success(tUndo('success', { count: r.cancelled }));
+              }
+              if (r.tooLate > 0) {
+                toast.warning(tUndo('tooLate', { count: r.tooLate }));
+              }
+              if (r.failed > 0) {
+                toast.error(tUndo('failed', { count: r.failed }));
+              }
+              router.refresh();
+            },
+          },
+        });
+      }
+
       router.refresh();
     } finally {
       setExecuting(false);
     }
-  }, [cappedIds, executing, onClear, onPartialFailure, router, t]);
+  }, [cappedIds, executing, onClear, onPartialFailure, router, t, tUndo]);
 
   if (readOnly || selectedIds.length === 0) return null;
 
