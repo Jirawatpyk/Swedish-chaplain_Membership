@@ -44,6 +44,16 @@
  * bulk-selected-state axe scan (previously one test) so a missing seed
  * only skips the seed-dependent half, not the always-runnable core PR1
  * a11y signal.
+ *
+ * Task 9 (2026-08-01-broadcast-review-queue-pr2) — the `@a11y` describe now
+ * sweeps the render tree Tasks 2–6 shipped: the shared `ui/table.tsx`
+ * desktop `<table>` (Task 3), the `QueueCardList` mobile fallback at a
+ * 360px viewport (Task 4), and the fixed-bottom `role="toolbar"` bulk bar
+ * that replaced the old sticky-top `role="region"` bar (Task 5/6). The D3
+ * test above's trailing assertion against that old `role="region"` bar
+ * was stale after `7465ae9be` dropped it — fixed here in the same pass to
+ * target the current `role="toolbar"`, since it exercises the identical
+ * selector this task otherwise had to introduce anyway.
  */
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
@@ -372,10 +382,16 @@ test.describe('admin review queue (T099 — US2 AS1–AS6 + Q14)', () => {
     await seededRow.getByRole('checkbox').click();
 
     await expect(liveRegion).toContainText(/1 selected/);
-    // The visible bulk toolbar (same label) mounts alongside it.
-    await expect(
-      page.getByRole('region', { name: /1 selected/i }),
-    ).toBeVisible();
+    // The visible fixed-bottom bulk toolbar mounts alongside it — Task 5/6
+    // (2026-08-01-broadcast-review-queue-pr2) replaced the old sticky-top
+    // `role="region"` bar this assertion originally checked with a
+    // fixed-bottom `role="toolbar"` (`7465ae9be`); its own `aria-live`
+    // span carries the same "N selected" text.
+    const toolbar = page.getByRole('toolbar');
+    await expect(toolbar).toBeVisible();
+    await expect(toolbar.locator('[aria-live="polite"]')).toContainText(
+      /1 selected/,
+    );
   });
 
   // ---------- AS2: approve send-now ----------
@@ -615,7 +631,7 @@ test.describe('admin review queue (T099 — US2 AS1–AS6 + Q14)', () => {
  * review queue suite and remain hostage to it despite living outside its
  * braces.
  */
-test.describe('@a11y queue overdue/SLA/bulk-selection scan', () => {
+test.describe('@a11y queue render-tree scan — desktop table / mobile card / bulk toolbar', () => {
   test.describe.configure({ mode: 'default' });
   test.skip(
     !ADMIN_EMAIL || !ADMIN_PASSWORD,
@@ -627,7 +643,7 @@ test.describe('@a11y queue overdue/SLA/bulk-selection scan', () => {
   // banner + SLA banner token colours); it must always run and report its
   // own pass/fail rather than being swallowed by a `test.skip` on the
   // (seed-gated) bulk-selected scan that used to share its test body.
-  test('axe-core WCAG 2.1/2.2 AA scan — default view (overdue banner + SLA tokens)', async ({
+  test('axe-core WCAG 2.1/2.2 AA scan — default view (desktop table, overdue banner + SLA tokens)', async ({
     page,
   }) => {
     await signIn(page, ADMIN_EMAIL!, ADMIN_PASSWORD!);
@@ -636,6 +652,12 @@ test.describe('@a11y queue overdue/SLA/bulk-selection scan', () => {
 
     await page.goto('/admin/broadcasts');
     await page.locator('h1').first().waitFor({ timeout: 10_000 });
+
+    // Task 9 — the Playwright `chromium` project's default viewport
+    // (1280×720, Desktop Chrome) is ≥ the `md` breakpoint, so the shared
+    // `ui/table.tsx` primitive Task 3 adopted (`hidden md:block` wrapper)
+    // must render, not a hand-rolled table.
+    await expect(page.locator('[data-slot="table"]')).toBeVisible();
 
     // Covers the overdue banner (role="alert", when count>0), the
     // always-present SLA banner's severity-coloured token pill, filters,
@@ -646,7 +668,44 @@ test.describe('@a11y queue overdue/SLA/bulk-selection scan', () => {
     expect(results.violations).toEqual([]);
   });
 
-  test('axe-core WCAG 2.1/2.2 AA scan — 1-row bulk-selected state', async ({
+  // Task 9 — proves the `hidden md:block` (desktop table) / `md:hidden`
+  // (`QueueCardList`, Task 4) split actually holds under a real browser's
+  // CSS engine at a phone-width viewport (not just a unit-test snapshot),
+  // then axe-scans the mobile card render — its checkbox, status badge,
+  // and `ReviewActions` button group are never painted into the a11y tree
+  // by the desktop-viewport scan above.
+  test('axe-core WCAG 2.1/2.2 AA scan — mobile QueueCardList at 360px (desktop table hidden)', async ({
+    page,
+  }) => {
+    await signIn(page, ADMIN_EMAIL!, ADMIN_PASSWORD!);
+    const enabled = await isFeatureEnabled(page);
+    test.skip(!enabled, 'F7 feature flag is OFF (ship-dark)');
+
+    await page.goto('/admin/broadcasts');
+    await page.locator('h1').first().waitFor({ timeout: 10_000 });
+
+    await page.setViewportSize({ width: 360, height: 800 });
+    await page.reload();
+    await page.locator('h1').first().waitFor({ timeout: 10_000 });
+
+    await expect(
+      page.locator('[data-testid="queue-card-list"]'),
+    ).toBeVisible();
+    // Attached-then-hidden (not just "not matched") — the desktop table
+    // must still be a CSS-hidden DOM node at this width (`hidden`), never
+    // removed from the tree entirely, which would be a different
+    // regression `toBeHidden()` alone can't distinguish from.
+    const desktopTable = page.locator('[data-slot="table"]');
+    await expect(desktopTable).toBeAttached();
+    await expect(desktopTable).toBeHidden();
+
+    const results = await new AxeBuilder({ page })
+      .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
+      .analyze();
+    expect(results.violations).toEqual([]);
+  });
+
+  test('axe-core WCAG 2.1/2.2 AA scan — fixed-bottom bulk toolbar, 1 row selected (plain tab order)', async ({
     page,
   }) => {
     await signIn(page, ADMIN_EMAIL!, ADMIN_PASSWORD!);
@@ -661,17 +720,39 @@ test.describe('@a11y queue overdue/SLA/bulk-selection scan', () => {
     await page.goto('/admin/broadcasts');
     await page.locator('h1').first().waitFor({ timeout: 10_000 });
 
-    // Selecting a submitted row mounts the bulk toolbar + activates the
-    // sr-only aria-live selection announcer, neither of which the
-    // default-view scan above (0 rows selected) ever renders into the
-    // accessibility tree.
+    // Selecting a submitted row mounts the fixed-bottom `role="toolbar"`
+    // bulk bar (Task 5/6 — replaces the deleted sticky-top `role="region"`
+    // bar) + activates the sr-only aria-live selection announcer, neither
+    // of which the default-view scan above (0 rows selected) ever renders
+    // into the accessibility tree.
     const seededRow = page
       .locator('tbody tr')
       .filter({ hasText: SEEDED_SUBJECT });
     await seededRow.getByRole('checkbox').click();
-    await expect(
-      page.getByRole('region', { name: /1 selected/i }),
-    ).toBeVisible();
+
+    const toolbar = page.getByRole('toolbar');
+    await expect(toolbar).toBeVisible();
+    await expect(toolbar.locator('[aria-live="polite"]')).toContainText(
+      /1 selected/,
+    );
+
+    // Task 9 — `queue-bulk-action-bar.tsx`'s module docstring claims
+    // "Plain tab order — no roving-tabindex, matching both precedents
+    // exactly." Prove it behaviourally: focus Clear directly, then a
+    // single Tab must land on Approve. Had the toolbar instead implemented
+    // the WAI-ARIA APG toolbar widget pattern's roving tabindex (the
+    // ARIA-spec default for `role="toolbar"`), Tab from Clear would leave
+    // the toolbar entirely rather than reaching Approve — this deliberate
+    // divergence from the spec pattern is exactly what this assertion
+    // guards against regressing.
+    const clearButton = toolbar.getByRole('button', { name: /clear/i });
+    const approveButton = toolbar.getByRole('button', {
+      name: /approve selected/i,
+    });
+    await clearButton.focus();
+    await expect(clearButton).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(approveButton).toBeFocused();
 
     const results = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
