@@ -2879,7 +2879,7 @@
         },
         "bulk": {
           "selectAria": "เลือก E-Blast",
-          "selected": "{count, plural, other {เลือก # รายการ}}",
+          "selected": "{count, plural, other {เลือกแล้ว # รายการ}}",
           "approveSelected": "อนุมัติและส่งรายการที่เลือก",
           "clear": "ล้างที่เลือก",
           "successAll": "อนุมัติ E-Blast ที่เลือกทั้งหมดสำเร็จ",

@@ -16,6 +16,7 @@ import { useMemo, useRef, useState, useTransition } from 'react';
 import { Clock, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useTranslations } from 'next-intl';
 import {
   flexRender,
   getCoreRowModel,
@@ -75,12 +76,6 @@ export interface QueueTableClientProps {
     readonly status: string;
     readonly actions: string;
     readonly select: string;
-    readonly bulkApprove: string;
-    readonly bulkClear: string;
-    readonly bulkSelected: string;
-    readonly bulkSuccess: string;
-    readonly bulkFailure: string;
-    readonly bulkPartial: string;
     readonly tableAria: string;
   };
   readonly readOnly?: boolean;
@@ -94,6 +89,7 @@ export function QueueTableClient({
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [pending, startTransition] = useTransition();
   const router = useRouter();
+  const tBulk = useTranslations('admin.broadcasts.queue.bulk');
 
   const columns = useMemo<ColumnDef<EnrichedQueueRow>[]>(() => {
     const base: ColumnDef<EnrichedQueueRow>[] = [];
@@ -108,13 +104,16 @@ export function QueueTableClient({
           const actionableRows = table
             .getRowModel()
             .rows.filter((r) => r.original.actionable);
+          const selectedActionable = actionableRows.filter((r) => r.getIsSelected());
           const allSelected =
-            actionableRows.length > 0 &&
-            actionableRows.every((r) => r.getIsSelected());
+            actionableRows.length > 0 && selectedActionable.length === actionableRows.length;
+          const someSelected = selectedActionable.length > 0 && !allSelected;
           return (
             <Checkbox
               aria-label={columnLabels.select}
               checked={allSelected}
+              indeterminate={someSelected}
+              className="min-h-[24px] min-w-[24px]"
               onCheckedChange={(checked) => {
                 actionableRows.forEach((r) => r.toggleSelected(Boolean(checked)));
               }}
@@ -126,6 +125,7 @@ export function QueueTableClient({
             <Checkbox
               aria-label={columnLabels.select}
               checked={ctx.row.getIsSelected()}
+              className="min-h-[24px] min-w-[24px]"
               onCheckedChange={(checked) => ctx.row.toggleSelected(Boolean(checked))}
             />
           ) : null,
@@ -151,7 +151,7 @@ export function QueueTableClient({
                     'inline-flex items-center gap-1 self-start text-xs',
                     row.ageBadge.variant === 'red'
                       ? 'border-destructive/40 bg-destructive-surface text-destructive'
-                      : 'border-amber-400/40 bg-amber-100 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200',
+                      : 'border-warning/40 bg-warning-surface text-warning',
                   )}
                 >
                   {/* UX-R2-7 (round-3) — non-color signal for color-blind users */}
@@ -355,10 +355,10 @@ export function QueueTableClient({
       const succeeded = outcomes.length - failures.length;
 
       if (failures.length === 0) {
-        toast.success(columnLabels.bulkSuccess);
+        toast.success(tBulk('successAll'));
         setRowSelection({});
       } else if (succeeded === 0) {
-        toast.error(columnLabels.bulkFailure, {
+        toast.error(tBulk('failureAll'), {
           description: failures
             .slice(0, 3)
             .map((f) => `${f.subject} (${f.code ?? (f.status === 0 ? 'network' : f.status)})`)
@@ -367,9 +367,7 @@ export function QueueTableClient({
         // Keep failed rows selected so admin can retry without re-selecting
       } else {
         toast.warning(
-          columnLabels.bulkPartial
-            .replace('{ok}', String(succeeded))
-            .replace('{fail}', String(failures.length)),
+          tBulk('partial', { ok: succeeded, fail: failures.length }),
           {
             description: failures
               .slice(0, 3)
@@ -418,11 +416,9 @@ export function QueueTableClient({
   // portal contexts where the variable isn't defined.
   // A5 UX hardening — bulk-bar `aria-label` was the unresolved template
   // string `"{count} selected"`; SR users heard the literal placeholder.
-  // Interpolate the count before passing as label.
-  const bulkSelectedLabel = columnLabels.bulkSelected.replace(
-    '{count}',
-    String(selectedIds.length),
-  );
+  // Task 5 — moved to `tBulk('selected', {count})` (ICU plural) so the
+  // count is both correctly interpolated AND grammatically pluralised.
+  const bulkSelectedLabel = tBulk('selected', { count: selectedIds.length });
   const bulkBar =
     !readOnly && selectedIds.length > 0 ? (
       <div
@@ -431,7 +427,9 @@ export function QueueTableClient({
         className="sticky z-20 mb-2 flex items-center justify-between gap-3 rounded-md border bg-primary/5 px-3 py-2"
         style={{ top: 'var(--top-bar-height, 0px)' }}
       >
-        <span className="text-sm font-medium">{bulkSelectedLabel}</span>
+        <span className="text-sm font-medium" aria-live="polite">
+          {bulkSelectedLabel}
+        </span>
         <div className="flex gap-2">
           <Button
             type="button"
@@ -440,7 +438,7 @@ export function QueueTableClient({
             onClick={() => setRowSelection({})}
             disabled={pending}
           >
-            {columnLabels.bulkClear}
+            {tBulk('clear')}
           </Button>
           <Button
             type="button"
@@ -448,7 +446,7 @@ export function QueueTableClient({
             onClick={handleBulkApprove}
             disabled={pending}
           >
-            {columnLabels.bulkApprove}
+            {tBulk('approveSelected')}
           </Button>
         </div>
       </div>
