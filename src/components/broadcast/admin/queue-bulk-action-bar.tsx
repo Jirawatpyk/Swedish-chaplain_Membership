@@ -68,11 +68,23 @@
  * a live `done` counter would also mean promoting the fan-out's local
  * `outcomes` array to state (a re-render per completed request) — more
  * than this polish task warrants. So this uses the documented fallback: a
- * conditionally-mounted `role="status"` region showing only
- * `progress.label` ("Approving…") while `executing` is true, mirroring
- * the permanent `selectionAnnouncer` pattern in `queue-table-client.tsx`
- * (`sr-only` + explicit `aria-live="polite"` + `aria-atomic="true"` even
- * though `role="status"` implies both, for the same AT-compat reason).
+ * `role="status"` region showing `progress.label` ("Approving…").
+ *
+ * Fix round 1 (opus a11y review) — the region is PERMANENTLY MOUNTED for
+ * the bar's whole lifetime, with its TEXT toggling between `''` and
+ * `progress.label`, NOT conditionally mounted only while `executing`. This
+ * genuinely mirrors the `selectionAnnouncer` pattern in
+ * `queue-table-client.tsx:381-401` (the first cut only copied its
+ * `sr-only`/ARIA attributes, not the permanence that makes it work): a
+ * live region that appears WITH content already populated in the same
+ * paint is not reliably announced by NVDA/JAWS — only text MUTATIONS on an
+ * already-mounted region are announced. At `BULK_CAP=100` /
+ * `BULK_CHUNK=5` (up to 20 sequential chunked round-trips) `executing` can
+ * stay `true` for several seconds, so a conditionally-mounted region would
+ * leave the screen-reader/keyboard admin this task exists for with zero
+ * announcement for that whole window. `sr-only` + explicit
+ * `aria-live="polite"` + `aria-atomic="true"` even though `role="status"`
+ * implies both, for the same AT-compat reason as `selectionAnnouncer`.
  *
  * `overCap` does NOT disable the Approve button (unlike the members bar,
  * which refuses to act at all past the cap) — the Task 5 contract is
@@ -332,19 +344,24 @@ export function QueueBulkActionBar({
 
   if (readOnly || selectedIds.length === 0) return null;
 
+  // Task 7 fix round 1 — see the module docstring's "Fix round 1" note.
+  // PERMANENTLY mounted (as long as the bar itself is mounted, i.e. as long
+  // as there's a selection), text toggling between '' and the label — the
+  // '' → 'Approving…' MUTATION is what NVDA/JAWS actually announce; a
+  // region that only EXISTS while `executing` is true is not reliably
+  // announced because its content is already populated at mount.
+  const progressAnnouncement = executing ? tProgress('label') : '';
+
   return (
     <>
       {/* Task 7 — announced in-flight status for the bulk-approve fan-out.
-          Conditionally mounted (not permanent, unlike `selectionAnnouncer`
-          in `queue-table-client.tsx`) — a progress announcement should only
-          exist WHILE work is happening, not sit as a silent, always-present
-          region. See the module docstring's Task 7 note for why this is the
-          fallback rather than reusing `BulkProgressIndicator`. */}
-      {executing && (
-        <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
-          {tProgress('label')}
-        </div>
-      )}
+          See the module docstring's Task 7 / Fix round 1 notes for why
+          this must be permanently mounted with toggling text rather than
+          conditionally mounted only while `executing`, and why
+          `BulkProgressIndicator` isn't reused. */}
+      <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+        {progressAnnouncement}
+      </div>
       <div
         ref={barRef}
         // `pb-[env(safe-area-inset-bottom)]` keeps the action row clear of the

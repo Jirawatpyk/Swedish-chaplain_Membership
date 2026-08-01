@@ -527,7 +527,7 @@ describe('QueueBulkActionBar — bulk-approve fan-out', () => {
 });
 
 describe('QueueBulkActionBar — in-flight progress announcement (Task 7, 2026-08-02-broadcast-review-queue-pr3)', () => {
-  it('is absent before the fan-out starts, appears with role="status" announcing "Approving…" while executing, and disappears once the fan-out resolves', async () => {
+  it('is a PERMANENTLY-mounted role="status" region whose TEXT toggles empty → "Approving…" → empty across the fan-out (fix round 1 — NVDA/JAWS only announce mutations on an already-mounted region, not a region that appears with content already populated)', async () => {
     let resolveFetch: ((res: Response) => void) | undefined;
     const pending = new Promise<Response>((resolve) => {
       resolveFetch = resolve;
@@ -545,20 +545,28 @@ describe('QueueBulkActionBar — in-flight progress announcement (Task 7, 2026-0
       </Provider>,
     );
 
-    // Not executing yet — no status region should exist (it's not a
-    // permanent noisy region; it only exists while work is happening).
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    // Before the fan-out starts, the region already EXISTS (permanent —
+    // not conditionally mounted), but is silent (empty text).
+    const statusBefore = screen.getByRole('status');
+    expect(statusBefore.textContent).toBe('');
 
     await approveViaSendNowConfirm();
 
-    // The fan-out is now in-flight — `fetch` hasn't resolved yet — so the
-    // announced status region must be present.
-    expect(await screen.findByRole('status')).toHaveTextContent('Approving…');
+    // The fan-out is now in-flight — `fetch` hasn't resolved yet. The SAME
+    // node (not a newly-mounted one — `toBe` proves node identity) must now
+    // carry the "Approving…" text, which is the mutation NVDA/JAWS actually
+    // announce.
+    const statusDuring = screen.getByRole('status');
+    expect(statusDuring).toBe(statusBefore);
+    await waitFor(() => expect(statusDuring.textContent).toBe('Approving…'));
+    expect(statusDuring).toHaveTextContent('Approving…');
 
     // Resolve the pending fetch; the fan-out completes and `executing`
-    // flips back to false — the status region must unmount.
+    // flips back to false — the SAME node goes silent again (empty text),
+    // it does NOT unmount.
     resolveFetch?.(jsonResponse({ ok: true }));
-    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
+    await waitFor(() => expect(statusDuring.textContent).toBe(''));
+    expect(screen.getByRole('status')).toBe(statusBefore);
   });
 });
 
