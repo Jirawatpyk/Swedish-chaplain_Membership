@@ -2,16 +2,21 @@
  * T117 — Admin review queue table (server async wrapper).
  *
  * Pre-formats every i18n string + locale-aware date so the client-side
- * `QueueTableClient` (TanStack Table v8 + react-virtual) renders without
- * needing locale or i18n at runtime. Activates virtualization above 100
- * rows (perf.md CHK039).
+ * `QueueTableClient` (TanStack Table v8, rendered via `QueueWithBulk` — see
+ * below) renders without needing locale or i18n at runtime. Task 2
+ * (2026-08-01-broadcast-review-queue-pr2) removed
+ * row virtualization (`@tanstack/react-virtual`, threshold 100 rows,
+ * perf.md CHK039) — the queue query pages at 50 rows, so the threshold
+ * never fired in production. Task 3 switched the desktop table to the
+ * shared `@/components/ui/table.tsx` primitive, matching the
+ * members/renewals lists. Task 6 swapped the rendered client component
+ * from `QueueTableClient` to `QueueWithBulk` (same props — that wrapper
+ * now owns the lifted selection state + the fixed-bottom bulk-action bar).
  */
 import { Inbox } from 'lucide-react';
 import { getLocale, getTranslations } from 'next-intl/server';
-import {
-  QueueTableClient,
-  type EnrichedQueueRow,
-} from './queue-table-client';
+import type { EnrichedQueueRow } from './queue-table-client';
+import { QueueWithBulk } from './queue-with-bulk';
 import type { BroadcastStatus } from '@/modules/broadcasts';
 import { getBroadcastStatusBadgeProps } from '@/components/broadcast/status-badge-mapping';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
@@ -132,7 +137,7 @@ export async function QueueTable({
   });
 
   return (
-    <QueueTableClient
+    <QueueWithBulk
       rows={enrichedRows}
       readOnly={readOnly}
       columnLabels={{

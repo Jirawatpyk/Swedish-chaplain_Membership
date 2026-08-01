@@ -2880,11 +2880,22 @@
         "bulk": {
           "selectAria": "Select broadcast",
           "selected": "{count, plural, one {# selected} other {# selected}}",
-          "approveSelected": "Approve & send selected",
-          "clear": "Clear selection",
+          "toolbarLabel": "Bulk actions for selected broadcasts",
+          "selectedCount": "{count, plural, one {# selected} other {# selected}}",
+          "approveSelected": "Approve selected",
+          "clear": "Clear",
+          "overCap": "Selection limited to {max}",
+          "overCapHelper": "You selected {count} — only the first {max} will be actioned.",
           "successAll": "All selected broadcasts approved.",
           "failureAll": "Bulk approve failed. Try again or approve individually.",
           "partial": "{ok} approved, {fail} failed."
+        },
+        "card": {
+          "actionsLabel": "Actions",
+          "audienceLabel": "Audience",
+          "recipientsLabel": "Recipients",
+          "submittedLabel": "Submitted",
+          "statusLabel": "Status"
         },
         "filters": {
           "formAriaLabel": "Broadcast queue filters",
@@ -2915,6 +2926,10 @@
           "failed_to_dispatch": "Failed",
           "partially_sent": "Partially sent",
           "partial_delivery_accepted": "Partial delivery accepted"
+        },
+        "statusGroup": {
+          "inReview": "In review",
+          "terminal": "Closed"
         },
         "actorRole": {
           "member_self_service": "Member",

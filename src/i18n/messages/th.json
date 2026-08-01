@@ -2880,11 +2880,22 @@
         "bulk": {
           "selectAria": "เลือก E-Blast",
           "selected": "{count, plural, other {เลือกแล้ว # รายการ}}",
-          "approveSelected": "อนุมัติและส่งรายการที่เลือก",
-          "clear": "ล้างที่เลือก",
+          "toolbarLabel": "การดำเนินการแบบกลุ่มสำหรับ E-Blast ที่เลือก",
+          "selectedCount": "{count, plural, other {เลือกแล้ว # รายการ}}",
+          "approveSelected": "อนุมัติรายการที่เลือก",
+          "clear": "ล้าง",
+          "overCap": "จำกัดการเลือกไว้ที่ {max} รายการ",
+          "overCapHelper": "คุณเลือก {count} รายการ — จะดำเนินการเฉพาะ {max} รายการแรกเท่านั้น",
           "successAll": "อนุมัติ E-Blast ที่เลือกทั้งหมดสำเร็จ",
           "failureAll": "อนุมัติเป็นกลุ่มไม่สำเร็จ ลองใหม่หรืออนุมัติทีละรายการ",
           "partial": "สำเร็จ {ok} รายการ ล้มเหลว {fail} รายการ"
+        },
+        "card": {
+          "actionsLabel": "การดำเนินการ",
+          "audienceLabel": "กลุ่มผู้รับ",
+          "recipientsLabel": "ผู้รับ",
+          "submittedLabel": "ส่งเมื่อ",
+          "statusLabel": "สถานะ"
         },
         "filters": {
           "formAriaLabel": "ตัวกรองคิวตรวจสอบ E-Blast",
@@ -2915,6 +2926,10 @@
           "failed_to_dispatch": "ส่งไม่สำเร็จ",
           "partially_sent": "ส่งสำเร็จบางส่วน",
           "partial_delivery_accepted": "ยอมรับการส่งบางส่วนแล้ว"
+        },
+        "statusGroup": {
+          "inReview": "กำลังตรวจสอบ",
+          "terminal": "สิ้นสุดแล้ว"
         },
         "actorRole": {
           "member_self_service": "สมาชิก",

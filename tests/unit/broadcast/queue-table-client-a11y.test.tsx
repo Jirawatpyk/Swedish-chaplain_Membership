@@ -150,4 +150,89 @@ describe('QueueTableClient a11y + ICU', () => {
     expect(rowCb?.className ?? '').toMatch(/min-h-\[24px\]/);
     expect(rowCb?.className ?? '').toMatch(/min-w-\[24px\]/);
   });
+
+  // Task 2 (2026-08-01-broadcast-review-queue-pr2) — the row-virtualization
+  // branch (`@tanstack/react-virtual`, threshold 100 rows) never fires in
+  // production: the queue query pages at 50 rows. This guard renders a
+  // row count well below the old threshold and asserts every row lands in
+  // the DOM as a real `<tr>` — no synthetic virtualizer padding rows —
+  // so a future re-introduction of virtualization at a low threshold (or
+  // any padding-row artifact) fails loudly here.
+  it('renders every row without virtualization padding rows', () => {
+    const manyRows: EnrichedQueueRow[] = Array.from({ length: 12 }, (_, i) => ({
+      ...base,
+      broadcastId: `b${i}`,
+      subject: `Subject ${i}`,
+    }));
+    const { container } = render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <QueueTableClient rows={manyRows} columnLabels={columnLabels} />
+      </NextIntlClientProvider>,
+    );
+
+    const bodyRows = container.querySelectorAll('tbody tr');
+    expect(bodyRows).toHaveLength(12); // exactly the data rows, no padding <tr>
+    bodyRows.forEach((tr) => {
+      expect(tr).not.toHaveAttribute('aria-hidden');
+    });
+  });
+
+  // Task 3 (2026-08-01-broadcast-review-queue-pr2) — the desktop table now
+  // renders through the shared `@/components/ui/table.tsx` primitive
+  // instead of a hand-rolled `<table>`, for consistency with the
+  // members/renewals lists. Asserts the primitive's data-slot markers +
+  // sticky header + focusable scroll region, rather than re-testing the
+  // primitive's own internals (covered by its own test suite).
+  //
+  // Review round 1, M-1 — also assert `aria-label={columnLabels.tableAria}`
+  // actually reaches the region. Without this, a regression in that wiring
+  // would silently fall back to the primitive's hardcoded English
+  // `'Data table'` default and no test would fail.
+  it('renders through the shared Table primitive (focusable region + sticky header)', () => {
+    const { container } = renderTable();
+    expect(container.querySelector('[data-slot="table"]')).not.toBeNull();
+    const region = container.querySelector('[data-slot="table-container"]');
+    expect(region).toHaveAttribute('tabindex', '0');
+    expect(region).toHaveAttribute('role', 'region');
+    expect(region).toHaveAttribute('aria-label', columnLabels.tableAria);
+    expect(container.querySelector('[data-slot="table-header"]')).toHaveClass('sticky');
+  });
+
+  // Review round 1, I-1 — the shared `TableCell` applies `whitespace-nowrap`
+  // to every cell by default. `subject` is free-text up to ~200 chars (F7
+  // sanitiser cap) and the primary column admins scan; left un-wrapped, a
+  // long subject widens the whole table past its container on every wide
+  // row. Guards the fix (`whitespace-normal break-words` on the subject
+  // cell only — precedent: `members-table.tsx` "057 overflow fix") against
+  // regression.
+  it('wraps a long subject instead of forcing table overflow', () => {
+    const longSubject =
+      'A'.repeat(60) + ' ' + 'B'.repeat(60) + ' very long broadcast subject line for review';
+    const { container } = render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <QueueTableClient
+          rows={[{ ...base, subject: longSubject }]}
+          columnLabels={columnLabels}
+        />
+      </NextIntlClientProvider>,
+    );
+    // Task 4 (2026-08-01-broadcast-review-queue-pr2) — the mobile
+    // `QueueCardList` dual-render also shows the subject (as a link with
+    // the same accessible name), so this desktop-only assertion must be
+    // scoped to the `<table>` itself, not the whole container. jsdom
+    // applies no real CSS, so the `hidden md:block` / `md:hidden` wrapper
+    // classes don't hide either tree from queries — only the `[data-slot=
+    // "table"]` scope disambiguates which one is desktop.
+    const desktopTable = container.querySelector<HTMLElement>('[data-slot="table"]');
+    expect(desktopTable).not.toBeNull();
+    const subjectLink = within(desktopTable!).getByRole('link', { name: longSubject });
+    const subjectCell = subjectLink.closest('[data-slot="table-cell"]');
+    expect(subjectCell).not.toBeNull();
+    expect(subjectCell).toHaveClass('whitespace-normal');
+    expect(subjectCell).toHaveClass('break-words');
+    // Other columns are unaffected — recipientCount stays nowrap (inherited
+    // from the shared primitive's default) and right-aligned.
+    const recipientCell = within(desktopTable!).getByText('5').closest('[data-slot="table-cell"]');
+    expect(recipientCell).not.toHaveClass('whitespace-normal');
+  });
 });

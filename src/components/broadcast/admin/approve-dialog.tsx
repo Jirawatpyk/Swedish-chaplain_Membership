@@ -208,12 +208,22 @@ export function ApproveDialog({
       <AlertDialogContent className="max-w-lg" finalFocus={finalFocus}>
         <AlertDialogHeader>
           <AlertDialogTitle>{t('title')}</AlertDialogTitle>
-          <AlertDialogDescription>{t('description')}</AlertDialogDescription>
-          {recipientCount !== undefined ? (
-            <p className="text-sm text-muted-foreground">
-              {t('recipientCount', { count: recipientCount })}
-            </p>
-          ) : null}
+          <AlertDialogDescription>
+            {t('description')}
+            {/* a11y M1 (2026-08-01-broadcast-review-queue-pr2 Task 8) — the
+                recipient sentence used to be a sibling <p> of this element.
+                Base UI wires the dialog's `aria-describedby` to
+                AlertDialogDescription only, so a screen reader announced the
+                title + description but never "Reaches ~N recipients" on
+                open. Folding it in here (as a `block` span — an inner <p>
+                would be invalid inside this description's own <p>) makes it
+                part of the announced description. */}
+            {recipientCount !== undefined ? (
+              <span className="mt-2 block text-muted-foreground">
+                {t('recipientCount', { count: recipientCount })}
+              </span>
+            ) : null}
+          </AlertDialogDescription>
         </AlertDialogHeader>
         {/* C3 UX hardening — removed `aria-disabled` on the fieldset.
             HTML `disabled` on a `<fieldset>` disables all descendant

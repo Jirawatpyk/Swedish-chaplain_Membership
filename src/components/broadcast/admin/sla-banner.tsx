@@ -53,11 +53,19 @@ export interface SlaBannerProps {
 export async function SlaBanner({
   stats,
   compact = false,
-}: SlaBannerProps): Promise<React.ReactElement> {
+}: SlaBannerProps): Promise<React.ReactElement | null> {
   const t = await getTranslations('admin.broadcasts.queue.slaBanner');
   const fmt = (n: number | null): string =>
     n === null ? '—' : n.toFixed(1);
   if (compact) {
+    // M3 (2026-08-01-broadcast-review-queue-pr2 Task 8) — with zero
+    // decisions the median/p95 fields are both `null`, so `fmt` renders
+    // '—' for each and the line reads "Half decided within —h · 95%
+    // within —h" — noise for an all-`submitted` tenant that hasn't
+    // decided anything yet. Suppress the stat line entirely in that case.
+    if (stats.decisionCount === 0) {
+      return null;
+    }
     return (
       <p className="text-xs text-muted-foreground tabular-nums">
         {t('medianRolling30d', { hours: fmt(stats.medianTimeToDecisionHours) })}{' '}

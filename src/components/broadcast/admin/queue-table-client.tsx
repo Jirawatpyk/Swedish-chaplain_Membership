@@ -1,25 +1,57 @@
 'use client';
 
 /**
- * T117 — TanStack Table v8 client renderer with `@tanstack/react-virtual`
- * row virtualization. Activates virtualization automatically when row
- * count exceeds 100 (perf.md CHK039).
+ * T117 — TanStack Table v8 client renderer.
+ *
+ * Task 2 (2026-08-01-broadcast-review-queue-pr2): row virtualization
+ * (`@tanstack/react-virtual`, threshold 100 rows, perf.md CHK039) was
+ * removed — the queue query pages at 50 rows, so the threshold never
+ * fired in production. Dead code removed to unblock the shared `<Table>`
+ * adoption (Task 3).
+ *
+ * Task 3 — the desktop table markup now renders through the shared
+ * `@/components/ui/table.tsx` primitive (focusable `role="region"` scroll
+ * container, sticky `bg-card` header, `--table-row-height` rows) instead
+ * of a hand-rolled `<table>`, matching the members/renewals lists. Wrapped
+ * in `hidden md:block` to prepare Task 4's mobile card dual-render (the
+ * card list itself is out of scope here).
  *
  * Smart-2 (2026-04-30): admins can multi-select `submitted` rows and
- * bulk-approve in one click via Promise.allSettled (catalogue Feature #7).
+ * bulk-approve them (catalogue Feature #7).
+ *
+ * Task 6 (2026-08-01-broadcast-review-queue-pr2) — selection ownership
+ * moved OUT of this component. `rowSelection` stays local/uncontrolled
+ * (TanStack needs somewhere to hold it), but a parent (`QueueWithBulk`)
+ * now mirrors it via three new optional props:
+ *   - `enableSelection` (defaults to `!readOnly`, the pre-Task-6 gate) —
+ *     whether the `select` column + sr-only announcer render at all.
+ *   - `onSelectionChange(ids)` — fired in an effect whenever the local
+ *     `rowSelection` changes, so the parent always has the current
+ *     broadcastId list.
+ *   - `clearSelectionNonce` — bumped by the parent to force this
+ *     component's uncontrolled selection back to `{}` (e.g. after Clear
+ *     or a full bulk-approve success). Mirrors the members-directory
+ *     `DirectoryWithBulk`/`MembersTable` nonce precedent.
+ * The OLD sticky-top `role="region"` bulk bar + its `handleBulkApprove`
+ * fan-out are DELETED from this file — that UI + logic now live in the
+ * fixed-bottom `QueueBulkActionBar` (Task 5), mounted by `QueueWithBulk`
+ * alongside this table. The sr-only `role="status"` selection announcer
+ * STAYS here (see the comment above `selectionAnnouncer` below) and is the
+ * SOLE live region for the count — the bar's visible count span is
+ * deliberately NOT a live region, so this permanently-mounted announcer
+ * covers the mount/unmount 0↔1 transitions the round-2 a11y fix exists for
+ * without a double-announce.
  *
  * The parent server component pre-formats every per-row + column-header
  * i18n string and locale-formatted date, so this component never needs
  * `getTranslations` or a locale instance for row/column content. The
- * bulk-selection bar strings (`admin.broadcasts.queue.bulk.*`) are the one
- * exception — Task 5 moved those to client-side `useTranslations` so the
- * `bulk.selected` ICU-plural count interpolates correctly without a
- * `.replace()` template hack.
+ * selection-announcer string (`admin.broadcasts.queue.bulk.selected`) is
+ * the one exception — it's translated client-side via `useTranslations`
+ * so the ICU-plural count interpolates correctly.
  */
-import { useMemo, useRef, useState, useTransition } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Clock, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import {
   flexRender,
@@ -28,16 +60,19 @@ import {
   type ColumnDef,
   type RowSelectionState,
 } from '@tanstack/react-table';
-import { useVirtualizer } from '@tanstack/react-virtual';
-import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 import { ReviewActions } from './review-actions';
-
-const VIRTUALIZE_THRESHOLD = 100;
-const ESTIMATED_ROW_HEIGHT_PX = 56;
+import { QueueCardList } from './queue-card-list';
 
 type BadgeVariant =
   | 'default'
@@ -83,17 +118,30 @@ export interface QueueTableClientProps {
     readonly tableAria: string;
   };
   readonly readOnly?: boolean;
+  /**
+   * Task 6 — whether the `select` column + selection announcer render.
+   * Defaults to `!readOnly` (the pre-Task-6 gate) when omitted, so direct
+   * callers that don't opt into the selection lift (e.g. unit tests) keep
+   * the original behaviour unchanged.
+   */
+  readonly enableSelection?: boolean;
+  /** Task 6 — fired in an effect whenever the local `rowSelection` changes. */
+  readonly onSelectionChange?: (ids: string[]) => void;
+  /** Task 6 — bump to force the local, uncontrolled `rowSelection` to `{}`. */
+  readonly clearSelectionNonce?: number;
 }
 
 export function QueueTableClient({
   rows,
   columnLabels,
   readOnly = false,
+  enableSelection,
+  onSelectionChange,
+  clearSelectionNonce,
 }: QueueTableClientProps): React.ReactElement {
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
-  const [pending, startTransition] = useTransition();
-  const router = useRouter();
   const tBulk = useTranslations('admin.broadcasts.queue.bulk');
+  const selectionEnabled = enableSelection ?? !readOnly;
 
   const columns = useMemo<ColumnDef<EnrichedQueueRow>[]>(() => {
     const base: ColumnDef<EnrichedQueueRow>[] = [];
@@ -101,7 +149,7 @@ export function QueueTableClient({
     // Smart-2: row-selection checkbox (admin only). Manager (`readOnly`)
     // never sees the column so the bulk-action surface is invisible to
     // read-only roles.
-    if (!readOnly) {
+    if (selectionEnabled) {
       base.push({
         id: 'select',
         header: ({ table }) => {
@@ -242,7 +290,7 @@ export function QueueTableClient({
       });
     }
     return base;
-  }, [columnLabels, readOnly]);
+  }, [columnLabels, readOnly, selectionEnabled]);
 
   // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Table v8 hook
   const table = useReactTable({
@@ -259,321 +307,125 @@ export function QueueTableClient({
     getCoreRowModel: getCoreRowModel(),
   });
 
-  const shouldVirtualize = rows.length > VIRTUALIZE_THRESHOLD;
-  const tableRef = useRef<HTMLDivElement>(null);
   const rowModel = table.getRowModel();
-  const virtualizer = useVirtualizer({
-    count: rowModel.rows.length,
-    getScrollElement: () => tableRef.current,
-    estimateSize: () => ESTIMATED_ROW_HEIGHT_PX,
-    overscan: 8,
-    enabled: shouldVirtualize,
-  });
 
-  // Smart-2 — bulk-approve handler. Concurrency capped at BULK_CHUNK
-  // to avoid DB pool exhaustion on Neon serverless (~10 connections);
-  // each approve takes a `lockForUpdate` advisory lock + tx.
-  // Per-row failures are kept selected so the admin can retry without
-  // re-selecting (IMP-2 round-3).
-  const BULK_CHUNK = 5;
+  // Task 6 — mirror the local uncontrolled selection up to the parent
+  // (`QueueWithBulk`) on every change, so the fixed-bottom
+  // `QueueBulkActionBar` (which owns the bulk-approve fan-out now — see
+  // module docstring) always has the current broadcastId list.
+  useEffect(() => {
+    onSelectionChange?.(
+      table.getSelectedRowModel().rows.map((r) => r.original.broadcastId),
+    );
+  }, [rowSelection, onSelectionChange, table]);
+
+  // Task 6 — parent-commanded reset (Clear / full bulk-approve success).
+  // Guarded only on the prop being defined at all — direct callers that
+  // never pass `clearSelectionNonce` (e.g. unit tests) never fire this.
+  useEffect(() => {
+    if (clearSelectionNonce !== undefined) setRowSelection({});
+  }, [clearSelectionNonce]);
+
   // Simplify-S3 (round-3) — derive in render; no useMemo + ESLint
   // suppression. Selection size is bounded by visible rows; cost is
   // negligible.
-  const selectedRows = table.getSelectedRowModel().rows;
-  const selectedIds = selectedRows.map((r) => r.original.broadcastId);
+  const selectedIds = table.getSelectedRowModel().rows.map((r) => r.original.broadcastId);
 
-  const handleBulkApprove = (): void => {
-    if (selectedIds.length === 0 || pending) return;
-    startTransition(async () => {
-      type Outcome =
-        | { id: string; subject: string; ok: true }
-        | {
-            id: string;
-            subject: string;
-            ok: false;
-            status: number;
-            code: string | null;
-          };
-      const outcomes: Outcome[] = [];
-
-      // IMP-1 round-3 — chunked Promise.allSettled. Each chunk awaits
-      // before the next so we never exceed BULK_CHUNK concurrent
-      // requests against the approve endpoint.
-      for (let i = 0; i < selectedRows.length; i += BULK_CHUNK) {
-        const chunk = selectedRows.slice(i, i + BULK_CHUNK);
-        const settled = await Promise.allSettled(
-          chunk.map(async (r) => {
-            const res = await fetch(
-              `/api/admin/broadcasts/${r.original.broadcastId}/approve`,
-              {
-                method: 'POST',
-                credentials: 'same-origin',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ decision: 'send_now' }),
-              },
-            );
-            return { res, original: r.original };
-          }),
-        );
-        for (const result of settled) {
-          if (result.status === 'fulfilled') {
-            const { res, original } = result.value;
-            if (res.ok) {
-              outcomes.push({
-                id: original.broadcastId,
-                subject: original.subject,
-                ok: true,
-              });
-            } else {
-              // Round-5 R5-S4 — parse the F7 error envelope so the
-              // partial-failure toast description carries the route's
-              // `error.code` (e.g. `broadcast_concurrent_action_blocked`)
-              // instead of just the opaque HTTP status. Admin can self-
-              // diagnose without opening dev-tools.
-              const body = await res
-                .json()
-                .catch(() => null) as { error?: { code?: string } } | null;
-              outcomes.push({
-                id: original.broadcastId,
-                subject: original.subject,
-                ok: false,
-                status: res.status,
-                code: body?.error?.code ?? null,
-              });
-            }
-          } else {
-            // Network failure — id from chunk position
-            const idx = settled.indexOf(result);
-            const original = chunk[idx]?.original;
-            if (original) {
-              outcomes.push({
-                id: original.broadcastId,
-                subject: original.subject,
-                ok: false,
-                status: 0,
-                code: null,
-              });
-            }
-          }
-        }
-      }
-
-      const failures = outcomes.filter((o): o is Extract<Outcome, { ok: false }> => !o.ok);
-      const succeeded = outcomes.length - failures.length;
-
-      if (failures.length === 0) {
-        toast.success(tBulk('successAll'));
-        setRowSelection({});
-      } else if (succeeded === 0) {
-        toast.error(tBulk('failureAll'), {
-          description: failures
-            .slice(0, 3)
-            .map((f) => `${f.subject} (${f.code ?? (f.status === 0 ? 'network' : f.status)})`)
-            .join(', '),
-        });
-        // Keep failed rows selected so admin can retry without re-selecting
-      } else {
-        toast.warning(
-          tBulk('partial', { ok: succeeded, fail: failures.length }),
-          {
-            description: failures
-              .slice(0, 3)
-              .map((f) => `${f.subject} (${f.code ?? (f.status === 0 ? 'network' : f.status)})`)
-              .join(', '),
-          },
-        );
-        // Clear successful rows; keep failures selected. With
-        // `getRowId: row => row.broadcastId`, row.id === broadcastId so
-        // the mapping is direct.
-        const nextSelection: RowSelectionState = {};
-        for (const f of failures) nextSelection[f.id] = true;
-        setRowSelection(nextSelection);
-      }
-      router.refresh();
-    });
-  };
-
-  const headerRow = (
-    <tr>
-      {table.getHeaderGroups()[0]?.headers.map((header) => {
-        const alignRight = header.column.id === 'recipientCount';
-        const narrow = header.column.id === 'select';
-        return (
-          <th
-            key={header.id}
-            scope="col"
-            className={cn(
-              'px-3 py-2',
-              alignRight && 'text-right',
-              !alignRight && !narrow && 'text-left',
-              narrow && 'w-10',
-            )}
-          >
-            {flexRender(header.column.columnDef.header, header.getContext())}
-          </th>
-        );
-      })}
-    </tr>
-  );
-
-  // UX-R2-5 (round-3) + Round-4 CRIT-D — sticky bar uses the staff
-  // shell's `--top-bar-height` CSS variable (defined globally and
-  // applied at `src/app/(staff)/admin/layout.tsx` header). The bar sits
-  // BELOW the shell header rather than under it. Falls back to 0px in
-  // portal contexts where the variable isn't defined.
   // A5 UX hardening — bulk-bar `aria-label` was the unresolved template
   // string `"{count} selected"`; SR users heard the literal placeholder.
   // Task 5 — moved to `tBulk('selected', {count})` (ICU plural) so the
   // count is both correctly interpolated AND grammatically pluralised.
   const bulkSelectedLabel = tBulk('selected', { count: selectedIds.length });
-  // Round-2 review Fix 1 — the visible bar (and its `aria-live`) is
-  // conditionally MOUNTED (`selectedIds.length > 0 ? (...) : null`), so an
+  // Round-2 review Fix 1 — the announcer is PERMANENTLY MOUNTED (not
+  // conditionally rendered only while `selectedIds.length > 0`), because an
   // `aria-live` region that appears WITH its content already populated in
   // the same paint is not reliably announced by NVDA/JAWS — only text
-  // MUTATIONS on an already-mounted live region are announced. That silences
-  // exactly the transitions this feature exists to announce: 0→1 (entering
-  // selection) and 1→0 (clearing). Fix: a permanently-mounted sr-only
-  // announcer rendered unconditionally below, separate from the visible bar.
-  // Precedent: `members-table.tsx` selected-count region +
-  // `renewals/result-count-announcer.tsx`.
+  // MUTATIONS on an already-mounted live region are announced. That would
+  // silence exactly the transitions this feature exists to announce: 0→1
+  // (entering selection) and 1→0 (clearing). Task 6 — this stays here even
+  // though the VISIBLE bulk bar moved to `QueueBulkActionBar` (Task 5,
+  // mounted by `QueueWithBulk`): that bar's visible count span is
+  // deliberately NOT a live region (it would otherwise double-announce with
+  // this one), and the bar itself unmounts at the 0↔1 boundary
+  // (`selectedIds.length === 0` renders `null`), so this permanently-mounted
+  // announcer is the sole region covering every transition. Precedent:
+  // `members-table.tsx` selected-count region + `renewals/result-count-
+  // announcer.tsx`.
   const selectionAnnouncement = selectedIds.length > 0 ? bulkSelectedLabel : '';
-  const selectionAnnouncer = !readOnly ? (
+  const selectionAnnouncer = selectionEnabled ? (
     <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
       {selectionAnnouncement}
     </div>
   ) : null;
-  const bulkBar =
-    !readOnly && selectedIds.length > 0 ? (
-      <div
-        role="region"
-        aria-label={bulkSelectedLabel}
-        className="sticky z-20 mb-2 flex items-center justify-between gap-3 rounded-md border bg-primary/5 px-3 py-2"
-        style={{ top: 'var(--top-bar-height, 0px)' }}
-      >
-        <span className="text-sm font-medium">{bulkSelectedLabel}</span>
-        <div className="flex gap-2">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => setRowSelection({})}
-            disabled={pending}
-          >
-            {tBulk('clear')}
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            onClick={handleBulkApprove}
-            disabled={pending}
-          >
-            {tBulk('approveSelected')}
-          </Button>
-        </div>
-      </div>
-    ) : null;
 
-  if (!shouldVirtualize) {
-    return (
-      <>
-        {selectionAnnouncer}
-        {bulkBar}
-        <div className="overflow-x-auto rounded-md border" ref={tableRef}>
-          <table className="w-full min-w-[920px] text-sm">
-            <thead className="bg-muted/50 text-xs uppercase tracking-wide">
-              {headerRow}
-            </thead>
-            <tbody>
-              {rowModel.rows.map((row) => (
-                <tr key={row.id} className="border-t">
-                  {row.getVisibleCells().map((cell) => {
-                    const alignRight = cell.column.id === 'recipientCount';
-                    return (
-                      <td
-                        key={cell.id}
-                        className={`px-3 py-2 ${alignRight ? 'text-right' : ''}`}
-                      >
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </>
-    );
-  }
-
-  // A6 UX hardening — padding-row virtualisation preserves the
-  // `<table>/<tr>/<td>` DOM so screen readers in table-grid mode can
-  // still navigate by row/column. Previously the virtualised path
-  // used `position: absolute` on each `<tr>`, which breaks the
-  // browser's table-layout algorithm and silently degrades SR
-  // navigation. The TanStack docs recommend the padding-row pattern
-  // for table virtualisation.
-  //
-  // Strategy: compute the unrendered space above the first visible
-  // row + below the last visible row, and emit two `<tr>` spacer
-  // rows holding that space via explicit `height` styles. The
-  // visible `<tr>`s sit between them with normal flow layout.
-  const totalSize = virtualizer.getTotalSize();
-  const virtualItems = virtualizer.getVirtualItems();
-  const paddingTop = virtualItems.length > 0 ? (virtualItems[0]?.start ?? 0) : 0;
-  const lastItem = virtualItems[virtualItems.length - 1];
-  const paddingBottom =
-    virtualItems.length > 0 && lastItem !== undefined
-      ? totalSize - lastItem.end
-      : 0;
   return (
     <>
       {selectionAnnouncer}
-      {bulkBar}
-      <div
-        className="overflow-auto rounded-md border"
-        style={{ height: '70vh', maxHeight: '720px' }}
-        ref={tableRef}
-        role="region"
-        aria-label={columnLabels.tableAria}
-      >
-        <table className="w-full min-w-[920px] text-sm">
-          <thead className="sticky top-0 z-10 bg-muted/95 text-xs uppercase tracking-wide backdrop-blur">
-            {headerRow}
-          </thead>
-          <tbody>
-            {paddingTop > 0 ? (
-              <tr aria-hidden="true">
-                <td style={{ height: `${paddingTop}px` }} />
-              </tr>
-            ) : null}
-            {virtualItems.map((vRow) => {
-              const row = rowModel.rows[vRow.index];
-              if (!row) return null;
-              return (
-                <tr key={row.id} className="border-t">
-                  {row.getVisibleCells().map((cell) => {
-                    const alignRight = cell.column.id === 'recipientCount';
-                    return (
-                      <td
-                        key={cell.id}
-                        className={`px-3 py-2 ${alignRight ? 'text-right' : ''}`}
-                      >
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </td>
-                    );
-                  })}
-                </tr>
-              );
-            })}
-            {paddingBottom > 0 ? (
-              <tr aria-hidden="true">
-                <td style={{ height: `${paddingBottom}px` }} />
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
+      {/* Task 4 — dual-render: desktop `<table>` hidden below `md`, mobile
+          `QueueCardList` hidden at/above `md`. Both read from the SAME
+          `table` instance built above, so a selection made in one
+          presentation is visible in the other across a breakpoint resize. */}
+      <div className="hidden md:block">
+        <Table aria-label={columnLabels.tableAria}>
+          <TableHeader>
+            {table.getHeaderGroups().map((headerGroup) => (
+              <TableRow key={headerGroup.id}>
+                {headerGroup.headers.map((header) => {
+                  const alignRight = header.column.id === 'recipientCount';
+                  const narrow = header.column.id === 'select';
+                  return (
+                    <TableHead
+                      key={header.id}
+                      scope="col"
+                      className={cn(alignRight && 'text-right', narrow && 'w-10')}
+                    >
+                      {header.isPlaceholder
+                        ? null
+                        : flexRender(header.column.columnDef.header, header.getContext())}
+                    </TableHead>
+                  );
+                })}
+              </TableRow>
+            ))}
+          </TableHeader>
+          <TableBody>
+            {rowModel.rows.map((row) => (
+              <TableRow key={row.id} data-state={row.getIsSelected() ? 'selected' : undefined}>
+                {row.getVisibleCells().map((cell) => {
+                  const alignRight = cell.column.id === 'recipientCount';
+                  // Review round 1, I-1 — `TableCell` applies `whitespace-nowrap`
+                  // to every cell. `subject` is free-text up to ~200 chars (F7
+                  // sanitiser cap) and the primary column admins scan; under
+                  // table auto-layout an un-wrapped long subject widens the
+                  // whole table past its container. Restore wrapping on this
+                  // column only, capped so one very long word/subject can't
+                  // still blow out the column width. Precedent:
+                  // `members-table.tsx` "057 overflow fix" (`whitespace-normal
+                  // break-words` replacing `whitespace-nowrap`).
+                  const wrapSubject = cell.column.id === 'subject';
+                  return (
+                    <TableCell
+                      key={cell.id}
+                      className={cn(
+                        alignRight && 'text-right',
+                        wrapSubject && 'max-w-[40ch] whitespace-normal break-words',
+                      )}
+                    >
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </TableCell>
+                  );
+                })}
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       </div>
+      <QueueCardList
+        table={table}
+        readOnly={readOnly}
+        columnLabels={columnLabels}
+        className="md:hidden"
+      />
     </>
   );
 }

@@ -44,6 +44,40 @@
  * bulk-selected-state axe scan (previously one test) so a missing seed
  * only skips the seed-dependent half, not the always-runnable core PR1
  * a11y signal.
+ *
+ * Task 9 (2026-08-01-broadcast-review-queue-pr2) — the `@a11y` describe now
+ * sweeps the render tree Tasks 2–6 shipped: the shared `ui/table.tsx`
+ * desktop `<table>` (Task 3), the `QueueCardList` mobile fallback at a
+ * 360px viewport (Task 4), and the fixed-bottom `role="toolbar"` bulk bar
+ * that replaced the old sticky-top `role="region"` bar (Task 5/6). The D3
+ * test above's trailing assertion against that old `role="region"` bar
+ * was stale after `7465ae9be` dropped it — fixed here in the same pass to
+ * target the current `role="toolbar"`, since it exercises the identical
+ * selector this task otherwise had to introduce anyway.
+ *
+ * Task 9 fix round 1 — the `@i18n` describe's per-locale test anchored its
+ * PRIMARY assertion on the SLA banner's de-jargoned "Review target: within
+ * 48 hours" copy. That copy is CONDITIONALLY rendered: `page.tsx` passes
+ * `<SlaBanner compact={showOverdue}>`, and the compact branch (taken
+ * whenever the queue currently has an overdue `submitted` broadcast) never
+ * mentions "Review target" at all — it renders a bare median/p95 stat line
+ * instead (a legitimate product choice: no 30-day trend is worth showing
+ * when the page is already shouting "act now" via the overdue banner).
+ * `compact={showOverdue}` shipped in the SAME PR1 commit (`ee0aab12d`) as
+ * the original `@i18n` test, so this was a latent gap from day one — it
+ * only ever passed because the dev DB happened to have zero overdue
+ * broadcasts when PR1 was validated; data aging on the shared dev branch
+ * eventually flipped `showOverdue` true and turned the test permanently
+ * red. The fix: the per-locale test's REQUIRED assertions are now (1) the
+ * queue title heading (renders unconditionally, any state), (2) no
+ * `MISSING_MESSAGE`/`MISSING_KEY`, (3) no raw dotted-key leak (both the
+ * full `admin.broadcasts.queue.` path AND the bare scope-relative forms
+ * `queue./slaBanner./bulk./card./ageBadge.` that this page's own
+ * `useTranslations(scope)` calls would render un-resolved). The SLA
+ * "Review target" copy is still checked, but only OPPORTUNISTICALLY —
+ * gated on the full (non-compact) banner actually being in the DOM — so
+ * the test never depends on which SLA-banner render mode the live dev DB
+ * happens to be in at run time.
  */
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
@@ -372,10 +406,16 @@ test.describe('admin review queue (T099 — US2 AS1–AS6 + Q14)', () => {
     await seededRow.getByRole('checkbox').click();
 
     await expect(liveRegion).toContainText(/1 selected/);
-    // The visible bulk toolbar (same label) mounts alongside it.
-    await expect(
-      page.getByRole('region', { name: /1 selected/i }),
-    ).toBeVisible();
+    // The visible fixed-bottom bulk toolbar mounts alongside it — Task 5/6
+    // (2026-08-01-broadcast-review-queue-pr2) replaced the old sticky-top
+    // `role="region"` bar this assertion originally checked with a
+    // fixed-bottom `role="toolbar"` (`7465ae9be`); its own `aria-live`
+    // span carries the same "N selected" text.
+    const toolbar = page.getByRole('toolbar');
+    await expect(toolbar).toBeVisible();
+    await expect(toolbar.locator('[aria-live="polite"]')).toContainText(
+      /1 selected/,
+    );
   });
 
   // ---------- AS2: approve send-now ----------
@@ -615,7 +655,7 @@ test.describe('admin review queue (T099 — US2 AS1–AS6 + Q14)', () => {
  * review queue suite and remain hostage to it despite living outside its
  * braces.
  */
-test.describe('@a11y queue overdue/SLA/bulk-selection scan', () => {
+test.describe('@a11y queue render-tree scan — desktop table / mobile card / bulk toolbar', () => {
   test.describe.configure({ mode: 'default' });
   test.skip(
     !ADMIN_EMAIL || !ADMIN_PASSWORD,
@@ -627,7 +667,7 @@ test.describe('@a11y queue overdue/SLA/bulk-selection scan', () => {
   // banner + SLA banner token colours); it must always run and report its
   // own pass/fail rather than being swallowed by a `test.skip` on the
   // (seed-gated) bulk-selected scan that used to share its test body.
-  test('axe-core WCAG 2.1/2.2 AA scan — default view (overdue banner + SLA tokens)', async ({
+  test('axe-core WCAG 2.1/2.2 AA scan — default view (desktop table, overdue banner + SLA tokens)', async ({
     page,
   }) => {
     await signIn(page, ADMIN_EMAIL!, ADMIN_PASSWORD!);
@@ -636,6 +676,12 @@ test.describe('@a11y queue overdue/SLA/bulk-selection scan', () => {
 
     await page.goto('/admin/broadcasts');
     await page.locator('h1').first().waitFor({ timeout: 10_000 });
+
+    // Task 9 — the Playwright `chromium` project's default viewport
+    // (1280×720, Desktop Chrome) is ≥ the `md` breakpoint, so the shared
+    // `ui/table.tsx` primitive Task 3 adopted (`hidden md:block` wrapper)
+    // must render, not a hand-rolled table.
+    await expect(page.locator('[data-slot="table"]')).toBeVisible();
 
     // Covers the overdue banner (role="alert", when count>0), the
     // always-present SLA banner's severity-coloured token pill, filters,
@@ -646,7 +692,44 @@ test.describe('@a11y queue overdue/SLA/bulk-selection scan', () => {
     expect(results.violations).toEqual([]);
   });
 
-  test('axe-core WCAG 2.1/2.2 AA scan — 1-row bulk-selected state', async ({
+  // Task 9 — proves the `hidden md:block` (desktop table) / `md:hidden`
+  // (`QueueCardList`, Task 4) split actually holds under a real browser's
+  // CSS engine at a phone-width viewport (not just a unit-test snapshot),
+  // then axe-scans the mobile card render — its checkbox, status badge,
+  // and `ReviewActions` button group are never painted into the a11y tree
+  // by the desktop-viewport scan above.
+  test('axe-core WCAG 2.1/2.2 AA scan — mobile QueueCardList at 360px (desktop table hidden)', async ({
+    page,
+  }) => {
+    await signIn(page, ADMIN_EMAIL!, ADMIN_PASSWORD!);
+    const enabled = await isFeatureEnabled(page);
+    test.skip(!enabled, 'F7 feature flag is OFF (ship-dark)');
+
+    await page.goto('/admin/broadcasts');
+    await page.locator('h1').first().waitFor({ timeout: 10_000 });
+
+    await page.setViewportSize({ width: 360, height: 800 });
+    await page.reload();
+    await page.locator('h1').first().waitFor({ timeout: 10_000 });
+
+    await expect(
+      page.locator('[data-testid="queue-card-list"]'),
+    ).toBeVisible();
+    // Attached-then-hidden (not just "not matched") — the desktop table
+    // must still be a CSS-hidden DOM node at this width (`hidden`), never
+    // removed from the tree entirely, which would be a different
+    // regression `toBeHidden()` alone can't distinguish from.
+    const desktopTable = page.locator('[data-slot="table"]');
+    await expect(desktopTable).toBeAttached();
+    await expect(desktopTable).toBeHidden();
+
+    const results = await new AxeBuilder({ page })
+      .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
+      .analyze();
+    expect(results.violations).toEqual([]);
+  });
+
+  test('axe-core WCAG 2.1/2.2 AA scan — fixed-bottom bulk toolbar, 1 row selected (plain tab order)', async ({
     page,
   }) => {
     await signIn(page, ADMIN_EMAIL!, ADMIN_PASSWORD!);
@@ -661,17 +744,39 @@ test.describe('@a11y queue overdue/SLA/bulk-selection scan', () => {
     await page.goto('/admin/broadcasts');
     await page.locator('h1').first().waitFor({ timeout: 10_000 });
 
-    // Selecting a submitted row mounts the bulk toolbar + activates the
-    // sr-only aria-live selection announcer, neither of which the
-    // default-view scan above (0 rows selected) ever renders into the
-    // accessibility tree.
+    // Selecting a submitted row mounts the fixed-bottom `role="toolbar"`
+    // bulk bar (Task 5/6 — replaces the deleted sticky-top `role="region"`
+    // bar) + activates the sr-only aria-live selection announcer, neither
+    // of which the default-view scan above (0 rows selected) ever renders
+    // into the accessibility tree.
     const seededRow = page
       .locator('tbody tr')
       .filter({ hasText: SEEDED_SUBJECT });
     await seededRow.getByRole('checkbox').click();
-    await expect(
-      page.getByRole('region', { name: /1 selected/i }),
-    ).toBeVisible();
+
+    const toolbar = page.getByRole('toolbar');
+    await expect(toolbar).toBeVisible();
+    await expect(toolbar.locator('[aria-live="polite"]')).toContainText(
+      /1 selected/,
+    );
+
+    // Task 9 — `queue-bulk-action-bar.tsx`'s module docstring claims
+    // "Plain tab order — no roving-tabindex, matching both precedents
+    // exactly." Prove it behaviourally: focus Clear directly, then a
+    // single Tab must land on Approve. Had the toolbar instead implemented
+    // the WAI-ARIA APG toolbar widget pattern's roving tabindex (the
+    // ARIA-spec default for `role="toolbar"`), Tab from Clear would leave
+    // the toolbar entirely rather than reaching Approve — this deliberate
+    // divergence from the spec pattern is exactly what this assertion
+    // guards against regressing.
+    const clearButton = toolbar.getByRole('button', { name: /clear/i });
+    const approveButton = toolbar.getByRole('button', {
+      name: /approve selected/i,
+    });
+    await clearButton.focus();
+    await expect(clearButton).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(approveButton).toBeFocused();
 
     const results = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
@@ -680,25 +785,39 @@ test.describe('@a11y queue overdue/SLA/bulk-selection scan', () => {
   });
 });
 
-// ---------- @i18n: de-jargoned SLA copy, no key leaks ----------
+// ---------- @i18n: stable title + no key leaks (+ opportunistic SLA copy) ----------
 // Fix round 1 — sibling of the serial suite, same rationale as @a11y above
 // (including the `mode: 'default'` override — a file-level `configure`
 // cascades into every later top-level describe unless reset).
-test.describe('@i18n queue localisation — de-jargoned SLA copy, no key leaks', () => {
+//
+// Task 9 fix round 1 — see the module docstring's "Task 9 fix round 1"
+// entry for the full root-cause writeup. Summary: this describe used to
+// assert the SLA banner's "Review target: within 48 hours" copy
+// unconditionally, but that copy is CONDITIONALLY rendered
+// (`SlaBanner compact={showOverdue}` demotes to a bare stat line — no
+// "Review target" mention at all — whenever the queue currently has an
+// overdue broadcast, a legitimate product state, not a bug). The REQUIRED
+// per-locale assertions are now state-independent: a stable heading, no
+// `MISSING_MESSAGE`, no raw dotted-key leak. The SLA copy is still checked
+// when it happens to be in the DOM, but never required.
+test.describe('@i18n queue localisation — stable title, no key leaks', () => {
   test.describe.configure({ mode: 'default' });
   test.skip(
     !ADMIN_EMAIL || !ADMIN_PASSWORD,
     'Set E2E_ADMIN_EMAIL and E2E_ADMIN_PASSWORD',
   );
 
+  // STABLE anchor — the queue page title renders on every load regardless
+  // of overdue/SLA-compact runtime state. Values copied verbatim from
+  // `src/i18n/messages/{en,th,sv}.json` → `admin.broadcasts.queue.title`.
   const TITLE_RE: Record<'en' | 'th' | 'sv', RegExp> = {
     en: /E-Blast review queue/,
     th: /คิวตรวจสอบ E-Blast/,
     sv: /Granskningskö för E-Blast/,
   };
-  // The de-jargoned "review target" line (`admin.broadcasts.queue.
-  // slaBanner.targetSla`) — Task 2's SLA banner renders it
-  // unconditionally on every load, independent of any seed.
+  // OPPORTUNISTIC only (see module docstring) — the de-jargoned "review
+  // target" line (`admin.broadcasts.queue.slaBanner.targetSla`), present
+  // only when the full (non-compact) SlaBanner renders.
   const SLA_TARGET_RE: Record<'en' | 'th' | 'sv', RegExp> = {
     en: /Review target: within 48 hours/,
     th: /เป้าหมายการตรวจ: ภายใน 48 ชั่วโมง/,
@@ -706,7 +825,7 @@ test.describe('@i18n queue localisation — de-jargoned SLA copy, no key leaks',
   };
 
   for (const locale of ['en', 'th', 'sv'] as const) {
-    test(`renders in ${locale.toUpperCase()} — localised title + SLA copy, no MISSING_MESSAGE`, async ({
+    test(`renders in ${locale.toUpperCase()} — stable title, no raw key leak, no MISSING_MESSAGE`, async ({
       page,
       context,
     }) => {
@@ -724,16 +843,40 @@ test.describe('@i18n queue localisation — de-jargoned SLA copy, no key leaks',
       await page.goto('/admin/broadcasts');
       await page.locator('h1').first().waitFor({ timeout: 10_000 });
 
+      // REQUIRED #1 — stable localised heading, any runtime state.
       await expect(
         page.getByRole('heading', { name: TITLE_RE[locale], level: 1 }),
       ).toBeVisible();
-      await expect(page.getByText(SLA_TARGET_RE[locale])).toBeVisible();
 
       const bodyText: string = await page.evaluate(
         () => document.body.innerText,
       );
-      expect(bodyText).not.toMatch(/admin\.broadcasts\.queue\.[a-zA-Z]/);
+      // REQUIRED #2 — no MISSING_MESSAGE / MISSING_KEY anywhere on the page.
       expect(bodyText).not.toMatch(/MISSING_MESSAGE|MISSING_KEY/);
+      // REQUIRED #3 — no raw i18n dotted-key leak. next-intl does not throw
+      // on a missing key; it renders the dotted path instead (this repo's
+      // "next-intl no throw on missing key" gotcha). The first pattern
+      // covers the full absolute path under this page's namespace; the
+      // second covers the bare scope-relative form each component's own
+      // `useTranslations(scope)` call would render un-resolved
+      // (`sla-banner.tsx` → `slaBanner.*`, `queue-bulk-action-bar.tsx` →
+      // `bulk.*`, `queue-card-list.tsx` → `card.*`, the age-badge helper →
+      // `ageBadge.*`).
+      expect(bodyText).not.toMatch(/admin\.broadcasts\.queue\.[a-zA-Z]/);
+      expect(bodyText).not.toMatch(
+        /\b(queue|slaBanner|bulk|card|ageBadge)\.[a-zA-Z]+/,
+      );
+
+      // OPPORTUNISTIC — only when the full (non-compact) SlaBanner happens
+      // to be in the DOM (i.e. the queue has no currently-overdue
+      // broadcast) does this locale's de-jargoned "Review target" copy
+      // apply. When the compact stat-line branch is showing instead
+      // (`SlaBanner compact={showOverdue}`), there's nothing to check here
+      // — that state renders no "Review target" text at all, by design.
+      const slaTargetLocator = page.getByText(SLA_TARGET_RE[locale]);
+      if ((await slaTargetLocator.count()) > 0) {
+        await expect(slaTargetLocator).toBeVisible();
+      }
     });
   }
 });

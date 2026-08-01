@@ -68,4 +68,24 @@ describe('SlaBanner', () => {
       /bg-success-surface|bg-warning-surface|bg-destructive-surface/,
     );
   });
+
+  it('M3: compact suppresses the "within —h" stat line when there are zero decisions', async () => {
+    const zeroDecisions: SlaStats = {
+      ...green,
+      medianTimeToDecisionHours: null,
+      p95TimeToDecisionHours: null,
+      decisionCount: 0,
+    };
+    const ui = await SlaBanner({ stats: zeroDecisions, compact: true });
+    const { container } = render(ui);
+    expect(container.innerHTML).toBe('');
+    expect(container.textContent).not.toMatch(/—h/);
+  });
+
+  it('M3: compact still shows the stat line once at least one decision exists', async () => {
+    const ui = await SlaBanner({ stats: green, compact: true });
+    const { container } = render(ui);
+    expect(container.textContent).toMatch(/medianRolling30d/);
+    expect(container.textContent).toMatch(/p95Rolling30d/);
+  });
 });
