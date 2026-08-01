@@ -16,11 +16,41 @@
  *   - AS5: manager role sees queue read-only, no Approve/Reject buttons
  *   - AS6: concurrent admin race → second action gets 409 toast
  *   - Q14: halt-state banner + clear-halt typed-phrase confirmation
+ *
+ * Task 7 (2026-08-01-broadcast-review-queue-pr1) additions:
+ *   - D2: Audience column never leaks the raw `segment_type` enum, and
+ *         shows the localised label for the seeded row.
+ *   - D3: selecting a `submitted` row's checkbox announces the running
+ *         selection count via the sr-only `aria-live="polite"` region.
+ *   - @a11y: axe-core WCAG 2.1/2.2 AA scan of `/admin/broadcasts`,
+ *            covering both the default landing view (overdue banner +
+ *            SLA banner token colours) and the 1-row bulk-selected
+ *            state (bulk toolbar + selection announcer) — neither of
+ *            which the baseline `broadcast-axe.spec.ts` admin-queue
+ *            scan exercises (it never selects a row).
+ *   - @i18n: EN/TH/SV render the localised queue title + the
+ *            de-jargoned SLA "review target" copy with no
+ *            `MISSING_MESSAGE` / raw-key leak.
  */
+import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
 import { seedF7Broadcasts } from './helpers/broadcasts-seed';
+
+/**
+ * The raw `segment_type` DB enum values (`src/modules/broadcasts` domain).
+ * These must never render verbatim in the Audience column — only their
+ * localised label (`admin.broadcasts.review.segmentType.*`) may appear.
+ */
+const RAW_SEGMENT_ENUMS = [
+  'event_attendees_last_90d',
+  'all_members',
+  'tier',
+  'custom',
+] as const;
+
+const SEEDED_SUBJECT = '[E2E SEED] AS2-AS6 fixture broadcast';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
@@ -242,6 +272,93 @@ test.describe('admin review queue (T099 — US2 AS1–AS6 + Q14)', () => {
     ).toBeChecked();
   });
 
+  // ---------- D2: Audience column raw-enum leak ----------
+  test('D2: Audience column never renders the raw segment_type enum', async ({
+    page,
+  }) => {
+    await signIn(page, ADMIN_EMAIL!, ADMIN_PASSWORD!);
+    const enabled = await isFeatureEnabled(page);
+    test.skip(!enabled, 'F7 feature flag is OFF (ship-dark)');
+
+    await page.goto('/admin/broadcasts');
+    await page.locator('h1').first().waitFor({ timeout: 10_000 });
+
+    // Negative invariant — holds regardless of what's seeded. Scope to
+    // the table body: the raw strings are short/generic ("tier",
+    // "custom") enough that a page-wide search risks a false positive
+    // from unrelated furniture, so only the Audience cell's exact
+    // (whitespace-normalised) text content is checked, never a
+    // substring of surrounding copy.
+    const tbody = page.locator('tbody');
+    for (const raw of RAW_SEGMENT_ENUMS) {
+      await expect(tbody.getByText(new RegExp(`^${raw}$`))).toHaveCount(0);
+    }
+  });
+
+  test('D2b: Audience column shows the localised label for the seeded all_members broadcast', async ({
+    page,
+  }) => {
+    await signIn(page, ADMIN_EMAIL!, ADMIN_PASSWORD!);
+    const enabled = await isFeatureEnabled(page);
+    test.skip(!enabled, 'F7 feature flag is OFF (ship-dark)');
+    test.skip(
+      !SEEDED_SUBMITTED_BROADCAST_ID,
+      'Set E2E_SEED_BROADCAST_ID for the seeded all_members broadcast',
+    );
+    await reseed();
+
+    await page.goto('/admin/broadcasts');
+    await page.locator('h1').first().waitFor({ timeout: 10_000 });
+
+    // The AS2-AS6 seed row is `segment_type = 'all_members'`
+    // (`helpers/broadcasts-seed.ts`) → the Audience cell must render the
+    // localised label "All members" (admin.broadcasts.review.segmentType.
+    // all_members), never the raw enum string.
+    const seededRow = page
+      .locator('tbody tr')
+      .filter({ hasText: SEEDED_SUBJECT });
+    await expect(seededRow).toBeVisible();
+    await expect(seededRow.getByText('All members', { exact: true })).toBeVisible();
+    await expect(seededRow.getByText('all_members')).toHaveCount(0);
+  });
+
+  // ---------- D3: bulk selection aria-live ----------
+  test('D3: selecting a submitted row checkbox announces the count via aria-live', async ({
+    page,
+  }) => {
+    await signIn(page, ADMIN_EMAIL!, ADMIN_PASSWORD!);
+    const enabled = await isFeatureEnabled(page);
+    test.skip(!enabled, 'F7 feature flag is OFF (ship-dark)');
+    test.skip(
+      !SEEDED_SUBMITTED_BROADCAST_ID,
+      'Set E2E_SEED_BROADCAST_ID for a submitted row to select',
+    );
+    await reseed();
+
+    await page.goto('/admin/broadcasts');
+    await page.locator('h1').first().waitFor({ timeout: 10_000 });
+
+    // Permanently-mounted sr-only announcer (Round-2 review Fix 1 in
+    // `queue-table-client.tsx`) — empty before any selection so the
+    // 0→1 transition is a text MUTATION on an already-mounted node,
+    // which is what NVDA/JAWS actually announce.
+    const liveRegion = page.locator(
+      '[role="status"][aria-live="polite"].sr-only',
+    );
+    await expect(liveRegion).toBeAttached();
+
+    const seededRow = page
+      .locator('tbody tr')
+      .filter({ hasText: SEEDED_SUBJECT });
+    await seededRow.getByRole('checkbox').click();
+
+    await expect(liveRegion).toContainText(/1 selected/);
+    // The visible bulk toolbar (same label) mounts alongside it.
+    await expect(
+      page.getByRole('region', { name: /1 selected/i }),
+    ).toBeVisible();
+  });
+
   // ---------- AS2: approve send-now ----------
   test('AS2: admin approves "send now" → status flips to approved', async ({
     page,
@@ -450,5 +567,100 @@ test.describe('admin review queue (T099 — US2 AS1–AS6 + Q14)', () => {
     await expect(
       page.getByRole('button', { name: /clear|resume/i }).first(),
     ).toBeVisible();
+  });
+
+  // ---------- @a11y: overdue banner + SLA tokens + bulk selection ----------
+  test.describe('@a11y queue overdue/SLA/bulk-selection scan', () => {
+    test('axe-core WCAG 2.1/2.2 AA scan — default view + 1-row bulk-selected state', async ({
+      page,
+    }) => {
+      await signIn(page, ADMIN_EMAIL!, ADMIN_PASSWORD!);
+      const enabled = await isFeatureEnabled(page);
+      test.skip(!enabled, 'F7 feature flag is OFF (ship-dark)');
+
+      await page.goto('/admin/broadcasts');
+      await page.locator('h1').first().waitFor({ timeout: 10_000 });
+
+      // Scan #1 — the default landing view. Covers the overdue banner
+      // (role="alert", when count>0), the always-present SLA banner's
+      // severity-coloured token pill, filters, and the table/empty-state.
+      const collapsedResults = await new AxeBuilder({ page })
+        .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
+        .analyze();
+      expect(collapsedResults.violations).toEqual([]);
+
+      // Scan #2 — with a submitted row selected. Mounts the bulk
+      // toolbar + activates the sr-only aria-live selection announcer,
+      // neither of which scan #1 (0 rows selected) ever renders into
+      // the accessibility tree.
+      test.skip(
+        !SEEDED_SUBMITTED_BROADCAST_ID,
+        'Set E2E_SEED_BROADCAST_ID to cover the bulk-selection a11y state',
+      );
+      await reseed();
+      await page.goto('/admin/broadcasts');
+      await page.locator('h1').first().waitFor({ timeout: 10_000 });
+      const seededRow = page
+        .locator('tbody tr')
+        .filter({ hasText: SEEDED_SUBJECT });
+      await seededRow.getByRole('checkbox').click();
+      await expect(
+        page.getByRole('region', { name: /1 selected/i }),
+      ).toBeVisible();
+
+      const expandedResults = await new AxeBuilder({ page })
+        .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
+        .analyze();
+      expect(expandedResults.violations).toEqual([]);
+    });
+  });
+
+  // ---------- @i18n: de-jargoned SLA copy, no key leaks ----------
+  test.describe('@i18n queue localisation — de-jargoned SLA copy, no key leaks', () => {
+    const TITLE_RE: Record<'en' | 'th' | 'sv', RegExp> = {
+      en: /E-Blast review queue/,
+      th: /คิวตรวจสอบ E-Blast/,
+      sv: /Granskningskö för E-Blast/,
+    };
+    // The de-jargoned "review target" line (`admin.broadcasts.queue.
+    // slaBanner.targetSla`) — Task 2's SLA banner renders it
+    // unconditionally on every load, independent of any seed.
+    const SLA_TARGET_RE: Record<'en' | 'th' | 'sv', RegExp> = {
+      en: /Review target: within 48 hours/,
+      th: /เป้าหมายการตรวจ: ภายใน 48 ชั่วโมง/,
+      sv: /Granskningsmål: inom 48 timmar/,
+    };
+
+    for (const locale of ['en', 'th', 'sv'] as const) {
+      test(`renders in ${locale.toUpperCase()} — localised title + SLA copy, no MISSING_MESSAGE`, async ({
+        page,
+        context,
+      }) => {
+        await signIn(page, ADMIN_EMAIL!, ADMIN_PASSWORD!);
+        const enabled = await isFeatureEnabled(page);
+        test.skip(!enabled, 'F7 feature flag is OFF (ship-dark)');
+
+        // Port-agnostic per RFC 6265 (domain+path only, no explicit
+        // url/port) — matches `broadcast-i18n.spec.ts` T197's
+        // NEXT_LOCALE cookie convention so this test works unchanged
+        // whether Playwright's baseURL is :3100 or a worktree's :3101.
+        await context.addCookies([
+          { name: 'NEXT_LOCALE', value: locale, domain: 'localhost', path: '/' },
+        ]);
+        await page.goto('/admin/broadcasts');
+        await page.locator('h1').first().waitFor({ timeout: 10_000 });
+
+        await expect(
+          page.getByRole('heading', { name: TITLE_RE[locale], level: 1 }),
+        ).toBeVisible();
+        await expect(page.getByText(SLA_TARGET_RE[locale])).toBeVisible();
+
+        const bodyText: string = await page.evaluate(
+          () => document.body.innerText,
+        );
+        expect(bodyText).not.toMatch(/admin\.broadcasts\.queue\.[a-zA-Z]/);
+        expect(bodyText).not.toMatch(/MISSING_MESSAGE|MISSING_KEY/);
+      });
+    }
   });
 });
