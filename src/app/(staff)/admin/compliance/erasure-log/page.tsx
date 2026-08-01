@@ -1,12 +1,14 @@
 /**
- * COMP-1 US3-D (Task 4) — DPO erasure-evidence log (`/admin/compliance/erasure-log`).
+ * COMP-1 US3-D (Task 4, rewired Task 6) — DPO erasure-evidence log
+ * (`/admin/compliance/erasure-log`).
  *
  * Read-only admin page that gives the Data Protection Officer a single,
- * accountable view of every member erasure + its full Art.17 evidence: the
- * Art.12 attestation, the completion cascade, the F1 `user_erased` credential
- * proof, the US3-B tax-document redactions, and the US3-C sub-processor
- * outcome — grouped one card per erased member, newest-erasure-first, with a
- * prominent half-run / OVERDUE badge.
+ * accountable, TRIAGE-FIRST view of every member erasure + its full Art.17
+ * evidence: the Art.12 attestation, the completion cascade, the F1
+ * `user_erased` credential proof, the US3-B tax-document redactions, and the
+ * US3-C sub-processor outcome — grouped one card per erased member,
+ * urgency-first (overdue > in-progress > complete), with a status-filter nav,
+ * an SCCM member-number search, and a breach / all-clear banner.
  *
  * RBAC (CWE-285 carry-forward from Task 2): ADMIN-ONLY. Chamber-OS has no
  * distinct DPO role, so the admin acts as DPO. `requireAdminContext`
@@ -23,14 +25,17 @@
  *
  * Read-only: NO action buttons. The page never mutates an erasure — remediation
  * runs through the US2d reconciler cron / the US3-A admin erase flow.
+ *
+ * Task 6 replaces the original cursor/keyset pager with the `getErasureEvidenceLog`
+ * triage engine (Task 3): a bounded `displayCap` read, a status-bucket summary,
+ * urgency-first sort, an optional `?status=` filter, and an optional `?q=`
+ * SCCM member-number search — see `src/modules/insights/application/erasure-evidence.ts`.
  */
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { getTranslations, getLocale } from 'next-intl/server';
 import { env } from '@/lib/env';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { buttonVariants } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { EmptyState } from '@/components/shell/empty-state';
@@ -38,21 +43,27 @@ import { ShieldCheckIcon } from 'lucide-react';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
-import { cn } from '@/lib/utils';
 import {
   getErasureEvidenceLog,
   makeGetErasureEvidenceLogDeps,
-  type GroupedEvidence,
+  DEFAULT_DISPLAY_CAP,
+  type ErasureStatusFilter,
 } from '@/modules/insights';
-import { decodeCursor, encodeCursor } from './cursor';
+import {
+  resolveMemberNumberPrefix,
+  drizzleMemberSettingsRepo,
+  parseMemberNumberQuery,
+  formatMemberNumber,
+  asMemberNumber,
+} from '@/modules/members';
+import { EvidenceCard } from './_components/evidence-card';
+import { ErasureFilterTabs } from './_components/erasure-filter-tabs';
+import { ErasureSearchForm } from './_components/erasure-search-form';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.compliance.erasureLog');
   return { title: t('title') };
 }
-
-/** Keyset page size — the evidence read is per-member low-volume; 25 is plenty. */
-const PAGE_SIZE = 25;
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
@@ -60,6 +71,50 @@ type SearchParams = Record<string, string | string[] | undefined>;
 function str(v: string | string[] | undefined): string {
   const raw = Array.isArray(v) ? v[0] : v;
   return (raw ?? '').trim();
+}
+
+const VALID_STATUS = new Set<ErasureStatusFilter>(['all', 'overdue', 'in_progress', 'complete']);
+
+/** Unknown/absent `?status=` values fall back to `'all'` (never a 400 — this is a triage view, not an API). */
+function parseStatus(v: string): ErasureStatusFilter {
+  return VALID_STATUS.has(v as ErasureStatusFilter) ? (v as ErasureStatusFilter) : 'all';
+}
+
+type Translator = (key: string, values?: Record<string, string | number>) => string;
+
+/** `filteredEmpty`/`filteredSearchEmpty` i18n key segment for a non-'all' status bucket. */
+function statusMessageKey(status: Exclude<ErasureStatusFilter, 'all'>): 'overdue' | 'inProgress' | 'complete' {
+  return status === 'in_progress' ? 'inProgress' : status;
+}
+
+/**
+ * Canonical SCCM echo for the empty-state `ref` — a numeric/`SCCM-NNNN` query
+ * echoes back formatted the same way `EvidenceCard` renders it (e.g. `17` →
+ * `SCCM-0017`), instead of the raw query text. Non-numeric queries (company
+ * name searches, once supported) echo back verbatim.
+ */
+function formatSearchRef(q: string, memberPrefix: string): string {
+  const n = parseMemberNumberQuery(q);
+  return n !== null ? formatMemberNumber(memberPrefix, asMemberNumber(n)) : q;
+}
+
+/**
+ * Empty-state title copy — four mutually exclusive cases (search × filter),
+ * distinguishing a genuinely-empty org from a filtered/searched dead end so
+ * the DPO is never told "no erasures" when the org simply has none matching
+ * the CURRENT view.
+ */
+function emptyStateTitle(
+  status: ErasureStatusFilter,
+  q: string,
+  memberPrefix: string,
+  t: Translator,
+): string {
+  const ref = formatSearchRef(q, memberPrefix);
+  if (q !== '' && status !== 'all') return t(`filteredSearchEmpty.${statusMessageKey(status)}`, { ref });
+  if (q !== '' && status === 'all') return t('search.empty', { ref });
+  if (q === '' && status !== 'all') return t(`filteredEmpty.${statusMessageKey(status)}`);
+  return t('empty.title');
 }
 
 export default async function ErasureLogPage({
@@ -75,17 +130,22 @@ export default async function ErasureLogPage({
   const t = await getTranslations('admin.compliance.erasureLog');
   const locale = await getLocale();
   const tenant = resolveTenantFromRequest();
-  const cursor = decodeCursor(str(params.cursor));
+  const status = parseStatus(str(params.status));
+  const q = str(params.q);
 
   // Read the clock ONCE so the use-case's isOverdue (server-side) and the
   // per-card `elapsed()` render agree on the same instant.
   const now = new Date();
-  const result = await getErasureEvidenceLog(makeGetErasureEvidenceLogDeps(), {
-    ctx: tenant,
-    limit: PAGE_SIZE,
-    ...(cursor ? { cursor } : {}),
-    now,
-  });
+  const [result, memberPrefix] = await Promise.all([
+    getErasureEvidenceLog(makeGetErasureEvidenceLogDeps(), {
+      ctx: tenant,
+      now,
+      filter: status,
+      ...(q ? { search: q } : {}),
+      displayCap: DEFAULT_DISPLAY_CAP,
+    }),
+    resolveMemberNumberPrefix(tenant, drizzleMemberSettingsRepo),
+  ]);
 
   // Render every instant in the tenant timezone (the Vercel runtime is UTC;
   // without timeZone the "local" line would duplicate the UTC value).
@@ -95,258 +155,71 @@ export default async function ErasureLogPage({
     timeZone: env.tenant.timezone, // canonical tenant TZ (matches the F9 audit page); closes the latent multi-tenant gap
   });
 
-  const header = <PageHeader title={t('title')} subtitle={t('subtitle')} />;
+  // Breach / all-clear banners are ONLY meaningful on the unfiltered, unsearched
+  // 'all' view — a filtered/searched subset can look "all clear" or "all overdue"
+  // by construction of the filter itself, which would mislead the DPO.
+  const unfiltered = status === 'all' && q === '';
+  const topBannerPresent = unfiltered && result.summary.overdue > 0;
+  // `!result.capped`: a capped read only shows the newest `displayCap` rows, so
+  // an org with older, unseen erasures past the cap could have `inProgress === 0`
+  // on the visible slice while older rows are still outstanding — asserting
+  // "no outstanding breaches" here would be a false compliance claim.
+  const showAllClear =
+    unfiltered && result.summary.total > 0 && result.summary.inProgress === 0 && !result.capped;
 
-  if (result.rows.length === 0) {
-    // Distinguish a genuinely-empty org (no cursor → first page) from an empty
-    // paginated TAIL (a "load more" landed on a 0-row page beyond a full final
-    // page). The org-level "none yet" copy would mislead on the latter.
-    const emptyKey = cursor ? 'emptyTail' : 'empty';
-    return (
-      <TableContainer>
-        {header}
+  return (
+    <TableContainer>
+      <PageHeader title={t('title')} subtitle={t('subtitle')} />
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <ErasureFilterTabs active={status} summary={result.summary} q={q} />
+        <ErasureSearchForm status={status} q={q} />
+      </div>
+
+      {topBannerPresent ? (
+        <div
+          role="alert"
+          className="rounded-md border border-destructive/40 bg-destructive-surface p-3 text-sm font-medium text-destructive"
+        >
+          {t('breachAlert', { count: result.summary.overdue })}
+        </div>
+      ) : showAllClear ? (
+        <div className="rounded-md border border-success/40 bg-success-surface p-3 text-sm text-success">
+          {t('allClear')}
+        </div>
+      ) : null}
+
+      {result.capped ? (
+        <p className="text-sm text-muted-foreground">{t('capNote', { cap: DEFAULT_DISPLAY_CAP })}</p>
+      ) : null}
+
+      {result.rows.length === 0 ? (
         <Card>
           <CardContent>
             <EmptyState
               icon={ShieldCheckIcon}
-              title={t(`${emptyKey}.title`)}
-              description={t(`${emptyKey}.body`)}
+              title={emptyStateTitle(status, q, memberPrefix, t)}
               bordered={false}
               data-testid="erasure-log-empty"
+              {...(unfiltered ? { description: t('empty.body') } : {})}
             />
           </CardContent>
         </Card>
-      </TableContainer>
-    );
-  }
-
-  const nextHref =
-    result.nextCursor !== null
-      ? `/admin/compliance/erasure-log?cursor=${encodeCursor(result.nextCursor)}`
-      : null;
-
-  return (
-    <TableContainer>
-      {header}
-
-      {/* SR result-count announcement, re-rendered on each "load more" nav. */}
-      <p role="status" className="sr-only">
-        {t('resultCount', { count: result.rows.length })}
-      </p>
-
-      <ul className="flex flex-col gap-[var(--page-section-gap)]">
-        {result.rows.map((row) => (
-          <li key={row.memberId}>
-            <EvidenceCard row={row} fmt={dateFmt} t={t} now={now} />
-          </li>
-        ))}
-      </ul>
-
-      {nextHref ? (
-        <div className="flex justify-center">
-          <a href={nextHref} className={buttonVariants({ variant: 'outline' })}>
-            {t('loadMore')}
-          </a>
-        </div>
-      ) : null}
+      ) : (
+        <ul className="flex flex-col gap-[var(--page-section-gap)]">
+          {result.rows.map((row) => (
+            <li key={row.memberId}>
+              <EvidenceCard
+                row={row}
+                memberPrefix={memberPrefix}
+                fmt={dateFmt}
+                now={now}
+                topBannerPresent={topBannerPresent}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
     </TableContainer>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Presentation helpers (RSC-local — no client interactivity on this surface)
-// ---------------------------------------------------------------------------
-
-type T = (key: string, values?: Record<string, string | number>) => string;
-
-/** Human-readable elapsed time since an instant (whole days / hours / minutes). */
-function elapsed(from: Date, now: Date, t: T): string {
-  const ms = Math.max(0, now.getTime() - from.getTime());
-  const days = Math.floor(ms / (24 * 60 * 60 * 1000));
-  if (days >= 1) return t('status.elapsedDays', { count: days });
-  const hours = Math.floor(ms / (60 * 60 * 1000));
-  if (hours >= 1) return t('status.elapsedHours', { count: hours });
-  const minutes = Math.floor(ms / (60 * 1000));
-  return t('status.elapsedMinutes', { count: minutes });
-}
-
-/** A label/value definition row. Value is em-dash when null/empty. */
-function Field({ label, children }: { label: string; children: React.ReactNode }): React.JSX.Element {
-  return (
-    <div className="flex flex-col gap-0.5">
-      <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
-      <dd className="text-sm">{children}</dd>
-    </div>
-  );
-}
-
-const DASH = '—';
-
-function EvidenceCard({
-  row,
-  fmt,
-  t,
-  now,
-}: {
-  row: GroupedEvidence;
-  fmt: Intl.DateTimeFormat;
-  t: T;
-  now: Date;
-}): React.JSX.Element {
-  const headingId = `erasure-${row.memberId}`;
-  const fmtDate = (d: Date | null): string => (d ? fmt.format(d) : DASH);
-  const fmtBool = (b: boolean | null): string =>
-    b === null ? DASH : b ? t('value.yes') : t('value.no');
-  const fmtText = (s: string | null): string => (s && s.trim() !== '' ? s : DASH);
-
-  // Status badge — destructive (overdue) > amber (half-run) > neutral (complete).
-  const statusVariant: 'destructive' | 'outline' | 'secondary' = row.isOverdue
-    ? 'destructive'
-    : row.halfRun
-      ? 'outline'
-      : 'secondary';
-  const statusLabel = row.isOverdue
-    ? t('status.overdue')
-    : row.halfRun
-      ? t('status.halfRun')
-      : t('status.complete');
-
-  return (
-    <Card>
-      <CardHeader className="border-b">
-        <section aria-labelledby={headingId} className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex flex-col gap-1">
-            <h2 id={headingId} className="font-heading text-base font-medium leading-snug">
-              {t('memberNumber', { number: row.memberNumber })}
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              {t('erasedAt', { at: fmtDate(row.erasedAt) })}
-            </p>
-          </div>
-          <Badge
-            variant={statusVariant}
-            className={cn(
-              'h-6 px-2.5 text-xs',
-              // Amber half-run (not overdue): the destructive variant is reserved
-              // for the breach state, so half-run gets an explicit amber treatment.
-              row.halfRun && !row.isOverdue &&
-                'border-amber-500/60 bg-amber-500/10 text-amber-700 dark:text-amber-400',
-            )}
-          >
-            {statusLabel}
-          </Badge>
-        </section>
-      </CardHeader>
-
-      <CardContent className="flex flex-col gap-6">
-        {/* Half-run note — elapsed time + reconciler escalation guidance. */}
-        {row.halfRun && row.requestedAt ? (
-          <p
-            className={cn(
-              'rounded-md border p-3 text-sm',
-              row.isOverdue
-                ? 'border-destructive/40 bg-destructive-surface text-destructive'
-                : 'border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-300',
-            )}
-            role={row.isOverdue ? 'alert' : 'status'}
-          >
-            {row.isOverdue
-              ? t('halfRunNote.overdue', { elapsed: elapsed(row.requestedAt, now, t) })
-              : t('halfRunNote.pending', { elapsed: elapsed(row.requestedAt, now, t) })}
-          </p>
-        ) : null}
-
-        {/* Requested + Art.12 attestation block. */}
-        <section aria-label={t('sections.requested')} className="flex flex-col gap-2">
-          <h3 className="text-sm font-semibold">{t('sections.requested')}</h3>
-          <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Field label={t('fields.requestedAt')}>{fmtDate(row.requestedAt)}</Field>
-            <Field label={t('fields.reason')}>{fmtText(row.reason)}</Field>
-            <Field label={t('fields.identityVerified')}>{fmtBool(row.identityVerified)}</Field>
-            <Field label={t('fields.verificationMethod')}>{fmtText(row.verificationMethod)}</Field>
-            <Field label={t('fields.note')}>{fmtText(row.note)}</Field>
-          </dl>
-        </section>
-
-        {/* Completion block — cascade counts + the re-drive caveat. */}
-        <section aria-label={t('sections.completion')} className="flex flex-col gap-2">
-          <h3 className="text-sm font-semibold">{t('sections.completion')}</h3>
-          <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Field label={t('fields.completedAt')}>{fmtDate(row.completedAt)}</Field>
-            <Field label={t('fields.sessionsRevoked')}>
-              {row.sessionsRevokedTotal ?? DASH}
-            </Field>
-            <Field label={t('fields.invitationsRevoked')}>
-              {row.invitationsRevokedCount ?? DASH}
-            </Field>
-          </dl>
-          {row.reDrive === true ? (
-            <p className="text-xs text-muted-foreground" role="note">
-              {t('reDriveNote')}
-            </p>
-          ) : null}
-        </section>
-
-        {/* Credential erasure (user_erased) — occurredAt + marker ONLY (M-2). */}
-        <section aria-label={t('sections.credential')} className="flex flex-col gap-2">
-          <h3 className="text-sm font-semibold">{t('sections.credential')}</h3>
-          {row.userErasedProofs.length > 0 ? (
-            <ul className="flex flex-col gap-1 text-sm">
-              {row.userErasedProofs.map((p, i) => (
-                <li key={`${row.memberId}-cred-${i}`} className="flex items-center gap-2">
-                  <ShieldCheckIcon className="size-4 text-muted-foreground" aria-hidden />
-                  <span>{t('credentialErasedAt', { at: fmt.format(p.occurredAt) })}</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-sm text-muted-foreground">{t('credentialNone')}</p>
-          )}
-        </section>
-
-        {/* Tax-document redactions (US3-B) — occurredAt + document_kind (H-1). */}
-        <section aria-label={t('sections.taxRedactions')} className="flex flex-col gap-2">
-          <h3 className="text-sm font-semibold">{t('sections.taxRedactions')}</h3>
-          {row.taxRedactions.length > 0 ? (
-            <ul className="flex flex-col gap-1 text-sm">
-              {row.taxRedactions.map((r, i) => (
-                <li key={`${row.memberId}-tax-${i}`} className="flex flex-wrap items-center gap-2">
-                  <Badge variant="outline" className="text-xs">
-                    {r.documentKind === 'invoice'
-                      ? t('documentKind.invoice')
-                      : r.documentKind === 'credit_note'
-                        ? t('documentKind.creditNote')
-                        : r.documentKind}
-                  </Badge>
-                  <span className="text-muted-foreground">{fmt.format(r.occurredAt)}</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-sm text-muted-foreground">{t('taxRedactionsNone')}</p>
-          )}
-        </section>
-
-        {/* Sub-processor (Resend) outcome (US3-C). */}
-        <section aria-label={t('sections.subprocessor')} className="flex flex-col gap-2">
-          <h3 className="text-sm font-semibold">{t('sections.subprocessor')}</h3>
-          {row.subprocessorOutcome ? (
-            <dl className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <Field label={t('fields.resendOutcome')}>
-                {row.subprocessorOutcome.resendOutcome}
-              </Field>
-              <Field label={t('fields.contactsRemoved')}>
-                {row.subprocessorOutcome.contactsRemoved}
-              </Field>
-              <Field label={t('fields.contactsFailed')}>
-                {row.subprocessorOutcome.contactsFailed}
-              </Field>
-            </dl>
-          ) : (
-            <p className="text-sm text-muted-foreground">{t('subprocessorNone')}</p>
-          )}
-        </section>
-      </CardContent>
-    </Card>
   );
 }

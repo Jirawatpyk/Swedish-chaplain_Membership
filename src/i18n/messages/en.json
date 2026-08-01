@@ -361,9 +361,24 @@
       "erasureLog": {
         "title": "Erasure evidence log",
         "subtitle": "Accountable record of every member erasure and its Article 17 evidence",
-        "resultCount": "{count, plural, =0 {No erasures on this page} one {# erasure} other {# erasures}}",
-        "loadMore": "Load older erasures",
-        "memberNumber": "Member #{number}",
+        "filter": {
+          "navLabel": "Filter erasures by status",
+          "all": "All",
+          "overdue": "Overdue",
+          "inProgress": "In progress",
+          "complete": "Complete",
+          "countSr": "{count, plural, =0 {no erasures} one {# erasure} other {# erasures}}"
+        },
+        "search": {
+          "label": "Search by member number",
+          "placeholder": "e.g. SCCM-0042",
+          "submit": "Search",
+          "clear": "Clear search",
+          "empty": "No erasure matches {ref}."
+        },
+        "breachAlert": "{count, plural, one {# erasure is} other {# erasures are}} past the 30-day statutory window — this may be a reportable breach. Review now.",
+        "allClear": "All erasures complete — no outstanding breaches.",
+        "memberNumber": "Member {ref}",
         "erasedAt": "Erased {at}",
         "reDriveNote": "Completed via reconciler re-drive — the counts above reflect this pass only (the original run revoked the sessions and invitations).",
         "credentialErasedAt": "Login credential erased {at}",
@@ -374,10 +389,17 @@
           "title": "No erasures recorded",
           "body": "No members have been erased for this organisation yet. Erasure evidence appears here once a member is erased."
         },
-        "emptyTail": {
-          "title": "No more results",
-          "body": "You've reached the end of the erasure evidence log."
+        "filteredEmpty": {
+          "overdue": "No overdue erasures.",
+          "inProgress": "No erasures in progress.",
+          "complete": "No completed erasures."
         },
+        "filteredSearchEmpty": {
+          "overdue": "No overdue erasures match {ref}.",
+          "inProgress": "No in-progress erasures match {ref}.",
+          "complete": "No completed erasures match {ref}."
+        },
+        "capNote": "Showing the newest {cap} erasures. The list and counts above are limited to these — older erasures are not shown.",
         "status": {
           "complete": "Complete",
           "halfRun": "In progress",

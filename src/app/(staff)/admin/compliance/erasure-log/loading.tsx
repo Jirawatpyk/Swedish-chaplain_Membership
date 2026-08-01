@@ -1,9 +1,19 @@
 /**
  * Route-level loading UI for /admin/compliance/erasure-log — shimmer skeleton
- * in the final shape for CLS 0 (ux-standards § 2.1). Mirrors the evidence-log
- * layout: PageHeader + a list of card skeletons (header row with a status
- * badge + a sectioned definition grid), inside a TableContainer to match the
- * page's container (check:layout pairing).
+ * in the final shape for CLS 0 (ux-standards § 2.1). Mirrors the Task 6 page
+ * shape: PageHeader, then the filter-tabs + search toolbar row, then a list
+ * of evidence-card skeletons, inside a TableContainer to match the page's
+ * container (check:layout pairing).
+ *
+ * `EvidenceCard` (`_components/evidence-card.tsx`) is a native `<details>`
+ * that renders COLLAPSED (summary-row height only) for complete erasures and
+ * OPEN (full two-grid content) for half-run/overdue ones — urgency-first, so
+ * most real cards land collapsed. `CollapsedCardSkeleton` mirrors the
+ * `<summary>` row alone (`Card` with `p-0`, since `<details>` owns padding,
+ * wrapping a `border-b px-6 py-4` row) so the shimmer→real transition has
+ * zero layout shift for the common case; `ExpandedCardSkeleton` mirrors the
+ * open two-section definition-grid content for the minority of cards that
+ * render open.
  */
 import { getTranslations } from 'next-intl/server';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -11,7 +21,26 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 
-function EvidenceCardSkeleton(): React.JSX.Element {
+/** Mirrors `EvidenceCard`'s collapsed `<summary>` row — no content below it. */
+function CollapsedCardSkeleton(): React.JSX.Element {
+  return (
+    <Card className="p-0">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b px-6 py-4">
+        <div className="flex flex-col gap-1">
+          <Skeleton className="h-[1.375rem] w-40" />
+          <Skeleton className="h-5 w-56" />
+        </div>
+        <div className="flex items-center gap-2">
+          <Skeleton className="h-6 w-24 rounded-4xl" />
+          <Skeleton className="size-4" />
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+/** Mirrors `EvidenceCard`'s open state — summary row + the two sectioned definition grids. */
+function ExpandedCardSkeleton(): React.JSX.Element {
   return (
     <Card>
       <CardHeader className="border-b">
@@ -48,9 +77,16 @@ export default async function Loading(): Promise<React.JSX.Element> {
   return (
     <TableContainer aria-busy="true">
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between" aria-hidden>
+        <Skeleton className="h-8 w-72 rounded-lg" />
+        <Skeleton className="h-9 w-64 rounded-md" />
+      </div>
+
       <div className="flex flex-col gap-[var(--page-section-gap)]" aria-hidden>
-        <EvidenceCardSkeleton />
-        <EvidenceCardSkeleton />
+        <CollapsedCardSkeleton />
+        <ExpandedCardSkeleton />
+        <CollapsedCardSkeleton />
       </div>
     </TableContainer>
   );

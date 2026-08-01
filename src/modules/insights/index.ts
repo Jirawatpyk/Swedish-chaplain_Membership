@@ -258,6 +258,9 @@ export {
   type SubprocessorOutcomeEvidence,
   type TaxRedactionEvidence,
   type UserErasedProof,
+  type ErasureStatusFilter,
+  type ErasureLogSummary,
+  DEFAULT_DISPLAY_CAP,
 } from './application/erasure-evidence';
 
 // --- Composition root factories (US1) -------------------------------------

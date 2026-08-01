@@ -361,9 +361,24 @@
       "erasureLog": {
         "title": "Bevislogg för radering",
         "subtitle": "Spårbart register över varje medlemsradering och dess bevis enligt artikel 17",
-        "resultCount": "{count, plural, =0 {Inga raderingar på den här sidan} one {# radering} other {# raderingar}}",
-        "loadMore": "Ladda äldre raderingar",
-        "memberNumber": "Medlem nr {number}",
+        "filter": {
+          "navLabel": "Filtrera raderingar efter status",
+          "all": "Alla",
+          "overdue": "Försenad",
+          "inProgress": "Pågår",
+          "complete": "Slutförd",
+          "countSr": "{count, plural, =0 {inga raderingar} one {# radering} other {# raderingar}}"
+        },
+        "search": {
+          "label": "Sök på medlemsnummer",
+          "placeholder": "t.ex. SCCM-0042",
+          "submit": "Sök",
+          "clear": "Rensa sökning",
+          "empty": "Ingen radering matchar {ref}."
+        },
+        "breachAlert": "{count, plural, one {# radering} other {# raderingar}} har passerat den lagstadgade 30-dagarsfristen — detta kan vara ett rapporteringspliktigt intrång. Granska nu.",
+        "allClear": "Alla raderingar är klara — inga utestående intrång.",
+        "memberNumber": "Medlem {ref}",
         "erasedAt": "Raderad {at}",
         "reDriveNote": "Slutförd via avstämningens omkörning – siffrorna ovan avser endast denna omgång (den ursprungliga körningen återkallade redan sessionerna och inbjudningarna).",
         "credentialErasedAt": "Inloggningsuppgift raderad {at}",
@@ -374,10 +389,17 @@
           "title": "Inga raderingar registrerade",
           "body": "Inga medlemmar har raderats för den här organisationen ännu. Raderingsbevis visas här när en medlem raderas."
         },
-        "emptyTail": {
-          "title": "Inga fler resultat",
-          "body": "Du har nått slutet av raderingsbevisloggen."
+        "filteredEmpty": {
+          "overdue": "Inga försenade raderingar.",
+          "inProgress": "Inga pågående raderingar.",
+          "complete": "Inga slutförda raderingar."
         },
+        "filteredSearchEmpty": {
+          "overdue": "Inga försenade raderingar matchar {ref}.",
+          "inProgress": "Inga pågående raderingar matchar {ref}.",
+          "complete": "Inga slutförda raderingar matchar {ref}."
+        },
+        "capNote": "Visar de {cap} senaste raderingarna. Listan och antalen ovan är begränsade till dessa — äldre raderingar visas inte.",
         "status": {
           "complete": "Slutförd",
           "halfRun": "Pågår",

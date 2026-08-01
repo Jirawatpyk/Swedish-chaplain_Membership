@@ -649,3 +649,21 @@ summary,
     @apply bg-background text-foreground;}
   html {
     @apply font-sans;}}
+
+/* Erasure evidence log — force-open every evidence <details> when printing so a
+   printed page is a COMPLETE Article 17 accountability record (the print-to-PDF
+   fallback the export-cut relies on). */
+@media print {
+  details[data-evidence] > *:not(summary) { display: block !important; }
+  /* Chrome 131+ hides a collapsed <details>' content via the `::details-content`
+     pseudo (`content-visibility: hidden`), which the child `display:block` rule
+     above does not defeat — a collapsed COMPLETE card would print EMPTY,
+     breaking the Article 17 "printed page = complete record" guarantee. Force
+     the pseudo visible too; the rule above still covers older browsers that
+     don't implement `::details-content`. */
+  details[data-evidence]::details-content { content-visibility: visible !important; }
+  details[data-evidence] summary .lucide-chevron-down { display: none; }
+  /* The `display:block` override above drops CardContent's flex `gap-6`
+     between evidence sections — restore inter-section spacing in print. */
+  details[data-evidence] > :not(summary) > * + * { margin-top: 1.5rem !important; }
+}

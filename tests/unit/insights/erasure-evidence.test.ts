@@ -151,7 +151,7 @@ describe('getErasureEvidenceLog', () => {
       },
     });
 
-    const out = await getErasureEvidenceLog(deps, { ctx: CTX, limit: 10, now: NOW });
+    const out = await getErasureEvidenceLog(deps, { ctx: CTX, now: NOW });
 
     expect(out.rows).toHaveLength(1);
     const row = out.rows[0]!;
@@ -206,7 +206,7 @@ describe('getErasureEvidenceLog', () => {
       },
     });
 
-    const out = await getErasureEvidenceLog(deps, { ctx: CTX, limit: 10, now: NOW });
+    const out = await getErasureEvidenceLog(deps, { ctx: CTX, now: NOW });
 
     const row = out.rows[0]!;
     expect(row.halfRun).toBe(true);
@@ -255,7 +255,7 @@ describe('getErasureEvidenceLog', () => {
       },
     });
 
-    const out = await getErasureEvidenceLog(deps, { ctx: CTX, limit: 10, now: NOW });
+    const out = await getErasureEvidenceLog(deps, { ctx: CTX, now: NOW });
 
     const row = out.rows[0]!;
     expect(row.halfRun).toBe(false);
@@ -283,7 +283,7 @@ describe('getErasureEvidenceLog', () => {
       },
     });
 
-    const out = await getErasureEvidenceLog(deps, { ctx: CTX, limit: 10, now: NOW });
+    const out = await getErasureEvidenceLog(deps, { ctx: CTX, now: NOW });
 
     const row = out.rows[0]!;
     expect(row.halfRun).toBe(true);
@@ -319,7 +319,7 @@ describe('getErasureEvidenceLog', () => {
       },
     });
 
-    const out = await getErasureEvidenceLog(deps, { ctx: CTX, limit: 10, now: NOW });
+    const out = await getErasureEvidenceLog(deps, { ctx: CTX, now: NOW });
 
     const row = out.rows[0]!;
     expect(row.userErasedProofs).toHaveLength(1);
@@ -329,7 +329,7 @@ describe('getErasureEvidenceLog', () => {
     expect(JSON.stringify(row.userErasedProofs)).not.toContain(leakSentinel);
   });
 
-  it('passes through the member-list nextCursor and reads each erased member', async () => {
+  it('reads each erased member (fold is order-independent of input order)', async () => {
     const ids = ['m1', 'm2', 'm3'];
     const deps = makeDeps({
       rows: ids.map((id, i) => erasedRow(id, 100 + i)),
@@ -337,9 +337,9 @@ describe('getErasureEvidenceLog', () => {
       evidenceByMember: {},
     });
 
-    const out = await getErasureEvidenceLog(deps, { ctx: CTX, limit: 3, now: NOW });
+    const out = await getErasureEvidenceLog(deps, { ctx: CTX, now: NOW });
 
-    expect(out.rows.map((r) => r.memberId)).toEqual(ids);
+    expect([...out.rows.map((r) => r.memberId)].sort()).toEqual(['m1', 'm2', 'm3']);
     // No evidence rows → every fold field is null/empty, not a throw.
     for (const r of out.rows) {
       expect(r.requestedAt).toBeNull();
@@ -408,7 +408,7 @@ describe('getErasureEvidenceLog', () => {
       },
     });
 
-    const { rows } = await getErasureEvidenceLog(deps, { ctx: CTX, limit: 10, now: NOW });
+    const { rows } = await getErasureEvidenceLog(deps, { ctx: CTX, now: NOW });
     const row = rows[0]!;
     // The first-pass FAILED outcome wins — the page does NOT mask it with the re-drive ok.
     expect(row.subprocessorOutcome).toEqual({ resendOutcome: 'failed', contactsRemoved: 0, contactsFailed: 2 });
@@ -456,7 +456,7 @@ describe('getErasureEvidenceLog', () => {
       },
     });
 
-    const out = await getErasureEvidenceLog(deps, { ctx: CTX, limit: 10, now: NOW });
+    const out = await getErasureEvidenceLog(deps, { ctx: CTX, now: NOW });
 
     const row = out.rows[0]!;
     expect(row.taxRedactions).toHaveLength(1);
@@ -503,7 +503,7 @@ describe('getErasureEvidenceLog', () => {
       },
     });
 
-    const out = await getErasureEvidenceLog(deps, { ctx: CTX, limit: 10, now: NOW });
+    const out = await getErasureEvidenceLog(deps, { ctx: CTX, now: NOW });
 
     const row = out.rows[0]!;
     expect(row.halfRun).toBe(false);
@@ -572,7 +572,7 @@ describe('getErasureEvidenceLog', () => {
         },
       });
 
-      const out = await getErasureEvidenceLog(deps, { ctx: CTX, limit: 10, now: NOW });
+      const out = await getErasureEvidenceLog(deps, { ctx: CTX, now: NOW });
       const row = out.rows[0]!;
       // Four same-login re-drive rows collapse to ONE proof…
       expect(row.userErasedProofs).toHaveLength(1);
@@ -630,7 +630,7 @@ describe('getErasureEvidenceLog', () => {
         },
       });
 
-      const out = await getErasureEvidenceLog(deps, { ctx: CTX, limit: 10, now: NOW });
+      const out = await getErasureEvidenceLog(deps, { ctx: CTX, now: NOW });
       const row = out.rows[0]!;
       // Two DISTINCT logins → two proofs (NOT folded onto a single global earliest).
       expect(row.userErasedProofs).toHaveLength(2);
@@ -690,7 +690,7 @@ describe('getErasureEvidenceLog', () => {
       },
     });
 
-    const out = await getErasureEvidenceLog(deps, { ctx: CTX, limit: 10, now: NOW });
+    const out = await getErasureEvidenceLog(deps, { ctx: CTX, now: NOW });
 
     const row = out.rows[0]!;
     // The first-pass real counts win — NOT the later racing 0/0 re-drive.
@@ -700,5 +700,125 @@ describe('getErasureEvidenceLog', () => {
     expect(row.completedAt?.toISOString()).toBe(isoMinus(FORTY_DAYS_MS - 1000));
     expect(row.halfRun).toBe(false);
     expect(row.isOverdue).toBe(false);
+  });
+});
+
+// --- Task 1 (triage) helpers ---------------------------------------------
+function reqRow(memberId: string, agoMs: number) {
+  return {
+    id: `req-${memberId}`, eventType: 'member_erasure_requested' as const,
+    occurredAtIso: isoMinus(agoMs), actorUserId: 'admin-1', targetUserId: null,
+    payload: { member_id: memberId, reason: 'gdpr_erasure_request' },
+  };
+}
+function erasedEvidence(memberId: string) {
+  return {
+    id: `er-${memberId}`, eventType: 'member_erased' as const,
+    occurredAtIso: isoMinus(TEN_MIN_MS - 1000), actorUserId: 'admin-1', targetUserId: null,
+    payload: { member_id: memberId, sessions_revoked_total: 1, invitations_revoked_count: 0, re_drive: false },
+  };
+}
+/** erasedAt override so multi-row ordering is deterministic. */
+function erasedRowAt(memberId: string, memberNumber: number, erasedAgoMs: number) {
+  return { memberId, memberNumber, erasedAt: new Date(isoMinus(erasedAgoMs)) };
+}
+
+describe('getErasureEvidenceLog — triage (summary / sort / filter / search / cap)', () => {
+  it('summarises overdue / in-progress / complete counts over the loaded set', async () => {
+    const deps = makeDeps({
+      rows: [erasedRow('over', 1), erasedRow('prog', 2), erasedRow('done', 3)],
+      linkedByMember: {},
+      evidenceByMember: {
+        over: [reqRow('over', FORTY_DAYS_MS)],                       // half-run + 40d → overdue
+        prog: [reqRow('prog', TEN_MIN_MS)],                          // half-run + fresh → in-progress
+        done: [reqRow('done', TEN_MIN_MS), erasedEvidence('done')], // completed
+      },
+    });
+    const out = await getErasureEvidenceLog(deps, { ctx: CTX, now: NOW });
+    expect(out.summary).toEqual({ overdue: 1, inProgress: 1, complete: 1, total: 3 });
+    expect(out.capped).toBe(false);
+    expect(out.loadedCount).toBe(3);
+  });
+
+  it('sorts urgency-first: an OLD overdue pins ABOVE a NEWER complete', async () => {
+    const deps = makeDeps({
+      // `done` was erased more recently than `over` was requested — newest-first
+      // would bury the overdue below it; urgency-first must pin `over` on top.
+      rows: [erasedRowAt('done', 10, TEN_MIN_MS), erasedRowAt('over', 11, FORTY_DAYS_MS)],
+      linkedByMember: {},
+      evidenceByMember: {
+        done: [reqRow('done', TEN_MIN_MS), erasedEvidence('done')],
+        over: [reqRow('over', FORTY_DAYS_MS)],
+      },
+    });
+    const out = await getErasureEvidenceLog(deps, { ctx: CTX, now: NOW });
+    expect(out.rows.map((r) => r.memberId)).toEqual(['over', 'done']);
+  });
+
+  it('within the overdue bucket, sorts by requestedAt ASCENDING (longest-overdue first)', async () => {
+    const deps = makeDeps({
+      rows: [erasedRow('less', 1), erasedRow('more', 2)],
+      linkedByMember: {},
+      evidenceByMember: {
+        less: [reqRow('less', FORTY_DAYS_MS)],               // 40d overdue
+        more: [reqRow('more', FORTY_DAYS_MS + 5 * 24 * 3600_000)], // 45d overdue (older)
+      },
+    });
+    const out = await getErasureEvidenceLog(deps, { ctx: CTX, now: NOW });
+    expect(out.rows.map((r) => r.memberId)).toEqual(['more', 'less']);
+  });
+
+  it('status filter narrows to a single bucket while summary stays full', async () => {
+    const deps = makeDeps({
+      rows: [erasedRow('over', 1), erasedRow('done', 2)],
+      linkedByMember: {},
+      evidenceByMember: {
+        over: [reqRow('over', FORTY_DAYS_MS)],
+        done: [reqRow('done', TEN_MIN_MS), erasedEvidence('done')],
+      },
+    });
+    const out = await getErasureEvidenceLog(deps, { ctx: CTX, now: NOW, filter: 'overdue' });
+    expect(out.rows.map((r) => r.memberId)).toEqual(['over']);
+    expect(out.summary).toEqual({ overdue: 1, inProgress: 0, complete: 1, total: 2 });
+  });
+
+  it('SCCM-aware search matches SCCM-0042 / 0042 / 42 to member 42; summary scopes to the searched set', async () => {
+    const deps = makeDeps({
+      rows: [erasedRow('a', 42), erasedRow('b', 7)],
+      linkedByMember: {},
+      evidenceByMember: { a: [reqRow('a', TEN_MIN_MS)], b: [reqRow('b', TEN_MIN_MS)] },
+    });
+    for (const q of ['SCCM-0042', '0042', '42']) {
+      const out = await getErasureEvidenceLog(deps, { ctx: CTX, now: NOW, search: q });
+      expect(out.rows.map((r) => r.memberNumber)).toEqual([42]);
+      expect(out.summary.total).toBe(1);
+    }
+  });
+
+  it('a non-matching / non-member-number search yields zero rows and a zero summary; empty search is a no-op', async () => {
+    const deps = makeDeps({
+      rows: [erasedRow('a', 42)],
+      linkedByMember: {},
+      evidenceByMember: { a: [reqRow('a', TEN_MIN_MS)] },
+    });
+    const miss = await getErasureEvidenceLog(deps, { ctx: CTX, now: NOW, search: '999' });
+    expect(miss.rows).toHaveLength(0);
+    expect(miss.summary.total).toBe(0);
+    const notNum = await getErasureEvidenceLog(deps, { ctx: CTX, now: NOW, search: 'not-a-number' });
+    expect(notNum.rows).toHaveLength(0);
+    const blank = await getErasureEvidenceLog(deps, { ctx: CTX, now: NOW, search: '   ' });
+    expect(blank.rows).toHaveLength(1); // whitespace-only → no search
+  });
+
+  it('reports capped=true when the member list returns a full page (nextCursor non-null)', async () => {
+    const deps = makeDeps({
+      rows: [erasedRow('a', 1), erasedRow('b', 2)],
+      nextCursor: { erasedAt: new Date(isoMinus(TEN_MIN_MS)), memberId: 'b' },
+      linkedByMember: {},
+      evidenceByMember: {},
+    });
+    const out = await getErasureEvidenceLog(deps, { ctx: CTX, now: NOW, displayCap: 2 });
+    expect(out.capped).toBe(true);
+    expect(out.loadedCount).toBe(2);
   });
 });
