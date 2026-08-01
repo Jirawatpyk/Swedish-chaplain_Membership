@@ -16,6 +16,7 @@ import { runInTenant } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
 import { CheckCircle2, Circle } from 'lucide-react';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
+import { env } from '@/lib/env';
 
 interface AuditRow {
   readonly eventType: string;
@@ -72,7 +73,10 @@ export async function AuditTimeline({
   const locale = await getLocale();
   const fmt = new Intl.DateTimeFormat(
     getDateFormatLocale(locale),
-    { dateStyle: 'medium', timeStyle: 'short' },
+    // Tenant-TZ pin (#315 follow-up, server-UTC display class): audit
+    // instants rendered by the UTC Vercel runtime were 7h off for the
+    // Bangkok admin. Canonical tenant TZ (erasure-log precedent).
+    { dateStyle: 'medium', timeStyle: 'short', timeZone: env.tenant.timezone },
   );
 
   // Raw SQL via Drizzle `sql` template (auditLog schema is NOT exposed

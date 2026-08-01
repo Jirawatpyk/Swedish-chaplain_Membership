@@ -15,6 +15,7 @@ import {
 import type { BroadcastStatus } from '@/modules/broadcasts';
 import { getBroadcastStatusBadgeProps } from '@/components/broadcast/status-badge-mapping';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
+import { env } from '@/lib/env';
 
 // Status → badge variant mapping moved to
 // `src/components/broadcast/status-badge-mapping.ts` (H4 UX hardening)
@@ -49,7 +50,10 @@ export async function QueueTable({
   const locale = await getLocale();
   const dateFormatter = new Intl.DateTimeFormat(
     getDateFormatLocale(locale),
-    { dateStyle: 'medium', timeStyle: 'short' },
+    // Tenant-TZ pin (#315 follow-up, server-UTC display class): without it
+    // the Vercel runtime formats submitted/created instants as UTC — 7h off
+    // for the Bangkok admin. Canonical tenant TZ (erasure-log precedent).
+    { dateStyle: 'medium', timeStyle: 'short', timeZone: env.tenant.timezone },
   );
 
   if (rows.length === 0) {
