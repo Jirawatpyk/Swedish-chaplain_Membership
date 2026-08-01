@@ -2879,7 +2879,7 @@
         },
         "bulk": {
           "selectAria": "Välj utskick",
-          "selected": "{count} markerade",
+          "selected": "{count, plural, one {# markerad} other {# markerade}}",
           "approveSelected": "Godkänn och skicka markerade",
           "clear": "Rensa markering",
           "successAll": "Alla markerade utskick godkända.",
@@ -2889,12 +2889,10 @@
         "filters": {
           "formAriaLabel": "Filter för utskickskö",
           "statusLabel": "Status",
-          "statusAll": "Alla statusar",
           "memberLabel": "Medlem",
           "memberAll": "Alla medlemmar",
           "fromDate": "Från",
           "toDate": "Till",
-          "apply": "Tillämpa filter",
           "reset": "Återställ filter"
         },
         "columns": {
@@ -2923,17 +2921,15 @@
           "admin_proxy": "Admin (ombud)",
           "system": "System"
         },
-        "pagination": {
-          "previous": "Föregående",
-          "next": "Nästa"
-        },
         "slaBanner": {
-          "targetSla": "Mål för granskningstid (SLA): 48 timmar",
-          "medianRolling30d": "Median beslutstid (rullande 30 dagar): {hours} h",
-          "p95Rolling30d": "p95: {hours} h",
-          "withinBudget": "Inom SLA-budget",
-          "breachWarning": "SC-002 överskridning — kontrollera granskningskapacitet"
-        }
+          "targetSla": "Granskningsmål: inom 48 timmar",
+          "medianRolling30d": "Hälften beslutade inom {hours}h",
+          "p95Rolling30d": "95% inom {hours}h",
+          "withinBudget": "Granskningar i fas",
+          "breachWarning": "Granskningar går långsamt"
+        },
+        "overdueBanner": "{count, plural, one {# utskick har} other {# utskick har}} väntat i över 48 timmar — granska nu.",
+        "truncationNote": "Visar de första 50 — förfina filtren för att se fler."
       },
       "review": {
         "title": "Granska utskick",
@@ -2983,6 +2979,7 @@
         "scheduleLabel": "Skicka",
         "scheduleHelp": "Minst 5 minuter från nu. Tidszon: Asia/Bangkok.",
         "schedulePreviewLabel": "Skickas:",
+        "recipientCount": "Når ~{count, plural, one {# mottagare} other {# mottagare}}.",
         "confirm": "Godkänn",
         "cancel": "Avbryt"
       },

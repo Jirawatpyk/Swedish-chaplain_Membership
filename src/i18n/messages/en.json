@@ -2879,7 +2879,7 @@
         },
         "bulk": {
           "selectAria": "Select broadcast",
-          "selected": "{count} selected",
+          "selected": "{count, plural, one {# selected} other {# selected}}",
           "approveSelected": "Approve & send selected",
           "clear": "Clear selection",
           "successAll": "All selected broadcasts approved.",
@@ -2889,12 +2889,10 @@
         "filters": {
           "formAriaLabel": "Broadcast queue filters",
           "statusLabel": "Status",
-          "statusAll": "All statuses",
           "memberLabel": "Member",
           "memberAll": "All members",
           "fromDate": "From",
           "toDate": "To",
-          "apply": "Apply filters",
           "reset": "Reset filters"
         },
         "columns": {
@@ -2923,17 +2921,15 @@
           "admin_proxy": "Admin (proxy)",
           "system": "System"
         },
-        "pagination": {
-          "previous": "Previous",
-          "next": "Next"
-        },
         "slaBanner": {
-          "targetSla": "Target review SLA: 48 hours",
-          "medianRolling30d": "Median time-to-decision (rolling 30d): {hours}h",
-          "p95Rolling30d": "p95: {hours}h",
-          "withinBudget": "Within SLA budget",
-          "breachWarning": "SC-002 breach — review queue capacity"
-        }
+          "targetSla": "Review target: within 48 hours",
+          "medianRolling30d": "Half decided within {hours}h",
+          "p95Rolling30d": "95% within {hours}h",
+          "withinBudget": "Reviews on track",
+          "breachWarning": "Reviews are running slow"
+        },
+        "overdueBanner": "{count, plural, one {# broadcast has} other {# broadcasts have}} been waiting over 48 hours — review now.",
+        "truncationNote": "Showing the first 50 — refine the filters to see more."
       },
       "review": {
         "title": "Broadcast review",
@@ -2983,6 +2979,7 @@
         "scheduleLabel": "Send at",
         "scheduleHelp": "At least 5 minutes from now. Time zone: Asia/Bangkok.",
         "schedulePreviewLabel": "Will be sent on:",
+        "recipientCount": "Reaches ~{count, plural, one {# recipient} other {# recipients}}.",
         "confirm": "Approve",
         "cancel": "Cancel"
       },

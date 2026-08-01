@@ -2879,7 +2879,7 @@
         },
         "bulk": {
           "selectAria": "เลือก E-Blast",
-          "selected": "เลือกแล้ว {count} รายการ",
+          "selected": "{count, plural, other {เลือก # รายการ}}",
           "approveSelected": "อนุมัติและส่งรายการที่เลือก",
           "clear": "ล้างที่เลือก",
           "successAll": "อนุมัติ E-Blast ที่เลือกทั้งหมดสำเร็จ",
@@ -2889,12 +2889,10 @@
         "filters": {
           "formAriaLabel": "ตัวกรองคิวตรวจสอบ E-Blast",
           "statusLabel": "สถานะ",
-          "statusAll": "ทั้งหมด",
           "memberLabel": "สมาชิก",
           "memberAll": "สมาชิกทั้งหมด",
           "fromDate": "จาก",
           "toDate": "ถึง",
-          "apply": "กรอง",
           "reset": "รีเซ็ตเป็นค่าเริ่มต้น"
         },
         "columns": {
@@ -2923,17 +2921,15 @@
           "admin_proxy": "ผู้ดูแล (ส่งแทน)",
           "system": "ระบบ"
         },
-        "pagination": {
-          "previous": "ก่อนหน้า",
-          "next": "ถัดไป"
-        },
         "slaBanner": {
-          "targetSla": "เป้าหมายการตรวจสอบ: 48 ชั่วโมง",
-          "medianRolling30d": "เวลาตรวจสอบเฉลี่ย (30 วันล่าสุด): {hours} ชม.",
-          "p95Rolling30d": "p95: {hours} ชม.",
-          "withinBudget": "อยู่ในเกณฑ์ SLA",
-          "breachWarning": "เกิน SLA — ทบทวนกำลังคนของทีมตรวจสอบ"
-        }
+          "targetSla": "เป้าหมายการตรวจ: ภายใน 48 ชั่วโมง",
+          "medianRolling30d": "ครึ่งหนึ่งตัดสินภายใน {hours} ชม.",
+          "p95Rolling30d": "95% ภายใน {hours} ชม.",
+          "withinBudget": "ตรวจทันเวลา",
+          "breachWarning": "การตรวจล่าช้า"
+        },
+        "overdueBanner": "มี {count} รายการรออนุมัติเกิน 48 ชั่วโมง — รีบตรวจสอบ",
+        "truncationNote": "แสดง 50 รายการแรก — กรองเพิ่มเพื่อดูรายการอื่น"
       },
       "review": {
         "title": "ตรวจสอบ E-Blast",
@@ -2983,6 +2979,7 @@
         "scheduleLabel": "ส่งเวลา",
         "scheduleHelp": "อย่างน้อย 5 นาทีจากเวลาปัจจุบัน · เขตเวลา: Asia/Bangkok",
         "schedulePreviewLabel": "จะส่งในวันที่:",
+        "recipientCount": "ส่งถึงผู้รับ ~{count} คน",
         "confirm": "อนุมัติ",
         "cancel": "ยกเลิก"
       },
