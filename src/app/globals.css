@@ -663,4 +663,7 @@ summary,
      don't implement `::details-content`. */
   details[data-evidence]::details-content { content-visibility: visible !important; }
   details[data-evidence] summary .lucide-chevron-down { display: none; }
+  /* The `display:block` override above drops CardContent's flex `gap-6`
+     between evidence sections — restore inter-section spacing in print. */
+  details[data-evidence] > :not(summary) > * + * { margin-top: 1.5rem !important; }
 }

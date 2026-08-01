@@ -76,7 +76,7 @@ export function EvidenceCard({
       className={cn(
         'p-0', // details owns padding
         row.isOverdue && 'border-l-2 border-l-destructive',
-        row.halfRun && !row.isOverdue && 'border-l-2 border-l-amber-500',
+        row.halfRun && !row.isOverdue && 'border-l-2 border-l-warning',
       )}
     >
       <details data-evidence open={!isComplete} className="group">
@@ -91,7 +91,7 @@ export function EvidenceCard({
             <Badge
               variant={statusVariant}
               className={cn('h-6 px-2.5 text-xs',
-                row.halfRun && !row.isOverdue && 'border-amber-500/60 bg-amber-500/10 text-amber-700 dark:text-amber-400')}
+                row.halfRun && !row.isOverdue && 'border-warning/60 bg-warning-surface text-warning')}
             >
               {statusLabel}
             </Badge>
@@ -110,7 +110,7 @@ export function EvidenceCard({
                 'rounded-md border p-3 text-sm',
                 row.isOverdue
                   ? 'border-destructive/40 bg-destructive-surface text-destructive'
-                  : 'border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-300',
+                  : 'border-warning/40 bg-warning-surface text-warning',
               )}
               role={row.isOverdue && !topBannerPresent ? 'alert' : 'status'}
             >

@@ -49,7 +49,13 @@ import {
   DEFAULT_DISPLAY_CAP,
   type ErasureStatusFilter,
 } from '@/modules/insights';
-import { resolveMemberNumberPrefix, drizzleMemberSettingsRepo } from '@/modules/members';
+import {
+  resolveMemberNumberPrefix,
+  drizzleMemberSettingsRepo,
+  parseMemberNumberQuery,
+  formatMemberNumber,
+  asMemberNumber,
+} from '@/modules/members';
 import { EvidenceCard } from './_components/evidence-card';
 import { ErasureFilterTabs } from './_components/erasure-filter-tabs';
 import { ErasureSearchForm } from './_components/erasure-search-form';
@@ -82,14 +88,31 @@ function statusMessageKey(status: Exclude<ErasureStatusFilter, 'all'>): 'overdue
 }
 
 /**
+ * Canonical SCCM echo for the empty-state `ref` — a numeric/`SCCM-NNNN` query
+ * echoes back formatted the same way `EvidenceCard` renders it (e.g. `17` →
+ * `SCCM-0017`), instead of the raw query text. Non-numeric queries (company
+ * name searches, once supported) echo back verbatim.
+ */
+function formatSearchRef(q: string, memberPrefix: string): string {
+  const n = parseMemberNumberQuery(q);
+  return n !== null ? formatMemberNumber(memberPrefix, asMemberNumber(n)) : q;
+}
+
+/**
  * Empty-state title copy — four mutually exclusive cases (search × filter),
  * distinguishing a genuinely-empty org from a filtered/searched dead end so
  * the DPO is never told "no erasures" when the org simply has none matching
  * the CURRENT view.
  */
-function emptyStateTitle(status: ErasureStatusFilter, q: string, t: Translator): string {
-  if (q !== '' && status !== 'all') return t(`filteredSearchEmpty.${statusMessageKey(status)}`, { ref: q });
-  if (q !== '' && status === 'all') return t('search.empty', { ref: q });
+function emptyStateTitle(
+  status: ErasureStatusFilter,
+  q: string,
+  memberPrefix: string,
+  t: Translator,
+): string {
+  const ref = formatSearchRef(q, memberPrefix);
+  if (q !== '' && status !== 'all') return t(`filteredSearchEmpty.${statusMessageKey(status)}`, { ref });
+  if (q !== '' && status === 'all') return t('search.empty', { ref });
   if (q === '' && status !== 'all') return t(`filteredEmpty.${statusMessageKey(status)}`);
   return t('empty.title');
 }
@@ -161,7 +184,7 @@ export default async function ErasureLogPage({
           {t('breachAlert', { count: result.summary.overdue })}
         </div>
       ) : showAllClear ? (
-        <div className="rounded-md border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm text-emerald-800 dark:text-emerald-300">
+        <div className="rounded-md border border-success/40 bg-success-surface p-3 text-sm text-success">
           {t('allClear')}
         </div>
       ) : null}
@@ -175,7 +198,7 @@ export default async function ErasureLogPage({
           <CardContent>
             <EmptyState
               icon={ShieldCheckIcon}
-              title={emptyStateTitle(status, q, t)}
+              title={emptyStateTitle(status, q, memberPrefix, t)}
               bordered={false}
               data-testid="erasure-log-empty"
               {...(unfiltered ? { description: t('empty.body') } : {})}
