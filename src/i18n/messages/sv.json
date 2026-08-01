@@ -2880,11 +2880,22 @@
         "bulk": {
           "selectAria": "Välj utskick",
           "selected": "{count, plural, one {# markerad} other {# markerade}}",
-          "approveSelected": "Godkänn och skicka markerade",
-          "clear": "Rensa markering",
+          "toolbarLabel": "Massåtgärder för valda utskick",
+          "selectedCount": "{count, plural, one {# markerad} other {# markerade}}",
+          "approveSelected": "Godkänn valda",
+          "clear": "Rensa",
+          "overCap": "Urvalet begränsat till {max}",
+          "overCapHelper": "Du valde {count} — endast de första {max} åtgärdas.",
           "successAll": "Alla markerade utskick godkända.",
           "failureAll": "Massgodkännande misslyckades. Försök igen eller godkänn ett i taget.",
           "partial": "{ok} godkända, {fail} misslyckades."
+        },
+        "card": {
+          "actionsLabel": "Åtgärder",
+          "audienceLabel": "Målgrupp",
+          "recipientsLabel": "Mottagare",
+          "submittedLabel": "Skickat",
+          "statusLabel": "Status"
         },
         "filters": {
           "formAriaLabel": "Filter för utskickskö",
