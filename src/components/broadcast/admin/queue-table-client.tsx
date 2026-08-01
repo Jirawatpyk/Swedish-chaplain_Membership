@@ -234,7 +234,10 @@ export function QueueTableClient({
         header: columnLabels.actions,
         cell: (ctx) =>
           ctx.row.original.actionable ? (
-            <ReviewActions broadcastId={ctx.row.original.broadcastId} />
+            <ReviewActions
+              broadcastId={ctx.row.original.broadcastId}
+              recipientCount={ctx.row.original.recipientCount}
+            />
           ) : null,
       });
     }

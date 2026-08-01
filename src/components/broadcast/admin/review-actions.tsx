@@ -19,10 +19,17 @@ import { RejectDialog } from './reject-dialog';
 
 export interface ReviewActionsProps {
   readonly broadcastId: string;
+  /**
+   * Task 6 (2026-08-01-broadcast-review-queue-pr1) — passed through to
+   * `ApproveDialog` so the admin sees the estimated recipient count
+   * before approving.
+   */
+  readonly recipientCount?: number;
 }
 
 export function ReviewActions({
   broadcastId,
+  recipientCount,
 }: ReviewActionsProps): React.ReactElement {
   const t = useTranslations('admin.broadcasts.approveDialog');
   const tReject = useTranslations('admin.broadcasts.rejectDialog');
@@ -62,6 +69,7 @@ export function ReviewActions({
         open={approveOpen}
         onOpenChange={setApproveOpen}
         triggerRef={approveTriggerRef}
+        {...(recipientCount !== undefined ? { recipientCount } : {})}
       />
       <RejectDialog
         broadcastId={broadcastId}
