@@ -78,12 +78,36 @@
  * gated on the full (non-compact) banner actually being in the DOM — so
  * the test never depends on which SLA-banner render mode the live dev DB
  * happens to be in at run time.
+ *
+ * Task 8 (2026-08-02-broadcast-review-queue-pr3) — a new `@bulk` describe
+ * (sibling of the serial suite and the `@a11y`/`@i18n` describes above, same
+ * `mode: 'default'` override + same rationale: it must not be hostage to the
+ * destructive AS2-AS6 flow) covers the bulk-approve confirm dialog Tasks
+ * 2-7 shipped: selecting >=2 `submitted` rows opens `BulkApproveConfirmDialog`
+ * (the alertdialog showing the recipient total) instead of fanning out
+ * directly; the LOAD-BEARING assertion is the network-level tamper-safety
+ * check -- the approve POST body is asserted, at the wire, to be exactly
+ * `{decision:'send_now'}` (or `{decision:'schedule', scheduledFor}`) with no
+ * recipient/total key, proving the dialog's displayed total is display-only
+ * and cannot leak into the request even by accident. Also covers the 60s
+ * send-now Undo (fires `POST .../cancel` with a non-empty `cancellationReason`)
+ * and an axe scan of the open dialog + focus-return to `#main-content` after
+ * confirm (F7-A11Y-1 -- the "Approve selected" trigger unmounts once the bulk
+ * bar clears on success). Seed-gated: `seedBulkApproveFixtures` (new helper
+ * in `helpers/broadcasts-seed.ts`) provisions TWO `submitted` broadcasts
+ * with distinct recipient counts (`seedF7Broadcasts` only ever provisions
+ * one), re-seeded fresh in a `beforeEach` since every test in this describe
+ * transitions both rows out of `submitted`.
  */
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
-import { seedF7Broadcasts } from './helpers/broadcasts-seed';
+import {
+  seedF7Broadcasts,
+  seedBulkApproveFixtures,
+  type BulkApproveSeedResult,
+} from './helpers/broadcasts-seed';
 
 /**
  * The raw `segment_type` DB enum values (`src/modules/broadcasts` domain).
@@ -880,3 +904,282 @@ test.describe('@i18n queue localisation — stable title, no key leaks', () => {
     });
   }
 });
+
+// ---------- @bulk: bulk-approve confirm dialog — schedule / Undo / tamper-safety ----------
+// Task 8 (2026-08-02-broadcast-review-queue-pr3) — sibling of the serial suite
+// and the `@a11y`/`@i18n` describes above, same `mode: 'default'` override +
+// same rationale (must not be hostage to the destructive AS2-AS6 flow, and a
+// file-level `configure({mode:'serial'})` cascades into every later top-level
+// describe unless reset here).
+test.describe(
+  '@bulk bulk-approve confirm dialog — schedule + Undo + tamper-safety (Task 8, 2026-08-02-broadcast-review-queue-pr3)',
+  () => {
+    test.describe.configure({ mode: 'default' });
+    test.skip(
+      !ADMIN_EMAIL || !ADMIN_PASSWORD,
+      'Set E2E_ADMIN_EMAIL and E2E_ADMIN_PASSWORD',
+    );
+
+    let bulkSeed: BulkApproveSeedResult | null = null;
+
+    // Every test in this describe transitions both fixture rows out of
+    // `submitted` (approve send-now, approve+schedule, or reject via the
+    // confirm gate) — re-seed fresh before each one, mirroring how the
+    // serial suite's destructive AS2-AS6 tests each call `reseed()` at
+    // their own start.
+    test.beforeEach(async () => {
+      bulkSeed = await seedBulkApproveFixtures();
+    });
+
+    /** Signs in, opens the queue, and checks both seeded fixture rows. */
+    async function openQueueAndSelectBoth(page: Page): Promise<void> {
+      await page.goto('/admin/broadcasts');
+      await page.locator('h1').first().waitFor({ timeout: 10_000 });
+      for (const subject of bulkSeed!.subjects) {
+        const row = page.locator('tbody tr').filter({ hasText: subject });
+        await row.getByRole('checkbox').click();
+      }
+      const toolbar = page.getByRole('toolbar');
+      await expect(toolbar).toBeVisible();
+      await expect(toolbar.locator('[aria-live="polite"]')).toContainText(
+        /2 selected/,
+      );
+    }
+
+    test('confirm gate: selecting >=2 submitted rows opens the alertdialog showing the recipient total, and no approve request fires before confirm', async ({
+      page,
+    }) => {
+      test.skip(
+        !bulkSeed,
+        'needs >=2 submitted broadcasts (requires DATABASE_URL + E2E_MEMBER_EMAIL to seed)',
+      );
+      await signIn(page, ADMIN_EMAIL!, ADMIN_PASSWORD!);
+      const enabled = await isFeatureEnabled(page);
+      test.skip(!enabled, 'F7 feature flag is OFF (ship-dark)');
+
+      // Registered BEFORE the "Approve selected" click — opening the dialog
+      // alone must never fan out; only `handleConfirm` inside it may.
+      const approveRequestUrls: string[] = [];
+      page.on('request', (req) => {
+        if (req.method() === 'POST' && /\/approve$/.test(req.url())) {
+          approveRequestUrls.push(req.url());
+        }
+      });
+
+      await openQueueAndSelectBoth(page);
+      await page
+        .getByRole('toolbar')
+        .getByRole('button', { name: /approve selected/i })
+        .click();
+
+      const dialog = page.getByRole('alertdialog');
+      await expect(dialog).toBeVisible({ timeout: 5_000 });
+      // `admin.broadcasts.queue.bulk.confirm.recipientTotal` — "Reaches ~7
+      // recipients across 2 broadcasts." (3 + 4 from the two fixtures).
+      await expect(dialog).toContainText(
+        new RegExp(String(bulkSeed!.totalRecipients)),
+      );
+      await expect(dialog).toContainText(/2/);
+
+      expect(approveRequestUrls).toHaveLength(0);
+    });
+
+    test('tamper-safety (network): send-now confirm POSTs exactly {decision:"send_now"} per broadcast — no recipient/total key ever reaches the wire', async ({
+      page,
+    }) => {
+      test.skip(
+        !bulkSeed,
+        'needs >=2 submitted broadcasts (requires DATABASE_URL + E2E_MEMBER_EMAIL to seed)',
+      );
+      await signIn(page, ADMIN_EMAIL!, ADMIN_PASSWORD!);
+      const enabled = await isFeatureEnabled(page);
+      test.skip(!enabled, 'F7 feature flag is OFF (ship-dark)');
+
+      await openQueueAndSelectBoth(page);
+      await page
+        .getByRole('toolbar')
+        .getByRole('button', { name: /approve selected/i })
+        .click();
+
+      const dialog = page.getByRole('alertdialog');
+      await expect(dialog).toBeVisible({ timeout: 5_000 });
+
+      // Registered BEFORE the confirm click, keyed to each fixture's own id
+      // — this is the e2e mirror of the unit-level tamper test.
+      // `BulkApproveDecision` structurally cannot carry a recipient count,
+      // so this must hold for every id in the fan-out, not just one.
+      const requestsPromise = Promise.all(
+        bulkSeed!.broadcastIds.map((id) =>
+          page.waitForRequest(
+            (req) =>
+              req.method() === 'POST' &&
+              req.url().includes(`/api/admin/broadcasts/${id}/approve`),
+            { timeout: 15_000 },
+          ),
+        ),
+      );
+
+      await dialog
+        .getByRole('button', { name: /approve & send now/i })
+        .click();
+
+      const requests = await requestsPromise;
+      for (const req of requests) {
+        expect(req.postDataJSON()).toEqual({ decision: 'send_now' });
+      }
+    });
+
+    test('schedule: picking Schedule + a valid Bangkok time confirms with POST {decision:"schedule", scheduledFor:<ISO ending in Z>}', async ({
+      page,
+    }) => {
+      test.skip(
+        !bulkSeed,
+        'needs >=2 submitted broadcasts (requires DATABASE_URL + E2E_MEMBER_EMAIL to seed)',
+      );
+      await signIn(page, ADMIN_EMAIL!, ADMIN_PASSWORD!);
+      const enabled = await isFeatureEnabled(page);
+      test.skip(!enabled, 'F7 feature flag is OFF (ship-dark)');
+
+      await openQueueAndSelectBoth(page);
+      await page
+        .getByRole('toolbar')
+        .getByRole('button', { name: /approve selected/i })
+        .click();
+
+      const dialog = page.getByRole('alertdialog');
+      await expect(dialog).toBeVisible({ timeout: 5_000 });
+      await dialog
+        .getByRole('radio', { name: /schedule/i })
+        .check({ force: true });
+
+      // Same construction as AS4 — local wall-time ~70 min ahead so the
+      // server-side `min: now+5min` re-validation passes even under
+      // browser<->server clock skew.
+      const future = new Date(Date.now() + 70 * 60 * 1000);
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const localStr = `${future.getFullYear()}-${pad(future.getMonth() + 1)}-${pad(future.getDate())}T${pad(future.getHours())}:${pad(future.getMinutes())}`;
+      await dialog.locator('input[type="datetime-local"]').fill(localStr);
+
+      const requestsPromise = Promise.all(
+        bulkSeed!.broadcastIds.map((id) =>
+          page.waitForRequest(
+            (req) =>
+              req.method() === 'POST' &&
+              req.url().includes(`/api/admin/broadcasts/${id}/approve`),
+            { timeout: 15_000 },
+          ),
+        ),
+      );
+
+      await dialog
+        .getByRole('button', { name: /approve & schedule/i })
+        .click();
+
+      const requests = await requestsPromise;
+      for (const req of requests) {
+        const body = req.postDataJSON() as {
+          decision: string;
+          scheduledFor: string;
+        };
+        expect(body).toEqual({
+          decision: 'schedule',
+          scheduledFor: expect.stringMatching(/Z$/),
+        });
+        expect(Date.parse(body.scheduledFor)).toBeGreaterThan(Date.now());
+      }
+    });
+
+    test('Undo: after a send-now confirm, the toast Undo action fires POST .../cancel with a non-empty cancellationReason', async ({
+      page,
+    }) => {
+      test.skip(
+        !bulkSeed,
+        'needs >=2 submitted broadcasts (requires DATABASE_URL + E2E_MEMBER_EMAIL to seed)',
+      );
+      await signIn(page, ADMIN_EMAIL!, ADMIN_PASSWORD!);
+      const enabled = await isFeatureEnabled(page);
+      test.skip(!enabled, 'F7 feature flag is OFF (ship-dark)');
+
+      await openQueueAndSelectBoth(page);
+      await page
+        .getByRole('toolbar')
+        .getByRole('button', { name: /approve selected/i })
+        .click();
+
+      const dialog = page.getByRole('alertdialog');
+      await expect(dialog).toBeVisible({ timeout: 5_000 });
+      await dialog
+        .getByRole('button', { name: /approve & send now/i })
+        .click();
+      await expect(dialog).toBeHidden({ timeout: 15_000 });
+
+      // 60s send-now Undo toast (`admin.broadcasts.queue.bulk.undo.action`
+      // = "Undo") — appears once the fan-out resolves with >=1 success.
+      const undoButton = page.getByRole('button', { name: /^undo$/i });
+      await expect(undoButton).toBeVisible({ timeout: 15_000 });
+
+      const cancelRequestsPromise = Promise.all(
+        bulkSeed!.broadcastIds.map((id) =>
+          page.waitForRequest(
+            (req) =>
+              req.method() === 'POST' &&
+              req.url().includes(`/api/admin/broadcasts/${id}/cancel`),
+            { timeout: 15_000 },
+          ),
+        ),
+      );
+
+      await undoButton.click();
+
+      const requests = await cancelRequestsPromise;
+      for (const req of requests) {
+        const body = req.postDataJSON() as { cancellationReason: string };
+        expect(typeof body.cancellationReason).toBe('string');
+        expect(body.cancellationReason.length).toBeGreaterThan(0);
+      }
+    });
+
+    test('@a11y: axe scan of the open bulk-approve confirm dialog -> 0 violations; focus returns to #main-content after confirm', async ({
+      page,
+    }) => {
+      test.skip(
+        !bulkSeed,
+        'needs >=2 submitted broadcasts (requires DATABASE_URL + E2E_MEMBER_EMAIL to seed)',
+      );
+      await signIn(page, ADMIN_EMAIL!, ADMIN_PASSWORD!);
+      const enabled = await isFeatureEnabled(page);
+      test.skip(!enabled, 'F7 feature flag is OFF (ship-dark)');
+
+      await openQueueAndSelectBoth(page);
+      await page
+        .getByRole('toolbar')
+        .getByRole('button', { name: /approve selected/i })
+        .click();
+
+      const dialog = page.getByRole('alertdialog');
+      await expect(dialog).toBeVisible({ timeout: 5_000 });
+
+      const results = await new AxeBuilder({ page })
+        .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
+        .analyze();
+      expect(results.violations).toEqual([]);
+
+      // F7-A11Y-1 — the "Approve selected" trigger unmounts once the bulk
+      // bar clears on a successful approve (`closedViaSuccessRef`), so
+      // focus must land on the `#main-content` landmark, never drop to
+      // `<body>`. `expect.poll` rather than a fixed wait — Base UI resolves
+      // `finalFocus` asynchronously relative to the dialog's own unmount.
+      await dialog
+        .getByRole('button', { name: /approve & send now/i })
+        .click();
+      await expect(dialog).toBeHidden({ timeout: 15_000 });
+
+      await expect
+        .poll(
+          async () => page.evaluate(() => document.activeElement?.id ?? null),
+          { timeout: 5_000 },
+        )
+        .toBe('main-content');
+    });
+  },
+);
