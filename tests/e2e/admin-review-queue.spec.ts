@@ -54,6 +54,30 @@
  * was stale after `7465ae9be` dropped it — fixed here in the same pass to
  * target the current `role="toolbar"`, since it exercises the identical
  * selector this task otherwise had to introduce anyway.
+ *
+ * Task 9 fix round 1 — the `@i18n` describe's per-locale test anchored its
+ * PRIMARY assertion on the SLA banner's de-jargoned "Review target: within
+ * 48 hours" copy. That copy is CONDITIONALLY rendered: `page.tsx` passes
+ * `<SlaBanner compact={showOverdue}>`, and the compact branch (taken
+ * whenever the queue currently has an overdue `submitted` broadcast) never
+ * mentions "Review target" at all — it renders a bare median/p95 stat line
+ * instead (a legitimate product choice: no 30-day trend is worth showing
+ * when the page is already shouting "act now" via the overdue banner).
+ * `compact={showOverdue}` shipped in the SAME PR1 commit (`ee0aab12d`) as
+ * the original `@i18n` test, so this was a latent gap from day one — it
+ * only ever passed because the dev DB happened to have zero overdue
+ * broadcasts when PR1 was validated; data aging on the shared dev branch
+ * eventually flipped `showOverdue` true and turned the test permanently
+ * red. The fix: the per-locale test's REQUIRED assertions are now (1) the
+ * queue title heading (renders unconditionally, any state), (2) no
+ * `MISSING_MESSAGE`/`MISSING_KEY`, (3) no raw dotted-key leak (both the
+ * full `admin.broadcasts.queue.` path AND the bare scope-relative forms
+ * `queue./slaBanner./bulk./card./ageBadge.` that this page's own
+ * `useTranslations(scope)` calls would render un-resolved). The SLA
+ * "Review target" copy is still checked, but only OPPORTUNISTICALLY —
+ * gated on the full (non-compact) banner actually being in the DOM — so
+ * the test never depends on which SLA-banner render mode the live dev DB
+ * happens to be in at run time.
  */
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
@@ -761,25 +785,39 @@ test.describe('@a11y queue render-tree scan — desktop table / mobile card / bu
   });
 });
 
-// ---------- @i18n: de-jargoned SLA copy, no key leaks ----------
+// ---------- @i18n: stable title + no key leaks (+ opportunistic SLA copy) ----------
 // Fix round 1 — sibling of the serial suite, same rationale as @a11y above
 // (including the `mode: 'default'` override — a file-level `configure`
 // cascades into every later top-level describe unless reset).
-test.describe('@i18n queue localisation — de-jargoned SLA copy, no key leaks', () => {
+//
+// Task 9 fix round 1 — see the module docstring's "Task 9 fix round 1"
+// entry for the full root-cause writeup. Summary: this describe used to
+// assert the SLA banner's "Review target: within 48 hours" copy
+// unconditionally, but that copy is CONDITIONALLY rendered
+// (`SlaBanner compact={showOverdue}` demotes to a bare stat line — no
+// "Review target" mention at all — whenever the queue currently has an
+// overdue broadcast, a legitimate product state, not a bug). The REQUIRED
+// per-locale assertions are now state-independent: a stable heading, no
+// `MISSING_MESSAGE`, no raw dotted-key leak. The SLA copy is still checked
+// when it happens to be in the DOM, but never required.
+test.describe('@i18n queue localisation — stable title, no key leaks', () => {
   test.describe.configure({ mode: 'default' });
   test.skip(
     !ADMIN_EMAIL || !ADMIN_PASSWORD,
     'Set E2E_ADMIN_EMAIL and E2E_ADMIN_PASSWORD',
   );
 
+  // STABLE anchor — the queue page title renders on every load regardless
+  // of overdue/SLA-compact runtime state. Values copied verbatim from
+  // `src/i18n/messages/{en,th,sv}.json` → `admin.broadcasts.queue.title`.
   const TITLE_RE: Record<'en' | 'th' | 'sv', RegExp> = {
     en: /E-Blast review queue/,
     th: /คิวตรวจสอบ E-Blast/,
     sv: /Granskningskö för E-Blast/,
   };
-  // The de-jargoned "review target" line (`admin.broadcasts.queue.
-  // slaBanner.targetSla`) — Task 2's SLA banner renders it
-  // unconditionally on every load, independent of any seed.
+  // OPPORTUNISTIC only (see module docstring) — the de-jargoned "review
+  // target" line (`admin.broadcasts.queue.slaBanner.targetSla`), present
+  // only when the full (non-compact) SlaBanner renders.
   const SLA_TARGET_RE: Record<'en' | 'th' | 'sv', RegExp> = {
     en: /Review target: within 48 hours/,
     th: /เป้าหมายการตรวจ: ภายใน 48 ชั่วโมง/,
@@ -787,7 +825,7 @@ test.describe('@i18n queue localisation — de-jargoned SLA copy, no key leaks',
   };
 
   for (const locale of ['en', 'th', 'sv'] as const) {
-    test(`renders in ${locale.toUpperCase()} — localised title + SLA copy, no MISSING_MESSAGE`, async ({
+    test(`renders in ${locale.toUpperCase()} — stable title, no raw key leak, no MISSING_MESSAGE`, async ({
       page,
       context,
     }) => {
@@ -805,16 +843,40 @@ test.describe('@i18n queue localisation — de-jargoned SLA copy, no key leaks',
       await page.goto('/admin/broadcasts');
       await page.locator('h1').first().waitFor({ timeout: 10_000 });
 
+      // REQUIRED #1 — stable localised heading, any runtime state.
       await expect(
         page.getByRole('heading', { name: TITLE_RE[locale], level: 1 }),
       ).toBeVisible();
-      await expect(page.getByText(SLA_TARGET_RE[locale])).toBeVisible();
 
       const bodyText: string = await page.evaluate(
         () => document.body.innerText,
       );
-      expect(bodyText).not.toMatch(/admin\.broadcasts\.queue\.[a-zA-Z]/);
+      // REQUIRED #2 — no MISSING_MESSAGE / MISSING_KEY anywhere on the page.
       expect(bodyText).not.toMatch(/MISSING_MESSAGE|MISSING_KEY/);
+      // REQUIRED #3 — no raw i18n dotted-key leak. next-intl does not throw
+      // on a missing key; it renders the dotted path instead (this repo's
+      // "next-intl no throw on missing key" gotcha). The first pattern
+      // covers the full absolute path under this page's namespace; the
+      // second covers the bare scope-relative form each component's own
+      // `useTranslations(scope)` call would render un-resolved
+      // (`sla-banner.tsx` → `slaBanner.*`, `queue-bulk-action-bar.tsx` →
+      // `bulk.*`, `queue-card-list.tsx` → `card.*`, the age-badge helper →
+      // `ageBadge.*`).
+      expect(bodyText).not.toMatch(/admin\.broadcasts\.queue\.[a-zA-Z]/);
+      expect(bodyText).not.toMatch(
+        /\b(queue|slaBanner|bulk|card|ageBadge)\.[a-zA-Z]+/,
+      );
+
+      // OPPORTUNISTIC — only when the full (non-compact) SlaBanner happens
+      // to be in the DOM (i.e. the queue has no currently-overdue
+      // broadcast) does this locale's de-jargoned "Review target" copy
+      // apply. When the compact stat-line branch is showing instead
+      // (`SlaBanner compact={showOverdue}`), there's nothing to check here
+      // — that state renders no "Review target" text at all, by design.
+      const slaTargetLocator = page.getByText(SLA_TARGET_RE[locale]);
+      if ((await slaTargetLocator.count()) > 0) {
+        await expect(slaTargetLocator).toBeVisible();
+      }
     });
   }
 });
