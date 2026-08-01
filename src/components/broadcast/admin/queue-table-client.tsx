@@ -36,9 +36,11 @@
  * fan-out are DELETED from this file — that UI + logic now live in the
  * fixed-bottom `QueueBulkActionBar` (Task 5), mounted by `QueueWithBulk`
  * alongside this table. The sr-only `role="status"` selection announcer
- * STAYS here (see the comment above `selectionAnnouncer` below) — the
- * new bar's own `aria-live` span does not cover the mount/unmount 0↔1
- * transitions the round-2 a11y fix exists for.
+ * STAYS here (see the comment above `selectionAnnouncer` below) and is the
+ * SOLE live region for the count — the bar's visible count span is
+ * deliberately NOT a live region, so this permanently-mounted announcer
+ * covers the mount/unmount 0↔1 transitions the round-2 a11y fix exists for
+ * without a double-announce.
  *
  * The parent server component pre-formats every per-row + column-header
  * i18n string and locale-formatted date, so this component never needs
@@ -342,10 +344,11 @@ export function QueueTableClient({
   // silence exactly the transitions this feature exists to announce: 0→1
   // (entering selection) and 1→0 (clearing). Task 6 — this stays here even
   // though the VISIBLE bulk bar moved to `QueueBulkActionBar` (Task 5,
-  // mounted by `QueueWithBulk`): that bar's own `aria-live` span mutates
-  // its text on count CHANGES but is itself mounted/unmounted at the 0↔1
-  // boundary (`selectedIds.length === 0` renders `null`), so it cannot
-  // cover the boundary transitions this announcer exists for. Precedent:
+  // mounted by `QueueWithBulk`): that bar's visible count span is
+  // deliberately NOT a live region (it would otherwise double-announce with
+  // this one), and the bar itself unmounts at the 0↔1 boundary
+  // (`selectedIds.length === 0` renders `null`), so this permanently-mounted
+  // announcer is the sole region covering every transition. Precedent:
   // `members-table.tsx` selected-count region + `renewals/result-count-
   // announcer.tsx`.
   const selectionAnnouncement = selectedIds.length > 0 ? bulkSelectedLabel : '';
