@@ -86,6 +86,17 @@ export interface QueueBulkActionBarProps {
    * handles this (acceptable-minimum: clears the whole selection).
    */
   readonly onPartialFailure?: (failedIds: string[]) => void;
+  /**
+   * Task 2 (2026-08-02-broadcast-review-queue-pr3) — per-row recipient
+   * counts, keyed by broadcast id, so the bar can derive a total-recipients
+   * figure for the upcoming confirm dialog (Task 4). One row per entry in
+   * `EnrichedQueueRow` (`queue-table-client.tsx`); `queue-with-bulk.tsx`
+   * threads the whole `rows` prop through unchanged.
+   */
+  readonly recipientByIdRows: ReadonlyArray<{
+    readonly broadcastId: string;
+    readonly recipientCount: number;
+  }>;
 }
 
 type Outcome =
@@ -97,6 +108,7 @@ export function QueueBulkActionBar({
   onClear,
   onPartialFailure,
   readOnly,
+  recipientByIdRows,
 }: QueueBulkActionBarProps): React.JSX.Element | null {
   const t = useTranslations('admin.broadcasts.queue.bulk');
   const router = useRouter();
@@ -127,6 +139,21 @@ export function QueueBulkActionBar({
 
   const cappedIds = selectedIds.slice(0, BULK_CAP);
   const overCap = selectedIds.length > BULK_CAP;
+
+  // Task 2 (2026-08-02-broadcast-review-queue-pr3) — sum over `cappedIds`
+  // (the actually-actioned set), never raw `selectedIds`: the total must
+  // match what the fan-out below will actually approve, not what's merely
+  // checked past the cap.
+  const recipientById = new Map(
+    recipientByIdRows.map((r) => [r.broadcastId, r.recipientCount]),
+  );
+  // Consumed by the confirm dialog in Task 4
+  // (`<BulkApproveConfirmDialog totalRecipients={totalRecipients} …>`) — not
+  // read yet in this task.
+  const totalRecipients = cappedIds.reduce(
+    (sum, id) => sum + (recipientById.get(id) ?? 0),
+    0,
+  );
 
   // IMP-1 (queue-table-client.tsx round-3) — chunked Promise.allSettled,
   // moved verbatim in spirit (see module docstring for what could not

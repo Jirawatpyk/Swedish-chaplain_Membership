@@ -102,7 +102,12 @@ describe('QueueBulkActionBar — bar shell + count + spacer', () => {
   it('renders a role=toolbar with the visible count (no aria-live — I-1 review fix) and a ResizeObserver spacer', () => {
     const { container } = render(
       <Provider>
-        <QueueBulkActionBar selectedIds={['b1', 'b2']} onClear={vi.fn()} readOnly={false} />
+        <QueueBulkActionBar
+          selectedIds={['b1', 'b2']}
+          onClear={vi.fn()}
+          readOnly={false}
+          recipientByIdRows={[]}
+        />
       </Provider>,
     );
     const bar = screen.getByRole('toolbar');
@@ -124,7 +129,12 @@ describe('QueueBulkActionBar — bar shell + count + spacer', () => {
   it('rounds a fractional measured height UP', () => {
     const { container } = render(
       <Provider>
-        <QueueBulkActionBar selectedIds={['b1']} onClear={vi.fn()} readOnly={false} />
+        <QueueBulkActionBar
+          selectedIds={['b1']}
+          onClear={vi.fn()}
+          readOnly={false}
+          recipientByIdRows={[]}
+        />
       </Provider>,
     );
     act(() => roCb?.([{ borderBoxSize: [{ blockSize: 68.4 }] }]));
@@ -135,7 +145,12 @@ describe('QueueBulkActionBar — bar shell + count + spacer', () => {
   it('falls back to offsetHeight when the entry has no borderBoxSize', () => {
     const { container } = render(
       <Provider>
-        <QueueBulkActionBar selectedIds={['b1']} onClear={vi.fn()} readOnly={false} />
+        <QueueBulkActionBar
+          selectedIds={['b1']}
+          onClear={vi.fn()}
+          readOnly={false}
+          recipientByIdRows={[]}
+        />
       </Provider>,
     );
     const bar = screen.getByRole('toolbar');
@@ -148,7 +163,12 @@ describe('QueueBulkActionBar — bar shell + count + spacer', () => {
   it('disconnects the observer on unmount', () => {
     const { unmount } = render(
       <Provider>
-        <QueueBulkActionBar selectedIds={['b1']} onClear={vi.fn()} readOnly={false} />
+        <QueueBulkActionBar
+          selectedIds={['b1']}
+          onClear={vi.fn()}
+          readOnly={false}
+          recipientByIdRows={[]}
+        />
       </Provider>,
     );
     expect(disconnectCount).toBe(0);
@@ -165,6 +185,7 @@ describe('QueueBulkActionBar — BULK_CAP over-cap alert', () => {
           selectedIds={Array.from({ length: 120 }, (_, i) => `b${i}`)}
           onClear={vi.fn()}
           readOnly={false}
+          recipientByIdRows={[]}
         />
       </Provider>,
     );
@@ -178,6 +199,7 @@ describe('QueueBulkActionBar — BULK_CAP over-cap alert', () => {
           selectedIds={Array.from({ length: BULK_CAP }, (_, i) => `b${i}`)}
           onClear={vi.fn()}
           readOnly={false}
+          recipientByIdRows={[]}
         />
       </Provider>,
     );
@@ -185,11 +207,37 @@ describe('QueueBulkActionBar — BULK_CAP over-cap alert', () => {
   });
 });
 
+describe('QueueBulkActionBar — recipientByIdRows', () => {
+  it('sums recipientCount over the capped selection', () => {
+    render(
+      <Provider>
+        <QueueBulkActionBar
+          selectedIds={['b1', 'b2']}
+          readOnly={false}
+          onClear={vi.fn()}
+          recipientByIdRows={[
+            { broadcastId: 'b1', recipientCount: 10 },
+            { broadcastId: 'b2', recipientCount: 5 },
+          ]}
+        />
+      </Provider>,
+    );
+    // The total is surfaced when the confirm dialog opens (Task 4) — here we
+    // only assert the prop typechecks and the bar still renders the toolbar.
+    expect(screen.getByRole('toolbar')).toBeInTheDocument();
+  });
+});
+
 describe('QueueBulkActionBar — hidden states', () => {
   it('renders nothing when selectedIds is empty', () => {
     const { container } = render(
       <Provider>
-        <QueueBulkActionBar selectedIds={[]} onClear={vi.fn()} readOnly={false} />
+        <QueueBulkActionBar
+          selectedIds={[]}
+          onClear={vi.fn()}
+          readOnly={false}
+          recipientByIdRows={[]}
+        />
       </Provider>,
     );
     expect(container.querySelector('[role="toolbar"]')).toBeNull();
@@ -198,7 +246,12 @@ describe('QueueBulkActionBar — hidden states', () => {
   it('renders nothing when readOnly is true, even with a selection', () => {
     const { container } = render(
       <Provider>
-        <QueueBulkActionBar selectedIds={['b1']} onClear={vi.fn()} readOnly />
+        <QueueBulkActionBar
+          selectedIds={['b1']}
+          onClear={vi.fn()}
+          readOnly
+          recipientByIdRows={[]}
+        />
       </Provider>,
     );
     expect(container.querySelector('[role="toolbar"]')).toBeNull();
@@ -213,7 +266,12 @@ describe('QueueBulkActionBar — bulk-approve fan-out', () => {
 
     render(
       <Provider>
-        <QueueBulkActionBar selectedIds={['b1', 'b2']} onClear={onClear} readOnly={false} />
+        <QueueBulkActionBar
+          selectedIds={['b1', 'b2']}
+          onClear={onClear}
+          readOnly={false}
+          recipientByIdRows={[]}
+        />
       </Provider>,
     );
 
@@ -246,6 +304,7 @@ describe('QueueBulkActionBar — bulk-approve fan-out', () => {
           selectedIds={Array.from({ length: 120 }, (_, i) => `b${i}`)}
           onClear={vi.fn()}
           readOnly={false}
+          recipientByIdRows={[]}
         />
       </Provider>,
     );
@@ -264,7 +323,12 @@ describe('QueueBulkActionBar — bulk-approve fan-out', () => {
 
     render(
       <Provider>
-        <QueueBulkActionBar selectedIds={['b1']} onClear={onClear} readOnly={false} />
+        <QueueBulkActionBar
+          selectedIds={['b1']}
+          onClear={onClear}
+          readOnly={false}
+          recipientByIdRows={[]}
+        />
       </Provider>,
     );
 
@@ -288,7 +352,12 @@ describe('QueueBulkActionBar — bulk-approve fan-out', () => {
 
     render(
       <Provider>
-        <QueueBulkActionBar selectedIds={['b1', 'b2']} onClear={onClear} readOnly={false} />
+        <QueueBulkActionBar
+          selectedIds={['b1', 'b2']}
+          onClear={onClear}
+          readOnly={false}
+          recipientByIdRows={[]}
+        />
       </Provider>,
     );
 
@@ -303,7 +372,12 @@ describe('QueueBulkActionBar — bulk-approve fan-out', () => {
     const onClear = vi.fn();
     render(
       <Provider>
-        <QueueBulkActionBar selectedIds={['b1']} onClear={onClear} readOnly={false} />
+        <QueueBulkActionBar
+          selectedIds={['b1']}
+          onClear={onClear}
+          readOnly={false}
+          recipientByIdRows={[]}
+        />
       </Provider>,
     );
     fireEvent.click(screen.getByRole('button', { name: 'Clear' }));

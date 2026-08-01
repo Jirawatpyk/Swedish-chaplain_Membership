@@ -98,6 +98,10 @@ export function QueueWithBulk({
         readOnly={readOnly}
         onClear={handleClear}
         onPartialFailure={handlePartialFailure}
+        recipientByIdRows={rows.map((r) => ({
+          broadcastId: r.broadcastId,
+          recipientCount: r.recipientCount,
+        }))}
       />
     </>
   );
