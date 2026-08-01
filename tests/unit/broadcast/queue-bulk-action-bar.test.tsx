@@ -526,6 +526,42 @@ describe('QueueBulkActionBar — bulk-approve fan-out', () => {
   });
 });
 
+describe('QueueBulkActionBar — in-flight progress announcement (Task 7, 2026-08-02-broadcast-review-queue-pr3)', () => {
+  it('is absent before the fan-out starts, appears with role="status" announcing "Approving…" while executing, and disappears once the fan-out resolves', async () => {
+    let resolveFetch: ((res: Response) => void) | undefined;
+    const pending = new Promise<Response>((resolve) => {
+      resolveFetch = resolve;
+    });
+    vi.stubGlobal('fetch', vi.fn(() => pending));
+
+    render(
+      <Provider>
+        <QueueBulkActionBar
+          selectedIds={['b1']}
+          onClear={vi.fn()}
+          readOnly={false}
+          recipientByIdRows={[]}
+        />
+      </Provider>,
+    );
+
+    // Not executing yet — no status region should exist (it's not a
+    // permanent noisy region; it only exists while work is happening).
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+
+    await approveViaSendNowConfirm();
+
+    // The fan-out is now in-flight — `fetch` hasn't resolved yet — so the
+    // announced status region must be present.
+    expect(await screen.findByRole('status')).toHaveTextContent('Approving…');
+
+    // Resolve the pending fetch; the fan-out completes and `executing`
+    // flips back to false — the status region must unmount.
+    resolveFetch?.(jsonResponse({ ok: true }));
+    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
+  });
+});
+
 describe('QueueBulkActionBar — 60s send-now Undo toast (Task 5, 2026-08-02-broadcast-review-queue-pr3)', () => {
   it('after an all-success send-now confirm, shows an Undo toast whose action cancels every approved id with the canned reason', async () => {
     const cancelMock = vi.fn(async () => jsonResponse({ status: 'cancelled' }));

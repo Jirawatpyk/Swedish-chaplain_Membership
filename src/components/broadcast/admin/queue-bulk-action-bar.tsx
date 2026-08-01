@@ -56,6 +56,24 @@
  * progress-indicator key set was out of Task 1's scope; a plain
  * `disabled={executing}` on both buttons covers in-flight feedback for now.
  *
+ * Task 7 (2026-08-02-broadcast-review-queue-pr3) — `disabled={executing}`
+ * gives no signal to screen-reader/keyboard admins (a disabled button is
+ * silent), so this task adds an announced in-flight status. Task 1 DID
+ * land `progress.label`/`progress.message` keys under this namespace after
+ * the paragraph above was written, but `BulkProgressIndicator` still
+ * doesn't fit: it reads flat `progressLabel`/`progressMessage`/
+ * `elapsedSeconds`/`actions.<action>` keys with `{action, count}`
+ * interpolation, not our nested `progress.label`/`progress.message` with
+ * `{done, total}` — a real key-shape mismatch, not just naming. Wiring up
+ * a live `done` counter would also mean promoting the fan-out's local
+ * `outcomes` array to state (a re-render per completed request) — more
+ * than this polish task warrants. So this uses the documented fallback: a
+ * conditionally-mounted `role="status"` region showing only
+ * `progress.label` ("Approving…") while `executing` is true, mirroring
+ * the permanent `selectionAnnouncer` pattern in `queue-table-client.tsx`
+ * (`sr-only` + explicit `aria-live="polite"` + `aria-atomic="true"` even
+ * though `role="status"` implies both, for the same AT-compat reason).
+ *
  * `overCap` does NOT disable the Approve button (unlike the members bar,
  * which refuses to act at all past the cap) — the Task 5 contract is
  * explicit: `cappedIds = selectedIds.slice(0, BULK_CAP)` and the button
@@ -127,6 +145,7 @@ export function QueueBulkActionBar({
 }: QueueBulkActionBarProps): React.JSX.Element | null {
   const t = useTranslations('admin.broadcasts.queue.bulk');
   const tUndo = useTranslations('admin.broadcasts.queue.bulk.undo');
+  const tProgress = useTranslations('admin.broadcasts.queue.bulk.progress');
   const router = useRouter();
   const [executing, setExecuting] = useState(false);
 
@@ -315,6 +334,17 @@ export function QueueBulkActionBar({
 
   return (
     <>
+      {/* Task 7 — announced in-flight status for the bulk-approve fan-out.
+          Conditionally mounted (not permanent, unlike `selectionAnnouncer`
+          in `queue-table-client.tsx`) — a progress announcement should only
+          exist WHILE work is happening, not sit as a silent, always-present
+          region. See the module docstring's Task 7 note for why this is the
+          fallback rather than reusing `BulkProgressIndicator`. */}
+      {executing && (
+        <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+          {tProgress('label')}
+        </div>
+      )}
       <div
         ref={barRef}
         // `pb-[env(safe-area-inset-bottom)]` keeps the action row clear of the
