@@ -10,6 +10,7 @@ import { QueueTable, type QueueRow } from '@/components/broadcast/admin/queue-ta
 import { QueueFilters } from '@/components/broadcast/admin/queue-filters';
 import { SlaBanner, type SlaStats } from '@/components/broadcast/admin/sla-banner';
 import { OverdueBanner } from '@/components/broadcast/admin/overdue-banner';
+import { isDefaultBroadcastView } from './_lib/is-default-view';
 import { HaltStateBanner } from '@/components/broadcast/admin/halt-state-banner';
 import { ManagerReadonlyBanner } from '@/components/broadcast/admin/manager-readonly-banner';
 import { isF71aUs7Enabled } from '@/modules/broadcasts';
@@ -279,9 +280,12 @@ export default async function AdminBroadcastsPage({
   // Overdue banner + truncation note only on the default `submitted`
   // view — a filtered/searched subset would mislead (mirror
   // erasure-log unfiltered gating in
-  // `compliance/erasure-log/page.tsx`).
-  const isDefaultView =
-    !explicitShowAll && params.status === undefined && params.memberId === undefined;
+  // `compliance/erasure-log/page.tsx`). Delegated to a pure helper
+  // (`_lib/is-default-view.ts`) that mirrors `queue-filters.tsx`'s
+  // `hasAnyFilter` — including `fromDate`/`toDate` — so this gate can
+  // never drift from what the filter bar's "Reset" button considers
+  // an active filter (Task 3 review fix, Important).
+  const isDefaultView = isDefaultBroadcastView(params);
   const showOverdue = isDefaultView && overdueCount > 0;
   const truncated = isDefaultView && listResult.nextCursor !== null;
 
