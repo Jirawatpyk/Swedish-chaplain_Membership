@@ -219,12 +219,18 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
   // admins). The Date constructor accepts any string and
   // `Intl.DateTimeFormat.format` returns "Invalid Date" for bad
   // input rather than throwing — no try/catch needed.
+  // Tenant-TZ pin (#315 follow-up, server-UTC display class): these two
+  // format timestamptz INSTANTS — the UTC Vercel runtime rendered them 7h
+  // off (and the wrong day for instants ≥ 17:00 UTC). `fmtCalendarDate`
+  // below stays UTC-pinned by design (already-Bangkok calendar dates).
   const dtFmtFull = new Intl.DateTimeFormat(getDateFormatLocale(locale), {
     dateStyle: 'long',
     timeStyle: 'short',
+    timeZone: env.tenant.timezone,
   });
   const dtFmtDay = new Intl.DateTimeFormat(getDateFormatLocale(locale), {
     dateStyle: 'long',
+    timeZone: env.tenant.timezone,
   });
   const fmtDate = (s: string | null | undefined): string =>
     s ? dtFmtFull.format(new Date(s)) : '—';

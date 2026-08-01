@@ -36,6 +36,7 @@ import {
   parseBroadcastId,
 } from '@/modules/broadcasts';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
+import { env } from '@/lib/env';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { randomUUID } from 'node:crypto';
 import { CancelBroadcastAction } from '@/components/broadcast/cancel-broadcast-action';
@@ -115,6 +116,9 @@ export default async function BroadcastDetailPage(props: {
   const dateFormatter = new Intl.DateTimeFormat(getDateFormatLocale(locale), {
     dateStyle: 'medium',
     timeStyle: 'short',
+    // Tenant-TZ pin (#315 follow-up, server-UTC display class) — matches
+    // the admin broadcast detail's H2 Bangkok pin; canonical tenant TZ.
+    timeZone: env.tenant.timezone,
   });
 
   return (

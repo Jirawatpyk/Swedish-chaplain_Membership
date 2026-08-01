@@ -341,6 +341,10 @@ export default async function StaffHomePage() {
   // FR-001a trend charts — display-ready points (visible to all staff; the
   // empty state shows only when a tenant genuinely has no paid revenue yet).
   // `thbFmt` is declared above (hoisted for the revenue KPI's <CountUp>).
+  // No timeZone pin needed (deliberate — server-UTC sweep exempt): the month
+  // anchor is CONSTRUCTED with the runtime-local `new Date(y, m-1, 1)` and
+  // formatted in the same runtime zone, so the pair is self-consistent and
+  // UTC vs Bangkok agree on the month either way.
   const monthFmt = new Intl.DateTimeFormat(getDateFormatLocale(locale), { month: 'short', year: 'numeric' });
   const monthLabel = (key: string): string =>
     monthFmt.format(new Date(Number(key.slice(0, 4)), Number(key.slice(5, 7)) - 1, 1));

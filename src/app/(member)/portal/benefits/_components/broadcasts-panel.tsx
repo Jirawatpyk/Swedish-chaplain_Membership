@@ -50,6 +50,7 @@ import type { IanaTimezone } from '@/modules/tenants';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { shouldShowPlanChangedExplainer } from '@/components/broadcast/quota-banner';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
+import { env } from '@/lib/env';
 
 const PER_PAGE = 10;
 
@@ -75,12 +76,18 @@ export async function BroadcastsPanel({
   const tQuota = await getTranslations('portal.broadcasts.quota');
   const tPagination = await getTranslations('portal.broadcasts.list.pagination');
   const locale = await getLocale();
+  // Tenant-TZ pin (#315 follow-up, server-UTC display class): sent/created
+  // instants rendered by the UTC Vercel runtime were 7h off (wrong day past
+  // 17:00 UTC). Same canonical tenant TZ the panel's own
+  // `planChangedFormatter` below already uses.
   const dateFormatter = new Intl.DateTimeFormat(getDateFormatLocale(locale), {
     dateStyle: 'medium',
     timeStyle: 'short',
+    timeZone: env.tenant.timezone,
   });
   const dateOnlyFormatter = new Intl.DateTimeFormat(getDateFormatLocale(locale), {
     dateStyle: 'long',
+    timeZone: env.tenant.timezone,
   });
 
   // Defensive re-clamp: `requestedPage` is documented as already clamped to

@@ -1005,8 +1005,12 @@ async function PendingReviewSection({
     );
   }
 
+  // Tenant-TZ pin (#315 follow-up, server-UTC display class): this formats
+  // timestamptz INSTANTS (entered_pending_at / expires_at) — the UTC Vercel
+  // runtime rendered the wrong calendar day for instants ≥ 17:00 UTC.
   const dtFmtDay = new Intl.DateTimeFormat(getDateFormatLocale(locale), {
     dateStyle: 'long',
+    timeZone: env.tenant.timezone,
   });
   const fmtDateOnly = (s: string | null | undefined): string =>
     s ? dtFmtDay.format(new Date(s)) : '—';

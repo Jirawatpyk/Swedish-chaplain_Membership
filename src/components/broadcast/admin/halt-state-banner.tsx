@@ -14,6 +14,7 @@ import Link from 'next/link';
 import { ShieldAlert } from 'lucide-react';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
+import { env } from '@/lib/env';
 import { ClearHaltDialog } from './clear-halt-dialog';
 
 export interface HaltedMember {
@@ -37,7 +38,10 @@ export async function HaltStateBanner({
   const locale = await getLocale();
   const fmt = new Intl.DateTimeFormat(
     getDateFormatLocale(locale),
-    { dateStyle: 'medium' },
+    // Tenant-TZ pin (#315 follow-up, server-UTC display class): the halt
+    // timestamp is an instant — its UTC calendar day differs from the
+    // Bangkok day for instants ≥ 17:00 UTC.
+    { dateStyle: 'medium', timeZone: env.tenant.timezone },
   );
 
   return (
