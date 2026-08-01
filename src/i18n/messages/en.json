@@ -2929,7 +2929,7 @@
         },
         "statusGroup": {
           "inReview": "In review",
-          "terminal": "Completed"
+          "terminal": "Closed"
         },
         "actorRole": {
           "member_self_service": "Member",

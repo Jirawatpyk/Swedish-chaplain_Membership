@@ -218,7 +218,12 @@ export function QueueBulkActionBar({
       >
         <div className="mx-auto flex max-w-screen-xl flex-wrap items-center justify-between gap-x-4 gap-y-3 px-4 py-3">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-medium" aria-live="polite">
+            {/* No `aria-live` here — the permanent `role="status"` announcer in
+                `queue-table-client.tsx` (`selectionAnnouncement`) is the sole
+                live region for this count. Duplicating `aria-live` on this
+                visible span made screen readers announce every count change
+                TWICE (I-1, PR2 whole-branch review). */}
+            <span className="text-sm font-medium">
               {t('selectedCount', { count: selectedIds.length })}
             </span>
             {overCap && (

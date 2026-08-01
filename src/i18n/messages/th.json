@@ -2929,7 +2929,7 @@
         },
         "statusGroup": {
           "inReview": "กำลังตรวจสอบ",
-          "terminal": "เสร็จสิ้น"
+          "terminal": "สิ้นสุดแล้ว"
         },
         "actorRole": {
           "member_self_service": "สมาชิก",

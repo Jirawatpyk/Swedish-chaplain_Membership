@@ -55,8 +55,14 @@ describe('<QueueFilters> — status chip grouping + Reset placement', () => {
       </Provider>,
     );
 
+    // M-2 (PR2 whole-branch review) — the terminal group's label changed
+    // from "Completed" to "Closed" (a group that holds rejected/cancelled/
+    // failed_to_dispatch/partially_sent read as "success" under the old
+    // label). Matches BOTH groups' actual aria-label text
+    // (`statusGroup.inReview` / `statusGroup.terminal` in en.json) — not the
+    // internal `terminal` key name, which is never rendered.
     const groups = screen.getAllByRole('group', {
-      name: /in review|completed|terminal/i,
+      name: /in review|closed/i,
     });
     expect(groups.length).toBeGreaterThanOrEqual(2);
   });

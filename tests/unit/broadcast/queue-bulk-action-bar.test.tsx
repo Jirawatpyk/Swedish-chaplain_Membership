@@ -98,8 +98,8 @@ function fetchMockOf(
   return vi.fn(impl);
 }
 
-describe('QueueBulkActionBar — bar shell + aria-live count + spacer', () => {
-  it('renders a role=toolbar with an aria-live count and a ResizeObserver spacer', () => {
+describe('QueueBulkActionBar — bar shell + count + spacer', () => {
+  it('renders a role=toolbar with the visible count (no aria-live — I-1 review fix) and a ResizeObserver spacer', () => {
     const { container } = render(
       <Provider>
         <QueueBulkActionBar selectedIds={['b1', 'b2']} onClear={vi.fn()} readOnly={false} />
@@ -107,7 +107,14 @@ describe('QueueBulkActionBar — bar shell + aria-live count + spacer', () => {
     );
     const bar = screen.getByRole('toolbar');
     expect(bar).toHaveClass('fixed', 'bottom-0');
-    expect(within(bar).getByText('2 selected')).toHaveAttribute('aria-live', 'polite');
+    // I-1 (PR2 whole-branch review, both opus reviewers) — this span must NOT
+    // carry `aria-live`. The permanent `role="status"` announcer in
+    // `queue-table-client.tsx` is the sole live region for the selection
+    // count; duplicating it here caused a double announcement on every
+    // count change ("2 selected. 2 selected."). See
+    // `queue-table-client-a11y.test.tsx` for that announcer's own coverage.
+    const countSpan = within(bar).getByText('2 selected');
+    expect(countSpan).not.toHaveAttribute('aria-live');
 
     act(() => roCb?.([{ borderBoxSize: [{ blockSize: 68 }] }]));
     const spacer = container.querySelector('[aria-hidden="true"][data-testid="queue-bulk-spacer"]');
