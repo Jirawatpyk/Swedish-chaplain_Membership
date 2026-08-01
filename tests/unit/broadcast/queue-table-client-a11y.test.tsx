@@ -150,4 +150,30 @@ describe('QueueTableClient a11y + ICU', () => {
     expect(rowCb?.className ?? '').toMatch(/min-h-\[24px\]/);
     expect(rowCb?.className ?? '').toMatch(/min-w-\[24px\]/);
   });
+
+  // Task 2 (2026-08-01-broadcast-review-queue-pr2) — the row-virtualization
+  // branch (`@tanstack/react-virtual`, threshold 100 rows) never fires in
+  // production: the queue query pages at 50 rows. This guard renders a
+  // row count well below the old threshold and asserts every row lands in
+  // the DOM as a real `<tr>` — no synthetic virtualizer padding rows —
+  // so a future re-introduction of virtualization at a low threshold (or
+  // any padding-row artifact) fails loudly here.
+  it('renders every row without virtualization padding rows', () => {
+    const manyRows: EnrichedQueueRow[] = Array.from({ length: 12 }, (_, i) => ({
+      ...base,
+      broadcastId: `b${i}`,
+      subject: `Subject ${i}`,
+    }));
+    const { container } = render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <QueueTableClient rows={manyRows} columnLabels={columnLabels} />
+      </NextIntlClientProvider>,
+    );
+
+    const bodyRows = container.querySelectorAll('tbody tr');
+    expect(bodyRows).toHaveLength(12); // exactly the data rows, no padding <tr>
+    bodyRows.forEach((tr) => {
+      expect(tr).not.toHaveAttribute('aria-hidden');
+    });
+  });
 });

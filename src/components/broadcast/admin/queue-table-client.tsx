@@ -1,9 +1,13 @@
 'use client';
 
 /**
- * T117 — TanStack Table v8 client renderer with `@tanstack/react-virtual`
- * row virtualization. Activates virtualization automatically when row
- * count exceeds 100 (perf.md CHK039).
+ * T117 — TanStack Table v8 client renderer.
+ *
+ * Task 2 (2026-08-01-broadcast-review-queue-pr2): row virtualization
+ * (`@tanstack/react-virtual`, threshold 100 rows, perf.md CHK039) was
+ * removed — the queue query pages at 50 rows, so the threshold never
+ * fired in production. Dead code removed to unblock the shared `<Table>`
+ * adoption (Task 3).
  *
  * Smart-2 (2026-04-30): admins can multi-select `submitted` rows and
  * bulk-approve in one click via Promise.allSettled (catalogue Feature #7).
@@ -16,7 +20,7 @@
  * `bulk.selected` ICU-plural count interpolates correctly without a
  * `.replace()` template hack.
  */
-import { useMemo, useRef, useState, useTransition } from 'react';
+import { useMemo, useState, useTransition } from 'react';
 import { Clock, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -28,16 +32,12 @@ import {
   type ColumnDef,
   type RowSelectionState,
 } from '@tanstack/react-table';
-import { useVirtualizer } from '@tanstack/react-virtual';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 import { ReviewActions } from './review-actions';
-
-const VIRTUALIZE_THRESHOLD = 100;
-const ESTIMATED_ROW_HEIGHT_PX = 56;
 
 type BadgeVariant =
   | 'default'
@@ -259,16 +259,7 @@ export function QueueTableClient({
     getCoreRowModel: getCoreRowModel(),
   });
 
-  const shouldVirtualize = rows.length > VIRTUALIZE_THRESHOLD;
-  const tableRef = useRef<HTMLDivElement>(null);
   const rowModel = table.getRowModel();
-  const virtualizer = useVirtualizer({
-    count: rowModel.rows.length,
-    getScrollElement: () => tableRef.current,
-    estimateSize: () => ESTIMATED_ROW_HEIGHT_PX,
-    overscan: 8,
-    enabled: shouldVirtualize,
-  });
 
   // Smart-2 — bulk-approve handler. Concurrency capped at BULK_CHUNK
   // to avoid DB pool exhaustion on Neon serverless (~10 connections);
@@ -473,104 +464,31 @@ export function QueueTableClient({
       </div>
     ) : null;
 
-  if (!shouldVirtualize) {
-    return (
-      <>
-        {selectionAnnouncer}
-        {bulkBar}
-        <div className="overflow-x-auto rounded-md border" ref={tableRef}>
-          <table className="w-full min-w-[920px] text-sm">
-            <thead className="bg-muted/50 text-xs uppercase tracking-wide">
-              {headerRow}
-            </thead>
-            <tbody>
-              {rowModel.rows.map((row) => (
-                <tr key={row.id} className="border-t">
-                  {row.getVisibleCells().map((cell) => {
-                    const alignRight = cell.column.id === 'recipientCount';
-                    return (
-                      <td
-                        key={cell.id}
-                        className={`px-3 py-2 ${alignRight ? 'text-right' : ''}`}
-                      >
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </>
-    );
-  }
-
-  // A6 UX hardening — padding-row virtualisation preserves the
-  // `<table>/<tr>/<td>` DOM so screen readers in table-grid mode can
-  // still navigate by row/column. Previously the virtualised path
-  // used `position: absolute` on each `<tr>`, which breaks the
-  // browser's table-layout algorithm and silently degrades SR
-  // navigation. The TanStack docs recommend the padding-row pattern
-  // for table virtualisation.
-  //
-  // Strategy: compute the unrendered space above the first visible
-  // row + below the last visible row, and emit two `<tr>` spacer
-  // rows holding that space via explicit `height` styles. The
-  // visible `<tr>`s sit between them with normal flow layout.
-  const totalSize = virtualizer.getTotalSize();
-  const virtualItems = virtualizer.getVirtualItems();
-  const paddingTop = virtualItems.length > 0 ? (virtualItems[0]?.start ?? 0) : 0;
-  const lastItem = virtualItems[virtualItems.length - 1];
-  const paddingBottom =
-    virtualItems.length > 0 && lastItem !== undefined
-      ? totalSize - lastItem.end
-      : 0;
   return (
     <>
       {selectionAnnouncer}
       {bulkBar}
-      <div
-        className="overflow-auto rounded-md border"
-        style={{ height: '70vh', maxHeight: '720px' }}
-        ref={tableRef}
-        role="region"
-        aria-label={columnLabels.tableAria}
-      >
+      <div className="overflow-x-auto rounded-md border">
         <table className="w-full min-w-[920px] text-sm">
-          <thead className="sticky top-0 z-10 bg-muted/95 text-xs uppercase tracking-wide backdrop-blur">
+          <thead className="bg-muted/50 text-xs uppercase tracking-wide">
             {headerRow}
           </thead>
           <tbody>
-            {paddingTop > 0 ? (
-              <tr aria-hidden="true">
-                <td style={{ height: `${paddingTop}px` }} />
+            {rowModel.rows.map((row) => (
+              <tr key={row.id} className="border-t">
+                {row.getVisibleCells().map((cell) => {
+                  const alignRight = cell.column.id === 'recipientCount';
+                  return (
+                    <td
+                      key={cell.id}
+                      className={`px-3 py-2 ${alignRight ? 'text-right' : ''}`}
+                    >
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </td>
+                  );
+                })}
               </tr>
-            ) : null}
-            {virtualItems.map((vRow) => {
-              const row = rowModel.rows[vRow.index];
-              if (!row) return null;
-              return (
-                <tr key={row.id} className="border-t">
-                  {row.getVisibleCells().map((cell) => {
-                    const alignRight = cell.column.id === 'recipientCount';
-                    return (
-                      <td
-                        key={cell.id}
-                        className={`px-3 py-2 ${alignRight ? 'text-right' : ''}`}
-                      >
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </td>
-                    );
-                  })}
-                </tr>
-              );
-            })}
-            {paddingBottom > 0 ? (
-              <tr aria-hidden="true">
-                <td style={{ height: `${paddingBottom}px` }} />
-              </tr>
-            ) : null}
+            ))}
           </tbody>
         </table>
       </div>
