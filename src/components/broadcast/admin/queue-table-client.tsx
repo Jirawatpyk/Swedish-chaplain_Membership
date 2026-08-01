@@ -8,9 +8,13 @@
  * Smart-2 (2026-04-30): admins can multi-select `submitted` rows and
  * bulk-approve in one click via Promise.allSettled (catalogue Feature #7).
  *
- * The parent server component pre-formats every i18n + date-formatted
- * string so this client component never needs to call `getTranslations`
- * or hold a locale instance — keeps the bundle small and SSR-friendly.
+ * The parent server component pre-formats every per-row + column-header
+ * i18n string and locale-formatted date, so this component never needs
+ * `getTranslations` or a locale instance for row/column content. The
+ * bulk-selection bar strings (`admin.broadcasts.queue.bulk.*`) are the one
+ * exception — Task 5 moved those to client-side `useTranslations` so the
+ * `bulk.selected` ICU-plural count interpolates correctly without a
+ * `.replace()` template hack.
  */
 import { useMemo, useRef, useState, useTransition } from 'react';
 import { Clock, AlertCircle } from 'lucide-react';
@@ -419,6 +423,22 @@ export function QueueTableClient({
   // Task 5 — moved to `tBulk('selected', {count})` (ICU plural) so the
   // count is both correctly interpolated AND grammatically pluralised.
   const bulkSelectedLabel = tBulk('selected', { count: selectedIds.length });
+  // Round-2 review Fix 1 — the visible bar (and its `aria-live`) is
+  // conditionally MOUNTED (`selectedIds.length > 0 ? (...) : null`), so an
+  // `aria-live` region that appears WITH its content already populated in
+  // the same paint is not reliably announced by NVDA/JAWS — only text
+  // MUTATIONS on an already-mounted live region are announced. That silences
+  // exactly the transitions this feature exists to announce: 0→1 (entering
+  // selection) and 1→0 (clearing). Fix: a permanently-mounted sr-only
+  // announcer rendered unconditionally below, separate from the visible bar.
+  // Precedent: `members-table.tsx` selected-count region +
+  // `renewals/result-count-announcer.tsx`.
+  const selectionAnnouncement = selectedIds.length > 0 ? bulkSelectedLabel : '';
+  const selectionAnnouncer = !readOnly ? (
+    <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+      {selectionAnnouncement}
+    </div>
+  ) : null;
   const bulkBar =
     !readOnly && selectedIds.length > 0 ? (
       <div
@@ -427,9 +447,7 @@ export function QueueTableClient({
         className="sticky z-20 mb-2 flex items-center justify-between gap-3 rounded-md border bg-primary/5 px-3 py-2"
         style={{ top: 'var(--top-bar-height, 0px)' }}
       >
-        <span className="text-sm font-medium" aria-live="polite">
-          {bulkSelectedLabel}
-        </span>
+        <span className="text-sm font-medium">{bulkSelectedLabel}</span>
         <div className="flex gap-2">
           <Button
             type="button"
@@ -455,6 +473,7 @@ export function QueueTableClient({
   if (!shouldVirtualize) {
     return (
       <>
+        {selectionAnnouncer}
         {bulkBar}
         <div className="overflow-x-auto rounded-md border" ref={tableRef}>
           <table className="w-full min-w-[920px] text-sm">
@@ -506,6 +525,7 @@ export function QueueTableClient({
       : 0;
   return (
     <>
+      {selectionAnnouncer}
       {bulkBar}
       <div
         className="overflow-auto rounded-md border"

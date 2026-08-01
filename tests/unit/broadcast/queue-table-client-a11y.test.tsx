@@ -1,9 +1,19 @@
 /**
  * Task 5 (2026-08-01-broadcast-review-queue-pr1) — bulk-selection bar a11y:
- * `aria-live="polite"` on the selected-count region, `indeterminate`
- * (aria-checked="mixed") on the header select-all checkbox when some-but-
- * not-all actionable rows are selected, and a 24px minimum touch target on
- * every select checkbox (WCAG 2.2 SC 2.5.8).
+ * a PERMANENTLY-MOUNTED `role="status" aria-live="polite"` announcer for
+ * the selected count, `indeterminate` (aria-checked="mixed") on the header
+ * select-all checkbox when some-but-not-all actionable rows are selected,
+ * and a 24px minimum touch target on every select checkbox (WCAG 2.2
+ * SC 2.5.8).
+ *
+ * Round-2 review Fix 1 — the announcer must stay mounted across the
+ * 0-selected ↔ 1-selected transition. A live region that is INSERTED into
+ * the DOM already containing its text (e.g. conditionally rendered only
+ * while `selectedIds.length > 0`) is not reliably announced by NVDA/JAWS —
+ * only text MUTATIONS on an already-mounted region are. So this asserts
+ * the region exists even with 0 selected (empty text) and gains the count
+ * text after a row is selected — the exact 0→1 transition the feature
+ * exists to announce.
  *
  * `QueueTableClient` now translates its own `bulk.*` strings via
  * `useTranslations` (Task 1 made `bulk.selected` an ICU-plural key), so this
@@ -100,14 +110,24 @@ function getRowCheckboxes(container: HTMLElement) {
 }
 
 describe('QueueTableClient a11y + ICU', () => {
-  it('the selected-count region is aria-live=polite and pluralises via ICU', async () => {
+  it('the selected-count announcer is permanently mounted and announces the 0→1 transition via ICU', async () => {
     const user = userEvent.setup();
     const { container } = renderTable();
+
+    // Permanently-mounted regardless of selection state (Round-2 review
+    // Fix 1) — must exist BEFORE any row is clicked, with empty text.
+    const announcer = container.querySelector('[role="status"][aria-live="polite"]');
+    expect(announcer).not.toBeNull();
+    expect(announcer).toHaveAttribute('aria-atomic', 'true');
+    expect(announcer).toHaveTextContent('');
+
     const [rowCheckbox] = getRowCheckboxes(container);
     await user.click(rowCheckbox!);
-    const live = document.querySelector('[aria-live="polite"]');
-    expect(live).not.toBeNull();
-    expect(live).toHaveTextContent(/1 selected/);
+
+    // Same node, now carrying the ICU-pluralised count — a text MUTATION on
+    // an already-mounted live region, which SR/AT reliably announce.
+    expect(container.querySelector('[role="status"][aria-live="polite"]')).toBe(announcer);
+    expect(announcer).toHaveTextContent(/1 selected/);
   });
 
   it('the header select-all checkbox exposes an indeterminate (mixed) state', async () => {
@@ -120,12 +140,14 @@ describe('QueueTableClient a11y + ICU', () => {
     expect(mixed).not.toBeNull();
   });
 
-  it('checkbox targets meet the 24px minimum', () => {
+  it('checkbox targets meet the 24px minimum — header AND row', () => {
     const { container } = renderTable();
-    const cb = container.querySelector(
-      'button[role="checkbox"], input[type="checkbox"], span[role="checkbox"]',
-    );
-    expect(cb?.className ?? '').toMatch(/min-h-\[24px\]/);
-    expect(cb?.className ?? '').toMatch(/min-w-\[24px\]/);
+    const headerCb = container.querySelector('thead [role="checkbox"], thead input[type="checkbox"]');
+    expect(headerCb?.className ?? '').toMatch(/min-h-\[24px\]/);
+    expect(headerCb?.className ?? '').toMatch(/min-w-\[24px\]/);
+
+    const [rowCb] = getRowCheckboxes(container);
+    expect(rowCb?.className ?? '').toMatch(/min-h-\[24px\]/);
+    expect(rowCb?.className ?? '').toMatch(/min-w-\[24px\]/);
   });
 });
