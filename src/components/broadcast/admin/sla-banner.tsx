@@ -30,7 +30,13 @@ const SEVERITY_STYLES: Record<SlaStats['bannerSeverity'], string> = {
 const PILL_STYLES: Record<SlaStats['bannerSeverity'], string> = {
   green: 'bg-success text-success-foreground',
   amber: 'bg-warning text-warning-foreground',
-  red: 'bg-destructive text-destructive-foreground',
+  // --destructive-foreground stays near-white in dark mode (unlike --success/
+  // --warning-foreground which flip to near-black), so on the bright dark-mode
+  // --destructive fill it fails WCAG AA (~2.77:1). Override the DARK text to
+  // near-black (via the --background token) to mimic the success/warning flip
+  // — light mode keeps the white foreground (6.43:1). Root token asymmetry
+  // tracked as a separate design-system follow-up.
+  red: 'bg-destructive text-destructive-foreground dark:text-background',
 };
 
 export interface SlaBannerProps {
