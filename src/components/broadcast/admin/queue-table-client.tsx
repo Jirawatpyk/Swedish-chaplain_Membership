@@ -129,6 +129,22 @@ export interface QueueTableClientProps {
   readonly onSelectionChange?: (ids: string[]) => void;
   /** Task 6 — bump to force the local, uncontrolled `rowSelection` to `{}`. */
   readonly clearSelectionNonce?: number;
+  /**
+   * Task 6 (2026-08-02-broadcast-review-queue-pr3) — the ids to re-apply as
+   * `rowSelection` the next time `reselectNonce` bumps. `QueueWithBulk` uses
+   * this to keep ONLY the failed rows checked after a partial bulk-approve
+   * failure: because this is the SAME `rowSelection` state that backs the
+   * desktop checkboxes, the mobile `QueueCardList`, and the selection
+   * mirror/announcer below, re-applying it here (rather than narrowing the
+   * parent's own `selectedIds` mirror in isolation) keeps every consumer of
+   * the shared `useReactTable` instance in lockstep — no desync between the
+   * toolbar's displayed count and the checkboxes. See `queue-with-bulk.tsx`'s
+   * module docstring for why the PR2 "clear everything" acceptable-minimum
+   * is replaced by this controlled re-select.
+   */
+  readonly reselectIds?: readonly string[];
+  /** Task 6 — bump to force `rowSelection` to exactly `reselectIds`. */
+  readonly reselectNonce?: number;
 }
 
 export function QueueTableClient({
@@ -138,6 +154,8 @@ export function QueueTableClient({
   enableSelection,
   onSelectionChange,
   clearSelectionNonce,
+  reselectIds,
+  reselectNonce,
 }: QueueTableClientProps): React.ReactElement {
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const tBulk = useTranslations('admin.broadcasts.queue.bulk');
@@ -292,7 +310,16 @@ export function QueueTableClient({
     return base;
   }, [columnLabels, readOnly, selectionEnabled]);
 
-  // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Table v8 hook
+  // Task 6 (2026-08-02-broadcast-review-queue-pr3) — the
+  // `react-hooks/incompatible-library` disable that used to sit here is now
+  // reported as unused: with the reselect effect below also present, the
+  // React Compiler's whole-component analysis bails out on THAT effect's
+  // intentionally non-exhaustive deps first and never reaches this call to
+  // re-flag `useReactTable`. The underlying caveat (TanStack's returned
+  // functions aren't safely memoizable) hasn't changed — this component was
+  // never a React Compiler memoization candidate either way (it holds
+  // uncontrolled `rowSelection` state) — only the lint tool's bailout order
+  // did, so the stale disable was removed rather than left as dead comment.
   const table = useReactTable({
     data: rows as EnrichedQueueRow[],
     columns,
@@ -325,6 +352,21 @@ export function QueueTableClient({
   useEffect(() => {
     if (clearSelectionNonce !== undefined) setRowSelection({});
   }, [clearSelectionNonce]);
+
+  // Task 6 (2026-08-02-broadcast-review-queue-pr3) — parent-commanded
+  // CONTROLLED re-select: after a partial bulk-approve failure,
+  // `QueueWithBulk` bumps `reselectNonce` with `reselectIds` set to exactly
+  // the failed ids. Re-applying `rowSelection` here (rather than only
+  // narrowing the parent's own mirror) is what keeps the desktop checkboxes,
+  // the mobile card list, and the toolbar count all reading off the SAME
+  // state — no desync. `reselectIds` is deliberately read at bump time only,
+  // not tracked as a dep — the nonce is the sole trigger, mirroring
+  // `clearSelectionNonce` above.
+  useEffect(() => {
+    if (reselectNonce === undefined) return;
+    setRowSelection(Object.fromEntries((reselectIds ?? []).map((id) => [id, true])));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reselectNonce]);
 
   // Simplify-S3 (round-3) — derive in render; no useMemo + ESLint
   // suppression. Selection size is bounded by visible rows; cost is

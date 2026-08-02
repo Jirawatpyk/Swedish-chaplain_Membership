@@ -195,6 +195,167 @@ export async function seedF7Broadcasts(): Promise<SeedResult | null> {
   }
 }
 
+const BULK_FIXTURE_SUBJECTS = [
+  '[E2E SEED] Bulk-confirm fixture A',
+  '[E2E SEED] Bulk-confirm fixture B',
+] as const;
+const BULK_FIXTURE_RECIPIENT_COUNTS = [3, 4] as const;
+
+export interface BulkApproveSeedResult {
+  readonly broadcastIds: readonly [string, string];
+  readonly subjects: readonly [string, string];
+  readonly totalRecipients: number;
+}
+
+/**
+ * Task 8 (2026-08-02-broadcast-review-queue-pr3) — seeds TWO `submitted`
+ * broadcasts, not one. `seedF7Broadcasts` above only ever provisions a
+ * single fixture row (AS2-AS6 are single-row flows); proving the bulk
+ * confirm dialog's multi-row recipient-total math and the per-request
+ * tamper-safety of the approve fan-out needs ≥2 distinct rows selected at
+ * once.
+ *
+ * Same idempotent DELETE-then-INSERT-by-subject shape as
+ * `seedF7Broadcasts`, reusing the same e2e-member lookup, but keyed by two
+ * fixed subjects (with distinct `estimated_recipient_count`s, so the
+ * confirm dialog's summed total is a real sum, not a single row repeated)
+ * so re-runs don't pile up rows. Callers should re-seed in a
+ * `test.beforeEach` — every test in the `@bulk` describe transitions both
+ * rows out of `submitted` (approve/schedule/reject), so each test needs a
+ * fresh pair.
+ *
+ * Returns `null` (never throws) when `DATABASE_URL` / `E2E_MEMBER_EMAIL`
+ * are absent, or the e2e-member seed itself is missing — callers gate the
+ * whole `@bulk` describe on this via `test.skip(!bulkSeed, …)`.
+ */
+export async function seedBulkApproveFixtures(): Promise<BulkApproveSeedResult | null> {
+  const dbUrl = process.env.DATABASE_URL;
+  const memberEmail = process.env.E2E_MEMBER_EMAIL;
+  if (!dbUrl || !memberEmail) {
+    console.warn(
+      '[e2e seed bulk-approve] skipped — DATABASE_URL or E2E_MEMBER_EMAIL missing',
+    );
+    return null;
+  }
+  const sql = postgres(dbUrl, { ssl: 'require', max: 1 });
+  try {
+    const memberRows = await sql<
+      Array<{
+        user_id: string;
+        member_id: string;
+        plan_uuid: string;
+        primary_contact_email: string;
+      }>
+    >`
+      SELECT u.id::text AS user_id,
+             m.member_id::text AS member_id,
+             m.plan_id AS plan_uuid,
+             COALESCE(pc.email, u.email) AS primary_contact_email
+      FROM users u
+      JOIN contacts c
+        ON c.linked_user_id = u.id AND c.tenant_id = ${TENANT_ID}
+      JOIN members m
+        ON m.member_id = c.member_id AND m.tenant_id = ${TENANT_ID}
+      LEFT JOIN contacts pc
+        ON pc.member_id = m.member_id
+       AND pc.tenant_id = ${TENANT_ID}
+       AND pc.is_primary = TRUE
+       AND pc.removed_at IS NULL
+      WHERE u.email = ${memberEmail}
+      LIMIT 1
+    `;
+    const member = memberRows[0];
+    if (!member) {
+      console.warn(
+        `[e2e seed bulk-approve] e2e-member not found in tenant ${TENANT_ID}; skipping seed`,
+      );
+      return null;
+    }
+
+    const ids: string[] = [];
+    for (let i = 0; i < BULK_FIXTURE_SUBJECTS.length; i++) {
+      const subject = BULK_FIXTURE_SUBJECTS[i];
+      const recipientCount = BULK_FIXTURE_RECIPIENT_COUNTS[i];
+      // Unreachable given the `i < .length` loop bound — narrows past
+      // `noUncheckedIndexedAccess` for the tagged-template calls below.
+      if (subject === undefined || recipientCount === undefined) continue;
+
+      const existingRows = await sql<Array<{ broadcast_id: string }>>`
+        SELECT broadcast_id::text AS broadcast_id
+        FROM broadcasts
+        WHERE tenant_id = ${TENANT_ID}
+          AND requested_by_member_id = ${member.member_id}::uuid
+          AND subject = ${subject}
+        ORDER BY created_at DESC
+        LIMIT 1
+      `;
+      const existingId = existingRows[0]?.broadcast_id;
+      const id = existingId ?? randomUUID();
+
+      if (existingId) {
+        // Same immutability-trigger workaround as `seedF7Broadcasts` —
+        // DELETE + re-INSERT bypasses the "no update after draft" trigger.
+        await sql`
+          DELETE FROM broadcast_deliveries
+          WHERE tenant_id = ${TENANT_ID} AND broadcast_id = ${id}::uuid
+        `;
+        await sql`
+          DELETE FROM broadcasts
+          WHERE tenant_id = ${TENANT_ID} AND broadcast_id = ${id}::uuid
+        `;
+      }
+
+      await sql`
+        INSERT INTO broadcasts (
+          tenant_id, broadcast_id,
+          requested_by_member_id, requested_by_member_plan_id_snapshot,
+          submitted_by_user_id, actor_role,
+          subject, body_html, body_source,
+          from_name, reply_to_email,
+          segment_type, segment_params, custom_recipient_emails,
+          estimated_recipient_count,
+          status, submitted_at,
+          retention_years, created_at, updated_at
+        ) VALUES (
+          ${TENANT_ID}, ${id}::uuid,
+          ${member.member_id}::uuid, ${member.plan_uuid},
+          ${member.user_id}::uuid, 'member_self_service',
+          ${subject},
+          '<p>Bulk-confirm e2e fixture broadcast.</p>',
+          'plain',
+          'SweCham', ${member.primary_contact_email},
+          'all_members', NULL, NULL,
+          ${recipientCount},
+          'submitted', NOW(),
+          5, NOW(), NOW()
+        )
+      `;
+      ids.push(id);
+    }
+
+    const totalRecipients = BULK_FIXTURE_RECIPIENT_COUNTS.reduce(
+      (sum, n) => sum + n,
+      0,
+    );
+    const [idA, idB] = ids;
+    if (!idA || !idB) {
+      // Unreachable given the fixed-length loop above; narrows the tuple
+      // type for the return statement without a non-null assertion.
+      return null;
+    }
+    console.log(
+      `[e2e seed bulk-approve] OK broadcasts=${ids.join(',')} totalRecipients=${totalRecipients}`,
+    );
+    return {
+      broadcastIds: [idA, idB],
+      subjects: BULK_FIXTURE_SUBJECTS,
+      totalRecipients,
+    };
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
+}
+
 /**
  * Best-effort cleanup — flips the halted member back to non-halted so
  * subsequent test runs against the shared tenant don't pile up halts.

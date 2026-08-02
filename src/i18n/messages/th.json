@@ -2888,7 +2888,34 @@
           "overCapHelper": "คุณเลือก {count} รายการ — จะดำเนินการเฉพาะ {max} รายการแรกเท่านั้น",
           "successAll": "อนุมัติ E-Blast ที่เลือกทั้งหมดสำเร็จ",
           "failureAll": "อนุมัติเป็นกลุ่มไม่สำเร็จ ลองใหม่หรืออนุมัติทีละรายการ",
-          "partial": "สำเร็จ {ok} รายการ ล้มเหลว {fail} รายการ"
+          "partial": "สำเร็จ {ok} รายการ ล้มเหลว {fail} รายการ",
+          "confirm": {
+            "title": "อนุมัติ E-Blast {count} รายการ?",
+            "recipientTotal": "ส่งถึงผู้รับประมาณ {recipients} คน จาก {count} รายการ",
+            "overCapNote": "จะอนุมัติเฉพาะ {max} รายการแรกจากที่เลือก {selected} รายการเท่านั้น",
+            "decisionLabel": "กำหนดเวลาส่ง",
+            "sendNow": "ส่งทันที",
+            "schedule": "ตั้งเวลา",
+            "sendNowWarning": "อีเมลจะถูกส่งทันทีและไม่สามารถเรียกคืนได้",
+            "scheduleLabel": "ส่งเมื่อ",
+            "scheduleHelp": "อย่างน้อย 5 นาทีจากนี้ เขตเวลา: Asia/Bangkok",
+            "schedulePreviewLabel": "จะถูกส่งเมื่อ:",
+            "confirmSendNow": "อนุมัติและส่งทันที",
+            "confirmSchedule": "อนุมัติและตั้งเวลา",
+            "cancel": "ยกเลิก"
+          },
+          "undo": {
+            "sendingSendNow": "กำลังส่ง {count} รายการใน 60 วินาที",
+            "action": "เลิกทำ",
+            "reason": "เลิกทำโดยผู้ดูแลจากคิวตรวจสอบ",
+            "success": "ยกเลิกแล้ว {count} รายการ",
+            "tooLate": "กำลังส่งอยู่ — เลิกทำไม่ทัน {count} รายการ",
+            "failed": "เลิกทำไม่สำเร็จ {count} รายการ — ยังอนุมัติอยู่"
+          },
+          "progress": {
+            "label": "กำลังอนุมัติ…",
+            "message": "อนุมัติแล้ว {done} จาก {total}…"
+          }
         },
         "card": {
           "actionsLabel": "การดำเนินการ",

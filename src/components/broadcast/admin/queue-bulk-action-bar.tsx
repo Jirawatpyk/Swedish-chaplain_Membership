@@ -56,19 +56,64 @@
  * progress-indicator key set was out of Task 1's scope; a plain
  * `disabled={executing}` on both buttons covers in-flight feedback for now.
  *
+ * Task 7 (2026-08-02-broadcast-review-queue-pr3) — `disabled={executing}`
+ * gives no signal to screen-reader/keyboard admins (a disabled button is
+ * silent), so this task adds an announced in-flight status. Task 1 DID
+ * land `progress.label`/`progress.message` keys under this namespace after
+ * the paragraph above was written, but `BulkProgressIndicator` still
+ * doesn't fit: it reads flat `progressLabel`/`progressMessage`/
+ * `elapsedSeconds`/`actions.<action>` keys with `{action, count}`
+ * interpolation, not our nested `progress.label`/`progress.message` with
+ * `{done, total}` — a real key-shape mismatch, not just naming. Wiring up
+ * a live `done` counter would also mean promoting the fan-out's local
+ * `outcomes` array to state (a re-render per completed request) — more
+ * than this polish task warrants. So this uses the documented fallback: a
+ * `role="status"` region showing `progress.label` ("Approving…").
+ *
+ * Fix round 1 (opus a11y review) — the region is PERMANENTLY MOUNTED for
+ * the bar's whole lifetime, with its TEXT toggling between `''` and
+ * `progress.label`, NOT conditionally mounted only while `executing`. This
+ * genuinely mirrors the `selectionAnnouncer` pattern in
+ * `queue-table-client.tsx:381-401` (the first cut only copied its
+ * `sr-only`/ARIA attributes, not the permanence that makes it work): a
+ * live region that appears WITH content already populated in the same
+ * paint is not reliably announced by NVDA/JAWS — only text MUTATIONS on an
+ * already-mounted region are announced. At `BULK_CAP=100` /
+ * `BULK_CHUNK=5` (up to 20 sequential chunked round-trips) `executing` can
+ * stay `true` for several seconds, so a conditionally-mounted region would
+ * leave the screen-reader/keyboard admin this task exists for with zero
+ * announcement for that whole window. `sr-only` + explicit
+ * `aria-live="polite"` + `aria-atomic="true"` even though `role="status"`
+ * implies both, for the same AT-compat reason as `selectionAnnouncer`.
+ *
  * `overCap` does NOT disable the Approve button (unlike the members bar,
  * which refuses to act at all past the cap) — the Task 5 contract is
  * explicit: `cappedIds = selectedIds.slice(0, BULK_CAP)` and the button
  * "runs the fan-out over cappedIds", i.e. truncate-and-still-run rather
  * than block-until-split. The over-cap alert communicates the truncation.
+ *
+ * Task 4 (2026-08-02-broadcast-review-queue-pr3) — the "Approve selected"
+ * button no longer fans out directly. It opens `BulkApproveConfirmDialog`
+ * (Task 3), which is the ONLY caller of `handleBulkApprove` now that the
+ * handler takes a `BulkApproveDecision` param. This is the load-bearing
+ * tamper-safety seam: `BulkApproveDecision` structurally carries only
+ * `type` (+ `scheduledFor` for schedule) — never a recipient count — so the
+ * per-row request body built from it cannot include `totalRecipients`
+ * even by accident. The dialog itself never fetches; it is purely a
+ * confirmation gate in front of this component's existing fan-out.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { XIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { BULK_CAP } from '@/lib/members-bulk-constants';
+import {
+  BulkApproveConfirmDialog,
+  type BulkApproveDecision,
+} from '@/components/broadcast/admin/bulk-approve-confirm-dialog';
+import { cancelApprovedBroadcasts } from '@/components/broadcast/admin/send-now-undo';
 
 const BULK_CHUNK = 5;
 
@@ -86,6 +131,17 @@ export interface QueueBulkActionBarProps {
    * handles this (acceptable-minimum: clears the whole selection).
    */
   readonly onPartialFailure?: (failedIds: string[]) => void;
+  /**
+   * Task 2 (2026-08-02-broadcast-review-queue-pr3) — per-row recipient
+   * counts, keyed by broadcast id, so the bar can derive a total-recipients
+   * figure for the upcoming confirm dialog (Task 4). One row per entry in
+   * `EnrichedQueueRow` (`queue-table-client.tsx`); `queue-with-bulk.tsx`
+   * threads the whole `rows` prop through unchanged.
+   */
+  readonly recipientByIdRows: ReadonlyArray<{
+    readonly broadcastId: string;
+    readonly recipientCount: number;
+  }>;
 }
 
 type Outcome =
@@ -97,10 +153,19 @@ export function QueueBulkActionBar({
   onClear,
   onPartialFailure,
   readOnly,
+  recipientByIdRows,
 }: QueueBulkActionBarProps): React.JSX.Element | null {
   const t = useTranslations('admin.broadcasts.queue.bulk');
+  const tUndo = useTranslations('admin.broadcasts.queue.bulk.undo');
+  const tProgress = useTranslations('admin.broadcasts.queue.bulk.progress');
   const router = useRouter();
   const [executing, setExecuting] = useState(false);
+
+  // Task 4 — the confirm dialog's own open state + the "Approve selected"
+  // trigger ref (F7-A11Y-1 finalFocus target, per `review-actions.tsx`'s
+  // approve/reject-trigger precedent).
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const approveBtnRef = useRef<HTMLButtonElement | null>(null);
 
   // Sticky-bar spacer — verbatim copy of `bulk-action-bar.tsx:138-158`.
   const barRef = useRef<HTMLDivElement | null>(null);
@@ -125,17 +190,54 @@ export function QueueBulkActionBar({
     return () => ro.disconnect();
   }, []);
 
-  const cappedIds = selectedIds.slice(0, BULK_CAP);
+  // Task 5 review carry-forward (Task 4) — memoized on `selectedIds` so the
+  // `totalRecipients` memo below (keyed on this array's REFERENCE) actually
+  // holds across renders. Before this fix `cappedIds` was a plain
+  // `selectedIds.slice(...)` re-evaluated every render, producing a fresh
+  // array reference each time — `useMemo([recipientByIdRows, cappedIds])`
+  // was therefore a no-op that recomputed on every render regardless of
+  // whether either input had actually changed (e.g. a sibling state update
+  // from the confirm dialog's own schedule input re-rendering this bar).
+  // Pure perf fix — no behaviour change.
+  const cappedIds = useMemo(
+    () => selectedIds.slice(0, BULK_CAP),
+    [selectedIds],
+  );
   const overCap = selectedIds.length > BULK_CAP;
+
+  // Task 2 (2026-08-02-broadcast-review-queue-pr3) — sum over `cappedIds`
+  // (the actually-actioned set), never raw `selectedIds`: the total must
+  // match what the fan-out below will actually approve, not what's merely
+  // checked past the cap.
+  //
+  // Task 4 — memoized: consumed on every render by the confirm dialog
+  // below, so without this the Map + reduce would be rebuilt on every
+  // keystroke inside that dialog's own schedule input (a sibling state
+  // update in this same component tree re-renders the bar too).
+  const totalRecipients = useMemo(() => {
+    const recipientById = new Map(
+      recipientByIdRows.map((r) => [r.broadcastId, r.recipientCount]),
+    );
+    return cappedIds.reduce((sum, id) => sum + (recipientById.get(id) ?? 0), 0);
+  }, [recipientByIdRows, cappedIds]);
 
   // IMP-1 (queue-table-client.tsx round-3) — chunked Promise.allSettled,
   // moved verbatim in spirit (see module docstring for what could not
   // carry over unchanged). Each chunk awaits before the next so we never
   // exceed BULK_CHUNK concurrent requests against the approve endpoint.
-  const handleBulkApprove = useCallback(async () => {
+  //
+  // Task 4 — parameterized on the confirm dialog's `BulkApproveDecision`.
+  // `rowBody` is built ONLY from `decision`'s own fields — `decision` has
+  // no `totalRecipients`/recipient field to leak, so this is the
+  // tamper-safety guarantee made structural rather than just reviewed-by-eye.
+  const handleBulkApprove = useCallback(async (decision: BulkApproveDecision) => {
     if (cappedIds.length === 0 || executing) return;
     setExecuting(true);
     try {
+      const rowBody =
+        decision.type === 'send_now'
+          ? { decision: 'send_now' as const }
+          : { decision: 'schedule' as const, scheduledFor: decision.scheduledFor };
       const outcomes: Outcome[] = [];
 
       for (let i = 0; i < cappedIds.length; i += BULK_CHUNK) {
@@ -146,7 +248,7 @@ export function QueueBulkActionBar({
               method: 'POST',
               credentials: 'same-origin',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ decision: 'send_now' }),
+              body: JSON.stringify(rowBody),
             });
             return { res, id };
           }),
@@ -197,16 +299,69 @@ export function QueueBulkActionBar({
         // docstring for the caller's current acceptable-minimum handling).
         onPartialFailure?.(failures.map((f) => f.id));
       }
+
+      // Task 5 (2026-08-02-broadcast-review-queue-pr3) — 60s send-now
+      // "Undo". Shown IN ADDITION to the successAll/partial/failureAll
+      // toast above (that one reports the approve outcome; this one is
+      // the actionable escape hatch for the ≤60s window before the
+      // dispatch cron picks the broadcast up). Schedule decisions get NO
+      // Undo toast — an already-scheduled broadcast is cancellable via
+      // the normal per-row action, so there's no "oops, sent now" race to
+      // rescue.
+      if (decision.type === 'send_now' && succeeded > 0) {
+        const approvedIds = outcomes
+          .filter((o): o is Extract<Outcome, { ok: true }> => o.ok)
+          .map((o) => o.id);
+        toast(tUndo('sendingSendNow', { count: approvedIds.length }), {
+          duration: 60_000,
+          action: {
+            label: tUndo('action'),
+            onClick: async () => {
+              const r = await cancelApprovedBroadcasts(
+                approvedIds,
+                tUndo('reason'),
+              );
+              if (r.cancelled > 0) {
+                toast.success(tUndo('success', { count: r.cancelled }));
+              }
+              if (r.tooLate > 0) {
+                toast.warning(tUndo('tooLate', { count: r.tooLate }));
+              }
+              if (r.failed > 0) {
+                toast.error(tUndo('failed', { count: r.failed }));
+              }
+              router.refresh();
+            },
+          },
+        });
+      }
+
       router.refresh();
     } finally {
       setExecuting(false);
     }
-  }, [cappedIds, executing, onClear, onPartialFailure, router, t]);
+  }, [cappedIds, executing, onClear, onPartialFailure, router, t, tUndo]);
 
   if (readOnly || selectedIds.length === 0) return null;
 
+  // Task 7 fix round 1 — see the module docstring's "Fix round 1" note.
+  // PERMANENTLY mounted (as long as the bar itself is mounted, i.e. as long
+  // as there's a selection), text toggling between '' and the label — the
+  // '' → 'Approving…' MUTATION is what NVDA/JAWS actually announce; a
+  // region that only EXISTS while `executing` is true is not reliably
+  // announced because its content is already populated at mount.
+  const progressAnnouncement = executing ? tProgress('label') : '';
+
   return (
     <>
+      {/* Task 7 — announced in-flight status for the bulk-approve fan-out.
+          See the module docstring's Task 7 / Fix round 1 notes for why
+          this must be permanently mounted with toggling text rather than
+          conditionally mounted only while `executing`, and why
+          `BulkProgressIndicator` isn't reused. */}
+      <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+        {progressAnnouncement}
+      </div>
       <div
         ref={barRef}
         // `pb-[env(safe-area-inset-bottom)]` keeps the action row clear of the
@@ -255,9 +410,10 @@ export function QueueBulkActionBar({
               {t('clear')}
             </Button>
             <Button
+              ref={approveBtnRef}
               size="sm"
               disabled={executing}
-              onClick={handleBulkApprove}
+              onClick={() => setConfirmOpen(true)}
               className="min-h-11 whitespace-nowrap"
             >
               {t('approveSelected')}
@@ -270,6 +426,17 @@ export function QueueBulkActionBar({
           wrapped multi-row bar can never cover the last table row or the
           pagination control. */}
       <div data-testid="queue-bulk-spacer" style={{ height: barHeight }} aria-hidden="true" />
+
+      <BulkApproveConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        broadcastCount={cappedIds.length}
+        selectedCount={selectedIds.length}
+        cap={BULK_CAP}
+        totalRecipients={totalRecipients}
+        onConfirm={(d) => handleBulkApprove(d)}
+        triggerRef={approveBtnRef}
+      />
     </>
   );
 }
