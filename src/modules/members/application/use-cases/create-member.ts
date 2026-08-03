@@ -29,7 +29,10 @@ import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import { asEmail } from '../../domain/value-objects/email';
 import { asPhone, type Phone } from '../../domain/value-objects/phone';
-import { asIsoCountryCode } from '../../domain/value-objects/iso-country-code';
+import {
+  asIsoCountryCode,
+  type IsoCountryCode,
+} from '../../domain/value-objects/iso-country-code';
 import { asTaxId, type TaxId } from '../../domain/value-objects/tax-id';
 // Review fix (Finding 1) — close `legal_entity_type` to the 12-code
 // catalogue at THIS boundary too. Task 3b closed it client-side only
@@ -99,6 +102,18 @@ export const createMemberSchema = z.object({
   province: z.string().max(100).nullable().optional(),
   postal_code: z.string().max(20).nullable().optional(),
   sub_district: z.string().max(100).nullable().optional(),
+  // member-billing-address (0284) — optional tax-document address group,
+  // field types mirroring the company address above. Unlike update (a
+  // partial patch), create sees the WHOLE group at once, so the
+  // all-or-nothing rule lives in this use-case's up-front validation:
+  // any field present ⇒ line1 + city + postal_code + country required.
+  billing_address_line1: z.string().max(200).nullable().optional(),
+  billing_address_line2: z.string().max(200).nullable().optional(),
+  billing_city: z.string().max(100).nullable().optional(),
+  billing_province: z.string().max(100).nullable().optional(),
+  billing_postal_code: z.string().max(20).nullable().optional(),
+  billing_sub_district: z.string().max(100).nullable().optional(),
+  billing_country: z.string().length(2).nullable().optional(),
   founded_year: z.number().int().min(1800).max(2100).nullable().optional(),
   turnover_thb: z.number().int().nonnegative().nullable().optional(),
   registered_capital_thb: z.number().int().nonnegative().nullable().optional(),
@@ -180,6 +195,9 @@ export type CreateMemberError =
   // defense-in-depth for a direct API call.
   | { type: 'secondary_email_same_as_primary' }
   | { type: 'invalid_country' }
+  // member-billing-address (0284) — partial billing group on create (any
+  // field set without line1 + city + postal_code + country).
+  | { type: 'billing_address_incomplete' }
   | { type: 'invalid_tax_id'; code: string }
   | { type: 'invalid_override_reason'; code: string }
   | { type: 'plan_not_found' }
@@ -291,6 +309,37 @@ export async function createMember(
   // 2. Domain value-object validation
   const country = asIsoCountryCode(data.country);
   if (!country.ok) return err({ type: 'invalid_country' });
+
+  // member-billing-address (0284) — all-or-nothing group + country VO
+  // validation (same validator as the company country; never a bare
+  // 2-char string). A fully-absent/NULL group = no billing address (the
+  // common case); any field present ⇒ line1 + city + postal + country
+  // required. Mirrors the DB `members_billing_address_group_ck`.
+  const billingParts = {
+    line1: data.billing_address_line1 ?? null,
+    line2: data.billing_address_line2 ?? null,
+    subDistrict: data.billing_sub_district ?? null,
+    city: data.billing_city ?? null,
+    province: data.billing_province ?? null,
+    postalCode: data.billing_postal_code ?? null,
+    countryRaw: data.billing_country ?? null,
+  };
+  const billingAnyPresent = Object.values(billingParts).some((v) => v !== null);
+  if (
+    billingAnyPresent &&
+    (billingParts.line1 === null ||
+      billingParts.city === null ||
+      billingParts.postalCode === null ||
+      billingParts.countryRaw === null)
+  ) {
+    return err({ type: 'billing_address_incomplete' });
+  }
+  let billingCountry: IsoCountryCode | null = null;
+  if (billingParts.countryRaw !== null) {
+    const r = asIsoCountryCode(billingParts.countryRaw);
+    if (!r.ok) return err({ type: 'invalid_country' });
+    billingCountry = r.value;
+  }
 
   const email = asEmail(data.primary_contact.email);
   if (!email.ok) return err({ type: 'invalid_email' });
@@ -530,6 +579,14 @@ export async function createMember(
         province: data.province ?? null,
         postalCode: data.postal_code ?? null,
         subDistrict: data.sub_district ?? null,
+        // member-billing-address (0284) — validated group (see step 2).
+        billingAddressLine1: billingParts.line1,
+        billingAddressLine2: billingParts.line2,
+        billingSubDistrict: billingParts.subDistrict,
+        billingCity: billingParts.city,
+        billingProvince: billingParts.province,
+        billingPostalCode: billingParts.postalCode,
+        billingCountry: billingCountry,
         status: 'active',
         archivedAt: null,
       };

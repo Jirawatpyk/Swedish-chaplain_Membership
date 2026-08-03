@@ -22,7 +22,10 @@ import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import { asMemberNumber, formatMemberNumber } from '@/modules/members';
 import type { TenantTx } from '@/lib/db';
 import { makeMemberIdentitySnapshot } from '../../domain/value-objects/member-identity-snapshot';
-import { composeBuyerAddress } from './compose-buyer-address';
+import {
+  composeBuyerAddress,
+  type BuyerAddressParts,
+} from './compose-buyer-address';
 
 export const memberIdentityAdapter: MemberIdentityPort = {
   async getForIssue(
@@ -51,6 +54,8 @@ export const memberIdentityAdapter: MemberIdentityPort = {
         ? sql`
             SELECT m.member_id, m.company_name, m.tax_id, m.country, m.status,
                    m.address_line1, m.address_line2, m.sub_district, m.city, m.province, m.postal_code,
+                   m.billing_address_line1, m.billing_address_line2, m.billing_sub_district,
+                   m.billing_city, m.billing_province, m.billing_postal_code, m.billing_country,
                    m.archived_at, m.erased_at, m.registration_date, m.registration_fee_paid,
                    m.member_number,
                    m.is_vat_registered, m.is_head_office, m.branch_code,
@@ -72,6 +77,8 @@ export const memberIdentityAdapter: MemberIdentityPort = {
         : sql`
             SELECT m.member_id, m.company_name, m.tax_id, m.country, m.status,
                    m.address_line1, m.address_line2, m.sub_district, m.city, m.province, m.postal_code,
+                   m.billing_address_line1, m.billing_address_line2, m.billing_sub_district,
+                   m.billing_city, m.billing_province, m.billing_postal_code, m.billing_country,
                    m.archived_at, m.erased_at, m.registration_date, m.registration_fee_paid,
                    m.member_number,
                    m.is_vat_registered, m.is_head_office, m.branch_code,
@@ -100,6 +107,16 @@ export const memberIdentityAdapter: MemberIdentityPort = {
       city: string | null;
       province: string | null;
       postal_code: string | null;
+      // member-billing-address (0284) — the optional tax-document address
+      // group. Present in BOTH SELECT arms above (see the two-arms WARNING
+      // below); `billing_address_line1 IS NOT NULL` ⟺ the group is set.
+      billing_address_line1: string | null;
+      billing_address_line2: string | null;
+      billing_sub_district: string | null;
+      billing_city: string | null;
+      billing_province: string | null;
+      billing_postal_code: string | null;
+      billing_country: string | null;
       status: string;
       archived_at: Date | null;
       // COMP-1 / PDPA — erasure is ORTHOGONAL to archive (`scrubPiiInTx` stamps
@@ -171,6 +188,55 @@ export const memberIdentityAdapter: MemberIdentityPort = {
         ? formatMemberNumber(m.member_number_prefix, asMemberNumber(m.member_number))
         : null;
 
+    // member-billing-address (0284) — ONE switch point: when the member
+    // carries a billing address (⟺ billing_address_line1 IS NOT NULL, the
+    // group invariant), the §86/4 buyer block composes from the BILLING
+    // group (their ภ.พ.20-registered address, incl. its OWN country);
+    // otherwise from the company address exactly as before. SAME composer
+    // either way — no second formatting path. Credit notes inherit
+    // `original.memberIdentitySnapshot` verbatim (issue-credit-note.ts), so
+    // this is the only compose site. EXISTING issued documents are
+    // untouched: the snapshot is FROZEN at issue (FR-038 immutability) —
+    // adding a billing address later never rewrites a previously-issued
+    // invoice/receipt.
+    let buyerAddressParts: BuyerAddressParts;
+    if (m.billing_address_line1 !== null) {
+      if (m.billing_country === null) {
+        // LOW-1 (tax review) — DELIBERATE issue-blocking fail-loud, same
+        // posture as the `asMemberNumber` corrupt-identity throw above: the
+        // `members_billing_address_group_ck` CHECK guarantees a non-null
+        // country whenever line1 is set, so this is unreachable off a live
+        // row. A silent `?? m.country` fallback here would print a MIXED
+        // address (billing street under the company's country) on a §86/4
+        // tax document; because this runs INSIDE the issue tx, the throw
+        // aborts issuance instead.
+        throw new Error(
+          `corrupt billing address group for member ${m.member_id}: ` +
+            'billing_address_line1 is set but billing_country is NULL ' +
+            '(members_billing_address_group_ck should make this unreachable)',
+        );
+      }
+      buyerAddressParts = {
+        addressLine1: m.billing_address_line1,
+        addressLine2: m.billing_address_line2,
+        subDistrict: m.billing_sub_district,
+        city: m.billing_city,
+        province: m.billing_province,
+        postalCode: m.billing_postal_code,
+        country: m.billing_country,
+      };
+    } else {
+      buyerAddressParts = {
+        addressLine1: m.address_line1,
+        addressLine2: m.address_line2,
+        subDistrict: m.sub_district,
+        city: m.city,
+        province: m.province,
+        postalCode: m.postal_code,
+        country: m.country,
+      };
+    }
+
     return {
       memberId,
       isActive: m.status === 'active',
@@ -182,15 +248,9 @@ export const memberIdentityAdapter: MemberIdentityPort = {
       snapshot: makeMemberIdentitySnapshot({
         legal_name: m.company_name,
         tax_id: m.tax_id,
-        address: composeBuyerAddress({
-          addressLine1: m.address_line1,
-          addressLine2: m.address_line2,
-          subDistrict: m.sub_district,
-          city: m.city,
-          province: m.province,
-          postalCode: m.postal_code,
-          country: m.country,
-        }),
+        // member-billing-address (0284) — billing-vs-company switch resolved
+        // (with its LOW-1 fail-loud guard) into `buyerAddressParts` above.
+        address: composeBuyerAddress(buyerAddressParts),
         primary_contact_name: primaryContact
           ? `${primaryContact.firstName} ${primaryContact.lastName}`
           : '',

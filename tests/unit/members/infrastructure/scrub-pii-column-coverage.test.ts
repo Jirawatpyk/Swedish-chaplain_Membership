@@ -59,6 +59,18 @@ const SCRUBBED = new Set<string>([
   // Postal address (PII). แขวง/ตำบล — the Thai sub-district level; part of
   // the §86/4 buyer address frozen onto the tax document at issue.
   'subDistrict',
+  // member-billing-address (0284) — the OPTIONAL ภ.พ.20-registered billing
+  // address for tax documents. PII of the same class as the postal address
+  // above; scrubbed to NULL as a whole group (a fully-NULL group also
+  // satisfies `members_billing_address_group_ck`, so the scrub can never
+  // trip the CHECK). Live-Neon oracle: erase-member.test.ts.
+  'billingAddressLine1',
+  'billingAddressLine2',
+  'billingSubDistrict',
+  'billingCity',
+  'billingProvince',
+  'billingPostalCode',
+  'billingCountry',
   // Business quasi-identifier (GDPR Recital 26 at small-chamber scale) —
   // same class as turnoverThb / foundedYear.
   'registeredCapitalThb',

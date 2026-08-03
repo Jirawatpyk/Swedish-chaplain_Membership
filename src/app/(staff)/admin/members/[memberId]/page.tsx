@@ -1133,6 +1133,40 @@ export default async function MemberDetailPage({
                 </dl>
               ) : null;
             })()}
+            {(() => {
+              // member-billing-address (0284) — read-only billing block,
+              // shown ONLY when set ("set" ⟺ line1 present). Same line
+              // composition order as the company address above (and as
+              // composeBuyerAddress freezes onto the tax document) + the
+              // billing group's OWN country code on the last line — it may
+              // differ from the member's country and is exactly what the
+              // §86/4 buyer block will carry on the next issued document.
+              if (!member.billingAddressLine1) return null;
+              const billingCityLine = [
+                member.billingSubDistrict,
+                member.billingCity,
+                member.billingProvince,
+                member.billingPostalCode,
+              ]
+                .filter((p) => p && p.trim().length > 0)
+                .join(' ');
+              const billingLines = [
+                member.billingAddressLine1,
+                member.billingAddressLine2,
+                billingCityLine,
+                member.billingCountry,
+              ].filter((l): l is string => Boolean(l && l.trim().length > 0));
+              return (
+                <dl className="mt-4 border-t pt-4">
+                  <dt className="text-xs text-muted-foreground mb-1">
+                    {t('fields.billingAddress')}
+                  </dt>
+                  <dd className="text-sm whitespace-pre-wrap">
+                    {billingLines.join('\n')}
+                  </dd>
+                </dl>
+              );
+            })()}
             {member.description && (
               /* <dl> wrapper (not <div>) so the <dt>/<dd> have a list parent —
                  WCAG 2.1 AA 1.3.1 (a11y scan fix: axe `dlitem`). */

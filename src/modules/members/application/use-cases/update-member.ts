@@ -71,6 +71,19 @@ export const updateMemberSchema = z
     province: z.string().max(100).nullable().optional(),
     postal_code: z.string().max(20).nullable().optional(),
     sub_district: z.string().max(100).nullable().optional(),
+    // member-billing-address (0284) — the optional tax-document address
+    // group, field types mirroring the company address above. The
+    // all-or-nothing group rule (any present ⇒ line1 + city + postal +
+    // country required) is enforced against the RESULTING state in the
+    // use-case body (same partial-patch reasoning as the §86/4 invariants
+    // below); the DB `members_billing_address_group_ck` is the backstop.
+    billing_address_line1: z.string().max(200).nullable().optional(),
+    billing_address_line2: z.string().max(200).nullable().optional(),
+    billing_city: z.string().max(100).nullable().optional(),
+    billing_province: z.string().max(100).nullable().optional(),
+    billing_postal_code: z.string().max(20).nullable().optional(),
+    billing_sub_district: z.string().max(100).nullable().optional(),
+    billing_country: z.string().length(2).nullable().optional(),
     founded_year: z.number().int().min(1800).max(2100).nullable().optional(),
     turnover_thb: z.number().int().nonnegative().nullable().optional(),
     registered_capital_thb: z.number().int().nonnegative().nullable().optional(),
@@ -140,6 +153,12 @@ export type UpdateMemberError =
   // the narrower `branch_requires_vat_registrant` gate straight into a raw
   // Postgres CHECK-violation 500. See the check in the use-case body below.
   | { type: 'head_office_branch_code_mismatch' }
+  // member-billing-address (0284) — the resulting billing group is partial
+  // (some field set, but line1 / city / postal_code / country missing).
+  // Mirrors the DB `members_billing_address_group_ck`; checked against the
+  // RESULTING state for the same partial-patch reason as the invariants
+  // above.
+  | { type: 'billing_address_incomplete' }
   | { type: 'not_found' }
   | { type: 'server_error'; message: string };
 
@@ -228,6 +247,19 @@ export async function updateMember(
     if (!r.ok) return err({ type: 'invalid_country' });
     validatedCountry = r.value;
   }
+  // member-billing-address (0284) — billing_country goes through the SAME
+  // validator as the company country (never a bare 2-char string). `null`
+  // clears; absent means unchanged.
+  let validatedBillingCountry: IsoCountryCode | null | undefined;
+  if (data.billing_country !== undefined) {
+    if (data.billing_country === null) {
+      validatedBillingCountry = null;
+    } else {
+      const r = asIsoCountryCode(data.billing_country);
+      if (!r.ok) return err({ type: 'invalid_country' });
+      validatedBillingCountry = r.value;
+    }
+  }
 
   // 3. M1 — read+lock current, build patch, persist, and audit in ONE tx.
   //    The diff base is read via findByIdInTx (SELECT ... FOR UPDATE) INSIDE
@@ -300,6 +332,22 @@ export async function updateMember(
       if (data.province !== undefined) draft.province = data.province;
       if (data.postal_code !== undefined) draft.postalCode = data.postal_code;
       if (data.sub_district !== undefined) draft.subDistrict = data.sub_district;
+      // member-billing-address (0284) — buildDiff surfaces the group on the
+      // member_updated audit's fields_changed + diff (no new event type),
+      // same as every other patched field.
+      if (data.billing_address_line1 !== undefined)
+        draft.billingAddressLine1 = data.billing_address_line1;
+      if (data.billing_address_line2 !== undefined)
+        draft.billingAddressLine2 = data.billing_address_line2;
+      if (data.billing_sub_district !== undefined)
+        draft.billingSubDistrict = data.billing_sub_district;
+      if (data.billing_city !== undefined) draft.billingCity = data.billing_city;
+      if (data.billing_province !== undefined)
+        draft.billingProvince = data.billing_province;
+      if (data.billing_postal_code !== undefined)
+        draft.billingPostalCode = data.billing_postal_code;
+      if (validatedBillingCountry !== undefined)
+        draft.billingCountry = validatedBillingCountry;
       if (data.founded_year !== undefined) draft.foundedYear = data.founded_year;
       if (data.turnover_thb !== undefined) draft.turnoverThb = data.turnover_thb;
       if (data.registered_capital_thb !== undefined)
@@ -407,6 +455,42 @@ export async function updateMember(
               type: 'branch_requires_vat_registrant',
             });
           }
+        }
+      }
+
+      // member-billing-address (0284) — all-or-nothing group invariant,
+      // checked against the RESULTING state (same partial-patch reasoning
+      // as the §86/4 invariants above: a patch touching only ONE billing
+      // field looks fine in isolation). Rule: a fully-NULL group = billing
+      // address cleared (OK — buyer block falls back to the company
+      // address); ANY field present ⇒ line1 + city + postal_code + country
+      // required (line2 / sub_district / province stay optional inside an
+      // enabled group). Mirrors the DB `members_billing_address_group_ck`,
+      // which remains the backstop for non-use-case writers. Gated on the
+      // patch touching a billing field so unrelated edits are never blocked
+      // by a (theoretically) legacy-violating row.
+      const billingKeys = [
+        'billingAddressLine1',
+        'billingAddressLine2',
+        'billingSubDistrict',
+        'billingCity',
+        'billingProvince',
+        'billingPostalCode',
+        'billingCountry',
+      ] as const;
+      if (billingKeys.some((k) => patch[k] !== undefined)) {
+        const resulting = (k: (typeof billingKeys)[number]) =>
+          patch[k] !== undefined ? patch[k] : (current[k] ?? null);
+        const anyPresent = billingKeys.some((k) => resulting(k) !== null);
+        const requiredPresent =
+          resulting('billingAddressLine1') !== null &&
+          resulting('billingCity') !== null &&
+          resulting('billingPostalCode') !== null &&
+          resulting('billingCountry') !== null;
+        if (anyPresent && !requiredPresent) {
+          throw new UseCaseAbort<UpdateMemberError>({
+            type: 'billing_address_incomplete',
+          });
         }
       }
 

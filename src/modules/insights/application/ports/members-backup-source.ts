@@ -36,6 +36,15 @@ export interface MemberBackupRow {
   readonly province: string | null;
   readonly postalCode: string | null;
   readonly country: string | null;
+  // member-billing-address (0284) — optional tax-document address group
+  // (Art. 20 portability completeness, same class as the company address).
+  readonly billingAddressLine1: string | null;
+  readonly billingAddressLine2: string | null;
+  readonly billingSubDistrict: string | null;
+  readonly billingCity: string | null;
+  readonly billingProvince: string | null;
+  readonly billingPostalCode: string | null;
+  readonly billingCountry: string | null;
   readonly preferredLocale: string | null;
   readonly lastActivityAt: string | null; // ISO 8601 UTC
   readonly riskBand: string | null;

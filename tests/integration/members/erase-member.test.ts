@@ -141,6 +141,15 @@ async function seedMemberWithContacts(
       province: 'Bangkok',
       postalCode: '10500',
       subDistrict: 'คลองเตยเหนือ',
+      // member-billing-address (0284) — PII of the same class as the
+      // operating address; the erasure oracle below must see it scrubbed.
+      billingAddressLine1: '1 Registered Tax Address Rd',
+      billingAddressLine2: 'Suite 9',
+      billingSubDistrict: 'สีลม',
+      billingCity: 'Bangkok',
+      billingProvince: 'Bangkok',
+      billingPostalCode: '10500',
+      billingCountry: 'TH',
       preferredLocale: 'sv',
       planId: PLAN_ID,
       planYear: 2026,
@@ -192,6 +201,16 @@ async function rawSelectMember(memberId: string) {
       province: members.province,
       postal_code: members.postalCode,
       sub_district: members.subDistrict,
+      // member-billing-address (0284) — the billing group is PII of the same
+      // class as the operating address; the oracle must read it or no test
+      // could tell whether erasure left the ภ.พ.20 address behind.
+      billing_address_line1: members.billingAddressLine1,
+      billing_address_line2: members.billingAddressLine2,
+      billing_sub_district: members.billingSubDistrict,
+      billing_city: members.billingCity,
+      billing_province: members.billingProvince,
+      billing_postal_code: members.billingPostalCode,
+      billing_country: members.billingCountry,
       // 059 / PR-A — the §86/4 branch triple. The oracle never read these, so
       // no test could tell whether erasure left a member in a state the
       // tightened `members_branch_pairing_ck` (0248) forbids.
@@ -293,6 +312,17 @@ describe('eraseMember — live-Neon PII oracle (production deps)', () => {
     expect(m.province).toBeNull();
     expect(m.postal_code).toBeNull();
     expect(m.sub_district).toBeNull();
+    // member-billing-address (0284) — the billing group scrubs with the
+    // operating address (GDPR Art.17 / PDPA §33). A fully-NULL group also
+    // satisfies members_billing_address_group_ck, so the scrub can never
+    // trip the CHECK.
+    expect(m.billing_address_line1).toBeNull();
+    expect(m.billing_address_line2).toBeNull();
+    expect(m.billing_sub_district).toBeNull();
+    expect(m.billing_city).toBeNull();
+    expect(m.billing_province).toBeNull();
+    expect(m.billing_postal_code).toBeNull();
+    expect(m.billing_country).toBeNull();
     expect(m.legal_entity_type).toBeNull();
     expect(m.erased_at).not.toBeNull();
     // Identity preserved.

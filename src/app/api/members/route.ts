@@ -242,6 +242,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     case 'invalid_email':
     case 'invalid_phone':
     case 'invalid_country':
+    // member-billing-address (0284) — partial billing group, same 400 shape.
+    case 'billing_address_incomplete':
     case 'invalid_tax_id':
     case 'invalid_override_reason':
     // PR-B task 8 — secondary-contact domain validation, same 400 shape.

@@ -128,6 +128,29 @@ export const members = pgTable(
     // holds the district (อำเภอ/เขต).
     subDistrict: text('sub_district'),
 
+    // member-billing-address (migration 0284) — OPTIONAL billing address for
+    // tax documents: a VAT-registrant buyer's ใบกำกับภาษี must carry their
+    // ภ.พ.20-registered address even when their operating/contact address
+    // above differs. Mirrors the company address column set EXACTLY, plus
+    // its OWN `billing_country` (the ภ.พ.20 address may sit in a different
+    // country than the member's `country`). NO enable flag by design —
+    // "billing address set" ⟺ `billing_address_line1 IS NOT NULL`; clearing
+    // the admin form NULLs the whole group. All-or-nothing shape is
+    // enforced by the `members_billing_address_group_ck` CHECK (0284) +
+    // the create/update use-cases' resulting-state validation: when ANY
+    // field of the group is present, line1 + city + postal_code + country
+    // are required. F4 threads the group into the §86/4 buyer block via
+    // `member-identity-adapter` → `composeBuyerAddress` (billing wins over
+    // company when present). PII: scrubbed by `scrubPiiInTx` + exported by
+    // the GDPR Art.20 paths alongside the company address.
+    billingAddressLine1: text('billing_address_line1'),
+    billingAddressLine2: text('billing_address_line2'),
+    billingSubDistrict: text('billing_sub_district'),
+    billingCity: text('billing_city'),
+    billingProvince: text('billing_province'),
+    billingPostalCode: text('billing_postal_code'),
+    billingCountry: text('billing_country'),
+
     // State
     status: memberStatusEnum('status').notNull().default('active'),
     archivedAt: timestamp('archived_at', { withTimezone: true }),

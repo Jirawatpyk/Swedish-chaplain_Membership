@@ -180,4 +180,103 @@ describe('F4 member-identity adapter — composes the full buyer address (§86/�
     expect(view).not.toBeNull();
     expect(view!.snapshot.address).toBe('Sweden');
   });
+
+  // member-billing-address (0284) — the ONE switch point: when the member
+  // carries a billing group ("set" ⟺ billing_address_line1 IS NOT NULL),
+  // the §86/4 buyer block composes from the BILLING columns (the buyer's
+  // ภ.พ.20-registered address, incl. its OWN country); otherwise from the
+  // company address exactly as before (pinned by the suites above). A wrong
+  // billing_* column name in either raw-SQL SELECT arm is exactly the drift
+  // typecheck cannot catch.
+  it('member WITH a billing address → snapshot composes from the BILLING group, not the company address', async () => {
+    const memberId = randomUUID();
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(members).values({
+        tenantId: tenant.ctx.slug,
+        memberId,
+        memberNumber: nextSeedMemberNumber(),
+        companyName: 'Billing Addr Co',
+        country: 'TH',
+        // Operating address — must NOT appear on the tax document.
+        addressLine1: '99/1 Operating Rd',
+        addressLine2: 'Warehouse 3',
+        subDistrict: 'คลองเตย',
+        city: 'เขตคลองเตย',
+        province: 'กรุงเทพมหานคร',
+        postalCode: '10110',
+        // ภ.พ.20-registered billing address — this is what §86/4 must carry.
+        billingAddressLine1: '55 Registered Tax Rd',
+        billingAddressLine2: 'Tower B',
+        billingSubDistrict: 'สีลม',
+        billingCity: 'เขตบางรัก',
+        billingProvince: 'กรุงเทพมหานคร',
+        billingPostalCode: '10500',
+        billingCountry: 'TH',
+        planId,
+        planYear: 2026,
+      });
+    });
+
+    const view = await runInTenant(tenant.ctx, (tx) =>
+      memberIdentityAdapter.getForIssue(tx, tenant.ctx.slug, memberId),
+    );
+    expect(view).not.toBeNull();
+    const address = view!.snapshot.address;
+    // Billing parts present…
+    expect(address).toContain('55 Registered Tax Rd');
+    expect(address).toContain('Tower B');
+    expect(address).toMatch(/สีลม เขตบางรัก/);
+    expect(address).toContain('10500');
+    // …company parts ABSENT (the whole point of the feature).
+    expect(address).not.toContain('99/1 Operating Rd');
+    expect(address).not.toContain('Warehouse 3');
+    expect(address).not.toContain('10110');
+    // Domestic TH billing address — no trailing country line (L-01 parity).
+    expect(address.split('\n')).not.toContain('TH');
+
+    // The real issue path locks via the FOR UPDATE arm — same raw SQL,
+    // SEPARATE branch; a billing_* column missing from THAT arm would issue
+    // documents with the company address under lock. Assert parity.
+    const lockedView = await runInTenant(tenant.ctx, (tx) =>
+      memberIdentityAdapter.getForIssue(tx, tenant.ctx.slug, memberId, {
+        forUpdate: true,
+      }),
+    );
+    expect(lockedView).not.toBeNull();
+    expect(lockedView!.snapshot.address).toBe(address);
+  });
+
+  it('billing group with its OWN country (SE billing on a TH member) → foreign billing address renders the country name', async () => {
+    const memberId = randomUUID();
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(members).values({
+        tenantId: tenant.ctx.slug,
+        memberId,
+        memberNumber: nextSeedMemberNumber(),
+        companyName: 'Foreign Billing Co',
+        country: 'TH',
+        addressLine1: '99/1 Operating Rd',
+        city: 'Bangkok',
+        postalCode: '10110',
+        billingAddressLine1: 'Storgatan 1',
+        billingCity: 'Stockholm',
+        billingPostalCode: '111 22',
+        billingCountry: 'SE',
+        planId,
+        planYear: 2026,
+      });
+    });
+
+    const view = await runInTenant(tenant.ctx, (tx) =>
+      memberIdentityAdapter.getForIssue(tx, tenant.ctx.slug, memberId),
+    );
+    expect(view).not.toBeNull();
+    const address = view!.snapshot.address;
+    expect(address).toContain('Storgatan 1');
+    expect(address).toContain('Stockholm 111 22');
+    // The billing group's OWN country wins — rendered as a NAME (Task 6a
+    // parity), because the member's TH country would suppress the line.
+    expect(address).toContain('Sweden');
+    expect(address).not.toContain('99/1 Operating Rd');
+  });
 });

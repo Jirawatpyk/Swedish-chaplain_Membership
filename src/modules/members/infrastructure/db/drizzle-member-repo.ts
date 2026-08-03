@@ -131,6 +131,15 @@ function rowToMember(row: MemberRow): Member {
     province: row.province,
     postalCode: row.postalCode,
     subDistrict: row.subDistrict,
+    // member-billing-address (0284) — ALWAYS populated (the aggregate keys
+    // are optional only for fixture ergonomics).
+    billingAddressLine1: row.billingAddressLine1,
+    billingAddressLine2: row.billingAddressLine2,
+    billingSubDistrict: row.billingSubDistrict,
+    billingCity: row.billingCity,
+    billingProvince: row.billingProvince,
+    billingPostalCode: row.billingPostalCode,
+    billingCountry: row.billingCountry,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     // M5: narrow into the correlated lifecycle union (status ⟺ archivedAt).
@@ -174,6 +183,19 @@ function applyMemberPatch(
   if (patch.province !== undefined) set.province = patch.province;
   if (patch.postalCode !== undefined) set.postalCode = patch.postalCode;
   if (patch.subDistrict !== undefined) set.subDistrict = patch.subDistrict;
+  if (patch.billingAddressLine1 !== undefined)
+    set.billingAddressLine1 = patch.billingAddressLine1;
+  if (patch.billingAddressLine2 !== undefined)
+    set.billingAddressLine2 = patch.billingAddressLine2;
+  if (patch.billingSubDistrict !== undefined)
+    set.billingSubDistrict = patch.billingSubDistrict;
+  if (patch.billingCity !== undefined) set.billingCity = patch.billingCity;
+  if (patch.billingProvince !== undefined)
+    set.billingProvince = patch.billingProvince;
+  if (patch.billingPostalCode !== undefined)
+    set.billingPostalCode = patch.billingPostalCode;
+  if (patch.billingCountry !== undefined)
+    set.billingCountry = patch.billingCountry;
   if (patch.country !== undefined) set.country = patch.country;
   if (patch.planId !== undefined) set.planId = patch.planId;
   if (patch.planYear !== undefined) set.planYear = patch.planYear;
@@ -799,6 +821,13 @@ export const drizzleMemberRepo: MemberRepo = {
           province: draft.member.province,
           postalCode: draft.member.postalCode,
           subDistrict: draft.member.subDistrict,
+          billingAddressLine1: draft.member.billingAddressLine1 ?? null,
+          billingAddressLine2: draft.member.billingAddressLine2 ?? null,
+          billingSubDistrict: draft.member.billingSubDistrict ?? null,
+          billingCity: draft.member.billingCity ?? null,
+          billingProvince: draft.member.billingProvince ?? null,
+          billingPostalCode: draft.member.billingPostalCode ?? null,
+          billingCountry: draft.member.billingCountry ?? null,
           status: draft.member.status,
           archivedAt: draft.member.archivedAt,
         })
@@ -968,6 +997,16 @@ export const drizzleMemberRepo: MemberRepo = {
           province: null,
           postalCode: null,
           subDistrict: null,
+          // member-billing-address (0284) — the billing group is PII of the
+          // same class as the operating address above; scrubbed identically
+          // (GDPR Art.17 / PDPA §33).
+          billingAddressLine1: null,
+          billingAddressLine2: null,
+          billingSubDistrict: null,
+          billingCity: null,
+          billingProvince: null,
+          billingPostalCode: null,
+          billingCountry: null,
           registeredCapitalThb: null,
           // 088 US3 — reset the §86/4 Head-Office / Branch particular to its
           // head-office DEFAULT on erasure (drops the RD branch identifier). The

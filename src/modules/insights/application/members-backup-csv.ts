@@ -27,7 +27,12 @@ const MEMBERS_HEADERS = [
   'is_head_office', 'website', 'founded_year', 'registered_capital_thb',
   'plan', 'plan_year', 'registration_fee_paid', 'status', 'address_line1',
   'address_line2', 'sub_district', 'city', 'province', 'postal_code',
-  'country', 'preferred_locale', 'last_activity_at', 'risk_band', 'notes',
+  'country',
+  // member-billing-address (0284) — Art. 20 portability completeness:
+  // the billing group exports alongside the company address.
+  'billing_address_line1', 'billing_address_line2', 'billing_sub_district',
+  'billing_city', 'billing_province', 'billing_postal_code', 'billing_country',
+  'preferred_locale', 'last_activity_at', 'risk_band', 'notes',
   'created_at', 'archived_at', 'erased_at',
 ] as const;
 
@@ -85,6 +90,9 @@ export function buildMembersCsv(rows: readonly MemberBackupRow[]): string {
       cell(m.planYear), cell(m.registrationFeePaid), cell(m.status),
       cell(m.addressLine1), cell(m.addressLine2), cell(m.subDistrict),
       cell(m.city), cell(m.province), cell(m.postalCode), cell(m.country),
+      cell(m.billingAddressLine1), cell(m.billingAddressLine2),
+      cell(m.billingSubDistrict), cell(m.billingCity), cell(m.billingProvince),
+      cell(m.billingPostalCode), cell(m.billingCountry),
       cell(m.preferredLocale), cell(m.lastActivityAt), cell(m.riskBand),
       cell(m.notes), cell(m.createdAt), cell(m.archivedAt), cell(m.erasedAt),
     ]),

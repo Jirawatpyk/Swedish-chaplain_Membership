@@ -183,6 +183,15 @@ export default async function EditMemberPage({ params }: PageProps) {
               postalCode: member.postalCode,
               // PR-B task 6 — แขวง/ตำบล.
               subDistrict: member.subDistrict,
+              // member-billing-address (0284) — the optional tax-document
+              // address group (seeds the edit form's toggle + fields).
+              billingAddressLine1: member.billingAddressLine1 ?? null,
+              billingAddressLine2: member.billingAddressLine2 ?? null,
+              billingSubDistrict: member.billingSubDistrict ?? null,
+              billingCity: member.billingCity ?? null,
+              billingProvince: member.billingProvince ?? null,
+              billingPostalCode: member.billingPostalCode ?? null,
+              billingCountry: member.billingCountry ?? null,
               foundedYear: member.foundedYear,
               turnoverThb: member.turnoverThb,
               // PR-B task 7 — ทุนจดทะเบียน. A separate field from turnoverThb.

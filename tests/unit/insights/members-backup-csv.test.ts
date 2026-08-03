@@ -41,6 +41,15 @@ const member: MemberBackupRow = {
   province: null,
   postalCode: '10110',
   country: 'TH',
+  // member-billing-address (0284) — populated so the CSV row test proves
+  // the billing group exports (Art. 20 completeness).
+  billingAddressLine1: '99 Tax Tower',
+  billingAddressLine2: null,
+  billingSubDistrict: null,
+  billingCity: 'Bangkok',
+  billingProvince: null,
+  billingPostalCode: '10500',
+  billingCountry: 'TH',
   preferredLocale: 'th',
   lastActivityAt: '2026-07-01T03:00:00Z',
   riskBand: 'healthy',
@@ -56,7 +65,7 @@ describe('buildMembersCsv', () => {
     expect(csv.startsWith(BOM)).toBe(true);
     const firstLine = csv.slice(1).split('\r\n')[0];
     expect(firstLine).toBe(
-      '"member_number","company_name","legal_entity_type","tax_id","is_head_office","website","founded_year","registered_capital_thb","plan","plan_year","registration_fee_paid","status","address_line1","address_line2","sub_district","city","province","postal_code","country","preferred_locale","last_activity_at","risk_band","notes","created_at","archived_at","erased_at"',
+      '"member_number","company_name","legal_entity_type","tax_id","is_head_office","website","founded_year","registered_capital_thb","plan","plan_year","registration_fee_paid","status","address_line1","address_line2","sub_district","city","province","postal_code","country","billing_address_line1","billing_address_line2","billing_sub_district","billing_city","billing_province","billing_postal_code","billing_country","preferred_locale","last_activity_at","risk_band","notes","created_at","archived_at","erased_at"',
     );
     // header-only file still ends with one CRLF
     expect(csv.endsWith('\r\n')).toBe(true);

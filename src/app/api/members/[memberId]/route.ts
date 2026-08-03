@@ -341,6 +341,10 @@ export async function PATCH(
     // same resulting-state posture. Without this case a PATCH touching only
     // `branch_code` fell through to the `server_error` 500 branch below.
     case 'head_office_branch_code_mismatch':
+    // member-billing-address (0284) — partial billing group (any field set
+    // without line1 + city + postal_code + country), same resulting-state
+    // posture as the invariants above.
+    case 'billing_address_incomplete':
       return NextResponse.json(
         {
           error: {

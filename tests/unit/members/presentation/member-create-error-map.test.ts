@@ -82,6 +82,15 @@ describe('mapMemberCreateServerError', () => {
       'branch_code',
       'fields.errors.branchOnNonRegistrant',
     ],
+    // member-billing-address (0284) — the use-case-body all-or-nothing
+    // billing-group check (defense-in-depth only; the form's superRefine +
+    // all-null-when-off payload builders block this in the normal UI flow).
+    // Routed to line1, the group's anchor field.
+    [
+      'billing_address_incomplete',
+      'billing_address_line1',
+      'fields.errors.billingAddressIncomplete',
+    ],
   ])('routes a 400 %s to its originating field', (type, field, messageKey) => {
     expect(mapMemberCreateServerError(400, 'validation_error', type)).toEqual({
       field,
@@ -146,9 +155,15 @@ describe('mapMemberCreateServerError', () => {
         'validation_error',
         'vat_registrant_requires_tax_id',
       ),
+      // member-billing-address (0284)
+      mapMemberCreateServerError(
+        400,
+        'validation_error',
+        'billing_address_incomplete',
+      ),
     ].filter((m): m is NonNullable<typeof m> => m !== null);
 
-    expect(mapped).toHaveLength(9);
+    expect(mapped).toHaveLength(10);
     for (const m of mapped) {
       expect(typeof resolveCreateKey(m.messageKey)).toBe('string');
     }

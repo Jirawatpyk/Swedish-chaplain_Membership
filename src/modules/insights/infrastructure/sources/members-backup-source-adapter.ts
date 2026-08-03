@@ -74,6 +74,13 @@ interface MemberRaw {
   sub_district: string | null;
   city: string | null;
   province: string | null;
+  billing_address_line1: string | null;
+  billing_address_line2: string | null;
+  billing_sub_district: string | null;
+  billing_city: string | null;
+  billing_province: string | null;
+  billing_postal_code: string | null;
+  billing_country: string | null;
   postal_code: string | null;
   country: string | null;
   preferred_locale: string | null;
@@ -135,7 +142,10 @@ export const membersBackupSourceAdapter: MembersBackupSource = {
              (mp.plan_name->>'en') AS plan, m.plan_year,
              m.registration_fee_paid, m.status,
              m.address_line1, m.address_line2, m.sub_district, m.city, m.province,
-             m.postal_code, m.country, m.preferred_locale,
+             m.postal_code, m.country,
+             m.billing_address_line1, m.billing_address_line2, m.billing_sub_district,
+             m.billing_city, m.billing_province, m.billing_postal_code, m.billing_country,
+             m.preferred_locale,
              to_char(m.last_activity_at AT TIME ZONE 'UTC', ${sql.raw(ISO_UTC)}) AS last_activity_at,
              m.risk_score_band, m.notes,
              to_char(m.created_at AT TIME ZONE 'UTC', ${sql.raw(ISO_UTC)}) AS created_at,
@@ -202,6 +212,13 @@ export const membersBackupSourceAdapter: MembersBackupSource = {
       subDistrict: r.sub_district,
       city: r.city,
       province: r.province,
+      billingAddressLine1: r.billing_address_line1,
+      billingAddressLine2: r.billing_address_line2,
+      billingSubDistrict: r.billing_sub_district,
+      billingCity: r.billing_city,
+      billingProvince: r.billing_province,
+      billingPostalCode: r.billing_postal_code,
+      billingCountry: r.billing_country,
       postalCode: r.postal_code,
       country: r.country,
       preferredLocale: r.preferred_locale,

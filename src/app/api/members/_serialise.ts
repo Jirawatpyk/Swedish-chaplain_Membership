@@ -35,6 +35,16 @@ export function serialiseMember(m: Member) {
     province: m.province,
     postal_code: m.postalCode,
     sub_district: m.subDistrict,
+    // member-billing-address (0284) — optional tax-document address group.
+    // `?? null` guards hand-built Members (the aggregate keys are optional
+    // for fixture ergonomics; repo-loaded rows always carry them).
+    billing_address_line1: m.billingAddressLine1 ?? null,
+    billing_address_line2: m.billingAddressLine2 ?? null,
+    billing_sub_district: m.billingSubDistrict ?? null,
+    billing_city: m.billingCity ?? null,
+    billing_province: m.billingProvince ?? null,
+    billing_postal_code: m.billingPostalCode ?? null,
+    billing_country: m.billingCountry ?? null,
     founded_year: m.foundedYear,
     turnover_thb: m.turnoverThb,
     registered_capital_thb: m.registeredCapitalThb,

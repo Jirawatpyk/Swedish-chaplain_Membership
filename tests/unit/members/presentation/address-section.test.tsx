@@ -24,7 +24,7 @@
  * country-combobox.test.tsx (real timers, ResizeObserver + scrollIntoView
  * stubs) since this opens the real Popover + cmdk stack.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen, fireEvent, waitFor, cleanup, within } from '@testing-library/react';
 import { StrictMode } from 'react';
 import { NextIntlClientProvider } from 'next-intl';
@@ -36,6 +36,22 @@ class ResizeObserverStub {
   unobserve() {}
   disconnect() {}
 }
+
+beforeAll(() => {
+  // member-billing-address (0284) — Base UI's CheckboxRoot onClick touches
+  // `PointerEvent`, which jsdom does not define. Same minimal polyfill as
+  // filter-chips.test.tsx (Base UI Select).
+  if (typeof globalThis.PointerEvent === 'undefined') {
+    // @ts-expect-error — minimal polyfill for jsdom (Base UI Checkbox)
+    globalThis.PointerEvent = class PointerEvent extends MouseEvent {
+      readonly pointerId: number;
+      constructor(type: string, params?: PointerEventInit) {
+        super(type, params);
+        this.pointerId = params?.pointerId ?? 0;
+      }
+    };
+  }
+});
 
 const PLANS: PlanOption[] = [
   { plan_id: 'premium', plan_year: 2026, display_name: 'Premium — 2026' },
@@ -691,6 +707,87 @@ describe('AddressSection — manual entry when the postcode has no candidates (C
     fireEvent.click(useItem);
 
     await waitFor(() => expect(byId('province')).toHaveTextContent('Farmland Province'));
+  });
+});
+
+// member-billing-address (0284) — the checkbox reveals a simple 7-field
+// group (no postal-lookup machinery); unchecking hides it again but keeps
+// the typed values in form state. Rendered against the REAL en.json so a
+// dangling i18n key (billingDiffers / billingAddressHeading / the field
+// labels) fails HERE, not as a runtime MISSING_MESSAGE.
+describe('AddressSection — billing address group (0284)', () => {
+  it('hidden by default; checkbox reveals the 7 fields with real-catalogue labels', async () => {
+    renderForm();
+
+    // Collapsed by default — the common no-billing-address create.
+    expect(document.getElementById('billing_address_line1')).toBeNull();
+    const toggle = screen.getByRole('checkbox', {
+      name: /billing address differs from company address/i,
+    });
+    expect(toggle).toBeInTheDocument();
+    // Real-catalogue hint copy (not a key echo) — B2: names "tax documents"
+    // (receipts + credit notes inherit too) AND states the clear-on-uncheck
+    // consequence.
+    expect(
+      screen.getByText(
+        /tax documents will carry the billing address instead\. saving with this unchecked removes the stored billing address/i,
+      ),
+    ).toBeInTheDocument();
+
+    fireEvent.click(toggle);
+
+    await waitFor(() =>
+      expect(document.getElementById('billing_address_line1')).not.toBeNull(),
+    );
+    // The whole group is present…
+    for (const id of [
+      'billing_address_line1',
+      'billing_address_line2',
+      'billing_sub_district',
+      'billing_city',
+      'billing_province',
+      'billing_postal_code',
+      'billing_country',
+    ]) {
+      expect(document.getElementById(id)).not.toBeNull();
+    }
+    // …under the real group heading.
+    expect(
+      screen.getByText('Billing address (tax documents)'),
+    ).toBeInTheDocument();
+    // Required-when-enabled: the 4 anchor fields are marked, the rest not.
+    expect(byId('billing_address_line1')).toHaveAttribute('aria-required');
+    expect(byId('billing_city')).toHaveAttribute('aria-required');
+    expect(byId('billing_postal_code')).toHaveAttribute('aria-required');
+    expect(byId('billing_address_line2')).not.toHaveAttribute('aria-required');
+    expect(byId('billing_sub_district')).not.toHaveAttribute('aria-required');
+    expect(byId('billing_province')).not.toHaveAttribute('aria-required');
+  });
+
+  it('unchecking hides the group but keeps the typed values for re-checking', async () => {
+    renderForm();
+    const toggle = screen.getByRole('checkbox', {
+      name: /billing address differs/i,
+    });
+
+    fireEvent.click(toggle);
+    await waitFor(() =>
+      expect(document.getElementById('billing_address_line1')).not.toBeNull(),
+    );
+    fireEvent.change(byId('billing_address_line1'), {
+      target: { value: '9 Tax Rd' },
+    });
+
+    fireEvent.click(toggle); // hide
+    await waitFor(() =>
+      expect(document.getElementById('billing_address_line1')).toBeNull(),
+    );
+
+    fireEvent.click(toggle); // reveal again — value restored, not wiped
+    await waitFor(() =>
+      expect(document.getElementById('billing_address_line1')).not.toBeNull(),
+    );
+    expect(byId('billing_address_line1')).toHaveValue('9 Tax Rd');
   });
 });
 
