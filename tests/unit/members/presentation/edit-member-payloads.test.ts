@@ -12,6 +12,8 @@ import type { MemberFormValues } from '@/components/members/member-form';
 import {
   buildFieldPayload,
   buildContactPayload,
+  buildBillingAddressPayload,
+  billingAddressChanged,
   hasFieldDiff,
   contactFieldsChanged,
   contactEmailChanged,
@@ -270,5 +272,129 @@ describe('planChanged', () => {
   });
   it('detects a plan year change', () => {
     expect(planChanged(makeValues({ plan_year: 2027 }), member)).toBe(true);
+  });
+});
+
+// member-billing-address (0284) — the group's ''-vs-null normalisation +
+// toggle semantics. Shared by create + edit, so a bug here silently drops
+// (or spuriously clears) the ภ.พ.20 address on BOTH flows.
+describe('buildBillingAddressPayload (0284)', () => {
+  const ON = {
+    billing_differs: true,
+    billing_address_line1: ' 9 Tax Rd ',
+    billing_address_line2: '',
+    billing_sub_district: undefined,
+    billing_city: ' Bangkok ',
+    billing_province: '  ',
+    billing_postal_code: '10500',
+    billing_country: ' th ',
+  } as Partial<MemberFormValues>;
+
+  it('toggle ON → trims, maps empty → null, uppercases country', () => {
+    expect(buildBillingAddressPayload(makeValues(ON))).toEqual({
+      billing_address_line1: '9 Tax Rd',
+      billing_address_line2: null,
+      billing_sub_district: null,
+      billing_city: 'Bangkok',
+      billing_province: null,
+      billing_postal_code: '10500',
+      billing_country: 'TH',
+    });
+  });
+
+  it('toggle OFF → every field null even when values linger in form state', () => {
+    // Unchecking HIDES the group but keeps typed values in RHF state — the
+    // payload must still clear the whole group server-side.
+    expect(
+      buildBillingAddressPayload(makeValues({ ...ON, billing_differs: false })),
+    ).toEqual({
+      billing_address_line1: null,
+      billing_address_line2: null,
+      billing_sub_district: null,
+      billing_city: null,
+      billing_province: null,
+      billing_postal_code: null,
+      billing_country: null,
+    });
+  });
+
+  it('toggle absent (create form untouched) behaves as OFF', () => {
+    expect(
+      buildBillingAddressPayload(makeValues()).billing_address_line1,
+    ).toBeNull();
+  });
+
+  it('buildFieldPayload carries the group (all-null when off)', () => {
+    const out = buildFieldPayload(makeValues());
+    expect(out.billing_address_line1).toBeNull();
+    expect(out.billing_country).toBeNull();
+  });
+});
+
+describe('billingAddressChanged / hasFieldDiff billing legs (0284)', () => {
+  const memberWithBilling: MemberInitialValues = {
+    ...member,
+    billingAddressLine1: '9 Tax Rd',
+    billingAddressLine2: null,
+    billingSubDistrict: null,
+    billingCity: 'Bangkok',
+    billingProvince: null,
+    billingPostalCode: '10500',
+    billingCountry: 'TH',
+  };
+  const formOnSame = {
+    billing_differs: true,
+    billing_address_line1: '9 Tax Rd',
+    billing_city: 'Bangkok',
+    billing_postal_code: '10500',
+    billing_country: 'TH',
+  } as Partial<MemberFormValues>;
+
+  it('no change when toggle ON mirrors the persisted group', () => {
+    expect(billingAddressChanged(makeValues(formOnSame), memberWithBilling)).toBe(
+      false,
+    );
+    expect(hasFieldDiff(makeValues(formOnSame), memberWithBilling)).toBe(false);
+  });
+
+  it('no change when toggle OFF and member has no billing address', () => {
+    expect(billingAddressChanged(makeValues(), member)).toBe(false);
+  });
+
+  it('detects ADDING a billing address (fires the PATCH)', () => {
+    expect(billingAddressChanged(makeValues(formOnSame), member)).toBe(true);
+    expect(hasFieldDiff(makeValues(formOnSame), member)).toBe(true);
+  });
+
+  it('detects CLEARING via the toggle (member has one, toggle now off)', () => {
+    // Without this leg, unchecking the toggle produced no diff → no PATCH →
+    // the billing address silently survived on the member.
+    expect(
+      billingAddressChanged(
+        makeValues({ ...formOnSame, billing_differs: false }),
+        memberWithBilling,
+      ),
+    ).toBe(true);
+    expect(
+      hasFieldDiff(
+        makeValues({ ...formOnSame, billing_differs: false }),
+        memberWithBilling,
+      ),
+    ).toBe(true);
+  });
+
+  it('detects a single-field edit inside the group', () => {
+    expect(
+      billingAddressChanged(
+        makeValues({ ...formOnSame, billing_postal_code: '10110' }),
+        memberWithBilling,
+      ),
+    ).toBe(true);
+  });
+
+  it('fixture omitting the optional billing keys compares as all-null', () => {
+    // `member` (no billing keys at all) must behave exactly like explicit
+    // nulls — pins the `?? null` on the MemberInitialValues side.
+    expect(billingAddressChanged(makeValues(), member)).toBe(false);
   });
 });

@@ -26,6 +26,9 @@ import {
   type ResolvedServerFieldError,
 } from './member-form';
 import { mapMemberCreateServerError } from './member-create-error-map';
+// member-billing-address (0284) — shared ''-vs-null group normaliser (same
+// builder the edit flow uses, so the two flows can never diverge).
+import { buildBillingAddressPayload } from './edit-member-payloads';
 import {
   OverrideReasonDialog,
   type OverrideReasonResult,
@@ -88,6 +91,10 @@ function toPayload(
     postal_code: values.postal_code?.trim() || null,
     // PR-B task 6 — แขวง/ตำบล. TH-only in the UI; null for a non-TH address.
     sub_district: values.sub_district?.trim() || null,
+    // member-billing-address (0284) — the whole group via the shared
+    // builder (toggle off ⇒ all null; create's all-or-nothing check +
+    // the DB CHECK back the client zod's required-when-enabled rule).
+    ...buildBillingAddressPayload(values),
     founded_year:
       typeof values.founded_year === 'number' ? values.founded_year : null,
     turnover_thb:

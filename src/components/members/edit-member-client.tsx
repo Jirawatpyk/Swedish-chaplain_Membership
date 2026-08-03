@@ -539,6 +539,17 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
           postal_code: member.postalCode ?? undefined,
           // PR-B task 6 — แขวง/ตำบล.
           sub_district: member.subDistrict ?? undefined,
+          // member-billing-address (0284) — seed the toggle from the group
+          // invariant ("set" ⟺ line1 present) + the field values so the
+          // admin sees the present billing address before Save.
+          billing_differs: Boolean(member.billingAddressLine1),
+          billing_address_line1: member.billingAddressLine1 ?? undefined,
+          billing_address_line2: member.billingAddressLine2 ?? undefined,
+          billing_sub_district: member.billingSubDistrict ?? undefined,
+          billing_city: member.billingCity ?? undefined,
+          billing_province: member.billingProvince ?? undefined,
+          billing_postal_code: member.billingPostalCode ?? undefined,
+          billing_country: member.billingCountry ?? undefined,
           // 088 US3 — §86/4 branch particular (seed the head-office toggle +
           // branch code so the admin sees the present value before Save).
           // 059 / PR-A — and the VAT-registrant flag that gates them both.

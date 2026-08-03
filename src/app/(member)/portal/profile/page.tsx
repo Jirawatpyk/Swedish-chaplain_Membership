@@ -184,6 +184,27 @@ export async function PortalProfileBody({
       .filter((l): l is string => Boolean(l && l.trim()))
       .join(', ') || null;
 
+  // member-billing-address (0284) — read-only, shown ONLY when set ("set" ⟺
+  // line1 present): the ภ.พ.20-registered address that overrides the company
+  // address on the member's tax documents. Same "verify what the chamber has
+  // on file" rationale as the address above; NOT self-editable this round
+  // (admin-managed — the portal edit whitelist deliberately excludes it;
+  // self-service editing is a noted follow-up). Includes the group's OWN
+  // country code — it may differ from the member's country.
+  const billingCityLine = [
+    m.billingSubDistrict,
+    m.billingCity,
+    m.billingProvince,
+    m.billingPostalCode,
+  ]
+    .filter((p): p is string => Boolean(p && p.trim()))
+    .join(' ');
+  const billingAddressText = m.billingAddressLine1
+    ? [m.billingAddressLine1, m.billingAddressLine2, billingCityLine, m.billingCountry]
+        .filter((l): l is string => Boolean(l && l.trim()))
+        .join(', ')
+    : null;
+
   // Render the website as a link only when it is a safe http(s) URL — an
   // unsafe scheme (javascript:/data:) falls back to plain text. See safe-url.ts.
   const websiteHref = safeExternalHref(m.website);
@@ -266,6 +287,16 @@ export async function PortalProfileBody({
                   value={addressText}
                 />
               </div>
+              {billingAddressText ? (
+                // member-billing-address (0284) — shown only when set, so
+                // the common no-billing-address profile is unchanged.
+                <div className="sm:col-span-2 lg:col-span-3">
+                  <DetailField
+                    label={t('fields.billingAddress')}
+                    value={billingAddressText}
+                  />
+                </div>
+              ) : null}
               {websiteHref ? (
                 <DetailField
                   label={t('fields.website')}

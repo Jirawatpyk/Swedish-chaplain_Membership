@@ -86,9 +86,11 @@ import { AlertTriangleIcon } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { RequiredMark } from '@/components/ui/required-mark';
 import { LiveRegion } from '@/components/ui/live-region';
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
+import { CountryCombobox } from '@/components/members/country-combobox';
 import { FieldError } from '../field-error';
 import { type MemberFormValues } from '../schema';
 
@@ -176,6 +178,8 @@ export function AddressSection({ mode }: { readonly mode: 'create' | 'edit' }) {
   const provinceValue = useWatch({ control, name: 'province' }) ?? '';
   const subDistrictValue = useWatch({ control, name: 'sub_district' }) ?? '';
   const addressLine1Value = useWatch({ control, name: 'address_line1' }) ?? '';
+  // member-billing-address (0284) — drives the reveal of the billing group.
+  const billingDiffers = useWatch({ control, name: 'billing_differs' }) === true;
 
   const [candidates, setCandidates] = useState<readonly PostalCandidate[]>([]);
   const [lookupStatus, setLookupStatus] = useState<LookupStatus>('idle');
@@ -715,6 +719,197 @@ export function AddressSection({ mode }: { readonly mode: 'create' | 'edit' }) {
               aria-describedby={errors.postal_code ? 'postal_code-error' : undefined}
             />
             <FieldError id="postal_code-error" message={errors.postal_code?.message} />
+          </div>
+        </div>
+      )}
+
+      {/* member-billing-address (0284) — optional tax-document address.
+          A checkbox reveals a SIMPLE 7-field group (plain Inputs + the
+          shared CountryCombobox). Deliberately NO postal auto-fill /
+          cascading-combobox machinery here: that apparatus above serves
+          the operating address every member gets; the billing group is a
+          rarer power-user field for VAT registrants whose ภ.พ.20 address
+          differs — wiring a second lookup pipeline would double this
+          file's most complex code for its least-used field (follow-up if
+          demand appears). Unchecking HIDES the group but keeps the typed
+          values in form state (re-checking restores them); the payload
+          builders send the whole group as null while unchecked, which is
+          what clears it server-side (no enable flag exists — "set" ⟺
+          line1 IS NOT NULL). */}
+      <div className="flex items-start gap-2 border-t pt-4">
+        <Controller
+          control={control}
+          name="billing_differs"
+          render={({ field }) => (
+            <Checkbox
+              id="billing_differs"
+              className="mt-0.5"
+              // base-ui Checkbox.Root's visible `role=checkbox` element uses
+              // its own generated id (the `id` prop we pass lands on the
+              // hidden native input instead), so the sibling <Label
+              // htmlFor> can't reliably name it — set the accessible name
+              // directly (same fix as is_vat_registered / is_head_office in
+              // tax-branch-section.tsx and art14_attested; fixes axe
+              // aria-toggle-field-name).
+              aria-label={tf('billingDiffers')}
+              checked={field.value === true}
+              onCheckedChange={(checked: boolean) => field.onChange(checked)}
+            />
+          )}
+        />
+        <div>
+          <Label htmlFor="billing_differs" className="font-normal">
+            {tf('billingDiffers')}
+          </Label>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {tf('billingDiffersHint')}
+          </p>
+        </div>
+      </div>
+      {billingDiffers && (
+        <div
+          role="group"
+          aria-labelledby="billing-address-heading"
+          className="flex flex-col gap-4 rounded-md border bg-muted/20 p-3"
+        >
+          <p id="billing-address-heading" className="text-sm font-semibold">
+            {tf('billingAddressHeading')}
+          </p>
+          <div>
+            <Label htmlFor="billing_address_line1">
+              {tf('addressLine1')}
+              <RequiredMark />
+            </Label>
+            <Input
+              id="billing_address_line1"
+              {...register('billing_address_line1')}
+              maxLength={200}
+              aria-required
+              aria-invalid={Boolean(errors.billing_address_line1)}
+              aria-describedby={
+                errors.billing_address_line1 ? 'billing_address_line1-error' : undefined
+              }
+            />
+            <FieldError
+              id="billing_address_line1-error"
+              message={errors.billing_address_line1?.message}
+            />
+          </div>
+          <div>
+            <Label htmlFor="billing_address_line2">{tf('addressLine2')}</Label>
+            <Input
+              id="billing_address_line2"
+              {...register('billing_address_line2')}
+              maxLength={200}
+              aria-invalid={Boolean(errors.billing_address_line2)}
+              aria-describedby={
+                errors.billing_address_line2 ? 'billing_address_line2-error' : undefined
+              }
+            />
+            <FieldError
+              id="billing_address_line2-error"
+              message={errors.billing_address_line2?.message}
+            />
+          </div>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div>
+              <Label htmlFor="billing_sub_district">{tf('subDistrict')}</Label>
+              <Input
+                id="billing_sub_district"
+                {...register('billing_sub_district')}
+                maxLength={100}
+                aria-invalid={Boolean(errors.billing_sub_district)}
+                aria-describedby={
+                  errors.billing_sub_district ? 'billing_sub_district-error' : undefined
+                }
+              />
+              <FieldError
+                id="billing_sub_district-error"
+                message={errors.billing_sub_district?.message}
+              />
+            </div>
+            <div>
+              <Label htmlFor="billing_city">
+                {tf('city')}
+                <RequiredMark />
+              </Label>
+              <Input
+                id="billing_city"
+                {...register('billing_city')}
+                maxLength={100}
+                aria-required
+                aria-invalid={Boolean(errors.billing_city)}
+                aria-describedby={errors.billing_city ? 'billing_city-error' : undefined}
+              />
+              <FieldError id="billing_city-error" message={errors.billing_city?.message} />
+            </div>
+            <div>
+              <Label htmlFor="billing_province">{tf('province')}</Label>
+              <Input
+                id="billing_province"
+                {...register('billing_province')}
+                maxLength={100}
+                aria-invalid={Boolean(errors.billing_province)}
+                aria-describedby={
+                  errors.billing_province ? 'billing_province-error' : undefined
+                }
+              />
+              <FieldError
+                id="billing_province-error"
+                message={errors.billing_province?.message}
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div>
+              <Label htmlFor="billing_postal_code">
+                {tf('postalCode')}
+                <RequiredMark />
+              </Label>
+              <Input
+                id="billing_postal_code"
+                {...register('billing_postal_code')}
+                maxLength={20}
+                aria-required
+                aria-invalid={Boolean(errors.billing_postal_code)}
+                aria-describedby={
+                  errors.billing_postal_code ? 'billing_postal_code-error' : undefined
+                }
+              />
+              <FieldError
+                id="billing_postal_code-error"
+                message={errors.billing_postal_code?.message}
+              />
+            </div>
+            <div>
+              <Label id="billing_country-label" htmlFor="billing_country">
+                {tf('country')}
+                <RequiredMark />
+              </Label>
+              <Controller
+                control={control}
+                name="billing_country"
+                render={({ field }) => (
+                  <CountryCombobox
+                    id="billing_country"
+                    value={field.value ?? ''}
+                    onChange={field.onChange}
+                    aria-labelledby="billing_country-label"
+                    aria-required
+                    aria-invalid={Boolean(errors.billing_country)}
+                    // `exactOptionalPropertyTypes` — the prop type has no
+                    // `| undefined`, so spread it in only when present.
+                    {...(errors.billing_country
+                      ? { 'aria-describedby': 'billing_country-error' }
+                      : {})}
+                  />
+                )}
+              />
+              <FieldError
+                id="billing_country-error"
+                message={errors.billing_country?.message}
+              />
+            </div>
           </div>
         </div>
       )}

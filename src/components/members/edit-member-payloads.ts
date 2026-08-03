@@ -58,7 +58,43 @@ export type MemberInitialValues = {
   // pre-existing fixtures stay non-breaking; the edit page always supplies it
   // (`billingCycle ?? 'rolling'`). The diff normalises both sides to 'rolling'.
   readonly billingCycle?: BillingCycle;
+  // member-billing-address (0284) — optional tax-document address group.
+  // Optional (fixture-non-breaking, like subDistrict above); the edit page
+  // supplies them from the serialised member.
+  readonly billingAddressLine1?: string | null;
+  readonly billingAddressLine2?: string | null;
+  readonly billingSubDistrict?: string | null;
+  readonly billingCity?: string | null;
+  readonly billingProvince?: string | null;
+  readonly billingPostalCode?: string | null;
+  readonly billingCountry?: string | null;
 };
+
+/**
+ * member-billing-address (0284) — the billing group as the API expects it.
+ * Toggle OFF ⇒ every field null (clears the group server-side — "set" ⟺
+ * line1 IS NOT NULL, no enable flag exists). Toggle ON ⇒ trimmed values,
+ * '' → null; the form zod already guaranteed line1/city/postal/country are
+ * present, and the server's resulting-state check + DB CHECK back it up.
+ * Shared by the create + edit payload builders so the ''-vs-null
+ * normalisation can never diverge between the two flows.
+ */
+export function buildBillingAddressPayload(
+  values: MemberFormValues,
+): Record<string, string | null> {
+  const on = values.billing_differs === true;
+  return {
+    billing_address_line1: on ? values.billing_address_line1?.trim() || null : null,
+    billing_address_line2: on ? values.billing_address_line2?.trim() || null : null,
+    billing_sub_district: on ? values.billing_sub_district?.trim() || null : null,
+    billing_city: on ? values.billing_city?.trim() || null : null,
+    billing_province: on ? values.billing_province?.trim() || null : null,
+    billing_postal_code: on ? values.billing_postal_code?.trim() || null : null,
+    billing_country: on
+      ? values.billing_country?.trim().toUpperCase() || null
+      : null,
+  };
+}
 
 export type EditablePrimaryContact = {
   readonly contactId: string;
@@ -118,6 +154,9 @@ export function buildFieldPayload(
     // client zod requires a pick, so `values.billing_cycle` is always set;
     // `?? 'rolling'` mirrors is_vat_registered's `?? false` default-normalise).
     billing_cycle: values.billing_cycle ?? 'rolling',
+    // member-billing-address (0284) — the whole group rides every field
+    // PATCH (all-null when the toggle is off, which clears it).
+    ...buildBillingAddressPayload(values),
   };
 }
 
@@ -160,7 +199,29 @@ export function hasFieldDiff(
     // 065 §5.1 — without this leg, changing ONLY the billing cycle produces no
     // diff, so no PATCH fires and the change silently fails to save. Both sides
     // normalise to 'rolling' so a fixture omitting either does not false-trigger.
-    (values.billing_cycle ?? 'rolling') !== (member.billingCycle ?? 'rolling')
+    (values.billing_cycle ?? 'rolling') !== (member.billingCycle ?? 'rolling') ||
+    // member-billing-address (0284) — without these legs, editing (or
+    // clearing via the toggle) ONLY the billing group produces no diff → no
+    // PATCH → silent no-save. Compares the PAYLOAD-normalised group (toggle
+    // off ⇒ all-null) against the persisted values.
+    billingAddressChanged(values, member)
+  );
+}
+
+/** True when the (toggle-normalised) billing group differs from the member. */
+export function billingAddressChanged(
+  values: MemberFormValues,
+  member: MemberInitialValues,
+): boolean {
+  const p = buildBillingAddressPayload(values);
+  return (
+    p.billing_address_line1 !== (member.billingAddressLine1 ?? null) ||
+    p.billing_address_line2 !== (member.billingAddressLine2 ?? null) ||
+    p.billing_sub_district !== (member.billingSubDistrict ?? null) ||
+    p.billing_city !== (member.billingCity ?? null) ||
+    p.billing_province !== (member.billingProvince ?? null) ||
+    p.billing_postal_code !== (member.billingPostalCode ?? null) ||
+    p.billing_country !== (member.billingCountry ?? null)
   );
 }
 

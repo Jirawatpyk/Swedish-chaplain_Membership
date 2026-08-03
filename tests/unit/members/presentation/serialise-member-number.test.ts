@@ -63,3 +63,40 @@ describe('serialiser maps memberNumber → member_number', () => {
     expect(serialiseDirectoryRow(row).member_number).toBe(7);
   });
 });
+
+// member-billing-address (0284) — the snake_case billing group in the JSON
+// shape, plus the `?? null` guard for hand-built Members that omit the
+// optional aggregate keys (repo-loaded rows always carry them).
+describe('serialiseMember — billing address group (0284)', () => {
+  it('emits explicit nulls when the aggregate omits the optional billing keys', () => {
+    const out = serialiseMember(makeTestMember());
+    expect(out.billing_address_line1).toBeNull();
+    expect(out.billing_address_line2).toBeNull();
+    expect(out.billing_sub_district).toBeNull();
+    expect(out.billing_city).toBeNull();
+    expect(out.billing_province).toBeNull();
+    expect(out.billing_postal_code).toBeNull();
+    expect(out.billing_country).toBeNull();
+  });
+
+  it('maps a populated group camelCase → snake_case', () => {
+    const m: Member = {
+      ...makeTestMember(),
+      billingAddressLine1: '9 Tax Rd',
+      billingAddressLine2: 'Floor 3',
+      billingSubDistrict: 'Silom',
+      billingCity: 'Bangkok',
+      billingProvince: 'Bangkok',
+      billingPostalCode: '10500',
+      billingCountry: 'SE',
+    };
+    const out = serialiseMember(m);
+    expect(out.billing_address_line1).toBe('9 Tax Rd');
+    expect(out.billing_address_line2).toBe('Floor 3');
+    expect(out.billing_sub_district).toBe('Silom');
+    expect(out.billing_city).toBe('Bangkok');
+    expect(out.billing_province).toBe('Bangkok');
+    expect(out.billing_postal_code).toBe('10500');
+    expect(out.billing_country).toBe('SE');
+  });
+});

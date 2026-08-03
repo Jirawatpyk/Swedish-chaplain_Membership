@@ -202,6 +202,17 @@ export type MemberPatch = Partial<
     taxId: TaxId | null;
     planId: PlanId;
     planYear: number;
+    // member-billing-address (0284) — the optional tax-document address
+    // group. Listed explicitly (not via Pick) because the aggregate carries
+    // them as OPTIONAL properties; a patch value of `null` clears, absent
+    // means unchanged (same semantics as every other patch key).
+    billingAddressLine1: string | null;
+    billingAddressLine2: string | null;
+    billingSubDistrict: string | null;
+    billingCity: string | null;
+    billingProvince: string | null;
+    billingPostalCode: string | null;
+    billingCountry: IsoCountryCode | null;
   }
 >;
 

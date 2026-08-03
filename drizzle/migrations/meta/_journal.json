@@ -1926,6 +1926,13 @@
       "when": 1798541100000,
       "tag": "0283_renewal_lapse_deferred_warning_pending",
       "breakpoints": true
+    },
+    {
+      "idx": 285,
+      "version": "7",
+      "when": 1798541200000,
+      "tag": "0284_member_billing_address",
+      "breakpoints": true
     }
   ]
 }

@@ -545,3 +545,111 @@ describe('buildMemberFormSchema — superRefine must still run when plan_id is U
     ).toContain('branch_code');
   });
 });
+
+// member-billing-address (0284) — required-when-enabled group. The toggle is
+// the opt-in: unchecked ⇒ zero validation (payload builders send all-null);
+// checked ⇒ line1 + city + postal + country required for EVERY country
+// (unlike the TH-gated company address), line2/sub-district/province stay
+// optional. Mirrors the server all-or-nothing rule +
+// `members_billing_address_group_ck`.
+describe('buildMemberFormSchema — billing address group (0284)', () => {
+  it('unchecked toggle → no billing validation even with empty fields', () => {
+    expect(issuePaths({ ...BASE, billing_differs: false })).toEqual([]);
+    expect(issuePaths(BASE)).toEqual([]); // toggle absent behaves as off
+  });
+
+  it('checked with all fields empty → required on line1/city/postal/country ONLY', () => {
+    const paths = issuePaths({ ...BASE, billing_differs: true });
+    expect(paths).toContain('billing_address_line1');
+    expect(paths).toContain('billing_city');
+    expect(paths).toContain('billing_postal_code');
+    expect(paths).toContain('billing_country');
+    // Optional inside an enabled group:
+    expect(paths).not.toContain('billing_address_line2');
+    expect(paths).not.toContain('billing_sub_district');
+    expect(paths).not.toContain('billing_province');
+  });
+
+  it('checked with the 4 required fields → valid (optionals empty)', () => {
+    expect(
+      issuePaths({
+        ...BASE,
+        billing_differs: true,
+        billing_address_line1: '9 Tax Rd',
+        billing_city: 'Bangkok',
+        billing_postal_code: '10500',
+        billing_country: 'TH',
+      }),
+    ).toEqual([]);
+  });
+
+  it('required for a non-TH company too — the toggle, not the country, gates it', () => {
+    const paths = issuePaths({
+      ...BASE,
+      country: 'SE',
+      billing_differs: true,
+    });
+    expect(paths).toContain('billing_address_line1');
+    expect(paths).toContain('billing_country');
+  });
+
+  it('whitespace-only required fields still fail (trim before judging)', () => {
+    const paths = issuePaths({
+      ...BASE,
+      billing_differs: true,
+      billing_address_line1: '   ',
+      billing_city: 'Bangkok',
+      billing_postal_code: '10500',
+      billing_country: 'TH',
+    });
+    expect(paths).toContain('billing_address_line1');
+  });
+
+  it('rejects a well-formed but non-existent billing country code', () => {
+    expect(
+      issuePaths({
+        ...BASE,
+        billing_differs: true,
+        billing_address_line1: '9 Tax Rd',
+        billing_city: 'Bangkok',
+        billing_postal_code: '10500',
+        billing_country: 'ZZ',
+      }),
+    ).toContain('billing_country');
+  });
+
+  it('accepts a lowercase ISO code (payload builder uppercases before send)', () => {
+    expect(
+      issuePaths({
+        ...BASE,
+        billing_differs: true,
+        billing_address_line1: '9 Tax Rd',
+        billing_city: 'Bangkok',
+        billing_postal_code: '10500',
+        billing_country: 'se',
+      }),
+    ).toEqual([]);
+  });
+
+  it('billing group may differ from the company country (SE billing on a TH member)', () => {
+    expect(
+      issuePaths({
+        ...BASE,
+        billing_differs: true,
+        billing_address_line1: 'Storgatan 1',
+        billing_city: 'Stockholm',
+        billing_postal_code: '111 22',
+        billing_country: 'SE',
+      }),
+    ).toEqual([]);
+  });
+
+  it('still validates the billing group when plan_id is UNSET (aborted-status guard)', () => {
+    // Same first-submit shape as the suite above — the billing rules live in
+    // the SAME superRefine, so they must survive the invalid_type abort too.
+    const { plan_id: _omit, ...rest } = BASE;
+    expect(issuePaths({ ...rest, billing_differs: true })).toContain(
+      'billing_address_line1',
+    );
+  });
+});

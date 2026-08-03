@@ -302,6 +302,15 @@ export const gdprArchiveSourceAdapter: GdprArchiveSource = {
         addressLine2: member.addressLine2,
         // 058 / PR-B — แขวง/ตำบล, part of the postal address (Art. 20).
         subDistrict: member.subDistrict,
+        // member-billing-address (0284) — same Art. 20 completeness class.
+        // `?? null` guards the optional aggregate keys (repo rows carry them).
+        billingAddressLine1: member.billingAddressLine1 ?? null,
+        billingAddressLine2: member.billingAddressLine2 ?? null,
+        billingSubDistrict: member.billingSubDistrict ?? null,
+        billingCity: member.billingCity ?? null,
+        billingProvince: member.billingProvince ?? null,
+        billingPostalCode: member.billingPostalCode ?? null,
+        billingCountry: member.billingCountry ?? null,
         city: member.city,
         province: member.province,
         postalCode: member.postalCode,

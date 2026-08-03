@@ -106,6 +106,18 @@ export function mapMemberCreateServerError(
           field: 'branch_code',
           messageKey: 'fields.errors.headOfficeBranchCodeMismatch',
         };
+      // member-billing-address (0284) — the create/update use-case body's
+      // all-or-nothing billing-group check (defense-in-depth only:
+      // buildMemberFormSchema's own superRefine requires line1 + city +
+      // postal + country whenever the toggle is on, and the payload
+      // builders send the whole group as null when it is off — so this is
+      // reachable only via a direct API call sending a partial group).
+      // Routed to line1, the group's anchor field ("set" ⟺ line1 present).
+      case 'billing_address_incomplete':
+        return {
+          field: 'billing_address_line1',
+          messageKey: 'fields.errors.billingAddressIncomplete',
+        };
       case 'invalid_phone':
         return { field: 'primary_contact.phone', messageKey: 'fields.phoneError' };
       case 'invalid_country':

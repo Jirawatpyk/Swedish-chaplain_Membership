@@ -122,6 +122,22 @@ export function buildMemberFormSchema(
   // (invoicing module, Task 2). TH-only in the UI, but not `.nullable()` —
   // mirrors city/province/postal_code's shape exactly.
   sub_district: z.string().max(100, tv('tooLong', { max: 100 })).optional(),
+  // member-billing-address (0284) — client-only toggle revealing the billing
+  // group below. NOT sent to the API (the payload builders derive the group
+  // from it: unchecked ⇒ every billing field is sent as null, which clears
+  // the whole group server-side).
+  billing_differs: z.boolean().optional(),
+  // The billing address group — field shapes mirror the company address
+  // above. Required-when-enabled (line1 + city + postal + country) is
+  // enforced in the superRefine below, matching the server's all-or-nothing
+  // rule (`members_billing_address_group_ck`).
+  billing_address_line1: z.string().max(200, tv('tooLong', { max: 200 })).optional(),
+  billing_address_line2: z.string().max(200, tv('tooLong', { max: 200 })).optional(),
+  billing_sub_district: z.string().max(100, tv('tooLong', { max: 100 })).optional(),
+  billing_city: z.string().max(100, tv('tooLong', { max: 100 })).optional(),
+  billing_province: z.string().max(100, tv('tooLong', { max: 100 })).optional(),
+  billing_postal_code: z.string().max(20, tv('tooLong', { max: 20 })).optional(),
+  billing_country: z.string().optional(),
   // 088 US3 (FR-008) — §86/4 Head-Office / Branch particular. Rendered on the
   // EDIT form only (tax-critical, admin-managed). `is_head_office` defaults true
   // (สำนักงานใหญ่); a branch carries a 5-digit `branch_code`. The 5-digit +
@@ -444,6 +460,54 @@ export function buildMemberFormSchema(
         path: ['tax_id'],
         message: tf('errors.taxIdRequiredForRegistrant'),
       });
+    }
+    // member-billing-address (0284) — required-when-enabled group. When the
+    // "billing address differs" toggle is ON, line1 + city + postal + country
+    // are required (line2 / sub-district / province stay optional), mirroring
+    // the server's all-or-nothing rule + `members_billing_address_group_ck`.
+    // Unlike the company address (TH-gated), this group is required for
+    // EVERY country when enabled: the toggle itself is the opt-in, and the
+    // API refuses a partial group regardless of country. Unchecked ⇒ no
+    // validation (the payload builders send the group as null).
+    if (data.billing_differs === true) {
+      if (!data.billing_address_line1?.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['billing_address_line1'],
+          message: tf('errors.required'),
+        });
+      }
+      if (!data.billing_city?.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['billing_city'],
+          message: tf('errors.required'),
+        });
+      }
+      if (!data.billing_postal_code?.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['billing_postal_code'],
+          message: tf('errors.required'),
+        });
+      }
+      const bc = data.billing_country?.trim() ?? '';
+      if (!bc) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['billing_country'],
+          message: tf('errors.required'),
+        });
+      } else if (!isIsoCountryCode(bc.toUpperCase())) {
+        // Same client-side ISO-3166 mirror (and the SAME message key) the
+        // company `country` check above uses — reject inline instead of on
+        // a 400 round-trip.
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['billing_country'],
+          message: tf('errors.countryCode'),
+        });
+      }
     }
   });
 }

@@ -229,6 +229,24 @@ export type Member = {
   readonly province: string | null;
   readonly postalCode: string | null;
   readonly subDistrict: string | null;
+  /**
+   * member-billing-address (migration 0284) — OPTIONAL billing address for
+   * tax documents (ภ.พ.20-registered address when it differs from the
+   * operating address above). "Set" ⟺ `billingAddressLine1 !== null`; when
+   * any field of the group is present, line1 + city + postalCode + country
+   * are required (use-case resulting-state check + DB
+   * `members_billing_address_group_ck`). OPTIONAL on the aggregate (same
+   * posture as `billingCycle`/`autoInvoiceEnrolledAt`) so partial-`Member`
+   * fixtures stay non-breaking; `rowToMember` ALWAYS populates them.
+   */
+  readonly billingAddressLine1?: string | null;
+  readonly billingAddressLine2?: string | null;
+  readonly billingSubDistrict?: string | null;
+  readonly billingCity?: string | null;
+  readonly billingProvince?: string | null;
+  readonly billingPostalCode?: string | null;
+  /** UPPERCASE ISO 3166-1 alpha-2 (own country — may differ from `country`). */
+  readonly billingCountry?: string | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 } & MemberLifecycle;
