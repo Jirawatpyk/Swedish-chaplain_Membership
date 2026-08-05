@@ -678,3 +678,118 @@ describe('QueueBulkActionBar — 60s send-now Undo toast (Task 5, 2026-08-02-bro
     expect(message).toBe('Sending 1 broadcast in 60s.'); // only b1 succeeded
   });
 });
+
+describe('QueueBulkActionBar — Task 2 hotfix (2026-08-05-broadcast-crosspr-hotfix, opus a11y audit): total-failure retry focus', () => {
+  // A REAL `<main id="main-content" tabIndex={-1}>` is rendered alongside
+  // the bar in every test below, mirroring the admin/member layout landmark
+  // `resolveDialogFinalFocus` falls back to. Without it, `finalFocus` has
+  // nowhere to resolve to and jsdom's Base UI AlertDialog silently keeps its
+  // OWN default close-time behaviour (restore focus to the trigger) — which
+  // would land on the "Approve selected" button for every outcome
+  // (success/partial/total-failure alike) even WITHOUT this task's fix,
+  // masking the exact bug these tests exist to catch. With the landmark
+  // present, `finalFocus` resolves to it and Base UI's own close-time
+  // restore correctly lands there — so a subsequent jump BACK onto the
+  // "Approve selected" button is attributable ONLY to this task's
+  // `focusRetryOnEnableRef` effect in `queue-bulk-action-bar.tsx`, not to
+  // library-internal focus bookkeeping.
+  //
+  // `document.activeElement` is the primary, unambiguous assertion — it's
+  // the literal end state a keyboard/AT user experiences. A `vi.spyOn` on
+  // the SPECIFIC button instance (not `HTMLElement.prototype`, so as not to
+  // intercept focus calls elsewhere in the tree) corroborates that a real
+  // `focus()` call landed, not just an incidental DOM/test-runner quirk.
+  it('on a TOTAL bulk-approve failure, returns focus to the "Approve selected" retry button once it re-enables', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ error: { code: 'boom' } }, 500)));
+
+    render(
+      <Provider>
+        <main id="main-content" tabIndex={-1} />
+        <QueueBulkActionBar
+          selectedIds={['b1']}
+          onClear={vi.fn()}
+          readOnly={false}
+          recipientByIdRows={[]}
+        />
+      </Provider>,
+    );
+
+    const approveBtn = screen.getByRole('button', { name: 'Approve selected' });
+    const focusSpy = vi.spyOn(approveBtn, 'focus');
+
+    await approveViaSendNowConfirm();
+
+    await waitFor(() => expect(toastError).toHaveBeenCalledTimes(1)); // failureAll toast
+    await waitFor(() => expect(document.activeElement).toBe(approveBtn));
+    expect(approveBtn).not.toBeDisabled(); // focus() on jsdom silently no-ops while disabled
+    expect(focusSpy).toHaveBeenCalled();
+  });
+
+  // Negative — on a FULL success the outcome branch that sets
+  // `focusRetryOnEnableRef` never runs, so the retry-focus effect must stay
+  // a no-op and the landmark (Base UI's own close-time restore target)
+  // keeps focus. (The success `onClear()` call here is a bare `vi.fn()`, so
+  // unlike production it does NOT actually empty `selectedIds` — this is a
+  // standalone component test with no parent state — meaning the button
+  // stays mounted for the whole assertion window; this test is about the
+  // gating flag, not about surviving an unmount.)
+  it('on a FULL success, leaves focus on #main-content — does NOT reclaim it onto the "Approve selected" button', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ ok: true })));
+    const onClear = vi.fn();
+
+    render(
+      <Provider>
+        <main id="main-content" tabIndex={-1} />
+        <QueueBulkActionBar
+          selectedIds={['b1']}
+          onClear={onClear}
+          readOnly={false}
+          recipientByIdRows={[]}
+        />
+      </Provider>,
+    );
+
+    const approveBtn = screen.getByRole('button', { name: 'Approve selected' });
+    const mainContent = document.getElementById('main-content')!;
+
+    await approveViaSendNowConfirm();
+
+    await waitFor(() => expect(onClear).toHaveBeenCalledTimes(1)); // successAll path
+    await waitFor(() => expect(document.activeElement).toBe(mainContent));
+    expect(document.activeElement).not.toBe(approveBtn);
+  });
+
+  // Negative — a PARTIAL failure calls `onPartialFailure`, not the total-
+  // failure branch, so the retry-focus effect must stay a no-op here too.
+  it('on a PARTIAL failure, leaves focus on #main-content — does NOT reclaim it onto the "Approve selected" button', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) =>
+        String(url).includes('b2')
+          ? jsonResponse({ error: { code: 'broadcast_concurrent_action_blocked' } }, 409)
+          : jsonResponse({ ok: true }),
+      ),
+    );
+
+    render(
+      <Provider>
+        <main id="main-content" tabIndex={-1} />
+        <QueueBulkActionBar
+          selectedIds={['b1', 'b2']}
+          onClear={vi.fn()}
+          readOnly={false}
+          recipientByIdRows={[]}
+        />
+      </Provider>,
+    );
+
+    const approveBtn = screen.getByRole('button', { name: 'Approve selected' });
+    const mainContent = document.getElementById('main-content')!;
+
+    await approveViaSendNowConfirm();
+
+    await waitFor(() => expect(toastWarning).toHaveBeenCalledTimes(1)); // partial toast
+    await waitFor(() => expect(document.activeElement).toBe(mainContent));
+    expect(document.activeElement).not.toBe(approveBtn);
+  });
+});
