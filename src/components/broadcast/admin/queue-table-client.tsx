@@ -27,7 +27,11 @@
  *     whether the `select` column + sr-only announcer render at all.
  *   - `onSelectionChange(ids)` — fired in an effect whenever the local
  *     `rowSelection` changes, so the parent always has the current
- *     broadcastId list.
+ *     broadcastId list. Cross-PR hotfix (broadcast-queue-crosspr-hotfix):
+ *     also re-fires (and prunes `rowSelection`) when `rows` changes without
+ *     a selection toggle, so a row dropping out of a `router.refresh()` no
+ *     longer leaves a stale/phantom id in the mirror or the checkbox state
+ *     — see the comment above the mirror effect below.
  *   - `clearSelectionNonce` — bumped by the parent to force this
  *     component's uncontrolled selection back to `{}` (e.g. after Clear
  *     or a full bulk-approve success). Mirrors the members-directory
@@ -340,11 +344,44 @@ export function QueueTableClient({
   // (`QueueWithBulk`) on every change, so the fixed-bottom
   // `QueueBulkActionBar` (which owns the bulk-approve fan-out now — see
   // module docstring) always has the current broadcastId list.
+  //
+  // Cross-PR hotfix (broadcast-queue-crosspr-hotfix) — the original deps
+  // here were `[rowSelection, onSelectionChange, table]`. `table` is a
+  // stable instance across re-renders (it mutates in place via
+  // `setOptions`, it doesn't get recreated — see the comment above the
+  // `useReactTable` call for why it's still not a safe ESLint
+  // auto-dependency), and `onSelectionChange` is the parent's stable
+  // `setSelectedIds` setter. So when `router.refresh()` drops a
+  // previously-selected row out of `rows` WITHOUT any checkbox toggle
+  // (e.g. the admin approves/rejects ONE row individually while others
+  // stay checked, and the default view filters to `status=['submitted']`),
+  // neither dep changed and this effect never re-fired: the parent mirror,
+  // the toolbar count, and the confirm dialog stayed stuck on the old
+  // (now-partly-absent) selection, and a bulk-approve retry would fan a
+  // doomed `POST /approve` for the row that's no longer there. Adding
+  // `rows` re-fires the mirror on every data change so
+  // `getSelectedRowModel()` (which already intersects `rowSelection` with
+  // the CURRENT row model) re-syncs the parent to only-present ids.
+  //
+  // That alone leaves the local `rowSelection` map itself still holding the
+  // absent row's key — a phantom that would resurrect CHECKED if that row
+  // ever reappears in a later refresh. Prune it here too. Guarded against a
+  // render loop the same way `clearSelectionNonce`/`reselectNonce` below
+  // avoid re-triggering themselves: only call `setRowSelection` when the
+  // prune actually drops a key; once nothing is orphaned this branch is
+  // skipped and the effect settles.
   useEffect(() => {
+    const presentIds = new Set(rows.map((r) => r.broadcastId));
+    const prunedEntries = Object.entries(rowSelection).filter(([id]) =>
+      presentIds.has(id),
+    );
+    if (prunedEntries.length !== Object.keys(rowSelection).length) {
+      setRowSelection(Object.fromEntries(prunedEntries));
+    }
     onSelectionChange?.(
       table.getSelectedRowModel().rows.map((r) => r.original.broadcastId),
     );
-  }, [rowSelection, onSelectionChange, table]);
+  }, [rowSelection, rows, onSelectionChange, table]);
 
   // Task 6 — parent-commanded reset (Clear / full bulk-approve success).
   // Guarded only on the prop being defined at all — direct callers that

@@ -147,6 +147,109 @@ describe('<QueueWithBulk>', () => {
   });
 });
 
+/**
+ * Cross-PR hotfix (broadcast-queue-crosspr-hotfix, Task 1) —
+ * stale-selection-mirror regression found by a holistic post-merge audit
+ * that no single-PR review could see (PR1 built the announcer, PR2 lifted
+ * selection into this wrapper, PR3 added the reselect-on-partial-failure
+ * path; none of them exercised "a row drops out of `rows` while OTHER rows
+ * stay selected, without any selection UI interaction").
+ *
+ * In production this happens via `router.refresh()`: the default queue view
+ * filters to `status=['submitted']`, so approving/rejecting ONE selected row
+ * individually (via its own per-row `ReviewActions`, not the bulk bar) drops
+ * it out of the refreshed `rows` prop while the OTHER checked rows are still
+ * `submitted`. This test simulates that with `rerender` — swapping the
+ * `rows` prop directly — because driving it through the real per-row action
+ * would just be re-testing `ReviewActions`' own fetch/refresh wiring, not
+ * the selection-mirror bug.
+ */
+describe('<QueueWithBulk> — cross-PR hotfix: selection re-sync + prune on a data refresh', () => {
+  it('re-syncs the toolbar count and prunes the dropped row so it does NOT resurrect checked if it reappears', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <Provider>
+        <QueueWithBulk
+          rows={[
+            makeRow({ broadcastId: 'a' }),
+            makeRow({ broadcastId: 'b' }),
+            makeRow({ broadcastId: 'c' }),
+          ]}
+          readOnly={false}
+          columnLabels={LABELS}
+        />
+      </Provider>,
+    );
+
+    const getTbody = () => screen.getByRole('table').querySelector('tbody')!;
+    let rowChecks = within(getTbody()).getAllByRole('checkbox');
+    await user.click(rowChecks[0]!); // a
+    await user.click(rowChecks[1]!); // b
+    await user.click(rowChecks[2]!); // c
+
+    const bar = await screen.findByRole('toolbar');
+    expect(within(bar).getByText('3 selected')).toBeInTheDocument();
+
+    // Simulate `router.refresh()` dropping row `b` out of the filtered
+    // queue (e.g. it was individually approved/rejected) — NO selection
+    // checkbox is touched here, only the `rows` prop changes.
+    rerender(
+      <Provider>
+        <QueueWithBulk
+          rows={[makeRow({ broadcastId: 'a' }), makeRow({ broadcastId: 'c' })]}
+          readOnly={false}
+          columnLabels={LABELS}
+        />
+      </Provider>,
+    );
+
+    // The mirror must re-sync to the two SURVIVING rows — not stay at 3
+    // (the phantom-fan-out bug: a bulk-approve retry would otherwise POST
+    // `/approve` for the now-absent `b` and 409).
+    await waitFor(() => {
+      expect(within(screen.getByRole('toolbar')).getByText('2 selected')).toBeInTheDocument();
+    });
+
+    rowChecks = within(getTbody()).getAllByRole('checkbox');
+    expect(rowChecks).toHaveLength(2);
+    expect(rowChecks[0]).toHaveAttribute('aria-checked', 'true'); // a
+    expect(rowChecks[1]).toHaveAttribute('aria-checked', 'true'); // c
+
+    // Prove the phantom is actually PRUNED from `rowSelection`, not merely
+    // hidden because its row is absent: bring `b` back (e.g. the admin
+    // navigates to a different filter and back) and confirm it reappears
+    // UNCHECKED. A stale `rowSelection.b === true` left over from before the
+    // prune would resurrect it checked here.
+    rerender(
+      <Provider>
+        <QueueWithBulk
+          rows={[
+            makeRow({ broadcastId: 'a' }),
+            makeRow({ broadcastId: 'b' }),
+            makeRow({ broadcastId: 'c' }),
+          ]}
+          readOnly={false}
+          columnLabels={LABELS}
+        />
+      </Provider>,
+    );
+
+    // `b` reappearing doesn't change the selection count (it comes back
+    // unchecked) — settle on the same "2 selected" before reading
+    // checkboxes, so the prune effect's state update from this rerender is
+    // flushed inside `waitFor`'s `act()` wrapper rather than racing it.
+    await waitFor(() => {
+      expect(within(screen.getByRole('toolbar')).getByText('2 selected')).toBeInTheDocument();
+    });
+
+    rowChecks = within(getTbody()).getAllByRole('checkbox');
+    expect(rowChecks).toHaveLength(3);
+    expect(rowChecks[0]).toHaveAttribute('aria-checked', 'true'); // a
+    expect(rowChecks[1]).toHaveAttribute('aria-checked', 'false'); // b — not resurrected
+    expect(rowChecks[2]).toHaveAttribute('aria-checked', 'true'); // c
+  });
+});
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status });
 }
