@@ -677,6 +677,73 @@ describe('QueueBulkActionBar — 60s send-now Undo toast (Task 5, 2026-08-02-bro
     const [message] = toastFn.mock.calls[0] as [string];
     expect(message).toBe('Sending 1 broadcast in 60s.'); // only b1 succeeded
   });
+
+  // Task 3 (2026-08-05-broadcast-crosspr-hotfix, opus audit re-confirm) — the
+  // Undo `onClick` handler maps `cancelApprovedBroadcasts`'s `{cancelled,
+  // tooLate, failed}` tally onto THREE separate toast calls (success/
+  // warning/error). Every existing Undo test above stubs `/cancel` to
+  // uniformly 200, so only the `cancelled` branch has ever run — deleting
+  // either the `if (r.tooLate > 0) toast.warning(...)` or
+  // `if (r.failed > 0) toast.error(...)` line in
+  // `queue-bulk-action-bar.tsx` would leave every test in this file GREEN.
+  // This test drives a MIXED tally (one 409 too-late, one 500 failed) over
+  // a 3-id approval and asserts each outcome landed on the CORRECT toast
+  // method with the CORRECT (real en.json, ICU-resolved) copy — not just
+  // "some toast fired".
+  it('Undo with a MIXED tally (tooLate + failed) fires toast.warning AND toast.error with the correct copy — proves both branches are wired, not just cancelled', async () => {
+    const fetchMock = fetchMockOf(async (url) => {
+      const u = String(url);
+      if (u.endsWith('/approve')) return jsonResponse({ ok: true });
+      // /cancel — classify by id: b1 too-late, b2 hard-failed, b3 cancelled.
+      if (u.endsWith('/b1/cancel')) {
+        return jsonResponse(
+          { error: { code: 'broadcast_cancel_too_late' } },
+          409,
+        );
+      }
+      if (u.endsWith('/b2/cancel')) {
+        return jsonResponse({ error: { code: 'internal_error' } }, 500);
+      }
+      return jsonResponse({ status: 'cancelled' });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <Provider>
+        <QueueBulkActionBar
+          selectedIds={['b1', 'b2', 'b3']}
+          onClear={vi.fn()}
+          readOnly={false}
+          recipientByIdRows={[]}
+        />
+      </Provider>,
+    );
+
+    await approveViaSendNowConfirm();
+
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalledTimes(1)); // successAll (approve outcome)
+    expect(toastFn).toHaveBeenCalledTimes(1); // the Undo toast itself
+    const [, opts] = toastFn.mock.calls[0] as [
+      string,
+      { action?: { onClick: () => Promise<void> } },
+    ];
+
+    await opts.action!.onClick();
+
+    // cancelled → toast.success called a SECOND time (successAll + Undo-cancelled)
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalledTimes(2));
+    expect(toastSuccess).toHaveBeenNthCalledWith(2, 'Cancelled 1 broadcast.');
+    // tooLate → toast.warning with the real ICU-resolved copy
+    await waitFor(() => expect(toastWarning).toHaveBeenCalledTimes(1));
+    expect(toastWarning).toHaveBeenCalledWith(
+      'Already sending — too late to undo 1 broadcast.',
+    );
+    // failed → toast.error with the real ICU-resolved copy
+    await waitFor(() => expect(toastError).toHaveBeenCalledTimes(1));
+    expect(toastError).toHaveBeenCalledWith(
+      "Couldn't undo 1 broadcast — still approved.",
+    );
+  });
 });
 
 describe('QueueBulkActionBar — Task 2 hotfix (2026-08-05-broadcast-crosspr-hotfix, opus a11y audit): total-failure retry focus', () => {
