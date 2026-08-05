@@ -101,6 +101,15 @@
  * per-row request body built from it cannot include `totalRecipients`
  * even by accident. The dialog itself never fetches; it is purely a
  * confirmation gate in front of this component's existing fan-out.
+ *
+ * Task 2 (2026-08-05-broadcast-crosspr-hotfix, opus a11y audit) — on a TOTAL
+ * bulk-approve failure the confirm dialog's own `finalFocus` (raised
+ * eagerly, before the fire-and-forget fan-out resolves — see
+ * `bulk-approve-confirm-dialog.tsx`) lands keyboard/AT focus on
+ * `#main-content` rather than the surviving "Approve selected" retry
+ * button. See the `focusRetryOnEnableRef` ref + effect below for the fix —
+ * it cannot live in the dialog without giving it a multi-second "sending"
+ * open state, which is out of scope for this hotfix.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -166,6 +175,39 @@ export function QueueBulkActionBar({
   // approve/reject-trigger precedent).
   const [confirmOpen, setConfirmOpen] = useState(false);
   const approveBtnRef = useRef<HTMLButtonElement | null>(null);
+
+  // Task 2 (2026-08-05-broadcast-crosspr-hotfix, opus a11y audit) — see the
+  // effect below, right after `handleBulkApprove`.
+  const focusRetryOnEnableRef = useRef(false);
+
+  // Task 2 (2026-08-05-broadcast-crosspr-hotfix, opus a11y audit) — on a
+  // TOTAL bulk-approve failure, `BulkApproveConfirmDialog.handleConfirm`
+  // raises its `closedViaSuccessRef` UNCONDITIONALLY before the fan-out
+  // outcome is known (fire-and-forget `onConfirm`), so `useDialogFinalFocus`
+  // resolves to `#main-content` at dialog-close time even though the
+  // "Approve selected" trigger is still mounted (total failure keeps the
+  // selection — see `handleBulkApprove` below). The dialog cannot fix this
+  // itself: awaiting the fan-out before raising the ref would keep the
+  // dialog open for the whole multi-second chunked fan-out (up to 20
+  // sequential round-trips at BULK_CAP=100), which is a real UX change out
+  // of scope for this hotfix. So the retry-focus lives here instead, gated
+  // by `focusRetryOnEnableRef` (set only in the `succeeded === 0` branch of
+  // `handleBulkApprove`) and consumed in an effect keyed on `executing`
+  // rather than called inline: the button carries `disabled={executing}`,
+  // and `executing` is still `true` at the moment that branch runs (it only
+  // flips to `false` in the `finally` a few lines later) — a disabled
+  // button cannot receive focus. The effect only runs after React commits
+  // the re-enabled DOM for the render where `executing` becomes `false`,
+  // guaranteeing the `.focus()` call actually lands. On SUCCESS (`onClear()`
+  // empties `selectedIds`, unmounting this whole bar) and on PARTIAL failure
+  // the flag is never set, so this is a no-op there — `#main-content`
+  // remains the correct target for those two outcomes.
+  useEffect(() => {
+    if (!executing && focusRetryOnEnableRef.current) {
+      focusRetryOnEnableRef.current = false;
+      approveBtnRef.current?.focus();
+    }
+  }, [executing]);
 
   // Sticky-bar spacer — verbatim copy of `bulk-action-bar.tsx:138-158`.
   const barRef = useRef<HTMLDivElement | null>(null);
@@ -292,6 +334,11 @@ export function QueueBulkActionBar({
         toast.error(t('failureAll'));
         // Keep the bar mounted (selection unchanged) so the admin can retry
         // without re-selecting.
+        //
+        // Task 2 (2026-08-05-broadcast-crosspr-hotfix) — flag a pending
+        // retry-focus; consumed by the effect above once `executing` flips
+        // back to `false` and the button is re-enabled.
+        focusRetryOnEnableRef.current = true;
       } else {
         toast.warning(t('partial', { ok: succeeded, fail: failures.length }));
         // Task 6 CF-2 — tell the caller which ids failed so it can decide

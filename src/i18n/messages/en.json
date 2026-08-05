@@ -2918,8 +2918,7 @@
             "failed": "Couldn't undo {count, plural, one {# broadcast} other {# broadcasts}} — still approved."
           },
           "progress": {
-            "label": "Approving…",
-            "message": "Approving {done} of {total}…"
+            "label": "Approving…"
           }
         },
         "card": {

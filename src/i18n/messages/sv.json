@@ -2918,8 +2918,7 @@
             "failed": "Kunde inte ångra {count, plural, one {# utskick} other {# utskick}} — fortfarande godkända."
           },
           "progress": {
-            "label": "Godkänner…",
-            "message": "Godkände {done} av {total}…"
+            "label": "Godkänner…"
           }
         },
         "card": {

@@ -166,6 +166,62 @@ describe('ApproveDialog — send-now Undo toast (Task 5, 2026-08-02-broadcast-re
     );
   });
 
+  // Task 3 (2026-08-05-broadcast-crosspr-hotfix, opus audit re-confirm) — the
+  // Undo `onClick` handler here is duplicated verbatim from the bulk bar
+  // (module docstring: "same 60s send-now Undo toast as the bulk bar,
+  // reusing its i18n namespace verbatim") and has the SAME untested
+  // tooLate/failed branches. The single-approve path only ever sends ONE
+  // id, so the most important race to cover here is tooLate (the cron
+  // already dispatched before the admin clicked Undo) — a bare "some toast
+  // fired" assertion would pass even if `toast.warning` were swapped for
+  // `toast.success` or deleted entirely, so this asserts the SPECIFIC
+  // method + real ICU-resolved copy, and that success/error did NOT also
+  // fire for this outcome.
+  it('a single send-now Undo that races the dispatch cron (409 too-late) shows toast.warning with the tooLate copy — NOT toast.success', async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (String(url).endsWith('/approve')) {
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      }
+      if (String(url).endsWith('/cancel')) {
+        return new Response(
+          JSON.stringify({ error: { code: 'broadcast_cancel_too_late' } }),
+          { status: 409 },
+        );
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <ApproveDialog broadcastId="b1" open onOpenChange={() => {}} />
+      </NextIntlClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+
+    await waitFor(() =>
+      expect(toastSuccess).toHaveBeenCalledWith('Broadcast approved.'),
+    );
+    expect(toastFn).toHaveBeenCalledTimes(1);
+    const [, opts] = toastFn.mock.calls[0] as [
+      string,
+      { action?: { onClick: () => Promise<void> } },
+    ];
+    const successCallsBeforeUndo = toastSuccess.mock.calls.length;
+
+    await opts.action!.onClick();
+
+    await waitFor(() => expect(toastWarning).toHaveBeenCalledTimes(1));
+    expect(toastWarning).toHaveBeenCalledWith(
+      'Already sending — too late to undo 1 broadcast.',
+    );
+    // toast.success must NOT fire again for the Undo outcome — only the
+    // pre-existing "Broadcast approved." call from before counts.
+    expect(toastSuccess).toHaveBeenCalledTimes(successCallsBeforeUndo);
+    expect(toastError).not.toHaveBeenCalled();
+  });
+
   it('a schedule success shows NO Undo toast', async () => {
     stubApproveAndCancelFetch();
 
