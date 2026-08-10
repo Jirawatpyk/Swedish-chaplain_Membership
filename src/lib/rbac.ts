@@ -53,7 +53,6 @@ import { hasPermission } from '@/modules/auth/domain/permissions/evaluator';
 import type { LegacyRow } from '@/modules/auth/domain/permissions/legacy-shim';
 import type { PermissionKey } from '@/modules/auth/domain/permissions/permission-catalogue';
 import type { Role } from '@/modules/auth/domain/role';
-import { auditRepo } from '@/modules/auth/infrastructure/db/audit-repo';
 import type { UserId } from '@/modules/auth/domain/branded';
 
 /** Injection seam — production values live in `defaultDeps` below. */
@@ -115,9 +114,19 @@ async function pathFromHeaders(): Promise<string> {
 
 const defaultDeps: RbacDeps = {
   rbacV2: env.features.rbacV2,
-  getSession: getCurrentSession,
+  // Called through, not captured. `getSession: getCurrentSession` dereferenced
+  // the export at module-eval time, which (a) blew up any test that partially
+  // mocks '@/lib/auth-session' — the module is imported transitively by every
+  // swept page — and (b) froze the binding before a mock could replace it.
+  getSession: () => getCurrentSession(),
   audit: {
+    // Imported on demand, not at module scope. A static import would drag the
+    // audit repo — and through it the Postgres client, which builds itself at
+    // module eval — into the import graph of EVERY staff page, whether or not
+    // that request ever denies. The dynamic import keeps the DB out of the
+    // happy path entirely and is paid for only on the denial branch.
     append: async (event) => {
+      const { auditRepo } = await import('@/modules/auth/infrastructure/db/audit-repo');
       await auditRepo.append(event);
     },
   },

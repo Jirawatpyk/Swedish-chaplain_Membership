@@ -6231,6 +6231,7 @@
       "session_forcibly_ended": "Session tvångsavslutad",
       "concurrent_sessions_revoked": "Samtidiga sessioner återkallade",
       "manager_denied_write": "Skrivåtkomst nekad för Manager",
+      "permission_denied": "Åtkomst nekad",
       "invitation_redemption_failed": "Inlösen av inbjudan misslyckades",
       "email_verification_consumed": "E-post verifierad",
       "plan_cloned": "Paket klonat",

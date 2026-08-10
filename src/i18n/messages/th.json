@@ -6231,6 +6231,7 @@
       "session_forcibly_ended": "บังคับสิ้นสุดเซสชัน",
       "concurrent_sessions_revoked": "ยกเลิกเซสชันที่เปิดพร้อมกัน",
       "manager_denied_write": "ปฏิเสธสิทธิ์แก้ไขของผู้จัดการ",
+      "permission_denied": "ถูกปฏิเสธสิทธิ์การเข้าถึง",
       "invitation_redemption_failed": "ใช้คำเชิญไม่สำเร็จ",
       "email_verification_consumed": "ยืนยันอีเมลแล้ว",
       "plan_cloned": "คัดลอกแพ็กเกจ",

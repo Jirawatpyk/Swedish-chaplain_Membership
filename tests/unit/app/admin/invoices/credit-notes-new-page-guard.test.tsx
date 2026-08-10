@@ -42,6 +42,9 @@ vi.mock('next-intl/server', () => ({
 
 vi.mock('@/lib/auth-session', () => ({
   requireSession: vi.fn().mockResolvedValue({ user: { role: 'admin' } }),
+  // 016 T027 — swept pages gate via requirePagePermission, which reads
+  // getCurrentSession. Same session as requireSession so the case is unchanged.
+  getCurrentSession: vi.fn().mockResolvedValue({ user: { role: 'admin' } }),
 }));
 
 vi.mock('@/lib/tenant-context', () => ({

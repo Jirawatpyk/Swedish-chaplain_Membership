@@ -6231,6 +6231,7 @@
       "session_forcibly_ended": "Session forcibly ended",
       "concurrent_sessions_revoked": "Concurrent sessions revoked",
       "manager_denied_write": "Manager write access denied",
+      "permission_denied": "Permission denied",
       "invitation_redemption_failed": "Invitation redemption failed",
       "email_verification_consumed": "Email verified",
       "plan_cloned": "Plan cloned",
