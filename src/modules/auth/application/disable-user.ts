@@ -29,7 +29,7 @@ import { Result, err, ok } from '@/lib/result';
 import { isLastAdminTriggerError } from '@/lib/db-errors';
 import type { UserId } from '@/modules/auth/domain/branded';
 import type { UserAccount } from '@/modules/auth/domain/user';
-import { isAdministrativeRole } from '@/modules/auth/domain/role';
+import { administrativeRoles, isAdministrativeRole } from '@/modules/auth/domain/role';
 // Type-only — see sign-in.ts for the Clean Architecture rationale.
 import type { UserRepo } from '@/modules/auth/infrastructure/db/user-repo';
 import type { SessionRepo } from '@/modules/auth/infrastructure/db/session-repo';
@@ -86,10 +86,16 @@ export async function disableUser(
   // The DB trigger `users_last_admin_protection` (migration 0003) is
   // the second line of defence and closes the race window between
   // `countActiveAdministrators()` and `disable()`.
-  // 016 T026 — population mirrors `users_last_admin_guard()` (migration 0286):
-  // disabling the last active administrator of EITHER role is refused.
+  // 016 T026/T019 — the counted population is flag-aware
+  // (`administrativeRoles`): OFF = admin ∪ super_admin (mirrors
+  // `users_last_admin_guard()`, migration 0286); ON = super_admin alone —
+  // counting plain admins there would let the last super_admin be disabled
+  // while only plain admins remain (SC-003 lockout). App stricter than the
+  // trigger is safe; PR 5 (T069) narrows the trigger to match.
   if (isAdministrativeRole(target.role, deps.rbacV2) && target.status === 'active') {
-    const activeAdmins = await deps.users.countActiveAdministrators();
+    const activeAdmins = await deps.users.countActiveAdministrators(
+      administrativeRoles(deps.rbacV2),
+    );
     if (activeAdmins <= 1) {
       return err({ code: 'last-admin-protection' });
     }

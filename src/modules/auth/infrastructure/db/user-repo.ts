@@ -13,6 +13,7 @@ import {
   getTableColumns,
   gte,
   ilike,
+  inArray,
   isNull,
   lt,
   notExists,
@@ -115,7 +116,7 @@ export interface UserRepo {
   clearFailedCount(id: UserId): Promise<void>;
   setLocked(id: UserId, until: Date): Promise<void>;
   clearLock(id: UserId): Promise<void>;
-  countActiveAdministrators(): Promise<number>;
+  countActiveAdministrators(roles: readonly Role[]): Promise<number>;
   createPending(args: {
     email: EmailAddress;
     role: Role;
@@ -410,21 +411,21 @@ export const userRepo: UserRepo = {
    * administrator always exists" (FR-011 + Edge Case Concurrent last-admin
    * race).
    *
-   * 016 T026: the population is `admin` UNION `super_admin` and MUST stay
-   * identical to `users_last_admin_guard()` (migration 0286) and to
-   * `ADMINISTRATIVE_ROLES` in the Domain. Named `countActiveAdministrators`
-   * rather than tasks.md T026's `countActiveSuperAdmins` because during the
-   * transition it counts BOTH roles — a super_admin-only name would describe
-   * behaviour the function must not have until PR 5 (T069) narrows all three
-   * in one commit.
+   * 016 T026/T019: the population is CALLER-SUPPLIED — every use case passes
+   * `administrativeRoles(deps.rbacV2)` so the count is flag-aware: OFF leg =
+   * admin ∪ super_admin (mirrors `users_last_admin_guard()`, migration 0286);
+   * ON leg = super_admin ALONE. The narrowing matters: post-D4 only
+   * super_admin holds `users.manage`, so counting plain admins on the ON leg
+   * would let the last super_admin be erased/demoted while only plain admins
+   * remain — a permanent tenant lockout (SC-003). App stricter than the DB
+   * trigger is safe; PR 5 (T069) narrows the trigger to match. The parameter
+   * is REQUIRED so no new call site can silently fall back to the union.
    */
-  async countActiveAdministrators(): Promise<number> {
+  async countActiveAdministrators(roles: readonly Role[]): Promise<number> {
     const rows = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(users)
-      .where(
-        sql`${users.role} IN ('admin', 'super_admin') AND ${users.status} = 'active'`,
-      );
+      .where(and(inArray(users.role, [...roles]), eq(users.status, 'active')));
     return rows[0]?.count ?? 0;
   },
 

@@ -62,7 +62,7 @@ import { logger } from '@/lib/logger';
 import { isLastAdminTriggerError } from '@/lib/db-errors';
 import { err, ok, type Result } from '@/lib/result';
 import type { UserId } from '@/modules/auth/domain/branded';
-import { isAdministrativeRole } from '@/modules/auth/domain/role';
+import { administrativeRoles, isAdministrativeRole } from '@/modules/auth/domain/role';
 import type { ActorRef } from '@/modules/auth/domain/audit-event';
 import type { UserRepo } from '@/modules/auth/infrastructure/db/user-repo';
 import type { SessionRepo } from '@/modules/auth/infrastructure/db/session-repo';
@@ -142,7 +142,7 @@ export async function eraseUser(
     target !== null &&
     isAdministrativeRole(target.role, deps.rbacV2) &&
     target.status === 'active' &&
-    (await deps.users.countActiveAdministrators()) <= 1
+    (await deps.users.countActiveAdministrators(administrativeRoles(deps.rbacV2))) <= 1
   ) {
     logger.error(
       { requestId: input.requestId, userId: input.userId },

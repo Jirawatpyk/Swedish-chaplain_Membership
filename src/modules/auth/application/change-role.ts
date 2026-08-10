@@ -17,7 +17,12 @@
 import { Result, err, ok } from '@/lib/result';
 import { isLastAdminTriggerError } from '@/lib/db-errors';
 import type { UserId } from '@/modules/auth/domain/branded';
-import { isAdministrativeRole, isStaffRole, type Role } from '@/modules/auth/domain/role';
+import {
+  administrativeRoles,
+  isAdministrativeRole,
+  isStaffRole,
+  type Role,
+} from '@/modules/auth/domain/role';
 import type { UserAccount } from '@/modules/auth/domain/user';
 // Type-only — see sign-in.ts for the Clean Architecture rationale.
 import type { UserRepo } from '@/modules/auth/infrastructure/db/user-repo';
@@ -85,14 +90,20 @@ export async function changeRole(
   // administrative set, not on the `'admin'` literal. Once PR 3 makes
   // super_admin assignable, a single-admin tenant promoting its only admin to
   // super_admin PRESERVES administrative coverage — keying on `'admin'` would
-  // refuse it with `last-admin-protection`. The population here mirrors
-  // `users_last_admin_guard()` (migration 0286) exactly.
+  // refuse it with `last-admin-protection`. The counted population is
+  // flag-aware (`administrativeRoles`, T019): OFF = admin ∪ super_admin
+  // (mirrors `users_last_admin_guard()`, migration 0286); ON = super_admin
+  // alone — counting plain admins there would let the last super_admin be
+  // demoted while only plain admins remain (SC-003 lockout). App stricter
+  // than the trigger is safe; PR 5 (T069) narrows the trigger to match.
   if (
     isAdministrativeRole(target.role, deps.rbacV2) &&
     target.status === 'active' &&
     !isAdministrativeRole(input.newRole, deps.rbacV2)
   ) {
-    const activeAdmins = await deps.users.countActiveAdministrators();
+    const activeAdmins = await deps.users.countActiveAdministrators(
+      administrativeRoles(deps.rbacV2),
+    );
     if (activeAdmins <= 1) {
       return err({ code: 'last-admin-protection' });
     }

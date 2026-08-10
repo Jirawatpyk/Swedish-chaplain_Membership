@@ -59,7 +59,7 @@
 - [x] T016 [P] [US2] API exhaustiveness fs-walk test (recognise `export async function METHOD` / `export const METHOD = <ident|call>`; expected-class column `role-matrix|public|cron-bearer|webhook-signature|portal-member`; fail on unclassified) in `tests/contract/rbac/api-route-exhaustiveness.test.ts`
 - [x] T017 [P] [US2] Denial-audit contract test per role (pinned payload `{actor_user_id, role, permission_key, route_path-no-query, request_id}`; fail-open: emit-throw still serves denial; REAL role for unknown values) in `tests/contract/rbac/permission-denied-audit.test.ts`
 - [x] T018 [P] [US2] Integration (live Neon, tx-wrapped ROLLBACK): transitional UNION trigger rehearsal — refuses demote/disable/delete/ERASE of last guarded row; plain `UPDATE`/non-last `DELETE` pass (0004 return-row); `isLastAdminTriggerError` matches ERRCODE+substring — in `tests/integration/auth/last-admin-guard-transitional.test.ts`
-- [ ] T019 [P] [US2] Integration: erase-user app-layer pre-flight refuses erasing the last super_admin while a plain admin exists (SC-003 erase path) in `tests/integration/auth/erase-last-super-admin.test.ts`
+- [x] T019 [P] [US2] Integration: erase-user app-layer pre-flight refuses erasing the last super_admin while a plain admin exists (SC-003 erase path) in `tests/integration/auth/erase-last-super-admin.test.ts` — RED exposed a REAL defect: `countActiveAdministrators()` hardcoded the union, so the ON-leg erase of the last SA passed pre-flight (permanent lockout). Fix: population is now caller-supplied (`countActiveAdministrators(administrativeRoles(rbacV2))`) across erase-user + change-role + disable-user; repo `inArray` narrowing proven by a live-Neon relative-count case
 
 ### Implementation — infrastructure
 
