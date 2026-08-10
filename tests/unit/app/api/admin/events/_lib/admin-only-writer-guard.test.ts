@@ -92,6 +92,9 @@ function buildRequest(): NextRequest {
 }
 
 const baseInput = {
+  // 016 T029 — the guard evaluates the route's flag-ON key through the
+  // evaluator (legacyF6Guard row on the OFF leg); denial SHAPES stay D9.
+  permissionKey: 'events.write',
   attemptedRoute: '/api/admin/events/test',
   attemptedAction: 'test_action',
   eventId: null,
@@ -105,6 +108,32 @@ describe('adminOnlyWriterGuard (Round-1 test-M7)', () => {
     expect(result.kind).toBe('allow');
     if (result.kind === 'allow') {
       expect(result.actorUserId).toBe('admin-1');
+    }
+    expect(emitStandaloneMock).not.toHaveBeenCalled();
+  });
+
+  it('016 T029 — super_admin → allow (D16 evaluates as admin on the OFF leg; the literal admin check 404ed every promoted super_admin post-Migration-C)', async () => {
+    getCurrentSessionMock.mockResolvedValue({
+      user: { id: 'sa-1', role: 'super_admin' as const, email: 'sa@t' },
+    });
+    const { adminOnlyWriterGuard } = await loadGuard();
+    const result = await adminOnlyWriterGuard(buildRequest(), baseInput);
+    expect(result.kind).toBe('allow');
+    if (result.kind === 'allow') {
+      expect(result.actorUserId).toBe('sa-1');
+    }
+    expect(emitStandaloneMock).not.toHaveBeenCalled();
+  });
+
+  it('016 T029 — marketing → deny 404, no audit (D16 denies it on the OFF leg; the audit port cannot attribute it until T033 widens the enum)', async () => {
+    getCurrentSessionMock.mockResolvedValue({
+      user: { id: 'mk-1', role: 'marketing' as const, email: 'mk@t' },
+    });
+    const { adminOnlyWriterGuard } = await loadGuard();
+    const result = await adminOnlyWriterGuard(buildRequest(), baseInput);
+    expect(result.kind).toBe('deny');
+    if (result.kind === 'deny') {
+      expect(result.response.status).toBe(404);
     }
     expect(emitStandaloneMock).not.toHaveBeenCalled();
   });

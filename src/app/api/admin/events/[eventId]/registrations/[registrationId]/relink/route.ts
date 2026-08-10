@@ -92,6 +92,7 @@ export async function POST(
   // disclosure asymmetry; matches sibling erase route). Manager → 403
   // + audit, member → 404 + audit, no-session/unknown → 404.
   const guard = await adminOnlyWriterGuard(request, {
+    permissionKey: 'events.relink',
     attemptedRoute: `/api/admin/events/${eventId}/registrations/${registrationId}/relink`,
     attemptedAction: 'relink_registration',
     eventId,

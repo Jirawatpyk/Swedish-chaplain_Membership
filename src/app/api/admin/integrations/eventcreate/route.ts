@@ -28,6 +28,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     return new NextResponse(null, { status: 404 });
   }
   const guard = await adminOnlyGuard(request, {
+    permissionKey: 'settings.integrations',
     attemptedRoute: ROUTE,
     attemptedAction: 'load_integration_config',
   });

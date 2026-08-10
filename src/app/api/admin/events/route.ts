@@ -279,6 +279,7 @@ export async function POST(request: NextRequest) {
   // path above which allows manager-read. See `adminOnlyWriterGuard`
   // doc-comment for the full FR-035 matrix.
   const guard = await adminOnlyWriterGuard(request, {
+    permissionKey: 'events.write',
     attemptedRoute: '/api/admin/events',
     attemptedAction: 'create_event',
     eventId: null,

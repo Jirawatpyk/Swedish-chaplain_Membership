@@ -57,6 +57,7 @@ export async function POST(
   // never reaches the regex (info-disclosure asymmetry; matches relink
   // + erase sibling-route ordering).
   const guard = await adminOnlyWriterGuard(request, {
+    permissionKey: 'events.write',
     attemptedRoute: `/api/admin/events/${eventId}/toggle-cultural-event`,
     attemptedAction: 'toggle_cultural_event',
     eventId,

@@ -85,6 +85,7 @@ export async function POST(
   // for the FULL request path. Manager → 403 + audit, member → 404 +
   // audit, no-session/unknown → 404.
   const guard = await adminOnlyWriterGuard(request, {
+    permissionKey: 'events.erasure',
     attemptedRoute: `/api/admin/events/${eventId}/registrations/${registrationId}/erase`,
     attemptedAction: 'erase_attendee_pii',
     eventId,

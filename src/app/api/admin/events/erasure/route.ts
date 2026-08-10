@@ -95,6 +95,7 @@ export async function POST(request: NextRequest) {
   // fires for the full request. Manager → 403 + audit, member → 404 + audit,
   // no-session/unknown → 404.
   const guard = await adminOnlyWriterGuard(request, {
+    permissionKey: 'events.erasure',
     attemptedRoute: ATTEMPTED_ROUTE,
     attemptedAction: 'erase_attendees_by_email',
     eventId: null,

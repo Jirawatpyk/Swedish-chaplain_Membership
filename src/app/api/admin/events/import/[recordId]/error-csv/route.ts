@@ -69,6 +69,7 @@ export async function GET(
 
   // 2. RBAC — admin only.
   const guard = await adminOnlyGuard(request, {
+    permissionKey: 'events.write',
     attemptedRoute: '/api/admin/events/import/{recordId}/error-csv',
     attemptedAction: 'csv_import_error_csv_download',
   });

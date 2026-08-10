@@ -29,7 +29,10 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { logger } from '@/lib/logger';
 import { getCurrentSession } from '@/lib/auth-session';
+import { canPerform } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { legacyF6Guard } from '@/modules/auth/domain/permissions/legacy-shim';
+import type { PermissionKey } from '@/modules/auth/domain/permissions/permission-catalogue';
 import { makeStandaloneAuditDeps } from '@/modules/events';
 import { asTenantId } from '@/modules/members';
 import { asUserId, type UserId } from '@/modules/auth';
@@ -140,7 +143,9 @@ export async function emitEventsRoleViolation(
  * Behaviour matrix (spec-canonical, distinct from the
  * `/admin/integrations/eventcreate/**` sibling guard which is 404-for-all):
  *
- *   - `admin`               → `{kind:'allow', actorUserId}` (caller continues)
+ *   - key-holder (evaluator) → `{kind:'allow', actorUserId}` (caller
+ *     continues). OFF leg: admin + super_admin (D16); ON leg: whoever holds
+ *     the route's `permissionKey` (016 T029).
  *   - `manager`             → 403 Forbidden + RFC 7807 body + audit
  *     emit. Action-level deny: "manager sees the surface, just cannot
  *     perform the mutation" (spec.md:250). The 403 body is intentionally
@@ -174,6 +179,18 @@ export async function emitEventsRoleViolation(
 export async function adminOnlyWriterGuard(
   request: NextRequest,
   input: {
+    /**
+     * 016 T029 — the route's flag-ON `PermissionKey` (`events.write` /
+     * `events.erasure` / `events.relink`). ADMISSION goes through the
+     * evaluator with the `legacyF6Guard` row: on the OFF leg that row is the
+     * pre-016 admin-only check with D16 totalisation (super_admin → admin
+     * passes — the literal `role === 'admin'` used to 404 every promoted
+     * super_admin after Migration C; marketing/unknown denied); on the ON leg
+     * the key decides, which is what lets PR 4 grant marketing `events.write`
+     * without touching this guard again. Denial SHAPES below stay the D9
+     * route-local contract verbatim.
+     */
+    readonly permissionKey: PermissionKey;
     readonly attemptedRoute: string;
     readonly attemptedAction: string;
     /**
@@ -259,7 +276,7 @@ export async function adminOnlyWriterGuard(
     };
   }
   const role = session.user.role;
-  if (role === 'admin') {
+  if (canPerform(role, input.permissionKey, legacyF6Guard)) {
     // Brand at the trust boundary — session.user.id is a plain string
     // post-deserialization; the smart constructor pins the brand for
     // every downstream consumer.

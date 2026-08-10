@@ -10,8 +10,10 @@
  *
  * See `archiveEvent` use-case for full algorithm.
  *
- * Authz: **admin only** (FR-035 — explicit admin-only action).
- * Manager + member → 404 + `role_violation_blocked` audit.
+ * Authz: **admin-only writer surface** (FR-035) via `adminOnlyWriterGuard`
+ * with `events.write`. Manager → 403 + RFC 7807 + `role_violation_blocked`
+ * audit; member/unknown/no-session → 404 (the pre-016 header claimed 404 for
+ * manager too — stale since the Phase-9 writer-guard split; fixed in T029).
  *
  * Body: empty (`{}` or omitted; reason text deferred to a future
  * surface).
@@ -78,6 +80,7 @@ export async function POST(
   // never reaches the regex (info-disclosure asymmetry; matches relink
   // + erase sibling-route ordering).
   const guard = await adminOnlyWriterGuard(request, {
+    permissionKey: 'events.write',
     attemptedRoute: `/api/admin/events/${eventId}/archive`,
     attemptedAction: 'archive_event',
     eventId,

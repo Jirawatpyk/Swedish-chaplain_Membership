@@ -87,6 +87,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   // guard semantics (manager sees the events surface but cannot
   // mutate) instead of the integration-family 404-for-all pattern.
   const guard = await adminOnlyWriterGuard(request, {
+    permissionKey: 'events.write',
     attemptedRoute: ROUTE,
     eventId: null,
     attemptedAction: 'csv_import',
