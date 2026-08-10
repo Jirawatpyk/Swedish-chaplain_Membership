@@ -77,8 +77,11 @@ describe('changeRole — staff↔member portal boundary (all five roles)', () =>
     STAFF.flatMap((from) => STAFF.filter((to) => to !== from).map((to) => [from, to] as const)),
   )('permits staff→staff %s → %s', async (from, to) => {
     const result = await attempt(from, to);
-    // Staff↔staff is legal — Migration C promotion and its demotion rollback
-    // both depend on admin ↔ super_admin being permitted.
+    // Staff↔staff is legal. Note which direction depends on THIS use case:
+    // Migration C's promotion is a raw `UPDATE users SET role='super_admin'`
+    // inside the runner's batch transaction (design § 5), so it does not pass
+    // through changeRole — but the account-level rollback (demotion back to
+    // admin) does, and so will every UI role change from PR 3 onward.
     expect(result.ok).toBe(true);
   });
 });

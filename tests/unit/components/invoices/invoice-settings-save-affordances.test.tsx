@@ -96,6 +96,43 @@ function renderSettings(
   );
 }
 
+describe('InvoiceSettingsForm — read-only rendering (canEdit=false)', () => {
+  // 016 PR 1 replaced the `currentUserRole` prop with a server-derived
+  // `canEdit` boolean so the client never re-derives authorization from a role
+  // literal. Every existing case passes `canEdit`, so the false branch — the
+  // one an unauthorized viewer actually sees — had no coverage at all
+  // (re-review 016 PR1, F-2).
+  function renderReadOnly() {
+    return render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <InvoiceSettingsForm initialValues={FIXTURE} canEdit={false} exists />
+      </NextIntlClientProvider>,
+    );
+  }
+
+  it('hides the submit affordance entirely', () => {
+    const { queryByRole } = renderReadOnly();
+    expect(queryByRole('button', { name: /save/i })).toBeNull();
+  });
+
+  it('disables the inputs', () => {
+    const { container } = renderReadOnly();
+    const inputs = container.querySelectorAll('input');
+    expect(inputs.length).toBeGreaterThan(0);
+    for (const input of inputs) {
+      expect(input).toBeDisabled();
+    }
+  });
+
+  it('never becomes dirty, so the sticky save bar cannot appear', () => {
+    const { container, queryByRole } = renderReadOnly();
+    const input = container.querySelector('input');
+    expect(input).not.toBeNull();
+    fireEvent.change(input as HTMLInputElement, { target: { value: 'CHANGED' } });
+    expect(queryByRole('button', { name: /save/i })).toBeNull();
+  });
+});
+
 describe('InvoiceSettingsForm — C3 sticky-bar clearance', () => {
   it('pads the content wrapper only while dirty, so the sticky bar never covers the last section', () => {
     const { container } = renderSettings();

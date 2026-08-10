@@ -76,15 +76,16 @@ export async function GET(
   if (!session) return new NextResponse(null, { status: 404 });
   const role = session.user.role;
   if (role !== 'admin' && role !== 'manager') {
-    // Narrowed `role` passed directly so future Role-union additions
-    // fail to compile against the helper's `'member' | 'manager'`.
     await emitEventsRoleViolation(request, {
       // Round-3 type-M closure — brand at callsite for consistency
       // with the 5 other admin write routes' actor-id discipline.
       actorUserId: asUserId(session.user.id),
-      // 016 PR1: cast preserved — PR 2 sweeps this F6 route to the evaluator
-      // (legacyF6Guard) and widens `EmitEventsRoleViolationInput.actorRole`
-      // to the full staff-role union with it.
+      // Pre-016 this call passed the narrowed `role` directly, so a
+      // Role-union addition failed to compile here — a deliberate tripwire.
+      // 016 PR 1 widened Role and had to cast, which SUPPRESSES that signal;
+      // PR 2 sweeps this F6 route to the evaluator (legacyF6Guard) and widens
+      // `EmitEventsRoleViolationInput.actorRole` to the full staff-role union,
+      // restoring it. Remove the cast and this note together.
       actorRole: role as 'manager' | 'member',
       attemptedRoute: `/api/admin/events/${eventId}`,
       attemptedAction: 'load_event_detail',

@@ -122,11 +122,18 @@ describe('environment discipline (design § 10)', () => {
   it('tests/setup.ts does not force-set FEATURE_RBAC_V2 (CI matrix must control it)', () => {
     // Source scan, not an env probe: an env probe passes whatever setup.ts did.
     // Idiom matches tests/unit/architecture/*.
+    //
+    // Matches the flag ANYWHERE in the file rather than an assignment shape:
+    // setup.ts forces its other flags with `process.env['FEATURE_X'] = 'true'`
+    // (bracket notation), which an assignment-shaped regex misses — and that
+    // copy-the-line-above edit is precisely the regression this guards against.
+    // `vi.stubEnv('FEATURE_RBAC_V2', …)` and `??=` would slip past too. setup.ts
+    // has no legitimate reason to name this flag in any form.
     const setup = readFileSync(
       join(process.cwd(), 'tests', 'setup.ts'),
       'utf8',
     );
-    expect(setup).not.toMatch(/FEATURE_RBAC_V2\s*[=:]/);
+    expect(setup).not.toMatch(/FEATURE_RBAC_V2/);
   });
 
   it('getPermissionSet is synchronous and env-independent (D15 purity)', () => {

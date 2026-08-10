@@ -69,7 +69,7 @@
 - [ ] T023 [US2] Author Migration B (audit enum `+= 'permission_denied'`; `CREATE OR REPLACE users_last_admin_guard()` UNION population preserving ERRCODE 23514 + `'last-admin-protection'` substring + 0004 return-row) + journal entry + `REQUIRED_ENUM_VALUES` `permission_denied`
 - [ ] T024 [US2] Register `permission_denied` in all 4 places (audit domain const, pgEnum, 2 test counts) — `src/modules/auth/**` audit taxonomy + `pnpm check:audit-events`/`check:audit-counts` green
 - [ ] T025 [US2] Apply Migration B to dev Neon; run T018 GREEN
-- [ ] T026 [US2] Rename `countActiveAdmins()` → `countActiveSuperAdmins()` and wire THREE callers — pre-flight added to `erase-user.ts` (new), kept in `change-role.ts` + `disable-user.ts` — in `src/modules/auth/application/`
+- [ ] T026 [US2] Rename `countActiveAdmins()` → `countActiveSuperAdmins()` and wire THREE callers — pre-flight added to `erase-user.ts` (new), kept in `change-role.ts` + `disable-user.ts` — in `src/modules/auth/application/`. **Re-key the existing last-admin pre-flight while you are there** (`change-role.ts`, currently `target.role === 'admin' && newRole !== 'admin'`): once PR 3 makes super_admin assignable, a single-admin tenant promoting its only admin → super_admin would be refused with `last-admin-protection` even though the promotion PRESERVES coverage. Guard on the elevated-staff set, not the `'admin'` literal (re-review 016 PR1, V-1 carry-forward — D13 does not name this)
 
 ### Implementation — the sweep (behaviour-preserving under flag; T015 cells are the referee)
 

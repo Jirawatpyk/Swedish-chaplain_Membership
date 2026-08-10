@@ -35,8 +35,13 @@ call sites converted in the PR-2 sweep; their flag-OFF shim row class is
 `legacyAdminOrManager`, which after D16 normalisation is extensionally identical to
 `legacySessionOnly` — super_admin→admin passes, marketing/unknown denied):
 `/admin/credit-notes` · `/admin/events` · `/admin/events/[eventId]` ·
-`/admin/members/[memberId]/benefits` · `/admin/renewals` · `/admin/renewals/[cycleId]` ·
+`/admin/members/[memberId]/benefits`\* · `/admin/renewals` · `/admin/renewals/[cycleId]` ·
 `/admin/renewals/tasks` · `/admin/settings/renewals/schedules`
+
+\* `/admin/members/[memberId]/benefits` deviates twice and its PR-2 conversion must fix both:
+its deny arm **throws** (rendering the 500 boundary at `(staff)/admin/error.tsx`) instead of
+denying, and the check sits **below** the `getMember` + `computeBenefitUsage` PII reads. Convert it
+to `notFound()` placed ABOVE those two reads (re-review 016 PR1, C-2).
 
 **Class B — 21 admin-only-checked pages** (`role !== 'admin'` → notFound/redirect; the
 observed guard is the flag-OFF expectation): broadcasts/new, broadcasts/templates{,/new,

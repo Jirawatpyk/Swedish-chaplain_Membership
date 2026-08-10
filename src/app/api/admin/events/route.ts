@@ -90,11 +90,6 @@ export async function GET(request: NextRequest) {
   if (!session) return new NextResponse(null, { status: 404 });
   const role = session.user.role;
   if (role !== 'admin' && role !== 'manager') {
-    // TS narrows `role` to `'member'` after the guard. Passing `role`
-    // directly (no `as 'member'` cast) means a future Role-union
-    // addition (e.g. `'treasurer'`) fails this call to compile against
-    // the helper's `'member' | 'manager'` param — surfaceable signal,
-    // not silent audit mis-labelling.
     await emitEventsRoleViolation(request, {
       // Round-3 type-M closure — brand at this callsite for
       // consistency with the 5 other admin write routes' actor-id
@@ -102,9 +97,12 @@ export async function GET(request: NextRequest) {
       // any string subtype (UserId widens cleanly); this brand is
       // future-proof against tightening the helper to require UserId.
       actorUserId: asUserId(session.user.id),
-      // 016 PR1: cast preserved — PR 2 sweeps this F6 route to the evaluator
-      // (legacyF6Guard) and widens `EmitEventsRoleViolationInput.actorRole`
-      // to the full staff-role union with it.
+      // Pre-016 this call passed the narrowed `role` directly, so a
+      // Role-union addition failed to compile here — a deliberate tripwire.
+      // 016 PR 1 widened Role and had to cast, which SUPPRESSES that signal;
+      // PR 2 sweeps this F6 route to the evaluator (legacyF6Guard) and widens
+      // `EmitEventsRoleViolationInput.actorRole` to the full staff-role union,
+      // restoring it. Remove the cast and this note together.
       actorRole: role as 'manager' | 'member',
       attemptedRoute: '/api/admin/events',
       attemptedAction: 'list_events',
