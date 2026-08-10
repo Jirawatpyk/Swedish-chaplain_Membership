@@ -2,7 +2,7 @@
 
 **Feature Branch**: `016-rbac-permissions`
 **Created**: 2026-08-10
-**Status**: Draft
+**Status**: Implementing
 **Input**: User description: "อยากได้ role base เพิ่ม: Super Admin, Marketing และปรับปรุง admin" — expanded through a brainstorming session + three multi-agent design-review rounds into `docs/superpowers/specs/2026-08-10-rbac-permission-system-design.md` (v2 rev 3, **the authoritative design companion to this spec** — section references below (`design § N`) point there).
 
 ## Overview *(context, non-normative)*

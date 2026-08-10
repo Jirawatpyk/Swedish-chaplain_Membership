@@ -143,9 +143,24 @@ describe('canAccess — exhaustive negative coverage', () => {
     }
   });
 
-  it('every defined Role appears in ROLES exactly once', () => {
-    expect(ROLES).toEqual(['admin', 'manager', 'member']);
+  it('every defined Role appears in ROLES exactly once (5 roles — 016 FR-001)', () => {
+    expect([...ROLES].sort()).toEqual(
+      ['admin', 'manager', 'marketing', 'member', 'super_admin'].sort(),
+    );
     expect(new Set(ROLES).size).toBe(ROLES.length);
+  });
+
+  it('legacy canAccess denies the two 016 roles (shim normalises BEFORE calling it)', () => {
+    // policies.ts is the FLAG-OFF leg. super_admin/marketing never reach it
+    // directly — normalizeLegacyRole maps super_admin→admin and marketing→deny
+    // upstream — so canAccess treating them as unknown (deny) is the correct
+    // safe default until PR 5 deletes this file.
+    for (const resource of NON_SELF_RESOURCES) {
+      for (const action of ACTIONS) {
+        expect(canAccess('super_admin' as Role, resource, action)).toBe(false);
+        expect(canAccess('marketing' as Role, resource, action)).toBe(false);
+      }
+    }
   });
 });
 

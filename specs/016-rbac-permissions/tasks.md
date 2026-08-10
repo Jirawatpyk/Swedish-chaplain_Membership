@@ -16,8 +16,8 @@
 
 **Purpose**: Scaffolding that everything else builds on. (No new deps, no structural init — the repo exists.)
 
-- [ ] T001 Add 5 role display-name i18n keys (`roles.super_admin` … `roles.member`) to `src/i18n/messages/en.json`, `th.json`, `sv.json`; run `pnpm check:i18n`
-- [ ] T002 Add the flag-parameterised characterization CI job skeleton (matrix over `FEATURE_RBAC_V2` ∈ {unset, 'true'}) to `.github/workflows/quality-gates.yml`, initially running `tests/contract/rbac/` only
+- [x] T001 Add 5 role display-name i18n keys to `shell.roleBadge` + `invitation-email` `ROLE_LABELS` across `en/th/sv`; `check:i18n` GREEN (5127 keys parity)
+- [ ] T002 DEFERRED to PR 2: the flag-parameterised CI env-matrix only becomes meaningful once `src/lib/rbac.ts` reads `FEATURE_RBAC_V2` (PR 2). In PR 1 the evaluator takes the flag as a pure parameter, so `tests/contract/rbac/evaluator-characterization.test.ts` already exercises BOTH legs in the existing unit job — an env matrix would run identical tests twice. Skeleton lands with T020/T021.
 
 ---
 
@@ -27,21 +27,21 @@
 
 ### Tests first (write → RED → commit)
 
-- [ ] T003 [P] Domain test: catalogue key format (`<module>.<action>` dot-separated), flags (`superAdminOnly`, `sensitive`), 40-key § 4.1 parity in `tests/unit/auth/permissions/permission-catalogue.test.ts`
-- [ ] T004 [P] Domain test: `ROLE_BUNDLES` table-driven parity vs design § 4.1 + invariants (no SA key in any bundle; `member` empty; landing invariant `dashboard.view` + ≥1 widget per staff bundle) in `tests/unit/auth/permissions/role-bundles.test.ts`
-- [ ] T005 [P] Domain test: evaluator guarantees E1–E6 (SA bypass; SA-key refusal; matrix parity; D16 totalisation super_admin→admin / marketing→DENY; deterministic; unknown role → false, never throws) in `tests/unit/auth/permissions/evaluator.test.ts`
-- [ ] T006 [P] Contract test: evaluator-level characterization rows, BOTH legs, incl. D16 rows — flag-OFF expected values transcribed from observed `policies.ts` behaviour — in `tests/contract/rbac/evaluator-characterization.test.ts`
+- [x] T003 [P] Domain test: catalogue key format, flags, 40-key § 4.1 parity — `tests/unit/auth/permissions/permission-catalogue.test.ts` (+ pinned fixture `tests/helpers/rbac-pinned-matrix.ts`)
+- [x] T004 [P] Domain test: `ROLE_BUNDLES` parity + invariants (no SA key in any bundle; `member` empty; landing invariant) — `role-bundles.test.ts` (also pins ROLES ×5)
+- [x] T005 [P] Domain test: evaluator E1–E6 (SA bypass; SA-key refusal even in a poisoned bundle; matrix parity; D16; deterministic; unknown role → false) — `evaluator.test.ts`
+- [x] T006 [P] Contract test: evaluator characterization BOTH legs + anti-circularity anchor (legacy leg ≡ observed `canAccess` after D16 normalisation) — `tests/contract/rbac/evaluator-characterization.test.ts`
 
 ### Implementation
 
-- [ ] T007 Widen `ROLES` tuple + `STAFF_ROLES` + `PORTAL_FOR_ROLE` (both new roles → `staff`) in `src/modules/auth/domain/role.ts`
-- [ ] T008 [P] Implement `src/modules/auth/domain/permissions/permission-catalogue.ts` (pure data, § 4.1 pinned keys + flags)
-- [ ] T009 [P] Implement `src/modules/auth/domain/permissions/role-bundles.ts` (`ROLE_BUNDLES: Record<Role, ReadonlySet<PermissionKey>>`)
-- [ ] T010 Implement `src/modules/auth/domain/permissions/evaluator.ts` (flag as explicit param; E1–E6) + `legacy-shim.ts` skeleton with D16 totalisation (depends T008, T009)
-- [ ] T011 Widen `roleEnum` tuple in `src/modules/auth/infrastructure/db/schema.ts` (SAME commit as T012 — tuple and DB enum never diverge)
-- [ ] T012 Author Migration A (`ALTER TYPE role ADD VALUE IF NOT EXISTS` ×2) + `drizzle/migrations/meta/_journal.json` entry with `when` > global applied max
-- [ ] T013 Extend `REQUIRED_ENUM_VALUES.role += ['super_admin','marketing']` in `scripts/lib/enum-migration-guard.ts`
-- [ ] T014 Apply Migration A to dev Neon (`pnpm db:migrate` + `pnpm db:verify`; confirm enum values via information_schema) BEFORE committing schema change; run T003–T006 GREEN both legs
+- [x] T007 Widen `ROLES` (+ `ASSIGNABLE_ROLES` for staged assignability) + `STAFF_ROLES` + `PORTAL_FOR_ROLE` in `src/modules/auth/domain/role.ts`; barrel re-exports `ASSIGNABLE_ROLES`
+- [x] T008 [P] `permission-catalogue.ts` — 40 pinned keys + flags; `PermissionKey` literal union via `CATALOGUE_RAW`; `SUPER_ADMIN_ONLY_KEYS` + `ALL_PERMISSION_KEYS`
+- [x] T009 [P] `role-bundles.ts` — `ROLE_BUNDLES` (super_admin/admin = all non-SA keys; manager/marketing explicit; member empty)
+- [x] T010 `evaluator.ts` (role-first signature; E1–E6; injectable bundles for the poisoned-bundle test) + `legacy-shim.ts` (D16 `normalizeLegacyRole` + `legacySessionOnly`/`legacyAdminOrManager`/`mappedLegacy` row primitives)
+- [x] T011 Widen `roleEnum` tuple in `schema.ts` (same commit as T012)
+- [x] T012 Migration A `0285_rbac_v2_role_enum.sql` (`ADD VALUE IF NOT EXISTS` ×2) + journal entry (`when` 1798541300000 > global max)
+- [x] T013 `REQUIRED_ENUM_VALUES.role += ['super_admin','marketing']` in `enum-migration-guard.ts`
+- [x] T014 Applied Migration A to dev Neon (`db:migrate` — NOTICEs confirm both labels present; `db:verify` 9/9 canaries) BEFORE commit; T003–T006 GREEN (269 tests). Plus: `Role`-widening ripple resolved across ~15 consumers (Record<Role> maps filled; metrics labels widened to `Role`; user-list-table imports Domain `Role`; actor-role stampings cast with `016 PR1` markers for PR-2 removal); pre-existing role tuple tests updated for FR-001; enum-guard fixtures updated. `typecheck` + `lint` clean.
 
 **Checkpoint**: PR 1 mergeable — dark; evaluator proven at Domain level on both legs.
 

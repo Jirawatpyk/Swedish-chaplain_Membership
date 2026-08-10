@@ -196,6 +196,7 @@ export {
 export type { Role, Portal } from './domain/role';
 export {
   ROLES,
+  ASSIGNABLE_ROLES,
   STAFF_ROLES,
   PORTAL_FOR_ROLE,
   isRole,

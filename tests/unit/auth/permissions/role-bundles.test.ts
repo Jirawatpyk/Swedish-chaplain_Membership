@@ -12,11 +12,15 @@ import { describe, expect, it } from 'vitest';
 import { PORTAL_FOR_ROLE, ROLES, STAFF_ROLES } from '@/modules/auth/domain/role';
 import { ROLE_BUNDLES } from '@/modules/auth/domain/permissions/role-bundles';
 
+import type { PermissionKey } from '@/modules/auth/domain/permissions/permission-catalogue';
+
 import {
   PINNED_MATRIX,
   PINNED_SUPER_ADMIN_ONLY,
   WIDGET_KEYS,
 } from '../../../helpers/rbac-pinned-matrix';
+
+const k = (s: string) => s as PermissionKey;
 
 describe('Role widening (FR-001)', () => {
   it('ROLES is exactly the five system roles', () => {
@@ -42,12 +46,12 @@ describe('ROLE_BUNDLES (§ 4.1 pinned parity)', () => {
   it.each(PINNED_MATRIX.map((r) => [r.key, r] as const))(
     'matrix parity for %s',
     (_key, pinned) => {
-      expect(ROLE_BUNDLES.admin.has(pinned.key), 'admin').toBe(pinned.admin);
-      expect(ROLE_BUNDLES.manager.has(pinned.key), 'manager').toBe(pinned.manager);
-      expect(ROLE_BUNDLES.marketing.has(pinned.key), 'marketing').toBe(pinned.marketing);
+      expect(ROLE_BUNDLES.admin.has(k(pinned.key)), 'admin').toBe(pinned.admin);
+      expect(ROLE_BUNDLES.manager.has(k(pinned.key)), 'manager').toBe(pinned.manager);
+      expect(ROLE_BUNDLES.marketing.has(k(pinned.key)), 'marketing').toBe(pinned.marketing);
       // super_admin's BUNDLE holds every non-SA key; SA-only keys come from
       // the evaluator bypass (E1), never from bundle content (FR-003).
-      expect(ROLE_BUNDLES.super_admin.has(pinned.key), 'super_admin').toBe(
+      expect(ROLE_BUNDLES.super_admin.has(k(pinned.key)), 'super_admin').toBe(
         pinned.superAdminOnly !== true,
       );
     },
@@ -60,7 +64,7 @@ describe('ROLE_BUNDLES (§ 4.1 pinned parity)', () => {
   it('no bundle contains a superAdminOnly key (FR-003)', () => {
     for (const [role, bundle] of Object.entries(ROLE_BUNDLES)) {
       for (const saKey of PINNED_SUPER_ADMIN_ONLY) {
-        expect(bundle.has(saKey), `${role} must not hold ${saKey}`).toBe(false);
+        expect(bundle.has(k(saKey)), `${role} must not hold ${saKey}`).toBe(false);
       }
     }
   });
@@ -68,9 +72,9 @@ describe('ROLE_BUNDLES (§ 4.1 pinned parity)', () => {
   it('landing invariant: every staff bundle has dashboard.view + ≥1 widget key', () => {
     for (const role of ['super_admin', 'admin', 'manager', 'marketing'] as const) {
       const bundle = ROLE_BUNDLES[role];
-      expect(bundle.has('dashboard.view'), `${role} dashboard.view`).toBe(true);
+      expect(bundle.has(k('dashboard.view')), `${role} dashboard.view`).toBe(true);
       expect(
-        WIDGET_KEYS.some((k) => bundle.has(k)),
+        WIDGET_KEYS.some((key) => bundle.has(k(key))),
         `${role} must hold at least one widget permission`,
       ).toBe(true);
     }

@@ -168,8 +168,10 @@
       "label": "Change language"
     },
     "roleBadge": {
+      "super_admin": "Super Admin",
       "admin": "Admin",
       "manager": "Manager",
+      "marketing": "Marketing",
       "member": "Member"
     }
   },

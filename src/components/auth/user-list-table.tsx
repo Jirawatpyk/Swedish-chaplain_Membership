@@ -24,8 +24,11 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
+// Pure Domain type — type-only import is erased at build, safe in a client
+// component (the @/modules/auth barrel is NOT client-safe, but this deep path
+// carries no runtime code). Kept in sync with the five-role enum (016 FR-001).
+import type { Role } from '@/modules/auth/domain/role';
 
-type Role = 'admin' | 'manager' | 'member';
 type Status = 'pending' | 'active' | 'disabled';
 
 interface UserRow {
@@ -70,8 +73,10 @@ const statusVariant: Record<Status, 'default' | 'secondary' | 'outline' | 'destr
 };
 
 const roleVariant: Record<Role, 'default' | 'secondary' | 'outline'> = {
+  super_admin: 'default',
   admin: 'default',
   manager: 'secondary',
+  marketing: 'secondary',
   member: 'outline',
 };
 

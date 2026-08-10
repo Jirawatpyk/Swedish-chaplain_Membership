@@ -102,7 +102,9 @@ export async function GET(request: NextRequest) {
       // any string subtype (UserId widens cleanly); this brand is
       // future-proof against tightening the helper to require UserId.
       actorUserId: asUserId(session.user.id),
-      actorRole: role,
+      // 016 PR1: cast preserved — PR 2 sweeps this F6 route to the evaluator
+      // (legacyF6Guard) and widens the F6 attempted_role union with it.
+      actorRole: role as 'manager' | 'member',
       attemptedRoute: '/api/admin/events',
       attemptedAction: 'list_events',
       eventId: null,

@@ -146,7 +146,9 @@ export async function requireRenewalAdminContext(
             payload: {
               resource: 'renewal',
               action,
-              attempted_role: current.user.role,
+              // 016 PR1: cast preserved; PR 2 widens the F8 audit-port
+              // attempted_role union to the full staff-role set with the sweep.
+              attempted_role: current.user.role as 'admin' | 'manager' | 'member',
               route: new URL(request.url).pathname,
             },
           },

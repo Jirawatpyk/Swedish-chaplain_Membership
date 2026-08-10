@@ -148,7 +148,9 @@ export default async function AuditLogPage({
 
   const meta = {
     actorUserId: user.id as string,
-    actorRole: user.role,
+    // 016 PR1: cast preserved; PR 2 widens the insights actorRole unions
+    // and re-keys the audit-viewer redaction to the audit.read permission.
+    actorRole: user.role as 'admin' | 'manager' | 'member',
     requestId: randomUUID(),
   };
 

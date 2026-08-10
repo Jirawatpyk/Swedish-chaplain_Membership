@@ -114,7 +114,12 @@ export async function GET(request: NextRequest): Promise<Response> {
   try {
     result = await auditExport(
       input,
-      { actorUserId: session.user.id as string, actorRole: session.user.role, requestId },
+      {
+        actorUserId: session.user.id as string,
+        // 016 PR1: cast preserved; PR 2 widens the insights actorRole unions.
+        actorRole: session.user.role as 'admin' | 'manager' | 'member',
+        requestId,
+      },
       tenant,
       makeAuditQueryDeps(),
     );

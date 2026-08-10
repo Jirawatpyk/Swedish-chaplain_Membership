@@ -72,7 +72,8 @@ export default async function DirectoryPage({
 
   const meta = {
     actorUserId: user.id as string,
-    actorRole: user.role,
+    // 016 PR1: cast preserved; PR 2 widens the insights actorRole unions.
+    actorRole: user.role as 'admin' | 'manager' | 'member',
     requestId: randomUUID(),
   };
 

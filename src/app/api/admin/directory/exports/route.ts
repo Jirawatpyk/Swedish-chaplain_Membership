@@ -79,7 +79,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   const meta = {
     actorUserId: current.user.id as string,
-    actorRole: current.user.role,
+    // 016 PR1: cast preserved (matches sibling routes); PR 2 widens the
+    // use-case actorRole type to the full Role union with the sweep.
+    actorRole: current.user.role as 'admin' | 'manager' | 'member',
     requestId: correlationId,
   };
 

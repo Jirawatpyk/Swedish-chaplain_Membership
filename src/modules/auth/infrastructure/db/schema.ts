@@ -34,7 +34,17 @@ import {
 
 // --- Enums --------------------------------------------------------------------
 
-export const roleEnum = pgEnum('role', ['admin', 'manager', 'member']);
+// 016-rbac-permissions: widened to five roles by migration 0285 (ADD VALUE
+// appends, so the new labels follow the original three). Tuple order MUST match
+// the live enum label order label-for-label — never reorder. Mirrors ROLES in
+// src/modules/auth/domain/role.ts.
+export const roleEnum = pgEnum('role', [
+  'admin',
+  'manager',
+  'member',
+  'super_admin',
+  'marketing',
+]);
 
 export const userStatusEnum = pgEnum('user_status', [
   'pending',

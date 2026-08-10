@@ -1933,6 +1933,13 @@
       "when": 1798541200000,
       "tag": "0284_member_billing_address",
       "breakpoints": true
+    },
+    {
+      "idx": 286,
+      "version": "7",
+      "when": 1798541300000,
+      "tag": "0285_rbac_v2_role_enum",
+      "breakpoints": true
     }
   ]
 }

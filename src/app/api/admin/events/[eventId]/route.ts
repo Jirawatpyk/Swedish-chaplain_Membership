@@ -82,7 +82,9 @@ export async function GET(
       // Round-3 type-M closure — brand at callsite for consistency
       // with the 5 other admin write routes' actor-id discipline.
       actorUserId: asUserId(session.user.id),
-      actorRole: role,
+      // 016 PR1: cast preserved — PR 2 sweeps this F6 route to the evaluator
+      // (legacyF6Guard) and widens the F6 attempted_role union with it.
+      actorRole: role as 'manager' | 'member',
       attemptedRoute: `/api/admin/events/${eventId}`,
       attemptedAction: 'load_event_detail',
       eventId,

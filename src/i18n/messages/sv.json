@@ -168,8 +168,10 @@
       "label": "Byt språk"
     },
     "roleBadge": {
+      "super_admin": "Superadministratör",
       "admin": "Administratör",
       "manager": "Chef",
+      "marketing": "Marknadsföring",
       "member": "Medlem"
     }
   },

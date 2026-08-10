@@ -151,7 +151,9 @@ export default async function InvoiceSettingsPage() {
         <CardContent>
           <InvoiceSettingsForm
             initialValues={initialValues}
-            currentUserRole={currentUser.role}
+            // 016 PR1: cast preserved; PR 2 gates this page on settings.invoicing
+            // (super_admin only) so the prop's role union narrows with the sweep.
+            currentUserRole={currentUser.role as 'admin' | 'manager' | 'member'}
             exists={existing !== null}
           />
         </CardContent>

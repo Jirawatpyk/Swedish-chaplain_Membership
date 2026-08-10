@@ -106,6 +106,8 @@ describe('findMissingEnumValues', () => {
   it('returns [] when every required value is present', () => {
     const present = new Map<string, Set<string>>([
       ['document_type', new Set(['invoice', 'receipt', 'credit_note', 'bill', 'receipt_105'])],
+      // 016-rbac-permissions: role gains super_admin + marketing (mig 0285).
+      ['role', new Set(['admin', 'manager', 'member', 'super_admin', 'marketing'])],
       [
         'audit_event_type',
         new Set([
@@ -151,6 +153,8 @@ describe('findMissingEnumValues', () => {
     // here — this test's whole point is isolating a SINGLE missing type.
     const present = new Map<string, Set<string>>([
       ['document_type', new Set(['invoice', 'receipt', 'credit_note'])],
+      // 016: role fully present so this test isolates document_type as the miss.
+      ['role', new Set(['admin', 'manager', 'member', 'super_admin', 'marketing'])],
       [
         'audit_event_type',
         new Set([
@@ -185,6 +189,8 @@ describe('findMissingEnumValues', () => {
   it('reports all required values with typeExists:false when the type is absent', () => {
     const present = new Map<string, Set<string>>([
       ['document_type', new Set(['invoice', 'receipt', 'credit_note', 'bill', 'receipt_105'])],
+      // 016: role fully present so this test isolates audit_event_type absence.
+      ['role', new Set(['admin', 'manager', 'member', 'super_admin', 'marketing'])],
     ]);
     expect(findMissingEnumValues(present)).toEqual<MissingEnumValues[]>([
       {
