@@ -6,7 +6,7 @@
  * active admin always exists" invariant in two layers:
  *
  *   Layer 1 (Application — race-prone, fast happy-path):
- *     pre-tx `countActiveAdmins()` short-circuits at value == 1 when
+ *     pre-tx `countActiveAdministrators()` short-circuits at value == 1 when
  *     the target is the active admin → returns `last-admin-protection`
  *     without opening a tx.
  *
@@ -29,6 +29,7 @@ import { Result, err, ok } from '@/lib/result';
 import { isLastAdminTriggerError } from '@/lib/db-errors';
 import type { UserId } from '@/modules/auth/domain/branded';
 import type { UserAccount } from '@/modules/auth/domain/user';
+import { isAdministrativeRole } from '@/modules/auth/domain/role';
 // Type-only — see sign-in.ts for the Clean Architecture rationale.
 import type { UserRepo } from '@/modules/auth/infrastructure/db/user-repo';
 import type { SessionRepo } from '@/modules/auth/infrastructure/db/session-repo';
@@ -61,6 +62,12 @@ export interface DisableUserDeps {
   readonly sessions: SessionRepo;
   readonly audit: AuditRepo;
   readonly now: () => Date;
+  /**
+   * 016 T026 — which roles count as administrators for the last-administrator
+   * guard. Threaded in rather than read from env so this use case stays pure
+   * Application (same purity pin as the permission evaluator).
+   */
+  readonly rbacV2: boolean;
 }
 
 export { defaultDisableUserDeps };
@@ -78,9 +85,11 @@ export async function disableUser(
   // Last-admin protection — first line of defence (application layer).
   // The DB trigger `users_last_admin_protection` (migration 0003) is
   // the second line of defence and closes the race window between
-  // `countActiveAdmins()` and `disable()`.
-  if (target.role === 'admin' && target.status === 'active') {
-    const activeAdmins = await deps.users.countActiveAdmins();
+  // `countActiveAdministrators()` and `disable()`.
+  // 016 T026 — population mirrors `users_last_admin_guard()` (migration 0286):
+  // disabling the last active administrator of EITHER role is refused.
+  if (isAdministrativeRole(target.role, deps.rbacV2) && target.status === 'active') {
+    const activeAdmins = await deps.users.countActiveAdministrators();
     if (activeAdmins <= 1) {
       return err({ code: 'last-admin-protection' });
     }

@@ -112,6 +112,8 @@ describe('findMissingEnumValues', () => {
         'audit_event_type',
         new Set([
           'sign_in_success',
+          // 016-rbac-permissions: the denial trail (mig 0286).
+          'permission_denied',
           'tax_receipt_issued',
           'members_backup_exported',
           'renewal_cycle_reanchored',
@@ -159,6 +161,8 @@ describe('findMissingEnumValues', () => {
         'audit_event_type',
         new Set([
           'sign_in_success',
+          // 016-rbac-permissions: the denial trail (mig 0286).
+          'permission_denied',
           'tax_receipt_issued',
           'members_backup_exported',
           'renewal_cycle_reanchored',
@@ -197,6 +201,7 @@ describe('findMissingEnumValues', () => {
         enumType: 'audit_event_type',
         typeExists: false,
         missing: [
+          'permission_denied',
           'tax_receipt_issued',
           'members_backup_exported',
           'renewal_cycle_reanchored',

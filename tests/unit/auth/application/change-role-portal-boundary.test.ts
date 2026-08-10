@@ -37,7 +37,7 @@ function makeDeps(role: Role): ChangeRoleDeps {
     users: {
       findById: vi.fn().mockResolvedValue(targetUser(role)),
       // High enough that last-admin protection never fires in these cases.
-      countActiveAdmins: vi.fn().mockResolvedValue(5),
+      countActiveAdministrators: vi.fn().mockResolvedValue(5),
       setRole: vi.fn().mockResolvedValue(undefined),
     },
     sessions: { deleteByUserId: vi.fn().mockResolvedValue(0) },

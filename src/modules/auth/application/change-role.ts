@@ -17,7 +17,7 @@
 import { Result, err, ok } from '@/lib/result';
 import { isLastAdminTriggerError } from '@/lib/db-errors';
 import type { UserId } from '@/modules/auth/domain/branded';
-import { isStaffRole, type Role } from '@/modules/auth/domain/role';
+import { isAdministrativeRole, isStaffRole, type Role } from '@/modules/auth/domain/role';
 import type { UserAccount } from '@/modules/auth/domain/user';
 // Type-only — see sign-in.ts for the Clean Architecture rationale.
 import type { UserRepo } from '@/modules/auth/infrastructure/db/user-repo';
@@ -48,6 +48,12 @@ export interface ChangeRoleDeps {
   readonly users: UserRepo;
   readonly sessions: SessionRepo;
   readonly audit: AuditRepo;
+  /**
+   * 016 T026 — which roles count as administrators for the last-administrator
+   * guard. Threaded in rather than read from env so this use case stays pure
+   * Application (same purity pin as the permission evaluator).
+   */
+  readonly rbacV2: boolean;
 }
 
 export { defaultChangeRoleDeps };
@@ -74,9 +80,19 @@ export async function changeRole(
   // Last-admin protection — first line of defence (application layer).
   // The DB trigger `users_last_admin_protection` (migration 0003) is
   // the second line of defence and closes the race window between
-  // `countActiveAdmins()` and `setRole()`.
-  if (target.role === 'admin' && target.status === 'active' && input.newRole !== 'admin') {
-    const activeAdmins = await deps.users.countActiveAdmins();
+  // `countActiveAdministrators()` and `setRole()`.
+  // 016 T026 (re-review PR1 carry-forward V-1): guard on LEAVING the
+  // administrative set, not on the `'admin'` literal. Once PR 3 makes
+  // super_admin assignable, a single-admin tenant promoting its only admin to
+  // super_admin PRESERVES administrative coverage — keying on `'admin'` would
+  // refuse it with `last-admin-protection`. The population here mirrors
+  // `users_last_admin_guard()` (migration 0286) exactly.
+  if (
+    isAdministrativeRole(target.role, deps.rbacV2) &&
+    target.status === 'active' &&
+    !isAdministrativeRole(input.newRole, deps.rbacV2)
+  ) {
+    const activeAdmins = await deps.users.countActiveAdministrators();
     if (activeAdmins <= 1) {
       return err({ code: 'last-admin-protection' });
     }

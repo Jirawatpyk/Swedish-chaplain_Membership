@@ -13,7 +13,7 @@
  *
  * This test closes the gap by injecting a counting UserRepo that
  * reports exactly ONE active admin, regardless of the real DB state.
- * The guard logic (`countActiveAdmins() <= 1`) then fires
+ * The guard logic (`countActiveAdministrators() <= 1`) then fires
  * deterministically on both `disableUser` and `changeRole`, and we
  * assert the specific `last-admin-protection` error code is
  * returned.
@@ -40,7 +40,7 @@ import {
 
 /**
  * Wrap the real `userRepo` so every method delegates except
- * `countActiveAdmins()`, which returns a hardcoded `1`. This is the
+ * `countActiveAdministrators()`, which returns a hardcoded `1`. This is the
  * minimum stub needed to force the guard branch on deterministically.
  *
  * The guard in both `disableUser` and `changeRole` short-circuits
@@ -59,7 +59,7 @@ function oneAdminRepo(): UserRepo {
     setLocked: (id, until) => userRepo.setLocked(id, until),
     clearLock: (id) => userRepo.clearLock(id),
     // THE POINT of this wrapper: pretend there is only one admin.
-    countActiveAdmins: async () => 1,
+    countActiveAdministrators: async () => 1,
     createPending: (args) => userRepo.createPending(args),
     createPendingInTx: (tx, args) => userRepo.createPendingInTx(tx, args),
     deletePending: (id) => userRepo.deletePending(id),
@@ -118,6 +118,9 @@ describe('integration: last-admin-protection guard (T-10)', () => {
         users: oneAdminRepo(),
         sessions: sessionRepo,
         audit: auditRepo,
+        // 016 T026 — legacy leg: the guarded population is admin ∪ super_admin,
+        // matching migration 0286's transitional trigger.
+        rbacV2: false,
         now: () => new Date(),
       },
     );
@@ -140,6 +143,9 @@ describe('integration: last-admin-protection guard (T-10)', () => {
         users: oneAdminRepo(),
         sessions: sessionRepo,
         audit: auditRepo,
+        // 016 T026 — legacy leg: the guarded population is admin ∪ super_admin,
+        // matching migration 0286's transitional trigger.
+        rbacV2: false,
       },
     );
 
@@ -153,7 +159,7 @@ describe('integration: last-admin-protection guard (T-10)', () => {
     // DISABLING the last admin. Promoting a manager to admin is
     // explicitly allowed — it grows the admin count, it doesn't
     // shrink it — so the guard MUST skip the check even when
-    // `countActiveAdmins()` returns 1.
+    // `countActiveAdministrators()` returns 1.
     //
     // We use manager → admin (both staff-portal roles) because:
     //   - Target role is NOT admin → guard is never entered
@@ -174,6 +180,7 @@ describe('integration: last-admin-protection guard (T-10)', () => {
           users: oneAdminRepo(),
           sessions: sessionRepo,
           audit: auditRepo,
+          rbacV2: false,
         },
       );
       expect(result.ok).toBe(true);

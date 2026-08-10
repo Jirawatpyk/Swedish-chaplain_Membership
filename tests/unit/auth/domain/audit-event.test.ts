@@ -6,7 +6,7 @@ import {
 } from '@/modules/auth/domain/audit-event';
 
 describe('AUDIT_EVENT_TYPES', () => {
-  it('contains 36 event types (17 F1 + 10 F5 route-level + 3 F1 post-ship B5 + 1 go-live SAGA + 1 go-live P3 refund rate-limit + 1 COMP-1 US2a user_erased + 3 staff invitation lifecycle)', () => {
+  it('contains 37 event types (17 F1 + 10 F5 route-level + 3 F1 post-ship B5 + 1 go-live SAGA + 1 go-live P3 refund rate-limit + 1 COMP-1 US2a user_erased + 3 staff invitation lifecycle + 1 016 permission_denied)', () => {
     // F5 route-level events live on F1's audit-repo because they fire
     // BEFORE a tenant tx is established (Group D Architect rationale).
     // Composition by migration:
@@ -36,7 +36,7 @@ describe('AUDIT_EVENT_TYPES', () => {
     // `eraseUser` use-case after anonymising the linked login row), so
     // it lives on this array — unlike `member_number_assigned` /
     // `member_erased` which are F3 events on the shared pg enum only.
-    expect(AUDIT_EVENT_TYPES).toHaveLength(36);
+    expect(AUDIT_EVENT_TYPES).toHaveLength(37);
   });
 
   it('includes the COMP-1 US2a F1 linked-user erasure event (migration 0222)', () => {

@@ -115,7 +115,7 @@ export interface UserRepo {
   clearFailedCount(id: UserId): Promise<void>;
   setLocked(id: UserId, until: Date): Promise<void>;
   clearLock(id: UserId): Promise<void>;
-  countActiveAdmins(): Promise<number>;
+  countActiveAdministrators(): Promise<number>;
   createPending(args: {
     email: EmailAddress;
     role: Role;
@@ -405,16 +405,26 @@ export const userRepo: UserRepo = {
   },
 
   /**
-   * Used by `disable-user` and `change-role` (T125 / T127) inside a
-   * transaction with `SELECT ... FOR UPDATE` to enforce
-   * "at least one active admin always exists" (FR-011 + Edge Case
-   * Concurrent last-admin race).
+   * Used by `disable-user`, `change-role` and `erase-user` inside a
+   * transaction with `SELECT ... FOR UPDATE` to enforce "at least one active
+   * administrator always exists" (FR-011 + Edge Case Concurrent last-admin
+   * race).
+   *
+   * 016 T026: the population is `admin` UNION `super_admin` and MUST stay
+   * identical to `users_last_admin_guard()` (migration 0286) and to
+   * `ADMINISTRATIVE_ROLES` in the Domain. Named `countActiveAdministrators`
+   * rather than tasks.md T026's `countActiveSuperAdmins` because during the
+   * transition it counts BOTH roles — a super_admin-only name would describe
+   * behaviour the function must not have until PR 5 (T069) narrows all three
+   * in one commit.
    */
-  async countActiveAdmins(): Promise<number> {
+  async countActiveAdministrators(): Promise<number> {
     const rows = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(users)
-      .where(sql`${users.role} = 'admin' AND ${users.status} = 'active'`);
+      .where(
+        sql`${users.role} IN ('admin', 'super_admin') AND ${users.status} = 'active'`,
+      );
     return rows[0]?.count ?? 0;
   },
 

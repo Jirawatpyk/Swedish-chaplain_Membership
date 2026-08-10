@@ -61,6 +61,9 @@ export const AUDIT_EVENT_TYPES = [
   'concurrent_sessions_revoked',
   'manager_denied_write',
   'invitation_redemption_failed',
+  // --- 016 RBAC v2 (migration 0286) ---
+  // Emitted by `src/lib/rbac.ts` on every denied staff surface, both legs.
+  'permission_denied',
   // --- F5 webhook + rate-limit event types consumed by auditRepo directly
   // via route handlers (`src/app/api/webhooks/stripe/route.ts` +
   // `src/app/api/payments/{initiate,[id]/cancel}/route.ts`). Tenant-

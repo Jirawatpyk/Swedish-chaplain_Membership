@@ -106,6 +106,8 @@ export const REQUIRED_ENUM_VALUES: Readonly<Record<string, readonly string[]>> =
   role: ['admin', 'manager', 'member', 'super_admin', 'marketing'],
   document_type: ['invoice', 'receipt', 'credit_note', 'bill', 'receipt_105'],
   audit_event_type: [
+    // 016 RBAC v2 (0286) — the denial trail; absent = every denial is silent.
+    'permission_denied',
     'tax_receipt_issued',
     'members_backup_exported',
     'renewal_cycle_reanchored',

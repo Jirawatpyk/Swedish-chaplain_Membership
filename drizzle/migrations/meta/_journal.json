@@ -1940,6 +1940,13 @@
       "when": 1798541300000,
       "tag": "0285_rbac_v2_role_enum",
       "breakpoints": true
+    },
+    {
+      "idx": 287,
+      "version": "7",
+      "when": 1798541400000,
+      "tag": "0286_rbac_v2_denial_audit_and_union_guard",
+      "breakpoints": true
     }
   ]
 }

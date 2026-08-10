@@ -62,3 +62,39 @@ export function isRole(value: string): value is Role {
 export function isStaffRole(role: Role): boolean {
   return STAFF_ROLES.includes(role);
 }
+
+/**
+ * Roles that carry administrative capability over the tenant — the population
+ * the last-administrator guard protects. The set DEPENDS ON THE FLAG, because
+ * what "can administer this tenant" means changes at cutover:
+ *
+ *   flag OFF — `super_admin` ∪ `admin`. A plain admin still holds every
+ *     administrative capability, so refusing a demotion while other admins
+ *     remain would block ordinary day-to-day operations. Matches the
+ *     transitional population inside `users_last_admin_guard()` (migration
+ *     0286) exactly, so the two layers never refuse different operations.
+ *
+ *   flag ON — `super_admin` ALONE. Once D4 narrows `users.manage`, `audit.read`
+ *     and `settings.invoicing` to super-admin-only, a plain admin can no longer
+ *     administer staff. Counting them would let the last super_admin be erased,
+ *     demoted or disabled while only plain admins remain — after which NOBODY
+ *     can promote anyone and the tenant is permanently locked out of its own
+ *     user administration (SC-003). The application layer is therefore STRICTER
+ *     than the DB trigger on this leg, which is safe: the trigger stays the
+ *     backstop and never refuses something the app allows.
+ *
+ * PR 5 (T069) narrows the trigger to super_admin too and deletes the OFF branch.
+ */
+export const ADMINISTRATIVE_ROLES_LEGACY: readonly Role[] = ['super_admin', 'admin'];
+export const ADMINISTRATIVE_ROLES_V2: readonly Role[] = ['super_admin'];
+
+export function administrativeRoles(rbacV2: boolean): readonly Role[] {
+  return rbacV2 ? ADMINISTRATIVE_ROLES_V2 : ADMINISTRATIVE_ROLES_LEGACY;
+}
+
+export function isAdministrativeRole(
+  role: Role | (string & {}),
+  rbacV2: boolean,
+): boolean {
+  return (administrativeRoles(rbacV2) as readonly string[]).includes(role);
+}

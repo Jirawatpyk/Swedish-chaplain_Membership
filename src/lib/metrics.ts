@@ -298,6 +298,12 @@ export interface RbacDeniedLabels {
   readonly action: string;
 }
 
+export interface PermissionDeniedLabels {
+  /** The REAL role string — never coerced, so an unknown value stays visible. */
+  readonly role: string;
+  readonly permission: string;
+}
+
 export interface EmailLabels {
   readonly template: 'reset_password' | 'invitation';
   readonly reason?: 'api_error' | 'rate_limited' | 'bounced' | 'complained';
@@ -403,6 +409,18 @@ export const authMetrics = {
   // --- RBAC ------------------------------------------------------------------
   rbacDenied(labels: RbacDeniedLabels): void {
     counter('auth_rbac_denied_total', 'Denied operations by role/resource/action').add(1, {
+      ...labels,
+    });
+  },
+  /**
+   * 016 RBAC v2 — one denial, one increment. Labels are LOW cardinality by
+   * construction: `role` is the five-value union and `permission` is a
+   * catalogue key, so the series count is bounded at |roles| × |catalogue|.
+   * The route path is deliberately NOT a label — it is unbounded and lives in
+   * the audit row instead.
+   */
+  permissionDenied(labels: PermissionDeniedLabels): void {
+    counter('rbac_permission_denied_total', 'Denied staff surfaces by role/permission').add(1, {
       ...labels,
     });
   },

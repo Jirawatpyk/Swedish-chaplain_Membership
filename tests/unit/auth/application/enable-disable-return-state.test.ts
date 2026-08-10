@@ -112,7 +112,7 @@ describe('disableUser — returns mutated state without a re-read (code-review #
         findById,
         disable,
         // member role → last-admin guard is skipped
-        countActiveAdmins: vi.fn().mockResolvedValue(5),
+        countActiveAdministrators: vi.fn().mockResolvedValue(5),
       } as unknown as DisableUserDeps['users'],
       sessions: { deleteByUserId } as unknown as DisableUserDeps['sessions'],
       audit: { append } as unknown as DisableUserDeps['audit'],
@@ -149,7 +149,7 @@ describe('disableUser — returns mutated state without a re-read (code-review #
       users: {
         findById,
         disable,
-        countActiveAdmins: vi.fn().mockResolvedValue(5),
+        countActiveAdministrators: vi.fn().mockResolvedValue(5),
       } as unknown as DisableUserDeps['users'],
       sessions: { deleteByUserId: vi.fn() } as unknown as DisableUserDeps['sessions'],
       audit: { append: vi.fn() } as unknown as DisableUserDeps['audit'],

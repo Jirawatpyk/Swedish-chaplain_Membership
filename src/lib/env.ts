@@ -674,6 +674,15 @@ const schema = z.object({
   // Vercel env after the Slice-A review gate (research R11). Default FALSE.
   FEATURE_F9_DASHBOARD: booleanFromString.default(false),
 
+  // --- 016 RBAC v2 — permission bundles + super_admin/marketing -------------
+  // Kill-switch for the positive-permission leg. FALSE (default) keeps every
+  // staff surface on the pre-016 legacy leg byte for byte via the compatibility
+  // shim, so PR 2 ships dark and a flip back to FALSE is a true rollback.
+  // Read ONLY here and in `src/lib/rbac.ts` — the Domain evaluator takes the
+  // flag as an explicit parameter so it stays pure (contracts § 1 purity pin).
+  // Code-default flips to TRUE in PR 4; the env var is deleted in PR 5.
+  FEATURE_RBAC_V2: booleanFromString.default(false),
+
   // HMAC secret used to sign single-use, short-TTL (≤1 h) download tokens for
   // the private-artefact proxy (`/api/internal/exports/[jobId]/download`).
   // GDPR archives + Directory E-Books are stored in PRIVATE Vercel Blob and
@@ -1042,6 +1051,8 @@ export const env = {
     f6EventCreate: raw.FEATURE_F6_EVENTCREATE,
     f6EventCreateAdapter: raw.FEATURE_F6_EVENTCREATE_ADAPTER,
     f9Dashboard: raw.FEATURE_F9_DASHBOARD,
+    // 016 — RBAC v2 positive-permission leg. See the schema docstring above.
+    rbacV2: raw.FEATURE_RBAC_V2,
     // 088 — §87-at-payment tax flow (bill → ใบแจ้งหนี้) + US8 zero-rate UI.
     // Default false; ships dark. See schema docstring above + plan § Rollout.
     f088TaxAtPayment: raw.FEATURE_088_TAX_AT_PAYMENT,
