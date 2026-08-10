@@ -8,6 +8,8 @@
 #
 # Rationale per check (all derived from 2026-05-17 polish retrospective):
 #
+#   - check:staff-page-guard : every (staff) page declares a LITERAL permission
+#                       key + shim row matching the frozen 016 baseline
 #   - check:layout    : single-page → single-container invariant
 #                       (Spec §FR-007 CLS-0). Cheap (~1 sec).
 #
@@ -64,6 +66,7 @@ pnpm check:fixme
 pnpm check:dates
 pnpm check:env-example
 pnpm check:env-boot
+pnpm check:staff-page-guard
 pnpm vitest run tests/unit/architecture/ --passWithNoTests
 
 # ===========================================================================

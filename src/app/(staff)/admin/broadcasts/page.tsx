@@ -21,7 +21,8 @@ import {
   membersBridge,
 } from '@/modules/broadcasts';
 import { runInTenant } from '@/lib/db';
-import { requireSession } from '@/lib/auth-session';
+import { requirePagePermission } from '@/lib/rbac';
+import { legacySessionOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { unstable_cache } from 'next/cache';
 
@@ -118,7 +119,7 @@ export default async function AdminBroadcastsPage({
   // component body. Auto-instrumented span comes from `@vercel/otel`.
   const t = await getTranslations('admin.broadcasts.queue');
   const tBroadcasts = await getTranslations('admin.broadcasts');
-  const session = await requireSession('staff');
+  const session = await requirePagePermission('broadcasts.read', legacySessionOnly);
   const isReadOnlyManager = session.user.role === 'manager';
 
   const tenant = resolveTenantFromRequest();

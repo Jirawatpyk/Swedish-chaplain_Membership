@@ -23,7 +23,7 @@
  */
 import type { Metadata } from 'next';
 import { Suspense } from 'react';
-import { notFound, redirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { headers } from 'next/headers';
 import { AlertTriangle } from 'lucide-react';
@@ -34,7 +34,11 @@ import { PageHeader } from '@/components/layout/page-header';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { renewalsMetrics } from '@/lib/metrics';
-import { requireSession } from '@/lib/auth-session';
+import { canPerform, requirePagePermission } from '@/lib/rbac';
+import {
+  legacyAdminOrManager,
+  mappedLegacy,
+} from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import {
   ESCALATION_TASK_STATUSES,
@@ -77,11 +81,8 @@ export default async function EscalationTaskQueuePage({
     notFound();
   }
 
-  const session = await requireSession('staff');
+  const session = await requirePagePermission('renewals.read', legacyAdminOrManager);
   const role = session.user.role;
-  if (role !== 'admin' && role !== 'manager') {
-    redirect('/admin/renewals');
-  }
 
   const reqHeaders = await headers();
   const fakeRequest = new Request(
@@ -281,7 +282,7 @@ export default async function EscalationTaskQueuePage({
       ) : (
         <>
           <EscalationTaskQueue
-            actorRole={role}
+            canMutate={canPerform(role, 'renewals.write', mappedLegacy('renewal', 'write'))}
             actorUserId={session.user.id}
             overdueCount={overdueCount}
             distinctTaskTypes={distinctTaskTypes}

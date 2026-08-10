@@ -13,7 +13,8 @@ import { notFound } from 'next/navigation';
 import { headers } from 'next/headers';
 import { getTranslations } from 'next-intl/server';
 import { ArrowLeftIcon } from 'lucide-react';
-import { requireSession } from '@/lib/auth-session';
+import { requirePagePermission } from '@/lib/rbac';
+import { legacyAdminOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import {
   getInvoice,
@@ -38,8 +39,7 @@ export default async function NewCreditNotePage({
   params: Promise<{ invoiceId: string }>;
 }) {
   const { invoiceId } = await params;
-  const { user } = await requireSession('staff');
-  if (user.role !== 'admin') notFound();
+  await requirePagePermission('credit_notes.write', legacyAdminOnly);
 
   const t = await getTranslations('admin.creditNotes.new');
 

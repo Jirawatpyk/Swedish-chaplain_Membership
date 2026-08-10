@@ -14,7 +14,8 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 import { PlusIcon, CopyIcon } from 'lucide-react';
-import { requireSession } from '@/lib/auth-session';
+import { requirePagePermission } from '@/lib/rbac';
+import { legacySessionOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { listPlans, asPlanYear } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
@@ -42,7 +43,7 @@ export default async function PlansListPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  const { user: currentUser } = await requireSession('staff');
+  const { user: currentUser } = await requirePagePermission('plans.read', legacySessionOnly);
   const query = await searchParams;
   const t = await getTranslations('admin.plans');
 

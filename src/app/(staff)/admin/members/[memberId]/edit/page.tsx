@@ -13,7 +13,8 @@ import { notFound } from 'next/navigation';
 import { headers } from 'next/headers';
 import { getTranslations, getLocale } from 'next-intl/server';
 import { ArrowLeftIcon } from 'lucide-react';
-import { requireSession } from '@/lib/auth-session';
+import { requirePagePermission } from '@/lib/rbac';
+import { legacyAdminOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { logger } from '@/lib/logger';
@@ -63,8 +64,7 @@ export default async function EditMemberPage({ params }: PageProps) {
   const { memberId } = await params;
   if (!UUID_RE.test(memberId)) notFound();
 
-  const { user } = await requireSession('staff');
-  if (user.role !== 'admin') notFound();
+  const { user } = await requirePagePermission('members.write', legacyAdminOnly);
 
   const tenant = resolveTenantFromRequest();
   const h = await headers();

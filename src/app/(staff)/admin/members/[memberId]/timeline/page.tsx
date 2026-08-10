@@ -16,7 +16,8 @@ import { notFound } from 'next/navigation';
 import { headers } from 'next/headers';
 import { getTranslations } from 'next-intl/server';
 import { ArrowLeftIcon } from 'lucide-react';
-import { requireSession } from '@/lib/auth-session';
+import { requirePagePermission } from '@/lib/rbac';
+import { legacySessionOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { env } from '@/lib/env';
@@ -64,7 +65,7 @@ export default async function MemberTimelinePage({ params, searchParams }: PageP
   const { memberId } = await params;
   if (!UUID_RE.test(memberId)) notFound();
 
-  const session = await requireSession('staff');
+  const session = await requirePagePermission('members.read', legacySessionOnly);
   const tenant = resolveTenantFromRequest();
   const h = await headers();
   const requestId = requestIdFromHeaders(h);
@@ -140,8 +141,9 @@ export default async function MemberTimelinePage({ params, searchParams }: PageP
   const totalEvents = timelineResult.ok ? timelineResult.value.total : 0;
 
   // FR-036 PII-read trail (R002): a staff member viewing another member's full
-  // timeline is a third-party PII access — audit it. requireSession('staff')
-  // admits only admin + manager; validate rather than cast. Best-effort.
+  // timeline is a third-party PII access — audit it. The gate is
+  // `requirePagePermission('members.read', …)` above; the trail records the
+  // actor's REAL role rather than coercing it. Best-effort.
   //
   // Scope decision (staff-review R2): ONE emit per full-timeline-page view —
   // the deliberate "show me everything" access. Consistent with

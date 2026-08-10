@@ -21,7 +21,8 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { headers } from 'next/headers';
-import { requireSession } from '@/lib/auth-session';
+import { requirePagePermission } from '@/lib/rbac';
+import { legacySessionOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { getCreditNote, makeGetCreditNoteDeps } from '@/modules/invoicing';
@@ -80,7 +81,7 @@ export default async function CreditNoteDetailPage({
   const t = await getTranslations('admin.creditNotes.detail');
   const locale = await getLocale();
 
-  const { user } = await requireSession('staff');
+  const { user } = await requirePagePermission('invoicing.read', legacySessionOnly);
 
   const hdrs = await headers();
   const requestId = requestIdFromHeaders(hdrs);

@@ -13,6 +13,7 @@
  */
 
 import { env } from '@/lib/env';
+import type { Role } from '@/modules/auth/domain/role';
 import { insightsMetrics } from '@/lib/metrics';
 import { insightsAuditAdapter } from './audit/insights-audit-adapter';
 import { f9RetentionFor } from '../application/ports/audit-port';
@@ -124,7 +125,13 @@ export async function recordStaffBenefitView(input: {
   readonly tenantId: string;
   readonly requestId: string | null;
   readonly actorUserId: string;
-  readonly actorRole: 'admin' | 'manager';
+  /**
+   * 016 T033 — the REAL staff role. Widened from `'admin' | 'manager'`: a
+   * two-value union cannot express `super_admin` or `marketing`, and a
+   * PII-read trail that coerces the actor's role is worse than useless to
+   * the person reading it during an investigation.
+   */
+  readonly actorRole: Role;
   readonly subjectMemberId: string;
   readonly membershipYear: number;
 }): Promise<void> {

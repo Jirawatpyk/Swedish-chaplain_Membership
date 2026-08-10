@@ -17,7 +17,8 @@ export async function generateMetadata(): Promise<Metadata> {
   return { title: t('title') };
 }
 import { PlusIcon } from 'lucide-react';
-import { requireSession } from '@/lib/auth-session';
+import { requirePagePermission } from '@/lib/rbac';
+import { legacySessionOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
 import {
@@ -204,7 +205,7 @@ export default async function AdminInvoicesPage({
   const tShared = await getTranslations('shared');
   const query = await searchParams;
 
-  const { user: currentUser } = await requireSession('staff');
+  const { user: currentUser } = await requirePagePermission('invoicing.read', legacySessionOnly);
   const isAdmin = currentUser.role === 'admin';
 
   const hdrs = await headers();

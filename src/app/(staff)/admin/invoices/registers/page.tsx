@@ -24,7 +24,8 @@ import { notFound } from 'next/navigation';
 import { headers } from 'next/headers';
 import { getLocale, getTranslations } from 'next-intl/server';
 
-import { requireSession } from '@/lib/auth-session';
+import { requirePagePermission } from '@/lib/rbac';
+import { legacyAdminOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
 import { bangkokLocalDate } from '@/lib/fiscal-year';
@@ -65,10 +66,11 @@ export default async function TaxRegistersPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  const { user } = await requireSession('staff');
-  // Admin-only tax-filing tool + flag-gated: a manager (read-only on finance)
-  // or a flag-off tenant gets a clean 404 rather than an empty surface.
-  if (user.role !== 'admin' || !env.features.f088TaxAtPayment) {
+  await requirePagePermission('invoicing.receipt', legacyAdminOnly);
+  // The role half of this guard moved to `requirePagePermission` above; the
+  // FLAG half stays — a flag-off tenant gets a clean 404 rather than an empty
+  // surface, and that has nothing to do with who is asking.
+  if (!env.features.f088TaxAtPayment) {
     notFound();
   }
 

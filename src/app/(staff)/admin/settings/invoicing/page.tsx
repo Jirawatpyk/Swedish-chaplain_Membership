@@ -14,7 +14,8 @@
  */
 import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
-import { requireSession } from '@/lib/auth-session';
+import { requirePagePermission } from '@/lib/rbac';
+import { legacySessionOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { headers } from 'next/headers';
 import {
@@ -80,7 +81,7 @@ const DEFAULTS: InvoiceSettingsFormInitialValues = {
 };
 
 export default async function InvoiceSettingsPage() {
-  const { user: currentUser } = await requireSession('staff');
+  const { user: currentUser } = await requirePagePermission('settings.invoicing', legacySessionOnly);
   const t = await getTranslations('admin.invoiceSettings');
 
   const hdrs = await headers();

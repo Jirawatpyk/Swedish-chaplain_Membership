@@ -23,7 +23,8 @@ import {
   PencilIcon,
   UserPlusIcon,
 } from 'lucide-react';
-import { requireSession } from '@/lib/auth-session';
+import { requirePagePermission } from '@/lib/rbac';
+import { legacySessionOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
 import { requestIdFromHeaders } from '@/lib/request-id';
@@ -533,7 +534,7 @@ export default async function MemberDetailPage({
   const { memberId } = await params;
   if (!UUID_RE.test(memberId)) notFound();
 
-  const session = await requireSession('staff');
+  const session = await requirePagePermission('members.read', legacySessionOnly);
   // S1-P1-10: the read-only `manager` role must not see member write
   // affordances (Edit/Archive/Add-Contact/Invite/Promote/Remove) — they
   // dead-end at the API (route RBAC rejects). Only `admin` may mutate members.

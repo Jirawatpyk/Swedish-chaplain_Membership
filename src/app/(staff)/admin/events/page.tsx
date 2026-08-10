@@ -31,7 +31,8 @@ import {
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { redactStack } from '@/lib/redact-stack';
-import { requireSession } from '@/lib/auth-session';
+import { requirePagePermission } from '@/lib/rbac';
+import { legacyAdminOrManager } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { runListEvents } from '@/lib/events-admin-deps';
 import { TableContainer } from '@/components/layout';
@@ -101,10 +102,7 @@ export default async function AdminEventsListPage({
   }
 
   // auth + role gate. Member returns 404.
-  const { user: currentUser } = await requireSession('staff');
-  if (currentUser.role !== 'admin' && currentUser.role !== 'manager') {
-    notFound();
-  }
+  const { user: currentUser } = await requirePagePermission('events.read', legacyAdminOrManager);
 
   const query = await searchParams;
   const t = await getTranslations('admin.events.list');

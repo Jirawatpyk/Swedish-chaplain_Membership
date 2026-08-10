@@ -25,7 +25,8 @@ import { AuditFilters } from '@/components/audit/audit-filters';
 import { AuditTable, type AuditTableRow } from '@/components/audit/audit-table';
 import { buildAuditPaginationLinks } from './_lib/pagination-links';
 import { isValidTargetRef, isValidEventTypeFilter } from '@/lib/audit-filter-validation';
-import { requireSession } from '@/lib/auth-session';
+import { requirePagePermission } from '@/lib/rbac';
+import { legacySessionOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
 import { humanizeEventType, resolveEventLabel } from '@/lib/audit-event-label';
@@ -86,7 +87,7 @@ export default async function AuditLogPage({
 }: {
   readonly searchParams: Promise<SearchParams>;
 }): Promise<React.JSX.Element> {
-  const { user } = await requireSession('staff');
+  const { user } = await requirePagePermission('audit.read', legacySessionOnly);
   if (!env.features.f9Dashboard) notFound();
 
   const params = await searchParams;

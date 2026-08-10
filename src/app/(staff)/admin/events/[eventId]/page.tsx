@@ -11,7 +11,8 @@ import { getTranslations } from 'next-intl/server';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { redactStack } from '@/lib/redact-stack';
-import { requireSession } from '@/lib/auth-session';
+import { requirePagePermission } from '@/lib/rbac';
+import { legacyAdminOrManager } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { runLoadEventDetail } from '@/lib/events-admin-deps';
 import { isMatchType, isPaymentStatus } from '@/modules/events';
@@ -112,10 +113,7 @@ export default async function AdminEventDetailPage({
   if (!env.features.f6EventCreate) {
     notFound();
   }
-  const { user: currentUser } = await requireSession('staff');
-  if (currentUser.role !== 'admin' && currentUser.role !== 'manager') {
-    notFound();
-  }
+  const { user: currentUser } = await requirePagePermission('events.read', legacyAdminOrManager);
 
   const { eventId } = await params;
   const query = await searchParams;

@@ -65,7 +65,7 @@
 
 - [x] T020 [US2] Add `FEATURE_RBAC_V2` (zod boolean, default false) to `src/lib/env.ts`
 - [x] T021 [US2] Implement `src/lib/rbac.ts`: `requirePagePermission` (deny → emit → `notFound()`), `requireApiPermission` (deny → emit → typed 403), `canAccess` façade; `rbac.permission_denied_total{role, permission}` counter emission; the ONLY env-flag reads
-- [ ] T022 [US2] Complete `legacy-shim.ts` rows per call-site class: `legacySessionOnly` ONLY for the 17 pinned pages (contracts §1.1); `legacyAdminOrManager` for the 8 A\* inert-check pages; `mappedLegacy` per real guard (`users.manage`→`('auth:user','write')`, `members.erasure`→`('members','write')`); `settings.invoicing` ×3 rows; `legacyF6Guard`; fix the 4 stale guard comments pinned in contracts §1.1
+- [x] T022 [US2] Complete `legacy-shim.ts` rows per call-site class: `legacySessionOnly` ONLY for the 17 pinned pages (contracts §1.1); `legacyAdminOrManager` for the 8 A\* inert-check pages; `mappedLegacy` per real guard (`users.manage`→`('auth:user','write')`, `members.erasure`→`('members','write')`); `settings.invoicing` ×3 rows; `legacyF6Guard`; fix the 4 stale guard comments pinned in contracts §1.1
 - [x] T023 [US2] Author Migration B (audit enum `+= 'permission_denied'`; `CREATE OR REPLACE users_last_admin_guard()` UNION population preserving ERRCODE 23514 + `'last-admin-protection'` substring + 0004 return-row) + journal entry + `REQUIRED_ENUM_VALUES` `permission_denied`
 - [x] T024 [US2] Register `permission_denied` in all 4 places (audit domain const, pgEnum, 2 test counts) — `src/modules/auth/**` audit taxonomy + `pnpm check:audit-events`/`check:audit-counts` green
 - [x] T025 [US2] Apply Migration B to dev Neon; run T018 GREEN
@@ -73,7 +73,7 @@
 
 ### Implementation — the sweep (behaviour-preserving under flag; T015 cells are the referee)
 
-- [ ] T027 [US2] Gate every `(staff)` page with `requirePagePermission('<literal>')` incl. `/admin/users`, `/admin/audit`, all 4 settings pages + settings index, erasure log — `src/app/(staff)/admin/**`
+- [x] T027 [US2] Gate every `(staff)` page with `requirePagePermission('<literal>', <shim row>)` — 46 pages swept + 1 redirect-only exemption; **11 pages denied by `redirect()` rather than `notFound()` pre-sweep, so the denial SHAPE changes from 302 to 404** (uniform page contract, outcome unchanged — recorded in the baseline); two erase pages had the guard inside a `try/catch` that would have swallowed `notFound()`'s control-flow throw and re-routed to sign-in — restructured; `/admin/members/[memberId]/benefits` C-2 carry-forward CLOSED (was throw→500 BELOW its PII reads, now 404 above them) incl. `/admin/users`, `/admin/audit`, all 4 settings pages + settings index, erasure log — `src/app/(staff)/admin/**`
 - [ ] T028 [US2] Gate every staff API route with `requireApiPermission` (except F6 families): six users routes branch per TARGET role (`users.manage` staff-target / `users.member_accounts` member-target); erasure endpoints carry SA erasure keys — `src/app/api/admin/**`, `src/app/api/internal/**` classification
 - [ ] T029 [US2] F6 families keep `adminOnlyWriterGuard` (legacyF6Guard rows from observed behaviour); fix stale header comment in `src/app/api/admin/events/[id]/registrations/[rid]/archive/route.ts`
 - [ ] T030 [US2] Sweep escalate/demote ternaries (×8) + `as 'admin' | 'manager'` casts (~12) across `src/**` → evaluator-derived values (unknown role never escalates)
@@ -86,7 +86,7 @@
 ### Implementation — gates, scripts, runbook
 
 - [ ] T036 [US2] Add D7 promotion-gate assertion to `scripts/run-migrations.ts` (pending promotion file + flag ≠ 'true' → exit 1 pre-migrate)
-- [ ] T037 [US2] Create `scripts/check-staff-page-guard.ts` (clone portal-guard-core precedent; literal-only args) + `package.json` script + wire `.husky/pre-push` + `quality-gates.yml` static step
+- [x] T037 [US2] Create `scripts/check-staff-page-guard.ts` (clone portal-guard-core precedent; literal-only args) + `package.json` script + wire `.husky/pre-push` + `quality-gates.yml` static step
 - [ ] T038 [US2] Update `scripts/seed-bootstrap-admin.ts` (mints `super_admin`; refuses IFF a super_admin exists — D18 contract) + DR seed scripts
 - [ ] T039 [US2] Coverage config: explicit 100%-branch entry for `src/lib/rbac.ts` in `vitest.config.ts`; assert file absent from every coverage-exclude list
 - [ ] T040 [US2] Author `docs/runbooks/rbac-v2-cutover.md`: pre-mint → flag flip + verification checklist (abort criterion = any unexpected denial pair) → Migration C procedure (gate + **re-validate C's journal `when` > global applied max AT MERGE TIME** — other features may land migrations between authoring and merge; silent-no-op class — + information_schema trigger check) → promotion floor → per-window rollback incl. marketing-availability note → interrupted-session recovery (CHK085) → PR-4 env verify → PR-5 env delete → bundle-change procedure → READ_ONLY_MODE

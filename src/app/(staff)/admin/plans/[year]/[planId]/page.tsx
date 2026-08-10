@@ -11,7 +11,8 @@ import type { Metadata } from 'next';
 import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
-import { requireSession } from '@/lib/auth-session';
+import { requirePagePermission } from '@/lib/rbac';
+import { legacySessionOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { REQUEST_ID_HEADER, requestIdFromHeaders } from '@/lib/request-id';
 import { asPlanSlug, asPlanYear, getPlan } from '@/modules/plans';
@@ -61,7 +62,7 @@ export default async function PlanDetailPage({
 }: {
   params: Promise<{ year: string; planId: string }>;
 }) {
-  const { user: currentUser } = await requireSession('staff');
+  const { user: currentUser } = await requirePagePermission('plans.read', legacySessionOnly);
   const { year, planId } = await params;
   const t = await getTranslations('admin.plans');
   const tM = await getTranslations('admin.plans.create.matrix');

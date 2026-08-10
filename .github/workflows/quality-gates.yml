@@ -85,6 +85,9 @@ jobs:
       - name: .env.example boots the env.ts schema verbatim
         run: pnpm check:env-boot
 
+      - name: Every staff page declares a literal permission (016 RBAC)
+        run: pnpm check:staff-page-guard
+
   unit:
     # Sharded because `vitest.config.ts` caps `maxWorkers: '50%'` for
     # determinism (see the starvation trade-off documented there). On a 2-core

@@ -3,7 +3,6 @@
  */
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
 import { headers } from 'next/headers';
 import { getTranslations, getLocale } from 'next-intl/server';
 import { ArrowLeftIcon } from 'lucide-react';
@@ -12,7 +11,8 @@ export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.invoices.new');
   return { title: t('title') };
 }
-import { requireSession } from '@/lib/auth-session';
+import { requirePagePermission } from '@/lib/rbac';
+import { legacyAdminOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
 import { bangkokLocalDate } from '@/lib/fiscal-year';
@@ -42,8 +42,7 @@ export default async function NewInvoiceDraftPage({
 }) {
   const t = await getTranslations('admin.invoices.new');
   const locale = await getLocale();
-  const { user } = await requireSession('staff');
-  if (user.role !== 'admin') notFound();
+  await requirePagePermission('invoicing.write', legacyAdminOnly);
 
   // Deep-link pre-fill from F3 member detail page CTA. UUID-validated
   // here so a malformed query string can't smuggle an attacker-chosen

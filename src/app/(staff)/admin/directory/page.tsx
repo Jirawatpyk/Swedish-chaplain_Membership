@@ -21,7 +21,8 @@ import { GenerateExportActions } from '@/components/directory/generate-export-ac
 import { RecentExports, type RecentExportRow } from '@/components/directory/recent-exports';
 import { EmptyState } from '@/components/shell/empty-state';
 import { ShieldAlertIcon } from 'lucide-react';
-import { requireSession } from '@/lib/auth-session';
+import { requirePagePermission } from '@/lib/rbac';
+import { legacySessionOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
@@ -55,7 +56,7 @@ export default async function DirectoryPage({
 }: {
   readonly searchParams: Promise<SearchParams>;
 }): Promise<React.JSX.Element> {
-  const { user } = await requireSession('staff');
+  const { user } = await requirePagePermission('directory.export', legacySessionOnly);
   if (!env.features.f9Dashboard) notFound();
 
   const params = await searchParams;

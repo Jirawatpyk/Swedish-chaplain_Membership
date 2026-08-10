@@ -34,6 +34,7 @@
     "check:layout": "tsx scripts/check-layout-container-usage.ts",
     "check:fixme": "tsx scripts/check-fixme-budget.ts",
     "check:audit-events": "tsx scripts/check-audit-event-count.ts",
+    "check:staff-page-guard": "tsx scripts/check-staff-page-guard.ts",
     "check:audit-counts": "tsx scripts/check-cross-module-audit-counts.ts",
     "check:bundle-budgets": "tsx scripts/check-bundle-budgets.ts",
     "check:multi-tenant": "node --env-file=.env.local --import tsx scripts/check-multi-tenant-ready.ts",

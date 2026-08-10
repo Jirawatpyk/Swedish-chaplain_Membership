@@ -24,7 +24,8 @@ import {
 } from '@/modules/broadcasts';
 import { makeDrizzleBatchManifestsRepo } from '@/modules/broadcasts/infrastructure/drizzle-batch-manifests-repo';
 import { runInTenant } from '@/lib/db';
-import { requireSession } from '@/lib/auth-session';
+import { requirePagePermission } from '@/lib/rbac';
+import { legacySessionOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { dompurifySanitizer } from '@/modules/broadcasts';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
@@ -42,7 +43,7 @@ export default async function AdminBroadcastDetailPage({
   const t = await getTranslations('admin.broadcasts.review');
   const tActor = await getTranslations('admin.broadcasts.queue.actorRole');
   const tSegment = await getTranslations('admin.broadcasts.review.segmentType');
-  const session = await requireSession('staff');
+  const session = await requirePagePermission('broadcasts.read', legacySessionOnly);
   const isReadOnlyManager = session.user.role === 'manager';
 
   const { id } = await params;

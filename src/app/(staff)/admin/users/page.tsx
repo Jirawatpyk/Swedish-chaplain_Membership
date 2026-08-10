@@ -8,16 +8,19 @@
  * behind a `<TableSkeleton>` fallback. Zero CLS because the skeleton
  * row count and column widths match the real table grid.
  *
- * RBAC: action enablement inside `<UserListTable>` is gated by the
- * admin role via the staff-shell auth guard (requireSession); the API
- * route layer re-validates via `requireRole`.
+ * RBAC: the page declares `users.manage` via `requirePagePermission`. The
+ * old note here claimed the staff-shell auth guard enforced the admin role —
+ * it never did: `requireSession('staff')` checks session validity only, so a
+ * manager reached this page before 016 (contracts/authorization-surfaces
+ * § 1.1, Class A). The API route layer re-validates independently.
  *
  * Pagination: capped at 50 per page; proper paginated query surface is
  * a documented F9 follow-up.
  */
 import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
-import { requireSession } from '@/lib/auth-session';
+import { requirePagePermission } from '@/lib/rbac';
+import { legacySessionOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 // Admin user list page (server component) reads directly from the
 // repo. An Application-layer `listUsers` use case would be a
 // near-identical passthrough and add no behaviour; this read is
@@ -57,7 +60,7 @@ export default async function AdminUsersPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  const { user: currentUser } = await requireSession('staff');
+  const { user: currentUser } = await requirePagePermission('users.manage', legacySessionOnly);
   const t = await getTranslations('admin.users');
   const query = await searchParams;
   const rawPage = Number.parseInt(query.page ?? '1', 10);

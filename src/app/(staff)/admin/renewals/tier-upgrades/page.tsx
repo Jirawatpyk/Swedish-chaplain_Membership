@@ -11,7 +11,7 @@
  */
 import type { Metadata } from 'next';
 import { Suspense } from 'react';
-import { notFound, redirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 import { getTranslations, getLocale } from 'next-intl/server';
 import { headers } from 'next/headers';
 import { AlertTriangle } from 'lucide-react';
@@ -20,7 +20,8 @@ import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { requireSession } from '@/lib/auth-session';
+import { requirePagePermission } from '@/lib/rbac';
+import { legacyAdminOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
 import { makeRenewalsDeps } from '@/modules/renewals';
@@ -45,10 +46,7 @@ export default async function TierUpgradeQueuePage() {
     notFound();
   }
 
-  const session = await requireSession('staff');
-  if (session.user.role !== 'admin') {
-    redirect('/admin/renewals');
-  }
+  await requirePagePermission('renewals.write', legacyAdminOnly);
 
   const reqHeaders = await headers();
   const fakeRequest = new Request(

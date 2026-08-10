@@ -13,7 +13,7 @@
  */
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { notFound, redirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 import {
   getFormatter,
   getLocale,
@@ -31,7 +31,8 @@ import { PlanBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
 import { EmptyState } from '@/components/shell/empty-state';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { requireSession } from '@/lib/auth-session';
+import { requirePagePermission } from '@/lib/rbac';
+import { legacyAdminOrManager } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { loadCycleDetail, makeRenewalsDeps } from '@/modules/renewals';
 import { CycleStatusBadge } from './_components/cycle-status-badge';
@@ -99,10 +100,7 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
   const locale = await getLocale();
 
   // Auth + role check — managers permitted on this read-only surface.
-  const { user: currentUser } = await requireSession('staff');
-  if (currentUser.role !== 'admin' && currentUser.role !== 'manager') {
-    redirect('/portal');
-  }
+  const { user: currentUser } = await requirePagePermission('renewals.read', legacyAdminOrManager);
 
   const { cycleId } = await params;
   const requestHeaders = await headers();

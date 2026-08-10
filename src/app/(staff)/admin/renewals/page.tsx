@@ -20,7 +20,6 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import { Suspense } from 'react';
-import { redirect } from 'next/navigation';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { headers } from 'next/headers';
 import { randomUUID } from 'node:crypto';
@@ -31,7 +30,8 @@ import { PageHeader } from '@/components/layout/page-header';
 import { renewalsMetrics } from '@/lib/metrics';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { requireSession } from '@/lib/auth-session';
+import { requirePagePermission } from '@/lib/rbac';
+import { legacyAdminOrManager } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
 import { runInTenant } from '@/lib/db';
@@ -173,10 +173,7 @@ export default async function RenewalsPipelinePage({
   const t = await getTranslations('admin.renewals');
 
   // Auth + role check — managers permitted on this read-only surface.
-  const { user: currentUser } = await requireSession('staff');
-  if (currentUser.role !== 'admin' && currentUser.role !== 'manager') {
-    redirect('/portal');
-  }
+  const { user: currentUser } = await requirePagePermission('renewals.read', legacyAdminOrManager);
 
   if (!env.features.f8Renewals) {
     return (

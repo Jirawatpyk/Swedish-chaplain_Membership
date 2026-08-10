@@ -23,7 +23,8 @@ export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.invoices.meta');
   return { title: t('title') };
 }
-import { requireSession } from '@/lib/auth-session';
+import { requirePagePermission } from '@/lib/rbac';
+import { legacySessionOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { env } from '@/lib/env';
@@ -144,7 +145,7 @@ export default async function InvoiceDetailPage({
   const { invoiceId } = await params;
   const t = await getTranslations('admin.invoices.detail');
   const tStatus = await getTranslations('admin.invoices.list.statuses');
-  const { user: currentUser } = await requireSession('staff');
+  const { user: currentUser } = await requirePagePermission('invoicing.read', legacySessionOnly);
   // M3 — use the next-intl locale for date display so TH/SV users
   // see their localised format instead of the browser default.
   const locale = (await import('next-intl/server')).getLocale;

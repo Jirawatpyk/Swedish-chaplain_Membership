@@ -27,7 +27,8 @@ import { makeDrizzleBroadcastTemplatesRepo } from '@/modules/broadcasts/infrastr
 import { f7AuditAdapter } from '@/modules/broadcasts';
 import { safeAuditEmit } from '@/modules/broadcasts/application/use-cases/_safe-audit-emit';
 import { runInTenant } from '@/lib/db';
-import { requireSession } from '@/lib/auth-session';
+import { requirePagePermission } from '@/lib/rbac';
+import { legacyAdminOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -44,8 +45,7 @@ export default async function AdminBroadcastEditTemplatePage({
 }: RouteParams): Promise<React.ReactElement> {
   if (!isF71aUs7Enabled()) notFound();
 
-  const session = await requireSession('staff');
-  if (session.user.role !== 'admin') notFound();
+  const session = await requirePagePermission('broadcasts.write', legacyAdminOnly);
 
   const { id } = await params;
   const tenantCtx = resolveTenantFromRequest();

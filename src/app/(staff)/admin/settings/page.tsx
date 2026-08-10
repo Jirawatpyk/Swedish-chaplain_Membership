@@ -26,7 +26,8 @@ import {
 } from '@/components/ui/card';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { requireSession } from '@/lib/auth-session';
+import { requirePagePermission } from '@/lib/rbac';
+import { legacySessionOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.settings.index');
@@ -49,7 +50,7 @@ const CATEGORIES = [
 ] as const;
 
 export default async function SettingsIndexPage() {
-  await requireSession('staff');
+  await requirePagePermission('dashboard.view', legacySessionOnly);
   const t = await getTranslations('admin.settings.index');
   return (
     <DetailContainer>

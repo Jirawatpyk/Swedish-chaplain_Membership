@@ -32,7 +32,6 @@
  * SCCM member-number search — see `src/modules/insights/application/erasure-evidence.ts`.
  */
 import type { Metadata } from 'next';
-import { notFound } from 'next/navigation';
 import { getTranslations, getLocale } from 'next-intl/server';
 import { env } from '@/lib/env';
 import { Card, CardContent } from '@/components/ui/card';
@@ -40,7 +39,8 @@ import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { EmptyState } from '@/components/shell/empty-state';
 import { ShieldCheckIcon } from 'lucide-react';
-import { requireSession } from '@/lib/auth-session';
+import { requirePagePermission } from '@/lib/rbac';
+import { legacyAdminOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
 import {
@@ -123,8 +123,7 @@ export default async function ErasureLogPage({
   readonly searchParams: Promise<SearchParams>;
 }): Promise<React.JSX.Element> {
   // RBAC: staff session, then admin-only. Manager + member → notFound (no leak).
-  const { user } = await requireSession('staff');
-  if (user.role !== 'admin') notFound();
+  await requirePagePermission('members.erasure_log_read', legacyAdminOnly);
 
   const params = await searchParams;
   const t = await getTranslations('admin.compliance.erasureLog');
