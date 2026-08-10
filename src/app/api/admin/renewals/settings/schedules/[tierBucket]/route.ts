@@ -55,7 +55,7 @@ export async function PUT(
     });
   }
 
-  const ctx = await requireRenewalAdminContext(request, 'write');
+  const ctx = await requireRenewalAdminContext(request, 'write', 'settings.renewal_schedules');
   if ('response' in ctx) return ctx.response;
 
   const { tierBucket: rawTierBucket } = await context.params;

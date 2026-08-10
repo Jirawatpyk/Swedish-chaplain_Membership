@@ -14,11 +14,11 @@ import { err, ok } from '@/lib/result';
 // Mock seams — declared before any import of the route.
 // ---------------------------------------------------------------------------
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const discardAutoDraftedRenewalMock = vi.fn();
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 
 vi.mock('@/lib/tenant-context', () => ({
@@ -108,7 +108,7 @@ describe('contract: POST /api/invoices/[invoiceId]/discard-auto-draft (Task 14)'
   }, 60_000);
 
   beforeEach(() => {
-    requireAdminContextMock.mockResolvedValue(adminContext);
+    requireApiPermissionMock.mockResolvedValue(adminContext);
   });
 
   afterEach(() => {
@@ -116,7 +116,7 @@ describe('contract: POST /api/invoices/[invoiceId]/discard-auto-draft (Task 14)'
   });
 
   it('403 for a non-admin caller — the use-case is never called', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: new Response(JSON.stringify({ error: 'forbidden' }), { status: 403 }),
     });
 

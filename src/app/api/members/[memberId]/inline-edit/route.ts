@@ -25,7 +25,8 @@
  */
 
 import { NextResponse, type NextRequest } from 'next/server';
-import { requireAdminContext } from '@/lib/admin-context';
+import { requireApiPermission } from '@/lib/rbac';
+import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import {
   parseIdempotencyKey,
@@ -44,10 +45,7 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ memberId: string }> },
 ): Promise<NextResponse> {
-  const ctx = await requireAdminContext(request, {
-    resource: 'members',
-    action: 'write',
-  });
+  const ctx = await requireApiPermission(request, 'members.write', mappedLegacy('members', 'write'));
   if ('response' in ctx) return ctx.response;
 
   const { memberId: rawMemberId } = await params;

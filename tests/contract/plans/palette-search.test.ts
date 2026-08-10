@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 import { ok } from '@/lib/result';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const searchPlansMock = vi.fn();
 const buildPlansDepsMock = vi.fn();
 // 055-member-number — runInTenant stub so we can supply a fake prefix
@@ -28,8 +28,8 @@ const listInvoicesPagedMock = vi.fn();
 const loadInvoicePaymentActivityMock = vi.fn();
 const computeRemainingRefundableMock = vi.fn();
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 vi.mock('@/modules/plans/plans-deps', () => ({
   buildPlansDeps: (...args: unknown[]) => buildPlansDepsMock(...args),
@@ -186,7 +186,7 @@ describe('contract: GET /api/plans/search (T064)', () => {
   });
 
   it('200 — returns { results: { plans, actions, navigate } } envelope', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     stubPlansOk();
 
     const { GET } = await import('@/app/api/plans/search/route');
@@ -199,7 +199,7 @@ describe('contract: GET /api/plans/search (T064)', () => {
   });
 
   it('200 — manager gets filtered actions (no create/clone)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(managerContext);
+    requireApiPermissionMock.mockResolvedValueOnce(managerContext);
     buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
     searchPlansMock.mockResolvedValueOnce(
       ok({
@@ -223,7 +223,7 @@ describe('contract: GET /api/plans/search (T064)', () => {
   });
 
   it('400 when q is missing', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
     const { GET } = await import('@/app/api/plans/search/route');
     const res = await GET(new NextRequest('http://localhost/api/plans/search'));
@@ -232,7 +232,7 @@ describe('contract: GET /api/plans/search (T064)', () => {
   });
 
   it('401 when unauthenticated', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: NextResponse.json({ error: 'no-session' }, { status: 401 }),
     });
     const { GET } = await import('@/app/api/plans/search/route');
@@ -243,7 +243,7 @@ describe('contract: GET /api/plans/search (T064)', () => {
 
   // 055-member-number — member hits include formatted display number
   it('200 — member results include member_number_display (SCCM-NNNN)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     stubPlansOk(true);
     // The route resolves the display prefix via resolveMemberNumberPrefix
     // (mocked to 'SCCM' above) + directorySearch (mocked to Acme Co #42), so the
@@ -268,7 +268,7 @@ describe('contract: GET /api/plans/search (T064)', () => {
   // invoice has a NULL §87 documentNumber → its §86/4 RC number must surface;
   // a legacy paid invoice keeps its §87 number. Locks route.ts line ~223.
   it('200 — refundable rows resolve invoice_number (088 RC fallback + legacy §87)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     stubPlansOk(true);
 
     // Paid 088 invoice: documentNumber NULL → number lives in its RC receipt.

@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 import { ok, err } from '@/lib/result';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const acceptPartialDeliveryMock = vi.fn();
 const isF71aUs1EnabledMock = vi.fn();
 const f71aUs1DisabledReasonMock = vi.fn();
@@ -23,9 +23,9 @@ const adminCtx = {
   requestId: 'req-test-1',
 };
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) =>
-    requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) =>
+    requireApiPermissionMock(...args),
 }));
 vi.mock('@/lib/tenant-context', () => ({
   resolveTenantFromRequest: () => ({ slug: 'test-tenant' }),
@@ -63,7 +63,7 @@ function makeContext(): { params: Promise<{ id: string }> } {
 }
 
 beforeEach(() => {
-  requireAdminContextMock.mockResolvedValue(adminCtx);
+  requireApiPermissionMock.mockResolvedValue(adminCtx);
   acceptPartialDeliveryMock.mockReset();
   isF71aUs1EnabledMock.mockReturnValue(true);
   f71aUs1DisabledReasonMock.mockReturnValue(null);
@@ -78,7 +78,7 @@ afterEach(() => {
 
 describe('admin accept-partial route — wire contract (Phase 3F.11.5 / Finding 8b)', () => {
   it('admin auth rejection → returns the auth response (401/403)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: NextResponse.json({ error: 'forbidden' }, { status: 403 }),
     });
     const { POST } = await import(

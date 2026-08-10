@@ -17,7 +17,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { ok, err } from '@/lib/result';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const eraseMemberMock = vi.fn();
 const buildEraseMemberDepsMock = vi.fn();
 // Loosely typed so a single mock can return any idempotency classification
@@ -33,8 +33,8 @@ const reserveIdempotencyRecordMock: ReturnType<typeof vi.fn> = vi.fn(
   }),
 );
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 vi.mock('@/modules/members/members-deps', () => ({
   buildEraseMemberDeps: (...args: unknown[]) => buildEraseMemberDepsMock(...args),
@@ -133,7 +133,7 @@ describe('contract: POST /api/members/[memberId]/erase (COMP-1 US3-A)', () => {
   }
 
   it('200 happy path — erase succeeds, attestation forwarded to eraseMember', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildEraseMemberDepsMock.mockReturnValueOnce({});
     eraseMemberMock.mockResolvedValueOnce(
       ok({ memberId: MEMBER_ID, erasedAt, cascadesComplete: true }),
@@ -158,7 +158,7 @@ describe('contract: POST /api/members/[memberId]/erase (COMP-1 US3-A)', () => {
   });
 
   it('200 cascadesComplete:false is still 200', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildEraseMemberDepsMock.mockReturnValueOnce({});
     eraseMemberMock.mockResolvedValueOnce(
       ok({ memberId: MEMBER_ID, erasedAt, cascadesComplete: false }),
@@ -172,7 +172,7 @@ describe('contract: POST /api/members/[memberId]/erase (COMP-1 US3-A)', () => {
   });
 
   it('401 no session — eraseMember not called', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: new Response(JSON.stringify({ error: 'no-session' }), {
         status: 401,
       }),
@@ -185,7 +185,7 @@ describe('contract: POST /api/members/[memberId]/erase (COMP-1 US3-A)', () => {
   });
 
   it('403 manager — eraseMember not called', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: new Response(JSON.stringify({ error: 'forbidden' }), {
         status: 403,
       }),
@@ -198,7 +198,7 @@ describe('contract: POST /api/members/[memberId]/erase (COMP-1 US3-A)', () => {
   });
 
   it('400 invalid_body — reason missing, eraseMember not called', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
 
     const res = await invoke({
       identityVerified: true,
@@ -212,7 +212,7 @@ describe('contract: POST /api/members/[memberId]/erase (COMP-1 US3-A)', () => {
   });
 
   it('400 invalid_body — identityVerified:false cannot bypass attestation', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
 
     const res = await invoke({ ...VALID_BODY, identityVerified: false });
 
@@ -223,7 +223,7 @@ describe('contract: POST /api/members/[memberId]/erase (COMP-1 US3-A)', () => {
   });
 
   it('400 invalid_body — identityVerified absent', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
 
     const res = await invoke({
       reason: 'gdpr_erasure_request',
@@ -237,7 +237,7 @@ describe('contract: POST /api/members/[memberId]/erase (COMP-1 US3-A)', () => {
   });
 
   it('400 invalid_body — unknown verificationMethod', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
 
     const res = await invoke({ ...VALID_BODY, verificationMethod: 'telepathy' });
 
@@ -248,7 +248,7 @@ describe('contract: POST /api/members/[memberId]/erase (COMP-1 US3-A)', () => {
   });
 
   it('400 invalid_body — note > 500 chars', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
 
     const res = await invoke({ ...VALID_BODY, note: 'x'.repeat(501) });
 
@@ -259,7 +259,7 @@ describe('contract: POST /api/members/[memberId]/erase (COMP-1 US3-A)', () => {
   });
 
   it('400 missing_idempotency_key', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
 
     const res = await invoke(VALID_BODY, {});
 
@@ -269,7 +269,7 @@ describe('contract: POST /api/members/[memberId]/erase (COMP-1 US3-A)', () => {
   });
 
   it('404 not_found — cross-tenant or missing member', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildEraseMemberDepsMock.mockReturnValueOnce({});
     eraseMemberMock.mockResolvedValueOnce(err({ type: 'not_found' }));
 
@@ -281,7 +281,7 @@ describe('contract: POST /api/members/[memberId]/erase (COMP-1 US3-A)', () => {
   });
 
   it('500 server_error on unexpected failure', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildEraseMemberDepsMock.mockReturnValueOnce({});
     eraseMemberMock.mockResolvedValueOnce(
       err({ type: 'server_error', message: 'boom' }),
@@ -295,7 +295,7 @@ describe('contract: POST /api/members/[memberId]/erase (COMP-1 US3-A)', () => {
   });
 
   it('409 idempotency_conflict — eraseMember not called', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     classifyIdempotencyRequestMock.mockResolvedValueOnce({ kind: 'conflict' });
 
     const res = await invoke(VALID_BODY);
@@ -307,7 +307,7 @@ describe('contract: POST /api/members/[memberId]/erase (COMP-1 US3-A)', () => {
   });
 
   it('200 replay — returns previous response, eraseMember not called', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     classifyIdempotencyRequestMock.mockResolvedValueOnce({
       kind: 'replay',
       previousResponse: {
@@ -331,7 +331,7 @@ describe('contract: POST /api/members/[memberId]/erase (COMP-1 US3-A)', () => {
   it('503 idempotency_reservation_failed — Upstash outage, eraseMember not called', async () => {
     // Destructive GDPR surface: a reservation outage MUST fail closed (503 +
     // Retry-After) and NOT fall through to an unprotected erase. (speckit tests #1)
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     reserveIdempotencyRecordMock.mockResolvedValueOnce({ ok: false });
 
     const res = await invoke(VALID_BODY);
@@ -346,7 +346,7 @@ describe('contract: POST /api/members/[memberId]/erase (COMP-1 US3-A)', () => {
   it('400 invalid_body — malformed JSON body, eraseMember not called', async () => {
     // The route's `JSON.parse` try/catch → 400 path (distinct from the schema
     // 400 path). The header docstring lists malformed JSON as a 400 trigger. (#2)
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     const { POST } = await import('@/app/api/members/[memberId]/erase/route');
     const req = new NextRequest(
       `http://localhost/api/members/${MEMBER_ID}/erase`,
@@ -376,7 +376,7 @@ describe('contract: POST /api/members/[memberId]/erase (COMP-1 US3-A)', () => {
     // BEFORE any body/idempotency work — a reachable HTTP branch (direct API
     // call with a bad id), distinct from the use-case `not_found` (a real but
     // missing/cross-tenant member).
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     const { POST } = await import('@/app/api/members/[memberId]/erase/route');
 
     const res = await POST(makeRequest(VALID_BODY), {

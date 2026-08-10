@@ -24,7 +24,7 @@
  *   (1) Composition-level — call the barrel's `guardGenericRouteIssueOrigin`
  *       + `makeGuardGenericRouteIssueOriginDeps` directly, fully unmocked.
  *   (2) Route-level — import the REAL route handler and POST to it with a
- *       real `NextRequest`. Only `requireAdminContext` is mocked (the SAME,
+ *       real `NextRequest`. Only `requireApiPermission` is mocked (the SAME,
  *       and only, mock every other "hit a real route" integration test in
  *       this repo accepts — e.g. tests/integration/members/
  *       bulk-action-rate-limit.test.ts — because this repo has no harness
@@ -68,9 +68,9 @@ import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 // Only auth is mocked (see file header). Everything downstream of it —
 // tenant resolution, rate limiting, the guard, its deps factory, and
 // issueInvoice — runs for real against live Neon.
-const requireAdminContextMock = vi.fn();
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+const requireApiPermissionMock = vi.fn();
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 
 const MATRIX: BenefitMatrix = {
@@ -205,7 +205,7 @@ describe('issue route + guard — COMPOSED, live Neon (107-auto-invoice Task 10)
   }, 60_000);
 
   // ---------------------------------------------------------------------
-  // (2) Route-level — the REAL POST handler. Only requireAdminContext is
+  // (2) Route-level — the REAL POST handler. Only requireApiPermission is
   // mocked (module-level, see top of file); everything else — tenant
   // resolution, rate limiter, guard, deps factory, issueInvoice — is real.
   // ---------------------------------------------------------------------
@@ -228,7 +228,7 @@ describe('issue route + guard — COMPOSED, live Neon (107-auto-invoice Task 10)
   }
 
   it('POSTs an auto_renewal draft to the real route -> 422, and NOTHING was minted on the real row', async () => {
-    requireAdminContextMock.mockResolvedValue(adminContextFor(user));
+    requireApiPermissionMock.mockResolvedValue(adminContextFor(user));
     const invoiceId = await insertDraft('auto_renewal');
 
     const { POST } = await import('@/app/api/invoices/[invoiceId]/issue/route');

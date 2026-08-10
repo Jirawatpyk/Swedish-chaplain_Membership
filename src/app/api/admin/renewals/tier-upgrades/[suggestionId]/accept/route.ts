@@ -31,7 +31,7 @@ export async function POST(
     });
   }
 
-  const ctx = await requireRenewalAdminContext(request, 'write');
+  const ctx = await requireRenewalAdminContext(request, 'write', 'renewals.write');
   if ('response' in ctx) return ctx.response;
 
   const { suggestionId } = await context.params;

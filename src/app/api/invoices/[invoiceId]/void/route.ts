@@ -7,7 +7,8 @@
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
-import { requireAdminContext } from '@/lib/admin-context';
+import { requireApiPermission } from '@/lib/rbac';
+import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import {
@@ -59,7 +60,7 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ invoiceId: string }> },
 ): Promise<NextResponse> {
-  const ctx = await requireAdminContext(request, { resource: 'invoice', action: 'write' });
+  const ctx = await requireApiPermission(request, 'invoicing.void', mappedLegacy('invoice', 'write'));
   if ('response' in ctx) return ctx.response;
   // Manager role is read-only on finance per Constitution.
   if (ctx.current.user.role !== 'admin') {

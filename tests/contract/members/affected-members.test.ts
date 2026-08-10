@@ -5,11 +5,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { ok, err } from '@/lib/result';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const affectedMembersCountMock = vi.fn();
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 vi.mock('@/modules/members/members-deps', () => ({
   buildMembersDeps: vi.fn(() => ({ plans: {} })),
@@ -56,7 +56,7 @@ describe('contract: GET /api/plans/[year]/[planId]/affected-members (T071)', () 
   afterEach(() => vi.clearAllMocks());
 
   it('200 — returns { plan_id, plan_year, count }', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     affectedMembersCountMock.mockResolvedValueOnce(ok({ count: 47 }));
     const { GET } = await import(
       '@/app/api/plans/[year]/[planId]/affected-members/route'
@@ -72,7 +72,7 @@ describe('contract: GET /api/plans/[year]/[planId]/affected-members (T071)', () 
   });
 
   it('404 on invalid params', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     const { GET } = await import(
       '@/app/api/plans/[year]/[planId]/affected-members/route'
     );
@@ -83,7 +83,7 @@ describe('contract: GET /api/plans/[year]/[planId]/affected-members (T071)', () 
   });
 
   it('500 on use case error', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     affectedMembersCountMock.mockResolvedValueOnce(
       err({ type: 'server_error', message: 'x' }),
     );

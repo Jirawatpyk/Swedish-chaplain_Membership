@@ -32,7 +32,8 @@ import {
 } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
-import { requireAdminContext } from '@/lib/admin-context';
+import { requireApiPermission } from '@/lib/rbac';
+import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { logger } from '@/lib/logger';
 
 const inputSchema = z.object({
@@ -72,7 +73,18 @@ const createUserPort: CreateUserPort = async (input) => {
 };
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  const ctx = await requireAdminContext(request);
+  // 016 T028 (§ 7.1 per-TARGET contract, contracts/authorization-surfaces § 3):
+  // step 1 gates on the WIDER capability (`users.member_accounts` — held by
+  // super_admin + admin on the ON leg) before the body is read; step 2 below
+  // re-gates on `users.manage` (SA-only) once the target role is known to be a
+  // staff role. On the OFF leg both rows are `mappedLegacy('auth:user',
+  // 'write')` — exactly the single pre-sweep `requireAdminContext(request)`
+  // check, so behaviour is byte-identical.
+  const ctx = await requireApiPermission(
+    request,
+    'users.member_accounts',
+    mappedLegacy('auth:user', 'write'),
+  );
   if ('response' in ctx) return ctx.response;
   // B3 — outer try/catch (see sign-in/route.ts B3 note).
   try {
@@ -106,6 +118,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       },
       { status: 400 },
     );
+  }
+
+  // Step 2 (§ 7.1): a STAFF-role target requires `users.manage` (SA-only on
+  // the ON leg). Placed before either branch acts; the OFF-leg row is the
+  // same as step 1, so pre-cutover this re-check is a no-op for anyone who
+  // passed step 1.
+  if (parsed.data.role !== 'member') {
+    const staffGate = await requireApiPermission(
+      request,
+      'users.manage',
+      mappedLegacy('auth:user', 'write'),
+    );
+    if ('response' in staffGate) return staffGate.response;
   }
 
   // --- Branch A: member role with optional memberId link ---

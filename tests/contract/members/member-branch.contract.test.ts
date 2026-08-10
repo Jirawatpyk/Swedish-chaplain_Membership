@@ -10,7 +10,7 @@
  *     branch fields in `fields_changed` + `diff` (NO new audit event type).
  *
  *  2. The ROUTE RBAC (admin-only) — a manager / member is denied at the
- *     `requireAdminContext(request, { resource:'members', action:'write' })`
+ *     `requireApiPermission(request, { resource:'members', action:'write' })`
  *     guard before the use-case runs; NOT exposed on the member self-portal.
  *
  * The use-case tests import `updateMember` from its DEEP path (real), with
@@ -31,10 +31,10 @@ vi.mock('@/lib/db', () => ({
 
 // Route layer: admin guard + barrel + deps stubbed so the RBAC path is testable
 // without loading the real members module.
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const routeUpdateMemberMock = vi.fn();
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 vi.mock('@/modules/members', () => ({
   updateMember: (...a: unknown[]) => routeUpdateMemberMock(...a),
@@ -222,7 +222,7 @@ describe('T027 PATCH /api/members/[memberId] — admin-only RBAC (contract)', ()
   }
 
   it('a non-admin (manager) is denied at the write guard → the guard response, use-case NOT called', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: NextResponse.json(
         { error: { code: 'forbidden', message: 'Forbidden.' } },
         { status: 403 },
@@ -234,15 +234,16 @@ describe('T027 PATCH /api/members/[memberId] — admin-only RBAC (contract)', ()
     });
     expect(res.status).toBe(403);
     expect(routeUpdateMemberMock).not.toHaveBeenCalled();
-    // Asserts the write action is what gates the branch edit (tax-critical).
-    expect(requireAdminContextMock).toHaveBeenCalledWith(expect.anything(), {
-      resource: 'members',
-      action: 'write',
-    });
+    // Asserts the write key + shim row gate the branch edit (tax-critical).
+    expect(requireApiPermissionMock).toHaveBeenCalledWith(
+      expect.anything(),
+      'members.write',
+      { kind: 'mappedLegacy', resource: 'members', action: 'write' },
+    );
   });
 
   it('an admin branch edit dispatches to the field-update arm (not change-plan) → 200', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       current: { user: { id: 'admin-1', role: 'admin' } },
       requestId: 'req-branch',
     });

@@ -10,13 +10,13 @@ import { describe, expect, it, vi, afterEach } from 'vitest';
 import { NextRequest } from 'next/server';
 import { ok } from '@/lib/result';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const rateLimitCheckMock = vi.fn();
 const auditRecordMock = vi.fn().mockResolvedValue(ok(undefined));
 const bulkActionMock = vi.fn();
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 vi.mock('@/modules/members/members-deps', () => ({
   buildMembersDeps: vi.fn(() => ({
@@ -92,7 +92,7 @@ describe('integration: bulk action rate limit route (T101 / round-2 C-1)', () =>
   afterEach(() => vi.clearAllMocks());
 
   it('429 + audit emission when rate-limited at route layer', { timeout: 30_000 }, async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     rateLimitCheckMock.mockResolvedValueOnce({
       success: false,
       remaining: 0,
@@ -131,7 +131,7 @@ describe('integration: bulk action rate limit route (T101 / round-2 C-1)', () =>
   });
 
   it('rate limit check uses correct key shape (bulk:tenant:actor)', { timeout: 30_000 }, async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     rateLimitCheckMock.mockResolvedValueOnce({
       success: false,
       remaining: 0,
@@ -154,7 +154,7 @@ describe('integration: bulk action rate limit route (T101 / round-2 C-1)', () =>
   });
 
   it('round-2 I-5: audit write failure does not mask the 429 response', { timeout: 30_000 }, async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     rateLimitCheckMock.mockResolvedValueOnce({
       success: false,
       remaining: 0,

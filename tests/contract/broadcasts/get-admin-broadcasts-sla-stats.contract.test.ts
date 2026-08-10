@@ -11,11 +11,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const runInTenantMock = vi.fn();
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 vi.mock('@/lib/tenant-context', () => ({
   resolveTenantFromRequest: () => ({ slug: 'test-tenant', __brand: true }),
@@ -76,7 +76,7 @@ afterEach(() => {
 
 describe('GET /api/admin/broadcasts/sla-stats — Wave 6 GREEN (T125a)', () => {
   it('200: full envelope shape with stats', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     runInTenantMock.mockResolvedValueOnce([
       { decision_count: 10, median_hours: 18.5, p95_hours: 36.2 },
     ]);
@@ -96,7 +96,7 @@ describe('GET /api/admin/broadcasts/sla-stats — Wave 6 GREEN (T125a)', () => {
   });
 
   it('zero data path: medianTimeToDecisionHours=null, decisionCount=0, severity=green', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     runInTenantMock.mockResolvedValueOnce([
       { decision_count: 0, median_hours: null, p95_hours: null },
     ]);
@@ -111,7 +111,7 @@ describe('GET /api/admin/broadcasts/sla-stats — Wave 6 GREEN (T125a)', () => {
   });
 
   it('banner severity = green when median ≤24h AND p95 ≤40h', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     runInTenantMock.mockResolvedValueOnce([
       { decision_count: 5, median_hours: 23.9, p95_hours: 39.9 },
     ]);
@@ -121,7 +121,7 @@ describe('GET /api/admin/broadcasts/sla-stats — Wave 6 GREEN (T125a)', () => {
   });
 
   it('banner severity = amber when median > 24h (and p95 ≤48h)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     runInTenantMock.mockResolvedValueOnce([
       { decision_count: 5, median_hours: 25, p95_hours: 35 },
     ]);
@@ -131,7 +131,7 @@ describe('GET /api/admin/broadcasts/sla-stats — Wave 6 GREEN (T125a)', () => {
   });
 
   it('banner severity = amber when p95 > 40h (and p95 ≤48h)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     runInTenantMock.mockResolvedValueOnce([
       { decision_count: 5, median_hours: 20, p95_hours: 41 },
     ]);
@@ -141,7 +141,7 @@ describe('GET /api/admin/broadcasts/sla-stats — Wave 6 GREEN (T125a)', () => {
   });
 
   it('banner severity = red when p95 > 48h (SC-002 breach)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     runInTenantMock.mockResolvedValueOnce([
       { decision_count: 5, median_hours: 30, p95_hours: 60 },
     ]);
@@ -151,7 +151,7 @@ describe('GET /api/admin/broadcasts/sla-stats — Wave 6 GREEN (T125a)', () => {
   });
 
   it('401: unauthenticated', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: unauthorisedResponse,
     });
     const { GET } = await importRoute();
@@ -161,7 +161,7 @@ describe('GET /api/admin/broadcasts/sla-stats — Wave 6 GREEN (T125a)', () => {
   });
 
   it('403: member attempting access (admin-context guard rejects)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: forbiddenResponse,
     });
     const { GET } = await importRoute();
@@ -170,7 +170,7 @@ describe('GET /api/admin/broadcasts/sla-stats — Wave 6 GREEN (T125a)', () => {
   });
 
   it('200: manager role allowed (read-only access)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(managerCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(managerCtx);
     runInTenantMock.mockResolvedValueOnce([
       { decision_count: 3, median_hours: 12, p95_hours: 22 },
     ]);
@@ -180,7 +180,7 @@ describe('GET /api/admin/broadcasts/sla-stats — Wave 6 GREEN (T125a)', () => {
   });
 
   it('aggregation runs inside runInTenant (RLS scoping)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     runInTenantMock.mockResolvedValueOnce([
       { decision_count: 1, median_hours: 1, p95_hours: 1 },
     ]);
@@ -192,7 +192,7 @@ describe('GET /api/admin/broadcasts/sla-stats — Wave 6 GREEN (T125a)', () => {
   });
 
   it('500: unexpected error returns internal_error envelope', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     runInTenantMock.mockRejectedValueOnce(new Error('db down'));
     const { GET } = await importRoute();
     const res = await GET(makeRequest());

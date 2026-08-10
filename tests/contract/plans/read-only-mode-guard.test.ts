@@ -28,7 +28,7 @@ vi.mock('@/lib/env', () => ({
   },
 }));
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const createPlanMock = vi.fn();
 const updatePlanMock = vi.fn();
 const softDeletePlanMock = vi.fn();
@@ -39,8 +39,8 @@ const clonePlansToYearMock = vi.fn();
 const cancelScheduledPlanChangeMock = vi.fn();
 const buildPlansDepsMock = vi.fn();
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 vi.mock('@/modules/plans/plans-deps', () => ({
   buildPlansDeps: (...args: unknown[]) => buildPlansDepsMock(...args),
@@ -148,14 +148,14 @@ describe('R2-S8: READ_ONLY_MODE 503 short-circuit across 8 F2 mutation routes', 
   afterEach(() => vi.clearAllMocks());
 
   it('POST /api/plans (create) → 503', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     const { POST } = await import('@/app/api/plans/route');
     const res = await POST(makeReq('http://x/api/plans', { x: 1 }));
     await assert503ReadOnly(res, createPlanMock);
   });
 
   it('POST /api/plans/clone → 503', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     const { POST } = await import('@/app/api/plans/clone/route');
     const res = await POST(
       makeReq('http://x/api/plans/clone', { source_year: 2025, target_year: 2026 }),
@@ -164,7 +164,7 @@ describe('R2-S8: READ_ONLY_MODE 503 short-circuit across 8 F2 mutation routes', 
   });
 
   it('PATCH /api/plans/[year]/[planId] → 503', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     const { PATCH } = await import('@/app/api/plans/[year]/[planId]/route');
     const res = await PATCH(
       makeReq('http://x/api/plans/2026/premium', { plan_name: { en: 'X' } }, 'PATCH'),
@@ -174,7 +174,7 @@ describe('R2-S8: READ_ONLY_MODE 503 short-circuit across 8 F2 mutation routes', 
   });
 
   it('DELETE /api/plans/[year]/[planId] → 503', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     const { DELETE } = await import('@/app/api/plans/[year]/[planId]/route');
     const res = await DELETE(
       makeReq('http://x/api/plans/2026/premium', {}, 'DELETE'),
@@ -184,7 +184,7 @@ describe('R2-S8: READ_ONLY_MODE 503 short-circuit across 8 F2 mutation routes', 
   });
 
   it('POST /api/plans/[year]/[planId]/activate → 503', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     const { POST } = await import(
       '@/app/api/plans/[year]/[planId]/activate/route'
     );
@@ -195,7 +195,7 @@ describe('R2-S8: READ_ONLY_MODE 503 short-circuit across 8 F2 mutation routes', 
   });
 
   it('POST /api/plans/[year]/[planId]/deactivate → 503', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     const { POST } = await import(
       '@/app/api/plans/[year]/[planId]/deactivate/route'
     );
@@ -206,7 +206,7 @@ describe('R2-S8: READ_ONLY_MODE 503 short-circuit across 8 F2 mutation routes', 
   });
 
   it('POST /api/plans/[year]/[planId]/undelete → 503', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     const { POST } = await import(
       '@/app/api/plans/[year]/[planId]/undelete/route'
     );
@@ -217,7 +217,7 @@ describe('R2-S8: READ_ONLY_MODE 503 short-circuit across 8 F2 mutation routes', 
   });
 
   it('POST /api/admin/scheduled-plan-changes/[id]/cancel → 503', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     const { POST } = await import(
       '@/app/api/admin/scheduled-plan-changes/[id]/cancel/route'
     );
@@ -245,7 +245,7 @@ describe('R2-S8: READ_ONLY_MODE 503 short-circuit across 8 F2 mutation routes', 
 // fires before readonly". A refactor swapping the order would
 // silently leak 503 to unauthenticated callers.
 //
-// These 8 tests mock `requireAdminContext` to return a 401 response
+// These 8 tests mock `requireApiPermission` to return a 401 response
 // + assert the route returns 401 (NOT 503) under READ_ONLY_MODE=true.
 // Use-case mocks MUST NOT be called.
 // ============================================================
@@ -272,14 +272,14 @@ describe('R3-C4: auth fires BEFORE read-only-mode across 8 F2 mutation routes', 
   afterEach(() => vi.clearAllMocks());
 
   it('POST /api/plans (create): unauthenticated → 401 not 503', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(unauthenticatedCtx());
+    requireApiPermissionMock.mockResolvedValueOnce(unauthenticatedCtx());
     const { POST } = await import('@/app/api/plans/route');
     const res = await POST(makeReq('http://x/api/plans', { x: 1 }));
     await assert401NotReadOnly(res, createPlanMock);
   });
 
   it('POST /api/plans/clone: unauthenticated → 401 not 503', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(unauthenticatedCtx());
+    requireApiPermissionMock.mockResolvedValueOnce(unauthenticatedCtx());
     const { POST } = await import('@/app/api/plans/clone/route');
     const res = await POST(
       makeReq('http://x/api/plans/clone', {
@@ -291,7 +291,7 @@ describe('R3-C4: auth fires BEFORE read-only-mode across 8 F2 mutation routes', 
   });
 
   it('PATCH /api/plans/[year]/[planId]: unauthenticated → 401 not 503', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(unauthenticatedCtx());
+    requireApiPermissionMock.mockResolvedValueOnce(unauthenticatedCtx());
     const { PATCH } = await import('@/app/api/plans/[year]/[planId]/route');
     const res = await PATCH(
       makeReq(
@@ -305,7 +305,7 @@ describe('R3-C4: auth fires BEFORE read-only-mode across 8 F2 mutation routes', 
   });
 
   it('DELETE /api/plans/[year]/[planId]: unauthenticated → 401 not 503', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(unauthenticatedCtx());
+    requireApiPermissionMock.mockResolvedValueOnce(unauthenticatedCtx());
     const { DELETE } = await import('@/app/api/plans/[year]/[planId]/route');
     const res = await DELETE(
       makeReq('http://x/api/plans/2026/premium', {}, 'DELETE'),
@@ -315,7 +315,7 @@ describe('R3-C4: auth fires BEFORE read-only-mode across 8 F2 mutation routes', 
   });
 
   it('POST /api/plans/[year]/[planId]/activate: unauthenticated → 401 not 503', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(unauthenticatedCtx());
+    requireApiPermissionMock.mockResolvedValueOnce(unauthenticatedCtx());
     const { POST } = await import(
       '@/app/api/plans/[year]/[planId]/activate/route'
     );
@@ -326,7 +326,7 @@ describe('R3-C4: auth fires BEFORE read-only-mode across 8 F2 mutation routes', 
   });
 
   it('POST /api/plans/[year]/[planId]/deactivate: unauthenticated → 401 not 503', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(unauthenticatedCtx());
+    requireApiPermissionMock.mockResolvedValueOnce(unauthenticatedCtx());
     const { POST } = await import(
       '@/app/api/plans/[year]/[planId]/deactivate/route'
     );
@@ -338,7 +338,7 @@ describe('R3-C4: auth fires BEFORE read-only-mode across 8 F2 mutation routes', 
   });
 
   it('POST /api/plans/[year]/[planId]/undelete: unauthenticated → 401 not 503', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(unauthenticatedCtx());
+    requireApiPermissionMock.mockResolvedValueOnce(unauthenticatedCtx());
     const { POST } = await import(
       '@/app/api/plans/[year]/[planId]/undelete/route'
     );
@@ -349,7 +349,7 @@ describe('R3-C4: auth fires BEFORE read-only-mode across 8 F2 mutation routes', 
   });
 
   it('POST /api/admin/scheduled-plan-changes/[id]/cancel: unauthenticated → 401 not 503', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(unauthenticatedCtx());
+    requireApiPermissionMock.mockResolvedValueOnce(unauthenticatedCtx());
     const { POST } = await import(
       '@/app/api/admin/scheduled-plan-changes/[id]/cancel/route'
     );

@@ -170,10 +170,11 @@ describe('GET /api/admin/renewals/settlement-preview — contract', () => {
     // Review round 1 fix D — a mutation of
     // `requireRenewalAdminContext(request, 'read')` → `'write'` would 403
     // every manager (this is a read-only surface: admin OR manager). Pin
-    // the exact authz mode requested so that mutation can't survive.
+    // the exact authz mode + flag-ON key so that mutation can't survive.
     expect(requireRenewalAdminContextMock).toHaveBeenCalledWith(
       expect.anything(),
       'read',
+      'renewals.read',
     );
   });
 

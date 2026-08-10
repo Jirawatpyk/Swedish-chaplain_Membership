@@ -14,11 +14,13 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { getCurrentSession, type CurrentSession } from '@/lib/auth-session';
-import { requireRole } from '@/lib/rbac-guard';
+import { requireApiPermission } from '@/lib/rbac';
 import { getClientIp } from '@/lib/client-ip';
 import { logger } from '@/lib/logger';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
+import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
+import type { PermissionKey } from '@/modules/auth/domain/permissions/permission-catalogue';
 import { makeRenewalsDeps } from '@/modules/renewals';
 
 export interface RenewalsErrorOptions {
@@ -97,9 +99,15 @@ export type RenewalAdminAction = 'read' | 'write' | 'manager_exception';
  * F8-aware admin gate. Drop-in replacement for `requireAdminContext`
  * that adds an F8 audit emit on the manager-deny path.
  *
- * On 403 for resource='renewal', action='write': emits
- * `f8_role_violation_blocked` (in addition to F1's `manager_denied_write`
- * via rbac-guard) per admin-renewals-api.md § 1 contract.
+ * 016 T028: composes `requireApiPermission` (the canonical RBAC v2 gate — the
+ * `permission_denied` trail + metric + both flag legs live there) and keeps the
+ * three F8-contract behaviours layered on top: the F8 error ENVELOPE
+ * (`{ error: { code }, correlationId }` + `X-Correlation-Id`, admin-renewals-api.md
+ * § 1), the `f8_role_violation_blocked` audit on the 403 path, and the
+ * `F8.ACCEPT_TIER.*` taxonomy log line on the 500 path. `key` is the surface's
+ * flag-ON permission; the flag-OFF row is always `mappedLegacy('renewal',
+ * rbacAction)` — exactly the pre-016 `requireRole(current, 'renewal', action)`
+ * this helper wrapped.
  *
  * Caller should always check `'response' in result` and return early
  * on rejection. The 401 path (no session) does NOT emit the F8 audit
@@ -108,107 +116,107 @@ export type RenewalAdminAction = 'read' | 'write' | 'manager_exception';
 export async function requireRenewalAdminContext(
   request: NextRequest,
   action: RenewalAdminAction,
+  key: PermissionKey,
 ): Promise<RenewalAdminContext | RenewalAdminContextRejection> {
   const correlationId = randomUUID();
   const requestId = requestIdFromHeaders(request.headers);
   const sourceIp = getClientIp(request);
 
-  try {
-    const current = await getCurrentSession();
-    if (!current) {
-      return {
-        response: errorResponse({
-          status: 401,
-          code: 'no_session',
-          correlationId,
-        }),
-      };
-    }
+  // 'manager_exception' allows both admin + manager (mirrors 'read'
+  // at the RBAC layer); the label is preserved for the audit emit
+  // path below so dashboards see the actual semantic.
+  const rbacAction = action === 'manager_exception' ? 'read' : action;
+  const gate = await requireApiPermission(
+    request,
+    key,
+    mappedLegacy('renewal', rbacAction),
+  );
 
-    // 'manager_exception' allows both admin + manager (mirrors 'read'
-    // at the RBAC layer); the label is preserved for the audit emit
-    // path below so dashboards see the actual semantic.
-    const rbacAction = action === 'manager_exception' ? 'read' : action;
-    const guard = await requireRole(current, 'renewal', rbacAction, {
-      sourceIp,
-      requestId,
-    });
-    if (!guard.ok) {
-      // F8 contract audit (verify-run C1). Fire-and-forget — never
-      // blocks the 403 response. Emits via the F8 audit emitter
-      // (drizzle-renewal-audit-emitter) which writes to audit_log.
-      try {
-        const tenantCtx = resolveTenantFromRequest(request);
-        const deps = makeRenewalsDeps(tenantCtx.slug);
-        await deps.auditEmitter.emit(
-          {
-            type: 'f8_role_violation_blocked',
-            payload: {
-              resource: 'renewal',
-              action,
-              // 016 PR1: cast preserved; PR 2 widens the F8 audit-port
-              // attempted_role union to the full staff-role set with the sweep.
-              attempted_role: current.user.role as 'admin' | 'manager' | 'member',
-              route: new URL(request.url).pathname,
-            },
-          },
-          {
-            tenantId: tenantCtx.slug,
-            actorUserId: current.user.id,
-            actorRole:
-              current.user.role === 'manager'
-                ? 'manager'
-                : current.user.role === 'admin'
-                  ? 'admin'
-                  : 'member',
-            correlationId,
-            requestId,
-            summary: `Role ${current.user.role} blocked from ${action} on renewal route ${new URL(request.url).pathname}`,
-          },
-        );
-      } catch (auditErr) {
-        // Audit failure must NOT block the 403 — log + continue.
-        logger.warn(
-          {
-            err:
-              auditErr instanceof Error ? auditErr.message : String(auditErr),
-            correlationId,
-            actorRole: current.user.role,
-          },
-          'f8_role_violation_blocked audit emit failed',
-        );
-      }
-      return {
-        response: errorResponse({
-          status: 403,
-          code: 'forbidden',
-          correlationId,
-        }),
-      };
+  if ('response' in gate) {
+    const status = gate.response.status;
+    if (status === 403) {
+      await emitF8RoleViolationBlocked(request, action, correlationId, requestId);
     }
-
-    return { current, sourceIp, requestId, correlationId };
-  } catch (error) {
-    // Attach the F8 errorId taxonomy entry so SRE alert rules
-    // keyed on `F8.ACCEPT_TIER.*` catch infrastructure errors that
-    // escape BEFORE the route's outer try/catch (which attaches
-    // F8.ACCEPT_TIER.UNEXPECTED). Session-lookup DB outages would
-    // otherwise produce 500 with no taxonomy-routed alert match.
-    logger.error(
-      {
-        errorId: 'F8.ACCEPT_TIER.CONTEXT_RESOLUTION_FAILED',
-        err: error instanceof Error ? error.message : String(error),
-        requestId,
-        correlationId,
-      },
-      'renewals-route-helpers.infrastructure-error',
-    );
+    if (status === 500) {
+      // Attach the F8 errorId taxonomy entry so SRE alert rules keyed on
+      // `F8.ACCEPT_TIER.*` catch infrastructure errors that escape BEFORE the
+      // route's outer try/catch (which attaches F8.ACCEPT_TIER.UNEXPECTED).
+      // The underlying cause is already logged by `requireApiPermission`
+      // (`rbac.session-lookup-failed`) with the same requestId.
+      logger.error(
+        {
+          errorId: 'F8.ACCEPT_TIER.CONTEXT_RESOLUTION_FAILED',
+          requestId,
+          correlationId,
+        },
+        'renewals-route-helpers.infrastructure-error',
+      );
+    }
     return {
       response: errorResponse({
-        status: 500,
-        code: 'server_error',
+        status,
+        code:
+          status === 401 ? 'no_session' : status === 403 ? 'forbidden' : 'server_error',
         correlationId,
       }),
     };
+  }
+
+  return { current: gate.current, sourceIp, requestId, correlationId };
+}
+
+/**
+ * F8 contract audit (verify-run C1). Fire-and-forget — never blocks the 403
+ * response. Emits via the F8 audit emitter (drizzle-renewal-audit-emitter)
+ * which writes to audit_log. Re-reads the session for the actor identity;
+ * a 403 implies one existed moments ago, and if it vanished in between the
+ * `permission_denied` trail from `requireApiPermission` still holds the actor.
+ */
+async function emitF8RoleViolationBlocked(
+  request: NextRequest,
+  action: RenewalAdminAction,
+  correlationId: string,
+  requestId: string,
+): Promise<void> {
+  try {
+    const current = await getCurrentSession();
+    if (!current) return;
+    const tenantCtx = resolveTenantFromRequest(request);
+    const deps = makeRenewalsDeps(tenantCtx.slug);
+    await deps.auditEmitter.emit(
+      {
+        type: 'f8_role_violation_blocked',
+        payload: {
+          resource: 'renewal',
+          action,
+          // 016 PR1: cast preserved; T033 widens the F8 audit-port
+          // attempted_role union to the full staff-role set with the sweep.
+          attempted_role: current.user.role as 'admin' | 'manager' | 'member',
+          route: new URL(request.url).pathname,
+        },
+      },
+      {
+        tenantId: tenantCtx.slug,
+        actorUserId: current.user.id,
+        actorRole:
+          current.user.role === 'manager'
+            ? 'manager'
+            : current.user.role === 'admin'
+              ? 'admin'
+              : 'member',
+        correlationId,
+        requestId,
+        summary: `Role ${current.user.role} blocked from ${action} on renewal route ${new URL(request.url).pathname}`,
+      },
+    );
+  } catch (auditErr) {
+    // Audit failure must NOT block the 403 — log + continue.
+    logger.warn(
+      {
+        err: auditErr instanceof Error ? auditErr.message : String(auditErr),
+        correlationId,
+      },
+      'f8_role_violation_blocked audit emit failed',
+    );
   }
 }

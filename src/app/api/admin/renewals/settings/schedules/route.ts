@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  const ctx = await requireRenewalAdminContext(request, 'read');
+  const ctx = await requireRenewalAdminContext(request, 'read', 'settings.renewal_schedules');
   if ('response' in ctx) return ctx.response;
 
   const tenantCtx = resolveTenantFromRequest(request);

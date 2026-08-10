@@ -29,7 +29,7 @@ export async function GET(
     });
   }
 
-  const ctx = await requireRenewalAdminContext(request, 'read');
+  const ctx = await requireRenewalAdminContext(request, 'read', 'renewals.read');
   if ('response' in ctx) return ctx.response;
 
   const { cycleId } = await context.params;

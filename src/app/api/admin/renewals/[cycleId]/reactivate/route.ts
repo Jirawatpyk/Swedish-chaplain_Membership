@@ -10,7 +10,7 @@
  *
  * Mirrors the cancel route (`[cycleId]/cancel/route.ts`):
  *   - `env.features.f8Renewals` kill-switch → 503
- *   - `requireRenewalAdminContext(request, 'write')` admin-only;
+ *   - `requireRenewalAdminContext(request, 'write', 'renewals.write')` admin-only;
  *     manager → 403 + `f8_role_violation_blocked` audit
  *   - shared `errorResponse` / `successResponse` envelopes
  *
@@ -54,7 +54,7 @@ export async function POST(
     });
   }
 
-  const ctx = await requireRenewalAdminContext(request, 'write');
+  const ctx = await requireRenewalAdminContext(request, 'write', 'renewals.write');
   if ('response' in ctx) return ctx.response;
 
   const { cycleId } = await context.params;

@@ -94,7 +94,7 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  const ctx = await requireRenewalAdminContext(request, 'read');
+  const ctx = await requireRenewalAdminContext(request, 'read', 'renewals.read');
   if ('response' in ctx) return ctx.response;
 
   // K8-L6: `Object.fromEntries` reads the URLSearchParams iterable

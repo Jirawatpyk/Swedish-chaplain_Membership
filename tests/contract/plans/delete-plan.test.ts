@@ -17,12 +17,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 import { ok, err } from '@/lib/result';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const softDeletePlanMock = vi.fn();
 const buildPlansDepsMock = vi.fn();
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 vi.mock('@/modules/plans/plans-deps', () => ({
   buildPlansDeps: (...args: unknown[]) => buildPlansDepsMock(...args),
@@ -110,7 +110,7 @@ describe('contract: DELETE /api/plans/[year]/[planId] (T123)', () => {
   });
 
   it('200 on successful soft-delete — returns plan with deleted_at set', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
     softDeletePlanMock.mockResolvedValueOnce(ok(SAMPLE_DELETED_PLAN));
 
@@ -125,7 +125,7 @@ describe('contract: DELETE /api/plans/[year]/[planId] (T123)', () => {
   });
 
   it('409 plan_has_active_members with details.affected_member_count', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
     softDeletePlanMock.mockResolvedValueOnce(
       err({ type: 'has_active_members', count: 3 }),
@@ -142,7 +142,7 @@ describe('contract: DELETE /api/plans/[year]/[planId] (T123)', () => {
   });
 
   it('404 when plan not found', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
     softDeletePlanMock.mockResolvedValueOnce(err({ type: 'not_found' }));
 
@@ -154,7 +154,7 @@ describe('contract: DELETE /api/plans/[year]/[planId] (T123)', () => {
   });
 
   it('401 when unauthenticated', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: NextResponse.json({ error: 'no-session' }, { status: 401 }),
     });
     const { DELETE } = await import('@/app/api/plans/[year]/[planId]/route');
@@ -166,7 +166,7 @@ describe('contract: DELETE /api/plans/[year]/[planId] (T123)', () => {
   });
 
   it('400 when Idempotency-Key header missing', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
     const { DELETE } = await import('@/app/api/plans/[year]/[planId]/route');
     const res = await DELETE(makeRequest('2026', 'premium', {}), {

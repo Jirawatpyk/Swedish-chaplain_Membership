@@ -54,7 +54,7 @@ export async function POST(
   // f8_role_violation_blocked audit carrying action='manager_exception'
   // so dashboards can distinguish a manager-permitted write from a
   // pure read.
-  const ctx = await requireRenewalAdminContext(request, 'manager_exception');
+  const ctx = await requireRenewalAdminContext(request, 'manager_exception', 'renewals.read');
   if ('response' in ctx) return ctx.response;
 
   // Capture actor role for the audit payload + use-case discrimination.

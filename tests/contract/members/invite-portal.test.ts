@@ -12,12 +12,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 import { ok, err } from '@/lib/result';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const invitePortalMock = vi.fn();
 const buildMembersDepsMock = vi.fn();
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 vi.mock('@/modules/members/members-deps', () => ({
   buildMembersDeps: (...args: unknown[]) => buildMembersDepsMock(...args),
@@ -85,7 +85,7 @@ describe(
     afterEach(() => vi.clearAllMocks());
 
     it('200 success — returns user_id + email', async () => {
-      requireAdminContextMock.mockResolvedValueOnce(adminContext);
+      requireApiPermissionMock.mockResolvedValueOnce(adminContext);
       buildMembersDepsMock.mockReturnValueOnce({ contactRepo: {} });
       invitePortalMock.mockResolvedValueOnce(
         ok({ userId: 'usr-42', email: 'contact@fogmaker.se' }),
@@ -103,7 +103,7 @@ describe(
     });
 
     it('404 not_found — contact does not exist', async () => {
-      requireAdminContextMock.mockResolvedValueOnce(adminContext);
+      requireApiPermissionMock.mockResolvedValueOnce(adminContext);
       buildMembersDepsMock.mockReturnValueOnce({ contactRepo: {} });
       invitePortalMock.mockResolvedValueOnce(err({ code: 'not_found' }));
 
@@ -119,7 +119,7 @@ describe(
     });
 
     it('409 already_linked — contact already has a portal account', async () => {
-      requireAdminContextMock.mockResolvedValueOnce(adminContext);
+      requireApiPermissionMock.mockResolvedValueOnce(adminContext);
       buildMembersDepsMock.mockReturnValueOnce({ contactRepo: {} });
       invitePortalMock.mockResolvedValueOnce(err({ code: 'already_linked' }));
 
@@ -135,7 +135,7 @@ describe(
     });
 
     it('400 no_email — contact has no email address on record', async () => {
-      requireAdminContextMock.mockResolvedValueOnce(adminContext);
+      requireApiPermissionMock.mockResolvedValueOnce(adminContext);
       buildMembersDepsMock.mockReturnValueOnce({ contactRepo: {} });
       invitePortalMock.mockResolvedValueOnce(err({ code: 'no_email' }));
 
@@ -151,7 +151,7 @@ describe(
     });
 
     it('400 invalid_email — contact email fails format validation', async () => {
-      requireAdminContextMock.mockResolvedValueOnce(adminContext);
+      requireApiPermissionMock.mockResolvedValueOnce(adminContext);
       buildMembersDepsMock.mockReturnValueOnce({ contactRepo: {} });
       invitePortalMock.mockResolvedValueOnce(err({ code: 'invalid_email' }));
 
@@ -167,7 +167,7 @@ describe(
     });
 
     it('409 email_taken — email already registered to another account', async () => {
-      requireAdminContextMock.mockResolvedValueOnce(adminContext);
+      requireApiPermissionMock.mockResolvedValueOnce(adminContext);
       buildMembersDepsMock.mockReturnValueOnce({ contactRepo: {} });
       invitePortalMock.mockResolvedValueOnce(err({ code: 'email_taken' }));
 
@@ -183,7 +183,7 @@ describe(
     });
 
     it('500 server_error — unexpected failure from use case', async () => {
-      requireAdminContextMock.mockResolvedValueOnce(adminContext);
+      requireApiPermissionMock.mockResolvedValueOnce(adminContext);
       buildMembersDepsMock.mockReturnValueOnce({ contactRepo: {} });
       invitePortalMock.mockResolvedValueOnce(err({ code: 'server_error' }));
 
@@ -199,7 +199,7 @@ describe(
     });
 
     it('500 link_failed — contact link rolled back (SAGA compensation, go-live #12-13)', async () => {
-      requireAdminContextMock.mockResolvedValueOnce(adminContext);
+      requireApiPermissionMock.mockResolvedValueOnce(adminContext);
       buildMembersDepsMock.mockReturnValueOnce({ contactRepo: {} });
       invitePortalMock.mockResolvedValueOnce(err({ code: 'link_failed' }));
 
@@ -214,8 +214,8 @@ describe(
       expect(typeof body.error.message).toBe('string');
     });
 
-    it('401 unauthenticated — requireAdminContext rejects the request', async () => {
-      requireAdminContextMock.mockResolvedValueOnce({
+    it('401 unauthenticated — requireApiPermission rejects the request', async () => {
+      requireApiPermissionMock.mockResolvedValueOnce({
         response: NextResponse.json(
           { error: { code: 'unauthenticated', message: 'Not signed in.' } },
           { status: 401 },

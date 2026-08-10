@@ -214,7 +214,13 @@ export interface ApiPermissionContext {
    */
   readonly response?: never;
   readonly current: CurrentSession;
-  readonly sourceIp: string | null;
+  /**
+   * Always a string — `AdminContext.sourceIp` was, and this shape must stay a
+   * drop-in for the ~130-site sweep. `getClientIp` never returns null for a
+   * real request ('0.0.0.0' fallback); a test dep that does is coalesced to
+   * the same sentinel.
+   */
+  readonly sourceIp: string;
   readonly requestId: string;
 }
 
@@ -247,7 +253,7 @@ export async function requireApiPermission(
   }
 
   if (hasPermission(current.user.role, key, { rbacV2: deps.rbacV2, legacy })) {
-    return { current, sourceIp, requestId };
+    return { current, sourceIp: sourceIp ?? '0.0.0.0', requestId };
   }
 
   const routePath = await deps.routePath(request);

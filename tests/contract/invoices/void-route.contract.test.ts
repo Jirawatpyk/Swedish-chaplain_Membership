@@ -25,11 +25,11 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { err } from '@/lib/result';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const voidInvoiceMock = vi.fn();
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 
 vi.mock('@/lib/tenant-context', () => ({
@@ -112,14 +112,14 @@ describe('contract: POST /api/invoices/[invoiceId]/void', () => {
   // whose cold-load can exceed a per-test budget under the parallel suite and
   // strand an unconsumed mock. Mirrors event-draft.contract.test.ts.
   beforeAll(async () => {
-    requireAdminContextMock.mockResolvedValue(adminContext);
+    requireApiPermissionMock.mockResolvedValue(adminContext);
     voidInvoiceMock.mockResolvedValue(err({ code: 'invoice_not_found' }));
     await import('@/app/api/invoices/[invoiceId]/void/route').catch(() => undefined);
   });
 
   afterEach(() => {
     vi.clearAllMocks();
-    requireAdminContextMock.mockResolvedValue(adminContext);
+    requireApiPermissionMock.mockResolvedValue(adminContext);
     voidInvoiceMock.mockResolvedValue(err({ code: 'invoice_not_found' }));
   });
 
@@ -205,7 +205,7 @@ describe('contract: POST /api/invoices/[invoiceId]/void', () => {
   });
 
   it('returns 403 for a non-admin (manager) actor', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       ...adminContext,
       current: { ...adminContext.current, user: { ...adminContext.current.user, role: 'manager' } },
     });

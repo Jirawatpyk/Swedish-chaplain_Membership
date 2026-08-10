@@ -10,13 +10,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 import { ok, err } from '@/lib/result';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const setMemberPreferredLocaleMock = vi.fn();
 const tryMemberIdMock = vi.fn();
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) =>
-    requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) =>
+    requireApiPermissionMock(...args),
 }));
 
 vi.mock('@/lib/tenant-context', () => ({
@@ -74,7 +74,7 @@ afterEach(() => vi.clearAllMocks());
 
 describe('PATCH /api/admin/members/[id]/preferred-locale', () => {
   it('200 happy: writes value + admin actor + memberId from URL', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     setMemberPreferredLocaleMock.mockResolvedValueOnce(
       ok({ kind: 'updated', previousValue: null, nextValue: 'sv' }),
     );
@@ -89,7 +89,7 @@ describe('PATCH /api/admin/members/[id]/preferred-locale', () => {
   });
 
   it('200 idempotent: same value → outcome.kind unchanged', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     setMemberPreferredLocaleMock.mockResolvedValueOnce(
       ok({ kind: 'unchanged', currentValue: 'th' }),
     );
@@ -102,7 +102,7 @@ describe('PATCH /api/admin/members/[id]/preferred-locale', () => {
   });
 
   it('404 member_not_found: invalid uuid in path', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     const { PATCH } = await importRoute();
     const { req, ctx } = makeRequest({ preferredLocale: 'th' }, 'not-a-uuid');
     const res = await PATCH(req, ctx);
@@ -110,7 +110,7 @@ describe('PATCH /api/admin/members/[id]/preferred-locale', () => {
   });
 
   it('404 member_not_found: use-case returns not_found (cross-tenant or absent)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     setMemberPreferredLocaleMock.mockResolvedValueOnce(
       ok({ kind: 'not_found' }),
     );
@@ -121,7 +121,7 @@ describe('PATCH /api/admin/members/[id]/preferred-locale', () => {
   });
 
   it('400 invalid_body: malformed JSON', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     const { PATCH } = await importRoute();
     const req = new NextRequest(
       `http://localhost/api/admin/members/${VALID_ID}/preferred-locale`,
@@ -136,7 +136,7 @@ describe('PATCH /api/admin/members/[id]/preferred-locale', () => {
   });
 
   it('400 invalid_body: unknown locale rejected', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     const { PATCH } = await importRoute();
     const { req, ctx } = makeRequest({ preferredLocale: 'de' });
     const res = await PATCH(req, ctx);
@@ -144,7 +144,7 @@ describe('PATCH /api/admin/members/[id]/preferred-locale', () => {
   });
 
   it('rejects request when admin context resolver returns response (e.g. 403 manager)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: NextResponse.json({ error: 'forbidden' }, { status: 403 }),
     });
     const { PATCH } = await importRoute();
@@ -154,7 +154,7 @@ describe('PATCH /api/admin/members/[id]/preferred-locale', () => {
   });
 
   it('500 internal_error: use-case throws', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     setMemberPreferredLocaleMock.mockRejectedValueOnce(new Error('db down'));
     const { PATCH } = await importRoute();
     const { req, ctx } = makeRequest({ preferredLocale: 'th' });
@@ -163,7 +163,7 @@ describe('PATCH /api/admin/members/[id]/preferred-locale', () => {
   });
 
   it('500 internal_error: use-case returns repo_error', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     setMemberPreferredLocaleMock.mockResolvedValueOnce(
       err({ kind: 'repo_error', cause: 'boom' }),
     );

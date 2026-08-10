@@ -122,6 +122,19 @@ export const OBSERVED_PAGES: readonly ObservedSurface[] = [
   { surface: '/admin/settings/integrations/eventcreate', kind: 'page', key: 'settings.integrations', row: { kind: 'legacyAdminOnly' }, guard: 'role !== \'admin\' -> notFound()', cells: { super_admin: 'allow', admin: 'allow', manager: 'deny', marketing: 'deny', member: 'deny' } },
 ];
 
+/**
+ * T028 capture correction: `GET /api/internal/exports/[jobId]/download` was
+ * originally captured here as `legacyAdminOrManager` with `member: deny` — a
+ * misread. The `role === 'member'` branch in that file RESOLVES the acting
+ * member id, it does not deny: the route is the dual-audience private-artefact
+ * proxy that `/api/portal/account/data-export/[jobId]/download` 303-redirects
+ * the SUBJECT MEMBER to for their own GDPR archive. Gating it on a staff
+ * permission would 403 that member flow. Its real guards are the single-use
+ * job-bound HMAC token plus `downloadExport`'s subject-or-staff authorize();
+ * it is therefore classified `session-any` in the exhaustiveness test, not
+ * role-matrix. The STAFF entry points that mint its tokens stay role-gated
+ * (`directory.export` / `members.bulk`).
+ */
 export const OBSERVED_API: readonly ObservedSurface[] = [
   { surface: 'DELETE /api/admin/broadcasts/templates/[id]', kind: 'api', key: 'broadcasts.write', row: { kind: 'mappedLegacy', resource: 'broadcast', action: 'write' }, guard: 'requireAdminContext(request, { resource: \'broadcast\', action: \'write\', }', cells: { super_admin: 'allow', admin: 'allow', manager: 'deny', marketing: 'deny', member: 'deny' } },
   { surface: 'DELETE /api/invoices/[invoiceId]', kind: 'api', key: 'invoicing.write', row: { kind: 'mappedLegacy', resource: 'invoice', action: 'delete' }, guard: 'requireAdminContext(request, { resource: \'invoice\', action: \'delete\' }', cells: { super_admin: 'allow', admin: 'allow', manager: 'deny', marketing: 'deny', member: 'deny' } },
@@ -152,7 +165,6 @@ export const OBSERVED_API: readonly ObservedSurface[] = [
   { surface: 'GET /api/credit-notes/[creditNoteId]', kind: 'api', key: 'invoicing.read', row: { kind: 'mappedLegacy', resource: 'credit_note', action: 'read' }, guard: 'requireAdminContext(request, { resource: \'credit_note\', action: \'read\', }', cells: { super_admin: 'allow', admin: 'allow', manager: 'allow', marketing: 'deny', member: 'deny' } },
   { surface: 'GET /api/credit-notes/[creditNoteId]/pdf', kind: 'api', key: 'invoicing.read', row: { kind: 'mappedLegacy', resource: 'credit_note', action: 'read' }, guard: 'requireAdminContext(request, { resource: \'credit_note\', action: \'read\', }', cells: { super_admin: 'allow', admin: 'allow', manager: 'allow', marketing: 'deny', member: 'deny' } },
   { surface: 'GET /api/geo/postal/[code]', kind: 'api', key: 'members.read', row: { kind: 'mappedLegacy', resource: 'members', action: 'read' }, guard: 'requireAdminContext(request, { resource: \'members\', action: \'read\', }', cells: { super_admin: 'allow', admin: 'allow', manager: 'allow', marketing: 'deny', member: 'deny' } },
-  { surface: 'GET /api/internal/exports/[jobId]/download', kind: 'api', key: 'directory.export', row: { kind: 'legacyAdminOrManager' }, guard: 'getCurrentSession() ; role === \'member\'', cells: { super_admin: 'allow', admin: 'allow', manager: 'allow', marketing: 'deny', member: 'deny' } },
   { surface: 'GET /api/invoices', kind: 'api', key: 'invoicing.read', row: { kind: 'mappedLegacy', resource: 'invoice', action: 'read' }, guard: 'requireAdminContext(request, { resource: \'invoice\', action: \'read\' }', cells: { super_admin: 'allow', admin: 'allow', manager: 'allow', marketing: 'deny', member: 'deny' } },
   { surface: 'GET /api/invoices/[invoiceId]', kind: 'api', key: 'invoicing.read', row: { kind: 'mappedLegacy', resource: 'invoice', action: 'read' }, guard: 'requireAdminContext(request, { resource: \'invoice\', action: \'read\' }', cells: { super_admin: 'allow', admin: 'allow', manager: 'allow', marketing: 'deny', member: 'deny' } },
   { surface: 'GET /api/invoices/[invoiceId]/pdf', kind: 'api', key: 'invoicing.read', row: { kind: 'mappedLegacy', resource: 'invoice', action: 'read' }, guard: 'requireAdminContext(request, { resource: \'invoice\', action: \'read\' }', cells: { super_admin: 'allow', admin: 'allow', manager: 'allow', marketing: 'deny', member: 'deny' } },

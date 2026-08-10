@@ -5,8 +5,10 @@
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
-import { changeRole, asUserId } from '@/modules/auth';
-import { requireAdminContext } from '@/lib/admin-context';
+import { changeRole, asUserId, isStaffRole } from '@/modules/auth';
+import { requireApiPermission } from '@/lib/rbac';
+import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
+import { userRepo } from '@/lib/auth-deps';
 import { logger } from '@/lib/logger';
 
 const inputSchema = z.object({
@@ -17,7 +19,15 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<NextResponse> {
-  const ctx = await requireAdminContext(request);
+  // 016 T028 (§ 7.1 per-TARGET contract): step 1 gates on the wider
+  // `users.member_accounts`; step 2 below re-gates on `users.manage` (SA-only
+  // on the ON leg) when the TARGET is a staff row. Both OFF-leg rows are the
+  // pre-sweep `requireAdminContext(request)` policy — byte-identical.
+  const ctx = await requireApiPermission(
+    request,
+    'users.member_accounts',
+    mappedLegacy('auth:user', 'write'),
+  );
   if ('response' in ctx) return ctx.response;
   // B3 — outer try/catch (see sign-in/route.ts B3 note).
   try {
@@ -37,6 +47,22 @@ export async function POST(
     }
 
     const { id } = await params;
+
+    // Step 2 (§ 7.1): staff-role target (current OR requested role) requires
+    // `users.manage`. A missing target falls through — the use case's own
+    // not-found path answers 404 exactly as pre-sweep.
+    const target = await userRepo.findById(asUserId(id));
+    if (
+      (target && isStaffRole(target.role)) ||
+      isStaffRole(parsed.data.newRole)
+    ) {
+      const staffGate = await requireApiPermission(
+        request,
+        'users.manage',
+        mappedLegacy('auth:user', 'write'),
+      );
+      if ('response' in staffGate) return staffGate.response;
+    }
     const result = await changeRole({
       targetUserId: asUserId(id),
       newRole: parsed.data.newRole,

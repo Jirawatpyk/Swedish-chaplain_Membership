@@ -24,7 +24,8 @@ import {
 } from '@/modules/broadcasts';
 import { runInTenant } from '@/lib/db';
 import { baseHeaders, jsonError } from '@/lib/broadcasts-route-helpers';
-import { requireAdminContext } from '@/lib/admin-context';
+import { requireApiPermission } from '@/lib/rbac';
+import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
 
@@ -64,10 +65,7 @@ export async function PATCH(
     notFound();
   }
 
-  const ctx = await requireAdminContext(request, {
-    resource: 'broadcast',
-    action: 'write',
-  });
+  const ctx = await requireApiPermission(request, 'broadcasts.write', mappedLegacy('broadcast', 'write'));
   if ('response' in ctx) return ctx.response;
 
   const resolvedParams = await params;
@@ -171,10 +169,7 @@ export async function DELETE(
     notFound();
   }
 
-  const ctx = await requireAdminContext(request, {
-    resource: 'broadcast',
-    action: 'write',
-  });
+  const ctx = await requireApiPermission(request, 'broadcasts.write', mappedLegacy('broadcast', 'write'));
   if ('response' in ctx) return ctx.response;
 
   const resolvedParams = await params;

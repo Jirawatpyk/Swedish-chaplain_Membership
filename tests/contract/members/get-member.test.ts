@@ -16,7 +16,7 @@ import { ok, err } from '@/lib/result';
 // Hoist mocks
 // ---------------------------------------------------------------------------
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const getMemberMock = vi.fn();
 const buildMembersDepsMock = vi.fn(() => ({
   contactRepo: {},
@@ -25,8 +25,8 @@ const buildMembersDepsMock = vi.fn(() => ({
   clock: { now: () => new Date() },
 }));
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: requireAdminContextMock,
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: requireApiPermissionMock,
 }));
 
 vi.mock('@/modules/members/members-deps', () => ({
@@ -128,7 +128,7 @@ describe('contract: GET /api/members/[memberId]', () => {
   afterEach(() => vi.clearAllMocks());
 
   it('200 — returns serialised member with contacts on success', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     getMemberMock.mockResolvedValueOnce(ok(MEMBER_FIXTURE));
 
     const { GET } = await import('@/app/api/members/[memberId]/route');
@@ -145,7 +145,7 @@ describe('contract: GET /api/members/[memberId]', () => {
   });
 
   it('401 — admin-context gate short-circuits before reaching use case', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: NextResponse.json(
         { error: { code: 'unauthenticated', message: 'Not signed in.' } },
         { status: 401 },
@@ -160,7 +160,7 @@ describe('contract: GET /api/members/[memberId]', () => {
   });
 
   it('404 — invalid UUID memberId param', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
 
     const { GET } = await import('@/app/api/members/[memberId]/route');
     const res = await GET(
@@ -173,7 +173,7 @@ describe('contract: GET /api/members/[memberId]', () => {
   });
 
   it('404 — use case reports not_found (cross-tenant probe)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     getMemberMock.mockResolvedValueOnce(err({ type: 'not_found' }));
 
     const { GET } = await import('@/app/api/members/[memberId]/route');
@@ -185,7 +185,7 @@ describe('contract: GET /api/members/[memberId]', () => {
   });
 
   it('500 — use case reports server_error', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     getMemberMock.mockResolvedValueOnce(
       err({ type: 'server_error', message: 'db timeout' }),
     );

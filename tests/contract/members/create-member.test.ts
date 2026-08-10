@@ -10,12 +10,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { ok, err } from '@/lib/result';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const createMemberMock = vi.fn();
 const buildMembersDepsMock = vi.fn();
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 vi.mock('@/modules/members/members-deps', () => ({
   buildMembersDeps: (...args: unknown[]) => buildMembersDepsMock(...args),
@@ -90,7 +90,7 @@ describe('contract: POST /api/members (T040)', () => {
   afterEach(() => vi.clearAllMocks());
 
   it('201 happy path — returns member_id + primary_contact_id', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildMembersDepsMock.mockReturnValueOnce({});
     createMemberMock.mockResolvedValueOnce(
       ok({ memberId: 'mem-1', contactId: 'con-1' }),
@@ -106,7 +106,7 @@ describe('contract: POST /api/members (T040)', () => {
   // Post-ship R6 Batch 2b — surface Upstash outage as 503 instead of
   // silently continuing. Mirrors the F2 plans guard `_idempotency-guard.ts`.
   it('503 idempotency_reservation_failed when Upstash reserve returns err()', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildMembersDepsMock.mockReturnValueOnce({});
     // Override the default ok-mock for this single test
     const idem = await import('@/lib/idempotency');
@@ -132,7 +132,7 @@ describe('contract: POST /api/members (T040)', () => {
   });
 
   it('400 missing Idempotency-Key', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildMembersDepsMock.mockReturnValueOnce({});
     const { POST } = await import('@/app/api/members/route');
     const res = await POST(makeRequest(validBody, {}));
@@ -142,7 +142,7 @@ describe('contract: POST /api/members (T040)', () => {
   });
 
   it('400 invalid_body when zod rejects payload', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildMembersDepsMock.mockReturnValueOnce({});
     createMemberMock.mockResolvedValueOnce(
       err({
@@ -158,7 +158,7 @@ describe('contract: POST /api/members (T040)', () => {
   });
 
   it('404 plan_not_found', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildMembersDepsMock.mockReturnValueOnce({});
     createMemberMock.mockResolvedValueOnce(err({ type: 'plan_not_found' }));
     const { POST } = await import('@/app/api/members/route');
@@ -169,7 +169,7 @@ describe('contract: POST /api/members (T040)', () => {
   });
 
   it('409 soft_duplicate — gives the caller the existing member id', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildMembersDepsMock.mockReturnValueOnce({});
     createMemberMock.mockResolvedValueOnce(
       err({
@@ -187,7 +187,7 @@ describe('contract: POST /api/members (T040)', () => {
   });
 
   it('422 turnover_warning — admin must re-submit with override_reason', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildMembersDepsMock.mockReturnValueOnce({});
     createMemberMock.mockResolvedValueOnce(
       err({
@@ -207,7 +207,7 @@ describe('contract: POST /api/members (T040)', () => {
   // top-level `message` (the old shape leaked the raw discriminator as a
   // user-visible string and gave the client nothing to switch on).
   it('409 conflict — carries the discriminator reason in details.reason', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildMembersDepsMock.mockReturnValueOnce({});
     createMemberMock.mockResolvedValueOnce(
       err({ type: 'conflict', reason: 'secondary_email_in_use' }),

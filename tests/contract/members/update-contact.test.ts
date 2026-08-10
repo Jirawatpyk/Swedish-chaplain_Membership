@@ -15,7 +15,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { ok, err } from '@/lib/result';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const updateContactFieldsMock = vi.fn();
 const changeContactEmailMock = vi.fn();
 const updateUnlinkedContactEmailMock = vi.fn();
@@ -25,8 +25,8 @@ const rememberIdempotentResponseMock = vi.hoisted(() =>
   vi.fn(async () => undefined),
 );
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 
 const contactRepoFindByIdMock = vi.fn();
@@ -132,7 +132,7 @@ describe('contract: PATCH /api/members/[memberId]/contacts/[contactId] (T071)', 
   afterEach(() => vi.clearAllMocks());
 
   it('200 on non-email update', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     updateContactFieldsMock.mockResolvedValueOnce(
       ok({ ...stubContact, firstName: 'Alicia' }),
     );
@@ -148,7 +148,7 @@ describe('contract: PATCH /api/members/[memberId]/contacts/[contactId] (T071)', 
   });
 
   it('200 when email change requested on unlinked contact — in-place update', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     // findById routes to the unlinked path; the route then returns the
     // updateUnlinkedContactEmail value directly for the response body (no
     // fall-through re-read on the unlinked path — that avoids a post-commit
@@ -174,7 +174,7 @@ describe('contract: PATCH /api/members/[memberId]/contacts/[contactId] (T071)', 
   });
 
   it('409 conflict when the new email is already in use (unlinked path)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     contactRepoFindByIdMock.mockResolvedValue(ok(stubContact));
     updateUnlinkedContactEmailMock.mockResolvedValueOnce(
       err({ type: 'conflict', reason: 'email_taken' }),
@@ -191,7 +191,7 @@ describe('contract: PATCH /api/members/[memberId]/contacts/[contactId] (T071)', 
   });
 
   it('400 validation_error when the new email is malformed (unlinked path)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     contactRepoFindByIdMock.mockResolvedValue(ok(stubContact));
     updateUnlinkedContactEmailMock.mockResolvedValueOnce(
       err({ type: 'invalid_email' }),
@@ -208,7 +208,7 @@ describe('contract: PATCH /api/members/[memberId]/contacts/[contactId] (T071)', 
   });
 
   it('400 invalid body', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     updateContactFieldsMock.mockResolvedValueOnce(
       err({
         type: 'invalid_body',
@@ -227,7 +227,7 @@ describe('contract: PATCH /api/members/[memberId]/contacts/[contactId] (T071)', 
   });
 
   it('404 when use case reports not_found', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     updateContactFieldsMock.mockResolvedValueOnce(err({ type: 'not_found' }));
     const { PATCH } = await import(
       '@/app/api/members/[memberId]/contacts/[contactId]/route'
@@ -240,7 +240,7 @@ describe('contract: PATCH /api/members/[memberId]/contacts/[contactId] (T071)', 
 
   it('401 when no session — admin-context short-circuits', async () => {
     const { NextResponse } = await import('next/server');
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: NextResponse.json({ error: 'no-session' }, { status: 401 }),
     });
     const { PATCH } = await import(
@@ -255,7 +255,7 @@ describe('contract: PATCH /api/members/[memberId]/contacts/[contactId] (T071)', 
   // --- Linked-user email-change branch (FR-012a atomic txn) ------------------
 
   it('200 on linked-user email change — changeContactEmail success', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     contactRepoFindByIdMock.mockResolvedValue(ok(stubLinkedContact));
     changeContactEmailMock.mockResolvedValueOnce(
       ok({
@@ -283,7 +283,7 @@ describe('contract: PATCH /api/members/[memberId]/contacts/[contactId] (T071)', 
   });
 
   it('400 on linked-user email change — invalid_input', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     contactRepoFindByIdMock.mockResolvedValueOnce(ok(stubLinkedContact));
     changeContactEmailMock.mockResolvedValueOnce(
       err({ code: 'invalid_input', field: 'email' }),
@@ -301,7 +301,7 @@ describe('contract: PATCH /api/members/[memberId]/contacts/[contactId] (T071)', 
   });
 
   it('404 on linked-user email change — not_found', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     contactRepoFindByIdMock.mockResolvedValueOnce(ok(stubLinkedContact));
     changeContactEmailMock.mockResolvedValueOnce(err({ code: 'not_found' }));
     const { PATCH } = await import(
@@ -316,7 +316,7 @@ describe('contract: PATCH /api/members/[memberId]/contacts/[contactId] (T071)', 
   });
 
   it('409 on linked-user email change — conflict (email_taken)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     contactRepoFindByIdMock.mockResolvedValueOnce(ok(stubLinkedContact));
     changeContactEmailMock.mockResolvedValueOnce(
       err({ code: 'conflict', reason: 'email_taken' }),
@@ -334,7 +334,7 @@ describe('contract: PATCH /api/members/[memberId]/contacts/[contactId] (T071)', 
   });
 
   it('500 on linked-user email change — server_error', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     contactRepoFindByIdMock.mockResolvedValueOnce(ok(stubLinkedContact));
     changeContactEmailMock.mockResolvedValueOnce(
       err({ code: 'server_error', cause: new Error('db timeout') }),
@@ -358,7 +358,7 @@ describe('contract: PATCH /api/members/[memberId]/contacts/[contactId] (T071)', 
   // rather than re-emitting the email audit).
 
   it('200 + field_update_failed when unlinked email commits but field update fails', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     contactRepoFindByIdMock.mockResolvedValueOnce(ok(stubContact)); // unlinked
     updateUnlinkedContactEmailMock.mockResolvedValueOnce(
       ok({ ...stubContact, email: 'new@example.com' }),
@@ -383,7 +383,7 @@ describe('contract: PATCH /api/members/[memberId]/contacts/[contactId] (T071)', 
   });
 
   it('200 + field_update_failed when linked email commits but field update fails (re-reads)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     contactRepoFindByIdMock
       .mockResolvedValueOnce(ok(stubLinkedContact)) // section 1 lookup → linked
       .mockResolvedValueOnce(
@@ -416,7 +416,7 @@ describe('contract: PATCH /api/members/[memberId]/contacts/[contactId] (T071)', 
   });
 
   it('field-only update that fails still returns the error (no partial-save marker)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     updateContactFieldsMock.mockResolvedValueOnce(err({ type: 'server_error' }));
     const { PATCH } = await import(
       '@/app/api/members/[memberId]/contacts/[contactId]/route'

@@ -11,7 +11,8 @@
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
-import { requireAdminContext } from '@/lib/admin-context';
+import { requireApiPermission } from '@/lib/rbac';
+import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
 import { loadMemberRenewalContext } from '@/app/(staff)/admin/invoices/_lib/member-renewal-context';
@@ -21,7 +22,7 @@ const querySchema = z.object({
 });
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
-  const ctx = await requireAdminContext(request, { resource: 'invoice', action: 'read' });
+  const ctx = await requireApiPermission(request, 'invoicing.read', mappedLegacy('invoice', 'read'));
   if ('response' in ctx) return ctx.response;
 
   const tenantCtx = resolveTenantFromRequest(request);

@@ -30,10 +30,11 @@
  * earlier /code-review nit that suggested not counting non-sends.
  */
 import { NextResponse, type NextRequest } from 'next/server';
-import { resendStaffInvitation, asUserId } from '@/modules/auth';
-import { requireAdminContext } from '@/lib/admin-context';
+import { resendStaffInvitation, asUserId, isStaffRole } from '@/modules/auth';
+import { requireApiPermission } from '@/lib/rbac';
+import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
-import { rateLimiter } from '@/lib/auth-deps';
+import { rateLimiter, userRepo } from '@/lib/auth-deps';
 import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
 import { logger } from '@/lib/logger';
 
@@ -41,12 +42,34 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<NextResponse> {
-  const ctx = await requireAdminContext(request);
+  // 016 T028 (§ 7.1 per-TARGET contract): step 1 gates on the wider
+  // `users.member_accounts`; step 2 below re-gates on `users.manage` (SA-only
+  // on the ON leg) when the TARGET is a staff row. Both OFF-leg rows are the
+  // pre-sweep `requireAdminContext(request)` policy — byte-identical.
+  const ctx = await requireApiPermission(
+    request,
+    'users.member_accounts',
+    mappedLegacy('auth:user', 'write'),
+  );
   if ('response' in ctx) return ctx.response;
   // B3 — outer try/catch (see sign-in/route.ts B3 note).
   try {
     const { id } = await params;
     const tenant = resolveTenantFromRequest(request);
+
+    // Step 2 (§ 7.1): staff-role target requires `users.manage`. Placed BEFORE
+    // the RA-1 limiter so a denied actor cannot spend the target's resend
+    // budget. A missing target falls through — the use case answers 404
+    // exactly as pre-sweep.
+    const target = await userRepo.findById(asUserId(id));
+    if (target && isStaffRole(target.role)) {
+      const staffGate = await requireApiPermission(
+        request,
+        'users.manage',
+        mappedLegacy('auth:user', 'write'),
+      );
+      if ('response' in staffGate) return staffGate.response;
+    }
 
     // RA-1 — per-(tenant, target) resend throttle. Atomic consume BEFORE
     // the use case runs: the ONLY way to keep the mail-bomb guarantee

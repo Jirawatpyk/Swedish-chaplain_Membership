@@ -23,12 +23,12 @@ import { addMonthsUtc } from '@/lib/dates';
 // Mock seams — declared before any import of the route.
 // ---------------------------------------------------------------------------
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const createInvoiceDraftMock = vi.fn();
 const loadMemberRenewalContextMock = vi.fn();
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 
 vi.mock('@/lib/tenant-context', () => ({
@@ -163,7 +163,7 @@ describe('contract: POST /api/invoices — membershipCoverage server-side thread
   }, 60_000);
 
   beforeEach(() => {
-    requireAdminContextMock.mockResolvedValue(adminContext);
+    requireApiPermissionMock.mockResolvedValue(adminContext);
     createInvoiceDraftMock.mockResolvedValue(ok(STUB_MEMBERSHIP_INVOICE));
   });
 

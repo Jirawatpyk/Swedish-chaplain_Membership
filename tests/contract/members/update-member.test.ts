@@ -8,13 +8,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { ok, err } from '@/lib/result';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const updateMemberMock = vi.fn();
 const changePlanMock = vi.fn();
 const getMemberMock = vi.fn();
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 vi.mock('@/modules/members/members-deps', () => ({
   buildMembersDeps: vi.fn(() => ({})),
@@ -105,7 +105,7 @@ describe('contract: PATCH /api/members/[memberId] (T071 / T090)', () => {
   afterEach(() => vi.clearAllMocks());
 
   it('200 on field update — happy path', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     updateMemberMock.mockResolvedValueOnce(
       ok({ ...stubMember, companyName: 'New Name' }),
     );
@@ -119,7 +119,7 @@ describe('contract: PATCH /api/members/[memberId] (T071 / T090)', () => {
   });
 
   it('400 invalid_body on zod fail', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     updateMemberMock.mockResolvedValueOnce(
       err({
         type: 'invalid_body',
@@ -134,7 +134,7 @@ describe('contract: PATCH /api/members/[memberId] (T071 / T090)', () => {
   });
 
   it('404 on not_found', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     updateMemberMock.mockResolvedValueOnce(err({ type: 'not_found' }));
     const { PATCH } = await import('@/app/api/members/[memberId]/route');
     const res = await PATCH(makeRequest({ company_name: 'X' }), {
@@ -144,7 +144,7 @@ describe('contract: PATCH /api/members/[memberId] (T071 / T090)', () => {
   });
 
   it('200 on plan change happy path', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     changePlanMock.mockResolvedValueOnce(
       // Phase 2 — changePlan's ok payload is `{ member, billingEffect }`.
       ok({ member: { ...stubMember, planId: 'premium' }, billingEffect: null }),
@@ -163,7 +163,7 @@ describe('contract: PATCH /api/members/[memberId] (T071 / T090)', () => {
   });
 
   it('200 plan change surfaces a non-null billing_effect (snake_case wire)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     changePlanMock.mockResolvedValueOnce(
       ok({
         member: { ...stubMember, planId: 'premium' },
@@ -189,7 +189,7 @@ describe('contract: PATCH /api/members/[memberId] (T071 / T090)', () => {
   });
 
   it('409 bundle_change_requires_confirmation', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     changePlanMock.mockResolvedValueOnce(
       err({
         type: 'bundle_change_requires_confirmation',
@@ -209,7 +209,7 @@ describe('contract: PATCH /api/members/[memberId] (T071 / T090)', () => {
   });
 
   it('422 turnover_warning on plan change', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     changePlanMock.mockResolvedValueOnce(
       err({
         type: 'turnover_out_of_band',
@@ -228,7 +228,7 @@ describe('contract: PATCH /api/members/[memberId] (T071 / T090)', () => {
   });
 
   it('400 missing Idempotency-Key', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     const { PATCH } = await import('@/app/api/members/[memberId]/route');
     const res = await PATCH(makeRequest({ company_name: 'X' }, {}), {
       params: routeParams(),

@@ -26,7 +26,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { ok, err } from '@/lib/result';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const issueCreditNoteMock = vi.fn();
 const rateLimitCheckMock = vi.fn();
 const makeIssueCreditNoteDepsMock: (...args: unknown[]) => unknown = vi.fn(
@@ -40,8 +40,8 @@ const makeIssueCreditNoteDepsMock: (...args: unknown[]) => unknown = vi.fn(
 const cancelInFlightCyclesForMemberMock = vi.fn();
 const makeRenewalsDepsMock: (...args: unknown[]) => unknown = vi.fn(() => ({}));
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 vi.mock('@/lib/tenant-context', () => ({
   resolveTenantFromRequest: () => ({ slug: 'test', __brand: true }),
@@ -164,7 +164,7 @@ describe('POST /api/credit-notes — contract', () => {
   }
 
   it('201 happy path — returns serialised credit note + email_delivery signal', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(ADMIN_CONTEXT);
+    requireApiPermissionMock.mockResolvedValueOnce(ADMIN_CONTEXT);
     rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
     // MEDIUM-5 — issueCreditNote success value is now `{ creditNote, emailDelivery }`.
     issueCreditNoteMock.mockResolvedValueOnce(
@@ -192,7 +192,7 @@ describe('POST /api/credit-notes — contract', () => {
   }, 30_000);
 
   it('400 invalid_json on malformed body', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(ADMIN_CONTEXT);
+    requireApiPermissionMock.mockResolvedValueOnce(ADMIN_CONTEXT);
     rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
     const POST = await loadHandler();
     const res = await POST(makeReq('not json at all'));
@@ -201,7 +201,7 @@ describe('POST /api/credit-notes — contract', () => {
   });
 
   it('400 invalid_body when reason missing (zod fail)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(ADMIN_CONTEXT);
+    requireApiPermissionMock.mockResolvedValueOnce(ADMIN_CONTEXT);
     rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
     const POST = await loadHandler();
     const res = await POST(
@@ -212,7 +212,7 @@ describe('POST /api/credit-notes — contract', () => {
   });
 
   it('400 invalid_body on zero creditTotalSatang (S-3)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(ADMIN_CONTEXT);
+    requireApiPermissionMock.mockResolvedValueOnce(ADMIN_CONTEXT);
     rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
     const POST = await loadHandler();
     const res = await POST(makeReq(makeBody({ creditTotalSatang: '0' })));
@@ -225,7 +225,7 @@ describe('POST /api/credit-notes — contract', () => {
   });
 
   it('400 invalid_body on non-numeric creditTotalSatang string', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(ADMIN_CONTEXT);
+    requireApiPermissionMock.mockResolvedValueOnce(ADMIN_CONTEXT);
     rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
     const POST = await loadHandler();
     const res = await POST(makeReq(makeBody({ creditTotalSatang: 'abc' })));
@@ -234,7 +234,7 @@ describe('POST /api/credit-notes — contract', () => {
   });
 
   it('403 forbidden when actor role is manager', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(MANAGER_CONTEXT);
+    requireApiPermissionMock.mockResolvedValueOnce(MANAGER_CONTEXT);
     const POST = await loadHandler();
     const res = await POST(makeReq());
     expect(res.status).toBe(403);
@@ -245,7 +245,7 @@ describe('POST /api/credit-notes — contract', () => {
   });
 
   it('429 rate-limited', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(ADMIN_CONTEXT);
+    requireApiPermissionMock.mockResolvedValueOnce(ADMIN_CONTEXT);
     rateLimitCheckMock.mockResolvedValueOnce({
       success: false,
       reset: Date.now() + 10_000,
@@ -281,7 +281,7 @@ describe('POST /api/credit-notes — contract', () => {
     // retriable once the refund settles).
     ['refund_in_progress', 409],
   ] as const)('maps %s use-case error → HTTP %i', async (code, status) => {
-    requireAdminContextMock.mockResolvedValueOnce(ADMIN_CONTEXT);
+    requireApiPermissionMock.mockResolvedValueOnce(ADMIN_CONTEXT);
     rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
     issueCreditNoteMock.mockResolvedValueOnce(
       err(
@@ -305,7 +305,7 @@ describe('POST /api/credit-notes — contract', () => {
   });
 
   it('409 credit_exceeds_remainder — bigint fields serialise to strings', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(ADMIN_CONTEXT);
+    requireApiPermissionMock.mockResolvedValueOnce(ADMIN_CONTEXT);
     rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
     issueCreditNoteMock.mockResolvedValueOnce(
       err({
@@ -340,7 +340,7 @@ describe('POST /api/credit-notes — contract', () => {
   // 201 body.
   describe('F-2 — F8 membership-cancellation cascade orchestration', () => {
     it('membershipCancellationRequested=true + cascade succeeds → 201, no warning field, F8 called with correlationId=credit-note:<id>', async () => {
-      requireAdminContextMock.mockResolvedValueOnce(ADMIN_CONTEXT);
+      requireApiPermissionMock.mockResolvedValueOnce(ADMIN_CONTEXT);
       rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
       issueCreditNoteMock.mockResolvedValueOnce(
         ok({
@@ -370,7 +370,7 @@ describe('POST /api/credit-notes — contract', () => {
     });
 
     it('membershipCancellationRequested=false → F8 is never called', async () => {
-      requireAdminContextMock.mockResolvedValueOnce(ADMIN_CONTEXT);
+      requireApiPermissionMock.mockResolvedValueOnce(ADMIN_CONTEXT);
       rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
       issueCreditNoteMock.mockResolvedValueOnce(
         ok({
@@ -386,7 +386,7 @@ describe('POST /api/credit-notes — contract', () => {
     });
 
     it('cascade Result.ok but outcome="cascade_partial_failure" → 201 + membership_cancellation_failed:true (credit note unaffected)', async () => {
-      requireAdminContextMock.mockResolvedValueOnce(ADMIN_CONTEXT);
+      requireApiPermissionMock.mockResolvedValueOnce(ADMIN_CONTEXT);
       rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
       issueCreditNoteMock.mockResolvedValueOnce(
         ok({
@@ -408,7 +408,7 @@ describe('POST /api/credit-notes — contract', () => {
     });
 
     it('cascade Result.err → 201 + membership_cancellation_failed:true', async () => {
-      requireAdminContextMock.mockResolvedValueOnce(ADMIN_CONTEXT);
+      requireApiPermissionMock.mockResolvedValueOnce(ADMIN_CONTEXT);
       rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
       issueCreditNoteMock.mockResolvedValueOnce(
         ok({
@@ -428,7 +428,7 @@ describe('POST /api/credit-notes — contract', () => {
     });
 
     it('cascade THROWS → 201 + membership_cancellation_failed:true, credit note still returned', async () => {
-      requireAdminContextMock.mockResolvedValueOnce(ADMIN_CONTEXT);
+      requireApiPermissionMock.mockResolvedValueOnce(ADMIN_CONTEXT);
       rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
       issueCreditNoteMock.mockResolvedValueOnce(
         ok({
@@ -448,7 +448,7 @@ describe('POST /api/credit-notes — contract', () => {
     });
 
     it('membershipCancellationRequested=true but originalInvoiceMemberId is null (unreachable-in-practice) → 201 + warning, F8 never called', async () => {
-      requireAdminContextMock.mockResolvedValueOnce(ADMIN_CONTEXT);
+      requireApiPermissionMock.mockResolvedValueOnce(ADMIN_CONTEXT);
       rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
       issueCreditNoteMock.mockResolvedValueOnce(
         ok({

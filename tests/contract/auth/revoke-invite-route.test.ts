@@ -3,7 +3,7 @@
  * (Staff Invitation Lifecycle, Task 4).
  *
  * Exposes Task 3's `revokeInvitation` use case over HTTP, admin-gated via
- * `requireAdminContext`. DELETE-semantics on the auth surface: permanently
+ * `requireApiPermission`. DELETE-semantics on the auth surface: permanently
  * removes a `pending` invited user so a typo'd / wrong invite can be
  * removed and the email freed for a fresh invite. No rate limiting — this
  * is not an email-sending action. Mock style follows
@@ -13,18 +13,26 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 import { ok, err } from '@/lib/result';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const revokeInvitationMock = vi.fn();
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 vi.mock('@/modules/auth', () => ({
   revokeInvitation: (...args: unknown[]) => revokeInvitationMock(...args),
   asUserId: (id: string) => id,
+  // Real predicate shape — the route's § 7.1 step-2 branch keys on it.
+  isStaffRole: (r: string) => ['super_admin', 'admin', 'manager', 'marketing'].includes(r),
 }));
 vi.mock('@/lib/tenant-context', () => ({
   resolveTenantFromRequest: () => ({ slug: 'test-swecham', __brand: true }),
+}));
+// 016 T028 — the route loads the TARGET row to pick the per-target permission
+// (§ 7.1). Default null = step-2 gate skipped; mocked so no real db is touched.
+const findByIdMock = vi.fn(async (..._args: unknown[]) => null);
+vi.mock('@/lib/auth-deps', () => ({
+  userRepo: { findById: (...args: unknown[]) => findByIdMock(...args) },
 }));
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },
@@ -58,7 +66,7 @@ describe('contract: POST /api/auth/users/[id]/revoke-invite (Task 4)', () => {
   });
 
   it('200 — admin + ok, calls the use case with tenantId=slug + userId=route param (not the admin id)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     revokeInvitationMock.mockResolvedValueOnce(ok({ deleted: true }));
 
     const { POST } = await import('@/app/api/auth/users/[id]/revoke-invite/route');
@@ -80,7 +88,7 @@ describe('contract: POST /api/auth/users/[id]/revoke-invite (Task 4)', () => {
   });
 
   it('404 — not-pending-or-not-found', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     revokeInvitationMock.mockResolvedValueOnce(err({ code: 'not-pending-or-not-found' }));
 
     const { POST } = await import('@/app/api/auth/users/[id]/revoke-invite/route');
@@ -89,7 +97,7 @@ describe('contract: POST /api/auth/users/[id]/revoke-invite (Task 4)', () => {
   });
 
   it('401 — unauthenticated', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: NextResponse.json({ error: 'no-session' }, { status: 401 }),
     });
 

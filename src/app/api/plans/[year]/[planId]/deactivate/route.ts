@@ -5,7 +5,8 @@
  * /activate/route.ts for the idempotency + error-mapping rationale.
  */
 import { NextResponse, type NextRequest } from 'next/server';
-import { requireAdminContext } from '@/lib/admin-context';
+import { requireApiPermission } from '@/lib/rbac';
+import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { rememberIdempotentResponse } from '@/lib/idempotency';
 import { logger } from '@/lib/logger';
@@ -20,10 +21,7 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ year: string; planId: string }> },
 ): Promise<NextResponse> {
-  const ctx = await requireAdminContext(request, {
-    resource: 'plan',
-    action: 'write',
-  });
+  const ctx = await requireApiPermission(request, 'plans.write', mappedLegacy('plan', 'write'));
   if ('response' in ctx) return ctx.response;
 
   // Emergency maintenance freeze short-circuit.

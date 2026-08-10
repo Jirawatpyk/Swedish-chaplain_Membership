@@ -15,7 +15,8 @@ import { z } from 'zod';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
-import { getCurrentSession } from '@/lib/auth-session';
+import { requireApiPermission } from '@/lib/rbac';
+import { legacyAdminOrManager } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { dismissInsight, makeDismissInsightDeps } from '@/modules/insights';
 
@@ -33,13 +34,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: { code: 'feature_disabled' }, correlationId }, { status: 503 });
   }
 
-  const current = await getCurrentSession();
-  if (!current) {
-    return NextResponse.json({ error: { code: 'unauthorized' }, correlationId }, { status: 401 });
-  }
-  if (current.user.role === 'member') {
-    return NextResponse.json({ error: { code: 'forbidden' }, correlationId }, { status: 403 });
-  }
+  // 016 T028: replaces the deny-by-exclusion `role === 'member'` arm (which
+  // would have admitted any future non-member role) with the positive gate.
+  // Denial shape moves to the uniform sweep contract (`{error:'no-session'}` /
+  // `{error:'forbidden'}` without correlationId); the dismiss button branches
+  // on `res.ok` only.
+  const ctx = await requireApiPermission(request, 'insights.engagement', legacyAdminOrManager);
+  if ('response' in ctx) return ctx.response;
+  const current = ctx.current;
 
   let raw: unknown;
   try {

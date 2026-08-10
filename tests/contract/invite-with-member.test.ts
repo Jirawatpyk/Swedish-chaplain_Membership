@@ -7,9 +7,9 @@
  *   (csrf) missing Origin → behaviour exercised through the route — CSRF is proxy-level
  *          but the route handler is invoked directly here (no proxy); we document the
  *          expected proxy-level guard with a note and exercise the 401/403 path via
- *          requireAdminContext (same pattern as invite.test.ts).
+ *          requireApiPermission (same pattern as invite.test.ts).
  *
- * Pattern: direct handler invocation + vi.mock of requireAdminContext + inviteUserForMember
+ * Pattern: direct handler invocation + vi.mock of requireApiPermission + inviteUserForMember
  * (same technique as tests/contract/invite.test.ts — no MSW / no real HTTP).
  *
  * CSRF note: The Origin allow-list is enforced by `src/proxy.ts` (checkCsrf), which runs
@@ -18,7 +18,7 @@
  * is covered exhaustively by tests/contract/csrf.test.ts. Here we confirm the route
  * handler itself does NOT re-implement a parallel CSRF check (that would be defence-in-
  * depth duplication) — i.e. a missing-Origin request that somehow bypasses the proxy
- * (e.g. direct invocation in tests) is handled only by requireAdminContext (session gate),
+ * (e.g. direct invocation in tests) is handled only by requireApiPermission (session gate),
  * not by a secondary Origin check in the route.
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -30,11 +30,11 @@ import { ok, err } from '@/lib/result';
 type InviteRouteModule = typeof import('@/app/api/auth/invite/route');
 
 // ---------------------------------------------------------------------------
-// Mock requireAdminContext — same approach as tests/contract/invite.test.ts.
+// Mock requireApiPermission — same approach as tests/contract/invite.test.ts.
 // ---------------------------------------------------------------------------
-const requireAdminContextMock = vi.fn();
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+const requireApiPermissionMock = vi.fn();
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 
 // ---------------------------------------------------------------------------
@@ -166,7 +166,7 @@ describe('contract: POST /api/auth/invite — memberId extension (Gap 1)', () =>
   // -------------------------------------------------------------------------
   describe('(b) invalid memberId UUID format', () => {
     it('400 when memberId is a non-UUID string', async () => {
-      requireAdminContextMock.mockResolvedValueOnce(adminContext);
+      requireApiPermissionMock.mockResolvedValue(adminContext);
 
       const res = await POST(
         makeRequest({
@@ -185,7 +185,7 @@ describe('contract: POST /api/auth/invite — memberId extension (Gap 1)', () =>
     });
 
     it('400 when memberId is an empty string', async () => {
-      requireAdminContextMock.mockResolvedValueOnce(adminContext);
+      requireApiPermissionMock.mockResolvedValue(adminContext);
 
       const res = await POST(
         makeRequest({
@@ -202,7 +202,7 @@ describe('contract: POST /api/auth/invite — memberId extension (Gap 1)', () =>
     });
 
     it('400 when memberId is a UUID-shaped string missing hyphens', async () => {
-      requireAdminContextMock.mockResolvedValueOnce(adminContext);
+      requireApiPermissionMock.mockResolvedValue(adminContext);
 
       const res = await POST(
         makeRequest({
@@ -225,7 +225,7 @@ describe('contract: POST /api/auth/invite — memberId extension (Gap 1)', () =>
   // -------------------------------------------------------------------------
   describe('(d) role=admin + memberId — explicit rejection', () => {
     it('400 when role=admin and memberId is provided', async () => {
-      requireAdminContextMock.mockResolvedValueOnce(adminContext);
+      requireApiPermissionMock.mockResolvedValue(adminContext);
 
       const res = await POST(
         makeRequest({
@@ -246,7 +246,7 @@ describe('contract: POST /api/auth/invite — memberId extension (Gap 1)', () =>
     });
 
     it('400 when role=manager and memberId is provided', async () => {
-      requireAdminContextMock.mockResolvedValueOnce(adminContext);
+      requireApiPermissionMock.mockResolvedValue(adminContext);
 
       const res = await POST(
         makeRequest({
@@ -268,18 +268,18 @@ describe('contract: POST /api/auth/invite — memberId extension (Gap 1)', () =>
   // CSRF / auth guard behaviour
   // -------------------------------------------------------------------------
   describe('CSRF / auth guard behaviour', () => {
-    it('401 when requireAdminContext returns no-session (missing or invalid session)', async () => {
+    it('401 when requireApiPermission returns no-session (missing or invalid session)', async () => {
       // This simulates the proxy allowing the request through (Origin header
       // present and allowed) but the session cookie being absent or expired.
       // The route must short-circuit before ANY body parsing or use-case call.
-      requireAdminContextMock.mockResolvedValueOnce({
+      requireApiPermissionMock.mockResolvedValueOnce({
         response: NextResponse.json({ error: 'no-session' }, { status: 401 }),
       });
 
       const res = await POST(
         // Request WITHOUT an Origin header — in production the proxy
         // would have already rejected this with 403. Here we confirm
-        // the route itself reaches requireAdminContext first (401 wins).
+        // the route itself reaches requireApiPermission first (401 wins).
         makeRequest({ email: 'x@y.com', role: 'member', memberId: VALID_MEMBER_UUID }),
       );
 
@@ -288,8 +288,8 @@ describe('contract: POST /api/auth/invite — memberId extension (Gap 1)', () =>
       expect(createUserMock).not.toHaveBeenCalled();
     });
 
-    it('403 when requireAdminContext returns forbidden (manager caller on admin-only route)', async () => {
-      requireAdminContextMock.mockResolvedValueOnce({
+    it('403 when requireApiPermission returns forbidden (manager caller on admin-only route)', async () => {
+      requireApiPermissionMock.mockResolvedValueOnce({
         response: NextResponse.json({ error: 'forbidden' }, { status: 403 }),
       });
 
@@ -308,7 +308,7 @@ describe('contract: POST /api/auth/invite — memberId extension (Gap 1)', () =>
   // -------------------------------------------------------------------------
   describe('Branch A — role=member + valid memberId (smoke)', () => {
     it('201 created when inviteUserForMember succeeds', async () => {
-      requireAdminContextMock.mockResolvedValueOnce(adminContext);
+      requireApiPermissionMock.mockResolvedValue(adminContext);
       inviteUserForMemberMock.mockResolvedValueOnce(
         ok({
           userId: 'new-user-uuid-001',
@@ -337,7 +337,7 @@ describe('contract: POST /api/auth/invite — memberId extension (Gap 1)', () =>
     });
 
     it('404 member-not-found when inviteUserForMember returns member_not_found', async () => {
-      requireAdminContextMock.mockResolvedValueOnce(adminContext);
+      requireApiPermissionMock.mockResolvedValue(adminContext);
       inviteUserForMemberMock.mockResolvedValueOnce(
         err({ type: 'member_not_found' }),
       );
@@ -356,7 +356,7 @@ describe('contract: POST /api/auth/invite — memberId extension (Gap 1)', () =>
     });
 
     it('409 email-taken when inviteUserForMember returns email_taken', async () => {
-      requireAdminContextMock.mockResolvedValueOnce(adminContext);
+      requireApiPermissionMock.mockResolvedValue(adminContext);
       inviteUserForMemberMock.mockResolvedValueOnce(
         err({ type: 'email_taken' }),
       );
@@ -375,7 +375,7 @@ describe('contract: POST /api/auth/invite — memberId extension (Gap 1)', () =>
     });
 
     it('409 contact-already-linked when inviteUserForMember returns contact_already_linked', async () => {
-      requireAdminContextMock.mockResolvedValueOnce(adminContext);
+      requireApiPermissionMock.mockResolvedValue(adminContext);
       inviteUserForMemberMock.mockResolvedValueOnce(
         err({ type: 'contact_already_linked' }),
       );
@@ -394,7 +394,7 @@ describe('contract: POST /api/auth/invite — memberId extension (Gap 1)', () =>
     });
 
     it('409 email-belongs-to-other-member when inviteUserForMember returns email_belongs_to_other_member', async () => {
-      requireAdminContextMock.mockResolvedValueOnce(adminContext);
+      requireApiPermissionMock.mockResolvedValue(adminContext);
       inviteUserForMemberMock.mockResolvedValueOnce(
         err({ type: 'email_belongs_to_other_member' }),
       );
@@ -413,7 +413,7 @@ describe('contract: POST /api/auth/invite — memberId extension (Gap 1)', () =>
     });
 
     it('400 invalid-input when inviteUserForMember returns invalid_email', async () => {
-      requireAdminContextMock.mockResolvedValueOnce(adminContext);
+      requireApiPermissionMock.mockResolvedValue(adminContext);
       inviteUserForMemberMock.mockResolvedValueOnce(
         err({ type: 'invalid_email' }),
       );
@@ -432,7 +432,7 @@ describe('contract: POST /api/auth/invite — memberId extension (Gap 1)', () =>
     });
 
     it('500 server-error when inviteUserForMember returns server_error', async () => {
-      requireAdminContextMock.mockResolvedValueOnce(adminContext);
+      requireApiPermissionMock.mockResolvedValue(adminContext);
       inviteUserForMemberMock.mockResolvedValueOnce(
         err({ type: 'server_error', message: 'tx failed' }),
       );
@@ -456,7 +456,7 @@ describe('contract: POST /api/auth/invite — memberId extension (Gap 1)', () =>
   // -------------------------------------------------------------------------
   describe('Branch B — role=member without memberId uses F1 createUser', () => {
     it('201 when role=member and no memberId provided (existing F1 flow)', async () => {
-      requireAdminContextMock.mockResolvedValueOnce(adminContext);
+      requireApiPermissionMock.mockResolvedValue(adminContext);
       createUserMock.mockResolvedValueOnce(
         ok({
           user: {

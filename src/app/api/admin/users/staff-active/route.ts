@@ -17,53 +17,21 @@ import { type NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { logger } from '@/lib/logger';
 import { errorResponse } from '@/lib/renewals-route-helpers';
-import { requireSession } from '@/lib/auth-session';
+import { requireApiPermission } from '@/lib/rbac';
+import { legacyAdminOrManager } from '@/modules/auth/domain/permissions/legacy-shim';
 import { userRepo } from '@/lib/auth-deps';
 
-export async function GET(_request: NextRequest) {
-  // Round 5 I-4 close — bind + log the catch so DB-down / Upstash-quota /
-  // session-store outages produce a Sentry signal instead of every
-  // request silently returning 401 (indistinguishable from a real
-  // unauthenticated state).
-  //
-  // R6 IMP-2 close — `requireSession` calls `redirect()` for any
-  // request without a valid session, which throws `NEXT_REDIRECT`.
-  // Logging every such throw at ERROR severity floods Sentry with
-  // routine anonymous traffic. Filter it out — only genuine errors
-  // (DB outage, Upstash quota) reach the log call.
-  let session;
-  const sessionCorrelationId = randomUUID();
-  try {
-    session = await requireSession('staff');
-  } catch (e) {
-    const isNextRedirect =
-      e !== null &&
-      typeof e === 'object' &&
-      'digest' in e &&
-      typeof (e as { digest?: unknown }).digest === 'string' &&
-      (e as { digest: string }).digest.startsWith('NEXT_REDIRECT');
-    if (!isNextRedirect) {
-      logger.error(
-        {
-          err: e instanceof Error ? e : new Error(String(e)),
-          correlationId: sessionCorrelationId,
-        },
-        'admin.users.staff-active.session_resolution_failed',
-      );
-    }
-    return errorResponse({
-      status: 401,
-      code: 'unauthenticated',
-      correlationId: sessionCorrelationId,
-    });
-  }
-  if (session.user.role !== 'admin' && session.user.role !== 'manager') {
-    return errorResponse({
-      status: 403,
-      code: 'forbidden',
-      correlationId: randomUUID(),
-    });
-  }
+export async function GET(request: NextRequest) {
+  // 016 T028: session + role fold into one gate (replaces the pre-sweep
+  // `requireSession` NEXT_REDIRECT-filter idiom — the gate 401s JSON instead of
+  // redirecting, and a session-store outage now surfaces as 500 via the gate's
+  // own `rbac.session-lookup-failed` log rather than a silent 401). Denial
+  // shape changes from the borrowed F8 envelope to the uniform sweep contract
+  // (`{error:'no-session'|'forbidden'}`); the reassign combobox branches on
+  // `res.ok` only. Key `renewals.read` per the frozen baseline — this list
+  // feeds the renewals escalation UI.
+  const ctx = await requireApiPermission(request, 'renewals.read', legacyAdminOrManager);
+  if ('response' in ctx) return ctx.response;
 
   const correlationId = randomUUID();
   try {

@@ -8,7 +8,8 @@
  * before they hit the DB.
  */
 import { NextResponse, type NextRequest } from 'next/server';
-import { requireAdminContext } from '@/lib/admin-context';
+import { requireApiPermission } from '@/lib/rbac';
+import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import {
@@ -96,10 +97,7 @@ const ERROR_STATUS: Record<IssueCreditNoteError['code'], number> = {
 };
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  const ctx = await requireAdminContext(request, {
-    resource: 'credit_note',
-    action: 'write',
-  });
+  const ctx = await requireApiPermission(request, 'credit_notes.write', mappedLegacy('credit_note', 'write'));
   if ('response' in ctx) return ctx.response;
   // Manager role is read-only on finance per Constitution §.
   if (ctx.current.user.role !== 'admin') {

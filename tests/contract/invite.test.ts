@@ -9,7 +9,7 @@
  *   - 409 email-taken
  *
  * Mocks `@/lib/admin-context` directly — the route uses
- * `requireAdminContext()` for its session + RBAC prologue (same
+ * `requireApiPermission()` for its session + RBAC prologue (same
  * pattern as the 3 other admin lifecycle routes).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -28,9 +28,9 @@ vi.mock('@/modules/auth/application/create-user', async () => {
   };
 });
 
-const requireAdminContextMock = vi.fn();
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+const requireApiPermissionMock = vi.fn();
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 
 const adminContext = {
@@ -65,7 +65,7 @@ describe('POST /api/auth/invite', () => {
   });
 
   it('201 created on admin invite success', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValue(adminContext);
     createUserMock.mockResolvedValueOnce(
       ok({
         user: {
@@ -93,8 +93,8 @@ describe('POST /api/auth/invite', () => {
     expect(body.user.status).toBe('pending');
   });
 
-  it('401 when requireAdminContext rejects with no-session', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+  it('401 when requireApiPermission rejects with no-session', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: NextResponse.json({ error: 'no-session' }, { status: 401 }),
     });
 
@@ -105,8 +105,8 @@ describe('POST /api/auth/invite', () => {
     expect(createUserMock).not.toHaveBeenCalled();
   });
 
-  it('403 when requireAdminContext rejects with forbidden (manager denied)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+  it('403 when requireApiPermission rejects with forbidden (manager denied)', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: NextResponse.json({ error: 'forbidden' }, { status: 403 }),
     });
 
@@ -118,7 +118,7 @@ describe('POST /api/auth/invite', () => {
   });
 
   it('400 on invalid role', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValue(adminContext);
 
     const response = await POST(
       makeRequest({ email: 'x@y.com', role: 'superuser' }),
@@ -127,7 +127,7 @@ describe('POST /api/auth/invite', () => {
   });
 
   it('400 on malformed email', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValue(adminContext);
 
     const response = await POST(
       makeRequest({ email: 'not-an-email', role: 'member' }),
@@ -136,7 +136,7 @@ describe('POST /api/auth/invite', () => {
   });
 
   it('409 on email-taken', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValue(adminContext);
     createUserMock.mockResolvedValueOnce(err({ code: 'email-taken' }));
 
     const response = await POST(
@@ -152,7 +152,7 @@ describe('POST /api/auth/invite', () => {
     const { assertRoute500WithRequestId } = await import(
       './_helpers/assert-route-500'
     );
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValue(adminContext);
     createUserMock.mockRejectedValueOnce(new Error('neon: connection terminated'));
 
     const response = await POST(

@@ -8,11 +8,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { ok, err } from '@/lib/result';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const directorySearchMock = vi.fn();
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 vi.mock('@/modules/members/members-deps', () => ({
   buildMembersDeps: vi.fn(() => ({})),
@@ -58,7 +58,7 @@ describe('contract: GET /api/members (T058)', () => {
   afterEach(() => vi.clearAllMocks());
 
   it('200 — returns { items, next_cursor } envelope', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     directorySearchMock.mockResolvedValueOnce(
       ok({
         items: [
@@ -118,7 +118,7 @@ describe('contract: GET /api/members (T058)', () => {
   });
 
   it('400 on invalid limit', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     const { GET } = await import('@/app/api/members/route');
     const res = await GET(makeRequest('?limit=999'));
     expect(res.status).toBe(400);
@@ -127,7 +127,7 @@ describe('contract: GET /api/members (T058)', () => {
   });
 
   it('500 when use case errors', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     directorySearchMock.mockResolvedValueOnce(
       err({ type: 'server_error', message: 'x' }),
     );

@@ -20,12 +20,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 import { ok, err } from '@/lib/result';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const createPlanMock = vi.fn();
 const buildPlansDepsMock = vi.fn();
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 vi.mock('@/modules/plans/plans-deps', () => ({
   buildPlansDeps: (...args: unknown[]) => buildPlansDepsMock(...args),
@@ -115,7 +115,7 @@ describe('contract: POST /api/plans (T092)', () => {
   });
 
   it('201 on successful create — returns the created plan', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
     createPlanMock.mockResolvedValueOnce(
       ok({
@@ -150,7 +150,7 @@ describe('contract: POST /api/plans (T092)', () => {
   });
 
   it('400 on invalid body (shape fault — missing required plan_name.en)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
     createPlanMock.mockResolvedValueOnce(
       err({
@@ -167,7 +167,7 @@ describe('contract: POST /api/plans (T092)', () => {
   });
 
   it('422 on partnership/corporate mismatch from the use case', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
     createPlanMock.mockResolvedValueOnce(
       err({
@@ -183,7 +183,7 @@ describe('contract: POST /api/plans (T092)', () => {
   });
 
   it('409 duplicate_plan when composite key collides', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
     createPlanMock.mockResolvedValueOnce(err({ type: 'duplicate_plan' }));
     const { POST } = await import('@/app/api/plans/route');
@@ -194,7 +194,7 @@ describe('contract: POST /api/plans (T092)', () => {
   });
 
   it('409 idempotency_conflict when key replayed with different body', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
     createPlanMock.mockResolvedValueOnce(err({ type: 'idempotency_conflict' }));
     const { POST } = await import('@/app/api/plans/route');
@@ -205,7 +205,7 @@ describe('contract: POST /api/plans (T092)', () => {
   });
 
   it('401 when unauthenticated', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: NextResponse.json({ error: 'no-session' }, { status: 401 }),
     });
     const { POST } = await import('@/app/api/plans/route');
@@ -215,7 +215,7 @@ describe('contract: POST /api/plans (T092)', () => {
   });
 
   it('400 when Idempotency-Key header missing', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
     const { POST } = await import('@/app/api/plans/route');
     const res = await POST(makeRequest(validBody, {}));

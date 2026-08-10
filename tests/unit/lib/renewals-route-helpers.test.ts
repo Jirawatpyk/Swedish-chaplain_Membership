@@ -13,6 +13,14 @@
  * `f8_role_violation_blocked` with the actual `action` label
  * preserved (not flattened to 'read').
  *
+ * 016 T028: the helper now composes `requireApiPermission`, so the role
+ * decision runs through the REAL Domain evaluator on the flag-OFF leg
+ * (`mappedLegacy('renewal', action)` → the real `canAccess`) instead of a
+ * mocked `requireRole`. The matrix cells below are therefore end-to-end
+ * through the actual policy code; the mapping of 'manager_exception' → the
+ * 'read' population is proven by OUTCOME (manager passes it but is denied
+ * 'write'), not by a call-args spy.
+ *
  * Covers the 3 at-risk admin routes:
  *   - GET  /api/admin/renewals/at-risk           → 'read'
  *   - POST /api/admin/renewals/at-risk/[id]/snooze → 'write'
@@ -25,7 +33,7 @@ const TENANT_SLUG = 'tenanta';
 
 vi.mock('@/lib/env', () => ({
   env: {
-    features: { f8Renewals: true },
+    features: { f8Renewals: true, rbacV2: false },
     tenant: { slug: 'tenanta' },
     database: { url: 'postgres://stub:stub@localhost/stub' },
     log: { level: 'silent' },
@@ -51,9 +59,10 @@ vi.mock('@/lib/auth-session', () => ({
   getCurrentSession: getCurrentSessionMock,
 }));
 
-const requireRoleMock = vi.hoisted(() => vi.fn());
-vi.mock('@/lib/rbac-guard', () => ({
-  requireRole: requireRoleMock,
+// The gate's denial trail appends via a dynamic import of the auth audit repo;
+// stub it so the unit test never touches the (mocked-empty) db client.
+vi.mock('@/modules/auth/infrastructure/db/audit-repo', () => ({
+  auditRepo: { append: vi.fn(async () => {}) },
 }));
 
 const auditEmitMock = vi.hoisted(() =>
@@ -76,7 +85,10 @@ function makeRequest(pathname = '/api/admin/renewals/at-risk'): NextRequest {
 }
 
 function mockSession(role: 'admin' | 'manager' | 'member') {
-  getCurrentSessionMock.mockResolvedValueOnce({
+  // Plain mockResolvedValue (not ...Once): the 403 path reads the session
+  // twice since T028 — once inside `requireApiPermission`, once in the F8
+  // audit-emit helper that needs the actor identity.
+  getCurrentSessionMock.mockResolvedValue({
     user: { id: '00000000-0000-0000-0000-00000000a001', role },
   });
 }
@@ -89,8 +101,7 @@ describe('requireRenewalAdminContext (Phase 6 review I8)', () => {
   // --- 'read' action ---------------------------------------------------
   it("admin + 'read' → context returned", async () => {
     mockSession('admin');
-    requireRoleMock.mockResolvedValueOnce({ ok: true });
-    const result = await requireRenewalAdminContext(makeRequest(), 'read');
+    const result = await requireRenewalAdminContext(makeRequest(), 'read', 'renewals.read');
     expect('current' in result).toBe(true);
     if ('current' in result) {
       expect(result.current.user.role).toBe('admin');
@@ -100,16 +111,14 @@ describe('requireRenewalAdminContext (Phase 6 review I8)', () => {
 
   it("manager + 'read' → context returned (FR-052a manager full-read)", async () => {
     mockSession('manager');
-    requireRoleMock.mockResolvedValueOnce({ ok: true });
-    const result = await requireRenewalAdminContext(makeRequest(), 'read');
+    const result = await requireRenewalAdminContext(makeRequest(), 'read', 'renewals.read');
     expect('current' in result).toBe(true);
     expect(auditEmitMock).not.toHaveBeenCalled();
   });
 
   it("member + 'read' → 403 + f8_role_violation_blocked audit", async () => {
     mockSession('member');
-    requireRoleMock.mockResolvedValueOnce({ ok: false, reason: 'role-denied' });
-    const result = await requireRenewalAdminContext(makeRequest(), 'read');
+    const result = await requireRenewalAdminContext(makeRequest(), 'read', 'renewals.read');
     expect('response' in result).toBe(true);
     if ('response' in result) {
       expect(result.response.status).toBe(403);
@@ -126,10 +135,10 @@ describe('requireRenewalAdminContext (Phase 6 review I8)', () => {
   // --- 'write' action --------------------------------------------------
   it("admin + 'write' → context returned", async () => {
     mockSession('admin');
-    requireRoleMock.mockResolvedValueOnce({ ok: true });
     const result = await requireRenewalAdminContext(
       makeRequest('/api/admin/renewals/at-risk/m1/snooze'),
       'write',
+      'renewals.write',
     );
     expect('current' in result).toBe(true);
     expect(auditEmitMock).not.toHaveBeenCalled();
@@ -137,10 +146,10 @@ describe('requireRenewalAdminContext (Phase 6 review I8)', () => {
 
   it("manager + 'write' → 403 + audit (FR-052a manager denied write)", async () => {
     mockSession('manager');
-    requireRoleMock.mockResolvedValueOnce({ ok: false, reason: 'role-denied' });
     const result = await requireRenewalAdminContext(
       makeRequest('/api/admin/renewals/at-risk/m1/snooze'),
       'write',
+      'renewals.write',
     );
     expect('response' in result).toBe(true);
     expect(auditEmitMock).toHaveBeenCalledTimes(1);
@@ -155,28 +164,23 @@ describe('requireRenewalAdminContext (Phase 6 review I8)', () => {
   // --- 'manager_exception' action (Phase 6 review I5) ------------------
   it("admin + 'manager_exception' → context returned (mapped to 'read' RBAC)", async () => {
     mockSession('admin');
-    requireRoleMock.mockResolvedValueOnce({ ok: true });
     const result = await requireRenewalAdminContext(
       makeRequest('/api/admin/renewals/at-risk/m1/outreach'),
       'manager_exception',
+      'renewals.read',
     );
     expect('current' in result).toBe(true);
-    // RBAC layer received the mapped 'read' label.
-    expect(requireRoleMock).toHaveBeenCalledWith(
-      expect.anything(),
-      'renewal',
-      'read',
-      expect.anything(),
-    );
     expect(auditEmitMock).not.toHaveBeenCalled();
   });
 
   it("manager + 'manager_exception' → context returned (FR-052a outreach exception)", async () => {
+    // OUTCOME-level proof of the 'manager_exception' → 'read' mapping: the
+    // same manager is DENIED under 'write' (test above) but passes here.
     mockSession('manager');
-    requireRoleMock.mockResolvedValueOnce({ ok: true });
     const result = await requireRenewalAdminContext(
       makeRequest('/api/admin/renewals/at-risk/m1/outreach'),
       'manager_exception',
+      'renewals.read',
     );
     expect('current' in result).toBe(true);
     expect(auditEmitMock).not.toHaveBeenCalled();
@@ -184,10 +188,10 @@ describe('requireRenewalAdminContext (Phase 6 review I8)', () => {
 
   it("member + 'manager_exception' → 403 + audit with action='manager_exception' (NOT 'read')", async () => {
     mockSession('member');
-    requireRoleMock.mockResolvedValueOnce({ ok: false, reason: 'role-denied' });
     const result = await requireRenewalAdminContext(
       makeRequest('/api/admin/renewals/at-risk/m1/outreach'),
       'manager_exception',
+      'renewals.read',
     );
     expect('response' in result).toBe(true);
     expect(auditEmitMock).toHaveBeenCalledTimes(1);
@@ -202,8 +206,8 @@ describe('requireRenewalAdminContext (Phase 6 review I8)', () => {
 
   // --- 401 path --------------------------------------------------------
   it('no session → 401 (no audit emit)', async () => {
-    getCurrentSessionMock.mockResolvedValueOnce(null);
-    const result = await requireRenewalAdminContext(makeRequest(), 'read');
+    getCurrentSessionMock.mockResolvedValue(null);
+    const result = await requireRenewalAdminContext(makeRequest(), 'read', 'renewals.read');
     expect('response' in result).toBe(true);
     if ('response' in result) {
       expect(result.response.status).toBe(401);

@@ -7,7 +7,7 @@
  *     when the body omits it; explicit body values thread through.
  *   - 400 invalid body (missing/garbage/impossible paymentDate, bad
  *     paymentMethod, non-JSON body)
- *   - 401/403 forwarded from requireAdminContext (admin-only write)
+ *   - 401/403 forwarded from requireApiPermission (admin-only write)
  *   - 404 invoice_not_found / member_not_found
  *   - 409 invoice_already_issued (sequential double-POST) /
  *         member_archived / settings_missing
@@ -39,12 +39,12 @@ import { ok, err } from '@/lib/result';
 // Mock seams — declared before any import of the route.
 // ---------------------------------------------------------------------------
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const issueEventInvoiceAsPaidMock = vi.fn();
 const makeDepsMock = vi.fn((..._args: unknown[]) => ({}));
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 
 vi.mock('@/lib/tenant-context', () => ({
@@ -224,7 +224,7 @@ describe('contract: POST /api/invoices/[invoiceId]/issue-as-paid (Task 11)', () 
   }, 60_000);
 
   beforeEach(() => {
-    requireAdminContextMock.mockResolvedValue(adminContext);
+    requireApiPermissionMock.mockResolvedValue(adminContext);
   });
 
   afterEach(() => {
@@ -235,8 +235,8 @@ describe('contract: POST /api/invoices/[invoiceId]/issue-as-paid (Task 11)', () 
   // AuthN / AuthZ
   // -------------------------------------------------------------------------
 
-  it('401 no-session — unauthenticated request forwarded from requireAdminContext', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+  it('401 no-session — unauthenticated request forwarded from requireApiPermission', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: new Response(JSON.stringify({ error: 'no-session' }), {
         status: 401,
       }),
@@ -252,7 +252,7 @@ describe('contract: POST /api/invoices/[invoiceId]/issue-as-paid (Task 11)', () 
   });
 
   it('403 forbidden — manager role is rejected before reaching use-case (admin-only write)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: new Response(JSON.stringify({ error: 'forbidden' }), {
         status: 403,
       }),
@@ -677,12 +677,14 @@ describe('contract: POST /api/invoices/[invoiceId]/issue-as-paid (Task 11)', () 
     expect(lines).toHaveLength(1);
     expect(lines[0]).toHaveProperty('kind', 'event_fee');
 
-    // RBAC policy-arg pin: admin-only WRITE on the invoice resource —
-    // a drift to a weaker policy (e.g. read) must fail this contract.
-    expect(requireAdminContextMock).toHaveBeenCalledWith(expect.anything(), {
-      resource: 'invoice',
-      action: 'write',
-    });
+    // RBAC key+row pin (016 T028): the flag-ON key is `invoicing.issue` and the
+    // flag-OFF shim row is the pre-sweep admin-only WRITE policy — a drift to a
+    // weaker key or row (e.g. read) must fail this contract.
+    expect(requireApiPermissionMock).toHaveBeenCalledWith(
+      expect.anything(),
+      'invoicing.issue',
+      { kind: 'mappedLegacy', resource: 'invoice', action: 'write' },
+    );
 
     // Input threading: ids from context, defaults applied by the route.
     expect(issueEventInvoiceAsPaidMock).toHaveBeenCalledTimes(1);

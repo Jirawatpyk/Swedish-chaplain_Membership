@@ -23,11 +23,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { ok, err } from '@/lib/result';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const cancelScheduledPlanChangeMock = vi.fn();
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 vi.mock('@/modules/plans', async () => {
   const actual = await vi.importActual<typeof import('@/modules/plans')>(
@@ -138,7 +138,7 @@ describe('contract: POST /api/admin/scheduled-plan-changes/[id]/cancel (R2-S3)',
   afterEach(() => vi.clearAllMocks());
 
   it('200 happy path — returns the cancelled scheduled-plan-change envelope', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     cancelScheduledPlanChangeMock.mockResolvedValueOnce(
       ok({
         tenantId: 'test-swecham',
@@ -171,7 +171,7 @@ describe('contract: POST /api/admin/scheduled-plan-changes/[id]/cancel (R2-S3)',
   });
 
   it('400 missing Idempotency-Key', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     const { POST } = await import(
       '@/app/api/admin/scheduled-plan-changes/[id]/cancel/route'
     );
@@ -184,7 +184,7 @@ describe('contract: POST /api/admin/scheduled-plan-changes/[id]/cancel (R2-S3)',
   });
 
   it('400 invalid_body when memberId is not a UUID', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     const { POST } = await import(
       '@/app/api/admin/scheduled-plan-changes/[id]/cancel/route'
     );
@@ -198,7 +198,7 @@ describe('contract: POST /api/admin/scheduled-plan-changes/[id]/cancel (R2-S3)',
   });
 
   it('400 invalid_input from the use-case (zod failure post-handler)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     cancelScheduledPlanChangeMock.mockResolvedValueOnce(
       err({ code: 'invalid_input', field: 'scheduledChangeId' }),
     );
@@ -214,7 +214,7 @@ describe('contract: POST /api/admin/scheduled-plan-changes/[id]/cancel (R2-S3)',
   });
 
   it('404 not_found when use-case returns not_found', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     cancelScheduledPlanChangeMock.mockResolvedValueOnce(
       err({ code: 'not_found', scheduledChangeId: SCHEDULED_ID }),
     );
@@ -230,7 +230,7 @@ describe('contract: POST /api/admin/scheduled-plan-changes/[id]/cancel (R2-S3)',
   });
 
   it('409 already_terminal with status in details', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     cancelScheduledPlanChangeMock.mockResolvedValueOnce(
       err({
         code: 'already_terminal',
@@ -272,7 +272,7 @@ describe('contract: POST /api/admin/scheduled-plan-changes/[id]/cancel (R2-S3)',
   };
 
   it('200 audit_failed (auditErrorType=persist_failed) + X-Audit-Backfill-Required header', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     cancelScheduledPlanChangeMock.mockResolvedValueOnce(
       err({
         code: 'audit_failed',
@@ -308,7 +308,7 @@ describe('contract: POST /api/admin/scheduled-plan-changes/[id]/cancel (R2-S3)',
   // invalid_payload discriminator maps to a distinct errorId in the
   // log + distinct X-Audit-Error-Type header.
   it('200 audit_failed (auditErrorType=invalid_payload) + X-Audit-Backfill-Required header', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     cancelScheduledPlanChangeMock.mockResolvedValueOnce(
       err({
         code: 'audit_failed',
@@ -348,7 +348,7 @@ describe('contract: POST /api/admin/scheduled-plan-changes/[id]/cancel (R2-S3)',
   // (errorId tagged) AND logger.error (untagged) on the recheck
   // branch — alert-rule double-firing risk.
   it('500 server_error (no recheck) — single logger.error with F2.PLAN_CHANGE.CANCEL_SERVER_ERROR', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     cancelScheduledPlanChangeMock.mockResolvedValueOnce(
       err({
         code: 'server_error',
@@ -383,7 +383,7 @@ describe('contract: POST /api/admin/scheduled-plan-changes/[id]/cancel (R2-S3)',
   });
 
   it('500 server_error (recheck failed) — single logger.error with F2.PLAN_CHANGE.CANCEL_RECHECK_FAILED + recheckErrMessage field', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     cancelScheduledPlanChangeMock.mockResolvedValueOnce(
       err({
         code: 'server_error',
@@ -430,7 +430,7 @@ describe('contract: POST /api/admin/scheduled-plan-changes/[id]/cancel (R2-S3)',
   // `rememberIdempotentResponse(... { status, body, headers })` would
   // ship green.
   it('R5-S6: rememberIdempotentResponse receives the diagnostic headers on audit_failed write', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     cancelScheduledPlanChangeMock.mockResolvedValueOnce(
       err({
         code: 'audit_failed',
@@ -469,7 +469,7 @@ describe('contract: POST /api/admin/scheduled-plan-changes/[id]/cancel (R2-S3)',
   // alert routing keyed on `X-Audit-Backfill-Required` silently
   // loses the discriminator on retry.
   it('R4-I10: replay of cached audit_failed response re-emits diagnostic headers', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     const idem = await import('@/lib/idempotency');
     vi.mocked(idem.classifyIdempotencyRequest).mockResolvedValueOnce({
       kind: 'replay',
@@ -508,7 +508,7 @@ describe('contract: POST /api/admin/scheduled-plan-changes/[id]/cancel (R2-S3)',
   });
 
   it('503 idempotency_reservation_failed when Upstash reserve returns err', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     const idem = await import('@/lib/idempotency');
     vi.mocked(idem.reserveIdempotencyRecord).mockResolvedValueOnce({
       ok: false,
@@ -530,7 +530,7 @@ describe('contract: POST /api/admin/scheduled-plan-changes/[id]/cancel (R2-S3)',
   // R3 Batch 4c (R3-I11) — RBAC cases. Sibling F2 plan routes ship
   // 401 + 403 tests; cancel route was missing them.
   it('401 unauthenticated', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: new Response(
         JSON.stringify({ error: { code: 'unauthenticated' } }),
         { status: 401, headers: { 'content-type': 'application/json' } },
@@ -547,7 +547,7 @@ describe('contract: POST /api/admin/scheduled-plan-changes/[id]/cancel (R2-S3)',
   });
 
   it('403 manager attempts (write requires admin)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: new Response(
         JSON.stringify({
           error: { code: 'forbidden', message: 'admin role required' },

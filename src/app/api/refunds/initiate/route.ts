@@ -20,7 +20,8 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 
-import { requireAdminContext } from '@/lib/admin-context';
+import { requireApiPermission } from '@/lib/rbac';
+import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { asSatang } from '@/lib/money';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
@@ -245,10 +246,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // table (`auth/domain/policies.ts`) now expresses the actual
   // refund permission directly: admin-only, no read surface (the
   // refund-history view is part of the `payment` timeline resource).
-  const adminCtx = await requireAdminContext(request, {
-    resource: 'refund',
-    action: 'write',
-  });
+  const adminCtx = await requireApiPermission(request, 'refunds.write', mappedLegacy('refund', 'write'));
   if ('response' in adminCtx && adminCtx.response) {
     return adminCtx.response as NextResponse;
   }

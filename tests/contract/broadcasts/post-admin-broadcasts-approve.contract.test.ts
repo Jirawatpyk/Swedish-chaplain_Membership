@@ -11,12 +11,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 import { ok, err } from '@/lib/result';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const approveBroadcastMock = vi.fn();
 const sendMemberEmailMock = vi.fn(async (..._args: unknown[]) => undefined);
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 vi.mock('@/lib/tenant-context', () => ({
   resolveTenantFromRequest: () => ({ slug: 'test-tenant', __brand: true }),
@@ -119,7 +119,7 @@ afterEach(() => vi.clearAllMocks());
 
 describe('POST /api/admin/broadcasts/[id]/approve — Wave 6 GREEN (T093)', () => {
   it('200 send_now: { broadcastId, status:approved, approvedAt, scheduledFor, resendBroadcastId:null }', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     const now = new Date('2026-06-15T05:00:00Z');
     approveBroadcastMock.mockResolvedValueOnce(
       ok({
@@ -144,7 +144,7 @@ describe('POST /api/admin/broadcasts/[id]/approve — Wave 6 GREEN (T093)', () =
   });
 
   it('200 schedule: scheduledFor reflects future timestamp', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     const future = new Date(Date.now() + 60 * 60 * 1000);
     approveBroadcastMock.mockResolvedValueOnce(
       ok({
@@ -166,7 +166,7 @@ describe('POST /api/admin/broadcasts/[id]/approve — Wave 6 GREEN (T093)', () =
   });
 
   it('400 invalid_body: schedule without scheduledFor', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     const { POST } = await importRoute();
     const { req, ctx } = makeRequest({ decision: 'schedule' });
     const res = await POST(req, ctx);
@@ -175,7 +175,7 @@ describe('POST /api/admin/broadcasts/[id]/approve — Wave 6 GREEN (T093)', () =
   });
 
   it('400 invalid_body: scheduledFor < now+5min (zod refine)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     const tooSoon = new Date(Date.now() + 60 * 1000);
     const { POST } = await importRoute();
     const { req, ctx } = makeRequest({
@@ -187,7 +187,7 @@ describe('POST /api/admin/broadcasts/[id]/approve — Wave 6 GREEN (T093)', () =
   });
 
   it('400 invalid_body: malformed JSON', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     const req = new NextRequest(
       `http://localhost/api/admin/broadcasts/${VALID_ID}/approve`,
       {
@@ -204,7 +204,7 @@ describe('POST /api/admin/broadcasts/[id]/approve — Wave 6 GREEN (T093)', () =
   });
 
   it('400 invalid_body: unknown decision discriminator', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     const { POST } = await importRoute();
     const { req, ctx } = makeRequest({ decision: 'bogus' });
     const res = await POST(req, ctx);
@@ -212,7 +212,7 @@ describe('POST /api/admin/broadcasts/[id]/approve — Wave 6 GREEN (T093)', () =
   });
 
   it('404 broadcast_not_found: invalid uuid in path', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     const { POST } = await importRoute();
     const { req, ctx } = makeRequest({ decision: 'send_now' }, 'not-a-uuid');
     const res = await POST(req, ctx);
@@ -223,7 +223,7 @@ describe('POST /api/admin/broadcasts/[id]/approve — Wave 6 GREEN (T093)', () =
   });
 
   it('404 broadcast_not_found: use-case not_found', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     approveBroadcastMock.mockResolvedValueOnce(
       err({ kind: 'broadcast_not_found', broadcastId: VALID_ID }),
     );
@@ -234,7 +234,7 @@ describe('POST /api/admin/broadcasts/[id]/approve — Wave 6 GREEN (T093)', () =
   });
 
   it('409 broadcast_invalid_state_transition with observedStatus detail', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     approveBroadcastMock.mockResolvedValueOnce(
       err({
         kind: 'broadcast_invalid_state_transition',
@@ -250,7 +250,7 @@ describe('POST /api/admin/broadcasts/[id]/approve — Wave 6 GREEN (T093)', () =
   });
 
   it('409 broadcast_concurrent_action_blocked', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     approveBroadcastMock.mockResolvedValueOnce(
       err({
         kind: 'broadcast_concurrent_action_blocked',
@@ -264,7 +264,7 @@ describe('POST /api/admin/broadcasts/[id]/approve — Wave 6 GREEN (T093)', () =
   });
 
   it('422 broadcast_schedule_too_soon (use-case branch)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     const tooSoon = new Date(Date.now() + 60_000);
     approveBroadcastMock.mockResolvedValueOnce(
       err({ kind: 'broadcast_schedule_too_soon', scheduledFor: tooSoon }),
@@ -282,7 +282,7 @@ describe('POST /api/admin/broadcasts/[id]/approve — Wave 6 GREEN (T093)', () =
   });
 
   it('401 unauthenticated', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: NextResponse.json({ error: 'unauthorized' }, { status: 401 }),
     });
     const { POST } = await importRoute();
@@ -293,7 +293,7 @@ describe('POST /api/admin/broadcasts/[id]/approve — Wave 6 GREEN (T093)', () =
   });
 
   it('403 manager-role attempting approve (forbidden)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: NextResponse.json({ error: 'forbidden' }, { status: 403 }),
     });
     const { POST } = await importRoute();
@@ -303,7 +303,7 @@ describe('POST /api/admin/broadcasts/[id]/approve — Wave 6 GREEN (T093)', () =
   });
 
   it('500 internal_error: use-case throws', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     approveBroadcastMock.mockRejectedValueOnce(new Error('db down'));
     const { POST } = await importRoute();
     const { req, ctx } = makeRequest({ decision: 'send_now' });
@@ -312,7 +312,7 @@ describe('POST /api/admin/broadcasts/[id]/approve — Wave 6 GREEN (T093)', () =
   });
 
   it('500 internal_error: use-case returns approve.server_error', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     approveBroadcastMock.mockResolvedValueOnce(
       err({ kind: 'approve.server_error', message: 'db down' }),
     );
@@ -323,7 +323,7 @@ describe('POST /api/admin/broadcasts/[id]/approve — Wave 6 GREEN (T093)', () =
   });
 
   it('member email failure does NOT 5xx the request (best-effort)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     const now = new Date();
     approveBroadcastMock.mockResolvedValueOnce(
       ok({

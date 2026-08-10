@@ -13,7 +13,8 @@
  * `PATCH /api/tenant-invoice-settings { logo_blob_key }`.
  */
 import { NextResponse, type NextRequest } from 'next/server';
-import { requireAdminContext } from '@/lib/admin-context';
+import { requireApiPermission } from '@/lib/rbac';
+import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { rateLimiter } from '@/lib/auth-deps';
@@ -39,10 +40,7 @@ import {
 import { createHash } from 'node:crypto';
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  const ctx = await requireAdminContext(request, {
-    resource: 'tenant_invoice_settings',
-    action: 'write',
-  });
+  const ctx = await requireApiPermission(request, 'settings.invoicing', mappedLegacy('tenant_invoice_settings', 'write'));
   if ('response' in ctx) return ctx.response;
 
   const tenantCtx = resolveTenantFromRequest(request);

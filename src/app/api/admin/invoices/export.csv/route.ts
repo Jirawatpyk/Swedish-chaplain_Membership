@@ -16,7 +16,8 @@
  * Node runtime pinned (Drizzle).
  */
 import { type NextRequest, NextResponse } from 'next/server';
-import { requireAdminContext } from '@/lib/admin-context';
+import { requireApiPermission } from '@/lib/rbac';
+import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { buildAttachmentContentDisposition } from '@/lib/content-disposition';
@@ -34,10 +35,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   // 1. RBAC — admin only. Manager/member/anonymous rejections are
   //    forwarded as-is from requireAdminContext (401 anonymous /
   //    403 wrong-role).
-  const ctx = await requireAdminContext(request, {
-    resource: 'invoice',
-    action: 'read',
-  });
+  const ctx = await requireApiPermission(request, 'invoicing.read', mappedLegacy('invoice', 'read'));
   if ('response' in ctx) return ctx.response;
 
   // 2. Query-param parse + shape check. The use-case schema does

@@ -128,6 +128,8 @@ const SESSION_ANY: Readonly<Record<string, string>> = {
   'POST /api/internal/client-error': 'client telemetry sink — no tenant data is read',
   'GET /api/broadcasts/templates':
     'deliberately shared member+staff template picker (F7.1a T110 header) — anonymous 401, no role branch',
+  'GET /api/internal/exports/[jobId]/download':
+    'dual-audience private-artefact proxy — the portal 303-redirects the SUBJECT MEMBER here for their own GDPR archive, so no staff key can gate it; real guards = single-use job-bound HMAC token + downloadExport subject-or-staff authorize() (T028 capture correction, see the baseline header note)',
 };
 
 /** Routes that are unauthenticated by design. */
@@ -151,8 +153,10 @@ function classify(h: Handler): ExpectedClass | null {
   if (h.route.startsWith('/api/member/')) return 'portal-member';
   if (h.route.startsWith('/api/broadcasts/')) return 'portal-member';
   if (h.route.startsWith('/api/payments/')) return 'portal-member';
-  // `/api/internal/exports/**` is a staff surface and is deliberately matched
-  // by the baseline lookup below, not by this prefix.
+  // `/api/internal/exports/**` is the dual-audience artefact proxy (session-any
+  // via the explicit id above) — excluded from the cron prefix so any FUTURE
+  // handler added there must be classified explicitly instead of inheriting
+  // cron-bearer.
   if (h.route.startsWith('/api/internal/') && !h.route.startsWith('/api/internal/exports/')) {
     return 'cron-bearer';
   }
@@ -209,8 +213,8 @@ describe('T016 API route exhaustiveness', () => {
     expect(stale).toEqual([]);
   });
 
-  it('the session-any allow-list is exactly the four documented handlers', () => {
-    expect(Object.keys(SESSION_ANY)).toHaveLength(4);
+  it('the session-any allow-list is exactly the five documented handlers', () => {
+    expect(Object.keys(SESSION_ANY)).toHaveLength(5);
     const applied = ALL.filter((h) => classify(h) === 'session-any').map((h) => `${h.method} ${h.route}`);
     expect(applied.sort()).toEqual(Object.keys(SESSION_ANY).sort());
   });

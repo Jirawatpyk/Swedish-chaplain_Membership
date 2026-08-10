@@ -12,15 +12,23 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextResponse, NextRequest } from 'next/server';
 import { ok, err } from '@/lib/result';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const enableUserMock = vi.fn();
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 
 vi.mock('@/modules/auth/application/enable-user', () => ({
   enableUser: (...args: unknown[]) => enableUserMock(...args),
+}));
+
+// 016 T028 — the route loads the TARGET row to pick the per-target permission
+// (§ 7.1). Default null = step-2 gate skipped; the use-case mock still decides
+// the outcome (pre-sweep contract). Mocked so no real repo/db is touched.
+const findByIdMock = vi.fn(async (..._args: unknown[]) => null);
+vi.mock('@/lib/auth-deps', () => ({
+  userRepo: { findById: (...args: unknown[]) => findByIdMock(...args) },
 }));
 
 vi.mock('@/lib/logger', () => ({
@@ -57,7 +65,7 @@ describe('contract: POST /api/auth/users/[id]/enable (T112)', () => {
   });
 
   it('200 on success', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     enableUserMock.mockResolvedValueOnce(ok({ userId: 'target-1' }));
 
     const { POST } = await import('@/app/api/auth/users/[id]/enable/route');
@@ -71,8 +79,8 @@ describe('contract: POST /api/auth/users/[id]/enable (T112)', () => {
     );
   });
 
-  it('401 when requireAdminContext rejects with no-session', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+  it('401 when requireApiPermission rejects with no-session', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: NextResponse.json({ error: 'no-session' }, { status: 401 }),
     });
 
@@ -83,8 +91,8 @@ describe('contract: POST /api/auth/users/[id]/enable (T112)', () => {
     expect(enableUserMock).not.toHaveBeenCalled();
   });
 
-  it('403 when requireAdminContext rejects with forbidden', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+  it('403 when requireApiPermission rejects with forbidden', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: NextResponse.json({ error: 'forbidden' }, { status: 403 }),
     });
 
@@ -96,7 +104,7 @@ describe('contract: POST /api/auth/users/[id]/enable (T112)', () => {
   });
 
   it('404 when target user not found', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     enableUserMock.mockResolvedValueOnce(err({ code: 'not-found' }));
 
     const { POST } = await import('@/app/api/auth/users/[id]/enable/route');
@@ -106,7 +114,7 @@ describe('contract: POST /api/auth/users/[id]/enable (T112)', () => {
   });
 
   it('409 when not-disabled (already active)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     enableUserMock.mockResolvedValueOnce(err({ code: 'not-disabled' }));
 
     const { POST } = await import('@/app/api/auth/users/[id]/enable/route');
@@ -122,7 +130,7 @@ describe('contract: POST /api/auth/users/[id]/enable (T112)', () => {
     const { assertRoute500WithRequestId } = await import(
       './_helpers/assert-route-500'
     );
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     enableUserMock.mockRejectedValueOnce(new Error('neon: connection terminated'));
 
     const { POST } = await import('@/app/api/auth/users/[id]/enable/route');

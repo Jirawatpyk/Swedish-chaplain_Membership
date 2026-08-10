@@ -35,12 +35,12 @@ vi.mock('@/lib/auth-deps', async () => {
   };
 });
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const resendVerificationEmailMock = vi.fn();
 const buildMembersDepsMock = vi.fn(() => makeBuildMembersDepsMockReturn());
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: requireAdminContextMock,
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: requireApiPermissionMock,
 }));
 
 vi.mock('@/modules/members/members-deps', () => ({
@@ -73,7 +73,7 @@ describe('contract: resend-verification rate limit', () => {
   afterEach(() => vi.clearAllMocks());
 
   it('returns 429 { error: "rate_limited" } + Retry-After when limiter denies', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     checkRl.mockResolvedValueOnce({ success: false, reset: Date.now() + 60_000 });
 
     const { POST } = await import(
@@ -90,7 +90,7 @@ describe('contract: resend-verification rate limit', () => {
   });
 
   it('proceeds to 200 when limiter allows', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     checkRl.mockResolvedValueOnce({ success: true, reset: Date.now() + 3600_000 });
     resendVerificationEmailMock.mockResolvedValueOnce(
       ok({

@@ -17,7 +17,8 @@
  *   - blob_missing       → 502
  */
 import { NextResponse, type NextRequest } from 'next/server';
-import { requireAdminContext } from '@/lib/admin-context';
+import { requireApiPermission } from '@/lib/rbac';
+import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import {
@@ -49,7 +50,7 @@ export async function GET(
   // (read-only staff) too — ratified to match the invoice-PDF read gate: a
   // manager who can already view the tax invoice/receipt can view its supporting
   // §80/1(5) cert scan. No write/delete path is exposed to manager.
-  const ctx = await requireAdminContext(request, { resource: 'invoice', action: 'read' });
+  const ctx = await requireApiPermission(request, 'invoicing.read', mappedLegacy('invoice', 'read'));
   if ('response' in ctx) return ctx.response;
 
   const { invoiceId } = await params;
@@ -63,8 +64,8 @@ export async function GET(
       {
         tenantId: tenantCtx.slug,
         actorUserId: ctx.current.user.id,
-        // requireAdminContext(invoice, read) admits only admin + manager; the
-        // cert scan is staff-only supporting evidence.
+        // requireApiPermission('invoicing.read', mappedLegacy('invoice', 'read'))
+        // admits only staff roles; the cert scan is staff-only supporting evidence.
         actorRole: ctx.current.user.role === 'manager' ? 'manager' : 'admin',
         requestId,
         invoiceId,
