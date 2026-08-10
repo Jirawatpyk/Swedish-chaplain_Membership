@@ -25,10 +25,10 @@ async function main(): Promise<void> {
     >`
       SELECT id, email, role, status, created_at
       FROM users
-      WHERE role = 'admin'
+      WHERE role IN ('admin', 'super_admin')
       ORDER BY created_at
     `;
-    console.log('Admins:');
+    console.log('Administrators:');
     for (const row of admins) {
       console.log(
         `  ${row.id.slice(0, 8)}…  ${row.email}  role=${row.role}  status=${row.status}  created=${row.created_at.toISOString()}`,

@@ -62,10 +62,11 @@ async function main(): Promise<void> {
     const memberId = memberRow.member_id;
 
     // `users` is cross-tenant in F1 — no tenant_id, no archived_at.
-    // Just pick the oldest admin user (any will FK-satisfy submitted_by).
+    // Just pick the oldest administrator (any will FK-satisfy submitted_by;
+    // post-Migration-C the human admins are super_admins — 016 T038).
     const [userRow] = await sql<{ readonly id: string }[]>`
       SELECT id FROM users
-      WHERE role = 'admin'
+      WHERE role IN ('admin', 'super_admin')
       ORDER BY created_at ASC
       LIMIT 1
     `;

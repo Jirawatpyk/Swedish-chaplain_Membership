@@ -113,3 +113,31 @@ jobs:
       # No DATABASE_URL / no secrets — tests/setup.ts fills placeholders.
       - name: Vitest (unit + contract)
         run: pnpm vitest run --shard=${{ matrix.shard }}/2 --passWithNoTests
+
+  rbac-flag-matrix:
+    # 016 T002 — flag-parameterised env matrix. The Domain evaluator takes the
+    # flag as a pure parameter (both legs already run in the unit job above),
+    # but `src/lib/rbac.ts` READS `FEATURE_RBAC_V2` from env (the only reader):
+    # this job proves the RBAC contract suite holds under both real env values,
+    # so an env-plumbing regression (zod coercion, default flip in PR 4, stray
+    # test reading defaultDeps) surfaces on the leg it breaks. Cheap: the rbac
+    # contract directory only (~350 tests, seconds).
+    name: RBAC contract (FEATURE_RBAC_V2=${{ matrix.rbacV2 }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        rbacV2: ['false', 'true']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - name: Vitest (rbac contract, both flag legs)
+        env:
+          FEATURE_RBAC_V2: ${{ matrix.rbacV2 }}
+        run: pnpm vitest run tests/contract/rbac/ --passWithNoTests
