@@ -596,8 +596,10 @@
         "role": {
           "label": "Role",
           "all": "All roles",
+          "super_admin": "Super Admin",
           "admin": "Admin",
           "manager": "Manager",
+          "marketing": "Marketing",
           "member": "Member"
         },
         "status": {

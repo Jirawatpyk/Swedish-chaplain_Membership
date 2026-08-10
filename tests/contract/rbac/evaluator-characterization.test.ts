@@ -15,6 +15,9 @@
  * `tests/setup.ts` must NOT force-set FEATURE_RBAC_V2 (design § 10).
  */
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -117,13 +120,32 @@ describe('ON leg reproduces the pinned § 4.1 matrix exactly', () => {
 
 describe('environment discipline (design § 10)', () => {
   it('tests/setup.ts does not force-set FEATURE_RBAC_V2 (CI matrix must control it)', () => {
-    // When the CI job sets the var, it must arrive unmodified; when unset
-    // locally it must stay unset. Either way setup.ts must not have pinned it.
-    const v = process.env.FEATURE_RBAC_V2;
-    expect(v === undefined || v === 'true' || v === 'false').toBe(true);
+    // Source scan, not an env probe: an env probe passes whatever setup.ts did.
+    // Idiom matches tests/unit/architecture/*.
+    const setup = readFileSync(
+      join(process.cwd(), 'tests', 'setup.ts'),
+      'utf8',
+    );
+    expect(setup).not.toMatch(/FEATURE_RBAC_V2\s*[=:]/);
   });
 
   it('getPermissionSet is synchronous and env-independent (D15 purity)', () => {
-    expect(getPermissionSet('manager')).toEqual(getPermissionSet('manager'));
+    // Synchronous: a real Set, never a Promise/thenable.
+    const first = getPermissionSet('manager');
+    expect(first).toBeInstanceOf(Set);
+
+    // Env-independent: flipping the flag between calls cannot change membership.
+    const original = process.env.FEATURE_RBAC_V2;
+    try {
+      process.env.FEATURE_RBAC_V2 = 'true';
+      const on = [...getPermissionSet('manager')].sort();
+      process.env.FEATURE_RBAC_V2 = 'false';
+      const off = [...getPermissionSet('manager')].sort();
+      expect(on).toEqual(off);
+      expect(on).toEqual([...first].sort());
+    } finally {
+      if (original === undefined) delete process.env.FEATURE_RBAC_V2;
+      else process.env.FEATURE_RBAC_V2 = original;
+    }
   });
 });

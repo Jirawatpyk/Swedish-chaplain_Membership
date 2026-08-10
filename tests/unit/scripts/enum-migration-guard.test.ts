@@ -238,6 +238,11 @@ describe('findMissingEnumValues', () => {
   });
 
   it('the default REQUIRED_ENUM_VALUES set matches the code-critical enums', () => {
+    // 016-rbac-permissions (mig 0285): the app depends on both new role labels
+    // from PR 1 onward (ROLES + roleEnum tuple), so the Phase-3 assertion must
+    // require them or a silent ADD VALUE no-op ships undetected.
+    expect(REQUIRED_ENUM_VALUES['role']).toContain('super_admin');
+    expect(REQUIRED_ENUM_VALUES['role']).toContain('marketing');
     expect(REQUIRED_ENUM_VALUES['document_type']).toContain('bill');
     expect(REQUIRED_ENUM_VALUES['document_type']).toContain('receipt_105');
     expect(REQUIRED_ENUM_VALUES['audit_event_type']).toContain('tax_receipt_issued');

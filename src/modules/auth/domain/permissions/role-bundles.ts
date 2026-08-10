@@ -54,7 +54,7 @@ const MARKETING_KEYS: readonly PermissionKey[] = [
   'insights.engagement',
 ];
 
-export const ROLE_BUNDLES: Record<Role, ReadonlySet<PermissionKey>> = {
+export const ROLE_BUNDLES: Readonly<Record<Role, ReadonlySet<PermissionKey>>> = {
   super_admin: new Set(NON_SUPER_ADMIN_ONLY_KEYS),
   admin: new Set(NON_SUPER_ADMIN_ONLY_KEYS),
   manager: new Set(MANAGER_KEYS),

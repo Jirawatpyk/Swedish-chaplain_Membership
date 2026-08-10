@@ -24,9 +24,12 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
-// Pure Domain type — type-only import is erased at build, safe in a client
-// component (the @/modules/auth barrel is NOT client-safe, but this deep path
-// carries no runtime code). Kept in sync with the five-role enum (016 FR-001).
+// `import type` is fully erased at build, so this pulls no runtime code into
+// the client bundle regardless of the specifier. The deep path (rather than
+// the `@/modules/auth` barrel) matches the convention the other client
+// components here follow, and keeps the import safe if it ever becomes a
+// value import. Replaces a local 3-role alias that silently diverged from the
+// Domain enum when 016 widened it (review 016 PR1, ui-1).
 import type { Role } from '@/modules/auth/domain/role';
 
 type Status = 'pending' | 'active' | 'disabled';

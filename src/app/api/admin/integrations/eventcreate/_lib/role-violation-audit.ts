@@ -13,6 +13,12 @@
  *   3. `actorUserId` is nullable — never the sentinel UUID.
  *   4. `actorRole` typed as the narrowed Role union so a future role
  *      addition surfaces as a COMPILE error at the call site.
+ *      TRIPWIRE CURRENTLY SUPPRESSED: 016 PR 1 added `super_admin` +
+ *      `marketing` to `Role` and silenced this compile error with an
+ *      `as 'manager' | 'member'` cast at the call site (marked `016 PR1`).
+ *      016 PR 2 sweeps these F6 routes onto the permission evaluator and
+ *      widens `EmitIntegrationRoleViolationInput.actorRole` to the full
+ *      staff-role union — remove the cast and this note together.
  */
 import type { NextRequest } from 'next/server';
 import { logger } from '@/lib/logger';
@@ -113,7 +119,9 @@ export async function adminOnlyGuard(
     await emitIntegrationRoleViolation(request, {
       actorUserId: session.user.id,
       // 016 PR1: cast preserved — PR 2 sweeps this F6 route to the evaluator
-      // (legacyF6Guard) and widens the F6 attempted_role union with it.
+      // (legacyF6Guard) and widens
+      // `EmitIntegrationRoleViolationInput.actorRole` to the full staff-role
+      // union with it.
       actorRole: role as 'manager' | 'member',
       attemptedRoute: input.attemptedRoute,
       attemptedAction: input.attemptedAction,

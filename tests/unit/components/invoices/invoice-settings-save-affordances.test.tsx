@@ -89,7 +89,7 @@ function renderSettings(
     <NextIntlClientProvider locale="en" messages={enMessages}>
       <InvoiceSettingsForm
         initialValues={{ ...FIXTURE, ...overrides }}
-        currentUserRole="admin"
+        canEdit
         exists={exists}
       />
     </NextIntlClientProvider>,
@@ -152,7 +152,7 @@ describe('InvoiceSettingsForm — code-review follow-up (finding 1): symmetric n
   it('clears dirty once a save reloads initialValues with the server-normalized (trimmed/uppercased) value', () => {
     const { container, rerender } = render(
       <NextIntlClientProvider locale="en" messages={enMessages}>
-        <InvoiceSettingsForm initialValues={FIXTURE} currentUserRole="admin" exists />
+        <InvoiceSettingsForm initialValues={FIXTURE} canEdit exists />
       </NextIntlClientProvider>,
     );
 
@@ -172,7 +172,7 @@ describe('InvoiceSettingsForm — code-review follow-up (finding 1): symmetric n
       <NextIntlClientProvider locale="en" messages={enMessages}>
         <InvoiceSettingsForm
           initialValues={{ ...FIXTURE, currency_code: 'USD' }}
-          currentUserRole="admin"
+          canEdit
           exists
         />
       </NextIntlClientProvider>,

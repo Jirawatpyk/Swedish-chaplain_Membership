@@ -1,17 +1,43 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ASSIGNABLE_ROLES,
   isRole,
   isStaffRole,
   PORTAL_FOR_ROLE,
   ROLES,
   STAFF_ROLES,
 } from '@/modules/auth/domain/role';
+import { roleEnum } from '@/modules/auth/infrastructure/db/schema';
 
 describe('ROLES constant', () => {
   it('contains exactly the five system roles (016-rbac-permissions FR-001)', () => {
     expect([...ROLES].sort()).toEqual(
       ['admin', 'manager', 'marketing', 'member', 'super_admin'].sort(),
     );
+  });
+
+  it('is ORDER-EXACT — the tuple must match the live pg_enum label order', () => {
+    // `ALTER TYPE … ADD VALUE` appends, so migration 0285's labels follow the
+    // original three. Both role.ts and schema.ts document "never reorder";
+    // this is the assertion that makes the contract fail loudly.
+    expect([...ROLES]).toEqual(['admin', 'manager', 'member', 'super_admin', 'marketing']);
+  });
+
+  it('the Drizzle roleEnum tuple matches ROLES label-for-label and in order', () => {
+    expect([...roleEnum.enumValues]).toEqual([...ROLES]);
+  });
+});
+
+describe('ASSIGNABLE_ROLES (staged assignability)', () => {
+  it('offers exactly the three pre-016 roles until PR 3 / PR 4 widen it', () => {
+    // super_admin becomes assignable in PR 3 (users-page retrofit), marketing
+    // in PR 4 (design D17). Widening this WITHOUT widening the invite and
+    // change-role zod enums (and vice versa) is the defect this pins.
+    expect([...ASSIGNABLE_ROLES]).toEqual(['admin', 'manager', 'member']);
+  });
+
+  it('is a subset of ROLES', () => {
+    for (const role of ASSIGNABLE_ROLES) expect(ROLES).toContain(role);
   });
 });
 

@@ -106,7 +106,7 @@ function renderSettings(overrides: Partial<InvoiceSettingsFormInitialValues> = {
     <NextIntlClientProvider locale="en" messages={enMessages}>
       <InvoiceSettingsForm
         initialValues={{ ...FIXTURE, ...overrides }}
-        currentUserRole="admin"
+        canEdit
         exists
       />
     </NextIntlClientProvider>,

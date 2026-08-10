@@ -17,7 +17,7 @@
 import { Result, err, ok } from '@/lib/result';
 import { isLastAdminTriggerError } from '@/lib/db-errors';
 import type { UserId } from '@/modules/auth/domain/branded';
-import type { Role } from '@/modules/auth/domain/role';
+import { isStaffRole, type Role } from '@/modules/auth/domain/role';
 import type { UserAccount } from '@/modules/auth/domain/user';
 // Type-only — see sign-in.ts for the Clean Architecture rationale.
 import type { UserRepo } from '@/modules/auth/infrastructure/db/user-repo';
@@ -52,10 +52,6 @@ export interface ChangeRoleDeps {
 
 export { defaultChangeRoleDeps };
 
-function isStaffRole(role: Role): boolean {
-  return role === 'admin' || role === 'manager';
-}
-
 export async function changeRole(
   input: ChangeRoleInput,
   deps: ChangeRoleDeps = defaultChangeRoleDeps,
@@ -67,7 +63,10 @@ export async function changeRole(
     return err({ code: 'same-role' });
   }
 
-  // Portal boundary — staff ↔ member crossings forbidden in F1
+  // Portal boundary — staff ↔ member crossings forbidden in F1.
+  // Uses the Domain invariant (STAFF_ROLES) so a role added to ROLES lands on
+  // the correct side automatically; a local copy silently misclassified the
+  // 016 roles as member-side (review 016 PR1, rbac-4/sec-1).
   if (isStaffRole(target.role) !== isStaffRole(input.newRole)) {
     return err({ code: 'role-portal-mismatch' });
   }

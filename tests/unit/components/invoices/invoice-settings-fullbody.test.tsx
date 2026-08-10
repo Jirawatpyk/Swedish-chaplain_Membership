@@ -86,7 +86,7 @@ const FIXTURE: InvoiceSettingsFormInitialValues = {
 function renderForm() {
   return render(
     <NextIntlClientProvider locale="en" messages={enMessages}>
-      <InvoiceSettingsForm initialValues={FIXTURE} currentUserRole="admin" exists />
+      <InvoiceSettingsForm initialValues={FIXTURE} canEdit exists />
     </NextIntlClientProvider>,
   );
 }

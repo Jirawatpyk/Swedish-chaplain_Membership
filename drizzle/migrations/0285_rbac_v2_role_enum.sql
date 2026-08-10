@@ -6,10 +6,14 @@
 -- columns widen at once.
 --
 -- Pattern: `ALTER TYPE … ADD VALUE IF NOT EXISTS`. The IF NOT EXISTS form is
--- REQUIRED — the runner's autocommit enum pre-pass
--- (scripts/run-migrations.ts) re-executes every `ALTER TYPE … ADD VALUE`
--- from ALL migration files on every deploy; a bare ADD VALUE would fail the
--- second deploy (round-3 R3-M1). Forward-only: enum values cannot be removed.
+-- REQUIRED because the runner applies this statement TWICE in the SAME deploy:
+-- Phase 1 replays every `ALTER TYPE … ADD VALUE` in autocommit (so the label is
+-- committed before any transaction can use it) WITHOUT recording anything in
+-- `__drizzle_migrations`, then Phase 2's transactional `migrate()` executes the
+-- same file again. A bare ADD VALUE raises 42710 inside that batch transaction
+-- and aborts the whole deploy on the FIRST run — Phase 1's own 42710 tolerance
+-- (run-migrations.ts `isAlreadyExists`) does not extend to the transactional
+-- pass (round-3 R3-M1). Forward-only: enum values cannot be removed.
 --
 -- Ships in lockstep (SAME commit) with:
 --   - `roleEnum` tuple  (src/modules/auth/infrastructure/db/schema.ts) — tuple

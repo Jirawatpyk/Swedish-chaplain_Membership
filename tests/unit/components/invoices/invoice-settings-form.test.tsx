@@ -90,7 +90,7 @@ function renderSettings(
     <NextIntlClientProvider locale="en" messages={enMessages}>
       <InvoiceSettingsForm
         initialValues={{ ...BASE_VALUES, ...overrides }}
-        currentUserRole="admin"
+        canEdit
         exists
       />
     </NextIntlClientProvider>,

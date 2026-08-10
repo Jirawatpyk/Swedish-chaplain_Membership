@@ -14,9 +14,12 @@ import {
   hasPermission,
 } from '@/modules/auth/domain/permissions/evaluator';
 import {
+  evaluateLegacyRow,
+  legacyAdminOrManager,
   legacySessionOnly,
   mappedLegacy,
 } from '@/modules/auth/domain/permissions/legacy-shim';
+import { ROLES } from '@/modules/auth/domain/role';
 import type { PermissionKey } from '@/modules/auth/domain/permissions/permission-catalogue';
 
 import { PINNED_MATRIX, PINNED_SUPER_ADMIN_ONLY } from '../../../helpers/rbac-pinned-matrix';
@@ -87,24 +90,69 @@ describe('E4 — legacy leg: D16 totalisation + caller-selected shim row (flag O
     expect(hasPermission('admin', key('members.read'), { rbacV2: false })).toBe(false);
     expect(hasPermission('super_admin', key('members.read'), { rbacV2: false })).toBe(false);
   });
+
+  it('legacyAdminOrManager (the 8 A* inert-check pages) admits the same set as legacySessionOnly', () => {
+    const k = key('dashboard.view');
+    expect(hasPermission('admin', k, { rbacV2: false, legacy: legacyAdminOrManager })).toBe(true);
+    expect(hasPermission('manager', k, { rbacV2: false, legacy: legacyAdminOrManager })).toBe(true);
+    expect(hasPermission('super_admin', k, { rbacV2: false, legacy: legacyAdminOrManager })).toBe(
+      true,
+    );
+    expect(hasPermission('marketing', k, { rbacV2: false, legacy: legacyAdminOrManager })).toBe(
+      false,
+    );
+    expect(hasPermission('member', k, { rbacV2: false, legacy: legacyAdminOrManager })).toBe(false);
+  });
+
+  it('the two page row classes are extensionally identical (as legacy-shim.ts claims)', () => {
+    for (const role of ROLES) {
+      expect(
+        evaluateLegacyRow(role, legacyAdminOrManager),
+        `${role} must agree across the two page row classes`,
+      ).toBe(evaluateLegacyRow(role, legacySessionOnly));
+    }
+  });
 });
 
 describe('E5/E6 — deterministic, total, never throws, never escalates', () => {
-  it('unknown role → false on both legs, no throw', () => {
-    for (const rbacV2 of [true, false]) {
+  // Includes the Object.prototype member names: a plain object literal would
+  // return a Function/prototype for these instead of undefined, so the `??`
+  // fallbacks never fire and `.has()` throws (review 016 PR1, rbac-1).
+  const HOSTILE_ROLES = [
+    'platform_admin',
+    '',
+    'toString',
+    'constructor',
+    'valueOf',
+    'hasOwnProperty',
+    '__proto__',
+  ];
+
+  it.each(HOSTILE_ROLES.flatMap((r) => [true, false].map((f) => [r, f] as const)))(
+    'unknown role %j (rbacV2=%s) → false, no throw',
+    (role, rbacV2) => {
       expect(
-        hasPermission('platform_admin', key('dashboard.view'), {
+        hasPermission(role, key('dashboard.view'), {
           rbacV2,
           legacy: legacySessionOnly,
         }),
       ).toBe(false);
-      expect(hasPermission('', key('members.read'), { rbacV2 })).toBe(false);
-    }
+      expect(hasPermission(role, key('members.read'), { rbacV2 })).toBe(false);
+    },
+  );
+
+  it.each(HOSTILE_ROLES)('getPermissionSet(%j) → empty Set, no throw', (role) => {
+    const set = getPermissionSet(role);
+    expect(set).toBeInstanceOf(Set);
+    expect(set.size).toBe(0);
   });
 
-  it('deterministic: repeated calls agree', () => {
-    const args = ['manager', key('invoicing.read'), { rbacV2: true }] as const;
-    expect(hasPermission(...args)).toBe(hasPermission(...args));
+  it('deterministic: the answer does not depend on call order or a previous call', () => {
+    // Not a self-comparison — pins the actual expected values so an
+    // implementation that memoised wrongly (or read mutable state) fails.
+    expect(hasPermission('manager', key('invoicing.read'), { rbacV2: true })).toBe(true);
+    expect(hasPermission('manager', key('invoicing.write'), { rbacV2: true })).toBe(false);
+    expect(hasPermission('manager', key('invoicing.read'), { rbacV2: true })).toBe(true);
   });
 });
 

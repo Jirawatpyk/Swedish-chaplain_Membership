@@ -171,7 +171,7 @@
       "super_admin": "Superadministratör",
       "admin": "Administratör",
       "manager": "Chef",
-      "marketing": "Marknadsföring",
+      "marketing": "Marknadsförare",
       "member": "Medlem"
     }
   },
@@ -596,8 +596,10 @@
         "role": {
           "label": "Roll",
           "all": "Alla roller",
+          "super_admin": "Superadministratör",
           "admin": "Admin",
           "manager": "Manager",
+          "marketing": "Marknadsförare",
           "member": "Medlem"
         },
         "status": {

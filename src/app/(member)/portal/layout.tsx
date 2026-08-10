@@ -12,6 +12,7 @@ import { ThemeToggle } from '@/components/shell/theme-toggle';
 import { UserMenu } from '@/components/shell/user-menu';
 import { BrandMark } from '@/components/shell/brand-mark';
 import { requireSession } from '@/lib/auth-session';
+import { isStaffRole } from '@/modules/auth';
 import { enforcePortalPageAccess } from '@/lib/portal-page-access';
 import { MarketingAcknowledgementBanner } from './_components/marketing-acknowledgement-banner';
 
@@ -44,7 +45,9 @@ export default async function MemberLayout({ children }: { children: ReactNode }
   const { user } = session;
 
   // Cross-portal guard: staff landed on a member route by accident.
-  if (user.role === 'admin' || user.role === 'manager') {
+  // Domain invariant, not a role literal — a role added to ROLES routes
+  // correctly without editing this file (review 016 PR1, sec-2).
+  if (isStaffRole(user.role)) {
     redirect('/admin');
   }
 

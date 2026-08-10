@@ -151,9 +151,11 @@ export default async function InvoiceSettingsPage() {
         <CardContent>
           <InvoiceSettingsForm
             initialValues={initialValues}
-            // 016 PR1: cast preserved; PR 2 gates this page on settings.invoicing
-            // (super_admin only) so the prop's role union narrows with the sweep.
-            currentUserRole={currentUser.role as 'admin' | 'manager' | 'member'}
+            // Server-derived write authorization (never a role literal in the
+            // client). PR 2 replaces this expression with
+            // hasPermission(role, 'settings.invoicing', …) — the boolean shape
+            // means the component itself needs no change then.
+            canEdit={currentUser.role === 'admin'}
             exists={existing !== null}
           />
         </CardContent>

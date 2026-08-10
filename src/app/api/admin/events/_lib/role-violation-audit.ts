@@ -19,6 +19,12 @@
  *   4. `actorRole` is typed as the narrowed Role union (`'member' | 'manager'`)
  *      so a future role addition surfaces as a COMPILE error at the call
  *      site, not a silent audit mis-labelling (HIGH-1 round-3).
+ *      TRIPWIRE CURRENTLY SUPPRESSED: 016 PR 1 added `super_admin` +
+ *      `marketing` to `Role` and silenced this compile error with an
+ *      `as 'manager' | 'member'` cast at both call sites (marked `016 PR1`).
+ *      016 PR 2 sweeps these F6 routes onto the permission evaluator and
+ *      widens `EmitEventsRoleViolationInput.actorRole` to the full staff-role
+ *      union — remove the casts and this note together.
  */
 import { type NextRequest, NextResponse } from 'next/server';
 import { logger } from '@/lib/logger';

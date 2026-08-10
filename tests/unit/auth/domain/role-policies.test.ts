@@ -21,6 +21,16 @@ const NON_SELF_RESOURCES = [
   // F2 additions (002-membership-plans)
   'plan',
   'fee_config',
+  // Real F3/F4/F5 resource ids. These are the cells the 016 flag-OFF
+  // characterization suite DELEGATES to canAccess for, so they must be pinned
+  // here or the money/PII rows of the legacy leg are unanchored on both sides
+  // (review 016 PR1, test-1).
+  'members',
+  'contacts',
+  'invoice',
+  'credit_note',
+  'tenant_invoice_settings',
+  'refund',
 ] as const;
 
 describe('canAccess — admin role', () => {

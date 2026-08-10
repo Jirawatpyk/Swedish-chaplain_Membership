@@ -44,10 +44,23 @@ export interface EvaluatorOptions {
  */
 export function getPermissionSet(role: Role | (string & {})): ReadonlySet<PermissionKey> {
   if (role === 'super_admin') return ALL_PERMISSION_KEYS;
-  const bundle = (ROLE_BUNDLES as Partial<Record<string, ReadonlySet<PermissionKey>>>)[
-    role
-  ];
-  return bundle ?? EMPTY_SET;
+  return lookupBundle(ROLE_BUNDLES, role) ?? EMPTY_SET;
+}
+
+/**
+ * Own-property-only bundle lookup. A plain object literal inherits
+ * `Object.prototype`, so a bare `bundles[role]` for a role string like
+ * `'toString'` or `'__proto__'` returns a Function/prototype instead of
+ * `undefined` — the `??` fallbacks never fire and `.has()` throws, breaking
+ * the E6 "never throws, never escalates" guarantee for arbitrary strings.
+ */
+function lookupBundle(
+  bundles: Record<Role, ReadonlySet<PermissionKey>>,
+  role: Role | (string & {}),
+): ReadonlySet<PermissionKey> | undefined {
+  return Object.hasOwn(bundles, role)
+    ? (bundles as Record<string, ReadonlySet<PermissionKey>>)[role]
+    : undefined;
 }
 
 /**
@@ -75,6 +88,5 @@ export function hasPermission(
   }
   if (role === 'super_admin') return true;
   if (SUPER_ADMIN_ONLY_KEYS.has(key)) return false;
-  const bundle = (bundles as Partial<Record<string, ReadonlySet<PermissionKey>>>)[role];
-  return bundle?.has(key) ?? false;
+  return lookupBundle(bundles, role)?.has(key) ?? false;
 }

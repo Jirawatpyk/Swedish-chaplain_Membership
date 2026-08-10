@@ -68,14 +68,14 @@ const ROLE_LABELS: Record<EmailLocale, Record<Role, string>> = {
     super_admin: 'ผู้ดูแลระบบสูงสุด',
     admin: 'ผู้ดูแลระบบ',
     manager: 'ผู้จัดการ',
-    marketing: 'การตลาด',
+    marketing: 'ฝ่ายการตลาด',
     member: 'สมาชิก',
   },
   sv: {
     super_admin: 'Superadministratör',
     admin: 'Administratör',
     manager: 'Chef',
-    marketing: 'Marknadsföring',
+    marketing: 'Marknadsförare',
     member: 'Medlem',
   },
 };
