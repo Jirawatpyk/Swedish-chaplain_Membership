@@ -32,8 +32,12 @@ import { f9RetentionFor, type InsightsAuditPort } from '../ports/audit-port';
 import type { ClockPort } from '../ports/clock-port';
 import type { ExportJobRecord, ExportJobRepo } from '../ports/export-job-repo';
 import type { PrivateBlobPort } from '../ports/private-blob-port';
+import { isAdministrativeRole, type Role } from '@/modules/auth';
 
-export type DownloadActorRole = 'admin' | 'manager' | 'member';
+// 016 T030/T033 — widened to the full Role union so routes stop casting and
+// audit emitters record the LITERAL actor role; the decision arms in this
+// file stay explicit per-role checks (deny arms unchanged).
+export type DownloadActorRole = Role;
 
 export interface DownloadExportMeta {
   readonly actorUserId: string;
@@ -46,11 +50,14 @@ export interface DownloadExportMeta {
 /** True when the caller may access this job's artefact. */
 function authorize(job: ExportJobRecord, meta: DownloadExportMeta): boolean {
   if (job.subjectMemberId === null) {
-    // Directory artefact (E-Book / JSON) — staff only.
-    return meta.actorRole === 'admin' || meta.actorRole === 'manager';
+    // Directory artefact (E-Book / JSON) — the directory.export population on
+    // both flag legs: admin ∪ super_admin (D16, 016 T030) ∪ manager.
+    // Marketing stays denied (route key + this arm agree).
+    return isAdministrativeRole(meta.actorRole, false) || meta.actorRole === 'manager';
   }
-  // Subject artefact (GDPR archive) — the subject member or a same-tenant admin.
-  if (meta.actorRole === 'admin') return true;
+  // Subject artefact (GDPR archive) — the subject member or a same-tenant
+  // administrator (admin ∪ super_admin per D16 — 016 T030).
+  if (isAdministrativeRole(meta.actorRole, false)) return true;
   if (meta.actorRole === 'member') return meta.actorMemberId === job.subjectMemberId;
   return false;
 }

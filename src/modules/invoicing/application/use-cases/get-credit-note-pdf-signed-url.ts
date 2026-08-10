@@ -13,11 +13,13 @@ import {
   type CreditNoteId,
 } from '@/modules/invoicing/domain/credit-note';
 import { logger } from '@/lib/logger';
+import type { Role } from '@/modules/auth';
 
 export interface GetCreditNotePdfSignedUrlInput {
   readonly tenantId: string;
   readonly actorUserId: string;
-  readonly actorRole: 'admin' | 'manager' | 'member';
+  /** 016 T030/T033 — literal session role; member arms below key on the literal. */
+  readonly actorRole: Role;
   /**
    * G-1 — REQUIRED when `actorRole === 'member'`. The use-case
    * enforces that the CN's `originalInvoiceMemberId` matches this id

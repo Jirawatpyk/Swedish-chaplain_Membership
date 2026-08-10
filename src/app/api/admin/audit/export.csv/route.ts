@@ -116,8 +116,7 @@ export async function GET(request: NextRequest): Promise<Response> {
       input,
       {
         actorUserId: session.user.id as string,
-        // 016 PR1: cast preserved; PR 2 widens the insights actorRole unions.
-        actorRole: session.user.role as 'admin' | 'manager' | 'member',
+        actorRole: session.user.role,
         requestId,
       },
       tenant,

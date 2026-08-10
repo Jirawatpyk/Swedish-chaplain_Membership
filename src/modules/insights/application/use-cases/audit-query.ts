@@ -40,8 +40,23 @@ import type {
   AuditSourceFilters,
   AuditSourceRow,
 } from '../ports/audit-source';
+import type { Role } from '@/modules/auth';
 
-export type AuditQueryActorRole = 'admin' | 'manager' | 'member';
+// 016 T030/T033 — widened to the full Role union so routes stop casting and
+// audit emitters record the LITERAL actor role; the decision arms in this
+// file stay explicit per-role checks (deny arms unchanged).
+export type AuditQueryActorRole = Role;
+
+/**
+ * The roles that may enter the audit viewer/export at all (016 T030/T034):
+ * a closed allow-list rather than the old `!== 'member'` exclusion, so
+ * marketing/unknown roles are denied instead of falling through into a
+ * projection. The route/page gate is the real authority; this is
+ * defence-in-depth.
+ */
+function isAuditViewerActor(role: Role): boolean {
+  return role === 'admin' || role === 'manager' || role === 'super_admin';
+}
 
 /** Largest sync (streamed) export; a filtered set above this routes to an async job (US6). */
 export const AUDIT_EXPORT_SYNC_CAP = 10_000;
@@ -355,8 +370,14 @@ export async function auditQuery(
   ctx: TenantContext,
   deps: AuditQueryDeps,
 ): Promise<Result<AuditQueryResult, AuditQueryError>> {
-  if (meta.actorRole === 'member') return err('forbidden');
-  const role: AuditViewerRole = meta.actorRole;
+  // 016 T030/T034 — deny-by-default allow-list, then project onto the viewer
+  // union: manager keeps today's redacted projection; admin AND super_admin
+  // (D16) get the full one — the pre-016 fall-through silently degraded a
+  // promoted super_admin to the manager view. On the ON leg the `audit.read`
+  // page/route gate (D4, super-admin-only) decides who reaches this use case
+  // at all; the projection here never widens access (contracts § 6).
+  if (!isAuditViewerActor(meta.actorRole)) return err('forbidden');
+  const role: AuditViewerRole = meta.actorRole === 'manager' ? 'manager' : 'admin';
 
   const resolved = resolveFilters(input);
   if (!resolved.ok) return err('invalid_range');
@@ -424,8 +445,9 @@ export async function auditExport(
   ctx: TenantContext,
   deps: AuditQueryDeps,
 ): Promise<Result<AuditExportResult, AuditExportError>> {
-  if (meta.actorRole === 'member') return err('forbidden');
-  const role: AuditViewerRole = meta.actorRole;
+  // 016 T030/T034 — same allow-list + projection as auditQuery above.
+  if (!isAuditViewerActor(meta.actorRole)) return err('forbidden');
+  const role: AuditViewerRole = meta.actorRole === 'manager' ? 'manager' : 'admin';
 
   const resolved = resolveFilters(input);
   if (!resolved.ok) return err('invalid_range');

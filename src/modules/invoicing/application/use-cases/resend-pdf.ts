@@ -49,6 +49,7 @@ import type { RecipientLocalePort } from '../ports/recipient-locale-port';
 import { resolveRecipientLocale } from '../lib/resolve-recipient-locale';
 import { asInvoiceId, billFirstDocumentNumber } from '@/modules/invoicing/domain/invoice';
 import { asCreditNoteId } from '@/modules/invoicing/domain/credit-note';
+import type { Role } from '@/modules/auth';
 
 /**
  * R19 / QA TC-03 H-1 — long-retention PII minimisation.
@@ -73,7 +74,9 @@ function hashRecipientEmail(raw: string): string {
 export type ResendPdfActor =
   | {
       readonly userId: string;
-      readonly role: 'admin' | 'manager';
+      /** 016 T030/T033 — the literal STAFF role (member stays its own arm so
+       *  the discriminated union keeps narrowing on `role === 'member'`). */
+      readonly role: Exclude<Role, 'member'>;
       readonly requestId: string | null;
     }
   | {

@@ -160,7 +160,8 @@ export async function recordStaffTimelineView(input: {
   readonly tenantId: string;
   readonly requestId: string | null;
   readonly actorUserId: string;
-  readonly actorRole: 'admin' | 'manager';
+  /** 016 T033 — the REAL staff role (same widening rationale as above). */
+  readonly actorRole: Role;
   readonly subjectMemberId: string;
   readonly filterApplied: boolean;
 }): Promise<void> {

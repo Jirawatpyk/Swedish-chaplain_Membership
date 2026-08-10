@@ -18,8 +18,12 @@ import { ok, err, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import type { FieldVisibility } from '../../domain/directory-listing';
 import type { DirectoryRepo, DirectorySearchFilter } from '../ports/directory-repo';
+import type { Role } from '@/modules/auth';
 
-export type SearchDirectoryActorRole = 'admin' | 'manager' | 'member';
+// 016 T030/T033 — widened to the full Role union so routes stop casting and
+// audit emitters record the LITERAL actor role; the decision arms in this
+// file stay explicit per-role checks (deny arms unchanged).
+export type SearchDirectoryActorRole = Role;
 
 export interface SearchDirectoryInput {
   readonly q?: string;

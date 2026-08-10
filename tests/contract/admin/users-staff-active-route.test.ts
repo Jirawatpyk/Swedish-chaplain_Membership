@@ -100,7 +100,7 @@ describe('GET /api/admin/users/staff-active — contract (R10 W3 / 016 T028)', (
 
   it('admits manager (read surface) — 200', async () => {
     getCurrentSessionMock.mockResolvedValue(session('manager'));
-    listWithFilterMock.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+    listWithFilterMock.mockResolvedValue([]);
     const GET = await loadHandler();
     const res = await GET(makeReq());
     expect(res.status).toBe(200);
@@ -108,14 +108,22 @@ describe('GET /api/admin/users/staff-active — contract (R10 W3 / 016 T028)', (
 
   it('admits super_admin via D16 (evaluates as admin on the legacy leg) — 200', async () => {
     getCurrentSessionMock.mockResolvedValue(session('super_admin'));
-    listWithFilterMock.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+    listWithFilterMock.mockResolvedValue([]);
     const GET = await loadHandler();
     const res = await GET(makeReq());
     expect(res.status).toBe(200);
   });
 
-  it('returns 200 with merged admin+manager users (snake_case)', async () => {
+  it('returns 200 with merged super_admin+admin+manager users (snake_case)', async () => {
     getCurrentSessionMock.mockResolvedValue(session('admin'));
+    const superAdminUsers = [
+      {
+        id: 'sa-1',
+        email: 'sa1@x.co',
+        displayName: 'Super Admin',
+        role: 'super_admin',
+      },
+    ];
     const adminUsers = [
       {
         id: 'admin-1',
@@ -132,9 +140,10 @@ describe('GET /api/admin/users/staff-active — contract (R10 W3 / 016 T028)', (
         role: 'manager',
       },
     ];
-    // R10 S6 close — Promise.all parallel; the route invokes
-    // listWithFilter twice (admin + manager). Sequence the mock returns.
+    // R10 S6 close — Promise.all parallel; 016 T030 (cutover defect 2) added
+    // the super_admin query so promoted administrators stay in the picker.
     listWithFilterMock
+      .mockResolvedValueOnce(superAdminUsers)
       .mockResolvedValueOnce(adminUsers)
       .mockResolvedValueOnce(managerUsers);
 
@@ -143,29 +152,41 @@ describe('GET /api/admin/users/staff-active — contract (R10 W3 / 016 T028)', (
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(Array.isArray(body.users)).toBe(true);
-    expect(body.users).toHaveLength(2);
+    expect(body.users).toHaveLength(3);
     expect(body.users[0]).toEqual({
+      id: 'sa-1',
+      email: 'sa1@x.co',
+      display_name: 'Super Admin',
+      role: 'super_admin',
+    });
+    expect(body.users[1]).toEqual({
       id: 'admin-1',
       email: 'admin1@x.co',
       display_name: 'Admin One',
       role: 'admin',
     });
-    expect(body.users[1]).toEqual({
+    expect(body.users[2]).toEqual({
       id: 'manager-1',
       email: 'manager1@x.co',
       display_name: null,
       role: 'manager',
     });
-    // Confirm both queries were dispatched (parallel via Promise.all).
-    expect(listWithFilterMock).toHaveBeenCalledTimes(2);
+    // Confirm all three queries were dispatched (parallel via Promise.all).
+    expect(listWithFilterMock).toHaveBeenCalledTimes(3);
     expect(listWithFilterMock).toHaveBeenNthCalledWith(
       1,
-      { role: 'admin', status: 'active' },
+      { role: 'super_admin', status: 'active' },
       100,
       0,
     );
     expect(listWithFilterMock).toHaveBeenNthCalledWith(
       2,
+      { role: 'admin', status: 'active' },
+      100,
+      0,
+    );
+    expect(listWithFilterMock).toHaveBeenNthCalledWith(
+      3,
       { role: 'manager', status: 'active' },
       100,
       0,
@@ -174,7 +195,7 @@ describe('GET /api/admin/users/staff-active — contract (R10 W3 / 016 T028)', (
 
   it('returns Cache-Control: no-store, private + correlation header', async () => {
     getCurrentSessionMock.mockResolvedValue(session('admin'));
-    listWithFilterMock.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+    listWithFilterMock.mockResolvedValue([]);
     const GET = await loadHandler();
     const res = await GET(makeReq());
     expect(res.status).toBe(200);

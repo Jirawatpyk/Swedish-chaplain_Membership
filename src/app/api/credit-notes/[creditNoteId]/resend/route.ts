@@ -38,13 +38,20 @@ export async function POST(
     return rateLimitedJson(rl);
   }
 
+  // 016 T030 — narrow to the STAFF arm of the actor union (the gate already
+  // denies members).
+  const sessionRole = ctx.current.user.role;
+  if (sessionRole === 'member') {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  }
+
   const result = await resendPdf(makeResendPdfDeps(tenantCtx.slug), {
     tenantId: tenantCtx.slug,
     kind: 'credit_note',
     creditNoteId,
     actor: {
       userId: ctx.current.user.id,
-      role: ctx.current.user.role as 'admin' | 'manager',
+      role: sessionRole,
       requestId,
     },
   });

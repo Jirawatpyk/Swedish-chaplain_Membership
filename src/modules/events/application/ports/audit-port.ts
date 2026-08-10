@@ -35,7 +35,7 @@
  * Pure interface — no framework imports (Constitution Principle III).
  */
 import type { Result } from '@/lib/result';
-import type { AuditEventId, UserId } from '@/modules/auth';
+import type { AuditEventId, Role, UserId } from '@/modules/auth';
 import type { TenantId, MemberId, ContactId } from '@/modules/members';
 import type {
   EventId,
@@ -595,7 +595,8 @@ export interface AuditPayloads {
      * with a real all-zeros UUID in queries.
      */
     readonly actorUserId: UserId | null;
-    readonly actorRole: 'manager' | 'member';
+    /** 016 T033 — the LITERAL denied role (RBAC v2 roles included). */
+    readonly actorRole: Role;
     readonly attemptedRoute: string;
     readonly attemptedAction: string;
     readonly blockedAt: 'app_layer' | 'middleware';
@@ -809,6 +810,10 @@ export type AuditPayloadFor<T extends F6AuditEventType> = AuditPayloads[T];
 
 export type ActorType =
   | 'system'
+  // 016 T033 — the two RBAC v2 roles, so denial/probe trails can record the
+  // LITERAL actor role instead of coercing it into a pre-016 value.
+  | 'super_admin'
+  | 'marketing'
   | 'admin'
   | 'manager'
   | 'member'

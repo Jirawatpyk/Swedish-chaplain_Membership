@@ -18,6 +18,7 @@ import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import type { MemberId } from '../../domain/member';
 import type { MemberRepo, RepoError } from '../ports/member-repo';
+import type { Role } from '@/modules/auth';
 
 export type MemberHaltError =
   | RepoError
@@ -30,7 +31,8 @@ export type SetMemberHaltDeps = {
 };
 
 export type SetMemberHaltMeta = {
-  readonly actorRole: 'admin' | 'manager' | 'member';
+  /** 016 T030/T033 — literal session role; member arms below key on the literal. */
+  readonly actorRole: Role;
 };
 
 export async function setMemberHalt(

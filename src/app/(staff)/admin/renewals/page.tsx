@@ -30,8 +30,8 @@ import { PageHeader } from '@/components/layout/page-header';
 import { renewalsMetrics } from '@/lib/metrics';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { requirePagePermission } from '@/lib/rbac';
-import { legacyAdminOrManager } from '@/modules/auth/domain/permissions/legacy-shim';
+import { canPerform, requirePagePermission } from '@/lib/rbac';
+import { legacyAdminOrManager, mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
 import { runInTenant } from '@/lib/db';
@@ -499,6 +499,8 @@ export default async function RenewalsPipelinePage({
   //   - actor role is `member` — but route already redirects member to
   //     /portal at L77, so this server component only runs for
   //     admin / manager.
+  // 016 T030 — VIEW projection (not an audit stamp): manager keeps the
+  // manager widget view; admin AND super_admin (D16) get the admin view.
   const widgetActorRole: 'admin' | 'manager' =
     currentUser.role === 'manager' ? 'manager' : 'admin';
 
@@ -507,7 +509,9 @@ export default async function RenewalsPipelinePage({
   // "Mark paid") from a read-only manager. Server-side 403 guards on those
   // routes stay in place as defence-in-depth; this only fixes the client
   // affordance so a manager never sees a CTA that would just 403.
-  const canMutate = currentUser.role === 'admin';
+  // 016 T030 — evaluator-derived (the old `role === 'admin'` literal hid
+  // every mutation CTA from a promoted super_admin while the API allowed it).
+  const canMutate = canPerform(currentUser.role, 'renewals.write', mappedLegacy('renewal', 'write'));
 
   // Sighted result-count (aria-hidden twin of `ResultCountAnnouncer`). Computed
   // once so the same element can be the LEFT item of the pipeline table's

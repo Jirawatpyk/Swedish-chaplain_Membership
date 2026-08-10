@@ -189,21 +189,16 @@ async function emitF8RoleViolationBlocked(
         payload: {
           resource: 'renewal',
           action,
-          // 016 PR1: cast preserved; T033 widens the F8 audit-port
-          // attempted_role union to the full staff-role set with the sweep.
-          attempted_role: current.user.role as 'admin' | 'manager' | 'member',
+          // 016 T033 — the LITERAL denied role (the port union now carries
+          // the RBAC v2 roles; a coerced trail misleads the investigator).
+          attempted_role: current.user.role,
           route: new URL(request.url).pathname,
         },
       },
       {
         tenantId: tenantCtx.slug,
         actorUserId: current.user.id,
-        actorRole:
-          current.user.role === 'manager'
-            ? 'manager'
-            : current.user.role === 'admin'
-              ? 'admin'
-              : 'member',
+        actorRole: current.user.role,
         correlationId,
         requestId,
         summary: `Role ${current.user.role} blocked from ${action} on renewal route ${new URL(request.url).pathname}`,

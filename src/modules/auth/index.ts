@@ -199,6 +199,10 @@ export {
   ASSIGNABLE_ROLES,
   STAFF_ROLES,
   PORTAL_FOR_ROLE,
+  ADMINISTRATIVE_ROLES_LEGACY,
+  ADMINISTRATIVE_ROLES_V2,
+  administrativeRoles,
+  isAdministrativeRole,
   isRole,
   isStaffRole,
 } from './domain/role';

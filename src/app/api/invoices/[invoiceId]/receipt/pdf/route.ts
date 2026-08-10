@@ -50,9 +50,7 @@ export async function GET(
       {
         tenantId: tenantCtx.slug,
         actorUserId: ctx.current.user.id,
-        // 016 PR1: cast preserved (matches sibling routes); PR 2 widens the
-        // use-case actorRole type to the full Role union with the sweep.
-        actorRole: ctx.current.user.role as 'admin' | 'manager' | 'member',
+        actorRole: ctx.current.user.role,
         requestId,
         invoiceId,
       },

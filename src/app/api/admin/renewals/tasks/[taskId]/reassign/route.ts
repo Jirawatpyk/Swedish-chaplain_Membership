@@ -101,7 +101,12 @@ export async function POST(
   if (
     assignee === null ||
     assignee.status !== 'active' ||
-    (assignee.role !== 'admin' && assignee.role !== 'manager')
+    // 016 T030 — a promoted super_admin is a valid assignee (the old
+    // admin/manager allow-list made every post-Migration-C administrator
+    // vanish from the reassign target set).
+    (assignee.role !== 'admin' &&
+      assignee.role !== 'manager' &&
+      assignee.role !== 'super_admin')
   ) {
     return errorResponse({
       status: 400,

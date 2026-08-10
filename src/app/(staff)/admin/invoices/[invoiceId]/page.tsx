@@ -162,7 +162,7 @@ export default async function InvoiceDetailPage({
     // when an admin navigates to /admin/invoices/<foreign-id>.
     actor: {
       userId: currentUser.id,
-      role: currentUser.role as 'admin' | 'manager' | 'member',
+      role: currentUser.role,
       requestId,
     },
   });

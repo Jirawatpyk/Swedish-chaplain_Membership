@@ -74,9 +74,11 @@ describe('staffNavConfig', () => {
     ]);
     const erasureLog = compliance.items[0]! as NavItem;
     expect(erasureLog.href).toBe('/admin/compliance/erasure-log');
-    // Admin-only ACCESS — the page notFound()s for manager + member (no
-    // distinct DPO role; admin acts as DPO). Hidden from the manager sidebar.
-    expect(erasureLog.roles).toEqual(['admin']);
+    // Administrator-only ACCESS — the page notFound()s for manager + member
+    // (no distinct DPO role; the administrator acts as DPO). Hidden from the
+    // manager sidebar. 016 T032 widened the array to name super_admin
+    // explicitly (a promoted super_admin keeps the entry post-Migration-C).
+    expect(erasureLog.roles).toEqual(['admin', 'super_admin']);
   });
 
   it('section 6 is Settings with Invoice + RenewalSchedules + BroadcastSettings + EventCreate', () => {

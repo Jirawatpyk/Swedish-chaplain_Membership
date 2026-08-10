@@ -57,10 +57,20 @@ export async function POST(
   const ctx = await requireRenewalAdminContext(request, 'manager_exception', 'renewals.read');
   if ('response' in ctx) return ctx.response;
 
-  // Capture actor role for the audit payload + use-case discrimination.
-  // FR-052a: only 'admin' and 'manager' should reach this point; the
-  // helper above rejects 'member'. We re-narrow to the allowed union.
-  const actorRole = ctx.current.user.role === 'manager' ? 'manager' : 'admin';
+  // Capture the LITERAL actor role for the audit payload + use-case
+  // discrimination (016 T030 — the old ternary ESCALATED any non-manager role
+  // to 'admin'). The gate admits the manager_exception population
+  // (admin ∪ super_admin ∪ manager); anything else here is a gate bug — fail
+  // loudly instead of stamping a coerced role.
+  const sessionRole = ctx.current.user.role;
+  if (sessionRole !== 'admin' && sessionRole !== 'manager' && sessionRole !== 'super_admin') {
+    return errorResponse({
+      status: 403,
+      code: 'forbidden',
+      correlationId: ctx.correlationId,
+    });
+  }
+  const actorRole = sessionRole;
 
   const { memberId } = await context.params;
 

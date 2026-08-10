@@ -125,7 +125,7 @@ describe('adminOnlyWriterGuard (Round-1 test-M7)', () => {
     expect(emitStandaloneMock).not.toHaveBeenCalled();
   });
 
-  it('016 T029 — marketing → deny 404, no audit (D16 denies it on the OFF leg; the audit port cannot attribute it until T033 widens the enum)', async () => {
+  it('016 T029/T033 — marketing → deny 404 + attributable audit with the LITERAL role', async () => {
     getCurrentSessionMock.mockResolvedValue({
       user: { id: 'mk-1', role: 'marketing' as const, email: 'mk@t' },
     });
@@ -135,7 +135,10 @@ describe('adminOnlyWriterGuard (Round-1 test-M7)', () => {
     if (result.kind === 'deny') {
       expect(result.response.status).toBe(404);
     }
-    expect(emitStandaloneMock).not.toHaveBeenCalled();
+    expect(emitStandaloneMock).toHaveBeenCalled();
+    const entry = emitStandaloneMock.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect(entry?.['eventType']).toBe('role_violation_blocked');
+    expect(entry?.['actorType']).toBe('marketing');
   });
 
   it('manager → deny with 403 + role_violation_blocked emitted', async () => {

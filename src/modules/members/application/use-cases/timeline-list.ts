@@ -16,6 +16,7 @@ import { z } from 'zod';
 import { ok, err, type Result } from '@/lib/result';
 import { rootCause } from '@/lib/log-id';
 import { TIMELINE_SOURCES, TIMELINE_ACTOR_KINDS } from '@/lib/timeline-shared';
+import type { Role } from '@/modules/auth';
 import type { TenantContext } from '@/modules/tenants';
 import type {
   TimelinePort,
@@ -125,7 +126,9 @@ export type TimelineListOutput = {
 
 export async function timelineList(
   input: TimelineListInput,
-  meta: { actorUserId: string; actorRole: 'admin' | 'manager' | 'member'; requestId: string },
+  // 016 T030/T033 — actorRole widened to the full Role union (routes stop
+  // casting); the member-redaction arm below keys on the literal 'member'.
+  meta: { actorUserId: string; actorRole: Role; requestId: string },
   ctx: TenantContext,
   deps: TimelineListDeps,
 ): Promise<Result<TimelineListOutput, TimelineListError>> {

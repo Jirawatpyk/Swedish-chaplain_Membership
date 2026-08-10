@@ -108,8 +108,7 @@ export default async function StaffHomePage() {
   const locale = await getLocale();
   const meta = {
     actorUserId: user.id as string,
-    // 016 PR1: cast preserved; PR 2 widens the insights actorRole unions.
-    actorRole: user.role as 'admin' | 'manager' | 'member',
+    actorRole: user.role,
     requestId: randomUUID(),
   };
 

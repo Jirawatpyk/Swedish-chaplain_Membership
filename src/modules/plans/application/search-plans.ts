@@ -20,6 +20,9 @@ import { errKind } from '@/lib/log-id';
 // any client component re-exports this file via the plans barrel.
 // See plans/domain/policies.ts for the full rationale.
 import type { Role } from '@/modules/auth/domain/role';
+// Value import, same deep-path rationale: the D16 totaliser is pure Domain
+// (no framework imports), so it is safe in any bundle this file reaches.
+import { normalizeLegacyRole } from '@/modules/auth/domain/permissions/legacy-shim';
 import type { TenantContext } from '@/modules/tenants';
 import type { ClockPort, PlanRepo } from './ports';
 import { asPlanYear, type Plan, type PlanCategory } from '../domain/plan';
@@ -397,9 +400,15 @@ function filterByRole<T extends { requires: 'admin' | 'read' }>(
   entries: ReadonlyArray<T>,
   role: Role,
 ): ReadonlyArray<T> {
-  if (role === 'admin') return entries;
-  if (role === 'manager') return entries.filter((e) => e.requires === 'read');
-  return []; // member role should never reach this use case
+  // 016 T031 — the palette population goes through the D16 totaliser instead
+  // of role literals: super_admin evaluates as admin (the old literal left it
+  // with an EMPTY palette post-Migration-C), marketing/unknown fall to the
+  // empty set. PR 4 replaces the two-tier `requires` with per-entry
+  // `requiredPermission` (T064).
+  const normalized = normalizeLegacyRole(role);
+  if (normalized === 'admin') return entries;
+  if (normalized === 'manager') return entries.filter((e) => e.requires === 'read');
+  return []; // member/marketing/unknown never reach this use case
 }
 
 // --- Filter helper ----------------------------------------------------------

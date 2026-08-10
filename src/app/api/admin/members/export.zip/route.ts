@@ -39,7 +39,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   const result = await exportMembersBackup(
     {
       actorUserId: ctx.current.user.id,
-      actorRole: ctx.current.user.role as 'admin' | 'manager' | 'member',
+      actorRole: ctx.current.user.role,
       requestId,
     },
     tenantCtx,

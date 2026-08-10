@@ -36,7 +36,7 @@ export async function GET(
       {
         tenantId: tenantCtx.slug,
         actorUserId: ctx.current.user.id,
-        actorRole: ctx.current.user.role as 'admin' | 'manager',
+        actorRole: ctx.current.user.role,
         requestId,
         creditNoteId,
       },

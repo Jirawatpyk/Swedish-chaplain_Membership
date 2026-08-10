@@ -21,6 +21,8 @@
 // rationale in `search-plans.ts` and `command-palette.tsx`.
  
 import type { Role } from '@/modules/auth/domain/role';
+// Pure Domain value import (client-safe — the shim has no framework imports).
+import { normalizeLegacyRole } from '@/modules/auth/domain/permissions/legacy-shim';
 
 // --- Entity (plan) hit shape -------------------------------------------------
 
@@ -130,7 +132,11 @@ export function filterEntriesByRole<T extends { readonly requires: PaletteRoleRe
   entries: ReadonlyArray<T>,
   role: Role,
 ): ReadonlyArray<T> {
-  if (role === 'admin') return entries;
-  if (role === 'manager') return entries.filter((e) => e.requires === 'read');
+  // 016 T031 — mirrors the server filter's D16 totalisation: super_admin
+  // evaluates as admin (non-empty palette post-Migration-C); marketing and
+  // unknown roles fall to the empty set (never escalate).
+  const normalized = normalizeLegacyRole(role);
+  if (normalized === 'admin') return entries;
+  if (normalized === 'manager') return entries.filter((e) => e.requires === 'read');
   return [];
 }

@@ -32,8 +32,12 @@ import { exportJobIdempotencyInput, type ExportStatus } from '../../domain/expor
 import { f9RetentionFor, type InsightsAuditPort } from '../ports/audit-port';
 import type { ClockPort } from '../ports/clock-port';
 import type { ExportJobRepo } from '../ports/export-job-repo';
+import type { Role } from '@/modules/auth';
 
-export type RequestDataExportActorRole = 'admin' | 'manager' | 'member';
+// 016 T030/T033 — widened to the full Role union so routes stop casting and
+// audit emitters record the LITERAL actor role; the decision arms in this
+// file stay explicit per-role checks (deny arms unchanged).
+export type RequestDataExportActorRole = Role;
 
 export interface RequestDataExportInput {
   /** The data subject whose archive is requested. */

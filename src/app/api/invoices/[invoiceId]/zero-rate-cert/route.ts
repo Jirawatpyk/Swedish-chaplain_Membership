@@ -64,9 +64,9 @@ export async function GET(
       {
         tenantId: tenantCtx.slug,
         actorUserId: ctx.current.user.id,
-        // requireApiPermission('invoicing.read', mappedLegacy('invoice', 'read'))
-        // admits only staff roles; the cert scan is staff-only supporting evidence.
-        actorRole: ctx.current.user.role === 'manager' ? 'manager' : 'admin',
+        // 016 T030 — the LITERAL role (the old ternary escalated any
+        // non-manager role to 'admin' in the audit stamp).
+        actorRole: ctx.current.user.role,
         requestId,
         invoiceId,
       },

@@ -32,6 +32,7 @@ import type { InvoiceStatus } from '../../domain/invoice';
 import type { TaxAtPaymentFlag } from '../../domain/tax-at-payment-flag';
 // REMOVE-WITH-064-REMEDIATION — legacy no-TIN event payability guard below.
 import { buyerHasTin } from '../../domain/document-kind';
+import type { Role } from '@/modules/auth';
 
 /** Input for the F5 → F4 payability + ownership resolver. */
 export interface GetInvoiceForPaymentInput {
@@ -45,7 +46,8 @@ export interface GetInvoiceForPaymentInput {
    */
   readonly actor?: {
     readonly userId: string;
-    readonly role: 'admin' | 'manager' | 'member';
+    /** 016 T030/T033 — literal session role; member arms below key on the literal. */
+    readonly role: Role;
     readonly requestId: string | null;
     readonly memberId?: string;
   };

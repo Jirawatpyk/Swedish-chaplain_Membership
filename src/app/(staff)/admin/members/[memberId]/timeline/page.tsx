@@ -127,7 +127,7 @@ export default async function MemberTimelinePage({ params, searchParams }: PageP
     { memberId, limit: 50, ...buildTimelineFilterInput(filterArgs, tz) },
     {
       actorUserId: session.user.id,
-      actorRole: session.user.role as 'admin' | 'manager' | 'member',
+      actorRole: session.user.role,
       requestId,
     },
     tenant,

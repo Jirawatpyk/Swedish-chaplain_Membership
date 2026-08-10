@@ -25,8 +25,12 @@ import { f9RetentionFor } from '../ports/audit-port';
 import type { InsightsAuditPort } from '../ports/audit-port';
 import type { SnapshotRepo } from '../ports/snapshot-repo';
 import type { SnapshotError } from './compute-dashboard-snapshot';
+import type { Role } from '@/modules/auth';
 
-export type DashboardActorRole = 'admin' | 'manager' | 'member';
+// 016 T030/T033 — widened to the full Role union so routes stop casting and
+// audit emitters record the LITERAL actor role; the decision arms in this
+// file stay explicit per-role checks (deny arms unchanged).
+export type DashboardActorRole = Role;
 
 export interface ListDashboardMeta {
   readonly actorUserId: string;

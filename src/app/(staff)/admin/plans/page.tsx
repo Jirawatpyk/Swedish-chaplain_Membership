@@ -16,6 +16,7 @@ import { getTranslations } from 'next-intl/server';
 import { PlusIcon, CopyIcon } from 'lucide-react';
 import { requirePagePermission } from '@/lib/rbac';
 import { legacySessionOnly } from '@/modules/auth/domain/permissions/legacy-shim';
+import type { Role } from '@/modules/auth/domain/role';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { listPlans, asPlanYear } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
@@ -85,7 +86,7 @@ export default async function PlansListPage({
           */}
           <PlansList
             query={query}
-            currentUserRole={currentUser.role as 'admin' | 'manager' | 'member'}
+            currentUserRole={currentUser.role}
           />
         </CardContent>
       </Card>
@@ -98,7 +99,7 @@ async function PlansList({
   currentUserRole,
 }: {
   query: SearchParams;
-  currentUserRole: 'admin' | 'manager' | 'member';
+  currentUserRole: Role;
 }) {
   const tenant = resolveTenantFromRequest();
   const deps = buildPlansDeps(tenant);

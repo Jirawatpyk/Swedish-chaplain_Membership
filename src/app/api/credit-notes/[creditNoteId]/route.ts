@@ -21,6 +21,14 @@ export async function GET(
   const tenantCtx = resolveTenantFromRequest(request);
   const requestId = requestIdFromHeaders(request.headers);
 
+  // 016 T030 — narrow to the STAFF arm of the actor union (the gate already
+  // denies members; the check keeps the type honest and fails loudly on a
+  // gate bug instead of stamping a member as staff).
+  const sessionRole = ctx.current.user.role;
+  if (sessionRole === 'member') {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  }
+
   // Wrap the whole use-case + serialisation path: the repo's
   // row→domain mapping can throw on corrupt `document_number` /
   // `pdf_sha256` / VAT-balance violations. Without this catch the
@@ -31,7 +39,7 @@ export async function GET(
       creditNoteId,
       actor: {
         userId: ctx.current.user.id,
-        role: ctx.current.user.role as 'admin' | 'manager',
+        role: sessionRole,
         requestId,
       },
     });

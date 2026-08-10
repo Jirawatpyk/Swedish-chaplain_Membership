@@ -67,9 +67,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       },
       {
         actorUserId: current.user.id as string,
-        // 016 PR1: cast preserved (matches sibling routes); PR 2 widens the
-        // use-case actorRole type to the full Role union with the sweep.
-        actorRole: current.user.role as 'admin' | 'manager' | 'member',
+        actorRole: current.user.role,
         requestId: correlationId,
       },
       tenantCtx,

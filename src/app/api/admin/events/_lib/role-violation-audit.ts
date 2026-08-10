@@ -16,15 +16,10 @@
  *   2. Audit emit failure NEVER blocks the 404 response (F1 round-1) —
  *      caught + logged at `error` level with `event: 'f6_audit_emit_failed'`.
  *   3. `actorUserId` is properly nullable (L-C round-3) — no sentinel UUID.
- *   4. `actorRole` is typed as the narrowed Role union (`'member' | 'manager'`)
- *      so a future role addition surfaces as a COMPILE error at the call
- *      site, not a silent audit mis-labelling (HIGH-1 round-3).
- *      TRIPWIRE CURRENTLY SUPPRESSED: 016 PR 1 added `super_admin` +
- *      `marketing` to `Role` and silenced this compile error with an
- *      `as 'manager' | 'member'` cast at both call sites (marked `016 PR1`).
- *      016 PR 2 sweeps these F6 routes onto the permission evaluator and
- *      widens `EmitEventsRoleViolationInput.actorRole` to the full staff-role
- *      union — remove the casts and this note together.
+ *   4. `actorRole` carries the LITERAL denied role (016 T033 — widened to the
+ *      full `Role` union together with the F6 `ActorType`; the PR-1 casts and
+ *      their tripwire note are gone). A role OUTSIDE the union never reaches
+ *      the emitter — the guards warn-log it instead.
  */
 import { type NextRequest, NextResponse } from 'next/server';
 import { logger } from '@/lib/logger';
@@ -35,11 +30,13 @@ import { legacyF6Guard } from '@/modules/auth/domain/permissions/legacy-shim';
 import type { PermissionKey } from '@/modules/auth/domain/permissions/permission-catalogue';
 import { makeStandaloneAuditDeps } from '@/modules/events';
 import { asTenantId } from '@/modules/members';
-import { asUserId, type UserId } from '@/modules/auth';
+import { asUserId, isRole, type Role, type UserId } from '@/modules/auth';
 
 export interface EmitEventsRoleViolationInput {
   readonly actorUserId: string | null;
-  readonly actorRole: 'member' | 'manager';
+  /** 016 T033 — the LITERAL denied role (the F6 ActorType union now carries
+   *  the RBAC v2 roles, so the trail never coerces the actor). */
+  readonly actorRole: Role;
   /** Route path (without protocol/host) for the audit payload. */
   readonly attemptedRoute: string;
   /** Short action identifier (e.g. `'list_events'`, `'load_event_detail'`). */
@@ -302,10 +299,13 @@ export async function adminOnlyWriterGuard(
       ),
     };
   }
-  if (role === 'member') {
+  if (isRole(role)) {
+    // member / marketing / any future KNOWN role — 404 (surface disclosure)
+    // + attributable audit (016 T033 widened the ActorType union, so the
+    // trail records the LITERAL role).
     await emitEventsRoleViolation(request, {
       actorUserId: session.user.id,
-      actorRole: 'member',
+      actorRole: role,
       attemptedRoute: input.attemptedRoute,
       attemptedAction: input.attemptedAction,
       eventId: input.eventId,
@@ -315,10 +315,9 @@ export async function adminOnlyWriterGuard(
       response: new NextResponse(null, { status: 404 }),
     };
   }
-  // Unknown role — return 404 without audit. The audit port's
-  // `actorRole` enum only accepts `'member' | 'manager'`, so an
-  // unexpected role string would fail enum validation at the emit
-  // boundary. Logging at warn level makes the regression observable.
+  // Unknown role STRING (not in the Role union) — 404 without audit: it
+  // cannot be attributed to a real role. Logging at warn level makes the
+  // regression observable.
   logger.warn(
     {
       event: 'f6_admin_writer_guard_unknown_role',

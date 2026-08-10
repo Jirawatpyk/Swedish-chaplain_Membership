@@ -111,11 +111,19 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
   } as unknown as Parameters<typeof resolveTenantFromRequest>[0]);
   const renewalsDeps = makeRenewalsDeps(tenantCtx.slug);
 
+  // 016 T030 — the LITERAL role (the old ternary demoted a promoted
+  // super_admin to 'manager'); the page gate admits exactly the use-case
+  // schema's population, so anything else here is a gate bug — 404 rather
+  // than a coerced audit stamp.
+  const sessionRole = currentUser.role;
+  if (sessionRole !== 'admin' && sessionRole !== 'manager' && sessionRole !== 'super_admin') {
+    notFound();
+  }
   const result = await loadCycleDetail(renewalsDeps, {
     tenantId: tenantCtx.slug,
     cycleId,
     actorUserId: currentUser.id,
-    actorRole: currentUser.role === 'admin' ? 'admin' : 'manager',
+    actorRole: sessionRole,
     requestId,
     correlationId: requestId,
   });

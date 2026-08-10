@@ -29,7 +29,7 @@ export async function GET(
     invoiceId,
     actor: {
       userId: ctx.current.user.id,
-      role: ctx.current.user.role as 'admin' | 'manager' | 'member',
+      role: ctx.current.user.role,
       requestId,
     },
   });

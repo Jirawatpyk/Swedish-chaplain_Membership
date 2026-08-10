@@ -114,7 +114,7 @@ export async function GET(
     },
     {
       actorUserId: ctx.current.user.id,
-      actorRole: ctx.current.user.role as 'admin' | 'manager' | 'member',
+      actorRole: ctx.current.user.role,
       requestId: ctx.requestId,
     },
     tenant,

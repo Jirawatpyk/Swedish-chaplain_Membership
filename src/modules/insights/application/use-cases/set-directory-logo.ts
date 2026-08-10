@@ -16,8 +16,12 @@ import type { TenantContext } from '@/modules/tenants';
 import { f9RetentionFor, type InsightsAuditPort } from '../ports/audit-port';
 import type { DirectoryRepo } from '../ports/directory-repo';
 import type { LogoContentType, LogoImagePort, LogoStorePort } from '../ports/logo-port';
+import { isAdministrativeRole, type Role } from '@/modules/auth';
 
-export type LogoActorRole = 'admin' | 'manager' | 'member';
+// 016 T030/T033 — widened to the full Role union so routes stop casting and
+// audit emitters record the LITERAL actor role; the decision arms in this
+// file stay explicit per-role checks (deny arms unchanged).
+export type LogoActorRole = Role;
 
 /** Max accepted upload size before re-encode (FR-025a ≤ 2 MB). */
 export const MAX_LOGO_UPLOAD_BYTES = 2 * 1024 * 1024;
@@ -59,7 +63,9 @@ export type SetDirectoryLogoError =
 function authorizeMutation(meta: DirectoryLogoMeta, memberId: string): boolean {
   if (meta.actorRole === 'manager') return false;
   if (meta.actorRole === 'member') return meta.actorMemberId === memberId;
-  return meta.actorRole === 'admin';
+  // Administrator set (admin ∪ super_admin per D16 — 016 T030); any other
+  // role (marketing/unknown) falls through to false.
+  return isAdministrativeRole(meta.actorRole, false);
 }
 
 export async function setDirectoryLogo(

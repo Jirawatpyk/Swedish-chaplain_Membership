@@ -24,11 +24,13 @@ import {
   billFirstDocumentNumber,
   type InvoiceId,
 } from '@/modules/invoicing/domain/invoice';
+import type { Role } from '@/modules/auth';
 
 export interface GetInvoicePdfSignedUrlInput {
   readonly tenantId: string;
   readonly actorUserId: string;
-  readonly actorRole: 'admin' | 'manager' | 'member';
+  /** 016 T030/T033 — literal session role; member arms below key on the literal. */
+  readonly actorRole: Role;
   /** For members only — the member_id they are allowed to see. */
   readonly actorMemberId?: string;
   readonly requestId?: string | null;

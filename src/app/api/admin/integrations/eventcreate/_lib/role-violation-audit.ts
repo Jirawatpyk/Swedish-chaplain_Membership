@@ -11,14 +11,10 @@
  *      `f6_audit_emit_failed`.
  *   2. Audit emit failure NEVER blocks the 404 response.
  *   3. `actorUserId` is nullable — never the sentinel UUID.
- *   4. `actorRole` typed as the narrowed Role union so a future role
- *      addition surfaces as a COMPILE error at the call site.
- *      TRIPWIRE CURRENTLY SUPPRESSED: 016 PR 1 added `super_admin` +
- *      `marketing` to `Role` and silenced this compile error with an
- *      `as 'manager' | 'member'` cast at the call site (marked `016 PR1`).
- *      016 PR 2 sweeps these F6 routes onto the permission evaluator and
- *      widens `EmitIntegrationRoleViolationInput.actorRole` to the full
- *      staff-role union — remove the cast and this note together.
+ *   4. `actorRole` carries the LITERAL denied role (016 T033 — widened to the
+ *      full `Role` union together with the F6 `ActorType`; the PR-1 cast and
+ *      its tripwire note are gone). A role OUTSIDE the union never reaches
+ *      the emitter — the guard warn-logs it instead.
  */
 import type { NextRequest } from 'next/server';
 import { logger } from '@/lib/logger';
@@ -33,11 +29,12 @@ import {
 } from '@/lib/canonical-base-url';
 import { makeStandaloneAuditDeps } from '@/modules/events';
 import { asTenantId } from '@/modules/members';
-import { asUserId } from '@/modules/auth';
+import { asUserId, isRole, type Role } from '@/modules/auth';
 
 export interface EmitIntegrationRoleViolationInput {
   readonly actorUserId: string | null;
-  readonly actorRole: 'member' | 'manager';
+  /** 016 T033 — the LITERAL denied role (F6 ActorType now carries RBAC v2). */
+  readonly actorRole: Role;
   readonly attemptedRoute: string;
   /** Short action identifier (e.g. `'generate_webhook_secret'`). */
   readonly attemptedAction: string;
@@ -128,7 +125,9 @@ export async function adminOnlyGuard(
   }
   const role = session.user.role;
   if (!canPerform(role, input.permissionKey, legacyF6Guard)) {
-    if (role === 'manager' || role === 'member') {
+    if (isRole(role)) {
+      // Any KNOWN denied role — attributable audit with the LITERAL role
+      // (016 T033 widened the F6 ActorType union).
       await emitIntegrationRoleViolation(request, {
         actorUserId: session.user.id,
         actorRole: role,
@@ -136,8 +135,8 @@ export async function adminOnlyGuard(
         attemptedAction: input.attemptedAction,
       });
     } else {
-      // The audit port's actor enum only accepts 'manager' | 'member' until
-      // T033 widens it — surface the denial in logs so it is observable.
+      // Unknown role STRING — cannot be attributed; warn-log so the denial
+      // stays observable.
       logger.warn(
         {
           event: 'f6_integration_guard_role_denied_unattributable',

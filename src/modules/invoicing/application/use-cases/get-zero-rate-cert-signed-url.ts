@@ -25,12 +25,14 @@ import type { InvoiceRepo } from '../ports/invoice-repo';
 import type { BlobStoragePort } from '../ports/blob-storage-port';
 import type { AuditPort } from '../ports/audit-port';
 import { asInvoiceId, type InvoiceId } from '@/modules/invoicing/domain/invoice';
+import type { Role } from '@/modules/auth';
 
 export interface GetZeroRateCertSignedUrlInput {
   readonly tenantId: string;
   readonly actorUserId: string;
   /** Staff-only — the cert scan is admin/manager evidence, never member-facing. */
-  readonly actorRole: 'admin' | 'manager';
+  /** 016 T030/T033 — literal session role; member arms below key on the literal. */
+  readonly actorRole: Role;
   readonly requestId?: string | null;
   readonly invoiceId: string;
 }

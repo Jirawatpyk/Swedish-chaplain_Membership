@@ -1358,7 +1358,7 @@ export default async function MemberDetailPage({
           <TimelinePreviewSection
             memberId={member.memberId}
             actorUserId={session.user.id}
-            actorRole={session.user.role as 'admin' | 'manager' | 'member'}
+            actorRole={session.user.role}
           />
         </Suspense>
 

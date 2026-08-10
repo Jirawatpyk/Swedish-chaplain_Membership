@@ -14,8 +14,8 @@
 
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
-import { requireApiPermission } from '@/lib/rbac';
-import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
+import { canPerform, requireApiPermission } from '@/lib/rbac';
+import { legacySessionOnly, mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import {
   parseIdempotencyKey,
@@ -51,7 +51,14 @@ export async function GET(
   }
 
   const url = new URL(request.url);
-  const includeDob = url.searchParams.get('include') === 'date_of_birth';
+  // 016 T035 — DoB is a `members.pii_sensitive` field on the flag-ON leg
+  // (any bundle lacking the key — marketing in PR 4 — gets the contact WITHOUT
+  // date_of_birth even when it asks). The OFF-leg row admits every staff role,
+  // which is today's behaviour byte-for-byte. Write surfaces (edit/create
+  // forms) are members.write-gated and unaffected.
+  const includeDob =
+    url.searchParams.get('include') === 'date_of_birth' &&
+    canPerform(ctx.current.user.role, 'members.pii_sensitive', legacySessionOnly);
 
   const tenant = resolveTenantFromRequest(request);
   const deps = buildMembersDeps(tenant);

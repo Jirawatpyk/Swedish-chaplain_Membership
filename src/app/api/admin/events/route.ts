@@ -105,13 +105,7 @@ export async function GET(request: NextRequest) {
       // any string subtype (UserId widens cleanly); this brand is
       // future-proof against tightening the helper to require UserId.
       actorUserId: asUserId(session.user.id),
-      // Pre-016 this call passed the narrowed `role` directly, so a
-      // Role-union addition failed to compile here — a deliberate tripwire.
-      // 016 PR 1 widened Role and had to cast, which SUPPRESSES that signal;
-      // PR 2 sweeps this F6 route to the evaluator (legacyF6Guard) and widens
-      // `EmitEventsRoleViolationInput.actorRole` to the full staff-role union,
-      // restoring it. Remove the cast and this note together.
-      actorRole: role as 'manager' | 'member',
+      actorRole: role,
       attemptedRoute: '/api/admin/events',
       attemptedAction: 'list_events',
       eventId: null,

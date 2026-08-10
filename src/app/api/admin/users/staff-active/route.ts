@@ -35,16 +35,20 @@ export async function GET(request: NextRequest) {
 
   const correlationId = randomUUID();
   try {
-    // R10 S6 close — Promise.all parallelizes the two role queries
+    // R10 S6 close — Promise.all parallelizes the per-role queries
     // (UserRepo.listWithFilter currently accepts a single Role only;
     // a future Phase 9 schema extension can collapse to a single
     // query when `UserListFilter.roles?: Role[]` is added). Hard cap
-    // 100 per role is appropriate for SweCham; max 200 total.
-    const [adminUsers, managerUsers] = await Promise.all([
+    // 100 per role is appropriate for SweCham; max 300 total.
+    // 016 T030 (cutover defect 2) — super_admin included: after Migration C
+    // every human administrator carries it, and the old two-role query made
+    // them all vanish from the escalation-task reassign picker.
+    const [superAdminUsers, adminUsers, managerUsers] = await Promise.all([
+      userRepo.listWithFilter({ role: 'super_admin', status: 'active' }, 100, 0),
       userRepo.listWithFilter({ role: 'admin', status: 'active' }, 100, 0),
       userRepo.listWithFilter({ role: 'manager', status: 'active' }, 100, 0),
     ]);
-    const merged = [...adminUsers, ...managerUsers].map((u) => ({
+    const merged = [...superAdminUsers, ...adminUsers, ...managerUsers].map((u) => ({
       id: u.id,
       email: u.email,
       display_name: u.displayName ?? null,

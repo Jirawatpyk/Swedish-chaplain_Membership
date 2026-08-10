@@ -31,6 +31,7 @@
  * never member PII (names, emails, raw bodies).
  */
 
+import type { Role } from '@/modules/auth';
 import type { InsightKey } from '../../domain/smart-insight';
 
 export const F9_AUDIT_EVENT_TYPES = [
@@ -74,7 +75,10 @@ export type F9AuditEventType = (typeof F9_AUDIT_EVENT_TYPES)[number];
  */
 export interface F9AuditPayloadByType {
   dashboard_viewed: {
-    readonly actor_role: 'admin' | 'manager';
+    // 016 T033 — the LITERAL staff role (a trail that coerces the actor's
+    // role misleads the investigator reading it). `member` never reaches the
+    // dashboard use case; the type documents the recorded value, not access.
+    readonly actor_role: Role;
   };
   audit_log_queried: {
     /** Filter field names that were applied (not their values). */

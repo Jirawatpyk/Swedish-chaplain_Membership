@@ -85,13 +85,7 @@ export async function GET(
       // Round-3 type-M closure — brand at callsite for consistency
       // with the 5 other admin write routes' actor-id discipline.
       actorUserId: asUserId(session.user.id),
-      // Pre-016 this call passed the narrowed `role` directly, so a
-      // Role-union addition failed to compile here — a deliberate tripwire.
-      // 016 PR 1 widened Role and had to cast, which SUPPRESSES that signal;
-      // PR 2 sweeps this F6 route to the evaluator (legacyF6Guard) and widens
-      // `EmitEventsRoleViolationInput.actorRole` to the full staff-role union,
-      // restoring it. Remove the cast and this note together.
-      actorRole: role as 'manager' | 'member',
+      actorRole: role,
       attemptedRoute: `/api/admin/events/${eventId}`,
       attemptedAction: 'load_event_detail',
       eventId,
@@ -271,7 +265,8 @@ export async function GET(
         {
           eventType: 'event_detail_not_found_probe',
           tenantId: asTenantId(tenantCtx.slug),
-          actorType: session.user.role === 'admin' ? 'admin' : 'manager',
+          // 016 T030/T033 — literal role (ActorType now carries RBAC v2).
+          actorType: session.user.role,
           actorUserId: asUserId(session.user.id),
           occurredAt: new Date(),
           summary: `admin event-detail 404 (event_id_hash=${eventIdHash}) — info-level probe; alert only on cross_tenant_probe`,

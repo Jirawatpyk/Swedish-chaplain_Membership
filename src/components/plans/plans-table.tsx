@@ -26,6 +26,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { CopyIcon, MoreHorizontal, PlusIcon, SearchIcon } from 'lucide-react';
+import { isAdministrativeRole, type Role } from '@/modules/auth/domain/role';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { EmptyState } from '@/components/shell/empty-state';
@@ -99,7 +100,9 @@ export interface PlansTableProps {
   readonly plans: ReadonlyArray<PlanListItem>;
   readonly currencyCode: string;
   readonly year: number;
-  readonly currentUserRole: 'admin' | 'manager' | 'member';
+  /** 016 T030 — the literal session role; admin affordances key on the
+   *  administrator set (admin ∪ super_admin per D16) below. */
+  readonly currentUserRole: Role;
   readonly initialFilter: {
     readonly category: 'corporate' | 'partnership' | null;
     readonly q: string | null;
@@ -237,7 +240,9 @@ export function PlansTable({
     });
   }, [plans]);
 
-  const isAdmin = currentUserRole === 'admin';
+  // 016 T030 — a promoted super_admin keeps the admin affordances (the old
+  // literal hid every mutation CTA from it post-Migration-C).
+  const isAdmin = isAdministrativeRole(currentUserRole, false);
 
   // Year filter options — a small window around the viewed year (always
   // included), newest first. Before BUG-009 there was NO visible year

@@ -87,14 +87,18 @@ export default async function CreditNoteDetailPage({
   const requestId = requestIdFromHeaders(hdrs);
   const tenantCtx = resolveTenantFromHeaders(hdrs);
 
+  // 016 T030 — the LITERAL role, narrowed to the STAFF arm of the actor
+  // union (the page gate already denies members; the old ternary escalated
+  // any non-manager role to 'admin' in the stamp).
+  const sessionRole = user.role;
+  if (sessionRole === 'member') notFound();
+
   const result = await getCreditNote(makeGetCreditNoteDeps(tenantCtx.slug), {
     tenantId: tenantCtx.slug,
     creditNoteId,
     actor: {
       userId: user.id,
-      // `requireSession('staff')` narrows to admin | manager; the
-      // `role` discriminator on getCreditNote admits both.
-      role: user.role === 'manager' ? 'manager' : 'admin',
+      role: sessionRole,
       requestId,
     },
   });
