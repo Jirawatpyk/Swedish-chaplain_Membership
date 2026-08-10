@@ -13,6 +13,47 @@ This contract defines what every surface MUST declare and how the matrix verifie
 - Redirect-only pages use the gate script's exemption mechanism (memory:
   check:layout precedent).
 
+### 1.1 Pinned page-guard inventory (verified 2026-08-10 by full code walk — 47 pages)
+
+The staff shell layout (`(staff)/admin/layout.tsx:32-37`) is the only inherited gate:
+`requireSession('staff')` (session validity ONLY — zero role comparison) + a
+`role === 'member' → redirect('/portal')` eject. Baseline observed truth for T015 capture
+and the T022 shim rows; the round-1 "47 files / 11 without checks" note is SUPERSEDED by
+this verified classification (47 = 17 + 8 + 21 + 1).
+
+**Class A — 17 pure session-only pages = the EXACT `legacySessionOnly` shim membership**
+(any signed-in staff role reaches them today):
+`/admin` · `/admin/account` · `/admin/audit` · `/admin/broadcasts` · `/admin/broadcasts/[id]` ·
+`/admin/credit-notes/[creditNoteId]` · `/admin/directory` · `/admin/invoices` ·
+`/admin/invoices/[invoiceId]` · `/admin/members` · `/admin/members/[memberId]` ·
+`/admin/members/[memberId]/timeline` · `/admin/plans` · `/admin/plans/[year]/[planId]` ·
+`/admin/settings` · `/admin/settings/invoicing` · `/admin/users`
+
+**Class A\* — 8 pages with an INERT `admin||manager` deny-arm** (admits exactly what the
+layout admits today, but DENIES any 4th/5th role pre-sweep — these checks are class-4
+call sites converted in the PR-2 sweep; their flag-OFF shim row class is
+`legacyAdminOrManager`, which after D16 normalisation is extensionally identical to
+`legacySessionOnly` — super_admin→admin passes, marketing/unknown denied):
+`/admin/credit-notes` · `/admin/events` · `/admin/events/[eventId]` ·
+`/admin/members/[memberId]/benefits` · `/admin/renewals` · `/admin/renewals/[cycleId]` ·
+`/admin/renewals/tasks` · `/admin/settings/renewals/schedules`
+
+**Class B — 21 admin-only-checked pages** (`role !== 'admin'` → notFound/redirect; the
+observed guard is the flag-OFF expectation): broadcasts/new, broadcasts/templates{,/new,
+/[id]/edit}, compliance/erasure-log, events/{[eventId]/registrations/[rid]/erase, erasure,
+import, import/history}, invoices/{new, registers, [invoiceId]/void,
+[invoiceId]/credit-notes/new}, members/{new, [memberId]/edit}, plans/{new, clone,
+[year]/[planId]/edit}, renewals/tier-upgrades, settings/broadcasts,
+settings/integrations/eventcreate
+
+**Class C — 1 redirect-only page** (gate-script exemption): `/admin/compliance`
+
+Sweep must also fix the STALE comments contradicting observed behaviour:
+`users/page.tsx:12` ("admin role via the staff-shell auth guard" — false, manager reaches
+it), `credit-notes/page.tsx:16`, `benefits/page.tsx:124`, `timeline/page.tsx:143`
+("requireSession narrows to admin|manager" — the narrowing is the layout's member-eject,
+not the helper).
+
 ## 2. API routes (`src/app/api/**/route.ts`)
 
 Every handler export is classified by exactly one expected-class:

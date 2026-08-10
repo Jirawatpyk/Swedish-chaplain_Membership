@@ -198,7 +198,7 @@ form and pins the repo facts the design depends on. Design references (`D#`, `§
 
 | Fact | Where verified |
 |---|---|
-| 17 staff pages gated only by `requireSession('staff')` | round-1 fact-check lens |
+| 47 staff pages = 17 pure session-only (`legacySessionOnly` membership, pinned in contracts/authorization-surfaces §1.1) + 8 inert `admin\|\|manager` deny-arms (A\*) + 21 admin-only-checked + 1 redirect | full code walk 2026-08-10 (supersedes round-1's "47/11" note) |
 | `users_last_admin_protection` trigger: migrations 0003/0004, reads OLD/NEW role, no WHEN clause | round-3 § 15 clean-checks |
 | `isLastAdminTriggerError` at `src/lib/db-errors.ts:50-65`; consumers change-role.ts:94, disable-user.ts:96, erase-user.ts:154 (erase = catch-only, NO pre-flight) | round-3 SEC-R3-02 |
 | `countActiveAdmins()` callers today = change-role.ts:80, disable-user.ts:83 | round-2 verification |

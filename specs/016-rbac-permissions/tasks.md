@@ -65,7 +65,7 @@
 
 - [ ] T020 [US2] Add `FEATURE_RBAC_V2` (zod boolean, default false) to `src/lib/env.ts`
 - [ ] T021 [US2] Implement `src/lib/rbac.ts`: `requirePagePermission` (deny → emit → `notFound()`), `requireApiPermission` (deny → emit → typed 403), `canAccess` façade; `rbac.permission_denied_total{role, permission}` counter emission; the ONLY env-flag reads
-- [ ] T022 [US2] Complete `legacy-shim.ts` rows per call-site class: `legacySessionOnly` ONLY for the 17 ungated pages; `mappedLegacy` per real guard (`users.manage`→`('auth:user','write')`, `members.erasure`→`('members','write')`); `settings.invoicing` ×3 rows; `legacyF6Guard`
+- [ ] T022 [US2] Complete `legacy-shim.ts` rows per call-site class: `legacySessionOnly` ONLY for the 17 pinned pages (contracts §1.1); `legacyAdminOrManager` for the 8 A\* inert-check pages; `mappedLegacy` per real guard (`users.manage`→`('auth:user','write')`, `members.erasure`→`('members','write')`); `settings.invoicing` ×3 rows; `legacyF6Guard`; fix the 4 stale guard comments pinned in contracts §1.1
 - [ ] T023 [US2] Author Migration B (audit enum `+= 'permission_denied'`; `CREATE OR REPLACE users_last_admin_guard()` UNION population preserving ERRCODE 23514 + `'last-admin-protection'` substring + 0004 return-row) + journal entry + `REQUIRED_ENUM_VALUES` `permission_denied`
 - [ ] T024 [US2] Register `permission_denied` in all 4 places (audit domain const, pgEnum, 2 test counts) — `src/modules/auth/**` audit taxonomy + `pnpm check:audit-events`/`check:audit-counts` green
 - [ ] T025 [US2] Apply Migration B to dev Neon; run T018 GREEN
