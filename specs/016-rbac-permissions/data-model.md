@@ -53,8 +53,14 @@ Invariants (each a Domain test):
 ### PermissionSet (derived, never persisted)
 
 ```ts
-getPermissionSet(role: Role): ReadonlySet<PermissionKey>   // synchronous, no DB read (D15)
-hasPermission(set, key, { rbacV2: boolean }): boolean       // pure; flag = explicit param
+getPermissionSet(role: Role): ReadonlySet<PermissionKey>   // synchronous, no DB read (D15);
+                                                            // feeds nav/palette filtering
+hasPermission(role: Role, key: PermissionKey,
+              opts: { rbacV2: boolean }): boolean           // pure; flag = explicit param
+// CANONICAL signature is ROLE-FIRST (matches contracts/permission-evaluator.md §1):
+// E1 super_admin bypass and E4 D16 totalisation both require the ROLE — a bare set
+// cannot express either. Design §6.1's `getPermissionSet → hasPermission(set, key)`
+// pipeline sketch is conceptual flow, not the API signature.
 ```
 
 - `super_admin` → evaluator bypass (always allowed), EXCEPT nothing — bypass is total (D3

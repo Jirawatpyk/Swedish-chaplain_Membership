@@ -38,7 +38,7 @@
 
 ## Dependencies & Assumptions
 
-- [ ] CHK085 - Is the operator-availability assumption for the cutover session (pre-mint → verify → merge C in one sequenced session) stated, with what happens if the session is interrupted mid-window? [Gap, Spec §SC-006, Design §11]
+- [x] CHK085 - Is the operator-availability assumption for the cutover session (pre-mint → verify → merge C in one sequenced session) stated, with what happens if the session is interrupted mid-window? [Gap, Spec §SC-006, Design §11] — **CLOSED 2026-08-10**: spec §Edge Cases — every step boundary is a stable resting state; runbook (T040) defines per-point resume
 - [ ] CHK086 - Are the bundle-change (post-ship role tweak) procedure requirements defined — code change + deploy + which reviews re-run (sensitive-flag diff) — so Phase-1 maintenance is not undefined? [Completeness, Design §4.2, §11]
 
 ## Notes

@@ -89,8 +89,8 @@
 - [ ] T037 [US2] Create `scripts/check-staff-page-guard.ts` (clone portal-guard-core precedent; literal-only args) + `package.json` script + wire `.husky/pre-push` + `quality-gates.yml` static step
 - [ ] T038 [US2] Update `scripts/seed-bootstrap-admin.ts` (mints `super_admin`; refuses IFF a super_admin exists — D18 contract) + DR seed scripts
 - [ ] T039 [US2] Coverage config: explicit 100%-branch entry for `src/lib/rbac.ts` in `vitest.config.ts`; assert file absent from every coverage-exclude list
-- [ ] T040 [US2] Author `docs/runbooks/rbac-v2-cutover.md`: pre-mint → flag flip + verification checklist (abort criterion = any unexpected denial pair) → Migration C procedure (gate + information_schema trigger check) → promotion floor → per-window rollback incl. marketing-availability note → interrupted-session recovery (CHK085) → PR-4 env verify → PR-5 env delete → bundle-change procedure → READ_ONLY_MODE
-- [ ] T041 [US2] Full matrix GREEN both legs (T015 ON-leg cells now from § 4.1); run `pnpm lint`, all `check:*`, `pnpm typecheck` LAST
+- [ ] T040 [US2] Author `docs/runbooks/rbac-v2-cutover.md`: pre-mint → flag flip + verification checklist (abort criterion = any unexpected denial pair) → Migration C procedure (gate + **re-validate C's journal `when` > global applied max AT MERGE TIME** — other features may land migrations between authoring and merge; silent-no-op class — + information_schema trigger check) → promotion floor → per-window rollback incl. marketing-availability note → interrupted-session recovery (CHK085) → PR-4 env verify → PR-5 env delete → bundle-change procedure → READ_ONLY_MODE
+- [ ] T041 [US2] Full matrix GREEN both legs (T015 ON-leg cells now from § 4.1, **incl. per-target-role rows for the six users routes** — contracts/authorization-surfaces §3); run `pnpm lint`, all `check:*`, `pnpm typecheck` LAST
 
 **Checkpoint**: PR 2 mergeable — flag OFF byte-identical (SC-002 evidence banked); flag ON = new matrix + D4 narrowing. US2 independently testable.
 
@@ -107,8 +107,8 @@
 - [ ] T042 [P] [US1] Integration (live Neon, tx-wrapped): Migration C promotion rehearsal reading the real SQL file — every pre-C human admin promoted; **all three** system actors untouched; D18 pre-minted row untouched; open admin invitations promoted; expired skipped; (user, invitation) coherence — in `tests/integration/auth/migration-c-promotion.test.ts`
 - [ ] T043 [P] [US1] Integration: reversed-order C-before-B rehearsal asserts ABORT under the old 0004 guard in `tests/integration/auth/migration-order-abort.test.ts`
 - [ ] T044 [P] [US1] Contract: redeem-invite tamper check stays coherent across promotion (promoted user + promoted invitation) in `tests/contract/rbac/invitation-promotion.test.ts`
-- [ ] T045 [P] [US1] E2E: plain-admin persona assertion list — 404 on `/admin/users`, `/admin/audit`, `/admin/settings/invoicing`, erasure log; erasure APIs denied; invoice issue + refund record + member edit succeed — in `tests/e2e/rbac-admin-persona.spec.ts`
-- [ ] T046 [P] [US1] E2E: super_admin persona — invite staff (narrowed-admin bundle lands per US1-AS2), change role, open audit unredacted, non-empty palette, erasure-log nav entry present — in `tests/e2e/rbac-super-admin-persona.spec.ts`
+- [ ] T045 [P] [US1] E2E: plain-admin persona assertion list — 404 on `/admin/users`, `/admin/audit`, `/admin/settings/invoicing`, erasure log; erasure APIs denied; invoice issue + refund record + member edit succeed; **+ axe a11y scan on the retrofitted users page (PR-3 ships with a11y evidence, not deferred to PR 4)** — in `tests/e2e/rbac-admin-persona.spec.ts`
+- [ ] T046 [P] [US1] E2E: super_admin persona — invite staff (narrowed-admin bundle lands per US1-AS2), change role, open audit unredacted, non-empty palette, erasure-log nav entry present; **+ axe a11y scan of the users-page dialogs/picker** — in `tests/e2e/rbac-super-admin-persona.spec.ts`
 
 ### Implementation
 
@@ -138,7 +138,7 @@
 ### Implementation
 
 - [ ] T056 [US3] Split the F9 snapshot loader into separately cacheable engagement/finance parts + widget→permission map in `src/modules/insights/**` + `src/app/(staff)/admin/page.tsx` (grid collapses gracefully)
-- [ ] T057 [US3] Server-side `members.pii_sensitive` stripping for marketing on member read APIs + profile UI (extends T035 to the marketing bundle)
+- [ ] T057 [US3] VERIFY `members.pii_sensitive` stripping holds for marketing (key-based gating from T035 covers any bundle lacking the key — no re-implementation) + marketing-specific UI paths only (profile render, directory row) in member read APIs + profile UI
 - [ ] T058 [US3] PII-redacted activity feed for non-`insights.activity_unredacted` holders (marketing) in insights feed components
 - [ ] T059 [US3] Role picker += `marketing` (PR-4 reveal) in users page; seed `E2E_MARKETING_*` persona via global-setup idiom
 - [ ] T060 [US3] ROPA/privacy documentation update: staff-role-administration activity + marketing member-read scope + DPIA-trigger answer (CHK035) + last-SA-erase vs Art. 17 rationale (CHK041) in the privacy docs + `docs/runbooks/rbac-v2-cutover.md` cross-ref
@@ -156,15 +156,15 @@
 ### Tests first
 
 - [ ] T061 [P] [US4] Unit: nav config declares `requiredPermission` per item; server-derived filtering; zero role literals (architecture-guard assertion) in `tests/unit/config/nav-permissions.test.ts`
-- [ ] T062 [P] [US4] E2E: four-persona navigation walk (super_admin, admin, manager, marketing) — visible ≡ permitted, no dead links, landing invariant — in `tests/e2e/rbac-navigation.spec.ts`
+- [ ] T062 [P] [US4] E2E: four-persona navigation walk (super_admin, admin, manager, marketing) — visible ≡ permitted, no dead links, landing invariant; **+ manager direct-URL assertions (404 on `/admin/users` + `/admin/audit`; all four settings pages denied — design §10 manager list)** — in `tests/e2e/rbac-navigation.spec.ts`
 
 ### Implementation
 
 - [ ] T063 [US4] Replace nav role arrays with declarative `requiredPermission` + server-side filtering in `src/config/nav.ts` + shell components
 - [ ] T064 [US4] Palette actions + settings index render from declared permissions in palette registry + `src/app/(staff)/admin/settings/page.tsx`
-- [ ] T065 [US4] Architecture guard: authorization role-reads outside the identity allowlist fail (nav/palette filters IN scope) in `tests/unit/architecture/rbac-authorization-reads.test.ts`
+- [ ] T065 [US4] Architecture guard: authorization role-reads outside the identity allowlist fail (nav/palette filters IN scope; **the F6 `adminOnlyWriterGuard` role reads are a PERMANENT allowlist entry — D9 route-local override survives PR 5**) in `tests/unit/architecture/rbac-authorization-reads.test.ts`
 - [ ] T066 [US4] Flip flag code-default → `true` in `src/lib/env.ts`; add PR-4 runbook step: verify prod env var unset or `'true'` (leftover `'false'` defeats the flip)
-- [ ] T067 [US4] Observability completion: expected-denial baseline alert (extended for marketing) + `docs/observability.md` metric/SLO entries + a11y (`@a11y`) + i18n (`@i18n`) E2E sweeps green on changed surfaces
+- [ ] T067 [US4] Observability completion: expected-denial baseline alert (extended for marketing) + `docs/observability.md` metric/SLO entries + a11y (`@a11y`) + i18n (`@i18n`) E2E sweeps green on PR-4-changed surfaces (nav, palette, settings index, dashboard split — users page already covered by T045/T046)
 
 **Checkpoint**: PR 4 mergeable — marketing usable end-to-end; nav fully permission-aware; flag default ON.
 

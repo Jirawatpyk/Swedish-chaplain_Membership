@@ -8,8 +8,8 @@
 
 - [ ] CHK049 - Are role-picker requirements complete for BOTH windows (PR 3: super_admin/admin/manager; PR 4: +marketing) including who may open the picker at all? [Completeness, Spec §FR-010, Design §7.1]
 - [ ] CHK050 - Is the `finalFocus` requirement stated for EVERY dialog on the page (including the pre-existing `user-list-table.tsx` omission) with the keyboard E2E acceptance (`activeElement !== body`) as its measure? [Completeness, Spec §FR-010, §FR-015, Design §7.1]
-- [ ] CHK051 - Are empty/denied-state requirements defined for the users page as seen by each role that can still reach adjacent surfaces (e.g., admin sees member-account rows but no staff-role mutations — is that presentation specified, or left to implementation)? [Gap, Spec §US1-AS5]
-- [ ] CHK052 - Are error-presentation requirements defined for the last-super-admin refusal (typed error → which user-facing message, which locale keys, not a 500 toast)? [Gap, Spec §US1-AS4]
+- [x] CHK051 - Are empty/denied-state requirements defined for the users page as seen by each role that can still reach adjacent surfaces (e.g., admin sees member-account rows but no staff-role mutations — is that presentation specified, or left to implementation)? [Gap, Spec §US1-AS5] — **CLOSED 2026-08-10**: spec §FR-010 — the PAGE is `users.manage` SA-only (admin 404s, no partial view); admin's member-account ops run through the members-surface UI calling the member-target routes
+- [x] CHK052 - Are error-presentation requirements defined for the last-super-admin refusal (typed error → which user-facing message, which locale keys, not a 500 toast)? [Gap, Spec §US1-AS4] — **CLOSED 2026-08-10**: spec §FR-010 — localized inline error with EN/TH/SV keys, never an unhandled 500; implemented at T048
 
 ## Navigation, Palette & Landing (§8)
 

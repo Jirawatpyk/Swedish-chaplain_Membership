@@ -8,7 +8,7 @@
 
 - [ ] CHK033 - Is the new processing activity (staff role administration) named with an update duty on the ROPA/privacy docs, and is the delivery point pinned (PR 4)? [Completeness, Spec §FR-018, Design §12]
 - [ ] CHK034 - Is marketing's member-data READ access documented as a processing-scope change (purpose + minimisation rationale), not just as a permission mapping? [Completeness, Spec §FR-018, Design §12]
-- [ ] CHK035 - Is the DPIA-trigger question answered in the requirements (does adding a marketing read-role over member PII require a DPIA under the project's PDPA+GDPR standard, or is the existing assessment sufficient)? [Gap, plan Constitution §I]
+- [x] CHK035 - Is the DPIA-trigger question answered in the requirements (does adding a marketing read-role over member PII require a DPIA under the project's PDPA+GDPR standard, or is the existing assessment sufficient)? [Gap, plan Constitution §I] — **CLOSED 2026-08-10**: spec §Assumptions — no DPIA (internal access role, no new category/purpose/transfer/ADM); assessment note lands in the FR-018 ROPA update (T060)
 
 ## Data Minimisation — marketing scope
 
@@ -20,7 +20,7 @@
 ## Data-Subject Rights & Erasure
 
 - [ ] CHK040 - Are both erasure endpoints (member erasure F3, attendee erasure F6) explicitly tied to their `superAdminOnly` keys, and is the erasure LOG read also SA-only? [Completeness, Spec §FR-013, Design D10]
-- [ ] CHK041 - Is the interplay between the last-super-admin ERASE refusal and data-subject erasure rights documented (the refused account is a staff operator, not a data subject exercising Art. 17 — is that rationale recorded so the refusal is defensible)? [Gap, Spec §FR-009, Design D13]
+- [x] CHK041 - Is the interplay between the last-super-admin ERASE refusal and data-subject erasure rights documented (the refused account is a staff operator, not a data subject exercising Art. 17 — is that rationale recorded so the refusal is defensible)? [Gap, Spec §FR-009, Design D13] — **CLOSED 2026-08-10**: spec §Edge Cases — refusal = staff-continuity guard, not an Art. 17/PDPA §33 denial; data-subject path = mint/promote another SA first, then erase
 - [ ] CHK042 - Do the requirements preserve the ability to fulfil access/erasure requests "without code changes" (Constitution §I) after permission concentration to SA — i.e., is the SA-availability assumption for compliance operations stated? [Assumption, Design §12 SoD residual]
 
 ## Audit & Log Hygiene
