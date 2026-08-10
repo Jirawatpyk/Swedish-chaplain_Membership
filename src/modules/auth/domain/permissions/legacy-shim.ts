@@ -23,6 +23,8 @@ import type { Role } from '../role';
 export type LegacyRow =
   | { readonly kind: 'legacySessionOnly' }
   | { readonly kind: 'legacyAdminOrManager' }
+  | { readonly kind: 'legacyAdminOnly' }
+  | { readonly kind: 'legacyF6Guard' }
   | { readonly kind: 'mappedLegacy'; readonly resource: Resource; readonly action: Action };
 
 /** The 17 contracts § 1.1 pure session-only pages: any staff session passes. */
@@ -35,6 +37,31 @@ export const legacySessionOnly: LegacyRow = { kind: 'legacySessionOnly' };
  * but the distinct row keeps the characterization capture honest per class.
  */
 export const legacyAdminOrManager: LegacyRow = { kind: 'legacyAdminOrManager' };
+
+/**
+ * The 21 contracts § 1.1 Class-B pages whose observed gate is a bare
+ * `role !== 'admin' → notFound()` literal — no `canAccess` call to delegate
+ * to, so this cannot be expressed as a `mappedLegacy` row.
+ */
+export const legacyAdminOnly: LegacyRow = { kind: 'legacyAdminOnly' };
+
+/**
+ * The 16 F6 route handlers guarded by `adminOnlyWriterGuard` (events) or
+ * `adminOnlyGuard` (eventcreate integration) — the D9 permanent route-local
+ * override that survives PR 5.
+ *
+ * Evaluates identically to `legacyAdminOnly`; the distinct kind records that
+ * the DENIAL SHAPE differs and is contractual (manager → 403 + RFC 7807 +
+ * `role_violation_blocked` audit; member/unknown → 404), so a future edit that
+ * collapses the two rows is visible in review.
+ *
+ * Both guards today compare `role === 'admin'` and fail closed on anything
+ * else, which would 404 every promoted `super_admin` after Migration C. T029
+ * admits `super_admin` in both guards; this row already encodes the contract
+ * (`super_admin` evaluates as `admin` per D16), so the matrix holds the code
+ * to it rather than the other way round.
+ */
+export const legacyF6Guard: LegacyRow = { kind: 'legacyF6Guard' };
 
 /** A call site guarded today by `canAccess(role, resource, action)`. */
 export function mappedLegacy(resource: Resource, action: Action): LegacyRow {
@@ -81,6 +108,9 @@ export function evaluateLegacyRow(role: Role | (string & {}), row: LegacyRow): b
       // Both admit exactly the staff roles the pre-016 layout admitted
       // (member is ejected by the staff-shell redirect today).
       return normalized === 'admin' || normalized === 'manager';
+    case 'legacyAdminOnly':
+    case 'legacyF6Guard':
+      return normalized === 'admin';
     case 'mappedLegacy':
       return canAccess(normalized, row.resource, row.action);
   }
