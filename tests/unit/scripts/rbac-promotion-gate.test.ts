@@ -12,6 +12,8 @@
  * Pure-logic tests — the fs/db reads live in run-migrations.ts; this helper
  * decides, given (files, journal, applied set, flag value), whether to refuse.
  */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   promotionGateFailure,
@@ -29,6 +31,30 @@ const FILES = [
   '0286_rbac_v2_denial_audit_and_union_guard.sql',
   '0300_rbac_v2_promotion.sql',
 ];
+
+/**
+ * Post-remediation re-review — Migration C's system-actor exclusion is keyed on
+ * the RESERVED UUID NAMESPACE (`00000000-0000-0000-0000-0000000%`) rather than an
+ * enumerated id list, precisely so a future actor is covered without anyone
+ * editing the migration. That only holds while every SYSTEM_ACTORS id is minted
+ * inside the namespace — nothing enforced it, so an actor seeded outside it
+ * would be silently PROMOTED to super_admin at cutover.
+ */
+describe('SYSTEM_ACTORS stay inside the reserved uuid namespace', () => {
+  it('every canonical system actor matches the prefix Migration C excludes', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'scripts', 'seed-system-actors.ts'),
+      'utf-8',
+    );
+    const ids = [...src.matchAll(/id:\s*'([0-9a-f-]{36})'/gi)].map((m) => m[1] as string);
+    expect(ids.length, 'no system-actor ids parsed — the fixture shape changed').toBeGreaterThan(0);
+    for (const id of ids) {
+      expect(id, `${id} sits OUTSIDE the reserved namespace and WOULD be promoted`).toMatch(
+        /^00000000-0000-0000-0000-0000000/,
+      );
+    }
+  });
+});
 
 describe('T036 D7 promotion gate', () => {
   it('exposes the naming contract Migration C must use', () => {
@@ -185,6 +211,52 @@ describe('T036 D7 promotion gate', () => {
     });
     expect(failure, 'a promotion drizzle would silently skip must be refused').not.toBeNull();
     expect(failure).toMatch(/when|silently|skip/i);
+  });
+
+  /**
+   * Post-remediation re-review — the `when`-EQUALITY hole.
+   *
+   * The first fix keyed pending-ness on `appliedWhens.has(entry.when)`. When the
+   * promotion's `when` COLLIDES with an already-applied migration's (the
+   * copy-paste-the-previous-entry mistake the runbook warns about), that lookup
+   * hits, `pending` is false, and BOTH refusal branches are skipped — the gate
+   * waves the run through. Drizzle then compares strictly (`>`), skips the file,
+   * and prints "✓ Migrations applied" while promoting nobody. The `=` half of
+   * the old `when <= maxApplied` guard was provably dead code, because
+   * `maxApplied` is itself always a member of `appliedWhens`.
+   *
+   * Boundary triple: below / equal / above the highest OTHER journal entry.
+   */
+  it('promotion journaled with when EQUAL to an applied migration → refuse (collision, not "already applied")', () => {
+    const failure = promotionGateFailure({
+      migrationFiles: [...FILES],
+      journal: [
+        { tag: '0285_rbac_v2_role_enum', when: 1798541300000 },
+        { tag: '0286_rbac_v2_denial_audit_and_union_guard', when: 1798541400000 },
+        // Copy-pasted from 0286 and never bumped.
+        { tag: '0300_rbac_v2_promotion', when: 1798541400000 },
+      ],
+      appliedWhens: new Set([1798541300000, 1798541400000]),
+      flagValue: 'true',
+    });
+    expect(
+      failure,
+      'a colliding `when` is a silent no-op, not evidence the promotion already applied',
+    ).not.toBeNull();
+    expect(failure).toMatch(/when|skip|greater/i);
+  });
+
+  it('promotion genuinely applied (its own when is the max) → proceed, not mistaken for a collision', () => {
+    // The PR-5 state: C ran, its `when` is now in appliedWhens AND is the max.
+    // The fix must not confuse this with the collision case above.
+    expect(
+      promotionGateFailure({
+        migrationFiles: [...FILES],
+        journal: JOURNAL,
+        appliedWhens: new Set([1798541300000, 1798541400000, 1798551400000]),
+        flagValue: undefined,
+      }),
+    ).toBeNull();
   });
 
   it('promotion journaled with when > applied max → proceed (the normal cutover)', () => {

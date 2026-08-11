@@ -34,7 +34,7 @@
  * explicit path. The operator's migration-only PR (T052) `git mv`s it to the top
  * level + journals it AFTER the flag is flipped. See the file header + runbook §5.
  */
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { sql } from 'drizzle-orm';
@@ -44,15 +44,29 @@ import { db } from '@/lib/db';
 const TAG = 't042-migration-c';
 
 /**
- * The staged location, with a fallback to the shipped one: the T052 operator
- * step `git mv`s this file into the migrations root, after which the staged
- * path is gone. Resolving both keeps the rehearsal runnable on either side of
- * the cutover instead of dying with ENOENT (016 PR-3 review, Suggestion #4).
+ * Resolve Migration C by its TAG, not by a fixed file name. Two things move at
+ * cutover (runbook § 5 step 1): the file is `git mv`d from `pending/` into the
+ * migrations root, AND its numeric prefix is renumbered if another feature
+ * landed one meanwhile. Only `rbac_v2_promotion` — the substring the D7 gate
+ * greps — is guaranteed stable, so match on that and search the staged
+ * directory first (016 PR-3 review Suggestion #4 + its post-remediation
+ * follow-up: the first fix still hardcoded `0287`, which the renumber step
+ * would have broken).
  */
 export function resolveMigrationCPath(): string {
   const root = join(process.cwd(), 'drizzle', 'migrations');
-  const staged = join(root, 'pending', '0287_rbac_v2_promotion.sql');
-  return existsSync(staged) ? staged : join(root, '0287_rbac_v2_promotion.sql');
+  for (const dir of [join(root, 'pending'), root]) {
+    if (!existsSync(dir)) continue;
+    const hit = readdirSync(dir)
+      .filter((f) => f.endsWith('.sql') && f.includes('rbac_v2_promotion'))
+      .sort()
+      .pop();
+    if (hit) return join(dir, hit);
+  }
+  throw new Error(
+    'Migration C not found: no *rbac_v2_promotion*.sql under drizzle/migrations/{pending,} — ' +
+      'the rehearsals must read the REAL file, never a retyped copy.',
+  );
 }
 
 const MIGRATION_C_PATH = resolveMigrationCPath();

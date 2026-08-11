@@ -22,7 +22,7 @@
  * The positive control is what makes the abort assertion meaningful: without it,
  * a guard that ALWAYS raised would pass the first case for the wrong reason.
  */
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { sql } from 'drizzle-orm';
@@ -31,13 +31,22 @@ import { isLastAdminTriggerError } from '@/lib/db-errors';
 
 const TAG = 't043-migration-order';
 
-// Staged path with a shipped-path fallback — the T052 `git mv` moves the file
-// (016 PR-3 review, Suggestion #4). Kept local rather than imported from the
-// sibling spec so neither rehearsal can drag the other's fixtures into scope.
+// Resolve by TAG: the T052 step both `git mv`s the file out of `pending/` and
+// may RENUMBER its prefix, so only the `rbac_v2_promotion` substring is stable
+// (016 PR-3 review Suggestion #4 + post-remediation follow-up). Kept local
+// rather than imported from the sibling spec so neither rehearsal can drag the
+// other's fixtures into scope.
 const MIGRATION_C_PATH = (() => {
   const root = join(process.cwd(), 'drizzle', 'migrations');
-  const staged = join(root, 'pending', '0287_rbac_v2_promotion.sql');
-  return existsSync(staged) ? staged : join(root, '0287_rbac_v2_promotion.sql');
+  for (const dir of [join(root, 'pending'), root]) {
+    if (!existsSync(dir)) continue;
+    const hit = readdirSync(dir)
+      .filter((f) => f.endsWith('.sql') && f.includes('rbac_v2_promotion'))
+      .sort()
+      .pop();
+    if (hit) return join(dir, hit);
+  }
+  throw new Error('Migration C not found under drizzle/migrations/{pending,}');
 })();
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];

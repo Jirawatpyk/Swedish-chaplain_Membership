@@ -48,12 +48,30 @@ export function promotionGateFailure(input: PromotionGateInput): string | null {
   }
   if (candidates.size === 0) return null;
 
-  // Drizzle applies a pending entry only when its `when` exceeds every applied
-  // one, so a promotion journaled at or below the current max is SKIPPED while
-  // the runner still prints "✓ Migrations applied" (016 PR-3 review,
+  // Drizzle applies a pending entry only when its `when` STRICTLY exceeds every
+  // applied one, so a promotion journaled at or below the current max is SKIPPED
+  // while the runner still prints "✓ Migrations applied" (016 PR-3 review,
   // Suggestion #2). Nothing else in the automated stack detects that:
   // `REQUIRED_ENUM_VALUES` is blind to a data-only migration.
-  const maxApplied = input.appliedWhens.size > 0 ? Math.max(...input.appliedWhens) : -Infinity;
+  //
+  // The ordering check compares against the OTHER JOURNAL ENTRIES, not against
+  // the applied set — that distinction is the post-remediation re-review's
+  // confirmed finding. Keying it on `appliedWhens` left an equality hole: when
+  // the promotion's `when` COLLIDES with an already-applied migration's (the
+  // copy-paste-the-previous-entry mistake), `appliedWhens.has(entry.when)` hits,
+  // `pending` reads false, both refusal branches are skipped, and the gate waves
+  // through a promotion drizzle will silently skip. Every applied migration came
+  // from a journal entry, so "strictly newer than every sibling in the journal"
+  // is the stronger and simpler invariant: it catches the collision AND a plain
+  // too-low value, while the genuine post-application state (C's own `when` is
+  // the journal max) still passes.
+  const maxOtherJournalWhen = (tag: string): number => {
+    let max = -Infinity;
+    for (const j of input.journal) {
+      if (j.tag !== tag && j.when > max) max = j.when;
+    }
+    return max;
+  };
 
   for (const [tag, file] of candidates) {
     const entry = input.journal.find((j) => j.tag === tag);
@@ -73,13 +91,16 @@ export function promotionGateFailure(input: PromotionGateInput): string | null {
         `migrate before any DDL ran.`
       );
     }
-    if (pending && entry.when <= maxApplied) {
+    const highestSibling = maxOtherJournalWhen(tag);
+    if (entry.when <= highestSibling) {
       return (
         `D7 promotion gate: '${file}' is journaled with when=${entry.when}, ` +
-        `which is NOT greater than the highest applied migration ` +
-        `(${maxApplied}). Drizzle would SKIP it while still reporting success — ` +
-        `the promotion would silently never apply. Bump its 'when' above the ` +
-        `applied max (docs/runbooks/rbac-v2-cutover.md § 5 step 1).`
+        `which is NOT strictly greater than every other journal entry ` +
+        `(highest sibling: ${highestSibling}). Drizzle compares strictly, so it ` +
+        `would SKIP this migration while still reporting "✓ Migrations applied" ` +
+        `— the promotion would silently never run, and a value EQUAL to an ` +
+        `already-applied one additionally reads as "already applied". Bump its ` +
+        `'when' above the journal max (docs/runbooks/rbac-v2-cutover.md § 5 step 1).`
       );
     }
   }

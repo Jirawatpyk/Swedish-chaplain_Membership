@@ -110,10 +110,20 @@ Only after section 4 passes:
      { "idx": <lastIdx + 1>, "version": "7", "when": <globalMax + 100000>, "tag": "0287_rbac_v2_promotion", "breakpoints": true }
      ```
 
-     A `when` ≤ the applied max makes drizzle SKIP it while still printing "✓ Migrations applied" (the 0281-era silent-no-op class). The D7 gate now refuses that case outright, so a mistake here fails the deploy loudly instead of quietly doing nothing — but get it right the first time.
-   - The tag MUST be the bare file name. A tag carrying the directory (`pending/0287_rbac_v2_promotion`) would make drizzle apply the file from its staged location; the gate refuses that shape too.
+     Drizzle compares strictly, so a `when` that is not GREATER than every other journal entry is SKIPPED while the runner still prints "✓ Migrations applied" (the 0281-era silent-no-op class) — and a value EQUAL to an already-applied one additionally reads as "already applied". The D7 gate refuses both, comparing against the other JOURNAL entries rather than the applied set, so a mistake here fails the deploy loudly. **`when` is the highest-risk keystroke of the whole cutover — recompute the max from merge-day `main` and check strict `>` by hand anyway.**
+   - The tag MUST be the bare file name. A tag carrying the directory (`pending/0287_rbac_v2_promotion`) makes drizzle apply the file from its staged location, defeating the staging design. The gate refuses that shape **while the flag is off**; with the flag ON (i.e. during this very step) it is allowed through like any other promotion tag, so there is **no automated backstop here** — get the tag right yourself.
 
 2. Merge that branch to `main` → the production deploy applies it via `vercel-build`. The D7 gate allows it because `FEATURE_RBAC_V2=true` is now set. (The same deploy with the flag unset exits 1 by design — that is the D7 guarantee.)
+
+   **Expect a RED Vercel PREVIEW on this branch.** Preview deployments do not carry the production `FEATURE_RBAC_V2=true`, so the D7 gate correctly refuses there and the preview build fails. That is the gate working, not a regression — do not "fix" it by relaxing the gate. Only the production deploy matters for this step.
+
+   **Then confirm the promotion actually ran** — never trust the "✓ Migrations applied" line alone:
+
+   ```sql
+   select count(*) from drizzle.__drizzle_migrations where created_at = <C's when>;
+   ```
+
+   Expect `1`. A `0` here means drizzle skipped the file: stop, fix the `when`, redeploy. Run this BEFORE the assertions below, or (a) reads `0` for the wrong reason.
 3. Post-C assertions (run in the prod SQL console):
 
    ```sql
@@ -122,11 +132,19 @@ Only after section 4 passes:
    --     `system-<name>@chamber-os.internal` with role='admin', status='disabled'
    --     — they are NOT promoted by Migration C, so they must be excluded here
    --     or this count reads 3 and triggers a false ABORT.
+   --     Key these on the RESERVED UUID NAMESPACE, exactly as the migration's
+   --     own predicate does. Migration C excludes
+   --     `id::text LIKE '00000000-0000-0000-0000-0000000%'`, NOT an email
+   --     pattern — an email-keyed check would disagree with the migration the
+   --     moment a system actor is seeded off-convention, and would then read
+   --     anomalous in the middle of the cutover window.
    select count(*) from users
-    where role = 'admin' and email not like 'system-%@chamber-os.internal';
-   -- (b) system actors untouched (expect their original role='admin', status='disabled')
-   select email, role, status from users
-    where email like 'system-%@chamber-os.internal';
+    where role = 'admin' and id::text not like '00000000-0000-0000-0000-0000000%';
+   -- (b) system actors untouched (expect role='admin', status='disabled' for each).
+   --     No fixed row count: the namespace is open-ended by design, so assert the
+   --     SHAPE of every row rather than that there are exactly three.
+   select id, email, role, status from users
+    where id::text like '00000000-0000-0000-0000-0000000%';
    -- (c) open invitations promoted coherently.
    --     NOTE: the column is `intended_role`, not `role`.
    select count(*) from invitations i join users u on u.id = i.user_id
@@ -134,7 +152,7 @@ Only after section 4 passes:
       and i.intended_role <> 'super_admin';
    ```
 
-   Expected: (a) `0`, (b) three rows still `admin` / `disabled`, (c) `0`.
+   Expected: (a) `0`, (b) every returned row still `admin` / `disabled` (three today — more is fine, they are system actors by namespace), (c) `0`.
 4. Verify the trigger still refuses last-administrator removal (information_schema check from section 1 + a dry-run demote of the sole super_admin in a rolled-back transaction if you want belt-and-braces — `tests/integration/auth/last-admin-guard-transitional.test.ts` is the dev-side rehearsal).
 
 ## 6. Rollback — per window
@@ -157,7 +175,8 @@ The sequence is interruptible between any two steps; each state is safe to HOLD:
 | pre-mint only | 1 super_admin exists, flag OFF | continue at section 3 any time — the pre-minted SA degrades to admin semantics (D16), harmless | **DELETE** the pre-minted row (not disable). `scripts/seed-bootstrap-admin.ts` refuses whenever a super_admin row exists in ANY status, so a disabled row permanently blocks re-running the pre-mint. |
 | flag flip, walk incomplete | ON leg live, un-verified | finish the section 4 walk — do not leave it half-verified overnight | flag OFF (window A) |
 | walk failed / aborted | flag OFF again | fix on dev, restart at section 3 | — |
-| Migration C merged but deploy failed | promotion partially visible? **No** — C runs inside one deploy migration transaction; a failed deploy applied nothing. Re-deploy. | re-run deploy; D7 gate re-checks the flag | flag stays ON; no data changed |
+| Migration C merged but deploy failed — **BUILD** stage | `vercel-build` is `run-migrations.ts && next build`, so migrations run FIRST. A failure in `next build` means the promotion **already applied**. Check before assuming anything: `select count(*) from drizzle.__drizzle_migrations where created_at = <C's when>;` | if the promotion applied: you are in window B — fix the build and redeploy, do NOT re-run migrations expecting a clean slate (C is idempotent, but the state is already promoted) | flag stays ON; data MAY have changed |
+| Migration C merged but deploy failed — **MIGRATE** stage | C itself is one file = atomic under the runner's whole-batch transaction, so a failure inside `run-migrations.ts` applied nothing of C. | re-run deploy; D7 gate re-checks the flag | flag stays ON; no data changed |
 | Migration C applied, assertions fail | promotion data live | do NOT flag-OFF reflexively (window B is still safe); diagnose with section 5.3 queries; system actors/coherence issues are data-fix SQL, not rollbacks | window B demotion path |
 
 If the operator session dies mid-window: the cutover log (section 9) is the source of truth for which step completed; every step above is idempotent or hold-safe.
