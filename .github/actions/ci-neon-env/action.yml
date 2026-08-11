@@ -65,6 +65,21 @@ runs:
       shell: bash
       env:
         DATABASE_URL: ${{ inputs.database-url }}
+        # 016 D7 promotion gate. `.env.local` is seeded from `.env.example`,
+        # which ships `FEATURE_RBAC_V2="false"`, so once Migration C
+        # (`0287_rbac_v2_promotion`) is journaled on `main` the gate refuses
+        # EVERY migrate in CI — permanently, on every future PR, because a
+        # disposable Neon branch never carries the production flag and the
+        # promotion therefore stays pending there forever.
+        #
+        # Scoped to THIS step only: the integration tests run in later steps
+        # with their own env, so this changes what the CI database looks like,
+        # not what the suite evaluates. Applying the promotion here is also the
+        # more faithful state — post-cutover production HAS promoted admins, and
+        # the CI branch is disposable and blocklist-guarded against prod.
+        #
+        # Delete alongside the gate itself in PR 5 (T068/T071).
+        FEATURE_RBAC_V2: 'true'
       # `scripts/run-migrations.ts` takes no advisory lock, and since the smoke
       # workflow left the repo-wide concurrency group two jobs can now reach
       # this step at once. A collision there is transient — the loser sees a
