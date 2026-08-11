@@ -62,6 +62,9 @@ export async function POST(
   // to 'admin'). The gate admits the manager_exception population
   // (admin ∪ super_admin ∪ manager); anything else here is a gate bug — fail
   // loudly instead of stamping a coerced role.
+  // rbac-narrow-ok: a TYPE narrow onto the use-case's zod population, not an
+  // authorization decision — it admits exactly what the gate above admits, so
+  // it can only fire if the gate itself regressed.
   const sessionRole = ctx.current.user.role;
   if (sessionRole !== 'admin' && sessionRole !== 'manager' && sessionRole !== 'super_admin') {
     return errorResponse({

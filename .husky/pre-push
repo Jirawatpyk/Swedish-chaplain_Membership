@@ -9,6 +9,8 @@
 # Rationale per check (all derived from 2026-05-17 polish retrospective):
 #
 #   - check:staff-page-guard : every (staff) page declares a LITERAL permission
+#   - check:api-route-guard  : same for the ~119 staff API route files, plus a
+#     scan for staff-role literals left behind a gate (016 review C3)
 #                       key + shim row matching the frozen 016 baseline
 #   - check:layout    : single-page → single-container invariant
 #                       (Spec §FR-007 CLS-0). Cheap (~1 sec).
@@ -67,6 +69,7 @@ pnpm check:dates
 pnpm check:env-example
 pnpm check:env-boot
 pnpm check:staff-page-guard
+pnpm check:api-route-guard
 pnpm vitest run tests/unit/architecture/ --passWithNoTests
 
 # ===========================================================================

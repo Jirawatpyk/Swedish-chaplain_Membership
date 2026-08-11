@@ -223,15 +223,26 @@ ORDER BY created_at DESC
 LIMIT 50;
 ```
 
-### Manager write denials in the last 24 h (governance signal)
+### Staff authorization denials in the last 24 h (governance signal)
+
+Since 016 (RBAC v2) every staff denial — all 46 pages and ~119 API handlers —
+writes `permission_denied`, whose summary encodes the role, the permission key
+and the route path. `manager_denied_write` has no emitter left; query it only
+for rows written before the sweep. Note the column is `timestamp`, not
+`created_at`.
+
 ```sql
-SELECT actor_user_id, COUNT(*) as denials
+SELECT actor_user_id, summary, COUNT(*) AS denials
 FROM audit_log
-WHERE event_type = 'manager_denied_write'
-  AND created_at > NOW() - INTERVAL '1 day'
-GROUP BY actor_user_id
+WHERE event_type = 'permission_denied'
+  AND timestamp > NOW() - INTERVAL '1 day'
+GROUP BY actor_user_id, summary
 ORDER BY denials DESC;
 ```
+
+To split by permission rather than by actor, the summary format is pinned as
+`role=<role> permission=<key> route=<path>` by
+`tests/contract/rbac/permission-denied-audit.test.ts`.
 
 ### Pending invitations (haven't been redeemed)
 ```sql

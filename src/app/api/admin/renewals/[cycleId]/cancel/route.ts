@@ -71,6 +71,8 @@ export async function POST(
       // 016 review I4 — the LITERAL role. The gate above (`renewals.write`)
       // admits admin + super_admin only, so the narrow below is a fail-loud
       // assertion, not a policy decision.
+      // rbac-narrow-ok: stamps the LITERAL role into the audit row; the
+      // gate above already decided admission.
       actorRole: ctx.current.user.role === 'super_admin' ? 'super_admin' : 'admin',
       requestId: ctx.requestId,
       correlationId: ctx.correlationId,

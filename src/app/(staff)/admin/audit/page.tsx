@@ -59,6 +59,14 @@ export async function generateMetadata(): Promise<Metadata> {
 // trims the viewer dropdown).
 const NEVER_EMITTED_EVENT_TYPES: ReadonlySet<string> = new Set([
   'session_forcibly_ended',
+  // 016 review I1 — RETIRED, not never-emitted: `manager_denied_write` was
+  // written only by `requireRole`, whose last call site the RBAC v2 sweep
+  // removed. Every staff denial now writes `permission_denied` instead. Rows
+  // from before the sweep still exist and remain readable by event-type URL,
+  // but offering the filter would hand an investigator an empty result for
+  // any recent window — which reads as "no violations", the most dangerous
+  // possible wrong answer on a governance surface.
+  'manager_denied_write',
 ]);
 const EVENT_TYPE_OPTIONS: readonly string[] = ALL_AUDIT_EVENT_TYPES.filter(
   (t) => !NEVER_EMITTED_EVENT_TYPES.has(t),

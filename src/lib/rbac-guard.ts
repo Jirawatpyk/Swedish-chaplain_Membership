@@ -1,6 +1,24 @@
 /**
  * RBAC guard for API routes + server actions (T084, spec FR-003 / US2).
  *
+ * ## RETIRED by 016 (RBAC v2) — no live call sites
+ *
+ * `requireRole` is reached only from `requireAdminContext`
+ * (`src/lib/admin-context.ts`), and the PR-2 sweep removed that helper's last
+ * call site: every staff surface now goes through `requireApiPermission` /
+ * `requirePagePermission` in `src/lib/rbac.ts`. Both files are kept until PR 5
+ * so the legacy leg has a reference implementation and pre-016 audit rows stay
+ * explicable — but nothing below emits any more. Three signals retired with it
+ * (all recorded in `docs/observability.md`):
+ *
+ *   - audit event `manager_denied_write` → superseded by `permission_denied`
+ *   - metric `auth_manager_denied_write_total` → `rbac_permission_denied_total`
+ *   - metric `auth_rbac_denied_total` → same
+ *
+ * Delete this file together with the compatibility shim in PR 5.
+ *
+ * ---
+ *
  * Call AFTER `getCurrentSession()` / `requireSession()`. Validates the
  * authenticated user's role against the Domain policy `canAccess()`
  * and, on denial, emits a `manager_denied_write` audit event and

@@ -192,6 +192,74 @@ describe('contract: POST /api/auth/users/[id]/role (T113)', () => {
     expect(res.status).toBe(409);
   });
 
+  /**
+   * 016 review C2 — the § 7.1 step-2 gate was implemented but never EXECUTED
+   * by any test: `findByIdMock` resolves `null` everywhere, so
+   * `if (target && isStaffRole(target.role))` was always false and deleting
+   * the whole block left the suite green. Post-cutover on the flag-ON leg that
+   * is privilege escalation — a plain admin holds `users.member_accounts` and
+   * would sail through step 1 to demote a super_admin.
+   *
+   * These three cases pin the branch by OUTCOME, not by call shape:
+   * a staff target must consult `users.manage` and honour its rejection;
+   * a member target must not consult it at all.
+   */
+  describe('§ 7.1 step-2 per-TARGET escalation gate', () => {
+    it('staff-role TARGET consults users.manage and returns its rejection', async () => {
+      requireApiPermissionMock
+        .mockResolvedValueOnce(adminContext) // step 1 — users.member_accounts
+        .mockResolvedValueOnce({
+          // step 2 — users.manage (super-admin-only on the ON leg)
+          response: NextResponse.json({ error: 'forbidden' }, { status: 403 }),
+        });
+      findByIdMock.mockResolvedValueOnce({ id: 'target-1', role: 'super_admin' } as never);
+
+      const { POST } = await import('@/app/api/auth/users/[id]/role/route');
+      const res = await POST(makeRequest({ newRole: 'manager' }), { params: routeParams });
+
+      expect(res.status).toBe(403);
+      expect(changeRoleMock).not.toHaveBeenCalled();
+      expect(requireApiPermissionMock).toHaveBeenCalledTimes(2);
+      expect(requireApiPermissionMock).toHaveBeenNthCalledWith(
+        2,
+        expect.anything(),
+        'users.manage',
+        { kind: 'mappedLegacy', resource: 'auth:user', action: 'write' },
+      );
+    });
+
+    it('member TARGET never consults users.manage (step 1 alone authorises)', async () => {
+      requireApiPermissionMock.mockResolvedValue(adminContext);
+      findByIdMock.mockResolvedValueOnce({ id: 'target-1', role: 'member' } as never);
+      changeRoleMock.mockResolvedValueOnce(ok({ sessionsRevoked: 0 }));
+
+      const { POST } = await import('@/app/api/auth/users/[id]/role/route');
+      const res = await POST(makeRequest({ newRole: 'member' }), { params: routeParams });
+
+      expect(res.status).toBe(200);
+      expect(requireApiPermissionMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('PROMOTING a member to a staff role consults users.manage (direction-independent)', async () => {
+      // The target row is a member, but the REQUESTED role is staff — without
+      // the `isStaffRole(newRole)` half of the condition an admin could mint a
+      // new super_admin through the member-accounts key alone.
+      requireApiPermissionMock
+        .mockResolvedValueOnce(adminContext)
+        .mockResolvedValueOnce({
+          response: NextResponse.json({ error: 'forbidden' }, { status: 403 }),
+        });
+      findByIdMock.mockResolvedValueOnce({ id: 'target-1', role: 'member' } as never);
+
+      const { POST } = await import('@/app/api/auth/users/[id]/role/route');
+      const res = await POST(makeRequest({ newRole: 'admin' }), { params: routeParams });
+
+      expect(res.status).toBe(403);
+      expect(changeRoleMock).not.toHaveBeenCalled();
+      expect(requireApiPermissionMock).toHaveBeenCalledTimes(2);
+    });
+  });
+
   // N4 (Round 3) — B3 outer try/catch.
   it('500 with requestId when change-role throws (infra error)', async () => {
     const { assertRoute500WithRequestId } = await import(

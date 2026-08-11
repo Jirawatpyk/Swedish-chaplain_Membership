@@ -30,7 +30,7 @@ vi.mock('@/lib/tenant-context', () => ({
 }));
 // 016 T028 — the route loads the TARGET row to pick the per-target permission
 // (§ 7.1). Default null = step-2 gate skipped; mocked so no real db is touched.
-const findByIdMock = vi.fn(async (..._args: unknown[]) => null);
+const findByIdMock = vi.fn(async (..._args: unknown[]): Promise<unknown> => null);
 vi.mock('@/lib/auth-deps', () => ({
   userRepo: { findById: (...args: unknown[]) => findByIdMock(...args) },
 }));
@@ -106,4 +106,47 @@ describe('contract: POST /api/auth/users/[id]/revoke-invite (Task 4)', () => {
     expect(res.status).toBe(401);
     expect(revokeInvitationMock).not.toHaveBeenCalled();
   });
+
+  /**
+   * 016 review C2 — the § 7.1 step-2 gate was implemented but never EXECUTED:
+   * `findByIdMock` resolves `null` everywhere, so the staff-target branch was
+   * always false and deleting the block left the suite green. On the flag-ON
+   * leg that is privilege escalation — a plain admin holds
+   * `users.member_accounts` and would sail through step 1 onto a staff row.
+   */
+  describe('§ 7.1 step-2 per-TARGET escalation gate', () => {
+    it('staff-role TARGET consults users.manage and returns its rejection', async () => {
+      requireApiPermissionMock
+        .mockResolvedValueOnce(adminContext)
+        .mockResolvedValueOnce({
+          response: NextResponse.json({ error: 'forbidden' }, { status: 403 }),
+        });
+      findByIdMock.mockResolvedValueOnce({ id: 'target-1', role: 'super_admin' });
+
+      const { POST } = await import('@/app/api/auth/users/[id]/revoke-invite/route');
+      const res = await POST(makeRequest('user-1'), makeParams('user-1'));
+
+      expect(res.status).toBe(403);
+      expect(revokeInvitationMock).not.toHaveBeenCalled();
+      expect(requireApiPermissionMock).toHaveBeenCalledTimes(2);
+      expect(requireApiPermissionMock).toHaveBeenNthCalledWith(
+        2,
+        expect.anything(),
+        'users.manage',
+        { kind: 'mappedLegacy', resource: 'auth:user', action: 'write' },
+      );
+    });
+
+    it('member TARGET never consults users.manage (step 1 alone authorises)', async () => {
+      requireApiPermissionMock.mockResolvedValue(adminContext);
+      findByIdMock.mockResolvedValueOnce({ id: 'target-1', role: 'member' });
+      revokeInvitationMock.mockResolvedValueOnce(ok({}));
+
+      const { POST } = await import('@/app/api/auth/users/[id]/revoke-invite/route');
+      await POST(makeRequest('user-1'), makeParams('user-1'));
+
+      expect(requireApiPermissionMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
 });

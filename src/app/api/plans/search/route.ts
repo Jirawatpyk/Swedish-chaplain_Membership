@@ -152,6 +152,8 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     // while `POST /api/refunds/initiate` (the action these entries launch)
     // still admitted them. `legacyAdminOnly` reproduces the pre-016 arm
     // byte-for-byte; the ON leg follows `refunds.write`.
+    // rbac-subgate-ok: an optional SECTION of an already-authorised palette
+    // response, not admission to the surface (that is the `plans.read` gate).
     if (canPerform(ctx.current.user.role, 'refunds.write', legacyAdminOnly)) {
       try {
         const invoiceDeps = makeListInvoicesDeps(tenant.slug);

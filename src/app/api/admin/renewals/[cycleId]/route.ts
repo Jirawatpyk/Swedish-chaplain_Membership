@@ -35,6 +35,9 @@ export async function GET(
   // 016 T030 — the LITERAL role (the old ternary demoted a promoted
   // super_admin to 'manager'). The gate admits exactly the schema's
   // population; anything else here is a gate bug — fail loudly.
+  // rbac-narrow-ok: a TYPE narrow onto the use-case's zod population, not an
+  // authorization decision — it admits exactly what the gate above admits, so
+  // it can only fire if the gate itself regressed.
   const sessionRole = ctx.current.user.role;
   if (sessionRole !== 'admin' && sessionRole !== 'manager' && sessionRole !== 'super_admin') {
     return errorResponse({

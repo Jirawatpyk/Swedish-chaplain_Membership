@@ -63,6 +63,8 @@ export async function GET(
   // Write surfaces (edit/create forms) are members.write-gated and unaffected.
   const includeDob =
     url.searchParams.get('include') === 'date_of_birth' &&
+    // rbac-subgate-ok: gates the DoB FIELD of an already-authorised response,
+    // not admission to the surface (that is the `members.read` gate above).
     canPerform(ctx.current.user.role, 'members.pii_sensitive', legacyAdminOnly);
 
   const tenant = resolveTenantFromRequest(request);

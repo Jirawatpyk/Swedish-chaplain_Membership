@@ -146,9 +146,19 @@ UPDATE audit_log
 SET summary = '[erased-per-gdpr-art-17]',
     source_ip = NULL
 WHERE (actor_user_id = :user_id OR target_user_id = :user_id)
-  AND event_type NOT IN ('sign_in_failure', 'lockout_triggered', 'manager_denied_write');
--- The three excluded event types are retained UNREDACTED per legitimate interest
+  AND event_type NOT IN ('sign_in_failure', 'lockout_triggered', 'manager_denied_write',
+                         'permission_denied');
+-- The excluded event types are retained UNREDACTED per legitimate interest
 -- (security-incident investigation), documented in security.md T-04.
+--
+-- 016 — `permission_denied` (migration 0286) is the successor to
+-- `manager_denied_write`: since the RBAC v2 sweep it is the row EVERY staff
+-- authorization denial writes, across 46 pages and ~119 API handlers. It
+-- carries the same class of content (actor id, role, permission key, route
+-- path) and so belongs in the same exclusion. `manager_denied_write` stays
+-- listed for rows written before the sweep. Omitting the successor would have
+-- pulled denial rows into subject-access exports that the equivalent class was
+-- deliberately kept out of.
 ```
 
 **What stays vs. what goes**:

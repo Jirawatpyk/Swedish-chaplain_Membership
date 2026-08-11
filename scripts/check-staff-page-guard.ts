@@ -65,7 +65,12 @@ function walk(dir: string, out: string[] = []): string[] {
  * statement, which no string literal in these pages contains.
  */
 function stripComments(src: string): string {
-  return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+  // Order is load-bearing: LINE comments first. A line comment containing `/**`
+  // (this repo has prose referencing route globs like `/admin/events/**`) makes
+  // a block-first regex latch onto that `/*` and swallow hundreds of lines,
+  // hiding the very guard this gate looks for — observed for real in
+  // `api/admin/events/import/route.ts` while building the API counterpart.
+  return src.replace(/(^|[^:])\/\/[^\n]*/g, '$1').replace(/\/\*[\s\S]*?\*\//g, '');
 }
 
 /** `.../admin/plans/[year]/page.tsx` → `/admin/plans/[year]`; `(home)` → `/admin`. */
