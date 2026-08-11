@@ -23,6 +23,7 @@ import {
   OBSERVED_PAGES,
   type ObservedSurface,
 } from '../../helpers/rbac-observed-baseline';
+import { PINNED_MATRIX } from '../../helpers/rbac-pinned-matrix';
 import { hasPermission } from '@/modules/auth/domain/permissions/evaluator';
 import type { LegacyRow } from '@/modules/auth/domain/permissions/legacy-shim';
 import { ALL_PERMISSION_KEYS } from '@/modules/auth/domain/permissions/permission-catalogue';
@@ -237,5 +238,150 @@ describe('T041 per-TARGET-role cells for the six users routes (§ 7.1)', () => {
     expect(off('manager')).toBe(false);
     expect(off('marketing')).toBe(false);
     expect(off('member')).toBe(false);
+  });
+});
+
+/**
+ * T053 (016 PR 4, US3) — the MARKETING surface matrix.
+ *
+ * PR 4 makes `marketing` assignable, so its reachable set stops being theory.
+ * Everything below asserts against sources INDEPENDENT of `ROLE_BUNDLES`:
+ *
+ *   - `PINNED_MATRIX` is a hand transcription of design § 4.1, so it can
+ *     disagree with the implementation. Deriving expectations from
+ *     `ROLE_BUNDLES` instead would be a tautology — the bundle would be
+ *     asserting about itself.
+ *   - the 47-surface list is FROZEN LITERAL text, reviewed by eye once. A
+ *     computed list would re-derive the very thing under test and pass no
+ *     matter what the bundle said.
+ *
+ * MUTATION PROOF (recorded at authoring, re-run it if you touch this file):
+ * adding `'invoicing.read'` to `MARKETING_KEYS` must turn these RED. A version
+ * of this suite that survives that mutation pins nothing.
+ */
+describe('T053 marketing reachable surfaces (US3)', () => {
+  it('every surface agrees with the pinned § 4.1 design table', () => {
+    const disagreements: string[] = [];
+    for (const s of OBSERVED_BASELINE) {
+      const pinned = PINNED_MATRIX.find((r) => r.key === s.key);
+      if (!pinned) {
+        disagreements.push(`${s.surface}: key '${s.key}' missing from PINNED_MATRIX`);
+        continue;
+      }
+      // superAdminOnly keys are refused by the evaluator for every other role
+      // (contract E2), so the design's per-role column is not consulted.
+      const expected = pinned.superAdminOnly === true ? false : pinned.marketing;
+      const actual = onLeg('marketing', s);
+      if (actual !== expected) {
+        disagreements.push(
+          `${s.surface} (${s.key}): design says ${expected}, evaluator says ${actual}`,
+        );
+      }
+    }
+    expect(disagreements).toEqual([]);
+  });
+
+  /**
+   * Anti-circularity anchor. Reviewed by eye at authoring: no money surface
+   * (`/admin/invoices`, `/admin/plans`, `/admin/renewals`, refunds,
+   * credit-notes), no PII egress (`export.zip`, `data-export`,
+   * `/admin/directory`), no compliance surface (erasure, audit), and no
+   * `/admin/users` appears below. Two entries look surprising and are
+   * deliberate, both keyed on something marketing legitimately holds:
+   * `GET /api/plans/[year]/[planId]/affected-members` is keyed `members.read`,
+   * and `POST /api/admin/members/[id]/broadcasts-halt-clear` is keyed
+   * `broadcasts.write`. `/admin/settings` is reachable but every child denies —
+   * T064/D-8 filters that index so it is not a dead end.
+   */
+  const MARKETING_REACHABLE: readonly string[] = [
+    '/admin',
+    '/admin/account',
+    '/admin/broadcasts',
+    '/admin/broadcasts/[id]',
+    '/admin/broadcasts/new',
+    '/admin/broadcasts/templates',
+    '/admin/broadcasts/templates/[id]/edit',
+    '/admin/broadcasts/templates/new',
+    '/admin/events',
+    '/admin/events/[eventId]',
+    '/admin/events/import',
+    '/admin/events/import/history',
+    '/admin/members',
+    '/admin/members/[memberId]',
+    '/admin/members/[memberId]/benefits',
+    '/admin/members/[memberId]/timeline',
+    '/admin/settings',
+    'DELETE /api/admin/broadcasts/templates/[id]',
+    'GET /api/admin/broadcasts',
+    'GET /api/admin/broadcasts/sla-stats',
+    'GET /api/admin/broadcasts/templates',
+    'GET /api/admin/events',
+    'GET /api/admin/events/[eventId]',
+    'GET /api/admin/events/import/[recordId]/error-csv',
+    'GET /api/admin/events/import/history',
+    'GET /api/admin/members/search',
+    'GET /api/geo/postal/[code]',
+    'GET /api/members',
+    'GET /api/members/[memberId]',
+    'GET /api/members/[memberId]/timeline',
+    'GET /api/members/ids',
+    'GET /api/plans/[year]/[planId]/affected-members',
+    'PATCH /api/admin/broadcasts/templates/[id]',
+    'POST /api/admin/broadcasts/[id]/accept-partial',
+    'POST /api/admin/broadcasts/[id]/approve',
+    'POST /api/admin/broadcasts/[id]/cancel',
+    'POST /api/admin/broadcasts/[id]/reject',
+    'POST /api/admin/broadcasts/[id]/retry',
+    'POST /api/admin/broadcasts/proxy-submit',
+    'POST /api/admin/broadcasts/templates',
+    'POST /api/admin/events',
+    'POST /api/admin/events/[eventId]/archive',
+    'POST /api/admin/events/[eventId]/toggle-cultural-event',
+    'POST /api/admin/events/[eventId]/toggle-partner-benefit',
+    'POST /api/admin/events/import',
+    'POST /api/admin/insights/dismiss',
+    'POST /api/admin/members/[id]/broadcasts-halt-clear',
+  ];
+
+  it('reaches EXACTLY the frozen 47-surface set — nothing more, nothing less', () => {
+    const actual = OBSERVED_BASELINE.filter((s) => onLeg('marketing', s))
+      .map((s) => s.surface)
+      .sort();
+    expect(actual).toEqual([...MARKETING_REACHABLE].sort());
+  });
+
+  /**
+   * Named denials. The frozen list above already implies these, but naming the
+   * money/PII/compliance surfaces explicitly means a future edit that widens
+   * one of them fails with a message that says WHAT was widened, instead of a
+   * 47-line array diff nobody reads.
+   */
+  const MUST_DENY_MARKETING: readonly string[] = [
+    // money
+    '/admin/invoices',
+    '/admin/credit-notes',
+    '/admin/plans',
+    '/admin/renewals',
+    'POST /api/invoices',
+    'POST /api/refunds/initiate',
+    'POST /api/credit-notes',
+    // PII egress
+    'GET /api/admin/members/export.zip',
+    'POST /api/admin/members/[id]/data-export',
+    '/admin/directory',
+    'POST /api/admin/directory/exports',
+    // compliance / administration
+    '/admin/audit',
+    '/admin/users',
+    '/admin/compliance/erasure-log',
+    '/admin/settings/invoicing',
+    'POST /api/members/[memberId]/erase',
+    'POST /api/admin/events/[eventId]/registrations/[registrationId]/relink',
+  ];
+
+  it.each(MUST_DENY_MARKETING)('denies marketing on %s', (surface) => {
+    const s = OBSERVED_BASELINE.find((x) => x.surface === surface);
+    expect(s, `${surface} is not in the frozen baseline — did it get renamed?`).toBeDefined();
+    expect(onLeg('marketing', s!)).toBe(false);
   });
 });
