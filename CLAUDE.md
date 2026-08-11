@@ -145,7 +145,7 @@ pnpm db:verify                 # assert the live schema matches expectations (pr
 pnpm build                     # production build
 ```
 
-Full gate list — run this before shipping anything non-trivial. **CI covers the hermetic half only**: `quality-gates.yml` runs `lint` + `next typegen` + `typecheck` + `check:i18n`/`layout`/`fixme`/`dates`/`env-example`/`env-boot` + the unit+contract suite (sharded ×2) on every PR and push to `main`; the other workflows are `architecture-guards`, nightly F7+F8 multi-tenant readiness, template-seed drift, Neon preview cleanup. **Integration, e2e and coverage have no CI job** — those remain local-only, so budget >1 h end-to-end here:
+Full gate list — run this before shipping anything non-trivial. CI runs: `quality-gates.yml` (`lint` + `next typegen` + `typecheck` + `check:i18n`/`layout`/`fixme`/`dates`/`env-example`/`env-boot` + the unit+contract suite sharded ×2 + the RBAC contract matrix under `FEATURE_RBAC_V2=false|true`), `architecture-guards`, **`integration-smoke.yml` (tenant isolation + money invariants, against a disposable Neon branch — this one is REQUIRED on `main`)**, plus nightly F7+F8 multi-tenant readiness, template-seed drift, and Neon preview cleanup. **e2e and coverage still have no CI job** — those remain local-only, so budget >1 h end-to-end here:
 
 ```bash
 pnpm lint && pnpm typecheck && pnpm test:coverage && pnpm check:i18n && pnpm check:layout && pnpm check:fixme && pnpm check:template-seed && pnpm test:integration && pnpm test:e2e
@@ -197,7 +197,7 @@ Use `[Spec Kit]` prefix on commits that move a feature through a gate (`[Spec Ki
 - **Commits**: Conventional Commits, enforced by commit-msg hook. Use `[Spec Kit]` prefix for Spec Kit workflow commits.
 - **Branches**: one feature per branch (`nnn-feature-name`); spec directory name matches exactly (e.g. `001-auth-rbac`).
 - **PR review**: ≥1 reviewer normal, **≥2 for security-sensitive** (auth, RBAC, payment, PII, audit log, GDPR surfaces). One of the two signs the security checklist.
-- **`main` is protected** (since 2026-07-28): 4 required status checks — `Lint · typecheck · static gates`, `Unit + contract (shard 1/2)`, `(shard 2/2)`, `Architecture governance tests`. No required reviewers (solo-maintainer substitute), `enforce_admins: false` so an admin can still override for a hotfix; force-push and branch deletion are blocked.
+- **`main` is protected** (since 2026-07-28): **5** required status checks — `Lint · typecheck · static gates`, `Unit + contract (shard 1/2)`, `(shard 2/2)`, `Architecture governance tests`, and `Integration smoke (tenant isolation + money invariants)`. The integration-smoke requirement means a PR that breaks `pnpm db:migrate` against a fresh Neon branch cannot merge — 016's Migration C hit exactly that. No required reviewers (solo-maintainer substitute), `enforce_admins: false` so an admin can still override for a hotfix; force-push and branch deletion are blocked. Verify the live list with `gh api repos/Jirawatpyk/Swedish-chaplain_Membership/branches/main/protection --jq '.required_status_checks.contexts'` rather than trusting this line.
 - **Timestamps**: always store **ISO 8601 UTC (Gregorian)**. Thai Buddhist Era (BE = CE + 543) is **display-only** for `th-TH` user-facing surfaces. Mixing BE into storage is a ship blocker (off-by-543-years class).
 - **Primary currency THB**; SEK/EUR/USD presentable where applicable. Thai tax invoices need VAT 7%, tax IDs on both parties, TH language, sequential tax-receipt numbering (F4 surface).
 
@@ -299,6 +299,7 @@ Use `[Spec Kit]` prefix on commits that move a feature through a gate (`[Spec Ki
 
 Full per-feature provenance (F1–F8 + every F7.1a/b review round) is archived in [`docs/changelog.md`](docs/changelog.md). Rolling summary:
 
+- **016-rbac-permissions: RBAC v2 SHIPPED + CUTOVER COMPLETE IN PRODUCTION (2026-08-11).** Roles widened 3→5 (`+super_admin`, `+marketing`); ~175 authorization sites converted to positive permission checks against a 40-key catalogue + per-role bundles (pure Domain data). PR #323 shipped the feature dark (flag absent = frozen legacy shim rows, byte-identical); the operator session then pre-minted a super_admin, flipped `FEATURE_RBAC_V2=true`, passed the verification walk (plain admin denied exactly the four D4-narrowed surfaces, denial trail matching `INTENTIONAL_NARROWINGS` with zero unexpected pairs), and merged PR #324 (Migration C) which promoted every human admin. Prod now runs 3 `super_admin` + 3 system actors; `users.manage` / `audit.read` / `settings.invoicing` / erasure surfaces are super-admin-only. Full log: `docs/runbooks/rbac-v2-cutover.md` § 9. **Still open: PR 4** (marketing role assignable, declarative nav `requiredPermission`, insights engagement/finance split, flag default→ON) **and PR 5** (delete the legacy leg + shim + façade + the D7 gate + the Vercel env var). The T045/T046 persona E2E suites are authored but have **never executed** — see tasks.md T051.
 - 015-admin-dashboard: F9 Admin Dashboard SHIPPED (PR #29) — go-live gate CLEARED; insights / audit-viewer / timeline / benefit-usage / directory + E-Book/JSON export.
 - 088-invoice-tax-flow-redesign: SHIPPED to prod (#149–151, flag ON) — `bill` document type, §86/4 buyer-TIN line, WHT note, head-office / branch-code.
 - money-remediation + plan-change billing: plan changes now reach billing on all paths F3/F8/F4 (#233–#242); money tasks 8A/8B/8C+10 (#240, migrations 0268–0270).
@@ -308,4 +309,4 @@ Full per-feature provenance (F1–F8 + every F7.1a/b review round) is archived i
 - 012-eventcreate-integration: F6 EventCreate Integration SHIPPED (PR #26) + flag-flipped to production 2026-05-19 — CSV attendee import + webhook ingest + benefit-quota tracking; F8 at-risk bridge port live-wired.
 - 011-renewal-reminders: F8 Renewal Tracking + Smart Reminders SHIPPED (PR #24) — pipeline dashboard, tier-aware reminder schedule, 8-factor at-risk scoring, auto tier-upgrade, manual escalation queue.
 
-Last updated: 2026-08-10 (F9 + 055 member-number shipped, go-live gate cleared / SweCham launching, post-F9 money / renewal / tax / members work; full history → docs/changelog.md)
+Last updated: 2026-08-11 (016 RBAC v2 shipped + production cutover COMPLETE — 5 roles live, super-admin-only surfaces enforced; PR 4/PR 5 outstanding; full history → docs/changelog.md)
