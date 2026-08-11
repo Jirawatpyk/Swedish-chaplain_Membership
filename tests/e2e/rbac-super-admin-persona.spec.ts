@@ -126,8 +126,21 @@ test.describe('T046 RBAC v2 — super_admin persona (ON leg) @a11y', () => {
     // It also directly proves the D16 client mirror fix — before it, a promoted
     // super_admin fell through a raw `role === 'admin'` check and received
     // `actions: []`, leaving this option missing while the server sent it.
+    //
+    // Wait for the SEARCH RESPONSE rather than racing the default expect
+    // timeout: the palette debounces through `useDeferredValue` and then fetches
+    // /api/plans/search, whose first hit pays a Turbopack cold compile. Without
+    // this the test is flaky — it failed once and passed on retry during the
+    // first real execution of this suite.
+    const searchDone = page.waitForResponse(
+      (r) => r.url().includes('/api/plans/search') && r.status() === 200,
+      { timeout: 60_000 },
+    );
     await palette.getByRole('combobox').fill('audit');
-    await expect(palette.getByRole('option', { name: /view audit log/i })).toBeVisible();
+    await searchDone;
+    await expect(palette.getByRole('option', { name: /view audit log/i })).toBeVisible({
+      timeout: 15_000,
+    });
   });
 
   test('axe-core WCAG 2.1/2.2 AA — users page + change-role picker + invite dialog', async ({

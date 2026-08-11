@@ -16,9 +16,12 @@
  * locally (some features dark) the reachable seams still run. Run with `--workers=1`.
  */
 import { expect, test } from './fixtures';
-import { signInAsAdmin } from './helpers/admin-session';
+// 016 D4 (cutover 2026-08-11): this journey opens surfaces that are now
+// superAdminOnly, so it signs in as super_admin. Post-Migration-C every human
+// admin IS a super_admin, so this is also the realistic operator persona.
+import { signInAsSuperAdmin } from './helpers/admin-session';
 
-const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
+const ADMIN_EMAIL = process.env.E2E_SUPER_ADMIN_EMAIL;
 const F5 = process.env.FEATURE_F5_ONLINE_PAYMENT === 'true';
 const F7 = process.env.FEATURE_F7_BROADCASTS === 'true';
 const F8 = process.env.FEATURE_F8_RENEWALS === 'true';
@@ -33,7 +36,7 @@ test.describe('Journey — admin golden path across module seams @journey', () =
   test.beforeAll(() => {
     if (!ADMIN_EMAIL) {
       throw new Error(
-        'E2E_ADMIN_EMAIL/E2E_ADMIN_PASSWORD missing — set the seeded admin creds in .env.local before running @journey.',
+        'E2E_SUPER_ADMIN_EMAIL/E2E_SUPER_ADMIN_PASSWORD missing — set the seeded admin creds in .env.local before running @journey.',
       );
     }
   });
@@ -51,7 +54,7 @@ test.describe('Journey — admin golden path across module seams @journey', () =
     };
 
     // --- F1 — sign in (lands on /admin) ---
-    await signInAsAdmin(page);
+    await signInAsSuperAdmin(page);
 
     // --- F2 — membership plans ---
     await page.goto('/admin/plans');
@@ -82,7 +85,26 @@ test.describe('Journey — admin golden path across module seams @journey', () =
     // --- F5 — paid-online reconciliation view ---
     await gated('F5 payment reconciliation', F5, async () => {
       await page.goto('/admin/invoices?paidOnline=1');
-      await expect(page.getByTestId('paid-online-filter-chip')).toBeVisible({ timeout: 10_000 });
+
+      // The invoices filter-UX redesign (#264/#265) moved the secondary filter
+      // chips behind a "Filters" disclosure, so the paid-online chip is no
+      // longer on the page at rest — this assertion had been failing ever since,
+      // asserting a layout that no longer exists rather than a broken feature.
+      //
+      // Assert the thing the journey actually cares about first: that
+      // `?paidOnline=1` was HONOURED. The trigger's count badge reads the number
+      // of active secondary filters, so "1" proves the URL filter is applied
+      // without opening anything.
+      const moreFilters = page.getByTestId('invoice-more-filters-trigger');
+      await expect(moreFilters).toBeVisible({ timeout: 10_000 });
+      await expect(page.getByTestId('invoice-more-filters-count')).toHaveText('1');
+
+      // Then open the disclosure and confirm the chip itself reflects the active
+      // state (aria-pressed), which is what a returning operator would see.
+      await moreFilters.click();
+      const chip = page.getByTestId('paid-online-filter-chip');
+      await expect(chip).toBeVisible({ timeout: 10_000 });
+      await expect(chip).toHaveAttribute('aria-pressed', 'true');
     });
 
     // --- F7 — broadcasts admin surface ---

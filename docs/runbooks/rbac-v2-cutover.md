@@ -115,7 +115,12 @@ Only after section 4 passes:
 
 2. Merge that branch to `main` → the production deploy applies it via `vercel-build`. The D7 gate allows it because `FEATURE_RBAC_V2=true` is now set. (The same deploy with the flag unset exits 1 by design — that is the D7 guarantee.)
 
-   **Expect a RED Vercel PREVIEW on this branch.** Preview deployments do not carry the production `FEATURE_RBAC_V2=true`, so the D7 gate correctly refuses there and the preview build fails. That is the gate working, not a regression — do not "fix" it by relaxing the gate. Only the production deploy matters for this step.
+   **The preview + CI outcome depends on where the flag is scoped.** The D7 gate refuses wherever the promotion is pending and `FEATURE_RBAC_V2 !== 'true'`, which includes any environment that does not carry the flag:
+
+   - **Vercel PREVIEW** — red if the env var is scoped to Production only; green if it is set for all environments (Vercel's default when you do not narrow the scope). On the 2026-08-11 SweCham cutover it was set for all environments and the preview passed, applying the promotion to that PR's disposable Neon branch. Either outcome is correct behaviour.
+   - **CI `Integration smoke`** — this one is NOT optional to handle. `.github/actions/ci-neon-env` seeds `.env.local` from `.env.example`, which ships `FEATURE_RBAC_V2="false"`, and a disposable CI Neon branch never carries the production flag. Once the promotion is journaled on `main` the gate therefore refuses **every** CI migrate, permanently, on every future PR — and `Integration smoke` is a required check. The fix already landed: the `Apply migrations` step sets the flag for itself only (test steps keep their own env). If you are cutting over a NEW tenant and see that check go red, this is why.
+
+   **Whatever goes red, do not relax the gate to make it green.** It is the only technical mechanism standing between a stray deploy and an un-flagged promotion (FR-008 / SC-006). Only the production deploy matters for this step.
 
    **Then confirm the promotion actually ran** — never trust the "✓ Migrations applied" line alone:
 
@@ -193,7 +198,54 @@ Permission bundles are **code** (`src/modules/auth/domain/permissions/role-bundl
 
 Never edit bundles via data or env — Phase 1 has no DB-driven bundles by design (§ 13 re-open triggers documented in the design doc).
 
-## 9. Cutover log template
+## 9. Cutover log
+
+### SweCham / TSCC — executed 2026-08-11 ✅ COMPLETE
+
+```text
+RBAC v2 cutover — 2026-08-11 (Asia/Bangkok)
+[x] PR #323 (feature, ships dark) merged: df3f25908 — CI 9/9, flag absent → zero behaviour change
+[x] prod migrations verified applied: 0285 (role enum += super_admin, marketing),
+    0286 (audit_event_type += permission_denied; users_last_admin_guard = UNION body)
+[x] pre-mint: jirawat.pyk@gmail.com — user id beb20aff-2614-466d-9614-5193d82fa345
+    (dedicated break-glass identity; the two live admins were left alone for Migration C)
+[x] flag ON: FEATURE_RBAC_V2=true set in Vercel + redeploy
+[x] verification walk: PASS
+      plain admin (jirawat.p@eqho.com) → not-found on ALL FOUR D4 surfaces
+        /admin/users · /admin/audit · /admin/settings/invoicing · /admin/compliance/erasure-log
+      same account → /admin/invoices · /admin/members · /admin/renewals · /admin all render
+      sweep signature confirmed live: anonymous GET /api/admin/audit/export.csv → 401 no-session
+[x] denial-trail check: baseline-only? YES — exactly 4 permission_denied pairs, all four
+    present in INTENTIONAL_NARROWINGS. Payload shape as pinned (role/permission/route,
+    no query string, no PII). Zero unexpected pairs → no abort criterion met.
+[x] Migration C `when` re-validated vs journal max: main max 1798541400000 → used 1798541500000
+    (prefix 0287 re-checked free; D7 gate re-run against the real repo state:
+     flag unset → REFUSE, 'false' → REFUSE, 'true' → PROCEED)
+[x] Migration C merged: PR #324, commit 3319a03b1
+[x] promotion PROVED applied (not inferred from the runner's success line):
+      select count(*) from drizzle.__drizzle_migrations where created_at = 1798541500000  → 1
+[x] post-C assertions: (a) human plain-admins = 0 ✓ · (b) 3 system actors still admin/disabled ✓
+    · (c) incoherent open invitations = 0 ✓
+[x] post-C live re-verification: jirawat.p@eqho.com signs in as role=super_admin and reaches
+    all four previously-denied surfaces; money/member surfaces unaffected
+[ ] PR-4 (later): prod env var verified unset-or-'true' before the default-ON deploy
+[ ] PR-5 (later): FEATURE_RBAC_V2 env var DELETED from Vercel
+
+Final population: super_admin/active = 3 (2 promoted + 1 pre-minted) · admin/disabled = 3
+(system actors, excluded by the reserved-namespace predicate) · zero human plain-admins.
+
+NOT DONE — carried forward, see § 10:
+  - T051 dev-branch rehearsal was SKIPPED. The prod verification walk superseded its
+    de-risking purpose, but the consequence stands: the T045/T046 persona E2E suites have
+    never executed anywhere. They remain authored-but-unproven.
+  - Five pre-existing E2E specs still sign in as `admin` and open D4-narrowed surfaces
+    (admin-erasure-log, f9-audit, invoices/invoice-settings, admin-journey,
+    breadcrumb-navigation). On the ON leg those assertions are false. If Migration C is ever
+    applied to the dev branch, re-run scripts/seed-e2e-user.ts IMMEDIATELY — otherwise the
+    promoted e2e-admin turns those suites GREEN while proving nothing.
+```
+
+### Template (for the next tenant)
 
 ```text
 RBAC v2 cutover — <date>
