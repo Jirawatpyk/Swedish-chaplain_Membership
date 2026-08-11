@@ -14,8 +14,11 @@
  */
 import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
-import { requirePagePermission } from '@/lib/rbac';
-import { legacySessionOnly } from '@/modules/auth/domain/permissions/legacy-shim';
+import { canPerform, requirePagePermission } from '@/lib/rbac';
+import {
+  legacyAdminOnly,
+  legacySessionOnly,
+} from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { headers } from 'next/headers';
 import {
@@ -153,10 +156,14 @@ export default async function InvoiceSettingsPage() {
           <InvoiceSettingsForm
             initialValues={initialValues}
             // Server-derived write authorization (never a role literal in the
-            // client). PR 2 replaces this expression with
-            // hasPermission(role, 'settings.invoicing', …) — the boolean shape
-            // means the component itself needs no change then.
-            canEdit={currentUser.role === 'admin'}
+            // client). 016 review I13: the PR-2 tripwire that used to sit here
+            // had already fired without being actioned, so the expression is
+            // now evaluator-derived. `legacyAdminOnly` reproduces the pre-016
+            // admin-only projection byte-for-byte (the PAGE itself is
+            // session-only, so manager still READS these settings) while
+            // admitting a promoted super_admin; the ON leg follows
+            // `settings.invoicing`, which is superAdminOnly by D4.
+            canEdit={canPerform(currentUser.role, 'settings.invoicing', legacyAdminOnly)}
             exists={existing !== null}
           />
         </CardContent>

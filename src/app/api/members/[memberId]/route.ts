@@ -15,7 +15,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { canPerform, requireApiPermission } from '@/lib/rbac';
-import { legacySessionOnly, mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
+import { legacyAdminOnly, mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import {
   parseIdempotencyKey,
@@ -51,14 +51,19 @@ export async function GET(
   }
 
   const url = new URL(request.url);
-  // 016 T035 — DoB is a `members.pii_sensitive` field on the flag-ON leg
-  // (any bundle lacking the key — marketing in PR 4 — gets the contact WITHOUT
-  // date_of_birth even when it asks). The OFF-leg row admits every staff role,
-  // which is today's behaviour byte-for-byte. Write surfaces (edit/create
-  // forms) are members.write-gated and unaffected.
+  // 016 T035 (corrected by review C1/I9) — DoB rides `members.pii_sensitive`.
+  // The OFF-leg row is `legacyAdminOnly`, which reproduces this route's
+  // pre-016 `role === 'admin'` projection byte-for-byte (manager has never
+  // received DoB here) while admitting a promoted `super_admin` via D16. On
+  // the ON leg any bundle lacking the key is stripped — that is MANAGER from
+  // the flag flip onward (recorded in the cutover runbook's expected-denial
+  // baseline), and marketing from PR 4. The redundant
+  // `&& role === 'admin'` conjunct that used to sit on the serialiser call
+  // made this check dead code and locked super_admin out of DoB entirely.
+  // Write surfaces (edit/create forms) are members.write-gated and unaffected.
   const includeDob =
     url.searchParams.get('include') === 'date_of_birth' &&
-    canPerform(ctx.current.user.role, 'members.pii_sensitive', legacySessionOnly);
+    canPerform(ctx.current.user.role, 'members.pii_sensitive', legacyAdminOnly);
 
   const tenant = resolveTenantFromRequest(request);
   const deps = buildMembersDeps(tenant);
@@ -90,7 +95,7 @@ export async function GET(
       ...serialiseMember(result.value.member),
       contacts: result.value.contacts.map((c) =>
         serialiseContact(c, {
-          includeDateOfBirth: includeDob && ctx.current.user.role === 'admin',
+          includeDateOfBirth: includeDob,
         }),
       ),
     },

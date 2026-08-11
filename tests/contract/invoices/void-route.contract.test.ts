@@ -22,7 +22,7 @@
  * response.
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { err } from '@/lib/result';
 
 const requireApiPermissionMock = vi.fn();
@@ -205,13 +205,22 @@ describe('contract: POST /api/invoices/[invoiceId]/void', () => {
   });
 
   it('returns 403 for a non-admin (manager) actor', async () => {
+    // 016 review C1 — manager is denied BY THE GATE, not by a role literal in
+    // the handler (that literal also 403'd super_admin, whom the frozen
+    // baseline pins as allow, and would have made voiding an issued tax
+    // invoice unreachable after Migration C). Pin the key + shim row the gate
+    // is asked for, and that its rejection is returned untouched.
     requireApiPermissionMock.mockResolvedValueOnce({
-      ...adminContext,
-      current: { ...adminContext.current, user: { ...adminContext.current.user, role: 'manager' } },
+      response: NextResponse.json({ error: { code: 'forbidden' } }, { status: 403 }),
     });
 
     const res = await callRoute(VALID_INVOICE_ID, { voidReason: 'legit reason' });
 
+    expect(requireApiPermissionMock).toHaveBeenCalledWith(
+      expect.anything(),
+      'invoicing.void',
+      { kind: 'mappedLegacy', resource: 'invoice', action: 'write' },
+    );
     expect(res.status).toBe(403);
     expect(voidInvoiceMock).not.toHaveBeenCalled();
   });

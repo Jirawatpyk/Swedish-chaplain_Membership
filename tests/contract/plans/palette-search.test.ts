@@ -28,9 +28,24 @@ const listInvoicesPagedMock = vi.fn();
 const loadInvoicePaymentActivityMock = vi.fn();
 const computeRemainingRefundableMock = vi.fn();
 
-vi.mock('@/lib/rbac', () => ({
-  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
-}));
+vi.mock('@/lib/rbac', async () => {
+  // 016 review C1 — the refundable-invoice palette arm is now evaluator-derived
+  // (`refunds.write` / legacyAdminOnly) instead of a `role === 'admin'` literal.
+  // `canPerform` delegates to the REAL pure-Domain evaluator (not the composition
+  // root, which would drag env/audit/session infrastructure into this suite), so
+  // the arm's role semantics stay under test instead of being stubbed constant.
+  const { hasPermission } = await vi.importActual<
+    typeof import('@/modules/auth/domain/permissions/evaluator')
+  >('@/modules/auth/domain/permissions/evaluator');
+  return {
+    requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
+    canPerform: (role: unknown, key: unknown, legacy: unknown) =>
+      hasPermission(role as never, key as never, {
+        rbacV2: false,
+        legacy: legacy as never,
+      }),
+  };
+});
 vi.mock('@/modules/plans/plans-deps', () => ({
   buildPlansDeps: (...args: unknown[]) => buildPlansDepsMock(...args),
 }));

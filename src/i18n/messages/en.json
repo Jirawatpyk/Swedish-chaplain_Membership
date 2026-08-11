@@ -1525,7 +1525,10 @@
           "planPlaceholder": "Select a plan…",
           "billingCycle": "Billing cycle",
           "billingCyclePlaceholder": "Select a billing cycle…",
-          "billingCycleOptions": { "calendar": "Calendar year (Jan–Dec)", "rolling": "Rolling (anniversary)" },
+          "billingCycleOptions": {
+            "calendar": "Calendar year (Jan–Dec)",
+            "rolling": "Rolling (anniversary)"
+          },
           "planYear": "Plan year",
           "registrationDate": "Registration date",
           "registrationDateHint": "Defaults to today. This date anchors the renewal cycle — back-date it for a member who joined earlier.",
@@ -2299,7 +2302,9 @@
         }
       },
       "registers": {
-        "meta": { "title": "Tax registers" },
+        "meta": {
+          "title": "Tax registers"
+        },
         "title": "Tax document registers",
         "description": "Period registers for the monthly VAT return (ภ.พ.30): §86/4 tax receipts, §105 receipts, and §80/1(5) zero-rate sales.",
         "entry": "Tax registers (ภ.พ.30)",
@@ -2310,8 +2315,13 @@
           "zeroRateSales": "§80/1(5) zero-rate sales",
           "reRegister": "§105 receipt register"
         },
-        "fields": { "from": "From", "to": "To" },
-        "actions": { "view": "View register" },
+        "fields": {
+          "from": "From",
+          "to": "To"
+        },
+        "actions": {
+          "view": "View register"
+        },
         "outputVat": {
           "title": "Period output VAT (ภ.พ.30)",
           "combined": "Net output VAT",
@@ -4169,6 +4179,7 @@
           "skipped": "Skipped"
         },
         "assigneeRole": {
+          "super_admin": "Super Admin",
           "admin": "Admin",
           "manager": "Manager",
           "executive_director": "Executive Director"
@@ -5766,7 +5777,9 @@
           "reasonHelp": "Up to 500 characters.",
           "confirm": "Cancel broadcast",
           "cancel": "Keep it",
-          "errors": { "reasonTooLong": "Reason exceeds 500 characters." }
+          "errors": {
+            "reasonTooLong": "Reason exceeds 500 characters."
+          }
         },
         "toast": {
           "cancelled": "Broadcast cancelled.",

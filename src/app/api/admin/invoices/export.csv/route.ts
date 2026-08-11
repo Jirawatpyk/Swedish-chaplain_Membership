@@ -2,7 +2,8 @@
  * Phase 3 of the F4 receipt-surface plan — GET
  * `/api/admin/invoices/export.csv?from=YYYY-MM-DD&to=YYYY-MM-DD`.
  *
- * Admin-only (manager + member → 404). Streams a CSV of every paid
+ * Staff read surface — `invoicing.read` (admin + manager allowed on both legs;
+ * member/marketing 403; anonymous 401). Streams a CSV of every paid
  * invoice whose `paidAt` (Bangkok-local YYYY-MM-DD) falls inside the
  * inclusive range. The CSV is encoded UTF-8 with a leading BOM so
  * Excel-TH renders Thai legal names without forcing the import wizard.

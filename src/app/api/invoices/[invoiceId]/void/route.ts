@@ -60,12 +60,14 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ invoiceId: string }> },
 ): Promise<NextResponse> {
+  // Manager is read-only on finance (Constitution) — enforced BY THE GATE on
+  // both legs (OFF: `canAccess(manager,'invoice','write')` false; ON:
+  // `invoicing.void` absent from the manager bundle). The redundant
+  // `role !== 'admin'` arm removed here 403'd `super_admin`, whom the frozen
+  // baseline pins as `allow`, which would have made voiding an issued tax
+  // invoice unreachable by any human after Migration C (016 review C1).
   const ctx = await requireApiPermission(request, 'invoicing.void', mappedLegacy('invoice', 'write'));
   if ('response' in ctx) return ctx.response;
-  // Manager role is read-only on finance per Constitution.
-  if (ctx.current.user.role !== 'admin') {
-    return NextResponse.json({ error: { code: 'forbidden' } }, { status: 403 });
-  }
 
   const { invoiceId } = await params;
   // Validate the path param up front. The wide `voidInvoiceSchema` used to do

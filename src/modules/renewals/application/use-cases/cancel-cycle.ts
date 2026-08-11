@@ -44,7 +44,11 @@ export const cancelCycleInputSchema = z.object({
   cycleId: z.string().uuid(),
   reason: z.string().min(1).max(500),
   actorUserId: z.string().min(1),
-  actorRole: z.enum(['admin']),
+  // 016 review I4 — super_admin included: Migration C promotes every human
+  // admin, and this value is stamped into the money-path audit trail. A
+  // hardcoded 'admin' would attribute every post-cutover cancellation to a
+  // role the actor no longer holds.
+  actorRole: z.enum(['admin', 'super_admin']),
   requestId: z.string().nullable().optional(),
   correlationId: z.string().min(1),
 });

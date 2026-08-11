@@ -10,14 +10,19 @@
  * urgency-first (overdue > in-progress > complete), with a status-filter nav,
  * an SCCM member-number search, and a breach / all-clear banner.
  *
- * RBAC (CWE-285 carry-forward from Task 2): ADMIN-ONLY. Chamber-OS has no
- * distinct DPO role, so the admin acts as DPO. `requireAdminContext`
- * (`src/lib/admin-context.ts`) is a ROUTE-HANDLER helper (returns a
- * `NextResponse`) and does NOT work in an RSC page; the F9 audit page's
- * `requireSession('staff')` ALSO admits `manager`. So this page MUST do
- * `requireSession('staff')` THEN `if (user.role !== 'admin') notFound()` — a
- * bare staff-gate would LEAK erasure evidence (PII + identity-verification
- * attestations) to managers.
+ * RBAC (CWE-285 carry-forward from Task 2): gated by
+ * `requirePagePermission('members.erasure_log_read', legacyAdminOnly)`. A bare
+ * staff gate would LEAK erasure evidence (PII + identity-verification
+ * attestations) to managers, so the shim row is `legacyAdminOnly`, not
+ * `legacySessionOnly`.
+ *
+ * Per-leg outcome: flag OFF admits admin (and, via D16, a promoted
+ * super_admin) and 404s everyone else — byte-identical to the pre-016
+ * `requireSession('staff')` + `role !== 'admin'` pair this replaced. Flag ON
+ * narrows further: `members.erasure_log_read` is `superAdminOnly`, so plain
+ * admin is denied too — a DECLARED narrowing (`INTENTIONAL_NARROWINGS`), not a
+ * regression. Do not "restore" a role literal here; the gate is the contract
+ * and `scripts/check-staff-page-guard.ts` pins it against the frozen baseline.
  *
  * UNGATED: US3-D is COMP-1, NOT F9 — the reused audit-viewer shell gates on
  * `FEATURE_F9_DASHBOARD`, but this page deliberately does NOT (consistent with

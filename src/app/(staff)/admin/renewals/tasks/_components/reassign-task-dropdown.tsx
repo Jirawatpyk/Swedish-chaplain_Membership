@@ -45,7 +45,13 @@ const staffUserSchema = z.object({
   id: z.string().uuid(),
   email: z.string().email(),
   display_name: z.string().nullable(),
-  role: z.enum(['admin', 'manager']),
+  // 016 review I3 — MUST stay in lockstep with the roles
+  // `GET /api/admin/users/staff-active` actually queries. That route was
+  // widened to include `super_admin` (Migration C promotes every human admin),
+  // and this schema parses the WHOLE response: one unexpected role value made
+  // `safeParse` fail, which set `loadError` and killed the reassign combobox
+  // for every staff user, not just for the super_admin row.
+  role: z.enum(['super_admin', 'admin', 'manager']),
 });
 
 const staffActiveResponseSchema = z.object({

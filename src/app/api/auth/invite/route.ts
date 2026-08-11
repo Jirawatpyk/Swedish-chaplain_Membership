@@ -10,7 +10,9 @@
  *   400 — invalid-input (including memberId+admin/manager role mismatch,
  *         or invalid memberId UUID format)
  *   401 — no-session
- *   403 — forbidden (with manager_denied_write audit emission)
+ *   403 — forbidden (recorded as a `permission_denied` audit row by
+ *         `src/lib/rbac.ts`; the pre-016 `manager_denied_write` event is no
+ *         longer emitted from this route)
  *   404 — member-not-found (memberId supplied but not visible in
  *         caller's tenant; returned as 404 to not leak existence
  *         across tenants — consistent with `get-member` pattern)

@@ -107,9 +107,39 @@ export function buildDenialAudit(input: {
   };
 }
 
+/**
+ * Plausible same-origin path shape. Deliberately excludes CR/LF (log-injection,
+ * CWE-117) and anything that is not a URL path character, and caps the length so
+ * a forged header cannot dominate the 500-char audit summary.
+ */
+const SAFE_ROUTE_PATH_RE = /^\/[A-Za-z0-9\-._~/%[\]@!$&'()*+,;=:]{0,255}$/;
+
+/**
+ * 016 review I2 — `x-pathname` is normally set by the proxy
+ * (`src/proxy.ts` sets it to `pathname + search`), but the PAGE matcher
+ * deliberately skips the proxy for Next.js router prefetch requests
+ * (`missing: next-router-prefetch / purpose: prefetch`). On those requests the
+ * header arrives straight from the CLIENT, so a signed-in caller who is about
+ * to be denied could forge the `route=` field of an append-only
+ * `permission_denied` row — the very governance artefact this gate exists to
+ * produce. (`/api/*` is exempt from that skip and uses `request.url`, so only
+ * the page leg is exposed.)
+ *
+ * Strip the query string here too, so the `routePath` contract above — "WITHOUT
+ * the query string" — is true on BOTH legs rather than only after
+ * `buildDenialAudit` re-strips it. Anything that fails the shape check is
+ * dropped rather than recorded, because an attacker-chosen string in an
+ * append-only trail is worse than a missing one.
+ */
+export function sanitiseRoutePath(raw: string | null | undefined): string {
+  if (!raw) return '';
+  const path = raw.split('?')[0] ?? '';
+  return SAFE_ROUTE_PATH_RE.test(path) ? path : '';
+}
+
 async function pathFromHeaders(): Promise<string> {
   const h = await headers();
-  return h.get('x-pathname') ?? '';
+  return sanitiseRoutePath(h.get('x-pathname'));
 }
 
 const defaultDeps: RbacDeps = {

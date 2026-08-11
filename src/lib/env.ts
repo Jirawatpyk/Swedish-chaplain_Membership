@@ -678,8 +678,11 @@ const schema = z.object({
   // Kill-switch for the positive-permission leg. FALSE (default) keeps every
   // staff surface on the pre-016 legacy leg byte for byte via the compatibility
   // shim, so PR 2 ships dark and a flip back to FALSE is a true rollback.
-  // Read ONLY here and in `src/lib/rbac.ts` — the Domain evaluator takes the
-  // flag as an explicit parameter so it stays pure (contracts § 1 purity pin).
+  // The Domain evaluator never reads it — the flag is passed in as an explicit
+  // parameter so Domain stays pure (contracts § 1 purity pin). Consumed in
+  // exactly two composition roots: `src/lib/rbac.ts` (the gate) and
+  // `src/lib/auth-deps.ts` (3 sites — the erase/disable/change-role deps that
+  // need the flag-aware administrator population). PR 5 must clear BOTH.
   // Code-default flips to TRUE in PR 4; the env var is deleted in PR 5.
   FEATURE_RBAC_V2: booleanFromString.default(false),
 

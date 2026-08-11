@@ -23,7 +23,7 @@
  * lives in `tests/integration/invoicing/credit-note-partial-accumulation.test.ts`.
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { ok, err } from '@/lib/result';
 
 const requireApiPermissionMock = vi.fn();
@@ -93,9 +93,19 @@ const ADMIN_CONTEXT = {
   requestId: 'req-cn-1',
 };
 
-const MANAGER_CONTEXT = {
+/**
+ * 016 review C1 — the frozen baseline pins this surface as
+ * `super_admin: 'allow'` (rbac-observed-baseline.ts:239). Migration C promotes
+ * every human admin to super_admin, so a residual `role !== 'admin'` deny arm
+ * behind the gate would make credit-note issuance unreachable by any human on
+ * a live-money tenant. The gate itself already denies manager on both legs.
+ */
+const SUPER_ADMIN_CONTEXT = {
   ...ADMIN_CONTEXT,
-  current: { ...ADMIN_CONTEXT.current, user: { ...ADMIN_CONTEXT.current.user, role: 'manager' } },
+  current: {
+    ...ADMIN_CONTEXT.current,
+    user: { ...ADMIN_CONTEXT.current.user, role: 'super_admin' },
+  },
 };
 
 function makeBody(overrides?: Partial<Record<string, unknown>>): string {
@@ -191,6 +201,22 @@ describe('POST /api/credit-notes — contract', () => {
     expect(cancelInFlightCyclesForMemberMock).not.toHaveBeenCalled();
   }, 30_000);
 
+  it('016 C1 — super_admin issues a credit note (baseline pins allow; post-Migration-C every human is one)', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(SUPER_ADMIN_CONTEXT);
+    rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
+    issueCreditNoteMock.mockResolvedValueOnce(
+      ok({
+        creditNote: makeCreditNoteFixture(),
+        emailDelivery: 'skipped_no_recipient',
+        membershipCancellationRequested: false,
+      }),
+    );
+    const POST = await loadHandler();
+    const res = await POST(makeReq());
+    expect(res.status).toBe(201);
+    expect(issueCreditNoteMock).toHaveBeenCalledTimes(1);
+  });
+
   it('400 invalid_json on malformed body', async () => {
     requireApiPermissionMock.mockResolvedValueOnce(ADMIN_CONTEXT);
     rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
@@ -234,12 +260,25 @@ describe('POST /api/credit-notes — contract', () => {
   });
 
   it('403 forbidden when actor role is manager', async () => {
-    requireApiPermissionMock.mockResolvedValueOnce(MANAGER_CONTEXT);
+    // 016 review C1 — manager is denied BY THE GATE, not by a role literal in
+    // the handler (the literal was removed because it also 403'd super_admin).
+    // So this pins the two things that actually keep manager out: the gate is
+    // asked for `credit_notes.write` with the finance-write shim row, and its
+    // rejection is returned untouched. Weakening either — a read key, a wider
+    // row, or ignoring the rejection — fails here.
+    requireApiPermissionMock.mockResolvedValueOnce({
+      response: NextResponse.json({ error: { code: 'forbidden' } }, { status: 403 }),
+    });
     const POST = await loadHandler();
     const res = await POST(makeReq());
     expect(res.status).toBe(403);
     expect((await res.json()).error.code).toBe('forbidden');
-    // Manager should never reach the rate limiter or the use-case.
+    expect(requireApiPermissionMock).toHaveBeenCalledWith(
+      expect.anything(),
+      'credit_notes.write',
+      { kind: 'mappedLegacy', resource: 'credit_note', action: 'write' },
+    );
+    // A denied caller never reaches the rate limiter or the use-case.
     expect(rateLimitCheckMock).not.toHaveBeenCalled();
     expect(issueCreditNoteMock).not.toHaveBeenCalled();
   });

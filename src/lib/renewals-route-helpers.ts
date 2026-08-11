@@ -7,9 +7,11 @@
  *
  * `requireRenewalAdminContext` extends `requireAdminContext` with an
  * F8-specific audit emit on the role-deny path (verify-run C1):
- * managers attempting POST cancel / mark-paid-offline get the F1
- * generic `manager_denied_write` AND the F8-contract-mandated
- * `f8_role_violation_blocked` audit (admin-renewals-api.md § 1).
+ * managers attempting POST cancel / mark-paid-offline get the generic
+ * denial row AND the F8-contract-mandated `f8_role_violation_blocked`
+ * audit (admin-renewals-api.md § 1). Since the 016 sweep the generic row is
+ * `permission_denied` (written by `src/lib/rbac.ts`), not the pre-016
+ * `manager_denied_write`.
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { randomUUID } from 'node:crypto';

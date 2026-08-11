@@ -97,12 +97,15 @@ const ERROR_STATUS: Record<IssueCreditNoteError['code'], number> = {
 };
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
+  // Manager is read-only on finance (Constitution §) — enforced BY THE GATE on
+  // both legs: OFF `canAccess(manager, 'credit_note', 'write')` is false, ON
+  // `credit_notes.write` is absent from the manager bundle. The redundant
+  // `role !== 'admin'` arm that used to sit here was a cutover landmine: it
+  // 403'd `super_admin`, whom the frozen baseline pins as `allow`, so after
+  // Migration C promotes every human admin nobody could issue a credit note
+  // (016 review C1).
   const ctx = await requireApiPermission(request, 'credit_notes.write', mappedLegacy('credit_note', 'write'));
   if ('response' in ctx) return ctx.response;
-  // Manager role is read-only on finance per Constitution §.
-  if (ctx.current.user.role !== 'admin') {
-    return NextResponse.json({ error: { code: 'forbidden' } }, { status: 403 });
-  }
 
   const tenantCtx = resolveTenantFromRequest(request);
   const requestId = requestIdFromHeaders(request.headers);

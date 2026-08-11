@@ -68,7 +68,10 @@ export async function POST(
       cycleId,
       reason: parsed.data.reason,
       actorUserId: ctx.current.user.id,
-      actorRole: 'admin',
+      // 016 review I4 — the LITERAL role. The gate above (`renewals.write`)
+      // admits admin + super_admin only, so the narrow below is a fail-loud
+      // assertion, not a policy decision.
+      actorRole: ctx.current.user.role === 'super_admin' ? 'super_admin' : 'admin',
       requestId: ctx.requestId,
       correlationId: ctx.correlationId,
     });

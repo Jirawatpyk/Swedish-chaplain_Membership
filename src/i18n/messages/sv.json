@@ -1525,7 +1525,10 @@
           "planPlaceholder": "Välj paket…",
           "billingCycle": "Faktureringscykel",
           "billingCyclePlaceholder": "Välj faktureringscykel…",
-          "billingCycleOptions": { "calendar": "Kalenderår (jan–dec)", "rolling": "Rullande (årsdag)" },
+          "billingCycleOptions": {
+            "calendar": "Kalenderår (jan–dec)",
+            "rolling": "Rullande (årsdag)"
+          },
           "planYear": "Paketår",
           "registrationDate": "Registreringsdatum",
           "registrationDateHint": "Standard är dagens datum. Detta datum är ankaret för förnyelsecykeln — backdatera det för en medlem som gick med tidigare.",
@@ -2299,7 +2302,9 @@
         }
       },
       "registers": {
-        "meta": { "title": "Skatteregister" },
+        "meta": {
+          "title": "Skatteregister"
+        },
         "title": "Skattedokumentregister",
         "description": "Periodregister för den månatliga momsdeklarationen (ภ.พ.30): §86/4-skattekvitton, §105-kvitton och §80/1(5)-nollskatteförsäljning.",
         "entry": "Skatteregister (ภ.พ.30)",
@@ -2310,8 +2315,13 @@
           "zeroRateSales": "§80/1(5) nollskatteförsäljning",
           "reRegister": "§105-kvittoregister"
         },
-        "fields": { "from": "Från", "to": "Till" },
-        "actions": { "view": "Visa register" },
+        "fields": {
+          "from": "Från",
+          "to": "Till"
+        },
+        "actions": {
+          "view": "Visa register"
+        },
         "outputVat": {
           "title": "Periodens utgående moms (ภ.พ.30)",
           "combined": "Netto utgående moms",
@@ -4169,6 +4179,7 @@
           "skipped": "Hoppad"
         },
         "assigneeRole": {
+          "super_admin": "Superadministratör",
           "admin": "Administratör",
           "manager": "Chef",
           "executive_director": "Verkställande direktör"
@@ -5766,7 +5777,9 @@
           "reasonHelp": "Upp till 500 tecken.",
           "confirm": "Avbryt utskick",
           "cancel": "Behåll det",
-          "errors": { "reasonTooLong": "Anledningen överskrider 500 tecken." }
+          "errors": {
+            "reasonTooLong": "Anledningen överskrider 500 tecken."
+          }
         },
         "toast": {
           "cancelled": "Utskicket har avbrutits.",

@@ -147,7 +147,9 @@ export async function POST(
       paymentReference: parsed.data.payment_reference,
       paymentDate: parsed.data.payment_date,
       actorUserId: ctx.current.user.id,
-      actorRole: 'admin',
+      // 016 review I4 — the LITERAL role (see cancel/route.ts). The gate above
+      // (`renewals.write`) admits admin + super_admin only.
+      actorRole: ctx.current.user.role === 'super_admin' ? 'super_admin' : 'admin',
       requestId: ctx.requestId,
       correlationId: ctx.correlationId,
     });

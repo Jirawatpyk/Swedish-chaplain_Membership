@@ -8,7 +8,8 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { requireApiPermission } from '@/lib/rbac';
-import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
+import { canPerform } from '@/lib/rbac';
+import { legacyAdminOnly, mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
@@ -146,7 +147,12 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     // augmentation: a single-module outage on this fetch must NOT
     // blank the rest of the palette (plans + members already populated).
     let refundableInvoices: readonly PaletteRefundableInvoiceEntity[] = [];
-    if (ctx.current.user.role === 'admin') {
+    // 016 review C1 — evaluator-derived instead of the `role === 'admin'`
+    // literal, which dropped this palette section for a promoted super_admin
+    // while `POST /api/refunds/initiate` (the action these entries launch)
+    // still admitted them. `legacyAdminOnly` reproduces the pre-016 arm
+    // byte-for-byte; the ON leg follows `refunds.write`.
+    if (canPerform(ctx.current.user.role, 'refunds.write', legacyAdminOnly)) {
       try {
         const invoiceDeps = makeListInvoicesDeps(tenant.slug);
         const paid = await listInvoicesPaged(invoiceDeps, {

@@ -19,6 +19,7 @@ import {
   denialSummary,
   requireApiPermission,
   requirePagePermission,
+  sanitiseRoutePath,
   type RbacDeps,
 } from '@/lib/rbac';
 import { legacyAdminOnly, legacySessionOnly } from '@/modules/auth/domain/permissions/legacy-shim';
@@ -232,5 +233,60 @@ describe('T017 the helper is the only env-flag reader', () => {
     }
     const helper = readFileSync(join(process.cwd(), 'src', 'lib', 'rbac.ts'), 'utf8');
     expect(helper).toMatch(/FEATURE_RBAC_V2|env\.features\.rbacV2/);
+  });
+});
+
+/**
+ * 016 review I2 — the page leg reads `x-pathname`, which the proxy normally
+ * sets. But `src/proxy.ts`'s PAGE matcher skips the proxy entirely for Next.js
+ * router prefetch requests (`missing: next-router-prefetch / purpose:
+ * prefetch`), so on those the header is client-supplied. Without a shape check
+ * a signed-in caller about to be denied can choose the `route=` value written
+ * into an append-only governance row. (`/api/*` never skips the proxy and uses
+ * `request.url`, so only this leg is exposed.)
+ */
+describe('T017/I2 route-path sanitisation (denial trail cannot be forged)', () => {
+  it('accepts ordinary staff paths verbatim', () => {
+    expect(sanitiseRoutePath('/admin/compliance/erasure-log')).toBe(
+      '/admin/compliance/erasure-log',
+    );
+    expect(sanitiseRoutePath('/admin/members/[memberId]/benefits')).toBe(
+      '/admin/members/[memberId]/benefits',
+    );
+  });
+
+  it('strips the query string on the PAGE leg too (proxy sets pathname+search)', () => {
+    // The contract on `RbacDeps.routePath` says "WITHOUT the query string";
+    // before this fix only the API leg honoured it, and query strings on this
+    // surface routinely carry member ids and emails.
+    expect(sanitiseRoutePath('/admin/members?q=anders@example.test')).toBe('/admin/members');
+  });
+
+  it('drops a forged CRLF payload rather than recording it (CWE-117)', () => {
+    expect(sanitiseRoutePath('/admin/x\r\nrole=super_admin permission=users.manage')).toBe('');
+  });
+
+  it('drops values that are not same-origin paths', () => {
+    expect(sanitiseRoutePath('https://evil.example/admin')).toBe('');
+    expect(sanitiseRoutePath('admin/members')).toBe('');
+    expect(sanitiseRoutePath('')).toBe('');
+    expect(sanitiseRoutePath(null)).toBe('');
+  });
+
+  it('drops an over-long value so a forgery cannot dominate the 500-char summary', () => {
+    expect(sanitiseRoutePath('/' + 'a'.repeat(300))).toBe('');
+  });
+
+  it('a dropped path still yields a well-formed summary (denial is never blocked)', () => {
+    const event = buildDenialAudit({
+      actorUserId: USER_ID,
+      role: 'manager',
+      permissionKey: 'audit.read',
+      routePath: sanitiseRoutePath('/admin\r\ninjected'),
+      requestId: 'req-1',
+      sourceIp: null,
+    });
+    expect(event.summary).toBe(denialSummary('manager', 'audit.read', ''));
+    expect(event.summary).not.toContain('injected');
   });
 });

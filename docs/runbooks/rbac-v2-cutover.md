@@ -16,14 +16,19 @@ The two legs, in one line each:
 - [ ] Migration B (0286 — `permission_denied` enum + transitional UNION trigger) is applied in prod. Verify:
 
   ```sql
-  select routine_name from information_schema.routines
-   where routine_name = 'users_last_admin_guard';
+  -- The FUNCTION has existed since migration 0003 — checking its NAME proves
+  -- nothing. Check the 0286 body: the population must be the admin ∪
+  -- super_admin union.
+  select 1 from pg_proc
+   where proname = 'users_last_admin_guard' and prosrc like '%super_admin%';
   select 1 from pg_enum e join pg_type t on t.oid = e.enumtypid
    where t.typname = 'audit_event_type' and e.enumlabel = 'permission_denied';
   ```
 
+  Both must return exactly one row.
+
 - [ ] The Migration C PR exists on its **own migration-only branch** and is **NOT merged** (D7). Its file name carries the `rbac_v2_promotion` tag the D7 gate greps for.
-- [ ] `docs/observability.md` denial-baseline alert reviewed; you know where `rbac.permission_denied_total{role, permission}` is graphed.
+- [ ] `docs/observability.md` denial-baseline alert reviewed; you know where `rbac_permission_denied_total{role, permission}` is graphed.
 - [ ] A second person (or a second session) is available for the verification walk — the window should not exceed ~1 h.
 
 ## 2. Step 1 — pre-mint the first super_admin (D18)
@@ -69,7 +74,7 @@ select summary, count(*) from audit_log
  group by summary order by count(*) desc;
 ```
 
-**Expected-denial baseline** = exactly the pairs implied by `INTENTIONAL_NARROWINGS` in `tests/helpers/rbac-observed-baseline.ts` (admin/manager on users, audit, settings.invoicing, erasure surfaces, settings.renewal_schedules for manager, plus member probes).
+**Expected-denial baseline** = exactly the pairs implied by `INTENTIONAL_NARROWINGS` in `tests/helpers/rbac-observed-baseline.ts`. **Open that file and read all 22 entries — do not work from a summary.** The ones most likely to be mistaken for an incident because they are irreversible-PII surfaces: `/admin/events/erasure`, `/admin/events/[eventId]/registrations/[registrationId]/erase` (both `events.erasure`, super-admin-only), and `GET /api/admin/members/[id]/data-export/[jobId]/download` (manager loses `members.bulk`). Also expect manager denials on `settings.renewal_schedules`, and — from the flag flip, not from PR 4 — manager losing `members.pii_sensitive`, so `GET /api/members/[id]?include=date_of_birth` returns the contact without a date of birth.
 
 **ABORT CRITERION:** any (role, permission, route) denial pair **not** in that baseline — especially any `admin` or `manager` denial on a money surface (`invoicing.*`, `refunds.*`, `renewals.*` reads) — means the matrix is wrong in production. Do not diagnose live: **roll back** (section 6, window A) and reproduce on dev.
 
@@ -82,24 +87,31 @@ Only after section 4 passes:
 3. Post-C assertions (run in the prod SQL console):
 
    ```sql
-   -- (a) zero human plain-admins remain (all promoted)
-   select count(*) from users where role = 'admin'
-     and id not in (select id from users where email like 'system+%');
-   -- (b) all three system actors untouched
-   select email, role from users where email like 'system+%';
-   -- (c) open invitations promoted coherently
+   -- (a) zero human plain-admins remain (all promoted).
+   --     System actors are seeded by scripts/seed-system-actors.ts as
+   --     `system-<name>@chamber-os.internal` with role='admin', status='disabled'
+   --     — they are NOT promoted by Migration C, so they must be excluded here
+   --     or this count reads 3 and triggers a false ABORT.
+   select count(*) from users
+    where role = 'admin' and email not like 'system-%@chamber-os.internal';
+   -- (b) system actors untouched (expect their original role='admin', status='disabled')
+   select email, role, status from users
+    where email like 'system-%@chamber-os.internal';
+   -- (c) open invitations promoted coherently.
+   --     NOTE: the column is `intended_role`, not `role`.
    select count(*) from invitations i join users u on u.id = i.user_id
-    where u.role = 'super_admin' and i.consumed_at is null and i.role <> 'super_admin';
+    where u.role = 'super_admin' and i.consumed_at is null
+      and i.intended_role <> 'super_admin';
    ```
 
-   Expected: (a) `0`, (b) system actors keep their original roles, (c) `0`.
+   Expected: (a) `0`, (b) three rows still `admin` / `disabled`, (c) `0`.
 4. Verify the trigger still refuses last-administrator removal (information_schema check from section 1 + a dry-run demote of the sole super_admin in a rolled-back transaction if you want belt-and-braces — `tests/integration/auth/last-admin-guard-transitional.test.ts` is the dev-side rehearsal).
 
 ## 6. Rollback — per window
 
 | Window | State | Rollback | Notes |
 |--------|-------|----------|-------|
-| **A. after flag flip, before Migration C** | flag ON, roles unchanged | set `FEATURE_RBAC_V2=false` + redeploy (~2 min) | TRUE rollback — byte-identical legacy behaviour returns. |
+| **A. after flag flip, before Migration C** | flag ON, roles unchanged | set `FEATURE_RBAC_V2=false` + redeploy (~2 min) | TRUE rollback for every ROLE-BASED outcome. Two shapes changed with the SWEEP, not the flag, and therefore do **not** revert: anonymous callers to `GET /api/admin/audit/export.csv` now get `401 {"error":"no-session"}` instead of a sign-in redirect, and 11 pages deny with 404 instead of 302. |
 | **B. after Migration C** | admins are now super_admins | flag OFF = **degraded-safe**: promoted super_admins evaluate as admin (D16), nobody is locked out, but D4 narrowing is gone. To fully revert, demote promoted rows (`update users set role='admin' where role='super_admin' and id <> '<pre-mint id>'`) — the trigger permits it while ≥1 administrator remains. | **Promotion floor on `vercel promote`:** never promote a pre-C deployment while post-C data exists — old code does not know `super_admin` exists in row data it may write back. Roll FORWARD (flag OFF on current code) instead. |
 | **C. after PR 4 (flag default ON)** | marketing assignable, nav declarative | emergency env `FEATURE_RBAC_V2=false` overrides the code default | **Marketing-availability note:** on the OFF leg `marketing` is DENIED on every staff surface (D16 — deliberately never mapped to manager, SEC-R3-03). Any marketing staff lose access for the duration. Accepted cost; tell them first. |
 | **D. after PR 5 (legacy leg deleted)** | single-leg evaluator | no flag rollback exists — revert = `vercel promote` to a pre-PR-5 deployment (subject to the promotion floor above) | PR 5 merges only after ≥1 clean window with no unexpected denial pairs. |
@@ -112,7 +124,7 @@ The sequence is interruptible between any two steps; each state is safe to HOLD:
 
 | Interrupted after | System state | Resume | Or abort |
 |---|---|---|---|
-| pre-mint only | 1 super_admin exists, flag OFF | continue at section 3 any time — the pre-minted SA degrades to admin semantics (D16), harmless | disable the pre-minted account (`/admin/users`) |
+| pre-mint only | 1 super_admin exists, flag OFF | continue at section 3 any time — the pre-minted SA degrades to admin semantics (D16), harmless | **DELETE** the pre-minted row (not disable). `scripts/seed-bootstrap-admin.ts` refuses whenever a super_admin row exists in ANY status, so a disabled row permanently blocks re-running the pre-mint. |
 | flag flip, walk incomplete | ON leg live, un-verified | finish the section 4 walk — do not leave it half-verified overnight | flag OFF (window A) |
 | walk failed / aborted | flag OFF again | fix on dev, restart at section 3 | — |
 | Migration C merged but deploy failed | promotion partially visible? **No** — C runs inside one deploy migration transaction; a failed deploy applied nothing. Re-deploy. | re-run deploy; D7 gate re-checks the flag | flag stays ON; no data changed |
@@ -128,7 +140,7 @@ Permission bundles are **code** (`src/modules/auth/domain/permissions/role-bundl
 2. The pinned fixture `tests/helpers/rbac-pinned-matrix.ts` + `role-bundles.test.ts` fail — update them IN THE SAME PR (that is the review artefact).
 3. If a surface's key changes, update its row in `tests/helpers/rbac-observed-baseline.ts` (`key` column only — `cells` are the flag-OFF pin and never change) + `INTENTIONAL_NARROWINGS` if the change narrows.
 4. Security review is mandatory (auth surface). Ship as a normal PR — no migration, no flag.
-5. Post-deploy: watch `rbac.permission_denied_total` for the affected role for one business day.
+5. Post-deploy: watch `rbac_permission_denied_total` for the affected role for one business day.
 
 Never edit bundles via data or env — Phase 1 has no DB-driven bundles by design (§ 13 re-open triggers documented in the design doc).
 
