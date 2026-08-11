@@ -1947,6 +1947,13 @@
       "when": 1798541400000,
       "tag": "0286_rbac_v2_denial_audit_and_union_guard",
       "breakpoints": true
+    },
+    {
+      "idx": 288,
+      "version": "7",
+      "when": 1798541500000,
+      "tag": "0287_rbac_v2_promotion",
+      "breakpoints": true
     }
   ]
 }
