@@ -36,8 +36,12 @@ pnpm db:verify             # assert DDL landed (silent-no-op class: check enum v
 
 - Hand-written SQL + `_journal.json`; `when` > global max (+100000 ms on collision).
 - Enum DDL: `ADD VALUE IF NOT EXISTS` ONLY (runner re-executes enum DDL every deploy).
-- Migration C never exists on `main` until its own promotion PR (D7). Dev-branch C is
-  applied in coordination with PR-3 E2E persona changes (runbook).
+- Migration C ships to `main` **staged, not applied**: the SQL sits at
+  `drizzle/migrations/pending/0287_rbac_v2_promotion.sql` with NO journal entry, so the
+  non-recursive migrations-root read makes it invisible to the migrator, the enum pre-pass
+  and the D7 gate. Applying it is a two-part operator action at cutover (`git mv` into the
+  root + **add** a journal entry with `when` > applied max) — runbook § 5 step 1. Dev-branch
+  C is applied in coordination with PR-3 E2E persona changes (runbook).
 
 ## Integration rehearsals (live Neon dev — money-path law: real DB, no mocks)
 
@@ -87,8 +91,11 @@ pnpm lint && pnpm typecheck      # full lint; typecheck is in NO other gate
    (refuses iff a super_admin already exists — D18).
 3. Flip `FEATURE_RBAC_V2=true` in Vercel env + redeploy; run the verification checklist
    (expected-denial baseline = PASS evidence; any unexpected pair = abort → flag OFF).
-4. Merge the Migration C PR → deploy promotes human admins + open invitations.
-   (Premature merge fails the build: run-migrations D7 assertion.)
+4. Ship Migration C on a migration-only branch: `git mv` it out of `pending/` into the
+   migrations root + add its journal entry (`when` > applied max), then merge → the deploy
+   promotes human admins + open invitations. (Doing that with the flag unset fails the
+   build: the run-migrations D7 assertion, which checks the journal as well as the
+   file listing.)
 5. After C: rollback = flag OFF (degraded-safe, marketing DENIED) + demotion;
    `vercel promote` floor = the PR-2 deployment.
 6. PR 4: verify prod env var is unset or `'true'` (leftover `'false'` defeats the

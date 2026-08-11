@@ -199,9 +199,13 @@ export function ChangeRoleDialog({
           <AlertDialogCancel disabled={submitting}>
             {t('confirm.cancel')}
           </AlertDialogCancel>
+          {/* `user === null` is folded into the gate so the "open with no
+              target" state (representable because `user` and `open` are
+              independent props) cannot present an enabled Confirm whose handler
+              then early-returns in silence — review Suggestion #11. */}
           <AlertDialogAction
-            disabled={unchanged || submitting}
-            aria-disabled={unchanged || submitting || undefined}
+            disabled={user === null || unchanged || submitting}
+            aria-disabled={user === null || unchanged || submitting || undefined}
             onClick={(event) => {
               event.preventDefault();
               void handleConfirm();

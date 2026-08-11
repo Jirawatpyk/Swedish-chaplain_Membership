@@ -33,20 +33,27 @@
 -- promotion applied but unrecorded (re-run would double-apply — here idempotent,
 -- but the class is the hazard).
 --
--- Promote every HUMAN admin (active OR disabled). The three system-actor rows
--- (Stripe webhook f5001, Resend webhook f5002, auto-invoice cron f5003 — the
--- canonical list is SYSTEM_ACTORS in scripts/seed-system-actors.ts; enumerate
--- EVERY entry here at write time) are excluded by id so webhook/cron writes keep
--- their role='admin'/status='disabled' identity. The D18 pre-minted super_admin
--- is out of scope by the role='admin' predicate — never touched.
+-- Promote every HUMAN admin (active OR disabled). System-actor rows keep their
+-- role='admin'/status='disabled' identity so webhook/cron writes are unaffected.
+--
+-- They are excluded by the RESERVED NAMESPACE, not by an enumerated id list.
+-- The enumeration was the original form and it is a drift hazard: the canonical
+-- list (SYSTEM_ACTORS in scripts/seed-system-actors.ts) is hand-copied into this
+-- file and into the rehearsal fixture, so a FOURTH actor seeded between now and
+-- the cutover would be silently promoted with every test still green — a
+-- one-way, operator-gated migration is the worst place to carry that coupling.
+-- The prefix is the repo's own reserved range (`RESERVED_SYSTEM_ACTOR_PREFIX`,
+-- src/modules/auth/application/enable-user.ts:47) and `gen_random_uuid()` can
+-- never produce this shape (the v4 variant/version bits would collide), so no
+-- human row can hide behind it. Known members of the namespace at write time:
+--   …f5001 system-stripe-webhook · …f5002 system-resend-webhook
+--   …f5003 system-auto-invoice-cron
+--
+-- The D18 pre-minted super_admin is out of scope by the role='admin' predicate.
 UPDATE users
    SET role = 'super_admin'
  WHERE role = 'admin'
-   AND id NOT IN (
-     '00000000-0000-0000-0000-0000000f5001',  -- system-stripe-webhook
-     '00000000-0000-0000-0000-0000000f5002',  -- system-resend-webhook
-     '00000000-0000-0000-0000-0000000f5003'   -- system-auto-invoice-cron
-   );
+   AND id::text NOT LIKE '00000000-0000-0000-0000-0000000%';
 
 -- Promote OPEN admin invitations in lockstep with their user rows so
 -- redeem-invite's tamper check (user.role === invitation.intendedRole) stays

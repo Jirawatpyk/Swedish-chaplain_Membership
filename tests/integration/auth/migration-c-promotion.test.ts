@@ -34,7 +34,7 @@
  * explicit path. The operator's migration-only PR (T052) `git mv`s it to the top
  * level + journals it AFTER the flag is flipped. See the file header + runbook §5.
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { sql } from 'drizzle-orm';
@@ -43,13 +43,19 @@ import { db } from '@/lib/db';
 /** Marker so any row that somehow escapes the rollback is obvious. */
 const TAG = 't042-migration-c';
 
-const MIGRATION_C_PATH = join(
-  process.cwd(),
-  'drizzle',
-  'migrations',
-  'pending',
-  '0287_rbac_v2_promotion.sql',
-);
+/**
+ * The staged location, with a fallback to the shipped one: the T052 operator
+ * step `git mv`s this file into the migrations root, after which the staged
+ * path is gone. Resolving both keeps the rehearsal runnable on either side of
+ * the cutover instead of dying with ENOENT (016 PR-3 review, Suggestion #4).
+ */
+export function resolveMigrationCPath(): string {
+  const root = join(process.cwd(), 'drizzle', 'migrations');
+  const staged = join(root, 'pending', '0287_rbac_v2_promotion.sql');
+  return existsSync(staged) ? staged : join(root, '0287_rbac_v2_promotion.sql');
+}
+
+const MIGRATION_C_PATH = resolveMigrationCPath();
 
 /** Canonical system-actor ids (mirror scripts/seed-system-actors.ts). */
 const SYSTEM_ACTOR_IDS = [
@@ -57,6 +63,14 @@ const SYSTEM_ACTOR_IDS = [
   '00000000-0000-0000-0000-0000000f5002',
   '00000000-0000-0000-0000-0000000f5003',
 ] as const;
+
+/**
+ * A system actor that does NOT exist yet. The exclusion is keyed on the reserved
+ * uuid namespace rather than an enumerated id list precisely so that the NEXT
+ * actor is covered without anyone remembering to edit the migration — this id
+ * stands in for that future row.
+ */
+const FUTURE_SYSTEM_ACTOR_ID = '00000000-0000-0000-0000-0000000f5099';
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -125,7 +139,9 @@ async function inRolledBackTx(body: (tx: Tx, f: Fixtures) => Promise<void>): Pro
     await db.transaction(async (tx) => {
       // Ensure the three system actors exist so the "untouched" assertion is
       // self-contained (healthy dev seeds them role='admin'/status='disabled').
-      for (const [i, id] of SYSTEM_ACTOR_IDS.entries()) {
+      // The FUTURE one is seeded too: it is not in any enumerated list, so it is
+      // the fixture that proves the exclusion is namespace-based.
+      for (const [i, id] of [...SYSTEM_ACTOR_IDS, FUTURE_SYSTEM_ACTOR_ID].entries()) {
         await tx.execute(sql`
           INSERT INTO users (id, email, role, status, password_hash, display_name)
           VALUES (${id}::uuid, ${`system-${i}@chamber-os.internal.${TAG}`}, 'admin', 'disabled', NULL, ${TAG})
@@ -197,6 +213,19 @@ async function inRolledBackTx(body: (tx: Tx, f: Fixtures) => Promise<void>): Pro
 }
 
 describe('T042 Migration C promotion rehearsal (live Neon, reads the real SQL)', () => {
+  it('the file stays within what the naive splitter can execute', () => {
+    // `migrationCStatements` strips `--` comments and splits on `;`. That is
+    // only safe while the file has no dollar-quoted body and no literal
+    // BEGIN/COMMIT — the header forbids both, but nothing enforced it, so a
+    // future edit could make BOTH rehearsals silently execute mangled SQL
+    // (016 PR-3 review, Suggestion #6). Enforce the precondition here.
+    const raw = readFileSync(MIGRATION_C_PATH, 'utf-8');
+    expect(raw, 'dollar-quoted body would break the ";" splitter').not.toMatch(/\$\$/);
+    expect(raw, 'literal BEGIN/COMMIT is forbidden (design §5) and breaks atomicity').not.toMatch(
+      /^\s*(BEGIN|COMMIT)\s*;/im,
+    );
+  });
+
   it('promotes every human admin — active AND disabled — to super_admin', async () => {
     await inRolledBackTx(async (tx, f) => {
       await applyMigrationC(tx);
@@ -217,6 +246,20 @@ describe('T042 Migration C promotion rehearsal (live Neon, reads the real SQL)',
         expect(actor?.role, `system actor ${id} must not be promoted`).toBe('admin');
         expect(actor?.status).toBe('disabled');
       }
+    });
+  });
+
+  it('excludes a FUTURE system actor nobody enumerated (namespace-keyed, not id-keyed)', async () => {
+    // The drift hazard this pins (016 PR-3 review, Suggestion #1): with the
+    // original `id NOT IN (f5001, f5002, f5003)` form, a fourth actor seeded
+    // between authoring and the cutover is silently promoted — and every test
+    // stays green, because the fixtures enumerate the same three ids the
+    // migration does. Keying on the reserved uuid namespace removes the coupling.
+    await inRolledBackTx(async (tx) => {
+      await applyMigrationC(tx);
+      const future = await roleOfId(tx, FUTURE_SYSTEM_ACTOR_ID);
+      expect(future?.role, 'a system actor added after this migration was written must not be promoted').toBe('admin');
+      expect(future?.status).toBe('disabled');
     });
   });
 

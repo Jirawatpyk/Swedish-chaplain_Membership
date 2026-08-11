@@ -31,6 +31,7 @@ if (typeof globalThis.PointerEvent === 'undefined') {
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 const ADMIN_USER = { id: 'u-admin-1', email: 'admin@example.com', role: 'admin' } as const;
+const MANAGER_USER = { id: 'u-manager-1', email: 'manager@example.com', role: 'manager' } as const;
 
 function renderDialog(onOpenChange = vi.fn(), onChanged = vi.fn()) {
   render(
@@ -111,6 +112,95 @@ describe('ChangeRoleDialog', () => {
   // the E2E persona spec (tests/e2e/rbac-super-admin-persona) — Base UI's
   // AlertDialogCancel does not round-trip onOpenChange under jsdom+fireEvent, so
   // a unit assertion there would test the harness, not the component.
+
+  /**
+   * 016 PR-3 review, Important #4 — cross-row state leak.
+   *
+   * The parent mounts ONE dialog unconditionally and RETAINS the last user
+   * through the close (that is what makes Base UI run its close cycle and fire
+   * `finalFocus` — review C1). Consequence: `useState(initialSelected)` runs
+   * once per page load, so the per-open reset effect is the ONLY thing that
+   * re-pristines the picker for the next row.
+   *
+   * Without it: open row A (admin) → pick Super Admin → close → open row B
+   * (manager) → `selected` is still 'super_admin', `unchanged` is false, and
+   * Confirm is ENABLED AND PRE-ARMED on a role the operator never chose for B.
+   * One click promotes the wrong user to the highest privilege in the system.
+   *
+   * Every other test in this file mounts fresh with one fixed user, so that
+   * mutant survives them all — this is the only test that drives the reuse.
+   */
+  it('re-pristines when reopened for a DIFFERENT row — no armed selection carries over', () => {
+    const { rerender } = render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <ChangeRoleDialog user={ADMIN_USER} open onOpenChange={vi.fn()} onChanged={vi.fn()} />
+      </NextIntlClientProvider>,
+    );
+
+    // Row A: arm a promotion to Super Admin.
+    fireEvent.click(screen.getByRole('radio', { name: en.admin.users.filters.role.super_admin }));
+    expect(screen.getByRole('button', { name: en.admin.users.changeRole.confirm })).toBeEnabled();
+
+    // Close, then reopen for a DIFFERENT user (the parent keeps one instance).
+    rerender(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <ChangeRoleDialog
+          user={ADMIN_USER}
+          open={false}
+          onOpenChange={vi.fn()}
+          onChanged={vi.fn()}
+        />
+      </NextIntlClientProvider>,
+    );
+    rerender(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <ChangeRoleDialog user={MANAGER_USER} open onOpenChange={vi.fn()} onChanged={vi.fn()} />
+      </NextIntlClientProvider>,
+    );
+
+    // Row B opens pristine: its OWN role is current, so nothing is armed.
+    expect(
+      screen.getByRole('button', { name: en.admin.users.changeRole.confirm }),
+      'reopening for another row must not inherit the previous row’s selection',
+    ).toBeDisabled();
+    expect(screen.getByText(en.admin.users.changeRole.current)).toBeInTheDocument();
+  });
+
+  it('clears a previous row’s inline error when reopened', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: async () => ({ error: 'last-admin-protection' }),
+    } as unknown as Response);
+    const { rerender } = render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <ChangeRoleDialog user={ADMIN_USER} open onOpenChange={vi.fn()} onChanged={vi.fn()} />
+      </NextIntlClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole('radio', { name: en.admin.users.filters.role.manager }));
+    fireEvent.click(screen.getByRole('button', { name: en.admin.users.changeRole.confirm }));
+    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
+
+    rerender(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <ChangeRoleDialog
+          user={ADMIN_USER}
+          open={false}
+          onOpenChange={vi.fn()}
+          onChanged={vi.fn()}
+        />
+      </NextIntlClientProvider>,
+    );
+    rerender(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <ChangeRoleDialog user={MANAGER_USER} open onOpenChange={vi.fn()} onChanged={vi.fn()} />
+      </NextIntlClientProvider>,
+    );
+
+    // Row B must not inherit row A's refusal notice.
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
 
   it('tolerates a null user while closed (parent retains the last user through the close)', () => {
     // The unconditional-mount pattern renders this with user=null before the

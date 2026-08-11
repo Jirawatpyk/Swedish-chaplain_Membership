@@ -22,7 +22,7 @@
  * The positive control is what makes the abort assertion meaningful: without it,
  * a guard that ALWAYS raised would pass the first case for the wrong reason.
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { sql } from 'drizzle-orm';
@@ -31,13 +31,14 @@ import { isLastAdminTriggerError } from '@/lib/db-errors';
 
 const TAG = 't043-migration-order';
 
-const MIGRATION_C_PATH = join(
-  process.cwd(),
-  'drizzle',
-  'migrations',
-  'pending',
-  '0287_rbac_v2_promotion.sql',
-);
+// Staged path with a shipped-path fallback — the T052 `git mv` moves the file
+// (016 PR-3 review, Suggestion #4). Kept local rather than imported from the
+// sibling spec so neither rehearsal can drag the other's fixtures into scope.
+const MIGRATION_C_PATH = (() => {
+  const root = join(process.cwd(), 'drizzle', 'migrations');
+  const staged = join(root, 'pending', '0287_rbac_v2_promotion.sql');
+  return existsSync(staged) ? staged : join(root, '0287_rbac_v2_promotion.sql');
+})();
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -104,22 +105,41 @@ async function seedLoneAdmin(tx: Tx): Promise<string> {
   return id;
 }
 
+/** Sentinel that guarantees rollback regardless of what the body does. */
+const ROLLBACK = new Error('intentional-rollback');
+
 describe('T043 reversed-order (C-before-B) abort rehearsal (live Neon, real SQL)', () => {
   it('OLD admin-only guard: applying Migration C on the last admin ABORTS', async () => {
-    // The tx rejects when the promotion trips the restored old guard; drizzle
-    // rolls back on the throw, so the old-guard DDL never persists.
-    await expect(
-      db.transaction(async (tx) => {
+    // Rollback must NOT be a side effect of the assertion (016 PR-3 review,
+    // Important #5). postgres-js COMMITS whenever the transaction callback
+    // resolves, so if a future change to Migration C's predicate ever stopped
+    // the abort, this tx would commit BOTH `seedLoneAdmin`'s blanket
+    // `UPDATE users SET status='disabled' …` AND the CREATE OR REPLACE that
+    // reverts `users_last_admin_guard()` to its pre-016 admin-only body —
+    // corrupting the shared dev branch for every other suite. Capture the
+    // expected error inside and ALWAYS throw the sentinel, then assert outside.
+    let caught: unknown;
+    try {
+      await db.transaction(async (tx) => {
         await seedLoneAdmin(tx);
         // Restore the pre-B admin-only population, then run the real promotion.
         await tx.execute(sql.raw(OLD_ADMIN_ONLY_GUARD));
-        await applyMigrationC(tx);
-      }),
-    ).rejects.toSatisfy(isLastAdminTriggerError);
+        try {
+          await applyMigrationC(tx);
+        } catch (e) {
+          caught = e;
+        }
+        throw ROLLBACK;
+      });
+    } catch (e) {
+      if (e !== ROLLBACK) throw e;
+    }
+
+    expect(caught, 'Migration C must ABORT under the pre-B admin-only guard').toBeDefined();
+    expect(isLastAdminTriggerError(caught)).toBe(true);
   });
 
   it('CURRENT 0286 union guard: the identical promotion SUCCEEDS (positive control)', async () => {
-    const ROLLBACK = new Error('intentional-rollback');
     try {
       await db.transaction(async (tx) => {
         const id = await seedLoneAdmin(tx);

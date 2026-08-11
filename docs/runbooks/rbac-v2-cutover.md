@@ -27,7 +27,16 @@ The two legs, in one line each:
 
   Both must return exactly one row.
 
-- [ ] The Migration C PR exists on its **own migration-only branch** and is **NOT merged** (D7). Its file name carries the `rbac_v2_promotion` tag the D7 gate greps for.
+- [ ] Migration C is **staged, not shipped**: the SQL lives at `drizzle/migrations/pending/0287_rbac_v2_promotion.sql` on `main` and has **NO entry in `meta/_journal.json`**. Verify both:
+
+  ```bash
+  ls drizzle/migrations/pending/0287_rbac_v2_promotion.sql        # exists
+  ls drizzle/migrations/*rbac_v2_promotion*.sql 2>/dev/null       # must be EMPTY
+  grep -c rbac_v2_promotion drizzle/migrations/meta/_journal.json # must be 0
+  ```
+
+  `run-migrations.ts` reads the migrations root NON-recursively, so a file in `pending/` is invisible to the migrator, to the enum pre-pass, and to the D7 gate — that is what lets every ordinary deploy of this feature run while the promotion waits. Applying it is § 5, and it is a deliberate two-part operator action (`git mv` + **add** a journal entry), never an automatic consequence of merging anything.
+- [ ] The D7 gate is armed for BOTH shapes. It derives the promotion set from the journal as well as the file listing, so a journal entry that points at the `pending/` path (`tag: "pending/0287_rbac_v2_promotion"` — drizzle resolves `${folder}/${tag}.sql` with no path sanitisation) is refused too, and it also refuses a `when` that is ≤ the applied max. Covered by `tests/unit/scripts/rbac-promotion-gate.test.ts`.
 - [ ] `docs/observability.md` denial-baseline alert reviewed; you know where `rbac_permission_denied_total{role, permission}` is graphed.
 - [ ] A second person (or a second session) is available for the verification walk — the window should not exceed ~1 h.
 
@@ -84,8 +93,27 @@ select summary, count(*) from audit_log
 
 Only after section 4 passes:
 
-1. **Re-validate C's journal `when` AT MERGE TIME** — other features may have landed migrations between authoring and merge; a `when` ≤ the global applied max makes `db:migrate` a **silent no-op** ("✓ applied" while applying nothing — the 0281-era class). Rule: `when` must be strictly greater than every `when` in `drizzle/migrations/meta/_journal.json` on the MERGE-DAY main.
-2. Merge the Migration C PR to `main` → the production deploy applies it via `vercel-build`. The D7 gate in `run-migrations.ts` allows it because `FEATURE_RBAC_V2=true` is now set. (Deploying C with the flag unset exits 1 by design.)
+1. **Ship the staged SQL on a migration-only branch.** Migration C is not a PR waiting to be merged — it is a staged file that must be MOVED into the migrations root and REGISTERED. On a fresh branch off the merge-day `main`:
+
+   ```bash
+   git switch -c 016-migration-c-promotion
+   git mv drizzle/migrations/pending/0287_rbac_v2_promotion.sql \
+          drizzle/migrations/0287_rbac_v2_promotion.sql
+   ```
+
+   Then renumber + journal it against the MERGE-DAY state, not the authoring state:
+
+   - **Numeric prefix**: if another feature landed `0287_*` meanwhile, rename to `<globalMax+1>_rbac_v2_promotion.sql`. The `rbac_v2_promotion` tag is what the gate greps — keep it verbatim.
+   - **Journal entry**: append to `drizzle/migrations/meta/_journal.json`, with `when` **strictly greater** than every `when` already there:
+
+     ```json
+     { "idx": <lastIdx + 1>, "version": "7", "when": <globalMax + 100000>, "tag": "0287_rbac_v2_promotion", "breakpoints": true }
+     ```
+
+     A `when` ≤ the applied max makes drizzle SKIP it while still printing "✓ Migrations applied" (the 0281-era silent-no-op class). The D7 gate now refuses that case outright, so a mistake here fails the deploy loudly instead of quietly doing nothing — but get it right the first time.
+   - The tag MUST be the bare file name. A tag carrying the directory (`pending/0287_rbac_v2_promotion`) would make drizzle apply the file from its staged location; the gate refuses that shape too.
+
+2. Merge that branch to `main` → the production deploy applies it via `vercel-build`. The D7 gate allows it because `FEATURE_RBAC_V2=true` is now set. (The same deploy with the flag unset exits 1 by design — that is the D7 guarantee.)
 3. Post-C assertions (run in the prod SQL console):
 
    ```sql
