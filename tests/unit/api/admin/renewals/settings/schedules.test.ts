@@ -201,9 +201,11 @@ describe('GET /api/admin/renewals/settings/schedules (T084)', () => {
   it('uses requireRenewalAdminContext("read") so manager can also load', async () => {
     loadSchedulePoliciesMock.mockResolvedValueOnce(ok({ policies: [] }));
     await GET(makeGetRequest());
+    // 016 T028 — the helper also takes the flag-ON key for this surface.
     expect(requireAdminMock).toHaveBeenCalledWith(
       expect.anything(),
       'read',
+      'settings.renewal_schedules',
     );
   });
 
@@ -343,9 +345,11 @@ describe('PUT /api/admin/renewals/settings/schedules/[tierBucket] (T085)', () =>
       }),
     );
     await PUT(makePutRequest(VALID_PUT_BODY), validParams);
+    // 016 T028 — the helper also takes the flag-ON key for this surface.
     expect(requireAdminMock).toHaveBeenCalledWith(
       expect.anything(),
       'write',
+      'settings.renewal_schedules',
     );
   });
 

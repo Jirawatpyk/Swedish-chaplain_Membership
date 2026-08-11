@@ -196,3 +196,46 @@ describe('T015 flag-ON leg never widens for a role that exists today', () => {
     expect([...narrowed].sort()).toEqual(Object.keys(INTENTIONAL_NARROWINGS).sort());
   });
 });
+
+describe('T041 per-TARGET-role cells for the six users routes (§ 7.1)', () => {
+  // The six mutating users routes gate in TWO steps (T028): the wider
+  // `users.member_accounts` before the body/target is read, then
+  // `users.manage` once the target row (or requested role) is known to be a
+  // staff role. These cells pin the KEY-level outcome that composition
+  // produces per (actor, target-class) on both flag legs — the route-level
+  // behaviour is exactly `memberTarget AND (staffTarget when staff)`.
+  const USERS_ROUTES_OFF_ROW: LegacyRow = {
+    kind: 'mappedLegacy',
+    resource: 'auth:user',
+    action: 'write',
+  };
+
+  const onKey = (role: Role, key: 'users.manage' | 'users.member_accounts'): boolean =>
+    hasPermission(role, key, { rbacV2: true });
+  const off = (role: Role): boolean =>
+    hasPermission(role, 'users.manage', { rbacV2: false, legacy: USERS_ROUTES_OFF_ROW });
+
+  it('ON leg, STAFF-role target (users.manage) — super_admin alone (D4)', () => {
+    expect(onKey('super_admin', 'users.manage')).toBe(true);
+    expect(onKey('admin', 'users.manage')).toBe(false);
+    expect(onKey('manager', 'users.manage')).toBe(false);
+    expect(onKey('marketing', 'users.manage')).toBe(false);
+    expect(onKey('member', 'users.manage')).toBe(false);
+  });
+
+  it('ON leg, MEMBER-account target (users.member_accounts) — super_admin + admin', () => {
+    expect(onKey('super_admin', 'users.member_accounts')).toBe(true);
+    expect(onKey('admin', 'users.member_accounts')).toBe(true);
+    expect(onKey('manager', 'users.member_accounts')).toBe(false);
+    expect(onKey('marketing', 'users.member_accounts')).toBe(false);
+    expect(onKey('member', 'users.member_accounts')).toBe(false);
+  });
+
+  it('OFF leg, BOTH targets share the pre-sweep row — admin (+ super_admin via D16) only', () => {
+    expect(off('super_admin')).toBe(true);
+    expect(off('admin')).toBe(true);
+    expect(off('manager')).toBe(false);
+    expect(off('marketing')).toBe(false);
+    expect(off('member')).toBe(false);
+  });
+});

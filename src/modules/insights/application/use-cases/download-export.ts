@@ -32,7 +32,10 @@ import { f9RetentionFor, type InsightsAuditPort } from '../ports/audit-port';
 import type { ClockPort } from '../ports/clock-port';
 import type { ExportJobRecord, ExportJobRepo } from '../ports/export-job-repo';
 import type { PrivateBlobPort } from '../ports/private-blob-port';
-import { isAdministrativeRole, type Role } from '@/modules/auth';
+// Deep PURE-Domain import (not the barrel): a value import of the auth barrel
+// would drag auth-deps' infrastructure singletons (argon2, Upstash, repos)
+// into this Application module's graph at eval time.
+import { isAdministrativeRole, type Role } from '@/modules/auth/domain/role';
 
 // 016 T030/T033 — widened to the full Role union so routes stop casting and
 // audit emitters record the LITERAL actor role; the decision arms in this
