@@ -14,14 +14,7 @@
 import type { Page } from '@playwright/test';
 import { fillField } from '../fixtures';
 
-export async function signInAsAdmin(page: Page): Promise<void> {
-  const email = process.env.E2E_ADMIN_EMAIL;
-  const password = process.env.E2E_ADMIN_PASSWORD;
-  if (!email || !password) {
-    throw new Error(
-      'signInAsAdmin: E2E_ADMIN_EMAIL or E2E_ADMIN_PASSWORD missing — gate the calling test with test.skip first.',
-    );
-  }
+async function signInStaff(page: Page, email: string, password: string): Promise<void> {
   await page.goto('/admin/sign-in');
   await fillField(page.getByLabel(/email/i), email);
   // R9.B1 / F1 PasswordInput regression — the older `getByLabel`
@@ -38,4 +31,33 @@ export async function signInAsAdmin(page: Page): Promise<void> {
   // takes >30s to compile + serve → waitForURL times out before the
   // navigation completes.
   await page.waitForURL('**/admin', { timeout: 60_000 });
+}
+
+export async function signInAsAdmin(page: Page): Promise<void> {
+  const email = process.env.E2E_ADMIN_EMAIL;
+  const password = process.env.E2E_ADMIN_PASSWORD;
+  if (!email || !password) {
+    throw new Error(
+      'signInAsAdmin: E2E_ADMIN_EMAIL or E2E_ADMIN_PASSWORD missing — gate the calling test with test.skip first.',
+    );
+  }
+  await signInStaff(page, email, password);
+}
+
+/**
+ * 016 PR 3 (T050) — the super_admin persona (E2E_SUPER_ADMIN_*), used ONLY by
+ * the users/audit/erasure/settings suites that exercise the ON-leg D4 narrowing.
+ * Requires the RBAC v2 flag ON in the E2E env + Migration C applied on dev +
+ * `scripts/seed-e2e-user.ts` re-run (which mints this super_admin and resets the
+ * admin persona to a FRESH plain admin). See docs/runbooks/rbac-v2-cutover.md.
+ */
+export async function signInAsSuperAdmin(page: Page): Promise<void> {
+  const email = process.env.E2E_SUPER_ADMIN_EMAIL;
+  const password = process.env.E2E_SUPER_ADMIN_PASSWORD;
+  if (!email || !password) {
+    throw new Error(
+      'signInAsSuperAdmin: E2E_SUPER_ADMIN_EMAIL or E2E_SUPER_ADMIN_PASSWORD missing — gate the calling test with test.skip first.',
+    );
+  }
+  await signInStaff(page, email, password);
 }

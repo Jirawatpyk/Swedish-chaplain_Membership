@@ -55,12 +55,19 @@ C-before-B aborts.
 ## E2E personas
 
 ```bash
-# .env.local — staff sign in at /admin/sign-in, members at /portal/sign-in
-E2E_ADMIN_*        # PR 3: re-provisioned as a FRESH plain admin (old one gets promoted)
-E2E_SUPER_ADMIN_*  # PR 3: used ONLY by users/audit/erasure/settings suites
+# .env.local — staff sign in at /admin/sign-in, members at /portal/sign-in.
+# Seeded by scripts/seed-e2e-user.ts (re-run it AFTER Migration C on dev — it
+# mints E2E_SUPER_ADMIN_* and RESETS E2E_ADMIN_* back to a plain admin).
+E2E_SUPER_ADMIN_*  # PR 3: used ONLY by rbac-super-admin-persona (users/audit/erasure/settings)
+E2E_ADMIN_*        # PR 3: re-provisioned as a FRESH plain admin (Migration C promoted the old one)
 E2E_MARKETING_*    # PR 4
+E2E_RBAC_V2_ON=true  # opt IN the ON-leg persona suites (rbac-admin/super-admin-persona).
+                     # Set ONLY when the dev server runs FEATURE_RBAC_V2=true AND
+                     # Migration C is applied on dev; the suites skip otherwise so
+                     # they can never assert the OFF-leg matrix by accident.
 pnpm test:e2e --workers=1                     # ALWAYS --workers=1
 pnpm test:e2e --grep "@a11y" -- --workers=1
+pnpm test:e2e --grep "rbac-.*-persona" -- --workers=1   # the PR-3 US1 persona suites
 ```
 
 ## Gates for this feature (run before every push; typecheck LAST after final edit)
