@@ -22,6 +22,9 @@ const RBAC_V2_ON = process.env.E2E_RBAC_V2_ON === 'true';
 
 const AXE_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'] as const;
 
+/** Palette accelerator — same form the proven command-palette spec uses. */
+const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
+
 test.describe('T046 RBAC v2 — super_admin persona (ON leg) @a11y', () => {
   test.skip(
     !SUPER_ADMIN_EMAIL || !RBAC_V2_ON,
@@ -42,7 +45,12 @@ test.describe('T046 RBAC v2 — super_admin persona (ON leg) @a11y', () => {
     await page.getByRole('button', { name: /invite user/i }).click();
     // The invite dialog's role select now offers Super Admin (PR 3 assignable).
     await expect(page.getByRole('dialog')).toBeVisible();
-    await page.getByRole('combobox', { name: /role/i }).click();
+    // Target the trigger by its explicit id rather than an accessible name: the
+    // dialog also renders the MemberPicker combobox, so a bare
+    // getByRole('combobox') is ambiguous under strict mode, and the Base UI
+    // Select trigger's name derives from a <Label htmlFor> association that is
+    // not worth betting the assertion on.
+    await page.locator('#invite-role').click();
     await expect(page.getByRole('option', { name: /super admin/i })).toBeVisible();
   });
 
@@ -74,27 +82,52 @@ test.describe('T046 RBAC v2 — super_admin persona (ON leg) @a11y', () => {
     await expect(page.getByRole('radio', { name: /^manager$/i })).toBeVisible();
     await page.getByRole('button', { name: /^cancel$/i }).click();
     await expect(page.getByRole('radio', { name: /^manager$/i })).toHaveCount(0);
-    await expect(page.locator('body')).not.toBeFocused();
+    // Read activeElement directly — that IS the CHK050 measure. `expect(body)
+    // .not.toBeFocused()` would also pass when focus sits on a DETACHED node,
+    // which is the very failure mode being guarded.
+    const activeTag = await page.evaluate(() => document.activeElement?.tagName ?? 'NONE');
+    expect(activeTag, 'focus must not fall back to <body> after the dialog closes').not.toBe(
+      'BODY',
+    );
   });
 
-  test('reaches the audit log and the erasure-log nav entry', async ({ page }) => {
+  test('reaches the audit log', async ({ page }) => {
     const audit = await page.context().request.get('/admin/audit', {
       failOnStatusCode: false,
       maxRedirects: 0,
     });
     expect(audit.status(), '/admin/audit must render for a super_admin').toBeLessThan(400);
+  });
 
+  test('the erasure-log nav entry is present in the sidebar', async ({ page, isMobile }) => {
+    // Desktop rail only — mobile renders the nav inside a closed Sheet, so the
+    // link is legitimately absent from the DOM (idiom: nav-a11y.spec.ts:124).
+    test.skip(isMobile === true, 'Desktop rail only — mobile renders the nav in a Sheet');
     await page.goto('/admin', { waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('link', { name: /erasure log/i })).toBeVisible();
   });
 
-  test('command palette is non-empty for a super_admin', async ({ page }) => {
+  test('command palette surfaces ADMIN-tier actions for a super_admin (D16 client mirror)', async ({
+    page,
+  }) => {
     await page.goto('/admin', { waitUntil: 'domcontentloaded' });
-    // cmdk opens on Ctrl/Cmd+K; assert the dialog appears with ≥1 result.
-    await page.keyboard.press('ControlOrMeta+k');
-    const palette = page.getByRole('dialog');
+    // Accelerator + dialog name match the proven command-palette spec.
+    await page.keyboard.press(`${MOD}+KeyK`);
+    const palette = page.getByRole('dialog', { name: /command palette/i });
     await expect(palette).toBeVisible();
-    await expect(palette.getByRole('option').first()).toBeVisible();
+
+    // The palette deliberately renders NOTHING until a query is typed
+    // (command-palette.tsx swaps in EMPTY_RESULTS while the query is blank), so
+    // asserting options on the bare open would always fail.
+    //
+    // "audit" matches the STATIC action registry entry `audit.view`
+    // (search-plans.ts ACTION_REGISTRY — label key 'palette.actions.viewAuditLog'),
+    // so this assertion is data-independent: it needs no seeded plan or member.
+    // It also directly proves the D16 client mirror fix — before it, a promoted
+    // super_admin fell through a raw `role === 'admin'` check and received
+    // `actions: []`, leaving this option missing while the server sent it.
+    await palette.getByRole('combobox').fill('audit');
+    await expect(palette.getByRole('option', { name: /view audit log/i })).toBeVisible();
   });
 
   test('axe-core WCAG 2.1/2.2 AA — users page + change-role picker + invite dialog', async ({

@@ -95,11 +95,18 @@ test.describe('T045 RBAC v2 — plain-admin persona (ON leg) @a11y', () => {
 
   test('the SA-only surfaces are absent from the plain-admin sidebar (no dead links)', async ({
     page,
+    isMobile,
   }) => {
+    // Desktop rail only. On mobile the whole nav lives in a CLOSED Sheet, so
+    // every one of these toHaveCount(0) assertions would pass VACUOUSLY — a
+    // green test proving nothing (idiom: nav-a11y.spec.ts:124).
+    test.skip(isMobile === true, 'Desktop rail only — mobile renders the nav in a Sheet');
     // Load a surface the admin CAN read, then assert the D4 nav entries are gone.
     await page.goto('/admin/renewals', { waitUntil: 'domcontentloaded' });
+    // Sanity: the rail IS rendered here, so the absences below are real.
+    await expect(page.getByRole('link', { name: /members/i }).first()).toBeVisible();
     await expect(page.getByRole('link', { name: /^users$/i })).toHaveCount(0);
-    await expect(page.getByRole('link', { name: /audit/i })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: /audit log/i })).toHaveCount(0);
     await expect(page.getByRole('link', { name: /erasure log/i })).toHaveCount(0);
   });
 
