@@ -57,17 +57,20 @@
  *   pnpm test:e2e --grep "invoice settings" --workers=1
  */
 import { expect, test, fillField } from '../fixtures';
-import { signInAsAdmin } from '../helpers/admin-session';
+// 016 D4 (cutover 2026-08-11): `settings.invoicing` is superAdminOnly, so this
+// suite runs as super_admin. A plain admin now gets notFound() on
+// /admin/settings/invoicing — covered by rbac-admin-persona.spec.ts.
+import { signInAsSuperAdmin } from '../helpers/admin-session';
 import { waitForLayoutContainer } from '../helpers/layout';
 import { runAxeScan } from '../helpers/axe-scan';
 
-const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
-const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
+const ADMIN_EMAIL = process.env.E2E_SUPER_ADMIN_EMAIL;
+const ADMIN_PASSWORD = process.env.E2E_SUPER_ADMIN_PASSWORD;
 
 const SETTINGS_PATH = '/admin/settings/invoicing';
 
 test.describe('invoice settings: section-nav focus + sticky-save prefix guard @f4', () => {
-  test.skip(!ADMIN_EMAIL || !ADMIN_PASSWORD, 'E2E_ADMIN_* not set');
+  test.skip(!ADMIN_EMAIL || !ADMIN_PASSWORD, 'E2E_SUPER_ADMIN_* not set');
 
   // Cold Turbopack compile of /admin/settings/invoicing on first hit
   // (same budget rationale as admin-session.ts's 60s /admin wait) plus
@@ -77,7 +80,7 @@ test.describe('invoice settings: section-nav focus + sticky-save prefix guard @f
   test('@a11y nav focus + sticky Save keeps the §87 prefix-change dialog + full-body PATCH', async ({
     page,
   }, testInfo) => {
-    await signInAsAdmin(page);
+    await signInAsSuperAdmin(page);
 
     // Desktop viewport — the section-nav rail (`section-nav.tsx`) is
     // `hidden md:block`; below the `md` breakpoint only the mobile

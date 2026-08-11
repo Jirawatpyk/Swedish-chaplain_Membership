@@ -55,7 +55,10 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { BrowserContext, Page } from '@playwright/test';
 import { expect, fillField, test } from './fixtures';
-import { signInAsAdmin } from './helpers/admin-session';
+// 016 D4 (cutover 2026-08-11): `members.erasure_log_read` is superAdminOnly, so
+// the DPO happy path runs as super_admin. A plain admin now gets notFound() here
+// — that cell lives in rbac-admin-persona.spec.ts, not duplicated below.
+import { signInAsSuperAdmin } from './helpers/admin-session';
 import { signInAsManager } from './helpers/manager-session';
 import { signInAsMember } from './helpers/member-session';
 import {
@@ -63,7 +66,7 @@ import {
   type ErasureEvidenceSeed,
 } from './helpers/erasure-evidence-seed';
 
-const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
+const ADMIN_EMAIL = process.env.E2E_SUPER_ADMIN_EMAIL;
 const MANAGER_EMAIL = process.env.E2E_MANAGER_EMAIL;
 const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL;
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -186,7 +189,7 @@ test.describe('COMP-1 US3-D — erasure-evidence log (admin DPO) @a11y @i18n', (
   test('admin sees the seeded erased member evidence card (M-2: no actor uuid leak)', async ({
     page,
   }) => {
-    await signInAsAdmin(page);
+    await signInAsSuperAdmin(page);
     await page.goto(ROUTE, { waitUntil: 'domcontentloaded' });
 
     // Title (h1) renders localised, not a raw key.
@@ -261,7 +264,7 @@ test.describe('COMP-1 US3-D — erasure-evidence log (admin DPO) @a11y @i18n', (
   test('print media force-opens the collapsed COMPLETE card evidence content', async ({
     page,
   }) => {
-    await signInAsAdmin(page);
+    await signInAsSuperAdmin(page);
     await page.goto(ROUTE, { waitUntil: 'domcontentloaded' });
 
     const cardHeading = page.getByRole('heading', {
@@ -294,7 +297,7 @@ test.describe('COMP-1 US3-D — erasure-evidence log (admin DPO) @a11y @i18n', (
   test('status filter tabs render and Overdue navigates to ?status=overdue', async ({
     page,
   }) => {
-    await signInAsAdmin(page);
+    await signInAsSuperAdmin(page);
     await page.goto(ROUTE, { waitUntil: 'domcontentloaded' });
 
     await expect(
@@ -310,7 +313,7 @@ test.describe('COMP-1 US3-D — erasure-evidence log (admin DPO) @a11y @i18n', (
   test('searching a non-existent member number renders the empty state', async ({
     page,
   }) => {
-    await signInAsAdmin(page);
+    await signInAsSuperAdmin(page);
     await page.goto(ROUTE, { waitUntil: 'domcontentloaded' });
 
     // `SCCM-0000` parses to member number `0`, which `parseMemberNumberQuery`
@@ -371,7 +374,7 @@ test.describe('COMP-1 US3-D — erasure-evidence log (admin DPO) @a11y @i18n', (
   // --- 3. @a11y -------------------------------------------------------------
 
   test('axe-core WCAG 2.1 + 2.2 AA scan — no violations', async ({ page }) => {
-    await signInAsAdmin(page);
+    await signInAsSuperAdmin(page);
     await page.goto(ROUTE, { waitUntil: 'domcontentloaded' });
     // Wait for the seeded card to be on the page before scanning so axe runs
     // against the populated state (not a loading skeleton).
@@ -412,7 +415,7 @@ test.describe('COMP-1 US3-D — erasure-evidence log (admin DPO) @a11y @i18n', (
       page,
       context,
     }) => {
-      await signInAsAdmin(page);
+      await signInAsSuperAdmin(page);
       await setLocale(context, locale);
       await page.goto(ROUTE, { waitUntil: 'domcontentloaded' });
 
