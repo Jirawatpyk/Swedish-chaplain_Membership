@@ -24,7 +24,7 @@
  * because the row trigger unmounts under the success `router.refresh()`
  * (reference: dialog-focus-lost-after-unmount).
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { Loader2Icon } from 'lucide-react';
@@ -63,7 +63,13 @@ function resolveErrorKey(code: string): (typeof KNOWN_ERROR_CODES)[number] | 'ge
 }
 
 export interface ChangeRoleDialogProps {
-  readonly user: { readonly id: string; readonly email: string; readonly role: Role };
+  /**
+   * The target row, or `null` while the dialog sits closed. The parent mounts
+   * ONE instance unconditionally (so Base UI runs its close cycle + `finalFocus`
+   * — 016 UX review C1) and retains the last user through the close animation,
+   * so every user access here is null-guarded for the brief closed/idle window.
+   */
+  readonly user: { readonly id: string; readonly email: string; readonly role: Role } | null;
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   /** Called after a successful role change (parent runs `router.refresh()`). */
@@ -81,14 +87,15 @@ export function ChangeRoleDialog({
 }: ChangeRoleDialogProps) {
   const t = useTranslations('admin.users');
   const tRole = useTranslations('admin.users.filters.role');
+  const currentRole = user?.role ?? null;
   // Pre-select the user's current role when it is one of the offered options
   // (so "confirm" stays disabled until the operator actually picks a change);
   // otherwise start unset so any pick is a real change.
-  const initialSelected = CHANGE_ROLE_OPTIONS.includes(user.role) ? user.role : null;
+  const initialSelected =
+    currentRole !== null && CHANGE_ROLE_OPTIONS.includes(currentRole) ? currentRole : null;
   const [selected, setSelected] = useState<Role | null>(initialSelected);
   const [submitting, setSubmitting] = useState(false);
   const [errorCode, setErrorCode] = useState<string | null>(null);
-  const cancelRef = useRef<HTMLButtonElement>(null);
 
   // Reset to the pristine per-user state whenever the dialog (re)opens — the
   // parent reuses one dialog instance across rows, so a stale selection/error
@@ -101,10 +108,10 @@ export function ChangeRoleDialog({
     }
   }, [open, initialSelected]);
 
-  const unchanged = selected === null || selected === user.role;
+  const unchanged = selected === null || selected === currentRole;
 
   async function handleConfirm(): Promise<void> {
-    if (unchanged || submitting || selected === null) return;
+    if (unchanged || submitting || selected === null || user === null) return;
     setSubmitting(true);
     setErrorCode(null);
     try {
@@ -132,9 +139,16 @@ export function ChangeRoleDialog({
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent initialFocus={cancelRef} finalFocus={finalFocus}>
+      {/* No `initialFocus` on Cancel — this is a picker, not a destructive
+          confirm. Confirm is disabled until a DIFFERENT role is chosen, so
+          there is no accidental-confirm risk to guard; letting Base UI land
+          focus in the RadioGroup makes arrow-key selection work immediately
+          (016 UX review I1; ux-standards §6 form vs confirmation focus). */}
+      <AlertDialogContent finalFocus={finalFocus}>
         <AlertDialogHeader>
-          <AlertDialogTitle>{t('changeRole.title', { email: user.email })}</AlertDialogTitle>
+          <AlertDialogTitle>
+            {t('changeRole.title', { email: user?.email ?? '' })}
+          </AlertDialogTitle>
           <AlertDialogDescription>{t('changeRole.description')}</AlertDialogDescription>
         </AlertDialogHeader>
 
@@ -163,7 +177,7 @@ export function ChangeRoleDialog({
                 aria-labelledby={`change-role-opt-${r}`}
               />
               <span id={`change-role-opt-${r}`}>{tRole(r)}</span>
-              {r === user.role ? (
+              {r === currentRole ? (
                 <span className="ml-auto text-xs text-muted-foreground">
                   {t('changeRole.current')}
                 </span>
@@ -182,7 +196,7 @@ export function ChangeRoleDialog({
         ) : null}
 
         <AlertDialogFooter>
-          <AlertDialogCancel ref={cancelRef} disabled={submitting}>
+          <AlertDialogCancel disabled={submitting}>
             {t('confirm.cancel')}
           </AlertDialogCancel>
           <AlertDialogAction

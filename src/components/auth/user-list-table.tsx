@@ -24,15 +24,14 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
-import { ChangeRoleDialog } from '@/components/auth/change-role-dialog';
+import { ChangeRoleDialog, CHANGE_ROLE_OPTIONS } from '@/components/auth/change-role-dialog';
 // The deep path (rather than the `@/modules/auth` barrel) matches the
 // convention the other client components here follow: `role.ts` is pure Domain
 // (no framework imports) and safe in the client bundle, whereas the barrel
-// transitively loads Node-only Infrastructure. `isStaffRole` is a value import
-// (the change-role trigger only shows on staff rows); `Role` is a type.
-// Replaces a local 3-role alias that silently diverged from the Domain enum
-// when 016 widened it (review 016 PR1, ui-1).
-import { isStaffRole, type Role } from '@/modules/auth/domain/role';
+// transitively loads Node-only Infrastructure. `Role` is a type. Replaces a
+// local 3-role alias that silently diverged from the Domain enum when 016
+// widened it (review 016 PR1, ui-1).
+import type { Role } from '@/modules/auth/domain/role';
 
 type Status = 'pending' | 'active' | 'disabled';
 
@@ -122,6 +121,7 @@ export function UserListTable({
   const router = useRouter();
   const [pending, setPending] = useState<PendingAction>(null);
   const [roleChangeUser, setRoleChangeUser] = useState<UserRow | null>(null);
+  const [roleDialogOpen, setRoleDialogOpen] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   // `now` is computed once on the server (AdminUsersPage's
   // `UsersDataSection`) and passed down, so SSR and client hydration use
@@ -308,10 +308,14 @@ export function UserListTable({
               const canEnable = canManageAccounts && user.status === 'disabled';
               const canManageInvite = canManageAccounts && user.status === 'pending';
               // Staff-role reassignment (users.manage). Never on your own row
-              // (self-demotion lockout) and only on staff rows — a member↔staff
-              // move is a portal change, out of this picker's scope.
+              // (self-demotion lockout) and only on rows whose CURRENT role is
+              // one the picker offers (super_admin/admin/manager) — that keeps
+              // the "Current" badge meaningful and, until PR 4 adds marketing to
+              // the options, avoids a marketing row opening a picker that can't
+              // show its own role. A member↔staff move is a portal change, out
+              // of this picker's scope.
               const canChangeRole =
-                canManageStaffRoles && !isSelf && isStaffRole(user.role);
+                canManageStaffRoles && !isSelf && CHANGE_ROLE_OPTIONS.includes(user.role);
               const busy = busyId === user.id;
               const daysRemaining = user.invitationExpiresAt
                 ? daysUntil(user.invitationExpiresAt, now)
@@ -374,7 +378,10 @@ export function UserListTable({
                         size="sm"
                         variant="outline"
                         disabled={busy}
-                        onClick={() => setRoleChangeUser(user)}
+                        onClick={() => {
+                          setRoleChangeUser(user);
+                          setRoleDialogOpen(true);
+                        }}
                       >
                         <UserCogIcon className="size-4" aria-hidden />
                         {t('actions.changeRole')}
@@ -482,17 +489,19 @@ export function UserListTable({
         }}
       />
 
-      {roleChangeUser ? (
-        <ChangeRoleDialog
-          user={roleChangeUser}
-          open={roleChangeUser !== null}
-          onOpenChange={(open) => {
-            if (!open) setRoleChangeUser(null);
-          }}
-          onChanged={() => router.refresh()}
-          finalFocus={dialogFinalFocus}
-        />
-      ) : null}
+      {/* Mounted UNCONDITIONALLY (like the ConfirmationDialog above), driven by
+          `open` alone. Conditionally rendering it would unmount the Base UI Root
+          in the same frame the close is requested, so the close cycle — and
+          `finalFocus` with it — never runs and focus drops to <body> (016 UX
+          review C1 / CHK050). `roleChangeUser` is RETAINED through the close
+          animation and only changes when another row opens the picker. */}
+      <ChangeRoleDialog
+        user={roleChangeUser}
+        open={roleDialogOpen}
+        onOpenChange={setRoleDialogOpen}
+        onChanged={() => router.refresh()}
+        finalFocus={dialogFinalFocus}
+      />
     </>
   );
 }

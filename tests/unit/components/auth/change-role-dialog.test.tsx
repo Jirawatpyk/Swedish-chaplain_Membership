@@ -107,6 +107,23 @@ describe('ChangeRoleDialog', () => {
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
   });
 
+  // The Cancel/ESC close path + its finalFocus (016 UX review C1) is verified in
+  // the E2E persona spec (tests/e2e/rbac-super-admin-persona) — Base UI's
+  // AlertDialogCancel does not round-trip onOpenChange under jsdom+fireEvent, so
+  // a unit assertion there would test the harness, not the component.
+
+  it('tolerates a null user while closed (parent retains the last user through the close)', () => {
+    // The unconditional-mount pattern renders this with user=null before the
+    // first row is picked; it must not throw. open=false → no visible content.
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <ChangeRoleDialog user={null} open={false} onOpenChange={vi.fn()} onChanged={vi.fn()} />
+      </NextIntlClientProvider>,
+    );
+    // Nothing rendered (closed) and no crash.
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+  });
+
   it('falls back to a generic localized error on an unknown failure', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: false,

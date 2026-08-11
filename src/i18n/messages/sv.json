@@ -650,7 +650,7 @@
         "current": "Nuvarande",
         "confirm": "Ändra roll",
         "errors": {
-          "last-admin-protection": "Du kan inte ändra den sista administratörens roll — befordra eller bjud in en annan Super Admin först.",
+          "last-admin-protection": "Du kan inte ändra den sista administratörens roll — befordra eller bjud in en annan Superadministratör först.",
           "same-role": "Användaren har redan den här rollen.",
           "role-portal-mismatch": "Den rolländringen är inte tillåten för det här kontot.",
           "generic": "Kunde inte ändra rollen. Försök igen."

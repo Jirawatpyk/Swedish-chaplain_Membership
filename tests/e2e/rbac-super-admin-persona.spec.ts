@@ -62,6 +62,21 @@ test.describe('T046 RBAC v2 — super_admin persona (ON leg) @a11y', () => {
     await expect(page.getByRole('radio', { name: /^marketing$/i })).toHaveCount(0);
   });
 
+  test('finalFocus: closing the change-role picker keeps focus OFF <body> (CHK050 / C1)', async ({
+    page,
+  }) => {
+    // The parent mounts the picker unconditionally so Base UI runs its close
+    // cycle + finalFocus (016 UX review C1). Without that, focus drops to
+    // <body> on close. Assert the CHK050 measure (activeElement !== body) after
+    // the Cancel close; the success close runs the identical cycle.
+    await page.goto('/admin/users', { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: /change role/i }).first().click();
+    await expect(page.getByRole('radio', { name: /^manager$/i })).toBeVisible();
+    await page.getByRole('button', { name: /^cancel$/i }).click();
+    await expect(page.getByRole('radio', { name: /^manager$/i })).toHaveCount(0);
+    await expect(page.locator('body')).not.toBeFocused();
+  });
+
   test('reaches the audit log and the erasure-log nav entry', async ({ page }) => {
     const audit = await page.context().request.get('/admin/audit', {
       failOnStatusCode: false,
