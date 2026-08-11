@@ -3,11 +3,13 @@
  * (016-rbac-permissions; contracts/permission-evaluator.md § 1, guarantees E1–E6).
  *
  * PURITY PIN (design § 6.1, round-3 R3-04): the flag is ALWAYS an explicit
- * parameter. The only `FEATURE_RBAC_V2` env reads live in `src/lib/rbac.ts`
- * (PR 2) — never here, never in client components (they receive server-derived
- * booleans as props). `src/modules/plans` deep-imports THIS module (not the
- * auth barrel — argon2 client-bundle hazard) and threads the flag from its own
- * server boundary.
+ * parameter — never read here, never in client components (they receive
+ * server-derived booleans as props). `FEATURE_RBAC_V2` env reads live in the
+ * COMPOSITION layer (`src/lib/rbac.ts` for the gate, `src/lib/auth-deps.ts`
+ * for the administrator-count wiring — 016 re-review corrected the earlier
+ * "only in rbac.ts" claim). `src/modules/plans` deep-imports THIS module (not
+ * the auth barrel — argon2 client-bundle hazard) and threads the flag from its
+ * own server boundary.
  *
  * Signature is ROLE-FIRST (canonical, data-model § 1): the super_admin bypass
  * (E1) and D16 totalisation (E4) both need the role — a bare permission set

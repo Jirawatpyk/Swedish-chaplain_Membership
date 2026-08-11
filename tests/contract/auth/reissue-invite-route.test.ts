@@ -26,12 +26,18 @@ const rateLimiterCheckMock = vi.fn();
 vi.mock('@/lib/rbac', () => ({
   requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
-vi.mock('@/modules/auth', () => ({
-  resendStaffInvitation: (...args: unknown[]) => resendStaffInvitationMock(...args),
-  asUserId: (id: string) => id,
-  // Real predicate shape — the route's § 7.1 step-2 branch keys on it.
-  isStaffRole: (r: string) => ['super_admin', 'admin', 'manager', 'marketing'].includes(r),
-}));
+vi.mock('@/modules/auth', async () => {
+  // 016 re-review — delegate to the REAL `isStaffRole`, not a re-implementation.
+  // The route's § 7.1 step-2 branch keys on it; a hand-copied allow-list would
+  // stay green if the real predicate ever changed (a staff role added/removed),
+  // silently diverging the test from the code it guards.
+  const actual = await vi.importActual<typeof import('@/modules/auth')>('@/modules/auth');
+  return {
+    ...actual,
+    resendStaffInvitation: (...args: unknown[]) => resendStaffInvitationMock(...args),
+    asUserId: (id: string) => id,
+  };
+});
 vi.mock('@/lib/tenant-context', () => ({
   resolveTenantFromRequest: () => ({ slug: 'test-swecham', __brand: true }),
 }));
@@ -213,6 +219,27 @@ describe('contract: POST /api/auth/users/[id]/reissue-invite (Task 2)', () => {
       await POST(makeRequest('user-1'), makeParams('user-1'));
 
       expect(requireApiPermissionMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('step-2 denial does NOT spend the target resend budget (ordering pin)', async () => {
+      // The route's RA-1 doc comment claims a security property: step 2 sits
+      // ABOVE the RA-1 limiter "so a denied actor cannot spend the target's
+      // resend budget". Moving the limiter above step 2 would let a plain
+      // admin burn a staff target's 3/hour mail-bomb budget by repeatedly
+      // probing — a denial-of-service on the invite flow. Pin the ordering by
+      // asserting the limiter is untouched when step 2 rejects.
+      requireApiPermissionMock
+        .mockResolvedValueOnce(adminContext)
+        .mockResolvedValueOnce({
+          response: NextResponse.json({ error: 'forbidden' }, { status: 403 }),
+        });
+      findByIdMock.mockResolvedValueOnce({ id: 'target-1', role: 'super_admin' });
+
+      const { POST } = await import('@/app/api/auth/users/[id]/reissue-invite/route');
+      const res = await POST(makeRequest('user-1'), makeParams('user-1'));
+
+      expect(res.status).toBe(403);
+      expect(rateLimiterCheckMock).not.toHaveBeenCalled();
     });
   });
 

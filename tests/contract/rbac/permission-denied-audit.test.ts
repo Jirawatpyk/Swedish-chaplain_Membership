@@ -13,10 +13,11 @@
  * `summary`), so role / permission_key / route_path are encoded in a
  * deterministic summary string that this test owns.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   buildDenialAudit,
   denialSummary,
+  pathFromHeaders,
   requireApiPermission,
   requirePagePermission,
   sanitiseRoutePath,
@@ -264,6 +265,23 @@ describe('T017/I2 route-path sanitisation (denial trail cannot be forged)', () =
 
   it('drops a forged CRLF payload rather than recording it (CWE-117)', () => {
     expect(sanitiseRoutePath('/admin/x\r\nrole=super_admin permission=users.manage')).toBe('');
+    // A space alone would let a forger append a fake field to the
+    // `role=… permission=… route=…` summary; the class already excludes it.
+    expect(sanitiseRoutePath('/admin/x permission=users.manage')).toBe('');
+  });
+
+  it('drops percent-encoded CRLF (inert here, but re-materialises on any decode)', () => {
+    // Re-review round 2 — `%` is a valid path char, so `%0d%0a` passed the
+    // class; a consumer that URL-decodes the summary would get a real line
+    // break back. Rejected outright.
+    expect(sanitiseRoutePath('/admin/x%0d%0arole=super_admin')).toBe('');
+    expect(sanitiseRoutePath('/admin/x%0A%0Dinjected')).toBe('');
+  });
+
+  it('drops a protocol-relative //host prefix (off-origin if ever rendered as href)', () => {
+    // Re-review round 2 — `https://…` was already dropped, but `//evil/…`
+    // slipped through the leading-slash check.
+    expect(sanitiseRoutePath('//evil.example/admin')).toBe('');
   });
 
   it('drops values that are not same-origin paths', () => {
@@ -275,6 +293,9 @@ describe('T017/I2 route-path sanitisation (denial trail cannot be forged)', () =
 
   it('drops an over-long value so a forgery cannot dominate the 500-char summary', () => {
     expect(sanitiseRoutePath('/' + 'a'.repeat(300))).toBe('');
+    // Boundary pins (re-review): the cap is "leading slash + 255 chars".
+    expect(sanitiseRoutePath('/' + 'a'.repeat(255))).toBe('/' + 'a'.repeat(255));
+    expect(sanitiseRoutePath('/' + 'a'.repeat(256))).toBe('');
   });
 
   it('a dropped path still yields a well-formed summary (denial is never blocked)', () => {
@@ -289,4 +310,37 @@ describe('T017/I2 route-path sanitisation (denial trail cannot be forged)', () =
     expect(event.summary).toBe(denialSummary('manager', 'audit.read', ''));
     expect(event.summary).not.toContain('injected');
   });
+
+  /**
+   * Re-review round 2 — the WIRING, not just the pure function. Testing
+   * `sanitiseRoutePath` in isolation leaves `pathFromHeaders` free to return
+   * `h.get('x-pathname') ?? ''` unsanitised (the original C1 shape: test the
+   * artefact, not the call site). This drives the real header read and asserts
+   * the forged value never survives it.
+   */
+  it('pathFromHeaders sanitises the raw x-pathname header, not just the pure fn', async () => {
+    vi.resetModules();
+    vi.doMock('next/headers', () => ({
+      headers: async () => new Headers({ 'x-pathname': '/admin/x%0d%0arole=super_admin' }),
+    }));
+    const { pathFromHeaders: freshPathFromHeaders } = await import('@/lib/rbac');
+    expect(await freshPathFromHeaders()).toBe('');
+    vi.doUnmock('next/headers');
+    vi.resetModules();
+  });
+
+  it('pathFromHeaders passes an ordinary path through', async () => {
+    vi.resetModules();
+    vi.doMock('next/headers', () => ({
+      headers: async () => new Headers({ 'x-pathname': '/admin/renewals?tab=lapsed' }),
+    }));
+    const { pathFromHeaders: freshPathFromHeaders } = await import('@/lib/rbac');
+    expect(await freshPathFromHeaders()).toBe('/admin/renewals');
+    vi.doUnmock('next/headers');
+    vi.resetModules();
+  });
+
+  // Keep a reference so the top-level import is not flagged unused when the
+  // dynamic re-imports above are what exercise the wiring.
+  void pathFromHeaders;
 });

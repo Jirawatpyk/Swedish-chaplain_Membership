@@ -19,8 +19,11 @@
  */
 import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
-import { requirePagePermission } from '@/lib/rbac';
-import { legacySessionOnly } from '@/modules/auth/domain/permissions/legacy-shim';
+import { canPerform, requirePagePermission } from '@/lib/rbac';
+import {
+  legacySessionOnly,
+  mappedLegacy,
+} from '@/modules/auth/domain/permissions/legacy-shim';
 // Admin user list page (server component) reads directly from the
 // repo. An Application-layer `listUsers` use case would be a
 // near-identical passthrough and add no behaviour; this read is
@@ -81,7 +84,20 @@ export default async function AdminUsersPage({
       <PageHeader
         title={t('title')}
         subtitle={t('pageSubtitle')}
-        actions={<InviteUserDialog disabled={currentUser.role !== 'admin'} />}
+        actions={
+          // 016 re-review D — the dialog launches POST /api/auth/invite, whose
+          // step-1 gate is (users.member_accounts, auth:user write); mirror it
+          // so the affordance enables exactly when the API would admit.
+          <InviteUserDialog
+            disabled={
+              !canPerform(
+                currentUser.role,
+                'users.member_accounts',
+                mappedLegacy('auth:user', 'write'),
+              )
+            }
+          />
+        }
       />
 
       <Card>

@@ -97,10 +97,13 @@ function loadBaseline(): Map<string, Map<string, Set<Pair>>> {
     methods.set(method!, set);
     byPath.set(path, methods);
   }
-  // Fail-loud reconciliation (see header). `kind: 'api'` is counted on the raw
-  // text, so a row the regex can no longer read still counts — any drift
-  // between the two aborts instead of silently narrowing coverage.
-  const declaredApiRows = (src.match(/kind: 'api'/g) ?? []).length;
+  // Fail-loud reconciliation (see header). Counted as `kind: 'api', key:` on
+  // the raw text, so a row the regex can no longer read still counts — any
+  // drift between the two aborts instead of silently narrowing coverage. The
+  // `key:` suffix keeps the BaselineRow TYPE declaration (`readonly kind:
+  // 'page' | 'api';`) out of the count; it bit the page gate's copy of this
+  // check on its very first run.
+  const declaredApiRows = (src.match(/kind: 'api', key:/g) ?? []).length;
   if (parsed !== declaredApiRows || parsed < 100) {
     console.error(
       `check:api-route-guard ABORT — baseline parse drift: regex read ${parsed} ` +
@@ -409,6 +412,30 @@ const NARROW_MARKER = 'rbac-narrow-ok';
  */
 const SUBGATE_MARKER = 'rbac-subgate-ok';
 
+/**
+ * Routes that declare a staff gate yet legitimately carry no baseline row.
+ * Exactly one: the dual-audience GDPR artefact proxy, which a subject MEMBER
+ * also reaches (session-any, not role-matrix) — see
+ * `api-route-exhaustiveness.test.ts` SESSION_ANY. Any OTHER gated-but-
+ * unbaselined route is a staff surface hiding under an auto-classified prefix
+ * (`/api/payments/**`, `/api/portal/**`, `/api/broadcasts/**`,
+ * `/api/internal/**`), which both gates and the exhaustiveness "no
+ * staff-looking route hides" check (scoped to /api/admin + /api/auth/users)
+ * would otherwise miss — re-review finding 11.
+ */
+const GATED_WITHOUT_BASELINE_OK: ReadonlySet<string> = new Set([
+  '/api/internal/exports/[jobId]/download',
+]);
+
+/** True when the file declares any admission gate this script understands. */
+function declaresStaffGate(code: string): boolean {
+  return (
+    /requireApiPermission\(/.test(code) ||
+    /requireRenewalAdminContext\(/.test(code) ||
+    /permissionKey:\s*'/.test(code)
+  );
+}
+
 const baseline = loadBaseline();
 const errors: string[] = [];
 const seen = new Set<string>();
@@ -417,7 +444,21 @@ let checked = 0;
 for (const file of walk(API_DIR)) {
   const surface = surfaceOf(file);
   const expectedByMethod = baseline.get(surface);
-  if (expectedByMethod === undefined) continue; // non-role-matrix class; owned elsewhere
+  if (expectedByMethod === undefined) {
+    // Non-role-matrix class, owned elsewhere — UNLESS the file declares a staff
+    // gate, in which case it is a role-matrix surface missing its baseline row.
+    const code = stripCommentsPreserveLines(readFileSync(file, 'utf8'));
+    if (declaresStaffGate(code) && !GATED_WITHOUT_BASELINE_OK.has(surface)) {
+      const shown = relative(ROOT, file).replace(/\\/g, '/');
+      errors.push(
+        `${shown}: declares a staff permission gate but has no row in ` +
+          `rbac-observed-baseline.ts. A staff API surface must be in the frozen ` +
+          `baseline (or, if genuinely session-any like the GDPR export proxy, be ` +
+          `added to GATED_WITHOUT_BASELINE_OK with a reason).`,
+      );
+    }
+    continue;
+  }
   seen.add(surface);
   checked += 1;
 

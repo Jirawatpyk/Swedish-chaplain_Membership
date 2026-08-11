@@ -12,6 +12,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 import { ok, err } from '@/lib/result';
+// 016 re-review — real § 7.1 predicate, deep-imported (see change-role.test.ts).
+import { isStaffRole as realIsStaffRole } from '@/modules/auth/domain/role';
 
 const requireApiPermissionMock = vi.fn();
 const revokeInvitationMock = vi.fn();
@@ -22,8 +24,7 @@ vi.mock('@/lib/rbac', () => ({
 vi.mock('@/modules/auth', () => ({
   revokeInvitation: (...args: unknown[]) => revokeInvitationMock(...args),
   asUserId: (id: string) => id,
-  // Real predicate shape — the route's § 7.1 step-2 branch keys on it.
-  isStaffRole: (r: string) => ['super_admin', 'admin', 'manager', 'marketing'].includes(r),
+  isStaffRole: (r: string) => realIsStaffRole(r as never),
 }));
 vi.mock('@/lib/tenant-context', () => ({
   resolveTenantFromRequest: () => ({ slug: 'test-swecham', __brand: true }),

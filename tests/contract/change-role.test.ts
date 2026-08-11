@@ -28,11 +28,17 @@ vi.mock('@/lib/rbac', () => ({
 // full-suite worker-pool module caching. Since the route only
 // imports `changeRole` and `asUserId` from the barrel, stubbing
 // just those two is enough.
+// 016 re-review — the route's § 7.1 step-2 branch keys on `isStaffRole`. Import
+// the REAL predicate from its deep Domain module (pure, no infra) rather than
+// re-implementing the allow-list: a hand-copied list would stay green if the
+// real predicate ever changed. Deep import (not the barrel) keeps the author's
+// original reason to avoid `importActual` on the barrel — eager full-barrel
+// resolution is brittle under full-suite worker-pool module caching.
+import { isStaffRole as realIsStaffRole } from '@/modules/auth/domain/role';
 vi.mock('@/modules/auth', () => ({
   changeRole: (...args: unknown[]) => changeRoleMock(...args),
   asUserId: (s: string) => s,
-  // Real predicate shape — the route's § 7.1 step-2 branch keys on it.
-  isStaffRole: (r: string) => ['super_admin', 'admin', 'manager', 'marketing'].includes(r),
+  isStaffRole: (r: string) => realIsStaffRole(r as never),
 }));
 
 // 016 T028 — the route loads the TARGET row to pick the per-target permission

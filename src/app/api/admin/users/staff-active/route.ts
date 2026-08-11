@@ -1,9 +1,11 @@
 /**
  * F8 Phase 8 T222 — `GET /api/admin/users/staff-active`.
  *
- * Returns the list of active staff users (`role IN ('admin', 'manager')`,
- * `status = 'active'`) for use in the escalation-task reassign combobox
- * (T222). RBAC: admin+manager allowed (read).
+ * Returns the list of active staff users (`role IN ('super_admin', 'admin',
+ * 'manager')`, `status = 'active'`) for use in the escalation-task reassign
+ * combobox (T222). RBAC: admin+manager allowed (read). (016 T030 widened the
+ * query to include super_admin — see the note at the Promise.all below; this
+ * header used to say the pre-016 two-role set.)
  *
  * Tenant scoping note: the F1 `users` table is currently global (MTA
  * model — see saas-architecture.md). Multi-tenant filtering will be

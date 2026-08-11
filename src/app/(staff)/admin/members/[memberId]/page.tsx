@@ -23,8 +23,8 @@ import {
   PencilIcon,
   UserPlusIcon,
 } from 'lucide-react';
-import { requirePagePermission } from '@/lib/rbac';
-import { legacySessionOnly } from '@/modules/auth/domain/permissions/legacy-shim';
+import { canPerform, requirePagePermission } from '@/lib/rbac';
+import { legacyAdminOnly, legacySessionOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
 import { requestIdFromHeaders } from '@/lib/request-id';
@@ -538,7 +538,10 @@ export default async function MemberDetailPage({
   // S1-P1-10: the read-only `manager` role must not see member write
   // affordances (Edit/Archive/Add-Contact/Invite/Promote/Remove) — they
   // dead-end at the API (route RBAC rejects). Only `admin` may mutate members.
-  const canWrite = session.user.role === 'admin';
+  // 016 re-review D — evaluator-derived ('members.write'; OFF leg
+  // legacyAdminOnly reproduces the admin-only affordances and admits a
+  // promoted super_admin).
+  const canWrite = canPerform(session.user.role, 'members.write', legacyAdminOnly);
   const h = await headers();
   // resolveTenantFromHeaders honours the T115t `x-tenant` header
   // override used by throwaway-tenant E2E.
@@ -791,9 +794,13 @@ export default async function MemberDetailPage({
   // Compute once so the JSX below can conditionally switch between a 2-col
   // grid (Renewal + Benefits side-by-side) and full-width Renewal alone.
   // Benefits only shows when the F9 flag is on AND the actor is admin/manager.
+  // 016 re-review D — the preview mirrors the benefits page's own admission
+  // ('members.read'; OFF leg legacySessionOnly = admin ∪ manager, byte-
+  // identical to the old pair literal), so the tile shows exactly when the
+  // destination page would admit.
   const showBenefitsPreview =
     env.features.f9Dashboard &&
-    (session.user.role === 'admin' || session.user.role === 'manager');
+    canPerform(session.user.role, 'members.read', legacySessionOnly);
 
   return (
     <DetailContainer>
@@ -1335,7 +1342,10 @@ export default async function MemberDetailPage({
             own Suspense boundary so member metadata + contacts paint
             first and an invoice-fetch failure stays isolated to this
             section (parent page's `getMember` call is unaffected). */}
-        {(session.user.role === 'admin' || session.user.role === 'manager') && (
+        {/* 016 re-review D — finance read: follows 'invoicing.read' (manager
+            keeps it, marketing is excluded per D3 finance carve-out; OFF leg
+            legacySessionOnly = admin ∪ manager, byte-identical). */}
+        {canPerform(session.user.role, 'invoicing.read', legacySessionOnly) && (
           <Suspense fallback={<MemberInvoicesSkeleton />}>
             <MemberInvoicesSection
               tenant={tenant}
@@ -1367,7 +1377,12 @@ export default async function MemberDetailPage({
             excluded, mirroring requestDataExport). F9-flag-gated. Hidden once
             the member is erased (COMP-1 US3-A post-erase state S5) — there is no
             PII left to export, and offering it would mislead the DPO. */}
-        {env.features.f9Dashboard && session.user.role === 'admin' && !isErased && (
+        {/* 016 re-review D — the export section drives the members.bulk-gated
+            data-export API; mirror that key so the tile shows exactly when the
+            API would admit. */}
+        {env.features.f9Dashboard &&
+          canPerform(session.user.role, 'members.bulk', legacyAdminOnly) &&
+          !isErased && (
           <Suspense fallback={<MemberDataExportSkeleton />}>
             <MemberDataExportSection tenant={tenant} memberId={member.memberId} />
           </Suspense>

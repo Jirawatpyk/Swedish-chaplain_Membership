@@ -156,10 +156,16 @@ WHERE (actor_user_id = :user_id OR target_user_id = :user_id)
 -- authorization denial writes, across 46 pages and ~119 API handlers. It
 -- carries the same class of content (actor id, role, permission key, route
 -- path) and so belongs in the same exclusion. `manager_denied_write` stays
--- listed for rows written before the sweep. Omitting the successor would have
--- pulled denial rows into subject-access exports that the equivalent class was
--- deliberately kept out of.
+-- listed for rows written before the sweep. This is the Art. 17 REDACTION
+-- update: excluding an event type here means those rows are KEPT UNREDACTED
+-- (the security-incident carve-out). Omitting the successor would therefore
+-- have REDACTED the denial trail on erasure — losing the equivalent class's
+-- forensic value that `manager_denied_write` was deliberately keeping.
+-- (The DPO must confirm the balancing test + a retention bound for this
+-- now-much-larger population — see the note below the query.)
 ```
+
+> **DPO action (016 re-review):** the `permission_denied` carve-out extends the "kept unredacted for security investigation" population from three rare auth events to EVERY staff authorization denial (a manager clicking a nav link they lack, across 46 pages + ~119 handlers). Those rows carry the DS's `actor_user_id` and keep `source_ip`. Before relying on this carve-out at erasure time, the DPO must (a) re-run the legitimate-interest balancing test for the wider population and (b) set an explicit retention bound (rows currently inherit the default 5-year `retention_years`). Until confirmed, treat the carve-out as provisional.
 
 **What stays vs. what goes**:
 

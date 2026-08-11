@@ -13,9 +13,9 @@
  *   the source of truth for programmatic clients (contract tests,
  *   future client-side sort/filter).
  *
- * RBAC (`canMutate = role === 'admin'`):
- *   - `admin`   — list + all quick actions (view, record payment, issue CN),
- *     plus the "New invoice" create affordances.
+ * RBAC (`canMutate = canPerform(role, 'invoicing.write', legacyAdminOnly)`):
+ *   - `admin` / promoted `super_admin` — list + all quick actions (view,
+ *     record payment, issue CN), plus the "New invoice" create affordances.
  *   - `manager` — list only. Per-row mutating actions (record payment / void /
  *     issue CN) render DISABLED with a role-constraint tooltip
  *     (`ManagerDisabledAction`). The "New invoice" create affordances (the
@@ -25,6 +25,9 @@
  */
 import Link from 'next/link';
 import { getTranslations, getFormatter } from 'next-intl/server';
+import { canPerform } from '@/lib/rbac';
+import { legacyAdminOnly } from '@/modules/auth/domain/permissions/legacy-shim';
+import type { Role } from '@/modules/auth/domain/role';
 import { FileTextIcon, PlusIcon, ReceiptIcon } from 'lucide-react';
 import {
   listInvoicesByMember,
@@ -61,7 +64,10 @@ import { resolveMemberInvoiceDisplayNumber } from './resolve-invoice-display-num
 interface MemberInvoicesSectionProps {
   readonly tenant: TenantContext;
   readonly memberId: string;
-  readonly role: 'admin' | 'manager';
+  // 016 re-review D — widened to the full Role union: the parent page now
+  // admits via canPerform (not a role-pair literal), so no narrowing reaches
+  // this prop; `canMutate` below derives everything role-specific.
+  readonly role: Role;
   /**
    * G-U7F — status filter from URL (`?invStatus=paid`). `undefined`
    * means "all". Legal values narrowed at the page layer before
@@ -200,7 +206,11 @@ export async function MemberInvoicesSection({
 
   const rows = result.value.rows;
   const total = result.value.total;
-  const canMutate = role === 'admin';
+  // 016 re-review D — evaluator-derived ('invoicing.write'; OFF leg
+  // legacyAdminOnly reproduces the admin-only mutations and admits a promoted
+  // super_admin — this was the one staff-role literal living in _components/,
+  // outside the first version of the page gate's scan radius).
+  const canMutate = canPerform(role, 'invoicing.write', legacyAdminOnly);
 
   const formatBaht = (satang: bigint | null): string =>
     satang === null

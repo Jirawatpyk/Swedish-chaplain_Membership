@@ -151,7 +151,13 @@ export default async function MemberTimelinePage({ params, searchParams }: PageP
   // (/api/members/[id]/timeline) and the 3-row preview snippet on the member
   // detail page do NOT re-emit (avoids audit-log inflation; the page-view event
   // already establishes who accessed whose timeline).
-  if (session.user.role === 'admin' || session.user.role === 'manager') {
+  // 016 re-review D — emit UNCONDITIONALLY: the page gate above only admits
+  // staff, so every viewer here is a third-party PII access worth a trail.
+  // The old `admin || manager` pair meant a promoted super_admin's (or PR-4
+  // marketing's) full-timeline view would have gone UNRECORDED — an audit gap,
+  // the opposite failure mode from the affordance literals. actorRole takes
+  // the literal role (T033 widened it).
+  {
     await recordStaffTimelineView({
       tenantId: tenant.slug,
       requestId,

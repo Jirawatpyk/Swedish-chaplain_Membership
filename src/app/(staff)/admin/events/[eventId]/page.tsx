@@ -11,8 +11,8 @@ import { getTranslations } from 'next-intl/server';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { redactStack } from '@/lib/redact-stack';
-import { requirePagePermission } from '@/lib/rbac';
-import { legacyAdminOrManager } from '@/modules/auth/domain/permissions/legacy-shim';
+import { canPerform, requirePagePermission } from '@/lib/rbac';
+import { legacyAdminOnly, legacyAdminOrManager } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { runLoadEventDetail } from '@/lib/events-admin-deps';
 import { isMatchType, isPaymentStatus } from '@/modules/events';
@@ -286,7 +286,10 @@ export default async function AdminEventDetailPage({
       <EventDetailHeader
         event={event}
         actions={
-          currentUser.role === 'admin' && !event.archivedAt ? (
+          // 016 re-review D — evaluator-derived (events.write, the key the
+          // category-toggle + archive APIs admit; OFF leg = admin-only).
+          canPerform(currentUser.role, 'events.write', legacyAdminOnly) &&
+          !event.archivedAt ? (
             <>
               <EventCategoryToggles
                 eventId={event.eventId}
@@ -339,11 +342,16 @@ export default async function AdminEventDetailPage({
           {...(paymentStatusFilter !== null && {
             initialPaymentStatus: paymentStatusFilter,
           })}
-          // F6 Phase 9 / US6 — admin-only column; manager render path
-          // hides it. Archived events disable relink because the
-          // use-case short-circuits with `event_archived`.
+          // F6 Phase 9 / US6 — relink column follows `events.relink` (its own
+          // catalogue key, money-sensitive; not granted to marketing). Archived
+          // events disable relink because the use-case short-circuits with
+          // `event_archived`. (016 re-review D — was a `role === 'admin'`
+          // literal, which went false for every human after Migration C.)
           eventId={event.eventId}
-          canRelink={currentUser.role === 'admin' && !event.archivedAt}
+          canRelink={
+            canPerform(currentUser.role, 'events.relink', legacyAdminOnly) &&
+            !event.archivedAt
+          }
         />
         <TablePagination
           page={pagination.page}

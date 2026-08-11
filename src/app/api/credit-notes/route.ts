@@ -149,6 +149,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const parsed = issueCreditNoteSchema.safeParse({
     tenantId: tenantCtx.slug,
     actorUserId: ctx.current.user.id,
+    // 016 re-review — the literal role for the cross-tenant-probe audit row.
+    actorRole: ctx.current.user.role,
     requestId,
     invoiceId: rawBody.invoiceId,
     creditTotalSatang,

@@ -31,8 +31,8 @@ import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { requirePagePermission } from '@/lib/rbac';
-import { legacyAdminOrManager } from '@/modules/auth/domain/permissions/legacy-shim';
+import { canPerform, requirePagePermission } from '@/lib/rbac';
+import { legacyAdminOrManager, mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import {
   loadSchedulePolicies,
@@ -53,7 +53,14 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function RenewalSchedulesSettingsPage() {
   const t = await getTranslations('admin.renewals.settings.schedules');
   const { user: currentUser } = await requirePagePermission('settings.renewal_schedules', legacyAdminOrManager);
-  const readOnly = currentUser.role !== 'admin';
+  // 016 re-review D — mirrors the write route's exact pair
+  // (requireRenewalAdminContext(request, 'write', 'settings.renewal_schedules')
+  // on [tierBucket]): the form is editable exactly when the PATCH would admit.
+  const readOnly = !canPerform(
+    currentUser.role,
+    'settings.renewal_schedules',
+    mappedLegacy('renewal', 'write'),
+  );
 
   if (!env.features.f8Renewals) {
     const tShared = await getTranslations('admin.renewals');

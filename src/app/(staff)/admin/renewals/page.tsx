@@ -277,9 +277,11 @@ export default async function RenewalsPipelinePage({
             <PendingReviewSection
               tenantSlug={tenantCtx.slug}
               locale={locale}
-              // B2 — manager views this queue read-only; the reactivate route is
-              // admin-only, so only admins get the inline Approve.
-              canApprove={currentUser.role === 'admin'}
+              // B2 — manager views this queue read-only; the reactivate route
+              // admits `renewals.write` holders, so the inline Approve follows
+              // the same pair (016 re-review D — the old `role === 'admin'`
+              // literal went false for every human after Migration C).
+              canApprove={canPerform(currentUser.role, 'renewals.write', mappedLegacy('renewal', 'write'))}
             />
           </CardContent>
         </Card>
@@ -501,6 +503,8 @@ export default async function RenewalsPipelinePage({
   //     admin / manager.
   // 016 T030 — VIEW projection (not an audit stamp): manager keeps the
   // manager widget view; admin AND super_admin (D16) get the admin view.
+  // rbac-narrow-ok: chooses which widget VARIANT to render — never an
+  // authorization decision, and deliberately total over the admitted roles.
   const widgetActorRole: 'admin' | 'manager' =
     currentUser.role === 'manager' ? 'manager' : 'admin';
 

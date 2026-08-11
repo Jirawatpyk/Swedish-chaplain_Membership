@@ -143,6 +143,8 @@ export async function POST(
     {
       tenantId: tenantCtx.slug,
       actorUserId: ctx.current.user.id,
+      // 016 re-review — the literal role for the cross-tenant-probe audit row.
+      actorRole: ctx.current.user.role,
       requestId,
       invoiceId: parsedInvoiceId.value,
       voidReason: parsed.data.voidReason,

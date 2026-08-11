@@ -31,8 +31,8 @@ import { PlanBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
 import { EmptyState } from '@/components/shell/empty-state';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { requirePagePermission } from '@/lib/rbac';
-import { legacyAdminOrManager } from '@/modules/auth/domain/permissions/legacy-shim';
+import { canPerform, requirePagePermission } from '@/lib/rbac';
+import { legacyAdminOrManager, mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { loadCycleDetail, makeRenewalsDeps } from '@/modules/renewals';
 import { CycleStatusBadge } from './_components/cycle-status-badge';
@@ -115,6 +115,8 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
   // super_admin to 'manager'); the page gate admits exactly the use-case
   // schema's population, so anything else here is a gate bug — 404 rather
   // than a coerced audit stamp.
+  // rbac-narrow-ok: a TYPE narrow onto the use-case's population, mirroring
+  // the gate above — it can only fire if the gate itself regressed.
   const sessionRole = currentUser.role;
   if (sessionRole !== 'admin' && sessionRole !== 'manager' && sessionRole !== 'super_admin') {
     notFound();
@@ -460,8 +462,11 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
           notice Alert above. Only admins act (the page already lets
           managers view this read-only surface; the route handlers reject
           a manager POST with 403 + f8_role_violation_blocked audit). */}
+      {/* 016 re-review D — follows the reactivate/reject routes' pair
+          ('renewals.write'); the old `role === 'admin'` literal went false
+          for every human after Migration C. */}
       {c.status === 'pending_admin_reactivation' &&
-        currentUser.role === 'admin' && (
+        canPerform(currentUser.role, 'renewals.write', mappedLegacy('renewal', 'write')) && (
           <PendingReactivationActions
             cycleId={c.cycleId}
             status={c.status}
@@ -479,7 +484,7 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
           pending_admin_reactivation cycles. Admin-only — managers view this
           surface read-only; the route handlers also reject a manager POST
           with 403 + f8_role_violation_blocked audit. */}
-      {currentUser.role === 'admin' && (
+      {canPerform(currentUser.role, 'renewals.write', mappedLegacy('renewal', 'write')) && (
         <CycleAdminActions cycleId={c.cycleId} status={c.status} />
       )}
 

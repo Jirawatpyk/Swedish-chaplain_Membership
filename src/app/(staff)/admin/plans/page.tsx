@@ -14,8 +14,8 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 import { PlusIcon, CopyIcon } from 'lucide-react';
-import { requirePagePermission } from '@/lib/rbac';
-import { legacySessionOnly } from '@/modules/auth/domain/permissions/legacy-shim';
+import { canPerform, requirePagePermission } from '@/lib/rbac';
+import { legacyAdminOnly, legacySessionOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import type { Role } from '@/modules/auth/domain/role';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { listPlans, asPlanYear } from '@/modules/plans';
@@ -54,7 +54,8 @@ export default async function PlansListPage({
         title={t('title')}
         subtitle={t('listDescription')}
         actions={
-          currentUser.role === 'admin' ? (
+          // 016 re-review D — evaluator-derived ('plans.write').
+          canPerform(currentUser.role, 'plans.write', legacyAdminOnly) ? (
             <>
               <Link
                 href="/admin/plans/clone"

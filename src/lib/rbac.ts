@@ -1,10 +1,16 @@
 /**
  * RBAC v2 composition root (016-rbac-permissions T021).
  *
- * The ONLY place in the application that reads `FEATURE_RBAC_V2`. The Domain
- * evaluator takes the flag as an explicit parameter so it stays pure; this
- * file supplies it, together with the session, the audit sink, the metric
- * counter, and the request metadata the denial trail needs.
+ * The GATE composition root: the Domain evaluator takes the flag as an
+ * explicit parameter so it stays pure; this file supplies it, together with
+ * the session, the audit sink, the metric counter, and the request metadata
+ * the denial trail needs.
+ *
+ * NOTE (016 re-review): this is NOT the only reader of `FEATURE_RBAC_V2`.
+ * `src/lib/auth-deps.ts` also reads `env.features.rbacV2` in three places
+ * (the flag-aware administrator-count wiring). An earlier version of this
+ * header claimed exclusivity; PR 5 must grep `rbacV2` / `FEATURE_RBAC_V2`
+ * across `src/**`, not trust a single-reader claim, when it deletes the flag.
  *
  * Every staff surface calls exactly one of:
  *
@@ -111,8 +117,27 @@ export function buildDenialAudit(input: {
  * Plausible same-origin path shape. Deliberately excludes CR/LF (log-injection,
  * CWE-117) and anything that is not a URL path character, and caps the length so
  * a forged header cannot dominate the 500-char audit summary.
+ *
+ * Two shapes the character class alone admits are rejected separately
+ * (re-review round 2):
+ *   - a `//host/…` prefix — protocol-relative, so a consumer that ever renders
+ *     `route=` as an href would link OFF-origin;
+ *   - percent-encoded CR/LF (`%0d`/`%0a`) — inert in the summary itself, but it
+ *     re-materialises as a real line break in any consumer that URL-decodes,
+ *     which would reopen CWE-117 one hop downstream.
+ *
+ * ## Honest limit — sanitised ≠ trusted
+ *
+ * This validates SHAPE, not provenance. On a prefetch-skip request the header
+ * is client-controlled, so a denied caller can still choose any WELL-FORMED
+ * same-origin path for the `route=` field (e.g. record a denial at
+ * `/admin/dashboard` while probing `/admin/compliance/erasure-log`). Treat the
+ * field as attacker-influenced-but-well-formed in forensics; closing the
+ * attribution gap needs a server-derived path (or an unverified marker) and is
+ * tracked for PR 4.
  */
 const SAFE_ROUTE_PATH_RE = /^\/[A-Za-z0-9\-._~/%[\]@!$&'()*+,;=:]{0,255}$/;
+const PCT_ENCODED_CRLF_RE = /%0[da]/i;
 
 /**
  * 016 review I2 — `x-pathname` is normally set by the proxy
@@ -134,10 +159,20 @@ const SAFE_ROUTE_PATH_RE = /^\/[A-Za-z0-9\-._~/%[\]@!$&'()*+,;=:]{0,255}$/;
 export function sanitiseRoutePath(raw: string | null | undefined): string {
   if (!raw) return '';
   const path = raw.split('?')[0] ?? '';
+  if (path.startsWith('//')) return '';
+  if (PCT_ENCODED_CRLF_RE.test(path)) return '';
   return SAFE_ROUTE_PATH_RE.test(path) ? path : '';
 }
 
-async function pathFromHeaders(): Promise<string> {
+/**
+ * Exported for exactly one consumer besides `defaultDeps`: the wiring pin in
+ * `permission-denied-audit.test.ts`. The re-review proved that testing
+ * `sanitiseRoutePath` in isolation lets `return h.get('x-pathname') ?? ''`
+ * come back here unnoticed — the same test-the-artefact-not-the-wiring shape
+ * as the original C1. Do not add production callers; pages get the value via
+ * `RbacDeps.routePath`.
+ */
+export async function pathFromHeaders(): Promise<string> {
   const h = await headers();
   return sanitiseRoutePath(h.get('x-pathname'));
 }

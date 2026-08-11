@@ -1,5 +1,6 @@
 /**
- * check:staff-page-guard (016-rbac-permissions T037).
+ * check:staff-page-guard (016-rbac-permissions T037; hardened alongside the API
+ * gate after the post-remediation re-review).
  *
  * Every `(staff)/admin/**​/page.tsx` MUST call `requirePagePermission` exactly
  * once, with LITERAL arguments, and those literals MUST be the (key, row) pair
@@ -13,6 +14,24 @@
  * Why the baseline cross-check: the call alone proves a page is gated, not that
  * it is gated CORRECTLY. Tying the literals to `rbac-observed-baseline.ts` is
  * what makes the matrix test's per-role verdicts apply to the real page.
+ *
+ * ## The affordance-literal scan (re-review round 2)
+ *
+ * The original leftover-literal rule here was an `if (…role !== 'admin')` regex
+ * — it could not see `const canWrite = role === 'admin'`, which is the shape of
+ * ~20 AFFORDANCE literals the re-review found on staff pages (mutation CTAs,
+ * approve buttons, readOnly toggles). Those are not admission gates, so the
+ * page loads — but after Migration C promotes every human admin to
+ * `super_admin`, each one flips false and the admin portal renders read-only
+ * for every human while the APIs behind the buttons accept the calls. That is
+ * the C1 defect one layer up. The scan now uses the API gate's scanner
+ * (identifier-chain compare in either operand order, single or double quotes,
+ * array-literal `.includes()`, line-wrap tolerant) and covers EVERY `.tsx`
+ * under `(staff)/admin` — `_components/` included, because `canMutate = role
+ * === 'admin'` was found living in one. Deliberate narrows carry a
+ * comment-hosted `rbac-narrow-ok` marker. Honest limits are the same as the
+ * API gate's (switch/case, laundered const, predicate calls) — behavioural
+ * pins are the net for those shapes.
  *
  * Exemptions: exactly the redirect-only pages listed in the baseline's
  * `GUARD_EXEMPT_PAGES` — a page that only calls `redirect()` has no surface of
@@ -42,6 +61,20 @@ function loadBaseline(): { pages: Map<string, BaselineRow>; exempt: Set<string> 
   while ((m = re.exec(src)) !== null) {
     pages.set(m[1]!, { key: m[2]!, row: m[3]! });
   }
+  // Fail-loud reconciliation (same disease as the API gate's first version:
+  // a reformatted row silently vanished from the parsed map and its page went
+  // unpoliced while the script printed OK). Counted as `kind: 'page', key:` —
+  // the bare string also appears in the BaselineRow TYPE declaration
+  // (`readonly kind: 'page' | 'api';`), which is not a row.
+  const declaredPageRows = (src.match(/kind: 'page', key:/g) ?? []).length;
+  if (pages.size !== declaredPageRows || pages.size < 40) {
+    console.error(
+      `check:staff-page-guard ABORT — baseline parse drift: regex read ${pages.size} ` +
+        `page row(s) but the file contains ${declaredPageRows} \`kind: 'page'\` marker(s). ` +
+        'Restore the one-line literal row shape (or update the parser and this guard together).',
+    );
+    process.exit(1);
+  }
   const exemptBlock = /export const GUARD_EXEMPT_PAGES[^=]*=\s*\[([^\]]*)\]/.exec(src);
   const exempt = new Set<string>(
     [...(exemptBlock?.[1] ?? '').matchAll(/'([^']+)'/g)].map((x) => x[1]!),
@@ -49,29 +82,86 @@ function loadBaseline(): { pages: Map<string, BaselineRow>; exempt: Set<string> 
   return { pages, exempt };
 }
 
-function walk(dir: string, out: string[] = []): string[] {
+function walk(dir: string, pred: (entry: string) => boolean, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
     const p = join(dir, entry);
-    if (statSync(p).isDirectory()) walk(p, out);
-    else if (entry === 'page.tsx') out.push(p);
+    if (statSync(p).isDirectory()) walk(p, pred, out);
+    else if (pred(entry)) out.push(p);
   }
   return out;
 }
 
 /**
- * Blank out block + line comments so a scan sees code only. Deliberately naive
- * (it does not understand comment-like text inside string literals) — that is
- * acceptable here because the only consumer looks for an `if (…role !== '…')`
- * statement, which no string literal in these pages contains.
+ * Blank out comments while PRESERVING line structure (so scan hits report real
+ * line numbers and markers can be checked on the raw lines). Three passes whose
+ * order is load-bearing — see the API gate's copy for the war stories:
+ * single-line block comments first (`/* a // b *​/` would otherwise lose its
+ * terminator to the line pass), then line comments (a line comment containing
+ * `/**` would feed the block pass a false opener), then multi-line blocks
+ * reduced to their newlines.
  */
-function stripComments(src: string): string {
-  // Order is load-bearing: LINE comments first. A line comment containing `/**`
-  // (this repo has prose referencing route globs like `/admin/events/**`) makes
-  // a block-first regex latch onto that `/*` and swallow hundreds of lines,
-  // hiding the very guard this gate looks for — observed for real in
-  // `api/admin/events/import/route.ts` while building the API counterpart.
-  return src.replace(/(^|[^:])\/\/[^\n]*/g, '$1').replace(/\/\*[\s\S]*?\*\//g, '');
+function stripCommentsPreserveLines(src: string): string {
+  return src
+    .replace(/\/\*[^\n]*?\*\//g, (m) => ' '.repeat(m.length))
+    .replace(/(^|[^:])\/\/[^\n]*/g, (_m, p1: string) => p1)
+    .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ''));
 }
+
+/** 0-based line number of a character offset within `text`. */
+function lineOfIndex(text: string, index: number): number {
+  let line = 0;
+  for (let i = 0; i < index; i += 1) if (text.charCodeAt(i) === 10) line += 1;
+  return line;
+}
+
+/** A source line that is entirely comment (`//`, `*`, `/*`). */
+function isCommentLine(line: string): boolean {
+  const t = line.trim();
+  return t.startsWith('//') || t.startsWith('*') || t.startsWith('/*');
+}
+
+/**
+ * Comment-hosted opt-out marker: same line after `//`, or in the contiguous
+ * comment block at most MAX_CODE_GAP code lines above. Mirrors the API gate;
+ * see its docstring for why comment-hosting (a marker string in CODE silenced
+ * its neighbours in the first version).
+ */
+const MAX_CODE_GAP = 3;
+function markerApplies(lines: readonly string[], index: number, marker: string): boolean {
+  const line = lines[index] ?? '';
+  const slash = line.indexOf('//');
+  if (slash >= 0 && line.slice(slash).includes(marker)) return true;
+  let i = index - 1;
+  let codeGap = 0;
+  while (i >= 0) {
+    const l = lines[i] ?? '';
+    if (isCommentLine(l)) {
+      for (let j = i; j >= 0 && isCommentLine(lines[j] ?? ''); j -= 1) {
+        if (lines[j]!.includes(marker)) return true;
+      }
+      return false;
+    }
+    if (l.trim() !== '') {
+      codeGap += 1;
+      if (codeGap > MAX_CODE_GAP) return false;
+    }
+    i -= 1;
+  }
+  return false;
+}
+
+const NARROW_MARKER = 'rbac-narrow-ok';
+
+const STAFF_ROLE = `(admin|manager|super_admin|marketing)`;
+const CMP_LITERAL = new RegExp(
+  `(?:^|[^\\w$.])((?:[A-Za-z_$][\\w$]*\\s*\\.\\s*)*[A-Za-z_$][\\w$]*)\\s*(===|!==)\\s*['"]${STAFF_ROLE}['"]` +
+    `|['"]${STAFF_ROLE}['"]\\s*(===|!==)\\s*(?:[A-Za-z_$][\\w$]*\\s*\\.\\s*)*[A-Za-z_$][\\w$]*`,
+  'g',
+);
+const INCLUDES_LITERAL = new RegExp(
+  `\\[\\s*(?:['"]${STAFF_ROLE}['"]\\s*,?\\s*)+\\]\\s*\\.\\s*includes\\s*\\(`,
+  'g',
+);
 
 /** `.../admin/plans/[year]/page.tsx` → `/admin/plans/[year]`; `(home)` → `/admin`. */
 function surfaceOf(file: string): string {
@@ -84,13 +174,13 @@ const { pages: baseline, exempt } = loadBaseline();
 const errors: string[] = [];
 const seen = new Set<string>();
 
-for (const file of walk(PAGES_DIR)) {
+for (const file of walk(PAGES_DIR, (e) => e === 'page.tsx')) {
   const surface = surfaceOf(file);
   const src = readFileSync(file, 'utf8');
   const shown = relative(ROOT, file).replace(/\\/g, '/');
 
   if (exempt.has(surface)) {
-    if (/requirePagePermission/.test(stripComments(src))) {
+    if (/requirePagePermission/.test(stripCommentsPreserveLines(src))) {
       errors.push(`${shown}: listed in GUARD_EXEMPT_PAGES but calls requirePagePermission`);
     }
     // A redirect-only page must actually be redirect-only.
@@ -111,7 +201,7 @@ for (const file of walk(PAGES_DIR)) {
   // Scan CODE only, consistently: several pages name the helper in their
   // header prose, and counting those as call sites would make documenting the
   // guard a build failure.
-  const code = stripComments(src);
+  const code = stripCommentsPreserveLines(src);
   const calls = [
     ...code.matchAll(/requirePagePermission\(\s*'([^']*)'\s*,\s*([A-Za-z_$][\w$]*)/g),
   ];
@@ -139,15 +229,28 @@ for (const file of walk(PAGES_DIR)) {
   if (row !== expected.row) {
     errors.push(`${shown}: declares row '${row}', baseline says '${expected.row}'`);
   }
+}
 
-  // A leftover role literal means the sweep left a second, invisible gate that
-  // the matrix cannot see — and one that would deny super_admin after Migration C.
-  // Scan CODE only: several pages legitimately quote the old guard in their
-  // header prose, and a gate that fails on documentation teaches people to
-  // delete documentation.
-  const roleGate = /if\s*\([^)]*\brole\s*!==\s*'(admin|manager)'/.exec(stripComments(src));
-  if (roleGate !== null) {
-    errors.push(`${shown}: still contains a role-literal deny arm — ${roleGate[0].trim()}`);
+// Affordance-literal scan over EVERY staff-surface .tsx (see header) — pages,
+// _components, layouts alike. A hit is a role decision the evaluator cannot
+// see; after Migration C it silently strips humans of the affordance it gates.
+for (const file of walk(PAGES_DIR, (e) => e.endsWith('.tsx'))) {
+  const src = readFileSync(file, 'utf8');
+  const shown = relative(ROOT, file).replace(/\\/g, '/');
+  const code = stripCommentsPreserveLines(src);
+  const rawLines = src.split(/\r?\n/);
+  for (const re of [CMP_LITERAL, INCLUDES_LITERAL]) {
+    re.lastIndex = 0;
+    let hit: RegExpExecArray | null;
+    while ((hit = re.exec(code)) !== null) {
+      const line = lineOfIndex(code, hit.index);
+      if (markerApplies(rawLines, line, NARROW_MARKER)) continue;
+      errors.push(
+        `${shown}:${line + 1}: staff-role literal — ${hit[0].trim()} ` +
+          `(affordance/deny decisions must go through canPerform(role, key, row) so both legs ` +
+          `and Migration C stay correct; a TYPE narrow takes a "${NARROW_MARKER}" comment).`,
+      );
+    }
   }
 }
 
@@ -160,7 +263,8 @@ if (errors.length > 0) {
   errors.forEach((e) => console.error('  ✗ ' + e));
   console.error(
     `\n${errors.length} problem(s). Every staff page declares its permission as a ` +
-      'literal pair matching tests/helpers/rbac-observed-baseline.ts.',
+      'literal pair matching tests/helpers/rbac-observed-baseline.ts, and staff role ' +
+      'decisions go through the evaluator.',
   );
   process.exit(1);
 }

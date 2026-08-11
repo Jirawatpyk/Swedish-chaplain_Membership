@@ -33,9 +33,16 @@ import { describe, expect, it } from 'vitest';
 
 const SRC = join(process.cwd(), 'src');
 
-/** Specifiers under `@/modules/auth/**` that are NOT the public barrel. */
+/**
+ * Specifiers under `@/modules/auth/**` that are NOT the public barrel — both
+ * static `from '…'` and dynamic `import('…')` forms. The re-review proved the
+ * static-only version was evadable (and already wrong): `src/lib/rbac.ts`
+ * dynamic-imports the audit-repo, so the inventory under-counted by one and
+ * converting any static import to `await import(...)` would have removed a
+ * file from the count silently.
+ */
 const DEEP_IMPORT_RE =
-  /from '(@\/modules\/auth\/(?:domain|application|infrastructure)\/[^']+)'/g;
+  /(?:from\s+|import\s*\(\s*)['"](@\/modules\/auth\/(?:domain|application|infrastructure)\/[^'"]+)['"]/g;
 
 /**
  * Deep specifiers the carve-out permits. Everything here is pure Domain: no
@@ -61,7 +68,7 @@ const ALLOWED = new Set([
  * pretend 016 should fix them; it pins the CURRENT size so the 016 carve-out
  * cannot be used as cover to grow the older one.
  */
-const NON_DOMAIN_BASELINE_FILES = 41;
+const NON_DOMAIN_BASELINE_FILES = 42;
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
@@ -112,14 +119,25 @@ describe('016 I7 — auth deep-import carve-out inventory', () => {
         .map((h) => h.file),
     );
     // Every one of these loses its second gate argument when PR 5 deletes the
-    // legacy leg. The number is asserted so the carve-out cannot widen quietly
-    // and so PR 5 knows when it is finished. Changing it is a deliberate edit.
-    expect(shimFiles.size).toBe(134);
+    // legacy leg. A CEILING rather than exact equality (re-review): widening
+    // still demands a conscious bump here + a Complexity Tracking #5 note, but
+    // PR 5's incremental deletion counts DOWN without churning this file.
+    // 135 = 134 at PR-2 close + member-invoices-section, whose affordance
+    // literal was converted to the evaluator in re-review round 2. Floor keeps
+    // the assertion non-vacuous if the regex ever breaks.
+    expect(shimFiles.size).toBeGreaterThan(100);
+    expect(
+      shimFiles.size,
+      'A new file imports the legacy shim — a new gated surface. Bump the ' +
+        'ceiling deliberately and extend plan.md § Complexity Tracking #5.',
+    ).toBeLessThanOrEqual(135);
   });
 
   it('the pre-016 non-Domain deep imports have not grown', () => {
     // Not a 016 concern and not asserted to zero — see NON_DOMAIN_BASELINE_FILES.
     // Pinned so the RBAC carve-out cannot be used as cover to add more.
+    // 42 = the 41 static importers + src/lib/rbac.ts, whose infrastructure
+    // reach is a DYNAMIC import the first regex could not see.
     const files = new Set(
       hits.filter((h) => !isDomain(h.specifier)).map((h) => h.file),
     );

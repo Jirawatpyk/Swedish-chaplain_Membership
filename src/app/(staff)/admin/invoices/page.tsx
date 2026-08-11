@@ -17,8 +17,8 @@ export async function generateMetadata(): Promise<Metadata> {
   return { title: t('title') };
 }
 import { PlusIcon } from 'lucide-react';
-import { requirePagePermission } from '@/lib/rbac';
-import { legacySessionOnly } from '@/modules/auth/domain/permissions/legacy-shim';
+import { canPerform, requirePagePermission } from '@/lib/rbac';
+import { legacyAdminOnly, legacySessionOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
 import {
@@ -206,7 +206,9 @@ export default async function AdminInvoicesPage({
   const query = await searchParams;
 
   const { user: currentUser } = await requirePagePermission('invoicing.read', legacySessionOnly);
-  const isAdmin = currentUser.role === 'admin';
+  // 016 re-review D — evaluator-derived ('invoicing.write'; OFF leg legacyAdminOnly
+  // reproduces the admin-only affordance and admits a promoted super_admin).
+  const isAdmin = canPerform(currentUser.role, 'invoicing.write', legacyAdminOnly);
 
   const hdrs = await headers();
   const tenantCtx = resolveTenantFromHeaders(hdrs);
