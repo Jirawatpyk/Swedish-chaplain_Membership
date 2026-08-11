@@ -55,11 +55,13 @@ export async function GET(
   // The OFF-leg row is `legacyAdminOnly`, which reproduces this route's
   // pre-016 `role === 'admin'` projection byte-for-byte (manager has never
   // received DoB here) while admitting a promoted `super_admin` via D16. On
-  // the ON leg any bundle lacking the key is stripped — that is MANAGER from
-  // the flag flip onward (recorded in the cutover runbook's expected-denial
-  // baseline), and marketing from PR 4. The redundant
-  // `&& role === 'admin'` conjunct that used to sit on the serialiser call
-  // made this check dead code and locked super_admin out of DoB entirely.
+  // the ON leg any bundle lacking the key is stripped — for MANAGER that is no
+  // change (denied on both legs and pre-016 alike; nothing flips here at
+  // cutover, and this arm writes NO permission_denied row, so it can never
+  // appear in the runbook's § 4 reconciliation); marketing arrives already
+  // stripped at PR 4. The redundant `&& role === 'admin'` conjunct that used
+  // to sit on the serialiser call made this check dead code and locked
+  // super_admin out of DoB entirely.
   // Write surfaces (edit/create forms) are members.write-gated and unaffected.
   const includeDob =
     url.searchParams.get('include') === 'date_of_birth' &&

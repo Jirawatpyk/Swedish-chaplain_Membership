@@ -213,6 +213,70 @@ describe('contract: GET /api/plans/search (T064)', () => {
     expect(body.results.navigate).toHaveLength(1);
   });
 
+  /**
+   * 016 re-review B — the refundable-invoice arm previously had no assertion
+   * that could tell whether it ran: the default stubs return zero rows, so a
+   * manager response and an admin response were byte-identical. These two pins
+   * drive REAL rows through the arm so the `canPerform(role, 'refunds.write',
+   * legacyAdminOnly)` decision becomes observable in the payload.
+   */
+  describe('refundable-invoice arm (refunds.write sub-gate)', () => {
+    function stubOneRefundableRow() {
+      listInvoicesPagedMock.mockResolvedValue(
+        ok({
+          rows: [
+            {
+              invoiceId: 'inv-1',
+              total: { satang: 250000 },
+              currency: 'THB',
+              memberIdentitySnapshot: { legal_name: 'Fogmaker AB' },
+              documentNumber: { raw: 'SC-2026-000123' },
+              receiptDocumentNumberRaw: null,
+              status: 'paid',
+            },
+          ],
+          total: 1,
+        }),
+      );
+      loadInvoicePaymentActivityMock.mockResolvedValue(
+        ok({ payments: [], refunds: [] }),
+      );
+      computeRemainingRefundableMock.mockReturnValue({ satang: 250000 });
+    }
+
+    it('admin receives the refundable section when rows exist', async () => {
+      requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+      stubPlansOk();
+      stubOneRefundableRow();
+
+      const { GET } = await import('@/app/api/plans/search/route');
+      const res = await GET(makeRequest('fogmaker'));
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.results.refundableInvoices).toHaveLength(1);
+      expect(body.results.refundableInvoices[0].invoice_id).toBe('inv-1');
+    });
+
+    it('manager never receives the section — the arm must not even query', async () => {
+      requireApiPermissionMock.mockResolvedValueOnce(managerContext);
+      buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
+      searchPlansMock.mockResolvedValueOnce(
+        ok({ results: { plans: [], actions: [], navigate: [] } }),
+      );
+      stubOneRefundableRow();
+
+      const { GET } = await import('@/app/api/plans/search/route');
+      const res = await GET(makeRequest('fogmaker'));
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.results.refundableInvoices).toHaveLength(0);
+      // Not just an empty list — the paid-invoice query itself must be
+      // skipped, or a manager keystroke would still fan out tenant-wide
+      // invoice reads it is not entitled to trigger.
+      expect(listInvoicesPagedMock).not.toHaveBeenCalled();
+    });
+  });
+
   it('200 — manager gets filtered actions (no create/clone)', async () => {
     requireApiPermissionMock.mockResolvedValueOnce(managerContext);
     buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });

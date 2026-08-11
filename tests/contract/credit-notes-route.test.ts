@@ -6,7 +6,7 @@
  *   - 400 invalid_json (malformed body)
  *   - 400 invalid_body (zod fail — missing required field)
  *   - 400 invalid_body — non-numeric creditTotalSatang string
- *   - 403 forbidden (manager role blocked)
+ *   - 403 forbidden (gate rejection returned untouched; key + row pinned)
  *   - 429 rate-limited (bucket exhausted)
  *   - 404 invoice_not_found → HTTP 404
  *   - 409 invalid_status → HTTP 409
@@ -259,13 +259,15 @@ describe('POST /api/credit-notes — contract', () => {
     expect((await res.json()).error.code).toBe('invalid_body');
   });
 
-  it('403 forbidden when actor role is manager', async () => {
-    // 016 review C1 — manager is denied BY THE GATE, not by a role literal in
+  it('returns the gate rejection untouched (key + shim row pinned)', async () => {
+    // 016 review C1 — denial is decided BY THE GATE, not by a role literal in
     // the handler (the literal was removed because it also 403'd super_admin).
-    // So this pins the two things that actually keep manager out: the gate is
-    // asked for `credit_notes.write` with the finance-write shim row, and its
-    // rejection is returned untouched. Weakening either — a read key, a wider
-    // row, or ignoring the rejection — fails here.
+    // No role appears in this case — the gate is mocked to reject. The pins
+    // are what actually keep manager out: the gate is asked for
+    // `credit_notes.write` with the finance-write shim row, and its rejection
+    // is returned untouched. Weakening either — a read key, a wider row, or
+    // ignoring the rejection — fails here. Manager's real denial on both legs
+    // is proven by role-endpoint-matrix.test.ts.
     requireApiPermissionMock.mockResolvedValueOnce({
       response: NextResponse.json({ error: { code: 'forbidden' } }, { status: 403 }),
     });

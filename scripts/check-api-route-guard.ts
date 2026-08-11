@@ -1,6 +1,7 @@
 /**
  * check:api-route-guard — the API counterpart to `check:staff-page-guard`
- * (016-rbac-permissions, review finding C3).
+ * (016-rbac-permissions, review finding C3; hardened per the post-remediation
+ * re-review, which defeated the first version six different ways).
  *
  * ## Why this exists
  *
@@ -26,19 +27,35 @@
  *
  *  1. Every declared gate argument is a LITERAL (a computed key cannot be
  *     compared to the baseline, so it is rejected outright).
- *  2. The SET of (key, row) pairs declared in the file equals the set the
- *     baseline expects for that path across all its methods. Set equality rather
- *     than per-method matching because a call site cannot be attributed to an
- *     exported handler without parsing scopes — set equality still catches a
- *     wrong key, a missing key, and an extra key.
- *  3. No leftover STAFF-role literal deny arm. Comparisons against `'member'`
- *     are allowed: `member` is never a staff role, so narrowing it out is the
- *     safe direction and is how several handlers satisfy a discriminated-union
- *     actor type.
+ *  2. PER-METHOD matching: each exported handler's declarations are compared
+ *     against the baseline rows for exactly that `METHOD /path`. The first
+ *     version compared one SET for the whole file, which the re-review defeated
+ *     two ways on multi-method files: swapping the keys between GET and POST
+ *     left the set identical, and downgrading PATCH to a pair its sibling GET
+ *     already declared was absorbed by set-dedup. Both now fail. Files whose
+ *     gate objects live at MODULE scope (the F6 `permissionKey:` guards — the
+ *     scanner cannot attribute a module-level object to the handler that uses
+ *     it without real scope analysis) fall back to file-level set equality;
+ *     their per-method behaviour is pinned by the F6 contract/unit tests, which
+ *     run the real guards.
+ *  3. No leftover STAFF-role literal deny arm (see the scanner's own docstring
+ *     for its honest limits). Comparisons against `'member'` are allowed:
+ *     `member` is never a staff role, so narrowing it out is the safe direction
+ *     and is how several handlers satisfy a discriminated-union actor type.
  *
  * Routes with no baseline row are skipped — their class (public / cron-bearer /
  * webhook-signature / portal-member / session-any) is owned by
  * `api-route-exhaustiveness.test.ts`, which fails on anything unclassified.
+ *
+ * ## Fail-loud guarantee on the baseline parse
+ *
+ * The baseline is scraped with a regex bound to the row literal's exact shape.
+ * The re-review proved the first version FAILED OPEN: reformatting a single row
+ * made its path vanish from the parsed map, the route was silently skipped, and
+ * the script still printed OK — the vanished row happened to be the members
+ * backup CSV that emits every contact's date of birth. The parse is now
+ * reconciled against an independent count of `kind: 'api'` occurrences in the
+ * same file and aborts on any mismatch.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
@@ -46,6 +63,9 @@ import { join, relative, sep } from 'node:path';
 const ROOT = process.cwd();
 const API_DIR = join(ROOT, 'src', 'app', 'api');
 const BASELINE = join(ROOT, 'tests', 'helpers', 'rbac-observed-baseline.ts');
+
+const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'] as const;
+type HttpMethod = (typeof HTTP_METHODS)[number];
 
 /** A (key, row) pair, rendered as a comparable string. */
 type Pair = string;
@@ -55,21 +75,43 @@ const pairOf = (key: string, row: string): Pair => `${key} :: ${row}`;
 /**
  * Baseline rows carry either a bare row kind (`{ kind: 'legacyAdminOnly' }`) or
  * a mapped row with data (`{ kind: 'mappedLegacy', resource: 'x', action: 'y' }`).
- * Render both into the same shape the source scan produces.
+ * Render both into the same shape the source scan produces. Keyed per METHOD —
+ * see § 2 of the header.
  */
-function loadBaseline(): Map<string, Set<Pair>> {
+function loadBaseline(): Map<string, Map<string, Set<Pair>>> {
   const src = readFileSync(BASELINE, 'utf8');
-  const byPath = new Map<string, Set<Pair>>();
+  const byPath = new Map<string, Map<string, Set<Pair>>>();
   const re =
     /\{ surface: '([^']+)', kind: 'api', key: '([^']+)', row: \{ kind: '([^']+)'(?:, resource: '([^']+)', action: '([^']+)')? \}/g;
   let m: RegExpExecArray | null;
+  let parsed = 0;
   while ((m = re.exec(src)) !== null) {
+    parsed += 1;
     const [, surface, key, kind, resource, action] = m;
-    const path = surface!.split(' ').slice(1).join(' ');
+    const [method, ...pathParts] = surface!.split(' ');
+    const path = pathParts.join(' ');
     const row = kind === 'mappedLegacy' ? `mappedLegacy(${resource},${action})` : kind!;
-    const set = byPath.get(path) ?? new Set<Pair>();
+    const methods = byPath.get(path) ?? new Map<string, Set<Pair>>();
+    const set = methods.get(method!) ?? new Set<Pair>();
     set.add(pairOf(key!, row));
-    byPath.set(path, set);
+    methods.set(method!, set);
+    byPath.set(path, methods);
+  }
+  // Fail-loud reconciliation (see header). `kind: 'api'` is counted on the raw
+  // text, so a row the regex can no longer read still counts — any drift
+  // between the two aborts instead of silently narrowing coverage.
+  const declaredApiRows = (src.match(/kind: 'api'/g) ?? []).length;
+  if (parsed !== declaredApiRows || parsed < 100) {
+    console.error(
+      `check:api-route-guard ABORT — baseline parse drift: regex read ${parsed} ` +
+        `api row(s) but the file contains ${declaredApiRows} \`kind: 'api'\` marker(s). `,
+    );
+    console.error(
+      'A baseline row was probably reformatted out of the one-line literal shape ' +
+        'this script parses. Restore the shape (or update the parser + this guard ' +
+        'together); skipping the row would silently un-police its route.',
+    );
+    process.exit(1);
   }
   return byPath;
 }
@@ -84,17 +126,33 @@ function walk(dir: string, out: string[] = []): string[] {
 }
 
 /**
- * Blank out comments so prose describing a guard is never counted as one.
+ * Blank out comments while PRESERVING line structure, so match offsets can be
+ * mapped back to line numbers for region attribution and marker lookup.
  *
- * LINE comments are stripped FIRST, and that order is load-bearing: this repo
- * has line comments containing `/**` (e.g. a prose reference to the route glob
- * `/admin/events/**` in `api/admin/events/import/route.ts:48`). Stripping block
- * comments first makes the regex latch onto that `/*` and swallow everything up
- * to the next `*​/` — 564 lines in that file, which silently hid the guard this
- * gate exists to find. The `[^:]` guard keeps `https://` intact.
+ * Order is load-bearing, in three passes:
+ *
+ *  1. SINGLE-LINE block comments first (`/* a *​/`). This closes the mirror
+ *     hazard the two-pass version had: a single-line block comment CONTAINING
+ *     `//` (`/* a // b *​/`) would lose its terminator to the line-comment pass,
+ *     leaving an unclosed `/*` that swallowed everything to the next `*​/`.
+ *  2. LINE comments next. This repo has line comments containing `/**` (prose
+ *     naming the route glob `/admin/events/**`), which made a block-first pass
+ *     latch on and swallow 564 lines — silently hiding the guard this gate
+ *     exists to find. The `[^:]` guard keeps `https://` intact.
+ *  3. Multi-line block comments last, replaced by their newlines only.
  */
-function stripComments(src: string): string {
-  return src.replace(/(^|[^:])\/\/[^\n]*/g, '$1').replace(/\/\*[\s\S]*?\*\//g, '');
+function stripCommentsPreserveLines(src: string): string {
+  return src
+    .replace(/\/\*[^\n]*?\*\//g, (m) => ' '.repeat(m.length))
+    .replace(/(^|[^:])\/\/[^\n]*/g, (_m, p1: string) => p1)
+    .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ''));
+}
+
+/** 0-based line number of a character offset within `text`. */
+function lineOfIndex(text: string, index: number): number {
+  let line = 0;
+  for (let i = 0; i < index; i += 1) if (text.charCodeAt(i) === 10) line += 1;
+  return line;
 }
 
 /** `src/app/api/plans/[year]/route.ts` → `/api/plans/[year]`. */
@@ -103,50 +161,110 @@ function surfaceOf(file: string): string {
   return '/' + rel.join('/');
 }
 
+/** A source line that is entirely comment (`//`, `*`, `/*`). */
+function isCommentLine(line: string): boolean {
+  const t = line.trim();
+  return t.startsWith('//') || t.startsWith('*') || t.startsWith('/*');
+}
+
 /**
- * Extract every gate declaration in a route file, in the three forms the repo
- * uses. Returns `null` for the pair when an argument is not a literal, so the
- * caller can report it rather than silently passing.
+ * True when an opt-out marker legitimately covers the code at `index`.
+ *
+ * A marker counts ONLY when it is hosted in a comment — either after `//` on
+ * the same line, or inside the contiguous comment block sitting at most
+ * `MAX_CODE_GAP` code lines above (a narrow's condition often spans several
+ * lines, so the block may not be strictly adjacent to every line it covers).
+ *
+ * The first version accepted the marker string ANYWHERE in a 5-line raw
+ * window, which the re-review defeated twice: a plain string constant in CODE
+ * (`const tag = 'rbac-narrow-ok'`) silenced the 4 lines beneath it, and an
+ * unrelated marker bled onto neighbouring statements. Comment-hosting kills
+ * the string-constant hole. The remaining semantics are trust in the
+ * ANNOTATION itself: a committer who writes a marker comment directly above a
+ * genuine authorization decision defeats any textual gate — that is what
+ * review of marker diffs is for.
+ */
+const MAX_CODE_GAP = 3;
+function markerApplies(
+  lines: readonly string[],
+  index: number,
+  marker: string,
+): boolean {
+  const line = lines[index] ?? '';
+  const slash = line.indexOf('//');
+  if (slash >= 0 && line.slice(slash).includes(marker)) return true;
+
+  let i = index - 1;
+  let codeGap = 0;
+  while (i >= 0) {
+    const l = lines[i] ?? '';
+    if (isCommentLine(l)) {
+      for (let j = i; j >= 0 && isCommentLine(lines[j] ?? ''); j -= 1) {
+        if (lines[j]!.includes(marker)) return true;
+      }
+      return false;
+    }
+    if (l.trim() !== '') {
+      codeGap += 1;
+      if (codeGap > MAX_CODE_GAP) return false;
+    }
+    i -= 1;
+  }
+  return false;
+}
+
+interface Located {
+  readonly pair: Pair;
+  readonly line: number; // 0-based
+}
+
+/**
+ * Extract every gate declaration with its line, in the four forms the repo
+ * uses. Regexes are whitespace-tolerant so multi-line call formatting (the
+ * T028 codemod's default) is matched — the first version's per-line scan for
+ * `canPerform` could not see a wrapped call at all.
  */
 function declaredPairs(
   code: string,
   rawLines: readonly string[],
-): { pairs: Pair[]; nonLiteral: number } {
-  const pairs: Pair[] = [];
+): { located: Located[]; nonLiteral: number } {
+  const located: Located[] = [];
   let nonLiteral = 0;
 
   // 1. requireApiPermission(request, 'key', <row>)
-  const direct = code.matchAll(
-    /requireApiPermission\(\s*[A-Za-z_$][\w$]*\s*,\s*'([^']+)'\s*,\s*(mappedLegacy\(\s*'([^']+)'\s*,\s*'([^']+)'\s*\)|[A-Za-z_$][\w$]*)/g,
-  );
-  for (const m of direct) {
+  const FORM1 =
+    /requireApiPermission\(\s*[A-Za-z_$][\w$]*\s*,\s*'([^']+)'\s*,\s*(mappedLegacy\(\s*'([^']+)'\s*,\s*'([^']+)'\s*\)|[A-Za-z_$][\w$]*)/g;
+  let literal1 = 0;
+  for (const m of code.matchAll(FORM1)) {
+    literal1 += 1;
     const [, key, rowExpr, resource, action] = m;
-    pairs.push(pairOf(key!, resource ? `mappedLegacy(${resource},${action})` : rowExpr!));
+    located.push({
+      pair: pairOf(key!, resource ? `mappedLegacy(${resource},${action})` : rowExpr!),
+      line: lineOfIndex(code, m.index!),
+    });
   }
-  const directCalls = (code.match(/requireApiPermission\(/g) ?? []).length;
-  nonLiteral += directCalls - [...code.matchAll(
-    /requireApiPermission\(\s*[A-Za-z_$][\w$]*\s*,\s*'([^']+)'\s*,\s*(mappedLegacy\(\s*'([^']+)'\s*,\s*'([^']+)'\s*\)|[A-Za-z_$][\w$]*)/g,
-  )].length;
+  nonLiteral += (code.match(/requireApiPermission\(/g) ?? []).length - literal1;
 
   // 2. requireRenewalAdminContext(request, 'action', 'key') — the F8 wrapper
   //    composes requireApiPermission with mappedLegacy('renewal', action),
   //    mapping the 'manager_exception' label onto the 'read' population.
-  const renewals = code.matchAll(
-    /requireRenewalAdminContext\(\s*[A-Za-z_$][\w$]*\s*,\s*'([^']+)'\s*,\s*'([^']+)'\s*\)/g,
-  );
-  for (const m of renewals) {
+  const FORM2 =
+    /requireRenewalAdminContext\(\s*[A-Za-z_$][\w$]*\s*,\s*'([^']+)'\s*,\s*'([^']+)'\s*\)/g;
+  let literal2 = 0;
+  for (const m of code.matchAll(FORM2)) {
+    literal2 += 1;
     const [, action, key] = m;
     const mapped = action === 'manager_exception' ? 'read' : action!;
-    pairs.push(pairOf(key!, `mappedLegacy(renewal,${mapped})`));
+    located.push({
+      pair: pairOf(key!, `mappedLegacy(renewal,${mapped})`),
+      line: lineOfIndex(code, m.index!),
+    });
   }
-  const renewalCalls = (code.match(/requireRenewalAdminContext\(/g) ?? []).length;
-  nonLiteral += renewalCalls - [...code.matchAll(
-    /requireRenewalAdminContext\(\s*[A-Za-z_$][\w$]*\s*,\s*'([^']+)'\s*,\s*'([^']+)'\s*\)/g,
-  )].length;
+  nonLiteral += (code.match(/requireRenewalAdminContext\(/g) ?? []).length - literal2;
 
   // 3. F6 route-local guards (D9): adminOnly[Writer]Guard({ permissionKey: 'x', … })
   for (const m of code.matchAll(/permissionKey:\s*'([^']+)'/g)) {
-    pairs.push(pairOf(m[1]!, 'legacyF6Guard'));
+    located.push({ pair: pairOf(m[1]!, 'legacyF6Guard'), line: lineOfIndex(code, m.index!) });
   }
 
   // 4. canPerform(role, 'key', row) used as the ADMISSION decision. Two F6 GET
@@ -157,43 +275,67 @@ function declaredPairs(
   //    A `canPerform` that gates a FIELD or an optional SECTION of an
   //    already-authorised response (DoB on the member read, the refundable
   //    invoices arm of the palette) is a sub-gate, not the surface's admission
-  //    decision, so it carries a `SUBGATE_MARKER` and is excluded here. The
-  //    marker is required rather than inferred: without it an admission
+  //    decision, so it carries a `SUBGATE_MARKER` (comment-hosted; checked on
+  //    the RAW lines because comment stripping removes it) and is excluded.
+  //    The marker is required rather than inferred: without it an admission
   //    decision could hide behind the same syntax.
-  //    Scanned on the RAW source, because the marker lives in a comment and
-  //    `stripComments` would remove it. Comment lines are skipped explicitly so
-  //    prose naming `canPerform` is never counted as a call.
-  for (const [i, line] of rawLines.entries()) {
-    if (isCommentLine(line)) continue;
-    if (markerNear(rawLines, i, SUBGATE_MARKER)) continue;
-    const m =
-      /canPerform\(\s*[A-Za-z_$][\w$.]*\s*,\s*'([^']+)'\s*,\s*(mappedLegacy\(\s*'([^']+)'\s*,\s*'([^']+)'\s*\)|[A-Za-z_$][\w$]*)/.exec(
-        line,
-      );
-    if (m === null) continue;
+  const FORM4 =
+    /canPerform\(\s*[A-Za-z_$][\w$.]*\s*,\s*'([^']+)'\s*,\s*(mappedLegacy\(\s*'([^']+)'\s*,\s*'([^']+)'\s*\)|[A-Za-z_$][\w$]*)/g;
+  for (const m of code.matchAll(FORM4)) {
+    const line = lineOfIndex(code, m.index!);
+    if (markerApplies(rawLines, line, SUBGATE_MARKER)) continue;
     const [, key, rowExpr, resource, action] = m;
-    pairs.push(pairOf(key!, resource ? `mappedLegacy(${resource},${action})` : rowExpr!));
+    located.push({
+      pair: pairOf(key!, resource ? `mappedLegacy(${resource},${action})` : rowExpr!),
+      line,
+    });
   }
 
-  return { pairs, nonLiteral };
+  return { located, nonLiteral };
 }
 
-/** A source line that is entirely comment (`//`, `*`, `/*`). */
-function isCommentLine(line: string): boolean {
-  const t = line.trim();
-  return t.startsWith('//') || t.startsWith('*') || t.startsWith('/*');
+interface HandlerSegment {
+  readonly method: HttpMethod;
+  readonly startLine: number; // 0-based, inclusive
 }
 
 /**
- * True when an opt-out marker sits on this line or in the short comment block
- * immediately above it. A window rather than same-line only, because the repo's
- * house style puts the reason on its own comment line above the code.
+ * Locate exported handler starts, in declaration order, plus `export const
+ * GET = POST` style aliases (the Vercel-cron GET=POST shim).
  */
-function markerNear(lines: readonly string[], index: number, marker: string): boolean {
-  for (let i = Math.max(0, index - 4); i <= index; i += 1) {
-    if (lines[i]?.includes(marker)) return true;
+function handlerSegments(code: string): {
+  segments: HandlerSegment[];
+  aliases: Map<HttpMethod, HttpMethod>;
+} {
+  const segments: HandlerSegment[] = [];
+  const aliases = new Map<HttpMethod, HttpMethod>();
+  const methodAlt = HTTP_METHODS.join('|');
+  const fnRe = new RegExp(
+    `^export\\s+(?:async\\s+)?function\\s+(${methodAlt})\\b`,
+    'gm',
+  );
+  for (const m of code.matchAll(fnRe)) {
+    segments.push({ method: m[1] as HttpMethod, startLine: lineOfIndex(code, m.index!) });
   }
-  return false;
+  const aliasRe = new RegExp(
+    `^export\\s+const\\s+(${methodAlt})\\s*=\\s*(${methodAlt})\\s*;?`,
+    'gm',
+  );
+  for (const m of code.matchAll(aliasRe)) {
+    aliases.set(m[1] as HttpMethod, m[2] as HttpMethod);
+  }
+  segments.sort((a, b) => a.startLine - b.startLine);
+  return { segments, aliases };
+}
+
+/** Region owner of a 0-based line: an HTTP method, or 'module'. */
+function regionOf(segments: readonly HandlerSegment[], line: number): HttpMethod | 'module' {
+  let owner: HttpMethod | 'module' = 'module';
+  for (const seg of segments) {
+    if (seg.startLine <= line) owner = seg.method;
+    else break;
+  }
+  return owner;
 }
 
 /**
@@ -205,8 +347,10 @@ function markerNear(lines: readonly string[], index: number, marker: string): bo
  * about — so the step-1 key is an EXPECTED extra declaration here, not drift.
  *
  * Keeping this allowance in the gate (rather than adding a second baseline row)
- * preserves the baseline as a frozen capture. The two-step behaviour itself is
- * pinned behaviourally by the contract tests on all six routes.
+ * preserves the baseline as a frozen capture. The two-step behaviour itself —
+ * including the branch placement this script cannot see — is pinned by the
+ * step-2 contract tests on all six routes (invite included as of the
+ * post-remediation re-review; it was the one route the codemod missed).
  */
 const STEP_ONE_COMPANION: Readonly<Record<string, Pair>> = Object.fromEntries(
   [
@@ -220,25 +364,42 @@ const STEP_ONE_COMPANION: Readonly<Record<string, Pair>> = Object.fromEntries(
 );
 
 /**
- * A leftover deny arm comparing against a STAFF role. `'member'` is excluded on
- * purpose — narrowing a member out is the safe direction and several handlers
- * need it to satisfy a discriminated-union actor type.
+ * Leftover deny arms comparing against a STAFF role. `'member'` is excluded on
+ * purpose — narrowing a member out is the safe direction.
+ *
+ * Two shapes are scanned, on comment-stripped line-preserving text so wrapped
+ * comparisons are visible (the first version scanned per raw line and a
+ * newline between the operator and the literal escaped it):
+ *
+ *   1. identifier-chain `===`/`!==` staff-role literal, either operand order,
+ *      single or double quotes;
+ *   2. `['admin', …].includes(x)` over an array literal of staff roles.
+ *
+ * ## Honest limits (all proven to slip past regex scanning)
+ *
+ * `switch (role) { case 'manager': … }`, a role literal laundered through a
+ * named constant (`const ONLY = 'admin'; role !== ONLY`), and predicate calls
+ * (`isAdministrativeRole(role, false)`, `!isStaffRole(role)`) are NOT caught
+ * here. The behavioural net for this class is the super_admin happy-path
+ * contract tests on the money routes (credit-notes + invoice-void), which fail
+ * on ANY handler-level deny of an admitted super_admin regardless of how it is
+ * spelled. When adding a staff API surface, add that pin too.
  */
-/**
- * ANY identifier (or property chain) compared with `===`/`!==` to a staff-role
- * string literal. Deliberately NOT restricted to identifiers named `*role`:
- * the first version of this rule required a name ending in `Role`, which
- * matched `sessionRole` but silently missed the far more common
- * `ctx.current.user.role` — i.e. it missed the exact shape of the four defects
- * this gate was written to catch. A mutation test (re-inserting the deny arm on
- * the invoice-void route) is what surfaced that; keep one when editing this.
- */
-const STAFF_ROLE_LITERAL =
-  /(?:^|[^\w$.])((?:[A-Za-z_$][\w$]*\s*\.\s*)*[A-Za-z_$][\w$]*)\s*(===|!==)\s*'(admin|manager|super_admin|marketing)'/;
+const STAFF_ROLE = `(admin|manager|super_admin|marketing)`;
+const CMP_LITERAL = new RegExp(
+  `(?:^|[^\\w$.])((?:[A-Za-z_$][\\w$]*\\s*\\.\\s*)*[A-Za-z_$][\\w$]*)\\s*(===|!==)\\s*['"]${STAFF_ROLE}['"]` +
+    `|['"]${STAFF_ROLE}['"]\\s*(===|!==)\\s*(?:[A-Za-z_$][\\w$]*\\s*\\.\\s*)*[A-Za-z_$][\\w$]*`,
+  'g',
+);
+const INCLUDES_LITERAL = new RegExp(
+  `\\[\\s*(?:['"]${STAFF_ROLE}['"]\\s*,?\\s*)+\\]\\s*\\.\\s*includes\\s*\\(`,
+  'g',
+);
 
 /**
  * Opt-out for a comparison that is a TYPE narrow feeding a use-case schema
- * rather than an authorization decision. Must name the reason on the same line.
+ * rather than an authorization decision. Comment-hosted, same line or the
+ * contiguous comment block above — see `markerApplies`.
  */
 const NARROW_MARKER = 'rbac-narrow-ok';
 
@@ -255,55 +416,119 @@ let checked = 0;
 
 for (const file of walk(API_DIR)) {
   const surface = surfaceOf(file);
-  const expected = baseline.get(surface);
-  if (expected === undefined) continue; // non-role-matrix class; owned elsewhere
+  const expectedByMethod = baseline.get(surface);
+  if (expectedByMethod === undefined) continue; // non-role-matrix class; owned elsewhere
   seen.add(surface);
   checked += 1;
 
   const shown = relative(ROOT, file).replace(/\\/g, '/');
   const src = readFileSync(file, 'utf8');
-  const code = stripComments(src);
+  const code = stripCommentsPreserveLines(src);
   const rawLines = src.split(/\r?\n/);
-  const { pairs, nonLiteral } = declaredPairs(code, rawLines);
+  const { located, nonLiteral } = declaredPairs(code, rawLines);
 
   if (nonLiteral > 0) {
     errors.push(`${shown}: ${nonLiteral} gate call(s) with non-literal arguments`);
     continue;
   }
-  if (pairs.length === 0) {
+  if (located.length === 0) {
     errors.push(`${shown}: baseline expects a role-matrix gate but the file declares none`);
     continue;
   }
 
-  const declared = new Set(pairs);
-  for (const want of expected) {
-    if (!declared.has(want)) {
-      errors.push(`${shown}: baseline expects [${want}] — file declares [${[...declared].join('] [')}]`);
-    }
-  }
   const companion = STEP_ONE_COMPANION[surface];
-  for (const got of declared) {
-    if (expected.has(got) || got === companion) continue;
-    errors.push(`${shown}: declares [${got}] which is not in the baseline for '${surface}'`);
+  const { segments, aliases } = handlerSegments(code);
+  const byRegion = new Map<string, Set<Pair>>();
+  for (const { pair, line } of located) {
+    const region = regionOf(segments, line);
+    const set = byRegion.get(region) ?? new Set<Pair>();
+    set.add(pair);
+    byRegion.set(region, set);
   }
-  if (companion !== undefined && !declared.has(companion)) {
-    errors.push(
-      `${shown}: § 7.1 step-1 gate missing — expected [${companion}] before the target row is read`,
-    );
+  for (const [alias, target] of aliases) {
+    const targetSet = byRegion.get(target);
+    if (targetSet !== undefined) byRegion.set(alias, targetSet);
   }
 
-  // Scanned on the RAW source for the same reason as the sub-gate scan: the
-  // opt-out marker lives in a comment. Comment lines are skipped so a header
-  // quoting the old guard is never reported as a live deny arm.
-  for (const [i, line] of rawLines.entries()) {
-    if (isCommentLine(line)) continue;
-    if (markerNear(rawLines, i, NARROW_MARKER)) continue;
-    const hit = STAFF_ROLE_LITERAL.exec(line);
-    if (hit !== null) {
+  const modulePairs = byRegion.get('module');
+  if (modulePairs !== undefined && modulePairs.size > 0) {
+    // F6 allowance — module-scope guard objects cannot be attributed to a
+    // handler textually; fall back to file-level set equality. Per-method
+    // behaviour of these guards is pinned by the F6 contract/unit tests.
+    const declared = new Set(located.map((l) => l.pair));
+    const expectedUnion = new Set<Pair>();
+    for (const set of expectedByMethod.values()) for (const p of set) expectedUnion.add(p);
+    for (const want of expectedUnion) {
+      if (!declared.has(want)) {
+        errors.push(
+          `${shown}: baseline expects [${want}] — file declares [${[...declared].join('] [')}]`,
+        );
+      }
+    }
+    for (const got of declared) {
+      if (expectedUnion.has(got) || got === companion) continue;
+      errors.push(`${shown}: declares [${got}] which is not in the baseline for '${surface}'`);
+    }
+    if (companion !== undefined && !declared.has(companion)) {
       errors.push(
-        `${shown}:${i + 1}: staff-role literal behind the gate — ${hit[0].trim()} ` +
+        `${shown}: § 7.1 step-1 gate missing — expected [${companion}] before the target row is read`,
+      );
+    }
+  } else {
+    // Strict per-method matching.
+    for (const [method, expected] of expectedByMethod) {
+      const declared = byRegion.get(method);
+      if (declared === undefined || declared.size === 0) {
+        errors.push(
+          `${shown}: baseline expects a gate in the ${method} handler — none declared there`,
+        );
+        continue;
+      }
+      for (const want of expected) {
+        if (!declared.has(want)) {
+          errors.push(
+            `${shown}: ${method} expects [${want}] — handler declares [${[...declared].join('] [')}]`,
+          );
+        }
+      }
+      for (const got of declared) {
+        if (expected.has(got) || got === companion) continue;
+        errors.push(
+          `${shown}: ${method} declares [${got}] which is not in the baseline for '${method} ${surface}'`,
+        );
+      }
+      if (companion !== undefined && !declared.has(companion)) {
+        errors.push(
+          `${shown}: § 7.1 step-1 gate missing in ${method} — expected [${companion}]`,
+        );
+      }
+    }
+    // A handler that declares pairs for a method the baseline does not know is
+    // drift in the other direction (e.g. a new PATCH added without a baseline
+    // row — it would otherwise be policed by nothing).
+    for (const [region, set] of byRegion) {
+      if (region === 'module' || expectedByMethod.has(region) || set.size === 0) continue;
+      if (aliases.has(region as HttpMethod)) continue;
+      errors.push(
+        `${shown}: ${region} handler declares a gate but '${region} ${surface}' has no baseline row`,
+      );
+    }
+  }
+
+  // Leftover staff-role literal scan — on comment-stripped line-preserving
+  // text (so wrapped comparisons are visible and prose can never false-
+  // positive), with comment-hosted markers checked against the RAW lines.
+  for (const re of [CMP_LITERAL, INCLUDES_LITERAL]) {
+    re.lastIndex = 0;
+    let hit: RegExpExecArray | null;
+    while ((hit = re.exec(code)) !== null) {
+      const line = lineOfIndex(code, hit.index);
+      if (markerApplies(rawLines, line, NARROW_MARKER)) continue;
+      errors.push(
+        `${shown}:${line + 1}: staff-role literal behind the gate — ${hit[0].trim()} ` +
           `(a second, invisible gate the matrix cannot see; it would deny super_admin after Migration C. ` +
-          `If this is a TYPE narrow, not an authorization decision, add a "${NARROW_MARKER}" comment on the line.)`,
+          `If this is a TYPE narrow, not an authorization decision, add a "${NARROW_MARKER}" comment ` +
+          `on the line or in the comment block directly above it.)`,
       );
     }
   }
@@ -318,8 +543,8 @@ if (errors.length > 0) {
   errors.forEach((e) => console.error('  ✗ ' + e));
   console.error(
     `\n${errors.length} problem(s). Every staff API handler declares its permission as a ` +
-      'literal pair matching tests/helpers/rbac-observed-baseline.ts, and carries no ' +
-      'staff-role literal behind the gate.',
+      'literal pair matching tests/helpers/rbac-observed-baseline.ts (per METHOD), and ' +
+      'carries no staff-role literal behind the gate.',
   );
   process.exit(1);
 }
