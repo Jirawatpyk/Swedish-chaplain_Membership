@@ -18,7 +18,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { ok, err } from '@/lib/result';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const uploadTenantLogoMock = vi.fn();
 const classifyIdempotencyRequestMock = vi.fn();
  
@@ -29,8 +29,8 @@ const reserveIdempotencyRecordMock = vi.fn(
  
 const rememberIdempotentResponseMock = vi.fn(async (..._args: unknown[]) => undefined);
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 vi.mock('@/lib/tenant-context', () => ({
   resolveTenantFromRequest: () => ({ slug: 'test-swecham', __brand: true }),
@@ -132,7 +132,7 @@ describe('contract: POST /api/tenant-invoice-settings/logo idempotency (F-09)', 
   });
 
   it('first-time classification → proceeds to use-case and returns 201 with logo_blob_key', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     classifyIdempotencyRequestMock.mockResolvedValueOnce({ kind: 'first' });
     uploadTenantLogoMock.mockResolvedValueOnce(
       ok({ logoBlobKey: 'invoicing/test-swecham/logos/abc.png' }),
@@ -159,7 +159,7 @@ describe('contract: POST /api/tenant-invoice-settings/logo idempotency (F-09)', 
   });
 
   it('replay classification → returns cached response without calling use-case', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     classifyIdempotencyRequestMock.mockResolvedValueOnce({
       kind: 'replay',
       previousResponse: {
@@ -185,7 +185,7 @@ describe('contract: POST /api/tenant-invoice-settings/logo idempotency (F-09)', 
   });
 
   it('conflict classification → 409 idempotency_conflict, use-case NOT called', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     classifyIdempotencyRequestMock.mockResolvedValueOnce({
       kind: 'conflict',
       storedBodyHash: 'hash:old',
@@ -207,7 +207,7 @@ describe('contract: POST /api/tenant-invoice-settings/logo idempotency (F-09)', 
   });
 
   it('optional Idempotency-Key omitted → proceeds without classify/remember', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     uploadTenantLogoMock.mockResolvedValueOnce(
       ok({ logoBlobKey: 'invoicing/test-swecham/logos/nokey.png' }),
     );
@@ -221,7 +221,7 @@ describe('contract: POST /api/tenant-invoice-settings/logo idempotency (F-09)', 
   });
 
   it('F-01 — validation error under idempotency key is cached so replay returns same 4xx', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     classifyIdempotencyRequestMock.mockResolvedValueOnce({ kind: 'first' });
     uploadTenantLogoMock.mockResolvedValueOnce(
       err({ code: 'too_large', size: 2_000_000, maxBytes: 1_048_576 }),
@@ -249,7 +249,7 @@ describe('contract: POST /api/tenant-invoice-settings/logo idempotency (F-09)', 
   });
 
   it('logo_history_cap_reached → 409 with error code (distinct from idempotency_conflict)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     classifyIdempotencyRequestMock.mockResolvedValueOnce({ kind: 'first' });
     uploadTenantLogoMock.mockResolvedValueOnce(
       err({ code: 'logo_history_cap_reached', current: 50, cap: 50 }),

@@ -22,12 +22,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 import { ok, err } from '@/lib/result';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const updatePlanMock = vi.fn();
 const buildPlansDepsMock = vi.fn();
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 vi.mock('@/modules/plans/plans-deps', () => ({
   buildPlansDeps: (...args: unknown[]) => buildPlansDepsMock(...args),
@@ -111,7 +111,7 @@ describe('contract: PATCH /api/plans/[year]/[planId] (T111)', () => {
   });
 
   it('200 on successful cosmetic update — returns the updated plan', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
     updatePlanMock.mockResolvedValueOnce(ok(SAMPLE_PLAN));
 
@@ -127,7 +127,7 @@ describe('contract: PATCH /api/plans/[year]/[planId] (T111)', () => {
   });
 
   it('422 prior_year_locked_fields with details.locked_fields + suggested_action', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
     updatePlanMock.mockResolvedValueOnce(
       err({
@@ -150,7 +150,7 @@ describe('contract: PATCH /api/plans/[year]/[planId] (T111)', () => {
   });
 
   it('404 when plan not found', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
     updatePlanMock.mockResolvedValueOnce(err({ type: 'not_found' }));
 
@@ -165,7 +165,7 @@ describe('contract: PATCH /api/plans/[year]/[planId] (T111)', () => {
   });
 
   it('422 on partnership/corporate mismatch from the use case', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
     updatePlanMock.mockResolvedValueOnce(
       err({
@@ -185,7 +185,7 @@ describe('contract: PATCH /api/plans/[year]/[planId] (T111)', () => {
   });
 
   it('409 idempotency_conflict when key replayed with different body', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
     updatePlanMock.mockResolvedValueOnce(err({ type: 'idempotency_conflict' }));
 
@@ -200,7 +200,7 @@ describe('contract: PATCH /api/plans/[year]/[planId] (T111)', () => {
   });
 
   it('401 when unauthenticated', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: NextResponse.json({ error: 'no-session' }, { status: 401 }),
     });
     const { PATCH } = await import('@/app/api/plans/[year]/[planId]/route');
@@ -213,7 +213,7 @@ describe('contract: PATCH /api/plans/[year]/[planId] (T111)', () => {
   });
 
   it('400 when Idempotency-Key header missing', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
     const { PATCH } = await import('@/app/api/plans/[year]/[planId]/route');
     const res = await PATCH(
@@ -227,7 +227,7 @@ describe('contract: PATCH /api/plans/[year]/[planId] (T111)', () => {
   });
 
   it('400 on malformed path (uppercase slug)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
     const { PATCH } = await import('@/app/api/plans/[year]/[planId]/route');
     const res = await PATCH(

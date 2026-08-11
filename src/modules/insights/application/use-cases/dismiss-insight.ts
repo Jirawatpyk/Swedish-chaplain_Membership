@@ -20,8 +20,12 @@ import { f9RetentionFor } from '../ports/audit-port';
 import type { InsightsAuditPort } from '../ports/audit-port';
 import type { InsightDismissalRepo } from '../ports/insight-dismissal-repo';
 import type { ClockPort } from '../ports/clock-port';
+import type { Role } from '@/modules/auth';
 
-export type InsightsActorRole = 'admin' | 'manager' | 'member';
+// 016 T030/T033 — widened to the full Role union so routes stop casting and
+// audit emitters record the LITERAL actor role; the decision arms in this
+// file stay explicit per-role checks (deny arms unchanged).
+export type InsightsActorRole = Role;
 
 export interface DismissInsightInput {
   readonly insightKey: string;

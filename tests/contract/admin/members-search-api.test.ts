@@ -8,7 +8,7 @@
  *   - 200 OK with `primaryContact=null` mapping to `primaryContactName: null`
  *     (not "undefined undefined")
  *   - 400 invalid query (empty `q`, oversized `limit`)
- *   - 401/403 path via `requireAdminContext` (member role denied)
+ *   - 401/403 path via `requireApiPermission` (member role denied)
  *   - 500 when use-case returns server_error
  *
  * Mock surface: directorySearch use-case + admin context + tenant.
@@ -24,7 +24,7 @@ import {
 import { NextRequest } from 'next/server';
 
 const directorySearchMock = vi.fn();
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const resolveTenantFromRequestMock = vi.fn();
 
 vi.mock('@/modules/members', async () => {
@@ -44,8 +44,8 @@ vi.mock('@/modules/members/members-deps', () => ({
   }),
 }));
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 
 vi.mock('@/lib/tenant-context', () => ({
@@ -63,7 +63,7 @@ const ADMIN_CONTEXT = {
 
 beforeEach(() => {
   resolveTenantFromRequestMock.mockReturnValue({ slug: TENANT_SLUG });
-  requireAdminContextMock.mockResolvedValue(ADMIN_CONTEXT);
+  requireApiPermissionMock.mockResolvedValue(ADMIN_CONTEXT);
   directorySearchMock.mockResolvedValue({
     ok: true,
     value: {
@@ -209,7 +209,7 @@ describe('GET /api/admin/members/search (Round-1 test-M5)', () => {
   });
 
   it('admin-context denial bubbles up (e.g. member role)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: new Response(null, { status: 404 }),
     });
     const { GET } = await loadRoute();

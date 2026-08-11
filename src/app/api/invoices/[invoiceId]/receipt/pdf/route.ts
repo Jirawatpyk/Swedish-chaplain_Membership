@@ -15,7 +15,8 @@
  *                            return 425 for symmetry if it ever surfaces
  */
 import { NextResponse, type NextRequest } from 'next/server';
-import { requireAdminContext } from '@/lib/admin-context';
+import { requireApiPermission } from '@/lib/rbac';
+import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import {
@@ -30,10 +31,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ invoiceId: string }> },
 ): Promise<NextResponse> {
-  const ctx = await requireAdminContext(request, {
-    resource: 'invoice',
-    action: 'read',
-  });
+  const ctx = await requireApiPermission(request, 'invoicing.read', mappedLegacy('invoice', 'read'));
   if ('response' in ctx) return ctx.response;
   const { invoiceId } = await params;
   const tenantCtx = resolveTenantFromRequest(request);

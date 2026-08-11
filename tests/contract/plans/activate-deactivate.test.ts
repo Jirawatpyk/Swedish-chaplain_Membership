@@ -20,13 +20,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 import { ok, err } from '@/lib/result';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const activatePlanMock = vi.fn();
 const deactivatePlanMock = vi.fn();
 const buildPlansDepsMock = vi.fn();
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 vi.mock('@/modules/plans/plans-deps', () => ({
   buildPlansDeps: (...args: unknown[]) => buildPlansDepsMock(...args),
@@ -117,7 +117,7 @@ describe('contract: POST /api/plans/[year]/[planId]/activate (T122)', () => {
   });
 
   it('200 on activate — returns plan with is_active: true', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
     activatePlanMock.mockResolvedValueOnce(ok(SAMPLE_PLAN_ACTIVE));
 
@@ -135,7 +135,7 @@ describe('contract: POST /api/plans/[year]/[planId]/activate (T122)', () => {
   });
 
   it('200 on no-op activate (already active) — idempotent', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
     activatePlanMock.mockResolvedValueOnce(ok(SAMPLE_PLAN_ACTIVE));
 
@@ -150,7 +150,7 @@ describe('contract: POST /api/plans/[year]/[planId]/activate (T122)', () => {
   });
 
   it('404 when plan not found', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
     activatePlanMock.mockResolvedValueOnce(err({ type: 'not_found' }));
 
@@ -165,7 +165,7 @@ describe('contract: POST /api/plans/[year]/[planId]/activate (T122)', () => {
   });
 
   it('401 when unauthenticated', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: NextResponse.json({ error: 'no-session' }, { status: 401 }),
     });
     const { POST } = await import(
@@ -180,7 +180,7 @@ describe('contract: POST /api/plans/[year]/[planId]/activate (T122)', () => {
   });
 
   it('403 when manager role attempts activate', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: NextResponse.json(
         { error: { code: 'forbidden', message: 'Insufficient permissions.' } },
         { status: 403 },
@@ -198,7 +198,7 @@ describe('contract: POST /api/plans/[year]/[planId]/activate (T122)', () => {
   });
 
   it('500 when audit write fails', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
     activatePlanMock.mockResolvedValueOnce(
       err({ type: 'audit_failed', message: 'db down' }),
@@ -217,7 +217,7 @@ describe('contract: POST /api/plans/[year]/[planId]/activate (T122)', () => {
   });
 
   it('400 when Idempotency-Key header missing', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
     const { POST } = await import(
       '@/app/api/plans/[year]/[planId]/activate/route'
@@ -239,7 +239,7 @@ describe('contract: POST /api/plans/[year]/[planId]/deactivate (T122)', () => {
   });
 
   it('200 on deactivate — returns plan with is_active: false', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
     deactivatePlanMock.mockResolvedValueOnce(ok(SAMPLE_PLAN_INACTIVE));
 
@@ -256,7 +256,7 @@ describe('contract: POST /api/plans/[year]/[planId]/deactivate (T122)', () => {
   });
 
   it('200 on no-op deactivate (already inactive) — idempotent', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
     deactivatePlanMock.mockResolvedValueOnce(ok(SAMPLE_PLAN_INACTIVE));
 
@@ -271,7 +271,7 @@ describe('contract: POST /api/plans/[year]/[planId]/deactivate (T122)', () => {
   });
 
   it('404 when plan not found', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
     deactivatePlanMock.mockResolvedValueOnce(err({ type: 'not_found' }));
 
@@ -286,7 +286,7 @@ describe('contract: POST /api/plans/[year]/[planId]/deactivate (T122)', () => {
   });
 
   it('403 when manager role attempts deactivate', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: NextResponse.json(
         { error: { code: 'forbidden', message: 'Insufficient permissions.' } },
         { status: 403 },
@@ -304,7 +304,7 @@ describe('contract: POST /api/plans/[year]/[planId]/deactivate (T122)', () => {
   });
 
   it('500 when audit write fails on deactivate', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
     deactivatePlanMock.mockResolvedValueOnce(
       err({ type: 'audit_failed', message: 'db down' }),

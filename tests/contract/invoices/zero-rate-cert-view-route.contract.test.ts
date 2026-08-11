@@ -9,7 +9,7 @@
  * route comment), and the status mapping.
  *
  *   admin        → 200 (streams the cert bytes with the upstream Content-Type)
- *   manager      → 200 (read-only staff; requireAdminContext action:'read' admits
+ *   manager      → 200 (read-only staff; requireApiPermission action:'read' admits
  *                  manager — asserts the route threads actorRole='manager')
  *   member       → 403 (guard short-circuits; use-case never runs)
  *   cert missing → 404 (cert_not_attached)
@@ -23,12 +23,12 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { NextResponse, NextRequest } from 'next/server';
 import { err, ok } from '@/lib/result';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const getZeroRateCertSignedUrlMock = vi.fn();
 const fetchMock = vi.fn();
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 
 vi.mock('@/lib/tenant-context', () => ({
@@ -119,7 +119,7 @@ describe('contract: GET /api/invoices/[id]/zero-rate-cert (088 UX-B1 cert view)'
   }, 60_000);
 
   beforeEach(() => {
-    requireAdminContextMock.mockResolvedValue(adminContext);
+    requireApiPermissionMock.mockResolvedValue(adminContext);
     fetchMock.mockResolvedValue(okBlobResponse());
     vi.stubGlobal('fetch', fetchMock);
   });
@@ -143,7 +143,7 @@ describe('contract: GET /api/invoices/[id]/zero-rate-cert (088 UX-B1 cert view)'
   });
 
   it('manager → 200 (read-only staff admitted) and the route threads actorRole=manager', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(managerContext);
+    requireApiPermissionMock.mockResolvedValueOnce(managerContext);
     getZeroRateCertSignedUrlMock.mockResolvedValueOnce(
       ok({ url: 'https://blob.test/cert.png', filename: 'zero-rate-cert-SC-2026-000012.png' }),
     );
@@ -151,7 +151,7 @@ describe('contract: GET /api/invoices/[id]/zero-rate-cert (088 UX-B1 cert view)'
     const res = await GET(makeRequest(), routeParams);
     expect(res.status).toBe(200);
     // FR-024 ratified: manager (read-only staff) gets the cert view, consistent
-    // with the invoice-PDF read gate (requireAdminContext action:'read').
+    // with the invoice-PDF read gate (requireApiPermission action:'read').
     expect(getZeroRateCertSignedUrlMock).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ actorRole: 'manager', invoiceId: VALID_INVOICE_ID }),
@@ -159,7 +159,7 @@ describe('contract: GET /api/invoices/[id]/zero-rate-cert (088 UX-B1 cert view)'
   });
 
   it('member → 403 (guard short-circuits; use-case + fetch never run)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: NextResponse.json({ error: 'forbidden' }, { status: 403 }),
     });
     const { GET } = await importRoute();

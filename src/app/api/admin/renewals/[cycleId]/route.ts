@@ -29,8 +29,23 @@ export async function GET(
     });
   }
 
-  const ctx = await requireRenewalAdminContext(request, 'read');
+  const ctx = await requireRenewalAdminContext(request, 'read', 'renewals.read');
   if ('response' in ctx) return ctx.response;
+
+  // 016 T030 — the LITERAL role (the old ternary demoted a promoted
+  // super_admin to 'manager'). The gate admits exactly the schema's
+  // population; anything else here is a gate bug — fail loudly.
+  // rbac-narrow-ok: a TYPE narrow onto the use-case's zod population, not an
+  // authorization decision — it admits exactly what the gate above admits, so
+  // it can only fire if the gate itself regressed.
+  const sessionRole = ctx.current.user.role;
+  if (sessionRole !== 'admin' && sessionRole !== 'manager' && sessionRole !== 'super_admin') {
+    return errorResponse({
+      status: 403,
+      code: 'forbidden',
+      correlationId: ctx.correlationId,
+    });
+  }
 
   const { cycleId } = await context.params;
   const tenantCtx = resolveTenantFromRequest(request);
@@ -41,7 +56,7 @@ export async function GET(
       tenantId: tenantCtx.slug,
       cycleId,
       actorUserId: ctx.current.user.id,
-      actorRole: ctx.current.user.role === 'admin' ? 'admin' : 'manager',
+      actorRole: sessionRole,
       requestId: ctx.requestId,
       correlationId: ctx.correlationId,
     });

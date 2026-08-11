@@ -50,7 +50,7 @@ import {
  
 import type { Role } from '@/modules/auth/domain/role';
 import { PaletteGroups } from './groups';
-import type { PaletteSearchResponse } from './registry';
+import { filterResultsByRole, type PaletteSearchResponse } from './registry';
 
 type CommandPaletteProps = {
   readonly currentUserRole: Role;
@@ -169,28 +169,24 @@ export function CommandPalette({ currentUserRole }: CommandPaletteProps) {
     handleOpenChange(false);
   }, [handleOpenChange]);
 
-  // Defence-in-depth: filter actions by role on the client too. The
-  // server is authoritative, but this costs nothing and prevents a
-  // server-side bug from flashing an admin-only item to a manager.
-  // Also swap in EMPTY_RESULTS when there is no query so the list
-  // starts blank instead of showing stale prior-query hits.
+  // Defence-in-depth: filter results by role on the client too. The server is
+  // authoritative, but this costs nothing and prevents a server-side bug from
+  // flashing an admin-only item to a manager.
+  //
+  // 016 PR 3 — this used to be an inline `currentUserRole === 'admin'` chain
+  // right here, which the union-widening sweep could not see: post-Migration-C
+  // a promoted super_admin fell through it and lost the whole Actions group.
+  // The logic now lives in `filterResultsByRole` (registry.ts) beside its
+  // sibling registry filter, routed through the D16 totaliser and unit-tested.
+  //
+  // Also swap in EMPTY_RESULTS when there is no query so the list starts blank
+  // instead of showing stale prior-query hits.
   const hasQuery = deferredQuery.trim().length > 0;
   const sourceResults = hasQuery ? results : EMPTY_RESULTS;
-  const filteredResults: PaletteSearchResponse['results'] =
-    currentUserRole === 'admin'
-      ? sourceResults
-      : {
-          plans: sourceResults.plans,
-          members: sourceResults.members,
-          // Refundable-invoice search is admin-only; manager + member
-          // never see this group even if a server bug populates it.
-          refundableInvoices: [],
-          actions:
-            currentUserRole === 'manager'
-              ? sourceResults.actions.filter((a) => !isAdminOnlyAction(a.id))
-              : [],
-          navigate: currentUserRole === 'member' ? [] : sourceResults.navigate,
-        };
+  const filteredResults: PaletteSearchResponse['results'] = filterResultsByRole(
+    sourceResults,
+    currentUserRole,
+  );
 
   const hasAnyResult =
     filteredResults.plans.length +
@@ -235,20 +231,5 @@ export function CommandPalette({ currentUserRole }: CommandPaletteProps) {
   );
 }
 
-// Mirror of `ACTION_REGISTRY` entries that carry `requires: 'admin'`
-// in `search-plans.ts`. Kept as a string-set check here rather than an
-// import to keep this file free of server-side module imports.
-// 088 T021b / FR-035 — the two invoice money actions are admin-only (managers
-// are read-only on finance); include them so a server-filter bug can never
-// flash them to a manager.
-const ADMIN_ONLY_ACTION_IDS = new Set([
-  'plan.new',
-  'plan.clone',
-  'fee.edit',
-  'invoice.recordPayment',
-  'invoice.rerenderReceipt',
-]);
-
-function isAdminOnlyAction(id: string): boolean {
-  return ADMIN_ONLY_ACTION_IDS.has(id);
-}
+// (ADMIN_ONLY_ACTION_IDS + the role gate moved to registry.ts's
+// `filterResultsByRole` — see the call site above.)

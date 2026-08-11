@@ -12,7 +12,8 @@ import { getLocale } from 'next-intl/server';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
-import { requireAdminContext } from '@/lib/admin-context';
+import { requireApiPermission } from '@/lib/rbac';
+import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { rateLimiter } from '@/lib/auth-deps';
 import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
@@ -29,7 +30,7 @@ export async function POST(
   if (!env.features.f9Dashboard) {
     return NextResponse.json({ error: { code: 'feature_disabled' } }, { status: 503 });
   }
-  const ctx = await requireAdminContext(request, { resource: 'members', action: 'write' });
+  const ctx = await requireApiPermission(request, 'members.bulk', mappedLegacy('members', 'write'));
   if ('response' in ctx) return ctx.response;
 
   const { id } = await context.params;

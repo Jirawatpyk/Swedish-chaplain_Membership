@@ -68,6 +68,7 @@ export async function GET(request: NextRequest): Promise<Response> {
 
   // 2. RBAC — admin only; manager/member/no-session → 404.
   const guard = await adminOnlyGuard(request, {
+    permissionKey: 'events.write',
     attemptedRoute: ROUTE,
     attemptedAction: 'csv_import_history_list',
   });

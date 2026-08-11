@@ -14,7 +14,9 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 import { PlusIcon, CopyIcon } from 'lucide-react';
-import { requireSession } from '@/lib/auth-session';
+import { canPerform, requirePagePermission } from '@/lib/rbac';
+import { legacyAdminOnly, legacySessionOnly } from '@/modules/auth/domain/permissions/legacy-shim';
+import type { Role } from '@/modules/auth/domain/role';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { listPlans, asPlanYear } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
@@ -42,7 +44,7 @@ export default async function PlansListPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  const { user: currentUser } = await requireSession('staff');
+  const { user: currentUser } = await requirePagePermission('plans.read', legacySessionOnly);
   const query = await searchParams;
   const t = await getTranslations('admin.plans');
 
@@ -52,7 +54,8 @@ export default async function PlansListPage({
         title={t('title')}
         subtitle={t('listDescription')}
         actions={
-          currentUser.role === 'admin' ? (
+          // 016 re-review D — evaluator-derived ('plans.write').
+          canPerform(currentUser.role, 'plans.write', legacyAdminOnly) ? (
             <>
               <Link
                 href="/admin/plans/clone"
@@ -84,7 +87,7 @@ export default async function PlansListPage({
           */}
           <PlansList
             query={query}
-            currentUserRole={currentUser.role as 'admin' | 'manager' | 'member'}
+            currentUserRole={currentUser.role}
           />
         </CardContent>
       </Card>
@@ -97,7 +100,7 @@ async function PlansList({
   currentUserRole,
 }: {
   query: SearchParams;
-  currentUserRole: 'admin' | 'manager' | 'member';
+  currentUserRole: Role;
 }) {
   const tenant = resolveTenantFromRequest();
   const deps = buildPlansDeps(tenant);

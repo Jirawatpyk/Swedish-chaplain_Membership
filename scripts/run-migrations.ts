@@ -39,6 +39,7 @@ import {
   findMissingEnumValues,
   formatMissingEnumValuesError,
 } from './lib/enum-migration-guard';
+import { promotionGateFailure } from './lib/rbac-promotion-gate';
 
 // Local convenience: load `.env.local` if present (covers direct `tsx`
 // invocations alongside the `--env-file=.env.local` flag in `pnpm db:migrate`).
@@ -162,6 +163,40 @@ async function findMissingRequiredEnums(client: Sql) {
   return findMissingEnumValues(present);
 }
 
+/**
+ * Phase 0 — D7 promotion gate (016 T036). If a PENDING `rbac_v2_promotion`
+ * migration is present while `FEATURE_RBAC_V2` is not 'true', refuse the WHOLE
+ * run before any DDL: Migration C must only apply after the flag flip
+ * (docs/runbooks/rbac-v2-cutover.md § 5). Decision logic + naming contract
+ * live in scripts/lib/rbac-promotion-gate.ts.
+ */
+async function checkPromotionGate(client: Sql): Promise<string | null> {
+  const migrationFiles = readdirSync(MIGRATIONS_DIR).filter((n) => n.endsWith('.sql'));
+  const journalRaw = readFileSync(join(MIGRATIONS_DIR, 'meta', '_journal.json'), 'utf-8');
+  const journal = (JSON.parse(journalRaw) as { entries: Array<{ tag: string; when: number }> })
+    .entries;
+
+  let appliedWhens: ReadonlySet<number>;
+  try {
+    const rows = await client<Array<{ created_at: string | number }>>`
+      select created_at from drizzle.__drizzle_migrations`;
+    appliedWhens = new Set(rows.map((r) => Number(r.created_at)));
+  } catch (error) {
+    // Fresh database — drizzle has not created its bookkeeping table yet, so
+    // nothing is applied. (42P01 undefined_table / 3F000 invalid_schema_name.)
+    const code = (error as { code?: unknown } | null)?.code;
+    if (code !== '42P01' && code !== '3F000') throw error;
+    appliedWhens = new Set();
+  }
+
+  return promotionGateFailure({
+    migrationFiles,
+    journal,
+    appliedWhens,
+    flagValue: process.env.FEATURE_RBAC_V2,
+  });
+}
+
 async function main(): Promise<void> {
   const client = postgres(url!, {
     max: 1,
@@ -172,15 +207,20 @@ async function main(): Promise<void> {
 
   let failure: string | null = null;
   try {
-    // Phase 1 — commit enum-adds in their own transaction (see header).
-    await applyEnumAddsAutocommit(client);
-    // Phase 2 — normal transactional migrate (journal / __drizzle_migrations).
-    await migrate(db, { migrationsFolder: './drizzle/migrations' });
-    console.log('✓ Migrations applied');
-    // Phase 3 — fail loudly if a code-required enum value did not land.
-    const missing = await findMissingRequiredEnums(client);
-    if (missing.length > 0) {
-      failure = formatMissingEnumValuesError(missing);
+    // Phase 0 — D7 promotion gate: refuse before ANY DDL when Migration C is
+    // pending and the RBAC v2 flag is not flipped (016 T036).
+    failure = await checkPromotionGate(client);
+    if (failure === null) {
+      // Phase 1 — commit enum-adds in their own transaction (see header).
+      await applyEnumAddsAutocommit(client);
+      // Phase 2 — normal transactional migrate (journal / __drizzle_migrations).
+      await migrate(db, { migrationsFolder: './drizzle/migrations' });
+      console.log('✓ Migrations applied');
+      // Phase 3 — fail loudly if a code-required enum value did not land.
+      const missing = await findMissingRequiredEnums(client);
+      if (missing.length > 0) {
+        failure = formatMissingEnumValuesError(missing);
+      }
     }
   } catch (error) {
     failure = `Migration failed: ${

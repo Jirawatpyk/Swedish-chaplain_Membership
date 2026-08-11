@@ -2,8 +2,10 @@
  * Bootstrap admin seed (T080, research.md § 12, spec §Assumptions
  * "Bootstrap admin").
  *
- * Creates the FIRST `admin` user as ACTIVE with a password set
- * directly. This is a deliberate deviation from the normal invitation
+ * 016 T038 (D18): mints the FIRST **`super_admin`** user as ACTIVE with a
+ * password set directly — this is the pre-mint step of the RBAC v2 cutover
+ * (docs/runbooks/rbac-v2-cutover.md § 2) as well as the original first-boot
+ * seed. This is a deliberate deviation from the normal invitation
  * flow because:
  *
  *   - The invitation redemption page (`/invite/[token]/page.tsx`) is
@@ -15,9 +17,11 @@
  *     (`checkPasswordPolicy`) that real users go through, so it can't
  *     be weaker.
  *
- * Refuses to run if any admin (active or pending) already exists.
- * This is the only privilege-escalation vector in the system, so it
- * must be impossible to invoke twice.
+ * Refuses to run IFF a `super_admin` (active or pending) already exists —
+ * NOT if plain admins exist: the D18 pre-mint happens on a system that has
+ * live admins, and they must not block minting the first super_admin. This
+ * remains the only privilege-escalation vector in the system, so it must be
+ * impossible to invoke twice.
  *
  * Usage:
  *
@@ -74,15 +78,16 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  // 1. Refuse if any admin exists
+  // 1. Refuse IFF a super_admin exists (D18 — plain admins never block the
+  //    pre-mint; see the header).
   const existing = await db
     .select({ id: users.id, status: users.status })
     .from(users)
-    .where(sql`${users.role} = 'admin'`);
+    .where(sql`${users.role} = 'super_admin'`);
 
   if (existing.length > 0) {
     console.error(
-      `seed-bootstrap-admin: ${existing.length} admin row(s) already exist. Bootstrap is single-use.`,
+      `seed-bootstrap-admin: ${existing.length} super_admin row(s) already exist. Bootstrap is single-use.`,
     );
     process.exit(2);
   }
@@ -105,7 +110,7 @@ async function main(): Promise<void> {
     .insert(users)
     .values({
       email,
-      role: 'admin',
+      role: 'super_admin',
       status: 'active',
       passwordHash: hash,
       lastPasswordChangedAt: now,
@@ -123,7 +128,7 @@ async function main(): Promise<void> {
     actorUserId: 'system:bootstrap',
     targetUserId: user.id as never,
     sourceIp: null,
-    summary: `bootstrap admin created for ${email}`,
+    summary: `bootstrap super_admin created for ${email}`,
     requestId: `bootstrap-${now.toISOString()}`,
   });
 

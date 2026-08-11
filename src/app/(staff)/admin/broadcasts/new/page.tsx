@@ -10,12 +10,12 @@
  */
 
 import type { Metadata } from 'next';
-import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { ProxyComposeForm } from '@/components/broadcast/proxy-compose-form';
-import { requireSession } from '@/lib/auth-session';
+import { requirePagePermission } from '@/lib/rbac';
+import { legacyAdminOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.broadcasts.proxySubmitDialog');
@@ -23,8 +23,7 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function AdminProxyComposePage(): Promise<React.ReactElement> {
-  const { user } = await requireSession('staff');
-  if (user.role !== 'admin') notFound();
+  await requirePagePermission('broadcasts.write', legacyAdminOnly);
 
   const t = await getTranslations('admin.broadcasts.proxySubmitDialog');
 

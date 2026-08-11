@@ -17,7 +17,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { ok, err } from '@/lib/result';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const bulkUnenrolMock = vi.fn();
 const rateLimitCheckMock = vi.fn();
 type Classification =
@@ -31,8 +31,8 @@ const classifyMock = vi.fn(
   async (): Promise<Classification> => ({ kind: 'first' }),
 );
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 const auditRecordMock = vi.fn().mockResolvedValue({ ok: true, value: undefined });
 vi.mock('@/modules/members/members-deps', () => ({
@@ -128,7 +128,7 @@ describe('contract: POST /api/members/bulk — unenrol_auto_invoice arm', () => 
   });
 
   it('200 happy path — returns snake_case bucket counts', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     allowRateLimit();
     bulkUnenrolMock.mockResolvedValueOnce(
       ok({ unenrolled: 2, skippedNotEnrolled: 1 }),
@@ -146,7 +146,7 @@ describe('contract: POST /api/members/bulk — unenrol_auto_invoice arm', () => 
   });
 
   it('403 when the actor is not an admin', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: new (await import('next/server')).NextResponse(
         JSON.stringify({ error: 'forbidden' }),
         { status: 403 },
@@ -161,7 +161,7 @@ describe('contract: POST /api/members/bulk — unenrol_auto_invoice arm', () => 
   });
 
   it('400 bulk_cap_exceeded when > 100 member_ids — before the use-case runs', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     const ids = Array.from({ length: 101 }, (_, i) => `id-${i}`);
     const { POST } = await import('@/app/api/members/bulk/route');
     const res = await POST(
@@ -174,7 +174,7 @@ describe('contract: POST /api/members/bulk — unenrol_auto_invoice arm', () => 
   });
 
   it('400 when the Idempotency-Key header is missing', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     const { POST } = await import('@/app/api/members/bulk/route');
     const res = await POST(
       makeRequest({ action: 'unenrol_auto_invoice', member_ids: ['id-1'] }, {}),
@@ -186,7 +186,7 @@ describe('contract: POST /api/members/bulk — unenrol_auto_invoice arm', () => 
   });
 
   it('replays a cached response without re-running the un-enrolment', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     classifyMock.mockImplementationOnce(async () => ({
       kind: 'replay' as const,
       previousResponse: {
@@ -208,7 +208,7 @@ describe('contract: POST /api/members/bulk — unenrol_auto_invoice arm', () => 
   });
 
   it('429 when the per-actor bulk rate limit is exhausted', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     rateLimitCheckMock.mockResolvedValueOnce({
       success: false,
       remaining: 0,
@@ -225,7 +225,7 @@ describe('contract: POST /api/members/bulk — unenrol_auto_invoice arm', () => 
   });
 
   it('404 when a member id in the batch does not exist', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     allowRateLimit();
     bulkUnenrolMock.mockResolvedValueOnce(
       err({ type: 'not_found', memberId: 'ghost-1' }),
@@ -245,7 +245,7 @@ describe('contract: POST /api/members/bulk — unenrol_auto_invoice arm', () => 
     // copy-paste that left the enrol arm's literal in place would send
     // un-enrol requests to the ENROL use-case — turning "stop billing me"
     // into a no-op that reports success. Cheap to pin, catastrophic to miss.
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     allowRateLimit();
     bulkUnenrolMock.mockResolvedValueOnce(
       ok({ unenrolled: 1, skippedNotEnrolled: 0 }),

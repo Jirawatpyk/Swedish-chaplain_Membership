@@ -31,7 +31,8 @@ import {
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { redactStack } from '@/lib/redact-stack';
-import { requireSession } from '@/lib/auth-session';
+import { canPerform, requirePagePermission } from '@/lib/rbac';
+import { legacyAdminOnly, legacyAdminOrManager } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { runListEvents } from '@/lib/events-admin-deps';
 import { TableContainer } from '@/components/layout';
@@ -101,10 +102,7 @@ export default async function AdminEventsListPage({
   }
 
   // auth + role gate. Member returns 404.
-  const { user: currentUser } = await requireSession('staff');
-  if (currentUser.role !== 'admin' && currentUser.role !== 'manager') {
-    notFound();
-  }
+  const { user: currentUser } = await requirePagePermission('events.read', legacyAdminOrManager);
 
   const query = await searchParams;
   const t = await getTranslations('admin.events.list');
@@ -184,8 +182,11 @@ export default async function AdminEventsListPage({
   // Primary CTA per F4 invoices "New invoice" precedent — admin-only
   // top-of-page actions use `variant: 'default'` (primary/black) to
   // match the visual hierarchy across F4/F6/F7/F8 admin pages.
+  // 016 re-review D — evaluator-derived (`events.write` is what the import
+  // page + API admit; OFF leg `legacyAdminOnly` reproduces the admin-only CTA).
   const importCsvCta =
-    currentUser.role === 'admin' && env.features.f6EventCreate ? (
+    canPerform(currentUser.role, 'events.write', legacyAdminOnly) &&
+    env.features.f6EventCreate ? (
       <Link
         href="/admin/events/import"
         className={buttonVariants({ variant: 'default' })}
@@ -198,8 +199,13 @@ export default async function AdminEventsListPage({
   // PR 2.2 — admin-only discoverability link to the by-email erasure surface
   // (FR-032a). Secondary (outline) next to the primary import CTA. Manager
   // never sees it — the erasure page + route are admin-only (FR-035).
+  // 016 re-review D — follows `events.erasure` (superAdminOnly on the ON leg),
+  // the key its DESTINATION page admits: the link hides exactly when the
+  // erasure surface would 404 the caller, instead of dangling for plain admin
+  // after the flag flip.
   const eraseByEmailCta =
-    currentUser.role === 'admin' && env.features.f6EventCreate ? (
+    canPerform(currentUser.role, 'events.erasure', legacyAdminOnly) &&
+    env.features.f6EventCreate ? (
       <Link
         href="/admin/events/erasure"
         className={buttonVariants({ variant: 'outline' })}

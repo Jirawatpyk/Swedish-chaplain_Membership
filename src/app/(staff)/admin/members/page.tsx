@@ -17,7 +17,8 @@ import { Suspense } from 'react';
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 import { PlusIcon } from 'lucide-react';
-import { requireSession } from '@/lib/auth-session';
+import { canPerform, requirePagePermission } from '@/lib/rbac';
+import { legacyAdminOnly, legacySessionOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import {
   countMembersNeedingPortalInvite,
@@ -203,7 +204,7 @@ export default async function MembersListPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  const { user: currentUser } = await requireSession('staff');
+  const { user: currentUser } = await requirePagePermission('members.read', legacySessionOnly);
   const query = await searchParams;
   const t = await getTranslations('admin.members');
 
@@ -213,9 +214,15 @@ export default async function MembersListPage({
         title={t('title')}
         subtitle={t('subtitle')}
         actions={
-          currentUser.role === 'admin' ? (
+          // 016 re-review D — split by destination key: the backup ZIP is a
+          // 'members.bulk' egress (full-tenant PII), "Add member" is a
+          // 'members.write' affordance. Identical holders today; the split is
+          // what keeps a future bundle diff from dragging the other along.
+          canPerform(currentUser.role, 'members.write', legacyAdminOnly) ? (
             <div className="flex items-center gap-2">
-              <ExportBackupButton />
+              {canPerform(currentUser.role, 'members.bulk', legacyAdminOnly) && (
+                <ExportBackupButton />
+              )}
               <Link
                 href="/admin/members/new"
                 className={buttonVariants()}
@@ -232,7 +239,7 @@ export default async function MembersListPage({
         <CardContent className="flex flex-col gap-4">
           <MembersDirectoryBody
             query={query}
-            isAdmin={currentUser.role === 'admin'}
+            isAdmin={canPerform(currentUser.role, 'members.write', legacyAdminOnly)}
           />
         </CardContent>
       </Card>

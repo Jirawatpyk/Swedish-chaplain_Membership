@@ -1,7 +1,7 @@
 /**
  * Contract test: GET /api/members/[memberId]/invoices (US7 / FR-032).
  *
- * Mocks `requireAdminContext`, `getMember`, `listInvoicesByMember`,
+ * Mocks `requireApiPermission`, `getMember`, `listInvoicesByMember`,
  * the tenant resolver, and related factories so the handler runs
  * without touching the real DB / session. Asserts response shape +
  * HTTP status for each branch.
@@ -10,13 +10,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 import { ok, err } from '@/lib/result';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const getMemberMock = vi.fn();
 const listInvoicesByMemberMock = vi.fn();
 const buildMemberProbeDepsMock = vi.fn();
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 vi.mock('@/modules/members', async () => {
   const actual = await vi.importActual<typeof import('@/modules/members')>(
@@ -110,8 +110,8 @@ function minimalInvoice(overrides: Record<string, unknown> = {}): unknown {
 describe('contract: GET /api/members/[memberId]/invoices', { timeout: 30_000 }, () => {
   afterEach(() => vi.clearAllMocks());
 
-  it('401 when unauthenticated (requireAdminContext returns response)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+  it('401 when unauthenticated (requireApiPermission returns response)', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: NextResponse.json({ error: 'unauthenticated' }, { status: 401 }),
     });
     const { GET } = await import(
@@ -127,7 +127,7 @@ describe('contract: GET /api/members/[memberId]/invoices', { timeout: 30_000 }, 
   });
 
   it('404 when memberId is not a UUID', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     const { GET } = await import(
       '@/app/api/members/[memberId]/invoices/route'
     );
@@ -144,7 +144,7 @@ describe('contract: GET /api/members/[memberId]/invoices', { timeout: 30_000 }, 
   });
 
   it('400 when query params are invalid (status out of enum)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     const { GET } = await import(
       '@/app/api/members/[memberId]/invoices/route'
     );
@@ -163,7 +163,7 @@ describe('contract: GET /api/members/[memberId]/invoices', { timeout: 30_000 }, 
   });
 
   it('404 when member does not exist in this tenant (cross-tenant probe)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildMemberProbeDepsMock.mockReturnValueOnce({ memberRepo: {}, audit: {} });
     getMemberMock.mockResolvedValueOnce(err({ type: 'not_found' }));
     const { GET } = await import(
@@ -179,7 +179,7 @@ describe('contract: GET /api/members/[memberId]/invoices', { timeout: 30_000 }, 
   });
 
   it('200 happy path — returns rows + total', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildMemberProbeDepsMock.mockReturnValueOnce({ memberRepo: {}, audit: {} });
     getMemberMock.mockResolvedValueOnce(
       ok({
@@ -206,7 +206,7 @@ describe('contract: GET /api/members/[memberId]/invoices', { timeout: 30_000 }, 
   });
 
   it('500 when use case surfaces repo_error', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildMemberProbeDepsMock.mockReturnValueOnce({ memberRepo: {}, audit: {} });
     getMemberMock.mockResolvedValueOnce(
       ok({

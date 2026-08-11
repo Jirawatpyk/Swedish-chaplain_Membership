@@ -30,8 +30,8 @@ vi.mock('@/lib/env', () => ({
 vi.mock('@/lib/auth-session', () => ({
   getCurrentSession: () => Promise.resolve(sessionResult),
 }));
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: () => Promise.resolve(adminCtx),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: () => Promise.resolve(adminCtx),
 }));
 vi.mock('@/lib/tenant-context', () => ({
   resolveTenantFromRequest: () => ({ slug: 'swecham' }),
@@ -160,7 +160,7 @@ describe('POST /api/admin/members/[id]/data-export (admin on-behalf)', () => {
     expect(res.status).toBe(503);
   });
 
-  it('requireAdminContext rejection short-circuits (manager/no session)', async () => {
+  it('requireApiPermission rejection short-circuits (manager/no session)', async () => {
     adminCtx = { response: new Response(null, { status: 403 }) };
     const res = await (await route()).POST(memberReq(), ctx);
     expect(res.status).toBe(403);

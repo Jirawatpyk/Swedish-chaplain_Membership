@@ -86,7 +86,11 @@ export const markPaidOfflineInputSchema = z.object({
   paymentReference: z.string().min(1).max(100),
   paymentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   actorUserId: z.string().min(1),
-  actorRole: z.enum(['admin']),
+  // 016 review I4 — super_admin included: Migration C promotes every human
+  // admin, and this value is stamped into the audit trail of a receipt-minting
+  // action. A hardcoded 'admin' would misattribute every post-cutover
+  // offline-payment record.
+  actorRole: z.enum(['admin', 'super_admin']),
   requestId: z.string().nullable().optional(),
   correlationId: z.string().min(1),
 });

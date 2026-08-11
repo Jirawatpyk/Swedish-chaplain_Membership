@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
   // §F context says queue is admin-only — the explicit role gate
   // closes the API-layer bypass that the UI page redirect alone did
   // not catch).
-  const ctx = await requireRenewalAdminContext(request, 'write');
+  const ctx = await requireRenewalAdminContext(request, 'write', 'renewals.write');
   if ('response' in ctx) return ctx.response;
 
   const tenantCtx = resolveTenantFromRequest(request);

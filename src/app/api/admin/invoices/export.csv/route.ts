@@ -2,7 +2,8 @@
  * Phase 3 of the F4 receipt-surface plan — GET
  * `/api/admin/invoices/export.csv?from=YYYY-MM-DD&to=YYYY-MM-DD`.
  *
- * Admin-only (manager + member → 404). Streams a CSV of every paid
+ * Staff read surface — `invoicing.read` (admin + manager allowed on both legs;
+ * member/marketing 403; anonymous 401). Streams a CSV of every paid
  * invoice whose `paidAt` (Bangkok-local YYYY-MM-DD) falls inside the
  * inclusive range. The CSV is encoded UTF-8 with a leading BOM so
  * Excel-TH renders Thai legal names without forcing the import wizard.
@@ -16,7 +17,8 @@
  * Node runtime pinned (Drizzle).
  */
 import { type NextRequest, NextResponse } from 'next/server';
-import { requireAdminContext } from '@/lib/admin-context';
+import { requireApiPermission } from '@/lib/rbac';
+import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { buildAttachmentContentDisposition } from '@/lib/content-disposition';
@@ -34,10 +36,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   // 1. RBAC — admin only. Manager/member/anonymous rejections are
   //    forwarded as-is from requireAdminContext (401 anonymous /
   //    403 wrong-role).
-  const ctx = await requireAdminContext(request, {
-    resource: 'invoice',
-    action: 'read',
-  });
+  const ctx = await requireApiPermission(request, 'invoicing.read', mappedLegacy('invoice', 'read'));
   if ('response' in ctx) return ctx.response;
 
   // 2. Query-param parse + shape check. The use-case schema does

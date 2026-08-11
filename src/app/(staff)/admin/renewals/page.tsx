@@ -20,7 +20,6 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import { Suspense } from 'react';
-import { redirect } from 'next/navigation';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { headers } from 'next/headers';
 import { randomUUID } from 'node:crypto';
@@ -31,7 +30,8 @@ import { PageHeader } from '@/components/layout/page-header';
 import { renewalsMetrics } from '@/lib/metrics';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { requireSession } from '@/lib/auth-session';
+import { canPerform, requirePagePermission } from '@/lib/rbac';
+import { legacyAdminOrManager, mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
 import { runInTenant } from '@/lib/db';
@@ -173,10 +173,7 @@ export default async function RenewalsPipelinePage({
   const t = await getTranslations('admin.renewals');
 
   // Auth + role check — managers permitted on this read-only surface.
-  const { user: currentUser } = await requireSession('staff');
-  if (currentUser.role !== 'admin' && currentUser.role !== 'manager') {
-    redirect('/portal');
-  }
+  const { user: currentUser } = await requirePagePermission('renewals.read', legacyAdminOrManager);
 
   if (!env.features.f8Renewals) {
     return (
@@ -280,9 +277,11 @@ export default async function RenewalsPipelinePage({
             <PendingReviewSection
               tenantSlug={tenantCtx.slug}
               locale={locale}
-              // B2 — manager views this queue read-only; the reactivate route is
-              // admin-only, so only admins get the inline Approve.
-              canApprove={currentUser.role === 'admin'}
+              // B2 — manager views this queue read-only; the reactivate route
+              // admits `renewals.write` holders, so the inline Approve follows
+              // the same pair (016 re-review D — the old `role === 'admin'`
+              // literal went false for every human after Migration C).
+              canApprove={canPerform(currentUser.role, 'renewals.write', mappedLegacy('renewal', 'write'))}
             />
           </CardContent>
         </Card>
@@ -502,6 +501,10 @@ export default async function RenewalsPipelinePage({
   //   - actor role is `member` — but route already redirects member to
   //     /portal at L77, so this server component only runs for
   //     admin / manager.
+  // 016 T030 — VIEW projection (not an audit stamp): manager keeps the
+  // manager widget view; admin AND super_admin (D16) get the admin view.
+  // rbac-narrow-ok: chooses which widget VARIANT to render — never an
+  // authorization decision, and deliberately total over the admitted roles.
   const widgetActorRole: 'admin' | 'manager' =
     currentUser.role === 'manager' ? 'manager' : 'admin';
 
@@ -510,7 +513,9 @@ export default async function RenewalsPipelinePage({
   // "Mark paid") from a read-only manager. Server-side 403 guards on those
   // routes stay in place as defence-in-depth; this only fixes the client
   // affordance so a manager never sees a CTA that would just 403.
-  const canMutate = currentUser.role === 'admin';
+  // 016 T030 — evaluator-derived (the old `role === 'admin'` literal hid
+  // every mutation CTA from a promoted super_admin while the API allowed it).
+  const canMutate = canPerform(currentUser.role, 'renewals.write', mappedLegacy('renewal', 'write'));
 
   // Sighted result-count (aria-hidden twin of `ResultCountAnnouncer`). Computed
   // once so the same element can be the LEFT item of the pipeline table's

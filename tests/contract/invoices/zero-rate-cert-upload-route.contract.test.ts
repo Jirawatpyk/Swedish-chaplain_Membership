@@ -23,11 +23,11 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { NextResponse, NextRequest } from 'next/server';
 import { err, ok } from '@/lib/result';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const uploadZeroRateCertMock = vi.fn();
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 
 vi.mock('@/lib/tenant-context', () => ({
@@ -129,7 +129,7 @@ describe('contract: POST /api/invoices/[id]/zero-rate-cert-upload (088 UX-B1)', 
   }, 60_000);
 
   beforeEach(() => {
-    requireAdminContextMock.mockResolvedValue(adminContext);
+    requireApiPermissionMock.mockResolvedValue(adminContext);
   });
 
   afterEach(() => {
@@ -192,7 +192,7 @@ describe('contract: POST /api/invoices/[id]/zero-rate-cert-upload (088 UX-B1)', 
   });
 
   it('non-admin → 403 (guard short-circuits, use-case never runs)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: NextResponse.json({ error: 'forbidden' }, { status: 403 }),
     });
     const { POST } = await importRoute();

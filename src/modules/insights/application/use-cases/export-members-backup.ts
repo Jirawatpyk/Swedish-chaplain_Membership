@@ -38,8 +38,15 @@ import type {
   MembersBackupData,
   MembersBackupSource,
 } from '../ports/members-backup-source';
+// Deep PURE-Domain import (not the barrel): a value import of the auth barrel
+// would drag auth-deps' infrastructure singletons (argon2, Upstash, repos)
+// into this Application module's graph at eval time.
+import { isAdministrativeRole, type Role } from '@/modules/auth/domain/role';
 
-export type ExportMembersBackupActorRole = 'admin' | 'manager' | 'member';
+// 016 T030/T033 — widened to the full Role union so routes stop casting and
+// audit emitters record the LITERAL actor role; the decision arms in this
+// file stay explicit per-role checks (deny arms unchanged).
+export type ExportMembersBackupActorRole = Role;
 
 export interface ExportMembersBackupMeta {
   readonly actorUserId: string;
@@ -76,7 +83,10 @@ export async function exportMembersBackup(
   ctx: TenantContext,
   deps: ExportMembersBackupDeps,
 ): Promise<Result<ExportMembersBackupOutput, ExportMembersBackupError>> {
-  if (meta.actorRole !== 'admin') return err('forbidden');
+  // 016 T030 — administrator set (admin ∪ super_admin per D16), matching the
+  // `members.bulk` holders on both flag legs; the old `!== 'admin'` literal
+  // would have 403ed every promoted super_admin post-Migration-C.
+  if (!isAdministrativeRole(meta.actorRole, false)) return err('forbidden');
 
   let data: MembersBackupData;
   try {

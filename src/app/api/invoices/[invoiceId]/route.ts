@@ -2,7 +2,8 @@
  * T052 — GET /api/invoices/[invoiceId] (detail) + DELETE (draft only).
  */
 import { NextResponse, type NextRequest } from 'next/server';
-import { requireAdminContext } from '@/lib/admin-context';
+import { requireApiPermission } from '@/lib/rbac';
+import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import {
@@ -18,7 +19,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ invoiceId: string }> },
 ): Promise<NextResponse> {
-  const ctx = await requireAdminContext(request, { resource: 'invoice', action: 'read' });
+  const ctx = await requireApiPermission(request, 'invoicing.read', mappedLegacy('invoice', 'read'));
   if ('response' in ctx) return ctx.response;
   const { invoiceId } = await params;
   const tenantCtx = resolveTenantFromRequest(request);
@@ -28,7 +29,7 @@ export async function GET(
     invoiceId,
     actor: {
       userId: ctx.current.user.id,
-      role: ctx.current.user.role as 'admin' | 'manager' | 'member',
+      role: ctx.current.user.role,
       requestId,
     },
   });
@@ -46,7 +47,7 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ invoiceId: string }> },
 ): Promise<NextResponse> {
-  const ctx = await requireAdminContext(request, { resource: 'invoice', action: 'delete' });
+  const ctx = await requireApiPermission(request, 'invoicing.write', mappedLegacy('invoice', 'delete'));
   if ('response' in ctx) return ctx.response;
   const { invoiceId } = await params;
   const tenantCtx = resolveTenantFromRequest(request);

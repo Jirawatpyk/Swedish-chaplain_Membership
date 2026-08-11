@@ -186,7 +186,10 @@ function makeTask(
   };
 }
 
-function renderQueue(actorRole: 'admin' | 'manager' = 'admin') {
+// 016 T033 — the component no longer derives write rights from a role
+// literal; the server passes `canMutate`. The helper takes the same shape so
+// the read-only case still has real coverage.
+function renderQueue(canMutate = true) {
   return render(
     <NextIntlClientProvider
       locale="en"
@@ -199,7 +202,7 @@ function renderQueue(actorRole: 'admin' | 'manager' = 'admin') {
           `document.getElementById('main-content')` fallback resolves. */}
       <main id="main-content" tabIndex={-1} />
       <EscalationTaskQueue
-        actorRole={actorRole}
+        canMutate={canMutate}
         actorUserId="actor-1"
         overdueCount={0}
         // length 1 → the task-type filter Select stays hidden (no need to mock it).
@@ -296,7 +299,7 @@ describe('<EscalationTaskQueue> row actions — Done + ⋯ overflow (UX-audit #4
   });
 
   it('renders no action controls for a read-only manager', () => {
-    renderQueue('manager');
+    renderQueue(false);
     expect(screen.queryByRole('button', { name: 'Done' })).toBeNull();
     expect(screen.queryByRole('menuitem', { name: 'Skip' })).toBeNull();
   });

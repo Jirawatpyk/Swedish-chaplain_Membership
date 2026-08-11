@@ -13,12 +13,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { ok, err } from '@/lib/result';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const bulkActionMock = vi.fn();
 const rateLimitCheckMock = vi.fn();
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 const auditRecordMock = vi.fn().mockResolvedValue({ ok: true, value: undefined });
 vi.mock('@/modules/members/members-deps', () => ({
@@ -114,7 +114,7 @@ describe('contract: POST /api/members/bulk (T099 / US4)', () => {
   afterEach(() => vi.clearAllMocks());
 
   it('200 on archive action — happy path', { timeout: 30_000 }, async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     rateLimitCheckMock.mockResolvedValueOnce({
       success: true,
       remaining: 9,
@@ -137,7 +137,7 @@ describe('contract: POST /api/members/bulk (T099 / US4)', () => {
   });
 
   it('200 on change_plan action — happy path', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     rateLimitCheckMock.mockResolvedValueOnce({
       success: true,
       remaining: 8,
@@ -160,7 +160,7 @@ describe('contract: POST /api/members/bulk (T099 / US4)', () => {
   });
 
   it('400 bulk_cap_exceeded when > 100 member_ids', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     const ids = Array.from({ length: 101 }, (_, i) => `id-${i}`);
     const { POST } = await import('@/app/api/members/bulk/route');
     const res = await POST(
@@ -172,7 +172,7 @@ describe('contract: POST /api/members/bulk (T099 / US4)', () => {
   });
 
   it('400 missing Idempotency-Key', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     const { POST } = await import('@/app/api/members/bulk/route');
     const res = await POST(makeRequest({ action: 'archive', member_ids: ['id-1'] }, {}));
     expect(res.status).toBe(400);
@@ -181,7 +181,7 @@ describe('contract: POST /api/members/bulk (T099 / US4)', () => {
   });
 
   it('429 rate-limited', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     rateLimitCheckMock.mockResolvedValueOnce({
       success: false,
       remaining: 0,
@@ -203,7 +203,7 @@ describe('contract: POST /api/members/bulk (T099 / US4)', () => {
   });
 
   it('403 non-admin rejected', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(forbiddenContext);
+    requireApiPermissionMock.mockResolvedValueOnce(forbiddenContext);
     const { POST } = await import('@/app/api/members/bulk/route');
     const res = await POST(
       makeRequest({ action: 'archive', member_ids: ['id-1'] }),

@@ -62,6 +62,7 @@ import { logger } from '@/lib/logger';
 import { isLastAdminTriggerError } from '@/lib/db-errors';
 import { err, ok, type Result } from '@/lib/result';
 import type { UserId } from '@/modules/auth/domain/branded';
+import { administrativeRoles, isAdministrativeRole } from '@/modules/auth/domain/role';
 import type { ActorRef } from '@/modules/auth/domain/audit-event';
 import type { UserRepo } from '@/modules/auth/infrastructure/db/user-repo';
 import type { SessionRepo } from '@/modules/auth/infrastructure/db/session-repo';
@@ -102,7 +103,17 @@ export type EraseUserError = {
 };
 
 export interface EraseUserDeps {
-  readonly users: Pick<UserRepo, 'anonymiseErasedInTx'>;
+  readonly users: Pick<
+    UserRepo,
+    'anonymiseErasedInTx' | 'findById' | 'countActiveAdministrators'
+  >;
+  /**
+   * 016 T026 — which roles count as administrators for the last-administrator
+   * guard. Threaded in rather than read from env so this use case stays pure
+   * Application (same purity pin as the permission evaluator).
+   */
+  readonly rbacV2: boolean;
+
   readonly sessions: Pick<SessionRepo, 'deleteByUserIdInTx'>;
   readonly audit: Pick<AuditRepo, 'appendInTx'>;
 }
@@ -117,6 +128,29 @@ export async function eraseUser(
   // The repo + audit row types want the brand; cast at the trust boundary
   // (same convention as delete-invited-user.ts's `actorUserId as ActorRef`).
   const userId = input.userId as UserId;
+
+  // 016 T026 — application-layer last-administrator pre-flight, the first line
+  // of defence that `disable-user` and `change-role` already carry. The DB
+  // trigger below is still the authority (it closes the read→write race), but
+  // reaching it means the anonymise UPDATE has already run inside the tx and
+  // the whole transaction unwinds on a REFUSAL rather than a fault. Checking
+  // first turns an expected refusal into a clean, cheap `err()` — and, unlike
+  // the trigger path, it cannot be mistaken for a transient infra error by the
+  // US2d reconciler. Placed ABOVE the transaction so no write precedes it.
+  const target = await deps.users.findById(userId);
+  if (
+    target !== null &&
+    isAdministrativeRole(target.role, deps.rbacV2) &&
+    target.status === 'active' &&
+    (await deps.users.countActiveAdministrators(administrativeRoles(deps.rbacV2))) <= 1
+  ) {
+    logger.error(
+      { requestId: input.requestId, userId: input.userId },
+      'erase_user.last_admin_blocked_preflight',
+    );
+    return err({ code: 'erase-user-last-admin', cause: 'last-administrator-preflight' });
+  }
+
   try {
     const outcome = await db.transaction(async (tx) => {
       // 1. Scrub the users row. Plain `{ erased }` (NOT a Result) — a DB error

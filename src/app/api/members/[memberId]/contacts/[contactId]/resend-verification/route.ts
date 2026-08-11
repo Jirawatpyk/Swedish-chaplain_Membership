@@ -19,7 +19,8 @@ import {
 } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
-import { requireAdminContext } from '@/lib/admin-context';
+import { requireApiPermission } from '@/lib/rbac';
+import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { logger } from '@/lib/logger';
 import { rateLimiter } from '@/lib/auth-deps';
 import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
@@ -33,10 +34,7 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ memberId: string; contactId: string }> },
 ): Promise<NextResponse> {
-  const gate = await requireAdminContext(request, {
-    resource: 'members',
-    action: 'write',
-  });
+  const gate = await requireApiPermission(request, 'contacts.write', mappedLegacy('members', 'write'));
   if ('response' in gate) return gate.response;
   const { current, requestId } = gate;
 

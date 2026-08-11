@@ -57,9 +57,27 @@ const COPY: Record<EmailLocale, InvitationEmailCopy> = {
 };
 
 const ROLE_LABELS: Record<EmailLocale, Record<Role, string>> = {
-  en: { admin: 'Administrator', manager: 'Manager', member: 'Member' },
-  th: { admin: 'ผู้ดูแลระบบ', manager: 'ผู้จัดการ', member: 'สมาชิก' },
-  sv: { admin: 'Administratör', manager: 'Chef', member: 'Medlem' },
+  en: {
+    super_admin: 'Super Admin',
+    admin: 'Administrator',
+    manager: 'Manager',
+    marketing: 'Marketing',
+    member: 'Member',
+  },
+  th: {
+    super_admin: 'ผู้ดูแลระบบสูงสุด',
+    admin: 'ผู้ดูแลระบบ',
+    manager: 'ผู้จัดการ',
+    marketing: 'ฝ่ายการตลาด',
+    member: 'สมาชิก',
+  },
+  sv: {
+    super_admin: 'Superadministratör',
+    admin: 'Administratör',
+    manager: 'Chef',
+    marketing: 'Marknadsförare',
+    member: 'Medlem',
+  },
 };
 
 export interface InvitationEmailInput {

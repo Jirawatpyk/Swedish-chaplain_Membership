@@ -6,7 +6,7 @@
  * Pre-fix the route had ZERO test coverage. The use-case is covered
  * by tests/unit/invoicing/export-paid-invoices-csv.test.ts +
  * tests/integration/invoicing/export-paid-invoices-csv.test.ts, but
- * the route's wire-level concerns (RBAC cloak via requireAdminContext,
+ * the route's wire-level concerns (RBAC cloak via requireApiPermission,
  * YYYY-MM-DD format probe, range error mapping → 400, success-path
  * Content-Disposition + X-Row-Count headers, UTF-8 BOM survives the
  * Response constructor) had nowhere to be asserted.
@@ -23,11 +23,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const exportPaidInvoicesCsvMock = vi.fn();
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 vi.mock('@/lib/tenant-context', () => ({
   resolveTenantFromRequest: () => ({ slug: 'test-swecham', __brand: true }),
@@ -74,21 +74,21 @@ async function callRoute(qs: string): Promise<Response> {
 describe('GET /api/admin/invoices/export.csv — route handler contract', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    requireAdminContextMock.mockResolvedValue(adminContext);
+    requireApiPermissionMock.mockResolvedValue(adminContext);
   });
   afterEach(() => {
     vi.resetModules();
   });
 
   // -------------------------------------------------------------------------
-  // RBAC cloak — route MUST forward whatever requireAdminContext rejection
+  // RBAC cloak — route MUST forward whatever requireApiPermission rejection
   // says (401 anonymous / 403 forbidden). The route does NOT cloak to 404
   // — that comment in the route is drift documented elsewhere (see code
   // review). What matters is that rejections are forwarded verbatim.
   // -------------------------------------------------------------------------
 
-  it('anonymous (no session) → 401 forwarded from requireAdminContext', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+  it('anonymous (no session) → 401 forwarded from requireApiPermission', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: new Response(JSON.stringify({ error: 'no-session' }), {
         status: 401,
       }),
@@ -99,8 +99,8 @@ describe('GET /api/admin/invoices/export.csv — route handler contract', () => 
     expect(exportPaidInvoicesCsvMock).not.toHaveBeenCalled();
   });
 
-  it('forbidden role → 403 forwarded from requireAdminContext', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+  it('forbidden role → 403 forwarded from requireApiPermission', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: new Response(JSON.stringify({ error: 'forbidden' }), {
         status: 403,
       }),

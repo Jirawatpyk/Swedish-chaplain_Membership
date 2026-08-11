@@ -10,12 +10,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const bulkSendPortalInviteMock = vi.fn();
 const rateLimitCheckMock = vi.fn();
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 const auditRecordMock = vi.fn().mockResolvedValue({ ok: true, value: undefined });
 vi.mock('@/modules/members/members-deps', () => ({
@@ -92,7 +92,7 @@ describe('contract: POST /api/members/bulk send_portal_invite (P1-17)', () => {
   afterEach(() => vi.clearAllMocks());
 
   it('200 with per-member buckets body on partial success', { timeout: 30_000 }, async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     rlOk();
     bulkSendPortalInviteMock.mockResolvedValueOnce({
       ok: true,
@@ -117,7 +117,7 @@ describe('contract: POST /api/members/bulk send_portal_invite (P1-17)', () => {
   });
 
   it('400 when Idempotency-Key header is missing', { timeout: 30_000 }, async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     const { POST } = await import('@/app/api/members/bulk/route');
     const res = await POST(makeRequest({ action: 'send_portal_invite', member_ids: ['m1'] }, {}));
     expect(res.status).toBe(400);
@@ -125,7 +125,7 @@ describe('contract: POST /api/members/bulk send_portal_invite (P1-17)', () => {
   });
 
   it('400 bulk_cap_exceeded for > 100 member_ids (route pre-check)', { timeout: 30_000 }, async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     const ids = Array.from({ length: 101 }, (_, i) => `m${i}`);
     const { POST } = await import('@/app/api/members/bulk/route');
     const res = await POST(makeRequest({ action: 'send_portal_invite', member_ids: ids }));
@@ -136,7 +136,7 @@ describe('contract: POST /api/members/bulk send_portal_invite (P1-17)', () => {
   });
 
   it('403 for a non-admin actor', { timeout: 30_000 }, async () => {
-    requireAdminContextMock.mockResolvedValueOnce(forbiddenContext);
+    requireApiPermissionMock.mockResolvedValueOnce(forbiddenContext);
     const { POST } = await import('@/app/api/members/bulk/route');
     const res = await POST(makeRequest({ action: 'send_portal_invite', member_ids: ['m1'] }));
     expect(res.status).toBe(403);
@@ -144,7 +144,7 @@ describe('contract: POST /api/members/bulk send_portal_invite (P1-17)', () => {
   });
 
   it('429 when rate-limited', { timeout: 30_000 }, async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     rateLimitCheckMock.mockResolvedValueOnce({ success: false, remaining: 0, reset: Date.now() + 600_000 });
     const { POST } = await import('@/app/api/members/bulk/route');
     const res = await POST(makeRequest({ action: 'send_portal_invite', member_ids: ['m1'] }));

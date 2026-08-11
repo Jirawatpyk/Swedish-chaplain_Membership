@@ -501,7 +501,8 @@ export interface F8AuditPayloadShapes {
      * via this discriminator.
      */
     readonly action: 'read' | 'write' | 'manager_exception';
-    readonly attempted_role: 'admin' | 'manager' | 'member';
+    /** 016 T033 — the LITERAL denied role (RBAC v2 roles included). */
+    readonly attempted_role: 'super_admin' | 'admin' | 'manager' | 'marketing' | 'member';
     readonly route: string;
   };
   readonly renewal_token_invalid: {
@@ -1017,7 +1018,8 @@ export interface F8AuditPayloadShapes {
     readonly outreach_id: OutreachId;
     readonly channel: 'email' | 'phone' | 'meeting';
     readonly template_id: string | null;
-    readonly actor_role: 'admin' | 'manager';
+    /** 016 T033 — literal staff role (super_admin outreach post-Migration-C). */
+    readonly actor_role: 'super_admin' | 'admin' | 'manager';
   };
   /**
    * Phase 6 Wave A2 — `at_risk_skipped_below_min_tenure` typed payload
@@ -1454,6 +1456,9 @@ export interface F8AuditEvent<E extends F8AuditEventType = F8AuditEventType> {
  *   - `system` — replays + bookkeeping + tests
  */
 export type RenewalActorRole =
+  // 016 T033 — the two RBAC v2 roles, so F8 trails record the LITERAL actor.
+  | 'super_admin'
+  | 'marketing'
   | 'admin'
   | 'manager'
   | 'member'

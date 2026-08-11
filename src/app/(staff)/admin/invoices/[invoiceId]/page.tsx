@@ -23,7 +23,8 @@ export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.invoices.meta');
   return { title: t('title') };
 }
-import { requireSession } from '@/lib/auth-session';
+import { canPerform, requirePagePermission } from '@/lib/rbac';
+import { legacyAdminOnly, legacySessionOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { env } from '@/lib/env';
@@ -144,7 +145,7 @@ export default async function InvoiceDetailPage({
   const { invoiceId } = await params;
   const t = await getTranslations('admin.invoices.detail');
   const tStatus = await getTranslations('admin.invoices.list.statuses');
-  const { user: currentUser } = await requireSession('staff');
+  const { user: currentUser } = await requirePagePermission('invoicing.read', legacySessionOnly);
   // M3 — use the next-intl locale for date display so TH/SV users
   // see their localised format instead of the browser default.
   const locale = (await import('next-intl/server')).getLocale;
@@ -161,7 +162,7 @@ export default async function InvoiceDetailPage({
     // when an admin navigates to /admin/invoices/<foreign-id>.
     actor: {
       userId: currentUser.id,
-      role: currentUser.role as 'admin' | 'manager' | 'member',
+      role: currentUser.role,
       requestId,
     },
   });
@@ -250,7 +251,9 @@ export default async function InvoiceDetailPage({
   );
 
   const isDraft = invoice.status === 'draft';
-  const isAdmin = currentUser.role === 'admin';
+  // 016 re-review D — evaluator-derived ('invoicing.write'; OFF leg legacyAdminOnly
+  // reproduces the admin-only affordance and admits a promoted super_admin).
+  const isAdmin = canPerform(currentUser.role, 'invoicing.write', legacyAdminOnly);
 
   // Resend-eligibility gates — SHARED with InvoiceMoreMenu below so the
   // failure banner + the action menu stay in lockstep (combined-mode rule,

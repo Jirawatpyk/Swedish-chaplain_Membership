@@ -24,7 +24,8 @@ import {
 } from '@/modules/broadcasts';
 import { makeDrizzleBatchManifestsRepo } from '@/modules/broadcasts/infrastructure/drizzle-batch-manifests-repo';
 import { runInTenant } from '@/lib/db';
-import { requireSession } from '@/lib/auth-session';
+import { canPerform, requirePagePermission } from '@/lib/rbac';
+import { legacyAdminOnly, legacySessionOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { dompurifySanitizer } from '@/modules/broadcasts';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
@@ -42,8 +43,11 @@ export default async function AdminBroadcastDetailPage({
   const t = await getTranslations('admin.broadcasts.review');
   const tActor = await getTranslations('admin.broadcasts.queue.actorRole');
   const tSegment = await getTranslations('admin.broadcasts.review.segmentType');
-  const session = await requireSession('staff');
-  const isReadOnlyManager = session.user.role === 'manager';
+  const session = await requirePagePermission('broadcasts.read', legacySessionOnly);
+  // 016 re-review D — evaluator-derived (see the queue page's note): the
+  // literal treated every non-manager as a writer. OFF leg `legacyAdminOnly`
+  // reproduces admin-only cancel/halt affordances.
+  const isReadOnlyManager = !canPerform(session.user.role, 'broadcasts.write', legacyAdminOnly);
 
   const { id } = await params;
   const parsedId = parseBroadcastId(id);

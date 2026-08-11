@@ -5,7 +5,8 @@
  *   Key: `f4:resend:credit_note:{tenantId}:{creditNoteId}`
  */
 import { NextResponse, type NextRequest } from 'next/server';
-import { requireAdminContext } from '@/lib/admin-context';
+import { requireApiPermission } from '@/lib/rbac';
+import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { resendPdf, makeResendPdfDeps } from '@/modules/invoicing';
@@ -17,10 +18,7 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ creditNoteId: string }> },
 ): Promise<NextResponse> {
-  const ctx = await requireAdminContext(request, {
-    resource: 'credit_note',
-    action: 'write',
-  });
+  const ctx = await requireApiPermission(request, 'credit_notes.write', mappedLegacy('credit_note', 'write'));
   if ('response' in ctx) return ctx.response;
 
   const { creditNoteId } = await params;
@@ -40,13 +38,20 @@ export async function POST(
     return rateLimitedJson(rl);
   }
 
+  // 016 T030 — narrow to the STAFF arm of the actor union (the gate already
+  // denies members).
+  const sessionRole = ctx.current.user.role;
+  if (sessionRole === 'member') {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  }
+
   const result = await resendPdf(makeResendPdfDeps(tenantCtx.slug), {
     tenantId: tenantCtx.slug,
     kind: 'credit_note',
     creditNoteId,
     actor: {
       userId: ctx.current.user.id,
-      role: ctx.current.user.role as 'admin' | 'manager',
+      role: sessionRole,
       requestId,
     },
   });

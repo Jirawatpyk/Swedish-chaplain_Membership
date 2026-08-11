@@ -19,7 +19,8 @@ import { headers } from 'next/headers';
 import { getLocale, getTranslations } from 'next-intl/server';
 import Link from 'next/link';
 import { env } from '@/lib/env';
-import { requireSession } from '@/lib/auth-session';
+import { requirePagePermission } from '@/lib/rbac';
+import { legacyAdminOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
@@ -45,10 +46,7 @@ export default async function CsvImportHistoryPage({
   if (!env.features.f6EventCreate) {
     notFound();
   }
-  const { user } = await requireSession('staff');
-  if (user.role !== 'admin') {
-    notFound();
-  }
+  await requirePagePermission('events.write', legacyAdminOnly);
 
   const tenantSlug = resolveTenantFromHeaders(await headers()).slug;
   const t = await getTranslations('admin.events.import.history');

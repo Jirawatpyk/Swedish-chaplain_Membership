@@ -19,12 +19,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 import { ok, err } from '@/lib/result';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const clonePlansToYearMock = vi.fn();
 const buildPlansDepsMock = vi.fn();
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 vi.mock('@/modules/plans/plans-deps', () => ({
   buildPlansDeps: (...args: unknown[]) => buildPlansDepsMock(...args),
@@ -82,7 +82,7 @@ describe('contract: POST /api/plans/clone (T093)', () => {
   });
 
   it('201 on successful clone — returns summary with 9 cloned plan_ids', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
     clonePlansToYearMock.mockResolvedValueOnce(
       ok({
@@ -117,7 +117,7 @@ describe('contract: POST /api/plans/clone (T093)', () => {
   });
 
   it('409 target_year_populated with existing_plan_ids detail', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
     clonePlansToYearMock.mockResolvedValueOnce(
       err({
@@ -137,7 +137,7 @@ describe('contract: POST /api/plans/clone (T093)', () => {
   });
 
   it('409 source_year_empty when no plans in source', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
     clonePlansToYearMock.mockResolvedValueOnce(err({ type: 'source_year_empty' }));
     const { POST } = await import('@/app/api/plans/clone/route');
@@ -150,7 +150,7 @@ describe('contract: POST /api/plans/clone (T093)', () => {
   });
 
   it('409 idempotency_conflict when key replayed with different body', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
     clonePlansToYearMock.mockResolvedValueOnce(err({ type: 'idempotency_conflict' }));
     const { POST } = await import('@/app/api/plans/clone/route');
@@ -163,7 +163,7 @@ describe('contract: POST /api/plans/clone (T093)', () => {
   });
 
   it('400 when source_year === target_year', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
     const { POST } = await import('@/app/api/plans/clone/route');
     const res = await POST(
@@ -176,7 +176,7 @@ describe('contract: POST /api/plans/clone (T093)', () => {
   });
 
   it('400 when Idempotency-Key header missing', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
     const { POST } = await import('@/app/api/plans/clone/route');
     const res = await POST(
@@ -192,7 +192,7 @@ describe('contract: POST /api/plans/clone (T093)', () => {
   });
 
   it('401 when unauthenticated', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: NextResponse.json({ error: 'no-session' }, { status: 401 }),
     });
     const { POST } = await import('@/app/api/plans/clone/route');

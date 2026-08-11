@@ -11,13 +11,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { ok, err } from '@/lib/result';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const archiveMemberMock = vi.fn();
 const undeleteMemberMock = vi.fn();
 const buildMembersDepsMock = vi.fn();
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 vi.mock('@/modules/members/members-deps', () => ({
   buildMembersDeps: (...args: unknown[]) => buildMembersDepsMock(...args),
@@ -123,7 +123,7 @@ describe('contract: POST /api/members/[memberId]/archive (T134)', () => {
   }
 
   it('200 happy path — archive succeeds', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildMembersDepsMock.mockReturnValueOnce({});
     archiveMemberMock.mockResolvedValueOnce(ok(archivedMember));
     const res = await invokeArchive({ reason: 'Company closed' });
@@ -134,7 +134,7 @@ describe('contract: POST /api/members/[memberId]/archive (T134)', () => {
   });
 
   it('200 happy path without reason (empty body allowed)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildMembersDepsMock.mockReturnValueOnce({});
     archiveMemberMock.mockResolvedValueOnce(ok(archivedMember));
     const res = await invokeArchive({});
@@ -142,7 +142,7 @@ describe('contract: POST /api/members/[memberId]/archive (T134)', () => {
   });
 
   it('400 missing Idempotency-Key', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     const res = await invokeArchive({}, {});
     expect(res.status).toBe(400);
     const body = await res.json();
@@ -150,7 +150,7 @@ describe('contract: POST /api/members/[memberId]/archive (T134)', () => {
   });
 
   it('400 invalid_body when zod rejects payload', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildMembersDepsMock.mockReturnValueOnce({});
     archiveMemberMock.mockResolvedValueOnce(
       err({
@@ -165,7 +165,7 @@ describe('contract: POST /api/members/[memberId]/archive (T134)', () => {
   });
 
   it('404 not_found — cross-tenant or missing member', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildMembersDepsMock.mockReturnValueOnce({});
     archiveMemberMock.mockResolvedValueOnce(err({ type: 'not_found' }));
     const res = await invokeArchive({});
@@ -175,7 +175,7 @@ describe('contract: POST /api/members/[memberId]/archive (T134)', () => {
   });
 
   it('409 state_error — already archived', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildMembersDepsMock.mockReturnValueOnce({});
     archiveMemberMock.mockResolvedValueOnce(
       err({
@@ -190,7 +190,7 @@ describe('contract: POST /api/members/[memberId]/archive (T134)', () => {
   });
 
   it('500 server_error on unexpected failure', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildMembersDepsMock.mockReturnValueOnce({});
     archiveMemberMock.mockResolvedValueOnce(
       err({ type: 'server_error', message: 'boom' }),
@@ -214,7 +214,7 @@ describe('contract: POST /api/members/[memberId]/undelete (T134)', () => {
   }
 
   it('200 happy path — undelete succeeds', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildMembersDepsMock.mockReturnValueOnce({});
     undeleteMemberMock.mockResolvedValueOnce(ok(activeMember));
     const res = await invokeUndelete();
@@ -224,7 +224,7 @@ describe('contract: POST /api/members/[memberId]/undelete (T134)', () => {
   });
 
   it('400 missing Idempotency-Key', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     const res = await invokeUndelete({});
     expect(res.status).toBe(400);
     const body = await res.json();
@@ -232,7 +232,7 @@ describe('contract: POST /api/members/[memberId]/undelete (T134)', () => {
   });
 
   it('403 archive_window_expired — > 90 days', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildMembersDepsMock.mockReturnValueOnce({});
     undeleteMemberMock.mockResolvedValueOnce(
       err({
@@ -249,7 +249,7 @@ describe('contract: POST /api/members/[memberId]/undelete (T134)', () => {
   });
 
   it('404 not_found', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildMembersDepsMock.mockReturnValueOnce({});
     undeleteMemberMock.mockResolvedValueOnce(err({ type: 'not_found' }));
     const res = await invokeUndelete();
@@ -257,7 +257,7 @@ describe('contract: POST /api/members/[memberId]/undelete (T134)', () => {
   });
 
   it('409 state_error — not archived', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildMembersDepsMock.mockReturnValueOnce({});
     undeleteMemberMock.mockResolvedValueOnce(
       err({
@@ -272,7 +272,7 @@ describe('contract: POST /api/members/[memberId]/undelete (T134)', () => {
   });
 
   it('500 server_error', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildMembersDepsMock.mockReturnValueOnce({});
     undeleteMemberMock.mockResolvedValueOnce(
       err({ type: 'server_error', message: 'boom' }),

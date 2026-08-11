@@ -8,8 +8,8 @@
  * `resolveFailedAutoRefund` use-case, which clears the persistent
  * `AutoRefundFailedAlert` + reverts the member void banner.
  *
- * Auth: `requireAdminContext({ resource: 'refund', action: 'write' })` — the
- * same admin-only gate the refund-initiate route uses (manager → 403).
+ * Auth: `requireApiPermission('refunds.write', mappedLegacy('refund', 'write'))` —
+ * the same admin-only gate the refund-initiate route uses (manager → 403).
  *
  * PCI (Principle IV): logs + audit carry ids only — no card data, no raw
  * `error.message`. The 500 path emits a bounded `errKind` classifier.
@@ -19,7 +19,8 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 
-import { requireAdminContext } from '@/lib/admin-context';
+import { requireApiPermission } from '@/lib/rbac';
+import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { rateLimiter } from '@/lib/auth-deps';
@@ -56,10 +57,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const correlationId = randomUUID();
 
   // Admin-only, same RBAC gate as refund-initiate (manager → 403).
-  const adminCtx = await requireAdminContext(request, {
-    resource: 'refund',
-    action: 'write',
-  });
+  const adminCtx = await requireApiPermission(request, 'refunds.write', mappedLegacy('refund', 'write'));
   if ('response' in adminCtx && adminCtx.response) {
     return adminCtx.response as NextResponse;
   }

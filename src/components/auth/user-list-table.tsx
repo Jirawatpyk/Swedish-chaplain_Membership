@@ -12,7 +12,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { BanIcon, CircleCheckIcon, MailIcon, Trash2Icon } from 'lucide-react';
+import { BanIcon, CircleCheckIcon, MailIcon, Trash2Icon, UserCogIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -24,8 +24,15 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
+import { ChangeRoleDialog, CHANGE_ROLE_OPTIONS } from '@/components/auth/change-role-dialog';
+// The deep path (rather than the `@/modules/auth` barrel) matches the
+// convention the other client components here follow: `role.ts` is pure Domain
+// (no framework imports) and safe in the client bundle, whereas the barrel
+// transitively loads Node-only Infrastructure. `Role` is a type. Replaces a
+// local 3-role alias that silently diverged from the Domain enum when 016
+// widened it (review 016 PR1, ui-1).
+import type { Role } from '@/modules/auth/domain/role';
 
-type Role = 'admin' | 'manager' | 'member';
 type Status = 'pending' | 'active' | 'disabled';
 
 interface UserRow {
@@ -47,7 +54,20 @@ interface UserRow {
 export interface UserListTableProps {
   readonly users: readonly UserRow[];
   readonly currentUserId: string;
-  readonly currentUserRole: Role;
+  /**
+   * Whether the viewer may run member-account lifecycle actions
+   * (disable / enable / resend / revoke). Computed server-side via
+   * `canPerform(role, 'users.member_accounts', …)` and threaded down as a
+   * boolean — NEVER `role === 'admin'` in the client (016 C1-affordance class:
+   * that literal flips false the instant Migration C promotes admins to
+   * super_admin, silently rendering the whole page read-only for every human).
+   */
+  readonly canManageAccounts: boolean;
+  /**
+   * Whether the viewer may change a staff member's ROLE — `users.manage`,
+   * super-admin-only on the ON leg. Gates the per-row "Change role" trigger.
+   */
+  readonly canManageStaffRoles: boolean;
   /**
    * "Now" used to compute the "expires in N days" hint — computed ONCE on
    * the server (see AdminUsersPage's `UsersDataSection`) and threaded down
@@ -70,8 +90,10 @@ const statusVariant: Record<Status, 'default' | 'secondary' | 'outline' | 'destr
 };
 
 const roleVariant: Record<Role, 'default' | 'secondary' | 'outline'> = {
+  super_admin: 'default',
   admin: 'default',
   manager: 'secondary',
+  marketing: 'secondary',
   member: 'outline',
 };
 
@@ -90,13 +112,16 @@ function daysUntil(expiresAt: Date, now: Date): number {
 export function UserListTable({
   users,
   currentUserId,
-  currentUserRole,
+  canManageAccounts,
+  canManageStaffRoles,
   now,
 }: UserListTableProps) {
   const t = useTranslations('admin.users');
   const tErrors = useTranslations('errors');
   const router = useRouter();
   const [pending, setPending] = useState<PendingAction>(null);
+  const [roleChangeUser, setRoleChangeUser] = useState<UserRow | null>(null);
+  const [roleDialogOpen, setRoleDialogOpen] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   // `now` is computed once on the server (AdminUsersPage's
   // `UsersDataSection`) and passed down, so SSR and client hydration use
@@ -105,7 +130,14 @@ export function UserListTable({
   // over while the page stays open (a fresh value only arrives on the next
   // server render / router.refresh()).
 
-  const isAdmin = currentUserRole === 'admin';
+  // Focus-return target shared by every dialog on this page. Both the row
+  // action buttons and the "Change role" trigger unmount when a successful
+  // action fires `router.refresh()` (status flips / role changes / row
+  // filtered out), so returning focus to the trigger would drop it to
+  // `<body>`. The #main-content landmark (staff layout's focusable <main>)
+  // always survives (reference: dialog-focus-lost-after-unmount).
+  const dialogFinalFocus = () =>
+    typeof document !== 'undefined' ? document.getElementById('main-content') : null;
 
   async function runAction(
     url: string,
@@ -272,9 +304,18 @@ export function UserListTable({
           <TableBody>
             {users.map((user) => {
               const isSelf = user.id === currentUserId;
-              const canDisable = isAdmin && !isSelf && user.status === 'active';
-              const canEnable = isAdmin && user.status === 'disabled';
-              const canManageInvite = isAdmin && user.status === 'pending';
+              const canDisable = canManageAccounts && !isSelf && user.status === 'active';
+              const canEnable = canManageAccounts && user.status === 'disabled';
+              const canManageInvite = canManageAccounts && user.status === 'pending';
+              // Staff-role reassignment (users.manage). Never on your own row
+              // (self-demotion lockout) and only on rows whose CURRENT role is
+              // one the picker offers (super_admin/admin/manager) — that keeps
+              // the "Current" badge meaningful and, until PR 4 adds marketing to
+              // the options, avoids a marketing row opening a picker that can't
+              // show its own role. A member↔staff move is a portal change, out
+              // of this picker's scope.
+              const canChangeRole =
+                canManageStaffRoles && !isSelf && CHANGE_ROLE_OPTIONS.includes(user.role);
               const busy = busyId === user.id;
               const daysRemaining = user.invitationExpiresAt
                 ? daysUntil(user.invitationExpiresAt, now)
@@ -332,6 +373,20 @@ export function UserListTable({
                 </TableCell>
                 <TableCell>
                   <div className="flex items-center justify-end gap-2">
+                    {canChangeRole ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() => {
+                          setRoleChangeUser(user);
+                          setRoleDialogOpen(true);
+                        }}
+                      >
+                        <UserCogIcon className="size-4" aria-hidden />
+                        {t('actions.changeRole')}
+                      </Button>
+                    ) : null}
                     {canDisable ? (
                       <Button
                         size="sm"
@@ -376,7 +431,7 @@ export function UserListTable({
                         {t('actions.revoke')}
                       </Button>
                     ) : null}
-                    {!canDisable && !canEnable && !canManageInvite ? (
+                    {!canDisable && !canEnable && !canManageInvite && !canChangeRole ? (
                       <span className="text-xs text-muted-foreground">
                         {isSelf ? t('actions.self') : '—'}
                       </span>
@@ -426,11 +481,26 @@ export function UserListTable({
         }
         cancelLabel={t('confirm.cancel')}
         destructive={pending?.kind === 'disable' || pending?.kind === 'revoke'}
+        finalFocus={dialogFinalFocus}
         onConfirm={async () => {
           if (pending?.kind === 'disable') await handleDisable(pending.user);
           else if (pending?.kind === 'enable') await handleEnable(pending.user);
           else if (pending?.kind === 'revoke') await handleRevoke(pending.user);
         }}
+      />
+
+      {/* Mounted UNCONDITIONALLY (like the ConfirmationDialog above), driven by
+          `open` alone. Conditionally rendering it would unmount the Base UI Root
+          in the same frame the close is requested, so the close cycle — and
+          `finalFocus` with it — never runs and focus drops to <body> (016 UX
+          review C1 / CHK050). `roleChangeUser` is RETAINED through the close
+          animation and only changes when another row opens the picker. */}
+      <ChangeRoleDialog
+        user={roleChangeUser}
+        open={roleDialogOpen}
+        onOpenChange={setRoleDialogOpen}
+        onChanged={() => router.refresh()}
+        finalFocus={dialogFinalFocus}
       />
     </>
   );

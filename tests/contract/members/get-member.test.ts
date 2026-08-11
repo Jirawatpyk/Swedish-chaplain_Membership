@@ -16,7 +16,7 @@ import { ok, err } from '@/lib/result';
 // Hoist mocks
 // ---------------------------------------------------------------------------
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const getMemberMock = vi.fn();
 const buildMembersDepsMock = vi.fn(() => ({
   contactRepo: {},
@@ -25,9 +25,34 @@ const buildMembersDepsMock = vi.fn(() => ({
   clock: { now: () => new Date() },
 }));
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: requireAdminContextMock,
-}));
+/**
+ * Post-remediation re-review B — the leg this suite runs `canPerform` on.
+ * Mutable so individual tests can pin the ON leg; reset in `afterEach`.
+ */
+const rbacLeg = { v2: false };
+
+vi.mock('@/lib/rbac', async () => {
+  // 016 re-review finding B — the earlier factory exported ONLY
+  // `requireApiPermission`, which left `canPerform` as `undefined` in the
+  // route module. Every test passed because none exercised the DoB arm (the
+  // short-circuit on `include !== 'date_of_birth'` never reached the call),
+  // so the one PII egress decision this route makes had no net at all — and
+  // any test that DID reach it would have crashed on the mock instead of
+  // asserting anything. `canPerform` now delegates to the REAL pure-Domain
+  // evaluator (same pattern as palette-search.test.ts), keeping the role
+  // semantics under test on both legs via `rbacLeg`.
+  const { hasPermission } = await vi.importActual<
+    typeof import('@/modules/auth/domain/permissions/evaluator')
+  >('@/modules/auth/domain/permissions/evaluator');
+  return {
+    requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
+    canPerform: (role: unknown, key: unknown, legacy: unknown) =>
+      hasPermission(role as never, key as never, {
+        rbacV2: rbacLeg.v2,
+        legacy: legacy as never,
+      }),
+  };
+});
 
 vi.mock('@/modules/members/members-deps', () => ({
   buildMembersDeps: buildMembersDepsMock,
@@ -125,10 +150,13 @@ const MEMBER_FIXTURE = {
 // ---------------------------------------------------------------------------
 
 describe('contract: GET /api/members/[memberId]', () => {
-  afterEach(() => vi.clearAllMocks());
+  afterEach(() => {
+    vi.clearAllMocks();
+    rbacLeg.v2 = false;
+  });
 
   it('200 — returns serialised member with contacts on success', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     getMemberMock.mockResolvedValueOnce(ok(MEMBER_FIXTURE));
 
     const { GET } = await import('@/app/api/members/[memberId]/route');
@@ -145,7 +173,7 @@ describe('contract: GET /api/members/[memberId]', () => {
   });
 
   it('401 — admin-context gate short-circuits before reaching use case', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: NextResponse.json(
         { error: { code: 'unauthenticated', message: 'Not signed in.' } },
         { status: 401 },
@@ -160,7 +188,7 @@ describe('contract: GET /api/members/[memberId]', () => {
   });
 
   it('404 — invalid UUID memberId param', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
 
     const { GET } = await import('@/app/api/members/[memberId]/route');
     const res = await GET(
@@ -173,7 +201,7 @@ describe('contract: GET /api/members/[memberId]', () => {
   });
 
   it('404 — use case reports not_found (cross-tenant probe)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     getMemberMock.mockResolvedValueOnce(err({ type: 'not_found' }));
 
     const { GET } = await import('@/app/api/members/[memberId]/route');
@@ -185,7 +213,7 @@ describe('contract: GET /api/members/[memberId]', () => {
   });
 
   it('500 — use case reports server_error', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     getMemberMock.mockResolvedValueOnce(
       err({ type: 'server_error', message: 'db timeout' }),
     );
@@ -196,5 +224,95 @@ describe('contract: GET /api/members/[memberId]', () => {
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body.error.code).toBe('server_error');
+  });
+
+  /**
+   * 016 re-review B — the DoB projection is the one PII egress decision this
+   * route makes, PR 2 rewrote it (row `legacySessionOnly` → `legacyAdminOnly`,
+   * conjunct dropped), and until now no test reached it on either leg. These
+   * pins use the REAL evaluator (see the rbac mock above), so a future row
+   * swap back to `legacySessionOnly` — which would hand every contact's date
+   * of birth to manager on the OFF leg — goes red here instead of shipping.
+   */
+  describe('016 DoB projection (members.pii_sensitive sub-gate)', () => {
+    const DOB_FIXTURE = {
+      ...MEMBER_FIXTURE,
+      contacts: [
+        {
+          ...MEMBER_FIXTURE.contacts[0]!,
+          dateOfBirth: new Date('1980-04-01T00:00:00Z'),
+        },
+      ],
+    };
+
+    function makeDobRequest(): NextRequest {
+      return new NextRequest(
+        `http://localhost:3100/api/members/${MEMBER_ID}?include=date_of_birth`,
+        { method: 'GET' },
+      );
+    }
+
+    function contextFor(role: string) {
+      return {
+        ...adminContext,
+        current: {
+          ...adminContext.current,
+          user: { ...adminContext.current.user, role },
+        },
+      };
+    }
+
+    async function dobRequestAs(role: string, leg: 'off' | 'on') {
+      rbacLeg.v2 = leg === 'on';
+      requireApiPermissionMock.mockResolvedValueOnce(contextFor(role));
+      getMemberMock.mockResolvedValueOnce(ok(DOB_FIXTURE));
+      const { GET } = await import('@/app/api/members/[memberId]/route');
+      const res = await GET(makeDobRequest(), {
+        params: Promise.resolve({ memberId: MEMBER_ID }),
+      });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      return body.contacts[0] as Record<string, unknown>;
+    }
+
+    it('OFF leg — admin receives date_of_birth', async () => {
+      const contact = await dobRequestAs('admin', 'off');
+      expect(contact.date_of_birth).toBe('1980-04-01');
+    });
+
+    it('OFF leg — super_admin receives date_of_birth (D16 totalisation)', async () => {
+      const contact = await dobRequestAs('super_admin', 'off');
+      expect(contact.date_of_birth).toBe('1980-04-01');
+    });
+
+    it('OFF leg — manager does NOT receive the field (legacyAdminOnly row)', async () => {
+      const contact = await dobRequestAs('manager', 'off');
+      expect('date_of_birth' in contact).toBe(false);
+    });
+
+    it('ON leg — super_admin receives date_of_birth (E1 bypass)', async () => {
+      const contact = await dobRequestAs('super_admin', 'on');
+      expect(contact.date_of_birth).toBe('1980-04-01');
+    });
+
+    it('ON leg — manager is stripped (bundle lacks members.pii_sensitive)', async () => {
+      const contact = await dobRequestAs('manager', 'on');
+      expect('date_of_birth' in contact).toBe(false);
+    });
+
+    it('ON leg — marketing is stripped (US3/T057 single-member read)', async () => {
+      const contact = await dobRequestAs('marketing', 'on');
+      expect('date_of_birth' in contact).toBe(false);
+    });
+
+    it('without ?include=date_of_birth the field is absent even for admin', async () => {
+      requireApiPermissionMock.mockResolvedValueOnce(contextFor('admin'));
+      getMemberMock.mockResolvedValueOnce(ok(DOB_FIXTURE));
+      const { GET } = await import('@/app/api/members/[memberId]/route');
+      const res = await GET(makeRequest(), { params: routeParams });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect('date_of_birth' in body.contacts[0]).toBe(false);
+    });
   });
 });

@@ -7,6 +7,7 @@ import { SecurityUpdateBanner } from '@/components/auth/security-update-banner';
 import { AuthPageControls } from '@/components/shell/auth-page-controls';
 import { BrandMark } from '@/components/shell/brand-mark';
 import { getCurrentSession } from '@/lib/auth-session';
+import { isStaffRole } from '@/modules/auth';
 import { safeReturnTo } from '@/lib/return-url';
 
 /**
@@ -50,7 +51,9 @@ export default async function StaffSignInPage({ searchParams }: StaffSignInPageP
   const showSecurityBanner = reasonCandidate === 'security-update';
 
   const current = await getCurrentSession();
-  if (current && (current.user.role === 'admin' || current.user.role === 'manager')) {
+  // Domain invariant, not a role literal — a role added to ROLES bounces
+  // correctly without editing this file (review 016 PR1, ux-2).
+  if (current && isStaffRole(current.user.role)) {
     redirect(validatedReturnTo ?? '/admin');
   }
 

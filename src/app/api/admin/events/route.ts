@@ -21,6 +21,8 @@ import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { redactStack } from '@/lib/redact-stack';
 import { getCurrentSession } from '@/lib/auth-session';
+import { canPerform } from '@/lib/rbac';
+import { legacyAdminOrManager } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { eventsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import { runListEvents } from '@/lib/events-admin-deps';
@@ -89,12 +91,13 @@ export async function GET(request: NextRequest) {
   const session = await getCurrentSession();
   if (!session) return new NextResponse(null, { status: 404 });
   const role = session.user.role;
-  if (role !== 'admin' && role !== 'manager') {
-    // TS narrows `role` to `'member'` after the guard. Passing `role`
-    // directly (no `as 'member'` cast) means a future Role-union
-    // addition (e.g. `'treasurer'`) fails this call to compile against
-    // the helper's `'member' | 'manager'` param — surfaceable signal,
-    // not silent audit mis-labelling.
+  // 016 T028: the role decision goes through the flag-aware evaluator (a
+  // promoted super_admin passes; the old `role !== 'admin' && !== 'manager'`
+  // literal failed closed on it). The F6 FR-035 denial SHAPE is preserved
+  // verbatim — non-staff → 404 (surface disclosure) + `role_violation_blocked`
+  // audit, the D9 route-local override — NOT the sweep's uniform 403 +
+  // `permission_denied` trail.
+  if (!canPerform(role, 'events.read', legacyAdminOrManager)) {
     await emitEventsRoleViolation(request, {
       // Round-3 type-M closure — brand at this callsite for
       // consistency with the 5 other admin write routes' actor-id
@@ -270,6 +273,7 @@ export async function POST(request: NextRequest) {
   // path above which allows manager-read. See `adminOnlyWriterGuard`
   // doc-comment for the full FR-035 matrix.
   const guard = await adminOnlyWriterGuard(request, {
+    permissionKey: 'events.write',
     attemptedRoute: '/api/admin/events',
     attemptedAction: 'create_event',
     eventId: null,

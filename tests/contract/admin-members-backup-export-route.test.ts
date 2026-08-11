@@ -11,11 +11,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const exportMembersBackupMock = vi.fn();
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 vi.mock('@/lib/tenant-context', () => ({
   resolveTenantFromRequest: () => ({ slug: 'test-swecham', __brand: true }),
@@ -48,7 +48,7 @@ async function callRoute(): Promise<Response> {
 describe('GET /api/admin/members/export.zip — route contract', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    requireAdminContextMock.mockResolvedValue(adminContext);
+    requireApiPermissionMock.mockResolvedValue(adminContext);
     exportMembersBackupMock.mockResolvedValue({
       ok: true,
       value: {
@@ -61,14 +61,15 @@ describe('GET /api/admin/members/export.zip — route contract', () => {
   afterEach(() => vi.resetModules());
 
   it('guard rejection is forwarded verbatim (guard called with members:bulk/write)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: new Response(JSON.stringify({ error: 'forbidden' }), { status: 403 }),
     });
     const res = await callRoute();
     expect(res.status).toBe(403);
-    expect(requireAdminContextMock).toHaveBeenCalledWith(
+    expect(requireApiPermissionMock).toHaveBeenCalledWith(
       expect.anything(),
-      { resource: 'members:bulk', action: 'write' },
+      'members.bulk',
+      { kind: 'mappedLegacy', resource: 'members:bulk', action: 'write' },
     );
     expect(exportMembersBackupMock).not.toHaveBeenCalled();
   });

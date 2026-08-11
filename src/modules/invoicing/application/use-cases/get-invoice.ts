@@ -18,6 +18,7 @@ import { ok, err, type Result } from '@/lib/result';
 import type { InvoiceRepo } from '../ports/invoice-repo';
 import type { AuditPort } from '../ports/audit-port';
 import { asInvoiceId, type Invoice } from '@/modules/invoicing/domain/invoice';
+import type { Role } from '@/modules/auth';
 
 export interface GetInvoiceInput {
   readonly tenantId: string;
@@ -38,7 +39,8 @@ export interface GetInvoiceInput {
    */
   readonly actor?: {
     readonly userId: string;
-    readonly role: 'admin' | 'manager' | 'member';
+    /** 016 T030/T033 — literal session role; member arms below key on the literal. */
+    readonly role: Role;
     readonly requestId: string | null;
     readonly memberId?: string;
   };

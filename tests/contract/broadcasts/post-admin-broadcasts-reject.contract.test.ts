@@ -12,12 +12,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 import { ok, err } from '@/lib/result';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const rejectBroadcastMock = vi.fn();
 const sendMemberEmailMock = vi.fn(async (..._args: unknown[]) => undefined);
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 vi.mock('@/lib/tenant-context', () => ({
   resolveTenantFromRequest: () => ({ slug: 'test-tenant', __brand: true }),
@@ -130,7 +130,7 @@ afterEach(() => vi.clearAllMocks());
 
 describe('POST /api/admin/broadcasts/[id]/reject — Wave 6 GREEN (T094)', () => {
   it('200 happy: returns { broadcastId, status, rejectedAt, reservationReleased }', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     rejectBroadcastMock.mockResolvedValueOnce(
       ok({
         broadcast: broadcastFixture(),
@@ -151,7 +151,7 @@ describe('POST /api/admin/broadcasts/[id]/reject — Wave 6 GREEN (T094)', () =>
   });
 
   it('200 happy: passes verbatim rejectionReason to use-case (use-case enqueues notification IN-TX per G2)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     rejectBroadcastMock.mockResolvedValueOnce(
       ok({
         broadcast: broadcastFixture(),
@@ -175,7 +175,7 @@ describe('POST /api/admin/broadcasts/[id]/reject — Wave 6 GREEN (T094)', () =>
   });
 
   it('400 invalid_body: empty rejectionReason fails zod min(1)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     const { POST } = await importRoute();
     const { req, ctx } = makeRequest({ rejectionReason: '' });
     const res = await POST(req, ctx);
@@ -186,7 +186,7 @@ describe('POST /api/admin/broadcasts/[id]/reject — Wave 6 GREEN (T094)', () =>
   });
 
   it('400 invalid_body: rejectionReason > 2000 chars fails zod max', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     const { POST } = await importRoute();
     const { req, ctx } = makeRequest({ rejectionReason: 'x'.repeat(2001) });
     const res = await POST(req, ctx);
@@ -194,7 +194,7 @@ describe('POST /api/admin/broadcasts/[id]/reject — Wave 6 GREEN (T094)', () =>
   });
 
   it('400 invalid_body: missing rejectionReason field', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     const { POST } = await importRoute();
     const { req, ctx } = makeRequest({});
     const res = await POST(req, ctx);
@@ -202,7 +202,7 @@ describe('POST /api/admin/broadcasts/[id]/reject — Wave 6 GREEN (T094)', () =>
   });
 
   it('400 invalid_body: malformed JSON', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     const req = new NextRequest(
       `http://localhost/api/admin/broadcasts/${VALID_ID}/reject`,
       {
@@ -219,7 +219,7 @@ describe('POST /api/admin/broadcasts/[id]/reject — Wave 6 GREEN (T094)', () =>
   });
 
   it('404 broadcast_not_found: invalid uuid in path', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     const { POST } = await importRoute();
     const { req, ctx } = makeRequest(
       { rejectionReason: 'Reason' },
@@ -233,7 +233,7 @@ describe('POST /api/admin/broadcasts/[id]/reject — Wave 6 GREEN (T094)', () =>
   });
 
   it('404 broadcast_not_found: use-case returns not_found', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     rejectBroadcastMock.mockResolvedValueOnce(
       err({ kind: 'broadcast_not_found', broadcastId: VALID_ID }),
     );
@@ -246,7 +246,7 @@ describe('POST /api/admin/broadcasts/[id]/reject — Wave 6 GREEN (T094)', () =>
   });
 
   it('409 broadcast_invalid_state_transition with observedStatus detail', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     rejectBroadcastMock.mockResolvedValueOnce(
       err({
         kind: 'broadcast_invalid_state_transition',
@@ -263,7 +263,7 @@ describe('POST /api/admin/broadcasts/[id]/reject — Wave 6 GREEN (T094)', () =>
   });
 
   it('409 broadcast_concurrent_action_blocked', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     rejectBroadcastMock.mockResolvedValueOnce(
       err({
         kind: 'broadcast_concurrent_action_blocked',
@@ -279,7 +279,7 @@ describe('POST /api/admin/broadcasts/[id]/reject — Wave 6 GREEN (T094)', () =>
   });
 
   it('401: unauthenticated', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: unauthorisedResponse,
     });
     const { POST } = await importRoute();
@@ -290,7 +290,7 @@ describe('POST /api/admin/broadcasts/[id]/reject — Wave 6 GREEN (T094)', () =>
   });
 
   it('403: manager role attempting reject (admin-context guard rejects write)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: forbiddenResponse,
     });
     const { POST } = await importRoute();
@@ -300,7 +300,7 @@ describe('POST /api/admin/broadcasts/[id]/reject — Wave 6 GREEN (T094)', () =>
   });
 
   it('500 internal_error: use-case throws', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     rejectBroadcastMock.mockRejectedValueOnce(new Error('db down'));
     const { POST } = await importRoute();
     const { req, ctx } = makeRequest({ rejectionReason: 'Reason' });
@@ -311,7 +311,7 @@ describe('POST /api/admin/broadcasts/[id]/reject — Wave 6 GREEN (T094)', () =>
   });
 
   it('500 internal_error: use-case returns reject.server_error', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     rejectBroadcastMock.mockResolvedValueOnce(
       err({ kind: 'reject.server_error', message: 'db down' }),
     );
@@ -322,7 +322,7 @@ describe('POST /api/admin/broadcasts/[id]/reject — Wave 6 GREEN (T094)', () =>
   });
 
   it('member email failure does NOT 5xx the request (best-effort branch)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     rejectBroadcastMock.mockResolvedValueOnce(
       ok({
         broadcast: broadcastFixture(),
@@ -337,7 +337,7 @@ describe('POST /api/admin/broadcasts/[id]/reject — Wave 6 GREEN (T094)', () =>
   });
 
   it('correlation id present in success response headers', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     rejectBroadcastMock.mockResolvedValueOnce(
       ok({
         broadcast: broadcastFixture(),

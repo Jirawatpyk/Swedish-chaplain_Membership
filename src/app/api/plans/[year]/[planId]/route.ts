@@ -21,7 +21,8 @@
  * `not_found` → 404, `idempotency_conflict` → 409.
  */
 import { NextResponse, type NextRequest } from 'next/server';
-import { requireAdminContext } from '@/lib/admin-context';
+import { requireApiPermission } from '@/lib/rbac';
+import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import {
   parseIdempotencyKey,
@@ -47,10 +48,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ year: string; planId: string }> },
 ): Promise<NextResponse> {
-  const ctx = await requireAdminContext(request, {
-    resource: 'plan',
-    action: 'read',
-  });
+  const ctx = await requireApiPermission(request, 'plans.read', mappedLegacy('plan', 'read'));
   if ('response' in ctx) return ctx.response;
 
   const raw = await params;
@@ -129,10 +127,7 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ year: string; planId: string }> },
 ): Promise<NextResponse> {
-  const ctx = await requireAdminContext(request, {
-    resource: 'plan',
-    action: 'write',
-  });
+  const ctx = await requireApiPermission(request, 'plans.write', mappedLegacy('plan', 'write'));
   if ('response' in ctx) return ctx.response;
 
   // Emergency maintenance freeze short-circuit.
@@ -350,10 +345,7 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ year: string; planId: string }> },
 ): Promise<NextResponse> {
-  const ctx = await requireAdminContext(request, {
-    resource: 'plan',
-    action: 'write',
-  });
+  const ctx = await requireApiPermission(request, 'plans.write', mappedLegacy('plan', 'write'));
   if ('response' in ctx) return ctx.response;
 
   // Emergency maintenance freeze short-circuit.

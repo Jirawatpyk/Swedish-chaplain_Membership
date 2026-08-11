@@ -10,12 +10,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 import { ok, err } from '@/lib/result';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const getPlanMock = vi.fn();
 const buildPlansDepsMock = vi.fn();
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 vi.mock('@/modules/plans/plans-deps', () => ({
   buildPlansDeps: (...args: unknown[]) => buildPlansDepsMock(...args),
@@ -52,7 +52,7 @@ describe('contract: GET /api/plans/[year]/[planId] (T063)', () => {
   });
 
   it('200 on found plan — returns the full plan object', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
     getPlanMock.mockResolvedValueOnce(
       ok({
@@ -87,7 +87,7 @@ describe('contract: GET /api/plans/[year]/[planId] (T063)', () => {
   });
 
   it('404 on not_found — never 403 on cross-tenant probe', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
     getPlanMock.mockResolvedValueOnce(err({ type: 'not_found' }));
 
@@ -101,7 +101,7 @@ describe('contract: GET /api/plans/[year]/[planId] (T063)', () => {
   });
 
   it('401 when unauthenticated', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: NextResponse.json({ error: 'no-session' }, { status: 401 }),
     });
     const { GET } = await import('@/app/api/plans/[year]/[planId]/route');
@@ -113,7 +113,7 @@ describe('contract: GET /api/plans/[year]/[planId] (T063)', () => {
   });
 
   it('400 on malformed path params (non-numeric year)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
     const { GET } = await import('@/app/api/plans/[year]/[planId]/route');
     const res = await GET(makeRequest('notayear', 'premium'), {
@@ -124,7 +124,7 @@ describe('contract: GET /api/plans/[year]/[planId] (T063)', () => {
   });
 
   it('400 on malformed plan slug (uppercase)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
     const { GET } = await import('@/app/api/plans/[year]/[planId]/route');
     const res = await GET(makeRequest('2026', 'Premium'), {

@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 import { ok } from '@/lib/result';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const searchPlansMock = vi.fn();
 const buildPlansDepsMock = vi.fn();
 // 055-member-number — runInTenant stub so we can supply a fake prefix
@@ -28,9 +28,24 @@ const listInvoicesPagedMock = vi.fn();
 const loadInvoicePaymentActivityMock = vi.fn();
 const computeRemainingRefundableMock = vi.fn();
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
-}));
+vi.mock('@/lib/rbac', async () => {
+  // 016 review C1 — the refundable-invoice palette arm is now evaluator-derived
+  // (`refunds.write` / legacyAdminOnly) instead of a `role === 'admin'` literal.
+  // `canPerform` delegates to the REAL pure-Domain evaluator (not the composition
+  // root, which would drag env/audit/session infrastructure into this suite), so
+  // the arm's role semantics stay under test instead of being stubbed constant.
+  const { hasPermission } = await vi.importActual<
+    typeof import('@/modules/auth/domain/permissions/evaluator')
+  >('@/modules/auth/domain/permissions/evaluator');
+  return {
+    requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
+    canPerform: (role: unknown, key: unknown, legacy: unknown) =>
+      hasPermission(role as never, key as never, {
+        rbacV2: false,
+        legacy: legacy as never,
+      }),
+  };
+});
 vi.mock('@/modules/plans/plans-deps', () => ({
   buildPlansDeps: (...args: unknown[]) => buildPlansDepsMock(...args),
 }));
@@ -186,7 +201,7 @@ describe('contract: GET /api/plans/search (T064)', () => {
   });
 
   it('200 — returns { results: { plans, actions, navigate } } envelope', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     stubPlansOk();
 
     const { GET } = await import('@/app/api/plans/search/route');
@@ -198,8 +213,72 @@ describe('contract: GET /api/plans/search (T064)', () => {
     expect(body.results.navigate).toHaveLength(1);
   });
 
+  /**
+   * 016 re-review B — the refundable-invoice arm previously had no assertion
+   * that could tell whether it ran: the default stubs return zero rows, so a
+   * manager response and an admin response were byte-identical. These two pins
+   * drive REAL rows through the arm so the `canPerform(role, 'refunds.write',
+   * legacyAdminOnly)` decision becomes observable in the payload.
+   */
+  describe('refundable-invoice arm (refunds.write sub-gate)', () => {
+    function stubOneRefundableRow() {
+      listInvoicesPagedMock.mockResolvedValue(
+        ok({
+          rows: [
+            {
+              invoiceId: 'inv-1',
+              total: { satang: 250000 },
+              currency: 'THB',
+              memberIdentitySnapshot: { legal_name: 'Fogmaker AB' },
+              documentNumber: { raw: 'SC-2026-000123' },
+              receiptDocumentNumberRaw: null,
+              status: 'paid',
+            },
+          ],
+          total: 1,
+        }),
+      );
+      loadInvoicePaymentActivityMock.mockResolvedValue(
+        ok({ payments: [], refunds: [] }),
+      );
+      computeRemainingRefundableMock.mockReturnValue({ satang: 250000 });
+    }
+
+    it('admin receives the refundable section when rows exist', async () => {
+      requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+      stubPlansOk();
+      stubOneRefundableRow();
+
+      const { GET } = await import('@/app/api/plans/search/route');
+      const res = await GET(makeRequest('fogmaker'));
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.results.refundableInvoices).toHaveLength(1);
+      expect(body.results.refundableInvoices[0].invoice_id).toBe('inv-1');
+    });
+
+    it('manager never receives the section — the arm must not even query', async () => {
+      requireApiPermissionMock.mockResolvedValueOnce(managerContext);
+      buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
+      searchPlansMock.mockResolvedValueOnce(
+        ok({ results: { plans: [], actions: [], navigate: [] } }),
+      );
+      stubOneRefundableRow();
+
+      const { GET } = await import('@/app/api/plans/search/route');
+      const res = await GET(makeRequest('fogmaker'));
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.results.refundableInvoices).toHaveLength(0);
+      // Not just an empty list — the paid-invoice query itself must be
+      // skipped, or a manager keystroke would still fan out tenant-wide
+      // invoice reads it is not entitled to trigger.
+      expect(listInvoicesPagedMock).not.toHaveBeenCalled();
+    });
+  });
+
   it('200 — manager gets filtered actions (no create/clone)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(managerContext);
+    requireApiPermissionMock.mockResolvedValueOnce(managerContext);
     buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
     searchPlansMock.mockResolvedValueOnce(
       ok({
@@ -223,7 +302,7 @@ describe('contract: GET /api/plans/search (T064)', () => {
   });
 
   it('400 when q is missing', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
     const { GET } = await import('@/app/api/plans/search/route');
     const res = await GET(new NextRequest('http://localhost/api/plans/search'));
@@ -232,7 +311,7 @@ describe('contract: GET /api/plans/search (T064)', () => {
   });
 
   it('401 when unauthenticated', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: NextResponse.json({ error: 'no-session' }, { status: 401 }),
     });
     const { GET } = await import('@/app/api/plans/search/route');
@@ -243,7 +322,7 @@ describe('contract: GET /api/plans/search (T064)', () => {
 
   // 055-member-number — member hits include formatted display number
   it('200 — member results include member_number_display (SCCM-NNNN)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     stubPlansOk(true);
     // The route resolves the display prefix via resolveMemberNumberPrefix
     // (mocked to 'SCCM' above) + directorySearch (mocked to Acme Co #42), so the
@@ -268,7 +347,7 @@ describe('contract: GET /api/plans/search (T064)', () => {
   // invoice has a NULL §87 documentNumber → its §86/4 RC number must surface;
   // a legacy paid invoice keeps its §87 number. Locks route.ts line ~223.
   it('200 — refundable rows resolve invoice_number (088 RC fallback + legacy §87)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     stubPlansOk(true);
 
     // Paid 088 invoice: documentNumber NULL → number lives in its RC receipt.

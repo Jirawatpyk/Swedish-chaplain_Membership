@@ -3,7 +3,7 @@
  * (Staff Invitation Lifecycle, Task 4).
  *
  * Exposes Task 3's `revokeInvitation` use case over HTTP, admin-gated via
- * `requireAdminContext`. DELETE-semantics on the auth surface: permanently
+ * `requireApiPermission`. DELETE-semantics on the auth surface: permanently
  * removes a `pending` invited user so a typo'd / wrong invite can be
  * removed and the email freed for a fresh invite. No rate limiting — this
  * is not an email-sending action. Mock style follows
@@ -12,19 +12,28 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 import { ok, err } from '@/lib/result';
+// 016 re-review — real § 7.1 predicate, deep-imported (see change-role.test.ts).
+import { isStaffRole as realIsStaffRole } from '@/modules/auth/domain/role';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const revokeInvitationMock = vi.fn();
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 vi.mock('@/modules/auth', () => ({
   revokeInvitation: (...args: unknown[]) => revokeInvitationMock(...args),
   asUserId: (id: string) => id,
+  isStaffRole: (r: string) => realIsStaffRole(r as never),
 }));
 vi.mock('@/lib/tenant-context', () => ({
   resolveTenantFromRequest: () => ({ slug: 'test-swecham', __brand: true }),
+}));
+// 016 T028 — the route loads the TARGET row to pick the per-target permission
+// (§ 7.1). Default null = step-2 gate skipped; mocked so no real db is touched.
+const findByIdMock = vi.fn(async (..._args: unknown[]): Promise<unknown> => null);
+vi.mock('@/lib/auth-deps', () => ({
+  userRepo: { findById: (...args: unknown[]) => findByIdMock(...args) },
 }));
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },
@@ -58,7 +67,7 @@ describe('contract: POST /api/auth/users/[id]/revoke-invite (Task 4)', () => {
   });
 
   it('200 — admin + ok, calls the use case with tenantId=slug + userId=route param (not the admin id)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     revokeInvitationMock.mockResolvedValueOnce(ok({ deleted: true }));
 
     const { POST } = await import('@/app/api/auth/users/[id]/revoke-invite/route');
@@ -80,7 +89,7 @@ describe('contract: POST /api/auth/users/[id]/revoke-invite (Task 4)', () => {
   });
 
   it('404 — not-pending-or-not-found', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     revokeInvitationMock.mockResolvedValueOnce(err({ code: 'not-pending-or-not-found' }));
 
     const { POST } = await import('@/app/api/auth/users/[id]/revoke-invite/route');
@@ -89,7 +98,7 @@ describe('contract: POST /api/auth/users/[id]/revoke-invite (Task 4)', () => {
   });
 
   it('401 — unauthenticated', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: NextResponse.json({ error: 'no-session' }, { status: 401 }),
     });
 
@@ -98,4 +107,47 @@ describe('contract: POST /api/auth/users/[id]/revoke-invite (Task 4)', () => {
     expect(res.status).toBe(401);
     expect(revokeInvitationMock).not.toHaveBeenCalled();
   });
+
+  /**
+   * 016 review C2 — the § 7.1 step-2 gate was implemented but never EXECUTED:
+   * `findByIdMock` resolves `null` everywhere, so the staff-target branch was
+   * always false and deleting the block left the suite green. On the flag-ON
+   * leg that is privilege escalation — a plain admin holds
+   * `users.member_accounts` and would sail through step 1 onto a staff row.
+   */
+  describe('§ 7.1 step-2 per-TARGET escalation gate', () => {
+    it('staff-role TARGET consults users.manage and returns its rejection', async () => {
+      requireApiPermissionMock
+        .mockResolvedValueOnce(adminContext)
+        .mockResolvedValueOnce({
+          response: NextResponse.json({ error: 'forbidden' }, { status: 403 }),
+        });
+      findByIdMock.mockResolvedValueOnce({ id: 'target-1', role: 'super_admin' });
+
+      const { POST } = await import('@/app/api/auth/users/[id]/revoke-invite/route');
+      const res = await POST(makeRequest('user-1'), makeParams('user-1'));
+
+      expect(res.status).toBe(403);
+      expect(revokeInvitationMock).not.toHaveBeenCalled();
+      expect(requireApiPermissionMock).toHaveBeenCalledTimes(2);
+      expect(requireApiPermissionMock).toHaveBeenNthCalledWith(
+        2,
+        expect.anything(),
+        'users.manage',
+        { kind: 'mappedLegacy', resource: 'auth:user', action: 'write' },
+      );
+    });
+
+    it('member TARGET never consults users.manage (step 1 alone authorises)', async () => {
+      requireApiPermissionMock.mockResolvedValue(adminContext);
+      findByIdMock.mockResolvedValueOnce({ id: 'target-1', role: 'member' });
+      revokeInvitationMock.mockResolvedValueOnce(ok({}));
+
+      const { POST } = await import('@/app/api/auth/users/[id]/revoke-invite/route');
+      await POST(makeRequest('user-1'), makeParams('user-1'));
+
+      expect(requireApiPermissionMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
 });

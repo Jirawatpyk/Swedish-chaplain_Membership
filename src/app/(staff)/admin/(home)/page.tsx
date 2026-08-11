@@ -29,7 +29,8 @@ import { MembershipTierChart } from '@/components/dashboard/membership-tier-char
 import { InvoiceStatusChart } from '@/components/dashboard/invoice-status-chart';
 import { EmptyState } from '@/components/shell/empty-state';
 import { ShieldAlertIcon } from 'lucide-react';
-import { requireSession } from '@/lib/auth-session';
+import { requirePagePermission } from '@/lib/rbac';
+import { legacySessionOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
@@ -62,7 +63,7 @@ export const metadata: Metadata = {
 const ROADMAP_PHASES = ['F3', 'F4', 'F5', 'F6'] as const;
 
 export default async function StaffHomePage() {
-  const { user } = await requireSession('staff');
+  const { user } = await requirePagePermission('dashboard.view', legacySessionOnly);
 
   if (!env.features.f9Dashboard) {
     const tShell = await getTranslations('shell');

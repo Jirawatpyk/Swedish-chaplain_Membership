@@ -14,10 +14,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: requireAdminContextMock,
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: requireApiPermissionMock,
 }));
 
 const staffContext = {
@@ -39,7 +39,7 @@ describe('contract: GET /api/geo/postal/[code]', () => {
   afterEach(() => vi.clearAllMocks());
 
   it('200 with candidates for a known code', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(staffContext);
+    requireApiPermissionMock.mockResolvedValueOnce(staffContext);
 
     const { GET } = await import('@/app/api/geo/postal/[code]/route');
     const res = await GET(makeRequest('10110'), {
@@ -52,7 +52,7 @@ describe('contract: GET /api/geo/postal/[code]', () => {
   });
 
   it('404 for an unknown code', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(staffContext);
+    requireApiPermissionMock.mockResolvedValueOnce(staffContext);
 
     const { GET } = await import('@/app/api/geo/postal/[code]/route');
     const res = await GET(makeRequest('99999'), {
@@ -64,7 +64,7 @@ describe('contract: GET /api/geo/postal/[code]', () => {
   });
 
   it('400 for a malformed code', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(staffContext);
+    requireApiPermissionMock.mockResolvedValueOnce(staffContext);
 
     const { GET } = await import('@/app/api/geo/postal/[code]/route');
     const res = await GET(makeRequest('abc'), {
@@ -75,7 +75,7 @@ describe('contract: GET /api/geo/postal/[code]', () => {
   });
 
   it('401 when unauthenticated', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: NextResponse.json({ error: 'no-session' }, { status: 401 }),
     });
 

@@ -36,11 +36,11 @@ import { ok, err } from '@/lib/result';
 // hoists them to the top of the module graph.
 // ---------------------------------------------------------------------------
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const issueRefundMock = vi.fn();
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 
 vi.mock('@/lib/tenant-context', () => ({
@@ -207,7 +207,7 @@ describe('contract: POST /api/refunds/initiate (T101)', () => {
   });
 
   it('201 — happy path partial refund: response envelope matches spec shape', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     issueRefundMock.mockResolvedValueOnce(ok(SUCCESS_PAYLOAD));
 
     const { POST } = await importRoute();
@@ -240,7 +240,7 @@ describe('contract: POST /api/refunds/initiate (T101)', () => {
   });
 
   it('201 — full refund: payment.status=refunded, invoice.status=credited', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     issueRefundMock.mockResolvedValueOnce(
       ok({
         ...SUCCESS_PAYLOAD,
@@ -276,7 +276,7 @@ describe('contract: POST /api/refunds/initiate (T101)', () => {
     // #1 (2026-07-11) — a `pending`/`requires_action` Stripe refund is not
     // booked at creation time; the route returns 202 Accepted and the
     // `charge.refund.updated` webhook finalises it later.
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     issueRefundMock.mockResolvedValueOnce(
       ok({
         kind: 'pending' as const,
@@ -309,7 +309,7 @@ describe('contract: POST /api/refunds/initiate (T101)', () => {
   });
 
   it('400 invalid_input — paymentId missing', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
 
     const { POST } = await importRoute();
     const res = await POST(
@@ -321,7 +321,7 @@ describe('contract: POST /api/refunds/initiate (T101)', () => {
   });
 
   it('400 invalid_input — amountSatang ≤ 0', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
 
     const { POST } = await importRoute();
     const res = await POST(
@@ -333,7 +333,7 @@ describe('contract: POST /api/refunds/initiate (T101)', () => {
   });
 
   it('400 invalid_input — amountSatang exceeds 2_000_000_000 (20M THB upper bound)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
 
     const { POST } = await importRoute();
     const res = await POST(
@@ -345,7 +345,7 @@ describe('contract: POST /api/refunds/initiate (T101)', () => {
   });
 
   it('400 invalid_input — reason exceeds 500 chars', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
 
     const { POST } = await importRoute();
     const res = await POST(
@@ -357,7 +357,7 @@ describe('contract: POST /api/refunds/initiate (T101)', () => {
   });
 
   it('400 invalid_input — reason contains CR/LF (single-line constraint)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
 
     const { POST } = await importRoute();
     const res = await POST(
@@ -369,7 +369,7 @@ describe('contract: POST /api/refunds/initiate (T101)', () => {
   });
 
   it('401 unauthorized — no session', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: new Response(JSON.stringify({ error: 'no-session' }), {
         status: 401,
         headers: { 'content-type': 'application/json' },
@@ -384,7 +384,7 @@ describe('contract: POST /api/refunds/initiate (T101)', () => {
   it('403 forbidden_role — manager session is rejected (AS4) + body shape pinned', async () => {
     // I8 (review 2026-04-27): AS4 ("manager → 403 + button hidden") —
     // the route delegates auth-failure response synthesis to
-    // `requireAdminContext` (shared helper). Pin the contract:
+    // `requireApiPermission` (shared helper). Pin the contract:
     //   1. Status 403 surfaces verbatim.
     //   2. Body carries the helper's `{error: 'forbidden'}` payload
     //      unchanged — the route does NOT silently re-wrap it into
@@ -393,7 +393,7 @@ describe('contract: POST /api/refunds/initiate (T101)', () => {
     // The F5-specific i18n envelope (`messageThai`, `correlationId`)
     // applies only to use-case-driven errors; auth-context
     // rejections use the project-wide minimal shape.
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: new Response(JSON.stringify({ error: 'forbidden' }), {
         status: 403,
         headers: { 'content-type': 'application/json' },
@@ -410,7 +410,7 @@ describe('contract: POST /api/refunds/initiate (T101)', () => {
   });
 
   it('404 payment_not_found — id does not exist OR cross-tenant', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     issueRefundMock.mockResolvedValueOnce(err({ code: 'payment_not_found' }));
 
     const { POST } = await importRoute();
@@ -421,7 +421,7 @@ describe('contract: POST /api/refunds/initiate (T101)', () => {
   });
 
   it('409 payment_not_refundable — payment status not in {succeeded, partially_refunded}', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     issueRefundMock.mockResolvedValueOnce(
       err({ code: 'payment_not_refundable', currentStatus: 'failed' }),
     );
@@ -436,7 +436,7 @@ describe('contract: POST /api/refunds/initiate (T101)', () => {
   });
 
   it('409 refund_exceeds_remaining — pre-flight FR-011b rejection', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     issueRefundMock.mockResolvedValueOnce(
       err({
         code: 'refund_exceeds_remaining',
@@ -455,7 +455,7 @@ describe('contract: POST /api/refunds/initiate (T101)', () => {
   });
 
   it('409 refund_in_progress — concurrent refund holds the row lock', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     issueRefundMock.mockResolvedValueOnce(err({ code: 'refund_in_progress' }));
 
     const { POST } = await importRoute();
@@ -527,7 +527,7 @@ describe('contract: POST /api/refunds/initiate (T101)', () => {
 
   for (const c of preflightRefusals) {
     it(`${c.expectedStatus} ${c.expectedCode} — ${c.name}; refused before Stripe`, async () => {
-      requireAdminContextMock.mockResolvedValueOnce(adminContext);
+      requireApiPermissionMock.mockResolvedValueOnce(adminContext);
       issueRefundMock.mockResolvedValueOnce(
         err({ code: 'f4_preflight_credit_note_blocked', reason: c.reason }),
       );
@@ -541,7 +541,7 @@ describe('contract: POST /api/refunds/initiate (T101)', () => {
   }
 
   it('429 rate_limited — admin 20/5min budget exceeded; carries Retry-After', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     const { rateLimiter } = await getMockedAuthDeps();
     rateLimiter.check.mockResolvedValueOnce({
       success: false,
@@ -565,7 +565,7 @@ describe('contract: POST /api/refunds/initiate (T101)', () => {
   it('429 is best-effort: a thrown audit emit does NOT change the 429 response', async () => {
     // Exercises the route's try/catch around f5AuditAdapter.emit — an audit-sink
     // hiccup (e.g. Neon down) must never turn the rate-limit 429 into a 500.
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     const { rateLimiter } = await getMockedAuthDeps();
     rateLimiter.check.mockResolvedValueOnce({
       success: false,
@@ -587,7 +587,7 @@ describe('contract: POST /api/refunds/initiate (T101)', () => {
   });
 
   it('502 processor_unavailable — refund row inserted with status=failed; no CN', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     issueRefundMock.mockResolvedValueOnce(
       err({
         code: 'processor_unavailable',
@@ -606,7 +606,7 @@ describe('contract: POST /api/refunds/initiate (T101)', () => {
   });
 
   it('502 processor_unavailable — error envelope MUST NOT leak gateway `reason` (PCI hygiene)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     issueRefundMock.mockResolvedValueOnce(
       err({
         code: 'processor_unavailable',
@@ -624,7 +624,7 @@ describe('contract: POST /api/refunds/initiate (T101)', () => {
   });
 
   it('error responses carry messageThai field (i18n contract)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     issueRefundMock.mockResolvedValueOnce(err({ code: 'payment_not_refundable' }));
 
     const { POST } = await importRoute();
@@ -637,7 +637,7 @@ describe('contract: POST /api/refunds/initiate (T101)', () => {
   });
 
   it('every response carries Cache-Control: no-store, private', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     issueRefundMock.mockResolvedValueOnce(err({ code: 'payment_not_found' }));
 
     const { POST } = await importRoute();
@@ -648,7 +648,7 @@ describe('contract: POST /api/refunds/initiate (T101)', () => {
   });
 
   it('every response carries X-Correlation-Id header', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     issueRefundMock.mockResolvedValueOnce(err({ code: 'payment_not_found' }));
 
     const { POST } = await importRoute();
@@ -657,7 +657,7 @@ describe('contract: POST /api/refunds/initiate (T101)', () => {
   });
 
   it('500 internal_error — unexpected use-case throw is caught + correlationId returned', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     issueRefundMock.mockRejectedValueOnce(new Error('db connection lost'));
 
     const { POST } = await importRoute();

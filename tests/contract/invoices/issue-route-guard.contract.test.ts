@@ -21,7 +21,7 @@ import { err } from '@/lib/result';
 // Mock seams — declared before any import of the route.
 // ---------------------------------------------------------------------------
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const issueInvoiceMock = vi.fn();
 // 107-auto-invoice Task 10 — the route now calls this guard BEFORE
 // issueInvoice; stub it to always pass through so this file keeps testing
@@ -33,8 +33,8 @@ const guardGenericRouteIssueOriginMock = vi.fn(async (..._args: unknown[]) => ({
   value: undefined,
 }));
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 
 vi.mock('@/lib/tenant-context', () => ({
@@ -126,7 +126,7 @@ describe('contract: POST /api/invoices/[invoiceId]/issue — no-TIN event guard 
   }, 60_000);
 
   beforeEach(() => {
-    requireAdminContextMock.mockResolvedValue(adminContext);
+    requireApiPermissionMock.mockResolvedValue(adminContext);
   });
 
   afterEach(() => {

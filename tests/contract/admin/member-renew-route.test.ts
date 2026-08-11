@@ -145,6 +145,7 @@ describe('POST /api/admin/members/[id]/renew — contract', () => {
     expect(requireRenewalAdminContextMock).toHaveBeenCalledWith(
       expect.anything(),
       'write',
+      'renewals.write',
     );
   });
 

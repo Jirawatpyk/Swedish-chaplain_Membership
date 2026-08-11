@@ -14,12 +14,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
-const requireSessionMock = vi.fn();
+const getCurrentSessionMock = vi.fn();
 const auditExportMock = vi.fn();
 const rateLimiterCheckMock = vi.fn();
 
+// 016 T028: the route's `requireSession` + role-literal prologue folded into
+// `requireApiPermission('audit.read', legacyAdminOrManager)`; the gate reads
+// `getCurrentSession` and the REAL Domain evaluator decides admission.
 vi.mock('@/lib/auth-session', () => ({
-  requireSession: (...a: unknown[]) => requireSessionMock(...a),
+  getCurrentSession: (...a: unknown[]) => getCurrentSessionMock(...a),
+}));
+// The gate's denial trail appends via a dynamic import of the audit repo;
+// stub it so deny cases never touch the placeholder-env db client.
+vi.mock('@/modules/auth/infrastructure/db/audit-repo', () => ({
+  auditRepo: { append: vi.fn(async () => {}) },
 }));
 vi.mock('@/lib/env', () => ({
   env: { features: { f9Dashboard: true }, tenant: { timezone: 'Asia/Bangkok' } },
@@ -57,13 +65,13 @@ async function callRoute(qs: string): Promise<Response> {
 describe('GET /api/admin/audit/export.csv — route contract', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    requireSessionMock.mockResolvedValue(adminSession);
+    getCurrentSessionMock.mockResolvedValue(adminSession);
     rateLimiterCheckMock.mockResolvedValue(okRl());
   });
   afterEach(() => vi.resetModules());
 
   it('non-staff role → 403 (does not dispatch)', async () => {
-    requireSessionMock.mockResolvedValueOnce({ user: { id: 'm1', role: 'member' }, session: {} });
+    getCurrentSessionMock.mockResolvedValueOnce({ user: { id: 'm1', role: 'member' }, session: {} });
     const res = await callRoute('');
     expect(res.status).toBe(403);
     expect(auditExportMock).not.toHaveBeenCalled();

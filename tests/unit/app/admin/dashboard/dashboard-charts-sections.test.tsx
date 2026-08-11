@@ -79,6 +79,11 @@ vi.mock('@/lib/auth-session', () => ({
   requireSession: vi.fn().mockResolvedValue({
     user: { id: 'u1', displayName: 'Admin User', role: 'admin' },
   }),
+  // 016 T027 — swept pages gate via requirePagePermission, which reads
+  // getCurrentSession. Same session as requireSession so the case is unchanged.
+  getCurrentSession: vi.fn().mockResolvedValue({
+    user: { id: 'u1', displayName: 'Admin User', role: 'admin' },
+  }),
 }));
 
 vi.mock('@/lib/tenant-context', () => ({

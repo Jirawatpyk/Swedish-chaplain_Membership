@@ -18,11 +18,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { ok, err } from '@/lib/result';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const addContactMock = vi.fn();
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 
 vi.mock('@/modules/members/members-deps', () => ({
@@ -121,7 +121,7 @@ describe('contract: POST /api/members/[memberId]/contacts (addContact)', () => {
   afterEach(() => vi.clearAllMocks());
 
   it('201 happy path → serialised contact', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     addContactMock.mockResolvedValueOnce(ok(createdContact));
     const { POST } = await import(
       '@/app/api/members/[memberId]/contacts/route'
@@ -136,7 +136,7 @@ describe('contract: POST /api/members/[memberId]/contacts (addContact)', () => {
   });
 
   it('400 when Idempotency-Key header is missing', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     const { POST } = await import(
       '@/app/api/members/[memberId]/contacts/route'
     );
@@ -150,7 +150,7 @@ describe('contract: POST /api/members/[memberId]/contacts (addContact)', () => {
   });
 
   it('400 invalid_body (zod shape)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     addContactMock.mockResolvedValueOnce(
       err({
         type: 'invalid_body',
@@ -169,7 +169,7 @@ describe('contract: POST /api/members/[memberId]/contacts (addContact)', () => {
   });
 
   it('400 validation_error on invalid_email', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     addContactMock.mockResolvedValueOnce(err({ type: 'invalid_email' }));
     const { POST } = await import(
       '@/app/api/members/[memberId]/contacts/route'
@@ -184,7 +184,7 @@ describe('contract: POST /api/members/[memberId]/contacts (addContact)', () => {
   });
 
   it('409 conflict', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     addContactMock.mockResolvedValueOnce(
       err({ type: 'conflict', reason: 'duplicate' }),
     );
@@ -198,7 +198,7 @@ describe('contract: POST /api/members/[memberId]/contacts (addContact)', () => {
   });
 
   it('500 server_error', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     addContactMock.mockResolvedValueOnce(
       err({ type: 'server_error', message: 'boom' }),
     );
@@ -213,7 +213,7 @@ describe('contract: POST /api/members/[memberId]/contacts (addContact)', () => {
 
   it('401 when admin-context short-circuits (auth gate)', async () => {
     const { NextResponse } = await import('next/server');
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: NextResponse.json({ error: 'no-session' }, { status: 401 }),
     });
     const { POST } = await import(

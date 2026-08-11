@@ -21,7 +21,8 @@ import { notFound } from 'next/navigation';
 import { headers } from 'next/headers';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { ArrowLeftIcon, MailIcon } from 'lucide-react';
-import { requireSession } from '@/lib/auth-session';
+import { requirePagePermission } from '@/lib/rbac';
+import { legacyAdminOrManager } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { loadMembershipAccess } from '@/lib/load-membership-access';
@@ -54,7 +55,7 @@ export default async function MemberBenefitsPage({ params }: PageProps) {
   const { memberId } = await params;
   if (!UUID_RE.test(memberId)) notFound();
 
-  const session = await requireSession('staff');
+  const session = await requirePagePermission('members.read', legacyAdminOrManager);
   const tenant = resolveTenantFromRequest();
   const h = await headers();
   const requestId = requestIdFromHeaders(h);
@@ -121,13 +122,17 @@ export default async function MemberBenefitsPage({ params }: PageProps) {
   }
   const usage = result.value;
 
-  // requireSession('staff') admits only admin + manager, but the Role union
-  // includes 'member' — validate rather than cast (R I-3) so a future RBAC
-  // regression can't silently write an inaccurate actor_role to the audit row.
+  // The audit records the actor's REAL role. It is deliberately NOT narrowed
+  // to `admin | manager`: `requirePagePermission('members.read', …)` above is
+  // the gate, and the trail must be able to say `super_admin` or `marketing`
+  // truthfully rather than coerce them into a two-value union (016 T033).
+  // 016 T027 (re-review PR1 C-2): this used to be the page's only role check.
+  // It sat BELOW `getMember` + `computeBenefitUsage` — so an unauthorised
+  // caller's PII reads had already run — and it THREW, rendering the 500
+  // boundary instead of denying. `requirePagePermission` above now does both
+  // jobs correctly: it denies with 404 before any read happens. The literal
+  // role is still what the audit records (no coercion).
   const actorRole = session.user.role;
-  if (actorRole !== 'admin' && actorRole !== 'manager') {
-    throw new Error(`unexpected role on staff benefits route: ${actorRole}`);
-  }
 
   // PII-read trail + SC-012 metric (best-effort; never blocks the read).
   await recordStaffBenefitView({

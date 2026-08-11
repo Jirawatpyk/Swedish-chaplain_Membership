@@ -18,8 +18,15 @@ import type {
   ActivityFeedItem,
   ActivityFeedSource,
 } from '../ports/activity-feed-source';
+// Deep PURE-Domain import (not the barrel): a value import of the auth barrel
+// would drag auth-deps' infrastructure singletons (argon2, Upstash, repos)
+// into this Application module's graph at eval time.
+import { isAdministrativeRole, type Role } from '@/modules/auth/domain/role';
 
-export type ActivityFeedActorRole = 'admin' | 'manager' | 'member';
+// 016 T030/T033 — widened to the full Role union so routes stop casting and
+// audit emitters record the LITERAL actor role; the decision arms in this
+// file stay explicit per-role checks (deny arms unchanged).
+export type ActivityFeedActorRole = Role;
 
 export interface ActivityFeedMeta {
   readonly actorUserId: string;
@@ -72,7 +79,12 @@ export async function activityFeedQuery(
   // `summary`. Member company names are intentionally NOT redacted (a manager
   // has member-directory read scope, so they are not out-of-scope PII). Admin:
   // full feed.
-  if (meta.actorRole === 'manager') {
+  // 016 T030/T034 — redact for every role OUTSIDE the administrator set
+  // (admin ∪ super_admin per D16): the old `=== 'manager'` literal would have
+  // handed a future marketing viewer the FULL feed by falling through. On the
+  // ON leg this population equals the `insights.activity_unredacted` holders,
+  // so PR 4's key-based re-statement (T058) changes no behaviour.
+  if (!isAdministrativeRole(meta.actorRole, false)) {
     return ok(
       withActor.map((it) => ({ ...it, summary: redactSummaryForRole(it.summary, 'manager') })),
     );

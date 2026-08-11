@@ -8,9 +8,9 @@
  * CloneYearDialog confirmation.
  */
 import type { Metadata } from 'next';
-import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
-import { requireSession } from '@/lib/auth-session';
+import { requirePagePermission } from '@/lib/rbac';
+import { legacyAdminOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { listPlans, asPlanYear } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
@@ -25,10 +25,7 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function CloneYearPage() {
-  const { user: currentUser } = await requireSession('staff');
-  if (currentUser.role !== 'admin') {
-    redirect('/admin/plans');
-  }
+  await requirePagePermission('plans.clone', legacyAdminOnly);
 
   const t = await getTranslations('admin.plans.clone');
 

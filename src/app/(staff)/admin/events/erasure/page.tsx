@@ -27,14 +27,15 @@
  */
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { notFound, redirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 import { headers } from 'next/headers';
 import { z } from 'zod';
 import { getTranslations } from 'next-intl/server';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { redactStack } from '@/lib/redact-stack';
-import { requireSession } from '@/lib/auth-session';
+import { requirePagePermission } from '@/lib/rbac';
+import { legacyAdminOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { runSearchAttendeesByEmail } from '@/lib/events-admin-deps';
 import { bangkokLocalDate } from '@/lib/fiscal-year';
@@ -76,15 +77,11 @@ export default async function EraseByEmailPage({
 
   // FR-035 admin-only (carry-forward #1) — mirror the per-registration erase
   // page's deny: manager + member redirected to /admin/events.
-  let session: Awaited<ReturnType<typeof requireSession>>;
-  try {
-    session = await requireSession('staff');
-  } catch {
-    redirect('/admin/sign-in');
-  }
-  if (session.user.role !== 'admin') {
-    redirect('/admin/events');
-  }
+  // 016 T027 — NOT wrapped in try/catch. `requirePagePermission` denies by
+  // calling `notFound()`, which throws a Next.js control-flow signal; catching
+  // it would swallow the denial and re-route to sign-in instead of serving the
+  // 404. The no-session case is already handled by the staff shell's redirect.
+  await requirePagePermission('events.erasure', legacyAdminOnly);
 
   let tenantCtx: ReturnType<typeof resolveTenantFromHeaders>;
   try {

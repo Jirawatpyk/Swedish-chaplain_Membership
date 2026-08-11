@@ -111,7 +111,7 @@ export async function POST(
     });
   }
 
-  const ctx = await requireRenewalAdminContext(request, 'write');
+  const ctx = await requireRenewalAdminContext(request, 'write', 'renewals.write');
   if ('response' in ctx) return ctx.response;
 
   const { cycleId } = await context.params;
@@ -147,7 +147,11 @@ export async function POST(
       paymentReference: parsed.data.payment_reference,
       paymentDate: parsed.data.payment_date,
       actorUserId: ctx.current.user.id,
-      actorRole: 'admin',
+      // 016 review I4 — the LITERAL role (see cancel/route.ts). The gate above
+      // (`renewals.write`) admits admin + super_admin only.
+      // rbac-narrow-ok: stamps the LITERAL role into the audit row; the
+      // gate above already decided admission.
+      actorRole: ctx.current.user.role === 'super_admin' ? 'super_admin' : 'admin',
       requestId: ctx.requestId,
       correlationId: ctx.correlationId,
     });

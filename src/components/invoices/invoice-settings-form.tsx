@@ -178,18 +178,24 @@ const SECTIONS: ReadonlyArray<SectionNavItem> = [
 
 export interface InvoiceSettingsFormProps {
   readonly initialValues: InvoiceSettingsFormInitialValues;
-  readonly currentUserRole: 'admin' | 'manager' | 'member';
+  /**
+   * Server-derived write authorization. A boolean, NOT a role: this component
+   * must never re-derive authorization from a role literal — the permitted set
+   * changes with the RBAC bundles (016 `settings.invoicing`), and a stale
+   * `role === 'admin'` here would disable the form for the very role the
+   * server permits (review 016 PR1, cast-1).
+   */
+  readonly canEdit: boolean;
   readonly exists: boolean; // false on first-ever load
 }
 
 export function InvoiceSettingsForm({
   initialValues,
-  currentUserRole,
+  canEdit,
   exists,
 }: InvoiceSettingsFormProps) {
   const t = useTranslations('admin.invoiceSettings');
   const router = useRouter();
-  const isAdmin = currentUserRole === 'admin';
   const formRef = useRef<HTMLFormElement>(null);
 
   const [currencyCode, setCurrencyCode] = useState(initialValues.currency_code);
@@ -267,7 +273,7 @@ export function InvoiceSettingsForm({
   // confirms the §87 numbering-stream impact.
   const [pendingBody, setPendingBody] = useState<Record<string, unknown> | null>(null);
 
-  const disabled = !isAdmin || submitting;
+  const disabled = !canEdit || submitting;
 
   // Task 7 (spec §4.4) — dirty-state comparison feeding the sticky Save
   // bar + the beforeunload guard. Same flat key set on both sides so
@@ -340,7 +346,7 @@ export function InvoiceSettingsForm({
     payment_instructions_th: trimStr(paymentInstructionsTh),
     payment_instructions_en: trimStr(paymentInstructionsEn),
   };
-  const dirty = isAdmin && isDirty(initialRecord, currentValues);
+  const dirty = canEdit && isDirty(initialRecord, currentValues);
   useUnsavedGuard(dirty);
 
   // Task 7 (spec §6.3) / wave-A C1(a) — a blocked (validation-failed) submit
@@ -409,7 +415,7 @@ export function InvoiceSettingsForm({
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!isAdmin) return;
+    if (!canEdit) return;
     setSubmitting(true);
     setError(null);
     // Clear markers left by a previous blocked submit (see markInvalid
@@ -780,7 +786,7 @@ export function InvoiceSettingsForm({
           </p>
         ) : null}
 
-        {isAdmin ? (
+        {canEdit ? (
           <Button
             type="submit"
             size="lg"

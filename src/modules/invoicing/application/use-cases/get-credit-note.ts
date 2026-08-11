@@ -21,11 +21,14 @@ import {
   type CreditNote,
   type CreditNoteId,
 } from '@/modules/invoicing/domain/credit-note';
+import type { Role } from '@/modules/auth';
 
 export type GetCreditNoteActor =
   | {
       readonly userId: string;
-      readonly role: 'admin' | 'manager';
+      /** 016 T030/T033 — the literal STAFF role (member stays its own arm so
+       *  the discriminated union keeps narrowing on `role === 'member'`). */
+      readonly role: Exclude<Role, 'member'>;
       readonly requestId: string | null;
     }
   | {

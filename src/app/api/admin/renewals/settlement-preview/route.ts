@@ -83,7 +83,7 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  const ctx = await requireRenewalAdminContext(request, 'read');
+  const ctx = await requireRenewalAdminContext(request, 'read', 'renewals.read');
   if ('response' in ctx) return ctx.response;
 
   const url = new URL(request.url);

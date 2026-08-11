@@ -27,11 +27,11 @@ import { err } from '@/lib/result';
 // Mock seams — declared before any import of the route.
 // ---------------------------------------------------------------------------
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const recordPaymentMock = vi.fn();
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 
 vi.mock('@/lib/tenant-context', () => ({
@@ -133,7 +133,7 @@ describe('contract: POST /api/invoices/[invoiceId]/pay — legacy no-TIN event g
   }, 60_000);
 
   beforeEach(() => {
-    requireAdminContextMock.mockResolvedValue(adminContext);
+    requireApiPermissionMock.mockResolvedValue(adminContext);
   });
 
   afterEach(() => {

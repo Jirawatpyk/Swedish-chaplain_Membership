@@ -22,14 +22,14 @@
  * response.
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { err } from '@/lib/result';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const voidInvoiceMock = vi.fn();
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 
 vi.mock('@/lib/tenant-context', () => ({
@@ -112,14 +112,14 @@ describe('contract: POST /api/invoices/[invoiceId]/void', () => {
   // whose cold-load can exceed a per-test budget under the parallel suite and
   // strand an unconsumed mock. Mirrors event-draft.contract.test.ts.
   beforeAll(async () => {
-    requireAdminContextMock.mockResolvedValue(adminContext);
+    requireApiPermissionMock.mockResolvedValue(adminContext);
     voidInvoiceMock.mockResolvedValue(err({ code: 'invoice_not_found' }));
     await import('@/app/api/invoices/[invoiceId]/void/route').catch(() => undefined);
   });
 
   afterEach(() => {
     vi.clearAllMocks();
-    requireAdminContextMock.mockResolvedValue(adminContext);
+    requireApiPermissionMock.mockResolvedValue(adminContext);
     voidInvoiceMock.mockResolvedValue(err({ code: 'invoice_not_found' }));
   });
 
@@ -204,15 +204,53 @@ describe('contract: POST /api/invoices/[invoiceId]/void', () => {
     expect(body.error.code).toBe('paid_membership_requires_credit_note');
   });
 
-  it('returns 403 for a non-admin (manager) actor', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
-      ...adminContext,
-      current: { ...adminContext.current, user: { ...adminContext.current.user, role: 'manager' } },
+  it('returns the gate rejection untouched (key + shim row pinned)', async () => {
+    // 016 review C1 — denial is decided BY THE GATE, not by a role literal in
+    // the handler (that literal also 403'd super_admin, whom the frozen
+    // baseline pins as allow, and would have made voiding an issued tax
+    // invoice unreachable after Migration C). No role is involved in this
+    // case: the gate is mocked to reject, and the pins are (a) the exact
+    // (key, row) pair the gate is asked for and (b) that its rejection is
+    // returned without the handler touching anything else. Manager's actual
+    // denial on both legs is proven by role-endpoint-matrix.test.ts.
+    requireApiPermissionMock.mockResolvedValueOnce({
+      response: NextResponse.json({ error: { code: 'forbidden' } }, { status: 403 }),
     });
 
     const res = await callRoute(VALID_INVOICE_ID, { voidReason: 'legit reason' });
 
+    expect(requireApiPermissionMock).toHaveBeenCalledWith(
+      expect.anything(),
+      'invoicing.void',
+      { kind: 'mappedLegacy', resource: 'invoice', action: 'write' },
+    );
     expect(res.status).toBe(403);
     expect(voidInvoiceMock).not.toHaveBeenCalled();
+  });
+
+  it('super_admin passes the handler — no residual role arm between gate and use-case', async () => {
+    // 016 re-review — the five leftover-literal mutation shapes the API gate's
+    // regex cannot see (double-quoted literal, aliased const, line-wrapped
+    // comparison, `.includes()`, `switch/case`) all share one observable: they
+    // return 403 for super_admin AFTER the gate admits it. This pin kills the
+    // whole class behaviourally: an admitted super_admin must reach the
+    // use-case (404 from the default invoice_not_found stub, never 403) with
+    // its own identity threaded through.
+    requireApiPermissionMock.mockResolvedValueOnce({
+      ...adminContext,
+      current: {
+        ...adminContext.current,
+        user: { ...adminContext.current.user, id: 'sa-user-1', role: 'super_admin' as const },
+      },
+    });
+
+    const res = await callRoute(VALID_INVOICE_ID, { voidReason: 'duplicate issue' });
+
+    expect(res.status).toBe(404);
+    expect(voidInvoiceMock).toHaveBeenCalledTimes(1);
+    expect(voidInvoiceMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ actorUserId: 'sa-user-1' }),
+    );
   });
 });

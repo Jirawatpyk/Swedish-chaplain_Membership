@@ -14,7 +14,8 @@
 
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
-import { requireAdminContext } from '@/lib/admin-context';
+import { canPerform, requireApiPermission } from '@/lib/rbac';
+import { legacyAdminOnly, mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import {
   parseIdempotencyKey,
@@ -37,10 +38,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ memberId: string }> },
 ): Promise<NextResponse> {
-  const ctx = await requireAdminContext(request, {
-    resource: 'members',
-    action: 'read',
-  });
+  const ctx = await requireApiPermission(request, 'members.read', mappedLegacy('members', 'read'));
   if ('response' in ctx) return ctx.response;
 
   const resolved = await params;
@@ -53,7 +51,23 @@ export async function GET(
   }
 
   const url = new URL(request.url);
-  const includeDob = url.searchParams.get('include') === 'date_of_birth';
+  // 016 T035 (corrected by review C1/I9) — DoB rides `members.pii_sensitive`.
+  // The OFF-leg row is `legacyAdminOnly`, which reproduces this route's
+  // pre-016 `role === 'admin'` projection byte-for-byte (manager has never
+  // received DoB here) while admitting a promoted `super_admin` via D16. On
+  // the ON leg any bundle lacking the key is stripped — for MANAGER that is no
+  // change (denied on both legs and pre-016 alike; nothing flips here at
+  // cutover, and this arm writes NO permission_denied row, so it can never
+  // appear in the runbook's § 4 reconciliation); marketing arrives already
+  // stripped at PR 4. The redundant `&& role === 'admin'` conjunct that used
+  // to sit on the serialiser call made this check dead code and locked
+  // super_admin out of DoB entirely.
+  // Write surfaces (edit/create forms) are members.write-gated and unaffected.
+  const includeDob =
+    url.searchParams.get('include') === 'date_of_birth' &&
+    // rbac-subgate-ok: gates the DoB FIELD of an already-authorised response,
+    // not admission to the surface (that is the `members.read` gate above).
+    canPerform(ctx.current.user.role, 'members.pii_sensitive', legacyAdminOnly);
 
   const tenant = resolveTenantFromRequest(request);
   const deps = buildMembersDeps(tenant);
@@ -85,7 +99,7 @@ export async function GET(
       ...serialiseMember(result.value.member),
       contacts: result.value.contacts.map((c) =>
         serialiseContact(c, {
-          includeDateOfBirth: includeDob && ctx.current.user.role === 'admin',
+          includeDateOfBirth: includeDob,
         }),
       ),
     },
@@ -99,10 +113,7 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ memberId: string }> },
 ): Promise<NextResponse> {
-  const ctx = await requireAdminContext(request, {
-    resource: 'members',
-    action: 'write',
-  });
+  const ctx = await requireApiPermission(request, 'members.write', mappedLegacy('members', 'write'));
   if ('response' in ctx) return ctx.response;
 
   const resolved = await params;

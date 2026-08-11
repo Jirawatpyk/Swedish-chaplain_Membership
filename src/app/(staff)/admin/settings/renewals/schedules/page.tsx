@@ -22,7 +22,6 @@
  * FormContainer. The 42rem standard width is the right call.
  */
 import type { Metadata } from 'next';
-import { redirect } from 'next/navigation';
 import { headers } from 'next/headers';
 import { randomUUID } from 'node:crypto';
 import { getTranslations } from 'next-intl/server';
@@ -32,7 +31,8 @@ import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { requireSession } from '@/lib/auth-session';
+import { canPerform, requirePagePermission } from '@/lib/rbac';
+import { legacyAdminOrManager, mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import {
   loadSchedulePolicies,
@@ -52,11 +52,15 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function RenewalSchedulesSettingsPage() {
   const t = await getTranslations('admin.renewals.settings.schedules');
-  const { user: currentUser } = await requireSession('staff');
-  if (currentUser.role !== 'admin' && currentUser.role !== 'manager') {
-    redirect('/portal');
-  }
-  const readOnly = currentUser.role !== 'admin';
+  const { user: currentUser } = await requirePagePermission('settings.renewal_schedules', legacyAdminOrManager);
+  // 016 re-review D — mirrors the write route's exact pair
+  // (requireRenewalAdminContext(request, 'write', 'settings.renewal_schedules')
+  // on [tierBucket]): the form is editable exactly when the PATCH would admit.
+  const readOnly = !canPerform(
+    currentUser.role,
+    'settings.renewal_schedules',
+    mappedLegacy('renewal', 'write'),
+  );
 
   if (!env.features.f8Renewals) {
     const tShared = await getTranslations('admin.renewals');

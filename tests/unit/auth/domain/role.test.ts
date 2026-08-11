@@ -1,30 +1,64 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ASSIGNABLE_ROLES,
   isRole,
   isStaffRole,
   PORTAL_FOR_ROLE,
   ROLES,
   STAFF_ROLES,
 } from '@/modules/auth/domain/role';
+import { roleEnum } from '@/modules/auth/infrastructure/db/schema';
 
 describe('ROLES constant', () => {
-  it('contains exactly admin, manager, member', () => {
-    expect([...ROLES].sort()).toEqual(['admin', 'manager', 'member']);
+  it('contains exactly the five system roles (016-rbac-permissions FR-001)', () => {
+    expect([...ROLES].sort()).toEqual(
+      ['admin', 'manager', 'marketing', 'member', 'super_admin'].sort(),
+    );
+  });
+
+  it('is ORDER-EXACT — the tuple must match the live pg_enum label order', () => {
+    // `ALTER TYPE … ADD VALUE` appends, so migration 0285's labels follow the
+    // original three. Both role.ts and schema.ts document "never reorder";
+    // this is the assertion that makes the contract fail loudly.
+    expect([...ROLES]).toEqual(['admin', 'manager', 'member', 'super_admin', 'marketing']);
+  });
+
+  it('the Drizzle roleEnum tuple matches ROLES label-for-label and in order', () => {
+    expect([...roleEnum.enumValues]).toEqual([...ROLES]);
+  });
+});
+
+describe('ASSIGNABLE_ROLES (staged assignability)', () => {
+  it('adds super_admin in PR 3 (users-page retrofit); marketing still held to PR 4', () => {
+    // super_admin became assignable in PR 3 (invite + change-role); marketing
+    // follows in PR 4 (design D17). Widening this WITHOUT widening the invite
+    // and change-role zod enums (and vice versa) is the defect
+    // assignable-roles-lockstep.test.ts pins.
+    expect([...ASSIGNABLE_ROLES]).toEqual(['admin', 'manager', 'member', 'super_admin']);
+    expect(ASSIGNABLE_ROLES).not.toContain('marketing');
+  });
+
+  it('is a subset of ROLES', () => {
+    for (const role of ASSIGNABLE_ROLES) expect(ROLES).toContain(role);
   });
 });
 
 describe('STAFF_ROLES', () => {
-  it('contains admin and manager', () => {
+  it('contains all four staff roles, never member', () => {
+    expect(STAFF_ROLES).toContain('super_admin');
     expect(STAFF_ROLES).toContain('admin');
     expect(STAFF_ROLES).toContain('manager');
+    expect(STAFF_ROLES).toContain('marketing');
     expect(STAFF_ROLES).not.toContain('member');
   });
 });
 
 describe('PORTAL_FOR_ROLE', () => {
-  it('maps admin and manager to staff portal', () => {
+  it('maps every staff role to the staff portal', () => {
+    expect(PORTAL_FOR_ROLE.super_admin).toBe('staff');
     expect(PORTAL_FOR_ROLE.admin).toBe('staff');
     expect(PORTAL_FOR_ROLE.manager).toBe('staff');
+    expect(PORTAL_FOR_ROLE.marketing).toBe('staff');
   });
 
   it('maps member to member portal', () => {
@@ -34,25 +68,27 @@ describe('PORTAL_FOR_ROLE', () => {
 
 describe('isRole', () => {
   it('accepts valid roles', () => {
+    expect(isRole('super_admin')).toBe(true);
     expect(isRole('admin')).toBe(true);
     expect(isRole('manager')).toBe(true);
+    expect(isRole('marketing')).toBe(true);
     expect(isRole('member')).toBe(true);
   });
 
   it('rejects invalid strings', () => {
     expect(isRole('visitor')).toBe(false);
+    expect(isRole('platform_admin')).toBe(false);
     expect(isRole('')).toBe(false);
     expect(isRole('ADMIN')).toBe(false);
   });
 });
 
 describe('isStaffRole', () => {
-  it('admin is a staff role', () => {
+  it('super_admin, admin, manager, marketing are staff roles', () => {
+    expect(isStaffRole('super_admin')).toBe(true);
     expect(isStaffRole('admin')).toBe(true);
-  });
-
-  it('manager is a staff role', () => {
     expect(isStaffRole('manager')).toBe(true);
+    expect(isStaffRole('marketing')).toBe(true);
   });
 
   it('member is NOT a staff role', () => {

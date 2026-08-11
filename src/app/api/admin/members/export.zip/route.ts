@@ -16,7 +16,8 @@
  * Node runtime pinned (Drizzle).
  */
 import { type NextRequest, NextResponse } from 'next/server';
-import { requireAdminContext } from '@/lib/admin-context';
+import { requireApiPermission } from '@/lib/rbac';
+import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { buildAttachmentContentDisposition } from '@/lib/content-disposition';
@@ -29,10 +30,7 @@ import {
 export const runtime = 'nodejs';
 
 export async function GET(request: NextRequest): Promise<Response> {
-  const ctx = await requireAdminContext(request, {
-    resource: 'members:bulk',
-    action: 'write',
-  });
+  const ctx = await requireApiPermission(request, 'members.bulk', mappedLegacy('members:bulk', 'write'));
   if ('response' in ctx) return ctx.response;
 
   const tenantCtx = resolveTenantFromRequest(request);
@@ -41,7 +39,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   const result = await exportMembersBackup(
     {
       actorUserId: ctx.current.user.id,
-      actorRole: ctx.current.user.role as 'admin' | 'manager' | 'member',
+      actorRole: ctx.current.user.role,
       requestId,
     },
     tenantCtx,

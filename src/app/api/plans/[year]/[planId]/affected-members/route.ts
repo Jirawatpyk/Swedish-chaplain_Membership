@@ -13,7 +13,8 @@
 
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
-import { requireAdminContext } from '@/lib/admin-context';
+import { requireApiPermission } from '@/lib/rbac';
+import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
 import { affectedMembersCount } from '@/modules/members';
@@ -29,10 +30,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ year: string; planId: string }> },
 ): Promise<NextResponse> {
-  const ctx = await requireAdminContext(request, {
-    resource: 'members',
-    action: 'read',
-  });
+  const ctx = await requireApiPermission(request, 'members.read', mappedLegacy('members', 'read'));
   if ('response' in ctx) return ctx.response;
 
   const resolved = await params;

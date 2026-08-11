@@ -50,19 +50,43 @@ const META = {
 function makeDeps(overrides: Partial<EraseUserDeps> = {}): {
   deps: EraseUserDeps;
   anonymiseErasedInTx: ReturnType<typeof vi.fn>;
+  findById: ReturnType<typeof vi.fn>;
+  countActiveAdministrators: ReturnType<typeof vi.fn>;
   deleteByUserIdInTx: ReturnType<typeof vi.fn>;
   appendInTx: ReturnType<typeof vi.fn>;
 } {
   const anonymiseErasedInTx = vi.fn(async () => ({ erased: true }));
+  // 016 T026 — the last-administrator pre-flight reads the target BEFORE the
+  // transaction. The default target is a plain member so the pre-flight is
+  // inert for every pre-existing case; the pre-flight's own behaviour is
+  // covered by its dedicated describe block below.
+  const findById = vi.fn(async () => ({ id: USER_ID, role: 'member', status: 'active' }));
+  const countActiveAdministrators = vi.fn(async () => 5);
   const deleteByUserIdInTx = vi.fn(async () => 2);
   const appendInTx = vi.fn(async () => undefined);
   const deps: EraseUserDeps = {
-    users: { anonymiseErasedInTx } as unknown as EraseUserDeps['users'],
     sessions: { deleteByUserIdInTx } as unknown as EraseUserDeps['sessions'],
     audit: { appendInTx } as unknown as EraseUserDeps['audit'],
+    rbacV2: false,
     ...overrides,
+    // Merge (not replace) the users bag: a case overriding one repo method
+    // must not silently drop the pre-flight's `findById` /
+    // `countActiveAdministrators` and turn into a TypeError.
+    users: {
+      anonymiseErasedInTx,
+      findById,
+      countActiveAdministrators,
+      ...(overrides.users ?? {}),
+    } as unknown as EraseUserDeps['users'],
   };
-  return { deps, anonymiseErasedInTx, deleteByUserIdInTx, appendInTx };
+  return {
+    deps,
+    anonymiseErasedInTx,
+    findById,
+    countActiveAdministrators,
+    deleteByUserIdInTx,
+    appendInTx,
+  };
 }
 
 beforeEach(() => {
@@ -258,5 +282,83 @@ describe('eraseUser (F1 linked-user erasure)', () => {
     );
     expect(failCall).toBeDefined();
     expect(JSON.stringify(failCall![0])).not.toContain('raw pg fault string');
+  });
+});
+
+describe('eraseUser — last-administrator pre-flight (016 T026)', () => {
+  it('refuses to erase the last active administrator BEFORE opening the tx', async () => {
+    const { deps, anonymiseErasedInTx, countActiveAdministrators } = makeDeps({
+      users: {
+        findById: vi.fn(async () => ({ id: USER_ID, role: 'admin', status: 'active' })),
+        countActiveAdministrators: vi.fn(async () => 1),
+      } as unknown as EraseUserDeps['users'],
+    });
+
+    const result = await eraseUser({ userId: USER_ID, ...META }, deps);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('erase-user-last-admin');
+    // The whole point of a pre-flight: no write is attempted at all.
+    expect(anonymiseErasedInTx).not.toHaveBeenCalled();
+    void countActiveAdministrators;
+  });
+
+  it('counts super_admin as an administrator (transitional UNION population)', async () => {
+    const { deps, anonymiseErasedInTx } = makeDeps({
+      users: {
+        findById: vi.fn(async () => ({ id: USER_ID, role: 'super_admin', status: 'active' })),
+        countActiveAdministrators: vi.fn(async () => 1),
+      } as unknown as EraseUserDeps['users'],
+    });
+
+    const result = await eraseUser({ userId: USER_ID, ...META }, deps);
+
+    expect(result.ok).toBe(false);
+    expect(anonymiseErasedInTx).not.toHaveBeenCalled();
+  });
+
+  it('allows the erase when another administrator remains', async () => {
+    const { deps, anonymiseErasedInTx } = makeDeps({
+      users: {
+        findById: vi.fn(async () => ({ id: USER_ID, role: 'admin', status: 'active' })),
+        countActiveAdministrators: vi.fn(async () => 2),
+      } as unknown as EraseUserDeps['users'],
+    });
+
+    const result = await eraseUser({ userId: USER_ID, ...META }, deps);
+
+    expect(result.ok).toBe(true);
+    expect(anonymiseErasedInTx).toHaveBeenCalledTimes(1);
+  });
+
+  it('is inert for a non-administrative target — never counts, never blocks', async () => {
+    const countActiveAdministrators = vi.fn(async () => 1);
+    const { deps, anonymiseErasedInTx } = makeDeps({
+      users: {
+        findById: vi.fn(async () => ({ id: USER_ID, role: 'manager', status: 'active' })),
+        countActiveAdministrators,
+      } as unknown as EraseUserDeps['users'],
+    });
+
+    const result = await eraseUser({ userId: USER_ID, ...META }, deps);
+
+    expect(result.ok).toBe(true);
+    expect(countActiveAdministrators).not.toHaveBeenCalled();
+    expect(anonymiseErasedInTx).toHaveBeenCalledTimes(1);
+  });
+
+  it('is inert for an already-disabled administrator', async () => {
+    const { deps, anonymiseErasedInTx } = makeDeps({
+      users: {
+        findById: vi.fn(async () => ({ id: USER_ID, role: 'admin', status: 'disabled' })),
+        countActiveAdministrators: vi.fn(async () => 1),
+      } as unknown as EraseUserDeps['users'],
+    });
+
+    const result = await eraseUser({ userId: USER_ID, ...META }, deps);
+
+    expect(result.ok).toBe(true);
+    expect(anonymiseErasedInTx).toHaveBeenCalledTimes(1);
   });
 });

@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  const ctx = await requireRenewalAdminContext(request, 'read');
+  const ctx = await requireRenewalAdminContext(request, 'read', 'renewals.read');
   if ('response' in ctx) return ctx.response;
 
   // FR-052b granular kill-switch — return 200 with placeholder shape so

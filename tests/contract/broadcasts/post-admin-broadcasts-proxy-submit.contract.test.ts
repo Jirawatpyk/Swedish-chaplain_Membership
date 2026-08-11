@@ -12,14 +12,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 import { ok, err, type Result } from '@/lib/result';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const proxySubmitMock = vi.fn();
 const resolveTenantDisplayNameMock = vi.fn(
   async (..._args: unknown[]) => 'Test Chamber',
 );
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 vi.mock('@/lib/tenant-context', () => ({
   resolveTenantFromRequest: () => ({ slug: 'test-tenant', __brand: true }),
@@ -120,7 +120,7 @@ afterEach(() => vi.clearAllMocks());
 
 describe('POST /api/admin/broadcasts/proxy-submit — Wave 6 GREEN (T095)', () => {
   it('200 happy: { broadcastId, status:submitted, submittedAt, estimatedRecipientCount, actorRole:admin_proxy }', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     proxySubmitMock.mockResolvedValueOnce(ok(submitOutput));
     const { POST } = await importRoute();
     const res = await POST(makeRequest(VALID_BODY));
@@ -137,7 +137,7 @@ describe('POST /api/admin/broadcasts/proxy-submit — Wave 6 GREEN (T095)', () =
   });
 
   it('Q12 dual-actor: use-case receives proxiedMemberId + adminUserId', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     proxySubmitMock.mockResolvedValueOnce(ok(submitOutput));
     const { POST } = await importRoute();
     await POST(makeRequest(VALID_BODY));
@@ -150,7 +150,7 @@ describe('POST /api/admin/broadcasts/proxy-submit — Wave 6 GREEN (T095)', () =
   });
 
   it('DV-17 + #18: route resolves proxied member companyName → memberLookup.found', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     findMemberByIdMock.mockResolvedValueOnce(ok({ companyName: 'Fogmaker International AB' }));
     proxySubmitMock.mockResolvedValueOnce(ok(submitOutput));
     const { POST } = await importRoute();
@@ -170,7 +170,7 @@ describe('POST /api/admin/broadcasts/proxy-submit — Wave 6 GREEN (T095)', () =
   });
 
   it('400 invalid_body: subject too long', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     const { POST } = await importRoute();
     const res = await POST(
       makeRequest({ ...VALID_BODY, subject: 'x'.repeat(201) }),
@@ -180,14 +180,14 @@ describe('POST /api/admin/broadcasts/proxy-submit — Wave 6 GREEN (T095)', () =
   });
 
   it('400 invalid_body: subject empty', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     const { POST } = await importRoute();
     const res = await POST(makeRequest({ ...VALID_BODY, subject: '' }));
     expect(res.status).toBe(400);
   });
 
   it('400 invalid_body: bodyHtml missing', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     const { POST } = await importRoute();
     const { bodyHtml: _bh, ...rest } = VALID_BODY;
     const res = await POST(makeRequest(rest));
@@ -195,7 +195,7 @@ describe('POST /api/admin/broadcasts/proxy-submit — Wave 6 GREEN (T095)', () =
   });
 
   it('400 invalid_body: requestedByMemberId not uuid', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     const { POST } = await importRoute();
     const res = await POST(
       makeRequest({ ...VALID_BODY, requestedByMemberId: 'not-uuid' }),
@@ -204,7 +204,7 @@ describe('POST /api/admin/broadcasts/proxy-submit — Wave 6 GREEN (T095)', () =
   });
 
   it('400 invalid_body: tier segment without tierCodes', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     const { POST } = await importRoute();
     const res = await POST(
       makeRequest({ ...VALID_BODY, segment: { kind: 'tier' } }),
@@ -213,7 +213,7 @@ describe('POST /api/admin/broadcasts/proxy-submit — Wave 6 GREEN (T095)', () =
   });
 
   it('400 invalid_body: custom segment > 100 emails', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     const { POST } = await importRoute();
     const emails = Array.from({ length: 101 }, (_, i) => `u${i}@example.com`);
     const res = await POST(
@@ -223,7 +223,7 @@ describe('POST /api/admin/broadcasts/proxy-submit — Wave 6 GREEN (T095)', () =
   });
 
   it('400 invalid_body: malformed JSON', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     const req = new NextRequest(
       'http://localhost/api/admin/broadcasts/proxy-submit',
       {
@@ -238,7 +238,7 @@ describe('POST /api/admin/broadcasts/proxy-submit — Wave 6 GREEN (T095)', () =
   });
 
   it('404 broadcast_member_not_found: use-case rejects unknown member', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     proxySubmitMock.mockResolvedValueOnce(
       err({ kind: 'broadcast_member_not_found', memberId: VALID_MEMBER_ID }),
     );
@@ -255,7 +255,7 @@ describe('POST /api/admin/broadcasts/proxy-submit — Wave 6 GREEN (T095)', () =
     // through `findMemberByIdMock` rather than the use-case mock: a repo
     // `not_found` must become `memberLookup: { status: 'not_found' }`. The
     // use-case (mocked) then maps that input to broadcast_member_not_found.
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     findMemberByIdMock.mockResolvedValueOnce(err({ code: 'repo.not_found' }));
     proxySubmitMock.mockResolvedValueOnce(
       err({ kind: 'broadcast_member_not_found', memberId: VALID_MEMBER_ID }),
@@ -275,7 +275,7 @@ describe('POST /api/admin/broadcasts/proxy-submit — Wave 6 GREEN (T095)', () =
     // The non-not_found repo error arm: any other repo error code must become
     // `memberLookup: { status: 'lookup_failed', message: <code> }`. The
     // use-case (mocked) maps that to submit.server_error → 500.
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     findMemberByIdMock.mockResolvedValueOnce(err({ code: 'repo.unexpected' }));
     proxySubmitMock.mockResolvedValueOnce(
       err({ kind: 'submit.server_error', message: 'lookup_failed' }),
@@ -295,7 +295,7 @@ describe('POST /api/admin/broadcasts/proxy-submit — Wave 6 GREEN (T095)', () =
     // (it does not filter `erased_at`); the route's `findErasedAtById` read flips
     // memberLookup to `{ status: 'erased' }`. Assert the route both threads that
     // status into the use-case AND maps the use-case's `member_erased` to 409.
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     findMemberByIdMock.mockResolvedValueOnce(ok({ companyName: 'Erased Co' }));
     findErasedAtByIdMock.mockResolvedValueOnce(
       ok({ erasedAt: new Date('2026-06-20T00:00:00Z') }),
@@ -318,7 +318,7 @@ describe('POST /api/admin/broadcasts/proxy-submit — Wave 6 GREEN (T095)', () =
   it('FIX C: findErasedAtById read failure → memberLookup.lookup_failed → 500 (never a silent pass to found)', async () => {
     // A fault on the erasure read must fail closed (500), never default to
     // `found` (which would let an erased member through).
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     findMemberByIdMock.mockResolvedValueOnce(ok({ companyName: 'Acme Co' }));
     findErasedAtByIdMock.mockResolvedValueOnce(err({ code: 'repo.unexpected' }));
     proxySubmitMock.mockResolvedValueOnce(
@@ -335,7 +335,7 @@ describe('POST /api/admin/broadcasts/proxy-submit — Wave 6 GREEN (T095)', () =
   });
 
   it('422 broadcast_member_halted_pending_review (admin cannot bypass halt)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     proxySubmitMock.mockResolvedValueOnce(
       err({
         kind: 'broadcast_member_halted_pending_review',
@@ -348,7 +348,7 @@ describe('POST /api/admin/broadcasts/proxy-submit — Wave 6 GREEN (T095)', () =
   });
 
   it('422 broadcast_subject_too_long surfaced from use-case', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     proxySubmitMock.mockResolvedValueOnce(
       err({ kind: 'broadcast_subject_too_long', maxChars: 200, actualChars: 250 }),
     );
@@ -362,7 +362,7 @@ describe('POST /api/admin/broadcasts/proxy-submit — Wave 6 GREEN (T095)', () =
     // surfaces broadcast_quota_blocked when at cap and the route maps it
     // to 422 (no admin bypass). Arranged via the file's existing
     // proxySubmit deps-mock at-cap return.
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     proxySubmitMock.mockResolvedValueOnce(
       err({ kind: 'broadcast_quota_blocked', used: 6, reserved: 0, cap: 6 }),
     );
@@ -374,7 +374,7 @@ describe('POST /api/admin/broadcasts/proxy-submit — Wave 6 GREEN (T095)', () =
   });
 
   it('422 broadcast_body_unsafe_html surfaced from use-case', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     proxySubmitMock.mockResolvedValueOnce(
       err({ kind: 'broadcast_body_unsafe_html', strippedTags: ['script'] }),
     );
@@ -384,7 +384,7 @@ describe('POST /api/admin/broadcasts/proxy-submit — Wave 6 GREEN (T095)', () =
   });
 
   it('422 broadcast_empty_segment_blocked', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     proxySubmitMock.mockResolvedValueOnce(
       err({ kind: 'broadcast_empty_segment_blocked' }),
     );
@@ -394,7 +394,7 @@ describe('POST /api/admin/broadcasts/proxy-submit — Wave 6 GREEN (T095)', () =
   });
 
   it('401 unauthenticated', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: NextResponse.json({ error: 'unauthorized' }, { status: 401 }),
     });
     const { POST } = await importRoute();
@@ -403,7 +403,7 @@ describe('POST /api/admin/broadcasts/proxy-submit — Wave 6 GREEN (T095)', () =
   });
 
   it('403 manager attempting proxy-submit (forbidden)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: NextResponse.json({ error: 'forbidden' }, { status: 403 }),
     });
     const { POST } = await importRoute();
@@ -412,7 +412,7 @@ describe('POST /api/admin/broadcasts/proxy-submit — Wave 6 GREEN (T095)', () =
   });
 
   it('500 internal_error: submit.server_error', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     proxySubmitMock.mockResolvedValueOnce(
       err({ kind: 'submit.server_error', message: 'db down' }),
     );
@@ -422,7 +422,7 @@ describe('POST /api/admin/broadcasts/proxy-submit — Wave 6 GREEN (T095)', () =
   });
 
   it('500 internal_error: thrown', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     proxySubmitMock.mockRejectedValueOnce(new Error('boom'));
     const { POST } = await importRoute();
     const res = await POST(makeRequest(VALID_BODY));

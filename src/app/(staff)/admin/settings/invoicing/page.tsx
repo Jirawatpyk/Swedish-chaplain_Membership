@@ -14,7 +14,11 @@
  */
 import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
-import { requireSession } from '@/lib/auth-session';
+import { canPerform, requirePagePermission } from '@/lib/rbac';
+import {
+  legacyAdminOnly,
+  legacySessionOnly,
+} from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { headers } from 'next/headers';
 import {
@@ -80,7 +84,7 @@ const DEFAULTS: InvoiceSettingsFormInitialValues = {
 };
 
 export default async function InvoiceSettingsPage() {
-  const { user: currentUser } = await requireSession('staff');
+  const { user: currentUser } = await requirePagePermission('settings.invoicing', legacySessionOnly);
   const t = await getTranslations('admin.invoiceSettings');
 
   const hdrs = await headers();
@@ -151,7 +155,15 @@ export default async function InvoiceSettingsPage() {
         <CardContent>
           <InvoiceSettingsForm
             initialValues={initialValues}
-            currentUserRole={currentUser.role}
+            // Server-derived write authorization (never a role literal in the
+            // client). 016 review I13: the PR-2 tripwire that used to sit here
+            // had already fired without being actioned, so the expression is
+            // now evaluator-derived. `legacyAdminOnly` reproduces the pre-016
+            // admin-only projection byte-for-byte (the PAGE itself is
+            // session-only, so manager still READS these settings) while
+            // admitting a promoted super_admin; the ON leg follows
+            // `settings.invoicing`, which is superAdminOnly by D4.
+            canEdit={canPerform(currentUser.role, 'settings.invoicing', legacyAdminOnly)}
             exists={existing !== null}
           />
         </CardContent>

@@ -16,6 +16,7 @@ import type {
   RefundCreditNoteRequirement,
 } from '@/modules/invoicing';
 import type { Satang } from '@/lib/money';
+import type { Role } from '@/modules/auth';
 
 export interface InvoiceForPaymentDTO {
   readonly id: string;
@@ -120,7 +121,8 @@ export interface InvoicingBridgePort {
     readonly invoiceId: string;
     readonly actor?: {
       readonly userId: string;
-      readonly role: 'admin' | 'manager' | 'member';
+      /** 016 T030/T033 — literal session role; member arms below key on the literal. */
+      readonly role: Role;
       readonly requestId: string | null;
       readonly memberId?: string;
     };

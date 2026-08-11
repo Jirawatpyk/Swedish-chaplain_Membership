@@ -93,6 +93,13 @@ import { loadTenantLogo } from '../lib/load-tenant-logo';
 export const issueCreditNoteSchema = z.object({
   tenantId: z.string().min(1),
   actorUserId: z.string().min(1),
+  /**
+   * 016 re-review — LITERAL actor role for the cross-tenant-probe audit
+   * payload (see void-invoice.ts). Optional; the prod route passes
+   * `ctx.current.user.role`, so a promoted super_admin stops being stamped
+   * 'admin'. `admin` only when a legacy caller omits it.
+   */
+  actorRole: z.enum(['admin', 'super_admin', 'manager', 'marketing', 'member']).optional(),
   requestId: z.string().nullable().optional(),
   invoiceId: z.string().uuid(),
   /** Gross amount to credit (in satang, incl. VAT). Must be > 0. */
@@ -391,7 +398,7 @@ export async function issueCreditNote(
           summary: `Probe on invoice ${invoiceId} (not found on credit-note issue)`,
           payload: {
             attempted_invoice_id: invoiceId,
-            actor_role: 'admin',
+            actor_role: input.actorRole ?? 'admin',
             route: 'issue-credit-note',
           },
         });

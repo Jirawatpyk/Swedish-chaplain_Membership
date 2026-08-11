@@ -11,12 +11,17 @@
  *      `f6_audit_emit_failed`.
  *   2. Audit emit failure NEVER blocks the 404 response.
  *   3. `actorUserId` is nullable — never the sentinel UUID.
- *   4. `actorRole` typed as the narrowed Role union so a future role
- *      addition surfaces as a COMPILE error at the call site.
+ *   4. `actorRole` carries the LITERAL denied role (016 T033 — widened to the
+ *      full `Role` union together with the F6 `ActorType`; the PR-1 cast and
+ *      its tripwire note are gone). A role OUTSIDE the union never reaches
+ *      the emitter — the guard warn-logs it instead.
  */
 import type { NextRequest } from 'next/server';
 import { logger } from '@/lib/logger';
 import { getCurrentSession } from '@/lib/auth-session';
+import { canPerform } from '@/lib/rbac';
+import { legacyF6Guard } from '@/modules/auth/domain/permissions/legacy-shim';
+import type { PermissionKey } from '@/modules/auth/domain/permissions/permission-catalogue';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import {
   assertCanonicalBaseUrl,
@@ -24,11 +29,12 @@ import {
 } from '@/lib/canonical-base-url';
 import { makeStandaloneAuditDeps } from '@/modules/events';
 import { asTenantId } from '@/modules/members';
-import { asUserId } from '@/modules/auth';
+import { asUserId, isRole, type Role } from '@/modules/auth';
 
 export interface EmitIntegrationRoleViolationInput {
   readonly actorUserId: string | null;
-  readonly actorRole: 'member' | 'manager';
+  /** 016 T033 — the LITERAL denied role (F6 ActorType now carries RBAC v2). */
+  readonly actorRole: Role;
   readonly attemptedRoute: string;
   /** Short action identifier (e.g. `'generate_webhook_secret'`). */
   readonly attemptedAction: string;
@@ -81,18 +87,27 @@ export async function emitIntegrationRoleViolation(
 }
 
 /**
- * Common admin-only guard for the 5 integration endpoints. Returns
- * `null` when the actor is admin (caller proceeds); returns a 404
- * Response otherwise (caller returns immediately). Emits the
- * `role_violation_blocked` audit on every manager/member attempt;
- * silent on no-session (no actor to attribute).
+ * Common admin-only guard for the integration endpoints (plus the two
+ * import-history/error-csv readers). ADMISSION goes through the evaluator
+ * (016 T029): OFF leg = the pre-016 admin-only check with D16 totalisation
+ * (super_admin → admin passes — the literal `role !== 'admin'` used to 404
+ * every promoted super_admin after Migration C; marketing/unknown denied);
+ * ON leg = whoever holds the route's `permissionKey`. Denial SHAPE stays the
+ * D9 404-for-all contract. Emits the `role_violation_blocked` audit on every
+ * manager/member attempt; other denied roles get a warn log instead until
+ * T033 widens the audit port's actor enum; silent on no-session (no actor to
+ * attribute).
  *
  * Signature mirrors `getCurrentSession` semantics: caller receives the
- * admin user when allowed.
+ * allowed user's id.
  */
 export async function adminOnlyGuard(
   request: NextRequest,
-  input: { readonly attemptedRoute: string; readonly attemptedAction: string },
+  input: {
+    readonly permissionKey: PermissionKey;
+    readonly attemptedRoute: string;
+    readonly attemptedAction: string;
+  },
 ): Promise<
   | { kind: 'allow'; actorUserId: string }
   | { kind: 'deny'; response: Response }
@@ -109,13 +124,28 @@ export async function adminOnlyGuard(
     return { kind: 'deny', response: new Response(null, { status: 404 }) };
   }
   const role = session.user.role;
-  if (role !== 'admin') {
-    await emitIntegrationRoleViolation(request, {
-      actorUserId: session.user.id,
-      actorRole: role,
-      attemptedRoute: input.attemptedRoute,
-      attemptedAction: input.attemptedAction,
-    });
+  if (!canPerform(role, input.permissionKey, legacyF6Guard)) {
+    if (isRole(role)) {
+      // Any KNOWN denied role — attributable audit with the LITERAL role
+      // (016 T033 widened the F6 ActorType union).
+      await emitIntegrationRoleViolation(request, {
+        actorUserId: session.user.id,
+        actorRole: role,
+        attemptedRoute: input.attemptedRoute,
+        attemptedAction: input.attemptedAction,
+      });
+    } else {
+      // Unknown role STRING — cannot be attributed; warn-log so the denial
+      // stays observable.
+      logger.warn(
+        {
+          event: 'f6_integration_guard_role_denied_unattributable',
+          role,
+          attemptedRoute: input.attemptedRoute,
+        },
+        '[F6] integration guard denied a role the audit port cannot attribute — 404 served',
+      );
+    }
     return { kind: 'deny', response: new Response(null, { status: 404 }) };
   }
   return { kind: 'allow', actorUserId: session.user.id };

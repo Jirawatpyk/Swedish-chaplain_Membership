@@ -20,6 +20,8 @@ import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { redactStack } from '@/lib/redact-stack';
 import { getCurrentSession } from '@/lib/auth-session';
+import { canPerform } from '@/lib/rbac';
+import { legacyAdminOrManager } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { eventsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import {
@@ -75,9 +77,10 @@ export async function GET(
   const session = await getCurrentSession();
   if (!session) return new NextResponse(null, { status: 404 });
   const role = session.user.role;
-  if (role !== 'admin' && role !== 'manager') {
-    // Narrowed `role` passed directly so future Role-union additions
-    // fail to compile against the helper's `'member' | 'manager'`.
+  // 016 T028: role decision through the flag-aware evaluator (admits a
+  // promoted super_admin); the F6 FR-035 denial SHAPE — non-staff → 404 +
+  // `role_violation_blocked` — is preserved verbatim (D9 route-local override).
+  if (!canPerform(role, 'events.read', legacyAdminOrManager)) {
     await emitEventsRoleViolation(request, {
       // Round-3 type-M closure — brand at callsite for consistency
       // with the 5 other admin write routes' actor-id discipline.
@@ -262,7 +265,8 @@ export async function GET(
         {
           eventType: 'event_detail_not_found_probe',
           tenantId: asTenantId(tenantCtx.slug),
-          actorType: session.user.role === 'admin' ? 'admin' : 'manager',
+          // 016 T030/T033 — literal role (ActorType now carries RBAC v2).
+          actorType: session.user.role,
           actorUserId: asUserId(session.user.id),
           occurredAt: new Date(),
           summary: `admin event-detail 404 (event_id_hash=${eventIdHash}) — info-level probe; alert only on cross_tenant_probe`,

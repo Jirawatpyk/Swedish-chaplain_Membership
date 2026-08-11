@@ -30,6 +30,7 @@
  * (`endpoint`, `template`). NEVER use user id / email / IP as a
  * label — those belong in traces + logs, not metrics.
  */
+import type { Role } from '@/modules/auth/domain/role';
 import {
   metrics,
   type Counter,
@@ -292,9 +293,15 @@ export interface SignInLabels {
 }
 
 export interface RbacDeniedLabels {
-  readonly role: 'admin' | 'manager' | 'member';
+  readonly role: Role;
   readonly resource: string;
   readonly action: string;
+}
+
+export interface PermissionDeniedLabels {
+  /** The REAL role string — never coerced, so an unknown value stays visible. */
+  readonly role: string;
+  readonly permission: string;
 }
 
 export interface EmailLabels {
@@ -334,12 +341,12 @@ export const authMetrics = {
   },
 
   // --- Invitations -----------------------------------------------------------
-  invitationSent(role: 'admin' | 'manager' | 'member'): void {
+  invitationSent(role: Role): void {
     counter('auth_invitation_sent_total', 'Invitations sent by role').add(1, {
       role,
     });
   },
-  invitationRedeemed(role: 'admin' | 'manager' | 'member'): void {
+  invitationRedeemed(role: Role): void {
     counter('auth_invitation_redeemed_total', 'Invitations converted to active accounts').add(1, {
       role,
     });
@@ -357,7 +364,7 @@ export const authMetrics = {
    * into the outbox. Alert threshold: any non-zero rate for 5 min.
    */
   invitationEnqueueFailed(
-    role: 'admin' | 'manager' | 'member',
+    role: Role,
     reason: 'enqueue_failed' | 'no_row_returned',
   ): void {
     counter(
@@ -375,7 +382,7 @@ export const authMetrics = {
   },
   sessionDuration(
     seconds: number,
-    labels: { role: 'admin' | 'manager' | 'member'; endReason: string },
+    labels: { role: Role; endReason: string },
   ): void {
     histogram('auth_session_duration_seconds', 'Session lifetime distribution', 's').record(
       seconds,
@@ -402,6 +409,18 @@ export const authMetrics = {
   // --- RBAC ------------------------------------------------------------------
   rbacDenied(labels: RbacDeniedLabels): void {
     counter('auth_rbac_denied_total', 'Denied operations by role/resource/action').add(1, {
+      ...labels,
+    });
+  },
+  /**
+   * 016 RBAC v2 — one denial, one increment. Labels are LOW cardinality by
+   * construction: `role` is the five-value union and `permission` is a
+   * catalogue key, so the series count is bounded at |roles| × |catalogue|.
+   * The route path is deliberately NOT a label — it is unbounded and lives in
+   * the audit row instead.
+   */
+  permissionDenied(labels: PermissionDeniedLabels): void {
+    counter('rbac_permission_denied_total', 'Denied staff surfaces by role/permission').add(1, {
       ...labels,
     });
   },

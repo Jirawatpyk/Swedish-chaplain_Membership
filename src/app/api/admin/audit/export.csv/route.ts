@@ -13,7 +13,8 @@
  * Node runtime pinned (Drizzle).
  */
 import { type NextRequest, NextResponse } from 'next/server';
-import { requireSession } from '@/lib/auth-session';
+import { requireApiPermission } from '@/lib/rbac';
+import { legacyAdminOrManager } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { buildAttachmentContentDisposition } from '@/lib/content-disposition';
@@ -50,16 +51,15 @@ function str(v: string | null): string {
 }
 
 export async function GET(request: NextRequest): Promise<Response> {
-  // Redirects unauthenticated callers; returns the session for authenticated.
-  const session = await requireSession('staff');
+  // 016 T028: session + role fold into one gate. Anonymous callers now get the
+  // uniform API 401 (pre-sweep `requireSession` redirected them — shape change
+  // recorded with the sweep, outcome class unchanged). The use-case's own role
+  // gate below stays as defence-in-depth.
+  const ctx = await requireApiPermission(request, 'audit.read', legacyAdminOrManager);
+  if ('response' in ctx) return ctx.response;
+  const session = ctx.current;
   if (!env.features.f9Dashboard) {
     return NextResponse.json({ error: { code: 'not_found' } }, { status: 404 });
-  }
-  // Defence-in-depth role gate: `requireSession('staff')` authenticates but does
-  // not enforce role, so reject non-staff explicitly before dispatching (the
-  // use-case also returns `forbidden` for members → the same 403).
-  if (session.user.role !== 'admin' && session.user.role !== 'manager') {
-    return NextResponse.json({ error: { code: 'forbidden' } }, { status: 403 });
   }
 
   // Rate-limit per actor — the export is an unauthenticated-cost-multiplier
@@ -114,7 +114,11 @@ export async function GET(request: NextRequest): Promise<Response> {
   try {
     result = await auditExport(
       input,
-      { actorUserId: session.user.id as string, actorRole: session.user.role, requestId },
+      {
+        actorUserId: session.user.id as string,
+        actorRole: session.user.role,
+        requestId,
+      },
       tenant,
       makeAuditQueryDeps(),
     );

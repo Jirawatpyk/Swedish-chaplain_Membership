@@ -292,6 +292,8 @@ Use `[Spec Kit]` prefix on commits that move a feature through a gate (`[Spec Ki
 - Neon Postgres `ap-southeast-1` + Drizzle. **4 new tables** (015-admin-dashboard)
 - TypeScript 5.7+ strict (`strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`); Node 22 LTS + Next.js 16 App Router · React 19 · Drizzle ORM · `@react-pdf/renderer` (deterministic PDF) · `@js-joda/core`+`timezone` (Asia/Bangkok fiscal year) · `thai-baht-text` · `stripe` (payment path — passthrough only) · next-intl. **Zero new npm dependencies** (Constitution X). (088-invoice-tax-flow-redesign)
 - Neon Postgres `ap-southeast-1` (Drizzle) + Vercel Blob (PDF artifacts). New DDL: `document_type` enum `+= 'bill'`; `invoices.bill_document_number_raw` + partial unique index; `members.is_head_office` + `branch_code`; `tenant_invoice_settings.wht_note_th/_en` + `seller_is_head_office` + `seller_branch_code`; amended CHECK constraints on `invoices`. (088-invoice-tax-flow-redesign)
+- TypeScript 5.7+ strict (`strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`); Node 22 LTS + Next.js 16 App Router · React 19 · Drizzle ORM · next-intl. **Zero new npm dependencies** (Constitution X). (016-rbac-permissions)
+- Neon Postgres `ap-southeast-1` (Drizzle). **No new tables, no column drops.** DDL: role pgEnum `+= 'super_admin','marketing'` · audit_event_type `+= 'permission_denied'` · `users_last_admin_guard()` UNION→strict rewrite · Migration C = operator-gated data-only promotion. Permission catalogue + `ROLE_BUNDLES` as pure Domain data in `src/modules/auth/domain/permissions/`; `FEATURE_RBAC_V2` flag read only in `src/lib/rbac.ts`. (016-rbac-permissions)
 
 ## Recent Changes
 
@@ -306,4 +308,4 @@ Full per-feature provenance (F1–F8 + every F7.1a/b review round) is archived i
 - 012-eventcreate-integration: F6 EventCreate Integration SHIPPED (PR #26) + flag-flipped to production 2026-05-19 — CSV attendee import + webhook ingest + benefit-quota tracking; F8 at-risk bridge port live-wired.
 - 011-renewal-reminders: F8 Renewal Tracking + Smart Reminders SHIPPED (PR #24) — pipeline dashboard, tier-aware reminder schedule, 8-factor at-risk scoring, auto tier-upgrade, manual escalation queue.
 
-Last updated: 2026-07-23 (F9 + 055 member-number shipped, go-live gate cleared / SweCham launching, post-F9 money / renewal / tax / members work; full history → docs/changelog.md)
+Last updated: 2026-08-10 (F9 + 055 member-number shipped, go-live gate cleared / SweCham launching, post-F9 money / renewal / tax / members work; full history → docs/changelog.md)

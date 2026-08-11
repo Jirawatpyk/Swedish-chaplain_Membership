@@ -134,7 +134,7 @@ function renderQueue(
       timeZone="Asia/Bangkok"
     >
       <EscalationTaskQueue
-        actorRole="admin"
+        canMutate
         actorUserId="actor-1"
         overdueCount={0}
         distinctTaskTypes={distinctTaskTypes}

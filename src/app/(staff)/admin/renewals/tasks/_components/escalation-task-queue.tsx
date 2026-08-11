@@ -133,7 +133,13 @@ export interface EscalationTaskQueueProps {
    * domain unnecessarily and created dead branches that obscured
    * `canMutate` intent.
    */
-  readonly actorRole: 'admin' | 'manager';
+  /**
+   * 016 T033 — server-derived write authorization. Previously the component
+   * computed `actorRole === 'admin'` itself, which would silently render the
+   * queue read-only for a `super_admin` once PR 3 promotes the operators who
+   * actually run it.
+   */
+  readonly canMutate: boolean;
   readonly actorUserId: string;
   readonly overdueCount: number;
   /**
@@ -196,7 +202,7 @@ const OVERDUE_HIGHLIGHT_MS = OVERDUE_HIGHLIGHT_DAYS * 24 * 60 * 60 * 1000;
 // to sibling `status-tablist.tsx` for unit-testability.
 
 export function EscalationTaskQueue({
-  actorRole,
+  canMutate,
   actorUserId,
   overdueCount,
   distinctTaskTypes,
@@ -412,7 +418,7 @@ export function EscalationTaskQueue({
     reassignDialogTarget !== null
       ? items.find((task) => task.taskId === reassignDialogTarget.taskId) ?? null
       : null;
-  const canMutate = actorRole === 'admin';
+  // Authorization arrives as a prop (see the `canMutate` doc above).
 
   // UX-audit PR-A #5a — opening any dialog resets the success flag so a plain
   // Cancel returns focus to the ⋯ trigger (not #main-content). postAction

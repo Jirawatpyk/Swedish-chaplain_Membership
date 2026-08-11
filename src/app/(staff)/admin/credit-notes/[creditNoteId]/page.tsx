@@ -21,7 +21,8 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { headers } from 'next/headers';
-import { requireSession } from '@/lib/auth-session';
+import { requirePagePermission } from '@/lib/rbac';
+import { legacySessionOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { getCreditNote, makeGetCreditNoteDeps } from '@/modules/invoicing';
@@ -80,20 +81,24 @@ export default async function CreditNoteDetailPage({
   const t = await getTranslations('admin.creditNotes.detail');
   const locale = await getLocale();
 
-  const { user } = await requireSession('staff');
+  const { user } = await requirePagePermission('invoicing.read', legacySessionOnly);
 
   const hdrs = await headers();
   const requestId = requestIdFromHeaders(hdrs);
   const tenantCtx = resolveTenantFromHeaders(hdrs);
+
+  // 016 T030 — the LITERAL role, narrowed to the STAFF arm of the actor
+  // union (the page gate already denies members; the old ternary escalated
+  // any non-manager role to 'admin' in the stamp).
+  const sessionRole = user.role;
+  if (sessionRole === 'member') notFound();
 
   const result = await getCreditNote(makeGetCreditNoteDeps(tenantCtx.slug), {
     tenantId: tenantCtx.slug,
     creditNoteId,
     actor: {
       userId: user.id,
-      // `requireSession('staff')` narrows to admin | manager; the
-      // `role` discriminator on getCreditNote admits both.
-      role: user.role === 'manager' ? 'manager' : 'admin',
+      role: sessionRole,
       requestId,
     },
   });

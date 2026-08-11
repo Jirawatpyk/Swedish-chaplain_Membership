@@ -6,7 +6,7 @@
  *   - 400 invalid_json (malformed body)
  *   - 400 invalid_body (zod fail — missing required field)
  *   - 400 invalid_body — non-numeric creditTotalSatang string
- *   - 403 forbidden (manager role blocked)
+ *   - 403 forbidden (gate rejection returned untouched; key + row pinned)
  *   - 429 rate-limited (bucket exhausted)
  *   - 404 invoice_not_found → HTTP 404
  *   - 409 invalid_status → HTTP 409
@@ -23,10 +23,10 @@
  * lives in `tests/integration/invoicing/credit-note-partial-accumulation.test.ts`.
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { ok, err } from '@/lib/result';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const issueCreditNoteMock = vi.fn();
 const rateLimitCheckMock = vi.fn();
 const makeIssueCreditNoteDepsMock: (...args: unknown[]) => unknown = vi.fn(
@@ -40,8 +40,8 @@ const makeIssueCreditNoteDepsMock: (...args: unknown[]) => unknown = vi.fn(
 const cancelInFlightCyclesForMemberMock = vi.fn();
 const makeRenewalsDepsMock: (...args: unknown[]) => unknown = vi.fn(() => ({}));
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 vi.mock('@/lib/tenant-context', () => ({
   resolveTenantFromRequest: () => ({ slug: 'test', __brand: true }),
@@ -93,9 +93,19 @@ const ADMIN_CONTEXT = {
   requestId: 'req-cn-1',
 };
 
-const MANAGER_CONTEXT = {
+/**
+ * 016 review C1 — the frozen baseline pins this surface as
+ * `super_admin: 'allow'` (rbac-observed-baseline.ts:239). Migration C promotes
+ * every human admin to super_admin, so a residual `role !== 'admin'` deny arm
+ * behind the gate would make credit-note issuance unreachable by any human on
+ * a live-money tenant. The gate itself already denies manager on both legs.
+ */
+const SUPER_ADMIN_CONTEXT = {
   ...ADMIN_CONTEXT,
-  current: { ...ADMIN_CONTEXT.current, user: { ...ADMIN_CONTEXT.current.user, role: 'manager' } },
+  current: {
+    ...ADMIN_CONTEXT.current,
+    user: { ...ADMIN_CONTEXT.current.user, role: 'super_admin' },
+  },
 };
 
 function makeBody(overrides?: Partial<Record<string, unknown>>): string {
@@ -164,7 +174,7 @@ describe('POST /api/credit-notes — contract', () => {
   }
 
   it('201 happy path — returns serialised credit note + email_delivery signal', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(ADMIN_CONTEXT);
+    requireApiPermissionMock.mockResolvedValueOnce(ADMIN_CONTEXT);
     rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
     // MEDIUM-5 — issueCreditNote success value is now `{ creditNote, emailDelivery }`.
     issueCreditNoteMock.mockResolvedValueOnce(
@@ -191,8 +201,24 @@ describe('POST /api/credit-notes — contract', () => {
     expect(cancelInFlightCyclesForMemberMock).not.toHaveBeenCalled();
   }, 30_000);
 
+  it('016 C1 — super_admin issues a credit note (baseline pins allow; post-Migration-C every human is one)', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(SUPER_ADMIN_CONTEXT);
+    rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
+    issueCreditNoteMock.mockResolvedValueOnce(
+      ok({
+        creditNote: makeCreditNoteFixture(),
+        emailDelivery: 'skipped_no_recipient',
+        membershipCancellationRequested: false,
+      }),
+    );
+    const POST = await loadHandler();
+    const res = await POST(makeReq());
+    expect(res.status).toBe(201);
+    expect(issueCreditNoteMock).toHaveBeenCalledTimes(1);
+  });
+
   it('400 invalid_json on malformed body', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(ADMIN_CONTEXT);
+    requireApiPermissionMock.mockResolvedValueOnce(ADMIN_CONTEXT);
     rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
     const POST = await loadHandler();
     const res = await POST(makeReq('not json at all'));
@@ -201,7 +227,7 @@ describe('POST /api/credit-notes — contract', () => {
   });
 
   it('400 invalid_body when reason missing (zod fail)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(ADMIN_CONTEXT);
+    requireApiPermissionMock.mockResolvedValueOnce(ADMIN_CONTEXT);
     rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
     const POST = await loadHandler();
     const res = await POST(
@@ -212,7 +238,7 @@ describe('POST /api/credit-notes — contract', () => {
   });
 
   it('400 invalid_body on zero creditTotalSatang (S-3)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(ADMIN_CONTEXT);
+    requireApiPermissionMock.mockResolvedValueOnce(ADMIN_CONTEXT);
     rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
     const POST = await loadHandler();
     const res = await POST(makeReq(makeBody({ creditTotalSatang: '0' })));
@@ -225,7 +251,7 @@ describe('POST /api/credit-notes — contract', () => {
   });
 
   it('400 invalid_body on non-numeric creditTotalSatang string', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(ADMIN_CONTEXT);
+    requireApiPermissionMock.mockResolvedValueOnce(ADMIN_CONTEXT);
     rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
     const POST = await loadHandler();
     const res = await POST(makeReq(makeBody({ creditTotalSatang: 'abc' })));
@@ -233,19 +259,34 @@ describe('POST /api/credit-notes — contract', () => {
     expect((await res.json()).error.code).toBe('invalid_body');
   });
 
-  it('403 forbidden when actor role is manager', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(MANAGER_CONTEXT);
+  it('returns the gate rejection untouched (key + shim row pinned)', async () => {
+    // 016 review C1 — denial is decided BY THE GATE, not by a role literal in
+    // the handler (the literal was removed because it also 403'd super_admin).
+    // No role appears in this case — the gate is mocked to reject. The pins
+    // are what actually keep manager out: the gate is asked for
+    // `credit_notes.write` with the finance-write shim row, and its rejection
+    // is returned untouched. Weakening either — a read key, a wider row, or
+    // ignoring the rejection — fails here. Manager's real denial on both legs
+    // is proven by role-endpoint-matrix.test.ts.
+    requireApiPermissionMock.mockResolvedValueOnce({
+      response: NextResponse.json({ error: { code: 'forbidden' } }, { status: 403 }),
+    });
     const POST = await loadHandler();
     const res = await POST(makeReq());
     expect(res.status).toBe(403);
     expect((await res.json()).error.code).toBe('forbidden');
-    // Manager should never reach the rate limiter or the use-case.
+    expect(requireApiPermissionMock).toHaveBeenCalledWith(
+      expect.anything(),
+      'credit_notes.write',
+      { kind: 'mappedLegacy', resource: 'credit_note', action: 'write' },
+    );
+    // A denied caller never reaches the rate limiter or the use-case.
     expect(rateLimitCheckMock).not.toHaveBeenCalled();
     expect(issueCreditNoteMock).not.toHaveBeenCalled();
   });
 
   it('429 rate-limited', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(ADMIN_CONTEXT);
+    requireApiPermissionMock.mockResolvedValueOnce(ADMIN_CONTEXT);
     rateLimitCheckMock.mockResolvedValueOnce({
       success: false,
       reset: Date.now() + 10_000,
@@ -281,7 +322,7 @@ describe('POST /api/credit-notes — contract', () => {
     // retriable once the refund settles).
     ['refund_in_progress', 409],
   ] as const)('maps %s use-case error → HTTP %i', async (code, status) => {
-    requireAdminContextMock.mockResolvedValueOnce(ADMIN_CONTEXT);
+    requireApiPermissionMock.mockResolvedValueOnce(ADMIN_CONTEXT);
     rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
     issueCreditNoteMock.mockResolvedValueOnce(
       err(
@@ -305,7 +346,7 @@ describe('POST /api/credit-notes — contract', () => {
   });
 
   it('409 credit_exceeds_remainder — bigint fields serialise to strings', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(ADMIN_CONTEXT);
+    requireApiPermissionMock.mockResolvedValueOnce(ADMIN_CONTEXT);
     rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
     issueCreditNoteMock.mockResolvedValueOnce(
       err({
@@ -340,7 +381,7 @@ describe('POST /api/credit-notes — contract', () => {
   // 201 body.
   describe('F-2 — F8 membership-cancellation cascade orchestration', () => {
     it('membershipCancellationRequested=true + cascade succeeds → 201, no warning field, F8 called with correlationId=credit-note:<id>', async () => {
-      requireAdminContextMock.mockResolvedValueOnce(ADMIN_CONTEXT);
+      requireApiPermissionMock.mockResolvedValueOnce(ADMIN_CONTEXT);
       rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
       issueCreditNoteMock.mockResolvedValueOnce(
         ok({
@@ -370,7 +411,7 @@ describe('POST /api/credit-notes — contract', () => {
     });
 
     it('membershipCancellationRequested=false → F8 is never called', async () => {
-      requireAdminContextMock.mockResolvedValueOnce(ADMIN_CONTEXT);
+      requireApiPermissionMock.mockResolvedValueOnce(ADMIN_CONTEXT);
       rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
       issueCreditNoteMock.mockResolvedValueOnce(
         ok({
@@ -386,7 +427,7 @@ describe('POST /api/credit-notes — contract', () => {
     });
 
     it('cascade Result.ok but outcome="cascade_partial_failure" → 201 + membership_cancellation_failed:true (credit note unaffected)', async () => {
-      requireAdminContextMock.mockResolvedValueOnce(ADMIN_CONTEXT);
+      requireApiPermissionMock.mockResolvedValueOnce(ADMIN_CONTEXT);
       rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
       issueCreditNoteMock.mockResolvedValueOnce(
         ok({
@@ -408,7 +449,7 @@ describe('POST /api/credit-notes — contract', () => {
     });
 
     it('cascade Result.err → 201 + membership_cancellation_failed:true', async () => {
-      requireAdminContextMock.mockResolvedValueOnce(ADMIN_CONTEXT);
+      requireApiPermissionMock.mockResolvedValueOnce(ADMIN_CONTEXT);
       rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
       issueCreditNoteMock.mockResolvedValueOnce(
         ok({
@@ -428,7 +469,7 @@ describe('POST /api/credit-notes — contract', () => {
     });
 
     it('cascade THROWS → 201 + membership_cancellation_failed:true, credit note still returned', async () => {
-      requireAdminContextMock.mockResolvedValueOnce(ADMIN_CONTEXT);
+      requireApiPermissionMock.mockResolvedValueOnce(ADMIN_CONTEXT);
       rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
       issueCreditNoteMock.mockResolvedValueOnce(
         ok({
@@ -448,7 +489,7 @@ describe('POST /api/credit-notes — contract', () => {
     });
 
     it('membershipCancellationRequested=true but originalInvoiceMemberId is null (unreachable-in-practice) → 201 + warning, F8 never called', async () => {
-      requireAdminContextMock.mockResolvedValueOnce(ADMIN_CONTEXT);
+      requireApiPermissionMock.mockResolvedValueOnce(ADMIN_CONTEXT);
       rateLimitCheckMock.mockResolvedValueOnce({ success: true, reset: Date.now() + 1000 });
       issueCreditNoteMock.mockResolvedValueOnce(
         ok({

@@ -17,7 +17,8 @@ import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import Link from 'next/link';
 import { env } from '@/lib/env';
-import { requireSession } from '@/lib/auth-session';
+import { requirePagePermission } from '@/lib/rbac';
+import { legacyAdminOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { buttonVariants } from '@/components/ui/button';
@@ -30,10 +31,7 @@ export default async function CsvImportPage() {
   }
   // Admin-only — manager + member return 404 (surface disclosure) per
   // FR-035. Mirrors Phase 4 /admin/events/page.tsx pattern.
-  const { user } = await requireSession('staff');
-  if (user.role !== 'admin') {
-    notFound();
-  }
+  await requirePagePermission('events.write', legacyAdminOnly);
 
   const t = await getTranslations('admin.events.import');
   return (

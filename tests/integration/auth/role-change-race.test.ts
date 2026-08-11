@@ -5,7 +5,7 @@
  *   Request A: "disable admin Alice"
  *   Request B: "change Bob's role from admin to manager"
  *
- * Both requests pass the `countActiveAdmins() > 1` check (they read 2).
+ * Both requests pass the `countActiveAdministrators() > 1` check (they read 2).
  * Without protection, BOTH mutations would commit, leaving the system
  * with ZERO admins.
  *
@@ -28,7 +28,7 @@
  *
  * The TRUE "exactly 2 admins" race is covered by the dedicated
  * `last-admin-protection.test.ts` (added during the verify gate):
- * it stubs `countActiveAdmins()` to return 1, forcing the guard
+ * it stubs `countActiveAdministrators()` to return 1, forcing the guard
  * branch deterministically without needing a clean DB baseline.
  * This file remains the invariant check under realistic load.
  */

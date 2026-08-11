@@ -82,7 +82,7 @@ function makeDeps(overrides: Partial<CreateUserDeps> = {}): CreateUserDeps {
     clearFailedCount: vi.fn(),
     setLocked: vi.fn(),
     clearLock: vi.fn(),
-    countActiveAdmins: vi.fn(),
+    countActiveAdministrators: vi.fn(),
     createPending: vi.fn(),
     createPendingInTx: vi.fn().mockResolvedValue(PENDING_USER),
     deletePending: vi.fn(),

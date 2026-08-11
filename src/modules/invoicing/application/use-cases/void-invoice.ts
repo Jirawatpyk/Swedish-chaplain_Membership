@@ -112,6 +112,15 @@ import { InvoiceApplyConflictError } from '../lib/invoice-apply-conflict-error';
 export const voidInvoiceSchema = z.object({
   tenantId: z.string().min(1),
   actorUserId: z.string().min(1),
+  /**
+   * 016 re-review — the LITERAL actor role for the cross-tenant-probe audit
+   * payload. Optional so existing callers/tests are unaffected; both prod
+   * routes (F4 void + the void-on-reissue supersede) now pass
+   * `ctx.current.user.role`, so the probe row stops mis-stamping a promoted
+   * super_admin as 'admin' post-Migration-C. `admin` only when a legacy caller
+   * omits it — never coerced from a real value.
+   */
+  actorRole: z.enum(['admin', 'super_admin', 'manager', 'marketing', 'member']).optional(),
   requestId: z.string().nullable().optional(),
   invoiceId: z.string().uuid(),
   /** Free-text reason, required, 1-500 chars. Persisted + audited (hashed). */
@@ -261,7 +270,7 @@ export async function voidInvoice(
           summary: `Probe on invoice ${invoiceId} (not found on void)`,
           payload: {
             attempted_invoice_id: invoiceId,
-            actor_role: 'admin',
+            actor_role: input.actorRole ?? 'admin',
             route: 'void-invoice',
           },
         });

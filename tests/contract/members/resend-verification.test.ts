@@ -23,12 +23,12 @@ import {
 // Hoist mocks before any import that might pull in real implementations
 // ---------------------------------------------------------------------------
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const resendVerificationEmailMock = vi.fn();
 const buildMembersDepsMock = vi.fn(() => makeBuildMembersDepsMockReturn());
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: requireAdminContextMock,
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: requireApiPermissionMock,
 }));
 
 // DV-11: route now calls rateLimiter — mock it to always allow so the
@@ -78,7 +78,7 @@ describe('contract: POST /api/members/[memberId]/contacts/[contactId]/resend-ver
   afterEach(() => vi.clearAllMocks());
 
   it('200 — returns outbox_row_id and invalidated_prior on successful re-send', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     resendVerificationEmailMock.mockResolvedValueOnce(
       ok({
         userId: 'user-42',
@@ -102,7 +102,7 @@ describe('contract: POST /api/members/[memberId]/contacts/[contactId]/resend-ver
 
   it('401 — admin-context gate short-circuits before reaching use case', async () => {
     const { NextResponse } = await import('next/server');
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: NextResponse.json({ error: 'unauthorized' }, { status: 401 }),
     });
 
@@ -116,7 +116,7 @@ describe('contract: POST /api/members/[memberId]/contacts/[contactId]/resend-ver
   });
 
   it('404 — use case reports not_found (contact does not exist)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     resendVerificationEmailMock.mockResolvedValueOnce(
       err({ code: 'not_found' }),
     );
@@ -132,7 +132,7 @@ describe('contract: POST /api/members/[memberId]/contacts/[contactId]/resend-ver
   });
 
   it('409 — use case reports not_eligible and forwards reason to client', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     resendVerificationEmailMock.mockResolvedValueOnce(
       err({ code: 'not_eligible', reason: 'no_linked_user' }),
     );
@@ -149,7 +149,7 @@ describe('contract: POST /api/members/[memberId]/contacts/[contactId]/resend-ver
   });
 
   it('500 — use case reports server_error', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     resendVerificationEmailMock.mockResolvedValueOnce(
       err({ code: 'server_error', cause: new Error('db timeout') }),
     );
@@ -169,7 +169,7 @@ describe('contract: POST /api/members/[memberId]/contacts/[contactId]/resend-ver
   // must return not_found when the contact does not belong to that member,
   // and the route must propagate it as 404 { error: 'not_found' }.
   it('404 — use case returns not_found when memberId does not match contact owner', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     // Simulate the guard firing: the use-case sees a contactId that exists
     // but belongs to a different member → returns not_found.
     resendVerificationEmailMock.mockResolvedValueOnce(

@@ -23,12 +23,12 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { NextRequest } from 'next/server';
 import { err, ok } from '@/lib/result';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const createInvoiceDraftMock = vi.fn();
 const loadMemberRenewalContextMock = vi.fn();
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 vi.mock('@/lib/tenant-context', () => ({
   resolveTenantFromRequest: () => ({ slug: 'test-swecham', __brand: true }),
@@ -111,7 +111,7 @@ describe('POST /api/invoices — deliberate-duplicate acknowledgement', () => {
   }, 60_000);
 
   beforeEach(() => {
-    requireAdminContextMock.mockResolvedValue(adminContext);
+    requireApiPermissionMock.mockResolvedValue(adminContext);
     loadMemberRenewalContextMock.mockResolvedValue({
       classification: { kind: 'not_applicable' },
       periodTo: null,

@@ -173,6 +173,16 @@ export default defineConfig({
           functions: 100,
           statements: 100,
         },
+        // 016 T039 — the RBAC v2 composition root: the ONLY env-flag reader and
+        // the single gate every staff surface calls. 100% BRANCH is the
+        // Constitution-II security-critical bar (same class as sign-in /
+        // role policy). tests/unit/architecture/rbac-coverage-config.test.ts
+        // asserts this file never lands in the coverage-exclude list above.
+        'src/lib/rbac.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+        },
         'src/modules/auth/application/sign-in.ts': {
           lines: 100,
           branches: 100,

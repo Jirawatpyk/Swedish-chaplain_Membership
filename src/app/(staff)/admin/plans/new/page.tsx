@@ -15,9 +15,9 @@
  * guard.
  */
 import type { Metadata } from 'next';
-import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
-import { requireSession } from '@/lib/auth-session';
+import { requirePagePermission } from '@/lib/rbac';
+import { legacyAdminOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
 import { Card, CardContent } from '@/components/ui/card';
@@ -31,10 +31,7 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function NewPlanPage() {
-  const { user: currentUser } = await requireSession('staff');
-  if (currentUser.role !== 'admin') {
-    redirect('/admin/plans');
-  }
+  await requirePagePermission('plans.write', legacyAdminOnly);
 
   const t = await getTranslations('admin.plans.create');
 

@@ -54,13 +54,26 @@ export async function POST(
   // f8_role_violation_blocked audit carrying action='manager_exception'
   // so dashboards can distinguish a manager-permitted write from a
   // pure read.
-  const ctx = await requireRenewalAdminContext(request, 'manager_exception');
+  const ctx = await requireRenewalAdminContext(request, 'manager_exception', 'renewals.read');
   if ('response' in ctx) return ctx.response;
 
-  // Capture actor role for the audit payload + use-case discrimination.
-  // FR-052a: only 'admin' and 'manager' should reach this point; the
-  // helper above rejects 'member'. We re-narrow to the allowed union.
-  const actorRole = ctx.current.user.role === 'manager' ? 'manager' : 'admin';
+  // Capture the LITERAL actor role for the audit payload + use-case
+  // discrimination (016 T030 — the old ternary ESCALATED any non-manager role
+  // to 'admin'). The gate admits the manager_exception population
+  // (admin ∪ super_admin ∪ manager); anything else here is a gate bug — fail
+  // loudly instead of stamping a coerced role.
+  // rbac-narrow-ok: a TYPE narrow onto the use-case's zod population, not an
+  // authorization decision — it admits exactly what the gate above admits, so
+  // it can only fire if the gate itself regressed.
+  const sessionRole = ctx.current.user.role;
+  if (sessionRole !== 'admin' && sessionRole !== 'manager' && sessionRole !== 'super_admin') {
+    return errorResponse({
+      status: 403,
+      code: 'forbidden',
+      correlationId: ctx.correlationId,
+    });
+  }
+  const actorRole = sessionRole;
 
   const { memberId } = await context.params;
 

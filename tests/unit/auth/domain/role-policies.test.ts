@@ -21,6 +21,16 @@ const NON_SELF_RESOURCES = [
   // F2 additions (002-membership-plans)
   'plan',
   'fee_config',
+  // Real F3/F4/F5 resource ids. These are the cells the 016 flag-OFF
+  // characterization suite DELEGATES to canAccess for, so they must be pinned
+  // here or the money/PII rows of the legacy leg are unanchored on both sides
+  // (review 016 PR1, test-1).
+  'members',
+  'contacts',
+  'invoice',
+  'credit_note',
+  'tenant_invoice_settings',
+  'refund',
 ] as const;
 
 describe('canAccess — admin role', () => {
@@ -143,9 +153,24 @@ describe('canAccess — exhaustive negative coverage', () => {
     }
   });
 
-  it('every defined Role appears in ROLES exactly once', () => {
-    expect(ROLES).toEqual(['admin', 'manager', 'member']);
+  it('every defined Role appears in ROLES exactly once (5 roles — 016 FR-001)', () => {
+    expect([...ROLES].sort()).toEqual(
+      ['admin', 'manager', 'marketing', 'member', 'super_admin'].sort(),
+    );
     expect(new Set(ROLES).size).toBe(ROLES.length);
+  });
+
+  it('legacy canAccess denies the two 016 roles (shim normalises BEFORE calling it)', () => {
+    // policies.ts is the FLAG-OFF leg. super_admin/marketing never reach it
+    // directly — normalizeLegacyRole maps super_admin→admin and marketing→deny
+    // upstream — so canAccess treating them as unknown (deny) is the correct
+    // safe default until PR 5 deletes this file.
+    for (const resource of NON_SELF_RESOURCES) {
+      for (const action of ACTIONS) {
+        expect(canAccess('super_admin' as Role, resource, action)).toBe(false);
+        expect(canAccess('marketing' as Role, resource, action)).toBe(false);
+      }
+    }
   });
 });
 

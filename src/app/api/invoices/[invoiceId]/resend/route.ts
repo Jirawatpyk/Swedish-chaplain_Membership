@@ -10,7 +10,8 @@
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
-import { requireAdminContext } from '@/lib/admin-context';
+import { requireApiPermission } from '@/lib/rbac';
+import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { resendPdf, makeResendPdfDeps } from '@/modules/invoicing';
@@ -26,10 +27,7 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ invoiceId: string }> },
 ): Promise<NextResponse> {
-  const ctx = await requireAdminContext(request, {
-    resource: 'invoice',
-    action: 'write',
-  });
+  const ctx = await requireApiPermission(request, 'invoicing.write', mappedLegacy('invoice', 'write'));
   if ('response' in ctx) return ctx.response;
 
   const { invoiceId } = await params;
@@ -71,6 +69,13 @@ export async function POST(
     return rateLimitedJson(rl);
   }
 
+  // 016 T030 — narrow to the STAFF arm of the actor union (the gate already
+  // denies members).
+  const sessionRole = ctx.current.user.role;
+  if (sessionRole === 'member') {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  }
+
   const result = await resendPdf(makeResendPdfDeps(tenantCtx.slug), {
     tenantId: tenantCtx.slug,
     kind: 'invoice',
@@ -78,7 +83,7 @@ export async function POST(
     variant,
     actor: {
       userId: ctx.current.user.id,
-      role: ctx.current.user.role as 'admin' | 'manager',
+      role: sessionRole,
       requestId,
     },
   });

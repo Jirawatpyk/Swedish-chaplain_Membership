@@ -14,7 +14,8 @@
  */
 
 import { NextResponse, type NextRequest } from 'next/server';
-import { requireAdminContext } from '@/lib/admin-context';
+import { requireApiPermission } from '@/lib/rbac';
+import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import {
   parseIdempotencyKey,
@@ -41,10 +42,7 @@ import {
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   // 1. RBAC — admin-only, `members:bulk` resource
-  const ctx = await requireAdminContext(request, {
-    resource: 'members:bulk',
-    action: 'write',
-  });
+  const ctx = await requireApiPermission(request, 'members.bulk', mappedLegacy('members:bulk', 'write'));
   if ('response' in ctx) return ctx.response;
 
   // 2. Parse body

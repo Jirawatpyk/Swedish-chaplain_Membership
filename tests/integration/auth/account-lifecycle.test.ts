@@ -351,7 +351,12 @@ describe('integration: last-admin protection (FR-011)', () => {
     const { userRepo } = await import(
       '@/modules/auth/infrastructure/db/user-repo'
     );
-    const countBefore = await userRepo.countActiveAdmins();
+    // Same population the guard under test uses (flag-aware since T019).
+    const { administrativeRoles } = await import('@/modules/auth/domain/role');
+    const { env } = await import('@/lib/env');
+    const countBefore = await userRepo.countActiveAdministrators(
+      administrativeRoles(env.features.rbacV2),
+    );
 
     // If there are other admins in the live DB, this test can't
     // meaningfully assert the invariant — run only when the sole admin
@@ -375,7 +380,11 @@ describe('integration: last-admin protection (FR-011)', () => {
     const { userRepo } = await import(
       '@/modules/auth/infrastructure/db/user-repo'
     );
-    const countBefore = await userRepo.countActiveAdmins();
+    const { administrativeRoles } = await import('@/modules/auth/domain/role');
+    const { env } = await import('@/lib/env');
+    const countBefore = await userRepo.countActiveAdministrators(
+      administrativeRoles(env.features.rbacV2),
+    );
     if (countBefore > 1) return;
 
     const result = await changeRole({

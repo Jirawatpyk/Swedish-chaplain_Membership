@@ -25,7 +25,8 @@ import {
   f3DrizzleAuditAdapter,
 } from '@/modules/members';
 import { asTenantContext } from '@/modules/tenants';
-import { requireAdminContext } from '@/lib/admin-context';
+import { requireApiPermission } from '@/lib/rbac';
+import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
 
@@ -43,10 +44,7 @@ export async function PATCH(
   context: { params: Promise<{ id: string }> },
 ): Promise<NextResponse> {
   const correlationId = randomUUID();
-  const ctx = await requireAdminContext(request, {
-    resource: 'members',
-    action: 'write',
-  });
+  const ctx = await requireApiPermission(request, 'members.write', mappedLegacy('members', 'write'));
   if ('response' in ctx) return ctx.response;
 
   const { id } = await context.params;

@@ -7,7 +7,8 @@
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
-import { requireAdminContext } from '@/lib/admin-context';
+import { canPerform, requireApiPermission } from '@/lib/rbac';
+import { legacyAdminOnly, mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
@@ -50,10 +51,7 @@ function resolveLocale(request: NextRequest): LocaleKey {
 }
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
-  const ctx = await requireAdminContext(request, {
-    resource: 'plan',
-    action: 'read',
-  });
+  const ctx = await requireApiPermission(request, 'plans.read', mappedLegacy('plan', 'read'));
   if ('response' in ctx) return ctx.response;
 
   const url = new URL(request.url);
@@ -148,7 +146,14 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     // augmentation: a single-module outage on this fetch must NOT
     // blank the rest of the palette (plans + members already populated).
     let refundableInvoices: readonly PaletteRefundableInvoiceEntity[] = [];
-    if (ctx.current.user.role === 'admin') {
+    // 016 review C1 — evaluator-derived instead of the `role === 'admin'`
+    // literal, which dropped this palette section for a promoted super_admin
+    // while `POST /api/refunds/initiate` (the action these entries launch)
+    // still admitted them. `legacyAdminOnly` reproduces the pre-016 arm
+    // byte-for-byte; the ON leg follows `refunds.write`.
+    // rbac-subgate-ok: an optional SECTION of an already-authorised palette
+    // response, not admission to the surface (that is the `plans.read` gate).
+    if (canPerform(ctx.current.user.role, 'refunds.write', legacyAdminOnly)) {
       try {
         const invoiceDeps = makeListInvoicesDeps(tenant.slug);
         const paid = await listInvoicesPaged(invoiceDeps, {

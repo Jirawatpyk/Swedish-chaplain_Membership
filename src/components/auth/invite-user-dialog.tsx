@@ -50,7 +50,7 @@ import { MemberPicker } from '@/components/members/member-picker';
 // Infrastructure modules and cannot be used from client code.
 // Domain types and constants are pure and safe to import directly.
  
-import { isRole, ROLES, type Role } from '@/modules/auth/domain/role';
+import { ASSIGNABLE_ROLES, isRole, type Role } from '@/modules/auth/domain/role';
 
 /**
  * The exhaustive list of error codes the invite route + this dialog
@@ -262,7 +262,7 @@ export function InviteUserDialog({
                     />
                   </SelectTrigger>
                   <SelectContent>
-                    {ROLES.map((r) => (
+                    {ASSIGNABLE_ROLES.map((r) => (
                       <SelectItem key={r} value={r}>
                         {t(`roles.${r}`)}
                       </SelectItem>

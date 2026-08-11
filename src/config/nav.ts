@@ -1,5 +1,7 @@
 import type { LucideIcon } from 'lucide-react';
 import type { Role } from '@/modules/auth';
+// Pure Domain value import (client-safe) — the D16 totaliser for nav filtering.
+import { normalizeLegacyRole } from '@/modules/auth/domain/permissions/legacy-shim';
 import {
   LayoutDashboardIcon,
   FileTextIcon,
@@ -134,15 +136,24 @@ export function filterNavConfig(
   flags: NavVisibilityFlags,
   role: Role,
 ): NavConfig {
+  // 016 T032 — role matching goes through the D16 totaliser as well as the
+  // literal list: a role the array doesn't name still maps correctly
+  // (super_admin → admin; marketing/unknown normalize to null → hidden, never
+  // escalate). The admin-only arrays below ALSO name super_admin explicitly
+  // for greppability. PR 4 replaces the arrays with declarative
+  // `requiredPermission` + server-side filtering (T063).
+  const normalized = normalizeLegacyRole(role);
+  const roleMatches = (roles: ReadonlyArray<string>): boolean =>
+    roles.includes(role) || (normalized !== null && roles.includes(normalized));
   function keepNavItem(item: NavItem): boolean {
-    if (item.roles && !item.roles.includes(role)) return false;
+    if (item.roles && !roleMatches(item.roles)) return false;
     if (!item.visibilityFlag) return true;
     return flags[item.visibilityFlag] === true;
   }
   function filterEntry(item: NavItem | NavGroup): NavItem | NavGroup | null {
     if (isNavGroup(item)) {
       // Group-level role gate first, then recurse into children.
-      if (item.roles && !item.roles.includes(role)) return null;
+      if (item.roles && !roleMatches(item.roles)) return null;
       const children = item.children.filter(keepNavItem);
       if (children.length === 0) return null;
       return { ...item, children };
@@ -298,7 +309,7 @@ export const staffNavConfig: NavConfig = {
           icon: ShieldCheckIcon,
           href: '/admin/compliance/erasure-log',
           activePattern: '/admin/compliance/erasure-log',
-          roles: ['admin'],
+          roles: ['admin', 'super_admin'],
         },
       ],
     },
@@ -346,7 +357,7 @@ export const staffNavConfig: NavConfig = {
           // (role !== 'admin'), unlike Invoice Settings / Renewal Schedules
           // which managers may view read-only. Hide the entry so manager
           // isn't shown a link that 404s.
-          roles: ['admin'],
+          roles: ['admin', 'super_admin'],
         },
         // F6 EventCreate integration. Spec round-2 R1 noted that the
         // entry "is a navigation-affordance decision" — initially we
@@ -373,7 +384,7 @@ export const staffNavConfig: NavConfig = {
           visibilityFlag: 'eventsEnabled',
           // Admin-only ACCESS (FR-035) — route returns notFound() for
           // manager. Hidden from the manager sidebar via the roles filter.
-          roles: ['admin'],
+          roles: ['admin', 'super_admin'],
         },
       ],
     },

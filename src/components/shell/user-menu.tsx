@@ -54,8 +54,10 @@ export interface UserMenuProps {
 }
 
 const roleBadgeVariant: Record<Role, 'default' | 'secondary' | 'outline'> = {
+  super_admin: 'default',
   admin: 'default',
   manager: 'secondary',
+  marketing: 'secondary',
   member: 'outline',
 };
 

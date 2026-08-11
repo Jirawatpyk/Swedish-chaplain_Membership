@@ -106,10 +106,14 @@ describe('findMissingEnumValues', () => {
   it('returns [] when every required value is present', () => {
     const present = new Map<string, Set<string>>([
       ['document_type', new Set(['invoice', 'receipt', 'credit_note', 'bill', 'receipt_105'])],
+      // 016-rbac-permissions: role gains super_admin + marketing (mig 0285).
+      ['role', new Set(['admin', 'manager', 'member', 'super_admin', 'marketing'])],
       [
         'audit_event_type',
         new Set([
           'sign_in_success',
+          // 016-rbac-permissions: the denial trail (mig 0286).
+          'permission_denied',
           'tax_receipt_issued',
           'members_backup_exported',
           'renewal_cycle_reanchored',
@@ -151,10 +155,14 @@ describe('findMissingEnumValues', () => {
     // here — this test's whole point is isolating a SINGLE missing type.
     const present = new Map<string, Set<string>>([
       ['document_type', new Set(['invoice', 'receipt', 'credit_note'])],
+      // 016: role fully present so this test isolates document_type as the miss.
+      ['role', new Set(['admin', 'manager', 'member', 'super_admin', 'marketing'])],
       [
         'audit_event_type',
         new Set([
           'sign_in_success',
+          // 016-rbac-permissions: the denial trail (mig 0286).
+          'permission_denied',
           'tax_receipt_issued',
           'members_backup_exported',
           'renewal_cycle_reanchored',
@@ -185,12 +193,15 @@ describe('findMissingEnumValues', () => {
   it('reports all required values with typeExists:false when the type is absent', () => {
     const present = new Map<string, Set<string>>([
       ['document_type', new Set(['invoice', 'receipt', 'credit_note', 'bill', 'receipt_105'])],
+      // 016: role fully present so this test isolates audit_event_type absence.
+      ['role', new Set(['admin', 'manager', 'member', 'super_admin', 'marketing'])],
     ]);
     expect(findMissingEnumValues(present)).toEqual<MissingEnumValues[]>([
       {
         enumType: 'audit_event_type',
         typeExists: false,
         missing: [
+          'permission_denied',
           'tax_receipt_issued',
           'members_backup_exported',
           'renewal_cycle_reanchored',
@@ -232,6 +243,11 @@ describe('findMissingEnumValues', () => {
   });
 
   it('the default REQUIRED_ENUM_VALUES set matches the code-critical enums', () => {
+    // 016-rbac-permissions (mig 0285): the app depends on both new role labels
+    // from PR 1 onward (ROLES + roleEnum tuple), so the Phase-3 assertion must
+    // require them or a silent ADD VALUE no-op ships undetected.
+    expect(REQUIRED_ENUM_VALUES['role']).toContain('super_admin');
+    expect(REQUIRED_ENUM_VALUES['role']).toContain('marketing');
     expect(REQUIRED_ENUM_VALUES['document_type']).toContain('bill');
     expect(REQUIRED_ENUM_VALUES['document_type']).toContain('receipt_105');
     expect(REQUIRED_ENUM_VALUES['audit_event_type']).toContain('tax_receipt_issued');

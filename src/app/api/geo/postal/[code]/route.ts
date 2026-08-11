@@ -11,7 +11,8 @@
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
-import { requireAdminContext } from '@/lib/admin-context';
+import { requireApiPermission } from '@/lib/rbac';
+import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { lookupPostalCode, POSTAL_CODE_RE } from '@/lib/thai-postal/lookup';
 
 const paramsSchema = z.object({
@@ -22,10 +23,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ code: string }> },
 ): Promise<NextResponse> {
-  const ctx = await requireAdminContext(request, {
-    resource: 'members',
-    action: 'read',
-  });
+  const ctx = await requireApiPermission(request, 'members.read', mappedLegacy('members', 'read'));
   if ('response' in ctx) return ctx.response;
 
   const resolved = await params;

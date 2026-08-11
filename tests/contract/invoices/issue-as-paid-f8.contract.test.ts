@@ -25,15 +25,15 @@ import { ok } from '@/lib/result';
 // Mock seams — declared before any import of the route.
 // ---------------------------------------------------------------------------
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const issueEventInvoiceAsPaidMock = vi.fn();
 const makeDepsMock = vi.fn((..._args: unknown[]) => ({}));
 // Sentinel callback list — identity-asserted through to the deps factory.
 const cbSentinel = { onInvoicePaid: vi.fn() };
 const f8OnPaidCallbacksMock = vi.fn((_tenantSlug: string) => [cbSentinel]);
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 
 vi.mock('@/lib/tenant-context', () => ({
@@ -163,7 +163,7 @@ describe('contract: POST /api/invoices/[invoiceId]/issue-as-paid — FEATURE_F8_
   }, 60_000);
 
   beforeEach(() => {
-    requireAdminContextMock.mockResolvedValue(adminContext);
+    requireApiPermissionMock.mockResolvedValue(adminContext);
   });
 
   afterEach(() => {

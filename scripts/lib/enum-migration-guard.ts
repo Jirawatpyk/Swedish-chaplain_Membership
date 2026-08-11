@@ -99,8 +99,15 @@ export function extractAlterTypeAddValueStatements(sql: string): string[] {
  *                           0259 at rebase so it follows the task-7 stack's 0269)
  */
 export const REQUIRED_ENUM_VALUES: Readonly<Record<string, readonly string[]>> = {
+  // role base 'admin','manager','member' (0000) + 'super_admin','marketing' (0285,
+  // 016-rbac-permissions Migration A) — the app depends on the two new labels
+  // from PR 1 onward (roleEnum tuple + ROLES). Primary automated guard against
+  // the ADD VALUE silent-no-op class.
+  role: ['admin', 'manager', 'member', 'super_admin', 'marketing'],
   document_type: ['invoice', 'receipt', 'credit_note', 'bill', 'receipt_105'],
   audit_event_type: [
+    // 016 RBAC v2 (0286) — the denial trail; absent = every denial is silent.
+    'permission_denied',
     'tax_receipt_issued',
     'members_backup_exported',
     'renewal_cycle_reanchored',

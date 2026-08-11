@@ -13,18 +13,19 @@
  *     (case-insensitive substring)
  *   - Per-row actions: View + Download PDF
  *
- * RBAC: `requireSession('staff')` admits admin + manager. Manager is
- * finance-read per CLAUDE.md and the list is read-only so no extra
- * gate is needed.
+ * RBAC: the page declares `invoicing.read` via `requirePagePermission`, which
+ * both admin and manager hold (manager is finance-read per CLAUDE.md and this
+ * list is read-only). The pre-016 `admin || manager` arm this replaced was
+ * inert — it admitted exactly what the layout already admitted.
  */
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
 import { headers } from 'next/headers';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { ArrowUpRightIcon, DownloadIcon, EyeIcon } from 'lucide-react';
 
-import { requireSession } from '@/lib/auth-session';
+import { requirePagePermission } from '@/lib/rbac';
+import { legacyAdminOrManager } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { listCreditNotes, makeListCreditNotesDeps } from '@/modules/invoicing';
 import { TableContainer } from '@/components/layout';
@@ -66,10 +67,9 @@ export default async function AdminCreditNotesDirectoryPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { user } = await requireSession('staff');
+  await requirePagePermission('invoicing.read', legacyAdminOrManager);
   // Manager is read-only finance — allowed. Member / unauth blocked
   // by requireSession / layout.
-  if (user.role !== 'admin' && user.role !== 'manager') notFound();
 
   const t = await getTranslations('admin.creditNotes.list');
   const tCommon = await getTranslations('shared');

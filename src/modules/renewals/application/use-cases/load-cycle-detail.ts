@@ -42,7 +42,9 @@ export const loadCycleDetailInputSchema = z.object({
   tenantId: z.string().min(1),
   cycleId: z.string().uuid(),
   actorUserId: z.string().min(1),
-  actorRole: z.enum(['admin', 'manager']),
+  // 016 T030/T033 — super_admin included so the route can pass the LITERAL
+  // role (the old route ternary demoted a promoted super_admin to 'manager').
+  actorRole: z.enum(['admin', 'manager', 'super_admin']),
   requestId: z.string().nullable().optional(),
   correlationId: z.string().min(1),
 });

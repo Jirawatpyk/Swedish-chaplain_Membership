@@ -2,6 +2,12 @@
  * F9 (T073) — private export-artefact download proxy.
  * GET `/api/internal/exports/[jobId]/download?token=<signed>`.
  *
+ * 016 T028: deliberately NOT gated by `requireApiPermission` — this is the
+ * dual-audience proxy the portal 303-redirects the SUBJECT MEMBER to for their
+ * own GDPR archive, so no staff permission key can front it. Classified
+ * `session-any` in the exhaustiveness test; the staff entry points that mint
+ * its tokens are the role-gated surfaces.
+ *
  * Defence-in-depth (research R6):
  *   1. valid session (else 401),
  *   2. RBAC: subject member (their own GDPR archive) OR same-tenant staff —

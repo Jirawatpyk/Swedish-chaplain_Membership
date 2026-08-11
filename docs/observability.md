@@ -129,8 +129,9 @@ Names follow `<module>_<subject>_<action>` convention.
 
 | Metric | Type | Labels | Purpose |
 |---|---|---|---|
-| `auth_rbac_denied_total` | counter | `role`, `resource`, `action` | Denied operations — high values on one resource = UX issue |
-| `auth_manager_denied_write_total` | counter | `endpoint` | Specifically: managers hitting endpoints they can't mutate |
+| `rbac_permission_denied_total` | counter | `role`, `permission` | **The live denial counter since 016.** Every staff authorization denial across 46 pages + ~119 API handlers increments it. Paired with a `permission_denied` audit row |
+| `auth_rbac_denied_total` | counter | `role`, `resource`, `action` | **RETIRED by 016** — emitted only by `requireRole`, whose last call site the RBAC v2 sweep removed. Reads zero; kept for pre-sweep history |
+| `auth_manager_denied_write_total` | counter | `endpoint` | **RETIRED by 016** — same reason. Reads zero for any denial after the sweep |
 
 ### 4.7 Dependencies (USE)
 
@@ -170,7 +171,7 @@ Page the on-call only for things that require **immediate human action**.
 | **Sign-in error rate exploding** | `rate(5xx) > 5%` over 5 min | 🚨 Page | Auth on-call | Check Neon, Upstash, Vercel status dashboards |
 | **Sign-in latency p95 > 800 ms** | 10-min rolling window | 🚨 Page | Auth on-call | Check argon2 time, DB latency, Redis latency |
 | **Lockout spike** | `rate(auth_lockouts_total) > 10/hour` | ⚠ Warn | Security | Likely credential-stuffing attempt — review IP addresses |
-| **Manager write denials spike** | `rate(auth_manager_denied_write_total) > 20/day` | ⚠ Warn | Product | UX signal — managers trying to do things they can't; improve UI hiding |
+| **Staff permission denials spike** | `rate(rbac_permission_denied_total) > 20/day` | ⚠ Warn | Product | UX signal — staff reaching surfaces their role cannot use; hide the affordance. 016 replaced `auth_manager_denied_write_total` here: that counter has no emitter left and would have alerted on a permanently flat zero, which reads as "no violations" rather than "no instrumentation". During the RBAC v2 cutover expect a burst of DECLARED denials — see `docs/runbooks/rbac-v2-cutover.md` § 4 for the expected-denial baseline before treating a spike as an incident |
 | **Email failure rate > 5%** | `rate(auth_email_send_failures_total) / rate(auth_email_send_total) > 5%` over 1 hour | 🚨 Page | Ops | Resend dashboard + fallback plan |
 | **Redis fallback activated** | `rate(auth_redis_fallback_total) > 0` over 1 min | ⚠ Warn | Ops | Upstash outage — verify + monitor |
 | **Audit completeness failed** | `auth_audit_missing_total > 0` | 🚨 Page | Security | Audit gap — investigate immediately |

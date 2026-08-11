@@ -27,7 +27,8 @@ import Link from 'next/link';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { redactStack } from '@/lib/redact-stack';
-import { requireSession } from '@/lib/auth-session';
+import { requirePagePermission } from '@/lib/rbac';
+import { legacyAdminOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { runLoadEventDetail } from '@/lib/events-admin-deps';
 import { DetailContainer } from '@/components/layout';
@@ -61,15 +62,11 @@ export default async function ErasePiiPage({
   }
 
   // Admin-only — manager + member redirected per FR-035.
-  let session: Awaited<ReturnType<typeof requireSession>>;
-  try {
-    session = await requireSession('staff');
-  } catch {
-    redirect('/admin/sign-in');
-  }
-  if (session.user.role !== 'admin') {
-    redirect('/admin/events');
-  }
+  // 016 T027 — NOT wrapped in try/catch. `requirePagePermission` denies by
+  // calling `notFound()`, which throws a Next.js control-flow signal; catching
+  // it would swallow the denial and re-route to sign-in instead of serving the
+  // 404. The no-session case is already handled by the staff shell's redirect.
+  await requirePagePermission('events.erasure', legacyAdminOnly);
 
   let tenantCtx: ReturnType<typeof resolveTenantFromHeaders>;
   try {

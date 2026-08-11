@@ -25,7 +25,8 @@ import { headers } from 'next/headers';
 import { getTranslations } from 'next-intl/server';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { requireSession } from '@/lib/auth-session';
+import { requirePagePermission } from '@/lib/rbac';
+import { legacyAdminOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { runLoadIntegrationConfig } from '@/lib/events-admin-integration-deps';
 import { deriveWebhookBaseUrlFromHeaders } from '@/app/api/admin/integrations/eventcreate/_lib/role-violation-audit';
@@ -50,10 +51,7 @@ export default async function EventCreateIntegrationPage({
     notFound();
   }
 
-  const { user: currentUser } = await requireSession('staff');
-  if (currentUser.role !== 'admin') {
-    notFound();
-  }
+  await requirePagePermission('settings.integrations', legacyAdminOnly);
 
   const h = await headers();
   const tenantCtx = resolveTenantFromHeaders(h);

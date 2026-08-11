@@ -44,6 +44,7 @@ import { timelineList } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { toTimelineItemProps } from '@/lib/timeline-presenter';
 import { TimelineEventItem } from '@/components/members/timeline-event-item';
+import type { Role } from '@/modules/auth';
 import type { TimelineItemProps } from '@/components/members/timeline-event-item';
 
 const PREVIEW_LIMIT = 3;
@@ -51,7 +52,8 @@ const PREVIEW_LIMIT = 3;
 interface Props {
   readonly memberId: string;
   readonly actorUserId: string;
-  readonly actorRole: 'admin' | 'manager' | 'member';
+  /** 016 T030 — the literal session role; timelineList takes the full union. */
+  readonly actorRole: Role;
 }
 
 export async function TimelinePreviewSection({

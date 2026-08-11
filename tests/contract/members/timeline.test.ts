@@ -1,7 +1,7 @@
 /**
  * T127 — Contract test: GET /api/members/[memberId]/timeline (US6).
  *
- * Mocks `requireAdminContext`, `buildMembersDeps`, the tenant resolver,
+ * Mocks `requireApiPermission`, `buildMembersDeps`, the tenant resolver,
  * and the `timelineList` use case so the handler runs without touching
  * the real DB / session. Asserts the response shape + HTTP status for
  * each branch of the route handler.
@@ -10,12 +10,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { ok, err } from '@/lib/result';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const timelineListMock = vi.fn();
 const buildMembersDepsMock = vi.fn();
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 vi.mock('@/modules/members/members-deps', () => ({
   buildMembersDeps: (...args: unknown[]) => buildMembersDepsMock(...args),
@@ -61,7 +61,7 @@ describe('contract: GET /api/members/[memberId]/timeline (T127)', () => {
   afterEach(() => vi.clearAllMocks());
 
   it('200 happy path — returns items + next_cursor', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildMembersDepsMock.mockReturnValueOnce({ memberRepo: {}, timeline: {} });
     timelineListMock.mockResolvedValueOnce(
       ok({
@@ -101,7 +101,7 @@ describe('contract: GET /api/members/[memberId]/timeline (T127)', () => {
   });
 
   it('404 not_found — invalid memberId param (non-UUID)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildMembersDepsMock.mockReturnValueOnce({ memberRepo: {}, timeline: {} });
     const { GET } = await import(
       '@/app/api/members/[memberId]/timeline/route'
@@ -116,7 +116,7 @@ describe('contract: GET /api/members/[memberId]/timeline (T127)', () => {
   });
 
   it('404 not_found — use case returns not_found (cross-tenant probe)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildMembersDepsMock.mockReturnValueOnce({ memberRepo: {}, timeline: {} });
     timelineListMock.mockResolvedValueOnce(
       err({ type: 'not_found', message: 'Member not found' }),
@@ -136,7 +136,7 @@ describe('contract: GET /api/members/[memberId]/timeline (T127)', () => {
   });
 
   it('400 validation_error — invalid limit query param', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildMembersDepsMock.mockReturnValueOnce({ memberRepo: {}, timeline: {} });
     const { GET } = await import(
       '@/app/api/members/[memberId]/timeline/route'
@@ -152,9 +152,9 @@ describe('contract: GET /api/members/[memberId]/timeline (T127)', () => {
     expect(body.error.code).toBe('validation_error');
   });
 
-  it('403 forbidden — non-admin rejected by requireAdminContext', async () => {
+  it('403 forbidden — non-admin rejected by requireApiPermission', async () => {
     const { NextResponse } = await import('next/server');
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: NextResponse.json({ error: 'forbidden' }, { status: 403 }),
     });
     const { GET } = await import(
@@ -170,7 +170,7 @@ describe('contract: GET /api/members/[memberId]/timeline (T127)', () => {
   });
 
   it('500 internal — use case returns server_error', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildMembersDepsMock.mockReturnValueOnce({ memberRepo: {}, timeline: {} });
     timelineListMock.mockResolvedValueOnce(
       err({ type: 'server_error', message: 'DB outage' }),

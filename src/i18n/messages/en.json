@@ -168,8 +168,10 @@
       "label": "Change language"
     },
     "roleBadge": {
+      "super_admin": "Super Admin",
       "admin": "Admin",
       "manager": "Manager",
+      "marketing": "Marketing",
       "member": "Member"
     }
   },
@@ -594,8 +596,10 @@
         "role": {
           "label": "Role",
           "all": "All roles",
+          "super_admin": "Super Admin",
           "admin": "Admin",
           "manager": "Manager",
+          "marketing": "Marketing",
           "member": "Member"
         },
         "status": {
@@ -620,7 +624,8 @@
         "enable": "Enable",
         "resend": "Resend invitation",
         "revoke": "Revoke",
-        "self": "That's you"
+        "self": "That's you",
+        "changeRole": "Change role"
       },
       "confirm": {
         "cancel": "Cancel",
@@ -638,6 +643,19 @@
           "confirm": "Revoke invitation"
         }
       },
+      "changeRole": {
+        "title": "Change role for {email}",
+        "description": "Choose a new role. Changing it signs the user out of all active sessions immediately.",
+        "roleLabel": "New role",
+        "current": "Current",
+        "confirm": "Change role",
+        "errors": {
+          "last-admin-protection": "You can't change the last administrator's role — promote or invite another Super Admin first.",
+          "same-role": "That user already has this role.",
+          "role-portal-mismatch": "That role change isn't allowed for this account.",
+          "generic": "Couldn't change the role. Please try again."
+        }
+      },
       "toast": {
         "disabled": "{email} disabled.",
         "enabled": "{email} re-enabled.",
@@ -646,7 +664,8 @@
         "resendRateLimitedWait": "Too many resends — try again in about {minutes, plural, one {# minute} other {# minutes}}.",
         "resendError": "Couldn't resend the invitation. Please try again.",
         "revoked": "Invitation revoked for {email}.",
-        "revokeError": "Couldn't revoke the invitation. Please try again."
+        "revokeError": "Couldn't revoke the invitation. Please try again.",
+        "roleChanged": "{email}'s role changed to {role}."
       },
       "invite": {
         "title": "Invite a new user",
@@ -657,7 +676,8 @@
         "roles": {
           "admin": "Admin — full access",
           "manager": "Manager — read-only on finance",
-          "member": "Member — self-service portal"
+          "member": "Member — self-service portal",
+          "super_admin": "Super Admin — full access + staff role management"
         },
         "submit": "Send invitation",
         "submitting": "Sending…",
@@ -1521,7 +1541,10 @@
           "planPlaceholder": "Select a plan…",
           "billingCycle": "Billing cycle",
           "billingCyclePlaceholder": "Select a billing cycle…",
-          "billingCycleOptions": { "calendar": "Calendar year (Jan–Dec)", "rolling": "Rolling (anniversary)" },
+          "billingCycleOptions": {
+            "calendar": "Calendar year (Jan–Dec)",
+            "rolling": "Rolling (anniversary)"
+          },
           "planYear": "Plan year",
           "registrationDate": "Registration date",
           "registrationDateHint": "Defaults to today. This date anchors the renewal cycle — back-date it for a member who joined earlier.",
@@ -2295,7 +2318,9 @@
         }
       },
       "registers": {
-        "meta": { "title": "Tax registers" },
+        "meta": {
+          "title": "Tax registers"
+        },
         "title": "Tax document registers",
         "description": "Period registers for the monthly VAT return (ภ.พ.30): §86/4 tax receipts, §105 receipts, and §80/1(5) zero-rate sales.",
         "entry": "Tax registers (ภ.พ.30)",
@@ -2306,8 +2331,13 @@
           "zeroRateSales": "§80/1(5) zero-rate sales",
           "reRegister": "§105 receipt register"
         },
-        "fields": { "from": "From", "to": "To" },
-        "actions": { "view": "View register" },
+        "fields": {
+          "from": "From",
+          "to": "To"
+        },
+        "actions": {
+          "view": "View register"
+        },
         "outputVat": {
           "title": "Period output VAT (ภ.พ.30)",
           "combined": "Net output VAT",
@@ -4164,6 +4194,7 @@
           "skipped": "Skipped"
         },
         "assigneeRole": {
+          "super_admin": "Super Admin",
           "admin": "Admin",
           "manager": "Manager",
           "executive_director": "Executive Director"
@@ -5761,7 +5792,9 @@
           "reasonHelp": "Up to 500 characters.",
           "confirm": "Cancel broadcast",
           "cancel": "Keep it",
-          "errors": { "reasonTooLong": "Reason exceeds 500 characters." }
+          "errors": {
+            "reasonTooLong": "Reason exceeds 500 characters."
+          }
         },
         "toast": {
           "cancelled": "Broadcast cancelled.",
@@ -6226,6 +6259,7 @@
       "session_forcibly_ended": "Session forcibly ended",
       "concurrent_sessions_revoked": "Concurrent sessions revoked",
       "manager_denied_write": "Manager write access denied",
+      "permission_denied": "Permission denied",
       "invitation_redemption_failed": "Invitation redemption failed",
       "email_verification_consumed": "Email verified",
       "plan_cloned": "Plan cloned",

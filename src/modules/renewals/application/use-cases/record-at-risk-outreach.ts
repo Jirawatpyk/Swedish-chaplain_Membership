@@ -48,7 +48,9 @@ export const recordAtRiskOutreachInputSchema = z
     templateId: z.string().min(1).max(100).optional(),
     outcomeNote: z.string().trim().max(500).optional(),
     actorUserId: z.string().min(1),
-    actorRole: z.union([z.literal('admin'), z.literal('manager')]),
+    // 016 T030/T033 — super_admin included; the audit row records the
+    // LITERAL staff role (dashboards attribute outreach per role).
+    actorRole: z.union([z.literal('admin'), z.literal('manager'), z.literal('super_admin')]),
     requestId: z.string().nullable().optional(),
     correlationId: z.string().min(1),
   })

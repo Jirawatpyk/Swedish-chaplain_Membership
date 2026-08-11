@@ -34,7 +34,17 @@ import {
 
 // --- Enums --------------------------------------------------------------------
 
-export const roleEnum = pgEnum('role', ['admin', 'manager', 'member']);
+// 016-rbac-permissions: widened to five roles by migration 0285 (ADD VALUE
+// appends, so the new labels follow the original three). Tuple order MUST match
+// the live enum label order label-for-label — never reorder. Mirrors ROLES in
+// src/modules/auth/domain/role.ts.
+export const roleEnum = pgEnum('role', [
+  'admin',
+  'manager',
+  'member',
+  'super_admin',
+  'marketing',
+]);
 
 export const userStatusEnum = pgEnum('user_status', [
   'pending',
@@ -65,6 +75,9 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   'concurrent_sessions_revoked',
   'manager_denied_write',
   'invitation_redemption_failed',
+  // --- 016 RBAC v2 (migration 0286) ---
+  // Emitted by `src/lib/rbac.ts` on every denied staff surface, both legs.
+  'permission_denied',
   // --- F2 plan + fee-config events (10) — added by migration 0007 ---
   'plan_created',
   'plan_updated',

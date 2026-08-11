@@ -10,12 +10,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 import { ok, err } from '@/lib/result';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const listPlansMock = vi.fn();
 const buildPlansDepsMock = vi.fn();
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 
 vi.mock('@/modules/plans/plans-deps', () => ({
@@ -62,7 +62,7 @@ describe('contract: GET /api/plans (T062)', () => {
   });
 
   it('200 on success — returns data + meta envelope', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
     listPlansMock.mockResolvedValueOnce(
       ok({
@@ -116,7 +116,7 @@ describe('contract: GET /api/plans (T062)', () => {
   });
 
   it('200 for manager role (read-only access)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(managerContext);
+    requireApiPermissionMock.mockResolvedValueOnce(managerContext);
     buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
     listPlansMock.mockResolvedValueOnce(
       ok({
@@ -129,8 +129,8 @@ describe('contract: GET /api/plans (T062)', () => {
     expect(res.status).toBe(200);
   });
 
-  it('401 when requireAdminContext rejects with no-session', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+  it('401 when requireApiPermission rejects with no-session', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: NextResponse.json({ error: 'no-session' }, { status: 401 }),
     });
     const { GET } = await import('@/app/api/plans/route');
@@ -139,8 +139,8 @@ describe('contract: GET /api/plans (T062)', () => {
     expect(listPlansMock).not.toHaveBeenCalled();
   });
 
-  it('403 when requireAdminContext rejects with forbidden (member role)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+  it('403 when requireApiPermission rejects with forbidden (member role)', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: NextResponse.json({ error: 'forbidden' }, { status: 403 }),
     });
     const { GET } = await import('@/app/api/plans/route');
@@ -150,7 +150,7 @@ describe('contract: GET /api/plans (T062)', () => {
   });
 
   it('400 on invalid year query parameter', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
     const { GET } = await import('@/app/api/plans/route');
     const res = await GET(makeRequest('?year=not-a-number'));
@@ -160,7 +160,7 @@ describe('contract: GET /api/plans (T062)', () => {
   });
 
   it('500 when use case returns an unexpected error variant', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
     listPlansMock.mockResolvedValueOnce(err({ type: 'server_error', message: 'x' }));
     const { GET } = await import('@/app/api/plans/route');

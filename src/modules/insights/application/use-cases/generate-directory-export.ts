@@ -22,8 +22,12 @@ import type { TenantContext } from '@/modules/tenants';
 import { exportJobIdempotencyInput, type ExportKind, type ExportStatus } from '../../domain/export-job';
 import type { ClockPort } from '../ports/clock-port';
 import type { ExportJobRecord, ExportJobRepo } from '../ports/export-job-repo';
+import type { Role } from '@/modules/auth';
 
-export type DirectoryExportActorRole = 'admin' | 'manager' | 'member';
+// 016 T030/T033 — widened to the full Role union so routes stop casting and
+// audit emitters record the LITERAL actor role; the decision arms in this
+// file stay explicit per-role checks (deny arms unchanged).
+export type DirectoryExportActorRole = Role;
 
 export interface GenerateDirectoryExportMeta {
   readonly actorUserId: string;

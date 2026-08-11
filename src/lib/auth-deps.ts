@@ -32,6 +32,7 @@
  * import from either path: this file OR the re-export at the bottom
  * of each use case file. Both paths resolve to the same object.
  */
+import { env } from '@/lib/env';
 import { argon2Hasher } from '@/modules/auth/infrastructure/password/argon2-hasher';
 import { rateLimiter } from '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter';
 import { userRepo } from '@/modules/auth/infrastructure/db/user-repo';
@@ -257,6 +258,8 @@ export const defaultEraseUserDeps: EraseUserDeps = {
   users: userRepo,
   sessions: sessionRepo,
   audit: auditRepo,
+  // 016 — the composition root is allowed to read env; the use case is not.
+  rbacV2: env.features.rbacV2,
 };
 
 /**
@@ -325,6 +328,8 @@ export const defaultDisableUserDeps: DisableUserDeps = {
   sessions: sessionRepo,
   audit: auditRepo,
   now: wallClock,
+  // 016 — the composition root is allowed to read env; the use case is not.
+  rbacV2: env.features.rbacV2,
 };
 
 export const defaultEnableUserDeps: EnableUserDeps = {
@@ -336,6 +341,8 @@ export const defaultChangeRoleDeps: ChangeRoleDeps = {
   users: userRepo,
   sessions: sessionRepo,
   audit: auditRepo,
+  // 016 — the composition root is allowed to read env; the use case is not.
+  rbacV2: env.features.rbacV2,
 };
 
 export const defaultHeartbeatDeps: HeartbeatDeps = {

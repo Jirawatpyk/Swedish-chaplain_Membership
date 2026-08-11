@@ -10,7 +10,9 @@
  *   400 — invalid-input (including memberId+admin/manager role mismatch,
  *         or invalid memberId UUID format)
  *   401 — no-session
- *   403 — forbidden (with manager_denied_write audit emission)
+ *   403 — forbidden (recorded as a `permission_denied` audit row by
+ *         `src/lib/rbac.ts`; the pre-016 `manager_denied_write` event is no
+ *         longer emitted from this route)
  *   404 — member-not-found (memberId supplied but not visible in
  *         caller's tenant; returned as 404 to not leak existence
  *         across tenants — consistent with `get-member` pattern)
@@ -32,12 +34,17 @@ import {
 } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
-import { requireAdminContext } from '@/lib/admin-context';
+import { requireApiPermission } from '@/lib/rbac';
+import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { logger } from '@/lib/logger';
 
 const inputSchema = z.object({
   email: z.string().email().max(254),
-  role: z.enum(['admin', 'manager', 'member']),
+  // 016 PR 3 (T048): `super_admin` is now assignable — keep in lockstep with
+  // ASSIGNABLE_ROLES and the change-role route (assignable-roles-lockstep.test).
+  // Inviting a staff role trips the step-2 `users.manage` gate below (SA-only on
+  // the ON leg), so only a super_admin can actually mint one. `marketing`: PR 4.
+  role: z.enum(['super_admin', 'admin', 'manager', 'member']),
   displayName: z.string().min(1).max(120).optional(),
   locale: z.enum(['en', 'th', 'sv']).optional(),
   // F1 spec:672-678 — optional link to existing member record. Only
@@ -72,7 +79,18 @@ const createUserPort: CreateUserPort = async (input) => {
 };
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  const ctx = await requireAdminContext(request);
+  // 016 T028 (§ 7.1 per-TARGET contract, contracts/authorization-surfaces § 3):
+  // step 1 gates on the WIDER capability (`users.member_accounts` — held by
+  // super_admin + admin on the ON leg) before the body is read; step 2 below
+  // re-gates on `users.manage` (SA-only) once the target role is known to be a
+  // staff role. On the OFF leg both rows are `mappedLegacy('auth:user',
+  // 'write')` — exactly the single pre-sweep `requireAdminContext(request)`
+  // check, so behaviour is byte-identical.
+  const ctx = await requireApiPermission(
+    request,
+    'users.member_accounts',
+    mappedLegacy('auth:user', 'write'),
+  );
   if ('response' in ctx) return ctx.response;
   // B3 — outer try/catch (see sign-in/route.ts B3 note).
   try {
@@ -106,6 +124,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       },
       { status: 400 },
     );
+  }
+
+  // Step 2 (§ 7.1): a STAFF-role target requires `users.manage` (SA-only on
+  // the ON leg). Placed before either branch acts; the OFF-leg row is the
+  // same as step 1, so pre-cutover this re-check is a no-op for anyone who
+  // passed step 1.
+  if (parsed.data.role !== 'member') {
+    const staffGate = await requireApiPermission(
+      request,
+      'users.manage',
+      mappedLegacy('auth:user', 'write'),
+    );
+    if ('response' in staffGate) return staffGate.response;
   }
 
   // --- Branch A: member role with optional memberId link ---

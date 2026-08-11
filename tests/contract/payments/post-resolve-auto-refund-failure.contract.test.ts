@@ -3,7 +3,7 @@
  *
  * Admin-only "mark failed auto-refund as reconciled" surface. Mirrors the
  * shape of `/api/refunds/initiate` (T101):
- *   - Auth via `requireAdminContext({ resource: 'refund', action: 'write' })`
+ *   - Auth via `requireApiPermission({ resource: 'refund', action: 'write' })`
  *     (manager → 403, no session → 401).
  *   - zod input validation (invalid_input on bad body).
  *   - 200 success envelope `{ outcome, correlationId }` on `reconciled` +
@@ -19,11 +19,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { ok, err } from '@/lib/result';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const resolveFailedAutoRefundMock = vi.fn();
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 
 vi.mock('@/lib/tenant-context', () => ({
@@ -100,7 +100,7 @@ describe('contract: POST /api/refunds/resolve-auto-refund-failure (CF-2)', () =>
   });
 
   it('200 — reconciled: response envelope { outcome, correlationId } + delegates to use-case', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     resolveFailedAutoRefundMock.mockResolvedValueOnce(
       ok({ kind: 'reconciled', paymentId: 'pmt_1', processorRefundId: 're_1' }),
     );
@@ -123,7 +123,7 @@ describe('contract: POST /api/refunds/resolve-auto-refund-failure (CF-2)', () =>
   });
 
   it('200 — already_reconciled is a benign idempotent success', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     resolveFailedAutoRefundMock.mockResolvedValueOnce(
       ok({ kind: 'already_reconciled' }),
     );
@@ -136,7 +136,7 @@ describe('contract: POST /api/refunds/resolve-auto-refund-failure (CF-2)', () =>
   });
 
   it('400 invalid_input — invoiceId missing', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
 
     const { POST } = await importRoute();
     const res = await POST(makeJsonRequest({}));
@@ -146,7 +146,7 @@ describe('contract: POST /api/refunds/resolve-auto-refund-failure (CF-2)', () =>
   });
 
   it('401 unauthorized — no session', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: new Response(JSON.stringify({ error: 'no-session' }), {
         status: 401,
         headers: { 'content-type': 'application/json' },
@@ -159,7 +159,7 @@ describe('contract: POST /api/refunds/resolve-auto-refund-failure (CF-2)', () =>
   });
 
   it('403 forbidden — manager session is rejected (admin-only surface)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: new Response(JSON.stringify({ error: 'forbidden' }), {
         status: 403,
         headers: { 'content-type': 'application/json' },
@@ -176,7 +176,7 @@ describe('contract: POST /api/refunds/resolve-auto-refund-failure (CF-2)', () =>
   });
 
   it('409 no_failed_auto_refund — nothing to reconcile for this invoice', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     resolveFailedAutoRefundMock.mockResolvedValueOnce(
       err({ code: 'no_failed_auto_refund' }),
     );
@@ -192,7 +192,7 @@ describe('contract: POST /api/refunds/resolve-auto-refund-failure (CF-2)', () =>
   });
 
   it('429 rate_limited — admin budget exceeded; carries Retry-After', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     const { rateLimiter } = await getMockedAuthDeps();
     rateLimiter.check.mockResolvedValueOnce({
       success: false,
@@ -208,7 +208,7 @@ describe('contract: POST /api/refunds/resolve-auto-refund-failure (CF-2)', () =>
   });
 
   it('500 internal_error — unexpected use-case throw is caught + never leaked', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     resolveFailedAutoRefundMock.mockRejectedValueOnce(
       new Error('db connection lost'),
     );
@@ -222,7 +222,7 @@ describe('contract: POST /api/refunds/resolve-auto-refund-failure (CF-2)', () =>
   });
 
   it('every response carries Cache-Control: no-store, private + X-Correlation-Id', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     resolveFailedAutoRefundMock.mockResolvedValueOnce(
       ok({ kind: 'reconciled', paymentId: 'pmt_1', processorRefundId: 're_1' }),
     );

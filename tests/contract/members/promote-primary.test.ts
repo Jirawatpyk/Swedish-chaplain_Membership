@@ -12,11 +12,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { ok, err } from '@/lib/result';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const promotePrimaryMock = vi.fn();
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 vi.mock('@/modules/members/members-deps', () => ({
   buildMembersDeps: vi.fn(() => ({})),
@@ -79,7 +79,7 @@ describe('contract: POST /promote-primary (T071)', () => {
   afterEach(() => vi.clearAllMocks());
 
   it('200 returns { demoted, promoted } envelope', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     promotePrimaryMock.mockResolvedValueOnce(
       ok({
         demoted: { ...baseContact, contactId: oldPrimary, isPrimary: false },
@@ -98,7 +98,7 @@ describe('contract: POST /promote-primary (T071)', () => {
   });
 
   it('404 when use case reports not_found', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     promotePrimaryMock.mockResolvedValueOnce(err({ type: 'not_found' }));
     const { POST } = await import(
       '@/app/api/members/[memberId]/contacts/[contactId]/promote-primary/route'
@@ -108,7 +108,7 @@ describe('contract: POST /promote-primary (T071)', () => {
   });
 
   it('409 on partial-index race (conflict)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     promotePrimaryMock.mockResolvedValueOnce(
       err({ type: 'conflict', reason: 'primary partial-index race' }),
     );
@@ -122,7 +122,7 @@ describe('contract: POST /promote-primary (T071)', () => {
   });
 
   it('500 on server_error', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     promotePrimaryMock.mockResolvedValueOnce(
       err({ type: 'server_error', message: 'boom' }),
     );
@@ -135,7 +135,7 @@ describe('contract: POST /promote-primary (T071)', () => {
 
   it('401 when session missing', async () => {
     const { NextResponse } = await import('next/server');
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: NextResponse.json({ error: 'no-session' }, { status: 401 }),
     });
     const { POST } = await import(

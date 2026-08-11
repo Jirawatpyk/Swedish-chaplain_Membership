@@ -13,11 +13,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 import { ok, err } from '@/lib/result';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const inlineEditMock = vi.fn();
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 vi.mock('@/modules/members/members-deps', () => ({
   buildMembersDeps: vi.fn(() => ({
@@ -120,7 +120,7 @@ describe('contract: PATCH /api/members/[memberId]/inline-edit (round-2 review I-
   afterEach(() => vi.clearAllMocks());
 
   it('200 on status change — happy path', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     inlineEditMock.mockResolvedValueOnce(ok(stubMember));
     const { PATCH } = await import('@/app/api/members/[memberId]/inline-edit/route');
     const res = await PATCH(
@@ -133,7 +133,7 @@ describe('contract: PATCH /api/members/[memberId]/inline-edit (round-2 review I-
   });
 
   it('400 invalid_body on non-whitelisted field', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     inlineEditMock.mockResolvedValueOnce(
       err({
         type: 'invalid_body',
@@ -151,7 +151,7 @@ describe('contract: PATCH /api/members/[memberId]/inline-edit (round-2 review I-
   });
 
   it('400 validation_error on invalid field value', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     inlineEditMock.mockResolvedValueOnce(
       err({
         type: 'invalid_field_value',
@@ -170,7 +170,7 @@ describe('contract: PATCH /api/members/[memberId]/inline-edit (round-2 review I-
   });
 
   it('404 on not_found', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     inlineEditMock.mockResolvedValueOnce(err({ type: 'not_found' }));
     const { PATCH } = await import('@/app/api/members/[memberId]/inline-edit/route');
     const res = await PATCH(
@@ -181,7 +181,7 @@ describe('contract: PATCH /api/members/[memberId]/inline-edit (round-2 review I-
   });
 
   it('404 on invalid UUID format (short-circuits before use case)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     const { PATCH } = await import('@/app/api/members/[memberId]/inline-edit/route');
     const res = await PATCH(
       makeRequest({ field: 'status', value: 'inactive' }, 'not-a-uuid'),
@@ -193,7 +193,7 @@ describe('contract: PATCH /api/members/[memberId]/inline-edit (round-2 review I-
   });
 
   it('403 manager rejected (FR-042 RBAC separation)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(managerForbiddenContext);
+    requireApiPermissionMock.mockResolvedValueOnce(managerForbiddenContext);
     const { PATCH } = await import('@/app/api/members/[memberId]/inline-edit/route');
     const res = await PATCH(
       makeRequest({ field: 'status', value: 'inactive' }),
@@ -204,7 +204,7 @@ describe('contract: PATCH /api/members/[memberId]/inline-edit (round-2 review I-
   });
 
   it('403 member rejected (FR-042 RBAC separation)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(memberForbiddenContext);
+    requireApiPermissionMock.mockResolvedValueOnce(memberForbiddenContext);
     const { PATCH } = await import('@/app/api/members/[memberId]/inline-edit/route');
     const res = await PATCH(
       makeRequest({ field: 'status', value: 'inactive' }),
@@ -214,7 +214,7 @@ describe('contract: PATCH /api/members/[memberId]/inline-edit (round-2 review I-
   });
 
   it('409 state_error when archived member status change attempted', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     inlineEditMock.mockResolvedValueOnce(
       err({ type: 'state_error', code: 'state.undelete_only_from_archived' }),
     );
@@ -227,7 +227,7 @@ describe('contract: PATCH /api/members/[memberId]/inline-edit (round-2 review I-
   });
 
   it('400 on malformed JSON body (round-2 review I-3)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminContext);
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     const req = new NextRequest(`http://localhost/api/members/${validMemberId}/inline-edit`, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },

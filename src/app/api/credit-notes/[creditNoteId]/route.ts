@@ -2,7 +2,8 @@
  * T080 — GET /api/credit-notes/[creditNoteId] (F4 / US6).
  */
 import { NextResponse, type NextRequest } from 'next/server';
-import { requireAdminContext } from '@/lib/admin-context';
+import { requireApiPermission } from '@/lib/rbac';
+import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { getCreditNote, makeGetCreditNoteDeps } from '@/modules/invoicing';
@@ -13,15 +14,20 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ creditNoteId: string }> },
 ): Promise<NextResponse> {
-  const ctx = await requireAdminContext(request, {
-    resource: 'credit_note',
-    action: 'read',
-  });
+  const ctx = await requireApiPermission(request, 'invoicing.read', mappedLegacy('credit_note', 'read'));
   if ('response' in ctx) return ctx.response;
 
   const { creditNoteId } = await params;
   const tenantCtx = resolveTenantFromRequest(request);
   const requestId = requestIdFromHeaders(request.headers);
+
+  // 016 T030 — narrow to the STAFF arm of the actor union (the gate already
+  // denies members; the check keeps the type honest and fails loudly on a
+  // gate bug instead of stamping a member as staff).
+  const sessionRole = ctx.current.user.role;
+  if (sessionRole === 'member') {
+    return NextResponse.json({ error: 'forbidden' }, { status: 403 });
+  }
 
   // Wrap the whole use-case + serialisation path: the repo's
   // row→domain mapping can throw on corrupt `document_number` /
@@ -33,7 +39,7 @@ export async function GET(
       creditNoteId,
       actor: {
         userId: ctx.current.user.id,
-        role: ctx.current.user.role as 'admin' | 'manager',
+        role: sessionRole,
         requestId,
       },
     });

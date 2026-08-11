@@ -12,7 +12,7 @@
  *   - 400 invalid_body: seller-branch pairing (head-office=false with no code,
  *     or head-office=true WITH a code).
  *   - 400 invalid_body: malformed SWIFT / account-no.
- *   - 401/403 forwarded from requireAdminContext (admin-only write).
+ *   - 401/403 forwarded from requireApiPermission (admin-only write).
  *
  * Part B — use-case contract (REAL updateTenantInvoiceSettings, mocked ports):
  *   - the new fields land in the repo `upsert` patch;
@@ -25,12 +25,12 @@ import { NextRequest } from 'next/server';
 // Mock seams — declared before any import of the route.
 // ---------------------------------------------------------------------------
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const updateTenantInvoiceSettingsMock = vi.fn();
 const makeDepsMock = vi.fn((..._args: unknown[]) => ({}));
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 
 vi.mock('@/lib/tenant-context', () => ({
@@ -110,7 +110,7 @@ function patchRequest(body: unknown): NextRequest {
 
 describe('088 US5 T037 — PATCH /api/tenant-invoice-settings route contract', () => {
   beforeEach(() => {
-    requireAdminContextMock.mockResolvedValue(adminContext);
+    requireApiPermissionMock.mockResolvedValue(adminContext);
     updateTenantInvoiceSettingsMock.mockResolvedValue({ ok: true, value: undefined });
   });
   afterEach(() => vi.clearAllMocks());
@@ -192,9 +192,9 @@ describe('088 US5 T037 — PATCH /api/tenant-invoice-settings route contract', (
     expect(bad2.status).toBe(400);
   });
 
-  it('403 — non-admin is rejected (requireAdminContext forwards the response)', async () => {
+  it('403 — non-admin is rejected (requireApiPermission forwards the response)', async () => {
     const { NextResponse } = await import('next/server');
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: NextResponse.json({ error: { code: 'forbidden' } }, { status: 403 }),
     });
     const res = await PATCH(patchRequest({ wht_note_en: 'x' }));

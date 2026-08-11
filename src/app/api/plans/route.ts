@@ -17,7 +17,8 @@
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
-import { requireAdminContext } from '@/lib/admin-context';
+import { requireApiPermission } from '@/lib/rbac';
+import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import {
   parseIdempotencyKey,
@@ -42,10 +43,7 @@ const querySchema = z.object({
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
   // Read-level access — admin + manager both allowed
-  const ctx = await requireAdminContext(request, {
-    resource: 'plan',
-    action: 'read',
-  });
+  const ctx = await requireApiPermission(request, 'plans.read', mappedLegacy('plan', 'read'));
   if ('response' in ctx) return ctx.response;
 
   const url = new URL(request.url);
@@ -129,10 +127,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   // Admin-only write gate
-  const ctx = await requireAdminContext(request, {
-    resource: 'plan',
-    action: 'write',
-  });
+  const ctx = await requireApiPermission(request, 'plans.write', mappedLegacy('plan', 'write'));
   if ('response' in ctx) return ctx.response;
 
   // Emergency maintenance freeze short-circuit.

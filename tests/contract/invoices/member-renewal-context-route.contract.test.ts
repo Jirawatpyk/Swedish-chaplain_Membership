@@ -6,18 +6,18 @@
  * (`RenewalContextLoader` in `invoice-form.tsx`). Pins: 200 happy path
  * (wire shape uses snake_case per the route's own serialisation), 400 on
  * a missing/malformed memberId, 401/403 forwarded from
- * `requireAdminContext`, and 500 `lookup_failed` (non-throwing — the
+ * `requireApiPermission`, and 500 `lookup_failed` (non-throwing — the
  * client-side loader treats any non-2xx as "hide the panel") when the
  * `_lib` helper throws.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const loadMemberRenewalContextMock = vi.fn();
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 
 vi.mock('@/lib/tenant-context', () => ({
@@ -68,7 +68,7 @@ describe('contract: GET /api/invoices/member-renewal-context (Task 9)', () => {
   }, 60_000);
 
   beforeEach(() => {
-    requireAdminContextMock.mockResolvedValue(adminContext);
+    requireApiPermissionMock.mockResolvedValue(adminContext);
   });
 
   afterEach(() => {
@@ -112,7 +112,7 @@ describe('contract: GET /api/invoices/member-renewal-context (Task 9)', () => {
   });
 
   it('403 forbidden — manager role rejected before reaching the lookup', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: new Response(JSON.stringify({ error: 'forbidden' }), { status: 403 }),
     });
     const { GET } = (await importRoute()) as { GET: (req: NextRequest) => Promise<Response> };
@@ -121,8 +121,8 @@ describe('contract: GET /api/invoices/member-renewal-context (Task 9)', () => {
     expect(loadMemberRenewalContextMock).not.toHaveBeenCalled();
   });
 
-  it('401 no-session — unauthenticated request forwarded from requireAdminContext', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+  it('401 no-session — unauthenticated request forwarded from requireApiPermission', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: new Response(JSON.stringify({ error: 'no-session' }), { status: 401 }),
     });
     const { GET } = (await importRoute()) as { GET: (req: NextRequest) => Promise<Response> };

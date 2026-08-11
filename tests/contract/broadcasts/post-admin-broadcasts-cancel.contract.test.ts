@@ -14,11 +14,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 import { ok, err } from '@/lib/result';
 
-const requireAdminContextMock = vi.fn();
+const requireApiPermissionMock = vi.fn();
 const cancelBroadcastMock = vi.fn();
 
-vi.mock('@/lib/admin-context', () => ({
-  requireAdminContext: (...args: unknown[]) => requireAdminContextMock(...args),
+vi.mock('@/lib/rbac', () => ({
+  requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
 }));
 vi.mock('@/lib/tenant-context', () => ({
   resolveTenantFromRequest: () => ({ slug: 'test-tenant', __brand: true }),
@@ -133,7 +133,7 @@ describe('POST /api/admin/broadcasts/[id]/cancel — DV-12 (T111)', () => {
   // ── Success path ──────────────────────────────────────────────────────────
 
   it('200 happy: returns { broadcastId, status, cancelledAt, reservationReleased }', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     // Aggregate status is deliberately NOT 'cancelled' here so the assertion
     // proves the route returns the literal status: 'cancelled' on success
     // (its documented contract), rather than merely echoing the fixture.
@@ -157,7 +157,7 @@ describe('POST /api/admin/broadcasts/[id]/cancel — DV-12 (T111)', () => {
   });
 
   it('200 happy: passes verbatim cancellationReason to use-case', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     cancelBroadcastMock.mockResolvedValueOnce(
       ok({
         broadcast: broadcastFixture(),
@@ -179,7 +179,7 @@ describe('POST /api/admin/broadcasts/[id]/cancel — DV-12 (T111)', () => {
   // ── Auth / RBAC ───────────────────────────────────────────────────────────
 
   it('401: unauthenticated request', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: unauthorisedResponse,
     });
     const { POST } = await importRoute();
@@ -190,7 +190,7 @@ describe('POST /api/admin/broadcasts/[id]/cancel — DV-12 (T111)', () => {
   });
 
   it('403: manager role attempting cancel (admin-context guard rejects write)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce({
+    requireApiPermissionMock.mockResolvedValueOnce({
       response: forbiddenResponse,
     });
     const { POST } = await importRoute();
@@ -203,7 +203,7 @@ describe('POST /api/admin/broadcasts/[id]/cancel — DV-12 (T111)', () => {
   // ── Input validation (400) ────────────────────────────────────────────────
 
   it('400 invalid_body: empty cancellationReason fails zod min(1)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     const { POST } = await importRoute();
     const { req, ctx } = makeRequest({ cancellationReason: '' });
     const res = await POST(req, ctx);
@@ -214,7 +214,7 @@ describe('POST /api/admin/broadcasts/[id]/cancel — DV-12 (T111)', () => {
   });
 
   it('400 invalid_body: cancellationReason > 500 chars fails zod max(500)', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     const { POST } = await importRoute();
     const { req, ctx } = makeRequest({ cancellationReason: 'x'.repeat(501) });
     const res = await POST(req, ctx);
@@ -225,7 +225,7 @@ describe('POST /api/admin/broadcasts/[id]/cancel — DV-12 (T111)', () => {
   });
 
   it('400 invalid_body: missing cancellationReason field', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     const { POST } = await importRoute();
     const { req, ctx } = makeRequest({});
     const res = await POST(req, ctx);
@@ -235,7 +235,7 @@ describe('POST /api/admin/broadcasts/[id]/cancel — DV-12 (T111)', () => {
   });
 
   it('400 invalid_body: malformed JSON', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     const req = new NextRequest(
       `http://localhost/api/admin/broadcasts/${VALID_ID}/cancel`,
       {
@@ -254,7 +254,7 @@ describe('POST /api/admin/broadcasts/[id]/cancel — DV-12 (T111)', () => {
   // ── Path validation (404) ─────────────────────────────────────────────────
 
   it('404 broadcast_not_found: invalid uuid in path', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     const { POST } = await importRoute();
     const { req, ctx } = makeRequest(
       { cancellationReason: 'Reason' },
@@ -268,7 +268,7 @@ describe('POST /api/admin/broadcasts/[id]/cancel — DV-12 (T111)', () => {
   });
 
   it('404 broadcast_not_found: use-case returns not_found', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     cancelBroadcastMock.mockResolvedValueOnce(
       err({ kind: 'broadcast_not_found', broadcastId: VALID_ID }),
     );
@@ -283,7 +283,7 @@ describe('POST /api/admin/broadcasts/[id]/cancel — DV-12 (T111)', () => {
   // ── 409 state-machine errors ──────────────────────────────────────────────
 
   it('409 broadcast_cancel_too_late with observedStatus detail', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     cancelBroadcastMock.mockResolvedValueOnce(
       err({
         kind: 'broadcast_cancel_too_late',
@@ -300,7 +300,7 @@ describe('POST /api/admin/broadcasts/[id]/cancel — DV-12 (T111)', () => {
   });
 
   it('409 broadcast_concurrent_action_blocked with observedStatus detail', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     cancelBroadcastMock.mockResolvedValueOnce(
       err({
         kind: 'broadcast_concurrent_action_blocked',
@@ -319,7 +319,7 @@ describe('POST /api/admin/broadcasts/[id]/cancel — DV-12 (T111)', () => {
   // ── Server errors (500) ───────────────────────────────────────────────────
 
   it('500 internal_error: use-case throws unexpectedly', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     cancelBroadcastMock.mockRejectedValueOnce(new Error('db down'));
     const { POST } = await importRoute();
     const { req, ctx } = makeRequest({ cancellationReason: 'Reason' });
@@ -330,7 +330,7 @@ describe('POST /api/admin/broadcasts/[id]/cancel — DV-12 (T111)', () => {
   });
 
   it('500 internal_error: use-case returns cancel.server_error', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     cancelBroadcastMock.mockResolvedValueOnce(
       err({ kind: 'cancel.server_error', message: 'db down' }),
     );
@@ -345,7 +345,7 @@ describe('POST /api/admin/broadcasts/[id]/cancel — DV-12 (T111)', () => {
   // ── Observability ─────────────────────────────────────────────────────────
 
   it('correlation id present in success response headers', async () => {
-    requireAdminContextMock.mockResolvedValueOnce(adminCtx);
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
     cancelBroadcastMock.mockResolvedValueOnce(
       ok({
         broadcast: broadcastFixture(),

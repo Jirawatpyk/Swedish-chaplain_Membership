@@ -8,16 +8,22 @@
  * behind a `<TableSkeleton>` fallback. Zero CLS because the skeleton
  * row count and column widths match the real table grid.
  *
- * RBAC: action enablement inside `<UserListTable>` is gated by the
- * admin role via the staff-shell auth guard (requireSession); the API
- * route layer re-validates via `requireRole`.
+ * RBAC: the page declares `users.manage` via `requirePagePermission`. The
+ * old note here claimed the staff-shell auth guard enforced the admin role —
+ * it never did: `requireSession('staff')` checks session validity only, so a
+ * manager reached this page before 016 (contracts/authorization-surfaces
+ * § 1.1, Class A). The API route layer re-validates independently.
  *
  * Pagination: capped at 50 per page; proper paginated query surface is
  * a documented F9 follow-up.
  */
 import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
-import { requireSession } from '@/lib/auth-session';
+import { canPerform, requirePagePermission } from '@/lib/rbac';
+import {
+  legacySessionOnly,
+  mappedLegacy,
+} from '@/modules/auth/domain/permissions/legacy-shim';
 // Admin user list page (server component) reads directly from the
 // repo. An Application-layer `listUsers` use case would be a
 // near-identical passthrough and add no behaviour; this read is
@@ -57,7 +63,24 @@ export default async function AdminUsersPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  const { user: currentUser } = await requireSession('staff');
+  const { user: currentUser } = await requirePagePermission('users.manage', legacySessionOnly);
+  // Affordance decisions are permission-derived on the SERVER and threaded down
+  // as booleans (016 C1-affordance class): a `role === 'admin'` literal in the
+  // client would flip false the moment Migration C promotes admins to
+  // super_admin, silently rendering the page read-only for every human.
+  // - member-account lifecycle (disable/enable/resend/revoke) + invite:
+  //   users.member_accounts (mirrors the /api/auth/invite step-1 gate).
+  // - staff-role reassignment: users.manage (super-admin-only on the ON leg).
+  const canManageAccounts = canPerform(
+    currentUser.role,
+    'users.member_accounts',
+    mappedLegacy('auth:user', 'write'),
+  );
+  const canManageStaffRoles = canPerform(
+    currentUser.role,
+    'users.manage',
+    mappedLegacy('auth:user', 'write'),
+  );
   const t = await getTranslations('admin.users');
   const query = await searchParams;
   const rawPage = Number.parseInt(query.page ?? '1', 10);
@@ -78,7 +101,12 @@ export default async function AdminUsersPage({
       <PageHeader
         title={t('title')}
         subtitle={t('pageSubtitle')}
-        actions={<InviteUserDialog disabled={currentUser.role !== 'admin'} />}
+        actions={
+          // 016 re-review D — the dialog launches POST /api/auth/invite, whose
+          // step-1 gate is (users.member_accounts, auth:user write); mirror it
+          // so the affordance enables exactly when the API would admit.
+          <InviteUserDialog disabled={!canManageAccounts} />
+        }
       />
 
       <Card>
@@ -92,7 +120,8 @@ export default async function AdminUsersPage({
           */}
           <UsersDataSection
             currentUserId={currentUser.id}
-            currentUserRole={currentUser.role}
+            canManageAccounts={canManageAccounts}
+            canManageStaffRoles={canManageStaffRoles}
             page={page}
             {...(q !== undefined ? { q } : {})}
             {...(role !== undefined ? { role } : {})}
@@ -114,14 +143,16 @@ export default async function AdminUsersPage({
  */
 async function UsersDataSection({
   currentUserId,
-  currentUserRole,
+  canManageAccounts,
+  canManageStaffRoles,
   page,
   q,
   role,
   status,
 }: {
   currentUserId: string;
-  currentUserRole: Role;
+  canManageAccounts: boolean;
+  canManageStaffRoles: boolean;
   page: number;
   q?: string;
   role?: Role;
@@ -154,7 +185,8 @@ async function UsersDataSection({
           invitationExpiresAt: u.invitationExpiresAt,
         }))}
         currentUserId={currentUserId}
-        currentUserRole={currentUserRole}
+        canManageAccounts={canManageAccounts}
+        canManageStaffRoles={canManageStaffRoles}
         now={now}
       />
       <TablePagination page={page} pageSize={USERS_PAGE_SIZE} total={total} />
