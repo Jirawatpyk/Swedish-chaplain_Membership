@@ -85,7 +85,26 @@ test.describe('Journey — admin golden path across module seams @journey', () =
     // --- F5 — paid-online reconciliation view ---
     await gated('F5 payment reconciliation', F5, async () => {
       await page.goto('/admin/invoices?paidOnline=1');
-      await expect(page.getByTestId('paid-online-filter-chip')).toBeVisible({ timeout: 10_000 });
+
+      // The invoices filter-UX redesign (#264/#265) moved the secondary filter
+      // chips behind a "Filters" disclosure, so the paid-online chip is no
+      // longer on the page at rest — this assertion had been failing ever since,
+      // asserting a layout that no longer exists rather than a broken feature.
+      //
+      // Assert the thing the journey actually cares about first: that
+      // `?paidOnline=1` was HONOURED. The trigger's count badge reads the number
+      // of active secondary filters, so "1" proves the URL filter is applied
+      // without opening anything.
+      const moreFilters = page.getByTestId('invoice-more-filters-trigger');
+      await expect(moreFilters).toBeVisible({ timeout: 10_000 });
+      await expect(page.getByTestId('invoice-more-filters-count')).toHaveText('1');
+
+      // Then open the disclosure and confirm the chip itself reflects the active
+      // state (aria-pressed), which is what a returning operator would see.
+      await moreFilters.click();
+      const chip = page.getByTestId('paid-online-filter-chip');
+      await expect(chip).toBeVisible({ timeout: 10_000 });
+      await expect(chip).toHaveAttribute('aria-pressed', 'true');
     });
 
     // --- F7 — broadcasts admin surface ---
