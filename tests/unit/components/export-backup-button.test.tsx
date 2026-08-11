@@ -49,8 +49,17 @@ beforeEach(() => {
   });
 });
 
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  // The component schedules `setTimeout(() => URL.revokeObjectURL(url), 100)`
+  // on success (real timers are active here). If we unstub globals before that
+  // fires, the delayed callback runs against jsdom's URL — which has no
+  // `revokeObjectURL` — and throws as an UNCAUGHT exception on the next tick,
+  // long after this test finished. In isolation it is swallowed; under the
+  // full parallel suite Vitest catches it as an unhandled error and fails the
+  // whole run (exit 1) even though every assertion passed. Drain the pending
+  // real timer WHILE the stub is still installed, then restore fake timers.
+  await new Promise((resolve) => setTimeout(resolve, 150));
   vi.unstubAllGlobals();
   vi.useFakeTimers();
 });
