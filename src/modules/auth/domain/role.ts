@@ -84,6 +84,28 @@ export function isStaffRole(role: Role): boolean {
  *     backstop and never refuses something the app allows.
  *
  * PR 5 (T069) narrows the trigger to super_admin too and deletes the OFF branch.
+ *
+ * ## PR 5 caution — call sites that are NOT the last-administrator guard
+ *
+ * (016 review I6.) Six call sites use `isAdministrativeRole(role, false)` with a
+ * HARDCODED `false` as a general "is this an administrator?" predicate, for
+ * affordances and redaction rather than for the guard this population was
+ * defined for:
+ *
+ *   `src/components/plans/plans-table.tsx` (mutation CTAs)
+ *   `src/modules/insights/application/use-cases/activity-feed-query.ts` (redaction)
+ *   `.../download-export.ts` (×2 — export authorization)
+ *   `.../export-members-backup.ts` (`err('forbidden')`)
+ *   `.../set-directory-logo.ts`
+ *
+ * Deleting the OFF branch silently reclassifies all six from `admin ∪
+ * super_admin` to `super_admin` alone — plain admin would lose every plans
+ * mutation CTA, receive the REDACTED activity feed, and be refused
+ * member-backup export and directory-logo upload, with no compile error and no
+ * failing test to announce it. Before removing the branch, grep
+ * `isAdministrativeRole(` and re-decide each one; the correct answer for most is
+ * probably a permission key, the way `escalation-task-queue`'s `canMutate` prop
+ * is derived.
  */
 export const ADMINISTRATIVE_ROLES_LEGACY: readonly Role[] = ['super_admin', 'admin'];
 export const ADMINISTRATIVE_ROLES_V2: readonly Role[] = ['super_admin'];

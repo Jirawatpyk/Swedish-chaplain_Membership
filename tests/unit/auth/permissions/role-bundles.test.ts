@@ -80,3 +80,43 @@ describe('ROLE_BUNDLES (§ 4.1 pinned parity)', () => {
     }
   });
 });
+
+/**
+ * 016 review I5 — bulk/archive PII egress must imply field-level PII access.
+ *
+ * The members backup CSV (`GET /api/admin/members/export.zip`) and the GDPR
+ * member archive both emit contact DATE OF BIRTH, but are gated on
+ * `members.bulk` alone — not on `members.pii_sensitive`, which is the key T035
+ * put DoB behind on the single-member read. Today that is safe only by
+ * coincidence: the two keys happen to have identical holders. PR-4 task T057
+ * instructs the implementer to VERIFY rather than re-implement, on the stated
+ * assumption that the T035 gating already covers those paths — which is true
+ * only while the coincidence holds.
+ *
+ * This converts the coincidence into an enforced invariant, so a future bundle
+ * diff that grants bulk export without field-level PII access fails here
+ * instead of silently shipping every contact's date of birth.
+ */
+describe('016 I5 — PII egress key subsumption', () => {
+  it('every bundle holding members.bulk also holds members.pii_sensitive', () => {
+    // Non-vacuity: a subset assertion over an empty left-hand side passes for
+    // free. If `members.bulk` ever leaves every bundle, this test stops meaning
+    // anything and should be revisited rather than silently kept green.
+    const holders = ROLES.filter((role) => ROLE_BUNDLES[role].has(k('members.bulk')));
+    expect(holders.length, 'no bundle holds members.bulk — the invariant below is vacuous').
+      toBeGreaterThan(0);
+
+    const offenders = ROLES.filter(
+      (role) =>
+        ROLE_BUNDLES[role].has(k('members.bulk')) &&
+        !ROLE_BUNDLES[role].has(k('members.pii_sensitive')),
+    );
+    expect(
+      offenders,
+      'members.bulk exports contact date-of-birth (members-backup CSV + GDPR ' +
+        'archive). A role holding it without members.pii_sensitive would receive ' +
+        'PII that the single-member read denies it. Either add the key to that ' +
+        'bundle, or gate those two egress paths on it explicitly.',
+    ).toEqual([]);
+  });
+});
