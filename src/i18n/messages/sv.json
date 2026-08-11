@@ -624,7 +624,8 @@
         "enable": "Aktivera",
         "resend": "Skicka inbjudan igen",
         "revoke": "Återkalla",
-        "self": "Det är du"
+        "self": "Det är du",
+        "changeRole": "Ändra roll"
       },
       "confirm": {
         "cancel": "Avbryt",
@@ -642,6 +643,19 @@
           "confirm": "Återkalla inbjudan"
         }
       },
+      "changeRole": {
+        "title": "Ändra roll för {email}",
+        "description": "Välj en ny roll. Ändringen loggar ut användaren från alla aktiva sessioner direkt.",
+        "roleLabel": "Ny roll",
+        "current": "Nuvarande",
+        "confirm": "Ändra roll",
+        "errors": {
+          "last-admin-protection": "Du kan inte ändra den sista administratörens roll — befordra eller bjud in en annan Super Admin först.",
+          "same-role": "Användaren har redan den här rollen.",
+          "role-portal-mismatch": "Den rolländringen är inte tillåten för det här kontot.",
+          "generic": "Kunde inte ändra rollen. Försök igen."
+        }
+      },
       "toast": {
         "disabled": "{email} inaktiverad.",
         "enabled": "{email} återaktiverad.",
@@ -650,7 +664,8 @@
         "resendRateLimitedWait": "För många omsändningar — försök igen om ungefär {minutes, plural, one {# minut} other {# minuter}}.",
         "resendError": "Kunde inte skicka inbjudan igen. Försök igen.",
         "revoked": "Inbjudan återkallad för {email}.",
-        "revokeError": "Kunde inte återkalla inbjudan. Försök igen."
+        "revokeError": "Kunde inte återkalla inbjudan. Försök igen.",
+        "roleChanged": "Rollen för {email} ändrades till {role}."
       },
       "invite": {
         "title": "Bjud in en ny användare",
@@ -661,7 +676,8 @@
         "roles": {
           "admin": "Admin — full åtkomst",
           "manager": "Manager — läsbehörighet för ekonomi",
-          "member": "Medlem — självbetjäningsportal"
+          "member": "Medlem — självbetjäningsportal",
+          "super_admin": "Super Admin — full åtkomst + hantering av personalroller"
         },
         "submit": "Skicka inbjudan",
         "submitting": "Skickar…",

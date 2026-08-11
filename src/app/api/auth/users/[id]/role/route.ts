@@ -11,8 +11,14 @@ import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { userRepo } from '@/lib/auth-deps';
 import { logger } from '@/lib/logger';
 
+// 016 PR 3 (T048): `super_admin` becomes assignable from the users-page role
+// picker, so the server enum must accept it too — widen both together, never
+// just one (role.ts ASSIGNABLE_ROLES note). The § 7.1 step-2 gate below already
+// requires `users.manage` (super-admin-only on the ON leg) whenever the
+// requested role is a staff role, so only a super_admin can actually mint one.
+// `marketing` stays out until PR 4 (D17).
 const inputSchema = z.object({
-  newRole: z.enum(['admin', 'manager', 'member']),
+  newRole: z.enum(['super_admin', 'admin', 'manager', 'member']),
 });
 
 export async function POST(

@@ -264,6 +264,24 @@ describe('contract: POST /api/auth/users/[id]/role (T113)', () => {
       expect(changeRoleMock).not.toHaveBeenCalled();
       expect(requireApiPermissionMock).toHaveBeenCalledTimes(2);
     });
+
+    it('ACCEPTS super_admin as a target role (PR 3 assignable) and reaches the use case', async () => {
+      // super_admin joined the route enum in 016 PR 3. A staff→super_admin change
+      // passes step 1 + the step-2 users.manage gate and calls changeRole —
+      // proving the zod widening reached the SERVER, not just the picker UI.
+      requireApiPermissionMock.mockResolvedValue(adminContext);
+      findByIdMock.mockResolvedValueOnce({ id: 'target-1', role: 'admin' } as never);
+      changeRoleMock.mockResolvedValueOnce(ok({ sessionsRevoked: 2 }));
+
+      const { POST } = await import('@/app/api/auth/users/[id]/role/route');
+      const res = await POST(makeRequest({ newRole: 'super_admin' }), { params: routeParams });
+
+      expect(res.status).toBe(200);
+      expect(changeRoleMock).toHaveBeenCalledWith(
+        expect.objectContaining({ newRole: 'super_admin' }),
+      );
+      expect(requireApiPermissionMock).toHaveBeenCalledTimes(2);
+    });
   });
 
   // N4 (Round 3) — B3 outer try/catch.

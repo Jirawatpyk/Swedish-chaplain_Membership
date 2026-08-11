@@ -49,7 +49,10 @@ describe('ASSIGNABLE_ROLES ↔ server role enums (lockstep)', () => {
     const schema = z.enum(values as [string, ...string[]]);
     const notAssignable = ROLES.filter((r) => !ASSIGNABLE_ROLES.includes(r));
 
-    expect(notAssignable).toEqual(expect.arrayContaining(['super_admin', 'marketing']));
+    // PR 3 widened super_admin into ASSIGNABLE_ROLES (and both route enums);
+    // only marketing stays gated until PR 4.
+    expect(notAssignable).not.toContain('super_admin');
+    expect(notAssignable).toEqual(expect.arrayContaining(['marketing']));
     for (const role of notAssignable) {
       expect(schema.safeParse(role).success, `${role} must be rejected`).toBe(false);
     }

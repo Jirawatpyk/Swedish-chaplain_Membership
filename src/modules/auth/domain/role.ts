@@ -16,12 +16,13 @@ export type Role = (typeof ROLES)[number];
 
 /**
  * Roles that staff UI may OFFER for assignment/invitation right now.
- * Deliberately narrower than ROLES while 016 rolls out: `super_admin`
- * becomes assignable in PR 3 (users-page retrofit), `marketing` in PR 4
- * (design § 9 / D17). The invite API's zod schema is the server-side
- * counterpart — widen both together, never just one.
+ * Deliberately narrower than ROLES while 016 rolls out: `super_admin` became
+ * assignable in PR 3 (users-page retrofit — invite + change-role); `marketing`
+ * follows in PR 4 (design § 9 / D17). The invite AND change-role API zod schemas
+ * are the server-side counterparts — widen all together, never just one
+ * (assignable-roles-lockstep.test.ts fails loudly if they drift).
  */
-export const ASSIGNABLE_ROLES: readonly Role[] = ['admin', 'manager', 'member'];
+export const ASSIGNABLE_ROLES: readonly Role[] = ['admin', 'manager', 'member', 'super_admin'];
 
 /**
  * The two portal surfaces the app renders: `staff` (backoffice,

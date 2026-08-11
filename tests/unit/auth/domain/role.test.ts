@@ -29,11 +29,13 @@ describe('ROLES constant', () => {
 });
 
 describe('ASSIGNABLE_ROLES (staged assignability)', () => {
-  it('offers exactly the three pre-016 roles until PR 3 / PR 4 widen it', () => {
-    // super_admin becomes assignable in PR 3 (users-page retrofit), marketing
-    // in PR 4 (design D17). Widening this WITHOUT widening the invite and
-    // change-role zod enums (and vice versa) is the defect this pins.
-    expect([...ASSIGNABLE_ROLES]).toEqual(['admin', 'manager', 'member']);
+  it('adds super_admin in PR 3 (users-page retrofit); marketing still held to PR 4', () => {
+    // super_admin became assignable in PR 3 (invite + change-role); marketing
+    // follows in PR 4 (design D17). Widening this WITHOUT widening the invite
+    // and change-role zod enums (and vice versa) is the defect
+    // assignable-roles-lockstep.test.ts pins.
+    expect([...ASSIGNABLE_ROLES]).toEqual(['admin', 'manager', 'member', 'super_admin']);
+    expect(ASSIGNABLE_ROLES).not.toContain('marketing');
   });
 
   it('is a subset of ROLES', () => {

@@ -56,23 +56,46 @@ const DISABLED_USER = {
   invitationExpiresAt: null,
 } as const;
 
+// A STAFF row — the only rows the change-role picker offers (016 PR 3).
+const ADMIN_USER = {
+  id: 'u-admin-1',
+  email: 'admin@example.com',
+  role: 'admin',
+  status: 'active',
+  displayName: 'Admin User',
+  invitationExpiresAt: null,
+} as const;
+
 // Fixed "now" (Task 2's server-now-hydration fix): UserListTable no longer
 // reads `new Date()` internally — the value is computed once on the server
 // and threaded down as a prop. Tests pass a fixed instant so the
 // expiry-label assertions below are deterministic regardless of wall clock.
 const FIXED_NOW = new Date('2026-07-18T00:00:00Z');
 
-function renderTable(
-  users: Users,
-  currentUserRole: 'admin' | 'manager' | 'member' = 'admin',
-  now: Date = FIXED_NOW,
-) {
+// 016 PR 3 — affordances are permission booleans threaded from the server, not
+// a client `role === 'admin'` literal. Default both true (the post-cutover
+// super_admin, and the pre-cutover admin on the OFF leg); tests that exercise a
+// narrower viewer pass explicit booleans (e.g. a plain admin on the ON leg has
+// canManageAccounts=true but canManageStaffRoles=false).
+interface RenderOpts {
+  readonly canManageAccounts?: boolean;
+  readonly canManageStaffRoles?: boolean;
+  readonly now?: Date;
+}
+
+function renderTable(users: Users, opts: RenderOpts = {}) {
+  const {
+    canManageAccounts = true,
+    canManageStaffRoles = true,
+    now = FIXED_NOW,
+  } = opts;
   return render(
     <NextIntlClientProvider locale="en" messages={en}>
       <UserListTable
         users={users}
         currentUserId="current-viewer"
-        currentUserRole={currentUserRole}
+        canManageAccounts={canManageAccounts}
+        canManageStaffRoles={canManageStaffRoles}
         now={now}
       />
     </NextIntlClientProvider>,
@@ -110,8 +133,8 @@ describe('UserListTable — resend + revoke invitation actions', () => {
     expect(screen.queryByRole('button', { name: 'Revoke' })).not.toBeInTheDocument();
   });
 
-  it('does NOT show Resend/Revoke for a non-admin viewer, even on a pending row', () => {
-    renderTable([PENDING_USER], 'manager');
+  it('does NOT show Resend/Revoke when the viewer cannot manage accounts, even on a pending row', () => {
+    renderTable([PENDING_USER], { canManageAccounts: false, canManageStaffRoles: false });
     expect(screen.queryByRole('button', { name: 'Resend invitation' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Revoke' })).not.toBeInTheDocument();
   });
@@ -338,5 +361,57 @@ describe('UserListTable — table landmark aria-label (minor fix)', () => {
     renderTable([PENDING_USER]);
     expect(screen.getByRole('region', { name: en.admin.users.title })).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Data table' })).not.toBeInTheDocument();
+  });
+});
+
+describe('UserListTable — change-role picker (016 PR 3, US1)', () => {
+  it('shows "Change role" on a STAFF row when the viewer can manage staff roles', () => {
+    renderTable([ADMIN_USER], { canManageStaffRoles: true });
+    expect(screen.getByRole('button', { name: en.admin.users.actions.changeRole })).toBeInTheDocument();
+  });
+
+  it('does NOT show "Change role" on a MEMBER row (a portal move, not a staff reassignment)', () => {
+    renderTable([ACTIVE_USER], { canManageStaffRoles: true });
+    expect(
+      screen.queryByRole('button', { name: en.admin.users.actions.changeRole }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('hides "Change role" for a viewer without users.manage but keeps lifecycle actions (plain admin, ON leg)', () => {
+    renderTable([ADMIN_USER], { canManageAccounts: true, canManageStaffRoles: false });
+    // No staff-role reassignment...
+    expect(
+      screen.queryByRole('button', { name: en.admin.users.actions.changeRole }),
+    ).not.toBeInTheDocument();
+    // ...but member-account lifecycle (this admin row is active) still shows.
+    expect(screen.getByRole('button', { name: en.admin.users.actions.disable })).toBeInTheDocument();
+  });
+
+  it('the affordance is permission-driven, not role-literal: canManageAccounts=false hides every lifecycle action even for an admin-role row', () => {
+    // The C1-affordance regression guard: pre-016 this was `role === 'admin'`,
+    // which flips false after Migration C promotes admins to super_admin. Now
+    // it is a server-computed boolean, so a false value hides the actions
+    // regardless of what role string the VIEWER happens to hold.
+    renderTable([ADMIN_USER], { canManageAccounts: false, canManageStaffRoles: false });
+    expect(screen.queryByRole('button', { name: en.admin.users.actions.disable })).not.toBeInTheDocument();
+  });
+
+  it('opens the picker with exactly super_admin/admin/manager options — never member or marketing', () => {
+    renderTable([ADMIN_USER], { canManageStaffRoles: true });
+    fireEvent.click(screen.getByRole('button', { name: en.admin.users.actions.changeRole }));
+
+    // The three offered staff roles are present as radios...
+    expect(
+      screen.getByRole('radio', { name: en.admin.users.filters.role.super_admin }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: en.admin.users.filters.role.admin })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: en.admin.users.filters.role.manager })).toBeInTheDocument();
+    // ...and the two excluded roles are NOT.
+    expect(
+      screen.queryByRole('radio', { name: en.admin.users.filters.role.member }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('radio', { name: en.admin.users.filters.role.marketing }),
+    ).not.toBeInTheDocument();
   });
 });

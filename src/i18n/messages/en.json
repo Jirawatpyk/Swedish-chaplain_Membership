@@ -624,7 +624,8 @@
         "enable": "Enable",
         "resend": "Resend invitation",
         "revoke": "Revoke",
-        "self": "That's you"
+        "self": "That's you",
+        "changeRole": "Change role"
       },
       "confirm": {
         "cancel": "Cancel",
@@ -642,6 +643,19 @@
           "confirm": "Revoke invitation"
         }
       },
+      "changeRole": {
+        "title": "Change role for {email}",
+        "description": "Choose a new role. Changing it signs the user out of all active sessions immediately.",
+        "roleLabel": "New role",
+        "current": "Current",
+        "confirm": "Change role",
+        "errors": {
+          "last-admin-protection": "You can't change the last administrator's role — promote or invite another Super Admin first.",
+          "same-role": "That user already has this role.",
+          "role-portal-mismatch": "That role change isn't allowed for this account.",
+          "generic": "Couldn't change the role. Please try again."
+        }
+      },
       "toast": {
         "disabled": "{email} disabled.",
         "enabled": "{email} re-enabled.",
@@ -650,7 +664,8 @@
         "resendRateLimitedWait": "Too many resends — try again in about {minutes, plural, one {# minute} other {# minutes}}.",
         "resendError": "Couldn't resend the invitation. Please try again.",
         "revoked": "Invitation revoked for {email}.",
-        "revokeError": "Couldn't revoke the invitation. Please try again."
+        "revokeError": "Couldn't revoke the invitation. Please try again.",
+        "roleChanged": "{email}'s role changed to {role}."
       },
       "invite": {
         "title": "Invite a new user",
@@ -661,7 +676,8 @@
         "roles": {
           "admin": "Admin — full access",
           "manager": "Manager — read-only on finance",
-          "member": "Member — self-service portal"
+          "member": "Member — self-service portal",
+          "super_admin": "Super Admin — full access + staff role management"
         },
         "submit": "Send invitation",
         "submitting": "Sending…",
