@@ -125,7 +125,10 @@ describe('timelineList — filter resolution (D1)', () => {
       { memberId: MEMBER, limit: 50 },
       { ...META, actorRole: 'member' },
       CTX,
-      deps,
+      // The portal passes this: a member OWNS their billing history. The money
+      // gate exists to stop STAFF without invoicing.read reading someone
+      // else'''s invoices (016 review, security I-1).
+      { ...deps, invoicingRead: true },
     );
     expect(r.ok).toBe(true);
     if (!r.ok) return;
@@ -152,7 +155,10 @@ describe('timelineList — filter resolution (D1)', () => {
       { memberId: MEMBER, limit: 50 },
       { ...META, actorRole: 'member' },
       CTX,
-      deps,
+      // The portal passes this: a member OWNS their billing history. The money
+      // gate exists to stop STAFF without invoicing.read reading someone
+      // else'''s invoices (016 review, security I-1).
+      { ...deps, invoicingRead: true },
     );
     expect(r.ok).toBe(true);
     if (!r.ok) return;
@@ -210,5 +216,138 @@ describe('timelineList — filter resolution (D1)', () => {
       expect((r.error as { cause?: unknown }).cause).toBe(realError);
     }
     expect(timeline.listByMember).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * 016 review (security I-1) — the timeline must not hand per-member MONEY to a
+ * viewer without `invoicing.read`.
+ *
+ * `/api/members/[memberId]/timeline` is gated on `members.read`, which the new
+ * `marketing` bundle carries. The timeline's payment rows carry
+ * `amount_satang`, and its F4 audit rows carry `total_satang` /
+ * `credit_amount_satang` — and the page renders them.
+ *
+ * That contradicts three things PR 4 itself asserts: the dashboard split, which
+ * strips revenue from exactly this population; the role label shipped in three
+ * languages ("no finance or sensitive data"); and the frozen matrix's own
+ * comment claiming no money surface is reachable — in the same file whose list
+ * admits both timeline surfaces.
+ *
+ * `invoicingRead` is injected and defaults FALSE, matching `activityUnredacted`
+ * rather than `canFinance`: a caller that forgets it loses fidelity instead of
+ * leaking money.
+ */
+describe('timelineList — money is gated on invoicing.read (security I-1)', () => {
+  const PAYMENT_EVENT = {
+    id: 'e-pay',
+    source: 'payment',
+    occurredAt: '2026-08-01T00:00:00.000Z',
+    actorUserId: 'u1',
+    actorDisplayName: 'Staff',
+    actorKind: 'staff',
+    eventType: 'payment_succeeded',
+    payload: { status: 'succeeded', amount_satang: 12345600 },
+  };
+  const INVOICE_AUDIT_EVENT = {
+    id: 'e-inv',
+    source: 'audit',
+    occurredAt: '2026-08-02T00:00:00.000Z',
+    actorUserId: 'u1',
+    actorDisplayName: 'Staff',
+    actorKind: 'staff',
+    eventType: 'invoice_issued',
+    payload: { total_satang: 9900000, document_number: 'INV-2026-0001' },
+  };
+  const MEMBER_EVENT = {
+    id: 'e-mem',
+    source: 'audit',
+    occurredAt: '2026-08-03T00:00:00.000Z',
+    actorUserId: 'u1',
+    actorDisplayName: 'Staff',
+    actorKind: 'staff',
+    eventType: 'member_updated',
+    payload: { field: 'company_name' },
+  };
+  const ALL = [PAYMENT_EVENT, INVOICE_AUDIT_EVENT, MEMBER_EVENT];
+
+  const asMarketing = { actorUserId: 'u2', actorRole: 'marketing' as const, requestId: 'r2' };
+
+  it('drops payment rows for a viewer without invoicing.read', async () => {
+    const { deps } = makeDeps(ALL);
+    const r = await timelineList(
+      { memberId: MEMBER, limit: 50 },
+      asMarketing,
+      CTX,
+      { ...deps, invoicingRead: false },
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.events.map((e) => e.id)).not.toContain('e-pay');
+  });
+
+  it('drops F4 money audit rows for a viewer without invoicing.read', async () => {
+    const { deps } = makeDeps(ALL);
+    const r = await timelineList(
+      { memberId: MEMBER, limit: 50 },
+      asMarketing,
+      CTX,
+      { ...deps, invoicingRead: false },
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.events.map((e) => e.id)).not.toContain('e-inv');
+  });
+
+  it('no money FIELD survives anywhere in the payload (absent, not zeroed)', async () => {
+    const { deps } = makeDeps(ALL);
+    const r = await timelineList(
+      { memberId: MEMBER, limit: 50 },
+      asMarketing,
+      CTX,
+      { ...deps, invoicingRead: false },
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const blob = JSON.stringify(r.value.events);
+    for (const field of ['amount_satang', 'total_satang', 'credit_amount_satang']) {
+      expect(blob, `${field} reached a viewer without invoicing.read`).not.toContain(field);
+    }
+  });
+
+  it('keeps the non-money rows — the timeline is narrower, not empty', async () => {
+    const { deps } = makeDeps(ALL);
+    const r = await timelineList(
+      { memberId: MEMBER, limit: 50 },
+      asMarketing,
+      CTX,
+      { ...deps, invoicingRead: false },
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.events.map((e) => e.id)).toContain('e-mem');
+  });
+
+  it('a holder of invoicing.read still sees everything', async () => {
+    const { deps } = makeDeps(ALL);
+    const r = await timelineList(
+      { memberId: MEMBER, limit: 50 },
+      META,
+      CTX,
+      { ...deps, invoicingRead: true },
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.events.map((e) => e.id)).toEqual(['e-pay', 'e-inv', 'e-mem']);
+  });
+
+  it('defaults to DROPPING money when the dep is omitted (fail-closed)', async () => {
+    // Matches `activityUnredacted`, not `canFinance`: a call site that forgets
+    // to thread the flag must lose fidelity, never leak money.
+    const { deps } = makeDeps(ALL);
+    const r = await timelineList({ memberId: MEMBER, limit: 50 }, META, CTX, deps);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.events.map((e) => e.id)).not.toContain('e-pay');
   });
 });

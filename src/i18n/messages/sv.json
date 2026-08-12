@@ -1827,6 +1827,7 @@
       "index": {
         "title": "Inställningar",
         "subtitle": "Konfigurera fakturering och förnyelsepåminnelser för hela kammaren.",
+        "empty": "Inga inställningar är tillgängliga för din roll.",
         "categories": {
           "invoicing": {
             "title": "Fakturainställningar",

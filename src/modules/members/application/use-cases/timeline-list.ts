@@ -71,6 +71,21 @@ export type TimelineListError =
 export type TimelineListDeps = {
   readonly memberRepo: MemberRepo;
   readonly timeline: TimelinePort;
+  /**
+   * Whether the viewer holds `invoicing.read` (016 review, security I-1).
+   *
+   * The timeline route is gated on `members.read`, which the `marketing` bundle
+   * carries — and the timeline's payment rows carry `amount_satang` while its
+   * F4 audit rows carry `total_satang` / `credit_amount_satang`. Without this
+   * gate the role that PR 4 deliberately excluded from the revenue dashboard
+   * reads per-member money one page over.
+   *
+   * INJECTED, because the Application layer must not import `canPerform`
+   * (it reads `env`). Defaults to FALSE — fail-closed, matching
+   * `activityUnredacted`: a call site that forgets it loses fidelity rather
+   * than leaking money.
+   */
+  readonly invoicingRead?: boolean;
 };
 
 // ---------------------------------------------------------------------------
@@ -97,6 +112,31 @@ function redactPayload(
     }
   }
   return result;
+}
+
+/**
+ * Timeline rows that carry money, dropped for a viewer without `invoicing.read`.
+ *
+ * Dropped WHOLE rather than field-scrubbed: an invoice or payment row with its
+ * amounts removed still discloses that the member was billed, what document
+ * number was issued and when — and the row's own copy
+ * (`resolve-invoice-event-copy.ts`) renders from those fields, so a scrubbed row
+ * would render as a broken sentence. There is no partial version of this row
+ * that is both safe and useful.
+ */
+const MONEY_SOURCES: ReadonlySet<string> = new Set(['invoice', 'payment']);
+
+/**
+ * F4 event types that ride the `audit` source and carry money in their payload.
+ * Matched by prefix so a new `invoice_*` / `credit_note_*` / `refund_*` /
+ * `payment_*` event is excluded by DEFAULT — the same by-construction choice as
+ * `projectEngagementOnly`, for the same reason.
+ */
+const MONEY_AUDIT_PREFIXES = ['invoice_', 'credit_note_', 'refund_', 'payment_'] as const;
+
+function carriesMoney(e: TimelineEvent): boolean {
+  if (MONEY_SOURCES.has(e.source)) return true;
+  return MONEY_AUDIT_PREFIXES.some((p) => e.eventType.startsWith(p));
 }
 
 function redactEvents(events: readonly TimelineEvent[]): TimelineEvent[] {
@@ -216,8 +256,14 @@ export async function timelineList(
 
   // 4. Redact for member-role callers (US6 AS3 / FR-017)
   const { events, nextCursor, total } = timelineResult.value;
+  // rbac-portal-identity-ok: selects the member's own-history projection; the
+  // permission decisions are the route gate above and `invoicingRead` below.
+  const roleProjected = meta.actorRole === 'member' ? redactEvents(events) : events;
+  // 016 review (security I-1) — money rows need `invoicing.read` on top of the
+  // `members.read` that admitted the request. `!== true` rather than
+  // `=== false` so an omitted dep fails CLOSED.
   const projectedEvents =
-    meta.actorRole === 'member' ? redactEvents(events) : events;
+    deps.invoicingRead !== true ? roleProjected.filter((e) => !carriesMoney(e)) : roleProjected;
 
   return ok({
     memberId,

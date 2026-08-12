@@ -282,16 +282,30 @@ describe('T053 marketing reachable surfaces (US3)', () => {
   });
 
   /**
-   * Anti-circularity anchor. Reviewed by eye at authoring: no money surface
-   * (`/admin/invoices`, `/admin/plans`, `/admin/renewals`, refunds,
-   * credit-notes), no PII egress (`export.zip`, `data-export`,
+   * Anti-circularity anchor: the surfaces `marketing` reaches on the ON leg.
+   *
+   * No money PAGE (`/admin/invoices`, `/admin/plans`, `/admin/renewals`,
+   * refunds, credit-notes), no PII egress (`export.zip`, `data-export`,
    * `/admin/directory`), no compliance surface (erasure, audit), and no
-   * `/admin/users` appears below. Two entries look surprising and are
-   * deliberate, both keyed on something marketing legitimately holds:
-   * `GET /api/plans/[year]/[planId]/affected-members` is keyed `members.read`,
-   * and `POST /api/admin/members/[id]/broadcasts-halt-clear` is keyed
-   * `broadcasts.write`. `/admin/settings` is reachable but every child denies —
-   * T064/D-8 filters that index so it is not a dead end.
+   * `/admin/users`.
+   *
+   * Three entries look surprising and are deliberate, each keyed on something
+   * marketing legitimately holds:
+   * `GET /api/plans/[year]/[planId]/affected-members` is keyed `members.read`;
+   * `POST /api/admin/members/[id]/broadcasts-halt-clear` is keyed
+   * `broadcasts.write`; and `GET /api/plans/search` widened to `dashboard.view`
+   * (T064) so the ⌘K palette works at all — its plan and member hits are
+   * re-gated inside the handler.
+   *
+   * **This list is reachability, NOT a claim about what the response contains.**
+   * The first version of this comment asserted "no money surface appears
+   * below" from an eyeball pass, while the list itself admitted BOTH member
+   * timeline surfaces — whose payment rows carry `amount_satang` and whose F4
+   * audit rows carry `total_satang`. The review caught it; `timelineList` now
+   * drops money rows for a viewer without `invoicing.read`
+   * (`tests/unit/members/timeline-list-filters.test.ts`). Reachability and
+   * payload contents are separate properties and each needs its own test — an
+   * eyeball scan of route names cannot see inside a response.
    */
   const MARKETING_REACHABLE: readonly string[] = [
     '/admin',

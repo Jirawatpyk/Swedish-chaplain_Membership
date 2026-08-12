@@ -11,7 +11,7 @@
 
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
-import { requireApiPermission } from '@/lib/rbac';
+import { requireApiPermission, canPerform } from '@/lib/rbac';
 import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
@@ -121,6 +121,16 @@ export async function GET(
     {
       memberRepo: deps.memberRepo,
       timeline: deps.timeline,
+      // rbac-subgate-ok: gates the money ROWS of an already-authorised response
+      // — the surface itself is admitted by `members.read` above. 016 review
+      // (security I-1): `marketing` holds `members.read`, and the timeline's
+      // payment rows carry `amount_satang` while its F4 audit rows carry
+      // `total_satang` / `credit_amount_satang`.
+      invoicingRead: canPerform(
+        ctx.current.user.role,
+        'invoicing.read',
+        mappedLegacy('invoice', 'read'),
+      ),
     },
   );
 

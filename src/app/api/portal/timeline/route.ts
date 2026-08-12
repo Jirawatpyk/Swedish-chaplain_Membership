@@ -147,7 +147,15 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     },
     { actorUserId: user.id, actorRole: 'member', requestId },
     tenant,
-    { memberRepo: deps.memberRepo, timeline: deps.timeline },
+    {
+      memberRepo: deps.memberRepo,
+      timeline: deps.timeline,
+      // 016 review (security I-1) — the member's OWN billing history. The
+      // money gate exists to stop STAFF without `invoicing.read` reading
+      // someone else's invoices; the subject's own rows are the point of this
+      // surface. Explicit because the dep fails closed by default.
+      invoicingRead: true,
+    },
   );
 
   if (!result.ok) {
