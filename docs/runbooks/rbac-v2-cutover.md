@@ -274,4 +274,6 @@ RBAC v2 cutover — <date>
   SweCham/TSCC state at PR-4 time: **present, `"true"`** — set by the operator during the 2026-08-11 cutover (§ 9), so the default flip changes nothing in prod and only aligns preview + CI + local.
 
   Preview deployments inherit the production env var unless overridden; if a preview environment carries its own `'false'`, it is testing the leg that PR 5 deletes.
+- **Privacy record (T060):** the statutory processing record for staff role administration + the marketing member-read scope is `docs/compliance/processing-records.md` § *016 — Staff Role Administration + Marketing Read Scope*. It carries the DPIA answer (no DPIA required — no new category, purpose, recipient, transfer or ADM; the role is risk-reducing on balance) and the rationale that the last-super-admin erase refusal is a staff-continuity guard, **not** a GDPR Art. 17 / PDPA §33 denial — the data-subject path is to mint or promote another super_admin via § 2 above, then erase. Update that record if marketing ever gains a write path over member data.
+
 - **PR-5 (cleanup):** after the soak window, delete the `FEATURE_RBAC_V2` env var entirely (T071) — a stale value on a future redeploy would be read by nothing, but leaving dead env vars around is how the next incident starts.
