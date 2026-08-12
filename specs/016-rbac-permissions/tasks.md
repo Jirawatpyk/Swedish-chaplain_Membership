@@ -149,16 +149,16 @@ Deferred with rationale: S-3 (window-B invitation demotion — needs the optiona
 
 ### Tests first
 
-- [ ] T053 [P] [US3] Contract: marketing rows joined to the role × endpoint matrix — ALL money/PII/compliance surfaces denied (incl. `events.relink`, `directory.export`, settings, users, audit); broadcasts/events/members-read/insights-engagement allowed — in `tests/contract/rbac/role-endpoint-matrix.test.ts`
-- [ ] T054 [P] [US3] Unit: insights snapshot split — widget→permission map; finance data ABSENT from the engagement payload (server-side, not hidden) — in `tests/unit/insights/snapshot-split.test.ts`
+- [x] T053 [P] [US3] Contract: marketing rows joined to the role × endpoint matrix — ALL money/PII/compliance surfaces denied (incl. `events.relink`, `directory.export`, settings, users, audit); broadcasts/events/members-read/insights-engagement allowed — in `tests/contract/rbac/role-endpoint-matrix.test.ts`
+- [x] T054 [P] [US3] Unit: insights snapshot split — widget→permission map; finance data ABSENT from the engagement payload (server-side, not hidden) — in `tests/unit/insights/snapshot-split.test.ts`
 - [ ] T055 [P] [US3] E2E: marketing persona walk — E-Blast full flow succeeds; event registrations + CSV import; 404 `/admin/invoices`; engagement dashboard no grid holes/dead links; member profile shows no DoB — in `tests/e2e/rbac-marketing-persona.spec.ts`
 
 ### Implementation
 
-- [ ] T056 [US3] Split the F9 snapshot loader into separately cacheable engagement/finance parts + widget→permission map in `src/modules/insights/**` + `src/app/(staff)/admin/page.tsx` (grid collapses gracefully)
-- [ ] T057 [US3] VERIFY `members.pii_sensitive` stripping holds for marketing on the SINGLE-MEMBER read (`GET /api/members/[memberId]?include=date_of_birth` — key-based gating from T035, no re-implementation) + marketing-specific UI paths only (profile render, directory row) in member read APIs + profile UI. **Corrected by 016 review I5** — the original wording claimed T035 was a chokepoint covering every DoB egress; it is not. DoB also leaves via `GET /api/admin/members/export.zip` (backup CSV, every contact in the tenant) and the GDPR member archive, both gated on `members.bulk` alone. Those are safe today only because `members.bulk` and `members.pii_sensitive` happen to have identical holders, which `tests/unit/auth/permissions/role-bundles.test.ts` now pins as an enforced subset invariant. So T057 = verify the single-member read AND confirm the invariant test still guards the two bulk paths; if PR 4 ever grants marketing `members.bulk`, gate those two paths on `members.pii_sensitive` explicitly instead of relying on the coincidence
-- [ ] T058 [US3] PII-redacted activity feed for non-`insights.activity_unredacted` holders (marketing) in insights feed components
-- [ ] T059 [US3] Role picker += `marketing` (PR-4 reveal) in users page; seed `E2E_MARKETING_*` persona via global-setup idiom
+- [x] T056 [US3] Split the F9 snapshot loader into separately cacheable engagement/finance parts + widget→permission map in `src/modules/insights/**` + `src/app/(staff)/admin/page.tsx` (grid collapses gracefully)
+- [x] T057 [US3] VERIFY `members.pii_sensitive` stripping holds for marketing on the SINGLE-MEMBER read (`GET /api/members/[memberId]?include=date_of_birth` — key-based gating from T035, no re-implementation) + marketing-specific UI paths only (profile render, directory row) in member read APIs + profile UI. **Corrected by 016 review I5** — the original wording claimed T035 was a chokepoint covering every DoB egress; it is not. DoB also leaves via `GET /api/admin/members/export.zip` (backup CSV, every contact in the tenant) and the GDPR member archive, both gated on `members.bulk` alone. Those are safe today only because `members.bulk` and `members.pii_sensitive` happen to have identical holders, which `tests/unit/auth/permissions/role-bundles.test.ts` now pins as an enforced subset invariant. So T057 = verify the single-member read AND confirm the invariant test still guards the two bulk paths; if PR 4 ever grants marketing `members.bulk`, gate those two paths on `members.pii_sensitive` explicitly instead of relying on the coincidence
+- [x] T058 [US3] PII-redacted activity feed for non-`insights.activity_unredacted` holders (marketing) in insights feed components
+- [x] T059 [US3] Role picker += `marketing` (PR-4 reveal) in users page; seed `E2E_MARKETING_*` persona via global-setup idiom
 - [ ] T060 [US3] ROPA/privacy documentation update: staff-role-administration activity + marketing member-read scope + DPIA-trigger answer (CHK035) + last-SA-erase vs Art. 17 rationale (CHK041) in the privacy docs + `docs/runbooks/rbac-v2-cutover.md` cross-ref
 
 **Checkpoint**: US3 independently testable end-to-end with the seeded marketing persona.
@@ -173,15 +173,16 @@ Deferred with rationale: S-3 (window-B invitation demotion — needs the optiona
 
 ### Tests first
 
-- [ ] T061 [P] [US4] Unit: nav config declares `requiredPermission` per item; server-derived filtering; zero role literals (architecture-guard assertion) in `tests/unit/config/nav-permissions.test.ts`
+- [x] T061 [P] [US4] Unit: nav config declares `requiredPermission` per item; server-derived filtering; zero role literals (architecture-guard assertion) in `tests/unit/config/nav-permissions.test.ts`
 - [ ] T062 [P] [US4] E2E: four-persona navigation walk (super_admin, admin, manager, marketing) — visible ≡ permitted, no dead links, landing invariant; **+ manager direct-URL assertions (404 on `/admin/users` + `/admin/audit`; all four settings pages denied — design §10 manager list)** — in `tests/e2e/rbac-navigation.spec.ts`
 
 ### Implementation
 
-- [ ] T063 [US4] Replace nav role arrays with declarative `requiredPermission` + server-side filtering in `src/config/nav.ts` + shell components
-- [ ] T064 [US4] Palette actions + settings index render from declared permissions in palette registry + `src/app/(staff)/admin/settings/page.tsx`
-- [ ] T065 [US4] Architecture guard: authorization role-reads outside the identity allowlist fail (nav/palette filters IN scope; **the F6 `adminOnlyWriterGuard` role reads are a PERMANENT allowlist entry — D9 route-local override survives PR 5**) in `tests/unit/architecture/rbac-authorization-reads.test.ts`
-- [ ] T066 [US4] Flip flag code-default → `true` in `src/lib/env.ts`; add PR-4 runbook step: verify prod env var unset or `'true'` (leftover `'false'` defeats the flip)
+- [x] T063 [US4] Replace nav role arrays with declarative `requiredPermission` + server-side filtering in `src/config/nav.ts` + shell components
+- [x] T064 [US4] Palette actions + settings index render from declared permissions in palette registry + `src/app/(staff)/admin/settings/page.tsx`
+- [x] T065 [US4] Architecture guard: authorization role-reads outside the identity allowlist fail (nav/palette filters IN scope; **the F6 `adminOnlyWriterGuard` role reads are a PERMANENT allowlist entry — D9 route-local override survives PR 5**) in `tests/unit/architecture/rbac-authorization-reads.test.ts`
+  - **Implemented as a SCRIPT gate** (`scripts/check-authorization-role-reads.ts`) wired into `package.json` + `.husky/pre-push` + `quality-gates.yml`, not `tests/unit/architecture/rbac-authorization-reads.test.ts` as originally scoped: it belongs with its siblings `check:staff-page-guard` / `check:api-route-guard`, runs in the fast static-gates job rather than the architecture-test job, and prints per-site remediation. Markers live AT each site, not in a central allowlist.
+- [x] T066 [US4] Flip flag code-default → `true` in `src/lib/env.ts`; add PR-4 runbook step: verify prod env var unset or `'true'` (leftover `'false'` defeats the flip)
 - [ ] T067 [US4] Observability completion: expected-denial baseline alert (extended for marketing) + `docs/observability.md` metric/SLO entries + a11y (`@a11y`) + i18n (`@i18n`) E2E sweeps green on PR-4-changed surfaces (nav, palette, settings index, dashboard split — users page already covered by T045/T046)
 
 **Checkpoint**: PR 4 mergeable — marketing usable end-to-end; nav fully permission-aware; flag default ON.

@@ -262,5 +262,16 @@ RBAC v2 cutover — <date>
 
 ## 10. PR-4 / PR-5 operator steps (for completeness)
 
-- **PR-4 (flag default → `true`):** before merging, verify the prod env var is either **unset** or `'true'` — a leftover `'false'` silently defeats the code default flip (T066).
+- **PR-4 (flag default → `true`, T066):** the code default in `src/lib/env.ts` and the value in `.env.example` are now `true`, so a fresh checkout, a preview deploy and CI all match production instead of silently exercising the legacy leg.
+
+  An environment's EXPLICIT value still wins over the default. That is deliberate — rollback stays one env var — but it means the flip is not complete anywhere that still says `'false'`. Before merging, verify prod is **unset** or `'true'`:
+
+  ```bash
+  vercel env ls production | grep FEATURE_RBAC_V2
+  # expected: absent, or present with value "true"
+  ```
+
+  SweCham/TSCC state at PR-4 time: **present, `"true"`** — set by the operator during the 2026-08-11 cutover (§ 9), so the default flip changes nothing in prod and only aligns preview + CI + local.
+
+  Preview deployments inherit the production env var unless overridden; if a preview environment carries its own `'false'`, it is testing the leg that PR 5 deletes.
 - **PR-5 (cleanup):** after the soak window, delete the `FEATURE_RBAC_V2` env var entirely (T071) — a stale value on a future redeploy would be read by nothing, but leaving dead env vars around is how the next incident starts.

@@ -133,6 +133,33 @@ Names follow `<module>_<subject>_<action>` convention.
 | `auth_rbac_denied_total` | counter | `role`, `resource`, `action` | **RETIRED by 016** — emitted only by `requireRole`, whose last call site the RBAC v2 sweep removed. Reads zero; kept for pre-sweep history |
 | `auth_manager_denied_write_total` | counter | `endpoint` | **RETIRED by 016** — same reason. Reads zero for any denial after the sweep |
 
+**Reading `rbac_permission_denied_total` after 016 PR 4.** Until PR 4 the staff
+sidebar and the ⌘K palette offered links by role literal, so a denial usually
+meant "the navigation offered something the page then refused" — normal
+background noise, and the reason the cutover expected a burst. PR 4 made both
+surfaces filter on the SAME permission the destination guards on, so that class
+of denial is gone by construction.
+
+What remains is worth looking at:
+
+- **`role=marketing`** — a new population since PR 4. A steady trickle in the
+  first days is people typing URLs and following bookmarks from before the role
+  existed; a sustained rate on one permission means marketing needs a surface
+  its bundle does not carry, which is a bundle decision (§ 8 of the cutover
+  runbook), not an incident.
+- **`role=admin` on `users.manage` / `audit.read` / `settings.invoicing` /
+  `members.erasure*`** — the four keys D4 moved to super-admin-only. Post-PR-4
+  the nav no longer offers these, so a denial is a stale bookmark, a shared
+  link, or an admin who should have been promoted during Migration C.
+- **Any denial on a permission the actor's nav DOES show** is a real defect —
+  the two are asserted to agree by
+  `tests/unit/nav/nav-permission-parity.test.ts`, so it means either a page
+  guard changed without its nav entry or the evaluator disagrees with itself.
+
+The baseline to compare against is therefore LOWER than the cutover-window
+figure recorded in the runbook, not higher. Re-baseline before treating the
+>20/day warn threshold as meaningful.
+
 ### 4.7 Dependencies (USE)
 
 | Metric | Type | Labels | Purpose |
@@ -171,7 +198,7 @@ Page the on-call only for things that require **immediate human action**.
 | **Sign-in error rate exploding** | `rate(5xx) > 5%` over 5 min | 🚨 Page | Auth on-call | Check Neon, Upstash, Vercel status dashboards |
 | **Sign-in latency p95 > 800 ms** | 10-min rolling window | 🚨 Page | Auth on-call | Check argon2 time, DB latency, Redis latency |
 | **Lockout spike** | `rate(auth_lockouts_total) > 10/hour` | ⚠ Warn | Security | Likely credential-stuffing attempt — review IP addresses |
-| **Staff permission denials spike** | `rate(rbac_permission_denied_total) > 20/day` | ⚠ Warn | Product | UX signal — staff reaching surfaces their role cannot use; hide the affordance. 016 replaced `auth_manager_denied_write_total` here: that counter has no emitter left and would have alerted on a permanently flat zero, which reads as "no violations" rather than "no instrumentation". During the RBAC v2 cutover expect a burst of DECLARED denials — see `docs/runbooks/rbac-v2-cutover.md` § 4 for the expected-denial baseline before treating a spike as an incident |
+| **Staff permission denials spike** | `rate(rbac_permission_denied_total) > 20/day` | ⚠ Warn | Product | UX signal — staff reaching surfaces their role cannot use; hide the affordance. 016 replaced `auth_manager_denied_write_total` here: that counter has no emitter left and would have alerted on a permanently flat zero, which reads as "no violations" rather than "no instrumentation". During the RBAC v2 cutover expect a burst of DECLARED denials — see `docs/runbooks/rbac-v2-cutover.md` § 4 for the expected-denial baseline before treating a spike as an incident. **Since 016 PR 4 the expected baseline is LOWER, not higher** (see below) |
 | **Email failure rate > 5%** | `rate(auth_email_send_failures_total) / rate(auth_email_send_total) > 5%` over 1 hour | 🚨 Page | Ops | Resend dashboard + fallback plan |
 | **Redis fallback activated** | `rate(auth_redis_fallback_total) > 0` over 1 min | ⚠ Warn | Ops | Upstash outage — verify + monitor |
 | **Audit completeness failed** | `auth_audit_missing_total > 0` | 🚨 Page | Security | Audit gap — investigate immediately |

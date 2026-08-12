@@ -683,8 +683,18 @@ const schema = z.object({
   // exactly two composition roots: `src/lib/rbac.ts` (the gate) and
   // `src/lib/auth-deps.ts` (3 sites — the erase/disable/change-role deps that
   // need the flag-aware administrator population). PR 5 must clear BOTH.
-  // Code-default flips to TRUE in PR 4; the env var is deleted in PR 5.
-  FEATURE_RBAC_V2: booleanFromString.default(false),
+  // 016 T066 (PR 4) — code-default is now TRUE. Production has been on the ON
+  // leg since the 2026-08-11 cutover; this makes a fresh checkout, a preview
+  // deploy and CI agree with it instead of silently exercising the legacy leg.
+  //
+  // A leftover `FEATURE_RBAC_V2="false"` in an environment still WINS over this
+  // default and puts that environment back on the legacy leg — which is the
+  // point (rollback stays one env var), but it also means the flip is not
+  // complete until every environment's explicit value is removed or set to
+  // 'true'. Prod is verified in docs/runbooks/rbac-v2-cutover.md § 5 step 6.
+  //
+  // The env var is deleted outright in PR 5, together with the legacy leg.
+  FEATURE_RBAC_V2: booleanFromString.default(true),
 
   // HMAC secret used to sign single-use, short-TTL (≤1 h) download tokens for
   // the private-artefact proxy (`/api/internal/exports/[jobId]/download`).
