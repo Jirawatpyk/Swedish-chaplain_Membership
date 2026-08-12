@@ -178,7 +178,16 @@ export const OBSERVED_API: readonly ObservedSurface[] = [
   { surface: 'GET /api/members/[memberId]/invoices', kind: 'api', key: 'invoicing.read', row: { kind: 'mappedLegacy', resource: 'invoice', action: 'read' }, guard: 'requireAdminContext(request, { resource: \'invoice\', action: \'read\', }', cells: { super_admin: 'allow', admin: 'allow', manager: 'allow', marketing: 'deny', member: 'deny' } },
   { surface: 'GET /api/members/[memberId]/timeline', kind: 'api', key: 'members.read', row: { kind: 'mappedLegacy', resource: 'members', action: 'read' }, guard: 'requireAdminContext(request, { resource: \'members\', action: \'read\', }', cells: { super_admin: 'allow', admin: 'allow', manager: 'allow', marketing: 'deny', member: 'deny' } },
   { surface: 'GET /api/plans', kind: 'api', key: 'plans.read', row: { kind: 'mappedLegacy', resource: 'plan', action: 'read' }, guard: 'requireAdminContext(request, { resource: \'plan\', action: \'read\', }', cells: { super_admin: 'allow', admin: 'allow', manager: 'allow', marketing: 'deny', member: 'deny' } },
-  { surface: 'GET /api/plans/search', kind: 'api', key: 'plans.read', row: { kind: 'mappedLegacy', resource: 'plan', action: 'read' }, guard: 'requireAdminContext(request, { resource: \'plan\', action: \'read\', } ; role === \'admin\'', cells: { super_admin: 'allow', admin: 'allow', manager: 'allow', marketing: 'deny', member: 'deny' } },
+  // 016 T064 — DELIBERATE widening, the only baseline row PR 4 moves. The ⌘K
+  // palette is not a plans surface; it is the entry point to every staff
+  // surface, and each entry now carries its own destination permission (see
+  // palette-permission-parity.test.ts). Guarding the endpoint on `plans.read`
+  // denied it wholesale to `marketing`, whose bundle carries members +
+  // broadcasts + events, so its palette came back empty. The KEY widens to
+  // `dashboard.view`; the legacy ROW is unchanged, so the OFF-leg population is
+  // byte-identical. Plan HITS are re-gated on `plans.read` inside the handler —
+  // so `marketing: 'allow'` here means "reaches the endpoint", not "sees plans".
+  { surface: 'GET /api/plans/search', kind: 'api', key: 'dashboard.view', row: { kind: 'mappedLegacy', resource: 'plan', action: 'read' }, guard: 'requireApiPermission(request, \'dashboard.view\', mappedLegacy(\'plan\', \'read\'))', cells: { super_admin: 'allow', admin: 'allow', manager: 'allow', marketing: 'deny', member: 'deny' } },
   { surface: 'GET /api/plans/[year]/[planId]', kind: 'api', key: 'plans.read', row: { kind: 'mappedLegacy', resource: 'plan', action: 'read' }, guard: 'requireAdminContext(request, { resource: \'plan\', action: \'read\', }', cells: { super_admin: 'allow', admin: 'allow', manager: 'allow', marketing: 'deny', member: 'deny' } },
   { surface: 'GET /api/plans/[year]/[planId]/affected-members', kind: 'api', key: 'members.read', row: { kind: 'mappedLegacy', resource: 'members', action: 'read' }, guard: 'requireAdminContext(request, { resource: \'members\', action: \'read\', }', cells: { super_admin: 'allow', admin: 'allow', manager: 'allow', marketing: 'deny', member: 'deny' } },
   { surface: 'GET /api/tenant-invoice-settings', kind: 'api', key: 'settings.invoicing', row: { kind: 'mappedLegacy', resource: 'tenant_invoice_settings', action: 'read' }, guard: 'requireAdminContext(request, { resource: \'tenant_invoice_settings\', action: \'read\', }', cells: { super_admin: 'allow', admin: 'allow', manager: 'allow', marketing: 'deny', member: 'deny' } },

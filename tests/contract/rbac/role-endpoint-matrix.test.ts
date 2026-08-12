@@ -341,9 +341,15 @@ describe('T053 marketing reachable surfaces (US3)', () => {
     'POST /api/admin/events/import',
     'POST /api/admin/insights/dismiss',
     'POST /api/admin/members/[id]/broadcasts-halt-clear',
+    // 016 T064 — the ⌘K backend. Added DELIBERATELY: it was the one surface
+    // whose gate had to widen, because it is the entry point to every staff
+    // surface rather than a plans surface, and `plans.read` denied marketing
+    // the whole palette. Reaching the endpoint is not seeing plans — plan hits
+    // are re-gated on `plans.read` inside the handler.
+    'GET /api/plans/search',
   ];
 
-  it('reaches EXACTLY the frozen 47-surface set — nothing more, nothing less', () => {
+  it('reaches EXACTLY the frozen 48-surface set — nothing more, nothing less', () => {
     const actual = OBSERVED_BASELINE.filter((s) => onLeg('marketing', s))
       .map((s) => s.surface)
       .sort();

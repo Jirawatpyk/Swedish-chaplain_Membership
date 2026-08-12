@@ -19,10 +19,6 @@
 // chain-pulls `@node-rs/argon2` into the client bundle whenever a
 // client component transitively imports from it. See the same
 // rationale in `search-plans.ts` and `command-palette.tsx`.
- 
-import type { Role } from '@/modules/auth/domain/role';
-// Pure Domain value import (client-safe — the shim has no framework imports).
-import { normalizeLegacyRole } from '@/modules/auth/domain/permissions/legacy-shim';
 
 // --- Entity (plan) hit shape -------------------------------------------------
 
@@ -119,80 +115,3 @@ export type PaletteSearchResponse = {
 };
 
 // --- Role filter helper ------------------------------------------------------
-
-/**
- * Client-side role gate, mirroring `search-plans.ts → filterByRole`.
- *
- * The server is the authoritative gate — every action and navigate
- * entry the response already excludes write-side items for managers.
- * This helper is a defence-in-depth belt-and-braces check so a bug in
- * the server filter cannot expose an admin action to a manager.
- */
-export function filterEntriesByRole<T extends { readonly requires: PaletteRoleRequirement }>(
-  entries: ReadonlyArray<T>,
-  role: Role,
-): ReadonlyArray<T> {
-  // 016 T031 — mirrors the server filter's D16 totalisation: super_admin
-  // evaluates as admin (non-empty palette post-Migration-C); marketing and
-  // unknown roles fall to the empty set (never escalate).
-  const normalized = normalizeLegacyRole(role);
-  if (normalized === 'admin') return entries;
-  if (normalized === 'manager') return entries.filter((e) => e.requires === 'read');
-  return [];
-}
-
-/**
- * Mirror of `ACTION_REGISTRY` entries carrying `requires: 'admin'` in
- * `search-plans.ts`. Kept as a string set rather than an import so this module
- * stays free of server-side imports (it is pulled into the client bundle).
- * 088 T021b / FR-035 — the two invoice money actions are admin-only (managers
- * are read-only on finance).
- */
-const ADMIN_ONLY_ACTION_IDS: ReadonlySet<string> = new Set([
-  'plan.new',
-  'plan.clone',
-  'fee.edit',
-  'invoice.recordPayment',
-  'invoice.rerenderReceipt',
-]);
-
-/**
- * Client-side role gate on the SEARCH RESPONSE, mirroring the server's
- * `search-plans.ts → filterByRole`. Defence-in-depth only: the server is
- * authoritative and already excludes what a role may not see.
- *
- * This is the SECOND client role filter (the first is `filterEntriesByRole`
- * above, which gates the static registries). It previously lived inline in
- * `command-palette.tsx` as a raw `role === 'admin'` comparison — invisible to
- * the 016 union-widening sweep, so it kept the pre-016 three-role shape. After
- * Migration C that comparison falls through for `super_admin` and empties the
- * Actions + refundable-invoice groups for every human operator while the server
- * dutifully sends them. Extracted here so the mirror sits beside its sibling and
- * is directly unit-testable (tests/unit/components/command-palette/
- * filter-results-by-role.test.ts).
- *
- * D16 totalisation: super_admin → admin semantics; marketing/unknown → empty.
- */
-export function filterResultsByRole(
-  results: PaletteSearchResponse['results'],
-  role: Role,
-): PaletteSearchResponse['results'] {
-  const normalized = normalizeLegacyRole(role);
-  if (normalized === 'admin') return results;
-  return {
-    plans: results.plans,
-    members: results.members,
-    // Refundable-invoice search is admin-only; nobody below admin sees this
-    // group even if a server bug populates it.
-    refundableInvoices: [],
-    actions:
-      normalized === 'manager'
-        ? results.actions.filter((a) => !ADMIN_ONLY_ACTION_IDS.has(a.id))
-        : [],
-    // Only manager reaches here with navigate rights (the admin/super_admin
-    // branch returned early). `member` never had them; marketing + unknown are
-    // the D16 deny set. Keyed on the normalised value, not the raw literal, so
-    // a future role cannot silently inherit navigate by not being 'member'.
-    navigate: normalized === 'manager' ? results.navigate : [],
-  };
-}

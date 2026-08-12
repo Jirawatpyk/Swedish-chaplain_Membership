@@ -18,5 +18,8 @@ import { CommandPalette } from '@/components/command-palette/command-palette';
 export async function CommandPaletteRoot() {
   const { user } = await requireSession('staff');
   if (user.role === 'member') return null;
-  return <CommandPalette currentUserRole={user.role} />;
+  // 016 T064 — the palette no longer takes a role. Every entry is filtered
+  // server-side against its destination's declared permission; a role prop here
+  // would only invite a second, unreproducible client-side gate.
+  return <CommandPalette />;
 }

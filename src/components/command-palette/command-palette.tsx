@@ -48,13 +48,8 @@ import {
 // Type-only import of Role from the deep domain path — importing from
 // the auth barrel would chain-pull argon2 into the client bundle.
  
-import type { Role } from '@/modules/auth/domain/role';
 import { PaletteGroups } from './groups';
-import { filterResultsByRole, type PaletteSearchResponse } from './registry';
-
-type CommandPaletteProps = {
-  readonly currentUserRole: Role;
-};
+import type { PaletteSearchResponse } from './registry';
 
 const EMPTY_RESULTS: PaletteSearchResponse['results'] = {
   plans: [],
@@ -64,7 +59,7 @@ const EMPTY_RESULTS: PaletteSearchResponse['results'] = {
   navigate: [],
 };
 
-export function CommandPalette({ currentUserRole }: CommandPaletteProps) {
+export function CommandPalette() {
   const t = useTranslations('palette');
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -173,20 +168,25 @@ export function CommandPalette({ currentUserRole }: CommandPaletteProps) {
   // authoritative, but this costs nothing and prevents a server-side bug from
   // flashing an admin-only item to a manager.
   //
-  // 016 PR 3 — this used to be an inline `currentUserRole === 'admin'` chain
-  // right here, which the union-widening sweep could not see: post-Migration-C
-  // a promoted super_admin fell through it and lost the whole Actions group.
-  // The logic now lives in `filterResultsByRole` (registry.ts) beside its
-  // sibling registry filter, routed through the D16 totaliser and unit-tested.
+  // 016 PR 3 replaced an inline role comparison here with a
+  // D16-totalised mirror in registry.ts. T064 removes the mirror entirely.
   //
-  // Also swap in EMPTY_RESULTS when there is no query so the list starts blank
-  // instead of showing stale prior-query hits.
+  // The mirror existed as defence-in-depth against a bug in the server filter,
+  // but it could only ever restate a role→visibility mapping, and the server
+  // now filters per ENTRY against each destination's declared permission. A
+  // client copy of that is not reproducible: `canPerform` reads `env`, which
+  // does not exist in this bundle. What the copy actually did on the ON leg was
+  // empty the palette for `marketing` — a role the server correctly serves.
+  //
+  // A wrong mirror is worse than no mirror: it hides entries the server
+  // deliberately sent, and the failure is silent. The server is authoritative.
+  //
+  // EMPTY_RESULTS when there is no query so the list starts blank instead of
+  // showing stale prior-query hits.
   const hasQuery = deferredQuery.trim().length > 0;
-  const sourceResults = hasQuery ? results : EMPTY_RESULTS;
-  const filteredResults: PaletteSearchResponse['results'] = filterResultsByRole(
-    sourceResults,
-    currentUserRole,
-  );
+  const filteredResults: PaletteSearchResponse['results'] = hasQuery
+    ? results
+    : EMPTY_RESULTS;
 
   const hasAnyResult =
     filteredResults.plans.length +
@@ -231,5 +231,3 @@ export function CommandPalette({ currentUserRole }: CommandPaletteProps) {
   );
 }
 
-// (ADMIN_ONLY_ACTION_IDS + the role gate moved to registry.ts's
-// `filterResultsByRole` — see the call site above.)

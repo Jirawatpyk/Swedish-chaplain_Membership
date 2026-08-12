@@ -34,6 +34,7 @@ import {
   type PaletteFeatureFlag,
 } from '@/modules/plans';
 import type { Role } from '@/modules/auth/domain/role';
+import { canPerform } from '@/lib/rbac';
 
 const tenant = asTenantContext('test-swecham');
 
@@ -71,7 +72,10 @@ function makePlan(overrides: Partial<Plan> = {}): Plan {
 function makeDeps(opts: {
   plans?: Plan[];
   planRepoThrow?: Error;
+  /** 016 T064 — the actor the injected permission probe answers for. */
+  role?: Role;
 } = {}): SearchPlansDeps {
+  const role: Role = opts.role ?? 'admin';
   const planRepo = {
     findByTenantAndYear: vi.fn(async () => {
       if (opts.planRepoThrow) throw opts.planRepoThrow;
@@ -82,7 +86,11 @@ function makeDeps(opts: {
     now: () => new Date('2026-05-19T10:00:00Z'),
     currentYear: () => 2026,
   };
-  return { tenant, planRepo, clock };
+  // 016 T064 — OFF-leg probe through the REAL evaluator, so the role
+  // expectations in this file stay meaningful instead of being stubbed away.
+  const can: SearchPlansDeps['can'] = (key, legacy) =>
+    canPerform(role, key, legacy, { rbacV2: false });
+  return { tenant, planRepo, clock, can };
 }
 
 const baseInput = {
@@ -165,7 +173,7 @@ describe('searchPlans — role-based filter', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('admin sees admin-only + read-tier actions', async () => {
-    const deps = makeDeps({ plans: [] });
+    const deps = makeDeps({ plans: [], role: 'admin' });
     const result = await searchPlans({ ...baseInput, q: 'plan', role: 'admin' }, deps);
     if (!result.ok) throw new Error('unreachable');
     // ACTION_REGISTRY contains `palette.actions.newPlan` (admin) +
@@ -176,7 +184,7 @@ describe('searchPlans — role-based filter', () => {
   });
 
   it('BUG-024: admin typing "create" surfaces every "Create new …" action via keyword synonyms', async () => {
-    const deps = makeDeps({ plans: [] });
+    const deps = makeDeps({ plans: [], role: 'admin' });
     const result = await searchPlans({ ...baseInput, q: 'create', role: 'admin' }, deps);
     if (!result.ok) throw new Error('unreachable');
     const ids = result.value.results.actions.map((a) => a.id);
@@ -194,7 +202,7 @@ describe('searchPlans — role-based filter', () => {
   });
 
   it('BUG-024: "add" also matches the create actions', async () => {
-    const deps = makeDeps({ plans: [] });
+    const deps = makeDeps({ plans: [], role: 'admin' });
     const result = await searchPlans({ ...baseInput, q: 'add', role: 'admin' }, deps);
     if (!result.ok) throw new Error('unreachable');
     const ids = result.value.results.actions.map((a) => a.id);
@@ -209,7 +217,7 @@ describe('searchPlans — role-based filter', () => {
   });
 
   it('manager sees only read-tier actions (no plan.new / plan.clone)', async () => {
-    const deps = makeDeps({ plans: [] });
+    const deps = makeDeps({ plans: [], role: 'manager' });
     const result = await searchPlans(
       { ...baseInput, q: 'plan', role: 'manager' },
       deps,
@@ -221,7 +229,7 @@ describe('searchPlans — role-based filter', () => {
   });
 
   it('member role sees nothing (defence — route handler blocks first)', async () => {
-    const deps = makeDeps({ plans: [] });
+    const deps = makeDeps({ plans: [], role: 'member' });
     const result = await searchPlans(
       { ...baseInput, q: '', role: 'member' as Role },
       deps,

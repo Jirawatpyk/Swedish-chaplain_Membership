@@ -13,7 +13,12 @@
  * role-filter assertions do not need a second tenant.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { searchPlans } from '@/modules/plans/application/search-plans';
+import {
+  searchPlans,
+  type SearchPlansDeps,
+} from '@/modules/plans/application/search-plans';
+import type { Role } from '@/modules/auth/domain/role';
+import { canPerform } from '@/lib/rbac';
 import { planRepo } from '@/modules/plans/infrastructure/db/plan-repo';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import type { PlanDraftInput, ClockPort } from '@/modules/plans/application/ports';
@@ -65,6 +70,17 @@ const fixedClock: ClockPort = {
   now: () => new Date('2026-06-15T00:00:00Z'),
   currentYear: () => 2026,
 };
+
+/**
+ * 016 T064 — the palette's static registries are now filtered per ENTRY against
+ * each destination's declared permission. These cases pin pre-016 behaviour, so
+ * they bind the REAL evaluator on the OFF leg rather than stubbing `can` to
+ * `() => true`, which would make every role assertion below vacuous.
+ */
+const offLegProbe =
+  (role: Role): SearchPlansDeps['can'] =>
+  (key, legacy) =>
+    canPerform(role, key, legacy, { rbacV2: false });
 
 describe('Integration: search-plans filter correctness (T150, US6)', () => {
   let tenant: TestTenant;
@@ -123,7 +139,7 @@ describe('Integration: search-plans filter correctness (T150, US6)', () => {
   it('exact match returns the matching plan', async () => {
     const result = await searchPlans(
       { q: 'Premium', role: 'admin', activeLocale: 'en' },
-      { tenant: tenant.ctx, planRepo, clock: fixedClock },
+      { tenant: tenant.ctx, planRepo, clock: fixedClock, can: offLegProbe('admin') },
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -134,7 +150,7 @@ describe('Integration: search-plans filter correctness (T150, US6)', () => {
   it('prefix match is case-insensitive and returns the plan', async () => {
     const result = await searchPlans(
       { q: 'prem', role: 'admin', activeLocale: 'en' },
-      { tenant: tenant.ctx, planRepo, clock: fixedClock },
+      { tenant: tenant.ctx, planRepo, clock: fixedClock, can: offLegProbe('admin') },
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -146,7 +162,7 @@ describe('Integration: search-plans filter correctness (T150, US6)', () => {
   it('fully upper-case search still matches', async () => {
     const result = await searchPlans(
       { q: 'DIAMOND', role: 'admin', activeLocale: 'en' },
-      { tenant: tenant.ctx, planRepo, clock: fixedClock },
+      { tenant: tenant.ctx, planRepo, clock: fixedClock, can: offLegProbe('admin') },
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -161,7 +177,7 @@ describe('Integration: search-plans filter correctness (T150, US6)', () => {
     // Swedish/English command-palette muscle memory keeps working.
     const result = await searchPlans(
       { q: 'Gold', role: 'admin', activeLocale: 'th' },
-      { tenant: tenant.ctx, planRepo, clock: fixedClock },
+      { tenant: tenant.ctx, planRepo, clock: fixedClock, can: offLegProbe('admin') },
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -175,7 +191,7 @@ describe('Integration: search-plans filter correctness (T150, US6)', () => {
   it('plan_id substring match works', async () => {
     const result = await searchPlans(
       { q: 'diamo', role: 'admin', activeLocale: 'en' },
-      { tenant: tenant.ctx, planRepo, clock: fixedClock },
+      { tenant: tenant.ctx, planRepo, clock: fixedClock, can: offLegProbe('admin') },
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -187,7 +203,7 @@ describe('Integration: search-plans filter correctness (T150, US6)', () => {
   it('admin role sees all 4 action registry entries (when q matches all)', async () => {
     const result = await searchPlans(
       { q: 'palette', role: 'admin', activeLocale: 'en' },
-      { tenant: tenant.ctx, planRepo, clock: fixedClock },
+      { tenant: tenant.ctx, planRepo, clock: fixedClock, can: offLegProbe('admin') },
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -199,7 +215,7 @@ describe('Integration: search-plans filter correctness (T150, US6)', () => {
   it('manager role sees only read-category actions (viewAuditLog) — no create/clone', async () => {
     const result = await searchPlans(
       { q: 'palette', role: 'manager', activeLocale: 'en' },
-      { tenant: tenant.ctx, planRepo, clock: fixedClock },
+      { tenant: tenant.ctx, planRepo, clock: fixedClock, can: offLegProbe('manager') },
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -214,7 +230,7 @@ describe('Integration: search-plans filter correctness (T150, US6)', () => {
   it('member role returns empty action + navigate pools', async () => {
     const result = await searchPlans(
       { q: 'palette', role: 'member', activeLocale: 'en' },
-      { tenant: tenant.ctx, planRepo, clock: fixedClock },
+      { tenant: tenant.ctx, planRepo, clock: fixedClock, can: offLegProbe('member') },
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -226,7 +242,7 @@ describe('Integration: search-plans filter correctness (T150, US6)', () => {
     // "o" matches "Gold" and "Diamond" (both have 'o'); limit=1 crops to 1
     const result = await searchPlans(
       { q: 'o', role: 'admin', activeLocale: 'en', limit: 1 },
-      { tenant: tenant.ctx, planRepo, clock: fixedClock },
+      { tenant: tenant.ctx, planRepo, clock: fixedClock, can: offLegProbe('admin') },
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
