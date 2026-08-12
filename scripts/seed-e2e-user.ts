@@ -12,6 +12,8 @@
  *     without this reset the admin-persona suites would silently sign in as a
  *     super_admin and bypass the D4 narrowing they exist to prove.
  *   - e2e-manager@swecham.test  (role: manager) — read-only across staff portal
+ *   - e2e-marketing@swecham.test (role: marketing) — 016 PR 4 (T059): broadcasts +
+ *     events + member READ; denied every money/PII/compliance surface
  *   - e2e-member@swecham.test   (role: member)
  *   - e2e-lockout@swecham.test  (role: member) — DEDICATED destructible
  *     account for `tests/e2e/signin-lockout.spec.ts`. Locked on every
@@ -44,17 +46,19 @@ import { argon2Hasher } from '@/modules/auth/infrastructure/password/argon2-hash
 
 const E2E_SUPER_ADMIN_EMAIL = 'e2e-super-admin@swecham.test';
 const E2E_ADMIN_EMAIL = 'e2e-admin@swecham.test';
+const E2E_MARKETING_EMAIL = 'e2e-marketing@swecham.test';
 const E2E_MANAGER_EMAIL = 'e2e-manager@swecham.test';
 const E2E_MEMBER_EMAIL = 'e2e-member@swecham.test';
 const E2E_LOCKOUT_EMAIL = 'e2e-lockout@swecham.test';
 const E2E_PASSWORD = 'E2E-Testing-Password-2026!xZ';
 
-type E2ERole = 'super_admin' | 'admin' | 'manager' | 'member';
+type E2ERole = 'super_admin' | 'admin' | 'manager' | 'marketing' | 'member';
 
 const DISPLAY_NAME_FOR_ROLE: Record<E2ERole, string> = {
   super_admin: 'E2E Super Admin',
   admin: 'E2E Admin',
   manager: 'E2E Manager',
+  marketing: 'E2E Marketing',
   member: 'E2E Member',
 };
 
@@ -104,6 +108,7 @@ async function main(): Promise<void> {
   await upsertUser(E2E_SUPER_ADMIN_EMAIL, 'super_admin', hash);
   await upsertUser(E2E_ADMIN_EMAIL, 'admin', hash);
   await upsertUser(E2E_MANAGER_EMAIL, 'manager', hash);
+  await upsertUser(E2E_MARKETING_EMAIL, 'marketing', hash);
   await upsertUser(E2E_MEMBER_EMAIL, 'member', hash);
   await upsertUser(E2E_LOCKOUT_EMAIL, 'member', hash);
 
@@ -115,6 +120,8 @@ async function main(): Promise<void> {
   console.log(`  export E2E_ADMIN_PASSWORD='${E2E_PASSWORD}'`);
   console.log(`  export E2E_MANAGER_EMAIL='${E2E_MANAGER_EMAIL}'`);
   console.log(`  export E2E_MANAGER_PASSWORD='${E2E_PASSWORD}'`);
+  console.log(`  export E2E_MARKETING_EMAIL='${E2E_MARKETING_EMAIL}'`);
+  console.log(`  export E2E_MARKETING_PASSWORD='${E2E_PASSWORD}'`);
   console.log(`  export E2E_MEMBER_EMAIL='${E2E_MEMBER_EMAIL}'`);
   console.log(`  export E2E_MEMBER_PASSWORD='${E2E_PASSWORD}'`);
   console.log(`  export E2E_LOCKOUT_EMAIL='${E2E_LOCKOUT_EMAIL}'`);

@@ -677,7 +677,8 @@
           "admin": "Admin — full åtkomst",
           "manager": "Manager — läsbehörighet för ekonomi",
           "member": "Medlem — självbetjäningsportal",
-          "super_admin": "Super Admin — full åtkomst + hantering av personalroller"
+          "super_admin": "Super Admin — full åtkomst + hantering av personalroller",
+          "marketing": "Marknadsförare — utskick och evenemang, utan ekonomi eller känsliga uppgifter"
         },
         "submit": "Skicka inbjudan",
         "submitting": "Skickar…",

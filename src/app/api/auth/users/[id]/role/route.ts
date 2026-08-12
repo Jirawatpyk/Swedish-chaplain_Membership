@@ -11,14 +11,15 @@ import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { userRepo } from '@/lib/auth-deps';
 import { logger } from '@/lib/logger';
 
-// 016 PR 3 (T048): `super_admin` becomes assignable from the users-page role
-// picker, so the server enum must accept it too — widen both together, never
-// just one (role.ts ASSIGNABLE_ROLES note). The § 7.1 step-2 gate below already
-// requires `users.manage` (super-admin-only on the ON leg) whenever the
-// requested role is a staff role, so only a super_admin can actually mint one.
-// `marketing` stays out until PR 4 (D17).
+// Every role is assignable from the users-page picker: `super_admin` in PR 3
+// (T048), `marketing` in PR 4 (T059 / D17). The server enum must match the
+// picker — widen all four lists together, never one (role.ts ASSIGNABLE_ROLES
+// note; assignable-roles-lockstep.test.ts is the gate). The § 7.1 step-2 gate
+// below still requires `users.manage` (super-admin-only on the ON leg) whenever
+// the target's current OR requested role is a staff role, so only a super_admin
+// can hand out `super_admin` — or `marketing`.
 const inputSchema = z.object({
-  newRole: z.enum(['super_admin', 'admin', 'manager', 'member']),
+  newRole: z.enum(['super_admin', 'admin', 'manager', 'member', 'marketing']),
 });
 
 export async function POST(

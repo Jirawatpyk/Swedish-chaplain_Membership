@@ -396,22 +396,45 @@ describe('UserListTable — change-role picker (016 PR 3, US1)', () => {
     expect(screen.queryByRole('button', { name: en.admin.users.actions.disable })).not.toBeInTheDocument();
   });
 
-  it('opens the picker with exactly super_admin/admin/manager options — never member or marketing', () => {
+  it('opens the picker with every STAFF role — including marketing (PR 4 reveal)', () => {
     renderTable([ADMIN_USER], { canManageStaffRoles: true });
     fireEvent.click(screen.getByRole('button', { name: en.admin.users.actions.changeRole }));
 
-    // The three offered staff roles are present as radios...
-    expect(
-      screen.getByRole('radio', { name: en.admin.users.filters.role.super_admin }),
-    ).toBeInTheDocument();
-    expect(screen.getByRole('radio', { name: en.admin.users.filters.role.admin })).toBeInTheDocument();
-    expect(screen.getByRole('radio', { name: en.admin.users.filters.role.manager })).toBeInTheDocument();
-    // ...and the two excluded roles are NOT.
+    for (const label of [
+      en.admin.users.filters.role.super_admin,
+      en.admin.users.filters.role.admin,
+      en.admin.users.filters.role.manager,
+      en.admin.users.filters.role.marketing,
+    ]) {
+      expect(screen.getByRole('radio', { name: label })).toBeInTheDocument();
+    }
+    // `member` stays out: moving between the staff and member portals is a
+    // different operation, and the route answers `role-portal-mismatch`.
     expect(
       screen.queryByRole('radio', { name: en.admin.users.filters.role.member }),
     ).not.toBeInTheDocument();
+  });
+
+  it('offers Change role on a MARKETING row (it is a staff role like any other)', () => {
+    // The trigger is gated on CHANGE_ROLE_OPTIONS.includes(user.role) — before
+    // PR 4 a marketing row could not be re-ranked at all, and worse, opening the
+    // picker would have shown no "Current" badge because its own role was not an
+    // option. Both are fixed by the same widening.
+    const MARKETING_USER = {
+      id: 'u-marketing-1',
+      email: 'marketing@example.com',
+      role: 'marketing',
+      status: 'active',
+      displayName: 'Marketing User',
+      invitationExpiresAt: null,
+    } as const;
+    renderTable([MARKETING_USER], { canManageStaffRoles: true });
+
+    fireEvent.click(screen.getByRole('button', { name: en.admin.users.actions.changeRole }));
+    expect(screen.getByText(en.admin.users.changeRole.current)).toBeInTheDocument();
     expect(
-      screen.queryByRole('radio', { name: en.admin.users.filters.role.marketing }),
-    ).not.toBeInTheDocument();
+      screen.getByRole('button', { name: en.admin.users.changeRole.confirm }),
+      'its own role is pre-selected, so nothing is armed on open',
+    ).toBeDisabled();
   });
 });

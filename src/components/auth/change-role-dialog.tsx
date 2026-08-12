@@ -42,12 +42,23 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { isRole, type Role } from '@/modules/auth/domain/role';
 
 /**
- * The staff roles a super_admin may assign from the picker in PR 3. Ordered
- * most→least privileged. `marketing` (PR 4) and `member` (portal move, not a
- * staff reassignment) are intentionally absent — widen alongside the server
- * route's zod enum, never just one (role.ts ASSIGNABLE_ROLES note).
+ * The staff roles a super_admin may assign from the picker. Ordered most→least
+ * privileged; `marketing` joined in PR 4 (D17).
+ *
+ * `member` is deliberately absent: moving someone between the staff and member
+ * portals is a different operation from re-ranking a staff member, and the route
+ * answers `role-portal-mismatch` for it. The invariant is therefore
+ * `ASSIGNABLE_ROLES ∩ STAFF_ROLES` — asserted in
+ * `assignable-roles-lockstep.test.ts`, which did not cover this list until PR 4.
+ * It is the THIRD role list; widening the two route zod enums without this one
+ * makes a role assignable at the API and unofferable in the UI.
  */
-export const CHANGE_ROLE_OPTIONS: readonly Role[] = ['super_admin', 'admin', 'manager'];
+export const CHANGE_ROLE_OPTIONS: readonly Role[] = [
+  'super_admin',
+  'admin',
+  'manager',
+  'marketing',
+];
 
 /** Error codes the route returns that this dialog localises inline. */
 const KNOWN_ERROR_CODES = [

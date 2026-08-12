@@ -29,13 +29,27 @@ describe('ROLES constant', () => {
 });
 
 describe('ASSIGNABLE_ROLES (staged assignability)', () => {
-  it('adds super_admin in PR 3 (users-page retrofit); marketing still held to PR 4', () => {
-    // super_admin became assignable in PR 3 (invite + change-role); marketing
-    // follows in PR 4 (design D17). Widening this WITHOUT widening the invite
+  it('is fully open after PR 4 — every role in ROLES is assignable (D17 complete)', () => {
+    // The staging is finished: super_admin landed in PR 3 (users-page retrofit),
+    // marketing in PR 4 (design D17). Order is append-at-end, matching the
+    // widening history, and it is asserted EXACTLY so a reorder is a visible
+    // diff rather than a silent one. Widening this WITHOUT widening the invite
     // and change-role zod enums (and vice versa) is the defect
     // assignable-roles-lockstep.test.ts pins.
-    expect([...ASSIGNABLE_ROLES]).toEqual(['admin', 'manager', 'member', 'super_admin']);
-    expect(ASSIGNABLE_ROLES).not.toContain('marketing');
+    expect([...ASSIGNABLE_ROLES]).toEqual([
+      'admin',
+      'manager',
+      'member',
+      'super_admin',
+      'marketing',
+    ]);
+  });
+
+  it('now covers every role — the staged-assignability window is closed', () => {
+    // Once this is true, ASSIGNABLE_ROLES has no filtering job left. It is kept
+    // because the lockstep test uses it as the single source the two route zod
+    // enums must agree with; PR 5 may collapse it into ROLES.
+    expect([...ASSIGNABLE_ROLES].sort()).toEqual([...ROLES].sort());
   });
 
   it('is a subset of ROLES', () => {

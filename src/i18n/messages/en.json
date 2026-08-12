@@ -677,7 +677,8 @@
           "admin": "Admin — full access",
           "manager": "Manager — read-only on finance",
           "member": "Member — self-service portal",
-          "super_admin": "Super Admin — full access + staff role management"
+          "super_admin": "Super Admin — full access + staff role management",
+          "marketing": "Marketing — e-blasts and events, no finance or sensitive data"
         },
         "submit": "Send invitation",
         "submitting": "Sending…",

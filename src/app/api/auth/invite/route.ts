@@ -40,11 +40,14 @@ import { logger } from '@/lib/logger';
 
 const inputSchema = z.object({
   email: z.string().email().max(254),
-  // 016 PR 3 (T048): `super_admin` is now assignable — keep in lockstep with
-  // ASSIGNABLE_ROLES and the change-role route (assignable-roles-lockstep.test).
-  // Inviting a staff role trips the step-2 `users.manage` gate below (SA-only on
-  // the ON leg), so only a super_admin can actually mint one. `marketing`: PR 4.
-  role: z.enum(['super_admin', 'admin', 'manager', 'member']),
+  // Every role is invitable: `super_admin` from PR 3 (T048), `marketing` from
+  // PR 4 (T059 / D17). Keep in lockstep with ASSIGNABLE_ROLES, the change-role
+  // route and the users-page picker (assignable-roles-lockstep.test reads all
+  // four). Inviting ANY staff role trips the step-2 `users.manage` gate below
+  // (SA-only on the ON leg), so only a super_admin can mint one.
+  // NOTE: this must stay the FIRST `z.enum(...)` in the file — the lockstep test
+  // extracts it by regex, and `locale` is the next one down.
+  role: z.enum(['super_admin', 'admin', 'manager', 'member', 'marketing']),
   displayName: z.string().min(1).max(120).optional(),
   locale: z.enum(['en', 'th', 'sv']).optional(),
   // F1 spec:672-678 — optional link to existing member record. Only

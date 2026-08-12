@@ -15,14 +15,26 @@ export const ROLES = ['admin', 'manager', 'member', 'super_admin', 'marketing'] 
 export type Role = (typeof ROLES)[number];
 
 /**
- * Roles that staff UI may OFFER for assignment/invitation right now.
- * Deliberately narrower than ROLES while 016 rolls out: `super_admin` became
- * assignable in PR 3 (users-page retrofit — invite + change-role); `marketing`
- * follows in PR 4 (design § 9 / D17). The invite AND change-role API zod schemas
- * are the server-side counterparts — widen all together, never just one
- * (assignable-roles-lockstep.test.ts fails loudly if they drift).
+ * Roles that staff UI may OFFER for assignment/invitation. The 016 staging is
+ * COMPLETE: `super_admin` landed in PR 3 (users-page retrofit) and `marketing`
+ * in PR 4 (design § 9 / D17), so this now covers every role in ROLES.
+ *
+ * It is kept as a separate list rather than collapsed into ROLES because it is
+ * the single source that the two server zod enums AND the users-page picker must
+ * agree with — `assignable-roles-lockstep.test.ts` reads all four and fails
+ * loudly on drift. A future role added to ROLES therefore has to make an
+ * explicit decision here instead of becoming assignable by default.
+ *
+ * Order is append-at-end, mirroring the widening history, and is asserted
+ * exactly in `role.test.ts` so a reorder shows up as a deliberate diff.
  */
-export const ASSIGNABLE_ROLES: readonly Role[] = ['admin', 'manager', 'member', 'super_admin'];
+export const ASSIGNABLE_ROLES: readonly Role[] = [
+  'admin',
+  'manager',
+  'member',
+  'super_admin',
+  'marketing',
+];
 
 /**
  * The two portal surfaces the app renders: `staff` (backoffice,
