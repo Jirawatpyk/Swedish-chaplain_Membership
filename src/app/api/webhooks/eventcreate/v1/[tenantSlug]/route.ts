@@ -685,6 +685,7 @@ export async function POST(
           const dispatchedByActorRole =
             chamberTestMetadata !== null &&
             'dispatchedByActorRole' in chamberTestMetadata &&
+            // rbac-audit-projection-ok: reads a role recorded IN THE WEBHOOK METADATA by an earlier test dispatch; grants nothing.
             chamberTestMetadata.dispatchedByActorRole === 'admin'
               ? ('admin' as const)
               : null;

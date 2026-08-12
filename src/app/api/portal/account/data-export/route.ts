@@ -35,6 +35,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   if (!current) {
     return NextResponse.json({ error: { code: 'unauthorized' }, correlationId }, { status: 401 });
   }
+  // rbac-portal-identity-ok: /portal/** belongs to the member subject; staff have no self-service export.
   if (current.user.role !== 'member') {
     // Self-service route is for members; an admin uses the admin-on-behalf path.
     return NextResponse.json({ error: { code: 'forbidden' }, correlationId }, { status: 403 });

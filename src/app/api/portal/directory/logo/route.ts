@@ -47,6 +47,7 @@ async function gate(
   if (!current) {
     return NextResponse.json({ error: { code: 'unauthorized' }, correlationId }, { status: 401 });
   }
+  // rbac-portal-identity-ok: /portal/** belongs to the member subject.
   if (current.user.role !== 'member') {
     return NextResponse.json({ error: { code: 'forbidden' }, correlationId }, { status: 403 });
   }

@@ -25,6 +25,7 @@ export async function GET(
   // denies members; the check keeps the type honest and fails loudly on a
   // gate bug instead of stamping a member as staff).
   const sessionRole = ctx.current.user.role;
+  // rbac-portal-identity-ok: staff-vs-member split for the response shape; staff authority is the gate above.
   if (sessionRole === 'member') {
     return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   }

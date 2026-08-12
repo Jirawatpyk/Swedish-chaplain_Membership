@@ -9,6 +9,7 @@
 # Rationale per check (all derived from 2026-05-17 polish retrospective):
 #
 #   - check:staff-page-guard : every (staff) page declares a LITERAL permission
+#   - check:authorization-role-reads : no UNMARKED role literal on a decision surface
 #                       key + shim row matching the frozen 016 baseline, and
 #                       carries no staff-role affordance literal (re-review D)
 #   - check:api-route-guard  : same, per METHOD, for the ~119 staff API route
@@ -72,6 +73,7 @@ pnpm check:env-example
 pnpm check:env-boot
 pnpm check:staff-page-guard
 pnpm check:api-route-guard
+pnpm check:authorization-role-reads
 pnpm vitest run tests/unit/architecture/ --passWithNoTests
 
 # ===========================================================================

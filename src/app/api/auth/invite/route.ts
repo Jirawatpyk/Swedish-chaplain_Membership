@@ -119,6 +119,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // silent-ignore) — the form should not offer memberId for non-member
   // roles, so a payload carrying both is a client bug worth surfacing
   // rather than masking.
+  // rbac-payload-value-ok: the role BEING INVITED, from the request body — the inviter's own authority is the gate above.
   if (parsed.data.memberId && parsed.data.role !== 'member') {
     return NextResponse.json(
       {
@@ -133,6 +134,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // the ON leg). Placed before either branch acts; the OFF-leg row is the
   // same as step 1, so pre-cutover this re-check is a no-op for anyone who
   // passed step 1.
+  // rbac-payload-value-ok: as above: shapes which fields the invite payload must carry.
   if (parsed.data.role !== 'member') {
     const staffGate = await requireApiPermission(
       request,
@@ -143,6 +145,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   // --- Branch A: member role with optional memberId link ---
+  // rbac-payload-value-ok: as above: a memberId only makes sense for a member invite.
   if (parsed.data.role === 'member' && parsed.data.memberId) {
     const tenant = resolveTenantFromRequest(request);
     const deps = buildMembersDeps(tenant);

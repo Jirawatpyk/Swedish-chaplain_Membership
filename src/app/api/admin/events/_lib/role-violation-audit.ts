@@ -279,6 +279,7 @@ export async function adminOnlyWriterGuard(
     // every downstream consumer.
     return { kind: 'allow', actorUserId: asUserId(session.user.id) };
   }
+  // rbac-d9-override-ok: F6 keeps its own denial SHAPE (404 not 403, FR-035); this arm records which population violated it.
   if (role === 'manager') {
     await emitEventsRoleViolation(request, {
       actorUserId: session.user.id,

@@ -108,6 +108,7 @@ export async function requireRole(
     return { ok: true };
   }
 
+  // rbac-d9-override-ok: the legacy guard's own manager arm, kept until PR 5 deletes the shim wholesale.
   if (role === 'manager') {
     try {
       await deps.audit.append({

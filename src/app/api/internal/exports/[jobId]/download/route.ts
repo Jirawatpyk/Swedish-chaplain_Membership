@@ -68,6 +68,7 @@ export async function GET(
 
   // Resolve the acting member id for a member session (gates subject artefacts).
   let actorMemberId: string | null = null;
+  // rbac-portal-identity-ok: a member downloads only their OWN export; the ownership check follows.
   if (session.user.role === 'member') {
     const member = await drizzleMemberRepo.findByLinkedUserId(tenant, session.user.id);
     if (!member.ok) {
