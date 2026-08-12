@@ -17,6 +17,8 @@ import { CommandPalette } from '@/components/command-palette/command-palette';
 
 export async function CommandPaletteRoot() {
   const { user } = await requireSession('staff');
+  // rbac-portal-identity-ok: the STAFF palette does not mount in the member
+  // portal. `requireSession('staff')` is the gate; this is the portal split.
   if (user.role === 'member') return null;
   // 016 T064 — the palette no longer takes a role. Every entry is filtered
   // server-side against its destination's declared permission; a role prop here

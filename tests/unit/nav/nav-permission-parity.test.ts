@@ -17,6 +17,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { readFileSync, existsSync } from 'node:fs';
+import { extractPageGuard } from '../../../scripts/lib/source-scan';
 import { join } from 'node:path';
 import {
   staffNavConfig,
@@ -45,23 +46,28 @@ function pageFileFor(href: string): string | null {
   return null;
 }
 
-/** The FIRST `requirePagePermission('key', legacyRow)` in a page's source. */
+/**
+ * The `requirePagePermission('key', legacyRow)` a page declares.
+ *
+ * Delegates to the shared scanner. The version written here first stripped only
+ * whole-line `//`, so the `requirePagePermission(...)` EXAMPLE inside
+ * `admin/compliance/erasure-log/page.tsx`'s JSDoc header matched before the real
+ * call 116 lines below — this suite was comparing nav config against prose, on
+ * the highest-PII surface in the product, and passing for the wrong reason.
+ */
 function guardOf(file: string): { key: string; legacy: string } | null {
-  const src = readFileSync(file, 'utf8')
-    // Strip line comments first — a commented-out guard must not be read as the
-    // real one (the exact trap a previous sweep of this codebase fell into).
-    .replace(/^\s*\/\/.*$/gm, '');
-  const m = /requirePagePermission\(\s*'([^']+)'\s*,\s*([A-Za-z0-9_]+)/.exec(src);
-  return m ? { key: m[1]!, legacy: m[2]! } : null;
+  return extractPageGuard(readFileSync(file, 'utf8'), file);
 }
 
 const STAFF_ITEMS: readonly NavItem[] = flattenNavItems(staffNavConfig);
 
 describe('staff nav declares a permission for every entry (T061)', () => {
-  it('finds a non-trivial number of items (the flattener actually walked)', () => {
-    // Without this, a flattener that returned [] would make every other test in
-    // this file pass vacuously.
-    expect(STAFF_ITEMS.length).toBeGreaterThanOrEqual(14);
+  it('finds EXACTLY the known staff item count (the flattener actually walked)', () => {
+    // Pinned, not a floor. A floor of >=14 against 16 real items let two
+    // disappear unnoticed, and a flattener that returned [] would make every
+    // other test in this file pass vacuously. Update deliberately when the
+    // sidebar gains or loses an entry.
+    expect(STAFF_ITEMS).toHaveLength(16);
   });
 
   it('every staff nav item declares requiredPermission + legacyRow', () => {
@@ -69,6 +75,16 @@ describe('staff nav declares a permission for every entry (T061)', () => {
       (i) => !i.requiredPermission || !i.legacyRow,
     ).map((i) => i.href);
     expect(missing).toEqual([]);
+  });
+
+  it('staff hrefs are unique', () => {
+    // `filterNavConfig` gates on `allowedHrefs.has(item.href)`, so two items
+    // sharing an href would let the LOOSER one unlock the stricter one. The
+    // docblock on `staffNavAllowedHrefs` claimed this was asserted here; it was
+    // not — the claim was written for the palette suite and never made true for
+    // nav.
+    const hrefs = STAFF_ITEMS.map((i) => i.href);
+    expect(new Set(hrefs).size, `duplicate href in staffNavConfig: ${hrefs}`).toBe(hrefs.length);
   });
 
   it('no staff nav item still uses the legacy `roles` array', () => {

@@ -21,6 +21,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { readFileSync, existsSync } from 'node:fs';
+import { extractPageGuard } from '../../../../scripts/lib/source-scan';
 import { join } from 'node:path';
 import { ROLES, type Role } from '@/modules/auth/domain/role';
 import { canPerform } from '@/lib/rbac';
@@ -102,9 +103,10 @@ function pageGuardFor(url: string): { key: string; legacy: string } | null {
       : `src/app/(staff)/admin/${rel}/page.tsx`,
   );
   if (!existsSync(file)) return null;
-  const src = readFileSync(file, 'utf8').replace(/^\s*\/\/.*$/gm, '');
-  const m = /requirePagePermission\(\s*'([^']+)'\s*,\s*([A-Za-z0-9_]+)/.exec(src);
-  return m ? { key: m[1]!, legacy: m[2]! } : null;
+  // Shared scanner: the local version stripped only whole-line `//`, so a
+  // `requirePagePermission(...)` example inside a page's JSDoc header matched
+  // before the real call. See scripts/lib/source-scan.ts.
+  return extractPageGuard(readFileSync(file, 'utf8'), file);
 }
 
 /**

@@ -28,6 +28,8 @@ import { env } from '@/lib/env';
 
 export async function MemberCommandPaletteRoot() {
   const { user } = await requireSession('member');
+  // rbac-portal-identity-ok: mirror of the staff root — the MEMBER palette
+  // mounts only for the portal subject.
   if (user.role !== 'member') return null;
 
   // Fail open to 'full' — this only controls whether a palette ENTRY is
