@@ -33,6 +33,7 @@ import { requirePagePermission, canPerform } from '@/lib/rbac';
 import {
   legacySessionOnly,
   legacyAdminOrManager,
+  legacyAdminOnly,
 } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
@@ -123,12 +124,26 @@ export default async function StaffHomePage() {
   // numbers never leave the server for a viewer without it — hiding the widgets
   // client-side would still ship the figures in the RSC payload.
   const canFinance = canPerform(user.role, 'insights.finance', legacyAdminOrManager);
+  // 016 T058 — the activity feed's per-row deep link targets `/admin/audit`,
+  // which is gated on `audit.read`. Mirror that key here (same legacy row as the
+  // audit page itself) so the link only appears when it can actually be opened.
+  const canReadAudit = canPerform(user.role, 'audit.read', legacySessionOnly);
 
   // allSettled (not all) so a thrown activity-feed read can never take down the
   // whole dashboard — the feed is the least-critical widget (FR-003 vs FR-005).
   const [dashSettled, feedSettled] = await Promise.allSettled([
     listDashboard(meta, tenant, makeListDashboardDeps(tenant.slug, canFinance)),
-    activityFeedQuery({ limit: 15 }, meta, tenant, makeActivityFeedDeps()),
+    activityFeedQuery(
+      { limit: 15 },
+      meta,
+      tenant,
+      // 016 T058 — `legacyAdminOnly` reproduces today's OFF-leg population
+      // exactly: the shim normalises super_admin → admin, so the unredacted
+      // feed stays {admin, super_admin} until the flag flips.
+      makeActivityFeedDeps(
+        canPerform(user.role, 'insights.activity_unredacted', legacyAdminOnly),
+      ),
+    ),
   ]);
   const dashResult = dashSettled.status === 'fulfilled' ? dashSettled.value : null;
 
@@ -356,7 +371,12 @@ export default async function StaffHomePage() {
       // Related-record link (FR-003) — the audit viewer filtered to this event's
       // target record. Omitted for events with no user target (payload-only
       // entity). targetUserId is a uuid column so it passes the viewer's guard.
-      ...(item.targetUserId
+      // 016 T058: ALSO omitted for a viewer without `audit.read`. D4 narrowed
+      // that key to super_admin, so on the ON leg this link sent admins,
+      // managers and marketing to a page their own guard denies — a dead end
+      // that shipped the moment the flag flipped, not a PR 4 regression. The
+      // ROW still renders; only the link is dropped.
+      ...(item.targetUserId && canReadAudit
         ? { href: `/admin/audit?targetRef=${encodeURIComponent(item.targetUserId)}` }
         : {}),
       // Localised action label (FR-034) — resolved per-locale from the audit

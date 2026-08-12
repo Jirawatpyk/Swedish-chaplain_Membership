@@ -210,11 +210,19 @@ export function makeListSmartInsightsDeps(tenantId: string): ListSmartInsightsDe
 }
 
 /** US1 (T029/T031) — `activityFeedQuery` (live recent-audit feed) deps. */
-export function makeActivityFeedDeps(): ActivityFeedDeps {
+export function makeActivityFeedDeps(
+  /**
+   * 016 T058 — whether the viewer holds `insights.activity_unredacted`.
+   * REQUIRED here (unlike the Application-side optional, which exists so the
+   * default is fail-closed) so no call site can silently pick a projection.
+   */
+  activityUnredacted: boolean,
+): ActivityFeedDeps {
   return {
     activitySource: activityFeedSourceAdapter,
     // FR-003 actor resolution — same PDPA-safe reader the US2 audit viewer uses.
     actorDirectory: actorDirectoryAdapter,
+    activityUnredacted,
   };
 }
 

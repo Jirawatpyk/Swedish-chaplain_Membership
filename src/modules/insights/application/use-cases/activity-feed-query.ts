@@ -21,7 +21,7 @@ import type {
 // Deep PURE-Domain import (not the barrel): a value import of the auth barrel
 // would drag auth-deps' infrastructure singletons (argon2, Upstash, repos)
 // into this Application module's graph at eval time.
-import { isAdministrativeRole, type Role } from '@/modules/auth/domain/role';
+import type { Role } from '@/modules/auth/domain/role';
 
 // 016 T030/T033 — widened to the full Role union so routes stop casting and
 // audit emitters record the LITERAL actor role; the decision arms in this
@@ -38,6 +38,16 @@ export interface ActivityFeedDeps {
   readonly activitySource: ActivityFeedSource;
   /** Resolves actor UUIDs → display names (FR-003 actor), PDPA-safe (name only). */
   readonly actorDirectory: ActorDirectory;
+  /**
+   * Whether the viewer holds `insights.activity_unredacted` (016 T058).
+   * INJECTED by the composition root, which owns `canPerform` — the Application
+   * layer must not re-derive the permission model.
+   *
+   * Defaults to FALSE (redacted). Fail-closed on purpose: a call site that
+   * forgets to thread it gets the safe projection, so an oversight costs
+   * fidelity rather than leaking third-party email/phone.
+   */
+  readonly activityUnredacted?: boolean;
 }
 
 export type ActivityFeedError = 'forbidden';
@@ -79,12 +89,15 @@ export async function activityFeedQuery(
   // `summary`. Member company names are intentionally NOT redacted (a manager
   // has member-directory read scope, so they are not out-of-scope PII). Admin:
   // full feed.
-  // 016 T030/T034 — redact for every role OUTSIDE the administrator set
-  // (admin ∪ super_admin per D16): the old `=== 'manager'` literal would have
-  // handed a future marketing viewer the FULL feed by falling through. On the
-  // ON leg this population equals the `insights.activity_unredacted` holders,
-  // so PR 4's key-based re-statement (T058) changes no behaviour.
-  if (!isAdministrativeRole(meta.actorRole, false)) {
+  // 016 T058 — keyed on `insights.activity_unredacted`, not on membership of
+  // the administrative role set. The two populations are identical today (which
+  // is why T034 could land the role-set version first), but they diverge the
+  // moment a bundle moves: a role-set check would keep redacting for a
+  // non-administrative holder AND — the dangerous direction — keep handing the
+  // raw summary to an administrative role whose bundle no longer carries the
+  // key. The permission is the thing that actually decides, so it is what the
+  // code reads.
+  if (!deps.activityUnredacted) {
     return ok(
       withActor.map((it) => ({ ...it, summary: redactSummaryForRole(it.summary, 'manager') })),
     );
