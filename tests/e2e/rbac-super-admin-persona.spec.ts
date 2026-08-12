@@ -54,7 +54,7 @@ test.describe('T046 RBAC v2 — super_admin persona (ON leg) @a11y', () => {
     await expect(page.getByRole('option', { name: /super admin/i })).toBeVisible();
   });
 
-  test('can open the change-role picker on a staff row (super_admin/admin/manager)', async ({
+  test('can open the change-role picker on a staff row (all four staff roles)', async ({
     page,
   }) => {
     await page.goto('/admin/users', { waitUntil: 'domcontentloaded' });
@@ -62,12 +62,16 @@ test.describe('T046 RBAC v2 — super_admin persona (ON leg) @a11y', () => {
     // "Change role" trigger renders for a super_admin viewer on each.
     await page.getByRole('button', { name: /change role/i }).first().click();
 
-    // The picker offers exactly the three staff roles — never member/marketing.
+    // The picker offers the four STAFF roles. `marketing` moved from absent to
+    // present in PR 4 (T059) — PR 3 deliberately shipped the role unassignable,
+    // and this case asserted that state. `member` stays out: it is not a staff
+    // role, and promoting a member from this table would strand their portal
+    // access. That distinction is the reason the list is not simply `ROLES`.
     await expect(page.getByRole('radio', { name: /^super admin$/i })).toBeVisible();
     await expect(page.getByRole('radio', { name: /^admin$/i })).toBeVisible();
     await expect(page.getByRole('radio', { name: /^manager$/i })).toBeVisible();
+    await expect(page.getByRole('radio', { name: /^marketing$/i })).toBeVisible();
     await expect(page.getByRole('radio', { name: /^member$/i })).toHaveCount(0);
-    await expect(page.getByRole('radio', { name: /^marketing$/i })).toHaveCount(0);
   });
 
   test('finalFocus: closing the change-role picker keeps focus OFF <body> (CHK050 / C1)', async ({
