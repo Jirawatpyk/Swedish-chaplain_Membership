@@ -8,9 +8,10 @@
  * all: every NavItem carries a `LucideIcon`, i.e. a function.
  *
  * Passing hrefs — rather than, say, an index list — keeps the payload
- * self-describing and order-independent: hrefs are unique across the staff
- * config (asserted in `tests/unit/nav/nav-permission-parity.test.ts`), so
- * re-ordering the sidebar cannot silently re-point an entitlement.
+ * self-describing and order-independent, and href uniqueness IS asserted in
+ * `tests/unit/nav/nav-permission-parity.test.ts` so re-ordering the sidebar
+ * cannot silently re-point an entitlement. (That assertion was added by the 016
+ * review; this comment claimed it before it existed.)
  */
 import { canPerform } from '@/lib/rbac';
 import { staffNavConfig, flattenNavItems } from '@/config/nav';
@@ -19,9 +20,11 @@ import type { Role } from '@/modules/auth';
 /**
  * The hrefs of every staff nav entry `role` is permitted to open.
  *
- * An entry without a `requiredPermission` is always included — the filter only
- * consults this set for entries that declare one, so an unpermissioned item
- * behaves exactly as it did before this task.
+ * An entry without a `guard` is always included — the member nav has none, and
+ * an unguarded item behaves exactly as it did before this task. There is no
+ * half-declared case to worry about: `SurfaceGuard` carries the key and the row
+ * together, so the earlier fail-open (permission declared, row forgotten →
+ * admitted unchecked for every role) is now unrepresentable.
  */
 export function staffNavAllowedHrefs(
   role: Role,
@@ -33,11 +36,6 @@ export function staffNavAllowedHrefs(
   deps?: { readonly rbacV2: boolean },
 ): readonly string[] {
   return flattenNavItems(staffNavConfig)
-    .filter(
-      (item) =>
-        !item.requiredPermission ||
-        !item.legacyRow ||
-        canPerform(role, item.requiredPermission, item.legacyRow, deps),
-    )
+    .filter((item) => !item.guard || canPerform(role, item.guard.key, item.guard.legacy, deps))
     .map((item) => item.href);
 }

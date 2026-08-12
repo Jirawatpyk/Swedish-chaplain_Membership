@@ -70,6 +70,18 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     'plans.read',
     mappedLegacy('plan', 'read'),
   );
+  // rbac-subgate-ok: gates the member SECTION of an already-authorised palette
+  // response. 016 review — when the endpoint gate widened to `dashboard.view`,
+  // the plan and refund sections were re-gated and this one was not. It is safe
+  // today only because every bundle holding `dashboard.view` also holds
+  // `members.read`; that coincidence is exactly what this feature elsewhere
+  // refuses to rely on, and a future engagement-only role would get member PII
+  // through ⌘K with no code change.
+  const canReadMembers = canPerform(
+    ctx.current.user.role,
+    'members.read',
+    mappedLegacy('members', 'read'),
+  );
 
   const url = new URL(request.url);
   const parsed = querySchema.safeParse({
@@ -110,11 +122,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   });
 
   if (result.ok) {
-    // T069 — also search members for the palette. Ordering: plan
-    // matches first, then members, mirroring the `groups.tsx` render
-    // order. Member search is admin/manager-read-gated (the admin
-    // context gate above already blocks the `member` role from
-    // reaching this surface).
+    // T069 — also search members for the palette. Ordering: plan matches
+    // first, then members, mirroring the `groups.tsx` render order. The hits
+    // are gated on `members.read` at the exit point below (016 review): the
+    // endpoint gate is `dashboard.view`, which is broader.
     let members: readonly PaletteMemberEntity[] = [];
     try {
       const membersDeps = buildMembersDeps(tenant);
@@ -345,9 +356,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           // in-memory filter over the tenant's ~9 plans, so there is no cost to
           // save, and one exit point is easier to prove than two.
           plans: canReadPlans ? result.value.results.plans : [],
+          members: canReadMembers ? members : [],
           actions,
           navigate,
-          members,
           refundableInvoices,
         },
       },

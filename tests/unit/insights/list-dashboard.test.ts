@@ -40,6 +40,10 @@ function depsWith(over: Partial<ListDashboardDeps> = {}): ListDashboardDeps {
     snapshotRepo: { read: vi.fn().mockResolvedValue({ metrics: SNAP, computedAt: new Date(SNAP.computedAt), stale: false }) },
     recompute: vi.fn().mockResolvedValue(ok(SNAP)),
     audit: { record: vi.fn().mockResolvedValue(undefined), recordInTx: vi.fn() },
+    // Required since the 016 review made the permissive default a finding —
+    // the base fixture is a finance holder; cases that test the projection pass
+    // `canFinance: false` explicitly through `over`.
+    canFinance: true,
     ...over,
   };
 }

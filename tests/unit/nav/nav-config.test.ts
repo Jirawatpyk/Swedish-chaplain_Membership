@@ -96,8 +96,8 @@ describe('staffNavConfig', () => {
     // local: that the Compliance entry is permissioned at all, and with the
     // administrator-only legacy row that keeps the OFF leg unchanged.
     expect(erasureLog.roles).toBeUndefined();
-    expect(erasureLog.requiredPermission).toBe('members.erasure_log_read');
-    expect(erasureLog.legacyRow?.kind).toBe('legacyAdminOnly');
+    expect(erasureLog.guard?.key).toBe('members.erasure_log_read');
+    expect(erasureLog.guard?.legacy.kind).toBe('legacyAdminOnly');
   });
 
   it('section 6 is Settings with Invoice + RenewalSchedules + BroadcastSettings + EventCreate', () => {

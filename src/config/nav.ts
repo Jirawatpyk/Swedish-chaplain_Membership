@@ -6,9 +6,11 @@ import {
   legacySessionOnly,
   legacyAdminOrManager,
   legacyAdminOnly,
-  type LegacyRow,
 } from '@/modules/auth/domain/permissions/legacy-shim';
-import type { PermissionKey } from '@/modules/auth/domain/permissions/permission-catalogue';
+import {
+  defineGuard,
+  type SurfaceGuard,
+} from '@/modules/auth/domain/permissions/surface-guard';
 import {
   LayoutDashboardIcon,
   FileTextIcon,
@@ -67,19 +69,20 @@ export interface NavItem {
    */
   readonly roles?: ReadonlyArray<Role>;
   /**
-   * The permission the TARGET PAGE requires (016 T061). Must equal the key in
+   * What the TARGET PAGE requires (016 T061). The key must equal the one in
    * that page's own `requirePagePermission(...)` call — parity is asserted by
    * reading both sources, so a nav entry can be neither a dead link nor a
    * hidden feature.
+   *
+   * ONE field, not a key/row pair: as two optionals, half of it could go
+   * missing, and `staffNavAllowedHrefs` resolved that by ADMITTING the item for
+   * every role. Four reviewers found that fail-open independently.
    *
    * Evaluation happens on the SERVER (the sidebar is a client component and
    * cannot read `env` or call `canPerform`); the result arrives as the
    * `allowedHrefs` set passed to {@link filterNavConfig}.
    */
-  readonly requiredPermission?: PermissionKey;
-  /** The legacy (flag-OFF) row for {@link requiredPermission} — same value the
-   *  target page passes, so the OFF leg is byte-identical to pre-016. */
-  readonly legacyRow?: LegacyRow;
+  readonly guard?: SurfaceGuard;
   /**
    * If set, the item is rendered ONLY when the named flag is `true` in
    * the runtime visibility-flag map passed to the sidebar. Used by
@@ -199,7 +202,7 @@ export function filterNavConfig(
     // 016 T063 — permission gate BEFORE the feature-flag gate: a viewer who
     // cannot open the page must not see the link whether or not the kill-switch
     // happens to be on.
-    if (item.requiredPermission && !allowedHrefs?.has(item.href)) return false;
+    if (item.guard && !allowedHrefs?.has(item.href)) return false;
     if (!item.visibilityFlag) return true;
     return flags[item.visibilityFlag] === true;
   }
@@ -238,8 +241,7 @@ export const staffNavConfig: NavConfig = {
           titleKey: 'nav.staff.dashboard',
           icon: LayoutDashboardIcon,
           href: '/admin',
-          requiredPermission: 'dashboard.view',
-          legacyRow: legacySessionOnly,
+          guard: defineGuard('dashboard.view', legacySessionOnly),
           activePattern: 'exact:/admin',
         },
       ],
@@ -252,16 +254,14 @@ export const staffNavConfig: NavConfig = {
           titleKey: 'nav.staff.members',
           icon: BuildingIcon,
           href: '/admin/members',
-          requiredPermission: 'members.read',
-          legacyRow: legacySessionOnly,
+          guard: defineGuard('members.read', legacySessionOnly),
           activePattern: '/admin/members',
         },
         {
           titleKey: 'nav.staff.plans',
           icon: FileTextIcon,
           href: '/admin/plans',
-          requiredPermission: 'plans.read',
-          legacyRow: legacySessionOnly,
+          guard: defineGuard('plans.read', legacySessionOnly),
           activePattern: '/admin/plans',
         },
         // F8 Renewals — renewal pipeline. Sub-routes (tier-upgrades, tasks)
@@ -271,8 +271,7 @@ export const staffNavConfig: NavConfig = {
           titleKey: 'nav.staff.renewals',
           icon: RefreshCwIcon,
           href: '/admin/renewals',
-          requiredPermission: 'renewals.read',
-          legacyRow: legacyAdminOrManager,
+          guard: defineGuard('renewals.read', legacyAdminOrManager),
           activePattern: '/admin/renewals',
         },
         // F9 US5 — member directory + E-Book/JSON export. Gated server-side by
@@ -281,8 +280,7 @@ export const staffNavConfig: NavConfig = {
           titleKey: 'nav.staff.directory',
           icon: BookUserIcon,
           href: '/admin/directory',
-          requiredPermission: 'directory.export',
-          legacyRow: legacySessionOnly,
+          guard: defineGuard('directory.export', legacySessionOnly),
           activePattern: '/admin/directory',
         },
       ],
@@ -296,8 +294,7 @@ export const staffNavConfig: NavConfig = {
           titleKey: 'nav.staff.invoices',
           icon: ReceiptIcon,
           href: '/admin/invoices',
-          requiredPermission: 'invoicing.read',
-          legacyRow: legacySessionOnly,
+          guard: defineGuard('invoicing.read', legacySessionOnly),
           activePattern: '/admin/invoices',
         },
         // Credit notes — the standalone list (/admin/credit-notes). Notes
@@ -308,8 +305,7 @@ export const staffNavConfig: NavConfig = {
           titleKey: 'nav.staff.creditNotes',
           icon: FileMinusIcon,
           href: '/admin/credit-notes',
-          requiredPermission: 'invoicing.read',
-          legacyRow: legacyAdminOrManager,
+          guard: defineGuard('invoicing.read', legacyAdminOrManager),
           activePattern: '/admin/credit-notes',
         },
       ],
@@ -322,8 +318,7 @@ export const staffNavConfig: NavConfig = {
           titleKey: 'nav.staff.broadcasts',
           icon: MegaphoneIcon,
           href: '/admin/broadcasts',
-          requiredPermission: 'broadcasts.read',
-          legacyRow: legacySessionOnly,
+          guard: defineGuard('broadcasts.read', legacySessionOnly),
           activePattern: '/admin/broadcasts',
           // 016 — hide when FEATURE_F7_BROADCASTS is off (the /admin/broadcasts
           // routes 503 via the proxy kill-switch, so a visible link is a dead
@@ -336,8 +331,7 @@ export const staffNavConfig: NavConfig = {
           titleKey: 'nav.staff.events',
           icon: CalendarDaysIcon,
           href: '/admin/events',
-          requiredPermission: 'events.read',
-          legacyRow: legacyAdminOrManager,
+          guard: defineGuard('events.read', legacyAdminOrManager),
           activePattern: '/admin/events',
           // 016 — hide when FEATURE_F6_EVENTCREATE is off (the /admin/events
           // pages call `notFound()` when the flag is off, so a visible link 404s).
@@ -353,8 +347,7 @@ export const staffNavConfig: NavConfig = {
           titleKey: 'nav.staff.users',
           icon: UsersIcon,
           href: '/admin/users',
-          requiredPermission: 'users.manage',
-          legacyRow: legacySessionOnly,
+          guard: defineGuard('users.manage', legacySessionOnly),
           activePattern: '/admin/users',
         },
         // F9 US2 — staff audit-log viewer. Admin + manager (member never
@@ -364,8 +357,7 @@ export const staffNavConfig: NavConfig = {
           titleKey: 'nav.staff.audit',
           icon: ScrollTextIcon,
           href: '/admin/audit',
-          requiredPermission: 'audit.read',
-          legacyRow: legacySessionOnly,
+          guard: defineGuard('audit.read', legacySessionOnly),
           activePattern: '/admin/audit',
         },
       ],
@@ -383,8 +375,7 @@ export const staffNavConfig: NavConfig = {
           titleKey: 'nav.staff.erasureLog',
           icon: ShieldCheckIcon,
           href: '/admin/compliance/erasure-log',
-          requiredPermission: 'members.erasure_log_read',
-          legacyRow: legacyAdminOnly,
+          guard: defineGuard('members.erasure_log_read', legacyAdminOnly),
           activePattern: '/admin/compliance/erasure-log',
         },
       ],
@@ -400,16 +391,14 @@ export const staffNavConfig: NavConfig = {
           titleKey: 'nav.staff.settingsInvoices',
           icon: FileCog2Icon,
           href: '/admin/settings/invoicing',
-          requiredPermission: 'settings.invoicing',
-          legacyRow: legacySessionOnly,
+          guard: defineGuard('settings.invoicing', legacySessionOnly),
           activePattern: '/admin/settings/invoicing',
         },
         {
           titleKey: 'nav.staff.settingsRenewalSchedules',
           icon: CalendarClockIcon,
           href: '/admin/settings/renewals/schedules',
-          requiredPermission: 'settings.renewal_schedules',
-          legacyRow: legacyAdminOrManager,
+          guard: defineGuard('settings.renewal_schedules', legacyAdminOrManager),
           activePattern: '/admin/settings/renewals',
         },
         // F7.1a US2 — Broadcast settings (image-source allowlist).
@@ -431,8 +420,7 @@ export const staffNavConfig: NavConfig = {
           titleKey: 'nav.staff.settingsBroadcasts',
           icon: Settings2Icon,
           href: '/admin/settings/broadcasts',
-          requiredPermission: 'settings.broadcasts',
-          legacyRow: legacyAdminOnly,
+          guard: defineGuard('settings.broadcasts', legacyAdminOnly),
           activePattern: '/admin/settings/broadcasts',
           visibilityFlag: 'broadcastsEnabled',
           // Admin-only ACCESS — the page returns notFound() for manager
@@ -457,8 +445,7 @@ export const staffNavConfig: NavConfig = {
           titleKey: 'nav.staff.settingsIntegrationEventcreate',
           icon: PlugZapIcon,
           href: '/admin/settings/integrations/eventcreate',
-          requiredPermission: 'settings.integrations',
-          legacyRow: legacyAdminOnly,
+          guard: defineGuard('settings.integrations', legacyAdminOnly),
           activePattern: '/admin/settings/integrations/eventcreate',
           // 016 follow-up — the page returns notFound() when
           // FEATURE_F6_EVENTCREATE is off, so gate the nav entry on the same F6

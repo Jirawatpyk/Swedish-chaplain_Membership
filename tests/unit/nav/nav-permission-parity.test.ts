@@ -70,10 +70,11 @@ describe('staff nav declares a permission for every entry (T061)', () => {
     expect(STAFF_ITEMS).toHaveLength(16);
   });
 
-  it('every staff nav item declares requiredPermission + legacyRow', () => {
-    const missing = STAFF_ITEMS.filter(
-      (i) => !i.requiredPermission || !i.legacyRow,
-    ).map((i) => i.href);
+  it('every staff nav item declares a guard', () => {
+    // The key and the row now travel as ONE `SurfaceGuard`, so "declared half"
+    // is no longer representable — this only has to catch "declared none",
+    // which for a staff item means it is visible to every role.
+    const missing = STAFF_ITEMS.filter((i) => !i.guard).map((i) => i.href);
     expect(missing).toEqual([]);
   });
 
@@ -104,11 +105,11 @@ describe('every staff nav entry matches its target page guard (T063)', () => {
       expect(file, `no page file found for ${href}`).not.toBeNull();
       const guard = guardOf(file!);
       expect(guard, `${file} has no requirePagePermission call`).not.toBeNull();
-      expect(item.requiredPermission).toBe(guard!.key);
       // Presence is asserted by the T061 suite above; narrow here so a missing
-      // row surfaces as that suite's failure rather than a confusing TS error.
-      expect(item.legacyRow).toBeDefined();
-      expect(item.legacyRow!.kind).toBe(
+      // guard surfaces as that suite's failure rather than a confusing TS error.
+      expect(item.guard).toBeDefined();
+      expect(item.guard!.key).toBe(guard!.key);
+      expect(item.guard!.legacy.kind).toBe(
         // `legacySessionOnly` → kind 'legacySessionOnly', etc. The nav stores
         // the row VALUE; the page names the imported const. Comparing the kind
         // to the identifier keeps the two in step without importing the page.

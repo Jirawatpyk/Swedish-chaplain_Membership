@@ -60,10 +60,16 @@ export interface ListDashboardDeps {
    * re-derive the permission model, and a role literal here would be the third
    * copy of a predicate this feature has already been bitten by twice.
    *
-   * Defaults to `true` so existing callers keep today's behaviour until they
-   * thread it; the page and the deps factory both pass it explicitly.
+   * REQUIRED. It shipped optional with a PERMISSIVE default ("existing callers
+   * keep today's behaviour"), which meant an omitted dep sent full revenue —
+   * the opposite direction from its sibling `activityUnredacted`, ~40 lines
+   * away in the same module, which defaults to redacted. Two adjacent security
+   * projections that read alike and behave oppositely is how the wrong one gets
+   * copied. The justification had also expired: there was exactly one
+   * production caller and the factory already made it mandatory, so the default
+   * was unused and untested.
    */
-  readonly canFinance?: boolean;
+  readonly canFinance: boolean;
 }
 
 /**
@@ -170,7 +176,9 @@ export async function listDashboard(
   // Project AFTER both branches converge (cached read and cold-start recompute),
   // so a cold start cannot leak the full snapshot — which is precisely when a
   // newly-hired marketing operator first opens the page.
-  const metrics = deps.canFinance === false ? projectEngagementOnly(snapshot) : snapshot;
+  // `!== true` rather than `=== false`: with the field required this is the
+  // same decision, and it keeps the safe direction if the type ever loosens.
+  const metrics = deps.canFinance !== true ? projectEngagementOnly(snapshot) : snapshot;
 
   return ok({ metrics, computedAt });
 }
