@@ -36,15 +36,28 @@ interface StaffSidebarProps {
    * Defaults to the empty map — items without a flag are always shown.
    */
   readonly navVisibilityFlags?: NavVisibilityFlags;
+  /**
+   * 016 T063 — hrefs this viewer may open, resolved by `staffNavAllowedHrefs`
+   * in the server layout. Required: this component cannot evaluate permissions
+   * itself (no `env`, no `canPerform` in a client bundle), and `filterNavConfig`
+   * fails CLOSED, so omitting it renders an empty sidebar rather than leaking.
+   */
+  readonly allowedHrefs: readonly string[];
 }
 
 export function StaffSidebar({
   tenantName,
   role,
   navVisibilityFlags = {},
+  allowedHrefs,
 }: StaffSidebarProps) {
   const t = useTranslations();
-  const filtered = filterNavConfig(staffNavConfig, navVisibilityFlags, role);
+  const filtered = filterNavConfig(
+    staffNavConfig,
+    navVisibilityFlags,
+    role,
+    new Set(allowedHrefs),
+  );
 
   return (
     <Sidebar

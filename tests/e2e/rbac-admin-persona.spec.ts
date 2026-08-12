@@ -93,7 +93,7 @@ test.describe('T045 RBAC v2 — plain-admin persona (ON leg) @a11y', () => {
     });
   }
 
-  test('the page gate holds even though the sidebar still offers the SA-only links (PR-3 state)', async ({
+  test('the sidebar offers no link a plain admin cannot open (T062, visible ≡ permitted)', async ({
     page,
     isMobile,
   }) => {
@@ -101,30 +101,32 @@ test.describe('T045 RBAC v2 — plain-admin persona (ON leg) @a11y', () => {
     // link assertion there is vacuous (idiom: nav-a11y.spec.ts:124).
     test.skip(isMobile === true, 'Desktop rail only — mobile renders the nav in a Sheet');
 
-    // PR 3 gates the PAGES; it does NOT sweep the nav. `filterNavConfig`
-    // (src/config/nav.ts) still filters on role literals, and the users +
-    // audit items carry no `roles` key at all while erasure-log carries
-    // `['admin','super_admin']` — so a plain admin genuinely still SEES all
-    // three links on the ON leg. Converting nav to declarative
-    // `requiredPermission` is T063, explicitly PR 4, and T062 is where the
-    // "visible set ≡ permitted set" assertion belongs.
+    // PR 3 gated the PAGES and left the nav filtering on role literals, so a
+    // plain admin still SAW the four D4-narrowed links and only discovered they
+    // were dead on click. T063 made the sidebar declarative — each entry now
+    // carries the same permission its target page guards on, evaluated server-
+    // side — so those links are gone, and this asserts the property T062 asks
+    // for: everything the sidebar offers actually opens.
     //
-    // Asserting their ABSENCE here would be a knowingly-red test inside a suite
-    // whose first execution is the cutover window. So assert what PR 3 actually
-    // guarantees instead: the links are dead ends, not doors — the page gate
-    // answers notFound() even when nav offers the route. That is the property
-    // that keeps a plain admin safe until PR 4 tidies the presentation.
+    // Route-by-route reachability is already covered by the DENIED_ROUTES /
+    // ALLOWED_ROUTES cases above; what is only observable HERE is what the
+    // rendered navigation contains.
     await page.goto('/admin/renewals', { waitUntil: 'domcontentloaded' });
-    const usersLink = page.getByRole('link', { name: /^users$/i }).first();
-    await expect(usersLink, 'nav is unswept in PR 3 — the link is still rendered').toBeVisible();
+    const nav = page.getByRole('navigation').first();
+    await expect(nav).toBeVisible();
 
-    await usersLink.click();
-    await expect(page).toHaveURL(/\/admin\/users/);
-    // The users page never renders for a plain admin: no page <h1>, no invite
-    // affordance. (The not-found body is asserted at the HTTP level by the
-    // DENIED_ROUTES cases above.)
-    await expect(page.getByRole('heading', { name: /^users$/i, level: 1 })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: /invite user/i })).toHaveCount(0);
+    for (const denied of DENIED_ROUTES) {
+      await expect(
+        nav.locator(`a[href="${denied}"]`),
+        `${denied} is denied to a plain admin — the sidebar must not offer it`,
+      ).toHaveCount(0);
+    }
+    for (const allowed of ALLOWED_ROUTES) {
+      await expect(
+        nav.locator(`a[href="${allowed}"]`),
+        `${allowed} is permitted — hiding it would strand a reachable feature`,
+      ).toHaveCount(1);
+    }
   });
 
   test('axe-core WCAG 2.1/2.2 AA — a reachable admin surface has no violations', async ({

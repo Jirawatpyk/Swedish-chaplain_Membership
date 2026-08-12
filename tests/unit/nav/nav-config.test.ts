@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { staffNavAllowedHrefs } from '@/lib/nav-permissions';
 import {
   filterNavConfig,
   isNavGroup,
@@ -11,6 +12,16 @@ import {
   type NavGroup,
   type NavItem,
 } from '@/config/nav';
+
+/**
+ * 016 T063 — these suites pin the OFF-leg (pre-016) sidebar, so they build the
+ * allow-list from the REAL resolver on the OFF leg rather than hand-listing
+ * hrefs. That keeps them a genuine regression net: if the legacy row on any nav
+ * entry drifts, the expected sets below stop matching. The ON-leg behaviour
+ * (marketing) is asserted in `nav-permission-parity.test.ts`.
+ */
+const OFF_LEG_ALLOWED = (role: Parameters<typeof staffNavAllowedHrefs>[0]) =>
+  new Set(staffNavAllowedHrefs(role, { rbacV2: false }));
 
 describe('staffNavConfig', () => {
   it('has exactly 7 sections: Overview, Membership, Finance, Engagement, System, Compliance, Settings', () => {
@@ -76,9 +87,17 @@ describe('staffNavConfig', () => {
     expect(erasureLog.href).toBe('/admin/compliance/erasure-log');
     // Administrator-only ACCESS — the page notFound()s for manager + member
     // (no distinct DPO role; the administrator acts as DPO). Hidden from the
-    // manager sidebar. 016 T032 widened the array to name super_admin
-    // explicitly (a promoted super_admin keeps the entry post-Migration-C).
-    expect(erasureLog.roles).toEqual(['admin', 'super_admin']);
+    // manager sidebar.
+    //
+    // 016 T063 — the hand-maintained `roles: ['admin','super_admin']` array is
+    // gone; the entry now declares the SAME key its page guards on, and the
+    // parity suite proves the two agree by reading both sources. Asserting the
+    // pair here would only restate that suite, so this pins what remains
+    // local: that the Compliance entry is permissioned at all, and with the
+    // administrator-only legacy row that keeps the OFF leg unchanged.
+    expect(erasureLog.roles).toBeUndefined();
+    expect(erasureLog.requiredPermission).toBe('members.erasure_log_read');
+    expect(erasureLog.legacyRow?.kind).toBe('legacyAdminOnly');
   });
 
   it('section 6 is Settings with Invoice + RenewalSchedules + BroadcastSettings + EventCreate', () => {
@@ -160,10 +179,11 @@ describe('filterNavConfig (role + visibility-flag filtering)', () => {
     // runtime state when F6/F7 are enabled); otherwise those items + the whole
     // Engagement section would drop.
     const filtered = filterNavConfig(
-      staffNavConfig,
-      { broadcastsEnabled: true, eventsEnabled: true },
-      'admin',
-    );
+        staffNavConfig,
+        { broadcastsEnabled: true, eventsEnabled: true },
+        'admin',
+        OFF_LEG_ALLOWED('admin'),
+      );
     // 7 sections survive — the Compliance section has an admin-visible item.
     expect(filtered.sections).toHaveLength(7);
     const all = hrefs(filtered);
@@ -176,10 +196,11 @@ describe('filterNavConfig (role + visibility-flag filtering)', () => {
 
   it('manager drops the 2 admin-only Settings pages + the whole Compliance section, keeps everything else', () => {
     const filtered = filterNavConfig(
-      staffNavConfig,
-      { broadcastsEnabled: true, eventsEnabled: true },
-      'manager',
-    );
+        staffNavConfig,
+        { broadcastsEnabled: true, eventsEnabled: true },
+        'manager',
+        OFF_LEG_ALLOWED('manager'),
+      );
     // The Compliance section's only item is admin-only → the section empties →
     // it is dropped. Settings survives (Invoice Settings + Renewal Schedules
     // stay manager-readable, rendered read-only), so 6 sections remain and
@@ -214,7 +235,7 @@ describe('filterNavConfig (role + visibility-flag filtering)', () => {
 // ---------------------------------------------------------------------------
 describe('filterNavConfig — F6/F7 feature-flag nav gating (016, live config)', () => {
   const staffHrefs = (flags: Parameters<typeof filterNavConfig>[1]) =>
-    filterNavConfig(staffNavConfig, flags, 'admin').sections.flatMap((s) =>
+    filterNavConfig(staffNavConfig, flags, 'admin', OFF_LEG_ALLOWED('admin')).sections.flatMap((s) =>
       s.items.map((i) => (i as NavItem).href),
     );
 
@@ -244,10 +265,11 @@ describe('filterNavConfig — F6/F7 feature-flag nav gating (016, live config)',
 
   it('both OFF → the Engagement section drops entirely; Settings keeps its non-F6/F7 entries', () => {
     const filtered = filterNavConfig(
-      staffNavConfig,
-      { broadcastsEnabled: false, eventsEnabled: false },
-      'admin',
-    );
+        staffNavConfig,
+        { broadcastsEnabled: false, eventsEnabled: false },
+        'admin',
+        OFF_LEG_ALLOWED('admin'),
+      );
     expect(filtered.sections.map((s) => s.titleKey)).not.toContain(
       'nav.staff.sections.engagement',
     );
