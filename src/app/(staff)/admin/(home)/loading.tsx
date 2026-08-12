@@ -25,6 +25,16 @@ import { env } from '@/lib/env';
  * admin children slot, so navigating to any /admin/* feature (cache cold) would
  * flash this dashboard skeleton before the target page's own loading.tsx
  * mounts. Do NOT move this back up to `admin/loading.tsx`.
+ *
+ * 016 T054 — this skeleton does NOT mirror the finance/engagement split, on
+ * purpose. Doing so would need the viewer's permissions, and the only way to
+ * get them here is `getCurrentSession()`, which is not React-cached and writes
+ * `last_seen_at` — i.e. a DB write on every loading fallback, to save one
+ * viewer class a horizontal reflow of a single card row. A viewer without
+ * `insights.finance` therefore sees 4 KPI placeholders settle into 3, and two
+ * chart placeholders settle into one full-width chart; both are same-height
+ * swaps, so the vertical shift (what CLS actually scores) is nil. Revisit only
+ * if `getCurrentSession` becomes side-effect-free and request-cached.
  */
 export default async function Loading() {
   const tLayout = await getTranslations('layout');

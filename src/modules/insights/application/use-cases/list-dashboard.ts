@@ -39,7 +39,12 @@ export interface ListDashboardMeta {
 }
 
 export interface DashboardView {
-  readonly metrics: DashboardSnapshot;
+  /**
+   * The full snapshot for a viewer holding `insights.finance`; the engagement
+   * projection for anyone else. The finance keys are ABSENT rather than zeroed —
+   * see `projectEngagementOnly`.
+   */
+  readonly metrics: DashboardSnapshot | EngagementSnapshot;
   /** "As of" time (FR-005), ISO 8601 UTC; presentation renders per-locale. */
   readonly computedAt: string;
 }
@@ -49,6 +54,71 @@ export interface ListDashboardDeps {
   /** Cold-start lazy recompute (computeDashboardSnapshot bound to the tenant). */
   recompute(ctx: TenantContext): Promise<Result<DashboardSnapshot, SnapshotError>>;
   readonly audit: InsightsAuditPort;
+  /**
+   * Whether the viewer holds `insights.finance` (016 T056). INJECTED by the
+   * composition root, which owns `canPerform` — the Application layer must not
+   * re-derive the permission model, and a role literal here would be the third
+   * copy of a predicate this feature has already been bitten by twice.
+   *
+   * Defaults to `true` so existing callers keep today's behaviour until they
+   * thread it; the page and the deps factory both pass it explicitly.
+   */
+  readonly canFinance?: boolean;
+}
+
+/**
+ * The engagement-only view of the snapshot: every field except the finance ones.
+ *
+ * Finance members, per design § 4.3: `ytdPaidRevenueSatang`, `revenueTrend`,
+ * `invoiceStatus` at the top level, plus `needsAttention.overdueInvoices` and
+ * `counts.overdue` — the last two are finance-derived numbers living inside
+ * containers that also carry engagement data, so the containers survive and only
+ * those members are dropped.
+ */
+export type EngagementSnapshot = Omit<
+  DashboardSnapshot,
+  'ytdPaidRevenueSatang' | 'revenueTrend' | 'invoiceStatus' | 'needsAttention' | 'counts'
+> & {
+  readonly counts: Omit<DashboardSnapshot['counts'], 'overdue'>;
+  readonly needsAttention: Omit<DashboardSnapshot['needsAttention'], 'overdueInvoices'>;
+};
+
+/**
+ * Drop the finance fields by CONSTRUCTION rather than by deletion.
+ *
+ * Rebuilding the object from named engagement fields means a NEW finance field
+ * added to `DashboardSnapshot` is excluded by default — it has to be added here
+ * deliberately to reach a marketing viewer. A `delete`-based implementation, or
+ * a spread minus a blocklist, would leak every future field silently, which is
+ * the failure mode this whole task exists to prevent.
+ */
+/**
+ * Narrow a `DashboardView.metrics` back to the full snapshot.
+ *
+ * The union is deliberately NOT discriminated by a flag field — presence of the
+ * finance data IS the discriminant, so there is no way to claim finance access
+ * while the numbers are absent. Callers that render finance widgets must go
+ * through this, which is why the compiler flags every unguarded finance read in
+ * the dashboard page the moment the projection lands.
+ */
+export function hasFinanceMetrics(
+  metrics: DashboardSnapshot | EngagementSnapshot,
+): metrics is DashboardSnapshot {
+  return 'ytdPaidRevenueSatang' in metrics;
+}
+
+export function projectEngagementOnly(snapshot: DashboardSnapshot): EngagementSnapshot {
+  const { total, active, atRisk } = snapshot.counts;
+  const { broadcastsAwaitingApproval, atRiskMembers } = snapshot.needsAttention;
+  return {
+    counts: { total, active, atRisk },
+    underDeliveredBenefitCount: snapshot.underDeliveredBenefitCount,
+    needsAttention: { broadcastsAwaitingApproval, atRiskMembers },
+    memberGrowth: snapshot.memberGrowth,
+    topInsights: snapshot.topInsights,
+    tierDistribution: snapshot.tierDistribution,
+    computedAt: snapshot.computedAt,
+  };
 }
 
 export type DashboardError = 'forbidden' | 'snapshot_unavailable';
@@ -97,5 +167,10 @@ export async function listDashboard(
   }
   insightsMetrics.dashboardViewed(meta.actorRole, ctx.slug);
 
-  return ok({ metrics: snapshot, computedAt });
+  // Project AFTER both branches converge (cached read and cold-start recompute),
+  // so a cold start cannot leak the full snapshot — which is precisely when a
+  // newly-hired marketing operator first opens the page.
+  const metrics = deps.canFinance === false ? projectEngagementOnly(snapshot) : snapshot;
+
+  return ok({ metrics, computedAt });
 }

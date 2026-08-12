@@ -180,12 +180,22 @@ export async function recordStaffTimelineView(input: {
 }
 
 /** US1 (T027/T031) — `listDashboard` read-path dependency bundle. */
-export function makeListDashboardDeps(tenantId: string): ListDashboardDeps {
+export function makeListDashboardDeps(
+  tenantId: string,
+  /**
+   * 016 T056 — whether the viewer holds `insights.finance`. REQUIRED rather than
+   * optional so a new call site cannot forget it and silently ship revenue to a
+   * marketing session; the Application default only covers legacy callers that
+   * build their own deps object (tests).
+   */
+  canFinance: boolean,
+): ListDashboardDeps {
   return {
     snapshotRepo: makeDrizzleSnapshotRepo(tenantId),
     recompute: (ctx) =>
       computeDashboardSnapshot(ctx, makeComputeDashboardSnapshotDeps(tenantId)),
     audit: insightsAuditAdapter,
+    canFinance,
   };
 }
 

@@ -23,6 +23,7 @@ import {
   makeComputeDashboardSnapshotDeps,
   makeDismissInsightDeps,
   makeListDashboardDeps,
+  hasFinanceMetrics,
 } from '@/modules/insights';
 import { dashboardMetricsCache, smartInsightDismissals } from '@/modules/insights/infrastructure/db/schema-insights';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
@@ -328,11 +329,18 @@ describe('F9 computeDashboardSnapshot — revenue + overdue (I-5)', () => {
     const result = await listDashboard(
       { actorUserId: admin.userId, actorRole: 'manager', requestId: 'mgr-dash-1' },
       tenant.ctx,
-      makeListDashboardDeps(tenant.ctx.slug),
+      makeListDashboardDeps(tenant.ctx.slug, true),
     );
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.value.metrics.ytdPaidRevenueSatang).toBe('150000');
+      // 016 T056 — the payload is a union now; the guard is the assertion that
+      // a manager's response actually CARRIES the finance fields, so a
+      // regression that projected them away would fail here rather than fall
+      // through to an `undefined === '150000'` comparison.
+      expect(hasFinanceMetrics(result.value.metrics)).toBe(true);
+      if (hasFinanceMetrics(result.value.metrics)) {
+        expect(result.value.metrics.ytdPaidRevenueSatang).toBe('150000');
+      }
     }
   });
 });
