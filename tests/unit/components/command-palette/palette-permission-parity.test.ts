@@ -71,18 +71,27 @@ function parseRegistries(): readonly Entry[] {
       }
     }
     const body = src.slice(open, end);
-    // One object literal per entry; nested braces do not occur in these.
+    // Innermost-brace match: an entry that grows a nested object (`feature: {…}`)
+    // would be split and its outer half would carry no `id`. The original code
+    // `continue`d on that, so the entry silently left the checked set while the
+    // count floor still passed. It is a hard failure now — a palette entry this
+    // parser cannot read is an entry nothing is checking.
     for (const block of body.match(/\{[^{}]*\}/g) ?? []) {
-      const id = /id: '([^']+)'/.exec(block);
-      const url = /url: '([^']+)'/.exec(block);
+      const id = /id: ['"]([^'"]+)['"]/.exec(block);
+      const url = /url: ['"]([^'"]+)['"]/.exec(block);
       const permission = /permission: '([^']+)'/.exec(block);
       const legacy = /legacy: (\w+)/.exec(block);
-      if (!id || !url) continue;
-      expect(permission, `${id[1]} has no permission`).not.toBeNull();
-      expect(legacy, `${id[1]} has no legacy row`).not.toBeNull();
+      // A fragment with neither id nor url is the outer half of a split entry,
+      // or the `as const` tail — those are expected. One with an id but no url
+      // (or vice versa) is a real entry the parser mangled.
+      if (!id && !url) continue;
+      expect(id, `entry fragment has a url but no id: ${block}`).not.toBeNull();
+      expect(url, `entry ${id?.[1]} has no url`).not.toBeNull();
+      expect(permission, `${id?.[1]} has no permission`).not.toBeNull();
+      expect(legacy, `${id?.[1]} has no legacy row`).not.toBeNull();
       out.push({
-        id: id[1]!,
-        url: url[1]!,
+        id: id![1]!,
+        url: url![1]!,
         permission: permission![1] as PermissionKey,
         legacy: legacy![1]!,
         kind,
@@ -128,9 +137,12 @@ function holders(key: string): ReadonlySet<Role> {
 const ENTRIES = parseRegistries();
 
 describe('palette registries declare a permission (T064)', () => {
-  it('parses a non-trivial number of entries', () => {
-    // A parser that silently returned [] would make every case below vacuous.
-    expect(ENTRIES.length).toBeGreaterThanOrEqual(30);
+  it('parses EXACTLY the known entry count', () => {
+    // Pinned, not a floor. `>= 30` against 32 real entries let two disappear
+    // unnoticed — and the entries likeliest to grow a nested field, and so to
+    // be dropped by the innermost-brace parser, are the newest ones. Update
+    // deliberately when the palette gains or loses an entry.
+    expect(ENTRIES).toHaveLength(32);
   });
 
   it('no entry still carries the two-tier `requires` tag', () => {

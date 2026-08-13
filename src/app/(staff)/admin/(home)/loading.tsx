@@ -29,12 +29,27 @@ import { env } from '@/lib/env';
  * 016 T054 — this skeleton does NOT mirror the finance/engagement split, on
  * purpose. Doing so would need the viewer's permissions, and the only way to
  * get them here is `getCurrentSession()`, which is not React-cached and writes
- * `last_seen_at` — i.e. a DB write on every loading fallback, to save one
- * viewer class a horizontal reflow of a single card row. A viewer without
- * `insights.finance` therefore sees 4 KPI placeholders settle into 3, and two
- * chart placeholders settle into one full-width chart; both are same-height
- * swaps, so the vertical shift (what CLS actually scores) is nil. Revisit only
- * if `getCurrentSession` becomes side-effect-free and request-cached.
+ * `last_seen_at` — i.e. a DB write on every loading fallback.
+ *
+ * What a viewer without `insights.finance` actually sees, stated honestly
+ * (the first version of this note claimed the shift was nil, which is true only
+ * at `lg` and above, and it counted one collapsing chart row when there are
+ * two):
+ *
+ *  - KPI row: 4 placeholders settle into 3.
+ *  - Trends row: 2 placeholders settle into 1.
+ *  - Breakdown row: 2 placeholders settle into 1.
+ *
+ * At `lg` and above all three are HORIZONTAL reflows — same heights, so the
+ * vertical shift CLS scores is nil. Below `lg` the grids stack, so the two
+ * chart rows do remove roughly two card heights and that viewer does score
+ * some CLS. Accepted: the affected population is `marketing` only, staff work
+ * here is desktop-first, and the alternative is a DB write on every fallback.
+ *
+ * Revisit if either changes: `getCurrentSession` becoming side-effect-free and
+ * request-cached, or the page moving its data reads behind their own
+ * `<Suspense>` boundaries — the latter would let the shell stream with
+ * `canFinance` already known and make this file's fork unnecessary.
  */
 export default async function Loading() {
   const tLayout = await getTranslations('layout');

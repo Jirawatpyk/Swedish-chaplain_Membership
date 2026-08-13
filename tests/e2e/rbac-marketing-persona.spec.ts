@@ -135,9 +135,13 @@ test.describe('T055 RBAC v2 — marketing persona (ON leg) @a11y', () => {
       await page.goto('/admin', { waitUntil: 'domcontentloaded' });
       const body = page.locator('body');
 
-      // Engagement half is present — the dashboard is narrower, not empty.
+      // Anchor on a string only the DASHBOARD renders. `/member/i` was
+      // satisfied by the sidebar's Members link, which is on every staff page —
+      // so the page's own `forbidden` / error branch (PageHeader + sidebar, no
+      // "revenue") passed every assertion in this test.
       await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
-      await expect(body).toContainText(/member/i);
+      await expect(body).toContainText(en.admin.dashboard.kpi.total);
+      await expect(body).toContainText(en.admin.dashboard.kpi.atRisk);
 
       // Finance half is absent. Asserted on the RENDERED TEXT rather than by
       // counting cards: the widgets could be reordered without weakening this.
@@ -148,17 +152,15 @@ test.describe('T055 RBAC v2 — marketing persona (ON leg) @a11y', () => {
       await expect(body).not.toContainText('undefined');
     });
 
-    test('a member profile shows no date of birth', async ({ page }) => {
-      // `members.pii_sensitive` is not in the marketing bundle (T035/T057), and
-      // the single-member read is the only staff egress that serves DoB.
-      await page.goto('/admin/members', { waitUntil: 'domcontentloaded' });
-      const firstRow = page.getByRole('link', { name: /view|open|detail/i }).first();
-      const rowCount = await firstRow.count();
-      test.skip(rowCount === 0, 'no seeded member rows to open');
-      await firstRow.click();
-      await expect(page).toHaveURL(/\/admin\/members\/[^/]+/);
-      await expect(page.locator('body')).not.toContainText(/date of birth/i);
-    });
+    // DoB is NOT asserted here. The "Date of birth" label renders only on the
+    // member EDIT form, which marketing cannot reach at all, so a
+    // `not.toContainText(/date of birth/i)` on the detail page passes for every
+    // role including super_admin — it proved nothing about
+    // `members.pii_sensitive`. The real egress is
+    // `GET /api/members/[memberId]?include=date_of_birth`, owned by
+    // `tests/contract/members/get-member.test.ts`, which drives the field gate
+    // directly and covers marketing on both legs. Deleting a vacuous assertion
+    // is better than leaving one that looks like coverage.
   });
 
   test('axe-core WCAG 2.1/2.2 AA — the marketing dashboard has no violations', async ({

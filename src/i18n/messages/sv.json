@@ -170,7 +170,7 @@
     "roleBadge": {
       "super_admin": "Superadministratör",
       "admin": "Administratör",
-      "manager": "Chef",
+      "manager": "Manager",
       "marketing": "Marknadsförare",
       "member": "Medlem"
     }
@@ -572,6 +572,9 @@
           "smart_insight_dismissed": "Insikt avfärdad",
           "dashboard_viewed": "Instrumentpanel visad"
         }
+      },
+      "engagement": {
+        "sectionLabel": "Engagemangsdiagram"
       }
     },
     "home": {
@@ -674,7 +677,7 @@
         "emailPlaceholder": "person@example.com",
         "roleLabel": "Roll",
         "roles": {
-          "admin": "Admin — full åtkomst",
+          "admin": "Admin — allt utom användarhantering, granskningslogg, fakturainställningar och radering",
           "manager": "Manager — läsbehörighet för ekonomi",
           "member": "Medlem — självbetjäningsportal",
           "super_admin": "Super Admin — full åtkomst + hantering av personalroller",
@@ -1042,7 +1045,7 @@
       },
       "subtitle": "Medlemsföretag + primära kontakter",
       "directory": {
-        "managerReadOnlyBanner": "Skrivskyddad vy — chefer kan bläddra och söka men inte redigera, arkivera eller utföra massåtgärder. Kontakta en systemadministratör för att göra ändringar.",
+        "managerReadOnlyBanner": "Skrivskyddad vy — du kan bläddra och söka bland medlemmar men inte redigera, arkivera eller utföra massåtgärder. Kontakta en administratör för att göra ändringar.",
         "searchPlaceholder": "Sök på företag, kontakt, e-post eller medlemsnummer",
         "searchSrLabel": "Sök medlemmar",
         "clearFilters": "Rensa filter",
@@ -5151,6 +5154,11 @@
           }
         }
       }
+    },
+    "notFound": {
+      "title": "Sidan är inte tillgänglig för din roll",
+      "body": "Vissa personalsidor kräver en högre roll än din. Be en superadministratör att öppna den åt dig eller att ändra din roll.",
+      "back": "Tillbaka till översikten"
     }
   },
   "palette": {

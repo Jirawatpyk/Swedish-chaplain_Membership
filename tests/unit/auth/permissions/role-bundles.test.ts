@@ -121,6 +121,43 @@ describe('016 I5 — PII egress key subsumption', () => {
   });
 
   /**
+   * 016 review I-8 — the SECOND DoB egress, symmetric to the rule above.
+   *
+   * `T035` recorded that the member edit/create forms are `members.write`
+   * surfaces whose "holders always carry `pii_sensitive`" and are therefore
+   * correctly ungated. True today, pinned by nothing.
+   *
+   * The exposure is concrete: `admin/members/[memberId]/edit/page.tsx` reads
+   * `primary.dateOfBirth` straight off the domain aggregate — bypassing the API
+   * projection that carries the sub-gate — and ships it into the RSC flight
+   * payload for a client component. Root cause is one layer down:
+   * `drizzle-contact-repo.ts` selects whole rows, so every in-process `Contact`
+   * carries DoB and confidentiality rests on each call site remembering to drop
+   * it. Art. 25(2) says the default should be the other way round.
+   */
+  it('every bundle holding members.write also holds members.pii_sensitive', () => {
+    const holders = ROLES.filter((role) => ROLE_BUNDLES[role].has(k('members.write')));
+    expect(
+      holders.length,
+      'no bundle holds members.write — the invariant below is vacuous',
+    ).toBeGreaterThan(0);
+
+    const offenders = ROLES.filter(
+      (role) =>
+        ROLE_BUNDLES[role].has(k('members.write')) &&
+        !ROLE_BUNDLES[role].has(k('members.pii_sensitive')),
+    );
+    expect(
+      offenders,
+      'the member edit page ships contact date_of_birth into the RSC payload ' +
+        'under members.write alone (admin/members/[memberId]/edit/page.tsx). A ' +
+        'role holding write without members.pii_sensitive would receive PII the ' +
+        'single-member read denies it. Either add the key to that bundle, or ' +
+        'project date_of_birth out of the edit page payload.',
+    ).toEqual([]);
+  });
+
+  /**
    * T057 (016 PR 4) — the marketing half, stated as its own assertion rather
    * than left implied by the subsumption rule above.
    *

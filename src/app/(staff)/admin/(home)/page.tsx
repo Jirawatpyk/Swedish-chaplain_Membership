@@ -440,15 +440,21 @@ export default async function StaffHomePage() {
 
       {/* 3 tiles without `insights.finance`, 4 with — the column count follows
           so an engagement-only viewer gets an evenly-filled row rather than a
-          gap where the revenue tile used to be. Both class strings are written
-          out in full: Tailwind scans source text, so an interpolated
-          `lg:grid-cols-${n}` would never be generated. */}
+          gap where the revenue tile used to be.
+          The 3-tile variant goes straight to `sm:grid-cols-3`. Keeping
+          `sm:grid-cols-2` moved the gap rather than closing it: 4 tiles fill a
+          2×2 exactly, but 3 tiles leave a half-width hole on the second row for
+          every viewport from 640px to 1023px — iPad portrait and any
+          split-screen desktop window.
+          Both class strings are written out in full: Tailwind scans source
+          text, so an interpolated `lg:grid-cols-${n}` would never be
+          generated. */}
       <section
         aria-label={t('kpi.sectionLabel')}
         className={
           finance
             ? 'grid gap-4 sm:grid-cols-2 lg:grid-cols-4'
-            : 'grid gap-4 sm:grid-cols-2 lg:grid-cols-3'
+            : 'grid gap-4 sm:grid-cols-3'
         }
       >
         {kpis.map((kpi) => (
@@ -477,51 +483,76 @@ export default async function StaffHomePage() {
         />
       </div>
 
-      {/* Without finance access the revenue chart is gone, so member growth
-          takes the full width instead of sitting in a half-empty two-up. */}
-      <section
-        aria-label={t('trends.sectionLabel')}
-        className={finance ? 'grid gap-4 lg:grid-cols-2' : 'grid gap-4'}
-      >
-        {finance ? (
-          <RevenueTrendChart
-            title={t('revenueTrend.title')}
-            caption={t('revenueTrend.perMonth')}
-            emptyLabel={revenueTrendEmpty}
-            sparseLabel={t('revenueTrend.sparse')}
-            monthHeader={t('revenueTrend.month')}
-            amountHeader={t('revenueTrend.amount')}
-            summary={revenueSummary}
-            points={revenueTrendPoints}
-          />
-        ) : null}
-        <MemberGrowthChart
-          title={t('memberGrowth.title')}
-          caption={t('memberGrowth.cumulative')}
-          emptyLabel={t('memberGrowth.empty')}
-          sparseLabel={t('memberGrowth.sparse')}
-          monthHeader={t('memberGrowth.month')}
-          countHeader={t('memberGrowth.count')}
-          summary={memberGrowthSummary}
-          {...(memberDelta ? { delta: memberDelta } : {})}
-          points={memberGrowthPoints}
-        />
-      </section>
+      {/* With finance: Trends (revenue + growth) and Breakdown (tier + AR) are
+          two separate 2-up rows, as before.
+          Without it, both rows would collapse to ONE card each and the page
+          would read as leftovers stacked in a column — a 12-point sparkline
+          stretched across the full detail width looks like a bar, not a chart.
+          So the two survivors are merged into a single 2-up "Engagement charts"
+          row instead, which keeps the finance dashboard's rhythm and halves the
+          skeleton mismatch documented in loading.tsx. */}
+      {finance ? (
+        <>
+          <section
+            aria-label={t('trends.sectionLabel')}
+            className="grid gap-4 lg:grid-cols-2"
+          >
+            <RevenueTrendChart
+              title={t('revenueTrend.title')}
+              caption={t('revenueTrend.perMonth')}
+              emptyLabel={revenueTrendEmpty}
+              sparseLabel={t('revenueTrend.sparse')}
+              monthHeader={t('revenueTrend.month')}
+              amountHeader={t('revenueTrend.amount')}
+              summary={revenueSummary}
+              points={revenueTrendPoints}
+            />
+            <MemberGrowthChart
+              title={t('memberGrowth.title')}
+              caption={t('memberGrowth.cumulative')}
+              emptyLabel={t('memberGrowth.empty')}
+              sparseLabel={t('memberGrowth.sparse')}
+              monthHeader={t('memberGrowth.month')}
+              countHeader={t('memberGrowth.count')}
+              summary={memberGrowthSummary}
+              {...(memberDelta ? { delta: memberDelta } : {})}
+              points={memberGrowthPoints}
+            />
+          </section>
 
-      {/* Breakdown / composition charts (Task 12) — membership-by-tier bar +
-          invoice-status donut. Both are self-contained i18n (no title/label
-          props — see each component's own docblock) and both lazy-load their
-          recharts canvas internally (`next/dynamic(..., { ssr: false })`),
-          so this section, like Trends above, SSRs its accessible
-          `<ChartDataTable>` even though the decorative canvas is client-lazy. */}
-      <section
-        aria-label={t('breakdown.sectionLabel')}
-        className={finance ? 'grid gap-4 lg:grid-cols-2' : 'grid gap-4'}
-      >
-        <MembershipTierChart slices={metrics.tierDistribution} />
-        {/* The receivables donut is AR data — `insights.finance` only. */}
-        {finance ? <InvoiceStatusChart distribution={finance.invoiceStatus} /> : null}
-      </section>
+          {/* Breakdown / composition charts (Task 12) — membership-by-tier bar +
+              invoice-status donut. Both are self-contained i18n (no title/label
+              props — see each component's own docblock) and both lazy-load their
+              recharts canvas internally (`next/dynamic(..., { ssr: false })`),
+              so this section, like Trends above, SSRs its accessible
+              `<ChartDataTable>` even though the decorative canvas is client-lazy. */}
+          <section
+            aria-label={t('breakdown.sectionLabel')}
+            className="grid gap-4 lg:grid-cols-2"
+          >
+            <MembershipTierChart slices={metrics.tierDistribution} />
+            <InvoiceStatusChart distribution={finance.invoiceStatus} />
+          </section>
+        </>
+      ) : (
+        <section
+          aria-label={t('engagement.sectionLabel')}
+          className="grid gap-4 lg:grid-cols-2"
+        >
+          <MemberGrowthChart
+            title={t('memberGrowth.title')}
+            caption={t('memberGrowth.cumulative')}
+            emptyLabel={t('memberGrowth.empty')}
+            sparseLabel={t('memberGrowth.sparse')}
+            monthHeader={t('memberGrowth.month')}
+            countHeader={t('memberGrowth.count')}
+            summary={memberGrowthSummary}
+            {...(memberDelta ? { delta: memberDelta } : {})}
+            points={memberGrowthPoints}
+          />
+          <MembershipTierChart slices={metrics.tierDistribution} />
+        </section>
+      )}
 
       <ActivityFeed
         title={t('activity.title')}

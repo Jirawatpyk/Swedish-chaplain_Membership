@@ -284,9 +284,27 @@ describe('StaffHomePage — engagement-only viewer (016 T054)', () => {
     expect(html).not.toContain('MISSING_NS:');
   });
 
-  it('collapses the KPI row to 3 columns so there is no gap where revenue sat', async () => {
+  it('collapses the KPI row to 3 columns at every breakpoint, with no orphan tile', async () => {
     const html = await renderWithoutFinance();
-    expect(html).toContain('lg:grid-cols-3');
+    // `sm:grid-cols-3`, not `sm:grid-cols-2 lg:grid-cols-3`: 4 tiles fill a 2x2
+    // exactly, but 3 tiles in a 2-column grid leave a half-width hole on the
+    // second row for every viewport from 640px to 1023px. The first version of
+    // this fix moved the gap instead of closing it.
+    expect(html).toContain('sm:grid-cols-3');
     expect(html).not.toContain('lg:grid-cols-4');
+  });
+
+  it('renders the two engagement charts as one 2-up row, not two full-width rows', async () => {
+    // Without finance both chart sections would otherwise collapse to a single
+    // full-width card each, and a 12-point sparkline stretched across the full
+    // detail width reads as a bar, not a chart. Merging them keeps the 2-up
+    // rhythm the finance dashboard has.
+    const html = await renderWithoutFinance();
+    expect(html).toContain(en.admin.dashboard.memberGrowth.title);
+    expect(html).toContain(en.admin.dashboard.membershipTier.title);
+    expect(html).toContain(`aria-label="${en.admin.dashboard.engagement.sectionLabel}"`);
+    // The finance-only section labels are gone entirely, not left empty.
+    expect(html).not.toContain(`aria-label="${en.admin.dashboard.trends.sectionLabel}"`);
+    expect(html).not.toContain(`aria-label="${en.admin.dashboard.breakdown.sectionLabel}"`);
   });
 });

@@ -28,6 +28,7 @@
  *   `pnpm test:e2e --grep "rbac-navigation" --workers=1`
  */
 import type { Page } from '@playwright/test';
+import en from '@/i18n/messages/en.json';
 import { expect, test } from './fixtures';
 import { signInAsAdmin, signInAsSuperAdmin } from './helpers/admin-session';
 import { signInAsManager } from './helpers/manager-session';
@@ -89,7 +90,10 @@ const MUST_NOT_SEE: Readonly<Record<string, readonly string[]>> = {
 
 /** Every href the rendered staff sidebar offers, de-duplicated. */
 async function sidebarHrefs(page: Page): Promise<readonly string[]> {
-  const nav = page.getByRole('navigation').first();
+  // By NAME, not `.first()`: the staff layout also renders <BreadcrumbNav />,
+  // so positional selection is a bet on DOM order. `nav.staff.ariaLabel` is the
+  // sidebar's own accessible name (staff-sidebar.tsx).
+  const nav = page.getByRole('navigation', { name: en.nav.staff.ariaLabel });
   await expect(nav).toBeVisible();
   const hrefs = await nav
     .locator('a[href^="/admin"]')
@@ -111,7 +115,11 @@ async function assertOpens(page: Page, href: string): Promise<void> {
     maxRedirects: 0,
   });
   const status = res.status();
-  expect(status, `${href} returned ${status}`).toBeLessThan(400);
+  // 200 exactly, not `< 400`. With `maxRedirects: 0` a 3xx here means the
+  // session expired mid-walk — and `< 400` would then read every link on the
+  // sidebar as "opens fine", turning the whole suite green at the moment it
+  // stopped testing anything.
+  expect(status, `${href} returned ${status}`).toBe(200);
   const body = await res.text();
   // The dev RSC response can be a 200 that CARRIES the not-found marker, so a
   // status check alone is not enough (idiom: rbac-admin-persona.spec.ts).
@@ -172,6 +180,11 @@ test.describe('T062 RBAC v2 — four-persona navigation walk (ON leg)', () => {
 
         await page.goto('/admin', { waitUntil: 'domcontentloaded' });
         const hrefs = await sidebarHrefs(page);
+        // Positive anchor FIRST. A loop of `not.toContain` over an empty array
+        // passes every assertion, so a selector that stopped matching would
+        // read as "nothing denied is offered" — the strongest possible result
+        // from the weakest possible evidence.
+        expect(hrefs, `${persona.name} sees an empty sidebar`).toContain('/admin');
         for (const href of denied!) {
           expect(hrefs, `${persona.name} must not be offered ${href}`).not.toContain(href);
         }

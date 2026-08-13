@@ -572,6 +572,9 @@
           "smart_insight_dismissed": "Insight dismissed",
           "dashboard_viewed": "Dashboard viewed"
         }
+      },
+      "engagement": {
+        "sectionLabel": "Engagement charts"
       }
     },
     "home": {
@@ -674,7 +677,7 @@
         "emailPlaceholder": "person@example.com",
         "roleLabel": "Role",
         "roles": {
-          "admin": "Admin — full access",
+          "admin": "Admin — everything except user management, audit log, invoice settings and erasure",
           "manager": "Manager — read-only on finance",
           "member": "Member — self-service portal",
           "super_admin": "Super Admin — full access + staff role management",
@@ -1042,7 +1045,7 @@
       },
       "subtitle": "Member companies + primary contacts",
       "directory": {
-        "managerReadOnlyBanner": "Read-only view — managers can browse and search but cannot edit, archive, or bulk-action members. Contact an admin to make changes.",
+        "managerReadOnlyBanner": "Read-only view — you can browse and search members but not edit, archive, or bulk-action them. Contact an administrator to make changes.",
         "searchPlaceholder": "Search by company, contact name, email, or member number",
         "searchSrLabel": "Search members",
         "clearFilters": "Clear filters",
@@ -5151,6 +5154,11 @@
           }
         }
       }
+    },
+    "notFound": {
+      "title": "This page isn't available to your role",
+      "body": "Some staff surfaces need a higher role than yours. Ask a Super Administrator to open it for you, or to change your role.",
+      "back": "Back to dashboard"
     }
   },
   "palette": {

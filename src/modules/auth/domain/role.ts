@@ -37,6 +37,36 @@ export const ASSIGNABLE_ROLES: readonly Role[] = [
 ];
 
 /**
+ * The order roles are PRESENTED in, most-privileged first.
+ *
+ * `ASSIGNABLE_ROLES` is a SET whose order records the widening history and is
+ * pinned exactly by `role.test.ts` — useful for spotting a silent membership
+ * change, useless as a UI ordering. Rendering it directly gave the invite dialog
+ * "Admin · Manager · Member · Super Admin · Marketing", with the member role
+ * wedged into the middle of the staff ones, while the change-role picker on the
+ * SAME PAGE listed them by rank. Two pickers, one screen, two orders.
+ *
+ * Every list rendered to a human orders by this. Membership still comes from
+ * `ASSIGNABLE_ROLES` / `CHANGE_ROLE_OPTIONS`; this only sorts.
+ */
+export const ROLE_DISPLAY_ORDER: readonly Role[] = [
+  'super_admin',
+  'admin',
+  'manager',
+  'marketing',
+  'member',
+];
+
+/** `roles` sorted for display. Anything not in the order list goes last. */
+export function byDisplayOrder(roles: readonly Role[]): readonly Role[] {
+  const rank = (r: Role): number => {
+    const i = ROLE_DISPLAY_ORDER.indexOf(r);
+    return i === -1 ? ROLE_DISPLAY_ORDER.length : i;
+  };
+  return [...roles].sort((a, b) => rank(a) - rank(b));
+}
+
+/**
  * The two portal surfaces the app renders: `staff` (backoffice,
  * role=admin/manager) and `member` (self-service, role=member).
  *
