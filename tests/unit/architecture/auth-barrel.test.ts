@@ -52,6 +52,12 @@ const ALLOWED = new Set([
   '@/modules/auth/domain/permissions/legacy-shim',
   '@/modules/auth/domain/permissions/permission-catalogue',
   '@/modules/auth/domain/permissions/evaluator',
+  // 016 review — added by PR 4's SurfaceGuard. `src/config/nav.ts` is pulled
+  // into the CLIENT bundle by `staff-sidebar.tsx`, so it cannot import the auth
+  // barrel: `auth-deps` builds argon2 / Upstash / repo singletons at module
+  // eval. `surface-guard.ts` is pure Domain — two type-only imports and an
+  // object literal, no runtime dependency at all.
+  '@/modules/auth/domain/permissions/surface-guard',
   '@/modules/auth/domain/role',
   '@/modules/auth/domain/branded',
   '@/modules/auth/domain/user',

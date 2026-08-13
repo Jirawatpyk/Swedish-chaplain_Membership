@@ -119,4 +119,69 @@ describe('016 I5 — PII egress key subsumption', () => {
         'bundle, or gate those two egress paths on it explicitly.',
     ).toEqual([]);
   });
+
+  /**
+   * 016 review I-8 — the SECOND DoB egress, symmetric to the rule above.
+   *
+   * `T035` recorded that the member edit/create forms are `members.write`
+   * surfaces whose "holders always carry `pii_sensitive`" and are therefore
+   * correctly ungated. True today, pinned by nothing.
+   *
+   * The exposure is concrete: `admin/members/[memberId]/edit/page.tsx` reads
+   * `primary.dateOfBirth` straight off the domain aggregate — bypassing the API
+   * projection that carries the sub-gate — and ships it into the RSC flight
+   * payload for a client component. Root cause is one layer down:
+   * `drizzle-contact-repo.ts` selects whole rows, so every in-process `Contact`
+   * carries DoB and confidentiality rests on each call site remembering to drop
+   * it. Art. 25(2) says the default should be the other way round.
+   */
+  it('every bundle holding members.write also holds members.pii_sensitive', () => {
+    const holders = ROLES.filter((role) => ROLE_BUNDLES[role].has(k('members.write')));
+    expect(
+      holders.length,
+      'no bundle holds members.write — the invariant below is vacuous',
+    ).toBeGreaterThan(0);
+
+    const offenders = ROLES.filter(
+      (role) =>
+        ROLE_BUNDLES[role].has(k('members.write')) &&
+        !ROLE_BUNDLES[role].has(k('members.pii_sensitive')),
+    );
+    expect(
+      offenders,
+      'the member edit page ships contact date_of_birth into the RSC payload ' +
+        'under members.write alone (admin/members/[memberId]/edit/page.tsx). A ' +
+        'role holding write without members.pii_sensitive would receive PII the ' +
+        'single-member read denies it. Either add the key to that bundle, or ' +
+        'project date_of_birth out of the edit page payload.',
+    ).toEqual([]);
+  });
+
+  /**
+   * T057 (016 PR 4) — the marketing half, stated as its own assertion rather
+   * than left implied by the subsumption rule above.
+   *
+   * PR 4 makes `marketing` assignable, which turns "marketing cannot reach the
+   * bulk PII paths" from a hypothetical into a live guarantee. Those two paths
+   * (`GET /api/admin/members/export.zip`, the GDPR member archive) are gated on
+   * `members.bulk` ALONE — the field-level `members.pii_sensitive` sub-gate that
+   * protects the single-member read does not run there. So marketing's safety on
+   * them rests entirely on it not holding `members.bulk`.
+   *
+   * Naming both keys here means a bundle edit that grants either one fails with
+   * a message about PII egress, instead of only tripping the generic subsumption
+   * test (which a well-meaning "just add pii_sensitive too" fix would silence
+   * while handing marketing every contact's date of birth).
+   */
+  it('marketing holds neither members.bulk nor members.pii_sensitive (T057)', () => {
+    expect(
+      ROLE_BUNDLES.marketing.has(k('members.bulk')),
+      'marketing would reach the members-backup CSV and the GDPR member archive, ' +
+        'both of which emit every contact date_of_birth in the tenant',
+    ).toBe(false);
+    expect(
+      ROLE_BUNDLES.marketing.has(k('members.pii_sensitive')),
+      'marketing would receive date_of_birth on the single-member read',
+    ).toBe(false);
+  });
 });

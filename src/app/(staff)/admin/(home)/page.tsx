@@ -29,8 +29,12 @@ import { MembershipTierChart } from '@/components/dashboard/membership-tier-char
 import { InvoiceStatusChart } from '@/components/dashboard/invoice-status-chart';
 import { EmptyState } from '@/components/shell/empty-state';
 import { ShieldAlertIcon } from 'lucide-react';
-import { requirePagePermission } from '@/lib/rbac';
-import { legacySessionOnly } from '@/modules/auth/domain/permissions/legacy-shim';
+import { requirePagePermission, canPerform } from '@/lib/rbac';
+import {
+  legacySessionOnly,
+  legacyAdminOrManager,
+  legacyAdminOnly,
+} from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
@@ -39,6 +43,7 @@ import { resolveEventLabel } from '@/lib/audit-event-label';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
 import {
   listDashboard,
+  hasFinanceMetrics,
   activityFeedQuery,
   listSmartInsights,
   makeListDashboardDeps,
@@ -112,11 +117,33 @@ export default async function StaffHomePage() {
     requestId: randomUUID(),
   };
 
+  // 016 T054/T056 — the page guard above only proves `dashboard.view`. Finance
+  // is a SECOND permission: `insights.finance` decides whether the revenue KPI,
+  // the revenue trend, the receivables donut and the overdue-invoice attention
+  // row exist AT ALL. It is resolved here and passed into the use case so the
+  // numbers never leave the server for a viewer without it — hiding the widgets
+  // client-side would still ship the figures in the RSC payload.
+  const canFinance = canPerform(user.role, 'insights.finance', legacyAdminOrManager);
+  // 016 T058 — the activity feed's per-row deep link targets `/admin/audit`,
+  // which is gated on `audit.read`. Mirror that key here (same legacy row as the
+  // audit page itself) so the link only appears when it can actually be opened.
+  const canReadAudit = canPerform(user.role, 'audit.read', legacySessionOnly);
+
   // allSettled (not all) so a thrown activity-feed read can never take down the
   // whole dashboard — the feed is the least-critical widget (FR-003 vs FR-005).
   const [dashSettled, feedSettled] = await Promise.allSettled([
-    listDashboard(meta, tenant, makeListDashboardDeps(tenant.slug)),
-    activityFeedQuery({ limit: 15 }, meta, tenant, makeActivityFeedDeps()),
+    listDashboard(meta, tenant, makeListDashboardDeps(tenant.slug, canFinance)),
+    activityFeedQuery(
+      { limit: 15 },
+      meta,
+      tenant,
+      // 016 T058 — `legacyAdminOnly` reproduces today's OFF-leg population
+      // exactly: the shim normalises super_admin → admin, so the unredacted
+      // feed stays {admin, super_admin} until the flag flips.
+      makeActivityFeedDeps(
+        canPerform(user.role, 'insights.activity_unredacted', legacyAdminOnly),
+      ),
+    ),
   ]);
   const dashResult = dashSettled.status === 'fulfilled' ? dashSettled.value : null;
 
@@ -149,6 +176,11 @@ export default async function StaffHomePage() {
   }
 
   const { metrics, computedAt } = dashResult.value;
+  // Narrow ONCE. `finance` is non-null exactly when the payload actually carries
+  // the numbers, so no widget below re-derives the permission — and the compiler
+  // refuses any finance read taken straight off `metrics`, which is what makes a
+  // future widget unable to quietly leak.
+  const finance = hasFinanceMetrics(metrics) ? metrics : null;
   const numberFmt = new Intl.NumberFormat(locale);
   // Hoisted above the KPI cards (Task 15) — the revenue KPI's <CountUp>
   // needs this same formatter, and `revenueTrendPoints`/`revenueSummary`
@@ -221,33 +253,46 @@ export default async function StaffHomePage() {
       rawValue: metrics.counts.atRisk,
       variant: 'integer',
     },
-    // FR-007: revenue is visible to all staff (admin + the "read-only on
-    // finance" manager role); only members are denied the dashboard
-    // (handled upstream). Satang → THB conversion happens HERE (at the call
-    // site, a plain number), not inside <CountUp> — it only ever receives a
-    // baht value, mirroring the previous one-shot `revenueDisplay` computation.
-    {
-      key: 'revenue',
-      label: t('kpi.revenue'),
-      caption: t('kpi.revenueCaption'),
-      rawValue: Number(metrics.ytdPaidRevenueSatang) / 100,
-      variant: 'thb',
-    },
+    // FR-007 + 016 T054: revenue is visible to every staff role that holds
+    // `insights.finance` — admin, super_admin, and the "read-only on finance"
+    // manager. Marketing does not hold it, so the tile is absent rather than
+    // zeroed (the number never reached the server response either). Satang →
+    // THB conversion happens HERE (at the call site, a plain number), not inside
+    // <CountUp> — it only ever receives a baht value, mirroring the previous
+    // one-shot `revenueDisplay` computation.
+    ...(finance
+      ? ([
+          {
+            key: 'revenue',
+            label: t('kpi.revenue'),
+            caption: t('kpi.revenueCaption'),
+            rawValue: Number(finance.ytdPaidRevenueSatang) / 100,
+            variant: 'thb',
+          },
+        ] as const)
+      : []),
   ];
 
   // Only surface items that actually need attention (FR-006) — a "0" with a
   // dead-end link is noise; when all are zero the list shows an "all clear" state.
   const needsAttentionItems: readonly NeedsAttentionItem[] = (
     [
-      {
-        id: 'overdueInvoices',
-        n: metrics.needsAttention.overdueInvoices,
-        label: t('needsAttention.overdueInvoices'),
-        // The metric counts OVERDUE invoices, so deep-link to the derived
-        // `overdue` filter (issued + Bangkok-today > dueDate), not `issued`
-        // (a superset that shows not-yet-due invoices too).
-        href: '/admin/invoices?status=overdue',
-      },
+      // 016 T054 — the overdue-invoice row is finance data AND deep-links to
+      // `/admin/invoices`, which a marketing session cannot open; without the
+      // guard it would be both a leak and a dead-end link.
+      ...(finance
+        ? ([
+            {
+              id: 'overdueInvoices',
+              n: finance.needsAttention.overdueInvoices,
+              label: t('needsAttention.overdueInvoices'),
+              // The metric counts OVERDUE invoices, so deep-link to the derived
+              // `overdue` filter (issued + Bangkok-today > dueDate), not `issued`
+              // (a superset that shows not-yet-due invoices too).
+              href: '/admin/invoices?status=overdue',
+            },
+          ] as const)
+        : []),
       {
         id: 'atRisk',
         n: metrics.needsAttention.atRiskMembers,
@@ -326,7 +371,12 @@ export default async function StaffHomePage() {
       // Related-record link (FR-003) — the audit viewer filtered to this event's
       // target record. Omitted for events with no user target (payload-only
       // entity). targetUserId is a uuid column so it passes the viewer's guard.
-      ...(item.targetUserId
+      // 016 T058: ALSO omitted for a viewer without `audit.read`. D4 narrowed
+      // that key to super_admin, so on the ON leg this link sent admins,
+      // managers and marketing to a page their own guard denies — a dead end
+      // that shipped the moment the flag flipped, not a PR 4 regression. The
+      // ROW still renders; only the link is dropped.
+      ...(item.targetUserId && canReadAudit
         ? { href: `/admin/audit?targetRef=${encodeURIComponent(item.targetUserId)}` }
         : {}),
       // Localised action label (FR-034) — resolved per-locale from the audit
@@ -349,7 +399,7 @@ export default async function StaffHomePage() {
   const monthFmt = new Intl.DateTimeFormat(getDateFormatLocale(locale), { month: 'short', year: 'numeric' });
   const monthLabel = (key: string): string =>
     monthFmt.format(new Date(Number(key.slice(0, 4)), Number(key.slice(5, 7)) - 1, 1));
-  const revenueTrendPoints = metrics.revenueTrend.map((p) => ({
+  const revenueTrendPoints = (finance?.revenueTrend ?? []).map((p) => ({
     key: p.month,
     label: monthLabel(p.month),
     value: Number(p.satang),
@@ -362,7 +412,10 @@ export default async function StaffHomePage() {
     valueLabel: numberFmt.format(p.cumulative),
   }));
   // At-a-glance summary stats above each sparkline (readability).
-  const revenueTotalSatang = metrics.revenueTrend.reduce((s, p) => s + BigInt(p.satang), 0n);
+  const revenueTotalSatang = (finance?.revenueTrend ?? []).reduce(
+    (s, p) => s + BigInt(p.satang),
+    0n,
+  );
   const revenueSummary = {
     value: thbFmt.format(Number(revenueTotalSatang) / 100),
     label: t('revenueTrend.total'),
@@ -385,9 +438,24 @@ export default async function StaffHomePage() {
     <DetailContainer>
       <PageHeader title={t('title')} subtitle={t('asOf', { time: asOf })} />
 
+      {/* 3 tiles without `insights.finance`, 4 with — the column count follows
+          so an engagement-only viewer gets an evenly-filled row rather than a
+          gap where the revenue tile used to be.
+          The 3-tile variant goes straight to `sm:grid-cols-3`. Keeping
+          `sm:grid-cols-2` moved the gap rather than closing it: 4 tiles fill a
+          2×2 exactly, but 3 tiles leave a half-width hole on the second row for
+          every viewport from 640px to 1023px — iPad portrait and any
+          split-screen desktop window.
+          Both class strings are written out in full: Tailwind scans source
+          text, so an interpolated `lg:grid-cols-${n}` would never be
+          generated. */}
       <section
         aria-label={t('kpi.sectionLabel')}
-        className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
+        className={
+          finance
+            ? 'grid gap-4 sm:grid-cols-2 lg:grid-cols-4'
+            : 'grid gap-4 sm:grid-cols-3'
+        }
       >
         {kpis.map((kpi) => (
           <KpiCard
@@ -415,40 +483,76 @@ export default async function StaffHomePage() {
         />
       </div>
 
-      <section aria-label={t('trends.sectionLabel')} className="grid gap-4 lg:grid-cols-2">
-        <RevenueTrendChart
-          title={t('revenueTrend.title')}
-          caption={t('revenueTrend.perMonth')}
-          emptyLabel={revenueTrendEmpty}
-          sparseLabel={t('revenueTrend.sparse')}
-          monthHeader={t('revenueTrend.month')}
-          amountHeader={t('revenueTrend.amount')}
-          summary={revenueSummary}
-          points={revenueTrendPoints}
-        />
-        <MemberGrowthChart
-          title={t('memberGrowth.title')}
-          caption={t('memberGrowth.cumulative')}
-          emptyLabel={t('memberGrowth.empty')}
-          sparseLabel={t('memberGrowth.sparse')}
-          monthHeader={t('memberGrowth.month')}
-          countHeader={t('memberGrowth.count')}
-          summary={memberGrowthSummary}
-          {...(memberDelta ? { delta: memberDelta } : {})}
-          points={memberGrowthPoints}
-        />
-      </section>
+      {/* With finance: Trends (revenue + growth) and Breakdown (tier + AR) are
+          two separate 2-up rows, as before.
+          Without it, both rows would collapse to ONE card each and the page
+          would read as leftovers stacked in a column — a 12-point sparkline
+          stretched across the full detail width looks like a bar, not a chart.
+          So the two survivors are merged into a single 2-up "Engagement charts"
+          row instead, which keeps the finance dashboard's rhythm and halves the
+          skeleton mismatch documented in loading.tsx. */}
+      {finance ? (
+        <>
+          <section
+            aria-label={t('trends.sectionLabel')}
+            className="grid gap-4 lg:grid-cols-2"
+          >
+            <RevenueTrendChart
+              title={t('revenueTrend.title')}
+              caption={t('revenueTrend.perMonth')}
+              emptyLabel={revenueTrendEmpty}
+              sparseLabel={t('revenueTrend.sparse')}
+              monthHeader={t('revenueTrend.month')}
+              amountHeader={t('revenueTrend.amount')}
+              summary={revenueSummary}
+              points={revenueTrendPoints}
+            />
+            <MemberGrowthChart
+              title={t('memberGrowth.title')}
+              caption={t('memberGrowth.cumulative')}
+              emptyLabel={t('memberGrowth.empty')}
+              sparseLabel={t('memberGrowth.sparse')}
+              monthHeader={t('memberGrowth.month')}
+              countHeader={t('memberGrowth.count')}
+              summary={memberGrowthSummary}
+              {...(memberDelta ? { delta: memberDelta } : {})}
+              points={memberGrowthPoints}
+            />
+          </section>
 
-      {/* Breakdown / composition charts (Task 12) — membership-by-tier bar +
-          invoice-status donut. Both are self-contained i18n (no title/label
-          props — see each component's own docblock) and both lazy-load their
-          recharts canvas internally (`next/dynamic(..., { ssr: false })`),
-          so this section, like Trends above, SSRs its accessible
-          `<ChartDataTable>` even though the decorative canvas is client-lazy. */}
-      <section aria-label={t('breakdown.sectionLabel')} className="grid gap-4 lg:grid-cols-2">
-        <MembershipTierChart slices={metrics.tierDistribution} />
-        <InvoiceStatusChart distribution={metrics.invoiceStatus} />
-      </section>
+          {/* Breakdown / composition charts (Task 12) — membership-by-tier bar +
+              invoice-status donut. Both are self-contained i18n (no title/label
+              props — see each component's own docblock) and both lazy-load their
+              recharts canvas internally (`next/dynamic(..., { ssr: false })`),
+              so this section, like Trends above, SSRs its accessible
+              `<ChartDataTable>` even though the decorative canvas is client-lazy. */}
+          <section
+            aria-label={t('breakdown.sectionLabel')}
+            className="grid gap-4 lg:grid-cols-2"
+          >
+            <MembershipTierChart slices={metrics.tierDistribution} />
+            <InvoiceStatusChart distribution={finance.invoiceStatus} />
+          </section>
+        </>
+      ) : (
+        <section
+          aria-label={t('engagement.sectionLabel')}
+          className="grid gap-4 lg:grid-cols-2"
+        >
+          <MemberGrowthChart
+            title={t('memberGrowth.title')}
+            caption={t('memberGrowth.cumulative')}
+            emptyLabel={t('memberGrowth.empty')}
+            sparseLabel={t('memberGrowth.sparse')}
+            monthHeader={t('memberGrowth.month')}
+            countHeader={t('memberGrowth.count')}
+            summary={memberGrowthSummary}
+            {...(memberDelta ? { delta: memberDelta } : {})}
+            points={memberGrowthPoints}
+          />
+          <MembershipTierChart slices={metrics.tierDistribution} />
+        </section>
+      )}
 
       <ActivityFeed
         title={t('activity.title')}

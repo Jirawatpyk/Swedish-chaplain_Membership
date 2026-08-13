@@ -25,6 +25,33 @@ import { env } from '@/lib/env';
  * admin children slot, so navigating to any /admin/* feature (cache cold) would
  * flash this dashboard skeleton before the target page's own loading.tsx
  * mounts. Do NOT move this back up to `admin/loading.tsx`.
+ *
+ * 016 T054 — this skeleton does NOT mirror the finance/engagement split, on
+ * purpose. Doing so would need the viewer's permissions, and the only way to
+ * get them here is `getCurrentSession()`, which is not React-cached and writes
+ * `last_seen_at` — i.e. a DB write on every loading fallback.
+ *
+ * What a viewer without `insights.finance` actually sees, stated honestly
+ * (the first version of this note claimed the shift was nil, which is true only
+ * at `lg` and above, and it counted one collapsing chart row when there are
+ * two):
+ *
+ *  - KPI row: 4 placeholders settle into 3.
+ *  - The two chart ROWS (Trends + Breakdown, 2 cards each) settle into ONE
+ *    "Engagement charts" row of 2 cards — so one whole row disappears.
+ *
+ * The KPI change is a horizontal reflow at every breakpoint. The chart change
+ * is not: one row of cards is removed outright, so that viewer scores CLS at
+ * every width, not only below `lg`. An earlier version of this note described a
+ * 2→1 settle in each of two rows — that was true for about an hour, until the
+ * same commit merged them, and it is recorded here because a note that drifts
+ * from the layout it describes is how the next reader is misled. Accepted: the affected population is `marketing` only, staff work
+ * here is desktop-first, and the alternative is a DB write on every fallback.
+ *
+ * Revisit if either changes: `getCurrentSession` becoming side-effect-free and
+ * request-cached, or the page moving its data reads behind their own
+ * `<Suspense>` boundaries — the latter would let the shell stream with
+ * `canFinance` already known and make this file's fork unnecessary.
  */
 export default async function Loading() {
   const tLayout = await getTranslations('layout');

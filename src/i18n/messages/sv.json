@@ -168,10 +168,10 @@
       "label": "Byt språk"
     },
     "roleBadge": {
-      "super_admin": "Superadministratör",
-      "admin": "Administratör",
-      "manager": "Chef",
-      "marketing": "Marknadsförare",
+      "super_admin": "Super Admin",
+      "admin": "Admin",
+      "manager": "Manager",
+      "marketing": "Marketing",
       "member": "Medlem"
     }
   },
@@ -572,6 +572,9 @@
           "smart_insight_dismissed": "Insikt avfärdad",
           "dashboard_viewed": "Instrumentpanel visad"
         }
+      },
+      "engagement": {
+        "sectionLabel": "Engagemangsdiagram"
       }
     },
     "home": {
@@ -596,10 +599,10 @@
         "role": {
           "label": "Roll",
           "all": "Alla roller",
-          "super_admin": "Superadministratör",
+          "super_admin": "Super Admin",
           "admin": "Admin",
           "manager": "Manager",
-          "marketing": "Marknadsförare",
+          "marketing": "Marketing",
           "member": "Medlem"
         },
         "status": {
@@ -649,10 +652,20 @@
         "roleLabel": "Ny roll",
         "current": "Nuvarande",
         "confirm": "Ändra roll",
+        "pickDifferent": "Välj en annan roll för att fortsätta.",
+        "memberHint": "Att flytta någon mellan personalportalen och medlemsportalen är inte en rolländring — bjud in personen separat.",
+        "superAdminWarning": "Super Admin ger även användarhantering, granskningsloggen, fakturainställningar och permanent radering av data — och personen kan i sin tur ändra din roll.",
+        "superAdminPhrase": "PROMOTE",
+        "superAdminConfirmCopy": "Skriv {phrase} för att bekräfta befordran.",
+        "superAdminConfirmMismatch": "Skriv {phrase} exakt för att fortsätta.",
         "errors": {
-          "last-admin-protection": "Du kan inte ändra den sista administratörens roll — befordra eller bjud in en annan Superadministratör först.",
+          "last-admin-protection": "Du kan inte ändra den sista administratörens roll — befordra eller bjud in en annan Super Admin först.",
           "same-role": "Användaren har redan den här rollen.",
           "role-portal-mismatch": "Den rolländringen är inte tillåten för det här kontot.",
+          "forbidden": "Du har inte längre behörighet att ändra roller. Logga ut och in igen, fråga sedan en Super Admin.",
+          "not-found": "Användaren finns inte längre. Uppdatera listan.",
+          "invalid-role": "Det är inte en roll som systemet kan tilldela.",
+          "no-session": "Din session har gått ut. Logga in igen och försök ändra rollen på nytt.",
           "generic": "Kunde inte ändra rollen. Försök igen."
         }
       },
@@ -667,18 +680,19 @@
         "revokeError": "Kunde inte återkalla inbjudan. Försök igen.",
         "roleChanged": "Rollen för {email} ändrades till {role}."
       },
+      "roleSummary": {
+        "super_admin": "Full åtkomst, inklusive användarhantering, granskningsloggen, fakturainställningar och radering av data.",
+        "admin": "Medlemmar, fakturor, evenemang och utskick. Kan inte hantera användare, läsa granskningsloggen, ändra fakturainställningar eller radera data.",
+        "manager": "Läsbehörighet för ekonomi. Kan se medlemmar, fakturor och rapporter utan att ändra dem.",
+        "marketing": "Utskick, evenemang och medlemmarnas kontaktuppgifter. Ingen ekonomi och inga känsliga uppgifter.",
+        "member": "Endast självbetjäningsportalen — eget medlemskap, egna fakturor och evenemang."
+      },
       "invite": {
         "title": "Bjud in en ny användare",
         "description": "De får ett mejl med en engångslänk för att skapa sitt lösenord.",
         "emailLabel": "E-postadress",
         "emailPlaceholder": "person@example.com",
         "roleLabel": "Roll",
-        "roles": {
-          "admin": "Admin — full åtkomst",
-          "manager": "Manager — läsbehörighet för ekonomi",
-          "member": "Medlem — självbetjäningsportal",
-          "super_admin": "Super Admin — full åtkomst + hantering av personalroller"
-        },
         "submit": "Skicka inbjudan",
         "submitting": "Skickar…",
         "cancel": "Avbryt",
@@ -1041,7 +1055,7 @@
       },
       "subtitle": "Medlemsföretag + primära kontakter",
       "directory": {
-        "managerReadOnlyBanner": "Skrivskyddad vy — chefer kan bläddra och söka men inte redigera, arkivera eller utföra massåtgärder. Kontakta en systemadministratör för att göra ändringar.",
+        "managerReadOnlyBanner": "Skrivskyddad vy — du kan bläddra och söka bland medlemmar men inte redigera, arkivera eller utföra massåtgärder. Kontakta en administratör för att göra ändringar.",
         "searchPlaceholder": "Sök på företag, kontakt, e-post eller medlemsnummer",
         "searchSrLabel": "Sök medlemmar",
         "clearFilters": "Rensa filter",
@@ -1826,6 +1840,7 @@
       "index": {
         "title": "Inställningar",
         "subtitle": "Konfigurera fakturering och förnyelsepåminnelser för hela kammaren.",
+        "empty": "Inga inställningar är tillgängliga för din roll.",
         "categories": {
           "invoicing": {
             "title": "Fakturainställningar",
@@ -3674,8 +3689,8 @@
             },
             "assigneeLabel": "Tilldelad roll",
             "assigneeRole": {
-              "admin": "Administratör",
-              "manager": "Chef",
+              "admin": "Admin",
+              "manager": "Manager",
               "executive_director": "Verkställande direktör"
             },
             "timing": {
@@ -4194,9 +4209,9 @@
           "skipped": "Hoppad"
         },
         "assigneeRole": {
-          "super_admin": "Superadministratör",
-          "admin": "Administratör",
-          "manager": "Chef",
+          "super_admin": "Super Admin",
+          "admin": "Admin",
+          "manager": "Manager",
           "executive_director": "Verkställande direktör"
         },
         "tierBucket": {
@@ -5149,6 +5164,12 @@
           }
         }
       }
+    },
+    "notFound": {
+      "title": "Sidan är inte tillgänglig",
+      "body": "Sidan finns inte, posten har tagits bort, eller så är den inte tillgänglig för din roll. Om du kom hit via en länk eller ett bokmärke kan länken vara inaktuell.",
+      "roleHint": "Om du förväntade dig åtkomst, be en superadministratör om hjälp — vissa personalsidor är begränsade till den rollen.",
+      "back": "Tillbaka till instrumentpanelen"
     }
   },
   "palette": {

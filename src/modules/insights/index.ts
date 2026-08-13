@@ -128,9 +128,12 @@ export {
 } from './application/use-cases/compute-benefit-usage';
 export {
   listDashboard,
+  hasFinanceMetrics,
+  projectEngagementOnly,
   type DashboardActorRole,
   type DashboardError,
   type DashboardView,
+  type EngagementSnapshot,
   type ListDashboardMeta,
 } from './application/use-cases/list-dashboard';
 export {

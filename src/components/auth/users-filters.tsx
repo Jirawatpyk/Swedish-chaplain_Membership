@@ -12,6 +12,7 @@ import { useCallback, useRef, useTransition } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { SearchIcon, XIcon } from 'lucide-react';
+import { byDisplayOrder, ROLES } from '@/modules/auth/domain/role';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { FilterBar } from '@/components/ui/filter-bar';
@@ -25,7 +26,20 @@ import {
 
 const DEBOUNCE_MS = 300;
 
-const ROLE_VALUES = ['admin', 'manager', 'member'] as const;
+/**
+ * Every role that can EXIST — derived, never re-typed.
+ *
+ * This was a hand-written `['admin', 'manager', 'member']`, and it was the
+ * fourth copy of the role union on this screen. Neither PR 3 (`super_admin`)
+ * nor PR 4 (`marketing`) reached it, so the page could hand out a role it could
+ * not then filter for, and "who holds super_admin right now?" — the question
+ * this screen exists to answer — was unaskable. `page.tsx` validates `?role=`
+ * against all of `ROLES`, so the URL accepted values with no matching option.
+ *
+ * Filtering is deliberately NOT `ASSIGNABLE_ROLES`: you filter for what exists,
+ * which includes roles that are no longer handed out.
+ */
+const ROLE_VALUES = byDisplayOrder(ROLES);
 const STATUS_VALUES = ['active', 'disabled', 'pending'] as const;
 
 export function UsersFilters() {

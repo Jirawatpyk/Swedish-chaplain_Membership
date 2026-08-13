@@ -56,10 +56,23 @@ const COPY: Record<EmailLocale, InvitationEmailCopy> = {
   },
 };
 
-const ROLE_LABELS: Record<EmailLocale, Record<Role, string>> = {
+/**
+ * Role names for the invitation email.
+ *
+ * A FIFTH copy of the role labels, separate from `src/i18n/messages/*` because
+ * emails render outside a next-intl context. `Record<EmailLocale, Record<Role,
+ * …>>` makes a MISSING role a type error, but nothing keeps the WORDS in step
+ * with the app, and they had drifted: sv said "Administratör" / "Chef" where
+ * the badge and the users table say "Admin" / "Manager", and en said
+ * "Administrator" where the app says "Admin". A new colleague read one word in
+ * the invitation and a different one the moment they signed in.
+ */
+/** Exported so `tests/unit/i18n/role-label-parity` can hold it to the app's
+ *  wording — this is the copy that drifted furthest. */
+export const ROLE_LABELS: Record<EmailLocale, Record<Role, string>> = {
   en: {
     super_admin: 'Super Admin',
-    admin: 'Administrator',
+    admin: 'Admin',
     manager: 'Manager',
     marketing: 'Marketing',
     member: 'Member',
@@ -72,10 +85,10 @@ const ROLE_LABELS: Record<EmailLocale, Record<Role, string>> = {
     member: 'สมาชิก',
   },
   sv: {
-    super_admin: 'Superadministratör',
-    admin: 'Administratör',
-    manager: 'Chef',
-    marketing: 'Marknadsförare',
+    super_admin: 'Super Admin',
+    admin: 'Admin',
+    manager: 'Manager',
+    marketing: 'Marketing',
     member: 'Medlem',
   },
 };

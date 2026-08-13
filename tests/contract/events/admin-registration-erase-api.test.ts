@@ -85,6 +85,19 @@ const VALID_PARAMS = {
   registrationId: VALID_REGISTRATION_ID,
 };
 
+/**
+ * 016 D4 — `events.erasure` is super-admin-only, so the HOLDER persona for this
+ * destructive PII surface is `super_admin`. See the sibling file
+ * `tests/contract/admin-events-erase-by-email.test.ts` for the full note: this
+ * suite drove a plain `admin` and stayed green only while the default leg was
+ * the legacy one. `super_admin` passes on BOTH legs (the shim normalises it to
+ * `admin`).
+ */
+const SUPER_ADMIN_SESSION = {
+  session: { id: 'sess-super-admin', userId: ADMIN_USER_ID } as unknown,
+  user: { id: ADMIN_USER_ID, role: 'super_admin' as const, email: 'super-admin@test' },
+};
+/** A plain admin — DENIED this surface on the ON leg (D4). */
 const ADMIN_SESSION = {
   session: { id: 'sess-admin', userId: ADMIN_USER_ID } as unknown,
   user: { id: ADMIN_USER_ID, role: 'admin' as const, email: 'admin@test' },
@@ -127,7 +140,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   resolveTenantFromRequestMock.mockReturnValue({ slug: TENANT_SLUG });
-  getCurrentSessionMock.mockResolvedValue(ADMIN_SESSION);
+  getCurrentSessionMock.mockResolvedValue(SUPER_ADMIN_SESSION);
   emitStandaloneMock.mockResolvedValue({ ok: true, value: 'audit-id' });
 });
 
@@ -270,6 +283,19 @@ describe('Phase B B7 — POST /api/admin/events/[eventId]/registrations/[registr
           'role_violation_blocked',
       );
       expect(violation).toBeDefined();
+    });
+
+    it('denies a PLAIN admin on the ON leg — D4 made this super-admin-only', async () => {
+      // Keeps ADMIN_SESSION a live fixture: `admin` held this surface until D4,
+      // so nothing else here would notice `events.erasure` losing its
+      // `superAdminOnly` flag. Skipped on the legacy leg, where admin still
+      // legitimately holds it.
+      if (process.env['FEATURE_RBAC_V2'] === 'false') return;
+      getCurrentSessionMock.mockResolvedValue(ADMIN_SESSION);
+      const { POST } = await loadRoute();
+      const res = await POST(jsonRequest({ reasonText: 'x' }), withParams(VALID_PARAMS));
+      // F6 keeps its own denial SHAPE (D9): 404, not the sweep's uniform 403.
+      expect(res.status).toBe(404);
     });
 
     it('404 when member attempts erase', async () => {

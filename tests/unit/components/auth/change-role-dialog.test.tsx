@@ -65,6 +65,123 @@ describe('ChangeRoleDialog', () => {
     expect(screen.getByText(en.admin.users.changeRole.current)).toBeInTheDocument();
   });
 
+  it('states what each role grants — a bare role name is not an informed choice', () => {
+    // The picker used to render role NAMES only, while the invite dialog three
+    // clicks away carried the descriptions. Promoting a colleague to super_admin
+    // showed nothing about what that adds over admin.
+    renderDialog();
+    expect(screen.getByText(en.admin.users.roleSummary.super_admin)).toBeInTheDocument();
+    expect(screen.getByText(en.admin.users.roleSummary.marketing)).toBeInTheDocument();
+  });
+
+  it('explains why `member` is absent instead of looking like a missing option', () => {
+    renderDialog();
+    expect(screen.getByText(en.admin.users.changeRole.memberHint)).toBeInTheDocument();
+  });
+
+  it('warns ONLY when the pick is a promotion to super_admin', async () => {
+    // The grant is users.manage + audit.read + invoice settings + GDPR erasure,
+    // and the grantee can demote the grantor — it had exactly the same weight
+    // as picking `manager`.
+    renderDialog();
+    const warning = () => screen.queryByTestId('super-admin-promotion-warning');
+    expect(warning(), 'nothing picked yet').toBeNull();
+
+    fireEvent.click(screen.getByRole('radio', { name: en.admin.users.filters.role.manager }));
+    expect(warning(), 'manager is not a promotion to super_admin').toBeNull();
+
+    fireEvent.click(screen.getByRole('radio', { name: en.admin.users.filters.role.super_admin }));
+    await waitFor(() => expect(warning()).toBeInTheDocument());
+  });
+
+  it('BLOCKS a super_admin promotion until the phrase is typed exactly', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    renderDialog();
+    fireEvent.click(screen.getByRole('radio', { name: en.admin.users.filters.role.super_admin }));
+
+    const confirm = screen.getByRole('button', { name: en.admin.users.changeRole.confirm });
+    await waitFor(() => expect(confirm).toBeDisabled());
+
+    // A near-miss must not pass — this is the whole point of a typed phrase.
+    const input = screen.getByLabelText(
+      en.admin.users.changeRole.superAdminConfirmCopy.replace(
+        '{phrase}',
+        en.admin.users.changeRole.superAdminPhrase,
+      ),
+    );
+    fireEvent.change(input, { target: { value: 'PROMOT' } });
+    await waitFor(() => expect(confirm).toBeDisabled());
+    expect(fetchSpy, 'nothing may be POSTed while the phrase is wrong').not.toHaveBeenCalled();
+
+    fireEvent.change(input, { target: { value: 'promote' } });
+    await waitFor(() => expect(confirm).toBeEnabled());
+  });
+
+  it('leaves every OTHER role change on a single click', async () => {
+    // The gate must be scoped to the promotion. Making all four roles heavier
+    // would train operators to type past it.
+    renderDialog();
+    fireEvent.click(screen.getByRole('radio', { name: en.admin.users.filters.role.manager }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: en.admin.users.changeRole.confirm }),
+      ).toBeEnabled(),
+    );
+  });
+
+  it('keeps focus in the phrase field while typing AFTER a failed attempt', async () => {
+    // The inline error is focused when it appears (ux-standards § 6.4). Doing
+    // that with an INLINE ref callback re-fires it on every render, because the
+    // callback's identity changes each time and React detaches then reattaches
+    // it — so each keystroke in the phrase field bounced focus onto the alert
+    // and the second character never landed. The two elements coexist on
+    // exactly one path: pick super_admin → type the phrase → submit → server
+    // refuses, leaving `selected` armed and `errorCode` set.
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: false,
+      json: async () => ({ error: 'last-admin-protection' }),
+    } as Response);
+    renderDialog();
+
+    const phraseLabel = en.admin.users.changeRole.superAdminConfirmCopy.replace(
+      '{phrase}',
+      en.admin.users.changeRole.superAdminPhrase,
+    );
+    fireEvent.click(screen.getByRole('radio', { name: en.admin.users.filters.role.super_admin }));
+    const input = screen.getByLabelText(phraseLabel);
+    fireEvent.change(input, {
+      target: { value: en.admin.users.changeRole.superAdminPhrase },
+    });
+    fireEvent.click(screen.getByRole('button', { name: en.admin.users.changeRole.confirm }));
+    await waitFor(() =>
+      expect(screen.getByText(en.admin.users.changeRole.errors['last-admin-protection'])),
+    );
+
+    // With the alert on screen, the operator corrects the phrase.
+    input.focus();
+    fireEvent.change(input, { target: { value: 'PROMOT' } });
+    await waitFor(() =>
+      expect(
+        document.activeElement,
+        'typing must not be interrupted by the error alert re-grabbing focus',
+      ).toBe(input),
+    );
+  });
+
+  it('does NOT warn when the row is already a super_admin (no promotion happening)', () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <ChangeRoleDialog
+          user={{ id: 'u-sa', email: 'sa@example.com', role: 'super_admin' }}
+          open
+          onOpenChange={vi.fn()}
+          onChanged={vi.fn()}
+        />
+      </NextIntlClientProvider>,
+    );
+    expect(screen.queryByTestId('super-admin-promotion-warning')).toBeNull();
+  });
+
   it('POSTs the picked role to the change-role route on confirm', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,
@@ -137,8 +254,21 @@ describe('ChangeRoleDialog', () => {
       </NextIntlClientProvider>,
     );
 
-    // Row A: arm a promotion to Super Admin.
+    // Row A: fully arm a promotion to Super Admin — pick it AND satisfy the
+    // typed-phrase gate, so the dialog is one click from granting the highest
+    // privilege in the system. The typed phrase is state too, and state that
+    // survived a row change would be worse than a stale radio: it would carry
+    // the deliberate friction across to a user the operator never typed it for.
     fireEvent.click(screen.getByRole('radio', { name: en.admin.users.filters.role.super_admin }));
+    const phraseInput = screen.getByLabelText(
+      en.admin.users.changeRole.superAdminConfirmCopy.replace(
+        '{phrase}',
+        en.admin.users.changeRole.superAdminPhrase,
+      ),
+    );
+    fireEvent.change(phraseInput, {
+      target: { value: en.admin.users.changeRole.superAdminPhrase },
+    });
     expect(screen.getByRole('button', { name: en.admin.users.changeRole.confirm })).toBeEnabled();
 
     // Close, then reopen for a DIFFERENT user (the parent keeps one instance).
@@ -164,6 +294,33 @@ describe('ChangeRoleDialog', () => {
       'reopening for another row must not inherit the previous row’s selection',
     ).toBeDisabled();
     expect(screen.getByText(en.admin.users.changeRole.current)).toBeInTheDocument();
+    // …and the promotion gate is gone with it, rather than sitting pre-satisfied.
+    expect(screen.queryByTestId('super-admin-promotion-warning')).toBeNull();
+  });
+
+  it('keeps the typed phrase while the dialog stays open for the SAME row', () => {
+    // Arm, then step away to another role, then come back. If `typedPhrase`
+    // survived that, the second promotion would be one click — the gate would
+    // hold exactly once per dialog instance and then quietly stop working.
+    renderDialog();
+    const phraseLabel = en.admin.users.changeRole.superAdminConfirmCopy.replace(
+      '{phrase}',
+      en.admin.users.changeRole.superAdminPhrase,
+    );
+    fireEvent.click(screen.getByRole('radio', { name: en.admin.users.filters.role.super_admin }));
+    fireEvent.change(screen.getByLabelText(phraseLabel), {
+      target: { value: en.admin.users.changeRole.superAdminPhrase },
+    });
+    expect(screen.getByRole('button', { name: en.admin.users.changeRole.confirm })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole('radio', { name: en.admin.users.filters.role.manager }));
+    fireEvent.click(screen.getByRole('radio', { name: en.admin.users.filters.role.super_admin }));
+
+    // KNOWN BEHAVIOUR, pinned deliberately: the phrase is kept while the dialog
+    // stays open for the SAME row, so a mis-click on another radio does not
+    // force a retype. It is cleared on every open (asserted above), which is the
+    // boundary that matters — a different user always starts from zero.
+    expect(screen.getByRole('button', { name: en.admin.users.changeRole.confirm })).toBeEnabled();
   });
 
   it('clears a previous row’s inline error when reopened', async () => {

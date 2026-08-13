@@ -133,7 +133,12 @@ const SNAPSHOT = vi.hoisted(
   }),
 );
 
-vi.mock('@/modules/insights', () => ({
+vi.mock('@/modules/insights', async () => ({
+  // 016 T054 — the REAL predicate, deep-imported from the pure Application
+  // module rather than hand-copied as `'ytdPaidRevenueSatang' in m`. A local
+  // copy would keep answering `true` after the production discriminant changed,
+  // and the page would render finance widgets in a test that still passed.
+  ...(await import('@/modules/insights/application/use-cases/list-dashboard')),
   listDashboard: vi.fn().mockResolvedValue({ ok: true, value: { metrics: SNAPSHOT, computedAt: SNAPSHOT.computedAt } }),
   activityFeedQuery: vi.fn().mockResolvedValue({ ok: true, value: [] }),
   listSmartInsights: vi.fn().mockResolvedValue({ ok: true, value: [] }),
@@ -143,7 +148,7 @@ vi.mock('@/modules/insights', () => ({
 }));
 
 import StaffHomePage from '@/app/(staff)/admin/(home)/page';
-import { listDashboard } from '@/modules/insights';
+import { listDashboard, projectEngagementOnly } from '@/modules/insights';
 
 /** A fresh-tenant / no-activity snapshot — empty tierDistribution + all-zero
  * invoiceStatus so BOTH new Breakdown charts must render their empty branch. */
@@ -221,5 +226,85 @@ describe('StaffHomePage — Trends + Breakdown chart sections (Task 12)', () => 
     expect(html).not.toContain('MISSING_KEY:');
     expect(html).not.toContain('MISSING_NS:');
     expect(html).not.toMatch(/recharts-/);
+  });
+});
+
+/**
+ * 016 T054 (US3) — the page half of the engagement/finance split.
+ *
+ * `listDashboard` already omits the finance fields from the PAYLOAD (proved in
+ * `tests/unit/insights/list-dashboard.test.ts`). This suite proves the other
+ * half: that the page renders coherently from that narrower payload instead of
+ * crashing on a missing field or printing "NaN"/"undefined" where the revenue
+ * used to be — the realistic failure mode once a widget reads a field that is
+ * no longer there.
+ *
+ * The engagement payload is produced by the REAL `projectEngagementOnly`, not by
+ * hand-deleting keys from SNAPSHOT: a hand-built fixture would drift the moment
+ * the projection changed and would then be testing a shape the server never
+ * actually sends.
+ */
+describe('StaffHomePage — engagement-only viewer (016 T054)', () => {
+  async function renderWithoutFinance(): Promise<string> {
+    vi.mocked(listDashboard).mockResolvedValueOnce({
+      ok: true,
+      value: {
+        metrics: projectEngagementOnly(SNAPSHOT),
+        computedAt: SNAPSHOT.computedAt,
+      },
+    } as Awaited<ReturnType<typeof listDashboard>>);
+    return renderPage();
+  }
+
+  it('drops the revenue KPI, the revenue trend and the receivables donut', async () => {
+    const html = await renderWithoutFinance();
+    expect(html).not.toContain(en.admin.dashboard.kpi.revenue);
+    expect(html).not.toContain(en.admin.dashboard.revenueTrend.title);
+    expect(html).not.toContain(en.admin.dashboard.invoiceStatus.title);
+  });
+
+  it('keeps every engagement widget — the dashboard is narrower, not empty', async () => {
+    const html = await renderWithoutFinance();
+    expect(html).toContain(en.admin.dashboard.kpi.total);
+    expect(html).toContain(en.admin.dashboard.kpi.active);
+    expect(html).toContain(en.admin.dashboard.kpi.atRisk);
+    expect(html).toContain(en.admin.dashboard.memberGrowth.title);
+    expect(html).toContain(en.admin.dashboard.membershipTier.title);
+    expect(html).toContain('Gold'); // tier data still reaches the chart
+  });
+
+  it('renders no NaN / undefined / MISSING_KEY where the finance numbers were', async () => {
+    // The specific regression this guards: a widget that keeps reading
+    // `metrics.ytdPaidRevenueSatang` prints `NaN` (Number(undefined)/100)
+    // rather than throwing, so a crash-only assertion would miss it.
+    const html = await renderWithoutFinance();
+    expect(html).not.toContain('NaN');
+    expect(html).not.toContain('undefined');
+    expect(html).not.toContain('MISSING_KEY:');
+    expect(html).not.toContain('MISSING_NS:');
+  });
+
+  it('collapses the KPI row to 3 columns at every breakpoint, with no orphan tile', async () => {
+    const html = await renderWithoutFinance();
+    // `sm:grid-cols-3`, not `sm:grid-cols-2 lg:grid-cols-3`: 4 tiles fill a 2x2
+    // exactly, but 3 tiles in a 2-column grid leave a half-width hole on the
+    // second row for every viewport from 640px to 1023px. The first version of
+    // this fix moved the gap instead of closing it.
+    expect(html).toContain('sm:grid-cols-3');
+    expect(html).not.toContain('lg:grid-cols-4');
+  });
+
+  it('renders the two engagement charts as one 2-up row, not two full-width rows', async () => {
+    // Without finance both chart sections would otherwise collapse to a single
+    // full-width card each, and a 12-point sparkline stretched across the full
+    // detail width reads as a bar, not a chart. Merging them keeps the 2-up
+    // rhythm the finance dashboard has.
+    const html = await renderWithoutFinance();
+    expect(html).toContain(en.admin.dashboard.memberGrowth.title);
+    expect(html).toContain(en.admin.dashboard.membershipTier.title);
+    expect(html).toContain(`aria-label="${en.admin.dashboard.engagement.sectionLabel}"`);
+    // The finance-only section labels are gone entirely, not left empty.
+    expect(html).not.toContain(`aria-label="${en.admin.dashboard.trends.sectionLabel}"`);
+    expect(html).not.toContain(`aria-label="${en.admin.dashboard.breakdown.sectionLabel}"`);
   });
 });

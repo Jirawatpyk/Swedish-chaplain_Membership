@@ -90,6 +90,24 @@ const TENANT_SLUG = 'test-swecham';
 const ADMIN_USER_ID = '00000000-0000-4000-8000-000000000001';
 const ROUTE_URL = 'http://test/api/admin/events/erasure';
 
+/**
+ * 016 D4 — `events.erasure` is super-admin-only, so the HOLDER persona for this
+ * destructive PII surface is `super_admin`, not `admin`.
+ *
+ * This file drove a plain `admin` and passed for as long as the suite ran on
+ * the legacy leg by default. PR 4's default flip (T066) turned every case here
+ * red with a 404 — the F6 D9 denial shape — which is the CORRECT answer for a
+ * plain admin post-cutover, i.e. what production has been doing since
+ * 2026-08-11. The test was asserting pre-D4 behaviour, not catching a bug.
+ *
+ * `super_admin` passes on BOTH legs: the shim normalises it to `admin`, so the
+ * OFF leg admits it exactly as it admitted the old fixture.
+ */
+const SUPER_ADMIN_SESSION = {
+  session: { id: 'sess-super-admin', userId: ADMIN_USER_ID } as unknown,
+  user: { id: ADMIN_USER_ID, role: 'super_admin' as const, email: 'super-admin@test' },
+};
+/** A plain admin — DENIED this surface on the ON leg (D4). */
 const ADMIN_SESSION = {
   session: { id: 'sess-admin', userId: ADMIN_USER_ID } as unknown,
   user: { id: ADMIN_USER_ID, role: 'admin' as const, email: 'admin@test' },
@@ -123,7 +141,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   resolveTenantFromRequestMock.mockReturnValue({ slug: TENANT_SLUG });
-  getCurrentSessionMock.mockResolvedValue(ADMIN_SESSION);
+  getCurrentSessionMock.mockResolvedValue(SUPER_ADMIN_SESSION);
   emitStandaloneMock.mockResolvedValue({ ok: true, value: 'audit-id' });
 });
 
@@ -310,6 +328,24 @@ describe('PR 2.2 — POST /api/admin/events/erasure (by-email bulk erasure)', ()
           'role_violation_blocked',
       );
       expect(violation).toBeDefined();
+      expect(runEraseAttendeesByEmailMock).not.toHaveBeenCalled();
+    });
+
+    it('denies a PLAIN admin on the ON leg — D4 made this super-admin-only', async () => {
+      // Not a redundant restatement of the manager case: `admin` was the
+      // HOLDER of this surface until D4, and it is the persona every other
+      // case in this file used to run as. Without this, `ADMIN_SESSION` would
+      // be a dead fixture and nothing would notice if `events.erasure` quietly
+      // lost its `superAdminOnly` flag.
+      //
+      // Skipped on the legacy leg, where admin legitimately still holds it —
+      // asserting a denial there would be asserting a bug.
+      if (process.env['FEATURE_RBAC_V2'] === 'false') return;
+      getCurrentSessionMock.mockResolvedValue(ADMIN_SESSION);
+      const { POST } = await loadRoute();
+      const res = await POST(jsonRequest({ email: 'a@b.com', reasonText: 'x' }));
+      // F6 keeps its own denial SHAPE (D9): 404, not the sweep's uniform 403.
+      expect(res.status).toBe(404);
       expect(runEraseAttendeesByEmailMock).not.toHaveBeenCalled();
     });
 

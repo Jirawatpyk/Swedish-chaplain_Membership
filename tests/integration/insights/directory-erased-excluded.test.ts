@@ -69,8 +69,16 @@ describe('F9 directory excludes GDPR-erased members (COMP-1 H4)', () => {
           status: 'active', // erasure keeps status active — the whole point
           erasedAt,
         });
+      // BOTH rows start un-erased. The listing upsert now refuses a write for
+      // an erased member outright (upsertInTx's `erased_at IS NULL` guard —
+      // the COMP-1 resurrect-prevention from the max-review, finding #13), so
+      // seeding the row already-erased made this test's own SETUP impossible:
+      // updateDirectoryListing answered member_not_found before the scenario
+      // existed. The REAL H4 timeline is list-then-erase, and that is what is
+      // seeded now: the erasure stamp lands AFTER the listing is created,
+      // below.
       await seedMember(kept, 'Kept Active Co', null);
-      await seedMember(erased, '[erased]', new Date());
+      await seedMember(erased, 'Soon Erased Co', null);
 
       await tx.insert(contacts).values({
         tenantId: tenant.ctx.slug,
@@ -107,6 +115,17 @@ describe('F9 directory excludes GDPR-erased members (COMP-1 H4)', () => {
       );
       expect(r.ok).toBe(true);
     }
+
+    // NOW the erasure happens — after the listing exists, which is the only
+    // order the resurrect-guard permits and the only order that occurs in
+    // production (eraseMember stamps erased_at on a member whose listing
+    // predates it). The directory must hide the tombstone from here on.
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx
+        .update(members)
+        .set({ erasedAt: new Date(), companyName: '[erased]' })
+        .where(eq(members.memberId, erased));
+    });
   }, 180_000);
 
   afterAll(async () => {

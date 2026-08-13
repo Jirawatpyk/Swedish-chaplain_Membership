@@ -245,9 +245,9 @@ describe('contract: GET /api/members/[memberId]', () => {
       ],
     };
 
-    function makeDobRequest(): NextRequest {
+    function makeDobRequest(include = 'date_of_birth'): NextRequest {
       return new NextRequest(
-        `http://localhost:3100/api/members/${MEMBER_ID}?include=date_of_birth`,
+        `http://localhost:3100/api/members/${MEMBER_ID}?include=${include}`,
         { method: 'GET' },
       );
     }
@@ -304,6 +304,36 @@ describe('contract: GET /api/members/[memberId]', () => {
       const contact = await dobRequestAs('marketing', 'on');
       expect('date_of_birth' in contact).toBe(false);
     });
+
+    it('OFF leg — marketing is stripped too (D16 maps marketing to no legacy role)', async () => {
+      // T057 completeness: PR 4 makes marketing assignable, and an emergency
+      // flag-OFF rollback must not hand it the field the ON leg withholds.
+      // `legacyAdminOnly` + `normalizeLegacyRole('marketing') === null` = deny.
+      const contact = await dobRequestAs('marketing', 'off');
+      expect('date_of_birth' in contact).toBe(false);
+    });
+
+    /**
+     * The gate is `searchParams.get('include') === 'date_of_birth'` — EXACT
+     * string equality, so it fails closed on anything else. Pinning that keeps a
+     * future "be liberal in what you accept" refactor (splitting on commas,
+     * lowercasing) from quietly turning a single opt-in into a family of them.
+     */
+    it.each(['DATE_OF_BIRTH', 'date_of_birth,contacts', ' date_of_birth', 'dateOfBirth'])(
+      'fails closed for admin on ?include=%s (exact match only)',
+      async (include) => {
+        rbacLeg.v2 = true;
+        requireApiPermissionMock.mockResolvedValueOnce(contextFor('admin'));
+        getMemberMock.mockResolvedValueOnce(ok(DOB_FIXTURE));
+        const { GET } = await import('@/app/api/members/[memberId]/route');
+        const res = await GET(makeDobRequest(encodeURIComponent(include)), {
+          params: Promise.resolve({ memberId: MEMBER_ID }),
+        });
+        expect(res.status).toBe(200);
+        const body = await res.json();
+        expect('date_of_birth' in body.contacts[0]).toBe(false);
+      },
+    );
 
     it('without ?include=date_of_birth the field is absent even for admin', async () => {
       requireApiPermissionMock.mockResolvedValueOnce(contextFor('admin'));

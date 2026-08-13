@@ -24,6 +24,7 @@ import {
   LogOutIcon,
   UserIcon,
   CalendarClockIcon,
+  ShieldCheckIcon,
   ShieldIcon,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -74,6 +75,8 @@ export function UserMenu({ displayName, email, role }: UserMenuProps) {
   const t = useTranslations('shell.userMenu');
   const tBadge = useTranslations('shell.roleBadge');
   const tHub = useTranslations('portal.account.menu');
+  // rbac-portal-identity-ok: chooses the member-portal menu items over the
+  // staff ones; grants nothing either way.
   const isMember = role === 'member';
   const router = useRouter();
 
@@ -81,6 +84,7 @@ export function UserMenu({ displayName, email, role }: UserMenuProps) {
     try {
       const response = await fetch('/api/auth/sign-out', { method: 'POST' });
       if (response.ok) {
+        // rbac-portal-identity-ok: picks which sign-in screen to return to.
         router.push(role === 'member' ? '/portal/sign-in' : '/admin/sign-in');
         router.refresh();
       } else {
@@ -108,6 +112,12 @@ export function UserMenu({ displayName, email, role }: UserMenuProps) {
               <span className="text-sm font-medium">{displayName ?? email}</span>
               <span className="text-xs text-muted-foreground">{email}</span>
               <Badge variant={roleBadgeVariant[role]} className="mt-1 w-fit">
+                {/* Matches the users-table badge: `default` is shared with
+                    plain admin, so shape carries the distinction. */}
+                {/* rbac-presentation-only-ok: picks a badge icon */}
+                {role === 'super_admin' ? (
+                  <ShieldCheckIcon className="size-3" aria-hidden />
+                ) : null}
                 {tBadge(role)}
               </Badge>
             </div>

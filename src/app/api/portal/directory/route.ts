@@ -48,6 +48,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   if (!current) {
     return NextResponse.json({ error: { code: 'unauthorized' }, correlationId }, { status: 401 });
   }
+  // rbac-portal-identity-ok: /portal/** belongs to the member subject.
   if (current.user.role !== 'member') {
     // The member self-service route is for members; staff edit via the admin surface.
     return NextResponse.json({ error: { code: 'forbidden' }, correlationId }, { status: 403 });

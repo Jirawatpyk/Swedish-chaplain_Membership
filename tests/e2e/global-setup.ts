@@ -1,10 +1,13 @@
 /**
  * Playwright global setup.
  *
- * Runs ONCE before any test starts. Two responsibilities:
+ * Runs ONCE before any test starts. Responsibilities:
  *  1. Clears Upstash rate-limit buckets so a prior run's residue doesn't
  *     trip the 5/15-min sign-in limit on the dedicated test users.
- *  2. Resets the F5 issued-invoice fixture row (E2E_ISSUED_INVOICE_ID)
+ *  2. Warms `/admin/sign-in`, `/admin`, `/portal/sign-in` and `/portal` so a cold
+ *     Turbopack compile does not land inside a test's `beforeEach` — see
+ *     `warmAdminRoutes` for why that was fatal rather than merely slow.
+ *  3. Resets the F5 issued-invoice fixture row (E2E_ISSUED_INVOICE_ID)
  *     back to status='issued' so the Pay-now button renders again after
  *     a happy-path run flipped it to `paid`. Cascades through child
  *     payments / refunds / processor_events first.
@@ -16,6 +19,48 @@ import { clearE2ERateLimits } from './helpers/rate-limit';
 import { seedF7Broadcasts } from './helpers/broadcasts-seed';
 import { seedF8Renewals } from './helpers/renewals-seed';
 import { seedF6Events } from './helpers/eventcreate-seed';
+
+/**
+ * Compile the routes every persona suite signs in through, BEFORE any test's
+ * clock starts.
+ *
+ * Playwright's `webServer.url` readiness probe hits `/` only, so on a cold dev
+ * server `/admin/sign-in` and `/admin` are still uncompiled when the first test
+ * runs. Turbopack then compiles them inside `beforeEach`, and the sign-in
+ * helper's `waitForURL` blows the 30s TEST timeout — which caps the whole hook,
+ * so the helper's own documented 60s budget (bumped in R9.B1 for exactly this
+ * reason) can never be reached.
+ *
+ * That made the persona suites pass only when a dev server happened to be warm
+ * already, and fail as a block when Playwright started its own. Nine failures
+ * in one run, every one of them `Test timeout of 30000ms exceeded while running
+ * "beforeEach" hook` — no assertion ever executed.
+ *
+ * Warming here fixes it for every suite at once, instead of raising a timeout in
+ * each. Best-effort: a failure to warm is not a reason to fail the whole run,
+ * and the tests will simply pay the compile as before.
+ */
+async function warmAdminRoutes(): Promise<void> {
+  const base = process.env.E2E_BASE_URL ?? 'http://localhost:3100';
+  // `/portal` too: the member nav-a11y test signs in and lands there, and an
+  // unwarmed /portal cold-compiled past the sign-in helper's 60s budget on
+  // webkit — the only project that runs it against a truly cold route.
+  const routes = ['/admin/sign-in', '/admin', '/portal/sign-in', '/portal'];
+  for (const route of routes) {
+    try {
+      // 120s: a cold Turbopack compile of `/admin` is the slowest thing in the
+      // whole run. Sequential, not parallel — concurrent first-hits on a cold
+      // dev server contend for the same compiler and are slower in practice.
+      const res = await fetch(`${base}${route}`, {
+        redirect: 'manual',
+        signal: AbortSignal.timeout(120_000),
+      });
+      console.log(`[e2e global setup] warmed ${route} (${res.status})`);
+    } catch (error) {
+      console.warn(`[e2e global setup] warm ${route} failed:`, String(error));
+    }
+  }
+}
 
 async function resetF5IssuedInvoice(): Promise<void> {
   const id = process.env.E2E_ISSUED_INVOICE_ID;
@@ -63,6 +108,9 @@ async function resetF5IssuedInvoice(): Promise<void> {
 }
 
 async function globalSetup(): Promise<void> {
+  // FIRST: compile the sign-in routes while nobody's test clock is running.
+  await warmAdminRoutes();
+
   try {
     await clearE2ERateLimits();
     console.log('[e2e global setup] cleared Upstash rate-limit buckets');

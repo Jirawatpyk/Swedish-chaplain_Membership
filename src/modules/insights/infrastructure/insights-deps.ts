@@ -180,12 +180,22 @@ export async function recordStaffTimelineView(input: {
 }
 
 /** US1 (T027/T031) — `listDashboard` read-path dependency bundle. */
-export function makeListDashboardDeps(tenantId: string): ListDashboardDeps {
+export function makeListDashboardDeps(
+  tenantId: string,
+  /**
+   * 016 T056 — whether the viewer holds `insights.finance`. REQUIRED here AND on
+   * the Application port: the optional-with-permissive-default version was found
+   * during review to be unused, untested and failing OPEN, so it was removed
+   * rather than documented.
+   */
+  canFinance: boolean,
+): ListDashboardDeps {
   return {
     snapshotRepo: makeDrizzleSnapshotRepo(tenantId),
     recompute: (ctx) =>
       computeDashboardSnapshot(ctx, makeComputeDashboardSnapshotDeps(tenantId)),
     audit: insightsAuditAdapter,
+    canFinance,
   };
 }
 
@@ -200,11 +210,19 @@ export function makeListSmartInsightsDeps(tenantId: string): ListSmartInsightsDe
 }
 
 /** US1 (T029/T031) — `activityFeedQuery` (live recent-audit feed) deps. */
-export function makeActivityFeedDeps(): ActivityFeedDeps {
+export function makeActivityFeedDeps(
+  /**
+   * 016 T058 — whether the viewer holds `insights.activity_unredacted`.
+   * REQUIRED here (unlike the Application-side optional, which exists so the
+   * default is fail-closed) so no call site can silently pick a projection.
+   */
+  activityUnredacted: boolean,
+): ActivityFeedDeps {
   return {
     activitySource: activityFeedSourceAdapter,
     // FR-003 actor resolution — same PDPA-safe reader the US2 audit viewer uses.
     actorDirectory: actorDirectoryAdapter,
+    activityUnredacted,
   };
 }
 

@@ -51,8 +51,37 @@ function resolveLocale(request: NextRequest): LocaleKey {
 }
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
-  const ctx = await requireApiPermission(request, 'plans.read', mappedLegacy('plan', 'read'));
+  // 016 T064 — the palette is not a plans surface; it is the ⌘K entry point for
+  // every staff surface, and its per-entry permissions do the real gating below.
+  // Guarding the whole endpoint on `plans.read` denied it outright to
+  // `marketing`, whose bundle carries members + broadcasts + events — so its
+  // palette came back empty for entries it is plainly entitled to.
+  //
+  // The key widens to `dashboard.view`; the LEGACY ROW is deliberately
+  // unchanged, so on the OFF leg the admitted population is byte-identical to
+  // before. Plan hits are re-gated on `plans.read` further down.
+  const ctx = await requireApiPermission(request, 'dashboard.view', mappedLegacy('plan', 'read'));
   if ('response' in ctx) return ctx.response;
+  // rbac-subgate-ok: an optional SECTION of an already-authorised palette
+  // response (the plan hits), not this surface's admission decision — that is
+  // the `dashboard.view` gate immediately above.
+  const canReadPlans = canPerform(
+    ctx.current.user.role,
+    'plans.read',
+    mappedLegacy('plan', 'read'),
+  );
+  // rbac-subgate-ok: gates the member SECTION of an already-authorised palette
+  // response. 016 review — when the endpoint gate widened to `dashboard.view`,
+  // the plan and refund sections were re-gated and this one was not. It is safe
+  // today only because every bundle holding `dashboard.view` also holds
+  // `members.read`; that coincidence is exactly what this feature elsewhere
+  // refuses to rely on, and a future engagement-only role would get member PII
+  // through ⌘K with no code change.
+  const canReadMembers = canPerform(
+    ctx.current.user.role,
+    'members.read',
+    mappedLegacy('members', 'read'),
+  );
 
   const url = new URL(request.url);
   const parsed = querySchema.safeParse({
@@ -86,14 +115,17 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     tenant: deps.tenant,
     planRepo: deps.planRepo,
     clock: deps.clock,
+    // 016 T064 — bind the evaluator to this actor. The Application layer holds
+    // each entry's declared permission but must not read `env`, so the probe
+    // crosses the boundary instead of `canPerform` itself.
+    can: (key, legacy) => canPerform(ctx.current.user.role, key, legacy),
   });
 
   if (result.ok) {
-    // T069 — also search members for the palette. Ordering: plan
-    // matches first, then members, mirroring the `groups.tsx` render
-    // order. Member search is admin/manager-read-gated (the admin
-    // context gate above already blocks the `member` role from
-    // reaching this surface).
+    // T069 — also search members for the palette. Ordering: plan matches
+    // first, then members, mirroring the `groups.tsx` render order. The hits
+    // are gated on `members.read` at the exit point below (016 review): the
+    // endpoint gate is `dashboard.view`, which is broader.
     let members: readonly PaletteMemberEntity[] = [];
     try {
       const membersDeps = buildMembersDeps(tenant);
@@ -318,9 +350,15 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       {
         results: {
           ...result.value.results,
+          // 016 T064 — the endpoint gate widened to `dashboard.view` so every
+          // staff role reaches the palette; plan HITS still need `plans.read`.
+          // Emptied here rather than skipping the query: the plan list is an
+          // in-memory filter over the tenant's ~9 plans, so there is no cost to
+          // save, and one exit point is easier to prove than two.
+          plans: canReadPlans ? result.value.results.plans : [],
+          members: canReadMembers ? members : [],
           actions,
           navigate,
-          members,
           refundableInvoices,
         },
       },

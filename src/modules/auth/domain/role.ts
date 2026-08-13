@@ -15,14 +15,56 @@ export const ROLES = ['admin', 'manager', 'member', 'super_admin', 'marketing'] 
 export type Role = (typeof ROLES)[number];
 
 /**
- * Roles that staff UI may OFFER for assignment/invitation right now.
- * Deliberately narrower than ROLES while 016 rolls out: `super_admin` became
- * assignable in PR 3 (users-page retrofit — invite + change-role); `marketing`
- * follows in PR 4 (design § 9 / D17). The invite AND change-role API zod schemas
- * are the server-side counterparts — widen all together, never just one
- * (assignable-roles-lockstep.test.ts fails loudly if they drift).
+ * Roles that staff UI may OFFER for assignment/invitation. The 016 staging is
+ * COMPLETE: `super_admin` landed in PR 3 (users-page retrofit) and `marketing`
+ * in PR 4 (design § 9 / D17), so this now covers every role in ROLES.
+ *
+ * It is kept as a separate list rather than collapsed into ROLES because it is
+ * the single source that the two server zod enums AND the users-page picker must
+ * agree with — `assignable-roles-lockstep.test.ts` reads all four and fails
+ * loudly on drift. A future role added to ROLES therefore has to make an
+ * explicit decision here instead of becoming assignable by default.
+ *
+ * Order is append-at-end, mirroring the widening history, and is asserted
+ * exactly in `role.test.ts` so a reorder shows up as a deliberate diff.
  */
-export const ASSIGNABLE_ROLES: readonly Role[] = ['admin', 'manager', 'member', 'super_admin'];
+export const ASSIGNABLE_ROLES: readonly Role[] = [
+  'admin',
+  'manager',
+  'member',
+  'super_admin',
+  'marketing',
+];
+
+/**
+ * The order roles are PRESENTED in, most-privileged first.
+ *
+ * `ASSIGNABLE_ROLES` is a SET whose order records the widening history and is
+ * pinned exactly by `role.test.ts` — useful for spotting a silent membership
+ * change, useless as a UI ordering. Rendering it directly gave the invite dialog
+ * "Admin · Manager · Member · Super Admin · Marketing", with the member role
+ * wedged into the middle of the staff ones, while the change-role picker on the
+ * SAME PAGE listed them by rank. Two pickers, one screen, two orders.
+ *
+ * Every list rendered to a human orders by this. Membership still comes from
+ * `ASSIGNABLE_ROLES` / `CHANGE_ROLE_OPTIONS`; this only sorts.
+ */
+export const ROLE_DISPLAY_ORDER: readonly Role[] = [
+  'super_admin',
+  'admin',
+  'manager',
+  'marketing',
+  'member',
+];
+
+/** `roles` sorted for display. Anything not in the order list goes last. */
+export function byDisplayOrder(roles: readonly Role[]): readonly Role[] {
+  const rank = (r: Role): number => {
+    const i = ROLE_DISPLAY_ORDER.indexOf(r);
+    return i === -1 ? ROLE_DISPLAY_ORDER.length : i;
+  };
+  return [...roles].sort((a, b) => rank(a) - rank(b));
+}
 
 /**
  * The two portal surfaces the app renders: `staff` (backoffice,
@@ -88,18 +130,22 @@ export function isStaffRole(role: Role): boolean {
  *
  * ## PR 5 caution — call sites that are NOT the last-administrator guard
  *
- * (016 review I6.) Six call sites use `isAdministrativeRole(role, false)` with a
+ * (016 review I6.) Five call sites use `isAdministrativeRole(role, false)` with a
  * HARDCODED `false` as a general "is this an administrator?" predicate, for
  * affordances and redaction rather than for the guard this population was
  * defined for:
  *
  *   `src/components/plans/plans-table.tsx` (mutation CTAs)
- *   `src/modules/insights/application/use-cases/activity-feed-query.ts` (redaction)
  *   `.../download-export.ts` (×2 — export authorization)
  *   `.../export-members-backup.ts` (`err('forbidden')`)
  *   `.../set-directory-logo.ts`
  *
- * Deleting the OFF branch silently reclassifies all six from `admin ∪
+ * (PR 4 removed a sixth: `activity-feed-query.ts` now takes an injected
+ * `activityUnredacted` flag instead. The count and the list are kept in step
+ * deliberately — an inventory PR 5 reads to find deletion sites is worse than
+ * useless when it is stale, and this one was already wrong once.)
+ *
+ * Deleting the OFF branch silently reclassifies all five from `admin ∪
  * super_admin` to `super_admin` alone — plain admin would lose every plans
  * mutation CTA, receive the REDACTED activity feed, and be refused
  * member-backup export and directory-logo upload, with no compile error and no

@@ -63,7 +63,7 @@ describe('F9 activityFeedQuery — integration (T029)', () => {
       { limit: 100 },
       { actorUserId: randomUUID(), actorRole: 'admin', requestId: `q-${randomUUID()}` },
       tenantA.ctx,
-      makeActivityFeedDeps(),
+      makeActivityFeedDeps(true),
     );
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -85,7 +85,7 @@ describe('F9 activityFeedQuery — integration (T029)', () => {
       { limit: 2 },
       { actorUserId: randomUUID(), actorRole: 'manager', requestId: `q-${randomUUID()}` },
       tenantA.ctx,
-      makeActivityFeedDeps(),
+      makeActivityFeedDeps(false),
     );
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.value).toHaveLength(2);
@@ -96,7 +96,7 @@ describe('F9 activityFeedQuery — integration (T029)', () => {
       { limit: 10 },
       { actorUserId: randomUUID(), actorRole: 'member', requestId: `q-${randomUUID()}` },
       tenantA.ctx,
-      makeActivityFeedDeps(),
+      makeActivityFeedDeps(false),
     );
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toBe('forbidden');

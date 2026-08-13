@@ -20,7 +20,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { db, runInTenant } from '@/lib/db';
-import { listDashboard, makeListDashboardDeps } from '@/modules/insights';
+import { listDashboard, makeListDashboardDeps, hasFinanceMetrics } from '@/modules/insights';
 import { dashboardMetricsCache } from '@/modules/insights/infrastructure/db/schema-insights';
 import { makeDrizzleSnapshotRepo } from '@/modules/insights/infrastructure/repos/drizzle-snapshot-repo';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
@@ -107,7 +107,7 @@ describe('067 T6 — snapshotRepo.read() rejects a legacy pre-067 cache row', ()
     const result = await listDashboard(
       { actorUserId: admin.userId, actorRole: 'admin', requestId: `legacy-row-${randomUUID()}` },
       tenant.ctx,
-      makeListDashboardDeps(tenant.ctx.slug),
+      makeListDashboardDeps(tenant.ctx.slug, true),
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -122,6 +122,10 @@ describe('067 T6 — snapshotRepo.read() rejects a legacy pre-067 cache row', ()
     // always returns all 3 buckets (zeroed), plus `draftCount`. The point
     // here isn't the exact figures; it's that the KEY is present + typed
     // (not `undefined`, which is what a legacy row's parsed value would be).
+    // 016 T056 — narrow the union first; the admin persona holds
+    // `insights.finance`, so a missing guard here means the projection broke.
+    expect(hasFinanceMetrics(result.value.metrics)).toBe(true);
+    if (!hasFinanceMetrics(result.value.metrics)) return;
     expect(result.value.metrics.invoiceStatus.draftCount).toBe(0);
     expect(result.value.metrics.invoiceStatus.buckets).toHaveLength(3);
 

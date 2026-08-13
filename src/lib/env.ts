@@ -683,8 +683,38 @@ const schema = z.object({
   // exactly two composition roots: `src/lib/rbac.ts` (the gate) and
   // `src/lib/auth-deps.ts` (3 sites — the erase/disable/change-role deps that
   // need the flag-aware administrator population). PR 5 must clear BOTH.
-  // Code-default flips to TRUE in PR 4; the env var is deleted in PR 5.
-  FEATURE_RBAC_V2: booleanFromString.default(false),
+  // 016 T066 (PR 4) — code-default is now TRUE. Production has been on the ON
+  // leg since the 2026-08-11 cutover; this makes a fresh checkout, a preview
+  // deploy and CI agree with it instead of silently exercising the legacy leg.
+  //
+  // A leftover `FEATURE_RBAC_V2="false"` in an environment still WINS over this
+  // default and puts that environment back on the legacy leg — which is the
+  // point (rollback stays one env var), but it also means the flip is not
+  // complete until every environment's explicit value is removed or set to
+  // 'true'. Prod is verified in docs/runbooks/rbac-v2-cutover.md § 10 (the
+  // PR-4 operator steps), not § 5 — § 5 is Migration C and has four steps.
+  // There are exactly TWO safe values: DELETE the variable, or set it to
+  // 'true'. Do NOT blank it. `.default()` fires only on `undefined`, so an
+  // empty string is a present value that `booleanFromString` resolves to
+  // `false` — measured, not assumed — and "clear it" therefore drops that
+  // environment onto the legacy leg silently. (An earlier version of this
+  // comment said an empty string counts as unset AND recommended clearing it;
+  // both halves were wrong in the same direction.)
+  //
+  // Falling back to the legacy leg is not a soft degradation: `manager` regains
+  // /admin/users and /admin/audit, all four D4 narrowings come off, and
+  // `marketing` is locked out of /admin/** entirely (D16 maps it to no legacy
+  // role). `tests/unit/nav/nav-config.test.ts` pins that OFF-leg shape.
+  //
+  // The migration gate is a SECOND reader with different rules: it compares
+  // `process.env.FEATURE_RBAC_V2 !== 'true'` as raw text
+  // (scripts/lib/rbac-promotion-gate.ts), so it accepts neither this default
+  // nor 'TRUE'/'1'. That asymmetry is deliberate — a code default must not be
+  // able to unlock a data migration — but it means 'TRUE' yields an app on the
+  // ON leg whose deploy refuses to migrate. Lower-case 'true' only.
+  //
+  // The env var is deleted outright in PR 5, together with the legacy leg.
+  FEATURE_RBAC_V2: booleanFromString.default(true),
 
   // HMAC secret used to sign single-use, short-TTL (≤1 h) download tokens for
   // the private-artefact proxy (`/api/internal/exports/[jobId]/download`).

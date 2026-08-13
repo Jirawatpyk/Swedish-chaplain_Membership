@@ -26,37 +26,72 @@ import {
 } from '@/components/ui/card';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { requirePagePermission } from '@/lib/rbac';
-import { legacySessionOnly } from '@/modules/auth/domain/permissions/legacy-shim';
+import { requirePagePermission, canPerform } from '@/lib/rbac';
+import {
+  legacySessionOnly,
+  legacyAdminOrManager,
+} from '@/modules/auth/domain/permissions/legacy-shim';
+import { EmptyState } from '@/components/shell/empty-state';
+import { SettingsIcon } from 'lucide-react';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.settings.index');
   return { title: t('title'), description: t('subtitle') };
 }
 
+/**
+ * Each card mirrors the permission its destination page guards on — same
+ * contract as the sidebar (T063) and the ⌘K palette (T064).
+ *
+ * 016 review — this index was MISSED by T064 despite being named in the task,
+ * and the miss was live on the ON leg: it admits anyone with `dashboard.view`,
+ * so `marketing` opened it and saw two cards that both 404, and a plain admin
+ * saw the invoicing card that D4 moved to super-admin-only. Each of those
+ * clicks also writes a `permission_denied` row to an append-only audit log for
+ * a user who did nothing wrong. Exactly the dead-link class the parity tests
+ * exist to kill, on the one surface those tests did not cover.
+ */
 const CATEGORIES = [
   {
     titleKey: 'categories.invoicing.title',
     descriptionKey: 'categories.invoicing.description',
     href: '/admin/settings/invoicing',
     icon: FileCog2Icon,
+    permission: 'settings.invoicing',
+    legacy: legacySessionOnly,
   },
   {
     titleKey: 'categories.renewalSchedules.title',
     descriptionKey: 'categories.renewalSchedules.description',
     href: '/admin/settings/renewals/schedules',
     icon: CalendarClockIcon,
+    permission: 'settings.renewal_schedules',
+    legacy: legacyAdminOrManager,
   },
 ] as const;
 
 export default async function SettingsIndexPage() {
-  await requirePagePermission('dashboard.view', legacySessionOnly);
+  const { user } = await requirePagePermission('dashboard.view', legacySessionOnly);
   const t = await getTranslations('admin.settings.index');
+  const visible = CATEGORIES.filter((c) => canPerform(user.role, c.permission, c.legacy));
+
+  // Every card gone: the viewer holds `dashboard.view` (so the index itself
+  // opens) but no settings surface. Better than an empty grid, which reads as a
+  // loading failure.
+  if (visible.length === 0) {
+    return (
+      <DetailContainer>
+        <PageHeader title={t('title')} subtitle={t('subtitle')} />
+        <EmptyState icon={SettingsIcon} title={t('empty')} />
+      </DetailContainer>
+    );
+  }
+
   return (
     <DetailContainer>
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
       <div className="grid gap-4 sm:grid-cols-2">
-        {CATEGORIES.map(({ titleKey, descriptionKey, href, icon: Icon }) => (
+        {visible.map(({ titleKey, descriptionKey, href, icon: Icon }) => (
           <Link
             key={href}
             href={href}

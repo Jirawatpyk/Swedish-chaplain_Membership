@@ -34,6 +34,7 @@ import {
   type PaletteFeatureFlag,
 } from '@/modules/plans';
 import type { Role } from '@/modules/auth/domain/role';
+import { canPerform } from '@/lib/rbac';
 
 const tenant = asTenantContext('test-swecham');
 
@@ -71,7 +72,10 @@ function makePlan(overrides: Partial<Plan> = {}): Plan {
 function makeDeps(opts: {
   plans?: Plan[];
   planRepoThrow?: Error;
+  /** 016 T064 — the actor the injected permission probe answers for. */
+  role?: Role;
 } = {}): SearchPlansDeps {
+  const role: Role = opts.role ?? 'admin';
   const planRepo = {
     findByTenantAndYear: vi.fn(async () => {
       if (opts.planRepoThrow) throw opts.planRepoThrow;
@@ -82,7 +86,11 @@ function makeDeps(opts: {
     now: () => new Date('2026-05-19T10:00:00Z'),
     currentYear: () => 2026,
   };
-  return { tenant, planRepo, clock };
+  // 016 T064 — OFF-leg probe through the REAL evaluator, so the role
+  // expectations in this file stay meaningful instead of being stubbed away.
+  const can: SearchPlansDeps['can'] = (key, legacy) =>
+    canPerform(role, key, legacy, { rbacV2: false });
+  return { tenant, planRepo, clock, can };
 }
 
 const baseInput = {
@@ -161,11 +169,11 @@ describe('searchPlans — plan filter', () => {
   });
 });
 
-describe('searchPlans — role-based filter', () => {
+describe('searchPlans — role-based filter (OFF leg)', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('admin sees admin-only + read-tier actions', async () => {
-    const deps = makeDeps({ plans: [] });
+    const deps = makeDeps({ plans: [], role: 'admin' });
     const result = await searchPlans({ ...baseInput, q: 'plan', role: 'admin' }, deps);
     if (!result.ok) throw new Error('unreachable');
     // ACTION_REGISTRY contains `palette.actions.newPlan` (admin) +
@@ -176,7 +184,7 @@ describe('searchPlans — role-based filter', () => {
   });
 
   it('BUG-024: admin typing "create" surfaces every "Create new …" action via keyword synonyms', async () => {
-    const deps = makeDeps({ plans: [] });
+    const deps = makeDeps({ plans: [], role: 'admin' });
     const result = await searchPlans({ ...baseInput, q: 'create', role: 'admin' }, deps);
     if (!result.ok) throw new Error('unreachable');
     const ids = result.value.results.actions.map((a) => a.id);
@@ -194,7 +202,7 @@ describe('searchPlans — role-based filter', () => {
   });
 
   it('BUG-024: "add" also matches the create actions', async () => {
-    const deps = makeDeps({ plans: [] });
+    const deps = makeDeps({ plans: [], role: 'admin' });
     const result = await searchPlans({ ...baseInput, q: 'add', role: 'admin' }, deps);
     if (!result.ok) throw new Error('unreachable');
     const ids = result.value.results.actions.map((a) => a.id);
@@ -209,7 +217,7 @@ describe('searchPlans — role-based filter', () => {
   });
 
   it('manager sees only read-tier actions (no plan.new / plan.clone)', async () => {
-    const deps = makeDeps({ plans: [] });
+    const deps = makeDeps({ plans: [], role: 'manager' });
     const result = await searchPlans(
       { ...baseInput, q: 'plan', role: 'manager' },
       deps,
@@ -221,10 +229,106 @@ describe('searchPlans — role-based filter', () => {
   });
 
   it('member role sees nothing (defence — route handler blocks first)', async () => {
-    const deps = makeDeps({ plans: [] });
+    const deps = makeDeps({ plans: [], role: 'member' });
     const result = await searchPlans(
       { ...baseInput, q: '', role: 'member' as Role },
       deps,
+    );
+    if (!result.ok) throw new Error('unreachable');
+    expect(result.value.results.actions).toEqual([]);
+    expect(result.value.results.navigate).toEqual([]);
+  });
+});
+
+/**
+ * The ON leg — which is what production runs, and which `filterByPermission`
+ * had never once been executed under.
+ *
+ * Every existing probe in this file pins `{ rbacV2: false }`, the integration
+ * suite uses an OFF-leg probe too, and the contract suite replaces `searchPlans`
+ * wholesale with `vi.mock`. So the three ON-leg cases added for T064 tested the
+ * route's two sub-gates and never reached the registry filter: no test in the
+ * tree produced a marketing ⌘K payload from the real code, which is the entire
+ * point of T064.
+ *
+ * `super_admin` is covered here for the same reason — `filter-results-by-role`
+ * was deleted with T064 and it held the only end-to-end pin that D16's
+ * super_admin arm returns a FULL payload rather than an empty one.
+ */
+describe('searchPlans — role-based filter (ON leg — the production leg)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  /** Same shape as `makeDeps`, with the evaluator asked on the ON leg. */
+  function onLegDeps(role: Role): SearchPlansDeps {
+    const deps = makeDeps({ plans: [], role });
+    return { ...deps, can: (key, legacy) => canPerform(role, key, legacy, { rbacV2: true }) };
+  }
+
+  it('marketing gets a USABLE palette — its own surfaces, without plan authoring', async () => {
+    const result = await searchPlans(
+      { ...baseInput, q: '', role: 'marketing' as Role },
+      onLegDeps('marketing'),
+    );
+    if (!result.ok) throw new Error('unreachable');
+    const nav = result.value.results.navigate.map((n) => n.id);
+    const actions = result.value.results.actions.map((a) => a.id);
+
+    // Positive anchor FIRST: an empty payload would satisfy every `not.toContain`
+    // below, and "marketing's ⌘K returns nothing" is the exact bug T064 fixed.
+    expect(nav.length, 'marketing must reach its own surfaces').toBeGreaterThan(0);
+    expect(nav.some((id) => id.includes('broadcast'))).toBe(true);
+    expect(actions, 'plans.read is not in the marketing bundle').not.toContain('plan.new');
+    expect(actions).not.toContain('plan.clone');
+  });
+
+  it('super_admin gets everything a plain admin gets, plus the four D4 surfaces', async () => {
+    // `limit: 100`, not the default 20. Both lists are truncated at `limit`, and
+    // super_admin legitimately matches MORE entries — so at 20 its extra hits
+    // push the registry's last entry (`nav.directory`) off the end and the
+    // superset claim fails on a display cap rather than on a permission. That
+    // near-miss is the reason to say it here: the assertion is about who may
+    // reach what, so the cap has to be lifted out of the way first.
+    const forRole = async (role: Role): Promise<string[]> => {
+      const r = await searchPlans({ ...baseInput, q: '', role, limit: 100 }, onLegDeps(role));
+      if (!r.ok) throw new Error('unreachable');
+      return [
+        ...r.value.results.actions.map((a) => `a:${a.id}`),
+        ...r.value.results.navigate.map((n) => `n:${n.id}`),
+      ].sort();
+    };
+    const admin = await forRole('admin');
+    const superAdmin = await forRole('super_admin');
+    expect(admin.length, 'a vacuous comparison of two empty payloads proves nothing').toBeGreaterThan(
+      0,
+    );
+    expect(superAdmin).toEqual(expect.arrayContaining(admin));
+    // Strictly more, and specifically the D4-narrowed surfaces — otherwise an
+    // evaluator that granted super_admin exactly what admin gets would pass.
+    expect(superAdmin).toEqual(
+      expect.arrayContaining(['n:nav.users', 'n:nav.auditLog', 'n:nav.invoiceSettings']),
+    );
+    expect(admin).not.toContain('n:nav.users');
+    expect(admin).not.toContain('n:nav.auditLog');
+  });
+
+  it('manager still loses plan authoring on this leg too', async () => {
+    const result = await searchPlans(
+      { ...baseInput, q: 'plan', role: 'manager' },
+      onLegDeps('manager'),
+    );
+    if (!result.ok) throw new Error('unreachable');
+    const ids = result.value.results.actions.map((a) => a.id);
+    expect(result.value.results.navigate.length, 'manager keeps a working palette').toBeGreaterThan(
+      0,
+    );
+    expect(ids).not.toContain('plan.new');
+    expect(ids).not.toContain('plan.clone');
+  });
+
+  it('member is still empty on this leg', async () => {
+    const result = await searchPlans(
+      { ...baseInput, q: '', role: 'member' as Role },
+      onLegDeps('member'),
     );
     if (!result.ok) throw new Error('unreachable');
     expect(result.value.results.actions).toEqual([]);

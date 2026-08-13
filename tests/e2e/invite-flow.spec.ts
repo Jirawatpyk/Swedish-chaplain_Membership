@@ -24,20 +24,25 @@
 import { expect, fillField, test } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
 
-const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
-const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
+// Post-cutover (2026-08-11) this flow belongs to a SUPER admin: /admin/users
+// is D4-narrowed to `users.manage` (a plain admin gets the 404 shell before any
+// button exists), and inviting a STAFF role trips the same gate server-side
+// (T059). The spec pre-dated RBAC v2 and kept signing in as plain admin, so it
+// timed out on a page that no longer opens for that persona.
+const ADMIN_EMAIL = process.env.E2E_SUPER_ADMIN_EMAIL;
+const ADMIN_PASSWORD = process.env.E2E_SUPER_ADMIN_PASSWORD;
 
 test.describe('invite-flow wall-clock (T119, SC-008)', () => {
   test.skip(
     !ADMIN_EMAIL || !ADMIN_PASSWORD,
-    'Set E2E_ADMIN_EMAIL and E2E_ADMIN_PASSWORD to run the invite flow',
+    'Set E2E_SUPER_ADMIN_EMAIL and E2E_SUPER_ADMIN_PASSWORD to run the invite flow',
   );
 
   test.beforeAll(async () => {
     await clearE2ERateLimits();
   });
 
-  test('admin invites a manager via the dialog and completes under 300 s', async ({
+  test('a super_admin invites a manager via the dialog and completes under 300 s', async ({
     page,
   }) => {
     const startWallClock = Date.now();

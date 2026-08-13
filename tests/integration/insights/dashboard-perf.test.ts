@@ -149,7 +149,7 @@ describe.skipIf(!RUN_PERF)('dashboard perf @ 5k members (T098, RUN_PERF=1)', () 
   }, 120_000);
 
   it(`read (listDashboard) p95 < ${READ_P95_TARGET_MS}ms @ ${SEED_MEMBERS} members (SC-002 data path)`, async () => {
-    const deps = makeListDashboardDeps(tenant.ctx.slug);
+    const deps = makeListDashboardDeps(tenant.ctx.slug, true);
     const meta = {
       actorUserId: admin.userId,
       actorRole: 'admin' as const,

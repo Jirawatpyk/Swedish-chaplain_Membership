@@ -262,5 +262,44 @@ RBAC v2 cutover — <date>
 
 ## 10. PR-4 / PR-5 operator steps (for completeness)
 
-- **PR-4 (flag default → `true`):** before merging, verify the prod env var is either **unset** or `'true'` — a leftover `'false'` silently defeats the code default flip (T066).
+- **PR-4 (flag default → `true`, T066):** the code default in `src/lib/env.ts` and the value in `.env.example` are now `true`, so a fresh checkout, a preview deploy and CI all match production instead of silently exercising the legacy leg.
+
+  An environment's EXPLICIT value still wins over the default. That is deliberate — rollback stays one env var — but it means the flip is not complete anywhere that still says `'false'`. Before merging, verify prod is **unset** or `'true'`:
+
+  ```bash
+  vercel env ls production | grep FEATURE_RBAC_V2
+  # expected: absent, or present with value "true"
+  ```
+
+  SweCham/TSCC state at PR-4 time: **present, `"true"`** — set by the operator during the 2026-08-11 cutover (§ 9), so the default flip changes nothing in prod and only aligns preview + CI + local.
+
+  Preview deployments inherit the production env var unless overridden; if a preview environment carries its own `'false'`, it is testing the leg that PR 5 deletes. Verify that too — the branch cannot assert anything about Vercel project settings from inside the repo:
+
+  ```bash
+  vercel env ls preview | grep FEATURE_RBAC_V2
+  # expected: absent (inherits production), or present with value "true"
+  ```
+
+  SweCham/TSCC state, verified by the operator 2026-08-13 (PR #326): **present,
+  lower-case `"true"`, scoped Production and Preview** — both environments run
+  the ON leg and the D7 gate's raw-string comparison is satisfied.
+
+  **Only two safe values: absent, or the lower-case string `true`.** Do NOT blank the variable. `zod`'s `.default()` fires only on `undefined`, so a declared-but-empty var is a present value that resolves to `false` and drops that environment onto the legacy leg — where `manager` regains `/admin/users` and `/admin/audit`, all four D4 narrowings come off, and `marketing` is locked out of `/admin/**` entirely. `'TRUE'` and `'1'` are equally wrong in the other direction: the app reads them as ON, but the migration gate compares raw text against `'true'` and will refuse the deploy.
+
+- **D7 promotion-gate ordering fix (PR 4).** The gate's "strictly newer than every sibling" check was unconditional, so it began refusing as soon as ANY migration newer than `0287_rbac_v2_promotion` was journaled — on an already-applied promotion. Because `run-migrations.ts` runs as `vercel-build` and inside the required `Integration smoke` check, that would have frozen prod deploys, preview deploys and merges to `main` together, on whichever unrelated branch happened to add the next migration. It is now gated on `pending`; the `when`-COLLISION check stays unconditional, since a colliding value is exactly what `pending` cannot see. Regression cases: `tests/unit/scripts/rbac-promotion-gate.test.ts` ("the steady state").
+- **Privacy record (T060):** the statutory processing record for staff role administration + the marketing member-read scope is `docs/compliance/processing-records.md` § *016 — Staff Role Administration + Marketing Read Scope*. It carries the DPIA answer (no DPIA required under Art. 35(3) / WP248; note the PDPA has no DPIA obligation at all) and the last-super-admin rationale in two cases. **The successor path is PROMOTION, not § 2.** `scripts/seed-bootstrap-admin.ts` refuses whenever a super_admin row exists in any status — which is true by definition when the guard fires — so the routes are: the outgoing super_admin promotes a successor from `/admin/users` before departing, or, if they are unavailable, the operator break-glass `UPDATE users SET role='super_admin'` in the Neon console, recorded in the DPO log. Where the guard blocks a MEMBER's erasure cascade the erasure is deferred, not refused, and the Art. 12 one-month clock runs from `member_erasure_requested`. Update that record if marketing ever gains a write path over member data.
+
+- **Dev / preview databases after PR 4 (016 review, S-5).** Migration C now sits in the migrations ROOT and is journaled, and `.env.example` ships `FEATURE_RBAC_V2="true"` — which is what `.env.local` is seeded from. The D7 gate reads that variable RAW, so it no longer blocks: the next `pnpm db:migrate` against any database that has not applied C **will promote every human admin to `super_admin`**, with no operator step.
+
+  That is correct for prod (already done) and harmless for a disposable CI branch, but on the shared `dev` branch it silently turns `e2e-admin@swecham.test` into a super_admin — and the admin-persona E2E suites then sign in as a super_admin and prove nothing about the D4 narrowing they exist to prove. `scripts/seed-e2e-user.ts` re-provisions that row as a plain `admin` precisely to undo it.
+
+  So the order is fixed, and it is one breath, not two sessions:
+
+  ```bash
+  pnpm db:migrate                                              # may apply Migration C
+  node --env-file=.env.local --import tsx scripts/seed-e2e-user.ts   # resets e2e-admin to 'admin'
+  ```
+
+  Skipping the second command leaves the persona suites green and meaningless.
+
 - **PR-5 (cleanup):** after the soak window, delete the `FEATURE_RBAC_V2` env var entirely (T071) — a stale value on a future redeploy would be read by nothing, but leaving dead env vars around is how the next incident starts.

@@ -71,6 +71,27 @@ export type TimelineListError =
 export type TimelineListDeps = {
   readonly memberRepo: MemberRepo;
   readonly timeline: TimelinePort;
+  /**
+   * Whether the viewer holds `invoicing.read` (016 review, security I-1).
+   *
+   * The timeline route is gated on `members.read`, which the `marketing` bundle
+   * carries — and the timeline's payment rows carry `amount_satang` while its
+   * F4 audit rows carry `total_satang` / `credit_amount_satang`. Without this
+   * gate the role that PR 4 deliberately excluded from the revenue dashboard
+   * reads per-member money one page over.
+   *
+   * INJECTED, because the Application layer must not import `canPerform`
+   * (it reads `env`).
+   *
+   * REQUIRED. It shipped optional-and-fail-closed, and four of the six call
+   * sites then forgot it — all four SSR paths. Fail-closed meant the failure
+   * was quiet in the worst way: members stopped seeing their OWN invoices on
+   * page 1 of the portal timeline while the API-driven "load more" still
+   * returned them, and the header count kept counting rows the page no longer
+   * showed. `ListDashboardDeps.canFinance` made the same parameter mandatory
+   * and has zero misses; this follows it.
+   */
+  readonly invoicingRead: boolean;
 };
 
 // ---------------------------------------------------------------------------
@@ -97,6 +118,64 @@ function redactPayload(
     }
   }
   return result;
+}
+
+/**
+ * Timeline rows that carry money, dropped for a viewer without `invoicing.read`.
+ *
+ * Dropped WHOLE rather than field-scrubbed: an invoice or payment row with its
+ * amounts removed still discloses that the member was billed, what document
+ * number was issued and when — and the row's own copy
+ * (`resolve-invoice-event-copy.ts`) renders from those fields, so a scrubbed row
+ * would render as a broken sentence. There is no partial version of this row
+ * that is both safe and useful.
+ */
+const MONEY_SOURCES: ReadonlySet<string> = new Set(['invoice', 'payment']);
+
+/**
+ * F4 event types that ride the `audit` source and carry money. Matched by
+ * prefix so a new `invoice_*` / `credit_note_*` / `refund_*` / `payment_*`
+ * event is excluded by default.
+ *
+ * A CHEAP FIRST PASS ONLY — see `hasMoneyShapedPayload`. The first version of
+ * this gate relied on the prefixes alone and leaked: `renewal_auto_drafted`
+ * (`frozen_price_thb`), `member_plan_change_billing_effect`
+ * (`old_price_thb` / `new_price_thb`) and `renewal_invoice_created`
+ * (`total_satang`) all carry `member_id` plus a price and match none of them.
+ */
+const MONEY_AUDIT_PREFIXES = ['invoice_', 'credit_note_', 'refund_', 'payment_'] as const;
+
+/**
+ * Money identified by the SHAPE of the payload rather than the name of the
+ * event that produced it.
+ *
+ * Naming is the wrong axis: it requires every future emitter to pick a blessed
+ * prefix, and three shipped ones already do not. The unit that actually leaks
+ * is a payload KEY, so that is what this matches — `*_satang`, `*_thb`, and
+ * anything spelled `price` or `amount`. Recursive, because F4 payloads nest
+ * (`{ totals: { total_satang } }`).
+ *
+ * Deliberately broad. A false positive costs one hidden timeline row for a
+ * viewer who could not open the money surface it describes anyway; a false
+ * negative is a per-member figure on a page whose role label promises the
+ * opposite.
+ */
+const MONEY_KEY_RE = /(_satang|_thb)$|price|amount/i;
+
+function hasMoneyShapedPayload(value: unknown, depth = 0): boolean {
+  if (depth > 4 || value === null || typeof value !== 'object') return false;
+  if (Array.isArray(value)) return value.some((v) => hasMoneyShapedPayload(v, depth + 1));
+  for (const [key, nested] of Object.entries(value)) {
+    if (MONEY_KEY_RE.test(key)) return true;
+    if (hasMoneyShapedPayload(nested, depth + 1)) return true;
+  }
+  return false;
+}
+
+function carriesMoney(e: TimelineEvent): boolean {
+  if (MONEY_SOURCES.has(e.source)) return true;
+  if (MONEY_AUDIT_PREFIXES.some((p) => e.eventType.startsWith(p))) return true;
+  return hasMoneyShapedPayload(e.payload);
 }
 
 function redactEvents(events: readonly TimelineEvent[]): TimelineEvent[] {
@@ -216,13 +295,25 @@ export async function timelineList(
 
   // 4. Redact for member-role callers (US6 AS3 / FR-017)
   const { events, nextCursor, total } = timelineResult.value;
-  const projectedEvents =
-    meta.actorRole === 'member' ? redactEvents(events) : events;
+  // rbac-portal-identity-ok: selects the member's own-history projection; the
+  // permission decisions are the route gate above and `invoicingRead` below.
+  const roleProjected = meta.actorRole === 'member' ? redactEvents(events) : events;
+  // 016 review (security I-1) — money rows need `invoicing.read` on top of the
+  // `members.read` that admitted the request. `!== true` rather than
+  // `=== false` so an omitted dep fails CLOSED.
+  const moneyFiltered =
+    deps.invoicingRead !== true ? roleProjected.filter((e) => !carriesMoney(e)) : roleProjected;
 
   return ok({
     memberId,
-    events: projectedEvents,
+    events: moneyFiltered,
     nextCursor,
-    total,
+    // 016 final review B2 — `total` is what the page renders as its header
+    // count. Returning the PRE-filter figure made it disagree with the rows on
+    // screen for any viewer whose money rows were dropped. Reduce it by what
+    // this page actually removed. It stays approximate across pages (the repo
+    // counts server-side and cannot know the filter), which is the same
+    // approximation the cursor already carries.
+    total: Math.max(0, total - (roleProjected.length - moneyFiltered.length)),
   });
 }

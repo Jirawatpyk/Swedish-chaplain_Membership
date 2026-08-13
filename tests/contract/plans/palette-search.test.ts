@@ -8,7 +8,7 @@
  * 055-member-number — added AS: member results include `member_number_display`
  * (formatted `SCCM-NNNN`) resolved via RLS-safe `runInTenant` + `getPrefix`.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 import { ok } from '@/lib/result';
 
@@ -28,6 +28,20 @@ const listInvoicesPagedMock = vi.fn();
 const loadInvoicePaymentActivityMock = vi.fn();
 const computeRemainingRefundableMock = vi.fn();
 
+/** Mutable so a case can drive either leg. Reset in `beforeEach`. */
+const LEG = vi.hoisted(() => ({ rbacV2: false }));
+
+/**
+ * Pay the cold Next.js module graph ONCE, inside the hook budget rather than
+ * charging it to whichever `it()` happens to import the route first. That test
+ * measured 30.009 s under contention — an intermittent red on a required check.
+ * `vitest.config.ts` sets `hookTimeout` to double `testTimeout` for this, and
+ * says plainly that raising `testTimeout` again is not the answer.
+ */
+beforeAll(async () => {
+  await import('@/app/api/plans/search/route');
+}, 60_000);
+
 vi.mock('@/lib/rbac', async () => {
   // 016 review C1 — the refundable-invoice palette arm is now evaluator-derived
   // (`refunds.write` / legacyAdminOnly) instead of a `role === 'admin'` literal.
@@ -39,9 +53,13 @@ vi.mock('@/lib/rbac', async () => {
   >('@/modules/auth/domain/permissions/evaluator');
   return {
     requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
+    // 016 final review — the leg is MUTABLE now. It was hardcoded `false`, so
+    // the ON leg (the default since T066) was never exercised here and the two
+    // sub-gates the widened endpoint depends on — `canReadPlans` and
+    // `canReadMembers` — had zero coverage anywhere in the tree.
     canPerform: (role: unknown, key: unknown, legacy: unknown) =>
       hasPermission(role as never, key as never, {
-        rbacV2: false,
+        rbacV2: LEG.rbacV2,
         legacy: legacy as never,
       }),
   };
@@ -132,6 +150,20 @@ const adminContext = {
   },
   sourceIp: '203.0.113.5',
   requestId: 'req-search-1',
+};
+const marketingContext = {
+  current: {
+    user: {
+      id: 'mkt-1',
+      email: 'k@b.co',
+      role: 'marketing',
+      status: 'active',
+      displayName: 'K',
+    },
+    session: { id: 'sess-3' },
+  },
+  sourceIp: '203.0.113.5',
+  requestId: 'req-search-3',
 };
 const managerContext = {
   current: {
@@ -399,5 +431,67 @@ describe('contract: GET /api/plans/search (T064)', () => {
     expect(numberById['inv-088']).toBe('RC-2026-000015');
     // Legacy row → §87 document number.
     expect(numberById['inv-legacy']).toBe('IN-2026-000002');
+  });
+
+
+  /**
+   * 016 final review — the two sub-gates the widened endpoint rests on.
+   *
+   * T064 widened admission from `plans.read` to `dashboard.view` so `marketing`
+   * could use ⌘K at all, then re-gated the plan hits on `plans.read` and (after
+   * the first review) the member hits on `members.read`. Neither sub-gate had a
+   * test: this file pinned the leg to `false`, where `marketing` is denied the
+   * endpoint outright and the arms never run.
+   */
+  describe('GET /api/plans/search — ON-leg sub-gates', () => {
+    beforeEach(() => {
+      LEG.rbacV2 = true;
+    });
+    afterEach(() => {
+      LEG.rbacV2 = false;
+    });
+  
+    it('marketing reaches the endpoint but gets NO plan hits', async () => {
+      // `dashboard.view` admits it; `plans.read` is not in its bundle. Before the
+      // widening this was a 403 for the whole palette, which is the bug T064
+      // exists to fix — so the endpoint must answer 200 AND withhold plans.
+      requireApiPermissionMock.mockResolvedValueOnce(marketingContext);
+      stubPlansOk();
+      const { GET } = await import('@/app/api/plans/search/route');
+      const res = await GET(makeRequest('prem'));
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { results: { plans: unknown[] } };
+      expect(body.results.plans).toEqual([]);
+    });
+  
+    it('admin still gets plan hits on the same leg', async () => {
+      // The other direction, so the case above cannot pass because the stub
+      // stopped returning plans entirely.
+      requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+      stubPlansOk();
+      const { GET } = await import('@/app/api/plans/search/route');
+      const res = await GET(makeRequest('prem'));
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { results: { plans: unknown[] } };
+      expect(body.results.plans.length).toBeGreaterThan(0);
+    });
+  
+    it('marketing KEEPS member hits — it holds members.read', async () => {
+      // `canReadMembers` must not be over-tight: marketing's whole purpose is
+      // member communication, and an empty member section would make ⌘K useless
+      // for it again by a different route.
+      requireApiPermissionMock.mockResolvedValueOnce(marketingContext);
+      stubPlansOk();
+      const { GET } = await import('@/app/api/plans/search/route');
+      const res = await GET(makeRequest('prem'));
+      const body = (await res.json()) as { results: { members: unknown[] } };
+      // `toHaveLength(1)`, not `Array.isArray` — the route answers
+      // `members: canReadMembers ? members : []`, so an empty array IS an array
+      // and the weaker assertion passed for the exact regression it names.
+      // Tightening `canReadMembers` to, say, `members.pii_sensitive` left this
+      // green while marketing's ⌘K went silently empty again. The stub returns
+      // one row unconditionally, so the count is the honest check.
+      expect(body.results.members, 'marketing must still see member hits').toHaveLength(1);
+    });
   });
 });

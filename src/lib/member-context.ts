@@ -61,6 +61,7 @@ export async function requireMemberContext(
       };
     }
 
+    // rbac-portal-identity-ok: resolves the member subject behind /portal/**; there is no staff member-context.
     if (current.user.role !== 'member') {
       return {
         response: NextResponse.json({ error: 'forbidden' }, { status: 403 }),

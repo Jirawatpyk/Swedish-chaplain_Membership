@@ -47,6 +47,7 @@ export async function GET(
   if (!current) {
     return NextResponse.json({ error: { code: 'unauthorized' } }, { status: 401 });
   }
+  // rbac-portal-identity-ok: /portal/** belongs to the member subject; staff have no self-service export.
   if (current.user.role !== 'member') {
     return NextResponse.json({ error: { code: 'forbidden' } }, { status: 403 });
   }

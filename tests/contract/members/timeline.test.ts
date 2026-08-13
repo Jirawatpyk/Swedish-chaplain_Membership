@@ -16,6 +16,13 @@ const buildMembersDepsMock = vi.fn();
 
 vi.mock('@/lib/rbac', () => ({
   requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
+  // 016 review (security I-1) — the route now resolves `invoicing.read` as a
+  // sub-gate so the timeline's money rows are dropped for a viewer without it.
+  // Stubbed TRUE here: this file is the ROUTE contract (status codes, body
+  // shape, cursor), and the money projection is owned by
+  // `tests/unit/members/timeline-list-filters.test.ts`, which drives the flag
+  // directly in both directions. A partial mock that omits it fails at import.
+  canPerform: () => true,
 }));
 vi.mock('@/modules/members/members-deps', () => ({
   buildMembersDeps: (...args: unknown[]) => buildMembersDepsMock(...args),

@@ -67,9 +67,19 @@ describe('activityFeedQuery', () => {
     expect(recent).not.toHaveBeenCalled();
   });
 
+  // `activityUnredacted` is set explicitly on both cases below to the value the
+  // page derives for that role (admin holds `insights.activity_unredacted`,
+  // manager does not). `depsReturning` omits the field, so these two ran the
+  // REDACTED branch and passed only because the MIXED fixture happens to carry
+  // no email or phone — two tests named for a path neither of them walked.
   it('admin sees the full feed (incl. finance events), fetching exactly `limit`', async () => {
     const { deps, recent } = depsReturning(MIXED);
-    const result = await activityFeedQuery({ limit: 10 }, meta('admin'), ctx, deps);
+    const result = await activityFeedQuery(
+      { limit: 10 },
+      meta('admin'),
+      ctx,
+      { ...deps, activityUnredacted: true },
+    );
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.value.map((e) => e.id)).toEqual(['1', '2', '3', '4', '5', '6']);
     expect(recent).toHaveBeenCalledWith(ctx, 10);
@@ -79,7 +89,14 @@ describe('activityFeedQuery', () => {
     // The "read-only on finance" manager may VIEW finance figures, so the feed
     // no longer drops payment/invoice/refund events for managers.
     const { deps, recent } = depsReturning(MIXED);
-    const result = await activityFeedQuery({ limit: 10 }, meta('manager'), ctx, deps);
+    const result = await activityFeedQuery(
+      { limit: 10 },
+      meta('manager'),
+      ctx,
+      // Redaction and finance visibility are INDEPENDENT axes: a manager reads
+      // the feed redacted, and still sees every money event in it.
+      { ...deps, activityUnredacted: false },
+    );
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value.map((e) => e.id)).toEqual(['1', '2', '3', '4', '5', '6']);
@@ -95,11 +112,20 @@ describe('activityFeedQuery', () => {
     const withEmail: readonly ActivityFeedItem[] = [
       { ...item('1', 'account_disabled'), summary: 'disabled manager user@example.com' },
     ];
-    const mgr = await activityFeedQuery({ limit: 5 }, meta('manager'), ctx, depsReturning(withEmail).deps);
+    // 016 T058 — the flags below are what the composition root computes for
+    // these two roles from `insights.activity_unredacted`; the roles are kept
+    // in the test names because R001 is about those personas' projections.
+    const mgr = await activityFeedQuery({ limit: 5 }, meta('manager'), ctx, {
+      ...depsReturning(withEmail).deps,
+      activityUnredacted: false,
+    });
     expect(mgr.ok).toBe(true);
     if (mgr.ok) expect(mgr.value[0]!.summary).toBe('disabled manager [email redacted]');
 
-    const adm = await activityFeedQuery({ limit: 5 }, meta('admin'), ctx, depsReturning(withEmail).deps);
+    const adm = await activityFeedQuery({ limit: 5 }, meta('admin'), ctx, {
+      ...depsReturning(withEmail).deps,
+      activityUnredacted: true,
+    });
     expect(adm.ok).toBe(true);
     if (adm.ok) expect(adm.value[0]!.summary).toBe('disabled manager user@example.com');
   });
@@ -154,5 +180,95 @@ describe('activityFeedQuery', () => {
     if (result.ok) expect(result.value[0]!.actorLabel).toBeNull();
     // system:* sentinels are never sent to the PDPA-safe resolver.
     expect(labelsFor).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * 016 T058 (US3) — the redaction decision is keyed on
+ * `insights.activity_unredacted`, not on membership of the administrative role
+ * set.
+ *
+ * The two populations are identical TODAY, which is why this task is a
+ * restatement rather than a behaviour change (T034). They stop being identical
+ * the moment the bundles move: granting `insights.activity_unredacted` to a
+ * non-administrative role would leave a role-set check still redacting, and
+ * removing it from `admin` would leave that check still handing over the raw
+ * summary. The second direction is the dangerous one — this suite pins both.
+ *
+ * `unredacted` is INJECTED for the same reason as `canFinance` in
+ * `listDashboard`: the Application layer must not re-derive the permission
+ * model, and the composition root already owns `canPerform`.
+ */
+describe('activityFeedQuery redaction is permission-keyed (T058)', () => {
+  const WITH_EMAIL: readonly ActivityFeedItem[] = [
+    { ...item('1', 'user_invited'), summary: 'invited nina@example.com as manager' },
+  ];
+
+  it('redacts the summary when the viewer lacks the key', async () => {
+    const result = await activityFeedQuery(
+      { limit: 5 },
+      meta('marketing'),
+      ctx,
+      { ...depsReturning(WITH_EMAIL).deps, activityUnredacted: false },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value[0]!.summary).not.toContain('nina@example.com');
+  });
+
+  it('leaves the summary intact when the viewer holds the key', async () => {
+    const result = await activityFeedQuery(
+      { limit: 5 },
+      meta('admin'),
+      ctx,
+      { ...depsReturning(WITH_EMAIL).deps, activityUnredacted: true },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value[0]!.summary).toContain('nina@example.com');
+  });
+
+  it('follows the KEY, not the role — a non-administrative holder is not redacted', async () => {
+    // The assertion a role-set check cannot pass: `manager` sits outside the
+    // administrative set, so `isAdministrativeRole` would redact regardless of
+    // what the bundle says.
+    const result = await activityFeedQuery(
+      { limit: 5 },
+      meta('manager'),
+      ctx,
+      { ...depsReturning(WITH_EMAIL).deps, activityUnredacted: true },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value[0]!.summary).toContain('nina@example.com');
+  });
+
+  it('follows the KEY in the other direction — an administrative non-holder IS redacted', async () => {
+    // The dangerous direction: an `admin` whose bundle no longer carries the
+    // key must lose the raw summary. A role-set check would hand it over.
+    const result = await activityFeedQuery(
+      { limit: 5 },
+      meta('admin'),
+      ctx,
+      { ...depsReturning(WITH_EMAIL).deps, activityUnredacted: false },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value[0]!.summary).not.toContain('nina@example.com');
+  });
+
+  it('defaults to REDACTED when the dep is omitted (fail-closed)', async () => {
+    // A caller that forgets to thread the flag must get the safe projection,
+    // never the raw one — the opposite default would turn an oversight in a new
+    // call site into a PII leak.
+    const result = await activityFeedQuery(
+      { limit: 5 },
+      meta('admin'),
+      ctx,
+      depsReturning(WITH_EMAIL).deps,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value[0]!.summary).not.toContain('nina@example.com');
   });
 });

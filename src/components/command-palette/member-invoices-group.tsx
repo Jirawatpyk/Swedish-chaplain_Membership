@@ -108,6 +108,7 @@ export function MemberCommandPalette({
 
   // Global ⌘K / Ctrl+K toggle.
   useEffect(() => {
+    // rbac-portal-identity-ok: the MEMBER portal palette; the staff palette is a different component entirely.
     if (currentUserRole !== 'member') return;
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
@@ -185,6 +186,7 @@ export function MemberCommandPalette({
 
   // Defence-in-depth: if a non-member somehow reaches this mount,
   // render nothing — neither the listener nor the dialog.
+  // rbac-portal-identity-ok: as above — renders nothing outside the member portal.
   if (currentUserRole !== 'member') return null;
 
   const hasQuery = deferredQuery.trim().length > 0;

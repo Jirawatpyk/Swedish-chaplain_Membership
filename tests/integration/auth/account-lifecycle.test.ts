@@ -338,7 +338,20 @@ describe('integration: last-admin protection (FR-011)', () => {
   let soleAdmin: TestUser;
 
   beforeEach(async () => {
-    soleAdmin = await createActiveTestUser('admin');
+    // Seed the TOP of the CURRENT administrator population, not a literal
+    // 'admin'. Since #323, administrativeRoles(true) is ['super_admin'] — on
+    // the ON leg an admin can no longer be "the last administrator", so the
+    // old literal asserted the guard on a role it deliberately stopped
+    // protecting: the use case ALLOWED the disable (correctly — a super_admin
+    // remained) and this test read that right answer as a failure. It had
+    // only ever passed via the OFF-leg soft-skip. [0] is super_admin on BOTH
+    // legs, so the assertion now targets the guarded population whichever leg
+    // the environment runs.
+    const { administrativeRoles } = await import('@/modules/auth/domain/role');
+    const { env } = await import('@/lib/env');
+    soleAdmin = await createActiveTestUser(
+      administrativeRoles(env.features.rbacV2)[0]!,
+    );
   });
 
   afterEach(async () => {

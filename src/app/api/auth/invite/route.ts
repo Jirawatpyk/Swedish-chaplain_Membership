@@ -40,11 +40,19 @@ import { logger } from '@/lib/logger';
 
 const inputSchema = z.object({
   email: z.string().email().max(254),
-  // 016 PR 3 (T048): `super_admin` is now assignable — keep in lockstep with
-  // ASSIGNABLE_ROLES and the change-role route (assignable-roles-lockstep.test).
-  // Inviting a staff role trips the step-2 `users.manage` gate below (SA-only on
-  // the ON leg), so only a super_admin can actually mint one. `marketing`: PR 4.
-  role: z.enum(['super_admin', 'admin', 'manager', 'member']),
+  // Every role is invitable: `super_admin` from PR 3 (T048), `marketing` from
+  // PR 4 (T059 / D17). Inviting ANY staff role trips the step-2 `users.manage`
+  // gate below (SA-only on the ON leg), so only a super_admin can mint one.
+  //
+  // `assignable-roles-lockstep.test.ts` holds this in step with
+  // ASSIGNABLE_ROLES, the change-role route and BOTH users-page pickers. It
+  // reads this file by name — `role: z.enum([…])`, comment-stripped — so
+  // declaration order carries no meaning. An earlier NOTE here asked the next
+  // author to keep this the FIRST `z.enum(...)` in the file because the test
+  // took whichever came first from raw text; that made `locale` two lines below
+  // load-bearing, and it invited exactly the comment that could defeat the
+  // check, since a role list written in prose read as source.
+  role: z.enum(['super_admin', 'admin', 'manager', 'member', 'marketing']),
   displayName: z.string().min(1).max(120).optional(),
   locale: z.enum(['en', 'th', 'sv']).optional(),
   // F1 spec:672-678 — optional link to existing member record. Only
@@ -116,6 +124,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // silent-ignore) — the form should not offer memberId for non-member
   // roles, so a payload carrying both is a client bug worth surfacing
   // rather than masking.
+  // rbac-payload-value-ok: the role BEING INVITED, from the request body — the inviter's own authority is the gate above.
   if (parsed.data.memberId && parsed.data.role !== 'member') {
     return NextResponse.json(
       {
@@ -130,6 +139,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // the ON leg). Placed before either branch acts; the OFF-leg row is the
   // same as step 1, so pre-cutover this re-check is a no-op for anyone who
   // passed step 1.
+  // rbac-payload-value-ok: as above: shapes which fields the invite payload must carry.
   if (parsed.data.role !== 'member') {
     const staffGate = await requireApiPermission(
       request,
@@ -140,6 +150,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   // --- Branch A: member role with optional memberId link ---
+  // rbac-payload-value-ok: as above: a memberId only makes sense for a member invite.
   if (parsed.data.role === 'member' && parsed.data.memberId) {
     const tenant = resolveTenantFromRequest(request);
     const deps = buildMembersDeps(tenant);

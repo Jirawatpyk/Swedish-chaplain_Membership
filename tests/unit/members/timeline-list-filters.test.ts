@@ -34,7 +34,15 @@ function makeDeps(events: unknown[] = []) {
       return ok({ events, nextCursor: null, total: events.length });
     }),
   } as unknown as TimelinePort;
-  return { deps: { memberRepo, timeline }, captured, memberRepo, timeline };
+  // 016 final review B2 — the flag is REQUIRED now. Default TRUE at the
+  // factory so the pre-existing filter/redaction cases keep their fixtures;
+  // the money-gate describe overrides it per case.
+  return {
+    deps: { memberRepo, timeline, invoicingRead: true },
+    captured,
+    memberRepo,
+    timeline,
+  };
 }
 
 describe('timelineList — filter resolution (D1)', () => {
@@ -125,7 +133,10 @@ describe('timelineList — filter resolution (D1)', () => {
       { memberId: MEMBER, limit: 50 },
       { ...META, actorRole: 'member' },
       CTX,
-      deps,
+      // The portal passes this: a member OWNS their billing history. The money
+      // gate exists to stop STAFF without invoicing.read reading someone
+      // else'''s invoices (016 review, security I-1).
+      { ...deps, invoicingRead: true },
     );
     expect(r.ok).toBe(true);
     if (!r.ok) return;
@@ -152,7 +163,10 @@ describe('timelineList — filter resolution (D1)', () => {
       { memberId: MEMBER, limit: 50 },
       { ...META, actorRole: 'member' },
       CTX,
-      deps,
+      // The portal passes this: a member OWNS their billing history. The money
+      // gate exists to stop STAFF without invoicing.read reading someone
+      // else'''s invoices (016 review, security I-1).
+      { ...deps, invoicingRead: true },
     );
     expect(r.ok).toBe(true);
     if (!r.ok) return;
@@ -179,6 +193,7 @@ describe('timelineList — filter resolution (D1)', () => {
     const r = await timelineList({ memberId: MEMBER, limit: 50 }, META, CTX, {
       memberRepo,
       timeline,
+      invoicingRead: true,
     });
 
     expect(r.ok).toBe(false);
@@ -202,6 +217,7 @@ describe('timelineList — filter resolution (D1)', () => {
     const r = await timelineList({ memberId: MEMBER, limit: 50 }, META, CTX, {
       memberRepo,
       timeline,
+      invoicingRead: true,
     });
 
     expect(r.ok).toBe(false);
@@ -210,5 +226,208 @@ describe('timelineList — filter resolution (D1)', () => {
       expect((r.error as { cause?: unknown }).cause).toBe(realError);
     }
     expect(timeline.listByMember).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * 016 review (security I-1) — the timeline must not hand per-member MONEY to a
+ * viewer without `invoicing.read`.
+ *
+ * `/api/members/[memberId]/timeline` is gated on `members.read`, which the new
+ * `marketing` bundle carries. The timeline's payment rows carry
+ * `amount_satang`, and its F4 audit rows carry `total_satang` /
+ * `credit_amount_satang` — and the page renders them.
+ *
+ * That contradicts three things PR 4 itself asserts: the dashboard split, which
+ * strips revenue from exactly this population; the role label shipped in three
+ * languages ("no finance or sensitive data"); and the frozen matrix's own
+ * comment claiming no money surface is reachable — in the same file whose list
+ * admits both timeline surfaces.
+ *
+ * `invoicingRead` is injected and defaults FALSE, matching `activityUnredacted`
+ * rather than `canFinance`: a caller that forgets it loses fidelity instead of
+ * leaking money.
+ */
+describe('timelineList — money is gated on invoicing.read (security I-1)', () => {
+  const PAYMENT_EVENT = {
+    id: 'e-pay',
+    source: 'payment',
+    occurredAt: '2026-08-01T00:00:00.000Z',
+    actorUserId: 'u1',
+    actorDisplayName: 'Staff',
+    actorKind: 'staff',
+    eventType: 'payment_succeeded',
+    payload: { status: 'succeeded', amount_satang: 12345600 },
+  };
+  const INVOICE_AUDIT_EVENT = {
+    id: 'e-inv',
+    source: 'audit',
+    occurredAt: '2026-08-02T00:00:00.000Z',
+    actorUserId: 'u1',
+    actorDisplayName: 'Staff',
+    actorKind: 'staff',
+    eventType: 'invoice_issued',
+    payload: { total_satang: 9900000, document_number: 'INV-2026-0001' },
+  };
+  /**
+   * 016 final review B1 — money that the PREFIX list does not match.
+   *
+   * `renewal_auto_drafted`, `member_plan_change_billing_effect` and
+   * `renewal_invoice_created` all carry `member_id` plus a price/total in the
+   * payload, and none of them starts with `invoice_`, `credit_note_`,
+   * `refund_` or `payment_`. They ride `source: 'audit'`, so the source filter
+   * misses them too.
+   *
+   * The original fixture could not catch this: every money row in it was
+   * dropped WHOLE, so the "no money FIELD survives" scan ran over a set with no
+   * surviving money-bearing row and passed vacuously.
+   */
+  const UNPREFIXED_MONEY = [
+    {
+      id: 'e-auto',
+      source: 'audit',
+      occurredAt: '2026-08-04T00:00:00.000Z',
+      actorUserId: 'system:cron',
+      actorDisplayName: null,
+      actorKind: 'system',
+      eventType: 'renewal_auto_drafted',
+      payload: { member_id: 'm-1', frozen_price_thb: '45000.00' },
+    },
+    {
+      id: 'e-planchg',
+      source: 'audit',
+      occurredAt: '2026-08-05T00:00:00.000Z',
+      actorUserId: 'u1',
+      actorDisplayName: 'Staff',
+      actorKind: 'staff',
+      eventType: 'member_plan_change_billing_effect',
+      payload: { member_id: 'm-1', old_price_thb: '30000.00', new_price_thb: '45000.00' },
+    },
+    {
+      id: 'e-renewinv',
+      source: 'audit',
+      occurredAt: '2026-08-06T00:00:00.000Z',
+      actorUserId: 'u1',
+      actorDisplayName: 'Staff',
+      actorKind: 'staff',
+      eventType: 'renewal_invoice_created',
+      payload: { member_id: 'm-1', invoice_number: 'INV-2026-0007', total_satang: 4500000 },
+    },
+  ];
+
+  const MEMBER_EVENT = {
+    id: 'e-mem',
+    source: 'audit',
+    occurredAt: '2026-08-03T00:00:00.000Z',
+    actorUserId: 'u1',
+    actorDisplayName: 'Staff',
+    actorKind: 'staff',
+    eventType: 'member_updated',
+    payload: { field: 'company_name' },
+  };
+  const ALL = [PAYMENT_EVENT, INVOICE_AUDIT_EVENT, ...UNPREFIXED_MONEY, MEMBER_EVENT];
+
+  const asMarketing = { actorUserId: 'u2', actorRole: 'marketing' as const, requestId: 'r2' };
+
+  it('drops payment rows for a viewer without invoicing.read', async () => {
+    const { deps } = makeDeps(ALL);
+    const r = await timelineList(
+      { memberId: MEMBER, limit: 50 },
+      asMarketing,
+      CTX,
+      { ...deps, invoicingRead: false },
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.events.map((e) => e.id)).not.toContain('e-pay');
+  });
+
+  it('drops F4 money audit rows for a viewer without invoicing.read', async () => {
+    const { deps } = makeDeps(ALL);
+    const r = await timelineList(
+      { memberId: MEMBER, limit: 50 },
+      asMarketing,
+      CTX,
+      { ...deps, invoicingRead: false },
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.events.map((e) => e.id)).not.toContain('e-inv');
+  });
+
+  it('no money FIELD survives anywhere in the payload (absent, not zeroed)', async () => {
+    const { deps } = makeDeps(ALL);
+    const r = await timelineList(
+      { memberId: MEMBER, limit: 50 },
+      asMarketing,
+      CTX,
+      { ...deps, invoicingRead: false },
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const blob = JSON.stringify(r.value.events);
+    // Any money-shaped key, not just the three the prefix list happens to
+    // catch — this is the assertion that would have caught B1.
+    for (const field of [
+      'amount_satang',
+      'total_satang',
+      'credit_amount_satang',
+      'frozen_price_thb',
+      'old_price_thb',
+      'new_price_thb',
+    ]) {
+      expect(blob, `${field} reached a viewer without invoicing.read`).not.toContain(field);
+    }
+  });
+
+  it('keeps the non-money rows — the timeline is narrower, not empty', async () => {
+    const { deps } = makeDeps(ALL);
+    const r = await timelineList(
+      { memberId: MEMBER, limit: 50 },
+      asMarketing,
+      CTX,
+      { ...deps, invoicingRead: false },
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.events.map((e) => e.id)).toContain('e-mem');
+  });
+
+  it('a holder of invoicing.read still sees everything', async () => {
+    const { deps } = makeDeps(ALL);
+    const r = await timelineList(
+      { memberId: MEMBER, limit: 50 },
+      META,
+      CTX,
+      { ...deps, invoicingRead: true },
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.events.map((e) => e.id)).toEqual([
+      'e-pay',
+      'e-inv',
+      'e-auto',
+      'e-planchg',
+      'e-renewinv',
+      'e-mem',
+    ]);
+  });
+
+  it('still fails closed if `undefined` reaches it at runtime', () => {
+    // The dep is REQUIRED now, so "omitted" is a compile error and the old
+    // version of this case could not be written. The runtime guard is `!== true`
+    // rather than `=== false` precisely so a value that arrives undefined —
+    // from an untyped caller, a cast, or a future loosening of the type — still
+    // drops money instead of shipping it. That is what this pins.
+    const deps = makeDeps(ALL);
+    const loosened = {
+      ...deps.deps,
+      invoicingRead: undefined as unknown as boolean,
+    };
+    return timelineList({ memberId: MEMBER, limit: 50 }, META, CTX, loosened).then((r) => {
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      expect(r.value.events.map((e) => e.id)).not.toContain('e-pay');
+    });
   });
 });

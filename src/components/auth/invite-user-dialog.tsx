@@ -8,7 +8,8 @@
  * UX (ux-standards § 6 / § 11):
  *   - Dialog opens from the "Invite user" button at the bottom of
  *     the users table.
- *   - Fields: email (auto-focus), role (admin / manager / member),
+ *   - Fields: email (auto-focus), role (every role in ASSIGNABLE_ROLES —
+ *     super_admin / admin / manager / marketing / member),
  *     optional "link to member" picker — enabled only when role=member
  *     (F1 spec:672-678).
  *   - Submits to `POST /api/auth/invite` with the Origin header set
@@ -50,7 +51,12 @@ import { MemberPicker } from '@/components/members/member-picker';
 // Infrastructure modules and cannot be used from client code.
 // Domain types and constants are pure and safe to import directly.
  
-import { ASSIGNABLE_ROLES, isRole, type Role } from '@/modules/auth/domain/role';
+import {
+  ASSIGNABLE_ROLES,
+  byDisplayOrder,
+  isRole,
+  type Role,
+} from '@/modules/auth/domain/role';
 
 /**
  * The exhaustive list of error codes the invite route + this dialog
@@ -127,6 +133,13 @@ export function InviteUserDialog({
   const t = useTranslations('admin.users.invite');
   const tLink = useTranslations('admin.users.invite.linkMember');
   const tActions = useTranslations('admin.users.actions');
+  // Role NAME and role SUMMARY, both shared with the change-role picker so the
+  // two controls on this screen describe a role the same way. They used to draw
+  // from different namespaces: invite showed "name — description" while
+  // change-role showed a bare name, so a super_admin promoting a colleague to
+  // super_admin saw no statement of what that grants.
+  const tRole = useTranslations('admin.users.filters.role');
+  const tSummary = useTranslations('admin.users.roleSummary');
   // Email-locale audit 2026-07-16 — carry the admin's UI locale as the invite
   // default. The route threads it onward: for a NEW contact / staff user this
   // is the best available signal; for an EXISTING member contact the use-case
@@ -168,6 +181,8 @@ export function InviteUserDialog({
   // is locked: role can never leave 'member' in that mode.
   useEffect(() => {
     if (lockMember) return;
+    // rbac-presentation-only-ok: clears a form field that is meaningless for
+    // a staff role. The server ignores memberId for non-member invites.
     if (role !== 'member' && memberId !== null) {
       setMemberId(null);
     }
@@ -184,6 +199,8 @@ export function InviteUserDialog({
         role,
         locale,
       };
+      // rbac-presentation-only-ok: shapes the request body; the route
+      // re-derives the member link itself and does not trust this.
       if (role === 'member' && memberId) {
         body.memberId = memberId;
       }
@@ -248,7 +265,9 @@ export function InviteUserDialog({
                 /admin/users entry point shows the full role selector. */}
             {!lockMember && (
               <div className="space-y-1.5">
-                <Label htmlFor="invite-role">{t('roleLabel')}</Label>
+                <Label id="invite-role-label" htmlFor="invite-role">
+                  {t('roleLabel')}
+                </Label>
                 <Select
                   value={role}
                   disabled={submitting}
@@ -256,15 +275,43 @@ export function InviteUserDialog({
                     if (next && isRole(next)) setRole(next);
                   }}
                 >
-                  <SelectTrigger id="invite-role" className="w-full">
+                  {/* `<label for>` does NOT name a button, and Base UI renders
+                      SelectTrigger as one — so the accessible name of the
+                      control that hands out super_admin was its own selected
+                      VALUE ("Member — self-service portal"), never the word
+                      "Role" (WCAG 1.3.1 + 4.1.2, level A). axe cannot see this:
+                      `button-name` is satisfied by the subtree text. Same
+                      `aria-labelledby` lists the label FIRST and then the
+                      trigger itself, so the name reads "Role, <value>". The
+                      self-reference is safe: accname takes this node's own
+                      subtree, it does not recurse. (The MemberPicker below uses
+                      a single id — it has no value to append.) */}
+                  <SelectTrigger
+                    id="invite-role"
+                    aria-labelledby="invite-role-label invite-role"
+                    className="w-full"
+                  >
+                    {/* NAME only. The trigger is `whitespace-nowrap` with
+                        `line-clamp-1`, and line-clamp can only draw an ellipsis
+                        on text that wraps — so the old "Admin — everything
+                        except user management, audit log, invoice settings and
+                        erasure" was hard-cut with no "…" at roughly
+                        "settings and erasure", losing the entire exclusion list
+                        that was the point of the sentence. The summary now
+                        lives on the option, where it has two lines. */}
                     <TranslatedSelectValue
-                      translate={(v) => (v ? t(`roles.${v}`) : t('roleLabel'))}
+                      translate={(v) => (v ? tRole(v) : t('roleLabel'))}
                     />
                   </SelectTrigger>
                   <SelectContent>
-                    {ASSIGNABLE_ROLES.map((r) => (
-                      <SelectItem key={r} value={r}>
-                        {t(`roles.${r}`)}
+                    {byDisplayOrder(ASSIGNABLE_ROLES).map((r) => (
+                      <SelectItem key={r} value={r} label={tRole(r)} className="items-start">
+                        <span className="flex max-w-[42ch] flex-col gap-0.5 whitespace-normal">
+                          <span>{tRole(r)}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {tSummary(r)}
+                          </span>
+                        </span>
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -309,6 +356,7 @@ export function InviteUserDialog({
                   aria-describedby="invite-link-member-help"
                   value={memberId}
                   onChange={setMemberId}
+                  // rbac-presentation-only-ok: enables a field, grants nothing
                   disabled={submitting || role !== 'member'}
                 />
               )}
