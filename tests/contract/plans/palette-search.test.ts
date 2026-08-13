@@ -57,11 +57,8 @@ vi.mock('@/lib/rbac', async () => {
     // the ON leg (the default since T066) was never exercised here and the two
     // sub-gates the widened endpoint depends on — `canReadPlans` and
     // `canReadMembers` — had zero coverage anywhere in the tree.
-    canPerform: (role: unknown, key: unknown, legacy: unknown) =>
-      hasPermission(role as never, key as never, {
-        rbacV2: LEG.rbacV2,
-        legacy: legacy as never,
-      }),
+    canPerform: (role: unknown, key: unknown) =>
+      hasPermission(role as never, key as never),
   };
 });
 vi.mock('@/modules/plans/plans-deps', () => ({

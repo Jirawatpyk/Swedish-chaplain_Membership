@@ -348,9 +348,8 @@ describe('integration: last-admin protection (FR-011)', () => {
     // legs, so the assertion now targets the guarded population whichever leg
     // the environment runs.
     const { administrativeRoles } = await import('@/modules/auth/domain/role');
-    const { env } = await import('@/lib/env');
     soleAdmin = await createActiveTestUser(
-      administrativeRoles(env.features.rbacV2)[0]!,
+      administrativeRoles()[0]!,
     );
   });
 
@@ -366,9 +365,8 @@ describe('integration: last-admin protection (FR-011)', () => {
     );
     // Same population the guard under test uses (flag-aware since T019).
     const { administrativeRoles } = await import('@/modules/auth/domain/role');
-    const { env } = await import('@/lib/env');
     const countBefore = await userRepo.countActiveAdministrators(
-      administrativeRoles(env.features.rbacV2),
+      administrativeRoles(),
     );
 
     // If there are other admins in the live DB, this test can't
@@ -394,9 +392,8 @@ describe('integration: last-admin protection (FR-011)', () => {
       '@/modules/auth/infrastructure/db/user-repo'
     );
     const { administrativeRoles } = await import('@/modules/auth/domain/role');
-    const { env } = await import('@/lib/env');
     const countBefore = await userRepo.countActiveAdministrators(
-      administrativeRoles(env.features.rbacV2),
+      administrativeRoles(),
     );
     if (countBefore > 1) return;
 

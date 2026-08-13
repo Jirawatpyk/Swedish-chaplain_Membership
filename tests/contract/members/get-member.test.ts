@@ -46,11 +46,7 @@ vi.mock('@/lib/rbac', async () => {
   >('@/modules/auth/domain/permissions/evaluator');
   return {
     requireApiPermission: (...args: unknown[]) => requireApiPermissionMock(...args),
-    canPerform: (role: unknown, key: unknown, legacy: unknown) =>
-      hasPermission(role as never, key as never, {
-        rbacV2: rbacLeg.v2,
-        legacy: legacy as never,
-      }),
+    canPerform: (role: unknown, key: unknown) => hasPermission(role as never, key as never),
   };
 });
 

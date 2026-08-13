@@ -67,7 +67,6 @@ function makeDeps(overrides: Partial<EraseUserDeps> = {}): {
   const deps: EraseUserDeps = {
     sessions: { deleteByUserIdInTx } as unknown as EraseUserDeps['sessions'],
     audit: { appendInTx } as unknown as EraseUserDeps['audit'],
-    rbacV2: false,
     ...overrides,
     // Merge (not replace) the users bag: a case overriding one repo method
     // must not silently drop the pre-flight's `findById` /

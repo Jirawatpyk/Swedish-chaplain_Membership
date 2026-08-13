@@ -343,7 +343,7 @@ const STEP_ONE_COMPANION: Readonly<Record<string, Pair>> = Object.fromEntries(
     '/api/auth/users/[id]/enable',
     '/api/auth/users/[id]/reissue-invite',
     '/api/auth/users/[id]/revoke-invite',
-  ].map((p) => [p, pairOf('users.member_accounts', 'mappedLegacy(auth:user,write)')]),
+  ].map((p) => [p, pairOf('users.member_accounts')]),
 );
 
 /**

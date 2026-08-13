@@ -15,7 +15,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NextResponse, NextRequest } from 'next/server';
 import { POST } from '@/app/api/auth/invite/route';
-import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { ok, err } from '@/lib/result';
 
 const createUserMock = vi.fn();
@@ -184,7 +183,6 @@ describe('POST /api/auth/invite', () => {
         2,
         expect.anything(),
         'users.manage',
-        mappedLegacy('auth:user', 'write'),
       );
     });
 
@@ -212,7 +210,6 @@ describe('POST /api/auth/invite', () => {
         1,
         expect.anything(),
         'users.member_accounts',
-        mappedLegacy('auth:user', 'write'),
       );
     });
 
@@ -240,7 +237,6 @@ describe('POST /api/auth/invite', () => {
         2,
         expect.anything(),
         'users.manage',
-        mappedLegacy('auth:user', 'write'),
       );
     });
   });

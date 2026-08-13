@@ -119,8 +119,6 @@ describe('integration: last-admin-protection guard (T-10)', () => {
         sessions: sessionRepo,
         audit: auditRepo,
         // 016 T026 — legacy leg: the guarded population is admin ∪ super_admin,
-        // matching migration 0286's transitional trigger.
-        rbacV2: false,
         now: () => new Date(),
       },
     );
@@ -144,8 +142,6 @@ describe('integration: last-admin-protection guard (T-10)', () => {
         sessions: sessionRepo,
         audit: auditRepo,
         // 016 T026 — legacy leg: the guarded population is admin ∪ super_admin,
-        // matching migration 0286's transitional trigger.
-        rbacV2: false,
       },
     );
 
@@ -180,7 +176,6 @@ describe('integration: last-admin-protection guard (T-10)', () => {
           users: oneAdminRepo(),
           sessions: sessionRepo,
           audit: auditRepo,
-          rbacV2: false,
         },
       );
       expect(result.ok).toBe(true);

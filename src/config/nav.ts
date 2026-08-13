@@ -1,5 +1,4 @@
 import type { LucideIcon } from 'lucide-react';
-import type { Role } from '@/modules/auth';
 // Pure Domain value import (client-safe) — the D16 totaliser for nav filtering.
 import {
   defineGuard,

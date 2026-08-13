@@ -47,7 +47,7 @@ function pageFileFor(href: string): string | null {
 }
 
 /**
- * The `requirePagePermission('key', legacyRow)` a page declares.
+ * The `requirePagePermission('key')` a page declares (key-only since PR 5).
  *
  * Delegates to the shared scanner. The version written here first stripped only
  * whole-line `//`, so the `requirePagePermission(...)` EXAMPLE inside
@@ -55,7 +55,7 @@ function pageFileFor(href: string): string | null {
  * call 116 lines below — this suite was comparing nav config against prose, on
  * the highest-PII surface in the product, and passing for the wrong reason.
  */
-function guardOf(file: string): { key: string; legacy: string } | null {
+function guardOf(file: string): { key: string } | null {
   return extractPageGuard(readFileSync(file, 'utf8'), file);
 }
 
@@ -88,12 +88,12 @@ describe('staff nav declares a permission for every entry (T061)', () => {
     expect(new Set(hrefs).size, `duplicate href in staffNavConfig: ${hrefs}`).toBe(hrefs.length);
   });
 
-  it('no staff nav item still uses the legacy `roles` array', () => {
-    // The arrays were a hand-maintained approximation of three pages' guards.
-    // Leaving one behind would mean that item is filtered by BOTH mechanisms,
-    // and the stricter one silently wins.
-    const stragglers = STAFF_ITEMS.filter((i) => i.roles).map((i) => i.href);
-    expect(stragglers).toEqual([]);
+  it('the deleted `roles` allow-list has not crept back into the nav config', () => {
+    // PR 5 removed the field from NavItem and NavGroup entirely, so a compile
+    // error now covers typed reuse — but a re-ADDED field plus config entries
+    // would compile again. Pin the deletion at the source level.
+    const src = readFileSync(join(REPO_ROOT, 'src', 'config', 'nav.ts'), 'utf8');
+    expect(src).not.toMatch(/^\s*roles:\s*\[/m);
   });
 
   /**
@@ -107,12 +107,17 @@ describe('staff nav declares a permission for every entry (T061)', () => {
    * `staffNavConfig` has no groups today, which is precisely why this needs
    * asserting: the first one added would otherwise arrive unchecked.
    */
-  it('no staff nav GROUP carries a legacy roles array (groups escape the leaf walk)', () => {
+  it('every staff nav GROUP child is a guarded leaf (groups escape the leaf-count pins)', () => {
+    // Groups have no href and render only when a child survives, so the leaf
+    // walk covers their children — but assert it explicitly so the first group
+    // added does not arrive with an unguarded child.
     const groups = staffNavConfig.sections.flatMap((s) =>
       s.items.filter((i): i is Extract<typeof i, { children: unknown }> => 'children' in i),
     );
-    const withRoles = groups.filter((g) => g.roles).map((g) => g.titleKey);
-    expect(withRoles, 'a group hidden by `roles` is invisible to the permission model').toEqual([]);
+    const unguarded = groups.flatMap((g) =>
+      g.children.filter((c) => !c.guard).map((c) => c.href),
+    );
+    expect(unguarded, 'a group child without a guard is visible to every role').toEqual([]);
   });
 
   it('staff titleKeys are unique', () => {
@@ -137,12 +142,6 @@ describe('every staff nav entry matches its target page guard (T063)', () => {
       // guard surfaces as that suite's failure rather than a confusing TS error.
       expect(item.guard).toBeDefined();
       expect(item.guard!.key).toBe(guard!.key);
-      expect(item.guard!.legacy.kind).toBe(
-        // `legacySessionOnly` → kind 'legacySessionOnly', etc. The nav stores
-        // the row VALUE; the page names the imported const. Comparing the kind
-        // to the identifier keeps the two in step without importing the page.
-        guard!.legacy,
-      );
     },
   );
 });
@@ -154,7 +153,6 @@ describe('filterNavConfig filters on the server-computed allow-list (T063)', () 
     const filtered = filterNavConfig(
       staffNavConfig,
       ALL_FLAGS,
-      'admin',
       allowed === undefined ? undefined : new Set(allowed),
     );
     return flattenNavItems(filtered).map((i) => i.href);
@@ -177,12 +175,7 @@ describe('filterNavConfig filters on the server-computed allow-list (T063)', () 
   });
 
   it('drops a section left with no visible items (no orphan header)', () => {
-    const filtered = filterNavConfig(
-      staffNavConfig,
-      ALL_FLAGS,
-      'admin',
-      new Set(['/admin']),
-    );
+    const filtered = filterNavConfig(staffNavConfig, ALL_FLAGS, new Set(['/admin']));
     // Only the dashboard survives → exactly one section remains.
     expect(filtered.sections).toHaveLength(1);
   });
@@ -191,7 +184,6 @@ describe('filterNavConfig filters on the server-computed allow-list (T063)', () 
     const filtered = filterNavConfig(
       staffNavConfig,
       { broadcastsEnabled: false, eventsEnabled: true },
-      'admin',
       new Set(['/admin', '/admin/broadcasts', '/admin/events']),
     );
     const hrefs = flattenNavItems(filtered).map((i) => i.href);
@@ -214,12 +206,7 @@ describe('ON-leg sidebar per role (T063)', () => {
 
   function sidebarFor(role: Parameters<typeof staffNavAllowedHrefs>[0]): readonly string[] {
     return flattenNavItems(
-      filterNavConfig(
-        staffNavConfig,
-        ALL_FLAGS,
-        role,
-        new Set(staffNavAllowedHrefs(role, { rbacV2: true })),
-      ),
+      filterNavConfig(staffNavConfig, ALL_FLAGS, new Set(staffNavAllowedHrefs(role))),
     ).map((i) => i.href);
   }
 

@@ -12,7 +12,6 @@ import {
   getPermissionSet,
   hasPermission,
 } from '@/modules/auth/domain/permissions/evaluator';
-import { ROLES } from '@/modules/auth/domain/role';
 import type { PermissionKey } from '@/modules/auth/domain/permissions/permission-catalogue';
 
 import { PINNED_MATRIX, PINNED_SUPER_ADMIN_ONLY } from '../../../helpers/rbac-pinned-matrix';

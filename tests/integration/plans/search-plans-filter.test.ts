@@ -79,8 +79,7 @@ const fixedClock: ClockPort = {
  */
 const offLegProbe =
   (role: Role): SearchPlansDeps['can'] =>
-  (key, legacy) =>
-    canPerform(role, key, legacy, { rbacV2: false });
+  (key) => canPerform(role, key);
 
 describe('Integration: search-plans filter correctness (T150, US6)', () => {
   let tenant: TestTenant;

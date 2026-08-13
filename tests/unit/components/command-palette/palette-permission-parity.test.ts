@@ -25,7 +25,6 @@ import { extractPageGuard } from '../../../../scripts/lib/source-scan';
 import { join } from 'node:path';
 import { ROLES, type Role } from '@/modules/auth/domain/role';
 import { canPerform } from '@/lib/rbac';
-import { legacySessionOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import type { PermissionKey } from '@/modules/auth/domain/permissions/permission-catalogue';
 
 const REPO_ROOT = process.cwd();
@@ -38,7 +37,6 @@ type Entry = {
   readonly id: string;
   readonly url: string;
   readonly permission: PermissionKey;
-  readonly legacy: string;
   readonly kind: 'action' | 'navigate';
 };
 
@@ -80,7 +78,6 @@ function parseRegistries(): readonly Entry[] {
       const id = /id: ['"]([^'"]+)['"]/.exec(block);
       const url = /url: ['"]([^'"]+)['"]/.exec(block);
       const permission = /permission: '([^']+)'/.exec(block);
-      const legacy = /legacy: (\w+)/.exec(block);
       // A fragment with neither id nor url is the outer half of a split entry,
       // or the `as const` tail — those are expected. One with an id but no url
       // (or vice versa) is a real entry the parser mangled.
@@ -88,12 +85,10 @@ function parseRegistries(): readonly Entry[] {
       expect(id, `entry fragment has a url but no id: ${block}`).not.toBeNull();
       expect(url, `entry ${id?.[1]} has no url`).not.toBeNull();
       expect(permission, `${id?.[1]} has no permission`).not.toBeNull();
-      expect(legacy, `${id?.[1]} has no legacy row`).not.toBeNull();
       out.push({
         id: id![1]!,
         url: url![1]!,
         permission: permission![1] as PermissionKey,
-        legacy: legacy![1]!,
         kind,
       });
     }
@@ -102,7 +97,7 @@ function parseRegistries(): readonly Entry[] {
 }
 
 /** The guard on the page a palette url lands on (query string ignored). */
-function pageGuardFor(url: string): { key: string; legacy: string } | null {
+function pageGuardFor(url: string): { key: string } | null {
   const path = url.split('?')[0]!;
   const rel = path.replace(/^\/admin\/?/, '');
   const file = join(
@@ -129,7 +124,7 @@ function pageGuardFor(url: string): { key: string; legacy: string } | null {
 function holders(key: string): ReadonlySet<Role> {
   return new Set(
     ROLES.filter((r) =>
-      canPerform(r, key as PermissionKey, legacySessionOnly, { rbacV2: true }),
+      canPerform(r, key as PermissionKey),
     ),
   );
 }
@@ -168,7 +163,6 @@ describe('navigate entries mirror their destination page guard (T064)', () => {
     const guard = pageGuardFor(entry.url);
     expect(guard, `no page guard found for ${entry.url}`).not.toBeNull();
     expect(entry.permission).toBe(guard!.key);
-    expect(entry.legacy).toBe(guard!.legacy);
   });
 });
 
@@ -197,7 +191,7 @@ describe('action entries are never looser than their destination (T064)', () => 
 describe('ON-leg palette reach per role (T064)', () => {
   function reachable(role: Role): readonly string[] {
     return ENTRIES.filter((e) =>
-      canPerform(role, e.permission, legacySessionOnly, { rbacV2: true }),
+      canPerform(role, e.permission),
     ).map((e) => e.id);
   }
 

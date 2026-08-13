@@ -31,7 +31,7 @@ vi.mock('@/lib/env', () => ({
     },
     // 016 T029 — the module under test now transitively imports @/lib/rbac
     // (guard evaluator), whose defaultDeps read the flag at module eval.
-    features: { rbacV2: false },
+    features: {},
   } as const,
 }));
 
