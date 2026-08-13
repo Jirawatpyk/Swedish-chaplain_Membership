@@ -280,6 +280,10 @@ RBAC v2 cutover — <date>
   # expected: absent (inherits production), or present with value "true"
   ```
 
+  SweCham/TSCC state, verified by the operator 2026-08-13 (PR #326): **present,
+  lower-case `"true"`, scoped Production and Preview** — both environments run
+  the ON leg and the D7 gate's raw-string comparison is satisfied.
+
   **Only two safe values: absent, or the lower-case string `true`.** Do NOT blank the variable. `zod`'s `.default()` fires only on `undefined`, so a declared-but-empty var is a present value that resolves to `false` and drops that environment onto the legacy leg — where `manager` regains `/admin/users` and `/admin/audit`, all four D4 narrowings come off, and `marketing` is locked out of `/admin/**` entirely. `'TRUE'` and `'1'` are equally wrong in the other direction: the app reads them as ON, but the migration gate compares raw text against `'true'` and will refuse the deploy.
 
 - **D7 promotion-gate ordering fix (PR 4).** The gate's "strictly newer than every sibling" check was unconditional, so it began refusing as soon as ANY migration newer than `0287_rbac_v2_promotion` was journaled — on an already-applied promotion. Because `run-migrations.ts` runs as `vercel-build` and inside the required `Integration smoke` check, that would have frozen prod deploys, preview deploys and merges to `main` together, on whichever unrelated branch happened to add the next migration. It is now gated on `pending`; the `when`-COLLISION check stays unconditional, since a colliding value is exactly what `pending` cannot see. Regression cases: `tests/unit/scripts/rbac-promotion-gate.test.ts` ("the steady state").
