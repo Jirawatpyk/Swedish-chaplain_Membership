@@ -5,9 +5,9 @@
  *   - the `searchPlans` use case returns (via `@/modules/plans`), and
  *   - the `<CommandPalette>` client component consumes.
  *
- * The client component imports **only** these types and the
- * `filterEntriesByRole` helper. It does not import any other module —
- * the registry stays free of framework/React dependencies so it can be
+ * The client component imports **only** these types — the role-filter helpers
+ * that used to live here were removed in T064. It does not import any other
+ * module: the registry stays free of framework/React dependencies so it can be
  * consumed server-side too if future work ever needs it.
  *
  * The action + navigate entries that live in `search-plans.ts` are the

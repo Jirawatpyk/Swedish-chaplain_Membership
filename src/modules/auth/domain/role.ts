@@ -130,7 +130,7 @@ export function isStaffRole(role: Role): boolean {
  *
  * ## PR 5 caution — call sites that are NOT the last-administrator guard
  *
- * (016 review I6.) Six call sites use `isAdministrativeRole(role, false)` with a
+ * (016 review I6.) Five call sites use `isAdministrativeRole(role, false)` with a
  * HARDCODED `false` as a general "is this an administrator?" predicate, for
  * affordances and redaction rather than for the guard this population was
  * defined for:

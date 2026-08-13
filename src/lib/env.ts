@@ -691,7 +691,11 @@ const schema = z.object({
   // default and puts that environment back on the legacy leg — which is the
   // point (rollback stays one env var), but it also means the flip is not
   // complete until every environment's explicit value is removed or set to
-  // 'true'. Prod is verified in docs/runbooks/rbac-v2-cutover.md § 5 step 6.
+  // 'true'. Prod is verified in docs/runbooks/rbac-v2-cutover.md § 10 (the
+  // PR-4 operator steps), not § 5 — § 5 is Migration C and has four steps.
+  // An empty string counts as unset for zod's `.default()` but NOT for a
+  // declared-but-blank Vercel var, which resolves to `false`: remove it,
+  // clear it, or set it to 'true'.
   //
   // The env var is deleted outright in PR 5, together with the legacy leg.
   FEATURE_RBAC_V2: booleanFromString.default(true),

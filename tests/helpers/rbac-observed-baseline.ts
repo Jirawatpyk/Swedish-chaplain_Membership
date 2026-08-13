@@ -185,8 +185,14 @@ export const OBSERVED_API: readonly ObservedSurface[] = [
   // denied it wholesale to `marketing`, whose bundle carries members +
   // broadcasts + events, so its palette came back empty. The KEY widens to
   // `dashboard.view`; the legacy ROW is unchanged, so the OFF-leg population is
-  // byte-identical. Plan HITS are re-gated on `plans.read` inside the handler —
-  // so `marketing: 'allow'` here means "reaches the endpoint", not "sees plans".
+  // byte-identical. Plan hits are re-gated on `plans.read` inside the handler,
+  // and member hits on `members.read` (016 review).
+  //
+  // `cells` records the OFF LEG — that is what `T015 flag-OFF leg reproduces
+  // observed behaviour` compares against — so the unchanged row still denies
+  // marketing here. The ON-leg reach is pinned separately by T053's frozen
+  // list, which now includes this surface. An earlier draft of this comment
+  // glossed the cell as `marketing: 'allow'`, contradicting the line below it.
   { surface: 'GET /api/plans/search', kind: 'api', key: 'dashboard.view', row: { kind: 'mappedLegacy', resource: 'plan', action: 'read' }, guard: 'requireApiPermission(request, \'dashboard.view\', mappedLegacy(\'plan\', \'read\'))', cells: { super_admin: 'allow', admin: 'allow', manager: 'allow', marketing: 'deny', member: 'deny' } },
   { surface: 'GET /api/plans/[year]/[planId]', kind: 'api', key: 'plans.read', row: { kind: 'mappedLegacy', resource: 'plan', action: 'read' }, guard: 'requireAdminContext(request, { resource: \'plan\', action: \'read\', }', cells: { super_admin: 'allow', admin: 'allow', manager: 'allow', marketing: 'deny', member: 'deny' } },
   { surface: 'GET /api/plans/[year]/[planId]/affected-members', kind: 'api', key: 'members.read', row: { kind: 'mappedLegacy', resource: 'members', action: 'read' }, guard: 'requireAdminContext(request, { resource: \'members\', action: \'read\', }', cells: { super_admin: 'allow', admin: 'allow', manager: 'allow', marketing: 'deny', member: 'deny' } },

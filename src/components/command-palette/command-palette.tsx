@@ -12,9 +12,11 @@
  *   - Arrow-key + Enter navigation is provided by `cmdk` under the hood.
  *   - Results are grouped into Plans / Actions / Navigate (three
  *     `<CommandGroup>`s, hidden when empty).
- *   - Defence-in-depth: a client-side role filter drops any admin-only
- *     entry that somehow slipped through the server filter (see
- *     `registry.ts`).
+ *   - Results render exactly as the server sent them. The client-side role
+ *     mirror was REMOVED in T064: per-entry permission filtering happens in
+ *     `/api/plans/search`, and no client copy can reproduce it (`canPerform`
+ *     reads `env`). What the mirror actually did on the ON leg was blank the
+ *     palette for `marketing`.
  *   - React 19 `useDeferredValue` keeps typing input responsive while
  *     the filter-then-render runs concurrently. No explicit setTimeout
  *     debounce — scheduler + deferred value handles it.

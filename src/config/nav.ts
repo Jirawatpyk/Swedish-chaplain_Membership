@@ -61,11 +61,11 @@ export interface NavItem {
   /** URL pattern for active-state matching (see {@link ActivePattern}). */
   readonly activePattern: ActivePattern;
   /**
-   * DEPRECATED (016 T063) — superseded by `requiredPermission` + `legacyRow`.
-   * Kept on the type so `memberNavConfig` and any future non-staff config can
-   * still express a coarse allow-list; `tests/unit/nav/nav-permission-parity`
-   * asserts no STAFF item uses it, because an item filtered by both mechanisms
-   * silently takes the stricter one.
+   * DEPRECATED (016 T063) — superseded by {@link SurfaceGuard}. Kept on the
+   * type so `memberNavConfig` and any future non-staff config can still express
+   * a coarse allow-list; `tests/unit/nav/nav-permission-parity` asserts no
+   * STAFF item uses it, because an item filtered by both mechanisms silently
+   * takes the stricter one.
    */
   readonly roles?: ReadonlyArray<Role>;
   /**
@@ -160,11 +160,15 @@ export function flattenNavItems(config: NavConfig): readonly NavItem[] {
  * Filter a nav config for the current request. Pure — lives here (not in
  * the client sidebar) so it is unit-testable without rendering React.
  *
- *  - `roles`: an item with a `roles` allow-list is dropped unless the
- *    current `role` is in it (e.g. admin-only Settings entries that the
- *    server gates with `notFound()` for manager — hides the dead link).
+ *  - `guard` + `allowedHrefs`: THE mechanism for staff. An item declaring a
+ *    `SurfaceGuard` is dropped unless its href is in the server-computed
+ *    allow-list (see `staffNavAllowedHrefs`). Every staff item declares one.
  *  - `visibilityFlag`: an item with a flag is dropped unless that flag is
  *    `true` in `flags`.
+ *  - `roles`: LEGACY, retained on the type for `memberNavConfig` and any
+ *    future non-staff config. No config declares it today, so `roleMatches`
+ *    and the `role` parameter are currently unreachable in production —
+ *    only the synthetic configs in `nav-config.test.ts` exercise them.
  *  - NavGroups: a group's own `roles` allow-list is honoured, then its
  *    CHILDREN are recursively filtered with the same item rules. A group
  *    left with no visible children after filtering is dropped (so a future
@@ -180,10 +184,10 @@ export function filterNavConfig(
    * 016 T063 — the set of hrefs the CURRENT viewer is permitted to open,
    * computed on the server by `staffNavAllowedHrefs` (which owns `canPerform`).
    *
-   * An item that declares `requiredPermission` is dropped unless its href is in
+   * An item that declares a `guard` is dropped unless its href is in
    * here. Omitting the set drops every such item — fail-closed, because the
    * alternative turns one missed wiring into every staff link being shown to
-   * every role. Items WITHOUT `requiredPermission` (the member nav) are
+   * every role. Items WITHOUT a `guard` (the member nav) are
    * unaffected either way.
    */
   allowedHrefs?: ReadonlySet<string>,
@@ -191,9 +195,12 @@ export function filterNavConfig(
   // 016 T032 — role matching goes through the D16 totaliser as well as the
   // literal list: a role the array doesn't name still maps correctly
   // (super_admin → admin; marketing/unknown normalize to null → hidden, never
-  // escalate). The admin-only arrays below ALSO name super_admin explicitly
-  // for greppability. PR 4 replaces the arrays with declarative
-  // `requiredPermission` + server-side filtering (T063).
+  // escalate).
+  //
+  // T063 replaced every staff `roles` array with a declarative `guard`, so
+  // nothing below this line declares one and this branch is unreachable for
+  // both live configs. Kept for `memberNavConfig`'s benefit and exercised only
+  // by synthetic configs in `nav-config.test.ts`.
   const normalized = normalizeLegacyRole(role);
   const roleMatches = (roles: ReadonlyArray<string>): boolean =>
     roles.includes(role) || (normalized !== null && roles.includes(normalized));
