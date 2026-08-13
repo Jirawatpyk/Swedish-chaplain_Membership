@@ -652,10 +652,20 @@
         "roleLabel": "New role",
         "current": "Current",
         "confirm": "Change role",
+        "pickDifferent": "Pick a different role to continue.",
+        "memberHint": "Moving someone between the staff portal and the member portal isn't a role change — invite them separately.",
+        "superAdminWarning": "Super Admin also grants user management, the audit log, invoice settings and permanent data erasure — and they will be able to change your role in turn.",
+        "superAdminPhrase": "PROMOTE",
+        "superAdminConfirmCopy": "Type {phrase} to confirm this promotion.",
+        "superAdminConfirmMismatch": "Type {phrase} exactly to continue.",
         "errors": {
           "last-admin-protection": "You can't change the last administrator's role — promote or invite another Super Admin first.",
           "same-role": "That user already has this role.",
           "role-portal-mismatch": "That role change isn't allowed for this account.",
+          "forbidden": "You no longer have permission to change roles. Sign out and back in, then ask a Super Admin.",
+          "not-found": "That user no longer exists. Refresh the list.",
+          "invalid-role": "That isn't a role this system can assign.",
+          "no-session": "Your session expired. Sign in again, then retry the role change.",
           "generic": "Couldn't change the role. Please try again."
         }
       },
@@ -670,19 +680,19 @@
         "revokeError": "Couldn't revoke the invitation. Please try again.",
         "roleChanged": "{email}'s role changed to {role}."
       },
+      "roleSummary": {
+        "super_admin": "Full access, including user management, the audit log, invoice settings and data erasure.",
+        "admin": "Members, invoices, events and E-Blasts. Cannot manage users, read the audit log, change invoice settings or erase data.",
+        "manager": "Read-only on finance. Views members, invoices and reports without changing them.",
+        "marketing": "E-Blasts, events and member contact details. No finance and no sensitive data.",
+        "member": "Self-service portal only — their own membership, invoices and events."
+      },
       "invite": {
         "title": "Invite a new user",
         "description": "They'll receive an email with a one-time link to set their password.",
         "emailLabel": "Email address",
         "emailPlaceholder": "person@example.com",
         "roleLabel": "Role",
-        "roles": {
-          "admin": "Admin — everything except user management, audit log, invoice settings and erasure",
-          "manager": "Manager — read-only on finance",
-          "member": "Member — self-service portal",
-          "super_admin": "Super Admin — full access + staff role management",
-          "marketing": "Marketing — e-blasts and events, no finance or sensitive data"
-        },
         "submit": "Send invitation",
         "submitting": "Sending…",
         "cancel": "Cancel",
@@ -3679,7 +3689,7 @@
             },
             "assigneeLabel": "Assignee role",
             "assigneeRole": {
-              "admin": "Administrator",
+              "admin": "Admin",
               "manager": "Manager",
               "executive_director": "Executive Director"
             },
@@ -5158,7 +5168,7 @@
     "notFound": {
       "title": "Page not available",
       "body": "This page doesn't exist, the record was removed, or it isn't available to your role. If you reached it from a link or a bookmark, that link may be out of date.",
-      "roleHint": "If you expected access, ask a Super Administrator — some staff surfaces are restricted to that role.",
+      "roleHint": "If you expected access, ask a Super Admin — some staff surfaces are restricted to that role.",
       "back": "Back to dashboard"
     }
   },

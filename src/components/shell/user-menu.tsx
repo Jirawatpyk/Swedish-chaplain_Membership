@@ -24,6 +24,7 @@ import {
   LogOutIcon,
   UserIcon,
   CalendarClockIcon,
+  ShieldCheckIcon,
   ShieldIcon,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -111,6 +112,12 @@ export function UserMenu({ displayName, email, role }: UserMenuProps) {
               <span className="text-sm font-medium">{displayName ?? email}</span>
               <span className="text-xs text-muted-foreground">{email}</span>
               <Badge variant={roleBadgeVariant[role]} className="mt-1 w-fit">
+                {/* Matches the users-table badge: `default` is shared with
+                    plain admin, so shape carries the distinction. */}
+                {/* rbac-presentation-only-ok: picks a badge icon */}
+                {role === 'super_admin' ? (
+                  <ShieldCheckIcon className="size-3" aria-hidden />
+                ) : null}
                 {tBadge(role)}
               </Badge>
             </div>

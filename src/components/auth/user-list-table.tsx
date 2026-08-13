@@ -12,7 +12,14 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { BanIcon, CircleCheckIcon, MailIcon, Trash2Icon, UserCogIcon } from 'lucide-react';
+import {
+  BanIcon,
+  CircleCheckIcon,
+  MailIcon,
+  ShieldCheckIcon,
+  Trash2Icon,
+  UserCogIcon,
+} from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -309,11 +316,11 @@ export function UserListTable({
               const canManageInvite = canManageAccounts && user.status === 'pending';
               // Staff-role reassignment (users.manage). Never on your own row
               // (self-demotion lockout) and only on rows whose CURRENT role is
-              // one the picker offers (super_admin/admin/manager) — that keeps
-              // the "Current" badge meaningful and, until PR 4 adds marketing to
-              // the options, avoids a marketing row opening a picker that can't
-              // show its own role. A member↔staff move is a portal change, out
-              // of this picker's scope.
+              // one the picker offers (all four staff roles, marketing included
+              // since PR 4) — that keeps the "Current" badge meaningful and
+              // avoids a row opening a picker that cannot show its own role.
+              // A member↔staff move is a portal change, out of this picker's
+              // scope; `changeRole.memberHint` says so in the dialog.
               const canChangeRole =
                 canManageStaffRoles && !isSelf && CHANGE_ROLE_OPTIONS.includes(user.role);
               const busy = busyId === user.id;
@@ -350,6 +357,16 @@ export function UserListTable({
                 </TableCell>
                 <TableCell>
                   <Badge variant={roleVariant[user.role]}>
+                    {/* super_admin and admin both map to `default`, so on a
+                        50-row table the one distinction this page exists to
+                        show could not be scanned — you had to read every badge.
+                        A leading icon separates them by SHAPE, so it is not a
+                        colour-only cue (WCAG 1.4.1) and survives the shared
+                        variant. */}
+                    {/* rbac-presentation-only-ok: picks a badge icon */}
+                    {user.role === 'super_admin' ? (
+                      <ShieldCheckIcon className="size-3" aria-hidden />
+                    ) : null}
                     {t(`filters.role.${user.role}`)}
                   </Badge>
                 </TableCell>
