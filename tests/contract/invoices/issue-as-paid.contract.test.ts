@@ -683,7 +683,6 @@ describe('contract: POST /api/invoices/[invoiceId]/issue-as-paid (Task 11)', () 
     expect(requireApiPermissionMock).toHaveBeenCalledWith(
       expect.anything(),
       'invoicing.issue',
-      { kind: 'mappedLegacy', resource: 'invoice', action: 'write' },
     );
 
     // Input threading: ids from context, defaults applied by the route.

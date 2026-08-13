@@ -278,7 +278,6 @@ describe('POST /api/credit-notes — contract', () => {
     expect(requireApiPermissionMock).toHaveBeenCalledWith(
       expect.anything(),
       'credit_notes.write',
-      { kind: 'mappedLegacy', resource: 'credit_note', action: 'write' },
     );
     // A denied caller never reaches the rate limiter or the use-case.
     expect(rateLimitCheckMock).not.toHaveBeenCalled();

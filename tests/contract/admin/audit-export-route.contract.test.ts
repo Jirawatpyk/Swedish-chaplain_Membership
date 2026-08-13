@@ -51,7 +51,9 @@ vi.mock('@/modules/insights', () => ({
   makeAuditQueryDeps: () => ({}),
 }));
 
-const adminSession = { user: { id: 'admin-1', role: 'admin' }, session: { id: 's1' } };
+// `audit.read` is super-admin-only (D4) — a plain admin has been 403 here
+// since the cutover; the OFF-leg row that used to admit one died in PR 5.
+const superAdminSession = { user: { id: 'sa-1', role: 'super_admin' }, session: { id: 's1' } };
 
 function okRl() {
   return { success: true, remaining: 9, reset: Date.now() + 60_000, fellBack: false };
@@ -65,7 +67,7 @@ async function callRoute(qs: string): Promise<Response> {
 describe('GET /api/admin/audit/export.csv — route contract', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    getCurrentSessionMock.mockResolvedValue(adminSession);
+    getCurrentSessionMock.mockResolvedValue(superAdminSession);
     rateLimiterCheckMock.mockResolvedValue(okRl());
   });
   afterEach(() => vi.resetModules());
@@ -75,6 +77,15 @@ describe('GET /api/admin/audit/export.csv — route contract', () => {
     const res = await callRoute('');
     expect(res.status).toBe(403);
     expect(auditExportMock).not.toHaveBeenCalled();
+  });
+
+  it('a plain admin is 403 (audit.read is super-admin-only — D4)', async () => {
+    getCurrentSessionMock.mockResolvedValueOnce({
+      user: { id: 'admin-1', role: 'admin' },
+      session: { id: 's2' },
+    });
+    const res = await callRoute('');
+    expect(res.status).toBe(403);
   });
 
   it('rate-limited → 429 + Retry-After (does not dispatch)', async () => {

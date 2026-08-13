@@ -134,7 +134,6 @@ describe('contract: POST /api/auth/users/[id]/revoke-invite (Task 4)', () => {
         2,
         expect.anything(),
         'users.manage',
-        { kind: 'mappedLegacy', resource: 'auth:user', action: 'write' },
       );
     });
 

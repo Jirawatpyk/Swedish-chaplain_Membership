@@ -49,7 +49,6 @@ const DEEP_IMPORT_RE =
  * framework imports, no infrastructure, safe in a client bundle.
  */
 const ALLOWED = new Set([
-  '@/modules/auth/domain/permissions/legacy-shim',
   '@/modules/auth/domain/permissions/permission-catalogue',
   '@/modules/auth/domain/permissions/evaluator',
   // 016 review — added by PR 4's SurfaceGuard. `src/config/nav.ts` is pulled
@@ -62,7 +61,6 @@ const ALLOWED = new Set([
   '@/modules/auth/domain/branded',
   '@/modules/auth/domain/user',
   '@/modules/auth/domain/session',
-  '@/modules/auth/domain/policies',
   '@/modules/auth/domain/audit-event',
 ]);
 
@@ -118,25 +116,20 @@ describe('016 I7 — auth deep-import carve-out inventory', () => {
     ).toEqual([]);
   });
 
-  it('pins the PR-5 deletion inventory: files importing the legacy shim', () => {
+  it('the deleted legacy shim has ZERO importers (PR 5 deletion is total)', () => {
+    // This pin used to hold the deletion INVENTORY (>100 files, ceiling 135)
+    // so PR 5 could count down without churn. PR 5 happened: the module is
+    // gone, and the invariant inverts — any importer now is a resurrection,
+    // which would also be a build error, but this fails with a message that
+    // says WHY rather than a module-not-found stack.
     const shimFiles = new Set(
       hits
         .filter((h) => h.specifier === '@/modules/auth/domain/permissions/legacy-shim')
         .map((h) => h.file),
     );
-    // Every one of these loses its second gate argument when PR 5 deletes the
-    // legacy leg. A CEILING rather than exact equality (re-review): widening
-    // still demands a conscious bump here + a Complexity Tracking #5 note, but
-    // PR 5's incremental deletion counts DOWN without churning this file.
-    // 135 = 134 at PR-2 close + member-invoices-section, whose affordance
-    // literal was converted to the evaluator in re-review round 2. Floor keeps
-    // the assertion non-vacuous if the regex ever breaks.
-    expect(shimFiles.size).toBeGreaterThan(100);
-    expect(
-      shimFiles.size,
-      'A new file imports the legacy shim — a new gated surface. Bump the ' +
-        'ceiling deliberately and extend plan.md § Complexity Tracking #5.',
-    ).toBeLessThanOrEqual(135);
+    expect([...shimFiles], 'the legacy shim was deleted in PR 5 — nothing may import it').toEqual(
+      [],
+    );
   });
 
   it('the pre-016 non-Domain deep imports have not grown', () => {

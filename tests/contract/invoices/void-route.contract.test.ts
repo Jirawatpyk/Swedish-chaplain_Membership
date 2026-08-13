@@ -222,7 +222,6 @@ describe('contract: POST /api/invoices/[invoiceId]/void', () => {
     expect(requireApiPermissionMock).toHaveBeenCalledWith(
       expect.anything(),
       'invoicing.void',
-      { kind: 'mappedLegacy', resource: 'invoice', action: 'write' },
     );
     expect(res.status).toBe(403);
     expect(voidInvoiceMock).not.toHaveBeenCalled();

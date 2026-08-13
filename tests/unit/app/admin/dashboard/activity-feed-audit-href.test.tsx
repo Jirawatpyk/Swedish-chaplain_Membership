@@ -59,7 +59,7 @@ function makeRealTranslator(ns: string) {
 }
 
 /** Mutable so each test can pick the leg + the viewer without re-mocking. */
-const state = vi.hoisted(() => ({ rbacV2: true, role: 'admin' as string }));
+const state = vi.hoisted(() => ({ role: 'admin' as string }));
 
 vi.mock('@/lib/env', () => ({
   env: {
@@ -69,9 +69,6 @@ vi.mock('@/lib/env', () => ({
       },
       get f7Broadcasts() {
         return true;
-      },
-      get rbacV2() {
-        return state.rbacV2;
       },
     },
     tenant: { timezone: 'Asia/Bangkok' },
@@ -151,9 +148,8 @@ vi.mock('@/modules/insights', async () => ({
  * A static import here would silently pin every case to whichever leg happened
  * to be set first, and the OFF-leg assertions would be vacuous.
  */
-async function renderAs(role: string, rbacV2: boolean): Promise<string> {
+async function renderAs(role: string): Promise<string> {
   state.role = role;
-  state.rbacV2 = rbacV2;
   vi.resetModules();
   const { default: StaffHomePage } = await import('@/app/(staff)/admin/(home)/page');
   const tree = await StaffHomePage();
@@ -169,43 +165,34 @@ const AUDIT_HREF = `/admin/audit?targetRef=${TARGET_USER_ID}`;
 describe('dashboard activity feed — audit deep-link follows audit.read (016 T058)', () => {
   beforeEach(() => {
     state.role = 'admin';
-    state.rbacV2 = true;
   });
 
-  it('ON leg: super_admin keeps the link', async () => {
-    expect(await renderAs('super_admin', true)).toContain(AUDIT_HREF);
+  it('super_admin keeps the link', async () => {
+    expect(await renderAs('super_admin')).toContain(AUDIT_HREF);
   });
 
-  it('ON leg: admin does NOT get a link to a page D4 denies them', async () => {
-    expect(await renderAs('admin', true)).not.toContain(AUDIT_HREF);
+  it('admin does NOT get a link to a page D4 denies them', async () => {
+    expect(await renderAs('admin')).not.toContain(AUDIT_HREF);
   });
 
-  it('ON leg: manager does NOT get the link', async () => {
-    expect(await renderAs('manager', true)).not.toContain(AUDIT_HREF);
+  it('manager does NOT get the link', async () => {
+    expect(await renderAs('manager')).not.toContain(AUDIT_HREF);
   });
 
-  it('ON leg: marketing does NOT get the link', async () => {
-    expect(await renderAs('marketing', true)).not.toContain(AUDIT_HREF);
+  it('marketing does NOT get the link', async () => {
+    expect(await renderAs('marketing')).not.toContain(AUDIT_HREF);
   });
 
-  it('ON leg: the feed row itself still renders — only the link is dropped', async () => {
+  it('the feed row itself still renders — only the link is dropped', async () => {
     // Guards against "fixing" this by filtering the row out of the feed, which
     // would silently shrink the widget rather than de-link one entry.
-    const html = await renderAs('marketing', true);
+    const html = await renderAs('marketing');
     expect(html).toContain(en.admin.dashboard.activity.title);
     expect(html).toContain('Admin User');
   });
 
-  it('OFF leg: every role that can open the page keeps the link (byte-identical to pre-016)', async () => {
-    // `marketing` is deliberately absent: D16 maps it to no legacy role, so on
-    // the OFF leg it is denied the dashboard outright and never reaches the
-    // feed. Asserting a link for it here would not be a stricter test — it
-    // would fail inside `requirePagePermission`'s denial path, which is the
-    // correct behaviour, covered by the OFF-leg role tests.
-    for (const role of ['admin', 'manager', 'super_admin']) {
-      expect(await renderAs(role, false), `${role} on the OFF leg`).toContain(AUDIT_HREF);
-    }
-  });
+  // The OFF-leg link case (byte-identical to pre-016) died with the legacy
+  // leg in PR 5; the per-role ON-leg cases above are the whole story now.
 });
 
 /**
@@ -238,9 +225,8 @@ describe('dashboard finance + redaction flags are bound to the right permissions
   /** The factory spies from the SAME module registry the page just used. */
   async function depsCallsAfterRender(
     role: string,
-    rbacV2: boolean,
   ): Promise<{ finance: unknown; unredacted: unknown }> {
-    await renderAs(role, rbacV2);
+    await renderAs(role);
     const insights = await import('@/modules/insights');
     const dash = vi.mocked(insights.makeListDashboardDeps).mock.calls.at(-1);
     const feed = vi.mocked(insights.makeActivityFeedDeps).mock.calls.at(-1);
@@ -252,18 +238,11 @@ describe('dashboard finance + redaction flags are bound to the right permissions
     { role: 'admin', finance: true, unredacted: true },
     { role: 'manager', finance: true, unredacted: false },
     { role: 'marketing', finance: false, unredacted: false },
-  ])('ON leg: $role → finance=$finance, unredacted=$unredacted', async (c) => {
-    const got = await depsCallsAfterRender(c.role, true);
+  ])('$role → finance=$finance, unredacted=$unredacted', async (c) => {
+    const got = await depsCallsAfterRender(c.role);
     expect(got.finance, `${c.role} must${c.finance ? '' : ' NOT'} receive money`).toBe(c.finance);
     expect(got.unredacted, `${c.role} unredacted feed`).toBe(c.unredacted);
   });
 
-  it.each([
-    { role: 'admin', finance: true, unredacted: true },
-    { role: 'manager', finance: true, unredacted: false },
-  ])('OFF leg: $role keeps its pre-016 answer ($finance / $unredacted)', async (c) => {
-    const got = await depsCallsAfterRender(c.role, false);
-    expect(got.finance).toBe(c.finance);
-    expect(got.unredacted).toBe(c.unredacted);
-  });
+  // The OFF-leg seam cases died with the legacy leg in PR 5.
 });

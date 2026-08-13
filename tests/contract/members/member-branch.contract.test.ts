@@ -238,7 +238,6 @@ describe('T027 PATCH /api/members/[memberId] — admin-only RBAC (contract)', ()
     expect(requireApiPermissionMock).toHaveBeenCalledWith(
       expect.anything(),
       'members.write',
-      { kind: 'mappedLegacy', resource: 'members', action: 'write' },
     );
   });
 
