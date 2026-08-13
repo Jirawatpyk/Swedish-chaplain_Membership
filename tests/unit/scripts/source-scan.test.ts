@@ -72,6 +72,47 @@ describe('stripCommentLines — the bug that made the T065 gate blind', () => {
     expect(out).toContain("role === 'admin'");
   });
 
+  it('a REGEX LITERAL containing /* does not open a block comment', () => {
+    // Found while deciding whether the review fixes needed reviewing: the
+    // scanner written to stop a phantom block comment had the same bug one
+    // level down. `const re = /\/\*/;` blanked every line after it.
+    const src = ['const re = /\\/\\*/;', "const a = role === 'admin';"].join('\n');
+    expect(stripCommentLines(src)[1]).toContain("role === 'admin'");
+  });
+
+  it('a regex containing quotes does not leave the scanner inside a string', () => {
+    const src = ['const re = /[\'"]/;', "const a = role === 'admin';"].join('\n');
+    expect(stripCommentLines(src)[1]).toContain("role === 'admin'");
+  });
+
+  it('a regex character class may contain a slash', () => {
+    // `/[/]/` is ONE regex — a naive skip ends it at the inner slash and then
+    // reads the trailing `/` as the start of something else.
+    const src = ['const re = /[/]/;', "const a = role === 'admin';"].join('\n');
+    expect(stripCommentLines(src)[1]).toContain("role === 'admin'");
+  });
+
+  it('division is still division, not a regex swallowing the line', () => {
+    const out = stripCommentLines("const n = a / b; const c = role === 'admin';")[0]!;
+    expect(out).toContain("role === 'admin'");
+  });
+
+  it('a template literal does not hide a comparison after it', () => {
+    const src = ['const s = `x ${y} //z`;', "const a = role === 'admin';"].join('\n');
+    expect(stripCommentLines(src)[1]).toContain("role === 'admin'");
+  });
+
+  it('a LINE-LEADING block comment is a comment, never a regex', () => {
+    // The regression the regex support introduced and the existing suite
+    // caught: with `startsRegex('') === true`, every `/**` docblock became a
+    // regex literal, went un-stripped, and the parity tests went straight back
+    // to matching a guard EXAMPLE in a page header.
+    const src = ['/** docblock */', "const a = role === 'admin';"].join('\n');
+    const out = stripCommentLines(src);
+    expect(out[0]).not.toContain('docblock');
+    expect(out[1]).toContain("role === 'admin'");
+  });
+
   it('genuinely commented code IS removed', () => {
     const src = ["// if (role === 'admin') escalate();", '/* role === "admin" */'].join('\n');
     const out = stripCommentLines(src);

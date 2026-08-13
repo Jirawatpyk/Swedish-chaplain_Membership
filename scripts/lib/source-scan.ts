@@ -22,6 +22,58 @@
  * version; do not re-inline a regex variant.
  */
 
+/**
+ * Whether a `/` at this point begins a REGEX literal rather than division or a
+ * comment, decided from the last significant character before it.
+ *
+ * Not a parser — a heuristic biased toward "regex", because the failure it
+ * guards is a regex being mistaken for a comment opener, which BLANKS code and
+ * makes a gate silently blind. Mistaking division for a regex costs at most a
+ * garbled fragment on one line, and the callers only look for
+ * `role === 'literal'`, which division never precedes.
+ */
+function startsRegex(before: string): boolean {
+  const t = before.trimEnd();
+  // NOTHING before it on this line → a comment, not a regex. This arm first
+  // returned `true` (a `/` at the start of an expression usually IS a regex),
+  // which made every `/**` docblock a regex literal — un-stripped — and
+  // instantly reinstated the exact Critical this module was written to close:
+  // the parity tests went back to matching the `requirePagePermission(...)`
+  // example in a page's header. Two existing tests caught it immediately.
+  //
+  // The asymmetry is deliberate. Mistaking a comment for a regex breaks EVERY
+  // docblock in the tree; mistaking a line-leading regex for a comment costs
+  // one blanked line in a shape (`const re =` then the literal on the next
+  // line) that is rare and that `MIN_EXPECTED_SITES` would surface.
+  if (t === '') return false;
+  const last = t[t.length - 1]!;
+  if ('=(,:[!&|?{};+*%~^<>'.includes(last)) return true;
+  // `return /re/`, `case /re/`, `typeof /re/` … keyword-preceded.
+  return /\b(return|case|typeof|instanceof|in|of|new|delete|void|do|else|yield|await)$/.test(t);
+}
+
+/**
+ * Index just past the closing `/` of the regex literal starting at `start`.
+ * Honours escapes and character classes (`/[/]/` is one regex, not two).
+ * Unterminated on this line → consume to end of line.
+ */
+function skipRegex(line: string, start: number): number {
+  let i = start + 1;
+  let inClass = false;
+  while (i < line.length) {
+    const c = line[i]!;
+    if (c === '\\') {
+      i += 2;
+      continue;
+    }
+    if (c === '[') inClass = true;
+    else if (c === ']') inClass = false;
+    else if (c === '/' && !inClass) return i + 1;
+    i += 1;
+  }
+  return line.length;
+}
+
 /** A source line that is entirely comment (`//`, `*`, `/*`). */
 export function isCommentLine(line: string): boolean {
   const t = line.trim();
@@ -77,10 +129,22 @@ export function stripCommentLines(src: string): readonly string[] {
       // A line comment runs to end of line — nothing after it is code, and
       // crucially nothing in it can open a block comment.
       if (c === '/' && next === '/') break;
-      if (c === '/' && next === '*') {
-        inBlock = true;
-        i += 2;
-        continue;
+      if (c === '/') {
+        // `/` is either division, a comment opener, or a REGEX literal. Only
+        // the last one needs care: a regex containing `/*` — e.g. `/\/\*/` —
+        // would otherwise open a block comment and blank the rest of the file.
+        // That is the exact bug this module exists to prevent, one level up.
+        if (startsRegex(res)) {
+          const end = skipRegex(line, i);
+          res += line.slice(i, end);
+          i = end;
+          continue;
+        }
+        if (next === '*') {
+          inBlock = true;
+          i += 2;
+          continue;
+        }
       }
       res += c;
       i += 1;
