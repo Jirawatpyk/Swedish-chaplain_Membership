@@ -93,17 +93,18 @@ const COMPARISON = new RegExp(
  * when sites are legitimately removed; never lower it to make a run pass.
  *
  * Pinned to the MEASURED TOTAL — `marked + unmarked`, which is what `scanned`
- * counts — not to the `marked` counter. 39 as of PR 4, after
- * `src/components/auth` joined SCOPE. Reading the wrong counter set this to 38
- * for a while: one below the truth, i.e. exactly the slack this docblock
- * forbids, inside the gate whose whole thesis is that a low floor is how
- * partial blindness ships.
+ * counts — not to the `marked` counter. 38 as of PR 5: the legacy shim died
+ * (its one `rbac-legacy-shim-arm-ok` site and marker went with it). It was 39
+ * as of PR 4, after `src/components/auth` joined SCOPE; before that a
+ * wrong-counter reading set it one below the truth — exactly the slack this
+ * docblock forbids, inside the gate whose whole thesis is that a low floor is
+ * how partial blindness ships.
  *
  * The earlier 28 (against a then-total of 33) left the scanner free to go ~15%
  * blind before tripping. The T065 gate reported "0 unmarked" while it could not
  * see 341 lines of src/config/nav.ts.
  */
-const MIN_EXPECTED_SITES = 39;
+const MIN_EXPECTED_SITES = 38;
 
 /**
  * Every accepted claim. Each says what the literal is doing INSTEAD of
@@ -136,13 +137,6 @@ const MARKERS: ReadonlyArray<{ marker: string; means: string }> = [
     marker: 'rbac-d9-override-ok',
     means:
       'the F6 route-local denial-shape override (D9) — a PERMANENT exemption that survives PR 5',
-  },
-  {
-    // Distinct from the D9 marker on purpose. D9 is permanent; this one marks
-    // an arm of the legacy leg that PR 5 DELETES. Sharing one marker would tell
-    // whoever does PR 5 to leave both alone.
-    marker: 'rbac-legacy-shim-arm-ok',
-    means: 'an arm of the flag-OFF legacy shim — removed wholesale by PR 5, not exempt forever',
   },
   {
     // Deliberately NOT folded into `rbac-subgate-ok`. That one marks a literal
