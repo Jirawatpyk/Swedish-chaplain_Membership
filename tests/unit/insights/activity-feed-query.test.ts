@@ -67,9 +67,19 @@ describe('activityFeedQuery', () => {
     expect(recent).not.toHaveBeenCalled();
   });
 
+  // `activityUnredacted` is set explicitly on both cases below to the value the
+  // page derives for that role (admin holds `insights.activity_unredacted`,
+  // manager does not). `depsReturning` omits the field, so these two ran the
+  // REDACTED branch and passed only because the MIXED fixture happens to carry
+  // no email or phone — two tests named for a path neither of them walked.
   it('admin sees the full feed (incl. finance events), fetching exactly `limit`', async () => {
     const { deps, recent } = depsReturning(MIXED);
-    const result = await activityFeedQuery({ limit: 10 }, meta('admin'), ctx, deps);
+    const result = await activityFeedQuery(
+      { limit: 10 },
+      meta('admin'),
+      ctx,
+      { ...deps, activityUnredacted: true },
+    );
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.value.map((e) => e.id)).toEqual(['1', '2', '3', '4', '5', '6']);
     expect(recent).toHaveBeenCalledWith(ctx, 10);
@@ -79,7 +89,14 @@ describe('activityFeedQuery', () => {
     // The "read-only on finance" manager may VIEW finance figures, so the feed
     // no longer drops payment/invoice/refund events for managers.
     const { deps, recent } = depsReturning(MIXED);
-    const result = await activityFeedQuery({ limit: 10 }, meta('manager'), ctx, deps);
+    const result = await activityFeedQuery(
+      { limit: 10 },
+      meta('manager'),
+      ctx,
+      // Redaction and finance visibility are INDEPENDENT axes: a manager reads
+      // the feed redacted, and still sees every money event in it.
+      { ...deps, activityUnredacted: false },
+    );
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value.map((e) => e.id)).toEqual(['1', '2', '3', '4', '5', '6']);

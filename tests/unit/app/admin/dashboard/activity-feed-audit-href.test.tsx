@@ -207,3 +207,63 @@ describe('dashboard activity feed — audit deep-link follows audit.read (016 T0
     }
   });
 });
+
+/**
+ * The SEAM — the two `canPerform(...)` calls whose results are handed to a
+ * factory and therefore vanish from every existing test.
+ *
+ * `audit.read` above is pinned for all five roles on both legs only because the
+ * page RENDERS its result (the href). `insights.finance` and
+ * `insights.activity_unredacted` end their lives as arguments at page.tsx:135
+ * and :143, and every suite cuts exactly there: these page tests mock
+ * `makeListDashboardDeps`/`makeActivityFeedDeps` to `() => ({})` and feed
+ * ready-made payloads in; the use-case tests inject the booleans directly; the
+ * integration tests call the factories with literal `true`/`false`. Half the
+ * wire is tested at each end and the join is tested nowhere.
+ *
+ * What survives that gap: change `'insights.finance'` here to
+ * `'insights.engagement'` or `'dashboard.view'` — both of which marketing holds
+ * — or hardcode `true`, and `ytdPaidRevenueSatang`, `revenueTrend`,
+ * `invoiceStatus` and the overdue counts reach a marketing viewer in the RSC
+ * payload. That is precisely the leak T056 exists to prevent, and the whole
+ * unit + contract suite stays green.
+ *
+ * So assert the ARGUMENT. The role set is chosen to distinguish the two
+ * permission keys AND their two legacy rows from each other: manager separates
+ * `insights.finance` (holds) from `insights.activity_unredacted` (does not),
+ * which is also the difference between `legacyAdminOrManager` and
+ * `legacyAdminOnly` on the OFF leg.
+ */
+describe('dashboard finance + redaction flags are bound to the right permissions', () => {
+  /** The factory spies from the SAME module registry the page just used. */
+  async function depsCallsAfterRender(
+    role: string,
+    rbacV2: boolean,
+  ): Promise<{ finance: unknown; unredacted: unknown }> {
+    await renderAs(role, rbacV2);
+    const insights = await import('@/modules/insights');
+    const dash = vi.mocked(insights.makeListDashboardDeps).mock.calls.at(-1);
+    const feed = vi.mocked(insights.makeActivityFeedDeps).mock.calls.at(-1);
+    return { finance: dash?.[1], unredacted: feed?.[0] };
+  }
+
+  it.each([
+    { role: 'super_admin', finance: true, unredacted: true },
+    { role: 'admin', finance: true, unredacted: true },
+    { role: 'manager', finance: true, unredacted: false },
+    { role: 'marketing', finance: false, unredacted: false },
+  ])('ON leg: $role → finance=$finance, unredacted=$unredacted', async (c) => {
+    const got = await depsCallsAfterRender(c.role, true);
+    expect(got.finance, `${c.role} must${c.finance ? '' : ' NOT'} receive money`).toBe(c.finance);
+    expect(got.unredacted, `${c.role} unredacted feed`).toBe(c.unredacted);
+  });
+
+  it.each([
+    { role: 'admin', finance: true, unredacted: true },
+    { role: 'manager', finance: true, unredacted: false },
+  ])('OFF leg: $role keeps its pre-016 answer ($finance / $unredacted)', async (c) => {
+    const got = await depsCallsAfterRender(c.role, false);
+    expect(got.finance).toBe(c.finance);
+    expect(got.unredacted).toBe(c.unredacted);
+  });
+});

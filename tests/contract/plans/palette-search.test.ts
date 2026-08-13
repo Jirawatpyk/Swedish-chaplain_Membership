@@ -8,7 +8,7 @@
  * 055-member-number — added AS: member results include `member_number_display`
  * (formatted `SCCM-NNNN`) resolved via RLS-safe `runInTenant` + `getPrefix`.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 import { ok } from '@/lib/result';
 
@@ -30,6 +30,17 @@ const computeRemainingRefundableMock = vi.fn();
 
 /** Mutable so a case can drive either leg. Reset in `beforeEach`. */
 const LEG = vi.hoisted(() => ({ rbacV2: false }));
+
+/**
+ * Pay the cold Next.js module graph ONCE, inside the hook budget rather than
+ * charging it to whichever `it()` happens to import the route first. That test
+ * measured 30.009 s under contention — an intermittent red on a required check.
+ * `vitest.config.ts` sets `hookTimeout` to double `testTimeout` for this, and
+ * says plainly that raising `testTimeout` again is not the answer.
+ */
+beforeAll(async () => {
+  await import('@/app/api/plans/search/route');
+}, 60_000);
 
 vi.mock('@/lib/rbac', async () => {
   // 016 review C1 — the refundable-invoice palette arm is now evaluator-derived
@@ -474,7 +485,13 @@ describe('contract: GET /api/plans/search (T064)', () => {
       const { GET } = await import('@/app/api/plans/search/route');
       const res = await GET(makeRequest('prem'));
       const body = (await res.json()) as { results: { members: unknown[] } };
-      expect(Array.isArray(body.results.members)).toBe(true);
+      // `toHaveLength(1)`, not `Array.isArray` — the route answers
+      // `members: canReadMembers ? members : []`, so an empty array IS an array
+      // and the weaker assertion passed for the exact regression it names.
+      // Tightening `canReadMembers` to, say, `members.pii_sensitive` left this
+      // green while marketing's ⌘K went silently empty again. The stub returns
+      // one row unconditionally, so the count is the honest check.
+      expect(body.results.members, 'marketing must still see member hits').toHaveLength(1);
     });
   });
 });

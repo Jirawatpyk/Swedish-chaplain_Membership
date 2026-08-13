@@ -95,6 +95,34 @@ describe('staff nav declares a permission for every entry (T061)', () => {
     const stragglers = STAFF_ITEMS.filter((i) => i.roles).map((i) => i.href);
     expect(stragglers).toEqual([]);
   });
+
+  /**
+   * The assertions above walk `flattenNavItems`, which returns LEAVES. A
+   * `NavGroup` node is not among them, so it escapes both the guard check and
+   * the legacy-`roles` check — and a group carries a visible label. It has no
+   * href, and it only renders when at least one child survives, so the exposure
+   * is a section title rather than a link; that is why this is separate rather
+   * than folded into "every staff nav item declares a guard".
+   *
+   * `staffNavConfig` has no groups today, which is precisely why this needs
+   * asserting: the first one added would otherwise arrive unchecked.
+   */
+  it('no staff nav GROUP carries a legacy roles array (groups escape the leaf walk)', () => {
+    const groups = staffNavConfig.sections.flatMap((s) =>
+      s.items.filter((i): i is Extract<typeof i, { children: unknown }> => 'children' in i),
+    );
+    const withRoles = groups.filter((g) => g.roles).map((g) => g.titleKey);
+    expect(withRoles, 'a group hidden by `roles` is invisible to the permission model').toEqual([]);
+  });
+
+  it('staff titleKeys are unique', () => {
+    // `titleKey` is the React key for section items (staff-sidebar.tsx), and
+    // `href` for group children (nav-item.tsx). A duplicate is a reconciliation
+    // bug rather than a permission one, but it costs one line beside the href
+    // uniqueness assertion that already exists.
+    const keys = staffNavConfig.sections.flatMap((s) => s.items.map((i) => i.titleKey));
+    expect(new Set(keys).size, `duplicate titleKey: ${keys}`).toBe(keys.length);
+  });
 });
 
 describe('every staff nav entry matches its target page guard (T063)', () => {

@@ -17,6 +17,7 @@
  */
 import {
   afterEach,
+  beforeAll,
   beforeEach,
   describe,
   expect,
@@ -72,6 +73,23 @@ const MEMBER_SESSION = {
   user: { id: 'mbr-1', role: 'member' as const, email: 'mb@t' },
 };
 
+/**
+ * Pay the cold module-graph cost ONCE, inside the hook budget.
+ *
+ * The first `it()` in this file was importing the whole Next.js server graph
+ * itself and charging it to the 30 s TEST timeout — 27 s solo, and over the
+ * line whenever a sibling file was competing for CPU. That is an intermittent
+ * red on `Unit + contract`, which is a required check on `main`, and
+ * intermittent is worse than broken because it trains people to re-run.
+ *
+ * `vitest.config.ts` sets `hookTimeout` to double `testTimeout` for exactly
+ * this, and states outright that raising `testTimeout` again is not the answer
+ * ("the treadmill this repo is already on — 5s → 10s → 30s").
+ */
+beforeAll(async () => {
+  await import('@/app/api/admin/events/_lib/role-violation-audit');
+}, 60_000);
+
 beforeEach(() => {
   resolveTenantFromRequestMock.mockReturnValue({ slug: TENANT_SLUG });
   emitStandaloneMock.mockResolvedValue({ ok: true, value: 'audit-id' });
@@ -81,7 +99,42 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-async function loadGuard() {
+/**
+ * Which RBAC leg the next `loadGuard()` runs on.
+ *
+ * This file used to inherit the leg silently. That was survivable while the
+ * flag defaulted to OFF, and it broke the moment T066 flipped the code default
+ * to `true`: the marketing case below started running the ON leg, where
+ * marketing legitimately holds `events.write`, and asserted the OFF-leg answer.
+ * Inheriting a leg means the file cannot say which behaviour it is pinning —
+ * so it now says so per case.
+ */
+const state = vi.hoisted(() => ({ rbacV2: true }));
+
+vi.mock('@/lib/env', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/env')>('@/lib/env');
+  return {
+    ...actual,
+    env: {
+      ...actual.env,
+      features: {
+        ...actual.env.features,
+        get rbacV2() {
+          return state.rbacV2;
+        },
+      },
+    },
+  };
+});
+
+/**
+ * `src/lib/rbac.ts` snapshots `env.features.rbacV2` into `defaultDeps` at MODULE
+ * EVAL, so flipping `state` is not enough — the registry has to be reset and the
+ * guard re-imported, or every case pins whichever leg happened to load first.
+ */
+async function loadGuard(rbacV2 = true) {
+  state.rbacV2 = rbacV2;
+  vi.resetModules();
   return await import('@/app/api/admin/events/_lib/role-violation-audit');
 }
 
@@ -112,24 +165,86 @@ describe('adminOnlyWriterGuard (Round-1 test-M7)', () => {
     expect(emitStandaloneMock).not.toHaveBeenCalled();
   });
 
-  it('016 T029 — super_admin → allow (D16 evaluates as admin on the OFF leg; the literal admin check 404ed every promoted super_admin post-Migration-C)', async () => {
-    getCurrentSessionMock.mockResolvedValue({
-      user: { id: 'sa-1', role: 'super_admin' as const, email: 'sa@t' },
-    });
-    const { adminOnlyWriterGuard } = await loadGuard();
-    const result = await adminOnlyWriterGuard(buildRequest(), baseInput);
-    expect(result.kind).toBe('allow');
-    if (result.kind === 'allow') {
-      expect(result.actorUserId).toBe('sa-1');
-    }
-    expect(emitStandaloneMock).not.toHaveBeenCalled();
-  });
+  it.each([true, false])(
+    '016 T029 — super_admin → allow on BOTH legs (rbacV2=%s); the literal admin check 404ed every promoted super_admin post-Migration-C',
+    async (rbacV2) => {
+      // Both legs, because the two arms are different code. On ON the evaluator
+      // short-circuits at `role === 'super_admin'` and never reads the legacy
+      // row; only on OFF does D16's `super_admin → admin` mapping do any work.
+      // Pinned to ON alone, this case asserted a rationale it did not execute —
+      // forcing `legacyF6Guard` to deny everyone left the whole file green.
+      getCurrentSessionMock.mockResolvedValue({
+        user: { id: 'sa-1', role: 'super_admin' as const, email: 'sa@t' },
+      });
+      const { adminOnlyWriterGuard } = await loadGuard(rbacV2);
+      const result = await adminOnlyWriterGuard(buildRequest(), baseInput);
+      expect(result.kind).toBe('allow');
+      if (result.kind === 'allow') {
+        expect(result.actorUserId).toBe('sa-1');
+      }
+      expect(emitStandaloneMock).not.toHaveBeenCalled();
+    },
+  );
 
-  it('016 T029/T033 — marketing → deny 404 + attributable audit with the LITERAL role', async () => {
+  /**
+   * Marketing is the one role whose answer here DIFFERS BY LEG, so both are
+   * pinned. The guard admits via `canPerform(role, input.permissionKey,
+   * legacyF6Guard)` and `baseInput.permissionKey` is `events.write`:
+   *
+   *  - ON leg (production since the 2026-08-11 cutover, and the code default
+   *    since T066): `events.write` is in the marketing bundle → ALLOW. That is
+   *    the design, not a leak — spec.md § Clarifications reads "events RW
+   *    (excluding attendee-PII erasure and registration relink)", tasks.md T029
+   *    states "PR 4 grants marketing `events.write` without touching the
+   *    guards", and the frozen contract matrix lists POST /api/admin/events,
+   *    …/archive, …/toggle-*, …/import under `MARKETING_REACHABLE`. The two
+   *    exclusions are separate keys and stay denied — asserted below.
+   *  - OFF leg: D16 maps marketing to no legacy role, so the shim denies it
+   *    everywhere under /admin — one of the five fold decisions the maintainer
+   *    confirmed on 2026-08-10 ("marketing denied on legacy leg"). PR 5 deletes
+   *    this arm along with the leg.
+   *
+   * The T033 claim — a denial records the LITERAL role rather than collapsing
+   * it to a legacy one — is carried by the OFF-leg case here and by the
+   * `member` case below, which is denied on both legs.
+   */
+  it('016 T029 — marketing → ALLOW on the ON leg (events RW is its scope)', async () => {
     getCurrentSessionMock.mockResolvedValue({
       user: { id: 'mk-1', role: 'marketing' as const, email: 'mk@t' },
     });
-    const { adminOnlyWriterGuard } = await loadGuard();
+    const { adminOnlyWriterGuard } = await loadGuard(true);
+    const result = await adminOnlyWriterGuard(buildRequest(), baseInput);
+    expect(result.kind).toBe('allow');
+    if (result.kind === 'allow') {
+      expect(result.actorUserId).toBe('mk-1');
+    }
+    expect(emitStandaloneMock, 'an allowed write is not a role violation').not.toHaveBeenCalled();
+  });
+
+  it('016 T029 — marketing is still DENIED the two carved-out event keys on the ON leg', async () => {
+    // Without this, "marketing → allow" could be read as "marketing → allow
+    // everything under /admin/events", which is exactly what the spec excludes.
+    getCurrentSessionMock.mockResolvedValue({
+      user: { id: 'mk-1', role: 'marketing' as const, email: 'mk@t' },
+    });
+    const { adminOnlyWriterGuard } = await loadGuard(true);
+    for (const permissionKey of ['events.relink', 'events.erasure'] as const) {
+      emitStandaloneMock.mockClear();
+      const result = await adminOnlyWriterGuard(buildRequest(), { ...baseInput, permissionKey });
+      expect(result.kind, `${permissionKey} must stay denied for marketing`).toBe('deny');
+      if (result.kind === 'deny') {
+        expect(result.response.status).toBe(404);
+      }
+      const entry = emitStandaloneMock.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+      expect(entry?.['actorType']).toBe('marketing');
+    }
+  });
+
+  it('016 T029/T033 — marketing → deny 404 + attributable audit with the LITERAL role (OFF leg)', async () => {
+    getCurrentSessionMock.mockResolvedValue({
+      user: { id: 'mk-1', role: 'marketing' as const, email: 'mk@t' },
+    });
+    const { adminOnlyWriterGuard } = await loadGuard(false);
     const result = await adminOnlyWriterGuard(buildRequest(), baseInput);
     expect(result.kind).toBe('deny');
     if (result.kind === 'deny') {
