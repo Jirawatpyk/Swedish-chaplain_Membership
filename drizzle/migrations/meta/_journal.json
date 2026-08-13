@@ -1954,6 +1954,13 @@
       "when": 1798541500000,
       "tag": "0287_rbac_v2_promotion",
       "breakpoints": true
+    },
+    {
+      "idx": 289,
+      "version": "7",
+      "when": 1798541600000,
+      "tag": "0288_rbac_v2_strict_last_admin_guard",
+      "breakpoints": true
     }
   ]
 }

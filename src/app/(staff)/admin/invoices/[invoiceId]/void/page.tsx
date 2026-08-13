@@ -13,7 +13,6 @@ import { headers } from 'next/headers';
 import { getTranslations } from 'next-intl/server';
 import { ArrowLeftIcon } from 'lucide-react';
 import { requirePagePermission } from '@/lib/rbac';
-import { legacyAdminOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { getInvoice, makeGetInvoiceDeps, issuedInvoiceIdentity } from '@/modules/invoicing';
 import { FormContainer } from '@/components/layout';
@@ -32,7 +31,7 @@ export default async function VoidInvoicePage({
   params: Promise<{ invoiceId: string }>;
 }) {
   const { invoiceId } = await params;
-  await requirePagePermission('invoicing.void', legacyAdminOnly);
+  await requirePagePermission('invoicing.void');
 
   const t = await getTranslations('admin.invoices.void');
 

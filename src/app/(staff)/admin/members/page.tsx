@@ -18,7 +18,6 @@ import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 import { PlusIcon } from 'lucide-react';
 import { canPerform, requirePagePermission } from '@/lib/rbac';
-import { legacyAdminOnly, legacySessionOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import {
   countMembersNeedingPortalInvite,
@@ -204,7 +203,7 @@ export default async function MembersListPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  const { user: currentUser } = await requirePagePermission('members.read', legacySessionOnly);
+  const { user: currentUser } = await requirePagePermission('members.read');
   const query = await searchParams;
   const t = await getTranslations('admin.members');
 
@@ -218,9 +217,9 @@ export default async function MembersListPage({
           // 'members.bulk' egress (full-tenant PII), "Add member" is a
           // 'members.write' affordance. Identical holders today; the split is
           // what keeps a future bundle diff from dragging the other along.
-          canPerform(currentUser.role, 'members.write', legacyAdminOnly) ? (
+          canPerform(currentUser.role, 'members.write') ? (
             <div className="flex items-center gap-2">
-              {canPerform(currentUser.role, 'members.bulk', legacyAdminOnly) && (
+              {canPerform(currentUser.role, 'members.bulk') && (
                 <ExportBackupButton />
               )}
               <Link
@@ -239,7 +238,7 @@ export default async function MembersListPage({
         <CardContent className="flex flex-col gap-4">
           <MembersDirectoryBody
             query={query}
-            isAdmin={canPerform(currentUser.role, 'members.write', legacyAdminOnly)}
+            isAdmin={canPerform(currentUser.role, 'members.write')}
           />
         </CardContent>
       </Card>

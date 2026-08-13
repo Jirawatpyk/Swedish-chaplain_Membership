@@ -12,7 +12,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { requireApiPermission } from '@/lib/rbac';
-import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import {
   parseIdempotencyKey,
@@ -34,7 +33,7 @@ const bodySchema = z.object({
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   // Admin-only clone gate (uses the existing 'plan' + 'clone' RBAC slot)
-  const ctx = await requireApiPermission(request, 'plans.clone', mappedLegacy('plan', 'clone'));
+  const ctx = await requireApiPermission(request, 'plans.clone');
   if ('response' in ctx) return ctx.response;
 
   // Emergency maintenance freeze short-circuit.

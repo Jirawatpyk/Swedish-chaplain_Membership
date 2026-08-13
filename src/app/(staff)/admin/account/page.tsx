@@ -12,8 +12,6 @@ import { ChangePasswordForm } from '@/components/auth/change-password-form';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { requirePagePermission } from '@/lib/rbac';
-import { legacySessionOnly } from '@/modules/auth/domain/permissions/legacy-shim';
-
 /**
  * Staff account settings page (T154) at URL `/admin/account`.
  *
@@ -26,7 +24,7 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function StaffAccountPage() {
-  const { user } = await requirePagePermission('dashboard.view', legacySessionOnly);
+  const { user } = await requirePagePermission('dashboard.view');
   const t = await getTranslations('auth.changePassword');
   const tShell = await getTranslations('shell.roleBadge');
 

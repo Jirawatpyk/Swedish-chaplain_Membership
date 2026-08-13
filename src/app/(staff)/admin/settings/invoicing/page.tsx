@@ -15,10 +15,6 @@
 import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
 import { canPerform, requirePagePermission } from '@/lib/rbac';
-import {
-  legacyAdminOnly,
-  legacySessionOnly,
-} from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { headers } from 'next/headers';
 import {
@@ -84,7 +80,7 @@ const DEFAULTS: InvoiceSettingsFormInitialValues = {
 };
 
 export default async function InvoiceSettingsPage() {
-  const { user: currentUser } = await requirePagePermission('settings.invoicing', legacySessionOnly);
+  const { user: currentUser } = await requirePagePermission('settings.invoicing');
   const t = await getTranslations('admin.invoiceSettings');
 
   const hdrs = await headers();
@@ -163,7 +159,7 @@ export default async function InvoiceSettingsPage() {
             // session-only, so manager still READS these settings) while
             // admitting a promoted super_admin; the ON leg follows
             // `settings.invoicing`, which is superAdminOnly by D4.
-            canEdit={canPerform(currentUser.role, 'settings.invoicing', legacyAdminOnly)}
+            canEdit={canPerform(currentUser.role, 'settings.invoicing')}
             exists={existing !== null}
           />
         </CardContent>

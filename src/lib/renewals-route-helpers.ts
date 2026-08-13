@@ -21,7 +21,6 @@ import { getClientIp } from '@/lib/client-ip';
 import { logger } from '@/lib/logger';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
-import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import type { PermissionKey } from '@/modules/auth/domain/permissions/permission-catalogue';
 import { makeRenewalsDeps } from '@/modules/renewals';
 
@@ -107,9 +106,8 @@ export type RenewalAdminAction = 'read' | 'write' | 'manager_exception';
  * (`{ error: { code }, correlationId }` + `X-Correlation-Id`, admin-renewals-api.md
  * § 1), the `f8_role_violation_blocked` audit on the 403 path, and the
  * `F8.ACCEPT_TIER.*` taxonomy log line on the 500 path. `key` is the surface's
- * flag-ON permission; the flag-OFF row is always `mappedLegacy('renewal',
- * rbacAction)` — exactly the pre-016 `requireRole(current, 'renewal', action)`
- * this helper wrapped.
+ * permission (single leg since PR 5 removed the shim row this helper used to
+ * derive from the action).
  *
  * Caller should always check `'response' in result` and return early
  * on rejection. The 401 path (no session) does NOT emit the F8 audit
@@ -127,11 +125,9 @@ export async function requireRenewalAdminContext(
   // 'manager_exception' allows both admin + manager (mirrors 'read'
   // at the RBAC layer); the label is preserved for the audit emit
   // path below so dashboards see the actual semantic.
-  const rbacAction = action === 'manager_exception' ? 'read' : action;
   const gate = await requireApiPermission(
     request,
     key,
-    mappedLegacy('renewal', rbacAction),
   );
 
   if ('response' in gate) {

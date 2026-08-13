@@ -22,12 +22,6 @@ import { errKind } from '@/lib/log-id';
 import type { Role } from '@/modules/auth/domain/role';
 // Value import, same deep-path rationale: the D16 totaliser is pure Domain
 // (no framework imports), so it is safe in any bundle this file reaches.
-import {
-  legacySessionOnly,
-  legacyAdminOrManager,
-  legacyAdminOnly,
-  type LegacyRow,
-} from '@/modules/auth/domain/permissions/legacy-shim';
 import type { PermissionKey } from '@/modules/auth/domain/permissions/permission-catalogue';
 import type { TenantContext } from '@/modules/tenants';
 import type { ClockPort, PlanRepo } from './ports';
@@ -120,13 +114,9 @@ export type SearchPlansDeps = {
 
 // --- Static action + navigate registries ------------------------------------
 
-/**
- * The permission a palette entry's destination requires, plus the legacy row
- * that reproduces today's OFF-leg population for it (016 T064).
- */
+/** The permission a palette entry's destination requires (016 T064). */
 type PermissionedEntry = {
   readonly permission: PermissionKey;
-  readonly legacy: LegacyRow;
 };
 
 /**
@@ -134,18 +124,18 @@ type PermissionedEntry = {
  * current actor by the composition root — the Application layer must not
  * import `canPerform`, which reads `env`.
  */
-export type PermissionProbe = (key: PermissionKey, legacy: LegacyRow) => boolean;
+export type PermissionProbe = (key: PermissionKey) => boolean;
 
 type ActionEntry = PaletteActionItem & PermissionedEntry;
 type NavigateEntry = PaletteNavigateItem & PermissionedEntry;
 
 const ACTION_REGISTRY: ReadonlyArray<ActionEntry> = [
-  { id: 'plan.new', label: 'palette.actions.newPlan', url: '/admin/plans/new', permission: 'plans.write', legacy: legacyAdminOnly, keywords: ['create', 'add'] },
+  { id: 'plan.new', label: 'palette.actions.newPlan', url: '/admin/plans/new', permission: 'plans.write', keywords: ['create', 'add'] },
   {
     id: 'plan.clone',
     label: 'palette.actions.cloneYear',
     url: '/admin/plans/clone',
-    permission: 'plans.clone', legacy: legacyAdminOnly,
+    permission: 'plans.clone',
   },
   // R8 consolidation — Fee Configuration palette entry removed.
   // Admins now edit VAT + currency + registration fee via Invoice
@@ -155,14 +145,14 @@ const ACTION_REGISTRY: ReadonlyArray<ActionEntry> = [
     id: 'audit.view',
     label: 'palette.actions.viewAuditLog',
     url: '/admin/audit',
-    permission: 'audit.read', legacy: legacySessionOnly,
+    permission: 'audit.read',
   },
   // F3 T069 — member surfaces reachable from the palette.
   {
     id: 'member.new',
     label: 'palette.actions.newMember',
     url: '/admin/members/new',
-    permission: 'members.write', legacy: legacyAdminOnly,
+    permission: 'members.write',
     keywords: ['create', 'add'],
   },
   // F4 T059 — invoice surfaces reachable from the palette.
@@ -170,7 +160,7 @@ const ACTION_REGISTRY: ReadonlyArray<ActionEntry> = [
     id: 'invoice.new',
     label: 'palette.actions.newInvoice',
     url: '/admin/invoices/new',
-    permission: 'invoicing.write', legacy: legacyAdminOnly,
+    permission: 'invoicing.write',
     keywords: ['create', 'add'],
   },
   // 088 T021b / FR-035 — "Record payment for …" jump. Lands on the payable
@@ -182,7 +172,7 @@ const ACTION_REGISTRY: ReadonlyArray<ActionEntry> = [
     id: 'invoice.recordPayment',
     label: 'palette.actions.recordPayment',
     url: '/admin/invoices?status=issued&pay=1',
-    permission: 'invoicing.write', legacy: legacyAdminOnly,
+    permission: 'invoicing.write',
   },
   // 088 T021b / FR-035 — "Re-render tax receipt" jump. Lands on the paid-invoice
   // list where the row ⋯ menu re-renders / resends the §86/4 RC tax receipt.
@@ -193,7 +183,7 @@ const ACTION_REGISTRY: ReadonlyArray<ActionEntry> = [
     id: 'invoice.rerenderReceipt',
     label: 'palette.actions.rerenderTaxReceipt',
     url: '/admin/invoices?status=paid',
-    permission: 'invoicing.write', legacy: legacyAdminOnly,
+    permission: 'invoicing.write',
     feature: 'f088TaxAtPayment',
   },
   // F5 Phase 6 (T118) — refund flow browse-mode shortcut. Admin-only.
@@ -207,7 +197,7 @@ const ACTION_REGISTRY: ReadonlyArray<ActionEntry> = [
     id: 'refund.issue',
     label: 'palette.actions.issueRefund',
     url: '/admin/invoices?paidOnly=1',
-    permission: 'refunds.write', legacy: legacyAdminOnly,
+    permission: 'refunds.write',
   },
   // F7 Smart-1 — Email Broadcast actions. Admins use the queue daily;
   // halt-clear is rare but high-stakes (Q14). Member-self-service
@@ -217,14 +207,14 @@ const ACTION_REGISTRY: ReadonlyArray<ActionEntry> = [
     id: 'broadcast.review',
     label: 'palette.actions.reviewBroadcasts',
     url: '/admin/broadcasts',
-    permission: 'broadcasts.read', legacy: legacySessionOnly,
+    permission: 'broadcasts.read',
     feature: 'f7Broadcasts',
   },
   {
     id: 'broadcast.halted',
     label: 'palette.actions.broadcastsHalted',
     url: '/admin/broadcasts?status=halted',
-    permission: 'broadcasts.write', legacy: legacyAdminOnly,
+    permission: 'broadcasts.write',
     feature: 'f7Broadcasts',
   },
   // F7.1a US7 Round 1 R4-S7 L2 — direct ⌘K jump to author a new
@@ -234,7 +224,7 @@ const ACTION_REGISTRY: ReadonlyArray<ActionEntry> = [
     id: 'broadcast.newTemplate',
     label: 'palette.actions.newBroadcastTemplate',
     url: '/admin/broadcasts/templates/new',
-    permission: 'broadcasts.write', legacy: legacyAdminOnly,
+    permission: 'broadcasts.write',
     keywords: ['create', 'add'],
     feature: 'f7Broadcasts',
   },
@@ -245,37 +235,37 @@ const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
     id: 'nav.plans',
     label: 'palette.navigate.plansList',
     url: '/admin/plans',
-    permission: 'plans.read', legacy: legacySessionOnly,
+    permission: 'plans.read',
   },
   {
     id: 'nav.invoiceSettings',
     label: 'palette.navigate.invoiceSettings',
     url: '/admin/settings/invoicing',
-    permission: 'settings.invoicing', legacy: legacySessionOnly,
+    permission: 'settings.invoicing',
   },
   {
     id: 'nav.users',
     label: 'palette.navigate.usersList',
     url: '/admin/users',
-    permission: 'users.manage', legacy: legacySessionOnly,
+    permission: 'users.manage',
   },
   {
     id: 'nav.dashboard',
     label: 'palette.navigate.dashboard',
     url: '/admin',
-    permission: 'dashboard.view', legacy: legacySessionOnly,
+    permission: 'dashboard.view',
   },
   {
     id: 'nav.members',
     label: 'palette.navigate.membersList',
     url: '/admin/members',
-    permission: 'members.read', legacy: legacySessionOnly,
+    permission: 'members.read',
   },
   {
     id: 'nav.invoices',
     label: 'palette.navigate.invoicesList',
     url: '/admin/invoices',
-    permission: 'invoicing.read', legacy: legacySessionOnly,
+    permission: 'invoicing.read',
   },
   {
     // Verify-fix S1 (2026-04-26): F5 Phase 5 paid-online reconciliation
@@ -285,7 +275,7 @@ const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
     id: 'nav.invoicesPaidOnline',
     label: 'palette.navigate.invoicesPaidOnline',
     url: '/admin/invoices?paidOnline=1',
-    permission: 'invoicing.read', legacy: legacySessionOnly,
+    permission: 'invoicing.read',
   },
   {
     // G-4 — Credit notes directory (/admin/credit-notes). Typing
@@ -295,14 +285,14 @@ const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
     id: 'nav.creditNotes',
     label: 'palette.navigate.creditNotesList',
     url: '/admin/credit-notes',
-    permission: 'invoicing.read', legacy: legacyAdminOrManager,
+    permission: 'invoicing.read',
   },
   // F7 Smart-1 — broadcast review queue navigation entry.
   {
     id: 'nav.broadcasts',
     label: 'palette.navigate.broadcastsQueue',
     url: '/admin/broadcasts',
-    permission: 'broadcasts.read', legacy: legacySessionOnly,
+    permission: 'broadcasts.read',
     feature: 'f7Broadcasts',
   },
   // F7.1a US7 Round 1 R4-S7 L2 — admin broadcast templates library.
@@ -319,7 +309,7 @@ const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
     // Deny-direction and correct — the old entry was a tease that 404'd on
     // click — but it changes the flag-OFF population and is recorded here
     // rather than left for someone to discover in a rollback.
-    permission: 'broadcasts.write', legacy: legacyAdminOnly,
+    permission: 'broadcasts.write',
     feature: 'f7Broadcasts',
   },
   // F7.1a US2 image-allowlist editor (UX M-1 fix 2026-05-21,
@@ -334,7 +324,7 @@ const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
     // Relocated from /admin/broadcasts/settings (404 — no page.tsx at the
     // old path); fixed as part of the nav-orphans follow-up sweep.
     url: '/admin/settings/broadcasts',
-    permission: 'settings.broadcasts', legacy: legacyAdminOnly,
+    permission: 'settings.broadcasts',
     feature: 'f7Broadcasts',
   },
   // J4-B9 (smart-feature #4 MVP) — F8 Phase 4 surfaces. Without
@@ -346,7 +336,7 @@ const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
     id: 'nav.renewals',
     label: 'palette.navigate.renewalsList',
     url: '/admin/renewals',
-    permission: 'renewals.read', legacy: legacyAdminOrManager,
+    permission: 'renewals.read',
   },
   {
     id: 'nav.renewalSchedules',
@@ -355,7 +345,7 @@ const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
     // Manager role can READ the schedule editor (it renders read-only
     // for them server-side per `requireRenewalAdminContext('read')`).
     // Admin-only mutations are still gated at the route handler.
-    permission: 'settings.renewal_schedules', legacy: legacyAdminOrManager,
+    permission: 'settings.renewal_schedules',
   },
   // Round 5 SF-1 close — F8 Phase 8 escalation task queue palette
   // entries (smart-chamber-features § MVP #4). Admin + manager can
@@ -365,19 +355,19 @@ const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
     id: 'nav.escalationTasks',
     label: 'palette.navigate.escalationTasks',
     url: '/admin/renewals/tasks',
-    permission: 'renewals.read', legacy: legacyAdminOrManager,
+    permission: 'renewals.read',
   },
   {
     id: 'nav.escalationTasksMine',
     label: 'palette.navigate.escalationTasksMine',
     url: '/admin/renewals/tasks?assignment=mine',
-    permission: 'renewals.read', legacy: legacyAdminOrManager,
+    permission: 'renewals.read',
   },
   {
     id: 'nav.escalationTasksOverdue',
     label: 'palette.navigate.escalationTasksOverdue',
     url: '/admin/renewals/tasks?overdue_only=true',
-    permission: 'renewals.read', legacy: legacyAdminOrManager,
+    permission: 'renewals.read',
   },
   // Phase 5 review-fix S-13 (2026-05-13) — F6 EventCreate palette
   // entries (smart-chamber-features § MVP #4 command palette). Without
@@ -394,14 +384,14 @@ const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
     id: 'nav.events',
     label: 'palette.navigate.eventsList',
     url: '/admin/events',
-    permission: 'events.read', legacy: legacyAdminOrManager,
+    permission: 'events.read',
     feature: 'f6EventCreate',
   },
   {
     id: 'nav.eventcreateIntegration',
     label: 'palette.navigate.eventcreateIntegration',
     url: '/admin/settings/integrations/eventcreate',
-    permission: 'settings.integrations', legacy: legacyAdminOnly,
+    permission: 'settings.integrations',
     feature: 'f6EventCreate',
   },
   // F6.1 R1 ux I8 — high-frequency navigation target for admins who
@@ -410,7 +400,7 @@ const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
     id: 'nav.csvImportHistory',
     label: 'palette.navigate.csvImportHistory',
     url: '/admin/events/import/history',
-    permission: 'events.write', legacy: legacyAdminOnly,
+    permission: 'events.write',
     feature: 'f6EventCreate',
   },
   // F9 — distinct staff-only surfaces (audit log + member directory) that
@@ -420,13 +410,13 @@ const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
     id: 'nav.auditLog',
     label: 'palette.navigate.auditLog',
     url: '/admin/audit',
-    permission: 'audit.read', legacy: legacySessionOnly,
+    permission: 'audit.read',
   },
   {
     id: 'nav.directory',
     label: 'palette.navigate.directory',
     url: '/admin/directory',
-    permission: 'directory.export', legacy: legacySessionOnly,
+    permission: 'directory.export',
   },
 ];
 
@@ -445,11 +435,11 @@ const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
  * and the caller injects the probe. The predicate is INJECTED rather than
  * imported because `canPerform` reads `env` — Application code must not.
  */
-function filterByPermission<T extends { permission: PermissionKey; legacy: LegacyRow }>(
+function filterByPermission<T extends { permission: PermissionKey }>(
   entries: ReadonlyArray<T>,
   can: PermissionProbe,
 ): ReadonlyArray<T> {
-  return entries.filter((e) => can(e.permission, e.legacy));
+  return entries.filter((e) => can(e.permission));
 }
 
 // --- Filter helper ----------------------------------------------------------

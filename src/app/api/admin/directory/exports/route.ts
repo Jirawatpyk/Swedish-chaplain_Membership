@@ -13,7 +13,6 @@ import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { requireApiPermission } from '@/lib/rbac';
-import { legacyAdminOrManager } from '@/modules/auth/domain/permissions/legacy-shim';
 import { rateLimiter } from '@/lib/auth-deps';
 import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
@@ -38,7 +37,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // 016 T028: replaces the deny-by-exclusion `role === 'member'` arm with the
   // positive gate (uniform denial shape; the export dialog branches on
   // `res.ok` only).
-  const ctx = await requireApiPermission(request, 'directory.export', legacyAdminOrManager);
+  const ctx = await requireApiPermission(request, 'directory.export');
   if ('response' in ctx) return ctx.response;
   const current = ctx.current;
 

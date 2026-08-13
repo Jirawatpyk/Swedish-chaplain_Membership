@@ -25,7 +25,6 @@ import {
   baseHeaders,
 } from '@/lib/broadcasts-route-helpers';
 import { requireApiPermission } from '@/lib/rbac';
-import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
 
@@ -63,7 +62,7 @@ interface QueueItem {
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const correlationId = randomUUID();
-  const ctx = await requireApiPermission(request, 'broadcasts.read', mappedLegacy('broadcast', 'read'));
+  const ctx = await requireApiPermission(request, 'broadcasts.read');
   if ('response' in ctx) return ctx.response;
 
   const tenantCtx = resolveTenantFromRequest(request);

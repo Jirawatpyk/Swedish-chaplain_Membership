@@ -28,14 +28,8 @@ import type { Role } from '@/modules/auth';
  */
 export function staffNavAllowedHrefs(
   role: Role,
-  /**
-   * Flag override, forwarded to `canPerform`. Production omits it (the flag is
-   * snapshotted at module eval); tests pass it so a suite can assert BOTH legs
-   * in one file without resetting the module registry.
-   */
-  deps?: { readonly rbacV2: boolean },
 ): readonly string[] {
   return flattenNavItems(staffNavConfig)
-    .filter((item) => !item.guard || canPerform(role, item.guard.key, item.guard.legacy, deps))
+    .filter((item) => !item.guard || canPerform(role, item.guard.key))
     .map((item) => item.href);
 }

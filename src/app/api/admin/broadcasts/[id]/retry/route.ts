@@ -40,7 +40,6 @@ import {
   baseHeaders,
 } from '@/lib/broadcasts-route-helpers';
 import { requireApiPermission } from '@/lib/rbac';
-import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
 
@@ -49,7 +48,7 @@ export async function POST(
   context: { params: Promise<{ id: string }> },
 ): Promise<NextResponse> {
   const correlationId = randomUUID();
-  const ctx = await requireApiPermission(request, 'broadcasts.send', mappedLegacy('broadcast', 'write'));
+  const ctx = await requireApiPermission(request, 'broadcasts.send');
   if ('response' in ctx) return ctx.response;
 
   // T061 F71A US1 flag gate. When OFF: return 503 feature_disabled so

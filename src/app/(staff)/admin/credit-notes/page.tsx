@@ -25,7 +25,6 @@ import { getLocale, getTranslations } from 'next-intl/server';
 import { ArrowUpRightIcon, DownloadIcon, EyeIcon } from 'lucide-react';
 
 import { requirePagePermission } from '@/lib/rbac';
-import { legacyAdminOrManager } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { listCreditNotes, makeListCreditNotesDeps } from '@/modules/invoicing';
 import { TableContainer } from '@/components/layout';
@@ -67,7 +66,7 @@ export default async function AdminCreditNotesDirectoryPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  await requirePagePermission('invoicing.read', legacyAdminOrManager);
+  await requirePagePermission('invoicing.read');
   // Manager is read-only finance — allowed. Member / unauth blocked
   // by requireSession / layout.
 

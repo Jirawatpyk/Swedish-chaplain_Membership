@@ -55,7 +55,6 @@ export default async function StaffLayout({ children }: { children: ReactNode })
         {/* TODO: resolve tenant name from session context when F10 ships (MTA+STD) */}
         <StaffSidebar
           tenantName={process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham'}
-          role={user.role}
           // 016 T063 — the sidebar is filtered by PERMISSION, resolved here
           // because a client component can read neither `env` nor `canPerform`.
           // Only the resulting hrefs cross the RSC boundary; the config itself

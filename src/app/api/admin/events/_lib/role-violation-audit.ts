@@ -26,7 +26,6 @@ import { logger } from '@/lib/logger';
 import { getCurrentSession } from '@/lib/auth-session';
 import { canPerform } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
-import { legacyF6Guard } from '@/modules/auth/domain/permissions/legacy-shim';
 import type { PermissionKey } from '@/modules/auth/domain/permissions/permission-catalogue';
 import { makeStandaloneAuditDeps } from '@/modules/events';
 import { asTenantId } from '@/modules/members';
@@ -273,7 +272,7 @@ export async function adminOnlyWriterGuard(
     };
   }
   const role = session.user.role;
-  if (canPerform(role, input.permissionKey, legacyF6Guard)) {
+  if (canPerform(role, input.permissionKey)) {
     // Brand at the trust boundary — session.user.id is a plain string
     // post-deserialization; the smart constructor pins the brand for
     // every downstream consumer.

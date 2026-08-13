@@ -12,7 +12,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { requireApiPermission, canPerform } from '@/lib/rbac';
-import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
 import { errKind, rootCause } from '@/lib/log-id';
@@ -46,7 +45,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ memberId: string }> },
 ): Promise<NextResponse> {
-  const ctx = await requireApiPermission(request, 'members.read', mappedLegacy('members', 'read'));
+  const ctx = await requireApiPermission(request, 'members.read');
   if ('response' in ctx) return ctx.response;
 
   const resolved = await params;
@@ -129,7 +128,6 @@ export async function GET(
       invoicingRead: canPerform(
         ctx.current.user.role,
         'invoicing.read',
-        mappedLegacy('invoice', 'read'),
       ),
     },
   );

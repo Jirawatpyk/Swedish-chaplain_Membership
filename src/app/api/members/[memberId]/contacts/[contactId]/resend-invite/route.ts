@@ -23,7 +23,6 @@ import {
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requireApiPermission } from '@/lib/rbac';
-import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { logger } from '@/lib/logger';
 
 const paramsSchema = z.object({
@@ -35,7 +34,7 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ memberId: string; contactId: string }> },
 ): Promise<NextResponse> {
-  const gate = await requireApiPermission(request, 'contacts.write', mappedLegacy('members', 'write'));
+  const gate = await requireApiPermission(request, 'contacts.write');
   if ('response' in gate) return gate.response;
   const { current, requestId } = gate;
 

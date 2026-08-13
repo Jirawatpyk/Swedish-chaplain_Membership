@@ -26,7 +26,6 @@ import { getTranslations } from 'next-intl/server';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { requirePagePermission } from '@/lib/rbac';
-import { legacyAdminOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { runLoadIntegrationConfig } from '@/lib/events-admin-integration-deps';
 import { deriveWebhookBaseUrlFromHeaders } from '@/app/api/admin/integrations/eventcreate/_lib/role-violation-audit';
@@ -51,7 +50,7 @@ export default async function EventCreateIntegrationPage({
     notFound();
   }
 
-  await requirePagePermission('settings.integrations', legacyAdminOnly);
+  await requirePagePermission('settings.integrations');
 
   const h = await headers();
   const tenantCtx = resolveTenantFromHeaders(h);

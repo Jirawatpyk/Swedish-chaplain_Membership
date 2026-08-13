@@ -1,23 +1,19 @@
 /**
- * Permission evaluator — pure Domain, both flag legs
+ * Permission evaluator — pure Domain, single leg
  * (016-rbac-permissions; contracts/permission-evaluator.md § 1, guarantees E1–E6).
  *
- * PURITY PIN (design § 6.1, round-3 R3-04): the flag is ALWAYS an explicit
- * parameter — never read here, never in client components (they receive
- * server-derived booleans as props). `FEATURE_RBAC_V2` env reads live in the
- * COMPOSITION layer (`src/lib/rbac.ts` for the gate, `src/lib/auth-deps.ts`
- * for the administrator-count wiring — 016 re-review corrected the earlier
- * "only in rbac.ts" claim). `src/modules/plans` deep-imports THIS module (not
- * the auth barrel — argon2 client-bundle hazard) and threads the flag from its
- * own server boundary.
+ * PR 5 (T068) deleted the legacy leg: production has run the positive-
+ * permission leg since the 2026-08-11 cutover, PR 4 flipped the code default,
+ * and the `FEATURE_RBAC_V2` flag no longer exists. The `EvaluatorOptions`
+ * parameter went with it — the evaluator needs nothing beyond (role, key),
+ * which also dissolves the old purity hazard (the flag used to be threaded in
+ * from the composition layer; now there is nothing to thread).
  *
  * Signature is ROLE-FIRST (canonical, data-model § 1): the super_admin bypass
- * (E1) and D16 totalisation (E4) both need the role — a bare permission set
- * can express neither.
+ * (E1) needs the role — a bare permission set cannot express it.
  */
 
 import type { Role } from '../role';
-import { evaluateLegacyRow, type LegacyRow } from './legacy-shim';
 import {
   ALL_PERMISSION_KEYS,
   SUPER_ADMIN_ONLY_KEYS,
@@ -26,17 +22,6 @@ import {
 import { ROLE_BUNDLES } from './role-bundles';
 
 const EMPTY_SET: ReadonlySet<PermissionKey> = new Set();
-
-export interface EvaluatorOptions {
-  /** The FEATURE_RBAC_V2 flag — threaded in by the caller, never read here. */
-  readonly rbacV2: boolean;
-  /**
-   * Flag-OFF leg only: the shim row for the CALLING call-site class
-   * (contract § 3 — rows are per call-site class, selected by the caller).
-   * Absent row on the legacy leg → deny (safe default).
-   */
-  readonly legacy?: LegacyRow;
-}
 
 /**
  * Derived, in-memory permission set for a role (D15: synchronous, no DB read,
@@ -66,15 +51,16 @@ function lookupBundle(
 }
 
 /**
- * The single authorization decision, total over both legs:
+ * The single authorization decision:
  *
- *   E1  flag ON  + super_admin        → true (total bypass)
- *   E2  flag ON  + superAdminOnly key → false for every other role, even if a
- *       (buggy) bundle contains it — checked BEFORE bundle lookup
- *   E3  flag ON  → bundle membership (§ 4.1 matrix parity)
- *   E4  flag OFF → D16 totalisation + the caller's shim row; no row → false
+ *   E1  super_admin        → true (total bypass)
+ *   E2  superAdminOnly key → false for every other role, even if a (buggy)
+ *       bundle contains it — checked BEFORE bundle lookup
+ *   E3  bundle membership (§ 4.1 matrix parity)
  *   E5  deterministic, synchronous, no I/O
- *   E6  unknown/future role → false on either leg; never throws, never escalates
+ *   E6  unknown/future role → false; never throws, never escalates
+ *
+ * (E4 — the flag-OFF legacy shim leg — was deleted in PR 5 with the flag.)
  *
  * `bundles` is injectable for Domain tests only (E2 poisoned-bundle proof);
  * production call sites never pass it.
@@ -82,12 +68,8 @@ function lookupBundle(
 export function hasPermission(
   role: Role | (string & {}),
   key: PermissionKey,
-  opts: EvaluatorOptions,
   bundles: Record<Role, ReadonlySet<PermissionKey>> = ROLE_BUNDLES,
 ): boolean {
-  if (!opts.rbacV2) {
-    return opts.legacy === undefined ? false : evaluateLegacyRow(role, opts.legacy);
-  }
   if (role === 'super_admin') return true;
   if (SUPER_ADMIN_ONLY_KEYS.has(key)) return false;
   return lookupBundle(bundles, role)?.has(key) ?? false;

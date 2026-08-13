@@ -16,7 +16,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { requireApiPermission } from '@/lib/rbac';
-import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import {
   parseIdempotencyKey,
@@ -45,7 +44,7 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ memberId: string; contactId: string }> },
 ): Promise<NextResponse> {
-  const ctx = await requireApiPermission(request, 'contacts.write', mappedLegacy('contacts', 'write'));
+  const ctx = await requireApiPermission(request, 'contacts.write');
   if ('response' in ctx) return ctx.response;
 
   const resolved = await params;
@@ -429,7 +428,7 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ memberId: string; contactId: string }> },
 ): Promise<NextResponse> {
-  const ctx = await requireApiPermission(request, 'contacts.write', mappedLegacy('contacts', 'delete'));
+  const ctx = await requireApiPermission(request, 'contacts.write');
   if ('response' in ctx) return ctx.response;
 
   const resolved = await params;

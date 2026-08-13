@@ -9,7 +9,6 @@
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { requireApiPermission } from '@/lib/rbac';
-import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import {
@@ -104,7 +103,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // 403'd `super_admin`, whom the frozen baseline pins as `allow`, so after
   // Migration C promotes every human admin nobody could issue a credit note
   // (016 review C1).
-  const ctx = await requireApiPermission(request, 'credit_notes.write', mappedLegacy('credit_note', 'write'));
+  const ctx = await requireApiPermission(request, 'credit_notes.write');
   if ('response' in ctx) return ctx.response;
 
   const tenantCtx = resolveTenantFromRequest(request);

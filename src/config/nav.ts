@@ -2,12 +2,6 @@ import type { LucideIcon } from 'lucide-react';
 import type { Role } from '@/modules/auth';
 // Pure Domain value import (client-safe) — the D16 totaliser for nav filtering.
 import {
-  normalizeLegacyRole,
-  legacySessionOnly,
-  legacyAdminOrManager,
-  legacyAdminOnly,
-} from '@/modules/auth/domain/permissions/legacy-shim';
-import {
   defineGuard,
   type SurfaceGuard,
 } from '@/modules/auth/domain/permissions/surface-guard';
@@ -60,15 +54,7 @@ export interface NavItem {
   readonly href: string;
   /** URL pattern for active-state matching (see {@link ActivePattern}). */
   readonly activePattern: ActivePattern;
-  /**
-   * DEPRECATED (016 T063) — superseded by {@link SurfaceGuard}. Kept on the
-   * type so `memberNavConfig` and any future non-staff config can still express
-   * a coarse allow-list; `tests/unit/nav/nav-permission-parity` asserts no
-   * STAFF item uses it, because an item filtered by both mechanisms silently
-   * takes the stricter one.
-   */
-  readonly roles?: ReadonlyArray<Role>;
-  /**
+    /**
    * What the TARGET PAGE requires (016 T061). The key must equal the one in
    * that page's own `requirePagePermission(...)` call — parity is asserted by
    * reading both sources, so a nav entry can be neither a dead link nor a
@@ -121,19 +107,7 @@ export interface NavGroup {
   /** URL pattern — group auto-expands when any child matches (see {@link ActivePattern}). */
   readonly activePattern: ActivePattern;
   readonly children: readonly NavItem[];
-  /**
-   * Legacy role allow-list. `ReadonlyArray<Role>`, not `<string>`: as `string`
-   * a typo (`'admni'`) compiled fine and silently matched nobody, and widening
-   * the Role union could not surface this file at all.
-   *
-   * DEAD in both live configs — `staffNavConfig` moved to `guard` and
-   * `memberNavConfig` never declared one, so nothing in production reads it
-   * (only the synthetic configs in `nav-config.test.ts` do). PR 5 can delete
-   * the field outright; an earlier version of this note claimed the member
-   * config still needed it, which would have made that deletion look risky.
-   */
-  readonly roles?: ReadonlyArray<Role>;
-}
+  }
 
 /** A logical grouping of NavItems and NavGroups with an optional header. */
 export interface NavSection {
@@ -190,7 +164,6 @@ export function flattenNavItems(config: NavConfig): readonly NavItem[] {
 export function filterNavConfig(
   config: NavConfig,
   flags: NavVisibilityFlags,
-  role: Role,
   /**
    * 016 T063 — the set of hrefs the CURRENT viewer is permitted to open,
    * computed on the server by `staffNavAllowedHrefs` (which owns `canPerform`).
@@ -203,20 +176,7 @@ export function filterNavConfig(
    */
   allowedHrefs?: ReadonlySet<string>,
 ): NavConfig {
-  // 016 T032 — role matching goes through the D16 totaliser as well as the
-  // literal list: a role the array doesn't name still maps correctly
-  // (super_admin → admin; marketing/unknown normalize to null → hidden, never
-  // escalate).
-  //
-  // T063 replaced every staff `roles` array with a declarative `guard`, so
-  // nothing below this line declares one and this branch is unreachable for
-  // both live configs. Kept for `memberNavConfig`'s benefit and exercised only
-  // by synthetic configs in `nav-config.test.ts`.
-  const normalized = normalizeLegacyRole(role);
-  const roleMatches = (roles: ReadonlyArray<string>): boolean =>
-    roles.includes(role) || (normalized !== null && roles.includes(normalized));
   function keepNavItem(item: NavItem): boolean {
-    if (item.roles && !roleMatches(item.roles)) return false;
     // 016 T063 — permission gate BEFORE the feature-flag gate: a viewer who
     // cannot open the page must not see the link whether or not the kill-switch
     // happens to be on.
@@ -226,8 +186,6 @@ export function filterNavConfig(
   }
   function filterEntry(item: NavItem | NavGroup): NavItem | NavGroup | null {
     if (isNavGroup(item)) {
-      // Group-level role gate first, then recurse into children.
-      if (item.roles && !roleMatches(item.roles)) return null;
       const children = item.children.filter(keepNavItem);
       if (children.length === 0) return null;
       return { ...item, children };
@@ -259,7 +217,7 @@ export const staffNavConfig: NavConfig = {
           titleKey: 'nav.staff.dashboard',
           icon: LayoutDashboardIcon,
           href: '/admin',
-          guard: defineGuard('dashboard.view', legacySessionOnly),
+          guard: defineGuard('dashboard.view'),
           activePattern: 'exact:/admin',
         },
       ],
@@ -272,14 +230,14 @@ export const staffNavConfig: NavConfig = {
           titleKey: 'nav.staff.members',
           icon: BuildingIcon,
           href: '/admin/members',
-          guard: defineGuard('members.read', legacySessionOnly),
+          guard: defineGuard('members.read'),
           activePattern: '/admin/members',
         },
         {
           titleKey: 'nav.staff.plans',
           icon: FileTextIcon,
           href: '/admin/plans',
-          guard: defineGuard('plans.read', legacySessionOnly),
+          guard: defineGuard('plans.read'),
           activePattern: '/admin/plans',
         },
         // F8 Renewals — renewal pipeline. Sub-routes (tier-upgrades, tasks)
@@ -289,7 +247,7 @@ export const staffNavConfig: NavConfig = {
           titleKey: 'nav.staff.renewals',
           icon: RefreshCwIcon,
           href: '/admin/renewals',
-          guard: defineGuard('renewals.read', legacyAdminOrManager),
+          guard: defineGuard('renewals.read'),
           activePattern: '/admin/renewals',
         },
         // F9 US5 — member directory + E-Book/JSON export. Gated server-side by
@@ -298,7 +256,7 @@ export const staffNavConfig: NavConfig = {
           titleKey: 'nav.staff.directory',
           icon: BookUserIcon,
           href: '/admin/directory',
-          guard: defineGuard('directory.export', legacySessionOnly),
+          guard: defineGuard('directory.export'),
           activePattern: '/admin/directory',
         },
       ],
@@ -312,7 +270,7 @@ export const staffNavConfig: NavConfig = {
           titleKey: 'nav.staff.invoices',
           icon: ReceiptIcon,
           href: '/admin/invoices',
-          guard: defineGuard('invoicing.read', legacySessionOnly),
+          guard: defineGuard('invoicing.read'),
           activePattern: '/admin/invoices',
         },
         // Credit notes — the standalone list (/admin/credit-notes). Notes
@@ -323,7 +281,7 @@ export const staffNavConfig: NavConfig = {
           titleKey: 'nav.staff.creditNotes',
           icon: FileMinusIcon,
           href: '/admin/credit-notes',
-          guard: defineGuard('invoicing.read', legacyAdminOrManager),
+          guard: defineGuard('invoicing.read'),
           activePattern: '/admin/credit-notes',
         },
       ],
@@ -336,7 +294,7 @@ export const staffNavConfig: NavConfig = {
           titleKey: 'nav.staff.broadcasts',
           icon: MegaphoneIcon,
           href: '/admin/broadcasts',
-          guard: defineGuard('broadcasts.read', legacySessionOnly),
+          guard: defineGuard('broadcasts.read'),
           activePattern: '/admin/broadcasts',
           // 016 — hide when FEATURE_F7_BROADCASTS is off (the /admin/broadcasts
           // routes 503 via the proxy kill-switch, so a visible link is a dead
@@ -349,7 +307,7 @@ export const staffNavConfig: NavConfig = {
           titleKey: 'nav.staff.events',
           icon: CalendarDaysIcon,
           href: '/admin/events',
-          guard: defineGuard('events.read', legacyAdminOrManager),
+          guard: defineGuard('events.read'),
           activePattern: '/admin/events',
           // 016 — hide when FEATURE_F6_EVENTCREATE is off (the /admin/events
           // pages call `notFound()` when the flag is off, so a visible link 404s).
@@ -365,7 +323,7 @@ export const staffNavConfig: NavConfig = {
           titleKey: 'nav.staff.users',
           icon: UsersIcon,
           href: '/admin/users',
-          guard: defineGuard('users.manage', legacySessionOnly),
+          guard: defineGuard('users.manage'),
           activePattern: '/admin/users',
         },
         // F9 US2 — staff audit-log viewer. Admin + manager (member never
@@ -375,7 +333,7 @@ export const staffNavConfig: NavConfig = {
           titleKey: 'nav.staff.audit',
           icon: ScrollTextIcon,
           href: '/admin/audit',
-          guard: defineGuard('audit.read', legacySessionOnly),
+          guard: defineGuard('audit.read'),
           activePattern: '/admin/audit',
         },
       ],
@@ -393,7 +351,7 @@ export const staffNavConfig: NavConfig = {
           titleKey: 'nav.staff.erasureLog',
           icon: ShieldCheckIcon,
           href: '/admin/compliance/erasure-log',
-          guard: defineGuard('members.erasure_log_read', legacyAdminOnly),
+          guard: defineGuard('members.erasure_log_read'),
           activePattern: '/admin/compliance/erasure-log',
         },
       ],
@@ -409,14 +367,14 @@ export const staffNavConfig: NavConfig = {
           titleKey: 'nav.staff.settingsInvoices',
           icon: FileCog2Icon,
           href: '/admin/settings/invoicing',
-          guard: defineGuard('settings.invoicing', legacySessionOnly),
+          guard: defineGuard('settings.invoicing'),
           activePattern: '/admin/settings/invoicing',
         },
         {
           titleKey: 'nav.staff.settingsRenewalSchedules',
           icon: CalendarClockIcon,
           href: '/admin/settings/renewals/schedules',
-          guard: defineGuard('settings.renewal_schedules', legacyAdminOrManager),
+          guard: defineGuard('settings.renewal_schedules'),
           activePattern: '/admin/settings/renewals',
         },
         // F7.1a US2 — Broadcast settings (image-source allowlist).
@@ -438,7 +396,7 @@ export const staffNavConfig: NavConfig = {
           titleKey: 'nav.staff.settingsBroadcasts',
           icon: Settings2Icon,
           href: '/admin/settings/broadcasts',
-          guard: defineGuard('settings.broadcasts', legacyAdminOnly),
+          guard: defineGuard('settings.broadcasts'),
           activePattern: '/admin/settings/broadcasts',
           visibilityFlag: 'broadcastsEnabled',
           // Admin-only ACCESS — the page returns notFound() for manager
@@ -463,7 +421,7 @@ export const staffNavConfig: NavConfig = {
           titleKey: 'nav.staff.settingsIntegrationEventcreate',
           icon: PlugZapIcon,
           href: '/admin/settings/integrations/eventcreate',
-          guard: defineGuard('settings.integrations', legacyAdminOnly),
+          guard: defineGuard('settings.integrations'),
           activePattern: '/admin/settings/integrations/eventcreate',
           // 016 follow-up — the page returns notFound() when
           // FEATURE_F6_EVENTCREATE is off, so gate the nav entry on the same F6

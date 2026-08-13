@@ -20,7 +20,6 @@ import { randomUUID } from 'node:crypto';
 import { logger } from '@/lib/logger';
 import { errorResponse } from '@/lib/renewals-route-helpers';
 import { requireApiPermission } from '@/lib/rbac';
-import { legacyAdminOrManager } from '@/modules/auth/domain/permissions/legacy-shim';
 import { userRepo } from '@/lib/auth-deps';
 
 export async function GET(request: NextRequest) {
@@ -32,7 +31,7 @@ export async function GET(request: NextRequest) {
   // (`{error:'no-session'|'forbidden'}`); the reassign combobox branches on
   // `res.ok` only. Key `renewals.read` per the frozen baseline — this list
   // feeds the renewals escalation UI.
-  const ctx = await requireApiPermission(request, 'renewals.read', legacyAdminOrManager);
+  const ctx = await requireApiPermission(request, 'renewals.read');
   if ('response' in ctx) return ctx.response;
 
   const correlationId = randomUUID();

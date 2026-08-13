@@ -62,12 +62,6 @@ export interface DisableUserDeps {
   readonly sessions: SessionRepo;
   readonly audit: AuditRepo;
   readonly now: () => Date;
-  /**
-   * 016 T026 — which roles count as administrators for the last-administrator
-   * guard. Threaded in rather than read from env so this use case stays pure
-   * Application (same purity pin as the permission evaluator).
-   */
-  readonly rbacV2: boolean;
 }
 
 export { defaultDisableUserDeps };
@@ -92,9 +86,9 @@ export async function disableUser(
   // counting plain admins there would let the last super_admin be disabled
   // while only plain admins remain (SC-003 lockout). App stricter than the
   // trigger is safe; PR 5 (T069) narrows the trigger to match.
-  if (isAdministrativeRole(target.role, deps.rbacV2) && target.status === 'active') {
+  if (isAdministrativeRole(target.role) && target.status === 'active') {
     const activeAdmins = await deps.users.countActiveAdministrators(
-      administrativeRoles(deps.rbacV2),
+      administrativeRoles(),
     );
     if (activeAdmins <= 1) {
       return err({ code: 'last-admin-protection' });

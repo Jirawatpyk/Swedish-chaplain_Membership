@@ -23,8 +23,6 @@ import {
 import { AdminTemplateForm } from '@/components/broadcast/admin/template-form';
 import { isF71aUs7Enabled } from '@/modules/broadcasts';
 import { requirePagePermission } from '@/lib/rbac';
-import { legacyAdminOnly } from '@/modules/auth/domain/permissions/legacy-shim';
-
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.broadcasts.templates');
   return { title: t('newPageTitle') };
@@ -33,7 +31,7 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function AdminBroadcastNewTemplatePage(): Promise<React.ReactElement> {
   if (!isF71aUs7Enabled()) notFound();
 
-  await requirePagePermission('broadcasts.write', legacyAdminOnly);
+  await requirePagePermission('broadcasts.write');
 
   const t = await getTranslations('admin.broadcasts.templates');
 

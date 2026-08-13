@@ -8,7 +8,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { requireApiPermission } from '@/lib/rbac';
-import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import {
@@ -66,7 +65,7 @@ export async function POST(
   // `role !== 'admin'` arm removed here 403'd `super_admin`, whom the frozen
   // baseline pins as `allow`, which would have made voiding an issued tax
   // invoice unreachable by any human after Migration C (016 review C1).
-  const ctx = await requireApiPermission(request, 'invoicing.void', mappedLegacy('invoice', 'write'));
+  const ctx = await requireApiPermission(request, 'invoicing.void');
   if ('response' in ctx) return ctx.response;
 
   const { invoiceId } = await params;

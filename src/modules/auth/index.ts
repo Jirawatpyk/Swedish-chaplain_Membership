@@ -180,9 +180,6 @@ export {
   type HeartbeatDeps,
 } from './application/heartbeat';
 
-export { hasPermission } from './application/has-permission';
-export type { Action, Resource } from './domain/policies';
-export { canAccess, isReadOnlyRole } from './domain/policies';
 
 export {
   checkPasswordPolicy,
@@ -199,10 +196,10 @@ export {
   ASSIGNABLE_ROLES,
   STAFF_ROLES,
   PORTAL_FOR_ROLE,
-  ADMINISTRATIVE_ROLES_LEGACY,
-  ADMINISTRATIVE_ROLES_V2,
+  ADMINISTRATIVE_ROLES,
   administrativeRoles,
   isAdministrativeRole,
+  isAdminTier,
   isRole,
   isStaffRole,
 } from './domain/role';

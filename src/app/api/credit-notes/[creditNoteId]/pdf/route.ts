@@ -7,7 +7,6 @@
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { requireApiPermission } from '@/lib/rbac';
-import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import {
@@ -22,7 +21,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ creditNoteId: string }> },
 ): Promise<NextResponse> {
-  const ctx = await requireApiPermission(request, 'invoicing.read', mappedLegacy('credit_note', 'read'));
+  const ctx = await requireApiPermission(request, 'invoicing.read');
   if ('response' in ctx) return ctx.response;
 
   const { creditNoteId } = await params;

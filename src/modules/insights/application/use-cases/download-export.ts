@@ -35,7 +35,7 @@ import type { PrivateBlobPort } from '../ports/private-blob-port';
 // Deep PURE-Domain import (not the barrel): a value import of the auth barrel
 // would drag auth-deps' infrastructure singletons (argon2, Upstash, repos)
 // into this Application module's graph at eval time.
-import { isAdministrativeRole, type Role } from '@/modules/auth/domain/role';
+import { isAdminTier, type Role } from '@/modules/auth/domain/role';
 
 // 016 T030/T033 — widened to the full Role union so routes stop casting and
 // audit emitters record the LITERAL actor role; the decision arms in this
@@ -56,11 +56,11 @@ function authorize(job: ExportJobRecord, meta: DownloadExportMeta): boolean {
     // Directory artefact (E-Book / JSON) — the directory.export population on
     // both flag legs: admin ∪ super_admin (D16, 016 T030) ∪ manager.
     // Marketing stays denied (route key + this arm agree).
-    return isAdministrativeRole(meta.actorRole, false) || meta.actorRole === 'manager';
+    return isAdminTier(meta.actorRole) || meta.actorRole === 'manager';
   }
   // Subject artefact (GDPR archive) — the subject member or a same-tenant
   // administrator (admin ∪ super_admin per D16 — 016 T030).
-  if (isAdministrativeRole(meta.actorRole, false)) return true;
+  if (isAdminTier(meta.actorRole)) return true;
   if (meta.actorRole === 'member') return meta.actorMemberId === job.subjectMemberId;
   return false;
 }

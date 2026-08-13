@@ -15,7 +15,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { canPerform, requireApiPermission } from '@/lib/rbac';
-import { legacyAdminOnly, mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import {
   parseIdempotencyKey,
@@ -38,7 +37,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ memberId: string }> },
 ): Promise<NextResponse> {
-  const ctx = await requireApiPermission(request, 'members.read', mappedLegacy('members', 'read'));
+  const ctx = await requireApiPermission(request, 'members.read');
   if ('response' in ctx) return ctx.response;
 
   const resolved = await params;
@@ -67,7 +66,7 @@ export async function GET(
     url.searchParams.get('include') === 'date_of_birth' &&
     // rbac-subgate-ok: gates the DoB FIELD of an already-authorised response,
     // not admission to the surface (that is the `members.read` gate above).
-    canPerform(ctx.current.user.role, 'members.pii_sensitive', legacyAdminOnly);
+    canPerform(ctx.current.user.role, 'members.pii_sensitive');
 
   const tenant = resolveTenantFromRequest(request);
   const deps = buildMembersDeps(tenant);
@@ -113,7 +112,7 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ memberId: string }> },
 ): Promise<NextResponse> {
-  const ctx = await requireApiPermission(request, 'members.write', mappedLegacy('members', 'write'));
+  const ctx = await requireApiPermission(request, 'members.write');
   if ('response' in ctx) return ctx.response;
 
   const resolved = await params;

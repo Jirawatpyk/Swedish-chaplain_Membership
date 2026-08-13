@@ -24,7 +24,6 @@ import {
   UserPlusIcon,
 } from 'lucide-react';
 import { canPerform, requirePagePermission } from '@/lib/rbac';
-import { legacyAdminOnly, legacySessionOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
 import { requestIdFromHeaders } from '@/lib/request-id';
@@ -534,14 +533,14 @@ export default async function MemberDetailPage({
   const { memberId } = await params;
   if (!UUID_RE.test(memberId)) notFound();
 
-  const session = await requirePagePermission('members.read', legacySessionOnly);
+  const session = await requirePagePermission('members.read');
   // S1-P1-10: the read-only `manager` role must not see member write
   // affordances (Edit/Archive/Add-Contact/Invite/Promote/Remove) — they
   // dead-end at the API (route RBAC rejects). Only `admin` may mutate members.
   // 016 re-review D — evaluator-derived ('members.write'; OFF leg
   // legacyAdminOnly reproduces the admin-only affordances and admits a
   // promoted super_admin).
-  const canWrite = canPerform(session.user.role, 'members.write', legacyAdminOnly);
+  const canWrite = canPerform(session.user.role, 'members.write');
   const h = await headers();
   // resolveTenantFromHeaders honours the T115t `x-tenant` header
   // override used by throwaway-tenant E2E.
@@ -800,7 +799,7 @@ export default async function MemberDetailPage({
   // destination page would admit.
   const showBenefitsPreview =
     env.features.f9Dashboard &&
-    canPerform(session.user.role, 'members.read', legacySessionOnly);
+    canPerform(session.user.role, 'members.read');
 
   return (
     <DetailContainer>
@@ -1345,7 +1344,7 @@ export default async function MemberDetailPage({
         {/* 016 re-review D — finance read: follows 'invoicing.read' (manager
             keeps it, marketing is excluded per D3 finance carve-out; OFF leg
             legacySessionOnly = admin ∪ manager, byte-identical). */}
-        {canPerform(session.user.role, 'invoicing.read', legacySessionOnly) && (
+        {canPerform(session.user.role, 'invoicing.read') && (
           <Suspense fallback={<MemberInvoicesSkeleton />}>
             <MemberInvoicesSection
               tenant={tenant}
@@ -1381,7 +1380,7 @@ export default async function MemberDetailPage({
             data-export API; mirror that key so the tile shows exactly when the
             API would admit. */}
         {env.features.f9Dashboard &&
-          canPerform(session.user.role, 'members.bulk', legacyAdminOnly) &&
+          canPerform(session.user.role, 'members.bulk') &&
           !isErased && (
           <Suspense fallback={<MemberDataExportSkeleton />}>
             <MemberDataExportSection tenant={tenant} memberId={member.memberId} />

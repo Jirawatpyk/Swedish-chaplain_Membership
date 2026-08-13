@@ -1,37 +1,20 @@
 /**
  * RBAC v2 composition root (016-rbac-permissions T021).
  *
- * The GATE composition root: the Domain evaluator takes the flag as an
- * explicit parameter so it stays pure; this file supplies it, together with
- * the session, the audit sink, the metric counter, and the request metadata
- * the denial trail needs.
- *
- * NOTE (016 re-review): this is NOT the only reader of `FEATURE_RBAC_V2`.
- * `src/lib/auth-deps.ts` also reads `env.features.rbacV2` in three places
- * (the flag-aware administrator-count wiring). An earlier version of this
- * header claimed exclusivity; PR 5 must grep `rbacV2` / `FEATURE_RBAC_V2`
- * across `src/**`, not trust a single-reader claim, when it deletes the flag.
+ * The GATE composition root: supplies the session, the audit sink, the metric
+ * counter, and the request metadata the denial trail needs. PR 5 (T068)
+ * deleted the `FEATURE_RBAC_V2` flag and the legacy-shim argument — the
+ * evaluator is single-leg and every gate takes just the permission key.
  *
  * Every staff surface calls exactly one of:
  *
- *   const { user } = await requirePagePermission('members.read', legacySessionOnly);
+ *   const { user } = await requirePagePermission('members.read');
  *
- *   const ctx = await requireApiPermission(request, 'members.write', mappedLegacy('members', 'write'));
+ *   const ctx = await requireApiPermission(request, 'members.write');
  *   if ('response' in ctx) return ctx.response;   // 401 or 403
  *
- * The API result shape is deliberately identical to `requireAdminContext`'s,
- * so the PR-2 sweep is a mechanical substitution at ~130 call sites rather
- * than a rewrite of each handler's prologue.
- *
- * ## Why two arguments
- *
- * `key` governs the flag-ON leg. `legacy` is the shim row for the flag-OFF
- * leg — the call-site class this surface was guarded by before the sweep.
- * Keeping them separate is what makes "flag OFF is byte-identical" a
- * mechanically checkable claim: `tests/helpers/rbac-observed-baseline.ts`
- * pins the (surface, key, row) triple and the matrix test proves the row
- * reproduces the pre-sweep outcome for all five roles. Both arguments are
- * deleted together in PR 5 when the legacy leg goes.
+ * The API result shape is deliberately identical to the old
+ * `requireAdminContext`'s, which is what made the PR-2 sweep mechanical.
  *
  * ## Denial semantics
  *
@@ -50,20 +33,17 @@ import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
 import { getCurrentSession, type CurrentSession } from '@/lib/auth-session';
 import { getClientIp } from '@/lib/client-ip';
-import { env } from '@/lib/env';
 import { errKind } from '@/lib/log-id';
 import { logger } from '@/lib/logger';
 import { authMetrics, type PermissionDeniedLabels } from '@/lib/metrics';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { hasPermission } from '@/modules/auth/domain/permissions/evaluator';
-import type { LegacyRow } from '@/modules/auth/domain/permissions/legacy-shim';
 import type { PermissionKey } from '@/modules/auth/domain/permissions/permission-catalogue';
 import type { Role } from '@/modules/auth/domain/role';
 import type { UserId } from '@/modules/auth/domain/branded';
 
 /** Injection seam — production values live in `defaultDeps` below. */
 export interface RbacDeps {
-  readonly rbacV2: boolean;
   readonly getSession: () => Promise<CurrentSession | null>;
   readonly audit: { readonly append: (event: DenialAuditEvent) => Promise<void> };
   readonly countDenied: (labels: PermissionDeniedLabels) => void;
@@ -178,7 +158,6 @@ export async function pathFromHeaders(): Promise<string> {
 }
 
 const defaultDeps: RbacDeps = {
-  rbacV2: env.features.rbacV2,
   // Called through, not captured. `getSession: getCurrentSession` dereferenced
   // the export at module-eval time, which (a) blew up any test that partially
   // mocks '@/lib/auth-session' — the module is imported transitively by every
@@ -249,7 +228,6 @@ async function recordDenial(
  */
 export async function requirePagePermission(
   key: PermissionKey,
-  legacy: LegacyRow,
   deps: RbacDeps = defaultDeps,
 ): Promise<CurrentSession> {
   const current = await deps.getSession();
@@ -260,7 +238,7 @@ export async function requirePagePermission(
     notFound();
   }
 
-  if (hasPermission(current.user.role, key, { rbacV2: deps.rbacV2, legacy })) {
+  if (hasPermission(current.user.role, key)) {
     return current;
   }
 
@@ -297,7 +275,6 @@ export interface ApiPermissionRejection {
 export async function requireApiPermission(
   request: NextRequest,
   key: PermissionKey,
-  legacy: LegacyRow,
   deps: RbacDeps = defaultDeps,
 ): Promise<ApiPermissionContext | ApiPermissionRejection> {
   const requestId = await deps.requestId(request);
@@ -317,7 +294,7 @@ export async function requireApiPermission(
     return { response: NextResponse.json({ error: 'no-session' }, { status: 401 }) };
   }
 
-  if (hasPermission(current.user.role, key, { rbacV2: deps.rbacV2, legacy })) {
+  if (hasPermission(current.user.role, key)) {
     return { current, sourceIp: sourceIp ?? '0.0.0.0', requestId };
   }
 
@@ -329,12 +306,10 @@ export async function requireApiPermission(
 /**
  * Read-only check for render decisions (does this staff user get the button?).
  * No audit, no denial — callers use it to shape a page, never to gate one.
+ *
+ * Pure since PR 5: with the flag gone this is a direct alias of the Domain
+ * evaluator, kept as the composition-layer name ~48 call sites already use.
  */
-export function canPerform(
-  role: Role | (string & {}),
-  key: PermissionKey,
-  legacy: LegacyRow,
-  deps: Pick<RbacDeps, 'rbacV2'> = defaultDeps,
-): boolean {
-  return hasPermission(role, key, { rbacV2: deps.rbacV2, legacy });
+export function canPerform(role: Role | (string & {}), key: PermissionKey): boolean {
+  return hasPermission(role, key);
 }

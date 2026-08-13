@@ -14,7 +14,6 @@ import { headers } from 'next/headers';
 import { getTranslations, getLocale } from 'next-intl/server';
 import { ArrowLeftIcon } from 'lucide-react';
 import { requirePagePermission } from '@/lib/rbac';
-import { legacyAdminOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { listPlans } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
@@ -36,7 +35,7 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function NewMemberPage() {
-  await requirePagePermission('members.write', legacyAdminOnly);
+  await requirePagePermission('members.write');
 
   // resolveTenantFromHeaders honours the T115t `x-tenant` header (same
   // pattern as the sibling [memberId] page) — WITHOUT it this page lists

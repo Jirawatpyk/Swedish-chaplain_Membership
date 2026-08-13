@@ -13,7 +13,6 @@ import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { requireApiPermission } from '@/lib/rbac';
-import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { rateLimiter } from '@/lib/auth-deps';
 import { retryAfterSecondsFromRl } from '@/lib/rate-limit-helpers';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
@@ -30,7 +29,7 @@ export async function POST(
   if (!env.features.f9Dashboard) {
     return NextResponse.json({ error: { code: 'feature_disabled' } }, { status: 503 });
   }
-  const ctx = await requireApiPermission(request, 'members.bulk', mappedLegacy('members', 'write'));
+  const ctx = await requireApiPermission(request, 'members.bulk');
   if ('response' in ctx) return ctx.response;
 
   const { id } = await context.params;

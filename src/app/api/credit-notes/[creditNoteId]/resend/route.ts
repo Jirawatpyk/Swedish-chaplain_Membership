@@ -6,7 +6,6 @@
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { requireApiPermission } from '@/lib/rbac';
-import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { resendPdf, makeResendPdfDeps } from '@/modules/invoicing';
@@ -18,7 +17,7 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ creditNoteId: string }> },
 ): Promise<NextResponse> {
-  const ctx = await requireApiPermission(request, 'credit_notes.write', mappedLegacy('credit_note', 'write'));
+  const ctx = await requireApiPermission(request, 'credit_notes.write');
   if ('response' in ctx) return ctx.response;
 
   const { creditNoteId } = await params;

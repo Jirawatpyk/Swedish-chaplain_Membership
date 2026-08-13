@@ -14,7 +14,6 @@
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { requireApiPermission } from '@/lib/rbac';
-import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { rateLimiter } from '@/lib/auth-deps';
@@ -40,7 +39,7 @@ import {
 import { createHash } from 'node:crypto';
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  const ctx = await requireApiPermission(request, 'settings.invoicing', mappedLegacy('tenant_invoice_settings', 'write'));
+  const ctx = await requireApiPermission(request, 'settings.invoicing');
   if ('response' in ctx) return ctx.response;
 
   const tenantCtx = resolveTenantFromRequest(request);

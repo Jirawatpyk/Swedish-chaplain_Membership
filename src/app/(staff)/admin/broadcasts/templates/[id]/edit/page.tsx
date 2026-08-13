@@ -28,7 +28,6 @@ import { f7AuditAdapter } from '@/modules/broadcasts';
 import { safeAuditEmit } from '@/modules/broadcasts/application/use-cases/_safe-audit-emit';
 import { runInTenant } from '@/lib/db';
 import { requirePagePermission } from '@/lib/rbac';
-import { legacyAdminOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -45,7 +44,7 @@ export default async function AdminBroadcastEditTemplatePage({
 }: RouteParams): Promise<React.ReactElement> {
   if (!isF71aUs7Enabled()) notFound();
 
-  const session = await requirePagePermission('broadcasts.write', legacyAdminOnly);
+  const session = await requirePagePermission('broadcasts.write');
 
   const { id } = await params;
   const tenantCtx = resolveTenantFromRequest();

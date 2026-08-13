@@ -22,7 +22,6 @@ import {
 } from '@/modules/broadcasts';
 import { runInTenant } from '@/lib/db';
 import { canPerform, requirePagePermission } from '@/lib/rbac';
-import { legacyAdminOnly, legacySessionOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { unstable_cache } from 'next/cache';
 
@@ -119,14 +118,14 @@ export default async function AdminBroadcastsPage({
   // component body. Auto-instrumented span comes from `@vercel/otel`.
   const t = await getTranslations('admin.broadcasts.queue');
   const tBroadcasts = await getTranslations('admin.broadcasts');
-  const session = await requirePagePermission('broadcasts.read', legacySessionOnly);
+  const session = await requirePagePermission('broadcasts.read');
   // 016 re-review D — evaluator-derived: the `role === 'manager'` literal
   // treated every non-manager as a writer, so a promoted super_admin was fine
   // by luck but PR-4 marketing (holds broadcasts.write) would have been
   // read-only-banner'd — and any future read-only staff role would silently
   // get write CTAs. OFF leg `legacyAdminOnly` reproduces admin-only writes.
   // (Banner copy still says "manager"; revisit wording at PR 4.)
-  const isReadOnlyManager = !canPerform(session.user.role, 'broadcasts.write', legacyAdminOnly);
+  const isReadOnlyManager = !canPerform(session.user.role, 'broadcasts.write');
 
   const tenant = resolveTenantFromRequest();
   const params = await searchParams;

@@ -19,7 +19,6 @@
 
 import { NextResponse, type NextRequest } from 'next/server';
 import { requireApiPermission } from '@/lib/rbac';
-import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
 import { directorySearchWithCount } from '@/modules/members';
@@ -32,7 +31,7 @@ import {
 import { BULK_CAP } from '@/lib/members-bulk-constants';
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
-  const ctx = await requireApiPermission(request, 'members.read', mappedLegacy('members', 'read'));
+  const ctx = await requireApiPermission(request, 'members.read');
   if ('response' in ctx) return ctx.response;
 
   const url = new URL(request.url);

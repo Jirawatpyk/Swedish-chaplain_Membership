@@ -30,11 +30,6 @@ import { InvoiceStatusChart } from '@/components/dashboard/invoice-status-chart'
 import { EmptyState } from '@/components/shell/empty-state';
 import { ShieldAlertIcon } from 'lucide-react';
 import { requirePagePermission, canPerform } from '@/lib/rbac';
-import {
-  legacySessionOnly,
-  legacyAdminOrManager,
-  legacyAdminOnly,
-} from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
@@ -68,7 +63,7 @@ export const metadata: Metadata = {
 const ROADMAP_PHASES = ['F3', 'F4', 'F5', 'F6'] as const;
 
 export default async function StaffHomePage() {
-  const { user } = await requirePagePermission('dashboard.view', legacySessionOnly);
+  const { user } = await requirePagePermission('dashboard.view');
 
   if (!env.features.f9Dashboard) {
     const tShell = await getTranslations('shell');
@@ -123,11 +118,11 @@ export default async function StaffHomePage() {
   // row exist AT ALL. It is resolved here and passed into the use case so the
   // numbers never leave the server for a viewer without it — hiding the widgets
   // client-side would still ship the figures in the RSC payload.
-  const canFinance = canPerform(user.role, 'insights.finance', legacyAdminOrManager);
+  const canFinance = canPerform(user.role, 'insights.finance');
   // 016 T058 — the activity feed's per-row deep link targets `/admin/audit`,
   // which is gated on `audit.read`. Mirror that key here (same legacy row as the
   // audit page itself) so the link only appears when it can actually be opened.
-  const canReadAudit = canPerform(user.role, 'audit.read', legacySessionOnly);
+  const canReadAudit = canPerform(user.role, 'audit.read');
 
   // allSettled (not all) so a thrown activity-feed read can never take down the
   // whole dashboard — the feed is the least-critical widget (FR-003 vs FR-005).
@@ -141,7 +136,7 @@ export default async function StaffHomePage() {
       // exactly: the shim normalises super_admin → admin, so the unredacted
       // feed stays {admin, super_admin} until the flag flips.
       makeActivityFeedDeps(
-        canPerform(user.role, 'insights.activity_unredacted', legacyAdminOnly),
+        canPerform(user.role, 'insights.activity_unredacted'),
       ),
     ),
   ]);

@@ -15,15 +15,13 @@ import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { ProxyComposeForm } from '@/components/broadcast/proxy-compose-form';
 import { requirePagePermission } from '@/lib/rbac';
-import { legacyAdminOnly } from '@/modules/auth/domain/permissions/legacy-shim';
-
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.broadcasts.proxySubmitDialog');
   return { title: t('title') };
 }
 
 export default async function AdminProxyComposePage(): Promise<React.ReactElement> {
-  await requirePagePermission('broadcasts.write', legacyAdminOnly);
+  await requirePagePermission('broadcasts.write');
 
   const t = await getTranslations('admin.broadcasts.proxySubmitDialog');
 

@@ -14,7 +14,6 @@
  */
 import { type NextRequest, NextResponse } from 'next/server';
 import { requireApiPermission } from '@/lib/rbac';
-import { legacyAdminOrManager } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { buildAttachmentContentDisposition } from '@/lib/content-disposition';
@@ -55,7 +54,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   // uniform API 401 (pre-sweep `requireSession` redirected them — shape change
   // recorded with the sweep, outcome class unchanged). The use-case's own role
   // gate below stays as defence-in-depth.
-  const ctx = await requireApiPermission(request, 'audit.read', legacyAdminOrManager);
+  const ctx = await requireApiPermission(request, 'audit.read');
   if ('response' in ctx) return ctx.response;
   const session = ctx.current;
   if (!env.features.f9Dashboard) {

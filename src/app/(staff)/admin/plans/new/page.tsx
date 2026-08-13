@@ -17,7 +17,6 @@
 import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
 import { requirePagePermission } from '@/lib/rbac';
-import { legacyAdminOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
 import { Card, CardContent } from '@/components/ui/card';
@@ -31,7 +30,7 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function NewPlanPage() {
-  await requirePagePermission('plans.write', legacyAdminOnly);
+  await requirePagePermission('plans.write');
 
   const t = await getTranslations('admin.plans.create');
 

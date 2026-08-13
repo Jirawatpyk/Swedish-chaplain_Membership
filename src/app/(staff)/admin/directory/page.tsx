@@ -22,7 +22,6 @@ import { RecentExports, type RecentExportRow } from '@/components/directory/rece
 import { EmptyState } from '@/components/shell/empty-state';
 import { ShieldAlertIcon } from 'lucide-react';
 import { requirePagePermission } from '@/lib/rbac';
-import { legacySessionOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
@@ -56,7 +55,7 @@ export default async function DirectoryPage({
 }: {
   readonly searchParams: Promise<SearchParams>;
 }): Promise<React.JSX.Element> {
-  const { user } = await requirePagePermission('directory.export', legacySessionOnly);
+  const { user } = await requirePagePermission('directory.export');
   if (!env.features.f9Dashboard) notFound();
 
   const params = await searchParams;

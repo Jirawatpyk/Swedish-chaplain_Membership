@@ -12,7 +12,6 @@ export async function generateMetadata(): Promise<Metadata> {
   return { title: t('title') };
 }
 import { requirePagePermission } from '@/lib/rbac';
-import { legacyAdminOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
 import { bangkokLocalDate } from '@/lib/fiscal-year';
@@ -42,7 +41,7 @@ export default async function NewInvoiceDraftPage({
 }) {
   const t = await getTranslations('admin.invoices.new');
   const locale = await getLocale();
-  await requirePagePermission('invoicing.write', legacyAdminOnly);
+  await requirePagePermission('invoicing.write');
 
   // Deep-link pre-fill from F3 member detail page CTA. UUID-validated
   // here so a malformed query string can't smuggle an attacker-chosen
