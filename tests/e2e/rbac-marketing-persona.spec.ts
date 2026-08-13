@@ -57,6 +57,14 @@ test.describe('T055 RBAC v2 — marketing persona (ON leg) @a11y', () => {
       'D16 denies marketing every staff surface and this walk proves nothing.',
   );
 
+  // The sign-in helper budgets 60s for `waitForURL` (bumped in R9.B1 to absorb
+  // a Turbopack cold compile of `/admin`). Playwright's 30s TEST timeout caps
+  // the whole `beforeEach`, so that 60s was unreachable and the suite only ever
+  // passed against an already-warm server. `global-setup.ts` now warms the
+  // routes, and this makes the helper's stated budget actually reachable if a
+  // compile still lands here.
+  test.describe.configure({ timeout: 90_000 });
+
   test.beforeEach(async ({ page }) => {
     await signInAsMarketing(page);
   });
