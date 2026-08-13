@@ -136,12 +136,16 @@ export function isStaffRole(role: Role): boolean {
  * defined for:
  *
  *   `src/components/plans/plans-table.tsx` (mutation CTAs)
- *   `src/modules/insights/application/use-cases/activity-feed-query.ts` (redaction)
  *   `.../download-export.ts` (×2 — export authorization)
  *   `.../export-members-backup.ts` (`err('forbidden')`)
  *   `.../set-directory-logo.ts`
  *
- * Deleting the OFF branch silently reclassifies all six from `admin ∪
+ * (PR 4 removed a sixth: `activity-feed-query.ts` now takes an injected
+ * `activityUnredacted` flag instead. The count and the list are kept in step
+ * deliberately — an inventory PR 5 reads to find deletion sites is worse than
+ * useless when it is stale, and this one was already wrong once.)
+ *
+ * Deleting the OFF branch silently reclassifies all five from `admin ∪
  * super_admin` to `super_admin` alone — plain admin would lose every plans
  * mutation CTA, receive the REDACTED activity feed, and be refused
  * member-backup export and directory-logo upload, with no compile error and no

@@ -183,10 +183,10 @@ export async function recordStaffTimelineView(input: {
 export function makeListDashboardDeps(
   tenantId: string,
   /**
-   * 016 T056 — whether the viewer holds `insights.finance`. REQUIRED rather than
-   * optional so a new call site cannot forget it and silently ship revenue to a
-   * marketing session; the Application default only covers legacy callers that
-   * build their own deps object (tests).
+   * 016 T056 — whether the viewer holds `insights.finance`. REQUIRED here AND on
+   * the Application port: the optional-with-permissive-default version was found
+   * during review to be unused, untested and failing OPEN, so it was removed
+   * rather than documented.
    */
   canFinance: boolean,
 ): ListDashboardDeps {

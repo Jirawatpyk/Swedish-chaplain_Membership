@@ -312,6 +312,13 @@ const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
     id: 'nav.broadcastTemplates',
     label: 'palette.navigate.broadcastTemplates',
     url: '/admin/broadcasts/templates',
+    // 016 final review — the SECOND deliberate OFF-leg change on this branch,
+    // and the PR text claimed there was only one. This entry was
+    // `requires: 'read'`, so manager saw it; it now mirrors its destination
+    // page's `broadcasts.write` + `legacyAdminOnly`, so manager does not.
+    // Deny-direction and correct — the old entry was a tease that 404'd on
+    // click — but it changes the flag-OFF population and is recorded here
+    // rather than left for someone to discover in a rollback.
     permission: 'broadcasts.write', legacy: legacyAdminOnly,
     feature: 'f7Broadcasts',
   },

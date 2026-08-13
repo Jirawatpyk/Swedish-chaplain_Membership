@@ -37,13 +37,15 @@ import { env } from '@/lib/env';
  * two):
  *
  *  - KPI row: 4 placeholders settle into 3.
- *  - Trends row: 2 placeholders settle into 1.
- *  - Breakdown row: 2 placeholders settle into 1.
+ *  - The two chart ROWS (Trends + Breakdown, 2 cards each) settle into ONE
+ *    "Engagement charts" row of 2 cards — so one whole row disappears.
  *
- * At `lg` and above all three are HORIZONTAL reflows — same heights, so the
- * vertical shift CLS scores is nil. Below `lg` the grids stack, so the two
- * chart rows do remove roughly two card heights and that viewer does score
- * some CLS. Accepted: the affected population is `marketing` only, staff work
+ * The KPI change is a horizontal reflow at every breakpoint. The chart change
+ * is not: one row of cards is removed outright, so that viewer scores CLS at
+ * every width, not only below `lg`. An earlier version of this note described a
+ * 2→1 settle in each of two rows — that was true for about an hour, until the
+ * same commit merged them, and it is recorded here because a note that drifts
+ * from the layout it describes is how the next reader is misled. Accepted: the affected population is `marketing` only, staff work
  * here is desktop-first, and the alternative is a DB write on every fallback.
  *
  * Revisit if either changes: `getCurrentSession` becoming side-effect-free and
