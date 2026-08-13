@@ -71,7 +71,14 @@ test.describe('command palette — US6', () => {
 
   test('Esc closes the palette and restores focus to the previously-active element', async ({
     page,
+    isMobile,
   }) => {
+    // The focus-return target is a SIDEBAR link, and mobile renders the nav
+    // inside a closed Sheet - the link is legitimately absent from the DOM
+    // (idiom: nav-a11y.spec.ts / rbac-super-admin-persona.spec.ts), so
+    // locator.focus burned the whole test budget. Esc-restores-focus is a
+    // desktop-keyboard behaviour; the desktop projects carry it.
+    test.skip(isMobile === true, 'focus target lives in the mobile Sheet; desktop covers Esc restore');
     test.skip(
       !ADMIN_EMAIL || !ADMIN_PASSWORD,
       'Set E2E_ADMIN_EMAIL and E2E_ADMIN_PASSWORD',
