@@ -4,7 +4,7 @@
  * Runs ONCE before any test starts. Responsibilities:
  *  1. Clears Upstash rate-limit buckets so a prior run's residue doesn't
  *     trip the 5/15-min sign-in limit on the dedicated test users.
- *  2. Warms `/admin/sign-in`, `/admin` and `/portal/sign-in` so a cold
+ *  2. Warms `/admin/sign-in`, `/admin`, `/portal/sign-in` and `/portal` so a cold
  *     Turbopack compile does not land inside a test's `beforeEach` — see
  *     `warmAdminRoutes` for why that was fatal rather than merely slow.
  *  3. Resets the F5 issued-invoice fixture row (E2E_ISSUED_INVOICE_ID)
@@ -42,7 +42,10 @@ import { seedF6Events } from './helpers/eventcreate-seed';
  */
 async function warmAdminRoutes(): Promise<void> {
   const base = process.env.E2E_BASE_URL ?? 'http://localhost:3100';
-  const routes = ['/admin/sign-in', '/admin', '/portal/sign-in'];
+  // `/portal` too: the member nav-a11y test signs in and lands there, and an
+  // unwarmed /portal cold-compiled past the sign-in helper's 60s budget on
+  // webkit — the only project that runs it against a truly cold route.
+  const routes = ['/admin/sign-in', '/admin', '/portal/sign-in', '/portal'];
   for (const route of routes) {
     try {
       // 120s: a cold Turbopack compile of `/admin` is the slowest thing in the

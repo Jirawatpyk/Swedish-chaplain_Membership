@@ -62,12 +62,26 @@ async function assertNotFound(page: Page, route: string): Promise<void> {
   );
 }
 
+/**
+ * Counterpart to `assertDenied` above — and it has to be just as strict.
+ *
+ * `toBeLessThan(400)` accepted every outcome this file cares about
+ * distinguishing: `notFound()` answers **HTTP 200** on the dev server (the
+ * assertion two functions up exists BECAUSE of that), so a route that had
+ * started 404-ing for a plain admin read as "reachable". With
+ * `maxRedirects: 0`, a 3xx also passed — meaning a session that expired
+ * mid-walk turned the whole allow-list green at the moment it stopped testing
+ * anything. Same shape as `assertOpens` in rbac-navigation.spec.ts.
+ */
 async function assertReachable(page: Page, route: string): Promise<void> {
   const res = await page.context().request.get(route, {
     failOnStatusCode: false,
     maxRedirects: 0,
   });
-  expect(res.status(), `${route} must render for a plain admin`).toBeLessThan(400);
+  expect(res.status(), `${route} must render for a plain admin`).toBe(200);
+  expect(await res.text(), `${route} rendered the not-found shell`).not.toMatch(
+    /<meta\s+name="next-error"\s+content="not-found"|NEXT_HTTP_ERROR_FALLBACK;404/,
+  );
 }
 
 test.describe('T045 RBAC v2 — plain-admin persona (ON leg) @a11y', () => {

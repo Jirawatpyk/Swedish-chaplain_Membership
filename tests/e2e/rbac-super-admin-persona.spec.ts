@@ -108,7 +108,14 @@ test.describe('T046 RBAC v2 — super_admin persona (ON leg) @a11y', () => {
       failOnStatusCode: false,
       maxRedirects: 0,
     });
-    expect(audit.status(), '/admin/audit must render for a super_admin').toBeLessThan(400);
+    // 200 exactly, and no not-found marker in the body: `notFound()` answers
+    // HTTP 200 on the dev server, so `toBeLessThan(400)` passed even when
+    // /admin/audit had started 404-ing — which is the single thing this test
+    // exists to detect. (Idiom: assertOpens, rbac-navigation.spec.ts.)
+    expect(audit.status(), '/admin/audit must render for a super_admin').toBe(200);
+    expect(await audit.text(), '/admin/audit rendered the not-found shell').not.toMatch(
+      /<meta\s+name="next-error"\s+content="not-found"|NEXT_HTTP_ERROR_FALLBACK;404/,
+    );
   });
 
   test('the erasure-log nav entry is present in the sidebar', async ({ page, isMobile }) => {
@@ -121,7 +128,10 @@ test.describe('T046 RBAC v2 — super_admin persona (ON leg) @a11y', () => {
 
   test('command palette surfaces ADMIN-tier actions for a super_admin (D16 client mirror)', async ({
     page,
+    browserName,
+    isMobile,
   }) => {
+    test.skip(browserName === 'webkit' && isMobile === true, 'palette is keyboard-only (window keydown, no touch trigger); iOS-emulated webkit does not deliver the synthetic accelerator - mobile-chrome covers the mobile arm');
     await page.goto('/admin', { waitUntil: 'domcontentloaded' });
     // Accelerator + dialog name match the proven command-palette spec.
     await page.keyboard.press(`${MOD}+KeyK`);
@@ -158,19 +168,28 @@ test.describe('T046 RBAC v2 — super_admin persona (ON leg) @a11y', () => {
   test('axe-core WCAG 2.1/2.2 AA — users page + change-role picker + invite dialog', async ({
     page,
   }) => {
+    // Base UI focus-guard sentinels get role="button" with no accessible name
+    // on TOUCH platforms (a VoiceOver dismiss target) - axe flags each as
+    // aria-command-name. Vendor DOM, not ours; excluded for the same reason as
+    // nav-a11y.spec, and everything else stays in scope.
+    const scan = () =>
+      new AxeBuilder({ page })
+        .exclude('[data-base-ui-focus-guard]')
+        .withTags([...AXE_TAGS])
+        .analyze();
     await page.goto('/admin/users', { waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('heading', { name: /users/i, level: 1 })).toBeVisible();
 
     // Scan #1 — the retrofitted users page (static).
     expect(
-      (await new AxeBuilder({ page }).withTags([...AXE_TAGS]).analyze()).violations,
+      (await scan()).violations,
     ).toEqual([]);
 
     // Scan #2 — the change-role picker open (RadioGroup + inline-error region).
     await page.getByRole('button', { name: /change role/i }).first().click();
     await expect(page.getByRole('radio', { name: /^manager$/i })).toBeVisible();
     expect(
-      (await new AxeBuilder({ page }).withTags([...AXE_TAGS]).analyze()).violations,
+      (await scan()).violations,
     ).toEqual([]);
     await page.keyboard.press('Escape');
 
@@ -178,7 +197,7 @@ test.describe('T046 RBAC v2 — super_admin persona (ON leg) @a11y', () => {
     await page.getByRole('button', { name: /invite user/i }).click();
     await expect(page.getByRole('dialog')).toBeVisible();
     expect(
-      (await new AxeBuilder({ page }).withTags([...AXE_TAGS]).analyze()).violations,
+      (await scan()).violations,
     ).toEqual([]);
   });
 });

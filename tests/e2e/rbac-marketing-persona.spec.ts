@@ -100,7 +100,8 @@ test.describe('T055 RBAC v2 — marketing persona (ON leg) @a11y', () => {
       await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
     });
 
-    test('the command palette returns results — not the empty shell', async ({ page }) => {
+    test('the command palette returns results — not the empty shell', async ({ page, browserName, isMobile }) => {
+      test.skip(browserName === 'webkit' && isMobile === true, 'palette is keyboard-only (window keydown, no touch trigger); iOS-emulated webkit does not deliver the synthetic accelerator - mobile-chrome covers the mobile arm');
       // The T064 regression: the client-side role mirror emptied every group
       // for marketing while the server was serving them correctly. An assertion
       // that the palette merely OPENS would have passed throughout.

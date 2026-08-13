@@ -57,7 +57,10 @@ test.describe('F9 — admin operations dashboard (US1) @f9', () => {
     // figure is fiscal-year + ex-VAT, unlike the VAT-inclusive/all-time donut.
     await expect(metrics.getByText('Fiscal year to date · ex-VAT')).toBeVisible();
     // Admin sees the real THB revenue figure (not redacted).
-    await expect(metrics.getByText(/THB|฿/)).toBeVisible();
+    await expect(
+      metrics.locator('.sr-only', { hasText: /THB|฿/ }),
+      'count-up renders the value thrice (sizer + animated visual + sr-only); assert the AT copy',
+    ).toHaveCount(1);
 
     // Needs-attention section (FR-002). Items with a zero count are filtered
     // out (D5) — when the tenant has none, an "all clear" state shows instead.
@@ -96,7 +99,10 @@ test.describe('F9 — admin operations dashboard (US1) @f9', () => {
     await expect(metrics).toBeVisible();
     await expect(metrics.getByText('Paid revenue')).toBeVisible();
     // "read-only on finance" → the manager DOES see the real THB revenue value.
-    await expect(metrics.getByText(/THB|฿/)).toBeVisible();
+    await expect(
+      metrics.locator('.sr-only', { hasText: /THB|฿/ }),
+      'count-up renders the value thrice (sizer + animated visual + sr-only); assert the AT copy',
+    ).toHaveCount(1);
     await expect(metrics.getByText('Active members')).toBeVisible();
     // The revenue-trend chart (finance-bearing) is visible to the manager too.
     await expect(page.getByText('Revenue trend (12 months)').first()).toBeVisible();
