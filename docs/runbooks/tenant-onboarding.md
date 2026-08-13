@@ -109,6 +109,18 @@ TENANT_SLUG=<NEW_TENANT_SLUG> \
 pnpm tsx scripts/seed-bootstrap-admin.ts
 ```
 
+> **Roles are code-defined — there is NO per-tenant role seeding.** Since 016
+> RBAC v2 (PR 5), the five roles (`super_admin` / `admin` / `manager` /
+> `marketing` / `member`) and their permission bundles live entirely in
+> `src/modules/auth/domain/permissions/` as pure Domain data; the evaluator is
+> single-leg and flag-free. The bootstrap script mints the tenant's first
+> **super_admin** (the only role holding `users.manage`), who then invites the
+> rest from `/admin/users`. Nothing role-related exists in the database beyond
+> the `role` column on `users` — no role tables, no permission rows, nothing to
+> seed or migrate per tenant. The last-administrator guard (DB trigger
+> `users_last_admin_guard`, migration 0288) protects the super_admin population
+> per DEPLOYMENT, not per tenant — `users` is cross-tenant by design (F1).
+
 ### 6. Vercel — env wiring
 
 Add per-tenant subdomain (e.g. `<slug>.zyncdata.app`) → bind to the same project. Tenant resolution lives in `src/lib/tenant-context.ts` via the host header.
