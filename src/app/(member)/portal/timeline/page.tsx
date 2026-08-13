@@ -95,7 +95,15 @@ export default async function PortalTimelinePage({
     { memberId: member.memberId, limit: 50, ...buildTimelineFilterInput(filterArgs, tz) },
     { actorUserId: user.id, actorRole: 'member', requestId },
     tenant,
-    { memberRepo: deps.memberRepo, timeline: deps.timeline },
+    {
+      memberRepo: deps.memberRepo,
+      timeline: deps.timeline,
+      // 016 final review B2 — the member OWNS this billing history. The gate
+      // exists to stop STAFF without `invoicing.read` reading someone else's;
+      // omitting it here hid the member's own invoices from page 1 while the
+      // API path still returned them.
+      invoicingRead: true,
+    },
   );
 
   const initialEvents: TimelineItemProps[] = result.ok

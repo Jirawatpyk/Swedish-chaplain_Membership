@@ -47,7 +47,15 @@ export async function RecentActivitySection({
     { memberId, limit: PREVIEW_LIMIT },
     { actorUserId: userId, actorRole: 'member', requestId },
     tenant,
-    { memberRepo: deps.memberRepo, timeline: deps.timeline },
+    {
+      memberRepo: deps.memberRepo,
+      timeline: deps.timeline,
+      // 016 final review B2 — the member OWNS this billing history. The gate
+      // exists to stop STAFF without `invoicing.read` reading someone else's;
+      // omitting it here hid the member's own invoices from page 1 while the
+      // API path still returned them.
+      invoicingRead: true,
+    },
   );
 
   // D1 review finding B2 — a failed read must NOT fall open to the "No activity

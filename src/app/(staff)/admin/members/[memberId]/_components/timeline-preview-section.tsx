@@ -37,6 +37,8 @@ import {
 import { buttonVariants } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { logger } from '@/lib/logger';
+import { canPerform } from '@/lib/rbac';
+import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { errKind, rootCause } from '@/lib/log-id';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
@@ -82,7 +84,19 @@ export async function TimelinePreviewSection({
       { memberId, limit: PREVIEW_LIMIT },
       { actorUserId, actorRole, requestId },
       tenant,
-      { memberRepo: deps.memberRepo, timeline: deps.timeline },
+      {
+        memberRepo: deps.memberRepo,
+        timeline: deps.timeline,
+        // rbac-subgate-ok: gates the money ROWS of an already-authorised
+        // response; admission is the page guard above. 016 final review B2 —
+        // this SSR path was missed when the gate landed, so a super_admin's
+        // first page showed no invoices while the API-driven "load more" did.
+        invoicingRead: canPerform(
+          actorRole,
+          'invoicing.read',
+          mappedLegacy('invoice', 'read'),
+        ),
+      },
     );
     if (result.ok) {
       events = result.value.events.map(toTimelineItemProps);

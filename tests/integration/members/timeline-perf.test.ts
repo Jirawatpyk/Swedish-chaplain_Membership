@@ -174,7 +174,7 @@ describe.skipIf(!RUN_PERF)('timeline perf (E3, RUN_PERF=1)', () => {
       { memberId, limit: PAGE_SIZE },
       { actorUserId: user.userId, actorRole: 'admin', requestId: 'warmup' },
       tenant.ctx,
-      { memberRepo: deps.memberRepo, timeline: deps.timeline },
+      { memberRepo: deps.memberRepo, timeline: deps.timeline, invoicingRead: true },
     );
 
     for (let i = 0; i < RUN_COUNT; i++) {
@@ -187,7 +187,7 @@ describe.skipIf(!RUN_PERF)('timeline perf (E3, RUN_PERF=1)', () => {
           requestId: `perf-${i}`,
         },
         tenant.ctx,
-        { memberRepo: deps.memberRepo, timeline: deps.timeline },
+        { memberRepo: deps.memberRepo, timeline: deps.timeline, invoicingRead: true },
       );
       const t1 = performance.now();
       expect(r.ok).toBe(true);

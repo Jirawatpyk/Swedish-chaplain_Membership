@@ -240,7 +240,7 @@ describe('timeline integration (T128, US6)', () => {
         requestId: 'test-1',
       },
       tenantA.ctx,
-      { memberRepo: deps.memberRepo, timeline: deps.timeline },
+      { memberRepo: deps.memberRepo, timeline: deps.timeline, invoicingRead: true },
     );
     expect(r.ok).toBe(true);
     if (!r.ok) return;
@@ -270,7 +270,7 @@ describe('timeline integration (T128, US6)', () => {
         requestId: 'test-2a',
       },
       tenantA.ctx,
-      { memberRepo: deps.memberRepo, timeline: deps.timeline },
+      { memberRepo: deps.memberRepo, timeline: deps.timeline, invoicingRead: true },
     );
     expect(first.ok).toBe(true);
     if (!first.ok) return;
@@ -291,7 +291,7 @@ describe('timeline integration (T128, US6)', () => {
         requestId: 'test-2b',
       },
       tenantA.ctx,
-      { memberRepo: deps.memberRepo, timeline: deps.timeline },
+      { memberRepo: deps.memberRepo, timeline: deps.timeline, invoicingRead: true },
     );
     expect(second.ok).toBe(true);
     if (!second.ok) return;
@@ -313,7 +313,7 @@ describe('timeline integration (T128, US6)', () => {
         requestId: 'test-3',
       },
       tenantA.ctx,
-      { memberRepo: deps.memberRepo, timeline: deps.timeline },
+      { memberRepo: deps.memberRepo, timeline: deps.timeline, invoicingRead: true },
     );
     expect(r.ok).toBe(true);
     if (!r.ok) return;
@@ -345,7 +345,7 @@ describe('timeline integration (T128, US6)', () => {
         requestId: 'test-4',
       },
       tenantA.ctx,
-      { memberRepo: deps.memberRepo, timeline: deps.timeline },
+      { memberRepo: deps.memberRepo, timeline: deps.timeline, invoicingRead: true },
     );
     expect(r.ok).toBe(true);
     if (!r.ok) return;
@@ -368,7 +368,7 @@ describe('timeline integration (T128, US6)', () => {
         requestId: 'test-5',
       },
       tenantA.ctx,
-      { memberRepo: deps.memberRepo, timeline: deps.timeline },
+      { memberRepo: deps.memberRepo, timeline: deps.timeline, invoicingRead: true },
     );
     // Either:
     //  - 404 not_found (memberB is not in tenantA — the getMember guard
@@ -395,7 +395,7 @@ describe('timeline integration (T128, US6)', () => {
         requestId: 'test-6',
       },
       tenantA.ctx,
-      { memberRepo: deps.memberRepo, timeline: deps.timeline },
+      { memberRepo: deps.memberRepo, timeline: deps.timeline, invoicingRead: true },
     );
     expect(r.ok).toBe(false);
     if (r.ok) return;
@@ -417,7 +417,7 @@ describe('timeline integration (T128, US6)', () => {
         requestId: 'test-e2',
       },
       tenantA.ctx,
-      { memberRepo: deps.memberRepo, timeline: deps.timeline },
+      { memberRepo: deps.memberRepo, timeline: deps.timeline, invoicingRead: true },
     );
     expect(r.ok).toBe(true);
     if (!r.ok) return;

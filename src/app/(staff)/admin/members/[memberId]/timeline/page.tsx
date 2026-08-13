@@ -16,8 +16,11 @@ import { notFound } from 'next/navigation';
 import { headers } from 'next/headers';
 import { getTranslations } from 'next-intl/server';
 import { ArrowLeftIcon } from 'lucide-react';
-import { requirePagePermission } from '@/lib/rbac';
-import { legacySessionOnly } from '@/modules/auth/domain/permissions/legacy-shim';
+import { requirePagePermission, canPerform } from '@/lib/rbac';
+import {
+  legacySessionOnly,
+  mappedLegacy,
+} from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { env } from '@/lib/env';
@@ -131,7 +134,19 @@ export default async function MemberTimelinePage({ params, searchParams }: PageP
       requestId,
     },
     tenant,
-    { memberRepo: deps.memberRepo, timeline: deps.timeline },
+    {
+      memberRepo: deps.memberRepo,
+      timeline: deps.timeline,
+      // rbac-subgate-ok: gates the money ROWS of an already-authorised
+      // response; admission is the page guard above. 016 final review B2 —
+      // this SSR path was missed when the gate landed, so a super_admin's
+      // first page showed no invoices while the API-driven "load more" did.
+      invoicingRead: canPerform(
+        session.user.role,
+        'invoicing.read',
+        mappedLegacy('invoice', 'read'),
+      ),
+    },
   );
 
   const initialEvents: TimelineItemProps[] = timelineResult.ok

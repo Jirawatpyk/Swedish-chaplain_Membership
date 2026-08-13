@@ -81,11 +81,17 @@ export type TimelineListDeps = {
    * reads per-member money one page over.
    *
    * INJECTED, because the Application layer must not import `canPerform`
-   * (it reads `env`). Defaults to FALSE — fail-closed, matching
-   * `activityUnredacted`: a call site that forgets it loses fidelity rather
-   * than leaking money.
+   * (it reads `env`).
+   *
+   * REQUIRED. It shipped optional-and-fail-closed, and four of the six call
+   * sites then forgot it — all four SSR paths. Fail-closed meant the failure
+   * was quiet in the worst way: members stopped seeing their OWN invoices on
+   * page 1 of the portal timeline while the API-driven "load more" still
+   * returned them, and the header count kept counting rows the page no longer
+   * showed. `ListDashboardDeps.canFinance` made the same parameter mandatory
+   * and has zero misses; this follows it.
    */
-  readonly invoicingRead?: boolean;
+  readonly invoicingRead: boolean;
 };
 
 // ---------------------------------------------------------------------------
@@ -127,16 +133,49 @@ function redactPayload(
 const MONEY_SOURCES: ReadonlySet<string> = new Set(['invoice', 'payment']);
 
 /**
- * F4 event types that ride the `audit` source and carry money in their payload.
- * Matched by prefix so a new `invoice_*` / `credit_note_*` / `refund_*` /
- * `payment_*` event is excluded by DEFAULT — the same by-construction choice as
- * `projectEngagementOnly`, for the same reason.
+ * F4 event types that ride the `audit` source and carry money. Matched by
+ * prefix so a new `invoice_*` / `credit_note_*` / `refund_*` / `payment_*`
+ * event is excluded by default.
+ *
+ * A CHEAP FIRST PASS ONLY — see `hasMoneyShapedPayload`. The first version of
+ * this gate relied on the prefixes alone and leaked: `renewal_auto_drafted`
+ * (`frozen_price_thb`), `member_plan_change_billing_effect`
+ * (`old_price_thb` / `new_price_thb`) and `renewal_invoice_created`
+ * (`total_satang`) all carry `member_id` plus a price and match none of them.
  */
 const MONEY_AUDIT_PREFIXES = ['invoice_', 'credit_note_', 'refund_', 'payment_'] as const;
 
+/**
+ * Money identified by the SHAPE of the payload rather than the name of the
+ * event that produced it.
+ *
+ * Naming is the wrong axis: it requires every future emitter to pick a blessed
+ * prefix, and three shipped ones already do not. The unit that actually leaks
+ * is a payload KEY, so that is what this matches — `*_satang`, `*_thb`, and
+ * anything spelled `price` or `amount`. Recursive, because F4 payloads nest
+ * (`{ totals: { total_satang } }`).
+ *
+ * Deliberately broad. A false positive costs one hidden timeline row for a
+ * viewer who could not open the money surface it describes anyway; a false
+ * negative is a per-member figure on a page whose role label promises the
+ * opposite.
+ */
+const MONEY_KEY_RE = /(_satang|_thb)$|price|amount/i;
+
+function hasMoneyShapedPayload(value: unknown, depth = 0): boolean {
+  if (depth > 4 || value === null || typeof value !== 'object') return false;
+  if (Array.isArray(value)) return value.some((v) => hasMoneyShapedPayload(v, depth + 1));
+  for (const [key, nested] of Object.entries(value)) {
+    if (MONEY_KEY_RE.test(key)) return true;
+    if (hasMoneyShapedPayload(nested, depth + 1)) return true;
+  }
+  return false;
+}
+
 function carriesMoney(e: TimelineEvent): boolean {
   if (MONEY_SOURCES.has(e.source)) return true;
-  return MONEY_AUDIT_PREFIXES.some((p) => e.eventType.startsWith(p));
+  if (MONEY_AUDIT_PREFIXES.some((p) => e.eventType.startsWith(p))) return true;
+  return hasMoneyShapedPayload(e.payload);
 }
 
 function redactEvents(events: readonly TimelineEvent[]): TimelineEvent[] {
@@ -262,13 +301,19 @@ export async function timelineList(
   // 016 review (security I-1) — money rows need `invoicing.read` on top of the
   // `members.read` that admitted the request. `!== true` rather than
   // `=== false` so an omitted dep fails CLOSED.
-  const projectedEvents =
+  const moneyFiltered =
     deps.invoicingRead !== true ? roleProjected.filter((e) => !carriesMoney(e)) : roleProjected;
 
   return ok({
     memberId,
-    events: projectedEvents,
+    events: moneyFiltered,
     nextCursor,
-    total,
+    // 016 final review B2 — `total` is what the page renders as its header
+    // count. Returning the PRE-filter figure made it disagree with the rows on
+    // screen for any viewer whose money rows were dropped. Reduce it by what
+    // this page actually removed. It stays approximate across pages (the repo
+    // counts server-side and cannot know the filter), which is the same
+    // approximation the cursor already carries.
+    total: Math.max(0, total - (roleProjected.length - moneyFiltered.length)),
   });
 }
