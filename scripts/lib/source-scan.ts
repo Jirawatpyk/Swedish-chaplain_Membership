@@ -83,10 +83,23 @@ function skipRegex(line: string, start: number): number {
   return line.length;
 }
 
-/** A source line that is entirely comment (`//`, `*`, `/*`). */
+/**
+ * A source line that is entirely comment (`//`, `*`, `/*`, or a JSX `{/*`).
+ *
+ * The JSX form matters because these scanners run over `.tsx`, and the marker
+ * protocol they enforce is "host the marker in a comment". Inside JSX CHILDREN
+ * the only comment syntax is `{/* … *​/}`; `//` is unavailable there. Without
+ * this arm, a literal sitting in JSX children could not be marked in place at
+ * all — the author had to restructure working code to appease the tool.
+ *
+ * Narrower than it first looks, and worth stating precisely: `//` markers
+ * always worked in the TS body AND in JSX attribute position, which is how
+ * three of the sites in `invite-user-dialog.tsx` are marked. Only children
+ * were unreachable.
+ */
 export function isCommentLine(line: string): boolean {
   const t = line.trim();
-  return t.startsWith('//') || t.startsWith('*') || t.startsWith('/*');
+  return t.startsWith('//') || t.startsWith('*') || t.startsWith('/*') || t.startsWith('{/*');
 }
 
 /**
@@ -102,6 +115,8 @@ export function isCommentLine(line: string): boolean {
 export function stripCommentLines(src: string): readonly string[] {
   const out: string[] = [];
   let inBlock = false;
+  // Set when the open block came from a JSX `{/*`, so its `}` is consumed too.
+  let inJsxBlock = false;
   // Template literals span lines; `'` and `"` cannot. `inBlock` was already
   // carried across lines and `quote` was not, so a `/*` on the CONTINUATION
   // line of a multi-line template was scanned as CODE and opened a phantom
@@ -122,6 +137,14 @@ export function stripCommentLines(src: string): readonly string[] {
         if (c === '*' && next === '/') {
           inBlock = false;
           i += 2;
+          // A JSX comment closes `*​/}` — swallow the brace too, or the line
+          // survives stripping as a lone `}` and reads as CODE. That is enough
+          // to make a marker on the line above look separated from the site it
+          // covers by a code gap.
+          if (inJsxBlock) {
+            inJsxBlock = false;
+            if (line[i] === '}') i += 1;
+          }
           continue;
         }
         i += 1;
@@ -136,6 +159,16 @@ export function stripCommentLines(src: string): readonly string[] {
         if (c === quote) quote = null;
         res += c;
         i += 1;
+        continue;
+      }
+      // JSX comment opener. Handled BEFORE the `/` cases because `{` is in the
+      // `startsRegex` set, so `{/*` was read as "a regex begins here" and the
+      // whole comment was copied through as CODE — which is why role literals
+      // written inside a JSX comment were being counted as decision sites.
+      if (c === '{' && next === '/' && line[i + 2] === '*') {
+        inBlock = true;
+        inJsxBlock = true;
+        i += 3;
         continue;
       }
       if (c === '"' || c === "'" || c === '`') {
@@ -204,6 +237,8 @@ export function markerApplies(
   lines: readonly string[],
   index: number,
   markers: readonly string[],
+  /** `stripCommentLines(src)` for the same file — see the note inside. */
+  codeLines?: readonly string[],
 ): boolean {
   const hosts = (text: string): boolean => markers.some((m) => text.includes(m));
 
@@ -211,20 +246,38 @@ export function markerApplies(
   const slash = line.indexOf('//');
   if (slash >= 0 && hosts(line.slice(slash))) return true;
 
+  // Comment-ness is decided from the STRIPPED source when the caller supplies
+  // it, and only falls back to the line-shape guess otherwise.
+  //
+  // Shape alone cannot see a multi-line comment's CONTINUATION lines: the second
+  // line of a `{/* … */}` starts with prose, so it read as CODE, and a marker on
+  // the opening line was separated from the site it covers by a phantom gap.
+  // With `MAX_CODE_GAP` slack that merely wasted budget; with any adjacency
+  // rule it silently stopped working. The stripped source has no such blind
+  // spot — a comment line is exactly a line that survives stripping as blank.
+  const blank = (n: number): boolean => (lines[n] ?? '').trim() === '';
+  const code = (n: number): boolean => {
+    if (blank(n)) return false;
+    return codeLines ? (codeLines[n] ?? '').trim() !== '' : !isCommentLine(lines[n] ?? '');
+  };
+
   let i = index - 1;
   let codeGap = 0;
   while (i >= 0) {
-    const l = lines[i] ?? '';
-    if (isCommentLine(l)) {
-      for (let j = i; j >= 0 && isCommentLine(lines[j] ?? ''); j -= 1) {
+    if (blank(i)) {
+      i -= 1;
+      continue;
+    }
+    if (!code(i)) {
+      // A contiguous comment run — search all of it, then stop. Walking further
+      // would let a marker reach across unrelated code.
+      for (let j = i; j >= 0 && !code(j); j -= 1) {
         if (hosts(lines[j]!)) return true;
       }
       return false;
     }
-    if (l.trim() !== '') {
-      codeGap += 1;
-      if (codeGap > MAX_CODE_GAP) return false;
-    }
+    codeGap += 1;
+    if (codeGap > MAX_CODE_GAP) return false;
     i -= 1;
   }
   return false;

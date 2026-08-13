@@ -259,6 +259,50 @@ describe('T036 D7 promotion gate', () => {
     ).toBeNull();
   });
 
+  /**
+   * THE STEADY STATE — and the case the 14 tests above all missed.
+   *
+   * Every scenario here froze the repo at the cutover instant, where C's `when`
+   * happens to be the journal max. That is a moment, not a state: the next
+   * feature branch that adds ANY migration makes its `when` the max, and the
+   * ordering check — which is NOT gated on `pending` — starts refusing on an
+   * already-applied promotion.
+   *
+   * The blast radius is the whole repo, not one deploy: `vercel-build` is
+   * `run-migrations.ts && next build`, so prod and every preview exit 1 before
+   * any DDL, and `Integration smoke` (a REQUIRED check on main) migrates a
+   * fresh Neon branch, so nothing can merge either. 0282 → 0287 landed inside
+   * two weeks; the fuse is short.
+   *
+   * The unconditional check was deliberate — it exists to catch a `when`
+   * COLLISION, which `pending` cannot see (a colliding value reads as
+   * "already applied"). That reasoning is right for collisions and wrong for
+   * ordering, so the two split: collision stays unconditional, ordering is
+   * only meaningful while the promotion is still pending.
+   */
+  it('promotion applied LONG AGO + a newer migration lands → proceed (the steady state)', () => {
+    expect(
+      promotionGateFailure({
+        migrationFiles: [...FILES, '0301_some_future_feature.sql'],
+        journal: [...JOURNAL, { tag: '0301_some_future_feature', when: 1798561400000 }],
+        appliedWhens: new Set([1798541300000, 1798541400000, 1798551400000]),
+        flagValue: 'true',
+      }),
+      'C is applied and is no longer the journal max — that is every day after cutover, not a fault',
+    ).toBeNull();
+  });
+
+  it('promotion applied + newer migration + flag deleted (PR 5 end state) → proceed', () => {
+    expect(
+      promotionGateFailure({
+        migrationFiles: [...FILES, '0301_some_future_feature.sql'],
+        journal: [...JOURNAL, { tag: '0301_some_future_feature', when: 1798561400000 }],
+        appliedWhens: new Set([1798541300000, 1798541400000, 1798551400000]),
+        flagValue: undefined,
+      }),
+    ).toBeNull();
+  });
+
   it('promotion journaled with when > applied max → proceed (the normal cutover)', () => {
     expect(
       promotionGateFailure({

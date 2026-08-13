@@ -54,17 +54,22 @@ export function promotionGateFailure(input: PromotionGateInput): string | null {
   // Suggestion #2). Nothing else in the automated stack detects that:
   // `REQUIRED_ENUM_VALUES` is blind to a data-only migration.
   //
-  // The ordering check compares against the OTHER JOURNAL ENTRIES, not against
-  // the applied set — that distinction is the post-remediation re-review's
-  // confirmed finding. Keying it on `appliedWhens` left an equality hole: when
-  // the promotion's `when` COLLIDES with an already-applied migration's (the
-  // copy-paste-the-previous-entry mistake), `appliedWhens.has(entry.when)` hits,
-  // `pending` reads false, both refusal branches are skipped, and the gate waves
-  // through a promotion drizzle will silently skip. Every applied migration came
-  // from a journal entry, so "strictly newer than every sibling in the journal"
-  // is the stronger and simpler invariant: it catches the collision AND a plain
-  // too-low value, while the genuine post-application state (C's own `when` is
-  // the journal max) still passes.
+  // COLLISION and ORDERING are two different faults and are checked separately.
+  //
+  // The collision check must be UNCONDITIONAL, because a `when` copy-pasted from
+  // an already-applied migration is exactly the case `pending` cannot see: the
+  // lookup hits, `pending` reads false, and a promotion drizzle will silently
+  // skip sails through.
+  //
+  // The ordering check must be gated on `pending`, because "strictly newer than
+  // every sibling" is only a requirement while the promotion is still WAITING to
+  // apply. Once it has applied, the repo keeps adding migrations and one of them
+  // becomes the journal max within days — a fact about time passing, not a
+  // fault. An earlier revision made ordering unconditional to close the equality
+  // hole above; that armed a delayed repo-wide freeze. `run-migrations.ts` runs
+  // as `vercel-build` (prod + every preview) and inside the REQUIRED
+  // `Integration smoke` check, so a refusal here stops deploys AND merges.
+  // Splitting the two closes the hole without the fuse.
   const maxOtherJournalWhen = (tag: string): number => {
     let max = -Infinity;
     for (const j of input.journal) {
@@ -82,6 +87,17 @@ export function promotionGateFailure(input: PromotionGateInput): string | null {
         `file drizzle cannot see would silently never apply).`
       );
     }
+    const collidesWith = input.journal.find((j) => j.tag !== tag && j.when === entry.when);
+    if (collidesWith) {
+      return (
+        `D7 promotion gate: '${file}' is journaled with when=${entry.when}, which ` +
+        `COLLIDES with '${collidesWith.tag}'. Drizzle compares strictly, so it ` +
+        `would SKIP this migration while still reporting "✓ Migrations applied", ` +
+        `and a value equal to an already-applied one additionally reads as ` +
+        `"already applied". Bump its 'when' above the journal max ` +
+        `(docs/runbooks/rbac-v2-cutover.md § 5 step 1).`
+      );
+    }
     const pending = !input.appliedWhens.has(entry.when);
     if (pending && input.flagValue !== 'true') {
       return (
@@ -92,15 +108,15 @@ export function promotionGateFailure(input: PromotionGateInput): string | null {
       );
     }
     const highestSibling = maxOtherJournalWhen(tag);
-    if (entry.when <= highestSibling) {
+    if (pending && entry.when <= highestSibling) {
       return (
-        `D7 promotion gate: '${file}' is journaled with when=${entry.when}, ` +
-        `which is NOT strictly greater than every other journal entry ` +
-        `(highest sibling: ${highestSibling}). Drizzle compares strictly, so it ` +
-        `would SKIP this migration while still reporting "✓ Migrations applied" ` +
-        `— the promotion would silently never run, and a value EQUAL to an ` +
-        `already-applied one additionally reads as "already applied". Bump its ` +
-        `'when' above the journal max (docs/runbooks/rbac-v2-cutover.md § 5 step 1).`
+        `D7 promotion gate: '${file}' is PENDING and journaled with ` +
+        `when=${entry.when}, which is NOT strictly greater than every other ` +
+        `journal entry (highest sibling: ${highestSibling}). Drizzle compares ` +
+        `strictly, so it would SKIP this migration while still reporting ` +
+        `"✓ Migrations applied" — the promotion would silently never run. Bump ` +
+        `its 'when' above the journal max ` +
+        `(docs/runbooks/rbac-v2-cutover.md § 5 step 1).`
       );
     }
   }

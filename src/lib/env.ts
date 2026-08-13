@@ -693,9 +693,25 @@ const schema = z.object({
   // complete until every environment's explicit value is removed or set to
   // 'true'. Prod is verified in docs/runbooks/rbac-v2-cutover.md § 10 (the
   // PR-4 operator steps), not § 5 — § 5 is Migration C and has four steps.
-  // An empty string counts as unset for zod's `.default()` but NOT for a
-  // declared-but-blank Vercel var, which resolves to `false`: remove it,
-  // clear it, or set it to 'true'.
+  // There are exactly TWO safe values: DELETE the variable, or set it to
+  // 'true'. Do NOT blank it. `.default()` fires only on `undefined`, so an
+  // empty string is a present value that `booleanFromString` resolves to
+  // `false` — measured, not assumed — and "clear it" therefore drops that
+  // environment onto the legacy leg silently. (An earlier version of this
+  // comment said an empty string counts as unset AND recommended clearing it;
+  // both halves were wrong in the same direction.)
+  //
+  // Falling back to the legacy leg is not a soft degradation: `manager` regains
+  // /admin/users and /admin/audit, all four D4 narrowings come off, and
+  // `marketing` is locked out of /admin/** entirely (D16 maps it to no legacy
+  // role). `tests/unit/nav/nav-config.test.ts` pins that OFF-leg shape.
+  //
+  // The migration gate is a SECOND reader with different rules: it compares
+  // `process.env.FEATURE_RBAC_V2 !== 'true'` as raw text
+  // (scripts/lib/rbac-promotion-gate.ts), so it accepts neither this default
+  // nor 'TRUE'/'1'. That asymmetry is deliberate — a code default must not be
+  // able to unlock a data migration — but it means 'TRUE' yields an app on the
+  // ON leg whose deploy refuses to migrate. Lower-case 'true' only.
   //
   // The env var is deleted outright in PR 5, together with the legacy leg.
   FEATURE_RBAC_V2: booleanFromString.default(true),

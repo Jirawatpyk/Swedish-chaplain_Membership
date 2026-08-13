@@ -43,6 +43,7 @@ import { eq, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { users } from '@/modules/auth/infrastructure/db/schema';
 import { argon2Hasher } from '@/modules/auth/infrastructure/password/argon2-hasher';
+import { seedTargetRefusal } from './lib/seed-target-guard';
 
 const E2E_SUPER_ADMIN_EMAIL = 'e2e-super-admin@swecham.test';
 const E2E_ADMIN_EMAIL = 'e2e-admin@swecham.test';
@@ -99,12 +100,43 @@ async function upsertUser(
   }
 }
 
+/** Every account `main()` writes — also the list the target guard vets. */
+const SEEDED_EMAILS = [
+  E2E_SUPER_ADMIN_EMAIL,
+  E2E_ADMIN_EMAIL,
+  E2E_MANAGER_EMAIL,
+  E2E_MARKETING_EMAIL,
+  E2E_MEMBER_EMAIL,
+  E2E_LOCKOUT_EMAIL,
+] as const;
+
 async function main(): Promise<void> {
+  // BEFORE any write, and before hashing: this script mints an active
+  // super_admin with a password committed to the repository, and nothing else
+  // stopped it running against production — `.env.production` is in the same
+  // checkout, one flag away. See scripts/lib/seed-target-guard.ts.
+  const refusal = seedTargetRefusal({
+    databaseUrl: process.env.DATABASE_URL,
+    blocklistRaw: process.env.TEST_DB_HOST_BLOCKLIST,
+    nodeEnv: process.env.NODE_ENV,
+    emails: SEEDED_EMAILS,
+    confirmedTarget: process.argv.includes('--confirm-target'),
+  });
+  if (refusal) throw new Error(refusal);
+
   console.log('seeding E2E test users…');
   const hash = await argon2Hasher.hash(E2E_PASSWORD);
 
-  // super_admin FIRST — keeps the administrator union non-empty so the admin
-  // row can be reset to plain `admin` even post-Migration-C (see file header).
+  // super_admin FIRST, so the administrator population is never empty when the
+  // admin row below is reset from super_admin back to plain `admin`.
+  //
+  // DORMANT TODAY, deliberately kept: migration 0286's guard fires on
+  // `NEW.role NOT IN ('admin','super_admin')`, so a super_admin → admin
+  // demotion never enters the guarded arm and this order currently changes
+  // nothing. It becomes load-bearing the moment PR 5 (T069) narrows that
+  // population to `super_admin` alone. Documented as dormant rather than as
+  // live because an invariant described as protecting something it does not
+  // is the kind that gets deleted as dead code just before it matters.
   await upsertUser(E2E_SUPER_ADMIN_EMAIL, 'super_admin', hash);
   await upsertUser(E2E_ADMIN_EMAIL, 'admin', hash);
   await upsertUser(E2E_MANAGER_EMAIL, 'manager', hash);

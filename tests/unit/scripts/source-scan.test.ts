@@ -181,10 +181,29 @@ describe('isCommentLine', () => {
     ['// x', true],
     [' * x', true],
     ['/* x', true],
+    // JSX children admit no `//`, so `{/* … */}` is the only way to host a
+    // marker beside a role literal in a component. Missing this arm made the
+    // gate unsatisfiable in .tsx — every marker read as absent.
+    ['        {/* rbac-presentation-only-ok: picks a badge icon */}', true],
     ["const a = role === 'admin';", false],
     ['', false],
   ])('%s → %s', (line, expected) => {
     expect(isCommentLine(line)).toBe(expected);
+  });
+});
+
+describe('markerApplies — JSX comment hosting', () => {
+  it('accepts a marker in a JSX comment directly above the literal', () => {
+    const lines = [
+      '{/* rbac-presentation-only-ok: picks a badge icon */}',
+      "{user.role === 'super_admin' ? <Icon /> : null}",
+    ];
+    expect(markerApplies(lines, 1, ['rbac-presentation-only-ok'])).toBe(true);
+  });
+
+  it('still REJECTS a JSX-looking string that merely contains the marker text', () => {
+    const lines = ["const s = '{/* rbac-narrow-ok */}';", "if (role === 'admin') {}"];
+    expect(markerApplies(lines, 1, ['rbac-narrow-ok'])).toBe(false);
   });
 });
 

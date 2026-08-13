@@ -61,6 +61,13 @@ const SCOPE = [
   // which left a decision site in the very machinery this gate cites as its
   // motivating incident.
   'src/components/shell',
+  // The role-DENSEST folder in the product, and it was out of scope entirely:
+  // the users table, both role pickers and the role badges all live here. Six
+  // literals were invisible. Each now carries a marker stating what it does
+  // instead of authorizing, which a reviewer can check against the code beside
+  // it — "we looked" is the claim, not "they were all fine". Same argument as
+  // the `shell` entry above.
+  'src/components/auth',
 ] as const;
 
 /**
@@ -84,8 +91,19 @@ const COMPARISON = new RegExp(
  * broken parser is exactly what shipped. A gate that reports "0 unmarked"
  * because it saw nothing is worse than no gate at all. Raise this deliberately
  * when sites are legitimately removed; never lower it to make a run pass.
+ *
+ * Pinned to the MEASURED TOTAL — `marked + unmarked`, which is what `scanned`
+ * counts — not to the `marked` counter. 39 as of PR 4, after
+ * `src/components/auth` joined SCOPE. Reading the wrong counter set this to 38
+ * for a while: one below the truth, i.e. exactly the slack this docblock
+ * forbids, inside the gate whose whole thesis is that a low floor is how
+ * partial blindness ships.
+ *
+ * The earlier 28 (against a then-total of 33) left the scanner free to go ~15%
+ * blind before tripping. The T065 gate reported "0 unmarked" while it could not
+ * see 341 lines of src/config/nav.ts.
  */
-const MIN_EXPECTED_SITES = 28;
+const MIN_EXPECTED_SITES = 39;
 
 /**
  * Every accepted claim. Each says what the literal is doing INSTEAD of
@@ -126,6 +144,18 @@ const MARKERS: ReadonlyArray<{ marker: string; means: string }> = [
     marker: 'rbac-legacy-shim-arm-ok',
     means: 'an arm of the flag-OFF legacy shim — removed wholesale by PR 5, not exempt forever',
   },
+  {
+    // Deliberately NOT folded into `rbac-subgate-ok`. That one marks a literal
+    // that WITHHOLDS data from an authorised response; this one marks a literal
+    // that withholds nothing — an icon, an advisory line, a form field that is
+    // irrelevant for the chosen role. Sharing a marker would make the stricter
+    // claim unreadable, because a reviewer could no longer tell which kind of
+    // "it's fine" was being asserted.
+    marker: 'rbac-presentation-only-ok',
+    means:
+      'chooses an icon, hint or form-field visibility inside an already-authorised render; ' +
+      'withholds no data and grants nothing',
+  },
 ];
 
 const MARKER_NAMES = MARKERS.map((m) => m.marker);
@@ -163,7 +193,7 @@ for (const root of SCOPE) {
       const hits = [...codeLine.matchAll(COMPARISON)];
       if (hits.length === 0) continue;
       const line = i + 1;
-      const isMarked = markerApplies(rawLines, i, MARKER_NAMES);
+      const isMarked = markerApplies(rawLines, i, MARKER_NAMES, codeLines);
       for (const m of hits) {
         if (isMarked) {
           marked += 1;

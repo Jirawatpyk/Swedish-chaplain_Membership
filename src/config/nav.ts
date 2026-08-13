@@ -121,7 +121,18 @@ export interface NavGroup {
   /** URL pattern — group auto-expands when any child matches (see {@link ActivePattern}). */
   readonly activePattern: ActivePattern;
   readonly children: readonly NavItem[];
-  readonly roles?: ReadonlyArray<string>;
+  /**
+   * Legacy role allow-list. `ReadonlyArray<Role>`, not `<string>`: as `string`
+   * a typo (`'admni'`) compiled fine and silently matched nobody, and widening
+   * the Role union could not surface this file at all.
+   *
+   * DEAD in both live configs — `staffNavConfig` moved to `guard` and
+   * `memberNavConfig` never declared one, so nothing in production reads it
+   * (only the synthetic configs in `nav-config.test.ts` do). PR 5 can delete
+   * the field outright; an earlier version of this note claimed the member
+   * config still needed it, which would have made that deletion look risky.
+   */
+  readonly roles?: ReadonlyArray<Role>;
 }
 
 /** A logical grouping of NavItems and NavGroups with an optional header. */

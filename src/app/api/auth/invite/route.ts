@@ -41,12 +41,17 @@ import { logger } from '@/lib/logger';
 const inputSchema = z.object({
   email: z.string().email().max(254),
   // Every role is invitable: `super_admin` from PR 3 (T048), `marketing` from
-  // PR 4 (T059 / D17). Keep in lockstep with ASSIGNABLE_ROLES, the change-role
-  // route and the users-page picker (assignable-roles-lockstep.test reads all
-  // four). Inviting ANY staff role trips the step-2 `users.manage` gate below
-  // (SA-only on the ON leg), so only a super_admin can mint one.
-  // NOTE: this must stay the FIRST `z.enum(...)` in the file — the lockstep test
-  // extracts it by regex, and `locale` is the next one down.
+  // PR 4 (T059 / D17). Inviting ANY staff role trips the step-2 `users.manage`
+  // gate below (SA-only on the ON leg), so only a super_admin can mint one.
+  //
+  // `assignable-roles-lockstep.test.ts` holds this in step with
+  // ASSIGNABLE_ROLES, the change-role route and BOTH users-page pickers. It
+  // reads this file by name — `role: z.enum([…])`, comment-stripped — so
+  // declaration order carries no meaning. An earlier NOTE here asked the next
+  // author to keep this the FIRST `z.enum(...)` in the file because the test
+  // took whichever came first from raw text; that made `locale` two lines below
+  // load-bearing, and it invited exactly the comment that could defeat the
+  // check, since a role list written in prose read as source.
   role: z.enum(['super_admin', 'admin', 'manager', 'member', 'marketing']),
   displayName: z.string().min(1).max(120).optional(),
   locale: z.enum(['en', 'th', 'sv']).optional(),
