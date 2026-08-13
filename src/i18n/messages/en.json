@@ -5156,8 +5156,9 @@
       }
     },
     "notFound": {
-      "title": "This page isn't available to your role",
-      "body": "Some staff surfaces need a higher role than yours. Ask a Super Administrator to open it for you, or to change your role.",
+      "title": "Page not available",
+      "body": "This page doesn't exist, the record was removed, or it isn't available to your role. If you reached it from a link or a bookmark, that link may be out of date.",
+      "roleHint": "If you expected access, ask a Super Administrator — some staff surfaces are restricted to that role.",
       "back": "Back to dashboard"
     }
   },

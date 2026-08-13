@@ -5156,9 +5156,10 @@
       }
     },
     "notFound": {
-      "title": "Sidan är inte tillgänglig för din roll",
-      "body": "Vissa personalsidor kräver en högre roll än din. Be en superadministratör att öppna den åt dig eller att ändra din roll.",
-      "back": "Tillbaka till översikten"
+      "title": "Sidan är inte tillgänglig",
+      "body": "Sidan finns inte, posten har tagits bort, eller så är den inte tillgänglig för din roll. Om du kom hit via en länk eller ett bokmärke kan länken vara inaktuell.",
+      "roleHint": "Om du förväntade dig åtkomst, be en superadministratör om hjälp — vissa personalsidor är begränsade till den rollen.",
+      "back": "Tillbaka till instrumentpanelen"
     }
   },
   "palette": {

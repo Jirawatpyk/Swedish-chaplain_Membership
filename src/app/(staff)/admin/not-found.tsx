@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
-import { ShieldAlertIcon } from 'lucide-react';
+import { FileQuestionIcon } from 'lucide-react';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { EmptyState } from '@/components/shell/empty-state';
@@ -26,13 +26,23 @@ import { buttonVariants } from '@/components/ui/button';
  * elevation target to anyone looking over the operator's shoulder. The right
  * place to explain is the destination, which is only reached deliberately.
  *
- * The copy names no specific surface. `notFound()` is also the deny shape for
- * cross-tenant and unknown-id probes, and this boundary catches those too; a
- * message enumerating the super-admin-only pages would turn every stray 404
- * into a disclosure. "Some staff surfaces need a higher role" tells an
- * authenticated operator what they need to know — the product documents which
- * pages exist — without confirming anything about the id they typed.
+ * The copy is CAUSE-NEUTRAL, and that is the correction the final review forced.
+ * There are 71 `notFound()` calls under `/admin/**` and this one boundary
+ * catches all of them: unknown record ids, archived rows, feature-flag-off
+ * pages, cross-tenant probes — and permission denials. The first version said
+ * "some staff surfaces need a higher role than yours", which is wrong for most
+ * of them and actively confusing for the case it is worst at: a SUPER_ADMIN
+ * opening a stale link to a deleted invoice was told to go ask a super admin.
+ *
+ * So the body names the three real causes and points at the likeliest one — a
+ * stale link — and the role hint is a separate, softer line. Still no
+ * enumeration of which pages are restricted: `notFound()` is the deny shape for
+ * unknown-id probes too, so naming them would turn every stray 404 into a
+ * disclosure.
  */
+// Static, so it cannot be localised here (generateMetadata would make this a
+// dynamic segment for a boundary that must stay cheap). Kept deliberately
+// generic — the browser tab is not where the explanation belongs.
 export const metadata: Metadata = {
   title: 'Not available',
 };
@@ -43,8 +53,9 @@ export default async function StaffNotFound() {
     <DetailContainer>
       <PageHeader title={t('title')} />
       <EmptyState
-        icon={ShieldAlertIcon}
+        icon={FileQuestionIcon}
         title={t('body')}
+        description={t('roleHint')}
         action={
           <Link href="/admin" className={buttonVariants()}>
             {t('back')}

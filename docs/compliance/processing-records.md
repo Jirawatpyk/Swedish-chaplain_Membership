@@ -1362,15 +1362,30 @@ Both cases are audited, so the intervening interval is evidenced.
 
 ### Recipients of personal data
 
-No new recipients. Role changes and denials are visible to holders of
-`audit.read`, which D4 narrowed to `super_admin` only.
+No new recipients. Role changes are visible to holders of `audit.read`, which
+D4 narrowed to `super_admin` only.
 
-Stated carefully, because an earlier draft called this a reduction in the
-recipient population and the cutover log contradicts it: Migration C promoted
-both incumbent human admins, and a break-glass identity was pre-minted, so the
-current holder count is **3** where it was 2. What narrowed is the
-CAPABILITY — `audit.read` now constrains FUTURE grants, and a newly created
-`admin` does not receive it. No existing recipient was removed.
+**Denials are recorded but not currently readable in the product** — a
+documented residual, not a control this record may claim. `permission_denied`
+rows are appended by `src/lib/rbac.ts` without a tenant, while every audit
+reader leads with `eq(auditLog.tenantId, ctx.slug)`, so `/admin/audit` offers a
+filter for an event type it can never return. The rows exist in `audit_log` and
+are reachable by direct query; the accountability trail is therefore intact for
+a DPO with database access and absent from the operator UI. Tracked for the
+follow-up that threads the tenant slug onto the F1 denial event.
+
+Stated carefully, because two earlier drafts got this wrong in opposite
+directions. The first called it a reduction; the cutover log contradicts that —
+Migration C promoted both incumbent human admins and a break-glass identity was
+pre-minted, so the human holder count is **3** where it was 2. The second then
+said "no existing recipient was removed", which is also false: `manager` held
+`audit.read` on the legacy leg for both the page and the CSV export
+(`tests/helpers/rbac-observed-baseline.ts` records `manager: 'allow'` on each),
+and D4 removed it.
+
+So: the manager population LOST audit access at the cutover, the administrator
+population GREW by one break-glass identity, and the capability now constrains
+future grants because a newly created `admin` does not receive it.
 
 ### Cross-border data transfers
 

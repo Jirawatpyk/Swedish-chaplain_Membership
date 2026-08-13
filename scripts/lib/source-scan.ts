@@ -18,8 +18,17 @@
  *    before the real call. `admin/compliance/erasure-log/page.tsx` — the
  *    highest-PII surface in the product — was being compared against prose.
  *
- * So the scanner here is character-wise and STRING-AWARE. It is the only
- * version; do not re-inline a regex variant.
+ * So the scanner here is character-wise and STRING-AWARE.
+ *
+ * CONSOLIDATION IS PARTIAL, and saying otherwise would send the next fix to the
+ * wrong file. Current consumers: `check-authorization-role-reads.ts` and the
+ * three parity suites (nav, palette, settings index). NOT yet migrated:
+ * `check-api-route-guard.ts` and `check-staff-page-guard.ts` still carry their
+ * own private regex strippers and marker helpers. Those two predate this module,
+ * are individually correct, and were left untouched deliberately — rewriting two
+ * working security gates in a remediation pass is how a third bug gets in. The
+ * cost is that a fix here does not reach them; migrating them is follow-up work,
+ * and until then do not describe this as "the only version".
  */
 
 /**
@@ -93,10 +102,19 @@ export function isCommentLine(line: string): boolean {
 export function stripCommentLines(src: string): readonly string[] {
   const out: string[] = [];
   let inBlock = false;
+  // Template literals span lines; `'` and `"` cannot. `inBlock` was already
+  // carried across lines and `quote` was not, so a `/*` on the CONTINUATION
+  // line of a multi-line template was scanned as CODE and opened a phantom
+  // block — the same failure this module exists to close, one state variable
+  // away. Latent when found (no file in scope triggered it) but the trigger is
+  // a near-cousin of the original incident: a glob or a SQL comment inside a
+  // `sql`-tagged template would do it, and 21 in-scope files carry multi-line
+  // templates.
+  let inTemplate = false;
   for (const line of src.split('\n')) {
     let res = '';
     let i = 0;
-    let quote: string | null = null;
+    let quote: string | null = inTemplate ? '`' : null;
     while (i < line.length) {
       const c = line[i]!;
       const next = line[i + 1];
@@ -149,6 +167,7 @@ export function stripCommentLines(src: string): readonly string[] {
       res += c;
       i += 1;
     }
+    inTemplate = quote === '`';
     out.push(res);
   }
   return out;

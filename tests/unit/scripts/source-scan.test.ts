@@ -113,6 +113,20 @@ describe('stripCommentLines — the bug that made the T065 gate blind', () => {
     expect(out[1]).toContain("role === 'admin'");
   });
 
+  it('a MULTI-LINE template literal does not let /* open a block comment', () => {
+    // The final review's Critical: `quote` reset per line while `inBlock`
+    // carried across, so a continuation line inside a template was scanned as
+    // code. A `/*` there blanked the rest of the file — and 21 in-scope files
+    // already contain multi-line templates.
+    const src = [
+      'const SQL_DOC = `',
+      '  SELECT 1 /* a filtered subquery',
+      '`;',
+      "const a = role === 'manager';",
+    ].join('\n');
+    expect(stripCommentLines(src)[3]).toContain("role === 'manager'");
+  });
+
   it('genuinely commented code IS removed', () => {
     const src = ["// if (role === 'admin') escalate();", '/* role === "admin" */'].join('\n');
     const out = stripCommentLines(src);
