@@ -11,7 +11,7 @@ retention periods, and technical + organisational measures (TOMs).
 chamber legal-counsel for regulatory updates and with platform
 on-call for technical detail.
 
-**Last reviewed**: 2026-08-12 (016 PR 4 T060 — Staff Role Administration + Marketing Read Scope RoPA authored)
+**Last reviewed**: 2026-08-12 (016 PR 4 — Staff Role Administration + Marketing Scope RoPA authored, then corrected against the implementation in the PR-4 privacy review)
 
 > **AUTHORED 2026-06-21 (COMP-1 US3-E)**: the **F3 — Members & Contacts** core
 > RoPA and the **COMP-1 — Member Erasure (Art. 17 / §33)** processing-activity
@@ -1159,7 +1159,7 @@ Same as F7.
 
 ---
 
-## 016 — Staff Role Administration + Marketing Read Scope (RBAC v2)
+## 016 — Staff Role Administration + Marketing Scope (RBAC v2)
 
 **Status**: LIVE. Shipped PR #323/#324; production cutover completed
 2026-08-11 (`docs/runbooks/rbac-v2-cutover.md` § 9). PR 4 made the
@@ -1172,8 +1172,18 @@ or materially changed:
    disabling staff accounts, and the audit trail that makes those acts
    accountable. Pre-016 this existed with three roles; 016 widened it to
    five and narrowed who may perform it.
-2. **Marketing read scope over member PII** — a new internal population
-   with read access to member and contact records.
+2. **Marketing scope** — a new internal population with READ access to member
+   and contact records, and WRITE authority over two communication channels:
+   `broadcasts.write` + `broadcasts.send` (compose, approve and dispatch mass
+   email to the full member list) and `events.write` (CSV attendee import,
+   which CREATES personal-data records for non-member attendees). Those write
+   paths are themselves recorded under F7 and F6/F6.1; what this record adds is
+   who now holds them.
+
+   Two consequences are named rather than left implied. `approve-broadcast` has
+   no author-≠-approver check, so a marketing operator can approve their own
+   send; and `audit.read` is super-admin-only, so no `admin` can review what was
+   sent. That segregation-of-duties gap is a documented residual.
 
 ### Controller
 
@@ -1203,14 +1213,41 @@ Role administration: staff display name, work email, role, account status,
 `last_sign_in_at`, and the `audit_log` rows recording each change (actor,
 target, before/after role, timestamp, request id, source IP).
 
-Marketing read scope: the F3 member + contact fields MINUS the
-`members.pii_sensitive` set. Date of birth and the other DoB-class fields
-are **withheld from marketing at the single-member read egress**
-(`GET /api/members/[memberId]?include=date_of_birth`), which is the only
-staff path that serves them (016 T035/T057). Finance data is likewise
-absent rather than hidden: the dashboard payload omits revenue, receivables
-and overdue figures for a viewer without `insights.finance` (T054/T056), so
-the numbers never leave the server.
+Marketing scope: the F3 member + contact fields **minus date of birth**.
+Stated precisely, because "minus the `members.pii_sensitive` set" reads as a
+substantial carve-out and the real one is a single column — that key gates
+exactly `contacts.date_of_birth`, and there is no wider "DoB-class" set.
+Marketing therefore DOES receive, on `members.read`: company name and legal
+entity type, tax ID, postal and billing address, turnover and registered
+capital, free-text notes, and each contact's name, email and phone. That is a
+defensible scope for a communications role — but it IS the scope, and this
+record now says so.
+
+Date of birth is withheld from marketing on **every** staff egress, by three
+different keys. There is no single chokepoint; an earlier draft of this record
+said there was, which understated how many places must stay correct:
+
+| Egress | Gate | marketing |
+|---|---|---|
+| `GET /api/members/[memberId]?include=date_of_birth` | `members.pii_sensitive` | denied |
+| member edit form (`/admin/members/[id]/edit`) | `members.write` | denied |
+| members-backup CSV (`GET /api/admin/members/export.zip`) | `members.bulk` | denied |
+| staff-initiated GDPR member archive | `members.bulk` | denied |
+| private-artefact download proxy | role allow-list | denied |
+
+Both subsumption invariants — `members.bulk ⊆ members.pii_sensitive` and
+`members.write ⊆ members.pii_sensitive` — are enforced in
+`tests/unit/auth/permissions/role-bundles.test.ts`, so a bundle change granting
+bulk export or edit access without field-level PII access fails CI instead of
+silently shipping dates of birth.
+
+Finance data is absent rather than hidden, in two places: the dashboard payload
+omits revenue, receivables and overdue figures for a viewer without
+`insights.finance` (T054/T056), and the member timeline drops invoice and
+payment rows for a viewer without `invoicing.read`. The second gate was added
+during the review of this record — the timeline route is gated on
+`members.read`, which marketing holds, and was serving `amount_satang` and F4
+document totals.
 
 ### Purpose of processing
 
@@ -1237,9 +1274,20 @@ introduced**, which is the basis for the DPIA answer below.
 
 ### DPIA assessment (privacy checklist CHK035)
 
-**No DPIA is required for adding the `marketing` role.** GDPR Art. 35(1) and
-PDPA's equivalent trigger on processing "likely to result in a high risk".
-Adding an internal access role:
+**No DPIA is required for adding the `marketing` role.**
+
+GDPR Art. 35(1) triggers on processing "likely to result in a high risk".
+**Thailand's PDPA imposes no equivalent DPIA obligation** — there is no Thai
+counterpart to Art. 35; the relevant Thai duties here are §37 (security
+measures) and §41 (DPO oversight), both already discharged. An earlier draft of
+this record asserted a PDPA "equivalent trigger", which would have been a
+visible error to its primary Thai reader.
+
+Against Art. 35(3) none of the three mandatory triggers applies: no systematic
+and extensive evaluation producing legal effects, no large-scale Art. 9
+special-category processing, no large-scale systematic monitoring of a public
+area. Against the EDPB WP248 criteria the change scores at most one, and the
+threshold is two. Adding an internal access role:
 
 - introduces **no new category** of personal data — marketing sees a strict
   SUBSET of what `admin` already saw, with the DoB-class fields removed;
@@ -1247,11 +1295,19 @@ Adding an internal access role:
   recorded under F7/F6;
 - introduces **no new recipient and no new transfer** — the data does not
   leave the existing processors or regions;
-- involves **no automated decision-making or profiling** with legal or
-  similarly significant effects;
-- is **risk-REDUCING on balance**: it exists so communications work is done
-  without granting the money, audit, user-administration and erasure
-  surfaces that the `admin` role carries.
+- involves **no Art. 22 automated decision-making** producing legal or
+  similarly significant effects. Profiling in the Art. 4(4) sense DOES occur —
+  marketing holds `insights.engagement`, which reaches F8's at-risk scoring and
+  F9's engagement insights — and is assessed under the existing F8/F9 records.
+  The earlier "no profiling" wording was too broad to survive a regulator
+  reading it as a term of art;
+- and, as supporting colour rather than as the test: it is **risk-reducing on
+  balance**, existing so communications work happens without the money, audit,
+  user-administration and erasure surfaces `admin` carries. That is not the
+  Art. 35 question — which asks whether the processing is high-risk, not
+  whether it improves on the status quo — and it is contingent on the role
+  actually displacing over-privileged `admin` use, which this record cannot
+  evidence. The Art. 35(3) / WP248 analysis above is the operative reasoning.
 
 The existing F3 + F7 assessments therefore remain sufficient. Re-assess if
 marketing later gains a write path over member records, or if the role is
@@ -1259,29 +1315,62 @@ ever granted to a party outside the controller's own staff.
 
 ### Last-super-admin erase refusal vs erasure rights (privacy checklist CHK041)
 
-The system refuses to erase or disable the LAST account holding
-`super_admin`. This is a **staff-continuity guard, not a refusal of a data
-subject's erasure right** — it is not a GDPR Art. 17 / PDPA §33 denial:
+The system refuses to erase or disable the LAST account holding `super_admin`.
+There are two distinct cases behind that one guard, and only the first is the
+one an earlier draft of this record described.
 
-- the account is a staff operator's, processed on a legitimate-interests
-  basis for access control, not a member's record;
-- a genuine erasure request against that individual IS fulfilled: the DPO
-  first mints or promotes another `super_admin` (the bootstrap path in
-  `docs/runbooks/rbac-v2-cutover.md` § 2), after which the original account
-  is no longer the last holder and erasure proceeds normally;
-- the guard has no time limit that could cause the Art. 12 / §30 one-month
-  deadline to be missed — promotion takes minutes and needs no code deploy.
+**Case A — a staff operator asks for their own account to be erased.** The
+refusal is a staff-continuity guard, not a GDPR Art. 17 / PDPA §33 denial: the
+account is a staff operator's, processed for access control, not a member's
+record. The controller's overriding ground under Art. 17(1)(c) / Art. 21(1) is
+its own Art. 32 obligation — access control and the Art. 5(2) accountability
+trail cannot be maintained with zero administrators. The request is fulfilled
+by first putting a successor in place, then erasing.
 
-Recording this rationale is what makes the refusal defensible if
-challenged. The refusal itself is audited, so the intervening interval is
-evidenced.
+The successor path, stated accurately: **promotion, not the bootstrap script.**
+`scripts/seed-bootstrap-admin.ts` refuses whenever a `super_admin` row exists in
+ANY status, which is by definition true in this scenario — the earlier draft
+cited it as the escape hatch and it would have returned exit code 2. The two
+real paths are:
+
+1. the outgoing super_admin promotes a successor from `/admin/users` before
+   departing (`users.manage` is super-admin-only, so no one else can);
+2. if that person is unavailable — the realistic ex-employee case — the
+   operator break-glass path: a direct `UPDATE users SET role='super_admin'` in
+   the Neon console, which MUST be recorded in the DPO log with the request it
+   serves.
+
+Naming the break-glass step is what makes this defensible. A record that cites
+a script which returns a refusal is not.
+
+**Case B — a MEMBER's erasure cascade is blocked.** `eraseUser` exists
+primarily as the COMP-1 cascade (F3 member → F1 login), so the realistic firing
+of this guard is a member exercising Art. 17 whose contact is linked to the last
+administrative login (`users_last_admin_protection`, surfaced as
+`erase-user-last-admin` and explicitly not auto-recoverable by the reconciler).
+Here the blocked subject is a data subject with no employment-retention
+counterweight, and Art. 17(3) contains no operational-continuity exemption.
+
+The erasure is therefore **deferred, not refused**. The Art. 12 / §30 one-month
+clock runs from `member_erasure_requested`, and the remediation is to re-link
+that contact to a different login or promote a successor — minutes of work, no
+code deploy, **provided a super_admin is available to act**. Where the last
+holder is themselves the requesting subject or is unavailable, the break-glass
+path above applies and must be executed inside the Art. 12 window.
+
+Both cases are audited, so the intervening interval is evidenced.
 
 ### Recipients of personal data
 
 No new recipients. Role changes and denials are visible to holders of
-`audit.read`, which D4 narrowed to `super_admin` only — a REDUCTION in the
-internal recipient population versus pre-016, where every `admin` could
-read the audit log.
+`audit.read`, which D4 narrowed to `super_admin` only.
+
+Stated carefully, because an earlier draft called this a reduction in the
+recipient population and the cutover log contradicts it: Migration C promoted
+both incumbent human admins, and a break-glass identity was pre-minted, so the
+current holder count is **3** where it was 2. What narrowed is the
+CAPABILITY — `audit.read` now constrains FUTURE grants, and a newly created
+`admin` does not receive it. No existing recipient was removed.
 
 ### Cross-border data transfers
 
@@ -1291,11 +1380,25 @@ moves no data across a border.
 
 ### Retention periods
 
-Role-change audit rows follow the `audit_log` default of **5 years**
-(`audit_log.retention_years`), unchanged by 016. The `permission_denied`
-event type added by 016 carries the same 5-year default. Tax-document
-events keep their 10-year retention (F4 / RD §87/3) — 016 did not alter any
-retention value.
+Role-change audit rows are **classified** for 5-year retention via
+`audit_log.retention_years`, unchanged by 016. The `permission_denied` event
+type added by 016 carries the same 5-year classification. Tax-document events
+keep their 10-year classification (F4 / RD §87/3) — 016 altered no retention
+value.
+
+**Enforcement is a documented residual.** `retention_years` is a stored
+classification column; no purge job acts on it. The three sweepers under
+`src/app/api/internal/retention/` cover EventCreate pseudonymisation, error-CSV
+blobs and idempotency keys, and `vercel.json` schedules only those three. Under
+Art. 30(1)(f) an *envisaged* time limit is what the record must state, so
+declaring 5 years is legitimate — implying it is applied would not be.
+
+**Staff account records** (display name, work email, role, status,
+`last_sign_in_at`) have no separate limit: a departed operator's account is
+disabled at offboarding and anonymised through the same `eraseUser` path as any
+other subject, on request or at the controller's initiative. Retention of the
+disabled row between those two events is bounded by nothing automated today —
+the same residual as above, recorded here rather than left as an omission.
 
 ### Technical + organisational measures (TOMs)
 
@@ -1337,3 +1440,4 @@ Same as F7.
 | Date | Change | Author |
 |---|---|---|
 | 2026-08-12 | Record authored for 016 RBAC v2 — staff role administration + marketing member-read scope; DPIA answer (CHK035) and last-SA-erase vs Art. 17 rationale (CHK041) recorded; cross-ref to `docs/runbooks/rbac-v2-cutover.md` | 016 PR 4 (T060) |
+| 2026-08-12 | **Corrected before sign-off** following the PR-4 privacy review, which found six claims the implementation contradicted. (1) DoB was described as having a single chokepoint; there are five egresses on three keys, and the two subsumption invariants that hold them are now named. (2) "the other DoB-class fields" described an empty set while the fields marketing DOES receive — tax ID, addresses, notes, contact email/phone — went unlisted. (3) CHK041 cited `seed-bootstrap-admin.ts` as the successor path; that script refuses whenever a super_admin exists, i.e. exactly this scenario. Replaced with promotion + a named operator break-glass step. (4) CHK041 addressed only the staff-operator case; the guard's realistic firing is a MEMBER's Art. 17 cascade, now recorded as deferral with the Art. 12 clock and its remediation. (5) The record claimed a reduction in audit-log recipients; Migration C promoted both incumbents, so the count went 2→3 and what narrowed is future grants. (6) 5-year retention was stated as applied; it is a classification with no purge job, now recorded as a residual. Also: the PDPA was said to have a DPIA trigger (it has none), "no profiling" was too broad (Art. 4(4) profiling occurs via `insights.engagement`; what is absent is Art. 22), and the title and scope understated the bundle's `broadcasts.send` / `events.write` authority. | 016 PR 4 review |
