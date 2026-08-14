@@ -229,7 +229,7 @@ RBAC v2 cutover — 2026-08-11 (Asia/Bangkok)
 [x] post-C live re-verification: jirawat.p@eqho.com signs in as role=super_admin and reaches
     all four previously-denied surfaces; money/member surfaces unaffected
 [ ] PR-4 (later): prod env var verified unset-or-'true' before the default-ON deploy
-[ ] PR-5 (later): FEATURE_RBAC_V2 env var DELETED from Vercel
+[x] PR-5: FEATURE_RBAC_V2 env var DELETED from Vercel (operator, 2026-08-14 — Production + Preview)
 
 Final population: super_admin/active = 3 (2 promoted + 1 pre-minted) · admin/disabled = 3
 (system actors, excluded by the reserved-namespace predicate) · zero human plain-admins.
@@ -257,7 +257,7 @@ RBAC v2 cutover — <date>
 [ ] Migration C merged: commit = ____________
 [ ] post-C assertions (a)=0 / (b) system ok / (c)=0 : ____________
 [ ] PR-4 (later): prod env var verified unset-or-'true' before default-ON deploy
-[ ] PR-5 (later): FEATURE_RBAC_V2 env var DELETED from Vercel
+[x] PR-5: FEATURE_RBAC_V2 env var DELETED from Vercel (operator, 2026-08-14 — Production + Preview)
 ```
 
 ## 10. PR-4 / PR-5 operator steps (for completeness)
@@ -302,4 +302,4 @@ RBAC v2 cutover — <date>
 
   Skipping the second command leaves the persona suites green and meaningless.
 
-- **PR-5 (cleanup):** after the soak window, delete the `FEATURE_RBAC_V2` env var entirely (T071) — a stale value on a future redeploy would be read by nothing, but leaving dead env vars around is how the next incident starts.
+- **PR-5 (cleanup): DONE.** #327 merged 2026-08-14 (squash `37ee744a8`) after a clean 11 h soak (zero `permission_denied` rows across the #326 window); the operator deleted `FEATURE_RBAC_V2` from Production + Preview the same morning. Nothing reads the variable; the legacy leg, the shim, the D7 gate and this runbook's remaining live duties are all retired. This document is now HISTORY — the cutover it choreographs has fully completed.
