@@ -391,6 +391,61 @@ describe('T017/I2 route-path sanitisation (denial trail cannot be forged)', () =
     vi.resetModules();
   });
 
+  /**
+   * 016 post-ship review finding #5 — provenance, not just shape. A request
+   * carrying either prefetch marker is exactly the request the proxy matcher
+   * skipped, i.e. the only request whose `x-pathname` reaches the render
+   * without the server-side overwrite. A WELL-FORMED forged path on such a
+   * request must be clamped to unattributed — shape checks alone let the
+   * attacker choose the `route=` of an append-only governance row.
+   */
+  it('pathFromHeaders clamps a well-formed path on a next-router-prefetch request', async () => {
+    vi.resetModules();
+    vi.doMock('next/headers', () => ({
+      headers: async () =>
+        new Headers({
+          'x-pathname': '/admin/dashboard',
+          'next-router-prefetch': '1',
+        }),
+    }));
+    const { pathFromHeaders: freshPathFromHeaders } = await import('@/lib/rbac');
+    expect(await freshPathFromHeaders()).toBe('');
+    vi.doUnmock('next/headers');
+    vi.resetModules();
+  });
+
+  it('pathFromHeaders clamps on purpose: prefetch (the second proxy-skip marker)', async () => {
+    vi.resetModules();
+    vi.doMock('next/headers', () => ({
+      headers: async () =>
+        new Headers({
+          'x-pathname': '/admin/dashboard',
+          purpose: 'prefetch',
+        }),
+    }));
+    const { pathFromHeaders: freshPathFromHeaders } = await import('@/lib/rbac');
+    expect(await freshPathFromHeaders()).toBe('');
+    vi.doUnmock('next/headers');
+    vi.resetModules();
+  });
+
+  it('pathFromHeaders does NOT clamp on a non-prefetch purpose value', async () => {
+    // The proxy matcher only skips on `purpose: prefetch` exactly — any other
+    // value means the proxy ran and overwrote the header, so it is trusted.
+    vi.resetModules();
+    vi.doMock('next/headers', () => ({
+      headers: async () =>
+        new Headers({
+          'x-pathname': '/admin/renewals',
+          purpose: 'preload',
+        }),
+    }));
+    const { pathFromHeaders: freshPathFromHeaders } = await import('@/lib/rbac');
+    expect(await freshPathFromHeaders()).toBe('/admin/renewals');
+    vi.doUnmock('next/headers');
+    vi.resetModules();
+  });
+
   // Keep a reference so the top-level import is not flagged unused when the
   // dynamic re-imports above are what exercise the wiring.
   void pathFromHeaders;
