@@ -15,8 +15,11 @@ import { expect, test } from '../fixtures';
 import { clearE2ERateLimits } from '../helpers/rate-limit';
 import { signInViaForm, waitForLayoutContainer } from '../helpers/layout';
 
-const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
-const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
+// Super admin since 016 D4: the DetailContainer sample page is
+// /admin/settings/invoicing, super_admin-only (a plain admin 404s and the
+// CLS walk would measure the not-found shell instead).
+const ADMIN_EMAIL = process.env.E2E_SUPER_ADMIN_EMAIL;
+const ADMIN_PASSWORD = process.env.E2E_SUPER_ADMIN_PASSWORD;
 const CLS_BUDGET = 0.02;
 
 test.describe('F5 CLS container transition @layout', () => {

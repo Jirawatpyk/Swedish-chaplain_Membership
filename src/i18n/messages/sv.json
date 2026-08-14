@@ -664,8 +664,9 @@
           "role-portal-mismatch": "Den rolländringen är inte tillåten för det här kontot.",
           "forbidden": "Du har inte längre behörighet att ändra roller. Logga ut och in igen, fråga sedan en Super Admin.",
           "not-found": "Användaren finns inte längre. Uppdatera listan.",
-          "invalid-role": "Det är inte en roll som systemet kan tilldela.",
+          "invalid-role": "Det är inte en roll som systemet kan tilldela. Uppdatera sidan och välj igen.",
           "no-session": "Din session har gått ut. Logga in igen och försök ändra rollen på nytt.",
+          "invalid-input": "Begäran kunde inte läsas. Uppdatera sidan och välj rollen igen.",
           "generic": "Kunde inte ändra rollen. Försök igen."
         }
       },

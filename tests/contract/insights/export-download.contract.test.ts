@@ -100,7 +100,9 @@ function stubBlob(found = true): PrivateBlobPort {
 const audit = () => ({ recordInTx: vi.fn(), record: vi.fn() });
 const clock = { now: () => new Date() };
 
-const staff = (role: 'admin' | 'manager'): DownloadExportMeta => ({
+const staff = (
+  role: 'super_admin' | 'admin' | 'manager' | 'marketing',
+): DownloadExportMeta => ({
   actorUserId: 'u-1',
   actorRole: role,
   actorMemberId: null,
@@ -142,6 +144,35 @@ describe('downloadExport — authz matrix (T073a)', () => {
     const r = await downloadExport({ jobId: JOB_ID, token: 't' }, staff('manager'), ctx, downloadDeps(repo, stubBlob()));
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error).toBe('forbidden');
+  });
+
+  // 016 polish (I6) — the two authorize arms are keyed on catalogue permissions,
+  // and the two keys admit DIFFERENT populations. `directory.export` includes
+  // `manager`; `members.pii_sensitive` does not. The manager pair below is what
+  // separates the keys: it can only pass if each arm reads its own key, so a
+  // future edit that collapses them (or grabs a marketing-held key like
+  // `members.read`) goes red here.
+  it('the directory-artefact arm follows directory.export: manager may download, marketing may not', async () => {
+    const token = mintDownloadToken();
+    const managerRepo = stubRepo(job({ downloadTokenHash: hashDownloadToken(JOB_ID, token) }));
+    const managerR = await downloadExport({ jobId: JOB_ID, token }, staff('manager'), ctx, downloadDeps(managerRepo, stubBlob()));
+    expect(managerR.ok).toBe(true);
+
+    const marketingR = await downloadExport({ jobId: JOB_ID, token: 't' }, staff('marketing'), ctx, downloadDeps(stubRepo(job()), stubBlob()));
+    expect(marketingR.ok).toBe(false);
+    if (!marketingR.ok) expect(marketingR.error).toBe('forbidden');
+  });
+
+  it('the GDPR arm follows members.pii_sensitive: super_admin allowed, marketing denied', async () => {
+    const token = mintDownloadToken();
+    const gdpr = { kind: 'gdpr_member_archive', subjectMemberId: 'm-1' } as const;
+    const saRepo = stubRepo(job({ ...gdpr, downloadTokenHash: hashDownloadToken(JOB_ID, token) }));
+    const saR = await downloadExport({ jobId: JOB_ID, token }, staff('super_admin'), ctx, downloadDeps(saRepo, stubBlob()));
+    expect(saR.ok).toBe(true);
+
+    const marketingR = await downloadExport({ jobId: JOB_ID, token: 't' }, staff('marketing'), ctx, downloadDeps(stubRepo(job(gdpr)), stubBlob()));
+    expect(marketingR.ok).toBe(false);
+    if (!marketingR.ok) expect(marketingR.error).toBe('forbidden');
   });
 
   it('409 when the job is not yet ready', async () => {

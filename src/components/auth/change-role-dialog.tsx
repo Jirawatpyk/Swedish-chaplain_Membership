@@ -93,6 +93,16 @@ export const CHANGE_ROLE_OPTIONS: readonly Role[] = [
  *
  * `server-error` (500) is deliberately left on `generic`: "please try again" is
  * the correct advice there.
+ *
+ * Reachability (016 polish, S4): `invalid-role` is defence-only — this dialog
+ * only ever submits a member of `CHANGE_ROLE_OPTIONS`, all inside the route's
+ * zod enum, so the branch fires only if the two lists ever drift. `same-role`
+ * and `role-portal-mismatch` are reachable ONLY through a stale row (another
+ * operator changed the target after this page rendered). All three stay: the
+ * copy is already localised and a defensive branch that can name its trigger
+ * beats a generic fallback. `invalid-input` (400, body-not-JSON) was the
+ * OPPOSITE gap — a real route response with no key, mislabelled by the generic
+ * "please try again"; it now has its own copy.
  */
 const KNOWN_ERROR_CODES = [
   'last-admin-protection',
@@ -102,6 +112,7 @@ const KNOWN_ERROR_CODES = [
   'not-found',
   'invalid-role',
   'no-session',
+  'invalid-input',
 ] as const;
 
 function resolveErrorKey(code: string): (typeof KNOWN_ERROR_CODES)[number] | 'generic' {
@@ -109,6 +120,31 @@ function resolveErrorKey(code: string): (typeof KNOWN_ERROR_CODES)[number] | 'ge
     ? (code as (typeof KNOWN_ERROR_CODES)[number])
     : 'generic';
 }
+
+/**
+ * Codes where re-clicking Confirm with the SAME selection can never succeed
+ * (016 polish, S-10): the stale-row pair needs a refreshed list, `forbidden`
+ * needs a different OPERATOR, and the two `invalid-*` codes need a code fix.
+ * While one of these is on screen Confirm is disabled; picking a different
+ * role clears the error (the RadioGroup's onValueChange) and revives it.
+ *
+ * Deliberately ABSENT — codes whose own copy tells the operator to fix the
+ * precondition and RETRY, which a dead Confirm would contradict (UX review):
+ *  - `last-admin-protection`: promote another super_admin in a second tab,
+ *    then legitimately retry this exact change;
+ *  - `no-session`: its copy says "sign in again, then retry" — cookies are
+ *    tab-shared, so a second-tab sign-in makes this exact POST succeed;
+ *  - the retryable pair (`server-error`/network → `generic`), where "try
+ *    again" is the advice.
+ */
+const NON_RETRYABLE_ERROR_CODES: ReadonlySet<string> = new Set([
+  'same-role',
+  'role-portal-mismatch',
+  'forbidden',
+  'not-found',
+  'invalid-role',
+  'invalid-input',
+]);
 
 export interface ChangeRoleDialogProps {
   /**
@@ -148,18 +184,33 @@ export function ChangeRoleDialog({
   const [errorCode, setErrorCode] = useState<string | null>(null);
   const [typedPhrase, setTypedPhrase] = useState('');
   const errorRef = useRef<HTMLDivElement>(null);
+  // In-flight POST guard (016 polish, S-9 — idiom: relink-registration-dialog).
+  // The parent reuses ONE dialog instance forever, so a response that resolves
+  // after close would otherwise repaint the NEXT row's dialog with THIS row's
+  // outcome, and a late success would force-close a dialog the operator has
+  // since reopened. Closing aborts; every await below re-checks the signal.
+  const abortRef = useRef<AbortController | null>(null);
 
   // Reset to the pristine per-user state whenever the dialog (re)opens — the
   // parent reuses one dialog instance across rows, so a stale selection/error
-  // from a previous row must not leak into the next.
+  // from a previous row must not leak into the next. Closing aborts any
+  // in-flight POST for the same reason (S-9). Note the abort does NOT undo a
+  // change the server may already have committed — the next refresh shows the
+  // truth; what it prevents is this component acting on a stale response.
   useEffect(() => {
     if (open) {
       setSelected(initialSelected);
       setErrorCode(null);
       setSubmitting(false);
       setTypedPhrase('');
+    } else {
+      abortRef.current?.abort();
     }
   }, [open, initialSelected]);
+
+  // Unmount safety net (the parent never unmounts this today, but the abort
+  // must not depend on that staying true).
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   // One focus move per error, not one per render. See the alert's ref below.
   useEffect(() => {
@@ -219,6 +270,8 @@ export function ChangeRoleDialog({
     // presentation state, and this handler is the only thing between a pick and
     // a POST that grants erasure rights.
     if (phraseBlocking) return;
+    const controller = new AbortController();
+    abortRef.current = controller;
     setSubmitting(true);
     setErrorCode(null);
     try {
@@ -226,9 +279,15 @@ export function ChangeRoleDialog({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ newRole: selected }),
+        signal: controller.signal,
       });
+      // Closed while in flight (S-9): the dialog now belongs to another row —
+      // touch nothing. (fetch usually rejects on abort; this covers the race
+      // where the response had already resolved.)
+      if (controller.signal.aborted) return;
       if (!response.ok) {
         const body = (await response.json().catch(() => ({}))) as { error?: string };
+        if (controller.signal.aborted) return;
         setErrorCode(body.error ?? 'generic');
         return;
       }
@@ -238,13 +297,20 @@ export function ChangeRoleDialog({
       onChanged();
       onOpenChange(false);
     } catch {
+      if (controller.signal.aborted) return;
       setErrorCode('generic');
     } finally {
-      setSubmitting(false);
+      if (!controller.signal.aborted) setSubmitting(false);
     }
   }
 
   return (
+    // AlertDialog (not Dialog) is DELIBERATE — 016 UX review S1, recorded
+    // WON'T-FIX: Base UI's AlertDialog has no backdrop/outside-press dismiss,
+    // and a role grant mid-decision should not be dismissible by a stray
+    // click the way a browse dialog is. Escape still closes (and now aborts
+    // any in-flight POST). The two §6.4 confirmation-checklist deviations
+    // this picker keeps are documented on `promotingToSuperAdmin` above.
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       {/* No `initialFocus` on Cancel — this is a picker, not a destructive
           confirm. Confirm is disabled until a DIFFERENT role is chosen, so
@@ -413,8 +479,17 @@ export function ChangeRoleDialog({
           {/* No `aria-disabled` alongside `disabled`: a disabled button is out
               of the tab order, so the ARIA attribute is never announced and
               only suggests the two could disagree. */}
+          {/* The non-retryable arm (S-10): while an error whose verbatim retry
+              cannot succeed is on screen, Confirm is dead — picking a different
+              role clears the error and revives it. */}
           <AlertDialogAction
-            disabled={user === null || unchanged || submitting || phraseBlocking}
+            disabled={
+              user === null ||
+              unchanged ||
+              submitting ||
+              phraseBlocking ||
+              (errorCode !== null && NON_RETRYABLE_ERROR_CODES.has(errorCode))
+            }
             onClick={(event) => {
               event.preventDefault();
               void handleConfirm();

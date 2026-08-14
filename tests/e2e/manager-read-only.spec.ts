@@ -5,22 +5,19 @@
  * reports without mutating data" at the UI layer:
  *
  *   1. A manager can sign in to the staff portal at /admin/sign-in.
- *   2. A manager can LOAD /admin/users (the read surface is visible
- *      to both admin and manager — FR-003 = RBAC on the action,
- *      not the route).
- *   3. The UI hides every destructive affordance from the manager:
- *      - No Disable buttons on any row (canDisable = isAdmin && …)
- *      - No Enable buttons on any row (canEnable = isAdmin && …)
- *      - The "Invite user" button is rendered DISABLED
- *   4. A direct POST /api/auth/invite as the manager's session is
- *      rejected with 403 `forbidden` (the API gate re-validates
- *      via requireRole — server-side RBAC is the source of truth).
+ *   2. Since 016 D4, `/admin/users` is `users.manage` = super_admin-ONLY —
+ *      the manager (like a plain admin) gets the not-found shell, not a
+ *      read-only render. The pre-016 claim this test used to make ("the
+ *      read surface is visible, RBAC is on the action") is dead; the
+ *      route IS the gate now.
+ *   3. A direct POST /api/auth/invite as the manager's session is
+ *      rejected with 403 `forbidden` (the API gate re-validates via
+ *      `requireApiPermission('users.manage')` — server-side RBAC is the
+ *      source of truth).
  *
- * The unit + integration layers (`manager-readonly-policy.test.ts`
- * + `rbac-manager-readonly.test.ts`) already cover the policy and
- * API paths exhaustively. This spec closes the E2E gap: "when a
- * manager opens the page in a browser, are the buttons actually
- * absent / disabled, not just server-rejected on click?"
+ * Manager read-only AFFORDANCES on surfaces it still reaches are pinned
+ * by the rbac-navigation persona walk (T062) and the user-list-table RTL
+ * suite; this spec keeps only the browser-level route + API contracts.
  *
  * Credentials:
  *   E2E_MANAGER_EMAIL    = e2e-manager@swecham.test (seeded by
@@ -45,7 +42,7 @@ test.describe('manager read-only staff portal (FR-003, User Story 2)', () => {
     await clearE2ERateLimits();
   });
 
-  test('manager sees /admin/users with zero destructive affordances', async ({ page }) => {
+  test('manager is denied /admin/users entirely (users.manage is super_admin-only)', async ({ page }) => {
     // Sign in via the staff portal — same URL as admin (both roles
     // use /admin/sign-in). The RBAC policy runs after the sign-in,
     // at page/action load time.
@@ -57,46 +54,26 @@ test.describe('manager read-only staff portal (FR-003, User Story 2)', () => {
     await page.getByRole('button', { name: /sign in/i }).click();
 
     // Manager lands on /admin (staff home) — the same landing page
-    // as an admin. The difference is entirely in which mutating
-    // actions work once they navigate to a subsurface.
+    // as an admin. The difference is entirely in which subsurfaces
+    // open once they navigate.
     await page.waitForURL('**/admin', { timeout: 10_000 });
     await expect(page).toHaveURL(/\/admin$/);
 
-    // Navigate to the users list. Managers CAN read it (the
-    // requireSession('staff') guard accepts both admin and manager);
-    // they just cannot mutate.
-    await page.goto('/admin/users');
-    await page.waitForLoadState('networkidle');
-
-    // The page should render — we expect the table heading and
-    // refresh hint to be visible to a manager too.
-    await expect(
-      page.getByRole('heading', { level: 1, name: /users/i }),
-    ).toBeVisible();
-
-    // --- UI affordance assertions ---
-    // 1. Zero Disable buttons on ANY row (canDisable = isAdmin && …).
-    //    The button is rendered via {canDisable ? <Button /> : …} so
-    //    there should be literally zero nodes with the Disable label.
-    const disableButtons = page.getByRole('button', { name: /^disable$/i });
-    await expect(disableButtons).toHaveCount(0);
-
-    // 2. Zero Enable buttons on ANY row (canEnable = isAdmin && …).
-    const enableButtons = page.getByRole('button', { name: /^enable$/i });
-    await expect(enableButtons).toHaveCount(0);
-
-    // 3. The Invite user button IS rendered (it's always mounted)
-    //    but its `disabled` prop is bound to `!isAdmin`, so for a
-    //    manager session it MUST be in the disabled state. We query
-    //    by role='button' with the invite name and assert disabled.
-    const inviteButton = page.getByRole('button', { name: /invite user/i });
-    await expect(inviteButton).toBeVisible();
-    await expect(inviteButton).toBeDisabled();
-
-    // Sanity: the role badge in the top-right shows "manager" —
-    // the UserMenu always surfaces the caller's role so we can
-    // visually differentiate from an admin session in screenshots.
-    await expect(page.getByText(/manager/i).first()).toBeVisible();
+    // 016 D4: the users page gate is `requirePagePermission('users.manage')`
+    // — super_admin-only. The manager stays a staff session (the layout
+    // admits it) and the PAGE answers the not-found shell, never a
+    // redirect and never a 5xx. Same strict idiom as the rbac persona
+    // walks: `notFound()` is HTTP 200 on the dev server, so assert on
+    // the not-found marker, not the status code alone.
+    const res = await page.context().request.get('/admin/users', {
+      failOnStatusCode: false,
+      maxRedirects: 0,
+    });
+    expect(res.status(), '/admin/users must not 5xx for a manager').toBeLessThan(500);
+    expect([200, 404], '/admin/users must be a not-found, not a redirect').toContain(res.status());
+    expect(await res.text()).toMatch(
+      /<meta\s+name="next-error"\s+content="not-found"|NEXT_HTTP_ERROR_FALLBACK;404/,
+    );
   });
 
   test('direct POST /api/auth/invite as manager session is rejected with 403', async ({
@@ -125,7 +102,7 @@ test.describe('manager read-only staff portal (FR-003, User Story 2)', () => {
 
     // Fire a direct POST to /api/auth/invite with the manager's
     // session cookies attached (via page.request). The API route
-    // gate (requireRole('auth:user', 'write')) MUST return 403
+    // gate (requireApiPermission('users.manage')) MUST return 403
     // regardless of what the UI shows.
     const response = await page.request.post('/api/auth/invite', {
       headers: {
@@ -140,9 +117,9 @@ test.describe('manager read-only staff portal (FR-003, User Story 2)', () => {
 
     expect(response.status()).toBe(403);
 
-    // The API emits a `manager_denied_write` audit event for this
-    // exact path — verified at the integration layer by
-    // `tests/integration/auth/rbac-manager-readonly.test.ts`. We
+    // The API emits a `permission_denied` audit event for this exact
+    // path — pinned by the denial-audit contract suite
+    // (`tests/contract/rbac/permission-denied-audit.test.ts`). We
     // don't re-verify audit rows from an E2E to keep this spec
     // focused on the browser-visible contract.
   });

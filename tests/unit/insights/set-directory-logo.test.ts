@@ -69,6 +69,45 @@ describe('setDirectoryLogo — guard branches', () => {
     if (!r.ok) expect(r.error).toBe('forbidden');
   });
 
+  // 016 polish (I6) — the staff arm is keyed on `members.write` (admin ∪
+  // super_admin). `marketing` is the distinguishing case: it holds
+  // `members.read` but not `members.write`, so grabbing a read key here
+  // (or any marketing-held key) flips this test.
+  it('marketing is forbidden (no members.write)', async () => {
+    const deps = stubDeps();
+    const r = await setDirectoryLogo(
+      { memberId: 'm-1', bytes: png, declaredMime: 'image/png' },
+      { ...memberMeta, actorRole: 'marketing', actorMemberId: null },
+      ctx,
+      deps,
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toBe('forbidden');
+    expect(deps.image.reencode).not.toHaveBeenCalled();
+  });
+
+  it.each(['admin', 'super_admin'] as const)(
+    '%s passes the staff authorize arm (stops later, at byte validation)',
+    async (role) => {
+      const deps = stubDeps();
+      // Re-encode fails closed so the case stops before upload/runInTenant —
+      // reencode being REACHED is the proof the authorize arm passed.
+      vi.mocked(deps.image.reencode).mockResolvedValue({
+        ok: false,
+        error: { code: 'decode_failed', reason: 'stubbed' },
+      });
+      const r = await setDirectoryLogo(
+        { memberId: 'm-1', bytes: png, declaredMime: 'image/png' },
+        { ...memberMeta, actorRole: role, actorMemberId: null },
+        ctx,
+        deps,
+      );
+      expect(deps.image.reencode).toHaveBeenCalledTimes(1);
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error).toBe('invalid_image');
+    },
+  );
+
   it('rejects an oversize upload before re-encode', async () => {
     const deps = stubDeps();
     const big = new Uint8Array(MAX_LOGO_UPLOAD_BYTES + 1);

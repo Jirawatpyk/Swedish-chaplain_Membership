@@ -2,9 +2,10 @@
  * T097 — F4 US4 tenant invoice settings E2E (US4 AS1–AS5).
  *
  * Scope — AS that do NOT mutate shared SweCham tenant state:
- *   - AS3 non-admin (member / manager) reaching /admin/settings/invoicing
- *     hits a 403/404 guard OR sees the page with save disabled
- *     (manager UI-disabled, security boundary at API route).
+ *   - AS3 non-authorized roles reaching /admin/settings/invoicing are
+ *     denied. Since 016 D4 the page is `settings.invoicing` =
+ *     super_admin-ONLY — plain admin and manager 404 like everyone else,
+ *     so the signed-in persona here is the E2E super admin.
  *   - Form surface renders with all expected sections + labels.
  *   - A11y scan on the settings page.
  *
@@ -18,8 +19,10 @@ import { expect, test } from './fixtures';
 import { signInViaForm } from './helpers/layout';
 import { createThrowawayTenant } from './helpers/throwaway-tenant';
 
-const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
-const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
+// 016 D4 narrowed `/admin/settings/invoicing` to super_admin-only; the plain
+// E2E admin now 404s on it, so this suite signs in as the super admin persona.
+const ADMIN_EMAIL = process.env.E2E_SUPER_ADMIN_EMAIL;
+const ADMIN_PASSWORD = process.env.E2E_SUPER_ADMIN_PASSWORD;
 const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL;
 const MEMBER_PASSWORD = process.env.E2E_MEMBER_PASSWORD;
 
@@ -37,7 +40,7 @@ async function signIn(
 test.describe('@us4 tenant-invoice-settings', () => {
   test.skip(
     !ADMIN_EMAIL || !ADMIN_PASSWORD,
-    'Set E2E_ADMIN_EMAIL + E2E_ADMIN_PASSWORD to run',
+    'Set E2E_SUPER_ADMIN_EMAIL + E2E_SUPER_ADMIN_PASSWORD to run',
   );
 
   test('admin can reach /admin/settings/invoicing and sees the form', async ({ page }) => {
@@ -117,7 +120,11 @@ test.describe('@us4 tenant-invoice-settings', () => {
             r.request().method() === 'PATCH',
           { timeout: 15_000 },
         );
-        await page.getByRole('button', { name: /^(save|บันทึก|spara)/i }).click();
+        // `.first()` — once dirty, the settings-ux StickySaveBar renders a
+        // second "Save changes" button; BOTH drive the same requestSubmit()
+        // (documented in invoice-settings-form.tsx), so either is the same
+        // action and strict mode just needs one picked.
+        await page.getByRole('button', { name: /^(save|บันทึก|spara)/i }).first().click();
         const resp = await patchResponse;
         expect(resp.ok()).toBe(true);
         await expect(
@@ -207,8 +214,9 @@ test.describe('@us4 tenant-invoice-settings', () => {
         await expect(keyLabel).toBeVisible({ timeout: 20_000 });
 
         // Save and verify persistence via page reload — the hidden
-        // `logo_blob_key` should survive the PATCH round-trip.
-        await page.getByRole('button', { name: /^(save|บันทึก|spara)/i }).click();
+        // `logo_blob_key` should survive the PATCH round-trip. `.first()`:
+        // same StickySaveBar strict-mode note as AS1 above.
+        await page.getByRole('button', { name: /^(save|บันทึก|spara)/i }).first().click();
         // Skip `waitForLoadState('networkidle')` — Next.js dev HMR
         // websocket keeps network active and never settles. The toast
         // assertion below is the real signal for save success.

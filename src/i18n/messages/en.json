@@ -664,8 +664,9 @@
           "role-portal-mismatch": "That role change isn't allowed for this account.",
           "forbidden": "You no longer have permission to change roles. Sign out and back in, then ask a Super Admin.",
           "not-found": "That user no longer exists. Refresh the list.",
-          "invalid-role": "That isn't a role this system can assign.",
+          "invalid-role": "That isn't a role this system can assign. Refresh the page and pick again.",
           "no-session": "Your session expired. Sign in again, then retry the role change.",
+          "invalid-input": "The request couldn't be read. Refresh the page and pick the role again.",
           "generic": "Couldn't change the role. Please try again."
         }
       },

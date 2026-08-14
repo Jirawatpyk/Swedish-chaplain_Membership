@@ -15,16 +15,19 @@
  */
 import { expect, fillField, test } from './fixtures';
 
-const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
-const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
+// Super admin since 016 D4: the destructive buttons under test live on
+// /admin/users, which is `users.manage` = super_admin-only (a plain admin
+// now 404s there).
+const ADMIN_EMAIL = process.env.E2E_SUPER_ADMIN_EMAIL;
+const ADMIN_PASSWORD = process.env.E2E_SUPER_ADMIN_PASSWORD;
 
 test.describe('destructive-action confirmation (T120)', () => {
   test.skip(
     !ADMIN_EMAIL || !ADMIN_PASSWORD,
-    'Set E2E_ADMIN_EMAIL and E2E_ADMIN_PASSWORD to run',
+    'Set E2E_SUPER_ADMIN_EMAIL and E2E_SUPER_ADMIN_PASSWORD to run',
   );
 
-  test('disable/enable/role-change opens ConfirmationDialog and Cancel dismisses it', async ({
+  test('disable/enable opens ConfirmationDialog and Cancel dismisses it', async ({
     page,
   }) => {
     await page.goto('/admin/sign-in');
@@ -36,11 +39,15 @@ test.describe('destructive-action confirmation (T120)', () => {
     await page.goto('/admin/users');
     await page.waitForLoadState('networkidle');
 
-    // Find the first destructive action button (disable / enable /
-    // change role). We don't care which one — they all open the
-    // same dialog shape.
+    // Find the first CONFIRMATION-pattern destructive button (disable /
+    // enable). "Change role" is deliberately EXCLUDED: since 016 it opens
+    // ChangeRoleDialog, a picker whose focus contract intentionally deviates
+    // from §6.4 (focus lands in the RadioGroup, NOT on Cancel — 016 UX
+    // review I1), and it renders FIRST in a super_admin's row cluster, so
+    // matching it here asserted the wrong dialog's contract. Its own focus
+    // behaviour is pinned by the T046 persona spec.
     const destructiveBtn = page
-      .getByRole('button', { name: /disable|enable|change role/i })
+      .getByRole('button', { name: /disable|enable/i })
       .first();
     if ((await destructiveBtn.count()) === 0) {
       test.skip(

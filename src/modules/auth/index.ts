@@ -199,7 +199,6 @@ export {
   ADMINISTRATIVE_ROLES,
   administrativeRoles,
   isAdministrativeRole,
-  isAdminTier,
   isRole,
   isStaffRole,
 } from './domain/role';

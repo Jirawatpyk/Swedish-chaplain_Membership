@@ -197,6 +197,9 @@ describe('ChangeRoleDialog', () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ newRole: 'manager' }),
+        // S-9: every POST is abortable so a close mid-flight cannot repaint
+        // the next row's dialog with this row's outcome.
+        signal: expect.any(AbortSignal),
       }),
     );
     await waitFor(() => expect(toast.success).toHaveBeenCalled());
@@ -385,5 +388,154 @@ describe('ChangeRoleDialog', () => {
     await waitFor(() =>
       expect(screen.getByText(en.admin.users.changeRole.errors.generic)).toBeInTheDocument(),
     );
+  });
+
+  /**
+   * 016 polish — the two PR-3 deferrals on this dialog, closed:
+   *
+   * S-10: a NON-RETRYABLE refusal must not leave Confirm armed — re-clicking
+   * re-POSTs a request that can never succeed. Picking a different role is the
+   * recovery path (onValueChange clears the error), so that revives it.
+   *
+   * S-9: the parent reuses ONE dialog instance forever, so a POST resolving
+   * after close would repaint the NEXT row's dialog with THIS row's outcome.
+   * Closing now aborts the in-flight request, and the handler re-checks the
+   * signal after every await.
+   */
+  it('S-10: a non-retryable refusal disables Confirm; picking another role revives it', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: async () => ({ error: 'same-role' }),
+    } as unknown as Response);
+    renderDialog();
+
+    fireEvent.click(screen.getByRole('radio', { name: en.admin.users.filters.role.manager }));
+    const confirm = screen.getByRole('button', { name: en.admin.users.changeRole.confirm });
+    await waitFor(() => expect(confirm).toBeEnabled());
+    fireEvent.click(confirm);
+
+    await waitFor(() =>
+      expect(screen.getByText(en.admin.users.changeRole.errors['same-role'])).toBeInTheDocument(),
+    );
+    // Verbatim retry can never succeed → Confirm is dead while the error shows.
+    expect(confirm).toBeDisabled();
+
+    // Recovery: a DIFFERENT pick clears the error and revives Confirm.
+    fireEvent.click(screen.getByRole('radio', { name: en.admin.users.filters.role.marketing }));
+    await waitFor(() => expect(confirm).toBeEnabled());
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it.each(['last-admin-protection', 'no-session'] as const)(
+    'S-10: %s stays RETRYABLE — its copy says fix the precondition, then retry',
+    async (code) => {
+      // last-admin-protection: promote another super_admin in a second tab.
+      // no-session: sign in again in a second tab (cookies are tab-shared).
+      // A dead Confirm would contradict the remedy each copy prescribes.
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+        ok: false,
+        status: code === 'no-session' ? 401 : 409,
+        json: async () => ({ error: code }),
+      } as unknown as Response);
+      renderDialog();
+
+      fireEvent.click(screen.getByRole('radio', { name: en.admin.users.filters.role.manager }));
+      fireEvent.click(screen.getByRole('button', { name: en.admin.users.changeRole.confirm }));
+      await waitFor(() =>
+        expect(
+          screen.getByText(en.admin.users.changeRole.errors[code]),
+        ).toBeInTheDocument(),
+      );
+      expect(
+        screen.getByRole('button', { name: en.admin.users.changeRole.confirm }),
+        'the operator can fix the precondition elsewhere and retry this exact change',
+      ).toBeEnabled();
+    },
+  );
+
+  it('S-10/S4: invalid-input gets its own permanent-failure copy, not "please try again"', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({ error: 'invalid-input' }),
+    } as unknown as Response);
+    renderDialog();
+
+    fireEvent.click(screen.getByRole('radio', { name: en.admin.users.filters.role.manager }));
+    fireEvent.click(screen.getByRole('button', { name: en.admin.users.changeRole.confirm }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(en.admin.users.changeRole.errors['invalid-input']),
+      ).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByText(en.admin.users.changeRole.errors.generic),
+    ).not.toBeInTheDocument();
+  });
+
+  it('S-9: closing mid-flight aborts the POST', async () => {
+    let capturedSignal: AbortSignal | undefined;
+    vi.spyOn(globalThis, 'fetch').mockImplementation((_url, init) => {
+      capturedSignal = init?.signal ?? undefined;
+      return new Promise<Response>(() => {}); // never resolves
+    });
+    const { rerender } = render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <ChangeRoleDialog user={ADMIN_USER} open onOpenChange={vi.fn()} onChanged={vi.fn()} />
+      </NextIntlClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole('radio', { name: en.admin.users.filters.role.manager }));
+    fireEvent.click(screen.getByRole('button', { name: en.admin.users.changeRole.confirm }));
+    await waitFor(() => expect(capturedSignal).toBeDefined());
+    expect(capturedSignal!.aborted).toBe(false);
+
+    rerender(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <ChangeRoleDialog user={ADMIN_USER} open={false} onOpenChange={vi.fn()} onChanged={vi.fn()} />
+      </NextIntlClientProvider>,
+    );
+    expect(capturedSignal!.aborted, 'close must abort the in-flight POST').toBe(true);
+  });
+
+  it('S-9: a response landing after close touches nothing — no toast, no refresh, no force-close', async () => {
+    // A deferred the test resolves AFTER the close. The mock ignores the abort
+    // (like a response already on the wire), which exercises the post-await
+    // signal checks rather than fetch's own rejection path.
+    let resolveFetch!: (r: Response) => void;
+    vi.spyOn(globalThis, 'fetch').mockReturnValue(
+      new Promise<Response>((resolve) => {
+        resolveFetch = resolve;
+      }),
+    );
+    const onOpenChange = vi.fn();
+    const onChanged = vi.fn();
+    const { rerender } = render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <ChangeRoleDialog user={ADMIN_USER} open onOpenChange={onOpenChange} onChanged={onChanged} />
+      </NextIntlClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole('radio', { name: en.admin.users.filters.role.manager }));
+    fireEvent.click(screen.getByRole('button', { name: en.admin.users.changeRole.confirm }));
+
+    // Operator closes while the POST is in flight (the dialog may then be
+    // reopened for a different row — the stale outcome must not leak into it).
+    rerender(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <ChangeRoleDialog user={ADMIN_USER} open={false} onOpenChange={onOpenChange} onChanged={onChanged} />
+      </NextIntlClientProvider>,
+    );
+    onOpenChange.mockClear();
+
+    resolveFetch({ ok: true, json: async () => ({ ok: true }) } as Response);
+    // Give the microtask queue a beat to run the handler's continuation.
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(toast.success, 'stale success must not toast').not.toHaveBeenCalled();
+    expect(onChanged, 'stale success must not refresh').not.toHaveBeenCalled();
+    expect(onOpenChange, 'stale success must not force-close a reopened dialog').not.toHaveBeenCalled();
   });
 });

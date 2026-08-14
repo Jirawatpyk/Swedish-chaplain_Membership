@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   ASSIGNABLE_ROLES,
+  byDisplayOrder,
   isRole,
   isStaffRole,
   PORTAL_FOR_ROLE,
   ROLES,
   STAFF_ROLES,
+  type Role,
 } from '@/modules/auth/domain/role';
 import { roleEnum } from '@/modules/auth/infrastructure/db/schema';
 
@@ -107,5 +109,28 @@ describe('isStaffRole', () => {
 
   it('member is NOT a staff role', () => {
     expect(isStaffRole('member')).toBe(false);
+  });
+});
+
+describe('byDisplayOrder', () => {
+  it('sorts most-privileged first regardless of input order', () => {
+    expect(byDisplayOrder(['member', 'marketing', 'super_admin', 'admin', 'manager'])).toEqual([
+      'super_admin',
+      'admin',
+      'manager',
+      'marketing',
+      'member',
+    ]);
+  });
+
+  it('an unknown role sorts LAST rather than throwing or floating to the top', () => {
+    // The defensive `-1 → length` arm: a future role that has not yet been
+    // added to ROLE_DISPLAY_ORDER must degrade to "after everything ranked",
+    // never to position 0 (which would present it as most privileged).
+    expect(byDisplayOrder(['future_role' as Role, 'member', 'admin'])).toEqual([
+      'admin',
+      'member',
+      'future_role',
+    ]);
   });
 });

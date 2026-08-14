@@ -15,13 +15,16 @@
  * "when an admin disables a user in the browser, is the user
  * actually kicked out on their next click?".
  *
- * Requires TWO seeded test users: e2e-admin (admin role) and
- * e2e-member (member role). Run `scripts/seed-e2e-user.ts` first.
+ * Requires TWO seeded test users: e2e-super-admin (super_admin role) and
+ * e2e-member (member role). Run `scripts/seed-e2e-user.ts` first. Super
+ * admin since 016 D4 — the victim's row is scraped from /admin/users,
+ * which is `users.manage` = super_admin-only (a plain admin 404s there
+ * and the row locator would never resolve).
  */
 import { expect, fillField, test } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
 
-const ADMIN_EMAIL = 'e2e-admin@swecham.test';
+const ADMIN_EMAIL = 'e2e-super-admin@swecham.test';
 const ADMIN_PASSWORD = 'E2E-Testing-Password-2026!xZ';
 const VICTIM_EMAIL = 'e2e-member@swecham.test';
 const VICTIM_PASSWORD = 'E2E-Testing-Password-2026!xZ';
@@ -66,7 +69,10 @@ test.describe('session revocation on disable (T-05, User Story 4)', () => {
       await fillField(adminPage.getByRole('textbox', { name: /^password$/i }), ADMIN_PASSWORD);
       await adminPage.getByRole('button', { name: /sign in/i }).click();
       await adminPage.waitForURL('**/admin', { timeout: 15_000 });
-      await adminPage.goto('/admin/users');
+      // Server-side q filter: the dev DB carries the imported member accounts,
+      // so the victim's row is NOT guaranteed to sit on page 1 of the
+      // unfiltered list — an unfiltered goto flaked exactly that way.
+      await adminPage.goto(`/admin/users?q=${encodeURIComponent(VICTIM_EMAIL)}`);
       await adminPage.waitForLoadState('networkidle');
 
       // 3. Admin disables the victim via the /api/auth/users/[id]/disable

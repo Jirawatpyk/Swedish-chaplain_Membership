@@ -13,7 +13,9 @@
  *   - US5: Fee-config form (Tab through fields, save)
  *   - US6: Command palette (Ctrl+K, type, Enter to navigate)
  *
- * Gated on `E2E_ADMIN_EMAIL/PASSWORD` env vars.
+ * Gated on `E2E_SUPER_ADMIN_EMAIL/PASSWORD` env vars — the US5 fee-config
+ * case walks /admin/settings/invoicing, which is super_admin-only since
+ * 016 D4; the plans flows are persona-equivalent under super admin.
  */
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -21,8 +23,8 @@ import * as path from 'node:path';
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 
-const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
-const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
+const ADMIN_EMAIL = process.env.E2E_SUPER_ADMIN_EMAIL;
+const ADMIN_PASSWORD = process.env.E2E_SUPER_ADMIN_PASSWORD;
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
@@ -31,7 +33,7 @@ test.describe.configure({ mode: 'serial' });
 test.describe('keyboard-only plans admin — T158', () => {
   test.skip(
     !ADMIN_EMAIL || !ADMIN_PASSWORD,
-    'Set E2E_ADMIN_EMAIL and E2E_ADMIN_PASSWORD (seeded by scripts/seed-e2e-user.ts)',
+    'Set E2E_SUPER_ADMIN_EMAIL and E2E_SUPER_ADMIN_PASSWORD (seeded by scripts/seed-e2e-user.ts)',
   );
 
   /**
@@ -140,11 +142,15 @@ test.describe('keyboard-only plans admin — T158', () => {
     // contains "VAT rate" text.
     await expect(page.getByLabel(/vat rate/i)).toBeVisible({ timeout: 5_000 });
 
-    // Tab through form fields — verify we can reach the VAT and registration fee inputs
+    // Tab through form fields — verify we can reach the VAT and registration
+    // fee inputs. Budget 60 (was 20): the settings-ux redesign put a section
+    // nav rail + the whole Legal-identity section (names ×2, tax id,
+    // addresses ×2, head-office/branch) in the tab order BEFORE the Tax
+    // section, so 20 tabs stopped short of the VAT field.
     let reachedVat = false;
     let reachedRegFee = false;
 
-    for (let i = 0; i < 20; i += 1) {
+    for (let i = 0; i < 60; i += 1) {
       await page.keyboard.press('Tab');
       const activeLabel = await page.evaluate(() => {
         const el = document.activeElement;
