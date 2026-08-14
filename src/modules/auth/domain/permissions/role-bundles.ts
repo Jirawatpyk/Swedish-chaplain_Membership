@@ -30,6 +30,10 @@ const NON_SUPER_ADMIN_ONLY_KEYS: readonly PermissionKey[] = [...ALL_PERMISSION_K
 const MANAGER_KEYS: readonly PermissionKey[] = [
   'dashboard.view',
   'members.read',
+  // `contacts.read` + `payments.read` are UNENFORCED vocabulary today (no
+  // gate checks them — see the notes in permission-catalogue.ts). They stay
+  // granted for § 4.1 parity, but editing THEM changes nothing: contact
+  // access rides `members.read`, the payment timeline rides `invoicing.read`.
   'contacts.read',
   'directory.export',
   'plans.read',
@@ -45,6 +49,7 @@ const MANAGER_KEYS: readonly PermissionKey[] = [
 const MARKETING_KEYS: readonly PermissionKey[] = [
   'dashboard.view',
   'members.read',
+  // Unenforced today — see the MANAGER_KEYS note / permission-catalogue.ts.
   'contacts.read',
   'broadcasts.read',
   'broadcasts.write',

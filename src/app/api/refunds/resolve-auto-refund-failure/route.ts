@@ -8,8 +8,11 @@
  * `resolveFailedAutoRefund` use-case, which clears the persistent
  * `AutoRefundFailedAlert` + reverts the member void banner.
  *
- * Auth: `requireApiPermission('refunds.write', mappedLegacy('refund', 'write'))` —
- * the same admin-only gate the refund-initiate route uses (manager → 403).
+ * Auth: `requireApiPermission(request, 'refunds.write')` — the same
+ * admin-tier gate the refund-initiate route uses (manager → 403). (The old
+ * two-argument `mappedLegacy(…)` signature died with the legacy shim in
+ * PR 5 — this header once documented it and sent copy-paste authors hunting
+ * for a deleted helper.)
  *
  * PCI (Principle IV): logs + audit carry ids only — no card data, no raw
  * `error.message`. The 500 path emits a bounded `errKind` classifier.

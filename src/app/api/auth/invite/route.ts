@@ -88,11 +88,10 @@ const createUserPort: CreateUserPort = async (input) => {
 export async function POST(request: NextRequest): Promise<NextResponse> {
   // 016 T028 (§ 7.1 per-TARGET contract, contracts/authorization-surfaces § 3):
   // step 1 gates on the WIDER capability (`users.member_accounts` — held by
-  // super_admin + admin on the ON leg) before the body is read; step 2 below
-  // re-gates on `users.manage` (SA-only) once the target role is known to be a
-  // staff role. On the OFF leg both rows are `mappedLegacy('auth:user',
-  // 'write')` — exactly the single pre-sweep `requireAdminContext(request)`
-  // check, so behaviour is byte-identical.
+  // super_admin + admin) before the body is read; step 2 below re-gates on
+  // `users.manage` (SA-only) once the target role is known to be a staff
+  // role. (The OFF-leg `mappedLegacy` rows this note used to describe died
+  // with the legacy shim in PR 5 — there is one evaluator now.)
   const ctx = await requireApiPermission(
     request,
     'users.member_accounts',

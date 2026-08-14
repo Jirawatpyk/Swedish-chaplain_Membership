@@ -1850,6 +1850,14 @@
           "renewalSchedules": {
             "title": "Reminder schedules",
             "description": "Cadence and channel for renewal reminders, configurable per member tier."
+          },
+          "broadcasts": {
+            "title": "Broadcast settings",
+            "description": "Inline-image source allowlist and sending safeguards for member broadcasts."
+          },
+          "integrationsEventcreate": {
+            "title": "EventCreate integration",
+            "description": "Webhook credentials and attendee-import configuration for EventCreate."
           }
         }
       }

@@ -34,6 +34,13 @@ const CATALOGUE_RAW = [
   { key: 'members.pii_sensitive', sensitive: 'pii' },
   { key: 'members.erasure', superAdminOnly: true, sensitive: 'pii' },
   { key: 'members.erasure_log_read', superAdminOnly: true, sensitive: 'pii' },
+  // UNENFORCED VOCABULARY (016 post-ship review, below-cap): no gate,
+  // canPerform or hasPermission call anywhere in src/ or scripts/ checks
+  // this key — contact reads ride the `members.read`-gated member-detail
+  // surfaces, so granting or revoking it changes NOTHING at runtime today.
+  // Kept for § 4.1 matrix parity. If a dedicated contacts surface ever
+  // ships, gate it on this key and delete this note; until then, reviewers
+  // reasoning about contact access must look at `members.read`.
   { key: 'contacts.read' },
   { key: 'contacts.write', sensitive: 'pii' },
   { key: 'directory.export', sensitive: 'pii' },
@@ -47,6 +54,10 @@ const CATALOGUE_RAW = [
   { key: 'invoicing.receipt', sensitive: 'money' },
   { key: 'credit_notes.write', sensitive: 'money' },
   { key: 'refunds.write', sensitive: 'money' },
+  // UNENFORCED VOCABULARY (016 post-ship review, below-cap): checked by no
+  // gate — the invoice payment timeline is gated by `invoicing.read`, so
+  // granting this key opens nothing today. Same standing rule as
+  // `contacts.read` above.
   { key: 'payments.read' },
   { key: 'renewals.read' },
   { key: 'renewals.write', sensitive: 'money' },

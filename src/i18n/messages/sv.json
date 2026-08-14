@@ -1850,6 +1850,14 @@
           "renewalSchedules": {
             "title": "Påminnelseschema",
             "description": "Frekvens och kanal för förnyelsepåminnelser, konfigurerbart per medlemsnivå."
+          },
+          "broadcasts": {
+            "title": "Inställningar för utskick",
+            "description": "Tillåtna bildkällor och skyddsåtgärder för utskick till medlemmar."
+          },
+          "integrationsEventcreate": {
+            "title": "EventCreate-integration",
+            "description": "Webhook-uppgifter och konfiguration för import av deltagare från EventCreate."
           }
         }
       }

@@ -159,8 +159,10 @@ describe('integration: last-admin-protection guard (T-10)', () => {
     // `countActiveAdministrators()` returns 1.
     //
     // We use manager → admin (both staff-portal roles) because:
-    //   - Target role is NOT admin → guard is never entered
-    //     (the guard fires only when `target.role === 'admin'`)
+    //   - Target role is NOT administrative → guard is never entered
+    //     (post-0288 the guard fires only when the target is an ACTIVE
+    //     `super_admin` leaving the administrative set — a plain 'admin'
+    //     is not protected either)
     //   - Both are staff roles → no portal-mismatch rejection
     //   - The promotion is semantically valid under the policy
     const managerTarget = await createActiveTestUser('manager');

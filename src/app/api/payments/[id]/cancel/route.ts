@@ -96,10 +96,12 @@ export async function POST(
 
   const tenantCtx = resolveTenantFromRequest(request);
   const actorUserId = memberCtx.current.user.id;
-  const actorRole = memberCtx.current.user.role as
-    | 'admin'
-    | 'manager'
-    | 'member';
+  // requireMemberContext hard-checks `role === 'member'` before returning a
+  // MemberContext, so this is the literal role — not the stale 3-role F5
+  // cast that sat here (unreachable for staff; 016 post-ship cleanup, see
+  // the rbac-policy.ts header for why that union must never meet a staff
+  // session role).
+  const actorRole = 'member' as const;
   const actorMemberId = memberCtx.memberId;
 
   // 2 — Rate limit.

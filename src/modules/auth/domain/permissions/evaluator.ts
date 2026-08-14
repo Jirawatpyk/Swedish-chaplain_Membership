@@ -25,9 +25,16 @@ const EMPTY_SET: ReadonlySet<PermissionKey> = new Set();
 
 /**
  * Derived, in-memory permission set for a role (D15: synchronous, no DB read,
- * never persisted). Feeds nav/palette filtering. `super_admin` derives the
- * FULL catalogue — the E1 bypass surfaced as data so permission-aware UI
- * shows the complete surface. Unknown/future roles derive the empty set.
+ * never persisted). `super_admin` derives the FULL catalogue — the E1 bypass
+ * surfaced as data so a permission-aware UI would show the complete surface.
+ * Unknown/future roles derive the empty set.
+ *
+ * NO PRODUCTION CONSUMER today (016 post-ship review, below-cap): nav +
+ * palette filter per-guard via `hasPermission`, not via this set — the old
+ * "feeds nav/palette filtering" claim here was false. Kept (rather than
+ * deleted) because the D15/E6 characterization suites exercise the evaluator
+ * through it and it is the correct set-shaped projection should a UI ever
+ * need one; it is NOT divergent — the E1 bypass is honoured above.
  */
 export function getPermissionSet(role: Role | (string & {})): ReadonlySet<PermissionKey> {
   if (role === 'super_admin') return ALL_PERMISSION_KEYS;

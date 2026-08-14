@@ -58,12 +58,18 @@ const CATEGORIES = parseCategories();
 
 describe('settings index declares a permission per card', () => {
   it('parses the known cards (the parser actually walked)', () => {
-    expect(CATEGORIES).toHaveLength(2);
+    // 4 since the 016 post-ship review closed the 2-of-4 sidebar-parity gap
+    // (broadcasts + eventcreate cards, both feature-flag-aware).
+    expect(CATEGORIES).toHaveLength(4);
   });
 
   it('the page still filters — `visible` is derived, not the raw list', () => {
     const src = readFileSync(INDEX_FILE, 'utf8');
-    expect(src).toMatch(/CATEGORIES\.filter\(\s*\(c\)\s*=>\s*canPerform\(/);
+    // The filter body now carries the visibilityFlag arm BEFORE canPerform;
+    // both dimensions must be present.
+    expect(src).toMatch(/CATEGORIES\.filter\(/);
+    expect(src).toMatch(/visibilityFlag/);
+    expect(src).toMatch(/canPerform\(user\.role, c\.permission\)/);
     // …and the render maps the FILTERED list. A filter computed and then not
     // used is the likeliest way this regresses.
     expect(src).toMatch(/\{visible\.map\(/);
@@ -97,6 +103,8 @@ describe('ON-leg visibility per role', () => {
     const visible = visibleFor('admin');
     expect(visible).not.toContain('/admin/settings/invoicing');
     expect(visible).toContain('/admin/settings/renewals/schedules');
+    expect(visible).toContain('/admin/settings/broadcasts');
+    expect(visible).toContain('/admin/settings/integrations/eventcreate');
   });
 
   it('super_admin sees every card', () => {
