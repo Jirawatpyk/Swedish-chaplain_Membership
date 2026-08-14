@@ -59,6 +59,12 @@
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
+import {
+  lineOfIndex,
+  markerApplies,
+  stripCommentLines,
+  stripCommentsPreserveLines,
+} from './lib/source-scan';
 
 const ROOT = process.cwd();
 const API_DIR = join(ROOT, 'src', 'app', 'api');
@@ -124,92 +130,22 @@ function walk(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-/**
- * Blank out comments while PRESERVING line structure, so match offsets can be
- * mapped back to line numbers for region attribution and marker lookup.
- *
- * Order is load-bearing, in three passes:
- *
- *  1. SINGLE-LINE block comments first (`/* a *​/`). This closes the mirror
- *     hazard the two-pass version had: a single-line block comment CONTAINING
- *     `//` (`/* a // b *​/`) would lose its terminator to the line-comment pass,
- *     leaving an unclosed `/*` that swallowed everything to the next `*​/`.
- *  2. LINE comments next. This repo has line comments containing `/**` (prose
- *     naming the route glob `/admin/events/**`), which made a block-first pass
- *     latch on and swallow 564 lines — silently hiding the guard this gate
- *     exists to find. The `[^:]` guard keeps `https://` intact.
- *  3. Multi-line block comments last, replaced by their newlines only.
- */
-function stripCommentsPreserveLines(src: string): string {
-  return src
-    .replace(/\/\*[^\n]*?\*\//g, (m) => ' '.repeat(m.length))
-    .replace(/(^|[^:])\/\/[^\n]*/g, (_m, p1: string) => p1)
-    .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ''));
-}
-
-/** 0-based line number of a character offset within `text`. */
-function lineOfIndex(text: string, index: number): number {
-  let line = 0;
-  for (let i = 0; i < index; i += 1) if (text.charCodeAt(i) === 10) line += 1;
-  return line;
-}
+// Comment stripping + line mapping + marker hosting now come from the SHARED
+// string-aware scanner (016 post-ship review finding V3b closed the deferred
+// migration): the private three-pass regex stripper this file carried was not
+// string-aware — a string literal containing `/*` with no `*/` on the same
+// line (a MIME accept `'image/*'`, a glob) opened a phantom block comment and
+// blanked everything to the next `*/`, silently blinding the leftover
+// role-literal scan (check 3) — the exact 341-line-blindness class
+// `scripts/lib/source-scan.ts` was written to close. Its private markerApplies
+// also honored a marker hosted inside a string/URL on the decision line
+// (finding #11); the shared copy decides comment-hosting from the stripped
+// code.
 
 /** `src/app/api/plans/[year]/route.ts` → `/api/plans/[year]`. */
 function surfaceOf(file: string): string {
   const rel = relative(join(ROOT, 'src', 'app'), file).split(sep).slice(0, -1);
   return '/' + rel.join('/');
-}
-
-/** A source line that is entirely comment (`//`, `*`, `/*`). */
-function isCommentLine(line: string): boolean {
-  const t = line.trim();
-  return t.startsWith('//') || t.startsWith('*') || t.startsWith('/*');
-}
-
-/**
- * True when an opt-out marker legitimately covers the code at `index`.
- *
- * A marker counts ONLY when it is hosted in a comment — either after `//` on
- * the same line, or inside the contiguous comment block sitting at most
- * `MAX_CODE_GAP` code lines above (a narrow's condition often spans several
- * lines, so the block may not be strictly adjacent to every line it covers).
- *
- * The first version accepted the marker string ANYWHERE in a 5-line raw
- * window, which the re-review defeated twice: a plain string constant in CODE
- * (`const tag = 'rbac-narrow-ok'`) silenced the 4 lines beneath it, and an
- * unrelated marker bled onto neighbouring statements. Comment-hosting kills
- * the string-constant hole. The remaining semantics are trust in the
- * ANNOTATION itself: a committer who writes a marker comment directly above a
- * genuine authorization decision defeats any textual gate — that is what
- * review of marker diffs is for.
- */
-const MAX_CODE_GAP = 3;
-function markerApplies(
-  lines: readonly string[],
-  index: number,
-  marker: string,
-): boolean {
-  const line = lines[index] ?? '';
-  const slash = line.indexOf('//');
-  if (slash >= 0 && line.slice(slash).includes(marker)) return true;
-
-  let i = index - 1;
-  let codeGap = 0;
-  while (i >= 0) {
-    const l = lines[i] ?? '';
-    if (isCommentLine(l)) {
-      for (let j = i; j >= 0 && isCommentLine(lines[j] ?? ''); j -= 1) {
-        if (lines[j]!.includes(marker)) return true;
-      }
-      return false;
-    }
-    if (l.trim() !== '') {
-      codeGap += 1;
-      if (codeGap > MAX_CODE_GAP) return false;
-    }
-    i -= 1;
-  }
-  return false;
 }
 
 interface Located {
@@ -226,6 +162,7 @@ interface Located {
 function declaredPairs(
   code: string,
   rawLines: readonly string[],
+  codeLines: readonly string[],
 ): { located: Located[]; nonLiteral: number } {
   const located: Located[] = [];
   let nonLiteral = 0;
@@ -270,7 +207,7 @@ function declaredPairs(
   const FORM4 = /canPerform\(\s*[A-Za-z_$][\w$.]*\s*,\s*'([^']+)'/g;
   for (const m of code.matchAll(FORM4)) {
     const line = lineOfIndex(code, m.index!);
-    if (markerApplies(rawLines, line, SUBGATE_MARKER)) continue;
+    if (markerApplies(rawLines, line, [SUBGATE_MARKER], codeLines)) continue;
     located.push({ pair: pairOf(m[1]!), line });
   }
 
@@ -300,12 +237,30 @@ function handlerSegments(code: string): {
   for (const m of code.matchAll(fnRe)) {
     segments.push({ method: m[1] as HttpMethod, startLine: lineOfIndex(code, m.index!) });
   }
+  // Alias form anchored to end-of-line so `export const GET = POSTish` can
+  // never read as an alias to POST.
   const aliasRe = new RegExp(
-    `^export\\s+const\\s+(${methodAlt})\\s*=\\s*(${methodAlt})\\s*;?`,
+    `^export\\s+const\\s+(${methodAlt})\\s*=\\s*(${methodAlt})\\s*;?\\s*$`,
     'gm',
   );
   for (const m of code.matchAll(aliasRe)) {
     aliases.set(m[1] as HttpMethod, m[2] as HttpMethod);
+  }
+  // 016 post-ship review finding #14 — arrow/delegate handlers:
+  //   export const POST = async (req) => …
+  //   export const POST = withSentry(async (req) => …)
+  //   export const POST = handle
+  // yielded ZERO segments, so every gate declaration landed in the 'module'
+  // region and the whole file silently fell back to the weaker file-level
+  // set-union check — where swapping keys between GET and POST leaves the set
+  // identical and a downgraded method is absorbed by dedup, the two defeats
+  // the per-method rewrite exists to catch. Any `export const METHOD = <expr>`
+  // that is not the METHOD-alias form above starts a handler segment.
+  const constRe = new RegExp(`^export\\s+const\\s+(${methodAlt})\\s*=\\s*(.*)$`, 'gm');
+  const aliasRhs = new RegExp(`^(${methodAlt})\\s*;?\\s*$`);
+  for (const m of code.matchAll(constRe)) {
+    if (aliasRhs.test((m[2] ?? '').trim())) continue;
+    segments.push({ method: m[1] as HttpMethod, startLine: lineOfIndex(code, m.index!) });
   }
   segments.sort((a, b) => a.startLine - b.startLine);
   return { segments, aliases };
@@ -444,9 +399,10 @@ for (const file of walk(API_DIR)) {
 
   const shown = relative(ROOT, file).replace(/\\/g, '/');
   const src = readFileSync(file, 'utf8');
-  const code = stripCommentsPreserveLines(src);
+  const codeLines = stripCommentLines(src);
+  const code = codeLines.join('\n');
   const rawLines = src.split(/\r?\n/);
-  const { located, nonLiteral } = declaredPairs(code, rawLines);
+  const { located, nonLiteral } = declaredPairs(code, rawLines, codeLines);
 
   if (nonLiteral > 0) {
     errors.push(`${shown}: ${nonLiteral} gate call(s) with non-literal arguments`);
@@ -459,6 +415,19 @@ for (const file of walk(API_DIR)) {
 
   const companion = STEP_ONE_COMPANION[surface];
   const { segments, aliases } = handlerSegments(code);
+  // 016 post-ship review finding #14 (fail-loud half) — a baselined route
+  // whose exported handlers the scanner cannot see would silently attribute
+  // everything to 'module' and degrade to the weaker file-level fallback.
+  // A valid route file MUST export at least one handler, so zero recognized
+  // segments means the scanner is blind to a new export shape — say so.
+  if (segments.length === 0 && aliases.size === 0) {
+    errors.push(
+      `${shown}: no exported HTTP handler recognized — the gate would degrade to the ` +
+        `file-level fallback blindly. Export handlers as 'export async function METHOD' / ` +
+        `'export const METHOD = …', or teach handlerSegments the new shape.`,
+    );
+    continue;
+  }
   const byRegion = new Map<string, Set<Pair>>();
   for (const { pair, line } of located) {
     const region = regionOf(segments, line);
@@ -544,7 +513,7 @@ for (const file of walk(API_DIR)) {
     let hit: RegExpExecArray | null;
     while ((hit = re.exec(code)) !== null) {
       const line = lineOfIndex(code, hit.index);
-      if (markerApplies(rawLines, line, NARROW_MARKER)) continue;
+      if (markerApplies(rawLines, line, [NARROW_MARKER], codeLines)) continue;
       errors.push(
         `${shown}:${line + 1}: staff-role literal behind the gate — ${hit[0].trim()} ` +
           `(a second, invisible gate the matrix cannot see; it would deny super_admin after Migration C. ` +

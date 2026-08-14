@@ -43,6 +43,12 @@
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
+import {
+  lineOfIndex,
+  markerApplies,
+  stripCommentLines,
+  stripCommentsPreserveLines,
+} from './lib/source-scan';
 
 const ROOT = process.cwd();
 const PAGES_DIR = join(ROOT, 'src', 'app', '(staff)', 'admin');
@@ -90,64 +96,15 @@ function walk(dir: string, pred: (entry: string) => boolean, out: string[] = [])
   return out;
 }
 
-/**
- * Blank out comments while PRESERVING line structure (so scan hits report real
- * line numbers and markers can be checked on the raw lines). Three passes whose
- * order is load-bearing — see the API gate's copy for the war stories:
- * single-line block comments first (`/* a // b *​/` would otherwise lose its
- * terminator to the line pass), then line comments (a line comment containing
- * `/**` would feed the block pass a false opener), then multi-line blocks
- * reduced to their newlines.
- */
-function stripCommentsPreserveLines(src: string): string {
-  return src
-    .replace(/\/\*[^\n]*?\*\//g, (m) => ' '.repeat(m.length))
-    .replace(/(^|[^:])\/\/[^\n]*/g, (_m, p1: string) => p1)
-    .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ''));
-}
-
-/** 0-based line number of a character offset within `text`. */
-function lineOfIndex(text: string, index: number): number {
-  let line = 0;
-  for (let i = 0; i < index; i += 1) if (text.charCodeAt(i) === 10) line += 1;
-  return line;
-}
-
-/** A source line that is entirely comment (`//`, `*`, `/*`). */
-function isCommentLine(line: string): boolean {
-  const t = line.trim();
-  return t.startsWith('//') || t.startsWith('*') || t.startsWith('/*');
-}
-
-/**
- * Comment-hosted opt-out marker: same line after `//`, or in the contiguous
- * comment block at most MAX_CODE_GAP code lines above. Mirrors the API gate;
- * see its docstring for why comment-hosting (a marker string in CODE silenced
- * its neighbours in the first version).
- */
-const MAX_CODE_GAP = 3;
-function markerApplies(lines: readonly string[], index: number, marker: string): boolean {
-  const line = lines[index] ?? '';
-  const slash = line.indexOf('//');
-  if (slash >= 0 && line.slice(slash).includes(marker)) return true;
-  let i = index - 1;
-  let codeGap = 0;
-  while (i >= 0) {
-    const l = lines[i] ?? '';
-    if (isCommentLine(l)) {
-      for (let j = i; j >= 0 && isCommentLine(lines[j] ?? ''); j -= 1) {
-        if (lines[j]!.includes(marker)) return true;
-      }
-      return false;
-    }
-    if (l.trim() !== '') {
-      codeGap += 1;
-      if (codeGap > MAX_CODE_GAP) return false;
-    }
-    i -= 1;
-  }
-  return false;
-}
+// Comment stripping + line mapping + marker hosting come from the SHARED
+// string-aware scanner (016 post-ship review finding V3b closed the deferred
+// migration): the private regex stripper here was not string-aware — a string
+// containing `/*` with no `*/` on the same line (a MIME accept `'image/*'`, a
+// glob) opened a phantom block comment that blanked everything to the next
+// `*/`, silently blinding the affordance-literal scan; and the private
+// markerApplies honored a marker hosted inside a string/URL on the decision
+// line (finding #11). The shared copy also understands JSX `{/* … */}`
+// comments, which this .tsx-scanning gate could not.
 
 const NARROW_MARKER = 'rbac-narrow-ok';
 
@@ -233,14 +190,15 @@ for (const file of walk(PAGES_DIR, (e) => e === 'page.tsx')) {
 for (const file of walk(PAGES_DIR, (e) => e.endsWith('.tsx'))) {
   const src = readFileSync(file, 'utf8');
   const shown = relative(ROOT, file).replace(/\\/g, '/');
-  const code = stripCommentsPreserveLines(src);
+  const codeLines = stripCommentLines(src);
+  const code = codeLines.join('\n');
   const rawLines = src.split(/\r?\n/);
   for (const re of [CMP_LITERAL, INCLUDES_LITERAL]) {
     re.lastIndex = 0;
     let hit: RegExpExecArray | null;
     while ((hit = re.exec(code)) !== null) {
       const line = lineOfIndex(code, hit.index);
-      if (markerApplies(rawLines, line, NARROW_MARKER)) continue;
+      if (markerApplies(rawLines, line, [NARROW_MARKER], codeLines)) continue;
       errors.push(
         `${shown}:${line + 1}: staff-role literal — ${hit[0].trim()} ` +
           `(affordance/deny decisions must go through canPerform(role, key); a TYPE ` +

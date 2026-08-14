@@ -37,7 +37,10 @@
  * Honest limits, stated so nobody mistakes a pass for a proof:
  *  - Only the roots in SCOPE are scanned. A role literal in a use case, a
  *    module, or a component outside them is not caught here.
- *  - Only `<role-ish identifier> ===/!== '<role>'` is matched, in that order.
+ *  - Only `<role-ish identifier> ===/!== '<role>'` is matched, in that order —
+ *    including when the comparison is WRAPPED across line breaks (016
+ *    post-ship finding #12: the scan runs over the whole stripped text, so a
+ *    formatter-wrapped `role !==\n 'admin'` is counted, not invisible).
  *    NOT matched: the Yoda form `'admin' === role`; array membership
  *    (`roles.includes(role)`, `ROLES.indexOf(role) > 1`) — note the repo still
  *    has one at `src/config/nav.ts`; `switch (role)`; a role smuggled through
@@ -47,7 +50,7 @@
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { stripCommentLines, markerApplies } from './lib/source-scan';
+import { lineOfIndex, stripCommentLines, markerApplies } from './lib/source-scan';
 
 /** Decision surfaces: where an unmarked role literal is most likely a gate. */
 const SCOPE = [
@@ -93,18 +96,21 @@ const COMPARISON = new RegExp(
  * when sites are legitimately removed; never lower it to make a run pass.
  *
  * Pinned to the MEASURED TOTAL — `marked + unmarked`, which is what `scanned`
- * counts — not to the `marked` counter. 38 as of PR 5: the legacy shim died
- * (its one `rbac-legacy-shim-arm-ok` site and marker went with it). It was 39
- * as of PR 4, after `src/components/auth` joined SCOPE; before that a
- * wrong-counter reading set it one below the truth — exactly the slack this
- * docblock forbids, inside the gate whose whole thesis is that a low floor is
- * how partial blindness ships.
+ * counts — not to the `marked` counter. 52 as of the 016 post-ship review
+ * fixes (2026-08-14): the finding-#3 sweep added 14 marker-hosted
+ * `role === 'super_admin' ? … : 'admin'` audit-stamp ternaries across the
+ * renewals mutation routes. It was 38 as of PR 5 (the legacy shim died with
+ * its one `rbac-legacy-shim-arm-ok` site), 39 as of PR 4 after
+ * `src/components/auth` joined SCOPE; before that a wrong-counter reading set
+ * it one below the truth — exactly the slack this docblock forbids, inside
+ * the gate whose whole thesis is that a low floor is how partial blindness
+ * ships.
  *
  * The earlier 28 (against a then-total of 33) left the scanner free to go ~15%
  * blind before tripping. The T065 gate reported "0 unmarked" while it could not
  * see 341 lines of src/config/nav.ts.
  */
-const MIN_EXPECTED_SITES = 38;
+const MIN_EXPECTED_SITES = 52;
 
 /**
  * Every accepted claim. Each says what the literal is doing INSTEAD of
@@ -182,19 +188,25 @@ for (const root of SCOPE) {
     const raw = readFileSync(file, 'utf8');
     const rawLines = raw.split('\n');
     const codeLines = stripCommentLines(raw);
-    for (const [i, codeLine] of codeLines.entries()) {
-      COMPARISON.lastIndex = 0;
-      const hits = [...codeLine.matchAll(COMPARISON)];
-      if (hits.length === 0) continue;
-      const line = i + 1;
-      const isMarked = markerApplies(rawLines, i, MARKER_NAMES, codeLines);
-      for (const m of hits) {
-        if (isMarked) {
-          marked += 1;
-          continue;
-        }
-        findings.push(`  ✗ ${relative(ROOT, file).replace(/\\/g, '/')}:${line}: ${m[0]}`);
+    // 016 post-ship review finding #12 — scan the WHOLE comment-stripped
+    // text, not per line: `\s*` in COMPARISON spans newlines, so a
+    // comparison wrapped across a line break (`role !==\n 'admin'` — the
+    // shape a formatter produces) is now counted. The sibling
+    // check-api-route-guard fixed exactly this class already; per-line
+    // scanning also made MIN_EXPECTED_SITES unable to catch a NEW wrapped
+    // site (the floor only trips when previously counted sites disappear).
+    const code = codeLines.join('\n');
+    COMPARISON.lastIndex = 0;
+    for (const m of code.matchAll(COMPARISON)) {
+      // Anchor the marker protocol on the line the decision STARTS.
+      const i = lineOfIndex(code, m.index!);
+      if (markerApplies(rawLines, i, MARKER_NAMES, codeLines)) {
+        marked += 1;
+        continue;
       }
+      findings.push(
+        `  ✗ ${relative(ROOT, file).replace(/\\/g, '/')}:${i + 1}: ${m[0].replace(/\s+/g, ' ')}`,
+      );
     }
   }
 }
