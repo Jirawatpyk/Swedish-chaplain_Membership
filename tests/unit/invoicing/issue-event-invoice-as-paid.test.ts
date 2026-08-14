@@ -1630,4 +1630,196 @@ describe('issueEventInvoiceAsPaid — 064 Task 5 branch coverage', () => {
       expect(deps.eventRegistrationLookup.findById).toHaveBeenCalledTimes(1);
     });
   });
+
+  // --- 088 flag ON (§86/4 RC receipt stream) — T019 -----------------------------
+  //
+  // With FEATURE_088_TAX_AT_PAYMENT on, a TIN buyer's combined §86/4 receipt is
+  // minted from the §87 `RC` RECEIPT stream (mirroring record-payment, SC-002)
+  // instead of the shared invoice stream, and `tax_receipt_issued` fires in-tx.
+  // The no-TIN §105 `RE` arm is flag-independent and must stay RC-free.
+
+  describe('088 flag ON (§86/4 RC receipt stream)', () => {
+    it('flag ON + TIN buyer → allocates documentType receipt (RC), applies receipt_stream numbering, renders receipt_combined; issued audit carries the RC + null invoice-stream pair', async () => {
+      const deps = makeDeps(makeEventDraft(), makeSettings(), null, {
+        taxAtPayment: 'on',
+      });
+      const r = await issueEventInvoiceAsPaid(deps, input);
+      expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+      // ONE allocation from the §86/4 RC receipt stream — the shared §87
+      // invoice stream is never burned under the flag.
+      expect(deps.sequenceAllocator.allocateNext).toHaveBeenCalledTimes(1);
+      expect(deps.sequenceAllocator.allocateNext).toHaveBeenCalledWith(
+        OPAQUE_TX,
+        expect.objectContaining({ documentType: 'receipt', fiscalYear: 2026 }),
+      );
+      expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalledWith(
+        OPAQUE_TX,
+        expect.objectContaining({ documentType: 'invoice' }),
+      );
+      // Default 'RC' prefix (settings.receiptNumberPrefix undefined → 'RC').
+      const applyInput = vi.mocked(deps.invoiceRepo.applyIssueAsPaid).mock.calls[0]![1];
+      expect(applyInput.numbering).toEqual({
+        kind: 'receipt_stream',
+        receiptDocumentNumberRaw: 'RC-2026-000001',
+      });
+      // Still the COMBINED §86/4 document — the RC stream changes the
+      // number's register, not the document class.
+      expect(applyInput.pdfDocKind).toBe('receipt_combined');
+      expect(deps.pdfRender.render).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: 'receipt_combined' }),
+      );
+      const renderInput = vi.mocked(deps.pdfRender.render).mock.calls[0]![0];
+      expect(renderInput.documentNumber?.raw).toBe('RC-2026-000001');
+      // invoice_issued payload — the invoice-stream pair is genuinely NULL;
+      // the RC lands under its own receipt_document_number key.
+      const issuedEmit = vi.mocked(deps.audit.emit).mock.calls.find(
+        ([, e]) => (e as { eventType: string }).eventType === 'invoice_issued',
+      );
+      const issuedPayload = (issuedEmit![1] as { payload: Record<string, unknown> }).payload;
+      expect(issuedPayload.sequence_number).toBeNull();
+      expect(issuedPayload.document_number).toBeNull();
+      expect(issuedPayload.receipt_document_number).toBe('RC-2026-000001');
+    });
+
+    it("flag ON + tenant receiptNumberPrefix 'TR' → the RC-role number uses the configured prefix", async () => {
+      const deps = makeDeps(
+        makeEventDraft(),
+        makeSettings({ receiptNumberPrefix: 'TR' }),
+        null,
+        { taxAtPayment: 'on' },
+      );
+      const r = await issueEventInvoiceAsPaid(deps, input);
+      expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+      const applyInput = vi.mocked(deps.invoiceRepo.applyIssueAsPaid).mock.calls[0]![1];
+      expect(applyInput.numbering).toEqual({
+        kind: 'receipt_stream',
+        receiptDocumentNumberRaw: 'TR-2026-000001',
+      });
+    });
+
+    it('flag ON + matched member → tax_receipt_issued fires IN-TX with the RC number + member_id, DISTINCT from invoice_paid', async () => {
+      const deps = makeDeps(makeMatchedEventDraft(), makeSettings(), makeMember(), {
+        taxAtPayment: 'on',
+      });
+      const r = await issueEventInvoiceAsPaid(deps, input);
+      expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+      const emitCalls = vi.mocked(deps.audit.emit).mock.calls;
+      // THREE lifecycle facts in one commit: issued → paid → tax_receipt_issued.
+      expect(emitCalls).toHaveLength(3);
+      expect((emitCalls[2]![1] as { eventType: string }).eventType).toBe(
+        'tax_receipt_issued',
+      );
+      // In-tx by identity — the §78/1 tax-point signal must roll back with
+      // the mutation, never survive it (unlike the null-tx probes).
+      expect(emitCalls[2]![0]).toBe(OPAQUE_TX);
+      const payload = (emitCalls[2]![1] as { payload: Record<string, unknown> }).payload;
+      expect(payload.receipt_document_number_raw).toBe('RC-2026-000001');
+      expect(payload.member_id).toBe('member-1');
+      expect(payload.fiscal_year).toBe(2026);
+      expect(payload.payment_date).toBe(input.paymentDate);
+      expect(payload.invoice_subject).toBe('event');
+    });
+
+    it('flag ON + non-member TIN buyer → tax_receipt_issued carries event_registration_id, never member_id (+ requestId null when omitted)', async () => {
+      const deps = makeDeps(makeEventDraft(), makeSettings(), null, {
+        taxAtPayment: 'on',
+      });
+      // requestId omitted — pins the tax-receipt row's `requestId ?? null` arm.
+      const { requestId: _omit, ...withoutRequestId } = input;
+      const r = await issueEventInvoiceAsPaid(deps, withoutRequestId);
+      expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+      const taxEmit = vi.mocked(deps.audit.emit).mock.calls.find(
+        ([, e]) => (e as { eventType: string }).eventType === 'tax_receipt_issued',
+      );
+      expect(taxEmit, 'expected a tax_receipt_issued audit emit').toBeDefined();
+      expect((taxEmit![1] as { requestId: string | null }).requestId).toBeNull();
+      const payload = (taxEmit![1] as { payload: Record<string, unknown> }).payload;
+      expect(payload.event_registration_id).toBe('reg-uuid-1');
+      expect('member_id' in payload).toBe(false);
+    });
+
+    it('flag ON + NO-TIN β buyer → still the §105 receipt_105/RE register and NO tax_receipt_issued (no §86/4 was minted)', async () => {
+      const deps = makeDeps(makeNoTinDraft(), makeSettings(), null, {
+        taxAtPayment: 'on',
+      });
+      const r = await issueEventInvoiceAsPaid(deps, input);
+      expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+      expect(deps.sequenceAllocator.allocateNext).toHaveBeenCalledWith(
+        OPAQUE_TX,
+        expect.objectContaining({ documentType: 'receipt_105' }),
+      );
+      const applyInput = vi.mocked(deps.invoiceRepo.applyIssueAsPaid).mock.calls[0]![1];
+      expect(applyInput.numbering).toEqual({
+        kind: 'receipt_stream',
+        receiptDocumentNumberRaw: 'RE-2026-000001',
+      });
+      // Exactly the two lifecycle audits — a §105 receipt is not a §86/4
+      // tax receipt, so tax_receipt_issued must NOT fire.
+      const emitCalls = vi.mocked(deps.audit.emit).mock.calls;
+      expect(emitCalls).toHaveLength(2);
+      for (const call of emitCalls) {
+        expect((call[1] as { eventType: string }).eventType).not.toBe(
+          'tax_receipt_issued',
+        );
+      }
+    });
+  });
+
+  // --- money-coverage remediation — remaining closure pins ----------------------
+
+  it('COMP-1: GDPR-erased matched member (isErased=true) → member_not_found, allocator NEVER called', async () => {
+    // Mirror of the issue-invoice sibling: an erased member's redacted
+    // snapshot must never re-materialise into a §86/4 document.
+    const deps = makeDeps(
+      makeMatchedEventDraft(),
+      makeSettings(),
+      makeMember({ isArchived: false, isErased: true }),
+    );
+    const r = await issueEventInvoiceAsPaid(deps, input);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('member_not_found');
+    expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+    expect(deps.invoiceRepo.applyIssueAsPaid).not.toHaveBeenCalled();
+  });
+
+  it('059: buyer-identity-invalid AND the forensic audit emit ALSO throws → swallowed warn, typed error surfaces, no blob delete', async () => {
+    const throwingEmit = vi.fn(async () => {
+      throw new Error('audit store down');
+    });
+    const deps = makeDeps(makeMatchedEventDraft(), makeSettings(), null, {
+      memberIdentity: {
+        getForIssue: vi.fn(async () => ({
+          memberId: 'member-1',
+          isActive: true,
+          isArchived: false,
+          isErased: false,
+          memberTypeScope: 'company' as const,
+          registrationDate: '2026-01-15',
+          registrationFeePaid: true,
+          snapshot: makeMemberIdentitySnapshot({
+            legal_name: 'VAT-Registrant Co, No TIN Yet',
+            tax_id: null,
+            address: '123 Road, Bangkok',
+            primary_contact_name: 'Jane Buyer',
+            primary_contact_email: 'jane@beta.example',
+            buyer_is_vat_registrant: true,
+          }),
+        })),
+        markRegistrationFeePaid: vi.fn(async () => {}),
+      },
+      audit: { emit: throwingEmit },
+    });
+    // requestId omitted — also pins the forensic row's `requestId ?? null` arm.
+    const { requestId: _omit, ...withoutRequestId } = input;
+    const r = await issueEventInvoiceAsPaid(deps, withoutRequestId);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('buyer_tax_id_required_for_registrant');
+    expect(throwingEmit).toHaveBeenCalledTimes(1);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ invoiceId: INVOICE_ID }),
+      expect.stringContaining('invoice_buyer_identity_invalid audit emit also failed'),
+    );
+    // PRE-render failure — no bytes ever reached the deterministic key.
+    expect(deps.blob.delete).not.toHaveBeenCalled();
+  });
 });

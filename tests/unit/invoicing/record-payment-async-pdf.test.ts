@@ -386,4 +386,31 @@ describe('recordPayment — T166-03 async receipt PDF branch', () => {
     // applyPayment to the throw point).
     expect(deps.receiptPdfRenderEnqueue!.enqueue).toHaveBeenCalledTimes(1);
   });
+
+  it('legacy snapshot with NULL primary_contact_email → render-task enqueue falls back to the system sentinel address', async () => {
+    // The render-task row is NOT an email — the dispatcher routes by
+    // notification_type — but the column is NOT NULL, so a snapshot with
+    // no contact email must land the documented system sentinel instead
+    // of crashing (or persisting an empty string).
+    const base = makeIssuedInvoice();
+    const draft = {
+      ...base,
+      memberIdentitySnapshot: {
+        ...base.memberIdentitySnapshot!,
+        primary_contact_email: null as unknown as string,
+      },
+    } as Invoice;
+    const deps = makeAsyncDeps(draft, makeSettings());
+    const r = await recordPayment(deps, input);
+    expect(r.ok).toBe(true);
+    expect(deps.receiptPdfRenderEnqueue!.enqueue).toHaveBeenCalledTimes(1);
+    const enqueueArg = (
+      deps.receiptPdfRenderEnqueue!.enqueue as ReturnType<typeof vi.fn>
+    ).mock.calls[0]![1];
+    expect(enqueueArg.recipientEmail).toBe('system:async-render@swecham.test');
+    // The RECEIPT email outbox, by contrast, is correctly skipped — a
+    // sentinel must never receive the member-facing email.
+    expect(deps.outbox.enqueue).not.toHaveBeenCalled();
+    if (r.ok) expect(r.value.emailDispatch).toBe('skipped_no_email');
+  });
 });

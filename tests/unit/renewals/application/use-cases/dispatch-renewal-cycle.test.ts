@@ -2,8 +2,10 @@
  * F8 Phase 4 Wave I2c · T088 spec — `dispatchRenewalCycle` use-case.
  *
  * Cron-loop scope: input validation + cursor pagination + summary
- * aggregation. Per-cycle decision tree is tested in
- * `_lib/dispatch-one-cycle.test.ts`; here we mock the core fn.
+ * aggregation — for BOTH passes (066 §3.2(2) due-track first, then the
+ * expires_at-anchored main ladder). Per-cycle decision trees are tested
+ * in `_lib/dispatch-one-cycle.test.ts` + the due-track integration
+ * suite; here we mock the per-cycle fns.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { assertOk } from '../../_helpers/assert-result';
@@ -13,7 +15,10 @@ import {
   DEFAULT_PAGE_SIZE,
 } from '@/modules/renewals/application/use-cases/dispatch-renewal-cycle';
 import type { RenewalsDeps } from '@/modules/renewals/infrastructure/renewals-deps';
-import type { DispatchCandidate } from '@/modules/renewals/application/ports/dispatch-candidate-repo';
+import type {
+  DispatchCandidate,
+  DueTrackCandidate,
+} from '@/modules/renewals/application/ports/dispatch-candidate-repo';
 import { asCycleId } from '@/modules/renewals/domain/renewal-cycle';
 
 const TENANT_ID = 'tenantA';
@@ -36,6 +41,24 @@ vi.mock('@/lib/env', () => ({
   },
 }));
 
+// Module-mock the logger (same shape the api/** unit suites use) so the
+// page-loop safety-bound tests can observe the `logger.error` emits.
+const loggerErrorSpy = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/logger', () => ({
+  logger: {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: loggerErrorSpy,
+    debug: vi.fn(),
+  },
+  loggerFor: () => ({
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  }),
+}));
+
 // Stub dispatchOneCycle so we control outcomes per test.
 vi.mock(
   '@/modules/renewals/application/use-cases/_lib/dispatch-one-cycle',
@@ -52,6 +75,24 @@ vi.mock(
 
 import { dispatchOneCycle } from '@/modules/renewals/application/use-cases/_lib/dispatch-one-cycle';
 
+// 066 §3.2(2) — stub dispatchDueTrackCycle the same way (the due-track
+// pass runs FIRST inside runDispatchLoop; we control its outcomes per
+// test). importActual keeps DUE_TRACK_TEMPLATE_ID real.
+vi.mock(
+  '@/modules/renewals/application/use-cases/_lib/dispatch-due-track',
+  async () => {
+    const actual = await vi.importActual<
+      typeof import('@/modules/renewals/application/use-cases/_lib/dispatch-due-track')
+    >('@/modules/renewals/application/use-cases/_lib/dispatch-due-track');
+    return {
+      ...actual,
+      dispatchDueTrackCycle: vi.fn(),
+    };
+  },
+);
+
+import { dispatchDueTrackCycle } from '@/modules/renewals/application/use-cases/_lib/dispatch-due-track';
+
 function buildCandidate(cycleId: string): DispatchCandidate {
   return buildDispatchCandidate({
     cycle: {
@@ -65,12 +106,44 @@ function buildCandidate(cycleId: string): DispatchCandidate {
   });
 }
 
+/**
+ * 066 §3.2(2) — a due-track candidate is a dispatch candidate plus the
+ * member's oldest-due unpaid membership bill due_date (Bangkok
+ * 'YYYY-MM-DD'). The due-track candidate arm only selects
+ * `awaiting_payment` cycles, so the builder pins that status.
+ */
+function buildDueCandidate(cycleId: string): DueTrackCandidate {
+  return {
+    ...buildDispatchCandidate({
+      cycle: {
+        tenantId: TENANT_ID,
+        cycleId: asCycleId(cycleId),
+        status: 'awaiting_payment' as const,
+        periodFrom: '2025-06-01T00:00:00.000Z',
+        periodTo: '2026-06-01T00:00:00.000Z',
+        expiresAt: '2026-06-01T00:00:00.000Z',
+      },
+    }),
+    billDueDate: '2026-05-08',
+  };
+}
+
 function fakeDeps(
   pages: ReadonlyArray<DispatchCandidate>[],
-  opts: { unreconciledMemberIds?: ReadonlySet<string> } = {},
+  opts: {
+    unreconciledMemberIds?: ReadonlySet<string>;
+    /**
+     * 066 §3.2(2) — due-track candidate pages, cursor-walked exactly like
+     * `pages`. Default `[[]]` = one empty due page, so every STANDARD-pass
+     * test below behaves byte-identically; the due-track describe drives
+     * this knob + the dispatchDueTrackCycle mock.
+     */
+    duePages?: ReadonlyArray<DueTrackCandidate>[];
+  } = {},
 ): {
   deps: RenewalsDeps;
   listMock: ReturnType<typeof vi.fn>;
+  dueListMock: ReturnType<typeof vi.fn>;
   auditEmitMock: ReturnType<typeof vi.fn>;
   listUnreconciledMemberIdsMock: ReturnType<typeof vi.fn>;
 } {
@@ -80,6 +153,18 @@ function fakeDeps(
     pageIdx += 1;
     const hasMore = pageIdx < pages.length;
     return { items, nextCursor: hasMore ? `c-${pageIdx}` : null };
+  });
+  // 066 §3.2(2) — cursor-walking due-track page mock (mirror of listMock;
+  // synthesized cursors are `d-<n>` so the pagination test can pin the
+  // cursor threading: first call null, later calls carry the synthesized
+  // cursor).
+  const duePages = opts.duePages ?? [[]];
+  let duePageIdx = 0;
+  const dueListMock = vi.fn(async () => {
+    const items = duePages[duePageIdx] ?? [];
+    duePageIdx += 1;
+    const hasMore = duePageIdx < duePages.length;
+    return { items, nextCursor: hasMore ? `d-${duePageIdx}` : null };
   });
   // K12-7 (TST-K-2): wire an audit-emitter mock so the K1-C8 outer-
   // catch `renewal_reminder_send_failed` emission path is testable.
@@ -93,23 +178,24 @@ function fakeDeps(
   const deps: RenewalsDeps = {
     tenant: { slug: TENANT_ID } as RenewalsDeps['tenant'],
     // 066 F-4 — the due-track pass (listDueTrackCandidates) runs FIRST in
-    // runDispatchLoop. These tests exercise the STANDARD dispatch pass, so
-    // stub the due-track arm to an empty page (no due+N warnings) — leaving
-    // the standard `list` assertions below unaffected. Due-track behaviour is
-    // covered by tests/integration/renewals/due-track-dispatch.test.ts (sends,
-    // gates, suppression, idempotency, year-anchoring) + tests/unit/renewals/
-    // due-track.test.ts (the pure step model).
+    // runDispatchLoop. The default `duePages` [[]] keeps it an empty page
+    // (no due+N warnings) for the STANDARD-pass tests; the '066 §3.2(2)'
+    // describe drives the due-track LOOP branches here. The per-cycle
+    // gates/sends themselves stay covered by tests/integration/renewals/
+    // due-track-dispatch.test.ts (sends, gates, suppression, idempotency,
+    // year-anchoring) + tests/unit/renewals/due-track.test.ts (the pure
+    // step model).
     dispatchCandidateRepo: {
       list: listMock,
       findOne: vi.fn(),
-      listDueTrackCandidates: vi.fn(async () => ({ items: [], nextCursor: null })),
+      listDueTrackCandidates: dueListMock,
     } as unknown as RenewalsDeps['dispatchCandidateRepo'],
     auditEmitter: { emit: auditEmitMock } as unknown as RenewalsDeps['auditEmitter'],
     memberRenewalFlagsRepo: {
       listMemberIdsWithUnreconciledPaidMembershipInvoice: listUnreconciledMemberIdsMock,
     } as unknown as RenewalsDeps['memberRenewalFlagsRepo'],
   } as unknown as RenewalsDeps;
-  return { deps, listMock, auditEmitMock, listUnreconciledMemberIdsMock };
+  return { deps, listMock, dueListMock, auditEmitMock, listUnreconciledMemberIdsMock };
 }
 
 const VALID_INPUT = {
@@ -378,5 +464,226 @@ describe('dispatchRenewalCycle', () => {
     assertOk(result);
     expect(result.value.summary.candidatesProcessed).toBe(0);
     expect(result.value.summary.emailsSent).toBe(0);
+  });
+
+  // 066 §3.2(2) — the DUE-TRACK pass. Runs FIRST inside runDispatchLoop so
+  // the suppression set exists before the main ladder pass. These tests
+  // exercise the pass's LOOP mechanics (tally switch, crash isolation,
+  // suppression threading, cursor pagination, safety bound) with the
+  // per-cycle fn mocked — the per-cycle gates/sends live in the due-track
+  // integration + pure-domain suites.
+  describe('066 §3.2(2) — due-track pass', () => {
+    it('sent tally lands in BOTH emailsSent and dueTrackEmailsSent (2 due candidates → both counters 2)', async () => {
+      const dueCandidates = [
+        buildDueCandidate('due-001'),
+        buildDueCandidate('due-002'),
+      ];
+      (dispatchDueTrackCycle as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+        async () => ({ kind: 'sent', reminderEventId: 'r1', deliveryId: 'd1', dispatchedAt: NOW_ISO }),
+      );
+      const { deps } = fakeDeps([[]], { duePages: [dueCandidates] });
+      const result = await dispatchRenewalCycle(deps, VALID_INPUT);
+      assertOk(result);
+      expect(result.value.summary.candidatesProcessed).toBe(2);
+      expect(result.value.summary.emailsSent).toBe(2);
+      expect(result.value.summary.dueTrackEmailsSent).toBe(2);
+      expect(result.value.summary.tasksCreated).toBe(0);
+      // No main-pass candidates → the ladder fn never ran; both tallies
+      // came from the due switch.
+      expect(dispatchOneCycle).not.toHaveBeenCalled();
+    });
+
+    it('skipped / failed_transient / failed_permanent / task_created all tally on the due switch (task_created is a deliberate no-op — email-only track)', async () => {
+      const dueCandidates = [
+        buildDueCandidate('due-001'),
+        buildDueCandidate('due-002'),
+        buildDueCandidate('due-003'),
+        buildDueCandidate('due-004'),
+      ];
+      let i = 0;
+      (dispatchDueTrackCycle as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+        async () => {
+          i += 1;
+          if (i === 1) return { kind: 'skipped', reason: 'already_sent' };
+          if (i === 2)
+            return { kind: 'failed_transient', reminderEventId: 'r2', reason: '5xx' };
+          if (i === 3)
+            return { kind: 'failed_permanent', reminderEventId: 'r3', reason: '4xx' };
+          return { kind: 'task_created', taskId: 't1', taskType: 'phone_call', reminderEventId: 'r4' };
+        },
+      );
+      const { deps } = fakeDeps([[]], { duePages: [dueCandidates] });
+      const result = await dispatchRenewalCycle(deps, VALID_INPUT);
+      assertOk(result);
+      expect(result.value.summary.candidatesProcessed).toBe(4);
+      expect(result.value.summary.skipped.already_sent).toBe(1);
+      expect(result.value.summary.failedTransient).toBe(1);
+      expect(result.value.summary.failedPermanent).toBe(1);
+      // The due track is email-only — its task_created arm is tallied for
+      // exhaustiveness ONLY (a deliberate no-op), so tasksCreated stays 0.
+      expect(result.value.summary.tasksCreated).toBe(0);
+      expect(result.value.summary.emailsSent).toBe(0);
+      expect(result.value.summary.dueTrackEmailsSent).toBe(0);
+
+      // Tally conservation tripwire. The compile-time guard against a NEW
+      // outcome kind being silently dropped is the `never`-typed default
+      // arm in the source switch (typecheck fails if a variant lacks a
+      // case) — a runtime test cannot see kinds that don't exist yet. What
+      // THIS identity pins: exactly ONE processed candidate (the
+      // task_created no-op above) is deliberately un-tallied on the due
+      // switch. Anyone extending this mock with a new kind must either
+      // tally it (sum grows) or consciously widen the documented drop
+      // count below — a silent second drop fails here.
+      const s = result.value.summary;
+      const skippedTotal = Object.values(s.skipped).reduce((a, b) => a + b, 0);
+      const DELIBERATELY_DROPPED = 1; // task_created — email-only track
+      expect(
+        s.emailsSent + s.tasksCreated + skippedTotal + s.failedTransient + s.failedPermanent,
+      ).toBe(s.candidatesProcessed - DELIBERATELY_DROPPED);
+    });
+
+    it('a per-cycle THROW is isolated via the shared handleDispatcherCrash: dispatcher_crash audit + synthetic failed_transient; the second due candidate still sends', async () => {
+      const dueCandidates = [
+        buildDueCandidate('due-101'),
+        buildDueCandidate('due-102'),
+      ];
+      let i = 0;
+      (dispatchDueTrackCycle as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+        async () => {
+          i += 1;
+          if (i === 1) throw new Error('due-track boom');
+          return { kind: 'sent', reminderEventId: 'r1', deliveryId: 'd1', dispatchedAt: NOW_ISO };
+        },
+      );
+      const { deps, auditEmitMock } = fakeDeps([[]], { duePages: [dueCandidates] });
+      const result = await dispatchRenewalCycle(deps, VALID_INPUT);
+      assertOk(result);
+      expect(result.value.summary.candidatesProcessed).toBe(2);
+      expect(result.value.summary.failedTransient).toBe(1);
+      expect(result.value.summary.emailsSent).toBe(1);
+      expect(result.value.summary.dueTrackEmailsSent).toBe(1);
+
+      // The REAL K1-C8 crash handler emitted the canonical dispatcher_crash
+      // audit for the crashed cycle — same emit-site identity as the main
+      // pass (the two passes share ONE handler so they cannot drift).
+      expect(auditEmitMock).toHaveBeenCalledTimes(1);
+      const emitCall = auditEmitMock.mock.calls[0]!;
+      const event = emitCall[0] as {
+        type: string;
+        payload: {
+          cycle_id: string;
+          failure_kind: string;
+          failure_message: string;
+          via_retry_pass: boolean;
+        };
+      };
+      expect(event.type).toBe('renewal_reminder_send_failed');
+      expect(event.payload.cycle_id).toBe('due-101');
+      expect(event.payload.failure_kind).toBe('dispatcher_crash');
+      expect(event.payload.failure_message).toContain('due-track boom');
+      expect(event.payload.via_retry_pass).toBe(false);
+      const ctx = emitCall[1] as {
+        tenantId: string;
+        actorRole: string;
+        actorUserId: string | null;
+        correlationId: string;
+        requestId: string | null;
+      };
+      expect(ctx.tenantId).toBe(TENANT_ID);
+      expect(ctx.actorRole).toBe('cron');
+      expect(ctx.actorUserId).toBeNull();
+      expect(ctx.correlationId).toBe('corr-1');
+      expect(ctx.requestId).toBeNull();
+    });
+
+    it('suppression: every due candidate cycleId reaches the MAIN pass ctx as dueTrackCycleIds', async () => {
+      const dueCandidate = buildDueCandidate('due-201');
+      const mainCandidate = buildCandidate('main-201');
+      (dispatchDueTrackCycle as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+        async () => ({ kind: 'sent', reminderEventId: 'r1', deliveryId: 'd1', dispatchedAt: NOW_ISO }),
+      );
+      const oneCycleMock = dispatchOneCycle as unknown as ReturnType<typeof vi.fn>;
+      oneCycleMock.mockImplementation(async () => ({
+        kind: 'sent',
+        reminderEventId: 'r2',
+        deliveryId: 'd2',
+        dispatchedAt: NOW_ISO,
+      }));
+      const { deps } = fakeDeps([[mainCandidate]], { duePages: [[dueCandidate]] });
+      const result = await dispatchRenewalCycle(deps, VALID_INPUT);
+      assertOk(result);
+      const ctx = oneCycleMock.mock.calls[0]![2] as {
+        dueTrackCycleIds: ReadonlySet<string>;
+      };
+      expect(ctx.dueTrackCycleIds).toBeInstanceOf(Set);
+      expect(ctx.dueTrackCycleIds.has('due-201')).toBe(true);
+      expect(ctx.dueTrackCycleIds.has('main-201')).toBe(false);
+      // Both passes tallied: main sent + due sent.
+      expect(result.value.summary.emailsSent).toBe(2);
+      expect(result.value.summary.dueTrackEmailsSent).toBe(1);
+    });
+
+    it('pagination: 3 due pages walked via nextCursor — first call cursor null, later calls carry the synthesized cursor', async () => {
+      const duePages = [
+        [buildDueCandidate('due-301')],
+        [buildDueCandidate('due-302')],
+        [buildDueCandidate('due-303')],
+      ];
+      (dispatchDueTrackCycle as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+        async () => ({ kind: 'sent', reminderEventId: 'r1', deliveryId: 'd1', dispatchedAt: NOW_ISO }),
+      );
+      const { deps, dueListMock } = fakeDeps([[]], { duePages });
+      const result = await dispatchRenewalCycle(deps, VALID_INPUT);
+      assertOk(result);
+      expect(result.value.summary.candidatesProcessed).toBe(3);
+      expect(dueListMock).toHaveBeenCalledTimes(3);
+      expect(dueListMock.mock.calls[0]![1]).toEqual({
+        pageSize: DEFAULT_PAGE_SIZE,
+        cursor: null,
+      });
+      expect(dueListMock.mock.calls[1]![1].cursor).toBe('d-1');
+      expect(dueListMock.mock.calls[2]![1].cursor).toBe('d-2');
+    });
+
+    it('due-track page-loop safety bound: a runaway cursor aborts after >1000 pages, logs, and the cron pass still resolves ok (main pass still runs)', async () => {
+      const { deps, dueListMock, listMock } = fakeDeps([[]]);
+      dueListMock.mockImplementation(async () => ({
+        items: [],
+        nextCursor: 'd-runaway',
+      }));
+      const result = await dispatchRenewalCycle(deps, VALID_INPUT);
+      assertOk(result);
+      expect(result.value.summary.candidatesProcessed).toBe(0);
+      // duePages increments per iteration; the bound trips at 1001 (>1000).
+      expect(dueListMock).toHaveBeenCalledTimes(1001);
+      expect(
+        loggerErrorSpy.mock.calls.some(
+          (c) =>
+            typeof c[1] === 'string' &&
+            (c[1] as string).includes('due-track page-loop safety bound'),
+        ),
+      ).toBe(true);
+      // The abort is scoped to the due pass — the MAIN pass still runs.
+      expect(listMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('main page-loop safety bound: a runaway cursor aborts after >1000 pages and logs (due-track twin above)', async () => {
+    const { deps, listMock } = fakeDeps([[]]);
+    listMock.mockImplementation(async () => ({
+      items: [],
+      nextCursor: 'c-runaway',
+    }));
+    const result = await dispatchRenewalCycle(deps, VALID_INPUT);
+    assertOk(result);
+    expect(listMock).toHaveBeenCalledTimes(1001);
+    expect(
+      loggerErrorSpy.mock.calls.some(
+        (c) =>
+          typeof c[1] === 'string' &&
+          (c[1] as string).includes('page-loop safety bound hit') &&
+          !(c[1] as string).includes('due-track'),
+      ),
+    ).toBe(true);
   });
 });

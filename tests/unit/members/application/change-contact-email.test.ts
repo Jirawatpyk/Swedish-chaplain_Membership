@@ -285,6 +285,50 @@ describe('changeContactEmail — transaction port failures', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe('server_error');
   });
+
+  // Money-path coverage remediation — the mockResolvedValueOnce above only
+  // ever fails audit call #1, so the guards on the LATER three emits were
+  // dead. Failing type-selectively (not by call index) keeps these robust
+  // against a future re-ordering, and the prefix assertion pins the FR-023
+  // emit order + proves the rollback short-circuits at the failing emit.
+  describe.each([
+    ['user_sessions_revoked', ['member_contact_email_changed', 'user_sessions_revoked']],
+    [
+      'email_verification_sent',
+      ['member_contact_email_changed', 'user_sessions_revoked', 'email_verification_sent'],
+    ],
+    [
+      'email_change_notification_sent_to_old_address',
+      [
+        'member_contact_email_changed',
+        'user_sessions_revoked',
+        'email_verification_sent',
+        'email_change_notification_sent_to_old_address',
+      ],
+    ],
+  ] as const)('audit.recordInTx failure on %s', (failingType, expectedPrefix) => {
+    it('rolls back the tx and returns server_error', async () => {
+      const deps = makeDeps();
+      (deps.tokens.insertInTx as ReturnType<typeof vi.fn>).mockResolvedValue(ok(undefined));
+      (deps.emails.enqueueInTx as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce(ok({ outboxRowId: 'outbox-v' }))
+        .mockResolvedValueOnce(ok({ outboxRowId: 'outbox-r' }));
+      (deps.audit.recordInTx as ReturnType<typeof vi.fn>).mockImplementation(
+        async (_tx: unknown, _tenant: unknown, ev: { type: string }) =>
+          ev.type === failingType
+            ? err({ code: 'repo.unexpected', cause: new Error('audit insert failed') })
+            : ok(undefined),
+      );
+      const result = await changeContactEmail(deps, baseInput);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.code).toBe('server_error');
+      expect(
+        (deps.audit.recordInTx as ReturnType<typeof vi.fn>).mock.calls.map(
+          (c) => (c[2] as { type: string }).type,
+        ),
+      ).toEqual(expectedPrefix);
+    });
+  });
 });
 
 describe('changeContactEmail — happy path', () => {

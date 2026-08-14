@@ -229,6 +229,16 @@ describe('T017 API denials', () => {
     expect('response' in result).toBe(false);
     expect(recorded.appended).toEqual([]);
   });
+
+  it('a null client IP on allow degrades to the 0.0.0.0 sentinel, never undefined', async () => {
+    // getClientIp legitimately returns null (no forwarding headers); the
+    // allow-path context must still carry a string for downstream consumers.
+    const { deps } = makeDeps('super_admin');
+    const noIp: RbacDeps = { ...deps, sourceIp: () => null };
+    const result = await requireApiPermission(request, 'users.manage', noIp);
+    expect('response' in result).toBe(false);
+    if (!('response' in result)) expect(result.sourceIp).toBe('0.0.0.0');
+  });
 });
 
 describe('T017 every role produces a denial that is attributable', () => {

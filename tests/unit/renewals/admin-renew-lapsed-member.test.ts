@@ -36,6 +36,7 @@ import {
   CycleNotFoundError,
   InvoiceLinkConflictError,
 } from '@/modules/renewals/application/ports/renewal-cycle-repo';
+import type { MembershipBillCoverageRow } from '@/modules/renewals/domain/membership-bill-coverage';
 import { asSatang, parseThbDecimal } from '@/lib/money';
 import { buildCycle as buildCycleShared } from './_helpers/build-cycle';
 
@@ -81,6 +82,7 @@ interface DepsResult {
   countSettledCyclesForMemberMock: ReturnType<typeof vi.fn>;
   findMaxPaidThroughMock: ReturnType<typeof vi.fn>;
   readGuardsMock: ReturnType<typeof vi.fn>;
+  listCoverageMock: ReturnType<typeof vi.fn>;
 }
 
 function makeDeps(opts?: {
@@ -213,6 +215,15 @@ function makeDeps(opts?: {
     blocked: false,
     erased: opts?.erased ?? false,
   }));
+  // 107-auto-invoice Task 9 (review: third minting path) — the
+  // duplicate-bill content guard's PERSISTED-coverage read. Default: no
+  // existing live bill, so the pre-existing cases exercise the unchanged
+  // happy path; the '107 Task 9' describe below drives the refusal +
+  // carve-out branches (the live-Neon twin stays in
+  // tests/integration/renewals/admin-renew-lapsed-member.test.ts).
+  const listCoverageMock = vi.fn(
+    async (): Promise<MembershipBillCoverageRow[]> => [],
+  );
 
   const deps: AdminRenewLapsedMemberDeps = {
     tenant: { slug: TENANT_ID } as unknown as AdminRenewLapsedMemberDeps['tenant'],
@@ -226,13 +237,8 @@ function makeDeps(opts?: {
       countCyclesForMemberInTx: countCyclesForMemberMock,
       countSettledCyclesForMemberInTx: countSettledCyclesForMemberMock,
       findMaxPaidThroughForMemberInTx: findMaxPaidThroughMock,
-      // 107-auto-invoice Task 9 (review: third minting path) — the
-      // duplicate-bill content guard's read. Default: no existing live bill,
-      // so these pre-existing cases exercise the unchanged happy path. The
-      // refusal branch is covered live-Neon by
-      // `tests/integration/renewals/admin-renew-lapsed-member.test.ts`.
       listMembershipInvoicesForPlanYearInTx: vi.fn(async () => []),
-      listMembershipCoverageForMemberInTx: vi.fn(async () => []),
+      listMembershipCoverageForMemberInTx: listCoverageMock,
     } as unknown as AdminRenewLapsedMemberDeps['cyclesRepo'],
     auditEmitter: {
       emitInTx: emitInTxMock,
@@ -279,6 +285,7 @@ function makeDeps(opts?: {
     countSettledCyclesForMemberMock,
     findMaxPaidThroughMock,
     readGuardsMock,
+    listCoverageMock,
   };
 }
 
@@ -522,7 +529,7 @@ describe('adminRenewLapsedMember (Slice 3 / Task 3.1)', () => {
     });
   });
 
-  it('member_has_active_cycle: the member already holds an active cycle (createCycleInTx no-ops) — no invoice issued', async () => {
+  it('member_has_active_cycle: the member already holds an active cycle (Task-9 precedence read refuses first) — no invoice issued', async () => {
     const t = makeDeps({ activeCycle: buildCycle({ status: 'awaiting_payment' }) });
     const result = await adminRenewLapsedMember(t.deps, VALID_INPUT);
 
@@ -532,6 +539,27 @@ describe('adminRenewLapsedMember (Slice 3 / Task 3.1)', () => {
     // No invoice was issued — we never reach the bridge.
     expect(t.bridgeMock).not.toHaveBeenCalled();
     expect(t.insertMock).not.toHaveBeenCalled();
+  });
+
+  it('member_has_active_cycle via createCycleInTx no-op: a concurrent commit lands between the Task-9 precedence read and the in-tx idempotency guard', async () => {
+    const t = makeDeps();
+    // Both reads go through the SAME findActiveForMemberInTx mock: the
+    // Task-9 precedence read (first call) sees no active cycle, then
+    // createCycleInTx's own in-tx idempotency guard (second call) sees the
+    // concurrently-committed one → skipped_active_exists → the use-case
+    // maps it to member_has_active_cycle without inserting a cycle or
+    // minting a §86/4.
+    t.findActiveMock
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(buildCycle({ status: 'awaiting_payment' }));
+    const result = await adminRenewLapsedMember(t.deps, VALID_INPUT);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('member_has_active_cycle');
+    expect(t.findActiveMock).toHaveBeenCalledTimes(2);
+    expect(t.insertMock).not.toHaveBeenCalled();
+    expect(t.bridgeMock).not.toHaveBeenCalled();
   });
 
   it('member_not_found: the member lookup returns null — no cycle, no invoice', async () => {
@@ -826,5 +854,212 @@ describe('adminRenewLapsedMember (Slice 3 / Task 3.1)', () => {
       'audit string failure',
     );
     expect(t.linkAndReconcileMock).toHaveBeenCalledTimes(1);
+  });
+
+  // 107-auto-invoice Task 9 (review: third minting path) — the duplicate
+  // membership-bill content guard (membership-coverage-exclude pre-flight,
+  // mig 0281 twin). Default deps carry a settled predecessor with an
+  // EXPIRED gapless frontier (2020-01-01), so the comeback re-anchors at
+  // month-start(now) = 2026-06-01, term 12 → the guard's wNew is
+  // [2026-06-01, 2027-06-01).
+  describe('107 Task 9 — duplicate membership-bill content guard', () => {
+    const OVERLAPPING = {
+      from: '2026-06-01T00:00:00.000Z',
+      to: '2027-06-01T00:00:00.000Z',
+    } as const;
+
+    it('invoice_already_exists: a live ISSUED membership bill overlapping the comeback window refuses BEFORE any cycle write', async () => {
+      const t = makeDeps();
+      const existing: MembershipBillCoverageRow = {
+        invoiceId: 'inv-existing',
+        status: 'issued',
+        coverage: OVERLAPPING,
+      };
+      t.listCoverageMock.mockResolvedValueOnce([existing]);
+      const result = await adminRenewLapsedMember(t.deps, VALID_INPUT);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.kind).toBe('invoice_already_exists');
+      if (result.error.kind !== 'invoice_already_exists') return;
+      // The conflict invoice id is echoed so the UI can deep-link to it.
+      expect(result.error.invoiceId).toBe('inv-existing');
+      // Refused ABOVE the first write (New-3 ordering): no cycle insert, no
+      // §86/4 mint, no audit row of any kind — err() inside runInTenant
+      // COMMITS, so anything written before the guard would persist.
+      expect(t.insertMock).not.toHaveBeenCalled();
+      expect(t.bridgeMock).not.toHaveBeenCalled();
+      expect(t.emitInTxMock).not.toHaveBeenCalled();
+    });
+
+    it('includeDrafts pin: a pending DRAFT claiming the same window also refuses (create-then-issue path opts in)', async () => {
+      const t = makeDeps();
+      const draft: MembershipBillCoverageRow = {
+        invoiceId: 'inv-draft',
+        status: 'draft',
+        coverage: OVERLAPPING,
+      };
+      t.listCoverageMock.mockResolvedValueOnce([draft]);
+      const result = await adminRenewLapsedMember(t.deps, VALID_INPUT);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.kind).toBe('invoice_already_exists');
+      if (result.error.kind !== 'invoice_already_exists') return;
+      expect(result.error.invoiceId).toBe('inv-draft');
+      expect(t.insertMock).not.toHaveBeenCalled();
+      expect(t.bridgeMock).not.toHaveBeenCalled();
+    });
+
+    it('invoice_already_exists: an overlapping PAID bill refuses too (financial review S-1 — paid is in BLOCKING_STATUSES)', async () => {
+      // The member already paid for this coverage window; minting a second
+      // §86/4 for the same period would double-bill them.
+      const t = makeDeps();
+      const paid: MembershipBillCoverageRow = {
+        invoiceId: 'inv-paid',
+        status: 'paid',
+        coverage: OVERLAPPING,
+      };
+      t.listCoverageMock.mockResolvedValueOnce([paid]);
+      const result = await adminRenewLapsedMember(t.deps, VALID_INPUT);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.kind).toBe('invoice_already_exists');
+      if (result.error.kind !== 'invoice_already_exists') return;
+      expect(result.error.invoiceId).toBe('inv-paid');
+      expect(t.insertMock).not.toHaveBeenCalled();
+      expect(t.bridgeMock).not.toHaveBeenCalled();
+    });
+
+    it('void carve-out pin: a VOID bill with the same overlapping window does NOT refuse (a bill voided for correction must not wedge the member)', async () => {
+      const t = makeDeps();
+      const voided: MembershipBillCoverageRow = {
+        invoiceId: 'inv-voided',
+        status: 'void',
+        coverage: OVERLAPPING,
+      };
+      t.listCoverageMock.mockResolvedValueOnce([voided]);
+      const result = await adminRenewLapsedMember(t.deps, VALID_INPUT);
+
+      expect(result.ok).toBe(true);
+      expect(t.insertMock).toHaveBeenCalledTimes(1);
+      expect(t.bridgeMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('half-open window pin: an ADJACENT (non-overlapping) PAID prior coverage does not refuse — [from, to) makes …→2026-06-01 + 2026-06-01→… disjoint', async () => {
+      const t = makeDeps();
+      const adjacent: MembershipBillCoverageRow = {
+        invoiceId: 'inv-prior',
+        status: 'paid',
+        coverage: {
+          from: '2025-06-01T00:00:00.000Z',
+          to: '2026-06-01T00:00:00.000Z',
+        },
+      };
+      t.listCoverageMock.mockResolvedValueOnce([adjacent]);
+      const result = await adminRenewLapsedMember(t.deps, VALID_INPUT);
+
+      expect(result.ok).toBe(true);
+      expect(t.bridgeMock).toHaveBeenCalledTimes(1);
+      expect(invoiceCreatedEmits(t.emitInTxMock)).toBe(1);
+    });
+  });
+
+  // FIX H1 (Finding #20 follow-up) — Step-3 links + reconciles the frozen
+  // snapshot back to the billed §86/4 in one guarded statement; a corrective
+  // `renewal_cycle_price_frozen` audit fires ONLY when the pre-link snapshot
+  // (`linkResult.previous`) genuinely diverged from the billed one.
+  describe('FIX-H1 — concurrent change-plan refreeze reconciled to the billed §86/4', () => {
+    /** The corrective `renewal_cycle_price_frozen` emits (tx2 only — the
+     * create path emits `renewal_cycle_created`, never this type). */
+    function priceFrozenEmits(
+      emitMock: ReturnType<typeof vi.fn>,
+    ): Array<Record<string, unknown>> {
+      return emitMock.mock.calls
+        .filter(
+          (c) => (c[1] as { type?: string })?.type === 'renewal_cycle_price_frozen',
+        )
+        .map((c) => c[1] as Record<string, unknown>);
+    }
+
+    it('divergent previous snapshot → corrective audit with the reverted plan/price, ordered BEFORE renewal_invoice_created', async () => {
+      const t = makeDeps();
+      // A concurrent change-plan refroze the still-unlinked fresh cycle to
+      // partnership @ 180k between Step-1 create and Step-3 link. `previous`
+      // carries that pre-link snapshot; the billed snapshot is the cycle's
+      // own frozen fields (regular @ 50k).
+      t.linkAndReconcileMock.mockResolvedValueOnce({
+        cycle: buildCycle(),
+        previous: buildCycle({
+          frozenPlanPriceThb: parseThbDecimal('180000.00'),
+          planIdAtCycleStart: 'plan-partnership',
+          tierAtCycleStart: 'partnership',
+        }),
+      });
+      const result = await adminRenewLapsedMember(t.deps, VALID_INPUT);
+      expect(result.ok).toBe(true);
+
+      const calls = t.emitInTxMock.mock.calls;
+      const correctiveIdx = calls.findIndex(
+        (c) => (c[1] as { type?: string })?.type === 'renewal_cycle_price_frozen',
+      );
+      const createdIdx = calls.findIndex(
+        (c) => (c[1] as { type?: string })?.type === 'renewal_invoice_created',
+      );
+      expect(correctiveIdx).toBeGreaterThanOrEqual(0);
+      const corrective = calls[correctiveIdx]![1] as {
+        payload: Record<string, unknown>;
+      };
+      expect(corrective.payload).toMatchObject({
+        reconciled_from_concurrent_plan_change: true,
+        cycle_id: CYCLE_UUID,
+        frozen_price_thb: FROZEN_THB,
+        reverted_frozen_price_thb: '180000.00',
+        reverted_plan_id: 'plan-partnership',
+        invoice_id: 'inv-1',
+      });
+      // Same tx, corrective FIRST — a future re-order past the link audit
+      // would break forensic replay (the corrective explains the link row).
+      expect(createdIdx).toBeGreaterThan(correctiveIdx);
+      expect(invoiceCreatedEmits(t.emitInTxMock)).toBe(1);
+    });
+
+    it('M1: SAME-PRICE cross-plan swap still emits the corrective row (gate is any-of-5-frozen-fields, not price-only)', async () => {
+      const t = makeDeps();
+      t.linkAndReconcileMock.mockResolvedValueOnce({
+        cycle: buildCycle(),
+        previous: buildCycle({
+          planIdAtCycleStart: 'plan-partnership',
+          tierAtCycleStart: 'partnership',
+        }),
+      });
+      const result = await adminRenewLapsedMember(t.deps, VALID_INPUT);
+      expect(result.ok).toBe(true);
+
+      const emits = priceFrozenEmits(t.emitInTxMock);
+      expect(emits).toHaveLength(1);
+      expect(emits[0]!.payload).toMatchObject({
+        reconciled_from_concurrent_plan_change: true,
+        reverted_plan_id: 'plan-partnership',
+        // Price never diverged — the reverted price equals the billed one.
+        reverted_frozen_price_thb: FROZEN_THB,
+        frozen_price_thb: FROZEN_THB,
+      });
+    });
+
+    it('no corrective emit when the snapshots match satang-normalised ("50000" ≡ "50000.00")', async () => {
+      const t = makeDeps();
+      t.linkAndReconcileMock.mockResolvedValueOnce({
+        cycle: buildCycle(),
+        previous: buildCycle({
+          frozenPlanPriceThb: parseThbDecimal('50000'),
+        }),
+      });
+      const result = await adminRenewLapsedMember(t.deps, VALID_INPUT);
+      expect(result.ok).toBe(true);
+      expect(priceFrozenEmits(t.emitInTxMock)).toHaveLength(0);
+      expect(invoiceCreatedEmits(t.emitInTxMock)).toBe(1);
+    });
   });
 });

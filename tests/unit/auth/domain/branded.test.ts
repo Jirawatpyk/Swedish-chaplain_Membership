@@ -6,6 +6,8 @@ import {
   asAuditEventId,
   asEmailRevertTokenHash,
   asEmailVerificationTokenHash,
+  asInvitationTokenHash,
+  asInvitationTokenId,
   asPasswordHash,
   asEmailAddress,
 } from '@/modules/auth/domain/branded';
@@ -35,6 +37,11 @@ describe('Branded type constructors', () => {
   it('the F3 email-change hash constructors are pure casts (016 T072 coverage closure)', () => {
     expect(asEmailVerificationTokenHash('a'.repeat(64))).toBe('a'.repeat(64));
     expect(asEmailRevertTokenHash('b'.repeat(64))).toBe('b'.repeat(64));
+  });
+
+  it('the invitation-token constructors are pure casts (full-run coverage truth: the table truncated these from the left)', () => {
+    expect(asInvitationTokenId('c'.repeat(64))).toBe('c'.repeat(64));
+    expect(asInvitationTokenHash('d'.repeat(64))).toBe('d'.repeat(64));
   });
 });
 

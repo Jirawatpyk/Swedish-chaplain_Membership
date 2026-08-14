@@ -1,0 +1,72 @@
+# Coverage thresholds — the gate nothing was running.
+#
+# WHY THIS EXISTS
+# `vitest.config.ts` pins 100% (lines/branches) on the Domain layers, the RBAC
+# composition root, and a named set of money-path use cases — but until this
+# file landed, NO gate anywhere executed `pnpm test:coverage`: not CI, not
+# pre-push, and (evidently) not humans. The 016 T072 final-verification walk
+# ran it for the first time in weeks and found 13 money-path files below their
+# pins — one of them at 1.61% because its only test was an integration test
+# this run does not count. Thresholds that nothing evaluates are decoration;
+# this workflow is what makes them real.
+#
+# NIGHTLY + MANUAL, NOT PR-BLOCKING (yet). The full instrumented unit+contract
+# run costs tens of minutes — too slow for every PR push. It reports nightly;
+# a red run is a stop-the-line signal for the next working day. Promoting it
+# into the PR-blocking set is a branch-protection decision the maintainer owns
+# once the suite has a green streak.
+#
+# HERMETIC, same contract as quality-gates.yml: `pnpm test:coverage` runs
+# tests/unit + tests/contract only. With `.env.local` absent, tests/setup.ts
+# injects schema-satisfying placeholders; every boundary is mocked — nothing
+# dials Neon, Stripe, Resend or Upstash. No secrets are configured here, so a
+# leaked-credential class of failure cannot start in this file.
+name: Coverage thresholds (nightly)
+
+on:
+  schedule:
+    # 19:30 UTC = 02:30 Asia/Bangkok — after the other nightlies, before the
+    # working day. (Native cron note in docs/runbooks/cron-jobs.md is about
+    # Vercel Cron; GitHub schedules are independent but the UTC rule is the
+    # same trap.)
+    - cron: '30 19 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: coverage-nightly-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  coverage:
+    name: Unit + contract coverage vs pinned thresholds
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      # No `version:` — pnpm/action-setup reads `packageManager` from
+      # package.json, so CI can never drift from the lockfile.
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+
+      # Same reason as quality-gates.yml: tsx/vitest paths that touch Next
+      # route types need the typegen output present in a fresh checkout.
+      - name: Next route typegen
+        run: pnpm exec next typegen
+
+      - name: Vitest with coverage thresholds (vitest.config.ts is the law)
+        run: pnpm test:coverage
+
+      # The per-file table is the diagnostic artefact — keep it even on green
+      # so a drift trend is visible without re-running locally.
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 14
+          if-no-files-found: ignore

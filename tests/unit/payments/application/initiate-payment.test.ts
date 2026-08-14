@@ -1041,4 +1041,59 @@ describe('initiatePayment (T055)', () => {
     if (result.ok) return;
     expect(result.error.code).toBe('tenant_settings_incomplete');
   });
+
+  // F5R3v3 H-1 — the Step-4 bridge if-chain's `corrupted_total` arm. The
+  // bridge detected a malformed F4 invoice (negative totalSatang from data
+  // corruption / a dropped CHECK); the use-case MUST short-circuit BEFORE
+  // the Stripe round-trip so we never fabricate a zero-amount PI, never
+  // write a pending row, and never emit a misleading `payment_initiated`.
+  it('bridge corrupted_total — invoice_data_corrupt echoing the BRIDGE invoiceId, no Stripe call / no tx / no audit', async () => {
+    const deps = makeDeps();
+    (deps.invoicingBridge.getInvoiceForPayment as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      // Deliberately a DIFFERENT id from the request's INVOICE_ID so the
+      // echo assertion below is load-bearing: the use-case forwards
+      // `e.invoiceId` (the bridge is authoritative about WHICH row is
+      // corrupt), not the caller-supplied input id.
+      err({ code: 'corrupted_total', invoiceId: 'inv_corrupt_from_bridge' }),
+    );
+    const result = await initiatePayment(deps, makeInput());
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('invoice_data_corrupt');
+    if (result.error.code !== 'invoice_data_corrupt') return;
+    expect(result.error.invoiceId).toBe('inv_corrupt_from_bridge');
+    // Short-circuit is pre-tx AND pre-Stripe — nothing money-side moved.
+    expect(deps.processorGateway.createPaymentIntent).not.toHaveBeenCalled();
+    expect(deps.paymentsRepo.insert).not.toHaveBeenCalled();
+    expect(deps.paymentsRepo.withTx).not.toHaveBeenCalled();
+    expect(deps.audit.emit).not.toHaveBeenCalled();
+    // GAP-2 / try-finally all-exits invariant: the latency histogram still
+    // fires exactly once on this early-error path.
+    expect(metricsMocks.initiateDurationMs).toHaveBeenCalledTimes(1);
+  });
+
+  // I4 (Task 7 remediation) — the F4 payability read THREW (Neon down /
+  // connection reset). TRANSIENT: the member's invoice is fine, our READ
+  // hiccuped. Collapsing this into `invoice_not_payable` would tell a
+  // member their invoice cannot be paid because a database read failed —
+  // a lie that sends them to support. Distinct code → route 500 → retry.
+  it('bridge read_failed — invoice_read_failed (TRANSIENT, explicitly NOT invoice_not_payable), no Stripe call / no tx / no audit', async () => {
+    const deps = makeDeps();
+    (deps.invoicingBridge.getInvoiceForPayment as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      err({ code: 'read_failed' }),
+    );
+    const result = await initiatePayment(deps, makeInput());
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('invoice_read_failed');
+    // The load-bearing distinction: a read fault must never masquerade as
+    // a fact about the invoice.
+    expect(result.error.code).not.toBe('invoice_not_payable');
+    expect(deps.processorGateway.createPaymentIntent).not.toHaveBeenCalled();
+    expect(deps.paymentsRepo.insert).not.toHaveBeenCalled();
+    expect(deps.paymentsRepo.withTx).not.toHaveBeenCalled();
+    expect(deps.audit.emit).not.toHaveBeenCalled();
+    // try-finally all-exits invariant holds on this path too.
+    expect(metricsMocks.initiateDurationMs).toHaveBeenCalledTimes(1);
+  });
 });

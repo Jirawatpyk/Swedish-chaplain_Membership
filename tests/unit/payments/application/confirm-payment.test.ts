@@ -11,8 +11,15 @@ import {
   expectRolledBack,
 } from '../../../support/fake-tx';
 import { confirmPayment, type ConfirmPaymentDeps } from '@/modules/payments';
+// Deep import, deliberately: `causeForInvoiceStatus` is a use-case-internal
+// pure helper exported for direct unit coverage — it is not part of the
+// module's public barrel surface.
+import { causeForInvoiceStatus } from '../../../../src/modules/payments/application/use-cases/confirm-payment';
 import { asPaymentId, type Payment } from '../../../../src/modules/payments/domain/payment';
 import type { TenantPaymentSettings } from '../../../../src/modules/payments/domain/tenant-payment-settings';
+// NOT vi.mock'd in this file (other suites rely on the real module shape);
+// individual tests vi.spyOn specific counters and restore them.
+import { paymentsMetrics } from '@/lib/metrics';
 
 const TENANT_ID = 'tnt_abc';
 const PAYMENT_INTENT_ID = 'pi_test_abc';
@@ -217,6 +224,23 @@ describe('confirmPayment (T057)', () => {
     if (!result.ok) return;
     expect(result.value.kind).toBe('processed');
     expect(afterCommit).toHaveBeenCalledTimes(1);
+  });
+
+  it('post-commit — a NON-Error finalise throw is swallowed too (String(e) arm)', async () => {
+    // The forensic log's `instanceof Error ? message : String(e)` right arm:
+    // a promise-rejected string (or any non-Error) must not crash the swallow.
+    const deps = makeDeps();
+    const afterCommit = vi.fn(async () => {
+      // eslint-disable-next-line no-throw-literal
+      throw 'finalise string boom';
+    });
+    const result = await confirmPayment(
+      { ...deps, onAfterCommitCallbacks: [afterCommit] },
+      INPUT,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.kind).toBe('processed');
   });
 
   // Task 4 (review I-1) — the CAS-mismatch guard on the succeeded flip. When
@@ -543,6 +567,60 @@ describe('confirmPayment (T057)', () => {
     expect(
       auditCalls.some((c) => c[1].eventType === 'payment_auto_refunded_stale_invoice'),
     ).toBe(true);
+  });
+
+  // Marker-already-present races (Stripe retry idempotency): the attach helper
+  // returns null and the ops warn — with a wired logger — must name the exact
+  // guard-miss site so the runbook can confirm the refund. One per sub-case.
+  it('guard-miss (ii) + marker already present → warns auto_refund_marker_on_failed_guard_miss', async () => {
+    const warn = vi.fn();
+    const deps = makeDeps();
+    (deps.paymentsRepo.lockForUpdateByPaymentIntentId as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      FAILED_PAYMENT,
+    );
+    (deps.invoicingBridge.getInvoiceForPayment as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      ok({
+        id: 'inv_01JABCDE_XYZ',
+        status: 'void' as const,
+        totalSatang: asSatang(5_350_000n),
+        memberId: 'mem_01J_MEM',
+        tenantId: TENANT_ID,
+      }),
+    );
+    (deps.paymentsRepo.markAutoRefunded as ReturnType<typeof vi.fn>).mockResolvedValueOnce(null);
+    (deps.paymentsRepo.attachAutoRefundMarkerIfAbsent as ReturnType<typeof vi.fn>).mockResolvedValueOnce(null);
+    const result = await confirmPayment({ ...deps, logger: { warn } }, INPUT);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.kind).toBe('auto_refunded_stale_invoice');
+    expect(warn).toHaveBeenCalledWith(
+      'confirm_payment.auto_refund_marker_on_failed_guard_miss',
+      expect.objectContaining({ paymentId: FAILED_PAYMENT.id, processorRefundId: 're_test_auto' }),
+    );
+  });
+
+  it('guard-miss (i) + marker already present → warns auto_refund_flip_guard_miss', async () => {
+    const warn = vi.fn();
+    const deps = makeDeps();
+    (deps.invoicingBridge.getInvoiceForPayment as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      ok({
+        id: 'inv_01JABCDE_XYZ',
+        status: 'void' as const,
+        totalSatang: asSatang(5_350_000n),
+        memberId: 'mem_01J_MEM',
+        tenantId: TENANT_ID,
+      }),
+    );
+    (deps.paymentsRepo.markAutoRefunded as ReturnType<typeof vi.fn>).mockResolvedValueOnce(null);
+    (deps.paymentsRepo.attachAutoRefundMarkerIfAbsent as ReturnType<typeof vi.fn>).mockResolvedValueOnce(null);
+    const result = await confirmPayment({ ...deps, logger: { warn } }, INPUT);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.kind).toBe('auto_refunded_stale_invoice');
+    expect(warn).toHaveBeenCalledWith(
+      'confirm_payment.auto_refund_flip_guard_miss',
+      expect.objectContaining({ paymentId: PENDING_PAYMENT.id, processorRefundId: 're_test_auto' }),
+    );
   });
 
   it('stale invoice (void) — cause=invoice_voided', async () => {
@@ -1254,5 +1332,411 @@ describe('confirmPayment — I4: bridge read_failed must not auto-refund', () =>
         String(c[1]?.eventType ?? '').startsWith('payment_auto_refunded'),
       ),
     ).toBe(false);
+  });
+
+  // I4 sibling — same read_failed arrange, but WITH deps.logger wired so the
+  // decision warn fires. The log line records the DECISION (transient err,
+  // Stripe will retry) with bounded discriminators only — no raw error text.
+  it('read_failed with deps.logger wired → the decision warn fires with bounded discriminators', async () => {
+    const warn = vi.fn();
+    const deps = { ...makeDeps(), logger: { warn } };
+    (deps.invoicingBridge.getInvoiceForPayment as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      err({ code: 'read_failed' }),
+    );
+
+    const result = await confirmPayment(deps, INPUT);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('invoice_read_failed');
+    expect(warn).toHaveBeenCalledWith(
+      'confirm_payment.invoice_read_failed',
+      expect.objectContaining({
+        bridgeOutcome: 'read_failed',
+        disposition: 'transient_err_stripe_will_retry',
+        paymentId: PENDING_PAYMENT.id,
+      }),
+    );
+    // Still the assertion that matters: a read hiccup moves no money.
+    expect(deps.processorGateway.createRefund).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * money-coverage remediation — the Step-2 bridge-error arms that ack the
+ * webhook with a TX-BOUND forensic + markProcessed instead of auto-refunding.
+ * Stripe has already CHARGED the customer on every one of these paths; the
+ * broken side is OUR data, so the row must persist and the retry loop must
+ * break — but `createRefund` must never fire.
+ */
+describe('confirmPayment — Step-2 bridge-error acks (forbidden / corrupted_total / new-flow-bill)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('bridge forbidden → invoice_not_found outcome, TX-BOUND forensic, markProcessed, no auto-refund', async () => {
+    // F5R3 CR-4 — F4 `forbidden` is PERMANENT webhook-side: the forensic is
+    // tx-bound (NOT null) so it commits atomically with markProcessed; a
+    // rollback of one loses both, and Stripe retries cleanly.
+    const markProcessed = vi.fn(async () => undefined);
+    const deps = {
+      ...makeDeps(),
+      processorEventsRepo: {
+        markProcessed,
+      } as unknown as NonNullable<ConfirmPaymentDeps['processorEventsRepo']>,
+    };
+    (deps.invoicingBridge.getInvoiceForPayment as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      err({ code: 'forbidden' }),
+    );
+
+    const result = await confirmPayment(deps, { ...INPUT, processorEventId: 'evt_forbidden' });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.kind).toBe('invoice_not_found');
+    if (result.value.kind !== 'invoice_not_found') return;
+    expect(result.value.invoiceId).toBe(PENDING_PAYMENT.invoiceId);
+    expect(markProcessed).toHaveBeenCalledTimes(1);
+
+    const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+    const forensic = auditCalls.find(
+      (c) => c[1].eventType === 'payment_invoice_not_found',
+    );
+    expect(forensic).toBeDefined();
+    // TX-BOUND — first arg is the tx, NOT null (the not_found sibling is
+    // also tx-bound; the null-tx pattern is reserved for rollback-surviving
+    // forensics elsewhere in this file).
+    expect(forensic?.[0]).not.toBeNull();
+    // The SUMMARY is what discriminates `forbidden` from the not_found
+    // sibling — this arm's payload carries no bridge_outcome field
+    // (verified against source; only corrupted_total stamps one).
+    expect(forensic?.[1].summary).toContain('forbidden');
+
+    // Never auto-refund on a forbidden read (F5R1-E3), never settle.
+    expect(deps.processorGateway.createRefund).not.toHaveBeenCalled();
+    expect(deps.invoicingBridge.markPaidFromProcessor).not.toHaveBeenCalled();
+  });
+
+  it('bridge corrupted_total → invoice_data_corrupt + tx-bound forensic + markProcessed, no auto-refund', async () => {
+    const markProcessed = vi.fn(async () => undefined);
+    const deps = {
+      ...makeDeps(),
+      processorEventsRepo: {
+        markProcessed,
+      } as unknown as NonNullable<ConfirmPaymentDeps['processorEventsRepo']>,
+    };
+    (deps.invoicingBridge.getInvoiceForPayment as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      err({ code: 'corrupted_total', invoiceId: 'inv_corrupt' }),
+    );
+
+    const result = await confirmPayment(deps, { ...INPUT, processorEventId: 'evt_corrupt' });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.kind).toBe('invoice_data_corrupt');
+    if (result.value.kind !== 'invoice_data_corrupt') return;
+    // Pins ACTUAL behaviour, verified against source: this arm echoes the
+    // PAYMENT ROW's invoiceId (`payment.invoiceId`), NOT the bridge error's
+    // own `invoiceId` field ('inv_corrupt'). The webhook side already holds
+    // the locked row, so the row is authoritative here — unlike the
+    // initiate path, which has no row yet and echoes `e.invoiceId`.
+    expect(result.value.invoiceId).toBe(PENDING_PAYMENT.invoiceId);
+    expect(markProcessed).toHaveBeenCalledTimes(1);
+
+    const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+    const forensic = auditCalls.find(
+      (c) => c[1].eventType === 'payment_invoice_not_found',
+    );
+    expect(forensic).toBeDefined();
+    expect(forensic?.[0]).not.toBeNull();
+    expect(forensic?.[1].payload.bridge_outcome).toBe('corrupted_total');
+
+    // Pre-fix the bridge silently capped totalSatang at 0n and fell through
+    // to the stale branch — an auto-refund against a fake-zero baseline.
+    expect(deps.processorGateway.createRefund).not.toHaveBeenCalled();
+    expect(deps.invoicingBridge.markPaidFromProcessor).not.toHaveBeenCalled();
+  });
+
+  // 088 SEC-MED — `new_flow_bill_requires_flag_on` deliberately resolves to
+  // `undefined` in `invoiceStatusFromBridgeError`, i.e. it DOES reach the
+  // stale-invoice auto-refund with cause `invoice_unknown_status`.
+  //
+  // CAVEAT (carried verbatim from the source): that is PRE-EXISTING
+  // behaviour deliberately preserved byte-for-byte by the I4 hardening
+  // rather than changed as a side effect — "If it was never intended, that
+  // is a separate finding for whoever owns 088 — do not 'fix' it inside an
+  // unrelated change." This test pins CURRENT behaviour; it is not an
+  // endorsement of auto-refunding on a flag rollback.
+  //
+  // Reachability note (financial review S-2): the real webhook rail passes
+  // `reconciliationPath: true` to the bridge, which suppresses this error
+  // today — the arm pinned here is the defensive switch arm, driven via the
+  // mock. It becomes live only if a future caller omits that flag.
+  it('bridge new_flow_bill_requires_flag_on → stale auto-refund with cause invoice_unknown_status (pins pre-existing behaviour)', async () => {
+    const deps = makeDeps();
+    (deps.invoicingBridge.getInvoiceForPayment as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      err({ code: 'new_flow_bill_requires_flag_on' }),
+    );
+
+    const result = await confirmPayment(deps, INPUT);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.kind).toBe('auto_refunded_stale_invoice');
+
+    expect(deps.processorGateway.createRefund).toHaveBeenCalledTimes(1);
+    expect(deps.processorGateway.createRefund).toHaveBeenCalledWith(
+      expect.objectContaining({
+        idempotencyKey: `auto-refund-${PENDING_PAYMENT.id}`,
+      }),
+    );
+
+    // cause=invoice_unknown_status routes to the GENERIC stale event type,
+    // not the concurrent-manual-mark variant (that is invoice_already_paid
+    // only, per R3 CRIT-A).
+    const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+    const staleAudit = auditCalls.find(
+      (c) => c[1].eventType === 'payment_auto_refunded_stale_invoice',
+    );
+    expect(staleAudit).toBeDefined();
+    expect(staleAudit?.[1].payload.cause).toBe('invoice_unknown_status');
+    expect(
+      auditCalls.some(
+        (c) => c[1].eventType === 'payment_auto_refunded_concurrent_manual_mark',
+      ),
+    ).toBe(false);
+    expect(deps.invoicingBridge.markPaidFromProcessor).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * `causeForInvoiceStatus` — pure Domain-adjacent mapping, exercised directly
+ * so every arm (incl. the default bucket) is pinned without driving the whole
+ * use-case through each invoice status.
+ */
+describe('causeForInvoiceStatus (pure helper)', () => {
+  it.each([
+    ['paid', 'invoice_already_paid'],
+    ['void', 'invoice_voided'],
+    ['credited', 'invoice_credited'],
+    ['partially_credited', 'invoice_credited'],
+    ['draft', 'invoice_unknown_status'],
+    [undefined, 'invoice_unknown_status'],
+    ['some_future_f4_status', 'invoice_unknown_status'],
+  ] as ReadonlyArray<[string | undefined, string]>)(
+    'maps %j → %s',
+    (invoiceStatus, expectedCause) => {
+      expect(causeForInvoiceStatus(invoiceStatus)).toBe(expectedCause);
+    },
+  );
+
+  it('tripwire: paid and void map to DIFFERENT causes (audit labels must never conflate them)', () => {
+    // `invoice_already_paid` routes to the dedicated concurrent-manual-mark
+    // audit event; `invoice_voided` stays on the generic stale event.
+    // Collapsing them would silently reroute the R3 CRIT-A spec edge case.
+    expect(causeForInvoiceStatus('paid')).not.toBe(causeForInvoiceStatus('void'));
+  });
+});
+
+/**
+ * Give-up path residuals — the `input.processorEventId` presence arms and
+ * the Phase-B markProcessed failure containment (F5R2-SF-3).
+ */
+describe('confirmPayment — stale give-up with processorEventId + Phase-B failure containment', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  function arrangeStaleGiveUp(deps: ConfirmPaymentDeps): void {
+    (deps.invoicingBridge.getInvoiceForPayment as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      ok({
+        id: 'inv_01JABCDE_XYZ',
+        status: 'paid' as const,
+        totalSatang: asSatang(5_350_000n),
+        memberId: 'mem_01J_MEM',
+        tenantId: TENANT_ID,
+      }),
+    );
+    (deps.processorGateway.createRefund as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      err({ kind: 'retryable', reason: 'timeout' }),
+    );
+    // 49h after the event → past the 48h give-up ceiling (R1-E9 idiom).
+    const eventTs = INPUT.eventCreatedAtUnixSeconds;
+    deps.clock.nowMs = () => (eventTs + 49 * 60 * 60) * 1000;
+  }
+
+  it('stale give-up WITH processorEventId → forensic carries evt_giveup_1, not the event-${paymentId} fallback', async () => {
+    const deps = makeDeps();
+    arrangeStaleGiveUp(deps);
+
+    const result = await confirmPayment(deps, { ...INPUT, processorEventId: 'evt_giveup_1' });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.kind).toBe('auto_refund_given_up');
+
+    const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+    const giveUp = auditCalls.find(
+      (c) =>
+        c[1]?.eventType === 'out_of_band_refund_detected' &&
+        typeof c[1]?.summary === 'string' &&
+        c[1].summary.startsWith('Auto-refund giving up after '),
+    );
+    expect(giveUp).toBeDefined();
+    // No refund was actually created (the Stripe call failed), so the
+    // Stripe EVENT id is the forensic correlation key — NOT the
+    // `event-${payment.id}` fallback reserved for eventId-less callers.
+    expect(giveUp?.[1].payload.processor_refund_id).toBe('evt_giveup_1');
+    expect(giveUp?.[1].summary).toContain('evt_giveup_1');
+  });
+
+  it('stale give-up + Phase-B markProcessed tx throws → metric + warn (errKind per throw shape), still acks', async () => {
+    // F5R2-SF-3 — the stuck-row class: the give-up audit commits (null tx)
+    // and Stripe gets its 200, but the Phase-B tx that stamps processed_at
+    // dies. The counter + warn are the ONLY signals; the ack must survive.
+    const metricSpy = vi
+      .spyOn(paymentsMetrics, 'confirmPaymentGiveUpPhaseBMarkProcessedFailed')
+      .mockImplementation(() => {});
+    try {
+      for (const [thrown, expectedErrKind] of [
+        [new Error('phase-b tx down'), 'Error'],
+        ['raw string rejection', 'unknown'],
+      ] as ReadonlyArray<[unknown, string]>) {
+        vi.clearAllMocks();
+        const warn = vi.fn();
+        const deps = { ...makeDeps(), logger: { warn } };
+        arrangeStaleGiveUp(deps);
+        // Phase A passes through; the SECOND withTx (the give-up's Phase-B
+        // markProcessed) rejects — mirrors rejectSecondTx in the webhook suite.
+        const tx = deps.paymentsRepo.withTx as ReturnType<typeof vi.fn>;
+        tx.mockReset();
+        tx.mockImplementationOnce(async <T,>(fn: (t: unknown) => Promise<T>) => fn({}));
+        tx.mockImplementationOnce(async () => {
+          throw thrown;
+        });
+
+        const result = await confirmPayment(deps, INPUT);
+
+        // The ack survives the Phase-B failure — Stripe must still drain.
+        expect(result.ok, `errKind=${expectedErrKind}`).toBe(true);
+        if (!result.ok) return;
+        expect(result.value.kind, `errKind=${expectedErrKind}`).toBe('auto_refund_given_up');
+        expect(metricSpy, `errKind=${expectedErrKind}`).toHaveBeenCalledTimes(1);
+        expect(warn).toHaveBeenCalledWith(
+          'confirm_payment.give_up_phase_b_mark_processed_failed',
+          expect.objectContaining({
+            paymentId: PENDING_PAYMENT.id,
+            errKind: expectedErrKind,
+          }),
+        );
+      }
+    } finally {
+      metricSpy.mockRestore();
+    }
+  });
+});
+
+/**
+ * Late-charge (#8) — synchronous refund failure at creation + the F8
+ * post-commit gate on non-processed outcomes.
+ */
+describe('confirmPayment — late-charge sync-failed refund + F8 post-commit gating', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  // Round-2 (MED — #1 status discrimination), late-charge flavour: Stripe
+  // ACCEPTED the refund but it settled failed/canceled SYNCHRONOUSLY — the
+  // money was NOT returned and no reliable follow-up webhook exists. The
+  // money-not-returned forensic + page metric must fire NOW.
+  it.each(['failed', 'canceled'] as const)(
+    'late-charge refund settles %s at creation → Late-charge forensic + reconcile metric, marker still stamped',
+    async (refundStatus) => {
+      const reconcileSpy = vi
+        .spyOn(paymentsMetrics, 'autoRefundFailedNeedsReconcile')
+        .mockImplementation(() => {});
+      try {
+        const deps = makeDeps();
+        (deps.paymentsRepo.lockForUpdateByPaymentIntentId as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+          FAILED_PAYMENT,
+        );
+        (deps.processorGateway.createRefund as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+          ok({ id: 're_test_auto', status: refundStatus, amountSatang: asSatang(5_350_000n) }),
+        );
+
+        const result = await confirmPayment(deps, INPUT);
+
+        expect(result.ok, `refundStatus=${refundStatus}`).toBe(true);
+        if (!result.ok) return;
+        expect(result.value.kind).toBe('auto_refunded_stale_invoice');
+
+        const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+        const failureAudit = auditCalls.find(
+          (c) => c[1].eventType === 'auto_refund_failed_needs_manual_reconcile',
+        );
+        expect(failureAudit, `refundStatus=${refundStatus}`).toBeDefined();
+        expect(failureAudit?.[1].payload.refund_status).toBe(refundStatus);
+        expect(failureAudit?.[1].retentionYears).toBe(10);
+        // The 'Late-charge' summary pin is load-bearing: the STALE twin
+        // emits the SAME event type with summary 'Auto-refund for payment…'
+        // — without this pin the stale sibling would satisfy the test.
+        expect(failureAudit?.[1].summary).toContain('Late-charge');
+
+        // Page metric fired; the durable marker still landed (F-9: the row
+        // stays failed, the marker is what suppresses the false OOB later).
+        expect(reconcileSpy).toHaveBeenCalledTimes(1);
+        expect(deps.paymentsRepo.attachAutoRefundMarkerIfAbsent).toHaveBeenCalledTimes(1);
+      } finally {
+        reconcileSpy.mockRestore();
+      }
+    },
+  );
+
+  it('late-charge marker already present (Stripe retry) → warns late_charge_marker_guard_miss, still acks', async () => {
+    const warn = vi.fn();
+    const deps = makeDeps();
+    (deps.paymentsRepo.lockForUpdateByPaymentIntentId as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      FAILED_PAYMENT,
+    );
+    (deps.paymentsRepo.attachAutoRefundMarkerIfAbsent as ReturnType<typeof vi.fn>).mockResolvedValueOnce(null);
+    const result = await confirmPayment({ ...deps, logger: { warn } }, INPUT);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.kind).toBe('auto_refunded_stale_invoice');
+    expect(warn).toHaveBeenCalledWith(
+      'confirm_payment.late_charge_marker_guard_miss',
+      expect.objectContaining({ paymentId: FAILED_PAYMENT.id, processorRefundId: 're_test_auto' }),
+    );
+  });
+
+  // The F8 post-commit gate: `processed` is the ONE outcome that means the
+  // invoice flipped issued → paid in THIS dispatch. Firing the finaliser on
+  // any other outcome would emit a false `plan_change_applied`.
+  it('post-commit F8 hooks NOT fired on a non-processed outcome (already_succeeded)', async () => {
+    const deps = makeDeps();
+    const afterCommit = vi.fn(async () => undefined);
+    (deps.paymentsRepo.lockForUpdateByPaymentIntentId as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      { ...PENDING_PAYMENT, status: 'refunded' as const },
+    );
+
+    const result = await confirmPayment(
+      { ...deps, onAfterCommitCallbacks: [afterCommit] },
+      INPUT,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.kind).toBe('already_succeeded');
+    expect(afterCommit).not.toHaveBeenCalled();
+  });
+
+  it('post-commit F8 hooks NOT fired when the bridge declines (result not ok)', async () => {
+    const deps = makeDeps();
+    const afterCommit = vi.fn(async () => undefined);
+    (deps.invoicingBridge.markPaidFromProcessor as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      err({ code: 'pdf_render_failed', detail: 'x' }),
+    );
+
+    const result = await confirmPayment(
+      { ...deps, onAfterCommitCallbacks: [afterCommit] },
+      INPUT,
+    );
+
+    expect(result.ok).toBe(false);
+    expect(afterCommit).not.toHaveBeenCalled();
   });
 });

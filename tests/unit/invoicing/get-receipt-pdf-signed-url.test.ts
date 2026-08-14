@@ -810,3 +810,108 @@ describe('getReceiptPdfSignedUrl — blob_missing handling (R10-T1)', () => {
     if (!result.ok) expect(result.error.code).toBe('blob_missing');
   });
 });
+
+// Branch-closure pins (money-coverage remediation) — the last uncovered
+// arms of the receipt ACL gate: the member arm with NO actorMemberId at
+// all, the null last-error surface, and the double-null document-number
+// fallbacks in both filename modes.
+describe('getReceiptPdfSignedUrl — branch-closure pins', () => {
+  it('member actor with actorMemberId OMITTED → forbidden + probe payload actor_member_id null', async () => {
+    const invoice = separateRenderedInvoice();
+    const { deps, callsKeys, audit } = makeDeps(invoice);
+    const result = await getReceiptPdfSignedUrl(deps, {
+      tenantId: 't',
+      actorUserId: 'u-member',
+      actorRole: 'member',
+      // actorMemberId deliberately OMITTED — the guard's `!input.actorMemberId`
+      // arm must fail closed before ever comparing against invoice.memberId.
+      invoiceId: 'i',
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('forbidden');
+    expect(callsKeys).toEqual([]);
+    expect(audit).toHaveBeenCalledTimes(1);
+    const auditCall = audit.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(auditCall.eventType).toBe('invoice_cross_tenant_probe');
+    const payload = auditCall.payload as Record<string, unknown>;
+    expect(payload.actor_member_id).toBeNull();
+    expect(payload.invoice_member_id).toBe('m-owner');
+    expect(payload.route).toBe('get-receipt-pdf-signed-url');
+  });
+
+  it('separate-mode failed with receiptPdfLastError NULL → receipt_pdf_failed with reason null (worker never recorded a message)', async () => {
+    const invoice = {
+      ...separateFailedInvoice(),
+      receiptPdfLastError: null,
+    } as Invoice;
+    const { deps, callsKeys, audit } = makeDeps(invoice);
+    const result = await getReceiptPdfSignedUrl(deps, {
+      tenantId: 't',
+      actorUserId: 'u-admin',
+      actorRole: 'admin',
+      invoiceId: 'i',
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('receipt_pdf_failed');
+      if (result.error.code === 'receipt_pdf_failed') {
+        expect(result.error.reason).toBeNull();
+      }
+    }
+    expect(callsKeys).toEqual([]);
+    expect(audit).not.toHaveBeenCalled();
+  });
+
+  it('combined-mode with documentNumber NULL + billDocumentNumberRaw NULL → filename "receipt-receipt.pdf" + summary falls back to invoiceId', async () => {
+    // Defensive double-null shape — the filename `?? 'receipt'` and the
+    // summary `?? invoiceId` fallbacks must keep the download + §87
+    // forensic row well-formed rather than interpolating "undefined".
+    const invoice = {
+      ...combinedModeInvoice(),
+      documentNumber: null,
+      billDocumentNumberRaw: null,
+    } as unknown as Invoice;
+    const { deps, callsKeys, audit } = makeDeps(invoice);
+    const result = await getReceiptPdfSignedUrl(deps, {
+      tenantId: 't',
+      actorUserId: 'u-admin',
+      actorRole: 'admin',
+      invoiceId: 'i',
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.filename).toBe('receipt-receipt.pdf');
+    expect(callsKeys).toEqual([RECEIPT_BLOB_KEY]);
+    expect(audit).toHaveBeenCalledTimes(1);
+    const auditCall = audit.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(auditCall.summary).toBe('Receipt PDF downloaded — invoice i (combined mode)');
+    const payload = auditCall.payload as Record<string, unknown>;
+    expect(payload.receipt_numbering_mode).toBe('combined');
+  });
+
+  it('separate-mode with documentNumber NULL + billDocumentNumberRaw NULL → summary names the invoiceId, filename stays the RC number', async () => {
+    const invoice = {
+      ...separateRenderedInvoice(),
+      documentNumber: null,
+      billDocumentNumberRaw: null,
+    } as unknown as Invoice;
+    const { deps, callsKeys, audit } = makeDeps(invoice);
+    const result = await getReceiptPdfSignedUrl(deps, {
+      tenantId: 't',
+      actorUserId: 'u-admin',
+      actorRole: 'admin',
+      invoiceId: 'i',
+    });
+    expect(result.ok).toBe(true);
+    // The RC receipt number is the row's printed identity — the invoice
+    // document number is only the cross-reference inside the summary.
+    if (result.ok) expect(result.value.filename).toBe('RC-2026-000001.pdf');
+    expect(callsKeys).toEqual([RECEIPT_BLOB_KEY]);
+    expect(audit).toHaveBeenCalledTimes(1);
+    const auditCall = audit.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(auditCall.summary).toBe(
+      'Receipt PDF downloaded — RC-2026-000001 (invoice i)',
+    );
+    const payload = auditCall.payload as Record<string, unknown>;
+    expect(payload.receipt_numbering_mode).toBe('separate');
+  });
+});
