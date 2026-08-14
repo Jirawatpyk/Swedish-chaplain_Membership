@@ -28,7 +28,6 @@ import {
   errorResponse,
 } from '@/lib/broadcasts-route-helpers';
 import { requireApiPermission } from '@/lib/rbac';
-import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
 
@@ -59,7 +58,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const ctx = await requireApiPermission(request, 'settings.broadcasts', mappedLegacy('broadcast', 'write'));
+  const ctx = await requireApiPermission(request, 'settings.broadcasts');
   if ('response' in ctx) return ctx.response;
 
   const tenantCtx = resolveTenantFromRequest(request);

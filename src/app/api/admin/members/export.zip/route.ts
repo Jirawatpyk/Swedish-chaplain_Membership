@@ -17,7 +17,6 @@
  */
 import { type NextRequest, NextResponse } from 'next/server';
 import { requireApiPermission } from '@/lib/rbac';
-import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { buildAttachmentContentDisposition } from '@/lib/content-disposition';
@@ -30,7 +29,7 @@ import {
 export const runtime = 'nodejs';
 
 export async function GET(request: NextRequest): Promise<Response> {
-  const ctx = await requireApiPermission(request, 'members.bulk', mappedLegacy('members:bulk', 'write'));
+  const ctx = await requireApiPermission(request, 'members.bulk');
   if ('response' in ctx) return ctx.response;
 
   const tenantCtx = resolveTenantFromRequest(request);

@@ -1,18 +1,16 @@
 /**
- * T015 — role × endpoint matrix (016-rbac-permissions PR 2, US2).
+ * T015 — role × endpoint matrix (016-rbac-permissions; single-leg since PR 5).
  *
- * The referee for the sweep. Every assertion here is driven off the FROZEN
- * pre-sweep capture in `tests/helpers/rbac-observed-baseline.ts`:
+ * Driven off the (surface → key) register in
+ * `tests/helpers/rbac-observed-baseline.ts`. The flag-OFF half — the shim rows
+ * and the frozen per-role cells that held the legacy leg byte-identical
+ * (SC-002) — was deleted with that leg in PR 5; the SC-002 claim is now
+ * history, not an invariant anything can break.
  *
- *   - flag OFF: the shim row attached to each surface must reproduce the
- *     observed per-role outcome exactly (SC-002 — byte-identical behaviour).
- *   - flag ON: the declared key may narrow, never widen, for the three roles
- *     that exist today; every narrowing must be declared.
- *
- * Anti-circularity: the expected cells are literals frozen from an independent
- * re-implementation of the pre-016 policy rules (see the baseline file header).
- * The evaluator under test calls the REAL `canAccess`, so a disagreement
- * between the two implementations fails this suite rather than being absorbed.
+ * Anti-circularity: expectations come from `PINNED_MATRIX` (a hand
+ * transcription of design § 4.1) and from frozen literal surface lists —
+ * never derived from `ROLE_BUNDLES`, which would be the bundle asserting
+ * about itself.
  */
 import { describe, expect, it } from 'vitest';
 import {
@@ -25,19 +23,10 @@ import {
 } from '../../helpers/rbac-observed-baseline';
 import { PINNED_MATRIX } from '../../helpers/rbac-pinned-matrix';
 import { hasPermission } from '@/modules/auth/domain/permissions/evaluator';
-import type { LegacyRow } from '@/modules/auth/domain/permissions/legacy-shim';
 import { ALL_PERMISSION_KEYS } from '@/modules/auth/domain/permissions/permission-catalogue';
-import { ROLES, type Role } from '@/modules/auth/domain/role';
+import type { Role } from '@/modules/auth/domain/role';
 
-/** The baseline's structural row type is intentionally decoupled; re-attach. */
-const asLegacyRow = (surface: ObservedSurface): LegacyRow =>
-  surface.row as unknown as LegacyRow;
-
-const offLeg = (role: Role, s: ObservedSurface): boolean =>
-  hasPermission(role, s.key, { rbacV2: false, legacy: asLegacyRow(s) });
-
-const onLeg = (role: Role, s: ObservedSurface): boolean =>
-  hasPermission(role, s.key, { rbacV2: true });
+const allowed = (role: Role, s: ObservedSurface): boolean => hasPermission(role, s.key);
 
 describe('T015 baseline integrity', () => {
   it('captured 46 guarded pages + 1 exemption = the pinned 47-page inventory', () => {
@@ -63,76 +52,6 @@ describe('T015 baseline integrity', () => {
     const unknown = OBSERVED_BASELINE.filter((s) => !ALL_PERMISSION_KEYS.has(s.key));
     expect(unknown.map((s) => `${s.surface} -> ${s.key}`)).toEqual([]);
   });
-
-  it('records a non-empty observed guard for every surface', () => {
-    expect(OBSERVED_BASELINE.filter((s) => s.guard.trim() === '')).toEqual([]);
-  });
-});
-
-describe('T015 page-class membership matches contracts § 1.1', () => {
-  // The 17 pure session-only pages are the EXACT `legacySessionOnly` membership
-  // (contracts § 1.1 Class A). Pinned as a literal set: a page silently joining
-  // or leaving the ungated class is the regression this catches.
-  const CLASS_A = [
-    '/admin',
-    '/admin/account',
-    '/admin/audit',
-    '/admin/broadcasts',
-    '/admin/broadcasts/[id]',
-    '/admin/credit-notes/[creditNoteId]',
-    '/admin/directory',
-    '/admin/invoices',
-    '/admin/invoices/[invoiceId]',
-    '/admin/members',
-    '/admin/members/[memberId]',
-    '/admin/members/[memberId]/timeline',
-    '/admin/plans',
-    '/admin/plans/[year]/[planId]',
-    '/admin/settings',
-    '/admin/settings/invoicing',
-    '/admin/users',
-  ];
-
-  const CLASS_A_STAR = [
-    '/admin/credit-notes',
-    '/admin/events',
-    '/admin/events/[eventId]',
-    '/admin/members/[memberId]/benefits',
-    '/admin/renewals',
-    '/admin/renewals/[cycleId]',
-    '/admin/renewals/tasks',
-    '/admin/settings/renewals/schedules',
-  ];
-
-  it('legacySessionOnly ≡ the 17 Class-A pages', () => {
-    const actual = OBSERVED_PAGES.filter((p) => p.row.kind === 'legacySessionOnly')
-      .map((p) => p.surface)
-      .sort();
-    expect(actual).toEqual([...CLASS_A].sort());
-  });
-
-  it('legacyAdminOrManager ≡ the 8 Class-A* inert-check pages', () => {
-    const actual = OBSERVED_PAGES.filter((p) => p.row.kind === 'legacyAdminOrManager')
-      .map((p) => p.surface)
-      .sort();
-    expect(actual).toEqual([...CLASS_A_STAR].sort());
-  });
-
-  it('the remaining 21 pages are the admin-only class', () => {
-    expect(OBSERVED_PAGES.filter((p) => p.row.kind === 'legacyAdminOnly')).toHaveLength(21);
-  });
-});
-
-describe('T015 flag-OFF leg reproduces observed behaviour (SC-002)', () => {
-  for (const surface of OBSERVED_BASELINE) {
-    it(`${surface.surface} — all five roles`, () => {
-      const actual: Record<string, string> = {};
-      for (const role of ROLES) {
-        actual[role] = offLeg(role, surface) ? 'allow' : 'deny';
-      }
-      expect(actual).toEqual({ ...surface.cells });
-    });
-  }
 });
 
 describe('T015 anti-circularity anchors (manager stays denied)', () => {
@@ -152,12 +71,10 @@ describe('T015 anti-circularity anchors (manager stays denied)', () => {
   ];
 
   for (const name of MUST_DENY_MANAGER) {
-    it(`${name} denies manager on BOTH legs`, () => {
+    it(`${name} denies manager`, () => {
       const surface = OBSERVED_BASELINE.find((s) => s.surface === name);
       expect(surface, `surface missing from baseline: ${name}`).toBeDefined();
-      expect(surface!.cells.manager).toBe('deny');
-      expect(offLeg('manager', surface!)).toBe(false);
-      expect(onLeg('manager', surface!)).toBe(false);
+      expect(allowed('manager', surface!)).toBe(false);
     });
   }
 
@@ -166,35 +83,46 @@ describe('T015 anti-circularity anchors (manager stays denied)', () => {
       (s) => s.surface.includes('/api/auth/users/') || s.surface === 'POST /api/auth/invite',
     );
     expect(users).toHaveLength(6);
-    expect(users.every((s) => s.cells.manager === 'deny')).toBe(true);
+    expect(users.every((s) => !allowed('manager', s))).toBe(true);
   });
 });
 
-describe('T015 flag-ON leg never widens for a role that exists today', () => {
-  // super_admin and marketing gain access BY DESIGN (the whole feature), so the
-  // no-widening invariant is scoped to the three pre-016 roles.
-  const PRE_016_ROLES: readonly Role[] = ['admin', 'manager', 'member'];
-
-  it('no surface grants admin, manager or member more than it does today', () => {
-    const widenings: string[] = [];
-    for (const s of OBSERVED_BASELINE) {
-      for (const role of PRE_016_ROLES) {
-        if (s.cells[role] === 'deny' && onLeg(role, s)) {
-          widenings.push(`${s.surface} :: ${role}`);
-        }
+describe('T015 the D4 narrowings hold (INTENTIONAL_NARROWINGS is not stale)', () => {
+  // The old form compared the ON leg against the frozen pre-016 cells to prove
+  // "narrowed exactly where declared". The cells died with the legacy leg, so
+  // the residual invariant is: every DECLARED narrowing still narrows — a
+  // plain admin is denied on each listed surface. A narrowing that stops
+  // narrowing means either the bundle regressed or the declaration is stale;
+  // both deserve a red test.
+  it('the role each declaration names is still denied on that surface', () => {
+    // The declarations narrow DIFFERENT roles: the D4 entries take surfaces
+    // away from plain admin; the design § 10 entries take settings/exports
+    // away from manager (admin keeps those). The note text names the role, so
+    // read it rather than assuming admin everywhere — the first version did,
+    // and flagged three manager-narrowings as "no longer narrowing" while
+    // admin was, correctly, still allowed.
+    const undeclaredOrStale: string[] = [];
+    for (const [surface, note] of Object.entries(INTENTIONAL_NARROWINGS)) {
+      const s = OBSERVED_BASELINE.find((x) => x.surface === surface);
+      if (!s) {
+        undeclaredOrStale.push(`${surface}: not in the baseline register`);
+        continue;
+      }
+      // Which role each entry narrowed lived in the deleted cells, and the
+      // note prose does not reliably name it (the data-export entry names
+      // neither). The precise residual: a real narrowing denies admin or
+      // manager (or both) — a surface where BOTH are allowed cannot be a
+      // narrowing of today's model, so its declaration is stale. Marketing is
+      // excluded from the disjunction: it is denied nearly everywhere, which
+      // would make the check vacuously green.
+      void note;
+      if (allowed('admin', s) && allowed('manager', s)) {
+        undeclaredOrStale.push(
+          `${surface}: both admin AND manager are allowed — the declared narrowing no longer narrows`,
+        );
       }
     }
-    expect(widenings).toEqual([]);
-  });
-
-  it('every narrowing is declared in INTENTIONAL_NARROWINGS', () => {
-    const narrowed = new Set<string>();
-    for (const s of OBSERVED_BASELINE) {
-      for (const role of PRE_016_ROLES) {
-        if (s.cells[role] === 'allow' && !onLeg(role, s)) narrowed.add(s.surface);
-      }
-    }
-    expect([...narrowed].sort()).toEqual(Object.keys(INTENTIONAL_NARROWINGS).sort());
+    expect(undeclaredOrStale).toEqual([]);
   });
 });
 
@@ -205,16 +133,8 @@ describe('T041 per-TARGET-role cells for the six users routes (§ 7.1)', () => {
   // staff role. These cells pin the KEY-level outcome that composition
   // produces per (actor, target-class) on both flag legs — the route-level
   // behaviour is exactly `memberTarget AND (staffTarget when staff)`.
-  const USERS_ROUTES_OFF_ROW: LegacyRow = {
-    kind: 'mappedLegacy',
-    resource: 'auth:user',
-    action: 'write',
-  };
-
   const onKey = (role: Role, key: 'users.manage' | 'users.member_accounts'): boolean =>
-    hasPermission(role, key, { rbacV2: true });
-  const off = (role: Role): boolean =>
-    hasPermission(role, 'users.manage', { rbacV2: false, legacy: USERS_ROUTES_OFF_ROW });
+    hasPermission(role, key);
 
   it('ON leg, STAFF-role target (users.manage) — super_admin alone (D4)', () => {
     expect(onKey('super_admin', 'users.manage')).toBe(true);
@@ -232,13 +152,6 @@ describe('T041 per-TARGET-role cells for the six users routes (§ 7.1)', () => {
     expect(onKey('member', 'users.member_accounts')).toBe(false);
   });
 
-  it('OFF leg, BOTH targets share the pre-sweep row — admin (+ super_admin via D16) only', () => {
-    expect(off('super_admin')).toBe(true);
-    expect(off('admin')).toBe(true);
-    expect(off('manager')).toBe(false);
-    expect(off('marketing')).toBe(false);
-    expect(off('member')).toBe(false);
-  });
 });
 
 /**
@@ -271,7 +184,7 @@ describe('T053 marketing reachable surfaces (US3)', () => {
       // superAdminOnly keys are refused by the evaluator for every other role
       // (contract E2), so the design's per-role column is not consulted.
       const expected = pinned.superAdminOnly === true ? false : pinned.marketing;
-      const actual = onLeg('marketing', s);
+      const actual = allowed('marketing', s);
       if (actual !== expected) {
         disagreements.push(
           `${s.surface} (${s.key}): design says ${expected}, evaluator says ${actual}`,
@@ -364,7 +277,7 @@ describe('T053 marketing reachable surfaces (US3)', () => {
   ];
 
   it('reaches EXACTLY the frozen 48-surface set — nothing more, nothing less', () => {
-    const actual = OBSERVED_BASELINE.filter((s) => onLeg('marketing', s))
+    const actual = OBSERVED_BASELINE.filter((s) => allowed('marketing', s))
       .map((s) => s.surface)
       .sort();
     expect(actual).toEqual([...MARKETING_REACHABLE].sort());
@@ -402,6 +315,6 @@ describe('T053 marketing reachable surfaces (US3)', () => {
   it.each(MUST_DENY_MARKETING)('denies marketing on %s', (surface) => {
     const s = OBSERVED_BASELINE.find((x) => x.surface === surface);
     expect(s, `${surface} is not in the frozen baseline — did it get renamed?`).toBeDefined();
-    expect(onLeg('marketing', s!)).toBe(false);
+    expect(allowed('marketing', s!)).toBe(false);
   });
 });

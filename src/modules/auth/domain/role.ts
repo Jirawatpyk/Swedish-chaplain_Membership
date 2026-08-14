@@ -108,62 +108,40 @@ export function isStaffRole(role: Role): boolean {
 
 /**
  * Roles that carry administrative capability over the tenant — the population
- * the last-administrator guard protects. The set DEPENDS ON THE FLAG, because
- * what "can administer this tenant" means changes at cutover:
+ * the last-administrator guard protects. `super_admin` ALONE since PR 5
+ * (T069): D4 narrowed `users.manage`, `audit.read` and `settings.invoicing`
+ * to super-admin-only at the 2026-08-11 cutover, so a plain admin can no
+ * longer administer staff. Counting one would let the last super_admin be
+ * erased, demoted or disabled while only capability-less admins remain —
+ * after which NOBODY can promote anyone and the tenant is permanently locked
+ * out of its own user administration (SC-003).
  *
- *   flag OFF — `super_admin` ∪ `admin`. A plain admin still holds every
- *     administrative capability, so refusing a demotion while other admins
- *     remain would block ordinary day-to-day operations. Matches the
- *     transitional population inside `users_last_admin_guard()` (migration
- *     0286) exactly, so the two layers never refuse different operations.
- *
- *   flag ON — `super_admin` ALONE. Once D4 narrows `users.manage`, `audit.read`
- *     and `settings.invoicing` to super-admin-only, a plain admin can no longer
- *     administer staff. Counting them would let the last super_admin be erased,
- *     demoted or disabled while only plain admins remain — after which NOBODY
- *     can promote anyone and the tenant is permanently locked out of its own
- *     user administration (SC-003). The application layer is therefore STRICTER
- *     than the DB trigger on this leg, which is safe: the trigger stays the
- *     backstop and never refuses something the app allows.
- *
- * PR 5 (T069) narrows the trigger to super_admin too and deletes the OFF branch.
- *
- * ## PR 5 caution — call sites that are NOT the last-administrator guard
- *
- * (016 review I6.) Five call sites use `isAdministrativeRole(role, false)` with a
- * HARDCODED `false` as a general "is this an administrator?" predicate, for
- * affordances and redaction rather than for the guard this population was
- * defined for:
- *
- *   `src/components/plans/plans-table.tsx` (mutation CTAs)
- *   `.../download-export.ts` (×2 — export authorization)
- *   `.../export-members-backup.ts` (`err('forbidden')`)
- *   `.../set-directory-logo.ts`
- *
- * (PR 4 removed a sixth: `activity-feed-query.ts` now takes an injected
- * `activityUnredacted` flag instead. The count and the list are kept in step
- * deliberately — an inventory PR 5 reads to find deletion sites is worse than
- * useless when it is stale, and this one was already wrong once.)
- *
- * Deleting the OFF branch silently reclassifies all five from `admin ∪
- * super_admin` to `super_admin` alone — plain admin would lose every plans
- * mutation CTA, receive the REDACTED activity feed, and be refused
- * member-backup export and directory-logo upload, with no compile error and no
- * failing test to announce it. Before removing the branch, grep
- * `isAdministrativeRole(` and re-decide each one; the correct answer for most is
- * probably a permission key, the way `escalation-task-queue`'s `canMutate` prop
- * is derived.
+ * Matches `users_last_admin_guard()` (migration 0288 — the strict rewrite of
+ * 0286's transitional union) exactly, so the app pre-flights and the DB
+ * trigger never refuse different operations. The flag-parameterised version
+ * of this population died with `FEATURE_RBAC_V2` in PR 5.
  */
-export const ADMINISTRATIVE_ROLES_LEGACY: readonly Role[] = ['super_admin', 'admin'];
-export const ADMINISTRATIVE_ROLES_V2: readonly Role[] = ['super_admin'];
+export const ADMINISTRATIVE_ROLES: readonly Role[] = ['super_admin'];
 
-export function administrativeRoles(rbacV2: boolean): readonly Role[] {
-  return rbacV2 ? ADMINISTRATIVE_ROLES_V2 : ADMINISTRATIVE_ROLES_LEGACY;
+export function administrativeRoles(): readonly Role[] {
+  return ADMINISTRATIVE_ROLES;
 }
 
-export function isAdministrativeRole(
-  role: Role | (string & {}),
-  rbacV2: boolean,
-): boolean {
-  return (administrativeRoles(rbacV2) as readonly string[]).includes(role);
+/** Is this role in the population the last-administrator guard protects? */
+export function isAdministrativeRole(role: Role | (string & {})): boolean {
+  return (ADMINISTRATIVE_ROLES as readonly string[]).includes(role);
+}
+
+/**
+ * Admin-TIER predicate: `admin` ∪ `super_admin`. NOT the last-administrator
+ * population above — this is the affordance/authorization tier five call
+ * sites (plans-table CTAs, insights export ×3, directory-logo) used to spell
+ * as `isAdministrativeRole(role, false)` when the predicate was
+ * flag-parameterised. Kept as its own name so narrowing the GUARD population
+ * (which must be super_admin-only) can never again silently narrow these —
+ * that near-miss is documented in the 016 review as I6, and each of the five
+ * remains a candidate for a real permission key.
+ */
+export function isAdminTier(role: Role | (string & {})): boolean {
+  return role === 'admin' || role === 'super_admin';
 }

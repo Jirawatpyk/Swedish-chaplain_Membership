@@ -25,7 +25,6 @@ import { headers } from 'next/headers';
 import { getLocale, getTranslations } from 'next-intl/server';
 
 import { requirePagePermission } from '@/lib/rbac';
-import { legacyAdminOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
 import { bangkokLocalDate } from '@/lib/fiscal-year';
@@ -66,7 +65,7 @@ export default async function TaxRegistersPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  await requirePagePermission('invoicing.receipt', legacyAdminOnly);
+  await requirePagePermission('invoicing.receipt');
   // The role half of this guard moved to `requirePagePermission` above; the
   // FLAG half stays — a flag-off tenant gets a clean 404 rather than an empty
   // surface, and that has nothing to do with who is asking.

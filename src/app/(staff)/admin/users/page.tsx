@@ -20,10 +20,6 @@
 import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
 import { canPerform, requirePagePermission } from '@/lib/rbac';
-import {
-  legacySessionOnly,
-  mappedLegacy,
-} from '@/modules/auth/domain/permissions/legacy-shim';
 // Admin user list page (server component) reads directly from the
 // repo. An Application-layer `listUsers` use case would be a
 // near-identical passthrough and add no behaviour; this read is
@@ -63,7 +59,7 @@ export default async function AdminUsersPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  const { user: currentUser } = await requirePagePermission('users.manage', legacySessionOnly);
+  const { user: currentUser } = await requirePagePermission('users.manage');
   // Affordance decisions are permission-derived on the SERVER and threaded down
   // as booleans (016 C1-affordance class): a `role === 'admin'` literal in the
   // client would flip false the moment Migration C promotes admins to
@@ -74,12 +70,10 @@ export default async function AdminUsersPage({
   const canManageAccounts = canPerform(
     currentUser.role,
     'users.member_accounts',
-    mappedLegacy('auth:user', 'write'),
   );
   const canManageStaffRoles = canPerform(
     currentUser.role,
     'users.manage',
-    mappedLegacy('auth:user', 'write'),
   );
   const t = await getTranslations('admin.users');
   const query = await searchParams;

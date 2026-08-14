@@ -285,12 +285,11 @@ export function markerApplies(
 
 export interface PageGuard {
   readonly key: string;
-  /** The IDENTIFIER of the legacy row, e.g. `legacyAdminOnly`. */
-  readonly legacy: string;
 }
 
 /**
- * The `requirePagePermission('key', legacyRow)` a page file declares.
+ * The `requirePagePermission('key')` a page file declares. (The second
+ * argument — the legacy-shim row — died with the legacy leg in PR 5.)
  *
  * Throws when a file declares MORE THAN ONE — a page with two guards is
  * ambiguous, and silently taking the first is how the parity tests ended up
@@ -298,7 +297,7 @@ export interface PageGuard {
  */
 export function extractPageGuard(src: string, label: string): PageGuard | null {
   const code = stripCommentsPreserveLines(src);
-  const re = /requirePagePermission\(\s*'([^']+)'\s*,\s*([A-Za-z_$][\w$]*)/g;
+  const re = /requirePagePermission\(\s*'([^']+)'/g;
   const matches = [...code.matchAll(re)];
   if (matches.length === 0) return null;
   if (matches.length > 1) {
@@ -309,5 +308,5 @@ export function extractPageGuard(src: string, label: string): PageGuard | null {
     );
   }
   const m = matches[0]!;
-  return { key: m[1]!, legacy: m[2]! };
+  return { key: m[1]! };
 }

@@ -27,7 +27,6 @@ import {
   baseHeaders,
 } from '@/lib/broadcasts-route-helpers';
 import { requireApiPermission } from '@/lib/rbac';
-import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
 import { broadcastsMetrics } from '@/lib/metrics';
@@ -55,7 +54,7 @@ export async function POST(
   context: { params: Promise<{ id: string }> },
 ): Promise<NextResponse> {
   const correlationId = randomUUID();
-  const ctx = await requireApiPermission(request, 'broadcasts.send', mappedLegacy('broadcast', 'write'));
+  const ctx = await requireApiPermission(request, 'broadcasts.send');
   if ('response' in ctx) return ctx.response;
 
   const { id } = await context.params;

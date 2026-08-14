@@ -23,7 +23,6 @@ import {
   sanitiseRoutePath,
   type RbacDeps,
 } from '@/lib/rbac';
-import { legacyAdminOnly, legacySessionOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { ROLES, type Role } from '@/modules/auth/domain/role';
 
 const USER_ID = '11111111-1111-4111-8111-111111111111';
@@ -42,12 +41,11 @@ interface Recorded {
 
 function makeDeps(
   role: string,
-  overrides: { rbacV2?: boolean; auditThrows?: boolean } = {},
+  overrides: { auditThrows?: boolean } = {},
 ): { deps: RbacDeps; recorded: Recorded } {
   const appended: unknown[] = [];
   const metrics: unknown[] = [];
   const deps: RbacDeps = {
-    rbacV2: overrides.rbacV2 ?? true,
     getSession: async () => sessionFor(role),
     audit: {
       append: async (event: unknown) => {
@@ -118,7 +116,7 @@ describe('T017 page denials', () => {
   it('emits one denial audit + one metric per denied page load', async () => {
     const { deps, recorded } = makeDeps('manager');
     await expect(
-      requirePagePermission('users.manage', legacySessionOnly, deps),
+      requirePagePermission('users.manage', deps),
     ).rejects.toThrow();
     expect(recorded.appended).toHaveLength(1);
     expect(recorded.metrics).toEqual([{ role: 'manager', permission: 'users.manage' }]);
@@ -127,13 +125,13 @@ describe('T017 page denials', () => {
   it('serves the 404 even when the audit emit throws (fail-open)', async () => {
     const { deps } = makeDeps('manager', { auditThrows: true });
     await expect(
-      requirePagePermission('users.manage', legacySessionOnly, deps),
+      requirePagePermission('users.manage', deps),
     ).rejects.toThrow();
   });
 
   it('emits nothing on an allowed page load', async () => {
     const { deps, recorded } = makeDeps('super_admin');
-    await expect(requirePagePermission('users.manage', legacySessionOnly, deps)).resolves.toBeDefined();
+    await expect(requirePagePermission('users.manage', deps)).resolves.toBeDefined();
     expect(recorded.appended).toEqual([]);
     expect(recorded.metrics).toEqual([]);
   });
@@ -144,7 +142,7 @@ describe('T017 API denials', () => {
 
   it('returns a typed 403 and audits it', async () => {
     const { deps, recorded } = makeDeps('manager');
-    const result = await requireApiPermission(request, 'users.manage', legacyAdminOnly, deps);
+    const result = await requireApiPermission(request, 'users.manage', deps);
     expect('response' in result).toBe(true);
     expect((result as { response: Response }).response.status).toBe(403);
     expect(recorded.appended).toHaveLength(1);
@@ -152,14 +150,14 @@ describe('T017 API denials', () => {
 
   it('returns 403 even when the audit emit throws (fail-open)', async () => {
     const { deps } = makeDeps('manager', { auditThrows: true });
-    const result = await requireApiPermission(request, 'users.manage', legacyAdminOnly, deps);
+    const result = await requireApiPermission(request, 'users.manage', deps);
     expect((result as { response: Response }).response.status).toBe(403);
   });
 
   it('returns 401 — not 403 — for an anonymous caller (enumeration safety)', async () => {
     const { deps, recorded } = makeDeps('manager');
     const anon: RbacDeps = { ...deps, getSession: async () => null };
-    const result = await requireApiPermission(request, 'users.manage', legacyAdminOnly, anon);
+    const result = await requireApiPermission(request, 'users.manage', anon);
     expect((result as { response: Response }).response.status).toBe(401);
     // No actor identity exists, so nothing is attributable — no audit row.
     expect(recorded.appended).toEqual([]);
@@ -167,7 +165,7 @@ describe('T017 API denials', () => {
 
   it('passes the session through on allow', async () => {
     const { deps, recorded } = makeDeps('super_admin');
-    const result = await requireApiPermission(request, 'users.manage', legacyAdminOnly, deps);
+    const result = await requireApiPermission(request, 'users.manage', deps);
     expect('response' in result).toBe(false);
     expect(recorded.appended).toEqual([]);
   });
@@ -183,7 +181,6 @@ describe('T017 every role produces a denial that is attributable', () => {
       const result = await requireApiPermission(
         { headers: new Headers(), url: 'https://x.test/api/auth/invite' } as never,
         'users.manage',
-        legacyAdminOnly,
         deps,
       );
       if (role === 'super_admin') {
@@ -197,43 +194,27 @@ describe('T017 every role produces a denial that is attributable', () => {
   }
 });
 
-describe('T017 flag-OFF leg denials are audited the same way', () => {
-  it('a marketing actor denied by D16 totalisation still produces a trail', async () => {
-    const { deps, recorded } = makeDeps('marketing', { rbacV2: false });
-    const result = await requireApiPermission(
-      { headers: new Headers(), url: 'https://x.test/api/members' } as never,
-      'members.read',
-      legacySessionOnly,
-      deps,
-    );
-    expect((result as { response: Response }).response.status).toBe(403);
-    expect((recorded.appended[0] as { summary: string }).summary).toContain('role=marketing');
-  });
-
-  it('an admin allowed by the legacy row is not audited', async () => {
-    const { deps, recorded } = makeDeps('admin', { rbacV2: false });
-    const result = await requireApiPermission(
-      { headers: new Headers(), url: 'https://x.test/api/members' } as never,
-      'members.read',
-      legacySessionOnly,
-      deps,
-    );
-    expect('response' in result).toBe(false);
-    expect(recorded.appended).toEqual([]);
-  });
-});
-
-describe('T017 the helper is the only env-flag reader', () => {
-  it('src/lib/rbac.ts reads the flag; the Domain evaluator never does', async () => {
+describe('T017 nobody reads the deleted flag', () => {
+  it('neither the Domain evaluator nor rbac.ts reads env for authorization', async () => {
+    // PR 5 deleted FEATURE_RBAC_V2; the old assertion REQUIRED rbac.ts to read
+    // it. Now the invariant is total: the permission decision has no env input
+    // anywhere — a reappearing flag read is a resurrected leg switch.
     const { readFileSync } = await import('node:fs');
     const { join } = await import('node:path');
+    // CODE only — rbac.ts legitimately narrates the flag's deletion in its
+    // header, and a scan that reads prose as source is the exact blindness
+    // class scripts/lib/source-scan.ts exists to prevent.
+    const { stripCommentsPreserveLines } = await import(
+      '../../../scripts/lib/source-scan'
+    );
+    const codeOf = (path: string) => stripCommentsPreserveLines(readFileSync(path, 'utf8'));
     const domainDir = join(process.cwd(), 'src', 'modules', 'auth', 'domain', 'permissions');
-    for (const file of ['evaluator.ts', 'legacy-shim.ts', 'role-bundles.ts', 'permission-catalogue.ts']) {
-      const src = readFileSync(join(domainDir, file), 'utf8');
+    for (const file of ['evaluator.ts', 'role-bundles.ts', 'permission-catalogue.ts']) {
+      const src = codeOf(join(domainDir, file));
       expect(src, `${file} must not read env`).not.toMatch(/process\.env|from '@\/lib\/env'/);
     }
-    const helper = readFileSync(join(process.cwd(), 'src', 'lib', 'rbac.ts'), 'utf8');
-    expect(helper).toMatch(/FEATURE_RBAC_V2|env\.features\.rbacV2/);
+    const helper = codeOf(join(process.cwd(), 'src', 'lib', 'rbac.ts'));
+    expect(helper).not.toMatch(/FEATURE_RBAC_V2|env\.features\.rbacV2/);
   });
 });
 

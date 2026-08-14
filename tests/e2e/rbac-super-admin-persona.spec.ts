@@ -18,7 +18,6 @@ import { expect, test } from './fixtures';
 import { signInAsSuperAdmin } from './helpers/admin-session';
 
 const SUPER_ADMIN_EMAIL = process.env.E2E_SUPER_ADMIN_EMAIL;
-const RBAC_V2_ON = process.env.E2E_RBAC_V2_ON === 'true';
 
 const AXE_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'] as const;
 
@@ -27,9 +26,9 @@ const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
 test.describe('T046 RBAC v2 — super_admin persona (ON leg) @a11y', () => {
   test.skip(
-    !SUPER_ADMIN_EMAIL || !RBAC_V2_ON,
-    'ON-leg suite: needs FEATURE_RBAC_V2=true + Migration C on dev + E2E_SUPER_ADMIN_* ' +
-      '(re-run scripts/seed-e2e-user.ts), then set E2E_RBAC_V2_ON=true. See runbook §dev-branch.',
+    !SUPER_ADMIN_EMAIL,
+    'Needs Migration C on dev + E2E_SUPER_ADMIN_* ' +
+      '(re-run scripts/seed-e2e-user.ts), See runbook §dev-branch.',
   );
 
   // The sign-in helper budgets 60s for `waitForURL` (bumped in R9.B1 to absorb

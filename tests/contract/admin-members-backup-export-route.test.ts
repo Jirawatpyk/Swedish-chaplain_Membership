@@ -69,7 +69,6 @@ describe('GET /api/admin/members/export.zip — route contract', () => {
     expect(requireApiPermissionMock).toHaveBeenCalledWith(
       expect.anything(),
       'members.bulk',
-      { kind: 'mappedLegacy', resource: 'members:bulk', action: 'write' },
     );
     expect(exportMembersBackupMock).not.toHaveBeenCalled();
   });

@@ -16,7 +16,6 @@ import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { requireApiPermission } from '@/lib/rbac';
-import { legacyAdminOrManager } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { dismissInsight, makeDismissInsightDeps } from '@/modules/insights';
 
@@ -39,7 +38,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // Denial shape moves to the uniform sweep contract (`{error:'no-session'}` /
   // `{error:'forbidden'}` without correlationId); the dismiss button branches
   // on `res.ok` only.
-  const ctx = await requireApiPermission(request, 'insights.engagement', legacyAdminOrManager);
+  const ctx = await requireApiPermission(request, 'insights.engagement');
   if ('response' in ctx) return ctx.response;
   const current = ctx.current;
 

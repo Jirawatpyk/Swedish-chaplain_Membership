@@ -12,7 +12,6 @@ import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { redactStack } from '@/lib/redact-stack';
 import { canPerform, requirePagePermission } from '@/lib/rbac';
-import { legacyAdminOnly, legacyAdminOrManager } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { runLoadEventDetail } from '@/lib/events-admin-deps';
 import { isMatchType, isPaymentStatus } from '@/modules/events';
@@ -113,7 +112,7 @@ export default async function AdminEventDetailPage({
   if (!env.features.f6EventCreate) {
     notFound();
   }
-  const { user: currentUser } = await requirePagePermission('events.read', legacyAdminOrManager);
+  const { user: currentUser } = await requirePagePermission('events.read');
 
   const { eventId } = await params;
   const query = await searchParams;
@@ -288,7 +287,7 @@ export default async function AdminEventDetailPage({
         actions={
           // 016 re-review D — evaluator-derived (events.write, the key the
           // category-toggle + archive APIs admit; OFF leg = admin-only).
-          canPerform(currentUser.role, 'events.write', legacyAdminOnly) &&
+          canPerform(currentUser.role, 'events.write') &&
           !event.archivedAt ? (
             <>
               <EventCategoryToggles
@@ -349,7 +348,7 @@ export default async function AdminEventDetailPage({
           // literal, which went false for every human after Migration C.)
           eventId={event.eventId}
           canRelink={
-            canPerform(currentUser.role, 'events.relink', legacyAdminOnly) &&
+            canPerform(currentUser.role, 'events.relink') &&
             !event.archivedAt
           }
         />

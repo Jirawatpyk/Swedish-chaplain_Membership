@@ -218,10 +218,7 @@ describe('extractPageGuard', () => {
       ' */',
       "const { user } = await requirePagePermission('audit.read', legacySessionOnly);",
     ].join('\n');
-    expect(extractPageGuard(src, 'x')).toEqual({
-      key: 'audit.read',
-      legacy: 'legacySessionOnly',
-    });
+    expect(extractPageGuard(src, 'x')).toEqual({ key: 'audit.read' });
   });
 
   it('returns null when there is no guard', () => {

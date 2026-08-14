@@ -28,7 +28,6 @@ import { expect, test } from './fixtures';
 import { signInAsMarketing } from './helpers/marketing-session';
 
 const MARKETING_EMAIL = process.env.E2E_MARKETING_EMAIL;
-const RBAC_V2_ON = process.env.E2E_RBAC_V2_ON === 'true';
 
 const AXE_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'] as const;
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -51,9 +50,9 @@ const DENIED_ROUTES = [
 
 test.describe('T055 RBAC v2 — marketing persona (ON leg) @a11y', () => {
   test.skip(
-    !MARKETING_EMAIL || !RBAC_V2_ON,
-    'ON-leg suite: needs FEATURE_RBAC_V2=true + Migration C on dev + E2E_MARKETING_* ' +
-      '(re-run scripts/seed-e2e-user.ts), then set E2E_RBAC_V2_ON=true. On the OFF leg ' +
+    !MARKETING_EMAIL,
+    'ON-leg suite: needs Migration C on dev + E2E_MARKETING_* ' +
+      '(re-run scripts/seed-e2e-user.ts), On the OFF leg ' +
       'D16 denies marketing every staff surface and this walk proves nothing.',
   );
 

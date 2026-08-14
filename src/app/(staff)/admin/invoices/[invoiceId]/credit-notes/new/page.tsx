@@ -14,7 +14,6 @@ import { headers } from 'next/headers';
 import { getTranslations } from 'next-intl/server';
 import { ArrowLeftIcon } from 'lucide-react';
 import { requirePagePermission } from '@/lib/rbac';
-import { legacyAdminOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import {
   getInvoice,
@@ -39,7 +38,7 @@ export default async function NewCreditNotePage({
   params: Promise<{ invoiceId: string }>;
 }) {
   const { invoiceId } = await params;
-  await requirePagePermission('credit_notes.write', legacyAdminOnly);
+  await requirePagePermission('credit_notes.write');
 
   const t = await getTranslations('admin.creditNotes.new');
 

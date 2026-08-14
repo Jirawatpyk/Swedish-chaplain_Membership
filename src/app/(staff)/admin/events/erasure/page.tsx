@@ -35,7 +35,6 @@ import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { redactStack } from '@/lib/redact-stack';
 import { requirePagePermission } from '@/lib/rbac';
-import { legacyAdminOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { runSearchAttendeesByEmail } from '@/lib/events-admin-deps';
 import { bangkokLocalDate } from '@/lib/fiscal-year';
@@ -81,7 +80,7 @@ export default async function EraseByEmailPage({
   // calling `notFound()`, which throws a Next.js control-flow signal; catching
   // it would swallow the denial and re-route to sign-in instead of serving the
   // 404. The no-session case is already handled by the staff shell's redirect.
-  await requirePagePermission('events.erasure', legacyAdminOnly);
+  await requirePagePermission('events.erasure');
 
   let tenantCtx: ReturnType<typeof resolveTenantFromHeaders>;
   try {

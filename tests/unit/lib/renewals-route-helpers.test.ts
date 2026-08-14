@@ -33,7 +33,7 @@ const TENANT_SLUG = 'tenanta';
 
 vi.mock('@/lib/env', () => ({
   env: {
-    features: { f8Renewals: true, rbacV2: false },
+    features: { f8Renewals: true },
     tenant: { slug: 'tenanta' },
     database: { url: 'postgres://stub:stub@localhost/stub' },
     log: { level: 'silent' },

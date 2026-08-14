@@ -339,8 +339,6 @@ describe('PR 2.2 — POST /api/admin/events/erasure (by-email bulk erasure)', ()
       // lost its `superAdminOnly` flag.
       //
       // Skipped on the legacy leg, where admin legitimately still holds it —
-      // asserting a denial there would be asserting a bug.
-      if (process.env['FEATURE_RBAC_V2'] === 'false') return;
       getCurrentSessionMock.mockResolvedValue(ADMIN_SESSION);
       const { POST } = await loadRoute();
       const res = await POST(jsonRequest({ email: 'a@b.com', reasonText: 'x' }));

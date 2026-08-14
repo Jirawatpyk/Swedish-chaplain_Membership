@@ -38,7 +38,6 @@ import { buttonVariants } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { logger } from '@/lib/logger';
 import { canPerform } from '@/lib/rbac';
-import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { errKind, rootCause } from '@/lib/log-id';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
@@ -94,7 +93,6 @@ export async function TimelinePreviewSection({
         invoicingRead: canPerform(
           actorRole,
           'invoicing.read',
-          mappedLegacy('invoice', 'read'),
         ),
       },
     );

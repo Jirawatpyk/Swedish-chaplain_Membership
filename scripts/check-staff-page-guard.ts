@@ -50,16 +50,15 @@ const BASELINE = join(ROOT, 'tests', 'helpers', 'rbac-observed-baseline.ts');
 
 interface BaselineRow {
   readonly key: string;
-  readonly row: string;
 }
 
 function loadBaseline(): { pages: Map<string, BaselineRow>; exempt: Set<string> } {
   const src = readFileSync(BASELINE, 'utf8');
   const pages = new Map<string, BaselineRow>();
-  const re = /\{ surface: '([^']+)', kind: 'page', key: '([^']+)', row: \{ kind: '([^']+)' \}/g;
+  const re = /\{ surface: '([^']+)', kind: 'page', key: '([^']+)' \}/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(src)) !== null) {
-    pages.set(m[1]!, { key: m[2]!, row: m[3]! });
+    pages.set(m[1]!, { key: m[2]! });
   }
   // Fail-loud reconciliation (same disease as the API gate's first version:
   // a reformatted row silently vanished from the parsed map and its page went
@@ -203,7 +202,7 @@ for (const file of walk(PAGES_DIR, (e) => e === 'page.tsx')) {
   // guard a build failure.
   const code = stripCommentsPreserveLines(src);
   const calls = [
-    ...code.matchAll(/requirePagePermission\(\s*'([^']*)'\s*,\s*([A-Za-z_$][\w$]*)/g),
+    ...code.matchAll(/requirePagePermission\(\s*'([^']*)'/g),
   ];
   const anyCall = (code.match(/requirePagePermission\(/g) ?? []).length;
 
@@ -222,12 +221,9 @@ for (const file of walk(PAGES_DIR, (e) => e === 'page.tsx')) {
     continue;
   }
 
-  const [, key, row] = calls[0]!;
+  const [, key] = calls[0]!;
   if (key !== expected.key) {
     errors.push(`${shown}: declares key '${key}', baseline says '${expected.key}'`);
-  }
-  if (row !== expected.row) {
-    errors.push(`${shown}: declares row '${row}', baseline says '${expected.row}'`);
   }
 }
 
@@ -247,8 +243,8 @@ for (const file of walk(PAGES_DIR, (e) => e.endsWith('.tsx'))) {
       if (markerApplies(rawLines, line, NARROW_MARKER)) continue;
       errors.push(
         `${shown}:${line + 1}: staff-role literal — ${hit[0].trim()} ` +
-          `(affordance/deny decisions must go through canPerform(role, key, row) so both legs ` +
-          `and Migration C stay correct; a TYPE narrow takes a "${NARROW_MARKER}" comment).`,
+          `(affordance/deny decisions must go through canPerform(role, key); a TYPE ` +
+          `narrow takes a "${NARROW_MARKER}" comment).`,
       );
     }
   }

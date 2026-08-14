@@ -88,8 +88,7 @@ function makeDeps(opts: {
   };
   // 016 T064 — OFF-leg probe through the REAL evaluator, so the role
   // expectations in this file stay meaningful instead of being stubbed away.
-  const can: SearchPlansDeps['can'] = (key, legacy) =>
-    canPerform(role, key, legacy, { rbacV2: false });
+  const can: SearchPlansDeps['can'] = (key) => canPerform(role, key);
   return { tenant, planRepo, clock, can };
 }
 
@@ -261,7 +260,7 @@ describe('searchPlans — role-based filter (ON leg — the production leg)', ()
   /** Same shape as `makeDeps`, with the evaluator asked on the ON leg. */
   function onLegDeps(role: Role): SearchPlansDeps {
     const deps = makeDeps({ plans: [], role });
-    return { ...deps, can: (key, legacy) => canPerform(role, key, legacy, { rbacV2: true }) };
+    return { ...deps, can: (key) => canPerform(role, key) };
   }
 
   it('marketing gets a USABLE palette — its own surfaces, without plan authoring', async () => {

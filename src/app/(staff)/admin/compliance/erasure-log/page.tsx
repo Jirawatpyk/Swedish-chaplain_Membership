@@ -11,7 +11,7 @@
  * an SCCM member-number search, and a breach / all-clear banner.
  *
  * RBAC (CWE-285 carry-forward from Task 2): gated by
- * `requirePagePermission('members.erasure_log_read', legacyAdminOnly)`. A bare
+ * `requirePagePermission('members.erasure_log_read')`. A bare
  * staff gate would LEAK erasure evidence (PII + identity-verification
  * attestations) to managers, so the shim row is `legacyAdminOnly`, not
  * `legacySessionOnly`.
@@ -45,7 +45,6 @@ import { PageHeader } from '@/components/layout/page-header';
 import { EmptyState } from '@/components/shell/empty-state';
 import { ShieldCheckIcon } from 'lucide-react';
 import { requirePagePermission } from '@/lib/rbac';
-import { legacyAdminOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
 import {
@@ -128,7 +127,7 @@ export default async function ErasureLogPage({
   readonly searchParams: Promise<SearchParams>;
 }): Promise<React.JSX.Element> {
   // RBAC: staff session, then admin-only. Manager + member → notFound (no leak).
-  await requirePagePermission('members.erasure_log_read', legacyAdminOnly);
+  await requirePagePermission('members.erasure_log_read');
 
   const params = await searchParams;
   const t = await getTranslations('admin.compliance.erasureLog');

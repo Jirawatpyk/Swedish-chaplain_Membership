@@ -11,7 +11,6 @@ import { notFound } from 'next/navigation';
 import { headers } from 'next/headers';
 import { getTranslations } from 'next-intl/server';
 import { requirePagePermission } from '@/lib/rbac';
-import { legacyAdminOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { asPlanSlug, asPlanYear, getPlan, type PlanSchemaInput } from '@/modules/plans';
@@ -35,7 +34,7 @@ export default async function EditPlanPage({
 }: {
   params: Promise<{ year: string; planId: string }>;
 }) {
-  const { user: currentUser } = await requirePagePermission('plans.write', legacyAdminOnly);
+  const { user: currentUser } = await requirePagePermission('plans.write');
 
   const { year: rawYear, planId: rawPlanId } = await params;
   const year = Number.parseInt(rawYear, 10);

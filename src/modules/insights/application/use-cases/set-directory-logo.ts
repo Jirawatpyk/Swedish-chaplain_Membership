@@ -19,7 +19,7 @@ import type { LogoContentType, LogoImagePort, LogoStorePort } from '../ports/log
 // Deep PURE-Domain import (not the barrel): a value import of the auth barrel
 // would drag auth-deps' infrastructure singletons (argon2, Upstash, repos)
 // into this Application module's graph at eval time.
-import { isAdministrativeRole, type Role } from '@/modules/auth/domain/role';
+import { isAdminTier, type Role } from '@/modules/auth/domain/role';
 
 // 016 T030/T033 — widened to the full Role union so routes stop casting and
 // audit emitters record the LITERAL actor role; the decision arms in this
@@ -68,7 +68,7 @@ function authorizeMutation(meta: DirectoryLogoMeta, memberId: string): boolean {
   if (meta.actorRole === 'member') return meta.actorMemberId === memberId;
   // Administrator set (admin ∪ super_admin per D16 — 016 T030); any other
   // role (marketing/unknown) falls through to false.
-  return isAdministrativeRole(meta.actorRole, false);
+  return isAdminTier(meta.actorRole);
 }
 
 export async function setDirectoryLogo(

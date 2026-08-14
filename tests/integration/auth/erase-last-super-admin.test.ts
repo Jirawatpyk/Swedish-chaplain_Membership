@@ -90,10 +90,9 @@ async function inRolledBackTx(
  * exact seam under test — a use case that never narrows (no argument) gets
  * today's hardcoded union, byte-identical to the repo query it replaces.
  */
-function depsOverTx(tx: Tx, rbacV2: boolean): { deps: EraseUserDeps; anonymised: string[] } {
+function depsOverTx(tx: Tx): { deps: EraseUserDeps; anonymised: string[] } {
   const anonymised: string[] = [];
   const deps: EraseUserDeps = {
-    rbacV2,
     users: {
       findById: async (id) => {
         const rows = await tx.execute(sql`
@@ -154,7 +153,7 @@ describe('T019 erase-user last-super-admin pre-flight (live Neon, SC-003)', () =
     // {super_admin, admin} — the exact SC-003 lockout population: the DB
     // trigger's union stays at 2 so ONLY the app pre-flight can refuse.
     await inRolledBackTx(['super_admin', 'admin'], async (tx, { ids }) => {
-      const { deps, anonymised } = depsOverTx(tx, true);
+      const { deps, anonymised } = depsOverTx(tx);
       const res = await eraseUser(eraseInput(ids[0]!), deps);
       expect(res.ok).toBe(false);
       if (res.ok) return;
@@ -168,7 +167,7 @@ describe('T019 erase-user last-super-admin pre-flight (live Neon, SC-003)', () =
 
   it('flag ON: erasing a NON-last super_admin passes the pre-flight', async () => {
     await inRolledBackTx(['super_admin', 'super_admin'], async (tx, { ids }) => {
-      const { deps, anonymised } = depsOverTx(tx, true);
+      const { deps, anonymised } = depsOverTx(tx);
       const res = await eraseUser(eraseInput(ids[0]!), deps);
       expect(res.ok).toBe(true);
       expect(anonymised).toEqual([ids[0]]);
@@ -180,36 +179,17 @@ describe('T019 erase-user last-super-admin pre-flight (live Neon, SC-003)', () =
     // one cannot cause the SC-003 lockout; the 0286 trigger remains the
     // backstop for the union invariant (covered by T018).
     await inRolledBackTx(['super_admin', 'admin'], async (tx, { ids }) => {
-      const { deps, anonymised } = depsOverTx(tx, true);
+      const { deps, anonymised } = depsOverTx(tx);
       const res = await eraseUser(eraseInput(ids[1]!), deps);
       expect(res.ok).toBe(true);
       expect(anonymised).toEqual([ids[1]]);
     });
   });
 
-  it('flag OFF: erasing the pre-minted super_admin passes while a plain admin remains (union population)', async () => {
-    // Pre-cutover (D18 window) the plain admin still holds full capability,
-    // so the union count of 2 correctly permits erasing the SA — narrowing
-    // the OFF leg to SA-only would wrongly block pre-cutover recovery.
-    await inRolledBackTx(['super_admin', 'admin'], async (tx, { ids }) => {
-      const { deps, anonymised } = depsOverTx(tx, false);
-      const res = await eraseUser(eraseInput(ids[0]!), deps);
-      expect(res.ok).toBe(true);
-      expect(anonymised).toEqual([ids[0]]);
-    });
-  });
-
-  it('flag OFF: still refuses to erase the last plain admin (pre-016 behaviour pinned)', async () => {
-    await inRolledBackTx(['admin'], async (tx, { ids }) => {
-      const { deps, anonymised } = depsOverTx(tx, false);
-      const res = await eraseUser(eraseInput(ids[0]!), deps);
-      expect(res.ok).toBe(false);
-      if (res.ok) return;
-      expect(res.error.code).toBe('erase-user-last-admin');
-      expect(res.error.cause).toBe('last-administrator-preflight');
-      expect(anonymised).toHaveLength(0);
-    });
-  });
+  // The two flag-OFF cases (union-population erase + last-plain-admin
+  // refusal) died with the legacy leg in PR 5: administrativeRoles() is
+  // super_admin-only now, matching the strict trigger (migration 0288), and
+  // the pre-cutover recovery window they protected has closed.
 });
 
 /**

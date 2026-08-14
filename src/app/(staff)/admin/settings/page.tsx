@@ -27,10 +27,6 @@ import {
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { requirePagePermission, canPerform } from '@/lib/rbac';
-import {
-  legacySessionOnly,
-  legacyAdminOrManager,
-} from '@/modules/auth/domain/permissions/legacy-shim';
 import { EmptyState } from '@/components/shell/empty-state';
 import { SettingsIcon } from 'lucide-react';
 
@@ -58,7 +54,6 @@ const CATEGORIES = [
     href: '/admin/settings/invoicing',
     icon: FileCog2Icon,
     permission: 'settings.invoicing',
-    legacy: legacySessionOnly,
   },
   {
     titleKey: 'categories.renewalSchedules.title',
@@ -66,14 +61,13 @@ const CATEGORIES = [
     href: '/admin/settings/renewals/schedules',
     icon: CalendarClockIcon,
     permission: 'settings.renewal_schedules',
-    legacy: legacyAdminOrManager,
   },
 ] as const;
 
 export default async function SettingsIndexPage() {
-  const { user } = await requirePagePermission('dashboard.view', legacySessionOnly);
+  const { user } = await requirePagePermission('dashboard.view');
   const t = await getTranslations('admin.settings.index');
-  const visible = CATEGORIES.filter((c) => canPerform(user.role, c.permission, c.legacy));
+  const visible = CATEGORIES.filter((c) => canPerform(user.role, c.permission));
 
   // Every card gone: the viewer holds `dashboard.view` (so the index itself
   // opens) but no settings surface. Better than an empty grid, which reads as a

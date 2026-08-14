@@ -53,12 +53,6 @@ export interface ChangeRoleDeps {
   readonly users: UserRepo;
   readonly sessions: SessionRepo;
   readonly audit: AuditRepo;
-  /**
-   * 016 T026 — which roles count as administrators for the last-administrator
-   * guard. Threaded in rather than read from env so this use case stays pure
-   * Application (same purity pin as the permission evaluator).
-   */
-  readonly rbacV2: boolean;
 }
 
 export { defaultChangeRoleDeps };
@@ -97,12 +91,12 @@ export async function changeRole(
   // demoted while only plain admins remain (SC-003 lockout). App stricter
   // than the trigger is safe; PR 5 (T069) narrows the trigger to match.
   if (
-    isAdministrativeRole(target.role, deps.rbacV2) &&
+    isAdministrativeRole(target.role) &&
     target.status === 'active' &&
-    !isAdministrativeRole(input.newRole, deps.rbacV2)
+    !isAdministrativeRole(input.newRole)
   ) {
     const activeAdmins = await deps.users.countActiveAdministrators(
-      administrativeRoles(deps.rbacV2),
+      administrativeRoles(),
     );
     if (activeAdmins <= 1) {
       return err({ code: 'last-admin-protection' });

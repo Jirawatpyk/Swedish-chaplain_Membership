@@ -24,7 +24,6 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { env } from '@/lib/env';
 import { requireApiPermission } from '@/lib/rbac';
-import { legacyAdminOrManager } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
@@ -54,7 +53,7 @@ export async function GET(
   // 016 T028: replaces the deny-by-exclusion `role === 'member'` arm with the
   // positive gate (uniform denial shape; `prepareExportDownload`'s own RBAC
   // stays as defence-in-depth).
-  const ctx = await requireApiPermission(request, 'directory.export', legacyAdminOrManager);
+  const ctx = await requireApiPermission(request, 'directory.export');
   if ('response' in ctx) return ctx.response;
   const current = ctx.current;
 

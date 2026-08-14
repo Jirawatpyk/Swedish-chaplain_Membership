@@ -20,7 +20,6 @@ import { join } from 'node:path';
 import { extractPageGuard } from '../../../../../scripts/lib/source-scan';
 import { canPerform } from '@/lib/rbac';
 import { ROLES, type Role } from '@/modules/auth/domain/role';
-import { legacySessionOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import type { PermissionKey } from '@/modules/auth/domain/permissions/permission-catalogue';
 
 const REPO_ROOT = process.cwd();
@@ -29,7 +28,6 @@ const INDEX_FILE = join(REPO_ROOT, 'src/app/(staff)/admin/settings/page.tsx');
 interface Category {
   readonly href: string;
   readonly permission: PermissionKey;
-  readonly legacy: string;
 }
 
 /** The `CATEGORIES` array as declared in the page source. */
@@ -43,17 +41,14 @@ function parseCategories(): readonly Category[] {
   for (const block of body.match(/\{[^{}]*\}/g) ?? []) {
     const href = /href: '([^']+)'/.exec(block);
     const permission = /permission: '([^']+)'/.exec(block);
-    const legacy = /legacy: (\w+)/.exec(block);
     // Hard failure, not `continue`: a card the parser cannot read is a card
     // this suite is not checking, and silence there is how the palette parser
     // was found to be dropping entries.
     expect(href, `unparsed CATEGORIES entry: ${block}`).not.toBeNull();
     expect(permission, `${href?.[1]} declares no permission`).not.toBeNull();
-    expect(legacy, `${href?.[1]} declares no legacy row`).not.toBeNull();
     out.push({
       href: href![1]!,
       permission: permission![1] as PermissionKey,
-      legacy: legacy![1]!,
     });
   }
   return out;
@@ -84,14 +79,13 @@ describe('each card mirrors its destination page guard', () => {
     const guard = extractPageGuard(readFileSync(file, 'utf8'), file);
     expect(guard, `${file} declares no guard`).not.toBeNull();
     expect(card.permission).toBe(guard!.key);
-    expect(card.legacy).toBe(guard!.legacy);
   });
 });
 
 describe('ON-leg visibility per role', () => {
   function visibleFor(role: Role): readonly string[] {
     return CATEGORIES.filter((c) =>
-      canPerform(role, c.permission, legacySessionOnly, { rbacV2: true }),
+      canPerform(role, c.permission),
     ).map((c) => c.href);
   }
 
@@ -115,7 +109,7 @@ describe('ON-leg visibility per role', () => {
       for (const href of visibleFor(role)) {
         const card = CATEGORIES.find((c) => c.href === href)!;
         expect(
-          canPerform(role, card.permission, legacySessionOnly, { rbacV2: true }),
+          canPerform(role, card.permission),
           `${role} is offered ${href} but cannot open it`,
         ).toBe(true);
       }

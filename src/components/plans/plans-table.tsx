@@ -26,7 +26,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { CopyIcon, MoreHorizontal, PlusIcon, SearchIcon } from 'lucide-react';
-import { isAdministrativeRole, type Role } from '@/modules/auth/domain/role';
+import { isAdminTier, type Role } from '@/modules/auth/domain/role';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { EmptyState } from '@/components/shell/empty-state';
@@ -242,7 +242,7 @@ export function PlansTable({
 
   // 016 T030 — a promoted super_admin keeps the admin affordances (the old
   // literal hid every mutation CTA from it post-Migration-C).
-  const isAdmin = isAdministrativeRole(currentUserRole, false);
+  const isAdmin = isAdminTier(currentUserRole);
 
   // Year filter options — a small window around the viewed year (always
   // included), newest first. Before BUG-009 there was NO visible year

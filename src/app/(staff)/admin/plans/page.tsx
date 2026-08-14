@@ -15,7 +15,6 @@ import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 import { PlusIcon, CopyIcon } from 'lucide-react';
 import { canPerform, requirePagePermission } from '@/lib/rbac';
-import { legacyAdminOnly, legacySessionOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import type { Role } from '@/modules/auth/domain/role';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { listPlans, asPlanYear } from '@/modules/plans';
@@ -44,7 +43,7 @@ export default async function PlansListPage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  const { user: currentUser } = await requirePagePermission('plans.read', legacySessionOnly);
+  const { user: currentUser } = await requirePagePermission('plans.read');
   const query = await searchParams;
   const t = await getTranslations('admin.plans');
 
@@ -55,7 +54,7 @@ export default async function PlansListPage({
         subtitle={t('listDescription')}
         actions={
           // 016 re-review D — evaluator-derived ('plans.write').
-          canPerform(currentUser.role, 'plans.write', legacyAdminOnly) ? (
+          canPerform(currentUser.role, 'plans.write') ? (
             <>
               <Link
                 href="/admin/plans/clone"

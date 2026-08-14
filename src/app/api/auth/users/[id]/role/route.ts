@@ -7,7 +7,6 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { changeRole, asUserId, isStaffRole } from '@/modules/auth';
 import { requireApiPermission } from '@/lib/rbac';
-import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { userRepo } from '@/lib/auth-deps';
 import { logger } from '@/lib/logger';
 
@@ -33,7 +32,6 @@ export async function POST(
   const ctx = await requireApiPermission(
     request,
     'users.member_accounts',
-    mappedLegacy('auth:user', 'write'),
   );
   if ('response' in ctx) return ctx.response;
   // B3 — outer try/catch (see sign-in/route.ts B3 note).
@@ -66,7 +64,6 @@ export async function POST(
       const staffGate = await requireApiPermission(
         request,
         'users.manage',
-        mappedLegacy('auth:user', 'write'),
       );
       if ('response' in staffGate) return staffGate.response;
     }

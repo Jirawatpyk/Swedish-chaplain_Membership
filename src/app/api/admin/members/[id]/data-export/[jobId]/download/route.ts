@@ -15,7 +15,6 @@ import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { requireApiPermission } from '@/lib/rbac';
-import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import {
   prepareExportDownload,
@@ -40,7 +39,7 @@ export async function GET(
   if (!env.features.f9Dashboard) {
     return NextResponse.json({ error: { code: 'not_found' } }, { status: 404 });
   }
-  const ctx = await requireApiPermission(request, 'members.bulk', mappedLegacy('members', 'read'));
+  const ctx = await requireApiPermission(request, 'members.bulk');
   if ('response' in ctx) return ctx.response;
 
   const { jobId } = await context.params;

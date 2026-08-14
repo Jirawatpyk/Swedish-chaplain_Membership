@@ -96,7 +96,10 @@ describe('integration: last-admin-protection guard (T-10)', () => {
   let target: TestUser;
 
   beforeEach(async () => {
-    target = await createActiveTestUser('admin');
+    // super_admin, not 'admin' — since PR 5 the guarded population is
+    // super_admin-only (administrativeRoles(), matching migration 0288); an
+    // 'admin' target is no longer an administrator these guards protect.
+    target = await createActiveTestUser('super_admin');
   });
 
   afterEach(async () => {
@@ -118,9 +121,6 @@ describe('integration: last-admin-protection guard (T-10)', () => {
         users: oneAdminRepo(),
         sessions: sessionRepo,
         audit: auditRepo,
-        // 016 T026 — legacy leg: the guarded population is admin ∪ super_admin,
-        // matching migration 0286's transitional trigger.
-        rbacV2: false,
         now: () => new Date(),
       },
     );
@@ -143,9 +143,6 @@ describe('integration: last-admin-protection guard (T-10)', () => {
         users: oneAdminRepo(),
         sessions: sessionRepo,
         audit: auditRepo,
-        // 016 T026 — legacy leg: the guarded population is admin ∪ super_admin,
-        // matching migration 0286's transitional trigger.
-        rbacV2: false,
       },
     );
 
@@ -180,7 +177,6 @@ describe('integration: last-admin-protection guard (T-10)', () => {
           users: oneAdminRepo(),
           sessions: sessionRepo,
           audit: auditRepo,
-          rbacV2: false,
         },
       );
       expect(result.ok).toBe(true);

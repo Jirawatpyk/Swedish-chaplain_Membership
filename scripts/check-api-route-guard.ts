@@ -67,33 +67,29 @@ const BASELINE = join(ROOT, 'tests', 'helpers', 'rbac-observed-baseline.ts');
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'] as const;
 type HttpMethod = (typeof HTTP_METHODS)[number];
 
-/** A (key, row) pair, rendered as a comparable string. */
-type Pair = string;
-
-const pairOf = (key: string, row: string): Pair => `${key} :: ${row}`;
-
 /**
- * Baseline rows carry either a bare row kind (`{ kind: 'legacyAdminOnly' }`) or
- * a mapped row with data (`{ kind: 'mappedLegacy', resource: 'x', action: 'y' }`).
- * Render both into the same shape the source scan produces. Keyed per METHOD —
+ * The comparable unit is the PERMISSION KEY alone since PR 5 — the legacy row
+ * half of the old (key :: row) pair died with the leg. Keyed per METHOD —
  * see § 2 of the header.
  */
+type Pair = string;
+
+const pairOf = (key: string): Pair => key;
+
 function loadBaseline(): Map<string, Map<string, Set<Pair>>> {
   const src = readFileSync(BASELINE, 'utf8');
   const byPath = new Map<string, Map<string, Set<Pair>>>();
-  const re =
-    /\{ surface: '([^']+)', kind: 'api', key: '([^']+)', row: \{ kind: '([^']+)'(?:, resource: '([^']+)', action: '([^']+)')? \}/g;
+  const re = /\{ surface: '([^']+)', kind: 'api', key: '([^']+)' \}/g;
   let m: RegExpExecArray | null;
   let parsed = 0;
   while ((m = re.exec(src)) !== null) {
     parsed += 1;
-    const [, surface, key, kind, resource, action] = m;
+    const [, surface, key] = m;
     const [method, ...pathParts] = surface!.split(' ');
     const path = pathParts.join(' ');
-    const row = kind === 'mappedLegacy' ? `mappedLegacy(${resource},${action})` : kind!;
     const methods = byPath.get(path) ?? new Map<string, Set<Pair>>();
     const set = methods.get(method!) ?? new Set<Pair>();
-    set.add(pairOf(key!, row));
+    set.add(pairOf(key!));
     methods.set(method!, set);
     byPath.set(path, methods);
   }
@@ -234,40 +230,29 @@ function declaredPairs(
   const located: Located[] = [];
   let nonLiteral = 0;
 
-  // 1. requireApiPermission(request, 'key', <row>)
-  const FORM1 =
-    /requireApiPermission\(\s*[A-Za-z_$][\w$]*\s*,\s*'([^']+)'\s*,\s*(mappedLegacy\(\s*'([^']+)'\s*,\s*'([^']+)'\s*\)|[A-Za-z_$][\w$]*)/g;
+  // 1. requireApiPermission(request, 'key')
+  const FORM1 = /requireApiPermission\(\s*[A-Za-z_$][\w$]*\s*,\s*'([^']+)'/g;
   let literal1 = 0;
   for (const m of code.matchAll(FORM1)) {
     literal1 += 1;
-    const [, key, rowExpr, resource, action] = m;
-    located.push({
-      pair: pairOf(key!, resource ? `mappedLegacy(${resource},${action})` : rowExpr!),
-      line: lineOfIndex(code, m.index!),
-    });
+    located.push({ pair: pairOf(m[1]!), line: lineOfIndex(code, m.index!) });
   }
   nonLiteral += (code.match(/requireApiPermission\(/g) ?? []).length - literal1;
 
   // 2. requireRenewalAdminContext(request, 'action', 'key') — the F8 wrapper
-  //    composes requireApiPermission with mappedLegacy('renewal', action),
-  //    mapping the 'manager_exception' label onto the 'read' population.
+  //    composes requireApiPermission; only the key matters post-PR-5.
   const FORM2 =
     /requireRenewalAdminContext\(\s*[A-Za-z_$][\w$]*\s*,\s*'([^']+)'\s*,\s*'([^']+)'\s*\)/g;
   let literal2 = 0;
   for (const m of code.matchAll(FORM2)) {
     literal2 += 1;
-    const [, action, key] = m;
-    const mapped = action === 'manager_exception' ? 'read' : action!;
-    located.push({
-      pair: pairOf(key!, `mappedLegacy(renewal,${mapped})`),
-      line: lineOfIndex(code, m.index!),
-    });
+    located.push({ pair: pairOf(m[2]!), line: lineOfIndex(code, m.index!) });
   }
   nonLiteral += (code.match(/requireRenewalAdminContext\(/g) ?? []).length - literal2;
 
   // 3. F6 route-local guards (D9): adminOnly[Writer]Guard({ permissionKey: 'x', … })
   for (const m of code.matchAll(/permissionKey:\s*'([^']+)'/g)) {
-    located.push({ pair: pairOf(m[1]!, 'legacyF6Guard'), line: lineOfIndex(code, m.index!) });
+    located.push({ pair: pairOf(m[1]!), line: lineOfIndex(code, m.index!) });
   }
 
   // 4. canPerform(role, 'key', row) used as the ADMISSION decision. Two F6 GET
@@ -282,16 +267,11 @@ function declaredPairs(
   //    the RAW lines because comment stripping removes it) and is excluded.
   //    The marker is required rather than inferred: without it an admission
   //    decision could hide behind the same syntax.
-  const FORM4 =
-    /canPerform\(\s*[A-Za-z_$][\w$.]*\s*,\s*'([^']+)'\s*,\s*(mappedLegacy\(\s*'([^']+)'\s*,\s*'([^']+)'\s*\)|[A-Za-z_$][\w$]*)/g;
+  const FORM4 = /canPerform\(\s*[A-Za-z_$][\w$.]*\s*,\s*'([^']+)'/g;
   for (const m of code.matchAll(FORM4)) {
     const line = lineOfIndex(code, m.index!);
     if (markerApplies(rawLines, line, SUBGATE_MARKER)) continue;
-    const [, key, rowExpr, resource, action] = m;
-    located.push({
-      pair: pairOf(key!, resource ? `mappedLegacy(${resource},${action})` : rowExpr!),
-      line,
-    });
+    located.push({ pair: pairOf(m[1]!), line });
   }
 
   return { located, nonLiteral };
@@ -363,7 +343,7 @@ const STEP_ONE_COMPANION: Readonly<Record<string, Pair>> = Object.fromEntries(
     '/api/auth/users/[id]/enable',
     '/api/auth/users/[id]/reissue-invite',
     '/api/auth/users/[id]/revoke-invite',
-  ].map((p) => [p, pairOf('users.member_accounts', 'mappedLegacy(auth:user,write)')]),
+  ].map((p) => [p, pairOf('users.member_accounts')]),
 );
 
 /**

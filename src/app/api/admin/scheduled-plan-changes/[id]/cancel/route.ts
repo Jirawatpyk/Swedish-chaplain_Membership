@@ -35,7 +35,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { requireApiPermission } from '@/lib/rbac';
-import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { rememberIdempotentResponse } from '@/lib/idempotency';
 import { logger } from '@/lib/logger';
@@ -66,7 +65,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ): Promise<NextResponse> {
   // RBAC — admin-only (same gate as other plan mutation routes).
-  const ctx = await requireApiPermission(request, 'plans.write', mappedLegacy('plan', 'write'));
+  const ctx = await requireApiPermission(request, 'plans.write');
   if ('response' in ctx) return ctx.response;
 
   // Emergency maintenance freeze short-circuit.

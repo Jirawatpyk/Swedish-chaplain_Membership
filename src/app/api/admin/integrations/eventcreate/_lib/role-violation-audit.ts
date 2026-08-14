@@ -20,7 +20,6 @@ import type { NextRequest } from 'next/server';
 import { logger } from '@/lib/logger';
 import { getCurrentSession } from '@/lib/auth-session';
 import { canPerform } from '@/lib/rbac';
-import { legacyF6Guard } from '@/modules/auth/domain/permissions/legacy-shim';
 import type { PermissionKey } from '@/modules/auth/domain/permissions/permission-catalogue';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import {
@@ -124,7 +123,7 @@ export async function adminOnlyGuard(
     return { kind: 'deny', response: new Response(null, { status: 404 }) };
   }
   const role = session.user.role;
-  if (!canPerform(role, input.permissionKey, legacyF6Guard)) {
+  if (!canPerform(role, input.permissionKey)) {
     if (isRole(role)) {
       // Any KNOWN denied role — attributable audit with the LITERAL role
       // (016 T033 widened the F6 ActorType union).

@@ -32,7 +32,6 @@ import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { redactStack } from '@/lib/redact-stack';
 import { canPerform, requirePagePermission } from '@/lib/rbac';
-import { legacyAdminOnly, legacyAdminOrManager } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { runListEvents } from '@/lib/events-admin-deps';
 import { TableContainer } from '@/components/layout';
@@ -102,7 +101,7 @@ export default async function AdminEventsListPage({
   }
 
   // auth + role gate. Member returns 404.
-  const { user: currentUser } = await requirePagePermission('events.read', legacyAdminOrManager);
+  const { user: currentUser } = await requirePagePermission('events.read');
 
   const query = await searchParams;
   const t = await getTranslations('admin.events.list');
@@ -185,7 +184,7 @@ export default async function AdminEventsListPage({
   // 016 re-review D — evaluator-derived (`events.write` is what the import
   // page + API admit; OFF leg `legacyAdminOnly` reproduces the admin-only CTA).
   const importCsvCta =
-    canPerform(currentUser.role, 'events.write', legacyAdminOnly) &&
+    canPerform(currentUser.role, 'events.write') &&
     env.features.f6EventCreate ? (
       <Link
         href="/admin/events/import"
@@ -204,7 +203,7 @@ export default async function AdminEventsListPage({
   // erasure surface would 404 the caller, instead of dangling for plain admin
   // after the flag flip.
   const eraseByEmailCta =
-    canPerform(currentUser.role, 'events.erasure', legacyAdminOnly) &&
+    canPerform(currentUser.role, 'events.erasure') &&
     env.features.f6EventCreate ? (
       <Link
         href="/admin/events/erasure"

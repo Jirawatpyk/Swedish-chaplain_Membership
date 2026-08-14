@@ -21,7 +21,6 @@ import { PageHeader } from '@/components/layout/page-header';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { requirePagePermission } from '@/lib/rbac';
-import { legacyAdminOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
 import { makeRenewalsDeps } from '@/modules/renewals';
@@ -46,7 +45,7 @@ export default async function TierUpgradeQueuePage() {
     notFound();
   }
 
-  await requirePagePermission('renewals.write', legacyAdminOnly);
+  await requirePagePermission('renewals.write');
 
   const reqHeaders = await headers();
   const fakeRequest = new Request(

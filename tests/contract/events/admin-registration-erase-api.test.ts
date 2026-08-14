@@ -289,8 +289,6 @@ describe('Phase B B7 — POST /api/admin/events/[eventId]/registrations/[registr
       // Keeps ADMIN_SESSION a live fixture: `admin` held this surface until D4,
       // so nothing else here would notice `events.erasure` losing its
       // `superAdminOnly` flag. Skipped on the legacy leg, where admin still
-      // legitimately holds it.
-      if (process.env['FEATURE_RBAC_V2'] === 'false') return;
       getCurrentSessionMock.mockResolvedValue(ADMIN_SESSION);
       const { POST } = await loadRoute();
       const res = await POST(jsonRequest({ reasonText: 'x' }), withParams(VALID_PARAMS));

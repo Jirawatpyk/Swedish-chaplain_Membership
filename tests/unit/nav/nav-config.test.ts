@@ -14,14 +14,14 @@ import {
 } from '@/config/nav';
 
 /**
- * 016 T063 — these suites pin the OFF-leg (pre-016) sidebar, so they build the
- * allow-list from the REAL resolver on the OFF leg rather than hand-listing
- * hrefs. That keeps them a genuine regression net: if the legacy row on any nav
- * entry drifts, the expected sets below stop matching. The ON-leg behaviour
- * (marketing) is asserted in `nav-permission-parity.test.ts`.
+ * 016 T063 / PR 5 — the allow-list comes from the REAL resolver; the per-role
+ * EXPECTATIONS below stay hand-pinned literals (design § 4.1), so the pair is
+ * not circular: if a nav guard key or a bundle drifts, the hand-pinned sets
+ * stop matching. The OFF-leg variants of these suites died with the legacy
+ * leg. Marketing's sidebar is asserted in `nav-permission-parity.test.ts`.
  */
-const OFF_LEG_ALLOWED = (role: Parameters<typeof staffNavAllowedHrefs>[0]) =>
-  new Set(staffNavAllowedHrefs(role, { rbacV2: false }));
+const ALLOWED = (role: Parameters<typeof staffNavAllowedHrefs>[0]) =>
+  new Set(staffNavAllowedHrefs(role));
 
 describe('staffNavConfig', () => {
   it('has exactly 7 sections: Overview, Membership, Finance, Engagement, System, Compliance, Settings', () => {
@@ -95,9 +95,7 @@ describe('staffNavConfig', () => {
     // pair here would only restate that suite, so this pins what remains
     // local: that the Compliance entry is permissioned at all, and with the
     // administrator-only legacy row that keeps the OFF leg unchanged.
-    expect(erasureLog.roles).toBeUndefined();
     expect(erasureLog.guard?.key).toBe('members.erasure_log_read');
-    expect(erasureLog.guard?.legacy.kind).toBe('legacyAdminOnly');
   });
 
   it('section 6 is Settings with Invoice + RenewalSchedules + BroadcastSettings + EventCreate', () => {
@@ -173,55 +171,69 @@ describe('filterNavConfig (role + visibility-flag filtering)', () => {
   const hrefs = (cfg: NavConfig) =>
     cfg.sections.flatMap((s) => s.items.map((i) => (i as NavItem).href));
 
-  it('admin sees every staff entry incl. both admin-only Settings pages + the Compliance erasure log', () => {
-    // 016 — the Broadcasts/Events top-level items now carry a visibilityFlag,
-    // so the "sees everything" case passes the feature flags ON (the normal
-    // runtime state when F6/F7 are enabled); otherwise those items + the whole
-    // Engagement section would drop.
+  it('super_admin sees every staff entry incl. the D4 surfaces + the Compliance erasure log', () => {
+    // The Broadcasts/Events top-level items carry a visibilityFlag, so the
+    // "sees everything" case passes the feature flags ON (the normal runtime
+    // state when F6/F7 are enabled).
     const filtered = filterNavConfig(
-        staffNavConfig,
-        { broadcastsEnabled: true, eventsEnabled: true },
-        'admin',
-        OFF_LEG_ALLOWED('admin'),
-      );
-    // 7 sections survive — the Compliance section has an admin-visible item.
+      staffNavConfig,
+      { broadcastsEnabled: true, eventsEnabled: true },
+      ALLOWED('super_admin'),
+    );
     expect(filtered.sections).toHaveLength(7);
     const all = hrefs(filtered);
-    expect(all).toContain('/admin/broadcasts');
-    expect(all).toContain('/admin/events');
+    expect(all).toContain('/admin/users');
+    expect(all).toContain('/admin/audit');
+    expect(all).toContain('/admin/settings/invoicing');
+    expect(all).toContain('/admin/compliance/erasure-log');
     expect(all).toContain('/admin/settings/broadcasts');
     expect(all).toContain('/admin/settings/integrations/eventcreate');
-    expect(all).toContain('/admin/compliance/erasure-log');
   });
 
-  it('manager drops the 2 admin-only Settings pages + the whole Compliance section, keeps everything else', () => {
+  it('plain admin drops exactly the D4 surfaces: System + Compliance sections and Invoice Settings', () => {
     const filtered = filterNavConfig(
-        staffNavConfig,
-        { broadcastsEnabled: true, eventsEnabled: true },
-        'manager',
-        OFF_LEG_ALLOWED('manager'),
-      );
-    // The Compliance section's only item is admin-only → the section empties →
-    // it is dropped. Settings survives (Invoice Settings + Renewal Schedules
-    // stay manager-readable, rendered read-only), so 6 sections remain and
-    // Settings is the last surviving section (index 5 after Compliance drops).
-    expect(filtered.sections).toHaveLength(6);
-    expect(filtered.sections[5]!.items.map((i) => (i as NavItem).href)).toEqual([
-      '/admin/settings/invoicing',
-      '/admin/settings/renewals/schedules',
-    ]);
+      staffNavConfig,
+      { broadcastsEnabled: true, eventsEnabled: true },
+      ALLOWED('admin'),
+    );
+    // users.manage + audit.read empty the System section; the erasure log
+    // empties Compliance → 5 sections remain.
+    expect(filtered.sections).toHaveLength(5);
     const all = hrefs(filtered);
-    expect(all).not.toContain('/admin/settings/broadcasts');
-    expect(all).not.toContain('/admin/settings/integrations/eventcreate');
-    // CWE-285 — the erasure-evidence log must NEVER appear in a manager sidebar
-    // (it would 404 server-side AND the link itself hints the surface exists).
+    expect(all).not.toContain('/admin/users');
+    expect(all).not.toContain('/admin/audit');
     expect(all).not.toContain('/admin/compliance/erasure-log');
-    // Read-only-but-visible surfaces stay (manager reads them; the page
-    // disables writes, the nav entry is NOT hidden).
-    expect(all).toContain('/admin/users');
+    expect(all).not.toContain('/admin/settings/invoicing');
+    // Everything non-D4 stays, including the admin-writable settings.
+    expect(all).toContain('/admin/invoices');
+    expect(all).toContain('/admin/settings/renewals/schedules');
+    expect(all).toContain('/admin/settings/broadcasts');
+    expect(all).toContain('/admin/settings/integrations/eventcreate');
+  });
+
+  it('manager keeps the read surfaces and loses System, Compliance and ALL of Settings', () => {
+    const filtered = filterNavConfig(
+      staffNavConfig,
+      { broadcastsEnabled: true, eventsEnabled: true },
+      ALLOWED('manager'),
+    );
+    // Manager holds no settings.* key (declared narrowing, design § 10), no
+    // users.manage, no audit.read, no erasure-log read → three whole sections
+    // empty out: Overview, Membership, Finance, Engagement remain.
+    expect(filtered.sections).toHaveLength(4);
+    const all = hrefs(filtered);
+    // CWE-285 — the erasure-evidence log must NEVER appear in a manager
+    // sidebar (it would 404 server-side AND the link hints the surface exists).
+    expect(all).not.toContain('/admin/compliance/erasure-log');
+    expect(all).not.toContain('/admin/users');
+    expect(all).not.toContain('/admin/audit');
+    expect(all).not.toContain('/admin/settings/invoicing');
+    expect(all).not.toContain('/admin/settings/renewals/schedules');
+    // Read-only-but-visible surfaces stay.
     expect(all).toContain('/admin/invoices');
     expect(all).toContain('/admin/credit-notes');
-    expect(all).toContain('/admin/audit');
+    expect(all).toContain('/admin/members');
+    expect(all).toContain('/admin/renewals');
   });
 });
 
@@ -235,7 +247,7 @@ describe('filterNavConfig (role + visibility-flag filtering)', () => {
 // ---------------------------------------------------------------------------
 describe('filterNavConfig — F6/F7 feature-flag nav gating (016, live config)', () => {
   const staffHrefs = (flags: Parameters<typeof filterNavConfig>[1]) =>
-    filterNavConfig(staffNavConfig, flags, 'admin', OFF_LEG_ALLOWED('admin')).sections.flatMap((s) =>
+    filterNavConfig(staffNavConfig, flags, ALLOWED('admin')).sections.flatMap((s) =>
       s.items.map((i) => (i as NavItem).href),
     );
 
@@ -265,22 +277,21 @@ describe('filterNavConfig — F6/F7 feature-flag nav gating (016, live config)',
 
   it('both OFF → the Engagement section drops entirely; Settings keeps its non-F6/F7 entries', () => {
     const filtered = filterNavConfig(
-        staffNavConfig,
-        { broadcastsEnabled: false, eventsEnabled: false },
-        'admin',
-        OFF_LEG_ALLOWED('admin'),
-      );
+      staffNavConfig,
+      { broadcastsEnabled: false, eventsEnabled: false },
+      ALLOWED('admin'),
+    );
     expect(filtered.sections.map((s) => s.titleKey)).not.toContain(
       'nav.staff.sections.engagement',
     );
-    // Engagement drops (7→6); Settings survives (Invoice + Renewal Schedules
-    // remain) with the Broadcast + EventCreate entries removed.
-    expect(filtered.sections).toHaveLength(6);
+    // Engagement drops, and a plain admin already lost System + Compliance to
+    // D4 → 4 sections. Settings survives via Renewal Schedules.
+    expect(filtered.sections).toHaveLength(4);
     const settings = filtered.sections.find(
       (s) => s.titleKey === 'nav.staff.sections.settings',
     );
     const settingsHrefs = settings!.items.map((i) => (i as NavItem).href);
-    expect(settingsHrefs).toContain('/admin/settings/invoicing');
+    expect(settingsHrefs).toContain('/admin/settings/renewals/schedules');
     expect(settingsHrefs).not.toContain('/admin/settings/broadcasts');
     expect(settingsHrefs).not.toContain(
       '/admin/settings/integrations/eventcreate',
@@ -332,7 +343,7 @@ describe('filterNavConfig — synthetic visibilityFlag + NavGroup recursion (S16
       ],
     };
     // Flag absent (→ false): the flagged item is dropped, the sibling stays.
-    const off = filterNavConfig(config, {}, 'admin');
+    const off = filterNavConfig(config, {});
     const offHrefs = off.sections[0]!.items.map((i) => (i as NavItem).href);
     expect(offHrefs).toEqual(['/always']);
   });
@@ -346,7 +357,7 @@ describe('filterNavConfig — synthetic visibilityFlag + NavGroup recursion (S16
         },
       ],
     };
-    const on = filterNavConfig(config, { eventcreateConfigured: true }, 'admin');
+    const on = filterNavConfig(config, { eventcreateConfigured: true });
     expect(on.sections).toHaveLength(1);
     expect((on.sections[0]!.items[0]! as NavItem).href).toBe('/flagged');
   });
@@ -362,38 +373,40 @@ describe('filterNavConfig — synthetic visibilityFlag + NavGroup recursion (S16
       ],
     };
     // Flag off → the first section empties → it is removed; only 'survivor' left.
-    const filtered = filterNavConfig(config, {}, 'admin');
+    const filtered = filterNavConfig(config, {});
     expect(filtered.sections).toHaveLength(1);
     expect(filtered.sections[0]!.titleKey).toBe('survivor');
   });
 
-  it('recurses into a NavGroup: an admin-only child is hidden from the manager role', () => {
+  it('recurses into a NavGroup: a guarded child outside the allow-list is hidden', () => {
+    // PR 5 deleted the `roles` allow-list; the mechanism under test is now the
+    // guard + allowedHrefs pair, which is also what production runs.
     const group: NavGroup = {
       titleKey: 'group',
       icon: ICON,
       activePattern: '/group',
       children: [
         item('/group/shared'),
-        item('/group/admin-only', { roles: ['admin'] }),
+        item('/group/guarded', { guard: { key: 'users.manage' } }),
       ],
     };
     const config: NavConfig = {
       sections: [{ titleKey: 'sec', items: [group] }],
     };
 
-    // Manager: the admin-only child is dropped, the shared child survives, and
-    // the group itself stays (it still has ≥1 visible child).
-    const forManager = filterNavConfig(config, {}, 'manager');
-    const mgrGroup = forManager.sections[0]!.items[0]! as NavGroup;
-    expect(isNavGroup(mgrGroup)).toBe(true);
-    expect(mgrGroup.children.map((c) => c.href)).toEqual(['/group/shared']);
+    // Allow-list without the guarded href: the child drops, the group stays.
+    const narrow = filterNavConfig(config, {}, new Set(['/group/shared']));
+    const narrowGroup = narrow.sections[0]!.items[0]! as NavGroup;
+    expect(isNavGroup(narrowGroup)).toBe(true);
+    expect(narrowGroup.children.map((c) => c.href)).toEqual(['/group/shared']);
 
-    // Admin: sees both children (proves the manager drop was role-driven).
-    const forAdmin = filterNavConfig(config, {}, 'admin');
-    const adminGroup = forAdmin.sections[0]!.items[0]! as NavGroup;
-    expect(adminGroup.children.map((c) => c.href)).toEqual([
+    // Allow-list with both: both children survive (proves the drop above was
+    // permission-driven, not structural).
+    const wide = filterNavConfig(config, {}, new Set(['/group/shared', '/group/guarded']));
+    const wideGroup = wide.sections[0]!.items[0]! as NavGroup;
+    expect(wideGroup.children.map((c) => c.href)).toEqual([
       '/group/shared',
-      '/group/admin-only',
+      '/group/guarded',
     ]);
   });
 
@@ -402,15 +415,16 @@ describe('filterNavConfig — synthetic visibilityFlag + NavGroup recursion (S16
       titleKey: 'group',
       icon: ICON,
       activePattern: '/group',
-      children: [item('/group/admin-only', { roles: ['admin'] })],
+      children: [item('/group/guarded', { guard: { key: 'users.manage' } })],
     };
     const config: NavConfig = {
       sections: [{ titleKey: 'sec', items: [group] }],
     };
-    // Manager: the only child is admin-only → group has 0 visible children →
-    // group dropped → section emptied → section dropped → zero sections.
-    const forManager = filterNavConfig(config, {}, 'manager');
-    expect(forManager.sections).toHaveLength(0);
+    // Empty allow-list: the only child is guarded → group has 0 visible
+    // children → group dropped → section emptied → zero sections. This is the
+    // fail-closed default when a caller forgets the allow-list entirely.
+    const filtered = filterNavConfig(config, {}, new Set());
+    expect(filtered.sections).toHaveLength(0);
   });
 });
 

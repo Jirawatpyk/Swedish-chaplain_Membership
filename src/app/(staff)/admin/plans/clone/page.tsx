@@ -10,7 +10,6 @@
 import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
 import { requirePagePermission } from '@/lib/rbac';
-import { legacyAdminOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { listPlans, asPlanYear } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
@@ -25,7 +24,7 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function CloneYearPage() {
-  await requirePagePermission('plans.clone', legacyAdminOnly);
+  await requirePagePermission('plans.clone');
 
   const t = await getTranslations('admin.plans.clone');
 

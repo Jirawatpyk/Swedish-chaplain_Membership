@@ -8,7 +8,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { canPerform, requireApiPermission } from '@/lib/rbac';
-import { legacyAdminOnly, mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
@@ -60,7 +59,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   // The key widens to `dashboard.view`; the LEGACY ROW is deliberately
   // unchanged, so on the OFF leg the admitted population is byte-identical to
   // before. Plan hits are re-gated on `plans.read` further down.
-  const ctx = await requireApiPermission(request, 'dashboard.view', mappedLegacy('plan', 'read'));
+  const ctx = await requireApiPermission(request, 'dashboard.view');
   if ('response' in ctx) return ctx.response;
   // rbac-subgate-ok: an optional SECTION of an already-authorised palette
   // response (the plan hits), not this surface's admission decision — that is
@@ -68,7 +67,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const canReadPlans = canPerform(
     ctx.current.user.role,
     'plans.read',
-    mappedLegacy('plan', 'read'),
   );
   // rbac-subgate-ok: gates the member SECTION of an already-authorised palette
   // response. 016 review — when the endpoint gate widened to `dashboard.view`,
@@ -80,7 +78,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const canReadMembers = canPerform(
     ctx.current.user.role,
     'members.read',
-    mappedLegacy('members', 'read'),
   );
 
   const url = new URL(request.url);
@@ -115,10 +112,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     tenant: deps.tenant,
     planRepo: deps.planRepo,
     clock: deps.clock,
-    // 016 T064 — bind the evaluator to this actor. The Application layer holds
-    // each entry's declared permission but must not read `env`, so the probe
-    // crosses the boundary instead of `canPerform` itself.
-    can: (key, legacy) => canPerform(ctx.current.user.role, key, legacy),
+    // 016 T064 — bind the evaluator to this actor. The probe still crosses
+    // the boundary (Application must not import the composition layer), even
+    // though `canPerform` is pure since PR 5.
+    can: (key) => canPerform(ctx.current.user.role, key),
   });
 
   if (result.ok) {
@@ -185,7 +182,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     // byte-for-byte; the ON leg follows `refunds.write`.
     // rbac-subgate-ok: an optional SECTION of an already-authorised palette
     // response, not admission to the surface (that is the `plans.read` gate).
-    if (canPerform(ctx.current.user.role, 'refunds.write', legacyAdminOnly)) {
+    if (canPerform(ctx.current.user.role, 'refunds.write')) {
       try {
         const invoiceDeps = makeListInvoicesDeps(tenant.slug);
         const paid = await listInvoicesPaged(invoiceDeps, {

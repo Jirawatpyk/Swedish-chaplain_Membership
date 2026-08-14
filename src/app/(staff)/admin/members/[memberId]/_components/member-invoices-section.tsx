@@ -13,7 +13,7 @@
  *   the source of truth for programmatic clients (contract tests,
  *   future client-side sort/filter).
  *
- * RBAC (`canMutate = canPerform(role, 'invoicing.write', legacyAdminOnly)`):
+ * RBAC (`canMutate = canPerform(role, 'invoicing.write')`):
  *   - `admin` / promoted `super_admin` — list + all quick actions (view,
  *     record payment, issue CN), plus the "New invoice" create affordances.
  *   - `manager` — list only. Per-row mutating actions (record payment / void /
@@ -26,7 +26,6 @@
 import Link from 'next/link';
 import { getTranslations, getFormatter } from 'next-intl/server';
 import { canPerform } from '@/lib/rbac';
-import { legacyAdminOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import type { Role } from '@/modules/auth/domain/role';
 import { FileTextIcon, PlusIcon, ReceiptIcon } from 'lucide-react';
 import {
@@ -210,7 +209,7 @@ export async function MemberInvoicesSection({
   // legacyAdminOnly reproduces the admin-only mutations and admits a promoted
   // super_admin — this was the one staff-role literal living in _components/,
   // outside the first version of the page gate's scan radius).
-  const canMutate = canPerform(role, 'invoicing.write', legacyAdminOnly);
+  const canMutate = canPerform(role, 'invoicing.write');
 
   const formatBaht = (satang: bigint | null): string =>
     satang === null

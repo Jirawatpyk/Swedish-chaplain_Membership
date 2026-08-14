@@ -107,12 +107,6 @@ export interface EraseUserDeps {
     UserRepo,
     'anonymiseErasedInTx' | 'findById' | 'countActiveAdministrators'
   >;
-  /**
-   * 016 T026 — which roles count as administrators for the last-administrator
-   * guard. Threaded in rather than read from env so this use case stays pure
-   * Application (same purity pin as the permission evaluator).
-   */
-  readonly rbacV2: boolean;
 
   readonly sessions: Pick<SessionRepo, 'deleteByUserIdInTx'>;
   readonly audit: Pick<AuditRepo, 'appendInTx'>;
@@ -140,9 +134,9 @@ export async function eraseUser(
   const target = await deps.users.findById(userId);
   if (
     target !== null &&
-    isAdministrativeRole(target.role, deps.rbacV2) &&
+    isAdministrativeRole(target.role) &&
     target.status === 'active' &&
-    (await deps.users.countActiveAdministrators(administrativeRoles(deps.rbacV2))) <= 1
+    (await deps.users.countActiveAdministrators(administrativeRoles())) <= 1
   ) {
     logger.error(
       { requestId: input.requestId, userId: input.userId },

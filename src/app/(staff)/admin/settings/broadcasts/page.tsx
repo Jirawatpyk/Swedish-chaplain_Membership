@@ -29,7 +29,6 @@ import { makeDrizzleImageAllowlistRepo } from '@/modules/broadcasts/infrastructu
 import { seedPlatformDefaults } from '@/modules/broadcasts/application/use-cases/manage-image-allowlist';
 import { isF71aUs2Enabled } from '@/modules/broadcasts/infrastructure/feature-flags';
 import { requirePagePermission } from '@/lib/rbac';
-import { legacyAdminOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { runInTenant } from '@/lib/db';
 
@@ -44,7 +43,7 @@ export default async function AdminBroadcastSettingsPage(): Promise<React.ReactE
   // Admin role mandatory (manager has read-only on broadcasts queue
   // but mutating allowlist is privileged — keep parity with F4 logo
   // upload + F2 plan management restrictions).
-  await requirePagePermission('settings.broadcasts', legacyAdminOnly);
+  await requirePagePermission('settings.broadcasts');
 
   const tenantCtx = resolveTenantFromRequest();
   const t = await getTranslations('admin.broadcasts.settings');

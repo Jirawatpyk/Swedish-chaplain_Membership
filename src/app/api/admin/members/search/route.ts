@@ -21,7 +21,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { requireApiPermission } from '@/lib/rbac';
-import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
 import { directorySearch } from '@/modules/members';
@@ -38,7 +37,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   // Use 'member' read action because both admin AND manager can search
   // the directory; the relink action endpoint enforces admin-only on
   // its own (POST /relink). Mirrors /api/plans/search auth pattern.
-  const ctx = await requireApiPermission(request, 'members.read', mappedLegacy('member', 'read'));
+  const ctx = await requireApiPermission(request, 'members.read');
   if ('response' in ctx) return ctx.response;
 
   const url = new URL(request.url);

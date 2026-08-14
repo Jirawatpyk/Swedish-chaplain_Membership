@@ -33,8 +33,6 @@ import { expect, test } from './fixtures';
 import { signInAsAdmin, signInAsSuperAdmin } from './helpers/admin-session';
 import { signInAsManager } from './helpers/manager-session';
 import { signInAsMarketing } from './helpers/marketing-session';
-
-const RBAC_V2_ON = process.env.E2E_RBAC_V2_ON === 'true';
 const HAVE_PERSONAS = Boolean(
   process.env.E2E_SUPER_ADMIN_EMAIL &&
     process.env.E2E_ADMIN_EMAIL &&
@@ -137,9 +135,9 @@ const PERSONAS = [
 
 test.describe('T062 RBAC v2 — four-persona navigation walk (ON leg)', () => {
   test.skip(
-    !HAVE_PERSONAS || !RBAC_V2_ON,
-    'ON-leg suite: needs FEATURE_RBAC_V2=true + Migration C on dev + all four ' +
-      'E2E persona credentials (re-run scripts/seed-e2e-user.ts), then E2E_RBAC_V2_ON=true.',
+    !HAVE_PERSONAS,
+    'ON-leg suite: needs Migration C on dev + all four ' +
+      'E2E persona credentials (re-run scripts/seed-e2e-user.ts), seeded personas are the only precondition.',
   );
 
   for (const persona of PERSONAS) {

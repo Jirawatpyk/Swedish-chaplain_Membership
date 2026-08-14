@@ -33,7 +33,6 @@ import {
 import { runInTenant } from '@/lib/db';
 import { baseHeaders, jsonError } from '@/lib/broadcasts-route-helpers';
 import { requireApiPermission } from '@/lib/rbac';
-import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
 
@@ -55,7 +54,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     notFound(); // 404 — opaque admin surface
   }
 
-  const ctx = await requireApiPermission(request, 'broadcasts.write', mappedLegacy('broadcast', 'write'));
+  const ctx = await requireApiPermission(request, 'broadcasts.write');
   if ('response' in ctx) return ctx.response;
 
   const tenantCtx = resolveTenantFromRequest(request);
@@ -138,7 +137,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     notFound();
   }
 
-  const ctx = await requireApiPermission(request, 'broadcasts.read', mappedLegacy('broadcast', 'read'));
+  const ctx = await requireApiPermission(request, 'broadcasts.read');
   if ('response' in ctx) return ctx.response;
 
   const tenantCtx = resolveTenantFromRequest(request);

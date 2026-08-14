@@ -67,7 +67,6 @@ function makeDeps(overrides: Partial<EraseUserDeps> = {}): {
   const deps: EraseUserDeps = {
     sessions: { deleteByUserIdInTx } as unknown as EraseUserDeps['sessions'],
     audit: { appendInTx } as unknown as EraseUserDeps['audit'],
-    rbacV2: false,
     ...overrides,
     // Merge (not replace) the users bag: a case overriding one repo method
     // must not silently drop the pre-flight's `findById` /
@@ -289,7 +288,11 @@ describe('eraseUser — last-administrator pre-flight (016 T026)', () => {
   it('refuses to erase the last active administrator BEFORE opening the tx', async () => {
     const { deps, anonymiseErasedInTx, countActiveAdministrators } = makeDeps({
       users: {
-        findById: vi.fn(async () => ({ id: USER_ID, role: 'admin', status: 'active' })),
+        // super_admin, not 'admin': since PR 5 the guarded population is
+        // super_admin-only (administrativeRoles(), matching migration 0288) —
+        // an 'admin' target is not an administrator any more, so seeding one
+        // asserted the pre-flight on a role it deliberately stopped protecting.
+        findById: vi.fn(async () => ({ id: USER_ID, role: 'super_admin', status: 'active' })),
         countActiveAdministrators: vi.fn(async () => 1),
       } as unknown as EraseUserDeps['users'],
     });

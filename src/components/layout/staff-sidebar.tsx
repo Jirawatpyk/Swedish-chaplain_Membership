@@ -7,7 +7,6 @@ import {
   filterNavConfig,
   type NavVisibilityFlags,
 } from '@/config/nav';
-import type { Role } from '@/modules/auth';
 import { NavEntry } from '@/components/layout/nav-item';
 import {
   Sidebar,
@@ -24,20 +23,7 @@ import { BrandMark } from '@/components/shell/brand-mark';
 
 interface StaffSidebarProps {
   readonly tenantName: string;
-  /**
-   * Current actor role.
-   *
-   * NOT what hides staff entries any more — `allowedHrefs` is, resolved on the
-   * server from `canPerform` (see `staffNavAllowedHrefs`). Every staff entry now
-   * carries a `guard`, so the `roles` allow-list branch in `filterNavConfig` is
-   * dead — for the member config too, which never declared `roles` either.
-   * The rendered sidebar therefore no longer varies with this prop at all.
-   * Still threaded through because `filterNavConfig` takes it, and because a
-   * client-side role check was never the security boundary — the page guards
-   * are.
-   */
-  readonly role: Role;
-  /**
+    /**
    * Optional visibility flags from the server layout. Items with a
    * `visibilityFlag` are filtered OUT unless their flag is `true`.
    * Defaults to the empty map — items without a flag are always shown.
@@ -54,17 +40,11 @@ interface StaffSidebarProps {
 
 export function StaffSidebar({
   tenantName,
-  role,
   navVisibilityFlags = {},
   allowedHrefs,
 }: StaffSidebarProps) {
   const t = useTranslations();
-  const filtered = filterNavConfig(
-    staffNavConfig,
-    navVisibilityFlags,
-    role,
-    new Set(allowedHrefs),
-  );
+  const filtered = filterNavConfig(staffNavConfig, navVisibilityFlags, new Set(allowedHrefs));
 
   return (
     <Sidebar

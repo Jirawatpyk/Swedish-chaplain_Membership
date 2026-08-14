@@ -9,7 +9,6 @@
  */
 import { NextResponse, type NextRequest } from 'next/server';
 import { requireApiPermission } from '@/lib/rbac';
-import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import {
@@ -33,7 +32,7 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ invoiceId: string }> },
 ): Promise<NextResponse> {
-  const ctx = await requireApiPermission(request, 'invoicing.issue', mappedLegacy('invoice', 'write'));
+  const ctx = await requireApiPermission(request, 'invoicing.issue');
   if ('response' in ctx) return ctx.response;
 
   const { invoiceId } = await params;

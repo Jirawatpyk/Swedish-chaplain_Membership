@@ -73,14 +73,13 @@ const fixedClock: ClockPort = {
 
 /**
  * 016 T064 — the palette's static registries are now filtered per ENTRY against
- * each destination's declared permission. These cases pin pre-016 behaviour, so
- * they bind the REAL evaluator on the OFF leg rather than stubbing `can` to
- * `() => true`, which would make every role assertion below vacuous.
+ * each destination's declared permission. The probe binds the REAL evaluator
+ * (single-leg since PR 5) rather than stubbing `can` to `() => true`, which
+ * would make every role assertion below vacuous.
  */
-const offLegProbe =
+const probeFor =
   (role: Role): SearchPlansDeps['can'] =>
-  (key, legacy) =>
-    canPerform(role, key, legacy, { rbacV2: false });
+  (key) => canPerform(role, key);
 
 describe('Integration: search-plans filter correctness (T150, US6)', () => {
   let tenant: TestTenant;
@@ -139,7 +138,7 @@ describe('Integration: search-plans filter correctness (T150, US6)', () => {
   it('exact match returns the matching plan', async () => {
     const result = await searchPlans(
       { q: 'Premium', role: 'admin', activeLocale: 'en' },
-      { tenant: tenant.ctx, planRepo, clock: fixedClock, can: offLegProbe('admin') },
+      { tenant: tenant.ctx, planRepo, clock: fixedClock, can: probeFor('admin') },
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -150,7 +149,7 @@ describe('Integration: search-plans filter correctness (T150, US6)', () => {
   it('prefix match is case-insensitive and returns the plan', async () => {
     const result = await searchPlans(
       { q: 'prem', role: 'admin', activeLocale: 'en' },
-      { tenant: tenant.ctx, planRepo, clock: fixedClock, can: offLegProbe('admin') },
+      { tenant: tenant.ctx, planRepo, clock: fixedClock, can: probeFor('admin') },
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -162,7 +161,7 @@ describe('Integration: search-plans filter correctness (T150, US6)', () => {
   it('fully upper-case search still matches', async () => {
     const result = await searchPlans(
       { q: 'DIAMOND', role: 'admin', activeLocale: 'en' },
-      { tenant: tenant.ctx, planRepo, clock: fixedClock, can: offLegProbe('admin') },
+      { tenant: tenant.ctx, planRepo, clock: fixedClock, can: probeFor('admin') },
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -177,7 +176,7 @@ describe('Integration: search-plans filter correctness (T150, US6)', () => {
     // Swedish/English command-palette muscle memory keeps working.
     const result = await searchPlans(
       { q: 'Gold', role: 'admin', activeLocale: 'th' },
-      { tenant: tenant.ctx, planRepo, clock: fixedClock, can: offLegProbe('admin') },
+      { tenant: tenant.ctx, planRepo, clock: fixedClock, can: probeFor('admin') },
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -191,7 +190,7 @@ describe('Integration: search-plans filter correctness (T150, US6)', () => {
   it('plan_id substring match works', async () => {
     const result = await searchPlans(
       { q: 'diamo', role: 'admin', activeLocale: 'en' },
-      { tenant: tenant.ctx, planRepo, clock: fixedClock, can: offLegProbe('admin') },
+      { tenant: tenant.ctx, planRepo, clock: fixedClock, can: probeFor('admin') },
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -203,7 +202,7 @@ describe('Integration: search-plans filter correctness (T150, US6)', () => {
   it('admin role sees all 4 action registry entries (when q matches all)', async () => {
     const result = await searchPlans(
       { q: 'palette', role: 'admin', activeLocale: 'en' },
-      { tenant: tenant.ctx, planRepo, clock: fixedClock, can: offLegProbe('admin') },
+      { tenant: tenant.ctx, planRepo, clock: fixedClock, can: probeFor('admin') },
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -212,25 +211,30 @@ describe('Integration: search-plans filter correctness (T150, US6)', () => {
     expect(result.value.results.navigate.length).toBeGreaterThanOrEqual(4);
   });
 
-  it('manager role sees only read-category actions (viewAuditLog) — no create/clone', async () => {
+  it('manager keeps read navigation but loses audit.view (D4) and all authoring actions', async () => {
     const result = await searchPlans(
       { q: 'palette', role: 'manager', activeLocale: 'en' },
-      { tenant: tenant.ctx, planRepo, clock: fixedClock, can: offLegProbe('manager') },
+      { tenant: tenant.ctx, planRepo, clock: fixedClock, can: probeFor('manager') },
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const actionIds = result.value.results.actions.map((a) => a.id);
-    // Only `audit.view` requires `read` in the static registry
-    expect(actionIds).toContain('audit.view');
+    // `audit.view` is gated on audit.read — super-admin-only since D4, so the
+    // manager LOSES it too now (the old expectation pinned the OFF leg, where
+    // legacySessionOnly admitted manager). No authoring actions either.
+    expect(actionIds).not.toContain('audit.view');
     expect(actionIds).not.toContain('plan.new');
     expect(actionIds).not.toContain('plan.clone');
     expect(actionIds).not.toContain('fee.edit');
+    // Anchor so the case cannot pass on an empty pool: manager keeps a
+    // non-empty NAVIGATE pool (members/invoices/renewals reads).
+    expect(result.value.results.navigate.length).toBeGreaterThan(0);
   });
 
   it('member role returns empty action + navigate pools', async () => {
     const result = await searchPlans(
       { q: 'palette', role: 'member', activeLocale: 'en' },
-      { tenant: tenant.ctx, planRepo, clock: fixedClock, can: offLegProbe('member') },
+      { tenant: tenant.ctx, planRepo, clock: fixedClock, can: probeFor('member') },
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -242,7 +246,7 @@ describe('Integration: search-plans filter correctness (T150, US6)', () => {
     // "o" matches "Gold" and "Diamond" (both have 'o'); limit=1 crops to 1
     const result = await searchPlans(
       { q: 'o', role: 'admin', activeLocale: 'en', limit: 1 },
-      { tenant: tenant.ctx, planRepo, clock: fixedClock, can: offLegProbe('admin') },
+      { tenant: tenant.ctx, planRepo, clock: fixedClock, can: probeFor('admin') },
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;

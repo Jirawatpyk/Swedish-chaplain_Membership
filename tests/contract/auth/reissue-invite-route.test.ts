@@ -206,7 +206,6 @@ describe('contract: POST /api/auth/users/[id]/reissue-invite (Task 2)', () => {
         2,
         expect.anything(),
         'users.manage',
-        { kind: 'mappedLegacy', resource: 'auth:user', action: 'write' },
       );
     });
 

@@ -230,7 +230,6 @@ describe('contract: POST /api/auth/users/[id]/role (T113)', () => {
         2,
         expect.anything(),
         'users.manage',
-        { kind: 'mappedLegacy', resource: 'auth:user', action: 'write' },
       );
     });
 

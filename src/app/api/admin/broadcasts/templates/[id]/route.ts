@@ -25,7 +25,6 @@ import {
 import { runInTenant } from '@/lib/db';
 import { baseHeaders, jsonError } from '@/lib/broadcasts-route-helpers';
 import { requireApiPermission } from '@/lib/rbac';
-import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
 
@@ -65,7 +64,7 @@ export async function PATCH(
     notFound();
   }
 
-  const ctx = await requireApiPermission(request, 'broadcasts.write', mappedLegacy('broadcast', 'write'));
+  const ctx = await requireApiPermission(request, 'broadcasts.write');
   if ('response' in ctx) return ctx.response;
 
   const resolvedParams = await params;
@@ -169,7 +168,7 @@ export async function DELETE(
     notFound();
   }
 
-  const ctx = await requireApiPermission(request, 'broadcasts.write', mappedLegacy('broadcast', 'write'));
+  const ctx = await requireApiPermission(request, 'broadcasts.write');
   if ('response' in ctx) return ctx.response;
 
   const resolvedParams = await params;

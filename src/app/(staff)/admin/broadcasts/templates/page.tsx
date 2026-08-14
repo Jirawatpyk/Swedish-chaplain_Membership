@@ -32,7 +32,6 @@ import {
 } from '@/modules/broadcasts';
 import { runInTenant } from '@/lib/db';
 import { requirePagePermission } from '@/lib/rbac';
-import { legacyAdminOnly } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -43,7 +42,7 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function AdminBroadcastTemplatesPage(): Promise<React.ReactElement> {
   if (!isF71aUs7Enabled()) notFound();
 
-  await requirePagePermission('broadcasts.write', legacyAdminOnly);
+  await requirePagePermission('broadcasts.write');
 
   const tenantCtx = resolveTenantFromRequest();
   const t = await getTranslations('admin.broadcasts.templates');

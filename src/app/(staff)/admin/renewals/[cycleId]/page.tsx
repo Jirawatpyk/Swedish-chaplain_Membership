@@ -32,7 +32,6 @@ import { EmptyState } from '@/components/shell/empty-state';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { canPerform, requirePagePermission } from '@/lib/rbac';
-import { legacyAdminOrManager, mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { loadCycleDetail, makeRenewalsDeps } from '@/modules/renewals';
 import { CycleStatusBadge } from './_components/cycle-status-badge';
@@ -100,7 +99,7 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
   const locale = await getLocale();
 
   // Auth + role check — managers permitted on this read-only surface.
-  const { user: currentUser } = await requirePagePermission('renewals.read', legacyAdminOrManager);
+  const { user: currentUser } = await requirePagePermission('renewals.read');
 
   const { cycleId } = await params;
   const requestHeaders = await headers();
@@ -466,7 +465,7 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
           ('renewals.write'); the old `role === 'admin'` literal went false
           for every human after Migration C. */}
       {c.status === 'pending_admin_reactivation' &&
-        canPerform(currentUser.role, 'renewals.write', mappedLegacy('renewal', 'write')) && (
+        canPerform(currentUser.role, 'renewals.write') && (
           <PendingReactivationActions
             cycleId={c.cycleId}
             status={c.status}
@@ -484,7 +483,7 @@ export default async function AdminCycleDetailPage({ params }: PageProps) {
           pending_admin_reactivation cycles. Admin-only — managers view this
           surface read-only; the route handlers also reject a manager POST
           with 403 + f8_role_violation_blocked audit. */}
-      {canPerform(currentUser.role, 'renewals.write', mappedLegacy('renewal', 'write')) && (
+      {canPerform(currentUser.role, 'renewals.write') && (
         <CycleAdminActions cycleId={c.cycleId} status={c.status} />
       )}
 

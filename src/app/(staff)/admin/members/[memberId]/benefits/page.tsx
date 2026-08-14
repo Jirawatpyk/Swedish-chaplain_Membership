@@ -22,7 +22,6 @@ import { headers } from 'next/headers';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { ArrowLeftIcon, MailIcon } from 'lucide-react';
 import { requirePagePermission } from '@/lib/rbac';
-import { legacyAdminOrManager } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { loadMembershipAccess } from '@/lib/load-membership-access';
@@ -55,7 +54,7 @@ export default async function MemberBenefitsPage({ params }: PageProps) {
   const { memberId } = await params;
   if (!UUID_RE.test(memberId)) notFound();
 
-  const session = await requirePagePermission('members.read', legacyAdminOrManager);
+  const session = await requirePagePermission('members.read');
   const tenant = resolveTenantFromRequest();
   const h = await headers();
   const requestId = requestIdFromHeaders(h);

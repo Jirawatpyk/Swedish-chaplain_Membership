@@ -20,7 +20,6 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 
 import { requireApiPermission } from '@/lib/rbac';
-import { mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { rateLimiter } from '@/lib/auth-deps';
@@ -57,7 +56,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const correlationId = randomUUID();
 
   // Admin-only, same RBAC gate as refund-initiate (manager → 403).
-  const adminCtx = await requireApiPermission(request, 'refunds.write', mappedLegacy('refund', 'write'));
+  const adminCtx = await requireApiPermission(request, 'refunds.write');
   if ('response' in adminCtx && adminCtx.response) {
     return adminCtx.response as NextResponse;
   }

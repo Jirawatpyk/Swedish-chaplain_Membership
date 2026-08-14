@@ -35,10 +35,6 @@ import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { renewalsMetrics } from '@/lib/metrics';
 import { canPerform, requirePagePermission } from '@/lib/rbac';
-import {
-  legacyAdminOrManager,
-  mappedLegacy,
-} from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import {
   ESCALATION_TASK_STATUSES,
@@ -81,7 +77,7 @@ export default async function EscalationTaskQueuePage({
     notFound();
   }
 
-  const session = await requirePagePermission('renewals.read', legacyAdminOrManager);
+  const session = await requirePagePermission('renewals.read');
   const role = session.user.role;
 
   const reqHeaders = await headers();
@@ -282,7 +278,7 @@ export default async function EscalationTaskQueuePage({
       ) : (
         <>
           <EscalationTaskQueue
-            canMutate={canPerform(role, 'renewals.write', mappedLegacy('renewal', 'write'))}
+            canMutate={canPerform(role, 'renewals.write')}
             actorUserId={session.user.id}
             overdueCount={overdueCount}
             distinctTaskTypes={distinctTaskTypes}

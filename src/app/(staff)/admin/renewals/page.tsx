@@ -31,7 +31,6 @@ import { renewalsMetrics } from '@/lib/metrics';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { canPerform, requirePagePermission } from '@/lib/rbac';
-import { legacyAdminOrManager, mappedLegacy } from '@/modules/auth/domain/permissions/legacy-shim';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
 import { runInTenant } from '@/lib/db';
@@ -173,7 +172,7 @@ export default async function RenewalsPipelinePage({
   const t = await getTranslations('admin.renewals');
 
   // Auth + role check — managers permitted on this read-only surface.
-  const { user: currentUser } = await requirePagePermission('renewals.read', legacyAdminOrManager);
+  const { user: currentUser } = await requirePagePermission('renewals.read');
 
   if (!env.features.f8Renewals) {
     return (
@@ -281,7 +280,7 @@ export default async function RenewalsPipelinePage({
               // admits `renewals.write` holders, so the inline Approve follows
               // the same pair (016 re-review D — the old `role === 'admin'`
               // literal went false for every human after Migration C).
-              canApprove={canPerform(currentUser.role, 'renewals.write', mappedLegacy('renewal', 'write'))}
+              canApprove={canPerform(currentUser.role, 'renewals.write')}
             />
           </CardContent>
         </Card>
@@ -515,7 +514,7 @@ export default async function RenewalsPipelinePage({
   // affordance so a manager never sees a CTA that would just 403.
   // 016 T030 — evaluator-derived (the old `role === 'admin'` literal hid
   // every mutation CTA from a promoted super_admin while the API allowed it).
-  const canMutate = canPerform(currentUser.role, 'renewals.write', mappedLegacy('renewal', 'write'));
+  const canMutate = canPerform(currentUser.role, 'renewals.write');
 
   // Sighted result-count (aria-hidden twin of `ResultCountAnnouncer`). Computed
   // once so the same element can be the LEFT item of the pipeline table's
