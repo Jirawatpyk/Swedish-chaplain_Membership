@@ -911,6 +911,27 @@ describe('adminRenewLapsedMember (Slice 3 / Task 3.1)', () => {
       expect(t.bridgeMock).not.toHaveBeenCalled();
     });
 
+    it('invoice_already_exists: an overlapping PAID bill refuses too (financial review S-1 — paid is in BLOCKING_STATUSES)', async () => {
+      // The member already paid for this coverage window; minting a second
+      // §86/4 for the same period would double-bill them.
+      const t = makeDeps();
+      const paid: MembershipBillCoverageRow = {
+        invoiceId: 'inv-paid',
+        status: 'paid',
+        coverage: OVERLAPPING,
+      };
+      t.listCoverageMock.mockResolvedValueOnce([paid]);
+      const result = await adminRenewLapsedMember(t.deps, VALID_INPUT);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.kind).toBe('invoice_already_exists');
+      if (result.error.kind !== 'invoice_already_exists') return;
+      expect(result.error.invoiceId).toBe('inv-paid');
+      expect(t.insertMock).not.toHaveBeenCalled();
+      expect(t.bridgeMock).not.toHaveBeenCalled();
+    });
+
     it('void carve-out pin: a VOID bill with the same overlapping window does NOT refuse (a bill voided for correction must not wedge the member)', async () => {
       const t = makeDeps();
       const voided: MembershipBillCoverageRow = {

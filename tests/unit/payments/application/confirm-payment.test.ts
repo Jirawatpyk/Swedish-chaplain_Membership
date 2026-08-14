@@ -1465,6 +1465,11 @@ describe('confirmPayment — Step-2 bridge-error acks (forbidden / corrupted_tot
   // is a separate finding for whoever owns 088 — do not 'fix' it inside an
   // unrelated change." This test pins CURRENT behaviour; it is not an
   // endorsement of auto-refunding on a flag rollback.
+  //
+  // Reachability note (financial review S-2): the real webhook rail passes
+  // `reconciliationPath: true` to the bridge, which suppresses this error
+  // today — the arm pinned here is the defensive switch arm, driven via the
+  // mock. It becomes live only if a future caller omits that flag.
   it('bridge new_flow_bill_requires_flag_on → stale auto-refund with cause invoice_unknown_status (pins pre-existing behaviour)', async () => {
     const deps = makeDeps();
     (deps.invoicingBridge.getInvoiceForPayment as ReturnType<typeof vi.fn>).mockResolvedValueOnce(

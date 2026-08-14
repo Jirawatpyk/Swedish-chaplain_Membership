@@ -6,9 +6,13 @@
  * the CN fixture from `resend-pdf.test.ts`. Pins:
  *
  *   - admin/manager sign the STORED `cn.pdf.blobKey` and the filename is
- *     the §86/10 document number — and (deliberate contract) the CN
- *     download emits NO download audit event (unlike the invoice/receipt
- *     siblings' `*_pdf_downloaded` rows).
+ *     the §86/10 document number — and the CN download emits NO download
+ *     audit event. That is PINNED CURRENT BEHAVIOUR, not an endorsement:
+ *     it is asymmetric with the invoice/receipt siblings' R8-M1
+ *     `*_pdf_downloaded` rows, and a §86/10 credit note is a 10-year tax
+ *     document whose access trail cannot currently be reconstructed. A
+ *     `credit_note_pdf_downloaded` emit is filed as a follow-up
+ *     (financial review I-1); when it lands, flip these assertions.
  *   - G-1 member ownership: a member may sign only a CN whose
  *     `originalInvoiceMemberId` matches their own id; every denial is the
  *     OPAQUE `credit_note_not_found` (never `forbidden` — do not leak
@@ -118,7 +122,7 @@ function makeDeps(cn: CreditNote | null) {
   return { deps, callsKeys, audit };
 }
 
-describe('getCreditNotePdfSignedUrl — staff happy paths (no download audit by design)', () => {
+describe('getCreditNotePdfSignedUrl — staff happy paths (no download audit TODAY — see header, I-1 follow-up)', () => {
   it('admin success → signs cn.pdf.blobKey, filename is the §86/10 document number, audit NOT called', async () => {
     const cn = creditNoteFixture();
     const { deps, callsKeys, audit } = makeDeps(cn);
@@ -136,10 +140,10 @@ describe('getCreditNotePdfSignedUrl — staff happy paths (no download audit by 
       expect(result.value.url).toContain(STORED_CN_BLOB_KEY);
     }
     expect(callsKeys).toEqual([STORED_CN_BLOB_KEY]);
-    // Pin the deliberate contract: the CN download path emits NO audit
-    // row (unlike the invoice/receipt siblings' `*_pdf_downloaded`).
-    // If a future change adds one, this assertion forces the change to
-    // be made consciously (and symmetrically for member downloads).
+    // Pins CURRENT behaviour: the CN download path emits NO audit row —
+    // an access-trail gap vs the invoice/receipt siblings (header, I-1).
+    // When the follow-up adds `credit_note_pdf_downloaded`, flip this to
+    // a positive assertion (and add the member-download twin).
     expect(audit).not.toHaveBeenCalled();
   });
 
