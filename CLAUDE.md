@@ -309,4 +309,4 @@ Full per-feature provenance (F1–F8 + every F7.1a/b review round) is archived i
 - 012-eventcreate-integration: F6 EventCreate Integration SHIPPED (PR #26) + flag-flipped to production 2026-05-19 — CSV attendee import + webhook ingest + benefit-quota tracking; F8 at-risk bridge port live-wired.
 - 011-renewal-reminders: F8 Renewal Tracking + Smart Reminders SHIPPED (PR #24) — pipeline dashboard, tier-aware reminder schedule, 8-factor at-risk scoring, auto tier-upgrade, manual escalation queue.
 
-Last updated: 2026-08-14 (016 COMPLETE — PR 4 #326 + PR 5 #327 merged, env var deleted, feature closed; full history → docs/changelog.md)
+Last updated: 2026-08-14 (016 COMPLETE incl. T072 final verification on the `016-rbac-polish` branch — I6 sites keyed on real permissions, isAdminTier deleted, users-page deferrals closed, SC-007 pins restored; NEXT: money-path coverage remediation workstream (13 files + CI coverage job, user-approved — see docs/changelog.md); full history → docs/changelog.md)
