@@ -77,9 +77,14 @@ export async function changeRole(
   }
 
   // Last-admin protection — first line of defence (application layer).
-  // The DB trigger `users_last_admin_protection` (migration 0003) is
-  // the second line of defence and closes the race window between
-  // `countActiveAdministrators()` and `setRole()`.
+  // The DB trigger `users_last_admin_guard()` is the second line of
+  // defence. Since migration 0289 it serializes qualifying removals
+  // with a pg_advisory_xact_lock BEFORE its COUNT, which closes BOTH
+  // race shapes: this pre-flight's read-vs-write window on one row, and
+  // the cross-session write-skew where two sessions each remove one of
+  // the last two super_admins (each COUNT excluded its own OLD.id and
+  // couldn't see the other's uncommitted UPDATE — 016 post-ship review
+  // finding #1, 2026-08-14).
   // 016 T026 (re-review PR1 carry-forward V-1): guard on LEAVING the
   // administrative set, not on the `'admin'` literal. Once PR 3 makes
   // super_admin assignable, a single-admin tenant promoting its only admin to
