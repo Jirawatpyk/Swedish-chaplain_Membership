@@ -91,6 +91,33 @@ export async function getCreditNotePdfSignedUrl(
     }
   }
 
+  // I-1 (money-coverage financial review, 2026-08-14) — audit emit BEFORE
+  // signing, closing the access-trail asymmetry with the invoice/receipt
+  // siblings (R8-M1): a §86/10 credit note is a 10-year tax document whose
+  // download trail must be reconstructable, and if the emit fails we fail
+  // the read rather than serve an unrecorded download. AUDIT NOTE: reuses
+  // the existing `invoice_pdf_downloaded` event type (10y retention) rather
+  // than minting a new enum value — the same deliberate reuse as
+  // `get-zero-rate-cert-signed-url` — with the summary + payload carrying
+  // the credit-note identity for forensic queries.
+  await deps.audit.emit(null, {
+    tenantId: input.tenantId,
+    requestId: input.requestId ?? null,
+    eventType: 'invoice_pdf_downloaded',
+    actorUserId: input.actorUserId,
+    summary: `Credit note PDF downloaded — ${cn.documentNumber.raw}`,
+    payload: {
+      credit_note_id: creditNoteId,
+      original_invoice_member_id: cn.originalInvoiceMemberId,
+      // Member arm is non-null by construction: the G-1 gate above already
+      // denied a member without actorMemberId.
+      actor_member_id:
+        input.actorRole === 'member' ? input.actorMemberId! : null,
+      actor_role: input.actorRole,
+      route: 'get-credit-note-pdf-signed-url',
+    },
+  });
+
   // Review fix IM-4 (2026-04-20) — wrap the signed-URL issuance in
   // try/catch. The Vercel Blob SDK throws `BlobNotFoundError` when the
   // key is missing (e.g., deleted by an orphan sweeper, migrated away,

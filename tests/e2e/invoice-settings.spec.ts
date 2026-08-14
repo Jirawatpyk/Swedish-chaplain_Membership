@@ -188,6 +188,22 @@ test.describe('@us4 tenant-invoice-settings', () => {
         .toBuffer();
     }
 
+    // ROOT CAUSE of the long-flaky AS2/AS4 block (debug probe, 2026-08-14):
+    // the file input is SSR-rendered before React hydrates, and
+    // `setInputFiles` right after `goto` fired a change event the
+    // un-hydrated element had no onChange for — the upload silently never
+    // started (#logo_status stayed pristine; AS4's waitForResponse waited
+    // forever). React attaches its `__reactProps$…` expando on hydration,
+    // so waiting for it guarantees the handler is live. An instrumented
+    // probe (evaluate round-trips before upload) masked the race, which is
+    // why the failure looked X-Tenant-specific — it never was.
+    async function waitForLogoInputHydrated(page: import('@playwright/test').Page): Promise<void> {
+      await page.waitForFunction(() => {
+        const el = document.querySelector('#logo_file');
+        return el !== null && Object.keys(el).some((k) => k.startsWith('__reactProps'));
+      });
+    }
+
     test('AS2 — upload 400×200 PNG → success toast + logo_blob_key stored + save persists', async ({
       page,
     }) => {
@@ -199,6 +215,7 @@ test.describe('@us4 tenant-invoice-settings', () => {
         await expect(page).toHaveURL(/\/admin\/settings\/invoicing/);
 
         const validPng = await makePng(400, 200);
+        await waitForLogoInputHydrated(page);
         await page.locator('input#logo_file').setInputFiles({
           name: 'logo.png',
           mimeType: 'image/png',
@@ -265,6 +282,7 @@ test.describe('@us4 tenant-invoice-settings', () => {
             r.request().method() === 'POST',
           { timeout: 75_000 },
         );
+        await waitForLogoInputHydrated(page);
         await page.locator('input#logo_file').setInputFiles({
           name: 'logo.svg',
           mimeType: 'image/svg+xml',
@@ -298,6 +316,7 @@ test.describe('@us4 tenant-invoice-settings', () => {
 
         // Width 2400 > MAX_WIDTH=2000 → dimensions_out_of_range.
         const oversizePng = await makePng(2400, 600);
+        await waitForLogoInputHydrated(page);
         await page.locator('input#logo_file').setInputFiles({
           name: 'too-wide.png',
           mimeType: 'image/png',
@@ -338,6 +357,7 @@ test.describe('@us4 tenant-invoice-settings', () => {
             r.request().method() === 'POST',
           { timeout: 75_000 },
         );
+        await waitForLogoInputHydrated(page);
         await page.locator('input#logo_file').setInputFiles({
           name: 'too-small.png',
           mimeType: 'image/png',
