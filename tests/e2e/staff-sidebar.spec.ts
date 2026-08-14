@@ -5,15 +5,18 @@ import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
 
-const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
-const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
+// Super admin since 016 D4: the Users active-state case needs /admin/users
+// to render AND the sidebar to carry the Users link — both super_admin-only
+// for the shipped nav (a plain admin has neither).
+const ADMIN_EMAIL = process.env.E2E_SUPER_ADMIN_EMAIL;
+const ADMIN_PASSWORD = process.env.E2E_SUPER_ADMIN_PASSWORD;
 
 test.describe.configure({ mode: 'serial' });
 
 test.describe('staff sidebar — US1/US2/US3', () => {
   test.skip(
     !ADMIN_EMAIL || !ADMIN_PASSWORD,
-    'Set E2E_ADMIN_EMAIL and E2E_ADMIN_PASSWORD',
+    'Set E2E_SUPER_ADMIN_EMAIL and E2E_SUPER_ADMIN_PASSWORD',
   );
 
   test.beforeAll(async () => {

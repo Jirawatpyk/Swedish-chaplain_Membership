@@ -15,13 +15,16 @@
  */
 import { expect, fillField, test } from './fixtures';
 
-const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
-const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
+// Super admin since 016 D4: the destructive buttons under test live on
+// /admin/users, which is `users.manage` = super_admin-only (a plain admin
+// now 404s there).
+const ADMIN_EMAIL = process.env.E2E_SUPER_ADMIN_EMAIL;
+const ADMIN_PASSWORD = process.env.E2E_SUPER_ADMIN_PASSWORD;
 
 test.describe('destructive-action confirmation (T120)', () => {
   test.skip(
     !ADMIN_EMAIL || !ADMIN_PASSWORD,
-    'Set E2E_ADMIN_EMAIL and E2E_ADMIN_PASSWORD to run',
+    'Set E2E_SUPER_ADMIN_EMAIL and E2E_SUPER_ADMIN_PASSWORD to run',
   );
 
   test('disable/enable/role-change opens ConfirmationDialog and Cancel dismisses it', async ({

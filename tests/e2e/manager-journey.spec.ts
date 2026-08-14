@@ -67,18 +67,26 @@ test.describe('Journey — manager read-only golden path across module seams @jo
       skipped.push('F4 invoice-detail read-only (no E2E_ISSUED_INVOICE_ID seed)');
     }
 
-    // --- F9 — dashboard + audit are viewable by a manager ---
+    // --- F9 — dashboard viewable; audit DENIED (016 D4: audit.read is
+    // super_admin-only — the manager grant was removed at the cutover) ---
     await gated('F9 dashboard', F9, async () => {
       await page.goto('/admin');
       await expect(page.getByRole('heading', { name: 'Dashboard', level: 1 })).toBeVisible({
         timeout: 10_000,
       });
     });
-    await gated('F9 audit log', F9, async () => {
-      await page.goto('/admin/audit');
-      await expect(page.getByRole('heading', { name: 'Audit log', level: 1 })).toBeVisible({
-        timeout: 10_000,
+    await gated('F9 audit log denied', F9, async () => {
+      // `notFound()` answers HTTP 200 on the dev server, so assert on the
+      // not-found marker (same idiom as the rbac persona walks).
+      const res = await page.context().request.get('/admin/audit', {
+        failOnStatusCode: false,
+        maxRedirects: 0,
       });
+      expect(res.status(), '/admin/audit must not 5xx for a manager').toBeLessThan(500);
+      expect([200, 404]).toContain(res.status());
+      expect(await res.text()).toMatch(
+        /<meta\s+name="next-error"\s+content="not-found"|NEXT_HTTP_ERROR_FALLBACK;404/,
+      );
     });
 
     // --- F8 — escalation queue is viewable but read-only (no action buttons; read-only note) ---

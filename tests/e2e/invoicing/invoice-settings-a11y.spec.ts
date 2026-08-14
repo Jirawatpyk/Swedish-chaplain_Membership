@@ -13,10 +13,11 @@
  *   5. FR-036 grouping + reachable Save — every section is a <fieldset><legend>
  *      and the Save button is reachable/visible at 320px.
  *
- * Preview-gated (mirrors the F4 E2E policy): needs an authenticated admin. The
- * page renders for admin + manager, but Save is admin-only, so this signs in as
- * the E2E admin. Graceful-skips when creds are absent; local dev may emit dev-only
- * 320px/target noise — the load-bearing verification for the FIXES is the RTL
+ * Preview-gated (mirrors the F4 E2E policy): needs an authenticated operator.
+ * Since 016 D4 the page is `settings.invoicing` = super_admin-ONLY (plain admin
+ * and manager 404), so this signs in as the E2E super admin. Graceful-skips when
+ * creds are absent; local dev may emit dev-only 320px/target noise — the
+ * load-bearing verification for the FIXES is the RTL
  * (`tests/unit/components/invoices/invoice-settings-form.test.tsx`) guard.
  */
 import AxeBuilder from '@axe-core/playwright';
@@ -25,8 +26,8 @@ import { expect, test } from '../fixtures';
 import { clearE2ERateLimits } from '../helpers/rate-limit';
 import { signInViaForm, waitForLayoutContainer } from '../helpers/layout';
 
-const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
-const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
+const ADMIN_EMAIL = process.env.E2E_SUPER_ADMIN_EMAIL;
+const ADMIN_PASSWORD = process.env.E2E_SUPER_ADMIN_PASSWORD;
 
 const AXE_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'] as const;
 const MIN_TARGET = 44;
@@ -45,7 +46,7 @@ async function expectTargetSize(locator: Locator, label: string): Promise<void> 
 }
 
 test.describe('088 invoice-settings form a11y @a11y @f088', () => {
-  test.skip(!ADMIN_EMAIL || !ADMIN_PASSWORD, 'E2E_ADMIN_* not set');
+  test.skip(!ADMIN_EMAIL || !ADMIN_PASSWORD, 'E2E_SUPER_ADMIN_* not set');
 
   test.beforeAll(async () => {
     await clearE2ERateLimits();

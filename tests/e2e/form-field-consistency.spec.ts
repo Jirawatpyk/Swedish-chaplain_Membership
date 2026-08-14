@@ -4,8 +4,11 @@
 import { expect, test } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
 
-const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
-const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
+// Super admin since 016 D4: this suite audits the form on
+// /admin/settings/invoicing, which is `settings.invoicing` = super_admin-only
+// (a plain admin now 404s there).
+const ADMIN_EMAIL = process.env.E2E_SUPER_ADMIN_EMAIL;
+const ADMIN_PASSWORD = process.env.E2E_SUPER_ADMIN_PASSWORD;
 
 test.describe('F4 SC-012 — form field consistency @layout', () => {
   test.skip(!ADMIN_EMAIL || !ADMIN_PASSWORD, 'E2E_ADMIN_* not set');
