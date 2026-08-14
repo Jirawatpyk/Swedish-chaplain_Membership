@@ -10,11 +10,12 @@
 # this run does not count. Thresholds that nothing evaluates are decoration;
 # this workflow is what makes them real.
 #
-# NIGHTLY + MANUAL, NOT PR-BLOCKING (yet). The full instrumented unit+contract
-# run costs tens of minutes — too slow for every PR push. It reports nightly;
-# a red run is a stop-the-line signal for the next working day. Promoting it
-# into the PR-blocking set is a branch-protection decision the maintainer owns
-# once the suite has a green streak.
+# PR-BLOCKING since 2026-08-14 (maintainer decision, first dispatch green):
+# the job also runs on every pull_request and its check is in the branch-
+# protection required set. COST: the full instrumented run adds ~30-40 min to
+# every PR's critical path — accepted in exchange for money-path pins that
+# can never silently rot again. The nightly schedule stays as the drift
+# tripwire for direct pushes and dependency-driven change.
 #
 # HERMETIC, same contract as quality-gates.yml: `pnpm test:coverage` runs
 # tests/unit + tests/contract only. With `.env.local` absent, tests/setup.ts
@@ -24,6 +25,7 @@
 name: Coverage thresholds (nightly)
 
 on:
+  pull_request:
   schedule:
     # 19:30 UTC = 02:30 Asia/Bangkok — after the other nightlies, before the
     # working day. (Native cron note in docs/runbooks/cron-jobs.md is about
