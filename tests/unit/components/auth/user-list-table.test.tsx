@@ -94,8 +94,10 @@ function renderTable(users: Users, opts: RenderOpts = {}) {
       <UserListTable
         users={users}
         currentUserId="current-viewer"
-        canManageAccounts={canManageAccounts}
-        canManageStaffRoles={canManageStaffRoles}
+        capabilities={{
+          manageAccounts: canManageAccounts,
+          manageStaffRoles: canManageStaffRoles,
+        }}
         now={now}
       />
     </NextIntlClientProvider>,

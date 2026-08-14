@@ -29,7 +29,10 @@ import { canPerform, requirePagePermission } from '@/lib/rbac';
  
 import { userRepo } from '@/modules/auth/infrastructure/db/user-repo';
 import { ROLES, USER_STATUSES, type Role, type UserStatus } from '@/modules/auth';
-import { UserListTable } from '@/components/auth/user-list-table';
+import {
+  UserListTable,
+  type UserAdminCapabilities,
+} from '@/components/auth/user-list-table';
 import { UsersFilters } from '@/components/auth/users-filters';
 import { InviteUserDialog } from '@/components/auth/invite-user-dialog';
 import { TablePagination } from '@/components/layout/table-pagination';
@@ -61,20 +64,14 @@ export default async function AdminUsersPage({
 }) {
   const { user: currentUser } = await requirePagePermission('users.manage');
   // Affordance decisions are permission-derived on the SERVER and threaded down
-  // as booleans (016 C1-affordance class): a `role === 'admin'` literal in the
-  // client would flip false the moment Migration C promotes admins to
-  // super_admin, silently rendering the page read-only for every human.
-  // - member-account lifecycle (disable/enable/resend/revoke) + invite:
-  //   users.member_accounts (mirrors the /api/auth/invite step-1 gate).
-  // - staff-role reassignment: users.manage (super-admin-only on the ON leg).
-  const canManageAccounts = canPerform(
-    currentUser.role,
-    'users.member_accounts',
-  );
-  const canManageStaffRoles = canPerform(
-    currentUser.role,
-    'users.manage',
-  );
+  // as one capability map (016 C1-affordance class + polish S-12): a
+  // `role === 'admin'` literal in the client would flip false the moment
+  // Migration C promotes admins to super_admin, silently rendering the page
+  // read-only for every human. Key rationale lives on `UserAdminCapabilities`.
+  const capabilities: UserAdminCapabilities = {
+    manageAccounts: canPerform(currentUser.role, 'users.member_accounts'),
+    manageStaffRoles: canPerform(currentUser.role, 'users.manage'),
+  };
   const t = await getTranslations('admin.users');
   const query = await searchParams;
   const rawPage = Number.parseInt(query.page ?? '1', 10);
@@ -99,7 +96,7 @@ export default async function AdminUsersPage({
           // 016 re-review D — the dialog launches POST /api/auth/invite, whose
           // step-1 gate is (users.member_accounts, auth:user write); mirror it
           // so the affordance enables exactly when the API would admit.
-          <InviteUserDialog disabled={!canManageAccounts} />
+          <InviteUserDialog disabled={!capabilities.manageAccounts} />
         }
       />
 
@@ -114,8 +111,7 @@ export default async function AdminUsersPage({
           */}
           <UsersDataSection
             currentUserId={currentUser.id}
-            canManageAccounts={canManageAccounts}
-            canManageStaffRoles={canManageStaffRoles}
+            capabilities={capabilities}
             page={page}
             {...(q !== undefined ? { q } : {})}
             {...(role !== undefined ? { role } : {})}
@@ -137,16 +133,14 @@ export default async function AdminUsersPage({
  */
 async function UsersDataSection({
   currentUserId,
-  canManageAccounts,
-  canManageStaffRoles,
+  capabilities,
   page,
   q,
   role,
   status,
 }: {
   currentUserId: string;
-  canManageAccounts: boolean;
-  canManageStaffRoles: boolean;
+  capabilities: UserAdminCapabilities;
   page: number;
   q?: string;
   role?: Role;
@@ -179,8 +173,7 @@ async function UsersDataSection({
           invitationExpiresAt: u.invitationExpiresAt,
         }))}
         currentUserId={currentUserId}
-        canManageAccounts={canManageAccounts}
-        canManageStaffRoles={canManageStaffRoles}
+        capabilities={capabilities}
         now={now}
       />
       <TablePagination page={page} pageSize={USERS_PAGE_SIZE} total={total} />

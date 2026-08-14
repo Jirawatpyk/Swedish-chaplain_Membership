@@ -666,6 +666,7 @@
           "not-found": "That user no longer exists. Refresh the list.",
           "invalid-role": "That isn't a role this system can assign.",
           "no-session": "Your session expired. Sign in again, then retry the role change.",
+          "invalid-input": "The request couldn't be read. Refresh the page and pick the role again.",
           "generic": "Couldn't change the role. Please try again."
         }
       },

@@ -58,23 +58,31 @@ interface UserRow {
   readonly invitationExpiresAt: Date | null;
 }
 
+/**
+ * The viewer's capability map for this surface (016 polish, S-12 — one object
+ * instead of two loose booleans threaded through every hop). Computed
+ * server-side via `canPerform` and threaded down — NEVER `role === 'admin'`
+ * in the client (016 C1-affordance class: that literal flips false the
+ * instant Migration C promotes admins to super_admin, silently rendering the
+ * whole page read-only for every human).
+ */
+export interface UserAdminCapabilities {
+  /**
+   * Member-account lifecycle actions (disable / enable / resend / revoke) —
+   * `users.member_accounts`, mirroring the /api/auth/invite step-1 gate.
+   */
+  readonly manageAccounts: boolean;
+  /**
+   * Staff-role reassignment — `users.manage`, super-admin-only. Gates the
+   * per-row "Change role" trigger.
+   */
+  readonly manageStaffRoles: boolean;
+}
+
 export interface UserListTableProps {
   readonly users: readonly UserRow[];
   readonly currentUserId: string;
-  /**
-   * Whether the viewer may run member-account lifecycle actions
-   * (disable / enable / resend / revoke). Computed server-side via
-   * `canPerform(role, 'users.member_accounts', …)` and threaded down as a
-   * boolean — NEVER `role === 'admin'` in the client (016 C1-affordance class:
-   * that literal flips false the instant Migration C promotes admins to
-   * super_admin, silently rendering the whole page read-only for every human).
-   */
-  readonly canManageAccounts: boolean;
-  /**
-   * Whether the viewer may change a staff member's ROLE — `users.manage`,
-   * super-admin-only on the ON leg. Gates the per-row "Change role" trigger.
-   */
-  readonly canManageStaffRoles: boolean;
+  readonly capabilities: UserAdminCapabilities;
   /**
    * "Now" used to compute the "expires in N days" hint — computed ONCE on
    * the server (see AdminUsersPage's `UsersDataSection`) and threaded down
@@ -119,8 +127,7 @@ function daysUntil(expiresAt: Date, now: Date): number {
 export function UserListTable({
   users,
   currentUserId,
-  canManageAccounts,
-  canManageStaffRoles,
+  capabilities: { manageAccounts: canManageAccounts, manageStaffRoles: canManageStaffRoles },
   now,
 }: UserListTableProps) {
   const t = useTranslations('admin.users');
@@ -389,6 +396,14 @@ export function UserListTable({
                   </div>
                 </TableCell>
                 <TableCell>
+                  {/* ≤md the text labels collapse to `sr-only` (016 polish,
+                      S5): a pending staff row carries THREE icon+text buttons
+                      and TableCell is whitespace-nowrap, so at small widths
+                      the full-text cluster pushed the actions column into the
+                      table region's horizontal scroll on every row. Icons
+                      stay, each button keeps its accessible name (the span is
+                      hidden visually, not from the tree), targets stay ≥
+                      WCAG 2.5.8's 24px. */}
                   <div className="flex items-center justify-end gap-2">
                     {canChangeRole ? (
                       <Button
@@ -401,7 +416,7 @@ export function UserListTable({
                         }}
                       >
                         <UserCogIcon className="size-4" aria-hidden />
-                        {t('actions.changeRole')}
+                        <span className="max-md:sr-only">{t('actions.changeRole')}</span>
                       </Button>
                     ) : null}
                     {canDisable ? (
@@ -412,7 +427,7 @@ export function UserListTable({
                         onClick={() => setPending({ kind: 'disable', user })}
                       >
                         <BanIcon className="size-4" aria-hidden />
-                        {t('actions.disable')}
+                        <span className="max-md:sr-only">{t('actions.disable')}</span>
                       </Button>
                     ) : null}
                     {canEnable ? (
@@ -423,7 +438,7 @@ export function UserListTable({
                         onClick={() => setPending({ kind: 'enable', user })}
                       >
                         <CircleCheckIcon className="size-4" aria-hidden />
-                        {t('actions.enable')}
+                        <span className="max-md:sr-only">{t('actions.enable')}</span>
                       </Button>
                     ) : null}
                     {canManageInvite ? (
@@ -434,7 +449,9 @@ export function UserListTable({
                         onClick={() => void handleResend(user)}
                       >
                         <MailIcon className="size-4" aria-hidden />
-                        {busy ? t('invite.submitting') : t('actions.resend')}
+                        <span className="max-md:sr-only">
+                          {busy ? t('invite.submitting') : t('actions.resend')}
+                        </span>
                       </Button>
                     ) : null}
                     {canManageInvite ? (
@@ -445,7 +462,7 @@ export function UserListTable({
                         onClick={() => setPending({ kind: 'revoke', user })}
                       >
                         <Trash2Icon className="size-4" aria-hidden />
-                        {t('actions.revoke')}
+                        <span className="max-md:sr-only">{t('actions.revoke')}</span>
                       </Button>
                     ) : null}
                     {!canDisable && !canEnable && !canManageInvite && !canChangeRole ? (
