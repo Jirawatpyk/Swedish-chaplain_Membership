@@ -78,6 +78,16 @@ export type TimelineFilter = {
    */
   readonly fromTs?: string;
   readonly toTs?: string;
+  /**
+   * 016 post-ship review finding #2 — when true the repo excludes money
+   * rows (invoice/payment sources, F4 audit event-type prefixes, and any
+   * payload with a money-shaped key at ANY depth) inside the SQL itself,
+   * so `total` and the keyset cursor are computed over the money-free
+   * set. Set by the use-case for viewers without `invoicing.read`; an
+   * app-layer-only filter leaked money-event counts, billing timestamps
+   * and document ref_ids through those two fields.
+   */
+  readonly excludeMoney?: boolean;
 };
 
 export type TimelineResult = {

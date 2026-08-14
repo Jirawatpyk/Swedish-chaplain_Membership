@@ -47,6 +47,18 @@ import type {
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/**
+ * SQL-side twin of the use-case's `MONEY_KEY_RE` (timeline-list.ts), matched
+ * case-insensitively (`~*`) against `payload::text`: a JSONB KEY ending in
+ * `_satang`/`_thb`, or containing `price`/`amount`, at any nesting depth.
+ * jsonb::text prints keys as `"key":` (no space before the colon) and string
+ * VALUES are never followed by a colon, so only keys can match. `[^"]*`
+ * cannot cross an escaped quote (the `"` byte itself terminates it), so a
+ * crafted value like `"note": "a \"price\" tag"` stays a non-match.
+ */
+const MONEY_KEY_TEXT_PATTERN =
+  '"[^"]*(_satang|_thb)"[[:space:]]*:|"[^"]*(price|amount)[^"]*"[[:space:]]*:';
+
 /** Raw `member_timeline_v` row shape (snake_case from `tx.execute`). */
 type ViewRow = {
   readonly ref_id: string;
@@ -124,6 +136,31 @@ export const drizzleTimelineRepo: TimelinePort = {
         if (filter.actorKind) conditions.push(sql`actor_kind = ${filter.actorKind}`);
         if (filter.fromTs) conditions.push(sql`occurred_at >= ${filter.fromTs}::timestamptz`);
         if (filter.toTs) conditions.push(sql`occurred_at <= ${filter.toTs}::timestamptz`);
+        if (filter.excludeMoney) {
+          // 016 post-ship review finding #2 — the money gate must live in the
+          // SQL, not only in the page projection: `total` is COUNTed below and
+          // the keyset cursor is built from the last SCANNED row, so an
+          // app-layer-only filter still disclosed money-event counts, billing
+          // timestamps and document ref_ids to viewers without
+          // `invoicing.read`. Three arms over-approximate the use-case's
+          // `carriesMoney`: whole money sources, F4 audit event-type
+          // prefixes, and a depth-UNLIMITED payload-key shape probe over the
+          // serialized JSONB — a key ending `_satang`/`_thb` or containing
+          // `price`/`amount` is money wherever it nests. Values cannot false-
+          // positive the regex: in jsonb::text output only KEYS are followed
+          // by a colon. COALESCE keeps NULL payloads includable (NOT over a
+          // NULL predicate would silently drop innocent rows).
+          conditions.push(sql`NOT (
+            source IN ('invoice', 'payment')
+            OR (source = 'audit' AND (
+                 starts_with(COALESCE(payload->>'event_type', ''), 'invoice_')
+              OR starts_with(COALESCE(payload->>'event_type', ''), 'credit_note_')
+              OR starts_with(COALESCE(payload->>'event_type', ''), 'refund_')
+              OR starts_with(COALESCE(payload->>'event_type', ''), 'payment_')
+            ))
+            OR COALESCE(payload::text, '') ~* ${MONEY_KEY_TEXT_PATTERN}
+          )`);
+        }
         const baseWhere = conditions.reduce(
           (acc, cond, i) => (i === 0 ? cond : sql`${acc} AND ${cond}`),
         );

@@ -109,6 +109,9 @@ describe('F9 US3 — multi-source timeline (T051, live Neon)', () => {
   let admin: TestUser;
   let seeded: SeededRenewalCycle;
   let memberId: string;
+  /** ref_ids of the seeded money rows (2 invoices + 1 payment) — the SQL
+   *  money exclusion must keep every one of them out of cursors. */
+  const moneyRefIds: string[] = [];
 
   beforeAll(async () => {
     admin = await createActiveTestUser('admin');
@@ -132,15 +135,15 @@ describe('F9 US3 — multi-source timeline (T051, live Neon)', () => {
 
     await runInTenant(tenant.ctx, async (tx) => {
       // invoice (occurred_at = issue_date 2026-06-01)
-      await tx.insert(invoices).values(
-        invoiceRow({
-          tenantId: tenant.ctx.slug,
-          memberId,
-          draftByUserId: admin.userId,
-          seq: 1,
-          issueDate: '2026-06-01',
-        }),
-      );
+      const inv1 = invoiceRow({
+        tenantId: tenant.ctx.slug,
+        memberId,
+        draftByUserId: admin.userId,
+        seq: 1,
+        issueDate: '2026-06-01',
+      });
+      moneyRefIds.push(inv1.invoiceId);
+      await tx.insert(invoices).values(inv1);
 
       // event + registration (occurred_at = event start_date 2026-06-02)
       await tx.insert(events).values({
@@ -171,9 +174,12 @@ describe('F9 US3 — multi-source timeline (T051, live Neon)', () => {
         seq: 2,
         issueDate: '2026-05-15',
       });
+      moneyRefIds.push(invForPayment.invoiceId);
       await tx.insert(invoices).values(invForPayment);
+      const paymentId = randomUUID();
+      moneyRefIds.push(paymentId);
       await tx.insert(payments).values({
-        id: randomUUID(),
+        id: paymentId,
         tenantId: tenant.ctx.slug,
         invoiceId: invForPayment.invoiceId,
         memberId,
@@ -329,6 +335,59 @@ describe('F9 US3 — multi-source timeline (T051, live Neon)', () => {
     }
     // The 2026-06-01 invoice + earlier renewal must be excluded.
     expect(r.value.events.some((e) => e.source === 'renewal')).toBe(false);
+  });
+
+  it('016 finding #2 — total and cursors carry no money signal for a viewer without invoicing.read', async () => {
+    const deps = buildMembersDeps(tenant.ctx);
+    const meta = { actorUserId: admin.userId, actorRole: 'marketing' as const, requestId: 'us3-money' };
+
+    // Paginate to exhaustion at limit=1 — the shape that leaked pre-fix:
+    // page 1 held a non-money row, so the app-layer drop subtracted nothing
+    // while the SQL COUNT still included every invoice/payment row, and each
+    // nextCursor was built from the last SCANNED (possibly money) row.
+    const collected: string[] = [];
+    const totals: number[] = [];
+    let cursor: string | undefined;
+    for (let page = 0; page < 25; page++) {
+      const r = await timelineList(
+        { memberId, limit: 1, ...(cursor !== undefined ? { cursor } : {}) },
+        meta,
+        tenant.ctx,
+        { memberRepo: deps.memberRepo, timeline: deps.timeline, invoicingRead: false },
+      );
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      totals.push(r.value.total);
+      for (const e of r.value.events) {
+        collected.push(e.id);
+        expect(['invoice', 'payment']).not.toContain(e.source);
+      }
+      if (r.value.nextCursor === null) break;
+      // The keyset cursor decodes to `<occurred_at>|<ref_id>` — it must never
+      // reference a money row (that was the timestamp/UUID disclosure).
+      const decoded = Buffer.from(r.value.nextCursor, 'base64url').toString('utf-8');
+      const ref = decoded.slice(decoded.indexOf('|') + 1);
+      expect(moneyRefIds).not.toContain(ref);
+      cursor = r.value.nextCursor;
+    }
+
+    // Every page's header count equals what the viewer can actually reach —
+    // the SQL COUNT ran over the money-free set (pre-fix: page 1 reported the
+    // full count, disclosing exactly how many money events exist).
+    expect(collected.length).toBeGreaterThan(0);
+    for (const t of totals) expect(t).toBe(collected.length);
+
+    // And the full-access view really does hold more rows (the exclusion is
+    // doing work, not passing vacuously).
+    const full = await timelineList(
+      { memberId, limit: 50 },
+      { actorUserId: admin.userId, actorRole: 'admin', requestId: 'us3-money-full' },
+      tenant.ctx,
+      { memberRepo: deps.memberRepo, timeline: deps.timeline, invoicingRead: true },
+    );
+    expect(full.ok).toBe(true);
+    if (!full.ok) return;
+    expect(full.value.total).toBeGreaterThan(collected.length);
   });
 
   it('AS-5 — a member with no source rows yields an empty stream, no error', async () => {
