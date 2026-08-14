@@ -80,8 +80,10 @@ export function buildDenialAudit(input: {
   readonly sourceIp: string | null;
 }): DenialAuditEvent {
   // Query strings routinely carry filter values (member ids, emails in search
-  // params); the trail records the ROUTE, never the arguments.
-  const path = input.routePath.split('?')[0] ?? input.routePath;
+  // params); the trail records the ROUTE, never the arguments. `!`: split with
+  // a non-empty separator always yields ≥1 element — the assertion only
+  // silences noUncheckedIndexedAccess, it is not a reachable fallback.
+  const path = input.routePath.split('?')[0]!;
   return {
     eventType: 'permission_denied',
     actorUserId: input.actorUserId as UserId,
@@ -138,7 +140,8 @@ const PCT_ENCODED_CRLF_RE = /%0[da]/i;
  */
 export function sanitiseRoutePath(raw: string | null | undefined): string {
   if (!raw) return '';
-  const path = raw.split('?')[0] ?? '';
+  // `!`: split always yields ≥1 element (see buildDenialAudit above).
+  const path = raw.split('?')[0]!;
   if (path.startsWith('//')) return '';
   if (PCT_ENCODED_CRLF_RE.test(path)) return '';
   return SAFE_ROUTE_PATH_RE.test(path) ? path : '';
