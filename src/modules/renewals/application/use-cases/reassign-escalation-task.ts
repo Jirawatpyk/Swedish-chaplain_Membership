@@ -42,7 +42,11 @@ export const reassignEscalationTaskInputSchema = z.object({
   toUserId: z.string().uuid(),
   // Round 5 I-9 close — UUID brand promise (see complete schema).
   actorUserId: z.string().uuid(),
-  actorRole: z.literal('admin'),
+  // 016 post-ship review finding #3 - accept the LITERAL staff role the
+  // `renewals.write` gate admits (admin | super_admin). z.literal('admin')
+  // forced routes to fabricate 'admin' for promoted super_admins,
+  // poisoning append-only money-path audit rows.
+  actorRole: z.enum(['admin', 'super_admin']),
   correlationId: z.string().min(1),
   requestId: z.string().nullable().optional(),
 });

@@ -63,7 +63,11 @@ export const updateSchedulePolicyInputSchema = z.object({
   tierBucket: z.enum(TIER_BUCKETS),
   steps: z.array(stepInputSchema).min(1).max(20),
   actorUserId: z.string().min(1),
-  actorRole: z.literal('admin'),
+  // 016 post-ship review finding #3 - accept the LITERAL staff role the
+  // `renewals.write` gate admits (admin | super_admin). z.literal('admin')
+  // forced routes to fabricate 'admin' for promoted super_admins,
+  // poisoning append-only money-path audit rows.
+  actorRole: z.enum(['admin', 'super_admin']),
   requestId: z.string().nullable().optional(),
   correlationId: z.string().min(1),
 });
