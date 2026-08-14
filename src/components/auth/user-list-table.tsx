@@ -15,6 +15,7 @@ import { toast } from 'sonner';
 import {
   BanIcon,
   CircleCheckIcon,
+  Loader2Icon,
   MailIcon,
   ShieldCheckIcon,
   Trash2Icon,
@@ -402,14 +403,20 @@ export function UserListTable({
                       the full-text cluster pushed the actions column into the
                       table region's horizontal scroll on every row. Icons
                       stay, each button keeps its accessible name (the span is
-                      hidden visually, not from the tree), targets stay ≥
-                      WCAG 2.5.8's 24px. */}
+                      hidden visually, not from the tree), and — because ≤md
+                      is exactly the touch context — the buttons grow to the
+                      ux-standards §9.1 ≥44px tappable size there
+                      (`max-md:h-11 max-md:min-w-11`; UX review I2). `title`
+                      gives narrow-desktop mouse users a native hover label
+                      while the text is collapsed. */}
                   <div className="flex items-center justify-end gap-2">
                     {canChangeRole ? (
                       <Button
                         size="sm"
                         variant="outline"
+                        className="max-md:h-11 max-md:min-w-11"
                         disabled={busy}
+                        title={t('actions.changeRole')}
                         onClick={() => {
                           setRoleChangeUser(user);
                           setRoleDialogOpen(true);
@@ -423,7 +430,9 @@ export function UserListTable({
                       <Button
                         size="sm"
                         variant="outline"
+                        className="max-md:h-11 max-md:min-w-11"
                         disabled={busy}
+                        title={t('actions.disable')}
                         onClick={() => setPending({ kind: 'disable', user })}
                       >
                         <BanIcon className="size-4" aria-hidden />
@@ -434,7 +443,9 @@ export function UserListTable({
                       <Button
                         size="sm"
                         variant="outline"
+                        className="max-md:h-11 max-md:min-w-11"
                         disabled={busy}
+                        title={t('actions.enable')}
                         onClick={() => setPending({ kind: 'enable', user })}
                       >
                         <CircleCheckIcon className="size-4" aria-hidden />
@@ -445,10 +456,21 @@ export function UserListTable({
                       <Button
                         size="sm"
                         variant="outline"
+                        className="max-md:h-11 max-md:min-w-11"
                         disabled={busy}
+                        title={t('actions.resend')}
                         onClick={() => void handleResend(user)}
                       >
-                        <MailIcon className="size-4" aria-hidden />
+                        {/* Spinner while THIS row's resend is in flight (UX
+                            review I3): with the label sr-only at ≤md, the
+                            label swap alone left no visible signal. `busy` is
+                            per-row (`busyId === user.id`), so this cannot
+                            animate other rows. */}
+                        {busy ? (
+                          <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden />
+                        ) : (
+                          <MailIcon className="size-4" aria-hidden />
+                        )}
                         <span className="max-md:sr-only">
                           {busy ? t('invite.submitting') : t('actions.resend')}
                         </span>
@@ -458,7 +480,9 @@ export function UserListTable({
                       <Button
                         size="sm"
                         variant="outline"
+                        className="max-md:h-11 max-md:min-w-11"
                         disabled={busy}
+                        title={t('actions.revoke')}
                         onClick={() => setPending({ kind: 'revoke', user })}
                       >
                         <Trash2Icon className="size-4" aria-hidden />

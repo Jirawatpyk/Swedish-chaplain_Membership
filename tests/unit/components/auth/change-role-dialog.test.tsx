@@ -427,26 +427,32 @@ describe('ChangeRoleDialog', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
-  it('S-10: last-admin-protection stays RETRYABLE — fixable in another tab, then retried here', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
-      ok: false,
-      status: 409,
-      json: async () => ({ error: 'last-admin-protection' }),
-    } as unknown as Response);
-    renderDialog();
+  it.each(['last-admin-protection', 'no-session'] as const)(
+    'S-10: %s stays RETRYABLE — its copy says fix the precondition, then retry',
+    async (code) => {
+      // last-admin-protection: promote another super_admin in a second tab.
+      // no-session: sign in again in a second tab (cookies are tab-shared).
+      // A dead Confirm would contradict the remedy each copy prescribes.
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+        ok: false,
+        status: code === 'no-session' ? 401 : 409,
+        json: async () => ({ error: code }),
+      } as unknown as Response);
+      renderDialog();
 
-    fireEvent.click(screen.getByRole('radio', { name: en.admin.users.filters.role.manager }));
-    fireEvent.click(screen.getByRole('button', { name: en.admin.users.changeRole.confirm }));
-    await waitFor(() =>
+      fireEvent.click(screen.getByRole('radio', { name: en.admin.users.filters.role.manager }));
+      fireEvent.click(screen.getByRole('button', { name: en.admin.users.changeRole.confirm }));
+      await waitFor(() =>
+        expect(
+          screen.getByText(en.admin.users.changeRole.errors[code]),
+        ).toBeInTheDocument(),
+      );
       expect(
-        screen.getByText(en.admin.users.changeRole.errors['last-admin-protection']),
-      ).toBeInTheDocument(),
-    );
-    expect(
-      screen.getByRole('button', { name: en.admin.users.changeRole.confirm }),
-      'the operator can promote another super_admin elsewhere and retry this exact change',
-    ).toBeEnabled();
-  });
+        screen.getByRole('button', { name: en.admin.users.changeRole.confirm }),
+        'the operator can fix the precondition elsewhere and retry this exact change',
+      ).toBeEnabled();
+    },
+  );
 
   it('S-10/S4: invalid-input gets its own permanent-failure copy, not "please try again"', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({

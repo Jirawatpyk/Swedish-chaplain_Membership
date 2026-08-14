@@ -123,15 +123,19 @@ function resolveErrorKey(code: string): (typeof KNOWN_ERROR_CODES)[number] | 'ge
 
 /**
  * Codes where re-clicking Confirm with the SAME selection can never succeed
- * (016 polish, S-10): the stale-row pair needs a refreshed list, the auth pair
- * needs a new session, and the two `invalid-*` codes need a code fix. While one
- * of these is on screen Confirm is disabled; picking a different role clears
- * the error (the RadioGroup's onValueChange) and revives it.
+ * (016 polish, S-10): the stale-row pair needs a refreshed list, `forbidden`
+ * needs a different OPERATOR, and the two `invalid-*` codes need a code fix.
+ * While one of these is on screen Confirm is disabled; picking a different
+ * role clears the error (the RadioGroup's onValueChange) and revives it.
  *
- * Deliberately ABSENT: `last-admin-protection` — the operator can promote
- * another super_admin in a second tab and then legitimately retry this exact
- * change; and the retryable pair (`server-error`/network → `generic`), where
- * "try again" is the advice.
+ * Deliberately ABSENT — codes whose own copy tells the operator to fix the
+ * precondition and RETRY, which a dead Confirm would contradict (UX review):
+ *  - `last-admin-protection`: promote another super_admin in a second tab,
+ *    then legitimately retry this exact change;
+ *  - `no-session`: its copy says "sign in again, then retry" — cookies are
+ *    tab-shared, so a second-tab sign-in makes this exact POST succeed;
+ *  - the retryable pair (`server-error`/network → `generic`), where "try
+ *    again" is the advice.
  */
 const NON_RETRYABLE_ERROR_CODES: ReadonlySet<string> = new Set([
   'same-role',
@@ -139,7 +143,6 @@ const NON_RETRYABLE_ERROR_CODES: ReadonlySet<string> = new Set([
   'forbidden',
   'not-found',
   'invalid-role',
-  'no-session',
   'invalid-input',
 ]);
 
