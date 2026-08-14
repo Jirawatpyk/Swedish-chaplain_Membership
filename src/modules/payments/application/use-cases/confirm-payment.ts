@@ -385,6 +385,10 @@ function invoiceStatusFromBridgeError(
     // still be named: `undefined` for them would mean auto-refund, and the
     // whole point of this switch is that no code reaches that outcome by
     // omission.
+    /* v8 ignore start — STRUCTURALLY UNREACHABLE: Step 2 early-returns for all
+     * four codes below, and the never-trap default cannot fire on a well-typed
+     * union. The arms MUST stay named anyway (I4 hardening): deleting one makes
+     * omission resolve `undefined` → silent auto-refund with a green typecheck. */
     case 'forbidden':
     case 'not_found':
     case 'corrupted_total':
@@ -398,6 +402,7 @@ function invoiceStatusFromBridgeError(
       void exhaustive;
       return undefined;
     }
+    /* v8 ignore stop */
   }
 }
 
@@ -1557,7 +1562,6 @@ async function confirmPaymentBody(
               // The marker was already stamped (Stripe retry idempotency; the
               // partial-unique index is the DB backstop). The Stripe refund DID
               // happen; the audit above is the durable money-trail.
-              /* v8 ignore next 5 -- ops warn on the rare marker-already-present race; unit tests don't wire deps.logger (mirrors the late-charge marker + Phase B siblings). */
               deps.logger?.warn('confirm_payment.auto_refund_marker_on_failed_guard_miss', {
                 tenantId: input.tenantId,
                 paymentId: payment.id,
@@ -1584,7 +1588,6 @@ async function confirmPaymentBody(
               // The marker was already stamped (Stripe retry idempotency; the
               // partial-unique index is the DB backstop). The Stripe refund DID
               // happen; the audit above is the durable money-trail.
-              /* v8 ignore next 5 -- ops warn on the rare marker-already-present race; unit tests don't wire deps.logger (mirrors the sub-case (ii) + Phase B siblings). */
               deps.logger?.warn('confirm_payment.auto_refund_flip_guard_miss', {
                 tenantId: input.tenantId,
                 paymentId: payment.id,
@@ -1833,7 +1836,6 @@ async function confirmPaymentBody(
           // regardless. The Stripe refund DID happen; the audit above is the
           // durable money-trail. Warn so ops can confirm the refund via the
           // runbook.
-          /* v8 ignore next 5 -- ops warn on the rare marker-already-present race; unit tests don't wire deps.logger (mirrors the stale Phase B siblings). */
           deps.logger?.warn('confirm_payment.late_charge_marker_guard_miss', {
             tenantId: input.tenantId,
             paymentId: payment.id,

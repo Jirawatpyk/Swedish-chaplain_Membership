@@ -104,6 +104,12 @@ function makeDeps(): ProcessWebhookEventDeps {
       succeededSumSatang: asSatang(100_000n),
       nextSeq: 1,
     })),
+    // F-9 (Task 9) — app-refund marker recognition. Only consulted when the
+    // event carries an `appRefundIds` marker; default `null` → the marker
+    // resolves nothing and the OOB forensic keeps firing (over-suppression
+    // is the dangerous direction — see f9-app-refund-recognition.test.ts).
+    findAwaitingAttachByAppRefundId: vi.fn(async () => null),
+    attachProcessorRefundId: vi.fn(async () => undefined),
   };
   const processorEventsRepo = {
     insertIfNew: vi.fn(async (_tx: unknown, input: { id: string }) => ({
@@ -1031,5 +1037,254 @@ describe('processWebhookEvent (T056)', () => {
     expect(result.error.kind).toBe('dispatch_threw');
     expect(result.error.subDetail).toBeNull();
     expect(result.error.permanence).toBe('transient');
+  });
+
+  // F5R1-E8 — the recovery-replay arm of the step-6 idempotency guard. A
+  // prior dispatch tx died mid-flight: the insertIfNew row committed (its
+  // own tx) but `processed_at` is still NULL because markProcessed only
+  // fires inside the dispatch tx. Without the `processedAt !== null` guard,
+  // every Stripe retry hits ON CONFLICT and silently reads `duplicate` —
+  // and the captured payment NEVER settles.
+  it('recovery replay — processedAt NULL re-runs the dispatch (NOT duplicate)', async () => {
+    const deps = makeDeps();
+    (deps.processorEventsRepo.insertIfNew as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      inserted: false,
+      event: {
+        id: 'evt_test_001',
+        tenantId: TENANT_ID,
+        eventType: 'payment_intent.succeeded',
+        apiVersion: PINNED_API,
+        livemode: false,
+        processorAccountId: 'acct_test_123',
+        receivedAt: new Date(),
+        processedAt: null, // ← the prior dispatch tx died mid-flight
+        outcome: 'processed',
+        payloadSha256: 'x'.repeat(64),
+        correlationId: 'corr_1',
+      },
+    });
+    const result = await processWebhookEvent(deps, makeInput());
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.kind).toBe('processed'); // NOT 'duplicate'
+    // The dispatch genuinely re-ran (idempotent sub-use-case) and the row
+    // finally got its processed_at.
+    expect(deps.invoicingBridge.markPaidFromProcessor).toHaveBeenCalledTimes(1);
+    expect(deps.processorEventsRepo.markProcessed).toHaveBeenCalledTimes(1);
+  });
+
+  // R5 canonical fix — the `'invoiceId' in result.value` false arm on all
+  // three payment-intent branches: `unknown_intent` carries no invoiceId,
+  // so the dispatcher must OMIT the key (route falls back to the broader
+  // revalidation pattern) rather than forwarding `invoiceId: undefined`.
+  it.each([
+    'payment_intent.succeeded',
+    'payment_intent.payment_failed',
+    'payment_intent.canceled',
+  ] as const)('%s for an unknown intent → processed WITHOUT invoiceId (key omitted)', async (eventType) => {
+    const deps = makeDeps();
+    (deps.paymentsRepo.lockForUpdateByPaymentIntentId as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      null,
+    );
+    const result = await processWebhookEvent(deps, makeInput(makeEvent({ type: eventType })));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.kind).toBe('processed');
+    expect('invoiceId' in result.value).toBe(false);
+    // The sub-use-case still folds markProcessed into its own tx so the
+    // processor_events row cannot get stuck across Stripe retries.
+    expect(deps.processorEventsRepo.markProcessed).toHaveBeenCalledTimes(1);
+    if (eventType === 'payment_intent.succeeded') {
+      // No payment row → no settlement: the invoice must not be flipped.
+      expect(deps.invoicingBridge.markPaidFromProcessor).not.toHaveBeenCalled();
+    }
+  });
+
+  // F5R2-TY-A — the E9 give-up path must surface as its OWN outcome kind.
+  // Pre-fix it fell through to the generic `processed` catch-all → ops
+  // dashboards saw a successful dispatch, masking the "Stripe stopped
+  // retrying — operator must reconcile via Stripe Dashboard" signal.
+  it('auto_refund_given_up propagates as its OWN outcome kind (not generic processed)', async () => {
+    const deps = makeDeps();
+    // Stale invoice (already paid) → confirmPayment enters the auto-refund
+    // branch; the Stripe refund call fails…
+    (deps.invoicingBridge.getInvoiceForPayment as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      ok({
+        id: 'inv_01JABCDE_XYZ',
+        status: 'paid' as const,
+        totalSatang: asSatang(5_350_000n),
+        memberId: 'mem_01J_MEM',
+        tenantId: TENANT_ID,
+      }),
+    );
+    (deps.processorGateway.createRefund as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      err({ kind: 'retryable', reason: 'timeout' }),
+    );
+    // …and the event is already past the 48h give-up ceiling (same
+    // createdAtUnixSeconds idiom as the T5 ceiling tests above).
+    const nowSeconds = Math.floor(deps.clock.nowMs() / 1000);
+    const event = makeEvent({ createdAtUnixSeconds: nowSeconds - 49 * 60 * 60 });
+    const result = await processWebhookEvent(deps, makeInput(event));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.kind).toBe('auto_refund_given_up');
+    if (result.value.kind !== 'auto_refund_given_up') return;
+    expect(result.value.dispatched).toBe('payment_intent.succeeded');
+    expect(result.value.invoiceId).toBe('inv_01JABCDE_XYZ');
+  });
+
+  // F-9 (Task 9) — the dispatcher must FORWARD the full recognition
+  // envelope (appRefundIds + paymentIntentId + amountProjectionFailed) into
+  // processChargeRefunded, and wire its logger through. Inverse of the
+  // existing OOB tests: a genuine app-initiated refund with a valid marker
+  // must NOT fire the 10-year out_of_band forensic. Conjunction shape per
+  // f9-app-refund-recognition.test.ts — absence alone is vacuously
+  // satisfiable by a stub, so the positive attach is asserted too.
+  it('charge.refunded with the full F-9 envelope + wired logger — recognised, NO false OOB forensic', async () => {
+    const logger = { warn: vi.fn(), error: vi.fn(), info: vi.fn() };
+    const deps = { ...makeDeps(), logger };
+    (deps.refundsRepo.findAwaitingAttachByAppRefundId as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      id: 'rfd_app_1',
+      paymentId: asPaymentId('pmt_01J_TEST'),
+      invoiceId: 'inv_01JABCDE_XYZ',
+      amountSatang: asSatang(100_000n),
+      status: 'pending' as const,
+      parentProcessorPaymentIntentId: 'pi_test_001',
+    });
+    const event = makeEvent({
+      type: 'charge.refunded',
+      dataObject: {
+        id: 'ch_f9',
+        type: 'charge',
+        refundIds: ['re_f9_1'],
+        // amountSatang OMITTED — the H-4 contract: when projection failed,
+        // the verifier drops the amount and sets the flag instead.
+        amountProjectionFailed: true,
+        appRefundIds: { re_f9_1: 'rfd_app_1' },
+        paymentIntentId: 'pi_test_001',
+      },
+    });
+    const result = await processWebhookEvent(deps, makeInput(event));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.kind).toBe('processed');
+    // Half 1 — the false forensic did NOT fire (inverse of the OOB tests).
+    const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+    expect(
+      auditCalls.some((c) => c[1].eventType === 'out_of_band_refund_detected'),
+    ).toBe(false);
+    // Half 2 — the POSITIVE effect: the exact re_ id was attached.
+    expect(deps.refundsRepo.attachProcessorRefundId).toHaveBeenCalledTimes(1);
+    expect(deps.refundsRepo.attachProcessorRefundId).toHaveBeenCalledWith(expect.anything(), {
+      refundId: 'rfd_app_1',
+      tenantId: TENANT_ID,
+      processorRefundId: 're_f9_1',
+    });
+  });
+
+  // F-9 (Task 9) — the refund.updated arm keys the marker by the Refund's
+  // OWN id (`appRefundIds[dataObject.id]`), unlike the charge arm's
+  // per-refund map walk. Same conjunction discipline as above.
+  it('refund.updated with the F-9 envelope keyed by the refund own id + wired logger — backfilled, OOB forensic ABSENT', async () => {
+    const logger = { warn: vi.fn(), error: vi.fn(), info: vi.fn() };
+    const deps = { ...makeDeps(), logger };
+    (deps.refundsRepo.findAwaitingAttachByAppRefundId as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      id: 'rfd_app_2',
+      paymentId: asPaymentId('pmt_01J_TEST'),
+      invoiceId: 'inv_01JABCDE_XYZ',
+      amountSatang: asSatang(100_000n),
+      status: 'pending' as const,
+      parentProcessorPaymentIntentId: 'pi_test_001',
+    });
+    const event = makeEvent({
+      type: 'refund.updated',
+      dataObject: {
+        id: 're_f9_ru',
+        type: 'refund',
+        latestChargeId: 'ch_f9_ru',
+        refundStatus: 'succeeded',
+        amountProjectionFailed: true,
+        appRefundIds: { re_f9_ru: 'rfd_app_2' },
+        paymentIntentId: 'pi_test_001',
+      },
+    });
+    const result = await processWebhookEvent(deps, makeInput(event));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.kind).toBe('processed');
+    const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+    expect(
+      auditCalls.some((c) => c[1].eventType === 'out_of_band_refund_detected'),
+    ).toBe(false);
+    expect(deps.refundsRepo.attachProcessorRefundId).toHaveBeenCalledTimes(1);
+    expect(deps.refundsRepo.attachProcessorRefundId).toHaveBeenCalledWith(expect.anything(), {
+      refundId: 'rfd_app_2',
+      tenantId: TENANT_ID,
+      processorRefundId: 're_f9_ru',
+    });
+  });
+
+  // F-9 positive control at the DISPATCHER seam — a marker map that does
+  // NOT name this refund's own id must not be forwarded as `appRefundId`,
+  // so the OOB forensic STILL fires. Over-suppression is the dangerous
+  // direction: the OOB alert exists to catch money leaving by an
+  // unauthorised route, and a loose key-lookup would let a Stripe-Dashboard
+  // actor mute their own alarm.
+  it('refund.updated with a marker map NOT naming this refund → OOB forensic STILL fires', async () => {
+    const logger = { warn: vi.fn(), error: vi.fn(), info: vi.fn() };
+    const deps = { ...makeDeps(), logger };
+    const event = makeEvent({
+      type: 'refund.updated',
+      dataObject: {
+        id: 're_f9_ru2',
+        type: 'refund',
+        latestChargeId: 'ch_f9_ru2',
+        refundStatus: 'succeeded',
+        amountSatang: asSatang(50_000n),
+        appRefundIds: { re_someone_else: 'rfd_x' }, // ← keyed by a DIFFERENT refund
+        paymentIntentId: 'pi_test_001',
+      },
+    });
+    const result = await processWebhookEvent(deps, makeInput(event));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.kind).toBe('processed');
+    const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+    const oobCall = auditCalls.find(
+      (c) => c[1].eventType === 'out_of_band_refund_detected',
+    );
+    expect(oobCall).toBeDefined();
+    expect(oobCall![1].payload.processor_refund_id).toBe('re_f9_ru2');
+    // No appRefundId was forwarded → the marker path was never consulted.
+    expect(deps.refundsRepo.findAwaitingAttachByAppRefundId).not.toHaveBeenCalled();
+    expect(deps.refundsRepo.attachProcessorRefundId).not.toHaveBeenCalled();
+  });
+
+  // F5R3v3 H-4 — when the verifier could not parse the dispute amount, the
+  // 10-year audit row must carry the 'projection_failed' sentinel, never a
+  // known-wrong '0' (a fabricated figure retained for a decade under RD
+  // §87 / GDPR Art. 6(1)(c) is worse than an honest "couldn't parse").
+  it('charge.dispute.created with amountProjectionFailed → amount_satang sentinel "projection_failed" not "0"', async () => {
+    const deps = makeDeps();
+    const event = makeEvent({
+      type: 'charge.dispute.created',
+      dataObject: {
+        id: 'dp_x',
+        type: 'dispute',
+        disputeId: 'dp_x',
+        latestChargeId: 'ch_real',
+        amountProjectionFailed: true,
+        // amountSatang OMITTED — the flag replaces it (H-4 contract).
+      },
+    });
+    const result = await processWebhookEvent(deps, makeInput(event));
+    expect(result.ok).toBe(true);
+    const auditCalls = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls;
+    const disputeCall = auditCalls.find((c) => c[1].eventType === 'dispute_created');
+    expect(disputeCall).toBeDefined();
+    expect(disputeCall?.[1].payload.amount_satang).toBe('projection_failed');
+    expect(disputeCall?.[1].payload.amount_satang).not.toBe('0');
+    // Retention pin — dispute rows are 10y (RD §87 / GDPR Art. 6(1)(c)).
+    expect(disputeCall?.[1].retentionYears).toBe(10);
   });
 });
