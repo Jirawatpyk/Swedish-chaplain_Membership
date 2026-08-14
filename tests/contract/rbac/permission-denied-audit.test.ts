@@ -13,6 +13,8 @@
  * `summary`), so role / permission_key / route_path are encoded in a
  * deterministic summary string that this test owns.
  */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import {
   buildDenialAudit,
@@ -444,6 +446,28 @@ describe('T017/I2 route-path sanitisation (denial trail cannot be forged)', () =
     expect(await freshPathFromHeaders()).toBe('/admin/renewals');
     vi.doUnmock('next/headers');
     vi.resetModules();
+  });
+
+  /**
+   * Security-review test-gap #1 (2026-08-14) — the clamp is only sound while
+   * it matches the proxy matcher's `missing:` rules EXACTLY: the proxy skips
+   * (and therefore does not overwrite `x-pathname` on) precisely the requests
+   * carrying these markers, so the clamp must key on the same two. A change
+   * to either file without the other silently reopens the forgery window.
+   * This tripwire fails on ANY drift in either direction.
+   */
+  it('the clamp markers stay in lockstep with the proxy matcher missing-rules', () => {
+    const proxySrc = readFileSync(join(process.cwd(), 'src', 'proxy.ts'), 'utf-8');
+    const missingBlock = /missing:\s*\[([\s\S]*?)\]/.exec(proxySrc)?.[1] ?? '';
+    const proxyMarkers = [...missingBlock.matchAll(/\{ type: 'header', key: '([^']+)'(?:, value: '([^']+)')? \}/g)]
+      .map((m) => (m[2] ? `${m[1]}:${m[2]}` : m[1]!))
+      .sort();
+    expect(proxyMarkers).toEqual(['next-router-prefetch', 'purpose:prefetch']);
+
+    const rbacSrc = readFileSync(join(process.cwd(), 'src', 'lib', 'rbac.ts'), 'utf-8');
+    expect(rbacSrc).toMatch(
+      /h\.get\('next-router-prefetch'\) !== null \|\| h\.get\('purpose'\) === 'prefetch'/,
+    );
   });
 
   // Keep a reference so the top-level import is not flagged unused when the

@@ -119,7 +119,7 @@ export async function skipEscalationTask(
           {
             tenantId: input.tenantId,
             actorUserId: input.actorUserId,
-            actorRole: 'admin',
+            actorRole: input.actorRole,
             correlationId: input.correlationId,
             requestId: input.requestId ?? null,
           },

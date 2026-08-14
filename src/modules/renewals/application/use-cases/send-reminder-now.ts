@@ -114,7 +114,7 @@ export async function sendReminderNow(
     const outcome = await dispatchOneCycle(deps, candidate, {
       tenantId: input.tenantId,
       actorUserId: input.actorUserId,
-      actorRole: 'admin',
+      actorRole: input.actorRole,
       correlationId: input.correlationId,
       requestId: input.requestId ?? null,
       nowIso,

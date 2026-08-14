@@ -230,6 +230,26 @@ describe('F9 US3 — multi-source timeline (T051, live Neon)', () => {
       payload: { member_id: memberId, fields_changed: ['company_name'] },
       timestamp: new Date('2026-06-05T10:00:00.000Z'),
     });
+
+    // Financial-review test-add #2 — a money row detectable ONLY by the SQL
+    // shape-probe regex arm: event name matches no MONEY_AUDIT_PREFIXES,
+    // source is 'audit' (not a money source), but the payload carries
+    // `frozen_price_thb`. Placed mid-stream (2026-06-04T12:00) so limit=1
+    // pagination in the money-exclusion test would walk straight through it
+    // — its ref_id landing in a cursor is exactly the leak.
+    const shapeOnlyMoney = await db
+      .insert(auditLog)
+      .values({
+        eventType: 'renewal_auto_drafted',
+        actorUserId: admin.userId,
+        summary: 'synthetic renewal_auto_drafted (shape-only money)',
+        requestId: `tl-${randomUUID()}`,
+        tenantId: tenant.ctx.slug,
+        payload: { member_id: memberId, cycle_id: randomUUID(), frozen_price_thb: 25000 },
+        timestamp: new Date('2026-06-04T12:00:00.000Z'),
+      })
+      .returning({ id: auditLog.id });
+    moneyRefIds.push(shapeOnlyMoney[0]!.id);
   }, 180_000);
 
   afterAll(async () => {

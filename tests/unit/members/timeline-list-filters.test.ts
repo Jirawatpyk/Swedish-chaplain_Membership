@@ -471,4 +471,31 @@ describe('timelineList — money is gated on invoicing.read (security I-1)', () 
     // minimal and the repo predicate keys on truthiness.
     expect('excludeMoney' in (captured.filter ?? {})).toBe(false);
   });
+
+  /**
+   * Divergence-freeze pin (financial review 2026-08-14) — the app-side
+   * prefix arm applies to EVERY source's eventType, while the SQL twin
+   * scopes the same prefixes to source='audit'. That is a superset only
+   * while no non-audit eventType (a status value from the view) starts
+   * with a money prefix: a future status like `payment_pending` on the
+   * renewal source would be dropped app-side but kept by SQL — total and
+   * cursor would leak again. Enforce the condition instead of trusting it.
+   */
+  it('no renewal cycle status collides with a money audit prefix (SQL⊇app stays true)', async () => {
+    const { MONEY_AUDIT_PREFIXES } = await import(
+      '@/modules/members/application/use-cases/timeline-list'
+    );
+    const { CYCLE_STATUSES } = await import(
+      '@/modules/renewals/domain/value-objects/cycle-status'
+    );
+    for (const status of CYCLE_STATUSES) {
+      for (const prefix of MONEY_AUDIT_PREFIXES) {
+        expect(
+          status.startsWith(prefix),
+          `renewal status '${status}' collides with money prefix '${prefix}' — ` +
+            'scope the SQL prefix arm beyond audit or rename the status',
+        ).toBe(false);
+      }
+    }
+  });
 });

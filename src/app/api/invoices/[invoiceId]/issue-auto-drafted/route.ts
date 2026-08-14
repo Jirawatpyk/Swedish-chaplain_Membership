@@ -174,6 +174,9 @@ export async function POST(
       tenantId: tenantCtx.slug,
       invoiceId,
       actorUserId: ctx.current.user.id,
+      // rbac-narrow-ok: stamps the LITERAL role into the audit row; the
+      // gate above already decided admission (016 post-ship B-1).
+      actorRole: ctx.current.user.role === 'super_admin' ? 'super_admin' : 'admin',
       // A definite send-vs-silent choice, threaded verbatim — never a
       // fallback default. See the module header + `IssueAutoDraftedRenewalInput.sendEmail`'s own docstring.
       sendEmail: parsed.data.sendEmail,

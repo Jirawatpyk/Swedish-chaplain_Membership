@@ -389,7 +389,7 @@ export async function acceptTierUpgrade(
         {
           tenantId: input.tenantId,
           actorUserId: input.actorUserId,
-          actorRole: 'admin',
+          actorRole: input.actorRole,
           correlationId: input.correlationId,
           requestId: input.requestId ?? null,
         },
@@ -414,7 +414,7 @@ export async function acceptTierUpgrade(
           {
             tenantId: input.tenantId,
             actorUserId: input.actorUserId,
-            actorRole: 'admin',
+            actorRole: input.actorRole,
             correlationId: input.correlationId,
             requestId: input.requestId ?? null,
           },
@@ -556,7 +556,7 @@ export async function acceptTierUpgrade(
     const auditCtx = {
       tenantId: input.tenantId,
       actorUserId: input.actorUserId,
-      actorRole: 'admin' as const,
+      actorRole: input.actorRole,
       correlationId: input.correlationId,
       requestId: input.requestId ?? null,
     };

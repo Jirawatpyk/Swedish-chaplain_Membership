@@ -295,6 +295,7 @@ describe('107-auto-invoice Task 9 — issueAutoDraftedRenewal (live Neon)', () =
       tenantId: tenant.ctx.slug,
       invoiceId,
       actorUserId: user.userId,
+      actorRole: 'admin' as const,
       sendEmail: false,
       requestId: null,
     });
@@ -327,6 +328,7 @@ describe('107-auto-invoice Task 9 — issueAutoDraftedRenewal (live Neon)', () =
       tenantId: tenant.ctx.slug,
       invoiceId,
       actorUserId: user.userId,
+      actorRole: 'admin' as const,
       sendEmail: true,
       requestId: null,
     });
@@ -342,6 +344,7 @@ describe('107-auto-invoice Task 9 — issueAutoDraftedRenewal (live Neon)', () =
       tenantId: tenant.ctx.slug,
       invoiceId,
       actorUserId: user.userId,
+      actorRole: 'admin' as const,
       sendEmail: true,
       requestId: null,
     });
@@ -379,6 +382,7 @@ describe('107-auto-invoice Task 9 — issueAutoDraftedRenewal (live Neon)', () =
       tenantId: tenant.ctx.slug,
       invoiceId,
       actorUserId: user.userId,
+      actorRole: 'admin' as const,
       sendEmail: false,
       requestId: null,
     });
@@ -424,6 +428,7 @@ describe('107-auto-invoice Task 9 — issueAutoDraftedRenewal (live Neon)', () =
       tenantId: tenant.ctx.slug,
       invoiceId,
       actorUserId: user.userId,
+      actorRole: 'admin' as const,
       sendEmail: false,
       requestId: null,
     });
@@ -479,6 +484,7 @@ describe('107-auto-invoice Task 9 — issueAutoDraftedRenewal (live Neon)', () =
       tenantId: tenant.ctx.slug,
       invoiceId: manualDraft.invoiceId,
       actorUserId: user.userId,
+      actorRole: 'admin' as const,
       sendEmail: false,
       requestId: null,
     });
@@ -506,6 +512,7 @@ describe('107-auto-invoice Task 9 — issueAutoDraftedRenewal (live Neon)', () =
       tenantId: tenant.ctx.slug,
       invoiceId: ownerA.invoiceId,
       actorUserId: user.userId,
+      actorRole: 'admin' as const,
       sendEmail: false,
       requestId: null,
     });
@@ -529,6 +536,7 @@ describe('107-auto-invoice Task 9 — issueAutoDraftedRenewal (live Neon)', () =
       tenantId: tenant.ctx.slug,
       invoiceId: drift.invoiceId,
       actorUserId: user.userId,
+      actorRole: 'admin' as const,
       sendEmail: false,
       requestId: null,
     });
@@ -564,6 +572,7 @@ describe('107-auto-invoice Task 9 — issueAutoDraftedRenewal (live Neon)', () =
       tenantId: tenant.ctx.slug,
       invoiceId: planDrift.invoiceId,
       actorUserId: user.userId,
+      actorRole: 'admin' as const,
       sendEmail: false,
       requestId: null,
     });
@@ -588,6 +597,7 @@ describe('107-auto-invoice Task 9 — issueAutoDraftedRenewal (live Neon)', () =
       tenantId: tenant.ctx.slug,
       invoiceId,
       actorUserId: user.userId,
+      actorRole: 'admin' as const,
       sendEmail: false,
       requestId: null,
     });
@@ -739,6 +749,7 @@ describe('107-auto-invoice Task 9 — issueAutoDraftedRenewal (live Neon)', () =
         tenantId: tenant.ctx.slug,
         invoiceId: d1,
         actorUserId: user.userId,
+        actorRole: 'admin' as const,
         sendEmail: false,
         requestId: null,
       }),
@@ -746,6 +757,7 @@ describe('107-auto-invoice Task 9 — issueAutoDraftedRenewal (live Neon)', () =
         tenantId: tenant.ctx.slug,
         invoiceId: d2,
         actorUserId: user.userId,
+        actorRole: 'admin' as const,
         sendEmail: false,
         requestId: null,
       }),
@@ -789,6 +801,7 @@ describe('107-auto-invoice Task 9 — issueAutoDraftedRenewal (live Neon)', () =
       tenantId: tenant.ctx.slug,
       invoiceId,
       actorUserId: user.userId,
+      actorRole: 'admin' as const,
       sendEmail: false,
       requestId: null,
     });
@@ -837,6 +850,7 @@ describe('107-auto-invoice Task 9 — issueAutoDraftedRenewal (live Neon)', () =
       tenantId: tenant.ctx.slug,
       invoiceId,
       actorUserId: user.userId,
+      actorRole: 'admin' as const,
       sendEmail: false,
       requestId: null,
     });
@@ -947,6 +961,7 @@ describe('107-auto-invoice Task 9 — issueAutoDraftedRenewal (live Neon)', () =
       tenantId: tenant.ctx.slug,
       invoiceId,
       actorUserId: user.userId,
+      actorRole: 'admin' as const,
       sendEmail: false,
       requestId: null,
     });
@@ -999,6 +1014,7 @@ describe('107-auto-invoice Task 9 — issueAutoDraftedRenewal (live Neon)', () =
       tenantId: tenant.ctx.slug,
       invoiceId,
       actorUserId: user.userId,
+      actorRole: 'admin' as const,
       sendEmail: false,
       requestId: null,
     });
@@ -1070,6 +1086,7 @@ describe('107-auto-invoice Task 9 — issueAutoDraftedRenewal (live Neon)', () =
       tenantId: tenant.ctx.slug,
       invoiceId,
       actorUserId: user.userId,
+      actorRole: 'admin' as const,
       sendEmail: false,
       requestId: null,
     });
@@ -1133,6 +1150,7 @@ describe('107-auto-invoice Task 9 — issueAutoDraftedRenewal (live Neon)', () =
       tenantId: tenant.ctx.slug,
       invoiceId,
       actorUserId: user.userId,
+      actorRole: 'admin' as const,
       sendEmail: false,
       requestId: null,
     });
@@ -1204,6 +1222,7 @@ describe('107-auto-invoice Task 9 — issueAutoDraftedRenewal (live Neon)', () =
         tenantId: tenant.ctx.slug,
         invoiceId: peerRow.invoiceId,
         actorUserId: user.userId,
+        actorRole: 'admin' as const,
         sendEmail: false,
         requestId: null,
       });
@@ -1262,6 +1281,7 @@ describe('107-auto-invoice Task 9 — issueAutoDraftedRenewal (live Neon)', () =
       tenantId: tenant.ctx.slug,
       invoiceId: aInvoiceId,
       actorUserId: user.userId,
+      actorRole: 'admin' as const,
       sendEmail: false,
       requestId: null,
     });

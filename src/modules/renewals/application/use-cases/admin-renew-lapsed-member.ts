@@ -46,8 +46,9 @@
  *      adapter's `WHERE (linked_invoice_id IS NULL OR = $1)` guard close
  *      the orphan race. Emit `renewal_invoice_created`.
  *
- * RBAC: admin-only (`action='write'` at the route — manager 403). The
- * use-case input carries `actorRole:'admin'`; the route enforces the role
+ * RBAC: admin-tier (`action='write'` at the route — manager 403). The
+ * use-case input carries the LITERAL staff role (admin | super_admin,
+ * B-1) and threads it into every audit emit; the route enforces the role
  * via `requireRenewalAdminContext(request, 'write')`.
  *
  * Coverage policy: Constitution Principle II — 100% branch coverage
@@ -425,7 +426,7 @@ export async function adminRenewLapsedMember(
         planId: member.planId,
         startStatus: 'awaiting_payment',
         actorUserId: input.actorUserId,
-        actorRole: 'admin',
+        actorRole: input.actorRole,
         correlationId: input.correlationId,
       });
       if (outcome.kind === 'skipped_active_exists') {
@@ -732,7 +733,7 @@ export async function adminRenewLapsedMember(
         {
           tenantId: input.tenantId,
           actorUserId: input.actorUserId,
-          actorRole: 'admin',
+          actorRole: input.actorRole,
           correlationId: input.correlationId,
           requestId: input.requestId ?? null,
         },
@@ -766,7 +767,7 @@ export async function adminRenewLapsedMember(
         {
           tenantId: input.tenantId,
           actorUserId: input.actorUserId,
-          actorRole: 'admin',
+          actorRole: input.actorRole,
           correlationId: input.correlationId,
           requestId: input.requestId ?? null,
         },

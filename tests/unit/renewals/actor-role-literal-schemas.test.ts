@@ -10,6 +10,8 @@
  * and pins the exclusions so the widening never drifts into roles the gate
  * does not admit (manager / marketing / member).
  */
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { adminReactivateLapsedCycleInputSchema } from '@/modules/renewals/application/use-cases/admin-reactivate-lapsed-cycle';
 import { escalateTierUpgradeInputSchema } from '@/modules/renewals/application/use-cases/escalate-tier-upgrade';
@@ -25,6 +27,9 @@ import { snoozeAtRiskMemberInputSchema } from '@/modules/renewals/application/us
 import { sendReminderNowInputSchema } from '@/modules/renewals/application/use-cases/send-reminder-now';
 import { skipEscalationTaskInputSchema } from '@/modules/renewals/application/use-cases/skip-escalation-task';
 import { updateSchedulePolicyInputSchema } from '@/modules/renewals/application/use-cases/update-schedule-policy';
+import { discardAutoDraftedRenewalInputSchema } from '@/modules/renewals/application/use-cases/discard-auto-drafted-renewal';
+import { bulkSendRenewalReminderInputSchema } from '@/modules/renewals/application/use-cases/bulk-send-renewal-reminder';
+import { issueAutoDraftedRenewalInputSchema } from '@/modules/renewals/application/use-cases/issue-auto-drafted-renewal';
 
 const SCHEMAS = [
   ['admin-reactivate-lapsed-cycle', adminReactivateLapsedCycleInputSchema],
@@ -41,6 +46,11 @@ const SCHEMAS = [
   ['send-reminder-now', sendReminderNowInputSchema],
   ['skip-escalation-task', skipEscalationTaskInputSchema],
   ['update-schedule-policy', updateSchedulePolicyInputSchema],
+  // Financial-review B-1 follow-through — three more staff-actor mutation
+  // schemas widened after the body sweep exposed them:
+  ['discard-auto-drafted-renewal', discardAutoDraftedRenewalInputSchema],
+  ['bulk-send-renewal-reminder', bulkSendRenewalReminderInputSchema],
+  ['issue-auto-drafted-renewal', issueAutoDraftedRenewalInputSchema],
 ] as const;
 
 describe('renewals mutation schemas — actorRole accepts the literal staff role (finding #3)', () => {
@@ -53,5 +63,57 @@ describe('renewals mutation schemas — actorRole accepts the literal staff role
         false,
       );
     }
+  });
+});
+
+/**
+ * Financial-review B-1 (2026-08-14) — the schema widen alone proved NOTHING:
+ * 13 of 14 use-case bodies discarded `input.actorRole` and hardcoded
+ * `actorRole: 'admin'` into the append-only audit-emit context, so every
+ * emit still lied about the actor while 1,672 tests stayed green. This
+ * tripwire reads every renewals use-case SOURCE file and fails on any
+ * STAFF-role literal in an actorRole/actor_role position — the only
+ * legitimate remaining literals are non-staff actor kinds ('cron',
+ * 'system', 'webhook', 'member') and the two documented cron-REPLAY sites
+ * in reconcile-pending-reactivations (the original actor's role was never
+ * persisted; fixing those needs a data-model change, not a threading fix).
+ */
+describe('no use-case body hardcodes a staff actor role (B-1 tripwire)', () => {
+  it('every staff-role literal outside the documented replay sites is gone', () => {
+    const root = join(
+      process.cwd(),
+      'src', 'modules', 'renewals', 'application', 'use-cases',
+    );
+    const files: string[] = [];
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir)) {
+        const p = join(dir, entry);
+        if (statSync(p).isDirectory()) walk(p);
+        else if (p.endsWith('.ts')) files.push(p);
+      }
+    };
+    walk(root);
+    expect(files.length).toBeGreaterThan(30); // the walker actually walked
+
+    // `(?!\s*\|)` skips TYPE-union annotations (`actorRole: 'admin' |
+    // 'super_admin'`) — only VALUE positions are stamps.
+    const STAFF_LITERAL = /actor_?[Rr]ole:\s*'(admin|manager|super_admin)'(?!\s*\|)/g;
+    const offenders: string[] = [];
+    for (const file of files) {
+      const src = readFileSync(file, 'utf-8');
+      STAFF_LITERAL.lastIndex = 0;
+      for (const m of src.matchAll(STAFF_LITERAL)) {
+        offenders.push(`${file.slice(root.length + 1)}: ${m[0]}`);
+      }
+    }
+
+    // The ONLY accepted survivors: reconcile-pending-reactivations' two
+    // cron-replay emits (role-at-decision-time was never persisted — see the
+    // KNOWN LIMIT comment there). Anything else is the B-1 class returning.
+    const accepted = offenders.filter((o) =>
+      o.startsWith('reconcile-pending-reactivations.ts'),
+    );
+    expect(accepted).toHaveLength(2);
+    expect(offenders.filter((o) => !accepted.includes(o))).toEqual([]);
   });
 });

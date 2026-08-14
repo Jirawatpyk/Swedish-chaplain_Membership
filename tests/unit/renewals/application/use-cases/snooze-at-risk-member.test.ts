@@ -112,6 +112,23 @@ describe('snoozeAtRiskMember (T155)', () => {
     expect(r.ok).toBe(true);
   });
 
+  it('016 post-ship B-1 — the emit ctx carries the INPUT role, never a hardcoded admin', async () => {
+    // The schema widen alone proved nothing: the body used to discard
+    // input.actorRole and stamp 'admin' into the append-only ctx. Feed
+    // super_admin end-to-end and read the ctx the emitter actually received.
+    const { deps, emitInTxMock } = fakeDeps({ previousValue: false, affectedRows: 1 });
+    const r = await snoozeAtRiskMember(deps, {
+      ...baseInput,
+      actorRole: 'super_admin' as const,
+    });
+    expect(r.ok).toBe(true);
+    expect(emitInTxMock).toHaveBeenCalledOnce();
+    expect(emitInTxMock.mock.calls[0]?.[2]).toMatchObject({
+      actorRole: 'super_admin',
+      actorUserId: 'admin-1',
+    });
+  });
+
   it('happy path — 90d snooze', async () => {
     const { deps, emitInTxMock } = fakeDeps({
       previousValue: false,

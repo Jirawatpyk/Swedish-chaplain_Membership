@@ -143,7 +143,12 @@ const MONEY_SOURCES: ReadonlySet<string> = new Set(['invoice', 'payment']);
  * (`old_price_thb` / `new_price_thb`) and `renewal_invoice_created`
  * (`total_satang`) all carry `member_id` plus a price and match none of them.
  */
-const MONEY_AUDIT_PREFIXES = ['invoice_', 'credit_note_', 'refund_', 'payment_'] as const;
+// Exported for the divergence-freeze pin in timeline-list-filters.test.ts
+// (financial review 2026-08-14): the app applies these prefixes to EVERY
+// source's eventType while the SQL twin scopes them to source='audit' — a
+// superset that holds only while no non-audit status value starts with one
+// of these. The pin freezes that condition instead of trusting it.
+export const MONEY_AUDIT_PREFIXES = ['invoice_', 'credit_note_', 'refund_', 'payment_'] as const;
 
 /**
  * Money identified by the SHAPE of the payload rather than the name of the

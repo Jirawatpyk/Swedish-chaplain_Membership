@@ -53,6 +53,10 @@ export const discardAutoDraftedRenewalInputSchema = z.object({
   tenantId: z.string().min(1),
   invoiceId: z.string().uuid(),
   actorUserId: z.string().min(1),
+  // 016 post-ship B-1 — the LITERAL staff role the gate admits, threaded
+  // into every audit emit below (a hardcoded 'admin' misattributed every
+  // post-Migration-C discard).
+  actorRole: z.enum(['admin', 'super_admin']),
   requestId: z.string().nullable().optional(),
 });
 
@@ -132,7 +136,7 @@ export async function discardAutoDraftedRenewal(
         {
           tenantId: input.tenantId,
           actorUserId: input.actorUserId,
-          actorRole: 'admin',
+          actorRole: input.actorRole,
           correlationId: input.invoiceId,
           requestId,
         },

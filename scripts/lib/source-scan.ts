@@ -273,9 +273,12 @@ export function markerApplies(
   // marker that was itself inside the string — the exact string-constant
   // hole this function's docstring claims closed. Strings survive stripping
   // verbatim, so "in the raw line but not in the stripped line" is exactly
-  // "comment-hosted". When the caller did not supply codeLines, strip this
-  // one line in place (single-line contexts only, which is all the same-line
-  // arm can ever see).
+  // "comment-hosted". Known edge (security review 2026-08-14, accepted): a
+  // line carrying the marker in BOTH a string and a trailing comment is
+  // rejected — fail-CLOSED (a loud false finding, never a bypass); reword
+  // the string or move the marker above. When the caller did not supply
+  // codeLines, strip this one line in place (single-line contexts only,
+  // which is all the same-line arm can ever see).
   const codeLine = codeLines?.[index] ?? stripCommentLines(line)[0] ?? '';
   if (hosts(line) && !hosts(codeLine)) return true;
 

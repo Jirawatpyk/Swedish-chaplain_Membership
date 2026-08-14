@@ -51,10 +51,12 @@ const UUID_RE =
  * SQL-side twin of the use-case's `MONEY_KEY_RE` (timeline-list.ts), matched
  * case-insensitively (`~*`) against `payload::text`: a JSONB KEY ending in
  * `_satang`/`_thb`, or containing `price`/`amount`, at any nesting depth.
- * jsonb::text prints keys as `"key":` (no space before the colon) and string
- * VALUES are never followed by a colon, so only keys can match. `[^"]*`
- * cannot cross an escaped quote (the `"` byte itself terminates it), so a
- * crafted value like `"note": "a \"price\" tag"` stays a non-match.
+ * jsonb::text prints keys as `"key":` (no space before the colon) and plain
+ * string VALUES are never followed by a colon, so ordinary values cannot
+ * match. Known over-match (financial review 2026-08-14, accepted): a string
+ * VALUE that itself quotes JSON (`"summary": "... \"price\": 100 ..."`) can
+ * match the pattern — that direction is fail-CLOSED (one innocent row hidden
+ * from a viewer who holds no money permission anyway), never a leak.
  */
 const MONEY_KEY_TEXT_PATTERN =
   '"[^"]*(_satang|_thb)"[[:space:]]*:|"[^"]*(price|amount)[^"]*"[[:space:]]*:';

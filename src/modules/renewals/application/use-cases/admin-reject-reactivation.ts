@@ -489,7 +489,7 @@ export async function adminRejectReactivation(
         {
           tenantId: input.tenantId,
           actorUserId: input.actorUserId,
-          actorRole: 'admin',
+          actorRole: input.actorRole,
           correlationId: input.correlationId,
           requestId: input.requestId ?? null,
         },
@@ -564,7 +564,7 @@ export async function adminRejectReactivation(
             {
               tenantId: input.tenantId,
               actorUserId: input.actorUserId,
-              actorRole: 'admin',
+              actorRole: input.actorRole,
               correlationId: input.correlationId,
               requestId: input.requestId ?? null,
               summary: `post_refund_review task created for credit-note ${refundCreditNoteId}`,
