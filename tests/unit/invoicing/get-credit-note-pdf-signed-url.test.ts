@@ -6,13 +6,11 @@
  * the CN fixture from `resend-pdf.test.ts`. Pins:
  *
  *   - admin/manager sign the STORED `cn.pdf.blobKey` and the filename is
- *     the §86/10 document number — and the CN download emits NO download
- *     audit event. That is PINNED CURRENT BEHAVIOUR, not an endorsement:
- *     it is asymmetric with the invoice/receipt siblings' R8-M1
- *     `*_pdf_downloaded` rows, and a §86/10 credit note is a 10-year tax
- *     document whose access trail cannot currently be reconstructed. A
- *     `credit_note_pdf_downloaded` emit is filed as a follow-up
- *     (financial review I-1); when it lands, flip these assertions.
+ *     the §86/10 document number — and (I-1 CLOSED) every successful
+ *     download emits the R8-M1 access-trail audit BEFORE signing, failing
+ *     the read if the emit fails. AUDIT NOTE: reuses
+ *     `invoice_pdf_downloaded` (10y) per the get-zero-rate-cert precedent;
+ *     the summary + payload carry the credit-note identity.
  *   - G-1 member ownership: a member may sign only a CN whose
  *     `originalInvoiceMemberId` matches their own id; every denial is the
  *     OPAQUE `credit_note_not_found` (never `forbidden` — do not leak
@@ -122,8 +120,8 @@ function makeDeps(cn: CreditNote | null) {
   return { deps, callsKeys, audit };
 }
 
-describe('getCreditNotePdfSignedUrl — staff happy paths (no download audit TODAY — see header, I-1 follow-up)', () => {
-  it('admin success → signs cn.pdf.blobKey, filename is the §86/10 document number, audit NOT called', async () => {
+describe('getCreditNotePdfSignedUrl — staff happy paths (I-1: download audit CLOSED)', () => {
+  it('admin success → signs cn.pdf.blobKey, filename is the §86/10 document number, download audit emitted', async () => {
     const cn = creditNoteFixture();
     const { deps, callsKeys, audit } = makeDeps(cn);
 
@@ -131,6 +129,7 @@ describe('getCreditNotePdfSignedUrl — staff happy paths (no download audit TOD
       tenantId: TENANT,
       actorUserId: 'u-admin',
       actorRole: 'admin',
+      requestId: 'req-dl-1',
       creditNoteId: CN_UUID,
     });
 
@@ -140,14 +139,23 @@ describe('getCreditNotePdfSignedUrl — staff happy paths (no download audit TOD
       expect(result.value.url).toContain(STORED_CN_BLOB_KEY);
     }
     expect(callsKeys).toEqual([STORED_CN_BLOB_KEY]);
-    // Pins CURRENT behaviour: the CN download path emits NO audit row —
-    // an access-trail gap vs the invoice/receipt siblings (header, I-1).
-    // When the follow-up adds `credit_note_pdf_downloaded`, flip this to
-    // a positive assertion (and add the member-download twin).
-    expect(audit).not.toHaveBeenCalled();
+    // I-1 closed: the CN download now has the same reconstructable access
+    // trail as the invoice/receipt siblings. AUDIT NOTE — deliberately
+    // reuses `invoice_pdf_downloaded` (10y) like get-zero-rate-cert; the
+    // summary + payload carry the credit-note identity.
+    expect(audit).toHaveBeenCalledTimes(1);
+    const call = audit.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(call.eventType).toBe('invoice_pdf_downloaded');
+    expect(call.requestId).toBe('req-dl-1');
+    expect(call.summary).toBe('Credit note PDF downloaded — INV-2026-000001');
+    const payload = call.payload as Record<string, unknown>;
+    expect(payload.credit_note_id).toBe(CN_UUID);
+    expect(payload.actor_role).toBe('admin');
+    expect(payload.actor_member_id).toBeNull();
+    expect(payload.route).toBe('get-credit-note-pdf-signed-url');
   });
 
-  it('manager success → signs the same stored blob key, audit NOT called', async () => {
+  it('manager success → signs the same stored blob key, download audit emitted', async () => {
     const cn = creditNoteFixture();
     const { deps, callsKeys, audit } = makeDeps(cn);
 
@@ -160,10 +168,13 @@ describe('getCreditNotePdfSignedUrl — staff happy paths (no download audit TOD
 
     expect(result.ok).toBe(true);
     expect(callsKeys).toEqual([STORED_CN_BLOB_KEY]);
-    expect(audit).not.toHaveBeenCalled();
+    expect(audit).toHaveBeenCalledTimes(1);
+    expect((audit.mock.calls[0]?.[1] as Record<string, unknown>).eventType).toBe(
+      'invoice_pdf_downloaded',
+    );
   });
 
-  it('member with matching originalInvoiceMemberId → success, blobKey byte-identical to the admin path', async () => {
+  it('member with matching originalInvoiceMemberId → success, blobKey byte-identical to the admin path, audit carries the member id', async () => {
     const cn = creditNoteFixture();
     const adminCall = makeDeps(cn);
     const memberCall = makeDeps(cn);
@@ -191,7 +202,26 @@ describe('getCreditNotePdfSignedUrl — staff happy paths (no download audit TOD
     if (adminResult.ok && memberResult.ok) {
       expect(memberResult.value.filename).toBe(adminResult.value.filename);
     }
-    expect(memberCall.audit).not.toHaveBeenCalled();
+    // The member-download twin of the staff audit (I-1).
+    expect(memberCall.audit).toHaveBeenCalledTimes(1);
+    const memberAudit = memberCall.audit.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect((memberAudit.payload as Record<string, unknown>).actor_member_id).toBe('member-m1');
+  });
+
+  it('R8-M1 ordering: an audit-emit throw FAILS the read — no URL is signed for an unrecorded download', async () => {
+    const cn = creditNoteFixture();
+    const { deps, callsKeys, audit } = makeDeps(cn);
+    audit.mockRejectedValueOnce(new Error('audit_log unavailable'));
+
+    await expect(
+      getCreditNotePdfSignedUrl(deps, {
+        tenantId: TENANT,
+        actorUserId: 'u-admin',
+        actorRole: 'admin',
+        creditNoteId: CN_UUID,
+      }),
+    ).rejects.toThrow('audit_log unavailable');
+    expect(callsKeys, 'the blob must never be signed when the trail cannot be written').toEqual([]);
   });
 });
 
