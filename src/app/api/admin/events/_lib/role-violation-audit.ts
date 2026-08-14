@@ -23,6 +23,7 @@
  */
 import { type NextRequest, NextResponse } from 'next/server';
 import { logger } from '@/lib/logger';
+import { authMetrics } from '@/lib/metrics';
 import { getCurrentSession } from '@/lib/auth-session';
 import { canPerform } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
@@ -278,6 +279,15 @@ export async function adminOnlyWriterGuard(
     // every downstream consumer.
     return { kind: 'allow', actorUserId: asUserId(session.user.id) };
   }
+  // 016 post-ship review finding #7 — F6 keeps its own audit vocabulary
+  // (role_violation_blocked) but the org-wide DENIAL METRIC must still see
+  // these routes, or dashboards keyed on rbac_permission_denied_total are
+  // blind to every /api/admin/events/** denial. One denial, one increment —
+  // the same series recordDenial feeds. The label keeps the RAW role string
+  // by PermissionDeniedLabels design (an unknown value stays visible).
+  // No-session stays metric-free: the org gate 401s BEFORE permission
+  // evaluation, so "denied" never happened there either.
+  authMetrics.permissionDenied({ role, permission: input.permissionKey });
   // rbac-d9-override-ok: F6 keeps its own denial SHAPE (404 not 403, FR-035); this arm records which population violated it.
   if (role === 'manager') {
     await emitEventsRoleViolation(request, {
@@ -315,9 +325,11 @@ export async function adminOnlyWriterGuard(
       response: new NextResponse(null, { status: 404 }),
     };
   }
-  // Unknown role STRING (not in the Role union) — 404 without audit: it
-  // cannot be attributed to a real role. Logging at warn level makes the
-  // regression observable.
+  // Unknown role STRING (not in the Role union) — 404 without an audit ROW
+  // by design: the ActorType union has no honest value for it (a fake
+  // 'system' would lie to forensic queries) and a role outside the DB enum
+  // is a corruption tripwire, not a user class. The permissionDenied metric
+  // above + this warn are its observable signal.
   logger.warn(
     {
       event: 'f6_admin_writer_guard_unknown_role',

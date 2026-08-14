@@ -62,6 +62,19 @@ vi.mock('@/lib/logger', () => ({
   },
 }));
 
+// 016 post-ship finding #7 — the guard now feeds the org-wide denial metric.
+const permissionDeniedMock = vi.fn();
+vi.mock('@/lib/metrics', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/metrics')>('@/lib/metrics');
+  return {
+    ...actual,
+    authMetrics: {
+      ...actual.authMetrics,
+      permissionDenied: (...args: unknown[]) => permissionDeniedMock(...args),
+    },
+  };
+});
+
 const TENANT_SLUG = 'test-swecham';
 const ADMIN_SESSION = {
   user: { id: 'admin-1', role: 'admin' as const, email: 'a@t' },
@@ -342,6 +355,79 @@ describe('adminOnlyWriterGuard (Round-1 test-M7)', () => {
       expect.objectContaining({
         event: 'f6_admin_writer_guard_session_lookup_failed',
         requestId: callerRequestId,
+      }),
+      expect.any(String),
+    );
+  });
+});
+
+/**
+ * 016 post-ship review finding #7 — F6 keeps role_violation_blocked as its
+ * audit vocabulary, but every denial must ALSO increment the org-wide
+ * rbac_permission_denied_total series (dashboards were blind to
+ * /api/admin/events/** denials). No-session and allow stay metric-free:
+ * the org gate 401s before permission evaluation, so no denial happened.
+ */
+describe('adminOnlyWriterGuard — org-wide denial metric (finding #7)', () => {
+  it('manager denial increments with the raw role + permission key', async () => {
+    getCurrentSessionMock.mockResolvedValue(MANAGER_SESSION);
+    const { adminOnlyWriterGuard } = await loadGuard();
+    await adminOnlyWriterGuard(buildRequest(), baseInput);
+    expect(permissionDeniedMock).toHaveBeenCalledWith({
+      role: 'manager',
+      permission: 'events.write',
+    });
+  });
+
+  it('member denial increments', async () => {
+    getCurrentSessionMock.mockResolvedValue(MEMBER_SESSION);
+    const { adminOnlyWriterGuard } = await loadGuard();
+    await adminOnlyWriterGuard(buildRequest(), baseInput);
+    expect(permissionDeniedMock).toHaveBeenCalledWith({
+      role: 'member',
+      permission: 'events.write',
+    });
+  });
+
+  it('unknown role string increments with the RAW string (never coerced)', async () => {
+    getCurrentSessionMock.mockResolvedValue({
+      user: { id: 'unk-1', role: 'superadmin' as unknown as 'member', email: 'u@t' },
+    });
+    const { adminOnlyWriterGuard } = await loadGuard();
+    await adminOnlyWriterGuard(buildRequest(), baseInput);
+    expect(permissionDeniedMock).toHaveBeenCalledWith({
+      role: 'superadmin',
+      permission: 'events.write',
+    });
+  });
+
+  it('allow and no-session never increment', async () => {
+    getCurrentSessionMock.mockResolvedValue(ADMIN_SESSION);
+    const { adminOnlyWriterGuard } = await loadGuard();
+    await adminOnlyWriterGuard(buildRequest(), baseInput);
+    getCurrentSessionMock.mockResolvedValue(null);
+    await adminOnlyWriterGuard(buildRequest(), baseInput);
+    expect(permissionDeniedMock).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Twin of the eventcreate finding #4 pin — this copy always checked the
+ * emitStandalone Result; keep it pinned so the two _lib copies cannot
+ * drift apart again.
+ */
+describe('emitEventsRoleViolation — returned-err Result is logged (finding #4 twin)', () => {
+  it('emitStandalone {ok:false} → f6_role_violation_audit_emit_failed, denial still served', async () => {
+    getCurrentSessionMock.mockResolvedValue(MANAGER_SESSION);
+    emitStandaloneMock.mockResolvedValue({ ok: false, error: { kind: 'db_error' } });
+    const { adminOnlyWriterGuard } = await loadGuard();
+    const result = await adminOnlyWriterGuard(buildRequest(), baseInput);
+    expect(result.kind).toBe('deny');
+    if (result.kind === 'deny') expect(result.response.status).toBe(403);
+    expect(loggerErrorMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'f6_role_violation_audit_emit_failed',
+        err: 'db_error',
       }),
       expect.any(String),
     );
