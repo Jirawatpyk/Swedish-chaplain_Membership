@@ -28,6 +28,7 @@
  * cannot import `postgres-js`. Doing the lookup in the page server
  * component keeps the Node-only code in the Node runtime.
  */
+import { cache } from 'react';
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { isSessionValid } from '@/modules/auth/domain/session';
@@ -54,8 +55,22 @@ export interface CurrentSession {
  *
  * NEVER throws across the call boundary — caller decides what to do
  * with `null`.
+ *
+ * Wrapped in React `cache()` (016 post-ship review finding #15): every
+ * /admin page render used to run this THREE times — layout
+ * `requireSession` + `CommandPaletteRoot`'s own `requireSession` + the
+ * page's `requirePagePermission` — each paying a sessions SELECT, a
+ * users SELECT, and an unthrottled `last_seen_at` UPDATE: 9 Neon
+ * round-trips and triple write-amplification on the hottest table per
+ * view. `cache()` dedupes all of that to ONE lookup + ONE heartbeat
+ * write within a single RSC render (the member portal gets the same
+ * dedupe for free). Semantics elsewhere are unchanged: in Route
+ * Handlers and Server Actions React's cache store is absent, so the
+ * function simply executes uncached — and no flow in the repo mutates
+ * the session then re-reads it within one render (sign-out clears the
+ * cookie from its own route handler and never re-reads).
  */
-export async function getCurrentSession(): Promise<CurrentSession | null> {
+export const getCurrentSession = cache(async function getCurrentSession(): Promise<CurrentSession | null> {
   const sessionId = await getSessionIdFromCookie();
   if (!sessionId) return null;
 
@@ -83,10 +98,12 @@ export async function getCurrentSession(): Promise<CurrentSession | null> {
 
   // Sliding-window heartbeat — update last_seen_at on every protected
   // request so a continuously-active user never hits the idle expiry.
+  // (Once per RSC render since the cache() wrap — one heartbeat per page
+  // view is exactly what the 30-min idle window needs.)
   await sessionRepo.updateLastSeen(sessionId, now);
 
   return { session, user };
-}
+});
 
 /**
  * Convenience wrapper for layouts: gets the current session OR
