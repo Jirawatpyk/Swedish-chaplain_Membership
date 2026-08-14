@@ -1949,3 +1949,42 @@ describe('eraseMember — repo cause threads into the logged Error (forensics)',
     });
   });
 });
+
+/**
+ * Money-path remediation follow-through — the `!done.ok` RESULT-SHAPED arm of
+ * the sub-processor propagation audit. The pre-existing "audit failed" test
+ * drives that catch via a mock THROW, so the `if (!done.ok) throw` guard for a
+ * typed `{ ok: false }` return had never executed.
+ */
+describe('eraseMember — subprocessor audit returns { ok: false } (not a throw)', () => {
+  it('logs the audit failure and does NOT block member_erased', async () => {
+    const deps = buildEraseDeps();
+    deps.audit.recordInTx = vi.fn(
+      async (_tx: unknown, _ctx: unknown, ev: { type: string }) =>
+        ev.type === 'subprocessor_erasure_propagated'
+          ? ({ ok: false, error: { code: 'repo.unexpected' } })
+          : ok(undefined),
+    ) as never;
+    const spy = vi.spyOn(logger, 'error').mockImplementation(() => undefined as never);
+    try {
+      const res = await eraseMember(
+        asMemberId('m-1'),
+        { reason: 'gdpr_erasure_request' },
+        META,
+        deps,
+      );
+      // The propagation outcome drops out of the trail, but the erasure is
+      // authoritative — member_erased must still be emitted.
+      expect(res.ok).toBe(true);
+      const types = deps.audit.recordInTx.mock.calls.map(
+        (c) => (c[2] as { type: string }).type,
+      );
+      expect(types).toContain('member_erased');
+      expect(
+        spy.mock.calls.some((c) => c[1] === 'erase-member: subprocessor cascade audit failed'),
+      ).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});

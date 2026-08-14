@@ -115,6 +115,29 @@ describe('failPayment (T058)', () => {
     expect(r.ok).toBe(true);
   });
 
+  // The tracer-wrapper catch (defence-in-depth for non-Result throws) had
+  // never been ENTERED by any test — both rows below rethrow unchanged so
+  // the webhook dispatcher's own catch classifies the failure. Error and
+  // non-Error rows cover both arms of the span-status class-name ternary.
+  it('an unexpected repo THROW is rethrown unchanged (Error)', async () => {
+    const d = deps();
+    (d.tenantSettingsRepo.getByTenantId as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error('neon: connection reset'),
+    );
+    await expect(failPayment(d, INPUT)).rejects.toThrow('neon: connection reset');
+  });
+
+  it('a NON-Error throw is rethrown unchanged too (fail_threw span arm)', async () => {
+    const d = deps();
+    (d.tenantSettingsRepo.getByTenantId as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      async () => {
+        // eslint-disable-next-line no-throw-literal
+        throw 'string boom';
+      },
+    );
+    await expect(failPayment(d, INPUT)).rejects.toBe('string boom');
+  });
+
   it('tenant_settings missing → bridge_error / tenant_settings_missing (webhook-permanent)', async () => {
     // Title corrected (Task 5): this was `→ processor_unavailable`, the
     // pre-F5R2-CRIT-2 transient behaviour it was fixed AWAY from. failPayment
