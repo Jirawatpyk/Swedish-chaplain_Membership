@@ -342,9 +342,11 @@ const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
     id: 'nav.renewalSchedules',
     label: 'palette.navigate.renewalSchedules',
     url: '/admin/settings/renewals/schedules',
-    // Manager role can READ the schedule editor (it renders read-only
-    // for them server-side per `requireRenewalAdminContext('read')`).
-    // Admin-only mutations are still gated at the route handler.
+    // 016 D4 — admin-tier key: the design matrix pins "page open →
+    // denied" for manager (the pre-016 manager read-only view is
+    // retired), so this entry hides for manager on the same key the
+    // page gate uses. Mutations are additionally gated at the route
+    // handler.
     permission: 'settings.renewal_schedules',
   },
   // Round 5 SF-1 close — F8 Phase 8 escalation task queue palette

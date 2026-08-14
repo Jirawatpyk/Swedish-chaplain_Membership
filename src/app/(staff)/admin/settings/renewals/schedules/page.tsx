@@ -6,13 +6,16 @@
  * 301-redirected to the new path via `next.config.ts redirects()`).
  *
  * Reads all 5 tier-bucket schedule policies via `loadSchedulePolicies`
- * and renders the client-side `ScheduleEditor` (T087) with `readOnly`
- * derived from the session role.
+ * and renders the client-side `ScheduleEditor` (T087) in edit mode —
+ * every admitted viewer holds the write key (see Authz below).
  *
- * Authz: admin OR manager. Manager view is read-only; PUT route at
- * /api/admin/renewals/settings/schedules/[tierBucket] enforces the
- * canonical RBAC gate (defence-in-depth). NOTE: API routes intentionally
- * stayed at /api/admin/renewals/* — only the UI page was relocated.
+ * Authz (016 D4): `settings.renewal_schedules` holders only — admin +
+ * super_admin. The design matrix pins "page open → denied (D4)" for
+ * manager, retiring the pre-016 manager read-only view (016 post-ship
+ * review finding #6 caught this file still promising it). The PUT route
+ * at /api/admin/renewals/settings/schedules/[tierBucket] enforces the
+ * same key (defence-in-depth). NOTE: API routes intentionally stayed at
+ * /api/admin/renewals/* — only the UI page was relocated.
  *
  * Layout: wrapped in `<FormContainer>` (max-width 42rem) per
  * docs/ux-standards.md § 18 — settings/edit surfaces use form width
@@ -31,7 +34,7 @@ import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { canPerform, requirePagePermission } from '@/lib/rbac';
+import { requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import {
   loadSchedulePolicies,
@@ -51,14 +54,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function RenewalSchedulesSettingsPage() {
   const t = await getTranslations('admin.renewals.settings.schedules');
-  const { user: currentUser } = await requirePagePermission('settings.renewal_schedules');
-  // 016 re-review D — mirrors the write route's exact pair
-  // (requireRenewalAdminContext(request, 'write', 'settings.renewal_schedules')
-  // on [tierBucket]): the form is editable exactly when the PATCH would admit.
-  const readOnly = !canPerform(
-    currentUser.role,
-    'settings.renewal_schedules',
-  );
+  await requirePagePermission('settings.renewal_schedules');
 
   if (!env.features.f8Renewals) {
     const tShared = await getTranslations('admin.renewals');
@@ -151,7 +147,16 @@ export default async function RenewalSchedulesSettingsPage() {
   return (
     <FormContainer>
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
-      <ScheduleEditor initialPolicies={initialPolicies} readOnly={readOnly} />
+      {/*
+        016 post-ship review finding #6 — `readOnly` was computed as
+        `!canPerform(role, 'settings.renewal_schedules')`, provably
+        constant-false one line after a same-key requirePagePermission:
+        dead code that implied a manager read-only view D4 retired.
+        Hard-code false; the editor KEEPS its read-only mode (banner,
+        disabled controls, i18n) so a future design amendment that
+        re-admits a read tier only has to change this page's key pair.
+      */}
+      <ScheduleEditor initialPolicies={initialPolicies} readOnly={false} />
     </FormContainer>
   );
 }
