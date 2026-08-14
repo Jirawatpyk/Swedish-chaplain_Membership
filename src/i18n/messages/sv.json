@@ -1840,7 +1840,7 @@
     "settings": {
       "index": {
         "title": "Inställningar",
-        "subtitle": "Konfigurera fakturering och förnyelsepåminnelser för hela kammaren.",
+        "subtitle": "Kammarövergripande inställningar, ordnade per funktion.",
         "empty": "Inga inställningar är tillgängliga för din roll.",
         "categories": {
           "invoicing": {
@@ -1853,7 +1853,7 @@
           },
           "broadcasts": {
             "title": "Inställningar för utskick",
-            "description": "Tillåtna bildkällor och skyddsåtgärder för utskick till medlemmar."
+            "description": "Tillåtna bildkällor för utskick till medlemmar."
           },
           "integrationsEventcreate": {
             "title": "EventCreate-integration",

@@ -1840,7 +1840,7 @@
     "settings": {
       "index": {
         "title": "Settings",
-        "subtitle": "Configure tenant-wide invoicing and renewal-reminder behaviour.",
+        "subtitle": "Tenant-wide configuration for your chamber, grouped by feature.",
         "empty": "No settings are available to your role.",
         "categories": {
           "invoicing": {
@@ -1853,7 +1853,7 @@
           },
           "broadcasts": {
             "title": "Broadcast settings",
-            "description": "Inline-image source allowlist and sending safeguards for member broadcasts."
+            "description": "Inline-image source allowlist for member broadcasts."
           },
           "integrationsEventcreate": {
             "title": "EventCreate integration",

@@ -17,23 +17,23 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 
-const findByIdSession = vi.fn();
-const findByIdUser = vi.fn();
-const updateLastSeen = vi.fn(async () => {});
-const deleteSession = vi.fn(async () => {});
+const findByIdSession = vi.fn(async (_id: unknown): Promise<unknown> => null);
+const findByIdUser = vi.fn(async (_id: unknown): Promise<unknown> => null);
+const updateLastSeen = vi.fn(async (_id: unknown, _now: unknown) => {});
+const deleteSession = vi.fn(async (_id: unknown) => {});
 
 vi.mock('@/lib/auth-cookies', () => ({
   getSessionIdFromCookie: async () => 'sess-1',
 }));
 vi.mock('@/modules/auth/infrastructure/db/session-repo', () => ({
   sessionRepo: {
-    findById: (...a: unknown[]) => findByIdSession(...a),
-    updateLastSeen: (...a: unknown[]) => updateLastSeen(...a),
-    delete: (...a: unknown[]) => deleteSession(...a),
+    findById: (id: unknown) => findByIdSession(id),
+    updateLastSeen: (id: unknown, now: unknown) => updateLastSeen(id, now),
+    delete: (id: unknown) => deleteSession(id),
   },
 }));
 vi.mock('@/modules/auth/infrastructure/db/user-repo', () => ({
-  userRepo: { findById: (...a: unknown[]) => findByIdUser(...a) },
+  userRepo: { findById: (id: unknown) => findByIdUser(id) },
 }));
 
 describe('getCurrentSession — React cache() wrap (finding #15)', () => {

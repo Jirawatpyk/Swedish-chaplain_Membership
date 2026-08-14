@@ -131,7 +131,6 @@ describe('failPayment (T058)', () => {
     const d = deps();
     (d.tenantSettingsRepo.getByTenantId as ReturnType<typeof vi.fn>).mockImplementationOnce(
       async () => {
-        // eslint-disable-next-line no-throw-literal
         throw 'string boom';
       },
     );
