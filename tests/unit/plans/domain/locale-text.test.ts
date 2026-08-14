@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  asLocaleText,
+  EmptyEnLocaleTextError,
   hasMissingTranslations,
   LOCALE_KEYS,
   pickLocaleText,
@@ -59,6 +61,34 @@ describe('LocaleText', () => {
     it('falls back when locale value is empty string', () => {
       const t: LocaleText = { en: 'Premium', th: '' };
       expect(pickLocaleText(t, 'th')).toEqual({ value: 'Premium', missing: true });
+    });
+  });
+
+  // 016 T072 coverage closure — the R6 I9/D4 smart constructor had no test.
+  describe('asLocaleText', () => {
+    it('accepts an en-only record and omits absent optional locales', () => {
+      const out = asLocaleText({ en: 'Premium' });
+      expect(out).toEqual({ en: 'Premium' });
+      expect('th' in out).toBe(false);
+      expect('sv' in out).toBe(false);
+    });
+
+    it('preserves th and sv when supplied', () => {
+      expect(asLocaleText({ en: 'Premium', th: 'พรีเมียม', sv: 'Premium' })).toEqual({
+        en: 'Premium',
+        th: 'พรีเมียม',
+        sv: 'Premium',
+      });
+    });
+
+    it('throws EmptyEnLocaleTextError on an empty or whitespace-only en', () => {
+      expect(() => asLocaleText({ en: '' })).toThrow(EmptyEnLocaleTextError);
+      expect(() => asLocaleText({ en: '   ' })).toThrow(EmptyEnLocaleTextError);
+      // The invariant this constructor exists for: fixture/seed code that
+      // bypasses zod must not be able to persist an empty primary locale.
+      expect(() => asLocaleText({ en: '', th: 'มีค่า' })).toThrow(
+        'asLocaleText: `en` is required',
+      );
     });
   });
 });

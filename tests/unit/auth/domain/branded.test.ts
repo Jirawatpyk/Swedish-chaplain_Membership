@@ -4,6 +4,8 @@ import {
   asSessionToken,
   asTokenId,
   asAuditEventId,
+  asEmailRevertTokenHash,
+  asEmailVerificationTokenHash,
   asPasswordHash,
   asEmailAddress,
 } from '@/modules/auth/domain/branded';
@@ -28,6 +30,11 @@ describe('Branded type constructors', () => {
 
   it('asPasswordHash returns the input string', () => {
     expect(asPasswordHash('$argon2id$...')).toBe('$argon2id$...');
+  });
+
+  it('the F3 email-change hash constructors are pure casts (016 T072 coverage closure)', () => {
+    expect(asEmailVerificationTokenHash('a'.repeat(64))).toBe('a'.repeat(64));
+    expect(asEmailRevertTokenHash('b'.repeat(64))).toBe('b'.repeat(64));
   });
 });
 

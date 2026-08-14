@@ -48,7 +48,13 @@ vi.mock('@/modules/auth/application/password-policy', () => ({
 }));
 
 import { resetPassword } from '@/modules/auth/application/reset-password';
-import type { ResetPasswordDeps } from '@/modules/auth/application/reset-password';
+import type {
+  ResetPasswordDeps,
+  ResetPasswordError,
+} from '@/modules/auth/application/reset-password';
+import { TxAbort } from '@/modules/auth/application/tx-abort';
+import { db } from '@/lib/db';
+import { logger } from '@/lib/logger';
 import type { UserAccount } from '@/modules/auth/domain/user';
 import {
   asUserId,
@@ -484,5 +490,34 @@ describe('resetPassword use case', () => {
     if (result.ok) {
       expect(result.value.signInUrl).toBe('/admin/sign-in');
     }
+  });
+
+  // ── Tx catch arms (016 T072 — mock-only tests miss throw paths) ──────────
+  it('maps a TxAbort thrown inside the tx to its typed error (no rethrow, no tx_failed log)', async () => {
+    // Drizzle re-throws whatever the callback threw; the sentinel carries the
+    // typed use-case error out of the rollback (tx-abort.ts pattern).
+    vi.mocked(db.transaction).mockImplementationOnce(async () => {
+      throw new TxAbort<ResetPasswordError>({ code: 'link-invalid', reason: 'consumed' });
+    });
+    const result = await resetPassword(BASE_INPUT, makeDeps());
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toEqual({ code: 'link-invalid', reason: 'consumed' });
+    expect(logger.error).not.toHaveBeenCalled();
+    // The tx rolled back: post-commit metrics must NOT fire.
+    expect(authMetrics.passwordResetCompleted).not.toHaveBeenCalled();
+  });
+
+  it('logs tx_failed and RETHROWS on a non-sentinel tx error (route surfaces 500, state rolled back)', async () => {
+    vi.mocked(db.transaction).mockImplementationOnce(async () => {
+      throw new Error('neon: connection reset mid-tx');
+    });
+    await expect(resetPassword(BASE_INPUT, makeDeps())).rejects.toThrow(
+      'neon: connection reset mid-tx',
+    );
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ requestId: BASE_INPUT.requestId }),
+      'reset_password.tx_failed',
+    );
+    expect(authMetrics.passwordResetCompleted).not.toHaveBeenCalled();
   });
 });

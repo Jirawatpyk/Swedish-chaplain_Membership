@@ -41,7 +41,7 @@ interface Recorded {
 
 function makeDeps(
   role: string,
-  overrides: { auditThrows?: boolean } = {},
+  overrides: { auditThrows?: boolean; metricsThrow?: boolean } = {},
 ): { deps: RbacDeps; recorded: Recorded } {
   const appended: unknown[] = [];
   const metrics: unknown[] = [];
@@ -55,6 +55,7 @@ function makeDeps(
     },
     countDenied: (labels) => {
       metrics.push(labels);
+      if (overrides.metricsThrow === true) throw new Error('metrics backend down');
     },
     routePath: () => '/admin/secret',
     requestId: () => 'req-123',
@@ -134,6 +135,65 @@ describe('T017 page denials', () => {
     await expect(requirePagePermission('users.manage', deps)).resolves.toBeDefined();
     expect(recorded.appended).toEqual([]);
     expect(recorded.metrics).toEqual([]);
+  });
+
+  // 016 T072 — the three defaultDeps/edge arms coverage proved untested.
+  it('a metrics-backend throw does not change the served denial (both sinks are fail-open)', async () => {
+    const { deps, recorded } = makeDeps('manager', { metricsThrow: true });
+    await expect(requirePagePermission('users.manage', deps)).rejects.toThrow();
+    // The audit row still landed; the counter threw and was swallowed.
+    expect(recorded.appended).toHaveLength(1);
+  });
+
+  it('a session-less caller reaching the page gate gets notFound, not a 500 (shell bypassed)', async () => {
+    // The staff shell redirects anonymous callers before any page gate runs;
+    // reaching this gate without a session means the shell was bypassed, and
+    // the answer is the same not-found the denied get — never an error page.
+    const { deps, recorded } = makeDeps('manager');
+    const anon: RbacDeps = { ...deps, getSession: async () => null };
+    await expect(requirePagePermission('users.manage', anon)).rejects.toThrow();
+    // No actor identity exists — nothing attributable, no audit row.
+    expect(recorded.appended).toEqual([]);
+  });
+
+  /**
+   * The WIRING, not the seam (same rationale as the pathFromHeaders pair
+   * below): every deps-injected case above leaves `defaultDeps`' page leg —
+   * header-derived request id + route path — unexecuted. This drives a real
+   * no-deps denial with the modules `defaultDeps` touches mocked at the
+   * boundary, and asserts the header-sourced request id lands in the trail.
+   */
+  it('defaultDeps page leg: a no-deps denial derives request id + route from headers', async () => {
+    vi.resetModules();
+    const append = vi.fn(async () => {});
+    vi.doMock('next/headers', () => ({
+      headers: async () =>
+        new Headers({
+          'x-pathname': '/admin/users?tab=pending',
+          'x-request-id': 'aaaaaaaa-1111-4111-8111-cccccccccccc',
+        }),
+    }));
+    vi.doMock('@/lib/auth-session', () => ({
+      getCurrentSession: async () => sessionFor('manager'),
+    }));
+    vi.doMock('@/modules/auth/infrastructure/db/audit-repo', () => ({
+      auditRepo: { append },
+    }));
+    vi.doMock('@/lib/metrics', () => ({
+      authMetrics: { permissionDenied: vi.fn() },
+    }));
+    const { requirePagePermission: fresh } = await import('@/lib/rbac');
+    await expect(fresh('users.manage')).rejects.toThrow();
+    expect(append).toHaveBeenCalledTimes(1);
+    const event = append.mock.calls[0]![0] as { requestId: string; summary: string };
+    expect(event.requestId).toBe('aaaaaaaa-1111-4111-8111-cccccccccccc');
+    // Query string stripped by the page-leg sanitiser.
+    expect(event.summary).toContain('route=/admin/users');
+    vi.doUnmock('next/headers');
+    vi.doUnmock('@/lib/auth-session');
+    vi.doUnmock('@/modules/auth/infrastructure/db/audit-repo');
+    vi.doUnmock('@/lib/metrics');
+    vi.resetModules();
   });
 });
 

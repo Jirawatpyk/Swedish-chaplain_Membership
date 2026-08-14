@@ -7,6 +7,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   isTerminalStatus,
+  makeScheduledPlanChange,
   SCHEDULED_PLAN_CHANGE_STATUSES,
   type ScheduledPlanChangeStatus,
 } from '@/modules/plans/domain/scheduled-plan-change';
@@ -40,5 +41,42 @@ describe('isTerminalStatus', () => {
 
   it('non-terminal: pending → false', () => {
     expect(isTerminalStatus('pending')).toBe(false);
+  });
+});
+
+// 016 T072 coverage closure — only the `applied` arm of the factory had
+// callers in tests; the two other terminal arms were dead in the run.
+describe('makeScheduledPlanChange terminal arms', () => {
+  const base = {
+    tenantId: 'swecham',
+    scheduledChangeId: 'spc-1',
+    memberId: 'm-1',
+    effectiveAtCycleId: 'cycle-1',
+    fromPlanId: 'plan-a',
+    toPlanId: 'plan-b',
+    scheduledByUserId: 'u-1',
+    reason: null,
+    scheduledAt: '2026-08-01T00:00:00.000Z',
+  };
+  const TS = '2026-08-14T00:00:00.000Z';
+
+  it('superseded: stamps supersededAt alone, other timestamps null', () => {
+    expect(makeScheduledPlanChange(base, 'superseded', TS)).toEqual({
+      ...base,
+      status: 'superseded',
+      appliedAt: null,
+      supersededAt: TS,
+      cancelledAt: null,
+    });
+  });
+
+  it('cancelled: stamps cancelledAt alone, other timestamps null', () => {
+    expect(makeScheduledPlanChange(base, 'cancelled', TS)).toEqual({
+      ...base,
+      status: 'cancelled',
+      appliedAt: null,
+      supersededAt: null,
+      cancelledAt: TS,
+    });
   });
 });
