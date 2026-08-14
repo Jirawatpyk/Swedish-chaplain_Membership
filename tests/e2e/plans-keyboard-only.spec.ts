@@ -142,11 +142,15 @@ test.describe('keyboard-only plans admin — T158', () => {
     // contains "VAT rate" text.
     await expect(page.getByLabel(/vat rate/i)).toBeVisible({ timeout: 5_000 });
 
-    // Tab through form fields — verify we can reach the VAT and registration fee inputs
+    // Tab through form fields — verify we can reach the VAT and registration
+    // fee inputs. Budget 60 (was 20): the settings-ux redesign put a section
+    // nav rail + the whole Legal-identity section (names ×2, tax id,
+    // addresses ×2, head-office/branch) in the tab order BEFORE the Tax
+    // section, so 20 tabs stopped short of the VAT field.
     let reachedVat = false;
     let reachedRegFee = false;
 
-    for (let i = 0; i < 20; i += 1) {
+    for (let i = 0; i < 60; i += 1) {
       await page.keyboard.press('Tab');
       const activeLabel = await page.evaluate(() => {
         const el = document.activeElement;

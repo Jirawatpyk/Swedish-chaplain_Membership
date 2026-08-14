@@ -120,7 +120,11 @@ test.describe('@us4 tenant-invoice-settings', () => {
             r.request().method() === 'PATCH',
           { timeout: 15_000 },
         );
-        await page.getByRole('button', { name: /^(save|บันทึก|spara)/i }).click();
+        // `.first()` — once dirty, the settings-ux StickySaveBar renders a
+        // second "Save changes" button; BOTH drive the same requestSubmit()
+        // (documented in invoice-settings-form.tsx), so either is the same
+        // action and strict mode just needs one picked.
+        await page.getByRole('button', { name: /^(save|บันทึก|spara)/i }).first().click();
         const resp = await patchResponse;
         expect(resp.ok()).toBe(true);
         await expect(
@@ -210,8 +214,9 @@ test.describe('@us4 tenant-invoice-settings', () => {
         await expect(keyLabel).toBeVisible({ timeout: 20_000 });
 
         // Save and verify persistence via page reload — the hidden
-        // `logo_blob_key` should survive the PATCH round-trip.
-        await page.getByRole('button', { name: /^(save|บันทึก|spara)/i }).click();
+        // `logo_blob_key` should survive the PATCH round-trip. `.first()`:
+        // same StickySaveBar strict-mode note as AS1 above.
+        await page.getByRole('button', { name: /^(save|บันทึก|spara)/i }).first().click();
         // Skip `waitForLoadState('networkidle')` — Next.js dev HMR
         // websocket keeps network active and never settles. The toast
         // assertion below is the real signal for save success.

@@ -69,7 +69,10 @@ test.describe('session revocation on disable (T-05, User Story 4)', () => {
       await fillField(adminPage.getByRole('textbox', { name: /^password$/i }), ADMIN_PASSWORD);
       await adminPage.getByRole('button', { name: /sign in/i }).click();
       await adminPage.waitForURL('**/admin', { timeout: 15_000 });
-      await adminPage.goto('/admin/users');
+      // Server-side q filter: the dev DB carries the imported member accounts,
+      // so the victim's row is NOT guaranteed to sit on page 1 of the
+      // unfiltered list — an unfiltered goto flaked exactly that way.
+      await adminPage.goto(`/admin/users?q=${encodeURIComponent(VICTIM_EMAIL)}`);
       await adminPage.waitForLoadState('networkidle');
 
       // 3. Admin disables the victim via the /api/auth/users/[id]/disable
