@@ -507,3 +507,104 @@ describe('getInvoicePdfSignedUrl — blob_missing handling (R10-T1)', () => {
   });
 });
 
+// Branch-closure pins (money-coverage remediation) — the last uncovered
+// arms of this security-critical ACL gate: the member arm with NO
+// actorMemberId at all (distinct from the mismatch case above), the
+// double-null document-number fallback pair, and the requestId echo arms.
+describe('getInvoicePdfSignedUrl — branch-closure pins', () => {
+  it('member actor with actorMemberId OMITTED → forbidden + probe payload actor_member_id null', async () => {
+    const invoice = makeIssuedInvoice();
+    const { deps, audit, blob } = makeDeps(invoice);
+    const result = await getInvoicePdfSignedUrl(deps, {
+      tenantId: 't',
+      actorUserId: 'u-member',
+      actorRole: 'member',
+      // actorMemberId deliberately OMITTED — the guard's `!input.actorMemberId`
+      // arm must fail closed before ever comparing against invoice.memberId.
+      requestId: 'req-b1',
+      invoiceId: 'i',
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('forbidden');
+    expect(blob.callsKeys).toEqual([]);
+    expect(audit).toHaveBeenCalledTimes(1);
+    const auditCall = (audit as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] as
+      | Record<string, unknown>
+      | undefined;
+    expect(auditCall?.eventType).toBe('invoice_cross_tenant_probe');
+    // requestId supplied → echoed onto the probe row (not nulled).
+    expect(auditCall?.requestId).toBe('req-b1');
+    const payload = auditCall?.payload as Record<string, unknown>;
+    expect(payload.actor_member_id).toBeNull();
+    expect(payload.invoice_member_id).toBe('m-owner');
+    expect(payload.actor_role).toBe('member');
+  });
+
+  it('issued invoice with documentNumber NULL and billDocumentNumberRaw NULL → filename "invoice.pdf" + audit summary falls back to the invoiceId', async () => {
+    // Defensive double-null shape (an issued row always carries one of the
+    // two in production — DB CHECK) — the `?? 'invoice'` / `?? invoiceId`
+    // fallbacks must keep the download + forensic summary well-formed.
+    const bareRow = {
+      ...makeIssuedInvoice(),
+      documentNumber: null,
+      billDocumentNumberRaw: null,
+    } as unknown as Invoice;
+    const { deps, audit } = makeDeps(bareRow);
+    const result = await getInvoicePdfSignedUrl(deps, {
+      tenantId: 't',
+      actorUserId: 'u-admin',
+      actorRole: 'admin',
+      requestId: 'req-b2',
+      invoiceId: 'i',
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.filename).toBe('invoice.pdf');
+    expect(audit).toHaveBeenCalledTimes(1);
+    const auditCall = (audit as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] as
+      | Record<string, unknown>
+      | undefined;
+    expect(auditCall?.summary).toBe('Invoice PDF downloaded — i');
+    // requestId supplied → echoed onto the success download row.
+    expect(auditCall?.requestId).toBe('req-b2');
+  });
+
+  it('not-found probe with requestId supplied → probe row echoes it (never nulled)', async () => {
+    const { deps, audit } = makeDeps(null);
+    const result = await getInvoicePdfSignedUrl(deps, {
+      tenantId: 't',
+      actorUserId: 'u-admin',
+      actorRole: 'admin',
+      requestId: 'req-b3',
+      invoiceId: 'foreign',
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('invoice_not_found');
+    const auditCall = (audit as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] as
+      | Record<string, unknown>
+      | undefined;
+    expect(auditCall?.requestId).toBe('req-b3');
+  });
+
+  it('member + paid + receiptPdfStatus NULL (no async work ever queued) → normal signed URL, no 425', async () => {
+    // The T166 gate keys on `receiptPdfStatus !== null` — a paid row that
+    // never entered the async pipeline (sync-rendered receipt) must serve
+    // the member download rather than telling them to retry.
+    const invoice = {
+      ...makeIssuedInvoice(),
+      status: 'paid',
+      paidAt: '2026-04-21T00:00:00Z',
+      receiptPdfStatus: null,
+    } as Invoice;
+    const { deps, blob } = makeDeps(invoice);
+    const result = await getInvoicePdfSignedUrl(deps, {
+      tenantId: 't',
+      actorUserId: 'u-member',
+      actorRole: 'member',
+      actorMemberId: invoice.memberId as string,
+      invoiceId: 'i',
+    });
+    expect(result.ok).toBe(true);
+    expect(blob.callsKeys).toEqual([STORED_BLOB_KEY]);
+  });
+});
+

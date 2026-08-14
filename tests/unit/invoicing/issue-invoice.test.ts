@@ -1531,5 +1531,229 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
     // memberId is non-null → the footer is for NON-member buyers only.
     expect(enqueueArg.privacyFooterKind).toBeUndefined();
   });
+
+  // --- money-coverage remediation — branch/line closure pins -------------------
+  // The last uncovered paths of THE critical §87 transactional use-case:
+  // GDPR-erased buyer (COMP-1), the invalid_lines domain reject, the
+  // lock-OK-but-reload-null race, the invariant throw for a corrupted
+  // non-member row, the two forensic-audit-emit-also-fails catches, and
+  // the requestId/null-email fallback arms.
+
+  it('COMP-1: GDPR-erased member (isErased=true) → member_not_found, NOTHING allocated/rendered/applied', async () => {
+    const deps = makeDeps(
+      makeDraftInvoice(),
+      makeSettings(),
+      makeMember({ isArchived: false, isErased: true }),
+    );
+    const r = await issueInvoice(deps, input);
+    expect(r.ok).toBe(false);
+    // Deliberately the OPAQUE member_not_found (a redacted identity is not
+    // a valid buyer) — never a new code that would leak erasure state.
+    if (!r.ok) expect(r.error.code).toBe('member_not_found');
+    // The erasure gate sits INSIDE the FOR UPDATE re-read arm (FR-037).
+    expect(deps.memberIdentity.getForIssue).toHaveBeenCalledWith(
+      expect.anything(),
+      'test-swecham',
+      'member-1',
+      { forUpdate: true },
+    );
+    // PRE-SEQUENCE reject — no §87 number burned, no PII re-materialised.
+    expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+    expect(deps.invoiceRepo.applyIssue).not.toHaveBeenCalled();
+    expect(deps.pdfRender.render).not.toHaveBeenCalled();
+    expect(deps.blob.delete).not.toHaveBeenCalled();
+  });
+
+  it('COMP-1 precedence pin: isArchived=true AND isErased=true → member_archived (archive gate first)', async () => {
+    const deps = makeDeps(
+      makeDraftInvoice(),
+      makeSettings(),
+      makeMember({ isArchived: true, isErased: true }),
+    );
+    const r = await issueInvoice(deps, input);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('member_archived');
+  });
+
+  it('invalid_lines — membership draft without a membership_fee line → err with the domain reason, allocator untouched', async () => {
+    const deps = makeDeps(makeDraftInvoice({ lines: [] }), makeSettings(), makeMember());
+    const r = await issueInvoice(deps, input);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('invalid_lines');
+      if (r.error.code === 'invalid_lines') expect(r.error.reason).toBe('no_membership_line');
+    }
+    // Runs BEFORE allocateNext — a malformed draft cannot consume a §87 number.
+    expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+  });
+
+  it('invoice_not_found — lock observed draft but findByIdInTx reload returns null (race) → err, no probe double-emit', async () => {
+    const deps = makeDeps(makeDraftInvoice(), makeSettings(), makeMember());
+    deps.invoiceRepo.findByIdInTx = vi.fn(async () => null);
+    const r = await issueInvoice(deps, input);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('invoice_not_found');
+    // The probe audit belongs to the lock-null arm only; the post-lock
+    // reload-null arm is a plain typed error.
+    expect(deps.audit.emit).not.toHaveBeenCalled();
+  });
+
+  it('invoice_not_found probe with requestId OMITTED → probe row records requestId null', async () => {
+    const deps = makeDeps(null, makeSettings(), makeMember());
+    const r = await issueInvoice(deps, { ...input, requestId: undefined });
+    expect(r.ok).toBe(false);
+    expect(deps.audit.emit).toHaveBeenCalledWith(
+      null,
+      expect.objectContaining({
+        eventType: 'invoice_cross_tenant_probe',
+        requestId: null,
+      }),
+    );
+  });
+
+  it('corrupted non-member EVENT draft with eventRegistrationId NULL → THROWS the invoices_subject_fields_ck invariant error', async () => {
+    // `invoices_subject_fields_ck` guarantees event_registration_id NOT NULL
+    // whenever member_id IS NULL — a row violating it is corruption, so the
+    // use-case crashes loudly rather than emitting a mis-shaped audit row.
+    const corruptDraft = makeDraftInvoice({
+      memberId: null,
+      planId: null,
+      planYear: null,
+      invoiceSubject: 'event',
+      vatInclusive: true,
+      eventId: 'event-uuid-ck',
+      eventRegistrationId: null,
+      memberIdentitySnapshot: Object.freeze({
+        legal_name: 'Walk-in Guest',
+        tax_id: '9876543210123',
+        address: '50 Sukhumvit Road, Bangkok 10110',
+        primary_contact_name: 'Buyer',
+        primary_contact_email: 'buyer@example.com',
+        member_number: null,
+        member_number_display: null,
+      }),
+      lines: [
+        {
+          lineId: asInvoiceLineId('line-ck'),
+          kind: 'event_fee',
+          descriptionTh: 'ค่าเข้าร่วมงาน',
+          descriptionEn: 'Event ticket',
+          unitPrice: Money.fromSatangUnsafe(107000n),
+          quantity: '1.0000',
+          proRateFactor: null,
+          total: Money.fromSatangUnsafe(107000n),
+          position: 1,
+        },
+      ],
+    });
+    const deps = makeDeps(corruptDraft, makeSettings(), null);
+    await expect(issueInvoice(deps, input)).rejects.toThrow(
+      /non-member invoice has null event_registration_id/,
+    );
+    // The throw happens AFTER upload — the orphan-blob cleanup fires.
+    expect(deps.blob.delete).toHaveBeenCalledWith(EXPECTED_ISSUE_BLOB_KEY);
+  });
+
+  it('non-member EVENT issue with requestId OMITTED → non-timeline invoice_issued audit records requestId null', async () => {
+    const deps = makeDeps(makeEventDraft('9876543210123'), makeSettings(), null);
+    const r = await issueInvoice(deps, { ...input, requestId: undefined });
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+    expect(deps.audit.emit).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ eventType: 'invoice_issued', requestId: null }),
+    );
+  });
+
+  it('malformed legacy snapshot with NULL primary_contact_email → auto-email skipped (?? guard), invoice still issues', async () => {
+    // TS says `string`, but the snapshot is DB JSON — a legacy row can carry
+    // null. The `?? null` arm must degrade to the empty-recipient skip.
+    const deps = makeDeps(
+      makeDraftInvoice({ autoEmailOnIssue: null }),
+      makeSettings({ autoEmailEnabled: true }),
+      makeMember({
+        snapshot: Object.freeze({
+          legal_name: 'Acme Co',
+          tax_id: '1234567890123',
+          address: '123 Road, Bangkok',
+          primary_contact_name: 'John Doe',
+          primary_contact_email: null as unknown as string,
+          member_number: null,
+          member_number_display: null,
+        }),
+      }),
+    );
+    const r = await issueInvoice(deps, input);
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(!r.ok && r.error)}`).toBe(true);
+    expect(deps.outbox.enqueue).not.toHaveBeenCalled();
+    if (r.ok) expect(r.value.emailDispatch).toBe('skipped_no_email');
+  });
+
+  it('T122: pdf_render_failed AND the forensic audit emit ALSO throws → swallowed warn, typed error surfaces, emit exactly once, no blob delete', async () => {
+    const throwingEmit = vi.fn(async () => {
+      throw new Error('audit store down');
+    });
+    const deps = makeDeps(makeDraftInvoice(), makeSettings(), makeMember(), {
+      pdfRender: {
+        render: vi.fn(async () => {
+          throw new Error('font load failed');
+        }),
+      },
+      audit: { emit: throwingEmit },
+    });
+    // requestId omitted — also pins the forensic row's `requestId ?? null` arm.
+    const r = await issueInvoice(deps, { ...input, requestId: undefined });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('pdf_render_failed');
+    // Only the post-rollback forensic emit was attempted (render failed
+    // before any in-tx audit could fire) — and its failure never masks
+    // the original typed error.
+    expect(throwingEmit).toHaveBeenCalledTimes(1);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ invoiceId: INVOICE_ID }),
+      'issueInvoice: pdf_render_failed audit emit also failed',
+    );
+    // Render failed BEFORE upload — nothing at the key, cleanup skipped.
+    expect(deps.blob.delete).not.toHaveBeenCalled();
+  });
+
+  it('059: buyer-identity-invalid AND the forensic audit emit ALSO throws → swallowed warn, typed error surfaces, allocator untouched', async () => {
+    const throwingEmit = vi.fn(async () => {
+      throw new Error('audit store down');
+    });
+    const deps = makeDeps(makeDraftInvoice(), makeSettings(), makeMember(), {
+      memberIdentity: {
+        getForIssue: vi.fn(async () => ({
+          memberId: 'member-1',
+          isActive: true,
+          isArchived: false,
+          isErased: false,
+          memberTypeScope: 'company' as const,
+          registrationDate: '2026-01-15',
+          registrationFeePaid: true,
+          snapshot: makeMemberIdentitySnapshot({
+            legal_name: 'VAT-Registrant Co, No TIN Yet',
+            tax_id: null,
+            address: '123 Road, Bangkok',
+            primary_contact_name: 'John Doe',
+            primary_contact_email: 'john@acme.example',
+            buyer_is_vat_registrant: true,
+          }),
+        })),
+        markRegistrationFeePaid: vi.fn(async () => {}),
+      },
+      audit: { emit: throwingEmit },
+    });
+    // requestId omitted — also pins the forensic row's `requestId ?? null` arm.
+    const r = await issueInvoice(deps, { ...input, requestId: undefined });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('buyer_tax_id_required_for_registrant');
+    expect(throwingEmit).toHaveBeenCalledTimes(1);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ invoiceId: INVOICE_ID }),
+      'issueInvoice: invoice_buyer_identity_invalid audit emit also failed',
+    );
+    // PRE-SEQUENCE — buyer resolution runs before allocateNext.
+    expect(deps.sequenceAllocator.allocateNext).not.toHaveBeenCalled();
+  });
 });
 

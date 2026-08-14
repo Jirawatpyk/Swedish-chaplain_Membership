@@ -143,10 +143,10 @@ export async function getInvoicePdfSignedUrl(
     payload: {
       invoice_id: invoiceId,
       member_id: invoice.memberId,
+      // Member arm is non-null by construction: the ownership gate above
+      // already returned `forbidden` for a member without actorMemberId.
       actor_member_id:
-        input.actorRole === 'member'
-          ? (input.actorMemberId ?? null)
-          : null,
+        input.actorRole === 'member' ? input.actorMemberId! : null,
       invoice_pdf_template_version: invoice.pdf.templateVersion,
       actor_role: input.actorRole,
       route: 'get-invoice-pdf-signed-url',

@@ -697,7 +697,10 @@ export async function issueInvoice(
           ...(vatTreatment === 'zero_rated_80_1_5'
             ? {
                 vatTreatment,
-                zeroRateCertNo: input.zeroRateCertNo ?? null,
+                // Non-null by construction: the FR-024 fail-closed gate
+                // above rejected any zero-rated issue whose cert no was
+                // missing/blank — the former `?? null` arm was dead code.
+                zeroRateCertNo: input.zeroRateCertNo!,
                 zeroRateCertDate: input.zeroRateCertDate ?? null,
               }
             : {}),

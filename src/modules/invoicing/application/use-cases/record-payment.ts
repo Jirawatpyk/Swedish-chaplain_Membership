@@ -1067,11 +1067,14 @@ export async function recordPayment(
         // zero-rated) the MFA cert number on `tax_receipt_issued`. No new type.
         vat_treatment: loaded.vatTreatment,
         zero_rate_cert_no: loaded.zeroRateCertNo,
+        // Two-arm by construction: the invoice_paid emit above already
+        // THREW on (memberId null && eventRegistrationId null) — the
+        // invoices_subject_fields_ck invariant — so a null memberId here
+        // guarantees a non-null eventRegistrationId. The former `: {}`
+        // both-null arm was unreachable dead code.
         ...(memberId !== null
           ? { member_id: memberId }
-          : loaded.eventRegistrationId !== null
-            ? { event_registration_id: loaded.eventRegistrationId }
-            : {}),
+          : { event_registration_id: loaded.eventRegistrationId }),
       };
       await deps.audit.emit(tx, {
         tenantId: input.tenantId,
@@ -1260,7 +1263,11 @@ export async function recordPayment(
         paymentMethod: eventPaymentMethod,
         triggeredBy: eventTrigger,
         invoiceSubject: loaded.invoiceSubject,
-        paymentDate: input.paymentDate ?? null,
+        // `paymentDate` is REQUIRED by recordPaymentSchema (every rail
+        // zod-parses or constructs it), so the former `?? null` arm was
+        // unreachable dead code; the event field stays `string | null`
+        // for OTHER emitters (e.g. the as-paid path passes null).
+        paymentDate: input.paymentDate,
       };
       for (const cb of callbacks) {
         // I3 review-fix: thread the F4-internal tx so listeners can

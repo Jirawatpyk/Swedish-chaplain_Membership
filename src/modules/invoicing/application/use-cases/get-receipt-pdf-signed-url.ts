@@ -235,11 +235,11 @@ export async function getReceiptPdfSignedUrl(
       // members without re-resolving from actor_user_id. Symmetric
       // with the cross-tenant probe emit shape. `null` for non-member
       // actors (admin/manager) so the column stays opt-in for the
-      // member-timeline query.
+      // member-timeline query. Member arm is non-null by construction:
+      // the ownership gate above already returned `forbidden` for a
+      // member without actorMemberId.
       actor_member_id:
-        input.actorRole === 'member'
-          ? (input.actorMemberId ?? null)
-          : null,
+        input.actorRole === 'member' ? input.actorMemberId! : null,
       receipt_document_number_raw: invoice.receiptDocumentNumberRaw,
       receipt_numbering_mode: combinedMode ? 'combined' : 'separate',
       // Round-4 fix R4-RD-H2 — surface the template version that

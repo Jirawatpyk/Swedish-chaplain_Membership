@@ -1132,6 +1132,278 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.code).toBe('no_snapshot_on_invoice');
   });
+
+  // ---------------------------------------------------------------------------
+  // money-coverage remediation — branch/line closure pins. The last
+  // uncovered paths of the payment write-path: receipt-number overflow,
+  // the post-rollback pdf_render_failed forensics (+ its emit-also-fails
+  // catch), the F5 suppress arm, the zero-rate render threading, the
+  // flag-ON non-member RC path, the corrupted-row invariant throw, the
+  // conflict-kind passthrough, the F5-rail event overrides, and the
+  // paid-summary fallback chain.
+  // ---------------------------------------------------------------------------
+
+  it('overflow — receipt seq > 999_999 under the 088 flag → err overflow via throw-carrier; nothing rendered/applied', async () => {
+    const bill = makeIssuedInvoice({
+      documentNumber: null,
+      sequenceNumber: null,
+      billDocumentNumberRaw: 'SC-2026-000042',
+    });
+    const deps = makeDeps(true, bill, makeSettings(), {
+      taxAtPayment: 'on',
+      sequenceAllocator: { allocateNext: vi.fn(async () => 1_000_000) },
+    });
+    deps.invoiceRepo.findByIdInTx = vi.fn(async () => bill);
+    const r = await recordPayment(deps, input);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('overflow');
+      if (r.error.code === 'overflow') expect(r.error.fiscalYear).toBe(2026);
+    }
+    // The throw aborts the tx: the §87 receipt increment rolls back and
+    // the invoice stays issued.
+    expect(deps.pdfRender.render).not.toHaveBeenCalled();
+    expect(deps.invoiceRepo.applyPayment).not.toHaveBeenCalled();
+  });
+
+  it('T122: pdf_render_failed → err + post-rollback NULL-tx pdf_render_failed audit with render_kind receipt', async () => {
+    const deps = makeDeps(true, makeIssuedInvoice(), makeSettings(), {
+      pdfRender: {
+        render: vi.fn(async () => {
+          throw new Error('font load failed');
+        }),
+      },
+    });
+    const r = await recordPayment(deps, input);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('pdf_render_failed');
+      if (r.error.code === 'pdf_render_failed') {
+        expect(r.error.reason).toContain('font load failed');
+      }
+    }
+    expect(deps.invoiceRepo.applyPayment).not.toHaveBeenCalled();
+    // Forensic evidence survives the rollback — emitted on a NULL tx and
+    // it must not lie about which document failed (the receipt, not the
+    // invoice).
+    expect(deps.audit.emit).toHaveBeenCalledWith(
+      null,
+      expect.objectContaining({
+        eventType: 'pdf_render_failed',
+        requestId: 'req-pay',
+        payload: expect.objectContaining({
+          invoice_id: INVOICE_ID,
+          render_kind: 'receipt',
+        }),
+      }),
+    );
+  });
+
+  it('T122: pdf_render_failed AND the forensic audit emit ALSO throws → swallowed, original typed error surfaces, emit exactly once', async () => {
+    const throwingEmit = vi.fn(async () => {
+      throw new Error('audit store down');
+    });
+    const deps = makeDeps(true, makeIssuedInvoice(), makeSettings(), {
+      pdfRender: {
+        render: vi.fn(async () => {
+          throw new Error('font load failed');
+        }),
+      },
+      audit: { emit: throwingEmit },
+    });
+    // requestId omitted — also pins the forensic row's `requestId ?? null` arm.
+    const r = await recordPayment(deps, { ...input, requestId: undefined });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('pdf_render_failed');
+    // Only the post-rollback forensic emit was attempted; its failure
+    // never masks the original typed error (fire-and-forget contract).
+    expect(throwingEmit).toHaveBeenCalledTimes(1);
+  });
+
+  it('T128a: suppressReceiptEmail=true on the fresh path → no outbox enqueue, emailDispatch disabled, invoice still paid', async () => {
+    const invoice = makeIssuedInvoice();
+    const deps = makeDeps(true, invoice, makeSettings({ autoEmailEnabled: true }));
+    const r = await recordPayment(deps, { ...input, suppressReceiptEmail: true });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.status).toBe('paid');
+      // F5 suppressed — intentionally not sent, so 'disabled', never a
+      // 'skipped_no_email' warning (the member HAS an email on file).
+      expect(r.value.emailDispatch).toBe('disabled');
+    }
+    expect(deps.outbox.enqueue).not.toHaveBeenCalled();
+    // Status flip + audit still ran — only the dispatcher enqueue is gated.
+    expect(deps.invoiceRepo.applyPayment).toHaveBeenCalledTimes(1);
+  });
+
+  it('088 US8: zero-rated §80/1(5) row → receipt render threads the pinned vatTreatment + MFA cert (never re-computed)', async () => {
+    const zeroRated = makeIssuedInvoice({
+      vatTreatment: 'zero_rated_80_1_5',
+      zeroRateCertNo: 'MFA-2026-0001',
+      zeroRateCertDate: '2026-03-01',
+    });
+    const deps = makeDeps(true, zeroRated, makeSettings());
+    deps.invoiceRepo.findByIdInTx = vi.fn(async () => zeroRated);
+    const r = await recordPayment(deps, input);
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
+    expect(deps.pdfRender.render).toHaveBeenCalledWith(
+      expect.objectContaining({
+        vatTreatment: 'zero_rated_80_1_5',
+        zeroRateCertNo: 'MFA-2026-0001',
+        zeroRateCertDate: '2026-03-01',
+      }),
+    );
+  });
+
+  it('088 flag ON + non-member EVENT bill with TIN → tax_receipt_issued carries event_registration_id, never member_id', async () => {
+    const bill = makeNonMemberEventInvoice({
+      documentNumber: null,
+      sequenceNumber: null,
+      billDocumentNumberRaw: 'SC-2026-000077',
+    });
+    const deps = makeDeps(true, bill, makeSettings(), { taxAtPayment: 'on' });
+    deps.invoiceRepo.findByIdInTx = vi.fn(async () => bill);
+    // requestId omitted — pins the tax-receipt row's `requestId ?? null` arm.
+    const r = await recordPayment(deps, { ...input, requestId: undefined });
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
+
+    const taxEmit = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.find(
+      ([, e]) => (e as { eventType: string }).eventType === 'tax_receipt_issued',
+    );
+    expect(taxEmit, 'expected a tax_receipt_issued audit emit').toBeDefined();
+    expect((taxEmit![1] as { requestId: string | null }).requestId).toBeNull();
+    const payload = (taxEmit![1] as { payload: Record<string, unknown> }).payload;
+    expect(payload.event_registration_id).toBe('reg-88');
+    expect('member_id' in payload).toBe(false);
+    expect(payload.receipt_document_number_raw).toBe('RC-2026-000001');
+  });
+
+  it('corrupted non-member EVENT row with eventRegistrationId NULL → THROWS the invoices_subject_fields_ck invariant error', async () => {
+    // Legacy-shaped (documentNumber present, no bill number) so the two 088
+    // flag guards stay quiet with the flag OFF — the flow must reach the
+    // audit branch, where the corruption crashes loudly.
+    const corrupt = makeNonMemberEventInvoice({
+      eventRegistrationId: null,
+      billDocumentNumberRaw: null,
+    });
+    const deps = makeDeps(true, corrupt, makeSettings());
+    deps.invoiceRepo.findByIdInTx = vi.fn(async () => corrupt);
+    await expect(recordPayment(deps, input)).rejects.toThrow(
+      /non-member event invoice has null event_registration_id/,
+    );
+  });
+
+  it('foreign InvoiceApplyConflictError kind (applyIssue) from applyPayment → rethrown UNCHANGED, not remapped', async () => {
+    const invoice = makeIssuedInvoice();
+    const deps = makeDeps(true, invoice, makeSettings());
+    deps.invoiceRepo.applyPayment = vi.fn(async () => {
+      throw new InvoiceApplyConflictError('applyIssue');
+    });
+    const thrown = await recordPayment(deps, input).catch((e: unknown) => e);
+    expect(thrown).toBeInstanceOf(InvoiceApplyConflictError);
+    // The kind survives — only kind='applyPayment' maps to the typed
+    // concurrent_state_change; anything else is a programming error.
+    expect((thrown as InvoiceApplyConflictError).kind).toBe('applyIssue');
+  });
+
+  it('F5 rail override: processorMethod stripe_card + webhook trigger → onPaid event carries the processor rail, not the persisted enum', async () => {
+    const invoice = makeIssuedInvoice();
+    const onPaid = vi.fn(async () => {});
+    const deps = makeDeps(true, invoice, makeSettings(), { onPaidCallbacks: [onPaid] });
+    const r = await recordPayment(deps, {
+      ...input,
+      paymentMethod: 'bank_transfer',
+      processorMethod: 'stripe_card',
+      triggeredBy: 'webhook',
+    });
+    expect(r.ok).toBe(true);
+    expect(onPaid).toHaveBeenCalledTimes(1);
+    expect(onPaid).toHaveBeenCalledWith(
+      expect.objectContaining({
+        paymentMethod: 'stripe_card',
+        triggeredBy: 'webhook',
+        paymentDate: '2026-05-18',
+      }),
+      expect.anything(),
+    );
+  });
+
+  it('onPaid event paidAt uses applyPayment RETURNING paid_at when present (not the clock)', async () => {
+    const invoice = makeIssuedInvoice();
+    const onPaid = vi.fn(async () => {});
+    const deps = makeDeps(true, invoice, makeSettings(), { onPaidCallbacks: [onPaid] });
+    deps.invoiceRepo.applyPayment = vi.fn(async () => ({
+      ...invoice,
+      status: 'paid',
+      paidAt: '2026-05-18T09:59:00Z',
+    }) as Invoice);
+    const r = await recordPayment(deps, input);
+    expect(r.ok).toBe(true);
+    expect(onPaid).toHaveBeenCalledWith(
+      expect.objectContaining({ paidAt: '2026-05-18T09:59:00Z' }),
+      expect.anything(),
+    );
+  });
+
+  it('idempotent replay race — lock says paid but findByIdInTx returns null → invoice_not_found', async () => {
+    const paid = makeIssuedInvoice({ status: 'paid' });
+    const deps = makeDeps(true, paid, makeSettings());
+    deps.invoiceRepo.findByIdInTx = vi.fn(async () => null);
+    const r = await recordPayment(deps, input);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('invoice_not_found');
+  });
+
+  it('invoice_not_found probe with requestId OMITTED → probe row records requestId null', async () => {
+    const deps = makeDeps(false, null, makeSettings());
+    const r = await recordPayment(deps, { ...input, requestId: undefined });
+    expect(r.ok).toBe(false);
+    expect(deps.audit.emit).toHaveBeenCalledWith(
+      null,
+      expect.objectContaining({
+        eventType: 'invoice_cross_tenant_probe',
+        requestId: null,
+      }),
+    );
+  });
+
+  it('paid-summary fallback chain — bill number absent → the just-minted RC (receiptDocumentNumberRaw) names the audit', async () => {
+    const rcRow = makeIssuedInvoice({
+      billDocumentNumberRaw: null,
+      receiptDocumentNumberRaw: 'RC-2026-000099',
+    });
+    const deps = makeDeps(true, rcRow, makeSettings());
+    deps.invoiceRepo.findByIdInTx = vi.fn(async () => rcRow);
+    const r = await recordPayment(deps, input);
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
+    const paidEmit = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.find(
+      ([, e]) => (e as { eventType: string }).eventType === 'invoice_paid',
+    );
+    expect((paidEmit![1] as { summary: string }).summary).toBe(
+      'Invoice RC-2026-000099 marked paid',
+    );
+  });
+
+  it('paid-summary fallback chain — ALL document numbers null → falls back to the invoiceId (never "undefined") + member emit echoes requestId null', async () => {
+    const bareRow = makeIssuedInvoice({
+      documentNumber: null,
+      sequenceNumber: null,
+      billDocumentNumberRaw: null,
+      receiptDocumentNumberRaw: null,
+    });
+    const deps = makeDeps(true, bareRow, makeSettings());
+    deps.invoiceRepo.findByIdInTx = vi.fn(async () => bareRow);
+    const r = await recordPayment(deps, { ...input, requestId: undefined });
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
+    const paidEmit = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.find(
+      ([, e]) => (e as { eventType: string }).eventType === 'invoice_paid',
+    );
+    expect((paidEmit![1] as { summary: string }).summary).toBe(
+      `Invoice ${INVOICE_ID} marked paid`,
+    );
+    expect((paidEmit![1] as { summary: string }).summary).not.toContain('undefined');
+    expect((paidEmit![1] as { requestId: string | null }).requestId).toBeNull();
+  });
 });
 
 describe('recordPayment — server-side payment-date guard (defense-in-depth)', () => {
