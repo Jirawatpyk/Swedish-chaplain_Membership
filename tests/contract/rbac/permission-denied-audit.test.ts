@@ -165,7 +165,7 @@ describe('T017 page denials', () => {
    */
   it('defaultDeps page leg: a no-deps denial derives request id + route from headers', async () => {
     vi.resetModules();
-    const append = vi.fn(async () => {});
+    const append = vi.fn(async (_event: unknown) => {});
     vi.doMock('next/headers', () => ({
       headers: async () =>
         new Headers({

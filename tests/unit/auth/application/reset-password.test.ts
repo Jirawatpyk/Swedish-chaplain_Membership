@@ -497,11 +497,11 @@ describe('resetPassword use case', () => {
     // Drizzle re-throws whatever the callback threw; the sentinel carries the
     // typed use-case error out of the rollback (tx-abort.ts pattern).
     vi.mocked(db.transaction).mockImplementationOnce(async () => {
-      throw new TxAbort<ResetPasswordError>({ code: 'link-invalid', reason: 'consumed' });
+      throw new TxAbort<ResetPasswordError>({ code: 'link-invalid', reason: 'used' });
     });
     const result = await resetPassword(BASE_INPUT, makeDeps());
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toEqual({ code: 'link-invalid', reason: 'consumed' });
+    if (!result.ok) expect(result.error).toEqual({ code: 'link-invalid', reason: 'used' });
     expect(logger.error).not.toHaveBeenCalled();
     // The tx rolled back: post-commit metrics must NOT fire.
     expect(authMetrics.passwordResetCompleted).not.toHaveBeenCalled();
