@@ -16,10 +16,11 @@ import type { TenantContext } from '@/modules/tenants';
 import { f9RetentionFor, type InsightsAuditPort } from '../ports/audit-port';
 import type { DirectoryRepo } from '../ports/directory-repo';
 import type { LogoContentType, LogoImagePort, LogoStorePort } from '../ports/logo-port';
-// Deep PURE-Domain import (not the barrel): a value import of the auth barrel
+// Deep PURE-Domain imports (not the barrel): a value import of the auth barrel
 // would drag auth-deps' infrastructure singletons (argon2, Upstash, repos)
 // into this Application module's graph at eval time.
-import { isAdminTier, type Role } from '@/modules/auth/domain/role';
+import type { Role } from '@/modules/auth/domain/role';
+import { hasPermission } from '@/modules/auth/domain/permissions/evaluator';
 
 // 016 T030/T033 — widened to the full Role union so routes stop casting and
 // audit emitters record the LITERAL actor role; the decision arms in this
@@ -64,11 +65,12 @@ export type SetDirectoryLogoError =
   | 'member_not_found';
 
 function authorizeMutation(meta: DirectoryLogoMeta, memberId: string): boolean {
-  if (meta.actorRole === 'manager') return false;
+  // Member-own listing — a portal identity check, not a staff grant.
   if (meta.actorRole === 'member') return meta.actorMemberId === memberId;
-  // Administrator set (admin ∪ super_admin per D16 — 016 T030); any other
-  // role (marketing/unknown) falls through to false.
-  return isAdminTier(meta.actorRole);
+  // Staff arm — keyed on `members.write` (016 polish, I6): the logo is a
+  // directory-listing mutation. manager (read-only), marketing and unknown
+  // roles all lack the key and deny.
+  return hasPermission(meta.actorRole, 'members.write');
 }
 
 export async function setDirectoryLogo(

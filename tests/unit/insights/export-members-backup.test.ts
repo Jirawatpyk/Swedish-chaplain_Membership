@@ -69,13 +69,23 @@ const meta = {
 describe('exportMembersBackup', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it.each(['manager', 'member'] as const)('%s → forbidden, source never touched', async (role) => {
+  // 016 polish (I6) — the gate is keyed on `members.bulk` (admin ∪ super_admin).
+  // `marketing` is the distinguishing case: it holds `members.read` but NOT
+  // `members.bulk`, so a future edit that grabs the wrong members.* key flips it.
+  it.each(['manager', 'member', 'marketing'] as const)('%s → forbidden, source never touched', async (role) => {
     const deps = makeDeps();
     const res = await exportMembersBackup({ ...meta, actorRole: role }, ctx, deps);
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.error).toBe('forbidden');
     expect(deps.source.gatherInTx).not.toHaveBeenCalled();
     expect(deps.audit.recordInTx).not.toHaveBeenCalled();
+  });
+
+  it('super_admin passes the gate (same members.bulk population as admin)', async () => {
+    const deps = makeDeps();
+    const res = await exportMembersBackup({ ...meta, actorRole: 'super_admin' }, ctx, deps);
+    expect(res.ok).toBe(true);
+    expect(deps.source.gatherInTx).toHaveBeenCalledTimes(1);
   });
 
   it('admin: zips 3 named CSVs, audits counts in-tx, Bangkok filename', async () => {

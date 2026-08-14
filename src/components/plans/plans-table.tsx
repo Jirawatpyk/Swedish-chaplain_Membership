@@ -26,7 +26,9 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { CopyIcon, MoreHorizontal, PlusIcon, SearchIcon } from 'lucide-react';
-import { isAdminTier, type Role } from '@/modules/auth/domain/role';
+// Deep PURE-Domain imports (never the auth barrel — this is a client bundle).
+import type { Role } from '@/modules/auth/domain/role';
+import { hasPermission } from '@/modules/auth/domain/permissions/evaluator';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { EmptyState } from '@/components/shell/empty-state';
@@ -100,8 +102,8 @@ export interface PlansTableProps {
   readonly plans: ReadonlyArray<PlanListItem>;
   readonly currencyCode: string;
   readonly year: number;
-  /** 016 T030 — the literal session role; admin affordances key on the
-   *  administrator set (admin ∪ super_admin per D16) below. */
+  /** The literal session role; mutation affordances key on `plans.write`
+   *  (016 polish, I6 — admin ∪ super_admin today, but the KEY is the truth). */
   readonly currentUserRole: Role;
   readonly initialFilter: {
     readonly category: 'corporate' | 'partnership' | null;
@@ -240,9 +242,10 @@ export function PlansTable({
     });
   }, [plans]);
 
-  // 016 T030 — a promoted super_admin keeps the admin affordances (the old
-  // literal hid every mutation CTA from it post-Migration-C).
-  const isAdmin = isAdminTier(currentUserRole);
+  // 016 polish (I6) — affordances key on `plans.write`, the permission the
+  // mutation routes themselves require, so the CTAs can never outrun or lag
+  // the API's own gate when a bundle moves.
+  const canWritePlans = hasPermission(currentUserRole, 'plans.write');
 
   // Year filter options — a small window around the viewed year (always
   // included), newest first. Before BUG-009 there was NO visible year
@@ -378,7 +381,7 @@ export function PlansTable({
           </Label>
         </div>
 
-        {isAdmin ? (
+        {canWritePlans ? (
           <div className="flex items-center gap-2">
             <Switch
               id="plans-show-deleted"
@@ -427,7 +430,7 @@ export function PlansTable({
               <TableHead scope="col" className="text-xs uppercase tracking-wide text-muted-foreground">
                 {t('columns.status')}
               </TableHead>
-              {isAdmin ? (
+              {canWritePlans ? (
                 <TableHead scope="col" className="w-[48px] text-xs uppercase tracking-wide text-muted-foreground">
                   <span className="sr-only">{t('columns.actions')}</span>
                 </TableHead>
@@ -437,13 +440,13 @@ export function PlansTable({
         <TableBody>
           {sorted.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={isAdmin ? 7 : 6} className="py-12">
+              <TableCell colSpan={canWritePlans ? 7 : 6} className="py-12">
                 <EmptyState
                   icon={PlusIcon}
                   title={t('empty.title')}
                   description={t('empty.description')}
                   action={
-                    isAdmin ? (
+                    canWritePlans ? (
                       <div className="flex flex-wrap items-center justify-center gap-2">
                         <Link
                           href="/admin/plans/new"
@@ -485,7 +488,7 @@ export function PlansTable({
                     >
                       <LocaleTextDisplay
                         value={plan.plan_name}
-                        showMissingBadge={isAdmin}
+                        showMissingBadge={canWritePlans}
                         dataAttr="data-plan-name"
                       />
                     </a>
@@ -516,7 +519,7 @@ export function PlansTable({
                       <Badge variant="secondary">{t('badges.inactive')}</Badge>
                     )}
                   </TableCell>
-                  {isAdmin ? (
+                  {canWritePlans ? (
                     <TableCell>
                       <DropdownMenu>
                         <DropdownMenuTrigger

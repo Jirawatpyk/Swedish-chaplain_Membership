@@ -38,10 +38,11 @@ import type {
   MembersBackupData,
   MembersBackupSource,
 } from '../ports/members-backup-source';
-// Deep PURE-Domain import (not the barrel): a value import of the auth barrel
+// Deep PURE-Domain imports (not the barrel): a value import of the auth barrel
 // would drag auth-deps' infrastructure singletons (argon2, Upstash, repos)
 // into this Application module's graph at eval time.
-import { isAdminTier, type Role } from '@/modules/auth/domain/role';
+import type { Role } from '@/modules/auth/domain/role';
+import { hasPermission } from '@/modules/auth/domain/permissions/evaluator';
 
 // 016 T030/T033 — widened to the full Role union so routes stop casting and
 // audit emitters record the LITERAL actor role; the decision arms in this
@@ -83,10 +84,11 @@ export async function exportMembersBackup(
   ctx: TenantContext,
   deps: ExportMembersBackupDeps,
 ): Promise<Result<ExportMembersBackupOutput, ExportMembersBackupError>> {
-  // 016 T030 — administrator set (admin ∪ super_admin per D16), matching the
-  // `members.bulk` holders on both flag legs; the old `!== 'admin'` literal
-  // would have 403ed every promoted super_admin post-Migration-C.
-  if (!isAdminTier(meta.actorRole)) return err('forbidden');
+  // 016 polish (I6) — keyed on `members.bulk`, the same permission the route
+  // gate declares. The arm survives as defence-in-depth for a caller that
+  // skipped the route gate; a role-tier check here would silently diverge the
+  // moment the bundle moved.
+  if (!hasPermission(meta.actorRole, 'members.bulk')) return err('forbidden');
 
   let data: MembersBackupData;
   try {

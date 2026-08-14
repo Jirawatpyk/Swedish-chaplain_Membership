@@ -132,16 +132,3 @@ export function isAdministrativeRole(role: Role | (string & {})): boolean {
   return (ADMINISTRATIVE_ROLES as readonly string[]).includes(role);
 }
 
-/**
- * Admin-TIER predicate: `admin` ∪ `super_admin`. NOT the last-administrator
- * population above — this is the affordance/authorization tier five call
- * sites (plans-table CTAs, insights export ×3, directory-logo) used to spell
- * as `isAdministrativeRole(role, false)` when the predicate was
- * flag-parameterised. Kept as its own name so narrowing the GUARD population
- * (which must be super_admin-only) can never again silently narrow these —
- * that near-miss is documented in the 016 review as I6, and each of the five
- * remains a candidate for a real permission key.
- */
-export function isAdminTier(role: Role | (string & {})): boolean {
-  return role === 'admin' || role === 'super_admin';
-}

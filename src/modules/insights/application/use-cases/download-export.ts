@@ -32,10 +32,11 @@ import { f9RetentionFor, type InsightsAuditPort } from '../ports/audit-port';
 import type { ClockPort } from '../ports/clock-port';
 import type { ExportJobRecord, ExportJobRepo } from '../ports/export-job-repo';
 import type { PrivateBlobPort } from '../ports/private-blob-port';
-// Deep PURE-Domain import (not the barrel): a value import of the auth barrel
+// Deep PURE-Domain imports (not the barrel): a value import of the auth barrel
 // would drag auth-deps' infrastructure singletons (argon2, Upstash, repos)
 // into this Application module's graph at eval time.
-import { isAdminTier, type Role } from '@/modules/auth/domain/role';
+import type { Role } from '@/modules/auth/domain/role';
+import { hasPermission } from '@/modules/auth/domain/permissions/evaluator';
 
 // 016 T030/T033 — widened to the full Role union so routes stop casting and
 // audit emitters record the LITERAL actor role; the decision arms in this
@@ -53,16 +54,17 @@ export interface DownloadExportMeta {
 /** True when the caller may access this job's artefact. */
 function authorize(job: ExportJobRecord, meta: DownloadExportMeta): boolean {
   if (job.subjectMemberId === null) {
-    // Directory artefact (E-Book / JSON) — the directory.export population on
-    // both flag legs: admin ∪ super_admin (D16, 016 T030) ∪ manager.
-    // Marketing stays denied (route key + this arm agree).
-    return isAdminTier(meta.actorRole) || meta.actorRole === 'manager';
+    // Directory artefact (E-Book / JSON) — keyed on `directory.export`
+    // (016 polish, I6): admin ∪ super_admin ∪ manager; marketing and member
+    // deny. Route key + this arm now read the SAME key.
+    return hasPermission(meta.actorRole, 'directory.export');
   }
-  // Subject artefact (GDPR archive) — the subject member or a same-tenant
-  // administrator (admin ∪ super_admin per D16 — 016 T030).
-  if (isAdminTier(meta.actorRole)) return true;
+  // Subject artefact (GDPR archive) — the subject member themselves, or a
+  // staff role holding `members.pii_sensitive`. Keying the staff arm on the
+  // PII key (not `members.bulk`, whose holders merely COINCIDE today) is the
+  // exact move T057 prescribed for PII egress paths.
   if (meta.actorRole === 'member') return meta.actorMemberId === job.subjectMemberId;
-  return false;
+  return hasPermission(meta.actorRole, 'members.pii_sensitive');
 }
 
 function isExpired(job: ExportJobRecord, nowMs: number): boolean {
