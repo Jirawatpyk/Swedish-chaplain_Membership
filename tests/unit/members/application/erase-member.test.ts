@@ -20,7 +20,7 @@ import { asMemberId } from '@/modules/members';
 import { ok } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import type { MemberErasureReason } from '@/modules/members/application/ports/broadcasts-content-scrub-port';
-import { buildEraseDeps } from './erase-member.fixtures';
+import { buildEraseDeps, type StubbedEraseDeps } from './erase-member.fixtures';
 
 // S2 type-design (US2b): structural coupling of the cross-module
 // `MemberErasureReason` port enum to the erasure use-case's input. The port
@@ -899,6 +899,95 @@ describe('eraseMember — requested audit + atomic scrub', () => {
     expect(types).not.toContain('member_erased');
   });
 
+  // Money-path coverage remediation — the three M1/L1 in-tx ports below were
+  // stubbed clean by buildEraseDeps and NO test ever failed them, so their
+  // throw-on-failure guards were dead. Each failure must roll the scrub tx
+  // back (server_error), withhold member_erased, and never reach the
+  // post-commit fan-out.
+  it('returns server_error when the email-change-token invalidation fails inside the scrub tx (M1)', async () => {
+    // A live 48h revert token holds the ORIGINAL email in plaintext; a silent
+    // failure here would leave it redeemable post-erasure (Art.17 PII
+    // resurrection).
+    const deps = buildEraseDeps();
+    deps.contactRepo.listAllLinkedUserIdsForMemberInTx = vi.fn(async () => ['u-1']);
+    deps.tokens.invalidateAllActiveForUsersInTx = vi.fn(
+      async () => ({ ok: false, error: { code: 'repo.unexpected' } }) as never,
+    );
+    const res = await eraseMember(
+      asMemberId('m-1'),
+      { reason: 'gdpr_erasure_request' },
+      META,
+      deps,
+    );
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error.type).toBe('server_error');
+    // The port received the UNFILTERED work-list (removed contacts included).
+    expect(deps.tokens.invalidateAllActiveForUsersInTx).toHaveBeenCalledWith(
+      expect.anything(),
+      ['u-1'],
+      expect.any(Date),
+    );
+    const types = deps.audit.recordInTx.mock.calls.map(
+      (c) => (c[2] as { type: string }).type,
+    );
+    expect(types).not.toContain('member_erased');
+    // Rolled back BEFORE the post-commit fan-out.
+    expect(deps.broadcastsCascade.cancelInFlightForMember).not.toHaveBeenCalled();
+    expect(deps.userErasure.eraseUser).not.toHaveBeenCalled();
+  });
+
+  it('returns server_error when the linked-login email read fails inside the scrub tx (L1)', async () => {
+    const deps = buildEraseDeps();
+    deps.contactRepo.listAllLinkedUserIdsForMemberInTx = vi.fn(async () => ['u-1']);
+    deps.userEmails.listEmailsForUsersInTx = vi.fn(
+      async () => ({ ok: false, error: { code: 'repo.unexpected' } }) as never,
+    );
+    const res = await eraseMember(
+      asMemberId('m-1'),
+      { reason: 'gdpr_erasure_request' },
+      META,
+      deps,
+    );
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error.type).toBe('server_error');
+    // Failed AFTER the scrubs but BEFORE the outbox cancel.
+    expect(deps.outboxCancel.cancelPendingForEmailsInTx).not.toHaveBeenCalled();
+    expect(deps.broadcastsCascade.cancelInFlightForMember).not.toHaveBeenCalled();
+  });
+
+  it('returns server_error when the pending-outbox cancel fails inside the scrub tx (L1/FIX-4)', async () => {
+    const deps = buildEraseDeps();
+    deps.contactRepo.listLiveEmailsForMemberInTx = vi.fn(async () => ['live@example.com']);
+    deps.contactRepo.listAllLinkedUserIdsForMemberInTx = vi.fn(async () => ['u-1']);
+    deps.userEmails.listEmailsForUsersInTx = vi.fn(async () => ok(['login@example.com']));
+    deps.tokens.invalidateAllActiveForUsersInTx = vi.fn(async () =>
+      ok({ invalidatedEmails: ['old@example.com'] }),
+    );
+    deps.outboxCancel.cancelPendingForEmailsInTx = vi.fn(
+      async () => ({ ok: false, error: { code: 'repo.unexpected' } }) as never,
+    );
+    const res = await eraseMember(
+      asMemberId('m-1'),
+      { reason: 'gdpr_erasure_request' },
+      META,
+      deps,
+    );
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error.type).toBe('server_error');
+    // The cancel received the deduped union of live + login + token-invalidated
+    // addresses, plus the FIX-4 memberId ownership guard.
+    expect(deps.outboxCancel.cancelPendingForEmailsInTx).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.arrayContaining(['live@example.com', 'login@example.com', 'old@example.com']),
+      asMemberId('m-1'),
+    );
+    const types = deps.audit.recordInTx.mock.calls.map(
+      (c) => (c[2] as { type: string }).type,
+    );
+    expect(types).not.toContain('member_erased');
+    expect(deps.broadcastsCascade.cancelInFlightForMember).not.toHaveBeenCalled();
+  });
+
   // Renewals cascade returns a bare `cascade_failed` outcome (NOT
   // cascade_partial_failure / ok). The `r.outcome !== 'ok'` else-if arm flips
   // allCascadesClean=false so member_erased is withheld — the broadcasts
@@ -1722,5 +1811,141 @@ describe('US3-A — Art.12 attestation in member_erasure_requested payload', () 
     );
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.error.type).toBe('invalid_body');
+  });
+});
+
+/**
+ * Money-path coverage remediation — the `'cause' in X ? X.cause : undefined`
+ * forensic-threading ternaries. Every failure stub in this suite historically
+ * omitted `cause`, so all TEN true-arms were dead: a Neon SQLSTATE never
+ * provably survived into the logged Error. Each row drives ONE site with a
+ * cause-bearing repo error and asserts the outer log carries it verbatim.
+ */
+describe('eraseMember — repo cause threads into the logged Error (forensics)', () => {
+  const CAUSE = { sqlState: '40P01', message: 'deadlock detected' };
+  const failing = () =>
+    ({ ok: false, error: { code: 'repo.unexpected', cause: CAUSE } }) as never;
+  const failAuditType = (d: StubbedEraseDeps, type: string) => {
+    d.audit.recordInTx = vi.fn(
+      async (_tx: unknown, _ctx: unknown, ev: { type: string }) =>
+        ev.type === type ? failing() : ok(undefined),
+    ) as never;
+  };
+
+  const ROWS: ReadonlyArray<
+    readonly [label: string, apply: (d: StubbedEraseDeps) => void, log: string, wantOk: boolean]
+  > = [
+    [
+      'member_erasure_requested audit',
+      (d) => failAuditType(d, 'member_erasure_requested'),
+      'erase-member: requested-audit failed',
+      false,
+    ],
+    [
+      'pre-scrub findByIdInTx',
+      (d) => {
+        d.memberRepo.findByIdInTx = vi.fn(async () => failing());
+      },
+      'erase-member: scrub tx failed',
+      false,
+    ],
+    [
+      'member scrubPiiInTx',
+      (d) => {
+        d.memberRepo.scrubPiiInTx = vi.fn(async () => failing());
+      },
+      'erase-member: scrub tx failed',
+      false,
+    ],
+    [
+      'contact scrubPiiForMemberInTx',
+      (d) => {
+        d.contactRepo.scrubPiiForMemberInTx = vi.fn(async () => failing());
+      },
+      'erase-member: scrub tx failed',
+      false,
+    ],
+    [
+      'session revoke',
+      (d) => {
+        d.contactRepo.listLinkedUserIdsForMemberInTx = vi.fn(async () => ['u-1']);
+        d.sessions.revokeAllForInTx = vi.fn(async () => failing());
+      },
+      'erase-member: scrub tx failed',
+      false,
+    ],
+    [
+      'user_sessions_revoked audit',
+      (d) => {
+        d.contactRepo.listLinkedUserIdsForMemberInTx = vi.fn(async () => ['u-1']);
+        failAuditType(d, 'user_sessions_revoked');
+      },
+      'erase-member: scrub tx failed',
+      false,
+    ],
+    [
+      'token invalidation',
+      (d) => {
+        d.contactRepo.listAllLinkedUserIdsForMemberInTx = vi.fn(async () => ['u-1']);
+        d.tokens.invalidateAllActiveForUsersInTx = vi.fn(async () => failing());
+      },
+      'erase-member: scrub tx failed',
+      false,
+    ],
+    [
+      'linked-login email read',
+      (d) => {
+        d.contactRepo.listAllLinkedUserIdsForMemberInTx = vi.fn(async () => ['u-1']);
+        d.userEmails.listEmailsForUsersInTx = vi.fn(async () => failing());
+      },
+      'erase-member: scrub tx failed',
+      false,
+    ],
+    [
+      'outbox cancel',
+      (d) => {
+        d.contactRepo.listLiveEmailsForMemberInTx = vi.fn(async () => ['live@example.com']);
+        d.outboxCancel.cancelPendingForEmailsInTx = vi.fn(async () => failing());
+      },
+      'erase-member: scrub tx failed',
+      false,
+    ],
+    [
+      'member_erased audit',
+      (d) => failAuditType(d, 'member_erased'),
+      'erase-member: member_erased audit failed',
+      true,
+    ],
+  ];
+
+  describe.each(ROWS)('%s', (_label, apply, expectedLog, wantOk) => {
+    it('preserves error.cause for forensics', async () => {
+      const deps = buildEraseDeps();
+      apply(deps);
+      const spy = vi.spyOn(logger, 'error').mockImplementation(() => undefined as never);
+      try {
+        const res = await eraseMember(
+          asMemberId('m-1'),
+          { reason: 'gdpr_erasure_request' },
+          META,
+          deps,
+        );
+        if (wantOk) {
+          // member_erased audit failure is post-commit: the erasure holds,
+          // cascadesComplete flips false for the US2 reconciler.
+          expect(res.ok).toBe(true);
+          if (res.ok) expect(res.value.cascadesComplete).toBe(false);
+        } else {
+          expect(res.ok).toBe(false);
+          if (!res.ok) expect(res.error.type).toBe('server_error');
+        }
+        const call = spy.mock.calls.find((c) => c[1] === expectedLog);
+        expect(call, `expected a "${expectedLog}" log`).toBeDefined();
+        const logged = (call?.[0] as { err?: unknown }).err;
+        expect((logged as Error).cause).toEqual(CAUSE);
+      } finally {
+        spy.mockRestore();
+      }
+    });
   });
 });
