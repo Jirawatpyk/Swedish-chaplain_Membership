@@ -28,7 +28,7 @@ export async function POST(
   context: { params: Promise<{ id: string }> },
 ): Promise<NextResponse> {
   const correlationId = randomUUID();
-  const ctx = await requireApiPermission(request, 'broadcasts.write');
+  const ctx = await requireApiPermission(request, 'broadcasts.clear_halt');
   if ('response' in ctx) return ctx.response;
 
   const { id } = await context.params;
@@ -48,11 +48,7 @@ export async function POST(
       // authorization; the `broadcasts.write` gate above decided admission
       // (017 truth sweep — the bridge used to hardcode 'admin').
       actorRole:
-        ctx.current.user.role === 'super_admin'
-          ? 'super_admin'
-          : ctx.current.user.role === 'marketing'
-            ? 'marketing'
-            : 'admin',
+        ctx.current.user.role === 'super_admin' ? 'super_admin' : 'admin',
       requestId: ctx.requestId,
     });
     if (!result.ok) {

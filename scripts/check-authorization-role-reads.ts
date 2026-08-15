@@ -96,8 +96,14 @@ const COMPARISON = new RegExp(
  * when sites are legitimately removed; never lower it to make a run pass.
  *
  * Pinned to the MEASURED TOTAL — `marked + unmarked`, which is what `scanned`
- * counts — not to the `marked` counter. 68 as of the 018 deferred follow-ups
- * (the refund-initiate route's attribution ternary); 67 as of the 017 truth
+ * counts — not to the `marked` counter. 67 as of the 018 clear-halt narrowing:
+ * the 018 follow-ups ADDED one site (the refund-initiate route's attribution
+ * ternary, 67 → 68) and then REMOVED one (the halt-clear route's `marketing`
+ * arm, deleted when `broadcasts.clear_halt` narrowed clearing to the admin
+ * tier — a deliberate capability change, not a scanner regression), landing
+ * back at 67. Lowering this number is otherwise forbidden; it is allowed here
+ * only because the removed site is named above and reviewable in the diff.
+ * Also 67 as of the 017 truth
  * sweep (2026-08-15): the invoicing/events/broadcasts route stamps each add
  * a marker-hosted `role === 'super_admin' ? … : 'admin'` attribution
  * ternary. It was 52 after the 016 post-ship review fixes (2026-08-14): the finding-#3 sweep added 14 marker-hosted
@@ -113,7 +119,7 @@ const COMPARISON = new RegExp(
  * blind before tripping. The T065 gate reported "0 unmarked" while it could not
  * see 341 lines of src/config/nav.ts.
  */
-const MIN_EXPECTED_SITES = 68;
+const MIN_EXPECTED_SITES = 67;
 
 /**
  * Every accepted claim. Each says what the literal is doing INSTEAD of

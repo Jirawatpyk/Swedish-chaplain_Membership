@@ -31,7 +31,7 @@ describe('permission catalogue (§ 4.1 pinned)', () => {
   it('contains exactly the 40 pinned § 4.1 keys', () => {
     const keys = PERMISSION_CATALOGUE.map((e) => e.key).sort();
     expect(keys).toEqual([...PINNED_KEYS].sort());
-    expect(keys).toHaveLength(40);
+    expect(keys).toHaveLength(41);
   });
 
   it('superAdminOnly flags match the pinned set exactly', () => {

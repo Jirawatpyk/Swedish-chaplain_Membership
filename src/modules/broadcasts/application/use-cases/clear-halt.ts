@@ -40,7 +40,7 @@ export interface ClearHaltInput {
    * so the halt-clear is authorized against the REAL actor (the bridge
    * used to hardcode 'admin', which made that check a no-op).
    */
-  readonly actorRole: 'admin' | 'super_admin' | 'marketing';
+  readonly actorRole: 'admin' | 'super_admin';
   readonly requestId: string | null;
 }
 
