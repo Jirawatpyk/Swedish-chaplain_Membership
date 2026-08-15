@@ -577,6 +577,12 @@ export interface RenewalCycleRepo {
       readonly initiatedAt: string;
       readonly refundId: string;
       readonly actorUserId: string;
+      /**
+       * 016 post-ship follow-up (0290) — the rejecting admin's LITERAL role,
+       * persisted so the reconcile replay stamps the truth (not an assumed
+       * 'admin') into the append-only settle audit.
+       */
+      readonly actorRole: 'admin' | 'super_admin';
     },
   ): Promise<boolean>;
 

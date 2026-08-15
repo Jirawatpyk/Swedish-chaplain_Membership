@@ -171,6 +171,7 @@ async function readCycle(tenant: TestTenant, cycleId: string) {
         rejectRefundInitiatedAt: renewalCycles.rejectRefundInitiatedAt,
         rejectRefundId: renewalCycles.rejectRefundId,
         rejectActorUserId: renewalCycles.rejectActorUserId,
+        rejectActorRole: renewalCycles.rejectActorRole,
       })
       .from(renewalCycles)
       .where(eq(renewalCycles.cycleId, cycleId))
@@ -605,7 +606,7 @@ describe('F8-RP async reject-with-refund settles to cancelled (live Neon)', () =
         tx,
         tenantA.ctx.slug,
         asCycleId(cycleId),
-        { initiatedAt, refundId: refundA, actorUserId: actorA },
+        { initiatedAt, refundId: refundA, actorUserId: actorA, actorRole: 'super_admin' as const },
       );
     });
     expect(firstMarked).toBe(true);
@@ -619,7 +620,7 @@ describe('F8-RP async reject-with-refund settles to cancelled (live Neon)', () =
         tx,
         tenantA.ctx.slug,
         asCycleId(cycleId),
-        { initiatedAt, refundId: refundB, actorUserId: actorB },
+        { initiatedAt, refundId: refundB, actorUserId: actorB, actorRole: 'admin' as const },
       );
     });
     expect(secondMarked).toBe(false); // first-writer-wins
@@ -628,6 +629,9 @@ describe('F8-RP async reject-with-refund settles to cancelled (live Neon)', () =
     const afterSecond = await readCycle(tenantA, cycleId);
     expect(afterSecond?.rejectRefundId).toBe(refundA);
     expect(afterSecond?.rejectActorUserId).toBe(actorA);
+    // 0290 — the first writer's ROLE survives the concurrent second stamp too
+    // (writer A stamped super_admin; writer B would have written admin).
+    expect(afterSecond?.rejectActorRole).toBe('super_admin');
 
     // Post-clear re-stamp: clearing the marker (for R_A) then stamping again
     // must succeed — the `IS NULL` guard must NOT break the legitimate
@@ -648,13 +652,16 @@ describe('F8-RP async reject-with-refund settles to cancelled (live Neon)', () =
         tx,
         tenantA.ctx.slug,
         asCycleId(cycleId),
-        { initiatedAt, refundId: refundC, actorUserId: actorC },
+        { initiatedAt, refundId: refundC, actorUserId: actorC, actorRole: 'admin' as const },
       );
     });
     expect(reStamped).toBe(true);
     const afterReStamp = await readCycle(tenantA, cycleId);
     expect(afterReStamp?.rejectRefundId).toBe(refundC);
     expect(afterReStamp?.rejectActorUserId).toBe(actorC);
+    // 0290 — the clear nulls the role with its siblings; the re-stamp writes
+    // the fresh writer's role.
+    expect(afterReStamp?.rejectActorRole).toBe('admin');
   });
 
   it('Finding 1: a settled-FAILED marker-clear throw is per-cycle isolated (live Neon) — poison cycle rolls back with marker intact, a second cycle still converges', async () => {

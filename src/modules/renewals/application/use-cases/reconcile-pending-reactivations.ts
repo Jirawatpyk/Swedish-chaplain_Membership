@@ -873,6 +873,13 @@ async function processMarkedRejectRefund(
     return 'lookup_failed';
   }
   const rejectActorUserId = cycle.rejectActorUserId;
+  // 016 post-ship follow-up (0290) — the rejecting admin's LITERAL role,
+  // persisted at decision time. NULL means the marker predates 0290: fall
+  // back to 'admin' (the old assumption, now scoped to exactly the legacy
+  // rows). The stored text narrows onto the emit union defensively — only
+  // 'super_admin' upgrades the stamp; anything unexpected stays 'admin'.
+  const rejectActorRole: 'admin' | 'super_admin' =
+    cycle.rejectActorRole === 'super_admin' ? 'super_admin' : 'admin';
   // Capture the resolved refund id (R1) as a stable const post-guard: the
   // FAILED-branch marker-clear guards on it (Finding 5) and passes it into a
   // `runInTenant` closure, where property narrowing on `cycle.rejectRefundId`
@@ -1040,13 +1047,10 @@ async function processMarkedRejectRefund(
 
         // `lapsed_member_admin_reactivation_rejected` audit — byte-identical to
         // the sync path: same payload (cycle_id + actor + refund_credit_note_id)
-        // and the REPLAYED admin as actor (actorRole='admin'), NOT the cron.
-        // KNOWN LIMIT (016 post-ship B-1 residual, different class): this is a
-        // cron REPLAY of a stored decision — only the actor's user id was
-        // persisted, not their role at decision time, so 'admin' here is an
-        // assumption, not a session fact. Fixing it needs the role persisted
-        // alongside the pending decision (data-model change; both replay
-        // emits in this file share the limit).
+        // and the REPLAYED admin as actor, NOT the cron. Since 0290 the
+        // decision-time ROLE is persisted with the marker and replayed here
+        // (`rejectActorRole`; pre-0290 markers fall back to 'admin' — the old
+        // assumption, now scoped to exactly the legacy rows).
         await deps.auditEmitter.emitInTx(
           tx,
           {
@@ -1061,7 +1065,7 @@ async function processMarkedRejectRefund(
           {
             tenantId: cycle.tenantId,
             actorUserId: rejectActorUserId,
-            actorRole: 'admin',
+            actorRole: rejectActorRole,
             correlationId,
             requestId: null,
           },
@@ -1115,7 +1119,7 @@ async function processMarkedRejectRefund(
               {
                 tenantId: cycle.tenantId,
                 actorUserId: rejectActorUserId,
-                actorRole: 'admin',
+                actorRole: rejectActorRole,
                 correlationId,
                 requestId: null,
                 summary:

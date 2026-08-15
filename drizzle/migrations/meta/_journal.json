@@ -1968,6 +1968,13 @@
       "when": 1798541700000,
       "tag": "0289_last_admin_guard_serialize",
       "breakpoints": true
+    },
+    {
+      "idx": 291,
+      "version": "7",
+      "when": 1798541800000,
+      "tag": "0290_reject_actor_role",
+      "breakpoints": true
     }
   ]
 }

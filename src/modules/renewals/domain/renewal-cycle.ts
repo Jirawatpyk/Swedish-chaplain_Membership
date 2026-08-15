@@ -144,6 +144,14 @@ interface RenewalCycleBase {
   readonly rejectRefundInitiatedAt: string | null;
   readonly rejectRefundId: string | null;
   readonly rejectActorUserId: string | null;
+  /**
+   * 016 post-ship follow-up (migration 0290) — the rejecting admin's LITERAL
+   * staff role ('admin' | 'super_admin' as stamped; typed string because the
+   * column is advisory text), so the reconcile replay attributes the async
+   * settle to the role the actor actually held. NULL = pre-0290 marker; the
+   * replay falls back to 'admin' for those rows only.
+   */
+  readonly rejectActorRole: string | null;
 
   readonly createdAt: string;
   readonly updatedAt: string;

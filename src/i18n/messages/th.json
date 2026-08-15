@@ -1852,7 +1852,7 @@
             "description": "ความถี่และช่องทางของการแจ้งเตือนต่ออายุ ปรับได้แยกตามระดับสมาชิก"
           },
           "broadcasts": {
-            "title": "ตั้งค่าการส่งอีเมล",
+            "title": "ตั้งค่า E-Blast",
             "description": "รายการแหล่งรูปภาพที่อนุญาตสำหรับอีเมลถึงสมาชิก"
           },
           "integrationsEventcreate": {
@@ -3307,7 +3307,7 @@
         }
       },
       "settings": {
-        "pageTitle": "ตั้งค่าการส่งอีเมล",
+        "pageTitle": "ตั้งค่า E-Blast",
         "pageDescription": "กำหนดวิธีการทำงานของ E-Blast รวมถึงโดเมนที่อนุญาตให้ใช้รูปภาพในเนื้อหา",
         "allowlist": {
           "heading": "รายชื่อโดเมนที่อนุญาตให้ฝังรูปภาพ",
@@ -5238,7 +5238,7 @@
       "settings": "ตั้งค่า",
       "settingsInvoices": "ตั้งค่าใบแจ้งหนี้",
       "settingsRenewalSchedules": "ตารางการแจ้งเตือนต่ออายุ",
-      "settingsBroadcasts": "ตั้งค่าการส่งอีเมล",
+      "settingsBroadcasts": "ตั้งค่า E-Blast",
       "settingsIntegrationEventcreate": "การเชื่อมต่อ EventCreate",
       "events": "กิจกรรม",
       "sections": {
