@@ -223,6 +223,7 @@ function rowToDispatchCandidate(r: DispatchCandidateRow): DispatchCandidate {
     rejectRefundInitiatedAt: null,
     rejectRefundId: null,
     rejectActorUserId: null,
+    rejectActorRole: null,
     closedAt: r.cycleClosedAt,
     closedReason: r.cycleClosedReason,
     createdAt: r.cycleCreatedAt,

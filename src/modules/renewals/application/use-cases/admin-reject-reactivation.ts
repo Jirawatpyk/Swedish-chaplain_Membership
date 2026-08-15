@@ -360,6 +360,9 @@ export async function adminRejectReactivation(
               initiatedAt,
               refundId: resolvedRefundId,
               actorUserId: input.actorUserId,
+              // 0290 — persist the LITERAL role so the reconcile replay
+              // stamps the truth instead of assuming 'admin'.
+              actorRole: input.actorRole,
             },
           );
         });

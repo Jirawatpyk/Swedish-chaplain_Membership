@@ -74,9 +74,12 @@ describe('renewals mutation schemas — actorRole accepts the literal staff role
  * tripwire reads every renewals use-case SOURCE file and fails on any
  * STAFF-role literal in an actorRole/actor_role position — the only
  * legitimate remaining literals are non-staff actor kinds ('cron',
- * 'system', 'webhook', 'member') and the two documented cron-REPLAY sites
- * in reconcile-pending-reactivations (the original actor's role was never
- * persisted; fixing those needs a data-model change, not a threading fix).
+ * 'system', 'webhook', 'member'). The last two survivors (the cron-REPLAY
+ * emits in reconcile-pending-reactivations) died with migration 0290: the
+ * decision-time role is now persisted on the marker and replayed, with a
+ * fallback expression (`rejectActorRole === 'super_admin' ? … : 'admin'`)
+ * that this regex correctly does not match (the literal is not in the
+ * value position after `actorRole:`).
  */
 describe('no use-case body hardcodes a staff actor role (B-1 tripwire)', () => {
   it('every staff-role literal outside the documented replay sites is gone', () => {
@@ -107,13 +110,8 @@ describe('no use-case body hardcodes a staff actor role (B-1 tripwire)', () => {
       }
     }
 
-    // The ONLY accepted survivors: reconcile-pending-reactivations' two
-    // cron-replay emits (role-at-decision-time was never persisted — see the
-    // KNOWN LIMIT comment there). Anything else is the B-1 class returning.
-    const accepted = offenders.filter((o) =>
-      o.startsWith('reconcile-pending-reactivations.ts'),
-    );
-    expect(accepted).toHaveLength(2);
-    expect(offenders.filter((o) => !accepted.includes(o))).toEqual([]);
+    // ZERO survivors since migration 0290 persisted the decision-time role
+    // for the cron-replay emits. Any hit is the B-1 class returning.
+    expect(offenders).toEqual([]);
   });
 });

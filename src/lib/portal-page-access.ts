@@ -60,8 +60,26 @@ export async function enforcePortalPageAccess(current: CurrentSession): Promise<
 async function isPortalPageAccessBlocked(current: CurrentSession): Promise<boolean> {
   try {
     const h = await headers();
-    const rawPath = h.get('x-pathname');
-    const pathname = rawPath ? (rawPath.split('?')[0] ?? rawPath) : '/portal';
+    // 016 post-ship follow-up — provenance, same rule as rbac's
+    // `pathFromHeaders` (finding #5): the proxy overwrites `x-pathname`
+    // server-side on every request it runs on, and its matcher skips exactly
+    // the requests carrying a prefetch marker — only THOSE can reach this
+    // render with a client-forged path. Without this gate a suspended/
+    // terminated member could prefetch a BLOCKED portal page with
+    // `x-pathname` forged to an allowlisted path and receive the blocked
+    // page's RSC payload. On marked requests the path is treated as unknown
+    // via a sentinel no allowlist can ever match, so a blocked-class
+    // member's prefetch resolves to the `/portal` redirect (their next full
+    // load re-evaluates with the proxy-trusted path). Active members are
+    // unaffected — every path is allowed for them.
+    const prefetchMarked =
+      h.get('next-router-prefetch') !== null || h.get('purpose') === 'prefetch';
+    const rawPath = prefetchMarked ? null : h.get('x-pathname');
+    const pathname = prefetchMarked
+      ? 'prefetch:unattributed'
+      : rawPath
+        ? (rawPath.split('?')[0] ?? rawPath)
+        : '/portal';
     const requestId = requestIdFromHeaders(h);
 
     // `resolveTenantFromHeaders` (not the no-arg `resolveTenantFromRequest()`

@@ -285,6 +285,7 @@ export function rowToDomain(row: RenewalCycleRow): RenewalCycle {
       : null,
     rejectRefundId: row.rejectRefundId ?? null,
     rejectActorUserId: row.rejectActorUserId ?? null,
+    rejectActorRole: row.rejectActorRole ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -1353,6 +1354,7 @@ export function makeDrizzleRenewalCycleRepo(
         readonly initiatedAt: string;
         readonly refundId: string;
         readonly actorUserId: string;
+        readonly actorRole: 'admin' | 'super_admin';
       },
     ): Promise<boolean> {
       // F8-RP follow-up (migration 0243). GUARDED write: only stamp the marker
@@ -1382,6 +1384,7 @@ export function makeDrizzleRenewalCycleRepo(
           rejectRefundInitiatedAt: new Date(args.initiatedAt),
           rejectRefundId: args.refundId,
           rejectActorUserId: args.actorUserId,
+          rejectActorRole: args.actorRole,
         })
         .where(
           and(
@@ -1418,6 +1421,7 @@ export function makeDrizzleRenewalCycleRepo(
           rejectRefundInitiatedAt: null,
           rejectRefundId: null,
           rejectActorUserId: null,
+          rejectActorRole: null,
         })
         .where(
           and(

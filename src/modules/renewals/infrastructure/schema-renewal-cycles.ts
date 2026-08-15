@@ -109,6 +109,10 @@ export const renewalCycles = pgTable(
     }),
     rejectRefundId: text('reject_refund_id'),
     rejectActorUserId: text('reject_actor_user_id'),
+    // 016 post-ship follow-up (migration 0290) — the rejecting admin's
+    // LITERAL role, so the reconcile replay stamps the truth instead of
+    // assuming 'admin'. NULL = stamped pre-0290 (replay falls back).
+    rejectActorRole: text('reject_actor_role'),
 
     closedAt: timestamp('closed_at', { withTimezone: true }),
     closedReason: text('closed_reason'),
