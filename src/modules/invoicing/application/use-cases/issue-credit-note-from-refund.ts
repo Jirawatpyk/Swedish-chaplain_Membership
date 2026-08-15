@@ -54,6 +54,21 @@ export interface IssueCreditNoteFromRefundInput {
   /** Free-form reason — surfaces as the CN's `reason` column + PDF body. */
   readonly reason: string;
   readonly actorUserId: string;
+  /**
+   * 018 actor-role follow-up — WHICH refund path issued this credit note:
+   * a staff role for the admin-initiated refund, `'webhook'` for the
+   * Stripe refund.updated flip, `'cron'` for the stale-refund sweep.
+   * Optional so legacy callers keep compiling; absent records `null`.
+   */
+  readonly actorRole?:
+    | 'admin'
+    | 'super_admin'
+    | 'manager'
+    | 'marketing'
+    | 'member'
+    | 'webhook'
+    | 'cron'
+    | 'system';
   readonly requestId?: string | null;
 }
 
@@ -81,6 +96,7 @@ export async function issueCreditNoteFromRefund(
   const result = await issueCreditNote(deps, {
     tenantId: input.tenantId,
     actorUserId: input.actorUserId,
+    ...(input.actorRole !== undefined ? { actorRole: input.actorRole } : {}),
     ...(input.requestId !== undefined ? { requestId: input.requestId } : {}),
     invoiceId: input.invoiceId,
     creditTotalSatang: input.amountSatang,

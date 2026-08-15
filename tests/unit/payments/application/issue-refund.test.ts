@@ -1636,4 +1636,34 @@ describe('issueRefund (#1) — Stripe refund-status branch', () => {
     });
     await expect(issueRefund(deps, baseInput())).rejects.toBe('string-shaped failure');
   });
+  /**
+   * 018 actor-role follow-up — the credit note a refund mints must say WHICH
+   * path minted it. Before this, all three refund paths (admin-initiated,
+   * Stripe refund.updated webhook, stale-refund sweep) recorded nothing, so a
+   * forensic query could not tell a human refund from an automated one.
+   *
+   * This pins the ADMIN arm end-to-end: the role handed to `issueRefund`
+   * reaches the F4 bridge verbatim. The two non-human arms derive from the
+   * finalize helper's own `path` discriminator (webhook -> 'webhook',
+   * sweep_recovery -> 'cron'), which is why they need no plumbing.
+   */
+  it('018 — the admin-initiated refund stamps its LITERAL role onto the credit note', async () => {
+    const deps = makeDeps();
+    const r = await issueRefund(deps, baseInput({ actorRole: 'super_admin' }));
+    expect(r.ok, r.ok ? 'ok' : JSON.stringify(r.error)).toBe(true);
+    expect(asMock(deps.invoicingBridge.issueCreditNoteFromRefund)).toHaveBeenCalledWith(
+      expect.objectContaining({ actorRole: 'super_admin' }),
+    );
+  });
+
+  it('018 — omitting the role records NOTHING rather than guessing admin', async () => {
+    // The fallback that would have made this pass as 'admin' is the exact
+    // class the 017/018 sweep removes; absent must stay absent.
+    const deps = makeDeps();
+    const r = await issueRefund(deps, baseInput());
+    expect(r.ok).toBe(true);
+    const call = asMock(deps.invoicingBridge.issueCreditNoteFromRefund).mock.calls.at(-1);
+    expect(call?.[0]).not.toHaveProperty('actorRole');
+  });
+
 });

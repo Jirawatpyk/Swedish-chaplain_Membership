@@ -311,6 +311,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const deps = makeIssueRefundDeps(tenantCtx.slug);
     const result = await issueRefund(deps, {
       tenantId: tenantCtx.slug,
+      // rbac-narrow-ok: stamps the LITERAL role into the credit note this
+      // refund mints; the `refunds.write` gate above decided admission.
+      actorRole:
+        adminCtx.current.user.role === 'super_admin' ? 'super_admin' : 'admin',
       paymentId: parsedBody.paymentId,
       // Schema's `.transform(BigInt)` already returned a bigint — pass
       // through directly. Number/string union accepted at boundary

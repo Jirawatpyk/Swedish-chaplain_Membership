@@ -59,6 +59,13 @@ export async function setMemberHalt(
   //   system — the automated bounce-threshold halt (Resend webhook).
   // manager (FR-014) and member stay denied. This is a REAL check again now
   // that callers pass their true actor instead of a fabricated 'admin'.
+  //
+  // MARKETING IS PENDING RATIFICATION — it reached this action through the
+  // hard-coded-'admin' defect, not a decision, and the F7 spec still says
+  // "cleared manually by admin". Keeping it preserves live behaviour rather
+  // than silently revoking a capability. See the AMENDMENT PENDING block at
+  // the top of `specs/010-email-broadcast/spec.md` § Requirements for the
+  // ratify-or-narrow decision; the lockstep test pins whichever set wins.
   const ADMISSIBLE: ReadonlySet<string> = new Set([
     'admin',
     'super_admin',

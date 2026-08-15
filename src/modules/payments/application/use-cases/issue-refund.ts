@@ -99,6 +99,13 @@ export interface IssueRefundInput {
   readonly amountSatang: Satang;    // > 0
   readonly reason: string;          // 1..500 chars; single-line (no CR/LF)
   readonly actorUserId: string;     // admin UUID from session
+  /**
+   * 018 actor-role follow-up — the LITERAL staff role from the session,
+   * forwarded into the F4 credit note this refund mints so the CN's probe
+   * trail can tell an admin-initiated refund apart from the webhook and
+   * sweep paths (all three previously recorded nothing).
+   */
+  readonly actorRole?: 'admin' | 'super_admin';
   readonly correlationId: string;
   readonly requestId: string | null;
 }
@@ -1072,6 +1079,7 @@ async function issueRefundBody(
         invoiceId: prepared.payment.invoiceId,
         amountSatang: input.amountSatang,
         reason: input.reason,
+        ...(input.actorRole !== undefined ? { actorRole: input.actorRole } : {}),
         processorRefundId: stripeRefund.value.id,
         paymentNextStatus: nextPaymentStatus,
         actorUserId: input.actorUserId,

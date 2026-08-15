@@ -360,6 +360,38 @@ per US5.
 
 ## Requirements *(mandatory)*
 
+> **AMENDMENT PENDING — clear-halt actor set (raised 2026-08-15, 018 actor-role
+> follow-up). DECISION REQUIRED from product/DPO; no code change is waiting on
+> it.**
+>
+> FR-002(k) and Clarifications Q14/R3-NEW-3 below state that the halt is
+> *"cleared manually by admin"* and that *"`manager`-role users cannot clear"*.
+> Both were written before the `marketing` role existed.
+>
+> **What is actually true in production today:** the clear-halt route gates on
+> `broadcasts.write`, which 016 granted to **marketing** — so marketing can
+> clear a halt, and has been able to since the 016 cutover. It reached that
+> action through a defect, not a decision: the F7→F3 bridge hard-coded
+> `{actorRole:'admin'}`, which made F3's own `actorRole !== 'admin'` check admit
+> every caller. PR #334 removed the hard-code and wrote the *observed* set
+> (`admin + super_admin + marketing + system`) into `setMemberHalt` explicitly —
+> deliberately preserving today's behaviour rather than silently revoking a
+> capability people may be relying on.
+>
+> **Why it deserves a human decision rather than a default:** the halt is a
+> deliverability safety brake that fires when one member's broadcast exceeds a
+> 5% complaint rate. Marketing is the role that benefits most directly from
+> lifting it, so letting marketing clear its own halt is a self-review
+> arrangement, and the blast radius is tenant-wide sender reputation.
+>
+> **Options:** (a) ratify — amend FR-002(k)/R3-NEW-3 to name the four-actor set
+> and keep behaviour as-is; (b) narrow — restrict clearing to the admin tier by
+> splitting a `broadcasts.clear_halt` permission key out of `broadcasts.write`,
+> which *removes* a live marketing capability and needs an operator heads-up.
+> The lockstep test in `tests/unit/members/application/set-member-halt.test.ts`
+> pins whichever set is chosen to the permission bundle, so option (b) is a
+> two-line change plus the key.
+
 ### Functional Requirements
 
 #### Broadcast lifecycle

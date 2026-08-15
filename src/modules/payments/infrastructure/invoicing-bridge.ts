@@ -329,6 +329,7 @@ export const invoicingBridge: InvoicingBridgePort = {
       amountSatang: input.amountSatang,
       reason: input.reason,
       actorUserId: input.actorUserId,
+      ...(input.actorRole !== undefined ? { actorRole: input.actorRole } : {}),
       ...(input.requestId !== null ? { requestId: input.requestId } : {}),
     });
     if (!cn.ok) {

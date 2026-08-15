@@ -207,6 +207,22 @@ export interface InvoicingBridgePort {
     readonly amountSatang: Satang;
     readonly reason: string;
     readonly actorUserId: string;
+    /**
+     * 018 — WHICH refund path is issuing: the staff role for the
+     * admin-initiated refund, 'webhook' for the Stripe refund.updated
+     * flip, 'cron' for the stale-refund sweep. Derived from the caller's
+     * existing `path` discriminator, so nothing new has to be plumbed
+     * through the finalize helper's callers.
+     */
+    readonly actorRole?:
+      | 'admin'
+      | 'super_admin'
+      | 'manager'
+      | 'marketing'
+      | 'member'
+      | 'webhook'
+      | 'cron'
+      | 'system';
     readonly requestId: string | null;
   }): Promise<
     Result<

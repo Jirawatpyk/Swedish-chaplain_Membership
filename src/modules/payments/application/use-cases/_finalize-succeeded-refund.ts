@@ -138,6 +138,12 @@ export interface FinalizeSucceededRefundInput {
   readonly actorUserId: string;
   readonly requestId: string | null;
   readonly path: FinalizeSucceededRefundPath;
+  /**
+   * 018 actor-role follow-up — supplied ONLY on the admin-initiated path
+   * (the other two have no human actor). The credit-note actor is derived
+   * from `path` below, so the webhook and sweep paths need plumb nothing.
+   */
+  readonly actorRole?: 'admin' | 'super_admin';
 }
 
 /**
@@ -299,6 +305,21 @@ export async function finalizeSucceededRefund(
       amountSatang: input.amountSatang,
       reason: input.reason,
       actorUserId: input.actorUserId,
+      // 018 — the CN records WHICH path minted it. `path` is already the
+      // caller's own discriminator, so the two non-human paths state
+      // themselves without any new plumbing; the admin path forwards the
+      // session role it was handed.
+      //
+      // NO `?? 'admin'` on the admin arm: a call that omits the role must
+      // record NOTHING, not a guess. (I wrote that fallback here on the
+      // first pass — it is exactly the class this sweep exists to remove.)
+      ...(input.path === 'webhook_refund_updated'
+        ? { actorRole: 'webhook' as const }
+        : input.path === 'sweep_recovery'
+          ? { actorRole: 'cron' as const }
+          : input.actorRole !== undefined
+            ? { actorRole: input.actorRole }
+            : {}),
       requestId: input.requestId,
     });
     if (!cnResult.ok) {
