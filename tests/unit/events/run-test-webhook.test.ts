@@ -49,6 +49,7 @@ const INPUT = {
   webhookBaseUrl: BASE_URL,
   activeSecret: SECRET,
   actorUserId: ACTOR,
+  actorRole: 'admin' as const,
   now: new Date('2026-05-13T12:00:00.000Z'),
 };
 

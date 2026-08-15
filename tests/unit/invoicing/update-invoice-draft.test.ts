@@ -111,7 +111,7 @@ describe('updateInvoiceDraft', () => {
 
   it('invoice_not_found when repo returns null + emits invoice_cross_tenant_probe (R7-W1)', async () => {
     const deps = makeDeps(null);
-    const r = await updateInvoiceDraft(deps, baseInput);
+    const r = await updateInvoiceDraft(deps, { ...baseInput, actorRole: 'super_admin' as const });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.code).toBe('invoice_not_found');
     expect(deps.audit.emit).toHaveBeenCalledWith(
@@ -120,7 +120,10 @@ describe('updateInvoiceDraft', () => {
         eventType: 'invoice_cross_tenant_probe',
         payload: expect.objectContaining({
           attempted_invoice_id: baseInput.invoiceId,
-          actor_role: 'admin',
+          // 017 truth sweep — the probe records the role the CALLER stated;
+          // this case passes 'super_admin', so a regression back to a
+          // hardcoded 'admin' (or a dropped thread) fails here.
+          actor_role: 'super_admin',
           route: 'update-invoice-draft',
         }),
       }),

@@ -29,7 +29,7 @@
  *
  * ## What it checks
  *
- * Scans `src/modules/**` + `src/app/**` for
+ * Scans `src/modules/**` + `src/app/**` + `src/lib/**` + `scripts/**` for
  *   `actorRole|actor_role|actorType|actor_type: '<staff role>'`
  * in a VALUE position (type unions like `actorRole: 'admin' | 'super_admin'`
  * are declarations, not stamps, and are skipped), on comment-stripped text so
@@ -48,7 +48,9 @@ import { join, relative } from 'node:path';
 import { lineOfIndex, stripCommentLines } from './lib/source-scan';
 
 const ROOT = process.cwd();
-const SCOPE = ['src/modules', 'src/app', 'src/lib'] as const;
+// `scripts/` included: several import/backfill scripts write real audit
+// rows and can be run against prod (017 security review #9).
+const SCOPE = ['src/modules', 'src/app', 'src/lib', 'scripts'] as const;
 
 /**
  * Every accepted staff-role literal, by `path:line-anchor` + why it is TRUE.
@@ -66,11 +68,44 @@ const ALLOWED: ReadonlyArray<{ file: string; contains: string; why: string }> = 
 ];
 
 const STAFF = '(admin|manager|super_admin|marketing)';
-// Value position only: a `|` after the literal means it is a TYPE union.
+const QUOTE = '[\'"`]';
+/**
+ * Value position only: a `|` after the literal means it is a TYPE union.
+ *
+ * Hardened after the 017 security review MEASURED four evasions of the first
+ * version, each of which compiles and lints clean in this repo (there is no
+ * `quotes` ESLint rule and prettier is banned here):
+ *   - `actorRole: "admin"`             — double quotes
+ *   - actorRole: \`admin\`               — template literal
+ *   - `'actorRole': 'admin'`           — quoted key
+ *   - `dispatchedByActorRole: 'admin'` — SUFFIXED key
+ *
+ * The last one is not academic: that exact shape was live in
+ * `run-test-webhook.ts` — a hardcoded role feeding the very audit row whose
+ * docstring calls it a role-enforcement drift detector — and the first
+ * version of this gate walked straight past it.
+ *
+ * So the KEY half matches any identifier ending in an actor-role word
+ * (optionally quoted), and the VALUE half accepts all three quote styles.
+ */
 const STAMP = new RegExp(
-  `\\bactor_?(?:[Rr]ole|[Tt]ype)\\s*:\\s*'${STAFF}'(?!\\s*\\|)`,
+  // Optional prefix — `actorRole` (bare) and `dispatchedByActorRole` (suffixed)
+  // must BOTH match. Making the prefix mandatory broke the bare form, and the
+  // positive control below caught it on the very next run; that is what the
+  // control is for.
+  `${QUOTE}?(?:[A-Za-z_$][\\w$]*?)?[Aa]ctor_?(?:[Rr]ole|[Tt]ype)${QUOTE}?\\s*:\\s*` +
+    `${QUOTE}${STAFF}${QUOTE}(?!\\s*\\|)`,
   'g',
 );
+
+/**
+ * This file is skipped: it is the SCANNER, so its `ALLOWED` entries quote the
+ * literals they authorise and would otherwise match themselves. Skipping it
+ * costs nothing — a scanner emits no audit rows — and the alternative
+ * (obfuscating the allowlist strings) would make the allowlist unreadable,
+ * which is the one thing it must not be.
+ */
+const SELF = 'scripts/check-actor-role-truth.ts';
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
@@ -95,6 +130,7 @@ for (const root of SCOPE) {
     process.exit(1);
   }
   for (const file of files) {
+    if (relative(ROOT, file).replace(/\\/g, '/') === SELF) continue;
     scanned += 1;
     const raw = readFileSync(file, 'utf8');
     const code = stripCommentLines(raw).join('\n');
@@ -112,6 +148,21 @@ for (const root of SCOPE) {
       findings.push(`  ✗ ${shown}:${line}: ${m[0]}`);
     }
   }
+}
+
+if (allowed !== ALLOWED.length) {
+  // POSITIVE CONTROL. `scanned === 0` catches a wrong scope root but not a
+  // dead regex: if the pattern stops matching (or the comment stripper
+  // changes shape), `findings` goes empty and this gate prints OK while
+  // seeing nothing — the exact T065 failure mode this file's header cites.
+  // Every ALLOWED entry is a literal known to exist, so all of them must be
+  // FOUND on every run.
+  console.error(
+    `check:actor-role-truth ABORT — allowlist drift: ${allowed} of ` +
+      `${ALLOWED.length} justified literal(s) were found. Either an entry is ` +
+      'stale (delete it) or the scanner stopped seeing them.',
+  );
+  process.exit(1);
 }
 
 if (scanned === 0) {

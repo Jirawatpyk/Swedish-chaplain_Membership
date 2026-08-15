@@ -46,6 +46,13 @@ export interface RunTestWebhookInput {
   readonly webhookBaseUrl: string;
   readonly activeSecret: WebhookSecret;
   readonly actorUserId: UserId;
+  /**
+   * 017 actor-role truth sweep — the LITERAL session role, stamped into
+   * the synthetic payload's `chamberTestMetadata` and from there into the
+   * receiver's `webhook_test_invoked` audit row. The hardcoded 'admin' it
+   * replaces made the drift-detector this metadata exists FOR unfireable.
+   */
+  readonly actorRole: 'admin' | 'super_admin' | 'marketing';
   /** Injected for deterministic test fixtures; production uses `new Date()`. */
   readonly now: Date;
 }
@@ -244,7 +251,7 @@ export async function runTestWebhook(
     // `dispatchedByActorRole !== 'admin'` flags it for triage.
     chamberTestMetadata: {
       dispatchedByActorUserId: input.actorUserId,
-      dispatchedByActorRole: 'admin' as const,
+      dispatchedByActorRole: input.actorRole,
     },
   };
 

@@ -113,7 +113,7 @@ export interface IssueInvoiceForRenewalInput {
    * hardcoded 'admin'. Optional: system/cron-originated bridge calls have
    * no staff actor, and F4 records `null` rather than inventing one.
    */
-  readonly actorRole?: 'admin' | 'super_admin';
+  readonly actorRole?: import('@/modules/auth').Role;
   readonly correlationId: string;
   readonly requestId: string | null;
 }
@@ -196,7 +196,7 @@ export interface DraftInvoiceForRenewalInput {
    * hardcoded 'admin'. Optional: system/cron-originated bridge calls have
    * no staff actor, and F4 records `null` rather than inventing one.
    */
-  readonly actorRole?: 'admin' | 'super_admin';
+  readonly actorRole?: import('@/modules/auth').Role;
   readonly requestId: string | null;
 }
 
@@ -223,7 +223,7 @@ export interface IssueExistingDraftForRenewalInput {
    * hardcoded 'admin'. Optional: system/cron-originated bridge calls have
    * no staff actor, and F4 records `null` rather than inventing one.
    */
-  readonly actorRole?: 'admin' | 'super_admin';
+  readonly actorRole?: import('@/modules/auth').Role;
   /**
    * The review-queue action's definite send-vs-silent choice at issue time
    * — always a real decision (never "no opinion"), since the auto-drafted
@@ -260,7 +260,7 @@ export interface DiscardAutoDraftForRenewalInput {
    * hardcoded 'admin'. Optional: system/cron-originated bridge calls have
    * no staff actor, and F4 records `null` rather than inventing one.
    */
-  readonly actorRole?: 'admin' | 'super_admin';
+  readonly actorRole?: import('@/modules/auth').Role;
   readonly requestId: string | null;
   /**
    * Caller-owned Drizzle tx. REQUIRED for the Task 9 issue path: the sweep runs

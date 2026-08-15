@@ -18,7 +18,7 @@ export interface DeleteInvoiceDraftInput {
    * trail. Reaches here from the admin DELETE route and from the renewals
    * auto-draft discard bridge, both admin-tier.
    */
-  readonly actorRole?: 'admin' | 'super_admin';
+  readonly actorRole?: import('@/modules/auth').Role;
   readonly requestId?: string | null;
   readonly invoiceId: string;
   /**

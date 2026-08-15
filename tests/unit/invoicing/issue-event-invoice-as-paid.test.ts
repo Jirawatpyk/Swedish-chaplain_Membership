@@ -548,7 +548,7 @@ describe('issueEventInvoiceAsPaid — 064 Task 5 branch coverage', () => {
 
   it('invoice_not_found → err + null-tx invoice_cross_tenant_probe with route issue-event-invoice-as-paid', async () => {
     const deps = makeDeps(null, makeSettings(), null);
-    const r = await issueEventInvoiceAsPaid(deps, input);
+    const r = await issueEventInvoiceAsPaid(deps, { ...input, actorRole: 'super_admin' as const });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.code).toBe('invoice_not_found');
     // Probe survives the rollback — emitted with a NULL tx (mirror issueInvoice R7-W1).
@@ -558,7 +558,10 @@ describe('issueEventInvoiceAsPaid — 064 Task 5 branch coverage', () => {
         eventType: 'invoice_cross_tenant_probe',
         payload: expect.objectContaining({
           attempted_invoice_id: input.invoiceId,
-          actor_role: 'admin',
+          // 017 truth sweep — the probe records the role the CALLER stated;
+          // this case passes 'super_admin', so a regression back to a
+          // hardcoded 'admin' (or a dropped thread) fails here.
+          actor_role: 'super_admin',
           route: 'issue-event-invoice-as-paid',
         }),
       }),

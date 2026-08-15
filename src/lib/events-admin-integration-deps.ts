@@ -562,6 +562,7 @@ export async function runRunTestWebhook(
       webhookBaseUrl: options.webhookBaseUrl,
       activeSecret: cfg.value.activeSecret,
       actorUserId: asUserId(actorUserId),
+      actorRole,
       now: new Date(),
     },
     {

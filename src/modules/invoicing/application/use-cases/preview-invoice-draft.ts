@@ -35,7 +35,7 @@ export interface PreviewInvoiceDraftInput {
    * records `null` rather than a fabricated 'admin', so a row without an
    * actor id never claims a role either.
    */
-  readonly actorRole?: 'admin' | 'super_admin';
+  readonly actorRole?: import('@/modules/auth').Role;
   readonly requestId?: string | null;
 }
 
