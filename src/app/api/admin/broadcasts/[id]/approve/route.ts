@@ -102,7 +102,13 @@ export async function POST(
         attributes: {
           'tenant.id': tenantCtx.slug,
           'broadcast.id': parsedId.value as unknown as string,
-          'actor.role': 'admin',
+          // 018 — the LITERAL session role, not a hardcoded 'admin'. This
+          // span is the first surface an incident responder reads, and
+          // `broadcasts.send` is held by MARKETING too: filing a marketing
+          // approval as an admin action here misleads triage exactly the way
+          // the audit-row fabrications did. rbac-narrow-ok: attribution
+          // only — the gate above decided admission.
+          'actor.role': ctx.current.user.role,
           'broadcasts.decision': decision.mode,
         },
       },

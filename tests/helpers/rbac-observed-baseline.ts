@@ -177,7 +177,7 @@ export const OBSERVED_API: readonly ObservedSurface[] = [
   { surface: 'POST /api/admin/integrations/eventcreate/rotate-secret', kind: 'api', key: 'settings.integrations' },
   { surface: 'POST /api/admin/integrations/eventcreate/test-webhook', kind: 'api', key: 'settings.integrations' },
   { surface: 'POST /api/admin/members/[id]/block-auto-reactivation', kind: 'api', key: 'renewals.write' },
-  { surface: 'POST /api/admin/members/[id]/broadcasts-halt-clear', kind: 'api', key: 'broadcasts.write' },
+  { surface: 'POST /api/admin/members/[id]/broadcasts-halt-clear', kind: 'api', key: 'broadcasts.clear_halt' },
   { surface: 'POST /api/admin/members/[id]/data-export', kind: 'api', key: 'members.bulk' },
   { surface: 'POST /api/admin/members/[id]/renew', kind: 'api', key: 'renewals.write' },
   { surface: 'POST /api/admin/members/[id]/unblock-auto-reactivation', kind: 'api', key: 'renewals.write' },

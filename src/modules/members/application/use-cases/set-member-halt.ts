@@ -49,20 +49,28 @@ export async function setMemberHalt(
   halted: boolean,
   meta: SetMemberHaltMeta,
 ): Promise<Result<void, MemberHaltError>> {
-  // 017 truth sweep — the admissible set, stated once and matching what the
-  // F7 route gate (`broadcasts.write`) ACTUALLY admits today:
+  // The admissible set, stated once and matching what the F7 route gate
+  // (`broadcasts.clear_halt`) admits:
   //   admin + super_admin — the admin tier ('admin' alone would deny every
   //     promoted super_admin post-Migration-C);
-  //   marketing — holds `broadcasts.write`, so it already reaches this action
-  //     in production; the old literal only "denied" it because the F7 bridge
-  //     hardcoded 'admin' on the way in;
-  //   system — the automated bounce-threshold halt (Resend webhook).
-  // manager (FR-014) and member stay denied. This is a REAL check again now
-  // that callers pass their true actor instead of a fabricated 'admin'.
+  //   system — the automated bounce-threshold halt (Resend webhook), which
+  //     SETS the flag rather than clearing it.
+  // manager (FR-014), marketing and member are denied.
+  //
+  // 018 DECISION — marketing NARROWED OUT (spec 010 § Requirements amendment,
+  // 2026-08-15). It could clear halts in production, but only because the F7
+  // bridge hard-coded `{actorRole:'admin'}`, which made this very check admit
+  // everyone; that was a defect, never a decision. Clearing a halt is a
+  // deliverability judgement whose blast radius is tenant-wide sender
+  // reputation, and marketing is the role that benefits from lifting it —
+  // self-review. The asymmetry decided it: narrowing wrongly costs one admin
+  // click, keeping it wrongly costs reputation damage with a slow, hard-to-
+  // reverse feedback loop. `broadcasts.clear_halt` was split out of
+  // `broadcasts.write` for exactly this. The lockstep test derives the human
+  // half of this set from that key's holders, so the two cannot drift.
   const ADMISSIBLE: ReadonlySet<string> = new Set([
     'admin',
     'super_admin',
-    'marketing',
     'system',
   ]);
   if (!ADMISSIBLE.has(meta.actorRole)) {

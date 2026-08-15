@@ -360,6 +360,70 @@ per US5.
 
 ## Requirements *(mandatory)*
 
+> **AMENDMENT — clear-halt actor set (raised + DECIDED 2026-08-15, 018
+> actor-role follow-up). Decision: NARROW to the admin tier. Implemented in the
+> same PR; `manager`-role users still cannot clear (unchanged), and `marketing`
+> now cannot either.**
+>
+> FR-002(k) and Q14/R3-NEW-3 below keep their original intent — *"cleared
+> manually by admin"* — and the enforcement now matches it again. A new
+> permission key **`broadcasts.clear_halt`** is split out of `broadcasts.write`
+> and held by `admin` + `super_admin` only; the route
+> `POST /api/admin/members/[id]/broadcasts-halt-clear` gates on it, and F3's
+> `setMemberHalt` admits `admin + super_admin + system` (the last for the
+> automated bounce-threshold halt, which sets rather than clears).
+>
+> **Operator heads-up:** marketing COULD clear halts in production between the
+> 016 cutover and this change, so this removes a live capability. It was never
+> a granted one — marketing reached the action only because the F7→F3 bridge
+> hard-coded `{actorRole:'admin'}`, which made F3's own check admit every
+> caller (fixed in #334). If a marketing user hits the halt banner now, an
+> admin clears it; nothing else changes.
+>
+> **Rationale (the asymmetry):** the halt is a deliverability brake that fires
+> when one member's broadcast exceeds a 5% complaint rate, and its blast radius
+> is tenant-wide sender reputation on a shared ESP pool. Marketing is the role
+> that benefits most directly from lifting it, so marketing clearing its own
+> halt is self-review. Narrowing wrongly costs one admin click; keeping it
+> wrongly costs reputation damage with a slow, hard-to-reverse feedback loop.
+>
+> The lockstep test in `tests/unit/members/application/set-member-halt.test.ts`
+> derives the human half of the admissible set from the holders of
+> `broadcasts.clear_halt`, so the gate and the use case cannot drift apart
+> again.
+>
+> <details><summary>Original PENDING framing (kept for provenance)</summary>
+>
+> FR-002(k) and Clarifications Q14/R3-NEW-3 below state that the halt is
+> *"cleared manually by admin"* and that *"`manager`-role users cannot clear"*.
+> Both were written before the `marketing` role existed.
+>
+> **What is actually true in production today:** the clear-halt route gates on
+> `broadcasts.write`, which 016 granted to **marketing** — so marketing can
+> clear a halt, and has been able to since the 016 cutover. It reached that
+> action through a defect, not a decision: the F7→F3 bridge hard-coded
+> `{actorRole:'admin'}`, which made F3's own `actorRole !== 'admin'` check admit
+> every caller. PR #334 removed the hard-code and wrote the *observed* set
+> (`admin + super_admin + marketing + system`) into `setMemberHalt` explicitly —
+> deliberately preserving today's behaviour rather than silently revoking a
+> capability people may be relying on.
+>
+> **Why it deserves a human decision rather than a default:** the halt is a
+> deliverability safety brake that fires when one member's broadcast exceeds a
+> 5% complaint rate. Marketing is the role that benefits most directly from
+> lifting it, so letting marketing clear its own halt is a self-review
+> arrangement, and the blast radius is tenant-wide sender reputation.
+>
+> **Options:** (a) ratify — amend FR-002(k)/R3-NEW-3 to name the four-actor set
+> and keep behaviour as-is; (b) narrow — restrict clearing to the admin tier by
+> splitting a `broadcasts.clear_halt` permission key out of `broadcasts.write`,
+> which *removes* a live marketing capability and needs an operator heads-up.
+> The lockstep test in `tests/unit/members/application/set-member-halt.test.ts`
+> pins whichever set is chosen to the permission bundle, so option (b) is a
+> two-line change plus the key.
+>
+> </details>
+
 ### Functional Requirements
 
 #### Broadcast lifecycle

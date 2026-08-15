@@ -67,6 +67,7 @@ export const PINNED_MATRIX: readonly PinnedRow[] = [
   row('audit.read', false, false, false, { superAdminOnly: true }),
   row('settings.invoicing', false, false, false, { superAdminOnly: true, sensitive: 'money' }),
   row('settings.renewal_schedules', true, false, false),
+  row('broadcasts.clear_halt', true, false, false),
   row('settings.broadcasts', true, false, false),
   row('settings.integrations', true, false, false),
 ];

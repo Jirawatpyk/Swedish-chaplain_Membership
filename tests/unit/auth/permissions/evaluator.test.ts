@@ -93,12 +93,12 @@ describe('E5/E6 — deterministic, total, never throws, never escalates', () => 
 
 describe('getPermissionSet (derived, never persisted — D15)', () => {
   it('super_admin set is the FULL catalogue (bypass surfaces in derivation for nav)', () => {
-    expect(getPermissionSet('super_admin').size).toBe(40);
+    expect(getPermissionSet('super_admin').size).toBe(41);
     expect(getPermissionSet('super_admin').has(key('users.manage'))).toBe(true);
   });
 
-  it('bundle-backed sizes: admin 34, manager 12, marketing 9, member 0', () => {
-    expect(getPermissionSet('admin').size).toBe(34);
+  it('bundle-backed sizes: admin 35, manager 12, marketing 9, member 0', () => {
+    expect(getPermissionSet('admin').size).toBe(35);
     expect(getPermissionSet('manager').size).toBe(12);
     expect(getPermissionSet('marketing').size).toBe(9);
     expect(getPermissionSet('member').size).toBe(0);

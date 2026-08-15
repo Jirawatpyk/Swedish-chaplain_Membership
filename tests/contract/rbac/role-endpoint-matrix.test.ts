@@ -202,11 +202,16 @@ describe('T053 marketing reachable surfaces (US3)', () => {
    * `/admin/directory`), no compliance surface (erasure, audit), and no
    * `/admin/users`.
    *
-   * Three entries look surprising and are deliberate, each keyed on something
+   * Two entries look surprising and are deliberate, each keyed on something
    * marketing legitimately holds:
+   *
+   * A THIRD used to sit here — the broadcasts halt-clear route, keyed
+   * `broadcasts.write`. 018 split `broadcasts.clear_halt` out of that key
+   * and narrowed clearing to the admin tier, so marketing no longer reaches
+   * it and the frozen set drops 48 -> 47. See the spec 010 § Requirements
+   * amendment for the decision and the operator heads-up.
    * `GET /api/plans/[year]/[planId]/affected-members` is keyed `members.read`;
-   * `POST /api/admin/members/[id]/broadcasts-halt-clear` is keyed
-   * `broadcasts.write`; and `GET /api/plans/search` widened to `dashboard.view`
+   * and `GET /api/plans/search` widened to `dashboard.view`
    * (T064) so the ⌘K palette works at all — its plan and member hits are
    * re-gated inside the handler.
    *
@@ -267,7 +272,6 @@ describe('T053 marketing reachable surfaces (US3)', () => {
     'POST /api/admin/events/[eventId]/toggle-partner-benefit',
     'POST /api/admin/events/import',
     'POST /api/admin/insights/dismiss',
-    'POST /api/admin/members/[id]/broadcasts-halt-clear',
     // 016 T064 — the ⌘K backend. Added DELIBERATELY: it was the one surface
     // whose gate had to widen, because it is the entry point to every staff
     // surface rather than a plans surface, and `plans.read` denied marketing
@@ -276,7 +280,7 @@ describe('T053 marketing reachable surfaces (US3)', () => {
     'GET /api/plans/search',
   ];
 
-  it('reaches EXACTLY the frozen 48-surface set — nothing more, nothing less', () => {
+  it('reaches EXACTLY the frozen 47-surface set — nothing more, nothing less', () => {
     const actual = OBSERVED_BASELINE.filter((s) => allowed('marketing', s))
       .map((s) => s.surface)
       .sort();

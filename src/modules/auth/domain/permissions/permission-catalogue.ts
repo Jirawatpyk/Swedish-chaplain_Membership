@@ -64,6 +64,14 @@ const CATALOGUE_RAW = [
   { key: 'broadcasts.read' },
   { key: 'broadcasts.write' },
   { key: 'broadcasts.send' },
+  // 018 DECISION (spec 010 § Requirements amendment, 2026-08-15) — clearing a
+  // deliverability HALT is split out of `broadcasts.write` and narrowed to the
+  // admin tier. The halt fires at >5% complaint rate and protects tenant-wide
+  // sender reputation; marketing is the role that benefits from lifting it, so
+  // marketing clearing its own halt is self-review. Marketing reached this
+  // action only through the hard-coded-'admin' bridge defect (see 017/#334),
+  // never through a decision.
+  { key: 'broadcasts.clear_halt' },
   { key: 'events.read' },
   { key: 'events.write' },
   { key: 'events.relink', sensitive: 'money' },

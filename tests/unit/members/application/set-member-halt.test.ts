@@ -2,7 +2,7 @@
  * Unit tests for `setMemberHalt` use case (T029, F7 Batch C).
  *
  * Q14 clear-halt action. Tests cover authz across the FULL admissible
- * set (017 truth sweep: admin + super_admin + marketing + system, with
+ * set (018: admin + super_admin + system, with marketing narrowed out and
  * manager + member denied), member_not_found, success, repo errors.
  *
  * The set is not 'admin role only' any more, and never really was: the F7
@@ -152,8 +152,8 @@ describe('setMemberHalt', () => {
   // 017 actor-role truth sweep — the admissible set, pinned EXACTLY. These
   // four arms did not exist as tests before: the bridge's hardcoded 'admin'
   // meant only that one value was ever observed in production.
-  it.each(['admin', 'super_admin', 'marketing', 'system'] as const)(
-    'admits %s (the set the broadcasts.write gate + the webhook actually produce)',
+  it.each(['admin', 'super_admin', 'system'] as const)(
+    'admits %s (the set the broadcasts.clear_halt gate + the webhook produce)',
     async (actorRole) => {
       const memberRepo = {
         updateBroadcastsHaltedInTx: vi.fn(async () => ok(1)),
@@ -171,7 +171,7 @@ describe('setMemberHalt', () => {
     },
   );
 
-  it.each(['manager', 'member'] as const)(
+  it.each(['manager', 'marketing', 'member'] as const)(
     'denies %s and never touches the repo',
     async (actorRole) => {
       const memberRepo = {
@@ -193,19 +193,20 @@ describe('setMemberHalt', () => {
 
   /**
    * LOCKSTEP (017 security review #2). The admissible set is written by hand
-   * in the use case; the route gate is `broadcasts.write`. If a future bundle
+   * in the use case; the route gate is `broadcasts.clear_halt` (018 split it
+   * out of `broadcasts.write` to narrow marketing out). If a future bundle
    * edit grants that key to a role the use case does not admit — or revokes it
    * from one it does — the two drift apart silently, and the route's
    * fallback-to-'admin' ternary would then stamp a role the actor never held
    * WHILE letting them through. Derive one side from the other so that edit
    * fails here instead.
    */
-  it('the human half of the admissible set === the holders of broadcasts.write', async () => {
+  it('the human half of the admissible set === the holders of broadcasts.clear_halt', async () => {
     const { ROLES } = await import('@/modules/auth/domain/role');
     const { hasPermission } = await import(
       '@/modules/auth/domain/permissions/evaluator'
     );
-    const gateHolders = ROLES.filter((r) => hasPermission(r, 'broadcasts.write'));
+    const gateHolders = ROLES.filter((r) => hasPermission(r, 'broadcasts.clear_halt'));
 
     const admitted: string[] = [];
     for (const role of ROLES) {

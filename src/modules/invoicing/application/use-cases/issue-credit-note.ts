@@ -106,7 +106,23 @@ export const issueCreditNoteSchema = z.object({
   // fixtures across 70 money-path test files for no additional truth,
   // since null is honest and `check:actor-role-truth` guards the shape.
   // Every production caller passes `ctx.current.user.role`.
-  actorRole: z.enum(['admin', 'super_admin', 'manager', 'marketing', 'member']).optional(),
+  // 018 — the non-human actor kinds are first-class here, not placeholders:
+  // this use case is reached by the F5 refund bridge on THREE distinct
+  // paths (admin-initiated / Stripe webhook / stale-refund sweep). Without
+  // them the webhook and cron paths could only record `null`, which is
+  // indistinguishable from 'a staff caller forgot to pass one'.
+  actorRole: z
+    .enum([
+      'admin',
+      'super_admin',
+      'manager',
+      'marketing',
+      'member',
+      'webhook',
+      'cron',
+      'system',
+    ])
+    .optional(),
   requestId: z.string().nullable().optional(),
   invoiceId: z.string().uuid(),
   /** Gross amount to credit (in satang, incl. VAT). Must be > 0. */
