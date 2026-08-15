@@ -120,6 +120,12 @@ export const voidInvoiceSchema = z.object({
    * super_admin as 'admin' post-Migration-C. `admin` only when a legacy caller
    * omits it — never coerced from a real value.
    */
+  // 017 actor-role truth sweep — REQUIRED (was optional with a `?? 'admin'`
+  // fallback below): an omitting caller silently stamped a role nobody held
+  // into an append-only money trail. Every production caller already passes
+  // `ctx.current.user.role`; requiring it makes the omission a compile error
+  // instead of a lie (same REQUIRED-beats-optional-default lesson as
+  // `TimelineListDeps.invoicingRead`).
   actorRole: z.enum(['admin', 'super_admin', 'manager', 'marketing', 'member']).optional(),
   requestId: z.string().nullable().optional(),
   invoiceId: z.string().uuid(),
@@ -270,7 +276,7 @@ export async function voidInvoice(
           summary: `Probe on invoice ${invoiceId} (not found on void)`,
           payload: {
             attempted_invoice_id: invoiceId,
-            actor_role: input.actorRole ?? 'admin',
+            actor_role: input.actorRole ?? null,
             route: 'void-invoice',
           },
         });

@@ -240,6 +240,7 @@ describe('F6 Phase 9 — relinkRegistration (FR-014 / US6)', () => {
         // path-mismatch case has its own dedicated test added below.
         eventIdFromPath: null,
         actorUserId: asUserId(userId),
+        actorRole: 'admin' as const,
         occurredAt: new Date(),
       });
 
@@ -412,6 +413,7 @@ describe('F6 Phase 9 — relinkRegistration (FR-014 / US6)', () => {
         // path-mismatch case has its own dedicated test added below.
         eventIdFromPath: null,
         actorUserId: asUserId(userId),
+        actorRole: 'admin' as const,
         occurredAt: new Date(),
       });
       expect(result.ok).toBe(false);
@@ -547,6 +549,7 @@ describe('F6 Phase 9 — relinkRegistration (FR-014 / US6)', () => {
         // path-mismatch case has its own dedicated test added below.
         eventIdFromPath: null,
         actorUserId: asUserId(userId),
+        actorRole: 'admin' as const,
         occurredAt: new Date(),
       });
       expect(result.ok).toBe(true);
@@ -575,6 +578,7 @@ describe('F6 Phase 9 — relinkRegistration (FR-014 / US6)', () => {
         // path-mismatch case has its own dedicated test added below.
         eventIdFromPath: null,
         actorUserId: asUserId(userId),
+        actorRole: 'admin' as const,
         occurredAt: new Date(),
       });
       expect(result.ok).toBe(false);
@@ -601,6 +605,7 @@ describe('F6 Phase 9 — relinkRegistration (FR-014 / US6)', () => {
         // path-mismatch case has its own dedicated test added below.
         eventIdFromPath: null,
         actorUserId: asUserId(userId),
+        actorRole: 'admin' as const,
         occurredAt: new Date(),
       });
       expect(result.ok).toBe(false);
@@ -737,6 +742,7 @@ describe('F6 Phase 9 — relinkRegistration (FR-014 / US6)', () => {
         // path-mismatch case has its own dedicated test added below.
         eventIdFromPath: null,
         actorUserId: asUserId(userId),
+        actorRole: 'admin' as const,
         occurredAt: new Date(),
       });
       expect(result.ok).toBe(false);
@@ -882,6 +888,7 @@ describe('F6 Phase 9 — relinkRegistration (FR-014 / US6)', () => {
         // path-mismatch case has its own dedicated test added below.
         eventIdFromPath: null,
         actorUserId: asUserId(userId),
+        actorRole: 'admin' as const,
         occurredAt: new Date(),
       });
       expect(result.ok).toBe(true);
@@ -1098,6 +1105,7 @@ describe('F6 Phase 9 — relinkRegistration (FR-014 / US6)', () => {
         // path-mismatch case has its own dedicated test added below.
         eventIdFromPath: null,
         actorUserId: asUserId(userId),
+        actorRole: 'admin' as const,
         occurredAt: new Date(),
       });
       expect(result.ok).toBe(true);
@@ -1416,6 +1424,7 @@ describe('F6 Phase 9 — relinkRegistration (FR-014 / US6)', () => {
         newMatchedMemberId: otherMemberId as never,
         eventIdFromPath: eventBId as never, // attacker / client bug
         actorUserId: asUserId(userId),
+        actorRole: 'admin' as const,
         occurredAt: new Date(),
       });
 
@@ -1631,6 +1640,7 @@ describe('F6 Phase 9 — relinkRegistration (FR-014 / US6)', () => {
           newMatchedMemberId: memberBId as never,
           eventIdFromPath: null,
           actorUserId: asUserId(userId),
+          actorRole: 'admin' as const,
           occurredAt: new Date(),
         }),
         runRelinkRegistration(tenant.ctx.slug, {
@@ -1638,6 +1648,7 @@ describe('F6 Phase 9 — relinkRegistration (FR-014 / US6)', () => {
           newMatchedMemberId: memberAId as never,
           eventIdFromPath: null,
           actorUserId: asUserId(userId),
+          actorRole: 'admin' as const,
           occurredAt: new Date(),
         }),
       ]);
@@ -1790,6 +1801,7 @@ describe('F6 Phase 9 — relinkRegistration (FR-014 / US6)', () => {
         newMatchedMemberId: ghostMember as never,
         eventIdFromPath: null,
         actorUserId: asUserId(userA),
+        actorRole: 'admin' as const,
         occurredAt: new Date(),
       });
       expect(result.ok).toBe(false);

@@ -66,6 +66,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     const result = await runRunTestWebhook(
       tenantCtx.slug,
       guard.actorUserId,
+      guard.actorRole,
       { webhookBaseUrl: deriveWebhookBaseUrl(request) },
     );
     if (!result.ok) {

@@ -393,6 +393,8 @@ function freshSecret(): WebhookSecret {
 export async function runGenerateWebhookSecret(
   tenantSlug: string,
   actorUserId: string,
+  /** 017 truth sweep — LITERAL session role for the audit envelope. */
+  actorRole: 'admin' | 'super_admin' | 'marketing',
 ): Promise<
   Result<{ secret: string; secretLastFour: SecretLastFour }, GenerateWebhookSecretError>
 > {
@@ -405,6 +407,7 @@ export async function runGenerateWebhookSecret(
         tenantId: asTenantId(tenantSlug),
         source: 'eventcreate',
         actorUserId: asUserId(actorUserId),
+        actorRole,
         now: new Date(),
       },
       { repo, audit, generateSecret: freshSecret },
@@ -444,6 +447,8 @@ export async function runGenerateWebhookSecret(
 export async function runRotateWebhookSecret(
   tenantSlug: string,
   actorUserId: string,
+  /** 017 truth sweep — LITERAL session role for the audit envelope. */
+  actorRole: 'admin' | 'super_admin' | 'marketing',
 ): Promise<
   Result<
     { secret: string; secretLastFour: SecretLastFour; graceActiveUntil: string },
@@ -459,6 +464,7 @@ export async function runRotateWebhookSecret(
         tenantId: asTenantId(tenantSlug),
         source: 'eventcreate',
         actorUserId: asUserId(actorUserId),
+        actorRole,
         now: new Date(),
       },
       { repo, audit, generateSecret: freshSecret },
@@ -509,6 +515,8 @@ export interface RunTestWebhookComposeInput {
 export async function runRunTestWebhook(
   tenantSlug: string,
   actorUserId: string,
+  /** 017 truth sweep — LITERAL session role for the audit envelope. */
+  actorRole: 'admin' | 'super_admin' | 'marketing',
   options: RunTestWebhookComposeInput,
 ): Promise<
   Result<
@@ -694,6 +702,8 @@ export type ToggleIngestError =
 export async function runToggleIngest(
   tenantSlug: string,
   actorUserId: string,
+  /** 017 truth sweep — LITERAL session role for the audit envelope. */
+  actorRole: 'admin' | 'super_admin' | 'marketing',
   input: ToggleIngestInput,
 ): Promise<Result<{ enabled: boolean }, ToggleIngestError>> {
   const ctx: TenantContext = asTenantContext(tenantSlug);
@@ -749,7 +759,7 @@ export async function runToggleIngest(
     const auditRes = await safeAuditEmit(audit, {
       eventType: 'ingest_disabled_tenant_admin',
       tenantId: asTenantId(tenantSlug),
-      actorType: 'admin',
+      actorType: actorRole,
       actorUserId: asUserId(actorUserId),
       occurredAt: new Date(),
       summary: `tenant ingest ${enabledBefore ? 'enabled' : 'disabled'} → ${input.enabled ? 'enabled' : 'disabled'}: ${input.reason}`,

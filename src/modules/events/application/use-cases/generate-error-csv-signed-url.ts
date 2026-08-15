@@ -46,6 +46,15 @@ import type { F6AuditPort } from '../ports/audit-port';
 export interface GenerateErrorCsvSignedUrlInput {
   readonly tenantId: TenantId;
   readonly actorUserId: UserId;
+  /**
+   * 017 actor-role truth sweep — the LITERAL staff role from the session,
+   * recorded as the audit envelope's `actorType`. Hardcoding 'admin' folded
+   * two distinct populations into one: F6 grants `events.write` to
+   * MARKETING, so event mutations by a marketing user were filed as admin
+   * actions. REQUIRED (not optional-with-default): `actorType` cannot be
+   * null, so a caller that omits it has no honest value to fall back to.
+   */
+  readonly actorRole: 'admin' | 'super_admin' | 'marketing';
   readonly recordId: CsvImportRecordId;
   /** First hop from X-Forwarded-For (route parses, passes through). */
   readonly sourceIp: string;
@@ -142,7 +151,7 @@ export async function generateErrorCsvSignedUrl(
     const auditResult = await safeAuditEmit(deps.audit, {
       eventType: 'csv_import_error_csv_downloaded',
       tenantId: input.tenantId,
-      actorType: 'admin',
+      actorType: input.actorRole,
       actorUserId: input.actorUserId,
       occurredAt: downloadedAt,
       summary: `Admin downloaded error CSV for import ${input.recordId}`,
@@ -216,7 +225,7 @@ export async function generateErrorCsvSignedUrl(
     const probeAudit = await safeAuditEmit(deps.audit, {
       eventType: 'csv_import_cross_tenant_probe',
       tenantId: input.tenantId,
-      actorType: 'admin',
+      actorType: input.actorRole,
       actorUserId: input.actorUserId,
       occurredAt: probedAt,
       summary: `Cross-tenant CSV import record probe (recordId=${input.recordId}) by actor in tenant ${input.tenantId}`,

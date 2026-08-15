@@ -91,6 +91,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     const result = await runRotateWebhookSecret(
       tenantCtx.slug,
       guard.actorUserId,
+      guard.actorRole,
     );
     if (!result.ok) {
       if (result.error.kind === 'not_found') {

@@ -103,7 +103,8 @@ function makeDeps(opts: MakeDepsOpts = {}): {
 
 const BASE_INPUT = {
   tenantId: asTenantId('test-chamber'),
-  actorUserId: asUserId('00000000-0000-0000-0000-000000000abc'),
+  actorUserId: asUserId('00000000-0000-0000-0000-000000000abc'),
+  actorRole: 'admin' as const,
   externalId: 'agm-2026',
   name: 'AGM 2026',
   startDate: new Date('2026-03-20T11:00:00.000Z'),

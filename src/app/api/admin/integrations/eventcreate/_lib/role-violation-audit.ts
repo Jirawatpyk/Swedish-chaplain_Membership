@@ -126,7 +126,9 @@ export async function adminOnlyGuard(
     readonly attemptedAction: string;
   },
 ): Promise<
-  | { kind: 'allow'; actorUserId: string }
+  /** 017 truth sweep — see the events twin: routes need the LITERAL role to
+   *  stamp their audit envelope instead of hardcoding 'admin'. */
+  | { kind: 'allow'; actorUserId: string; actorRole: 'admin' | 'super_admin' | 'marketing' }
   | { kind: 'deny'; response: Response }
 > {
   // Round-6 verify-fix 2026-05-13 (code #9) — replaced lazy dynamic
@@ -176,7 +178,11 @@ export async function adminOnlyGuard(
     }
     return { kind: 'deny', response: new Response(null, { status: 404 }) };
   }
-  return { kind: 'allow', actorUserId: session.user.id };
+  // rbac-narrow-ok: projects the admitted session role onto the audit union
+  // for ATTRIBUTION; admission was decided by canPerform above.
+  const actorRole =
+    role === 'super_admin' || role === 'marketing' ? role : ('admin' as const);
+  return { kind: 'allow', actorUserId: session.user.id, actorRole };
 }
 
 /**

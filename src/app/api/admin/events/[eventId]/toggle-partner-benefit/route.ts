@@ -80,6 +80,8 @@ export async function POST(
   });
   if (guard.kind === 'deny') return guard.response;
   const actorUserId = guard.actorUserId;
+  // 017 truth sweep — the LITERAL role for the audit envelope.
+  const actorRole = guard.actorRole;
 
   // R3.1.3 — UUID v4 shape gate. After H3.3, `asEventId` throws on a
   // non-UUID input. Without this gate a malformed eventId would reach
@@ -132,6 +134,7 @@ export async function POST(
       flag: 'is_partner_benefit',
       newValue: parsed.data.newValue,
       actorUserId,
+      actorRole,
       occurredAt: new Date(),
     });
   } catch (e) {

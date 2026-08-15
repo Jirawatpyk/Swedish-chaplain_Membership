@@ -113,8 +113,8 @@ describe('makeTickMemoizedMembersBridge (R7 LOW-B)', () => {
   it('passes through non-cached methods (setMemberHalt) on every call', async () => {
     const stub = makeStubBridge();
     const memo = makeTickMemoizedMembersBridge(stub.bridge);
-    await memo.setMemberHalt(tenant, 'mem-1', true);
-    await memo.setMemberHalt(tenant, 'mem-1', true);
+    await memo.setMemberHalt(tenant, 'mem-1', true, 'system');
+    await memo.setMemberHalt(tenant, 'mem-1', true, 'system');
     expect(stub.haltCalls).toHaveLength(2);
   });
 

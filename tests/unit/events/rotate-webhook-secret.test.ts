@@ -86,7 +86,7 @@ describe('rotateWebhookSecret', () => {
     const generateSecret = vi.fn().mockReturnValue(NEW_SECRET);
 
     const result = await rotateWebhookSecret(
-      { tenantId: TENANT, source: 'eventcreate', actorUserId: ACTOR, now },
+      { tenantId: TENANT, source: 'eventcreate', actorUserId: ACTOR, actorRole: 'admin' as const, now },
       { repo, audit, generateSecret },
     );
 
@@ -132,6 +132,7 @@ describe('rotateWebhookSecret', () => {
         tenantId: TENANT,
         source: 'eventcreate',
         actorUserId: ACTOR,
+        actorRole: 'admin' as const,
         now: new Date(),
       },
       { repo, audit, generateSecret },
@@ -156,6 +157,7 @@ describe('rotateWebhookSecret', () => {
         tenantId: TENANT,
         source: 'eventcreate',
         actorUserId: ACTOR,
+        actorRole: 'admin' as const,
         now: new Date(),
       },
       { repo, audit, generateSecret },
@@ -180,7 +182,7 @@ describe('rotateWebhookSecret', () => {
     const fatalSpy = vi.spyOn(logger, 'fatal');
 
     const result = await rotateWebhookSecret(
-      { tenantId: TENANT, source: 'eventcreate', actorUserId: ACTOR, now },
+      { tenantId: TENANT, source: 'eventcreate', actorUserId: ACTOR, actorRole: 'admin' as const, now },
       { repo, audit, generateSecret },
     );
 
@@ -208,7 +210,7 @@ describe('rotateWebhookSecret', () => {
     const generateSecret = vi.fn().mockReturnValue(NEW_SECRET);
 
     await rotateWebhookSecret(
-      { tenantId: TENANT, source: 'eventcreate', actorUserId: ACTOR, now },
+      { tenantId: TENANT, source: 'eventcreate', actorUserId: ACTOR, actorRole: 'admin' as const, now },
       { repo, audit, generateSecret },
     );
 

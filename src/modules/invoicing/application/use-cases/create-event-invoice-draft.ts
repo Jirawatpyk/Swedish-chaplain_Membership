@@ -83,6 +83,11 @@ const EVENT_REGISTRATION_UNIQ_INDEX = 'invoices_event_registration_uniq';
 export const createEventInvoiceDraftSchema = z.object({
   tenantId: z.string().min(1),
   actorUserId: z.string().min(1),
+  // 017 actor-role truth sweep — the LITERAL staff role the invoicing gate
+  // admits (admin | super_admin). A hardcoded 'admin' in the probe payload
+  // below misattributed every post-Migration-C actor in the forensic trail
+  // that cross-tenant probes exist to produce.
+  actorRole: z.enum(['admin', 'super_admin']).optional(),
   requestId: z.string().nullable().optional(),
   eventRegistrationId: z.string().uuid(),
   /**
@@ -167,7 +172,7 @@ export async function createEventInvoiceDraft(
           summary: `Probe on event registration ${input.eventRegistrationId} (not found on event-invoice draft)`,
           payload: {
             event_registration_id: input.eventRegistrationId,
-            actor_role: 'admin',
+            actor_role: input.actorRole ?? null,
             route: 'create-event-invoice-draft',
           },
         });

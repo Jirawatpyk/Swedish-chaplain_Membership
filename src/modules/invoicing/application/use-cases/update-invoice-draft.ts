@@ -26,6 +26,11 @@ import { InvoiceApplyConflictError } from '../lib/invoice-apply-conflict-error';
 export const updateInvoiceDraftSchema = z.object({
   tenantId: z.string().min(1),
   actorUserId: z.string().min(1),
+  // 017 actor-role truth sweep — the LITERAL staff role the invoicing gate
+  // admits (admin | super_admin). A hardcoded 'admin' in the probe payload
+  // below misattributed every post-Migration-C actor in the forensic trail
+  // that cross-tenant probes exist to produce.
+  actorRole: z.enum(['admin', 'super_admin']).optional(),
   requestId: z.string().nullable().optional(),
   invoiceId: z.string().uuid(),
   autoEmailOnIssue: z.boolean().nullable().optional(),
@@ -65,7 +70,7 @@ export async function updateInvoiceDraft(
           summary: `Probe on invoice ${invoiceId} (not found on draft update)`,
           payload: {
             attempted_invoice_id: invoiceId,
-            actor_role: 'admin',
+            actor_role: input.actorRole ?? null,
             route: 'update-invoice-draft',
           },
         });

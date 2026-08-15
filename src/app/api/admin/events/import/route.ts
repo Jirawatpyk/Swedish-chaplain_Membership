@@ -382,6 +382,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     await emitCrossTenantProbeAudit({
       tenantSlug,
       actorUserId: guard.actorUserId,
+      actorRole: guard.actorRole,
       probedEventId: eventIdField,
       sourceIp:
         request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
@@ -591,6 +592,8 @@ export async function POST(request: NextRequest): Promise<Response> {
 interface CrossTenantProbeAuditInput {
   readonly tenantSlug: string;
   readonly actorUserId: string;
+  /** 017 truth sweep — LITERAL session role for the probe envelope. */
+  readonly actorRole: 'admin' | 'super_admin' | 'marketing';
   readonly probedEventId: string;
   readonly sourceIp: string;
   readonly requestId: string;
@@ -618,7 +621,7 @@ async function emitCrossTenantProbeAudit(
     const result = await auditDeps.emitStandalone({
       eventType: 'csv_import_cross_tenant_probe',
       tenantId: asTenantId(input.tenantSlug),
-      actorType: 'admin',
+      actorType: input.actorRole,
       actorUserId: asUserId(input.actorUserId),
       occurredAt: new Date(),
       summary: `Cross-tenant probe on POST /api/admin/events/import (event_id=${input.probedEventId.slice(0, 80)})`,

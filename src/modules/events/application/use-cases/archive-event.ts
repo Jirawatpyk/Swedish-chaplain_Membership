@@ -82,6 +82,15 @@ export interface ArchiveEventInput {
   readonly tenantId: TenantId;
   readonly eventId: EventId;
   readonly actorUserId: UserId;
+  /**
+   * 017 actor-role truth sweep — the LITERAL staff role from the session,
+   * recorded as the audit envelope's `actorType`. Hardcoding 'admin' folded
+   * two distinct populations into one: F6 grants `events.write` to
+   * MARKETING, so event mutations by a marketing user were filed as admin
+   * actions. REQUIRED (not optional-with-default): `actorType` cannot be
+   * null, so a caller that omits it has no honest value to fall back to.
+   */
+  readonly actorRole: 'admin' | 'super_admin' | 'marketing';
   readonly occurredAt: Date;
 }
 
@@ -384,7 +393,7 @@ export async function archiveEvent(
 
     const baseAudit = {
       tenantId: input.tenantId,
-      actorType: 'admin' as const,
+      actorType: input.actorRole,
       actorUserId: input.actorUserId,
       occurredAt: input.occurredAt,
     };
@@ -445,7 +454,7 @@ export async function archiveEvent(
   const macro = await safeAuditEmit(deps.audit, {
     eventType: 'event_archived',
     tenantId: input.tenantId,
-    actorType: 'admin',
+    actorType: input.actorRole,
     actorUserId: input.actorUserId,
     occurredAt: input.occurredAt,
     summary: `event ${input.eventId} archived by admin ${input.actorUserId}; ${counted.length} registrations credit-backed (partnership=${partnershipReversals}, cultural=${culturalReversals})`,

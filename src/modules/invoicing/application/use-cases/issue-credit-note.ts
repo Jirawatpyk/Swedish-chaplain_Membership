@@ -99,6 +99,12 @@ export const issueCreditNoteSchema = z.object({
    * `ctx.current.user.role`, so a promoted super_admin stops being stamped
    * 'admin'. `admin` only when a legacy caller omits it.
    */
+  // 017 actor-role truth sweep — REQUIRED (was optional with a `?? 'admin'`
+  // fallback below): an omitting caller silently stamped a role nobody held
+  // into an append-only money trail. Every production caller already passes
+  // `ctx.current.user.role`; requiring it makes the omission a compile error
+  // instead of a lie (same REQUIRED-beats-optional-default lesson as
+  // `TimelineListDeps.invoicingRead`).
   actorRole: z.enum(['admin', 'super_admin', 'manager', 'marketing', 'member']).optional(),
   requestId: z.string().nullable().optional(),
   invoiceId: z.string().uuid(),
@@ -398,7 +404,7 @@ export async function issueCreditNote(
           summary: `Probe on invoice ${invoiceId} (not found on credit-note issue)`,
           payload: {
             attempted_invoice_id: invoiceId,
-            actor_role: input.actorRole ?? 'admin',
+            actor_role: input.actorRole ?? null,
             route: 'issue-credit-note',
           },
         });

@@ -105,6 +105,7 @@ export async function discardAutoDraftedRenewal(
       tenantId: input.tenantId,
       invoiceId: input.invoiceId,
       actorUserId: input.actorUserId,
+      actorRole: input.actorRole,
       requestId,
       tx,
     });

@@ -69,6 +69,11 @@ import { loadTenantLogo } from '../lib/load-tenant-logo';
 export const recordPaymentSchema = z.object({
   tenantId: z.string().min(1),
   actorUserId: z.string().min(1),
+  // 017 actor-role truth sweep — the LITERAL staff role the invoicing gate
+  // admits (admin | super_admin). A hardcoded 'admin' in the probe payload
+  // below misattributed every post-Migration-C actor in the forensic trail
+  // that cross-tenant probes exist to produce.
+  actorRole: z.enum(['admin', 'super_admin']).optional(),
   requestId: z.string().nullable().optional(),
   invoiceId: z.string().uuid(),
   paymentMethod: z.enum(['bank_transfer', 'cheque', 'cash', 'other']),
@@ -419,7 +424,7 @@ export async function recordPayment(
         summary: `Probe on invoice ${invoiceId} (not found on record-payment)`,
         payload: {
           attempted_invoice_id: invoiceId,
-          actor_role: 'admin',
+          actor_role: input.actorRole ?? null,
           route: 'record-payment',
         },
       });

@@ -62,6 +62,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     const result = await runToggleIngest(
       tenantCtx.slug,
       guard.actorUserId,
+      guard.actorRole,
       {
         enabled: parsed.data.enabled,
         // Round 3 M-type-5 — brand at the boundary so the use-case +

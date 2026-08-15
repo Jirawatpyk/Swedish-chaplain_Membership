@@ -107,6 +107,13 @@ export interface IssueInvoiceForRenewalInput {
   /** Auto-email the issued PDF to the member's primary contact. */
   readonly autoEmailOnIssue: boolean;
   readonly actorUserId: string;
+  /**
+   * 017 actor-role truth sweep — the LITERAL staff role, forwarded into
+   * F4 so its cross-tenant probe payload records who acted instead of a
+   * hardcoded 'admin'. Optional: system/cron-originated bridge calls have
+   * no staff actor, and F4 records `null` rather than inventing one.
+   */
+  readonly actorRole?: 'admin' | 'super_admin';
   readonly correlationId: string;
   readonly requestId: string | null;
 }
@@ -183,6 +190,13 @@ export interface DraftInvoiceForRenewalInput {
    */
   readonly coverageWindow: NonNullable<CreateInvoiceDraftInput['coverageWindow']>;
   readonly actorUserId: string;
+  /**
+   * 017 actor-role truth sweep — the LITERAL staff role, forwarded into
+   * F4 so its cross-tenant probe payload records who acted instead of a
+   * hardcoded 'admin'. Optional: system/cron-originated bridge calls have
+   * no staff actor, and F4 records `null` rather than inventing one.
+   */
+  readonly actorRole?: 'admin' | 'super_admin';
   readonly requestId: string | null;
 }
 
@@ -203,6 +217,13 @@ export interface IssueExistingDraftForRenewalInput {
   readonly tenantId: string;
   readonly invoiceId: string;
   readonly actorUserId: string;
+  /**
+   * 017 actor-role truth sweep — the LITERAL staff role, forwarded into
+   * F4 so its cross-tenant probe payload records who acted instead of a
+   * hardcoded 'admin'. Optional: system/cron-originated bridge calls have
+   * no staff actor, and F4 records `null` rather than inventing one.
+   */
+  readonly actorRole?: 'admin' | 'super_admin';
   /**
    * The review-queue action's definite send-vs-silent choice at issue time
    * — always a real decision (never "no opinion"), since the auto-drafted
@@ -233,6 +254,13 @@ export interface DiscardAutoDraftForRenewalInput {
   readonly tenantId: string;
   readonly invoiceId: string;
   readonly actorUserId: string;
+  /**
+   * 017 actor-role truth sweep — the LITERAL staff role, forwarded into
+   * F4 so its cross-tenant probe payload records who acted instead of a
+   * hardcoded 'admin'. Optional: system/cron-originated bridge calls have
+   * no staff actor, and F4 records `null` rather than inventing one.
+   */
+  readonly actorRole?: 'admin' | 'super_admin';
   readonly requestId: string | null;
   /**
    * Caller-owned Drizzle tx. REQUIRED for the Task 9 issue path: the sweep runs

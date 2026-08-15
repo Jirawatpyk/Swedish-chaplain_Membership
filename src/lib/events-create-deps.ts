@@ -74,6 +74,8 @@ export async function createEventRateLimitCheck(
 export interface RunCreateEventInput {
   readonly tenantSlug: string;
   readonly actorUserId: UserId;
+  /** 017 truth sweep — LITERAL session role for the audit envelope. */
+  readonly actorRole: 'admin' | 'super_admin' | 'marketing';
   readonly externalId: string;
   readonly name: string;
   readonly startDate: Date;
@@ -113,6 +115,7 @@ export async function runCreateEvent(
     return await createEvent(
       {
         tenantId: asTenantId(input.tenantSlug),
+        actorRole: input.actorRole,
         actorUserId: input.actorUserId,
         externalId: input.externalId,
         name: input.name,

@@ -85,7 +85,7 @@ describe('generateWebhookSecret', () => {
 
     const now = new Date('2026-05-13T10:00:00.000Z');
     const result = await generateWebhookSecret(
-      { tenantId: TENANT, source: 'eventcreate', actorUserId: ACTOR, now },
+      { tenantId: TENANT, source: 'eventcreate', actorUserId: ACTOR, actorRole: 'admin' as const, now },
       { repo, audit, generateSecret },
     );
 
@@ -128,6 +128,7 @@ describe('generateWebhookSecret', () => {
         tenantId: TENANT,
         source: 'eventcreate',
         actorUserId: ACTOR,
+        actorRole: 'admin' as const,
         now: new Date(),
       },
       { repo, audit, generateSecret },
@@ -153,6 +154,7 @@ describe('generateWebhookSecret', () => {
         tenantId: TENANT,
         source: 'eventcreate',
         actorUserId: ACTOR,
+        actorRole: 'admin' as const,
         now: new Date(),
       },
       { repo, audit, generateSecret },
@@ -179,6 +181,7 @@ describe('generateWebhookSecret', () => {
         tenantId: TENANT,
         source: 'eventcreate',
         actorUserId: ACTOR,
+        actorRole: 'admin' as const,
         now: new Date(),
       },
       { repo, audit, generateSecret },
@@ -207,6 +210,7 @@ describe('generateWebhookSecret', () => {
         tenantId: TENANT,
         source: 'eventcreate',
         actorUserId: ACTOR,
+        actorRole: 'admin' as const,
         now: new Date(),
       },
       { repo, audit, generateSecret },

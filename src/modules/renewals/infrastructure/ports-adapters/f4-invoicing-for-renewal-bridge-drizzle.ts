@@ -288,6 +288,7 @@ export const makeF4InvoicingForRenewalBridge = (
       {
         tenantId: input.tenantId,
         actorUserId: input.actorUserId,
+        ...(input.actorRole !== undefined ? { actorRole: input.actorRole } : {}),
         requestId: input.requestId,
         invoiceId: input.invoiceId,
         ...(input.expectMayHaveVanished !== undefined

@@ -92,6 +92,9 @@ function makeMembersBridge(opts: {
 const baseInput = {
   memberId: 'm-42',
   actorUserId: 'admin-7',
+  // 017 truth sweep — the acting role is threaded to F3's halt
+  // authorization instead of the bridge fabricating 'admin'.
+  actorRole: 'admin',
   requestId: 'req-clear-halt',
 } as const;
 

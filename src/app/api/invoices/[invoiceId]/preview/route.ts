@@ -20,6 +20,9 @@ export async function GET(
     // R7-W1 — actor context enables `invoice_cross_tenant_probe`
     // audit emission when the draft lookup returns null.
     actorUserId: ctx.current.user.id,
+    // rbac-narrow-ok: stamps the LITERAL role into the probe audit row;
+    // the gate above already decided admission (017 truth sweep).
+    actorRole: ctx.current.user.role === 'super_admin' ? 'super_admin' : 'admin',
     requestId: ctx.requestId,
   });
   if (!result.ok) {

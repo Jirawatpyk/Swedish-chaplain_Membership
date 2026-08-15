@@ -174,16 +174,19 @@ export const membersBridge: MembersBridgePort = {
     tenantCtx: TenantContext,
     memberId: string,
     halted: boolean,
+    actorRole: 'admin' | 'super_admin' | 'marketing' | 'system',
   ): Promise<Result<void, MemberHaltError>> {
     const result = await f3SetMemberHalt(
       { tenant: tenantCtx, memberRepo: drizzleMemberRepo },
       asMemberId(memberId),
       halted,
-      { actorRole: 'admin' },
+      // 017 truth sweep — forward the caller's REAL actor; the old
+      // hardcoded 'admin' satisfied F3's check on every path.
+      { actorRole },
     );
     if (result.ok) return ok(undefined);
     if ('code' in result.error && result.error.code === 'member_halt.unauthorised') {
-      return err({ kind: 'member_halt.unauthorized', actorRole: 'admin' });
+      return err({ kind: 'member_halt.unauthorized', actorRole });
     }
     return err({ kind: 'member_halt.member_not_found', memberId });
   },

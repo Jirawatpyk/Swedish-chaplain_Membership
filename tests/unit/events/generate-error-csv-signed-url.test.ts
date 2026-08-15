@@ -79,6 +79,7 @@ function makeDeps(
 const baseInput: GenerateErrorCsvSignedUrlInput = {
   tenantId: tenantA,
   actorUserId,
+  actorRole: 'admin' as const,
   recordId,
   sourceIp: '203.0.113.10',
 };

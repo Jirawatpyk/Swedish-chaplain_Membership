@@ -242,6 +242,7 @@ function baseInput(
     // override `eventIdFromPath` explicitly.
     eventIdFromPath: EVENT_ID,
     actorUserId: ACTOR,
+    actorRole: 'admin' as const,
     occurredAt: new Date('2026-05-14T10:00:00Z'),
     ...patch,
   };

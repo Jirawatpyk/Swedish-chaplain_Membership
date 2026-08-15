@@ -47,6 +47,15 @@ export interface GenerateWebhookSecretInput {
   readonly source: Source;
   /** Admin actor (FR-035 — surface is admin-only; nullable rejected by type). */
   readonly actorUserId: UserId;
+  /**
+   * 017 actor-role truth sweep — the LITERAL staff role from the session,
+   * recorded as the audit envelope's `actorType`. Hardcoding 'admin' folded
+   * two distinct populations into one: F6 grants `events.write` to
+   * MARKETING, so event mutations by a marketing user were filed as admin
+   * actions. REQUIRED (not optional-with-default): `actorType` cannot be
+   * null, so a caller that omits it has no honest value to fall back to.
+   */
+  readonly actorRole: 'admin' | 'super_admin' | 'marketing';
   /** Injected for deterministic test fixtures; production uses `new Date()`. */
   readonly now: Date;
 }
@@ -105,7 +114,7 @@ export async function generateWebhookSecret(
   const auditResult = await safeAuditEmit(deps.audit, {
     eventType: 'webhook_secret_generated',
     tenantId: input.tenantId,
-    actorType: 'admin',
+    actorType: input.actorRole,
     actorUserId: input.actorUserId,
     occurredAt: input.now,
     summary: `webhook secret generated (last4=${secretLastFour})`,

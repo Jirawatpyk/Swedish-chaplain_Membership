@@ -474,6 +474,11 @@ export async function processWebhookEvent(
               deps.tenant,
               fresh.requestedByMemberId,
               true,
+              // 017 truth sweep — the bounce-threshold halt is performed by
+              // the Resend webhook, not a human. Previously the bridge
+              // hardcoded 'admin' here, filing an automated safety halt as
+              // an admin action.
+              'system',
             );
             if (halt.ok) {
               memberHalted = true;

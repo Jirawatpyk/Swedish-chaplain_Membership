@@ -200,6 +200,7 @@ describe('F6 Phase 10 Wave 1 — eraseAttendeePii (FR-032a)', () => {
         eventId: eventInternalId as never,
         registrationId: registrationId as never,
         actorUserId: asUserId(userId),
+        actorRole: 'admin' as const,
         reasonText: 'GDPR Article 17 request — member requested deletion',
         occurredAt: new Date(),
       });
@@ -280,6 +281,7 @@ describe('F6 Phase 10 Wave 1 — eraseAttendeePii (FR-032a)', () => {
         eventId: eventInternalId as never,
         registrationId: registrationId as never,
         actorUserId: asUserId(userId),
+        actorRole: 'admin' as const,
         reasonText: 'retry — should be no-op',
         occurredAt: new Date(),
       });
@@ -371,6 +373,7 @@ describe('F6 Phase 10 Wave 1 — eraseAttendeePii (FR-032a)', () => {
         eventId: eventInternalId as never,
         registrationId: registrationId as never,
         actorUserId: asUserId(userId),
+        actorRole: 'admin' as const,
         reasonText: 'non-member erase',
         occurredAt: new Date(),
       });
@@ -416,6 +419,7 @@ describe('F6 Phase 10 Wave 1 — eraseAttendeePii (FR-032a)', () => {
         eventId: randomUUID() as never,
         registrationId: randomUUID() as never,
         actorUserId: asUserId(userId),
+        actorRole: 'admin' as const,
         reasonText: 'should fail',
         occurredAt: new Date(),
       });
@@ -483,6 +487,7 @@ describe('F6 Phase 10 Wave 1 — eraseAttendeePii (FR-032a)', () => {
         eventId: eventB as never, // wrong event — path mismatch
         registrationId: regId as never,
         actorUserId: asUserId(userId),
+        actorRole: 'admin' as const,
         reasonText: 'path mismatch test',
         occurredAt: new Date(),
       });
@@ -565,6 +570,7 @@ describe('F6 Phase 10 Wave 1 — eraseAttendeePii (FR-032a)', () => {
         eventId: randomUUID() as never,
         registrationId: regIdInA as never,
         actorUserId: asUserId(userBId),
+        actorRole: 'admin' as const,
         reasonText: 'cross-tenant attempt',
         occurredAt: new Date(),
       });

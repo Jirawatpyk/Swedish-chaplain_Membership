@@ -31,8 +31,16 @@ export type SetMemberHaltDeps = {
 };
 
 export type SetMemberHaltMeta = {
-  /** 016 T030/T033 — literal session role; member arms below key on the literal. */
-  readonly actorRole: Role;
+  /**
+   * 016 T030/T033 — literal session role; the arm below keys on the literal.
+   *
+   * 017 actor-role truth sweep — widened with `'system'`, which is what the
+   * bounce-threshold HALT actually is: the F7 Resend webhook sets the flag,
+   * no human does. Until now the F7 bridge hardcoded `'admin'` for BOTH
+   * paths, which made the check below a no-op (every caller "was" an admin)
+   * AND recorded a human role for an automated action.
+   */
+  readonly actorRole: Role | 'system';
 };
 
 export async function setMemberHalt(
@@ -41,7 +49,23 @@ export async function setMemberHalt(
   halted: boolean,
   meta: SetMemberHaltMeta,
 ): Promise<Result<void, MemberHaltError>> {
-  if (meta.actorRole !== 'admin') {
+  // 017 truth sweep — the admissible set, stated once and matching what the
+  // F7 route gate (`broadcasts.write`) ACTUALLY admits today:
+  //   admin + super_admin — the admin tier ('admin' alone would deny every
+  //     promoted super_admin post-Migration-C);
+  //   marketing — holds `broadcasts.write`, so it already reaches this action
+  //     in production; the old literal only "denied" it because the F7 bridge
+  //     hardcoded 'admin' on the way in;
+  //   system — the automated bounce-threshold halt (Resend webhook).
+  // manager (FR-014) and member stay denied. This is a REAL check again now
+  // that callers pass their true actor instead of a fabricated 'admin'.
+  const ADMISSIBLE: ReadonlySet<string> = new Set([
+    'admin',
+    'super_admin',
+    'marketing',
+    'system',
+  ]);
+  if (!ADMISSIBLE.has(meta.actorRole)) {
     return err({
       code: 'member_halt.unauthorised',
       actorRole: meta.actorRole,

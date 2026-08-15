@@ -183,6 +183,7 @@ describe('T087 — F6 toggleEventCategory (admin FR-019 re-evaluation)', () => {
         flag: 'is_partner_benefit',
         newValue: true,
         actorUserId: asUserId(userId),
+        actorRole: 'admin' as const,
         occurredAt: new Date(),
       });
       try {
@@ -342,6 +343,7 @@ describe('T087 — F6 toggleEventCategory (admin FR-019 re-evaluation)', () => {
         flag: 'is_partner_benefit',
         newValue: false,
         actorUserId: asUserId(userId),
+        actorRole: 'admin' as const,
         occurredAt: new Date(),
       });
       expect(result.ok).toBe(true);
@@ -430,6 +432,7 @@ describe('T087 — F6 toggleEventCategory (admin FR-019 re-evaluation)', () => {
         flag: 'is_partner_benefit',
         newValue: false, // same as current
         actorUserId: asUserId(userId),
+        actorRole: 'admin' as const,
         occurredAt: new Date(),
       });
       expect(result.ok).toBe(true);
@@ -471,6 +474,7 @@ describe('T087 — F6 toggleEventCategory (admin FR-019 re-evaluation)', () => {
         flag: 'is_partner_benefit',
         newValue: true,
         actorUserId: asUserId(userId),
+        actorRole: 'admin' as const,
         occurredAt: new Date(),
       });
       expect(result.ok).toBe(false);
@@ -500,6 +504,7 @@ describe('T087 — F6 toggleEventCategory (admin FR-019 re-evaluation)', () => {
         flag: 'is_partner_benefit',
         newValue: true,
         actorUserId: asUserId(userId),
+        actorRole: 'admin' as const,
         occurredAt: new Date(),
       });
       expect(result.ok).toBe(false);
@@ -603,6 +608,7 @@ describe('T087 — F6 toggleEventCategory (admin FR-019 re-evaluation)', () => {
         flag: 'is_partner_benefit',
         newValue: true,
         actorUserId: asUserId(userA),
+        actorRole: 'admin' as const,
         occurredAt: new Date(),
       });
       expect(result.ok).toBe(false);

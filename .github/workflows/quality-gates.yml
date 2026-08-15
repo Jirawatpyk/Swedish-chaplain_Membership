@@ -94,6 +94,9 @@ jobs:
       - name: No unmarked role literal on a decision surface (016 RBAC)
         run: pnpm check:authorization-role-reads
 
+      - name: No audit row states a role its actor did not hold (017)
+        run: pnpm check:actor-role-truth
+
   unit:
     # Sharded because `vitest.config.ts` caps `maxWorkers: '50%'` for
     # determinism (see the starvation trade-off documented there). On a 2-core
