@@ -80,6 +80,12 @@ describe('renewals mutation schemas — actorRole accepts the literal staff role
  * fallback expression (`rejectActorRole === 'super_admin' ? … : 'admin'`)
  * that this regex correctly does not match (the literal is not in the
  * value position after `actorRole:`).
+ *
+ * SCOPE NOTE (017): this file stays RENEWALS-scoped on purpose — it lives
+ * next to the schema pins it complements. The codebase-wide successor is
+ * `scripts/check-actor-role-truth.ts` (wired into pre-push + CI), written
+ * after the same class was found again in invoicing, events and the F7
+ * members-bridge. A fix here does not reach those; that gate does.
  */
 describe('no use-case body hardcodes a staff actor role (B-1 tripwire)', () => {
   it('every staff-role literal outside the documented replay sites is gone', () => {

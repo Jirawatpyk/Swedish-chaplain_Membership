@@ -114,12 +114,18 @@ export const voidInvoiceSchema = z.object({
   actorUserId: z.string().min(1),
   /**
    * 016 re-review — the LITERAL actor role for the cross-tenant-probe audit
-   * payload. Optional so existing callers/tests are unaffected; both prod
-   * routes (F4 void + the void-on-reissue supersede) now pass
-   * `ctx.current.user.role`, so the probe row stops mis-stamping a promoted
-   * super_admin as 'admin' post-Migration-C. `admin` only when a legacy caller
-   * omits it — never coerced from a real value.
+   * payload, so the row stops mis-stamping a promoted super_admin as 'admin'
+   * post-Migration-C. (The 016 note here claimed the void-on-reissue
+   * supersede path passed it too; it did not — 017 wired that up in
+   * `issue-membership-bill`.)
    */
+  // 017 actor-role truth sweep — the `?? 'admin'` fallback below is GONE:
+  // an omitting caller used to silently stamp a role nobody held into an
+  // append-only money trail; it now records `null` (honest 'unknown').
+  // Still OPTIONAL, deliberately: making it required would churn ~460
+  // fixtures across 70 money-path test files for no additional truth,
+  // since null is honest and `check:actor-role-truth` guards the shape.
+  // Every production caller passes `ctx.current.user.role`.
   actorRole: z.enum(['admin', 'super_admin', 'manager', 'marketing', 'member']).optional(),
   requestId: z.string().nullable().optional(),
   invoiceId: z.string().uuid(),
@@ -270,7 +276,7 @@ export async function voidInvoice(
           summary: `Probe on invoice ${invoiceId} (not found on void)`,
           payload: {
             attempted_invoice_id: invoiceId,
-            actor_role: input.actorRole ?? 'admin',
+            actor_role: input.actorRole ?? null,
             route: 'void-invoice',
           },
         });

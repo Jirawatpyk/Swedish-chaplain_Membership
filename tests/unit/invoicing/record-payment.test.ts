@@ -401,7 +401,7 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
     // short-circuits at `settings_missing` when settings are null.
     // Intent of THIS test is the probe-emit path, not settings-missing.
     const deps = makeDeps(false, null, makeSettings());
-    const r = await recordPayment(deps, input);
+    const r = await recordPayment(deps, { ...input, actorRole: 'super_admin' as const });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.code).toBe('invoice_not_found');
     expect(deps.audit.emit).toHaveBeenCalledWith(
@@ -410,7 +410,10 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
         eventType: 'invoice_cross_tenant_probe',
         payload: expect.objectContaining({
           attempted_invoice_id: input.invoiceId,
-          actor_role: 'admin',
+          // 017 truth sweep — the probe records the role the CALLER stated;
+          // this case passes 'super_admin', so a regression back to a
+          // hardcoded 'admin' (or a dropped thread) fails here.
+          actor_role: 'super_admin',
           route: 'record-payment',
         }),
       }),

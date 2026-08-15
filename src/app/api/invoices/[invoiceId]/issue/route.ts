@@ -67,6 +67,9 @@ export async function POST(
   const parsed = issueInvoiceSchema.safeParse({
     tenantId: tenantCtx.slug,
     actorUserId: ctx.current.user.id,
+    // rbac-narrow-ok: stamps the LITERAL role into the probe audit row;
+    // the gate above already decided admission (017 truth sweep).
+    actorRole: ctx.current.user.role === 'super_admin' ? 'super_admin' : 'admin',
     requestId,
     invoiceId,
     vatTreatment: b.vatTreatment,

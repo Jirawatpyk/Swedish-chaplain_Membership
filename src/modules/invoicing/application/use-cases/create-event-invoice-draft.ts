@@ -83,6 +83,19 @@ const EVENT_REGISTRATION_UNIQ_INDEX = 'invoices_event_registration_uniq';
 export const createEventInvoiceDraftSchema = z.object({
   tenantId: z.string().min(1),
   actorUserId: z.string().min(1),
+  // 017 actor-role truth sweep — the LITERAL staff role the invoicing gate
+  // admits (admin | super_admin). A hardcoded 'admin' in the probe payload
+  // below misattributed every post-Migration-C actor in the forensic trail
+  // that cross-tenant probes exist to produce.
+  // 017 actor-role truth sweep — a RECORDING vocabulary, not an
+  // authorization statement: the route/permission gate decides admission,
+  // this field only states who it was. Kept at the full `Role` union (the
+  // same shape void-invoice + issue-credit-note already use) because the
+  // member-portal confirm-renewal path issues through here too — a
+  // narrower union would force that caller to lie or stay silent.
+  actorRole: z
+    .enum(['admin', 'super_admin', 'manager', 'marketing', 'member'])
+    .optional(),
   requestId: z.string().nullable().optional(),
   eventRegistrationId: z.string().uuid(),
   /**
@@ -167,7 +180,7 @@ export async function createEventInvoiceDraft(
           summary: `Probe on event registration ${input.eventRegistrationId} (not found on event-invoice draft)`,
           payload: {
             event_registration_id: input.eventRegistrationId,
-            actor_role: 'admin',
+            actor_role: input.actorRole ?? null,
             route: 'create-event-invoice-draft',
           },
         });

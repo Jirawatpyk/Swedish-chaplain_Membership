@@ -677,6 +677,9 @@ export function makeEraseAttendeesByEmailDeps(
         eventId: asEventId(eventId),
         registrationId: asRegistrationId(registrationId),
         actorUserId: asUserId(eraseInput.actorUserId),
+        // 017 truth sweep — member-erasure cascade arm; see the twin in
+        // src/modules/events/index.ts.
+        actorRole: 'system' as const,
         reasonText: eraseInput.reasonText,
         occurredAt: eraseInput.occurredAt,
       }),

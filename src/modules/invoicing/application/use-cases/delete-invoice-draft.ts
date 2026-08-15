@@ -11,6 +11,14 @@ import { asInvoiceId } from '@/modules/invoicing/domain/invoice';
 export interface DeleteInvoiceDraftInput {
   readonly tenantId: string;
   readonly actorUserId: string;
+  /**
+   * 017 actor-role truth sweep — the LITERAL staff role the invoicing gate
+   * admits. Stamped into the cross-tenant probe payload below; a hardcoded
+   * 'admin' misattributed every post-Migration-C actor in that forensic
+   * trail. Reaches here from the admin DELETE route and from the renewals
+   * auto-draft discard bridge, both admin-tier.
+   */
+  readonly actorRole?: import('@/modules/auth').Role;
   readonly requestId?: string | null;
   readonly invoiceId: string;
   /**
@@ -68,7 +76,7 @@ export async function deleteInvoiceDraft(
         summary: `Probe on invoice ${invoiceId} (not found on draft delete)`,
         payload: {
           attempted_invoice_id: invoiceId,
-          actor_role: 'admin',
+          actor_role: input.actorRole ?? null,
           route: 'delete-invoice-draft',
         },
       });

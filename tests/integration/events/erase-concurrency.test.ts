@@ -201,6 +201,7 @@ describe('#16 — erase stale-flip concurrency (fresh flags win)', () => {
         eventId: asEventId(eventInternalId),
         registrationId: asRegistrationId(registrationId),
         actorUserId: asUserId(userId),
+        actorRole: 'admin' as const,
         reasonText: 'DPO erasure during concurrent flag clear',
         occurredAt: new Date(),
       });

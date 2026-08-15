@@ -364,7 +364,7 @@ describe('halt-flag precondition (T051)', () => {
         audit: auditPort,
         clock: { now: () => FROZEN_NOW },
       },
-      { memberId: 'm-1', actorUserId: 'admin-7', requestId: 'req-clear' },
+      { memberId: 'm-1', actorUserId: 'admin-7', requestId: 'req-clear', actorRole: 'admin' as const },
     );
     expect(clearResult.ok).toBe(true);
 
@@ -406,7 +406,7 @@ describe('halt-flag precondition (T051)', () => {
         audit: auditPort,
         clock: { now: () => FROZEN_NOW },
       },
-      { memberId: 'm-1', actorUserId: 'manager-1', requestId: 'req-1' },
+      { memberId: 'm-1', actorUserId: 'manager-1', requestId: 'req-1', actorRole: 'admin' as const },
     );
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.kind).toBe('forbidden');

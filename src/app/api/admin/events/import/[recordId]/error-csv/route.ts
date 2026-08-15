@@ -141,6 +141,8 @@ export async function GET(
   const outcome = await runGenerateErrorCsvSignedUrl({
     tenantSlug,
     actorUserId: asUserId(guard.actorUserId),
+    // 017 truth sweep — the LITERAL role for the audit envelope.
+    actorRole: guard.actorRole,
     recordId,
     sourceIp,
   });

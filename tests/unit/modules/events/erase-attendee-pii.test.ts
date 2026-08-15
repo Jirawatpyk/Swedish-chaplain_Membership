@@ -198,6 +198,7 @@ function baseInput(
     eventId: EVENT_ID,
     registrationId: REG_ID,
     actorUserId: ACTOR,
+    actorRole: 'admin' as const,
     reasonText: 'DPO request 2026-07',
     occurredAt: new Date('2026-07-07T10:00:00Z'),
     ...patch,

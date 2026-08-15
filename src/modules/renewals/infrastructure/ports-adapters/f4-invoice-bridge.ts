@@ -100,6 +100,13 @@ export interface IssueAndMarkPaidInput {
   /** YYYY-MM-DD Bangkok-local. */
   readonly paymentDate: string;
   readonly actorUserId: string;
+  /**
+   * 017 actor-role truth sweep — the LITERAL staff role, forwarded into
+   * F4's issue + record-payment so their cross-tenant probe payloads name
+   * the real actor. Optional: a system-originated call has no staff role,
+   * and F4 records `null` rather than inventing one.
+   */
+  readonly actorRole?: 'admin' | 'super_admin';
   /** Optional caller-owned tx for atomic state+payment+cycle flip. */
   readonly externalTx?: unknown;
   /**
@@ -217,6 +224,7 @@ export const f4InvoiceBridge: F4InvoiceBridge = {
     const issued = await issueInvoice(issueDeps, {
       tenantId: input.tenantId,
       actorUserId: input.actorUserId,
+      ...(input.actorRole !== undefined ? { actorRole: input.actorRole } : {}),
       requestId: input.requestId ?? null,
       invoiceId,
     });
@@ -240,6 +248,7 @@ export const f4InvoiceBridge: F4InvoiceBridge = {
     const paid = await recordPayment(recordDeps, {
       tenantId: input.tenantId,
       actorUserId: input.actorUserId,
+      ...(input.actorRole !== undefined ? { actorRole: input.actorRole } : {}),
       requestId: input.requestId ?? null,
       invoiceId,
       paymentMethod: input.paymentMethod,

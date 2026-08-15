@@ -96,8 +96,10 @@ const COMPARISON = new RegExp(
  * when sites are legitimately removed; never lower it to make a run pass.
  *
  * Pinned to the MEASURED TOTAL — `marked + unmarked`, which is what `scanned`
- * counts — not to the `marked` counter. 52 as of the 016 post-ship review
- * fixes (2026-08-14): the finding-#3 sweep added 14 marker-hosted
+ * counts — not to the `marked` counter. 67 as of the 017 actor-role truth
+ * sweep (2026-08-15): the invoicing/events/broadcasts route stamps each add
+ * a marker-hosted `role === 'super_admin' ? … : 'admin'` attribution
+ * ternary. It was 52 after the 016 post-ship review fixes (2026-08-14): the finding-#3 sweep added 14 marker-hosted
  * `role === 'super_admin' ? … : 'admin'` audit-stamp ternaries across the
  * renewals mutation routes. It was 38 as of PR 5 (the legacy shim died with
  * its one `rbac-legacy-shim-arm-ok` site), 39 as of PR 4 after
@@ -110,7 +112,7 @@ const COMPARISON = new RegExp(
  * blind before tripping. The T065 gate reported "0 unmarked" while it could not
  * see 341 lines of src/config/nav.ts.
  */
-const MIN_EXPECTED_SITES = 52;
+const MIN_EXPECTED_SITES = 67;
 
 /**
  * Every accepted claim. Each says what the literal is doing INSTEAD of

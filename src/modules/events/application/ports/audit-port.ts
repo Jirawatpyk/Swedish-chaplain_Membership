@@ -304,14 +304,15 @@ export interface AuditPayloads {
      * is HMAC-signed by the admin route only, so a forged
      * `dispatchedByActorRole` would fail signature verification
      * before reaching the short-circuit branch. Drift detection: an
-     * audit row with `dispatchedByActorRole !== 'admin'` flags a
+     * audit row whose `dispatchedByActorRole` is not one the
+     * `settings.integrations` gate admits flags a
      * role-enforcement loosening at the admin route.
      *
      * Both fields default to `null` when the synthetic payload omits
      * `chamberTestMetadata` (legacy payloads from clients pre-S-05).
      */
     readonly dispatchedByActorUserId: UserId | null;
-    readonly dispatchedByActorRole: 'admin' | null;
+    readonly dispatchedByActorRole: 'admin' | 'super_admin' | 'marketing' | null;
   };
 
   // --- Match resolution (5) ---------------------------------------------

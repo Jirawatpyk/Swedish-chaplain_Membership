@@ -329,7 +329,7 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
 
   it('invoice_not_found → err + emits invoice_cross_tenant_probe (R7-W1)', async () => {
     const deps = makeDeps(null, makeSettings(), makeMember());
-    const r = await issueInvoice(deps, input);
+    const r = await issueInvoice(deps, { ...input, actorRole: 'super_admin' as const });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.code).toBe('invoice_not_found');
     // R7-W1 — probe audit fires on lockForUpdate-returns-null (RLS-
@@ -342,7 +342,10 @@ describe('issueInvoice — CP-3.3 branch coverage', () => {
         eventType: 'invoice_cross_tenant_probe',
         payload: expect.objectContaining({
           attempted_invoice_id: input.invoiceId,
-          actor_role: 'admin',
+          // 017 truth sweep — the probe records the role the CALLER stated;
+          // this case passes 'super_admin', so a regression back to a
+          // hardcoded 'admin' (or a dropped thread) fails here.
+          actor_role: 'super_admin',
           route: 'issue-invoice',
         }),
       }),

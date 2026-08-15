@@ -339,6 +339,8 @@ export async function runListCsvImportRecords(
 export interface RunGenerateErrorCsvSignedUrlInput {
   readonly tenantSlug: string;
   readonly actorUserId: UserId;
+  /** 017 truth sweep — LITERAL session role for the audit envelope. */
+  readonly actorRole: 'admin' | 'super_admin' | 'marketing';
   /** Validated-UUID recordId; branded inside the wrapper. */
   readonly recordId: string;
   readonly sourceIp: string;
@@ -379,6 +381,7 @@ export async function runGenerateErrorCsvSignedUrl(
       {
         tenantId: asTenantId(input.tenantSlug),
         actorUserId: input.actorUserId,
+        actorRole: input.actorRole,
         recordId: asCsvImportRecordId(input.recordId),
         sourceIp: input.sourceIp,
       },

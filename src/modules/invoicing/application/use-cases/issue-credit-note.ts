@@ -99,6 +99,13 @@ export const issueCreditNoteSchema = z.object({
    * `ctx.current.user.role`, so a promoted super_admin stops being stamped
    * 'admin'. `admin` only when a legacy caller omits it.
    */
+  // 017 actor-role truth sweep — the `?? 'admin'` fallback below is GONE:
+  // an omitting caller used to silently stamp a role nobody held into an
+  // append-only money trail; it now records `null` (honest 'unknown').
+  // Still OPTIONAL, deliberately: making it required would churn ~460
+  // fixtures across 70 money-path test files for no additional truth,
+  // since null is honest and `check:actor-role-truth` guards the shape.
+  // Every production caller passes `ctx.current.user.role`.
   actorRole: z.enum(['admin', 'super_admin', 'manager', 'marketing', 'member']).optional(),
   requestId: z.string().nullable().optional(),
   invoiceId: z.string().uuid(),
@@ -398,7 +405,7 @@ export async function issueCreditNote(
           summary: `Probe on invoice ${invoiceId} (not found on credit-note issue)`,
           payload: {
             attempted_invoice_id: invoiceId,
-            actor_role: input.actorRole ?? 'admin',
+            actor_role: input.actorRole ?? null,
             route: 'issue-credit-note',
           },
         });

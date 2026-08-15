@@ -794,6 +794,7 @@ export async function markPaidOffline(
         paymentReference: input.paymentReference,
         paymentDate: input.paymentDate,
         actorUserId: input.actorUserId,
+        actorRole: input.actorRole,
         externalTx: tx,
         onPaid,
         requestId: input.requestId ?? null,

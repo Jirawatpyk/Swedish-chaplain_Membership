@@ -243,6 +243,7 @@ function baseInput(
     tenantId: TENANT_ID,
     eventId: EVENT_ID,
     actorUserId: ACTOR_USER_ID,
+    actorRole: 'admin' as const,
     occurredAt: new Date('2026-05-14T10:00:00Z'),
     ...patch,
   };

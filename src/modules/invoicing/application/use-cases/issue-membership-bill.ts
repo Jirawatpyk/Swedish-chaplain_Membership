@@ -156,6 +156,11 @@ export async function issueMembershipBill(
       const voided = await voidInvoice(deps.voidDeps, {
         tenantId: input.tenantId,
         actorUserId: input.actorUserId,
+        // 017 truth sweep (M-2) — the supersede-void inherits the actor of the
+        // reissue that triggered it. `input` already carries the role; not
+        // forwarding it made this void's probe row claim `null` while the
+        // sibling issue row named the actor.
+        ...(input.actorRole !== undefined ? { actorRole: input.actorRole } : {}),
         requestId: input.requestId,
         invoiceId: bill.invoiceId,
         voidReason: `auto-void: superseded by renewal reissue ${newBill.invoiceId}`,

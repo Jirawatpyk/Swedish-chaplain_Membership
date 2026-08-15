@@ -841,6 +841,9 @@ export async function confirmRenewal(
         ),
       };
   const invoiceResult = await deps.f4InvoicingBridge.issueInvoiceForRenewal({
+    // 017 truth sweep — the LITERAL actor (this path is member-reachable
+    // on confirm-renewal), so F4's probe trail names who really acted.
+    actorRole: input.actorRole,
     tenantId: input.tenantId,
     memberId: input.memberId,
     planId: cycleAfterPlanChange.planIdAtCycleStart,

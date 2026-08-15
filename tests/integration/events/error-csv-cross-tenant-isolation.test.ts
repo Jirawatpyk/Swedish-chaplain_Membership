@@ -121,6 +121,7 @@ describe('T037 — error-csv signed-URL cross-tenant isolation (live Neon)', () 
     const outcome = await runGenerateErrorCsvSignedUrl({
       tenantSlug: tenantA.ctx.slug,
       actorUserId: actorA.userId,
+      actorRole: 'admin' as const,
       recordId: recordB,
       sourceIp: '127.0.0.1',
     });
@@ -176,6 +177,7 @@ describe('T037 — error-csv signed-URL cross-tenant isolation (live Neon)', () 
     const outcome = await runGenerateErrorCsvSignedUrl({
       tenantSlug: tenantB.ctx.slug,
       actorUserId: actorB.userId,
+      actorRole: 'admin' as const,
       recordId: recordB,
       sourceIp: '127.0.0.1',
     });
@@ -223,6 +225,7 @@ describe('T037 — error-csv signed-URL cross-tenant isolation (live Neon)', () 
     const outcome = await runGenerateErrorCsvSignedUrl({
       tenantSlug: tenantA.ctx.slug,
       actorUserId: actorA.userId,
+      actorRole: 'admin' as const,
       recordId: unknownRecordId,
       sourceIp: '127.0.0.1',
     });

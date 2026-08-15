@@ -210,7 +210,14 @@ export async function adminOnlyWriterGuard(
   // Round-2 types-H2 closure — return branded `UserId` so call sites
   // get type-safe actor IDs without re-applying `asUserId` at every
   // dispatch point. Single source of truth for the brand boundary.
-  | { kind: 'allow'; actorUserId: UserId }
+  /**
+   * 017 actor-role truth sweep — `actorRole` is returned alongside the id so
+   * a route can stamp the LITERAL actor into its audit envelope. The guard
+   * already resolved the session to make its decision; without this, routes
+   * had nothing to state and hardcoded 'admin' — which mis-filed every
+   * MARKETING actor (F6 grants marketing `events.write`) as an admin action.
+   */
+  | { kind: 'allow'; actorUserId: UserId; actorRole: 'admin' | 'super_admin' | 'marketing' }
   | { kind: 'deny'; response: Response }
 > {
   // Round-2 err-M5 polish — best-effort tenantSlug resolve so the
@@ -277,7 +284,13 @@ export async function adminOnlyWriterGuard(
     // Brand at the trust boundary — session.user.id is a plain string
     // post-deserialization; the smart constructor pins the brand for
     // every downstream consumer.
-    return { kind: 'allow', actorUserId: asUserId(session.user.id) };
+    // rbac-narrow-ok: projects the admitted session role onto the audit
+    // union for ATTRIBUTION; admission was decided by canPerform above.
+    // Only these three can reach here — manager and member are denied by
+    // every F6 permission key, and an unknown string falls through below.
+    const actorRole =
+      role === 'super_admin' || role === 'marketing' ? role : ('admin' as const);
+    return { kind: 'allow', actorUserId: asUserId(session.user.id), actorRole };
   }
   // 016 post-ship review finding #7 — F6 keeps its own audit vocabulary
   // (role_violation_blocked) but the org-wide DENIAL METRIC must still see

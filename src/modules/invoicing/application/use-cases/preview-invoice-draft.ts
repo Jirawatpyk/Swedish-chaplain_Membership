@@ -28,6 +28,14 @@ export interface PreviewInvoiceDraftInput {
    * the admin route; internal sweepers / tests may omit.
    */
   readonly actorUserId?: string;
+  /**
+   * 017 actor-role truth sweep — the LITERAL staff role, stamped into the
+   * cross-tenant probe payload. OPTIONAL in lockstep with `actorUserId`
+   * above (internal sweepers / tests may omit both); when absent the probe
+   * records `null` rather than a fabricated 'admin', so a row without an
+   * actor id never claims a role either.
+   */
+  readonly actorRole?: import('@/modules/auth').Role;
   readonly requestId?: string | null;
 }
 
@@ -80,7 +88,7 @@ export async function previewInvoiceDraft(
           summary: `Probe on invoice ${invoiceId} (not found on preview)`,
           payload: {
             attempted_invoice_id: invoiceId,
-            actor_role: 'admin',
+            actor_role: input.actorRole ?? null,
             route: 'preview-invoice-draft',
           },
         });

@@ -50,6 +50,15 @@ export interface CreateEventInput {
   readonly tenantId: TenantId;
   readonly actorUserId: UserId;
   /**
+   * 017 actor-role truth sweep — the LITERAL staff role from the session,
+   * recorded as the audit envelope's `actorType`. Hardcoding 'admin' folded
+   * two distinct populations into one: F6 grants `events.write` to
+   * MARKETING, so event mutations by a marketing user were filed as admin
+   * actions. REQUIRED (not optional-with-default): `actorType` cannot be
+   * null, so a caller that omits it has no honest value to fall back to.
+   */
+  readonly actorRole: 'admin' | 'super_admin' | 'marketing';
+  /**
    * Admin-supplied external identifier — typed slug like `agm-2026` or
    * `gt-workshop-2026q1`. MUST be unique within tenant when combined
    * with source='admin_manual'. Re-using the same externalId is an
@@ -187,7 +196,7 @@ export async function createEvent(
         const auditResult = await safeAuditEmit(ports.audit, {
           eventType: 'event_created',
           tenantId: input.tenantId,
-          actorType: 'admin',
+          actorType: input.actorRole,
           actorUserId: input.actorUserId,
           occurredAt: new Date(),
           summary: `Admin created event "${trimmedName}" (externalId=${trimmedExternalId})`,

@@ -158,6 +158,15 @@ export interface RelinkRegistrationInput {
   readonly registrationId: RegistrationId;
   readonly newMatchedMemberId: MemberId;
   readonly actorUserId: UserId;
+  /**
+   * 017 actor-role truth sweep — the LITERAL staff role from the session,
+   * recorded as the audit envelope's `actorType`. Hardcoding 'admin' folded
+   * two distinct populations into one: F6 grants `events.write` to
+   * MARKETING, so event mutations by a marketing user were filed as admin
+   * actions. REQUIRED (not optional-with-default): `actorType` cannot be
+   * null, so a caller that omits it has no honest value to fall back to.
+   */
+  readonly actorRole: 'admin' | 'super_admin' | 'marketing';
   readonly occurredAt: Date;
   /**
    * eventId from the URL path. The use-case
@@ -381,7 +390,7 @@ export async function relinkRegistration(
 
   const baseAudit = {
     tenantId: input.tenantId,
-    actorType: 'admin' as const,
+    actorType: input.actorRole,
     actorUserId: input.actorUserId,
     occurredAt: input.occurredAt,
   };
@@ -711,7 +720,7 @@ export async function relinkRegistration(
   const macroResult = await safeAuditEmit(deps.audit, {
     eventType: 'registration_relinked',
     tenantId: input.tenantId,
-    actorType: 'admin',
+    actorType: input.actorRole,
     actorUserId: input.actorUserId,
     occurredAt: input.occurredAt,
     summary: `registration ${input.registrationId} relinked by admin ${input.actorUserId}: ${previousMatchType}→member_contact, ${previousMatchedMemberId ?? 'none'}→${input.newMatchedMemberId} (scopes touched: ${scopes.join(',') || 'none'})`,

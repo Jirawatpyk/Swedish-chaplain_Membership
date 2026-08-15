@@ -60,6 +60,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     const result = await runGenerateWebhookSecret(
       tenantCtx.slug,
       guard.actorUserId,
+      guard.actorRole,
     );
 
     if (!result.ok) {

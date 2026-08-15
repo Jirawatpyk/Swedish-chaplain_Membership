@@ -84,6 +84,20 @@ export interface EraseAttendeePiiInput {
   readonly eventId: EventId;
   readonly registrationId: RegistrationId;
   readonly actorUserId: UserId;
+  /**
+   * 017 actor-role truth sweep — the LITERAL staff role from the session,
+   * recorded as the audit envelope's `actorType`. Hardcoding 'admin' folded
+   * two distinct populations into one: F6 grants `events.write` to
+   * MARKETING, so event mutations by a marketing user were filed as admin
+   * actions. REQUIRED (not optional-with-default): `actorType` cannot be
+   * null, so a caller that omits it has no honest value to fall back to.
+   *
+   * `'system'` is a first-class value here, not a placeholder: this use case
+   * is ALSO driven by the F3 member-erasure CASCADE, where no staff user
+   * erased THIS registration — the erasure job did, on behalf of a request
+   * whose initiator is recorded on the F3 side.
+   */
+  readonly actorRole: 'admin' | 'super_admin' | 'marketing' | 'system';
   /** Admin-supplied reason text persisted to `pii_erasure_requested` payload. */
   readonly reasonText: string;
   readonly occurredAt: Date;
@@ -206,7 +220,7 @@ export async function eraseAttendeePii(
   const requestedEmit = await safeAuditEmit(deps.audit, {
     eventType: 'pii_erasure_requested',
     tenantId: input.tenantId,
-    actorType: 'admin',
+    actorType: input.actorRole,
     actorUserId: input.actorUserId,
     occurredAt: input.occurredAt,
     summary: `admin erase requested: registration ${input.registrationId}`,
@@ -311,7 +325,7 @@ export async function eraseAttendeePii(
       const r = await safeAuditEmit(deps.audit, {
         eventType: 'quota_credit_back_archive',
         tenantId: input.tenantId,
-        actorType: 'admin',
+        actorType: input.actorRole,
         actorUserId: input.actorUserId,
         occurredAt: input.occurredAt,
         summary: `partnership credit-back via PII erasure: registration ${input.registrationId}`,
@@ -333,7 +347,7 @@ export async function eraseAttendeePii(
       const r = await safeAuditEmit(deps.audit, {
         eventType: 'quota_credit_back_archive',
         tenantId: input.tenantId,
-        actorType: 'admin',
+        actorType: input.actorRole,
         actorUserId: input.actorUserId,
         occurredAt: input.occurredAt,
         summary: `cultural credit-back via PII erasure: registration ${input.registrationId}`,
@@ -381,7 +395,7 @@ export async function eraseAttendeePii(
   const completedEmit = await safeAuditEmit(deps.audit, {
     eventType: 'pii_erasure_completed',
     tenantId: input.tenantId,
-    actorType: 'admin',
+    actorType: input.actorRole,
     actorUserId: input.actorUserId,
     occurredAt: input.occurredAt,
     summary: `admin erase completed: registration ${input.registrationId}; reversals=p${partnershipReversals}/c${culturalReversals}`,

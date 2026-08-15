@@ -625,6 +625,11 @@ describe('POST /api/admin/integrations/eventcreate/disable', () => {
     expect(runToggleIngestMock).toHaveBeenCalledWith(
       TENANT_SLUG,
       ADMIN_USER_ID,
+      // 017 truth sweep — the route forwards the LITERAL session role so the
+      // ingest-toggle audit envelope names the real actor instead of a
+      // hardcoded 'admin'. This session IS an admin, so the value matches;
+      // a marketing/super_admin session would now stamp itself.
+      'admin',
       expect.objectContaining({ enabled: false, reason: 'incident response' }),
     );
   });

@@ -181,6 +181,7 @@ describe('F6 wave-4 — archiveEvent (FR-019a)', () => {
       const result = await runArchiveEvent(tenant.ctx.slug, {
         eventId: eventInternalId as never,
         actorUserId: asUserId(userId),
+        actorRole: 'admin' as const,
         occurredAt: new Date(),
       });
       try {
@@ -306,6 +307,7 @@ describe('F6 wave-4 — archiveEvent (FR-019a)', () => {
       const result = await runArchiveEvent(tenant.ctx.slug, {
         eventId: randomUUID() as never,
         actorUserId: asUserId(userId),
+        actorRole: 'admin' as const,
         occurredAt: new Date(),
       });
       expect(result.ok).toBe(false);
@@ -333,6 +335,7 @@ describe('F6 wave-4 — archiveEvent (FR-019a)', () => {
       const result = await runArchiveEvent(tenant.ctx.slug, {
         eventId: archivedEventId as never,
         actorUserId: asUserId(userId),
+        actorRole: 'admin' as const,
         occurredAt: new Date(),
       });
       expect(result.ok).toBe(false);
@@ -448,6 +451,7 @@ describe('F6 wave-4 — archiveEvent (FR-019a)', () => {
       const result = await runArchiveEvent(tenantA.ctx.slug, {
         eventId: tenantBEventId as never,
         actorUserId: asUserId(userA),
+        actorRole: 'admin' as const,
         occurredAt: new Date(),
       });
       expect(result.ok).toBe(false);

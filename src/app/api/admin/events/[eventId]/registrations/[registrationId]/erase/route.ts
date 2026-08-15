@@ -92,6 +92,8 @@ export async function POST(
   });
   if (guard.kind === 'deny') return guard.response;
   const actorUserId = guard.actorUserId;
+  // 017 truth sweep — the LITERAL role for the audit envelope.
+  const actorRole = guard.actorRole;
 
   if (!UUID_V4.test(eventId) || !UUID_V4.test(registrationId)) {
     return new NextResponse(null, { status: 404 });
@@ -144,6 +146,7 @@ export async function POST(
       eventId: asEventId(eventId),
       registrationId: asRegistrationId(registrationId),
       actorUserId,
+      actorRole,
       reasonText: parsed.reasonText,
       occurredAt: new Date(),
     });

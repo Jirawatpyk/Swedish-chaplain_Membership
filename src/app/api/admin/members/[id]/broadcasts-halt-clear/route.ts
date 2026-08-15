@@ -44,6 +44,15 @@ export async function POST(
     const result = await clearHalt(deps, {
       memberId: memberIdResult.value as string,
       actorUserId: ctx.current.user.id,
+      // rbac-narrow-ok: forwards the LITERAL admitted role to F3's halt
+      // authorization; the `broadcasts.write` gate above decided admission
+      // (017 truth sweep — the bridge used to hardcode 'admin').
+      actorRole:
+        ctx.current.user.role === 'super_admin'
+          ? 'super_admin'
+          : ctx.current.user.role === 'marketing'
+            ? 'marketing'
+            : 'admin',
       requestId: ctx.requestId,
     });
     if (!result.ok) {

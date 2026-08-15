@@ -186,7 +186,7 @@ describe('H7 — F6 admin-integration composition adapter @workers=1', () => {
       const gaugeSpy = vi.spyOn(eventcreateMetrics, 'ingestDisabledTenant');
       const actor = randomUUID();
       try {
-        const result = await runToggleIngest(tenant.ctx.slug, actor, {
+        const result = await runToggleIngest(tenant.ctx.slug, actor, 'admin', {
           enabled: false,
           reason: asBoundedReason('H7 happy path test'),
         });
@@ -256,7 +256,7 @@ describe('H7 — F6 admin-integration composition adapter @workers=1', () => {
         });
       const actor = randomUUID();
       try {
-        const result = await runToggleIngest(tenant.ctx.slug, actor, {
+        const result = await runToggleIngest(tenant.ctx.slug, actor, 'admin', {
           enabled: false,
           reason: asBoundedReason('T-Gap1 forensic path test'),
         });
@@ -333,7 +333,7 @@ describe('H7 — F6 admin-integration composition adapter @workers=1', () => {
       const counterSpy = vi.spyOn(eventcreateMetrics, 'webhookSecretRotated');
       const actor = randomUUID();
       try {
-        const result = await runRotateWebhookSecret(tenant.ctx.slug, actor);
+        const result = await runRotateWebhookSecret(tenant.ctx.slug, actor, 'admin');
         expect(result.ok).toBe(true);
         // Counter incremented exactly once + scoped to the test tenant.
         expect(counterSpy).toHaveBeenCalledWith(tenant.ctx.slug);
@@ -357,7 +357,7 @@ describe('H7 — F6 admin-integration composition adapter @workers=1', () => {
 
     it('returns config_missing when findByTenantSource → ok(null)', async () => {
       const actor = randomUUID();
-      const result = await runRunTestWebhook(tenant.ctx.slug, actor, {
+      const result = await runRunTestWebhook(tenant.ctx.slug, actor, 'admin', {
         webhookBaseUrl: 'https://app.test',
       });
       expect(result.ok).toBe(false);
@@ -400,7 +400,7 @@ describe('H7 — F6 admin-integration composition adapter @workers=1', () => {
       // that never had a row.
       const gaugeSpy = vi.spyOn(eventcreateMetrics, 'ingestDisabledTenant');
       try {
-        const result = await runToggleIngest(freshTenant.ctx.slug, randomUUID(), {
+        const result = await runToggleIngest(freshTenant.ctx.slug, randomUUID(), 'admin', {
           enabled: false,
           reason: asBoundedReason('T-Gap3 fresh-tenant test'),
         });

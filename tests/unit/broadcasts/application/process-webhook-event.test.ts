@@ -234,8 +234,8 @@ function makeUnsubscribesRepo(): {
   return { port, upserts };
 }
 
-function makeMembersBridge(): { port: MembersBridgePort; haltCalls: Array<{ memberId: string; halted: boolean }> } {
-  const haltCalls: Array<{ memberId: string; halted: boolean }> = [];
+function makeMembersBridge(): { port: MembersBridgePort; haltCalls: Array<{ memberId: string; halted: boolean; actorRole: string }> } {
+  const haltCalls: Array<{ memberId: string; halted: boolean; actorRole: string }> = [];
   const port: MembersBridgePort = {
     async getMembersBySegment() {
       return [];
@@ -255,8 +255,11 @@ function makeMembersBridge(): { port: MembersBridgePort; haltCalls: Array<{ memb
     async getMembersHaltedInTenant() {
       return [];
     },
-    async setMemberHalt(_ctx, memberId, halted) {
-      haltCalls.push({ memberId, halted });
+    // 017 truth sweep — capture the ACTOR too: the bounce-threshold halt is
+    // performed by the webhook, not a human, and the bridge used to hardcode
+    // 'admin' for it. Swallowing this arg is why nothing noticed.
+    async setMemberHalt(_ctx, memberId, halted, actorRole) {
+      haltCalls.push({ memberId, halted, actorRole });
       return ok(undefined);
     },
     async markBroadcastsAcknowledged() {
@@ -725,6 +728,9 @@ describe('process-webhook-event โ€” per-broadcast complaint-rate auto-halt
     expect(members.haltCalls[0]).toEqual({
       memberId: '44444444-4444-4444-4444-444444444444',
       halted: true,
+      // 017 truth sweep — the automated safety halt is a SYSTEM action.
+      // A regression to 'admin' here files it as a human decision.
+      actorRole: 'system',
     });
     const breach = audit.emits.find(
       (e) => e.eventType === 'broadcast_complaint_rate_per_broadcast_breach',

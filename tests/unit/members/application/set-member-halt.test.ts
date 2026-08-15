@@ -1,8 +1,14 @@
 /**
  * Unit tests for `setMemberHalt` use case (T029, F7 Batch C).
  *
- * Q14 admin clear-halt action — admin role only. Tests cover authz
- * (admin/manager/member), member_not_found, success, repo errors.
+ * Q14 clear-halt action. Tests cover authz across the FULL admissible
+ * set (017 truth sweep: admin + super_admin + marketing + system, with
+ * manager + member denied), member_not_found, success, repo errors.
+ *
+ * The set is not 'admin role only' any more, and never really was: the F7
+ * bridge used to hardcode `{actorRole:'admin'}` for every caller, so the
+ * check admitted everyone — including the Resend webhook. Callers now pass
+ * their real actor, which is what makes these cases meaningful.
  *
  * **Audit emission is NOT tested here** — F3 use-case mutates the flag
  * column ONLY (per plan.md § Complexity Tracking deviation row); F7's
@@ -143,4 +149,76 @@ describe('setMemberHalt', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe('repo.unexpected');
   });
+  // 017 actor-role truth sweep — the admissible set, pinned EXACTLY. These
+  // four arms did not exist as tests before: the bridge's hardcoded 'admin'
+  // meant only that one value was ever observed in production.
+  it.each(['admin', 'super_admin', 'marketing', 'system'] as const)(
+    'admits %s (the set the broadcasts.write gate + the webhook actually produce)',
+    async (actorRole) => {
+      const memberRepo = {
+        updateBroadcastsHaltedInTx: vi.fn(async () => ok(1)),
+      } as unknown as Parameters<typeof setMemberHalt>[0]['memberRepo'];
+
+      const result = await setMemberHalt(
+        { tenant, memberRepo },
+        memberId,
+        false,
+        { actorRole },
+      );
+
+      expect(result.ok, `${actorRole} must be admitted`).toBe(true);
+      expect(memberRepo.updateBroadcastsHaltedInTx).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each(['manager', 'member'] as const)(
+    'denies %s and never touches the repo',
+    async (actorRole) => {
+      const memberRepo = {
+        updateBroadcastsHaltedInTx: vi.fn(),
+      } as unknown as Parameters<typeof setMemberHalt>[0]['memberRepo'];
+
+      const result = await setMemberHalt(
+        { tenant, memberRepo },
+        memberId,
+        false,
+        { actorRole },
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.code).toBe('member_halt.unauthorised');
+      expect(memberRepo.updateBroadcastsHaltedInTx).not.toHaveBeenCalled();
+    },
+  );
+
+  /**
+   * LOCKSTEP (017 security review #2). The admissible set is written by hand
+   * in the use case; the route gate is `broadcasts.write`. If a future bundle
+   * edit grants that key to a role the use case does not admit — or revokes it
+   * from one it does — the two drift apart silently, and the route's
+   * fallback-to-'admin' ternary would then stamp a role the actor never held
+   * WHILE letting them through. Derive one side from the other so that edit
+   * fails here instead.
+   */
+  it('the human half of the admissible set === the holders of broadcasts.write', async () => {
+    const { ROLES } = await import('@/modules/auth/domain/role');
+    const { hasPermission } = await import(
+      '@/modules/auth/domain/permissions/evaluator'
+    );
+    const gateHolders = ROLES.filter((r) => hasPermission(r, 'broadcasts.write'));
+
+    const admitted: string[] = [];
+    for (const role of ROLES) {
+      const memberRepo = {
+        updateBroadcastsHaltedInTx: vi.fn(async () => ok(1)),
+      } as unknown as Parameters<typeof setMemberHalt>[0]['memberRepo'];
+      const r = await setMemberHalt({ tenant, memberRepo }, memberId, false, {
+        actorRole: role,
+      });
+      if (r.ok) admitted.push(role);
+    }
+
+    expect([...admitted].sort()).toEqual([...gateHolders].sort());
+  });
+
 });

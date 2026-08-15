@@ -119,6 +119,7 @@ export const makeF4InvoicingForRenewalBridge = (
       {
         tenantId: input.tenantId,
         actorUserId: input.actorUserId,
+        ...(input.actorRole !== undefined ? { actorRole: input.actorRole } : {}),
         requestId: input.requestId,
         invoiceId: draft.invoiceId,
       },
@@ -240,6 +241,7 @@ export const makeF4InvoicingForRenewalBridge = (
       {
         tenantId: input.tenantId,
         actorUserId: input.actorUserId,
+        ...(input.actorRole !== undefined ? { actorRole: input.actorRole } : {}),
         requestId: input.requestId,
         invoiceId: input.invoiceId,
         autoEmailOverride: input.autoEmailOnIssue,
@@ -288,6 +290,7 @@ export const makeF4InvoicingForRenewalBridge = (
       {
         tenantId: input.tenantId,
         actorUserId: input.actorUserId,
+        ...(input.actorRole !== undefined ? { actorRole: input.actorRole } : {}),
         requestId: input.requestId,
         invoiceId: input.invoiceId,
         ...(input.expectMayHaveVanished !== undefined

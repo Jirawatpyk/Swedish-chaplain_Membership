@@ -146,6 +146,15 @@ export interface MembersBridgePort {
     tenantCtx: TenantContext,
     memberId: string,
     halted: boolean,
+    /**
+     * 017 actor-role truth sweep — the REAL actor behind this flag flip:
+     * the admin tier for the human clear-halt action, `'system'` for the
+     * bounce-threshold halt the Resend webhook performs. The bridge used
+     * to hardcode `'admin'` for both, which (a) recorded a human role for
+     * an automated action and (b) made F3's own authorization check a
+     * no-op, since every caller arrived claiming to be an admin.
+     */
+    actorRole: 'admin' | 'super_admin' | 'marketing' | 'system',
   ): Promise<Result<void, MemberHaltError>>;
 
   /**

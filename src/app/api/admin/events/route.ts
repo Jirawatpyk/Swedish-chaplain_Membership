@@ -279,6 +279,8 @@ export async function POST(request: NextRequest) {
   });
   if (guard.kind === 'deny') return guard.response;
   const actorUserId = guard.actorUserId;
+  // 017 truth sweep — the LITERAL role for the audit envelope.
+  const actorRole = guard.actorRole;
 
   let tenantCtx: ReturnType<typeof resolveTenantFromRequest>;
   try {
@@ -344,6 +346,7 @@ export async function POST(request: NextRequest) {
     outcome = await runCreateEvent({
       tenantSlug: tenantCtx.slug,
       actorUserId,
+      actorRole,
       externalId: parsed.data.externalId,
       name: parsed.data.name,
       startDate: new Date(parsed.data.startDate),

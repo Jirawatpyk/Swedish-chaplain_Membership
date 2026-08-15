@@ -614,6 +614,10 @@ export function makeEraseAllRegistrationsForMemberDeps(
         eventId: _asEventId(eventId),
         registrationId: _asRegistrationId(registrationId),
         actorUserId: _asUserId(input.actorUserId),
+        // 017 truth sweep — the F3 member-erasure CASCADE drives this arm; no
+        // staff user erased this registration, the erasure job did (its
+        // initiator is recorded F3-side). 'system' is the honest actor.
+        actorRole: 'system' as const,
         reasonText: input.reasonText,
         occurredAt: input.occurredAt,
       }),

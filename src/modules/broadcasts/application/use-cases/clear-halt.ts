@@ -35,6 +35,12 @@ export interface ClearHaltInput {
   readonly memberId: string;
   /** Acting admin user id — recorded in audit. */
   readonly actorUserId: string;
+  /**
+   * 017 actor-role truth sweep — the acting staff role, forwarded to F3
+   * so the halt-clear is authorized against the REAL actor (the bridge
+   * used to hardcode 'admin', which made that check a no-op).
+   */
+  readonly actorRole: 'admin' | 'super_admin' | 'marketing';
   readonly requestId: string | null;
 }
 
@@ -53,6 +59,7 @@ export async function clearHalt(
       deps.tenant,
       input.memberId,
       false,
+      input.actorRole,
     );
     if (!result.ok) {
       if (result.error.kind === 'member_halt.member_not_found') {

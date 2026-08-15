@@ -513,6 +513,7 @@ export async function issueAutoDraftedRenewal(
     tenantId: input.tenantId,
     invoiceId: input.invoiceId,
     actorUserId: input.actorUserId,
+    actorRole: input.actorRole,
     autoEmailOnIssue: input.sendEmail,
     requestId,
   });
@@ -745,6 +746,7 @@ async function discardSupersededDrafts(
       tenantId: args.tenantId,
       invoiceId: row.invoiceId,
       actorUserId: args.actorUserId,
+      actorRole: args.actorRole,
       requestId: args.requestId,
       tx,
       // The id came from the tenant-scoped read above, so a vanished row is a
