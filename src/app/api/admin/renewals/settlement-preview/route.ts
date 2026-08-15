@@ -60,7 +60,9 @@ export async function GET(request: NextRequest) {
         {
           tenantId: tenantCtx.slug,
           actorUserId: null,
-          actorRole: 'admin',
+          // 'system' — pre-auth kill-switch emit, no session exists yet;
+          // see the twin comment in ../route.ts (016 post-ship, B-1 tail).
+          actorRole: 'system',
           correlationId,
           requestId: null,
         },

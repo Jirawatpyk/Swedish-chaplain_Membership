@@ -70,7 +70,12 @@ export async function GET(request: NextRequest) {
         {
           tenantId: tenantCtx.slug,
           actorUserId: null,
-          actorRole: 'admin',
+          // 'system' — this emit fires BEFORE any session lookup (the
+          // kill-switch check precedes auth), so there is no actor to
+          // attribute: the SYSTEM records that a dark-launched route was
+          // probed. The old 'admin' placeholder was the last dishonest
+          // actor_role stamp left after the B-1 sweep (016 post-ship).
+          actorRole: 'system',
           correlationId,
           requestId: null,
         },
