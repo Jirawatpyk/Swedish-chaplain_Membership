@@ -33,7 +33,11 @@ export const sendReminderNowInputSchema = z.object({
   tenantId: z.string().min(1),
   cycleId: z.string().uuid(),
   actorUserId: z.string().min(1),
-  actorRole: z.literal('admin'),
+  // 016 post-ship review finding #3 - accept the LITERAL staff role the
+  // `renewals.write` gate admits (admin | super_admin). z.literal('admin')
+  // forced routes to fabricate 'admin' for promoted super_admins,
+  // poisoning append-only money-path audit rows.
+  actorRole: z.enum(['admin', 'super_admin']),
   correlationId: z.string().min(1),
   requestId: z.string().nullable().optional(),
   nowIso: z.string().datetime().optional(),
@@ -110,7 +114,7 @@ export async function sendReminderNow(
     const outcome = await dispatchOneCycle(deps, candidate, {
       tenantId: input.tenantId,
       actorUserId: input.actorUserId,
-      actorRole: 'admin',
+      actorRole: input.actorRole,
       correlationId: input.correlationId,
       requestId: input.requestId ?? null,
       nowIso,

@@ -11,6 +11,8 @@
  * (incl. exact boundary), and graceful degrade. The fake honours `limit` but not
  * the keyset SQL — backward gt+ASC ordering is pinned by the live integration test.
  */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import {
   auditQuery,
@@ -208,6 +210,41 @@ describe('auditQuery', () => {
       expect(mgrRes.value.rows[0]!.payload).not.toHaveProperty('reason');
       expect(mgrRes.value.rows[0]!.actorUserId).toBe(RESOLVABLE_ACTOR); // identity NOT redacted
     }
+  });
+
+  it('super_admin gets the full projection (D16 — never degraded to manager)', async () => {
+    const res = await auditQuery(
+      {},
+      { actorUserId: RESOLVABLE_ACTOR, actorRole: 'super_admin', requestId: 'req-1' },
+      ctx,
+      deps([row()]),
+    );
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.value.rows[0]!.payload).toHaveProperty('reason');
+  });
+
+  /**
+   * 016 post-ship review finding #8 — the projection default must fail
+   * toward the MOST-redacted tier. The unsafe form
+   * (`=== 'manager' ? 'manager' : 'admin'`) maps every non-manager role to
+   * the UNREDACTED projection, so widening `isAuditViewerActor` by one role
+   * without touching the coercion silently hands the new role raw
+   * third-party emails and member_updated diffs. That future state cannot be
+   * driven at runtime today (the allow-list rejects a 4th role before the
+   * coercion runs — which is exactly why the hazard is latent), so this is a
+   * source-shape tripwire in the repo's gate-reads-source idiom: both
+   * functions must name ONLY the admin tier and default everything else to
+   * 'manager'.
+   */
+  it('016 finding #8 — projection coercions default to the redacted tier (source tripwire)', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src', 'modules', 'insights', 'application', 'use-cases', 'audit-query.ts'),
+      'utf-8',
+    );
+    const failSafe =
+      /meta\.actorRole === 'admin' \|\| meta\.actorRole === 'super_admin' \? 'admin' : 'manager'/g;
+    expect(src.match(failSafe)?.length, 'both auditQuery and auditExport use the fail-safe form').toBe(2);
+    expect(src).not.toMatch(/=== 'manager' \? 'manager' : 'admin'/);
   });
 
   it('falls back to the raw id (NEVER email) when the resolved user has no display name', async () => {

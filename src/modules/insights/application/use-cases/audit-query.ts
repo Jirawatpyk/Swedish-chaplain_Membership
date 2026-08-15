@@ -377,7 +377,15 @@ export async function auditQuery(
   // page/route gate (D4, super-admin-only) decides who reaches this use case
   // at all; the projection here never widens access (contracts § 6).
   if (!isAuditViewerActor(meta.actorRole)) return err('forbidden');
-  const role: AuditViewerRole = meta.actorRole === 'manager' ? 'manager' : 'admin';
+  // 016 post-ship review finding #8 — the projection coercion must default
+  // toward the MOST-redacted tier. The old `=== 'manager' ? 'manager' :
+  // 'admin'` mapped every non-manager role to the UNREDACTED projection, so
+  // widening isAuditViewerActor by one role (a future compliance/analytics
+  // viewer) without touching this line would silently hand it raw third-party
+  // emails and member_updated diffs (PDPA §19 / GDPR Art.5(1)(c)). Only the
+  // admin tier is named; everything else falls to 'manager'.
+  const role: AuditViewerRole =
+    meta.actorRole === 'admin' || meta.actorRole === 'super_admin' ? 'admin' : 'manager';
 
   const resolved = resolveFilters(input);
   if (!resolved.ok) return err('invalid_range');
@@ -445,9 +453,11 @@ export async function auditExport(
   ctx: TenantContext,
   deps: AuditQueryDeps,
 ): Promise<Result<AuditExportResult, AuditExportError>> {
-  // 016 T030/T034 — same allow-list + projection as auditQuery above.
+  // 016 T030/T034 — same allow-list + projection as auditQuery above
+  // (incl. the finding #8 most-redacted default; see the comment there).
   if (!isAuditViewerActor(meta.actorRole)) return err('forbidden');
-  const role: AuditViewerRole = meta.actorRole === 'manager' ? 'manager' : 'admin';
+  const role: AuditViewerRole =
+    meta.actorRole === 'admin' || meta.actorRole === 'super_admin' ? 'admin' : 'manager';
 
   const resolved = resolveFilters(input);
   if (!resolved.ok) return err('invalid_range');

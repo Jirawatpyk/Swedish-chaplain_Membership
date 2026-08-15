@@ -1961,6 +1961,13 @@
       "when": 1798541600000,
       "tag": "0288_rbac_v2_strict_last_admin_guard",
       "breakpoints": true
+    },
+    {
+      "idx": 290,
+      "version": "7",
+      "when": 1798541700000,
+      "tag": "0289_last_admin_guard_serialize",
+      "breakpoints": true
     }
   ]
 }

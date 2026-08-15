@@ -231,7 +231,6 @@ describe('confirmPayment (T057)', () => {
     // a promise-rejected string (or any non-Error) must not crash the swallow.
     const deps = makeDeps();
     const afterCommit = vi.fn(async () => {
-      // eslint-disable-next-line no-throw-literal
       throw 'finalise string boom';
     });
     const result = await confirmPayment(

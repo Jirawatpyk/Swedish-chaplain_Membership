@@ -3,7 +3,8 @@
  * route for cancelling a pending scheduled plan change.
  *
  * Behaviour:
- *   - Admin RBAC (`requireApiPermission('plans.write', mappedLegacy('plan', 'write'))`).
+ *   - Admin RBAC (`requireApiPermission(request, 'plans.write')` — the old
+ *     `mappedLegacy(…)` second argument died with the legacy shim in PR 5).
  *   - `Idempotency-Key` header required (mirrors F2 mutation routes).
  *   - Body: `{ memberId: uuid, effectiveAtCycleId: uuid, reason?: string|null }`
  *     (zod-validated). The actor identity comes from the auth ctx via

@@ -18,6 +18,7 @@
  */
 import type { NextRequest } from 'next/server';
 import { logger } from '@/lib/logger';
+import { authMetrics } from '@/lib/metrics';
 import { getCurrentSession } from '@/lib/auth-session';
 import { canPerform } from '@/lib/rbac';
 import type { PermissionKey } from '@/modules/auth/domain/permissions/permission-catalogue';
@@ -61,7 +62,12 @@ export async function emitIntegrationRoleViolation(
   const summary = `${input.actorRole} attempted POST ${input.attemptedRoute} (${input.attemptedAction})`;
   try {
     const deps = makeStandaloneAuditDeps();
-    await deps.emitStandalone({
+    // 016 post-ship review finding #4 — emitStandalone returns a RESULT; a
+    // bare await here let a returned-err DB failure (db_error / audit_emit —
+    // not a throw) silently lose the forensic row while the twin in
+    // events/_lib checked it. Same event name as the twin so ops watches ONE
+    // signal across both F6 surfaces.
+    const result = await deps.emitStandalone({
       eventType: 'role_violation_blocked',
       tenantId: asTenantId(tenantSlug),
       actorType: input.actorRole,
@@ -77,6 +83,18 @@ export async function emitIntegrationRoleViolation(
         blockedAt: 'app_layer',
       },
     });
+    if (!result.ok) {
+      logger.error(
+        {
+          event: 'f6_role_violation_audit_emit_failed',
+          err: result.error.kind,
+          tenantSlug,
+          actorRole: input.actorRole,
+          attemptedRoute: input.attemptedRoute,
+        },
+        '[F6] role_violation_blocked audit emit failed — 404 response still served',
+      );
+    }
   } catch (e) {
     logger.error(
       { event: 'f6_audit_emit_failed', err: e instanceof Error ? e.message : String(e) },
@@ -124,6 +142,15 @@ export async function adminOnlyGuard(
   }
   const role = session.user.role;
   if (!canPerform(role, input.permissionKey)) {
+    // 016 post-ship review finding #7 — F6 keeps its own audit vocabulary
+    // (role_violation_blocked, D9 404 shape) but the org-wide DENIAL METRIC
+    // must still see these routes, or dashboards keyed on
+    // rbac_permission_denied_total are blind to every F6 denial. One denial,
+    // one increment — same series recordDenial feeds. The label keeps the
+    // RAW role string by PermissionDeniedLabels design (unknown stays
+    // visible). No-session arms stay metric-free: the org gate 401s BEFORE
+    // permission evaluation, so "denied" never happened.
+    authMetrics.permissionDenied({ role, permission: input.permissionKey });
     if (isRole(role)) {
       // Any KNOWN denied role — attributable audit with the LITERAL role
       // (016 T033 widened the F6 ActorType union).
@@ -134,8 +161,10 @@ export async function adminOnlyGuard(
         attemptedAction: input.attemptedAction,
       });
     } else {
-      // Unknown role STRING — cannot be attributed; warn-log so the denial
-      // stays observable.
+      // Unknown role STRING — no audit row BY DESIGN: the ActorType union
+      // has no honest value for it (a fake 'system' would lie to forensic
+      // queries), and a role outside the DB enum is a corruption tripwire,
+      // not a user class. The metric above + this warn are its signal.
       logger.warn(
         {
           event: 'f6_integration_guard_role_denied_unattributable',

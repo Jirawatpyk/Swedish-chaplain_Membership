@@ -38,6 +38,7 @@ function makeDeps(noCycle: string[] = []) {
 const base = {
   tenantId: 'tenant-a',
   actorUserId: 'admin-1',
+  actorRole: 'admin' as const,
   correlationId: 'corr-1',
   requestId: 'req-1',
 };

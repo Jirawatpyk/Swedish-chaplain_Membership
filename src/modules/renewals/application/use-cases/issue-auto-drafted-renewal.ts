@@ -193,6 +193,9 @@ export const issueAutoDraftedRenewalInputSchema = z.object({
   tenantId: z.string().min(1),
   invoiceId: z.string().uuid(),
   actorUserId: z.string().min(1),
+  // 016 post-ship B-1 — the LITERAL staff role, threaded into the
+  // superseded-draft discard audit below.
+  actorRole: z.enum(['admin', 'super_admin']),
   /**
    * The operator's definite send-vs-silent choice — never a "no opinion"
    * placeholder. Threads to the bridge's `autoEmailOnIssue`, which becomes
@@ -490,6 +493,7 @@ export async function issueAutoDraftedRenewal(
       planYear,
       issuedInvoiceId: input.invoiceId,
       actorUserId: input.actorUserId,
+      actorRole: input.actorRole,
       requestId,
     });
 
@@ -718,6 +722,7 @@ async function discardSupersededDrafts(
     readonly planYear: number;
     readonly issuedInvoiceId: string;
     readonly actorUserId: string;
+    readonly actorRole: 'admin' | 'super_admin';
     readonly requestId: string | null;
   },
 ): Promise<readonly string[]> {
@@ -772,7 +777,7 @@ async function discardSupersededDrafts(
       {
         tenantId: args.tenantId,
         actorUserId: args.actorUserId,
-        actorRole: 'admin',
+        actorRole: args.actorRole,
         correlationId: args.issuedInvoiceId,
         requestId: args.requestId,
       },

@@ -28,6 +28,9 @@ export const bulkSendRenewalReminderInputSchema = z.object({
   tenantId: z.string().min(1),
   memberIds: z.array(z.string().uuid()).min(1).max(100),
   actorUserId: z.string().min(1),
+  // 016 post-ship B-1 — literal staff role, forwarded per member into
+  // sendReminderNow (whose dispatch audit trail stamps it).
+  actorRole: z.enum(['admin', 'super_admin']),
   correlationId: z.string().min(1),
   requestId: z.string().nullable().optional(),
 });
@@ -99,7 +102,7 @@ export async function bulkSendRenewalReminder(
         tenantId: input.tenantId,
         cycleId: cycle.cycleId,
         actorUserId: input.actorUserId,
-        actorRole: 'admin',
+        actorRole: input.actorRole,
         correlationId: input.correlationId,
         requestId: input.requestId ?? null,
         nowIso,

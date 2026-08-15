@@ -108,15 +108,16 @@ export function buildDenialAudit(input: {
  *     re-materialises as a real line break in any consumer that URL-decodes,
  *     which would reopen CWE-117 one hop downstream.
  *
- * ## Honest limit — sanitised ≠ trusted
+ * ## Shape here, provenance in `pathFromHeaders`
  *
- * This validates SHAPE, not provenance. On a prefetch-skip request the header
- * is client-controlled, so a denied caller can still choose any WELL-FORMED
- * same-origin path for the `route=` field (e.g. record a denial at
- * `/admin/dashboard` while probing `/admin/compliance/erasure-log`). Treat the
- * field as attacker-influenced-but-well-formed in forensics; closing the
- * attribution gap needs a server-derived path (or an unverified marker) and is
- * tracked for PR 4.
+ * This validates SHAPE only. Provenance is enforced one layer up
+ * (016 post-ship review finding #5): `pathFromHeaders` refuses to read
+ * `x-pathname` at all on prefetch-marked requests — the only requests whose
+ * header can reach the RSC render without the proxy's server-side overwrite —
+ * so a well-formed-but-forged path can no longer be laundered into the
+ * append-only `permission_denied` trail. A recorded non-empty `route=` is
+ * therefore proxy-written (server-derived) on the page leg, and
+ * `request.url`-derived on the API leg.
  */
 const SAFE_ROUTE_PATH_RE = /^\/[A-Za-z0-9\-._~/%[\]@!$&'()*+,;=:]{0,255}$/;
 const PCT_ENCODED_CRLF_RE = /%0[da]/i;
@@ -126,11 +127,12 @@ const PCT_ENCODED_CRLF_RE = /%0[da]/i;
  * (`src/proxy.ts` sets it to `pathname + search`), but the PAGE matcher
  * deliberately skips the proxy for Next.js router prefetch requests
  * (`missing: next-router-prefetch / purpose: prefetch`). On those requests the
- * header arrives straight from the CLIENT, so a signed-in caller who is about
- * to be denied could forge the `route=` field of an append-only
- * `permission_denied` row — the very governance artefact this gate exists to
- * produce. (`/api/*` is exempt from that skip and uses `request.url`, so only
- * the page leg is exposed.)
+ * header arrives straight from the CLIENT — which is why `pathFromHeaders`
+ * refuses to read it when either prefetch marker is present (016 post-ship
+ * finding #5): without that gate a signed-in caller about to be denied could
+ * forge the `route=` field of an append-only `permission_denied` row.
+ * (`/api/*` is exempt from that skip and uses `request.url`, so only the page
+ * leg was exposed.)
  *
  * Strip the query string here too, so the `routePath` contract above — "WITHOUT
  * the query string" — is true on BOTH legs rather than only after
@@ -157,6 +159,18 @@ export function sanitiseRoutePath(raw: string | null | undefined): string {
  */
 export async function pathFromHeaders(): Promise<string> {
   const h = await headers();
+  // 016 post-ship review finding #5 — provenance gate. The proxy matcher
+  // skips requests carrying either prefetch marker (proxy.ts `missing:`
+  // rules), and ONLY on those skipped requests does a client-supplied
+  // `x-pathname` survive to this render un-overwritten. So the marker's
+  // presence is exactly the condition under which the header is forgeable:
+  // clamp to unattributed rather than record an attacker-chosen path in an
+  // append-only trail. Cost: a denial fired during a genuine router
+  // prefetch loses route attribution — the real navigation that follows is
+  // attributed normally (the proxy runs and overwrites the header).
+  if (h.get('next-router-prefetch') !== null || h.get('purpose') === 'prefetch') {
+    return '';
+  }
   return sanitiseRoutePath(h.get('x-pathname'));
 }
 

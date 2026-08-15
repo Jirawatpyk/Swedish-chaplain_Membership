@@ -15,7 +15,7 @@
  *   - Save → PUT /api/admin/renewals/settings/schedules/[tierBucket]
  *     → toast feedback with change diff (FR-058 audit-toast contract).
  *
- * Manager-role detection: `readOnly` prop renders all controls disabled
+ * Read-only mode: the `readOnly` prop renders all controls disabled
  * + a banner-style notice. Server-side RBAC at the PUT route is the
  * canonical gate — this UI affordance is defence-in-depth.
  */

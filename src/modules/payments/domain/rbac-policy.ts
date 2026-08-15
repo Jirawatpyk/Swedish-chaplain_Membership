@@ -1,28 +1,41 @@
 /**
- * F5 RBAC policy matrix.
+ * F5 RBAC policy matrix — MEMBER-ARM VOCABULARY ONLY since 016.
  *
- * Exported constants + pure authorisation helper for F5 resource
- * families (`payments:*`, `refunds:*`, `payment-settings:*`). Per Main-
- * agent Gate Decision #3, F1 has no existing matrix module — the F5
- * policy lives co-located with its own Domain so future route handlers
- * can import the narrowest surface they need without fabricating an
- * F1 infrastructure that other features would have to keep in sync.
+ * ## ⚠ Do NOT thread a staff session role into `isAllowed`
  *
- * Authority: `specs/009-online-payment/security.md` § 4 RBAC matrix.
+ * 016 post-ship review (below-cap): this table predates RBAC v2 and was
+ * never widened — `F5Role` has no `super_admin` and no `marketing`, so any
+ * future caller that threads a REAL staff session role in here denies a
+ * promoted super_admin (`['admin','manager'].includes('super_admin')` is
+ * false — exactly the demotion class 016 T030 fixed everywhere else). Its
+ * staff rows are also STALE AS DOCUMENTATION: `refunds.issue = ['admin']`
+ * contradicts the live evaluator (`refunds.write` admits admin AND
+ * super_admin). Staff authorization decisions belong to
+ * `canPerform(role, key)` / `requireApiPermission` — never to this table.
+ *
+ * What keeps it alive: ONE production caller — `cancel-payment`'s
+ * member-only `('payments', 'cancel-own')` arm, reached via
+ * `requireMemberContext` (role is always the literal `'member'` there).
+ * The staff-facing rows are dead code retained only because the D15-style
+ * characterization tests pin the table's shape; treat them as history, not
+ * as policy.
+ *
+ * Authority (historical): `specs/009-online-payment/security.md` § 4 —
+ * superseded for staff access by the 016 permission catalogue.
  *
  * Clean Architecture (Constitution Principle III): pure Domain — NO
- * framework / ORM / framework-runtime imports. Route handlers compose
- * this with session lookup from F1 at the Presentation layer.
+ * framework / ORM / framework-runtime imports.
  *
  * Ownership semantics: some rules require the acting member to own the
  * resource (e.g., a member can cancel ONLY their own pending payment).
  * The helper below resolves the ROLE question; the caller layers its
- * own ownership check on top (tenant_id match, member_id match). This
- * matches F1 precedent of separating "may this role touch this action?"
- * from "does this instance belong to them?".
+ * own ownership check on top (tenant_id match, member_id match).
  */
 
-/** The role axis. Mirrors F1's `role` pg enum. */
+/**
+ * The role axis. Pre-016 F1 enum — deliberately NOT widened (see the
+ * header warning: staff decisions do not belong here).
+ */
 export type F5Role = 'member' | 'manager' | 'admin';
 
 /** F5 resource families (spec security.md § 4). */

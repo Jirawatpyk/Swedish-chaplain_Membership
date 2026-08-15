@@ -20,15 +20,15 @@
  *
  * So the scanner here is character-wise and STRING-AWARE.
  *
- * CONSOLIDATION IS PARTIAL, and saying otherwise would send the next fix to the
- * wrong file. Current consumers: `check-authorization-role-reads.ts` and the
- * three parity suites (nav, palette, settings index). NOT yet migrated:
- * `check-api-route-guard.ts` and `check-staff-page-guard.ts` still carry their
- * own private regex strippers and marker helpers. Those two predate this module,
- * are individually correct, and were left untouched deliberately — rewriting two
- * working security gates in a remediation pass is how a third bug gets in. The
- * cost is that a fix here does not reach them; migrating them is follow-up work,
- * and until then do not describe this as "the only version".
+ * CONSOLIDATION IS TOTAL since the 016 post-ship review (2026-08-14): the two
+ * gates that still carried private regex strippers + marker helpers
+ * (`check-api-route-guard.ts`, `check-staff-page-guard.ts`) migrated here after
+ * the review CONFIRMED bugs in both private copies — the regex stripper opened
+ * a phantom block comment on a string containing `/*` (finding V3b), and the
+ * raw-line markerApplies honored a marker hosted inside a string/URL on the
+ * decision line (finding #11). "Deliberately deferred" stopped being prudence
+ * the moment both copies were proven wrong. Consumers now: all three RBAC
+ * static gates + the three parity suites. A fix here reaches every one.
  */
 
 /**
@@ -181,19 +181,30 @@ export function stripCommentLines(src: string): readonly string[] {
       // crucially nothing in it can open a block comment.
       if (c === '/' && next === '/') break;
       if (c === '/') {
-        // `/` is either division, a comment opener, or a REGEX literal. Only
-        // the last one needs care: a regex containing `/*` — e.g. `/\/\*/` —
-        // would otherwise open a block comment and blank the rest of the file.
-        // That is the exact bug this module exists to prevent, one level up.
+        // `/` is either division, a comment opener, or a REGEX literal.
+        //
+        // `/*` is checked FIRST (016 post-ship review finding #13): a regex
+        // literal can never START with `*` (a quantifier with nothing to
+        // repeat is a SyntaxError), so `/*` after code is ALWAYS a block
+        // comment. The old order consulted startsRegex() first, so a block
+        // opener preceded by code ending in `=(,:[` etc. — e.g.
+        // `const n=1; /* example: requirePagePermission('members.read') */`
+        // — was consumed as a regex literal: the trailing comment survived
+        // stripping as CODE (a phantom guard for the parity suites, fail-
+        // open) and a multi-line one left `inBlock=false`, corrupting every
+        // later line's comment-ness.
+        if (next === '*') {
+          inBlock = true;
+          i += 2;
+          continue;
+        }
+        // Now the remaining ambiguity is regex vs division. A regex
+        // containing `/*` — e.g. `/\/\*/` — must not open a block comment;
+        // that is the exact bug this module exists to prevent, one level up.
         if (startsRegex(res)) {
           const end = skipRegex(line, i);
           res += line.slice(i, end);
           i = end;
-          continue;
-        }
-        if (next === '*') {
-          inBlock = true;
-          i += 2;
           continue;
         }
       }
@@ -209,6 +220,18 @@ export function stripCommentLines(src: string): readonly string[] {
 /** `stripCommentLines` joined back into a string. Line numbers preserved. */
 export function stripCommentsPreserveLines(src: string): string {
   return stripCommentLines(src).join('\n');
+}
+
+/**
+ * 0-based line number of a character offset within `text`. Pairs with
+ * whole-text `matchAll` scans (the only shape that can see a comparison
+ * wrapped across a newline — 016 post-ship review finding #12) so a match
+ * offset maps back to the line the marker protocol anchors on.
+ */
+export function lineOfIndex(text: string, index: number): number {
+  let line = 0;
+  for (let i = 0; i < index; i += 1) if (text.charCodeAt(i) === 10) line += 1;
+  return line;
 }
 
 /**
@@ -243,8 +266,21 @@ export function markerApplies(
   const hosts = (text: string): boolean => markers.some((m) => text.includes(m));
 
   const line = lines[index] ?? '';
-  const slash = line.indexOf('//');
-  if (slash >= 0 && hosts(line.slice(slash))) return true;
+  // Same-line arm (016 post-ship review finding #11): a marker on the
+  // decision line counts only when STRIPPING removes it — i.e. it lives in
+  // the comment part. The old form took indexOf('//') on the RAW line, so a
+  // '//' inside a string (`track('https://x/rbac-narrow-ok')`) hosted a
+  // marker that was itself inside the string — the exact string-constant
+  // hole this function's docstring claims closed. Strings survive stripping
+  // verbatim, so "in the raw line but not in the stripped line" is exactly
+  // "comment-hosted". Known edge (security review 2026-08-14, accepted): a
+  // line carrying the marker in BOTH a string and a trailing comment is
+  // rejected — fail-CLOSED (a loud false finding, never a bypass); reword
+  // the string or move the marker above. When the caller did not supply
+  // codeLines, strip this one line in place (single-line contexts only,
+  // which is all the same-line arm can ever see).
+  const codeLine = codeLines?.[index] ?? stripCommentLines(line)[0] ?? '';
+  if (hosts(line) && !hosts(codeLine)) return true;
 
   // Comment-ness is decided from the STRIPPED source when the caller supplies
   // it, and only falls back to the line-shape guess otherwise.

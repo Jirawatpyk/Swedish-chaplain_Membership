@@ -135,4 +135,9 @@ jobs:
           cache: 'pnpm'
       - run: pnpm install --frozen-lockfile
       - name: Vitest (rbac contract)
-        run: pnpm vitest run tests/contract/rbac/ --passWithNoTests
+        # NO --passWithNoTests (016 post-ship review, below-cap): this leg is a
+        # REQUIRED check guarding the permission system — with the flag, a
+        # directory rename or glob change that empties the run would keep the
+        # check green while executing zero tests (the gate-reads-nothing class
+        # this repo was already burned by). An empty set must FAIL.
+        run: pnpm vitest run tests/contract/rbac/

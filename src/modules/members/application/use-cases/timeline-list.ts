@@ -143,7 +143,12 @@ const MONEY_SOURCES: ReadonlySet<string> = new Set(['invoice', 'payment']);
  * (`old_price_thb` / `new_price_thb`) and `renewal_invoice_created`
  * (`total_satang`) all carry `member_id` plus a price and match none of them.
  */
-const MONEY_AUDIT_PREFIXES = ['invoice_', 'credit_note_', 'refund_', 'payment_'] as const;
+// Exported for the divergence-freeze pin in timeline-list-filters.test.ts
+// (financial review 2026-08-14): the app applies these prefixes to EVERY
+// source's eventType while the SQL twin scopes them to source='audit' — a
+// superset that holds only while no non-audit status value starts with one
+// of these. The pin freezes that condition instead of trusting it.
+export const MONEY_AUDIT_PREFIXES = ['invoice_', 'credit_note_', 'refund_', 'payment_'] as const;
 
 /**
  * Money identified by the SHAPE of the payload rather than the name of the
@@ -162,8 +167,14 @@ const MONEY_AUDIT_PREFIXES = ['invoice_', 'credit_note_', 'refund_', 'payment_']
  */
 const MONEY_KEY_RE = /(_satang|_thb)$|price|amount/i;
 
+// Depth cap raised 4 → 12 (016 post-ship review, Angle A #6): a money key
+// five levels deep escaped the probe. 12 is far beyond any real audit payload
+// while still bounding recursion on a pathological value; the SQL-side twin
+// in the repo (`MONEY_KEY_TEXT_PATTERN`, applied when `excludeMoney` is set)
+// is depth-unlimited and is the authoritative gate — this app-side probe is
+// belt-and-braces over whatever the repo returned.
 function hasMoneyShapedPayload(value: unknown, depth = 0): boolean {
-  if (depth > 4 || value === null || typeof value !== 'object') return false;
+  if (depth > 12 || value === null || typeof value !== 'object') return false;
   if (Array.isArray(value)) return value.some((v) => hasMoneyShapedPayload(v, depth + 1));
   for (const [key, nested] of Object.entries(value)) {
     if (MONEY_KEY_RE.test(key)) return true;
@@ -278,6 +289,12 @@ export async function timelineList(
     ...(actorKind !== undefined ? { actorKind } : {}),
     ...(fromTs !== undefined ? { fromTs } : {}),
     ...(toTs !== undefined ? { toTs } : {}),
+    // 016 post-ship review finding #2 — money exclusion must reach the SQL:
+    // `total` is counted and the keyset cursor is built in the repo, so an
+    // app-layer-only drop still disclosed money-event counts, billing
+    // timestamps and invoice ref_ids through those two fields. `!== true`
+    // so an absent dep fails CLOSED (same stance as the filter below).
+    ...(deps.invoicingRead !== true ? { excludeMoney: true } : {}),
   };
 
   const timelineResult = await deps.timeline.listByMember(ctx, filter);
@@ -308,12 +325,13 @@ export async function timelineList(
     memberId,
     events: moneyFiltered,
     nextCursor,
-    // 016 final review B2 — `total` is what the page renders as its header
-    // count. Returning the PRE-filter figure made it disagree with the rows on
-    // screen for any viewer whose money rows were dropped. Reduce it by what
-    // this page actually removed. It stays approximate across pages (the repo
-    // counts server-side and cannot know the filter), which is the same
-    // approximation the cursor already carries.
+    // 016 final review B2 + post-ship finding #2 — `total` is what the page
+    // renders as its header count. Since `excludeMoney` reached the repo the
+    // SQL COUNT and the cursor are already computed over the money-free set,
+    // so for a money-excluded viewer this subtraction should be zero; it
+    // remains as belt-and-braces for any residue the broader app-side probe
+    // catches that the SQL twin somehow missed, so the header can never
+    // disclose more than the rows on screen.
     total: Math.max(0, total - (roleProjected.length - moneyFiltered.length)),
   });
 }

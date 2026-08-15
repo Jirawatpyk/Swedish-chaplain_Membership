@@ -1,12 +1,17 @@
 /**
  * Settings index — landing page for `/admin/settings/` that lists the
- * available setting categories. Currently:
+ * available setting categories, mirroring ALL FOUR sidebar Settings
+ * entries (016 post-ship review closed the 2-of-4 gap):
  *
  *   - Invoice settings (`/admin/settings/invoicing`) — F4 invoicing
  *     domain (VAT %, currency, registration fee, sequential numbering
- *     reset window, etc.)
+ *     reset window, etc.). Super-admin-only since D4.
  *   - Reminder schedules (`/admin/settings/renewals/schedules`) — F8
  *     renewal reminder cadence per tier-bucket.
+ *   - Broadcast settings (`/admin/settings/broadcasts`) — F7.1a
+ *     inline-image source allowlist. Hidden when F7 is off.
+ *   - EventCreate integration (`/admin/settings/integrations/
+ *     eventcreate`) — F6 webhook + import config. Hidden when F6 is off.
  *
  * Without an index page here, the breadcrumb segment "Settings" on
  * any nested setting page would 404 when clicked. Same for the
@@ -16,7 +21,13 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
-import { FileCog2Icon, CalendarClockIcon } from 'lucide-react';
+import {
+  FileCog2Icon,
+  CalendarClockIcon,
+  Settings2Icon,
+  PlugZapIcon,
+} from 'lucide-react';
+import { env } from '@/lib/env';
 import {
   Card,
   CardContent,
@@ -62,12 +73,44 @@ const CATEGORIES = [
     icon: CalendarClockIcon,
     permission: 'settings.renewal_schedules',
   },
+  // 016 post-ship review (below-cap): the index claimed "same contract as the
+  // sidebar (T063)" while listing 2 of the sidebar's 4 Settings entries — a
+  // super_admin arriving via the breadcrumb from /admin/settings/broadcasts
+  // saw an index that omitted the very surface they came from. The two cards
+  // below mirror the sidebar entries exactly, INCLUDING the feature-flag
+  // dimension (`visibilityFlag`, same vocabulary as nav.ts): a switched-off
+  // feature must not surface a dead card.
+  {
+    titleKey: 'categories.broadcasts.title',
+    descriptionKey: 'categories.broadcasts.description',
+    href: '/admin/settings/broadcasts',
+    icon: Settings2Icon,
+    permission: 'settings.broadcasts',
+    visibilityFlag: 'broadcastsEnabled',
+  },
+  {
+    titleKey: 'categories.integrationsEventcreate.title',
+    descriptionKey: 'categories.integrationsEventcreate.description',
+    href: '/admin/settings/integrations/eventcreate',
+    icon: PlugZapIcon,
+    permission: 'settings.integrations',
+    visibilityFlag: 'eventsEnabled',
+  },
 ] as const;
 
 export default async function SettingsIndexPage() {
   const { user } = await requirePagePermission('dashboard.view');
   const t = await getTranslations('admin.settings.index');
-  const visible = CATEGORIES.filter((c) => canPerform(user.role, c.permission));
+  // Same flag names the staff shell resolves for the sidebar (layout.tsx).
+  const flags = {
+    broadcastsEnabled: env.features.f7Broadcasts,
+    eventsEnabled: env.features.f6EventCreate,
+  } as const;
+  const visible = CATEGORIES.filter(
+    (c) =>
+      !('visibilityFlag' in c && !flags[c.visibilityFlag]) &&
+      canPerform(user.role, c.permission),
+  );
 
   // Every card gone: the viewer holds `dashboard.view` (so the index itself
   // opens) but no settings surface. Better than an empty grid, which reads as a

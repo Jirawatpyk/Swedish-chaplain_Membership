@@ -27,9 +27,13 @@ import { env } from '@/lib/env';
  * mounts. Do NOT move this back up to `admin/loading.tsx`.
  *
  * 016 T054 — this skeleton does NOT mirror the finance/engagement split, on
- * purpose. Doing so would need the viewer's permissions, and the only way to
- * get them here is `getCurrentSession()`, which is not React-cached and writes
- * `last_seen_at` — i.e. a DB write on every loading fallback.
+ * purpose. Doing so would need the viewer's permissions via
+ * `getCurrentSession()`. That helper is React-cached since the 016 post-ship
+ * review (finding #15), so the marginal cost inside a render that already
+ * fetched the session is now nil — but a loading fallback can stream BEFORE
+ * the layout's fetch resolves, so this call could still be the one that pays
+ * the DB round-trips, and a permissions-dependent skeleton would also flash
+ * wrong for the cached-out case. The decision stands.
  *
  * What a viewer without `insights.finance` actually sees, stated honestly
  * (the first version of this note claimed the shift was nil, which is true only

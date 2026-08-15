@@ -315,6 +315,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       tenantId: tenant.slug,
       memberIds: Array.isArray(memberIds) ? (memberIds as string[]) : [],
       actorUserId: ctx.current.user.id,
+      // rbac-narrow-ok: stamps the LITERAL role into the audit row; the
+      // gate above already decided admission (016 post-ship B-1).
+      actorRole: ctx.current.user.role === 'super_admin' ? 'super_admin' : 'admin',
       correlationId: ctx.requestId,
       requestId: ctx.requestId,
     });

@@ -36,7 +36,11 @@ export const snoozeAtRiskMemberInputSchema = z.object({
   /** FR-032 enumerates 7 / 30 / 90 only — admin UI surfaces these as a radio. */
   durationDays: z.union([z.literal(7), z.literal(30), z.literal(90)]),
   actorUserId: z.string().min(1),
-  actorRole: z.literal('admin'),
+  // 016 post-ship review finding #3 - accept the LITERAL staff role the
+  // `renewals.write` gate admits (admin | super_admin). z.literal('admin')
+  // forced routes to fabricate 'admin' for promoted super_admins,
+  // poisoning append-only money-path audit rows.
+  actorRole: z.enum(['admin', 'super_admin']),
   requestId: z.string().nullable().optional(),
   correlationId: z.string().min(1),
 });
@@ -90,7 +94,7 @@ export async function snoozeAtRiskMember(
         {
           tenantId: input.tenantId,
           actorUserId: input.actorUserId,
-          actorRole: 'admin',
+          actorRole: input.actorRole,
           correlationId: input.correlationId,
           requestId: input.requestId ?? null,
         },

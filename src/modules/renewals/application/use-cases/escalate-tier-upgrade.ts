@@ -33,7 +33,11 @@ export const escalateTierUpgradeInputSchema = z.object({
   suggestionId: z.string().uuid(),
   outcomeNote: z.string().trim().max(500).optional(),
   actorUserId: z.string().min(1),
-  actorRole: z.literal('admin'),
+  // 016 post-ship review finding #3 - accept the LITERAL staff role the
+  // `renewals.write` gate admits (admin | super_admin). z.literal('admin')
+  // forced routes to fabricate 'admin' for promoted super_admins,
+  // poisoning append-only money-path audit rows.
+  actorRole: z.enum(['admin', 'super_admin']),
   correlationId: z.string().min(1),
   requestId: z.string().nullable().optional(),
 });
@@ -101,13 +105,13 @@ export async function escalateTierUpgrade(
             outreach_id: result.outreachId as OutreachId,
             channel: 'email' as const,
             template_id: templateId,
-            actor_role: 'admin' as const,
+            actor_role: input.actorRole,
           },
         },
         {
           tenantId: input.tenantId,
           actorUserId: input.actorUserId,
-          actorRole: 'admin',
+          actorRole: input.actorRole,
           correlationId: input.correlationId,
           requestId: input.requestId ?? null,
         },

@@ -212,6 +212,7 @@ describe('107-auto-invoice Task 14 — discardAutoDraftedRenewal (live Neon)', (
       tenantId: tenant.ctx.slug,
       invoiceId,
       actorUserId: user.userId,
+      actorRole: 'admin' as const,
       requestId: null,
     });
 
@@ -239,6 +240,7 @@ describe('107-auto-invoice Task 14 — discardAutoDraftedRenewal (live Neon)', (
 
     const issued = await issueAutoDraftedRenewal(depsFor(tenant), {
       tenantId: tenant.ctx.slug,
+      actorRole: 'admin' as const,
       invoiceId,
       actorUserId: user.userId,
       sendEmail: false,
@@ -250,6 +252,7 @@ describe('107-auto-invoice Task 14 — discardAutoDraftedRenewal (live Neon)', (
       tenantId: tenant.ctx.slug,
       invoiceId,
       actorUserId: user.userId,
+      actorRole: 'admin' as const,
       requestId: null,
     });
 
@@ -266,6 +269,7 @@ describe('107-auto-invoice Task 14 — discardAutoDraftedRenewal (live Neon)', (
       tenantId: tenant.ctx.slug,
       invoiceId: randomUUID(),
       actorUserId: user.userId,
+      actorRole: 'admin' as const,
       requestId: null,
     });
 
@@ -283,6 +287,7 @@ describe('107-auto-invoice Task 14 — discardAutoDraftedRenewal (live Neon)', (
       tenantId: tenant.ctx.slug,
       invoiceId,
       actorUserId: user.userId,
+      actorRole: 'admin' as const,
       requestId: null,
     });
 

@@ -398,10 +398,12 @@ export const staffNavConfig: NavConfig = {
           guard: defineGuard('settings.broadcasts'),
           activePattern: '/admin/settings/broadcasts',
           visibilityFlag: 'broadcastsEnabled',
-          // Admin-only ACCESS — the page returns notFound() for manager
-          // (role !== 'admin'), unlike Invoice Settings / Renewal Schedules
-          // which managers may view read-only. Hide the entry so manager
-          // isn't shown a link that 404s.
+          // Access is the `settings.broadcasts` guard above (fail-closed
+          // nav: no holder, no entry). 016 post-ship finding — the old
+          // comment claimed managers could read Invoice Settings / Renewal
+          // Schedules: false since D4 (settings.invoicing is superAdminOnly,
+          // settings.renewal_schedules is admin-tier, manager holds no
+          // settings.* key at all).
         },
         // F6 EventCreate integration. Spec round-2 R1 noted that the
         // entry "is a navigation-affordance decision" — initially we
@@ -428,7 +430,10 @@ export const staffNavConfig: NavConfig = {
           // Events feature is switched off.
           visibilityFlag: 'eventsEnabled',
           // Admin-only ACCESS (FR-035) — route returns notFound() for
-          // manager. Hidden from the manager sidebar via the roles filter.
+          // manager. The entry hides via the `settings.integrations` guard
+          // above + the server-resolved allowedHrefs set (there is no
+          // separate roles filter — that mechanism is legacy, see the
+          // guard-model note at the top of this file).
         },
       ],
     },

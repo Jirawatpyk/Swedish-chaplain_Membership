@@ -39,7 +39,11 @@ export const skipEscalationTaskInputSchema = z.object({
   skippedReason: z.string().trim().min(1).max(500),
   // Round 5 I-9 close — UUID brand promise (see complete schema).
   actorUserId: z.string().uuid(),
-  actorRole: z.literal('admin'),
+  // 016 post-ship review finding #3 - accept the LITERAL staff role the
+  // `renewals.write` gate admits (admin | super_admin). z.literal('admin')
+  // forced routes to fabricate 'admin' for promoted super_admins,
+  // poisoning append-only money-path audit rows.
+  actorRole: z.enum(['admin', 'super_admin']),
   correlationId: z.string().min(1),
   requestId: z.string().nullable().optional(),
 });
@@ -115,7 +119,7 @@ export async function skipEscalationTask(
           {
             tenantId: input.tenantId,
             actorUserId: input.actorUserId,
-            actorRole: 'admin',
+            actorRole: input.actorRole,
             correlationId: input.correlationId,
             requestId: input.requestId ?? null,
           },

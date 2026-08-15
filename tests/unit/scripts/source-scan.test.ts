@@ -133,6 +133,47 @@ describe('stripCommentLines — the bug that made the T065 gate blind', () => {
     expect(out[0]).not.toContain('admin');
     expect(out[1]).not.toContain('admin');
   });
+
+  // 016 post-ship review finding #13 — the '/' branch consulted startsRegex()
+  // BEFORE checking for '*', so a block opener preceded by code ending in
+  // `=(,:[!&|?{};+*%~^<>` was consumed as a regex literal. A regex can never
+  // START with '*' (a quantifier with nothing to repeat is a SyntaxError), so
+  // `/*` after code is ALWAYS a comment.
+  it('a trailing block comment after `=` is stripped, not parsed as a regex (finding #13)', () => {
+    // `=` is in the startsRegex set — the old order kept this comment as CODE.
+    const out = stripCommentLines(
+      "const n = /* example: requirePagePermission('members.read') */ 1;",
+    )[0]!;
+    expect(out).not.toContain('requirePagePermission');
+    expect(out).toContain('1;');
+  });
+
+  it('a phantom guard in a trailing comment is invisible to extractPageGuard (finding #13)', () => {
+    const src = "const n = /* requirePagePermission('members.read') */ 1;";
+    expect(extractPageGuard(src, 'x')).toBeNull();
+  });
+
+  it('a MULTI-LINE block comment opened after code keeps inBlock across lines (finding #13)', () => {
+    // The old order left inBlock=false, so every following comment line read
+    // as CODE — corrupting comment-ness for the rest of the file.
+    const src = [
+      'const n = 1; /* prose about',
+      "role === 'admin' in prose",
+      '*/',
+      "const a = role === 'manager';",
+    ].join('\n');
+    const out = stripCommentLines(src);
+    expect(out[1]).not.toContain('admin');
+    expect(out[3]).toContain("role === 'manager'");
+  });
+
+  it('a regex literal containing /* STILL does not open a block (order preserved)', () => {
+    // The reorder must not regress the original protection: `/\/\*/` is a
+    // regex whose first char after `/` is `\`, so the `/*` check does not
+    // fire and startsRegex still owns it.
+    const src = ['const re = /\\/\\*/;', "const a = role === 'admin';"].join('\n');
+    expect(stripCommentLines(src)[1]).toContain("role === 'admin'");
+  });
 });
 
 describe('markerApplies — comment hosting', () => {
@@ -173,6 +214,35 @@ describe('markerApplies — comment hosting', () => {
   it('accepts any marker from the supplied set', () => {
     const lines = ['// rbac-subgate-ok: field only', "if (role === 'admin') {}"];
     expect(markerApplies(lines, 1, ['rbac-narrow-ok', 'rbac-subgate-ok'])).toBe(true);
+  });
+
+  // 016 post-ship review finding #11 — the same-line arm took indexOf('//')
+  // on the RAW line, so the '//' of a URL inside a string hosted a marker
+  // that was itself inside the string. Reproduced against the real module
+  // pre-fix; the marker must now be one stripping REMOVES (comment-hosted).
+  it('REJECTS a marker hosted inside a URL string on the decision line (finding #11)', () => {
+    const lines = [
+      "const canWrite = role === 'admin'; track('https://ex.example/rbac-narrow-ok');",
+    ];
+    expect(markerApplies(lines, 0, M)).toBe(false);
+  });
+
+  it('REJECTS a marker in a plain string on the decision line itself', () => {
+    const lines = ["const t = 'rbac-narrow-ok'; if (role === 'admin') {}"];
+    expect(markerApplies(lines, 0, M)).toBe(false);
+  });
+
+  it('accepts a marker in a trailing BLOCK comment on the same line', () => {
+    // Comment-hosted is the protocol; `/* … */` on the decision line is a
+    // comment host too (the old `//`-only arm could not see it).
+    const lines = ["if (role === 'admin') {} /* rbac-narrow-ok: type narrow */"];
+    expect(markerApplies(lines, 0, M)).toBe(true);
+  });
+
+  it('same-line rejection also holds when the caller supplies codeLines', () => {
+    const src = "const canWrite = role === 'admin'; track('https://ex.example/rbac-narrow-ok');";
+    const lines = [src];
+    expect(markerApplies(lines, 0, M, stripCommentLines(src))).toBe(false);
   });
 });
 

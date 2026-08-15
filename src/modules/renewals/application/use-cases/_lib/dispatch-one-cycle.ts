@@ -115,11 +115,14 @@ export interface DispatchContext {
   /** Null for cron actor; UUID for admin "Send reminder now" caller. */
   readonly actorUserId: string | null;
   /**
-   * J9-M15: narrowed `RenewalActorRole` to the two F8-dispatch-eligible
+   * J9-M15: narrowed `RenewalActorRole` to the F8-dispatch-eligible
    * actors. Sourced from the shared union in `renewal-audit-emitter.ts`
    * so adding a future role propagates here at compile time.
+   * 016 post-ship B-1: `super_admin` added — send-reminder-now threads the
+   * LITERAL session role, and every human admin is a super_admin post-
+   * Migration C; without this the type forced the 'admin' fabrication.
    */
-  readonly actorRole: Extract<RenewalActorRole, 'cron' | 'admin'>;
+  readonly actorRole: Extract<RenewalActorRole, 'cron' | 'admin' | 'super_admin'>;
   readonly correlationId: string;
   readonly requestId: string | null;
   /** Injectable now-clock for tests. Default: real-time on each call. */

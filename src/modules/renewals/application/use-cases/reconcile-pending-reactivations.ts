@@ -1041,6 +1041,12 @@ async function processMarkedRejectRefund(
         // `lapsed_member_admin_reactivation_rejected` audit — byte-identical to
         // the sync path: same payload (cycle_id + actor + refund_credit_note_id)
         // and the REPLAYED admin as actor (actorRole='admin'), NOT the cron.
+        // KNOWN LIMIT (016 post-ship B-1 residual, different class): this is a
+        // cron REPLAY of a stored decision — only the actor's user id was
+        // persisted, not their role at decision time, so 'admin' here is an
+        // assumption, not a session fact. Fixing it needs the role persisted
+        // alongside the pending decision (data-model change; both replay
+        // emits in this file share the limit).
         await deps.auditEmitter.emitInTx(
           tx,
           {

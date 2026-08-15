@@ -43,7 +43,9 @@ export async function POST(
       tenantId: tenantCtx.slug,
       suggestionId,
       actorUserId: ctx.current.user.id,
-      actorRole: 'admin',
+      // rbac-narrow-ok: stamps the LITERAL role into the audit row; the
+      // gate above already decided admission (016 post-ship finding #3).
+      actorRole: ctx.current.user.role === 'super_admin' ? 'super_admin' : 'admin',
       requestId: ctx.requestId,
       correlationId: ctx.correlationId,
     });
