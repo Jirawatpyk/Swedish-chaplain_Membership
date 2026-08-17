@@ -144,6 +144,10 @@ describe('acknowledgeBroadcastsTerms', () => {
     expect(event.requestId).toBe(requestId);
     expect(event.payload).toMatchObject({
       memberId,
+      // Snake `member_id` → the member's deliberate consent click bumps
+      // members.last_activity_at (F3 trigger) + lists in the timeline.
+      // Member-portal-only action (no admin_proxy path), so unconditional.
+      member_id: memberId,
       userId: actorUserId,
       acknowledgedAt: now.toISOString(),
       bannerLocale: 'sv',
