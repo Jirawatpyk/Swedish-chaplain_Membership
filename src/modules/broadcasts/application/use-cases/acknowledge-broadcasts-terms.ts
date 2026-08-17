@@ -156,6 +156,12 @@ export async function acknowledgeBroadcastsTerms(
       summary: `Member ${input.memberId} acknowledged broadcasts terms (locale=${input.locale})`,
       payload: {
         memberId: input.memberId,
+        // Snake `member_id` → a member deliberately accepting the broadcasts
+        // consent banner is genuine engagement: bumps members.last_activity_at
+        // (F3 trigger, migration 0009) + lists in the member timeline. This is
+        // a member-portal-only action (no admin_proxy path), so unconditional.
+        // camelCase `memberId` kept for forensic/back-compat.
+        member_id: input.memberId,
         userId: input.actorUserId,
         acknowledgedAt: acknowledgedAt.toISOString(),
         bannerLocale: input.locale,
