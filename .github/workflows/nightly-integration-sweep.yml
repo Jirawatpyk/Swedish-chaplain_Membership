@@ -54,11 +54,51 @@ jobs:
     name: Integration sweep
     runs-on: ubuntu-latest
     timeout-minutes: 240
+    # The auth rate-limit suites (brute-force, DoS, change-password, per-IP)
+    # exercise the REAL @upstash/ratelimit path — with `.env.example`'s
+    # placeholder they dialled `example.upstash.io` and every Saturday sweep
+    # died on ENOTFOUND (2026-08-08 + -15; sql-injection additionally burned
+    # its 60 s timeout in client retries). SRH (hiett/serverless-redis-http)
+    # is Upstash's documented CI emulator: same REST protocol, backed by the
+    # redis container, reached via KV_REST_API_URL below.
+    services:
+      redis:
+        image: redis:7-alpine
+      srh:
+        image: hiett/serverless-redis-http:latest
+        env:
+          SRH_MODE: env
+          SRH_TOKEN: synthetic-ci-srh-token
+          SRH_CONNECTION_STRING: redis://redis:6379
+        ports:
+          - 8080:80
     env:
       DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
       TEST_DB_HOST_BLOCKLIST: ${{ vars.TEST_DB_HOST_BLOCKLIST }}
       FEATURE_F7_BROADCASTS: 'true'
       FEATURE_F8_RENEWALS: 'true'
+      # Prod runs F9 ON (launch gate cleared 2026-05-31) and the suites assert
+      # the flag-on behaviour — `portal/gap-routes-access-gate` expects the
+      # access gate's 403, and with the flag dark got `feature_disabled` 503
+      # instead (Saturday sweeps 2026-08-08 + -15). Job-level env wins over the
+      # seeded .env.local (`process.loadEnvFile` never overrides process.env —
+      # same mechanism the F7/F8 flags above already rely on).
+      FEATURE_F9_DASHBOARD: 'true'
+      # env.ts refuses to boot F9-on without this secret (≥32 bytes, distinct
+      # from every other token secret in this block).
+      EXPORT_DOWNLOAD_TOKEN_SECRET: synthetic-ci-export-download-secret-32-chars-padding
+      # Prod runs 088 tax-at-payment ON (PR #149). The renewals confirm suites
+      # (`renewal-no-tin-confirm`, `confirm-renewal-anchored-plan-year-pin`)
+      # assert the shipped bill-first shape — §87 documentNumber NULL at issue,
+      # printed identity = billDocumentNumberRaw. With the flag dark the legacy
+      # leg minted the number at issue: `expected 'RNTN-2026-000001' to be
+      # null` (Tuesday sweeps 2026-08-11 + -18).
+      FEATURE_088_TAX_AT_PAYMENT: 'true'
+      # Points the @upstash/redis client at the SRH service container above
+      # (KV_* is the preferred pair in env.ts; overrides the .env.example
+      # placeholder that caused the ENOTFOUND class).
+      KV_REST_API_URL: http://localhost:8080
+      KV_REST_API_TOKEN: synthetic-ci-srh-token
       CRON_SECRET: synthetic-ci-cron-secret
       RENEWAL_LINK_TOKEN_SECRET_PRIMARY: synthetic-ci-renewal-token-secret-32-chars-padding
       RESEND_BROADCASTS_API_KEY: re_synthetic_ci_placeholder_DO_NOT_USE
