@@ -537,12 +537,18 @@ describe('void-pdf-reconcile cron (bug 10)', () => {
     const prev = process.env.VOID_RECONCILE_UPLOAD_TIMEOUT_MS;
     process.env.VOID_RECONCILE_UPLOAD_TIMEOUT_MS = '300';
     const invoiceId = await seedMarkedVoid({ voidReason: 'hung upload', seq: 8 });
-    // Upload hangs ~2s; the 300ms timeout must fire first, roll back the tx,
-    // release the lock, and let the catch bump attempts.
+    // Upload hangs 15s; the 300ms timeout must fire first, roll back the tx,
+    // release the lock, and let the catch bump attempts. The hang/budget pair
+    // is deliberately WIDE: the elapsed check measures the whole route call,
+    // and on the CI runner (an ocean from Neon, ~200ms/statement) the
+    // timeout-fired path alone measured ~5s — a 2s hang vs 1.8s budget
+    // asserted the network, not the mechanism (nightly sweeps 2026-08-10 +
+    // -17). 15s hang vs 10s budget keeps both verdicts unambiguous on either
+    // link: timeout fired ≈ overhead + 0.3s ≪ 10s; timeout dead ≥ 15s ≫ 10s.
     (vercelBlobAdapter.uploadPdf as ReturnType<typeof vi.fn>).mockImplementationOnce(
       () =>
         new Promise((resolve) =>
-          setTimeout(() => resolve({ key: 'k', url: 'u' }), 2000),
+          setTimeout(() => resolve({ key: 'k', url: 'u' }), 15_000),
         ),
     );
 
@@ -552,8 +558,8 @@ describe('void-pdf-reconcile cron (bug 10)', () => {
     process.env.VOID_RECONCILE_UPLOAD_TIMEOUT_MS = prev;
 
     expect(res.status).toBe(200);
-    // Returned well before the 2s hang would have completed.
-    expect(elapsed).toBeLessThan(1800);
+    // Returned well before the 15s hang would have completed.
+    expect(elapsed).toBeLessThan(10_000);
     const row = await readMarker(invoiceId);
     expect(row?.attempts).toBe(1); // timeout → throw → catch → bump
     expect(row?.pendingAt).not.toBeNull();
