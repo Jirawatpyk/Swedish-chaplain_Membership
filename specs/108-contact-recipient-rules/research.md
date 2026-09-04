@@ -8,8 +8,15 @@ plumbing; members module; broadcasts resolver; RBAC/nav/table patterns) and spot
 
 Three items are **verify-before-task** (not clarifications — the decision is made, the
 operator confirms a fact first): V1 prod count of secondary contacts and of active members
-with zero primaries (read-only; blocked in this session by the command classifier — run
-with the `!` prefix); V2 the Resend **Contacts Import API** on the test account — multipart
+with zero primaries — **DONE 2026-09-04 (read-only, tenant `swecham`)**: 150 live contacts, all
+primary, **0 secondary contacts**, 0 secondaries with portal login; invariant check
+`status <> 'archived' AND erased_at IS NULL` → **0 members with zero primaries, 0 with more
+than one** (PR-B's pre-check will pass); members: 110 `active`, 40 `inactive`, 0 archived,
+0 erased; `marketing_unsubscribes`: 0 rows. Consequences: the FR-027a pre-flight list will be
+empty until Tier C import or manual adds (Q2 cutover risk is nil today), and FR-021's
+active-only rule removes the 40 inactive members' primaries from the audience (~27 % of
+today's recipients) — decision Q1 = A stands, now with the number known. V2 the Resend
+**Contacts Import API** on the test account — multipart
 shape accepted by a raw `fetch` from the current SDK-4.8 codebase, the status values of
 `GET /contacts/imports/{id}` (only `completed` is documented), the `counts` fields, and that
 `on_conflict: upsert` never touches a contact's Resend-side `unsubscribed` flag when the CSV

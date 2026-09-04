@@ -23,6 +23,9 @@ node --env-file=.env.production --import tsx scripts/inventory-primary-contact-i
 
 Migration 0293's pre-check fails the deploy if the first number is not 0.
 
+First run (2026-09-04): violations 0, secondaries 0, secondaries with login 0,
+unsubscribes 0, members 110 active / 40 inactive. Re-run immediately before PR-B merges.
+
 **Remedy when the count is not 0**: for each listed member (ids only), open the member page,
 promote a remaining contact (or add one and promote it) — the existing promote path is the
 fix; do not edit rows by hand. Re-run the inventory until it prints 0, then merge PR-B.
