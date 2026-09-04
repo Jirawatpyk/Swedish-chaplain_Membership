@@ -2,7 +2,7 @@
 
 **Feature Branch**: `108-contact-recipient-rules`
 **Created**: 2026-09-04
-**Status**: Tasked
+**Status**: Implementing
 **Input**: User description: "Tier A and Tier B + ปิดช่องโหว่ หรือ รูรั่ว ทั้งหมด" — i.e. implement Tier A (harden the primary-contact-only rule for money emails) and Tier B (secondary contacts receive marketing) from `docs/contacts-primary-secondary-gap-analysis.md`, and close every gap that analysis found (H1, H2, G1–G9). Tier C (bulk import of secondary contacts) is a separate follow-on feature and is **out of scope** here.
 
 ## Overview *(context, non-normative)*

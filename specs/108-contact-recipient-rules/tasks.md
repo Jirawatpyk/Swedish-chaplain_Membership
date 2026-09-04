@@ -25,9 +25,9 @@ Modular monolith: `src/modules/<context>/{domain,application,infrastructure}`, p
 
 **Purpose**: Branch hygiene and the shared scaffolding every PR reuses.
 
-- [ ] T001 Confirm branch `108-contact-recipient-rules` is current (`git branch --show-current`), rebase on `main`, and confirm `drizzle/migrations/meta/_journal.json` still ends at `0291` (renumber the plan's 0292–0297 if not)
-- [ ] T002 [P] Create the shared PR checklist stub `specs/108-contact-recipient-rules/reviews/README.md` listing per-PR reviewer agents and the co-sign footer template (Constitution v1.4.2) for `checklists/{security,privacy,money,reliability,operations,ux}.md`
-- [ ] T003 [P] Add `scripts/inventory-primary-contact-invariant.ts` (read-only; prints counts only: active/non-erased members with ≠1 live primary, secondaries total, secondaries with portal login, `marketing_unsubscribes` count; uses `runInTenant`; refuses to write) per quickstart § Before PR-B
+- [x] T001 DONE 2026-09-04 (branch `108-contact-recipient-rules` current, up to date with `main` at `057e15ce3` — nothing to rebase; journal ends at tag `0291_event_attendance_bumps_last_activity`, idx 292, so the planned 0292–0297 numbering stands). Confirm branch `108-contact-recipient-rules` is current (`git branch --show-current`), rebase on `main`, and confirm `drizzle/migrations/meta/_journal.json` still ends at `0291` (renumber the plan's 0292–0297 if not)
+- [x] T002 Create the shared PR checklist stub `specs/108-contact-recipient-rules/reviews/README.md` listing per-PR reviewer agents and the co-sign footer template (Constitution v1.4.2) for `checklists/{security,privacy,money,reliability,operations,ux}.md`
+- [x] T003 Add `scripts/inventory-primary-contact-invariant.ts` (read-only; prints counts only: active/non-erased members with ≠1 live primary, secondaries total, secondaries with portal login, `marketing_unsubscribes` count; uses `runInTenant`; refuses to write) per quickstart § Before PR-B — verified by running it against the dev Neon branch (131 members, 0 violations); the login column is `linked_user_id`, not `user_id`
 
 ---
 
@@ -37,7 +37,7 @@ Modular monolith: `src/modules/<context>/{domain,application,infrastructure}`, p
 
 **⚠️ CRITICAL**: V3 blocks the first migration (US1); V1 blocks PR-B; V2 blocks the import-based audience build (US5, T086/T087).
 
-- [ ] T004 **V3** Read `scripts/lib/enum-migration-guard.ts` and confirm whether a single migration file may hold several `ALTER TYPE … ADD VALUE` statements; record the answer in `research.md § V3` and split migration 0295 into two files if required
+- [x] T004 **V3** DONE 2026-09-04: a single migration file MAY hold several `ALTER TYPE … ADD VALUE` statements — `ALTER_TYPE_ADD_VALUE_RE` is a `/g` regex and `extractAlterTypeAddValueStatements` returns every match, each replayed in autocommit by `run-migrations.ts` before the transactional pass. Recorded in `research.md § V3` + R13; **0295 stays one file** (statements must each end with `;` and must not sit on a `--` line)
 - [x] T005 **V1** DONE 2026-09-04 (read-only prod inventory, tenant `swecham`): 150 live contacts all primary, 0 secondaries, 0 with login; invariant violations 0/0; members 110 active / 40 inactive; 0 unsubscribes — recorded in `research.md § V1`. T003's script is still worth adding for re-runs before PR-B merges (re-run must still print 0 violations)
 - [ ] T006 **V2 + V5** Spike against the Resend test account with a raw multipart `fetch` (SDK 4.8 lacks `contacts.imports`): `POST /contacts/imports` with a 3-row CSV (`email` only, `on_conflict=upsert`, `segments=[<test audience id>]`), then `GET /contacts/imports/{id}` until `completed`; record status values, `counts`, whether the audience id is accepted as a segment, and that a pre-existing Resend-side `unsubscribed` contact stays unsubscribed after the upsert — in `research.md § V2`; also read the team's actual rate limit from Settings → Usage (V5)
 - [ ] T007 [P] Create the single shared port double `tests/helpers/recipient-locale-fake.ts` exposing `getMemberEmailLocale` + `getMemberEmailRecipient` with a configurable live primary (used by every invoicing unit/contract test from T015 on)

@@ -21,7 +21,13 @@ shape accepted by a raw `fetch` from the current SDK-4.8 codebase, the status va
 `GET /contacts/imports/{id}` (only `completed` is documented), the `counts` fields, and that
 `on_conflict: upsert` never touches a contact's Resend-side `unsubscribed` flag when the CSV
 carries no such column; V3 whether `scripts/lib/enum-migration-guard.ts` accepts several
-`ADD VALUE` statements in one file (its regex matches per statement; header says "single");
+`ADD VALUE` statements in one file — **DONE 2026-09-04 (code read, no DB needed)**: YES.
+`ALTER_TYPE_ADD_VALUE_RE` is a `/g` regex and `extractAlterTypeAddValueStatements` returns
+**every** match (`sql.match(re)` → array), which `run-migrations.ts` replays one by one in
+autocommit before the transactional pass. The header's "single" describes what the regex
+matches per capture, not a per-file limit. Consequence: migration **0295 stays one file**
+with both `ADD VALUE` statements; each statement must be on its own and end with `;`, and
+must not sit on a `--` comment line (those are stripped);
 V4 (superseded by the V2 redesign — no recipient working table is planned; keep only if V2
 shows the import id + counts cannot live on the `broadcasts` row); V5 the team's actual Resend
 rate limit (Settings → Usage; docs default is 10 req/s per team, raisable via support) and
@@ -350,8 +356,8 @@ affects F7's `audienceId`-based gateway (R16).
 - **Decision**: three new `audit_event_type` values in two enum-only migrations, each
   shipping with the PR that emits them: `0292` (PR-A) `auto_email_skipped_no_recipient`
   (F4, 5y); `0295` (PR-D) `contact_marketing_opted_out` + `contact_marketing_opted_in`
-  (F3; payload `{ member_id, contact_id, source: 'staff'|'self' }`, 5y) — split 0295 into
-  two files if V3 says the guard needs one statement per file. Pins: F3 union + `f3-audit-event-type-count.test.ts` 35→37 (+ title); the auth
+  (F3; payload `{ member_id, contact_id, source: 'staff'|'self' }`, 5y) — 0295 stays ONE
+  file (V3 answered: the guard extracts and replays every `ADD VALUE` in a file). Pins: F3 union + `f3-audit-event-type-count.test.ts` 35→37 (+ title); the auth
   pgEnum tuple (`schema.ts`, F3 block — `contact_removed` is in the tuple, verified);
   `audit.eventType.*` labels in EN/TH/SV with real Thai script
   (`audit-event-label-coverage.test.ts`); F4 union + retention map. The auth
