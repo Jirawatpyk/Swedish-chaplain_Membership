@@ -104,7 +104,7 @@ export async function POST(
         ? 404
         : result.error.code === 'forbidden'
           ? 403
-          : 409; // not_issued / no_receipt_pdf
+          : 409; // not_issued / no_receipt_pdf / no_recipient (108 FR-003)
     return NextResponse.json(
       { error: { code: result.error.code } },
       { status },

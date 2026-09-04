@@ -90,7 +90,11 @@ import type { ClockPort } from '../ports/clock-port';
 import type { EmailOutboxPort } from '../ports/email-outbox-port';
 import type { RecipientLocalePort } from '../ports/recipient-locale-port';
 import type { PendingRefundGuardPort } from '../ports/pending-refund-guard-port';
-import { resolveRecipientLocale } from '../lib/resolve-recipient-locale';
+import {
+  auditAutoEmailSkippedNoRecipient,
+  resolveMoneyRecipient,
+} from '../lib/resolve-money-recipient';
+import { invoicingMetrics } from '@/lib/metrics';
 // Bug 10 — the VOID-overlay render construction, shared with the reconcile cron.
 import {
   buildVoidRenderTargets,
@@ -471,19 +475,48 @@ export async function voidInvoice(
       const shouldAutoEmail =
         !input.suppressCancellationEmail &&
         (loaded.autoEmailOnIssue ?? settings.autoEmailEnabled);
-      if (shouldAutoEmail) {
-        // Email-locale audit 2026-07-16 — cancellation email in the member's
-        // language (live read; non-member event buyer → undefined → 'en').
-        const recipientLocale = await resolveRecipientLocale(
-          deps.recipientLocale,
-          tx,
-          input.tenantId,
-          memberId,
-        );
+      // 108 FR-001 — resolve the cancellation notice's address LIVE (the frozen
+      // snapshot still names the buyer on the §86/10 document). The locale rides
+      // on the same row. Resolved before the `shouldAutoEmail` branch so the
+      // no-recipient case can be audited even when the tenant has auto-email on.
+      const moneyRecipient = shouldAutoEmail
+        ? await resolveMoneyRecipient(
+            deps.recipientLocale,
+            tx,
+            input.tenantId,
+            memberId,
+            loaded.memberIdentitySnapshot,
+          )
+        : null;
+      if (shouldAutoEmail && moneyRecipient !== null && moneyRecipient.kind === 'no_recipient') {
+        // 108 FR-004 — void-invoice had NO empty-recipient guard: it enqueued
+        // whatever the snapshot held, including ''. Skip + record, never fall
+        // back, and never block the void itself — a §86/10 cancellation is a
+        // statutory act that cannot wait for someone to fix a contact row.
+        if (memberId !== null) {
+          await auditAutoEmailSkippedNoRecipient(deps.audit, tx, {
+            tenantId: input.tenantId,
+            requestId: input.requestId ?? null,
+            actorUserId: input.actorUserId,
+            memberId,
+            emailEventType: 'invoice_voided',
+            subject: loaded.invoiceSubject,
+            invoiceId,
+          });
+        } else {
+          invoicingMetrics.autoEmailSkipped(loaded.invoiceSubject, 'no_recipient');
+        }
+      } else if (
+        shouldAutoEmail &&
+        moneyRecipient !== null &&
+        moneyRecipient.kind !== 'no_recipient'
+      ) {
+        const recipientLocale =
+          moneyRecipient.kind === 'member' ? (moneyRecipient.locale ?? undefined) : undefined;
         await deps.outbox.enqueue(tx, {
           tenantId: input.tenantId,
           eventType: 'invoice_voided',
-          recipientEmail: loaded.memberIdentitySnapshot.primary_contact_email,
+          recipientEmail: moneyRecipient.email,
           invoiceId,
           pdfBlobKey: loaded.pdf.blobKey,
           pdfTemplateVersion: loaded.pdf.templateVersion,

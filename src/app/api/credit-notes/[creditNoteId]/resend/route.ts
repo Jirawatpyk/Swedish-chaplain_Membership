@@ -66,6 +66,8 @@ export async function POST(
       },
       'POST /api/credit-notes/[id]/resend failed',
     );
+    // 409 covers not_issued / no_receipt_pdf and, since 108, no_recipient —
+    // the member has no live primary contact, so there is nothing to resend to.
     const status = result.error.code === 'not_found' ? 404 : 409;
     return NextResponse.json(
       { error: { code: result.error.code } },

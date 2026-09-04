@@ -91,8 +91,9 @@ export async function POST(
     );
   }
 
-  return NextResponse.json(
-    { ok: true, recipientEmail: result.value.recipientEmail },
-    { status: 202 },
-  );
+  // 108 FR-006 — the body carries NO address. A secondary contact with a
+  // portal login may trigger this resend; echoing the primary contact's
+  // email back would disclose another person's address to them (and the
+  // client toast never read it). The mail still goes to the live primary.
+  return NextResponse.json({ ok: true }, { status: 202 });
 }

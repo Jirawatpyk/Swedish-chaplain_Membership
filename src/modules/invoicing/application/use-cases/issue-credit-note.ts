@@ -62,7 +62,10 @@ import type { ClockPort } from '../ports/clock-port';
 import type { EmailOutboxPort } from '../ports/email-outbox-port';
 import type { RecipientLocalePort } from '../ports/recipient-locale-port';
 import type { PendingRefundGuardPort } from '../ports/pending-refund-guard-port';
-import { resolveRecipientLocale } from '../lib/resolve-recipient-locale';
+import {
+  auditAutoEmailSkippedNoRecipient,
+  resolveMoneyRecipient,
+} from '../lib/resolve-money-recipient';
 import {
   asInvoiceId,
   type InvoiceId,
@@ -1234,7 +1237,19 @@ export async function issueCreditNote(
       // queue an outbox row addressed to '' (the Resend adapter would reject it
       // downstream + the row would dead-letter). Skip + a no-PII pino.warn
       // (ids only) when there is no contact email to send to.
-      const creditNoteRecipient = loaded.memberIdentitySnapshot.primary_contact_email;
+      // 108 FR-001 — the credit note's DELIVERY address is resolved live from
+      // the ORIGINAL invoice's member (a CN follows its invoice's buyer). The
+      // snapshot still names that buyer on the §86/10 document itself; only a
+      // non-member event buyer has no contact row and keeps the typed address.
+      const moneyRecipient = await resolveMoneyRecipient(
+        deps.recipientLocale,
+        tx,
+        input.tenantId,
+        memberId,
+        loaded.memberIdentitySnapshot,
+      );
+      const creditNoteRecipient =
+        moneyRecipient.kind === 'no_recipient' ? '' : moneyRecipient.email;
       // MEDIUM-5 — capture the delivery outcome so the route/UI can give the
       // admin a non-blocking signal (notice on `skipped_no_recipient`, silent
       // on `sent`/`not_requested`). Defaults to `not_requested`; flips to
@@ -1242,13 +1257,10 @@ export async function issueCreditNote(
       let emailDelivery: CreditNoteEmailDelivery = 'not_requested';
       if (shouldAutoEmail && creditNoteRecipient.trim() !== '') {
         // Email-locale audit 2026-07-16 — credit-note email in the member's
-        // language (live read; non-member event buyer → undefined → 'en').
-        const recipientLocale = await resolveRecipientLocale(
-          deps.recipientLocale,
-          tx,
-          input.tenantId,
-          memberId,
-        );
+        // language. 108: the preference rides on the same live primary-contact
+        // row that produced the address (non-member buyer → undefined → 'en').
+        const recipientLocale =
+          moneyRecipient.kind === 'member' ? (moneyRecipient.locale ?? undefined) : undefined;
         await deps.outbox.enqueue(tx, {
           tenantId: input.tenantId,
           eventType: 'credit_note_issued',
@@ -1261,6 +1273,22 @@ export async function issueCreditNote(
         emailDelivery = 'sent';
       } else if (shouldAutoEmail) {
         emailDelivery = 'skipped_no_recipient';
+        // 108 FR-004 — record the skip where an auditor can find it. In THIS tx,
+        // so it rolls back with a failed credit note. A non-member event buyer
+        // has no member to attribute it to (and the non-member audit arm needs
+        // an event_registration_id) — keep the pre-108 warn-only signal there.
+        if (memberId !== null) {
+          await auditAutoEmailSkippedNoRecipient(deps.audit, tx, {
+            tenantId: input.tenantId,
+            requestId: input.requestId ?? null,
+            actorUserId: input.actorUserId,
+            memberId,
+            emailEventType: 'credit_note_issued',
+            subject: loaded.invoiceSubject,
+            creditNoteId,
+            invoiceId,
+          });
+        }
         logger.warn(
           {
             tenantId: input.tenantId,

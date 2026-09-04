@@ -177,11 +177,12 @@ function creditNoteFixture(): CreditNote {
 function makeDeps(
   invoice: Invoice | null,
   cn: CreditNote | null = null,
+  recipientLocaleOverride?: RecipientLocalePort,
 ) {
   const audit = { emit: vi.fn(async () => {}) };
   const outbox = { enqueue: vi.fn(async () => {}) };
   // Email-locale audit 2026-07-16 — default no stored preference (→ 'en').
-  const recipientLocale: RecipientLocalePort = makeRecipientLocaleFake();
+  const recipientLocale: RecipientLocalePort = recipientLocaleOverride ?? makeRecipientLocaleFake();
   const invoiceRepo = {
     withTx: vi.fn(),
     insertDraft: vi.fn(),
@@ -221,7 +222,12 @@ const adminActor = {
 describe('resendPdf', () => {
   it('invoice variant — enqueues invoice_pdf_resent outbox row + audits with member_id', async () => {
     const invoice = issuedInvoice();
-    const deps = makeDeps(invoice);
+    // 108 — the live primary happens to be the same person the snapshot
+    // named, which is the ordinary case: nothing about the row changes.
+    const deps = makeDeps(invoice, null, makeRecipientLocaleFake({
+      email: 'member@example.com',
+      locale: 'th',
+    }));
     const r = await resendPdf(deps, {
       tenantId: TENANT,
       kind: 'invoice',
@@ -259,8 +265,11 @@ describe('resendPdf', () => {
 
   it('invoice variant — member prefers Thai → outbox row carries recipientLocale=th (email-locale audit 2026-07-16)', async () => {
     const invoice = issuedInvoice();
-    const deps = makeDeps(invoice);
-    deps.recipientLocale.getMemberEmailLocale = vi.fn(async () => 'th' as const);
+    // 108 — address AND locale come from one live primary-contact read.
+    const deps = makeDeps(invoice, null, makeRecipientLocaleFake({
+      email: 'member@example.com',
+      locale: 'th',
+    }));
     const r = await resendPdf(deps, {
       tenantId: TENANT,
       kind: 'invoice',
@@ -269,7 +278,7 @@ describe('resendPdf', () => {
       actor: adminActor,
     });
     expect(r.ok).toBe(true);
-    expect(deps.recipientLocale.getMemberEmailLocale).toHaveBeenCalledWith(
+    expect(deps.recipientLocale.getMemberEmailRecipient).toHaveBeenCalledWith(
       null,
       TENANT,
       'member-m1',
@@ -282,8 +291,10 @@ describe('resendPdf', () => {
 
   it('credit-note variant — member prefers Thai → outbox row carries recipientLocale=th (email-locale audit 2026-07-16)', async () => {
     const cn = creditNoteFixture(); // originalInvoiceMemberId = 'member-m1'
-    const deps = makeDeps(null, cn);
-    deps.recipientLocale.getMemberEmailLocale = vi.fn(async () => 'th' as const);
+    const deps = makeDeps(null, cn, makeRecipientLocaleFake({
+      email: 'member@example.com',
+      locale: 'th',
+    }));
     const r = await resendPdf(deps, {
       tenantId: TENANT,
       kind: 'credit_note',
@@ -291,7 +302,7 @@ describe('resendPdf', () => {
       actor: adminActor,
     });
     expect(r.ok).toBe(true);
-    expect(deps.recipientLocale.getMemberEmailLocale).toHaveBeenCalledWith(
+    expect(deps.recipientLocale.getMemberEmailRecipient).toHaveBeenCalledWith(
       null,
       TENANT,
       'member-m1',
@@ -611,3 +622,87 @@ describe('resendPdf', () => {
   });
 });
 
+describe('resendPdf — resends reach the LIVE primary contact (108 FR-001)', () => {
+  it('invoice resend goes to the contact who is primary NOW', async () => {
+    const invoice = issuedInvoice();
+    const deps = makeDeps(
+      invoice,
+      null,
+      makeRecipientLocaleFake({ email: 'promoted-b@example.com' }),
+    );
+
+    const r = await resendPdf(deps, {
+      tenantId: TENANT,
+      kind: 'invoice',
+      invoiceId: INVOICE_UUID,
+      variant: 'invoice',
+      actor: adminActor,
+    });
+
+    expect(r.ok).toBe(true);
+    const enqCall = (deps.outbox.enqueue as unknown as {
+      mock: { calls: unknown[][] };
+    }).mock.calls[0]![1] as Record<string, unknown>;
+    expect(enqCall.recipientEmail).toBe('promoted-b@example.com');
+  });
+
+  it('invoice resend with no live primary → no_recipient, no outbox row, audited skip', async () => {
+    const invoice = issuedInvoice();
+    const deps = makeDeps(invoice, null, makeRecipientLocaleFake({ email: null }));
+
+    const r = await resendPdf(deps, {
+      tenantId: TENANT,
+      kind: 'invoice',
+      invoiceId: INVOICE_UUID,
+      variant: 'invoice',
+      actor: adminActor,
+    });
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('no_recipient');
+    expect(deps.outbox.enqueue).not.toHaveBeenCalled();
+    expect(deps.audit.emit).toHaveBeenCalledWith(
+      null,
+      expect.objectContaining({
+        eventType: 'auto_email_skipped_no_recipient',
+        payload: expect.objectContaining({
+          email_event_type: 'invoice_pdf_resent',
+        }),
+      }),
+    );
+  });
+
+  it('credit-note resend goes to the live primary of the original invoice', async () => {
+    const cn = creditNoteFixture();
+    const deps = makeDeps(null, cn, makeRecipientLocaleFake({ email: 'promoted-b@example.com' }));
+
+    const r = await resendPdf(deps, {
+      tenantId: TENANT,
+      kind: 'credit_note',
+      creditNoteId: CN_UUID,
+      actor: adminActor,
+    });
+
+    expect(r.ok).toBe(true);
+    const enqCall = (deps.outbox.enqueue as unknown as {
+      mock: { calls: unknown[][] };
+    }).mock.calls[0]![1] as Record<string, unknown>;
+    expect(enqCall.recipientEmail).toBe('promoted-b@example.com');
+  });
+
+  it('credit-note resend with no live primary → no_recipient (the guard this arm never had)', async () => {
+    const cn = creditNoteFixture();
+    const deps = makeDeps(null, cn, makeRecipientLocaleFake({ email: null }));
+
+    const r = await resendPdf(deps, {
+      tenantId: TENANT,
+      kind: 'credit_note',
+      creditNoteId: CN_UUID,
+      actor: adminActor,
+    });
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('no_recipient');
+    expect(deps.outbox.enqueue).not.toHaveBeenCalled();
+  });
+});

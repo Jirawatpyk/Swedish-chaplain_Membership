@@ -6,6 +6,14 @@
  * as `member-identity-adapter.ts` (RLS still scopes both tables via the
  * per-tenant `tx`; the members barrel exposes no tx-threaded locale read).
  *
+ * 108: both reads also state `removed_at IS NULL` next to `is_primary`. That
+ * is REDUNDANT today — migration 0009's CHECK `contacts_primary_not_removed`
+ * already forbids a removed row from staying primary (verified by mutation:
+ * dropping the predicate changes no result, and the seed that would prove it
+ * is rejected by the constraint). It stays because both reads should state the
+ * whole rule they depend on rather than inherit half of it from a constraint
+ * three migrations away.
+ *
  * Precedence: `members.preferred_locale` (nullable — only ever set by an
  * explicit member/admin choice) COALESCEs over the primary contact's
  * `preferred_language` (NOT NULL DEFAULT 'en' — indistinguishable from "never

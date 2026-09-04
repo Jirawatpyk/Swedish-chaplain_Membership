@@ -512,8 +512,10 @@ describe('voidInvoice — S32 non-member event rows + S31 kind-true re-render', 
   });
 
   it('member prefers Thai → invoice_voided outbox row carries recipientLocale=th (email-locale audit 2026-07-16)', async () => {
-    const deps = makeDeps(makeIssuedMembership());
-    deps.recipientLocale.getMemberEmailLocale = vi.fn(async () => 'th' as const);
+    // 108 — address AND locale now come from the same live primary-contact read.
+    const deps = makeDeps(makeIssuedMembership(), {
+      recipientLocale: makeRecipientLocaleFake({ email: 'sim.contact@void.test', locale: 'th' }),
+    });
     const r = await voidInvoice(deps, INPUT);
     expect(r.ok).toBe(true);
     const outboxCall = (deps.outbox.enqueue as ReturnType<typeof vi.fn>).mock.calls[0];
@@ -935,5 +937,59 @@ describe('H1 — paid membership void refusal boundary', () => {
     if (!r.ok) return;
     expect(r.value.status).toBe('void');
     expect(deps.invoiceRepo.applyVoid).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('voidInvoice — the cancellation notice reaches the LIVE primary (108 FR-001)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('sends to the contact who is primary NOW, not the address frozen at issue', async () => {
+    const deps = makeDeps(makeIssuedMembership(), {
+      recipientLocale: makeRecipientLocaleFake({ email: 'promoted-b@void.test' }),
+    });
+
+    const r = await voidInvoice(deps, INPUT);
+
+    expect(r.ok).toBe(true);
+    const outboxCall = vi.mocked(deps.outbox.enqueue).mock.calls[0];
+    expect(outboxCall![1].eventType).toBe('invoice_voided');
+    expect(outboxCall![1].recipientEmail).toBe('promoted-b@void.test');
+  });
+
+  it('no live primary → no cancellation email and an audited skip (the guard void-invoice never had)', async () => {
+    const deps = makeDeps(makeIssuedMembership(), {
+      recipientLocale: makeRecipientLocaleFake({ email: null }),
+    });
+
+    const r = await voidInvoice(deps, INPUT);
+
+    expect(r.ok).toBe(true);
+    expect(deps.outbox.enqueue).not.toHaveBeenCalled();
+    expect(deps.audit.emit).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        eventType: 'auto_email_skipped_no_recipient',
+        payload: expect.objectContaining({
+          invoice_id: INVOICE_ID,
+          skipped_for_member_id: 'member-1',
+          email_event_type: 'invoice_voided',
+        }),
+      }),
+    );
+    // and the void itself still succeeded — a missing contact must never block
+    // a §86/10 cancellation.
+    expect(deps.invoiceRepo.withTx).toHaveBeenCalled();
+  });
+
+  it('takes the locale from the same live primary-contact read', async () => {
+    const deps = makeDeps(makeIssuedMembership(), {
+      recipientLocale: makeRecipientLocaleFake({ email: 'promoted-b@void.test', locale: 'th' }),
+    });
+
+    const r = await voidInvoice(deps, INPUT);
+
+    expect(r.ok).toBe(true);
+    const outboxCall = vi.mocked(deps.outbox.enqueue).mock.calls[0];
+    expect(outboxCall![1].recipientLocale).toBe('th');
   });
 });
