@@ -347,10 +347,46 @@ describe('stripCommentLines — nested template literals (108 PR-A re-review MED
     expect(stripCommentLines(src).join('\n')).toContain('SELECT 1');
   });
 
-  it('a `${` left open at end of line keeps the template open', () => {
-    const src = ['const q = `${', '  cond ? `a` : `b`', '}`;'].join('\n');
-    // The point is that line 2 is not mistaken for top-level code that ends the
-    // template early; the closing backtick on line 3 must still terminate it.
-    expect(stripCommentLines(src)).toHaveLength(3);
+  // The previous version of this test asserted `toHaveLength(3)` on a 3-line
+  // input. `stripCommentLines` pushes exactly one result per input line, so it
+  // held for every possible input under every possible implementation — a test
+  // that cannot fail is a claim of coverage, not coverage (review round 3,
+  // finding #7). Asserting on the CONTENT is what pins the stated invariant,
+  // and doing that immediately showed the invariant did not hold.
+
+  it('a `${` left open at end of line resumes in CODE context on the next line', () => {
+    const src = [
+      'const q = `${',
+      '  cond ? a : b // note',
+      '}` + snap.primary_contact_email;',
+    ].join('\n');
+    const out = stripCommentLines(src).join('\n');
+    // Line 2 sits INSIDE the `${…}` expression, i.e. real code — so `//` there
+    // is a real comment. Only the whole frame stack, carried across the
+    // newline, knows that. A boolean "we are in a template" cannot: it read
+    // line 2 as template TEXT, kept the comment, and let the backticks on that
+    // line push and pop the wrong frame — scrambling every later line.
+    expect(out).not.toContain('note');
+    expect(out).toContain('primary_contact_email');
+  });
+
+  it('a brace inside `${…}` does not close the frame', () => {
+    // The `}` of the object literal is not the `}` of the interpolation.
+    // Popping the frame on it drops the scanner into template TEXT
+    // mid-expression, so the backtick that follows reads as the CLOSING
+    // backtick of the outer template — and the `//` after it truncates the
+    // rest of the line.
+    const src = 'const s = `${fn({ a: 1 }, `//x`)}` + snap.primary_contact_email;';
+    expect(stripCommentLines(src).join('\n')).toContain('primary_contact_email');
+  });
+
+  it('an unterminated quote does NOT leak into the next line', () => {
+    // `'` and `"` cannot span lines; only a template can. If the frame survived
+    // EOL, line 2 would be scanned as string TEXT and its comment kept — the
+    // carry-the-stack fix must not over-carry.
+    const src = ["const bad = 'oops", 'const ok = 1; // note', 'check(x);'].join('\n');
+    const out = stripCommentLines(src).join('\n');
+    expect(out).not.toContain('note');
+    expect(out).toContain('check(x)');
   });
 });

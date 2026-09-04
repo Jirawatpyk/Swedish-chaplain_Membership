@@ -117,27 +117,29 @@ export function stripCommentLines(src: string): readonly string[] {
   let inBlock = false;
   // Set when the open block came from a JSX `{/*`, so its `}` is consumed too.
   let inJsxBlock = false;
-  // Template literals span lines; `'` and `"` cannot. `inBlock` was already
-  // carried across lines and `quote` was not, so a `/*` on the CONTINUATION
-  // line of a multi-line template was scanned as CODE and opened a phantom
-  // block — the same failure this module exists to close, one state variable
-  // away. Latent when found (no file in scope triggered it) but the trigger is
-  // a near-cousin of the original incident: a glob or a SQL comment inside a
-  // `sql`-tagged template would do it, and 21 in-scope files carry multi-line
-  // templates.
-  let inTemplate = false;
+  // A STACK, not one value, and carried ACROSS lines rather than rebuilt.
+  //
+  // A template literal's `${…}` re-enters CODE context, where another backtick
+  // opens a NESTED template — and with a single variable the inner backtick
+  // closed the OUTER one. Everything after it on that line was then read as
+  // code, so a `//` inside the outer template (a URL, usually) truncated the
+  // rest of the line and every gate built on this helper went blind to it.
+  // Measured shape:
+  //   const to = `${a ? `https://x` : `y`}${snap.primary_contact_email}`;
+  // — the token after the nested template was invisible. Six gates share this.
+  //
+  // The stack lives out here because templates span lines and their frames must
+  // too. Reducing it at EOL to the boolean "some template is open" (what this
+  // did before, review round 3 finding #7) LOSES the `${…}` frame: a multi-line
+  // interpolation resumed the next line in template TEXT instead of code, so a
+  // `//` comment there was kept and the backticks on that line pushed and
+  // popped the wrong frame — corrupting every later line in the file. `'` and
+  // `"` are the exception: they cannot span a line, so their frames are unwound
+  // at EOL (below) rather than carried.
+  const stack: string[] = [];
   for (const line of src.split('\n')) {
     let res = '';
     let i = 0;
-    // A STACK, not one value. A template literal's `${…}` re-enters CODE
-    // context, where another backtick opens a NESTED template — and with a
-    // single variable the inner backtick closed the OUTER one. Everything after
-    // it on that line was then read as code, so a `//` inside the outer template
-    // (a URL, usually) truncated the rest of the line and every gate built on
-    // this helper went blind to it. Measured shape:
-    //   const to = `${a ? `https://x` : `y`}${snap.primary_contact_email}`;
-    // — the token after the nested template was invisible. Six gates share this.
-    const stack: string[] = inTemplate ? ['`'] : [];
     while (i < line.length) {
       const c = line[i]!;
       const next = line[i + 1];
@@ -159,7 +161,8 @@ export function stripCommentLines(src: string): readonly string[] {
         continue;
       }
       const open = stack[stack.length - 1] ?? null;
-      if (open !== null && open !== '${') {
+      // `${` and `{` are CODE frames; only a quote or backtick frame is text.
+      if (open !== null && open !== '${' && open !== '{') {
         if (c === '\\') {
           res += c + (next ?? '');
           i += 2;
@@ -180,7 +183,14 @@ export function stripCommentLines(src: string): readonly string[] {
         continue;
       }
       // Code context — top level, or inside a template's `${…}`.
-      if (open === '${' && c === '}') {
+      //
+      // Braces inside an interpolation must BALANCE. Popping the frame on the
+      // first `}` closed it on the one that ends an object literal or a block
+      // body — `` `${fn({a: 1}, `//x`)}` `` dropped into template TEXT
+      // mid-expression, so the next backtick read as the outer template's
+      // closing one and the `//` after it ate the rest of the line. Same
+      // blindness class the stack was introduced to end, one nesting level in.
+      if (c === '}' && (open === '${' || open === '{')) {
         stack.pop();
         res += c;
         i += 1;
@@ -194,6 +204,16 @@ export function stripCommentLines(src: string): readonly string[] {
         inBlock = true;
         inJsxBlock = true;
         i += 3;
+        continue;
+      }
+      // Tracked only INSIDE an interpolation, where an unbalanced pop is what
+      // corrupts the scan. At top level a `}` closing a function body would
+      // otherwise have to find a `{` opened many lines earlier, so leave those
+      // alone — the scanner has no reason to care about them.
+      if (c === '{' && (open === '${' || open === '{')) {
+        stack.push('{');
+        res += c;
+        i += 1;
         continue;
       }
       if (c === '"' || c === "'" || c === '`') {
@@ -236,10 +256,16 @@ export function stripCommentLines(src: string): readonly string[] {
       res += c;
       i += 1;
     }
-    // Carry an unterminated template to the next line. A `${…}` still open at
-    // EOL sits ABOVE its template frame on the stack, so ask the whole stack
-    // rather than just the top.
-    inTemplate = stack.includes('`');
+    // Template and interpolation frames carry to the next line untouched. A
+    // single- or double-quoted string cannot span one, so an unterminated quote
+    // is a typo (or a lone apostrophe inside a comment this pass already
+    // blanked) — unwind those frames, or every following line of the file would
+    // be scanned as string text.
+    while (stack.length > 0) {
+      const top = stack[stack.length - 1]!;
+      if (top !== "'" && top !== '"') break;
+      stack.pop();
+    }
     out.push(res);
   }
   return out;
