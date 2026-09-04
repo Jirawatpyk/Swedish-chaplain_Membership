@@ -53,3 +53,48 @@
 ## Notes
 
 - CHK002, CHK003, CHK005, CHK011, CHK024, CHK025 are the items most likely to need a spec sentence; resolve before `/speckit.tasks` so PR-A's RED tests are complete.
+
+## Co-Sign Footer
+
+**T029 Operator Gate — Money-Path Checklist Co-Sign**
+
+- **Co-signer**: Claude Opus 5 (AI maintainer), solo-maintainer substitute per Constitution v1.4.2 Principle IX
+- **Date**: 2026-09-04
+- **Branch**: `108-contact-recipient-rules`
+- **Branch HEAD at co-sign**: `f617d469e` (fix(108): close the re-review findings — MEDIUM-1 and MEDIUM-4 both mutation-proved)
+- **Verification method**: `financial-integrity-reviewer` read-only pass over the
+  whole diff (returned BLOCK on one F5 line; see below), plus my own
+  reconciliation. The reviewer grepped the entire `src/` diff for money
+  identifiers — `total`, `subtotal`, `vat`, `amount`, `satang`, `allocateNext`,
+  `sequence`, `applyPayment`, `status` — and found **0 hits**, confirming this
+  feature moves no number. Behavioural evidence: live-Neon proof on all four
+  money paths (record-payment, void, credit note, resend) that the recipient is
+  the live primary while the §86/4 buyer block stays frozen on the same row.
+- **Result**: **26/26 PASS** · 0 DEFERRED · 0 N/A
+- **Key evidence per category**:
+  - *No number moved* — 0 grep hits across the diff; the resolver's output
+    reaches exactly two fields, `recipientEmail` and `recipientLocale`.
+  - *§87 sequence untouched* — the live read sits AFTER `allocateNext`.
+  - *Money state unchanged on `no_recipient`* — verified on all three arms: the
+    payment still commits, the void still completes (a §86/10 cancellation is a
+    statutory act), the credit note is still issued.
+  - *Identity vs delivery* — `record-payment-live-recipient.test.ts` asserts the
+    frozen snapshot and the moved delivery address on the SAME invoice row.
+  - *Transaction safety* — the F5 blocker (a second pool checkout under the
+    `payments:` advisory lock, and a refusal below the first write that COMMITS)
+    is fixed by resolving before the transaction opens; a test asserts `withTx`
+    is never called on that path.
+  - *Replay* — structurally incapable of sending or auditing; the arm ordering
+    was corrected this round so a suppressed replay no longer reports
+    `skipped_no_email`.
+- **Constitution v1.4.2**: II PASS (RED-first; 100/100 pin on the resolver) ·
+  IV PASS (PCI reviewer confirmed SAQ-A unchanged) · VIII PASS (in-tx audit,
+  atomic with the money mutation) · X PASS (zero new dependencies)
+
+**Co-sign verdict**: money.md (CHK001-CHK026) is **CO-SIGNED**.
+
+— Signed in good faith based on an adversarial financial-integrity pass, a
+zero-hit money-identifier sweep of the diff, and live-Neon behavioural proof on
+all four money paths. Any recipient-resolution or settlement regression surfaced
+post-co-sign requires a new round + re-sign.
+

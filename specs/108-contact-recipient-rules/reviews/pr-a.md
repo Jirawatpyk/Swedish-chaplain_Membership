@@ -235,6 +235,21 @@ capable of failing.
 - **LOW-6 / INFO-2/4/5/6/7** — test-depth and doc items recorded in the review;
   none change behaviour.
 
+## Status
+
+**PR-A is review-complete.** T001–T029 + T101/T102/T107 all closed. Two rounds of
+review (three reviewers, then a fresh-context re-review), every finding either
+fixed or deferred with a written reason. `checklists/security.md` and
+`checklists/money.md` carry Constitution v1.4.2 co-sign footers naming the
+verification method.
+
+Gate run at the co-signed HEAD: lint 0 · typecheck 0 · check:i18n 5171×3 ·
+check:money-recipient 615 files / 17 justified reads · check:actor-role-truth ·
+check:authorization-role-reads · check:staff-page-guard · check:api-route-guard ·
+check:portal-guard · unit+contract 1197 files / 13238 tests · four live-Neon
+suites 29 tests. (The earlier T028 table was pinned to a pre-remediation commit;
+these numbers are HEAD.)
+
 ## Open at hand-off
 
 - **T029** — the reviewer stack (`financial-integrity-reviewer`,

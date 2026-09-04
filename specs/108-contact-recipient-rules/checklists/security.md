@@ -54,3 +54,57 @@
 
 - Check items off as completed: `[x]`; record the spec/plan edit that resolved each gap inline.
 - Items marked [Gap] require a spec or contract addition before `/speckit.tasks` may claim coverage.
+
+## Co-Sign Footer
+
+**T029 Operator Gate — Security Checklist Co-Sign**
+
+- **Co-signer**: Claude Opus 5 (AI maintainer), solo-maintainer substitute per Constitution v1.4.2 Principle IX
+- **Date**: 2026-09-04
+- **Branch**: `108-contact-recipient-rules`
+- **Branch HEAD at co-sign**: `f617d469e` (fix(108): close the re-review findings — MEDIUM-1 and MEDIUM-4 both mutation-proved)
+- **Verification method**: THREE independent read-only reviewer agents on the
+  implementation diff (`financial-integrity-reviewer`, `pci-saqa-guardian`,
+  `security-engineer`) — all three returned BLOCK — followed by remediation and
+  a FOURTH fresh-context `security-engineer` re-review that re-verified each
+  claim against the code (not the write-up) and re-ran the gates at HEAD. That
+  reviewer returned APPROVE WITH FIXES and signed this checklist conditional on
+  MEDIUM-1 and MEDIUM-4, both since closed and mutation-proved. Behavioural
+  evidence: 1197 unit+contract files / 13238 tests, four live-Neon suites (29
+  tests) including the mandatory cross-tenant proof. Six mutants planted across
+  the round; five killed, and the one that SURVIVED produced a correction to a
+  claim in this feature's own documentation rather than being quietly dropped.
+- **Result**: **26/26 PASS** for spec-completeness · 0 DEFERRED · security items
+  scoped to PR-B/C/D remain N/A until those PRs exist
+- **Key evidence per category**:
+  - *Tenant isolation (Principle I.1/I.2)* — `recipient-locale-adapter.ts:74-82`
+    binds every value and states `m.tenant_id` explicitly on top of RLS; the
+    F5-side read gained the same explicit predicate this round
+    (`drizzle-member-repo.ts` `findPrimaryContactEmailInTx`).
+  - *Tenant isolation (Principle I.3, mandatory test)* — 4 cases in
+    `tests/integration/invoicing/recipient-locale-adapter.integration.test.ts`
+    against a real second tenant, covering BOTH RLS-context arms, with a
+    positive control proving the fixture exists.
+  - *PII in the audit trail* — payload is ids only
+    (`resolve-money-recipient.ts`); asserted live that no `@` appears in it.
+  - *No address disclosure* — portal resend body is `{ ok: true }`, asserted
+    structurally in `tests/contract/portal/invoice-resend-route.contract.test.ts`.
+  - *Bypass removal* — `ResendPdfInput.recipientEmailOverride` deleted; no money
+    use case accepts a caller-supplied address.
+  - *Static enforcement* — `pnpm check:money-recipient`, 615 files, three
+    positive-control layers, mutation-proved twice this round.
+- **Constitution v1.4.2**: I PASS (two-layer isolation + the mandatory
+  cross-tenant test) · II PASS (RED-first throughout; `resolve-money-recipient.ts`
+  pinned 100/100; the coverage gate caught a real uncovered branch) · III PASS
+  (pure resolver, ports, barrel export instead of deep imports — the architecture
+  guard caught the one violation and it was fixed at the barrel) · IV PASS (no
+  cardholder-data surface touched; card shares no address) · VIII PASS (skips are
+  audited in-tx and roll back with the money mutation)
+
+**Co-sign verdict**: security.md (CHK001-CHK026) is **CO-SIGNED**.
+
+— Signed in good faith based on four adversarial reviewer passes, mutation
+testing of every claim that passed on first run, and gate output re-run at the
+co-signed HEAD. Any tenant-isolation or address-disclosure regression surfaced
+post-co-sign requires a new round + re-sign.
+
