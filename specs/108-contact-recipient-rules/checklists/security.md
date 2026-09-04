@@ -108,3 +108,35 @@ testing of every claim that passed on first run, and gate output re-run at the
 co-signed HEAD. Any tenant-isolation or address-disclosure regression surfaced
 post-co-sign requires a new round + re-sign.
 
+### Round-3 re-affirmation (1e113fbaa)
+
+Signed at an earlier HEAD; re-derived because round 3 restructured a payment
+path and changed three admin surfaces.
+
+- **Tenant isolation** — unchanged. No read's tenant predicate was touched; the
+  cross-tenant integration test (Principle I.3) is green. The three FR-003
+  banner sites now reach the recipient through `resolveMoneyRecipient` +
+  `recipientLocaleAdapter`, which self-scopes via `runInTenant`, so they inherit
+  the same RLS context as the money path rather than a page-local query.
+- **No address disclosure** — unchanged, and improved in one place: the portal's
+  `resendNoRecipient` toast no longer directs a member to an admin route their
+  role cannot reach. It still discloses no address.
+- **PII in the audit trail** — unchanged; ids only. The one new emitter argument
+  is `invoiceSubject`, an enum.
+- **New failure surface reviewed** — swapping `getMember` (returns a `Result`)
+  for the resolver (can throw) added a 500 path to two staff pages; all three
+  banner sites are now best-effort (`.catch(() => false)`), which fails toward
+  hiding a warning rather than toward denying access or taking a page down.
+- **Static enforcement** — `pnpm check:money-recipient` still PASSES, as do the
+  four RBAC/audit-truth gates. The shared scanner `scripts/lib/source-scan.ts`
+  was fixed this round (a lost `${…}` frame across newlines, and a `}` that
+  popped the frame from inside an object literal); all five gates that read
+  through it re-run clean, so nothing previously hidden was being hidden.
+- **Constitution v1.4.2**: I PASS · II PASS · III PASS (the barrel is still the
+  only route; architecture guards 133 green) · IV PASS (no cardholder-data
+  surface touched) · VIII PASS.
+
+Verification at HEAD `1e113fbaa`: lint 0 · typecheck 0 · 13 static gates PASS ·
+full unit suite green · pnpm test:coverage exit 0 (1197 files / 13249 tests; the three pinned money files — resolve-money-recipient.ts, record-payment.ts, initiate-payment.ts — all at 100 lines/branches/functions) · live-Neon suites 21 tests green.
+
+**Re-affirmed**: security.md (CHK001-CHK026) remains **CO-SIGNED** at this HEAD.

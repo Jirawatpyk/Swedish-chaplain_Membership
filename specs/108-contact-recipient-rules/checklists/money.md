@@ -82,8 +82,19 @@
     frozen snapshot and the moved delivery address on the SAME invoice row.
   - *Transaction safety* — the F5 blocker (a second pool checkout under the
     `payments:` advisory lock, and a refusal below the first write that COMMITS)
-    is fixed by resolving before the transaction opens; a test asserts `withTx`
-    is never called on that path.
+    is fixed by splitting the READ from the REFUSAL. **Amended in round 3** —
+    the sentence here used to read "is fixed by resolving before the transaction
+    opens; a test asserts `withTx` is never called on that path", and round 3
+    made that false, so it is corrected rather than re-affirmed. The read still
+    runs before the transaction opens, so the adapter's `runInTenant` never asks
+    the pool for a second connection while this request holds one. The refusal
+    now runs INSIDE the transaction, below the pending lookup (so a PromptPay
+    resume, which needs no billing address, is exempt) and above the
+    cross-method arm, which is the first write. Nothing above that line writes —
+    a transaction-scoped advisory lock and a SELECT — so the refusal still
+    leaves nothing behind, and the tests assert that property DIRECTLY (no
+    cancel, no status update, no audit, no insert, no PaymentIntent) instead of
+    through the `withTx` proxy. Both placements are mutation-proved.
   - *Replay* — structurally incapable of sending or auditing; the arm ordering
     was corrected this round so a suppressed replay no longer reports
     `skipped_no_email`.
@@ -98,3 +109,34 @@ zero-hit money-identifier sweep of the diff, and live-Neon behavioural proof on
 all four money paths. Any recipient-resolution or settlement regression surfaced
 post-co-sign requires a new round + re-sign.
 
+### Round-3 re-affirmation (1e113fbaa)
+
+The co-sign above was signed at an earlier HEAD. Round 3 moved the refusal
+placement inside a payment path, restructured `void-invoice`'s auto-email
+branch, and changed what reaches Stripe (the address is now trimmed), so the
+signature is re-derived rather than assumed to carry.
+
+- **No number moved, still.** Round 3 touched no amount, no VAT arithmetic, no
+  document-state transition and no `§87` sequence. The only value semantics that
+  changed is whitespace: `resolveMoneyRecipient` and the F5 billing read now
+  return the TRIMMED address they were already testing, so `'  a@b.com  '` no
+  longer reaches Stripe's `billing_details.email` or
+  `notifications_outbox.to_email` verbatim.
+- **Money state on `no_recipient`** — unchanged on all three arms; the
+  `void-invoice` restructure is behaviour-preserving (a plain `if
+  (shouldAutoEmail)` replacing a ternary plus two conditions that could never be
+  false), and its 37-test suite is green.
+- **The F5 refusal still precedes every write**, mutation-proved in both
+  directions: moving it below the cross-method arm kills the card-survival test;
+  removing the resume exemption kills both new resume tests.
+- **Reads verified, not assumed.** Review finding #13 claimed the four
+  primary-contact reads could disagree; `contacts_one_primary_per_member`
+  (migration 0009) makes that impossible, confirmed against the live index and
+  pinned by `tests/integration/invoicing/primary-contact-read-agreement.test.ts`,
+  which asserts on `constraint_name` + SQLSTATE `23505`.
+
+Verification at HEAD `1e113fbaa`: lint 0 · typecheck 0 · 13 static gates PASS ·
+full unit suite green · pnpm test:coverage exit 0 (1197 files / 13249 tests; the three pinned money files — resolve-money-recipient.ts, record-payment.ts, initiate-payment.ts — all at 100 lines/branches/functions) · live-Neon money suites 21 tests green.
+
+**Re-affirmed**: money.md (CHK001-CHK026) remains **CO-SIGNED** at this HEAD,
+with the transaction-safety bullet amended above.
