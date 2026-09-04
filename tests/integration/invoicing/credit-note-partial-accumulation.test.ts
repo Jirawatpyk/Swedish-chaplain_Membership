@@ -19,7 +19,7 @@
  * real so the lock-ordering guarantee is genuinely exercised.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { runInTenant } from '@/lib/db';
 import { makeDrizzleInvoiceRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-invoice-repo';
@@ -41,6 +41,10 @@ import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 import { makeRecipientLocaleFake } from '../../helpers/recipient-locale-fake';
+// 108 T010 — the REAL adapter for the live-recipient case below.
+import { recipientLocaleAdapter } from '@/modules/invoicing/infrastructure/adapters/recipient-locale-adapter';
+import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
+import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 
 const MATRIX: BenefitMatrix = {
   eblast_per_year: 1,
@@ -243,6 +247,8 @@ describe('F4 US6 — credit-note partial accumulation + concurrent race (T075)',
       await tx.delete(creditNotes).where(eq(creditNotes.tenantId, tenant.ctx.slug));
       await tx.delete(invoiceLines).where(eq(invoiceLines.tenantId, tenant.ctx.slug));
       await tx.delete(invoices).where(eq(invoices.tenantId, tenant.ctx.slug));
+      // 108 — the live-recipient case seeds contacts, which FK to members.
+      await tx.delete(contacts).where(eq(contacts.tenantId, tenant.ctx.slug));
       await tx.delete(members).where(eq(members.tenantId, tenant.ctx.slug));
     });
   });
@@ -632,4 +638,86 @@ describe('F4 US6 — credit-note partial accumulation + concurrent race (T075)',
     expect(cnRows).toHaveLength(1);
     expect(cnRows[0]?.seq).toBeGreaterThanOrEqual(1);
   }, 90_000);
+
+  // ── 108 T010 (FR-001/FR-003) — the credit note's recipient ────────────────
+  //
+  // A credit note follows its original invoice's buyer, so the address is the
+  // live primary of THAT member. These two use the real adapter against real
+  // contact rows; the rest of the file mocks the port because it is testing
+  // accumulation arithmetic.
+
+  it('108 — the credit-note email goes to the LIVE primary, not the snapshot address', async () => {
+    const { invoiceId, memberId } = await seedInvoiceInStatus(tenant, user, planId, 'paid');
+    const live = `cn-live-${randomUUID().slice(0, 8)}@example.com`;
+    await runInTenant(tenant.ctx, (tx) =>
+      tx.insert(contacts).values({
+        tenantId: tenant.ctx.slug,
+        contactId: randomUUID(),
+        memberId,
+        firstName: 'CN',
+        lastName: 'Primary',
+        email: live,
+        isPrimary: true,
+      }),
+    );
+    const deps = { ...makeDeps(tenant.ctx.slug), recipientLocale: recipientLocaleAdapter };
+
+    const r = await issueCreditNote(deps, {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      requestId: `cn-live-${randomUUID()}`,
+      invoiceId,
+      creditTotalSatang: 10_700n,
+      reason: 'partial refund — live recipient',
+    });
+
+    expect(r.ok, r.ok ? 'ok' : JSON.stringify(r)).toBe(true);
+    if (r.ok) expect(r.value.emailDelivery).toBe('sent');
+    expect(deps.outbox.enqueue).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ eventType: 'credit_note_issued', recipientEmail: live }),
+    );
+    expect(deps.outbox.enqueue).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ recipientEmail: SNAP_MEMBER.primary_contact_email }),
+    );
+  }, 60_000);
+
+  it('108 — no live primary: the credit note is still issued, with an audited skip', async () => {
+    const { invoiceId, memberId } = await seedInvoiceInStatus(tenant, user, planId, 'paid');
+    // No contacts at all — the §86/10 document must still be issued: refusing
+    // to credit a member because their contact data is broken would be worse.
+    const deps = { ...makeDeps(tenant.ctx.slug), recipientLocale: recipientLocaleAdapter };
+
+    const r = await issueCreditNote(deps, {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      requestId: `cn-nolive-${randomUUID()}`,
+      invoiceId,
+      creditTotalSatang: 10_700n,
+      reason: 'partial refund — no primary contact',
+    });
+
+    expect(r.ok, r.ok ? 'ok' : JSON.stringify(r)).toBe(true);
+    if (r.ok) expect(r.value.emailDelivery).toBe('skipped_no_recipient');
+    expect(deps.outbox.enqueue).not.toHaveBeenCalled();
+
+    const audit = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({ payload: auditLog.payload })
+        .from(auditLog)
+        .where(
+          and(
+            eq(auditLog.tenantId, tenant.ctx.slug),
+            eq(auditLog.eventType, 'auto_email_skipped_no_recipient'),
+            sql`${auditLog.payload}->>'invoice_id' = ${invoiceId}`,
+          ),
+        ),
+    );
+    expect(audit).toHaveLength(1);
+    const payload = audit[0]!.payload as Record<string, unknown>;
+    expect(payload.email_event_type).toBe('credit_note_issued');
+    expect(payload.skipped_for_member_id).toBe(memberId);
+    expect(payload.credit_note_id).toBeDefined();
+  }, 60_000);
 });
