@@ -69,6 +69,7 @@ import { InvitePortalButton } from '@/components/members/invite-portal-button';
 import { ResendBouncedInviteButton } from '@/components/members/resend-bounced-invite-button';
 import { ArchivedBanner } from '@/components/members/archived-banner';
 import { NoPrimaryContactBanner } from '@/components/members/no-primary-contact-banner';
+import { recipientLocaleAdapter, resolveMoneyRecipient } from '@/modules/invoicing';
 import { ArchiveMemberButton } from '@/components/members/archive-member-button';
 import { EraseMemberButton } from '@/components/members/erase-member-button';
 import { ErasedBanner } from '@/components/members/erased-banner';
@@ -772,6 +773,30 @@ export default async function MemberDetailPage({
       : null;
 
   const isErased = erasureStatus.erasedAt !== null;
+
+  // 108 FR-003 — would a money email for this member reach anyone? Asked of the
+  // RESOLVER, so the banner and the money path can never disagree about what
+  // counts as deliverable. The page's own `primary` lookup answers a DIFFERENT
+  // question — which contact to DISPLAY as primary — and a primary contact with
+  // an empty `email` column is a perfectly good thing to display and a
+  // completely undeliverable address. Using one for the other is what let the
+  // banner stay silent while every receipt, void notice and credit note for
+  // this member was being skipped (review round 3 finding #2).
+  //
+  // Skipped entirely for an archived or erased member: neither is billed, so
+  // there is nothing to fail to deliver, and the read is not worth making.
+  const moneyEmailUndeliverable =
+    isErased || member.status === 'archived'
+      ? false
+      : (
+          await resolveMoneyRecipient(
+            recipientLocaleAdapter,
+            null,
+            tenant.slug,
+            member.memberId,
+            null,
+          )
+        ).kind === 'no_recipient';
   // Post-erase state (COMP-1 US3-A S5): the modify affordances — Erase, Archive,
   // Edit, add-contact, Renew — are gated on write-role AND not-yet-erased. Named
   // once so the four call sites stay in lock-step (Archive/Edit/add-contact
@@ -921,12 +946,9 @@ export default async function MemberDetailPage({
           />
         )}
 
-      {/* 108 FR-003 — money emails are being skipped for this member. Not
-          shown for an archived or erased member: neither is billed, so there
-          is nothing to fail to deliver. */}
-      {!isErased && member.status !== 'archived' && !primary && (
-        <NoPrimaryContactBanner memberId={member.memberId} />
-      )}
+      {/* 108 FR-003 — money emails are being skipped for this member. The
+          archived / erased exclusions live in `moneyEmailUndeliverable`. */}
+      {moneyEmailUndeliverable && <NoPrimaryContactBanner memberId={member.memberId} />}
         <section aria-labelledby="member-company-heading">
         <Card>
           <CardHeader>

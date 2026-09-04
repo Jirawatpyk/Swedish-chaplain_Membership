@@ -46,6 +46,9 @@ async function readLocale(
                  AND c.member_id = m.member_id
                  AND c.is_primary = true
                  AND c.removed_at IS NULL
+               -- At most ONE row can match: contacts_one_primary_per_member
+               -- (migration 0009) is a UNIQUE index whose WHERE clause is this
+               -- predicate exactly. See the note on readRecipient below.
                LIMIT 1)
            ) AS locale
       FROM members m
@@ -78,6 +81,14 @@ async function readRecipient(
        AND c.removed_at IS NULL
      WHERE m.tenant_id = ${tenantId}
        AND m.member_id = ${memberId}
+     -- Exactly one row can match. contacts_one_primary_per_member (migration
+     -- 0009) is a UNIQUE index on (tenant_id, member_id) whose WHERE clause is
+     -- character-for-character the two conditions above, so LIMIT 1 is
+     -- unambiguous and needs no ORDER BY tiebreak. Review round 3 finding #13
+     -- asked for one on the premise that the invariant was not yet a DB
+     -- constraint; it has been since 0009 (PR-B adds the at-LEAST-one half, not
+     -- the at-most-one half). Verified against the live index definition, and
+     -- pinned by tests/integration/invoicing/primary-contact-read-agreement.
      LIMIT 1
   `)) as unknown as Array<{ email: string | null; locale: string | null }>;
   const row = rows[0];

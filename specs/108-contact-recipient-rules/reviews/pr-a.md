@@ -236,6 +236,9 @@ capable of failing.
   page already carrying one extra read for this banner is the wrong trade for a
   cosmetic case. The gap is written into both call sites, naming the right fix
   (the domain type, not another round-trip).
+  *(Round 3 note: the "one extra read" half of this reasoning is gone — the
+  banner no longer costs a `getMember` on either page. The finding itself still
+  stands: the fix belongs on the domain type.)*
 - **LOW-5** — resolving above the resume check means a member who loses their
   primary contact mid-flight gets a 409 instead of their existing PromptPay
   `clientSecret`. There IS a shape that fixes it (resolve pre-tx, refuse inside
@@ -246,6 +249,11 @@ capable of failing.
   happened before we refused" — and that fix necessarily weakens it. A rare UX
   edge is the right thing to trade for a structural guarantee against a money
   bug that already shipped once.
+
+  **REVERSED in round 3 — see finding #1 below.** A third independent reviewer
+  raised it, and the reasoning above does not hold up: the `withTx` assertion
+  was a proxy for "nothing was written", and that property can be asserted
+  directly and more precisely. Nothing was traded away.
 - **LOW-6 (second half)** — the new explicit `contacts.tenant_id` predicate has
   no test of its own; proving it would mean disabling RLS. The reviewer's own
   reading applies: RLS is the wall, this is the second layer, and the wall is
@@ -253,20 +261,121 @@ capable of failing.
 - **LOW-6 / INFO-2/4/5/6/7** — test-depth and doc items recorded in the review;
   none change behaviour.
 
+## T029 — round 3: `/code-review` over the whole branch diff (2026-09-05)
+
+Ten finder angles over `main...HEAD` (~7.9k insertions), deduped, plus a gap
+sweep. Fifteen findings. Fourteen were real; one was wrong on its premise, and
+finding out which took a database query rather than a re-reading.
+
+Order of work was deliberate: **the gate helper went first.** Five gates share
+`scripts/lib/source-scan.ts`, so changing what it can see changes what all of
+them see. Doing it after the money edits would have made it impossible to say
+which change moved a gate.
+
+### Fixed
+
+| # | Finding | What it actually was |
+|---|---|---|
+| 7 | `source-scan` test asserted a tautology | `toHaveLength(3)` on a 3-line input — true for every input under every implementation. Rewriting it to assert CONTENT failed immediately, twice. |
+| 9 | `${…}` frame popped on any `}` | The `}` of an object literal closed the interpolation; the next backtick then read as the outer template's closing one, and the `//` after it ate the rest of the line. |
+| — | (found via #7) EOL reduced the stack to a boolean | A multi-line `${…}` resumed the next line in template TEXT, keeping comments and pushing/popping the wrong frames for every later line. The whole stack now carries; `'` and `"` frames unwind at EOL because they cannot span a line. |
+| 1 | Pre-tx billing read also gated the RESUME path | The one I had declined — see below. |
+| 8 | F5 `primary_contact_missing` emitted no metric | F4's identical condition has had one all along, so the PAYMENT-BLOCKING variant — the one a member notices — was the one with nothing to alert on. Added `payments.billing_recipient_blocked{tenant,reason}`. |
+| 2 | Banner re-implemented the recipient predicate | `isPrimary && removedAt === null` is two thirds of the rule. A primary contact with an empty `email` makes the resolver return `no_recipient` — every money email skipped, PromptPay 409 — while all three banners, finding that contact, rendered nothing. Exactly the outcome FR-003 exists to prevent. All three sites now ask `resolveMoneyRecipient`. |
+| 11 | Two hot admin pages gained a full `getMember` for one boolean | Same fix: the resolver's single indexed JOIN replaces the round-trip. The invoice page's `getMember` is draft-only again; the credit-note page's is gone. |
+| 12 | Recipient resolve inserted above the impossible-row guard | For a row with neither `member_id` nor `event_registration_id` and an empty snapshot address, the resolver returned `no_recipient` first — so staff were told to "add a contact" for an invoice with no member at all, and `resend_pdf_invoice_inconsistent_buyer`, the only signal such a row exists, never fired. |
+| 3 | Reconcile cron hardcoded `subject: 'membership'` | A voided EVENT invoice was counted as a membership skip. The caller had `loaded.invoiceSubject` in hand and did not pass it. |
+| 4 | Reads tested the TRIMMED email, returned the RAW one | `'  a@b.com  '` reached Stripe's `billing_details.email` and `notifications_outbox.to_email` verbatim. Also retires a `row!`. |
+| 5 | Portal toast was the admin string, byte for byte | It told a member to fix contacts "on the member page" — a route their role cannot reach. Rewritten in EN/TH/SV to point at the chamber staff, matching the portal's existing phrasing for staff-only fixes. |
+| 14 | `void-invoice` comment stated the opposite of the code | It claimed the resolve sat above the `shouldAutoEmail` branch "so the no-recipient case can be audited even when auto-email is on", while the code resolved INSIDE that ternary — and paid for the false claim with two guard conditions that could never be false. Collapsed to a plain `if (shouldAutoEmail)`. |
+| 15 | Wave-4 S15 fold-decision note cited a removed property | Reason (3) said the recipient is "truthiness-checked, NOT trimmed". 108 removed that difference. That note IS the decision record for whether the block may be folded into the shared helper; a stale premise in it is how the next refactor gets made on a reason nobody re-derived. |
+| 6 | CLAUDE.md said "PLANNED, no code yet" | Written in the very PR shipping ~2,700 lines, migration 0292 and a new pre-push gate. Corrected, along with the live migration number. |
+| 10 | A comment pasted twice | Removed with the surrounding rewrite. |
+
+### Finding #1 — reversing a documented refusal
+
+I recorded LOW-5 as "deliberately declined" after round 2 and told the user so.
+Round 3 raised it again: three independent reviewers on one placement, which
+earns a re-derivation rather than a repeat of my reason.
+
+My reason was that the fix weakens `expect(withTx).not.toHaveBeenCalled()`, the
+assertion guarding the round-1 money blocker. It does. But that assertion was a
+PROXY for "nothing was written", and the property itself can be asserted
+directly: no cancel, no status update, no audit, no insert, no PaymentIntent.
+Stated that way the fix costs nothing:
+
+- the READ stays pre-tx, so the adapter's `runInTenant` never asks the pool for a
+  second connection while this request holds one and the advisory lock is open;
+- the REFUSAL moves inside, BELOW the pending lookup (so a resume is exempt) and
+  ABOVE the cross-method arm (the first write). A transaction-scoped advisory
+  lock and a SELECT are not writes, so the refusal still leaves nothing behind.
+
+It also fixes a second bug I had not noticed: a transient read failure used to
+500 a member out of a resume, on a read the resume never uses.
+
+Both placements are mutation-proved — moving the block below the cross-method arm
+kills the card-survival test; removing the resume exemption kills both new resume
+tests. Neither co-signed security property regresses, so the
+`checklists/security.md` footer stands.
+
+### Finding #13 — REJECTED, on evidence
+
+The finding said the four primary-contact reads could each pick a different
+contact, since all four use `LIMIT 1` with no `ORDER BY` and "the
+exactly-one-primary invariant is not yet enforced by a DB constraint". I agreed,
+added `ORDER BY created_at, contact_id` to all four, fixed a test stub that broke
+on the longer Drizzle chain — and then the integration test meant to prove it
+could not even seed the two-live-primaries state:
+
+```
+PostgresError: duplicate key value violates unique constraint
+  "contacts_one_primary_per_member"
+```
+
+Migration 0009 has carried a partial UNIQUE index on `(tenant_id, member_id)
+WHERE is_primary = TRUE AND removed_at IS NULL` since F3. All four reads filter
+on exactly that predicate, so at most one row can match. PR-B adds the
+at-LEAST-one half, which is a different guarantee. Confirmed against the live
+index definition, not the migration text.
+
+The tiebreak was therefore **reverted**: it would have implied a multi-row case
+the database forbids, and a comment saying these reads "might otherwise disagree"
+is worse than no comment. What replaced it is a test pinning what the reads
+actually rest on — that the index is there and rejects the second row, asserted
+on `constraint_name` and SQLSTATE rather than on "something failed", since a NOT
+NULL or FK violation would satisfy a bare `toThrow` while proving nothing. If
+that index is ever dropped, finding #13 becomes real for all four reads at once,
+and this test says so.
+
+This is the second time in this feature that a redundancy I was about to
+introduce turned out to be already guaranteed by a 0009 constraint — the first
+was the `removed_at IS NULL` mutation survivor. The rule worth keeping: when a
+review says "the DB does not enforce X", query the database before writing code
+that assumes the review is right.
+
+### Finding #8 — split, not deferred whole
+
+The metric landed. The per-member AUDIT row did not: it needs a new
+`audit_event_type` value (5 places plus a migration on `0293`, the number PR-B is
+planned on), and reusing `auto_email_skipped_no_recipient` for it would be false
+— no email was skipped. That is the actor-role-truth class of lie in a different
+column. Recorded as a PR-B item rather than left to land by default.
+
 ## Status
 
-**PR-A is review-complete.** T001–T029 + T101/T102/T107 all closed. Two rounds of
-review (three reviewers, then a fresh-context re-review), every finding either
-fixed or deferred with a written reason. `checklists/security.md` and
-`checklists/money.md` carry Constitution v1.4.2 co-sign footers naming the
-verification method.
+**PR-A is review-complete.** T001–T029 + T101/T102/T107 all closed. Three rounds
+of review — three concurrent reviewers, a fresh-context re-review, then a
+ten-angle `/code-review` over the whole branch diff — with every finding either
+fixed or refused in writing. One round-2 refusal (LOW-5) was reversed in round 3;
+one round-3 finding (#13) was rejected on database evidence and the code written
+for it reverted. `checklists/security.md` and `checklists/money.md` carry
+Constitution v1.4.2 co-sign footers naming the verification method, and neither
+co-signed property regressed in round 3.
 
-Gate run at the co-signed HEAD: lint 0 · typecheck 0 · check:i18n 5171×3 ·
-check:money-recipient 615 files / 17 justified reads · check:actor-role-truth ·
-check:authorization-role-reads · check:staff-page-guard · check:api-route-guard ·
-check:portal-guard · unit+contract 1197 files / 13238 tests · four live-Neon
-suites 29 tests. (The earlier T028 table was pinned to a pre-remediation commit;
-these numbers are HEAD.)
+Gate run at HEAD: lint 0 · typecheck 0 · check:i18n 5171×3 · check:money-recipient
+· check:actor-role-truth · check:authorization-role-reads · check:staff-page-guard
+· check:api-route-guard · check:layout · check:dates · full unit suite green ·
+live-Neon suites green (incl. the new `primary-contact-read-agreement`).
 
 ## Open at hand-off
 
@@ -275,3 +384,8 @@ these numbers are HEAD.)
 - PR-B/D/C untouched. PR-B's migration `0293` still needs a fresh V1 run
   (`node --env-file=.env.production --import tsx scripts/inventory-primary-contact-invariant.ts`)
   immediately before merge.
+- **New PR-B item (round 3, finding #8):** a per-member AUDIT row for the F5
+  `primary_contact_missing` refusal. Needs a new `audit_event_type` value (5
+  places + a migration) — deliberately NOT folded into
+  `auto_email_skipped_no_recipient`, which would state that an email was skipped
+  when none was due.

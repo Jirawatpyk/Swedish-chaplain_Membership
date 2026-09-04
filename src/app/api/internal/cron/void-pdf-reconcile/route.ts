@@ -152,6 +152,14 @@ async function reEnqueueVoidCancellationEmail(
   newSha: string,
   memberId: string | null,
   snapshot: MoneyRecipientSnapshot | null,
+  /**
+   * The invoice's REAL subject, threaded rather than guessed. This site used to
+   * hardcode `'membership'` on the skip metric, so a voided EVENT invoice with a
+   * matched member was counted as a membership skip (review round 3 finding #3).
+   * Every sibling call site passes `loaded.invoiceSubject`; this one had it in
+   * hand at the caller and did not take it.
+   */
+  invoiceSubject: 'membership' | 'event',
 ): Promise<boolean> {
   // 108 FR-001 — resolve the recipient LIVE. This function used to copy
   // `o.to_email` forward from the original row, which made it the last path
@@ -189,7 +197,7 @@ async function reEnqueueVoidCancellationEmail(
         actorUserId: 'system:cron',
         memberId,
         emailEventType: 'invoice_voided',
-        subject: 'membership',
+        subject: invoiceSubject,
         invoiceId,
       });
     }
@@ -504,6 +512,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           built.value.targetA.rendered.sha256,
           loaded.memberId,
           loaded.memberIdentitySnapshot,
+          loaded.invoiceSubject,
         );
         await repo.clearVoidPdfReconcileMarker(tx, {
           tenantId: row.tenantId,

@@ -61,7 +61,11 @@ import {
   findFailedAutoEmailsByInvoice,
   resendVariantForFailedEvent,
 } from '@/modules/invoicing/infrastructure/adapters/resend-email-outbox-adapter';
-import { asInvoiceId } from '@/modules/invoicing';
+import {
+  asInvoiceId,
+  recipientLocaleAdapter,
+  resolveMoneyRecipient,
+} from '@/modules/invoicing';
 import { getMember } from '@/modules/members';
 import type { MemberId } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
@@ -212,40 +216,54 @@ export default async function InvoiceDetailPage({
   // (drafts only) alongside the display name; false for a non-member event draft
   // (which the review dialog treats as non-membership anyway).
   let buyerIsVatRegistrant = false;
-  // 108 FR-003 — this invoice's money emails go to the member's LIVE primary
-  // contact, so the page has to know whether one exists. The lookup is no
-  // longer draft-only for that reason: an ISSUED invoice whose member lost
-  // their primary contact is exactly the case the banner exists to surface.
-  let showNoPrimaryContactBanner = false;
-  if (invoice.memberId !== null) {
+  if (invoice.memberId !== null && !snapshotName) {
     const memberResult = await getMember(
       invoice.memberId as MemberId,
       { actorUserId: currentUser.id, requestId },
       buildMembersDeps(tenantCtx),
     );
     if (memberResult.ok) {
-      const { member: liveMember, contacts: liveContacts } = memberResult.value;
-      if (!snapshotName) {
-        memberDisplayName = liveMember.companyName;
-        buyerHasTaxId = liveMember.taxId !== null;
-        buyerIsVatRegistrant = liveMember.isVatRegistered;
-      }
-      // Archived members are not billed, so a missing contact is not a
-      // delivery failure for them — no banner.
-      // Archived members are not billed, so a missing contact is not a
-      // delivery failure for them — no banner.
-      //
-      // KNOWN GAP (PR-A re-review LOW-7): an ERASED member also shows it. Their
-      // contacts were scrubbed on purpose, so "add a contact" is the wrong
-      // advice. Not fixed here because `getMember`'s Member type does not carry
-      // `erasedAt` (the member page reads erasure status separately), and adding
-      // a second query to this page — already carrying one extra read for this
-      // banner — is the wrong trade for a cosmetic case. Fix with the domain
-      // type, not with another round-trip.
-      showNoPrimaryContactBanner =
-        liveMember.status !== 'archived' &&
-        !liveContacts.some((c) => c.isPrimary && c.removedAt === null);
+      const { member: liveMember } = memberResult.value;
+      memberDisplayName = liveMember.companyName;
+      buyerHasTaxId = liveMember.taxId !== null;
+      buyerIsVatRegistrant = liveMember.isVatRegistered;
     }
+  }
+
+  // 108 FR-003 — this invoice's money emails go to the member's LIVE primary
+  // contact, so the page has to know whether one exists.
+  //
+  // It ASKS THE RESOLVER rather than re-deriving the rule. The first version
+  // re-implemented the predicate inline as `isPrimary && removedAt === null`,
+  // which is only two thirds of it: a primary contact whose `email` column is
+  // empty (a bulk import that bypassed `asEmail` can store '') makes
+  // `resolveMoneyRecipient` return `no_recipient`, so every receipt, void
+  // notice, credit note and resend is skipped and PromptPay 409s — while the
+  // banner, finding that contact, rendered nothing. The member silently stopped
+  // receiving money mail with no warning on any admin surface, which is exactly
+  // what FR-003 exists to prevent. One question, one implementation: whatever
+  // the resolver counts as deliverable is what the banner reports. (Review
+  // round 3 finding #2; the same call replaces a whole `getMember` round-trip
+  // with one indexed JOIN — finding #11.)
+  //
+  // No `status !== 'archived'` gate here, unlike the member page: an archived
+  // member's document can still be voided, credited or resent, and each of
+  // those needs an address.
+  //
+  // KNOWN GAP (PR-A re-review LOW-7): an ERASED member also shows it. Their
+  // contacts were scrubbed on purpose, so "add a contact" is the wrong advice.
+  // Fix belongs on the domain type — `getMember`'s `Member` does not carry
+  // `erasedAt` — not in another query here.
+  let showNoPrimaryContactBanner = false;
+  if (invoice.memberId !== null) {
+    const recipient = await resolveMoneyRecipient(
+      recipientLocaleAdapter,
+      null,
+      tenantCtx.slug,
+      invoice.memberId,
+      null,
+    );
+    showNoPrimaryContactBanner = recipient.kind === 'no_recipient';
   }
 
   // Resolve staff-user display names for the audit fields on the

@@ -1480,14 +1480,25 @@ export const drizzleMemberRepo: MemberRepo = {
             sql`${contacts.removedAt} IS NULL`,
           ),
         )
+        // At most ONE row can match, so no ORDER BY tiebreak is needed:
+        // `contacts_one_primary_per_member` (migration 0009) is a UNIQUE index
+        // whose WHERE clause is exactly this predicate. This read therefore
+        // cannot hand Stripe a different contact than the one the invoice was
+        // addressed to. Review round 3 finding #13, rejected on that evidence.
         .limit(1);
       const row = rows[0];
       // 108 — an empty address is NOT an address. `contacts.email` is NOT NULL
       // but only length-checked, so a bulk import that bypassed `asEmail` can
       // store ''. F4's resolver already treats that as no-recipient; without
       // this, F5 would hand Stripe '' and get an opaque processor_unavailable.
+      //
+      // Return the TRIMMED value, not the raw one: testing `.trim()` and then
+      // returning `row.email` passed `'  a@b.com  '` through to Stripe as the
+      // PromptPay billing email, which is the same opaque failure one padded
+      // character further along. (Also retires a `row!` non-null assertion —
+      // the trimmed value is already proof the row exists.)
       const email = row?.email.trim() ?? '';
-      return ok(email === '' ? null : row!.email);
+      return ok(email === '' ? null : email);
     } catch (e) {
       return err(unexpected(e));
     }

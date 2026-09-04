@@ -52,10 +52,17 @@ export async function resolveMoneyRecipient(
   memberId: string | null,
   snapshot: MoneyRecipientSnapshot | null | undefined,
 ): Promise<MoneyRecipient> {
+  // Both arms return the TRIMMED value they tested. Testing `.trim()` and then
+  // returning the raw column handed `'  a@b.com  '` straight to Stripe's
+  // `billing_details.email` and to `notifications_outbox.to_email`, where it
+  // reads as a rejected address or a silently dead-lettered row. FR-001b's "an
+  // odd-looking address is still THE address" is about the address itself, not
+  // about padding around it — whitespace is a data-entry artifact and carries
+  // no information a recipient could want.
   if (memberId === null) {
     // Non-member event buyer: no contact row exists to read.
-    const snapshotEmail = snapshot?.primary_contact_email ?? '';
-    return snapshotEmail.trim() === ''
+    const snapshotEmail = (snapshot?.primary_contact_email ?? '').trim();
+    return snapshotEmail === ''
       ? { kind: 'no_recipient' }
       : { kind: 'non_member', email: snapshotEmail };
   }
@@ -64,8 +71,10 @@ export async function resolveMoneyRecipient(
   // An odd-looking or previously-bounced address is still THE address (FR-001b) —
   // deliverability is the dispatcher's problem. Only a genuinely empty column is
   // undeliverable, and an empty one means "no recipient", not "use the snapshot".
-  if (live === null || live.email.trim() === '') return { kind: 'no_recipient' };
-  return { kind: 'member', email: live.email, locale: live.locale };
+  if (live === null) return { kind: 'no_recipient' };
+  const email = live.email.trim();
+  if (email === '') return { kind: 'no_recipient' };
+  return { kind: 'member', email, locale: live.locale };
 }
 
 /**

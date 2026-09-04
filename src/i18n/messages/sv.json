@@ -5475,7 +5475,7 @@
         "resendSuccess": "Kopia köad — den går till organisationens primära kontakt.",
         "resendRateLimited": "Du bad om en kopia nyligen. Vänta några minuter och försök igen.",
         "resendFailed": "Kunde inte köa en ny kopia. Försök igen.",
-        "resendNoRecipient": "Ingen primär kontakt — ingenting skickades. Lägg till eller befordra en kontakt på medlemssidan och skicka sedan igen.",
+        "resendNoRecipient": "Ingenting skickades — ditt medlemskap saknar en registrerad kontaktadress. Kontakta kammarens personal så uppdaterar vi den.",
         "downloadInProgress": "Förbereder nedladdning…",
         "invoiceForbidden": "Du har inte behörighet till denna faktura.",
         "invoiceNotFound": "Faktura hittades inte.",

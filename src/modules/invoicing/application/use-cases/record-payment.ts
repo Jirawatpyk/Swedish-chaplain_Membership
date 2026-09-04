@@ -1166,12 +1166,20 @@ export async function recordPayment(
     // Wave-4 S15 — issueInvoice + issueEventInvoiceAsPaid share
     // `lib/enqueue-invoice-email.ts` for this block's shape; THIS block is
     // deliberately NOT folded into that helper because its semantics differ
-    // in four load-bearing ways: (1) the F5 `suppressReceiptEmail` THREE-arm
+    // in three load-bearing ways: (1) the F5 `suppressReceiptEmail` THREE-arm
     // branch incl. an info-log arm, (2) the `dependsOnReceiptPdf` async-PDF
-    // dispatcher gate, (3) the recipient is truthiness-checked, NOT trimmed
-    // (legacy-snapshot tolerance documented above), and (4) the skip warn
-    // carries memberId/documentNumber instead of the helper's fixed fields.
-    // Folding would mean a 4-mode helper — worse than the duplication.
+    // dispatcher gate, and (3) the skip warn carries memberId/documentNumber
+    // instead of the helper's fixed fields. Folding would mean a 3-mode helper
+    // — worse than the duplication.
+    //
+    // The fourth reason used to read "the recipient is truthiness-checked, NOT
+    // trimmed (legacy-snapshot tolerance)". 108 removed that difference:
+    // `resolveMoneyRecipient` trims and maps whitespace-only to `no_recipient`,
+    // so both sides now behave identically. Struck rather than left standing —
+    // this note IS the decision record for whether the block may be folded, and
+    // a stale premise in it means the next refactor either preserves a
+    // difference that no longer exists or folds on a reason nobody re-derived.
+    // (Review round 3 finding #15.)
     //
     // T128a: F5 caller may suppress the receipt-email enqueue when the
     // tenant has disabled `auto_email_on_payment`. Status flip + audit +

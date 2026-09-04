@@ -74,8 +74,13 @@ export function ResendInvoiceButton({
           return;
         }
         if (res.status === 409) {
-          // 108 FR-003. A member cannot fix this themselves, but telling them
-          // WHY beats a generic failure they will retry forever.
+          // 108 FR-003. A member cannot fix this themselves, so the toast must
+          // name an action they CAN take. `portal.invoices.toast
+          // .resendNoRecipient` was the admin string copy-pasted byte for byte,
+          // which sent a member to "the member page" — a route their role
+          // cannot reach (review round 3 finding #5). It now points at the
+          // chamber staff, matching the portal's existing phrasing for things
+          // only staff can resolve.
           const body = (await res.json().catch(() => null)) as
             | { error?: { code?: string } }
             | null;

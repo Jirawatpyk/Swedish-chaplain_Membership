@@ -5475,7 +5475,7 @@
         "resendSuccess": "Copy queued — it goes to your organisation's primary contact.",
         "resendRateLimited": "You already asked for a copy recently. Please try again in a few minutes.",
         "resendFailed": "Could not queue a fresh copy. Please try again.",
-        "resendNoRecipient": "No primary contact — nothing was sent. Add or promote a contact on the member page, then resend.",
+        "resendNoRecipient": "Nothing was sent — your membership has no contact email on file. Please contact the chamber staff to update it.",
         "downloadInProgress": "Preparing your download…",
         "invoiceForbidden": "You do not have access to this invoice.",
         "invoiceNotFound": "Invoice not found.",

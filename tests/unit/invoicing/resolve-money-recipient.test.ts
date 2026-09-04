@@ -82,6 +82,26 @@ describe('resolveMoneyRecipient — member invoice', () => {
     expect(result).toEqual<MoneyRecipient>({ kind: 'no_recipient' });
   });
 
+  it('returns the TRIMMED address, not the padded one it tested', async () => {
+    // Review round 3 finding #4: the emptiness test trimmed and the return did
+    // not, so `'  a@b.com  '` reached Stripe's
+    // `billing_details.email` and `notifications_outbox.to_email` verbatim — a
+    // rejected address surfacing as the opaque `processor_unavailable` this
+    // resolver's own comment says it prevents, or a silently dead-lettered
+    // outbox row. Whitespace is a data-entry artifact, never part of an
+    // address; FR-001b's "an odd address is still THE address" is about the
+    // address, not about padding around it.
+    const port = makePort({ email: '  padded@example.com  ', locale: 'en' });
+
+    const result = await resolveMoneyRecipient(port, {}, 'test-swecham', 'member-1', SNAPSHOT);
+
+    expect(result).toEqual<MoneyRecipient>({
+      kind: 'member',
+      email: 'padded@example.com',
+      locale: 'en',
+    });
+  });
+
   it('returns no_recipient when the live primary carries an empty address', async () => {
     const port = makePort({ email: '   ', locale: 'en' });
 
@@ -102,6 +122,19 @@ describe('resolveMoneyRecipient — non-member (event) buyer', () => {
       email: 'snapshot-frozen@example.com',
     });
     expect(port.getMemberEmailRecipient).not.toHaveBeenCalled();
+  });
+
+  it('trims the non-member snapshot address too', async () => {
+    const port = makePort(null);
+
+    const result = await resolveMoneyRecipient(port, {}, 'test-swecham', null, {
+      primary_contact_email: ' typed-with-a-space@example.com ',
+    });
+
+    expect(result).toEqual<MoneyRecipient>({
+      kind: 'non_member',
+      email: 'typed-with-a-space@example.com',
+    });
   });
 
   it('returns no_recipient when the non-member snapshot carries an empty address', async () => {

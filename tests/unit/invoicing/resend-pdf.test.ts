@@ -567,6 +567,32 @@ describe('resendPdf', () => {
     expect(deps.audit.emit).not.toHaveBeenCalled();
   });
 
+  it('impossible buyer is still not_issued when its snapshot address is empty too', async () => {
+    // Review round 3 finding #12. 108 inserted the recipient resolve ABOVE this
+    // guard, and for a row with no member the resolver reads the snapshot: an
+    // empty address there returns `no_recipient` FIRST, so the caller was told
+    // "no primary contact — add one" about an invoice that has no member at
+    // all, and `resend_pdf_invoice_inconsistent_buyer` — the only signal that a
+    // row violating `invoices_subject_fields_ck` exists — never fired.
+    const invoice = issuedInvoice({
+      memberId: null,
+      eventRegistrationId: null,
+      memberIdentitySnapshot: memberSnap(''),
+    });
+    const deps = makeDeps(invoice);
+    const r = await resendPdf(deps, {
+      tenantId: TENANT,
+      kind: 'invoice',
+      invoiceId: INVOICE_UUID,
+      variant: 'invoice',
+      actor: adminActor,
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('not_issued');
+    expect(deps.outbox.enqueue).not.toHaveBeenCalled();
+    expect(deps.audit.emit).not.toHaveBeenCalled();
+  });
+
   it('receipt variant — no receiptPdf → no_receipt_pdf', async () => {
     const invoice = issuedInvoice(); // receiptPdf = null
     const deps = makeDeps(invoice);

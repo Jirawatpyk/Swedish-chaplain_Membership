@@ -173,6 +173,13 @@ export const memberIdentityAdapter: MemberIdentityPort = {
           isNull(contacts.removedAt),
         ),
       )
+      // At most ONE row can match, so `limit(1)` needs no ORDER BY tiebreak:
+      // `contacts_one_primary_per_member` (migration 0009) is a UNIQUE index on
+      // (tenant_id, member_id) whose WHERE clause is exactly this predicate.
+      // Review round 3 finding #13 asked for a tiebreak on the premise that the
+      // invariant was not yet enforced in the DB — it has been since 0009, and
+      // `tests/integration/invoicing/primary-contact-read-agreement.test.ts`
+      // proves the index rejects a second live primary.
       .limit(1);
 
     const regDate =

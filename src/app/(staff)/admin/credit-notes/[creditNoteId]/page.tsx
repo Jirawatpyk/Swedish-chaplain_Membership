@@ -24,7 +24,12 @@ import { headers } from 'next/headers';
 import { requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
-import { getCreditNote, makeGetCreditNoteDeps } from '@/modules/invoicing';
+import {
+  getCreditNote,
+  makeGetCreditNoteDeps,
+  recipientLocaleAdapter,
+  resolveMoneyRecipient,
+} from '@/modules/invoicing';
 // G-5 — sibling-CN navigation. The list is an admin-view convenience
 // (no new use-case); same escape-hatch pattern as the settings +
 // credit-note list reads already used on the invoice detail page.
@@ -45,8 +50,6 @@ import { Separator } from '@/components/ui/separator';
 import { buttonVariants } from '@/components/ui/button';
 import { formatTaxDocDate } from '@/lib/format-tax-doc-date';
 import { CreditNoteMoreMenu } from '../_components/credit-note-more-menu';
-import { getMember, type MemberId } from '@/modules/members';
-import { buildMembersDeps } from '@/modules/members/members-deps';
 import { NoPrimaryContactBanner } from '@/components/members/no-primary-contact-banner';
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -119,23 +122,30 @@ export default async function CreditNoteDetailPage({
   // warning that explains why a resend will refuse. Best-effort: a repo failure
   // hides the banner rather than 500-ing a page whose job is to display a
   // §86/10 document.
+  //
+  // Asks the RESOLVER, not a hand-copied predicate. The inline version here was
+  // `isPrimary && removedAt === null`, which misses the empty-address case the
+  // resolver treats as no-recipient — so the one surface warning that a resend
+  // will refuse stayed silent in exactly the situation where the resend refuses
+  // (review round 3 finding #2). It also replaces a whole `getMember` — member
+  // row plus its full contacts collection — with one indexed JOIN, to answer a
+  // single boolean (finding #11).
+  //
+  // No archived gate: an archived member's §86/10 document can still be resent,
+  // and that resend needs an address. KNOWN GAP (re-review LOW-7), same as the
+  // invoice page: an ERASED member still sees this.
   const cnMemberId = cn.originalInvoiceMemberId;
   const noPrimaryContact =
     cnMemberId === null
       ? false
-      : await getMember(
-          cnMemberId as MemberId,
-          { actorUserId: user.id, requestId },
-          buildMembersDeps(tenantCtx),
+      : await resolveMoneyRecipient(
+          recipientLocaleAdapter,
+          null,
+          tenantCtx.slug,
+          cnMemberId,
+          null,
         )
-          .then((r) =>
-            // Same KNOWN GAP as the invoice page (re-review LOW-7): an erased
-            // member still sees this. Needs `erasedAt` on the Member type.
-            r.ok
-              ? r.value.member.status !== 'archived' &&
-                !r.value.contacts.some((c) => c.isPrimary && c.removedAt === null)
-              : false,
-          )
+          .then((r) => r.kind === 'no_recipient')
           .catch(() => false);
 
   // G-5 — sibling CNs on the same original invoice. Best-effort:

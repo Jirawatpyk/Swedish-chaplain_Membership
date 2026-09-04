@@ -146,6 +146,37 @@ describe('money-email recipient inventory (108 SC-001)', () => {
     ]);
   });
 
+  it('every FR-003 banner site asks the RESOLVER, never its own predicate', () => {
+    // Review round 3 finding #2. All three sites had hand-copied the rule as
+    // `isPrimary && removedAt === null` — two thirds of it. A primary contact
+    // with an empty `email` makes `resolveMoneyRecipient` return
+    // `no_recipient`, so every money email for that member was skipped and
+    // PromptPay 409'd, while all three banners, finding that contact,
+    // rendered nothing: the member silently stopped receiving money mail with
+    // no warning on any admin surface, which is the exact outcome FR-003
+    // exists to prevent.
+    //
+    // Structural, because behaviour cannot pin this: three RSC pages, and the
+    // failure is a SILENT agreement gap, not an error. If a file renders the
+    // banner it must decide with the same function the money path decides
+    // with. Adding a fourth banner site without wiring the resolver fails
+    // here.
+    const bannerSites = [
+      'src/app/(staff)/admin/invoices/[invoiceId]/page.tsx',
+      'src/app/(staff)/admin/credit-notes/[creditNoteId]/page.tsx',
+      'src/app/(staff)/admin/members/[memberId]/page.tsx',
+    ];
+    for (const rel of bannerSites) {
+      const src = readFileSync(resolvePath(REPO_ROOT, rel), 'utf8');
+      // Positive control: if the file stopped rendering the banner, the
+      // assertion below would pass vacuously.
+      expect(src, `${rel} no longer renders the banner`).toContain('NoPrimaryContactBanner');
+      expect(src, `${rel} decides the banner without the resolver`).toContain(
+        'resolveMoneyRecipient',
+      );
+    }
+  });
+
   it('issue-time equivalence still holds — the member arm re-reads live (re-review MEDIUM-2)', () => {
     // Two allowlist entries in `check:money-recipient` justify a snapshot read
     // by saying the snapshot IS the live read at issue. The code carrying that

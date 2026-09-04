@@ -231,6 +231,35 @@ async function resendInvoiceOrReceipt(
     // No snapshot ⇒ not issued. Defence-in-depth for racy state.
     return err({ code: 'not_issued' });
   }
+  // Defence-in-depth: memberId null AND eventRegistrationId null is a
+  // structurally-impossible row (violates `invoices_subject_fields_ck` — a row
+  // is EITHER a member invoice OR a non-member event invoice). This guard runs
+  // BEFORE any side effect (outbox enqueue / audit emit): on such a row we
+  // cannot construct a valid audit payload (neither `member_id` nor
+  // `event_registration_id` correlates), so we must NOT have already sent the
+  // email by the time we return the error — otherwise the caller sees a
+  // failure while the buyer still receives the PDF. No PII in the log (ids
+  // only, per CLAUDE.md § Secrets).
+  //
+  // It also runs before the recipient resolve, and that ordering is not
+  // incidental (review round 3 finding #12). 108 first put the resolve above
+  // it, and for a memberless row the resolver reads the SNAPSHOT: an empty
+  // address there returned `no_recipient` first, so staff were told to "add a
+  // contact" for an invoice that has no member at all, and this warn — the
+  // only signal that a CHECK-violating row exists — never fired. A row this
+  // broken has no meaningful recipient question to ask.
+  if (invoice.memberId === null && invoice.eventRegistrationId === null) {
+    logger.warn(
+      {
+        event: 'resend_pdf_invoice_inconsistent_buyer',
+        tenantId: input.tenantId,
+        invoiceId: input.invoiceId,
+      },
+      'resendPdf: invoice has neither member_id nor event_registration_id — cannot audit resend',
+    );
+    return err({ code: 'not_issued' });
+  }
+
   // 108 FR-001 — a resend is the path most likely to run long after issue,
   // so it is the one that most needs the LIVE address: resolve it now
   // (`tx === null` — resend runs outside any financial tx, the adapter
@@ -258,27 +287,6 @@ async function resendInvoiceOrReceipt(
     return err({ code: 'no_recipient' });
   }
   const recipientEmail = moneyRecipient.email;
-
-  // Defence-in-depth: memberId null AND eventRegistrationId null is a
-  // structurally-impossible row (violates `invoices_subject_fields_ck` — a row
-  // is EITHER a member invoice OR a non-member event invoice). This guard runs
-  // BEFORE any side effect (outbox enqueue / audit emit): on such a row we
-  // cannot construct a valid audit payload (neither `member_id` nor
-  // `event_registration_id` correlates), so we must NOT have already sent the
-  // email by the time we return the error — otherwise the caller sees a
-  // failure while the buyer still receives the PDF. No PII in the log (ids
-  // only, per CLAUDE.md § Secrets).
-  if (invoice.memberId === null && invoice.eventRegistrationId === null) {
-    logger.warn(
-      {
-        event: 'resend_pdf_invoice_inconsistent_buyer',
-        tenantId: input.tenantId,
-        invoiceId: input.invoiceId,
-      },
-      'resendPdf: invoice has neither member_id nor event_registration_id — cannot audit resend',
-    );
-    return err({ code: 'not_issued' });
-  }
 
   // 088 FR-030 — restore the SC/RC number to the resent audit summary + outbox
   // payload for an 088 invoice (§87 `documentNumber` NULL). Variant-aware: the
