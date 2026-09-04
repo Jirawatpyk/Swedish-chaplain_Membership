@@ -20,10 +20,20 @@ resolveMoneyRecipient(port, tx, tenantId, memberId, snapshot) →
 - MUST NOT fall back to the snapshot, to CC/BCC, or to any other contact when
   `no_recipient`.
 - On `no_recipient`: no outbox row; emit audit `auto_email_skipped_no_recipient`
-  `{ invoice_id | credit_note_id, event_type, member_id }` in the same tx; bump
-  `invoicing.auto_email_skipped{reason:'no_recipient'}`; return
-  `EmailDispatchOutcome = 'skipped_no_email'` (record-payment / issue paths) or
-  `err({ code: 'no_recipient' })` (resend paths, mapped to 409).
+  `{ invoice_id | credit_note_id, email_event_type, skipped_for_member_id }` in the
+  caller's tx (mutation paths) or standalone (resend, `tx === null`); bump
+  `invoicing.auto_email_skipped{reason:'no_recipient'}` when the caller knows the
+  subject label; return `EmailDispatchOutcome = 'skipped_no_email'` (record-payment /
+  issue paths) or `err({ code: 'no_recipient' })` (resend paths, mapped to 409).
+- **`skipped_for_member_id`, not `member_id`** — migration 0009's trigger bumps
+  `members.last_activity_at` from any audit payload carrying `member_id`, and the
+  member timeline selects on it. A skipped email is not member activity; staff
+  visibility is FR-003's banner. **`email_event_type`, not `event_type`** — so the
+  payload never reads as a second copy of `audit_log.event_type`.
+- `resolveMoneyRecipient` is a PURE resolver; the audit + metric side effect is a
+  separate export `auditAutoEmailSkippedNoRecipient(audit, tx, args)`. The
+  idempotent-replay arm of record-payment resolves without re-auditing a decision
+  the original attempt already owned.
 
 ## 2. Port
 

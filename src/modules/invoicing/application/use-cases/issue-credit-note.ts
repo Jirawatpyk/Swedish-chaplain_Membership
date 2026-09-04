@@ -1296,7 +1296,7 @@ export async function issueCreditNote(
             creditNoteId,
             invoiceSubject: loaded.invoiceSubject,
           },
-          'issueCreditNote: auto-email enabled but buyer snapshot has no contact email — skipping credit-note email',
+          'issueCreditNote: auto-email enabled but the buyer has no live primary contact — skipping credit-note email',
         );
       }
 

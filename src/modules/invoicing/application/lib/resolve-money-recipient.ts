@@ -101,12 +101,21 @@ export async function auditAutoEmailSkippedNoRecipient(
     readonly actorUserId: string;
     readonly memberId: string;
     readonly emailEventType: F4OutboxEventType;
-    readonly subject: 'membership' | 'event';
+    /**
+     * Metric label. Optional because the credit-note RESEND path only holds a
+     * `CreditNote`, which carries no invoice subject — and a guessed label is
+     * worse than none (a matched-member event CN would be counted as
+     * membership). When it is absent the audit row still lands; only the
+     * counter is skipped, and the audit event is itself alertable.
+     */
+    readonly subject?: 'membership' | 'event';
     readonly invoiceId?: string;
     readonly creditNoteId?: string;
   },
 ): Promise<void> {
-  invoicingMetrics.autoEmailSkipped(args.subject, 'no_recipient');
+  if (args.subject !== undefined) {
+    invoicingMetrics.autoEmailSkipped(args.subject, 'no_recipient');
+  }
   await audit.emit(tx, {
     tenantId: args.tenantId,
     requestId: args.requestId,

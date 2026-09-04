@@ -80,7 +80,6 @@ function makeInput(overrides: Partial<InitiatePaymentInput> = {}): InitiatePayme
     tenantId: TENANT_ID,
     actorUserId: ACTOR_USER_ID,
     actorMemberId: MEMBER_ID,
-    actorEmail: 'member@swecham.test',
     invoiceId: INVOICE_ID,
     method: 'card',
     correlationId: 'corr_1',
@@ -93,6 +92,11 @@ function makeDeps(
   overrides: Partial<InitiatePaymentDeps> = {},
 ): InitiatePaymentDeps {
   const audit = { emit: vi.fn(async () => undefined) };
+  // 108 FR-004 — default: the member HAS a primary contact. Tests that model a
+  // missing one override this dep.
+  const billingRecipient = {
+    getPrimaryContactEmail: vi.fn(async () => 'primary@acme.example'),
+  };
   const paymentsRepo = {
     withTx: vi.fn(async <T>(fn: (tx: unknown) => Promise<T>) => fn({})),
     acquireInitiateLock: vi.fn(async () => undefined),
@@ -171,6 +175,8 @@ function makeDeps(
     tenantSettingsRepo: tenantSettingsRepo as unknown as InitiatePaymentDeps['tenantSettingsRepo'],
     processorGateway: processorGateway as unknown as InitiatePaymentDeps['processorGateway'],
     invoicingBridge: invoicingBridge as unknown as InitiatePaymentDeps['invoicingBridge'],
+    billingRecipient:
+      billingRecipient as unknown as InitiatePaymentDeps['billingRecipient'],
     audit: audit as unknown as InitiatePaymentDeps['audit'],
     clock,
     generatePaymentId,
@@ -1095,5 +1101,69 @@ describe('initiatePayment (T055)', () => {
     expect(deps.audit.emit).not.toHaveBeenCalled();
     // try-finally all-exits invariant holds on this path too.
     expect(metricsMocks.initiateDurationMs).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 108 FR-004 — the address handed to the processor is the MEMBER's primary
+// contact, never the signed-in portal user's.
+//
+// Stripe needs a billing email on a server-confirmed PromptPay PI and mails its
+// own receipt there. Before 108 the route passed `memberCtx.current.user.email`,
+// so when a secondary contact with a portal login paid the company's invoice,
+// Stripe's receipt went to that individual instead of the company's primary
+// contact. Same class of bug as the F4 emails, different pipe.
+// ---------------------------------------------------------------------------
+describe('initiatePayment — billing email (108 FR-004)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('PromptPay shares the member primary contact address, not the paying user', async () => {
+    const deps = makeDeps({
+      billingRecipient: {
+        getPrimaryContactEmail: vi.fn(async () => 'primary@acme.example'),
+      },
+    });
+
+    await initiatePayment(deps, makeInput({ method: 'promptpay' }));
+
+    expect(deps.processorGateway.createPaymentIntent).toHaveBeenCalledWith(
+      expect.objectContaining({ billingEmail: 'primary@acme.example' }),
+    );
+  });
+
+  it('resolves the address for the tenant + invoice owner', async () => {
+    const getPrimaryContactEmail = vi.fn(async () => 'primary@acme.example');
+    const deps = makeDeps({ billingRecipient: { getPrimaryContactEmail } });
+
+    await initiatePayment(deps, makeInput({ method: 'promptpay' }));
+
+    expect(getPrimaryContactEmail).toHaveBeenCalledWith(TENANT_ID, expect.any(String));
+  });
+
+  it('PromptPay with no live primary contact fails permanently with primary_contact_missing', async () => {
+    const deps = makeDeps({
+      billingRecipient: { getPrimaryContactEmail: vi.fn(async () => null) },
+    });
+
+    const r = await initiatePayment(deps, makeInput({ method: 'promptpay' }));
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('primary_contact_missing');
+    // Nothing created at the processor — no orphan PI to reconcile.
+    expect(deps.processorGateway.createPaymentIntent).not.toHaveBeenCalled();
+  });
+
+  it('card shares no email and does not require a primary contact', async () => {
+    const deps = makeDeps({
+      billingRecipient: { getPrimaryContactEmail: vi.fn(async () => null) },
+    });
+
+    const r = await initiatePayment(deps, makeInput({ method: 'card' }));
+
+    expect(r.ok).toBe(true);
+    const arg = vi.mocked(deps.processorGateway.createPaymentIntent).mock.calls[0]![0];
+    expect(arg.billingEmail).toBeUndefined();
   });
 });

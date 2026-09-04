@@ -461,7 +461,8 @@ async function resendCreditNote(
         actorUserId: input.actor.userId,
         memberId: cn.originalInvoiceMemberId,
         emailEventType: 'credit_note_pdf_resent',
-        subject: 'membership',
+        // no `subject`: a CreditNote carries no invoice subject, and a guessed
+        // metric label is worse than an absent one (see the emitter's JSDoc).
         creditNoteId: input.creditNoteId,
       });
     }

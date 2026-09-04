@@ -59,19 +59,19 @@ import { paymentsMetrics } from '@/lib/metrics';
 import { paymentsTracer } from '@/lib/otel-tracer';
 import { SpanStatusCode } from '@opentelemetry/api';
 import type { TaxAtPaymentFlag } from '@/modules/invoicing';
+import type { BillingRecipientPort } from '../ports/billing-recipient-port';
 
 export interface InitiatePaymentInput {
   readonly tenantId: string;
   readonly actorUserId: string;
   readonly actorMemberId: string;
   /**
-   * Member's account email — required for Stripe PromptPay PIs.
-   * Stripe's `payment_method_data.billing_details.email` is mandatory
-   * when we server-confirm a PromptPay PaymentMethod (Card flow uses
-   * Stripe Elements which collects billing details client-side).
-   * Always populated from `requireMemberContext().current.user.email`.
+   * 108 FR-004 — `actorEmail` was REMOVED here. It carried the signed-in
+   * portal user's address, so a secondary contact paying the company's
+   * invoice sent Stripe's receipt to themselves. The billing email is now
+   * resolved from the member's primary contact through
+   * `BillingRecipientPort`, and only for PromptPay (card shares none).
    */
-  readonly actorEmail: string;
   readonly invoiceId: string;
   readonly method: PaymentMethod;
   readonly correlationId: string;
@@ -122,6 +122,13 @@ export type InitiatePaymentError =
    * change, so nothing user-visible moved.
    */
   | { readonly code: 'invoice_read_failed' }
+  /**
+   * 108 FR-004 — PromptPay needs a billing email and the member has no live
+   * primary contact, so there is no address of record to give Stripe. PERMANENT:
+   * retrying cannot help until staff fix the contact. Returned BEFORE
+   * `createPaymentIntent`, so no orphan PI is ever created. Route maps to 409.
+   */
+  | { readonly code: 'primary_contact_missing' }
   /**
    * REMOVE-WITH-064-REMEDIATION (online-payment site — master checklist
    * at the guard in record-payment.ts) — the F4 bridge rejected a LEGACY
@@ -193,6 +200,8 @@ export interface InitiatePaymentDeps {
   readonly tenantSettingsRepo: TenantPaymentSettingsRepo;
   readonly processorGateway: ProcessorGatewayPort;
   readonly invoicingBridge: InvoicingBridgePort;
+  /** 108 FR-004 — resolves the member's primary-contact address for PromptPay. */
+  readonly billingRecipient: BillingRecipientPort;
   readonly audit: AuditPort;
   readonly clock: ClockPort;
   /**
@@ -615,6 +624,23 @@ async function initiatePaymentBody(
       ? deps.idempotencyKeyFactory(baseKey)
       : baseKey;
 
+    // 108 FR-004 — PromptPay only: Stripe requires a billing email on a
+    // server-confirmed PromptPay PI and mails its receipt there, so it must be
+    // the member's primary contact, not the portal user who clicked Pay. Card
+    // shares no address at all (Elements collects billing details client-side),
+    // so it neither reads this nor fails when a member has no primary contact.
+    let billingEmail: string | undefined;
+    if (input.method === 'promptpay') {
+      const primaryEmail = await deps.billingRecipient.getPrimaryContactEmail(
+        input.tenantId,
+        invoice.memberId,
+      );
+      if (primaryEmail === null) {
+        return err<InitiatePaymentError>({ code: 'primary_contact_missing' });
+      }
+      billingEmail = primaryEmail;
+    }
+
     // Create intent BEFORE DB insert — failure here means no wasted
     // sequence + no orphan row (we haven't written anything yet).
     const created = await deps.processorGateway.createPaymentIntent({
@@ -629,8 +655,8 @@ async function initiatePaymentBody(
       idempotencyKey,
       stripeAccount: settings.processorAccountId,
       // Required by Stripe for server-confirmed PromptPay PIs (the
-      // gateway only embeds it when method='promptpay').
-      billingEmail: input.actorEmail,
+      // gateway only embeds it when method='promptpay'). Undefined for card.
+      ...(billingEmail === undefined ? {} : { billingEmail }),
     });
     if (!created.ok) {
       return err<InitiatePaymentError>({

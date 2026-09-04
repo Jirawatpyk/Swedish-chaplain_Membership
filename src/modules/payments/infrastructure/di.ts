@@ -116,6 +116,8 @@ export function makeInitiatePaymentDeps(tenantId: string): InitiatePaymentDeps {
     tenantSettingsRepo: makeDrizzleTenantPaymentSettingsRepo(),
     processorGateway: stripeGateway,
     invoicingBridge,
+    // 108 FR-004 — member primary contact for the PromptPay billing email.
+    billingRecipient: billingRecipientAdapter,
     audit: f5AuditAdapter,
     clock: systemClock,
     generatePaymentId,
@@ -371,6 +373,7 @@ export function makeResolveFailedAutoRefundDeps(
 // T130a — sweepStalePendingRefunds composition.
 // ---------------------------------------------------------------------------
 import type { SweepStalePendingRefundsDeps } from '../application/use-cases/sweep-stale-pending-refunds';
+import { billingRecipientAdapter } from './billing-recipient-adapter';
 
 export function makeSweepStalePendingRefundsDeps(
   tenantId: string,

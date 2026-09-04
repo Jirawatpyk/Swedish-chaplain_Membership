@@ -92,6 +92,9 @@ describe('payments barrel — public API contract', () => {
     expect(Object.keys(initDeps).sort()).toEqual(
       [
         'audit',
+        // 108 FR-004 — the member's primary-contact address for the PromptPay
+        // billing email (replaced the route-supplied actorEmail).
+        'billingRecipient',
         'clock',
         'generatePaymentId',
         'idempotencyKeyFactory',
