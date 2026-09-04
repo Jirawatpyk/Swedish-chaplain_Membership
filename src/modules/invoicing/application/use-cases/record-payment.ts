@@ -31,7 +31,10 @@ import { emitNonMemberInvoiceEvent, type AuditPort } from '../ports/audit-port';
 import type { ClockPort } from '../ports/clock-port';
 import type { EmailOutboxPort } from '../ports/email-outbox-port';
 import type { RecipientLocalePort } from '../ports/recipient-locale-port';
-import { resolveRecipientLocale } from '../lib/resolve-recipient-locale';
+import {
+  auditAutoEmailSkippedNoRecipient,
+  resolveMoneyRecipient,
+} from '../lib/resolve-money-recipient';
 import type { EmailDispatchOutcome } from '../email-dispatch-outcome';
 import type { MemberIdentityPort } from '../ports/member-identity-port';
 import type { ReceiptPdfRenderEnqueuePort } from '../ports/receipt-pdf-render-enqueue-port';
@@ -452,9 +455,21 @@ export async function recordPayment(
       // → 'sent'. Without the suppress arm a suppressed original replayed as
       // 'sent' (dishonest). Unreachable via the admin pay route today (it never
       // sets suppressReceiptEmail) but honest for any future caller.
+      // 108 FR-001 — mirror the fresh path's recipient resolution so a replay
+      // reports what the SAME invoice would do now: a member who lost their
+      // primary contact reads as `skipped_no_email`, not `sent`. Read-only —
+      // a replay re-sends nothing and audits no skip (the original attempt
+      // already owned that decision).
+      const replayRecipient = await resolveMoneyRecipient(
+        deps.recipientLocale,
+        tx,
+        input.tenantId,
+        loaded.memberId,
+        loaded.memberIdentitySnapshot,
+      );
       const replayEmailDispatch: EmailDispatchOutcome = !settings.autoEmailEnabled
         ? 'disabled'
-        : !loaded.memberIdentitySnapshot?.primary_contact_email
+        : replayRecipient.kind === 'no_recipient'
           ? 'skipped_no_email'
           : input.suppressReceiptEmail
             ? 'disabled'
@@ -1112,8 +1127,19 @@ export async function recordPayment(
     // retry the webhook indefinitely and potentially double-enqueue
     // on a future fix, and (d) admins can resend the receipt email
     // manually from /admin/invoices once ops investigates.
+    // 108 FR-001 — the DELIVERY address is resolved LIVE from the member's
+    // primary contact inside this payment tx; the snapshot above still fixes
+    // the tax document's BUYER. A non-member event buyer has no contact row,
+    // so `resolveMoneyRecipient` reads the snapshot for that arm only.
+    const moneyRecipient = await resolveMoneyRecipient(
+      deps.recipientLocale,
+      tx,
+      input.tenantId,
+      memberId,
+      loaded.memberIdentitySnapshot,
+    );
     const recipientEmail =
-      loaded.memberIdentitySnapshot.primary_contact_email ?? null;
+      moneyRecipient.kind === 'no_recipient' ? null : moneyRecipient.email;
     // Wave-4 S15 — issueInvoice + issueEventInvoiceAsPaid share
     // `lib/enqueue-invoice-email.ts` for this block's shape; THIS block is
     // deliberately NOT folded into that helper because its semantics differ
@@ -1151,15 +1177,12 @@ export async function recordPayment(
           ? ('event_non_member' as const)
           : undefined;
       // Email-locale audit 2026-07-16 — render the receipt email in the
-      // member's language. Live read (not the frozen snapshot) so a later
-      // preference change is honoured. A non-member event buyer (memberId
-      // null) has no preference → undefined → outbox 'en' default.
-      const recipientLocale = await resolveRecipientLocale(
-        deps.recipientLocale,
-        tx,
-        input.tenantId,
-        memberId,
-      );
+      // member's language. 108: the locale now rides along on the SAME live
+      // primary-contact read that produced the address, so the two can never
+      // disagree (one row, one round-trip). A non-member event buyer has no
+      // preference → undefined → outbox 'en' default.
+      const recipientLocale =
+        moneyRecipient.kind === 'member' ? (moneyRecipient.locale ?? undefined) : undefined;
       await deps.outbox.enqueue(tx, {
         tenantId: input.tenantId,
         eventType: 'invoice_paid',
@@ -1197,12 +1220,27 @@ export async function recordPayment(
       // F5 tenant setting / per-payment suppression — intentionally not sent.
       emailDispatch = 'disabled';
     } else if (settings.autoEmailEnabled && !recipientEmail) {
-      // Skip-with-warn: snapshot is missing the required field. This
-      // is a Domain-invariant violation upstream (likely a legacy or
-      // manually-patched invoice row). Bump a metric (ops can alert) AND
-      // warn — brings the record-payment skip to parity with the
-      // credit-note `skipped_no_recipient` + issue-invoice surfaces.
-      invoicingMetrics.autoEmailSkipped(loaded.invoiceSubject, 'no_recipient');
+      // 108 FR-004 — nowhere to deliver: the member has no contact with
+      // `is_primary AND removed_at IS NULL` (or a non-member event row carries
+      // no typed address). NO fallback is permitted, so record the skip where
+      // an auditor can find it later, in THIS tx so it rolls back with the
+      // payment. `auditAutoEmailSkippedNoRecipient` bumps the metric too.
+      if (memberId !== null) {
+        await auditAutoEmailSkippedNoRecipient(deps.audit, tx, {
+          tenantId: input.tenantId,
+          requestId: input.requestId ?? null,
+          actorUserId: input.actorUserId,
+          memberId,
+          emailEventType: 'invoice_paid',
+          subject: loaded.invoiceSubject,
+          invoiceId,
+        });
+      } else {
+        // Non-member event buyer: no member to attribute the skip to, and the
+        // audit payload arm for these rows requires an event_registration_id.
+        // Keep the pre-108 metric-only signal.
+        invoicingMetrics.autoEmailSkipped(loaded.invoiceSubject, 'no_recipient');
+      }
       logger.warn(
         {
           tenantId: input.tenantId,
@@ -1210,7 +1248,7 @@ export async function recordPayment(
           memberId: loaded.memberId,
           documentNumber: loaded.documentNumber?.raw,
         },
-        'recordPayment: invoice snapshot missing primary_contact_email — auto-email receipt skipped',
+        'recordPayment: no live primary contact for this invoice — auto-email receipt skipped',
       );
       // Cluster 5 (Finding 1) — the case the admin must act on: receipt was
       // NOT emailed because the member has no contact email on file.

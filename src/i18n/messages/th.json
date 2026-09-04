@@ -6271,6 +6271,7 @@
       "receipt_pdf_downloaded": "ดาวน์โหลดใบเสร็จรับเงินแล้ว",
       "tax_receipt_issued": "ออกใบกำกับภาษี/ใบเสร็จรับเงิน",
       "tenant_receipt_prefix_changed": "เปลี่ยน prefix เลขเอกสาร",
+      "auto_email_skipped_no_recipient": "ข้ามการส่งอีเมลอัตโนมัติ — ไม่มีผู้ติดต่อหลัก",
       "invoice_buyer_identity_invalid": "ข้อมูลผู้ซื้อไม่ถูกต้อง — ระงับการออกเอกสาร",
       "sign_in_failure": "เข้าสู่ระบบไม่สำเร็จ",
       "sign_out": "ออกจากระบบ",

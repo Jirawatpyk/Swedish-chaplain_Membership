@@ -465,21 +465,15 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
       expect(r.ok).toBe(true);
       if (r.ok) expect(r.value.emailDispatch).toBe('disabled');
     }
-    // auto-email on, NO recipient (empty-string sentinel) → 'skipped_no_email'
+    // auto-email on, NO recipient → 'skipped_no_email'. 108: "no recipient" is
+    // now a member with no LIVE primary contact — the snapshot address is
+    // irrelevant to delivery, so the fixture keeps its (frozen) buyer email and
+    // the live read is the one that comes back empty.
     {
-      const noEmail = makeIssuedInvoice({
-        status: 'paid',
-        memberIdentitySnapshot: {
-          legal_name: 'Acme Co',
-          tax_id: 'snapshot-tax-at-issue',
-          address: '123 Road',
-          primary_contact_name: 'John',
-          primary_contact_email: '',
-          member_number: null,
-          member_number_display: null,
-        },
+      const noEmail = makeIssuedInvoice({ status: 'paid' });
+      const deps = makeDeps(true, noEmail, makeSettings({ autoEmailEnabled: true }), {
+        recipientLocale: makeRecipientLocaleFake({ email: null }),
       });
-      const deps = makeDeps(true, noEmail, makeSettings({ autoEmailEnabled: true }));
       const r = await recordPayment(deps, input);
       expect(r.ok).toBe(true);
       if (r.ok) expect(r.value.emailDispatch).toBe('skipped_no_email');
@@ -680,15 +674,17 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
 
   it('member prefers Thai → receipt-email outbox row carries recipientLocale=th (email-locale audit 2026-07-16)', async () => {
     const invoice = makeIssuedInvoice();
-    const deps = makeDeps(true, invoice, makeSettings({ autoEmailEnabled: true }));
-    deps.recipientLocale.getMemberEmailLocale = vi.fn(async () => 'th' as const);
+    // 108 — address AND locale come from the same live primary-contact row.
+    const deps = makeDeps(true, invoice, makeSettings({ autoEmailEnabled: true }), {
+      recipientLocale: makeRecipientLocaleFake({ email: 'john@acme.example', locale: 'th' }),
+    });
     let call = 0;
     deps.invoiceRepo.findByIdInTx = vi.fn(async () => {
       call++;
       return call === 1 ? invoice : makeIssuedInvoice({ status: 'paid' });
     });
     await recordPayment(deps, input);
-    expect(deps.recipientLocale.getMemberEmailLocale).toHaveBeenCalledWith(
+    expect(deps.recipientLocale.getMemberEmailRecipient).toHaveBeenCalledWith(
       expect.anything(),
       'test-swecham',
       'member-1',
@@ -721,20 +717,13 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
     // `autoEmailSkipped` counter bumps so ops can alert (matches the
     // issue-invoice + credit-note `skipped_no_recipient` surfaces).
     const skipMetric = vi.spyOn(invoicingMetrics, 'autoEmailSkipped');
-    const invoice = makeIssuedInvoice({
-      memberIdentitySnapshot: {
-        legal_name: 'Acme Co',
-        tax_id: 'snapshot-tax-at-issue',
-        address: '123 Road',
-        primary_contact_name: 'John',
-        // Legacy/migrated snapshot row — no deliverable address (the snapshot
-        // type's "no email" sentinel is '' per the zod union, not null).
-        primary_contact_email: '',
-        member_number: null,
-        member_number_display: null,
-      },
+    // 108 — the skip is now driven by the LIVE read: this member has no contact
+    // with `is_primary AND removed_at IS NULL`. The frozen snapshot still names
+    // the buyer; it is simply not a delivery address any more.
+    const invoice = makeIssuedInvoice();
+    const deps = makeDeps(true, invoice, makeSettings({ autoEmailEnabled: true }), {
+      recipientLocale: makeRecipientLocaleFake({ email: null }),
     });
-    const deps = makeDeps(true, invoice, makeSettings({ autoEmailEnabled: true }));
     let call = 0;
     deps.invoiceRepo.findByIdInTx = vi.fn(async () => {
       call++;
@@ -1467,3 +1456,147 @@ describe('recordPayment — server-side payment-date guard (defense-in-depth)', 
   });
 });
 
+describe('recordPayment — the receipt reaches the LIVE primary contact (108 FR-001)', () => {
+  it('sends to the contact who is primary NOW, not the address frozen in the snapshot', async () => {
+    // The invoice was issued while john@acme.example was primary; the member has
+    // since promoted a new primary. The tax document keeps naming the old buyer
+    // (FR-038) — the EMAIL must go to the new one.
+    const invoice = makeIssuedInvoice();
+    const deps = makeDeps(true, invoice, makeSettings({ autoEmailEnabled: true }), {
+      recipientLocale: makeRecipientLocaleFake({ email: 'promoted-b@acme.example' }),
+    });
+    let call = 0;
+    deps.invoiceRepo.findByIdInTx = vi.fn(async () => {
+      call++;
+      return call === 1 ? invoice : makeIssuedInvoice({ status: 'paid' });
+    });
+
+    const r = await recordPayment(deps, input);
+
+    expect(r.ok).toBe(true);
+    expect(deps.outbox.enqueue).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        eventType: 'invoice_paid',
+        recipientEmail: 'promoted-b@acme.example',
+      }),
+    );
+    // and never to the frozen snapshot address
+    expect(deps.outbox.enqueue).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ recipientEmail: 'john@acme.example' }),
+    );
+  });
+
+  it('reads the live primary inside the payment tx (not a standalone read)', async () => {
+    const invoice = makeIssuedInvoice();
+    const fake = makeRecipientLocaleFake({ email: 'promoted-b@acme.example' });
+    const deps = makeDeps(true, invoice, makeSettings({ autoEmailEnabled: true }), {
+      recipientLocale: fake,
+    });
+    let call = 0;
+    deps.invoiceRepo.findByIdInTx = vi.fn(async () => {
+      call++;
+      return call === 1 ? invoice : makeIssuedInvoice({ status: 'paid' });
+    });
+
+    await recordPayment(deps, input);
+
+    expect(fake.getMemberEmailRecipient).toHaveBeenCalledWith(
+      expect.anything(),
+      'test-swecham',
+      'member-1',
+    );
+    const [txArg] = fake.getMemberEmailRecipient.mock.calls[0] ?? [];
+    expect(txArg).not.toBeNull();
+  });
+
+  it('carries the live primary locale onto the outbox row', async () => {
+    const invoice = makeIssuedInvoice();
+    const deps = makeDeps(true, invoice, makeSettings({ autoEmailEnabled: true }), {
+      recipientLocale: makeRecipientLocaleFake({ email: 'promoted-b@acme.example', locale: 'th' }),
+    });
+    let call = 0;
+    deps.invoiceRepo.findByIdInTx = vi.fn(async () => {
+      call++;
+      return call === 1 ? invoice : makeIssuedInvoice({ status: 'paid' });
+    });
+
+    await recordPayment(deps, input);
+
+    expect(deps.outbox.enqueue).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ recipientEmail: 'promoted-b@acme.example', recipientLocale: 'th' }),
+    );
+  });
+
+  it('no live primary → no outbox row, skipped_no_email, and an audited skip', async () => {
+    const invoice = makeIssuedInvoice();
+    const deps = makeDeps(true, invoice, makeSettings({ autoEmailEnabled: true }), {
+      recipientLocale: makeRecipientLocaleFake({ email: null }),
+    });
+    let call = 0;
+    deps.invoiceRepo.findByIdInTx = vi.fn(async () => {
+      call++;
+      return call === 1 ? invoice : makeIssuedInvoice({ status: 'paid' });
+    });
+
+    const r = await recordPayment(deps, input);
+
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.emailDispatch).toBe('skipped_no_email');
+    expect(deps.outbox.enqueue).not.toHaveBeenCalled();
+    expect(deps.audit.emit).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        eventType: 'auto_email_skipped_no_recipient',
+        payload: expect.objectContaining({
+          invoice_id: INVOICE_ID,
+          // NOT `member_id` — that key bumps members.last_activity_at (0009 trigger)
+          skipped_for_member_id: 'member-1',
+          email_event_type: 'invoice_paid',
+        }),
+      }),
+    );
+  });
+
+  it('audits the skip in the payment tx so it rolls back with a failed payment', async () => {
+    const invoice = makeIssuedInvoice();
+    const deps = makeDeps(true, invoice, makeSettings({ autoEmailEnabled: true }), {
+      recipientLocale: makeRecipientLocaleFake({ email: null }),
+    });
+    let call = 0;
+    deps.invoiceRepo.findByIdInTx = vi.fn(async () => {
+      call++;
+      return call === 1 ? invoice : makeIssuedInvoice({ status: 'paid' });
+    });
+
+    await recordPayment(deps, input);
+
+    const skipCall = vi
+      .mocked(deps.audit.emit)
+      .mock.calls.find(([, event]) => event.eventType === 'auto_email_skipped_no_recipient');
+    expect(skipCall).toBeDefined();
+    expect(skipCall?.[0]).not.toBeNull();
+  });
+
+  it('does not audit a skip when auto-email is off for the tenant (nothing was skipped)', async () => {
+    const invoice = makeIssuedInvoice();
+    const deps = makeDeps(true, invoice, makeSettings({ autoEmailEnabled: false }), {
+      recipientLocale: makeRecipientLocaleFake({ email: null }),
+    });
+    let call = 0;
+    deps.invoiceRepo.findByIdInTx = vi.fn(async () => {
+      call++;
+      return call === 1 ? invoice : makeIssuedInvoice({ status: 'paid' });
+    });
+
+    await recordPayment(deps, input);
+
+    expect(
+      vi
+        .mocked(deps.audit.emit)
+        .mock.calls.some(([, event]) => event.eventType === 'auto_email_skipped_no_recipient'),
+    ).toBe(false);
+  });
+});

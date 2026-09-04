@@ -175,7 +175,23 @@ export type F4AuditEventType =
    * test (`prefixes` list) and the admin audit-viewer's category heuristic
    * (`auditEventCategory`) with zero extra allow-list entries.
    */
-  | 'invoice_buyer_identity_invalid';
+  | 'invoice_buyer_identity_invalid'
+  /**
+   * 108 FR-004 — an F4 auto-email (receipt, void notice, credit note, resend)
+   * had nowhere to go: the member has no contact with `is_primary = true AND
+   * removed_at IS NULL`, so there is no address to deliver to and NO fallback
+   * is permitted (a former primary must not keep receiving the member's money
+   * mail). Without this row the skip is invisible — the money mutation
+   * succeeds, the member is never told, and nobody can tell afterwards which
+   * documents were never delivered.
+   *
+   * Emitted in the caller's tx on the mutation paths (so it rolls back with a
+   * failed payment / void / credit note) and standalone on the resend path.
+   * Payload: `{ invoice_id | credit_note_id, email_event_type, member_id }`
+   * — ids only, never the missing address (there is none) nor any contact PII.
+   * Operational, no tax-document touch → 5y.
+   */
+  | 'auto_email_skipped_no_recipient';
 
 /**
  * Retention-year mapping for F4 audit events (data-model 009 § 7.2).
@@ -193,6 +209,8 @@ export type F4AuditEventType =
  * (`audit-retention-backfill.test.ts`).
  */
 export const F4_AUDIT_RETENTION_YEARS: Record<F4AuditEventType, 5 | 10> = {
+  // 108 — operational skip record, no tax-document touch; 5y.
+  auto_email_skipped_no_recipient: 5,
   invoice_draft_created: 5,
   invoice_draft_updated: 5,
   invoice_draft_deleted: 5,

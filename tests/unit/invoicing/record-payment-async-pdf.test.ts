@@ -147,7 +147,11 @@ function makeSettings(overrides: Partial<TenantInvoiceSettingsView> = {}): Tenan
   };
 }
 
-function makeAsyncDeps(draft: Invoice, settings: TenantInvoiceSettingsView): RecordPaymentDeps {
+function makeAsyncDeps(
+  draft: Invoice,
+  settings: TenantInvoiceSettingsView,
+  overrides: Partial<RecordPaymentDeps> = {},
+): RecordPaymentDeps {
   const opaqueTx = { execute: vi.fn(async () => [{ status: 'issued' }]) };
   return {
     membershipAccess: membershipAccessStub(), // 066 §4.4(1)
@@ -221,6 +225,7 @@ function makeAsyncDeps(draft: Invoice, settings: TenantInvoiceSettingsView): Rec
     // Default: flag not carried (legacy/dormant), exact-equivalent of the
     // pre-refactor `undefined`. Tests that exercise the RC path override with 'on'.
     taxAtPayment: 'off',
+    ...overrides,
   };
 }
 
@@ -393,6 +398,11 @@ describe('recordPayment — T166-03 async receipt PDF branch', () => {
     // notification_type — but the column is NOT NULL, so a snapshot with
     // no contact email must land the documented system sentinel instead
     // of crashing (or persisting an empty string).
+    //
+    // 108 — the render-task sentinel still reads the SNAPSHOT (it is not a
+    // delivery address), while the receipt EMAIL is now skipped because the
+    // member has no live primary contact. Both halves are set explicitly so
+    // this test keeps proving both, independently.
     const base = makeIssuedInvoice();
     const draft = {
       ...base,
@@ -401,7 +411,9 @@ describe('recordPayment — T166-03 async receipt PDF branch', () => {
         primary_contact_email: null as unknown as string,
       },
     } as Invoice;
-    const deps = makeAsyncDeps(draft, makeSettings());
+    const deps = makeAsyncDeps(draft, makeSettings(), {
+      recipientLocale: makeRecipientLocaleFake({ email: null }),
+    });
     const r = await recordPayment(deps, input);
     expect(r.ok).toBe(true);
     expect(deps.receiptPdfRenderEnqueue!.enqueue).toHaveBeenCalledTimes(1);

@@ -24,7 +24,9 @@
  * email (and audits the skip) rather than guessing an address.
  */
 import type { RecipientLocalePort } from '../ports/recipient-locale-port';
-import type { F4OutboxLocale } from '../ports/email-outbox-port';
+import type { F4OutboxEventType, F4OutboxLocale } from '../ports/email-outbox-port';
+import type { AuditPort } from '../ports/audit-port';
+import { invoicingMetrics } from '@/lib/metrics';
 
 export type MoneyRecipient =
   /** Live primary contact of a member invoice. */
@@ -64,4 +66,58 @@ export async function resolveMoneyRecipient(
   // undeliverable, and an empty one means "no recipient", not "use the snapshot".
   if (live === null || live.email.trim() === '') return { kind: 'no_recipient' };
   return { kind: 'member', email: live.email, locale: live.locale };
+}
+
+/**
+ * 108 FR-004 — record that a money email was skipped because the member has no
+ * live primary contact.
+ *
+ * Without this row the skip is invisible: the payment settles, the void or
+ * credit note is issued, and nobody can reconstruct which documents never
+ * reached the member. The metric bump gives ops an alertable signal; the audit
+ * row gives an auditor the per-document trail.
+ *
+ * Payload keys, deliberately:
+ *   • `skipped_for_member_id`, NOT `member_id` — migration 0009's trigger bumps
+ *     `members.last_activity_at` for ANY audit row carrying a snake_case
+ *     `member_id`, and the F3 timeline view keys on the same field. A skipped
+ *     email is not member activity: stamping it would inflate the at-risk
+ *     scorer's recency signal for exactly the members whose contact data is
+ *     broken (the ones it most needs to flag).
+ *   • `email_event_type` — which mail was skipped; not named `event_type` so it
+ *     never reads as a second copy of `audit_log.event_type`.
+ *   • no address and no contact PII — there is no address; that IS the event.
+ *
+ * `tx` follows `AuditPort.emit`: the caller's open money tx on the mutation
+ * paths (so the skip rolls back with a failed payment), `null` on the resend
+ * path, which has no tx of its own.
+ */
+export async function auditAutoEmailSkippedNoRecipient(
+  audit: AuditPort,
+  tx: unknown,
+  args: {
+    readonly tenantId: string;
+    readonly requestId: string | null;
+    readonly actorUserId: string;
+    readonly memberId: string;
+    readonly emailEventType: F4OutboxEventType;
+    readonly subject: 'membership' | 'event';
+    readonly invoiceId?: string;
+    readonly creditNoteId?: string;
+  },
+): Promise<void> {
+  invoicingMetrics.autoEmailSkipped(args.subject, 'no_recipient');
+  await audit.emit(tx, {
+    tenantId: args.tenantId,
+    requestId: args.requestId,
+    eventType: 'auto_email_skipped_no_recipient',
+    actorUserId: args.actorUserId,
+    summary: `Auto-email ${args.emailEventType} skipped — member has no primary contact`,
+    payload: {
+      skipped_for_member_id: args.memberId,
+      email_event_type: args.emailEventType,
+      ...(args.invoiceId === undefined ? {} : { invoice_id: args.invoiceId }),
+      ...(args.creditNoteId === undefined ? {} : { credit_note_id: args.creditNoteId }),
+    },
+  });
 }

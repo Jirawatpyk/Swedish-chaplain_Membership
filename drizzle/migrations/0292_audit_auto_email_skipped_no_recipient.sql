@@ -1,0 +1,22 @@
+-- 108-contact-recipient-rules PR-A — new audit event type for an F4 auto-email
+-- that had no live primary contact to deliver to.
+--
+-- WHY: money emails (receipt on payment, void notice, credit note, resend) now
+-- resolve their recipient LIVE from the member's primary contact instead of the
+-- frozen buyer snapshot. When a member has no contact with
+-- `is_primary = true AND removed_at IS NULL`, there is no address and NO
+-- fallback is permitted — the enqueue is skipped. Without an audit row that
+-- skip is invisible: the payment settles, the member is never told, and nobody
+-- can reconstruct afterwards which documents were never delivered.
+--
+-- Payload carries ids only (`invoice_id` | `credit_note_id`,
+-- `email_event_type`, `member_id`) — never an address (there is none) and no
+-- contact PII. Operational event, no tax-document touch → 5y retention
+-- (F4_AUDIT_RETENTION_YEARS in audit-port.ts).
+--
+-- ENUM-ONLY FILE: `scripts/run-migrations.ts` extracts every
+-- `ALTER TYPE … ADD VALUE` and replays it in AUTOCOMMIT before the
+-- transactional migrate pass (see scripts/lib/enum-migration-guard.ts for the
+-- 0230 incident this prevents). Keep this file free of any other DDL.
+
+ALTER TYPE "audit_event_type" ADD VALUE IF NOT EXISTS 'auto_email_skipped_no_recipient';
