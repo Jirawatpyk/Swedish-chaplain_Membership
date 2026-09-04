@@ -785,18 +785,22 @@ export default async function MemberDetailPage({
   //
   // Skipped entirely for an archived or erased member: neither is billed, so
   // there is nothing to fail to deliver, and the read is not worth making.
+  //
+  // Best-effort for the same reason as the invoice and credit-note pages: this
+  // read can throw, and a warning banner must not take the member page down
+  // with it.
   const moneyEmailUndeliverable =
     isErased || member.status === 'archived'
       ? false
-      : (
-          await resolveMoneyRecipient(
-            recipientLocaleAdapter,
-            null,
-            tenant.slug,
-            member.memberId,
-            null,
-          )
-        ).kind === 'no_recipient';
+      : await resolveMoneyRecipient(
+          recipientLocaleAdapter,
+          null,
+          tenant.slug,
+          member.memberId,
+          null,
+        )
+          .then((r) => r.kind === 'no_recipient')
+          .catch(() => false);
   // Post-erase state (COMP-1 US3-A S5): the modify affordances — Erase, Archive,
   // Edit, add-contact, Renew — are gated on write-role AND not-yet-erased. Named
   // once so the four call sites stay in lock-step (Archive/Edit/add-contact

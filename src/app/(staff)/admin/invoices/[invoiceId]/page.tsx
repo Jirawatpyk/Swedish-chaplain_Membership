@@ -254,16 +254,23 @@ export default async function InvoiceDetailPage({
   // contacts were scrubbed on purpose, so "add a contact" is the wrong advice.
   // Fix belongs on the domain type — `getMember`'s `Member` does not carry
   // `erasedAt` — not in another query here.
+  //
+  // Best-effort, like the credit-note page: the read THROWS on a database blip
+  // (the `getMember` it replaced returned a Result and could not), and a
+  // warning banner must never 500 the page whose job is to display the
+  // invoice. Hiding the banner is the safe direction — the money paths refuse
+  // on their own, with their own audit trail.
   let showNoPrimaryContactBanner = false;
   if (invoice.memberId !== null) {
-    const recipient = await resolveMoneyRecipient(
+    showNoPrimaryContactBanner = await resolveMoneyRecipient(
       recipientLocaleAdapter,
       null,
       tenantCtx.slug,
       invoice.memberId,
       null,
-    );
-    showNoPrimaryContactBanner = recipient.kind === 'no_recipient';
+    )
+      .then((r) => r.kind === 'no_recipient')
+      .catch(() => false);
   }
 
   // Resolve staff-user display names for the audit fields on the
