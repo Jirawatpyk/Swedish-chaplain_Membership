@@ -894,6 +894,44 @@ describe('recordPayment — CP-4.2 branch coverage', () => {
     });
   }
 
+  it('a non-member event buyer with no typed address: metric only, no audit row', async () => {
+    // There is no member to attribute the skip to, and the audit arm for these
+    // rows requires an event_registration_id — so this path keeps the pre-108
+    // metric-only signal rather than fabricating a member_id.
+    const skipMetric = vi.spyOn(invoicingMetrics, 'autoEmailSkipped');
+    const invoice = makeNonMemberEventInvoice({
+      memberIdentitySnapshot: {
+        legal_name: 'Walk-in Buyer Co',
+        // Keep the TIN — a no-TIN event row hits the separate legacy
+        // remediation guard and never reaches the email arm at all.
+        tax_id: '9876543210123',
+        address: '50 Sukhumvit Road',
+        primary_contact_name: 'Jane',
+        primary_contact_email: '',
+        member_number: null,
+        member_number_display: null,
+      },
+    });
+    const deps = makeDeps(true, invoice, makeSettings({ autoEmailEnabled: true }));
+    let call = 0;
+    deps.invoiceRepo.findByIdInTx = vi.fn(async () => {
+      call++;
+      return call === 1 ? invoice : makeNonMemberEventInvoice({ status: 'paid' });
+    });
+
+    const r = await recordPayment(deps, input);
+
+    expect(r.ok, r.ok ? 'ok' : `err: ${JSON.stringify(r)}`).toBe(true);
+    if (r.ok) expect(r.value.emailDispatch).toBe('skipped_no_email');
+    expect(deps.outbox.enqueue).not.toHaveBeenCalled();
+    expect(skipMetric).toHaveBeenCalledWith('event', 'no_recipient');
+    expect(
+      vi
+        .mocked(deps.audit.emit)
+        .mock.calls.some(([, e]) => e.eventType === 'auto_email_skipped_no_recipient'),
+    ).toBe(false);
+  });
+
   it('non-member EVENT invoice (member_id NULL) → recordPayment succeeds (relaxed guard, spec §9 NF-B)', async () => {
     const invoice = makeNonMemberEventInvoice();
     const deps = makeDeps(true, invoice, makeSettings({ receiptNumberingMode: 'separate' }));
@@ -1456,6 +1494,31 @@ describe('recordPayment — server-side payment-date guard (defense-in-depth)', 
   });
 });
 
+describe('recordPayment — audited skip, request-id edge (108 FR-004)', () => {
+  it('records the skip with a null request id when the caller supplied none', async () => {
+    // The webhook path can arrive without a request id; the audit row must
+    // still land, carrying an honest null rather than failing to write.
+    const invoice = makeIssuedInvoice();
+    const deps = makeDeps(true, invoice, makeSettings({ autoEmailEnabled: true }), {
+      recipientLocale: makeRecipientLocaleFake({ email: null }),
+    });
+    let call = 0;
+    deps.invoiceRepo.findByIdInTx = vi.fn(async () => {
+      call++;
+      return call === 1 ? invoice : makeIssuedInvoice({ status: 'paid' });
+    });
+    const { requestId: _dropped, ...withoutRequestId } = input;
+
+    const r = await recordPayment(deps, withoutRequestId);
+
+    expect(r.ok).toBe(true);
+    const skip = vi
+      .mocked(deps.audit.emit)
+      .mock.calls.find(([, e]) => e.eventType === 'auto_email_skipped_no_recipient');
+    expect(skip).toBeDefined();
+    expect(skip?.[1].requestId).toBeNull();
+  });
+});
 describe('recordPayment — the receipt reaches the LIVE primary contact (108 FR-001)', () => {
   it('sends to the contact who is primary NOW, not the address frozen in the snapshot', async () => {
     // The invoice was issued while john@acme.example was primary; the member has

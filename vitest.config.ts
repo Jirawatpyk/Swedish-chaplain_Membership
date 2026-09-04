@@ -183,6 +183,16 @@ export default defineConfig({
           branches: 100,
           functions: 100,
         },
+        // 108 T019 — the money-email recipient resolver. Every F4 auto-email and
+        // the F5 PromptPay billing address flow through this one function, and
+        // its wrong branch is invisible: mail simply arrives at the wrong
+        // person. Money-path bar, same class as the auth entries below.
+        'src/modules/invoicing/application/lib/resolve-money-recipient.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
         'src/modules/auth/application/sign-in.ts': {
           lines: 100,
           branches: 100,
