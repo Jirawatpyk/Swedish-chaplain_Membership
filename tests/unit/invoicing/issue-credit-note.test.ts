@@ -654,7 +654,7 @@ describe('issueCreditNote — event-fee (non-member + matched-member) Task 8', (
       expect.objectContaining({
         eventType: 'auto_email_skipped_no_recipient',
         payload: expect.objectContaining({
-          skipped_for_member_id: 'member-1',
+          related_member_id: 'member-1',
           email_event_type: 'credit_note_issued',
         }),
       }),

@@ -1241,15 +1241,22 @@ export async function issueCreditNote(
       // the ORIGINAL invoice's member (a CN follows its invoice's buyer). The
       // snapshot still names that buyer on the §86/10 document itself; only a
       // non-member event buyer has no contact row and keeps the typed address.
-      const moneyRecipient = await resolveMoneyRecipient(
-        deps.recipientLocale,
-        tx,
-        input.tenantId,
-        memberId,
-        loaded.memberIdentitySnapshot,
-      );
+      // Gated on `shouldAutoEmail` for the same reason void-invoice is: no read
+      // inside the §86/10 issuing tx when nothing will be sent, and no audit row
+      // blaming a missing contact for an email the tenant had switched off.
+      const moneyRecipient = shouldAutoEmail
+        ? await resolveMoneyRecipient(
+            deps.recipientLocale,
+            tx,
+            input.tenantId,
+            memberId,
+            loaded.memberIdentitySnapshot,
+          )
+        : null;
       const creditNoteRecipient =
-        moneyRecipient.kind === 'no_recipient' ? '' : moneyRecipient.email;
+        moneyRecipient === null || moneyRecipient.kind === 'no_recipient'
+          ? ''
+          : moneyRecipient.email;
       // MEDIUM-5 — capture the delivery outcome so the route/UI can give the
       // admin a non-blocking signal (notice on `skipped_no_recipient`, silent
       // on `sent`/`not_requested`). Defaults to `not_requested`; flips to
@@ -1260,7 +1267,9 @@ export async function issueCreditNote(
         // language. 108: the preference rides on the same live primary-contact
         // row that produced the address (non-member buyer → undefined → 'en').
         const recipientLocale =
-          moneyRecipient.kind === 'member' ? (moneyRecipient.locale ?? undefined) : undefined;
+          moneyRecipient !== null && moneyRecipient.kind === 'member'
+            ? (moneyRecipient.locale ?? undefined)
+            : undefined;
         await deps.outbox.enqueue(tx, {
           tenantId: input.tenantId,
           eventType: 'credit_note_issued',

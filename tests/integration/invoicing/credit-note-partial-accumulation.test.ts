@@ -717,7 +717,7 @@ describe('F4 US6 — credit-note partial accumulation + concurrent race (T075)',
     expect(audit).toHaveLength(1);
     const payload = audit[0]!.payload as Record<string, unknown>;
     expect(payload.email_event_type).toBe('credit_note_issued');
-    expect(payload.skipped_for_member_id).toBe(memberId);
+    expect(payload.related_member_id).toBe(memberId);
     expect(payload.credit_note_id).toBeDefined();
   }, 60_000);
 });

@@ -26,7 +26,7 @@ Modular monolith: `src/modules/<context>/{domain,application,infrastructure}`, p
 > · `25ad2f83f` record-payment + migration 0292 + the new audit event (T015/T016/T020)
 > · `ba41be6c6` void / credit-note / resend / routes (T021–T024).
 > Two design notes that differ from the brief, both deliberate and documented in code:
-> (a) the skip audit payload uses **`skipped_for_member_id`**, not `member_id` — migration 0009's
+> (a) the skip audit payload uses **`related_member_id`**, not `member_id` — migration 0009's
 > trigger bumps `members.last_activity_at` for any audit row carrying that key, and a skipped email
 > is not member activity; (b) `resolveMoneyRecipient` is a PURE resolver and the audit/metric side
 > effect is a second export (`auditAutoEmailSkippedNoRecipient`), so the idempotent-replay arm can

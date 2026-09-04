@@ -79,7 +79,11 @@ affects F7's `audienceId`-based gateway (R16).
 
 ## R2 — "No recipient" becomes visible: audit event + live warning, no new persisted state
 
-- **Decision**: Add F4 audit event `auto_email_skipped_no_recipient` (5-year retention,
+- **Decision**: Add F4 audit event `auto_email_skipped_no_recipient` (**10-year** retention
+  — CORRECTED at the PR-A security review from the 5y first shipped: the row records that a
+  §86/4 / §86/10 document was never delivered, and every document event it can refer to is
+  10y. Keeping "sent" for ten years and "never sent" for five is an asymmetry that always
+  favours us,
   payload `{ invoice_id | credit_note_id, event_type, member_id }`, no email) emitted at the
   helper's `no_recipient` branch inside the same tx (throw-to-rollback like the existing
   emits). The invoice detail page and the member detail page compute the warning **live**

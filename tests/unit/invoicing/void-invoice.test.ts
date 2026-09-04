@@ -971,7 +971,7 @@ describe('voidInvoice — the cancellation notice reaches the LIVE primary (108 
         eventType: 'auto_email_skipped_no_recipient',
         payload: expect.objectContaining({
           invoice_id: INVOICE_ID,
-          skipped_for_member_id: 'member-1',
+          related_member_id: 'member-1',
           email_event_type: 'invoice_voided',
         }),
       }),

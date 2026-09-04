@@ -126,6 +126,10 @@ function httpStatusForUseCaseError(code: string): {
     // has no live primary contact. Actionable by staff, not by retrying.
     case 'primary_contact_missing':
       return { status: 409, routeCode: 'primary_contact_missing' };
+    // 108 FR-004 — we could not READ the contact. Transient: same 500 the
+    // escaping throw produced before, never the permanent 409 above.
+    case 'billing_recipient_read_failed':
+      return { status: 500, routeCode: 'internal_error' };
     case 'processor_unavailable':
       return { status: 502, routeCode: 'processor_unavailable' };
     // I4 (Task 7) — the F4 payability read THREW (Neon down). 500 is the SAME

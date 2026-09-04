@@ -28,12 +28,24 @@
  * must match an ALLOWED entry naming the file, the code it appears in, and why
  * that read is about IDENTITY (or an issue-time equivalence), not delivery.
  *
- * ## Positive control
+ * ## Positive control (three layers, because one is not enough)
  *
- * Every ALLOWED entry must be FOUND on each run. If the pattern rots or the
- * comment stripper changes shape, `findings` goes empty and a broken gate would
- * print OK while seeing nothing — the failure mode this repo has been burned by
- * before (a role-literal sweep that silently stopped matching).
+ * 1. **Every ALLOWED entry must be FOUND** each run. A rotted pattern makes
+ *    `findings` go empty, and a blind gate prints OK — the failure mode this
+ *    repo has been burned by before (a role-literal sweep that silently
+ *    stopped matching).
+ * 2. **Each entry declares how many times it may match** (`expect`), checked
+ *    in BOTH directions. Without it one allowlisted line blesses every future
+ *    occurrence of the same substring in that file — so someone could add
+ *    `recipientEmail: loaded.memberIdentitySnapshot.primary_contact_email` to
+ *    `record-payment.ts` and the gate would wave through the exact bug this
+ *    file exists to prevent. A read DISAPPEARING is information too.
+ * 3. **Per-file floor**: a file whose comment-stripped text has no `import` or
+ *    `export` line is almost certainly a stripper bug, not an empty file.
+ *    Layers 1 and 2 cannot see that, because the three use cases this feature
+ *    changed (`void-invoice`, `issue-credit-note`, `resend-pdf`) hold NO
+ *    allowlist entries — the gate could go blind on exactly them and still
+ *    report every entry found.
  *
  * ## Honest limits
  *
@@ -51,13 +63,23 @@ const ROOT = process.cwd();
 const SCOPE = ['src/modules/invoicing', 'src/modules/payments', 'src/app/api'] as const;
 
 /**
- * Each entry: the file, a substring of the matched line, and why this read is
- * NOT a delivery address. "It was already there" is not a reason.
+ * Each entry: the file, a substring of the matched line, how many lines in that
+ * file may match it, and why this read is NOT a delivery address.
+ * "It was already there" is not a reason.
  */
-const ALLOWED: ReadonlyArray<{ file: string; contains: string; why: string }> = [
+interface AllowedRead {
+  readonly file: string;
+  readonly contains: string;
+  /** Exact number of matching lines permitted. Checked in both directions. */
+  readonly expect: number;
+  readonly why: string;
+}
+
+const ALLOWED: ReadonlyArray<AllowedRead> = [
   {
     file: 'src/modules/invoicing/application/lib/resolve-money-recipient.ts',
     contains: 'snapshot?.primary_contact_email',
+    expect: 1,
     why:
       'the non-member arm: an event buyer has no contact row, so the address an ' +
       'admin typed at issue IS the only address. Every member invoice takes the ' +
@@ -66,6 +88,7 @@ const ALLOWED: ReadonlyArray<{ file: string; contains: string; why: string }> = 
   {
     file: 'src/modules/invoicing/application/use-cases/record-payment.ts',
     contains: 'loaded.memberIdentitySnapshot.primary_contact_email',
+    expect: 1,
     why:
       'the async receipt-PDF RENDER TASK, not an email: notifications_outbox.' +
       'to_email is NOT NULL and the dispatcher routes render rows by ' +
@@ -75,19 +98,31 @@ const ALLOWED: ReadonlyArray<{ file: string; contains: string; why: string }> = 
   {
     file: 'src/modules/invoicing/application/use-cases/issue-invoice.ts',
     contains: 'memberSnap.primary_contact_email',
+    expect: 1,
     why:
-      'ISSUE time: memberSnap was just built in this same tx from the live ' +
-      'primary contact (memberIdentity.getForIssue), so snapshot and live are the ' +
-      'same row. There is no window in which they can differ.',
+      'ISSUE time, and BOTH arms of resolve-invoice-buyer are safe for different ' +
+      'reasons — the half-true version of this note said only the first. Member ' +
+      'arm: memberSnap is re-read live in this same tx via ' +
+      'memberIdentity.getForIssue, so snapshot and live are the same row. ' +
+      'Non-member arm: getForIssue is never called (issue-invoice says so ' +
+      'explicitly) and the draft-pinned snapshot is used — safe because an event ' +
+      'buyer has no contact row that could have moved, exactly like the ' +
+      "resolver's own non_member arm.",
   },
   {
     file: 'src/modules/invoicing/application/use-cases/issue-event-invoice-as-paid.ts',
     contains: 'memberSnap.primary_contact_email',
-    why: 'same as issue-invoice — the snapshot is taken live in the issuing tx.',
+    expect: 1,
+    why:
+      'same as issue-invoice, including the two-arm reasoning: live re-read for a ' +
+      'matched member, draft-pinned for a non-member event buyer who has no ' +
+      'contact row.',
   },
   {
     file: 'src/modules/invoicing/application/use-cases/create-event-invoice-draft.ts',
     contains: 'primary_contact_email: input.buyer.primary_contact_email',
+    // The token appears twice on that one line (destination and source).
+    expect: 2,
     why:
       'BUILDING the snapshot for a non-member event buyer from admin-typed input ' +
       '— the write side of the identity record, not a read for delivery.',
@@ -95,11 +130,13 @@ const ALLOWED: ReadonlyArray<{ file: string; contains: string; why: string }> = 
   {
     file: 'src/modules/invoicing/application/use-cases/create-event-invoice-draft.ts',
     contains: 'primary_contact_email: z.union',
+    expect: 1,
     why: 'zod schema for the admin-typed buyer block — a declaration, not a read.',
   },
   {
     file: 'src/modules/invoicing/infrastructure/adapters/member-identity-adapter.ts',
     contains: 'primary_contact_email: primaryContact?.email',
+    expect: 1,
     why:
       'BUILDING the identity snapshot from the live primary contact at issue (the ' +
       'write side). This is the read the frozen value comes from.',
@@ -107,31 +144,37 @@ const ALLOWED: ReadonlyArray<{ file: string; contains: string; why: string }> = 
   {
     file: 'src/modules/invoicing/domain/value-objects/member-identity-snapshot.ts',
     contains: 'readonly primary_contact_email: string;',
+    expect: 1,
     why: 'the type declaration of the snapshot itself.',
   },
   {
     file: 'src/modules/invoicing/domain/value-objects/member-identity-snapshot.ts',
     contains: 'primary_contact_email: z.union([',
+    expect: 1,
     why: 'the snapshot zod schema — a declaration, not a read.',
   },
   {
     file: 'src/modules/invoicing/application/lib/resolve-money-recipient.ts',
     contains: 'readonly primary_contact_email?: string | null;',
+    expect: 1,
     why: 'the narrowed snapshot type the resolver accepts — a declaration.',
   },
   {
     file: 'src/modules/invoicing/domain/value-objects/member-identity-snapshot.ts',
     contains: 'must be a valid email',
+    expect: 1,
     why: 'the zod validation MESSAGE for that field, not a read.',
   },
   {
     file: 'src/app/api/internal/cron/receipt-pdf-reconcile/route.ts',
     contains: '| { primary_contact_email?: string }',
+    expect: 1,
     why: 'local cast of the snapshot JSON in the render-reconcile cron — a type.',
   },
   {
     file: 'src/app/api/internal/cron/receipt-pdf-reconcile/route.ts',
     contains: "return snap?.primary_contact_email ??",
+    expect: 1,
     why:
       'the render-reconcile cron re-enqueues a RENDER TASK, not an email ' +
       '(renderReceiptPdf never reads this field). notifications_outbox.to_email ' +
@@ -142,6 +185,8 @@ const ALLOWED: ReadonlyArray<{ file: string; contains: string; why: string }> = 
   {
     file: 'src/modules/invoicing/infrastructure/redaction/redact-buyer-pii-step.ts',
     contains: "'primary_contact_email',",
+    // Three sites: the field list plus the two SQL redaction literals.
+    expect: 3,
     why:
       'GDPR erasure: the field is being redacted OUT of the snapshot, the exact ' +
       'opposite of addressing mail with it.',
@@ -149,6 +194,20 @@ const ALLOWED: ReadonlyArray<{ file: string; contains: string; why: string }> = 
 ];
 
 const READ = /(?<![\w$])primary_contact_email(?![\w$])/g;
+
+/**
+ * Layer-3 sentinel. Deliberately NOT a keyword match: the first attempt looked
+ * for an `import`/`export` line in the stripped text and reported EVERY file as
+ * blind — a useful reminder that a sentinel you have not watched fail is not a
+ * sentinel. This one states the failure directly: a file with real content whose
+ * stripped form has no non-empty line left means the stripper ate it, and the
+ * scan of that file saw nothing.
+ */
+function looksStripped(raw: string, lines: readonly string[]): boolean {
+  const rawHasContent = raw.split(String.fromCharCode(10)).some((l) => l.trim().length > 0);
+  const anySurvived = lines.some((l) => l.trim().length > 0);
+  return rawHasContent && !anySurvived;
+}
 
 /** The scanner quotes the literals it authorises, so it must skip itself. */
 const SELF = 'scripts/check-money-email-recipient.ts';
@@ -163,7 +222,8 @@ function walk(dir: string, out: string[] = []): string[] {
 }
 
 const findings: string[] = [];
-const matchedEntries = new Set<number>();
+const matchCounts = new Map<number, number>();
+const blindFiles: string[] = [];
 let scanned = 0;
 
 for (const root of SCOPE) {
@@ -182,6 +242,13 @@ for (const root of SCOPE) {
     const raw = readFileSync(file, 'utf8');
     const lines = stripCommentLines(raw);
     const code = lines.join('\n');
+    // Per-file floor (layer 3). Every source file in scope has at least one
+    // import or export; a file that has none AFTER stripping means the stripper
+    // ate it, and the gate would then be blind to that file while still
+    // reporting every allowlist entry found.
+    if (looksStripped(raw, lines)) {
+      blindFiles.push(shown);
+    }
     READ.lastIndex = 0;
     for (const m of code.matchAll(READ)) {
       const lineNo = lineOfIndex(code, m.index ?? 0);
@@ -190,7 +257,7 @@ for (const root of SCOPE) {
         (a) => a.file === shown && lineText.includes(a.contains),
       );
       if (idx >= 0) {
-        matchedEntries.add(idx);
+        matchCounts.set(idx, (matchCounts.get(idx) ?? 0) + 1);
         continue;
       }
       findings.push(`  ✗ ${shown}:${lineNo + 1}: ${lineText.trim()}`);
@@ -203,15 +270,30 @@ if (scanned === 0) {
   process.exit(1);
 }
 
-if (matchedEntries.size !== ALLOWED.length) {
-  const missing = ALLOWED.filter((_, i) => !matchedEntries.has(i)).map(
-    (a) => `${a.file} :: ${a.contains}`,
-  );
+if (blindFiles.length > 0) {
   console.error(
-    `check:money-recipient ABORT — allowlist drift: ${matchedEntries.size} of ` +
-      `${ALLOWED.length} justified read(s) were found. Either an entry is stale ` +
-      '(delete it) or the scanner stopped seeing them:\n  ' +
-      missing.join('\n  '),
+    'check:money-recipient ABORT — comment-stripping left a file with no ' +
+      'import/export line, so the scanner is blind to it:\n  ' +
+      blindFiles.join('\n  '),
+  );
+  process.exit(1);
+}
+
+const drifted = ALLOWED.map((a, i) => ({ a, found: matchCounts.get(i) ?? 0 })).filter(
+  ({ a, found }) => found !== a.expect,
+);
+if (drifted.length > 0) {
+  console.error(
+    'check:money-recipient ABORT — allowlist drift. Each entry declares how ' +
+      'many times it may match; a HIGHER count means a new unreviewed read hid ' +
+      'behind an allowlisted one, a LOWER count means the entry is stale or the ' +
+      'scanner stopped seeing it:\n  ' +
+      drifted
+        .map(
+          ({ a, found }) =>
+            `${a.file} :: ${a.contains} — expected ${a.expect}, found ${found}`,
+        )
+        .join('\n  '),
   );
   process.exit(1);
 }
@@ -229,7 +311,8 @@ if (findings.length > 0) {
   process.exit(1);
 }
 
+const justified = [...matchCounts.values()].reduce((a, b) => a + b, 0);
 console.log(
   `check:money-recipient — OK (${scanned} file(s); 0 snapshot-addressed emails, ` +
-    `${matchedEntries.size} justified read(s)).`,
+    `${justified} justified read(s) across ${ALLOWED.length} allowlist entries).`,
 );

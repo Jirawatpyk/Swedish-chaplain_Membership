@@ -125,10 +125,21 @@ export type InitiatePaymentError =
   /**
    * 108 FR-004 — PromptPay needs a billing email and the member has no live
    * primary contact, so there is no address of record to give Stripe. PERMANENT:
-   * retrying cannot help until staff fix the contact. Returned BEFORE
-   * `createPaymentIntent`, so no orphan PI is ever created. Route maps to 409.
+   * retrying cannot help until staff fix the contact. Returned BEFORE the
+   * transaction opens — so no PaymentIntent is created, no row is written, and
+   * (the part the first version got wrong) no pending card attempt is cancelled
+   * on the way to refusing. Route maps to 409.
    */
   | { readonly code: 'primary_contact_missing' }
+  /**
+   * 108 FR-004 — we could not READ whether the member has a primary contact
+   * (Neon down, connection reset). TRANSIENT, and deliberately NOT
+   * `primary_contact_missing`: that code asserts a fact about the member's
+   * data, and asserting it because a read hiccuped is a lie that sends a
+   * member with a perfectly good contact to an admin who finds nothing wrong.
+   * Same distinction, same reason, as `invoice_read_failed` above.
+   */
+  | { readonly code: 'billing_recipient_read_failed' }
   /**
    * REMOVE-WITH-064-REMEDIATION (online-payment site — master checklist
    * at the guard in record-payment.ts) — the F4 bridge rejected a LEGACY
@@ -430,6 +441,42 @@ async function initiatePaymentBody(
     return err({ code: 'invoice_not_payable', currentStatus: invoice.status });
   }
 
+  // 108 FR-004 — resolve the PromptPay billing address BEFORE opening the
+  // transaction, for two reasons that are both about what happens when this
+  // read is slow or empty:
+  //
+  //   (1) The adapter opens its own `runInTenant`. Called from inside
+  //       `withTx` it would ask the pool for a SECOND connection while this
+  //       request already holds one and the `payments:` advisory lock is
+  //       open — at pool-max concurrent PromptPay initiates every request
+  //       holds one connection and waits for another, and Neon's pooler
+  //       drops `statement_timeout`, so the queue does not break itself.
+  //       This file's own header already says F4's bridge is kept OUTSIDE
+  //       `withTx` for exactly this reason.
+  //   (2) A refusal below the transaction's first write COMMITS it —
+  //       `err()` is a normal return, not a throw. The cross-method-switch
+  //       arm inside cancels the member's pending CARD PaymentIntent at
+  //       Stripe and audits `payment_method_switched`; refusing after that
+  //       destroyed a working payment and left an audit row describing a
+  //       switch to a PromptPay attempt that never happened.
+  //
+  // Card never reads this: Elements collects billing details client-side, so
+  // a member with no primary contact can still pay by card.
+  let billingEmail: string | undefined;
+  if (input.method === 'promptpay') {
+    const recipient = await deps.billingRecipient.getPrimaryContactEmail(
+      input.tenantId,
+      invoice.memberId,
+    );
+    if (!recipient.ok) {
+      return err<InitiatePaymentError>({ code: 'billing_recipient_read_failed' });
+    }
+    if (recipient.value === null) {
+      return err<InitiatePaymentError>({ code: 'primary_contact_missing' });
+    }
+    billingEmail = recipient.value;
+  }
+
   // Step 5 + 6: withTx → resume or insert+createIntent+audit.
   return await deps.paymentsRepo.withTx(async (tx) => {
     // advisory lock on (tenantId, invoiceId) so
@@ -623,23 +670,6 @@ async function initiatePaymentBody(
     const idempotencyKey = deps.idempotencyKeyFactory
       ? deps.idempotencyKeyFactory(baseKey)
       : baseKey;
-
-    // 108 FR-004 — PromptPay only: Stripe requires a billing email on a
-    // server-confirmed PromptPay PI and mails its receipt there, so it must be
-    // the member's primary contact, not the portal user who clicked Pay. Card
-    // shares no address at all (Elements collects billing details client-side),
-    // so it neither reads this nor fails when a member has no primary contact.
-    let billingEmail: string | undefined;
-    if (input.method === 'promptpay') {
-      const primaryEmail = await deps.billingRecipient.getPrimaryContactEmail(
-        input.tenantId,
-        invoice.memberId,
-      );
-      if (primaryEmail === null) {
-        return err<InitiatePaymentError>({ code: 'primary_contact_missing' });
-      }
-      billingEmail = primaryEmail;
-    }
 
     // Create intent BEFORE DB insert — failure here means no wasted
     // sequence + no orphan row (we haven't written anything yet).

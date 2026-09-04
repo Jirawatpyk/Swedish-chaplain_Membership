@@ -95,7 +95,7 @@ function makeDeps(
   // 108 FR-004 — default: the member HAS a primary contact. Tests that model a
   // missing one override this dep.
   const billingRecipient = {
-    getPrimaryContactEmail: vi.fn(async () => 'primary@acme.example'),
+    getPrimaryContactEmail: vi.fn(async () => ok('primary@acme.example')),
   };
   const paymentsRepo = {
     withTx: vi.fn(async <T>(fn: (tx: unknown) => Promise<T>) => fn({})),
@@ -1122,7 +1122,7 @@ describe('initiatePayment — billing email (108 FR-004)', () => {
   it('PromptPay shares the member primary contact address, not the paying user', async () => {
     const deps = makeDeps({
       billingRecipient: {
-        getPrimaryContactEmail: vi.fn(async () => 'primary@acme.example'),
+        getPrimaryContactEmail: vi.fn(async () => ok('primary@acme.example')),
       },
     });
 
@@ -1133,18 +1133,49 @@ describe('initiatePayment — billing email (108 FR-004)', () => {
     );
   });
 
-  it('resolves the address for the tenant + invoice owner', async () => {
-    const getPrimaryContactEmail = vi.fn(async () => 'primary@acme.example');
+  it('resolves the address of the INVOICE OWNER, not of the acting user', async () => {
+    // The whole feature exists because the code read the wrong person. Every
+    // other fixture sets actorMemberId === invoice.memberId, which would let a
+    // `input.actorMemberId` mutant pass — so this one drives them apart and
+    // pins the exact id. A secondary contact paying the company's invoice is
+    // precisely the case that must resolve to the COMPANY's contact.
+    const INVOICE_OWNER = 'mem_invoice_owner';
+    const getPrimaryContactEmail = vi.fn(async () => ok('primary@acme.example'));
     const deps = makeDeps({ billingRecipient: { getPrimaryContactEmail } });
+    deps.invoicingBridge.getInvoiceForPayment = vi.fn(async () =>
+      ok({ ...INVOICE_DTO, memberId: INVOICE_OWNER }),
+    ) as unknown as InitiatePaymentDeps['invoicingBridge']['getInvoiceForPayment'];
 
-    await initiatePayment(deps, makeInput({ method: 'promptpay' }));
+    await initiatePayment(
+      deps,
+      makeInput({ method: 'promptpay', actorMemberId: 'mem_someone_else' }),
+    );
 
-    expect(getPrimaryContactEmail).toHaveBeenCalledWith(TENANT_ID, expect.any(String));
+    expect(getPrimaryContactEmail).toHaveBeenCalledWith(TENANT_ID, INVOICE_OWNER);
+  });
+
+  it('a READ FAILURE is transient — never the permanent no-contact refusal', async () => {
+    // Collapsing a Neon hiccup into `primary_contact_missing` tells a member
+    // with a perfectly good contact that their membership has none, and sends
+    // them to an admin who finds nothing wrong. Same distinction the sibling
+    // `invoice_read_failed` exists for.
+    const deps = makeDeps({
+      billingRecipient: {
+        getPrimaryContactEmail: vi.fn(async () => err({ kind: 'read_failed' as const })),
+      },
+    });
+
+    const r = await initiatePayment(deps, makeInput({ method: 'promptpay' }));
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('billing_recipient_read_failed');
+    expect(deps.processorGateway.createPaymentIntent).not.toHaveBeenCalled();
+    expect(deps.paymentsRepo.insert).not.toHaveBeenCalled();
   });
 
   it('PromptPay with no live primary contact fails permanently with primary_contact_missing', async () => {
     const deps = makeDeps({
-      billingRecipient: { getPrimaryContactEmail: vi.fn(async () => null) },
+      billingRecipient: { getPrimaryContactEmail: vi.fn(async () => ok(null)) },
     });
 
     const r = await initiatePayment(deps, makeInput({ method: 'promptpay' }));
@@ -1153,11 +1184,59 @@ describe('initiatePayment — billing email (108 FR-004)', () => {
     if (!r.ok) expect(r.error.code).toBe('primary_contact_missing');
     // Nothing created at the processor — no orphan PI to reconcile.
     expect(deps.processorGateway.createPaymentIntent).not.toHaveBeenCalled();
+    expect(deps.paymentsRepo.insert).not.toHaveBeenCalled();
+    expect(deps.audit.emit).not.toHaveBeenCalled();
+  });
+
+  it('refusing does NOT destroy the pending CARD attempt it was switching from', async () => {
+    // The refusal used to sit inside the transaction, BELOW the cross-method
+    // switch arm — which cancels the card PaymentIntent at Stripe and audits
+    // the switch. Because `err()` from inside `runInTenant` is a normal return,
+    // that all COMMITTED and then the member got a 409: their working card
+    // payment destroyed, and an audit row describing a switch to a PromptPay
+    // attempt that never existed. The guard now runs before the tx opens.
+    const pendingCard: Payment = {
+      id: asPaymentId('pmt_pending_card'),
+      tenantId: TENANT_ID,
+      invoiceId: INVOICE_ID,
+      memberId: MEMBER_ID,
+      method: 'card',
+      status: 'pending',
+      amountSatang: asSatang(5_350_000n),
+      currency: 'THB',
+      processorPaymentIntentId: 'pi_pending_card',
+      processorChargeId: null,
+      processorEnvironment: 'test',
+      attemptSeq: 1,
+      card: null,
+      failureReasonCode: null,
+      initiatedAt: new Date('2026-05-12T06:00:00Z'),
+      completedAt: null,
+      actorUserId: ACTOR_USER_ID,
+      correlationId: 'corr_card',
+    };
+    const deps = makeDeps({
+      billingRecipient: { getPrimaryContactEmail: vi.fn(async () => ok(null)) },
+    });
+    (
+      deps.paymentsRepo.findPendingByInvoiceAndActor as ReturnType<typeof vi.fn>
+    ).mockResolvedValueOnce(pendingCard);
+
+    const r = await initiatePayment(deps, makeInput({ method: 'promptpay' }));
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('primary_contact_missing');
+    // The member's card attempt survives, at Stripe and in the DB.
+    expect(deps.processorGateway.cancelPaymentIntent).not.toHaveBeenCalled();
+    expect(deps.paymentsRepo.updateStatus).not.toHaveBeenCalled();
+    expect(deps.audit.emit).not.toHaveBeenCalled();
+    // And the transaction was never even opened.
+    expect(deps.paymentsRepo.withTx).not.toHaveBeenCalled();
   });
 
   it('card shares no email and does not require a primary contact', async () => {
     const deps = makeDeps({
-      billingRecipient: { getPrimaryContactEmail: vi.fn(async () => null) },
+      billingRecipient: { getPrimaryContactEmail: vi.fn(async () => ok(null)) },
     });
 
     const r = await initiatePayment(deps, makeInput({ method: 'card' }));

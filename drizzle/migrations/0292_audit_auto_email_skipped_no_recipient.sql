@@ -10,8 +10,12 @@
 -- can reconstruct afterwards which documents were never delivered.
 --
 -- Payload carries ids only (`invoice_id` | `credit_note_id`,
--- `email_event_type`, `member_id`) — never an address (there is none) and no
--- contact PII. Operational event, no tax-document touch → 5y retention
+-- `email_event_type`, `related_member_id`) — never an address (there is none)
+-- and no contact PII. `related_member_id`, not `member_id`: F9's
+-- `member_timeline_v` COALESCEs the two so the row surfaces on the member's
+-- timeline, while migration 0009's `last_activity_at` trigger keys on
+-- `member_id` alone and therefore stays asleep — a skipped email is not member
+-- activity. Retention 10y, matching the document events it refers to
 -- (F4_AUDIT_RETENTION_YEARS in audit-port.ts).
 --
 -- ENUM-ONLY FILE: `scripts/run-migrations.ts` extracts every

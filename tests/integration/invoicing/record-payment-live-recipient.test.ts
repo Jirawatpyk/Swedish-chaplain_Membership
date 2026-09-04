@@ -337,10 +337,12 @@ describe('108 record-payment — receipt reaches the live primary contact (live 
 
     const audit = await skipAuditFor(invoiceId);
     expect(audit).toHaveLength(1);
-    expect(audit[0]!.payload.skipped_for_member_id).toBe(memberId);
+    expect(audit[0]!.payload.related_member_id).toBe(memberId);
     expect(audit[0]!.payload.email_event_type).toBe('invoice_paid');
-    // Operational event, not a tax-document touch.
-    expect(audit[0]!.retention_years).toBe(5);
+    // 10y — this row records that a tax document was never delivered, and its
+    // sibling document events are all 10y. Keeping "sent" longer than "never
+    // sent" is an asymmetry that always favours us.
+    expect(audit[0]!.retention_years).toBe(10);
     // No address anywhere in the payload — there is none; that IS the event.
     expect(JSON.stringify(audit[0]!.payload)).not.toContain('@');
   }, 60_000);

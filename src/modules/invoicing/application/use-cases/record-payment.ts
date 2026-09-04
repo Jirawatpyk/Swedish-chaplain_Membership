@@ -1131,15 +1131,31 @@ export async function recordPayment(
     // primary contact inside this payment tx; the snapshot above still fixes
     // the tax document's BUYER. A non-member event buyer has no contact row,
     // so `resolveMoneyRecipient` reads the snapshot for that arm only.
-    const moneyRecipient = await resolveMoneyRecipient(
-      deps.recipientLocale,
-      tx,
-      input.tenantId,
-      memberId,
-      loaded.memberIdentitySnapshot,
-    );
+    //
+    // Gated on the tenant/caller actually WANTING an email. Two reasons, and
+    // the second is the important one:
+    //   • no read inside the settlement tx (which holds the invoice row lock
+    //     and the §87 receipt advisory lock) when nothing will be sent;
+    //   • an audit row must state the REAL reason. Without the gate, a tenant
+    //     with auto-email suppressed AND no primary contact would land
+    //     `auto_email_skipped_no_recipient` — a row asserting the email was
+    //     skipped for a missing contact when it was actually suppressed by F5.
+    //     Same class as the actor-role fabrications this repo spent five
+    //     rounds removing: the field is right, the value is a lie.
+    const wantsReceiptEmail = settings.autoEmailEnabled && !input.suppressReceiptEmail;
+    const moneyRecipient = wantsReceiptEmail
+      ? await resolveMoneyRecipient(
+          deps.recipientLocale,
+          tx,
+          input.tenantId,
+          memberId,
+          loaded.memberIdentitySnapshot,
+        )
+      : null;
     const recipientEmail =
-      moneyRecipient.kind === 'no_recipient' ? null : moneyRecipient.email;
+      moneyRecipient === null || moneyRecipient.kind === 'no_recipient'
+        ? null
+        : moneyRecipient.email;
     // Wave-4 S15 — issueInvoice + issueEventInvoiceAsPaid share
     // `lib/enqueue-invoice-email.ts` for this block's shape; THIS block is
     // deliberately NOT folded into that helper because its semantics differ
@@ -1182,7 +1198,9 @@ export async function recordPayment(
       // disagree (one row, one round-trip). A non-member event buyer has no
       // preference → undefined → outbox 'en' default.
       const recipientLocale =
-        moneyRecipient.kind === 'member' ? (moneyRecipient.locale ?? undefined) : undefined;
+        moneyRecipient !== null && moneyRecipient.kind === 'member'
+          ? (moneyRecipient.locale ?? undefined)
+          : undefined;
       await deps.outbox.enqueue(tx, {
         tenantId: input.tenantId,
         eventType: 'invoice_paid',
@@ -1199,11 +1217,13 @@ export async function recordPayment(
         ...(privacyFooterKind ? { privacyFooterKind } : {}),
       });
       emailDispatch = 'sent';
-    } else if (
-      settings.autoEmailEnabled &&
-      recipientEmail &&
-      input.suppressReceiptEmail
-    ) {
+    } else if (settings.autoEmailEnabled && input.suppressReceiptEmail) {
+      // 108 — this arm is now checked BEFORE the no-recipient one and no longer
+      // requires a resolved address. It has to be: since the resolve is gated on
+      // the caller wanting an email, a suppressed send has no address by
+      // construction, and the old ordering would have reported it as
+      // `skipped_no_email` — blaming the member's contacts for the caller's own
+      // decision.
       // T128a observability: explicit log when F5 suppressed an email
       // that F4 would otherwise have enqueued. Helps ops correlate
       // "no receipt email" complaints with the tenant's setting state.

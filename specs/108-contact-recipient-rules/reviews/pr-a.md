@@ -40,7 +40,7 @@ Nothing in the type system separates the two — both are `string`.
 
 ## Three deliberate deviations from the brief
 
-1. **Payload key `skipped_for_member_id`, not `member_id`.** Migration 0009's
+1. **Payload key `related_member_id`, not `member_id`.** Migration 0009's
    trigger bumps `members.last_activity_at` for ANY audit row carrying
    `member_id`, and the member-timeline view selects on the same key. A skipped
    email is not member activity: stamping it would inflate the at-risk scorer's
@@ -109,6 +109,64 @@ an `event_registration_id`, so the path keeps the pre-108 metric-only signal.
 Two unit tests close it (that arm, and the `requestId ?? null` path a webhook
 can take). Nothing about the feature was wrong; the gate simply refused to let
 a money-path branch ship unexercised, which is what it is for.
+
+## T029 — review round 1 (2026-09-04)
+
+Three read-only reviewers, concurrent: `financial-integrity-reviewer`,
+`pci-saqa-guardian`, `security-engineer`. **All three returned BLOCK**, and they
+converged on the same root cause from three different angles — which is the
+strongest signal a review round can give.
+
+### What they agreed was right
+
+The identity/delivery split itself, and the F4 side of it. The financial reviewer
+grepped the entire diff for money identifiers and found **zero** hits; confirmed
+the resolve sits after `allocateNext`, that the resolver's output reaches only
+`recipientEmail` and `recipientLocale`, and that the replay arm is structurally
+incapable of sending or auditing. The security reviewer tried to break tenant
+isolation, IDOR and PII paths on the new code and could not. PCI confirmed SAQ-A
+is untouched and card shares no address.
+
+### The blocker, and why I had already been told about it
+
+The F5 billing lookup ran INSIDE `paymentsRepo.withTx`, while the `payments:`
+advisory lock was held, through an adapter that opens its own `runInTenant`.
+Two consequences:
+
+1. Every PromptPay initiate asked the pool for a second connection while holding
+   the first. At pool-max concurrency that is a connection queue nothing breaks —
+   Neon's pooler drops `statement_timeout`. `db.ts` carries a comment recording
+   this exact incident from 2026-04-25, and this file's own header says the F4
+   bridge is kept outside `withTx` for the same reason.
+2. Refusing below the transaction's first write COMMITS it. The cross-method arm
+   cancels the member's pending CARD PaymentIntent and audits the switch — so a
+   card→PromptPay switch by a member with no primary contact destroyed a working
+   payment and left an audit row describing a switch that never happened.
+
+My own memory note says "`err()` inside `runInTenant` COMMITS — guards ABOVE the
+first write". I wrote the guard below it anyway. The lesson was recorded and not
+applied; that is the failure worth naming.
+
+### Remediation applied
+
+| Finding | Fix |
+|---|---|
+| pool nesting + write-then-refuse | resolution moved ABOVE `withTx`; the refusal now precedes the lock, the cancel and every write |
+| repo error → permanent 409 | port returns `Result<string \| null, {kind:'read_failed'}>`; new `billing_recipient_read_failed` → 500, mirroring `invoice_read_failed`. `errKind(rootCause(...))` so the log stops printing `'unknown'` |
+| `void-pdf-reconcile` copied the frozen `to_email` | resolves live like every other path; on no-recipient it retires the doomed row and audits the skip. This was the one remaining path that could mint a money email to a removed contact, and the gate could not see it (`to_email`, not `primary_contact_email`) |
+| payload key | `skipped_for_member_id` → **`related_member_id`**. F9's `member_timeline_v` already COALESCEs `member_id, related_member_id`, and 0009's trigger keys on `member_id` alone — so this reaches the member timeline (where an admin asking "why no receipt?" will look) without waking the trigger. My third key was invisible to both. Verified in the migration + view before adopting |
+| retention | 5y → **10y**. The row records that a §86/4 / §86/10 document was never delivered; every sibling document event is 10y. Keeping "sent" longer than "never sent" is an asymmetry that always favours us |
+| suppressed + no primary | the resolve is now gated on the caller wanting an email, and the suppression arm is checked first. Without it, a suppressed send with no contact audited `auto_email_skipped_no_recipient` — the field right, the value a lie. Same class as the actor-role sweep |
+| doc/code mismatch | `audit-port.ts` JSDoc and migration 0292's header said `member_id`; both now match the code |
+| test could not kill the mutant | the resolver pin was `expect.any(String)` with `actorMemberId === invoice.memberId` in every fixture. Now drives them apart and pins the invoice owner exactly |
+
+### Overstatements in this document, corrected
+
+- "no orphan PaymentIntent is ever created" was true and incomplete — nothing was
+  *created*, but a live card PI was *destroyed*. The fix makes the claim true;
+  the wording now says what it means.
+- "0 snapshot-addressed emails" was true of the token the gate scans, and was
+  used to support a broader claim the `void-pdf-reconcile` path violated.
 
 ## Open at hand-off
 

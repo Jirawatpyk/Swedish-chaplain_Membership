@@ -21,6 +21,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve as resolvePath } from 'node:path';
+import { stripCommentLines } from '../../../scripts/lib/source-scan';
 
 const REPO_ROOT = resolvePath(__dirname, '../../..');
 const REPO_FILE =
@@ -29,8 +30,16 @@ const REPO_FILE =
 /** The three candidate queries: reminder, due-track, tier-upgrade. */
 const EXPECTED_PRIMARY_JOINS = 3;
 
+/**
+ * Comment-stripped, like every other source-reading gate here. Reading raw
+ * would make a prose mention of `primary_contact_email` fail the last
+ * assertion, and a commented-out join inflate the count — a guard that can be
+ * reddened by a comment teaches people to stop writing comments.
+ */
 function source(): string {
-  return readFileSync(resolvePath(REPO_ROOT, REPO_FILE), 'utf8');
+  return stripCommentLines(readFileSync(resolvePath(REPO_ROOT, REPO_FILE), 'utf8')).join(
+    String.fromCharCode(10),
+  );
 }
 
 describe('F8 dispatch candidates — live primary contact (108 FR-008)', () => {

@@ -51,6 +51,12 @@ import {
 // this operational-infra route deep-imports it (allowlisted in
 // invoicing-presentation-imports.test.ts, mirroring receipt-pdf-reconcile).
 import { reactPdfRenderAdapter } from '@/modules/invoicing/infrastructure/adapters/react-pdf-render-adapter';
+import {
+  auditAutoEmailSkippedNoRecipient,
+  recipientLocaleAdapter,
+  resolveMoneyRecipient,
+  type MoneyRecipientSnapshot,
+} from '@/modules/invoicing';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 
 export const runtime = 'nodejs';
@@ -144,7 +150,51 @@ async function reEnqueueVoidCancellationEmail(
   tenantId: string,
   invoiceId: string,
   newSha: string,
+  memberId: string | null,
+  snapshot: MoneyRecipientSnapshot | null,
 ): Promise<boolean> {
+  // 108 FR-001 — resolve the recipient LIVE. This function used to copy
+  // `o.to_email` forward from the original row, which made it the last path
+  // in the system that could mint a money email addressed to a contact who
+  // had since been removed: void notifies A, staff promote B, the reconcile
+  // tick then mails A again. `check:money-recipient` cannot see it either —
+  // the token here is `to_email`, not `primary_contact_email`.
+  const recipient = await resolveMoneyRecipient(
+    recipientLocaleAdapter,
+    tx,
+    tenantId,
+    memberId,
+    snapshot,
+  );
+  if (recipient.kind === 'no_recipient') {
+    // Same rule as every other money path: no fallback. Retire the doomed
+    // original and record the skip rather than delivering to a stale address.
+    await tx.execute(sql`
+      UPDATE notifications_outbox
+         SET status = 'permanently_failed'::outbox_status,
+             last_error = 'superseded_by_void_pdf_reconcile',
+             updated_at = now()
+       WHERE tenant_id = ${tenantId}
+         AND notification_type = 'invoice_auto_email'::notification_type
+         AND context_data->>'event_type' = 'invoice_voided'
+         AND context_data->>'invoice_id' = ${invoiceId}
+         AND status = 'pending'
+    `);
+    if (memberId !== null) {
+      await auditAutoEmailSkippedNoRecipient(f4AuditAdapter, tx, {
+        tenantId,
+        requestId: null,
+        // The honest actor: no human triggered this row (see the sibling
+        // audit emits in this file, which stamp the same value).
+        actorUserId: 'system:cron',
+        memberId,
+        emailEventType: 'invoice_voided',
+        subject: 'membership',
+        invoiceId,
+      });
+    }
+    return false;
+  }
   await tx.execute(sql`
     UPDATE notifications_outbox
        SET status = 'permanently_failed'::outbox_status,
@@ -159,7 +209,7 @@ async function reEnqueueVoidCancellationEmail(
   const inserted = (await tx.execute(sql`
     INSERT INTO notifications_outbox
       (tenant_id, notification_type, to_email, locale, context_data, status, attempts, next_retry_at)
-    SELECT o.tenant_id, o.notification_type, o.to_email, o.locale,
+    SELECT o.tenant_id, o.notification_type, ${recipient.email}, o.locale,
            jsonb_set(o.context_data, '{expected_pdf_sha256}', to_jsonb(${newSha}::text)),
            'pending'::outbox_status, 0, now()
       FROM notifications_outbox o
@@ -447,6 +497,8 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           row.tenantId,
           row.invoiceId,
           built.value.targetA.rendered.sha256,
+          loaded.memberId,
+          loaded.memberIdentitySnapshot,
         );
         await repo.clearVoidPdfReconcileMarker(tx, {
           tenantId: row.tenantId,

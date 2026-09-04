@@ -1616,7 +1616,7 @@ describe('recordPayment — the receipt reaches the LIVE primary contact (108 FR
         payload: expect.objectContaining({
           invoice_id: INVOICE_ID,
           // NOT `member_id` — that key bumps members.last_activity_at (0009 trigger)
-          skipped_for_member_id: 'member-1',
+          related_member_id: 'member-1',
           email_event_type: 'invoice_paid',
         }),
       }),
@@ -1643,6 +1643,34 @@ describe('recordPayment — the receipt reaches the LIVE primary contact (108 FR
     expect(skipCall?.[0]).not.toBeNull();
   });
 
+  it('suppressed by F5 + no primary contact → NO skip audit (the reason would be a lie)', async () => {
+    // Both conditions hold at once. The arm precedence lands on the
+    // no-recipient branch, so without the gate this writes
+    // `auto_email_skipped_no_recipient` — a row stating the email was skipped
+    // for a missing contact when the caller had actually suppressed it. The
+    // field would be right and the value a lie.
+    const invoice = makeIssuedInvoice();
+    const deps = makeDeps(true, invoice, makeSettings({ autoEmailEnabled: true }), {
+      recipientLocale: makeRecipientLocaleFake({ email: null }),
+    });
+    let call = 0;
+    deps.invoiceRepo.findByIdInTx = vi.fn(async () => {
+      call++;
+      return call === 1 ? invoice : makeIssuedInvoice({ status: 'paid' });
+    });
+
+    const r = await recordPayment(deps, { ...input, suppressReceiptEmail: true });
+
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.emailDispatch).toBe('disabled');
+    expect(
+      vi
+        .mocked(deps.audit.emit)
+        .mock.calls.some(([, e]) => e.eventType === 'auto_email_skipped_no_recipient'),
+    ).toBe(false);
+    // …and the contact was never even read.
+    expect(deps.recipientLocale.getMemberEmailRecipient).not.toHaveBeenCalled();
+  });
   it('does not audit a skip when auto-email is off for the tenant (nothing was skipped)', async () => {
     const invoice = makeIssuedInvoice();
     const deps = makeDeps(true, invoice, makeSettings({ autoEmailEnabled: false }), {

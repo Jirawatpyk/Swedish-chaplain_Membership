@@ -1165,6 +1165,6 @@ describe('F4 US5 — void-invoice (T098)', () => {
     expect(audit).toHaveLength(1);
     const payload = audit[0]!.payload as Record<string, unknown>;
     expect(payload.email_event_type).toBe('invoice_voided');
-    expect(payload.skipped_for_member_id).toBe(memberId);
+    expect(payload.related_member_id).toBe(memberId);
   });
 });

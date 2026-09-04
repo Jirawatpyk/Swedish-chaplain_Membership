@@ -78,12 +78,17 @@ export async function resolveMoneyRecipient(
  * row gives an auditor the per-document trail.
  *
  * Payload keys, deliberately:
- *   • `skipped_for_member_id`, NOT `member_id` — migration 0009's trigger bumps
- *     `members.last_activity_at` for ANY audit row carrying a snake_case
- *     `member_id`, and the F3 timeline view keys on the same field. A skipped
- *     email is not member activity: stamping it would inflate the at-risk
- *     scorer's recency signal for exactly the members whose contact data is
- *     broken (the ones it most needs to flag).
+ *   • `related_member_id`, NOT `member_id`. Two mechanisms read the payload and
+ *     they want different things: migration 0009's trigger bumps
+ *     `members.last_activity_at` for any row carrying `member_id` (a skipped
+ *     email is NOT member activity — stamping it would inflate the at-risk
+ *     scorer's recency for exactly the members whose contact data is broken),
+ *     while F9's `member_timeline_v` selects
+ *     `COALESCE(member_id, related_member_id)`. `related_member_id` is the key
+ *     that satisfies both: the row surfaces on the member's timeline, where an
+ *     admin asking "why did they never get their receipt?" will actually look,
+ *     and the trigger stays asleep. F9 added that COALESCE for this exact
+ *     shape; this is its first emitter.
  *   • `email_event_type` — which mail was skipped; not named `event_type` so it
  *     never reads as a second copy of `audit_log.event_type`.
  *   • no address and no contact PII — there is no address; that IS the event.
@@ -123,7 +128,7 @@ export async function auditAutoEmailSkippedNoRecipient(
     actorUserId: args.actorUserId,
     summary: `Auto-email ${args.emailEventType} skipped — member has no primary contact`,
     payload: {
-      skipped_for_member_id: args.memberId,
+      related_member_id: args.memberId,
       email_event_type: args.emailEventType,
       ...(args.invoiceId === undefined ? {} : { invoice_id: args.invoiceId }),
       ...(args.creditNoteId === undefined ? {} : { credit_note_id: args.creditNoteId }),

@@ -187,9 +187,19 @@ export type F4AuditEventType =
    *
    * Emitted in the caller's tx on the mutation paths (so it rolls back with a
    * failed payment / void / credit note) and standalone on the resend path.
-   * Payload: `{ invoice_id | credit_note_id, email_event_type, member_id }`
-   * — ids only, never the missing address (there is none) nor any contact PII.
-   * Operational, no tax-document touch → 5y.
+   * Payload: `{ invoice_id | credit_note_id, email_event_type,
+   * related_member_id }` — ids only, never the missing address (there is none)
+   * nor any contact PII. `related_member_id` rather than `member_id` so the row
+   * reaches `member_timeline_v` (which COALESCEs the two) WITHOUT waking
+   * migration 0009's `last_activity_at` trigger, which keys on `member_id`
+   * alone — a skipped email is not member activity.
+   *
+   * **10y**, matching every document event it can refer to (`invoice_issued`,
+   * `invoice_paid`, `invoice_voided`, `credit_note_issued`, all three
+   * `*_pdf_resent`). This row is the record that a §86/4 or §86/10 document
+   * was NEVER DELIVERED to the buyer. Keeping "we sent it" for ten years and
+   * "we never sent it" for five is an asymmetry that always favours us —
+   * exactly what an audit trail must not do.
    */
   | 'auto_email_skipped_no_recipient';
 
@@ -209,8 +219,9 @@ export type F4AuditEventType =
  * (`audit-retention-backfill.test.ts`).
  */
 export const F4_AUDIT_RETENTION_YEARS: Record<F4AuditEventType, 5 | 10> = {
-  // 108 — operational skip record, no tax-document touch; 5y.
-  auto_email_skipped_no_recipient: 5,
+  // 108 — the record that a tax document was never delivered. 10y to match the
+  // document events it refers to (see the union member's JSDoc).
+  auto_email_skipped_no_recipient: 10,
   invoice_draft_created: 5,
   invoice_draft_updated: 5,
   invoice_draft_deleted: 5,

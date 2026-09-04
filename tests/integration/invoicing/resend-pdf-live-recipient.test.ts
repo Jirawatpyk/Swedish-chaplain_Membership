@@ -277,8 +277,8 @@ describe('108 resend-pdf — live primary contact (live Neon)', () => {
     }>;
     expect(audit).toHaveLength(1);
     expect(audit[0]!.payload.email_event_type).toBe('invoice_pdf_resent');
-    expect(audit[0]!.payload.skipped_for_member_id).toBe(memberId);
-    expect(audit[0]!.retention_years).toBe(5);
+    expect(audit[0]!.payload.related_member_id).toBe(memberId);
+    expect(audit[0]!.retention_years).toBe(10);
   }, 60_000);
 
   it('a repeated resend after the fix reaches the restored primary', async () => {

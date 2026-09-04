@@ -9,17 +9,17 @@
 # Rationale per check (all derived from 2026-05-17 polish retrospective):
 #
 #   - check:staff-page-guard : every (staff) page declares a LITERAL permission
-#   - check:authorization-role-reads : no UNMARKED role literal on a decision surface
-#   - check:actor-role-truth  : no audit row states a role its actor did not hold
-#   - check:money-recipient   : no money email is addressed from the frozen
-#                               buyer snapshot (§86/4 identity vs delivery)
 #                       key + shim row matching the frozen 016 baseline, and
 #                       carries no staff-role affordance literal (re-review D)
+#   - check:authorization-role-reads : no UNMARKED role literal on a decision surface
+#   - check:actor-role-truth  : no audit row states a role its actor did not hold
 #   - check:api-route-guard  : same, per METHOD, for the ~119 staff API route
 #                       files, plus a scan for staff-role literals left behind
 #                       a gate (016 review C3 + re-review hardening)
 #   - check:layout    : single-page → single-container invariant
 #                       (Spec §FR-007 CLS-0). Cheap (~1 sec).
+#   - check:money-recipient   : no money email is addressed from the frozen
+#                               buyer snapshot (§86/4 identity vs delivery)
 #
 #   - check:fixme     : zero test.fixme + bare test.skip in
 #                       tests/e2e + tests/contract. Closes the
