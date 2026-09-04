@@ -43,6 +43,7 @@ import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { nextSeedMemberNumber } from '../helpers/seed-member-number';
+import { makeRecipientLocaleFake } from '../../helpers/recipient-locale-fake';
 
 const MATRIX: BenefitMatrix = {
   eblast_per_year: 1,
@@ -302,7 +303,7 @@ function makeDeps(tenantId: string): VoidInvoiceDeps & {
         outboxCalls.push(input);
       }),
     },
-    recipientLocale: { getMemberEmailLocale: vi.fn(async () => null) },
+    recipientLocale: makeRecipientLocaleFake(),
     renderCalls,
     uploadCalls,
     outboxCalls,

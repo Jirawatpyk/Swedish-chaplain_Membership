@@ -39,6 +39,7 @@ import type { TenantInvoiceSettingsView } from '@/modules/invoicing/application/
 import { InvoiceApplyConflictError } from '@/modules/invoicing/application/lib/invoice-apply-conflict-error';
 import { invoicingMetrics } from '@/lib/metrics';
 import { membershipAccessStub } from '../../helpers/membership-access-stub';
+import { makeRecipientLocaleFake } from '../../helpers/recipient-locale-fake';
 
 const INVOICE_ID = '00000000-0000-0000-0000-00000000e002';
 
@@ -244,9 +245,7 @@ function makeDeps(
     // Email-locale audit 2026-07-16 — default no stored preference (→ 'en'),
     // preserving pre-fix behaviour for the existing assertions. Individual
     // tests override to assert the locale is threaded onto the outbox row.
-    recipientLocale: {
-      getMemberEmailLocale: vi.fn(async () => null),
-    },
+    recipientLocale: makeRecipientLocaleFake({ email: 'john@acme.example' }),
     currentTemplateVersion: 1,
     // Default: the flag is not carried (legacy/dormant), exact-equivalent of the
     // pre-refactor `undefined` — the stranded-funds guard (keyed on 'off') stays

@@ -40,6 +40,7 @@ import type { TenantInvoiceSettingsView } from '@/modules/invoicing/application/
 import type { PdfRenderInput } from '@/modules/invoicing/application/ports/pdf-render-port';
 import type { F4AuditEvent } from '@/modules/invoicing/application/ports/audit-port';
 import { membershipAccessStub } from '../../helpers/membership-access-stub';
+import { makeRecipientLocaleFake } from '../../helpers/recipient-locale-fake';
 
 const INVOICE_ID = '08800000-0000-4000-8000-0000000000bb';
 
@@ -239,7 +240,7 @@ function makeDeps(taxAtPayment: TaxAtPaymentFlag, legacy: boolean, cap: Cap): Re
     },
     clock: { nowIso: () => '2026-05-20T03:00:00Z' },
     outbox: { enqueue: vi.fn(async () => {}) },
-    recipientLocale: { getMemberEmailLocale: vi.fn(async () => null) },
+    recipientLocale: makeRecipientLocaleFake({ email: 'john@acme.example' }),
     memberIdentity: {
       getForIssue: vi.fn(),
       markRegistrationFeePaid: vi.fn(async () => {}),

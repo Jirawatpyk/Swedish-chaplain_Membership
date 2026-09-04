@@ -57,6 +57,7 @@ import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
 import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
 import { nextSeedMemberNumber } from '../helpers/seed-member-number';
+import { makeRecipientLocaleFake } from '../../helpers/recipient-locale-fake';
 
 const INVOICE_TOTAL = 107_000n; // 1,000 THB subtotal + 7% VAT
 const INVOICE_SUBTOTAL = 100_000n;
@@ -262,7 +263,7 @@ function makeCreditNoteDeps(tenantId: string): IssueCreditNoteDeps {
     audit: f4AuditAdapter,
     clock: { nowIso: () => '2026-04-18T10:00:00Z' },
     outbox: { enqueue: vi.fn(async () => {}) },
-    recipientLocale: { getMemberEmailLocale: vi.fn(async () => null) },
+    recipientLocale: makeRecipientLocaleFake(),
     currentTemplateVersion: 1,
   };
 }

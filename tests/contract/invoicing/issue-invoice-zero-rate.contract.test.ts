@@ -37,6 +37,7 @@ import type { PdfRenderInput } from '@/modules/invoicing/application/ports/pdf-r
 import type { F4AuditEvent } from '@/modules/invoicing/application/ports/audit-port';
 import type { EventRegistrationView } from '@/modules/invoicing/application/ports/event-registration-lookup-port';
 import { serialiseInvoice } from '@/app/api/invoices/_serialise';
+import { makeRecipientLocaleFake } from '../../helpers/recipient-locale-fake';
 
 const INVOICE_ID = '08800000-0000-4000-8000-0000000000e8';
 
@@ -289,7 +290,7 @@ function makeDeps(draft: Invoice, cap: Captured): IssueInvoiceDeps {
     },
     clock: { nowIso: () => '2026-03-15T10:00:00Z' },
     outbox: { enqueue: vi.fn(async () => {}) },
-    recipientLocale: { getMemberEmailLocale: vi.fn(async () => null) },
+    recipientLocale: makeRecipientLocaleFake(),
     currentTemplateVersion: 8,
     taxAtPayment: 'on',
   };

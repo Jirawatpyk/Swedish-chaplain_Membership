@@ -47,6 +47,7 @@ import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, deleteTestUser, type TestUser } from '../helpers/test-users';
 import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 import { eventRegistrationLookupAdapter } from '@/modules/invoicing/infrastructure/adapters/event-registration-lookup-adapter';
+import { makeRecipientLocaleFake } from '../../helpers/recipient-locale-fake';
 
 const SEED_FAR_FUTURE = new Date('2099-01-01T00:00:00Z');
 
@@ -394,7 +395,7 @@ describe('invoices.pdf_doc_kind — 064-event-invoice-paid-flow Task 2 (live Neo
       audit: f4AuditAdapter,
       clock: { nowIso: () => '2026-06-10T10:00:00Z' },
       outbox: { enqueue: vi.fn(async () => {}) },
-      recipientLocale: { getMemberEmailLocale: vi.fn(async () => null) },
+      recipientLocale: makeRecipientLocaleFake(),
       currentTemplateVersion: 1,
       taxAtPayment: 'off',
     };

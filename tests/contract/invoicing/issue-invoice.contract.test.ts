@@ -40,6 +40,7 @@ import type { MemberIdentityView } from '@/modules/invoicing/application/ports/m
 import type { PdfRenderInput } from '@/modules/invoicing/application/ports/pdf-render-port';
 import type { F4AuditEvent } from '@/modules/invoicing/application/ports/audit-port';
 import { serialiseInvoice } from '@/app/api/invoices/_serialise';
+import { makeRecipientLocaleFake } from '../../helpers/recipient-locale-fake';
 
 const INVOICE_ID = '08800000-0000-4000-8000-0000000000aa';
 
@@ -265,7 +266,7 @@ function makeDeps(taxAtPayment: TaxAtPaymentFlag, cap: Captured): IssueInvoiceDe
     },
     clock: { nowIso: () => '2026-04-18T10:00:00Z' },
     outbox: { enqueue: vi.fn(async () => {}) },
-    recipientLocale: { getMemberEmailLocale: vi.fn(async () => null) },
+    recipientLocale: makeRecipientLocaleFake(),
     currentTemplateVersion: 4,
     taxAtPayment,
   };

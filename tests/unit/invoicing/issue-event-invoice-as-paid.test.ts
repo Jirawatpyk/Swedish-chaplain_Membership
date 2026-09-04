@@ -58,6 +58,7 @@ import { InvoiceApplyConflictError } from '@/modules/invoicing/application/lib/i
 import { logger } from '@/lib/logger';
 import { invoicingMetrics } from '@/lib/metrics';
 import { sha256Hex } from '@/lib/crypto';
+import { makeRecipientLocaleFake } from '../../helpers/recipient-locale-fake';
 
 // Mirror issue-invoice.test.ts — stub only the log methods; keep the rest of
 // the logger module (PAN regex, child loggers) real via importActual spread.
@@ -378,9 +379,7 @@ function makeDeps(
       enqueue: vi.fn(async () => {}),
     },
     // Email-locale audit 2026-07-16 — default no stored preference (→ 'en').
-    recipientLocale: {
-      getMemberEmailLocale: vi.fn(async () => null),
-    },
+    recipientLocale: makeRecipientLocaleFake(),
     currentTemplateVersion: 1,
     // Default: flag not carried (legacy path), exact-equivalent of the
     // pre-refactor `undefined`. Flag-on behaviour is covered by event-parity.

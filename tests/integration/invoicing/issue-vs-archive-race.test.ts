@@ -44,6 +44,7 @@ import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 import { eventRegistrationLookupAdapter } from '@/modules/invoicing/infrastructure/adapters/event-registration-lookup-adapter';
+import { makeRecipientLocaleFake } from '../../helpers/recipient-locale-fake';
 
 const MATRIX: BenefitMatrix = {
   eblast_per_year: 1,
@@ -84,7 +85,7 @@ function makeDeps(tenantId: string): IssueInvoiceDeps {
     audit: f4AuditAdapter,
     clock: { nowIso: () => '2026-04-18T10:00:00Z' },
     outbox: { enqueue: vi.fn(async () => {}) },
-    recipientLocale: { getMemberEmailLocale: vi.fn(async () => null) },
+    recipientLocale: makeRecipientLocaleFake(),
     currentTemplateVersion: 1,
     taxAtPayment: 'off',
   };

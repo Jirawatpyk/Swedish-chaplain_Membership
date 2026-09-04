@@ -37,6 +37,7 @@ async function readLocale(
                WHERE c.tenant_id = m.tenant_id
                  AND c.member_id = m.member_id
                  AND c.is_primary = true
+                 AND c.removed_at IS NULL
                LIMIT 1)
            ) AS locale
       FROM members m
@@ -45,6 +46,35 @@ async function readLocale(
      LIMIT 1
   `)) as unknown as Array<{ locale: string | null }>;
   return narrowLocale(rows[0]?.locale ?? null);
+}
+
+/**
+ * 108 FR-001 — the live money-email recipient: the member's one primary,
+ * non-removed contact. The JOIN drops the member row when no such contact
+ * exists, so "no live primary" surfaces as `null` (no fallback address).
+ * Locale precedence is identical to `readLocale` above.
+ */
+async function readRecipient(
+  tx: TenantTx | typeof db,
+  tenantId: string,
+  memberId: string,
+): Promise<{ email: string; locale: F4OutboxLocale | null } | null> {
+  const rows = (await tx.execute(sql`
+    SELECT c.email                                        AS email,
+           COALESCE(m.preferred_locale, c.preferred_language) AS locale
+      FROM members m
+      JOIN contacts c
+        ON c.tenant_id = m.tenant_id
+       AND c.member_id = m.member_id
+       AND c.is_primary = true
+       AND c.removed_at IS NULL
+     WHERE m.tenant_id = ${tenantId}
+       AND m.member_id = ${memberId}
+     LIMIT 1
+  `)) as unknown as Array<{ email: string | null; locale: string | null }>;
+  const row = rows[0];
+  if (row === undefined || row.email === null) return null;
+  return { email: row.email, locale: narrowLocale(row.locale) };
 }
 
 export const recipientLocaleAdapter: RecipientLocalePort = {
@@ -63,5 +93,21 @@ export const recipientLocaleAdapter: RecipientLocalePort = {
       );
     }
     return readLocale(tx, tenantId, memberId);
+  },
+
+  async getMemberEmailRecipient(
+    txUnknown,
+    tenantId: string,
+    memberId: string,
+  ): Promise<{ email: string; locale: F4OutboxLocale | null } | null> {
+    // Same tx convention as getMemberEmailLocale: null tx = standalone read
+    // (resend-pdf) → self-scope via runInTenant so FORCE-RLS applies.
+    const tx = txUnknown as TenantTx | null;
+    if (tx === null) {
+      return runInTenant(asTenantContext(tenantId), (scoped) =>
+        readRecipient(scoped, tenantId, memberId),
+      );
+    }
+    return readRecipient(tx, tenantId, memberId);
   },
 };

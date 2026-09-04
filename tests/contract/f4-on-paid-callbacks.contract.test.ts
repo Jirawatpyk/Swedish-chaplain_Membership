@@ -46,6 +46,7 @@ import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/documen
 import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import type { TenantInvoiceSettingsView } from '@/modules/invoicing/application/ports/tenant-settings-repo';
 import { membershipAccessStub } from '../helpers/membership-access-stub';
+import { makeRecipientLocaleFake } from '../helpers/recipient-locale-fake';
 
 const INVOICE_ID = '00000000-0000-0000-0000-00000000f001';
 const MEMBER_ID = 'member-on-paid-cb';
@@ -233,7 +234,7 @@ function makeDepsWithCallbacks(
     outbox: {
       enqueue: vi.fn(async () => {}),
     },
-    recipientLocale: { getMemberEmailLocale: vi.fn(async () => null) },
+    recipientLocale: makeRecipientLocaleFake({ email: 'john@acme.example' }),
     memberIdentity: {
       getForIssue: vi.fn(),
       markRegistrationFeePaid: vi.fn(async () => {}),

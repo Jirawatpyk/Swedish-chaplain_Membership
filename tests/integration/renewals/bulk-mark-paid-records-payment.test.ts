@@ -88,6 +88,7 @@ import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
 import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
+import { makeRecipientLocaleFake } from '../../helpers/recipient-locale-fake';
 
 const FIXED_NOW = '2026-07-01T09:00:00Z';
 const PAYMENT_DATE = '2026-07-01';
@@ -144,7 +145,7 @@ function recordDeps(slug: string): RecordPaymentDeps {
     taxAtPayment: 'off',
     asyncReceiptPdf: false,
     outbox: { enqueue: vi.fn(async () => {}) },
-    recipientLocale: { getMemberEmailLocale: vi.fn(async () => null) },
+    recipientLocale: makeRecipientLocaleFake(),
   };
 }
 
@@ -166,7 +167,7 @@ function recordDepsFlagOn(slug: string): RecordPaymentDeps {
     taxAtPayment: 'on',
     asyncReceiptPdf: false,
     outbox: { enqueue: vi.fn(async () => {}) },
-    recipientLocale: { getMemberEmailLocale: vi.fn(async () => null) },
+    recipientLocale: makeRecipientLocaleFake(),
   };
 }
 

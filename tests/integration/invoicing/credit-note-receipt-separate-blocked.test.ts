@@ -73,6 +73,7 @@ import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { eventRegistrationLookupAdapter } from '@/modules/invoicing/infrastructure/adapters/event-registration-lookup-adapter';
+import { makeRecipientLocaleFake } from '../../helpers/recipient-locale-fake';
 
 // Non-member buyer WITHOUT a Thai TIN → issued as `receipt_separate` (§105).
 const BUYER_NO_TIN = {
@@ -155,7 +156,7 @@ function makeCreditNoteDeps(tenantSlug: string): {
     audit: f4AuditAdapter,
     clock: { nowIso: () => '2026-04-20T10:00:00Z' },
     outbox: { enqueue: vi.fn(async () => {}) },
-    recipientLocale: { getMemberEmailLocale: vi.fn(async () => null) },
+    recipientLocale: makeRecipientLocaleFake(),
     currentTemplateVersion: 1,
   };
   return { deps, pdfRenderMock };

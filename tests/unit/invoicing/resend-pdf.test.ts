@@ -32,6 +32,7 @@ import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import { makeMemberIdentitySnapshot } from '@/modules/invoicing/domain/value-objects/member-identity-snapshot';
 import { makeTenantIdentitySnapshot } from '@/modules/invoicing/domain/value-objects/tenant-identity-snapshot';
 import type { InvoiceFixtureOverrides } from '../../helpers/invoice-fixture-overrides';
+import { makeRecipientLocaleFake } from '../../helpers/recipient-locale-fake';
 
 const TENANT = 'test-tenant';
 const INVOICE_UUID = '11111111-2222-4333-8444-555555555555';
@@ -180,9 +181,7 @@ function makeDeps(
   const audit = { emit: vi.fn(async () => {}) };
   const outbox = { enqueue: vi.fn(async () => {}) };
   // Email-locale audit 2026-07-16 — default no stored preference (→ 'en').
-  const recipientLocale: RecipientLocalePort = {
-    getMemberEmailLocale: vi.fn(async () => null),
-  };
+  const recipientLocale: RecipientLocalePort = makeRecipientLocaleFake();
   const invoiceRepo = {
     withTx: vi.fn(),
     insertDraft: vi.fn(),

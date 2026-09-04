@@ -77,6 +77,7 @@ import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { eventRegistrationLookupAdapter } from '@/modules/invoicing/infrastructure/adapters/event-registration-lookup-adapter';
+import { makeRecipientLocaleFake } from '../../helpers/recipient-locale-fake';
 
 // Non-member buyer WITH a Thai TIN + a contact email (so the credit-note
 // auto-email enqueues — proving the guard is on email, not memberId).
@@ -112,7 +113,7 @@ function makeIssueDeps(tenantSlug: string): IssueInvoiceDeps {
     audit: f4AuditAdapter,
     clock: { nowIso: () => '2026-04-18T10:00:00Z' },
     outbox: { enqueue: vi.fn(async () => {}) },
-    recipientLocale: { getMemberEmailLocale: vi.fn(async () => null) },
+    recipientLocale: makeRecipientLocaleFake(),
     currentTemplateVersion: 1,
     taxAtPayment: 'off',
   };
@@ -143,7 +144,7 @@ function makeCreditNoteDeps(tenantSlug: string): {
     audit: f4AuditAdapter,
     clock: { nowIso: () => '2026-04-20T10:00:00Z' },
     outbox: { enqueue: outboxEnqueue },
-    recipientLocale: { getMemberEmailLocale: vi.fn(async () => null) },
+    recipientLocale: makeRecipientLocaleFake(),
     currentTemplateVersion: 1,
   };
   return { deps, outboxEnqueue };

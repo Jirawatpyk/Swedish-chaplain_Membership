@@ -49,6 +49,7 @@ import type { TenantIdentitySnapshot } from '@/modules/invoicing/domain/value-ob
 import type { MemberIdentitySnapshot } from '@/modules/invoicing/domain/value-objects/member-identity-snapshot';
 import type { TenantInvoiceSettingsView } from '@/modules/invoicing/application/ports/tenant-settings-repo';
 import type { PdfRenderInput } from '@/modules/invoicing/application/ports/pdf-render-port';
+import { makeRecipientLocaleFake } from '../../helpers/recipient-locale-fake';
 
 // ---- Fixtures ---------------------------------------------------------------
 
@@ -355,9 +356,7 @@ function makeDeps(
       enqueue: vi.fn(async () => {}),
     },
     // Email-locale audit 2026-07-16 — default no stored preference (→ 'en').
-    recipientLocale: {
-      getMemberEmailLocale: vi.fn(async () => null),
-    },
+    recipientLocale: makeRecipientLocaleFake({ email: 'jane@beta.example' }),
     currentTemplateVersion: 1,
     // 8A — default: no refund in flight → the guard never fires on the existing
     // happy paths. Guard tests override with a positive count.

@@ -32,4 +32,29 @@ export interface RecipientLocalePort {
     tenantId: string,
     memberId: string,
   ): Promise<F4OutboxLocale | null>;
+
+  /**
+   * 108 FR-001 — resolve the member's money-email DELIVERY address, live, at
+   * enqueue time: the one contact with `is_primary = true AND removed_at IS
+   * NULL`, plus the same locale precedence `getMemberEmailLocale` applies.
+   *
+   * Deliberately NOT the frozen `MemberIdentitySnapshot.primary_contact_email`:
+   * the snapshot fixes the tax document's BUYER (F4 FR-038, §86/4) and must
+   * never move, but a receipt, void notice, credit note or resend enqueued
+   * AFTER a contact promotion has to reach whoever is primary NOW. Two
+   * different questions, two different reads.
+   *
+   * `tx` follows the same convention as `getMemberEmailLocale`: the caller's
+   * open tenant tx, or `null` for standalone reads (resend-pdf runs outside a
+   * mutating financial tx) — the adapter then self-scopes via `runInTenant`.
+   *
+   * `null` means "this member has no live primary contact" — an FR-003
+   * violation upstream. There is NO fallback address: the caller skips the
+   * email and audits the skip (see `lib/resolve-money-recipient.ts`).
+   */
+  getMemberEmailRecipient(
+    tx: unknown,
+    tenantId: string,
+    memberId: string,
+  ): Promise<{ readonly email: string; readonly locale: F4OutboxLocale | null } | null>;
 }

@@ -33,6 +33,7 @@ import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import type { TenantInvoiceSettingsView } from '@/modules/invoicing/application/ports/tenant-settings-repo';
 import type { PdfRenderInput } from '@/modules/invoicing/application/ports/pdf-render-port';
 import { InvoiceApplyConflictError } from '@/modules/invoicing/application/lib/invoice-apply-conflict-error';
+import { makeRecipientLocaleFake } from '../../helpers/recipient-locale-fake';
 
 const INVOICE_ID = '00000000-0000-0000-0000-000000000099';
 const OPAQUE_TX = Symbol('tx');
@@ -343,7 +344,7 @@ function makeDeps(
     clock: { nowIso: () => '2026-06-11T03:00:00Z' },
     outbox: { enqueue: vi.fn(async () => {}) },
     // Email-locale audit 2026-07-16 — default no stored preference (→ 'en').
-    recipientLocale: { getMemberEmailLocale: vi.fn(async () => null) },
+    recipientLocale: makeRecipientLocaleFake({ email: 'sim.contact@void.test' }),
     // 8A — default: no refund in flight → the guard never fires on the existing
     // void happy paths. The guard test overrides with a positive count.
     pendingRefundGuard: {
