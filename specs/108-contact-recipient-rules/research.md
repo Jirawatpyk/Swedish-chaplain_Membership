@@ -378,7 +378,8 @@ affects F7's `audienceId`-based gateway (R16).
   count p95 < 400 ms at 5,000 and < 3 s at 20,000 (SC-004; 1,000-row pages ⇒ 20 round
   trips); Marketing audience page LCP < 2.5 s at 50 rows/page; toggle API p95 < 400 ms.
   `docs/observability.md` gains the four metrics; `docs/runbooks/broadcast-audience-build.md`
-  documents the resumable push and the stuck-`audience_building` reconcile.
+  documents the import-based audience build (submit → poll → send) and the
+  stuck-`audience_building` reconcile.
 - **Alert thresholds**: `audience_import_status` not `completed` within 30 min of submission,
   or `failed`/`stuck` → page; `invoicing.auto_email_skipped{reason:no_recipient}` > 0 in
   any 24 h → warn (expected 0 once the invariant ships); `recipient_count_ms` p95 > 3,000
