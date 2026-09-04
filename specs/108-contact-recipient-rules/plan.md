@@ -37,7 +37,7 @@ deferred constraint triggers on `contacts`/`members` with a data pre-check (0293
 `audit_event_type` values (0292, 0295) · two nullable `broadcasts` columns for the provider
 import job (0297). No new table, no column drops, no enum widening beyond audit events
 **Testing**: Vitest unit/contract · live-Neon integration (dev branch; race ×100, trigger
-rehearsal, 20k-contact pagination, resumable push) · Playwright + axe (`--workers=1`) ·
+rehearsal, 20k-contact pagination, import-based audience build) · Playwright + axe (`--workers=1`) ·
 static gates incl. a new `check:money-recipient`
 **Target Platform**: Vercel `sin1` (prod live at `swecham.dxtspace.com`); native Vercel Cron
 (`dispatch-scheduled` / `dispatch-batches` / `split-large-broadcasts` / `reconcile-stuck-sending`,
@@ -161,7 +161,7 @@ specs/108-contact-recipient-rules/
 ├── quickstart.md        # Phase 1 — per-PR test loops, manual verification, cutover checklist
 ├── contracts/
 │   ├── money-email-recipient.md    # Tier A resolution rule, widened port, F5 port, routes, gate
-│   ├── broadcast-audience.md       # Tier B resolver pipeline, ceiling, resumable push, count endpoints
+│   ├── broadcast-audience.md       # Tier B resolver pipeline, ceiling, import-based audience build, count endpoints
 │   └── contact-marketing-api.md    # toggle routes, audience page, member detail, undelete designate
 ├── checklists/requirements.md      # spec quality checklist (complete)
 └── tasks.md             # Phase 2 (/speckit.tasks — NOT created here)
@@ -280,5 +280,5 @@ complete deviation set. **GATE: PASS.**
   `.specify/scripts/powershell/update-agent-context.ps1 -AgentType claude`.
 - **Phase 2**: tasks.md — produced by `/speckit.tasks`, not by this command. Suggested
   task grouping: PR-A (R1–R3, R14 gate, 0292) · PR-B (R4, R5, 0293, V1) · PR-D (R6, R7,
-  0294, 0295, audience page, portal toggle) · PR-C (R8–R12, 0296, 0297?, V2, V3, spec-010 /
+  0294, 0295, audience page, portal toggle) · PR-C (R8–R12, R16, 0296, 0297, V2, V3, V5, spec-010 /
   005 / 007 / 014 / 016 AMENDMENT blocks) · follow-up (flag + `primary_only` leg deletion).

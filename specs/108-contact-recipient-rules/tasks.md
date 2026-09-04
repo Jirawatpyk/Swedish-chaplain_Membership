@@ -35,7 +35,7 @@ Modular monolith: `src/modules/<context>/{domain,application,infrastructure}`, p
 
 **Purpose**: The three verify-before-task facts (research V1–V3) and the one shared test double. No story may claim completion while its verify item is open.
 
-**⚠️ CRITICAL**: V3 blocks the first migration (US1); V1 blocks PR-B; V2 blocks the resumable push design (US5).
+**⚠️ CRITICAL**: V3 blocks the first migration (US1); V1 blocks PR-B; V2 blocks the import-based audience build (US5, T086/T087).
 
 - [ ] T004 **V3** Read `scripts/lib/enum-migration-guard.ts` and confirm whether a single migration file may hold several `ALTER TYPE … ADD VALUE` statements; record the answer in `research.md § V3` and split migration 0295 into two files if required
 - [ ] T005 **V1** Operator runs `node --env-file=.env.production --import tsx scripts/inventory-primary-contact-invariant.ts` (use the `!` prefix if the session classifier blocks it) and records the four counts in `research.md § V1`; if the invariant count is not 0, fix each member via the existing promote path (quickstart § Remedy) and re-run until 0

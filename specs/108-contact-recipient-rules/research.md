@@ -291,7 +291,7 @@ affects F7's `audienceId`-based gateway (R16).
   with enum migration 0292 · **PR-B** invariant (R4, R5, migration 0293 triggers) · **PR-D**
   permission key + contacts marketing columns (0294) + enum migration 0295 + member-page
   badges/toggle + Marketing audience page + portal self-toggle (R6, R7) · **PR-C** resolver,
-  ceiling, resumable push (0297 if a new table is needed), custom-list drop, unsubscribe
+  ceiling, import-based audience build (0297 broadcasts import columns), custom-list drop, unsubscribe
   attribution (0296 `contact_id`), count endpoint, spec-010 amendments (R8, R9, R11), behind
   the flag · operator runs the FR-027a pre-flight review on the audience page ·
   flag ON in Vercel · the flag and the `primary_only` leg are deleted in a follow-up PR once
@@ -409,8 +409,8 @@ affects F7's `audienceId`-based gateway (R16).
 - Next migration: tag `0292_…`, `idx: 293`, `when: 1798542000000` (+100000 ms per file);
   enum `ADD VALUE` migrations must be their own file(s) (autocommit pre-pass,
   `enum-migration-guard.ts`). Planned sequence: 0292 enum (PR-A) · 0293 triggers (PR-B) ·
-  0294 contacts columns + 0295 enum (PR-D) · 0296 `contact_id` (+ 0297 audience table if
-  needed) (PR-C). If PRs land out of order, renumber the later one (memory: parallel-branch
+  0294 contacts columns + 0295 enum (PR-D) · 0296 `contact_id` + 0297 broadcasts import
+  columns (PR-C). If PRs land out of order, renumber the later one (memory: parallel-branch
   migration collision).
 - `.limit(5000)`: `drizzle-member-repo.ts:1358`; 1:1 join `:1333-1340`; no status filter
   `:1349-1357`. `AUDIENCE_HARD_CAP` private at `resolve-segment-recipients.ts:36`.
