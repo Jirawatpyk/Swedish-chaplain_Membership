@@ -1378,6 +1378,11 @@
             "generic": "Något gick fel. Försök igen.",
             "serverBusy": "Servern är upptagen. Försök igen om en stund."
           }
+        },
+        "noPrimaryBanner": {
+          "title": "Ingen primär kontakt — betalningsmejl skickas inte",
+          "body": "Fakturor, kvitton, annulleringsbesked och kreditnotor för den här medlemmen köas till ingen förrän en kontakt är markerad som primär. Lägg till eller befordra en kontakt för att återuppta dem.",
+          "cta": "Öppna medlemmen för att åtgärda"
         }
       },
       "timeline": {

@@ -68,6 +68,7 @@ import { resolveLegalEntityTypeLabel } from '@/components/members/resolve-legal-
 import { InvitePortalButton } from '@/components/members/invite-portal-button';
 import { ResendBouncedInviteButton } from '@/components/members/resend-bounced-invite-button';
 import { ArchivedBanner } from '@/components/members/archived-banner';
+import { NoPrimaryContactBanner } from '@/components/members/no-primary-contact-banner';
 import { ArchiveMemberButton } from '@/components/members/archive-member-button';
 import { EraseMemberButton } from '@/components/members/erase-member-button';
 import { ErasedBanner } from '@/components/members/erased-banner';
@@ -919,6 +920,13 @@ export default async function MemberDetailPage({
             windowStatus={windowStatus}
           />
         )}
+
+      {/* 108 FR-003 — money emails are being skipped for this member. Not
+          shown for an archived or erased member: neither is billed, so there
+          is nothing to fail to deliver. */}
+      {!isErased && member.status !== 'archived' && !primary && (
+        <NoPrimaryContactBanner memberId={member.memberId} />
+      )}
         <section aria-labelledby="member-company-heading">
         <Card>
           <CardHeader>

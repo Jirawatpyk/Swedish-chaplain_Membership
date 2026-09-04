@@ -65,6 +65,7 @@ import { asInvoiceId } from '@/modules/invoicing';
 import { getMember } from '@/modules/members';
 import type { MemberId } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
+import { NoPrimaryContactBanner } from '@/components/members/no-primary-contact-banner';
 import { listPlans } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
 // Raw repo read mirrors the escape hatch used by /admin/users page.tsx —
@@ -211,16 +212,29 @@ export default async function InvoiceDetailPage({
   // (drafts only) alongside the display name; false for a non-member event draft
   // (which the review dialog treats as non-membership anyway).
   let buyerIsVatRegistrant = false;
-  if (!snapshotName && invoice.memberId !== null) {
+  // 108 FR-003 — this invoice's money emails go to the member's LIVE primary
+  // contact, so the page has to know whether one exists. The lookup is no
+  // longer draft-only for that reason: an ISSUED invoice whose member lost
+  // their primary contact is exactly the case the banner exists to surface.
+  let showNoPrimaryContactBanner = false;
+  if (invoice.memberId !== null) {
     const memberResult = await getMember(
       invoice.memberId as MemberId,
       { actorUserId: currentUser.id, requestId },
       buildMembersDeps(tenantCtx),
     );
     if (memberResult.ok) {
-      memberDisplayName = memberResult.value.member.companyName;
-      buyerHasTaxId = memberResult.value.member.taxId !== null;
-      buyerIsVatRegistrant = memberResult.value.member.isVatRegistered;
+      const { member: liveMember, contacts: liveContacts } = memberResult.value;
+      if (!snapshotName) {
+        memberDisplayName = liveMember.companyName;
+        buyerHasTaxId = liveMember.taxId !== null;
+        buyerIsVatRegistrant = liveMember.isVatRegistered;
+      }
+      // Archived members are not billed, so a missing contact is not a
+      // delivery failure for them — no banner.
+      showNoPrimaryContactBanner =
+        liveMember.status !== 'archived' &&
+        !liveContacts.some((c) => c.isPrimary && c.removedAt === null);
     }
   }
 
@@ -655,6 +669,17 @@ export default async function InvoiceDetailPage({
           </>
         }
       />
+
+      {/* 108 FR-003 — the member behind this invoice has no live primary
+          contact, so its receipt / void notice / credit note reach nobody.
+          Above the document body: the admin must see it before acting on the
+          invoice, not after. */}
+      {showNoPrimaryContactBanner && invoice.memberId !== null && (
+        <NoPrimaryContactBanner
+          memberId={invoice.memberId}
+          contactsHref={`/admin/members/${invoice.memberId}`}
+        />
+      )}
       <Card>
         <CardContent className="flex flex-col gap-4">
           {/* FR-026 — one delivery-failure banner per failed document (admins

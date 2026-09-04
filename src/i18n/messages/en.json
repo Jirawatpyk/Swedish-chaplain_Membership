@@ -1378,6 +1378,11 @@
             "generic": "Something went wrong. Please try again.",
             "serverBusy": "The server is busy. Please try again in a moment."
           }
+        },
+        "noPrimaryBanner": {
+          "title": "No primary contact — payment emails are not being sent",
+          "body": "Invoices, receipts, void notices and credit notes for this member are queued to nobody until a contact is marked as primary. Add or promote a contact to resume them.",
+          "cta": "Open the member to fix it"
         }
       },
       "timeline": {
