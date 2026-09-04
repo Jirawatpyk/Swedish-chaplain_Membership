@@ -125,10 +125,13 @@ export type InitiatePaymentError =
   /**
    * 108 FR-004 — PromptPay needs a billing email and the member has no live
    * primary contact, so there is no address of record to give Stripe. PERMANENT:
-   * retrying cannot help until staff fix the contact. Returned BEFORE the
-   * transaction opens — so no PaymentIntent is created, no row is written, and
-   * (the part the first version got wrong) no pending card attempt is cancelled
-   * on the way to refusing. Route maps to 409.
+   * retrying cannot help until staff fix the contact. Route maps to 409.
+   *
+   * Returned from inside the transaction but BEFORE its first write, and only
+   * when this is not a RESUME. Both halves matter and each was got wrong once:
+   * refusing below the cross-method arm committed a cancelled card PaymentIntent
+   * on the way out, and refusing above the pending lookup 409'd a member out of
+   * a PromptPay attempt that was already live at Stripe. See the guard itself.
    */
   | { readonly code: 'primary_contact_missing' }
   /**
@@ -462,20 +465,18 @@ async function initiatePaymentBody(
   //
   // Card never reads this: Elements collects billing details client-side, so
   // a member with no primary contact can still pay by card.
-  let billingEmail: string | undefined;
-  if (input.method === 'promptpay') {
-    const recipient = await deps.billingRecipient.getPrimaryContactEmail(
-      input.tenantId,
-      invoice.memberId,
-    );
-    if (!recipient.ok) {
-      return err<InitiatePaymentError>({ code: 'billing_recipient_read_failed' });
-    }
-    if (recipient.value === null) {
-      return err<InitiatePaymentError>({ code: 'primary_contact_missing' });
-    }
-    billingEmail = recipient.value;
-  }
+  //
+  // The READ happens here; the REFUSAL happens inside the tx, once we know
+  // whether this is a resume (review round 3 finding #1). A resume needs no
+  // billing address — the PaymentIntent already exists at Stripe with its
+  // billing email set, and that branch only calls `retrievePaymentIntent`.
+  // Refusing out here made a missing contact 409 the member out of their own
+  // in-flight QR, and a Neon blip 500 them out of it, on a read the resume
+  // never uses. Splitting read from refusal keeps both properties.
+  const billingRecipient =
+    input.method === 'promptpay'
+      ? await deps.billingRecipient.getPrimaryContactEmail(input.tenantId, invoice.memberId)
+      : null;
 
   // Step 5 + 6: withTx → resume or insert+createIntent+audit.
   return await deps.paymentsRepo.withTx(async (tx) => {
@@ -501,6 +502,38 @@ async function initiatePaymentBody(
       input.actorUserId,
       tx,
     );
+    // 108 FR-004 — refuse a PromptPay initiate with no deliverable billing
+    // address, HERE.
+    //
+    // Placement is load-bearing in both directions:
+    //   • BELOW the pending lookup, so a resume (`pending.method === method`,
+    //     handled further down) is exempt: that branch only retrieves an
+    //     existing PaymentIntent whose billing email was set when it was
+    //     created, so neither a missing contact nor a transient read failure
+    //     has any bearing on it.
+    //   • ABOVE the cross-method arm, which is the FIRST WRITE in this
+    //     transaction — it cancels the member's pending CARD PaymentIntent at
+    //     Stripe and audits `payment_method_switched`. `err()` from inside
+    //     `runInTenant` is a normal return, not a throw, so a refusal below
+    //     that point COMMITS it: a working card payment destroyed and an audit
+    //     row describing a switch to a PromptPay attempt that never happened.
+    //     Nothing above this line writes — `acquireInitiateLock` takes a
+    //     transaction-scoped advisory lock that releases on its own, and the
+    //     lookup is a SELECT — so refusing here leaves nothing behind.
+    let billingEmail: string | undefined;
+    const isResume = Boolean(pending) && pending?.method === input.method;
+    if (billingRecipient !== null && !isResume) {
+      if (!billingRecipient.ok) {
+        paymentsMetrics.billingRecipientBlocked(input.tenantId, 'read_failed');
+        return err<InitiatePaymentError>({ code: 'billing_recipient_read_failed' });
+      }
+      if (billingRecipient.value === null) {
+        paymentsMetrics.billingRecipientBlocked(input.tenantId, 'missing');
+        return err<InitiatePaymentError>({ code: 'primary_contact_missing' });
+      }
+      billingEmail = billingRecipient.value;
+    }
+
     // Resume only when the pending attempt matches the requested
     // method. Otherwise (user opened card tab, switched to PromptPay)
     // a card `clientSecret` would be returned for a PromptPay request

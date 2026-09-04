@@ -36,6 +36,7 @@ const metricsMocks = vi.hoisted(() => ({
   outOfBandRefundRejected: vi.fn(),
   stalePendingCount: vi.fn(),
   inviteToPaymentFunnelStep: vi.fn(),
+  billingRecipientBlocked: vi.fn(),
 }));
 vi.mock('@/lib/metrics', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/metrics')>();
@@ -1171,6 +1172,10 @@ describe('initiatePayment — billing email (108 FR-004)', () => {
     if (!r.ok) expect(r.error.code).toBe('billing_recipient_read_failed');
     expect(deps.processorGateway.createPaymentIntent).not.toHaveBeenCalled();
     expect(deps.paymentsRepo.insert).not.toHaveBeenCalled();
+    // Alertable. The transient half must be distinguishable from the permanent
+    // one in the counter too, or a Neon incident reads as a fleet-wide
+    // contact-data problem.
+    expect(metricsMocks.billingRecipientBlocked).toHaveBeenCalledWith(TENANT_ID, 'read_failed');
   });
 
   it('PromptPay with no live primary contact fails permanently with primary_contact_missing', async () => {
@@ -1186,6 +1191,9 @@ describe('initiatePayment — billing email (108 FR-004)', () => {
     expect(deps.processorGateway.createPaymentIntent).not.toHaveBeenCalled();
     expect(deps.paymentsRepo.insert).not.toHaveBeenCalled();
     expect(deps.audit.emit).not.toHaveBeenCalled();
+    // This refusal blocks a PAYMENT, so it needs a counter of its own: it is
+    // the variant a member actually notices, and until now it emitted nothing.
+    expect(metricsMocks.billingRecipientBlocked).toHaveBeenCalledWith(TENANT_ID, 'missing');
   });
 
   it('refusing does NOT destroy the pending CARD attempt it was switching from', async () => {
@@ -1230,8 +1238,95 @@ describe('initiatePayment — billing email (108 FR-004)', () => {
     expect(deps.processorGateway.cancelPaymentIntent).not.toHaveBeenCalled();
     expect(deps.paymentsRepo.updateStatus).not.toHaveBeenCalled();
     expect(deps.audit.emit).not.toHaveBeenCalled();
-    // And the transaction was never even opened.
-    expect(deps.paymentsRepo.withTx).not.toHaveBeenCalled();
+    // NOT `withTx not called`. That assertion was a PROXY for "nothing was
+    // written", and it stopped being available once the refusal had to move
+    // inside the tx to let a resume through (review round 3 finding #1). The
+    // invariant it stood for is asserted directly, above and here: the refusal
+    // still precedes every write, so nothing is left behind to roll back.
+    expect(deps.paymentsRepo.insert).not.toHaveBeenCalled();
+    expect(deps.processorGateway.createPaymentIntent).not.toHaveBeenCalled();
+  });
+
+  it('a PromptPay RESUME is not blocked by a missing primary contact', async () => {
+    // A resume needs no billing address: the PaymentIntent already exists at
+    // Stripe with its billing email already set, and this branch only calls
+    // `retrievePaymentIntent`. Gating it meant a member who reloaded the QR
+    // page after staff demoted their primary contact could not get their own
+    // QR back — the payment was blocked by a fact irrelevant to it.
+    const pendingPromptPay: Payment = {
+      id: asPaymentId('pmt_pending_pp'),
+      tenantId: TENANT_ID,
+      invoiceId: INVOICE_ID,
+      memberId: MEMBER_ID,
+      method: 'promptpay',
+      status: 'pending',
+      amountSatang: asSatang(5_350_000n),
+      currency: 'THB',
+      processorPaymentIntentId: 'pi_pending_pp',
+      processorChargeId: null,
+      processorEnvironment: 'test',
+      attemptSeq: 1,
+      card: null,
+      failureReasonCode: null,
+      initiatedAt: new Date('2026-05-12T06:00:00Z'),
+      completedAt: null,
+      actorUserId: ACTOR_USER_ID,
+      correlationId: 'corr_pp',
+    };
+    const deps = makeDeps({
+      billingRecipient: { getPrimaryContactEmail: vi.fn(async () => ok(null)) },
+    });
+    (
+      deps.paymentsRepo.findPendingByInvoiceAndActor as ReturnType<typeof vi.fn>
+    ).mockResolvedValueOnce(pendingPromptPay);
+
+    const r = await initiatePayment(deps, makeInput({ method: 'promptpay' }));
+
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.resumed).toBe(true);
+    expect(r.value.payment.id).toBe(pendingPromptPay.id);
+    expect(deps.processorGateway.retrievePaymentIntent).toHaveBeenCalled();
+    expect(deps.processorGateway.createPaymentIntent).not.toHaveBeenCalled();
+  });
+
+  it('a PromptPay RESUME survives a transient recipient read failure', async () => {
+    // The stricter half of the same rule. A Neon blip on a read the resume
+    // does not use must not 500 a member out of their existing QR.
+    const pendingPromptPay: Payment = {
+      id: asPaymentId('pmt_pending_pp2'),
+      tenantId: TENANT_ID,
+      invoiceId: INVOICE_ID,
+      memberId: MEMBER_ID,
+      method: 'promptpay',
+      status: 'pending',
+      amountSatang: asSatang(5_350_000n),
+      currency: 'THB',
+      processorPaymentIntentId: 'pi_pending_pp2',
+      processorChargeId: null,
+      processorEnvironment: 'test',
+      attemptSeq: 1,
+      card: null,
+      failureReasonCode: null,
+      initiatedAt: new Date('2026-05-12T06:00:00Z'),
+      completedAt: null,
+      actorUserId: ACTOR_USER_ID,
+      correlationId: 'corr_pp2',
+    };
+    const deps = makeDeps({
+      billingRecipient: {
+        getPrimaryContactEmail: vi.fn(async () => err({ kind: 'read_failed' as const })),
+      },
+    });
+    (
+      deps.paymentsRepo.findPendingByInvoiceAndActor as ReturnType<typeof vi.fn>
+    ).mockResolvedValueOnce(pendingPromptPay);
+
+    const r = await initiatePayment(deps, makeInput({ method: 'promptpay' }));
+
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.resumed).toBe(true);
   });
 
   it('card shares no email and does not require a primary contact', async () => {

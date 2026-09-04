@@ -1109,6 +1109,30 @@ export const paymentsMetrics = {
   },
 
   /**
+   * `payments.billing_recipient_blocked.count{tenant,reason}` — 108 FR-004.
+   *
+   * A PromptPay initiate refused because the member's live primary contact
+   * could not supply a billing address: `missing` (no live primary contact —
+   * permanent, 409) or `read_failed` (the lookup itself failed — transient,
+   * 500). F4's equivalent condition has had `invoicing.auto_email_skipped`
+   * since this feature landed; F5's had nothing, which left the
+   * PAYMENT-BLOCKING variant — the one a member actually notices — with no
+   * counter to alert on and no way to answer "how many members cannot pay
+   * because of a contact-data problem?".
+   *
+   * Counter only. The per-member audit trail needs a new `audit_event_type`
+   * value (5 places + a migration), and reusing
+   * `auto_email_skipped_no_recipient` for it would be false — no email was
+   * skipped. Tracked as a PR-B item; see `reviews/pr-a.md` round 3.
+   */
+  billingRecipientBlocked(tenantId: string, reason: 'missing' | 'read_failed'): void {
+    counter(
+      'payments_billing_recipient_blocked_count',
+      'PromptPay initiates refused for want of a live primary-contact billing address',
+    ).add(1, { tenant: tenantId, reason });
+  },
+
+  /**
    * `payments.auto_refunded_stale.count{tenant}` — guard-rail anomaly.
    * Fires when webhook `payment_intent.succeeded` lands on an invoice
    * already not in `issued`/`overdue` state and the system auto-refunds.
