@@ -33,7 +33,7 @@
 - [x] CHK014 Is retention for the new audit events (5 years) stated, and is it consistent with existing F3/F4 retention rules? [Completeness, Research R13, Spec §FR-053] → resolved: FR-053 (5y)
 - [x] CHK015 Is the fate of `marketing_unsubscribes.contact_id` after member erasure specified (suppression rows are never deleted; is the contact reference nulled, kept, or hashed)? [Gap, Spec §FR-024, data-model §2.3] → resolved: FR-056
 - [x] CHK016 Is the fate of `marketing_opt_out_by_user_id` when the referenced staff user is erased specified (no FK; audit remains authoritative)? [Gap, data-model §2.1] → resolved: FR-056
-- [x] CHK017 Are requirements defined for the optional audience working table (`broadcast_audience_members`) — its deletion on completion and its inclusion in the erasure cascade? [Coverage, data-model §2.5] → resolved: FR-044
+- [x] CHK017 Are requirements defined for any transient recipient data used to build the provider audience — retention, deletion on completion, erasure cascade? [Coverage, data-model §2.5] → resolved: FR-044; after the R9 correction no recipient list is persisted (CSV generated in memory per tick; only the provider import id + completion stamp live on `broadcasts`)
 - [x] CHK018 Does the money-email "no recipient" audit event avoid storing any address and remain useful for the compliance trail (ids, event type)? [Clarity, Research R2] → resolved: FR-003 payload
 
 ## Cross-border and processors

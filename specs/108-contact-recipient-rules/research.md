@@ -9,12 +9,17 @@ plumbing; members module; broadcasts resolver; RBAC/nav/table patterns) and spot
 Three items are **verify-before-task** (not clarifications — the decision is made, the
 operator confirms a fact first): V1 prod count of secondary contacts and of active members
 with zero primaries (read-only; blocked in this session by the command classifier — run
-with the `!` prefix); V2 Resend `contacts.create` behaviour on a duplicate email within one
-audience (idempotent vs error); V3 whether `scripts/lib/enum-migration-guard.ts` accepts
-several `ADD VALUE` statements in one file (its regex matches per statement; header says
-"single"); V4 whether the F7.1a batch persistence (`broadcast_batches` and friends) can hold the
-resolved recipient list for the resumable push (R9) — if yes, migration 0297 is not created;
-record the decision here before T086.
+with the `!` prefix); V2 the Resend **Contacts Import API** on the test account — multipart
+shape accepted by a raw `fetch` from the current SDK-4.8 codebase, the status values of
+`GET /contacts/imports/{id}` (only `completed` is documented), the `counts` fields, and that
+`on_conflict: upsert` never touches a contact's Resend-side `unsubscribed` flag when the CSV
+carries no such column; V3 whether `scripts/lib/enum-migration-guard.ts` accepts several
+`ADD VALUE` statements in one file (its regex matches per statement; header says "single");
+V4 (superseded by the V2 redesign — no recipient working table is planned; keep only if V2
+shows the import id + counts cannot live on the `broadcasts` row); V5 the team's actual Resend
+rate limit (Settings → Usage; docs default is 10 req/s per team, raisable via support) and
+whether the Audiences → Segments / Global Contacts migration has a deprecation date that
+affects F7's `audienceId`-based gateway (R16).
 
 ---
 
@@ -240,25 +245,43 @@ record the decision here before T086.
   `AUDIENCE_HARD_CAP = 5000` makes the split path unreachable — R-C §4). The compose-page
   `estimateNote` copy (hardcoded "capped at 5,000" in EN/TH/SV, `en.json:5667`) is
   rewritten to interpolate the ceiling and to add the mandated self-exclusion hint.
-- **The discovered blocker**: the single-audience push is a **serial per-contact loop at
-  2 req/s** (`resend-broadcasts-gateway.ts:246-256`, no bulk endpoint) inside a route with
-  `maxDuration = 300` (verified on both dispatch routes). ~600 contacts fill the budget;
-  5,000 takes ~40 minutes. Today's 131-member tenant hides this; 1:N makes it certain.
-- **Decision (push)**: make the audience build **resumable across cron ticks**: at the first
-  dispatch tick the resolved recipient list is snapshotted into a per-broadcast recipient
-  table (reuse the F7.1a batch/recipient persistence if `broadcast_batches` already stores
-  recipients — verify; else a new `broadcast_audience_members(tenant_id, broadcast_id,
-  email_lower, pushed_at)` table, RLS+FORCE), the tick pushes contacts in `email_lower`
-  order until ~240 s elapse and stamps `pushed_at`, leaves the broadcast in an
-  `audience_building` sub-state, and the next `dispatch-scheduled` tick resumes from the
-  unpushed rows; `sendBroadcast` fires only when every row is pushed. Contact creation is
-  treated as idempotent per `(audience, email)` — **V2 verifies** Resend's duplicate
-  semantics; if it errors on duplicates, the pushed-set is the guard.
-- **Alternatives**: lower the single-audience ceiling to what fits one tick (~500) and
-  route everything above through the batch cron — rejected (the batch path pushes serially
-  too, so it only moves the timeout); request a Resend rate increase — not a code fix and
-  not verifiable in tests; switch to `emails.batch` (transactional) — rejected, it abandons
-  the Broadcasts surface F7 is built on (separate suppression list + webhooks).
+- **The discovered blocker (corrected 2026-09-04 after checking Resend's docs)**: the
+  single-audience push is a **serial per-contact loop** (`resend-broadcasts-gateway.ts:246-256`)
+  inside a route with `maxDuration = 300` (verified on both dispatch routes). The code comment
+  claims "2 req/s, no bulk endpoint"; both claims are **stale**. Resend's current docs
+  (`api-reference/rate-limit`, `knowledge-base/account-quotas-and-limits`) state a default of
+  **10 requests/second per team** (all keys), raisable through support, with `ratelimit-*` and
+  `retry-after` headers on 429 — and Resend now offers a **Contacts Import API**
+  (`POST /contacts/imports`, multipart CSV ≤ 200 MB, `column_map`, `on_conflict: upsert|skip`,
+  async: returns `{ object:'contact_import', id }`; `GET /contacts/imports/{id}` returns
+  `status` + `counts { total, created, updated, skipped, failed }`). Even at 10 req/s the
+  serial loop needs ~500 s for 5,000 contacts, so the loop cannot stay; the import API removes
+  the problem instead of pacing it.
+- **Decision (push)**: build the provider audience with **one import per broadcast**: the first
+  `dispatch-scheduled` tick resolves the audience, renders a CSV (`email` column only — never an
+  `unsubscribed` column, so the upsert cannot flip a Global Contact's Resend-side preference),
+  submits it with `on_conflict: 'upsert'` to the broadcast's audience/segment, stores the
+  returned import id on the `broadcasts` row and moves it to `audience_building`; later ticks
+  poll `GET /contacts/imports/{id}`; when `status = completed` and
+  `created + updated + skipped = total` with `failed = 0` the tick calls `sendBroadcast`; any
+  `failed > 0` or a non-completed status after 30 min fails the dispatch with a typed reason
+  (audit + alert). This is still "resumable across ticks" in FR-044's terms — progress is the
+  provider's import job, not a per-recipient table — so **migration 0297 becomes two nullable
+  columns on `broadcasts`** (`audience_import_id`, `audience_import_completed_at`), not a new
+  table. Idempotency comes from `upsert` (V2 no longer needs a duplicate-semantics spike).
+- **SDK**: the installed `resend@4.8.0` (`package.json` `^4.0.1`) has no `contacts.imports`; the
+  method arrived in the 6.x line (latest 6.26.0, 2026-09-03). Decision: call the two import
+  endpoints with a raw multipart `fetch` inside the existing gateway adapter behind
+  `BroadcastsGatewayPort` (two new port methods `createContactImport`, `getContactImport`), and
+  **defer the 4 → 6 SDK upgrade** to its own PR with a full gateway contract suite — a major
+  bump across every F7 call is the wrong blast radius for PR-C.
+- **Alternatives**: keep the serial loop but make it resumable with a `pushed_at` working table
+  (the original R9) — rejected once the import API was verified (5,000 calls vs 2, and a new
+  RLS table for a working set); lower the ceiling to what fits one tick (~500 at 10 req/s) —
+  rejected (moves the timeout); request a rate increase alone — not a code fix, not testable;
+  switch to `emails.batch` (transactional, 100/call) — rejected, it abandons the Broadcasts
+  surface F7 is built on (separate suppression list + webhooks); upgrade the SDK in PR-C —
+  rejected for blast radius (see SDK bullet).
 
 ## R10 — Cutover behind a temporary flag; delivery order A → B → D → C → review → flip
 
@@ -349,19 +372,37 @@ record the decision here before T086.
 
 - **Decision**: metrics `invoicing.auto_email_skipped{reason}` (exists) + new
   `broadcasts.audience_resolved_total{segment, mode}`, `broadcasts.audience_pages_total`,
-  `broadcasts.audience_push_progress{broadcast}` gauge, `broadcasts.recipient_count_ms`
+  `broadcasts.audience_import_status{status}` gauge (submitted / completed / failed / stuck),
+  `broadcasts.recipient_count_ms`
   histogram; structured logs carry `memberId` hashes, never emails. Budgets: recipient
   count p95 < 400 ms at 5,000 and < 3 s at 20,000 (SC-004; 1,000-row pages ⇒ 20 round
   trips); Marketing audience page LCP < 2.5 s at 50 rows/page; toggle API p95 < 400 ms.
   `docs/observability.md` gains the four metrics; `docs/runbooks/broadcast-audience-build.md`
   documents the resumable push and the stuck-`audience_building` reconcile.
-- **Alert thresholds**: `audience_push_progress` unchanged for 30 min while a broadcast is
-  in `audience_building` → page; `invoicing.auto_email_skipped{reason:no_recipient}` > 0 in
+- **Alert thresholds**: `audience_import_status` not `completed` within 30 min of submission,
+  or `failed`/`stuck` → page; `invoicing.auto_email_skipped{reason:no_recipient}` > 0 in
   any 24 h → warn (expected 0 once the invariant ships); `recipient_count_ms` p95 > 3,000
   over 15 min → warn; existing bounce/complaint alerts unchanged. Runbooks to update:
   `docs/runbooks/cron-jobs.md` (new sub-state), `reconcile-stuck-sending` runbook
   (audience_building case), `void-pdf-reconcile` runbook (copy-forward note). Env: the flag
   is added to `.env.example` and passes `check:env-example` + `check:env-boot`.
+
+## R16 — Resend Audiences → Segments / Global Contacts (risk outside this feature's scope)
+
+- **Fact** (Resend docs `dashboard/segments/migrating-from-audiences-to-segments`, 2026-09):
+  Audiences are being replaced by Segments; a contact is now one record per team across
+  segments ("Global Contacts"); unsubscribe preference moves to Topics; "Contacts API
+  endpoints that previously required an `audience_id` can now be used directly". No
+  deprecation date is published; the page says to contact support for migration.
+- **Decision**: out of scope for 108. PR-C keeps `audienceId` on the existing gateway calls
+  (the import API accepts `segments[]`, which today's audience id satisfies per Resend's
+  compatibility note — **V5 confirms on the test account**). Record as an F7 platform risk in
+  `docs/email-broadcast-analysis.md` and the go-live risk register; the SDK 4 → 6 upgrade PR
+  (deferred from R9) is the natural place to adopt segments/topics.
+- **Why it matters here**: F7's suppression is our own `marketing_unsubscribes`; with Global
+  Contacts, a Resend-side `unsubscribed` flag set by any other segment now applies team-wide,
+  so the import CSV must never carry that column (R9) and the dispatch must keep re-resolving
+  our suppression list at send time (unchanged).
 
 ## Pinned repo facts the tasks rely on
 

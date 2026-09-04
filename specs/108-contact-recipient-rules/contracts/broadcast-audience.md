@@ -58,15 +58,23 @@ composition site; submit, count and dispatch compare against the same number.
 
 ## 4. Audience push (dispatch)
 
-- First dispatch tick snapshots `recipients` into the per-broadcast audience store
-  (F7.1a batch persistence if reusable, else `broadcast_audience_members`) and pushes
-  contacts in `email_lower` order until ~240 s of the 300 s budget are used, stamping
-  `pushed_at` per contact. Broadcast stays in `audience_building` with progress `n/N`.
-- Subsequent ticks resume with unpushed rows; `sendBroadcast` fires only when
-  `count(pushed_at IS NULL) = 0`. Idempotent per `(audience, email)` (V2 verifies Resend's
-  duplicate behaviour; the pushed-set is the guard either way).
-- `reconcile-stuck-sending` treats `audience_building` with no progress for 30 min as
-  stuck (existing runbook extended).
+- First dispatch tick resolves the audience, renders a CSV with a single `email` column
+  (never `unsubscribed`), and submits ONE import: `POST /contacts/imports` (multipart:
+  `file`, `column_map={"email":"email"}`, `on_conflict="upsert"`, `segments=[<audience id>]`)
+  through two new port methods `createContactImport` / `getContactImport` on
+  `BroadcastsGatewayPort`, implemented with a raw multipart `fetch` in the existing gateway
+  adapter (SDK 4.8 has no `contacts.imports`). The returned id is stored in
+  `broadcasts.audience_import_id`; the broadcast enters `audience_building`.
+- Each later tick polls `GET /contacts/imports/{id}`. Completion rule: `status = completed`
+  AND `failed = 0` AND `created + updated + skipped = total` AND `total` equals the resolved
+  count → stamp `audience_import_completed_at` and call `sendBroadcast`. Any `failed > 0`, a
+  count mismatch, or no completion within 30 min → typed dispatch failure
+  (`audience_import_failed` / `audience_import_stuck`) with audit + alert; never a partial send.
+- Idempotency: `upsert` makes re-submitting the same CSV safe; a tick never submits a second
+  import while `audience_import_id` is set.
+- `reconcile-stuck-sending` treats `audience_building` past 30 min as stuck (existing runbook
+  extended). Rate limit (10 req/s per team by default; V5 confirms the team's value) is
+  irrelevant at 2–3 calls per broadcast.
 
 ## 5. Recipient-count endpoints
 
@@ -107,6 +115,6 @@ gain `contact_id`. Suppression remains email-keyed and authoritative.
 - Integration (live Neon): `audience-cap.test.ts` re-pinned; new `audience-1n-status.test.ts`
   (inactive/archived excluded, secondaries included, orphan detection),
   `audience-pagination-20k.test.ts` (20,000 contacts, no truncation, < 3 s),
-  `audience-push-resumable.test.ts` (two ticks, no duplicate push), `unsubscribe-contact-attribution.test.ts`.
+  `audience-import-two-tick.test.ts` (submit once, poll, send only on completed + matching counts), `unsubscribe-contact-attribution.test.ts`.
 - Contract: `get-broadcasts-recipient-count.contract.test.ts` (member + admin), submit body.
 - E2E: compose shows the live count and the self-exclusion hint; count updates on segment change.

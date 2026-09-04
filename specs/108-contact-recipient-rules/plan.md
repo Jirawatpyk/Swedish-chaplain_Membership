@@ -34,8 +34,8 @@ shadcn/ui (`Switch`, table primitives) · Resend Broadcasts API (existing gatewa
 **Storage**: Neon Postgres `ap-southeast-1` (Drizzle, hand-written SQL). DDL: `contacts` +3
 nullable columns + 1 partial index (0294) · `marketing_unsubscribes.contact_id` (0296) · two
 deferred constraint triggers on `contacts`/`members` with a data pre-check (0293) · three
-`audit_event_type` values (0292, 0295) · optional `broadcast_audience_members` working table
-(0297). No column drops, no enum widening beyond audit events
+`audit_event_type` values (0292, 0295) · two nullable `broadcasts` columns for the provider
+import job (0297). No new table, no column drops, no enum widening beyond audit events
 **Testing**: Vitest unit/contract · live-Neon integration (dev branch; race ×100, trigger
 rehearsal, 20k-contact pagination, resumable push) · Playwright + axe (`--workers=1`) ·
 static gates incl. a new `check:money-recipient`
@@ -51,9 +51,10 @@ cron tick, resumable
 **Constraints**: live money path — tax-document buyer identity stays frozen (only delivery
 address goes live); no PII in logs or audit payloads (ids + hashes only); actor role always
 the session role (`check:actor-role-truth`); tenant isolation two-layer for every new query
-(`runInTenant` tx + RLS FORCE); Resend contact push is serial at 2 req/s inside a 300 s
-function budget (research R9); flag OFF must be behaviour-identical except the `status =
-'active'` narrowing
+(`runInTenant` tx + RLS FORCE); the provider audience is built with Resend's asynchronous
+Contacts Import API (one import per broadcast, polled across cron ticks — research R9; the
+installed SDK 4.8 lacks the method, so the adapter calls the endpoint directly); flag OFF
+must be behaviour-identical except the `status = 'active'` narrowing
 **Scale/Scope**: 4 invoicing use cases + 1 payments use case rewired (47 test files carry
 the affected deps types) · 1 permission key (41→42 pinned) · 1 staff page + 1 nav item +
 4 API routes (2 admin, 1 portal, 1 member) · 1 resolver rewrite (4 callers + memo wrapper) ·
@@ -120,7 +121,7 @@ re-checked post-Phase-1 design (see § Post-Design Re-check).*
       compose. `enterprise-ux-designer` pass on every UI PR.
 - [x] **VII. Performance & Observability** — Budgets in Technical Context; new metrics
       `broadcasts.audience_resolved_total`, `audience_pages_total`,
-      `audience_push_progress`, `recipient_count_ms`; existing
+      `audience_import_status`, `recipient_count_ms`; existing
       `invoicing.auto_email_skipped{reason}`; structured logs with member-id hashes;
       runbook `docs/runbooks/broadcast-audience-build.md`; `docs/observability.md` updated.
       Keyset pagination (1,000/page) bounds memory; partial index backs the audience query.
@@ -143,9 +144,9 @@ re-checked post-Phase-1 design (see § Post-Design Re-check).*
       of a new one; reuse `addContact` for the unarchive remedy; clone existing table/route/
       toggle patterns; three columns + one index instead of a preferences table; two audit
       events with a `source` payload instead of four. Accepted temporary complexity: the
-      cutover flag with a scheduled deletion (Complexity Tracking #2). The resumable push
-      is not speculative — the serial 2 req/s loop already cannot finish 5,000 contacts in
-      the 300 s budget.
+      cutover flag with a scheduled deletion (Complexity Tracking #2). Replacing the serial
+      per-contact push with one provider import per broadcast is simpler, not more complex:
+      2–3 API calls instead of thousands, and no per-recipient working table (research R9).
 
 ## Project Structure
 
@@ -202,9 +203,11 @@ src/modules/broadcasts/
 ├── application/ports/members-bridge-port.ts          # + getContactsBySegment, filterMarketingOptedOut; ContactRecipient
 ├── application/use-cases/resolve-segment-recipients.ts   # 1:N pipeline, audienceMode, ceiling param, droppedByPreference
 ├── application/use-cases/{validate-custom-recipients,submit-broadcast,dispatch-scheduled-broadcast,unsubscribe-recipient}.ts
-├── application/use-cases/build-audience-tick.ts      # NEW — resumable push (≤240 s/tick)
+├── application/use-cases/build-audience-tick.ts      # NEW — submit one contact import, poll, send when complete
+├── application/ports/broadcasts-gateway-port.ts      # + createContactImport / getContactImport
+├── infrastructure/resend/resend-broadcasts-gateway.ts # raw multipart fetch for /contacts/imports (SDK 4.8 gap)
 ├── infrastructure/{members-bridge,tick-memoized-members-bridge,broadcasts-deps}.ts   # errors propagate; memo; flag → mode
-└── infrastructure/schema.ts                          # marketing_unsubscribes.contact_id (+ audience table if 0297)
+└── infrastructure/schema.ts                          # marketing_unsubscribes.contact_id; broadcasts.audience_import_* (0297)
 
 src/modules/auth/domain/permissions/{permission-catalogue,role-bundles}.ts   # + contacts.marketing
 src/lib/
@@ -257,10 +260,11 @@ page cloned from the members directory pattern.
 
 Re-evaluated 2026-09-04 after generating research.md, data-model.md, contracts/ (3),
 quickstart.md: no new violations. Phase-1 artefacts add no dependency and no module; the
-one new table (0297) is conditional on V2/R9 and, if created, ships with RLS ENABLE + FORCE
-and a tenant policy cloned from 0139. The resumable-push design (R9) is a reliability
-requirement surfaced by research, not speculative scope: without it FR-041/SC-004 are
-unachievable inside the 300 s function budget. The four Complexity Tracking entries are the
+migration 0297 adds two nullable columns on `broadcasts` under its existing RLS policy (the
+earlier working-table idea was dropped after Resend's Contacts Import API was verified —
+research R9, corrected 2026-09-04). The import-based audience build is a reliability
+requirement surfaced by research, not speculative scope: the serial push cannot finish 5,000
+contacts inside the 300 s function budget even at the documented 10 req/s. The four Complexity Tracking entries are the
 complete deviation set. **GATE: PASS.**
 
 ## Phase Outputs

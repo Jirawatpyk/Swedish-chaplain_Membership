@@ -73,7 +73,7 @@ pnpm test:e2e tests/e2e/admin-marketing-audience.spec.ts --workers=1
 pnpm test tests/unit/broadcasts tests/unit/members/application/get-members-by-segment.test.ts
 pnpm test:integration tests/integration/broadcasts/audience-1n-status.test.ts
 pnpm test:integration tests/integration/broadcasts/audience-pagination-20k.test.ts
-pnpm test:integration tests/integration/broadcasts/audience-push-resumable.test.ts
+pnpm test:integration tests/integration/broadcasts/audience-import-two-tick.test.ts
 ```
 
 Before opening any PR: `pnpm lint && pnpm typecheck && pnpm check:i18n && pnpm vitest run tests/contract/`
@@ -104,7 +104,7 @@ Before opening any PR: `pnpm lint && pnpm typecheck && pnpm check:i18n && pnpm v
 3. Staff run the FR-027a pre-flight review on the audience page (preset link) and switch
    off anyone who should not receive.
 4. Flip `FEATURE_CONTACT_MARKETING_RECIPIENTS=true` in Vercel; redeploy.
-5. First send: watch `broadcasts.audience_push_progress` and the outbox; confirm
+5. First send: watch `broadcasts.audience_import_status` (and the import's `counts` in the Resend dashboard) and the outbox; confirm
    `estimated_recipient_count` = delivered.
 6. After one clean week: follow-up PR deletes the flag and the `primary_only` leg.
 7. Live-mode switch checklist (separate): Stripe Dashboard → Customer emails →

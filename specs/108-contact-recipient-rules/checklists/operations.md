@@ -31,7 +31,7 @@
 - [x] CHK012 Are the new metrics named with labels (audience resolved/pages/push progress/count latency; skipped money email by reason) and added to `docs/observability.md` as a requirement? [Completeness, Research R15, Plan Constitution VII] → resolved: R15
 - [x] CHK013 Are alert thresholds defined for: audience push with no progress (stuck), skipped money emails above baseline, recipient-count latency above budget? [Gap, Research R15] → resolved: R15 alert thresholds
 - [x] CHK014 Are performance budgets stated with measurement points (count p95 at 5,000 and 20,000; toggle p95; audience page LCP; per-tick push budget)? [Measurability, Plan Technical Context, Spec §FR-043, §SC-004] → resolved: plan Technical Context + SC-004
-- [ ] CHK015 Is the Resend rate limit (2 req/s) captured as an external dependency with an owner action (rate-increase request) and a fallback if refused? [Dependency, Research R9] → OPEN: operator task in /speckit.tasks: request Resend rate increase; fallback = resumable push (R9)
+- [x] CHK015 Is the Resend rate limit captured as an external dependency with an owner action and a fallback? [Dependency, Research R9] → resolved: docs verified 2026-09-04 (default 10 req/s per team, not the code comment's 2); the import-API design (R9) needs 2–3 calls per broadcast so no increase is required; T095 records the team's actual limit + T110 tracks the SDK/segments follow-up (R16)
 - [x] CHK016 Is the first-send observation step (progress gauge, outbox, estimated = delivered) defined with pass/fail criteria? [Measurability, quickstart §Cutover 5] → resolved: quickstart cutover 5
 
 ## Runbooks and documentation

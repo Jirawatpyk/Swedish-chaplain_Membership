@@ -134,21 +134,22 @@ Index `marketing_unsubscribes_contact_lookup_idx (tenant_id, contact_id) WHERE c
 `contact_marketing_opted_in` (0295). Own file(s), no other DDL (autocommit pre-pass rule).
 Retention: 5 years (default). Payloads carry ids and `source`, never an email address.
 
-### 2.5 Audience build (PR-C, conditional) — migration 0297
+### 2.5 Audience build via the Resend Contacts Import API (PR-C) — migration 0297
 
-Only if the F7.1a batch tables cannot host the resolved list (research V2/R9):
+Research R9 (corrected): the provider audience is built with one asynchronous import per
+broadcast, so no per-recipient working table is needed. Two nullable columns on `broadcasts`:
 
-```sql
-CREATE TABLE broadcast_audience_members (
-  tenant_id text NOT NULL, broadcast_id uuid NOT NULL, email_lower text NOT NULL,
-  pushed_at timestamptz NULL, created_at timestamptz NOT NULL DEFAULT now(),
-  PRIMARY KEY (tenant_id, broadcast_id, email_lower));
--- RLS ENABLE + FORCE + tenant_isolation policy (clone 0139 block); index (tenant_id, broadcast_id) WHERE pushed_at IS NULL
-```
+| Column | Type | Notes |
+|---|---|---|
+| `audience_import_id` | `text NULL` | Resend `contact_import` id returned by `POST /contacts/imports`; set when the broadcast enters `audience_building` |
+| `audience_import_completed_at` | `timestamptz NULL` | stamped when `GET /contacts/imports/{id}` reports `completed` with `failed = 0` and `created + updated + skipped = total`; `sendBroadcast` is gated on this |
 
-Rows are deleted when the broadcast reaches `sent`/`failed` (they are a working set, not a
-record; the audit log already holds counts). Erasure: `email_lower` rows for an erased
-member are removed by the existing broadcasts erasure cascade.
+No new table, no new RLS policy (existing `broadcasts` policy covers the columns). The CSV
+handed to Resend carries the `email` column only (never `unsubscribed`); it is generated in
+memory per tick and not persisted. Erasure: nothing new to cascade (no stored recipient list);
+the existing broadcasts erasure cascade is unchanged. If V2 shows the import id cannot be
+attached to the broadcast row, fall back to the original working-table design — record in
+research V4.
 
 ## 3. State transitions
 
@@ -172,9 +173,10 @@ existing `broadcast_unsubscribed` + `broadcast_suppression_applied` gain `contac
 
 ### Broadcast (PR-C addition)
 
-`approved → dispatching(audience_building: pushed n/N) → sending → sent`; an
-`audience_building` broadcast is resumed by the next `dispatch-scheduled` tick and
-reconciled by `reconcile-stuck-sending` if no progress for 30 min.
+`approved → audience_building (import submitted; polled each tick) → sending → sent`; an
+`audience_building` broadcast is polled by the next `dispatch-scheduled` tick and
+reconciled by `reconcile-stuck-sending` if the import is not `completed` within 30 min or
+reports `failed > 0` (typed failure + audit + alert).
 
 ## 4. Permissions
 
