@@ -73,6 +73,17 @@ export function ResendInvoiceButton({
           toast.warning(t('toast.resendRateLimited'));
           return;
         }
+        if (res.status === 409) {
+          // 108 FR-003. A member cannot fix this themselves, but telling them
+          // WHY beats a generic failure they will retry forever.
+          const body = (await res.json().catch(() => null)) as
+            | { error?: { code?: string } }
+            | null;
+          if (body?.error?.code === 'no_recipient') {
+            toast.error(t('toast.resendNoRecipient'));
+            return;
+          }
+        }
         toast.error(t('toast.resendFailed'));
       } catch (err) {
         // Round 6 (R5-SF-L1 parity) — log network error to console

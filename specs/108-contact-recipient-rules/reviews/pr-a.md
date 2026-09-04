@@ -168,6 +168,31 @@ applied; that is the failure worth naming.
 - "0 snapshot-addressed emails" was true of the token the gate scans, and was
   used to support a broader claim the `void-pdf-reconcile` path violated.
 
+### Round-1 items closed after the first remediation commit
+
+| Finding | Fix |
+|---|---|
+| **Cross-tenant test missing** (Constitution I.3, hard blocker) | 4 cases in `recipient-locale-adapter.integration.test.ts` against a real second tenant: both arms of `getMemberEmailRecipient` (threaded tx AND standalone, because they acquire RLS context differently), the locale read, and — deliberately — a case proving the tenant-B member IS resolvable from tenant B, so the three negative assertions cannot pass against a member that was never seeded |
+| **No live-Neon coverage for the PromptPay billing address** | `tests/integration/payments/promptpay-billing-recipient.test.ts`: the real adapter → members barrel → `runInTenant` → repo chain, with a capturing gateway. Live primary reaches Stripe; after a promotion the NEW one does; no primary → `primary_contact_missing` with no PaymentIntent and no `payments` row; card needs no contact and shares no address. The frozen snapshot carries a distinct address so an accidental pass would be visible |
+| **409 `no_recipient` had no user-facing copy** | `resendNoRecipient` in EN/TH/SV, wired on the credit-note menu and the portal button. It names the fix ("add or promote a contact on the member page, then resend") rather than "Resend failed" |
+| **No banner on the credit-note page** | `NoPrimaryContactBanner` added there too — the page carries a Resend action, so it must carry the warning that explains why the action will refuse |
+| **Portal toast said "check your inbox"** | It now says the copy goes to the organisation's primary contact. A secondary contact with a login would otherwise wait for mail that was never addressed to them |
+| **`findPrimaryContactEmailInTx` had no tenant predicate** | Added, with `tenantId` threaded through the port. RLS already scoped it; Principle I asks the application layer to state the same rule rather than inherit it, and 108 put this read on a money path |
+| **Gate scope excluded renewals** | Widened (615 files scanned, up from 421). Renewals owns `mark-paid-offline` and the F4 bridge; it addresses no money email from a snapshot today, and the point of a gate is that it stays that way |
+| **FR-006 rationale overstated** | Corrected in place: `/api/portal/profile` already returns every contact's email to that same user, so the old "discloses another person's address" claim was false. The honest reason is data minimisation, and the comment now says so |
+
+### Deliberately not done, with reasons
+
+- **F-5 (Stripe `retrievePaymentIntent` exposure)** — cannot be settled from
+  source; recorded in `research.md` as a test-mode operator check rather than
+  guessed at.
+- **F-6 (malformed contact address → Stripe 502)** — real but pre-existing in
+  shape: `asEmail` validates the app write path, and the exposure is limited to
+  bulk-imported rows that bypassed it. Left as a named follow-up rather than
+  adding a second validation layer inside a money path late in a review round.
+- **F-8 / L-5 (`getMember` on every invoice page load)** — a deliberate cost of
+  the banner. Handed to `performance-slo-guardian` rather than optimised blind.
+
 ## Open at hand-off
 
 - **T029** — the reviewer stack (`financial-integrity-reviewer`,

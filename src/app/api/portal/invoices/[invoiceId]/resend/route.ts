@@ -91,9 +91,17 @@ export async function POST(
     );
   }
 
-  // 108 FR-006 — the body carries NO address. A secondary contact with a
-  // portal login may trigger this resend; echoing the primary contact's
-  // email back would disclose another person's address to them (and the
-  // client toast never read it). The mail still goes to the live primary.
+  // 108 FR-006 — the body carries NO address.
+  //
+  // The first version of this comment claimed the old body 'disclosed another
+  // person's address'. The PR-A security review checked and that is overstated:
+  // the same portal user can call GET /api/portal/profile and receive every
+  // non-removed contact on the member, emails included, and the profile page
+  // renders them. Colleagues in one member organisation may see each other's
+  // work addresses; that is a deliberate product decision, not a leak.
+  //
+  // The honest reason is data minimisation: this endpoint's job is to say
+  // whether the resend was queued, and it does not need to name a person to do
+  // that. The mail still goes to the live primary contact.
   return NextResponse.json({ ok: true }, { status: 202 });
 }

@@ -45,6 +45,9 @@ import { Separator } from '@/components/ui/separator';
 import { buttonVariants } from '@/components/ui/button';
 import { formatTaxDocDate } from '@/lib/format-tax-doc-date';
 import { CreditNoteMoreMenu } from '../_components/credit-note-more-menu';
+import { getMember, type MemberId } from '@/modules/members';
+import { buildMembersDeps } from '@/modules/members/members-deps';
+import { NoPrimaryContactBanner } from '@/components/members/no-primary-contact-banner';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.creditNotes.detail.meta');
@@ -112,6 +115,27 @@ export default async function CreditNoteDetailPage({
 
   const invoiceHref = `/admin/invoices/${cn.originalInvoiceId}`;
 
+  // 108 FR-003 — this page carries a Resend action, so it must also carry the
+  // warning that explains why a resend will refuse. Best-effort: a repo failure
+  // hides the banner rather than 500-ing a page whose job is to display a
+  // §86/10 document.
+  const cnMemberId = cn.originalInvoiceMemberId;
+  const noPrimaryContact =
+    cnMemberId === null
+      ? false
+      : await getMember(
+          cnMemberId as MemberId,
+          { actorUserId: user.id, requestId },
+          buildMembersDeps(tenantCtx),
+        )
+          .then((r) =>
+            r.ok
+              ? r.value.member.status !== 'archived' &&
+                !r.value.contacts.some((c) => c.isPrimary && c.removedAt === null)
+              : false,
+          )
+          .catch(() => false);
+
   // G-5 — sibling CNs on the same original invoice. Best-effort:
   // a repo failure never 500s the page (this is a convenience nav
   // block, not load-bearing). Filter self + sort oldest→newest so
@@ -155,6 +179,13 @@ export default async function CreditNoteDetailPage({
           />
         }
       />
+
+      {noPrimaryContact && cnMemberId !== null && (
+        <NoPrimaryContactBanner
+          memberId={cnMemberId}
+          contactsHref={`/admin/members/${cnMemberId}`}
+        />
+      )}
 
       {/* Summary card — amounts + cross-reference to the original invoice. */}
       <Card>

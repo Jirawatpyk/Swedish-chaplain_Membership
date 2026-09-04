@@ -2106,7 +2106,8 @@
         "toast": {
           "resendSuccess": "Köad — {recipient} får en ny kopia inom kort.",
           "resendRateLimited": "Denna kreditnota skickades nyligen igen. Vänta några minuter och försök igen.",
-          "resendFailed": "Kunde inte köa en återsändning. Försök igen."
+          "resendFailed": "Kunde inte köa en återsändning. Försök igen.",
+          "resendNoRecipient": "Ingen primär kontakt — ingenting skickades. Lägg till eller befordra en kontakt på medlemssidan och skicka sedan igen."
         },
         "fields": {
           "issueDate": "Utfärdandedatum",
@@ -2621,6 +2622,7 @@
           "resendNoReceipt": "Det finns inget kvitto att skicka (kombinerat läge eller obetald).",
           "resendNotIssued": "Fakturan är fortfarande ett utkast — utfärda den först för att mejla en kopia.",
           "resendFailed": "Kunde inte köa en återsändning. Försök igen.",
+          "resendNoRecipient": "Ingen primär kontakt — ingenting skickades. Lägg till eller befordra en kontakt på medlemssidan och skicka sedan igen.",
           "receiptPending": "Kvitto-PDF förbereds fortfarande. Försök igen om en stund.",
           "receiptFailed": "Kvitto-PDF kunde inte genereras: {reason}. Kontakta support om problemet kvarstår.",
           "receiptForbidden": "Du har inte behörighet till detta kvitto.",
@@ -5470,9 +5472,10 @@
       "receiptNumberCombinedTooltip": "Kombinerat läge — kvittot återanvänder fakturanumret",
       "receiptNumberCombinedAria": "Kvitto använder fakturans dokumentnummer (kombinerat läge)",
       "toast": {
-        "resendSuccess": "Köad — du får en ny kopia inom kort.",
+        "resendSuccess": "Kopia köad — den går till organisationens primära kontakt.",
         "resendRateLimited": "Du bad om en kopia nyligen. Vänta några minuter och försök igen.",
         "resendFailed": "Kunde inte köa en ny kopia. Försök igen.",
+        "resendNoRecipient": "Ingen primär kontakt — ingenting skickades. Lägg till eller befordra en kontakt på medlemssidan och skicka sedan igen.",
         "downloadInProgress": "Förbereder nedladdning…",
         "invoiceForbidden": "Du har inte behörighet till denna faktura.",
         "invoiceNotFound": "Faktura hittades inte.",

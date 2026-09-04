@@ -80,6 +80,18 @@ export function CreditNoteMoreMenu({
       }
       if (res.status === 429) {
         toast.warning(t('toast.resendRateLimited'));
+      } else if (res.status === 409) {
+        // 108 FR-003 — the one resend failure a staff member can actually fix.
+        // "Resend failed" would send them to the logs for a data problem that
+        // is two clicks away on the member page.
+        const failure = (await res.json().catch(() => null)) as
+          | { error?: { code?: string } }
+          | null;
+        toast.error(
+          failure?.error?.code === 'no_recipient'
+            ? t('toast.resendNoRecipient')
+            : t('toast.resendFailed'),
+        );
       } else {
         toast.error(t('toast.resendFailed'));
       }

@@ -29,7 +29,14 @@ matches per capture, not a per-file limit. Consequence: migration **0295 stays o
 with both `ADD VALUE` statements; each statement must be on its own and end with `;`, and
 must not sit on a `--` comment line (those are stripped);
 V4 (superseded by the V2 redesign — no recipient working table is planned; keep only if V2
-shows the import id + counts cannot live on the `broadcasts` row); V5 the team's actual Resend
+shows the import id + counts cannot live on the `broadcasts` row); V6 (PR-A security review, PCI F-5) — whether a browser-side
+`stripe.retrievePaymentIntent(clientSecret)` can surface
+`payment_method_data.billing_details.email`, which since 108 is a DIFFERENT person's
+address than the payer's on a PromptPay PI. My reading is that it cannot (client-side
+retrieval returns a publishable-key-scoped PI with `payment_method` unexpanded), but it
+is not settleable from source: initiate a PromptPay payment in test mode, call it in the
+console, and grep the result. Also eyeball Stripe's hosted PromptPay instructions page.
+V5 the team's actual Resend
 rate limit (Settings → Usage; docs default is 10 req/s per team, raisable via support) and
 whether the Audiences → Segments / Global Contacts migration has a deprecation date that
 affects F7's `audienceId`-based gateway (R16).

@@ -60,7 +60,15 @@ import { join, relative } from 'node:path';
 import { lineOfIndex, stripCommentLines } from './lib/source-scan';
 
 const ROOT = process.cwd();
-const SCOPE = ['src/modules/invoicing', 'src/modules/payments', 'src/app/api'] as const;
+// `renewals` is in scope because it owns `mark-paid-offline` and the F4 bridge —
+// today it addresses no money email from a snapshot, and the point of a gate is
+// that it stays that way when someone adds one.
+const SCOPE = [
+  'src/modules/invoicing',
+  'src/modules/payments',
+  'src/modules/renewals',
+  'src/app/api',
+] as const;
 
 /**
  * Each entry: the file, a substring of the matched line, how many lines in that

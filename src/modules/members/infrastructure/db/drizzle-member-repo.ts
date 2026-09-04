@@ -1464,13 +1464,17 @@ export const drizzleMemberRepo: MemberRepo = {
     }
   },
 
-  async findPrimaryContactEmailInTx(tx, memberId) {
+  async findPrimaryContactEmailInTx(tx, tenantId, memberId) {
     try {
       const rows = await tx
         .select({ email: contacts.email })
         .from(contacts)
         .where(
           and(
+            // Belt-and-braces with RLS (Principle I two-layer). 108 put this
+            // read on the money path, where its F4 counterpart has always
+            // stated the tenant explicitly.
+            eq(contacts.tenantId, tenantId),
             eq(contacts.memberId, memberId),
             eq(contacts.isPrimary, true),
             sql`${contacts.removedAt} IS NULL`,

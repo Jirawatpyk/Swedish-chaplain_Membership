@@ -35,6 +35,9 @@ describe('recipientLocaleAdapter — member email locale (live Neon)', () => {
   let memberPromoted: string;
   // 108 — every contact removed: no live primary at all.
   let memberNoPrimary: string;
+  // 108 — a SECOND tenant, for the Principle I clause-3 cross-tenant test.
+  let tenantB: TestTenant;
+  let memberInB: string;
 
   beforeAll(async () => {
     user = await createActiveTestUser('admin');
@@ -44,6 +47,7 @@ describe('recipientLocaleAdapter — member email locale (live Neon)', () => {
     bothDefault = randomUUID();
     memberPromoted = randomUUID();
     memberNoPrimary = randomUUID();
+    memberInB = randomUUID();
     planId = `f4-locale-${randomUUID().slice(0, 8)}`;
 
     await runInTenant(tenant.ctx, (tx) =>
@@ -141,9 +145,44 @@ describe('recipientLocaleAdapter — member email locale (live Neon)', () => {
         preferredLanguage: 'th',
       });
     });
+
+    // Tenant B: a complete member + live primary contact of its own. Tenant A
+    // must not be able to see any of it.
+    tenantB = await createTestTenant();
+    await runInTenant(tenantB.ctx, async (tx) => {
+      await seedF8MembershipPlan(tx, {
+        tenantSlug: tenantB.ctx.slug,
+        planId,
+        planName: { en: 'Tenant B Plan', th: 'แผนผู้เช่า B' },
+        benefitMatrix: DEFAULT_TEST_BENEFIT_MATRIX,
+        createdBy: user.userId,
+        annualFeeMinorUnits: 1_600_000,
+      });
+      await tx.insert(members).values({
+        tenantId: tenantB.ctx.slug,
+        memberId: memberInB,
+        memberNumber: nextSeedMemberNumber(),
+        companyName: 'Tenant B Co',
+        country: 'TH',
+        planId,
+        planYear: 2026,
+        registrationDate: '2020-01-01',
+        preferredLocale: null,
+      });
+      await tx.insert(contacts).values({
+        tenantId: tenantB.ctx.slug,
+        contactId: randomUUID(),
+        memberId: memberInB,
+        firstName: 'Tenant',
+        lastName: 'B',
+        email: 'tenant-b-primary@example.com',
+        isPrimary: true,
+      });
+    });
   }, 120_000);
 
   afterAll(async () => {
+    await tenantB.cleanup().catch(() => {});
     await tenant.cleanup().catch(() => {});
   }, 120_000);
 
@@ -244,5 +283,51 @@ describe('recipientLocaleAdapter — member email locale (live Neon)', () => {
       memberPromoted,
     );
     expect(locale).toBe('sv');
+  });
+
+  // ── Principle I clause 3 — the mandatory cross-tenant proof ───────────────
+  //
+  // `getMemberEmailRecipient` decides who a MONEY email is addressed to. Reading
+  // the code and concluding it is tenant-safe is not evidence; a tenant-scoped
+  // read on a money path needs a test that actually asks for another tenant's
+  // member and watches nothing come back. Both arms are exercised because they
+  // acquire their RLS context by different routes: one inherits the caller's
+  // transaction, the other opens its own via `runInTenant`.
+
+  it('tenant A cannot resolve a tenant B member — threaded-tx arm', async () => {
+    const leaked = await runInTenant(tenant.ctx, (tx) =>
+      recipientLocaleAdapter.getMemberEmailRecipient(tx, tenant.ctx.slug, memberInB),
+    );
+    expect(leaked).toBeNull();
+  });
+
+  it('tenant A cannot resolve a tenant B member — standalone (null tx) arm', async () => {
+    // This is the resend path: no open transaction, the adapter self-scopes.
+    const leaked = await recipientLocaleAdapter.getMemberEmailRecipient(
+      null,
+      tenant.ctx.slug,
+      memberInB,
+    );
+    expect(leaked).toBeNull();
+  });
+
+  it('the tenant B member IS resolvable from tenant B — the fixture is real, not absent', async () => {
+    // Without this, both assertions above would pass against a member that was
+    // never seeded — the classic way a cross-tenant test proves nothing.
+    const own = await recipientLocaleAdapter.getMemberEmailRecipient(
+      null,
+      tenantB.ctx.slug,
+      memberInB,
+    );
+    expect(own?.email).toBe('tenant-b-primary@example.com');
+  });
+
+  it('the LOCALE read is tenant-scoped too', async () => {
+    const leaked = await recipientLocaleAdapter.getMemberEmailLocale(
+      null,
+      tenant.ctx.slug,
+      memberInB,
+    );
+    expect(leaked).toBeNull();
   });
 });

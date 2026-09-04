@@ -2106,7 +2106,8 @@
         "toast": {
           "resendSuccess": "Queued — {recipient} will receive a fresh copy shortly.",
           "resendRateLimited": "This credit note was resent recently. Please wait a few minutes before retrying.",
-          "resendFailed": "Could not queue a resend. Please try again."
+          "resendFailed": "Could not queue a resend. Please try again.",
+          "resendNoRecipient": "No primary contact — nothing was sent. Add or promote a contact on the member page, then resend."
         },
         "fields": {
           "issueDate": "Issue date",
@@ -2621,6 +2622,7 @@
           "resendNoReceipt": "No receipt PDF is available for this invoice (combined mode or unpaid).",
           "resendNotIssued": "Invoice is still a draft — issue it first to email a copy.",
           "resendFailed": "Could not queue a resend. Please try again.",
+          "resendNoRecipient": "No primary contact — nothing was sent. Add or promote a contact on the member page, then resend.",
           "receiptPending": "Receipt PDF is still being prepared. Please retry in a moment.",
           "receiptFailed": "Receipt PDF render failed: {reason}. Contact support if this persists.",
           "receiptForbidden": "You do not have access to this receipt.",
@@ -5470,9 +5472,10 @@
       "receiptNumberCombinedTooltip": "Combined mode — receipt reuses the invoice number",
       "receiptNumberCombinedAria": "Receipt uses the invoice document number (combined mode)",
       "toast": {
-        "resendSuccess": "Copy queued — check your inbox shortly.",
+        "resendSuccess": "Copy queued — it goes to your organisation's primary contact.",
         "resendRateLimited": "You already asked for a copy recently. Please try again in a few minutes.",
         "resendFailed": "Could not queue a fresh copy. Please try again.",
+        "resendNoRecipient": "No primary contact — nothing was sent. Add or promote a contact on the member page, then resend.",
         "downloadInProgress": "Preparing your download…",
         "invoiceForbidden": "You do not have access to this invoice.",
         "invoiceNotFound": "Invoice not found.",
