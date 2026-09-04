@@ -372,10 +372,22 @@ for it reverted. `checklists/security.md` and `checklists/money.md` carry
 Constitution v1.4.2 co-sign footers naming the verification method, and neither
 co-signed property regressed in round 3.
 
-Gate run at HEAD: lint 0 · typecheck 0 · check:i18n 5171×3 · check:money-recipient
-· check:actor-role-truth · check:authorization-role-reads · check:staff-page-guard
-· check:api-route-guard · check:layout · check:dates · full unit suite green ·
-live-Neon suites green (incl. the new `primary-contact-read-agreement`).
+Gate run at HEAD `1e113fbaa`: lint 0 · typecheck 0 · 13 static gates PASS
+(money-recipient, actor-role-truth, authorization-role-reads, staff-page-guard,
+api-route-guard, layout, template-seed, fixme, dates, env-example, env-boot,
+i18n 5171×3, portal-guard) · `pnpm test:coverage` **exit 0** — 1197 files /
+13249 tests, and the three 100/100 money pins (`resolve-money-recipient.ts`,
+`record-payment.ts`, `initiate-payment.ts`) all met · architecture guards 133 ·
+live-Neon 21 tests incl. the new `primary-contact-read-agreement`.
+
+Two caveats worth recording rather than smoothing over. First, the coverage
+figure took three runs to obtain honestly: the first two were reported as
+"exit 0" by a pipeline whose `$?` belonged to `sed`, not to pnpm — the second
+had in fact FAILED and printed no threshold block at all. Second, that failure
+was `tests/unit/components/auth/change-role-dialog.test.tsx`, a focus-timing
+flake in 016 RBAC territory that this branch does not touch; it is diagnosed and
+de-flaked in a separate, clearly-labelled commit (`8dd85c6af`) so it can be
+cherry-picked away from 108.
 
 ## Open at hand-off
 
