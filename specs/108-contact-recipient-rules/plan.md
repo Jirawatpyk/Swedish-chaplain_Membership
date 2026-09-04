@@ -175,7 +175,7 @@ src/modules/invoicing/
 ├── application/lib/resolve-money-recipient.ts        # NEW — MoneyRecipient rule (member/non_member/no_recipient)
 ├── application/use-cases/{record-payment,void-invoice,issue-credit-note,resend-pdf}.ts
 │                                                     # live resolve; guards; override deleted
-├── application/ports/audit-port.ts                   # + auto_email_skipped_no_recipient (5y)
+├── application/ports/audit-port.ts                   # + auto_email_skipped_no_recipient (10y)
 └── infrastructure/adapters/{recipient-locale-adapter,member-identity-adapter}.ts
                                                       # one live read; removed_at IS NULL
 

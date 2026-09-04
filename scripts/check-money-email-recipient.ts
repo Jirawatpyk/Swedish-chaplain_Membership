@@ -80,6 +80,19 @@ interface AllowedRead {
   readonly contains: string;
   /** Exact number of matching lines permitted. Checked in both directions. */
   readonly expect: number;
+  /**
+   * Code that must still exist in the same file for this entry's `why` to hold.
+   *
+   * Without it an entry blesses a LINE while its justification is about the
+   * CALL that line feeds — repoint `deps.receiptPdfRenderEnqueue.enqueue` at
+   * `deps.outbox.enqueue` and the matched line stays byte-identical, the count
+   * stays 1, and a render task quietly becomes a money email addressed from the
+   * snapshot. Checked against the whole file rather than a line window because
+   * the consumer is often far from the read (60 lines, in the reconcile cron).
+   * Deleting or renaming the consumer makes the entry stop matching, which the
+   * count check then reports.
+   */
+  readonly boundTo?: string;
   readonly why: string;
 }
 
@@ -97,6 +110,10 @@ const ALLOWED: ReadonlyArray<AllowedRead> = [
     file: 'src/modules/invoicing/application/use-cases/record-payment.ts',
     contains: 'loaded.memberIdentitySnapshot.primary_contact_email',
     expect: 1,
+    // Bound to its consumer: this read is only safe because it feeds the
+    // RENDER-TASK enqueue. Remove or repoint that call and the entry stops
+    // matching — which is the original bug wearing this line's face.
+    boundTo: 'receiptPdfRenderEnqueue.enqueue',
     why:
       'the async receipt-PDF RENDER TASK, not an email: notifications_outbox.' +
       'to_email is NOT NULL and the dispatcher routes render rows by ' +
@@ -183,6 +200,8 @@ const ALLOWED: ReadonlyArray<AllowedRead> = [
     file: 'src/app/api/internal/cron/receipt-pdf-reconcile/route.ts',
     contains: "return snap?.primary_contact_email ??",
     expect: 1,
+    // Same binding: safe only as the render-reconcile row's copy-forward.
+    boundTo: 'receiptPdfRenderEnqueueAdapter.enqueue',
     why:
       'the render-reconcile cron re-enqueues a RENDER TASK, not an email ' +
       '(renderReceiptPdf never reads this field). notifications_outbox.to_email ' +
@@ -262,7 +281,10 @@ for (const root of SCOPE) {
       const lineNo = lineOfIndex(code, m.index ?? 0);
       const lineText = lines[lineNo] ?? '';
       const idx = ALLOWED.findIndex(
-        (a) => a.file === shown && lineText.includes(a.contains),
+        (a) =>
+          a.file === shown &&
+          lineText.includes(a.contains) &&
+          (a.boundTo === undefined || code.includes(a.boundTo)),
       );
       if (idx >= 0) {
         matchCounts.set(idx, (matchCounts.get(idx) ?? 0) + 1);
@@ -280,8 +302,10 @@ if (scanned === 0) {
 
 if (blindFiles.length > 0) {
   console.error(
-    'check:money-recipient ABORT — comment-stripping left a file with no ' +
-      'import/export line, so the scanner is blind to it:\n  ' +
+    'check:money-recipient ABORT — comment-stripping left a file with NO ' +
+      'non-empty line at all, so the scan of it saw nothing. Fires only on ' +
+      'TOTAL loss (an unterminated block comment, say); a PARTIAL loss is not ' +
+      'covered — see Honest limits. Affected:\n  ' +
       blindFiles.join('\n  '),
   );
   process.exit(1);

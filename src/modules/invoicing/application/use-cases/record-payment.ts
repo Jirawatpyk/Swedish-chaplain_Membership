@@ -460,20 +460,27 @@ export async function recordPayment(
       // primary contact reads as `skipped_no_email`, not `sent`. Read-only —
       // a replay re-sends nothing and audits no skip (the original attempt
       // already owned that decision).
-      const replayRecipient = await resolveMoneyRecipient(
-        deps.recipientLocale,
-        tx,
-        input.tenantId,
-        loaded.memberId,
-        loaded.memberIdentitySnapshot,
-      );
-      const replayEmailDispatch: EmailDispatchOutcome = !settings.autoEmailEnabled
+      // Gated and ordered to MATCH the fresh path exactly (which is what the
+      // comment above has always claimed): auto-email off or suppressed → no
+      // read at all and 'disabled'; otherwise resolve and report honestly.
+      // Before this, a suppressed replay for a member with no primary contact
+      // reported `skipped_no_email` — blaming the member's contacts for the
+      // caller's own suppression, the same lie the fresh path was fixed for.
+      const replayWantsEmail = settings.autoEmailEnabled && !input.suppressReceiptEmail;
+      const replayRecipient = replayWantsEmail
+        ? await resolveMoneyRecipient(
+            deps.recipientLocale,
+            tx,
+            input.tenantId,
+            loaded.memberId,
+            loaded.memberIdentitySnapshot,
+          )
+        : null;
+      const replayEmailDispatch: EmailDispatchOutcome = !replayWantsEmail
         ? 'disabled'
-        : replayRecipient.kind === 'no_recipient'
+        : replayRecipient !== null && replayRecipient.kind === 'no_recipient'
           ? 'skipped_no_email'
-          : input.suppressReceiptEmail
-            ? 'disabled'
-            : 'sent';
+          : 'sent';
       return ok({ ...loaded, emailDispatch: replayEmailDispatch });
     }
 

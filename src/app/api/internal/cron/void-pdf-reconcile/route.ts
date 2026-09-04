@@ -206,10 +206,15 @@ async function reEnqueueVoidCancellationEmail(
        AND context_data->>'invoice_id' = ${invoiceId}
        AND status = 'pending'
   `);
+  // Take the locale from the SAME live row as the address. Copying `o.locale`
+  // forward would mail the new primary contact in the previous one's language —
+  // every other money path reads both from one row for exactly this reason.
+  const resolvedLocale =
+    recipient.kind === 'member' ? (recipient.locale ?? 'en') : 'en';
   const inserted = (await tx.execute(sql`
     INSERT INTO notifications_outbox
       (tenant_id, notification_type, to_email, locale, context_data, status, attempts, next_retry_at)
-    SELECT o.tenant_id, o.notification_type, ${recipient.email}, o.locale,
+    SELECT o.tenant_id, o.notification_type, ${recipient.email}, ${resolvedLocale},
            jsonb_set(o.context_data, '{expected_pdf_sha256}', to_jsonb(${newSha}::text)),
            'pending'::outbox_status, 0, now()
       FROM notifications_outbox o

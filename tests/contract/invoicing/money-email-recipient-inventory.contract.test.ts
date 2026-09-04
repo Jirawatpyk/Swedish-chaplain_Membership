@@ -20,7 +20,7 @@
  * leak one.
  */
 import { describe, expect, it } from 'vitest';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve as resolvePath } from 'node:path';
 import type { F4OutboxEventType } from '@/modules/invoicing/application/ports/email-outbox-port';
 
@@ -144,5 +144,19 @@ describe('money-email recipient inventory (108 SC-001)', () => {
       'recipientemail',
       'recipientlocale',
     ]);
+  });
+
+  it('issue-time equivalence still holds — the member arm re-reads live (re-review MEDIUM-2)', () => {
+    // Two allowlist entries in `check:money-recipient` justify a snapshot read
+    // by saying the snapshot IS the live read at issue. The code carrying that
+    // claim is `resolve-invoice-buyer.ts`, which holds no `primary_contact_email`
+    // token — so the gate cannot see it, and the two entries' text would stay
+    // true-looking if this helper started returning a pinned snapshot for a
+    // MEMBER. Assert the load-bearing call directly.
+    const src = readFileSync(
+      resolvePath(REPO_ROOT, 'src/modules/invoicing/application/lib/resolve-invoice-buyer.ts'),
+      'utf8',
+    );
+    expect(src).toContain('getForIssue');
   });
 });

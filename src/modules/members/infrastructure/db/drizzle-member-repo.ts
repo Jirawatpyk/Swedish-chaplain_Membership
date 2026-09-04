@@ -1482,7 +1482,12 @@ export const drizzleMemberRepo: MemberRepo = {
         )
         .limit(1);
       const row = rows[0];
-      return ok(row ? row.email : null);
+      // 108 — an empty address is NOT an address. `contacts.email` is NOT NULL
+      // but only length-checked, so a bulk import that bypassed `asEmail` can
+      // store ''. F4's resolver already treats that as no-recipient; without
+      // this, F5 would hand Stripe '' and get an opaque processor_unavailable.
+      const email = row?.email.trim() ?? '';
+      return ok(email === '' ? null : row!.email);
     } catch (e) {
       return err(unexpected(e));
     }

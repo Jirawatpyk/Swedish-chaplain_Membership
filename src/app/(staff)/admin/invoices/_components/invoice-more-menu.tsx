@@ -258,6 +258,11 @@ export function InvoiceMoreMenu({
         toast.warning(t('toast.resendNoReceipt'));
       } else if (code === 'not_issued') {
         toast.warning(t('toast.resendNotIssued'));
+      } else if (code === 'no_recipient') {
+        // 108 FR-003 — the only resend failure staff can fix themselves, and
+        // the generic 'please try again' would send them to retry a data
+        // problem forever. The banner on this page says the same thing.
+        toast.error(t('toast.resendNoRecipient'));
       } else {
         toast.error(t('toast.resendFailed'));
       }

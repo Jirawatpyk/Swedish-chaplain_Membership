@@ -129,6 +129,8 @@ export default async function CreditNoteDetailPage({
           buildMembersDeps(tenantCtx),
         )
           .then((r) =>
+            // Same KNOWN GAP as the invoice page (re-review LOW-7): an erased
+            // member still sees this. Needs `erasedAt` on the Member type.
             r.ok
               ? r.value.member.status !== 'archived' &&
                 !r.value.contacts.some((c) => c.isPrimary && c.removedAt === null)

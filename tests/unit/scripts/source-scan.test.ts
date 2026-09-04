@@ -312,3 +312,45 @@ describe('stripCommentsPreserveLines', () => {
     expect(stripCommentsPreserveLines(src).split('\n')).toHaveLength(4);
   });
 });
+
+describe('stripCommentLines — nested template literals (108 PR-A re-review MEDIUM-3)', () => {
+  // The stripper tracked ONE open-quote character. A template literal's `${…}`
+  // re-enters code context, where a second backtick opens a NESTED template —
+  // and with one variable that inner backtick CLOSED the outer one. From there
+  // the rest of the line read as code, so a `//` inside the outer template (a
+  // URL, in practice) was treated as a line comment and everything after it
+  // vanished. Six gates share this helper, so the blindness was theirs too.
+  //
+  // Measured impact when found: zero occurrences in scope. These tests exist so
+  // it stays zero for a reason other than luck.
+
+  it('keeps code that follows a nested template containing "//"', () => {
+    const src = 'const to = `${a ? `https://x` : `y`}${snap.primary_contact_email}`;';
+    expect(stripCommentLines(src).join('\n')).toContain('primary_contact_email');
+  });
+
+  it('keeps code after a nested template on an ordinary line', () => {
+    const src = 'const cls = `${on ? `a` : `b`} ${role}`; check(actorRole);';
+    const out = stripCommentLines(src).join('\n');
+    expect(out).toContain('actorRole');
+  });
+
+  it('still strips a REAL line comment after a template', () => {
+    const src = 'const u = `https://x`; // primary_contact_email';
+    const out = stripCommentLines(src).join('\n');
+    expect(out).toContain('https://x');
+    expect(out).not.toContain('primary_contact_email');
+  });
+
+  it('still carries an unterminated template across lines', () => {
+    const src = ['const q = sql`', '  SELECT 1 -- not a JS comment', '`;'].join('\n');
+    expect(stripCommentLines(src).join('\n')).toContain('SELECT 1');
+  });
+
+  it('a `${` left open at end of line keeps the template open', () => {
+    const src = ['const q = `${', '  cond ? `a` : `b`', '}`;'].join('\n');
+    // The point is that line 2 is not mistaken for top-level code that ends the
+    // template early; the closing backtick on line 3 must still terminate it.
+    expect(stripCommentLines(src)).toHaveLength(3);
+  });
+});

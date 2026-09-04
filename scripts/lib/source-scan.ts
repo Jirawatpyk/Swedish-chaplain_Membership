@@ -129,7 +129,15 @@ export function stripCommentLines(src: string): readonly string[] {
   for (const line of src.split('\n')) {
     let res = '';
     let i = 0;
-    let quote: string | null = inTemplate ? '`' : null;
+    // A STACK, not one value. A template literal's `${…}` re-enters CODE
+    // context, where another backtick opens a NESTED template — and with a
+    // single variable the inner backtick closed the OUTER one. Everything after
+    // it on that line was then read as code, so a `//` inside the outer template
+    // (a URL, usually) truncated the rest of the line and every gate built on
+    // this helper went blind to it. Measured shape:
+    //   const to = `${a ? `https://x` : `y`}${snap.primary_contact_email}`;
+    // — the token after the nested template was invisible. Six gates share this.
+    const stack: string[] = inTemplate ? ['`'] : [];
     while (i < line.length) {
       const c = line[i]!;
       const next = line[i + 1];
@@ -150,13 +158,30 @@ export function stripCommentLines(src: string): readonly string[] {
         i += 1;
         continue;
       }
-      if (quote !== null) {
+      const open = stack[stack.length - 1] ?? null;
+      if (open !== null && open !== '${') {
         if (c === '\\') {
           res += c + (next ?? '');
           i += 2;
           continue;
         }
-        if (c === quote) quote = null;
+        // Inside a template, `${` opens a CODE frame and its matching `}` pops
+        // back to the template. Only inside that frame can a backtick start a
+        // NEW template rather than end this one.
+        if (open === '`' && c === '$' && next === '{') {
+          stack.push('${');
+          res += '${';
+          i += 2;
+          continue;
+        }
+        if (c === open) stack.pop();
+        res += c;
+        i += 1;
+        continue;
+      }
+      // Code context — top level, or inside a template's `${…}`.
+      if (open === '${' && c === '}') {
+        stack.pop();
         res += c;
         i += 1;
         continue;
@@ -172,7 +197,7 @@ export function stripCommentLines(src: string): readonly string[] {
         continue;
       }
       if (c === '"' || c === "'" || c === '`') {
-        quote = c;
+        stack.push(c);
         res += c;
         i += 1;
         continue;
@@ -211,7 +236,10 @@ export function stripCommentLines(src: string): readonly string[] {
       res += c;
       i += 1;
     }
-    inTemplate = quote === '`';
+    // Carry an unterminated template to the next line. A `${…}` still open at
+    // EOL sits ABOVE its template frame on the stack, so ask the whole stack
+    // rather than just the top.
+    inTemplate = stack.includes('`');
     out.push(res);
   }
   return out;

@@ -119,6 +119,26 @@ describe('recipientLocaleAdapter — member email locale (live Neon)', () => {
         removedAt: new Date(),
         preferredLanguage: 'th',
       });
+      // A LIVE, non-removed SECONDARY. Without one, every non-primary row in
+      // this file was also removed, so `removed_at IS NULL` alone selected the
+      // right contact and the `is_primary` predicate — the whole point of the
+      // feature — could be deleted with every test still green.
+      //
+      // Inserted BEFORE the primary on purpose: neither read carries an
+      // ORDER BY (they do not need one — the partial unique index guarantees at
+      // most one live primary), so a query that lost the `is_primary` predicate
+      // would take whichever row comes first. Seeding the wrong answer first is
+      // what makes the mutation deterministic instead of lucky.
+      await tx.insert(contacts).values({
+        tenantId: tenant.ctx.slug,
+        contactId: randomUUID(),
+        memberId: memberPromoted,
+        firstName: 'Live',
+        lastName: 'Secondary',
+        email: 'live-secondary@example.com',
+        isPrimary: false,
+        preferredLanguage: 'th',
+      });
       await tx.insert(contacts).values({
         tenantId: tenant.ctx.slug,
         contactId: randomUUID(),
@@ -238,6 +258,26 @@ describe('recipientLocaleAdapter — member email locale (live Neon)', () => {
       memberPromoted,
     );
     expect(recipient).toEqual({ email: 'current-primary@example.com', locale: 'sv' });
+  });
+
+  it('never the LIVE secondary sitting beside it (the `is_primary` predicate)', async () => {
+    // This member has three contacts: a removed former primary, the current
+    // primary, and a live secondary. Only the middle one is a money-email
+    // recipient. Drop `is_primary = true` from the query and this is the test
+    // that goes red.
+    const recipient = await recipientLocaleAdapter.getMemberEmailRecipient(
+      null,
+      tenant.ctx.slug,
+      memberPromoted,
+    );
+    expect(recipient?.email).not.toBe('live-secondary@example.com');
+    const locale = await recipientLocaleAdapter.getMemberEmailLocale(
+      null,
+      tenant.ctx.slug,
+      memberPromoted,
+    );
+    // 'th' is the secondary's language; 'sv' is the primary's.
+    expect(locale).toBe('sv');
   });
 
   it('getMemberEmailRecipient returns null when no live primary contact exists', async () => {

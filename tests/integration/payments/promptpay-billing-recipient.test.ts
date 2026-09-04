@@ -181,6 +181,18 @@ describe('108 initiatePayment — PromptPay billing recipient (live Neon)', () =
         planId: PLAN_ID,
         planYear: 2026,
       });
+      // Every member here gets a LIVE secondary. Without it the repo's
+      // `is_primary` predicate could be deleted and these tests stay green —
+      // and 'the primary, not a secondary' is the entire feature.
+      await tx.insert(contacts).values({
+        tenantId: tenant.ctx.slug,
+        contactId: randomUUID(),
+        memberId,
+        firstName: 'Live',
+        lastName: 'Secondary',
+        email: `live-secondary-${randomUUID().slice(0, 8)}@example.com`,
+        isPrimary: false,
+      });
       if (primaryEmail !== null) {
         await tx.insert(contacts).values({
           tenantId: tenant.ctx.slug,

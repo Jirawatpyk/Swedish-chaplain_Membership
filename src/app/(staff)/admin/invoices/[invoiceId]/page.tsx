@@ -232,6 +232,16 @@ export default async function InvoiceDetailPage({
       }
       // Archived members are not billed, so a missing contact is not a
       // delivery failure for them — no banner.
+      // Archived members are not billed, so a missing contact is not a
+      // delivery failure for them — no banner.
+      //
+      // KNOWN GAP (PR-A re-review LOW-7): an ERASED member also shows it. Their
+      // contacts were scrubbed on purpose, so "add a contact" is the wrong
+      // advice. Not fixed here because `getMember`'s Member type does not carry
+      // `erasedAt` (the member page reads erasure status separately), and adding
+      // a second query to this page — already carrying one extra read for this
+      // banner — is the wrong trade for a cosmetic case. Fix with the domain
+      // type, not with another round-trip.
       showNoPrimaryContactBanner =
         liveMember.status !== 'archived' &&
         !liveContacts.some((c) => c.isPrimary && c.removedAt === null);

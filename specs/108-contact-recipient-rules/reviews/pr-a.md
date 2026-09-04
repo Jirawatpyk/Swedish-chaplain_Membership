@@ -34,7 +34,7 @@ Nothing in the type system separates the two — both are `string`.
 | Deleted | `ResendPdfInput.recipientEmailOverride` (no caller; a hand-supplied money address is the bypass FR-001 closes) |
 | Routes | `no_recipient` → 409 on all three resend routes; portal resend body is now `{ ok: true }` |
 | Payments | `BillingRecipientPort` + adapter via the members barrel; `actorEmail` removed from the input; `primary_contact_missing` → 409 with EN/TH copy |
-| Audit | `auto_email_skipped_no_recipient` (migration `0292`, enum-only, verified in `pg_enum`), 5-year retention, registered in all six places incl. `REQUIRED_ENUM_VALUES` |
+| Audit | `auto_email_skipped_no_recipient` (migration `0292`, enum-only, verified in `pg_enum`), 10-year retention (corrected at review), registered in all six places incl. `REQUIRED_ENUM_VALUES` |
 | UI | `NoPrimaryContactBanner` — `role="alert"`, non-dismissible, on the member and invoice pages (EN/TH/SV) |
 | Gate | `pnpm check:money-recipient` — package.json + pre-push + quality-gates.yml |
 
@@ -192,6 +192,48 @@ applied; that is the failure worth naming.
   adding a second validation layer inside a money path late in a review round.
 - **F-8 / L-5 (`getMember` on every invoice page load)** — a deliberate cost of
   the banner. Handed to `performance-slo-guardian` rather than optimised blind.
+
+## T029 — round 2: fresh-agent post-remediation re-review
+
+A `security-engineer` with no prior context re-reviewed the remediation against
+the code (not the write-up) and re-ran the gates at HEAD. Verdict: **APPROVE
+WITH FIXES**, security checklist **signed**, conditional on two items. All three
+round-1 blockers verified closed at the sink, and the two new tests confirmed
+capable of failing.
+
+### The two it asked for before merge — both closed
+
+| Finding | What was wrong | Fix |
+|---|---|---|
+| **MEDIUM-1** | My own round-1 note said the `no_recipient` toast was "wired on the credit-note menu and the portal button" — and it was, but the **admin invoice** surfaces (`invoice-more-menu`, `email-failure-alert`) were skipped, leaving the i18n key orphaned in all three locales and the most-used surface still saying "please try again" about a data problem | Wired both |
+| **MEDIUM-4** | Every non-primary contact in both new tests was ALSO removed, so `removed_at IS NULL` alone selected the right row — delete `is_primary = true` from the queries and every test stayed green. The feature's core predicate had no coverage | Live secondary contacts seeded in both files, **before** the primary (neither read has an `ORDER BY`, so seeding the wrong answer first is what makes the mutation deterministic instead of lucky). Mutation now kills 3 tests, not 1 |
+
+### Also closed this round
+
+| # | Fix |
+|---|---|
+| MEDIUM-2 | Allowlist entries pinned a LINE while their reason was about the CALL it feeds — repointing `receiptPdfRenderEnqueue.enqueue` at `outbox.enqueue` left the matched line byte-identical and the gate silent. Entries now carry `boundTo`, checked against the file. **Mutation-proved**: that exact edit now fails the gate. Plus a contract assertion on `resolve-invoice-buyer.ts`, which carries two entries' justification but holds no token the gate can see |
+| MEDIUM-3 | `stripCommentLines` tracked ONE open quote, so a nested template inside `${…}` closed the outer one and everything after a `//` on that line vanished — from **six** gates, not just this one. Now a proper frame stack. Regression tests added; they fail against the old implementation |
+| LOW-1 | The blindness floor's abort message described an assertion it does not make |
+| LOW-2 | The replay arm still had the ordering the fresh path was fixed away from, while its comment claimed it "mirrors the fresh path EXACTLY". A suppressed replay for a member with no primary reported `skipped_no_email` — blaming contacts for the caller's own suppression |
+| LOW-3 | The reconcile re-enqueue took the address from the live read but the LOCALE from the row being retired — mailing the new primary in the previous one's language |
+| LOW-4 | F5 lacked F4's empty-address guard: `contacts.email` is NOT NULL but only length-checked, so an import that bypassed `asEmail` could hand Stripe `''` |
+| INFO-1 | Retention doc drift (three files still said 5y) |
+
+### Left open, deliberately
+
+- **LOW-7** — an ERASED member still sees the banner on the invoice and
+  credit-note pages. `getMember`'s Member type does not carry `erasedAt` (the
+  member page reads erasure status separately), and adding a second query to a
+  page already carrying one extra read for this banner is the wrong trade for a
+  cosmetic case. The gap is written into both call sites, naming the right fix
+  (the domain type, not another round-trip).
+- **LOW-5** — resolving above the resume check means a member who loses their
+  primary contact mid-flight gets a 409 instead of their existing PromptPay
+  `clientSecret`. Nothing is destroyed; moving the resolve back down is what
+  caused the round-1 blocker, so this stays.
+- **LOW-6 / INFO-2/4/5/6/7** — test-depth and doc items recorded in the review;
+  none change behaviour.
 
 ## Open at hand-off
 
