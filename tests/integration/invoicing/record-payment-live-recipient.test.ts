@@ -388,4 +388,62 @@ describe('108 record-payment — receipt reaches the live primary contact (live 
     expect(await outboxFor(invoiceId, 'invoice_paid')).toHaveLength(1);
     expect(await skipAuditFor(invoiceId)).toHaveLength(0);
   }, 60_000);
+
+  it('a bounced, odd-looking primary address is still the ONLY target (FR-001b)', async () => {
+    // Deliverability is the dispatcher's problem. Recipient CHOICE is not: a
+    // previously-bounced or unusual-looking address must not cause a silent
+    // redirect to some other contact, and must not fall back to the snapshot —
+    // either would send a member's invoice to someone who never asked for it.
+    const memberId = randomUUID();
+    // Unusual but VALID: mixed case + a plus-tag. (A genuinely malformed
+    // address cannot reach this path at all — the buyer-identity snapshot's
+    // zod schema rejects it at ISSUE, long before any receipt.)
+    const odd = `Odd.Primary+tag-${randomUUID().slice(0, 8)}@Example.COM`;
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(members).values({
+        tenantId: tenant.ctx.slug,
+        memberId,
+        memberNumber: nextSeedMemberNumber(),
+        companyName: 'Bounced Primary Corp',
+        country: 'TH',
+        taxId: '9999999999999',
+        addressLine1: '99 Rama IV',
+        city: 'Sathon',
+        province: 'Bangkok',
+        postalCode: '10120',
+        planId,
+        planYear,
+      });
+      await tx.insert(contacts).values({
+        tenantId: tenant.ctx.slug,
+        contactId: randomUUID(),
+        memberId,
+        firstName: 'Bounced',
+        lastName: 'Primary',
+        email: odd,
+        isPrimary: true,
+        // F3 marks a contact whose portal invitation bounced. It is a warning
+        // badge in the directory — never a reason to re-address money mail.
+        inviteBouncedAt: new Date(),
+      });
+      // A perfectly deliverable SECONDARY exists — the tempting wrong answer.
+      await tx.insert(contacts).values({
+        tenantId: tenant.ctx.slug,
+        contactId: randomUUID(),
+        memberId,
+        firstName: 'Healthy',
+        lastName: 'Secondary',
+        email: `healthy-${randomUUID().slice(0, 8)}@example.com`,
+        isPrimary: false,
+      });
+    });
+    const invoiceId = await issuedMembershipBill(memberId);
+
+    const r = await pay(invoiceId);
+    expect(r.ok, r.ok ? 'ok' : JSON.stringify(r)).toBe(true);
+
+    const rows = await outboxFor(invoiceId, 'invoice_paid');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.to_email).toBe(odd);
+  }, 60_000);
 });
