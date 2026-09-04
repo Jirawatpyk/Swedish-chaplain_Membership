@@ -382,4 +382,62 @@ describe('108 initiatePayment — PromptPay billing recipient (live Neon)', () =
     expect(calls).toHaveLength(1);
     expect(calls[0]!.billingEmail).toBeUndefined();
   }, 120_000);
+
+  it('an EMPTY primary address is treated as no address (re-review LOW-4)', async () => {
+    // `contacts.email` is NOT NULL but only length-checked, so a bulk import
+    // that bypassed `asEmail` can store ''. F4's resolver has always treated
+    // that as no-recipient; F5 did not, and would have handed Stripe '' — an
+    // opaque `processor_unavailable` the member cannot act on.
+    const { memberId, invoiceId } = await seedPayableInvoice('', 5);
+    const { gateway, calls } = makeCapturingGateway();
+
+    const r = await initiatePayment(makeDeps(gateway), {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      actorMemberId: memberId,
+      invoiceId,
+      method: 'promptpay',
+      requestId: 'req-ppb-5',
+      correlationId: 'corr-ppb-5',
+    });
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('primary_contact_missing');
+    expect(calls).toHaveLength(0);
+  }, 120_000);
+
+  it('a REAL repo failure is transient, never the permanent no-contact refusal (re-review LOW-6)', async () => {
+    // The distinction this port exists for, exercised against a real database
+    // instead of a mock. The failure is induced honestly: `contacts.member_id`
+    // is `uuid`, so a non-UUID id makes Postgres raise, the repo catches it as
+    // `repo.unexpected`, and the adapter must report `read_failed` — NOT the
+    // `primary_contact_missing` that asserts a fact about the member's data.
+    //
+    // Mutate the adapter's catch back to `return null` and this goes red with
+    // a 409, which is exactly the bug the review found.
+    const { gateway, calls } = makeCapturingGateway();
+    const deps = makeDeps(gateway);
+    const result = await deps.billingRecipient.getPrimaryContactEmail(
+      tenant.ctx.slug,
+      'definitely-not-a-uuid',
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.kind).toBe('read_failed');
+    expect(calls).toHaveLength(0);
+  }, 120_000);
+
+  it('and the same adapter succeeds on a real member (the control)', async () => {
+    // Without this, the assertion above would pass against an adapter that
+    // failed for every input.
+    const { memberId } = await seedPayableInvoice('control@example.com', 6);
+    const { gateway } = makeCapturingGateway();
+    const result = await makeDeps(gateway).billingRecipient.getPrimaryContactEmail(
+      tenant.ctx.slug,
+      memberId,
+    );
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value).toBe('control@example.com');
+  }, 120_000);
 });

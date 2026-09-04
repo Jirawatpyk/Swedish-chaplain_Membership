@@ -1494,6 +1494,53 @@ describe('recordPayment — server-side payment-date guard (defense-in-depth)', 
   });
 });
 
+describe('recordPayment — replay arm reports the REAL reason (re-review LOW-2)', () => {
+  it('suppressed replay with no live primary reports disabled, not skipped_no_email', async () => {
+    // The fresh path was fixed to check suppression before recipient; the replay
+    // arm kept the old order while its comment claimed to mirror the fresh path
+    // EXACTLY. A suppressed replay for a member with no primary contact reported
+    // `skipped_no_email` — blaming the member's contacts for the caller's own
+    // decision. Same class as the audit-reason lie, one layer over.
+    const paid = makeIssuedInvoice({ status: 'paid' });
+    const deps = makeDeps(true, paid, makeSettings({ autoEmailEnabled: true }), {
+      recipientLocale: makeRecipientLocaleFake({ email: null }),
+    });
+
+    const r = await recordPayment(deps, { ...input, suppressReceiptEmail: true });
+
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.emailDispatch).toBe('disabled');
+    // …and the contact was never read: nothing was going to be sent.
+    expect(deps.recipientLocale.getMemberEmailRecipient).not.toHaveBeenCalled();
+  });
+
+  it('auto-email OFF on replay reports disabled without reading the contact', async () => {
+    const paid = makeIssuedInvoice({ status: 'paid' });
+    const deps = makeDeps(true, paid, makeSettings({ autoEmailEnabled: false }), {
+      recipientLocale: makeRecipientLocaleFake({ email: null }),
+    });
+
+    const r = await recordPayment(deps, input);
+
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.emailDispatch).toBe('disabled');
+    expect(deps.recipientLocale.getMemberEmailRecipient).not.toHaveBeenCalled();
+  });
+
+  it('a genuine no-recipient replay still reports skipped_no_email', async () => {
+    // The control: without it the two assertions above would also pass if the
+    // arm always returned 'disabled'.
+    const paid = makeIssuedInvoice({ status: 'paid' });
+    const deps = makeDeps(true, paid, makeSettings({ autoEmailEnabled: true }), {
+      recipientLocale: makeRecipientLocaleFake({ email: null }),
+    });
+
+    const r = await recordPayment(deps, input);
+
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.emailDispatch).toBe('skipped_no_email');
+  });
+});
 describe('recordPayment — audited skip, request-id edge (108 FR-004)', () => {
   it('records the skip with a null request id when the caller supplied none', async () => {
     // The webhook path can arrive without a request id; the audit row must

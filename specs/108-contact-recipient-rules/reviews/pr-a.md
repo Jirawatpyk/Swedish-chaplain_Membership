@@ -220,6 +220,14 @@ capable of failing.
 | LOW-4 | F5 lacked F4's empty-address guard: `contacts.email` is NOT NULL but only length-checked, so an import that bypassed `asEmail` could hand Stripe `''` |
 | INFO-1 | Retention doc drift (three files still said 5y) |
 
+### LOW findings — closed after the re-review
+
+| # | Fix | Proof |
+|---|---|---|
+| LOW-2 (test) | 3 cases pinning what the replay arm REPORTS: suppressed + no primary → `disabled`; auto-email off → `disabled` without reading the contact; genuine no-recipient → `skipped_no_email` (the control, without which the first two would pass against an arm that always said `disabled`) | Reverting the arm ordering turns 2 red |
+| LOW-4 (test) | An empty primary address is treated as no address on the F5 path too — live, through the real adapter | — |
+| LOW-6 (test) | The `read_failed` distinction proven against a real database rather than a mock. The failure is induced honestly: `contacts.member_id` is `uuid`, so a non-UUID id makes Postgres raise, the repo catches it, and the adapter must report `read_failed`. Plus a control asserting the same adapter succeeds on a real member | Mutating the adapter's catch back to `return ok(null)` turns it red |
+
 ### Left open, deliberately
 
 - **LOW-7** — an ERASED member still sees the banner on the invoice and
@@ -230,8 +238,18 @@ capable of failing.
   (the domain type, not another round-trip).
 - **LOW-5** — resolving above the resume check means a member who loses their
   primary contact mid-flight gets a 409 instead of their existing PromptPay
-  `clientSecret`. Nothing is destroyed; moving the resolve back down is what
-  caused the round-1 blocker, so this stays.
+  `clientSecret`. There IS a shape that fixes it (resolve pre-tx, refuse inside
+  the tx after the pending-row read but before the cross-method arm, with a
+  `pending?.method !== 'promptpay'` exclusion) and both reviewers described it.
+  It is not taken because the test that guards the round-1 blocker asserts
+  `withTx` is never called on the refusal path — the strongest form of "no write
+  happened before we refused" — and that fix necessarily weakens it. A rare UX
+  edge is the right thing to trade for a structural guarantee against a money
+  bug that already shipped once.
+- **LOW-6 (second half)** — the new explicit `contacts.tenant_id` predicate has
+  no test of its own; proving it would mean disabling RLS. The reviewer's own
+  reading applies: RLS is the wall, this is the second layer, and the wall is
+  what the cross-tenant test proves.
 - **LOW-6 / INFO-2/4/5/6/7** — test-depth and doc items recorded in the review;
   none change behaviour.
 
