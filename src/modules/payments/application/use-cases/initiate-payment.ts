@@ -521,7 +521,12 @@ async function initiatePaymentBody(
     //     transaction-scoped advisory lock that releases on its own, and the
     //     lookup is a SELECT — so refusing here leaves nothing behind.
     let billingEmail: string | undefined;
-    const isResume = Boolean(pending) && pending?.method === input.method;
+    // `pending?.method` alone, not `Boolean(pending) && pending?.method`: the
+    // leading truthiness check makes the optional chain's nullish arm
+    // unreachable, which is a dead branch on a file pinned at 100% branch
+    // coverage. With no pending row this is `undefined === input.method` →
+    // false, which is the answer we want anyway.
+    const isResume = pending?.method === input.method;
     if (billingRecipient !== null && !isResume) {
       if (!billingRecipient.ok) {
         paymentsMetrics.billingRecipientBlocked(input.tenantId, 'read_failed');

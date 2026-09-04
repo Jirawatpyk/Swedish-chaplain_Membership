@@ -69,6 +69,11 @@ import { InvitePortalButton } from '@/components/members/invite-portal-button';
 import { ResendBouncedInviteButton } from '@/components/members/resend-bounced-invite-button';
 import { ArchivedBanner } from '@/components/members/archived-banner';
 import { NoPrimaryContactBanner } from '@/components/members/no-primary-contact-banner';
+// 108 FR-003 — the banner must decide with the SAME function the money path
+// decides with, so the page calls the resolver directly. `recipientLocaleAdapter`
+// is infra, imported through the module barrel (never a deep path) — the same
+// documented escape-hatch the reads above use, and the same one
+// `api/internal/cron/void-pdf-reconcile` already takes for this pair.
 import { recipientLocaleAdapter, resolveMoneyRecipient } from '@/modules/invoicing';
 import { ArchiveMemberButton } from '@/components/members/archive-member-button';
 import { EraseMemberButton } from '@/components/members/erase-member-button';
