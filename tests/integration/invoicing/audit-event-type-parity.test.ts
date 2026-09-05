@@ -71,6 +71,18 @@ describe('F4 audit_event_type ↔ F4AuditEventType parity', () => {
         // payment. Owned by F4 invoicing (F4AuditEventType +
         // F4_AUDIT_RETENTION_YEARS, 10y retention).
         'tax_receipt_issued',
+        // 108-contact-recipient-rules (FR-004, migration 0292) — starts with
+        // `auto_email_` (no F4 prefix); emitted whenever a money email is
+        // skipped because the member has no live primary contact. Owned by F4
+        // invoicing (F4AuditEventType + F4_AUDIT_RETENTION_YEARS, 10y — it is
+        // the auditor's record that a §86/4 or §86/10 document reached nobody).
+        //
+        // PR-A added the event type and the migration but not this entry, so
+        // this test failed from that commit onward and nobody saw it: the
+        // per-module pre-push gate keyed on a first-push baseline of `HEAD~1`,
+        // and CI runs only `integration-smoke.yml`. It surfaced the first time
+        // a push gated the whole branch — which is the change that gate needed.
+        'auto_email_skipped_no_recipient',
       ],
     });
 

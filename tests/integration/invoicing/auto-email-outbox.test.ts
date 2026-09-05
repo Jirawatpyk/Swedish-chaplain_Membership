@@ -42,6 +42,7 @@ import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices'
 import { invoiceLines } from '@/modules/invoicing/infrastructure/db/schema-invoice-lines';
 import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
+import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { issueInvoice } from '@/modules/invoicing/application/use-cases/issue-invoice';
@@ -85,6 +86,12 @@ const CORPORATE_MATRIX: BenefitMatrix = {
 async function seedTenantForIssuance(
   tenant: TestTenant,
   user: TestUser,
+  /**
+   * Default true. Set false for the Cluster-5 case, whose whole subject is a
+   * member with NO deliverable address — giving that member a live primary
+   * contact would make the skip it asserts impossible.
+   */
+  withPrimaryContact = true,
 ): Promise<{ memberId: string; planId: string; planYear: number }> {
   const planId = 't105-plan';
   const planYear = 2026;
@@ -141,13 +148,34 @@ async function seedTenantForIssuance(
       country: 'TH',
       planId,
       planYear,
-      // Primary contact email lives on `contacts` (separate table);
-      // the mocked `memberIdentity.getForIssue` below supplies the
-      // snapshot that lands on the invoice row at issue time, so the
-      // resend flow has a deliverable address without inserting a
-      // real contact row.
+      // The mocked `memberIdentity.getForIssue` below supplies the snapshot
+      // that lands on the invoice row at ISSUE time. The comment here used to
+      // end "...so the resend flow has a deliverable address without inserting
+      // a real contact row" — true before 108, and the reason two resend cases
+      // in this file broke on that branch.
+      //
+      // 108 FR-001: a RESEND resolves the recipient LIVE from the member's
+      // primary contact, precisely so a document produced long after issue
+      // cannot go to someone who has since left. A member with no contact row
+      // is a member with no deliverable address, and the resend correctly
+      // refuses. The contact below carries the SAME address the snapshot does,
+      // so the issue-time assertions are unchanged and the resend has somewhere
+      // to go.
     }),
   );
+  if (withPrimaryContact) {
+    await runInTenant(tenant.ctx, (tx) =>
+      tx.insert(contacts).values({
+        tenantId: tenant.ctx.slug,
+        contactId: randomUUID(),
+        memberId,
+        firstName: 'T105',
+        lastName: 'Recipient',
+        email: 'recipient@t105.test',
+        isPrimary: true,
+      }),
+    );
+  }
   return { memberId, planId, planYear };
 }
 
@@ -483,7 +511,10 @@ describe('T105 — F4 auto-email outbox + T107 manual resend (live Neon)', () =>
   it('(Cluster 5 / Finding 1) member with NO contact email → issue + pay return emailDispatch="skipped_no_email" and enqueue NO auto-email row', async () => {
     const freshTenant = await createTestTenant('test-swecham');
     try {
-      const seed = await seedTenantForIssuance(freshTenant, user);
+      // No live primary contact — that IS the subject of this case (108: the
+      // recipient is resolved live, so "no contact row" and "no address on the
+      // snapshot" are now the same fact).
+      const seed = await seedTenantForIssuance(freshTenant, user, false);
       const draftId = await insertDraft(
         freshTenant,
         user,
