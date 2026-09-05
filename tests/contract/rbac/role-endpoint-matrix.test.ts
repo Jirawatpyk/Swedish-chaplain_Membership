@@ -29,8 +29,8 @@ import type { Role } from '@/modules/auth/domain/role';
 const allowed = (role: Role, s: ObservedSurface): boolean => hasPermission(role, s.key);
 
 describe('T015 baseline integrity', () => {
-  it('captured 46 guarded pages + 1 exemption = the pinned 47-page inventory', () => {
-    expect(OBSERVED_PAGES).toHaveLength(46);
+  it('captured 47 guarded pages + 1 exemption = the pinned 48-page inventory (108: +/admin/marketing/audience)', () => {
+    expect(OBSERVED_PAGES).toHaveLength(47);
     expect(GUARD_EXEMPT_PAGES).toHaveLength(1);
   });
 
@@ -238,6 +238,9 @@ describe('T053 marketing reachable surfaces (US3)', () => {
     '/admin/events/[eventId]',
     '/admin/events/import',
     '/admin/events/import/history',
+    // 108 PR-D — the Marketing audience page (`contacts.read`, FR-035). Name,
+    // email and marketing state only — no `pii_sensitive` field (FR-035a).
+    '/admin/marketing/audience',
     '/admin/members',
     '/admin/members/[memberId]',
     '/admin/members/[memberId]/benefits',
@@ -285,7 +288,7 @@ describe('T053 marketing reachable surfaces (US3)', () => {
     'GET /api/plans/search',
   ];
 
-  it('reaches EXACTLY the frozen 48-surface set — nothing more, nothing less', () => {
+  it('reaches EXACTLY the frozen 49-surface set — nothing more, nothing less', () => {
     const actual = OBSERVED_BASELINE.filter((s) => allowed('marketing', s))
       .map((s) => s.surface)
       .sort();

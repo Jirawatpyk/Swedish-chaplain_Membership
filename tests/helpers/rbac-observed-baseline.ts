@@ -53,6 +53,9 @@ export const OBSERVED_PAGES: readonly ObservedSurface[] = [
   { surface: '/admin/broadcasts/templates', kind: 'page', key: 'broadcasts.write' },
   { surface: '/admin/broadcasts/templates/new', kind: 'page', key: 'broadcasts.write' },
   { surface: '/admin/broadcasts/templates/[id]/edit', kind: 'page', key: 'broadcasts.write' },
+  // 108 PR-D — the Marketing audience page (FR-035): the first ENFORCED
+  // `contacts.read` surface; the inline switch is gated on `contacts.marketing`.
+  { surface: '/admin/marketing/audience', kind: 'page', key: 'contacts.read' },
   { surface: '/admin/compliance/erasure-log', kind: 'page', key: 'members.erasure_log_read' },
   { surface: '/admin/events/[eventId]/registrations/[registrationId]/erase', kind: 'page', key: 'events.erasure' },
   { surface: '/admin/events/erasure', kind: 'page', key: 'events.erasure' },
