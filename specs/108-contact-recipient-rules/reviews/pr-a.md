@@ -361,6 +361,92 @@ planned on), and reusing `auto_email_skipped_no_recipient` for it would be false
 — no email was skipped. That is the actor-role-truth class of lie in a different
 column. Recorded as a PR-B item rather than left to land by default.
 
+## T029 — round 4: second `/code-review` over the branch diff (2026-09-05)
+
+Fifteen more findings. Fourteen fixed, one rejected. Two of them were rules I
+broke while fixing round 3, and one was a REGRESSION this branch had already
+shipped — 31 commits deep, unnoticed, because nothing runs the suite that
+catches it.
+
+Order again put the shared gate helper first, for the round-3 reason: five gates
+read through `scripts/lib/source-scan.ts`, so changing what it sees changes what
+they all see.
+
+### The regression, found by accident
+
+`tests/integration/invoicing/void-pdf-reconcile-cron.test.ts` passes **14/14 on
+`main`** and failed **3 on this branch**. PR-A changed the void-cancellation cron
+to resolve its recipient LIVE instead of copying `o.to_email` forward, and the
+fixture seeds a member with **no contacts** — so the resolve correctly returned
+`no_recipient` and refused to re-enqueue. The product behaviour is the intended
+FR-001 rule; the tests encoded the copy-forward that 108 removed.
+
+Nothing caught it. The route is `src/app/api/**`, which the conditional
+per-module integration pre-push gate does not cover (it keys on
+`src/modules/<m>/**`), and CI runs `integration-smoke.yml` — tenant isolation and
+money invariants — not this suite. **The lesson is about the gate map, not the
+diff:** a feature that changes behaviour under `src/app/api/**` has no automatic
+integration coverage in this repo, and I did not go looking.
+
+Repaired by seeding a live primary contact. D6's assertion had read
+`toBe('void.member@example.com')` with the comment "copied context" — the exact
+behaviour 108 exists to remove — and now asserts the address is NOT the stale
+one. That assertion is the only thing standing over this path: the token here is
+`to_email`, so `check:money-recipient` cannot see it.
+
+### Blockers
+
+| # | Finding |
+|---|---|
+| 1 | The PromptPay **409** `primary_contact_missing` never reached the member. The hook maps by STATUS and consulted the body code only on the 403 arm, so 409 fell through to "Payment could not be completed" beside a Retry button — for a condition retrying cannot fix and the member cannot fix either. The bilingual string added for this case rendered nowhere. |
+| 2 | The reconcile **skip audit was not intent-gated**, while the enqueue always has been. A SUPPRESSED void (void-on-reissue, which never queues a notice) wrote a ten-year row claiming a notice went undelivered; the ambiguous-upload leg recorded "never delivered" for a document the buyer had received. Append-only rows asserting events that did not happen — the actor-role-truth class in a different column. |
+| 7 | **Principle III (NON-NEGOTIABLE).** Round 3 fixed the banner's hand-copied predicate by having three server components call `resolveMoneyRecipient(recipientLocaleAdapter, …)` — an `application/lib` helper plus an infra adapter, in Presentation. `plan.md` ticks "Presentation calls use cases only", which that made false. The architecture guard missed it because the import went through the barrel and its allowlist tracks DEEP infra paths. |
+
+Finding #7 is worth naming precisely: **round 3 traded one rule break for
+another.** The fix for a predicate that had drifted was to wire infrastructure
+into a page. `getMemberMoneyRecipientStatus` + `makeMemberMoneyRecipientStatusDeps`
+now give it the same use-case/deps shape as `makeResendPdfDeps`, and returning a
+`Result` also closed #5 — the three pages had a bare `.catch(() => false)` with
+no log, so a sustained read fault would have hidden the warning on every admin
+surface during exactly the incident class FR-003 exists to surface.
+
+### The rest
+
+| # | Finding |
+|---|---|
+| 15 | Two bugs, one symptom: a real `//` comment surviving the strip. (a) A `'` in code context opened a string frame unconditionally — but `'` cannot span a line, so an unmatched one is an apostrophe in prose (`<p>It's fine</p>`). (b) Found while fixing (a) and much broader: `<` was in the `startsRegex` set, so the `/` of a JSX **closing tag** opened a "regex" that ran to the `/` of the following `//`. These scanners run over `.tsx`. Both are over-inclusion, not blindness — `skipRegex` appends what it consumes — but a gate that reports a hit for a sentence is one people learn to ignore. |
+| 13 | `check:money-recipient` did not scan `src/app/(staff)` or `src/app/(member)` — trees that already load invoices and snapshots. Widened 615 → **965 files**; the three reads found are identity display and identity authoring, allowlisted with reasons. A gate's scope is part of its claim. |
+| 3 | The skip event filed under `'other'` in the audit viewer — absent from the Billing group an admin opens to ask the one question it exists to answer. |
+| 4 | `voidInvoice` returned a bare `Invoice`, so a skipped §86/10 notice read as an unqualified success. Both siblings already report delivery. |
+| 6 | A non-member event invoice with an empty typed address returned `no_recipient`, whose copy sends staff to a member page that does not exist for that row — and left no trace at all. New `no_buyer_email` code, copy, metric and warn. |
+| 8 | The credit-note skip's non-member arm bumped no metric, unlike both siblings. |
+| 11 | `issue-credit-note` round-tripped a resolved `no_recipient` through an `''` sentinel and re-tested it, leaving the second trim dead. |
+| 12 | The banner set `role="alert"` on content in the INITIAL server render — `aria-live="assertive"`, interrupting a screen reader on every navigation. Live regions announce CHANGES; the sibling `ArchivedBanner` sets no role. |
+| 14 | The skip counter was bumped BEFORE awaiting the audit emit. The row rolls back with the money tx; the counter cannot. |
+| 10 | The 11-line retirement UPDATE was duplicated verbatim in both reconcile arms, 30 lines apart. Folded into #2's restructure. |
+
+### #9 — REJECTED
+
+"Defer the billing-recipient read into the `!isResume` branch so a resume does
+not pay for it." That branch is **inside `withTx`**. Moving the read there
+reintroduces the round-1 blocker verbatim: the adapter opens its own
+`runInTenant`, so it would ask the pool for a second connection while this
+request holds one and the `payments:` advisory lock is open. The wasted read on
+a resume is the deliberate price of pool safety, and the pending lookup cannot
+move out of the transaction either — it needs the advisory lock for its TOCTOU
+guard. Written here so a fifth reviewer finds the reason rather than the shape.
+
+### Corrections to the findings themselves
+
+- **#6's premise is wrong.** It says the row "before this change returned
+  `not_issued`". A non-member event invoice carries `eventRegistrationId`, so it
+  never reached that guard. The UX half was real; the history was not.
+- **#1 is fixed only halfway, deliberately.** The Retry CTA still renders. That
+  is a pre-existing property of `PaymentFailurePanel`, shared with
+  `membership_access_restricted`, which is equally permanent. Suppressing the CTA
+  for permanent failures is a panel-API change worth making once, for both codes,
+  with a UX pass — not smuggled in beside a copy fix. **Open item.**
+
 ## Status
 
 **PR-A is review-complete.** T001–T029 + T101/T102/T107 all closed. Three rounds
