@@ -129,9 +129,25 @@ else
   #   3. `HEAD` — branch with no parent (edge case; skips gate).
   if git rev-parse --verify '@{u}' >/dev/null 2>&1; then
     BASELINE='@{u}'
+  elif git rev-parse --verify 'origin/main' >/dev/null 2>&1     && MERGE_BASE=$(git merge-base origin/main HEAD 2>/dev/null)     && [ -n "$MERGE_BASE" ]; then
+    # FIRST push of a branch: gate everything the branch ADDS, not just its
+    # last commit.
+    #
+    # This used to be `HEAD~1`, on the reasoning that a long branch would
+    # trigger too many module suites. The cost of that shortcut was measured on
+    # 108-contact-recipient-rules: 39 commits that rewrote src/modules/invoicing
+    # pushed with the hook printing "no src/modules/* changes in this push", and
+    # a broken cron rode along undetected for the whole branch. A gate that
+    # inspects one commit of thirty-nine is not gating the push.
+    #
+    # `SKIP_INTEGRATION_PREPUSH=1` remains the escape hatch for a genuinely
+    # oversized first push — but it is now an explicit choice with a rationale
+    # in the commit message, not a silent default.
+    BASELINE="$MERGE_BASE"
+    echo "[pre-push] first push of this branch — gating everything since origin/main ($MERGE_BASE)"
   elif git rev-parse --verify 'HEAD~1' >/dev/null 2>&1; then
     BASELINE='HEAD~1'
-    echo "[pre-push] no @{u} (branch not pushed yet) — gating only last commit (HEAD~1..HEAD)"
+    echo "[pre-push] no @{u} and no origin/main — gating only last commit (HEAD~1..HEAD)"
   else
     BASELINE='HEAD'
   fi
@@ -164,5 +180,46 @@ else
     done
   else
     echo "[pre-push] no src/modules/* changes in this push — skipping spec coverage gate"
+  fi
+
+  # --- API routes + crons -------------------------------------------------
+  #
+  # `src/app/api/**` mapped to NO module above, so a route or cron change ran
+  # no integration suite at all. That is how 108 shipped a broken
+  # void-pdf-reconcile cron: the suite that catches it passes on main, failed on
+  # the branch, and nothing ran it — the per-module gate keys on
+  # `src/modules/<m>/**` and CI runs only `integration-smoke.yml`.
+  #
+  # The mapping is EXACT, not a name heuristic: integration tests import a route
+  # by its `@/app/api/.../route` path, so we grep for that literal. A heuristic
+  # on the last path segment was tried and rejected — `[id]` is a glob character
+  # class (it matched `dos-rate-limit.test.ts`) and `cancel` matched an
+  # unrelated events suite. Running the WRONG suite is worse than running none.
+  #
+  # Self-maintaining: write a test that imports the route and it is covered.
+  CHANGED_ROUTES=$(echo "$CHANGED_FILES" | grep -E '^src/app/api/.*/route\.ts$' || true)
+  if [ -n "$CHANGED_ROUTES" ]; then
+    ROUTE_TESTS=''
+    for route in $CHANGED_ROUTES; do
+      import_path="@/$(echo "$route" | sed -E 's#^src/(.*)[.]ts$#\1#')"
+      hits=$(grep -rlF "$import_path" tests/integration/ 2>/dev/null || true)
+      if [ -n "$hits" ]; then
+        ROUTE_TESTS="$ROUTE_TESTS $hits"
+      else
+        echo "[pre-push] no integration test imports $route — skipping"
+      fi
+    done
+    ROUTE_TESTS=$(echo "$ROUTE_TESTS" | tr ' ' '
+' | grep -v '^$' | sort -u | tr '
+' ' ')
+    if [ -n "$ROUTE_TESTS" ]; then
+      echo "[pre-push] API route gate — running:$ROUTE_TESTS"
+      # shellcheck disable=SC2086
+      pnpm test:integration $ROUTE_TESTS || {
+        echo "[pre-push] ❌ integration tests failed for a changed API route"
+        echo "[pre-push]    Fix the failures OR set SKIP_INTEGRATION_PREPUSH=1 to push anyway"
+        exit 1
+      }
+    fi
   fi
 fi
