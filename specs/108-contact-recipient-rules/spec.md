@@ -226,15 +226,22 @@ A contact signed in to the member portal, the primary contact included, can see 
 > reading. Cleaning `dev` would not have helped; nor would repairing the 58
 > integration fixtures that seed contact-less members.
 >
-> Scope of the narrowing, stated precisely so the three enforcement points agree:
+> Scope of the narrowing, stated as ONE predicate so the three enforcement points
+> cannot drift: **a non-archived, non-erased member that has at least one contact
+> row at commit time must have exactly one live primary.** Consequences:
 >
-> - the **contacts** trigger keeps the full rule — the fact that it fired proves
->   a contact row exists or existed for that member, so removing or hard-deleting
->   the last contact of a live member still raises;
-> - the **members** trigger (`UPDATE OF status, erased_at`) carries the
->   exemption — a member with no contact rows at all is not checked;
-> - the **pre-check** uses the union of what those two can reach, so it never
->   refuses a deploy over a state the installed triggers would tolerate.
+> - a contact INSERT or UPDATE always leaves a row behind, so those paths keep the
+>   full rule — *removing* (soft-deleting) the last primary of a live member
+>   raises, and so does hard-deleting the primary while a secondary remains;
+> - hard-deleting **every** contact row of a live member is exempt, exactly like
+>   a member that never had one. No application path hard-deletes a contact; the
+>   test suite's tenant cleanup does (`DELETE FROM contacts WHERE tenant_id = …`
+>   as its own statement, before `members`), in the shared helper and in 38
+>   suites, and the tenant-wide statement leaves zero rows;
+> - the **members** trigger (`UPDATE OF status, erased_at`) carries the same
+>   exemption — a member with no contact rows is not checked;
+> - the **pre-check** uses the identical predicate, so it never refuses a deploy
+>   over a state the installed triggers would tolerate.
 >
 > What the narrowing gives up: archiving or deactivating a contact-less member no
 > longer trips a wire that would have surfaced a bad bulk import. The

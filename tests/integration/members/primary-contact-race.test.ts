@@ -21,10 +21,16 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';
-import { promotePrimary, type ContactId, type MemberId } from '@/modules/members';
+import {
+  promotePrimary,
+  removeContact,
+  type ContactId,
+  type MemberId,
+} from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
+import { drizzleContactRepo } from '@/modules/members/infrastructure/db/drizzle-contact-repo';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
@@ -223,4 +229,131 @@ describe('primary-contact partial-index race (T075)', () => {
     );
     expect(final.length).toBe(1);
   }, 30_000);
+
+  // ── 108 T030 (US2 / FR-010, FR-011, SC-002) ───────────────────────────────
+
+  it('removeInTx refuses to remove the current primary (cannot_remove_primary) — FR-011', async () => {
+    // The refusal must live in the SAME statement as the write (`WHERE
+    // is_primary = false`), not in a read taken before the tx. Two concurrent
+    // callers that both read "not primary" a moment ago must not both succeed.
+    const s = await seedMember();
+    const result = await runInTenant(tenant.ctx, (tx) =>
+      drizzleContactRepo.removeInTx(tx, s.primaryId),
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toEqual({
+      code: 'repo.conflict',
+      reason: 'cannot_remove_primary',
+    });
+    // Nothing changed: still primary, still live.
+    const [row] = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({ isPrimary: contacts.isPrimary, removedAt: contacts.removedAt })
+        .from(contacts)
+        .where(eq(contacts.contactId, s.primaryId)),
+    );
+    expect(row).toEqual({ isPrimary: true, removedAt: null });
+  }, 30_000);
+
+  it('removeInTx still removes a secondary and reports wasPrimary=false', async () => {
+    const s = await seedMember();
+    const result = await runInTenant(tenant.ctx, (tx) =>
+      drizzleContactRepo.removeInTx(tx, s.secondaryId),
+    );
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.wasPrimary).toBe(false);
+    expect(result.value.contact.removedAt).not.toBeNull();
+  }, 30_000);
+
+  it('promote(Y) vs remove(Y) ×100: every member ends with exactly one live primary and exactly one call is refused — SC-002', async () => {
+    // 50 members × (promote Y ‖ remove Y) = 100 concurrent use-case calls,
+    // batched so at most 20 are in flight against the 8-connection dev pool.
+    // Every interleaving must resolve to ONE of two end states, and the losing
+    // call must say so — never a silent zero-primary member (which, since 108
+    // PR-A, would stop that member's receipts).
+    const deps = buildMembersDeps(tenant.ctx);
+    const seeds = await Promise.all(Array.from({ length: 50 }, () => seedMember()));
+
+    type Outcome = {
+      memberId: MemberId;
+      promote: Awaited<ReturnType<typeof promotePrimary>>;
+      remove: Awaited<ReturnType<typeof removeContact>>;
+    };
+    const outcomes: Outcome[] = [];
+    const BATCH = 10;
+    for (let i = 0; i < seeds.length; i += BATCH) {
+      const batch = seeds.slice(i, i + BATCH);
+      const settled = await Promise.all(
+        batch.map(async (s) => {
+          const [promote, remove] = await Promise.all([
+            promotePrimary(
+              s.memberId,
+              s.secondaryId,
+              { actorUserId: admin.userId, requestId: `p-${s.memberId.slice(0, 8)}` },
+              deps,
+            ),
+            removeContact(
+              s.memberId,
+              s.secondaryId,
+              { actorUserId: admin.userId, requestId: `r-${s.memberId.slice(0, 8)}` },
+              deps,
+            ),
+          ]);
+          return { memberId: s.memberId, promote, remove };
+        }),
+      );
+      outcomes.push(...settled);
+    }
+
+    const rows = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({
+          memberId: contacts.memberId,
+          contactId: contacts.contactId,
+          isPrimary: contacts.isPrimary,
+          removedAt: contacts.removedAt,
+        })
+        .from(contacts)
+        .where(
+          inArray(
+            contacts.memberId,
+            seeds.map((s) => s.memberId),
+          ),
+        ),
+    );
+    const livePrimariesByMember = new Map<string, number>();
+    for (const r of rows) {
+      if (r.isPrimary && r.removedAt === null) {
+        livePrimariesByMember.set(
+          r.memberId,
+          (livePrimariesByMember.get(r.memberId) ?? 0) + 1,
+        );
+      }
+    }
+
+    const violations: string[] = [];
+    for (const o of outcomes) {
+      const live = livePrimariesByMember.get(o.memberId) ?? 0;
+      if (live !== 1) violations.push(`${o.memberId}: ${live} live primaries`);
+
+      const failures = [o.promote, o.remove].filter((r) => !r.ok).length;
+      if (failures !== 1) {
+        violations.push(
+          `${o.memberId}: ${failures} refusals (promote=${JSON.stringify(o.promote)} remove=${JSON.stringify(o.remove)})`,
+        );
+      }
+      // The loser must explain itself with a typed refusal, never a 500.
+      if (!o.promote.ok) {
+        expect(['not_found', 'conflict']).toContain(o.promote.error.type);
+      }
+      if (!o.remove.ok) {
+        expect(['cannot_remove_primary', 'not_found', 'conflict']).toContain(
+          o.remove.error.type,
+        );
+      }
+    }
+    expect(violations, violations.join('\n')).toEqual([]);
+  }, 120_000);
 });

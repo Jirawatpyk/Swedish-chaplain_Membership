@@ -127,8 +127,12 @@ CREATE CONSTRAINT TRIGGER members_one_primary_ct AFTER UPDATE OF status, erased_
   `rolbypassrls = true`, so the DO block and the DEFINER function genuinely see every
   tenant's rows — the pre-check is not vacuous. The explicit `tenant_id` filter is what
   keeps that reach from turning into a cross-tenant count.
-- The **members** trigger carries the AMENDMENT's `EXISTS (contact row)` exemption; the
-  **contacts** trigger does not (its firing proves a row exists or existed).
+- One predicate at all three points (AMENDMENT 2026-09-05): the member must have **at least
+  one contact row at commit time** to be checked. For INSERT/UPDATE that is automatically
+  true. For a contacts DELETE and for the members trigger it is the exemption — so
+  `DELETE FROM contacts WHERE tenant_id = …` (the test-suite cleanup, run as its own
+  statement before `members` in the shared helper and 38 suites) leaves zero rows and
+  passes, while hard-deleting the primary with a secondary still present raises.
 - Two `TG_OP` details the sketch above elides, both load-bearing:
   - on `DELETE`, `NEW` is NULL — resolve `tenant_id` / `member_id` from `OLD`;
   - at commit the member row may be **gone** (member hard-delete runs bottom-up:
