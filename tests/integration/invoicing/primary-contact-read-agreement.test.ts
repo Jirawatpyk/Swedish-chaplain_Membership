@@ -232,6 +232,60 @@ describe('108 primary-contact reads agree (live Neon)', () => {
     expect(r.value).toBe(primaryEmail);
   });
 
+  it('the BANNER read and the MONEY read agree on a whitespace-only address', async () => {
+    // Round-5 #2 added `getMemberRecipientStatus` for the banner, which is a
+    // SECOND SQL implementation of "does this member have a usable primary
+    // contact?" — the money read trims in JS after an inner JOIN, the status
+    // read filters `btrim(c.email) <> ''` in SQL. Two implementations of one
+    // rule is exactly the drift this whole feature exists to close (the banner
+    // used to carry a hand-copied `isPrimary && removedAt === null`), so the
+    // agreement is pinned rather than assumed.
+    const wsMemberId = randomUUID();
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(members).values({
+        tenantId: tenant.ctx.slug,
+        memberId: wsMemberId,
+        memberNumber: nextSeedMemberNumber(),
+        companyName: 'Whitespace Address Ltd',
+        country: 'TH',
+        addressLine1: '2 Silom',
+        city: 'Bang Rak',
+        province: 'Bangkok',
+        postalCode: '10500',
+        planId,
+        planYear,
+      });
+      await tx.insert(contacts).values({
+        tenantId: tenant.ctx.slug,
+        contactId: randomUUID(),
+        memberId: wsMemberId,
+        firstName: 'Blank',
+        lastName: 'Address',
+        // A live, primary contact whose address is whitespace. A bulk import
+        // that bypassed `asEmail` can store this; the column is only
+        // length-checked.
+        email: '   ',
+        isPrimary: true,
+      });
+    });
+
+    const money = await recipientLocaleAdapter.getMemberEmailRecipient(
+      null,
+      tenant.ctx.slug,
+      wsMemberId,
+    );
+    const banner = await recipientLocaleAdapter.getMemberRecipientStatus(
+      null,
+      tenant.ctx.slug,
+      wsMemberId,
+    );
+
+    // The money path skips (the resolver maps whitespace-only to no_recipient)…
+    expect(money?.email.trim() ?? '').toBe('');
+    // …and the banner must therefore WARN, not report the member as reachable.
+    expect(banner?.hasLivePrimary).toBe(false);
+  }, 60_000);
+
   it('the frozen §86/4 buyer snapshot names the SAME contact', async () => {
     const view = await runInTenant(tenant.ctx, (tx) =>
       memberIdentityAdapter.getForIssue(tx, tenant.ctx.slug, memberId),

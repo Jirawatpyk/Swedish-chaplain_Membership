@@ -447,53 +447,125 @@ guard. Written here so a fifth reviewer finds the reason rather than the shape.
   for permanent failures is a panel-API change worth making once, for both codes,
   with a UX pass — not smuggled in beside a copy fix. **Open item.**
 
+## T029 — round 5: third `/code-review` over the branch diff (2026-09-05)
+
+Thirteen findings. Eleven fixed, two perf items answered. **Two of the eleven
+were bugs round 4 introduced**, and one was a gap I had recorded as cosmetic for
+three consecutive rounds and mischaracterised.
+
+That is now the pattern of this feature, and it is worth stating rather than
+smoothing over: **rounds 3, 4 and 5 each found something the round before
+broke.** Round 3 fixed a drifted predicate by wiring infrastructure into a page;
+round 4 fixed that and, de-duplicating an UPDATE, made it stamp a reason that is
+false on one arm; round 4 also fixed `no_buyer_email` on one of the two resend
+paths and left the other. None of these were caught by tests I wrote in the same
+round — they were caught by a reader coming in cold.
+
+### Bugs round 4 introduced
+
+| # | What round 4 did | What it broke |
+|---|---|---|
+| 5 | Hoisted the retirement UPDATE above the recipient resolve, to stop the same eleven lines being written twice (round-4 #10) | Every arm then stamped `last_error = 'superseded_by_void_pdf_reconcile'`, including the arm that enqueues no replacement. An operator tracing the replacement row finds none; the row asserts an event that did not happen — the same class as the audit row the intent gate directly above it was added to stop. Now one statement, three honest reasons. |
+| 1 / 9 | Added `no_buyer_email` for a non-member event buyer on the INVOICE resend path | Left the CREDIT-NOTE path answering `no_recipient`, whose copy reads "add or promote a contact on the member page" — for a document with no member. And the copy was added to BOTH i18n namespaces, so three locales carried translated DEAD copy, which disguised the missing branch from anyone reading the message file. |
+
+### The one I had been wrong about for three rounds
+
+**#2 — the FR-003 banner on an ERASED member.** I recorded this as LOW-7 in
+round 2, called it "cosmetic" in round 3, and carried it as a KNOWN GAP comment
+in round 4. It is not cosmetic and it is not occasional:
+`scrubPiiForMemberInTx` sets `is_primary = false` AND `removed_at` on every
+contact, so the live-primary read is **guaranteed** empty for an erased member.
+The banner therefore fired on every invoice and credit note they had ever had,
+telling staff to "add or promote a contact" for an Art.17 data subject — advice
+that, followed, re-introduces the PII that was erased.
+
+What I got wrong was the reasoning, not just the priority: I deferred it because
+the fix "needs `erasedAt` on the `Member` domain type", having assumed the only
+route to the fact was through `getMember`. It was not. The banner's own read
+already selects `FROM members`, so `erased_at` and `status` are one column each
+on a query that was already happening. The exclusion now lives in the use case
+(`shouldWarn` + `suppressedBecause`), which also gives the invoice and
+credit-note pages a gate they never had — only the member page checked.
+
+### The rest
+
+| # | Finding |
+|---|---|
+| 7 | A member credit-note resend that reached nobody bumped no counter, because `subject` was omitted (a `CreditNote` carries no invoice subject). The label now takes `'unknown'` — honest, where a membership/event guess would be a lie and omission was silence. |
+| 3 | `catch {}` discarded the error while the function's own JSDoc claimed the pages logged the cause. They could not, and all three logged with no `err` field — a Neon timeout, a missing enum value and an RLS denial were indistinguishable. |
+| 4 | `email_delivery` had NO consumer: `void-confirm-dialog` fired `toast.success` unconditionally and navigated away, so round 4's fix reached nobody. Wired as a warning (the void itself succeeded). Round 4's premise was also wrong — void is reachable only from its own page, not "the list or the row menu". |
+| 10 | The barrel re-exported `recipientLocaleAdapter` with a comment saying "not for pages". A comment is not a guard: ESLint's rule is scoped to deep infra paths, so a barrel import in a server component was invisible to it, re-opening the exact Principle III hole the new use case exists to close. Removed; its one consumer deep-imports and is allowlisted — the architecture guard verified that by failing first. |
+| 11 | CLAUDE.md still said pre-push runs "ten static gates" after 108 added an eleventh. |
+| 12 | The gate script's `shown === SELF` skip is unreachable — `scripts/` is not in SCOPE, so `walk()` never reaches the file. A dead guard reading as a live one is how someone adds `scripts/` to SCOPE believing the exclusion works. |
+| 13 | `walk()`'s catch reported every failure as "scope root missing", so a dangling symlink or an unreadable directory would abort CI pointing at a directory that is present. Root existence is now tested separately; both paths exercised. |
+
+### The Retry CTA — round 4's open item, closed
+
+`PaymentFailurePanel` offered "Try again" for PERMANENT failures: a terminated
+membership and a membership with no primary contact. Neither is fixable by
+clicking, and both are fixable only by the chamber. Round 4 deferred this as "a
+panel-API change worth making once, for both codes, with a UX pass" — which is
+exactly what it now is: a `permanent` prop, set from the two arms that know, with
+the reason text still naming the action the member CAN take. Mutation-proved,
+with a transient control so the assertion cannot pass vacuously.
+
+### Perf findings — answered, not fixed
+
+- **#6 (the resume pays for a discarded read).** Rejected for the third time, and
+  the suggested "lazily-invoked thunk" does not change the answer: the thunk
+  would have to be invoked in the `!isResume` branch, which is INSIDE `withTx`,
+  and the adapter opens its own `runInTenant`. That is the round-1 pool-nesting
+  blocker exactly. The read cannot move later because resume-ness is not known
+  until the advisory lock and the pending lookup, and neither can move out of the
+  transaction. One indexed read on the resume path is the price of that.
+- **#8 (three pages each add a serial round-trip for the banner).** Real, and
+  smaller than when it was raised: the banner's read replaced a whole `getMember`
+  on two of the three pages, so the invoice page is now cheaper than before 108,
+  not dearer. Batching it into a `Promise.all` with its neighbours is a genuine
+  improvement and is NOT done here — reordering awaits on a page with six
+  existing serial reads is a change I would want measured, not assumed, and this
+  branch is long enough. Recorded as an open item.
+
 ## Status
 
-**PR-A is review-complete.** T001-T029 + T101/T102/T107 all closed. FOUR rounds of
-review — three concurrent reviewers, a fresh-context re-review, then two
-ten-angle `/code-review` passes over the whole branch diff — with every finding
-either fixed or refused in writing.
+**PR-A is review-complete.** T001-T029 + T101/T102/T107 all closed. FIVE rounds
+of review — three concurrent reviewers, a fresh-context re-review, then three
+ten-angle `/code-review` passes — with every finding fixed or refused in writing.
 
-Two of those rounds found rules broken by the ROUND BEFORE:
+The pattern worth carrying out of this feature: **rounds 3, 4 and 5 each found
+something the round before broke**, and none of it was caught by tests written
+in the same round. A fix for a drifted predicate wired infrastructure into a
+page; the fix for THAT left a barrel export re-opening the same hole behind a
+comment; de-duplicating an UPDATE made it stamp a reason false on one arm;
+`no_buyer_email` was added to one of two resend paths. Each was found by a
+reader coming in cold, not by the author verifying their own work.
 
-- round 3's fix for the banner's drifted predicate wired Infrastructure into
-  three server components (round-4 #7, Principle III NON-NEGOTIABLE);
-- round 3's re-affirmation then read that as "III PASS (the barrel is still the
-  only route)" — a green architecture guard mistaken for a passing principle.
-  Corrected in `checklists/security.md`, not appended to.
-
-Round 4 also surfaced a REGRESSION this branch had carried for 31 commits:
-`void-pdf-reconcile-cron` passes 14/14 on `main` and failed 3 here. The
-behaviour was right; the tests encoded the copy-forward 108 removed. **Nothing
-ran that suite** — the route is `src/app/api/**`, outside the per-module
-integration pre-push gate, and CI runs only `integration-smoke.yml`. That
-gate-map gap is the durable finding.
-
-Two findings were REJECTED on evidence rather than accommodated: round-3 #13
-(the four primary-contact reads cannot disagree — `contacts_one_primary_per_member`
-has been a partial UNIQUE index since migration 0009, and the tiebreak written
-for it was reverted) and round-4 #9 (deferring the F5 read into the `!isResume`
-branch would reintroduce the round-1 pool-nesting blocker, since that branch is
-inside `withTx`).
+Three findings were REJECTED on evidence rather than accommodated: round-3 #13
+(the primary-contact reads cannot disagree — `contacts_one_primary_per_member`
+has been a partial UNIQUE index since migration 0009; the tiebreak written for
+it was reverted), and round-4/round-5 #9/#6 (deferring the F5 read into the
+`!isResume` branch, or behind a thunk invoked there, reintroduces the round-1
+pool-nesting blocker — that branch is inside `withTx`).
 
 Both checklists carry Constitution v1.4.2 co-sign footers with per-round
-re-affirmations naming the verification method. `money.md`'s transaction-safety
-bullet and `security.md`'s Principle III line were each AMENDED when a later
-round made them false, rather than left standing.
+re-affirmations. Three claims were AMENDED when a later round made them false
+rather than left standing: `money.md`'s transaction-safety bullet, and
+`security.md`'s Principle III line **twice** — the second time because a
+principle check that reads a green guard instead of the rule will keep passing
+while the rule is broken.
 
-Gate run at HEAD `8e62a23a4`: lint 0 · typecheck 0 · **18 static gates PASS**
-(money-recipient now 965 files, up from 615) · full unit suite 1007 files /
-11324 tests · `pnpm test:coverage` **exit 0** — 1198 files / 13262 tests, the
-three 100% money pins met · live-Neon money + reconcile suites green
-(void-pdf-reconcile 17/17, primary-contact-read-agreement 5/5).
+Gate run at HEAD `631e5fd33`: lint 0 · typecheck 0 · static gates PASS
+(`check:money-recipient` 965 files, up from 615) · full unit suite 1007 files /
+11328 tests · `pnpm test:coverage` **exit 0** — 1198 files / 13264 tests, money
+pins met · architecture guards 133 · live-Neon suites green (void-pdf-reconcile
+18/18, primary-contact-read-agreement 6/6).
 
-One gate fails and is NOT a defect in this branch: `check:plan-divergence`
-reports anomalies on 72 leftover integration-test tenants on the shared dev Neon
-branch (every tenant with invoices there is `test-`-prefixed; there are no real
-ones). It has no `test-` exclusion, so it fails for anyone who has run the
-integration suite against dev. Deliberately not "fixed" here — adding a tenant
-filter to a money-integrity gate could mask a real divergence, and that is an
-owner's decision, not a drive-by.
+`check:plan-divergence` fails and is NOT a defect in this branch: it reports on
+72 leftover integration-test tenants on the shared dev Neon branch (every tenant
+with invoices there is `test-`-prefixed; there are no real ones). It has no
+`test-` exclusion, so it fails for anyone who has run the integration suite
+against dev. Deliberately not "fixed" — adding a tenant filter to a
+money-integrity gate could mask a real divergence, and that is an owner's call.
 
 ## Open at hand-off
 
@@ -502,15 +574,23 @@ owner's decision, not a drive-by.
 - PR-B/D/C untouched. PR-B's migration `0293` still needs a fresh V1 run
   (`node --env-file=.env.production --import tsx scripts/inventory-primary-contact-invariant.ts`)
   immediately before merge.
-- **Open UX item (round 4, finding #1):** `PaymentFailurePanel` still renders a
-  Retry CTA for PERMANENT failures — both the new `primary_contact_missing` and
-  the pre-existing `membership_access_restricted`. Suppressing it for permanent
-  codes is a panel-API change worth making once, for both, with a UX pass.
-- **Open (round 4, finding #2 fallout):** changes under `src/app/api/**` have no
-  automatic integration coverage — the per-module pre-push gate keys on
-  `src/modules/<m>/**` and CI runs only `integration-smoke.yml`. This branch shipped
-  a broken cron for 31 commits because of it. Worth either widening the pre-push
-  gate's path map or adding the route suites to CI.
+- ~~**Open UX item (round 4, finding #1):** the Retry CTA for PERMANENT
+  failures.~~ **CLOSED in round 5** — `PaymentFailurePanel` takes a `permanent`
+  prop, applied to both `primary_contact_missing` and the pre-existing
+  `membership_access_restricted` at once, as round 4 said it should be.
+- **Open (round 5, finding #8):** the three banner sites each add a serial
+  round-trip. Smaller than when raised — the read REPLACED a whole `getMember`
+  on two of them, so the invoice page is cheaper than before 108, not dearer —
+  but batching it into a `Promise.all` with its neighbours is a real
+  improvement. Not done here: reordering awaits on a page with six existing
+  serial reads is a change worth measuring, not assuming.
+- ~~**Open (round 4, finding #2 fallout):** `src/app/api/**` has no automatic
+  integration coverage.~~ **CLOSED on branch `api-route-integration-gate`** —
+  the pre-push hook now maps a changed route to the integration tests that
+  IMPORT it (exact `@/app/api/.../route` literal, not a name heuristic), and a
+  branch's FIRST push gates everything since `merge-base origin/main HEAD`
+  instead of one commit. Verified by breaking the reconcile route and watching
+  the hook exit 1.
 - **New PR-B item (round 3, finding #8):** a per-member AUDIT row for the F5
   `primary_contact_missing` refusal. Needs a new `audit_event_type` value (5
   places + a migration) — deliberately NOT folded into

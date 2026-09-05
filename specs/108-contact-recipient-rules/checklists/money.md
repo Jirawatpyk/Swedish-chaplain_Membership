@@ -179,3 +179,34 @@ full unit suite 1007 files / 11324 tests · pnpm test:coverage exit 0 (1198 file
 suites green (void-pdf-reconcile 17/17).
 
 **Re-affirmed**: money.md (CHK001-CHK026) remains **CO-SIGNED** at this HEAD.
+
+### Round-5 re-affirmation (631e5fd33)
+
+- **No number moved.** No amount, VAT calculation, document-state transition or
+  §87 sequence was touched this round.
+- **A false stamp on the money trail, fixed.** Round 4 hoisted the reconcile
+  cron's retirement UPDATE above the recipient resolve, so every arm wrote
+  `last_error = 'superseded_by_void_pdf_reconcile'` — including the arm that
+  enqueues nothing. An operator tracing the replacement row would find none.
+  Three honest reasons now (`duplicate_of_sent_void_notice`,
+  `no_live_primary_contact`, `superseded_by_void_pdf_reconcile`), pinned by a
+  test that asserts the skip arm does NOT claim a supersession.
+- **The delivery signal now reaches a human.** Round 4 added `email_delivery` to
+  the void response; round 5 found it had NO consumer — `void-confirm-dialog`
+  fired an unqualified success toast and navigated away. Wired as a warning: the
+  void succeeded, but nobody was told, and that page is the only place the admin
+  is looking.
+- **Skip counters completed.** A member credit-note RESEND that reached nobody
+  bumped nothing, because the label was omitted rather than set; it now reports
+  `'unknown'` — honest, where a membership/event guess would be a lie. The
+  non-member credit-note arm gained the same counter its invoice sibling got in
+  round 4.
+- **Two implementations of one rule, pinned.** Excluding erased members required
+  a second SQL read of "does this member have a usable primary contact?". That
+  is the drift class this whole feature exists to close, so the money read and
+  the banner read are pinned against each other on a live whitespace-only
+  address, and the pin is mutation-proved.
+
+Verification at HEAD `631e5fd33`: lint 0 · typecheck 0 · static gates PASS · full unit suite 1007 files / 11328 tests · pnpm test:coverage exit 0 (1198 files / 13264 tests; the pinned money files all at their 100% line/branch/function pins) · architecture guards 133 · live-Neon money + reconcile + agreement suites green (void-pdf-reconcile 18/18, primary-contact-read-agreement 6/6).
+
+**Re-affirmed**: money.md (CHK001-CHK026) remains **CO-SIGNED** at this HEAD.

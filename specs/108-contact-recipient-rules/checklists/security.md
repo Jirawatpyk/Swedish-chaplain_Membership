@@ -200,3 +200,58 @@ suites green.
 
 **Re-affirmed**: security.md (CHK001-CHK026) is **CO-SIGNED** at this HEAD, with
 the Principle III line above corrected rather than carried forward.
+
+### Round-5 re-affirmation (631e5fd33) — Principle III, corrected a SECOND time
+
+Round 4 corrected round 3's "III PASS (the barrel is still the only route)" and
+asserted that III passed on the substance, because the pages now call a use
+case. That was true of the pages and **still not true of the module**: the same
+commit exported `recipientLocaleAdapter` from the public barrel with a comment
+reading "NOT for pages or server components".
+
+A comment is not a guard. ESLint's `no-restricted-imports` is scoped to deep
+`infrastructure` paths under a module, so
+`import { recipientLocaleAdapter } from '@/modules/invoicing'` in a server
+component was invisible to it — every future importer inherited exactly the hole
+the use case had just been built to close, with nothing but prose in the way.
+
+Round 5 removes the export. Its one consumer, the `void-pdf-reconcile` cron,
+deep-imports it and carries an allowlist entry in
+`invoicing-presentation-imports.test.ts` — the same escape hatch that route
+already uses for `react-pdf-render-adapter`. A deep import is loud and lands in
+a reviewed list; a barrel export is neither. The architecture guard confirmed
+the mechanism by FAILING first, before the entry was added.
+
+**III passes now at the module boundary, not only at the call sites.** Two
+rounds of "III PASS" preceded this one; the lesson recorded here is that a
+principle check which reads a green guard, rather than the rule, will keep
+passing while the rule is broken.
+
+Other properties re-derived:
+
+- **Data-subject rights (Art.17)** — the round's most serious finding, and one I
+  had carried for three rounds as a cosmetic "KNOWN GAP". `scrubPiiForMemberInTx`
+  sets `is_primary = false` AND `removed_at` on every contact, so the FR-003
+  banner was GUARANTEED to fire on every invoice and credit note an erased
+  member ever had, telling staff to "add or promote a contact" for an erased
+  data subject — advice that, followed, re-introduces the PII that was erased.
+  Excluded in the use case, so all three surfaces share it; only the member page
+  had a gate before.
+- **Audit truth** — improved again. Round 4's de-duplication of the reconcile
+  UPDATE made every arm stamp `superseded_by_void_pdf_reconcile`, including the
+  arm that enqueues no replacement. Three honest reasons now.
+- **Log hygiene** — `getMemberMoneyRecipientStatus` swallowed its error while its
+  JSDoc claimed the callers logged it; they could not. Now `errKind(rootCause(e))`
+  at the point of failure — class only, never a message that could carry
+  user-submitted values.
+- **Address disclosure** — unchanged; narrowed once more on the credit-note
+  resend path, which answered `no_recipient` (copy: "fix it on the member page")
+  for a document that has no member.
+- **Tenant isolation** — unchanged. The new `getMemberRecipientStatus` read
+  states `m.tenant_id` explicitly and self-scopes through `runInTenant`, the same
+  posture as its siblings.
+
+Verification at HEAD `631e5fd33`: lint 0 · typecheck 0 · static gates PASS · full unit suite 1007 files / 11328 tests · pnpm test:coverage exit 0 (1198 files / 13264 tests; the pinned money files all at their 100% line/branch/function pins) · architecture guards 133 · live-Neon money + reconcile + agreement suites green (void-pdf-reconcile 18/18, primary-contact-read-agreement 6/6).
+
+**Re-affirmed**: security.md (CHK001-CHK026) is **CO-SIGNED** at this HEAD, with
+the Principle III line corrected for the second time rather than carried forward.
