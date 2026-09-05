@@ -32,6 +32,7 @@ import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import { db, runInTenant, type TenantTx } from '@/lib/db';
 import { verifyCronBearer } from '@/lib/cron-auth';
 import { logger } from '@/lib/logger';
+import { invoicingMetrics } from '@/lib/metrics';
 import { errKind } from '@/lib/log-id';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { asTenantContext } from '@/modules/tenants';
@@ -161,6 +162,53 @@ async function reEnqueueVoidCancellationEmail(
    */
   invoiceSubject: 'membership' | 'event',
 ): Promise<boolean> {
+  // INTENT GATE, before anything else. A cancellation email is only owed when
+  // one was actually queued: `voidInvoice` called with `suppressCancellationEmail`
+  // (the void-on-reissue path) never creates an outbox row at all, and a row
+  // already `sent` means the buyer has the document.
+  //
+  // The enqueue below has always been gated this way — its `INSERT … SELECT`
+  // simply matches nothing. The SKIP arm was not, so a suppressed void wrote a
+  // ten-year `auto_email_skipped_no_recipient` row claiming a cancellation
+  // notice went undelivered for want of a contact, when none was ever going to
+  // be sent; and the ambiguous-upload leg recorded "never delivered" for a
+  // document the buyer had received. Both are append-only rows asserting an
+  // event that did not happen — the same class as a fabricated `actor_role`,
+  // and the reason `auto_email_skipped_no_recipient` carries 10-year retention
+  // is precisely that an auditor is meant to trust it. (Round-4 finding #2.)
+  const [counts] = (await tx.execute(sql`
+    SELECT count(*) AS total,
+           count(*) FILTER (WHERE status = 'sent'::outbox_status) AS sent
+      FROM notifications_outbox
+     WHERE tenant_id = ${tenantId}
+       AND notification_type = 'invoice_auto_email'::notification_type
+       AND context_data->>'event_type' = 'invoice_voided'
+       AND context_data->>'invoice_id' = ${invoiceId}
+  `)) as unknown as Array<{ total: string | number; sent: string | number }>;
+  const totalRows = Number(counts?.total ?? 0);
+  const sentRows = Number(counts?.sent ?? 0);
+  // Nothing was ever queued → nothing to supersede, nothing to skip, nothing to
+  // record. Return before the recipient read, which would also be wasted.
+  if (totalRows === 0) return false;
+
+  // Retire the doomed original. Hoisted above the branch: both arms ran this
+  // verbatim, eleven lines apart, so a change to the predicate had to be made
+  // twice with nothing to catch a half-edit (round-4 finding #10).
+  await tx.execute(sql`
+    UPDATE notifications_outbox
+       SET status = 'permanently_failed'::outbox_status,
+           last_error = 'superseded_by_void_pdf_reconcile',
+           updated_at = now()
+     WHERE tenant_id = ${tenantId}
+       AND notification_type = 'invoice_auto_email'::notification_type
+       AND context_data->>'event_type' = 'invoice_voided'
+       AND context_data->>'invoice_id' = ${invoiceId}
+       AND status = 'pending'
+  `);
+  // Already delivered — the pending duplicate is retired above, but there is no
+  // undelivered document to report and no replacement to enqueue.
+  if (sentRows > 0) return false;
+
   // 108 FR-001 — resolve the recipient LIVE. This function used to copy
   // `o.to_email` forward from the original row, which made it the last path
   // in the system that could mint a money email addressed to a contact who
@@ -175,19 +223,8 @@ async function reEnqueueVoidCancellationEmail(
     snapshot,
   );
   if (recipient.kind === 'no_recipient') {
-    // Same rule as every other money path: no fallback. Retire the doomed
-    // original and record the skip rather than delivering to a stale address.
-    await tx.execute(sql`
-      UPDATE notifications_outbox
-         SET status = 'permanently_failed'::outbox_status,
-             last_error = 'superseded_by_void_pdf_reconcile',
-             updated_at = now()
-       WHERE tenant_id = ${tenantId}
-         AND notification_type = 'invoice_auto_email'::notification_type
-         AND context_data->>'event_type' = 'invoice_voided'
-         AND context_data->>'invoice_id' = ${invoiceId}
-         AND status = 'pending'
-    `);
+    // Same rule as every other money path: no fallback. The original is already
+    // retired above; record the skip rather than delivering to a stale address.
     if (memberId !== null) {
       await auditAutoEmailSkippedNoRecipient(f4AuditAdapter, tx, {
         tenantId,
@@ -200,20 +237,11 @@ async function reEnqueueVoidCancellationEmail(
         subject: invoiceSubject,
         invoiceId,
       });
+    } else {
+      invoicingMetrics.autoEmailSkipped(invoiceSubject, 'no_recipient');
     }
     return false;
   }
-  await tx.execute(sql`
-    UPDATE notifications_outbox
-       SET status = 'permanently_failed'::outbox_status,
-           last_error = 'superseded_by_void_pdf_reconcile',
-           updated_at = now()
-     WHERE tenant_id = ${tenantId}
-       AND notification_type = 'invoice_auto_email'::notification_type
-       AND context_data->>'event_type' = 'invoice_voided'
-       AND context_data->>'invoice_id' = ${invoiceId}
-       AND status = 'pending'
-  `);
   // Take the locale from the SAME live row as the address. Copying `o.locale`
   // forward would mail the new primary contact in the previous one's language —
   // every other money path reads both from one row for exactly this reason.
