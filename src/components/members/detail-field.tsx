@@ -30,6 +30,13 @@ export interface DetailFieldProps {
    * is null, so it may be the SOLE content of the field.
    */
   readonly extra?: ReactNode;
+  /**
+   * Extra classes on the field's own root `<div>` (e.g. a grid `col-span`).
+   * Use this instead of wrapping the field in another `<div>`: inside a
+   * `<dl>` a wrapper makes `div > div > dt`, which fails axe's
+   * `definition-list` / `dlitem` rules (108 PR-D portal a11y sweep).
+   */
+  readonly className?: string;
 }
 
 export function DetailField({
@@ -38,11 +45,12 @@ export function DetailField({
   fallback = '—',
   mono = false,
   extra,
+  className,
 }: DetailFieldProps) {
   const v =
     value === null || value === undefined || value === '' ? null : String(value);
   return (
-    <div className="flex flex-col gap-1 py-2">
+    <div className={cn('flex flex-col gap-1 py-2', className)}>
       <dt className="text-xs text-muted-foreground">{label}</dt>
       <dd className="flex items-center gap-2 text-sm">
         {v !== null && (

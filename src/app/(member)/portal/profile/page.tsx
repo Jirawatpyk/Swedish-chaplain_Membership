@@ -25,7 +25,11 @@ import {
   getMember,
   formatMemberNumber,
   resolveMemberNumberPrefix,
+  deriveMarketingState,
+  type MarketingState,
 } from '@/modules/members';
+import { makeMarketingSuppressionLookup } from '@/lib/contact-marketing-deps';
+import { PortalMarketingToggle } from '@/components/members/portal-marketing-toggle';
 import { env } from '@/lib/env';
 
 /**
@@ -141,6 +145,20 @@ export async function PortalProfileBody({
     (c) => String(c.linkedUserId) === user.id,
   );
   const isPrimary = ownContact?.isPrimary === true;
+
+  // 108 PR-D (US6 / FR-031a, FR-032) — the OWN contact's displayed marketing
+  // state only (suppression > opt-out > on; unreadable list → 'unavailable').
+  // Other contacts' states are never rendered in the portal.
+  let ownMarketingState: MarketingState | null = null;
+  if (ownContact) {
+    let suppressed: boolean | 'unknown';
+    try {
+      suppressed = await makeMarketingSuppressionLookup(tenant).isSuppressed(ownContact.email);
+    } catch {
+      suppressed = 'unknown';
+    }
+    ownMarketingState = deriveMarketingState(ownContact.marketing, suppressed);
+  }
 
   // Both reads are independent (plan lookup vs. member-settings row) —
   // collapse to ~1 RTT. Mirrors the Promise.all on the admin detail page.
@@ -281,21 +299,22 @@ export async function PortalProfileBody({
               />
               {/* 069 — §86/4 buyer address on file (read-only; admin-managed).
                   Full-width so a long address wraps cleanly. */}
-              <div className="sm:col-span-2 lg:col-span-3">
-                <DetailField
-                  label={t('fields.address')}
-                  value={addressText}
-                />
-              </div>
+              {/* `className` on the field itself, not a wrapper <div>: inside
+                  the <dl> a wrapper is `div > div > dt`, which axe rejects
+                  (definition-list / dlitem — caught by the PR-D portal sweep). */}
+              <DetailField
+                label={t('fields.address')}
+                value={addressText}
+                className="sm:col-span-2 lg:col-span-3"
+              />
               {billingAddressText ? (
                 // member-billing-address (0284) — shown only when set, so
                 // the common no-billing-address profile is unchanged.
-                <div className="sm:col-span-2 lg:col-span-3">
-                  <DetailField
-                    label={t('fields.billingAddress')}
-                    value={billingAddressText}
-                  />
-                </div>
+                <DetailField
+                  label={t('fields.billingAddress')}
+                  value={billingAddressText}
+                  className="sm:col-span-2 lg:col-span-3"
+                />
               ) : null}
               {websiteHref ? (
                 <DetailField
@@ -325,12 +344,11 @@ export async function PortalProfileBody({
                 />
               )}
               {m.description ? (
-                <div className="sm:col-span-2 lg:col-span-3">
-                  <DetailField
-                    label={t('fields.description')}
-                    value={m.description}
-                  />
-                </div>
+                <DetailField
+                  label={t('fields.description')}
+                  value={m.description}
+                  className="sm:col-span-2 lg:col-span-3"
+                />
               ) : null}
             </dl>
           </CardContent>
@@ -430,6 +448,18 @@ export async function PortalProfileBody({
                           {contact.roleTitle}
                         </p>
                       ) : null}
+                      {/* 108 PR-D (US6) — the signed-in contact's OWN marketing
+                          control; never rendered on another contact's row. */}
+                      {ownContact !== undefined &&
+                        contact.contactId === ownContact.contactId &&
+                        ownMarketingState !== null && (
+                          <div className="mt-3">
+                            <PortalMarketingToggle
+                              state={ownMarketingState}
+                              isPrimary={contact.isPrimary}
+                            />
+                          </div>
+                        )}
                     </div>
                   </div>
                 </div>

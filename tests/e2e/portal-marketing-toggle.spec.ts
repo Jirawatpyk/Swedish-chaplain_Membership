@@ -25,6 +25,11 @@ import { expect, test } from './fixtures';
 import { signInAsMember } from './helpers/member-session';
 import { clearE2ERateLimits } from './helpers/rate-limit';
 import { openSeedClient } from './helpers/open-seed-client';
+import {
+  cleanupPortalMemberFixture,
+  ensurePortalMemberForUser,
+  type PortalMarketingSeed,
+} from './helpers/portal-marketing-seed';
 
 const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL;
 const TENANT_ID = process.env.E2E_TENANT_SLUG ?? 'swecham';
@@ -57,10 +62,23 @@ test.describe.configure({ mode: 'serial', timeout: 90_000 });
 test.describe('108 PR-D — portal self marketing toggle (US6) @a11y', () => {
   test.skip(!MEMBER_EMAIL, 'Set E2E_MEMBER_EMAIL / E2E_MEMBER_PASSWORD (seeded by scripts/seed-e2e-user.ts)');
 
+  let seed: PortalMarketingSeed | null = null;
+
   test.beforeAll(async () => {
     await clearE2ERateLimits();
+    // The persona must be linked to a live member for /portal/profile to
+    // render its contact block; seed one when the dev branch has none.
+    seed = await ensurePortalMemberForUser(MEMBER_EMAIL!);
     // Make sure no earlier run left the persona suppressed.
-    await setSuppressed(MEMBER_EMAIL!, false);
+    await setSuppressed(seed?.contactEmail ?? MEMBER_EMAIL!, false);
+  });
+
+  test.afterAll(async () => {
+    if (seed?.seeded) await cleanupPortalMemberFixture();
+  });
+
+  test.beforeEach(() => {
+    test.skip(seed === null, 'persona could not be linked to a member (DATABASE_URL / user / plan missing)');
   });
 
   test('1. switch off → "off (by contact)"; switch on → "on"', async ({ page }) => {
@@ -87,16 +105,18 @@ test.describe('108 PR-D — portal self marketing toggle (US6) @a11y', () => {
   });
 
   test('2. unsubscribed → text only, no control', async ({ page }) => {
-    await setSuppressed(MEMBER_EMAIL!, true);
+    const email = seed!.contactEmail;
+    await setSuppressed(email, true);
     try {
       await signInAsMember(page);
       await page.goto('/portal/profile', { waitUntil: 'domcontentloaded' });
       const region = page.getByTestId('portal-marketing');
       await expect(region).toHaveAttribute('data-marketing-state', 'unsubscribed');
-      await expect(region.getByText(t.state.unsubscribed)).toBeVisible();
+      // `exact` — the hint paragraph also contains the word.
+      await expect(region.getByText(t.state.unsubscribed, { exact: true })).toBeVisible();
       await expect(region.getByRole('switch')).toHaveCount(0);
     } finally {
-      await setSuppressed(MEMBER_EMAIL!, false);
+      await setSuppressed(email, false);
     }
   });
 

@@ -47,6 +47,19 @@ vi.mock('@/modules/members', () => ({
     `${prefix}-${String(n).padStart(4, '0')}`,
   resolveMemberNumberPrefix: (...args: unknown[]) =>
     resolveMemberNumberPrefixMock(...args),
+  // 108 PR-D — the page derives the OWN contact's marketing state.
+  deriveMarketingState: () => 'on',
+}));
+// 108 PR-D — the suppression lookup composes the broadcasts barrel (whose
+// logger reads env.log); stub it so this page-boundary test stays DB- and
+// env-free. The toggle is a client component — stubbed like the other children.
+vi.mock('@/lib/contact-marketing-deps', () => ({
+  makeMarketingSuppressionLookup: () => ({ isSuppressed: async () => false }),
+}));
+vi.mock('@/components/members/portal-marketing-toggle', () => ({
+  PortalMarketingToggle: ({ state }: { state: string }) => (
+    <div data-testid="portal-marketing" data-marketing-state={state} />
+  ),
 }));
 
 vi.mock('@/lib/env', () => ({
