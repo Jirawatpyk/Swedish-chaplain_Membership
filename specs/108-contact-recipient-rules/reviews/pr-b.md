@@ -134,3 +134,27 @@ e2e gap too). 20 new findings; **20 fixed**, 0 rejected; each RED → GREEN.
 Verified after round 2: typecheck 0 · full lint 0 · `check:i18n` 5188/5188 · unit/contract for
 the touched surfaces 73/73 · T031 24/24 (v4 applied through the real migrator) · isolation 4/4 ·
 e2e designate cases 4/4 on chromium.
+
+### Round 3 — 2026-09-05, fresh-agent whole-branch re-review of `846218b8b` (static read, no test runner)
+
+Verdict **MERGEABLE**: 0 BLOCKER · 0 HIGH · 1 MEDIUM · 2 LOW. All three fixed, each RED first
+(`d62be454f`). The reviewer also confirmed, by reading: no `err()` inside `runInTenant` in any of
+the three use cases, members-first lock order everywhere, the erased gate before `undelete()`, one
+predicate at the pre-check / trigger / `data-model.md` §2.2 / AMENDMENT / inventory script, and
+that `SET LOCAL lock_timeout` + `LOCK TABLE` are effective because `run-migrations.ts` runs the
+file through drizzle's transactional `migrate()`.
+
+| # | Sev | Finding | Resolution |
+|---|---|---|---|
+| F3-M1 | MED | the runbook in 0293's pre-check comment, the inventory script and quickstart told the operator to "promote a remaining contact" — but `promotePrimaryInTx` is demote-then-promote and returned `repo.conflict{no_current_primary}` when nothing was demoted, so a zero-primary member got a 409 from exactly the path the runbook named; `designatePrimaryInTx` existed but was wired only into `undeleteMember` | fixed at the repo, not the use case (a fall-through to `designatePrimaryInTx` would hit its `is_primary = false` WHERE on the row just promoted): no current primary → `ok({ demoted: null, promoted })`; the use case audits `old_primary_contact_id: null` (the undelete / first-addContact shape); route body `demoted: null`; `no_current_primary` removed from `RepoConflictReason` (no producer left; swept: no i18n key, no UI reader, no exhaustive map, no `old_primary_contact_id` reader outside the use cases). The runbook now says which code decides the fix — with PR-B deployed, promote/add on the member page; before it (the pre-check failed the build → prod still on the previous deployment, where promote refuses and `addContact` hardcodes `isPrimary: false`) a human-chosen, per-member, tenant-scoped UPDATE of one row, never an auto-picking script (R4). Tests: unit (commit + null old id), contract (200 with `demoted: null`), integration (archived member with two secondaries and zero primaries — the only contact-bearing zero-primary shape 0293 lets commit — promote designates; audit row read back) |
+| F3-L2 | LOW | `RestorePrimaryDialog` cleared `picked` only in `handleClose` (Cancel/Escape); the banner closes it by flipping `open` after a failed or successful restore, the component stays mounted, so the next 409 re-opened with the previous contact pre-selected and Confirm enabled — the silent default the file's own header rules out | `setPicked(null)` in `onOpenChangeComplete(false)` before `onCloseComplete`, i.e. on every close path; presentation test: pick → programmatic close → re-open → nothing checked, Confirm disabled |
+| F3-L3 | LOW | three comments no longer matched the code: 0293 named `isPrimaryContactTriggerError` (real export `primaryContactTriggerViolation`) and still said "revoked from PUBLIC before the chamber_app grant" (round 2 removed that grant); the Domain policy header said the check runs "BEFORE persistence" (it runs after the write, inside the same tx, rolling back) | all three rewritten; 0293's `when` bumped to 1798542400000 and re-applied through the real migrator (a comment-only edit after dev had applied v4 — T031's sha256 pin is exactly the tripwire for this) |
+
+Verified after round 3: typecheck 0 · full lint 0 · the eleven static gates + architecture guards
+133/133 · the seven unit/contract files touching promote or the dialog 7/7 · T030 + T031 (race +
+trigger, incl. the sha256 pin against v5) green on dev · e2e `members-archive-undelete` 8/8 on
+chromium. Running the same spec on every project surfaced one mobile-safari failure in the spec's
+FIRST case ("detail page renders Archive CTA for active members", a page that never renders the
+dialog): `TypeError: Load failed`, a WebKit fetch abort caught by the page-error fixture —
+reproduced 3/3 on `main` (`bdbd631d9`) with the identical error, so it is pre-existing and outside
+this PR; chromium remains the declared e2e baseline.
