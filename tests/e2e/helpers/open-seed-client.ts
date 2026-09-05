@@ -24,6 +24,23 @@ export function openSeedClient(label: string): SeedClient | null {
     console.warn(`[${label}] skipped — DATABASE_URL missing`);
     return null;
   }
+  // Production-safety guard (108 T041 security review, L6). Every caller of
+  // this client is a BYPASSRLS fixture writer that DELETEs by pattern; the
+  // integration suite already refuses a blocklisted host
+  // (`tests/integration-setup.ts`), and the e2e seeds had no equivalent.
+  // Fail-closed: a matching fragment throws, it never degrades to a warning.
+  const blocklist = (process.env.TEST_DB_HOST_BLOCKLIST ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const blocked = blocklist.find((needle) => dbUrl.includes(needle));
+  if (blocked) {
+    throw new Error(
+      `[${label}] refusing to open a seed client against a blocklisted database ` +
+        `(host matched "${blocked}" from TEST_DB_HOST_BLOCKLIST). Point DATABASE_URL ` +
+        `at a dev/test Neon branch — never production.`,
+    );
+  }
   const sql = postgres(dbUrl, { ssl: 'require', max: 1 });
   return { sql, end: () => sql.end() };
 }

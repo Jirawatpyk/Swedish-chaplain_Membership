@@ -21,6 +21,7 @@
 
 import { z } from 'zod';
 import { runInTenant } from '@/lib/db';
+import { errorChainMessage, primaryContactTriggerViolation } from '@/lib/db-errors';
 import { logger } from '@/lib/logger';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
@@ -29,6 +30,7 @@ import {
   asMemberId,
   asPlanId,
   undelete,
+  type MemberId,
 } from '../../domain/member';
 import type { MemberRepo } from '../ports/member-repo';
 import type { AuditPort } from '../ports/audit-port';
@@ -386,6 +388,22 @@ export async function bulkAction(
     }
     if (e instanceof BulkStateError) {
       return err({ type: 'state_error', memberId: e.memberId, code: e.stateCode });
+    }
+    // 108 PR-B (T041 reliability review, M2): the bulk `unarchive` arm is the
+    // Undo of a bulk archive and skips the single-member designate flow on
+    // purpose, so migration 0293's deferred trigger is what refuses a member
+    // that would come back with no live primary. Its raise arrives here at
+    // COMMIT as a bare DB error; the message names the member, so the admin
+    // gets the same per-member `state_error` the route already renders
+    // instead of "bulk operation failed" for the whole batch.
+    const violation = primaryContactTriggerViolation(e);
+    if (violation !== null) {
+      const named = /member ([0-9a-f-]{36})/i.exec(errorChainMessage(e));
+      return err({
+        type: 'state_error',
+        memberId: (named?.[1] ?? '') as MemberId,
+        code: 'no_primary_contact',
+      });
     }
     // M2: log the rich cause server-side BEFORE sanitizing the wire response.
     // The route only sees the sanitized message, so without this an FK

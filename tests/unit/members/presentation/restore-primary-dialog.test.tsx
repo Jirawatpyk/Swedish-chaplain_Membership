@@ -20,9 +20,27 @@ import { RestorePrimaryDialog } from '@/components/members/restore-primary-dialo
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }),
 }));
+// The nested add-contact dialog is a form with its own fetch; stub it to what
+// this dialog needs from it — the trigger it renders, the `description` it
+// is handed, and the `onSaved` callback it fires after a successful add.
+vi.mock('@/components/members/contact-form-dialog', () => ({
+  ContactFormDialog: (props: {
+    trigger: React.ReactElement;
+    description?: string;
+    onSaved?: () => void;
+  }) => (
+    <div data-testid="cfd-stub" data-description={props.description ?? ''}>
+      {props.trigger}
+      <button type="button" data-testid="cfd-saved" onClick={() => props.onSaved?.()}>
+        saved
+      </button>
+    </div>
+  ),
+}));
 
-const ANN = { contactId: 'c-ann', firstName: 'Ann', lastName: 'Alpha' };
-const BO = { contactId: 'c-bo', firstName: 'Bo', lastName: 'Beta' };
+const ANN = { contactId: 'c-ann', firstName: 'Ann', lastName: 'Alpha', email: 'ann@alpha.example' };
+const BO = { contactId: 'c-bo', firstName: 'Bo', lastName: 'Beta', email: 'bo@beta.example' };
+const D = enMessages.admin.members.undelete.designate;
 
 function renderDialog(
   props: Partial<React.ComponentProps<typeof RestorePrimaryDialog>> = {},
@@ -113,6 +131,65 @@ describe('RestorePrimaryDialog (108 FR-014)', () => {
     // The remedy is reachable from here — the page hides the add-contact
     // button for archived members, so this is the only door.
     expect(screen.getByTestId('restore-primary-add-contact')).toBeInTheDocument();
+  });
+
+  // ── T041 UX review round 1 ─────────────────────────────────────────────────
+
+  it("shows each contact's email — the choice IS which address receives the receipts (M5)", () => {
+    renderDialog();
+    expect(screen.getByText(ANN.email)).toBeInTheDocument();
+    expect(screen.getByText(BO.email)).toBeInTheDocument();
+  });
+
+  it('a lost race is announced INSIDE the dialog as role="alert", not as a toast the modal hides (H1)', () => {
+    renderDialog({ notice: 'contact_gone' });
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent(D.retry);
+    // and it lives inside the dialog, where aria-hidden does not reach it
+    expect(screen.getByRole('alertdialog')).toContainElement(alert);
+  });
+
+  it('a lost race that left NO contacts says so — "choose another" would name nobody (H1)', () => {
+    renderDialog({ designatable: [], notice: 'contact_gone_none' });
+    expect(screen.getByRole('alert')).toHaveTextContent(D.retryNone);
+  });
+
+  it('no notice → no alert region at all', () => {
+    renderDialog();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('Escape does not close the dialog while the restore is in flight (M4)', () => {
+    const { onOpenChange } = renderDialog({ submitting: true });
+    fireEvent.keyDown(screen.getByRole('alertdialog'), { key: 'Escape' });
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+  });
+
+  it('zero contacts: hands the add dialog a primary-specific description and relays its onSaved (H2, M6)', () => {
+    const onContactAdded = vi.fn();
+    renderDialog({ designatable: [], onContactAdded });
+    expect(screen.getByTestId('cfd-stub')).toHaveAttribute(
+      'data-description',
+      D.addContactDescription,
+    );
+    fireEvent.click(screen.getByTestId('cfd-saved'));
+    expect(onContactAdded).toHaveBeenCalledTimes(1);
+  });
+
+  it('caps its height and scrolls — long TH copy plus five radios must not push the footer off a 320x568 screen (H3)', () => {
+    renderDialog();
+    const dialog = screen.getByRole('alertdialog');
+    expect(dialog.className).toContain('max-h-[85vh]');
+    expect(dialog.className).toContain('overflow-y-auto');
+  });
+
+  it('the radiogroup is named by its visible legend, once (L9b)', () => {
+    renderDialog();
+    const group = screen.getByRole('radiogroup');
+    const labelledBy = group.getAttribute('aria-labelledby');
+    expect(labelledBy).toBeTruthy();
+    expect(document.getElementById(labelledBy!)).toHaveTextContent(D.contactsLabel);
+    expect(group).not.toHaveAttribute('aria-label');
   });
 
   it('Cancel closes without restoring', async () => {

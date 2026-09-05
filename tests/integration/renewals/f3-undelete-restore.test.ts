@@ -228,7 +228,7 @@ describe('F3 undelete → F8 cycle restore — Cluster 4', () => {
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.status).toBe('active');
+    expect(result.value.member.status).toBe('active');
 
     // 4a. Exactly ONE non-terminal cycle exists (the restored one).
     expect(await countNonTerminalCycles(tenant.ctx.slug, memberId)).toBe(1);
@@ -449,7 +449,7 @@ describe('F3 undelete → F8 cycle restore — Cluster 4', () => {
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.status).toBe('active');
+    expect(result.value.member.status).toBe('active');
 
     // Exactly ONE non-terminal (restored) cycle.
     expect(await countNonTerminalCycles(tenant.ctx.slug, paidMemberId)).toBe(1);

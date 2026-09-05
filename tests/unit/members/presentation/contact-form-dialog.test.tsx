@@ -5,7 +5,7 @@
  * ADD must surface inline on #cf-email (aria-invalid + message) with focus, not
  * a toast. Rendered against real en.json with a mocked fetch.
  */
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
@@ -337,5 +337,76 @@ describe('ContactFormDialog — retryable 503 (G24)', () => {
     );
 
     vi.unstubAllGlobals();
+  });
+});
+
+describe('ContactFormDialog — 108 PR-B hooks for the restore dialog (T041 UX H2/M6)', () => {
+  beforeEach(() => {
+    vi.useRealTimers();
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function openAddWith(props: { description?: string; onSaved?: () => void }) {
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <ContactFormDialog
+          memberId="m1"
+          mode="add"
+          trigger={<button>Open</button>}
+          {...props}
+        />
+      </NextIntlClientProvider>,
+    );
+    fireEvent.click(screen.getByText('Open'));
+  }
+
+  it('renders a caller-supplied description instead of the generic add copy', () => {
+    openAddWith({ description: 'Add the person who should receive the receipts.' });
+    expect(screen.getByText('Add the person who should receive the receipts.')).toBeInTheDocument();
+    expect(screen.queryByText(enMessages.admin.members.contactForm.description)).toBeNull();
+  });
+
+  it('fires onSaved after a successful ADD (and not on failure)', async () => {
+    const onSaved = vi.fn();
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: async () => ({ contact_id: 'c-new' }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    openAddWith({ onSaved });
+
+    fireEvent.change(document.querySelector('#cf-first-name')!, { target: { value: 'New' } });
+    fireEvent.change(document.querySelector('#cf-last-name')!, { target: { value: 'Person' } });
+    fireEvent.change(document.querySelector('#cf-email')!, { target: { value: 'new@person.example' } });
+    fireEvent.click(document.querySelector('#cf-art14-attested')!);
+    fireEvent.submit(document.querySelector('form')!);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+  });
+
+  it('does NOT fire onSaved when the ADD is refused', async () => {
+    const onSaved = vi.fn();
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: async () => ({ error: { code: 'conflict', reason: 'contact_email_in_use' } }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    openAddWith({ onSaved });
+
+    fireEvent.change(document.querySelector('#cf-first-name')!, { target: { value: 'New' } });
+    fireEvent.change(document.querySelector('#cf-last-name')!, { target: { value: 'Person' } });
+    fireEvent.change(document.querySelector('#cf-email')!, { target: { value: 'dup@person.example' } });
+    fireEvent.click(document.querySelector('#cf-art14-attested')!);
+    fireEvent.submit(document.querySelector('form')!);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    // give the handler a tick to settle
+    await new Promise((r) => setTimeout(r, 20));
+    expect(onSaved).not.toHaveBeenCalled();
   });
 });

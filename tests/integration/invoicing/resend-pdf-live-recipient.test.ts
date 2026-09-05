@@ -182,13 +182,18 @@ describe('108 resend-pdf — live primary contact (live Neon)', () => {
     return email;
   }
 
+  /**
+   * The FR-003 "no live primary" state. Since 108 PR-B (migration 0293) an
+   * ACTIVE member with contact rows must carry exactly one live primary at
+   * COMMIT, so soft-removing every contact is no longer a reachable state —
+   * the one no-primary population left is the CONTACT-LESS member (a bare
+   * import), which is what these cases now model. Owner-role hard delete:
+   * zero rows remain, which 0293 exempts.
+   */
   async function removeAllContacts(memberId: string): Promise<void> {
-    await runInTenant(tenant.ctx, (tx) =>
-      tx
-        .update(contacts)
-        .set({ isPrimary: false, removedAt: new Date() })
-        .where(and(eq(contacts.tenantId, tenant.ctx.slug), eq(contacts.memberId, memberId))),
-    );
+    await db
+      .delete(contacts)
+      .where(and(eq(contacts.tenantId, tenant.ctx.slug), eq(contacts.memberId, memberId)));
   }
 
   async function issuedBill(memberId: string): Promise<string> {

@@ -152,7 +152,7 @@ describe('contact CRUD — in-tx exactly-one-primary policy (FR-012)', () => {
       expect(deps.audit.recordInTx).not.toHaveBeenCalled();
     });
 
-    it('aborts when the post-write state has zero live primaries', async () => {
+    it('aborts when the post-write state has zero live primaries — as no_primary_contact, not "try again"', async () => {
       const deps = makeDeps({
         afterWrite: [contactRow(PRIMARY), contactRow(SECONDARY)],
       });
@@ -161,10 +161,28 @@ describe('contact CRUD — in-tx exactly-one-primary policy (FR-012)', () => {
 
       expect(result.ok).toBe(false);
       if (result.ok) return;
+      // T041 reliability review M3: a retry cannot fix "zero primaries"; the
+      // caller must be told which state it is in.
       expect(result.error).toEqual({
         type: 'conflict',
-        reason: 'primary_contact_race',
+        reason: 'no_primary_contact',
       });
+    });
+
+    it('locks the member row BEFORE touching contacts (lock order matches erase/undelete)', async () => {
+      // T041 reliability review H1: `findByIdInTx` is SELECT … FOR UPDATE on
+      // members. erase-member and undelete-member lock members FIRST and then
+      // write contacts; writing contacts first and locking members after is a
+      // lock-order inversion → deadlock (40P01) → 500 on both sides.
+      const deps = makeDeps({
+        afterWrite: [contactRow(PRIMARY), contactRow(SECONDARY, { isPrimary: true })],
+      });
+
+      await promotePrimary(memberId, SECONDARY, meta, deps);
+
+      const lock = vi.mocked(deps.memberRepo.findByIdInTx).mock.invocationCallOrder[0]!;
+      const write = vi.mocked(deps.contactRepo.promotePrimaryInTx).mock.invocationCallOrder[0]!;
+      expect(lock).toBeLessThan(write);
     });
 
     it('reads the post-write state with the SAME tx object the write used', async () => {
@@ -232,9 +250,24 @@ describe('contact CRUD — in-tx exactly-one-primary policy (FR-012)', () => {
       if (result.ok) return;
       expect(result.error).toEqual({
         type: 'conflict',
-        reason: 'primary_contact_race',
+        reason: 'no_primary_contact',
       });
       expect(deps.audit.recordInTx).not.toHaveBeenCalled();
+    });
+
+    it('locks the member row BEFORE the soft-delete (lock order)', async () => {
+      const deps = makeDeps({
+        afterWrite: [
+          contactRow(PRIMARY, { isPrimary: true }),
+          contactRow(SECONDARY, { removed: true }),
+        ],
+      });
+
+      await removeContact(memberId, SECONDARY, meta, deps);
+
+      const lock = vi.mocked(deps.memberRepo.findByIdInTx).mock.invocationCallOrder[0]!;
+      const write = vi.mocked(deps.contactRepo.removeInTx).mock.invocationCallOrder[0]!;
+      expect(lock).toBeLessThan(write);
     });
 
     it('commits a normal secondary removal', async () => {
@@ -253,7 +286,7 @@ describe('contact CRUD — in-tx exactly-one-primary policy (FR-012)', () => {
   });
 
   describe('addContact', () => {
-    it('commits when the member still has exactly one live primary', async () => {
+    it('adds a SECONDARY when the member already has a live primary', async () => {
       const deps = makeDeps({
         afterWrite: [contactRow(PRIMARY, { isPrimary: true }), contactRow(NEW_ID)],
       });
@@ -261,6 +294,56 @@ describe('contact CRUD — in-tx exactly-one-primary policy (FR-012)', () => {
       const result = await addContact(memberId, addInput, meta, deps);
 
       expect(result.ok, JSON.stringify(result)).toBe(true);
+      const draft = vi.mocked(deps.contactRepo.addInTx).mock.calls[0]?.[1] as { isPrimary: boolean };
+      expect(draft.isPrimary).toBe(false);
+      const types = vi.mocked(deps.audit.recordInTx).mock.calls.map(
+        (c) => (c[2] as { type: string }).type,
+      );
+      expect(types).toEqual(['contact_created']);
+    });
+
+    it('locks the member row BEFORE the insert (lock order)', async () => {
+      const deps = makeDeps({
+        afterWrite: [contactRow(PRIMARY, { isPrimary: true }), contactRow(NEW_ID)],
+      });
+
+      await addContact(memberId, addInput, meta, deps);
+
+      const lock = vi.mocked(deps.memberRepo.findByIdInTx).mock.invocationCallOrder[0]!;
+      const write = vi.mocked(deps.contactRepo.addInTx).mock.invocationCallOrder[0]!;
+      expect(lock).toBeLessThan(write);
+    });
+
+    it('makes the FIRST contact of a member with no live primary the primary, audited as a designation', async () => {
+      // T041 reliability review M3: a member with no live primary (a
+      // contact-less import, or an archived member being repaired for FR-014)
+      // could never get one — add hardcoded secondary, promote has nothing to
+      // demote. The first contact of such a member is its primary.
+      const deps = makeDeps({ afterWrite: [contactRow(NEW_ID, { isPrimary: true })] });
+      vi.mocked(deps.contactRepo.listByMemberInTx)
+        .mockResolvedValueOnce(ok([])) // pre-insert read: nobody
+        .mockResolvedValueOnce(ok([contactRow(NEW_ID, { isPrimary: true }) as unknown as Contact]));
+      vi.mocked(deps.contactRepo.addInTx).mockResolvedValue(
+        ok(contactRow(NEW_ID, { isPrimary: true }) as unknown as Contact),
+      );
+
+      const result = await addContact(memberId, addInput, meta, deps);
+
+      expect(result.ok, JSON.stringify(result)).toBe(true);
+      const draft = vi.mocked(deps.contactRepo.addInTx).mock.calls[0]?.[1] as { isPrimary: boolean };
+      expect(draft.isPrimary).toBe(true);
+      expect(deps.audit.recordInTx).toHaveBeenCalledWith(
+        expect.anything(),
+        tenant,
+        expect.objectContaining({
+          type: 'member_primary_contact_changed',
+          payload: expect.objectContaining({
+            member_id: memberId,
+            old_primary_contact_id: null,
+            new_primary_contact_id: NEW_ID,
+          }),
+        }),
+      );
     });
 
     it('still lets staff add the first contact to an ARCHIVED member (FR-014 remedy)', async () => {

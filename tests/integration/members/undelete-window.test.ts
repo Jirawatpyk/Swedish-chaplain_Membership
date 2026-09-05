@@ -142,8 +142,8 @@ describe('undelete-member integration (T136, US7)', () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.status).toBe('active');
-    expect(result.value.archivedAt).toBeNull();
+    expect(result.value.member.status).toBe('active');
+    expect(result.value.member.archivedAt).toBeNull();
 
     const rows = await runInTenant(tenant.ctx, (tx) =>
       tx.select().from(members).where(eq(members.memberId, memberId)),

@@ -86,6 +86,19 @@ type Props = {
   readonly contact?: ContactInitial;
   /** Single ReactElement used as the dialog trigger (DialogTrigger render). */
   readonly trigger: React.ReactElement;
+  /**
+   * 108 PR-B — a caller-specific description for ADD mode. The restore
+   * dialog opens this form for a member with NO contacts, where the generic
+   * "add another person … as a secondary contact" is wrong on both counts:
+   * there is no other person, and the first contact becomes the primary.
+   */
+  readonly description?: string;
+  /**
+   * 108 PR-B — fires after a successful ADD (never on a refused one), before
+   * the router refresh. The restore dialog uses it to restore the member
+   * again in place now that a primary exists.
+   */
+  readonly onSaved?: () => void;
 };
 
 type FormValues = {
@@ -108,7 +121,14 @@ type FormValues = {
   art14_attested: boolean;
 };
 
-export function ContactFormDialog({ memberId, mode, contact, trigger }: Props) {
+export function ContactFormDialog({
+  memberId,
+  mode,
+  contact,
+  trigger,
+  description,
+  onSaved,
+}: Props) {
   const t = useTranslations('admin.members.contactForm');
   const tf = useTranslations('admin.members.create.fields');
   const tA = useTranslations('admin.members.detail.contactActions');
@@ -277,6 +297,7 @@ export function ContactFormDialog({ memberId, mode, contact, trigger }: Props) {
           return;
         }
         toast.success(tA('addSuccess'));
+        onSaved?.();
       } else {
         // edit — patch only changed fields. `email` is included only when the
         // field is editable (unlinked contact); the route updates it in place.
@@ -362,7 +383,7 @@ export function ContactFormDialog({ memberId, mode, contact, trigger }: Props) {
               {mode === 'add' ? t('title') : t('editTitle')}
             </DialogTitle>
             <DialogDescription>
-              {mode === 'add' ? t('description') : t('editDescription')}
+              {mode === 'add' ? (description ?? t('description')) : t('editDescription')}
             </DialogDescription>
           </DialogHeader>
 

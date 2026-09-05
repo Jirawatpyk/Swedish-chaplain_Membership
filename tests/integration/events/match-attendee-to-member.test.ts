@@ -387,6 +387,19 @@ describe('I2 — F6 match-attendee cascade (FR-012 5 outcomes)', () => {
         isPrimary: false, // removed ⇒ not primary (Domain invariant)
         removedAt: new Date(),
       } as unknown as typeof contacts.$inferInsert);
+      // 108 PR-B: an active member with contact rows must carry exactly one live
+      // primary at COMMIT (migration 0293). The removed contact above is the
+      // subject of this case; this filler primary sits at an unrelated domain so
+      // it can never satisfy the rule under test.
+      await tx.insert(contacts).values({
+        tenantId: tenant.ctx.slug,
+        contactId: randomUUID(),
+        memberId,
+        firstName: 'Filler',
+        lastName: 'Primary',
+        email: `filler-${randomUUID().slice(0, 8)}@filler-rule1.example`,
+        isPrimary: true,
+      } as unknown as typeof contacts.$inferInsert);
     });
 
     const result = await runInTenant(tenant.ctx, async (tx) => {
@@ -432,6 +445,19 @@ describe('I2 — F6 match-attendee cascade (FR-012 5 outcomes)', () => {
         email: 'original@ghost-co.example',
         isPrimary: false,
         removedAt: new Date(),
+      } as unknown as typeof contacts.$inferInsert);
+      // 108 PR-B: an active member with contact rows must carry exactly one live
+      // primary at COMMIT (migration 0293). The removed contact above is the
+      // subject of this case; this filler primary sits at an unrelated domain so
+      // it can never satisfy the rule under test.
+      await tx.insert(contacts).values({
+        tenantId: tenant.ctx.slug,
+        contactId: randomUUID(),
+        memberId,
+        firstName: 'Filler',
+        lastName: 'Primary',
+        email: `filler-${randomUUID().slice(0, 8)}@filler-rule2.example`,
+        isPrimary: true,
       } as unknown as typeof contacts.$inferInsert);
     });
 
@@ -503,6 +529,19 @@ describe('I2 — F6 match-attendee cascade (FR-012 5 outcomes)', () => {
         email: 'bob@shared-co.example',
         isPrimary: false,
         removedAt: new Date(),
+      } as unknown as typeof contacts.$inferInsert);
+      // 108 PR-B: an active member with contact rows must carry exactly one live
+      // primary at COMMIT (migration 0293). The removed contact above is the
+      // subject of this case; this filler primary sits at an unrelated domain so
+      // it can never satisfy the rule under test.
+      await tx.insert(contacts).values({
+        tenantId: tenant.ctx.slug,
+        contactId: randomUUID(),
+        memberId: sharedBId,
+        firstName: 'Filler',
+        lastName: 'Primary',
+        email: `filler-${randomUUID().slice(0, 8)}@filler-rule2c.example`,
+        isPrimary: true,
       } as unknown as typeof contacts.$inferInsert);
     });
 

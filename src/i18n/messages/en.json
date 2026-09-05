@@ -1828,15 +1828,17 @@
         "success": "Member restored.",
         "error": "Could not restore. Please try again.",
         "designate": {
-          "title": "Choose a primary contact to restore",
+          "title": "Choose a primary contact before restoring",
           "description": "This member has no primary contact. Receipts and other payment emails go to the primary contact, so one must be set before the member is restored. Choosing here restores the member and sets that contact as primary in one step.",
-          "noContactsDescription": "This member has no contacts left. Add a contact first — it will appear here as a choice — then restore.",
+          "noContactsDescription": "This member has no contacts left. Add one: the new contact becomes the primary contact and the member is restored.",
           "contactsLabel": "Primary contact",
           "confirm": "Restore and set as primary",
           "cancel": "Cancel",
           "addContact": "Add a contact",
           "retry": "That contact is no longer available. Choose another.",
-          "successDesignated": "Member restored and primary contact set."
+          "retryNone": "That contact is no longer available, and none remain. Add a contact to continue.",
+          "successDesignated": "Member restored and primary contact set.",
+          "addContactDescription": "Add the person who should receive this member's receipts. They become the primary contact and the member is restored."
         }
       },
       "benefits": {

@@ -58,11 +58,17 @@ import type { AuditPort } from '../ports/audit-port';
 import type { ClockPort } from '../ports/clock-port';
 import type { RenewalsCascadePort } from '../ports/renewals-cascade-port';
 
-/** A live contact the admin may designate as primary while restoring. */
+/**
+ * A live contact the admin may designate as primary while restoring. Carries
+ * the email because the question the dialog asks IS "which address should
+ * receive this member's receipts" (T041 UX review, M5); the caller already
+ * holds `members.write`, which shows every contact in full.
+ */
 export type DesignatableContact = {
   readonly contactId: ContactId;
   readonly firstName: string;
   readonly lastName: string;
+  readonly email: string;
 };
 
 export type UndeleteMemberError =
@@ -80,11 +86,26 @@ export type UndeleteMemberOptions = {
   readonly designatePrimaryContactId?: ContactId;
 };
 
+/**
+ * `designatedContactId` is the contact this call made primary, or `null` when
+ * the member already had one (including a primary that appeared between a 409
+ * and the retry) — so the caller's "primary contact set" copy is only shown
+ * when it is true (T041 reliability review, L4c).
+ */
+export type UndeleteMemberOutput = {
+  readonly member: Member;
+  readonly designatedContactId: ContactId | null;
+};
+
 export type UndeleteMemberDeps = {
   tenant: TenantContext;
   memberRepo: MemberRepo;
-  /** 108 PR-B — reads the member's contacts in-tx and applies a designation. */
-  contactRepo: Pick<ContactRepo, 'listByMemberInTx' | 'designatePrimaryInTx'>;
+  /**
+   * 108 PR-B — reads the member's contacts in-tx and applies a designation.
+   * `listByMember` (no tx) is used only when the deferred trigger refused the
+   * COMMIT and the in-tx list went with the rolled-back transaction.
+   */
+  contactRepo: Pick<ContactRepo, 'listByMemberInTx' | 'designatePrimaryInTx' | 'listByMember'>;
   audit: AuditPort;
   clock: ClockPort;
   /**
@@ -121,10 +142,30 @@ class UndeleteStateError extends Error {
   }
 }
 
+function toDesignatable(
+  rows: ReadonlyArray<{
+    readonly contactId: ContactId;
+    readonly firstName: string;
+    readonly lastName: string;
+    readonly email: string;
+    readonly removedAt: Date | null;
+  }>,
+): DesignatableContact[] {
+  return rows
+    .filter((c) => c.removedAt === null)
+    .map((c) => ({
+      contactId: c.contactId,
+      firstName: c.firstName,
+      lastName: c.lastName,
+      email: c.email,
+    }));
+}
+
 /**
- * FR-014, in-tx, before the status flip. Returns normally when the member
- * will have exactly one live primary once the flip commits; throws
- * `UndeleteStateError('no_primary_contact', …, designatable)` otherwise.
+ * FR-014, in-tx, before the status flip. Returns the contact it made primary
+ * (or `null` when one already existed) once the member is guaranteed exactly
+ * one live primary at commit; throws `UndeleteStateError('no_primary_contact',
+ * …, designatable)` otherwise.
  */
 async function ensurePrimaryBeforeRestore(
   tx: TenantTx,
@@ -132,38 +173,43 @@ async function ensurePrimaryBeforeRestore(
   options: UndeleteMemberOptions,
   meta: UndeleteMemberMeta,
   deps: UndeleteMemberDeps,
-): Promise<void> {
+): Promise<ContactId | null> {
   const rows = await deps.contactRepo.listByMemberInTx(tx, memberId);
   if (!rows.ok) throw new Error(`contacts_lookup_failed:${rows.error.code}`);
   const live = rows.value.filter((c) => c.removedAt === null);
 
   // Already satisfied — a designation passed alongside an existing primary is
   // not applied: honouring it would demote someone the admin did not name.
-  if (live.some((c) => c.isPrimary)) return;
+  if (live.some((c) => c.isPrimary)) return null;
 
-  const designatable: DesignatableContact[] = live.map((c) => ({
-    contactId: c.contactId,
-    firstName: c.firstName,
-    lastName: c.lastName,
-  }));
-  const refuse = (): never => {
+  const refuse = (designatable: ReadonlyArray<DesignatableContact>): never => {
     throw new UndeleteStateError('no_primary_contact', undefined, designatable);
   };
 
   const wanted = options.designatePrimaryContactId;
-  if (wanted === undefined) refuse();
+  if (wanted === undefined) refuse(toDesignatable(rows.value));
   // Removed, or another member's contact (IDOR) — not in `live`, refused
   // before any write.
-  if (!live.some((c) => c.contactId === wanted)) refuse();
+  if (!live.some((c) => c.contactId === wanted)) refuse(toDesignatable(rows.value));
 
   const designated = await deps.contactRepo.designatePrimaryInTx(
     tx,
     memberId,
     wanted!,
   );
-  // 0 rows = the contact was removed between our read and the UPDATE. The
-  // whole action fails (FR-014); the caller retries with a fresh list.
-  if (!designated.ok) refuse();
+  if (!designated.ok) {
+    // 0 rows = the contact was removed (or made primary) between our read
+    // and the UPDATE. The whole action fails (FR-014) — and the tx is still
+    // live after a 0-row UPDATE, so the list the caller retries with is
+    // re-read, not the one that just went stale (T041 reliability, L4b). A
+    // real DB failure is a server error, never "choose a contact"
+    // (T041 security, L4).
+    if (designated.error.code === 'repo.not_found' || designated.error.code === 'repo.conflict') {
+      const fresh = await deps.contactRepo.listByMemberInTx(tx, memberId);
+      refuse(toDesignatable(fresh.ok ? fresh.value : rows.value));
+    }
+    throw new Error(`designate_failed:${designated.error.code}`);
+  }
 
   const auditResult = await deps.audit.recordInTx(tx, deps.tenant, {
     type: 'member_primary_contact_changed',
@@ -177,6 +223,7 @@ async function ensurePrimaryBeforeRestore(
     },
   });
   if (!auditResult.ok) throw new Error('audit_failed');
+  return wanted!;
 }
 
 export async function undeleteMember(
@@ -184,7 +231,7 @@ export async function undeleteMember(
   meta: UndeleteMemberMeta,
   deps: UndeleteMemberDeps,
   options: UndeleteMemberOptions = {},
-): Promise<Result<Member, UndeleteMemberError>> {
+): Promise<Result<UndeleteMemberOutput, UndeleteMemberError>> {
   const now = deps.clock.now();
 
   try {
@@ -195,6 +242,15 @@ export async function undeleteMember(
           throw new UndeleteNotFoundError();
         throw new Error(`lookup_failed:${current.error.code}`);
       }
+
+      // GDPR Art.17 / PDPA §33 — an erased member is never restored. The
+      // member page hides the banner for one; the API had no gate of its
+      // own (T041 reliability review, L5). `erased_at` is not carried on
+      // the `Member` aggregate, so partition through the repo read every
+      // bulk path already uses.
+      const erased = await deps.memberRepo.findErasedIdsInTx(tx, deps.tenant.slug, [memberId]);
+      if (!erased.ok) throw new Error(`erased_lookup_failed:${erased.error.code}`);
+      if (erased.value.has(memberId)) throw new UndeleteStateError('undelete_erased');
 
       const transitioned = undelete(current.value, now);
       if (!transitioned.ok) {
@@ -207,7 +263,13 @@ export async function undeleteMember(
 
       // FR-014 — the state check above runs first, so a member that is not
       // archived is never designated for.
-      await ensurePrimaryBeforeRestore(tx, memberId, options, meta, deps);
+      const designatedContactId = await ensurePrimaryBeforeRestore(
+        tx,
+        memberId,
+        options,
+        meta,
+        deps,
+      );
 
       const persistResult = await deps.memberRepo.updateStatusInTx(
         tx,
@@ -229,7 +291,7 @@ export async function undeleteMember(
       });
       if (!auditResult.ok) throw new Error('audit_failed');
 
-      return persistResult.value;
+      return { member: persistResult.value, designatedContactId };
     });
 
     // Cluster 4 (2026-07-12) — F8 renewal-cycle RESTORE cascade. Runs AFTER
@@ -319,11 +381,23 @@ export async function undeleteMember(
       );
     }
     // Migration 0293's deferred trigger refused the COMMIT — only reachable
-    // when a contact changed under us after the in-tx read. No list can be
-    // offered from a rolled-back tx; the route sends an empty one and the
-    // dialog's next attempt re-reads.
+    // when a contact changed under us after the in-tx read. The in-tx list
+    // went with the rolled-back tx, so offer a fresh (non-tx) read: an empty
+    // list would render "no contacts left" for a member that has some
+    // (T041 reliability review, L4a).
     if (primaryContactTriggerViolation(e) !== null) {
-      return err({ type: 'state_error', code: 'no_primary_contact' });
+      const fresh = await deps.contactRepo.listByMember(deps.tenant, memberId);
+      if (!fresh.ok) {
+        logger.warn(
+          { memberId, requestId: meta.requestId, code: fresh.error.code },
+          'undelete-member: contacts re-read after COMMIT refusal failed — offering no list',
+        );
+      }
+      return err({
+        type: 'state_error',
+        code: 'no_primary_contact',
+        designatable: fresh.ok ? toDesignatable(fresh.value) : [],
+      });
     }
     logger.error(
       { err: e, memberId, requestId: meta.requestId },

@@ -476,4 +476,143 @@ describe('108 — primary-contact invariant triggers (migration 0293)', () => {
     });
     expect(await livePrimaryCount(s.memberId)).toBe(1);
   });
+
+  // ── T041 review round 1 (migration + security reviewers) ──────────────────
+
+  it('re-parenting the primary to another member leaves the OLD member at zero → fails at COMMIT', async () => {
+    // No app path moves a contact between members, but this migration
+    // declares itself the backstop for bare SQL and scripts — and
+    // scripts/seed-e2e-portal-invoices.ts does exactly this move. The trigger
+    // must check the member the row LEFT, not only the one it joined.
+    const a = await seedMember([{ isPrimary: true }, { isPrimary: false }]);
+    const b = await seedMember([{ isPrimary: true }]);
+    await expectCommitRefused(
+      db.transaction(async (tx) => {
+        await tx
+          .update(contacts)
+          .set({ memberId: b.memberId, isPrimary: false })
+          .where(eq(contacts.contactId, a.contactIds[0]!));
+      }),
+    );
+    expect(await livePrimaryCount(a.memberId)).toBe(1);
+    expect(await livePrimaryCount(b.memberId)).toBe(1);
+  });
+
+  it('counts within the row\'s tenant only: the same member_id in another tenant does not mask a violation', async () => {
+    // (tenant_id, member_id) is the composite key, so two tenants can hold the
+    // same member uuid. If the function ever dropped its tenant_id filter, B's
+    // count would read A's primary and pass silently.
+    const other = await createTestTenant('test-swecham');
+    try {
+      const sharedMemberId = randomUUID() as MemberId;
+      const rand = randomUUID().slice(0, 8);
+      for (const t of [tenant, other]) {
+        await runInTenant(t.ctx, async (tx) => {
+          if (t === other) {
+            await tx.insert(tenantInvoiceSettings).values({
+              tenantId: t.ctx.slug,
+              currencyCode: 'THB',
+              vatRate: '0.0700',
+              registrationFeeSatang: 100000n,
+              legalNameTh: 'Other TH',
+              legalNameEn: 'Other EN',
+              taxId: '0000000000001',
+              registeredAddressTh: 'Other Address TH',
+              registeredAddressEn: 'Other Address EN',
+              invoiceNumberPrefix: 'INV',
+              creditNoteNumberPrefix: 'CN',
+            });
+            await tx.insert(membershipPlans).values({
+              tenantId: t.ctx.slug,
+              planId: 'test-plan',
+              planYear: 2026,
+              planName: { en: 'Test Plan' },
+              description: { en: 'Test description' },
+              sortOrder: 10,
+              planCategory: 'corporate',
+              memberTypeScope: 'company',
+              annualFeeMinorUnits: 1_000_000,
+              createdBy: admin.userId,
+              updatedBy: admin.userId,
+              benefitMatrix: {
+                eblast_per_year: 1,
+                website_page_type: 'member_news_update',
+                homepage_logo_category: 'regular',
+                directory_listing_size: 'half_page',
+                event_discount_scope: 'all_employees',
+                events_cobranded_access: false,
+                cultural_tickets_per_year: 0,
+                m2m_benefits_access: true,
+                business_referrals: true,
+                tailor_made_services: false,
+                partnership: null,
+              },
+            });
+          }
+          await tx.insert(members).values({
+            tenantId: t.ctx.slug,
+            memberId: sharedMemberId,
+            memberNumber: nextSeedMemberNumber(),
+            companyName: `Shared Id Co ${rand}`,
+            country: 'TH',
+            planId: 'test-plan',
+            planYear: 2026,
+            status: 'active',
+          });
+          await tx.insert(contacts).values({
+            tenantId: t.ctx.slug,
+            contactId: randomUUID() as ContactId,
+            memberId: sharedMemberId,
+            firstName: 'P',
+            lastName: t.ctx.slug,
+            email: `shared-${t.ctx.slug}-${rand}@example.com`,
+            preferredLanguage: 'en',
+            isPrimary: true,
+          });
+        });
+      }
+      // Remove B's only primary. A's primary must NOT be counted for B.
+      await expectCommitRefused(
+        runInTenant(other.ctx, async (tx) => {
+          await tx
+            .update(contacts)
+            .set({ isPrimary: false, removedAt: new Date() })
+            .where(eq(contacts.memberId, sharedMemberId));
+        }),
+      );
+    } finally {
+      await other.cleanup();
+    }
+  });
+
+  it('the function pins a safe search_path and is not executable by PUBLIC', async () => {
+    const rows = (await db.execute(sql`
+      SELECT p.proconfig,
+             has_function_privilege('chamber_app', p.oid, 'EXECUTE') AS app_can_execute,
+             p.proacl::text AS acl
+        FROM pg_proc p
+       WHERE p.proname = 'contacts_assert_one_primary'
+    `)) as unknown as ReadonlyArray<{
+      proconfig: string[] | null;
+      app_can_execute: boolean;
+      acl: string | null;
+    }>;
+    expect(rows).toHaveLength(1);
+    // pg_catalog FIRST (CVE-2018-1058 class), pg_temp LAST and explicit (a
+    // session's TEMP TABLE members must not shadow the real one).
+    expect(rows[0]!.proconfig).toContain('search_path=pg_catalog, public, pg_temp');
+    expect(rows[0]!.app_can_execute).toBe(true);
+    // A NULL acl means the default (PUBLIC may EXECUTE). After REVOKE … FROM
+    // PUBLIC the acl is explicit and carries no `=X` (PUBLIC) entry.
+    expect(rows[0]!.acl).not.toBeNull();
+    expect(rows[0]!.acl).not.toMatch(/(^|,)=X\//);
+  });
+
+  it('a plain (tenant_id, member_id) index backs the per-row count at commit', async () => {
+    const rows = (await db.execute(sql`
+      SELECT indexname FROM pg_indexes
+       WHERE tablename = 'contacts' AND indexname = 'contacts_tenant_member_all_idx'
+    `)) as unknown as ReadonlyArray<{ indexname: string }>;
+    expect(rows).toHaveLength(1);
+  });
 });

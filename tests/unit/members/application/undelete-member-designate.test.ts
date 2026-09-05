@@ -33,7 +33,7 @@ vi.mock('@/lib/metrics', () => ({
 
 import { undeleteMember, asMemberId } from '@/modules/members';
 import { asTenantContext } from '@/modules/tenants';
-import type { ContactId } from '@/modules/members/domain/contact';
+import type { Contact, ContactId } from '@/modules/members/domain/contact';
 import type { Member } from '@/modules/members/domain/member';
 import type { UndeleteMemberDeps } from '@/modules/members/application/use-cases/undelete-member';
 
@@ -97,12 +97,17 @@ function contact(
 function makeDeps(contacts: ReadonlyArray<ReturnType<typeof contact>>) {
   const memberRepo = {
     findByIdInTx: vi.fn().mockResolvedValue(ok(makeMember())),
+    // T041 reliability review L5 — erased members are partitioned out first.
+    findErasedIdsInTx: vi.fn().mockResolvedValue(ok(new Set())),
     updateStatusInTx: vi
       .fn()
       .mockResolvedValue(ok({ ...makeMember(), status: 'active', archivedAt: null })),
   };
   const contactRepo = {
     listByMemberInTx: vi.fn().mockResolvedValue(ok(contacts)),
+    // Non-tx read used only when the deferred trigger refused the COMMIT and
+    // the in-tx list is gone with the rolled-back tx.
+    listByMember: vi.fn().mockResolvedValue(ok(contacts)),
     designatePrimaryInTx: vi
       .fn()
       .mockImplementation(async (_tx: unknown, _m: unknown, contactId: ContactId) => {
@@ -261,6 +266,129 @@ describe('undeleteMember — primary-contact designation (FR-014)', () => {
     if (result.error.type !== 'state_error') return;
     expect(result.error.code).toBe('no_primary_contact');
     // FR-014: the designation and the unarchive succeed or fail together.
+    expect(deps.memberRepo.updateStatusInTx).not.toHaveBeenCalled();
+  });
+
+  // ── T041 review round 1 ────────────────────────────────────────────────────
+
+  it('reports WHICH contact it designated, and null when a primary already existed', async () => {
+    // L4c: the banner's success toast must not claim "primary contact set"
+    // when a primary appeared between the 409 and the retry and nothing was
+    // designated.
+    const withPrimary = makeDeps([contact(LIVE_A, { isPrimary: true })]);
+    const r1 = await undeleteMember(memberId, meta, withPrimary, {
+      designatePrimaryContactId: LIVE_A,
+    });
+    expect(r1.ok, JSON.stringify(r1)).toBe(true);
+    if (!r1.ok) return;
+    expect(r1.value.designatedContactId).toBeNull();
+    expect(r1.value.member.status).toBe('active');
+
+    const without = makeDeps([contact(LIVE_A), contact(LIVE_B)]);
+    const r2 = await undeleteMember(memberId, meta, without, {
+      designatePrimaryContactId: LIVE_B,
+    });
+    expect(r2.ok, JSON.stringify(r2)).toBe(true);
+    if (!r2.ok) return;
+    expect(r2.value.designatedContactId).toBe(LIVE_B);
+  });
+
+  it('a DB failure during the designation is a server_error, not "choose a contact"', async () => {
+    // Security review L4: `repo.unexpected` must not be collapsed into 409.
+    const deps = makeDeps([contact(LIVE_A), contact(LIVE_B)]);
+    vi.mocked(deps.contactRepo.designatePrimaryInTx).mockResolvedValue(
+      err({ code: 'repo.unexpected' as const, cause: new Error('boom') }),
+    );
+
+    const result = await undeleteMember(memberId, meta, deps, {
+      designatePrimaryContactId: LIVE_B,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.type).toBe('server_error');
+    expect(deps.memberRepo.updateStatusInTx).not.toHaveBeenCalled();
+  });
+
+  it('a lost designation race refuses with a FRESH list, not the one read before the UPDATE', async () => {
+    // L4b: the tx is still live after a 0-row UPDATE, so re-read.
+    const deps = makeDeps([contact(LIVE_A), contact(LIVE_B)]);
+    vi.mocked(deps.contactRepo.listByMemberInTx)
+      .mockResolvedValueOnce(ok([contact(LIVE_A), contact(LIVE_B)] as unknown as Contact[]))
+      .mockResolvedValueOnce(
+        ok([contact(LIVE_A), contact(LIVE_B, { removed: true })] as unknown as Contact[]),
+      );
+    vi.mocked(deps.contactRepo.designatePrimaryInTx).mockResolvedValue(
+      err({ code: 'repo.not_found' as const }),
+    );
+
+    const result = await undeleteMember(memberId, meta, deps, {
+      designatePrimaryContactId: LIVE_B,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    if (result.error.type !== 'state_error') return;
+    expect(result.error.code).toBe('no_primary_contact');
+    expect(result.error.designatable?.map((c) => c.contactId)).toEqual([LIVE_A]);
+  });
+
+  it('the designatable list carries the email — the choice IS "which address gets the receipts"', async () => {
+    // UX review M5.
+    const deps = makeDeps([contact(LIVE_A), contact(LIVE_B)]);
+
+    const result = await undeleteMember(memberId, meta, deps);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    if (result.error.type !== 'state_error') return;
+    expect(result.error.designatable?.[0]).toEqual(
+      expect.objectContaining({ contactId: LIVE_A, email: expect.stringContaining('@') }),
+    );
+  });
+
+  it('when the deferred trigger refuses the COMMIT, offers the list from a fresh read — never an empty list', async () => {
+    // L4a: the rolled-back tx took the in-tx list with it; an empty list
+    // would render the "no contacts left" variant for a member that has some.
+    const deps = makeDeps([contact(LIVE_A), contact(LIVE_B)]);
+    // Nothing designated → normally refused before any write. Force the path
+    // where the in-tx read sees a primary (so the flip is attempted) and the
+    // COMMIT is then refused by the trigger.
+    vi.mocked(deps.contactRepo.listByMemberInTx).mockResolvedValueOnce(
+      ok([contact(LIVE_A, { isPrimary: true })] as unknown as Contact[]),
+    );
+    const { runInTenant } = await import('@/lib/db');
+    vi.mocked(runInTenant).mockImplementationOnce(async (_ctx, fn) => {
+      await fn({ __tx: true } as never);
+      const e = Object.assign(new Error('Failed query'), {
+        cause: Object.assign(
+          new Error('primary-contact-invariant: member x in tenant t has 0 live primary contact(s)'),
+          { code: '23514' },
+        ),
+      });
+      throw e;
+    });
+
+    const result = await undeleteMember(memberId, meta, deps);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    if (result.error.type !== 'state_error') return;
+    expect(result.error.code).toBe('no_primary_contact');
+    expect(deps.contactRepo.listByMember).toHaveBeenCalledWith(tenant, memberId);
+    expect(result.error.designatable?.map((c) => c.contactId)).toEqual([LIVE_A, LIVE_B]);
+  });
+
+  it('refuses to restore an ERASED member (the API had no erased_at gate)', async () => {
+    // L5: the page hides the banner for an erased member; the route did not.
+    const deps = makeDeps([contact(LIVE_A, { isPrimary: true })]);
+    vi.mocked(deps.memberRepo.findErasedIdsInTx).mockResolvedValue(ok(new Set([memberId])));
+
+    const result = await undeleteMember(memberId, meta, deps);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toEqual({ type: 'state_error', code: 'undelete_erased' });
     expect(deps.memberRepo.updateStatusInTx).not.toHaveBeenCalled();
   });
 

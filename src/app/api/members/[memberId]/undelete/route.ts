@@ -172,7 +172,13 @@ export async function POST(
         });
 
   if (result.ok) {
-    const responseBody = serialiseMember(result.value);
+    const responseBody = {
+      ...serialiseMember(result.value.member),
+      // Which contact this call made primary, or null when none was needed —
+      // the client's "primary contact set" copy keys on this, not on what it
+      // sent (a primary can appear between a 409 and the retry).
+      designated_primary_contact_id: result.value.designatedContactId,
+    };
     await rememberIdempotentResponse(tenant, keyCheck.key, bodyHash, {
       status: 200,
       body: responseBody,
@@ -188,25 +194,31 @@ export async function POST(
       );
     case 'state_error':
       if (result.error.code === 'no_primary_contact') {
-        // Not remembered under the idempotency key: the admin's next call
-        // with the same key WILL carry a designation and must run.
-        return NextResponse.json(
-          {
-            error: {
-              code: 'no_primary_contact',
-              message:
-                'This member has no primary contact. Choose one to restore.',
-              details: {
-                designatable: (result.error.designatable ?? []).map((c) => ({
-                  contact_id: c.contactId,
-                  first_name: c.firstName,
-                  last_name: c.lastName,
-                })),
-              },
+        // Remembered under the key like every other terminal response: the
+        // key was RESERVED before the use case ran, so leaving it without a
+        // response makes a replay of the same call an `idempotency_conflict`
+        // rather than a repeat of this (non-mutating, safe-to-replay) answer
+        // (T041 security review, M2). A new designation is a NEW key — the
+        // UI mints one per click.
+        const body = {
+          error: {
+            code: 'no_primary_contact',
+            message: 'This member has no primary contact. Choose one to restore.',
+            details: {
+              designatable: (result.error.designatable ?? []).map((c) => ({
+                contact_id: c.contactId,
+                first_name: c.firstName,
+                last_name: c.lastName,
+                email: c.email,
+              })),
             },
           },
-          { status: 409 },
-        );
+        };
+        await rememberIdempotentResponse(tenant, keyCheck.key, bodyHash, {
+          status: 409,
+          body,
+        });
+        return NextResponse.json(body, { status: 409 });
       }
       if (result.error.code === 'state.undelete_window_expired') {
         return NextResponse.json(

@@ -1828,15 +1828,17 @@
         "success": "Medlemmen har återställts.",
         "error": "Kunde inte återställa. Försök igen.",
         "designate": {
-          "title": "Välj en primär kontakt för att återställa",
+          "title": "Välj en primär kontakt innan du återställer",
           "description": "Den här medlemmen saknar primär kontakt. Kvitton och andra betalningsmejl går till den primära kontakten, så en måste anges innan medlemmen återställs. Valet här återställer medlemmen och gör kontakten primär i ett steg.",
-          "noContactsDescription": "Den här medlemmen har inga kontakter kvar. Lägg först till en kontakt — den visas då som ett val här — och återställ sedan.",
+          "noContactsDescription": "Den här medlemmen har inga kontakter kvar. Lägg till en: den nya kontakten blir primär kontakt och medlemmen återställs.",
           "contactsLabel": "Primär kontakt",
           "confirm": "Återställ och ange som primär",
           "cancel": "Avbryt",
           "addContact": "Lägg till en kontakt",
           "retry": "Den kontakten är inte längre tillgänglig. Välj en annan.",
-          "successDesignated": "Medlemmen återställd och primär kontakt angiven."
+          "retryNone": "Den kontakten är inte längre tillgänglig, och inga andra finns kvar. Lägg till en kontakt för att fortsätta.",
+          "successDesignated": "Medlemmen har återställts och den primära kontakten är angiven.",
+          "addContactDescription": "Lägg till den person som ska få medlemmens kvitton. Personen blir primär kontakt och medlemmen återställs."
         }
       },
       "benefits": {

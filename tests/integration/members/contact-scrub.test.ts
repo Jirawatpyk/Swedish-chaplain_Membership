@@ -168,11 +168,21 @@ describe('ContactRepo.scrubPiiForMemberInTx', () => {
     });
     const erasedAt = new Date('2026-06-16T00:00:00.000Z');
 
-    const result = await runInTenant(tenant.ctx, (tx) =>
-      drizzleContactRepo.scrubPiiForMemberInTx(tx, memberId as MemberId, {
-        erasedAt,
-      }),
-    );
+    const result = await runInTenant(tenant.ctx, async (tx) => {
+      const scrubbed = await drizzleContactRepo.scrubPiiForMemberInTx(
+        tx,
+        memberId as MemberId,
+        { erasedAt },
+      );
+      // 108 PR-B: real erasure co-commits `erased_at` with the scrub
+      // (erase-member.ts); a scrub that leaves an ACTIVE member with no live
+      // primary is exactly what migration 0293 refuses at COMMIT (FR-013).
+      await tx
+        .update(members)
+        .set({ erasedAt })
+        .where(eq(members.memberId, memberId));
+      return scrubbed;
+    });
     expect(result.ok, JSON.stringify(result)).toBe(true);
     if (result.ok) {
       expect(result.value.scrubbedCount).toBe(1);

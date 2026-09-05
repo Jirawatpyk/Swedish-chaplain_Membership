@@ -138,6 +138,16 @@ CREATE CONSTRAINT TRIGGER members_one_primary_ct AFTER UPDATE OF status, erased_
   - at commit the member row may be **gone** (member hard-delete runs bottom-up:
     contacts first, then `members`, in one tx). The function must `RETURN` when the
     member no longer exists, or every hard-delete script breaks under `0293`.
+- As shipped after the T041 round-1 review (see `reviews/pr-b.md`): the check lives in
+  `contacts_check_member_primary(p_tenant text, p_member uuid)` and the trigger body calls it
+  for `NEW` and — when an UPDATE changed `(tenant_id, member_id)` — for `OLD` too, so a
+  re-parented contact cannot leave its old member at zero; both functions carry
+  `SET search_path = pg_catalog, public, pg_temp` and `REVOKE ALL … FROM PUBLIC` before the
+  `chamber_app` grant; a plain index `contacts_tenant_member_all_idx (tenant_id, member_id)`
+  serves the per-row count (every other contacts index is partial); and the migration's first
+  statement is `LOCK TABLE members, contacts IN SHARE ROW EXCLUSIVE MODE` so no writer can
+  commit a violation between the pre-check and `CREATE TRIGGER` (the migrator runs the file in
+  one transaction).
 
 ### 2.3 `marketing_unsubscribes` — migration 0296 (PR-C)
 

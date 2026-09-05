@@ -32,6 +32,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { runInTenant } from '@/lib/db';
+import { eq } from 'drizzle-orm';
 import { asMemberId } from '@/modules/members';
 import { drizzleContactRepo } from '@/modules/members/infrastructure/db/drizzle-contact-repo';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
@@ -179,6 +180,13 @@ describe('listAllLinkedUserIdsForMemberInTx — survives the removed_at scrub sh
         { erasedAt: new Date() },
       );
       expect(scrub.ok, JSON.stringify(scrub)).toBe(true);
+      // 108 PR-B: real erasure co-commits `erased_at` with the scrub; without
+      // it this tx would leave an ACTIVE member with no live primary, which
+      // migration 0293 refuses at COMMIT (FR-013).
+      await tx
+        .update(members)
+        .set({ erasedAt: new Date() })
+        .where(eq(members.memberId, memberId));
 
       // CONTROL: the FILTERED read now returns [] — the removed_at shadow
       // hides the login. This is the exact gap the bug exploited on a re-drive.

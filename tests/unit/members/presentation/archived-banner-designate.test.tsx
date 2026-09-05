@@ -26,6 +26,19 @@ vi.mock('sonner', () => ({
     warning: vi.fn(),
   },
 }));
+// Stub the nested add-contact form: expose its `onSaved` as a button.
+vi.mock('@/components/members/contact-form-dialog', () => ({
+  ContactFormDialog: (props: { trigger: React.ReactElement; onSaved?: () => void }) => (
+    <div data-testid="cfd-stub">
+      {props.trigger}
+      <button type="button" data-testid="cfd-saved" onClick={() => props.onSaved?.()}>
+        saved
+      </button>
+    </div>
+  ),
+}));
+const D = enMessages.admin.members.undelete.designate;
+const A = enMessages.admin.members.archive;
 
 const MEMBER_ID = '11111111-1111-4111-8111-111111111111';
 const CONTACT_B = '77777777-7777-4777-8777-777777777777';
@@ -112,7 +125,13 @@ describe('ArchivedBanner — designate a primary on restore (108 FR-014)', () =>
           },
         }),
       )
-      .mockResolvedValueOnce(jsonResponse(200, { member_id: MEMBER_ID, status: 'active' }));
+      .mockResolvedValueOnce(
+        jsonResponse(200, {
+          member_id: MEMBER_ID,
+          status: 'active',
+          designated_primary_contact_id: CONTACT_B,
+        }),
+      );
     renderBanner();
 
     fireEvent.click(screen.getByRole('button', { name: /restore/i }));
@@ -137,8 +156,61 @@ describe('ArchivedBanner — designate a primary on restore (108 FR-014)', () =>
     expect(key2).toBeTruthy();
     expect(key2).not.toBe(key1);
 
-    await waitFor(() => expect(toastSuccess).toHaveBeenCalled());
-    expect(refresh).toHaveBeenCalled();
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith(D.successDesignated));
+    await waitFor(() => expect(refresh).toHaveBeenCalled());
+  });
+
+  it('says only "restored" (not "primary contact set") when the server designated nobody (L4c)', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse(409, {
+          error: {
+            code: 'no_primary_contact',
+            details: {
+              designatable: [
+                { contact_id: CONTACT_B, first_name: 'Bo', last_name: 'Beta', email: 'bo@x.example' },
+              ],
+            },
+          },
+        }),
+      )
+      // A primary appeared between the 409 and the retry: nothing designated.
+      .mockResolvedValueOnce(
+        jsonResponse(200, { member_id: MEMBER_ID, status: 'active', designated_primary_contact_id: null }),
+      );
+    renderBanner();
+    fireEvent.click(screen.getByRole('button', { name: /restore/i }));
+    await screen.findByRole('alertdialog');
+    fireEvent.click(screen.getByText('Bo Beta'));
+    await waitFor(() =>
+      expect(screen.getByRole('radio', { name: /Bo Beta/ })).toBeChecked(),
+    );
+    fireEvent.click(screen.getByTestId('restore-primary-confirm'));
+
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith(A.undeleteSuccess));
+    expect(toastSuccess).not.toHaveBeenCalledWith(D.successDesignated);
+  });
+
+  it('after "Add a contact" saves, restores again in place — the new contact is now the primary (H2)', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse(409, { error: { code: 'no_primary_contact', details: { designatable: [] } } }),
+      )
+      // addContact made the first contact primary, so the retry succeeds.
+      .mockResolvedValueOnce(
+        jsonResponse(200, { member_id: MEMBER_ID, status: 'active', designated_primary_contact_id: null }),
+      );
+    renderBanner();
+    fireEvent.click(screen.getByRole('button', { name: /restore/i }));
+    await screen.findByRole('alertdialog');
+    expect(screen.getByTestId('restore-primary-add-contact')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('cfd-saved'));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    const [, secondInit] = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(secondInit.body).toBeUndefined();
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith(A.undeleteSuccess));
   });
 
   it('a second 409 (the chosen contact vanished) re-opens the dialog with the fresh list, no crash', async () => {
@@ -178,10 +250,14 @@ describe('ArchivedBanner — designate a primary on restore (108 FR-014)', () =>
     fireEvent.click(screen.getByTestId('restore-primary-confirm'));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    // The stale choice is gone; the dialog now offers what the server has.
+    // The stale choice is gone; the dialog now offers what the server has,
+    // and says so INSIDE the dialog — a toast is aria-hidden behind the modal
+    // (T041 UX review, H1).
     await screen.findByRole('radio', { name: /Ann Alpha/ });
     expect(screen.queryByRole('radio', { name: /Bo Beta/ })).toBeNull();
-    expect(toastError).toHaveBeenCalledTimes(1);
+    expect(toastError).not.toHaveBeenCalled();
+    expect(screen.getByRole('alertdialog')).toContainElement(screen.getByRole('alert'));
+    expect(screen.getByRole('alert')).toHaveTextContent(D.retry);
   });
 
   it('a plain restore (member already has a primary) still works without any dialog', async () => {

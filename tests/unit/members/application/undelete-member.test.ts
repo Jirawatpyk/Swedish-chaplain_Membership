@@ -94,6 +94,8 @@ function makeDeps(overrides: Partial<{
     updateStatusInTx: vi.fn().mockResolvedValue(
       overrides.updateStatusResult ?? ok(makeMember({ status: 'active', archivedAt: null })),
     ),
+    // 108 PR-B (T041 L5) — the erased gate partitions through this read.
+    findErasedIdsInTx: vi.fn().mockResolvedValue(ok(new Set())),
     updateFields: vi.fn(),
     updateFieldsInTx: vi.fn(),
     searchDirectory: vi.fn(),
@@ -114,8 +116,9 @@ function makeDeps(overrides: Partial<{
   // designation paths are covered in undelete-member-designate.test.ts.
   const contactRepo = {
     listByMemberInTx: vi.fn().mockResolvedValue(
-      ok([{ contactId: 'p', firstName: 'P', lastName: 'Q', isPrimary: true, removedAt: null }]),
+      ok([{ contactId: 'p', firstName: 'P', lastName: 'Q', email: 'p@example.com', isPrimary: true, removedAt: null }]),
     ),
+    listByMember: vi.fn().mockResolvedValue(ok([])),
     designatePrimaryInTx: vi.fn(),
   };
   return {
@@ -140,7 +143,7 @@ describe('undeleteMember use case (R009)', () => {
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.status).toBe('active');
+    expect(result.value.member.status).toBe('active');
     expect(deps.audit.recordInTx).toHaveBeenCalledWith(
       expect.anything(),
       tenant,
@@ -169,7 +172,7 @@ describe('undeleteMember use case (R009)', () => {
     // must NOT fail the undelete.
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.status).toBe('active');
+    expect(result.value.member.status).toBe('active');
   });
 
   it('Cluster 4 — restore adapter throw is swallowed: undelete still succeeds', async () => {

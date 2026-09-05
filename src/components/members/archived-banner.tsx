@@ -29,6 +29,7 @@ import {
 import {
   RestorePrimaryDialog,
   type DesignatableContact,
+  type RestorePrimaryNotice,
 } from '@/components/members/restore-primary-dialog';
 
 /** The 409 `no_primary_contact` payload shape (snake_case on the wire). */
@@ -37,6 +38,7 @@ type NoPrimaryDetails = {
     readonly contact_id: string;
     readonly first_name: string;
     readonly last_name: string;
+    readonly email: string;
   }>;
 };
 
@@ -66,6 +68,7 @@ export function ArchivedBanner({
   // `finalFocus` lands back on the Restore button.
   const [designateOpen, setDesignateOpen] = useState(false);
   const [designatable, setDesignatable] = useState<ReadonlyArray<DesignatableContact>>([]);
+  const [notice, setNotice] = useState<RestorePrimaryNotice | null>(null);
   const restoreButtonRef = useRef<HTMLButtonElement>(null);
   // Set the moment a restore SUCCEEDS. `router.refresh()` then re-renders the
   // server tree and this whole banner unmounts, so returning focus to the
@@ -108,21 +111,30 @@ export function ArchivedBanner({
       });
       if (res.ok) {
         restoredRef.current = true;
-        setDesignateOpen(false);
-        // The plain-restore path never opened the dialog, so no close cycle
-        // will move focus for us — move it to the surviving landmark here
-        // before the refresh unmounts this banner.
-        if (designatePrimaryContactId === undefined) {
+        // The SERVER says whether anyone was designated — a primary can
+        // appear between the 409 and the retry, in which case the call sent a
+        // designation and nothing was set (T041 reliability review, L4c).
+        const body = (await res.json().catch(() => ({}))) as {
+          designated_primary_contact_id?: string | null;
+        };
+        const designated =
+          typeof body.designated_primary_contact_id === 'string' &&
+          body.designated_primary_contact_id.length > 0;
+        toast.success(designated ? tD('successDesignated') : t('undeleteSuccess'));
+        if (designateOpen) {
+          // Close first; the refresh runs from `onCloseComplete` so the
+          // dialog's close cycle (and `finalFocus`) finishes BEFORE the server
+          // tree re-renders and this banner unmounts (T041 UX review, M8).
+          setDesignateOpen(false);
+        } else {
+          // The plain-restore path never opened the dialog, so no close
+          // cycle will move focus — move it to the surviving landmark here
+          // before the refresh unmounts this banner.
           document.getElementById('main-content')?.focus();
+          startTransition(() => {
+            router.refresh();
+          });
         }
-        toast.success(
-          designatePrimaryContactId === undefined
-            ? t('undeleteSuccess')
-            : tD('successDesignated'),
-        );
-        startTransition(() => {
-          router.refresh();
-        });
       } else {
         const data = (await res.json().catch(() => ({}))) as {
           error?: { code?: string; details?: NoPrimaryDetails };
@@ -133,14 +145,23 @@ export function ArchivedBanner({
         if (code === 'no_primary_contact') {
           // Not an error to toast about on the first pass — it is the
           // question the dialog asks. On a SECOND pass (the chosen contact
-          // vanished under us) say so, and offer the fresh list.
+          // vanished under us) say so INSIDE the dialog — a toast would sit
+          // behind the modal's aria-hidden (T041 UX review, H1) — and offer
+          // the fresh list.
           const list = (data.error?.details?.designatable ?? []).map((c) => ({
             contactId: c.contact_id,
             firstName: c.first_name,
             lastName: c.last_name,
+            email: c.email,
           }));
           setDesignatable(list);
-          if (designatePrimaryContactId !== undefined) toast.error(tD('retry'));
+          setNotice(
+            designatePrimaryContactId === undefined
+              ? null
+              : list.length === 0
+                ? 'contact_gone_none'
+                : 'contact_gone',
+          );
           setDesignateOpen(true);
         } else if (code === 'archive_window_expired') {
           toast.error(t('windowExpiredToast'));
@@ -240,10 +261,23 @@ export function ArchivedBanner({
     </Card>
     <RestorePrimaryDialog
       open={designateOpen}
-      onOpenChange={setDesignateOpen}
+      onOpenChange={(next) => {
+        setDesignateOpen(next);
+        if (!next) setNotice(null);
+      }}
+      onCloseComplete={() => {
+        if (!restoredRef.current) return;
+        startTransition(() => {
+          router.refresh();
+        });
+      }}
       memberId={memberId}
       designatable={designatable}
+      notice={notice}
       onConfirm={(contactId) => void handleUndelete(contactId)}
+      // The zero-contacts door: `addContact` made the new contact the
+      // primary, so restoring again — in place, no click hunting — succeeds.
+      onContactAdded={() => void handleUndelete()}
       submitting={loading}
       finalFocus={dialogFinalFocus}
     />

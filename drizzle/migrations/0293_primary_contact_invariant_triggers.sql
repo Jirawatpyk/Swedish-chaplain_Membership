@@ -48,14 +48,34 @@
 -- may not — and it filters by the ROW'S tenant_id explicitly so that reach never
 -- becomes a cross-tenant count (mirrors the 0009 audit trigger + 0291).
 --
--- COST. One indexed count per changed contact row at commit (the partial index
--- contacts_one_primary_per_member serves the live-primary predicate). The
--- trigger is not narrowed with UPDATE OF because it must also cover INSERT and
--- DELETE and a single named trigger is what the tests pin; a name-only edit
--- queues one cheap count.
+-- COST. One count per changed contact row at commit, served by the plain
+-- (tenant_id, member_id) index added below — the existing indexes on contacts
+-- are all PARTIAL (`removed_at IS NULL` / the one-primary predicate) and the
+-- count must see removed rows too, so none of them applied (T041 migration
+-- review, L2). The trigger is not narrowed with UPDATE OF because it must also
+-- cover INSERT and DELETE and a single named trigger is what the tests pin; a
+-- name-only edit queues one cheap count. Postgres does not de-duplicate queued
+-- constraint-trigger events: a row touched k times is checked k times.
 --
 -- REPLAYABLE: DROP TRIGGER IF EXISTS before CREATE (CREATE TRIGGER has no OR
--- REPLACE — cf. 0291's dev-branch incident), CREATE OR REPLACE on the function.
+-- REPLACE — cf. 0291's dev-branch incident), CREATE OR REPLACE on the functions.
+--
+-- T041 review round 1 (security + migration reviewers) folded in:
+--   - search_path is `pg_catalog, public, pg_temp` — pg_catalog FIRST (the
+--     CVE-2018-1058 class; 0124 already moved the other trigger functions to
+--     that order), pg_temp LAST and explicit so a session's TEMP TABLE named
+--     `members` can never shadow the real one and turn the guard fail-open;
+--   - EXECUTE is revoked from PUBLIC before the chamber_app grant;
+--   - an UPDATE that moves a contact between members checks the member it LEFT
+--     as well as the one it joined (a script does exactly this move);
+--   - the whole batch takes SHARE ROW EXCLUSIVE on both tables first, so no
+--     writer can commit a violation between the pre-check and CREATE TRIGGER.
+
+-- ── Close the pre-check → CREATE TRIGGER window ──────────────────────────────
+-- The migrator runs this whole file in ONE transaction. This is the same lock
+-- CREATE CONSTRAINT TRIGGER takes anyway, so it adds no new contention class;
+-- new writers queue for the few ms the batch needs, reads are unaffected.
+LOCK TABLE "members", "contacts" IN SHARE ROW EXCLUSIVE MODE;--> statement-breakpoint
 
 -- ── Pre-check (FR-010a): fail the deploy if the data already violates ────────
 -- Counts only — no id, name or address is raised. On a violation the operator
@@ -86,73 +106,98 @@ BEGIN
   END IF;
 END $$;--> statement-breakpoint
 
--- ── The guard ────────────────────────────────────────────────────────────────
-CREATE OR REPLACE FUNCTION public.contacts_assert_one_primary()
-RETURNS trigger
+-- ── The index the count runs on ──────────────────────────────────────────────
+CREATE INDEX IF NOT EXISTS "contacts_tenant_member_all_idx"
+  ON "contacts" ("tenant_id", "member_id");--> statement-breakpoint
+
+-- ── The check, for ONE member ────────────────────────────────────────────────
+-- Split out so the trigger can run it for the member a row LEFT as well as the
+-- one it joined. Raises with ids only (member uuid + tenant slug + the count —
+-- never an address); the count is machine-read by the app (0 → no primary).
+CREATE OR REPLACE FUNCTION public.contacts_check_member_primary(p_tenant text, p_member uuid)
+RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, pg_catalog
+SET search_path = pg_catalog, public, pg_temp
 AS $$
 DECLARE
-  v_tenant_id      text;
-  v_member_id      uuid;
   v_status         text;
   v_erased_at      timestamptz;
   v_contact_rows   int;
   v_live_primaries int;
 BEGIN
-  -- Resolve the member this row belongs to. On DELETE there is no NEW.
-  IF TG_TABLE_NAME = 'contacts' AND TG_OP = 'DELETE' THEN
-    v_tenant_id := OLD.tenant_id;
-    v_member_id := OLD.member_id;
-  ELSE
-    v_tenant_id := NEW.tenant_id;
-    v_member_id := NEW.member_id;
-  END IF;
-
   -- Member row gone at commit → the bottom-up hard-delete chain (contacts,
   -- then members, one tx). Nothing left to guard.
   SELECT m.status::text, m.erased_at
     INTO v_status, v_erased_at
-    FROM members m
-   WHERE m.tenant_id = v_tenant_id
-     AND m.member_id = v_member_id;
+    FROM public.members m
+   WHERE m.tenant_id = p_tenant
+     AND m.member_id = p_member;
   IF NOT FOUND THEN
-    RETURN NULL;
+    RETURN;
   END IF;
 
   -- Archived keeps its final snapshot (FR-003 as written in 005); erased is the
   -- one sanctioned zero-primary state (FR-013).
   IF v_status = 'archived' OR v_erased_at IS NOT NULL THEN
-    RETURN NULL;
+    RETURN;
   END IF;
 
   SELECT count(*),
          count(*) FILTER (WHERE c.is_primary AND c.removed_at IS NULL)
     INTO v_contact_rows, v_live_primaries
-    FROM contacts c
-   WHERE c.tenant_id = v_tenant_id
-     AND c.member_id = v_member_id;
+    FROM public.contacts c
+   WHERE c.tenant_id = p_tenant
+     AND c.member_id = p_member;
 
   -- AMENDMENT scope: a member with no contact rows at all is not checked.
   IF v_contact_rows = 0 THEN
-    RETURN NULL;
+    RETURN;
   END IF;
 
   IF v_live_primaries <> 1 THEN
-    -- Ids only in the message (never an address). The count is machine-read by
-    -- the app: 0 → no_primary_contact, otherwise primary_contact_race.
     RAISE EXCEPTION
       'primary-contact-invariant: member % in tenant % has % live primary contact(s)',
-      v_member_id, v_tenant_id, v_live_primaries
+      p_member, p_tenant, v_live_primaries
       USING ERRCODE = '23514';  -- check_violation, like last-admin-protection
   END IF;
+END;
+$$;--> statement-breakpoint
 
+-- ── The trigger body ─────────────────────────────────────────────────────────
+CREATE OR REPLACE FUNCTION public.contacts_assert_one_primary()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public, pg_temp
+AS $$
+BEGIN
+  IF TG_TABLE_NAME = 'contacts' THEN
+    -- On DELETE there is no NEW; on an UPDATE that re-parents the row the
+    -- member it LEFT may be the one that ends at zero.
+    IF TG_OP = 'DELETE' THEN
+      PERFORM public.contacts_check_member_primary(OLD.tenant_id, OLD.member_id);
+      RETURN NULL;
+    END IF;
+    IF TG_OP = 'UPDATE'
+       AND (OLD.tenant_id, OLD.member_id) IS DISTINCT FROM (NEW.tenant_id, NEW.member_id) THEN
+      PERFORM public.contacts_check_member_primary(OLD.tenant_id, OLD.member_id);
+    END IF;
+    PERFORM public.contacts_check_member_primary(NEW.tenant_id, NEW.member_id);
+    RETURN NULL;
+  END IF;
+
+  -- members: UPDATE OF status, erased_at
+  PERFORM public.contacts_check_member_primary(NEW.tenant_id, NEW.member_id);
   RETURN NULL;  -- AFTER trigger: return value is ignored
 END;
 $$;--> statement-breakpoint
 
--- Without EXECUTE an app session (chamber_app) cannot fire the trigger at all.
+-- Not callable by anyone but the app role (and the owner). Without EXECUTE an
+-- app session (chamber_app) cannot fire the trigger at all.
+REVOKE ALL ON FUNCTION public.contacts_check_member_primary(text, uuid) FROM PUBLIC;--> statement-breakpoint
+REVOKE ALL ON FUNCTION public.contacts_assert_one_primary() FROM PUBLIC;--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION public.contacts_check_member_primary(text, uuid) TO chamber_app;--> statement-breakpoint
 GRANT EXECUTE ON FUNCTION public.contacts_assert_one_primary() TO chamber_app;--> statement-breakpoint
 
 DROP TRIGGER IF EXISTS "contacts_one_primary_ct" ON "contacts";--> statement-breakpoint
