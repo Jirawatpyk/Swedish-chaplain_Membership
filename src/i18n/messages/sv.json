@@ -1378,6 +1378,11 @@
             "generic": "Något gick fel. Försök igen.",
             "serverBusy": "Servern är upptagen. Försök igen om en stund."
           }
+        },
+        "noPrimaryBanner": {
+          "title": "Ingen primär kontakt — betalningsmejl skickas inte",
+          "body": "Fakturor, kvitton, annulleringsbesked och kreditnotor för den här medlemmen köas till ingen förrän en kontakt är markerad som primär. Lägg till eller befordra en kontakt för att återuppta dem.",
+          "cta": "Öppna medlemmen för att åtgärda"
         }
       },
       "timeline": {
@@ -2027,6 +2032,7 @@
         "cancel": "Avbryt",
         "success": "Kreditnota utfärdad.",
         "successWithNumber": "Kreditnota {number} utfärdad.",
+        "successWithNumberNoNotice": "Faktura {number} annullerades, men inget annulleringsmeddelande skickades — medlemmen saknar primär kontakt.",
         "emailSkippedNoRecipient": "Köparen har ingen e-post registrerad — skicka kreditnotan manuellt.",
         "membershipCancellationFailedNotice": "Kreditnotan utfärdades, men medlemskapet kunde inte avslutas automatiskt — avsluta det manuellt från sidan Förnyelser.",
         "membershipEffect": {
@@ -2101,7 +2107,9 @@
         "toast": {
           "resendSuccess": "Köad — {recipient} får en ny kopia inom kort.",
           "resendRateLimited": "Denna kreditnota skickades nyligen igen. Vänta några minuter och försök igen.",
-          "resendFailed": "Kunde inte köa en återsändning. Försök igen."
+          "resendFailed": "Kunde inte köa en återsändning. Försök igen.",
+          "resendNoRecipient": "Ingen primär kontakt — ingenting skickades. Lägg till eller befordra en kontakt på medlemssidan och skicka sedan igen.",
+          "resendNoBuyerEmail": "Ingen köpar-e-post på denna evenemangsfaktura — ingenting skickades. Utfärda den på nytt med en köpar-e-post, eller skicka PDF:en manuellt."
         },
         "fields": {
           "issueDate": "Utfärdandedatum",
@@ -2616,6 +2624,8 @@
           "resendNoReceipt": "Det finns inget kvitto att skicka (kombinerat läge eller obetald).",
           "resendNotIssued": "Fakturan är fortfarande ett utkast — utfärda den först för att mejla en kopia.",
           "resendFailed": "Kunde inte köa en återsändning. Försök igen.",
+          "resendNoRecipient": "Ingen primär kontakt — ingenting skickades. Lägg till eller befordra en kontakt på medlemssidan och skicka sedan igen.",
+          "resendNoBuyerEmail": "Ingen köpar-e-post på denna evenemangsfaktura — ingenting skickades. Utfärda den på nytt med en köpar-e-post, eller skicka PDF:en manuellt.",
           "receiptPending": "Kvitto-PDF förbereds fortfarande. Försök igen om en stund.",
           "receiptFailed": "Kvitto-PDF kunde inte genereras: {reason}. Kontakta support om problemet kvarstår.",
           "receiptForbidden": "Du har inte behörighet till detta kvitto.",
@@ -5465,9 +5475,10 @@
       "receiptNumberCombinedTooltip": "Kombinerat läge — kvittot återanvänder fakturanumret",
       "receiptNumberCombinedAria": "Kvitto använder fakturans dokumentnummer (kombinerat läge)",
       "toast": {
-        "resendSuccess": "Köad — du får en ny kopia inom kort.",
+        "resendSuccess": "Kopia köad — den går till organisationens primära kontakt.",
         "resendRateLimited": "Du bad om en kopia nyligen. Vänta några minuter och försök igen.",
         "resendFailed": "Kunde inte köa en ny kopia. Försök igen.",
+        "resendNoRecipient": "Ingenting skickades — ditt medlemskap saknar en registrerad kontaktadress. Kontakta kammarens personal så uppdaterar vi den.",
         "downloadInProgress": "Förbereder nedladdning…",
         "invoiceForbidden": "Du har inte behörighet till denna faktura.",
         "invoiceNotFound": "Faktura hittades inte.",
@@ -5991,6 +6002,7 @@
         "reasonRateLimitedWithSeconds": "För många försök. Vänta {seconds} sekunder och försök igen.",
         "reasonAuth": "Din session har gått ut. Logga in igen.",
         "reasonMembershipTerminated": "Ditt medlemskap har avslutats. Kontakta kammaren för att återaktivera medlemskapet innan du betalar.",
+        "reasonNoPrimaryContact": "Detta medlemskap saknar primär kontakt, så PromptPay kan inte användas. Kontakta kammarens personal, eller betala med kort i stället.",
         "reasonServer": "Vår betalningstjänst är tillfälligt otillgänglig.",
         "reasonNetwork": "Nätverksfel. Kontrollera din anslutning och försök igen.",
         "reasonCardDeclined": "Ditt kort avvisades.",
@@ -6271,6 +6283,7 @@
       "receipt_pdf_downloaded": "Kvitto-PDF nedladdat",
       "tax_receipt_issued": "Skattekvitto utfärdat (ใบกำกับภาษี/ใบเสร็จรับเงิน)",
       "tenant_receipt_prefix_changed": "Dokumentnummer-prefix ändrat",
+      "auto_email_skipped_no_recipient": "Automatiskt e-postmeddelande hoppades över — ingen primär kontakt",
       "invoice_buyer_identity_invalid": "Köparens uppgifter ogiltiga — utfärdande blockerat",
       "sign_in_failure": "Inloggning misslyckades",
       "sign_out": "Utloggad",

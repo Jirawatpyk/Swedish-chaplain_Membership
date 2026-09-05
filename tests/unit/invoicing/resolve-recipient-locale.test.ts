@@ -4,12 +4,13 @@
  * a member preference is honoured; a null member (non-member event buyer) and
  * an unset preference both fall through to `undefined` (outbox → 'en').
  */
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { resolveRecipientLocale } from '@/modules/invoicing/application/lib/resolve-recipient-locale';
 import type { RecipientLocalePort } from '@/modules/invoicing/application/ports/recipient-locale-port';
+import { makeRecipientLocaleFake } from '../../helpers/recipient-locale-fake';
 
 function makePort(returns: 'en' | 'th' | 'sv' | null): RecipientLocalePort {
-  return { getMemberEmailLocale: vi.fn(async () => returns) };
+  return makeRecipientLocaleFake({ locale: returns });
 }
 
 describe('resolveRecipientLocale', () => {

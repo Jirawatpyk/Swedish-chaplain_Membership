@@ -32,6 +32,7 @@ import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import { makeMemberIdentitySnapshot } from '@/modules/invoicing/domain/value-objects/member-identity-snapshot';
 import { makeTenantIdentitySnapshot } from '@/modules/invoicing/domain/value-objects/tenant-identity-snapshot';
 import type { InvoiceFixtureOverrides } from '../../helpers/invoice-fixture-overrides';
+import { makeRecipientLocaleFake } from '../../helpers/recipient-locale-fake';
 
 const TENANT = 'test-tenant';
 const INVOICE_UUID = '11111111-2222-4333-8444-555555555555';
@@ -176,13 +177,12 @@ function creditNoteFixture(): CreditNote {
 function makeDeps(
   invoice: Invoice | null,
   cn: CreditNote | null = null,
+  recipientLocaleOverride?: RecipientLocalePort,
 ) {
   const audit = { emit: vi.fn(async () => {}) };
   const outbox = { enqueue: vi.fn(async () => {}) };
   // Email-locale audit 2026-07-16 — default no stored preference (→ 'en').
-  const recipientLocale: RecipientLocalePort = {
-    getMemberEmailLocale: vi.fn(async () => null),
-  };
+  const recipientLocale: RecipientLocalePort = recipientLocaleOverride ?? makeRecipientLocaleFake();
   const invoiceRepo = {
     withTx: vi.fn(),
     insertDraft: vi.fn(),
@@ -222,7 +222,12 @@ const adminActor = {
 describe('resendPdf', () => {
   it('invoice variant — enqueues invoice_pdf_resent outbox row + audits with member_id', async () => {
     const invoice = issuedInvoice();
-    const deps = makeDeps(invoice);
+    // 108 — the live primary happens to be the same person the snapshot
+    // named, which is the ordinary case: nothing about the row changes.
+    const deps = makeDeps(invoice, null, makeRecipientLocaleFake({
+      email: 'member@example.com',
+      locale: 'th',
+    }));
     const r = await resendPdf(deps, {
       tenantId: TENANT,
       kind: 'invoice',
@@ -260,8 +265,11 @@ describe('resendPdf', () => {
 
   it('invoice variant — member prefers Thai → outbox row carries recipientLocale=th (email-locale audit 2026-07-16)', async () => {
     const invoice = issuedInvoice();
-    const deps = makeDeps(invoice);
-    deps.recipientLocale.getMemberEmailLocale = vi.fn(async () => 'th' as const);
+    // 108 — address AND locale come from one live primary-contact read.
+    const deps = makeDeps(invoice, null, makeRecipientLocaleFake({
+      email: 'member@example.com',
+      locale: 'th',
+    }));
     const r = await resendPdf(deps, {
       tenantId: TENANT,
       kind: 'invoice',
@@ -270,7 +278,7 @@ describe('resendPdf', () => {
       actor: adminActor,
     });
     expect(r.ok).toBe(true);
-    expect(deps.recipientLocale.getMemberEmailLocale).toHaveBeenCalledWith(
+    expect(deps.recipientLocale.getMemberEmailRecipient).toHaveBeenCalledWith(
       null,
       TENANT,
       'member-m1',
@@ -283,8 +291,10 @@ describe('resendPdf', () => {
 
   it('credit-note variant — member prefers Thai → outbox row carries recipientLocale=th (email-locale audit 2026-07-16)', async () => {
     const cn = creditNoteFixture(); // originalInvoiceMemberId = 'member-m1'
-    const deps = makeDeps(null, cn);
-    deps.recipientLocale.getMemberEmailLocale = vi.fn(async () => 'th' as const);
+    const deps = makeDeps(null, cn, makeRecipientLocaleFake({
+      email: 'member@example.com',
+      locale: 'th',
+    }));
     const r = await resendPdf(deps, {
       tenantId: TENANT,
       kind: 'credit_note',
@@ -292,7 +302,7 @@ describe('resendPdf', () => {
       actor: adminActor,
     });
     expect(r.ok).toBe(true);
-    expect(deps.recipientLocale.getMemberEmailLocale).toHaveBeenCalledWith(
+    expect(deps.recipientLocale.getMemberEmailRecipient).toHaveBeenCalledWith(
       null,
       TENANT,
       'member-m1',
@@ -557,6 +567,60 @@ describe('resendPdf', () => {
     expect(deps.audit.emit).not.toHaveBeenCalled();
   });
 
+  it('impossible buyer is still not_issued when its snapshot address is empty too', async () => {
+    // Review round 3 finding #12. 108 inserted the recipient resolve ABOVE this
+    // guard, and for a row with no member the resolver reads the snapshot: an
+    // empty address there returns `no_recipient` FIRST, so the caller was told
+    // "no primary contact — add one" about an invoice that has no member at
+    // all, and `resend_pdf_invoice_inconsistent_buyer` — the only signal that a
+    // row violating `invoices_subject_fields_ck` exists — never fired.
+    const invoice = issuedInvoice({
+      memberId: null,
+      eventRegistrationId: null,
+      memberIdentitySnapshot: memberSnap(''),
+    });
+    const deps = makeDeps(invoice);
+    const r = await resendPdf(deps, {
+      tenantId: TENANT,
+      kind: 'invoice',
+      invoiceId: INVOICE_UUID,
+      variant: 'invoice',
+      actor: adminActor,
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('not_issued');
+    expect(deps.outbox.enqueue).not.toHaveBeenCalled();
+    expect(deps.audit.emit).not.toHaveBeenCalled();
+  });
+
+  it('a NON-MEMBER event invoice with an empty typed address is no_buyer_email', async () => {
+    // Round-4 finding #6. `create-event-invoice-draft` permits '' and the
+    // snapshot's zod allows `z.literal('')`, so this row is reachable. It must
+    // NOT return `no_recipient`, whose copy reads "add or promote a contact on
+    // the member page" — there is no member and no member page. It also used to
+    // leave no trace at all: the audit arm needs a member to attribute to, and
+    // nothing counted the skip.
+    const invoice = issuedInvoice({
+      memberId: null,
+      eventRegistrationId: 'evt-reg-1',
+      memberIdentitySnapshot: memberSnap(''),
+    });
+    const deps = makeDeps(invoice);
+    const r = await resendPdf(deps, {
+      tenantId: TENANT,
+      kind: 'invoice',
+      invoiceId: INVOICE_UUID,
+      variant: 'invoice',
+      actor: adminActor,
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('no_buyer_email');
+    expect(deps.outbox.enqueue).not.toHaveBeenCalled();
+    // No audit row — there is no member to attribute one to — so the counter is
+    // the only trace, which is exactly why it must fire.
+    expect(deps.audit.emit).not.toHaveBeenCalled();
+  });
+
   it('receipt variant — no receiptPdf → no_receipt_pdf', async () => {
     const invoice = issuedInvoice(); // receiptPdf = null
     const deps = makeDeps(invoice);
@@ -612,3 +676,87 @@ describe('resendPdf', () => {
   });
 });
 
+describe('resendPdf — resends reach the LIVE primary contact (108 FR-001)', () => {
+  it('invoice resend goes to the contact who is primary NOW', async () => {
+    const invoice = issuedInvoice();
+    const deps = makeDeps(
+      invoice,
+      null,
+      makeRecipientLocaleFake({ email: 'promoted-b@example.com' }),
+    );
+
+    const r = await resendPdf(deps, {
+      tenantId: TENANT,
+      kind: 'invoice',
+      invoiceId: INVOICE_UUID,
+      variant: 'invoice',
+      actor: adminActor,
+    });
+
+    expect(r.ok).toBe(true);
+    const enqCall = (deps.outbox.enqueue as unknown as {
+      mock: { calls: unknown[][] };
+    }).mock.calls[0]![1] as Record<string, unknown>;
+    expect(enqCall.recipientEmail).toBe('promoted-b@example.com');
+  });
+
+  it('invoice resend with no live primary → no_recipient, no outbox row, audited skip', async () => {
+    const invoice = issuedInvoice();
+    const deps = makeDeps(invoice, null, makeRecipientLocaleFake({ email: null }));
+
+    const r = await resendPdf(deps, {
+      tenantId: TENANT,
+      kind: 'invoice',
+      invoiceId: INVOICE_UUID,
+      variant: 'invoice',
+      actor: adminActor,
+    });
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('no_recipient');
+    expect(deps.outbox.enqueue).not.toHaveBeenCalled();
+    expect(deps.audit.emit).toHaveBeenCalledWith(
+      null,
+      expect.objectContaining({
+        eventType: 'auto_email_skipped_no_recipient',
+        payload: expect.objectContaining({
+          email_event_type: 'invoice_pdf_resent',
+        }),
+      }),
+    );
+  });
+
+  it('credit-note resend goes to the live primary of the original invoice', async () => {
+    const cn = creditNoteFixture();
+    const deps = makeDeps(null, cn, makeRecipientLocaleFake({ email: 'promoted-b@example.com' }));
+
+    const r = await resendPdf(deps, {
+      tenantId: TENANT,
+      kind: 'credit_note',
+      creditNoteId: CN_UUID,
+      actor: adminActor,
+    });
+
+    expect(r.ok).toBe(true);
+    const enqCall = (deps.outbox.enqueue as unknown as {
+      mock: { calls: unknown[][] };
+    }).mock.calls[0]![1] as Record<string, unknown>;
+    expect(enqCall.recipientEmail).toBe('promoted-b@example.com');
+  });
+
+  it('credit-note resend with no live primary → no_recipient (the guard this arm never had)', async () => {
+    const cn = creditNoteFixture();
+    const deps = makeDeps(null, cn, makeRecipientLocaleFake({ email: null }));
+
+    const r = await resendPdf(deps, {
+      tenantId: TENANT,
+      kind: 'credit_note',
+      creditNoteId: CN_UUID,
+      actor: adminActor,
+    });
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('no_recipient');
+    expect(deps.outbox.enqueue).not.toHaveBeenCalled();
+  });
+});

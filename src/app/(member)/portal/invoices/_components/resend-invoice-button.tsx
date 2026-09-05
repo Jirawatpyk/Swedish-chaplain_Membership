@@ -73,6 +73,22 @@ export function ResendInvoiceButton({
           toast.warning(t('toast.resendRateLimited'));
           return;
         }
+        if (res.status === 409) {
+          // 108 FR-003. A member cannot fix this themselves, so the toast must
+          // name an action they CAN take. `portal.invoices.toast
+          // .resendNoRecipient` was the admin string copy-pasted byte for byte,
+          // which sent a member to "the member page" — a route their role
+          // cannot reach (review round 3 finding #5). It now points at the
+          // chamber staff, matching the portal's existing phrasing for things
+          // only staff can resolve.
+          const body = (await res.json().catch(() => null)) as
+            | { error?: { code?: string } }
+            | null;
+          if (body?.error?.code === 'no_recipient') {
+            toast.error(t('toast.resendNoRecipient'));
+            return;
+          }
+        }
         toast.error(t('toast.resendFailed'));
       } catch (err) {
         // Round 6 (R5-SF-L1 parity) — log network error to console

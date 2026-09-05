@@ -122,6 +122,14 @@ function httpStatusForUseCaseError(code: string): {
     // behind an opaque server error.
     case 'invoice_data_corrupt':
       return { status: 422, routeCode: 'invoice_data_corrupt' };
+    // 108 FR-004 — PromptPay needs a billing address of record and the member
+    // has no live primary contact. Actionable by staff, not by retrying.
+    case 'primary_contact_missing':
+      return { status: 409, routeCode: 'primary_contact_missing' };
+    // 108 FR-004 — we could not READ the contact. Transient: same 500 the
+    // escaping throw produced before, never the permanent 409 above.
+    case 'billing_recipient_read_failed':
+      return { status: 500, routeCode: 'internal_error' };
     case 'processor_unavailable':
       return { status: 502, routeCode: 'processor_unavailable' };
     // I4 (Task 7) — the F4 payability read THREW (Neon down). 500 is the SAME
@@ -264,9 +272,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       tenantId: tenantCtx.slug,
       actorUserId,
       actorMemberId,
-      // Required by Stripe `payment_method_data.billing_details.email`
-      // for server-confirmed PromptPay PIs (Card flows ignore it).
-      actorEmail: memberCtx.current.user.email,
+      // 108 FR-004 — the billing email is NOT the signed-in user's any more.
+      // A secondary contact with a portal login may pay the company's invoice;
+      // Stripe's receipt must still reach the primary contact, so the use case
+      // resolves it from the member through BillingRecipientPort.
       invoiceId: parsedBody.invoiceId,
       method,
       correlationId,

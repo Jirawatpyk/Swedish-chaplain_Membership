@@ -50,6 +50,7 @@ import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { makeDrizzleInvoiceRepo } from '@/modules/invoicing/infrastructure/repos/drizzle-invoice-repo';
 import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 import { eventRegistrationLookupAdapter } from '@/modules/invoicing/infrastructure/adapters/event-registration-lookup-adapter';
+import { makeRecipientLocaleFake } from '../../helpers/recipient-locale-fake';
 
 const CORPORATE_MATRIX: BenefitMatrix = {
   eblast_per_year: 1,
@@ -237,7 +238,7 @@ function makeIssueDeps(
     audit: { emit: vi.fn(async () => {}) },
     clock: { nowIso: () => '2026-04-18T10:00:00Z' },
     outbox: { enqueue: vi.fn(async () => {}) },
-    recipientLocale: { getMemberEmailLocale: vi.fn(async () => null) },
+    recipientLocale: makeRecipientLocaleFake(),
     currentTemplateVersion: 1,
     taxAtPayment: 'off',
   };

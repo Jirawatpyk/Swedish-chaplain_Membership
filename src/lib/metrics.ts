@@ -708,7 +708,18 @@ export const invoicingMetrics = {
    * violation upstream — a member with no contact email). Alert: any
    * sustained non-zero rate on `subject='membership'`.
    */
-  autoEmailSkipped(subject: 'membership' | 'event', reason: 'no_recipient'): void {
+  /**
+   * `subject` accepts `'unknown'` (round-5 finding #7). A credit-note RESEND
+   * holds only a `CreditNote`, which carries no invoice subject — so this
+   * counter simply did not fire on that path, and a dashboard on
+   * `invoicing.auto_email_skipped` under-reported every §86/10 resend that
+   * reached nobody. An honest third label value beats both a guessed
+   * membership/event split and a silently missing count.
+   */
+  autoEmailSkipped(
+    subject: 'membership' | 'event' | 'unknown',
+    reason: 'no_recipient',
+  ): void {
     // safeMetric parity with eventBuyerPiiRedacted / auditEmitFailed: both call
     // sites (issue-invoice + record-payment) record INSIDE the open `withTx`
     // callback, AFTER the §87 issuance / payment mutation has been written but
@@ -1106,6 +1117,30 @@ export const paymentsMetrics = {
       method,
       reason_code: reasonCode,
     });
+  },
+
+  /**
+   * `payments.billing_recipient_blocked.count{tenant,reason}` — 108 FR-004.
+   *
+   * A PromptPay initiate refused because the member's live primary contact
+   * could not supply a billing address: `missing` (no live primary contact —
+   * permanent, 409) or `read_failed` (the lookup itself failed — transient,
+   * 500). F4's equivalent condition has had `invoicing.auto_email_skipped`
+   * since this feature landed; F5's had nothing, which left the
+   * PAYMENT-BLOCKING variant — the one a member actually notices — with no
+   * counter to alert on and no way to answer "how many members cannot pay
+   * because of a contact-data problem?".
+   *
+   * Counter only. The per-member audit trail needs a new `audit_event_type`
+   * value (5 places + a migration), and reusing
+   * `auto_email_skipped_no_recipient` for it would be false — no email was
+   * skipped. Tracked as a PR-B item; see `reviews/pr-a.md` round 3.
+   */
+  billingRecipientBlocked(tenantId: string, reason: 'missing' | 'read_failed'): void {
+    counter(
+      'payments_billing_recipient_blocked_count',
+      'PromptPay initiates refused for want of a live primary-contact billing address',
+    ).add(1, { tenant: tenantId, reason });
   },
 
   /**

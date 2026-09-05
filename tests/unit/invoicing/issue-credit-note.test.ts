@@ -49,6 +49,7 @@ import type { TenantIdentitySnapshot } from '@/modules/invoicing/domain/value-ob
 import type { MemberIdentitySnapshot } from '@/modules/invoicing/domain/value-objects/member-identity-snapshot';
 import type { TenantInvoiceSettingsView } from '@/modules/invoicing/application/ports/tenant-settings-repo';
 import type { PdfRenderInput } from '@/modules/invoicing/application/ports/pdf-render-port';
+import { makeRecipientLocaleFake } from '../../helpers/recipient-locale-fake';
 
 // ---- Fixtures ---------------------------------------------------------------
 
@@ -355,9 +356,7 @@ function makeDeps(
       enqueue: vi.fn(async () => {}),
     },
     // Email-locale audit 2026-07-16 — default no stored preference (→ 'en').
-    recipientLocale: {
-      getMemberEmailLocale: vi.fn(async () => null),
-    },
+    recipientLocale: makeRecipientLocaleFake({ email: 'jane@beta.example' }),
     currentTemplateVersion: 1,
     // 8A — default: no refund in flight → the guard never fires on the existing
     // happy paths. Guard tests override with a positive count.
@@ -577,8 +576,10 @@ describe('issueCreditNote — event-fee (non-member + matched-member) Task 8', (
         buyer_is_vat_registrant: true,
       }),
     });
-    const deps = makeDeps(invoice, makeSettings({ autoEmailEnabled: true }));
-    deps.recipientLocale.getMemberEmailLocale = vi.fn(async () => 'th' as const);
+    // 108 — address AND locale come from the same live primary-contact read.
+    const deps = makeDeps(invoice, makeSettings({ autoEmailEnabled: true }), {
+      recipientLocale: makeRecipientLocaleFake({ email: 'jane@beta.example', locale: 'th' }),
+    });
     const r = await issueCreditNote(deps, {
       ...baseInput,
       requestId: 'req-cn-locale',
@@ -586,7 +587,7 @@ describe('issueCreditNote — event-fee (non-member + matched-member) Task 8', (
       reason: 'event cancelled',
     });
     expect(r.ok).toBe(true);
-    expect(deps.recipientLocale.getMemberEmailLocale).toHaveBeenCalledWith(
+    expect(deps.recipientLocale.getMemberEmailRecipient).toHaveBeenCalledWith(
       expect.anything(),
       'test-swecham',
       'member-1',
@@ -594,6 +595,69 @@ describe('issueCreditNote — event-fee (non-member + matched-member) Task 8', (
     expect(deps.outbox.enqueue).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ eventType: 'credit_note_issued', recipientLocale: 'th' }),
+    );
+  });
+
+  it('108 FR-001 — a MEMBER credit note reaches the live primary, not the frozen snapshot', async () => {
+    const invoice = makeIssuedEventInvoice({
+      memberId: 'member-1',
+      memberIdentitySnapshot: Object.freeze({
+        ...BUYER_SNAP_WITH_EMAIL,
+        buyer_is_vat_registrant: true,
+      }),
+    });
+    const deps = makeDeps(invoice, makeSettings({ autoEmailEnabled: true }), {
+      recipientLocale: makeRecipientLocaleFake({ email: 'promoted-b@beta.example' }),
+    });
+
+    const r = await issueCreditNote(deps, {
+      ...baseInput,
+      requestId: 'req-cn-live',
+      creditTotalSatang: 25_000n,
+      reason: 'event cancelled',
+    });
+
+    expect(r.ok).toBe(true);
+    expect(deps.outbox.enqueue).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        eventType: 'credit_note_issued',
+        recipientEmail: 'promoted-b@beta.example',
+      }),
+    );
+  });
+
+  it('108 FR-004 — member with no live primary: no credit-note email, audited skip, CN still issued', async () => {
+    const invoice = makeIssuedEventInvoice({
+      memberId: 'member-1',
+      memberIdentitySnapshot: Object.freeze({
+        ...BUYER_SNAP_WITH_EMAIL,
+        buyer_is_vat_registrant: true,
+      }),
+    });
+    const deps = makeDeps(invoice, makeSettings({ autoEmailEnabled: true }), {
+      recipientLocale: makeRecipientLocaleFake({ email: null }),
+    });
+
+    const r = await issueCreditNote(deps, {
+      ...baseInput,
+      requestId: 'req-cn-no-primary',
+      creditTotalSatang: 25_000n,
+      reason: 'event cancelled',
+    });
+
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.emailDelivery).toBe('skipped_no_recipient');
+    expect(deps.outbox.enqueue).not.toHaveBeenCalled();
+    expect(deps.audit.emit).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        eventType: 'auto_email_skipped_no_recipient',
+        payload: expect.objectContaining({
+          related_member_id: 'member-1',
+          email_event_type: 'credit_note_issued',
+        }),
+      }),
     );
   });
 

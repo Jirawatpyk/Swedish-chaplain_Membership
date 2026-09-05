@@ -153,11 +153,19 @@ describe('ChangeRoleDialog', () => {
       target: { value: en.admin.users.changeRole.superAdminPhrase },
     });
     fireEvent.click(screen.getByRole('button', { name: en.admin.users.changeRole.confirm }));
-    await waitFor(() =>
-      expect(screen.getByText(en.admin.users.changeRole.errors['last-admin-protection'])),
+    const alert = await screen.findByText(
+      en.admin.users.changeRole.errors['last-admin-protection'],
     );
+    // Wait for the alert to actually HOLD focus, not merely to be on screen.
+    // `errorRef.current?.focus()` runs in an effect keyed on `errorCode`, and
+    // the text lands in the DOM one flush BEFORE that effect. Waiting only for
+    // the text let the test refocus the input first and the effect then steal
+    // focus back — a race that stays hidden at normal speed (both land in the
+    // same tick) and surfaced under the instrumented coverage run, reddening a
+    // required check on `main` for reasons unrelated to any diff.
+    await waitFor(() => expect(document.activeElement).toBe(alert));
 
-    // With the alert on screen, the operator corrects the phrase.
+    // With the alert focused, the operator corrects the phrase.
     input.focus();
     fireEvent.change(input, { target: { value: 'PROMOT' } });
     await waitFor(() =>

@@ -95,6 +95,13 @@ const AUDIT_CATEGORY_OVERRIDES: ReadonlyMap<string, AuditEventCategory> = new Ma
   // arm would otherwise steal — billing-owned.
   ['event_buyer_pii_redacted', 'billing'],
   ['registration_cross_tenant_probe', 'billing'],
+  // 108 FR-004 — the trail for a §86/4 or §86/10 document that reached nobody.
+  // Its `auto_email_` prefix matches none of the billing prefixes below, so it
+  // filed under 'other' — absent from the Billing group an admin opens when
+  // asking "why did this member never get their receipt?", which is the one
+  // question it exists to answer. (Round-4 finding #3. Grouping only affects
+  // the dropdown heading, never whether an event can be filtered.)
+  ['auto_email_skipped_no_recipient', 'billing'],
   // F8 renewals cron dispatch — no renewals-family prefix.
   ['cron_dispatch_orchestrated', 'renewals'],
   // F7 broadcast consent event carries a `member_` prefix.

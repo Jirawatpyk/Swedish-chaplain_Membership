@@ -28,7 +28,7 @@ export async function getMemberPrimaryContact(
 ): Promise<Result<string | null, RepoError>> {
   try {
     return await runInTenant(deps.tenant, async (tx) =>
-      deps.memberRepo.findPrimaryContactEmailInTx(tx, memberId),
+      deps.memberRepo.findPrimaryContactEmailInTx(tx, deps.tenant.slug, memberId),
     );
   } catch (e) {
     return err({ code: 'repo.unexpected', cause: e });

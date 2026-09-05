@@ -69,7 +69,7 @@ export interface UseInitiatePaymentOptions {
   readonly translateRef: React.MutableRefObject<TranslateFn>;
   readonly onInitiating: () => void;
   readonly onSuccess: (payload: InitiateResponse) => void;
-  readonly onFailure: (reason: string) => void;
+  readonly onFailure: (reason: string, permanent: boolean) => void;
 }
 
 /**
@@ -204,8 +204,33 @@ export function useInitiatePayment(opts: UseInitiatePaymentOptions): void {
             /* non-JSON body — fall through to status mapping */
           }
           let reason: string;
+          // PERMANENT = retrying cannot change the outcome. The panel hides its
+          // Retry CTA for these (round-4 #1, closed in round 5): offering
+          // "Try again" for a terminated membership or a missing primary
+          // contact invites a member to hammer a button that can only fail,
+          // and reads as though the system is unsure what went wrong.
+          let permanent = false;
           if (response.status === 403 && bodyCode === 'membership_access_restricted') {
             reason = t('retry.reasonMembershipTerminated');
+            permanent = true;
+          } else if (response.status === 409 && bodyCode === 'primary_contact_missing') {
+            // 108 FR-004. The route already answers 409 with this code and a
+            // bilingual message, but the mapping below is by STATUS, and 409
+            // fell through to `retry.genericReason` — "Payment could not be
+            // completed", next to a Retry button, for a condition retrying
+            // cannot fix and the member cannot fix either. They would retry the
+            // QR indefinitely with nothing on screen naming the problem.
+            // (Round-4 finding #1.)
+            //
+            // The copy names what the member CAN do: ask the chamber staff, or
+            // pay by card — card collects billing details in Elements and never
+            // reads this, so it still works for them.
+            //
+            // Both this and `membership_access_restricted` above are PERMANENT,
+            // so the panel drops its Retry CTA for them — done once, for both,
+            // rather than only for the new code.
+            reason = t('retry.reasonNoPrimaryContact');
+            permanent = true;
           } else if (response.status === 429) {
             const retryAfter = response.headers.get('Retry-After');
             const seconds = retryAfter
@@ -222,7 +247,7 @@ export function useInitiatePayment(opts: UseInitiatePaymentOptions): void {
           } else {
             reason = t('retry.genericReason');
           }
-          optsRef.current.onFailure(reason);
+          optsRef.current.onFailure(reason, permanent);
           return;
         }
         const payload = (await response.json()) as InitiateResponse;
@@ -235,8 +260,10 @@ export function useInitiatePayment(opts: UseInitiatePaymentOptions): void {
       } catch (err) {
         if (cancelled) return;
         if (err instanceof DOMException && err.name === 'AbortError') return;
+        // A network error is TRANSIENT — the Retry CTA is exactly right here.
         optsRef.current.onFailure(
           optsRef.current.translateRef.current('retry.reasonNetwork'),
+          false,
         );
       }
     })();

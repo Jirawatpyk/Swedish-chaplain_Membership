@@ -1378,6 +1378,11 @@
             "generic": "Something went wrong. Please try again.",
             "serverBusy": "The server is busy. Please try again in a moment."
           }
+        },
+        "noPrimaryBanner": {
+          "title": "No primary contact — payment emails are not being sent",
+          "body": "Invoices, receipts, void notices and credit notes for this member are queued to nobody until a contact is marked as primary. Add or promote a contact to resume them.",
+          "cta": "Open the member to fix it"
         }
       },
       "timeline": {
@@ -2027,6 +2032,7 @@
         "cancel": "Cancel",
         "success": "Credit note issued.",
         "successWithNumber": "Credit note {number} issued.",
+        "successWithNumberNoNotice": "Invoice {number} was cancelled, but no cancellation notice was sent — this member has no primary contact.",
         "emailSkippedNoRecipient": "The buyer has no email on file — send the credit note manually.",
         "membershipCancellationFailedNotice": "Credit note issued, but the membership cancellation could not be completed automatically — cancel it manually from the Renewals page.",
         "membershipEffect": {
@@ -2101,7 +2107,9 @@
         "toast": {
           "resendSuccess": "Queued — {recipient} will receive a fresh copy shortly.",
           "resendRateLimited": "This credit note was resent recently. Please wait a few minutes before retrying.",
-          "resendFailed": "Could not queue a resend. Please try again."
+          "resendFailed": "Could not queue a resend. Please try again.",
+          "resendNoRecipient": "No primary contact — nothing was sent. Add or promote a contact on the member page, then resend.",
+          "resendNoBuyerEmail": "No buyer email on this event invoice — nothing was sent. Reissue it with a buyer email, or send the PDF manually."
         },
         "fields": {
           "issueDate": "Issue date",
@@ -2616,6 +2624,8 @@
           "resendNoReceipt": "No receipt PDF is available for this invoice (combined mode or unpaid).",
           "resendNotIssued": "Invoice is still a draft — issue it first to email a copy.",
           "resendFailed": "Could not queue a resend. Please try again.",
+          "resendNoRecipient": "No primary contact — nothing was sent. Add or promote a contact on the member page, then resend.",
+          "resendNoBuyerEmail": "No buyer email on this event invoice — nothing was sent. Reissue it with a buyer email, or send the PDF manually.",
           "receiptPending": "Receipt PDF is still being prepared. Please retry in a moment.",
           "receiptFailed": "Receipt PDF render failed: {reason}. Contact support if this persists.",
           "receiptForbidden": "You do not have access to this receipt.",
@@ -5465,9 +5475,10 @@
       "receiptNumberCombinedTooltip": "Combined mode — receipt reuses the invoice number",
       "receiptNumberCombinedAria": "Receipt uses the invoice document number (combined mode)",
       "toast": {
-        "resendSuccess": "Copy queued — check your inbox shortly.",
+        "resendSuccess": "Copy queued — it goes to your organisation's primary contact.",
         "resendRateLimited": "You already asked for a copy recently. Please try again in a few minutes.",
         "resendFailed": "Could not queue a fresh copy. Please try again.",
+        "resendNoRecipient": "Nothing was sent — your membership has no contact email on file. Please contact the chamber staff to update it.",
         "downloadInProgress": "Preparing your download…",
         "invoiceForbidden": "You do not have access to this invoice.",
         "invoiceNotFound": "Invoice not found.",
@@ -5991,6 +6002,7 @@
         "reasonRateLimitedWithSeconds": "Too many attempts. Please wait {seconds} seconds and try again.",
         "reasonAuth": "Your session expired. Please sign in again.",
         "reasonMembershipTerminated": "Your membership has been terminated. Please contact the chamber to reactivate your membership before paying.",
+        "reasonNoPrimaryContact": "This membership has no primary contact, so PromptPay cannot be used. Please contact the chamber staff, or pay by card instead.",
         "reasonServer": "Our payment service is temporarily unavailable.",
         "reasonNetwork": "Network error. Check your connection and try again.",
         "reasonCardDeclined": "Your card was declined.",
@@ -6271,6 +6283,7 @@
       "receipt_pdf_downloaded": "Receipt PDF downloaded",
       "tax_receipt_issued": "Tax receipt issued",
       "tenant_receipt_prefix_changed": "Document-number prefix changed",
+      "auto_email_skipped_no_recipient": "Automatic email skipped — no primary contact",
       "invoice_buyer_identity_invalid": "Buyer identity invalid — issuance blocked",
       "sign_in_failure": "Sign-in failed",
       "sign_out": "Signed out",

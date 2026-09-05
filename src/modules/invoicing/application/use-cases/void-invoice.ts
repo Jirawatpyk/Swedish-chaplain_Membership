@@ -90,7 +90,11 @@ import type { ClockPort } from '../ports/clock-port';
 import type { EmailOutboxPort } from '../ports/email-outbox-port';
 import type { RecipientLocalePort } from '../ports/recipient-locale-port';
 import type { PendingRefundGuardPort } from '../ports/pending-refund-guard-port';
-import { resolveRecipientLocale } from '../lib/resolve-recipient-locale';
+import {
+  auditAutoEmailSkippedNoRecipient,
+  resolveMoneyRecipient,
+} from '../lib/resolve-money-recipient';
+import { invoicingMetrics } from '@/lib/metrics';
 // Bug 10 — the VOID-overlay render construction, shared with the reconcile cron.
 import {
   buildVoidRenderTargets,
@@ -171,6 +175,24 @@ class VoidInvoiceInternalError extends TxAbort<VoidInvoiceError> {
   override readonly name = 'VoidInvoiceInternalError';
 }
 
+/**
+ * 108 FR-004 (round-4 finding #4) — did the §86/10 cancellation notice go out?
+ *
+ * `voidInvoice` skips the notice when the member has no live primary contact,
+ * writes the audit row, and completed — returning a bare `Invoice`, so the
+ * route and UI rendered an unqualified success and nobody was told that nobody
+ * was told. Its two siblings already report this: `issueCreditNote` returns
+ * `emailDelivery`, `recordPayment` returns `emailDispatch`. The FR-003 banner
+ * only helps an admin who happens to be on the invoice or member page; a void
+ * driven from the list or the row menu showed nothing at all.
+ */
+export type VoidEmailDelivery = 'sent' | 'skipped_no_recipient' | 'not_requested';
+
+/** The voided invoice, plus whether its cancellation notice actually left. */
+export type VoidInvoiceSuccess = Invoice & {
+  readonly emailDelivery: VoidEmailDelivery;
+};
+
 export interface VoidInvoiceDeps {
   readonly invoiceRepo: InvoiceRepo;
   readonly tenantSettingsRepo: TenantSettingsRepo;
@@ -218,7 +240,7 @@ export { sanitiseErrorReason } from '../lib/sanitise-error-reason';
 export async function voidInvoice(
   deps: VoidInvoiceDeps,
   input: VoidInvoiceInput,
-): Promise<Result<Invoice, VoidInvoiceError>> {
+): Promise<Result<VoidInvoiceSuccess, VoidInvoiceError>> {
   const invoiceId: InvoiceId = asInvoiceId(input.invoiceId);
   // B-1 — hash void_reason for the audit payload so free-text PII
   // cannot leak into the 10-year append-only audit log. The raw
@@ -256,6 +278,7 @@ export async function voidInvoice(
     readonly targetA: VoidRenderTarget;
     /** Separate §86/4 tax-receipt blob — only for a paid row with a distinct receiptPdf. */
     readonly targetB: VoidRenderTarget | null;
+    readonly emailDelivery: VoidEmailDelivery;
   };
 
   let phase1: Result<Phase1Success, VoidInvoiceError>;
@@ -471,40 +494,76 @@ export async function voidInvoice(
       const shouldAutoEmail =
         !input.suppressCancellationEmail &&
         (loaded.autoEmailOnIssue ?? settings.autoEmailEnabled);
+      // 108 FR-001 — resolve the cancellation notice's address LIVE (the frozen
+      // snapshot still names the buyer on the §86/10 document). The locale
+      // rides on the same row.
+      //
+      // Nested UNDER `shouldAutoEmail` rather than resolved above it: a
+      // suppressed void sends nothing, so there is no delivery to skip and
+      // nothing to record a skip about. The previous shape said the opposite in
+      // a comment while doing exactly this (review round 3 finding #14), and
+      // paid for the false claim with two guard conditions that could never be
+      // false — `moneyRecipient !== null` WAS `shouldAutoEmail`. A maintainer
+      // trusting that comment would look for a skip row on a suppressed void
+      // and never find one.
+      let emailDelivery: VoidEmailDelivery = 'not_requested';
       if (shouldAutoEmail) {
-        // Email-locale audit 2026-07-16 — cancellation email in the member's
-        // language (live read; non-member event buyer → undefined → 'en').
-        const recipientLocale = await resolveRecipientLocale(
+        const moneyRecipient = await resolveMoneyRecipient(
           deps.recipientLocale,
           tx,
           input.tenantId,
           memberId,
+          loaded.memberIdentitySnapshot,
         );
-        await deps.outbox.enqueue(tx, {
-          tenantId: input.tenantId,
-          eventType: 'invoice_voided',
-          recipientEmail: loaded.memberIdentitySnapshot.primary_contact_email,
-          invoiceId,
-          pdfBlobKey: loaded.pdf.blobKey,
-          pdfTemplateVersion: loaded.pdf.templateVersion,
-          ...(recipientLocale ? { recipientLocale } : {}),
-          documentNumber: mainDocNum.raw,
-          // B-1 / FR-036 — admin-entered reason rendered into the
-          // cancellation email body. Plaintext in the OUTBOX
-          // context_data is acceptable (row purged after 90 days per
-          // B-2 cron); the append-only audit log carries only
-          // `void_reason_sha256` to avoid 10-year PII retention.
-          voidReason: input.voidReason,
-          // R17-02 — sha256 of the freshly-rendered VOID-stamped MAIN bytes
-          // (Target A) we WILL upload in Phase 2. The dispatcher uses this to
-          // verify the Blob's prefetched bytes match what Phase 1
-          // committed to audit — if Phase 2 never uploads (Blob
-          // outage, cold-start timeout), the dispatcher would
-          // otherwise attach the ORIGINAL un-stamped invoice bytes
-          // to a cancellation email. Integrity check preempts that
-          // by permanently-failing the row.
-          expectedPdfSha256: targetA.rendered.sha256,
-        });
+        if (moneyRecipient.kind === 'no_recipient') {
+          emailDelivery = 'skipped_no_recipient';
+          // 108 FR-004 — void-invoice had NO empty-recipient guard: it enqueued
+          // whatever the snapshot held, including ''. Skip + record, never fall
+          // back, and never block the void itself — a §86/10 cancellation is a
+          // statutory act that cannot wait for someone to fix a contact row.
+          if (memberId !== null) {
+            await auditAutoEmailSkippedNoRecipient(deps.audit, tx, {
+              tenantId: input.tenantId,
+              requestId: input.requestId ?? null,
+              actorUserId: input.actorUserId,
+              memberId,
+              emailEventType: 'invoice_voided',
+              subject: loaded.invoiceSubject,
+              invoiceId,
+            });
+          } else {
+            invoicingMetrics.autoEmailSkipped(loaded.invoiceSubject, 'no_recipient');
+          }
+        } else {
+          const recipientLocale =
+            moneyRecipient.kind === 'member' ? (moneyRecipient.locale ?? undefined) : undefined;
+          await deps.outbox.enqueue(tx, {
+            tenantId: input.tenantId,
+            eventType: 'invoice_voided',
+            recipientEmail: moneyRecipient.email,
+            invoiceId,
+            pdfBlobKey: loaded.pdf.blobKey,
+            pdfTemplateVersion: loaded.pdf.templateVersion,
+            ...(recipientLocale ? { recipientLocale } : {}),
+            documentNumber: mainDocNum.raw,
+            // B-1 / FR-036 — admin-entered reason rendered into the
+            // cancellation email body. Plaintext in the OUTBOX
+            // context_data is acceptable (row purged after 90 days per
+            // B-2 cron); the append-only audit log carries only
+            // `void_reason_sha256` to avoid 10-year PII retention.
+            voidReason: input.voidReason,
+            // R17-02 — sha256 of the freshly-rendered VOID-stamped MAIN bytes
+            // (Target A) we WILL upload in Phase 2. The dispatcher uses this to
+            // verify the Blob's prefetched bytes match what Phase 1
+            // committed to audit — if Phase 2 never uploads (Blob
+            // outage, cold-start timeout), the dispatcher would
+            // otherwise attach the ORIGINAL un-stamped invoice bytes
+            // to a cancellation email. Integrity check preempts that
+            // by permanently-failing the row.
+            expectedPdfSha256: targetA.rendered.sha256,
+          });
+          emailDelivery = 'sent';
+        }
       }
 
       // H. Plan-change / void-on-reissue unlink (Phase 2, Step 2.4). For a
@@ -528,7 +587,7 @@ export async function voidInvoice(
         });
       }
 
-      return ok({ voided, targetA, targetB });
+      return ok({ voided, targetA, targetB, emailDelivery });
     });
   } catch (e) {
     if (e instanceof VoidInvoiceInternalError) {
@@ -546,7 +605,7 @@ export async function voidInvoice(
   }
 
   if (!phase1.ok) return err(phase1.error);
-  const { voided, targetA, targetB } = phase1.value;
+  const { voided, targetA, targetB, emailDelivery } = phase1.value;
 
   // Phase 2 — post-commit Blob overwrite + sha sync, PER TARGET. Best-effort:
   // on failure the invoice is ALREADY committed as void in the DB. State after
@@ -751,6 +810,7 @@ export async function voidInvoice(
   // with the unchanged bytes).
   return ok({
     ...voided,
+    emailDelivery,
     pdf:
       voided.pdf && syncedSha.invoice
         ? { ...voided.pdf, sha256: syncedSha.invoice }

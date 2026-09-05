@@ -43,6 +43,10 @@ import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { nextSeedMemberNumber } from '../helpers/seed-member-number';
+import { makeRecipientLocaleFake } from '../../helpers/recipient-locale-fake';
+// 108 T010 — the REAL adapter, so the live-recipient case exercises the SQL.
+import { recipientLocaleAdapter } from '@/modules/invoicing/infrastructure/adapters/recipient-locale-adapter';
+import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 
 const MATRIX: BenefitMatrix = {
   eblast_per_year: 1,
@@ -302,7 +306,7 @@ function makeDeps(tenantId: string): VoidInvoiceDeps & {
         outboxCalls.push(input);
       }),
     },
-    recipientLocale: { getMemberEmailLocale: vi.fn(async () => null) },
+    recipientLocale: makeRecipientLocaleFake(),
     renderCalls,
     uploadCalls,
     outboxCalls,
@@ -362,6 +366,8 @@ describe('F4 US5 — void-invoice (T098)', () => {
     await runInTenant(tenant.ctx, async (tx) => {
       await tx.delete(invoiceLines).where(eq(invoiceLines.tenantId, tenant.ctx.slug));
       await tx.delete(invoices).where(eq(invoices.tenantId, tenant.ctx.slug));
+      // 108 — the live-recipient cases seed contacts, which FK to members.
+      await tx.delete(contacts).where(eq(contacts.tenantId, tenant.ctx.slug));
       await tx.delete(members).where(eq(members.tenantId, tenant.ctx.slug));
     });
   });
@@ -1088,4 +1094,77 @@ describe('F4 US5 — void-invoice (T098)', () => {
       ),
     ).toBeNull();
   }, 60_000);
+
+  // ── 108 T010 (FR-001/FR-003) — the cancellation notice's recipient ────────
+  //
+  // The rest of this file mocks the recipient port because it is testing void
+  // MECHANICS. These two use the real adapter against real contact rows: the
+  // notice must reach whoever is primary NOW, and when nobody is, the void must
+  // still complete (a §86/10 cancellation is a statutory act — it cannot wait
+  // for someone to fix a contact row) while recording the skip.
+
+  it('108 — the cancellation notice goes to the LIVE primary, not the snapshot address', async () => {
+    const { invoiceId, memberId } = await seedInvoice(tenant, user, planId, 'issued');
+    const promoted = `promoted-${randomUUID().slice(0, 8)}@example.com`;
+    await runInTenant(tenant.ctx, (tx) =>
+      tx.insert(contacts).values({
+        tenantId: tenant.ctx.slug,
+        contactId: randomUUID(),
+        memberId,
+        firstName: 'Promoted',
+        lastName: 'Primary',
+        email: promoted,
+        isPrimary: true,
+      }),
+    );
+    const deps = { ...makeDeps(tenant.ctx.slug), recipientLocale: recipientLocaleAdapter };
+
+    const r = await voidInvoice(deps, {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      invoiceId,
+      voidReason: 'promoted primary contact',
+    });
+
+    expect(r.ok, r.ok ? 'ok' : JSON.stringify(r)).toBe(true);
+    expect(deps.outboxCalls).toHaveLength(1);
+    const enqueued = deps.outboxCalls[0] as { recipientEmail: string };
+    expect(enqueued.recipientEmail).toBe(promoted);
+    // The snapshot address is what the pre-108 code would have used.
+    expect(enqueued.recipientEmail).not.toBe(SNAP_MEMBER.primary_contact_email);
+  });
+
+  it('108 — no live primary: the void still completes, no notice, one audited skip', async () => {
+    const { invoiceId, memberId } = await seedInvoice(tenant, user, planId, 'issued');
+    // No contacts row at all for this member — the FR-003 state.
+    const deps = { ...makeDeps(tenant.ctx.slug), recipientLocale: recipientLocaleAdapter };
+
+    const r = await voidInvoice(deps, {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      invoiceId,
+      voidReason: 'no primary contact on file',
+    });
+
+    expect(r.ok, r.ok ? 'ok' : JSON.stringify(r)).toBe(true);
+    if (r.ok) expect(r.value.status).toBe('void');
+    expect(deps.outboxCalls).toHaveLength(0);
+
+    const audit = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({ payload: auditLog.payload })
+        .from(auditLog)
+        .where(
+          and(
+            eq(auditLog.tenantId, tenant.ctx.slug),
+            eq(auditLog.eventType, 'auto_email_skipped_no_recipient'),
+            sql`${auditLog.payload}->>'invoice_id' = ${invoiceId}`,
+          ),
+        ),
+    );
+    expect(audit).toHaveLength(1);
+    const payload = audit[0]!.payload as Record<string, unknown>;
+    expect(payload.email_event_type).toBe('invoice_voided');
+    expect(payload.related_member_id).toBe(memberId);
+  });
 });

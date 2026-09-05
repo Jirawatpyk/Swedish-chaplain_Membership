@@ -24,6 +24,7 @@ import { resendEmailOutboxAdapter } from '../infrastructure/adapters/resend-emai
 import { receiptPdfRenderEnqueueAdapter } from '../infrastructure/adapters/receipt-pdf-render-enqueue-adapter';
 import { memberIdentityAdapter } from '../infrastructure/adapters/member-identity-adapter';
 import { recipientLocaleAdapter } from '../infrastructure/adapters/recipient-locale-adapter';
+import type { GetMemberMoneyRecipientStatusDeps } from './use-cases/get-member-money-recipient-status';
 import { makeClamavVirusScanner } from '../infrastructure/adapters/clamav-virus-scanner';
 import { planLookupAdapter } from '../infrastructure/adapters/plan-lookup-adapter';
 import { eventRegistrationLookupAdapter } from '../infrastructure/adapters/event-registration-lookup-adapter';
@@ -550,6 +551,17 @@ export function makeOverdueAuditPort() {
  */
 export function makeF4AuditPort() {
   return f4AuditAdapter;
+}
+
+/**
+ * 108 FR-003 — deps for the banner's "is this member reachable?" read.
+ *
+ * One port. It exists so the three admin pages that render
+ * `NoPrimaryContactBanner` never name an infra adapter themselves (Principle
+ * III: Presentation calls use cases only).
+ */
+export function makeMemberMoneyRecipientStatusDeps(): GetMemberMoneyRecipientStatusDeps {
+  return { recipientLocale: recipientLocaleAdapter };
 }
 
 export function makeResendPdfDeps(tenantId: string): ResendPdfDeps {

@@ -126,6 +126,11 @@ export const REQUIRED_ENUM_VALUES: Readonly<Record<string, readonly string[]>> =
     'refund_credit_note_waived',
     'payment_settlement_rolled_back',
     'member_plan_change_billing_effect',
+    // 108 (0292) — record-payment / void / credit-note / resend INSERT this
+    // label the first time a member has no live primary contact. A 0230-class
+    // non-persisting ADD VALUE would 500 that path in prod instead of failing
+    // the deploy here.
+    'auto_email_skipped_no_recipient',
   ],
 };
 

@@ -37,6 +37,7 @@
     "check:staff-page-guard": "tsx scripts/check-staff-page-guard.ts",
     "check:authorization-role-reads": "tsx scripts/check-authorization-role-reads.ts",
     "check:actor-role-truth": "tsx scripts/check-actor-role-truth.ts",
+    "check:money-recipient": "tsx scripts/check-money-email-recipient.ts",
     "check:api-route-guard": "tsx scripts/check-api-route-guard.ts",
     "check:audit-counts": "tsx scripts/check-cross-module-audit-counts.ts",
     "check:bundle-budgets": "tsx scripts/check-bundle-budgets.ts",

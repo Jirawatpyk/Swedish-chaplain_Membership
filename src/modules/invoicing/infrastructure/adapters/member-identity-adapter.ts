@@ -13,7 +13,7 @@
  * just a country code — the prior stub). The primary contact's first/last
  * name + email come from `contacts`.
  */
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, sql, isNull } from 'drizzle-orm';
 import type {
   MemberIdentityPort,
   MemberIdentityView,
@@ -156,6 +156,12 @@ export const memberIdentityAdapter: MemberIdentityPort = {
     const m = memberRows[0];
     if (!m) return null;
 
+    // 108 FR-009 — state the whole primary-contact rule here. `removed_at IS
+    // NULL` is implied today by migration 0009's CHECK
+    // `contacts_primary_not_removed` (a removed row cannot stay primary), so
+    // this is belt-and-braces rather than a behaviour change; it keeps every
+    // primary-contact read in the money path spelling out the same predicate
+    // instead of half of it.
     const [primaryContact] = await tx
       .select()
       .from(contacts)
@@ -164,8 +170,16 @@ export const memberIdentityAdapter: MemberIdentityPort = {
           eq(contacts.tenantId, tenantId),
           eq(contacts.memberId, memberId),
           eq(contacts.isPrimary, true),
+          isNull(contacts.removedAt),
         ),
       )
+      // At most ONE row can match, so `limit(1)` needs no ORDER BY tiebreak:
+      // `contacts_one_primary_per_member` (migration 0009) is a UNIQUE index on
+      // (tenant_id, member_id) whose WHERE clause is exactly this predicate.
+      // Review round 3 finding #13 asked for a tiebreak on the premise that the
+      // invariant was not yet enforced in the DB — it has been since 0009, and
+      // `tests/integration/invoicing/primary-contact-read-agreement.test.ts`
+      // proves the index rejects a second live primary.
       .limit(1);
 
     const regDate =

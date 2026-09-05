@@ -294,7 +294,6 @@ describe('CR-5 cross-tenant probe — payment_cross_tenant_probe audit emission 
       tenantId: tenantB.ctx.slug,
       actorUserId: userB.userId,
       actorMemberId: memberBId,
-      actorEmail: userB.email,
       invoiceId: invoiceAId,
       method: 'card',
       requestId: 'req-cr5-probe',

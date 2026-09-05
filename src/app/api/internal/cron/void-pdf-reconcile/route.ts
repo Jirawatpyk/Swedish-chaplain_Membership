@@ -32,6 +32,13 @@ import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import { db, runInTenant, type TenantTx } from '@/lib/db';
 import { verifyCronBearer } from '@/lib/cron-auth';
 import { logger } from '@/lib/logger';
+import { invoicingMetrics } from '@/lib/metrics';
+// Deep infra import, allowlisted in `invoicing-presentation-imports.test.ts`
+// alongside this route's existing `react-pdf-render-adapter` entry. The barrel
+// deliberately does NOT re-export this adapter — see the note there (round-5
+// #10): a barrel export of infrastructure is invisible to ESLint's deep-path
+// `no-restricted-imports` rule, so every future importer inherits the hole.
+import { recipientLocaleAdapter } from '@/modules/invoicing/infrastructure/adapters/recipient-locale-adapter';
 import { errKind } from '@/lib/log-id';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { asTenantContext } from '@/modules/tenants';
@@ -51,6 +58,11 @@ import {
 // this operational-infra route deep-imports it (allowlisted in
 // invoicing-presentation-imports.test.ts, mirroring receipt-pdf-reconcile).
 import { reactPdfRenderAdapter } from '@/modules/invoicing/infrastructure/adapters/react-pdf-render-adapter';
+import {
+  auditAutoEmailSkippedNoRecipient,
+  resolveMoneyRecipient,
+  type MoneyRecipientSnapshot,
+} from '@/modules/invoicing';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 
 export const runtime = 'nodejs';
@@ -144,22 +156,121 @@ async function reEnqueueVoidCancellationEmail(
   tenantId: string,
   invoiceId: string,
   newSha: string,
+  memberId: string | null,
+  snapshot: MoneyRecipientSnapshot | null,
+  /**
+   * The invoice's REAL subject, threaded rather than guessed. This site used to
+   * hardcode `'membership'` on the skip metric, so a voided EVENT invoice with a
+   * matched member was counted as a membership skip (review round 3 finding #3).
+   * Every sibling call site passes `loaded.invoiceSubject`; this one had it in
+   * hand at the caller and did not take it.
+   */
+  invoiceSubject: 'membership' | 'event',
 ): Promise<boolean> {
-  await tx.execute(sql`
-    UPDATE notifications_outbox
-       SET status = 'permanently_failed'::outbox_status,
-           last_error = 'superseded_by_void_pdf_reconcile',
-           updated_at = now()
+  // INTENT GATE, before anything else. A cancellation email is only owed when
+  // one was actually queued: `voidInvoice` called with `suppressCancellationEmail`
+  // (the void-on-reissue path) never creates an outbox row at all, and a row
+  // already `sent` means the buyer has the document.
+  //
+  // The enqueue below has always been gated this way — its `INSERT … SELECT`
+  // simply matches nothing. The SKIP arm was not, so a suppressed void wrote a
+  // ten-year `auto_email_skipped_no_recipient` row claiming a cancellation
+  // notice went undelivered for want of a contact, when none was ever going to
+  // be sent; and the ambiguous-upload leg recorded "never delivered" for a
+  // document the buyer had received. Both are append-only rows asserting an
+  // event that did not happen — the same class as a fabricated `actor_role`,
+  // and the reason `auto_email_skipped_no_recipient` carries 10-year retention
+  // is precisely that an auditor is meant to trust it. (Round-4 finding #2.)
+  const [counts] = (await tx.execute(sql`
+    SELECT count(*) AS total,
+           count(*) FILTER (WHERE status = 'sent'::outbox_status) AS sent
+      FROM notifications_outbox
      WHERE tenant_id = ${tenantId}
        AND notification_type = 'invoice_auto_email'::notification_type
        AND context_data->>'event_type' = 'invoice_voided'
        AND context_data->>'invoice_id' = ${invoiceId}
-       AND status = 'pending'
-  `);
+  `)) as unknown as Array<{ total: string | number; sent: string | number }>;
+  const totalRows = Number(counts?.total ?? 0);
+  const sentRows = Number(counts?.sent ?? 0);
+  // Nothing was ever queued → nothing to supersede, nothing to skip, nothing to
+  // record. Return before the recipient read, which would also be wasted.
+  if (totalRows === 0) return false;
+
+  // Retire the doomed original, stating the REAL reason.
+  //
+  // One statement, three reasons. Round 4 hoisted this above the branch to stop
+  // the same eleven lines being written twice (#10) — but hoisting it above the
+  // RECIPIENT RESOLVE meant every arm stamped `superseded_by_...`, including the
+  // arm where nothing supersedes anything. An operator tracing the replacement
+  // row for a skipped notice would find none, and the row itself would be
+  // asserting an event that did not happen: the same class as the audit row the
+  // intent gate above was added to stop. (Round-5 finding #5.)
+  const retireOriginal = async (reason: string): Promise<void> => {
+    await tx.execute(sql`
+      UPDATE notifications_outbox
+         SET status = 'permanently_failed'::outbox_status,
+             last_error = ${reason},
+             updated_at = now()
+       WHERE tenant_id = ${tenantId}
+         AND notification_type = 'invoice_auto_email'::notification_type
+         AND context_data->>'event_type' = 'invoice_voided'
+         AND context_data->>'invoice_id' = ${invoiceId}
+         AND status = 'pending'
+    `);
+  };
+
+  // Already delivered — retire the pending duplicate, but nothing supersedes it
+  // and there is no undelivered document to report.
+  if (sentRows > 0) {
+    await retireOriginal('duplicate_of_sent_void_notice');
+    return false;
+  }
+
+  // 108 FR-001 — resolve the recipient LIVE. This function used to copy
+  // `o.to_email` forward from the original row, which made it the last path
+  // in the system that could mint a money email addressed to a contact who
+  // had since been removed: void notifies A, staff promote B, the reconcile
+  // tick then mails A again. `check:money-recipient` cannot see it either —
+  // the token here is `to_email`, not `primary_contact_email`.
+  const recipient = await resolveMoneyRecipient(
+    recipientLocaleAdapter,
+    tx,
+    tenantId,
+    memberId,
+    snapshot,
+  );
+  if (recipient.kind === 'no_recipient') {
+    // Same rule as every other money path: no fallback. Retire the original
+    // under its own reason — nothing replaces it — and record the skip.
+    await retireOriginal('no_live_primary_contact');
+    if (memberId !== null) {
+      await auditAutoEmailSkippedNoRecipient(f4AuditAdapter, tx, {
+        tenantId,
+        requestId: null,
+        // The honest actor: no human triggered this row (see the sibling
+        // audit emits in this file, which stamp the same value).
+        actorUserId: 'system:cron',
+        memberId,
+        emailEventType: 'invoice_voided',
+        subject: invoiceSubject,
+        invoiceId,
+      });
+    } else {
+      invoicingMetrics.autoEmailSkipped(invoiceSubject, 'no_recipient');
+    }
+    return false;
+  }
+  // A replacement IS about to be enqueued, so this reason is now true.
+  await retireOriginal('superseded_by_void_pdf_reconcile');
+  // Take the locale from the SAME live row as the address. Copying `o.locale`
+  // forward would mail the new primary contact in the previous one's language —
+  // every other money path reads both from one row for exactly this reason.
+  const resolvedLocale =
+    recipient.kind === 'member' ? (recipient.locale ?? 'en') : 'en';
   const inserted = (await tx.execute(sql`
     INSERT INTO notifications_outbox
       (tenant_id, notification_type, to_email, locale, context_data, status, attempts, next_retry_at)
-    SELECT o.tenant_id, o.notification_type, o.to_email, o.locale,
+    SELECT o.tenant_id, o.notification_type, ${recipient.email}, ${resolvedLocale},
            jsonb_set(o.context_data, '{expected_pdf_sha256}', to_jsonb(${newSha}::text)),
            'pending'::outbox_status, 0, now()
       FROM notifications_outbox o
@@ -447,6 +558,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           row.tenantId,
           row.invoiceId,
           built.value.targetA.rendered.sha256,
+          loaded.memberId,
+          loaded.memberIdentitySnapshot,
+          loaded.invoiceSubject,
         );
         await repo.clearVoidPdfReconcileMarker(tx, {
           tenantId: row.tenantId,

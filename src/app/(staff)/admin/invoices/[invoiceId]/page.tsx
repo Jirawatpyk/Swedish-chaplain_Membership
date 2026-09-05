@@ -61,10 +61,15 @@ import {
   findFailedAutoEmailsByInvoice,
   resendVariantForFailedEvent,
 } from '@/modules/invoicing/infrastructure/adapters/resend-email-outbox-adapter';
-import { asInvoiceId } from '@/modules/invoicing';
+import {
+  asInvoiceId,
+  getMemberMoneyRecipientStatus,
+  makeMemberMoneyRecipientStatusDeps,
+} from '@/modules/invoicing';
 import { getMember } from '@/modules/members';
 import type { MemberId } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
+import { NoPrimaryContactBanner } from '@/components/members/no-primary-contact-banner';
 import { listPlans } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
 // Raw repo read mirrors the escape hatch used by /admin/users page.tsx —
@@ -73,6 +78,7 @@ import { buildPlansDeps } from '@/modules/plans/plans-deps';
  
 import { userRepo } from '@/modules/auth/infrastructure/db/user-repo';
 import { asUserId } from '@/modules/auth';
+import { logger } from '@/lib/logger';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { PlanBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
@@ -211,16 +217,57 @@ export default async function InvoiceDetailPage({
   // (drafts only) alongside the display name; false for a non-member event draft
   // (which the review dialog treats as non-membership anyway).
   let buyerIsVatRegistrant = false;
-  if (!snapshotName && invoice.memberId !== null) {
+  if (invoice.memberId !== null && !snapshotName) {
     const memberResult = await getMember(
       invoice.memberId as MemberId,
       { actorUserId: currentUser.id, requestId },
       buildMembersDeps(tenantCtx),
     );
     if (memberResult.ok) {
-      memberDisplayName = memberResult.value.member.companyName;
-      buyerHasTaxId = memberResult.value.member.taxId !== null;
-      buyerIsVatRegistrant = memberResult.value.member.isVatRegistered;
+      const { member: liveMember } = memberResult.value;
+      memberDisplayName = liveMember.companyName;
+      buyerHasTaxId = liveMember.taxId !== null;
+      buyerIsVatRegistrant = liveMember.isVatRegistered;
+    }
+  }
+
+  // 108 FR-003 — this invoice's money emails go to the member's LIVE primary
+  // contact, so the page has to know whether one exists.
+  //
+  // It asks a USE CASE, which asks the resolver. Two rules meet here. The
+  // banner must decide with the same function the money path decides with —
+  // the first version re-derived the predicate inline as
+  // `isPrimary && removedAt === null`, missing the empty-address case, so
+  // every money email was skipped while the banner rendered nothing. And
+  // Presentation calls use cases only (Principle III, NON-NEGOTIABLE): the
+  // second version fixed the first by wiring an infra adapter into a server
+  // component, which is the same rule broken the other way.
+  //
+  // A failed READ is not the same fact as "no contact", so it is logged and
+  // the banner hidden rather than shown — a warning that fires on a database
+  // blip trains staff to ignore it.
+  //
+  // No `status !== 'archived'` gate here, unlike the member page: an archived
+  // member's document can still be voided, credited or resent, and each of
+  // those needs an address.
+  //
+  // The erased / archived exclusions live in the use case (round-5 #2): erasure
+  // scrubs every contact, so this member is GUARANTEED to read as "no live
+  // primary" and the banner used to fire on every invoice they ever had —
+  // advising staff to re-introduce PII for an Art.17 data subject.
+  let showNoPrimaryContactBanner = false;
+  if (invoice.memberId !== null) {
+    const recipientStatus = await getMemberMoneyRecipientStatus(
+      makeMemberMoneyRecipientStatusDeps(),
+      { tenantId: tenantCtx.slug, memberId: invoice.memberId },
+    );
+    if (recipientStatus.ok) {
+      showNoPrimaryContactBanner = recipientStatus.value.shouldWarn;
+    } else {
+      logger.warn(
+        { requestId, tenantId: tenantCtx.slug, memberId: invoice.memberId },
+        'admin.invoices.detail.recipient_status_read_failed — banner suppressed',
+      );
     }
   }
 
@@ -655,6 +702,17 @@ export default async function InvoiceDetailPage({
           </>
         }
       />
+
+      {/* 108 FR-003 — the member behind this invoice has no live primary
+          contact, so its receipt / void notice / credit note reach nobody.
+          Above the document body: the admin must see it before acting on the
+          invoice, not after. */}
+      {showNoPrimaryContactBanner && invoice.memberId !== null && (
+        <NoPrimaryContactBanner
+          memberId={invoice.memberId}
+          contactsHref={`/admin/members/${invoice.memberId}`}
+        />
+      )}
       <Card>
         <CardContent className="flex flex-col gap-4">
           {/* FR-026 — one delivery-failure banner per failed document (admins

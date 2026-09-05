@@ -36,6 +36,7 @@ const metricsMocks = vi.hoisted(() => ({
   outOfBandRefundRejected: vi.fn(),
   stalePendingCount: vi.fn(),
   inviteToPaymentFunnelStep: vi.fn(),
+  billingRecipientBlocked: vi.fn(),
 }));
 vi.mock('@/lib/metrics', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/metrics')>();
@@ -80,7 +81,6 @@ function makeInput(overrides: Partial<InitiatePaymentInput> = {}): InitiatePayme
     tenantId: TENANT_ID,
     actorUserId: ACTOR_USER_ID,
     actorMemberId: MEMBER_ID,
-    actorEmail: 'member@swecham.test',
     invoiceId: INVOICE_ID,
     method: 'card',
     correlationId: 'corr_1',
@@ -93,6 +93,11 @@ function makeDeps(
   overrides: Partial<InitiatePaymentDeps> = {},
 ): InitiatePaymentDeps {
   const audit = { emit: vi.fn(async () => undefined) };
+  // 108 FR-004 — default: the member HAS a primary contact. Tests that model a
+  // missing one override this dep.
+  const billingRecipient = {
+    getPrimaryContactEmail: vi.fn(async () => ok('primary@acme.example')),
+  };
   const paymentsRepo = {
     withTx: vi.fn(async <T>(fn: (tx: unknown) => Promise<T>) => fn({})),
     acquireInitiateLock: vi.fn(async () => undefined),
@@ -171,6 +176,8 @@ function makeDeps(
     tenantSettingsRepo: tenantSettingsRepo as unknown as InitiatePaymentDeps['tenantSettingsRepo'],
     processorGateway: processorGateway as unknown as InitiatePaymentDeps['processorGateway'],
     invoicingBridge: invoicingBridge as unknown as InitiatePaymentDeps['invoicingBridge'],
+    billingRecipient:
+      billingRecipient as unknown as InitiatePaymentDeps['billingRecipient'],
     audit: audit as unknown as InitiatePaymentDeps['audit'],
     clock,
     generatePaymentId,
@@ -1095,5 +1102,242 @@ describe('initiatePayment (T055)', () => {
     expect(deps.audit.emit).not.toHaveBeenCalled();
     // try-finally all-exits invariant holds on this path too.
     expect(metricsMocks.initiateDurationMs).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 108 FR-004 — the address handed to the processor is the MEMBER's primary
+// contact, never the signed-in portal user's.
+//
+// Stripe needs a billing email on a server-confirmed PromptPay PI and mails its
+// own receipt there. Before 108 the route passed `memberCtx.current.user.email`,
+// so when a secondary contact with a portal login paid the company's invoice,
+// Stripe's receipt went to that individual instead of the company's primary
+// contact. Same class of bug as the F4 emails, different pipe.
+// ---------------------------------------------------------------------------
+describe('initiatePayment — billing email (108 FR-004)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('PromptPay shares the member primary contact address, not the paying user', async () => {
+    const deps = makeDeps({
+      billingRecipient: {
+        getPrimaryContactEmail: vi.fn(async () => ok('primary@acme.example')),
+      },
+    });
+
+    await initiatePayment(deps, makeInput({ method: 'promptpay' }));
+
+    expect(deps.processorGateway.createPaymentIntent).toHaveBeenCalledWith(
+      expect.objectContaining({ billingEmail: 'primary@acme.example' }),
+    );
+  });
+
+  it('resolves the address of the INVOICE OWNER, not of the acting user', async () => {
+    // The whole feature exists because the code read the wrong person. Every
+    // other fixture sets actorMemberId === invoice.memberId, which would let a
+    // `input.actorMemberId` mutant pass — so this one drives them apart and
+    // pins the exact id. A secondary contact paying the company's invoice is
+    // precisely the case that must resolve to the COMPANY's contact.
+    const INVOICE_OWNER = 'mem_invoice_owner';
+    const getPrimaryContactEmail = vi.fn(async () => ok('primary@acme.example'));
+    const deps = makeDeps({ billingRecipient: { getPrimaryContactEmail } });
+    deps.invoicingBridge.getInvoiceForPayment = vi.fn(async () =>
+      ok({ ...INVOICE_DTO, memberId: INVOICE_OWNER }),
+    ) as unknown as InitiatePaymentDeps['invoicingBridge']['getInvoiceForPayment'];
+
+    await initiatePayment(
+      deps,
+      makeInput({ method: 'promptpay', actorMemberId: 'mem_someone_else' }),
+    );
+
+    expect(getPrimaryContactEmail).toHaveBeenCalledWith(TENANT_ID, INVOICE_OWNER);
+  });
+
+  it('a READ FAILURE is transient — never the permanent no-contact refusal', async () => {
+    // Collapsing a Neon hiccup into `primary_contact_missing` tells a member
+    // with a perfectly good contact that their membership has none, and sends
+    // them to an admin who finds nothing wrong. Same distinction the sibling
+    // `invoice_read_failed` exists for.
+    const deps = makeDeps({
+      billingRecipient: {
+        getPrimaryContactEmail: vi.fn(async () => err({ kind: 'read_failed' as const })),
+      },
+    });
+
+    const r = await initiatePayment(deps, makeInput({ method: 'promptpay' }));
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('billing_recipient_read_failed');
+    expect(deps.processorGateway.createPaymentIntent).not.toHaveBeenCalled();
+    expect(deps.paymentsRepo.insert).not.toHaveBeenCalled();
+    // Alertable. The transient half must be distinguishable from the permanent
+    // one in the counter too, or a Neon incident reads as a fleet-wide
+    // contact-data problem.
+    expect(metricsMocks.billingRecipientBlocked).toHaveBeenCalledWith(TENANT_ID, 'read_failed');
+  });
+
+  it('PromptPay with no live primary contact fails permanently with primary_contact_missing', async () => {
+    const deps = makeDeps({
+      billingRecipient: { getPrimaryContactEmail: vi.fn(async () => ok(null)) },
+    });
+
+    const r = await initiatePayment(deps, makeInput({ method: 'promptpay' }));
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('primary_contact_missing');
+    // Nothing created at the processor — no orphan PI to reconcile.
+    expect(deps.processorGateway.createPaymentIntent).not.toHaveBeenCalled();
+    expect(deps.paymentsRepo.insert).not.toHaveBeenCalled();
+    expect(deps.audit.emit).not.toHaveBeenCalled();
+    // This refusal blocks a PAYMENT, so it needs a counter of its own: it is
+    // the variant a member actually notices, and until now it emitted nothing.
+    expect(metricsMocks.billingRecipientBlocked).toHaveBeenCalledWith(TENANT_ID, 'missing');
+  });
+
+  it('refusing does NOT destroy the pending CARD attempt it was switching from', async () => {
+    // The refusal used to sit inside the transaction, BELOW the cross-method
+    // switch arm — which cancels the card PaymentIntent at Stripe and audits
+    // the switch. Because `err()` from inside `runInTenant` is a normal return,
+    // that all COMMITTED and then the member got a 409: their working card
+    // payment destroyed, and an audit row describing a switch to a PromptPay
+    // attempt that never existed. The guard now runs before the tx opens.
+    const pendingCard: Payment = {
+      id: asPaymentId('pmt_pending_card'),
+      tenantId: TENANT_ID,
+      invoiceId: INVOICE_ID,
+      memberId: MEMBER_ID,
+      method: 'card',
+      status: 'pending',
+      amountSatang: asSatang(5_350_000n),
+      currency: 'THB',
+      processorPaymentIntentId: 'pi_pending_card',
+      processorChargeId: null,
+      processorEnvironment: 'test',
+      attemptSeq: 1,
+      card: null,
+      failureReasonCode: null,
+      initiatedAt: new Date('2026-05-12T06:00:00Z'),
+      completedAt: null,
+      actorUserId: ACTOR_USER_ID,
+      correlationId: 'corr_card',
+    };
+    const deps = makeDeps({
+      billingRecipient: { getPrimaryContactEmail: vi.fn(async () => ok(null)) },
+    });
+    (
+      deps.paymentsRepo.findPendingByInvoiceAndActor as ReturnType<typeof vi.fn>
+    ).mockResolvedValueOnce(pendingCard);
+
+    const r = await initiatePayment(deps, makeInput({ method: 'promptpay' }));
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('primary_contact_missing');
+    // The member's card attempt survives, at Stripe and in the DB.
+    expect(deps.processorGateway.cancelPaymentIntent).not.toHaveBeenCalled();
+    expect(deps.paymentsRepo.updateStatus).not.toHaveBeenCalled();
+    expect(deps.audit.emit).not.toHaveBeenCalled();
+    // NOT `withTx not called`. That assertion was a PROXY for "nothing was
+    // written", and it stopped being available once the refusal had to move
+    // inside the tx to let a resume through (review round 3 finding #1). The
+    // invariant it stood for is asserted directly, above and here: the refusal
+    // still precedes every write, so nothing is left behind to roll back.
+    expect(deps.paymentsRepo.insert).not.toHaveBeenCalled();
+    expect(deps.processorGateway.createPaymentIntent).not.toHaveBeenCalled();
+  });
+
+  it('a PromptPay RESUME is not blocked by a missing primary contact', async () => {
+    // A resume needs no billing address: the PaymentIntent already exists at
+    // Stripe with its billing email already set, and this branch only calls
+    // `retrievePaymentIntent`. Gating it meant a member who reloaded the QR
+    // page after staff demoted their primary contact could not get their own
+    // QR back — the payment was blocked by a fact irrelevant to it.
+    const pendingPromptPay: Payment = {
+      id: asPaymentId('pmt_pending_pp'),
+      tenantId: TENANT_ID,
+      invoiceId: INVOICE_ID,
+      memberId: MEMBER_ID,
+      method: 'promptpay',
+      status: 'pending',
+      amountSatang: asSatang(5_350_000n),
+      currency: 'THB',
+      processorPaymentIntentId: 'pi_pending_pp',
+      processorChargeId: null,
+      processorEnvironment: 'test',
+      attemptSeq: 1,
+      card: null,
+      failureReasonCode: null,
+      initiatedAt: new Date('2026-05-12T06:00:00Z'),
+      completedAt: null,
+      actorUserId: ACTOR_USER_ID,
+      correlationId: 'corr_pp',
+    };
+    const deps = makeDeps({
+      billingRecipient: { getPrimaryContactEmail: vi.fn(async () => ok(null)) },
+    });
+    (
+      deps.paymentsRepo.findPendingByInvoiceAndActor as ReturnType<typeof vi.fn>
+    ).mockResolvedValueOnce(pendingPromptPay);
+
+    const r = await initiatePayment(deps, makeInput({ method: 'promptpay' }));
+
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.resumed).toBe(true);
+    expect(r.value.payment.id).toBe(pendingPromptPay.id);
+    expect(deps.processorGateway.retrievePaymentIntent).toHaveBeenCalled();
+    expect(deps.processorGateway.createPaymentIntent).not.toHaveBeenCalled();
+  });
+
+  it('a PromptPay RESUME survives a transient recipient read failure', async () => {
+    // The stricter half of the same rule. A Neon blip on a read the resume
+    // does not use must not 500 a member out of their existing QR.
+    const pendingPromptPay: Payment = {
+      id: asPaymentId('pmt_pending_pp2'),
+      tenantId: TENANT_ID,
+      invoiceId: INVOICE_ID,
+      memberId: MEMBER_ID,
+      method: 'promptpay',
+      status: 'pending',
+      amountSatang: asSatang(5_350_000n),
+      currency: 'THB',
+      processorPaymentIntentId: 'pi_pending_pp2',
+      processorChargeId: null,
+      processorEnvironment: 'test',
+      attemptSeq: 1,
+      card: null,
+      failureReasonCode: null,
+      initiatedAt: new Date('2026-05-12T06:00:00Z'),
+      completedAt: null,
+      actorUserId: ACTOR_USER_ID,
+      correlationId: 'corr_pp2',
+    };
+    const deps = makeDeps({
+      billingRecipient: {
+        getPrimaryContactEmail: vi.fn(async () => err({ kind: 'read_failed' as const })),
+      },
+    });
+    (
+      deps.paymentsRepo.findPendingByInvoiceAndActor as ReturnType<typeof vi.fn>
+    ).mockResolvedValueOnce(pendingPromptPay);
+
+    const r = await initiatePayment(deps, makeInput({ method: 'promptpay' }));
+
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.resumed).toBe(true);
+  });
+
+  it('card shares no email and does not require a primary contact', async () => {
+    const deps = makeDeps({
+      billingRecipient: { getPrimaryContactEmail: vi.fn(async () => ok(null)) },
+    });
+
+    const r = await initiatePayment(deps, makeInput({ method: 'card' }));
+
+    expect(r.ok).toBe(true);
+    const arg = vi.mocked(deps.processorGateway.createPaymentIntent).mock.calls[0]![0];
+    expect(arg.billingEmail).toBeUndefined();
   });
 });

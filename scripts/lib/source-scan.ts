@@ -56,6 +56,16 @@ function startsRegex(before: string): boolean {
   // line) that is rare and that `MIN_EXPECTED_SITES` would surface.
   if (t === '') return false;
   const last = t[t.length - 1]!;
+  // `</` is a JSX CLOSING TAG, never a regex. These scanners run over `.tsx`,
+  // where `</p>`, `</div>` and friends are on nearly every line, and `<` was in
+  // the operator set below — so `</p> // note` had its `/` read as a regex
+  // opener, `skipRegex` ran to the `/` of the `//`, and the comment after it
+  // survived stripping as source. Every gate then scanned that comment's
+  // contents as code. A genuine regex directly after `<` would have to be a
+  // comparison against a regex literal (`a < /re/`), which appears nowhere in
+  // this tree; JSX closers appear everywhere. (Round-4 finding #15, second
+  // half — found while fixing the apostrophe case, which shares the symptom.)
+  if (last === '<') return false;
   if ('=(,:[!&|?{};+*%~^<>'.includes(last)) return true;
   // `return /re/`, `case /re/`, `typeof /re/` … keyword-preceded.
   return /\b(return|case|typeof|instanceof|in|of|new|delete|void|do|else|yield|await)$/.test(t);
@@ -112,24 +122,52 @@ export function isCommentLine(line: string): boolean {
  *
  * Result index N corresponds to source line N+1, always.
  */
+/**
+ * Does the quote at `start` have an unescaped partner later on this line?
+ *
+ * Backslash escapes are honoured, so `'it\'s // fine'` still reads as one
+ * string and its `//` stays string content.
+ */
+function quoteClosesOnLine(line: string, start: number, quote: string): boolean {
+  for (let k = start + 1; k < line.length; k += 1) {
+    const ch = line[k]!;
+    if (ch === '\\') {
+      k += 1;
+      continue;
+    }
+    if (ch === quote) return true;
+  }
+  return false;
+}
+
 export function stripCommentLines(src: string): readonly string[] {
   const out: string[] = [];
   let inBlock = false;
   // Set when the open block came from a JSX `{/*`, so its `}` is consumed too.
   let inJsxBlock = false;
-  // Template literals span lines; `'` and `"` cannot. `inBlock` was already
-  // carried across lines and `quote` was not, so a `/*` on the CONTINUATION
-  // line of a multi-line template was scanned as CODE and opened a phantom
-  // block — the same failure this module exists to close, one state variable
-  // away. Latent when found (no file in scope triggered it) but the trigger is
-  // a near-cousin of the original incident: a glob or a SQL comment inside a
-  // `sql`-tagged template would do it, and 21 in-scope files carry multi-line
-  // templates.
-  let inTemplate = false;
+  // A STACK, not one value, and carried ACROSS lines rather than rebuilt.
+  //
+  // A template literal's `${…}` re-enters CODE context, where another backtick
+  // opens a NESTED template — and with a single variable the inner backtick
+  // closed the OUTER one. Everything after it on that line was then read as
+  // code, so a `//` inside the outer template (a URL, usually) truncated the
+  // rest of the line and every gate built on this helper went blind to it.
+  // Measured shape:
+  //   const to = `${a ? `https://x` : `y`}${snap.primary_contact_email}`;
+  // — the token after the nested template was invisible. Six gates share this.
+  //
+  // The stack lives out here because templates span lines and their frames must
+  // too. Reducing it at EOL to the boolean "some template is open" (what this
+  // did before, review round 3 finding #7) LOSES the `${…}` frame: a multi-line
+  // interpolation resumed the next line in template TEXT instead of code, so a
+  // `//` comment there was kept and the backticks on that line pushed and
+  // popped the wrong frame — corrupting every later line in the file. `'` and
+  // `"` are the exception: they cannot span a line, so their frames are unwound
+  // at EOL (below) rather than carried.
+  const stack: string[] = [];
   for (const line of src.split('\n')) {
     let res = '';
     let i = 0;
-    let quote: string | null = inTemplate ? '`' : null;
     while (i < line.length) {
       const c = line[i]!;
       const next = line[i + 1];
@@ -150,13 +188,38 @@ export function stripCommentLines(src: string): readonly string[] {
         i += 1;
         continue;
       }
-      if (quote !== null) {
+      const open = stack[stack.length - 1] ?? null;
+      // `${` and `{` are CODE frames; only a quote or backtick frame is text.
+      if (open !== null && open !== '${' && open !== '{') {
         if (c === '\\') {
           res += c + (next ?? '');
           i += 2;
           continue;
         }
-        if (c === quote) quote = null;
+        // Inside a template, `${` opens a CODE frame and its matching `}` pops
+        // back to the template. Only inside that frame can a backtick start a
+        // NEW template rather than end this one.
+        if (open === '`' && c === '$' && next === '{') {
+          stack.push('${');
+          res += '${';
+          i += 2;
+          continue;
+        }
+        if (c === open) stack.pop();
+        res += c;
+        i += 1;
+        continue;
+      }
+      // Code context — top level, or inside a template's `${…}`.
+      //
+      // Braces inside an interpolation must BALANCE. Popping the frame on the
+      // first `}` closed it on the one that ends an object literal or a block
+      // body — `` `${fn({a: 1}, `//x`)}` `` dropped into template TEXT
+      // mid-expression, so the next backtick read as the outer template's
+      // closing one and the `//` after it ate the rest of the line. Same
+      // blindness class the stack was introduced to end, one nesting level in.
+      if (c === '}' && (open === '${' || open === '{')) {
+        stack.pop();
         res += c;
         i += 1;
         continue;
@@ -171,8 +234,44 @@ export function stripCommentLines(src: string): readonly string[] {
         i += 3;
         continue;
       }
-      if (c === '"' || c === "'" || c === '`') {
-        quote = c;
+      // Tracked only INSIDE an interpolation, where an unbalanced pop is what
+      // corrupts the scan. At top level a `}` closing a function body would
+      // otherwise have to find a `{` opened many lines earlier, so leave those
+      // alone — the scanner has no reason to care about them.
+      if (c === '{' && (open === '${' || open === '{')) {
+        stack.push('{');
+        res += c;
+        i += 1;
+        continue;
+      }
+      // A `'` or `"` opens a string frame ONLY if it closes on this line.
+      //
+      // `'` and `"` cannot span a line, so an unmatched one is not a string
+      // opener at all — it is an apostrophe in prose. JSX children are full of
+      // them (`<p>It's fine</p>`), and that is also the context where the
+      // `{/* … */}` marker idiom lives, because `//` is unavailable there.
+      // Opening a frame on it made the rest of the line STRING TEXT, so a real
+      // `//` comment after it was copied through as source and every gate
+      // sharing this helper scanned the comment's contents as code — a prose
+      // mention of `primary_contact_email`, or a role literal written in a
+      // comment, counted as a decision site. (Round-4 finding #15. It fails
+      // LOUD rather than blind, but a gate that reports a hit for prose is a
+      // gate people learn to ignore.)
+      //
+      // A backtick needs no such test: templates DO span lines.
+      if (c === '"' || c === "'") {
+        if (!quoteClosesOnLine(line, i, c)) {
+          res += c;
+          i += 1;
+          continue;
+        }
+        stack.push(c);
+        res += c;
+        i += 1;
+        continue;
+      }
+      if (c === '`') {
+        stack.push(c);
         res += c;
         i += 1;
         continue;
@@ -211,7 +310,14 @@ export function stripCommentLines(src: string): readonly string[] {
       res += c;
       i += 1;
     }
-    inTemplate = quote === '`';
+    // Template and interpolation frames carry to the next line untouched.
+    //
+    // There is deliberately NO unwind of `'`/`"` frames here any more. There
+    // used to be, as a safety net against an unterminated quote leaking into
+    // the rest of the file — but `quoteClosesOnLine` now means such a frame is
+    // never pushed in the first place, so the unwind was unreachable. A dead
+    // guard that reads as a live one is the exact shape this module keeps being
+    // bitten by; the invariant is stated instead of half-enforced twice.
     out.push(res);
   }
   return out;

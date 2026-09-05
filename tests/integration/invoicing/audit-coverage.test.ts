@@ -243,7 +243,7 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
     // 24 (Phase 3 `invoices_csv_exported` 2026-05-16) → 25 (Task 15
     // `event_buyer_pii_redacted` 2026-06-04) → 26 (§ F.6 `tax_receipt_issued`
     // 2026-07-01) → 27 (059 PR-A Task 4 `invoice_buyer_identity_invalid`
-    // 2026-07-14).
+    // 2026-07-14) → 28 (108 PR-A `auto_email_skipped_no_recipient` 2026-09-04).
     const allF4Types: ReadonlyArray<F4AuditEventType> = [
       'invoice_draft_created',
       'invoice_draft_updated',
@@ -278,8 +278,10 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
       // invariant reject (VAT registrant, no tax_id). No tax-document touch;
       // PRE-SEQUENCE (no §87 number burned). 5y.
       'invoice_buyer_identity_invalid',
+      // 108 PR-A (migration 0292) — money email had no live primary contact.
+      'auto_email_skipped_no_recipient',
     ] as const;
-    expect(allF4Types).toHaveLength(27);
+    expect(allF4Types).toHaveLength(28);
     for (const t of allF4Types) {
       expect(dbEnum.has(t), `TS union declares '${t}' but DB enum lacks it`).toBe(true);
     }
@@ -717,6 +719,12 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
       // Unit-mocked coverage (exercises the REAL Domain VO, not a fixture)
       // proves the catch-branch + typed err + audit shape; a live-Neon
       // behavioral test would need a direct-SQL-seeded corrupt row.
+      auto_email_skipped_no_recipient: {
+        status: 'covered',
+        where:
+          'tests/unit/invoicing/record-payment.test.ts (108 FR-001 block — no live primary → skipped_no_email + audited skip, emitted on the payment tx)',
+        since: '2026-09-04',
+      },
       invoice_buyer_identity_invalid: {
         status: 'deferred',
         where:
@@ -764,6 +772,8 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
       // 059 PR-A Task 4 fix (2026-07-14) — write-time buyer-identity-snapshot
       // invariant reject.
       'invoice_buyer_identity_invalid',
+      // 108 PR-A (2026-09-04) — money email had no live primary contact.
+      'auto_email_skipped_no_recipient',
     ] as const;
     // C4 — the inventory must reference REAL, CURRENT test files.
     // Previously `'covered'` entries were declarative-only: if a
@@ -799,6 +809,9 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
         'tests/unit/invoicing/derive-overdue.test.ts',
       'tests/unit/invoicing/resend-pdf.test.ts':
         'tests/unit/invoicing/resend-pdf.test.ts',
+      // 108 PR-A — `auto_email_skipped_no_recipient` behavioural needle.
+      'tests/unit/invoicing/record-payment.test.ts':
+        'tests/unit/invoicing/record-payment.test.ts',
       // R9-T6 — wire up the PDF-download use-case unit tests so the
       // inventory's 'where' strings for `receipt_pdf_downloaded` (R5)
       // + `invoice_pdf_downloaded` (R8) resolve to real files.
@@ -877,12 +890,14 @@ describe('F4 Audit coverage — MVP flows emit the expected event types (T113a)'
     // `tax_receipt_issued` (deferred; emit site ships in US1 T018/T019).
     // 059 PR-A Task 4 fix — bumped 27 → 28 for `invoice_buyer_identity_invalid`
     // (deferred; no live-Neon behavioral test yet — see the coverage entry).
-    expect(coveredCount + deferredCount).toBe(28);
+    // 108 PR-A — bumped 28 → 29 for `auto_email_skipped_no_recipient` (covered:
+    // the record-payment unit block asserts the audit row on the payment tx).
+    expect(coveredCount + deferredCount).toBe(29);
     // Behavioral coverage target: 23/26. Remaining 4 are post-MVP/rare-path
     // deferrals: invoice_pdf_regenerated (Blob-outage auto-rerender),
     // receipt_rendered + pdf_render_permanently_failed (T166 async
     // receipt-PDF worker — integration coverage lands with T166-06),
     // invoice_buyer_identity_invalid (059 PR-A Task 4 — unit-mocked only).
-    expect(coveredCount).toBeGreaterThanOrEqual(23);
+    expect(coveredCount).toBeGreaterThanOrEqual(24);
   });
 });

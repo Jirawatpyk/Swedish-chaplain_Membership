@@ -41,12 +41,16 @@
 import { err, ok, type Result } from '@/lib/result';
 import { sha256Hex } from '@/lib/crypto';
 import { logger } from '@/lib/logger';
+import { invoicingMetrics } from '@/lib/metrics';
 import type { InvoiceRepo } from '../ports/invoice-repo';
 import type { CreditNoteRepo } from '../ports/credit-note-repo';
 import { emitNonMemberInvoiceEvent, type AuditPort } from '../ports/audit-port';
 import type { EmailOutboxPort, F4OutboxLocale } from '../ports/email-outbox-port';
 import type { RecipientLocalePort } from '../ports/recipient-locale-port';
-import { resolveRecipientLocale } from '../lib/resolve-recipient-locale';
+import {
+  auditAutoEmailSkippedNoRecipient,
+  resolveMoneyRecipient,
+} from '../lib/resolve-money-recipient';
 import { asInvoiceId, billFirstDocumentNumber } from '@/modules/invoicing/domain/invoice';
 import { asCreditNoteId } from '@/modules/invoicing/domain/credit-note';
 import type { Role } from '@/modules/auth';
@@ -102,11 +106,11 @@ export type ResendPdfInput =
       readonly variant: 'invoice' | 'receipt';
       readonly actor: ResendPdfActor;
       /**
-       * Optional override — defaults to the stored member primary
-       * contact email from the invoice's identity snapshot. Admins may
-       * future-supply a delegated address; MVP keeps it snapshot-bound.
+       * 108 — `recipientEmailOverride` was deleted here. It never had a
+       * caller, and a hand-supplied address on a money email is exactly the
+       * bypass FR-001 exists to close: the recipient is always the live
+       * primary contact, resolved at enqueue.
        */
-      readonly recipientEmailOverride?: string;
       readonly recipientLocale?: F4OutboxLocale;
     }
   | {
@@ -114,7 +118,6 @@ export type ResendPdfInput =
       readonly kind: 'credit_note';
       readonly creditNoteId: string;
       readonly actor: ResendPdfActor;
-      readonly recipientEmailOverride?: string;
       readonly recipientLocale?: F4OutboxLocale;
     };
 
@@ -132,7 +135,20 @@ export type ResendPdfError =
    * the combined receipt). The admin UI should hide `Resend receipt`
    * for these states.
    */
-  | { readonly code: 'no_receipt_pdf' };
+  | { readonly code: 'no_receipt_pdf' }
+  /**
+   * 108 FR-003 — the member has no contact with `is_primary AND removed_at
+   * IS NULL`, so there is no address to resend to and no fallback is
+   * permitted. Routes map this to 409 so the admin is told to fix the
+   * contact rather than being shown a success toast for a mail nobody got.
+   */
+  | { readonly code: 'no_recipient' }
+  /**
+   * Round-4 finding #6 — a NON-MEMBER event invoice whose typed buyer address
+   * is empty. Kept distinct from `no_recipient` because that code's copy sends
+   * staff to a member page, and this row has no member.
+   */
+  | { readonly code: 'no_buyer_email' };
 
 export interface ResendPdfDeps {
   readonly invoiceRepo: InvoiceRepo;
@@ -218,14 +234,10 @@ async function resendInvoiceOrReceipt(
     });
   }
 
-  const recipientEmail =
-    input.recipientEmailOverride ??
-    invoice.memberIdentitySnapshot?.primary_contact_email;
-  if (!recipientEmail) {
+  if (!invoice.memberIdentitySnapshot) {
     // No snapshot ⇒ not issued. Defence-in-depth for racy state.
     return err({ code: 'not_issued' });
   }
-
   // Defence-in-depth: memberId null AND eventRegistrationId null is a
   // structurally-impossible row (violates `invoices_subject_fields_ck` — a row
   // is EITHER a member invoice OR a non-member event invoice). This guard runs
@@ -235,6 +247,14 @@ async function resendInvoiceOrReceipt(
   // email by the time we return the error — otherwise the caller sees a
   // failure while the buyer still receives the PDF. No PII in the log (ids
   // only, per CLAUDE.md § Secrets).
+  //
+  // It also runs before the recipient resolve, and that ordering is not
+  // incidental (review round 3 finding #12). 108 first put the resolve above
+  // it, and for a memberless row the resolver reads the SNAPSHOT: an empty
+  // address there returned `no_recipient` first, so staff were told to "add a
+  // contact" for an invoice that has no member at all, and this warn — the
+  // only signal that a CHECK-violating row exists — never fired. A row this
+  // broken has no meaningful recipient question to ask.
   if (invoice.memberId === null && invoice.eventRegistrationId === null) {
     logger.warn(
       {
@@ -246,6 +266,52 @@ async function resendInvoiceOrReceipt(
     );
     return err({ code: 'not_issued' });
   }
+
+  // 108 FR-001 — a resend is the path most likely to run long after issue,
+  // so it is the one that most needs the LIVE address: resolve it now
+  // (`tx === null` — resend runs outside any financial tx, the adapter
+  // self-scopes). The snapshot keeps naming the buyer on the PDF itself.
+  const moneyRecipient = await resolveMoneyRecipient(
+    deps.recipientLocale,
+    null,
+    input.tenantId,
+    invoice.memberId,
+    invoice.memberIdentitySnapshot,
+  );
+  if (moneyRecipient.kind === 'no_recipient') {
+    if (invoice.memberId !== null) {
+      await auditAutoEmailSkippedNoRecipient(deps.audit, null, {
+        tenantId: input.tenantId,
+        requestId: input.actor.requestId,
+        actorUserId: input.actor.userId,
+        memberId: invoice.memberId,
+        emailEventType:
+          input.variant === 'invoice' ? 'invoice_pdf_resent' : 'receipt_pdf_resent',
+        subject: invoice.invoiceSubject,
+        invoiceId: input.invoiceId,
+      });
+      return err({ code: 'no_recipient' });
+    }
+    // Round-4 finding #6 — a NON-MEMBER event buyer. Their address is the one
+    // an admin typed at issue, and `create-event-invoice-draft` permits '' (the
+    // snapshot's zod allows `z.literal('')`), so this is reachable. It is a
+    // DIFFERENT failure from "the member has no primary contact": there is no
+    // member and no member page, and `no_recipient` renders as "add or promote
+    // a contact on the member page". It also left no trace at all — the audit
+    // arm above needs a member to attribute to, and nothing counted the skip.
+    invoicingMetrics.autoEmailSkipped(invoice.invoiceSubject, 'no_recipient');
+    logger.warn(
+      {
+        event: 'resend_pdf_no_buyer_email',
+        tenantId: input.tenantId,
+        invoiceId: input.invoiceId,
+        variant: input.variant,
+      },
+      'resendPdf: non-member event buyer has no address on the frozen snapshot — nothing sent',
+    );
+    return err({ code: 'no_buyer_email' });
+  }
+  const recipientEmail = moneyRecipient.email;
 
   // 088 FR-030 — restore the SC/RC number to the resent audit summary + outbox
   // payload for an 088 invoice (§87 `documentNumber` NULL). Variant-aware: the
@@ -259,18 +325,13 @@ async function resendInvoiceOrReceipt(
   const outboxEventType =
     input.variant === 'invoice' ? 'invoice_pdf_resent' : 'receipt_pdf_resent';
 
-  // Email-locale audit 2026-07-16 — resolve the member's language when the
-  // caller didn't pass one (no production route ever did). Standalone read
-  // (null tx → adapter self-scopes via runInTenant); non-member event buyer
-  // → undefined → outbox 'en'.
+  // Email-locale audit 2026-07-16 — the member's language, when the caller
+  // didn't pass one (no production route ever did). 108: it comes from the
+  // same live primary-contact row that produced the address — one read, and
+  // the two can never disagree. Non-member event buyer → undefined → 'en'.
   const recipientLocale =
     input.recipientLocale ??
-    (await resolveRecipientLocale(
-      deps.recipientLocale,
-      null,
-      input.tenantId,
-      invoice.memberId,
-    ));
+    (moneyRecipient.kind === 'member' ? (moneyRecipient.locale ?? undefined) : undefined);
 
   // Outbox enqueue — uses PINNED templateVersion from the invoice's
   // stored PDF so the dispatcher re-signs the same Blob key rather
@@ -415,19 +476,59 @@ async function resendCreditNote(
     }
   }
 
-  const recipientEmail =
-    input.recipientEmailOverride ?? cn.memberIdentitySnapshot.primary_contact_email;
+  // 108 FR-001 — a credit note follows its original invoice's buyer, so the
+  // live primary of THAT member is the recipient. This arm previously had no
+  // empty-recipient guard at all: it enqueued whatever the snapshot held.
+  const moneyRecipient = await resolveMoneyRecipient(
+    deps.recipientLocale,
+    null,
+    input.tenantId,
+    cn.originalInvoiceMemberId,
+    cn.memberIdentitySnapshot,
+  );
+  if (moneyRecipient.kind === 'no_recipient') {
+    if (cn.originalInvoiceMemberId === null) {
+      // Round-5 finding #1 — the NON-MEMBER event arm, which round 4 fixed on
+      // the invoice path and left here. `no_recipient` renders as "add or
+      // promote a contact on the member page"; this credit note has no member
+      // and no member page. It also left no trace at all: the audit arm below
+      // needs a member to attribute to, and nothing counted the skip.
+      invoicingMetrics.autoEmailSkipped('unknown', 'no_recipient');
+      logger.warn(
+        {
+          event: 'resend_pdf_no_buyer_email',
+          tenantId: input.tenantId,
+          creditNoteId: input.creditNoteId,
+        },
+        'resendPdf: non-member event buyer has no address on the credit note snapshot — nothing sent',
+      );
+      return err({ code: 'no_buyer_email' });
+    }
+    {
+      await auditAutoEmailSkippedNoRecipient(deps.audit, null, {
+        tenantId: input.tenantId,
+        requestId: input.actor.requestId,
+        actorUserId: input.actor.userId,
+        memberId: cn.originalInvoiceMemberId,
+        emailEventType: 'credit_note_pdf_resent',
+        // Round-5 finding #7 — `subject` is 'unknown', not omitted. A
+        // `CreditNote` carries no invoice subject, and omitting the label meant
+        // the counter never fired for a member credit note that reached nobody,
+        // while every sibling money path counts this exact condition. A guessed
+        // membership/event split would be worse; an honest 'unknown' is not.
+        subject: 'unknown',
+        creditNoteId: input.creditNoteId,
+      });
+    }
+    return err({ code: 'no_recipient' });
+  }
+  const recipientEmail = moneyRecipient.email;
 
-  // Email-locale audit 2026-07-16 — resolve the member's language when the
-  // caller didn't pass one; non-member event CN → undefined → outbox 'en'.
+  // Email-locale audit 2026-07-16 — the member's language, from the same live
+  // row; non-member event CN → undefined → outbox 'en'.
   const recipientLocale =
     input.recipientLocale ??
-    (await resolveRecipientLocale(
-      deps.recipientLocale,
-      null,
-      input.tenantId,
-      cn.originalInvoiceMemberId,
-    ));
+    (moneyRecipient.kind === 'member' ? (moneyRecipient.locale ?? undefined) : undefined);
 
   await deps.outbox.enqueue(null, {
     tenantId: input.tenantId,

@@ -16,6 +16,7 @@ import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import { invoiceLines } from '@/modules/invoicing/infrastructure/db/schema-invoice-lines';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
+import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
@@ -139,6 +140,12 @@ describe('void-pdf-reconcile cron (bug 10)', () => {
     seq: number;
     /** When set, seed a PAID two-blob void (a distinct §86/4 receipt blob). */
     receipt?: { docNumberRaw: string };
+    /**
+     * Default true. Set false to seed a member with NO live primary contact —
+     * the 108 skip path, where the reconcile must refuse to mail a stale
+     * address rather than copy one forward.
+     */
+    withPrimaryContact?: boolean;
   }): Promise<string> {
     const invoiceId = randomUUID();
     const memberId = randomUUID();
@@ -152,6 +159,26 @@ describe('void-pdf-reconcile cron (bug 10)', () => {
         planId,
         planYear: 2026,
       });
+      // 108 FR-001 — the cancellation email's address is now resolved LIVE from
+      // the member's primary contact at reconcile time, instead of copying
+      // `o.to_email` forward off the doomed outbox row. A member with no
+      // contacts is therefore a member with no deliverable address, and the
+      // re-enqueue correctly refuses. That is the intended rule, but it made
+      // three tests written against the copy-forward behaviour fail — a real
+      // regression this branch shipped unnoticed, because this route lives
+      // under `src/app/api/**` and no gate runs its suite.
+      if (opts.withPrimaryContact !== false) {
+        await tx.insert(contacts).values({
+          tenantId: tenant.ctx.slug,
+          contactId: randomUUID(),
+          memberId,
+          firstName: 'Void',
+          lastName: 'Recipient',
+          email: `void-live-${randomUUID().slice(0, 8)}@example.com`,
+          preferredLanguage: 'th',
+          isPrimary: true,
+        });
+      }
       await tx.insert(invoices).values({
         tenantId: tenant.ctx.slug,
         invoiceId,
@@ -425,7 +452,15 @@ describe('void-pdf-reconcile cron (bug 10)', () => {
     // A FRESH pending row pinned to the freshly-uploaded sha_cron now exists.
     const fresh = rows.filter((r) => r.status === 'pending' && r.sha === RESTAMP_SHA);
     expect(fresh).toHaveLength(1);
-    expect(fresh[0]?.to).toBe('void.member@example.com'); // copied context
+    // 108 FR-001 — the address is resolved LIVE, NOT copied off the doomed row.
+    // This assertion used to read `toBe('void.member@example.com')` with the
+    // comment "copied context", which is the exact behaviour 108 removed: void
+    // notifies A, staff promote B, and the reconcile tick mails A again. It is
+    // the last path in the system that could do that, and the token here is
+    // `to_email`, so `check:money-recipient` cannot see it either — this
+    // assertion is the only thing standing over it.
+    expect(fresh[0]?.to).not.toBe('void.member@example.com');
+    expect(fresh[0]?.to).toMatch(/^void-live-[0-9a-f]{8}@example\.com$/);
   }, 60_000);
 
   it('D6b — does NOT re-enqueue when no void email was ever intended (suppressed void)', async () => {
@@ -437,6 +472,120 @@ describe('void-pdf-reconcile cron (bug 10)', () => {
 
     const rows = await voidEmailRows(invoiceId);
     expect(rows).toHaveLength(0); // no spurious cancellation email
+  }, 60_000);
+
+  /**
+   * Round-4 finding #2 — the skip arm must be gated on the same INTENT as the
+   * enqueue arm.
+   *
+   * `auto_email_skipped_no_recipient` says "a money email was not delivered
+   * because this member has no contact". It carries 10-year retention
+   * (migration 0292) precisely so an auditor can trust it. Writing it when no
+   * email was ever going to be sent is an append-only row asserting an event
+   * that did not happen — the same class as a fabricated `actor_role`, which
+   * this repo spent five rounds removing.
+   *
+   * The enqueue arm has always been intent-gated: its `INSERT … SELECT` matches
+   * nothing when there is no outbox row, and its `NOT EXISTS (… sent)` matches
+   * nothing when the buyer already has the document. The skip arm was not.
+   */
+  async function skipAuditRows(invoiceId: string): Promise<number> {
+    const rows = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({ id: auditLog.id })
+        .from(auditLog)
+        .where(
+          and(
+            eq(auditLog.tenantId, tenant.ctx.slug),
+            eq(auditLog.eventType, 'auto_email_skipped_no_recipient'),
+            sql`${auditLog.payload}->>'invoice_id' = ${invoiceId}`,
+          ),
+        ),
+    );
+    return rows.length;
+  }
+
+  it('D6e — a pending original + no live contact DOES record the skip (control)', async () => {
+    // The positive control for the two gates below. Without it they could both
+    // pass because the skip never fires at all.
+    const invoiceId = await seedMarkedVoid({
+      voidReason: 'no contact',
+      seq: 21,
+      withPrimaryContact: false,
+    });
+    await seedFailedVoidEmail(invoiceId, { sha: 'a'.repeat(64), status: 'pending' });
+
+    const res = await reconcileCron(cronReq());
+    expect(res.status).toBe(200);
+
+    // Nothing re-enqueued — no fallback to the stale address on the doomed row.
+    const rows = await voidEmailRows(invoiceId);
+    expect(rows.filter((r) => r.status === 'pending')).toHaveLength(0);
+    // …and the undelivered §86/10 notice IS on the record.
+    expect(await skipAuditRows(invoiceId)).toBe(1);
+  }, 60_000);
+
+  it('D6h — the retired original states the REAL reason, not a false supersession', async () => {
+    // Round-5 finding #5. Round 4 hoisted the retirement UPDATE above the
+    // recipient resolve to de-duplicate it, which made every arm stamp
+    // `superseded_by_void_pdf_reconcile` — including the arm where nothing is
+    // enqueued to supersede it. An operator tracing the replacement row would
+    // find none, and the row would assert an event that did not happen: the
+    // same class as the audit row the intent gate exists to stop.
+    const invoiceId = await seedMarkedVoid({
+      voidReason: 'stamp truth',
+      seq: 24,
+      withPrimaryContact: false,
+    });
+    await seedFailedVoidEmail(invoiceId, { sha: 'a'.repeat(64), status: 'pending' });
+
+    const res = await reconcileCron(cronReq());
+    expect(res.status).toBe(200);
+
+    const reasons = await runInTenant(tenant.ctx, (tx) =>
+      tx.execute(sql`
+        SELECT last_error FROM notifications_outbox
+         WHERE tenant_id = ${tenant.ctx.slug}
+           AND context_data->>'invoice_id' = ${invoiceId}
+      `),
+    );
+    const errs = (reasons as unknown as Array<{ last_error: string | null }>).map(
+      (r) => r.last_error,
+    );
+    expect(errs).toContain('no_live_primary_contact');
+    expect(errs).not.toContain('superseded_by_void_pdf_reconcile');
+  }, 60_000);
+
+  it('D6f — a SUPPRESSED void records no skip (nothing was ever owed)', async () => {
+    const invoiceId = await seedMarkedVoid({
+      voidReason: 'suppressed + no contact',
+      seq: 22,
+      withPrimaryContact: false,
+    });
+    // No outbox row: `voidInvoice` ran with `suppressCancellationEmail`, the
+    // void-on-reissue path. No notice was ever going to be sent, so there is no
+    // undelivered notice to record.
+
+    const res = await reconcileCron(cronReq());
+    expect(res.status).toBe(200);
+
+    expect(await voidEmailRows(invoiceId)).toHaveLength(0);
+    expect(await skipAuditRows(invoiceId)).toBe(0);
+  }, 60_000);
+
+  it('D6g — an already-SENT notice records no skip (the buyer has it)', async () => {
+    const invoiceId = await seedMarkedVoid({
+      voidReason: 'sent + no contact',
+      seq: 23,
+      withPrimaryContact: false,
+    });
+    await seedFailedVoidEmail(invoiceId, { sha: 'a'.repeat(64), status: 'sent' });
+
+    const res = await reconcileCron(cronReq());
+    expect(res.status).toBe(200);
+
+    // "Never delivered" would be false about a document the buyer received.
+    expect(await skipAuditRows(invoiceId)).toBe(0);
   }, 60_000);
 
   it('D6c — does NOT re-enqueue when a valid cancellation email already shipped (sent)', async () => {

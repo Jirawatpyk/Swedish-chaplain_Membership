@@ -40,6 +40,7 @@ import type { MemberIdentityView } from '@/modules/invoicing/application/ports/m
 import { InvoiceApplyConflictError } from '@/modules/invoicing/application/lib/invoice-apply-conflict-error';
 import { logger } from '@/lib/logger';
 import { invoicingMetrics } from '@/lib/metrics';
+import { makeRecipientLocaleFake } from '../../helpers/recipient-locale-fake';
 
 // Task 14 — spy on the structured logger so the empty-recipient skip path
 // can assert the `invoice_auto_email_skipped_no_recipient` warn fires with
@@ -294,9 +295,7 @@ function makeDeps(draft: Invoice | null, settings: TenantInvoiceSettingsView | n
       enqueue: vi.fn(async () => {}),
     },
     // Email-locale audit 2026-07-16 — default no stored preference (→ 'en').
-    recipientLocale: {
-      getMemberEmailLocale: vi.fn(async () => null),
-    },
+    recipientLocale: makeRecipientLocaleFake(),
     currentTemplateVersion: 1,
     // Default: flag not carried (legacy §86/4-at-issue), exact-equivalent of the
     // pre-refactor `undefined`. Flag-specific behaviour is covered by the

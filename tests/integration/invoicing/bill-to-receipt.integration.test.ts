@@ -46,6 +46,7 @@ import { seedTenantFiscal } from '../helpers/seed-tenant-fiscal';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { nextSeedMemberNumber } from '../helpers/seed-member-number';
+import { makeRecipientLocaleFake } from '../../helpers/recipient-locale-fake';
 
 const MATRIX: BenefitMatrix = {
   eblast_per_year: 1,
@@ -121,7 +122,7 @@ function creditNoteDepsFlagOn(slug: string, captured?: PdfRenderInput[]): IssueC
     ...mockPdfBlob(captured),
     clock: { nowIso: () => FIXED_NOW },
     outbox: { enqueue: vi.fn(async () => {}) },
-    recipientLocale: { getMemberEmailLocale: vi.fn(async () => null) },
+    recipientLocale: makeRecipientLocaleFake(),
   };
 }
 

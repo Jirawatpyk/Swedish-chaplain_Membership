@@ -38,6 +38,10 @@ export type F5RouteErrorCode =
   // "misconfigured tenant" apart from "corrupted invoice data" at a
   // glance in logs/alerts even though both currently map to 422.
   | 'invoice_data_corrupt'
+  // 108 FR-004 — PromptPay needs a billing address of record and the member
+  // has no live primary contact. Distinct from `tenant_settings_incomplete`
+  // because the fix is on the MEMBER's contacts, not on tenant settings.
+  | 'primary_contact_missing'
   | 'rate_limited'
   | 'processor_unavailable'
   | 'internal_error'
@@ -152,6 +156,12 @@ export const F5_ERROR_MESSAGES: Record<F5RouteErrorCode, Bilingual> = {
   invoice_data_corrupt: {
     message: 'Invoice data is corrupt. Please contact your administrator.',
     messageThai: 'ข้อมูลใบแจ้งหนี้ผิดพลาด กรุณาติดต่อผู้ดูแลระบบ',
+  },
+  primary_contact_missing: {
+    message:
+      'This membership has no primary contact, so PromptPay cannot be used. Please contact your administrator.',
+    messageThai:
+      'สมาชิกนี้ยังไม่มีผู้ติดต่อหลัก จึงยังชำระผ่านพร้อมเพย์ไม่ได้ กรุณาติดต่อผู้ดูแลระบบ',
   },
   rate_limited: {
     message: 'Too many requests. Please try again shortly.',

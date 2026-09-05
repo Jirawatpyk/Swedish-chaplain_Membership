@@ -328,6 +328,41 @@ existing member events.
 **Tax-ID snapshot semantics (receipts and credit notes)**
 
 - **FR-038**: Receipts and credit notes MUST render the member tax identity (`tax_id`, legal name, address) **as snapshotted on the original invoice at issue time** — NOT as it appears on the live member record at payment or credit-note time. Rationale: Thai Revenue Department audits invoice + receipt + credit note as a single document chain with consistent payer identity (legal continuity). If a member's tax_id changes mid-cycle, admin must void the invoice + reissue under the new identity, or consult Thai RD guidance.
+> **AMENDMENT — the snapshot fixes the BUYER, not the recipient (added
+> 2026-09-04, feature 108 PR-A). No change to FR-038 itself.**
+>
+> FR-038 governs what the DOCUMENT says. It was also, in the shipped code, what
+> every F4 auto-email was addressed to: receipt-on-payment, void notice, credit
+> note and all three resends read
+> `member_identity_snapshot.primary_contact_email` for the recipient. Those are
+> two different questions that happen to share a field, and conflating them
+> meant that once a member promoted a new primary contact, their invoices kept
+> reaching the person who had left the company — indefinitely, and silently.
+>
+> As of 108 the DELIVERY address is resolved LIVE from the member's primary
+> contact (`is_primary = true AND removed_at IS NULL`) at enqueue time, inside
+> the same transaction as the money mutation. The buyer identity rendered on the
+> PDF is unchanged and still frozen exactly as FR-038 requires — §86/4 legal
+> continuity is untouched. See 108 FR-001/FR-002.
+>
+> One exception, unchanged: a NON-MEMBER event buyer has no contact row, so the
+> address an admin typed at issue remains the only address there is.
+>
+> When a member has no live primary contact there is NO fallback — not to the
+> snapshot, not to another contact. The email is skipped, an
+> `auto_email_skipped_no_recipient` audit row is written in the same
+> transaction, and a non-dismissible banner appears on the member and invoice
+> pages until the data is fixed (108 FR-003).
+>
+> **Operator heads-up:** no data migration and no behaviour change for a member
+> whose primary contact has not moved. For one who HAS, documents issued before
+> this change already carry the old address in their snapshot — that address
+> stays on the PDF (correctly), while any NEW email about that same invoice now
+> goes to the current primary contact.
+>
+> A static gate, `pnpm check:money-recipient`, keeps the two apart: every
+> `primary_contact_email` read in the invoicing/payments/API surface must be
+> justified by name as an identity read, not a delivery one.
 
 **UX requirements (post-checklist-gap resolution)**
 

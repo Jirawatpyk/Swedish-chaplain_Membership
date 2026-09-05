@@ -569,6 +569,40 @@ export { makeDrizzleZeroRateCertPruneRepo } from './infrastructure/repos/drizzle
 export { vercelBlobAdapter } from './infrastructure/adapters/vercel-blob-adapter';
 export { f4AuditAdapter } from './infrastructure/adapters/audit-adapter';
 export { receiptPdfRenderEnqueueAdapter } from './infrastructure/adapters/receipt-pdf-render-enqueue-adapter';
+// 108 FR-001 — the money-email recipient rule, for the ONE caller outside this
+// module that has to apply it: the void-PDF reconcile cron re-enqueues a
+// cancellation email and must resolve the LIVE primary contact rather than
+// copying the address frozen in the doomed outbox row.
+/**
+ * 108 FR-003 — the banner's question, as a USE CASE. Presentation imports this
+ * pair, never `recipientLocaleAdapter` (see the note on that export below).
+ */
+export {
+  getMemberMoneyRecipientStatus,
+  type MemberMoneyRecipientStatus,
+} from './application/use-cases/get-member-money-recipient-status';
+export { makeMemberMoneyRecipientStatusDeps } from './application/invoicing-deps';
+/**
+ * `recipientLocaleAdapter` is deliberately NOT exported here (round-5 #10).
+ *
+ * It was, with a comment saying "not for pages or server components" — but a
+ * comment is not a guard. ESLint's `no-restricted-imports` is scoped to deep
+ * deep `infrastructure` paths under a module, so an
+ * `import { recipientLocaleAdapter } from '@/modules/invoicing'` in a server
+ * component was invisible to it, which re-opened for every future importer the
+ * exact Principle III hole `getMemberMoneyRecipientStatus` was created to close.
+ *
+ * Its one consumer, the `void-pdf-reconcile` cron, DEEP-imports it instead and
+ * carries an entry in `tests/unit/architecture/invoicing-presentation-imports.test.ts`
+ * — the same escape hatch that route already uses for `react-pdf-render-adapter`.
+ * A deep import is loud and allowlisted; a barrel export is neither.
+ */
+export {
+  auditAutoEmailSkippedNoRecipient,
+  resolveMoneyRecipient,
+  type MoneyRecipient,
+  type MoneyRecipientSnapshot,
+} from './application/lib/resolve-money-recipient';
 // 059-membership-suspension Task 12 — schema-level re-export mirroring
 // the F5 `paymentsTable` precedent (`@/modules/payments` barrel): F8's
 // `invoice-due-bridge-drizzle.ts` reads the `invoices` table directly

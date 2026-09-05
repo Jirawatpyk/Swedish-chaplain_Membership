@@ -258,6 +258,16 @@ export function InvoiceMoreMenu({
         toast.warning(t('toast.resendNoReceipt'));
       } else if (code === 'not_issued') {
         toast.warning(t('toast.resendNotIssued'));
+      } else if (code === 'no_recipient') {
+        // 108 FR-003 — the only resend failure staff can fix themselves, and
+        // the generic 'please try again' would send them to retry a data
+        // problem forever. The banner on this page says the same thing.
+        toast.error(t('toast.resendNoRecipient'));
+      } else if (code === 'no_buyer_email') {
+        // Round-4 finding #6 — a NON-MEMBER event invoice. `resendNoRecipient`
+        // reads "add or promote a contact on the member page", and this row has
+        // no member and no member page. The fix is to reissue with an address.
+        toast.error(t('toast.resendNoBuyerEmail'));
       } else {
         toast.error(t('toast.resendFailed'));
       }

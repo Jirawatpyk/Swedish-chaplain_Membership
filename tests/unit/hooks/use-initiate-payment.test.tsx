@@ -98,3 +98,40 @@ describe('useInitiatePayment regression contract', () => {
     ).toBeTruthy();
   });
 });
+
+/**
+ * 108 FR-004 (round-4 finding #1) — the 409 refusal must reach the member as
+ * an EXPLANATION, not as "Payment could not be completed".
+ *
+ * Static, in this file's established idiom and for its stated reason: the
+ * hook's async fetch + AbortController + StrictMode double-invoke surface is
+ * flaky under jsdom. Two things can realistically regress, and both are visible
+ * in the source string plus the message catalogue — the arm being deleted, and
+ * the i18n key being renamed out from under it. `next-intl` does NOT throw on a
+ * missing key; it returns the raw dotted path, so a rename would ship the
+ * literal text "retry.reasonNoPrimaryContact" to a member with no test failing.
+ */
+describe('useInitiatePayment — 409 primary_contact_missing (108 FR-004)', () => {
+  it('maps the 409 body code to its own reason, not the generic one', () => {
+    // The mapping is by STATUS; `bodyCode` was consulted only for the 403 arm,
+    // so the 409 fell through to `retry.genericReason` next to a Retry button —
+    // for a condition retrying cannot fix and the member cannot fix either.
+    expect(source).toContain("bodyCode === 'primary_contact_missing'");
+    expect(source).toContain("t('retry.reasonNoPrimaryContact')");
+  });
+
+  it('the reason key exists in every locale', () => {
+    for (const locale of ['en', 'th', 'sv'] as const) {
+      const messages = JSON.parse(
+        readFileSync(resolve(process.cwd(), `src/i18n/messages/${locale}.json`), 'utf8'),
+      ) as { portal: { payment: { retry: Record<string, string> } } };
+      const value: string | undefined = messages.portal.payment.retry.reasonNoPrimaryContact;
+      expect(value, `${locale} is missing the key`).toBeTruthy();
+      if (value === undefined) return;
+      // It must name an action the MEMBER can take. They cannot add a contact
+      // themselves — that was the whole defect in the admin-string copy-paste
+      // this feature already fixed once on the resend toast.
+      expect(value.length).toBeGreaterThan(20);
+    }
+  });
+});

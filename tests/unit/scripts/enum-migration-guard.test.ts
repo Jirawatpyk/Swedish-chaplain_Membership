@@ -142,6 +142,8 @@ describe('findMissingEnumValues', () => {
           'refund_credit_note_waived',
           'payment_settlement_rolled_back',
           'member_plan_change_billing_effect',
+          // 0292 (108-contact-recipient-rules PR-A):
+          'auto_email_skipped_no_recipient',
         ]),
       ],
     ]);
@@ -182,6 +184,8 @@ describe('findMissingEnumValues', () => {
           'refund_credit_note_waived',
           'payment_settlement_rolled_back',
           'member_plan_change_billing_effect',
+          // 0292 (108-contact-recipient-rules PR-A):
+          'auto_email_skipped_no_recipient',
         ]),
       ],
     ]);
@@ -230,6 +234,8 @@ describe('findMissingEnumValues', () => {
           'refund_credit_note_waived',
           'payment_settlement_rolled_back',
           'member_plan_change_billing_effect',
+          // 0292 (108-contact-recipient-rules PR-A):
+          'auto_email_skipped_no_recipient',
         ],
       },
     ]);

@@ -68,6 +68,11 @@ import { resolveLegalEntityTypeLabel } from '@/components/members/resolve-legal-
 import { InvitePortalButton } from '@/components/members/invite-portal-button';
 import { ResendBouncedInviteButton } from '@/components/members/resend-bounced-invite-button';
 import { ArchivedBanner } from '@/components/members/archived-banner';
+import { NoPrimaryContactBanner } from '@/components/members/no-primary-contact-banner';
+import {
+  getMemberMoneyRecipientStatus,
+  makeMemberMoneyRecipientStatusDeps,
+} from '@/modules/invoicing';
 import { ArchiveMemberButton } from '@/components/members/archive-member-button';
 import { EraseMemberButton } from '@/components/members/erase-member-button';
 import { ErasedBanner } from '@/components/members/erased-banner';
@@ -771,6 +776,38 @@ export default async function MemberDetailPage({
       : null;
 
   const isErased = erasureStatus.erasedAt !== null;
+
+  // 108 FR-003 — would a money email for this member reach anyone?
+  //
+  // Asked of a USE CASE, which asks the resolver, so the banner and the money
+  // path can never disagree about what counts as deliverable. The page's own
+  // `primary` lookup answers a DIFFERENT question — which contact to DISPLAY —
+  // and a primary contact with an empty `email` is a fine thing to display and
+  // a completely undeliverable address. Using one for the other is what let the
+  // banner stay silent while every receipt and credit note was being skipped.
+  // Presentation calls use cases only (Principle III), so the adapter is not
+  // named here.
+  //
+  // The archived / erased exclusions moved INTO the use case (round-5 #2) so
+  // all three banner sites share them — the invoice and credit-note pages had
+  // no such gate and fired on every document an erased member ever had. A
+  // failed read is logged (inside the use case, with `errKind`) and the banner
+  // hidden — it is not a claim about the member's contacts.
+  let moneyEmailUndeliverable = false;
+  {
+    const recipientStatus = await getMemberMoneyRecipientStatus(
+      makeMemberMoneyRecipientStatusDeps(),
+      { tenantId: tenant.slug, memberId: member.memberId },
+    );
+    if (recipientStatus.ok) {
+      moneyEmailUndeliverable = recipientStatus.value.shouldWarn;
+    } else {
+      logger.warn(
+        { requestId, tenantId: tenant.slug, memberId: member.memberId },
+        'admin.members.detail.recipient_status_read_failed — banner suppressed',
+      );
+    }
+  }
   // Post-erase state (COMP-1 US3-A S5): the modify affordances — Erase, Archive,
   // Edit, add-contact, Renew — are gated on write-role AND not-yet-erased. Named
   // once so the four call sites stay in lock-step (Archive/Edit/add-contact
@@ -919,6 +956,10 @@ export default async function MemberDetailPage({
             windowStatus={windowStatus}
           />
         )}
+
+      {/* 108 FR-003 — money emails are being skipped for this member. The
+          archived / erased exclusions live in `moneyEmailUndeliverable`. */}
+      {moneyEmailUndeliverable && <NoPrimaryContactBanner memberId={member.memberId} />}
         <section aria-labelledby="member-company-heading">
         <Card>
           <CardHeader>

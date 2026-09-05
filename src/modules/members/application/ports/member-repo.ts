@@ -627,10 +627,18 @@ export interface MemberRepo {
   /**
    * F7 — get a member's primary contact email. Returns `null` if the
    * member has no primary contact OR the email is empty. Used by
-   * FR-002 precondition `j` reply-to derivation.
+   * FR-002 precondition `j` reply-to derivation, and since 108 by F5's
+   * `BillingRecipientPort` — which put it on a money path.
+   *
+   * `tenantId` is required for the WHERE clause, not for routing: RLS +
+   * FORCE already scope the read through the tx's GUC, and Principle I asks
+   * for the application layer to state the same rule rather than inherit it.
+   * Its F4 counterpart (`recipient-locale-adapter`) has always done so; this
+   * one was the asymmetry.
    */
   findPrimaryContactEmailInTx(
     tx: TenantTx,
+    tenantId: string,
     memberId: MemberId,
   ): Promise<Result<string | null, RepoError>>;
 

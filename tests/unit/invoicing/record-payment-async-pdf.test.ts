@@ -29,6 +29,7 @@ import { DocumentNumber } from '@/modules/invoicing/domain/value-objects/documen
 import { Sha256Hex } from '@/modules/invoicing/domain/value-objects/sha256-hex';
 import type { TenantInvoiceSettingsView } from '@/modules/invoicing/application/ports/tenant-settings-repo';
 import { membershipAccessStub } from '../../helpers/membership-access-stub';
+import { makeRecipientLocaleFake } from '../../helpers/recipient-locale-fake';
 
 const INVOICE_ID = '00000000-0000-0000-0000-00000000a166';
 
@@ -146,7 +147,11 @@ function makeSettings(overrides: Partial<TenantInvoiceSettingsView> = {}): Tenan
   };
 }
 
-function makeAsyncDeps(draft: Invoice, settings: TenantInvoiceSettingsView): RecordPaymentDeps {
+function makeAsyncDeps(
+  draft: Invoice,
+  settings: TenantInvoiceSettingsView,
+  overrides: Partial<RecordPaymentDeps> = {},
+): RecordPaymentDeps {
   const opaqueTx = { execute: vi.fn(async () => [{ status: 'issued' }]) };
   return {
     membershipAccess: membershipAccessStub(), // 066 §4.4(1)
@@ -209,7 +214,7 @@ function makeAsyncDeps(draft: Invoice, settings: TenantInvoiceSettingsView): Rec
     audit: { emit: vi.fn(async () => {}) },
     clock: { nowIso: () => '2026-05-18T10:00:00Z' },
     outbox: { enqueue: vi.fn(async () => {}) },
-    recipientLocale: { getMemberEmailLocale: vi.fn(async () => null) },
+    recipientLocale: makeRecipientLocaleFake({ email: 'john@acme.example' }),
     memberIdentity: {
       getForIssue: vi.fn(),
       markRegistrationFeePaid: vi.fn(async () => {}),
@@ -220,6 +225,7 @@ function makeAsyncDeps(draft: Invoice, settings: TenantInvoiceSettingsView): Rec
     // Default: flag not carried (legacy/dormant), exact-equivalent of the
     // pre-refactor `undefined`. Tests that exercise the RC path override with 'on'.
     taxAtPayment: 'off',
+    ...overrides,
   };
 }
 
@@ -392,6 +398,11 @@ describe('recordPayment — T166-03 async receipt PDF branch', () => {
     // notification_type — but the column is NOT NULL, so a snapshot with
     // no contact email must land the documented system sentinel instead
     // of crashing (or persisting an empty string).
+    //
+    // 108 — the render-task sentinel still reads the SNAPSHOT (it is not a
+    // delivery address), while the receipt EMAIL is now skipped because the
+    // member has no live primary contact. Both halves are set explicitly so
+    // this test keeps proving both, independently.
     const base = makeIssuedInvoice();
     const draft = {
       ...base,
@@ -400,7 +411,9 @@ describe('recordPayment — T166-03 async receipt PDF branch', () => {
         primary_contact_email: null as unknown as string,
       },
     } as Invoice;
-    const deps = makeAsyncDeps(draft, makeSettings());
+    const deps = makeAsyncDeps(draft, makeSettings(), {
+      recipientLocale: makeRecipientLocaleFake({ email: null }),
+    });
     const r = await recordPayment(deps, input);
     expect(r.ok).toBe(true);
     expect(deps.receiptPdfRenderEnqueue!.enqueue).toHaveBeenCalledTimes(1);

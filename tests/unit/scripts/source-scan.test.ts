@@ -312,3 +312,111 @@ describe('stripCommentsPreserveLines', () => {
     expect(stripCommentsPreserveLines(src).split('\n')).toHaveLength(4);
   });
 });
+
+describe('stripCommentLines — nested template literals (108 PR-A re-review MEDIUM-3)', () => {
+  // The stripper tracked ONE open-quote character. A template literal's `${…}`
+  // re-enters code context, where a second backtick opens a NESTED template —
+  // and with one variable that inner backtick CLOSED the outer one. From there
+  // the rest of the line read as code, so a `//` inside the outer template (a
+  // URL, in practice) was treated as a line comment and everything after it
+  // vanished. Six gates share this helper, so the blindness was theirs too.
+  //
+  // Measured impact when found: zero occurrences in scope. These tests exist so
+  // it stays zero for a reason other than luck.
+
+  it('keeps code that follows a nested template containing "//"', () => {
+    const src = 'const to = `${a ? `https://x` : `y`}${snap.primary_contact_email}`;';
+    expect(stripCommentLines(src).join('\n')).toContain('primary_contact_email');
+  });
+
+  it('keeps code after a nested template on an ordinary line', () => {
+    const src = 'const cls = `${on ? `a` : `b`} ${role}`; check(actorRole);';
+    const out = stripCommentLines(src).join('\n');
+    expect(out).toContain('actorRole');
+  });
+
+  it('still strips a REAL line comment after a template', () => {
+    const src = 'const u = `https://x`; // primary_contact_email';
+    const out = stripCommentLines(src).join('\n');
+    expect(out).toContain('https://x');
+    expect(out).not.toContain('primary_contact_email');
+  });
+
+  it('still carries an unterminated template across lines', () => {
+    const src = ['const q = sql`', '  SELECT 1 -- not a JS comment', '`;'].join('\n');
+    expect(stripCommentLines(src).join('\n')).toContain('SELECT 1');
+  });
+
+  // The previous version of this test asserted `toHaveLength(3)` on a 3-line
+  // input. `stripCommentLines` pushes exactly one result per input line, so it
+  // held for every possible input under every possible implementation — a test
+  // that cannot fail is a claim of coverage, not coverage (review round 3,
+  // finding #7). Asserting on the CONTENT is what pins the stated invariant,
+  // and doing that immediately showed the invariant did not hold.
+
+  it('a `${` left open at end of line resumes in CODE context on the next line', () => {
+    const src = [
+      'const q = `${',
+      '  cond ? a : b // note',
+      '}` + snap.primary_contact_email;',
+    ].join('\n');
+    const out = stripCommentLines(src).join('\n');
+    // Line 2 sits INSIDE the `${…}` expression, i.e. real code — so `//` there
+    // is a real comment. Only the whole frame stack, carried across the
+    // newline, knows that. A boolean "we are in a template" cannot: it read
+    // line 2 as template TEXT, kept the comment, and let the backticks on that
+    // line push and pop the wrong frame — scrambling every later line.
+    expect(out).not.toContain('note');
+    expect(out).toContain('primary_contact_email');
+  });
+
+  it('a brace inside `${…}` does not close the frame', () => {
+    // The `}` of the object literal is not the `}` of the interpolation.
+    // Popping the frame on it drops the scanner into template TEXT
+    // mid-expression, so the backtick that follows reads as the CLOSING
+    // backtick of the outer template — and the `//` after it truncates the
+    // rest of the line.
+    const src = 'const s = `${fn({ a: 1 }, `//x`)}` + snap.primary_contact_email;';
+    expect(stripCommentLines(src).join('\n')).toContain('primary_contact_email');
+  });
+
+  it('an apostrophe in JSX children does not swallow a later line comment', () => {
+    // Round-4 finding #15. A lone `'` in code context pushes a STRING frame, so
+    // everything after it on the line is read as string text — including a
+    // real `//` comment, whose contents then reach every gate as source. Six
+    // gates share this helper, and JSX children are exactly where stray
+    // apostrophes live (the `{/* … */}` marker idiom exists because `//` is
+    // unavailable there).
+    const src = "<p>It's fine</p> // primary_contact_email";
+    expect(stripCommentLines(src)[0]).not.toContain('primary_contact_email');
+  });
+
+  it('a JSX closing tag is not a regex opener', () => {
+    // Round-4 finding #15, second half. `<` was in the `startsRegex` operator
+    // set, so the `/` of `</div>` opened a "regex" that `skipRegex` ran to the
+    // `/` of the following `//` — and the comment after it survived as source.
+    // These scanners run over `.tsx`, where closing tags are on nearly every
+    // line, so this was the broadest instance of the same symptom.
+    const src = '<div>{label}</div> // primary_contact_email';
+    expect(stripCommentLines(src)[0]).not.toContain('primary_contact_email');
+  });
+
+  it('a real regex after an operator still works', () => {
+    // Control for the arm above: removing `<` from the set must not stop the
+    // set from doing its job. `=` still opens a regex, and its `//` content is
+    // regex text, not a comment.
+    const out = stripCommentLines('const re = /a\\/\\/b/; const role = 1;')[0]!;
+    expect(out).toContain('role = 1');
+    expect(out).toContain('/a');
+  });
+
+  it('an unterminated quote does NOT leak into the next line', () => {
+    // `'` and `"` cannot span lines; only a template can. If the frame survived
+    // EOL, line 2 would be scanned as string TEXT and its comment kept — the
+    // carry-the-stack fix must not over-carry.
+    const src = ["const bad = 'oops", 'const ok = 1; // note', 'check(x);'].join('\n');
+    const out = stripCommentLines(src).join('\n');
+    expect(out).not.toContain('note');
+    expect(out).toContain('check(x)');
+  });
+});

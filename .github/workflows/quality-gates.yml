@@ -97,6 +97,9 @@ jobs:
       - name: No audit row states a role its actor did not hold (017)
         run: pnpm check:actor-role-truth
 
+      - name: No money email addressed from the frozen buyer snapshot (108)
+        run: pnpm check:money-recipient
+
   unit:
     # Sharded because `vitest.config.ts` caps `maxWorkers: '50%'` for
     # determinism (see the starvation trade-off documented there). On a 2-core

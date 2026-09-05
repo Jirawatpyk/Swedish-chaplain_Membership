@@ -458,6 +458,8 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   //     F4_AUDIT_RETENTION_YEARS (invoicing audit port) — the F4
   //     enum↔retention parity test enforces it. ---
   'invoice_buyer_identity_invalid',
+  // 108 (migration 0292) — F4 auto-email had no live primary contact to send to.
+  'auto_email_skipped_no_recipient',
   // --- 107-auto-invoice Task 2 (migration 0275) — proactive renewal-
   //     invoice drafting cron's create/discard forensic events. Keep in
   //     lockstep with F8_AUDIT_EVENT_TYPES (renewals audit port) — the
