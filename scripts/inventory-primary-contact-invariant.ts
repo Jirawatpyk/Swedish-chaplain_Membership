@@ -2,11 +2,20 @@
  * 108 T003 / research V1 — read-only primary-contact inventory (counts only).
  *
  * Migration `0293` installs a deferred CONSTRAINT TRIGGER that refuses any
- * commit leaving an active, non-erased member with a number of live primary
- * contacts other than one. Its pre-check DO block FAILS THE DEPLOY when the
- * data already violates the invariant, so PR-B must not merge until this
- * script prints `violations: 0`. Re-run it immediately before the merge — the
- * first run (2026-09-04) is only a snapshot.
+ * commit leaving an active, non-erased member WITH AT LEAST ONE CONTACT ROW
+ * with a number of live primary contacts other than one. Its pre-check DO
+ * block FAILS THE DEPLOY when the data already violates the invariant, so
+ * PR-B must not merge until this script prints `violations: 0`. Re-run it
+ * immediately before the merge — and again right after any bulk contact
+ * import, because a member left with no live primary stops receiving money
+ * emails the moment it happens (108 PR-A is live with no flag).
+ *
+ * `violations` uses the SAME predicate as 0293's pre-check (spec AMENDMENT
+ * 2026-09-05), so exit 0 here means the migration will apply. Members with NO
+ * contact rows at all are reported on their own line: 0293 does not check
+ * them, but they are exactly the population PR-A skips money emails for, so a
+ * non-zero count after an import is a data problem even though it is not a
+ * deploy blocker.
  *
  * PRIVACY: prints COUNTS and member ids only — never an email, a name or any
  * other contact PII (Constitution Principle I; the operator runs this against
@@ -28,6 +37,8 @@ import { asTenantContext } from '@/modules/tenants';
 interface InventoryRow {
   readonly zero_primary: number;
   readonly multi_primary: number;
+  /** Members with NO contact row at all — outside 0293's scope, inside PR-A's. */
+  readonly no_contact_rows: number;
   readonly active_non_erased_members: number;
   readonly primaries: number;
   readonly secondaries: number;
@@ -66,7 +77,11 @@ async function main(): Promise<void> {
              AND c.removed_at IS NULL
            GROUP BY c.member_id
         ), scoped AS (
-          SELECT m.member_id, COALESCE(l.primaries, 0) AS primaries
+          SELECT m.member_id,
+                 COALESCE(l.primaries, 0) AS primaries,
+                 EXISTS (SELECT 1 FROM contacts c
+                          WHERE c.tenant_id = m.tenant_id
+                            AND c.member_id = m.member_id) AS has_contacts
             FROM members m
             LEFT JOIN live l ON l.member_id = m.member_id
            WHERE m.tenant_id = ${tenantId}
@@ -74,9 +89,10 @@ async function main(): Promise<void> {
              AND m.erased_at IS NULL
         )
         SELECT
-          (SELECT COUNT(*) FROM scoped WHERE primaries = 0)::int              AS zero_primary,
-          (SELECT COUNT(*) FROM scoped WHERE primaries > 1)::int              AS multi_primary,
-          (SELECT COUNT(*) FROM scoped)::int                                  AS active_non_erased_members,
+          (SELECT COUNT(*) FROM scoped WHERE primaries = 0 AND has_contacts)::int  AS zero_primary,
+          (SELECT COUNT(*) FROM scoped WHERE primaries > 1)::int                    AS multi_primary,
+          (SELECT COUNT(*) FROM scoped WHERE NOT has_contacts)::int                 AS no_contact_rows,
+          (SELECT COUNT(*) FROM scoped)::int                                        AS active_non_erased_members,
           (SELECT COALESCE(SUM(primaries), 0) FROM live)::int                 AS primaries,
           (SELECT COALESCE(SUM(secondaries), 0) FROM live)::int               AS secondaries,
           (SELECT COALESCE(SUM(secondaries_with_login), 0) FROM live)::int    AS secondaries_with_login,
@@ -96,6 +112,10 @@ async function main(): Promise<void> {
          WHERE m.tenant_id = ${tenantId}
            AND m.status <> 'archived'
            AND m.erased_at IS NULL
+           AND EXISTS (SELECT 1
+                         FROM contacts c
+                        WHERE c.tenant_id = m.tenant_id
+                          AND c.member_id = m.member_id)
            AND (SELECT COUNT(*)
                   FROM contacts c
                  WHERE c.tenant_id = m.tenant_id
@@ -120,6 +140,7 @@ async function main(): Promise<void> {
   console.log(`members (active/inactive, non-erased): ${counts.active_non_erased_members}`);
   console.log(`  with zero live primaries:            ${counts.zero_primary}`);
   console.log(`  with more than one live primary:     ${counts.multi_primary}`);
+  console.log(`  with NO contact rows at all:         ${counts.no_contact_rows}  (not a 0293 blocker; PR-A skips their money emails)`);
   console.log(`live contacts — primaries:             ${counts.primaries}`);
   console.log(`live contacts — secondaries:           ${counts.secondaries}`);
   console.log(`  of those, with a portal login:       ${counts.secondaries_with_login}`);

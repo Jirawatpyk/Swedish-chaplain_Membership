@@ -109,9 +109,19 @@ function makeDeps(overrides: Partial<{
       overrides.restoreOutcome ?? { outcome: 'restored', cycleId: 'cyc-1' },
     ),
   };
+  // 108 PR-B — undelete now reads the member's contacts in-tx (FR-014). A
+  // live primary keeps these cases about the pre-108 orchestration; the
+  // designation paths are covered in undelete-member-designate.test.ts.
+  const contactRepo = {
+    listByMemberInTx: vi.fn().mockResolvedValue(
+      ok([{ contactId: 'p', firstName: 'P', lastName: 'Q', isPrimary: true, removedAt: null }]),
+    ),
+    designatePrimaryInTx: vi.fn(),
+  };
   return {
     tenant,
     memberRepo,
+    contactRepo,
     audit,
     clock,
     renewalsCascade,

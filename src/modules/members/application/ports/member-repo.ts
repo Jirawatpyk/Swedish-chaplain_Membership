@@ -149,6 +149,13 @@ export type RepoConflictReason =
   | 'contact_already_linked'
   | 'no_current_primary'
   | 'primary_contact_race'
+  // 108 PR-B — the repo refuses to soft-delete the live primary in the SAME
+  // statement as the write (`WHERE is_primary = false`); a pre-read cannot
+  // see a concurrent promote.
+  | 'cannot_remove_primary'
+  // 108 PR-B — migration 0293's deferred trigger refused the COMMIT because
+  // the member would have ended with zero live primaries.
+  | 'no_primary_contact'
   | 'user_email_already_taken';
 
 export type RepoError =

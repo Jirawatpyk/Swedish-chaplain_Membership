@@ -139,6 +139,9 @@ function makeStubDeps(): MemberSelfUpdateDeps {
       ok({ ...baseContact, ...patch } as Contact),
     removeInTx: async () =>
       ok({ contact: baseContact, wasPrimary: false }),
+    // 108 PR-B port additions — unused by the whitelist path.
+    listByMemberInTx: async () => ok([baseContact]),
+    designatePrimaryInTx: async () => ok(baseContact),
     promotePrimaryInTx: async () =>
       err({ code: 'repo.unexpected' as const }),
     linkUserInTx: async () => ok(baseContact),

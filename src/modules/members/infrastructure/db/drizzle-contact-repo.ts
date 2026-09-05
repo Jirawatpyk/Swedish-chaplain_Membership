@@ -157,26 +157,69 @@ export const drizzleContactRepo: ContactRepo = {
     }
   },
 
+  async listByMemberInTx(tx, memberId) {
+    try {
+      const rows = await tx
+        .select()
+        .from(contacts)
+        .where(eq(contacts.memberId, memberId));
+      return ok(rows.map(rowToContact));
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
+
   async removeInTx(tx, contactId) {
     try {
-      // Capture isPrimary BEFORE the UPDATE — RETURNING reflects
-      // post-SET values, and SET forces isPrimary=false.
-      const [before] = await tx
+      // 108 PR-B — the primacy decision is IN the write. `is_primary = false`
+      // in the WHERE means a row that was promoted by a concurrent tx (whose
+      // row lock we wait on, then re-evaluate against) matches 0 rows here
+      // instead of being soft-deleted out from under the member.
+      const updated = await tx
+        .update(contacts)
+        .set({ removedAt: new Date() })
+        .where(
+          and(
+            eq(contacts.contactId, contactId),
+            eq(contacts.isPrimary, false),
+          ),
+        )
+        .returning();
+      if (updated.length > 0) {
+        return ok({ contact: rowToContact(updated[0]!), wasPrimary: false });
+      }
+
+      // 0 rows → distinguish "no such contact" from "it is the primary".
+      const [probe] = await tx
         .select({ isPrimary: contacts.isPrimary })
         .from(contacts)
         .where(eq(contacts.contactId, contactId))
         .limit(1);
-      const wasPrimary = before?.isPrimary ?? false;
-
-      const updated = await tx
-        .update(contacts)
-        .set({ removedAt: new Date(), isPrimary: false })
-        .where(eq(contacts.contactId, contactId))
-        .returning();
-      if (updated.length === 0) return err({ code: 'repo.not_found' });
-      return ok({ contact: rowToContact(updated[0]!), wasPrimary });
+      if (!probe) return err({ code: 'repo.not_found' });
+      return err({ code: 'repo.conflict', reason: 'cannot_remove_primary' });
     } catch (e) {
       return err(unexpected(e));
+    }
+  },
+
+  async designatePrimaryInTx(tx, memberId, contactId) {
+    try {
+      const updated = await tx
+        .update(contacts)
+        .set({ isPrimary: true, updatedAt: new Date() })
+        .where(
+          and(
+            eq(contacts.contactId, contactId),
+            eq(contacts.memberId, memberId),
+            isNull(contacts.removedAt),
+            eq(contacts.isPrimary, false),
+          ),
+        )
+        .returning();
+      if (updated.length === 0) return err({ code: 'repo.not_found' });
+      return ok(rowToContact(updated[0]!));
+    } catch (e) {
+      return err(mapDbError(e, 'primary_contact_race'));
     }
   },
 

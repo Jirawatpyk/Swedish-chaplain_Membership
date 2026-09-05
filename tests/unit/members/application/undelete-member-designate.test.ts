@@ -34,6 +34,7 @@ vi.mock('@/lib/metrics', () => ({
 import { undeleteMember, asMemberId } from '@/modules/members';
 import { asTenantContext } from '@/modules/tenants';
 import type { ContactId } from '@/modules/members/domain/contact';
+import type { Member } from '@/modules/members/domain/member';
 import type { UndeleteMemberDeps } from '@/modules/members/application/use-cases/undelete-member';
 
 const tenant = asTenantContext('test-tenant');
@@ -93,8 +94,6 @@ function contact(
   } as const;
 }
 
-type Stub = ReturnType<typeof vi.fn>;
-
 function makeDeps(contacts: ReadonlyArray<ReturnType<typeof contact>>) {
   const memberRepo = {
     findByIdInTx: vi.fn().mockResolvedValue(ok(makeMember())),
@@ -126,11 +125,7 @@ function makeDeps(contacts: ReadonlyArray<ReturnType<typeof contact>>) {
     audit,
     clock: { now: () => new Date('2026-03-01T00:00:00Z') },
     renewalsCascade,
-  } as unknown as UndeleteMemberDeps & {
-    memberRepo: Record<string, Stub>;
-    contactRepo: Record<string, Stub>;
-    audit: Record<string, Stub>;
-  };
+  } as unknown as UndeleteMemberDeps;
 }
 
 const meta = { actorUserId: 'admin-1', requestId: 'req-1' };
@@ -146,7 +141,7 @@ describe('undeleteMember — primary-contact designation (FR-014)', () => {
     expect(result.ok, JSON.stringify(result)).toBe(true);
     expect(deps.contactRepo.designatePrimaryInTx).not.toHaveBeenCalled();
     // Only the undelete event — no fabricated primary-contact change.
-    const types = deps.audit.recordInTx.mock.calls.map(
+    const types = vi.mocked(deps.audit.recordInTx).mock.calls.map(
       (c) => (c[2] as { type: string }).type,
     );
     expect(types).toEqual(['member_undeleted']);
@@ -201,7 +196,7 @@ describe('undeleteMember — primary-contact designation (FR-014)', () => {
         }),
       }),
     );
-    const types = deps.audit.recordInTx.mock.calls.map(
+    const types = vi.mocked(deps.audit.recordInTx).mock.calls.map(
       (c) => (c[2] as { type: string }).type,
     );
     expect(types).toEqual(['member_primary_contact_changed', 'member_undeleted']);
@@ -252,7 +247,7 @@ describe('undeleteMember — primary-contact designation (FR-014)', () => {
   it('aborts the whole transaction when the designation loses a concurrent race', async () => {
     const deps = makeDeps([contact(LIVE_A), contact(LIVE_B)]);
     // The row was live at read time and removed before the UPDATE landed.
-    deps.contactRepo.designatePrimaryInTx.mockResolvedValue(
+    vi.mocked(deps.contactRepo.designatePrimaryInTx).mockResolvedValue(
       err({ code: 'repo.not_found' as const }),
     );
 
@@ -271,7 +266,9 @@ describe('undeleteMember — primary-contact designation (FR-014)', () => {
 
   it('never designates for a member that is not archived — the state check runs first', async () => {
     const deps = makeDeps([contact(LIVE_A)]);
-    deps.memberRepo.findByIdInTx.mockResolvedValue(ok(makeMember('active')));
+    vi.mocked(deps.memberRepo.findByIdInTx).mockResolvedValue(
+      ok(makeMember('active') as unknown as Member),
+    );
 
     const result = await undeleteMember(memberId, meta, deps, {
       designatePrimaryContactId: LIVE_A,

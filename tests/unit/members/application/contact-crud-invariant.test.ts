@@ -33,7 +33,7 @@ import {
 } from '@/modules/members/application/use-cases/contact-crud';
 import type { ContactCrudDeps } from '@/modules/members/application/use-cases/contact-crud';
 import { asTenantContext } from '@/modules/tenants';
-import { asContactId } from '@/modules/members/domain/contact';
+import { asContactId, type Contact } from '@/modules/members/domain/contact';
 import { asMemberId } from '@/modules/members/domain/member';
 
 const tenant = asTenantContext('test-tenant');
@@ -114,11 +114,7 @@ function makeDeps(opts: {
     contactRepo,
     audit,
     idFactory: { contactId: () => NEW_ID },
-  } as unknown as ContactCrudDeps & {
-    memberRepo: Record<string, ReturnType<typeof vi.fn>>;
-    contactRepo: Record<string, ReturnType<typeof vi.fn>>;
-    audit: Record<string, ReturnType<typeof vi.fn>>;
-  };
+  } as unknown as ContactCrudDeps;
 }
 
 describe('contact CRUD — in-tx exactly-one-primary policy (FR-012)', () => {
@@ -178,8 +174,8 @@ describe('contact CRUD — in-tx exactly-one-primary policy (FR-012)', () => {
 
       await promotePrimary(memberId, SECONDARY, meta, deps);
 
-      const writeTx = deps.contactRepo.promotePrimaryInTx.mock.calls[0]?.[0];
-      const readTx = deps.contactRepo.listByMemberInTx.mock.calls[0]?.[0];
+      const writeTx = vi.mocked(deps.contactRepo.promotePrimaryInTx).mock.calls[0]?.[0];
+      const readTx = vi.mocked(deps.contactRepo.listByMemberInTx).mock.calls[0]?.[0];
       // A global-`db` read here would run outside the tx, see the pre-write
       // state, and pass while the invariant is broken (memory: RLS bypass via
       // the pool-global db singleton).
@@ -215,7 +211,9 @@ describe('contact CRUD — in-tx exactly-one-primary policy (FR-012)', () => {
           reason: 'cannot_remove_primary' as const,
         }),
       });
-      deps.contactRepo.findById.mockResolvedValue(ok(contactRow(PRIMARY)));
+      vi.mocked(deps.contactRepo.findById).mockResolvedValue(
+        ok(contactRow(PRIMARY) as unknown as Contact),
+      );
 
       const result = await removeContact(memberId, PRIMARY, meta, deps);
 

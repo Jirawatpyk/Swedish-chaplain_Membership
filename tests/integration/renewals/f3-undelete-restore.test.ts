@@ -42,6 +42,7 @@ import { db, runInTenant } from '@/lib/db';
 import { asSatang } from '@/lib/money';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
+import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
 import { renewalCycles } from '@/modules/renewals/infrastructure/schema-renewal-cycles';
 import { undeleteMember, asMemberId } from '@/modules/members';
@@ -89,6 +90,27 @@ async function countNonTerminalCycles(
     .length;
 }
 
+/**
+ * 108 PR-B (FR-014): undelete refuses a member with no live primary. Seed the
+ * primary contact the app always creates alongside a member.
+ */
+async function seedPrimaryContact(
+  tx: Parameters<Parameters<typeof runInTenant>[1]>[0],
+  tenantSlug: string,
+  memberId: string,
+): Promise<void> {
+  await tx.insert(contacts).values({
+    tenantId: tenantSlug,
+    contactId: randomUUID(),
+    memberId,
+    firstName: 'Primary',
+    lastName: 'Contact',
+    email: `restore-${randomUUID().slice(0, 8)}@example.com`,
+    preferredLanguage: 'en',
+    isPrimary: true,
+  });
+}
+
 describe('F3 undelete → F8 cycle restore — Cluster 4', () => {
   let tenant: TestTenant;
   let admin: TestUser;
@@ -124,6 +146,7 @@ describe('F3 undelete → F8 cycle restore — Cluster 4', () => {
         registrationDate: REGISTRATION_DATE,
         status: 'active',
       });
+      await seedPrimaryContact(tx, tenant.ctx.slug, memberId);
       await tx.insert(renewalCycles).values({
         tenantId: tenant.ctx.slug,
         cycleId: seedCycleId,
@@ -325,6 +348,7 @@ describe('F3 undelete → F8 cycle restore — Cluster 4', () => {
         registrationDate: '2020-03-15',
         status: 'active',
       });
+      await seedPrimaryContact(tx, tenant.ctx.slug, paidMemberId);
       // Real invoice for the completed cycle's linked_invoice_id composite FK
       // (`completed → linked_invoice_id NOT NULL`, migration 0087). Minimal
       // issued shape mirroring create-next-cycle-on-paid.test.ts.
@@ -512,6 +536,7 @@ describe('F3 undelete → F8 cycle restore — Cluster 4', () => {
         registrationDate: REG_DATE,
         status: 'active',
       });
+      await seedPrimaryContact(tx, tenant.ctx.slug, refundedMemberId);
       // Fully credit-noted (refunded) settling invoice. `credited` → the
       // effective-paid predicate retracts the completed cycle.
       await tx.insert(invoices).values({

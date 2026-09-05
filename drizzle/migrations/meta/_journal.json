@@ -1989,6 +1989,13 @@
       "when": 1798542000000,
       "tag": "0292_audit_auto_email_skipped_no_recipient",
       "breakpoints": true
+    },
+    {
+      "idx": 294,
+      "version": "7",
+      "when": 1798542100000,
+      "tag": "0293_primary_contact_invariant_triggers",
+      "breakpoints": true
     }
   ]
 }

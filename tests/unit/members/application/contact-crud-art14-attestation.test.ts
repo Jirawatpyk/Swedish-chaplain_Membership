@@ -95,7 +95,15 @@ describe('addContact — GDPR Art. 14 attestation gate (Task 8)', () => {
         listLinkedUserIdsForMemberInTx: vi.fn(),
         listByMember: vi.fn(),
         findById: vi.fn(),
+        // 108 PR-B — the in-tx invariant check reads the member's contacts
+        // after the add; a live primary keeps this test about Art. 14 only.
+        listByMemberInTx: vi.fn().mockResolvedValue(
+          ok([{ contactId: 'p', isPrimary: true, removedAt: null }]),
+        ),
       } as unknown as ContactCrudDeps['contactRepo'],
+      memberRepo: {
+        findByIdInTx: vi.fn().mockResolvedValue(ok({ memberId, status: 'active' })),
+      } as unknown as ContactCrudDeps['memberRepo'],
       audit: {
         record: vi.fn(),
         recordInTx: vi.fn().mockResolvedValue(ok(undefined)),

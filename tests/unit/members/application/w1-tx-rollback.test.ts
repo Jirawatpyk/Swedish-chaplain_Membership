@@ -69,7 +69,15 @@ function makeDeps(options: {
       listLinkedUserIdsForMemberInTx: vi.fn(),
       listByMember: vi.fn(),
       findById: vi.fn(),
+      // 108 PR-B — the in-tx invariant check runs between addInTx and the
+      // audit write; a live primary keeps this test about W1 atomicity only.
+      listByMemberInTx: vi.fn().mockResolvedValue(
+        ok([{ contactId: 'p', isPrimary: true, removedAt: null }]),
+      ),
     } as unknown as ContactCrudDeps['contactRepo'],
+    memberRepo: {
+      findByIdInTx: vi.fn().mockResolvedValue(ok({ memberId, status: 'active' })),
+    } as unknown as ContactCrudDeps['memberRepo'],
     audit: {
       record: vi.fn(),
       recordInTx: vi.fn().mockResolvedValue(options.auditResult),
