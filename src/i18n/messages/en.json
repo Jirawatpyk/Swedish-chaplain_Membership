@@ -6545,6 +6545,46 @@
       "required": "This field is required.",
       "invalidEmail": "Please enter a valid email address.",
       "tooLong": "Please use {max} characters or fewer."
+    },
+    "marketing": {
+      "state": {
+        "on": "Marketing on",
+        "off_by_staff": "Off (by staff)",
+        "off_by_staffAria": "Marketing switched off by staff — this contact will not receive broadcasts",
+        "off_by_contact": "Off (by contact)",
+        "off_by_contactAria": "Marketing switched off by the contact themself — they will not receive broadcasts",
+        "unsubscribed": "Unsubscribed",
+        "unsubscribedAria": "This person unsubscribed — their choice takes precedence and cannot be overridden by staff",
+        "unavailable": "Status unavailable",
+        "unavailableAria": "Marketing status is temporarily unavailable — the unsubscribe list could not be read"
+      },
+      "reason": {
+        "member_inactive": "Member is inactive",
+        "member_archived": "Member is archived",
+        "member_erased": "Member was erased",
+        "member_halted": "Member's broadcasts are halted pending review",
+        "contact_removed": "Contact was removed",
+        "off_by_staff": "Switched off by staff",
+        "off_by_contact": "Switched off by the contact",
+        "unsubscribed": "Unsubscribed by the person",
+        "sender_own_contact": "Belongs to the sending member",
+        "member_no_eligible_contact": "Member has no contact that can receive"
+      },
+      "switch": {
+        "ariaLabel": "Marketing for {name}: {state}",
+        "switchedOff": "Marketing switched off for {name}",
+        "switchedOn": "Marketing switched on for {name}",
+        "undo": "Undo",
+        "unchanged": "No change — the contact was already in that state.",
+        "errors": {
+          "suppressed": "This person unsubscribed themselves. Their choice takes precedence and cannot be switched back on by staff.",
+          "forbidden": "You do not have permission to change marketing for contacts.",
+          "notFound": "This contact no longer exists.",
+          "rateLimited": "Too many changes in a short time. Please wait a minute and try again.",
+          "unavailable": "The unsubscribe list is temporarily unavailable, so marketing cannot be switched on right now. Try again shortly.",
+          "generic": "Something went wrong. Please try again."
+        }
+      }
     }
   },
   "email": {

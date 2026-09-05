@@ -6545,6 +6545,46 @@
       "required": "Detta fält är obligatoriskt.",
       "invalidEmail": "Ange en giltig e-postadress.",
       "tooLong": "Får vara högst {max} tecken."
+    },
+    "marketing": {
+      "state": {
+        "on": "Marknadsföring på",
+        "off_by_staff": "Av (av personal)",
+        "off_by_staffAria": "Marknadsföring avstängd av personal — kontakten får inga utskick",
+        "off_by_contact": "Av (av kontakten)",
+        "off_by_contactAria": "Marknadsföring avstängd av kontakten själv — hen får inga utskick",
+        "unsubscribed": "Avregistrerad",
+        "unsubscribedAria": "Personen har avregistrerat sig — det valet gäller och kan inte ändras av personal",
+        "unavailable": "Status ej tillgänglig",
+        "unavailableAria": "Marknadsföringsstatus är tillfälligt otillgänglig — avregistreringslistan kunde inte läsas"
+      },
+      "reason": {
+        "member_inactive": "Medlemmen är inaktiv",
+        "member_archived": "Medlemmen är arkiverad",
+        "member_erased": "Medlemmen är raderad",
+        "member_halted": "Medlemmens utskick är pausade i väntan på granskning",
+        "contact_removed": "Kontakten är borttagen",
+        "off_by_staff": "Avstängd av personal",
+        "off_by_contact": "Avstängd av kontakten",
+        "unsubscribed": "Avregistrerad av personen",
+        "sender_own_contact": "Tillhör den avsändande medlemmen",
+        "member_no_eligible_contact": "Medlemmen har ingen kontakt som kan ta emot"
+      },
+      "switch": {
+        "ariaLabel": "Marknadsföring för {name}: {state}",
+        "switchedOff": "Marknadsföring avstängd för {name}",
+        "switchedOn": "Marknadsföring påslagen för {name}",
+        "undo": "Ångra",
+        "unchanged": "Ingen ändring — kontakten hade redan det läget.",
+        "errors": {
+          "suppressed": "Personen har avregistrerat sig själv. Det valet gäller och kan inte slås på igen av personal.",
+          "forbidden": "Du har inte behörighet att ändra marknadsföring för kontakter.",
+          "notFound": "Kontakten finns inte längre.",
+          "rateLimited": "För många ändringar på kort tid. Vänta en minut och försök igen.",
+          "unavailable": "Avregistreringslistan är tillfälligt otillgänglig, så marknadsföring kan inte slås på just nu. Försök igen strax.",
+          "generic": "Något gick fel. Försök igen."
+        }
+      }
     }
   },
   "email": {

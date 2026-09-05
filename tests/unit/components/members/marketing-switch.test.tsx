@@ -14,7 +14,7 @@
  *     override an unsubscribe nobody could verify);
  *   - the accessible name carries the contact's name and the state.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
@@ -51,6 +51,22 @@ function fetchCalls(): FetchCall[] {
 function keyOf(call: FetchCall): string {
   return new Headers(call.init.headers).get('idempotency-key') ?? '';
 }
+
+// Base UI Switch re-dispatches the click on its hidden input as a
+// PointerEvent, which jsdom does not implement — polyfill copied from
+// tests/unit/broadcast/queue-bulk-action-bar.test.tsx.
+beforeAll(() => {
+  if (typeof globalThis.PointerEvent === 'undefined') {
+    // @ts-expect-error — minimal polyfill for jsdom
+    globalThis.PointerEvent = class PointerEvent extends MouseEvent {
+      readonly pointerId: number;
+      constructor(type: string, params?: PointerEventInit) {
+        super(type, params);
+        this.pointerId = params?.pointerId ?? 0;
+      }
+    };
+  }
+});
 
 beforeEach(() => {
   vi.useRealTimers();
