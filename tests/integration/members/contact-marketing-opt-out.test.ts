@@ -23,7 +23,10 @@ import { errorChainMessage } from '@/lib/db-errors';
 import { buildContactMarketingDeps } from '@/lib/contact-marketing-deps';
 import {
   asContactId,
+  asMemberId,
   drizzleContactRepo,
+  drizzleMemberRepo,
+  getMemberPrimaryContact,
   setContactMarketingOptOut,
 } from '@/modules/members';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
@@ -196,6 +199,7 @@ describe('108 PR-D — setMarketingOptOutInTx + setContactMarketingOptOut (live 
   let suppressedContactId: string;
   const planId = `mkt2-${randomUUID().slice(0, 6)}`;
   const suppressedEmail = `sim-unsub-${randomUUID().slice(0, 8)}@example.test`;
+  const primaryEmail = `sim-primary-${randomUUID().slice(0, 8)}@example.test`;
   const STAFF_2 = randomUUID();
 
   beforeAll(async () => {
@@ -203,7 +207,7 @@ describe('108 PR-D — setMarketingOptOutInTx + setContactMarketingOptOut (live 
     tenantA = await createTestTenant('test-swecham');
     tenantB = await createTestTenant('test-swecham');
     await seedPortalPlan(tenantA.ctx.slug, admin.userId, planId);
-    const seeded = await seedPortalMemberWithContact(tenantA, planId);
+    const seeded = await seedPortalMemberWithContact(tenantA, planId, { contactEmail: primaryEmail });
     memberId = seeded.memberId;
     contactId = seeded.contactId;
     removedContactId = randomUUID();
@@ -431,6 +435,34 @@ describe('108 PR-D — setMarketingOptOutInTx + setContactMarketingOptOut (live 
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.error.type).toBe('suppressed');
+  });
+
+  it('FR-033: the PRIMARY switching marketing off (self) leaves the money-email recipient untouched', async () => {
+    // US6 AS4 — the primary contact opts out of marketing in the portal; the
+    // invoice / receipt path resolves the recipient from `is_primary` alone,
+    // so it still finds them. `getMemberPrimaryContact` is the read that path
+    // goes through.
+    const deps = buildContactMarketingDeps(tenantA.ctx);
+    const r = await setContactMarketingOptOut(
+      {
+        contactId: asContactId(contactId), // the seeded PRIMARY
+        state: 'off',
+        actor: { userId: admin.userId, role: 'member', source: 'self' },
+        requestId: `req-${randomUUID().slice(0, 8)}`,
+      },
+      deps,
+    );
+    expect(r.ok).toBe(true);
+    // The money path's recipient read (PR-A) — resolves by `is_primary` only.
+    const primary = await getMemberPrimaryContact(
+      { tenant: tenantA.ctx, memberRepo: drizzleMemberRepo },
+      asMemberId(memberId),
+    );
+    expect(primary.ok).toBe(true);
+    if (!primary.ok) return;
+    expect(primary.value).toBe(primaryEmail);
+    const read = await drizzleContactRepo.findById(tenantA.ctx, asContactId(contactId));
+    expect(read.ok && read.value.marketing.source).toBe('self');
   });
 
   it('use case: "off" for a suppressed address still records the staff opt-out', async () => {
