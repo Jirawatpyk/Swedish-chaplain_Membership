@@ -2107,7 +2107,8 @@
           "resendSuccess": "Köad — {recipient} får en ny kopia inom kort.",
           "resendRateLimited": "Denna kreditnota skickades nyligen igen. Vänta några minuter och försök igen.",
           "resendFailed": "Kunde inte köa en återsändning. Försök igen.",
-          "resendNoRecipient": "Ingen primär kontakt — ingenting skickades. Lägg till eller befordra en kontakt på medlemssidan och skicka sedan igen."
+          "resendNoRecipient": "Ingen primär kontakt — ingenting skickades. Lägg till eller befordra en kontakt på medlemssidan och skicka sedan igen.",
+          "resendNoBuyerEmail": "Ingen köpar-e-post på denna evenemangsfaktura — ingenting skickades. Utfärda den på nytt med en köpar-e-post, eller skicka PDF:en manuellt."
         },
         "fields": {
           "issueDate": "Utfärdandedatum",
@@ -2623,6 +2624,7 @@
           "resendNotIssued": "Fakturan är fortfarande ett utkast — utfärda den först för att mejla en kopia.",
           "resendFailed": "Kunde inte köa en återsändning. Försök igen.",
           "resendNoRecipient": "Ingen primär kontakt — ingenting skickades. Lägg till eller befordra en kontakt på medlemssidan och skicka sedan igen.",
+          "resendNoBuyerEmail": "Ingen köpar-e-post på denna evenemangsfaktura — ingenting skickades. Utfärda den på nytt med en köpar-e-post, eller skicka PDF:en manuellt.",
           "receiptPending": "Kvitto-PDF förbereds fortfarande. Försök igen om en stund.",
           "receiptFailed": "Kvitto-PDF kunde inte genereras: {reason}. Kontakta support om problemet kvarstår.",
           "receiptForbidden": "Du har inte behörighet till detta kvitto.",

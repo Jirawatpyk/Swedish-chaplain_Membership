@@ -36,12 +36,21 @@ export function NoPrimaryContactBanner({ memberId, contactsHref }: Props) {
   const t = useTranslations('admin.members.detail.noPrimaryBanner');
 
   return (
+    // No `role="alert"` (round-4 finding #12). This banner is part of the
+    // page's INITIAL server render, not something inserted in response to an
+    // action, and `role="alert"` is `aria-live="assertive"` — it interrupts
+    // whatever a screen reader is saying, on every navigation to this member,
+    // invoice or credit note. Live regions announce CHANGES; static content
+    // belongs in the document, which is why the sibling `ArchivedBanner` (the
+    // pattern this one follows) sets no role either. The heading text carries
+    // the meaning, and it is reached in normal reading order near the top of
+    // the page.
     <Card
-      role="alert"
       // Same destructive treatment as ArchivedBanner — this is a money-path
       // failure, not an informational note.
       className="border-destructive/40 bg-destructive/5 p-4"
       data-member-id={memberId}
+      data-testid="no-primary-contact-banner"
     >
       <div className="flex gap-3">
         <AlertTriangleIcon

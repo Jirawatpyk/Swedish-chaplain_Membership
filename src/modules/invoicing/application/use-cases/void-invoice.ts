@@ -175,6 +175,24 @@ class VoidInvoiceInternalError extends TxAbort<VoidInvoiceError> {
   override readonly name = 'VoidInvoiceInternalError';
 }
 
+/**
+ * 108 FR-004 (round-4 finding #4) — did the §86/10 cancellation notice go out?
+ *
+ * `voidInvoice` skips the notice when the member has no live primary contact,
+ * writes the audit row, and completed — returning a bare `Invoice`, so the
+ * route and UI rendered an unqualified success and nobody was told that nobody
+ * was told. Its two siblings already report this: `issueCreditNote` returns
+ * `emailDelivery`, `recordPayment` returns `emailDispatch`. The FR-003 banner
+ * only helps an admin who happens to be on the invoice or member page; a void
+ * driven from the list or the row menu showed nothing at all.
+ */
+export type VoidEmailDelivery = 'sent' | 'skipped_no_recipient' | 'not_requested';
+
+/** The voided invoice, plus whether its cancellation notice actually left. */
+export type VoidInvoiceSuccess = Invoice & {
+  readonly emailDelivery: VoidEmailDelivery;
+};
+
 export interface VoidInvoiceDeps {
   readonly invoiceRepo: InvoiceRepo;
   readonly tenantSettingsRepo: TenantSettingsRepo;
@@ -222,7 +240,7 @@ export { sanitiseErrorReason } from '../lib/sanitise-error-reason';
 export async function voidInvoice(
   deps: VoidInvoiceDeps,
   input: VoidInvoiceInput,
-): Promise<Result<Invoice, VoidInvoiceError>> {
+): Promise<Result<VoidInvoiceSuccess, VoidInvoiceError>> {
   const invoiceId: InvoiceId = asInvoiceId(input.invoiceId);
   // B-1 — hash void_reason for the audit payload so free-text PII
   // cannot leak into the 10-year append-only audit log. The raw
@@ -260,6 +278,7 @@ export async function voidInvoice(
     readonly targetA: VoidRenderTarget;
     /** Separate §86/4 tax-receipt blob — only for a paid row with a distinct receiptPdf. */
     readonly targetB: VoidRenderTarget | null;
+    readonly emailDelivery: VoidEmailDelivery;
   };
 
   let phase1: Result<Phase1Success, VoidInvoiceError>;
@@ -487,6 +506,7 @@ export async function voidInvoice(
       // false — `moneyRecipient !== null` WAS `shouldAutoEmail`. A maintainer
       // trusting that comment would look for a skip row on a suppressed void
       // and never find one.
+      let emailDelivery: VoidEmailDelivery = 'not_requested';
       if (shouldAutoEmail) {
         const moneyRecipient = await resolveMoneyRecipient(
           deps.recipientLocale,
@@ -496,6 +516,7 @@ export async function voidInvoice(
           loaded.memberIdentitySnapshot,
         );
         if (moneyRecipient.kind === 'no_recipient') {
+          emailDelivery = 'skipped_no_recipient';
           // 108 FR-004 — void-invoice had NO empty-recipient guard: it enqueued
           // whatever the snapshot held, including ''. Skip + record, never fall
           // back, and never block the void itself — a §86/10 cancellation is a
@@ -541,6 +562,7 @@ export async function voidInvoice(
             // by permanently-failing the row.
             expectedPdfSha256: targetA.rendered.sha256,
           });
+          emailDelivery = 'sent';
         }
       }
 
@@ -565,7 +587,7 @@ export async function voidInvoice(
         });
       }
 
-      return ok({ voided, targetA, targetB });
+      return ok({ voided, targetA, targetB, emailDelivery });
     });
   } catch (e) {
     if (e instanceof VoidInvoiceInternalError) {
@@ -583,7 +605,7 @@ export async function voidInvoice(
   }
 
   if (!phase1.ok) return err(phase1.error);
-  const { voided, targetA, targetB } = phase1.value;
+  const { voided, targetA, targetB, emailDelivery } = phase1.value;
 
   // Phase 2 — post-commit Blob overwrite + sha sync, PER TARGET. Best-effort:
   // on failure the invoice is ALREADY committed as void in the DB. State after
@@ -788,6 +810,7 @@ export async function voidInvoice(
   // with the unchanged bytes).
   return ok({
     ...voided,
+    emailDelivery,
     pdf:
       voided.pdf && syncedSha.invoice
         ? { ...voided.pdf, sha256: syncedSha.invoice }

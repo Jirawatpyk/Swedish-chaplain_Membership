@@ -41,6 +41,7 @@
 import { err, ok, type Result } from '@/lib/result';
 import { sha256Hex } from '@/lib/crypto';
 import { logger } from '@/lib/logger';
+import { invoicingMetrics } from '@/lib/metrics';
 import type { InvoiceRepo } from '../ports/invoice-repo';
 import type { CreditNoteRepo } from '../ports/credit-note-repo';
 import { emitNonMemberInvoiceEvent, type AuditPort } from '../ports/audit-port';
@@ -141,7 +142,13 @@ export type ResendPdfError =
    * permitted. Routes map this to 409 so the admin is told to fix the
    * contact rather than being shown a success toast for a mail nobody got.
    */
-  | { readonly code: 'no_recipient' };
+  | { readonly code: 'no_recipient' }
+  /**
+   * Round-4 finding #6 — a NON-MEMBER event invoice whose typed buyer address
+   * is empty. Kept distinct from `no_recipient` because that code's copy sends
+   * staff to a member page, and this row has no member.
+   */
+  | { readonly code: 'no_buyer_email' };
 
 export interface ResendPdfDeps {
   readonly invoiceRepo: InvoiceRepo;
@@ -283,8 +290,26 @@ async function resendInvoiceOrReceipt(
         subject: invoice.invoiceSubject,
         invoiceId: input.invoiceId,
       });
+      return err({ code: 'no_recipient' });
     }
-    return err({ code: 'no_recipient' });
+    // Round-4 finding #6 — a NON-MEMBER event buyer. Their address is the one
+    // an admin typed at issue, and `create-event-invoice-draft` permits '' (the
+    // snapshot's zod allows `z.literal('')`), so this is reachable. It is a
+    // DIFFERENT failure from "the member has no primary contact": there is no
+    // member and no member page, and `no_recipient` renders as "add or promote
+    // a contact on the member page". It also left no trace at all — the audit
+    // arm above needs a member to attribute to, and nothing counted the skip.
+    invoicingMetrics.autoEmailSkipped(invoice.invoiceSubject, 'no_recipient');
+    logger.warn(
+      {
+        event: 'resend_pdf_no_buyer_email',
+        tenantId: input.tenantId,
+        invoiceId: input.invoiceId,
+        variant: input.variant,
+      },
+      'resendPdf: non-member event buyer has no address on the frozen snapshot — nothing sent',
+    );
+    return err({ code: 'no_buyer_email' });
   }
   const recipientEmail = moneyRecipient.email;
 

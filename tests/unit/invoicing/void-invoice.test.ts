@@ -371,6 +371,24 @@ describe('voidInvoice — S32 non-member event rows + S31 kind-true re-render', 
   // refund's own Phase-B §86/10 then declines against it and the Stripe-settled
   // refund is stranded `pending` forever. The guard refuses (409) ABOVE the
   // first write. UNCONDITIONAL — a void has no refund-origin variant.
+  it('reports emailDelivery so a silent skip is not an unqualified success', async () => {
+    // Round-4 finding #4. The void completes and the audit row lands, but the
+    // admin got a bare Invoice back — and the FR-003 banner only helps someone
+    // already on the invoice or member page. A void driven from the list or the
+    // row menu showed nothing at all. Both siblings already report this
+    // (`issueCreditNote.emailDelivery`, `recordPayment.emailDispatch`).
+    const deps = makeDeps(makeIssuedMembership(), {
+      recipientLocale: makeRecipientLocaleFake({ email: null }),
+    });
+
+    const r = await voidInvoice(deps, INPUT);
+
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.emailDelivery).toBe('skipped_no_recipient');
+    expect(deps.outbox.enqueue).not.toHaveBeenCalled();
+  });
+
   it('blocks a void with refund_in_progress when a pending refund exists', async () => {
     const guard = vi.fn(async () => 1);
     const deps = makeDeps(makeIssuedMembership(), {

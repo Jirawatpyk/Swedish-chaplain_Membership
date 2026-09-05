@@ -7,7 +7,7 @@
  * and on the invoice, that receipts are silently not going out — and they must
  * not be able to dismiss that away while it is still true.
  *
- * This file pins the contract the pages depend on: the alert role (so it is
+ * This file pins the contract the pages depend on: the content (so it is
  * announced, not merely coloured), the absence of any dismiss affordance, and
  * a route to the fix.
  */
@@ -26,14 +26,18 @@ function renderBanner(props: { memberId: string; contactsHref?: string }) {
 }
 
 describe('NoPrimaryContactBanner (108 FR-003)', () => {
-  it('is announced as an alert', () => {
+  it('renders without an assertive live region (round-4 #12)', () => {
     renderBanner({ memberId: 'member-1' });
-    expect(screen.getByRole('alert')).toBeTruthy();
+    // It ships in the INITIAL server render, so `role="alert"` would interrupt
+    // a screen reader on every navigation to the page. Live regions are for
+    // CHANGES; the sibling ArchivedBanner sets no role for the same reason.
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByTestId('no-primary-contact-banner')).toBeTruthy();
   });
 
   it('says plainly that payment emails are not being sent', () => {
     renderBanner({ memberId: 'member-1' });
-    const alert = screen.getByRole('alert');
+    const alert = screen.getByTestId('no-primary-contact-banner');
     // The copy has to name the CONSEQUENCE, not just the missing data — "no
     // primary contact" alone reads like a tidy-up task, not like lost receipts.
     expect(alert.textContent).toContain('No primary contact');
@@ -42,7 +46,7 @@ describe('NoPrimaryContactBanner (108 FR-003)', () => {
 
   it('offers no way to dismiss it (it stays until the data is fixed)', () => {
     renderBanner({ memberId: 'member-1' });
-    const alert = screen.getByRole('alert');
+    const alert = screen.getByTestId('no-primary-contact-banner');
     expect(alert.querySelectorAll('button')).toHaveLength(0);
   });
 

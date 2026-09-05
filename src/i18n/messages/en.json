@@ -2107,7 +2107,8 @@
           "resendSuccess": "Queued — {recipient} will receive a fresh copy shortly.",
           "resendRateLimited": "This credit note was resent recently. Please wait a few minutes before retrying.",
           "resendFailed": "Could not queue a resend. Please try again.",
-          "resendNoRecipient": "No primary contact — nothing was sent. Add or promote a contact on the member page, then resend."
+          "resendNoRecipient": "No primary contact — nothing was sent. Add or promote a contact on the member page, then resend.",
+          "resendNoBuyerEmail": "No buyer email on this event invoice — nothing was sent. Reissue it with a buyer email, or send the PDF manually."
         },
         "fields": {
           "issueDate": "Issue date",
@@ -2623,6 +2624,7 @@
           "resendNotIssued": "Invoice is still a draft — issue it first to email a copy.",
           "resendFailed": "Could not queue a resend. Please try again.",
           "resendNoRecipient": "No primary contact — nothing was sent. Add or promote a contact on the member page, then resend.",
+          "resendNoBuyerEmail": "No buyer email on this event invoice — nothing was sent. Reissue it with a buyer email, or send the PDF manually.",
           "receiptPending": "Receipt PDF is still being prepared. Please retry in a moment.",
           "receiptFailed": "Receipt PDF render failed: {reason}. Contact support if this persists.",
           "receiptForbidden": "You do not have access to this receipt.",

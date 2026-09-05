@@ -87,6 +87,7 @@ import {
 } from '@/modules/invoicing/domain/document-kind';
 import { bangkokLocalDate } from '@/lib/fiscal-year';
 import { logger } from '@/lib/logger';
+import { invoicingMetrics } from '@/lib/metrics';
 import { isUniqueViolationOnConstraint } from '@/lib/db-errors';
 import { TxAbort } from '../lib/tx-abort';
 import { InvoiceApplyConflictError } from '../lib/invoice-apply-conflict-error';
@@ -1253,16 +1254,18 @@ export async function issueCreditNote(
             loaded.memberIdentitySnapshot,
           )
         : null;
-      const creditNoteRecipient =
-        moneyRecipient === null || moneyRecipient.kind === 'no_recipient'
-          ? ''
-          : moneyRecipient.email;
+      // Round-4 finding #11 — no `''` sentinel. The resolver already returns a
+      // discriminated union whose `no_recipient` member IS "there is no
+      // address", and it already trims, so collapsing that to `''` and
+      // re-testing `.trim() !== ''` below kept two representations of the same
+      // state alive in one function and made the second trim dead.
+      const hasRecipient = moneyRecipient !== null && moneyRecipient.kind !== 'no_recipient';
       // MEDIUM-5 — capture the delivery outcome so the route/UI can give the
       // admin a non-blocking signal (notice on `skipped_no_recipient`, silent
       // on `sent`/`not_requested`). Defaults to `not_requested`; flips to
       // `sent` on enqueue, `skipped_no_recipient` on the empty-email skip.
       let emailDelivery: CreditNoteEmailDelivery = 'not_requested';
-      if (shouldAutoEmail && creditNoteRecipient.trim() !== '') {
+      if (shouldAutoEmail && hasRecipient) {
         // Email-locale audit 2026-07-16 — credit-note email in the member's
         // language. 108: the preference rides on the same live primary-contact
         // row that produced the address (non-member buyer → undefined → 'en').
@@ -1273,7 +1276,7 @@ export async function issueCreditNote(
         await deps.outbox.enqueue(tx, {
           tenantId: input.tenantId,
           eventType: 'credit_note_issued',
-          recipientEmail: creditNoteRecipient,
+          recipientEmail: moneyRecipient.email,
           creditNoteId,
           pdfBlobKey: blobKey,
           pdfTemplateVersion: deps.currentTemplateVersion,
@@ -1297,6 +1300,14 @@ export async function issueCreditNote(
             creditNoteId,
             invoiceId,
           });
+        } else {
+          // Round-4 finding #8 — a non-member event buyer has no member to
+          // attribute an audit row to, but the SKIP still happened and ops
+          // still needs it counted. Both sibling paths (`record-payment`,
+          // `void-invoice`) bump the counter on exactly this arm; this one
+          // left only a pino.warn, so a §86/10 credit note that reached nobody
+          // was invisible to alerting.
+          invoicingMetrics.autoEmailSkipped(loaded.invoiceSubject, 'no_recipient');
         }
         logger.warn(
           {

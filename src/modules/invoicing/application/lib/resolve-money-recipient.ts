@@ -127,9 +127,6 @@ export async function auditAutoEmailSkippedNoRecipient(
     readonly creditNoteId?: string;
   },
 ): Promise<void> {
-  if (args.subject !== undefined) {
-    invoicingMetrics.autoEmailSkipped(args.subject, 'no_recipient');
-  }
   await audit.emit(tx, {
     tenantId: args.tenantId,
     requestId: args.requestId,
@@ -143,4 +140,15 @@ export async function auditAutoEmailSkippedNoRecipient(
       ...(args.creditNoteId === undefined ? {} : { credit_note_id: args.creditNoteId }),
     },
   });
+  // AFTER the emit, not before (round-4 finding #14). The audit row is written
+  // on the caller's money tx and rolls back with it; the counter cannot roll
+  // back. Bumping first meant a settlement that later unwound left a skip
+  // counted that never happened, and a webhook retry counted it again on each
+  // attempt. The sharper case is the emit itself throwing — an
+  // `auto_email_skipped_no_recipient` value missing from the prod enum because
+  // migration 0292 has not been applied — where the counter fired and the
+  // exception then propagated out of the payment transaction.
+  if (args.subject !== undefined) {
+    invoicingMetrics.autoEmailSkipped(args.subject, 'no_recipient');
+  }
 }

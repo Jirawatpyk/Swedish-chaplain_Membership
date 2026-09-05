@@ -162,5 +162,14 @@ export async function POST(
     const status = ERROR_STATUS[result.error.code] ?? 422;
     return NextResponse.json({ error: stripReason(result.error) }, { status });
   }
-  return NextResponse.json(serialiseInvoice(result.value));
+  // 108 FR-004 (round-4 finding #4) — ride the delivery outcome alongside the
+  // serialised invoice, exactly as `POST /api/credit-notes` does for its own
+  // `email_delivery`. A void whose §86/10 cancellation notice was skipped for
+  // want of a live primary contact used to return an unqualified success, so
+  // an admin voiding from the list or the row menu — where the FR-003 banner is
+  // not on screen — had no way to learn that nobody was told.
+  return NextResponse.json({
+    ...serialiseInvoice(result.value),
+    email_delivery: result.value.emailDelivery,
+  });
 }

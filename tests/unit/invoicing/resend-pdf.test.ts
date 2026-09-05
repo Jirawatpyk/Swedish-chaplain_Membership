@@ -593,6 +593,34 @@ describe('resendPdf', () => {
     expect(deps.audit.emit).not.toHaveBeenCalled();
   });
 
+  it('a NON-MEMBER event invoice with an empty typed address is no_buyer_email', async () => {
+    // Round-4 finding #6. `create-event-invoice-draft` permits '' and the
+    // snapshot's zod allows `z.literal('')`, so this row is reachable. It must
+    // NOT return `no_recipient`, whose copy reads "add or promote a contact on
+    // the member page" — there is no member and no member page. It also used to
+    // leave no trace at all: the audit arm needs a member to attribute to, and
+    // nothing counted the skip.
+    const invoice = issuedInvoice({
+      memberId: null,
+      eventRegistrationId: 'evt-reg-1',
+      memberIdentitySnapshot: memberSnap(''),
+    });
+    const deps = makeDeps(invoice);
+    const r = await resendPdf(deps, {
+      tenantId: TENANT,
+      kind: 'invoice',
+      invoiceId: INVOICE_UUID,
+      variant: 'invoice',
+      actor: adminActor,
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('no_buyer_email');
+    expect(deps.outbox.enqueue).not.toHaveBeenCalled();
+    // No audit row — there is no member to attribute one to — so the counter is
+    // the only trace, which is exactly why it must fire.
+    expect(deps.audit.emit).not.toHaveBeenCalled();
+  });
+
   it('receipt variant — no receiptPdf → no_receipt_pdf', async () => {
     const invoice = issuedInvoice(); // receiptPdf = null
     const deps = makeDeps(invoice);

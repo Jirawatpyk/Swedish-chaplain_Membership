@@ -68,6 +68,16 @@ const SCOPE = [
   'src/modules/payments',
   'src/modules/renewals',
   'src/app/api',
+  // Round-4 finding #13. The staff and member trees were OUT of scope while
+  // already loading invoices and their snapshots — the invoice detail page
+  // reads `memberIdentitySnapshot` for the buyer NAME two lines from where it
+  // decides the FR-003 banner. A server component or server action that
+  // composed an outbox enqueue or a mailto from
+  // `snapshot.primary_contact_email` was invisible to this gate, which then
+  // reported OK over a surface it did not cover. A gate's scope is part of its
+  // claim.
+  'src/app/(staff)',
+  'src/app/(member)',
 ] as const;
 
 /**
@@ -189,6 +199,24 @@ const ALLOWED: ReadonlyArray<AllowedRead> = [
     contains: 'must be a valid email',
     expect: 1,
     why: 'the zod validation MESSAGE for that field, not a read.',
+  },
+  {
+    file: 'src/app/(staff)/admin/credit-notes/[creditNoteId]/page.tsx',
+    contains: 'cn.memberIdentitySnapshot.primary_contact_email',
+    expect: 2,
+    why:
+      'RENDERS the frozen §86/4 buyer block beside tax_id and address — this is ' +
+      'WHO WAS BILLED on the tax document, shown to staff. Nothing is addressed ' +
+      'from it. Surfaced the day the staff tree entered scope (round-4 #13).',
+  },
+  {
+    file: 'src/app/(staff)/admin/invoices/new/_components/event-fee-form.tsx',
+    contains: 'primary_contact_email: buyer.contactEmail.trim()',
+    expect: 1,
+    why:
+      'AUTHORS the identity for a non-member event buyer at draft time from the ' +
+      'address an admin typed — the one case where the snapshot IS the only ' +
+      'address that exists. A write, not a delivery read.',
   },
   {
     file: 'src/app/api/internal/cron/receipt-pdf-reconcile/route.ts',
