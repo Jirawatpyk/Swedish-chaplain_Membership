@@ -38,6 +38,10 @@ export const PINNED_MATRIX: readonly PinnedRow[] = [
   row('members.erasure_log_read', false, false, false, { superAdminOnly: true, sensitive: 'pii' }),
   row('contacts.read', true, true, true),
   row('contacts.write', true, false, false, { sensitive: 'pii' }),
+  // 108 PR-D (FR-030 / data-model § 4) — "manage contact marketing audience":
+  // switch a contact's marketing state on/off. Granted to admin + marketing;
+  // manager sees the state read-only (FR-034). Confers NO other contact edit.
+  row('contacts.marketing', true, false, true, { sensitive: 'pii' }),
   row('directory.export', true, true, false, { sensitive: 'pii' }),
   row('plans.read', true, true, false),
   row('plans.write', true, false, false, { sensitive: 'money' }),
