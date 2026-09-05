@@ -158,6 +158,9 @@ function makeStubDeps(): MemberSelfUpdateDeps {
     listTombstoneEmailsForMemberInTx: async () => [],
     markInviteBouncedInTx: async () => ok({ affected: 0 }),
     clearInviteBouncedInTx: async () => ok({ affected: 0 }),
+    // 108 PR-D — the self-service whitelist never reaches the marketing write
+    // (the portal toggle bypasses `memberSelfUpdate`); a reaching call is a bug.
+    setMarketingOptOutInTx: async () => err({ code: 'repo.unexpected' as const }),
     scrubPiiForMemberInTx: async () => ok({ scrubbedCount: 0 }),
   };
 

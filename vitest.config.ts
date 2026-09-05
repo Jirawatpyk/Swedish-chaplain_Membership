@@ -594,6 +594,17 @@ export default defineConfig({
           functions: 100,
           statements: 100,
         },
+        // 108 PR-D — the one use case behind the staff marketing toggle and the
+        // portal self-toggle: a PII preference write whose refusal arms
+        // (suppressed → 409, lookup outage → refuse "on") protect the person's
+        // own unsubscribe (FR-025). Security-critical per plan § Constitution
+        // II → 100% line + branch (set-contact-marketing-opt-out.test.ts).
+        'src/modules/members/application/use-cases/set-contact-marketing-opt-out.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
         // F8: Renewals Domain layer — 100% line coverage per
         // Constitution Principle II. Pure entities (RenewalCycle 7-state
         // machine, TierUpgradeSuggestion 6-status DU, EscalationTask

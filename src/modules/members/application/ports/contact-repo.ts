@@ -4,7 +4,7 @@
 import type { TenantTx } from '@/lib/db';
 import type { Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
-import type { Contact, ContactId } from '../../domain/contact';
+import type { Contact, ContactId, MarketingOptOut } from '../../domain/contact';
 import type { MemberId } from '../../domain/member';
 import type { Email } from '../../domain/value-objects/email';
 import type { Phone } from '../../domain/value-objects/phone';
@@ -256,6 +256,29 @@ export interface ContactRepo {
     tx: TenantTx,
     contactId: ContactId,
   ): Promise<Result<{ affected: number }, RepoError>>;
+
+  /**
+   * 108 PR-D (FR-030, FR-032) — write the marketing opt-out for a LIVE contact
+   * (`removed_at IS NULL`; a removed contact has no marketing state →
+   * `repo.not_found`), inside the caller's transaction, under a row lock.
+   *
+   * The three columns land together (the DB CHECK
+   * `contacts_marketing_opt_out_correlated` refuses anything else). SAME
+   * STATE — "off" when already off, "on" when already on — is reported as
+   * `unchanged` WITHOUT rewriting the row, so a repeated "off" keeps the
+   * original actor + timestamp and the caller emits no audit (FR-030b).
+   * Does NOT emit audit — caller emits `contact_marketing_opted_out` / `_in`.
+   */
+  setMarketingOptOutInTx(
+    tx: TenantTx,
+    contactId: ContactId,
+    next: MarketingOptOut,
+  ): Promise<
+    Result<
+      { readonly outcome: 'changed' | 'unchanged'; readonly contact: Contact },
+      RepoError
+    >
+  >;
 
   /**
    * COMP-1 US2a (L1) — list the REAL email addresses of every contact on the

@@ -367,6 +367,45 @@ export const drizzleContactRepo: ContactRepo = {
     }
   },
 
+  async setMarketingOptOutInTx(tx, contactId, next) {
+    try {
+      // Lock the live row first so the same-state decision and the write see
+      // one snapshot (two staff toggling at once cannot both "change" it).
+      // Tenant-scoped via the caller's runInTenant tx (RLS): another tenant's
+      // contact id reads as 0 rows → not_found, never a cross-tenant write.
+      const rows = await tx
+        .select()
+        .from(contacts)
+        .where(and(eq(contacts.contactId, contactId), isNull(contacts.removedAt)))
+        .for('update')
+        .limit(1);
+      const current = rows[0];
+      if (!current) return err({ code: 'repo.not_found' });
+
+      const currentlyOff = current.marketingOptOutAt !== null;
+      const nextOff = next.optedOutAt !== null;
+      if (currentlyOff === nextOff) {
+        return ok({ outcome: 'unchanged' as const, contact: rowToContact(current) });
+      }
+
+      const updated = await tx
+        .update(contacts)
+        .set({
+          marketingOptOutAt: next.optedOutAt,
+          marketingOptOutSource: next.source,
+          marketingOptOutByUserId: next.byUserId,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(contacts.contactId, contactId), isNull(contacts.removedAt)))
+        .returning();
+      const row = updated[0];
+      if (!row) return err({ code: 'repo.not_found' });
+      return ok({ outcome: 'changed' as const, contact: rowToContact(row) });
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
+
   async listEmailsForMemberInTx(tx, memberId) {
     // NO try/catch: a thrown DB error (statement timeout / connection blip)
     // MUST propagate so the caller's runInTenant tx ROLLS BACK. An empty array
