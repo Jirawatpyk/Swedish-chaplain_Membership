@@ -135,12 +135,18 @@ export interface ContactRepo {
    * Demote the current primary + promote the target in one transaction.
    * Maps the partial-index race condition to `repo.conflict`. Does NOT
    * emit audit events — caller emits `member_primary_contact_changed`.
+   *
+   * 108 PR-B (T041 round 3) — a member with NO current primary is not an
+   * error: the promote is then a designation and `demoted` is `null`
+   * (caller records `old_primary_contact_id: null`, the same shape as
+   * `designatePrimaryInTx`). Refusing it left the inventory runbook's
+   * "promote a remaining contact" pointing at a 409.
    */
   promotePrimaryInTx(
     tx: TenantTx,
     memberId: MemberId,
     newPrimaryContactId: ContactId,
-  ): Promise<Result<{ demoted: Contact; promoted: Contact }, RepoError>>;
+  ): Promise<Result<{ demoted: Contact | null; promoted: Contact }, RepoError>>;
 
   /**
    * Bind an F1 user account to a contact. Used on invitation acceptance

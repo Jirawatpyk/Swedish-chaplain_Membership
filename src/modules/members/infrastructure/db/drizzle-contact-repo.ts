@@ -544,23 +544,22 @@ export const drizzleContactRepo: ContactRepo = {
           ),
         )
         .returning();
-      // Order is intentional: check the promotion TARGET first. If the target
-      // contact does not exist / is not in this member, `not_found` is the most
-      // specific, actionable error — preferred over `no current primary` even
-      // when BOTH the demote and promote matched zero rows. Both error branches
-      // return `err`, so the caller's throw-to-rollback undoes the demote either
-      // way; the only thing the ordering decides is WHICH error the caller sees.
+      // The promotion TARGET decides: if it does not exist / is not in this
+      // member / is removed, `not_found` — the caller's throw-to-rollback
+      // undoes the demote.
       if (promoted.length === 0) {
         return err({
           code: 'repo.not_found',
         });
       }
+      // No current primary → this promote IS the designation (108 PR-B, T041
+      // round 3). The member still ends the tx with exactly one live primary,
+      // so the deferred trigger and the in-tx policy are unaffected; only the
+      // refusal that used to sit here (`no_current_primary`) is gone — it left
+      // the inventory runbook's "promote a remaining contact" pointing at 409.
       const demotedRow = demoted[0];
-      if (!demotedRow) {
-        return err({ code: 'repo.conflict', reason: 'no_current_primary' });
-      }
       return ok({
-        demoted: rowToContact(demotedRow),
+        demoted: demotedRow ? rowToContact(demotedRow) : null,
         promoted: rowToContact(promoted[0]!),
       });
     } catch (e) {

@@ -132,6 +132,40 @@ describe('contact CRUD — in-tx exactly-one-primary policy (FR-012)', () => {
       expect(deps.contactRepo.listByMemberInTx).toHaveBeenCalled();
     });
 
+    it('promotes when the member has NO current primary — a designation, audited with old_primary_contact_id: null (T041 round 3, M1)', async () => {
+      // The repo reports "nobody demoted" as `demoted: null`; the use case
+      // must commit (the member ends with exactly one primary) and record the
+      // same payload shape undelete/addContact use for a designation. Before
+      // this round the repo refused with `no_current_primary`, so the runbook's
+      // "promote a remaining contact" pointed at a 409.
+      const deps = makeDeps({
+        memberStatus: 'archived',
+        afterWrite: [contactRow(PRIMARY), contactRow(SECONDARY, { isPrimary: true })],
+      });
+      vi.mocked(deps.contactRepo.promotePrimaryInTx).mockResolvedValueOnce(
+        ok({
+          demoted: null,
+          promoted: contactRow(SECONDARY, { isPrimary: true }) as unknown as Contact,
+        }),
+      );
+
+      const result = await promotePrimary(memberId, SECONDARY, meta, deps);
+
+      expect(result.ok, JSON.stringify(result)).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.demoted).toBeNull();
+      expect(result.value.promoted.contactId).toBe(SECONDARY);
+      const audit = vi.mocked(deps.audit.recordInTx).mock.calls[0]?.[2];
+      expect(audit).toMatchObject({
+        type: 'member_primary_contact_changed',
+        payload: {
+          member_id: memberId,
+          old_primary_contact_id: null,
+          new_primary_contact_id: SECONDARY,
+        },
+      });
+    });
+
     it('aborts when the post-write state has two live primaries (lost race)', async () => {
       const deps = makeDeps({
         afterWrite: [

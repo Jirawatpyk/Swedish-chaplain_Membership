@@ -118,7 +118,14 @@ export function RestorePrimaryDialog({
         handleClose();
       }}
       onOpenChangeComplete={(isOpen) => {
-        if (!isOpen) onCloseComplete?.();
+        if (isOpen) return;
+        // Every close path ends here — Cancel/Escape AND the banner flipping
+        // `open` after a failed or successful restore. The component stays
+        // mounted, so the pick is forgotten HERE, not only in `handleClose`:
+        // a re-opened dialog (the next 409) must start with nothing chosen
+        // (T041 round 3, L2).
+        setPicked(null);
+        onCloseComplete?.();
       }}
     >
       <AlertDialogContent

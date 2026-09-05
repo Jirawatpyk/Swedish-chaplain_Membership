@@ -26,9 +26,17 @@ Migration 0293's pre-check fails the deploy if the first number is not 0.
 First run (2026-09-04): violations 0, secondaries 0, secondaries with login 0,
 unsubscribes 0, members 110 active / 40 inactive. Re-run immediately before PR-B merges.
 
-**Remedy when the count is not 0**: for each listed member (ids only), open the member page,
-promote a remaining contact (or add one and promote it) — the existing promote path is the
-fix; do not edit rows by hand. Re-run the inventory until it prints 0, then merge PR-B.
+**Remedy when the count is not 0** (T041 round 3 corrected this — the earlier wording pointed at
+a 409): which code is running decides the fix. **With PR-B deployed**, open the member page and
+promote a remaining contact — promote designates when the member has no current primary — or
+add a contact (the first contact of a member with no live primary becomes the primary). **Before
+PR-B is deployed** (the 0293 pre-check failed the build, so prod is still on the previous
+deployment) that promote refuses with `no_current_primary` and add inserts a secondary, so the
+repair is a human-chosen, per-member, tenant-scoped `UPDATE contacts SET is_primary = true
+WHERE tenant_id = … AND contact_id = …` — one row, the contact the chamber names; never a script
+that auto-picks (research R4). The preview deployment is copy-on-write from prod and runs the
+same pre-check in `vercel-build`, so a prod violation fails the preview before merge. Re-run the
+inventory until it prints 0, then merge / redeploy.
 
 ## Rollback matrix
 

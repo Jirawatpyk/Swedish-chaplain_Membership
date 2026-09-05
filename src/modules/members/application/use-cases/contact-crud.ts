@@ -617,7 +617,7 @@ export async function promotePrimary(
   meta: ContactCrudCallMeta,
   deps: ContactCrudDeps,
 ): Promise<
-  Result<{ demoted: Contact; promoted: Contact }, ContactCrudError>
+  Result<{ demoted: Contact | null; promoted: Contact }, ContactCrudError>
 > {
   try {
     const result = await runInTenant(deps.tenant, async (tx) => {
@@ -641,7 +641,9 @@ export async function promotePrimary(
         summary: `primary_contact_changed for ${memberId}`,
         payload: {
           member_id: memberId,
-          old_primary_contact_id: promoted.value.demoted.contactId,
+          // `null` when the member had no current primary — the promote was
+          // a designation (same payload shape as undelete / first addContact).
+          old_primary_contact_id: promoted.value.demoted?.contactId ?? null,
           new_primary_contact_id: newPrimaryContactId,
         },
       });

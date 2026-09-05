@@ -135,7 +135,6 @@ export type DirectoryRow = {
  *   which don't have a primary/secondary distinction to make.
  * `contact_already_linked` — `linkUserInTx` found the contact already
  *   bound to a user (not a DB unique-violation — a manual state probe).
- * `no_current_primary` — `promotePrimaryInTx` demoted 0 rows (manual probe).
  * `primary_contact_race` — `promotePrimaryInTx` hit
  *   `contacts_one_primary_per_member` (a genuine unique-violation race).
  * `user_email_already_taken` — `UserEmailPort.updateInTx` hit the F1
@@ -147,7 +146,6 @@ export type RepoConflictReason =
   | 'secondary_email_in_use'
   | 'contact_email_in_use'
   | 'contact_already_linked'
-  | 'no_current_primary'
   | 'primary_contact_race'
   // 108 PR-B — the repo refuses to soft-delete the live primary in the SAME
   // statement as the write (`WHERE is_primary = false`); a pre-read cannot

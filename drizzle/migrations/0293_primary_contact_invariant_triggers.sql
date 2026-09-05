@@ -16,8 +16,8 @@
 -- tx. A row-level check would refuse both. A DEFERRABLE INITIALLY DEFERRED
 -- constraint trigger runs once per changed row at COMMIT and sees the final
 -- state, so those pass while a sequence that ENDS at zero or two primaries is
--- refused as a typed error the app maps to 409 (`isPrimaryContactTriggerError`,
--- same contract as `last-admin-protection`).
+-- refused as a typed error the app maps to 409 (`primaryContactTriggerViolation`
+-- in src/lib/db-errors.ts, same contract as `last-admin-protection`).
 --
 -- SCOPE — one predicate at all three points (spec AMENDMENT 2026-09-05):
 --   a non-archived, non-erased member that has AT LEAST ONE contact row at
@@ -65,7 +65,9 @@
 --     CVE-2018-1058 class; 0124 already moved the other trigger functions to
 --     that order), pg_temp LAST and explicit so a session's TEMP TABLE named
 --     `members` can never shadow the real one and turn the guard fail-open;
---   - EXECUTE is revoked from PUBLIC before the chamber_app grant;
+--   - EXECUTE is revoked from PUBLIC on both functions; only the trigger
+--     function is granted to chamber_app — the SECURITY DEFINER helper is
+--     callable by nobody but its owner (round 2 removed that grant);
 --   - an UPDATE that moves a contact between members checks the member it LEFT
 --     as well as the one it joined (a script does exactly this move);
 --   - the whole batch takes SHARE ROW EXCLUSIVE on both tables first, so no
@@ -84,10 +86,14 @@ SET LOCAL lock_timeout = '5s';--> statement-breakpoint
 LOCK TABLE "members", "contacts" IN SHARE ROW EXCLUSIVE MODE;--> statement-breakpoint
 
 -- ── Pre-check (FR-010a): fail the deploy if the data already violates ────────
--- Counts only — no id, name or address is raised. On a violation the operator
--- fixes the member through the member page (promote a remaining contact); a
--- silent backfill was rejected in research R4 because auto-picking a contact
--- silently chooses who receives money emails.
+-- Counts only — no id, name or address is raised. A failed pre-check leaves
+-- prod on the PREVIOUS deployment, whose promote refuses a member with no
+-- current primary and whose add-contact inserts a secondary — so the repair
+-- is a human-chosen, per-member, tenant-scoped `UPDATE contacts SET
+-- is_primary = true` (one row), then redeploy. Once THIS deployment is live,
+-- promote designates when there is no current primary (T041 round 3). Never
+-- a script that auto-picks: research R4 rejected a silent backfill because
+-- choosing a contact chooses who receives money emails.
 DO $$
 DECLARE
   bad int;

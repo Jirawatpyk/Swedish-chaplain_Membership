@@ -27,8 +27,11 @@
  *   node --env-file=.env.local --import tsx scripts/inventory-primary-contact-invariant.ts
  *
  * Exit code 0 = invariant holds (safe to apply 0293); 1 = violations found —
- * remedy per quickstart § "Before PR-B merges" (promote a remaining contact
- * through the normal member page; never hand-edit rows), then re-run.
+ * remedy per quickstart § "Before PR-B merges": with PR-B deployed, promote a
+ * remaining contact on the member page (promote designates when there is no
+ * current primary); on the deployment BEFORE PR-B that promote refuses, so the
+ * repair is a human-chosen, per-member, tenant-scoped UPDATE of one contact's
+ * is_primary — never a script that auto-picks. Then re-run.
  */
 import { sql } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
@@ -150,7 +153,9 @@ async function main(): Promise<void> {
 
   if (violationCount > 0) {
     console.log('');
-    console.log('Member ids to fix (promote a remaining contact on the member page):');
+    console.log(
+      'Member ids to fix (promote a remaining contact on the member page — PR-B code; before PR-B is deployed, a human-chosen per-member UPDATE, see the header):',
+    );
     for (const row of violations) {
       console.log(`  ${row.member_id}  live_primaries=${row.live_primaries}`);
     }

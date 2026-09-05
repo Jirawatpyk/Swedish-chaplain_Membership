@@ -33,6 +33,7 @@ import { buildMembersDeps } from '@/modules/members/members-deps';
 import { drizzleContactRepo } from '@/modules/members/infrastructure/db/drizzle-contact-repo';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
+import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
 import {
@@ -356,4 +357,90 @@ describe('primary-contact partial-index race (T075)', () => {
     }
     expect(violations, violations.join('\n')).toEqual([]);
   }, 120_000);
+
+  // ── 108 T041 review round 3 (fresh whole-branch re-review, M1) ────────────
+
+  it('promotePrimary on a member with NO current primary designates the target (demoted: null) instead of refusing', async () => {
+    // Once 0293 is applied, the only contact-bearing zero-primary state that
+    // can COMMIT is an archived member (the trigger exempts archived) — which
+    // is also the real post-deploy shape. Before this round the demote-then-
+    // promote repo refused it with `no_current_primary`, so the runbook's
+    // "promote a remaining contact" pointed at a 409.
+    const memberId = randomUUID() as MemberId;
+    const aId = randomUUID() as ContactId;
+    const bId = randomUUID() as ContactId;
+    const rand = randomUUID().slice(0, 8);
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(members).values({
+        tenantId: tenant.ctx.slug,
+        memberId,
+        memberNumber: nextSeedMemberNumber(),
+        companyName: `No Primary Co ${rand}`,
+        country: 'TH',
+        planId: 'test-plan',
+        planYear: 2026,
+        status: 'archived',
+        archivedAt: new Date(),
+      });
+      await tx.insert(contacts).values([
+        {
+          tenantId: tenant.ctx.slug,
+          contactId: aId,
+          memberId,
+          firstName: 'Ann',
+          lastName: 'Alpha',
+          email: `ann-${rand}@example.com`,
+          preferredLanguage: 'en',
+          isPrimary: false,
+        },
+        {
+          tenantId: tenant.ctx.slug,
+          contactId: bId,
+          memberId,
+          firstName: 'Bo',
+          lastName: 'Beta',
+          email: `bo-${rand}@example.com`,
+          preferredLanguage: 'en',
+          isPrimary: false,
+        },
+      ]);
+    });
+
+    const requestId = `req-np-${rand}`;
+    const result = await promotePrimary(
+      memberId,
+      bId,
+      { actorUserId: admin.userId, requestId },
+      buildMembersDeps(tenant.ctx),
+    );
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.demoted).toBeNull();
+    expect(result.value.promoted.contactId).toBe(bId);
+
+    const rows = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({ contactId: contacts.contactId, isPrimary: contacts.isPrimary })
+        .from(contacts)
+        .where(eq(contacts.memberId, memberId)),
+    );
+    expect(new Map(rows.map((r) => [r.contactId, r.isPrimary]))).toEqual(
+      new Map([
+        [aId, false],
+        [bId, true],
+      ]),
+    );
+
+    // The audit row says what happened: a designation, nobody demoted.
+    const audits = await db
+      .select({ type: auditLog.eventType, payload: auditLog.payload })
+      .from(auditLog)
+      .where(and(eq(auditLog.tenantId, tenant.ctx.slug), eq(auditLog.requestId, requestId)));
+    const changed = audits.find((r) => r.type === 'member_primary_contact_changed');
+    expect(changed?.payload).toMatchObject({
+      member_id: memberId,
+      old_primary_contact_id: null,
+      new_primary_contact_id: bId,
+    });
+  }, 30_000);
 });

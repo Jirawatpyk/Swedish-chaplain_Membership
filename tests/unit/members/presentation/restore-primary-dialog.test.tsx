@@ -252,4 +252,36 @@ describe('RestorePrimaryDialog (108 FR-014)', () => {
     expect(onConfirm).not.toHaveBeenCalled();
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
+
+  it('forgets the pick when the dialog is closed programmatically — the next 409 must not re-open with a contact pre-selected (T041 round 3, L2)', async () => {
+    // A failed restore closes the dialog by flipping `open`, not through
+    // Cancel; the component stays mounted, so a pick kept in state would
+    // survive and the re-opened dialog would show the silent default the
+    // header rules out.
+    const onCloseComplete = vi.fn();
+    const tree = (open: boolean) => (
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <RestorePrimaryDialog
+          open={open}
+          onOpenChange={vi.fn()}
+          onCloseComplete={onCloseComplete}
+          memberId="member-1"
+          designatable={[ANN, BO]}
+          onConfirm={vi.fn()}
+          submitting={false}
+        />
+      </NextIntlClientProvider>
+    );
+    const { rerender } = render(tree(true));
+    fireEvent.click(screen.getByText('Bo Beta'));
+    await waitFor(() =>
+      expect(screen.getByRole('radio', { name: /Bo Beta/ })).toBeChecked(),
+    );
+    rerender(tree(false));
+    await waitFor(() => expect(onCloseComplete).toHaveBeenCalledTimes(1));
+    rerender(tree(true));
+    const bo = await screen.findByRole('radio', { name: /Bo Beta/ });
+    expect(bo).not.toBeChecked();
+    expect(screen.getByTestId('restore-primary-confirm')).toBeDisabled();
+  });
 });

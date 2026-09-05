@@ -97,6 +97,25 @@ describe('contract: POST /promote-primary (T071)', () => {
     expect(body.promoted.is_primary).toBe(true);
   });
 
+  it('200 with `demoted: null` when the member had no current primary — promote designates (108 PR-B, T041 round 3)', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+    promotePrimaryMock.mockResolvedValueOnce(
+      ok({
+        demoted: null,
+        promoted: { ...baseContact, contactId: newPrimary, isPrimary: true },
+      }),
+    );
+    const { POST } = await import(
+      '@/app/api/members/[memberId]/contacts/[contactId]/promote-primary/route'
+    );
+    const res = await POST(makeRequest(), { params: routeParams() });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.demoted).toBeNull();
+    expect(body.promoted.contact_id).toBe(newPrimary);
+    expect(body.promoted.is_primary).toBe(true);
+  });
+
   it('404 when use case reports not_found', async () => {
     requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     promotePrimaryMock.mockResolvedValueOnce(err({ type: 'not_found' }));
