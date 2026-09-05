@@ -55,6 +55,14 @@ const KEPT = new Set<string>([
   'linkedUserId', // F1-binding (erasure deferred to US2 — retained intentionally)
   'inviteBouncedAt', // low-PII timestamp (no identifier, just a bounce marker)
   'art14AttestedAt', // Task 8: compliance evidence, no PII — retained on erasure
+  // 108 PR-D (migration 0294, FR-056): the per-contact marketing preference
+  // carries no personal data once the contact is scrubbed — the address it
+  // applied to is gone, and the preference is moot for a removed row. A staff
+  // user id on it stays because the audit trail, not the column, is the
+  // authoritative record of who changed it.
+  'marketingOptOutAt', // preference timestamp, no identifier
+  'marketingOptOutSource', // 'staff' | 'self' — no identifier
+  'marketingOptOutByUserId', // actor id (staff or the contact's own login); audit is authoritative
 ]);
 
 describe('contacts scrub — column-coverage allowlist guard (COMP-1 US1)', () => {

@@ -62,6 +62,11 @@ const F3_AUDIT_EVENTS: readonly F3AuditEventType[] = [
   'member_auto_invoice_enrolled',
   // 107-auto-invoice Task 18 (migration 0265) — the OFF direction.
   'member_auto_invoice_unenrolled',
+  // 108 PR-D (migration 0295, FR-053) — per-contact marketing preference
+  // changed by staff or by the contact themself; payload carries ids +
+  // `source`, never an address.
+  'contact_marketing_opted_out',
+  'contact_marketing_opted_in',
 ] as const;
 
 // Compile-time proof that the tuple covers the full union.
@@ -78,9 +83,9 @@ type _AssertF3Coverage = typeof F3_AUDIT_EVENTS extends
 const _: _AssertF3Coverage = true;
 
 describe('F3AuditEventType count guard', () => {
-  it('F3 audit event type count is 35 (32 prior + member_plan_change_billing_effect + member_auto_invoice_enrolled + member_auto_invoice_unenrolled)', () => {
+  it('F3 audit event type count is 37 (35 prior + contact_marketing_opted_out + contact_marketing_opted_in)', () => {
     // Reference `_` so the compile-time proof is not tree-shaken / unused.
     expect(_).toBe(true);
-    expect(F3_AUDIT_EVENTS.length).toBe(35);
+    expect(F3_AUDIT_EVENTS.length).toBe(37);
   });
 });
