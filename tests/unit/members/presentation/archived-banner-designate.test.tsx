@@ -338,6 +338,40 @@ describe('ArchivedBanner — designate a primary on restore (108 FR-014)', () =>
     await waitFor(() => expect(toastError).toHaveBeenCalledWith(A.undeleteErased));
   });
 
+  it('Cancel does not move focus to the landmark — that focus is for the refresh paths only (round 4, F4-#6)', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(409, {
+        error: {
+          code: 'no_primary_contact',
+          details: {
+            designatable: [{ contact_id: 'c-ann', first_name: 'Ann', last_name: 'Alpha' }],
+          },
+        },
+      }),
+    );
+    const main = document.createElement('main');
+    main.id = 'main-content';
+    main.tabIndex = -1;
+    document.body.appendChild(main);
+    const landmarkFocus = vi.spyOn(main, 'focus');
+    try {
+      renderBanner();
+      fireEvent.click(screen.getByRole('button', { name: /restore/i }));
+      await screen.findByRole('alertdialog');
+
+      fireEvent.click(screen.getByTestId('restore-primary-cancel'));
+      await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+
+      // The dialog's own `finalFocus` returns focus to the Restore button on
+      // cancel; a second focus() on the landmark would override it — the
+      // contradiction the round-4 review named.
+      expect(landmarkFocus).not.toHaveBeenCalled();
+      expect(refresh).not.toHaveBeenCalled();
+    } finally {
+      main.remove();
+    }
+  });
+
   it('a plain restore (member already has a primary) still works without any dialog', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(200, { member_id: MEMBER_ID }));
     renderBanner();

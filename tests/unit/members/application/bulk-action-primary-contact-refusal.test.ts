@@ -13,6 +13,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ok } from '@/lib/result';
 
+import { logger } from '@/lib/logger';
+
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
@@ -125,6 +127,62 @@ describe('bulkAction — deferred primary-contact refusal is a typed, per-member
       memberId: MEMBER,
       code: 'undelete_erased',
     });
+    expect(memberRepo.updateStatusInTx).not.toHaveBeenCalled();
+  });
+
+  it('logs the COMMIT refusal server-side before answering — never a silent typed error (round 4, F4-#7)', async () => {
+    runInTenantMock.mockRejectedValueOnce(triggerRaise(MEMBER));
+
+    await bulkAction(
+      { action: 'unarchive', member_ids: [MEMBER] },
+      { actorUserId: 'admin-1', requestId: 'req-log' },
+      makeDeps(),
+    );
+
+    expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(
+      expect.objectContaining({ memberId: MEMBER, requestId: 'req-log' }),
+      expect.stringContaining('primary-contact'),
+    );
+  });
+
+  it('bulk unarchive refuses a member with NO live primary (contact-less included) BEFORE any write — the single undelete rule (round 4, F4-#5)', async () => {
+    // 0293 exempts a contact-less member, so without a gate the Undo of a bulk
+    // archive brought back a member the single undelete refuses (409
+    // no_primary_contact) — active, and silently receiving no receipts.
+    const archived = {
+      tenantId: 'test-tenant',
+      memberId: MEMBER,
+      status: 'archived',
+      archivedAt: new Date(Date.now() - 86_400_000),
+    };
+    const memberRepo = {
+      findManyByIdsInTx: vi.fn().mockResolvedValue(ok(new Map([[MEMBER, archived]]))),
+      findErasedIdsInTx: vi.fn().mockResolvedValue(ok(new Set())),
+      findIdsWithoutLivePrimaryInTx: vi.fn().mockResolvedValue(ok(new Set([MEMBER]))),
+      updateStatusInTx: vi.fn(),
+    };
+    runInTenantMock.mockImplementationOnce(async (_ctx: unknown, fn: (tx: unknown) => unknown) =>
+      fn({ __tx: true }),
+    );
+
+    const result = await bulkAction(
+      { action: 'unarchive', member_ids: [MEMBER] },
+      { actorUserId: 'admin-1', requestId: 'req-1' },
+      { ...makeDeps(), memberRepo: memberRepo as never },
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toEqual({
+      type: 'state_error',
+      memberId: MEMBER,
+      code: 'no_primary_contact',
+    });
+    expect(memberRepo.findIdsWithoutLivePrimaryInTx).toHaveBeenCalledWith(
+      { __tx: true },
+      expect.any(String),
+      [MEMBER],
+    );
     expect(memberRepo.updateStatusInTx).not.toHaveBeenCalled();
   });
 

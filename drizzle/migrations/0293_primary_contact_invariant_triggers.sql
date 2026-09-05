@@ -82,6 +82,9 @@
 -- members via the 0009 trigger) holds ROW EXCLUSIVE and blocks this lock. Fail
 -- fast rather than sit on the migrator's 30 s statement timeout — the batch
 -- rolls back whole and the deploy is simply retried (T041 round 2, N3).
+-- Handed back (SET LOCAL lock_timeout = DEFAULT) as this file's LAST statement
+-- — SET LOCAL lives to the end of the migrator's single batch transaction, so
+-- later migrations in the same deploy must not inherit it (round 4, F4-#3).
 SET LOCAL lock_timeout = '5s';--> statement-breakpoint
 LOCK TABLE "members", "contacts" IN SHARE ROW EXCLUSIVE MODE;--> statement-breakpoint
 
@@ -98,6 +101,16 @@ DO $$
 DECLARE
   bad int;
 BEGIN
+  -- Round 4 (F4-#4): the helper below runs as its owner — this role. Under
+  -- RLS FORCE the owner is subject to the tenant policies unless it has
+  -- BYPASSRLS, and a helper that cannot see a member's contacts would read
+  -- zero rows and EXEMPT the member. Fail the deploy loudly instead; the
+  -- helper itself also sets row_security = off so a blind read RAISES.
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = current_user AND rolbypassrls) THEN
+    RAISE EXCEPTION
+      'migration role % lacks BYPASSRLS; contacts_check_member_primary would be blind under RLS FORCE',
+      current_user;
+  END IF;
   SELECT count(*) INTO bad
     FROM members m
    WHERE m.status <> 'archived'
@@ -131,6 +144,11 @@ RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = pg_catalog, public, pg_temp
+-- Fail CLOSED (round 4, F4-#4): with row_security = off a query that a policy
+-- WOULD filter raises instead of silently returning zero rows, so a helper
+-- that cannot see the member's contacts refuses the commit rather than
+-- exempting the member. A no-op for the BYPASSRLS owner.
+SET row_security = off
 AS $$
 DECLARE
   v_status         text;
@@ -237,4 +255,12 @@ CREATE CONSTRAINT TRIGGER "members_one_primary_ct"
   AFTER UPDATE OF "status", "erased_at" ON "members"
   DEFERRABLE INITIALLY DEFERRED
   FOR EACH ROW
-  EXECUTE FUNCTION public.contacts_assert_one_primary();
+  EXECUTE FUNCTION public.contacts_assert_one_primary();--> statement-breakpoint
+
+-- Round 4 (F4-#3): SET LOCAL lives to the end of the migrator's single batch
+-- transaction, so without this every migration applied after 0293 in the same
+-- deploy would inherit the 5 s lock_timeout — and a later ALTER that waited
+-- more than 5 s on live prod would abort the whole batch with the blame on the
+-- innocent file. The DDL above ran under the fail-fast intent; hand the
+-- default back now.
+SET LOCAL lock_timeout = DEFAULT;

@@ -676,6 +676,31 @@ export const drizzleMemberRepo: MemberRepo = {
     }
   },
 
+  async findIdsWithoutLivePrimaryInTx(tx, tenantId, memberIds) {
+    try {
+      if (memberIds.length === 0) return ok(new Set<MemberId>());
+      const rows = await tx
+        .select({ memberId: members.memberId })
+        .from(members)
+        .where(
+          and(
+            eq(members.tenantId, tenantId),
+            inArray(members.memberId, [...memberIds] as string[]),
+            // Correlated NOT EXISTS on the live-primary predicate — the same
+            // shape migration 0293's helper counts, on the same composite key.
+            sql`NOT EXISTS (SELECT 1 FROM contacts c
+                  WHERE c.tenant_id = ${members.tenantId}
+                    AND c.member_id = ${members.memberId}
+                    AND c.is_primary
+                    AND c.removed_at IS NULL)`,
+          ),
+        );
+      return ok(new Set(rows.map((r) => r.memberId as MemberId)));
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
+
   async unenrolAutoInvoiceInTx(tx, tenantId, memberIds) {
     try {
       if (memberIds.length === 0) return ok([] as ReadonlyArray<MemberId>);

@@ -126,6 +126,10 @@ function makeStubDeps(): MemberSelfUpdateDeps {
       ok: true as const,
       value: new Set<MemberId>(),
     }),
+    findIdsWithoutLivePrimaryInTx: async () => ({
+      ok: true as const,
+      value: new Set<MemberId>(),
+    }),
     enrolAutoInvoiceInTx: async () => ({ ok: true as const, value: [] }),
     unenrolAutoInvoiceInTx: async () => ({ ok: true as const, value: [] }),
   };

@@ -588,6 +588,30 @@ describe('108 — primary-contact invariant triggers (migration 0293)', () => {
     }
   });
 
+  it('the helper fails CLOSED under RLS (row_security=off), is owned by a BYPASSRLS role, and 0293 hands lock_timeout back (round 4, F4-#3 / F4-#4)', async () => {
+    const rows = (await db.execute(sql`
+      SELECT p.proconfig, r.rolbypassrls
+        FROM pg_proc p
+        JOIN pg_roles r ON r.oid = p.proowner
+       WHERE p.proname = 'contacts_check_member_primary'
+    `)) as unknown as ReadonlyArray<{ proconfig: string[] | null; rolbypassrls: boolean }>;
+    expect(rows).toHaveLength(1);
+    // Under RLS FORCE the owner is subject to policies unless it has
+    // BYPASSRLS. With row_security=off a query a policy WOULD filter errors
+    // out instead of silently reading zero rows — so a helper that cannot see
+    // the member's contacts refuses the commit rather than exempting the
+    // member ("v_contact_rows = 0 → RETURN" must never mean "blind").
+    expect(rows[0]!.proconfig).toContain('row_security=off');
+    expect(rows[0]!.rolbypassrls).toBe(true);
+    // SET LOCAL lives to the end of the migrator's single batch transaction;
+    // 0293 must hand the default back after its DDL so a later migration in
+    // the same deploy is not aborted by 0293's 5 s lock_timeout.
+    const text = readFileSync(MIGRATION_PATH, 'utf-8');
+    const reset = text.lastIndexOf('SET LOCAL lock_timeout = DEFAULT');
+    const lastTrigger = text.lastIndexOf('CREATE CONSTRAINT TRIGGER');
+    expect(reset).toBeGreaterThan(lastTrigger);
+  });
+
   it('the function pins a safe search_path and is not executable by PUBLIC', async () => {
     const rows = (await db.execute(sql`
       SELECT p.proconfig,

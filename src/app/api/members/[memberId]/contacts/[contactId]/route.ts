@@ -469,6 +469,22 @@ export async function DELETE(
         },
         { status: 409 },
       );
+    case 'conflict':
+      // 108 PR-B (T041 round 4, F4-#1) — the in-tx policy and migration
+      // 0293's deferred trigger answer with a typed reason
+      // (`no_primary_contact` / `primary_contact_race`). A rule the UI can
+      // explain is a 409 — never the 500 this arm's absence produced.
+      return NextResponse.json(
+        {
+          error: {
+            code: 'conflict',
+            message:
+              "The member's contacts changed while this request ran. Refresh and try again.",
+            details: { reason: result.error.reason },
+          },
+        },
+        { status: 409 },
+      );
     case 'server_error':
     default:
       logger.error(

@@ -239,7 +239,12 @@ export async function POST(
         {
           error: {
             code: 'state_error',
-            message: 'Member is not archived.',
+            // Round 4 (F4-#8): the message must state the truth for every
+            // code — an erased member IS archived; it cannot be restored.
+            message:
+              result.error.code === 'undelete_erased'
+                ? 'Member has been erased and cannot be restored.'
+                : 'Member is not archived.',
             details: { code: result.error.code },
           },
         },

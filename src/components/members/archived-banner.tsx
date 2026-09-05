@@ -289,14 +289,17 @@ export function ArchivedBanner({
         if (!next) setNotice(null);
       }}
       onCloseComplete={() => {
-        // Focus the landmark itself, not whatever Floating UI picks as the
-        // first tabbable child of <main> — the same target the plain path
-        // uses (T041 UX round 2, N4).
-        document.getElementById('main-content')?.focus();
         const pendingError = pendingErrorRef.current;
         pendingErrorRef.current = null;
         if (pendingError !== null) toast.error(pendingError);
+        // Cancel / Escape: the dialog's `finalFocus` has already returned
+        // focus to the Restore button — nothing to do here (round 4, F4-#6).
         if (!restoredRef.current && pendingError === null) return;
+        // The refresh paths: focus the landmark itself, not whatever Floating
+        // UI picks as the first tabbable child of <main> — the same target the
+        // plain path uses (T041 UX round 2, N4) — BEFORE the server tree
+        // re-renders and this banner unmounts.
+        document.getElementById('main-content')?.focus();
         startTransition(() => {
           router.refresh();
         });

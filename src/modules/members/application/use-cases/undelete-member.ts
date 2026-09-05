@@ -182,7 +182,13 @@ async function ensurePrimaryBeforeRestore(
   // not applied: honouring it would demote someone the admin did not name.
   if (live.some((c) => c.isPrimary)) return null;
 
-  const refuse = (designatable: ReadonlyArray<DesignatableContact>): never => {
+  // Declared with an explicit function type so TypeScript's control-flow
+  // analysis treats each call as never-returning and narrows `wanted` below —
+  // a plain `const f = (): never =>` does not, and the code had to compensate
+  // with `wanted!` (round 4, F4-#12).
+  const refuse: (designatable: ReadonlyArray<DesignatableContact>) => never = (
+    designatable,
+  ) => {
     throw new UndeleteStateError('no_primary_contact', undefined, designatable);
   };
 
@@ -195,7 +201,7 @@ async function ensurePrimaryBeforeRestore(
   const designated = await deps.contactRepo.designatePrimaryInTx(
     tx,
     memberId,
-    wanted!,
+    wanted,
   );
   if (!designated.ok) {
     // 0 rows (`repo.not_found`) = the contact was removed between our read
@@ -226,7 +232,7 @@ async function ensurePrimaryBeforeRestore(
     },
   });
   if (!auditResult.ok) throw new Error('audit_failed');
-  return wanted!;
+  return wanted;
 }
 
 export async function undeleteMember(

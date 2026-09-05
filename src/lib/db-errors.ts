@@ -77,9 +77,11 @@ export function isLastAdminTriggerError(error: unknown): boolean {
  * tell "zero primaries" (→ `no_primary_contact`) from "two" (→
  * `primary_contact_race`); `null` when the error is anything else.
  */
-export function primaryContactTriggerViolation(
-  error: unknown,
-): { readonly livePrimaries: number } | null {
+export function primaryContactTriggerViolation(error: unknown): {
+  readonly livePrimaries: number;
+  readonly memberId: string | null;
+  readonly tenantSlug: string | null;
+} | null {
   let cur: unknown = error;
   while (cur !== null && cur !== undefined) {
     if (
@@ -87,8 +89,19 @@ export function primaryContactTriggerViolation(
       cur.code === POSTGRES_CHECK_VIOLATION &&
       cur.message.includes('primary-contact-invariant')
     ) {
-      const m = /has (\d+) live primary/.exec(cur.message);
-      return { livePrimaries: m ? Number(m[1]) : -1 };
+      // One decoder for every caller (round 4, F4-#9 / F4-#10). The raise is
+      // `primary-contact-invariant: member <uuid> in tenant <slug> has <n>
+      // live primary contact(s)` — pinned by T031 on the real trigger. A count
+      // that cannot be read lands on the ACTIONABLE side (0 → "the member
+      // needs a primary"), never on "retry"; a member that cannot be read is
+      // null and the caller falls back to its sanitized error.
+      const count = /has (\d+) live primary/.exec(cur.message);
+      const who = /member ([0-9a-f-]{36}) in tenant (\S+)/i.exec(cur.message);
+      return {
+        livePrimaries: count ? Number(count[1]) : 0,
+        memberId: who?.[1] ?? null,
+        tenantSlug: who?.[2] ?? null,
+      };
     }
     cur = (cur as { cause?: unknown } | null)?.cause;
   }

@@ -1737,6 +1737,7 @@
         "rateLimited": "Too many bulk actions. Wait a few minutes and try again.",
         "errors": {
           "state_error": "One or more selected members are in a state that doesn't allow this action. Refresh and try again.",
+          "no_primary_contact": "One selected member has no primary contact and can't be restored in bulk. Open that member's page and restore it there to choose one.",
           "not_found": "One or more selected members no longer exist. Refresh and try again.",
           "plan_not_found": "The target plan no longer exists. Refresh and try again.",
           "bulk_cap_exceeded": "Too many members selected for one batch. Reduce the selection and try again.",

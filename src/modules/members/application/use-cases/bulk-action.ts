@@ -21,7 +21,7 @@
 
 import { z } from 'zod';
 import { runInTenant } from '@/lib/db';
-import { errorChainMessage, primaryContactTriggerViolation } from '@/lib/db-errors';
+import { primaryContactTriggerViolation } from '@/lib/db-errors';
 import { logger } from '@/lib/logger';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
@@ -229,6 +229,19 @@ export async function bulkAction(
         for (const id of memberIds) {
           if (erased.value.has(id)) throw new BulkStateError(id, 'undelete_erased');
         }
+        // 108 PR-B (T041 round 4, F4-#5) — the same rule as the single
+        // undelete: a member with no live primary (a contact-less member
+        // included — 0293 exempts those) is not restored. Partitioned BEFORE
+        // any write; the batch stays all-or-nothing and names the member.
+        const noPrimary = await deps.memberRepo.findIdsWithoutLivePrimaryInTx(
+          tx,
+          deps.tenant.slug,
+          memberIds,
+        );
+        if (!noPrimary.ok) throw new Error(`primary_lookup_failed:${noPrimary.error.code}`);
+        for (const id of memberIds) {
+          if (noPrimary.value.has(id)) throw new BulkStateError(id, 'no_primary_contact');
+        }
       }
 
       for (const memberId of memberIds) {
@@ -409,12 +422,22 @@ export async function bulkAction(
     // gets the same per-member `state_error` the route already renders
     // instead of "bulk operation failed" for the whole batch.
     const violation = primaryContactTriggerViolation(e);
-    const named =
-      violation === null ? null : /member ([0-9a-f-]{36})/i.exec(errorChainMessage(e));
-    if (named?.[1] !== undefined) {
+    if (violation !== null && violation.memberId !== null) {
+      // Round 4 (F4-#7): the typed answer must leave a server-side trace —
+      // this is the one bulk failure an operator most needs to correlate
+      // with a member id. `warn`, not `error`: the invariant did its job.
+      logger.warn(
+        {
+          requestId: meta.requestId,
+          action: data.action,
+          memberId: violation.memberId,
+          livePrimaries: violation.livePrimaries,
+        },
+        'bulk-action: refused at COMMIT by the primary-contact invariant (0293)',
+      );
       return err({
         type: 'state_error',
-        memberId: named[1] as MemberId,
+        memberId: violation.memberId as MemberId,
         code: 'no_primary_contact',
       });
     }

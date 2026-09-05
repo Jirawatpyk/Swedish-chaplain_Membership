@@ -426,6 +426,21 @@ export interface MemberRepo {
   ): Promise<Result<ReadonlySet<MemberId>, RepoError>>;
 
   /**
+   * 108 PR-B (T041 round 4, F4-#5) — the ids among `memberIds` that have NO
+   * live primary contact (`is_primary AND removed_at IS NULL`), a member with
+   * no contact rows at all included. Bulk `unarchive` partitions these out
+   * BEFORE any write so the Undo of a bulk archive enforces the same rule as
+   * the single undelete (migration 0293 exempts contact-less members, so the
+   * trigger alone would let them through). Explicit `tenantId` predicate
+   * alongside the RLS GUC — Principle I two-layer isolation.
+   */
+  findIdsWithoutLivePrimaryInTx(
+    tx: TenantTx,
+    tenantId: string,
+    memberIds: readonly MemberId[],
+  ): Promise<Result<ReadonlySet<MemberId>, RepoError>>;
+
+  /**
    * Clear `auto_invoice_enrolled_at` (set it back to NULL) for a batch of
    * members in ONE round-trip, and return the ids it actually cleared.
    *

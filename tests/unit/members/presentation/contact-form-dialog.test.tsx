@@ -444,3 +444,82 @@ describe('ContactFormDialog — 108 PR-B hooks for the restore dialog (T041 UX H
     expect(onSaved).not.toHaveBeenCalled();
   });
 });
+
+describe('ContactFormDialog — 108 T041 round 4', () => {
+  it('a 409 whose reason is about primacy (not the email) is a toast, never pinned on #cf-email (F4-#2)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 409,
+        json: async () => ({
+          error: { code: 'conflict', details: { reason: 'primary_contact_race' } },
+        }),
+      }),
+    );
+    openAddDialog();
+
+    fireEvent.change(document.querySelector('#cf-first-name')!, { target: { value: 'Jane' } });
+    fireEvent.change(document.querySelector('#cf-last-name')!, { target: { value: 'Doe' } });
+    fireEvent.change(document.querySelector('#cf-email')!, {
+      target: { value: 'nobody-has-this@example.com' },
+    });
+    fireEvent.click(document.querySelector('#cf-art14-attested')!);
+    fireEvent.submit(document.querySelector('form')!);
+
+    // "That email address is already in use" on an address nobody has used
+    // would be a lie with no way forward; the existing generic conflict copy
+    // ("refresh and try again") is the honest answer.
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith(
+        enMessages.admin.members.detail.contactActions.errors.conflict,
+      ),
+    );
+    expect(document.querySelector('#cf-email')?.getAttribute('aria-invalid')).not.toBe('true');
+    expect(document.querySelector('#cf-email-error')).toBeNull();
+
+    vi.unstubAllGlobals();
+  });
+
+  it('EDIT mode with onSaved still refreshes — the caller-owned follow-up is an ADD-only contract (F4-#13)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const onSaved = vi.fn();
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <ContactFormDialog
+          memberId="m1"
+          mode="edit"
+          contact={{
+            contactId: 'c1',
+            firstName: 'Alice',
+            lastName: 'Anderson',
+            email: 'alice@old.example',
+            phone: null,
+            roleTitle: null,
+            preferredLanguage: 'en',
+            linkedUserId: null,
+            isPrimary: false,
+          }}
+          trigger={<button>Open</button>}
+          onSaved={onSaved}
+        />
+      </NextIntlClientProvider>,
+    );
+    fireEvent.click(screen.getByText('Open'));
+    fireEvent.change(document.querySelector('#cf-first-name')!, { target: { value: 'Alicia' } });
+    fireEvent.submit(document.querySelector('form')!);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    // `onSaved` is fired by the ADD branch only; an edit that merely happens
+    // to receive the prop must not lose its refresh.
+    await waitFor(() => expect(routerRefresh).toHaveBeenCalled());
+    expect(onSaved).not.toHaveBeenCalled();
+
+    vi.unstubAllGlobals();
+  });
+});

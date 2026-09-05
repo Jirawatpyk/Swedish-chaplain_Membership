@@ -58,6 +58,7 @@ import { ArchiveConfirmDialog } from './archive-confirm-dialog';
 import { BulkProgressIndicator } from './bulk-progress-indicator';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
 import { useDialogFinalFocus } from '@/components/broadcast/reason-confirmation-dialog';
+import { bulkErrorKey, type BulkErrorBody } from './bulk-error-key';
 import { BULK_CAP } from '@/lib/members-bulk-constants';
 
 // I9 round-10 ui-design-specialist — `change_plan` was declared but
@@ -182,9 +183,8 @@ export function BulkActionBar({
         } else if (res.status === 429) {
           toast.error(t('rateLimited'));
         } else {
-          const code = body.error?.code;
-          const key = typeof code === 'string' ? `errors.${code}` : null;
-          toast.error(key && t.has(key) ? t(key) : t('unknownError'));
+          const key = bulkErrorKey(body as BulkErrorBody, (k) => t.has(k));
+          toast.error(key ? t(key) : t('unknownError'));
         }
       } catch {
         toast.error(t('networkError'));
@@ -348,9 +348,8 @@ export function BulkActionBar({
           // server's raw English `error.message` (state_error's message even
           // embeds a member UUID, see bulk/route.ts). Unknown codes fall back
           // to a generic localized message.
-          const code = body.error?.code;
-          const key = typeof code === 'string' ? `errors.${code}` : null;
-          toast.error(key && t.has(key) ? t(key) : t('unknownError'));
+          const key = bulkErrorKey(body as BulkErrorBody, (k) => t.has(k));
+          toast.error(key ? t(key) : t('unknownError'));
         }
       } catch {
         toast.error(t('networkError'));

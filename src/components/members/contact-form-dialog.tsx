@@ -241,18 +241,30 @@ export function ContactFormDialog({
 
   const handleError = async (res: Response): Promise<void> => {
     const body = (await res.json().catch(() => ({}))) as {
-      error?: { code?: string; details?: { field?: string } };
+      error?: { code?: string; details?: { field?: string; reason?: string } };
     };
     const code = body.error?.code;
     const field = body.error?.details?.field;
-    if (res.status === 409 && code === 'conflict' && emailEditable) {
+    const reason = body.error?.details?.reason;
+    // 108 PR-B (T041 round 4, F4-#2) — a 409 is about the EMAIL only when the
+    // server says so (or predates the reason token). The primacy reasons
+    // (`primary_contact_race` / `no_primary_contact`) mean the member's
+    // contacts changed under this form; pinning "email already in use" on an
+    // address nobody has used would be a lie with no way forward.
+    const emailConflict =
+      res.status === 409 &&
+      code === 'conflict' &&
+      (reason === undefined || reason === 'contact_email_in_use');
+    if (res.status === 409 && code === 'conflict' && !emailConflict) {
+      toast.error(tA('errors.conflict'));
+    } else if (emailConflict && emailEditable) {
       // Field-level rejection — surface inline on the email input (+ focus)
       // instead of a transient toast (audit XF-01). Only when the email field
       // is editable (add, or an unlinked contact on edit); a read-only email
       // must NOT pin a 409 onto the disabled field (setFocus would no-op).
       setError('email', { type: 'server', message: tA('errors.emailTaken') });
       setFocus('email');
-    } else if (res.status === 409 && code === 'conflict') {
+    } else if (emailConflict) {
       toast.error(tA('errors.emailTaken'));
     } else if (
       res.status === 400 &&
@@ -369,7 +381,10 @@ export function ContactFormDialog({
       // A caller that passed `onSaved` owns the follow-up (the restore dialog
       // restores again, which refreshes once on its own); refreshing here too
       // would re-render the server tree twice (T041 UX round 2, N6c).
-      if (!onSaved) router.refresh();
+      // Keyed on the branch that fired the callback, not on the prop's
+      // presence: an EDIT caller that passes `onSaved` keeps its refresh
+      // (round 4, F4-#13).
+      if (!(mode === 'add' && onSaved)) router.refresh();
     } catch {
       toast.error(tA('errors.generic'));
     } finally {

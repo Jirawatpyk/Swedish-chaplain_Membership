@@ -459,6 +459,10 @@ describe('contract: POST /api/members/[memberId]/undelete (T134)', () => {
     const body = await res.json();
     expect(body.error.code).toBe('state_error');
     expect(body.error.details.code).toBe('undelete_erased');
+    // Round 4 (F4-#8): a non-browser consumer reads the message; "Member is
+    // not archived." states the opposite of the truth for an erased member.
+    expect(body.error.message).toMatch(/erased/i);
+    expect(body.error.message).not.toMatch(/not archived/i);
   });
 
   it('200 — super_admin may designate and restore', async () => {
