@@ -180,6 +180,19 @@ export function makeDrizzleMarketingUnsubscribesRepo(
       });
     },
 
+    async listEmailLowers(tenantIdArg: string): Promise<ReadonlySet<EmailLower>> {
+      // 108 PR-D — whole-tenant suppressed set for the Marketing audience
+      // filters. Tenant-scoped via runInTenant (RLS) + the explicit tenant_id
+      // predicate, same as lookupBatch.
+      return runInTenant(ctx, async (tx) => {
+        const rows = await tx
+          .select({ emailLower: marketingUnsubscribes.emailLower })
+          .from(marketingUnsubscribes)
+          .where(eq(marketingUnsubscribes.tenantId, tenantIdArg));
+        return new Set(rows.map((r) => unsafeBrandEmailLower(r.emailLower)));
+      });
+    },
+
     async setMemberIdNull(
       txUnknown,
       tenantIdArg: string,

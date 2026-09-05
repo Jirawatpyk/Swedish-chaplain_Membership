@@ -53,7 +53,7 @@ export type SetContactMarketingOptOutDeps = {
   readonly tenant: TenantContext;
   readonly contactRepo: Pick<ContactRepo, 'findById' | 'setMarketingOptOutInTx'>;
   readonly audit: AuditPort;
-  readonly marketingSuppression: MarketingSuppressionLookupPort;
+  readonly marketingSuppression: Pick<MarketingSuppressionLookupPort, 'isSuppressed'>;
   readonly clock?: { now(): Date };
 };
 

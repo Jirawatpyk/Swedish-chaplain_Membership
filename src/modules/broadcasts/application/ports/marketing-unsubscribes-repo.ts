@@ -94,6 +94,20 @@ export interface MarketingUnsubscribesRepo {
   ): Promise<ReadonlySet<EmailLower>>;
 
   /**
+   * 108 PR-D — every suppressed `email_lower` of the tenant. The members
+   * Marketing audience page answers two of its filters from this list
+   * (`state=on` excludes suppressed rows at the query; `state=unsubscribed`
+   * IS the list), which a per-page `lookupBatch` cannot do truthfully.
+   * Bounded: one row per unsubscribe, never per contact.
+   *
+   * OPTIONAL for the same reason as `upsertStandalone`: the many partial
+   * test fixtures of this port need not stub it; the production Drizzle
+   * adapter always implements it and the members-side adapter throws when
+   * it is absent (never in prod).
+   */
+  listEmailLowers?(tenantId: string): Promise<ReadonlySet<EmailLower>>;
+
+  /**
    * Sever the `member_id` back-reference on every suppression row that
    * referenced a given member, RETAINING the row (and its plaintext
    * `email_lower`, so suppression survives).

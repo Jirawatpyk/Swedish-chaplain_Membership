@@ -20,22 +20,37 @@
 import type { TenantContext } from '@/modules/tenants';
 import {
   drizzleContactRepo,
+  drizzleMemberRepo,
   f3DrizzleAuditAdapter,
+  type ListMarketingAudienceDeps,
   type MarketingSuppressionLookupPort,
   type SetContactMarketingOptOutDeps,
 } from '@/modules/members';
-import { asEmailLower, makeDrizzleMarketingUnsubscribesRepo } from '@/modules/broadcasts';
+import {
+  asEmailLower,
+  makeDrizzleMarketingUnsubscribesRepo,
+  type EmailLower,
+} from '@/modules/broadcasts';
 
 /**
  * Suppression lookup over the RLS-safe broadcasts repo. An address that fails
  * the `EmailLower` parse cannot be on the list (the list only holds parsed
- * values) → `false`. A DB failure THROWS — the port contract — so the use
- * case refuses to switch "on" rather than guessing.
+ * values) → not suppressed. A DB failure THROWS — the port contract — so the
+ * toggle refuses to switch "on" and the list surfaces degrade to "status
+ * unavailable" rather than guessing.
  */
 export function makeMarketingSuppressionLookup(
   tenant: TenantContext,
 ): MarketingSuppressionLookupPort {
   const repo = makeDrizzleMarketingUnsubscribesRepo(tenant.slug);
+  const parseAll = (emails: readonly string[]): EmailLower[] => {
+    const out: EmailLower[] = [];
+    for (const email of emails) {
+      const parsed = asEmailLower(email.toLowerCase());
+      if (parsed.ok) out.push(parsed.value);
+    }
+    return out;
+  };
   return {
     async isSuppressed(email) {
       const parsed = asEmailLower(email.toLowerCase());
@@ -43,6 +58,25 @@ export function makeMarketingSuppressionLookup(
       const suppressed = await repo.lookupBatch(tenant.slug, [parsed.value]);
       return suppressed.has(parsed.value);
     },
+    async lookupSuppressed(emails) {
+      const parsed = parseAll(emails);
+      if (parsed.length === 0) return new Set<string>();
+      return repo.lookupBatch(tenant.slug, parsed) as Promise<ReadonlySet<string>>;
+    },
+    async listSuppressedEmailLowers() {
+      if (!repo.listEmailLowers) {
+        throw new Error('MarketingUnsubscribesRepo.listEmailLowers is not implemented');
+      }
+      return repo.listEmailLowers(tenant.slug) as Promise<ReadonlySet<string>>;
+    },
+  };
+}
+
+export function buildMarketingAudienceDeps(tenant: TenantContext): ListMarketingAudienceDeps {
+  return {
+    tenant,
+    memberRepo: drizzleMemberRepo,
+    marketingSuppression: makeMarketingSuppressionLookup(tenant),
   };
 }
 

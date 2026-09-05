@@ -20,4 +20,20 @@ export interface MarketingSuppressionLookupPort {
    * render "status unavailable").
    */
   isSuppressed(email: string): Promise<boolean>;
+
+  /**
+   * The subset of `emails` (any case) that is suppressed, as LOWER-CASED
+   * strings. Used to resolve the displayed state of one page of rows.
+   * THROWS on a lookup failure (callers degrade to "status unavailable").
+   */
+  lookupSuppressed(emails: readonly string[]): Promise<ReadonlySet<string>>;
+
+  /**
+   * Every suppressed address of the tenant, lower-cased. Needed when a
+   * FILTER is answered from the suppression list (`state=on` must exclude
+   * suppressed rows at the query; `state=unsubscribed` is that list) — a
+   * per-page lookup cannot give a truthful count. Bounded: one row per
+   * unsubscribe, never per contact. THROWS on a lookup failure.
+   */
+  listSuppressedEmailLowers(): Promise<ReadonlySet<string>>;
 }

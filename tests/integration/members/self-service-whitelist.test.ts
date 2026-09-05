@@ -133,6 +133,11 @@ function makeStubDeps(): MemberSelfUpdateDeps {
     }),
     enrolAutoInvoiceInTx: async () => ({ ok: true as const, value: [] }),
     unenrolAutoInvoiceInTx: async () => ({ ok: true as const, value: [] }),
+    // 108 PR-D — never reached by the self-service whitelist path.
+    listContactsForMarketingAudience: async () => ({
+      ok: true as const,
+      value: { rows: [], total: 0 },
+    }),
   };
 
   const contactRepo: ContactRepo = {

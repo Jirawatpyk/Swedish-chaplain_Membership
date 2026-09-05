@@ -7,7 +7,7 @@
 import type { TenantTx } from '@/lib/db';
 import type { Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
-import type { Member, MemberId, PlanId } from '../../domain/member';
+import type { Member, MemberId, MemberStatus, PlanId } from '../../domain/member';
 import type { Contact, ContactId } from '../../domain/contact';
 import type { IsoCountryCode } from '../../domain/value-objects/iso-country-code';
 import type { TaxId } from '../../domain/value-objects/tax-id';
@@ -220,6 +220,41 @@ export type MemberPatch = Partial<
     billingCountry: IsoCountryCode | null;
   }
 >;
+
+/**
+ * 108 PR-D (FR-035) — the Marketing audience query's WHERE, already
+ * translated from the page filter by `listMarketingAudience`. Every leg is
+ * optional and ANDed; `eligibleOnly` = member active + not erased + not
+ * halted. The two email legs are how a suppression-list filter reaches SQL
+ * without this module reading the broadcasts-owned table: the use case
+ * fetches the (bounded) suppressed set through its port and passes it down.
+ * An EMPTY `emailLowerIn` is short-circuited by the use case, never sent.
+ */
+export type MarketingAudienceRepoFilter = {
+  /** Substring over company name and contact full name (ILIKE). */
+  readonly q?: string;
+  readonly memberId?: MemberId;
+  readonly kind?: 'primary' | 'secondary';
+  /** DB-level opt-out state — `none` = receives (columns null). */
+  readonly optOut?: 'none' | 'staff' | 'self';
+  readonly eligibleOnly: boolean;
+  readonly emailLowerIn?: readonly string[];
+  readonly emailLowerNotIn?: readonly string[];
+  readonly limit: number;
+  readonly offset: number;
+};
+
+export type MarketingAudienceRepoRow = {
+  readonly contact: Contact;
+  readonly member: {
+    readonly memberId: MemberId;
+    readonly memberNumber: number;
+    readonly companyName: string;
+    readonly status: MemberStatus;
+    readonly erased: boolean;
+    readonly halted: boolean;
+  };
+};
 
 export interface MemberRepo {
   findById(
@@ -740,6 +775,24 @@ export interface MemberRepo {
     ctx: TenantContext,
     filter: DirectoryOffsetFilter,
   ): Promise<Result<number, RepoError>>;
+
+  /**
+   * 108 PR-D (FR-035) — one page of the Marketing audience: every NON-REMOVED
+   * contact of the tenant joined to its member, filtered per
+   * `MarketingAudienceRepoFilter`, ordered company name → contact last name →
+   * first name → contact id, plus the total matching count (two queries in
+   * one tenant tx, like `searchDirectoryWithCount`). Tenant-scoped via
+   * `runInTenant` + RLS FORCE on both tables (FR-052).
+   */
+  listContactsForMarketingAudience(
+    ctx: TenantContext,
+    filter: MarketingAudienceRepoFilter,
+  ): Promise<
+    Result<
+      { readonly rows: readonly MarketingAudienceRepoRow[]; readonly total: number },
+      RepoError
+    >
+  >;
 
   /**
    * F7 US3 AS2 — most-recent `member_plan_changed` audit timestamp
