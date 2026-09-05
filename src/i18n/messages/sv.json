@@ -5999,6 +5999,7 @@
         "reasonRateLimitedWithSeconds": "För många försök. Vänta {seconds} sekunder och försök igen.",
         "reasonAuth": "Din session har gått ut. Logga in igen.",
         "reasonMembershipTerminated": "Ditt medlemskap har avslutats. Kontakta kammaren för att återaktivera medlemskapet innan du betalar.",
+        "reasonNoPrimaryContact": "Detta medlemskap saknar primär kontakt, så PromptPay kan inte användas. Kontakta kammarens personal, eller betala med kort i stället.",
         "reasonServer": "Vår betalningstjänst är tillfälligt otillgänglig.",
         "reasonNetwork": "Nätverksfel. Kontrollera din anslutning och försök igen.",
         "reasonCardDeclined": "Ditt kort avvisades.",

@@ -206,6 +206,25 @@ export function useInitiatePayment(opts: UseInitiatePaymentOptions): void {
           let reason: string;
           if (response.status === 403 && bodyCode === 'membership_access_restricted') {
             reason = t('retry.reasonMembershipTerminated');
+          } else if (response.status === 409 && bodyCode === 'primary_contact_missing') {
+            // 108 FR-004. The route already answers 409 with this code and a
+            // bilingual message, but the mapping below is by STATUS, and 409
+            // fell through to `retry.genericReason` — "Payment could not be
+            // completed", next to a Retry button, for a condition retrying
+            // cannot fix and the member cannot fix either. They would retry the
+            // QR indefinitely with nothing on screen naming the problem.
+            // (Round-4 finding #1.)
+            //
+            // The copy names what the member CAN do: ask the chamber staff, or
+            // pay by card — card collects billing details in Elements and never
+            // reads this, so it still works for them.
+            //
+            // The Retry CTA still renders. That is a pre-existing property of
+            // this panel shared with `membership_access_restricted` above,
+            // which is equally permanent; suppressing it for permanent failures
+            // is a panel-API change worth doing on its own, for both codes at
+            // once. Recorded in the PR-A ledger rather than smuggled in here.
+            reason = t('retry.reasonNoPrimaryContact');
           } else if (response.status === 429) {
             const retryAfter = response.headers.get('Retry-After');
             const seconds = retryAfter

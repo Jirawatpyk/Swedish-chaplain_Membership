@@ -5999,6 +5999,7 @@
         "reasonRateLimitedWithSeconds": "Too many attempts. Please wait {seconds} seconds and try again.",
         "reasonAuth": "Your session expired. Please sign in again.",
         "reasonMembershipTerminated": "Your membership has been terminated. Please contact the chamber to reactivate your membership before paying.",
+        "reasonNoPrimaryContact": "This membership has no primary contact, so PromptPay cannot be used. Please contact the chamber staff, or pay by card instead.",
         "reasonServer": "Our payment service is temporarily unavailable.",
         "reasonNetwork": "Network error. Check your connection and try again.",
         "reasonCardDeclined": "Your card was declined.",
