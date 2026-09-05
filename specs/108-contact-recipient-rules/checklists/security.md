@@ -132,11 +132,71 @@ path and changed three admin surfaces.
   was fixed this round (a lost `${…}` frame across newlines, and a `}` that
   popped the frame from inside an object literal); all five gates that read
   through it re-run clean, so nothing previously hidden was being hidden.
-- **Constitution v1.4.2**: I PASS · II PASS · III PASS (the barrel is still the
-  only route; architecture guards 133 green) · IV PASS (no cardholder-data
-  surface touched) · VIII PASS.
+- **Constitution v1.4.2**: I PASS · II PASS · III **was NOT actually passing when
+  this line was written** — see the round-4 correction below · IV PASS (no
+  cardholder-data surface touched) · VIII PASS.
 
 Verification at HEAD `1e113fbaa`: lint 0 · typecheck 0 · 13 static gates PASS ·
 full unit suite green · pnpm test:coverage exit 0 (1197 files / 13249 tests; the three pinned money files — resolve-money-recipient.ts, record-payment.ts, initiate-payment.ts — all at 100 lines/branches/functions) · live-Neon suites 21 tests green.
 
 **Re-affirmed**: security.md (CHK001-CHK026) remains **CO-SIGNED** at this HEAD.
+
+### Round-4 re-affirmation (8e62a23a4), with a Principle III correction
+
+Round 3's re-affirmation asserted "III PASS (the barrel is still the only
+route)". That was true in letter and false in substance, and it is corrected
+here rather than quietly extended.
+
+**What was wrong.** Round 3 fixed the FR-003 banner's hand-copied predicate by
+having three server components call
+`resolveMoneyRecipient(recipientLocaleAdapter, …)` directly. `resolveMoneyRecipient`
+is an `application/lib` helper and `recipientLocaleAdapter` is Infrastructure.
+CLAUDE.md § Clean Architecture (Principle III, NON-NEGOTIABLE) says
+"Presentation calls Application use cases only; never touches Domain or
+Infrastructure directly", and `plan.md` ticks that box with the same sentence.
+Going through the module barrel satisfied the ARCHITECTURE GUARD — whose
+allowlist tracks deep infra paths — while breaking the rule the guard exists to
+serve. A green guard was read as a passing principle; it was not the same claim.
+
+**What it is now.** `getMemberMoneyRecipientStatus` +
+`makeMemberMoneyRecipientStatusDeps`, the same use-case/deps-factory shape as
+`makeResendPdfDeps`. No page names an adapter. The contract test asserts both
+directions: a banner site must contain `getMemberMoneyRecipientStatus` and must
+NOT contain `recipientLocaleAdapter`, so the next fix cannot re-break it the
+same way. **III PASSES now**, on the substance and not only the guard.
+
+Re-derived for the other properties:
+
+- **Tenant isolation** — unchanged; no read's tenant predicate was touched. The
+  banner now reaches the recipient through a use case whose port self-scopes via
+  `runInTenant`, i.e. the same RLS context as the money path.
+- **Address disclosure** — unchanged, and narrowed once more: a non-member event
+  resend now answers `no_buyer_email` instead of `no_recipient`, so staff are no
+  longer sent to a member page for a row that has no member. Still no address in
+  any response.
+- **Audit truth** — improved, and this is the round's most security-relevant
+  change. `auto_email_skipped_no_recipient` is a 10-year append-only assertion
+  that a document went undelivered. The reconcile cron wrote it without the
+  intent gate the enqueue arm has always had, so a SUPPRESSED void and an
+  ALREADY-SENT notice both produced rows asserting an event that did not happen.
+  Both arms now sit behind one count, with a positive control so the gates
+  cannot pass by the skip never firing.
+- **Fail-open review** — the three banner sites' bare `.catch(() => false)` is
+  gone: a failed READ is now distinguished from "this member has no contact",
+  logged with ids only, and the banner hidden rather than shown. Hiding a
+  warning is the safe direction; asserting a member's data is broken because a
+  database hiccupped is not.
+- **Static enforcement** — `check:money-recipient` now scans `src/app/(staff)`
+  and `src/app/(member)` as well (615 → 965 files). Those trees already load
+  invoices and snapshots, so the gate had been reporting OK over a surface it
+  did not cover. The three reads it found are identity display and identity
+  authoring, allowlisted with reasons. The shared scanner also stopped treating
+  an apostrophe in JSX children, and the `/` of a JSX closing tag, as string and
+  regex openers — both let a real `//` comment reach every gate as source.
+
+Verification at HEAD `8e62a23a4`: lint 0 · typecheck 0 · 18 static gates PASS ·
+full unit suite 1007 files / 11324 tests · pnpm test:coverage exit 0 (1198 files / 13262 tests; the three pinned money files — resolve-money-recipient.ts, record-payment.ts, initiate-payment.ts — all at their 100% line/branch/function pins) · live-Neon money + reconcile
+suites green.
+
+**Re-affirmed**: security.md (CHK001-CHK026) is **CO-SIGNED** at this HEAD, with
+the Principle III line above corrected rather than carried forward.

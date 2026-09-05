@@ -449,31 +449,51 @@ guard. Written here so a fifth reviewer finds the reason rather than the shape.
 
 ## Status
 
-**PR-A is review-complete.** T001–T029 + T101/T102/T107 all closed. Three rounds
-of review — three concurrent reviewers, a fresh-context re-review, then a
-ten-angle `/code-review` over the whole branch diff — with every finding either
-fixed or refused in writing. One round-2 refusal (LOW-5) was reversed in round 3;
-one round-3 finding (#13) was rejected on database evidence and the code written
-for it reverted. `checklists/security.md` and `checklists/money.md` carry
-Constitution v1.4.2 co-sign footers naming the verification method, and neither
-co-signed property regressed in round 3.
+**PR-A is review-complete.** T001-T029 + T101/T102/T107 all closed. FOUR rounds of
+review — three concurrent reviewers, a fresh-context re-review, then two
+ten-angle `/code-review` passes over the whole branch diff — with every finding
+either fixed or refused in writing.
 
-Gate run at HEAD `1e113fbaa`: lint 0 · typecheck 0 · 13 static gates PASS
-(money-recipient, actor-role-truth, authorization-role-reads, staff-page-guard,
-api-route-guard, layout, template-seed, fixme, dates, env-example, env-boot,
-i18n 5171×3, portal-guard) · `pnpm test:coverage` **exit 0** — 1197 files /
-13249 tests, and the three 100/100 money pins (`resolve-money-recipient.ts`,
-`record-payment.ts`, `initiate-payment.ts`) all met · architecture guards 133 ·
-live-Neon 21 tests incl. the new `primary-contact-read-agreement`.
+Two of those rounds found rules broken by the ROUND BEFORE:
 
-Two caveats worth recording rather than smoothing over. First, the coverage
-figure took three runs to obtain honestly: the first two were reported as
-"exit 0" by a pipeline whose `$?` belonged to `sed`, not to pnpm — the second
-had in fact FAILED and printed no threshold block at all. Second, that failure
-was `tests/unit/components/auth/change-role-dialog.test.tsx`, a focus-timing
-flake in 016 RBAC territory that this branch does not touch; it is diagnosed and
-de-flaked in a separate, clearly-labelled commit (`8dd85c6af`) so it can be
-cherry-picked away from 108.
+- round 3's fix for the banner's drifted predicate wired Infrastructure into
+  three server components (round-4 #7, Principle III NON-NEGOTIABLE);
+- round 3's re-affirmation then read that as "III PASS (the barrel is still the
+  only route)" — a green architecture guard mistaken for a passing principle.
+  Corrected in `checklists/security.md`, not appended to.
+
+Round 4 also surfaced a REGRESSION this branch had carried for 31 commits:
+`void-pdf-reconcile-cron` passes 14/14 on `main` and failed 3 here. The
+behaviour was right; the tests encoded the copy-forward 108 removed. **Nothing
+ran that suite** — the route is `src/app/api/**`, outside the per-module
+integration pre-push gate, and CI runs only `integration-smoke.yml`. That
+gate-map gap is the durable finding.
+
+Two findings were REJECTED on evidence rather than accommodated: round-3 #13
+(the four primary-contact reads cannot disagree — `contacts_one_primary_per_member`
+has been a partial UNIQUE index since migration 0009, and the tiebreak written
+for it was reverted) and round-4 #9 (deferring the F5 read into the `!isResume`
+branch would reintroduce the round-1 pool-nesting blocker, since that branch is
+inside `withTx`).
+
+Both checklists carry Constitution v1.4.2 co-sign footers with per-round
+re-affirmations naming the verification method. `money.md`'s transaction-safety
+bullet and `security.md`'s Principle III line were each AMENDED when a later
+round made them false, rather than left standing.
+
+Gate run at HEAD `8e62a23a4`: lint 0 · typecheck 0 · **18 static gates PASS**
+(money-recipient now 965 files, up from 615) · full unit suite 1007 files /
+11324 tests · `pnpm test:coverage` **exit 0** — 1198 files / 13262 tests, the
+three 100% money pins met · live-Neon money + reconcile suites green
+(void-pdf-reconcile 17/17, primary-contact-read-agreement 5/5).
+
+One gate fails and is NOT a defect in this branch: `check:plan-divergence`
+reports anomalies on 72 leftover integration-test tenants on the shared dev Neon
+branch (every tenant with invoices there is `test-`-prefixed; there are no real
+ones). It has no `test-` exclusion, so it fails for anyone who has run the
+integration suite against dev. Deliberately not "fixed" here — adding a tenant
+filter to a money-integrity gate could mask a real divergence, and that is an
+owner's decision, not a drive-by.
 
 ## Open at hand-off
 
@@ -482,6 +502,15 @@ cherry-picked away from 108.
 - PR-B/D/C untouched. PR-B's migration `0293` still needs a fresh V1 run
   (`node --env-file=.env.production --import tsx scripts/inventory-primary-contact-invariant.ts`)
   immediately before merge.
+- **Open UX item (round 4, finding #1):** `PaymentFailurePanel` still renders a
+  Retry CTA for PERMANENT failures — both the new `primary_contact_missing` and
+  the pre-existing `membership_access_restricted`. Suppressing it for permanent
+  codes is a panel-API change worth making once, for both, with a UX pass.
+- **Open (round 4, finding #2 fallout):** changes under `src/app/api/**` have no
+  automatic integration coverage — the per-module pre-push gate keys on
+  `src/modules/<m>/**` and CI runs only `integration-smoke.yml`. This branch shipped
+  a broken cron for 31 commits because of it. Worth either widening the pre-push
+  gate's path map or adding the route suites to CI.
 - **New PR-B item (round 3, finding #8):** a per-member AUDIT row for the F5
   `primary_contact_missing` refusal. Needs a new `audit_event_type` value (5
   places + a migration) — deliberately NOT folded into

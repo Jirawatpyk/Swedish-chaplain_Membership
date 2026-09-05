@@ -140,3 +140,42 @@ full unit suite green · pnpm test:coverage exit 0 (1197 files / 13249 tests; th
 
 **Re-affirmed**: money.md (CHK001-CHK026) remains **CO-SIGNED** at this HEAD,
 with the transaction-safety bullet amended above.
+
+### Round-4 re-affirmation (8e62a23a4)
+
+Round 4 restructured `void-invoice`'s return, re-gated the reconcile cron's
+audit arm, and changed when the skip counter fires. None of it moves a number;
+all of it changes what the money trail SAYS.
+
+- **No number moved, still.** No amount, no VAT arithmetic, no document-state
+  transition, no §87 sequence was touched this round.
+- **A regression was found and fixed.** `void-pdf-reconcile-cron` passes 14/14
+  on `main` and failed 3 on this branch: PR-A made the cancellation email
+  resolve its address live, and the fixture seeds a member with no contacts, so
+  it correctly refused to re-enqueue. The tests encoded the copy-forward 108
+  removed. Nothing caught it — the route is `src/app/api/**`, outside the
+  per-module integration pre-push gate, and CI runs only `integration-smoke`.
+  **That gate-map gap is the finding worth carrying forward**, not the fixture.
+- **Audit truth on the money trail.** The reconcile skip arm now fires only when
+  a cancellation notice was actually owed (a queued row, none already sent),
+  matching the enqueue arm's long-standing gate. Three tests with a positive
+  control; mutation-proved.
+- **Counter ordering.** `auditAutoEmailSkippedNoRecipient` bumped its metric
+  BEFORE awaiting the audit emit. The row rides the caller's money tx and rolls
+  back with it; the counter cannot. A settlement that later unwound left a skip
+  counted that never happened, and a webhook retry counted it again on each
+  attempt. Now bumped after a successful emit.
+- **Delivery outcome is reported.** `voidInvoice` returned a bare `Invoice`, so
+  a void whose §86/10 notice was skipped read as an unqualified success. It now
+  returns `emailDelivery`, and the route rides `email_delivery` beside the
+  serialised invoice the way POST /credit-notes already does. `issueCreditNote`'s
+  non-member arm also bumps the skip counter now, as both siblings already did.
+- **The F5 refusal still precedes every write** — unchanged this round, and the
+  suggestion to defer its read into the `!isResume` branch was REJECTED: that
+  branch is inside `withTx`, so it reintroduces the round-1 pool-nesting blocker.
+
+Verification at HEAD `8e62a23a4`: lint 0 · typecheck 0 · 18 static gates PASS ·
+full unit suite 1007 files / 11324 tests · pnpm test:coverage exit 0 (1198 files / 13262 tests; the three pinned money files — resolve-money-recipient.ts, record-payment.ts, initiate-payment.ts — all at their 100% line/branch/function pins) · live-Neon money + reconcile
+suites green (void-pdf-reconcile 17/17).
+
+**Re-affirmed**: money.md (CHK001-CHK026) remains **CO-SIGNED** at this HEAD.
