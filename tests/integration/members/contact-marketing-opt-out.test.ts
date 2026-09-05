@@ -7,16 +7,28 @@
  * unknown source, the partial index that backs the audience query exists, and
  * the two audit enum values are registered.
  *
- * Part 2 — `setMarketingOptOutInTx` + cross-tenant isolation is added in the
- * next TDD cycle (the repo method does not exist yet).
+ * Part 2 — `setMarketingOptOutInTx` (row lock, same-state = unchanged, removed
+ * = not_found), cross-tenant isolation through the real RLS (FR-052), and the
+ * full `setContactMarketingOptOut` use case through the production composition
+ * (`buildContactMarketingDeps`): audit row with ids + source and no address
+ * (FR-053a); a suppressed address refuses "on" (FR-025).
  *
  * Simulated emails only — no real PII.
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';
 import { errorChainMessage } from '@/lib/db-errors';
+import { buildContactMarketingDeps } from '@/lib/contact-marketing-deps';
+import {
+  asContactId,
+  drizzleContactRepo,
+  setContactMarketingOptOut,
+} from '@/modules/members';
+import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
+import { auditLog } from '@/modules/auth/infrastructure/db/schema';
+import { marketingUnsubscribes } from '@/modules/broadcasts/infrastructure/schema';
 import {
   createActiveTestUser,
   deleteTestUser,
@@ -171,5 +183,267 @@ describe('108 PR-D — contact marketing opt-out columns (migrations 0294 + 0295
       'contact_marketing_opted_in',
       'contact_marketing_opted_out',
     ]);
+  });
+});
+
+describe('108 PR-D — setMarketingOptOutInTx + setContactMarketingOptOut (live Neon)', () => {
+  let tenantA: TestTenant;
+  let tenantB: TestTenant;
+  let admin: TestUser;
+  let memberId: string;
+  let contactId: string;
+  let removedContactId: string;
+  let suppressedContactId: string;
+  const planId = `mkt2-${randomUUID().slice(0, 6)}`;
+  const suppressedEmail = `sim-unsub-${randomUUID().slice(0, 8)}@example.test`;
+  const STAFF_2 = randomUUID();
+
+  beforeAll(async () => {
+    admin = await createActiveTestUser('admin');
+    tenantA = await createTestTenant('test-swecham');
+    tenantB = await createTestTenant('test-swecham');
+    await seedPortalPlan(tenantA.ctx.slug, admin.userId, planId);
+    const seeded = await seedPortalMemberWithContact(tenantA, planId);
+    memberId = seeded.memberId;
+    contactId = seeded.contactId;
+    removedContactId = randomUUID();
+    suppressedContactId = randomUUID();
+    await runInTenant(tenantA.ctx, async (tx) => {
+      await tx.insert(contacts).values([
+        {
+          tenantId: tenantA.ctx.slug,
+          contactId: removedContactId,
+          memberId,
+          firstName: 'Gone',
+          lastName: 'Contact',
+          email: `gone-${randomUUID().slice(0, 8)}@example.test`,
+          preferredLanguage: 'en',
+          isPrimary: false,
+          removedAt: new Date('2026-05-01T00:00:00Z'),
+        },
+        {
+          tenantId: tenantA.ctx.slug,
+          contactId: suppressedContactId,
+          memberId,
+          firstName: 'Unsub',
+          lastName: 'Scribed',
+          email: suppressedEmail,
+          preferredLanguage: 'en',
+          isPrimary: false,
+        },
+      ]);
+      await tx.insert(marketingUnsubscribes).values({
+        tenantId: tenantA.ctx.slug,
+        emailLower: suppressedEmail.toLowerCase(),
+        memberId: null,
+        reason: 'recipient_initiated',
+        reasonText: null,
+        sourceBroadcastId: null,
+        sourceTokenHash: null,
+      });
+    });
+  }, 120_000);
+
+  afterAll(async () => {
+    await db
+      .delete(marketingUnsubscribes)
+      .where(eq(marketingUnsubscribes.tenantId, tenantA.ctx.slug))
+      .catch(() => {});
+    await db.delete(auditLog).where(eq(auditLog.tenantId, tenantA.ctx.slug)).catch(() => {});
+    await tenantA.cleanup().catch(() => {});
+    await tenantB.cleanup().catch(() => {});
+    await deleteTestUser(admin).catch(() => {});
+  }, 120_000);
+
+  it('off → changed; the three columns land together', async () => {
+    const at = new Date('2026-09-06T01:00:00Z');
+    const r = await runInTenant(tenantA.ctx, (tx) =>
+      drizzleContactRepo.setMarketingOptOutInTx(tx, asContactId(contactId), {
+        optedOutAt: at,
+        source: 'staff',
+        byUserId: admin.userId as never,
+      }),
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.outcome).toBe('changed');
+    expect(r.value.contact.marketing).toEqual({
+      optedOutAt: at,
+      source: 'staff',
+      byUserId: admin.userId,
+    });
+    const read = await drizzleContactRepo.findById(tenantA.ctx, asContactId(contactId));
+    expect(read.ok && read.value.marketing.source).toBe('staff');
+  });
+
+  it('off again (another actor) → unchanged; the ORIGINAL actor + timestamp are kept', async () => {
+    const r = await runInTenant(tenantA.ctx, (tx) =>
+      drizzleContactRepo.setMarketingOptOutInTx(tx, asContactId(contactId), {
+        optedOutAt: new Date('2026-09-06T02:00:00Z'),
+        source: 'self',
+        byUserId: STAFF_2 as never,
+      }),
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.outcome).toBe('unchanged');
+    expect(r.value.contact.marketing).toMatchObject({ source: 'staff', byUserId: admin.userId });
+  });
+
+  it('on → changed; all three columns are cleared', async () => {
+    const r = await runInTenant(tenantA.ctx, (tx) =>
+      drizzleContactRepo.setMarketingOptOutInTx(tx, asContactId(contactId), {
+        optedOutAt: null,
+        source: null,
+        byUserId: null,
+      }),
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.outcome).toBe('changed');
+    expect(r.value.contact.marketing).toEqual({ optedOutAt: null, source: null, byUserId: null });
+  });
+
+  it('on when already on → unchanged', async () => {
+    const r = await runInTenant(tenantA.ctx, (tx) =>
+      drizzleContactRepo.setMarketingOptOutInTx(tx, asContactId(contactId), {
+        optedOutAt: null,
+        source: null,
+        byUserId: null,
+      }),
+    );
+    expect(r.ok && r.value.outcome).toBe('unchanged');
+  });
+
+  it('a removed contact → repo.not_found (no marketing state to set)', async () => {
+    const r = await runInTenant(tenantA.ctx, (tx) =>
+      drizzleContactRepo.setMarketingOptOutInTx(tx, asContactId(removedContactId), {
+        optedOutAt: new Date(),
+        source: 'staff',
+        byUserId: admin.userId as never,
+      }),
+    );
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.code).toBe('repo.not_found');
+  });
+
+  it('FR-052: tenant B cannot reach tenant A\'s contact through the write (RLS → not_found)', async () => {
+    const r = await runInTenant(tenantB.ctx, (tx) =>
+      drizzleContactRepo.setMarketingOptOutInTx(tx, asContactId(contactId), {
+        optedOutAt: new Date(),
+        source: 'staff',
+        byUserId: admin.userId as never,
+      }),
+    );
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.code).toBe('repo.not_found');
+    // …and the row in tenant A is untouched.
+    const read = await drizzleContactRepo.findById(tenantA.ctx, asContactId(contactId));
+    expect(read.ok && read.value.marketing.optedOutAt).toBeNull();
+  });
+
+  it('use case (production composition): staff off → audit row with ids + source, no address', async () => {
+    const deps = buildContactMarketingDeps(tenantA.ctx);
+    const requestId = `req-${randomUUID().slice(0, 8)}`;
+    const r = await setContactMarketingOptOut(
+      {
+        contactId: asContactId(contactId),
+        state: 'off',
+        actor: { userId: admin.userId, role: 'admin', source: 'staff' },
+        requestId,
+      },
+      deps,
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.outcome).toBe('changed');
+
+    const rows = await db
+      .select()
+      .from(auditLog)
+      .where(and(eq(auditLog.tenantId, tenantA.ctx.slug), eq(auditLog.requestId, requestId)));
+    expect(rows).toHaveLength(1);
+    const row = rows[0]!;
+    expect(row.eventType).toBe('contact_marketing_opted_out');
+    expect(row.actorUserId).toBe(admin.userId);
+    expect(row.payload).toMatchObject({
+      member_id: memberId,
+      contact_id: contactId,
+      source: 'staff',
+      actor_role: 'admin',
+    });
+    expect(JSON.stringify(row.payload) + row.summary).not.toContain('@');
+  });
+
+  it('use case: same state again → unchanged and NO second audit row', async () => {
+    const deps = buildContactMarketingDeps(tenantA.ctx);
+    const requestId = `req-${randomUUID().slice(0, 8)}`;
+    const r = await setContactMarketingOptOut(
+      {
+        contactId: asContactId(contactId),
+        state: 'off',
+        actor: { userId: admin.userId, role: 'admin', source: 'staff' },
+        requestId,
+      },
+      deps,
+    );
+    expect(r.ok && r.value.outcome).toBe('unchanged');
+    const rows = await db
+      .select({ id: auditLog.id })
+      .from(auditLog)
+      .where(and(eq(auditLog.tenantId, tenantA.ctx.slug), eq(auditLog.requestId, requestId)));
+    expect(rows).toHaveLength(0);
+  });
+
+  it('use case: on → opted_in audit row; the member page reads the contact back as receiving', async () => {
+    const deps = buildContactMarketingDeps(tenantA.ctx);
+    const requestId = `req-${randomUUID().slice(0, 8)}`;
+    const r = await setContactMarketingOptOut(
+      {
+        contactId: asContactId(contactId),
+        state: 'on',
+        actor: { userId: admin.userId, role: 'admin', source: 'staff' },
+        requestId,
+      },
+      deps,
+    );
+    expect(r.ok && r.value.outcome).toBe('changed');
+    const rows = await db
+      .select({ eventType: auditLog.eventType })
+      .from(auditLog)
+      .where(and(eq(auditLog.tenantId, tenantA.ctx.slug), eq(auditLog.requestId, requestId)));
+    expect(rows.map((x) => x.eventType)).toEqual(['contact_marketing_opted_in']);
+  });
+
+  it('use case: "on" for a suppressed address → suppressed (FR-025), nothing written', async () => {
+    const deps = buildContactMarketingDeps(tenantA.ctx);
+    const r = await setContactMarketingOptOut(
+      {
+        contactId: asContactId(suppressedContactId),
+        state: 'on',
+        actor: { userId: admin.userId, role: 'admin', source: 'staff' },
+        requestId: `req-${randomUUID().slice(0, 8)}`,
+      },
+      deps,
+    );
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.type).toBe('suppressed');
+  });
+
+  it('use case: "off" for a suppressed address still records the staff opt-out', async () => {
+    const deps = buildContactMarketingDeps(tenantA.ctx);
+    const r = await setContactMarketingOptOut(
+      {
+        contactId: asContactId(suppressedContactId),
+        state: 'off',
+        actor: { userId: admin.userId, role: 'admin', source: 'staff' },
+        requestId: `req-${randomUUID().slice(0, 8)}`,
+      },
+      deps,
+    );
+    expect(r.ok && r.value.outcome).toBe('changed');
   });
 });
