@@ -67,6 +67,18 @@ export function ArchivedBanner({
   const [designateOpen, setDesignateOpen] = useState(false);
   const [designatable, setDesignatable] = useState<ReadonlyArray<DesignatableContact>>([]);
   const restoreButtonRef = useRef<HTMLButtonElement>(null);
+  // Set the moment a restore SUCCEEDS. `router.refresh()` then re-renders the
+  // server tree and this whole banner unmounts, so returning focus to the
+  // Restore button would drop it on <body> (memory: dialog-focus-lost-after-
+  // unmount — axe never catches it; the T040 e2e did). On success focus goes
+  // to the staff layout's #main-content landmark, which survives; on cancel,
+  // to the button that opened the dialog.
+  const restoredRef = useRef(false);
+  const dialogFinalFocus = () => {
+    if (typeof document === 'undefined') return null;
+    const landmark = document.getElementById('main-content');
+    return restoredRef.current ? landmark : (restoreButtonRef.current ?? landmark);
+  };
 
   const canUndelete = windowStatus.state === 'within_window';
 
@@ -95,7 +107,14 @@ export function ArchivedBanner({
             }),
       });
       if (res.ok) {
+        restoredRef.current = true;
         setDesignateOpen(false);
+        // The plain-restore path never opened the dialog, so no close cycle
+        // will move focus for us — move it to the surviving landmark here
+        // before the refresh unmounts this banner.
+        if (designatePrimaryContactId === undefined) {
+          document.getElementById('main-content')?.focus();
+        }
         toast.success(
           designatePrimaryContactId === undefined
             ? t('undeleteSuccess')
@@ -226,7 +245,7 @@ export function ArchivedBanner({
       designatable={designatable}
       onConfirm={(contactId) => void handleUndelete(contactId)}
       submitting={loading}
-      finalFocus={() => restoreButtonRef.current}
+      finalFocus={dialogFinalFocus}
     />
     </>
   );
