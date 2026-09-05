@@ -69,7 +69,9 @@ export interface ContactRepo {
    */
   addInTx(
     tx: TenantTx,
-    draft: Omit<Contact, 'createdAt' | 'updatedAt'>,
+    // 108 PR-D: `marketing` is omitted — a new contact always starts in
+    // `RECEIVES_MARKETING` (FR-027); the opt-out has its own write path.
+    draft: Omit<Contact, 'createdAt' | 'updatedAt' | 'marketing'>,
   ): Promise<Result<Contact, RepoError>>;
 
   /**

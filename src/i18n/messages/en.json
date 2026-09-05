@@ -6300,6 +6300,8 @@
       "tax_receipt_issued": "Tax receipt issued",
       "tenant_receipt_prefix_changed": "Document-number prefix changed",
       "auto_email_skipped_no_recipient": "Automatic email skipped — no primary contact",
+      "contact_marketing_opted_out": "Contact marketing switched off",
+      "contact_marketing_opted_in": "Contact marketing switched on",
       "invoice_buyer_identity_invalid": "Buyer identity invalid — issuance blocked",
       "sign_in_failure": "Sign-in failed",
       "sign_out": "Signed out",

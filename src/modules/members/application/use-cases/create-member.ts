@@ -359,7 +359,7 @@ export async function createMember(
   // non-null-ness stays in ONE block instead of relying on a re-check of
   // `data.secondary_contact` to satisfy the type checker further down.
   let secondaryContactDraft:
-    | Omit<Contact, 'createdAt' | 'updatedAt' | 'memberId'>
+    | Omit<Contact, 'createdAt' | 'updatedAt' | 'memberId' | 'marketing'>
     | null = null;
   if (data.secondary_contact) {
     const secondaryEmailResult = asEmail(data.secondary_contact.email);
@@ -511,7 +511,7 @@ export async function createMember(
   // leaves the counter incremented — numbers are never reused).
   const memberId = deps.idFactory.memberId();
   const contactId = deps.idFactory.contactId();
-  const contactDraft: Omit<Contact, 'createdAt' | 'updatedAt' | 'memberId'> = {
+  const contactDraft: Omit<Contact, 'createdAt' | 'updatedAt' | 'memberId' | 'marketing'> = {
     tenantId: deps.tenant.slug,
     contactId,
     firstName: data.primary_contact.first_name.trim(),

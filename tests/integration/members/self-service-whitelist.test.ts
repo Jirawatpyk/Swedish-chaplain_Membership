@@ -78,6 +78,7 @@ const baseContact: Contact = {
   linkedUserId: 'user-1' as Contact['linkedUserId'],
   inviteBouncedAt: null,
   art14AttestedAt: null,
+  marketing: { optedOutAt: null, source: null, byUserId: null },
   removedAt: null,
   createdAt: now,
   updatedAt: now,

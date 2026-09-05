@@ -56,6 +56,7 @@ function makeContact(
     linkedUserId: userId as Contact['linkedUserId'],
     inviteBouncedAt: null,
     art14AttestedAt: null,
+    marketing: { optedOutAt: null, source: null, byUserId: null },
     createdAt: new Date('2026-01-01'),
     updatedAt: new Date('2026-01-01'),
     isPrimary: true,

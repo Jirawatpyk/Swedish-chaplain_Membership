@@ -17,7 +17,12 @@ import { contacts } from './schema-contacts';
 import type {
   ContactRepo,
 } from '../../application/ports/contact-repo';
-import { contactPrimacy, type Contact, type ContactId } from '../../domain/contact';
+import {
+  contactMarketing,
+  contactPrimacy,
+  type Contact,
+  type ContactId,
+} from '../../domain/contact';
 import {
   ERASED_EMAIL_DOMAIN,
   ERASED_EMAIL_LOCAL_PREFIX,
@@ -43,6 +48,13 @@ export function rowToContact(c: typeof contacts.$inferSelect): Contact {
     linkedUserId: c.linkedUserId as UserId | null,
     inviteBouncedAt: c.inviteBouncedAt ?? null,
     art14AttestedAt: c.art14AttestedAt ?? null,
+    // 108 PR-D: narrow the three opt-out columns into the correlated union
+    // (all null ⟹ receives; all set ⟹ opted out) — throws on a partial row.
+    marketing: contactMarketing(
+      c.marketingOptOutAt ?? null,
+      c.marketingOptOutSource ?? null,
+      c.marketingOptOutByUserId ?? null,
+    ),
     createdAt: c.createdAt,
     updatedAt: c.updatedAt,
     // M5: narrow into the correlated primacy union (isPrimary ⟹ not removed).

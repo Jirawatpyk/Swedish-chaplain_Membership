@@ -6300,6 +6300,8 @@
       "tax_receipt_issued": "Skattekvitto utfärdat (ใบกำกับภาษี/ใบเสร็จรับเงิน)",
       "tenant_receipt_prefix_changed": "Dokumentnummer-prefix ändrat",
       "auto_email_skipped_no_recipient": "Automatiskt e-postmeddelande hoppades över — ingen primär kontakt",
+      "contact_marketing_opted_out": "Kontaktens marknadsföring avstängd",
+      "contact_marketing_opted_in": "Kontaktens marknadsföring påslagen",
       "invoice_buyer_identity_invalid": "Köparens uppgifter ogiltiga — utfärdande blockerat",
       "sign_in_failure": "Inloggning misslyckades",
       "sign_out": "Utloggad",

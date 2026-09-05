@@ -90,6 +90,16 @@ export const contacts = pgTable(
     // promote/demote primary-contact transitions.
     art14AttestedAt: timestamp('art14_attested_at', { withTimezone: true }),
 
+    // 108 PR-D (migration 0294) — per-contact marketing opt-out. All three
+    // NULL = receives marketing (no backfill); all three set = switched off
+    // by `marketing_opt_out_source` ('staff' | 'self') at `_at`. Correlated
+    // by the DB CHECK `contacts_marketing_opt_out_correlated` and by the
+    // Domain constructor `contactMarketing()`. `_by_user_id` has NO FK on
+    // purpose (users can be erased; the audit row is authoritative).
+    marketingOptOutAt: timestamp('marketing_opt_out_at', { withTimezone: true }),
+    marketingOptOutSource: text('marketing_opt_out_source'),
+    marketingOptOutByUserId: uuid('marketing_opt_out_by_user_id'),
+
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -119,6 +129,11 @@ export const contacts = pgTable(
     // of the partial indexes above can serve. Declared here for drift
     // hygiene only; the DDL is hand-written in 0293.
     index('contacts_tenant_member_all_idx').on(table.tenantId, table.memberId),
+    // 108 PR-D (migration 0294) — audience keyset order: live, not-opted-out
+    // contacts per (tenant, member). Drift hygiene only; DDL is hand-written.
+    index('contacts_marketing_recipients_idx')
+      .on(table.tenantId, table.memberId, table.contactId)
+      .where(sql`removed_at IS NULL AND marketing_opt_out_at IS NULL`),
     // Note: pg_trgm GIN index on (first_name || ' ' || last_name) is added
     // via raw SQL in the migration.
   ],

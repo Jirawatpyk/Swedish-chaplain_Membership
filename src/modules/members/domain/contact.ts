@@ -80,6 +80,101 @@ export function contactPrimacy(
   return { isPrimary: false, removedAt };
 }
 
+/**
+ * 108 PR-D (US4 / FR-027, FR-030, FR-032) — per-contact marketing opt-out.
+ *
+ * Who switched marketing off for this contact, and when. `'staff'` = a
+ * holder of `contacts.marketing` on the member / audience page; `'self'` =
+ * the contact themself in the portal. The person's own UNSUBSCRIBE is not
+ * recorded here — it lives in the F7 suppression list and always wins
+ * (FR-025); see `deriveMarketingState`.
+ */
+export const MARKETING_OPT_OUT_SOURCES = ['staff', 'self'] as const;
+export type MarketingOptOutSource = (typeof MARKETING_OPT_OUT_SOURCES)[number];
+
+/**
+ * Correlated sub-shape, mirroring `ContactPrimacy`: the three columns are
+ * all null (receives marketing — the no-backfill default) or all set. The
+ * DB CHECK `contacts_marketing_opt_out_correlated` (migration 0294) is the
+ * storage-side twin of this union; `contactMarketing()` is the construct-
+ * surface backstop.
+ */
+export type MarketingOptOut =
+  | { readonly optedOutAt: null; readonly source: null; readonly byUserId: null }
+  | {
+      readonly optedOutAt: Date;
+      readonly source: MarketingOptOutSource;
+      readonly byUserId: UserId;
+    };
+
+/** The all-null shape every new contact starts in (FR-027: no backfill). */
+export const RECEIVES_MARKETING: MarketingOptOut = Object.freeze({
+  optedOutAt: null,
+  source: null,
+  byUserId: null,
+});
+
+function isMarketingOptOutSource(value: unknown): value is MarketingOptOutSource {
+  return (
+    typeof value === 'string' &&
+    (MARKETING_OPT_OUT_SOURCES as readonly string[]).includes(value)
+  );
+}
+
+/**
+ * Build the correlated opt-out sub-shape from raw columns (e.g. a DB row).
+ * The throws are defensive assertions of the DB CHECKs and are unreachable
+ * for well-formed rows.
+ */
+export function contactMarketing(
+  optedOutAt: Date | null,
+  source: string | null,
+  byUserId: string | null,
+): MarketingOptOut {
+  if (optedOutAt === null && source === null && byUserId === null) {
+    return RECEIVES_MARKETING;
+  }
+  if (optedOutAt === null || source === null || byUserId === null) {
+    throw new Error(
+      'contact invariant violated: marketing opt-out columns must be all null ' +
+        'or all set (DB CHECK contacts_marketing_opt_out_correlated)',
+    );
+  }
+  if (!isMarketingOptOutSource(source)) {
+    throw new Error(
+      `contact invariant violated: unknown marketing opt-out source "${source}" ` +
+        '(DB CHECK contacts_marketing_opt_out_source_check)',
+    );
+  }
+  return { optedOutAt, source, byUserId: byUserId as UserId };
+}
+
+/**
+ * The DISPLAYED marketing state (FR-031) — derived, never stored.
+ * Precedence: suppression (the person's own unsubscribe) > opt-out > on
+ * (FR-025). An unreadable suppression list yields `'unavailable'` on every
+ * surface (FR-031a: "neither on nor off"), never a guessed state — dispatch
+ * re-resolves suppression itself, so display honesty costs no delivery.
+ */
+export const MARKETING_STATES = [
+  'on',
+  'off_by_staff',
+  'off_by_contact',
+  'unsubscribed',
+  'unavailable',
+] as const;
+export type MarketingState = (typeof MARKETING_STATES)[number];
+
+export function deriveMarketingState(
+  marketing: MarketingOptOut,
+  suppressed: boolean | 'unknown',
+): MarketingState {
+  if (suppressed === 'unknown') return 'unavailable';
+  if (suppressed) return 'unsubscribed';
+  if (marketing.optedOutAt === null) return 'on';
+  return marketing.source === 'staff' ? 'off_by_staff' : 'off_by_contact';
+}
+
 export type Contact = {
   readonly tenantId: TenantId;
   readonly contactId: ContactId;
@@ -142,6 +237,14 @@ export type Contact = {
    * a DB CHECK correlating this column with `isPrimary`.
    */
   readonly art14AttestedAt: Date | null;
+  /**
+   * 108 PR-D — per-contact marketing opt-out (all null = receives). Never
+   * consulted by any money path: money-email eligibility is `isPrimary &&
+   * removedAt === null` only (FR-033). Drafts handed to `addInTx` /
+   * `createWithPrimaryContactInTx` omit this field — a new contact always
+   * starts in `RECEIVES_MARKETING`.
+   */
+  readonly marketing: MarketingOptOut;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 } & ContactPrimacy;

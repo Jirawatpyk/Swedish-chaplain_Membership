@@ -123,7 +123,18 @@ export type F3AuditEventType =
   // when. Emitted once per ACTUALLY un-enrolled member (never for a
   // member who was already un-enrolled) inside the same tx as the
   // UPDATE, with the same `action` + `bulk_request_id` payload shape.
-  | 'member_auto_invoice_unenrolled';
+  | 'member_auto_invoice_unenrolled'
+  // 108 PR-D (migration 0295, FR-053) — the per-contact marketing
+  // preference changed. Emitted by `setContactMarketingOptOut` once per
+  // ACTUAL change (same-state calls are `unchanged` and emit nothing) in
+  // the same tx as the `contacts` UPDATE. Payload:
+  //   { member_id, contact_id, source: 'staff' | 'self' }
+  // — ids only, never an address (FR-053a). `member_id` is the
+  // conventional key on purpose: a preference change IS member activity,
+  // so migration 0009's `last_activity_at` bump is wanted here (contrast
+  // 0292's `related_member_id`). 5y retention (F3 default).
+  | 'contact_marketing_opted_out'
+  | 'contact_marketing_opted_in';
 
 // F7 cross-module event types (`broadcast_member_dispatch_resumed` +
 // `member_acknowledged_broadcasts_terms`) are NOT in this union —

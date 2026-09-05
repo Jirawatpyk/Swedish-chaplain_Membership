@@ -316,13 +316,14 @@ export interface MemberRepo {
     tx: TenantTx,
     draft: {
       readonly member: Omit<Member, 'createdAt' | 'updatedAt'>;
+      // 108 PR-D: `marketing` omitted — new contacts start in RECEIVES_MARKETING.
       readonly primaryContact: Omit<
         Contact,
-        'createdAt' | 'updatedAt' | 'memberId'
+        'createdAt' | 'updatedAt' | 'memberId' | 'marketing'
       >;
       readonly secondaryContact?: Omit<
         Contact,
-        'createdAt' | 'updatedAt' | 'memberId'
+        'createdAt' | 'updatedAt' | 'memberId' | 'marketing'
       >;
     },
   ): Promise<

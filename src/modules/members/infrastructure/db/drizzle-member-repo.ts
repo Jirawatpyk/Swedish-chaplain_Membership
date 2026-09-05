@@ -393,7 +393,7 @@ function directoryPlanNameSubquery(tx: RepoTx) {
 async function insertContactRow(
   tx: RepoTx,
   memberId: string,
-  contact: Omit<Contact, 'createdAt' | 'updatedAt' | 'memberId'>,
+  contact: Omit<Contact, 'createdAt' | 'updatedAt' | 'memberId' | 'marketing'>,
   isPrimary: boolean,
 ) {
   const inserted = await tx
