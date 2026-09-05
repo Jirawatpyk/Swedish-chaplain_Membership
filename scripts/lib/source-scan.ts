@@ -56,6 +56,16 @@ function startsRegex(before: string): boolean {
   // line) that is rare and that `MIN_EXPECTED_SITES` would surface.
   if (t === '') return false;
   const last = t[t.length - 1]!;
+  // `</` is a JSX CLOSING TAG, never a regex. These scanners run over `.tsx`,
+  // where `</p>`, `</div>` and friends are on nearly every line, and `<` was in
+  // the operator set below — so `</p> // note` had its `/` read as a regex
+  // opener, `skipRegex` ran to the `/` of the `//`, and the comment after it
+  // survived stripping as source. Every gate then scanned that comment's
+  // contents as code. A genuine regex directly after `<` would have to be a
+  // comparison against a regex literal (`a < /re/`), which appears nowhere in
+  // this tree; JSX closers appear everywhere. (Round-4 finding #15, second
+  // half — found while fixing the apostrophe case, which shares the symptom.)
+  if (last === '<') return false;
   if ('=(,:[!&|?{};+*%~^<>'.includes(last)) return true;
   // `return /re/`, `case /re/`, `typeof /re/` … keyword-preceded.
   return /\b(return|case|typeof|instanceof|in|of|new|delete|void|do|else|yield|await)$/.test(t);
@@ -112,6 +122,24 @@ export function isCommentLine(line: string): boolean {
  *
  * Result index N corresponds to source line N+1, always.
  */
+/**
+ * Does the quote at `start` have an unescaped partner later on this line?
+ *
+ * Backslash escapes are honoured, so `'it\'s // fine'` still reads as one
+ * string and its `//` stays string content.
+ */
+function quoteClosesOnLine(line: string, start: number, quote: string): boolean {
+  for (let k = start + 1; k < line.length; k += 1) {
+    const ch = line[k]!;
+    if (ch === '\\') {
+      k += 1;
+      continue;
+    }
+    if (ch === quote) return true;
+  }
+  return false;
+}
+
 export function stripCommentLines(src: string): readonly string[] {
   const out: string[] = [];
   let inBlock = false;
@@ -216,7 +244,33 @@ export function stripCommentLines(src: string): readonly string[] {
         i += 1;
         continue;
       }
-      if (c === '"' || c === "'" || c === '`') {
+      // A `'` or `"` opens a string frame ONLY if it closes on this line.
+      //
+      // `'` and `"` cannot span a line, so an unmatched one is not a string
+      // opener at all — it is an apostrophe in prose. JSX children are full of
+      // them (`<p>It's fine</p>`), and that is also the context where the
+      // `{/* … */}` marker idiom lives, because `//` is unavailable there.
+      // Opening a frame on it made the rest of the line STRING TEXT, so a real
+      // `//` comment after it was copied through as source and every gate
+      // sharing this helper scanned the comment's contents as code — a prose
+      // mention of `primary_contact_email`, or a role literal written in a
+      // comment, counted as a decision site. (Round-4 finding #15. It fails
+      // LOUD rather than blind, but a gate that reports a hit for prose is a
+      // gate people learn to ignore.)
+      //
+      // A backtick needs no such test: templates DO span lines.
+      if (c === '"' || c === "'") {
+        if (!quoteClosesOnLine(line, i, c)) {
+          res += c;
+          i += 1;
+          continue;
+        }
+        stack.push(c);
+        res += c;
+        i += 1;
+        continue;
+      }
+      if (c === '`') {
         stack.push(c);
         res += c;
         i += 1;
@@ -256,16 +310,14 @@ export function stripCommentLines(src: string): readonly string[] {
       res += c;
       i += 1;
     }
-    // Template and interpolation frames carry to the next line untouched. A
-    // single- or double-quoted string cannot span one, so an unterminated quote
-    // is a typo (or a lone apostrophe inside a comment this pass already
-    // blanked) — unwind those frames, or every following line of the file would
-    // be scanned as string text.
-    while (stack.length > 0) {
-      const top = stack[stack.length - 1]!;
-      if (top !== "'" && top !== '"') break;
-      stack.pop();
-    }
+    // Template and interpolation frames carry to the next line untouched.
+    //
+    // There is deliberately NO unwind of `'`/`"` frames here any more. There
+    // used to be, as a safety net against an unterminated quote leaking into
+    // the rest of the file — but `quoteClosesOnLine` now means such a frame is
+    // never pushed in the first place, so the unwind was unreachable. A dead
+    // guard that reads as a live one is the exact shape this module keeps being
+    // bitten by; the invariant is stated instead of half-enforced twice.
     out.push(res);
   }
   return out;

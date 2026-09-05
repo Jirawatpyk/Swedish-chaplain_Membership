@@ -380,6 +380,36 @@ describe('stripCommentLines — nested template literals (108 PR-A re-review MED
     expect(stripCommentLines(src).join('\n')).toContain('primary_contact_email');
   });
 
+  it('an apostrophe in JSX children does not swallow a later line comment', () => {
+    // Round-4 finding #15. A lone `'` in code context pushes a STRING frame, so
+    // everything after it on the line is read as string text — including a
+    // real `//` comment, whose contents then reach every gate as source. Six
+    // gates share this helper, and JSX children are exactly where stray
+    // apostrophes live (the `{/* … */}` marker idiom exists because `//` is
+    // unavailable there).
+    const src = "<p>It's fine</p> // primary_contact_email";
+    expect(stripCommentLines(src)[0]).not.toContain('primary_contact_email');
+  });
+
+  it('a JSX closing tag is not a regex opener', () => {
+    // Round-4 finding #15, second half. `<` was in the `startsRegex` operator
+    // set, so the `/` of `</div>` opened a "regex" that `skipRegex` ran to the
+    // `/` of the following `//` — and the comment after it survived as source.
+    // These scanners run over `.tsx`, where closing tags are on nearly every
+    // line, so this was the broadest instance of the same symptom.
+    const src = '<div>{label}</div> // primary_contact_email';
+    expect(stripCommentLines(src)[0]).not.toContain('primary_contact_email');
+  });
+
+  it('a real regex after an operator still works', () => {
+    // Control for the arm above: removing `<` from the set must not stop the
+    // set from doing its job. `=` still opens a regex, and its `//` content is
+    // regex text, not a comment.
+    const out = stripCommentLines('const re = /a\\/\\/b/; const role = 1;')[0]!;
+    expect(out).toContain('role = 1');
+    expect(out).toContain('/a');
+  });
+
   it('an unterminated quote does NOT leak into the next line', () => {
     // `'` and `"` cannot span lines; only a template can. If the frame survived
     // EOL, line 2 would be scanned as string TEXT and its comment kept — the
