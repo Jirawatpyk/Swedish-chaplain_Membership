@@ -24,16 +24,11 @@ import { headers } from 'next/headers';
 import { requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { requestIdFromHeaders } from '@/lib/request-id';
-// 108 FR-003 — the banner must decide with the SAME function the money path
-// decides with, so the page calls the resolver directly. `recipientLocaleAdapter`
-// is infra, imported through the module barrel (never a deep path) — the same
-// documented escape-hatch the reads above use, and the same one
-// `api/internal/cron/void-pdf-reconcile` already takes for this pair.
 import {
   getCreditNote,
   makeGetCreditNoteDeps,
-  recipientLocaleAdapter,
-  resolveMoneyRecipient,
+  getMemberMoneyRecipientStatus,
+  makeMemberMoneyRecipientStatusDeps,
 } from '@/modules/invoicing';
 // G-5 — sibling-CN navigation. The list is an admin-view convenience
 // (no new use-case); same escape-hatch pattern as the settings +
@@ -56,6 +51,7 @@ import { buttonVariants } from '@/components/ui/button';
 import { formatTaxDocDate } from '@/lib/format-tax-doc-date';
 import { CreditNoteMoreMenu } from '../_components/credit-note-more-menu';
 import { NoPrimaryContactBanner } from '@/components/members/no-primary-contact-banner';
+import { logger } from '@/lib/logger';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.creditNotes.detail.meta');
@@ -124,34 +120,33 @@ export default async function CreditNoteDetailPage({
   const invoiceHref = `/admin/invoices/${cn.originalInvoiceId}`;
 
   // 108 FR-003 — this page carries a Resend action, so it must also carry the
-  // warning that explains why a resend will refuse. Best-effort: a repo failure
-  // hides the banner rather than 500-ing a page whose job is to display a
-  // §86/10 document.
+  // warning that explains why a resend will refuse.
   //
-  // Asks the RESOLVER, not a hand-copied predicate. The inline version here was
-  // `isPrimary && removedAt === null`, which misses the empty-address case the
-  // resolver treats as no-recipient — so the one surface warning that a resend
-  // will refuse stayed silent in exactly the situation where the resend refuses
-  // (review round 3 finding #2). It also replaces a whole `getMember` — member
-  // row plus its full contacts collection — with one indexed JOIN, to answer a
-  // single boolean (finding #11).
+  // Asks the USE CASE, which asks the resolver: the banner and the money path
+  // must not disagree about what counts as deliverable (an inline
+  // `isPrimary && removedAt === null` missed the empty-address case), and
+  // Presentation calls use cases only (Principle III). A failed read is logged
+  // and the banner hidden — it is not a statement about the member's contacts.
   //
   // No archived gate: an archived member's §86/10 document can still be resent,
   // and that resend needs an address. KNOWN GAP (re-review LOW-7), same as the
   // invoice page: an ERASED member still sees this.
   const cnMemberId = cn.originalInvoiceMemberId;
-  const noPrimaryContact =
-    cnMemberId === null
-      ? false
-      : await resolveMoneyRecipient(
-          recipientLocaleAdapter,
-          null,
-          tenantCtx.slug,
-          cnMemberId,
-          null,
-        )
-          .then((r) => r.kind === 'no_recipient')
-          .catch(() => false);
+  let noPrimaryContact = false;
+  if (cnMemberId !== null) {
+    const recipientStatus = await getMemberMoneyRecipientStatus(
+      makeMemberMoneyRecipientStatusDeps(),
+      { tenantId: tenantCtx.slug, memberId: cnMemberId },
+    );
+    if (recipientStatus.ok) {
+      noPrimaryContact = !recipientStatus.value.deliverable;
+    } else {
+      logger.warn(
+        { requestId, tenantId: tenantCtx.slug, memberId: cnMemberId },
+        'admin.creditNotes.detail.recipient_status_read_failed — banner suppressed',
+      );
+    }
+  }
 
   // G-5 — sibling CNs on the same original invoice. Best-effort:
   // a repo failure never 500s the page (this is a convenience nav

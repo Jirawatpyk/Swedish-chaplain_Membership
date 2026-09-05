@@ -573,6 +573,20 @@ export { receiptPdfRenderEnqueueAdapter } from './infrastructure/adapters/receip
 // module that has to apply it: the void-PDF reconcile cron re-enqueues a
 // cancellation email and must resolve the LIVE primary contact rather than
 // copying the address frozen in the doomed outbox row.
+/**
+ * 108 FR-003 — the banner's question, as a USE CASE. Presentation imports this
+ * pair, never `recipientLocaleAdapter` (see the note on that export below).
+ */
+export {
+  getMemberMoneyRecipientStatus,
+  type MemberMoneyRecipientStatus,
+} from './application/use-cases/get-member-money-recipient-status';
+export { makeMemberMoneyRecipientStatusDeps } from './application/invoicing-deps';
+/**
+ * Infrastructure, exported for the cron routes that compose their own deps
+ * inside an open tenant tx (`void-pdf-reconcile`). NOT for pages or server
+ * components — those call `getMemberMoneyRecipientStatus` above. Principle III.
+ */
 export { recipientLocaleAdapter } from './infrastructure/adapters/recipient-locale-adapter';
 export {
   auditAutoEmailSkippedNoRecipient,

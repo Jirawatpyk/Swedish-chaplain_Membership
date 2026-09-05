@@ -69,12 +69,10 @@ import { InvitePortalButton } from '@/components/members/invite-portal-button';
 import { ResendBouncedInviteButton } from '@/components/members/resend-bounced-invite-button';
 import { ArchivedBanner } from '@/components/members/archived-banner';
 import { NoPrimaryContactBanner } from '@/components/members/no-primary-contact-banner';
-// 108 FR-003 — the banner must decide with the SAME function the money path
-// decides with, so the page calls the resolver directly. `recipientLocaleAdapter`
-// is infra, imported through the module barrel (never a deep path) — the same
-// documented escape-hatch the reads above use, and the same one
-// `api/internal/cron/void-pdf-reconcile` already takes for this pair.
-import { recipientLocaleAdapter, resolveMoneyRecipient } from '@/modules/invoicing';
+import {
+  getMemberMoneyRecipientStatus,
+  makeMemberMoneyRecipientStatusDeps,
+} from '@/modules/invoicing';
 import { ArchiveMemberButton } from '@/components/members/archive-member-button';
 import { EraseMemberButton } from '@/components/members/erase-member-button';
 import { ErasedBanner } from '@/components/members/erased-banner';
@@ -779,33 +777,36 @@ export default async function MemberDetailPage({
 
   const isErased = erasureStatus.erasedAt !== null;
 
-  // 108 FR-003 — would a money email for this member reach anyone? Asked of the
-  // RESOLVER, so the banner and the money path can never disagree about what
-  // counts as deliverable. The page's own `primary` lookup answers a DIFFERENT
-  // question — which contact to DISPLAY as primary — and a primary contact with
-  // an empty `email` column is a perfectly good thing to display and a
-  // completely undeliverable address. Using one for the other is what let the
-  // banner stay silent while every receipt, void notice and credit note for
-  // this member was being skipped (review round 3 finding #2).
+  // 108 FR-003 — would a money email for this member reach anyone?
+  //
+  // Asked of a USE CASE, which asks the resolver, so the banner and the money
+  // path can never disagree about what counts as deliverable. The page's own
+  // `primary` lookup answers a DIFFERENT question — which contact to DISPLAY —
+  // and a primary contact with an empty `email` is a fine thing to display and
+  // a completely undeliverable address. Using one for the other is what let the
+  // banner stay silent while every receipt and credit note was being skipped.
+  // Presentation calls use cases only (Principle III), so the adapter is not
+  // named here.
   //
   // Skipped entirely for an archived or erased member: neither is billed, so
-  // there is nothing to fail to deliver, and the read is not worth making.
-  //
-  // Best-effort for the same reason as the invoice and credit-note pages: this
-  // read can throw, and a warning banner must not take the member page down
-  // with it.
-  const moneyEmailUndeliverable =
-    isErased || member.status === 'archived'
-      ? false
-      : await resolveMoneyRecipient(
-          recipientLocaleAdapter,
-          null,
-          tenant.slug,
-          member.memberId,
-          null,
-        )
-          .then((r) => r.kind === 'no_recipient')
-          .catch(() => false);
+  // there is nothing to fail to deliver, and the read is not worth making. A
+  // failed read is logged and the banner hidden — it is not a claim about the
+  // member's contacts.
+  let moneyEmailUndeliverable = false;
+  if (!isErased && member.status !== 'archived') {
+    const recipientStatus = await getMemberMoneyRecipientStatus(
+      makeMemberMoneyRecipientStatusDeps(),
+      { tenantId: tenant.slug, memberId: member.memberId },
+    );
+    if (recipientStatus.ok) {
+      moneyEmailUndeliverable = !recipientStatus.value.deliverable;
+    } else {
+      logger.warn(
+        { requestId, tenantId: tenant.slug, memberId: member.memberId },
+        'admin.members.detail.recipient_status_read_failed — banner suppressed',
+      );
+    }
+  }
   // Post-erase state (COMP-1 US3-A S5): the modify affordances — Erase, Archive,
   // Edit, add-contact, Renew — are gated on write-role AND not-yet-erased. Named
   // once so the four call sites stay in lock-step (Archive/Edit/add-contact

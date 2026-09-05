@@ -171,8 +171,15 @@ describe('money-email recipient inventory (108 SC-001)', () => {
       // Positive control: if the file stopped rendering the banner, the
       // assertion below would pass vacuously.
       expect(src, `${rel} no longer renders the banner`).toContain('NoPrimaryContactBanner');
-      expect(src, `${rel} decides the banner without the resolver`).toContain(
-        'resolveMoneyRecipient',
+      // The USE CASE, not the resolver and never the adapter. Presentation
+      // calls use cases only (Principle III, NON-NEGOTIABLE) — the first fix
+      // for the predicate-drift bug wired `recipientLocaleAdapter` into three
+      // server components, trading one rule break for another.
+      expect(src, `${rel} decides the banner without the use case`).toContain(
+        'getMemberMoneyRecipientStatus',
+      );
+      expect(src, `${rel} names an infra adapter directly`).not.toContain(
+        'recipientLocaleAdapter',
       );
     }
   });

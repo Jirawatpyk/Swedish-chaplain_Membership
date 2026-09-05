@@ -61,15 +61,10 @@ import {
   findFailedAutoEmailsByInvoice,
   resendVariantForFailedEvent,
 } from '@/modules/invoicing/infrastructure/adapters/resend-email-outbox-adapter';
-// 108 FR-003 — the banner must decide with the SAME function the money path
-// decides with, so the page calls the resolver directly. `recipientLocaleAdapter`
-// is infra, imported through the module barrel (never a deep path) — the same
-// documented escape-hatch the reads above use, and the same one
-// `api/internal/cron/void-pdf-reconcile` already takes for this pair.
 import {
   asInvoiceId,
-  recipientLocaleAdapter,
-  resolveMoneyRecipient,
+  getMemberMoneyRecipientStatus,
+  makeMemberMoneyRecipientStatusDeps,
 } from '@/modules/invoicing';
 import { getMember } from '@/modules/members';
 import type { MemberId } from '@/modules/members';
@@ -83,6 +78,7 @@ import { buildPlansDeps } from '@/modules/plans/plans-deps';
  
 import { userRepo } from '@/modules/auth/infrastructure/db/user-repo';
 import { asUserId } from '@/modules/auth';
+import { logger } from '@/lib/logger';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { PlanBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
@@ -238,18 +234,18 @@ export default async function InvoiceDetailPage({
   // 108 FR-003 — this invoice's money emails go to the member's LIVE primary
   // contact, so the page has to know whether one exists.
   //
-  // It ASKS THE RESOLVER rather than re-deriving the rule. The first version
-  // re-implemented the predicate inline as `isPrimary && removedAt === null`,
-  // which is only two thirds of it: a primary contact whose `email` column is
-  // empty (a bulk import that bypassed `asEmail` can store '') makes
-  // `resolveMoneyRecipient` return `no_recipient`, so every receipt, void
-  // notice, credit note and resend is skipped and PromptPay 409s — while the
-  // banner, finding that contact, rendered nothing. The member silently stopped
-  // receiving money mail with no warning on any admin surface, which is exactly
-  // what FR-003 exists to prevent. One question, one implementation: whatever
-  // the resolver counts as deliverable is what the banner reports. (Review
-  // round 3 finding #2; the same call replaces a whole `getMember` round-trip
-  // with one indexed JOIN — finding #11.)
+  // It asks a USE CASE, which asks the resolver. Two rules meet here. The
+  // banner must decide with the same function the money path decides with —
+  // the first version re-derived the predicate inline as
+  // `isPrimary && removedAt === null`, missing the empty-address case, so
+  // every money email was skipped while the banner rendered nothing. And
+  // Presentation calls use cases only (Principle III, NON-NEGOTIABLE): the
+  // second version fixed the first by wiring an infra adapter into a server
+  // component, which is the same rule broken the other way.
+  //
+  // A failed READ is not the same fact as "no contact", so it is logged and
+  // the banner hidden rather than shown — a warning that fires on a database
+  // blip trains staff to ignore it.
   //
   // No `status !== 'archived'` gate here, unlike the member page: an archived
   // member's document can still be voided, credited or resent, and each of
@@ -259,23 +255,20 @@ export default async function InvoiceDetailPage({
   // contacts were scrubbed on purpose, so "add a contact" is the wrong advice.
   // Fix belongs on the domain type — `getMember`'s `Member` does not carry
   // `erasedAt` — not in another query here.
-  //
-  // Best-effort, like the credit-note page: the read THROWS on a database blip
-  // (the `getMember` it replaced returned a Result and could not), and a
-  // warning banner must never 500 the page whose job is to display the
-  // invoice. Hiding the banner is the safe direction — the money paths refuse
-  // on their own, with their own audit trail.
   let showNoPrimaryContactBanner = false;
   if (invoice.memberId !== null) {
-    showNoPrimaryContactBanner = await resolveMoneyRecipient(
-      recipientLocaleAdapter,
-      null,
-      tenantCtx.slug,
-      invoice.memberId,
-      null,
-    )
-      .then((r) => r.kind === 'no_recipient')
-      .catch(() => false);
+    const recipientStatus = await getMemberMoneyRecipientStatus(
+      makeMemberMoneyRecipientStatusDeps(),
+      { tenantId: tenantCtx.slug, memberId: invoice.memberId },
+    );
+    if (recipientStatus.ok) {
+      showNoPrimaryContactBanner = !recipientStatus.value.deliverable;
+    } else {
+      logger.warn(
+        { requestId, tenantId: tenantCtx.slug, memberId: invoice.memberId },
+        'admin.invoices.detail.recipient_status_read_failed — banner suppressed',
+      );
+    }
   }
 
   // Resolve staff-user display names for the audit fields on the
