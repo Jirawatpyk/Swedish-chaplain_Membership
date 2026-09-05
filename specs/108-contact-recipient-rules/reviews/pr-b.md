@@ -158,3 +158,38 @@ FIRST case ("detail page renders Archive CTA for active members", a page that ne
 dialog): `TypeError: Load failed`, a WebKit fetch abort caught by the page-error fixture —
 reproduced 3/3 on `main` (`bdbd631d9`) with the identical error, so it is pre-existing and outside
 this PR; chromium remains the declared e2e baseline.
+
+### Round 4 — 2026-09-05, `/code-review` on the open PR #342 (13 findings)
+
+Every finding verified against the code before triage: **11 fixed** (each RED first, `134459081`),
+**2 rejected on evidence**. The two that matter most: the DELETE-contact route answered 500 for the
+409s this PR introduced (no contract test existed for that route — one does now), and the 0293
+helper could fail OPEN under RLS (a blind read exempted the member).
+
+| # | Sev | Finding | Resolution |
+|---|---|---|---|
+| F4-#1 | HIGH | `DELETE …/contacts/[contactId]` had no `conflict` arm; the `{type:'conflict', reason}` `removeContact` returns since PR-B (in-tx policy + 0293 at COMMIT) fell through to `default` → 500 — and the route had zero contract coverage | `case 'conflict'` → 409 with `details.reason` (mirrors POST); new `tests/contract/members/remove-contact.test.ts` covers all six outcomes |
+| F4-#4 | HIGH | `contacts_check_member_primary` failed OPEN: under RLS FORCE the owner is subject to policies unless it has BYPASSRLS, so a helper that could not see the member's contacts read `v_contact_rows = 0` and RETURNed — byte-identical to the exempt case | `SET row_security = off` on the SECURITY DEFINER helper (a query a policy WOULD filter now RAISES instead of reading zero rows); the pre-check asserts `current_user` has BYPASSRLS and fails the deploy naming the cause; T031 pins `proconfig ∋ row_security=off` + the owner's `rolbypassrls` (0293 v6) |
+| F4-#3 | MED | `SET LOCAL lock_timeout = '5s'` lived to the end of the migrator's single batch tx, so every migration applied after 0293 in the same deploy inherited it — a later ALTER waiting > 5 s would abort the batch with the blame on the innocent file | `SET LOCAL lock_timeout = DEFAULT;` as 0293's LAST statement (the DDL still runs under the fail-fast intent); T031 pins that the reset follows the last `CREATE CONSTRAINT TRIGGER`; `when` → 1798542500000, re-applied on dev through the real migrator |
+| F4-#5 | MED | bulk `unarchive` (the Undo of a bulk archive) restored a CONTACT-LESS archived member silently — 0293 exempts those — while the single undelete refuses it (409 `no_primary_contact`); the converse (a contacts-but-no-primary member in a 50-member Undo) aborted the batch with the generic "state transition not allowed" | `MemberRepo.findIdsWithoutLivePrimaryInTx` (one correlated NOT EXISTS, tenant-filtered) partitions such ids out BEFORE any write → `BulkStateError(id, 'no_primary_contact')`; the batch stays all-or-nothing and names the member; `bulkErrorKey` gives `details.code === 'no_primary_contact'` its own copy ×3 (restore that member from its own page). Unit (gate fires before `updateStatusInTx`), integration (contact-less + no-primary archived members stay archived; one with its primary restores), helper unit test |
+| F4-#2 | MED | POST-contacts' `conflict` arm hardcoded "email already exists" and the dialog pinned every 409 on `#cf-email` — for `primary_contact_race` / `no_primary_contact` that is a lie on an address nobody has used (the restore dialog's add door racing a concurrent designation) — R-N3 carried from round 2 | route message keyed on `details.reason`; the dialog treats a 409 as an email conflict only when the reason is absent or `contact_email_in_use`, otherwise the existing `contactActions.errors.conflict` copy as a toast with no inline pin; contract + presentation tests |
+| F4-#6 | LOW | the banner's `onCloseComplete` focused `#main-content` on EVERY close, contradicting `dialogFinalFocus` (Restore button on cancel); the e2e cancel case passed only because Base UI's `finalFocus` runs after it | the landmark focus moved BELOW the early return, i.e. only on the refresh paths; presentation test spies `main.focus` on cancel; e2e still 8/8 |
+| F4-#7 | LOW | the 108 early return for the COMMIT refusal in `bulk-action` sat above the M2 logging, so that refusal left no server-side trace | `logger.warn` with requestId / member id / live-primary count before the typed answer; unit test |
+| F4-#8 | LOW | `undelete_erased` fell into the generic `state_error` arm whose message says "Member is not archived." — the opposite of the truth for every non-browser consumer | message keyed on the code ("Member has been erased and cannot be restored."); contract assertion on the text |
+| F4-#9 + #10 | LOW | an unparseable RAISE landed on `livePrimaries = -1` → `primary_contact_race` ("retry", which no retry can fix); the same error was decoded in three places, the bulk one regex-parsing a uuid out of prose | one decoder: `primaryContactTriggerViolation` returns `{ livePrimaries, memberId, tenantSlug }`; an unreadable count → 0 (the actionable side); the bulk regex is gone; `tests/unit/lib/db-errors.test.ts` gains its first coverage of the function (0 / 2 / unparseable / unrelated / `.cause` chain). The "structured DETAIL field" half is **rejected**: T031 pins the prose on the real trigger, and a second channel is a second thing to drift |
+| F4-#12 | LOW | `const refuse = (): never =>` does not narrow for TS control-flow analysis, so the code carried two `wanted!` | declared with an explicit function type (`const refuse: (…) => never`); both non-null assertions gone; typecheck is the test |
+| F4-#13 | LOW | `if (!onSaved) router.refresh()` keyed the refresh on the prop's presence, not on the ADD branch that fires the callback — an edit caller passing `onSaved` would lose its refresh | `if (!(mode === 'add' && onSaved))`; presentation test (edit + onSaved → refresh, callback not fired) |
+| F4-#11 | — | `addContact` reads the member's contacts twice (before the insert for `becomesPrimary`, after it for the policy) | **rejected on evidence**: the post-write re-read is the transaction's OWN view of the contacts — a statement-level snapshot that includes rows other transactions committed since the pre-read; `[...before, added]` is strictly less truthful. Cost: one indexed query on `contacts_tenant_member_all_idx` per write |
+
+Verified after round 4: typecheck 0 · full lint 0 · the eleven static gates + architecture guards
+133/133 · `check:i18n` 5189/5189 · the 13 unit/contract files touching this round 13/13 · live
+Neon (dev, 0293 v6 applied through the real migrator): T031 25/25 (incl. the new
+`row_security=off` + BYPASSRLS + lock_timeout hand-back pins) · bulk-unarchive gate 3/3 · race
+6/6 · isolation 4/4 · bulk toctou / archive-cascade / f3-undelete-restore 3/3 · the four
+full-repo stub suites 4/4 · e2e `members-archive-undelete` 8/8 on chromium.
+
+CI on #342 before this round: 9/9 green after one rerun — the first `Integration smoke` run failed
+at 0293's pre-check on the persistent `ci` Neon branch, which carries a pre-wipe copy of the
+`swecham` tenant (54 demo-era members from April 2026); exactly one had a single soft-removed,
+non-primary contact. Fixed with a one-row `DELETE` of that removed contact on `ci` (member becomes
+contact-less → exempt), never a reset-from-parent (parent is prod). Recorded on the PR.
