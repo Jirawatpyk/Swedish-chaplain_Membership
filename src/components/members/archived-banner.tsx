@@ -12,7 +12,7 @@
  * passed as props — the component itself is presentational only.
  */
 
-import { useState, useTransition } from 'react';
+import { useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations, useLocale } from 'next-intl';
 import { toast } from 'sonner';
@@ -26,6 +26,19 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import {
+  RestorePrimaryDialog,
+  type DesignatableContact,
+} from '@/components/members/restore-primary-dialog';
+
+/** The 409 `no_primary_contact` payload shape (snake_case on the wire). */
+type NoPrimaryDetails = {
+  readonly designatable?: ReadonlyArray<{
+    readonly contact_id: string;
+    readonly first_name: string;
+    readonly last_name: string;
+  }>;
+};
 
 type ArchiveWindow =
   | { state: 'within_window'; daysRemaining: number }
@@ -43,14 +56,27 @@ export function ArchivedBanner({
   windowStatus,
 }: Props) {
   const t = useTranslations('admin.members.archive');
+  const tD = useTranslations('admin.members.undelete.designate');
   const locale = useLocale();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [loading, setLoading] = useState(false);
+  // 108 FR-014 — the designate dialog. Mounted as ONE sibling instance
+  // (below the Card) and driven by state, so Base UI runs its close cycle and
+  // `finalFocus` lands back on the Restore button.
+  const [designateOpen, setDesignateOpen] = useState(false);
+  const [designatable, setDesignatable] = useState<ReadonlyArray<DesignatableContact>>([]);
+  const restoreButtonRef = useRef<HTMLButtonElement>(null);
 
   const canUndelete = windowStatus.state === 'within_window';
 
-  async function handleUndelete() {
+  /**
+   * One request per click, each under a FRESH Idempotency-Key: a 409
+   * `no_primary_contact` is a question the server deliberately does not
+   * remember, and re-sending the answer under the first key with a different
+   * body would be an idempotency conflict.
+   */
+  async function handleUndelete(designatePrimaryContactId?: string) {
     setLoading(true);
     try {
       const idempotencyKey = crypto.randomUUID();
@@ -60,20 +86,44 @@ export function ArchivedBanner({
           'Content-Type': 'application/json',
           'Idempotency-Key': idempotencyKey,
         },
+        ...(designatePrimaryContactId === undefined
+          ? {}
+          : {
+              body: JSON.stringify({
+                designate_primary_contact_id: designatePrimaryContactId,
+              }),
+            }),
       });
       if (res.ok) {
-        toast.success(t('undeleteSuccess'));
+        setDesignateOpen(false);
+        toast.success(
+          designatePrimaryContactId === undefined
+            ? t('undeleteSuccess')
+            : tD('successDesignated'),
+        );
         startTransition(() => {
           router.refresh();
         });
       } else {
         const data = (await res.json().catch(() => ({}))) as {
-          error?: { code?: string };
+          error?: { code?: string; details?: NoPrimaryDetails };
         };
         const code = data.error?.code ?? 'server_error';
         // Map the server error CODE to localized copy — never render the
         // server's raw English `error.message`.
-        if (code === 'archive_window_expired') {
+        if (code === 'no_primary_contact') {
+          // Not an error to toast about on the first pass — it is the
+          // question the dialog asks. On a SECOND pass (the chosen contact
+          // vanished under us) say so, and offer the fresh list.
+          const list = (data.error?.details?.designatable ?? []).map((c) => ({
+            contactId: c.contact_id,
+            firstName: c.first_name,
+            lastName: c.last_name,
+          }));
+          setDesignatable(list);
+          if (designatePrimaryContactId !== undefined) toast.error(tD('retry'));
+          setDesignateOpen(true);
+        } else if (code === 'archive_window_expired') {
           toast.error(t('windowExpiredToast'));
         } else if (code === 'state_error') {
           toast.error(t('undeleteNotArchived'));
@@ -112,6 +162,7 @@ export function ArchivedBanner({
   const disabled = loading || isPending;
 
   return (
+    <>
     <Card className="border-destructive/40 bg-destructive/5 p-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex gap-3">
@@ -138,9 +189,10 @@ export function ArchivedBanner({
         <div className="flex shrink-0 items-center">
           {canUndelete ? (
             <Button
+              ref={restoreButtonRef}
               variant="outline"
               size="sm"
-              onClick={handleUndelete}
+              onClick={() => void handleUndelete()}
               disabled={disabled}
               aria-label={t('undeleteCta')}
             >
@@ -167,5 +219,15 @@ export function ArchivedBanner({
         </div>
       </div>
     </Card>
+    <RestorePrimaryDialog
+      open={designateOpen}
+      onOpenChange={setDesignateOpen}
+      memberId={memberId}
+      designatable={designatable}
+      onConfirm={(contactId) => void handleUndelete(contactId)}
+      submitting={loading}
+      finalFocus={() => restoreButtonRef.current}
+    />
+    </>
   );
 }

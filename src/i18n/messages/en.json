@@ -1826,7 +1826,18 @@
         "confirmTitle": "Restore member?",
         "confirmDescription": "Restoring reactivates the member record. Linked portal users must sign in again.",
         "success": "Member restored.",
-        "error": "Could not restore. Please try again."
+        "error": "Could not restore. Please try again.",
+        "designate": {
+          "title": "Choose a primary contact to restore",
+          "description": "This member has no primary contact. Receipts and other payment emails go to the primary contact, so one must be set before the member is restored. Choosing here restores the member and sets that contact as primary in one step.",
+          "noContactsDescription": "This member has no contacts left. Add a contact first — it will appear here as a choice — then restore.",
+          "contactsLabel": "Primary contact",
+          "confirm": "Restore and set as primary",
+          "cancel": "Cancel",
+          "addContact": "Add a contact",
+          "retry": "That contact is no longer available. Choose another.",
+          "successDesignated": "Member restored and primary contact set."
+        }
       },
       "benefits": {
         "title": "Member benefits",
