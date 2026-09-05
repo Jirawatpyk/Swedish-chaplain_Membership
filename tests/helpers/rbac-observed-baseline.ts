@@ -162,6 +162,8 @@ export const OBSERVED_API: readonly ObservedSurface[] = [
   { surface: 'POST /api/admin/broadcasts/proxy-submit', kind: 'api', key: 'broadcasts.send' },
   { surface: 'POST /api/admin/broadcasts/settings/allowlist', kind: 'api', key: 'settings.broadcasts' },
   { surface: 'POST /api/admin/broadcasts/templates', kind: 'api', key: 'broadcasts.write' },
+  // 108 PR-D — the staff marketing toggle (FR-030); marketing holds the key.
+  { surface: 'POST /api/admin/contacts/[contactId]/marketing', kind: 'api', key: 'contacts.marketing' },
   { surface: 'POST /api/admin/directory/exports', kind: 'api', key: 'directory.export' },
   { surface: 'POST /api/admin/events', kind: 'api', key: 'events.write' },
   { surface: 'POST /api/admin/events/erasure', kind: 'api', key: 'events.erasure' },

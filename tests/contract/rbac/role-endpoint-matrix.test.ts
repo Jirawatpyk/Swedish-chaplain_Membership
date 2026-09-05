@@ -266,6 +266,11 @@ describe('T053 marketing reachable surfaces (US3)', () => {
     'POST /api/admin/broadcasts/[id]/retry',
     'POST /api/admin/broadcasts/proxy-submit',
     'POST /api/admin/broadcasts/templates',
+    // 108 PR-D — the contact marketing toggle, keyed `contacts.marketing`,
+    // which the marketing bundle holds (FR-030). It confers NO other contact
+    // edit: every `contacts.write` surface stays below in MUST_DENY territory
+    // by omission from this list.
+    'POST /api/admin/contacts/[contactId]/marketing',
     'POST /api/admin/events',
     'POST /api/admin/events/[eventId]/archive',
     'POST /api/admin/events/[eventId]/toggle-cultural-event',
@@ -280,7 +285,7 @@ describe('T053 marketing reachable surfaces (US3)', () => {
     'GET /api/plans/search',
   ];
 
-  it('reaches EXACTLY the frozen 47-surface set — nothing more, nothing less', () => {
+  it('reaches EXACTLY the frozen 48-surface set — nothing more, nothing less', () => {
     const actual = OBSERVED_BASELINE.filter((s) => allowed('marketing', s))
       .map((s) => s.surface)
       .sort();
@@ -307,6 +312,12 @@ describe('T053 marketing reachable surfaces (US3)', () => {
     'POST /api/admin/members/[id]/data-export',
     '/admin/directory',
     'POST /api/admin/directory/exports',
+    // 108 PR-D (US4 AS6) — `contacts.marketing` must NOT bleed into contact
+    // edits: marketing can switch a contact's marketing state, never its
+    // name / email / phone.
+    'PATCH /api/members/[memberId]/contacts/[contactId]',
+    'DELETE /api/members/[memberId]/contacts/[contactId]',
+    'POST /api/members/[memberId]/contacts/[contactId]/promote-primary',
     // compliance / administration
     '/admin/audit',
     '/admin/users',
