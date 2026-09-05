@@ -116,13 +116,16 @@ export async function auditAutoEmailSkippedNoRecipient(
     readonly memberId: string;
     readonly emailEventType: F4OutboxEventType;
     /**
-     * Metric label. Optional because the credit-note RESEND path only holds a
-     * `CreditNote`, which carries no invoice subject — and a guessed label is
-     * worse than none (a matched-member event CN would be counted as
-     * membership). When it is absent the audit row still lands; only the
-     * counter is skipped, and the audit event is itself alertable.
+     * Metric label. A credit-note RESEND holds only a `CreditNote`, which
+     * carries no invoice subject — it passes `'unknown'` rather than guessing
+     * (a matched-member event CN counted as membership would be a lie) and
+     * rather than omitting the label, which is what it used to do: the counter
+     * then never fired for that path at all, so a dashboard on
+     * `invoicing.auto_email_skipped` under-reported every §86/10 resend that
+     * reached nobody (round-5 finding #7). Still optional so a caller with no
+     * label at all lands the audit row without a counter.
      */
-    readonly subject?: 'membership' | 'event';
+    readonly subject?: 'membership' | 'event' | 'unknown';
     readonly invoiceId?: string;
     readonly creditNoteId?: string;
   },

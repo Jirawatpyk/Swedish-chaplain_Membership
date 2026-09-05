@@ -487,15 +487,36 @@ async function resendCreditNote(
     cn.memberIdentitySnapshot,
   );
   if (moneyRecipient.kind === 'no_recipient') {
-    if (cn.originalInvoiceMemberId !== null) {
+    if (cn.originalInvoiceMemberId === null) {
+      // Round-5 finding #1 — the NON-MEMBER event arm, which round 4 fixed on
+      // the invoice path and left here. `no_recipient` renders as "add or
+      // promote a contact on the member page"; this credit note has no member
+      // and no member page. It also left no trace at all: the audit arm below
+      // needs a member to attribute to, and nothing counted the skip.
+      invoicingMetrics.autoEmailSkipped('unknown', 'no_recipient');
+      logger.warn(
+        {
+          event: 'resend_pdf_no_buyer_email',
+          tenantId: input.tenantId,
+          creditNoteId: input.creditNoteId,
+        },
+        'resendPdf: non-member event buyer has no address on the credit note snapshot — nothing sent',
+      );
+      return err({ code: 'no_buyer_email' });
+    }
+    {
       await auditAutoEmailSkippedNoRecipient(deps.audit, null, {
         tenantId: input.tenantId,
         requestId: input.actor.requestId,
         actorUserId: input.actor.userId,
         memberId: cn.originalInvoiceMemberId,
         emailEventType: 'credit_note_pdf_resent',
-        // no `subject`: a CreditNote carries no invoice subject, and a guessed
-        // metric label is worse than an absent one (see the emitter's JSDoc).
+        // Round-5 finding #7 — `subject` is 'unknown', not omitted. A
+        // `CreditNote` carries no invoice subject, and omitting the label meant
+        // the counter never fired for a member credit note that reached nobody,
+        // while every sibling money path counts this exact condition. A guessed
+        // membership/event split would be worse; an honest 'unknown' is not.
+        subject: 'unknown',
         creditNoteId: input.creditNoteId,
       });
     }

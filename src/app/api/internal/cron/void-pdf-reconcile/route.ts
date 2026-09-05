@@ -33,6 +33,12 @@ import { db, runInTenant, type TenantTx } from '@/lib/db';
 import { verifyCronBearer } from '@/lib/cron-auth';
 import { logger } from '@/lib/logger';
 import { invoicingMetrics } from '@/lib/metrics';
+// Deep infra import, allowlisted in `invoicing-presentation-imports.test.ts`
+// alongside this route's existing `react-pdf-render-adapter` entry. The barrel
+// deliberately does NOT re-export this adapter — see the note there (round-5
+// #10): a barrel export of infrastructure is invisible to ESLint's deep-path
+// `no-restricted-imports` rule, so every future importer inherits the hole.
+import { recipientLocaleAdapter } from '@/modules/invoicing/infrastructure/adapters/recipient-locale-adapter';
 import { errKind } from '@/lib/log-id';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { asTenantContext } from '@/modules/tenants';
@@ -54,7 +60,6 @@ import {
 import { reactPdfRenderAdapter } from '@/modules/invoicing/infrastructure/adapters/react-pdf-render-adapter';
 import {
   auditAutoEmailSkippedNoRecipient,
-  recipientLocaleAdapter,
   resolveMoneyRecipient,
   type MoneyRecipientSnapshot,
 } from '@/modules/invoicing';
@@ -191,23 +196,35 @@ async function reEnqueueVoidCancellationEmail(
   // record. Return before the recipient read, which would also be wasted.
   if (totalRows === 0) return false;
 
-  // Retire the doomed original. Hoisted above the branch: both arms ran this
-  // verbatim, eleven lines apart, so a change to the predicate had to be made
-  // twice with nothing to catch a half-edit (round-4 finding #10).
-  await tx.execute(sql`
-    UPDATE notifications_outbox
-       SET status = 'permanently_failed'::outbox_status,
-           last_error = 'superseded_by_void_pdf_reconcile',
-           updated_at = now()
-     WHERE tenant_id = ${tenantId}
-       AND notification_type = 'invoice_auto_email'::notification_type
-       AND context_data->>'event_type' = 'invoice_voided'
-       AND context_data->>'invoice_id' = ${invoiceId}
-       AND status = 'pending'
-  `);
-  // Already delivered — the pending duplicate is retired above, but there is no
-  // undelivered document to report and no replacement to enqueue.
-  if (sentRows > 0) return false;
+  // Retire the doomed original, stating the REAL reason.
+  //
+  // One statement, three reasons. Round 4 hoisted this above the branch to stop
+  // the same eleven lines being written twice (#10) — but hoisting it above the
+  // RECIPIENT RESOLVE meant every arm stamped `superseded_by_...`, including the
+  // arm where nothing supersedes anything. An operator tracing the replacement
+  // row for a skipped notice would find none, and the row itself would be
+  // asserting an event that did not happen: the same class as the audit row the
+  // intent gate above was added to stop. (Round-5 finding #5.)
+  const retireOriginal = async (reason: string): Promise<void> => {
+    await tx.execute(sql`
+      UPDATE notifications_outbox
+         SET status = 'permanently_failed'::outbox_status,
+             last_error = ${reason},
+             updated_at = now()
+       WHERE tenant_id = ${tenantId}
+         AND notification_type = 'invoice_auto_email'::notification_type
+         AND context_data->>'event_type' = 'invoice_voided'
+         AND context_data->>'invoice_id' = ${invoiceId}
+         AND status = 'pending'
+    `);
+  };
+
+  // Already delivered — retire the pending duplicate, but nothing supersedes it
+  // and there is no undelivered document to report.
+  if (sentRows > 0) {
+    await retireOriginal('duplicate_of_sent_void_notice');
+    return false;
+  }
 
   // 108 FR-001 — resolve the recipient LIVE. This function used to copy
   // `o.to_email` forward from the original row, which made it the last path
@@ -223,8 +240,9 @@ async function reEnqueueVoidCancellationEmail(
     snapshot,
   );
   if (recipient.kind === 'no_recipient') {
-    // Same rule as every other money path: no fallback. The original is already
-    // retired above; record the skip rather than delivering to a stale address.
+    // Same rule as every other money path: no fallback. Retire the original
+    // under its own reason — nothing replaces it — and record the skip.
+    await retireOriginal('no_live_primary_contact');
     if (memberId !== null) {
       await auditAutoEmailSkippedNoRecipient(f4AuditAdapter, tx, {
         tenantId,
@@ -242,6 +260,8 @@ async function reEnqueueVoidCancellationEmail(
     }
     return false;
   }
+  // A replacement IS about to be enqueued, so this reason is now true.
+  await retireOriginal('superseded_by_void_pdf_reconcile');
   // Take the locale from the SAME live row as the address. Copying `o.locale`
   // forward would mail the new primary contact in the previous one's language —
   // every other money path reads both from one row for exactly this reason.

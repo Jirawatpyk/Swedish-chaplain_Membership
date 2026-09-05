@@ -525,6 +525,37 @@ describe('void-pdf-reconcile cron (bug 10)', () => {
     expect(await skipAuditRows(invoiceId)).toBe(1);
   }, 60_000);
 
+  it('D6h — the retired original states the REAL reason, not a false supersession', async () => {
+    // Round-5 finding #5. Round 4 hoisted the retirement UPDATE above the
+    // recipient resolve to de-duplicate it, which made every arm stamp
+    // `superseded_by_void_pdf_reconcile` — including the arm where nothing is
+    // enqueued to supersede it. An operator tracing the replacement row would
+    // find none, and the row would assert an event that did not happen: the
+    // same class as the audit row the intent gate exists to stop.
+    const invoiceId = await seedMarkedVoid({
+      voidReason: 'stamp truth',
+      seq: 24,
+      withPrimaryContact: false,
+    });
+    await seedFailedVoidEmail(invoiceId, { sha: 'a'.repeat(64), status: 'pending' });
+
+    const res = await reconcileCron(cronReq());
+    expect(res.status).toBe(200);
+
+    const reasons = await runInTenant(tenant.ctx, (tx) =>
+      tx.execute(sql`
+        SELECT last_error FROM notifications_outbox
+         WHERE tenant_id = ${tenant.ctx.slug}
+           AND context_data->>'invoice_id' = ${invoiceId}
+      `),
+    );
+    const errs = (reasons as unknown as Array<{ last_error: string | null }>).map(
+      (r) => r.last_error,
+    );
+    expect(errs).toContain('no_live_primary_contact');
+    expect(errs).not.toContain('superseded_by_void_pdf_reconcile');
+  }, 60_000);
+
   it('D6f — a SUPPRESSED void records no skip (nothing was ever owed)', async () => {
     const invoiceId = await seedMarkedVoid({
       voidReason: 'suppressed + no contact',

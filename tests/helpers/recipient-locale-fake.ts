@@ -25,11 +25,15 @@ export interface RecipientLocaleFakeOptions {
   readonly email?: string | null;
   /** Stored preference; `null` = none (the outbox applies its own 'en'). */
   readonly locale?: F4OutboxLocale | null;
+  /** FR-003 banner lifecycle facts; both default false. */
+  readonly erased?: boolean;
+  readonly archived?: boolean;
 }
 
 export interface RecipientLocaleFake extends RecipientLocalePort {
   getMemberEmailLocale: MockedFunction<RecipientLocalePort['getMemberEmailLocale']>;
   getMemberEmailRecipient: MockedFunction<RecipientLocalePort['getMemberEmailRecipient']>;
+  getMemberRecipientStatus: MockedFunction<RecipientLocalePort['getMemberRecipientStatus']>;
 }
 
 export function makeRecipientLocaleFake(
@@ -42,5 +46,10 @@ export function makeRecipientLocaleFake(
     getMemberEmailRecipient: vi.fn(async (_tx: unknown, _tenantId: string, _memberId: string) =>
       email === null ? null : { email, locale },
     ),
+    getMemberRecipientStatus: vi.fn(async (_tx: unknown, _tenantId: string, _memberId: string) => ({
+      hasLivePrimary: email !== null && email.trim() !== '',
+      erased: options.erased ?? false,
+      archived: options.archived ?? false,
+    })),
   };
 }

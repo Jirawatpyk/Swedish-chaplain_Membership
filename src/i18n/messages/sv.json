@@ -2032,6 +2032,7 @@
         "cancel": "Avbryt",
         "success": "Kreditnota utfärdad.",
         "successWithNumber": "Kreditnota {number} utfärdad.",
+        "successWithNumberNoNotice": "Faktura {number} annullerades, men inget annulleringsmeddelande skickades — medlemmen saknar primär kontakt.",
         "emailSkippedNoRecipient": "Köparen har ingen e-post registrerad — skicka kreditnotan manuellt.",
         "membershipCancellationFailedNotice": "Kreditnotan utfärdades, men medlemskapet kunde inte avslutas automatiskt — avsluta det manuellt från sidan Förnyelser.",
         "membershipEffect": {

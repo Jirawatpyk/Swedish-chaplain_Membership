@@ -166,8 +166,12 @@ export async function POST(
   // serialised invoice, exactly as `POST /api/credit-notes` does for its own
   // `email_delivery`. A void whose §86/10 cancellation notice was skipped for
   // want of a live primary contact used to return an unqualified success, so
-  // an admin voiding from the list or the row menu — where the FR-003 banner is
-  // not on screen — had no way to learn that nobody was told.
+  // an admin had no way to learn that nobody was told: the void flow lives on
+  // its own `/admin/invoices/{id}/void` page, where the FR-003 banner is not
+  // rendered, and `void-confirm-dialog` navigates away on success. (Round-4
+  // #4 claimed the gap was "voiding from the list or the row menu" — wrong,
+  // void is only reachable from that page; round-5 #4 also caught that the
+  // field had no consumer at all until the dialog was wired to it.)
   return NextResponse.json({
     ...serialiseInvoice(result.value),
     email_delivery: result.value.emailDelivery,

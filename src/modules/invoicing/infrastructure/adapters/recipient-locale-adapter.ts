@@ -96,6 +96,47 @@ async function readRecipient(
   return { email: row.email, locale: narrowLocale(row.locale) };
 }
 
+/**
+ * 108 FR-003 — the banner's three facts in one indexed read.
+ *
+ * `erased_at` and `status` come from the SAME members row the primary-contact
+ * JOIN already visits, so this costs one query, not three. LEFT JOIN (not the
+ * inner JOIN `readRecipient` uses) because the member must be returned even
+ * when they have no live primary contact — that IS the question.
+ */
+async function readRecipientStatus(
+  tx: TenantTx | typeof db,
+  tenantId: string,
+  memberId: string,
+): Promise<{ hasLivePrimary: boolean; erased: boolean; archived: boolean } | null> {
+  const rows = (await tx.execute(sql`
+    SELECT (c.contact_id IS NOT NULL) AS has_live_primary,
+           (m.erased_at IS NOT NULL)  AS erased,
+           (m.status = 'archived')    AS archived
+      FROM members m
+      LEFT JOIN contacts c
+        ON c.tenant_id = m.tenant_id
+       AND c.member_id = m.member_id
+       AND c.is_primary = true
+       AND c.removed_at IS NULL
+       AND btrim(c.email) <> ''
+     WHERE m.tenant_id = ${tenantId}
+       AND m.member_id = ${memberId}
+     LIMIT 1
+  `)) as unknown as Array<{
+    has_live_primary: boolean;
+    erased: boolean;
+    archived: boolean;
+  }>;
+  const row = rows[0];
+  if (row === undefined) return null;
+  return {
+    hasLivePrimary: row.has_live_primary === true,
+    erased: row.erased === true,
+    archived: row.archived === true,
+  };
+}
+
 export const recipientLocaleAdapter: RecipientLocalePort = {
   async getMemberEmailLocale(
     txUnknown,
@@ -128,5 +169,15 @@ export const recipientLocaleAdapter: RecipientLocalePort = {
       );
     }
     return readRecipient(tx, tenantId, memberId);
+  },
+
+  async getMemberRecipientStatus(txUnknown, tenantId: string, memberId: string) {
+    const tx = txUnknown as TenantTx | null;
+    if (tx === null) {
+      return runInTenant(asTenantContext(tenantId), (scoped) =>
+        readRecipientStatus(scoped, tenantId, memberId),
+      );
+    }
+    return readRecipientStatus(tx, tenantId, memberId);
   },
 };

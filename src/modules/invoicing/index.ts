@@ -583,11 +583,20 @@ export {
 } from './application/use-cases/get-member-money-recipient-status';
 export { makeMemberMoneyRecipientStatusDeps } from './application/invoicing-deps';
 /**
- * Infrastructure, exported for the cron routes that compose their own deps
- * inside an open tenant tx (`void-pdf-reconcile`). NOT for pages or server
- * components — those call `getMemberMoneyRecipientStatus` above. Principle III.
+ * `recipientLocaleAdapter` is deliberately NOT exported here (round-5 #10).
+ *
+ * It was, with a comment saying "not for pages or server components" — but a
+ * comment is not a guard. ESLint's `no-restricted-imports` is scoped to deep
+ * deep `infrastructure` paths under a module, so an
+ * `import { recipientLocaleAdapter } from '@/modules/invoicing'` in a server
+ * component was invisible to it, which re-opened for every future importer the
+ * exact Principle III hole `getMemberMoneyRecipientStatus` was created to close.
+ *
+ * Its one consumer, the `void-pdf-reconcile` cron, DEEP-imports it instead and
+ * carries an entry in `tests/unit/architecture/invoicing-presentation-imports.test.ts`
+ * — the same escape hatch that route already uses for `react-pdf-render-adapter`.
+ * A deep import is loud and allowlisted; a barrel export is neither.
  */
-export { recipientLocaleAdapter } from './infrastructure/adapters/recipient-locale-adapter';
 export {
   auditAutoEmailSkippedNoRecipient,
   resolveMoneyRecipient,

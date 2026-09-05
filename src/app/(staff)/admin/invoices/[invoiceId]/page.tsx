@@ -251,10 +251,10 @@ export default async function InvoiceDetailPage({
   // member's document can still be voided, credited or resent, and each of
   // those needs an address.
   //
-  // KNOWN GAP (PR-A re-review LOW-7): an ERASED member also shows it. Their
-  // contacts were scrubbed on purpose, so "add a contact" is the wrong advice.
-  // Fix belongs on the domain type — `getMember`'s `Member` does not carry
-  // `erasedAt` — not in another query here.
+  // The erased / archived exclusions live in the use case (round-5 #2): erasure
+  // scrubs every contact, so this member is GUARANTEED to read as "no live
+  // primary" and the banner used to fire on every invoice they ever had —
+  // advising staff to re-introduce PII for an Art.17 data subject.
   let showNoPrimaryContactBanner = false;
   if (invoice.memberId !== null) {
     const recipientStatus = await getMemberMoneyRecipientStatus(
@@ -262,7 +262,7 @@ export default async function InvoiceDetailPage({
       { tenantId: tenantCtx.slug, memberId: invoice.memberId },
     );
     if (recipientStatus.ok) {
-      showNoPrimaryContactBanner = !recipientStatus.value.deliverable;
+      showNoPrimaryContactBanner = recipientStatus.value.shouldWarn;
     } else {
       logger.warn(
         { requestId, tenantId: tenantCtx.slug, memberId: invoice.memberId },

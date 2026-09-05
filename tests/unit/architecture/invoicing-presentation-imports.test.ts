@@ -144,6 +144,11 @@ const KNOWN_ALLOWLIST: ReadonlySet<string> = new Set([
   // needs (buildVoidRenderTargets, asInvoiceId, repo/adapters, invoicesTable)
   // is routed through the public barrel.
   "src/app/api/internal/cron/void-pdf-reconcile/route.ts::@/modules/invoicing/infrastructure/adapters/react-pdf-render-adapter",
+  // Round-5 #10 — moved OFF the public barrel. A barrel re-export of an infra
+  // adapter is invisible to ESLint's deep-path rule, so it silently re-opened
+  // the Principle III hole `getMemberMoneyRecipientStatus` exists to close.
+  // A deep import is loud and lands here; that is the point.
+  "src/app/api/internal/cron/void-pdf-reconcile/route.ts::@/modules/invoicing/infrastructure/adapters/recipient-locale-adapter",
   // Admin invoice LIST — dynamic `await import(...)` of the CN schema for
   // the credit-note-count GROUP BY (N+1 avoidance). Multi-line dynamic
   // import surfaced by the 065 QC S11 scanner extension (see header note).

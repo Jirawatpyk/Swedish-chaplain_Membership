@@ -95,3 +95,44 @@ describe('<PaymentFailurePanel> — R2-CRIT-3 / R3-CR-9 regression coverage', ()
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('<PaymentFailurePanel> — permanent failures (108 FR-004 / round-5 #1)', () => {
+  it('hides the retry CTA when the failure is permanent', () => {
+    // A terminated membership and a membership with no primary contact are
+    // both conditions a member cannot fix by clicking, and only the chamber
+    // staff can. Offering "Try again" invites them to hammer a button that can
+    // only fail, and reads as though the system is unsure what went wrong.
+    render(
+      <NextIntlClientProvider locale="en" messages={messages}>
+        <PaymentFailurePanel
+          reason="This membership has no primary contact."
+          ctaLabel="Try again"
+          onRetry={() => {}}
+          testId="panel"
+          ctaTestId="cta"
+          permanent
+        />
+      </NextIntlClientProvider>,
+    );
+    expect(screen.queryByTestId('cta')).toBeNull();
+    // The reason still shows — it names the action the member CAN take.
+    expect(screen.getByTestId('panel').textContent).toContain('no primary contact');
+  });
+
+  it('still shows the retry CTA for a TRANSIENT failure', () => {
+    // The control. A network blip or a 500 is exactly what Retry is for; if
+    // this passed vacuously the assertion above would prove nothing.
+    render(
+      <NextIntlClientProvider locale="en" messages={messages}>
+        <PaymentFailurePanel
+          reason="Network error."
+          ctaLabel="Try again"
+          onRetry={() => {}}
+          testId="panel2"
+          ctaTestId="cta2"
+        />
+      </NextIntlClientProvider>,
+    );
+    expect(screen.getByTestId('cta2')).toBeTruthy();
+  });
+});

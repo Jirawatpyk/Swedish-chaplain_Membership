@@ -55,7 +55,7 @@
  * behavioural net for that shape is the live-recipient tests under
  * `tests/integration/invoicing/`.
  */
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { lineOfIndex, stripCommentLines } from './lib/source-scan';
 
@@ -283,16 +283,36 @@ let scanned = 0;
 
 for (const root of SCOPE) {
   const abs = join(ROOT, root);
+  // Test the ROOT separately from walking it (round-5 #13). The catch used to
+  // wrap the whole recursion and report every failure as "scope root missing" —
+  // so a dangling symlink (ENOENT) or an unreadable directory (EACCES) anywhere
+  // in the tree aborted CI pointing at a directory that is present, sending
+  // whoever debugged it to look for a deletion that never happened.
+  if (!existsSync(abs)) {
+    console.error(`check:money-recipient ABORT — scope root missing: ${root}`);
+    process.exit(1);
+  }
   let files: string[];
   try {
     files = walk(abs);
-  } catch {
-    console.error(`check:money-recipient ABORT — scope root missing: ${root}`);
+  } catch (e) {
+    console.error(
+      `check:money-recipient ABORT — failed to walk ${root}: ${
+        e instanceof Error ? e.name : 'unknown error'
+      }`,
+    );
     process.exit(1);
   }
   for (const file of files) {
     const shown = relative(ROOT, file).replace(/\\/g, '/');
-    if (shown === SELF) continue;
+    // NOTE: no `shown === SELF` skip here any more (round-5 #12). One used to
+    // sit on this line, guarding against the scanner matching the literals it
+    // quotes in its own allowlist — but `scripts/` is not in SCOPE, so `walk()`
+    // never reaches this file and the guard could not execute. A dead guard
+    // that reads as a live one is worse than none: it would let someone add
+    // `scripts/` to SCOPE believing the exclusion worked. If that ever happens,
+    // re-introduce the skip AND write a test for it.
+    void SELF;
     scanned += 1;
     const raw = readFileSync(file, 'utf8');
     const lines = stripCommentLines(raw);

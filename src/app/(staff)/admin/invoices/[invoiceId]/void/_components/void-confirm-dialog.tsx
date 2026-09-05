@@ -126,7 +126,22 @@ export function VoidConfirmDialog({ invoiceId, documentNumber }: Props) {
       }
       // FR-032 — doc-specific success toast: the invoice's document number is
       // known here (it IS the typed-phrase gate), so name it.
-      toast.success(t('successWithNumber', { number: documentNumber }));
+      //
+      // 108 FR-004 (round-5 finding #4) — and say whether the §86/10
+      // cancellation notice actually LEFT. `voidInvoice` skips it when the
+      // member has no live primary contact; the route reports that as
+      // `email_delivery`, and this success path used to ignore the body
+      // entirely and navigate away. The void succeeded either way, so this is a
+      // warning toast, not an error: the statutory act is done, but nobody was
+      // told, and this page is the only place the admin will be looking.
+      const body = (await res.json().catch(() => null)) as
+        | { email_delivery?: string }
+        | null;
+      if (body?.email_delivery === 'skipped_no_recipient') {
+        toast.warning(t('successWithNumberNoNotice', { number: documentNumber }));
+      } else {
+        toast.success(t('successWithNumber', { number: documentNumber }));
+      }
       router.push(`/admin/invoices/${invoiceId}`);
     });
   }, [canSubmit, invoiceId, reason, documentNumber, t, router]);

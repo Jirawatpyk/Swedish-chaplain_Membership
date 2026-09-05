@@ -91,7 +91,7 @@ export type PromptPayState =
       readonly expirySeconds: number;
     }
   | { readonly kind: 'expired' }
-  | { readonly kind: 'failure'; readonly reason: string };
+  | { readonly kind: 'failure'; readonly reason: string; readonly permanent?: boolean };
 
 /**
  * Pure transition function for the PromptPay PI poll-failure event.
@@ -129,7 +129,7 @@ export type PayState =
       readonly method: PaymentMethod;
       readonly receiptUrl: string;
     }
-  | { readonly kind: 'failure'; readonly reason: string };
+  | { readonly kind: 'failure'; readonly reason: string; readonly permanent?: boolean };
 
 /**
  * Pure derivation of the screen-reader announcement string for the
@@ -430,7 +430,7 @@ export function PaySheetInternal({
         paymentDbId: payload.payment.id,
       });
     },
-    onFailure: (reason) => setPayState({ kind: 'failure', reason }),
+    onFailure: (reason, permanent) => setPayState({ kind: 'failure', reason, permanent }),
   });
 
   // -- PromptPay initiate cycle (Phase 4 / T091) --------------------------
@@ -478,7 +478,7 @@ export function PaySheetInternal({
         expirySeconds: payload.stripe.promptpayQrExpirySeconds ?? 900,
       });
     },
-    onFailure: (reason) => setPromptpayState({ kind: 'failure', reason }),
+    onFailure: (reason, permanent) => setPromptpayState({ kind: 'failure', reason, permanent }),
   });
 
   // PromptPay PI status polling. Same `stripe.retrievePaymentIntent`
@@ -680,6 +680,7 @@ export function PaySheetInternal({
             onRetry={handlePromptPayRefresh}
             testId="pay-sheet-promptpay-failure"
             ctaTestId="pay-sheet-promptpay-retry"
+            permanent={promptpayState.permanent === true}
           />
         );
     }
@@ -791,6 +792,7 @@ export function PaySheetInternal({
             onRetry={handleRetry}
             testId="pay-sheet-retry-panel"
             ctaTestId="pay-sheet-retry-cta"
+            permanent={payState.permanent === true}
           />
         );
     }

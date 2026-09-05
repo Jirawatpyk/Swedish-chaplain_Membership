@@ -708,7 +708,18 @@ export const invoicingMetrics = {
    * violation upstream — a member with no contact email). Alert: any
    * sustained non-zero rate on `subject='membership'`.
    */
-  autoEmailSkipped(subject: 'membership' | 'event', reason: 'no_recipient'): void {
+  /**
+   * `subject` accepts `'unknown'` (round-5 finding #7). A credit-note RESEND
+   * holds only a `CreditNote`, which carries no invoice subject — so this
+   * counter simply did not fire on that path, and a dashboard on
+   * `invoicing.auto_email_skipped` under-reported every §86/10 resend that
+   * reached nobody. An honest third label value beats both a guessed
+   * membership/event split and a silently missing count.
+   */
+  autoEmailSkipped(
+    subject: 'membership' | 'event' | 'unknown',
+    reason: 'no_recipient',
+  ): void {
     // safeMetric parity with eventBuyerPiiRedacted / auditEmitFailed: both call
     // sites (issue-invoice + record-payment) record INSIDE the open `withTx`
     // callback, AFTER the §87 issuance / payment mutation has been written but

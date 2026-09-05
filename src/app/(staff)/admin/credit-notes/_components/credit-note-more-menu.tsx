@@ -87,10 +87,19 @@ export function CreditNoteMoreMenu({
         const failure = (await res.json().catch(() => null)) as
           | { error?: { code?: string } }
           | null;
+        const code = failure?.error?.code;
         toast.error(
-          failure?.error?.code === 'no_recipient'
+          code === 'no_recipient'
             ? t('toast.resendNoRecipient')
-            : t('toast.resendFailed'),
+            : // Round-5 finding #1/#9 — a NON-MEMBER event credit note. Its copy
+              // existed in all three locales from round 4 but had no consumer,
+              // because only the invoice path returned this code; the credit-note
+              // path answered `no_recipient` and told staff to fix a member page
+              // that does not exist for this document. Translated dead copy also
+              // disguised the missing branch from anyone reading the message file.
+              code === 'no_buyer_email'
+              ? t('toast.resendNoBuyerEmail')
+              : t('toast.resendFailed'),
         );
       } else {
         toast.error(t('toast.resendFailed'));

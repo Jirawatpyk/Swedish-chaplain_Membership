@@ -57,4 +57,31 @@ export interface RecipientLocalePort {
     tenantId: string,
     memberId: string,
   ): Promise<{ readonly email: string; readonly locale: F4OutboxLocale | null } | null>;
+
+  /**
+   * 108 FR-003 — the BANNER's question, which is not the same as the money
+   * path's.
+   *
+   * The money path asks "what address do I use?" and treats every empty answer
+   * alike. The banner asks "should staff be told to fix something?", and for an
+   * ERASED or ARCHIVED member the answer is no: no money email is due, and for
+   * an erased member "add or promote a contact" is advice to re-introduce PII
+   * for an Art.17 data subject. Erasure is not an edge case here —
+   * `scrubPiiForMemberInTx` sets `is_primary = false` AND `removed_at` on every
+   * contact, so `getMemberEmailRecipient` is GUARANTEED to return null for
+   * them and the banner fired on every invoice they ever had. (Round-5 #2.)
+   *
+   * One query, three facts, so the pages pay for a single indexed read rather
+   * than a member load they would otherwise need only for lifecycle.
+   * `null` = no such member in this tenant.
+   */
+  getMemberRecipientStatus(
+    tx: unknown,
+    tenantId: string,
+    memberId: string,
+  ): Promise<{
+    readonly hasLivePrimary: boolean;
+    readonly erased: boolean;
+    readonly archived: boolean;
+  } | null>;
 }

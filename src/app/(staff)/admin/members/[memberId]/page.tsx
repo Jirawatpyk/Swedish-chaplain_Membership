@@ -788,18 +788,19 @@ export default async function MemberDetailPage({
   // Presentation calls use cases only (Principle III), so the adapter is not
   // named here.
   //
-  // Skipped entirely for an archived or erased member: neither is billed, so
-  // there is nothing to fail to deliver, and the read is not worth making. A
-  // failed read is logged and the banner hidden — it is not a claim about the
-  // member's contacts.
+  // The archived / erased exclusions moved INTO the use case (round-5 #2) so
+  // all three banner sites share them — the invoice and credit-note pages had
+  // no such gate and fired on every document an erased member ever had. A
+  // failed read is logged (inside the use case, with `errKind`) and the banner
+  // hidden — it is not a claim about the member's contacts.
   let moneyEmailUndeliverable = false;
-  if (!isErased && member.status !== 'archived') {
+  {
     const recipientStatus = await getMemberMoneyRecipientStatus(
       makeMemberMoneyRecipientStatusDeps(),
       { tenantId: tenant.slug, memberId: member.memberId },
     );
     if (recipientStatus.ok) {
-      moneyEmailUndeliverable = !recipientStatus.value.deliverable;
+      moneyEmailUndeliverable = recipientStatus.value.shouldWarn;
     } else {
       logger.warn(
         { requestId, tenantId: tenant.slug, memberId: member.memberId },

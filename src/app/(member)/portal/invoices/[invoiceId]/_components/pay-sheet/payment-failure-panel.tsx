@@ -43,6 +43,18 @@ export interface PaymentFailurePanelProps {
   readonly testId: string;
   /** `data-testid` for the retry CTA (rail-specific). */
   readonly ctaTestId: string;
+  /**
+   * PERMANENT failure — retrying cannot change the outcome, so the CTA is not
+   * rendered at all.
+   *
+   * The panel used to show "Try again" for every failure including a
+   * terminated membership and a membership with no primary contact: conditions
+   * a member cannot fix by clicking, and in both cases only the chamber staff
+   * can. Offering the button invites them to hammer it and reads as though the
+   * system is unsure what went wrong; the reason text already names the action
+   * they CAN take. (Round-4 finding #1, closed in round 5 for BOTH codes.)
+   */
+  readonly permanent?: boolean;
 }
 
 export function PaymentFailurePanel({
@@ -51,6 +63,7 @@ export function PaymentFailurePanel({
   onRetry,
   testId,
   ctaTestId,
+  permanent = false,
 }: PaymentFailurePanelProps) {
   const t = useTranslations('portal.payment.retry');
   return (
@@ -69,16 +82,18 @@ export function PaymentFailurePanel({
     >
       <InlineAlertTitle>{t('title')}</InlineAlertTitle>
       <InlineAlertDescription>{t('body', { reason })}</InlineAlertDescription>
-      <Button
-        type="button"
-        variant="default"
-        onClick={onRetry}
-        // WCAG 2.5.5 / SC 2.5.8 — ≥ 44×44 px on mobile.
-        className="min-h-[44px] w-full"
-        data-testid={ctaTestId}
-      >
-        {ctaLabel}
-      </Button>
+      {permanent ? null : (
+        <Button
+          type="button"
+          variant="default"
+          onClick={onRetry}
+          // WCAG 2.5.5 / SC 2.5.8 — ≥ 44×44 px on mobile.
+          className="min-h-[44px] w-full"
+          data-testid={ctaTestId}
+        >
+          {ctaLabel}
+        </Button>
+      )}
     </InlineAlert>
   );
 }

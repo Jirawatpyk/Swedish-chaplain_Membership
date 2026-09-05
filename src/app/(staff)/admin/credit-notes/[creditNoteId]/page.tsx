@@ -128,9 +128,9 @@ export default async function CreditNoteDetailPage({
   // Presentation calls use cases only (Principle III). A failed read is logged
   // and the banner hidden — it is not a statement about the member's contacts.
   //
-  // No archived gate: an archived member's §86/10 document can still be resent,
-  // and that resend needs an address. KNOWN GAP (re-review LOW-7), same as the
-  // invoice page: an ERASED member still sees this.
+  // Archived and erased members are excluded by the use case (round-5 #2) —
+  // no money email is due for either, and for an erased one "add a contact" is
+  // advice to re-introduce PII for an Art.17 data subject.
   const cnMemberId = cn.originalInvoiceMemberId;
   let noPrimaryContact = false;
   if (cnMemberId !== null) {
@@ -139,7 +139,7 @@ export default async function CreditNoteDetailPage({
       { tenantId: tenantCtx.slug, memberId: cnMemberId },
     );
     if (recipientStatus.ok) {
-      noPrimaryContact = !recipientStatus.value.deliverable;
+      noPrimaryContact = recipientStatus.value.shouldWarn;
     } else {
       logger.warn(
         { requestId, tenantId: tenantCtx.slug, memberId: cnMemberId },
