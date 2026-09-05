@@ -185,6 +185,68 @@ describe('108 — undelete designation is tenant-isolated (Principle I §iii)', 
     }
   });
 
+  it('(d) the same member AND contact uuid in two tenants: the new repo methods see only their own tenant (RLS, not the id filter)', async () => {
+    // T041 security round 2, #8. Cases (a)/(b) pass even with RLS off, because
+    // `member_id` differs across tenants and the id filter alone refuses. The
+    // composite keys (tenant_id, member_id) / (tenant_id, contact_id) let the
+    // SAME uuids exist in both tenants — the only seed that separates RLS from
+    // the filter. `listByMemberInTx` and `designatePrimaryInTx` carry no tenant
+    // predicate by convention; `runInTenant` + FORCE RLS must be what scopes them.
+    const sharedMember = randomUUID() as MemberId;
+    const sharedContact = randomUUID() as ContactId;
+    const rand = randomUUID().slice(0, 8);
+    for (const t of [tenantA, tenantB]) {
+      await runInTenant(t.ctx, async (tx) => {
+        await tx.insert(members).values({
+          tenantId: t.ctx.slug,
+          memberId: sharedMember,
+          memberNumber: nextSeedMemberNumber(),
+          companyName: `Twin Co ${rand}`,
+          country: 'TH',
+          planId: 'test-plan',
+          planYear: 2026,
+          status: 'archived',
+          archivedAt: new Date(Date.now() - 5 * 86_400_000),
+        });
+        await tx.insert(contacts).values({
+          tenantId: t.ctx.slug,
+          contactId: sharedContact,
+          memberId: sharedMember,
+          firstName: 'Twin',
+          lastName: t.ctx.slug,
+          email: `twin-${t.ctx.slug}-${rand}@example.com`,
+          preferredLanguage: 'en',
+          isPrimary: false,
+        });
+      });
+    }
+
+    const { drizzleContactRepo } = await import(
+      '@/modules/members/infrastructure/db/drizzle-contact-repo'
+    );
+    const seenFromA = await runInTenant(tenantA.ctx, (tx) =>
+      drizzleContactRepo.listByMemberInTx(tx, sharedMember),
+    );
+    expect(seenFromA.ok).toBe(true);
+    if (!seenFromA.ok) return;
+    expect(seenFromA.value).toHaveLength(1);
+    expect(seenFromA.value[0]!.tenantId).toBe(tenantA.ctx.slug);
+
+    const designated = await runInTenant(tenantA.ctx, (tx) =>
+      drizzleContactRepo.designatePrimaryInTx(tx, sharedMember, sharedContact),
+    );
+    expect(designated.ok, JSON.stringify(designated)).toBe(true);
+
+    const rows = await db
+      .select({ tenantId: contacts.tenantId, isPrimary: contacts.isPrimary })
+      .from(contacts)
+      .where(eq(contacts.contactId, sharedContact));
+    const byTenant = new Map(rows.map((r) => [r.tenantId, r.isPrimary]));
+    expect(byTenant.get(tenantA.ctx.slug)).toBe(true);
+    // B's twin row is untouched — the UPDATE did not cross the tenant line.
+    expect(byTenant.get(tenantB.ctx.slug)).toBe(false);
+  });
+
   it('(c) happy path: designation + restore + audit commit together, predecessor honestly null', async () => {
     const a = await seedArchivedNoPrimary(tenantA);
     const requestId = `iso-c-${randomUUID().slice(0, 8)}`;

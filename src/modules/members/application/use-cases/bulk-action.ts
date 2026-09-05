@@ -219,6 +219,18 @@ export async function bulkAction(
         }
       }
 
+      // 108 PR-B (T041 reliability round 2, N2) — GDPR Art.17 / PDPA §33: an
+      // erased member is never restored. The single undelete gates on this;
+      // this Undo-of-archive arm had no gate, and migration 0293 exempts
+      // erased members, so an erased+archived id would have come back active.
+      if (data.action === 'unarchive') {
+        const erased = await deps.memberRepo.findErasedIdsInTx(tx, deps.tenant.slug, memberIds);
+        if (!erased.ok) throw new Error(`erased_lookup_failed:${erased.error.code}`);
+        for (const id of memberIds) {
+          if (erased.value.has(id)) throw new BulkStateError(id, 'undelete_erased');
+        }
+      }
+
       for (const memberId of memberIds) {
         const current = membersMap.get(memberId)!;
 
@@ -397,14 +409,18 @@ export async function bulkAction(
     // gets the same per-member `state_error` the route already renders
     // instead of "bulk operation failed" for the whole batch.
     const violation = primaryContactTriggerViolation(e);
-    if (violation !== null) {
-      const named = /member ([0-9a-f-]{36})/i.exec(errorChainMessage(e));
+    const named =
+      violation === null ? null : /member ([0-9a-f-]{36})/i.exec(errorChainMessage(e));
+    if (named?.[1] !== undefined) {
       return err({
         type: 'state_error',
-        memberId: (named?.[1] ?? '') as MemberId,
+        memberId: named[1] as MemberId,
         code: 'no_primary_contact',
       });
     }
+    // A raise without a member uuid in it (a future message change) falls
+    // through to the sanitized server_error below — never a blank memberId
+    // the route would render as "member  could not be restored".
     // M2: log the rich cause server-side BEFORE sanitizing the wire response.
     // The route only sees the sanitized message, so without this an FK
     // violation / `audit_failed` / deadlock during the all-or-nothing tx

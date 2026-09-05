@@ -197,6 +197,18 @@ describe('contract: POST /api/members/[memberId]/contacts (addContact)', () => {
     expect(body.error.code).toBe('conflict');
   });
 
+  it('404 not_found — the member is missing or belongs to another tenant (108 T041 reliability round 2, N1)', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+    addContactMock.mockResolvedValueOnce(err({ type: 'not_found' }));
+    const { POST } = await import(
+      '@/app/api/members/[memberId]/contacts/route'
+    );
+    const res = await POST(makeRequest(validBody), { params: routeParams() });
+    expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error.code).toBe('not_found');
+  });
+
   it('500 server_error', async () => {
     requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     addContactMock.mockResolvedValueOnce(

@@ -260,6 +260,84 @@ describe('ArchivedBanner — designate a primary on restore (108 FR-014)', () =>
     expect(screen.getByRole('alert')).toHaveTextContent(D.retry);
   });
 
+  // ── T041 UX review round 2 ─────────────────────────────────────────────────
+
+  it('a non-409 failure from INSIDE the dialog closes it first, then toasts and refreshes — the page becomes the source of truth (N1)', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse(409, { error: { code: 'no_primary_contact', details: { designatable: [] } } }),
+      )
+      // The retry after "Add a contact" hits a server error.
+      .mockResolvedValueOnce(jsonResponse(500, { error: { code: 'server_error' } }));
+    renderBanner();
+    fireEvent.click(screen.getByRole('button', { name: /restore/i }));
+    await screen.findByRole('alertdialog');
+
+    fireEvent.click(screen.getByTestId('cfd-saved'));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    // The dialog must not sit there still saying "no contacts left" with the
+    // add door open while a toast is hidden behind the modal.
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith(A.undeleteError));
+    await waitFor(() => expect(refresh).toHaveBeenCalled());
+  });
+
+  it('clears the lost-race notice the moment a new request starts, so a repeat is re-announced (N6a)', async () => {
+    let resolveSecond!: (v: unknown) => void;
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse(409, {
+          error: {
+            code: 'no_primary_contact',
+            details: {
+              designatable: [
+                { contact_id: CONTACT_B, first_name: 'Bo', last_name: 'Beta', email: 'bo@x.example' },
+              ],
+            },
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(409, {
+          error: {
+            code: 'no_primary_contact',
+            details: {
+              designatable: [
+                { contact_id: 'c-ann', first_name: 'Ann', last_name: 'Alpha', email: 'ann@x.example' },
+              ],
+            },
+          },
+        }),
+      )
+      .mockImplementationOnce(() => new Promise((r) => { resolveSecond = r; }));
+    renderBanner();
+    fireEvent.click(screen.getByRole('button', { name: /restore/i }));
+    await screen.findByRole('alertdialog');
+    fireEvent.click(screen.getByText('Bo Beta'));
+    await waitFor(() => expect(screen.getByRole('radio', { name: /Bo Beta/ })).toBeChecked());
+    fireEvent.click(screen.getByTestId('restore-primary-confirm'));
+    // Second 409 → the notice is up.
+    await screen.findByRole('alert');
+    fireEvent.click(screen.getByText('Ann Alpha'));
+    await waitFor(() => expect(screen.getByRole('radio', { name: /Ann Alpha/ })).toBeChecked());
+    fireEvent.click(screen.getByTestId('restore-primary-confirm'));
+    // Third request in flight: the old notice is gone, so the next one mounts fresh.
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    expect(screen.queryByRole('alert')).toBeNull();
+    resolveSecond(jsonResponse(200, { member_id: MEMBER_ID, designated_primary_contact_id: 'c-ann' }));
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalled());
+  });
+
+  it('an erased member gets its own copy, not "not archived" (reliability N4)', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(409, { error: { code: 'state_error', details: { code: 'undelete_erased' } } }),
+    );
+    renderBanner();
+    fireEvent.click(screen.getByRole('button', { name: /restore/i }));
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith(A.undeleteErased));
+  });
+
   it('a plain restore (member already has a primary) still works without any dialog', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(200, { member_id: MEMBER_ID }));
     renderBanner();

@@ -414,6 +414,9 @@ describe('108 — primary-contact invariant triggers (migration 0293)', () => {
       }),
     );
     expect(msg).toMatch(/has 0 live primary/);
+    // bulk-action.ts parses the member uuid out of this exact shape to return
+    // a per-member state_error — pin it here so a message edit fails loudly.
+    expect(msg).toMatch(/member [0-9a-f-]{36} in tenant /);
     expect(msg).not.toMatch(/@/); // never an email address in the raise
   });
 
@@ -606,6 +609,42 @@ describe('108 — primary-contact invariant triggers (migration 0293)', () => {
     // PUBLIC the acl is explicit and carries no `=X` (PUBLIC) entry.
     expect(rows[0]!.acl).not.toBeNull();
     expect(rows[0]!.acl).not.toMatch(/(^|,)=X\//);
+  });
+
+  // ── T041 review round 2 (migration reviewer N1 + N2) ──────────────────────
+
+  it('the app role cannot call the DEFINER helper directly (no cross-tenant count oracle)', async () => {
+    // `contacts_check_member_primary(tenant, member)` runs as the BYPASSRLS
+    // owner and takes a caller-supplied tenant. With EXECUTE, chamber_app could
+    // probe another tenant's member for existence + live-primary count from
+    // the raise text. The trigger body calls it as the owner, so the app role
+    // needs no grant at all.
+    let caught: unknown;
+    try {
+      await runInTenant(tenant.ctx, async (tx) => {
+        await tx.execute(
+          sql`SELECT public.contacts_check_member_primary(${'other-tenant'}, ${randomUUID()}::uuid)`,
+        );
+      });
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught, 'expected permission denied').toBeDefined();
+    expect(errorChainMessage(caught)).toMatch(/permission denied/i);
+  });
+
+  it('the migration recorded as applied is the file on disk (edit-after-apply tripwire)', async () => {
+    // drizzle applies a file when its journal `when` is newer than the last
+    // applied `created_at` and never compares hashes — so a file edited after
+    // it was applied to this branch is silently skipped by `db:migrate`
+    // (memory: silent no-op on a `when` collision). This pins the recorded
+    // sha256 to the file's current content: red means bump `when`.
+    const { createHash } = await import('node:crypto');
+    const hash = createHash('sha256').update(readFileSync(MIGRATION_PATH, 'utf-8')).digest('hex');
+    const rows = (await db.execute(sql`
+      SELECT hash FROM drizzle.__drizzle_migrations WHERE hash = ${hash}
+    `)) as unknown as ReadonlyArray<{ hash: string }>;
+    expect(rows.length, 'no applied-migration row matches the file on disk — bump `when` and db:migrate').toBeGreaterThan(0);
   });
 
   it('a plain (tenant_id, member_id) index backs the per-row count at commit', async () => {

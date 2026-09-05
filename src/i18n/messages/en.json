@@ -1783,7 +1783,8 @@
         "undeleteError": "Could not restore. Please try again.",
         "undeleteNotArchived": "This member isn't archived. Refresh the page.",
         "undeleteNotFound": "Member not found. Refresh the page.",
-        "windowExpiredToast": "Archive window (90 days) has expired. Contact a system admin to restore."
+        "windowExpiredToast": "Archive window (90 days) has expired. Contact a system admin to restore.",
+        "undeleteErased": "This member was erased and cannot be restored."
       },
       "erase": {
         "eraseCta": "Erase (GDPR/PDPA)…",
@@ -1838,7 +1839,8 @@
           "retry": "That contact is no longer available. Choose another.",
           "retryNone": "That contact is no longer available, and none remain. Add a contact to continue.",
           "successDesignated": "Member restored and primary contact set.",
-          "addContactDescription": "Add the person who should receive this member's receipts. They become the primary contact and the member is restored."
+          "addContactDescription": "Add the person who should receive this member's receipts. They become the primary contact and the member is restored.",
+          "restoring": "Restoring…"
         }
       },
       "benefits": {

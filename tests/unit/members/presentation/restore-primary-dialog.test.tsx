@@ -28,8 +28,13 @@ vi.mock('@/components/members/contact-form-dialog', () => ({
     trigger: React.ReactElement;
     description?: string;
     onSaved?: () => void;
+    disabled?: boolean;
   }) => (
-    <div data-testid="cfd-stub" data-description={props.description ?? ''}>
+    <div
+      data-testid="cfd-stub"
+      data-description={props.description ?? ''}
+      data-disabled={props.disabled ? 'true' : 'false'}
+    >
       {props.trigger}
       <button type="button" data-testid="cfd-saved" onClick={() => props.onSaved?.()}>
         saved
@@ -190,6 +195,51 @@ describe('RestorePrimaryDialog (108 FR-014)', () => {
     expect(labelledBy).toBeTruthy();
     expect(document.getElementById(labelledBy!)).toHaveTextContent(D.contactsLabel);
     expect(group).not.toHaveAttribute('aria-label');
+  });
+
+  // ── T041 UX review round 2 ─────────────────────────────────────────────────
+
+  it('zero contacts + restore in flight: the add door reads "Restoring…", is aria-disabled (never `disabled`), and the nested form is told not to open (N2)', () => {
+    renderDialog({ designatable: [], submitting: true });
+    const door = screen.getByTestId('restore-primary-add-contact');
+    // `disabled` would make the nested dialog's return-focus target
+    // untabbable and drop focus on <body>; aria-disabled keeps it focusable.
+    expect(door).not.toHaveAttribute('disabled');
+    expect(door).toHaveAttribute('aria-disabled', 'true');
+    expect(door).toHaveTextContent(D.restoring);
+    expect(screen.getByTestId('cfd-stub')).toHaveAttribute('data-disabled', 'true');
+  });
+
+  it('spinners respect reduced motion (motion-safe:animate-spin) (N3)', () => {
+    const { container } = render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <RestorePrimaryDialog
+          open
+          onOpenChange={() => {}}
+          memberId="member-1"
+          designatable={[ANN, BO]}
+          onConfirm={() => {}}
+          submitting
+        />
+      </NextIntlClientProvider>,
+    );
+    void container;
+    const spinner = document.querySelector('svg.motion-safe\\:animate-spin');
+    expect(spinner).not.toBeNull();
+    expect(document.querySelector('svg.animate-spin:not(.motion-safe\\:animate-spin)')).toBeNull();
+  });
+
+  it('the contact list scrolls inside the dialog so the footer stays reachable at 320x568 (N5)', () => {
+    renderDialog();
+    const group = screen.getByRole('radiogroup');
+    expect(group.className).toContain('overflow-y-auto');
+    expect(group.className).toContain('max-h-[40vh]');
+  });
+
+  it('a radio is named by its label alone — no redundant aria-label (N6b)', () => {
+    renderDialog();
+    const radio = screen.getByRole('radio', { name: /Ann Alpha/ });
+    expect(radio).not.toHaveAttribute('aria-label');
   });
 
   it('Cancel closes without restoring', async () => {

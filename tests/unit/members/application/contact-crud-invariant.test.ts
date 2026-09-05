@@ -314,6 +314,20 @@ describe('contact CRUD — in-tx exactly-one-primary policy (FR-012)', () => {
       expect(lock).toBeLessThan(write);
     });
 
+    it('adding to a member that does not exist (or is another tenant\'s) is not_found, not a 500 (reliability round 2, N1)', async () => {
+      const deps = makeDeps({ afterWrite: [] });
+      vi.mocked(deps.memberRepo.findByIdInTx).mockResolvedValue(
+        err({ code: 'repo.not_found' as const }),
+      );
+
+      const result = await addContact(memberId, addInput, meta, deps);
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toEqual({ type: 'not_found' });
+      expect(deps.contactRepo.addInTx).not.toHaveBeenCalled();
+    });
+
     it('makes the FIRST contact of a member with no live primary the primary, audited as a designation', async () => {
       // T041 reliability review M3: a member with no live primary (a
       // contact-less import, or an archived member being repaired for FR-014)

@@ -271,9 +271,66 @@ test.describe('members undelete — designate a primary (108 FR-014) @f3 @a11y @
       .analyze();
     expect(results.violations).toEqual([]);
 
-    // Cancel returns focus to the Restore button, not <body>.
+    // Cancel returns focus to the Restore button itself — not merely "not
+    // <body>" (a skip link would pass that).
     await page.getByTestId('restore-primary-cancel').click();
     await expect(dialog).toBeHidden();
+    const afterLabel = await page.evaluate(
+      () =>
+        document.activeElement?.getAttribute('aria-label') ??
+        document.activeElement?.tagName ??
+        'BODY',
+    );
+    expect(afterLabel).toMatch(/^restore$/i);
+  });
+
+  test('the add-contact door: nested dialog opens, Escape returns focus to the door, a saved contact restores in place', async ({
+    page,
+  }) => {
+    test.skip(!seed, 'seed unavailable (DATABASE_URL missing?)');
+    const s = seed!;
+    await signIn(page);
+    await page.goto(`/admin/members/${s.withoutContacts.memberId}`);
+    await page.waitForLoadState('networkidle');
+
+    await page.getByRole('button', { name: /^restore$/i }).first().click();
+    const dialog = page.getByRole('alertdialog');
+    await dialog.waitFor({ timeout: 10_000 });
+
+    // Open the nested add-contact form from the door; focus lands in it.
+    await page.getByTestId('restore-primary-add-contact').click();
+    const nested = page.getByRole('dialog');
+    await nested.waitFor({ timeout: 10_000 });
+    await expect(nested.locator('#cf-first-name')).toBeFocused();
+
+    // Escape closes ONLY the nested form; focus returns to the door.
+    await page.keyboard.press('Escape');
+    await expect(nested).toBeHidden();
+    await expect(dialog).toBeVisible();
+    const backOn = await page.evaluate(
+      () => document.activeElement?.getAttribute('data-testid') ?? 'BODY',
+    );
+    expect(backOn).toBe('restore-primary-add-contact');
+
+    // Now add a contact for real: it becomes the primary and the banner
+    // restores the member again in place.
+    await page.getByTestId('restore-primary-add-contact').click();
+    await nested.waitFor({ timeout: 10_000 });
+    const rand = Math.random().toString(16).slice(2, 10);
+    await fillField(nested.locator('#cf-first-name'), 'Door');
+    await fillField(nested.locator('#cf-last-name'), `Contact-${rand}`);
+    await fillField(nested.locator('#cf-email'), `door-${rand}@example.com`);
+    // `#cf-art14-attested` is Base UI's hidden native input; the visible
+    // role=checkbox carries the accessible name (aria-label).
+    await nested.getByRole('checkbox').first().click();
+    await nested.getByRole('button', { name: /save|บันทึก|spara/i }).click();
+
+    await expect(dialog).toBeHidden({ timeout: 20_000 });
+    await expect(page.getByText(/member restored/i).first()).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('button', { name: /^restore$/i })).toHaveCount(0, {
+      timeout: 20_000,
+    });
+    await expect(page.getByText(`Door Contact-${rand}`).first()).toBeVisible();
     const afterTag = await page.evaluate(() => document.activeElement?.tagName ?? 'BODY');
     expect(afterTag).not.toBe('BODY');
   });
@@ -289,10 +346,10 @@ test.describe('members undelete — designate a primary (108 FR-014) @f3 @a11y @
       await context.addCookies([
         { name: 'NEXT_LOCALE', value: locale, url: 'http://localhost:3100' },
       ]);
-      // The contact-bearing member was RESTORED by the first case (serial), so
-      // it no longer offers Restore; the contact-less one is still archived and
-      // its dialog variant renders the same namespace.
-      await page.goto(`/admin/members/${s.withoutContacts.memberId}`);
+      // Both earlier members were RESTORED by the cases above (serial), so
+      // they no longer offer Restore; the second contact-less one is still
+      // archived and its dialog variant renders the same namespace.
+      await page.goto(`/admin/members/${s.withoutContacts2.memberId}`);
       await page.waitForLoadState('networkidle');
       await page.getByRole('button', { name: /restore|กู้คืน|återställ/i }).first().click();
       const dialog = page.getByRole('alertdialog');

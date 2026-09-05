@@ -9,6 +9,7 @@
  */
 
 import { and, eq, isNull, sql } from 'drizzle-orm';
+import { isUniqueViolationOnConstraint } from '@/lib/db-errors';
 import { err, ok } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { mapDbError, unexpected } from './_repo-error';
@@ -124,6 +125,12 @@ export const drizzleContactRepo: ContactRepo = {
         .returning();
       return ok(rowToContact(rows[0]!));
     } catch (e) {
+      // 108 PR-B (T041 reliability round 2, N5): two "first contact" writers
+      // outside the app can both decide isPrimary=true; the loser trips the
+      // one-primary partial index, which is a primacy race, not an email clash.
+      if (isUniqueViolationOnConstraint(e, 'contacts_one_primary_per_member')) {
+        return err({ code: 'repo.conflict', reason: 'primary_contact_race' });
+      }
       return err(mapDbError(e, 'contact_email_in_use'));
     }
   },

@@ -44,6 +44,14 @@ export interface ArchivedNoPrimarySeed {
     readonly memberId: string;
     readonly companyName: string;
   };
+  /**
+   * A second contact-less archived member: the add-contact-door case RESTORES
+   * `withoutContacts`, so the locale case needs one that is still archived.
+   */
+  readonly withoutContacts2: {
+    readonly memberId: string;
+    readonly companyName: string;
+  };
   readonly cleanup: () => Promise<void>;
 }
 
@@ -96,8 +104,10 @@ export async function seedArchivedNoPrimaryMembers(): Promise<ArchivedNoPrimaryS
     const archivedAt = new Date(Date.now() - 10 * MS_PER_DAY).toISOString();
     const withContactsId = randomUUID();
     const withoutContactsId = randomUUID();
+    const withoutContacts2Id = randomUUID();
     const companyA = `${COMPANY_PREFIX} A ${run}`;
     const companyB = `${COMPANY_PREFIX} B ${run}`;
+    const companyC = `${COMPANY_PREFIX} C ${run}`;
     const contactsA = [
       { firstName: 'Ann', lastName: `Alpha-${run}` },
       { firstName: 'Bo', lastName: `Beta-${run}` },
@@ -146,9 +156,23 @@ export async function seedArchivedNoPrimaryMembers(): Promise<ArchivedNoPrimaryS
       )
     `;
 
+    await sql`
+      INSERT INTO members (
+        tenant_id, member_id, member_number, company_name, country,
+        plan_id, plan_year, registration_fee_paid, registration_date,
+        status, archived_at
+      )
+      VALUES (
+        ${TENANT_ID}, ${withoutContacts2Id}::uuid, ${989_000 + Math.floor(Math.random() * 4_000)},
+        ${companyC}, 'TH', ${anchor.plan_id}, ${anchor.plan_year}, true, '2020-01-01',
+        'archived', ${archivedAt}::timestamptz
+      )
+    `;
+
     return {
       withContacts: { memberId: withContactsId, companyName: companyA, contacts: contactsA },
       withoutContacts: { memberId: withoutContactsId, companyName: companyB },
+      withoutContacts2: { memberId: withoutContacts2Id, companyName: companyC },
       cleanup: async () => {
         const c = postgres(dbUrl, { ssl: 'require', max: 1 });
         try {

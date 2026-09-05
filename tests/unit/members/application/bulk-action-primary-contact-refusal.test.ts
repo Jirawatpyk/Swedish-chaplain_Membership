@@ -73,6 +73,61 @@ describe('bulkAction — deferred primary-contact refusal is a typed, per-member
     });
   });
 
+  it('a trigger raise whose message names no member falls back to the sanitized server_error (never a blank memberId)', async () => {
+    runInTenantMock.mockRejectedValueOnce(
+      Object.assign(new Error('Failed query: commit'), {
+        cause: Object.assign(new Error('primary-contact-invariant: has 0 live primary contact(s)'), {
+          code: '23514',
+        }),
+      }),
+    );
+
+    const result = await bulkAction(
+      { action: 'unarchive', member_ids: [MEMBER] },
+      { actorUserId: 'admin-1', requestId: 'req-1' },
+      makeDeps(),
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toEqual({ type: 'server_error', message: 'bulk operation failed' });
+  });
+
+  it('bulk unarchive refuses an ERASED member with undelete_erased before any write (reliability round 2, N2)', async () => {
+    // The single undelete has an erased gate; the bulk Undo-of-archive arm
+    // had none, and 0293 exempts erased members — so an erased+archived id in
+    // a bulk unarchive would come back `active`.
+    const archived = {
+      tenantId: 'test-tenant',
+      memberId: MEMBER,
+      status: 'archived',
+      archivedAt: new Date(Date.now() - 86_400_000),
+    };
+    const memberRepo = {
+      findManyByIdsInTx: vi.fn().mockResolvedValue(ok(new Map([[MEMBER, archived]]))),
+      findErasedIdsInTx: vi.fn().mockResolvedValue(ok(new Set([MEMBER]))),
+      updateStatusInTx: vi.fn(),
+    };
+    runInTenantMock.mockImplementationOnce(async (_ctx: unknown, fn: (tx: unknown) => unknown) =>
+      fn({ __tx: true }),
+    );
+
+    const result = await bulkAction(
+      { action: 'unarchive', member_ids: [MEMBER] },
+      { actorUserId: 'admin-1', requestId: 'req-1' },
+      { ...makeDeps(), memberRepo: memberRepo as never },
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toEqual({
+      type: 'state_error',
+      memberId: MEMBER,
+      code: 'undelete_erased',
+    });
+    expect(memberRepo.updateStatusInTx).not.toHaveBeenCalled();
+  });
+
   it('still reports an unrelated DB failure as the sanitized server_error', async () => {
     runInTenantMock.mockRejectedValueOnce(new Error('persist:fk_violation_plan_id'));
 

@@ -1783,7 +1783,8 @@
         "undeleteError": "Kunde inte återställa. Försök igen.",
         "undeleteNotArchived": "Den här medlemmen är inte arkiverad. Uppdatera sidan.",
         "undeleteNotFound": "Medlemmen hittades inte. Uppdatera sidan.",
-        "windowExpiredToast": "Återställningsfönstret (90 dagar) har gått ut. Kontakta systemadministratören för att återställa."
+        "windowExpiredToast": "Återställningsfönstret (90 dagar) har gått ut. Kontakta systemadministratören för att återställa.",
+        "undeleteErased": "Den här medlemmen har raderats och kan inte återställas."
       },
       "erase": {
         "eraseCta": "Radera (GDPR/PDPA)…",
@@ -1838,7 +1839,8 @@
           "retry": "Den kontakten är inte längre tillgänglig. Välj en annan.",
           "retryNone": "Den kontakten är inte längre tillgänglig, och inga andra finns kvar. Lägg till en kontakt för att fortsätta.",
           "successDesignated": "Medlemmen har återställts och den primära kontakten är angiven.",
-          "addContactDescription": "Lägg till den person som ska få medlemmens kvitton. Personen blir primär kontakt och medlemmen återställs."
+          "addContactDescription": "Lägg till den person som ska få medlemmens kvitton. Personen blir primär kontakt och medlemmen återställs.",
+          "restoring": "Återställer…"
         }
       },
       "benefits": {

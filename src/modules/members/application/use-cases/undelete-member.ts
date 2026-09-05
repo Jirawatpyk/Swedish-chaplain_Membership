@@ -198,12 +198,15 @@ async function ensurePrimaryBeforeRestore(
     wanted!,
   );
   if (!designated.ok) {
-    // 0 rows = the contact was removed (or made primary) between our read
+    // 0 rows (`repo.not_found`) = the contact was removed between our read
     // and the UPDATE. The whole action fails (FR-014) — and the tx is still
     // live after a 0-row UPDATE, so the list the caller retries with is
     // re-read, not the one that just went stale (T041 reliability, L4b). A
-    // real DB failure is a server error, never "choose a contact"
-    // (T041 security, L4).
+    // `repo.conflict` (23505 — a primary appeared meanwhile) has already
+    // aborted the tx, so that re-read fails and the pre-UPDATE list is
+    // offered instead; harmless, because the retry sees the primary and
+    // succeeds without designating. A real DB failure is a server error,
+    // never "choose a contact" (T041 security, L4).
     if (designated.error.code === 'repo.not_found' || designated.error.code === 'repo.conflict') {
       const fresh = await deps.contactRepo.listByMemberInTx(tx, memberId);
       refuse(toDesignatable(fresh.ok ? fresh.value : rows.value));

@@ -98,3 +98,39 @@ fixtures (the new rule refused them correctly): `contact-scrub`, `erase-member-l
 Not a finding, checked anyway: the three scripts the security reviewer named
 (`seed-demo-members`, `seed-e2e-portal-invoices`, `smoke-link-user-to-contact`) already write
 member + primary in one tx, demote-then-promote in one tx, or only read.
+
+### Round 2 — 2026-09-05, the same four reviewers re-checking `09db56408`
+
+Every round-1 item confirmed RESOLVED except three marked PARTIAL (S-H1 test shape, R-M2
+regex not pinned, R-L4b comment overclaim) — all closed below. Verdicts: reliability **SIGN**;
+security **SIGN** on conditions #7 + #8 (both landed); migration **SHIP after two one-liners**
+(both landed, plus the optional third); UX **SHIP WITH FIXES** N1–N3 (all landed, N4–N6 and the
+e2e gap too). 20 new findings; **20 fixed**, 0 rejected; each RED → GREEN.
+
+| # | Reviewer / sev | Finding | Resolution |
+|---|---|---|---|
+| M-N1 | migration MED | the file changed after dev had applied v1 and drizzle applies by `when`, never by hash — dev silently kept v1 (I had hand-applied v2 with a scratchpad tool, which the reviewer inferred) | `when` bumped (twice, once per revision) so the real migrator re-applies; T031 pins the recorded sha256 of the file on disk (`drizzle.__drizzle_migrations`) — red means "bump `when`" |
+| M-N2 + S-#7 | migration MED / security LOW | `GRANT EXECUTE` on the SECURITY DEFINER helper let `chamber_app` call it with any tenant id — a cross-tenant count oracle; the trigger PERFORMs it as the owner, so the app role needs no grant | grant removed; `REVOKE … FROM chamber_app` added by name (the earlier revision had granted it and `CREATE OR REPLACE` keeps an ACL); T031 proves `permission denied` for the app role and that the triggers still fire |
+| M-N3 / R-N6 | migration LOW / reliability LOW | `LOCK TABLE` under live prod traffic waits on the migrator's 30 s statement timeout | `SET LOCAL lock_timeout = '5s'` as statement 0 |
+| M-N5 | migration LOW | index not declared in `schema-contacts.ts` | declared (doc-only in the hand-written-SQL era) |
+| S-#8 | security MED (test gap) | (a)/(b) pass with RLS off — `member_id` alone refuses; the composite keys allow the SAME uuids in two tenants | case (d): same member + contact uuid in A and B; `listByMemberInTx` from A sees one row, A's; `designatePrimaryInTx` flips A's row and leaves B's untouched |
+| S-#9 | security LOW | banner comment still said the 409 is "not remembered" | fixed |
+| S-#10 | security INFO | `?? ''` fallback returned a blank memberId; stale `addContactSchema` comment | no uuid in the raise → sanitized `server_error` (unit test); comment rewritten |
+| R-N1 | reliability MED | adding a contact to a missing / other-tenant member → 500 (FK 23503 on main; `repo.not_found` here) | `not_found` → 404 in `addContact` + the contacts route; unit + contract tests |
+| R-N2 | reliability MED (pre-existing) | bulk `unarchive` had no erased gate; 0293 exempts erased members, so an erased+archived id came back active | `findErasedIdsInTx` partition before any write → `state_error{undelete_erased}`; unit test |
+| R-N3 | reliability LOW | `contact-form-dialog` mapped every 409 to "email taken" | carried as follow-up: the add path's only 409s reachable from the UI remain email collisions; the primacy reasons surface only for writers outside the app |
+| R-N4 | reliability LOW | banner showed "not archived" for `undelete_erased` | branch on `details.code`; new key `archive.undeleteErased` ×3 |
+| R-N5 | reliability LOW | `addInTx` mapped a 23505 on the one-primary index to `contact_email_in_use` | `isUniqueViolationOnConstraint(e, 'contacts_one_primary_per_member')` → `primary_contact_race`; unit test with a Drizzle-shaped error |
+| R-N7 | reliability LOW | bulk-action's uuid regex was only tested against a hand-written message | T031 pins `/member <uuid> in tenant /` on the real raise |
+| R-L4b | reliability | "fresh list" comment overclaimed for the 23505 branch (tx already aborted) | comment states both branches honestly |
+| UX-N1 | ux HIGH | a non-409 failure from inside the dialog toasted behind the modal and left "no contacts left" open after a contact WAS added | the failure is deferred: dialog closes, then toast + refresh from `onCloseComplete`; the refreshed page is the source of truth |
+| UX-N2 | ux MED | during the in-flight retry the add door stayed enabled (re-entrant) — and `disabled` would have broken the nested dialog's return focus | `aria-disabled` + spinner + `designate.restoring`; `ContactFormDialog.disabled` refuses to open |
+| UX-N3 | ux MED | `animate-spin` without `motion-safe:` (4th recurrence in the repo) | `motion-safe:animate-spin`; unit test pins it |
+| UX-N4 | ux LOW | success-path focus landed on the first tabbable child of `<main>`, not the landmark | `onCloseComplete` focuses `#main-content` explicitly, same as the plain path |
+| UX-N5 | ux LOW | the footer scrolled away with the content | the radio list scrolls (`max-h-[40vh] overflow-y-auto`); dialog `max-h` kept as the safety net |
+| UX-N6 | ux LOW | (a) a repeated notice not re-announced; (b) redundant `aria-label`; (c) double `router.refresh()` when `onSaved` is owned by the caller | (a) notice cleared at request start; (b) removed; (c) `ContactFormDialog` skips its refresh when `onSaved` is given |
+| UX e2e gap | ux | the nested add-contact door had no real-browser coverage | new case: open → focus in the form → Escape → focus back on the door → fill + save → member restored in place; a third seeded member keeps the locale case archived; the cancel case now asserts the Restore button by name |
+
+Verified after round 2: typecheck 0 · full lint 0 · `check:i18n` 5188/5188 · unit/contract for
+the touched surfaces 73/73 · T031 24/24 (v4 applied through the real migrator) · isolation 4/4 ·
+e2e designate cases 4/4 on chromium.

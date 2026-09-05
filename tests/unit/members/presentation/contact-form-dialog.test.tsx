@@ -29,8 +29,11 @@ beforeAll(() => {
   }
 });
 
+// Shared spy so a test can assert whether the dialog refreshed the router.
+// Dereferenced lazily (inside useRouter()), so the hoisted factory is safe.
+const routerRefresh = vi.fn();
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
+  useRouter: () => ({ push: vi.fn(), refresh: routerRefresh }),
 }));
 const toastError = vi.fn();
 const toastSuccess = vi.fn();
@@ -343,6 +346,7 @@ describe('ContactFormDialog — retryable 503 (G24)', () => {
 describe('ContactFormDialog — 108 PR-B hooks for the restore dialog (T041 UX H2/M6)', () => {
   beforeEach(() => {
     vi.useRealTimers();
+    routerRefresh.mockClear();
   });
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -386,6 +390,36 @@ describe('ContactFormDialog — 108 PR-B hooks for the restore dialog (T041 UX H
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+  });
+
+  it('does not open at all while `disabled` (the restore dialog is mid-request) (UX N2)', () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <ContactFormDialog memberId="m1" mode="add" disabled trigger={<button>Open</button>} />
+      </NextIntlClientProvider>,
+    );
+    fireEvent.click(screen.getByText('Open'));
+    expect(document.querySelector('form')).toBeNull();
+  });
+
+  it('leaves the refresh to the caller when onSaved is provided (UX N6c — no double refresh)', async () => {
+    const onSaved = vi.fn();
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: async () => ({ contact_id: 'c-new' }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    openAddWith({ onSaved });
+
+    fireEvent.change(document.querySelector('#cf-first-name')!, { target: { value: 'New' } });
+    fireEvent.change(document.querySelector('#cf-last-name')!, { target: { value: 'Person' } });
+    fireEvent.change(document.querySelector('#cf-email')!, { target: { value: 'new2@person.example' } });
+    fireEvent.click(document.querySelector('#cf-art14-attested')!);
+    fireEvent.submit(document.querySelector('form')!);
+
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+    expect(routerRefresh).not.toHaveBeenCalled();
   });
 
   it('does NOT fire onSaved when the ADD is refused', async () => {

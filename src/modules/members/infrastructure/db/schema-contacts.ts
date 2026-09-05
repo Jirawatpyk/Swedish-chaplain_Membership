@@ -114,6 +114,11 @@ export const contacts = pgTable(
     uniqueIndex('contacts_one_primary_per_member')
       .on(table.tenantId, table.memberId)
       .where(sql`is_primary = TRUE AND removed_at IS NULL`),
+    // 108 PR-B (migration 0293) — the deferred constraint trigger counts ALL
+    // contact rows of a member at commit (removed ones included), which none
+    // of the partial indexes above can serve. Declared here for drift
+    // hygiene only; the DDL is hand-written in 0293.
+    index('contacts_tenant_member_all_idx').on(table.tenantId, table.memberId),
     // Note: pg_trgm GIN index on (first_name || ' ' || last_name) is added
     // via raw SQL in the migration.
   ],

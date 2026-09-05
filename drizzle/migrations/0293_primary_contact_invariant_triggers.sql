@@ -75,6 +75,12 @@
 -- The migrator runs this whole file in ONE transaction. This is the same lock
 -- CREATE CONSTRAINT TRIGGER takes anyway, so it adds no new contention class;
 -- new writers queue for the few ms the batch needs, reads are unaffected.
+-- Prod migrates on deploy while the app is live: a transaction that has
+-- already written members/contacts (any audit insert carrying member_id bumps
+-- members via the 0009 trigger) holds ROW EXCLUSIVE and blocks this lock. Fail
+-- fast rather than sit on the migrator's 30 s statement timeout — the batch
+-- rolls back whole and the deploy is simply retried (T041 round 2, N3).
+SET LOCAL lock_timeout = '5s';--> statement-breakpoint
 LOCK TABLE "members", "contacts" IN SHARE ROW EXCLUSIVE MODE;--> statement-breakpoint
 
 -- ── Pre-check (FR-010a): fail the deploy if the data already violates ────────
@@ -193,11 +199,21 @@ BEGIN
 END;
 $$;--> statement-breakpoint
 
--- Not callable by anyone but the app role (and the owner). Without EXECUTE an
--- app session (chamber_app) cannot fire the trigger at all.
+-- The helper is callable by NOBODY but its owner. It runs as SECURITY DEFINER
+-- and takes a caller-supplied tenant, so an EXECUTE grant to chamber_app would
+-- let an app session probe another tenant's member for existence + live-primary
+-- count from the raise text — a cross-tenant oracle (T041 round 2, migration
+-- N2 / security #7). The trigger body PERFORMs it as the owner, whose EXECUTE
+-- survives the REVOKE, so the app role needs no grant for the triggers to fire.
+-- (Trigger-function EXECUTE is checked at CREATE TRIGGER time, not per fire;
+-- the grant on the trigger function is kept for parity with 0009/0291.)
 REVOKE ALL ON FUNCTION public.contacts_check_member_primary(text, uuid) FROM PUBLIC;--> statement-breakpoint
+-- Also from the app role by name: an earlier revision of this file granted it
+-- (and a branch that applied that revision — the shared dev branch did — keeps
+-- the grant, because CREATE OR REPLACE FUNCTION preserves an existing ACL). A
+-- no-op on a fresh database; self-correcting on one that ran the old version.
+REVOKE ALL ON FUNCTION public.contacts_check_member_primary(text, uuid) FROM chamber_app;--> statement-breakpoint
 REVOKE ALL ON FUNCTION public.contacts_assert_one_primary() FROM PUBLIC;--> statement-breakpoint
-GRANT EXECUTE ON FUNCTION public.contacts_check_member_primary(text, uuid) TO chamber_app;--> statement-breakpoint
 GRANT EXECUTE ON FUNCTION public.contacts_assert_one_primary() TO chamber_app;--> statement-breakpoint
 
 DROP TRIGGER IF EXISTS "contacts_one_primary_ct" ON "contacts";--> statement-breakpoint

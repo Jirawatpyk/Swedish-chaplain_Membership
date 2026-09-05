@@ -166,6 +166,13 @@ export async function POST(
         },
         { status: 409 },
       );
+    case 'not_found':
+      // 108 PR-B — the member lock is the first read of addContact; a missing
+      // or another tenant's member is a 404, not the FK 500 it used to be.
+      return NextResponse.json(
+        { error: { code: 'not_found', message: 'Member not found.' } },
+        { status: 404 },
+      );
     case 'server_error':
     default:
       logger.error(

@@ -142,8 +142,10 @@ CREATE CONSTRAINT TRIGGER members_one_primary_ct AFTER UPDATE OF status, erased_
   `contacts_check_member_primary(p_tenant text, p_member uuid)` and the trigger body calls it
   for `NEW` and — when an UPDATE changed `(tenant_id, member_id)` — for `OLD` too, so a
   re-parented contact cannot leave its old member at zero; both functions carry
-  `SET search_path = pg_catalog, public, pg_temp` and `REVOKE ALL … FROM PUBLIC` before the
-  `chamber_app` grant; a plain index `contacts_tenant_member_all_idx (tenant_id, member_id)`
+  `SET search_path = pg_catalog, public, pg_temp` and `REVOKE ALL … FROM PUBLIC`; the helper
+  is callable by NOBODY but its owner (the trigger PERFORMs it as the owner — an app-role grant
+  would be a cross-tenant count oracle, T041 round 2); a plain index
+  `contacts_tenant_member_all_idx (tenant_id, member_id)`
   serves the per-row count (every other contacts index is partial); and the migration's first
   statement is `LOCK TABLE members, contacts IN SHARE ROW EXCLUSIVE MODE` so no writer can
   commit a violation between the pre-check and `CREATE TRIGGER` (the migrator runs the file in

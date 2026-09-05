@@ -148,6 +148,11 @@ export function RestorePrimaryDialog({
               value={selected ?? ''}
               onValueChange={(v) => setPicked(typeof v === 'string' && v !== '' ? v : null)}
               aria-labelledby={legendId}
+              // The LIST scrolls, not the dialog: with five contacts and the
+              // Thai description on a 320×568 viewport the footer must stay
+              // pinned and reachable (T041 UX round 2, N5). The dialog's own
+              // max-h is the safety net.
+              className="max-h-[40vh] overflow-y-auto"
             >
               {designatable.map((c) => {
                 const id = `designate-${c.contactId}`;
@@ -157,7 +162,6 @@ export function RestorePrimaryDialog({
                       id={id}
                       value={c.contactId}
                       disabled={submitting}
-                      aria-label={`${c.firstName} ${c.lastName}`}
                       className="mt-0.5"
                     />
                     <Label htmlFor={id} className="mb-0 flex cursor-pointer flex-col gap-0.5 font-normal">
@@ -188,11 +192,26 @@ export function RestorePrimaryDialog({
               memberId={memberId}
               mode="add"
               description={t('addContactDescription')}
+              disabled={submitting}
               {...(onContactAdded ? { onSaved: onContactAdded } : {})}
               trigger={
-                <Button type="button" className="gap-2" data-testid="restore-primary-add-contact">
-                  <UserPlusIcon className="size-4" aria-hidden="true" />
-                  {t('addContact')}
+                // While the retry restore is in flight this is the only
+                // enabled control and the nested form's return-focus target.
+                // `disabled` would make it untabbable and drop that focus on
+                // <body>; aria-disabled keeps it focusable and inert (T041 UX
+                // round 2, N2).
+                <Button
+                  type="button"
+                  className="gap-2"
+                  aria-disabled={submitting}
+                  data-testid="restore-primary-add-contact"
+                >
+                  {submitting ? (
+                    <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" />
+                  ) : (
+                    <UserPlusIcon className="size-4" aria-hidden="true" />
+                  )}
+                  {submitting ? t('restoring') : t('addContact')}
                 </Button>
               }
             />
@@ -206,7 +225,7 @@ export function RestorePrimaryDialog({
               data-testid="restore-primary-confirm"
             >
               {submitting ? (
-                <Loader2Icon className="size-4 animate-spin" aria-hidden="true" />
+                <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" />
               ) : null}
               {t('confirm')}
             </Button>

@@ -57,13 +57,15 @@ export const addContactSchema = z.object({
   role_title: z.string().max(100).nullable().optional(),
   preferred_language: z.enum(['en', 'th', 'sv']).default('en'),
   date_of_birth: z.string().nullable().optional(),
-  // Task 8 (GDPR Art. 14) — every contact added through this use case is
-  // non-primary (isPrimary is hardcoded false below), i.e. a named third
-  // party whose data the ADMIN is supplying, not the person themselves. The
-  // admin must attest they informed that person before this write is
-  // allowed to proceed. `z.literal(true)` (not `z.boolean()`) so `false`,
-  // `undefined`, and any other value all fail validation — server-side
-  // enforcement so a direct API call cannot skip the UI checkbox.
+  // Task 8 (GDPR Art. 14) — every contact added through this use case is a
+  // named third party whose data the ADMIN is supplying, not the person
+  // themselves (a member's own primary is created with the member; since 108
+  // PR-B a first contact added to a member with no live primary BECOMES the
+  // primary, but it is still admin-supplied data). The admin must attest they
+  // informed that person before this write is allowed to proceed.
+  // `z.literal(true)` (not `z.boolean()`) so `false`, `undefined`, and any
+  // other value all fail validation — server-side enforcement so a direct API
+  // call cannot skip the UI checkbox.
   art14_attested: z.literal(true),
 });
 
@@ -327,6 +329,10 @@ export async function addContact(
   } catch (e) {
     if (e instanceof UseCaseAbort) {
       const re = e.error as RepoError;
+      // The member lock is the first read, so a missing (or another
+      // tenant's) member surfaces here — a 404, not a 500 (T041 reliability
+      // round 2, N1; on main this was an FK 23503 → 500).
+      if (re.code === 'repo.not_found') return err({ type: 'not_found' });
       if (re.code === 'repo.conflict')
         return err({ type: 'conflict', reason: re.reason });
       return err({ type: 'server_error', message: `add: ${re.code}` });

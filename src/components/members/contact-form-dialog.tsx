@@ -99,6 +99,12 @@ type Props = {
    * again in place now that a primary exists.
    */
   readonly onSaved?: () => void;
+  /**
+   * 108 PR-B — refuse to open (the trigger stays focusable; see the restore
+   * dialog for why it is `aria-disabled`, not `disabled`). Set while the
+   * caller has a request in flight that this form's save would race.
+   */
+  readonly disabled?: boolean;
 };
 
 type FormValues = {
@@ -128,6 +134,7 @@ export function ContactFormDialog({
   trigger,
   description,
   onSaved,
+  disabled = false,
 }: Props) {
   const t = useTranslations('admin.members.contactForm');
   const tf = useTranslations('admin.members.create.fields');
@@ -215,6 +222,7 @@ export function ContactFormDialog({
   });
 
   const handleOpenChange = (next: boolean) => {
+    if (next && disabled) return;
     if (next) {
       // Re-seed from the latest props every time the dialog opens so a
       // previous cancelled edit doesn't leave stale values behind.
@@ -358,7 +366,10 @@ export function ContactFormDialog({
         }
       }
       setOpen(false);
-      router.refresh();
+      // A caller that passed `onSaved` owns the follow-up (the restore dialog
+      // restores again, which refreshes once on its own); refreshing here too
+      // would re-render the server tree twice (T041 UX round 2, N6c).
+      if (!onSaved) router.refresh();
     } catch {
       toast.error(tA('errors.generic'));
     } finally {
