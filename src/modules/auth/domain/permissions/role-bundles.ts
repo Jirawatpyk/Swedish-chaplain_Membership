@@ -51,6 +51,9 @@ const MARKETING_KEYS: readonly PermissionKey[] = [
   'members.read',
   // Unenforced today — see the MANAGER_KEYS note / permission-catalogue.ts.
   'contacts.read',
+  // 108 PR-D (FR-030) — marketing may switch a contact's marketing state;
+  // it still holds NO `contacts.write`, so name/email/phone stay read-only.
+  'contacts.marketing',
   'broadcasts.read',
   'broadcasts.write',
   'broadcasts.send',

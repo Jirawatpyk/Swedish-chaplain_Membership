@@ -43,6 +43,13 @@ const CATALOGUE_RAW = [
   // reasoning about contact access must look at `members.read`.
   { key: 'contacts.read' },
   { key: 'contacts.write', sensitive: 'pii' },
+  // 108 PR-D (FR-030) — "manage contact marketing audience": switch a
+  // contact's marketing state on/off (staff toggle on the member page and
+  // the Marketing audience page). Deliberately SEPARATE from
+  // `contacts.write`: the marketing role holds this key and must NOT gain
+  // the name/email/phone edit that `contacts.write` gates (spec US4 AS6).
+  // `sensitive: 'pii'` because it writes a per-person preference.
+  { key: 'contacts.marketing', sensitive: 'pii' },
   { key: 'directory.export', sensitive: 'pii' },
   { key: 'plans.read' },
   { key: 'plans.write', sensitive: 'money' },
