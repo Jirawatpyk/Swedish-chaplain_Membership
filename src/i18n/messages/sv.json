@@ -1235,6 +1235,10 @@
           "unknown": "Status ej tillgänglig",
           "unknownAria": "Prenumerationsstatus är tillfälligt otillgänglig"
         },
+        "marketing": {
+          "primaryDescriptor": "Tar emot fakturor och betalningsmeddelanden",
+          "audienceLink": "Öppna i Marknadsföringsmålgrupp"
+        },
         "pendingInvitations": {
           "title": "Väntande portalinbjudningar",
           "subtitle": "Inbjudningar skickade men ännu inte inlösta.",
@@ -5205,6 +5209,84 @@
       "body": "Sidan finns inte, posten har tagits bort, eller så är den inte tillgänglig för din roll. Om du kom hit via en länk eller ett bokmärke kan länken vara inaktuell.",
       "roleHint": "Om du förväntade dig åtkomst, be en superadministratör om hjälp — vissa personalsidor är begränsade till den rollen.",
       "back": "Tillbaka till instrumentpanelen"
+    },
+    "marketing": {
+      "audience": {
+        "title": "Marknadsföringsmålgrupp",
+        "subtitle": "Varje kontakt som kan ta emot E-Blasts, med vem som stängde av och när. Filtrera för att kontrollera en målgrupp före ett utskick.",
+        "preflightPreset": "Förhandskontroll: sekundära kontakter som är på",
+        "readOnly": "Skrivskyddat — du ser marknadsföringsstatus här men kan inte ändra den.",
+        "count": "{count, plural, =0 {Inga kontakter matchar de aktuella filtren} one {# kontakt matchar de aktuella filtren} other {# kontakter matchar de aktuella filtren}}",
+        "tableCaption": "Marknadsföringsmålgrupp — kontakter och deras marknadsföringsstatus",
+        "error": {
+          "title": "Målgruppen kunde inte läsas in",
+          "description": "Något gick fel när kontakterna lästes. Försök igen om en stund."
+        },
+        "columns": {
+          "contact": "Kontakt",
+          "state": "Marknadsföring",
+          "switch": "Reglage",
+          "member": "Medlem",
+          "kind": "Roll",
+          "memberStatus": "Medlemsstatus",
+          "changedBy": "Ändrad av",
+          "changedAt": "Ändrad"
+        },
+        "kind": {
+          "primary": "Primär",
+          "secondary": "Sekundär"
+        },
+        "memberStatus": {
+          "active": "Aktiv",
+          "inactive": "Inaktiv",
+          "archived": "Arkiverad",
+          "halted": "Utskick pausade",
+          "erased": "Raderad"
+        },
+        "changedBy": {
+          "contact": "Kontakten själv",
+          "staff": "Personal"
+        },
+        "filters": {
+          "searchLabel": "Sök medlem eller kontakt",
+          "searchPlaceholder": "Medlems- eller kontaktnamn…",
+          "kindLabel": "Kontaktroll",
+          "kind": {
+            "all": "Alla kontakter",
+            "primary": "Endast primära",
+            "secondary": "Endast sekundära"
+          },
+          "stateLabel": "Marknadsföringsstatus",
+          "state": {
+            "all": "Alla lägen",
+            "on": "På",
+            "off_staff": "Av (av personal)",
+            "off_contact": "Av (av kontakten)",
+            "unsubscribed": "Avregistrerad"
+          },
+          "eligibleLabel": "Medlemsbehörighet",
+          "eligible": {
+            "on": "Endast behöriga medlemmar",
+            "off": "Alla medlemmar"
+          },
+          "clear": "Rensa filter"
+        },
+        "empty": {
+          "none": {
+            "title": "Inga kontakter ännu",
+            "description": "Kontakter visas här när medlemmar läggs till."
+          },
+          "filtered": {
+            "title": "Inga kontakter matchar dessa filter",
+            "description": "Prova att bredda eller rensa filtren.",
+            "cta": "Rensa filter"
+          },
+          "unavailable": {
+            "title": "Avregistreringsstatus är tillfälligt otillgänglig",
+            "description": "Avregistreringslistan kunde inte läsas, så alla lägen visas som otillgängliga tills den är tillbaka. Utskick påverkas inte — utskicket kontrollerar avregistreringar självt."
+          }
+        }
+      }
     }
   },
   "palette": {
@@ -5253,7 +5335,8 @@
       "eventcreateIntegration": "EventCreate-integration",
       "csvImportHistory": "CSV-importhistorik",
       "auditLog": "Granskningslogg",
-      "directory": "Medlemskatalog"
+      "directory": "Medlemskatalog",
+      "marketingAudience": "Marknadsföringsmålgrupp"
     }
   },
   "nav": {
@@ -5286,7 +5369,8 @@
       "renewals": "Förnyelser",
       "audit": "Granskningslogg",
       "directory": "Katalog",
-      "erasureLog": "Raderingslogg"
+      "erasureLog": "Raderingslogg",
+      "marketingAudience": "Marknadsföringsmålgrupp"
     },
     "member": {
       "dashboard": "Instrumentpanel",
@@ -5335,7 +5419,9 @@
     "newTemplate": "Ny mall",
     "editTemplate": "Redigera mall",
     "compliance": "Efterlevnad",
-    "erasureLog": "Raderingslogg"
+    "erasureLog": "Raderingslogg",
+    "marketing": "Marknadsföring",
+    "audience": "Målgrupp"
   },
   "layout": {
     "breadcrumbAriaLabel": "Brödsmulenavigering",
@@ -5876,6 +5962,30 @@
       "organisationSection": "Organisation",
       "membershipSection": "Medlemskap",
       "contactsSection": "Kontakter",
+      "marketing": {
+        "label": "Marknadsföringsutskick",
+        "switchLabel": "Ta emot marknadsföringsutskick",
+        "state": {
+          "on": "På — du får kammarens marknadsföringsutskick",
+          "off_by_contact": "Av — du stängde av marknadsföringsutskicken",
+          "off_by_staff": "Av — avstängt av kammaren; du kan slå på det igen",
+          "unsubscribed": "Avregistrerad",
+          "unavailable": "Status tillfälligt otillgänglig"
+        },
+        "unsubscribedHint": "Du har avregistrerat dig från marknadsföringsutskick. Det valet gäller; kontakta kammaren om du vill ändra det.",
+        "unavailableHint": "Avregistreringslistan kunde inte läsas just nu, så reglaget är pausat. Försök igen strax.",
+        "primaryNote": "Som primär kontakt får du fortfarande fakturor och betalningsmeddelanden; detta påverkar bara marknadsföring.",
+        "toast": {
+          "switchedOff": "Marknadsföringsutskick avstängda.",
+          "switchedOn": "Marknadsföringsutskick påslagna.",
+          "unchanged": "Ingen ändring — det var redan din inställning.",
+          "errors": {
+            "suppressed": "Du har avregistrerat dig från marknadsföringsutskick; det valet gäller.",
+            "rateLimited": "För många ändringar på kort tid. Vänta en minut och försök igen.",
+            "generic": "Något gick fel. Försök igen."
+          }
+        }
+      },
       "inviteColleague": "Bjud in kollega",
       "primaryBadge": "Primär",
       "portalLinked": "Portal kopplad",

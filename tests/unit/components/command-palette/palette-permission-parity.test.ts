@@ -137,7 +137,8 @@ describe('palette registries declare a permission (T064)', () => {
     // unnoticed — and the entries likeliest to grow a nested field, and so to
     // be dropped by the innermost-brace parser, are the newest ones. Update
     // deliberately when the palette gains or loses an entry.
-    expect(ENTRIES).toHaveLength(32);
+    // 108 PR-D: +1 — `nav.marketingAudience`.
+    expect(ENTRIES).toHaveLength(33);
   });
 
   it('no entry still carries the two-tier `requires` tag', () => {

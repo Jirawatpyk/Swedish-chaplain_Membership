@@ -180,6 +180,11 @@ const STATIC_LABEL_KEYS = {
   // "compliance / erasure-log" (incident 2026-07-18, PR #223 follow-up).
   compliance: 'compliance',
   'erasure-log': 'erasureLog',
+  // 108 PR-D — `/admin/marketing/audience`. `marketing` is an organisational
+  // segment with no page of its own (NON_ROUTE_BY_PARENT under `admin` in
+  // breadcrumb-path.ts, like `compliance`); `audience` is the page itself.
+  marketing: 'marketing',
+  audience: 'audience',
 } as const;
 
 // Verb segments resolve by parent resource. The outer key is the parent

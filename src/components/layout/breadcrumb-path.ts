@@ -111,7 +111,9 @@ export function parseBreadcrumbPath({
     // non-clickable plain text so its `<Link>` prefetch never hits the
     // `/admin/compliance` 404 that aborted client-side soft-nav to the leaf
     // (the redirect page fixed the route; this stops the prefetch entirely).
-    ['admin', new Set(['compliance'])],
+    // 108 PR-D — `/admin/marketing/audience`: `marketing` has no page of its
+    // own (the only page is the `audience` leaf), same shape as `compliance`.
+    ['admin', new Set(['compliance', 'marketing'])],
   ]);
   const isNonRouteSegment = (idx: number): boolean => {
     if (idx === 0) return false;

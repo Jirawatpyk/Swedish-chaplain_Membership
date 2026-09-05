@@ -34,13 +34,11 @@ const CATALOGUE_RAW = [
   { key: 'members.pii_sensitive', sensitive: 'pii' },
   { key: 'members.erasure', superAdminOnly: true, sensitive: 'pii' },
   { key: 'members.erasure_log_read', superAdminOnly: true, sensitive: 'pii' },
-  // UNENFORCED VOCABULARY (016 post-ship review, below-cap): no gate,
-  // canPerform or hasPermission call anywhere in src/ or scripts/ checks
-  // this key — contact reads ride the `members.read`-gated member-detail
-  // surfaces, so granting or revoking it changes NOTHING at runtime today.
-  // Kept for § 4.1 matrix parity. If a dedicated contacts surface ever
-  // ships, gate it on this key and delete this note; until then, reviewers
-  // reasoning about contact access must look at `members.read`.
+  // ENFORCED since 108 PR-D: the Marketing audience page
+  // (`/admin/marketing/audience`, FR-035) is gated on this key — the first
+  // dedicated contacts surface. Contact reads on the member-detail page still
+  // ride `members.read`, so revoking this key hides the audience page and the
+  // ⌘K entry for it but NOT the contacts shown on a member's own page.
   { key: 'contacts.read' },
   { key: 'contacts.write', sensitive: 'pii' },
   // 108 PR-D (FR-030) — "manage contact marketing audience": switch a

@@ -1235,6 +1235,10 @@
           "unknown": "Status unavailable",
           "unknownAria": "Subscription status is temporarily unavailable"
         },
+        "marketing": {
+          "primaryDescriptor": "Receives invoices and payment emails",
+          "audienceLink": "Open in Marketing audience"
+        },
         "pendingInvitations": {
           "title": "Pending portal invitations",
           "subtitle": "Invitations sent but not yet redeemed.",
@@ -5205,6 +5209,84 @@
       "body": "This page doesn't exist, the record was removed, or it isn't available to your role. If you reached it from a link or a bookmark, that link may be out of date.",
       "roleHint": "If you expected access, ask a Super Admin — some staff surfaces are restricted to that role.",
       "back": "Back to dashboard"
+    },
+    "marketing": {
+      "audience": {
+        "title": "Marketing audience",
+        "subtitle": "Every contact who can receive E-Blasts, with who switched them off and when. Filter to check an audience before a send.",
+        "preflightPreset": "Pre-flight: secondaries currently on",
+        "readOnly": "Read-only — you can see marketing states here but not change them.",
+        "count": "{count, plural, =0 {No contacts match the current filters} one {# contact matches the current filters} other {# contacts match the current filters}}",
+        "tableCaption": "Marketing audience — contacts and their marketing state",
+        "error": {
+          "title": "The audience could not be loaded",
+          "description": "Something went wrong reading contacts. Try again in a moment."
+        },
+        "columns": {
+          "contact": "Contact",
+          "state": "Marketing",
+          "switch": "Switch",
+          "member": "Member",
+          "kind": "Role",
+          "memberStatus": "Member status",
+          "changedBy": "Changed by",
+          "changedAt": "Changed"
+        },
+        "kind": {
+          "primary": "Primary",
+          "secondary": "Secondary"
+        },
+        "memberStatus": {
+          "active": "Active",
+          "inactive": "Inactive",
+          "archived": "Archived",
+          "halted": "Broadcasts halted",
+          "erased": "Erased"
+        },
+        "changedBy": {
+          "contact": "The contact",
+          "staff": "Staff"
+        },
+        "filters": {
+          "searchLabel": "Search member or contact",
+          "searchPlaceholder": "Member or contact name…",
+          "kindLabel": "Contact role",
+          "kind": {
+            "all": "All contacts",
+            "primary": "Primary only",
+            "secondary": "Secondary only"
+          },
+          "stateLabel": "Marketing state",
+          "state": {
+            "all": "Any state",
+            "on": "On",
+            "off_staff": "Off (by staff)",
+            "off_contact": "Off (by contact)",
+            "unsubscribed": "Unsubscribed"
+          },
+          "eligibleLabel": "Member eligibility",
+          "eligible": {
+            "on": "Eligible members only",
+            "off": "All members"
+          },
+          "clear": "Clear filters"
+        },
+        "empty": {
+          "none": {
+            "title": "No contacts yet",
+            "description": "Contacts appear here as members are added."
+          },
+          "filtered": {
+            "title": "No contacts match these filters",
+            "description": "Try widening the filters or clearing them.",
+            "cta": "Clear filters"
+          },
+          "unavailable": {
+            "title": "Unsubscribe status is temporarily unavailable",
+            "description": "The unsubscribe list could not be read, so every state shows as unavailable until it recovers. Sends are not affected — dispatch re-checks unsubscribes itself."
+          }
+        }
+      }
     }
   },
   "palette": {
@@ -5253,7 +5335,8 @@
       "eventcreateIntegration": "EventCreate integration",
       "csvImportHistory": "CSV import history",
       "auditLog": "Audit log",
-      "directory": "Member directory"
+      "directory": "Member directory",
+      "marketingAudience": "Marketing audience"
     }
   },
   "nav": {
@@ -5286,7 +5369,8 @@
       "renewals": "Renewals",
       "audit": "Audit log",
       "directory": "Directory",
-      "erasureLog": "Erasure log"
+      "erasureLog": "Erasure log",
+      "marketingAudience": "Marketing audience"
     },
     "member": {
       "dashboard": "Dashboard",
@@ -5335,7 +5419,9 @@
     "newTemplate": "New Template",
     "editTemplate": "Edit Template",
     "compliance": "Compliance",
-    "erasureLog": "Erasure log"
+    "erasureLog": "Erasure log",
+    "marketing": "Marketing",
+    "audience": "Audience"
   },
   "layout": {
     "breadcrumbAriaLabel": "Breadcrumb navigation",
@@ -5876,6 +5962,30 @@
       "organisationSection": "Organisation",
       "membershipSection": "Membership",
       "contactsSection": "Contacts",
+      "marketing": {
+        "label": "Marketing emails",
+        "switchLabel": "Receive marketing emails",
+        "state": {
+          "on": "On — you receive the chamber's marketing emails",
+          "off_by_contact": "Off — you switched marketing emails off",
+          "off_by_staff": "Off — switched off by the chamber; you can switch it back on",
+          "unsubscribed": "Unsubscribed",
+          "unavailable": "Status temporarily unavailable"
+        },
+        "unsubscribedHint": "You unsubscribed from marketing emails. That choice stays in force; contact the chamber if you want to change it.",
+        "unavailableHint": "The unsubscribe list could not be read right now, so this control is paused. Try again shortly.",
+        "primaryNote": "As the primary contact you still receive invoices and payment emails; this only affects marketing.",
+        "toast": {
+          "switchedOff": "Marketing emails switched off.",
+          "switchedOn": "Marketing emails switched on.",
+          "unchanged": "No change — that was already your setting.",
+          "errors": {
+            "suppressed": "You unsubscribed from marketing emails; that choice stays in force.",
+            "rateLimited": "Too many changes in a short time. Please wait a minute and try again.",
+            "generic": "Something went wrong. Please try again."
+          }
+        }
+      },
       "inviteColleague": "Invite Colleague",
       "primaryBadge": "Primary",
       "portalLinked": "Portal linked",
