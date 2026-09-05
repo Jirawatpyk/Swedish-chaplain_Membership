@@ -121,6 +121,13 @@ function stubDeps(overrides?: Partial<BulkActionDeps>): BulkActionDeps {
         value: new Set(),
       }),
     ),
+    // 108 round 4 — the bulk-unarchive no-primary gate; nothing to fence here.
+    findIdsWithoutLivePrimaryInTx: vi.fn(
+      async (): ReturnType<BulkActionDeps['memberRepo']['findIdsWithoutLivePrimaryInTx']> => ({
+        ok: true as const,
+        value: new Set(),
+      }),
+    ),
     enrolAutoInvoiceInTx: vi.fn(),
     unenrolAutoInvoiceInTx: vi.fn(),
     },

@@ -632,6 +632,21 @@ and `member_undeleted`).
   with at least one primary contact in a single transaction.
 - **FR-003**: System MUST enforce that every non-archived member
   has exactly one primary contact (unique partial index).
+
+> **AMENDMENT — FR-003 enforcement widened (108 PR-B, 2026-09-05).** The
+> partial unique index only ever guaranteed *at most* one primary. "Exactly
+> one" is now enforced on every primacy-affecting mutation — add, promote,
+> remove, unarchive — inside the writing transaction (108 FR-010/FR-012), and
+> **at commit** by deferred constraint triggers (migration `0293`, 108
+> FR-010a) for every path that is not the application. Removing the current
+> primary is refused in the write itself, not by a pre-read (108 FR-011): a
+> promote racing a remove had left 50 of 50 members with no primary in
+> rehearsal, and since 108 PR-A a member with no live primary silently stops
+> receiving receipts. Unarchiving a member with no primary now requires
+> designating one in the same action (108 FR-014). The DB-level guarantee is
+> scoped to members that have at least one contact row — see the 108 spec
+> AMENDMENT at FR-010 for why. `archived` and `erased` members remain exempt,
+> as this FR already said.
 - **FR-004**: System MUST allow admin role to edit a member's
   company info, plan assignment, and contacts; manager role is
   read-only on all member surfaces.
@@ -690,6 +705,13 @@ and `member_undeleted`).
 - **FR-011**: System MUST allow admin role to add, edit, remove, and
   promote/demote contacts within a member; primary/secondary is a
   single flag.
+
+> **AMENDMENT (108 PR-B, 2026-09-05).** "Remove" never applies to the
+> current primary — the request is refused with guidance to promote another
+> contact first (409 `cannot_remove_primary`), and "demote" exists only as the
+> demote half of a promote; there is no standalone demote that would leave the
+> member without a primary. The per-contact marketing state that 108 adds to
+> this flag ships with PR-D, not here.
 - **FR-012**: System MUST issue a member-scoped F1 portal invitation
   when admin clicks "Invite to portal" on a contact.
 - **FR-012a**: When a contact's email is edited and that contact is

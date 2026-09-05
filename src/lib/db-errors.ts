@@ -65,6 +65,50 @@ export function isLastAdminTriggerError(error: unknown): boolean {
 }
 
 /**
+ * 108 PR-B — the exactly-one-primary-contact guard raised by
+ * `contacts_assert_one_primary()` (migration 0293). It is a DEFERRED
+ * constraint trigger, so the raise surfaces at COMMIT — from `runInTenant`'s
+ * transaction wrapper, NOT from the repo method that made the write — which
+ * is why use cases map it in their outer `catch`, not in `mapDbError`.
+ *
+ * Same two-step contract as `isLastAdminTriggerError` (SQLSTATE 23514 +
+ * stable message token) so an unrelated check_violation is never swallowed.
+ * Returns the live-primary count the trigger reported, so the caller can
+ * tell "zero primaries" (→ `no_primary_contact`) from "two" (→
+ * `primary_contact_race`); `null` when the error is anything else.
+ */
+export function primaryContactTriggerViolation(error: unknown): {
+  readonly livePrimaries: number;
+  readonly memberId: string | null;
+  readonly tenantSlug: string | null;
+} | null {
+  let cur: unknown = error;
+  while (cur !== null && cur !== undefined) {
+    if (
+      isPostgresError(cur) &&
+      cur.code === POSTGRES_CHECK_VIOLATION &&
+      cur.message.includes('primary-contact-invariant')
+    ) {
+      // One decoder for every caller (round 4, F4-#9 / F4-#10). The raise is
+      // `primary-contact-invariant: member <uuid> in tenant <slug> has <n>
+      // live primary contact(s)` — pinned by T031 on the real trigger. A count
+      // that cannot be read lands on the ACTIONABLE side (0 → "the member
+      // needs a primary"), never on "retry"; a member that cannot be read is
+      // null and the caller falls back to its sanitized error.
+      const count = /has (\d+) live primary/.exec(cur.message);
+      const who = /member ([0-9a-f-]{36}) in tenant (\S+)/i.exec(cur.message);
+      return {
+        livePrimaries: count ? Number(count[1]) : 0,
+        memberId: who?.[1] ?? null,
+        tenantSlug: who?.[2] ?? null,
+      };
+    }
+    cur = (cur as { cause?: unknown } | null)?.cause;
+  }
+  return null;
+}
+
+/**
  * Concatenate `error.message` across the entire `.cause` chain into a
  * single inspectable string. Use this when you need to substring-match
  * against a Postgres error (e.g. unique-violation detection in repo

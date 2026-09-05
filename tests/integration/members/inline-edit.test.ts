@@ -82,6 +82,10 @@ function stubDeps(overrides?: Partial<InlineEditDeps>): InlineEditDeps {
       ok: true as const,
       value: new Set<MemberId>(),
     })),
+    findIdsWithoutLivePrimaryInTx: vi.fn(async () => ({
+      ok: true as const,
+      value: new Set<MemberId>(),
+    })),
     enrolAutoInvoiceInTx: vi.fn(),
     unenrolAutoInvoiceInTx: vi.fn(),
     },

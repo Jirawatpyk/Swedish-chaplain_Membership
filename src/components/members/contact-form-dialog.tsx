@@ -86,6 +86,25 @@ type Props = {
   readonly contact?: ContactInitial;
   /** Single ReactElement used as the dialog trigger (DialogTrigger render). */
   readonly trigger: React.ReactElement;
+  /**
+   * 108 PR-B — a caller-specific description for ADD mode. The restore
+   * dialog opens this form for a member with NO contacts, where the generic
+   * "add another person … as a secondary contact" is wrong on both counts:
+   * there is no other person, and the first contact becomes the primary.
+   */
+  readonly description?: string;
+  /**
+   * 108 PR-B — fires after a successful ADD (never on a refused one), before
+   * the router refresh. The restore dialog uses it to restore the member
+   * again in place now that a primary exists.
+   */
+  readonly onSaved?: () => void;
+  /**
+   * 108 PR-B — refuse to open (the trigger stays focusable; see the restore
+   * dialog for why it is `aria-disabled`, not `disabled`). Set while the
+   * caller has a request in flight that this form's save would race.
+   */
+  readonly disabled?: boolean;
 };
 
 type FormValues = {
@@ -108,7 +127,15 @@ type FormValues = {
   art14_attested: boolean;
 };
 
-export function ContactFormDialog({ memberId, mode, contact, trigger }: Props) {
+export function ContactFormDialog({
+  memberId,
+  mode,
+  contact,
+  trigger,
+  description,
+  onSaved,
+  disabled = false,
+}: Props) {
   const t = useTranslations('admin.members.contactForm');
   const tf = useTranslations('admin.members.create.fields');
   const tA = useTranslations('admin.members.detail.contactActions');
@@ -195,6 +222,7 @@ export function ContactFormDialog({ memberId, mode, contact, trigger }: Props) {
   });
 
   const handleOpenChange = (next: boolean) => {
+    if (next && disabled) return;
     if (next) {
       // Re-seed from the latest props every time the dialog opens so a
       // previous cancelled edit doesn't leave stale values behind.
@@ -213,18 +241,30 @@ export function ContactFormDialog({ memberId, mode, contact, trigger }: Props) {
 
   const handleError = async (res: Response): Promise<void> => {
     const body = (await res.json().catch(() => ({}))) as {
-      error?: { code?: string; details?: { field?: string } };
+      error?: { code?: string; details?: { field?: string; reason?: string } };
     };
     const code = body.error?.code;
     const field = body.error?.details?.field;
-    if (res.status === 409 && code === 'conflict' && emailEditable) {
+    const reason = body.error?.details?.reason;
+    // 108 PR-B (T041 round 4, F4-#2) — a 409 is about the EMAIL only when the
+    // server says so (or predates the reason token). The primacy reasons
+    // (`primary_contact_race` / `no_primary_contact`) mean the member's
+    // contacts changed under this form; pinning "email already in use" on an
+    // address nobody has used would be a lie with no way forward.
+    const emailConflict =
+      res.status === 409 &&
+      code === 'conflict' &&
+      (reason === undefined || reason === 'contact_email_in_use');
+    if (res.status === 409 && code === 'conflict' && !emailConflict) {
+      toast.error(tA('errors.conflict'));
+    } else if (emailConflict && emailEditable) {
       // Field-level rejection — surface inline on the email input (+ focus)
       // instead of a transient toast (audit XF-01). Only when the email field
       // is editable (add, or an unlinked contact on edit); a read-only email
       // must NOT pin a 409 onto the disabled field (setFocus would no-op).
       setError('email', { type: 'server', message: tA('errors.emailTaken') });
       setFocus('email');
-    } else if (res.status === 409 && code === 'conflict') {
+    } else if (emailConflict) {
       toast.error(tA('errors.emailTaken'));
     } else if (
       res.status === 400 &&
@@ -277,6 +317,7 @@ export function ContactFormDialog({ memberId, mode, contact, trigger }: Props) {
           return;
         }
         toast.success(tA('addSuccess'));
+        onSaved?.();
       } else {
         // edit — patch only changed fields. `email` is included only when the
         // field is editable (unlinked contact); the route updates it in place.
@@ -337,7 +378,13 @@ export function ContactFormDialog({ memberId, mode, contact, trigger }: Props) {
         }
       }
       setOpen(false);
-      router.refresh();
+      // A caller that passed `onSaved` owns the follow-up (the restore dialog
+      // restores again, which refreshes once on its own); refreshing here too
+      // would re-render the server tree twice (T041 UX round 2, N6c).
+      // Keyed on the branch that fired the callback, not on the prop's
+      // presence: an EDIT caller that passes `onSaved` keeps its refresh
+      // (round 4, F4-#13).
+      if (!(mode === 'add' && onSaved)) router.refresh();
     } catch {
       toast.error(tA('errors.generic'));
     } finally {
@@ -362,7 +409,7 @@ export function ContactFormDialog({ memberId, mode, contact, trigger }: Props) {
               {mode === 'add' ? t('title') : t('editTitle')}
             </DialogTitle>
             <DialogDescription>
-              {mode === 'add' ? t('description') : t('editDescription')}
+              {mode === 'add' ? (description ?? t('description')) : t('editDescription')}
             </DialogDescription>
           </DialogHeader>
 

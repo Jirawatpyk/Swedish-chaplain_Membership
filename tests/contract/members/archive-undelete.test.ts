@@ -216,7 +216,7 @@ describe('contract: POST /api/members/[memberId]/undelete (T134)', () => {
   it('200 happy path — undelete succeeds', async () => {
     requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildMembersDepsMock.mockReturnValueOnce({});
-    undeleteMemberMock.mockResolvedValueOnce(ok(activeMember));
+    undeleteMemberMock.mockResolvedValueOnce(ok({ member: activeMember, designatedContactId: null }));
     const res = await invokeUndelete();
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -279,5 +279,211 @@ describe('contract: POST /api/members/[memberId]/undelete (T134)', () => {
     );
     const res = await invokeUndelete();
     expect(res.status).toBe(500);
+  });
+
+  // --- 108 T033 (US2 / FR-014) — designate a primary while unarchiving ------
+
+  async function invokeUndeleteWithBody(
+    body: unknown,
+    headers: Record<string, string> = { 'idempotency-key': 'idem-1' },
+  ) {
+    const { POST } = await import(
+      '@/app/api/members/[memberId]/undelete/route'
+    );
+    return POST(
+      makeRequest(`/api/members/${MEMBER_ID}/undelete`, body, headers),
+      { params: Promise.resolve({ memberId: MEMBER_ID }) },
+    );
+  }
+
+  const CONTACT_A = '66666666-6666-4666-8666-666666666666';
+  const CONTACT_B = '77777777-7777-4777-8777-777777777777';
+
+  it('409 no_primary_contact — carries the designatable contacts for the dialog', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+    buildMembersDepsMock.mockReturnValueOnce({});
+    undeleteMemberMock.mockResolvedValueOnce(
+      err({
+        type: 'state_error',
+        code: 'no_primary_contact',
+        designatable: [
+          { contactId: CONTACT_A, firstName: 'Ann', lastName: 'Alpha' },
+          { contactId: CONTACT_B, firstName: 'Bo', lastName: 'Beta' },
+        ],
+      }),
+    );
+    const res = await invokeUndelete();
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error.code).toBe('no_primary_contact');
+    // The dialog cannot offer a choice it was not given; the shape is part of
+    // the contract, not an implementation detail of the banner.
+    expect(body.error.details.designatable).toEqual([
+      { contact_id: CONTACT_A, first_name: 'Ann', last_name: 'Alpha' },
+      { contact_id: CONTACT_B, first_name: 'Bo', last_name: 'Beta' },
+    ]);
+  });
+
+  it('409 no_primary_contact with an empty list when the member has no live contacts', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+    buildMembersDepsMock.mockReturnValueOnce({});
+    undeleteMemberMock.mockResolvedValueOnce(
+      err({ type: 'state_error', code: 'no_primary_contact', designatable: [] }),
+    );
+    const res = await invokeUndelete();
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error.details.designatable).toEqual([]);
+  });
+
+  it('200 — forwards designate_primary_contact_id to the use case', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+    buildMembersDepsMock.mockReturnValueOnce({});
+    undeleteMemberMock.mockResolvedValueOnce(ok({ member: activeMember, designatedContactId: null }));
+    const res = await invokeUndeleteWithBody({
+      designate_primary_contact_id: CONTACT_B,
+    });
+    expect(res.status).toBe(200);
+    expect(undeleteMemberMock).toHaveBeenCalledWith(
+      MEMBER_ID,
+      expect.objectContaining({ actorUserId: 'admin-1' }),
+      expect.anything(),
+      { designatePrimaryContactId: CONTACT_B },
+    );
+  });
+
+  it('400 when designate_primary_contact_id is not a uuid', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+    buildMembersDepsMock.mockReturnValueOnce({});
+    const res = await invokeUndeleteWithBody({
+      designate_primary_contact_id: 'not-a-uuid',
+    });
+    expect(res.status).toBe(400);
+    expect(undeleteMemberMock).not.toHaveBeenCalled();
+  });
+
+  it('the idempotency body hash covers the designation, so two designations do not collide', async () => {
+    const { hashRequestBody } = await import('@/lib/idempotency');
+    const hashMock = vi.mocked(hashRequestBody);
+    hashMock.mockClear();
+
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+    buildMembersDepsMock.mockReturnValueOnce({});
+    undeleteMemberMock.mockResolvedValueOnce(ok({ member: activeMember, designatedContactId: null }));
+    await invokeUndeleteWithBody({ designate_primary_contact_id: CONTACT_A });
+
+    // A hash computed over `{}` would make "restore designating A" and
+    // "restore designating B" the same request under one Idempotency-Key —
+    // the second would replay the first's response having designated nobody.
+    expect(hashMock).toHaveBeenCalledWith(
+      { designate_primary_contact_id: CONTACT_A },
+      expect.stringContaining('/undelete'),
+    );
+  });
+
+  // --- T041 review round 1 -------------------------------------------------
+
+  it('409 no_primary_contact IS remembered under the key (security M2): the key is already reserved', async () => {
+    // `reserveIdempotencyRecord` has already written the key. Not remembering
+    // the response leaves `response: null`, so a replay with the same key gets
+    // `idempotency_conflict` — the opposite of what "not remembered" claimed.
+    // The 409 is non-mutating and safe to replay; a NEW designation is a NEW
+    // key (the UI mints one per click).
+    const { rememberIdempotentResponse } = await import('@/lib/idempotency');
+    const remember = vi.mocked(rememberIdempotentResponse);
+    remember.mockClear();
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+    buildMembersDepsMock.mockReturnValueOnce({});
+    undeleteMemberMock.mockResolvedValueOnce(
+      err({ type: 'state_error', code: 'no_primary_contact', designatable: [] }),
+    );
+    const res = await invokeUndelete();
+    expect(res.status).toBe(409);
+    expect(remember).toHaveBeenCalledWith(
+      expect.anything(),
+      'idem-1',
+      expect.anything(),
+      expect.objectContaining({ status: 409 }),
+    );
+  });
+
+  it('409 designatable entries carry the email (UX M5)', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+    buildMembersDepsMock.mockReturnValueOnce({});
+    undeleteMemberMock.mockResolvedValueOnce(
+      err({
+        type: 'state_error',
+        code: 'no_primary_contact',
+        designatable: [
+          { contactId: CONTACT_A, firstName: 'Ann', lastName: 'Alpha', email: 'ann@example.com' },
+        ],
+      }),
+    );
+    const res = await invokeUndelete();
+    const body = await res.json();
+    expect(body.error.details.designatable).toEqual([
+      { contact_id: CONTACT_A, first_name: 'Ann', last_name: 'Alpha', email: 'ann@example.com' },
+    ]);
+  });
+
+  it('200 body names the designated contact, or null when none was needed (reliability L4c)', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+    buildMembersDepsMock.mockReturnValueOnce({});
+    undeleteMemberMock.mockResolvedValueOnce(
+      ok({ member: activeMember, designatedContactId: CONTACT_B }),
+    );
+    const res = await invokeUndeleteWithBody({ designate_primary_contact_id: CONTACT_B });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.status).toBe('active');
+    expect(body.designated_primary_contact_id).toBe(CONTACT_B);
+
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+    buildMembersDepsMock.mockReturnValueOnce({});
+    undeleteMemberMock.mockResolvedValueOnce(
+      ok({ member: activeMember, designatedContactId: null }),
+    );
+    const res2 = await invokeUndelete();
+    const body2 = await res2.json();
+    expect(body2.designated_primary_contact_id).toBeNull();
+  });
+
+  it('409 state_error undelete_erased for an erased member (reliability L5)', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+    buildMembersDepsMock.mockReturnValueOnce({});
+    undeleteMemberMock.mockResolvedValueOnce(
+      err({ type: 'state_error', code: 'undelete_erased' }),
+    );
+    const res = await invokeUndelete();
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error.code).toBe('state_error');
+    expect(body.error.details.code).toBe('undelete_erased');
+    // Round 4 (F4-#8): a non-browser consumer reads the message; "Member is
+    // not archived." states the opposite of the truth for an erased member.
+    expect(body.error.message).toMatch(/erased/i);
+    expect(body.error.message).not.toMatch(/not archived/i);
+  });
+
+  it('200 — super_admin may designate and restore', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce({
+      ...adminContext,
+      current: {
+        ...adminContext.current,
+        user: { ...adminContext.current.user, id: 'super-1', role: 'super_admin' },
+      },
+    });
+    buildMembersDepsMock.mockReturnValueOnce({});
+    undeleteMemberMock.mockResolvedValueOnce(ok({ member: activeMember, designatedContactId: null }));
+    const res = await invokeUndeleteWithBody({
+      designate_primary_contact_id: CONTACT_A,
+    });
+    expect(res.status).toBe(200);
+    expect(undeleteMemberMock).toHaveBeenCalledWith(
+      MEMBER_ID,
+      expect.objectContaining({ actorUserId: 'super-1' }),
+      expect.anything(),
+      { designatePrimaryContactId: CONTACT_A },
+    );
   });
 });

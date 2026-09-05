@@ -5,7 +5,7 @@
  * ADD must surface inline on #cf-email (aria-invalid + message) with focus, not
  * a toast. Rendered against real en.json with a mocked fetch.
  */
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
@@ -29,8 +29,11 @@ beforeAll(() => {
   }
 });
 
+// Shared spy so a test can assert whether the dialog refreshed the router.
+// Dereferenced lazily (inside useRouter()), so the hoisted factory is safe.
+const routerRefresh = vi.fn();
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
+  useRouter: () => ({ push: vi.fn(), refresh: routerRefresh }),
 }));
 const toastError = vi.fn();
 const toastSuccess = vi.fn();
@@ -335,6 +338,187 @@ describe('ContactFormDialog — retryable 503 (G24)', () => {
     expect(toastError).not.toHaveBeenCalledWith(
       'Something went wrong. Please try again.',
     );
+
+    vi.unstubAllGlobals();
+  });
+});
+
+describe('ContactFormDialog — 108 PR-B hooks for the restore dialog (T041 UX H2/M6)', () => {
+  beforeEach(() => {
+    vi.useRealTimers();
+    routerRefresh.mockClear();
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function openAddWith(props: { description?: string; onSaved?: () => void }) {
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <ContactFormDialog
+          memberId="m1"
+          mode="add"
+          trigger={<button>Open</button>}
+          {...props}
+        />
+      </NextIntlClientProvider>,
+    );
+    fireEvent.click(screen.getByText('Open'));
+  }
+
+  it('renders a caller-supplied description instead of the generic add copy', () => {
+    openAddWith({ description: 'Add the person who should receive the receipts.' });
+    expect(screen.getByText('Add the person who should receive the receipts.')).toBeInTheDocument();
+    expect(screen.queryByText(enMessages.admin.members.contactForm.description)).toBeNull();
+  });
+
+  it('fires onSaved after a successful ADD (and not on failure)', async () => {
+    const onSaved = vi.fn();
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: async () => ({ contact_id: 'c-new' }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    openAddWith({ onSaved });
+
+    fireEvent.change(document.querySelector('#cf-first-name')!, { target: { value: 'New' } });
+    fireEvent.change(document.querySelector('#cf-last-name')!, { target: { value: 'Person' } });
+    fireEvent.change(document.querySelector('#cf-email')!, { target: { value: 'new@person.example' } });
+    fireEvent.click(document.querySelector('#cf-art14-attested')!);
+    fireEvent.submit(document.querySelector('form')!);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+  });
+
+  it('does not open at all while `disabled` (the restore dialog is mid-request) (UX N2)', () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <ContactFormDialog memberId="m1" mode="add" disabled trigger={<button>Open</button>} />
+      </NextIntlClientProvider>,
+    );
+    fireEvent.click(screen.getByText('Open'));
+    expect(document.querySelector('form')).toBeNull();
+  });
+
+  it('leaves the refresh to the caller when onSaved is provided (UX N6c — no double refresh)', async () => {
+    const onSaved = vi.fn();
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: async () => ({ contact_id: 'c-new' }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    openAddWith({ onSaved });
+
+    fireEvent.change(document.querySelector('#cf-first-name')!, { target: { value: 'New' } });
+    fireEvent.change(document.querySelector('#cf-last-name')!, { target: { value: 'Person' } });
+    fireEvent.change(document.querySelector('#cf-email')!, { target: { value: 'new2@person.example' } });
+    fireEvent.click(document.querySelector('#cf-art14-attested')!);
+    fireEvent.submit(document.querySelector('form')!);
+
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+    expect(routerRefresh).not.toHaveBeenCalled();
+  });
+
+  it('does NOT fire onSaved when the ADD is refused', async () => {
+    const onSaved = vi.fn();
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: async () => ({ error: { code: 'conflict', reason: 'contact_email_in_use' } }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    openAddWith({ onSaved });
+
+    fireEvent.change(document.querySelector('#cf-first-name')!, { target: { value: 'New' } });
+    fireEvent.change(document.querySelector('#cf-last-name')!, { target: { value: 'Person' } });
+    fireEvent.change(document.querySelector('#cf-email')!, { target: { value: 'dup@person.example' } });
+    fireEvent.click(document.querySelector('#cf-art14-attested')!);
+    fireEvent.submit(document.querySelector('form')!);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    // give the handler a tick to settle
+    await new Promise((r) => setTimeout(r, 20));
+    expect(onSaved).not.toHaveBeenCalled();
+  });
+});
+
+describe('ContactFormDialog — 108 T041 round 4', () => {
+  it('a 409 whose reason is about primacy (not the email) is a toast, never pinned on #cf-email (F4-#2)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 409,
+        json: async () => ({
+          error: { code: 'conflict', details: { reason: 'primary_contact_race' } },
+        }),
+      }),
+    );
+    openAddDialog();
+
+    fireEvent.change(document.querySelector('#cf-first-name')!, { target: { value: 'Jane' } });
+    fireEvent.change(document.querySelector('#cf-last-name')!, { target: { value: 'Doe' } });
+    fireEvent.change(document.querySelector('#cf-email')!, {
+      target: { value: 'nobody-has-this@example.com' },
+    });
+    fireEvent.click(document.querySelector('#cf-art14-attested')!);
+    fireEvent.submit(document.querySelector('form')!);
+
+    // "That email address is already in use" on an address nobody has used
+    // would be a lie with no way forward; the existing generic conflict copy
+    // ("refresh and try again") is the honest answer.
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith(
+        enMessages.admin.members.detail.contactActions.errors.conflict,
+      ),
+    );
+    expect(document.querySelector('#cf-email')?.getAttribute('aria-invalid')).not.toBe('true');
+    expect(document.querySelector('#cf-email-error')).toBeNull();
+
+    vi.unstubAllGlobals();
+  });
+
+  it('EDIT mode with onSaved still refreshes — the caller-owned follow-up is an ADD-only contract (F4-#13)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const onSaved = vi.fn();
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <ContactFormDialog
+          memberId="m1"
+          mode="edit"
+          contact={{
+            contactId: 'c1',
+            firstName: 'Alice',
+            lastName: 'Anderson',
+            email: 'alice@old.example',
+            phone: null,
+            roleTitle: null,
+            preferredLanguage: 'en',
+            linkedUserId: null,
+            isPrimary: false,
+          }}
+          trigger={<button>Open</button>}
+          onSaved={onSaved}
+        />
+      </NextIntlClientProvider>,
+    );
+    fireEvent.click(screen.getByText('Open'));
+    fireEvent.change(document.querySelector('#cf-first-name')!, { target: { value: 'Alicia' } });
+    fireEvent.submit(document.querySelector('form')!);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    // `onSaved` is fired by the ADD branch only; an edit that merely happens
+    // to receive the prop must not lose its refresh.
+    await waitFor(() => expect(routerRefresh).toHaveBeenCalled());
+    expect(onSaved).not.toHaveBeenCalled();
 
     vi.unstubAllGlobals();
   });

@@ -9,6 +9,7 @@
  */
 
 import { and, eq, isNull, sql } from 'drizzle-orm';
+import { isUniqueViolationOnConstraint } from '@/lib/db-errors';
 import { err, ok } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { mapDbError, unexpected } from './_repo-error';
@@ -124,6 +125,12 @@ export const drizzleContactRepo: ContactRepo = {
         .returning();
       return ok(rowToContact(rows[0]!));
     } catch (e) {
+      // 108 PR-B (T041 reliability round 2, N5): two "first contact" writers
+      // outside the app can both decide isPrimary=true; the loser trips the
+      // one-primary partial index, which is a primacy race, not an email clash.
+      if (isUniqueViolationOnConstraint(e, 'contacts_one_primary_per_member')) {
+        return err({ code: 'repo.conflict', reason: 'primary_contact_race' });
+      }
       return err(mapDbError(e, 'contact_email_in_use'));
     }
   },
@@ -157,26 +164,69 @@ export const drizzleContactRepo: ContactRepo = {
     }
   },
 
+  async listByMemberInTx(tx, memberId) {
+    try {
+      const rows = await tx
+        .select()
+        .from(contacts)
+        .where(eq(contacts.memberId, memberId));
+      return ok(rows.map(rowToContact));
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
+
   async removeInTx(tx, contactId) {
     try {
-      // Capture isPrimary BEFORE the UPDATE — RETURNING reflects
-      // post-SET values, and SET forces isPrimary=false.
-      const [before] = await tx
+      // 108 PR-B — the primacy decision is IN the write. `is_primary = false`
+      // in the WHERE means a row that was promoted by a concurrent tx (whose
+      // row lock we wait on, then re-evaluate against) matches 0 rows here
+      // instead of being soft-deleted out from under the member.
+      const updated = await tx
+        .update(contacts)
+        .set({ removedAt: new Date() })
+        .where(
+          and(
+            eq(contacts.contactId, contactId),
+            eq(contacts.isPrimary, false),
+          ),
+        )
+        .returning();
+      if (updated.length > 0) {
+        return ok({ contact: rowToContact(updated[0]!), wasPrimary: false });
+      }
+
+      // 0 rows → distinguish "no such contact" from "it is the primary".
+      const [probe] = await tx
         .select({ isPrimary: contacts.isPrimary })
         .from(contacts)
         .where(eq(contacts.contactId, contactId))
         .limit(1);
-      const wasPrimary = before?.isPrimary ?? false;
-
-      const updated = await tx
-        .update(contacts)
-        .set({ removedAt: new Date(), isPrimary: false })
-        .where(eq(contacts.contactId, contactId))
-        .returning();
-      if (updated.length === 0) return err({ code: 'repo.not_found' });
-      return ok({ contact: rowToContact(updated[0]!), wasPrimary });
+      if (!probe) return err({ code: 'repo.not_found' });
+      return err({ code: 'repo.conflict', reason: 'cannot_remove_primary' });
     } catch (e) {
       return err(unexpected(e));
+    }
+  },
+
+  async designatePrimaryInTx(tx, memberId, contactId) {
+    try {
+      const updated = await tx
+        .update(contacts)
+        .set({ isPrimary: true, updatedAt: new Date() })
+        .where(
+          and(
+            eq(contacts.contactId, contactId),
+            eq(contacts.memberId, memberId),
+            isNull(contacts.removedAt),
+            eq(contacts.isPrimary, false),
+          ),
+        )
+        .returning();
+      if (updated.length === 0) return err({ code: 'repo.not_found' });
+      return ok(rowToContact(updated[0]!));
+    } catch (e) {
+      return err(mapDbError(e, 'primary_contact_race'));
     }
   },
 
@@ -494,23 +544,22 @@ export const drizzleContactRepo: ContactRepo = {
           ),
         )
         .returning();
-      // Order is intentional: check the promotion TARGET first. If the target
-      // contact does not exist / is not in this member, `not_found` is the most
-      // specific, actionable error — preferred over `no current primary` even
-      // when BOTH the demote and promote matched zero rows. Both error branches
-      // return `err`, so the caller's throw-to-rollback undoes the demote either
-      // way; the only thing the ordering decides is WHICH error the caller sees.
+      // The promotion TARGET decides: if it does not exist / is not in this
+      // member / is removed, `not_found` — the caller's throw-to-rollback
+      // undoes the demote.
       if (promoted.length === 0) {
         return err({
           code: 'repo.not_found',
         });
       }
+      // No current primary → this promote IS the designation (108 PR-B, T041
+      // round 3). The member still ends the tx with exactly one live primary,
+      // so the deferred trigger and the in-tx policy are unaffected; only the
+      // refusal that used to sit here (`no_current_primary`) is gone — it left
+      // the inventory runbook's "promote a remaining contact" pointing at 409.
       const demotedRow = demoted[0];
-      if (!demotedRow) {
-        return err({ code: 'repo.conflict', reason: 'no_current_primary' });
-      }
       return ok({
-        demoted: rowToContact(demotedRow),
+        demoted: demotedRow ? rowToContact(demotedRow) : null,
         promoted: rowToContact(promoted[0]!),
       });
     } catch (e) {

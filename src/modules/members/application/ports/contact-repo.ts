@@ -83,10 +83,30 @@ export interface ContactRepo {
   ): Promise<Result<Contact, RepoError>>;
 
   /**
-   * Soft-delete (`removedAt = now`). A primary contact cannot be removed
-   * while still primary — caller must `promotePrimary` first. Does NOT
-   * emit audit events — caller emits `contact_removed` with the
-   * `was_primary` flag derived from the returned row.
+   * 108 PR-B — every contact row of the member (removed rows INCLUDED),
+   * read with the caller's transaction so it reflects the writes that tx
+   * has already made. This is the read the exactly-one-primary policy
+   * (`assertPrimaryContactInvariant`) runs on AFTER a mutation, inside the
+   * same tx: a read on the pool-global `db` would see the pre-write state
+   * and pass while the invariant is broken. Removed rows are included
+   * because the policy also asserts "a removed contact is never primary".
+   */
+  listByMemberInTx(
+    tx: TenantTx,
+    memberId: MemberId,
+  ): Promise<Result<Contact[], RepoError>>;
+
+  /**
+   * Soft-delete (`removedAt = now`) — refused in the SAME statement when the
+   * row is the live primary (`WHERE is_primary = false`), surfaced as
+   * `repo.conflict{reason:'cannot_remove_primary'}`. The refusal lives in
+   * the write because a read taken before the tx cannot see a concurrent
+   * promote (108 PR-B: promote(Y) racing remove(Y) left 50/50 members at
+   * zero primaries through the old pre-check). Caller must `promotePrimary`
+   * first. `is_primary` is no longer forced to false here — a row that
+   * reaches the UPDATE is non-primary by construction, so `wasPrimary` is
+   * always `false` on success; the field is kept so the `contact_removed`
+   * audit payload shape is unchanged. Does NOT emit audit events.
    */
   removeInTx(
     tx: TenantTx,
@@ -94,15 +114,39 @@ export interface ContactRepo {
   ): Promise<Result<{ contact: Contact; wasPrimary: boolean }, RepoError>>;
 
   /**
+   * 108 PR-B (FR-014) — make a LIVE, currently non-primary contact of the
+   * member primary, with NO demote step: this is for a member that has no
+   * primary to demote (unarchive designation). `WHERE contact_id = ? AND
+   * member_id = ? AND removed_at IS NULL AND is_primary = false` — 0 rows
+   * is `repo.not_found` (missing, removed concurrently, another member's
+   * contact, or already primary), which the caller turns into the
+   * "designation lost a race → whole action fails" outcome. A second live
+   * primary trips `contacts_one_primary_per_member` → `repo.conflict
+   * {reason:'primary_contact_race'}`. Does NOT emit audit — caller emits
+   * `member_primary_contact_changed` with `old_primary_contact_id: null`.
+   */
+  designatePrimaryInTx(
+    tx: TenantTx,
+    memberId: MemberId,
+    contactId: ContactId,
+  ): Promise<Result<Contact, RepoError>>;
+
+  /**
    * Demote the current primary + promote the target in one transaction.
    * Maps the partial-index race condition to `repo.conflict`. Does NOT
    * emit audit events — caller emits `member_primary_contact_changed`.
+   *
+   * 108 PR-B (T041 round 3) — a member with NO current primary is not an
+   * error: the promote is then a designation and `demoted` is `null`
+   * (caller records `old_primary_contact_id: null`, the same shape as
+   * `designatePrimaryInTx`). Refusing it left the inventory runbook's
+   * "promote a remaining contact" pointing at a 409.
    */
   promotePrimaryInTx(
     tx: TenantTx,
     memberId: MemberId,
     newPrimaryContactId: ContactId,
-  ): Promise<Result<{ demoted: Contact; promoted: Contact }, RepoError>>;
+  ): Promise<Result<{ demoted: Contact | null; promoted: Contact }, RepoError>>;
 
   /**
    * Bind an F1 user account to a contact. Used on invitation acceptance

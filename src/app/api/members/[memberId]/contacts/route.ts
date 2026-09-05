@@ -160,11 +160,24 @@ export async function POST(
         {
           error: {
             code: 'conflict',
-            message: 'A contact with this email address already exists.',
+            // Round 4 (F4-#2): only an email collision is about the email.
+            // The primacy reasons mean the member's contacts changed under
+            // this request; the client keys its copy on `details.reason`.
+            message:
+              result.error.reason === 'contact_email_in_use'
+                ? 'A contact with this email address already exists.'
+                : "The member's contacts changed while this request ran. Refresh and try again.",
             details: { reason: result.error.reason },
           },
         },
         { status: 409 },
+      );
+    case 'not_found':
+      // 108 PR-B — the member lock is the first read of addContact; a missing
+      // or another tenant's member is a 404, not the FK 500 it used to be.
+      return NextResponse.json(
+        { error: { code: 'not_found', message: 'Member not found.' } },
+        { status: 404 },
       );
     case 'server_error':
     default:

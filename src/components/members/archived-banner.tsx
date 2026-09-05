@@ -12,7 +12,7 @@
  * passed as props — the component itself is presentational only.
  */
 
-import { useState, useTransition } from 'react';
+import { useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations, useLocale } from 'next-intl';
 import { toast } from 'sonner';
@@ -26,6 +26,21 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import {
+  RestorePrimaryDialog,
+  type DesignatableContact,
+  type RestorePrimaryNotice,
+} from '@/components/members/restore-primary-dialog';
+
+/** The 409 `no_primary_contact` payload shape (snake_case on the wire). */
+type NoPrimaryDetails = {
+  readonly designatable?: ReadonlyArray<{
+    readonly contact_id: string;
+    readonly first_name: string;
+    readonly last_name: string;
+    readonly email: string;
+  }>;
+};
 
 type ArchiveWindow =
   | { state: 'within_window'; daysRemaining: number }
@@ -43,15 +58,61 @@ export function ArchivedBanner({
   windowStatus,
 }: Props) {
   const t = useTranslations('admin.members.archive');
+  const tD = useTranslations('admin.members.undelete.designate');
   const locale = useLocale();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [loading, setLoading] = useState(false);
+  // 108 FR-014 — the designate dialog. Mounted as ONE sibling instance
+  // (below the Card) and driven by state, so Base UI runs its close cycle and
+  // `finalFocus` lands back on the Restore button.
+  const [designateOpen, setDesignateOpen] = useState(false);
+  const [designatable, setDesignatable] = useState<ReadonlyArray<DesignatableContact>>([]);
+  const [notice, setNotice] = useState<RestorePrimaryNotice | null>(null);
+  const restoreButtonRef = useRef<HTMLButtonElement>(null);
+  // Set the moment a restore SUCCEEDS. `router.refresh()` then re-renders the
+  // server tree and this whole banner unmounts, so returning focus to the
+  // Restore button would drop it on <body> (memory: dialog-focus-lost-after-
+  // unmount — axe never catches it; the T040 e2e did). On success focus goes
+  // to the staff layout's #main-content landmark, which survives; on cancel,
+  // to the button that opened the dialog.
+  const restoredRef = useRef(false);
+  // A failure that happens while the dialog is open is reported only AFTER
+  // the dialog has closed: a toast fired under an open modal is aria-hidden,
+  // and a dialog left open on "no contacts left" after a contact WAS added
+  // invites a second, wrong add (T041 UX round 2, N1). The page, refreshed,
+  // becomes the source of truth.
+  const pendingErrorRef = useRef<string | null>(null);
+  const dialogFinalFocus = () => {
+    if (typeof document === 'undefined') return null;
+    const landmark = document.getElementById('main-content');
+    return restoredRef.current ? landmark : (restoreButtonRef.current ?? landmark);
+  };
 
   const canUndelete = windowStatus.state === 'within_window';
 
-  async function handleUndelete() {
+  /**
+   * One request per click, each under a FRESH Idempotency-Key. The server
+   * remembers every terminal response under its key — including the 409
+   * `no_primary_contact` question — so re-sending the ANSWER (a different
+   * body) under the first key would be an idempotency conflict. A new
+   * designation is a new key.
+   */
+  async function handleUndelete(designatePrimaryContactId?: string) {
     setLoading(true);
+    // A second lost race must be announced again: `role="alert"` announces on
+    // mount, so the previous notice is cleared before the next answer arrives
+    // (T041 UX round 2, N6a).
+    setNotice(null);
+    /** Toast now, or — while the dialog is open — after it has closed. */
+    const reportError = (message: string) => {
+      if (designateOpen) {
+        pendingErrorRef.current = message;
+        setDesignateOpen(false);
+      } else {
+        toast.error(message);
+      }
+    };
     try {
       const idempotencyKey = crypto.randomUUID();
       const res = await fetch(`/api/members/${memberId}/undelete`, {
@@ -60,31 +121,83 @@ export function ArchivedBanner({
           'Content-Type': 'application/json',
           'Idempotency-Key': idempotencyKey,
         },
+        ...(designatePrimaryContactId === undefined
+          ? {}
+          : {
+              body: JSON.stringify({
+                designate_primary_contact_id: designatePrimaryContactId,
+              }),
+            }),
       });
       if (res.ok) {
-        toast.success(t('undeleteSuccess'));
-        startTransition(() => {
-          router.refresh();
-        });
+        restoredRef.current = true;
+        // The SERVER says whether anyone was designated — a primary can
+        // appear between the 409 and the retry, in which case the call sent a
+        // designation and nothing was set (T041 reliability review, L4c).
+        const body = (await res.json().catch(() => ({}))) as {
+          designated_primary_contact_id?: string | null;
+        };
+        const designated =
+          typeof body.designated_primary_contact_id === 'string' &&
+          body.designated_primary_contact_id.length > 0;
+        toast.success(designated ? tD('successDesignated') : t('undeleteSuccess'));
+        if (designateOpen) {
+          // Close first; the refresh runs from `onCloseComplete` so the
+          // dialog's close cycle (and `finalFocus`) finishes BEFORE the server
+          // tree re-renders and this banner unmounts (T041 UX review, M8).
+          setDesignateOpen(false);
+        } else {
+          // The plain-restore path never opened the dialog, so no close
+          // cycle will move focus — move it to the surviving landmark here
+          // before the refresh unmounts this banner.
+          document.getElementById('main-content')?.focus();
+          startTransition(() => {
+            router.refresh();
+          });
+        }
       } else {
         const data = (await res.json().catch(() => ({}))) as {
-          error?: { code?: string };
+          error?: { code?: string; details?: NoPrimaryDetails & { code?: string } };
         };
         const code = data.error?.code ?? 'server_error';
         // Map the server error CODE to localized copy — never render the
         // server's raw English `error.message`.
-        if (code === 'archive_window_expired') {
-          toast.error(t('windowExpiredToast'));
+        if (code === 'no_primary_contact') {
+          // Not an error to toast about on the first pass — it is the
+          // question the dialog asks. On a SECOND pass (the chosen contact
+          // vanished under us) say so INSIDE the dialog — a toast would sit
+          // behind the modal's aria-hidden (T041 UX review, H1) — and offer
+          // the fresh list.
+          const list = (data.error?.details?.designatable ?? []).map((c) => ({
+            contactId: c.contact_id,
+            firstName: c.first_name,
+            lastName: c.last_name,
+            email: c.email,
+          }));
+          setDesignatable(list);
+          setNotice(
+            designatePrimaryContactId === undefined
+              ? null
+              : list.length === 0
+                ? 'contact_gone_none'
+                : 'contact_gone',
+          );
+          setDesignateOpen(true);
+        } else if (code === 'archive_window_expired') {
+          reportError(t('windowExpiredToast'));
         } else if (code === 'state_error') {
-          toast.error(t('undeleteNotArchived'));
+          // An erased member is a different fact from "not archived"
+          // (T041 reliability round 2, N4).
+          const detail = data.error?.details?.code;
+          reportError(detail === 'undelete_erased' ? t('undeleteErased') : t('undeleteNotArchived'));
         } else if (code === 'not_found') {
-          toast.error(t('undeleteNotFound'));
+          reportError(t('undeleteNotFound'));
         } else {
-          toast.error(t('undeleteError'));
+          reportError(t('undeleteError'));
         }
       }
     } catch {
-      toast.error(t('undeleteError'));
+      reportError(t('undeleteError'));
     } finally {
       setLoading(false);
     }
@@ -112,6 +225,7 @@ export function ArchivedBanner({
   const disabled = loading || isPending;
 
   return (
+    <>
     <Card className="border-destructive/40 bg-destructive/5 p-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex gap-3">
@@ -138,9 +252,10 @@ export function ArchivedBanner({
         <div className="flex shrink-0 items-center">
           {canUndelete ? (
             <Button
+              ref={restoreButtonRef}
               variant="outline"
               size="sm"
-              onClick={handleUndelete}
+              onClick={() => void handleUndelete()}
               disabled={disabled}
               aria-label={t('undeleteCta')}
             >
@@ -167,5 +282,38 @@ export function ArchivedBanner({
         </div>
       </div>
     </Card>
+    <RestorePrimaryDialog
+      open={designateOpen}
+      onOpenChange={(next) => {
+        setDesignateOpen(next);
+        if (!next) setNotice(null);
+      }}
+      onCloseComplete={() => {
+        const pendingError = pendingErrorRef.current;
+        pendingErrorRef.current = null;
+        if (pendingError !== null) toast.error(pendingError);
+        // Cancel / Escape: the dialog's `finalFocus` has already returned
+        // focus to the Restore button — nothing to do here (round 4, F4-#6).
+        if (!restoredRef.current && pendingError === null) return;
+        // The refresh paths: focus the landmark itself, not whatever Floating
+        // UI picks as the first tabbable child of <main> — the same target the
+        // plain path uses (T041 UX round 2, N4) — BEFORE the server tree
+        // re-renders and this banner unmounts.
+        document.getElementById('main-content')?.focus();
+        startTransition(() => {
+          router.refresh();
+        });
+      }}
+      memberId={memberId}
+      designatable={designatable}
+      notice={notice}
+      onConfirm={(contactId) => void handleUndelete(contactId)}
+      // The zero-contacts door: `addContact` made the new contact the
+      // primary, so restoring again — in place, no click hunting — succeeds.
+      onContactAdded={() => void handleUndelete()}
+      submitting={loading}
+      finalFocus={dialogFinalFocus}
+    />
+    </>
   );
 }

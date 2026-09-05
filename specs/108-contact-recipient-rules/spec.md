@@ -201,6 +201,54 @@ A contact signed in to the member portal, the primary contact included, can see 
 
 - **FR-010**: Every non-archived, non-erased member MUST have exactly one primary contact at all times. Concurrent contact operations MUST NOT produce zero or two primaries; the operation that would break the rule MUST be refused with a retry message, not silently applied.
 - **FR-010a**: The invariant MUST be guaranteed below the application as well (a database-level check evaluated at commit). Introducing that guarantee MUST first verify that no existing non-archived, non-erased member already violates it; if any does, the rollout MUST stop before the guarantee is installed (a failed deployment is the intended outcome), and the operator fixes those members first. The verification reports counts only.
+> **AMENDMENT — the DB-level guarantee is scoped to members that HAVE at least
+> one contact row (raised + DECIDED 2026-09-05, during PR-B implementation).
+> Decision: NARROW FR-010's database enforcement and FR-010a's pre-check to
+> members with `EXISTS (any contact row)`. FR-010 as an application-level rule is
+> unchanged.**
+>
+> FR-010 says "at all times", and a member with **zero contact rows** literally
+> violates it. That state is unreachable through the application —
+> `createWithPrimaryContactInTx` writes the member and its primary contact in one
+> transaction — but it is reachable, and common, from test fixtures that seed a
+> member row directly.
+>
+> The decisive fact is not fixture churn, it is that the guarantee could not be
+> installed at all as originally specified. `integration-smoke.yml` is a REQUIRED
+> status check on `main`; it runs against a single persistent CI Neon branch that
+> has been accumulating `test-*` tenants since July and that this repository's
+> maintainers cannot inspect or clean from a PR. Migration `0293`'s pre-check
+> would raise there, so **PR-B could never merge**. The same is true of the
+> shared `dev` branch: measured 2026-09-05, 72 `test-*` tenants hold 150
+> violating members, and **every single one has zero contact rows** — not one is
+> a member that lost its primary. Production (`swecham`, 150 members) and every
+> `preview/*` branch (copy-on-write from prod) hold zero violations under either
+> reading. Cleaning `dev` would not have helped; nor would repairing the 58
+> integration fixtures that seed contact-less members.
+>
+> Scope of the narrowing, stated as ONE predicate so the three enforcement points
+> cannot drift: **a non-archived, non-erased member that has at least one contact
+> row at commit time must have exactly one live primary.** Consequences:
+>
+> - a contact INSERT or UPDATE always leaves a row behind, so those paths keep the
+>   full rule — *removing* (soft-deleting) the last primary of a live member
+>   raises, and so does hard-deleting the primary while a secondary remains;
+> - hard-deleting **every** contact row of a live member is exempt, exactly like
+>   a member that never had one. No application path hard-deletes a contact; the
+>   test suite's tenant cleanup does (`DELETE FROM contacts WHERE tenant_id = …`
+>   as its own statement, before `members`), in the shared helper and in 38
+>   suites, and the tenant-wide statement leaves zero rows;
+> - the **members** trigger (`UPDATE OF status, erased_at`) carries the same
+>   exemption — a member with no contact rows is not checked;
+> - the **pre-check** uses the identical predicate, so it never refuses a deploy
+>   over a state the installed triggers would tolerate.
+>
+> What the narrowing gives up: archiving or deactivating a contact-less member no
+> longer trips a wire that would have surfaced a bad bulk import. The
+> compensating control is `scripts/inventory-primary-contact-invariant.ts`, which
+> reports contact-less members on their own line — that population is exactly the
+> one 108 PR-A already skips money emails for.
+
 - **FR-011**: Removing the current primary contact MUST be refused with guidance to promote another contact first.
 - **FR-012**: The rule in FR-010 MUST be verified on every contact mutation that can change which contact is primary or whether a primary exists (add, promote, remove, unarchive); edits that cannot affect primacy (name, phone, language) are exempt.
 - **FR-013**: Erasure remains the one sanctioned way for a member to end with no primary; such a member MUST be excluded from all email paths.

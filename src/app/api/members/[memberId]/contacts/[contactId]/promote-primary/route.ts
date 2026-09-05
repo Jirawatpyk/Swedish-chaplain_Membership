@@ -45,7 +45,9 @@ export async function POST(
   if (result.ok) {
     return NextResponse.json(
       {
-        demoted: serialiseContact(result.value.demoted),
+        // `null` when the member had no current primary (108 PR-B, T041
+        // round 3): the promote was a designation, nobody was demoted.
+        demoted: result.value.demoted ? serialiseContact(result.value.demoted) : null,
         promoted: serialiseContact(result.value.promoted),
       },
       { status: 200 },
@@ -60,8 +62,8 @@ export async function POST(
       );
     case 'conflict':
       // Task 8 review-fix (Important 2) — `result.error.reason` is a
-      // `RepoConflictReason` machine token ('no_current_primary' /
-      // 'primary_contact_race'), not a sentence. Mirror the
+      // `RepoConflictReason` machine token ('primary_contact_race' /
+      // 'no_primary_contact'), not a sentence. Mirror the
       // `members/route.ts` POST precedent: fixed message, token in
       // `details.reason`. `code` is unchanged.
       return NextResponse.json(

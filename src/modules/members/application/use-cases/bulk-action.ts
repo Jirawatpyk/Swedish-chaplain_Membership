@@ -21,6 +21,7 @@
 
 import { z } from 'zod';
 import { runInTenant } from '@/lib/db';
+import { primaryContactTriggerViolation } from '@/lib/db-errors';
 import { logger } from '@/lib/logger';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
@@ -29,6 +30,7 @@ import {
   asMemberId,
   asPlanId,
   undelete,
+  type MemberId,
 } from '../../domain/member';
 import type { MemberRepo } from '../ports/member-repo';
 import type { AuditPort } from '../ports/audit-port';
@@ -217,6 +219,31 @@ export async function bulkAction(
         }
       }
 
+      // 108 PR-B (T041 reliability round 2, N2) — GDPR Art.17 / PDPA §33: an
+      // erased member is never restored. The single undelete gates on this;
+      // this Undo-of-archive arm had no gate, and migration 0293 exempts
+      // erased members, so an erased+archived id would have come back active.
+      if (data.action === 'unarchive') {
+        const erased = await deps.memberRepo.findErasedIdsInTx(tx, deps.tenant.slug, memberIds);
+        if (!erased.ok) throw new Error(`erased_lookup_failed:${erased.error.code}`);
+        for (const id of memberIds) {
+          if (erased.value.has(id)) throw new BulkStateError(id, 'undelete_erased');
+        }
+        // 108 PR-B (T041 round 4, F4-#5) — the same rule as the single
+        // undelete: a member with no live primary (a contact-less member
+        // included — 0293 exempts those) is not restored. Partitioned BEFORE
+        // any write; the batch stays all-or-nothing and names the member.
+        const noPrimary = await deps.memberRepo.findIdsWithoutLivePrimaryInTx(
+          tx,
+          deps.tenant.slug,
+          memberIds,
+        );
+        if (!noPrimary.ok) throw new Error(`primary_lookup_failed:${noPrimary.error.code}`);
+        for (const id of memberIds) {
+          if (noPrimary.value.has(id)) throw new BulkStateError(id, 'no_primary_contact');
+        }
+      }
+
       for (const memberId of memberIds) {
         const current = membersMap.get(memberId)!;
 
@@ -387,6 +414,36 @@ export async function bulkAction(
     if (e instanceof BulkStateError) {
       return err({ type: 'state_error', memberId: e.memberId, code: e.stateCode });
     }
+    // 108 PR-B (T041 reliability review, M2): the bulk `unarchive` arm is the
+    // Undo of a bulk archive and skips the single-member designate flow on
+    // purpose, so migration 0293's deferred trigger is what refuses a member
+    // that would come back with no live primary. Its raise arrives here at
+    // COMMIT as a bare DB error; the message names the member, so the admin
+    // gets the same per-member `state_error` the route already renders
+    // instead of "bulk operation failed" for the whole batch.
+    const violation = primaryContactTriggerViolation(e);
+    if (violation !== null && violation.memberId !== null) {
+      // Round 4 (F4-#7): the typed answer must leave a server-side trace —
+      // this is the one bulk failure an operator most needs to correlate
+      // with a member id. `warn`, not `error`: the invariant did its job.
+      logger.warn(
+        {
+          requestId: meta.requestId,
+          action: data.action,
+          memberId: violation.memberId,
+          livePrimaries: violation.livePrimaries,
+        },
+        'bulk-action: refused at COMMIT by the primary-contact invariant (0293)',
+      );
+      return err({
+        type: 'state_error',
+        memberId: violation.memberId as MemberId,
+        code: 'no_primary_contact',
+      });
+    }
+    // A raise without a member uuid in it (a future message change) falls
+    // through to the sanitized server_error below — never a blank memberId
+    // the route would render as "member  could not be restored".
     // M2: log the rich cause server-side BEFORE sanitizing the wire response.
     // The route only sees the sanitized message, so without this an FK
     // violation / `audit_failed` / deadlock during the all-or-nothing tx

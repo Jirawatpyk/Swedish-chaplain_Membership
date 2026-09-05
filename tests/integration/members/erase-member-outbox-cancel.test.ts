@@ -218,6 +218,20 @@ async function seedMemberWithRemovedContact(
       linkedUserId,
       removedAt: new Date(),
     });
+    // 108 PR-B: an ACTIVE member with contact rows must have exactly one live
+    // primary at COMMIT (migration 0293). The removed contact above is the
+    // subject of this case; the live primary is the shape the app always
+    // creates alongside a member.
+    await tx.insert(contacts).values({
+      tenantId: tenant.ctx.slug,
+      contactId: randomUUID(),
+      memberId,
+      firstName: 'Primary',
+      lastName: 'Contact',
+      email: `removed-co-primary-${randomUUID().slice(0, 8)}@example.com`,
+      preferredLanguage: 'en',
+      isPrimary: true,
+    });
     // A's OWN legitimate pending row, frozen to A's real LOGIN email (the
     // linked user's users.email — globally unique, unambiguously A's). The
     // erasure must still cancel this via the linked-login-email component.

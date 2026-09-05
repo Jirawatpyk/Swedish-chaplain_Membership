@@ -151,6 +151,29 @@ affects F7's `audienceId`-based gateway (R16).
 - **Verify-before-task**: V1 (prod count of active, non-erased members with zero live
   primaries) MUST be 0 before the migration PR merges, because prod migrates on deploy and
   the pre-check fails the build by design.
+- **V1 re-run, and the scope correction it forced (2026-09-05).** V1 checks the tenant
+  `swecham`. The pre-check DO block has **no tenant filter** — it scans the whole branch —
+  so a `swecham`-only inventory cannot answer "will the migration apply?". Measured on the
+  shared `dev` branch: **87 tenants / 411 non-archived, non-erased members**, of which
+  **72 `test-*` tenants hold 150 violating members**. Classified by shape, **all 150 have
+  zero contact rows** (`live_primaries = 0`, `any_contacts = 0`); **no member that has
+  contacts violates the invariant**, on any tenant. `swecham` on dev: 131 members, 0
+  violations. Prod: 150 members, 0 violations.
+- **Why that changed the design rather than the data.** `integration-smoke.yml` is a
+  REQUIRED check on `main` and runs against a **single persistent CI Neon branch**
+  (`CI_DATABASE_URL`) that accumulates `test-*` tenants the same way `dev` does and that
+  cannot be inspected or cleaned from a PR. The pre-check as first written would raise
+  there, so PR-B could not merge — cleaning `dev` would not help, and neither would
+  repairing the 58 integration fixtures that seed contact-less members. Hence the spec
+  AMENDMENT at FR-010/FR-010a: the DB-level guarantee and its pre-check are scoped to
+  members with `EXISTS (any contact row)`. `preview/*` branches are copy-on-write **from
+  prod** (`docs/runbooks/db-environment-branching.md` § 3), so they are clean under either
+  reading and were never the constraint.
+- **The pre-check is not vacuous.** The migration role on Neon is `neondb_owner` with
+  `rolbypassrls = true`, so the DO block reads every tenant's rows even though `members`
+  and `contacts` are RLS ENABLE + FORCE and no `app.current_tenant` GUC is set. Verified by
+  counting rows with the GUC unset (424 members visible). T031 pins this with a positive
+  control: seed a violation, expect the DO block to raise.
 
 ## R5 — Unarchive designates a primary in the same transaction
 

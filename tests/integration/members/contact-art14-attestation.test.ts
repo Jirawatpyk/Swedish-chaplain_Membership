@@ -214,25 +214,50 @@ describe('Task 8 — GDPR Art. 14 attestation (live Neon)', () => {
         planYear: 2026,
         status: 'active',
       });
-      await tx.insert(contacts).values({
-        tenantId: tenant.ctx.slug,
-        contactId,
-        memberId,
-        firstName: 'ToBeErased',
-        lastName: 'Secondary',
-        email: `erase-${rand}@example.com`,
-        preferredLanguage: 'en',
-        isPrimary: false,
-        art14AttestedAt: attestedAt,
-      });
+      await tx.insert(contacts).values([
+        {
+          // 108 PR-B: an active member must carry exactly one live primary
+          // at commit (migration 0293), so the fixture seeds the primary the
+          // app always creates alongside a member.
+          tenantId: tenant.ctx.slug,
+          contactId: randomUUID(),
+          memberId,
+          firstName: 'Primary',
+          lastName: 'Contact',
+          email: `erase-primary-${rand}@example.com`,
+          preferredLanguage: 'en',
+          isPrimary: true,
+        },
+        {
+          tenantId: tenant.ctx.slug,
+          contactId,
+          memberId,
+          firstName: 'ToBeErased',
+          lastName: 'Secondary',
+          email: `erase-${rand}@example.com`,
+          preferredLanguage: 'en',
+          isPrimary: false,
+          art14AttestedAt: attestedAt,
+        },
+      ]);
     });
 
     const erasedAt = new Date('2026-07-14T00:00:00.000Z');
-    const result = await runInTenant(tenant.ctx, (tx) =>
-      drizzleContactRepo.scrubPiiForMemberInTx(tx, memberId as MemberId, {
-        erasedAt,
-      }),
-    );
+    const result = await runInTenant(tenant.ctx, async (tx) => {
+      const scrubbed = await drizzleContactRepo.scrubPiiForMemberInTx(
+        tx,
+        memberId as MemberId,
+        { erasedAt },
+      );
+      // Real erasure co-commits `erased_at` with the scrub
+      // (erase-member.ts); a scrub that leaves an ACTIVE member with no live
+      // primary is exactly what 0293 refuses at commit (FR-013).
+      await tx
+        .update(members)
+        .set({ erasedAt })
+        .where(eq(members.memberId, memberId));
+      return scrubbed;
+    });
     expect(result.ok, JSON.stringify(result)).toBe(true);
 
     // Owner-role read (bypasses RLS) mirrors contact-scrub.test.ts's
@@ -246,7 +271,7 @@ describe('Task 8 — GDPR Art. 14 attestation (live Neon)', () => {
         art14AttestedAt: contacts.art14AttestedAt,
       })
       .from(contacts)
-      .where(eq(contacts.memberId, memberId));
+      .where(eq(contacts.contactId, contactId));
     expect(rows).toHaveLength(1);
     const row = rows[0]!;
     // Sanity: this IS the scrub having run (identity sentinel-ized).

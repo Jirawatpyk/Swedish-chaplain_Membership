@@ -1737,6 +1737,7 @@
         "rateLimited": "För många massåtgärder. Vänta och försök igen.",
         "errors": {
           "state_error": "En eller flera valda medlemmar är i ett läge som inte tillåter den här åtgärden. Uppdatera och försök igen.",
+          "no_primary_contact": "En vald medlem saknar primär kontakt och kan inte återställas i grupp. Öppna den medlemmens sida och återställ där för att välja en.",
           "not_found": "En eller flera valda medlemmar finns inte längre. Uppdatera och försök igen.",
           "plan_not_found": "Målplanen finns inte längre. Uppdatera och försök igen.",
           "bulk_cap_exceeded": "För många medlemmar valda för en omgång. Minska urvalet och försök igen.",
@@ -1783,7 +1784,8 @@
         "undeleteError": "Kunde inte återställa. Försök igen.",
         "undeleteNotArchived": "Den här medlemmen är inte arkiverad. Uppdatera sidan.",
         "undeleteNotFound": "Medlemmen hittades inte. Uppdatera sidan.",
-        "windowExpiredToast": "Återställningsfönstret (90 dagar) har gått ut. Kontakta systemadministratören för att återställa."
+        "windowExpiredToast": "Återställningsfönstret (90 dagar) har gått ut. Kontakta systemadministratören för att återställa.",
+        "undeleteErased": "Den här medlemmen har raderats och kan inte återställas."
       },
       "erase": {
         "eraseCta": "Radera (GDPR/PDPA)…",
@@ -1826,7 +1828,21 @@
         "confirmTitle": "Återställ medlem?",
         "confirmDescription": "Återställning återaktiverar medlemsposten. Kopplade portalanvändare måste logga in igen.",
         "success": "Medlemmen har återställts.",
-        "error": "Kunde inte återställa. Försök igen."
+        "error": "Kunde inte återställa. Försök igen.",
+        "designate": {
+          "title": "Välj en primär kontakt innan du återställer",
+          "description": "Den här medlemmen saknar primär kontakt. Kvitton och andra betalningsmejl går till den primära kontakten, så en måste anges innan medlemmen återställs. Valet här återställer medlemmen och gör kontakten primär i ett steg.",
+          "noContactsDescription": "Den här medlemmen har inga kontakter kvar. Lägg till en: den nya kontakten blir primär kontakt och medlemmen återställs.",
+          "contactsLabel": "Primär kontakt",
+          "confirm": "Återställ och ange som primär",
+          "cancel": "Avbryt",
+          "addContact": "Lägg till en kontakt",
+          "retry": "Den kontakten är inte längre tillgänglig. Välj en annan.",
+          "retryNone": "Den kontakten är inte längre tillgänglig, och inga andra finns kvar. Lägg till en kontakt för att fortsätta.",
+          "successDesignated": "Medlemmen har återställts och den primära kontakten är angiven.",
+          "addContactDescription": "Lägg till den person som ska få medlemmens kvitton. Personen blir primär kontakt och medlemmen återställs.",
+          "restoring": "Återställer…"
+        }
       },
       "benefits": {
         "title": "Medlemsförmåner",

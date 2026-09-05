@@ -13,25 +13,38 @@
  * use case (US3.b) because they require a 6-step atomic transaction
  * with session revocation + dual-channel notification.
  *
- * The primary-contact invariant (FR-003) is enforced at the DB layer
- * by the `contacts_one_primary_per_member` partial unique index; the
- * `promotePrimary` use case demotes BEFORE promoting to avoid a
- * partial-index collision, and maps the residual race condition to
- * `repo.conflict` (→ 409 in the API route).
+ * The primary-contact invariant (FR-003 / 108 FR-010–FR-012) is enforced
+ * three times, each catching what the layer above cannot:
+ *
+ *   1. In the WRITE — `removeInTx` refuses the live primary in its own
+ *      WHERE clause; a read taken before the tx cannot see a concurrent
+ *      promote (108 T030 reproduced 50/50 members at zero primaries).
+ *   2. In the TX, after every primacy-affecting write (add / promote /
+ *      remove) — `assertPrimaryContactInvariant` over `listByMemberInTx`
+ *      using the SAME tx, aborting (rollback) on a violation → 409.
+ *   3. At COMMIT — migration 0293's deferred trigger, the backstop for any
+ *      path that is not this file; its raise is mapped here to the same 409
+ *      so a caller never sees a 500 for a rule the UI can explain.
  */
 
 import { z } from 'zod';
-import { runInTenant } from '@/lib/db';
+import { runInTenant, type TenantTx } from '@/lib/db';
+import { primaryContactTriggerViolation } from '@/lib/db-errors';
 import { err, ok, type Result } from '@/lib/result';
 import { asPhone } from '../../domain/value-objects/phone';
 import { asEmail } from '../../domain/value-objects/email';
+import { assertPrimaryContactInvariant } from '../../domain/policies/primary-contact-invariant';
 import type { TenantContext } from '@/modules/tenants';
 import type { Contact, ContactId } from '../../domain/contact';
-import type { MemberId } from '../../domain/member';
+import type { MemberId, MemberStatus } from '../../domain/member';
 import type { Phone } from '../../domain/value-objects/phone';
 import type { AuditPort } from '../ports/audit-port';
 import type { ContactRepo } from '../ports/contact-repo';
-import type { RepoConflictReason, RepoError } from '../ports/member-repo';
+import type {
+  MemberRepo,
+  RepoConflictReason,
+  RepoError,
+} from '../ports/member-repo';
 import { UseCaseAbort } from '../tx-abort';
 
 // --- Schemas -----------------------------------------------------------------
@@ -44,13 +57,15 @@ export const addContactSchema = z.object({
   role_title: z.string().max(100).nullable().optional(),
   preferred_language: z.enum(['en', 'th', 'sv']).default('en'),
   date_of_birth: z.string().nullable().optional(),
-  // Task 8 (GDPR Art. 14) — every contact added through this use case is
-  // non-primary (isPrimary is hardcoded false below), i.e. a named third
-  // party whose data the ADMIN is supplying, not the person themselves. The
-  // admin must attest they informed that person before this write is
-  // allowed to proceed. `z.literal(true)` (not `z.boolean()`) so `false`,
-  // `undefined`, and any other value all fail validation — server-side
-  // enforcement so a direct API call cannot skip the UI checkbox.
+  // Task 8 (GDPR Art. 14) — every contact added through this use case is a
+  // named third party whose data the ADMIN is supplying, not the person
+  // themselves (a member's own primary is created with the member; since 108
+  // PR-B a first contact added to a member with no live primary BECOMES the
+  // primary, but it is still admin-supplied data). The admin must attest they
+  // informed that person before this write is allowed to proceed.
+  // `z.literal(true)` (not `z.boolean()`) so `false`, `undefined`, and any
+  // other value all fail validation — server-side enforcement so a direct API
+  // call cannot skip the UI checkbox.
   art14_attested: z.literal(true),
 });
 
@@ -112,6 +127,12 @@ export type ContactCrudError =
 export type ContactCrudDeps = {
   tenant: TenantContext;
   contactRepo: ContactRepo;
+  /**
+   * 108 PR-B — the in-tx invariant check needs the member's status (the
+   * rule is suspended for `archived`, which is exactly the member the
+   * FR-014 unarchive dialog sends staff here to add a contact to).
+   */
+  memberRepo: Pick<MemberRepo, 'findByIdInTx'>;
   audit: AuditPort;
   idFactory: { contactId(): ContactId };
 };
@@ -120,6 +141,75 @@ export type ContactCrudCallMeta = {
   actorUserId: string;
   requestId: string;
 };
+
+/**
+ * 108 PR-B — lock the member row FIRST, before any contact write.
+ *
+ * `findByIdInTx` is `SELECT … FOR UPDATE` on `members`. Every other
+ * transaction that touches a member's contacts (erase-member's scrub,
+ * undelete-member's designation, archive) locks `members` first and writes
+ * `contacts` after. Writing contacts first and locking members afterwards is
+ * a lock-order inversion: `removeContact(Y)` holding Y's row while waiting
+ * for the member ← `eraseMember` holding the member while scrubbing Y →
+ * deadlock (40P01) → 500 on both sides (T041 reliability review, H1). Taking
+ * the member lock up front also serialises two promotes on the same member
+ * without leaning on the partial unique index.
+ */
+async function lockMemberInTx(
+  tx: TenantTx,
+  memberId: MemberId,
+  deps: ContactCrudDeps,
+): Promise<MemberStatus> {
+  const member = await deps.memberRepo.findByIdInTx(tx, memberId);
+  if (!member.ok) throw new UseCaseAbort<RepoError>(member.error);
+  return member.value.status;
+}
+
+/**
+ * 108 PR-B (FR-012) — run the exactly-one-primary policy over the member's
+ * contacts AS THIS TX SEES THEM, after a primacy-affecting write and before
+ * the audit row. Throws (→ rollback) on a violation; the caller's catch turns
+ * it into a typed 409. Zero primaries is reported as `no_primary_contact`
+ * (nothing a retry can fix — the member needs a primary), anything else as
+ * `primary_contact_race` (retry).
+ *
+ * Reads through the tx on purpose: a read on the pool-global `db` would see
+ * the pre-write snapshot and pass while the invariant is broken.
+ */
+async function assertPrimaryInvariantInTx(
+  tx: TenantTx,
+  memberId: MemberId,
+  memberStatus: MemberStatus,
+  deps: ContactCrudDeps,
+): Promise<void> {
+  const rows = await deps.contactRepo.listByMemberInTx(tx, memberId);
+  if (!rows.ok) throw new UseCaseAbort<RepoError>(rows.error);
+  const verdict = assertPrimaryContactInvariant(rows.value, memberStatus);
+  if (!verdict.ok) {
+    throw new UseCaseAbort<RepoError>({
+      code: 'repo.conflict',
+      reason:
+        verdict.error.code === 'primary.zero_primaries'
+          ? 'no_primary_contact'
+          : 'primary_contact_race',
+    });
+  }
+}
+
+/**
+ * The deferred trigger (migration 0293) raises at COMMIT, i.e. from
+ * `runInTenant` itself rather than from any repo call — so it reaches the
+ * use case's outer catch as a bare DB error, not a `UseCaseAbort`. Map it to
+ * the same typed 409 the in-tx policy produces; `null` for anything else.
+ */
+function mapCommitRefusal(e: unknown): ContactCrudError | null {
+  const violation = primaryContactTriggerViolation(e);
+  if (violation === null) return null;
+  return {
+    type: 'conflict',
+    reason: violation.livePrimaries === 0 ? 'no_primary_contact' : 'primary_contact_race',
+  };
+}
 
 // --- add ---------------------------------------------------------------------
 
@@ -154,6 +244,21 @@ export async function addContact(
   const contactId = deps.idFactory.contactId();
   try {
     const contact = await runInTenant(deps.tenant, async (tx) => {
+      // Lock order: members first (see lockMemberInTx).
+      const memberStatus = await lockMemberInTx(tx, memberId, deps);
+
+      // 108 PR-B (T041 reliability review, M3): a member with no live primary
+      // — a contact-less import, or an archived member being repaired for
+      // FR-014 — could otherwise never get one: this use case always added a
+      // secondary, and promote has nothing to demote. The FIRST contact of
+      // such a member is its primary. When a live primary exists the new
+      // contact is a secondary, as before.
+      const before = await deps.contactRepo.listByMemberInTx(tx, memberId);
+      if (!before.ok) throw new UseCaseAbort<RepoError>(before.error);
+      const becomesPrimary = !before.value.some(
+        (c) => c.isPrimary && c.removedAt === null,
+      );
+
       const added = await deps.contactRepo.addInTx(tx, {
         tenantId: deps.tenant.slug,
         contactId,
@@ -164,7 +269,7 @@ export async function addContact(
         phone,
         roleTitle: data.role_title ?? null,
         preferredLanguage: data.preferred_language,
-        isPrimary: false,
+        isPrimary: becomesPrimary,
         dateOfBirth: data.date_of_birth ? new Date(data.date_of_birth) : null,
         linkedUserId: null,
         inviteBouncedAt: null,
@@ -172,7 +277,8 @@ export async function addContact(
         // already refused this call unless the admin attested; stamp the
         // real moment of attestation (not the checkbox click time on the
         // client, which we don't trust — this is the server-observed time
-        // the write actually happened).
+        // the write actually happened). The admin supplied this person's
+        // data either way, so the stamp does not depend on `becomesPrimary`.
         art14AttestedAt: new Date(),
         removedAt: null,
       });
@@ -180,6 +286,10 @@ export async function addContact(
       // the (non-existent) writes; only `throw` triggers Drizzle tx
       // rollback. Pattern mirrors archive-member.ts + change-plan.ts.
       if (!added.ok) throw new UseCaseAbort<RepoError>(added.error);
+
+      // FR-012: the member must end this tx with exactly one live primary
+      // (suspended for `archived`, so the FR-014 repair stays reachable).
+      await assertPrimaryInvariantInTx(tx, memberId, memberStatus, deps);
 
       const auditResult = await deps.audit.recordInTx(tx, deps.tenant, {
         type: 'contact_created',
@@ -196,16 +306,39 @@ export async function addContact(
       // state + audit atomic (Principle VIII audit-with-state).
       if (!auditResult.ok) throw new UseCaseAbort<RepoError>(auditResult.error);
 
+      if (becomesPrimary) {
+        // Audited like any promote; there was nobody to demote — an honest
+        // null, never a fabricated predecessor id.
+        const designated = await deps.audit.recordInTx(tx, deps.tenant, {
+          type: 'member_primary_contact_changed',
+          actorUserId: meta.actorUserId,
+          requestId: meta.requestId,
+          summary: `primary_contact_changed for ${memberId} (first contact)`,
+          payload: {
+            member_id: memberId,
+            old_primary_contact_id: null,
+            new_primary_contact_id: added.value.contactId,
+          },
+        });
+        if (!designated.ok) throw new UseCaseAbort<RepoError>(designated.error);
+      }
+
       return added.value;
     });
     return ok(contact);
   } catch (e) {
     if (e instanceof UseCaseAbort) {
       const re = e.error as RepoError;
+      // The member lock is the first read, so a missing (or another
+      // tenant's) member surfaces here — a 404, not a 500 (T041 reliability
+      // round 2, N1; on main this was an FK 23503 → 500).
+      if (re.code === 'repo.not_found') return err({ type: 'not_found' });
       if (re.code === 'repo.conflict')
         return err({ type: 'conflict', reason: re.reason });
       return err({ type: 'server_error', message: `add: ${re.code}` });
     }
+    const refused = mapCommitRefusal(e);
+    if (refused) return err(refused);
     return err({ type: 'server_error', message: 'add: unexpected' });
   }
 }
@@ -411,9 +544,11 @@ export async function removeContact(
   meta: ContactCrudCallMeta,
   deps: ContactCrudDeps,
 ): Promise<Result<Contact, ContactCrudError>> {
-  // Pre-check: refuse to remove a primary. Caller must promote another
-  // contact first. This is a UX contract (FR-003) — the partial unique
-  // index + Domain invariant is a secondary defence.
+  // Ownership check (SEC-3 IDOR guard) — a 404 decision, NOT a primacy
+  // decision. Whether the contact is the primary is decided by the write
+  // itself (`removeInTx`'s `WHERE is_primary = false`): a read here saw the
+  // pre-tx state, and 108 T030 showed a promote landing in between leaves
+  // the member with no primary if this read is what authorises the delete.
   const existing = await deps.contactRepo.findById(deps.tenant, contactId);
   if (!existing.ok) {
     if (existing.error.code === 'repo.not_found')
@@ -426,13 +561,18 @@ export async function removeContact(
   if (existing.value.memberId !== memberId) {
     return err({ type: 'not_found' });
   }
-  if (existing.value.isPrimary)
-    return err({ type: 'cannot_remove_primary' });
 
   try {
     const contact = await runInTenant(deps.tenant, async (tx) => {
+      // Lock order: members first (see lockMemberInTx).
+      const memberStatus = await lockMemberInTx(tx, memberId, deps);
+
       const removed = await deps.contactRepo.removeInTx(tx, contactId);
       if (!removed.ok) throw new UseCaseAbort<RepoError>(removed.error);
+
+      // FR-012: the write refused a primary; this catches the rest (a
+      // removal that would somehow leave the member at zero primaries).
+      await assertPrimaryInvariantInTx(tx, memberId, memberStatus, deps);
 
       const auditResult = await deps.audit.recordInTx(tx, deps.tenant, {
         type: 'contact_removed',
@@ -454,8 +594,17 @@ export async function removeContact(
     if (e instanceof UseCaseAbort) {
       const re = e.error as RepoError;
       if (re.code === 'repo.not_found') return err({ type: 'not_found' });
+      if (re.code === 'repo.conflict') {
+        // FR-011 — the write refused the live primary; keep the public error
+        // type the UI already explains ("promote another contact first").
+        if (re.reason === 'cannot_remove_primary')
+          return err({ type: 'cannot_remove_primary' });
+        return err({ type: 'conflict', reason: re.reason });
+      }
       return err({ type: 'server_error', message: `remove: ${re.code}` });
     }
+    const refused = mapCommitRefusal(e);
+    if (refused) return err(refused);
     return err({ type: 'server_error', message: 'remove: unexpected' });
   }
 }
@@ -468,16 +617,22 @@ export async function promotePrimary(
   meta: ContactCrudCallMeta,
   deps: ContactCrudDeps,
 ): Promise<
-  Result<{ demoted: Contact; promoted: Contact }, ContactCrudError>
+  Result<{ demoted: Contact | null; promoted: Contact }, ContactCrudError>
 > {
   try {
     const result = await runInTenant(deps.tenant, async (tx) => {
+      // Lock order: members first (see lockMemberInTx).
+      const memberStatus = await lockMemberInTx(tx, memberId, deps);
+
       const promoted = await deps.contactRepo.promotePrimaryInTx(
         tx,
         memberId,
         newPrimaryContactId,
       );
       if (!promoted.ok) throw new UseCaseAbort<RepoError>(promoted.error);
+
+      // FR-012: the member must end this tx with exactly one live primary.
+      await assertPrimaryInvariantInTx(tx, memberId, memberStatus, deps);
 
       const auditResult = await deps.audit.recordInTx(tx, deps.tenant, {
         type: 'member_primary_contact_changed',
@@ -486,7 +641,9 @@ export async function promotePrimary(
         summary: `primary_contact_changed for ${memberId}`,
         payload: {
           member_id: memberId,
-          old_primary_contact_id: promoted.value.demoted.contactId,
+          // `null` when the member had no current primary — the promote was
+          // a designation (same payload shape as undelete / first addContact).
+          old_primary_contact_id: promoted.value.demoted?.contactId ?? null,
           new_primary_contact_id: newPrimaryContactId,
         },
       });
@@ -503,6 +660,8 @@ export async function promotePrimary(
         return err({ type: 'conflict', reason: re.reason });
       return err({ type: 'server_error', message: `promote: ${re.code}` });
     }
+    const refused = mapCommitRefusal(e);
+    if (refused) return err(refused);
     return err({ type: 'server_error', message: 'promote: unexpected' });
   }
 }

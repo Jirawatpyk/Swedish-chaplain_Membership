@@ -135,7 +135,6 @@ export type DirectoryRow = {
  *   which don't have a primary/secondary distinction to make.
  * `contact_already_linked` — `linkUserInTx` found the contact already
  *   bound to a user (not a DB unique-violation — a manual state probe).
- * `no_current_primary` — `promotePrimaryInTx` demoted 0 rows (manual probe).
  * `primary_contact_race` — `promotePrimaryInTx` hit
  *   `contacts_one_primary_per_member` (a genuine unique-violation race).
  * `user_email_already_taken` — `UserEmailPort.updateInTx` hit the F1
@@ -147,8 +146,14 @@ export type RepoConflictReason =
   | 'secondary_email_in_use'
   | 'contact_email_in_use'
   | 'contact_already_linked'
-  | 'no_current_primary'
   | 'primary_contact_race'
+  // 108 PR-B — the repo refuses to soft-delete the live primary in the SAME
+  // statement as the write (`WHERE is_primary = false`); a pre-read cannot
+  // see a concurrent promote.
+  | 'cannot_remove_primary'
+  // 108 PR-B — migration 0293's deferred trigger refused the COMMIT because
+  // the member would have ended with zero live primaries.
+  | 'no_primary_contact'
   | 'user_email_already_taken';
 
 export type RepoError =
@@ -415,6 +420,21 @@ export interface MemberRepo {
    * predicate a bulk caller already has will fence one out.
    */
   findErasedIdsInTx(
+    tx: TenantTx,
+    tenantId: string,
+    memberIds: readonly MemberId[],
+  ): Promise<Result<ReadonlySet<MemberId>, RepoError>>;
+
+  /**
+   * 108 PR-B (T041 round 4, F4-#5) — the ids among `memberIds` that have NO
+   * live primary contact (`is_primary AND removed_at IS NULL`), a member with
+   * no contact rows at all included. Bulk `unarchive` partitions these out
+   * BEFORE any write so the Undo of a bulk archive enforces the same rule as
+   * the single undelete (migration 0293 exempts contact-less members, so the
+   * trigger alone would let them through). Explicit `tenantId` predicate
+   * alongside the RLS GUC — Principle I two-layer isolation.
+   */
+  findIdsWithoutLivePrimaryInTx(
     tx: TenantTx,
     tenantId: string,
     memberIds: readonly MemberId[],

@@ -104,10 +104,16 @@ async function seedActiveContact(t: TestTenant, email: string): Promise<string> 
 }
 
 // Seed `email` as a SOFT-DELETED contact (domain invariant: is_primary=false once removed).
+// 108 PR-B: the member that owns the removed row keeps a live FILLER primary of its
+// own — an active member with contact rows must have exactly one live primary at
+// COMMIT (migration 0293), so "only contact removed" is no longer a seedable state.
 async function seedSoftContact(t: TestTenant, email: string): Promise<void> {
-  await seedActiveContact(t, email);
+  const memberId = await seedActiveContact(t, `filler-${randomUUID().slice(0, 8)}@imp.test`);
   await runInTenant(t.ctx, async (tx) => {
-    await tx.update(contacts).set({ removedAt: new Date(), isPrimary: false }).where(eq(contacts.email, email));
+    await tx.insert(contacts).values({
+      tenantId: t.ctx.slug, contactId: randomUUID(), memberId,
+      firstName: 'S', lastName: 'R', email, preferredLanguage: 'en', isPrimary: false, removedAt: new Date(),
+    });
   });
 }
 
@@ -197,12 +203,17 @@ describe('commitMembers — integration (spec § 5)', () => {
         country: 'SE', planId: 'premium', planYear: 2026, registrationDate: '2026-01-01',
         registrationFeePaid: true, status: 'active',
       });
+      // 108 PR-B: the seeded member keeps a live filler primary (0293 refuses an
+      // active member whose only contact row is removed); the soft-deleted row is
+      // inserted as such rather than demoted after the fact.
       await tx.insert(contacts).values({
         tenantId: tenantA.ctx.slug, contactId: randomUUID(), memberId: seededMemberId,
-        firstName: 'S', lastName: 'D', email, preferredLanguage: 'en', isPrimary: true,
+        firstName: 'F', lastName: 'P', email: `filler-${randomUUID().slice(0, 8)}@imp.test`, preferredLanguage: 'en', isPrimary: true,
       });
-      // Soft-delete it (domain invariant: is_primary=false when removed_at set).
-      await tx.update(contacts).set({ removedAt: new Date(), isPrimary: false }).where(eq(contacts.email, email));
+      await tx.insert(contacts).values({
+        tenantId: tenantA.ctx.slug, contactId: randomUUID(), memberId: seededMemberId,
+        firstName: 'S', lastName: 'D', email, preferredLanguage: 'en', isPrimary: false, removedAt: new Date(),
+      });
     });
 
     const before = await countMembers(tenantA.ctx.slug);
@@ -223,9 +234,12 @@ describe('commitMembers — integration (spec § 5)', () => {
       });
       await tx.insert(contacts).values({
         tenantId: tenantC.ctx.slug, contactId: randomUUID(), memberId: oldMember,
-        firstName: 'X', lastName: 'Y', email: sEmail, preferredLanguage: 'en', isPrimary: true,
+        firstName: 'F', lastName: 'P', email: `filler-${randomUUID().slice(0, 8)}@imp.test`, preferredLanguage: 'en', isPrimary: true,
       });
-      await tx.update(contacts).set({ removedAt: new Date(), isPrimary: false }).where(eq(contacts.email, sEmail));
+      await tx.insert(contacts).values({
+        tenantId: tenantC.ctx.slug, contactId: randomUUID(), memberId: oldMember,
+        firstName: 'X', lastName: 'Y', email: sEmail, preferredLanguage: 'en', isPrimary: false, removedAt: new Date(),
+      });
     });
 
     // Import a NEW member: primary P (new) + secondary S (email matches the soft-deleted row).

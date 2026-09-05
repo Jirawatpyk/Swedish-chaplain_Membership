@@ -149,21 +149,13 @@ describe('recipientLocaleAdapter — member email locale (live Neon)', () => {
         isPrimary: true,
         preferredLanguage: 'sv',
       });
-      // memberNoPrimary keeps one removed, non-primary contact — every contact
-      // gone. (A removed row that stayed `is_primary` is not seedable: the 0009
-      // CHECK `contacts_primary_not_removed` rejects it, which is why the
-      // adapters' own `removed_at IS NULL` is belt-and-braces, not a fix.)
-      await tx.insert(contacts).values({
-        tenantId: tenant.ctx.slug,
-        contactId: randomUUID(),
-        memberId: memberNoPrimary,
-        firstName: 'Gone',
-        lastName: 'Contact',
-        email: 'gone-contact@example.com',
-        isPrimary: false,
-        removedAt: new Date(),
-        preferredLanguage: 'th',
-      });
+      // memberNoPrimary has NO contact rows at all. Since 108 PR-B (migration
+      // 0293) an ACTIVE member with contact rows must carry exactly one live
+      // primary at COMMIT, so "only contact removed" is no longer a seedable
+      // state — the contact-less member is the one no-primary population that
+      // remains reachable, and it is exactly what PR-A's skip path serves. The
+      // removed-row-is-ignored property is still pinned by memberPromoted's
+      // 'Former Primary' row above.
     });
 
     // Tenant B: a complete member + live primary contact of its own. Tenant A

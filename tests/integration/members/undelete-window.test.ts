@@ -14,6 +14,7 @@ import { db, runInTenant } from '@/lib/db';
 import { undeleteMember, asMemberId } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
+import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
@@ -47,12 +48,13 @@ async function seedArchivedMember(
   archivedAt: Date | null,
 ): Promise<string> {
   const memberId = randomUUID();
-  await runInTenant(tenant.ctx, (tx) =>
-    tx.insert(members).values({
+  const rand = randomUUID().slice(0, 6);
+  await runInTenant(tenant.ctx, async (tx) => {
+    await tx.insert(members).values({
       tenantId: tenant.ctx.slug,
       memberId,
       memberNumber: nextSeedMemberNumber(),
-      companyName: `Undelete Co ${Date.now()}-${randomUUID().slice(0, 6)}`,
+      companyName: `Undelete Co ${Date.now()}-${rand}`,
       country: 'TH',
       planId,
       planYear: 2026,
@@ -60,8 +62,20 @@ async function seedArchivedMember(
       registrationFeePaid: false,
       status: archivedAt ? 'archived' : 'active',
       archivedAt,
-    }),
-  );
+    });
+    // 108 PR-B (FR-014): undelete refuses a member with no live primary. Seed
+    // the primary the app always creates alongside a member.
+    await tx.insert(contacts).values({
+      tenantId: tenant.ctx.slug,
+      contactId: randomUUID(),
+      memberId,
+      firstName: 'Primary',
+      lastName: 'Contact',
+      email: `undelete-${rand}@example.com`,
+      preferredLanguage: 'en',
+      isPrimary: true,
+    });
+  });
   return memberId;
 }
 
@@ -128,8 +142,8 @@ describe('undelete-member integration (T136, US7)', () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.status).toBe('active');
-    expect(result.value.archivedAt).toBeNull();
+    expect(result.value.member.status).toBe('active');
+    expect(result.value.member.archivedAt).toBeNull();
 
     const rows = await runInTenant(tenant.ctx, (tx) =>
       tx.select().from(members).where(eq(members.memberId, memberId)),

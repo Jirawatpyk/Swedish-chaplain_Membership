@@ -13,6 +13,7 @@ import {
   errorChainMessage,
   isLastAdminTriggerError,
   isUniqueViolation,
+  primaryContactTriggerViolation,
 } from '@/lib/db-errors';
 
 function pgError(code: string, message: string): { code: string; message: string } {
@@ -114,5 +115,43 @@ describe('errorChainMessage', () => {
   it('returns empty string for null / undefined', () => {
     expect(errorChainMessage(null)).toBe('');
     expect(errorChainMessage(undefined)).toBe('');
+  });
+});
+
+describe('primaryContactTriggerViolation (108 round 4, F4-#9 / F4-#10)', () => {
+  const MEMBER = '30e0cf36-7fe7-45c0-b01e-b839d835ddef';
+  const RAISE = `primary-contact-invariant: member ${MEMBER} in tenant test-swecham-af8fb8f9 has 0 live primary contact(s)`;
+
+  it('parses member, tenant and count from the real raise — one decoder for every caller', () => {
+    expect(primaryContactTriggerViolation(pgError('23514', RAISE))).toEqual({
+      livePrimaries: 0,
+      memberId: MEMBER,
+      tenantSlug: 'test-swecham-af8fb8f9',
+    });
+  });
+
+  it('reads a count of 2 (the lost-race side)', () => {
+    const v = primaryContactTriggerViolation(pgError('23514', RAISE.replace('has 0', 'has 2')));
+    expect(v?.livePrimaries).toBe(2);
+    expect(v?.memberId).toBe(MEMBER);
+  });
+
+  it('walks the .cause chain the Drizzle wrapper adds', () => {
+    const wrapped = withCause(new Error('Failed query: commit'), pgError('23514', RAISE));
+    expect(primaryContactTriggerViolation(wrapped)?.memberId).toBe(MEMBER);
+  });
+
+  it('an unparseable message lands on the actionable side (0 → "needs a primary"), never on "retry"', () => {
+    expect(
+      primaryContactTriggerViolation(pgError('23514', 'primary-contact-invariant: reworded raise')),
+    ).toEqual({ livePrimaries: 0, memberId: null, tenantSlug: null });
+  });
+
+  it('returns null for an unrelated check_violation and for a different SQLSTATE', () => {
+    expect(
+      primaryContactTriggerViolation(pgError('23514', 'last-admin-protection: cannot demote')),
+    ).toBeNull();
+    expect(primaryContactTriggerViolation(pgError('23505', RAISE))).toBeNull();
+    expect(primaryContactTriggerViolation(null)).toBeNull();
   });
 });

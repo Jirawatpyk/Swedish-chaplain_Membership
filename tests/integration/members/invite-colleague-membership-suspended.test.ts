@@ -105,6 +105,21 @@ describe('inviteColleague — membership-access wiring (live Neon, 059 task-19b)
         linkedUserId: actorUser.userId,
         removedAt: null,
       });
+      if (!opts.isPrimary) {
+        // 108 PR-B: an active member with contact rows must have exactly one
+        // live primary at COMMIT (migration 0293). The control case wants the
+        // ACTOR to be non-primary, so the primary is someone else.
+        await tx.insert(contacts).values({
+          tenantId: tenant.ctx.slug,
+          contactId: randomUUID(),
+          memberId,
+          firstName: 'Primary',
+          lastName: 'Contact',
+          email: `primary-${memberId.slice(0, 8)}@swecham.test`,
+          preferredLanguage: 'en',
+          isPrimary: true,
+        });
+      }
     });
     return { memberId, actorContactId };
   }

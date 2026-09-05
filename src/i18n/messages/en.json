@@ -1737,6 +1737,7 @@
         "rateLimited": "Too many bulk actions. Wait a few minutes and try again.",
         "errors": {
           "state_error": "One or more selected members are in a state that doesn't allow this action. Refresh and try again.",
+          "no_primary_contact": "One selected member has no primary contact and can't be restored in bulk. Open that member's page and restore it there to choose one.",
           "not_found": "One or more selected members no longer exist. Refresh and try again.",
           "plan_not_found": "The target plan no longer exists. Refresh and try again.",
           "bulk_cap_exceeded": "Too many members selected for one batch. Reduce the selection and try again.",
@@ -1783,7 +1784,8 @@
         "undeleteError": "Could not restore. Please try again.",
         "undeleteNotArchived": "This member isn't archived. Refresh the page.",
         "undeleteNotFound": "Member not found. Refresh the page.",
-        "windowExpiredToast": "Archive window (90 days) has expired. Contact a system admin to restore."
+        "windowExpiredToast": "Archive window (90 days) has expired. Contact a system admin to restore.",
+        "undeleteErased": "This member was erased and cannot be restored."
       },
       "erase": {
         "eraseCta": "Erase (GDPR/PDPA)…",
@@ -1826,7 +1828,21 @@
         "confirmTitle": "Restore member?",
         "confirmDescription": "Restoring reactivates the member record. Linked portal users must sign in again.",
         "success": "Member restored.",
-        "error": "Could not restore. Please try again."
+        "error": "Could not restore. Please try again.",
+        "designate": {
+          "title": "Choose a primary contact before restoring",
+          "description": "This member has no primary contact. Receipts and other payment emails go to the primary contact, so one must be set before the member is restored. Choosing here restores the member and sets that contact as primary in one step.",
+          "noContactsDescription": "This member has no contacts left. Add one: the new contact becomes the primary contact and the member is restored.",
+          "contactsLabel": "Primary contact",
+          "confirm": "Restore and set as primary",
+          "cancel": "Cancel",
+          "addContact": "Add a contact",
+          "retry": "That contact is no longer available. Choose another.",
+          "retryNone": "That contact is no longer available, and none remain. Add a contact to continue.",
+          "successDesignated": "Member restored and primary contact set.",
+          "addContactDescription": "Add the person who should receive this member's receipts. They become the primary contact and the member is restored.",
+          "restoring": "Restoring…"
+        }
       },
       "benefits": {
         "title": "Member benefits",

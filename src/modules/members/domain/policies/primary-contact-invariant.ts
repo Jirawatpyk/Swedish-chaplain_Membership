@@ -6,8 +6,12 @@
  * timeline. The DB partial unique index enforces primary-per-member regardless
  * of parent status (its WHERE clause uses `is_primary = TRUE AND removed_at IS NULL`).
  *
- * Domain asserts this at the Application layer BEFORE persistence — so a
- * Result<Error> is returned to the UI instead of a raw DB constraint exception.
+ * The Application layer runs this inside the write transaction, over the
+ * contacts as that transaction sees them AFTER a primacy-affecting write
+ * (`contact-crud.ts` `assertPrimaryInvariantInTx`); a violation throws and
+ * rolls the write back, so the UI gets a typed Result<Error> instead of a
+ * raw DB constraint exception. Migration 0293's deferred trigger is the
+ * COMMIT-time backstop for every path that is not the app.
  *
  * Pure TypeScript — no framework imports.
  */
