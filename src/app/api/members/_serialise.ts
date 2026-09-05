@@ -79,6 +79,12 @@ export function serialiseContact(
     ...(opts.includeDateOfBirth && {
       date_of_birth: c.dateOfBirth?.toISOString().slice(0, 10) ?? null,
     }),
+    // 108 PR-D — per-contact marketing opt-out (all null = receives). The
+    // `?.` guards a hand-built Contact fixture that predates the field, like
+    // the `?? null` guards in serialiseMember.
+    marketing_opt_out_at: c.marketing?.optedOutAt?.toISOString() ?? null,
+    marketing_opt_out_source: c.marketing?.source ?? null,
+    marketing_opt_out_by_user_id: c.marketing?.byUserId ?? null,
     removed_at: c.removedAt?.toISOString() ?? null,
     created_at: c.createdAt.toISOString(),
     updated_at: c.updatedAt.toISOString(),

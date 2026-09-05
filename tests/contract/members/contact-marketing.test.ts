@@ -23,7 +23,11 @@ const requireApiPermissionMock = vi.fn();
 const setContactMarketingOptOutMock = vi.fn();
 const auditRecordMock = vi.fn(async () => ok(undefined));
 const rateLimitCheckMock = vi.fn();
-const classifyMock = vi.fn(async () => ({ kind: 'first' }));
+type Classification = {
+  readonly kind: 'first' | 'replay' | 'conflict';
+  readonly previousResponse?: { readonly status: number; readonly body: unknown };
+};
+const classifyMock = vi.fn(async (): Promise<Classification> => ({ kind: 'first' }));
 const reserveMock = vi.fn(async () => ({ ok: true, value: { kind: 'reserved' as const } }));
 const rememberMock = vi.fn(async () => undefined);
 
