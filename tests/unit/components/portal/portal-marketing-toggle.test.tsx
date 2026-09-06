@@ -184,3 +184,38 @@ describe('PortalMarketingToggle — cycle 11 (UX M7, a11y 11)', () => {
     expect(described).toContain(t.unavailableHint);
   });
 });
+
+function deferredResponse() {
+  let resolve!: (v: Response) => void;
+  const promise = new Promise<Response>((r) => { resolve = r; });
+  return { promise, resolve };
+}
+
+describe('PortalMarketingToggle — optimistic state (cycle 13, whole-branch LOW-6)', () => {
+  it('flips aria-checked at once on click, before the server answers', async () => {
+    const d = deferredResponse();
+    vi.stubGlobal('fetch', vi.fn(() => d.promise));
+    renderToggle('on');
+    const sw = screen.getByRole('switch');
+    expect(sw).toHaveAttribute('aria-checked', 'true');
+    fireEvent.click(sw);
+    await waitFor(() => expect(sw).toHaveAttribute('aria-checked', 'false'));
+    expect(refreshSpy).not.toHaveBeenCalled();
+    d.resolve(jsonResponse(200, { outcome: 'changed' }));
+    await waitFor(() => expect(refreshSpy).toHaveBeenCalled());
+    expect(sw).toHaveAttribute('aria-checked', 'false');
+  });
+
+  it('rolls back on a refusal (409) and toasts the reason', async () => {
+    const d = deferredResponse();
+    vi.stubGlobal('fetch', vi.fn(() => d.promise));
+    renderToggle('off_by_staff');
+    const sw = screen.getByRole('switch');
+    fireEvent.click(sw);
+    await waitFor(() => expect(sw).toHaveAttribute('aria-checked', 'true'));
+    d.resolve(jsonResponse(409, { error: { code: 'suppressed' } }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(t.toast.errors.suppressed));
+    expect(sw).toHaveAttribute('aria-checked', 'false');
+    expect(refreshSpy).not.toHaveBeenCalled();
+  });
+});

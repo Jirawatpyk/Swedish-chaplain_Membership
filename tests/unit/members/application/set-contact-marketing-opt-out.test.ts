@@ -76,7 +76,7 @@ function contact(overrides: Partial<Contact> = {}): Contact {
 function makeDeps(opts: {
   found?: Contact | null;
   suppressed?: boolean | 'throws';
-  repoOutcome?: 'changed' | 'unchanged' | 'not_found' | 'error';
+  repoOutcome?: 'changed' | 'unchanged' | 'refused' | 'not_found' | 'error';
   auditFails?: boolean;
 } = {}) {
   const found = opts.found === undefined ? contact() : opts.found;
@@ -90,6 +90,8 @@ function makeDeps(opts: {
           return ok({ outcome: 'changed' as const, contact: contact({ marketing: next }) });
         case 'unchanged':
           return ok({ outcome: 'unchanged' as const, contact: found ?? contact() });
+        case 'refused':
+          return ok({ outcome: 'refused_self_opted_out' as const, contact: found ?? contact() });
         case 'not_found':
           return err({ code: 'repo.not_found' as const });
         default:
@@ -396,5 +398,41 @@ describe('setContactMarketingOptOut — idempotency and refusals', () => {
     const next = contactRepo.setMarketingOptOutInTx.mock.calls[0]![2] as MarketingOptOut;
     expect(next.optedOutAt).toBeInstanceOf(Date);
     expect((next.optedOutAt as Date).getTime()).toBeGreaterThanOrEqual(before);
+  });
+});
+
+/**
+ * Review cycle 13 (whole-branch MEDIUM-1) — the FR-025 AMENDMENT is also
+ * enforced by the repo UNDER THE ROW LOCK: the use case passes the actor's
+ * source and honours a `refused_self_opted_out` outcome (no audit, 409).
+ * The pre-read fast path above stays; this closes the window between it and
+ * the write.
+ */
+describe('setContactMarketingOptOut — the guard is re-checked under the lock (cycle 13)', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('passes the actor source to the repo write', async () => {
+    const { deps, contactRepo } = makeDeps();
+    await setContactMarketingOptOut(staffOff, deps);
+    expect(contactRepo.setMarketingOptOutInTx).toHaveBeenCalledWith(
+      { __tx: true },
+      CONTACT,
+      { optedOutAt: NOW, source: 'staff', byUserId: STAFF },
+      { actorSource: 'staff' },
+    );
+  });
+
+  it('repo refuses under the lock (a self opt-out landed after the pre-read) → self_opted_out, NO audit', async () => {
+    // The pre-read still sees a staff record, so the fast path lets the call
+    // through; the locked row says `self` and the repo refuses.
+    const { deps, audit } = makeDeps({
+      found: contact({ marketing: { optedOutAt: NOW, source: 'staff', byUserId: STAFF as never } }),
+      repoOutcome: 'refused',
+    });
+    const r = await setContactMarketingOptOut({ ...staffOff, state: 'on' }, deps);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.type).toBe('self_opted_out');
+    expect(audit.recordInTx).not.toHaveBeenCalled();
   });
 });

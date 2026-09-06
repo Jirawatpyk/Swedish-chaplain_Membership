@@ -342,3 +342,27 @@ describe('MarketingSwitch — focus hand-off when the row leaves the view (cycle
     expect(opts?.description).toBeUndefined();
   });
 });
+
+describe('MarketingSwitch — Undo under leavesView (cycle 13, whole-branch LOW-5)', () => {
+  it('the Undo toast carries no "left the view" note — the row comes back', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, { outcome: 'changed', contact: {} })));
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <MarketingSwitch contactId={CONTACT} contactName="Jane Doe" state="on" leavesView />
+      </NextIntlClientProvider>,
+    );
+    fireEvent.click(screen.getByRole('switch'));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledTimes(1));
+    const first = (toast.success as unknown as ReturnType<typeof vi.fn>).mock.calls[0]![1] as {
+      description?: string;
+      action: { onClick: () => void | Promise<void> };
+    };
+    expect(first.description).toBe(t.leftView);
+    await first.action.onClick();
+    await waitFor(() => expect(toast.success).toHaveBeenCalledTimes(2));
+    const undo = (toast.success as unknown as ReturnType<typeof vi.fn>).mock.calls[1]![1] as
+      | { description?: string }
+      | undefined;
+    expect(undo?.description).toBeUndefined();
+  });
+});

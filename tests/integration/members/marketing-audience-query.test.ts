@@ -83,6 +83,9 @@ describe('108 PR-D — Marketing audience query (live Neon)', () => {
   let admin: TestUser;
   const planId = `aud-${randomUUID().slice(0, 6)}`;
   const suppressedEmail = `sim-unsub-${randomUUID().slice(0, 8)}@example.test`;
+  // Cycle 13 (whole-branch LOW-7): staff-off AND suppressed — the badge says
+  // "unsubscribed" (precedence), so the off_by_staff filter must not list it.
+  const staffOffSuppressedEmail = `sim-both-${randomUUID().slice(0, 8)}@example.test`;
   let acme: { memberId: string; contactIds: string[] };
   let beta: { memberId: string; contactIds: string[] };
   let gamma: { memberId: string; contactIds: string[] };
@@ -101,6 +104,13 @@ describe('108 PR-D — Marketing audience query (live Neon)', () => {
       { first: 'Prim', last: 'Ary', isPrimary: true },
       { first: 'Sec', last: 'Staffoff', isPrimary: false, optOut: { source: 'staff', byUserId: admin.userId } },
       { first: 'Sec', last: 'Unsub', isPrimary: false, email: suppressedEmail },
+      {
+        first: 'Sec',
+        last: 'Both',
+        isPrimary: false,
+        email: staffOffSuppressedEmail,
+        optOut: { source: 'staff', byUserId: admin.userId },
+      },
       { first: 'Sec', last: 'Removed', isPrimary: false, removed: true },
       { first: 'Sec', last: 'Zed-on', isPrimary: false },
     ]);
@@ -117,15 +127,17 @@ describe('108 PR-D — Marketing audience query (live Neon)', () => {
       { halted: true },
     );
     await runInTenant(tenantA.ctx, (tx) =>
-      tx.insert(marketingUnsubscribes).values({
-        tenantId: tenantA.ctx.slug,
-        emailLower: suppressedEmail.toLowerCase(),
-        memberId: null,
-        reason: 'recipient_initiated',
-        reasonText: null,
-        sourceBroadcastId: null,
-        sourceTokenHash: null,
-      }),
+      tx.insert(marketingUnsubscribes).values(
+        [suppressedEmail, staffOffSuppressedEmail].map((email) => ({
+          tenantId: tenantA.ctx.slug,
+          emailLower: email.toLowerCase(),
+          memberId: null,
+          reason: 'recipient_initiated' as const,
+          reasonText: null,
+          sourceBroadcastId: null,
+          sourceTokenHash: null,
+        })),
+      ),
     );
     bMember = await seedMember(tenantB, planId, 'Other Tenant Co', [
       { first: 'Oth', last: 'Er', isPrimary: true },
@@ -150,9 +162,10 @@ describe('108 PR-D — Marketing audience query (live Neon)', () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.value.degraded).toBe(false);
-    expect(r.value.total).toBe(4);
+    expect(r.value.total).toBe(5);
     expect(r.value.rows.map((x) => [x.companyName, x.lastName, x.state])).toEqual([
       ['Acme Co', 'Ary', 'on'],
+      ['Acme Co', 'Both', 'unsubscribed'],
       ['Acme Co', 'Staffoff', 'off_by_staff'],
       ['Acme Co', 'Unsub', 'unsubscribed'],
       ['Acme Co', 'Zed-on', 'on'],
@@ -165,7 +178,7 @@ describe('108 PR-D — Marketing audience query (live Neon)', () => {
       buildMarketingAudienceDeps(tenantA.ctx),
     );
     if (!r.ok) throw new Error('expected ok');
-    expect(r.value.total).toBe(6);
+    expect(r.value.total).toBe(7);
     const beaRow = r.value.rows.find((x) => x.memberId === beta.memberId)!;
     expect(beaRow).toMatchObject({ memberStatus: 'inactive', reasons: ['member_inactive'], state: 'on' });
     const gamRow = r.value.rows.find((x) => x.memberId === gamma.memberId)!;
@@ -202,14 +215,27 @@ describe('108 PR-D — Marketing audience query (live Neon)', () => {
     });
   });
 
-  it('state=unsubscribed → the suppressed secondary only', async () => {
+  it('state=unsubscribed → the suppressed secondaries only (incl. the staff-off one: precedence)', async () => {
     const r = await listMarketingAudience(
       { filter: { state: 'unsubscribed', eligible: true }, page: 1 },
       buildMarketingAudienceDeps(tenantA.ctx),
     );
     if (!r.ok) throw new Error('expected ok');
+    expect(r.value.total).toBe(2);
+    expect(r.value.rows.map((x) => [x.lastName, x.state])).toEqual([
+      ['Both', 'unsubscribed'],
+      ['Unsub', 'unsubscribed'],
+    ]);
+  });
+
+  it('state=off_by_staff never lists a suppressed address — the badge would say "unsubscribed" (cycle 13, LOW-7)', async () => {
+    const r = await listMarketingAudience(
+      { filter: { state: 'off_by_staff', eligible: true }, page: 1 },
+      buildMarketingAudienceDeps(tenantA.ctx),
+    );
+    if (!r.ok) throw new Error('expected ok');
     expect(r.value.total).toBe(1);
-    expect(r.value.rows.map((x) => [x.lastName, x.state])).toEqual([['Unsub', 'unsubscribed']]);
+    expect(r.value.rows.map((x) => x.lastName)).toEqual(['Staffoff']);
   });
 
   it('kind=primary + memberId narrow to one row; q matches company and contact names', async () => {
