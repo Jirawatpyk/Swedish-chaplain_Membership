@@ -87,6 +87,7 @@ describe('event-attendees-stub (T050)', () => {
     const r = await resolveSegmentRecipients(
       {
         tenant,
+        audienceMode: 'primary_only' as const,
         membersBridge: emptyMembersBridge,
         eventAttendees: eventAttendeesStub,
         marketingUnsubscribes: emptyUnsubscribes,
@@ -94,7 +95,7 @@ describe('event-attendees-stub (T050)', () => {
       {
         segment: { kind: 'event_attendees_last_90d' },
         phase: 'dispatch',
-        requestingMemberPrimaryEmail: null,
+        requestingMemberId: null,
         customRecipients: null,
       },
     );

@@ -408,6 +408,7 @@ function makeDeps(opts: FixtureOpts = {}, allowRateLimit = true) {
       emailValidator: rfc5321EmailValidator,
       eventAttendees: makeEventAttendees(),
       marketingUnsubscribes: makeMarketingUnsubscribes(),
+      audienceMode: 'primary_only' as const,
       rateLimiter: makeRateLimiter({
         allow: opts.rateLimit?.allow ?? allowRateLimit,
         retryAfterSeconds: opts.rateLimit?.retryAfterSeconds ?? 60,
@@ -1711,3 +1712,69 @@ describe('submit-broadcast — 108 PR-D opt-out filter at submit (round-2 findin
   });
 });
 
+
+/**
+ * 108 PR-C T076 — submit hands the resolver the MEMBER id (self-exclusion by
+ * member, FR-022), threads `audienceMode` from deps, and maps the resolver's
+ * typed `resolve.server_error` to `submit.server_error` WITHOUT a reject
+ * audit — nothing was decided about the audience, so nothing must be
+ * recorded as "empty" or "too large".
+ */
+describe('submit-broadcast — 108 PR-C resolver contract (T076)', () => {
+  it('self-exclusion is by member id: the sender is excluded even when the bridge lists them under another address', async () => {
+    // Old rule: exclude the address equal to the sender's primary. The bridge
+    // answers the sender's member under a DIFFERENT address, so the old rule
+    // would keep it and the submit would succeed with one recipient.
+    const { deps } = makeDeps({
+      primaryContact: 'me@example.com',
+      memberInBridge: [{ memberId: 'm-1', primaryContactEmail: 'other@example.com' }],
+    });
+    const result = await submitBroadcast(deps, baseInput);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('broadcast_empty_segment_blocked');
+  });
+
+  it("audienceMode 'all_contacts' resolves through getContactsBySegment, not the primary-only read", async () => {
+    const { deps } = makeDeps({
+      primaryContact: 'me@example.com',
+      memberInBridge: [{ memberId: 'm-9', primaryContactEmail: 'nine@example.com' }],
+    });
+    const contactCalls: string[] = [];
+    const bridge = deps.membersBridge as MembersBridgePort & {
+      getContactsBySegment: MembersBridgePort['getContactsBySegment'];
+    };
+    bridge.getContactsBySegment = async (_ctx, kind) => {
+      contactCalls.push(kind);
+      return [];
+    };
+    const result = await submitBroadcast({ ...deps, audienceMode: 'all_contacts' }, baseInput);
+    // The contact leg answered nothing, so the member-leg rows must NOT have
+    // been used instead.
+    expect(contactCalls).toEqual(['all_members']);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('broadcast_empty_segment_blocked');
+  });
+
+  it('a failed member read (resolve.server_error) → submit.server_error and NO reject audit', async () => {
+    const { audit, deps } = makeDeps({
+      primaryContact: 'me@example.com',
+      memberInBridge: [{ memberId: 'm-9', primaryContactEmail: 'nine@example.com' }],
+    });
+    const bridge = deps.membersBridge as MembersBridgePort & {
+      getMembersBySegment: MembersBridgePort['getMembersBySegment'];
+    };
+    bridge.getMembersBySegment = async () => {
+      throw new Error('members-bridge.getMembersBySegment: repo.unexpected');
+    };
+    const result = await submitBroadcast(deps, baseInput);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('submit.server_error');
+    const rejectKinds = audit.emits
+      .map((e) => e.eventType)
+      .filter((t) => t === 'broadcast_empty_segment_blocked' || t === 'broadcast_audience_too_large');
+    expect(rejectKinds).toEqual([]);
+  });
+});

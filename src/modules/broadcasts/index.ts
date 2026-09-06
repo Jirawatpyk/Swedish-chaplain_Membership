@@ -175,6 +175,9 @@ export {
   type ResolveSegmentInput,
   type ResolveSegmentOutput,
 } from './application/use-cases/resolve-segment-recipients';
+// 108 PR-C — the flag-derived resolver leg (Domain type; env read only in the
+// composition root).
+export type { AudienceMode } from './domain/audience-mode';
 
 // --- Application use-cases (Phase 4 US2) ---------------------------------
 export {
@@ -261,6 +264,8 @@ export {
 
 // --- F9 cross-module read (dashboard needs-attention, FR-002/AS-2) -------
 export { makeBroadcastApprovalCounter } from './infrastructure/broadcasts-deps';
+// 108 PR-C — the flag-derived resolver leg, read in the composition root only.
+export { currentAudienceMode } from './infrastructure/broadcasts-deps';
 export type { BroadcastApprovalCounter } from './application/ports/broadcast-approval-counter';
 
 // --- Composition root factories (Phase 4 US2) ----------------------------

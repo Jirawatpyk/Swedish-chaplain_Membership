@@ -50,9 +50,9 @@ import {
   type BroadcastActorRole,
 } from '../../domain/broadcast';
 import type { RecipientSegment } from '../../domain/recipient-segment';
+import type { AudienceMode } from '../../domain/audience-mode';
 import { composeBroadcastFromName } from '../../domain/from-name';
 import {
-  unsafeBrandEmailLower,
   type EmailLower,
 } from '../../domain/value-objects/email-lower';
 import type { AuditPort, F7AuditEventType } from '../ports/audit-port';
@@ -184,6 +184,12 @@ export interface SubmitBroadcastDeps {
   readonly emailValidator: EmailValidatorPort;
   readonly eventAttendees: EventAttendeesRepository;
   readonly marketingUnsubscribes: MarketingUnsubscribesRepo;
+  /**
+   * 108 PR-C — which resolver leg builds a member-based audience. Set by the
+   * composition root from `FEATURE_CONTACT_MARKETING_RECIPIENTS`; see
+   * `domain/audience-mode.ts`.
+   */
+  readonly audienceMode: AudienceMode;
   readonly rateLimiter: RateLimiterPort;
   readonly audit: AuditPort;
   readonly clock: { now(): Date };
@@ -594,11 +600,14 @@ export async function submitBroadcast(
         membersBridge: deps.membersBridge,
         eventAttendees: deps.eventAttendees,
         marketingUnsubscribes: deps.marketingUnsubscribes,
+        audienceMode: deps.audienceMode,
       },
       {
         segment: input.segment,
         phase: 'submit',
-        requestingMemberPrimaryEmail: unsafeBrandEmailLower(replyTo as string),
+        // 108 PR-C (FR-022): self-exclusion is by MEMBER — every contact of
+        // the submitting member, not just the address that equals reply-to.
+        requestingMemberId: input.memberId,
         customRecipients,
       },
     );
@@ -612,7 +621,25 @@ export async function submitBroadcast(
       message: 'recipient resolution unavailable',
     });
   }
+  // 108 PR-C — a failed member-leg read is typed by the resolver now
+  // (research R8). Same classification as the throw above: a 500, NO reject
+  // audit — the audience was never decided, so recording it as "empty" or
+  // "too large" would be a fabricated reason in an append-only table.
   if (!resolved.ok) {
+    if (resolved.error.kind === 'resolve.server_error') {
+      logger.error(
+        {
+          tenantId: deps.tenant.slug,
+          memberId: input.memberId,
+          err: resolved.error.message,
+        },
+        'broadcasts.submit.recipient_resolution_failed',
+      );
+      return err({
+        kind: 'submit.server_error' as const,
+        message: 'recipient resolution unavailable',
+      });
+    }
     const eventType: F7AuditEventType =
       resolved.error.kind === 'broadcast_audience_too_large'
         ? 'broadcast_audience_too_large'

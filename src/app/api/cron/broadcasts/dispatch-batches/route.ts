@@ -58,6 +58,7 @@ import {
   noOpAdvisoryLock,
   resendBroadcastsGateway,
   resolveSegmentRecipients,
+  currentAudienceMode,
   systemClock,
   tenantDefaultLocaleFor,
 } from '@/modules/broadcasts';
@@ -239,16 +240,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
       // 5c. Resolve recipients (segment + suppression + dedupe).
       const segment = buildSegmentFromBroadcast(broadcast);
-      const requestingPrimary = await membersBridge.getMemberPrimaryContact(
-        tenant,
-        broadcast.requestedByMemberId,
-      );
       // Staff review A11: the 108 PR-D opt-out lookup is fail-closed and
       // THROWS when the read fails. `dispatch-scheduled-broadcast.ts` maps that
       // to a typed `dispatch.server_error`; here it fell to the generic
       // per-broadcast catch, so one outage was classified two different ways
       // depending on which cron observed it. Safety was never in question —
       // the tick survives either way — only the alerting signal.
+      // 108 PR-C: self-exclusion is by MEMBER id (FR-022), so the requesting
+      // member's primary email is no longer read here; the leg comes from
+      // the same flag read the submit and dispatch paths use (SC-004).
       let resolved: Awaited<ReturnType<typeof resolveSegmentRecipients>>;
       try {
         resolved = await resolveSegmentRecipients(
@@ -257,11 +257,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           membersBridge,
           eventAttendees: eventAttendeesBridge,
           marketingUnsubscribes,
+          audienceMode: currentAudienceMode(),
         },
         {
           segment,
           phase: 'dispatch',
-          requestingMemberPrimaryEmail: requestingPrimary,
+          requestingMemberId: broadcast.requestedByMemberId,
           customRecipients:
             broadcast.customRecipientEmails === null
               ? null

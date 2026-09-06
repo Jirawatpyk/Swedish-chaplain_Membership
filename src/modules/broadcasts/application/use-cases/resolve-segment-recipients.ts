@@ -3,32 +3,51 @@
  *
  * Resolves a `RecipientSegment` to a deduplicated, suppression-filtered,
  * self-excluded, halt-aware recipient list. The single source of truth
- * for "who actually receives this broadcast" used by both submit-time
- * (estimatedRecipientCount) and dispatch-time (actual send list).
+ * for "who actually receives this broadcast" used by submit-time
+ * (estimatedRecipientCount), the recipient-count endpoints, and every
+ * dispatch path (dispatch-scheduled, split-large-broadcasts,
+ * dispatch-batches). Any other recipient query is a defect (108 contract
+ * broadcast-audience § preamble).
  *
- * Pipeline:
- *   1. Dispatch by segment kind →
- *      - all_members / tier → membersBridge.getMembersBySegment
- *      - event_attendees_last_90d → eventAttendees.getLastNinetyDayAttendees (F6 bridge — distinct attendees of events in the last 90 days)
- *      - custom → use input emails (already validated by validate-custom-recipients)
- *   2. Filter halted members (already done by F3 use-case)
- *   3. Filter self (Q16 — exclude requesting member's primary contact email)
- *   4. Filter suppressed (marketingUnsubscribesRepo.lookupBatch)
- * 4b. Filter the per-contact marketing opt-out (108 PR-D, FR-022a) —
- *     `membersBridge.filterMarketingOptedOut`, AFTER suppression so an
- *     address on both lists counts once; a failed lookup REJECTS, never
- *     fail-open
- *   5. Surface orphans (members with NULL primary email — caller emits
- *      `broadcast_member_missing_primary_contact_email` audit per orphan)
- *   6. Hard-cap 5,000 (FR-016a)
+ * Pipeline (108 PR-C, contract § 2):
+ *   1. Source by segment kind →
+ *      - all_members / tier, `audienceMode = 'all_contacts'` →
+ *        membersBridge.getContactsBySegment: every eligible contact of every
+ *        eligible member (FR-020); a null contact is an orphan (FR-029)
+ *      - all_members / tier, `audienceMode = 'primary_only'` →
+ *        membersBridge.getMembersBySegment: one primary per member (the
+ *        pre-108 leg; a null primary email is an orphan)
+ *      - event_attendees_last_90d → eventAttendees.getLastNinetyDayAttendees
+ *      - custom → input emails (already validated by validate-custom-recipients)
+ *      A failed bridge read on either member leg is a typed
+ *      `resolve.server_error` — never an empty audience (research R8).
+ *   2. Halted / inactive / archived / erased members are excluded by the F3
+ *      query behind the bridge (FR-021), on both legs.
+ *   3. Self-exclusion by MEMBER id (`requestingMemberId`): every contact of
+ *      the submitting member, member-based segments only (FR-022, FR-022a —
+ *      the custom list is exempt; the old email-equality arm is gone).
+ *   4. Dedupe by address (FR-023).
+ *   5. Suppression: `lookupBatch` in chunks of 1,000.
+ *  5b. Per-contact marketing opt-out (108 PR-D, FR-022a) —
+ *      `membersBridge.filterMarketingOptedOut`, AFTER suppression so an
+ *      address on both lists counts once; a failed lookup REJECTS (throws),
+ *      never fail-open. On the all_contacts leg the F3 query already
+ *      excluded opted-out contacts, so this is defence in depth there.
+ *   6. Empty → `broadcast_empty_segment_blocked`; above the cap →
+ *      `broadcast_audience_too_large` — never truncated (FR-016a, US5).
  *
- * Returns the resolved recipient list (non-empty if successful) +
- * orphan member ids + dedup count for observability.
+ * `droppedByPreference` (FR-022a "tell the sender how many"): every
+ * opt-out drop, plus — for the custom list and the attendee segment only —
+ * every suppression drop (US3 AS9: "2 addresses were excluded by recipient
+ * preference" covers an unsubscribed address as much as a switched-off
+ * one). On a member-based segment an unsubscribed person is simply not in
+ * the audience, so suppression is not a "drop" there.
  */
 import { err, ok, type Result } from '@/lib/result';
 import { broadcastsMetrics } from '@/lib/metrics';
 import type { TenantContext } from '@/modules/tenants';
 import type { RecipientSegment } from '../../domain/recipient-segment';
+import type { AudienceMode } from '../../domain/audience-mode';
 import type { MembersBridgePort } from '../ports/members-bridge-port';
 import type { EventAttendeesRepository } from '../ports/event-attendees-repository';
 import type { MarketingUnsubscribesRepo } from '../ports/marketing-unsubscribes-repo';
@@ -39,25 +58,51 @@ import {
 
 const AUDIENCE_HARD_CAP = 5000;
 
+/**
+ * Contract § 2 step 5 — `lookupBatch` chunk size. A 50,000-recipient audience
+ * (US5, batching ON) is 50 round trips, never one 50,000-parameter `= ANY`.
+ */
+const SUPPRESSION_LOOKUP_CHUNK = 1000;
+
 export type ResolveSegmentError =
   | { readonly kind: 'broadcast_empty_segment_blocked' }
   | {
       readonly kind: 'broadcast_audience_too_large';
       readonly count: number;
       readonly cap: number;
-    };
+    }
+  /**
+   * 108 PR-C — the member-leg bridge read failed (Neon outage, RLS denial,
+   * a keyset page that did not come back). Typed so submit maps it to
+   * `submit.server_error` (no reject audit — nothing was decided) and the
+   * dispatch paths to `dispatch.server_error` (the broadcast stays
+   * `approved`; the next tick retries). It must never be reported as an
+   * empty or too-large audience.
+   */
+  | { readonly kind: 'resolve.server_error'; readonly message: string };
 
 export interface ResolveSegmentDeps {
   readonly tenant: TenantContext;
   readonly membersBridge: MembersBridgePort;
   readonly eventAttendees: EventAttendeesRepository;
   readonly marketingUnsubscribes: MarketingUnsubscribesRepo;
+  /**
+   * 108 PR-C — which leg builds a member-based audience. Decided once in the
+   * composition root from `FEATURE_CONTACT_MARKETING_RECIPIENTS`; see
+   * `domain/audience-mode.ts`.
+   */
+  readonly audienceMode: AudienceMode;
 }
 
 export interface ResolveSegmentInput {
   readonly segment: RecipientSegment;
-  /** Member submitting the broadcast — excluded from recipients (Q16). */
-  readonly requestingMemberPrimaryEmail: EmailLower | null;
+  /**
+   * Member submitting the broadcast — EVERY contact of that member is
+   * excluded from a member-based audience (FR-022; Q16 widened from "the
+   * primary contact email"). `null` for a non-member caller (an admin
+   * counting an audience without a proxied member).
+   */
+  readonly requestingMemberId: string | null;
   /** Already-validated custom emails (when segment.kind === 'custom'). */
   readonly customRecipients: ReadonlyArray<EmailLower> | null;
   /**
@@ -74,15 +119,41 @@ export interface ResolveSegmentInput {
 export interface ResolveSegmentOutput {
   readonly recipients: ReadonlyArray<EmailLower>;
   readonly estimatedCount: number;
-  /** Member IDs missing a primary contact email (audit emit per orphan). */
+  /**
+   * Member ids with NO eligible contact (FR-029) — the caller emits the
+   * missing-recipient audit per orphan. On the primary_only leg: a null
+   * primary email. On the all_contacts leg: zero live, not-opted-out
+   * contacts (a member with secondaries but no primary is NOT an orphan).
+   */
   readonly orphans: ReadonlyArray<string>;
   /**
-   * 108 PR-D (FR-022a) — recipients removed because their contact row
-   * carries a marketing opt-out (staff or self). Counted separately from
-   * `orphans` (the member still has a primary contact) and from the
-   * suppression drop (an address that is both counts once, as suppressed).
+   * FR-022a — entries removed "by recipient preference": every per-contact
+   * opt-out drop (any segment kind), plus every suppression drop on the
+   * custom list and the attendee segment (see the module docblock). Counted
+   * separately from `orphans`. Shown to the sender as a number, never as
+   * addresses.
    */
   readonly droppedByPreference: number;
+}
+
+interface Candidate {
+  /** Owning member for self-exclusion; null for attendee / custom entries. */
+  readonly memberId: string | null;
+  readonly emailLower: EmailLower;
+}
+
+async function lookupSuppressedChunked(
+  repo: MarketingUnsubscribesRepo,
+  tenantId: string,
+  emails: ReadonlyArray<EmailLower>,
+): Promise<ReadonlySet<EmailLower>> {
+  const suppressed = new Set<EmailLower>();
+  for (let i = 0; i < emails.length; i += SUPPRESSION_LOOKUP_CHUNK) {
+    const chunk = emails.slice(i, i + SUPPRESSION_LOOKUP_CHUNK);
+    const hit = await repo.lookupBatch(tenantId, chunk);
+    for (const e of hit) suppressed.add(e);
+  }
+  return suppressed;
 }
 
 export async function resolveSegmentRecipients(
@@ -90,68 +161,104 @@ export async function resolveSegmentRecipients(
   input: ResolveSegmentInput,
 ): Promise<Result<ResolveSegmentOutput, ResolveSegmentError>> {
   const { segment } = input;
+  const memberBased = segment.kind === 'all_members' || segment.kind === 'tier';
 
-  // Step 1: dispatch by segment kind
-  let candidates: ReadonlyArray<EmailLower> = [];
+  // Step 1: source by segment kind
+  let candidates: ReadonlyArray<Candidate> = [];
   const orphans: string[] = [];
 
   if (segment.kind === 'all_members' || segment.kind === 'tier') {
-    const members = await deps.membersBridge.getMembersBySegment(
-      deps.tenant,
-      segment.kind === 'all_members' ? 'all_members' : 'tier',
-      segment.kind === 'tier' ? { tierCodes: segment.tierCodes } : {},
-    );
-    const emails: EmailLower[] = [];
-    for (const m of members) {
-      if (m.primaryContactEmail === null) {
-        orphans.push(m.memberId);
-        continue;
+    const params =
+      segment.kind === 'tier' ? { tierCodes: segment.tierCodes } : {};
+    const sourced: Candidate[] = [];
+    try {
+      if (deps.audienceMode === 'all_contacts') {
+        const rows = await deps.membersBridge.getContactsBySegment(
+          deps.tenant,
+          segment.kind,
+          params,
+        );
+        for (const r of rows) {
+          if (r.contactId === null || r.emailLower === null) {
+            orphans.push(r.memberId);
+            continue;
+          }
+          sourced.push({ memberId: r.memberId, emailLower: r.emailLower });
+        }
+      } else {
+        const members = await deps.membersBridge.getMembersBySegment(
+          deps.tenant,
+          segment.kind,
+          params,
+        );
+        for (const m of members) {
+          if (m.primaryContactEmail === null) {
+            orphans.push(m.memberId);
+            continue;
+          }
+          sourced.push({ memberId: m.memberId, emailLower: m.primaryContactEmail });
+        }
       }
-      emails.push(m.primaryContactEmail);
+    } catch (e) {
+      // The bridge already logged the class of failure; the caller decides
+      // whether this is a retry (dispatch) or a 500 (submit).
+      return err({
+        kind: 'resolve.server_error',
+        message: e instanceof Error ? e.message : 'unknown error',
+      });
     }
-    candidates = emails;
+    candidates = sourced;
   } else if (segment.kind === 'event_attendees_last_90d') {
     const attendees = await deps.eventAttendees.getLastNinetyDayAttendees(
       deps.tenant,
     );
-    candidates = attendees.map((a) => a.emailLower);
+    candidates = attendees.map((a) => ({ memberId: null, emailLower: a.emailLower }));
   } else if (segment.kind === 'custom') {
-    candidates = input.customRecipients ?? [];
+    candidates = (input.customRecipients ?? []).map((emailLower) => ({
+      memberId: null,
+      emailLower,
+    }));
   }
 
-  // Step 2 (halted) is enforced by membersBridge.getMembersBySegment
-  // (F3 use-case excludes halted members before returning).
+  // Step 2 (member eligibility: active, not erased, not halted) is enforced
+  // by the F3 query behind the bridge on both legs (FR-021).
 
-  // Step 3: exclude self
+  // Step 3: self-exclusion by member id — member-based segments only. The
+  // custom list is exempt (FR-022a, contract § 2 step 3); attendee rows are
+  // not member-keyed here.
   const selfExcluded =
-    input.requestingMemberPrimaryEmail === null
-      ? candidates
-      : candidates.filter((e) => e !== input.requestingMemberPrimaryEmail);
+    memberBased && input.requestingMemberId !== null
+      ? candidates.filter((c) => c.memberId !== input.requestingMemberId)
+      : candidates;
 
-  // Deduplicate (lower-cased branded values)
-  const dedup = Array.from(new Set(selfExcluded)) as EmailLower[];
+  // Step 4: dedupe by address (lower-cased branded values), keeping order.
+  const dedup = Array.from(new Set(selfExcluded.map((c) => c.emailLower)));
 
-  // Step 4: suppression filter (single batched query)
+  // Step 5: suppression filter, chunked (contract § 2 step 5).
   let final: EmailLower[] = dedup;
+  let suppressionDropped = 0;
   if (dedup.length > 0) {
-    const suppressed = await deps.marketingUnsubscribes.lookupBatch(
+    const suppressed = await lookupSuppressedChunked(
+      deps.marketingUnsubscribes,
       deps.tenant.slug,
       dedup,
     );
     final = dedup.filter((e) => !suppressed.has(e));
     // T172 — emit-site wiring (Phase 9). Number of recipients dropped
-    // by the suppression anti-join — `dedup.length - final.length`.
-    const filtered = dedup.length - final.length;
-    if (filtered > 0) {
-      broadcastsMetrics.suppressionFilterCount(deps.tenant.slug, filtered);
+    // by the suppression anti-join.
+    suppressionDropped = dedup.length - final.length;
+    if (suppressionDropped > 0) {
+      broadcastsMetrics.suppressionFilterCount(deps.tenant.slug, suppressionDropped);
     }
   }
 
-  // Step 4b (108 PR-D, FR-022a): per-contact marketing opt-out — runs on
+  // Step 5b (108 PR-D, FR-022a): per-contact marketing opt-out — runs on
   // the post-suppression list so a double-listed address counts once, and
   // is skipped when nothing is left. The bridge REJECTS on a failed lookup:
   // never fail-open onto people who objected (privacy B-1 / security HIGH-1).
-  let droppedByPreference = 0;
+  // On the all_contacts leg the SQL already excluded opted-out contacts;
+  // this is defence in depth there and the count is still MEASURED.
+  let optOutDropped = 0;
   if (final.length > 0) {
     const optedOut = await deps.membersBridge.filterMarketingOptedOut(
       deps.tenant,
@@ -162,10 +269,10 @@ export async function resolveSegmentRecipients(
       // inflate the count or the metric (review LOW-17).
       const before = final.length;
       final = final.filter((e) => !optedOut.has(e));
-      droppedByPreference = before - final.length;
+      optOutDropped = before - final.length;
     }
     // Emitted whenever the filter RAN, including at zero (staff review P2).
-    // Guarding on `> 0` made "nobody has opted out" and "step 4b was deleted"
+    // Guarding on `> 0` made "nobody has opted out" and "step 5b was deleted"
     // the same signal — no series either way — and SweCham cuts over with zero
     // opt-outs, so the catalogue's "a drop to 0 means the filter stopped"
     // alarm could never have fired. `.add(0)` still registers the series.
@@ -173,20 +280,24 @@ export async function resolveSegmentRecipients(
     // `dispatch` series, which ongoing submits must not keep alive.
     broadcastsMetrics.marketingOptOutFilterCount(
       deps.tenant.slug,
-      droppedByPreference,
+      optOutDropped,
       input.phase,
     );
   }
 
+  // FR-022a — what the sender is told was "excluded by recipient preference".
+  const droppedByPreference =
+    optOutDropped + (memberBased ? 0 : suppressionDropped);
+
   // Brand-cast (defence-in-depth — primary contact emails could be string at the source)
   final = final.map((e) => unsafeBrandEmailLower(e));
 
-  // Step 5: empty-after-filter check
+  // Step 6: empty-after-filter check
   if (final.length === 0) {
     return err({ kind: 'broadcast_empty_segment_blocked' });
   }
 
-  // Step 6: 5,000 hard cap
+  // Step 6: hard cap — never truncated
   if (final.length > AUDIENCE_HARD_CAP) {
     return err({
       kind: 'broadcast_audience_too_large',

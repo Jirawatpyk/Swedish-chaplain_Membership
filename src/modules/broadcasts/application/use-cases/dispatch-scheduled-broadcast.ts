@@ -39,6 +39,7 @@ import type {
   AudienceContact,
 } from '../ports/broadcasts-gateway-port';
 import type { MembersBridgePort } from '../ports/members-bridge-port';
+import type { AudienceMode } from '../../domain/audience-mode';
 import type { MarketingUnsubscribesRepo } from '../ports/marketing-unsubscribes-repo';
 import type { EventAttendeesRepository } from '../ports/event-attendees-repository';
 import type { PlansBridgePort } from '../ports/plans-bridge-port';
@@ -98,6 +99,13 @@ export interface DispatchScheduledBroadcastDeps {
   readonly membersBridge: MembersBridgePort;
   readonly marketingUnsubscribes: MarketingUnsubscribesRepo;
   readonly eventAttendees: EventAttendeesRepository;
+  /**
+   * 108 PR-C — which resolver leg builds a member-based audience. Set by the
+   * composition root from `FEATURE_CONTACT_MARKETING_RECIPIENTS`; see
+   * `domain/audience-mode.ts`. Submit and dispatch MUST read the same value
+   * so the estimate equals the dispatched set (SC-004).
+   */
+  readonly audienceMode: AudienceMode;
   readonly audit: AuditPort;
   readonly clock: { now(): Date };
   /**
@@ -478,28 +486,14 @@ export async function dispatchScheduledBroadcast(
   // Step 2: re-resolve recipients (segment may have changed since submit)
   const segment = buildSegmentFromBroadcast(broadcast);
   const requestingMember = broadcast.requestedByMemberId;
-  // W2-05: a bridge throw here (Neon/RLS/timeout) must map to the typed
-  // dispatch.server_error like Step 1 (L442-447), not escape the use-case past
-  // failDispatchAndAudit. The broadcast is still 'approved' at this point, so the
-  // next cron tick retries it cleanly.
-  let requestingPrimary: Awaited<
-    ReturnType<typeof deps.membersBridge.getMemberPrimaryContact>
-  >;
-  try {
-    requestingPrimary = await deps.membersBridge.getMemberPrimaryContact(
-      deps.tenant,
-      requestingMember,
-    );
-  } catch (e) {
-    return err({
-      kind: 'dispatch.server_error',
-      message: e instanceof Error ? e.message : 'unknown error',
-    });
-  }
+  // 108 PR-C (FR-022): the requesting member's PRIMARY email used to be read
+  // here (W2-05) only to feed the resolver's email-equality self-exclusion.
+  // Self-exclusion is by member id now, so that read — and its throw path —
+  // is gone; the reply-to read at Step 1 is untouched.
 
-  // W2-05, extended for 108 PR-D (review errors MEDIUM-5): the resolver now
-  // has TWO bridge reads that throw by design — the suppression anti-join and
-  // the per-contact opt-out filter, both fail-closed. An unhandled throw here
+  // W2-05, extended for 108 PR-D (review errors MEDIUM-5): the resolver has
+  // bridge reads that throw by design — the suppression anti-join and the
+  // per-contact opt-out filter, both fail-closed. An unhandled throw here
   // escapes to the cron route and lands in `summary.uncaught_error`, the class
   // that means "programming bug, page someone". A Neon blip is not that: it is
   // a typed `dispatch.server_error`, and the next tick retries because the
@@ -512,11 +506,12 @@ export async function dispatchScheduledBroadcast(
         membersBridge: deps.membersBridge,
         eventAttendees: deps.eventAttendees,
         marketingUnsubscribes: deps.marketingUnsubscribes,
+        audienceMode: deps.audienceMode,
       },
       {
         segment,
         phase: 'dispatch',
-        requestingMemberPrimaryEmail: requestingPrimary,
+        requestingMemberId: requestingMember,
         customRecipients:
           broadcast.customRecipientEmails === null
             ? null
@@ -529,6 +524,18 @@ export async function dispatchScheduledBroadcast(
     return err({
       kind: 'dispatch.server_error',
       message: e instanceof Error ? e.message : 'unknown error',
+    });
+  }
+
+  // 108 PR-C — the member-leg read failing is typed by the resolver
+  // (research R8). It is the SAME class as the throw above: no transition,
+  // no audit, the broadcast stays `approved` and the next tick retries. It
+  // must never fall through to the branches below, which would mark the
+  // broadcast failed with a fabricated "empty audience" reason.
+  if (!resolvedResult.ok && resolvedResult.error.kind === 'resolve.server_error') {
+    return err({
+      kind: 'dispatch.server_error',
+      message: resolvedResult.error.message,
     });
   }
 

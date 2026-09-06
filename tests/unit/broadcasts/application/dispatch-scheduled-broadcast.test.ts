@@ -463,10 +463,11 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
           recipients: [
-            recipient('m-1', 'one@example.com'),
+            recipient('m-r1', 'one@example.com'),
             recipient('m-2', 'two@example.com'),
           ],
           primaryContact: 'sender@example.com',
@@ -531,9 +532,10 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
-          recipients: [recipient('m-1', 'one@example.com')],
+          recipients: [recipient('m-r1', 'one@example.com')],
           primaryContact: 'sender@example.com',
         }),
         marketingUnsubscribes: makeMarketingUnsubscribes(),
@@ -564,6 +566,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({}),
         marketingUnsubscribes: makeMarketingUnsubscribes(),
@@ -593,6 +596,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({}),
         marketingUnsubscribes: makeMarketingUnsubscribes(),
@@ -626,9 +630,10 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
-          recipients: [recipient('m-1', 'one@example.com')],
+          recipients: [recipient('m-r1', 'one@example.com')],
           primaryContact: 'sender@example.com',
         }),
         marketingUnsubscribes: makeMarketingUnsubscribes(
@@ -670,12 +675,13 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
     // between submit and this dispatch tick) → resolveSegmentRecipients
     // returns broadcast_audience_too_large.
     const bigAudience = Array.from({ length: 5001 }, (_, i) =>
-      recipient(`m-${i}`, `u${i}@example.com`),
+      recipient(`m-big-${i}`, `u${i}@example.com`),
     );
     const result = await dispatchScheduledBroadcast(
       {
         tenant,
         broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
           recipients: bigAudience,
@@ -714,9 +720,10 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
     );
   });
 
-  // ---- Bridge throw on requesting-member primary lookup (W2-05) ------
+  // ---- Bridge throw on the member-leg read (W2-05; re-targeted by 108 PR-C —
+  //      the requesting-member primary read that used to sit here is gone) ------
 
-  it('getMemberPrimaryContact throws โ’ dispatch.server_error, no transition, no audit (retried next tick)', async () => {
+  it('the member-leg read (getMembersBySegment) throws โ’ dispatch.server_error, no transition, no audit (retried next tick)', async () => {
     const audit = makeAudit();
     const repo = makeRepo({
       lockedStatus: 'approved',
@@ -724,7 +731,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
     });
     const gw = makeGateway();
     // W2-05: a Neon/RLS/timeout throw from the requesting-member primary
-    // lookup (use-case L467-470) must be caught and mapped to the typed
+    // (now: the member-leg read, since 108 PR-C removed the primary read) must be caught and mapped to the typed
     // dispatch.server_error โ€” NOT escape the use-case. The broadcast must
     // stay 'approved' (no transition, no audit) so the next cron tick
     // retries it cleanly. Mock-only happy-path tests missed this throw path.
@@ -732,13 +739,14 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
         broadcastsGateway: gw.port,
         membersBridge: {
           ...makeMembersBridge({
-            recipients: [recipient('m-1', 'one@example.com')],
+            recipients: [recipient('m-r1', 'one@example.com')],
             primaryContact: 'sender@example.com',
           }),
-          async getMemberPrimaryContact() {
+          async getMembersBySegment() {
             throw new Error('neon connection reset');
           },
         },
@@ -780,9 +788,10 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
-          recipients: [recipient('m-1', 'one@example.com')],
+          recipients: [recipient('m-r1', 'one@example.com')],
           primaryContact: 'sender@example.com',
         }),
         marketingUnsubscribes: makeMarketingUnsubscribes(),
@@ -825,9 +834,10 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
-          recipients: [recipient('m-1', 'one@example.com')],
+          recipients: [recipient('m-r1', 'one@example.com')],
           primaryContact: 'sender@example.com',
         }),
         marketingUnsubscribes: makeMarketingUnsubscribes(),
@@ -863,9 +873,10 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
-          recipients: [recipient('m-1', 'one@example.com')],
+          recipients: [recipient('m-r1', 'one@example.com')],
           primaryContact: 'sender@example.com',
         }),
         marketingUnsubscribes: makeMarketingUnsubscribes(),
@@ -916,9 +927,10 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
-          recipients: [recipient('m-1', 'one@example.com')],
+          recipients: [recipient('m-r1', 'one@example.com')],
           primaryContact: 'sender@example.com',
         }),
         marketingUnsubscribes: makeMarketingUnsubscribes(),
@@ -968,9 +980,10 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
-          recipients: [recipient('m-1', 'one@example.com')],
+          recipients: [recipient('m-r1', 'one@example.com')],
           primaryContact: 'sender@example.com',
         }),
         marketingUnsubscribes: makeMarketingUnsubscribes(),
@@ -997,7 +1010,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
 
   // ---- Recipient self-exclusion (Q16) -------------------------------
 
-  it('requesting member primary contact email is excluded from audience contacts', async () => {
+  it('the requesting member is excluded from audience contacts — by member id since 108 PR-C (FR-022)', async () => {
     const audit = makeAudit();
     const repo = makeRepo({
       lockedStatus: 'approved',
@@ -1008,9 +1021,13 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
           recipients: [
+            // The requesting member (`makeBroadcast` → requestedByMemberId 'm-1')
+            // listed as a recipient: excluded because it is the SAME MEMBER,
+            // whatever address the row carries.
             recipient('m-1', 'sender@example.com'),
             recipient('m-2', 'two@example.com'),
           ],
@@ -1046,9 +1063,10 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
-          recipients: [recipient('m-1', 'one@example.com')],
+          recipients: [recipient('m-r1', 'one@example.com')],
           primaryContact: 'sender@example.com',
         }),
         marketingUnsubscribes: makeMarketingUnsubscribes(),
@@ -1083,9 +1101,10 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
-          recipients: [recipient('m-1', 'one@example.com')],
+          recipients: [recipient('m-r1', 'one@example.com')],
           primaryContact: 'sender@example.com',
         }),
         marketingUnsubscribes: makeMarketingUnsubscribes(),
@@ -1136,9 +1155,10 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
-          recipients: [recipient('m-1', 'one@example.com')],
+          recipients: [recipient('m-r1', 'one@example.com')],
           primaryContact: 'sender@example.com',
         }),
         marketingUnsubscribes: makeMarketingUnsubscribes(),
@@ -1176,9 +1196,10 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
-          recipients: [recipient('m-1', 'one@example.com')],
+          recipients: [recipient('m-r1', 'one@example.com')],
           primaryContact: 'sender@example.com',
         }),
         marketingUnsubscribes: makeMarketingUnsubscribes(),
@@ -1210,10 +1231,11 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
           recipients: [
-            recipient('m-1', 'one@example.com'),
+            recipient('m-r1', 'one@example.com'),
             recipient('m-2', 'two@example.com'),
             recipient('m-3', 'three@example.com'),
           ],
@@ -1255,6 +1277,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       {
         tenant,
         broadcastsRepo: repo,
+        audienceMode: 'primary_only' as const,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({}),
         marketingUnsubscribes: makeMarketingUnsubscribes(),
@@ -1308,10 +1331,11 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
         broadcastsGateway: gwPort,
         membersBridge: makeMembersBridge({
           recipients: [
-            recipient('m-1', 'one@example.com'),
+            recipient('m-r1', 'one@example.com'),
             recipient('m-2', 'two@example.com'),
           ],
           primaryContact: 'sender@example.com',
@@ -1363,9 +1387,10 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
         broadcastsGateway: gwPort,
         membersBridge: makeMembersBridge({
-          recipients: [recipient('m-1', 'one@example.com')],
+          recipients: [recipient('m-r1', 'one@example.com')],
           primaryContact: 'sender@example.com',
         }),
         marketingUnsubscribes: makeMarketingUnsubscribes(),
@@ -1420,9 +1445,10 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
         broadcastsGateway: gwPort,
         membersBridge: makeMembersBridge({
-          recipients: [recipient('m-1', 'one@example.com')],
+          recipients: [recipient('m-r1', 'one@example.com')],
           primaryContact: 'sender@example.com',
         }),
         marketingUnsubscribes: makeMarketingUnsubscribes(),
@@ -1470,9 +1496,10 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
-          recipients: [recipient('m-1', 'one@example.com')],
+          recipients: [recipient('m-r1', 'one@example.com')],
           primaryContact: 'sender@example.com',
         }),
         marketingUnsubscribes: makeMarketingUnsubscribes(),
@@ -1507,9 +1534,10 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
-          recipients: [recipient('m-1', 'one@example.com')],
+          recipients: [recipient('m-r1', 'one@example.com')],
           primaryContact: 'sender@example.com',
         }),
         marketingUnsubscribes: makeMarketingUnsubscribes(),
@@ -1546,9 +1574,10 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
-          recipients: [recipient('m-1', 'one@example.com')],
+          recipients: [recipient('m-r1', 'one@example.com')],
           primaryContact: 'sender@example.com',
         }),
         marketingUnsubscribes: makeMarketingUnsubscribes(),
@@ -1585,9 +1614,10 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
-          recipients: [recipient('m-1', 'one@example.com')],
+          recipients: [recipient('m-r1', 'one@example.com')],
           primaryContact: 'sender@example.com',
         }),
         marketingUnsubscribes: makeMarketingUnsubscribes(),
@@ -1630,9 +1660,10 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
-          recipients: [recipient('m-1', 'one@example.com')],
+          recipients: [recipient('m-r1', 'one@example.com')],
           primaryContact: 'sender@example.com',
         }),
         marketingUnsubscribes: makeMarketingUnsubscribes(),
@@ -1680,9 +1711,10 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
-          recipients: [recipient('m-1', 'one@example.com')],
+          recipients: [recipient('m-r1', 'one@example.com')],
           primaryContact: 'sender@example.com',
         }),
         marketingUnsubscribes: makeMarketingUnsubscribes(),
@@ -1735,9 +1767,10 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
-          recipients: [recipient('m-1', 'one@example.com')],
+          recipients: [recipient('m-r1', 'one@example.com')],
           primaryContact: 'sender@example.com',
           // Member explicitly prefers Thai; the tenant default below is 'en'.
           preferredLocale: 'th',
@@ -1778,9 +1811,10 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
-          recipients: [recipient('m-1', 'one@example.com')],
+          recipients: [recipient('m-r1', 'one@example.com')],
           primaryContact: 'sender@example.com',
         }),
         marketingUnsubscribes: makeMarketingUnsubscribes(),
@@ -1816,10 +1850,11 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
         broadcastsGateway: gw.port,
         // primaryContact: null โ’ membersBridge.getMemberPrimaryContact returns null
         membersBridge: makeMembersBridge({
-          recipients: [recipient('m-1', 'one@example.com')],
+          recipients: [recipient('m-r1', 'one@example.com')],
           primaryContact: null,
         }),
         marketingUnsubscribes: makeMarketingUnsubscribes(),
@@ -1858,9 +1893,10 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
-          recipients: [recipient('m-1', 'one@example.com')],
+          recipients: [recipient('m-r1', 'one@example.com')],
           primaryContact: 'sender@example.com',
         }),
         marketingUnsubscribes: makeMarketingUnsubscribes(),
@@ -1906,9 +1942,10 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
-          recipients: [recipient('m-1', 'one@example.com')],
+          recipients: [recipient('m-r1', 'one@example.com')],
           primaryContact: 'sender@example.com',
         }),
         marketingUnsubscribes: makeMarketingUnsubscribes(),
@@ -1960,9 +1997,10 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         {
           tenant,
           broadcastsRepo: repo.port,
+          audienceMode: 'primary_only' as const,
           broadcastsGateway: gw.port,
           membersBridge: makeMembersBridge({
-            recipients: [recipient('m-1', 'one@example.com')],
+            recipients: [recipient('m-r1', 'one@example.com')],
             primaryContact: 'sender@example.com',
           }),
           marketingUnsubscribes: makeMarketingUnsubscribes(),
@@ -1998,10 +2036,11 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
         broadcastsGateway: gw.port,
         // primaryContact: null โ’ email skipped, audit MUST fire
         membersBridge: makeMembersBridge({
-          recipients: [recipient('m-1', 'one@example.com')],
+          recipients: [recipient('m-r1', 'one@example.com')],
           primaryContact: null,
         }),
         marketingUnsubscribes: makeMarketingUnsubscribes(),
@@ -2056,9 +2095,10 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       {
         tenant,
         broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
-          recipients: [recipient('m-1', 'one@example.com')],
+          recipients: [recipient('m-r1', 'one@example.com')],
           primaryContact: 'sender@example.com',
         }),
         marketingUnsubscribes: makeMarketingUnsubscribes(),
@@ -2105,7 +2145,7 @@ describe('dispatch-scheduled-broadcast — per-broadcast opt-out drop log (round
     const repo = makeRepo({ lockedStatus: 'approved', broadcast: makeBroadcast('approved') });
     const gw = makeGateway();
     const bridge = makeMembersBridge({
-      recipients: [recipient('m-1', 'one@example.com'), recipient('m-2', 'two@example.com')],
+      recipients: [recipient('m-r1', 'one@example.com'), recipient('m-2', 'two@example.com')],
       primaryContact: 'sender@example.com',
     });
     // One of the two recipients carries a marketing opt-out.
@@ -2115,6 +2155,7 @@ describe('dispatch-scheduled-broadcast — per-broadcast opt-out drop log (round
       {
         tenant,
         broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
         broadcastsGateway: gw.port,
         membersBridge: bridge,
         marketingUnsubscribes: makeMarketingUnsubscribes(),
@@ -2143,3 +2184,101 @@ describe('dispatch-scheduled-broadcast — per-broadcast opt-out drop log (round
   });
 });
 
+
+/**
+ * 108 PR-C T076 — the dispatch path hands the resolver the requesting MEMBER
+ * id (self-exclusion by member, FR-022), threads `audienceMode` from deps,
+ * and maps the resolver's typed `resolve.server_error` to
+ * `dispatch.server_error` with NO transition and NO audit, so the broadcast
+ * stays `approved` for the next tick — never `failed_to_dispatch` with a
+ * fabricated "empty audience" reason.
+ */
+describe('dispatch-scheduled-broadcast — 108 PR-C resolver contract (T076)', () => {
+  function depsWith(
+    bridge: MembersBridgePort,
+    audienceMode: 'primary_only' | 'all_contacts',
+  ) {
+    const audit = makeAudit();
+    const repo = makeRepo({ lockedStatus: 'approved', broadcast: makeBroadcast('approved') });
+    const gw = makeGateway();
+    return {
+      audit,
+      repo,
+      gw,
+      deps: {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode,
+        broadcastsGateway: gw.port,
+        membersBridge: bridge,
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
+      },
+    };
+  }
+
+  it('a failed member read (resolve.server_error) → dispatch.server_error, no transition, no audit, no audience', async () => {
+    const { audit, repo, gw, deps } = depsWith(
+      {
+        ...makeMembersBridge({ recipients: [recipient('m-r1', 'one@example.com')], primaryContact: 'sender@example.com' }),
+        async getMembersBySegment() {
+          throw new Error('members-bridge.getMembersBySegment: repo.unexpected');
+        },
+      },
+      'primary_only',
+    );
+    const result = await dispatchScheduledBroadcast(deps, baseInput);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('dispatch.server_error');
+    expect(gw.audienceCalls).toHaveLength(0);
+    expect(repo.transitions).toHaveLength(0);
+    expect(audit.emits).toHaveLength(0);
+  });
+
+  it('self-exclusion is by member id: the requesting member (m-1) is dropped even under a different address', async () => {
+    const { gw, deps } = depsWith(
+      makeMembersBridge({
+        recipients: [recipient('m-1', 'not-the-sender-address@example.com'), recipient('m-2', 'two@example.com')],
+        primaryContact: 'sender@example.com',
+      }),
+      'primary_only',
+    );
+    const result = await dispatchScheduledBroadcast(deps, baseInput);
+    expect(result.ok).toBe(true);
+    const pushed = JSON.stringify(gw.contactsCalls);
+    expect(pushed).toContain('two@example.com');
+    expect(pushed).not.toContain('not-the-sender-address@example.com');
+  });
+
+  it("audienceMode 'all_contacts' dispatches the contact-leg rows, not the primary-only rows", async () => {
+    const kinds: string[] = [];
+    const { gw, deps } = depsWith(
+      {
+        ...makeMembersBridge({ recipients: [recipient('m-9', 'nine@example.com')], primaryContact: 'sender@example.com' }),
+        async getContactsBySegment(_ctx, kind) {
+          kinds.push(kind);
+          return [
+            { memberId: 'm-2', contactId: 'c-2p', emailLower: unsafeBrandEmailLower('two@example.com'), isPrimary: true },
+            { memberId: 'm-2', contactId: 'c-2s', emailLower: unsafeBrandEmailLower('two-secondary@example.com'), isPrimary: false },
+          ];
+        },
+      },
+      'all_contacts',
+    );
+    const result = await dispatchScheduledBroadcast(deps, baseInput);
+    expect(result.ok).toBe(true);
+    expect(kinds).toEqual(['all_members']);
+    const pushed = JSON.stringify(gw.contactsCalls);
+    expect(pushed).toContain('two@example.com');
+    expect(pushed).toContain('two-secondary@example.com');
+    expect(pushed).not.toContain('nine@example.com');
+  });
+});

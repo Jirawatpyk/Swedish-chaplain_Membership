@@ -28,6 +28,7 @@ import { makeDrizzleBroadcastApprovalCounter } from './db/drizzle-broadcast-appr
 import type { BroadcastApprovalCounter } from '../application/ports/broadcast-approval-counter';
 
 import type { ClockPort } from '../application/ports/clock-port';
+import type { AudienceMode } from '../domain/audience-mode';
 import type { ProcessWebhookEventDeps } from '../application/use-cases/process-webhook-event';
 import type { ReconcileStuckSendingDeps } from '../application/use-cases/reconcile-stuck-sending';
 import type { RollUpBatchBroadcastDeps } from '../application/use-cases/roll-up-batch-broadcast';
@@ -89,6 +90,19 @@ export function makeSaveDraftDeps(tenantId: string): SaveDraftDeps {
   };
 }
 
+/**
+ * 108 PR-C — the ONE place the cutover flag is read (plan Complexity
+ * Tracking #2; data-model § 5). Every resolver caller — submit, the
+ * recipient-count endpoints, dispatch-scheduled, split-large-broadcasts,
+ * dispatch-batches — takes the leg from here so the estimate shown at compose
+ * equals the dispatched set for the same tenant state (SC-004). Read per call
+ * (not cached at module load) so a Vercel env flip takes effect on the next
+ * request/tick without a process restart.
+ */
+export function currentAudienceMode(): AudienceMode {
+  return env.features.contactMarketingRecipients ? 'all_contacts' : 'primary_only';
+}
+
 export function makeSubmitBroadcastDeps(
   tenantId: string,
 ): SubmitBroadcastDeps {
@@ -110,6 +124,7 @@ export function makeSubmitBroadcastDeps(
     emailValidator: rfc5321EmailValidator,
     eventAttendees: eventAttendeesBridge,
     marketingUnsubscribes: makeDrizzleMarketingUnsubscribesRepo(tenantId),
+    audienceMode: currentAudienceMode(),
     rateLimiter: broadcastsRateLimiter,
     audit: f7AuditAdapter,
     clock: systemClock,
@@ -290,6 +305,7 @@ export async function makeDispatchScheduledBroadcastDeps(
     membersBridge,
     marketingUnsubscribes: makeDrizzleMarketingUnsubscribesRepo(tenantId),
     eventAttendees: eventAttendeesBridge,
+    audienceMode: currentAudienceMode(),
     audit: f7AuditAdapter,
     clock: systemClock,
     fromEmail: env.broadcasts.fromEmail,

@@ -326,6 +326,7 @@ function makeDeps(opts: FixtureOpts) {
       emailValidator: rfc5321EmailValidator,
       eventAttendees: makeEventAttendees(),
       marketingUnsubscribes: makeMarketingUnsubscribes(),
+      audienceMode: 'primary_only' as const,
       rateLimiter: makeRateLimiter(opts.rateLimitAllow ?? true),
       audit: audit.port,
       clock: { now: () => FROZEN_NOW },
