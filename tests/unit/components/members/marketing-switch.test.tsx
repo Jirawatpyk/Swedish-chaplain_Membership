@@ -366,3 +366,51 @@ describe('MarketingSwitch — Undo under leavesView (cycle 13, whole-branch LOW-
     expect(undo?.description).toBeUndefined();
   });
 });
+
+/**
+ * Cycle 14 (whole-branch HIGH-2): sonner dismisses the toast after
+ * `action.onClick` — the Undo button unmounts under the user's focus. The
+ * switch must catch it: back to itself when it is still in the DOM (member
+ * page, unfiltered audience), else to the count line (the row left the view).
+ */
+describe('MarketingSwitch — Undo keeps focus (cycle 14)', () => {
+  it('Undo returns focus to the switch when the row is still there', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, { outcome: 'changed', contact: {} })));
+    renderSwitch('on');
+    const sw = screen.getByRole('switch');
+    fireEvent.click(sw);
+    await waitFor(() => expect(toast.success).toHaveBeenCalledTimes(1));
+    const opts = (toast.success as unknown as ReturnType<typeof vi.fn>).mock.calls[0]![1] as {
+      action: { onClick: () => void | Promise<void> };
+    };
+    // Simulate the toast's Undo button holding focus, then being dismissed.
+    const undoButton = document.createElement('button');
+    document.body.appendChild(undoButton);
+    undoButton.focus();
+    await opts.action.onClick();
+    undoButton.remove();
+    await waitFor(() => expect(toast.success).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(document.activeElement).toBe(sw));
+  });
+
+  it('Undo falls back to the count line when the switch has left the DOM', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, { outcome: 'changed', contact: {} })));
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <p id="audience-count" tabIndex={-1}>1 contact</p>
+        <MarketingSwitch contactId={CONTACT} contactName="Jane Doe" state="on" leavesView />
+      </NextIntlClientProvider>,
+    );
+    const sw = screen.getByRole('switch');
+    fireEvent.click(sw);
+    await waitFor(() => expect(toast.success).toHaveBeenCalledTimes(1));
+    const opts = (toast.success as unknown as ReturnType<typeof vi.fn>).mock.calls[0]![1] as {
+      action: { onClick: () => void | Promise<void> };
+    };
+    // The refresh removed the row: the switch element is gone.
+    sw.remove();
+    await opts.action.onClick();
+    await waitFor(() => expect(toast.success).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(document.activeElement).toBe(document.getElementById('audience-count')));
+  });
+});

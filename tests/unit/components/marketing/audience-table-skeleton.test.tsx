@@ -32,3 +32,14 @@ describe('AudienceTableSkeleton — shape (cycle 11)', () => {
     for (const r of rows) expect(r.className).toContain('h-[var(--table-row-height)]');
   });
 });
+
+describe('AudienceTableSkeleton — matches the real table box (cycle 14)', () => {
+  it('the body is w-full with a min-width, not a fixed width', () => {
+    const { container } = render(<AudienceTableSkeleton />);
+    const body = container.querySelector<HTMLElement>('[data-slot="skeleton-body"]');
+    expect(body).not.toBeNull();
+    expect(body!.className).toContain('w-full');
+    expect(body!.style.minWidth).toMatch(/px$/);
+    expect(body!.style.width).toBe('');
+  });
+});

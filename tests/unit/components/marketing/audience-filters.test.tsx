@@ -116,3 +116,28 @@ describe('AudienceFilters — select triggers (cycle 11)', () => {
     expect(trigger!.className).not.toMatch(/\bsm:w-52\b/);
   });
 });
+
+describe('AudienceFilters — hostile / stale params (cycle 14)', () => {
+  it('?state=banana&kind=alien → the triggers read "All …" and no raw i18n key leaks into a label', () => {
+    renderFilters('state=banana&kind=alien');
+    const names = screen.getAllByRole('combobox').map((el) => el.getAttribute('aria-label') ?? '');
+    expect(names).toContain(`${t.stateLabel}: ${t.state.all}`);
+    expect(names).toContain(`${t.kindLabel}: ${t.kind.all}`);
+    for (const n of names) expect(n).not.toMatch(/\b(state|kind)\.[a-z]+\b/);
+    expect(document.body.textContent).not.toMatch(/state\.banana|kind\.alien/);
+  });
+
+  it('a pending search debounce is cancelled on unmount — no navigation fires after the user left', () => {
+    vi.useFakeTimers();
+    try {
+      const { unmount } = renderFilters();
+      const input = screen.getByRole('searchbox', { name: t.searchLabel });
+      fireEvent.change(input, { target: { value: 'Acme' } });
+      unmount();
+      vi.advanceTimersByTime(1_000);
+      expect(replaceSpy).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

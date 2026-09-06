@@ -84,3 +84,12 @@ describe('AudienceTable — structure (cycle 11)', () => {
     expect(email.className).toContain('[overflow-wrap:anywhere]');
   });
 });
+
+describe('AudienceTable — header wrap + column budget (cycle 14)', () => {
+  it('every header cell may wrap (the primitive is nowrap; SV "REGLAGE" overflowed a 72-px column)', () => {
+    const { container } = renderTable(true);
+    const ths = Array.from(container.querySelectorAll('th'));
+    expect(ths.length).toBe(8);
+    for (const th of ths) expect(th.className).toContain('whitespace-normal');
+  });
+});

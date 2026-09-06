@@ -704,3 +704,29 @@ describe('resolve-segment-recipients — 108 PR-D marketing opt-out at dispatch 
     expect(calls).toEqual([]);
   });
 });
+
+describe('resolve-segment-recipients — droppedByPreference is measured, not trusted (cycle 14)', () => {
+  it('a bridge answering with an address outside the batch does not inflate the count', async () => {
+    const spy = vi.spyOn(broadcastsMetrics, 'marketingOptOutFilterCount');
+    const deps = makeDeps({
+      members: [recipient('a@example.com'), recipient('b@example.com')],
+      // The fixture matches `optedOut` against the batch; force a stray answer
+      // by opting out an address the batch never contained.
+      optedOut: new Set([unsafeBrandEmailLower('stray@example.com')]),
+    });
+    // Monkey-patch the fixture so the bridge returns the stray address.
+    deps.membersBridge.filterMarketingOptedOut = async () =>
+      new Set([unsafeBrandEmailLower('stray@example.com')]);
+    const result = await resolveSegmentRecipients(deps, {
+      segment: { kind: 'all_members' },
+      requestingMemberPrimaryEmail: null,
+      customRecipients: null,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.recipients).toHaveLength(2);
+    expect(result.value.droppedByPreference).toBe(0);
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+});
