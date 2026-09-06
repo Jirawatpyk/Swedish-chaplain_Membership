@@ -152,6 +152,7 @@ async function suppressBatchRecipient(
         input.recipientEmailLower.toLowerCase().trim(),
       ),
       memberId: null,
+      contactId: null,
       reason: suppressionReason,
       reasonText: input.errorMessage ?? null,
       sourceBroadcastId: asBroadcastId(input.broadcastId),

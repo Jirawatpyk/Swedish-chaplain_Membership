@@ -144,21 +144,45 @@ export async function unsubscribeRecipient(
       // Continue — the suppression upsert + audit MUST still happen.
     }
 
-    // Best-effort member resolution: if the recipient is a known member
-    // we link the suppression to them (helps GDPR Art. 17 cascade later).
+    // Best-effort attribution (108 PR-C, FR-024 / US3 s7): the address is
+    // looked up against EVERY live contact in the tenant graph first, so a
+    // secondary contact's unsubscribe is recorded against the member AND the
+    // specific contact. The primary-contact lookup stays as the legacy
+    // fallback for an address that is a member's primary but has no contact
+    // row. Neither lookup may block the suppression: an outage here leaves
+    // both ids null and the row + audits are still written (GDPR Art. 21).
     let memberId: string | null = null;
+    let contactId: string | null = null;
     try {
-      const m = await deps.membersBridge.lookupMemberPrimaryContactEmailInTenant(
+      const c = await deps.membersBridge.lookupContactEmailInTenant(
         deps.tenant,
         input.emailLower,
       );
-      if (m !== null) memberId = m.memberId;
+      if (c !== null) {
+        memberId = c.memberId;
+        contactId = c.contactId;
+      }
     } catch (cause) {
       logger.warn(
         { err: (cause as Error).message },
-        'unsubscribe_member_lookup_failed',
+        'unsubscribe_contact_lookup_failed',
       );
-      // Continue with memberId=null.
+      // Fall through to the legacy lookup.
+    }
+    if (memberId === null) {
+      try {
+        const m = await deps.membersBridge.lookupMemberPrimaryContactEmailInTenant(
+          deps.tenant,
+          input.emailLower,
+        );
+        if (m !== null) memberId = m.memberId;
+      } catch (cause) {
+        logger.warn(
+          { err: (cause as Error).message },
+          'unsubscribe_member_lookup_failed',
+        );
+        // Continue with memberId=null.
+      }
     }
 
     let upsertResult: UpsertSuppressionResult;
@@ -167,6 +191,7 @@ export async function unsubscribeRecipient(
         tenantId: input.tenantId,
         emailLower: input.emailLower,
         memberId,
+        contactId,
         reason: 'recipient_initiated',
         reasonText,
         sourceBroadcastId,
@@ -189,6 +214,7 @@ export async function unsubscribeRecipient(
             broadcastId: sourceBroadcastId,
             emailHash,
             memberId,
+            contactId,
             sourceTokenHash: tokenHash,
             reason: 'recipient_initiated',
           },
@@ -203,6 +229,7 @@ export async function unsubscribeRecipient(
             broadcastId: sourceBroadcastId,
             emailHash,
             memberId,
+            contactId,
             reason: 'recipient_initiated',
           },
           tenantId: input.tenantId,

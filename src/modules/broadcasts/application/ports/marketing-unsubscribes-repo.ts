@@ -31,6 +31,14 @@ export interface NewSuppressionInput {
   readonly tenantId: string;
   readonly emailLower: EmailLower;
   readonly memberId: string | null;
+  /**
+   * 108 PR-C (FR-024) — the contact that unsubscribed, when the address
+   * resolved to a live contact row; `null` from the webhook paths (a bounce
+   * or complaint is not a person's act) and when resolution fails. On
+   * conflict the repo keeps a prior non-null attribution (COALESCE), so a
+   * later webhook event never blanks it.
+   */
+  readonly contactId: string | null;
   readonly reason: MarketingUnsubscribeReason;
   readonly reasonText: string | null;
   readonly sourceBroadcastId: BroadcastId | null;

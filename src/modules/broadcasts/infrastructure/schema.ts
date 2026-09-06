@@ -464,6 +464,11 @@ export const marketingUnsubscribes = pgTable(
     tenantId: text('tenant_id').notNull(),
     emailLower: text('email_lower').notNull(),
     memberId: uuid('member_id'),
+    // 108 PR-C (migration 0297, FR-024) — the specific CONTACT that
+    // unsubscribed, resolved best-effort at unsubscribe time; NULL for
+    // webhook-written bounces/complaints and for legacy rows. No FK, like
+    // `member_id`: the row outlives the contact (never deleted).
+    contactId: uuid('contact_id'),
 
     reason: marketingUnsubscribeReasonEnum('reason').notNull(),
     reasonText: text('reason_text'),
@@ -484,6 +489,12 @@ export const marketingUnsubscribes = pgTable(
     index('marketing_unsubscribes_member_lookup_idx')
       .on(table.tenantId, table.memberId)
       .where(sql`member_id IS NOT NULL`),
+
+    // 108 PR-C (0297) — contact-side lookup + the erasure cascade's
+    // "rows referencing these contacts". Partial: most rows have none.
+    index('marketing_unsubscribes_contact_lookup_idx')
+      .on(table.tenantId, table.contactId)
+      .where(sql`contact_id IS NOT NULL`),
 
     // Time-series query for ops dashboard
     index('marketing_unsubscribes_unsubscribed_at_idx').on(

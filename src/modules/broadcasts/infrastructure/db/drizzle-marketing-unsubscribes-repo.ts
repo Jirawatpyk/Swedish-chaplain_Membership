@@ -36,6 +36,7 @@ function rowToSuppression(row: MarketingUnsubscribeRow): MarketingUnsubscribe {
     tenantId: row.tenantId,
     emailLower: unsafeBrandEmailLower(row.emailLower),
     memberId: row.memberId,
+    contactId: row.contactId,
     reason: row.reason as MarketingUnsubscribeReason,
     reasonText: row.reasonText,
     sourceBroadcastId:
@@ -85,14 +86,19 @@ async function executeSuppressionUpsert(
 }> {
   const result = (await tx.execute(sql`
         INSERT INTO marketing_unsubscribes
-          (tenant_id, email_lower, member_id, reason, reason_text,
+          (tenant_id, email_lower, member_id, contact_id, reason, reason_text,
            source_broadcast_id, source_token_hash)
         VALUES
-          (${input.tenantId}, ${input.emailLower}, ${input.memberId},
+          (${input.tenantId}, ${input.emailLower}, ${input.memberId}, ${input.contactId},
            ${input.reason}::marketing_unsubscribe_reason, ${input.reasonText},
            ${input.sourceBroadcastId}, ${input.sourceTokenHash})
         ON CONFLICT (tenant_id, email_lower) DO UPDATE
-          SET reason = CASE
+          SET -- 108 PR-C (FR-024): attribution is filled in when a later event
+              -- knows it and never blanked by one that does not (a webhook
+              -- bounce carries neither id).
+              member_id = COALESCE(EXCLUDED.member_id, marketing_unsubscribes.member_id),
+              contact_id = COALESCE(EXCLUDED.contact_id, marketing_unsubscribes.contact_id),
+              reason = CASE
                 WHEN ${newRank()} >= ${oldRank()}
                 THEN EXCLUDED.reason
                 ELSE marketing_unsubscribes.reason

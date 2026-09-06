@@ -213,6 +213,7 @@ function makeUnsubscribesRepo(): {
           tenantId: input.tenantId,
           emailLower: input.emailLower,
           memberId: input.memberId,
+          contactId: input.contactId,
           reason: input.reason,
           reasonText: input.reasonText,
           sourceBroadcastId: input.sourceBroadcastId,
