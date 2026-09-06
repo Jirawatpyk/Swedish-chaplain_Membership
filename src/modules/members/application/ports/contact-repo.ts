@@ -100,8 +100,12 @@ export interface ContactRepo {
    */
   addInTx(
     tx: TenantTx,
-    // 108 PR-D: `marketing` is omitted — a new contact always starts in
-    // `RECEIVES_MARKETING` (FR-027); the opt-out has its own write path.
+    // 108 PR-D: `marketing` is omitted — the CALLER never chooses it. The
+    // implementation decides: `RECEIVES_MARKETING` (FR-027) unless this
+    // address already carries the person's OWN objection, which follows the
+    // address across remove → re-add (FR-027 AMENDMENT; see
+    // `infrastructure/db/carried-marketing-opt-out.ts`). Changing it later has
+    // its own write path.
     draft: Omit<Contact, 'createdAt' | 'updatedAt' | 'marketing'>,
   ): Promise<Result<Contact, RepoError>>;
 

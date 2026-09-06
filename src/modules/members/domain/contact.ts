@@ -241,8 +241,10 @@ export type Contact = {
    * 108 PR-D — per-contact marketing opt-out (all null = receives). Never
    * consulted by any money path: money-email eligibility is `isPrimary &&
    * removedAt === null` only (FR-033). Drafts handed to `addInTx` /
-   * `createWithPrimaryContactInTx` omit this field — a new contact always
-   * starts in `RECEIVES_MARKETING`.
+   * `createWithPrimaryContactInTx` omit this field — the repo decides:
+   * `RECEIVES_MARKETING`, unless the address already carries the person's own
+   * `self` objection, which follows it across remove → re-add (FR-027
+   * AMENDMENT, staff review C1/C2).
    */
   readonly marketing: MarketingOptOut;
   readonly createdAt: Date;

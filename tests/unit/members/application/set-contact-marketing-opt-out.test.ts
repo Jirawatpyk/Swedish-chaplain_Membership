@@ -10,7 +10,8 @@
  *     unsubscribe always wins (FR-025) — and refuses when the list cannot be
  *     read (re-enabling blind would override an unsubscribe nobody checked);
  *   - same-state is `unchanged` with NO audit row (FR-030b idempotency);
- *   - a removed contact has no marketing state → not_found;
+ *   - a contact ALREADY removed at the pre-read → `removed`, its own error
+ *     type (404, and deliberately NOT probe-audited);
  *   - the audit payload carries ids + source + the session role, never an
  *     address (FR-053a).
  *

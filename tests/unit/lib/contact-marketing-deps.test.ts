@@ -3,7 +3,7 @@
  * adapter behind both toggles and the audience page
  * (`makeMarketingSuppressionLookup`) was untested; its "unparseable address →
  * not suppressed" branch is the one that lets a "switch on" through, so it
- * must be pinned with its reason: the list only ever holds PARSED addresses,
+ * must be pinned with its reason: the two email grammars are identical, so the branch is unreachable — NOT because "the list only holds parsed values" (false: the multi-batch webhook path brands without parsing; see the body comment on that case),
  * so an unparseable one cannot be on it — that is a truthful answer, not a
  * fail-open. A repo failure, by contrast, THROWS (the port contract) so the
  * toggle refuses "on" and the audience page degrades to "status unavailable".

@@ -27,12 +27,16 @@
 --
 -- PARTIAL INDEX. `contacts_marketing_recipients_idx (tenant_id, member_id,
 -- contact_id) WHERE removed_at IS NULL AND marketing_opt_out_at IS NULL` is
--- RESERVED for PR-C's 1:N audience resolver ("every live, not-opted-out
--- contact of these members"); PR-D's own queries do not use it (the audience
--- page orders by company/last name with LIMIT/OFFSET and does not imply
--- `marketing_opt_out_at IS NULL` by default; the dispatch filter reads the
--- complement). It is tiny (a partial over a mostly-NULL column) and cheap on
--- write; PR-C MUST `EXPLAIN` its resolver against it and drop it if unused.
+-- added for PR-C's 1:N audience resolver ("every live, not-opted-out contact
+-- of these members"). CORRECTION (staff review P1): PR-D's audience page CAN
+-- plan against it. The `state=on` filter builds
+-- `tenant_id = $1 AND removed_at IS NULL AND marketing_opt_out_at IS NULL` —
+-- the partial predicate verbatim, with the index's leading column — and
+-- `state=on` is half of the FR-027a pre-flight preset, not an obscure filter.
+-- Only the DEFAULT (unfiltered) view does not imply it, and the dispatch
+-- filter reads the complement. So: it is tiny (a partial over a mostly-NULL
+-- column) and cheap on write, and PR-C MUST `EXPLAIN` **PR-D's `state=on`
+-- count query** as well as its own resolver before considering a drop.
 --
 -- RLS. `tenant_isolation_on_contacts` (ENABLE + FORCE, 0009) covers the new
 -- columns; no policy change. Erasure: the columns are classified KEPT in

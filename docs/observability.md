@@ -1281,7 +1281,13 @@ recipient email addresses (when used as keys), `Svix-Signature` header
 value, or unsubscribe-token plaintext is ever attributed** — those are in
 pino's redact list (see § 22.4).
 
-### 22.1 Metrics catalogue (18 metrics)
+### 22.1 Metrics catalogue
+
+> **Naming**: rows are titled in dotted form for readability, but the EMITTED
+> instrument name is the underscored one — `broadcasts.cron.dispatched.count`
+> is emitted as `broadcasts_cron_dispatched_count`. Copy the underscored name
+> into a dashboard query, not the row title. (The stale "(18 metrics)" count in
+> this heading was dropped rather than re-guessed: no gate keeps it honest.)
 
 | Metric | Type | Labels | Purpose |
 |---|---|---|---|

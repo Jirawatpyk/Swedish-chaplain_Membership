@@ -154,7 +154,7 @@ describe('108 PR-D — Marketing audience query (live Neon)', () => {
     await deleteTestUser(admin).catch(() => {});
   }, 120_000);
 
-  it('default view (eligible, no state): Acme\'s four live contacts, ordered company → last name; count matches', async () => {
+  it('default view (eligible, no state): Acme\'s five live contacts, ordered company → last name; count matches', async () => {
     const r = await listMarketingAudience(
       { filter: { eligible: true }, page: 1 },
       buildMarketingAudienceDeps(tenantA.ctx),
@@ -265,7 +265,13 @@ describe('108 PR-D — Marketing audience query (live Neon)', () => {
   });
 });
 
-describe('108 PR-D — Marketing audience pagination + SC-004 budget (live Neon)', () => {
+// Staff review T4: this block seeds 200 members × 100 contacts over 200
+// sequential transactions and then asserts WALL CLOCK against a 3 s budget.
+// That is a legitimate SC-004 check and a bad fit for `integration-smoke.yml`,
+// which is REQUIRED on `main`, capped at 20 minutes, and runs against a
+// freshly created (cold, unvacuumed) Neon branch. It runs in the nightly
+// sweep instead, which sets `RUN_SCALE_TESTS=1` — a genuine run, not a skip.
+describe.runIf(process.env.RUN_SCALE_TESTS === '1')('108 PR-D — Marketing audience pagination + SC-004 budget (live Neon)', () => {
   let tenant: TestTenant;
   let admin: TestUser;
   const planId = `aud20k-${randomUUID().slice(0, 6)}`;

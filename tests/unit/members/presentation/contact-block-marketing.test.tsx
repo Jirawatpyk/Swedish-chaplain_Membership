@@ -43,8 +43,9 @@ vi.mock('@/app/(staff)/admin/members/[memberId]/_lib/resolve-contact-subscriptio
 vi.mock('@/app/(staff)/admin/members/[memberId]/_lib/resolve-contact-verification', () => ({
   resolveContactVerification: vi.fn(),
 }));
-// The pre-108 two-state badge; stubbed so its `useTranslations` never needs a
-// provider. The assertions below require it to be ABSENT from the markup.
+// The 108 PR-D FIVE-state badge (the pre-108 two-state `subscription-badge`
+// was deleted); stubbed so its `useTranslations` never needs a provider, and
+// so the assertions below can read `data-state` off a stable node.
 vi.mock('@/components/members/marketing-state-badge', () => ({
   MarketingStateBadge: ({ state }: { state: string }) => (
     <span data-testid="marketing-state-badge" data-state={state} />

@@ -351,7 +351,9 @@ export interface MemberRepo {
     tx: TenantTx,
     draft: {
       readonly member: Omit<Member, 'createdAt' | 'updatedAt'>;
-      // 108 PR-D: `marketing` omitted — new contacts start in RECEIVES_MARKETING.
+      // 108 PR-D: `marketing` omitted — the caller never chooses it. The
+      // implementation carries a prior SELF opt-out on the same address
+      // forward (FR-027 AMENDMENT); otherwise `RECEIVES_MARKETING`.
       readonly primaryContact: Omit<
         Contact,
         'createdAt' | 'updatedAt' | 'memberId' | 'marketing'

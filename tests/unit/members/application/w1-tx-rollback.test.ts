@@ -132,6 +132,8 @@ describe('W1 — audit atomicity regression (throw-to-rollback)', () => {
       phone: null,
       roleTitle: null,
       preferredLanguage: 'en' as const,
+      // 108 PR-D staff review C3 — `contact_created` reads `marketing.source`.
+      marketing: { optedOutAt: null, source: null, byUserId: null },
       isPrimary: false,
       dateOfBirth: null,
       linkedUserId: null,
@@ -170,6 +172,8 @@ describe('W1 — audit atomicity regression (throw-to-rollback)', () => {
       phone: null,
       roleTitle: null,
       preferredLanguage: 'en' as const,
+      // 108 PR-D staff review C3 — `contact_created` reads `marketing.source`.
+      marketing: { optedOutAt: null, source: null, byUserId: null },
       isPrimary: false,
       dateOfBirth: null,
       linkedUserId: null,
@@ -275,6 +279,8 @@ describe('W1 — inviteColleague throw-to-rollback', () => {
       phone: null,
       roleTitle: null,
       preferredLanguage: 'en' as const,
+      // 108 PR-D staff review C3 — `contact_created` reads `marketing.source`.
+      marketing: { optedOutAt: null, source: null, byUserId: null },
       isPrimary: false,
       dateOfBirth: null,
       linkedUserId: null,
@@ -311,6 +317,8 @@ describe('W1 — inviteColleague throw-to-rollback', () => {
       phone: null,
       roleTitle: null,
       preferredLanguage: 'en' as const,
+      // 108 PR-D staff review C3 — `contact_created` reads `marketing.source`.
+      marketing: { optedOutAt: null, source: null, byUserId: null },
       isPrimary: false,
       dateOfBirth: null,
       linkedUserId: null,

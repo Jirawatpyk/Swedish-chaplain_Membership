@@ -79,6 +79,9 @@ describe('addContact — GDPR Art. 14 attestation gate (Task 8)', () => {
     const addInTx = vi.fn().mockImplementation(async (_tx, draft) =>
       ok({
         ...draft,
+        // 108 PR-D: the draft omits `marketing` by design (the repo decides);
+        // `contact_created`'s payload reads `.source` (staff review C3).
+        marketing: { optedOutAt: null, source: null, byUserId: null },
         createdAt: new Date(),
         updatedAt: new Date(),
       }),
