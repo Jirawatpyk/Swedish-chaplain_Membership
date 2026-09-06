@@ -1488,14 +1488,22 @@ export const drizzleMemberRepo: MemberRepo = {
           )
           .where(
             and(
+              // 108 PR-C (FR-021 / SC-009, UNFLAGGED): only ACTIVE members
+              // are marketing-eligible. Before this predicate an archived or
+              // lapsed member's primary still received every E-Blast.
+              eq(members.status, 'active'),
               // COMP-1 H4 — an erased member must never be a broadcast
               // recipient (erasure keeps `status`, stamps only `erased_at`).
               isNull(members.erasedAt),
               eq(members.broadcastsHaltedUntilAdminReview, false),
               ...(tierFilter ? [tierFilter] : []),
             ),
-          )
-          .limit(5000);
+          );
+        // 108 PR-C (research R8): the `.limit(5000)` that used to end this
+        // query is gone. It silently truncated the audience BELOW the
+        // resolver's ceiling check, so 5,001 members resolved as a clean
+        // 5,000 send instead of `broadcast_audience_too_large`. The resolver
+        // is the one truthful bound; a read must never pre-empt it.
       });
 
       return ok(

@@ -26,7 +26,8 @@
 | 1 | T072 flag | `tests/unit/lib/env-contact-marketing-recipients.test.ts` 3 × `expected undefined to be false` | 3 passed; `check:env-example` + `check:env-boot` OK | `0a1f62405` |
 | 2 | T071/T074 F3 keyset page | unit: module missing; live Neon `broadcast-recipient-contacts-keyset.test.ts` 9 × `not a function` (first run failed on a SEED error — partnership plan CHECK `membership_plans_partnership_bundles_corporate` — fixed, re-run for the honest RED) | 3 + 9 passed | `7c8f7e584` |
 | 3 | T075/T069 bridge + tick memo | `members-bridge.test.ts` 7 × `not a function` + `resolved "[]" instead of rejecting`; tick-memo 2 × cache miss | 21 passed; unit broadcasts+members 219 files green | `809a9f315` |
-| 4 | T067/T076 resolver + callers | resolver 16/45 failed (no `all_contacts` leg, email self-exclusion, no `resolve.server_error`, no chunking, `droppedByPreference` semantics); submit 3 new failed; dispatch 3 new + 1 legacy failed | resolver 45/45; the five caller suites 159/159; typecheck 0 | (this cycle) |
+| 4 | T067/T076 resolver + callers | resolver 16/45 failed (no `all_contacts` leg, email self-exclusion, no `resolve.server_error`, no chunking, `droppedByPreference` semantics); submit 3 new failed; dispatch 3 new + 1 legacy failed | resolver 45/45; the five caller suites 159/159; typecheck 0 | `56862a909` |
+| 5 | T068 / T074-b `status = 'active'` + no `.limit(5000)` on the primary_only read | live Neon `audience-1n-status.test.ts` 3/4 failed (OFF leg listed inactive/archived primaries; tier OFF 4 not 2; 5,001 resolved as a clean 5,000) — the ON-leg case was green from cycle 2 (SQL) and stands as the real-bridge acceptance proof for US3 s1–s5 | 4/4 + erased-excluded + keyset 18/18; typecheck 0 | (this commit) |
 
 ## Design points settled in cycle 4 (reviewers: check these first)
 

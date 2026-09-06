@@ -628,9 +628,13 @@ export interface MemberRepo {
    *   - members with NULL primary-contact email (caller emits
    *     `member_missing_primary_contact` audit per FR-015c)
    *
-   * Hard cap: 5,000 returned rows (FR-016a). Caller is responsible for
-   * suppression filter (`marketing_unsubscribes`) at F7 dispatch boundary
-   * — NOT applied here per Q8 + FR-015c separation of concerns.
+   * 108 PR-C: only `status = 'active'`, non-erased, non-halted members
+   * (FR-021, unflagged — the `primary_only` leg of the resolver), and NO
+   * row cap any more (research R8: the old `.limit(5000)` truncated below
+   * the resolver's ceiling, so an over-limit audience looked like a clean
+   * 5,000 send). Caller is responsible for the suppression filter
+   * (`marketing_unsubscribes`) at F7's dispatch boundary — NOT applied
+   * here per Q8 + FR-015c separation of concerns.
    *
    * For `event_attendees_last_90d` segment: F6 stub-port returns `[]`
    * until F6 ships (FR-015a). This repo method does NOT handle that
