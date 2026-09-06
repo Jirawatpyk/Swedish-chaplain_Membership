@@ -151,15 +151,19 @@ describe('setContactMarketingOptOut — switching OFF', () => {
       actorUserId: STAFF,
       requestId: 'req-1',
       payload: {
-        member_id: memberId,
+        // Security review MEDIUM-1: a STAFF action is not member activity —
+        // `related_member_id` keeps the row on the member timeline without
+        // firing migration 0009's `last_activity_at` bump (same key as 0292).
+        related_member_id: memberId,
         contact_id: CONTACT,
         source: 'staff',
         actor_role: 'marketing',
       },
     });
+    expect(event.payload).not.toHaveProperty('member_id');
   });
 
-  it('self off → source self in both the row and the audit payload (FR-032)', async () => {
+  it('self off → source self; the payload carries `member_id` so the contact\'s own action counts as member activity', async () => {
     const { deps, contactRepo, audit } = makeDeps();
     const r = await setContactMarketingOptOut(
       { ...staffOff, actor: { userId: SELF_USER, role: 'member', source: 'self' } },
@@ -171,10 +175,12 @@ describe('setContactMarketingOptOut — switching OFF', () => {
       CONTACT,
       { optedOutAt: NOW, source: 'self', byUserId: SELF_USER },
     );
-    expect(audit.recordInTx.mock.calls[0]![2]).toMatchObject({
+    const event = audit.recordInTx.mock.calls[0]![2];
+    expect(event).toMatchObject({
       actorUserId: SELF_USER,
-      payload: { source: 'self', actor_role: 'member' },
+      payload: { member_id: memberId, source: 'self', actor_role: 'member' },
     });
+    expect(event.payload).not.toHaveProperty('related_member_id');
   });
 
   it('off on a suppressed address still proceeds (opt-out is additive to the unsubscribe)', async () => {
@@ -236,6 +242,75 @@ describe('setContactMarketingOptOut — switching ON', () => {
   });
 });
 
+/**
+ * 108 PR-D review (privacy B-2, GDPR Art. 21(3) / PDPA §32) — a contact's OWN
+ * opt-out is an objection to direct marketing, exactly like the unsubscribe
+ * link. Staff cannot lift it (FR-025 AMENDMENT); and when a contact objects
+ * over a staff-made opt-out, that objection is RECORDED (source becomes
+ * `self`) so a later staff "on" cannot silently override it.
+ */
+describe('setContactMarketingOptOut — self opt-out takes precedence over staff (FR-025 amendment)', () => {
+  beforeEach(() => vi.clearAllMocks());
+  const selfOff = contact({ marketing: { optedOutAt: NOW, source: 'self', byUserId: SELF_USER as never } });
+  const staffOff = contact({ marketing: { optedOutAt: NOW, source: 'staff', byUserId: STAFF as never } });
+
+  it('staff "on" over a SELF opt-out → self_opted_out; nothing written, nothing audited', async () => {
+    const { deps, contactRepo, audit, marketingSuppression } = makeDeps({ found: selfOff });
+    const r = await setContactMarketingOptOut({ ...staffOff, state: 'on' }, deps);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.type).toBe('self_opted_out');
+    expect(contactRepo.setMarketingOptOutInTx).not.toHaveBeenCalled();
+    expect(audit.recordInTx).not.toHaveBeenCalled();
+    // Refused before the suppression lookup — the objection alone decides.
+    expect(marketingSuppression.isSuppressed).not.toHaveBeenCalled();
+  });
+
+  it('the contact themself may switch back on after their own opt-out', async () => {
+    const { deps, contactRepo } = makeDeps({ found: selfOff });
+    const r = await setContactMarketingOptOut(
+      { ...staffOff, state: 'on', actor: { userId: SELF_USER, role: 'member', source: 'self' } },
+      deps,
+    );
+    expect(r.ok).toBe(true);
+    expect(contactRepo.setMarketingOptOutInTx).toHaveBeenCalledWith(
+      expect.anything(),
+      CONTACT,
+      { optedOutAt: null, source: null, byUserId: null },
+    );
+  });
+
+  it('staff "on" over a STAFF opt-out is still allowed', async () => {
+    const { deps } = makeDeps({ found: staffOff });
+    const r = await setContactMarketingOptOut({ ...staffOff, state: 'on' }, deps);
+    expect(r.ok).toBe(true);
+  });
+
+  it('self "off" over a STAFF opt-out is a CHANGE: the objection is recorded as source self and audited', async () => {
+    const { deps, contactRepo, audit } = makeDeps({ found: staffOff });
+    contactRepo.setMarketingOptOutInTx.mockResolvedValueOnce(
+      ok({
+        outcome: 'changed' as const,
+        contact: contact({ marketing: { optedOutAt: NOW, source: 'self', byUserId: SELF_USER as never } }),
+      }),
+    );
+    const r = await setContactMarketingOptOut(
+      { ...staffOff, state: 'off', actor: { userId: SELF_USER, role: 'member', source: 'self' } },
+      deps,
+    );
+    expect(r.ok && r.value.outcome).toBe('changed');
+    expect(contactRepo.setMarketingOptOutInTx).toHaveBeenCalledWith(
+      expect.anything(),
+      CONTACT,
+      { optedOutAt: NOW, source: 'self', byUserId: SELF_USER },
+    );
+    expect(audit.recordInTx.mock.calls[0]![2]).toMatchObject({
+      type: 'contact_marketing_opted_out',
+      payload: { source: 'self' },
+    });
+  });
+});
+
 describe('setContactMarketingOptOut — idempotency and refusals', () => {
   beforeEach(() => vi.clearAllMocks());
 
@@ -257,14 +332,14 @@ describe('setContactMarketingOptOut — idempotency and refusals', () => {
     expect(contactRepo.setMarketingOptOutInTx).not.toHaveBeenCalled();
   });
 
-  it('removed contact → not_found (a removed contact has no marketing state)', async () => {
+  it('removed contact → `removed` (distinct from not_found so the route does not audit an in-tenant miss as a probe)', async () => {
     const { deps, contactRepo } = makeDeps({
       found: contact({ removedAt: new Date('2026-05-01') }),
     });
     const r = await setContactMarketingOptOut(staffOff, deps);
     expect(r.ok).toBe(false);
     if (r.ok) return;
-    expect(r.error.type).toBe('not_found');
+    expect(r.error.type).toBe('removed');
     expect(contactRepo.setMarketingOptOutInTx).not.toHaveBeenCalled();
   });
 

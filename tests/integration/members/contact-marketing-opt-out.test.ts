@@ -30,6 +30,7 @@ import {
   setContactMarketingOptOut,
 } from '@/modules/members';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
+import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { marketingUnsubscribes } from '@/modules/broadcasts/infrastructure/schema';
 import {
@@ -308,6 +309,46 @@ describe('108 PR-D — setMarketingOptOutInTx + setContactMarketingOptOut (live 
     expect(r.value.contact.marketing).toEqual({ optedOutAt: null, source: null, byUserId: null });
   });
 
+  it('repo: self "off" over a staff "off" is CHANGED — the person\'s objection replaces the staff record', async () => {
+    // Arrange: staff off.
+    await runInTenant(tenantA.ctx, (tx) =>
+      drizzleContactRepo.setMarketingOptOutInTx(tx, asContactId(contactId), {
+        optedOutAt: new Date('2026-09-06T03:00:00Z'),
+        source: 'staff',
+        byUserId: admin.userId as never,
+      }),
+    );
+    const r = await runInTenant(tenantA.ctx, (tx) =>
+      drizzleContactRepo.setMarketingOptOutInTx(tx, asContactId(contactId), {
+        optedOutAt: new Date('2026-09-06T04:00:00Z'),
+        source: 'self',
+        byUserId: STAFF_2 as never,
+      }),
+    );
+    expect(r.ok && r.value.outcome).toBe('changed');
+    expect(r.ok && r.value.contact.marketing).toMatchObject({ source: 'self', byUserId: STAFF_2 });
+
+    // …and a later staff "off" over the self record is UNCHANGED (the objection stays).
+    const again = await runInTenant(tenantA.ctx, (tx) =>
+      drizzleContactRepo.setMarketingOptOutInTx(tx, asContactId(contactId), {
+        optedOutAt: new Date('2026-09-06T05:00:00Z'),
+        source: 'staff',
+        byUserId: admin.userId as never,
+      }),
+    );
+    expect(again.ok && again.value.outcome).toBe('unchanged');
+    expect(again.ok && again.value.contact.marketing.source).toBe('self');
+
+    // Reset to on for the following cases.
+    await runInTenant(tenantA.ctx, (tx) =>
+      drizzleContactRepo.setMarketingOptOutInTx(tx, asContactId(contactId), {
+        optedOutAt: null,
+        source: null,
+        byUserId: null,
+      }),
+    );
+  });
+
   it('on when already on → unchanged', async () => {
     const r = await runInTenant(tenantA.ctx, (tx) =>
       drizzleContactRepo.setMarketingOptOutInTx(tx, asContactId(contactId), {
@@ -379,6 +420,69 @@ describe('108 PR-D — setMarketingOptOutInTx + setContactMarketingOptOut (live 
       actor_role: 'admin',
     });
     expect(JSON.stringify(row.payload) + row.summary).not.toContain('@');
+  });
+
+  it('security MEDIUM-1: a STAFF toggle does not bump members.last_activity_at; a SELF toggle does', async () => {
+    const deps = buildContactMarketingDeps(tenantA.ctx);
+    const readLastActivity = async (): Promise<Date | null> => {
+      const rows = await db
+        .select({ at: members.lastActivityAt })
+        .from(members)
+        .where(and(eq(members.tenantId, tenantA.ctx.slug), eq(members.memberId, memberId)));
+      return rows[0]?.at ?? null;
+    };
+    // Baseline: pin a known old value so "unchanged" is provable.
+    const anchor = new Date('2026-01-01T00:00:00Z');
+    await db
+      .update(members)
+      .set({ lastActivityAt: anchor })
+      .where(and(eq(members.tenantId, tenantA.ctx.slug), eq(members.memberId, memberId)));
+    // Make sure the contact is ON so the staff "off" below is a real change.
+    await runInTenant(tenantA.ctx, (tx) =>
+      drizzleContactRepo.setMarketingOptOutInTx(tx, asContactId(contactId), {
+        optedOutAt: null,
+        source: null,
+        byUserId: null,
+      }),
+    );
+
+    const staff = await setContactMarketingOptOut(
+      {
+        contactId: asContactId(contactId),
+        state: 'off',
+        actor: { userId: admin.userId, role: 'admin', source: 'staff' },
+        requestId: `req-${randomUUID().slice(0, 8)}`,
+      },
+      deps,
+    );
+    expect(staff.ok && staff.value.outcome).toBe('changed');
+    expect((await readLastActivity())?.toISOString()).toBe(anchor.toISOString());
+
+    // The contact objects themself over the staff record → recorded AND it is member activity.
+    const self = await setContactMarketingOptOut(
+      {
+        contactId: asContactId(contactId),
+        state: 'off',
+        actor: { userId: admin.userId, role: 'member', source: 'self' },
+        requestId: `req-${randomUUID().slice(0, 8)}`,
+      },
+      deps,
+    );
+    expect(self.ok && self.value.outcome).toBe('changed');
+    const after = await readLastActivity();
+    expect(after).not.toBeNull();
+    expect(after!.getTime()).toBeGreaterThan(anchor.getTime());
+
+    // Back to ON via the contact themself (staff cannot, see the case below).
+    await setContactMarketingOptOut(
+      {
+        contactId: asContactId(contactId),
+        state: 'on',
+        actor: { userId: admin.userId, role: 'member', source: 'self' },
+        requestId: `req-${randomUUID().slice(0, 8)}`,
+      },
+      deps,
+    );
   });
 
   it('use case: same state again → unchanged and NO second audit row', async () => {
@@ -463,6 +567,38 @@ describe('108 PR-D — setMarketingOptOutInTx + setContactMarketingOptOut (live 
     expect(primary.value).toBe(primaryEmail);
     const read = await drizzleContactRepo.findById(tenantA.ctx, asContactId(contactId));
     expect(read.ok && read.value.marketing.source).toBe('self');
+  });
+
+  it('use case: staff cannot switch marketing back on after the contact opted out themself (FR-025 amendment)', async () => {
+    const deps = buildContactMarketingDeps(tenantA.ctx);
+    // The seeded PRIMARY is currently self-off from the FR-033 case above.
+    const read = await drizzleContactRepo.findById(tenantA.ctx, asContactId(contactId));
+    expect(read.ok && read.value.marketing.source).toBe('self');
+
+    const staffOn = await setContactMarketingOptOut(
+      {
+        contactId: asContactId(contactId),
+        state: 'on',
+        actor: { userId: admin.userId, role: 'admin', source: 'staff' },
+        requestId: `req-${randomUUID().slice(0, 8)}`,
+      },
+      deps,
+    );
+    expect(staffOn.ok).toBe(false);
+    if (staffOn.ok) return;
+    expect(staffOn.error.type).toBe('self_opted_out');
+
+    // The contact themself lifts it.
+    const selfOn = await setContactMarketingOptOut(
+      {
+        contactId: asContactId(contactId),
+        state: 'on',
+        actor: { userId: admin.userId, role: 'member', source: 'self' },
+        requestId: `req-${randomUUID().slice(0, 8)}`,
+      },
+      deps,
+    );
+    expect(selfOn.ok && selfOn.value.outcome).toBe('changed');
   });
 
   it('use case: "off" for a suppressed address still records the staff opt-out', async () => {

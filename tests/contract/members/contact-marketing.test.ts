@@ -270,6 +270,30 @@ describe('contract: POST /api/admin/contacts/[contactId]/marketing (108 PR-D T04
     expect(rememberMock).not.toHaveBeenCalled();
   });
 
+  it('a REMOVED in-tenant contact → 404 with NO probe audit (security LOW-1: the probe signal stays high-signal)', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(contextFor('admin'));
+    setContactMarketingOptOutMock.mockResolvedValueOnce(err({ type: 'removed' }));
+    const { POST } = await loadRoute();
+    const res = await POST(makeRequest({ state: 'off' }), { params: routeParams() });
+    expect(res.status).toBe(404);
+    expect((await res.json()).type).toMatch(/not_found$/);
+    expect(auditRecordMock).not.toHaveBeenCalled();
+  });
+
+  it('a failed probe audit is LOGGED, and the 404 is still served (security LOW-2)', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(contextFor('admin'));
+    setContactMarketingOptOutMock.mockResolvedValueOnce(err({ type: 'not_found' }));
+    auditRecordMock.mockResolvedValueOnce(err({ code: 'repo.unexpected', cause: new Error('audit down') }) as never);
+    const { logger } = await import('@/lib/logger');
+    const { POST } = await loadRoute();
+    const res = await POST(makeRequest({ state: 'off' }), { params: routeParams() });
+    expect(res.status).toBe(404);
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ requestId: 'req-admin' }),
+      expect.stringMatching(/probe audit failed/),
+    );
+  });
+
   it('a non-UUID contact id → 404 without touching the use case', async () => {
     requireApiPermissionMock.mockResolvedValueOnce(contextFor('admin'));
     const { POST } = await loadRoute();
@@ -288,6 +312,18 @@ describe('contract: POST /api/admin/contacts/[contactId]/marketing (108 PR-D T04
     expect(res.status).toBe(409);
     const body = await res.json();
     expect(body.type).toMatch(/suppressed$/);
+    expect(typeof body.detail).toBe('string');
+    expect(rememberMock).not.toHaveBeenCalled();
+  });
+
+  it('contact opted out themself → 409 self_opted_out (staff cannot lift a personal objection)', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(contextFor('marketing'));
+    setContactMarketingOptOutMock.mockResolvedValueOnce(err({ type: 'self_opted_out' }));
+    const { POST } = await loadRoute();
+    const res = await POST(makeRequest({ state: 'on' }), { params: routeParams() });
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.type).toMatch(/self_opted_out$/);
     expect(typeof body.detail).toBe('string');
     expect(rememberMock).not.toHaveBeenCalled();
   });

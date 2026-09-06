@@ -89,10 +89,18 @@ describe('MarketingSwitch — rendering', () => {
     expect(sw).toHaveAccessibleName(t.ariaLabel.replace('{name}', 'Jane Doe').replace('{state}', en.shared.marketing.state.on));
   });
 
-  it.each(['off_by_staff', 'off_by_contact', 'unsubscribed'] as const)('%s → unchecked', (state) => {
-    renderSwitch(state);
+  it('off_by_staff → unchecked switch (staff may switch it back on)', () => {
+    renderSwitch('off_by_staff');
     expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'false');
   });
+
+  it.each(['off_by_contact', 'unsubscribed'] as const)(
+    '%s → NO control: the person\'s own objection is not something staff can lift (FR-025 amendment)',
+    (state) => {
+      renderSwitch(state);
+      expect(screen.queryByRole('switch')).toBeNull();
+    },
+  );
 
   it('"status unavailable" → disabled; a click sends nothing', async () => {
     vi.spyOn(globalThis, 'fetch');
