@@ -11,9 +11,13 @@
  * `pii_sensitive` field, no download (FR-035a).
  *
  * Responsive (FR-035c): the `Table` primitive scrolls horizontally inside
- * its own wrapper, the table carries a min-width so columns keep their
- * shape, and contact + state (+ switch) are the FIRST columns so they stay in
- * view at 320 px. Long SV/TH labels wrap (`whitespace-normal`).
+ * its own wrapper, `table-fixed` + an explicit <colgroup> pin the column
+ * widths to the header (so the header does not shift every time a filter
+ * changes the rows — same recipe as the members table; review M3), the
+ * table's min-width is the column total (under `table-fixed` the browser
+ * would otherwise SHRINK columns to fit), and contact + state (+ switch) are
+ * the FIRST columns so they stay in view at 320 px. Long SV/TH labels wrap
+ * (`whitespace-normal`).
  */
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
@@ -48,31 +52,64 @@ export type AudienceTableRow = {
   readonly changedAt: string | null;
 };
 
+/** px — the skeleton mirrors these (audience-table-skeleton.tsx). */
+export const AUDIENCE_COLUMN_WIDTHS = {
+  contact: 220,
+  state: 180,
+  switch: 72,
+  member: 200,
+  kind: 110,
+  memberStatus: 140,
+  changedBy: 160,
+  changedAt: 170,
+} as const;
+
+type ColumnKey = keyof typeof AUDIENCE_COLUMN_WIDTHS;
+
 export function AudienceTable({
   rows,
   canMarketing,
+  leavesView = false,
 }: {
   readonly rows: readonly AudienceTableRow[];
   readonly canMarketing: boolean;
+  /**
+   * True when the view is filtered by marketing state: a successful switch
+   * removes the row on refresh, so the switch hands focus on first (H4).
+   */
+  readonly leavesView?: boolean;
 }) {
   const t = useTranslations('admin.marketing.audience');
   const tReason = useTranslations('shared.marketing.reason');
 
+  const columns: readonly ColumnKey[] = canMarketing
+    ? ['contact', 'state', 'switch', 'member', 'kind', 'memberStatus', 'changedBy', 'changedAt']
+    : ['contact', 'state', 'member', 'kind', 'memberStatus', 'changedBy', 'changedAt'];
+  const minWidth = columns.reduce((sum, key) => sum + AUDIENCE_COLUMN_WIDTHS[key], 0);
+
   return (
-    <Table className="min-w-[960px]" data-testid="marketing-audience-table">
+    <Table
+      aria-label={t('tableCaption')}
+      className="table-fixed"
+      style={{ minWidth }}
+      data-testid="marketing-audience-table"
+    >
       <caption className="sr-only">{t('tableCaption')}</caption>
+      <colgroup>
+        {columns.map((key) => (
+          <col key={key} style={{ width: `${AUDIENCE_COLUMN_WIDTHS[key]}px` }} />
+        ))}
+      </colgroup>
       <TableHeader>
         <TableRow>
-          <TableHead scope="col" className="w-[220px]">{t('columns.contact')}</TableHead>
-          <TableHead scope="col" className="w-[180px]">{t('columns.state')}</TableHead>
-          {canMarketing && (
-            <TableHead scope="col" className="w-[72px]">{t('columns.switch')}</TableHead>
-          )}
-          <TableHead scope="col" className="w-[200px]">{t('columns.member')}</TableHead>
-          <TableHead scope="col" className="w-[110px]">{t('columns.kind')}</TableHead>
-          <TableHead scope="col" className="w-[140px]">{t('columns.memberStatus')}</TableHead>
-          <TableHead scope="col" className="w-[160px]">{t('columns.changedBy')}</TableHead>
-          <TableHead scope="col" className="w-[170px]">{t('columns.changedAt')}</TableHead>
+          <TableHead scope="col">{t('columns.contact')}</TableHead>
+          <TableHead scope="col">{t('columns.state')}</TableHead>
+          {canMarketing && <TableHead scope="col">{t('columns.switch')}</TableHead>}
+          <TableHead scope="col">{t('columns.member')}</TableHead>
+          <TableHead scope="col">{t('columns.kind')}</TableHead>
+          <TableHead scope="col">{t('columns.memberStatus')}</TableHead>
+          <TableHead scope="col">{t('columns.changedBy')}</TableHead>
+          <TableHead scope="col">{t('columns.changedAt')}</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -80,13 +117,15 @@ export function AudienceTable({
           <TableRow key={row.contactId} data-contact-id={row.contactId} data-marketing-state={row.state}>
             <TableCell className="whitespace-normal align-top">
               <div className="font-medium">{row.contactName}</div>
-              <div className="text-xs text-muted-foreground break-all">{row.email}</div>
+              <div className="text-xs text-muted-foreground [overflow-wrap:anywhere]">{row.email}</div>
             </TableCell>
             <TableCell className="whitespace-normal align-top">
               <div className="flex flex-col gap-1">
                 <MarketingStateBadge state={row.state} />
                 {row.reasons.length > 0 && (
-                  <ul className="text-xs text-muted-foreground">
+                  // `role="list"` — Tailwind preflight strips list-style, and
+                  // Safari/VoiceOver drop list semantics with it (a11y 12).
+                  <ul role="list" className="text-xs text-muted-foreground">
                     {row.reasons.map((reason) => (
                       <li key={reason}>{tReason(reason)}</li>
                     ))}
@@ -100,13 +139,14 @@ export function AudienceTable({
                   contactId={row.contactId}
                   contactName={row.contactName}
                   state={row.state}
+                  leavesView={leavesView}
                 />
               </TableCell>
             )}
             <TableCell className="whitespace-normal align-top">
               <Link
                 href={`/admin/members/${encodeURIComponent(row.memberId)}`}
-                className="underline-offset-4 hover:underline"
+                className="font-medium text-primary underline-offset-4 hover:underline"
               >
                 {row.companyName}
               </Link>

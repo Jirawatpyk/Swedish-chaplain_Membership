@@ -578,7 +578,7 @@ describe('resolve-segment-recipients — 108 PR-D marketing opt-out at dispatch 
   it('custom list: an opted-out address (e.g. a secondary contact) is dropped', async () => {
     const deps = makeDeps({ optedOut: new Set([OPTED]) });
     const result = await resolveSegmentRecipients(deps, {
-      segment: { kind: 'custom' },
+      segment: { kind: 'custom', emails: ['keep@example.com', 'opted-out@example.com'] },
       requestingMemberPrimaryEmail: null,
       customRecipients: [unsafeBrandEmailLower('keep@example.com'), OPTED],
     });

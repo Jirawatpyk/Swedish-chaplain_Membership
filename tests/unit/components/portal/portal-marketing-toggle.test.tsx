@@ -157,3 +157,30 @@ describe('PortalMarketingToggle — switching', () => {
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith(t.toast.errors.generic));
   });
 });
+
+describe('PortalMarketingToggle — cycle 11 (UX M7, a11y 11)', () => {
+  it('the state text is a real state, not a muted empty-sentinel', () => {
+    renderToggle('on');
+    const stateText = screen.getByText(t.state.on);
+    expect(stateText.className).not.toContain('text-muted-foreground');
+    expect(stateText.className).toContain('text-foreground');
+  });
+
+  it('the switch is described by its state text', () => {
+    renderToggle('off_by_staff');
+    const sw = screen.getByRole('switch');
+    const ids = (sw.getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean);
+    expect(ids.length).toBeGreaterThan(0);
+    const described = ids.map((id) => document.getElementById(id)?.textContent ?? '');
+    expect(described.join(' ')).toContain(t.state.off_by_staff);
+  });
+
+  it('"unavailable" — the disabled switch is also described by the hint', () => {
+    renderToggle('unavailable');
+    const sw = screen.getByRole('switch');
+    const ids = (sw.getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean);
+    const described = ids.map((id) => document.getElementById(id)?.textContent ?? '').join(' ');
+    expect(described).toContain(t.state.unavailable);
+    expect(described).toContain(t.unavailableHint);
+  });
+});

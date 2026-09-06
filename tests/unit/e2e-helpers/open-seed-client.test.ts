@@ -4,6 +4,12 @@
  * no production-host guard, unlike `tests/integration-setup.ts`. Same
  * fail-closed contract here: a `DATABASE_URL` matching any fragment in
  * `TEST_DB_HOST_BLOCKLIST` must never get a client.
+ *
+ * 108 PR-D review cycle 11 (security LOW-5) — the guard must also fail
+ * CLOSED when there is nothing to check against: with `TEST_DB_HOST_BLOCKLIST`
+ * unset or empty the client must NOT open. A missing env var used to be
+ * silently equivalent to "no guard" — on a machine where `.env.local` lacks
+ * the key, every PR-D fixture writer could have reached prod.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -48,6 +54,24 @@ describe('openSeedClient — production-host guard', () => {
     delete process.env.DATABASE_URL;
     process.env.TEST_DB_HOST_BLOCKLIST = 'ep-prod-abc123';
     expect(openSeedClient('unit')).toBeNull();
+    expect(postgresMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('openSeedClient — the guard cannot be vacuous (cycle 11, LOW-5)', () => {
+  it('TEST_DB_HOST_BLOCKLIST unset → THROWS naming the variable, nothing opened', () => {
+    process.env.DATABASE_URL = 'postgresql://u:p@ep-dev-xyz789.ap-southeast-1.aws.neon.tech/db';
+    delete process.env.TEST_DB_HOST_BLOCKLIST;
+    expect(() => openSeedClient('unit')).toThrow(/TEST_DB_HOST_BLOCKLIST/);
+    expect(postgresMock).not.toHaveBeenCalled();
+  });
+
+  it('TEST_DB_HOST_BLOCKLIST empty / whitespace / commas only → THROWS', () => {
+    process.env.DATABASE_URL = 'postgresql://u:p@ep-dev-xyz789.ap-southeast-1.aws.neon.tech/db';
+    for (const v of ['', '   ', ',,', ' , ']) {
+      process.env.TEST_DB_HOST_BLOCKLIST = v;
+      expect(() => openSeedClient('unit')).toThrow(/TEST_DB_HOST_BLOCKLIST/);
+    }
     expect(postgresMock).not.toHaveBeenCalled();
   });
 });

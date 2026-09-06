@@ -1228,13 +1228,6 @@
             }
           }
         },
-        "subscription": {
-          "subscribed": "Prenumererar",
-          "unsubscribed": "Avregistrerad",
-          "unsubscribedAria": "Den här kontakten har avregistrerat sig från E-Blasts",
-          "unknown": "Status ej tillgänglig",
-          "unknownAria": "Prenumerationsstatus är tillfälligt otillgänglig"
-        },
         "marketing": {
           "primaryDescriptor": "Tar emot fakturor och betalningsmeddelanden",
           "audienceLink": "Öppna i Marknadsföringsmålgrupp"
@@ -5214,9 +5207,10 @@
       "audience": {
         "title": "Marknadsföringsmålgrupp",
         "subtitle": "Varje kontakt som kan ta emot E-Blasts, med vem som stängde av och när. Filtrera för att kontrollera en målgrupp före ett utskick.",
-        "preflightPreset": "Förhandskontroll: sekundära kontakter som är på",
+        "preflightPreset": "Förhandskontroll: sekundära som är på",
         "readOnly": "Skrivskyddat — du ser marknadsföringsstatus här men kan inte ändra den.",
         "count": "{count, plural, =0 {Inga kontakter matchar de aktuella filtren} one {# kontakt matchar de aktuella filtren} other {# kontakter matchar de aktuella filtren}}",
+        "countAll": "{count, plural, =0 {Inga kontakter ännu} one {# kontakt} other {# kontakter}}",
         "tableCaption": "Marknadsföringsmålgrupp — kontakter och deras marknadsföringsstatus",
         "error": {
           "title": "Målgruppen kunde inte läsas in",
@@ -6662,7 +6656,7 @@
         "off_by_staff": "Av (av personal)",
         "off_by_staffAria": "Marknadsföring avstängd av personal — kontakten får inga utskick",
         "off_by_contact": "Av (av kontakten)",
-        "off_by_contactAria": "Marknadsföring avstängd av kontakten själv — hen får inga utskick",
+        "off_by_contactAria": "Marknadsföring avstängd av kontakten själv — kontakten får inga utskick",
         "unsubscribed": "Avregistrerad",
         "unsubscribedAria": "Personen har avregistrerat sig — det valet gäller och kan inte ändras av personal",
         "unavailable": "Status ej tillgänglig",
@@ -6676,14 +6670,15 @@
         "contact_removed": "Kontakten är borttagen",
         "off_by_staff": "Avstängd av personal",
         "off_by_contact": "Avstängd av kontakten",
-        "unsubscribed": "Avregistrerad av personen",
+        "unsubscribed": "Avregistrerad av personen själv",
         "sender_own_contact": "Tillhör den avsändande medlemmen",
         "member_no_eligible_contact": "Medlemmen har ingen kontakt som kan ta emot"
       },
       "switch": {
         "ariaLabel": "Marknadsföring för {name}: {state}",
-        "switchedOff": "Marknadsföring avstängd för {name}",
-        "switchedOn": "Marknadsföring påslagen för {name}",
+        "switchedOff": "Marknadsföring avstängd för {name}.",
+        "leftView": "Borttagen från den aktuella vyn — den matchar inte längre det aktiva filtret.",
+        "switchedOn": "Marknadsföring påslagen för {name}.",
         "undo": "Ångra",
         "unchanged": "Ingen ändring — kontakten hade redan det läget.",
         "errors": {

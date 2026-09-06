@@ -16,7 +16,7 @@
  * Only the session's own state is ever rendered — the page never passes
  * another contact's state in (FR-032).
  */
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
@@ -35,10 +35,16 @@ export function PortalMarketingToggle({
   const t = useTranslations('portal.profile.marketing');
   const router = useRouter();
   const [busy, setBusy] = useState(false);
+  const stateId = useId();
+  const hintId = useId();
 
   const checked = state === 'on';
   const controllable = state !== 'unsubscribed';
   const disabled = state === 'unavailable';
+  // a11y review 11: the state sentence and the "unavailable" hint describe the
+  // switch, so a screen reader hears them with the control — not only in
+  // browse mode (the disabled switch is `aria-disabled` + tabIndex -1).
+  const describedBy = state === 'unavailable' ? `${stateId} ${hintId}` : stateId;
 
   async function send(optOut: boolean): Promise<void> {
     if (busy) return;
@@ -83,19 +89,26 @@ export function PortalMarketingToggle({
               checked={checked}
               disabled={disabled || busy}
               aria-label={t('switchLabel')}
+              aria-describedby={describedBy}
               onCheckedChange={(next) => {
                 void send(!next);
               }}
             />
           </span>
         )}
-        <span className="text-sm text-muted-foreground">{t(`state.${state}`)}</span>
+        {/* A STATE, not an empty sentinel — muted is reserved for the hints
+            below (spec Assumptions; review M7). */}
+        <span id={stateId} className="text-sm text-foreground">
+          {t(`state.${state}`)}
+        </span>
       </div>
       {state === 'unsubscribed' && (
         <p className="text-xs text-muted-foreground">{t('unsubscribedHint')}</p>
       )}
       {state === 'unavailable' && (
-        <p className="text-xs text-muted-foreground">{t('unavailableHint')}</p>
+        <p id={hintId} className="text-xs text-muted-foreground">
+          {t('unavailableHint')}
+        </p>
       )}
       {isPrimary && <p className="text-xs text-muted-foreground">{t('primaryNote')}</p>}
     </div>

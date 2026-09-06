@@ -30,10 +30,10 @@ const t = en.shared.marketing.switch;
 const CONTACT = 'aaaaaaaa-bbbb-4ccc-8ddd-111111111111';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-function renderSwitch(state: MarketingState, onChanged?: () => void) {
+function renderSwitch(state: MarketingState) {
   return render(
     <NextIntlClientProvider locale="en" messages={en}>
-      <MarketingSwitch contactId={CONTACT} contactName="Jane Doe" state={state} onChanged={onChanged} />
+      <MarketingSwitch contactId={CONTACT} contactName="Jane Doe" state={state} />
     </NextIntlClientProvider>,
   );
 }
@@ -115,11 +115,10 @@ describe('MarketingSwitch — rendering', () => {
 
 describe('MarketingSwitch — switching off (with Undo)', () => {
   it('POSTs { state: off } with a fresh Idempotency-Key, toasts a 10-s Undo, refreshes', async () => {
-    const onChanged = vi.fn();
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       jsonResponse(200, { outcome: 'changed', contact: { contact_id: CONTACT } }),
     );
-    renderSwitch('on', onChanged);
+    renderSwitch('on');
     fireEvent.click(screen.getByRole('switch'));
 
     await waitFor(() => expect(toast.success).toHaveBeenCalledTimes(1));
@@ -137,7 +136,6 @@ describe('MarketingSwitch — switching off (with Undo)', () => {
     expect(opts.duration).toBe(10_000);
     expect(opts.action.label).toBe(t.undo);
     expect(refreshSpy).toHaveBeenCalled();
-    expect(onChanged).toHaveBeenCalled();
   });
 
   it('Undo POSTs { state: on } under a DIFFERENT Idempotency-Key (never the "off" key)', async () => {
@@ -223,5 +221,124 @@ describe('MarketingSwitch — switching on and the error map', () => {
     renderSwitch('on');
     fireEvent.click(screen.getByRole('switch'));
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith(t.errors.generic));
+  });
+});
+
+/**
+ * Review cycle 11 — UX H3 / H4, a11y 2 / 5.
+ *   - the switch flips OPTIMISTICALLY on click and rolls back on refusal, so
+ *     `aria-checked` (and the thumb) never lag one round-trip behind the toast;
+ *   - under a state-filtered view (the FR-027a pre-flight preset) the row
+ *     LEAVES the view on refresh — focus is handed to the next row's switch
+ *     (or the count line) BEFORE the refresh, never dropped on <body>.
+ */
+function deferred<T>() {
+  let resolve!: (v: T) => void;
+  const promise = new Promise<T>((r) => { resolve = r; });
+  return { promise, resolve };
+}
+
+describe('MarketingSwitch — optimistic state (cycle 11)', () => {
+  it('flips aria-checked at once on click, before the server answers', async () => {
+    const d = deferred<Response>();
+    vi.stubGlobal('fetch', vi.fn(() => d.promise));
+    renderSwitch('on');
+    const sw = screen.getByRole('switch');
+    expect(sw).toHaveAttribute('aria-checked', 'true');
+    fireEvent.click(sw);
+    await waitFor(() => expect(sw).toHaveAttribute('aria-checked', 'false'));
+    expect(refreshSpy).not.toHaveBeenCalled();
+    d.resolve(jsonResponse(200, { outcome: 'changed', contact: {} }));
+    await waitFor(() => expect(refreshSpy).toHaveBeenCalled());
+    expect(sw).toHaveAttribute('aria-checked', 'false');
+  });
+
+  it('rolls back on a refusal (409) and toasts the reason', async () => {
+    const d = deferred<Response>();
+    vi.stubGlobal('fetch', vi.fn(() => d.promise));
+    renderSwitch('off_by_staff');
+    const sw = screen.getByRole('switch');
+    fireEvent.click(sw);
+    await waitFor(() => expect(sw).toHaveAttribute('aria-checked', 'true'));
+    d.resolve(jsonResponse(409, { type: 'https://chamber-os.app/errors/suppressed' }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(t.errors.suppressed));
+    expect(sw).toHaveAttribute('aria-checked', 'false');
+    expect(refreshSpy).not.toHaveBeenCalled();
+  });
+
+  it('rolls back on a network failure', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('offline'))));
+    renderSwitch('on');
+    const sw = screen.getByRole('switch');
+    fireEvent.click(sw);
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(t.errors.generic));
+    expect(sw).toHaveAttribute('aria-checked', 'true');
+  });
+});
+
+describe('MarketingSwitch — focus hand-off when the row leaves the view (cycle 11)', () => {
+  function renderTwoRows(leavesView: boolean) {
+    return render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <p id="audience-count" tabIndex={-1}>2 contacts</p>
+        <table>
+          <tbody>
+            <tr>
+              <td>
+                <MarketingSwitch contactId={CONTACT} contactName="Jane Doe" state="on" leavesView={leavesView} />
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <MarketingSwitch
+                  contactId="bbbbbbbb-bbbb-4ccc-8ddd-222222222222"
+                  contactName="John Roe"
+                  state="on"
+                  leavesView={leavesView}
+                />
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </NextIntlClientProvider>,
+    );
+  }
+
+  it('leavesView: focus moves to the next-row switch before the refresh; the toast says the row left the view', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, { outcome: 'changed', contact: {} })));
+    renderTwoRows(true);
+    const [first, second] = screen.getAllByRole('switch');
+    first!.focus();
+    fireEvent.click(first!);
+    await waitFor(() => expect(refreshSpy).toHaveBeenCalled());
+    expect(document.activeElement).toBe(second);
+    expect(toast.success).toHaveBeenCalledWith(
+      t.switchedOff.replace('{name}', 'Jane Doe'),
+      expect.objectContaining({ description: t.leftView }),
+    );
+  });
+
+  it('leavesView, last row: focus falls back to the count line (never <body>)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, { outcome: 'changed', contact: {} })));
+    renderTwoRows(true);
+    const [, second] = screen.getAllByRole('switch');
+    second!.focus();
+    fireEvent.click(second!);
+    await waitFor(() => expect(refreshSpy).toHaveBeenCalled());
+    expect(document.activeElement).toBe(document.getElementById('audience-count'));
+  });
+
+  it('without leavesView the row stays — focus stays on the switch, no "left view" note', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(200, { outcome: 'changed', contact: {} })));
+    renderTwoRows(false);
+    const [first] = screen.getAllByRole('switch');
+    first!.focus();
+    fireEvent.click(first!);
+    await waitFor(() => expect(refreshSpy).toHaveBeenCalled());
+    expect(document.activeElement).toBe(first);
+    const opts = (toast.success as unknown as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] as
+      | { description?: string }
+      | undefined;
+    expect(opts?.description).toBeUndefined();
   });
 });

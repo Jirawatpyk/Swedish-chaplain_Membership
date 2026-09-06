@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest';
 import {
   MARKETING_AUDIENCE_PREFLIGHT_QUERY,
   parseMarketingAudienceParams,
+  MARKETING_AUDIENCE_MAX_PAGE,
 } from '@/lib/marketing-audience-filter';
 
 const MEMBER = '11111111-2222-4333-8444-555555555555';
@@ -74,6 +75,19 @@ describe('parseMarketingAudienceParams', () => {
     for (const raw of ['0', '-2', 'x', '2.7', undefined]) {
       expect(parseMarketingAudienceParams({ page: raw }).page).toBe(raw === '2.7' ? 2 : 1);
     }
+  });
+
+  it('page is clamped UPWARD too (security LOW-4): an absurd page cannot become a huge OFFSET', () => {
+    expect(MARKETING_AUDIENCE_MAX_PAGE).toBe(100_000);
+    expect(parseMarketingAudienceParams({ page: '99999999999999999999' }).page).toBe(
+      MARKETING_AUDIENCE_MAX_PAGE,
+    );
+    expect(parseMarketingAudienceParams({ page: String(MARKETING_AUDIENCE_MAX_PAGE + 1) }).page).toBe(
+      MARKETING_AUDIENCE_MAX_PAGE,
+    );
+    expect(parseMarketingAudienceParams({ page: String(MARKETING_AUDIENCE_MAX_PAGE) }).page).toBe(
+      MARKETING_AUDIENCE_MAX_PAGE,
+    );
   });
 
   it('hasFilters is true for any narrowing leg, and for eligible=0 (the default was lifted)', () => {

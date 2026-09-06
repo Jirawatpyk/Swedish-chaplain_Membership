@@ -129,7 +129,7 @@ describe('108 PR-D B-1 — marketing opt-out honoured at dispatch (live Neon, re
     const removed = await insertContact(tenantA, keepMemberId, removedEmail);
     await optOut(tenantA, removed, 'staff', admin.userId);
     await runInTenant(tenantA.ctx, (tx) =>
-      drizzleContactRepo.removeInTx(tx, asContactId(removed), NOW),
+      drizzleContactRepo.removeInTx(tx, asContactId(removed)),
     );
 
     // Tenant B has its own opted-out contact — invisible to tenant A (RLS).
@@ -142,7 +142,7 @@ describe('108 PR-D B-1 — marketing opt-out honoured at dispatch (live Neon, re
   afterAll(async () => {
     await tenantA?.cleanup().catch(() => {});
     await tenantB?.cleanup().catch(() => {});
-    if (admin) await deleteTestUser(admin.userId).catch(() => {});
+    if (admin) await deleteTestUser(admin).catch(() => {});
   });
 
   function deps(tenant: TestTenant) {
@@ -170,7 +170,7 @@ describe('108 PR-D B-1 — marketing opt-out honoured at dispatch (live Neon, re
 
   it('custom list: an opted-out SECONDARY contact is dropped; the kept primary stays', async () => {
     const result = await resolveSegmentRecipients(deps(tenantA), {
-      segment: { kind: 'custom' },
+      segment: { kind: 'custom', emails: [keepEmail, secondaryOffEmail, selfOffEmail] },
       requestingMemberPrimaryEmail: null,
       customRecipients: [
         unsafeBrandEmailLower(keepEmail),

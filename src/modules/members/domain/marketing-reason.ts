@@ -3,7 +3,7 @@
  * not receive a broadcast". Consumed by the member-page badge, the Marketing
  * audience page and (PR-C) the compose-time count feedback, so staff read the
  * same reason in the same words on every surface. i18n labels live under
- * `shared.marketingReason.*` (en/th/sv).
+ * `shared.marketing.reason.*` (en/th/sv).
  *
  * Member-level facts come first, then contact-level facts, in this order.
  * `sender_own_contact` and `member_no_eligible_contact` are compose-time

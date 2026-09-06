@@ -26,6 +26,9 @@ import type {
   MemberId,
 } from '@/modules/members';
 
+/** Upper clamp for `?page` (security LOW-4) — far beyond any real tenant. */
+export const MARKETING_AUDIENCE_MAX_PAGE = 100_000;
+
 export type MarketingAudienceSearchParams = Readonly<
   Record<string, string | string[] | undefined>
 >;
@@ -101,7 +104,13 @@ export function parseMarketingAudienceParams(
   const eligible = !(rawEligible === '0' || rawEligible === 'false');
 
   const rawPage = Number.parseInt(first(params.page) ?? '', 10);
-  const page = Number.isFinite(rawPage) && rawPage >= 1 ? rawPage : 1;
+  // Clamped BOTH ways (security review LOW-4): `?page=1e20` would otherwise
+  // become an OFFSET beyond bigint and a free COUNT(*) amplifier for any
+  // `contacts.read` holder.
+  const page =
+    Number.isFinite(rawPage) && rawPage >= 1
+      ? Math.min(rawPage, MARKETING_AUDIENCE_MAX_PAGE)
+      : 1;
 
   const hasFilters =
     q !== undefined ||

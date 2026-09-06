@@ -355,8 +355,13 @@ export function ContactBlock({
           <h3 className="text-base font-semibold">
             {`${contact.firstName} ${contact.lastName}`.trim()}
           </h3>
+          {/* `role="group"` — a bare <div> is `generic`, on which `aria-label`
+              is ARIA-prohibited (axe `aria-prohibited-attr`, a hard violation
+              once the cluster is empty). `empty:hidden` drops the labelled
+              group for a contact with no badge at all. */}
           <div
-            className="flex flex-wrap items-center gap-2"
+            role="group"
+            className="flex flex-wrap items-center gap-2 empty:hidden"
             aria-label={t('sections.contactStatusBadges')}
           >
             {contact.isPrimary && (
@@ -453,22 +458,28 @@ export function ContactBlock({
                 <span>{t('inviteBounced.badge')}</span>
               </Badge>
             )}
-            {/* 108 PR-D (FR-031) — the five-state marketing badge (was the
-                two-state E-Blast subscription badge). Only for contacts that
-                HAVE an email (no email = no E-Blast target). */}
-            {contact.email && <MarketingStateBadge state={marketingState} />}
-            {/* FR-030 / FR-034 — the switch for `contacts.marketing` holders;
-                deliberately OUTSIDE the `canWrite` cluster below (marketing
-                holds this right without `contacts.write`). */}
-            {contact.email && canMarketing && (
-              <MarketingSwitch
-                contactId={contact.contactId}
-                contactName={`${contact.firstName} ${contact.lastName}`.trim()}
-                state={marketingState}
-                size="sm"
-              />
-            )}
           </div>
+          {/* 108 PR-D (FR-031 / FR-030 / FR-034) — the marketing PAIR: the
+              five-state badge (was the two-state E-Blast subscription badge)
+              plus, for `contacts.marketing` holders, its switch. Grouped
+              together and OUTSIDE the status-badge cluster so an interactive
+              control is never announced as a "status badge" (review M9), and
+              OUTSIDE the `canWrite` cluster (marketing holds this right
+              without `contacts.write`). Only for contacts that HAVE an email
+              (no email = no E-Blast target). */}
+          {contact.email && (
+            <span className="inline-flex items-center gap-2 border-s ps-2">
+              <MarketingStateBadge state={marketingState} />
+              {canMarketing && (
+                <MarketingSwitch
+                  contactId={contact.contactId}
+                  contactName={`${contact.firstName} ${contact.lastName}`.trim()}
+                  state={marketingState}
+                  size="sm"
+                />
+              )}
+            </span>
+          )}
         </div>
         {/* S1-P1-10: write affordances hidden for the read-only manager. */}
         {canWrite && (
@@ -1342,6 +1353,15 @@ export default async function MemberDetailPage({
                   </p>
                 </PopoverContent>
               </Popover>
+              {/* 108 PR-D (US4 s8) — deep link into the Marketing audience filtered
+                  to this member (`member_id` is a parsed param there); every staff
+                  role on this page holds `contacts.read`. */}
+              <Link
+                href={`/admin/marketing/audience?member_id=${encodeURIComponent(memberId)}&eligible=0`}
+                className="ms-auto text-sm font-medium text-primary underline-offset-4 hover:underline"
+              >
+                {t('marketing.audienceLink')}
+              </Link>
               {canModify && member.status !== 'archived' && (
                 <ContactFormDialog
                   memberId={member.memberId}

@@ -4,7 +4,20 @@
  * 108 PR-D (FR-035) — Marketing audience filter bar. URL search params are
  * the single source of truth (shareable, back/forward-safe, and what the
  * server parses through `parseMarketingAudienceParams`); every change
- * resets `page`. Same shape as the members directory filters.
+ * resets `page`. Same shape as the members directory filters — including
+ * the two lessons that file carries (review cycle 11, H1 / H2):
+ *
+ *   - the search box is a CONTROLLED input that re-syncs FROM the URL only
+ *     when it is not focused (Clear-filters CTA, the pre-flight preset,
+ *     browser back/forward) — never mid-type;
+ *   - "Clear filters" unmounts itself in the same commit as the navigation,
+ *     so focus is moved to the always-present search input FIRST or it
+ *     falls back to <body> (a focus-loss class axe never catches).
+ *
+ * Each select trigger names itself with its label AND its current value so
+ * a screen reader hears "Contact role: Secondary only", not just the label
+ * (a11y review 7); the triggers size to content (`min-w`) so a long SV/TH
+ * value wraps instead of clipping (FR-035c, review M5).
  */
 import { useCallback, useRef, useState, useTransition } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
@@ -24,6 +37,9 @@ import { MARKETING_AUDIENCE_STATE_PARAMS } from '@/lib/marketing-audience-filter
 
 const DEBOUNCE_MS = 300;
 const KIND_VALUES = ['primary', 'secondary'] as const;
+type KindValue = 'all' | (typeof KIND_VALUES)[number];
+type StateValue = 'all' | (typeof MARKETING_AUDIENCE_STATE_PARAMS)[number];
+type EligibleValue = 'on' | 'off';
 
 export function AudienceFilters() {
   const t = useTranslations('admin.marketing.audience.filters');
@@ -32,13 +48,25 @@ export function AudienceFilters() {
   const searchParams = useSearchParams();
   const [, startTransition] = useTransition();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const currentQ = searchParams.get('q') ?? '';
-  const currentKind = searchParams.get('kind') ?? 'all';
-  const currentState = searchParams.get('state') ?? 'all';
+  const currentKind = (searchParams.get('kind') ?? 'all') as KindValue;
+  const currentState = (searchParams.get('state') ?? 'all') as StateValue;
   const eligibleRaw = searchParams.get('eligible');
-  const currentEligible = eligibleRaw === '0' || eligibleRaw === 'false' ? 'off' : 'on';
+  const currentEligible: EligibleValue =
+    eligibleRaw === '0' || eligibleRaw === 'false' ? 'off' : 'on';
+
+  // Reconcile FROM the URL only when the input is NOT focused — the React
+  // "adjust state when a prop changes" pattern, during render (no effect,
+  // no key-remount). See directory-filters.tsx for the long version.
   const [searchValue, setSearchValue] = useState(currentQ);
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [syncedQ, setSyncedQ] = useState(currentQ);
+  if (currentQ !== syncedQ) {
+    setSyncedQ(currentQ);
+    if (!isSearchFocused) setSearchValue(currentQ);
+  }
 
   const pushUrl = useCallback(
     (updates: Record<string, string | null>) => {
@@ -73,9 +101,16 @@ export function AudienceFilters() {
 
   const clearAll = () => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
+    // The Clear button unmounts in the commit that processes this navigation
+    // — hand focus to the search input FIRST.
+    searchInputRef.current?.focus();
     setSearchValue('');
     pushUrl({ q: null, kind: null, state: null, eligible: null, member_id: null });
   };
+
+  const kindLabel = (v: KindValue) => t(`kind.${v}`);
+  const stateLabel = (v: StateValue) => t(`state.${v}`);
+  const eligibleLabel = (v: EligibleValue) => t(`eligible.${v}`);
 
   return (
     <FilterBar>
@@ -85,9 +120,13 @@ export function AudienceFilters() {
           aria-hidden
         />
         <Input
+          ref={searchInputRef}
           type="search"
+          enterKeyHint="search"
           value={searchValue}
           onChange={(e) => onSearchChange(e.target.value)}
+          onFocus={() => setIsSearchFocused(true)}
+          onBlur={() => setIsSearchFocused(false)}
           placeholder={t('searchPlaceholder')}
           aria-label={t('searchLabel')}
           autoComplete="off"
@@ -96,10 +135,13 @@ export function AudienceFilters() {
       </div>
 
       <Select value={currentKind} onValueChange={(v) => pushUrl({ kind: v === 'all' ? null : v })}>
-        <SelectTrigger className="sm:w-44" aria-label={t('kindLabel')}>
+        <SelectTrigger
+          className="sm:min-w-44"
+          aria-label={`${t('kindLabel')}: ${kindLabel(currentKind)}`}
+        >
           <TranslatedSelectValue
             placeholder={t('kindLabel')}
-            translate={(v) => t(`kind.${(v || 'all') as 'all' | 'primary' | 'secondary'}`)}
+            translate={(v) => kindLabel((v || 'all') as KindValue)}
           />
         </SelectTrigger>
         <SelectContent>
@@ -113,12 +155,13 @@ export function AudienceFilters() {
       </Select>
 
       <Select value={currentState} onValueChange={(v) => pushUrl({ state: v === 'all' ? null : v })}>
-        <SelectTrigger className="sm:w-48" aria-label={t('stateLabel')}>
+        <SelectTrigger
+          className="sm:min-w-48"
+          aria-label={`${t('stateLabel')}: ${stateLabel(currentState)}`}
+        >
           <TranslatedSelectValue
             placeholder={t('stateLabel')}
-            translate={(v) =>
-              t(`state.${(v || 'all') as 'all' | (typeof MARKETING_AUDIENCE_STATE_PARAMS)[number]}`)
-            }
+            translate={(v) => stateLabel((v || 'all') as StateValue)}
           />
         </SelectTrigger>
         <SelectContent>
@@ -135,10 +178,13 @@ export function AudienceFilters() {
         value={currentEligible}
         onValueChange={(v) => pushUrl({ eligible: v === 'off' ? '0' : null })}
       >
-        <SelectTrigger className="sm:w-52" aria-label={t('eligibleLabel')}>
+        <SelectTrigger
+          className="sm:min-w-52"
+          aria-label={`${t('eligibleLabel')}: ${eligibleLabel(currentEligible)}`}
+        >
           <TranslatedSelectValue
             placeholder={t('eligibleLabel')}
-            translate={(v) => t(`eligible.${(v || 'on') as 'on' | 'off'}`)}
+            translate={(v) => eligibleLabel((v || 'on') as EligibleValue)}
           />
         </SelectTrigger>
         <SelectContent>

@@ -44,10 +44,32 @@ describe('MarketingStateBadge', () => {
     ['off_by_contact', labels.off_by_contactAria],
     ['unsubscribed', labels.unsubscribedAria],
     ['unavailable', labels.unavailableAria],
-  ] as const)('%s carries the explanatory accessible name', (state, aria) => {
-    renderBadge(state);
-    expect(screen.getByLabelText(aria)).toBeInTheDocument();
+  ] as const)('%s carries the explanation as REAL text (sr-only), never aria-label on a span', (state, aria) => {
+    // Review cycle 11 (UX M2 / a11y 3): `aria-label` on a role-less <span> is
+    // ARIA-prohibited — NVDA/JAWS drop it, VoiceOver replaces the visible text
+    // with it. A hidden sibling is read by every AT, in every locale.
+    const { container } = renderBadge(state);
+    const badge = container.querySelector('[data-marketing-state]');
+    expect(badge).not.toHaveAttribute('aria-label');
+    const hidden = screen.getByText(aria, { exact: false });
+    expect(hidden.className).toContain('sr-only');
   });
+
+  it('"on" carries no explanation', () => {
+    const { container } = renderBadge('on');
+    expect(container.querySelector('.sr-only')).toBeNull();
+  });
+
+  it.each(['off_by_staff', 'off_by_contact', 'unsubscribed'] as const)(
+    '%s uses the semantic warning tokens, not hardcoded amber',
+    (state) => {
+      const { container } = renderBadge(state);
+      const badge = container.querySelector('[data-marketing-state]');
+      expect(badge?.className).toContain('border-warning');
+      expect(badge?.className).toContain('text-warning');
+      expect(badge?.className).not.toMatch(/amber/);
+    },
+  );
 
   it('exposes the state as a data attribute for e2e + styling hooks', () => {
     const { container } = renderBadge('off_by_staff');

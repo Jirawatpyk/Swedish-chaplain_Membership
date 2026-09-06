@@ -45,9 +45,6 @@ vi.mock('@/app/(staff)/admin/members/[memberId]/_lib/resolve-contact-verificatio
 }));
 // The pre-108 two-state badge; stubbed so its `useTranslations` never needs a
 // provider. The assertions below require it to be ABSENT from the markup.
-vi.mock('@/components/members/subscription-badge', () => ({
-  SubscriptionBadge: () => <span data-testid="subscription-badge" />,
-}));
 vi.mock('@/components/members/marketing-state-badge', () => ({
   MarketingStateBadge: ({ state }: { state: string }) => (
     <span data-testid="marketing-state-badge" data-state={state} />

@@ -163,16 +163,23 @@ test.describe('108 PR-D — Marketing audience page @a11y @i18n', () => {
     });
   }
 
-  test('6. 320 px: container scroll only, switch reachable at ≥ 24×24 px (FR-035c)', async ({ page }) => {
+  test('6. 320 px in EVERY locale: container scroll only, switch reachable at ≥ 24×24 px (FR-035c / FR-050a)', async ({ page, context }) => {
     await page.setViewportSize({ width: 320, height: 720 });
     await signInAsMarketing(page);
+    // The SV preset label is +28 % longer than EN — an EN-only reflow check
+    // passed while SV pushed the page into horizontal scroll (review H6).
+    for (const locale of LOCALES) {
+      await setLocale(context, locale);
+      await page.goto(`${PAGE}${FIXTURE_QUERY}`, { waitUntil: 'domcontentloaded' });
+      await expect(page.getByTestId('marketing-audience-table')).toBeVisible();
+      const pageScrolls = await page.evaluate(
+        () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+      );
+      expect(pageScrolls, `[${locale}] the page must never scroll horizontally`).toBe(false);
+    }
+    await setLocale(context, 'en');
     await page.goto(`${PAGE}${FIXTURE_QUERY}`, { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('marketing-audience-table')).toBeVisible();
-
-    const pageScrolls = await page.evaluate(
-      () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
-    );
-    expect(pageScrolls, 'the page must never scroll horizontally').toBe(false);
 
     const containerScrolls = await page
       .getByTestId('marketing-audience-table')
@@ -199,11 +206,47 @@ test.describe('108 PR-D — Marketing audience page @a11y @i18n', () => {
     await expect(
       page.getByRole('switch', { name: new RegExp(fullName(F.secondaryStaffOff)) }),
     ).toBeVisible();
+    // The member page now carries the badge + switch pair — sweep it too.
+    const results = await new AxeBuilder({ page }).withTags([...AXE_TAGS]).analyze();
+    expect(results.violations).toEqual([]);
 
     await page.context().clearCookies();
     await signInAsManager(page);
     await page.goto(`/admin/members/${F.memberId}`, { waitUntil: 'domcontentloaded' });
     await expect(page.locator('[data-marketing-state="off_by_staff"]').first()).toBeVisible();
     await expect(page.getByRole('switch')).toHaveCount(0);
+  });
+
+  test('8. pre-flight preset: switching a row off keeps keyboard focus in the table (FR-027a, WCAG 2.4.3)', async ({ page }) => {
+    await signInAsMarketing(page);
+    await page.goto(`${PAGE}?${en.admin.marketing.audience.title && 'kind=secondary&state=on&eligible=1'}`, {
+      waitUntil: 'domcontentloaded',
+    });
+    const row = rowFor(page, F.secondaryOn.contactId);
+    await expect(row).toHaveAttribute('data-marketing-state', 'on');
+    const sw = row.getByRole('switch', { name: new RegExp(fullName(F.secondaryOn)) });
+    await sw.focus();
+    await page.keyboard.press('Space');
+    // The row leaves the state-filtered view on refresh — focus must land on
+    // another switch or the count line, never on <body> (review H4 / a11y 2).
+    await expect(row).toHaveCount(0, { timeout: 15_000 });
+    const active = await page.evaluate(() => {
+      const el = document.activeElement;
+      return {
+        tag: el?.tagName ?? null,
+        role: el?.getAttribute('role') ?? null,
+        id: el?.id ?? null,
+      };
+    });
+    expect(active.tag, 'focus fell back to <body>').not.toBe('BODY');
+    expect(active.role === 'switch' || active.id === 'audience-count').toBe(true);
+    await expect(page.getByText(en.shared.marketing.switch.leftView)).toBeVisible();
+
+    // Restore the fixture for the runs that follow (serial suite).
+    await page.goto(`${PAGE}${FIXTURE_QUERY}`, { waitUntil: 'domcontentloaded' });
+    await rowFor(page, F.secondaryOn.contactId).getByRole('switch').click();
+    await expect(rowFor(page, F.secondaryOn.contactId)).toHaveAttribute('data-marketing-state', 'on', {
+      timeout: 15_000,
+    });
   });
 });

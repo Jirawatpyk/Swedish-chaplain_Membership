@@ -144,6 +144,7 @@ function makeStubDeps(): MemberSelfUpdateDeps {
     listByMember: async () => ok([baseContact]),
     findById: async () => ok(baseContact),
     findByEmail: async () => err({ code: 'repo.not_found' as const }),
+    findMarketingOptedOutEmailLowers: async () => ok(new Set<string>()),
     addInTx: async () => err({ code: 'repo.unexpected' as const }),
     updateInTx: async (_tx, _id, patch) =>
       ok({ ...baseContact, ...patch } as Contact),

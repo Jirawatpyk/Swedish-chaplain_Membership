@@ -33,6 +33,18 @@ export function openSeedClient(label: string): SeedClient | null {
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
+  // 108 PR-D review cycle 11 (security LOW-5): an EMPTY blocklist is not "no
+  // production host to worry about" — it is a guard with nothing to check,
+  // which on a machine whose `.env.local` lacks the key made every seed
+  // writer prod-reachable. Refuse to open until the operator names the
+  // fragments (see `.env.example`).
+  if (blocklist.length === 0) {
+    throw new Error(
+      `[${label}] refusing to open a seed client: TEST_DB_HOST_BLOCKLIST is unset or empty. ` +
+        `Set it to the production Neon host fragment(s) (comma-separated) in .env.local — ` +
+        `the guard fails closed rather than trusting that DATABASE_URL is not prod.`,
+    );
+  }
   const blocked = blocklist.find((needle) => dbUrl.includes(needle));
   if (blocked) {
     throw new Error(

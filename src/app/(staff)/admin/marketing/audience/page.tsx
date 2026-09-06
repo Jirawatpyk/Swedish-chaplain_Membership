@@ -14,6 +14,13 @@
  * holders — a read-only viewer gets a badge and a note, never a disabled
  * control (FR-035). Columns are the FR-035 allow-list and nothing more
  * (FR-035a): no `pii_sensitive` field, no download.
+ *
+ * Review cycle 11: the preset action wraps (SV is +28 % longer than EN and
+ * overflowed a 320-px page — H6) and shows when it is active (L5); the count
+ * line distinguishes "no contacts yet" from "none match" (M4) and is the
+ * focus fallback when a row leaves a state-filtered view (H4); the degraded
+ * panel uses the semantic warning tokens (M6); the read-only note is the
+ * shared banner (M8); only ONE live region announces the count (L2).
  */
 import type { Metadata } from 'next';
 import { Suspense } from 'react';
@@ -29,12 +36,15 @@ import {
   parseMarketingAudienceParams,
   type MarketingAudienceSearchParams,
 } from '@/lib/marketing-audience-filter';
+import { cn } from '@/lib/utils';
 import { listMarketingAudience } from '@/modules/members';
 import { resolveActorIdentities } from '@/modules/auth';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { TablePagination } from '@/components/layout/table-pagination';
+import { AUDIENCE_COUNT_ID } from '@/components/members/marketing-switch';
 import { EmptyState } from '@/components/shell/empty-state';
+import { ReadOnlyBanner } from '@/components/shell/read-only-banner';
 import { Card, CardContent } from '@/components/ui/card';
 import { FilterBar } from '@/components/ui/filter-bar';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -59,6 +69,9 @@ export default async function MarketingAudiencePage({
   const query = await searchParams;
   const t = await getTranslations('admin.marketing.audience');
   const canMarketing = canPerform(user.role, 'contacts.marketing');
+  const { filter } = parseMarketingAudienceParams(query);
+  const presetActive =
+    filter.kind === 'secondary' && filter.state === 'on' && filter.eligible;
 
   return (
     <TableContainer>
@@ -68,7 +81,14 @@ export default async function MarketingAudiencePage({
         actions={
           <Link
             href={`${AUDIENCE_HREF}?${MARKETING_AUDIENCE_PREFLIGHT_QUERY}`}
-            className={buttonVariants({ variant: 'outline' })}
+            // A header action carrying a TRANSLATED label must be allowed to
+            // wrap: `buttonVariants` is `whitespace-nowrap`, and the SV string
+            // is wider than a 320-px content box (FR-035c / FR-050a).
+            className={cn(
+              buttonVariants({ variant: 'outline' }),
+              'h-auto min-h-9 whitespace-normal text-center',
+            )}
+            aria-current={presetActive ? 'page' : undefined}
             data-testid="audience-preflight-preset"
           >
             {t('preflightPreset')}
@@ -78,9 +98,7 @@ export default async function MarketingAudiencePage({
       <Card>
         <CardContent className="flex flex-col gap-4">
           {!canMarketing && (
-            <p className="text-sm text-muted-foreground" data-testid="audience-read-only">
-              {t('readOnly')}
-            </p>
+            <ReadOnlyBanner data-testid="audience-read-only">{t('readOnly')}</ReadOnlyBanner>
           )}
           {/* `useSearchParams` in the filters needs a Suspense boundary so the
               route keeps server rendering. */}
@@ -170,22 +188,34 @@ async function AudienceBody({
           }),
   }));
 
+  // A degraded read that found nothing is NOT "nothing matches" — the list
+  // could not be read (review M4): the panel below is the whole story.
+  const degradedEmpty = degraded && total === 0;
+  // A state-filtered view drops a row the moment its state changes (H4).
+  const leavesView = filter.state !== undefined;
+
   return (
     <>
-      {/* FR-040-style honesty for the count: announced to AT on every filter change. */}
-      <p
-        className="text-sm text-muted-foreground"
-        role="status"
-        aria-live="polite"
-        data-testid="audience-count"
-      >
-        {t('count', { count: total })}
-      </p>
+      {/* FR-040-style honesty for the count: announced to AT on every filter
+          change — the ONE live region here (pagination is silenced, L2). Also
+          the focus fallback when the last row leaves a filtered view. */}
+      {!degradedEmpty && (
+        <p
+          id={AUDIENCE_COUNT_ID}
+          tabIndex={-1}
+          className="text-sm text-muted-foreground outline-none"
+          role="status"
+          aria-live="polite"
+          data-testid="audience-count"
+        >
+          {hasFilters ? t('count', { count: total }) : t('countAll', { count: total })}
+        </p>
+      )}
 
       {degraded && (
         <div
           role="status"
-          className="rounded-md border border-amber-600 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-500 dark:bg-amber-950/40 dark:text-amber-100"
+          className="rounded-md border border-warning bg-warning-surface p-3 text-sm text-warning"
           data-testid="audience-degraded"
         >
           <p className="font-medium">{t('empty.unavailable.title')}</p>
@@ -193,7 +223,7 @@ async function AudienceBody({
         </div>
       )}
 
-      {total === 0 ? (
+      {degradedEmpty ? null : total === 0 ? (
         hasFilters ? (
           <EmptyState
             icon={SearchXIcon}
@@ -218,8 +248,14 @@ async function AudienceBody({
         )
       ) : (
         <>
-          <AudienceTable rows={tableRows} canMarketing={canMarketing} />
-          <TablePagination page={page} pageSize={pageSize} total={total} baseHref={AUDIENCE_HREF} />
+          <AudienceTable rows={tableRows} canMarketing={canMarketing} leavesView={leavesView} />
+          <TablePagination
+            page={page}
+            pageSize={pageSize}
+            total={total}
+            baseHref={AUDIENCE_HREF}
+            live={false}
+          />
         </>
       )}
     </>

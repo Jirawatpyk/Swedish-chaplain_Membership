@@ -1228,13 +1228,6 @@
             }
           }
         },
-        "subscription": {
-          "subscribed": "Subscribed",
-          "unsubscribed": "Unsubscribed",
-          "unsubscribedAria": "This contact has unsubscribed from E-Blasts",
-          "unknown": "Status unavailable",
-          "unknownAria": "Subscription status is temporarily unavailable"
-        },
         "marketing": {
           "primaryDescriptor": "Receives invoices and payment emails",
           "audienceLink": "Open in Marketing audience"
@@ -5213,10 +5206,11 @@
     "marketing": {
       "audience": {
         "title": "Marketing audience",
-        "subtitle": "Every contact who can receive E-Blasts, with who switched them off and when. Filter to check an audience before a send.",
+        "subtitle": "Every contact who can receive E-Blasts, showing who switched them off and when. Filter to check an audience before a send.",
         "preflightPreset": "Pre-flight: secondaries currently on",
         "readOnly": "Read-only — you can see marketing states here but not change them.",
         "count": "{count, plural, =0 {No contacts match the current filters} one {# contact matches the current filters} other {# contacts match the current filters}}",
+        "countAll": "{count, plural, =0 {No contacts yet} one {# contact} other {# contacts}}",
         "tableCaption": "Marketing audience — contacts and their marketing state",
         "error": {
           "title": "The audience could not be loaded",
@@ -6682,8 +6676,9 @@
       },
       "switch": {
         "ariaLabel": "Marketing for {name}: {state}",
-        "switchedOff": "Marketing switched off for {name}",
-        "switchedOn": "Marketing switched on for {name}",
+        "switchedOff": "Marketing switched off for {name}.",
+        "leftView": "Removed from the current view — it no longer matches the active filter.",
+        "switchedOn": "Marketing switched on for {name}.",
         "undo": "Undo",
         "unchanged": "No change — the contact was already in that state.",
         "errors": {
