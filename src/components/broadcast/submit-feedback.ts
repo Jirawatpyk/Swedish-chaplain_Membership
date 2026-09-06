@@ -49,6 +49,47 @@ export function errorValues(
   return { ceiling: cap };
 }
 
+export type ComposeSegmentKind = 'all_members' | 'tier' | 'custom' | 'event_attendees_last_90d';
+export type ComposeAudienceMode = 'primary_only' | 'all_contacts';
+
+/**
+ * 108 PR-C T079 — which `estimateNote.*` line describes the recipients for a
+ * segment under the leg in force. With the flag ON the member-based segments
+ * reach every eligible contact, not one primary per member, and the copy
+ * says so; the custom list and the attendee segment are leg-independent.
+ * The caller interpolates `{ ceiling }` (FR-041: the real ceiling, never a
+ * hard-coded 5,000).
+ */
+export function estimateNoteKey(
+  segmentKind: ComposeSegmentKind,
+  audienceMode: ComposeAudienceMode,
+):
+  | 'estimateNote.allMembers'
+  | 'estimateNote.allMembersAllContacts'
+  | 'estimateNote.tier'
+  | 'estimateNote.tierAllContacts'
+  | 'estimateNote.custom' {
+  if (segmentKind === 'all_members') {
+    return audienceMode === 'all_contacts'
+      ? 'estimateNote.allMembersAllContacts'
+      : 'estimateNote.allMembers';
+  }
+  if (segmentKind === 'tier') {
+    return audienceMode === 'all_contacts' ? 'estimateNote.tierAllContacts' : 'estimateNote.tier';
+  }
+  return 'estimateNote.custom';
+}
+
+/**
+ * 108 PR-C T079 (FR-022b) — "You and your colleagues won't receive your own
+ * broadcast." applies to the member-based segments only: self-exclusion is
+ * by member on `all_members` / `tier`, and the custom list is exempt
+ * (FR-022a); attendee rows are not member-keyed.
+ */
+export function showsSelfExclusionHint(segmentKind: ComposeSegmentKind): boolean {
+  return segmentKind === 'all_members' || segmentKind === 'tier';
+}
+
 export function excludedByPreference(body: SubmitFeedbackBody): number {
   const n = body.recipientPreferenceExcluded;
   return typeof n === 'number' && Number.isInteger(n) && n > 0 ? n : 0;

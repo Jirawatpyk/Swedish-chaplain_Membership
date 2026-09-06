@@ -16,7 +16,12 @@ import { describe, expect, it, vi } from 'vitest';
 import en from '@/i18n/messages/en.json';
 import th from '@/i18n/messages/th.json';
 import sv from '@/i18n/messages/sv.json';
-import { errorValues, submitSuccessDescription } from '@/components/broadcast/submit-feedback';
+import {
+  errorValues,
+  estimateNoteKey,
+  showsSelfExclusionHint,
+  submitSuccessDescription,
+} from '@/components/broadcast/submit-feedback';
 
 type Messages = Record<string, unknown>;
 function pick(messages: Messages, path: string): unknown {
@@ -109,5 +114,48 @@ describe('too-large copy interpolates the ceiling (108 PR-C T085)', () => {
     expect(errorValues('broadcast_audience_too_large', { cap: 'x' })).toBeUndefined();
     expect(errorValues('broadcast_empty_segment_blocked', { cap: 5000 })).toBeUndefined();
     expect(errorValues('broadcast_audience_too_large', undefined)).toBeUndefined();
+  });
+});
+
+/**
+ * 108 PR-C T079 (FR-022b; tasks T079) — the compose copy tells the truth for
+ * the leg in force: with the flag ON the recipients are every eligible
+ * contact, not "every active member with a primary contact email"; the
+ * ceiling is interpolated, never hard-coded; and a member-based segment
+ * shows the self-exclusion hint ("you and your colleagues"). The key choice
+ * is a pure helper so the wording per (segment, leg) is pinned without
+ * mounting the Tiptap form.
+ */
+describe('compose copy per audience leg (108 PR-C T079)', () => {
+  it.each([
+    ['portal.broadcasts.compose.estimateNote.allMembers', true],
+    ['portal.broadcasts.compose.estimateNote.tier', true],
+    ['portal.broadcasts.compose.estimateNote.allMembersAllContacts', true],
+    ['portal.broadcasts.compose.estimateNote.tierAllContacts', true],
+    ['portal.broadcasts.compose.selfExclusionHint', false],
+    ['admin.broadcasts.proxySubmitDialog.selfExclusionNotice', false],
+  ])('%s exists in en / th / sv (ceiling interpolated: %s) and never hard-codes 5,000', (path, ceiling) => {
+    for (const [locale, messages] of [['en', en], ['th', th], ['sv', sv]] as const) {
+      const value = pick(messages as Messages, path);
+      expect(typeof value, `${locale}: ${path}`).toBe('string');
+      if (ceiling) expect(value as string, `${locale}: ${path}`).toMatch(/\{ceiling/);
+      expect(value as string, `${locale}: ${path}`).not.toMatch(/5[,. ]?000/);
+    }
+  });
+
+  it('estimateNoteKey picks the leg-specific wording for member-based segments and the plain custom/attendee copy otherwise', () => {
+    expect(estimateNoteKey('all_members', 'primary_only')).toBe('estimateNote.allMembers');
+    expect(estimateNoteKey('all_members', 'all_contacts')).toBe('estimateNote.allMembersAllContacts');
+    expect(estimateNoteKey('tier', 'primary_only')).toBe('estimateNote.tier');
+    expect(estimateNoteKey('tier', 'all_contacts')).toBe('estimateNote.tierAllContacts');
+    expect(estimateNoteKey('custom', 'all_contacts')).toBe('estimateNote.custom');
+    expect(estimateNoteKey('event_attendees_last_90d', 'primary_only')).toBe('estimateNote.custom');
+  });
+
+  it('showsSelfExclusionHint is true for member-based segments only (the custom list is not self-excluded)', () => {
+    expect(showsSelfExclusionHint('all_members')).toBe(true);
+    expect(showsSelfExclusionHint('tier')).toBe(true);
+    expect(showsSelfExclusionHint('custom')).toBe(false);
+    expect(showsSelfExclusionHint('event_attendees_last_90d')).toBe(false);
   });
 });

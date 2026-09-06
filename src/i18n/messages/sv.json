@@ -3149,7 +3149,7 @@
         "subjectLabel": "Ämne",
         "bodyLabel": "Meddelande",
         "pageSubtitle": "Skapa och kölägg ett utskick för granskning med den här medlemmens e-utskickskvot.",
-        "selfExclusionNotice": "{company} får inte detta utskick — medlemmar exkluderas från sina egna utskick.",
+        "selfExclusionNotice": "{company} får inte detta utskick – en medlems kontakter exkluderas från sina egna utskick.",
         "memberNotFoundError": "Medlemmen finns inte längre. Välj en annan medlem.",
         "quotaBlockedError": "{company} har använt alla sina utskick för den här perioden.",
         "notInPlanError": "{company}:s paket inkluderar inte e-utskick.",
@@ -5773,9 +5773,12 @@
         "submitNote": {
           "cancellable": "Du kan avbryta detta utskick när som helst tills en administratör godkänner det."
         },
+        "selfExclusionHint": "Du och dina kollegor får inte ert eget utskick.",
         "estimateNote": {
-          "allMembers": "Mottagare: varje aktiv medlem med primär kontakt-e-post (max 5 000 per utskick).",
-          "tier": "Mottagare: medlemmar på vald nivå med primär kontakt-e-post (max 5 000).",
+          "allMembers": "Mottagare: primärkontakten hos varje aktiv medlem (högst {ceiling, number} per utskick).",
+          "tier": "Mottagare: primärkontakten hos varje aktiv medlem på valda nivåer (högst {ceiling, number}).",
+          "allMembersAllContacts": "Mottagare: varje kontakt hos varje aktiv medlem – primär och sekundär – som inte avböjt (högst {ceiling, number} per utskick).",
+          "tierAllContacts": "Mottagare: varje kontakt hos varje aktiv medlem på valda nivåer som inte avböjt (högst {ceiling, number}).",
           "custom": "Mottagare: en e-post per rad nedan. Max 100 rader. Varje måste matcha en medlem eller kontakt i din kammare.",
           "customCount": "{count} e-post angiven."
         },

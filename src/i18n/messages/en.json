@@ -3149,7 +3149,7 @@
         "subjectLabel": "Subject",
         "bodyLabel": "Message",
         "pageSubtitle": "Compose and queue a broadcast for review using this member's e-blast quota.",
-        "selfExclusionNotice": "{company} won't receive this broadcast — members are excluded from their own e-blasts.",
+        "selfExclusionNotice": "{company} won't receive this broadcast — a member's contacts are excluded from their own e-blasts.",
         "memberNotFoundError": "That member no longer exists. Pick another member.",
         "quotaBlockedError": "{company} has used all their e-blasts for this period.",
         "notInPlanError": "{company}'s plan doesn't include E-Blast.",
@@ -5773,9 +5773,12 @@
         "submitNote": {
           "cancellable": "You can cancel this broadcast at any time until an admin approves it."
         },
+        "selfExclusionHint": "You and your colleagues won't receive your own broadcast.",
         "estimateNote": {
-          "allMembers": "Recipients: every active member with a primary contact email (capped at 5,000 per broadcast).",
-          "tier": "Recipients: members on the selected tier with a primary contact email (capped at 5,000).",
+          "allMembers": "Recipients: the primary contact of every active member (up to {ceiling, number} per broadcast).",
+          "tier": "Recipients: the primary contact of every active member on the selected tiers (up to {ceiling, number}).",
+          "allMembersAllContacts": "Recipients: every contact of every active member — primary and secondary — who has not opted out (up to {ceiling, number} per broadcast).",
+          "tierAllContacts": "Recipients: every contact of every active member on the selected tiers who has not opted out (up to {ceiling, number}).",
           "custom": "Recipients: each line below is one email. Maximum 100 entries. Each must match a member or contact in your chamber.",
           "customCount": "{count} email(s) entered."
         },

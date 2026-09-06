@@ -22,6 +22,8 @@ import {
   makeComputeQuotaDeps,
   makeListBroadcastTemplatesDeps,
   substituteChamberName,
+  currentAudienceCeiling,
+  currentAudienceMode,
 } from '@/modules/broadcasts';
 import { makeDrizzleBroadcastTemplatesRepo } from '@/modules/broadcasts/infrastructure/drizzle-broadcast-templates-repo';
 import { safeAuditEmit } from '@/modules/broadcasts/application/use-cases/_safe-audit-emit';
@@ -143,6 +145,11 @@ export default async function ComposeBroadcastPage({
   // toolbar surface only appears when all three flag layers
   // (f7Broadcasts + f71aBroadcastAdvanced + f71aUs2Images) are ON.
   const imagesEnabled = isF71aUs2Enabled();
+  // 108 PR-C T079 / T085 — resolved ONCE here from the composition root and
+  // handed to the client form as props, so the compose copy names the real
+  // ceiling (FR-041 / FR-042) and describes the audience leg in force.
+  const audienceCeiling = currentAudienceCeiling();
+  const audienceMode = currentAudienceMode();
 
   // F7.1a US7 (T111) — template picker. Server-side fetches the
   // tenant's templates filtered by the member's current locale
@@ -286,6 +293,8 @@ export default async function ComposeBroadcastPage({
         key={selectedTemplateId ?? 'blank'}
         initialQuota={initialQuota}
         imagesEnabled={imagesEnabled}
+        audienceCeiling={audienceCeiling}
+        audienceMode={audienceMode}
         {...(initialSubject !== undefined ? { initialSubject } : {})}
         {...(initialBodyHtml !== undefined ? { initialBodyHtml } : {})}
       />

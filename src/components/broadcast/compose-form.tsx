@@ -22,7 +22,13 @@ import { useDeferredValue, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { errorValues, submitSuccessDescription } from '@/components/broadcast/submit-feedback';
+import {
+  errorValues,
+  estimateNoteKey,
+  showsSelfExclusionHint,
+  submitSuccessDescription,
+  type ComposeAudienceMode,
+} from '@/components/broadcast/submit-feedback';
 import { z } from 'zod';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -113,6 +119,16 @@ export interface ComposeFormProps {
    * when the kill-switch is fully ON.
    */
   readonly imagesEnabled?: boolean;
+  /**
+   * 108 PR-C T079 / T085 — the ceiling and the audience leg in force,
+   * resolved server-side by the page from the composition root
+   * (`currentAudienceCeiling()` / `currentAudienceMode()`), so the copy
+   * names the real limit (FR-041) and says who the recipients are under the
+   * flag (FR-020). REQUIRED on purpose: a default here would be a second
+   * definition of the ceiling (FR-042).
+   */
+  readonly audienceCeiling: number;
+  readonly audienceMode: ComposeAudienceMode;
 }
 
 export function ComposeForm({
@@ -121,6 +137,8 @@ export function ComposeForm({
   initialBodyHtml = '<p></p>',
   initialQuota = null,
   imagesEnabled = false,
+  audienceCeiling,
+  audienceMode,
 }: ComposeFormProps): React.ReactElement {
   const router = useRouter();
   const t = useTranslations('portal.broadcasts.compose');
@@ -450,12 +468,14 @@ export function ComposeForm({
               describe the segment shape + link to broadcast detail
               page where the post-submit count is visible. */}
           <p className="text-xs text-muted-foreground">
-            {segment.kind === 'all_members'
-              ? t('estimateNote.allMembers')
-              : segment.kind === 'tier'
-                ? t('estimateNote.tier')
-                : t('estimateNote.custom')}
+            {/* 108 PR-C T079: leg-aware wording + the real ceiling (FR-041). */}
+            {t(estimateNoteKey(segment.kind, audienceMode), { ceiling: audienceCeiling })}
           </p>
+          {showsSelfExclusionHint(segment.kind) ? (
+            // 108 PR-C T079 (FR-022b): self-exclusion covers every contact of
+            // the sending member, not only the primary address.
+            <p className="text-xs text-muted-foreground">{t('selfExclusionHint')}</p>
+          ) : null}
 
           {segment.kind === 'custom' ? (
             <CustomListInput

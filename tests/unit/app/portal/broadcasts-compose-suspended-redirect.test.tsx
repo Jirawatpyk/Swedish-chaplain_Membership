@@ -18,6 +18,7 @@
  * continue rendering instead of propagating it.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { render } from '@testing-library/react';
 
 const redirect = vi.hoisted(() =>
   vi.fn((url: string) => {
@@ -63,6 +64,10 @@ vi.mock('@/modules/broadcasts', () => ({
   makeComputeQuotaDeps: () => ({}),
   makeListBroadcastTemplatesDeps: () => ({}),
   substituteChamberName: (s: string) => s,
+  // 108 PR-C T079 / T085 — the page resolves the ceiling and the audience leg
+  // server-side and hands them to the form as props.
+  currentAudienceCeiling: () => 5000,
+  currentAudienceMode: () => 'primary_only',
 }));
 vi.mock('@/modules/broadcasts/infrastructure/drizzle-broadcast-templates-repo', () => ({
   makeDrizzleBroadcastTemplatesRepo: () => ({}),
@@ -81,11 +86,17 @@ vi.mock('@/components/layout/page-header', () => ({
   PageHeader: () => <div data-testid="page-header" />,
 }));
 vi.mock('@/components/broadcast/compose-form', () => ({
-  ComposeForm: () => <div data-testid="compose-form" />,
+  ComposeForm: (props: Record<string, unknown>) => {
+    capturedComposeProps = props;
+    return <div data-testid="compose-form" />;
+  },
 }));
 vi.mock('@/components/broadcast/compose/template-picker', () => ({
   ComposeTemplatePicker: () => null,
 }));
+
+// 108 PR-C T079 — the mocked ComposeForm records the props the page hands it.
+let capturedComposeProps: Record<string, unknown> | null = null;
 
 import ComposeBroadcastPage from '@/app/(member)/portal/broadcasts/new/page';
 
@@ -133,5 +144,9 @@ describe('/portal/broadcasts/new — membership-access + quota redirect (059-mem
     const result = await renderPage();
     expect(redirect).not.toHaveBeenCalled();
     expect(result).toBeTruthy();
+    // 108 PR-C T079 / T085 — the page passes the ceiling and the audience leg
+    // it resolved server-side, so the compose copy can never hard-code them.
+    render(result as React.ReactElement);
+    expect(capturedComposeProps).toMatchObject({ audienceCeiling: 5000, audienceMode: 'primary_only' });
   });
 });
