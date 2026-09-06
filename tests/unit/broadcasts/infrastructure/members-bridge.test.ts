@@ -204,3 +204,23 @@ describe('membersBridge.getMembersBySegment — the primary_only leg propagates 
     ]);
   });
 });
+
+/**
+ * 108 PR-C T090 — `broadcasts_audience_pages_total{tenant}`: the number of
+ * F3 keyset pages a 1:N resolve walked. Emitted once per completed walk
+ * (never on a failed page), so a rising pages-per-resolve is the early signal
+ * of a tenant approaching the per-tick budget.
+ */
+describe('membersBridge.getContactsBySegment — pages metric (108 PR-C T090)', () => {
+  it('records the page count after a completed walk (2 pages here)', async () => {
+    const { broadcastsMetrics } = await import('@/lib/metrics');
+    const spy = vi.spyOn(broadcastsMetrics, 'audiencePagesTotal');
+    f3.getBroadcastRecipientContacts
+      .mockResolvedValueOnce(ok(fullPage('pg')))
+      .mockResolvedValueOnce(ok([contactRow('t-m', 't-c')]));
+    await membersBridge.getContactsBySegment(tenant, 'all_members', {});
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenCalledWith('test-tenant', 2);
+    spy.mockRestore();
+  });
+});

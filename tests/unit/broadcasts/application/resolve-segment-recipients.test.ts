@@ -1152,3 +1152,33 @@ describe('resolve-segment-recipients — 108 PR-C the ceiling comes from deps (T
     expect(result.ok).toBe(true);
   });
 });
+
+/**
+ * 108 PR-C T090 — `broadcasts_audience_resolved_total{tenant, segment, mode}`:
+ * one increment per successful MEMBER-BASED resolve, labelled by segment kind
+ * and the leg in force, so the flag flip is visible as a label change on the
+ * dashboard (research R15). Not emitted for custom / attendee resolves.
+ */
+describe('resolve-segment-recipients — 108 PR-C audience_resolved_total metric (T090)', () => {
+  it('a member-based resolve increments once with {segment, mode}', async () => {
+    const spy = vi.spyOn(broadcastsMetrics, 'audienceResolvedTotal');
+    await resolveSegmentRecipients(
+      makeDeps({ audienceMode: 'all_contacts', contacts: [contact('m1', 'c1', 'x@example.com', { isPrimary: true })] }),
+      input({ segment: { kind: 'all_members' } }),
+    );
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenCalledWith('test-tenant', 'all_members', 'all_contacts');
+    spy.mockRestore();
+  });
+
+  it('a custom-list resolve does not touch it', async () => {
+    const spy = vi.spyOn(broadcastsMetrics, 'audienceResolvedTotal');
+    const a = unsafeBrandEmailLower('a@example.com');
+    await resolveSegmentRecipients(
+      makeDeps(),
+      input({ segment: { kind: 'custom', emails: ['a@example.com'] }, customRecipients: [a] }),
+    );
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+});

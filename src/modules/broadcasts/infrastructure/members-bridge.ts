@@ -19,6 +19,7 @@
  */
 import { ok, err, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { broadcastsMetrics } from '@/lib/metrics';
 import { errKind } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import {
@@ -177,7 +178,11 @@ export const membersBridge: MembersBridgePort = {
           isPrimary: r.isPrimary,
         });
       }
-      if (page.value.length < CONTACT_PAGE_SIZE) return out;
+      if (page.value.length < CONTACT_PAGE_SIZE) {
+        // 108 PR-C T090 — pages walked per COMPLETED resolve (never on failure).
+        broadcastsMetrics.audiencePagesTotal(tenantCtx.slug, pages);
+        return out;
+      }
       const last = page.value[page.value.length - 1]!;
       after = { memberId: last.memberId, contactId: last.contactId };
     }

@@ -22,6 +22,7 @@
 import { z } from 'zod';
 import { errKind } from '@/lib/log-id';
 import { logger } from '@/lib/logger';
+import { broadcastsMetrics } from '@/lib/metrics';
 import { resolveSegmentRecipients, type ResolveSegmentDeps } from '@/modules/broadcasts';
 import type { RecipientSegment } from '@/modules/broadcasts/domain/recipient-segment';
 
@@ -84,6 +85,24 @@ export type RecipientCountOutcome =
  * `unavailable`, logged with the error class only.
  */
 export async function countRecipients(
+  deps: ResolveSegmentDeps,
+  input: {
+    readonly segment: RecipientSegment;
+    readonly requestingMemberId: string;
+    readonly correlationId: string;
+  },
+): Promise<RecipientCountOutcome> {
+  // 108 PR-C T090 (SLO-F7-013) — observed on every outcome, including the
+  // failures: a count that times out is exactly the sample the p95 needs.
+  const startedAt = Date.now();
+  try {
+    return await countRecipientsInner(deps, input);
+  } finally {
+    broadcastsMetrics.recipientCountMs(deps.tenant.slug, Date.now() - startedAt);
+  }
+}
+
+async function countRecipientsInner(
   deps: ResolveSegmentDeps,
   input: {
     readonly segment: RecipientSegment;
