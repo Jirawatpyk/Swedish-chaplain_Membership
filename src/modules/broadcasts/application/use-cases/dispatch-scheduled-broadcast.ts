@@ -497,24 +497,39 @@ export async function dispatchScheduledBroadcast(
     });
   }
 
-  const resolvedResult = await resolveSegmentRecipients(
-    {
-      tenant: deps.tenant,
-      membersBridge: deps.membersBridge,
-      eventAttendees: deps.eventAttendees,
-      marketingUnsubscribes: deps.marketingUnsubscribes,
-    },
-    {
-      segment,
-      requestingMemberPrimaryEmail: requestingPrimary,
-      customRecipients:
-        broadcast.customRecipientEmails === null
-          ? null
-          : broadcast.customRecipientEmails.map((e) =>
-              unsafeBrandEmailLower(e.toLowerCase().trim()),
-            ),
-    },
-  );
+  // W2-05, extended for 108 PR-D (review errors MEDIUM-5): the resolver now
+  // has TWO bridge reads that throw by design — the suppression anti-join and
+  // the per-contact opt-out filter, both fail-closed. An unhandled throw here
+  // escapes to the cron route and lands in `summary.uncaught_error`, the class
+  // that means "programming bug, page someone". A Neon blip is not that: it is
+  // a typed `dispatch.server_error`, and the next tick retries because the
+  // broadcast is still `approved`.
+  let resolvedResult: Awaited<ReturnType<typeof resolveSegmentRecipients>>;
+  try {
+    resolvedResult = await resolveSegmentRecipients(
+      {
+        tenant: deps.tenant,
+        membersBridge: deps.membersBridge,
+        eventAttendees: deps.eventAttendees,
+        marketingUnsubscribes: deps.marketingUnsubscribes,
+      },
+      {
+        segment,
+        requestingMemberPrimaryEmail: requestingPrimary,
+        customRecipients:
+          broadcast.customRecipientEmails === null
+            ? null
+            : broadcast.customRecipientEmails.map((e) =>
+                unsafeBrandEmailLower(e.toLowerCase().trim()),
+              ),
+      },
+    );
+  } catch (e) {
+    return err({
+      kind: 'dispatch.server_error',
+      message: e instanceof Error ? e.message : 'unknown error',
+    });
+  }
 
   if (!resolvedResult.ok) {
     // Bug #13 fix (2026-07-10): distinguish the TWO resolve failures.

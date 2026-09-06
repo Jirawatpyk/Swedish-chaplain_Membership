@@ -13,7 +13,8 @@
  *     whole-branch review LOW-6);
  *   - unsubscribed → plain text and NO control: the person's own unsubscribe
  *     stands and is not something to flip from here (FR-025);
- *   - unavailable → a disabled switch with an explanation (FR-031a);
+ *   - unavailable → a disabled switch with an explanation (FR-031a), and a
+ *     503 from the write says so rather than "something went wrong";
  *   - primary contact → the FR-033 note: invoices and payment emails are
  *     unaffected by this preference.
  *
@@ -76,9 +77,15 @@ export function PortalMarketingToggle({
       const body = (await res.json().catch(() => ({}))) as ResponseBody;
       if (!res.ok) {
         setOptimistic(null);
-        if (res.status === 409) toast.error(t('toast.errors.suppressed'));
+        // Name the refusal (review errors MEDIUM-3 / LOW-2): 409 is three
+        // different things and 503 is a transient outage the copy already
+        // explains — "Something went wrong" told the member none of that.
+        const code = body.error?.code;
+        if (res.status === 409 && code === 'suppressed') toast.error(t('toast.errors.suppressed'));
         else if (res.status === 429) toast.error(t('toast.errors.rateLimited'));
-        else toast.error(t('toast.errors.generic'));
+        else if (res.status === 503 && code === 'suppression_unavailable') {
+          toast.error(t('toast.errors.unavailable'));
+        } else toast.error(t('toast.errors.generic'));
         return;
       }
       if (body.outcome === 'unchanged') {

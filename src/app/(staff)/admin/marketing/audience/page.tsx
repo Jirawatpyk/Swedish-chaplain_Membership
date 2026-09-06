@@ -34,6 +34,7 @@ import { buildMarketingAudienceDeps } from '@/lib/contact-marketing-deps';
 import { env } from '@/lib/env';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
 import {
+  AUDIENCE_COUNT_ID,
   MARKETING_AUDIENCE_PREFLIGHT_QUERY,
   parseMarketingAudienceParams,
   type MarketingAudienceSearchParams,
@@ -44,7 +45,6 @@ import { resolveActorIdentities } from '@/modules/auth';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { TablePagination } from '@/components/layout/table-pagination';
-import { AUDIENCE_COUNT_ID } from '@/components/members/marketing-switch';
 import { EmptyState } from '@/components/shell/empty-state';
 import { ReadOnlyBanner } from '@/components/shell/read-only-banner';
 import { Card, CardContent } from '@/components/ui/card';
@@ -139,7 +139,7 @@ async function AudienceBody({
   const tenant = resolveTenantFromRequest();
   const locale = await getLocale();
   const t = await getTranslations('admin.marketing.audience');
-  const { filter, page, hasFilters } = parseMarketingAudienceParams(query);
+  const { filter, page, hasFilters, narrowed } = parseMarketingAudienceParams(query);
 
   const result = await listMarketingAudience({ filter, page }, buildMarketingAudienceDeps(tenant));
   if (!result.ok) {
@@ -216,7 +216,7 @@ async function AudienceBody({
           {...(total > 0 ? { role: 'status', 'aria-live': 'polite' as const } : {})}
           data-testid="audience-count"
         >
-          {hasFilters ? t('count', { count: total }) : t('countAll', { count: total })}
+          {narrowed ? t('count', { count: total }) : t('countAll', { count: total })}
         </p>
       )}
 
@@ -232,7 +232,7 @@ async function AudienceBody({
       )}
 
       {degradedEmpty ? null : total === 0 ? (
-        hasFilters ? (
+        narrowed ? (
           <EmptyState
             icon={SearchXIcon}
             title={t('empty.filtered.title')}
@@ -240,7 +240,13 @@ async function AudienceBody({
             bordered={false}
             data-testid="audience-empty-filtered"
             action={
-              <Link href={AUDIENCE_HREF} className={buttonVariants({ variant: 'outline', size: 'sm' })}>
+              // Clearing must LIFT the default eligibility leg too, or a
+              // tenant whose members are all inactive lands back on the same
+              // empty page (review code M1).
+              <Link
+                href={`${AUDIENCE_HREF}?eligible=0`}
+                className={buttonVariants({ variant: 'outline', size: 'sm' })}
+              >
                 {t('empty.filtered.cta')}
               </Link>
             }

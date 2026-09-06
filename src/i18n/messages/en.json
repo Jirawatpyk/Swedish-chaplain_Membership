@@ -5976,6 +5976,7 @@
           "errors": {
             "suppressed": "You unsubscribed from marketing emails; that choice stays in force.",
             "rateLimited": "Too many changes in a short time. Please wait a minute and try again.",
+            "unavailable": "The unsubscribe list is temporarily unreadable, so this cannot be changed right now. Try again shortly.",
             "generic": "Something went wrong. Please try again."
           }
         }

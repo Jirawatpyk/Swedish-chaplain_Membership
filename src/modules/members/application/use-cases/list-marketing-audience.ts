@@ -21,6 +21,8 @@
  * empty. Dispatch re-resolves suppression itself, so display honesty never
  * costs a delivery.
  */
+import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import {
@@ -125,9 +127,17 @@ export async function listMarketingAudience(
 
   const empty = (): ListMarketingAudienceResult => ({ rows: [], total: 0, page, pageSize, degraded });
 
-  // `state=unsubscribed` IS the suppression list: unreadable → nothing truthful
-  // to show; empty → nobody.
-  if (filter.state === 'unsubscribed' && (degraded || suppressedAll!.size === 0)) {
+  // EVERY state filter is answered from the suppression list — `unsubscribed`
+  // IS the list, `on` and both `off_*` EXCLUDE it — so an unreadable list
+  // means none of them can be answered truthfully. Listing anyway would put
+  // people who unsubscribed under "on" and inflate the count on the FR-027a
+  // pre-flight page, whose whole job is to say who will receive (review
+  // errors MEDIUM-2). The unfiltered view is unaffected: it only LABELS rows.
+  if (filter.state !== undefined && degraded) {
+    return ok(empty());
+  }
+  // An empty list means nobody is unsubscribed → nobody to show.
+  if (filter.state === 'unsubscribed' && suppressedAll!.size === 0) {
     return ok(empty());
   }
 
@@ -153,6 +163,20 @@ export async function listMarketingAudience(
 
   const listed = await deps.memberRepo.listContactsForMarketingAudience(deps.tenant, repoFilter);
   if (!listed.ok) {
+    // The page renders an EmptyState from this Result, so `error.tsx` never
+    // sees it and there is no `digest` to correlate — log here or the failure
+    // is invisible server-side (review errors MEDIUM-1). No `q`: it is free
+    // text a staff user may have typed an address into.
+    logger.error(
+      {
+        tenantId: deps.tenant.slug,
+        err: listed.error.code,
+        cause: errKind('cause' in listed.error ? listed.error.cause : undefined),
+        filter: { state: filter.state, kind: filter.kind, eligible: filter.eligible },
+        page,
+      },
+      'admin.marketing.audience.list_failed',
+    );
     return err({ type: 'server_error', message: `audience: ${listed.error.code}` });
   }
 

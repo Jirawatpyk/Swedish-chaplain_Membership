@@ -2234,6 +2234,22 @@ export const broadcastsMetrics = {
    * marketing opt-out (staff or self). Distinct from the suppression
    * anti-join above — an address that is both counts once, as suppressed.
    */
+  /**
+   * `broadcasts.suppression_lookup_failed{tenant, op}` — 108 PR-D (review
+   * errors HIGH-1): the marketing suppression read threw. Every caller
+   * swallows the throw into a degraded state ("status unavailable", a refused
+   * "switch on"), so without this counter a sustained outage is invisible
+   * until staff open a ticket.
+   */
+  suppressionLookupFailed(tenantId: string, op: string): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_suppression_lookup_failed',
+        'Marketing suppression-list reads that threw (every caller degrades on it)',
+      ).add(1, { tenant: tenantId, op });
+    });
+  },
+
   marketingOptOutFilterCount(tenantId: string, count: number): void {
     safeMetric(() => {
       counter(

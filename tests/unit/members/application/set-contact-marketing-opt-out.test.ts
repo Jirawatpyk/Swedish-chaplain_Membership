@@ -40,6 +40,7 @@ import {
   type ContactId,
   type MarketingOptOut,
 } from '@/modules/members/domain/contact';
+import type { SetMarketingCommand } from '@/modules/members/application/ports/contact-repo';
 
 const tenant = asTenantContext('test-tenant');
 const memberId = asMemberId('11111111-1111-4111-8111-111111111111');
@@ -84,14 +85,20 @@ function makeDeps(opts: {
     findById: vi.fn().mockResolvedValue(
       found ? ok(found) : err({ code: 'repo.not_found' as const }),
     ),
-    setMarketingOptOutInTx: vi.fn(async (_tx: unknown, _id: ContactId, next: MarketingOptOut) => {
+    setMarketingOptOutInTx: vi.fn(async (_tx: unknown, _id: ContactId, command: SetMarketingCommand) => {
+      const next: MarketingOptOut =
+        command.kind === 'off'
+          ? { optedOutAt: command.at, source: command.actor, byUserId: command.byUserId }
+          : RECEIVES_MARKETING;
       switch (opts.repoOutcome ?? 'changed') {
         case 'changed':
           return ok({ outcome: 'changed' as const, contact: contact({ marketing: next }) });
         case 'unchanged':
           return ok({ outcome: 'unchanged' as const, contact: found ?? contact() });
         case 'refused':
-          return ok({ outcome: 'refused_self_opted_out' as const, contact: found ?? contact() });
+          // No `contact` on the refusal arm — the union makes reading it a
+          // compile error (review types HIGH-1).
+          return ok({ outcome: 'refused_self_opted_out' as const });
         case 'not_found':
           return err({ code: 'repo.not_found' as const });
         default:
@@ -142,9 +149,12 @@ describe('setContactMarketingOptOut — switching OFF', () => {
     expect(contactRepo.setMarketingOptOutInTx).toHaveBeenCalledWith(
       { __tx: true },
       CONTACT,
-      { optedOutAt: NOW, source: 'staff', byUserId: STAFF },
-      { actorSource: 'staff' },
+      { kind: 'off', actor: 'staff', byUserId: STAFF, at: NOW },
     );
+    // ONE representation of "who is acting": the command's `actor`. There is
+    // no second `source` field that could disagree with it (types MEDIUM-1).
+    const command = contactRepo.setMarketingOptOutInTx.mock.calls[0]![2] as SetMarketingCommand;
+    expect(Object.keys(command).sort()).toEqual(['actor', 'at', 'byUserId', 'kind']);
     // OFF never consults the suppression list — nothing to protect.
     expect(marketingSuppression.isSuppressed).not.toHaveBeenCalled();
     expect(audit.recordInTx).toHaveBeenCalledTimes(1);
@@ -176,8 +186,7 @@ describe('setContactMarketingOptOut — switching OFF', () => {
     expect(contactRepo.setMarketingOptOutInTx).toHaveBeenCalledWith(
       expect.anything(),
       CONTACT,
-      { optedOutAt: NOW, source: 'self', byUserId: SELF_USER },
-      { actorSource: 'self' },
+      { kind: 'off', actor: 'self', byUserId: SELF_USER, at: NOW },
     );
     const event = audit.recordInTx.mock.calls[0]![2];
     expect(event).toMatchObject({
@@ -218,8 +227,7 @@ describe('setContactMarketingOptOut — switching ON', () => {
     expect(contactRepo.setMarketingOptOutInTx).toHaveBeenCalledWith(
       expect.anything(),
       CONTACT,
-      { optedOutAt: null, source: null, byUserId: null },
-      expect.objectContaining({ actorSource: expect.stringMatching(/^(staff|self)$/) }),
+      expect.objectContaining({ kind: 'on', actor: expect.stringMatching(/^(staff|self)$/) }),
     );
     expect(audit.recordInTx.mock.calls[0]![2]).toMatchObject({
       type: 'contact_marketing_opted_in',
@@ -281,8 +289,7 @@ describe('setContactMarketingOptOut — self opt-out takes precedence over staff
     expect(contactRepo.setMarketingOptOutInTx).toHaveBeenCalledWith(
       expect.anything(),
       CONTACT,
-      { optedOutAt: null, source: null, byUserId: null },
-      expect.objectContaining({ actorSource: expect.stringMatching(/^(staff|self)$/) }),
+      expect.objectContaining({ kind: 'on', actor: expect.stringMatching(/^(staff|self)$/) }),
     );
   });
 
@@ -308,8 +315,7 @@ describe('setContactMarketingOptOut — self opt-out takes precedence over staff
     expect(contactRepo.setMarketingOptOutInTx).toHaveBeenCalledWith(
       expect.anything(),
       CONTACT,
-      { optedOutAt: NOW, source: 'self', byUserId: SELF_USER },
-      { actorSource: 'self' },
+      { kind: 'off', actor: 'self', byUserId: SELF_USER, at: NOW },
     );
     expect(audit.recordInTx.mock.calls[0]![2]).toMatchObject({
       type: 'contact_marketing_opted_out',
@@ -400,9 +406,11 @@ describe('setContactMarketingOptOut — idempotency and refusals', () => {
     const { clock: _clock, ...withoutClock } = deps;
     const before = Date.now();
     await setContactMarketingOptOut(staffOff, withoutClock);
-    const next = contactRepo.setMarketingOptOutInTx.mock.calls[0]![2] as MarketingOptOut;
-    expect(next.optedOutAt).toBeInstanceOf(Date);
-    expect((next.optedOutAt as Date).getTime()).toBeGreaterThanOrEqual(before);
+    const command = contactRepo.setMarketingOptOutInTx.mock.calls[0]![2] as SetMarketingCommand;
+    expect(command.kind).toBe('off');
+    if (command.kind !== 'off') return;
+    expect(command.at).toBeInstanceOf(Date);
+    expect(command.at.getTime()).toBeGreaterThanOrEqual(before);
   });
 });
 
@@ -416,14 +424,13 @@ describe('setContactMarketingOptOut — idempotency and refusals', () => {
 describe('setContactMarketingOptOut — the guard is re-checked under the lock (cycle 13)', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('passes the actor source to the repo write', async () => {
+  it('states the actor ONCE, in the command (no second source field to disagree)', async () => {
     const { deps, contactRepo } = makeDeps();
     await setContactMarketingOptOut(staffOff, deps);
     expect(contactRepo.setMarketingOptOutInTx).toHaveBeenCalledWith(
       { __tx: true },
       CONTACT,
-      { optedOutAt: NOW, source: 'staff', byUserId: STAFF },
-      { actorSource: 'staff' },
+      { kind: 'off', actor: 'staff', byUserId: STAFF, at: NOW },
     );
   });
 

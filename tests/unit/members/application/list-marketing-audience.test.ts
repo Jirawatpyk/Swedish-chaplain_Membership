@@ -322,14 +322,15 @@ describe('listMarketingAudience — degraded suppression (FR-031a / FR-035b)', (
     expect(r.value.rows.every((x) => x.reasons.length === 0)).toBe(true);
   });
 
-  it('state=on with the list unreadable → optOut leg only, no NOT IN leg, states unavailable', async () => {
+  it('state=on with the list unreadable → empty + degraded (it cannot be answered)', async () => {
+    // Superseded by review errors MEDIUM-2 (cycle 15): listing with the
+    // suppression leg silently dropped put people who unsubscribed under
+    // "on" and inflated the pre-flight count.
     const { deps, memberRepo } = makeDeps({ suppressedAll: 'throws' });
     const r = await listMarketingAudience({ filter: { state: 'on', eligible: true }, page: 1 }, deps);
     if (!r.ok) throw new Error('expected ok');
-    expect(repoFilter(memberRepo)).toMatchObject({ optOut: 'none' });
-    expect(repoFilter(memberRepo).emailLowerNotIn).toBeUndefined();
-    expect(r.value.degraded).toBe(true);
-    expect(new Set(r.value.rows.map((x) => x.state))).toEqual(new Set(['unavailable']));
+    expect(r.value).toMatchObject({ rows: [], total: 0, degraded: true });
+    expect(memberRepo.listContactsForMarketingAudience).not.toHaveBeenCalled();
   });
 
   it('state=unsubscribed with the list unreadable → nothing truthful to show: empty + degraded', async () => {
@@ -348,5 +349,36 @@ describe('listMarketingAudience — degraded suppression (FR-031a / FR-035b)', (
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.error.type).toBe('server_error');
+  });
+});
+
+describe('listMarketingAudience — a degraded suppression read never over-reports (cycle 15)', () => {
+  // Review errors MEDIUM-2: `state=unsubscribed` already returns empty when
+  // the list is unreadable. `on` and both `off_*` are defined BY that same
+  // list (they exclude it), so answering them without it lists and counts
+  // people who unsubscribed — on the very page (FR-027a pre-flight) whose job
+  // is to say who will receive.
+  it.each(['on', 'off_by_staff', 'off_by_contact'] as const)(
+    'state=%s + unreadable list → empty + degraded, and the repo is never asked',
+    async (state) => {
+      const { deps, memberRepo } = makeDeps({ suppressedAll: 'throws' });
+      const r = await listMarketingAudience({ filter: { state, eligible: true }, page: 1 }, deps);
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      expect(r.value).toMatchObject({ rows: [], total: 0, degraded: true });
+      expect(memberRepo.listContactsForMarketingAudience).not.toHaveBeenCalled();
+    },
+  );
+
+  it('no state filter + a per-page lookup failure still lists the page, degraded', async () => {
+    // The unfiltered view does not depend on the list to decide membership —
+    // only to label rows — so it stays useful.
+    const { deps, memberRepo } = makeDeps({ lookup: 'throws' });
+    const r = await listMarketingAudience({ filter: { eligible: true }, page: 1 }, deps);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.degraded).toBe(true);
+    expect(r.value.rows.length).toBeGreaterThan(0);
+    expect(memberRepo.listContactsForMarketingAudience).toHaveBeenCalled();
   });
 });

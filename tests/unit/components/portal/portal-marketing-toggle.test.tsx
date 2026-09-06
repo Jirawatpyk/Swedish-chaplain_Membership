@@ -139,11 +139,13 @@ describe('PortalMarketingToggle — switching', () => {
   });
 
   it.each([
-    [409, t.toast.errors.suppressed],
-    [429, t.toast.errors.rateLimited],
-    [500, t.toast.errors.generic],
-  ] as const)('HTTP %s → localized error toast', async (status, expected) => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse(status, { error: { code: 'x' } }));
+    [409, 'suppressed', t.toast.errors.suppressed],
+    [429, 'rate_limited', t.toast.errors.rateLimited],
+    [500, 'server_error', t.toast.errors.generic],
+  ] as const)('HTTP %s (%s) → localized error toast', async (status, code, expected) => {
+    // The status alone is not the reason (cycle 15): 409 covers `suppressed`,
+    // `self_opted_out` and `idempotency_conflict`.
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse(status, { error: { code } }));
     renderToggle('on');
     fireEvent.click(screen.getByRole('switch'));
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith(expected));
@@ -217,5 +219,41 @@ describe('PortalMarketingToggle — optimistic state (cycle 13, whole-branch LOW
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith(t.toast.errors.suppressed));
     expect(sw).toHaveAttribute('aria-checked', 'false');
     expect(refreshSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('PortalMarketingToggle — every refusal says WHICH (cycle 15)', () => {
+  it('503 suppression_unavailable → the "status unavailable" toast, not the generic one', async () => {
+    // Review errors MEDIUM-3: the staff switch has this branch; the portal
+    // did not, so a member saw "Something went wrong" for a transient outage
+    // the copy already explains.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse(503, { error: { code: 'suppression_unavailable' } })),
+    );
+    renderToggle('off_by_staff');
+    fireEvent.click(screen.getByRole('switch'));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(t.toast.errors.unavailable));
+  });
+
+  it('409 self_opted_out / idempotency_conflict do NOT claim the person unsubscribed', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse(409, { error: { code: 'idempotency_conflict' } })),
+    );
+    renderToggle('on');
+    fireEvent.click(screen.getByRole('switch'));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(t.toast.errors.generic));
+    expect(toast.error).not.toHaveBeenCalledWith(t.toast.errors.suppressed);
+  });
+
+  it('409 suppressed → the unsubscribe explanation', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse(409, { error: { code: 'suppressed' } })),
+    );
+    renderToggle('on');
+    fireEvent.click(screen.getByRole('switch'));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(t.toast.errors.suppressed));
   });
 });

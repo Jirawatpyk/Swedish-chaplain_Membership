@@ -19,6 +19,7 @@
  */
 import { ok, err, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import {
   drizzleMemberRepo,
@@ -274,13 +275,26 @@ export const membersBridge: MembersBridgePort = {
     tenantCtx: TenantContext,
     emails: ReadonlyArray<EmailLower>,
   ): Promise<ReadonlySet<EmailLower>> {
+    // Key the answer by the CALLER's own values, not by what came back from
+    // the DB (review types MEDIUM-4): the resolver tests membership with
+    // `optedOut.has(e)` on its own array, so a case difference between the
+    // two sides would silently fail OPEN — the one direction this filter
+    // must never fail in. `unsafeBrandEmailLower` is a cast, not a
+    // normaliser, so it cannot rescue that.
+    const byLower = new Map<string, EmailLower>();
+    for (const e of emails) byLower.set(String(e).toLowerCase().trim(), e);
     const result = await f3FilterMarketingOptedOutEmails(
       { tenant: tenantCtx, contactRepo: drizzleContactRepo },
-      emails as ReadonlyArray<string>,
+      [...byLower.keys()],
     );
     if (!result.ok) {
       logger.error(
-        { err: result.error.code, tenantId: tenantCtx.slug, batch: emails.length },
+        {
+          err: result.error.code,
+          cause: errKind('cause' in result.error ? result.error.cause : undefined),
+          tenantId: tenantCtx.slug,
+          batch: emails.length,
+        },
         'broadcasts.members_bridge.marketing_opt_out_lookup_failed',
       );
       throw new Error(
@@ -288,7 +302,10 @@ export const membersBridge: MembersBridgePort = {
       );
     }
     const out = new Set<EmailLower>();
-    for (const e of result.value) out.add(unsafeBrandEmailLower(e));
+    for (const e of result.value) {
+      const original = byLower.get(e.toLowerCase());
+      if (original !== undefined) out.add(original);
+    }
     return out;
   },
 };

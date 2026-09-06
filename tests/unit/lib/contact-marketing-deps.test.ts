@@ -14,6 +14,16 @@ const lookupBatch = vi.fn();
 const listEmailLowers = vi.fn();
 let withList = true;
 
+const loggerError = vi.fn();
+const loggerDebug = vi.fn();
+vi.mock('@/lib/logger', () => ({
+  logger: { error: (...a: unknown[]) => loggerError(...a), debug: (...a: unknown[]) => loggerDebug(...a), warn: vi.fn(), info: vi.fn() },
+}));
+const suppressionLookupFailed = vi.fn();
+vi.mock('@/lib/metrics', () => ({
+  broadcastsMetrics: { suppressionLookupFailed: (...a: unknown[]) => suppressionLookupFailed(...a) },
+}));
+
 vi.mock('@/modules/members', () => ({
   drizzleContactRepo: { __contactRepo: true },
   drizzleMemberRepo: { __memberRepo: true },
@@ -41,6 +51,9 @@ beforeEach(() => {
   withList = true;
   lookupBatch.mockReset();
   listEmailLowers.mockReset();
+  loggerError.mockReset();
+  loggerDebug.mockReset();
+  suppressionLookupFailed.mockReset();
 });
 
 describe('makeMarketingSuppressionLookup — isSuppressed', () => {
@@ -57,10 +70,18 @@ describe('makeMarketingSuppressionLookup — isSuppressed', () => {
     await expect(port.isSuppressed('jane@example.com')).resolves.toBe(false);
   });
 
-  it('an UNPARSEABLE address → false WITHOUT a lookup (it cannot be on a list of parsed values)', async () => {
+  it('an UNPARSEABLE address → false WITHOUT a lookup, and leaves a debug breadcrumb', async () => {
+    // The honest reason (review errors LOW-1): `asEmail` (members) and
+    // `asEmailLower` (broadcasts) share one grammar, so no stored
+    // `contacts.email` can pass one and fail the other. It is NOT "the list
+    // only holds parsed values" — the multi-batch webhook path brands without
+    // parsing. If this branch ever fires, the two grammars have drifted and
+    // somebody must know.
     const port = makeMarketingSuppressionLookup(tenant);
     await expect(port.isSuppressed('not an address')).resolves.toBe(false);
     expect(lookupBatch).not.toHaveBeenCalled();
+    expect(loggerDebug).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(loggerDebug.mock.calls[0])).not.toContain('not an address');
   });
 
   it('a repo failure THROWS — never "not suppressed" (fail closed)', async () => {
@@ -68,6 +89,40 @@ describe('makeMarketingSuppressionLookup — isSuppressed', () => {
     const port = makeMarketingSuppressionLookup(tenant);
     await expect(port.isSuppressed('jane@example.com')).rejects.toThrow('neon down');
   });
+
+  it('a repo failure is LOGGED (class only) and counted before it is re-thrown', async () => {
+    // Review errors HIGH-1: six callers swallow this throw into a degraded
+    // state. The composition layer is the one place that can see it, so it
+    // logs + counts here and every caller inherits the observability.
+    lookupBatch.mockRejectedValue(new Error('neon down: SELECT ... jane@example.com'));
+    const port = makeMarketingSuppressionLookup(tenant);
+    await expect(port.isSuppressed('jane@example.com')).rejects.toThrow();
+    expect(loggerError).toHaveBeenCalledTimes(1);
+    const [fields, message] = loggerError.mock.calls[0] as [Record<string, unknown>, string];
+    expect(message).toBe('marketing.suppression_lookup_threw');
+    expect(fields).toMatchObject({ tenantId: 'test-tenant', op: 'isSuppressed' });
+    // Class, never the message — a Postgres error carries the SQL and its
+    // parameters, which include the address.
+    expect(JSON.stringify(fields)).not.toContain('jane@example.com');
+    expect(suppressionLookupFailed).toHaveBeenCalledWith('test-tenant', 'isSuppressed');
+  });
+
+  it.each(['lookupSuppressed', 'listSuppressedEmailLowers'] as const)(
+    '%s also logs + counts before re-throwing',
+    async (op) => {
+      lookupBatch.mockRejectedValue(new Error('boom'));
+      listEmailLowers.mockRejectedValue(new Error('boom'));
+      const port = makeMarketingSuppressionLookup(tenant);
+      const call =
+        op === 'lookupSuppressed'
+          ? port.lookupSuppressed(['jane@example.com'])
+          : port.listSuppressedEmailLowers();
+      await expect(call).rejects.toThrow('boom');
+      expect(loggerError).toHaveBeenCalledTimes(1);
+      expect(loggerError.mock.calls[0]![0]).toMatchObject({ op });
+      expect(suppressionLookupFailed).toHaveBeenCalledWith('test-tenant', op);
+    },
+  );
 });
 
 describe('makeMarketingSuppressionLookup — batch + list', () => {

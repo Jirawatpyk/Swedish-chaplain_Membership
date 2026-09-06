@@ -8,7 +8,7 @@
  * `repo.conflict` so callers get a clean error instead of a leaky 500.
  */
 
-import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import { isUniqueViolationOnConstraint } from '@/lib/db-errors';
 import { err, ok } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
@@ -116,9 +116,41 @@ export const drizzleContactRepo: ContactRepo = {
 
   async addInTx(tx, draft) {
     try {
+      // 108 PR-D (review code H1) — a contact's OWN marketing objection is the
+      // same objection as the unsubscribe link (FR-025 AMENDMENT, GDPR Art.
+      // 21(3)), but it lives on the contact ROW, so removing the person and
+      // adding the same address back used to restore marketing silently — the
+      // shape SweCham's secondary-contact import has. Carry a `self` opt-out
+      // forward from the most recent row with this address in this tenant
+      // (removed rows included). A `staff` opt-out is an operational setting
+      // on a row, not the person's objection, so it does NOT follow.
+      const priorSelf = await tx
+        .select({
+          at: contacts.marketingOptOutAt,
+          byUserId: contacts.marketingOptOutByUserId,
+        })
+        .from(contacts)
+        .where(
+          and(
+            eq(contacts.tenantId, draft.tenantId),
+            sql`lower(${contacts.email}) = lower(${draft.email})`,
+            eq(contacts.marketingOptOutSource, 'self'),
+            isNotNull(contacts.marketingOptOutAt),
+          ),
+        )
+        .orderBy(desc(contacts.marketingOptOutAt))
+        .limit(1);
+      const carried = priorSelf[0];
       const rows = await tx
         .insert(contacts)
         .values({
+          ...(carried !== undefined
+            ? {
+                marketingOptOutAt: carried.at,
+                marketingOptOutSource: 'self' as const,
+                marketingOptOutByUserId: carried.byUserId,
+              }
+            : {}),
           tenantId: draft.tenantId,
           contactId: draft.contactId,
           memberId: draft.memberId,
@@ -367,7 +399,7 @@ export const drizzleContactRepo: ContactRepo = {
     }
   },
 
-  async setMarketingOptOutInTx(tx, contactId, next, opts) {
+  async setMarketingOptOutInTx(tx, contactId, command) {
     try {
       // Lock the live row first so the same-state decision and the write see
       // one snapshot (two staff toggling at once cannot both "change" it).
@@ -383,12 +415,12 @@ export const drizzleContactRepo: ContactRepo = {
       if (!current) return err({ code: 'repo.not_found' });
 
       const currentlyOff = current.marketingOptOutAt !== null;
-      const nextOff = next.optedOutAt !== null;
+      const nextOff = command.kind === 'off';
       // FR-025 AMENDMENT under the LOCK (whole-branch review MEDIUM-1): the
       // use case's pre-read is not the source of truth — a self opt-out that
       // committed after it must still stop a staff "on". No write, no audit.
-      if (!nextOff && opts.actorSource === 'staff' && current.marketingOptOutSource === 'self') {
-        return ok({ outcome: 'refused_self_opted_out' as const, contact: rowToContact(current) });
+      if (!nextOff && command.actor === 'staff' && current.marketingOptOutSource === 'self') {
+        return ok({ outcome: 'refused_self_opted_out' as const });
       }
       // Same on/off state is `unchanged` — EXCEPT a contact's own "off" over a
       // staff-made "off": that is the person's objection and must be RECORDED
@@ -399,7 +431,7 @@ export const drizzleContactRepo: ContactRepo = {
         currentlyOff &&
         nextOff &&
         current.marketingOptOutSource === 'staff' &&
-        next.source === 'self';
+        command.actor === 'self';
       if (currentlyOff === nextOff && !selfOverridesStaff) {
         return ok({ outcome: 'unchanged' as const, contact: rowToContact(current) });
       }
@@ -407,9 +439,9 @@ export const drizzleContactRepo: ContactRepo = {
       const updated = await tx
         .update(contacts)
         .set({
-          marketingOptOutAt: next.optedOutAt,
-          marketingOptOutSource: next.source,
-          marketingOptOutByUserId: next.byUserId,
+          marketingOptOutAt: command.kind === 'off' ? command.at : null,
+          marketingOptOutSource: command.kind === 'off' ? command.actor : null,
+          marketingOptOutByUserId: command.kind === 'off' ? command.byUserId : null,
           updatedAt: new Date(),
         })
         .where(and(eq(contacts.contactId, contactId), isNull(contacts.removedAt)))

@@ -47,8 +47,7 @@ async function optOut(
     drizzleContactRepo.setMarketingOptOutInTx(
       tx,
       asContactId(contactId),
-      { optedOutAt: NOW, source, byUserId: byUserId as never },
-      { actorSource: source },
+      { kind: 'off', actor: source, byUserId: byUserId as never, at: NOW },
     ),
   );
   if (!r.ok) throw new Error(`opt-out seed failed: ${r.error.code}`);

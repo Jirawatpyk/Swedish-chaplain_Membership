@@ -93,3 +93,16 @@ describe('AudienceTable — header wrap + column budget (cycle 14)', () => {
     for (const th of ths) expect(th.className).toContain('whitespace-normal');
   });
 });
+
+describe('AudienceTable — read-only viewer (cycle 15, FR-034/FR-035)', () => {
+  it('canMarketing=false → the state badge, and NO switch anywhere', () => {
+    renderTable(false);
+    expect(screen.queryByRole('switch')).toBeNull();
+    expect(screen.getByText(en.shared.marketing.state.off_by_staff)).toBeInTheDocument();
+  });
+
+  it('canMarketing=true → exactly one switch for the row', () => {
+    renderTable(true);
+    expect(screen.getAllByRole('switch')).toHaveLength(1);
+  });
+});

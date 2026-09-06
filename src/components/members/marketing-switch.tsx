@@ -34,6 +34,7 @@ import { useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
+import { AUDIENCE_COUNT_ID } from '@/lib/marketing-audience-filter';
 import { Switch } from '@/components/ui/switch';
 import type { MarketingState } from '@/modules/members';
 
@@ -44,9 +45,6 @@ function problemKind(body: ProblemBody): string | null {
   const m = typeof body.type === 'string' ? PROBLEM_KIND_RE.exec(body.type) : null;
   return m?.[1] ?? null;
 }
-
-/** The element the count line renders with (audience page) — focus fallback. */
-export const AUDIENCE_COUNT_ID = 'audience-count';
 
 /**
  * Where focus goes when this row is about to leave the view: the next

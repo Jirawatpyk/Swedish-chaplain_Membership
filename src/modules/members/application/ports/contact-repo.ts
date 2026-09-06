@@ -4,10 +4,16 @@
 import type { TenantTx } from '@/lib/db';
 import type { Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
-import type { Contact, ContactId, MarketingOptOut } from '../../domain/contact';
+import type {
+  Contact,
+  ContactId,
+  MarketingOptOut,
+  MarketingOptOutSource,
+} from '../../domain/contact';
 import type { MemberId } from '../../domain/member';
 import type { Email } from '../../domain/value-objects/email';
 import type { Phone } from '../../domain/value-objects/phone';
+import type { UserId } from '../../domain/value-objects/user-id';
 import type { RepoError } from './member-repo';
 
 /**
@@ -22,6 +28,32 @@ export type ContactPatch = Partial<
     phone: Phone | null;
   }
 >;
+
+/**
+ * 108 PR-D — the marketing write as ONE command (review types HIGH-1 /
+ * MEDIUM-1). `actor` is the single representation of who is acting: there is
+ * no second `source` field on a payload that could disagree with it, and
+ * "on" carries an actor too (it did not, which is why the guard needed a
+ * separate `opts.actorSource`).
+ */
+export type SetMarketingCommand =
+  | {
+      readonly kind: 'off';
+      readonly actor: MarketingOptOutSource;
+      readonly byUserId: UserId;
+      readonly at: Date;
+    }
+  | { readonly kind: 'on'; readonly actor: MarketingOptOutSource };
+
+/**
+ * The write's outcome. `refused_self_opted_out` carries NO contact: a caller
+ * that reaches for `.contact` without narrowing on `outcome` does not
+ * compile, so the FR-025 guard cannot be read as success by accident.
+ */
+export type SetMarketingOutcome =
+  | { readonly outcome: 'changed'; readonly contact: Contact }
+  | { readonly outcome: 'unchanged'; readonly contact: Contact }
+  | { readonly outcome: 'refused_self_opted_out' };
 
 export interface ContactRepo {
   listByMember(
@@ -276,23 +308,13 @@ export interface ContactRepo {
    * `'staff'` actor switching "on" over a `'self'` record is REFUSED —
    * `refused_self_opted_out`, no write — because a self opt-out that
    * committed after the caller's read must still win. `opts.actorSource`
-   * is therefore required: every writer states who is acting.
    * Does NOT emit audit — caller emits `contact_marketing_opted_out` / `_in`.
    */
   setMarketingOptOutInTx(
     tx: TenantTx,
     contactId: ContactId,
-    next: MarketingOptOut,
-    opts: { readonly actorSource: 'staff' | 'self' },
-  ): Promise<
-    Result<
-      {
-        readonly outcome: 'changed' | 'unchanged' | 'refused_self_opted_out';
-        readonly contact: Contact;
-      },
-      RepoError
-    >
-  >;
+    command: SetMarketingCommand,
+  ): Promise<Result<SetMarketingOutcome, RepoError>>;
 
   /**
    * COMP-1 US2a (L1) — list the REAL email addresses of every contact on the

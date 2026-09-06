@@ -14,6 +14,7 @@ import {
   MARKETING_AUDIENCE_PREFLIGHT_QUERY,
   parseMarketingAudienceParams,
   MARKETING_AUDIENCE_MAX_PAGE,
+  AUDIENCE_COUNT_ID,
 } from '@/lib/marketing-audience-filter';
 
 const MEMBER = '11111111-2222-4333-8444-555555555555';
@@ -109,5 +110,42 @@ describe('parseMarketingAudienceParams', () => {
 
   it('accepts string[] values (Next.js repeats) by taking the first', () => {
     expect(parseMarketingAudienceParams({ kind: ['primary', 'secondary'] }).filter.kind).toBe('primary');
+  });
+});
+
+describe('narrowed vs hasFilters (cycle 15, review code M1)', () => {
+  // `eligible=on` is the DEFAULT, so it is not a filter the user set — but it
+  // does narrow the query (active, not erased, not halted). A tenant whose
+  // members are all inactive/archived would otherwise be told "No contacts
+  // yet" with no way back, and the count line would claim a total that is not
+  // the tenant's total. `hasFilters` still drives "did the USER filter?";
+  // `narrowed` drives "is this a subset?".
+  it('the default view is not filtered but IS narrowed', () => {
+    const p = parseMarketingAudienceParams({});
+    expect(p.hasFilters).toBe(false);
+    expect(p.narrowed).toBe(true);
+  });
+
+  it('eligible=0 lifts the narrowing: nothing is filtered and nothing is narrowed', () => {
+    const p = parseMarketingAudienceParams({ eligible: '0' });
+    expect(p.hasFilters).toBe(true);
+    expect(p.narrowed).toBe(false);
+  });
+
+  it('any user filter narrows too', () => {
+    expect(parseMarketingAudienceParams({ q: 'x' }).narrowed).toBe(true);
+    expect(parseMarketingAudienceParams({ state: 'on' }).narrowed).toBe(true);
+    expect(parseMarketingAudienceParams({ kind: 'secondary', eligible: '0' }).narrowed).toBe(true);
+  });
+});
+
+describe('AUDIENCE_COUNT_ID (cycle 15, review code L1)', () => {
+  it('is a plain string exported from a server-safe module', () => {
+    // It used to be exported from `marketing-switch.tsx` ('use client'), so a
+    // Server Component importing it received a client-reference proxy rather
+    // than the string. It worked only because the page passed it straight
+    // through as a prop; `String(...)` or a template literal would have thrown.
+    expect(AUDIENCE_COUNT_ID).toBe('audience-count');
+    expect(typeof AUDIENCE_COUNT_ID).toBe('string');
   });
 });

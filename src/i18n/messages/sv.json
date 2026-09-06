@@ -5976,6 +5976,7 @@
           "errors": {
             "suppressed": "Du har avregistrerat dig från marknadsföringsutskick; det valet gäller.",
             "rateLimited": "För många ändringar på kort tid. Vänta en minut och försök igen.",
+            "unavailable": "Avregistreringslistan går tillfälligt inte att läsa, så detta kan inte ändras just nu. Försök igen om en stund.",
             "generic": "Något gick fel. Försök igen."
           }
         }

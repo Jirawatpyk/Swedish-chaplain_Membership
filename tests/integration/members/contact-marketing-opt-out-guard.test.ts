@@ -39,8 +39,7 @@ describe('108 PR-D — self opt-out precedence is enforced under the row lock (l
       drizzleContactRepo.setMarketingOptOutInTx(
         tx,
         asContactId(contactId),
-        { optedOutAt: NOW, source: 'self', byUserId: admin.userId as never },
-        { actorSource: 'self' },
+        { kind: 'off', actor: 'self', byUserId: admin.userId as never, at: NOW },
       ),
     );
     if (!r.ok) throw new Error(`seed opt-out failed: ${r.error.code}`);
@@ -53,9 +52,7 @@ describe('108 PR-D — self opt-out precedence is enforced under the row lock (l
 
   it('STAFF "on" over a self opt-out → refused_self_opted_out, the row is untouched', async () => {
     const r = await runInTenant(tenant.ctx, (tx) =>
-      drizzleContactRepo.setMarketingOptOutInTx(tx, asContactId(contactId), RECEIVES_MARKETING, {
-        actorSource: 'staff',
-      }),
+      drizzleContactRepo.setMarketingOptOutInTx(tx, asContactId(contactId), { kind: 'on', actor: 'staff' }),
     );
     expect(r.ok).toBe(true);
     if (!r.ok) return;
@@ -74,8 +71,7 @@ describe('108 PR-D — self opt-out precedence is enforced under the row lock (l
       drizzleContactRepo.setMarketingOptOutInTx(
         tx,
         asContactId(contactId),
-        { optedOutAt: new Date('2026-09-06T06:00:00Z'), source: 'staff', byUserId: admin.userId as never },
-        { actorSource: 'staff' },
+        { kind: 'off', actor: 'staff', byUserId: admin.userId as never, at: new Date('2026-09-06T06:00:00Z') },
       ),
     );
     expect(r.ok).toBe(true);
@@ -85,13 +81,12 @@ describe('108 PR-D — self opt-out precedence is enforced under the row lock (l
 
   it('the person\'s OWN "on" over their self opt-out → changed', async () => {
     const r = await runInTenant(tenant.ctx, (tx) =>
-      drizzleContactRepo.setMarketingOptOutInTx(tx, asContactId(contactId), RECEIVES_MARKETING, {
-        actorSource: 'self',
-      }),
+      drizzleContactRepo.setMarketingOptOutInTx(tx, asContactId(contactId), { kind: 'on', actor: 'self' }),
     );
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.value.outcome).toBe('changed');
+    if (r.value.outcome === 'refused_self_opted_out') return;
     expect(r.value.contact.marketing).toEqual(RECEIVES_MARKETING);
   });
 
@@ -100,14 +95,11 @@ describe('108 PR-D — self opt-out precedence is enforced under the row lock (l
       drizzleContactRepo.setMarketingOptOutInTx(
         tx,
         asContactId(contactId),
-        { optedOutAt: NOW, source: 'staff', byUserId: admin.userId as never },
-        { actorSource: 'staff' },
+        { kind: 'off', actor: 'staff', byUserId: admin.userId as never, at: NOW },
       ),
     );
     const r = await runInTenant(tenant.ctx, (tx) =>
-      drizzleContactRepo.setMarketingOptOutInTx(tx, asContactId(contactId), RECEIVES_MARKETING, {
-        actorSource: 'staff',
-      }),
+      drizzleContactRepo.setMarketingOptOutInTx(tx, asContactId(contactId), { kind: 'on', actor: 'staff' }),
     );
     expect(r.ok).toBe(true);
     if (!r.ok) return;

@@ -148,3 +148,25 @@ describe('makeTickMemoizedMembersBridge (R7 LOW-B)', () => {
     expect(stub.segmentCalls).toHaveLength(2);
   });
 });
+
+describe('makeTickMemoizedMembersBridge — filterMarketingOptedOut is NOT memoized (cycle 15)', () => {
+  it('forwards every call to the inner bridge and returns its answer', async () => {
+    // A contact can opt out mid-tick; a cached answer would send to them
+    // anyway. Only `getMembersBySegment` is cached per tick.
+    const calls: Array<ReadonlyArray<string>> = [];
+    const inner: MembersBridgePort = {
+      ...makeStubBridge().bridge,
+      async filterMarketingOptedOut(_ctx, emails) {
+        calls.push(emails as unknown as ReadonlyArray<string>);
+        return new Set([emails[0]!]);
+      },
+    };
+    const bridge = makeTickMemoizedMembersBridge(inner);
+    const batch = [unsafeBrandEmailLower('a@example.com'), unsafeBrandEmailLower('b@example.com')];
+    const first = await bridge.filterMarketingOptedOut(tenant, batch);
+    const second = await bridge.filterMarketingOptedOut(tenant, batch);
+    expect(calls).toHaveLength(2);
+    expect([...first]).toEqual(['a@example.com']);
+    expect([...second]).toEqual(['a@example.com']);
+  });
+});

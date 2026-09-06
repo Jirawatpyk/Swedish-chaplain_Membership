@@ -35,6 +35,8 @@
  * eligibility is `isPrimary && removedAt === null` only.
  */
 import { runInTenant } from '@/lib/db';
+import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import {
@@ -46,7 +48,7 @@ import {
 } from '../../domain/contact';
 import type { UserId } from '../../domain/value-objects/user-id';
 import type { AuditPort, F3AuditEventType } from '../ports/audit-port';
-import type { ContactRepo } from '../ports/contact-repo';
+import type { ContactRepo, SetMarketingCommand } from '../ports/contact-repo';
 import type { MarketingSuppressionLookupPort } from '../ports/marketing-suppression-lookup-port';
 import type { RepoError } from '../ports/member-repo';
 import { UseCaseAbort } from '../tx-abort';
@@ -135,14 +137,15 @@ export async function setContactMarketingOptOut(
     if (suppressed) return err({ type: 'suppressed' });
   }
 
-  const next: MarketingOptOut =
+  const command: SetMarketingCommand =
     input.state === 'off'
       ? {
-          optedOutAt: (deps.clock ?? { now: () => new Date() }).now(),
-          source: input.actor.source,
+          kind: 'off',
+          actor: input.actor.source,
           byUserId: input.actor.userId as UserId,
+          at: (deps.clock ?? { now: () => new Date() }).now(),
         }
-      : RECEIVES_MARKETING;
+      : { kind: 'on', actor: input.actor.source };
   const event: MarketingAuditEvent =
     input.state === 'off' ? 'contact_marketing_opted_out' : 'contact_marketing_opted_in';
 
@@ -150,9 +153,7 @@ export async function setContactMarketingOptOut(
   //    audit (idempotent replays and double-clicks leave no trace).
   try {
     const outcome = await runInTenant(deps.tenant, async (tx) => {
-      const written = await deps.contactRepo.setMarketingOptOutInTx(tx, input.contactId, next, {
-        actorSource: input.actor.source,
-      });
+      const written = await deps.contactRepo.setMarketingOptOutInTx(tx, input.contactId, command);
       if (!written.ok) throw new UseCaseAbort<RepoError>(written.error);
       if (written.value.outcome === 'refused_self_opted_out') {
         // Nothing was written; the tx has nothing to roll back.
@@ -185,11 +186,23 @@ export async function setContactMarketingOptOut(
     if (outcome.outcome === 'refused_self_opted_out') return err({ type: 'self_opted_out' });
     return ok(outcome);
   } catch (e) {
+    // Keep the CLASS of what actually failed (review errors HIGH-2): the repo
+    // hands us `{ code, cause }` and the caller used to see only the code, so
+    // a statement timeout, an RLS refusal and a violated 0294 CHECK were one
+    // indistinguishable `repo.unexpected` in the logs.
     if (e instanceof UseCaseAbort) {
       const re = e.error as RepoError;
       if (re.code === 'repo.not_found') return err({ type: 'not_found' });
+      logger.error(
+        { requestId: input.requestId, err: re.code, cause: errKind('cause' in re ? re.cause : undefined) },
+        'members.set_contact_marketing.repo_failed',
+      );
       return err({ type: 'server_error', message: `set-marketing: ${re.code}` });
     }
+    logger.error(
+      { requestId: input.requestId, err: errKind(e) },
+      'members.set_contact_marketing.unexpected',
+    );
     return err({ type: 'server_error', message: 'set-marketing: unexpected' });
   }
 }

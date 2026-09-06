@@ -26,6 +26,15 @@ import type {
   MemberId,
 } from '@/modules/members';
 
+/**
+ * The id of the count line on the audience page. It lives HERE, not in the
+ * `'use client'` switch that focuses it (review code L1): a Server Component
+ * importing a value from a client module receives a client-reference proxy,
+ * which only worked because the page passed it straight through as a prop —
+ * `String(...)` or a template literal would have thrown.
+ */
+export const AUDIENCE_COUNT_ID = 'audience-count';
+
 /** Upper clamp for `?page` (security LOW-4) — far beyond any real tenant. */
 export const MARKETING_AUDIENCE_MAX_PAGE = 100_000;
 
@@ -74,8 +83,14 @@ function first(value: string | string[] | undefined): string | undefined {
 export interface ParsedMarketingAudienceParams {
   readonly filter: MarketingAudienceFilter;
   readonly page: number;
-  /** True when any leg narrows the default view (incl. `eligible=0`). */
+  /** True when the USER set a filter (incl. `eligible=0`) — drives "Clear filters". */
   readonly hasFilters: boolean;
+  /**
+   * True when the result is a SUBSET of the tenant's contacts — `hasFilters`
+   * plus the default `eligible=on` leg. Drives the count copy and which empty
+   * state is honest (review code M1).
+   */
+  readonly narrowed: boolean;
 }
 
 export function parseMarketingAudienceParams(
@@ -119,6 +134,18 @@ export function parseMarketingAudienceParams(
     state !== undefined ||
     !eligible;
 
+  // `eligible=on` is the DEFAULT, so it is not a filter the USER set — but it
+  // does narrow the query (member active, not erased, not halted). A tenant
+  // whose members are all inactive or archived would otherwise be told "No
+  // contacts yet" with no Clear-filters way back, and the count line would
+  // claim a total that is not the tenant's total (review code M1).
+  const narrowed =
+    eligible ||
+    q !== undefined ||
+    memberId !== undefined ||
+    kind !== undefined ||
+    state !== undefined;
+
   return {
     filter: {
       ...(q !== undefined ? { q } : {}),
@@ -129,5 +156,6 @@ export function parseMarketingAudienceParams(
     },
     page,
     hasFilters,
+    narrowed,
   };
 }
