@@ -68,6 +68,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   let pending: PendingRow[];
   let stuck: PendingRow[];
   let dispatchRatios: DispatchRatioRow[];
+  let suppressionSizes: PendingRow[];
   try {
     const result = await db.transaction(async (tx) => {
       await tx.execute(sql`SET LOCAL statement_timeout = '10s'`);
@@ -104,11 +105,21 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         GROUP BY tenant_id
         HAVING COUNT(*) FILTER (WHERE status::text IN ('failed_to_dispatch', 'sent', 'sending')) > 0
       `);
-      return { pendingRows, stuckRows, dispatchRows };
+      // 108 PR-D (staff review P4): the Marketing audience page loads this
+      // WHOLE list per request for any `state` filter. It is bounded by TIME,
+      // not tenant size, so it is the one input on that page that grows
+      // without limit — and it had no signal at all.
+      const suppressionRows = await tx.execute<PendingRow>(sql`
+        SELECT tenant_id, COUNT(*)::int AS count
+        FROM marketing_unsubscribes
+        GROUP BY tenant_id
+      `);
+      return { pendingRows, stuckRows, dispatchRows, suppressionRows };
     });
     pending = Array.from(result.pendingRows);
     stuck = Array.from(result.stuckRows);
     dispatchRatios = Array.from(result.dispatchRows);
+    suppressionSizes = Array.from(result.suppressionRows);
   } catch (e) {
     logger.error(
       { requestId, err: e instanceof Error ? e.message : String(e) },
@@ -127,6 +138,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   for (const row of stuck) {
     broadcastsMetrics.stuckSendingCount(row.tenant_id, row.count);
     stuckTotal += row.count;
+  }
+  for (const row of suppressionSizes) {
+    broadcastsMetrics.suppressionListSize(row.tenant_id, row.count);
   }
   for (const row of dispatchRatios) {
     // dispatched > 0 enforced by HAVING clause — division safe.

@@ -89,26 +89,27 @@ const reqId = (): string => randomUUID();
 /** A fresh key per call — the route consumes one reservation per request. */
 function makeRequest(
   path: string,
-  init: { method: string; body?: unknown; requestId: string },
+  init: { method: string; body?: unknown; requestId: string; idempotencyKey?: string },
 ): NextRequest {
   return new NextRequest(`http://localhost:3100${path}`, {
     method: init.method,
     headers: {
       'x-tenant': tenant.ctx.slug,
       'x-request-id': init.requestId,
-      'idempotency-key': `idem-${randomUUID()}`,
+      'idempotency-key': init.idempotencyKey ?? `idem-${randomUUID()}`,
       ...(init.body !== undefined ? { 'content-type': 'application/json' } : {}),
     },
     ...(init.body !== undefined ? { body: JSON.stringify(init.body) } : {}),
   });
 }
 
-function staffToggle(state: 'on' | 'off', requestId: string) {
+function staffToggle(state: 'on' | 'off', requestId: string, idempotencyKey?: string) {
   return staffMarketingPost(
     makeRequest(`/api/admin/contacts/${contactId}/marketing`, {
       method: 'POST',
       body: { state },
       requestId,
+      ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
     }),
     { params: Promise.resolve({ contactId }) },
   );
@@ -147,6 +148,25 @@ beforeAll(async () => {
   });
   memberId = seeded.memberId;
   contactId = seeded.contactId;
+  // A SECOND contact on the same member, so the FR-032 assertion in the
+  // portal-profile case has a real row to be about (staff review T2).
+  await runInTenant(tenant.ctx, (tx) =>
+    tx.insert(contacts).values({
+      tenantId: tenant.ctx.slug,
+      contactId: randomUUID(),
+      memberId,
+      firstName: 'Peer',
+      lastName: 'Contact',
+      email: `peer-${randomUUID().slice(0, 8)}@example.test`,
+      phone: null,
+      roleTitle: null,
+      preferredLanguage: 'en',
+      isPrimary: false,
+      dateOfBirth: null,
+      linkedUserId: null,
+      removedAt: null,
+    }),
+  );
 }, 180_000);
 
 afterAll(async () => {
@@ -189,6 +209,38 @@ describe('108 PR-D — POST /api/admin/contacts/[contactId]/marketing (live Neon
     expect(res.status).toBe(200);
     await expect(res.json()).resolves.toEqual({ outcome: 'unchanged' });
     await expect(auditRowsFor(requestId)).resolves.toHaveLength(0);
+  });
+
+  it('the SAME Idempotency-Key replays the stored response and writes no second audit row', async () => {
+    // Staff review A2/T5: replay was proven only against a mocked
+    // `@/lib/idempotency`. This drives the real reservation table.
+    sessionAs(admin, 'admin');
+    const key = `idem-fixed-${randomUUID()}`;
+    const firstReq = reqId();
+    const first = await staffToggle('on', firstReq, key);
+    expect(first.status).toBe(200);
+    const firstBody = await first.json();
+    await expect(auditRowsFor(firstReq)).resolves.toHaveLength(1);
+
+    const replayReq = reqId();
+    const replay = await staffToggle('on', replayReq, key);
+    expect(replay.status).toBe(200);
+    await expect(replay.json()).resolves.toEqual(firstBody);
+    // The replay is served from the store: no second write, no second row.
+    await expect(auditRowsFor(replayReq)).resolves.toHaveLength(0);
+  });
+
+  it('the same Idempotency-Key with a DIFFERENT body is a 409 conflict, not a silent replay', async () => {
+    sessionAs(admin, 'admin');
+    const key = `idem-conflict-${randomUUID()}`;
+    expect((await staffToggle('off', reqId(), key)).status).toBe(200);
+
+    const conflict = await staffToggle('on', reqId(), key);
+    expect(conflict.status).toBe(409);
+    const body = (await conflict.json()) as { type?: string };
+    expect(body.type).toMatch(/idempotency_conflict$/);
+    // Refused, so the row still reads what the first call made it.
+    await expect(readContactRow()).resolves.toMatchObject({ source: 'staff' });
   });
 
   it('a manager session is refused and the row is untouched (contacts.marketing is never manager)', async () => {
@@ -265,8 +317,12 @@ describe('108 PR-D — the person outranks staff, end to end (FR-025 AMENDMENT)'
     // self opt-out derives `off_by_contact` (not the raw column value).
     const own = body.contacts.find((c) => c.contact_id === contactId);
     expect(own?.marketing?.state).toBe('off_by_contact');
-    expect(
-      body.contacts.filter((c) => c.contact_id !== contactId).every((c) => !c.marketing),
-    ).toBe(true);
+    // Staff review T2: the member has a SECOND contact (seeded in beforeAll),
+    // so this assertion is about a real row. It used to run `.every()` over an
+    // empty array — vacuously true, and a serialiser attaching `marketing` to
+    // every contact would have passed.
+    const others = body.contacts.filter((c) => c.contact_id !== contactId);
+    expect(others.length).toBeGreaterThan(0);
+    expect(others.every((c) => c.marketing === undefined)).toBe(true);
   });
 });

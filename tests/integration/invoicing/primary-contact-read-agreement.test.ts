@@ -45,7 +45,7 @@ import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import { recipientLocaleAdapter } from '@/modules/invoicing/infrastructure/adapters/recipient-locale-adapter';
 import { memberIdentityAdapter } from '@/modules/invoicing/infrastructure/adapters/member-identity-adapter';
-import { asMemberId, drizzleMemberRepo } from '@/modules/members';
+import { asContactId, asMemberId, drizzleContactRepo, drizzleMemberRepo } from '@/modules/members';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
@@ -221,6 +221,37 @@ describe('108 primary-contact reads agree (live Neon)', () => {
       memberId,
     );
     expect(locale).toBe('th');
+  });
+
+  it('a marketing opt-out on the primary does NOT change either money read (FR-033)', async () => {
+    // Staff review A14: FR-033's guard was proven behaviourally only against
+    // F5's `findPrimaryContactEmailInTx`. F4's resolver is a SEPARATE raw-SQL
+    // implementation (`recipient-locale-adapter.ts`) that shares no code with
+    // it, and no test had ever called it with an opted-out primary — its leg
+    // of FR-033 rested on "the column is never selected", which is true but
+    // structural. Switch the primary's marketing off and re-assert both.
+    await runInTenant(tenant.ctx, (tx) =>
+      drizzleContactRepo.setMarketingOptOutInTx(tx, asContactId(primaryContactId), {
+        kind: 'off',
+        actor: 'self',
+        byUserId: user.userId as never,
+        at: new Date('2026-09-06T12:00:00Z'),
+      }),
+    );
+
+    const f4 = await recipientLocaleAdapter.getMemberEmailRecipient(
+      null,
+      tenant.ctx.slug,
+      memberId,
+    );
+    expect(f4).toEqual({ email: primaryEmail, locale: 'th' });
+
+    const f5 = await runInTenant(tenant.ctx, (tx) =>
+      drizzleMemberRepo.findPrimaryContactEmailInTx(tx, tenant.ctx.slug, asMemberId(memberId)),
+    );
+    expect(f5.ok).toBe(true);
+    if (!f5.ok) return;
+    expect(f5.value).toBe(primaryEmail);
   });
 
   it("F5's PromptPay billing read picks the SAME contact", async () => {

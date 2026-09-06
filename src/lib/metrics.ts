@@ -2251,6 +2251,26 @@ export const broadcastsMetrics = {
    * marketing opt-out (staff or self). Distinct from the suppression
    * anti-join above — an address on BOTH lists counts once, as suppressed.
    */
+  /**
+   * `broadcasts.suppression_list_size{tenant}` — 108 PR-D (staff review P4):
+   * rows in `marketing_unsubscribes` for this tenant. The Marketing audience
+   * page loads this WHOLE list per request for any `state` filter and binds it
+   * into two queries, and the list is bounded by TIME, not by tenant size (it
+   * also accrues bounces, complaints, `admin_added`, and addresses that were
+   * never contacts). This is the leading indicator for when that stops being
+   * free; it was previously the only unbounded input with no signal.
+   */
+  suppressionListSize(tenantId: string, size: number): void {
+    safeMetric(() => {
+      observeGauge(
+        'broadcasts_suppression_list_size',
+        'Rows in marketing_unsubscribes per tenant (the audience page loads all of them)',
+        { tenant: tenantId },
+        size,
+      );
+    });
+  },
+
   marketingOptOutFilterCount(tenantId: string, count: number): void {
     safeMetric(() => {
       counter(
