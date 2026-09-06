@@ -160,6 +160,95 @@ describes the optimistic / focus hand-off behaviour; FR-050a written (ux CHK033)
   stamps `removed_at`). Correct outcome — erased people never appear; the vocabulary stays
   for the compose-time count feedback (PR-C).
 
+### Round 3 — `/speckit.review` (2026-09-06), 5 agents, 60 findings, all closed in cycle 15
+
+The user-invoked gate. Config had no `review-config.yml`, so all six agents were
+enabled by the extension defaults; scope was the branch diff (`main...HEAD`, 130
+files). The five analysis agents ran in parallel on Opus.
+
+| Agent | Verdict | Findings |
+|---|---|---|
+| `code-reviewer` | no blocker | H1 a self opt-out was lost on remove → re-add of the same address · M1 `eligible=on` was not counted as narrowing · L1 `AUDIENCE_COUNT_ID` exported from a `'use client'` module · L2/L3 |
+| `pr-test-analyzer` | **NOT mergeable** | **B-1 a unit test was RED on the branch** · H-1 the "write + audit commit together" claim was only proved against a stubbed `runInTenant` · H-2 an uncovered branch · M-1..M-6 · V-1..V-3 vacuous tests |
+| `silent-failure-hunter` | no blocker | HIGH-1 the suppression lookup was swallowed in six places with no log · HIGH-2 `RepoError.cause` dropped at every layer · M-1..M-5 · LOW-1..LOW-4 |
+| `type-design-analyzer` | mergeable | HIGH-1 `refused_self_opted_out` could be ignored (not a discriminated union) · MEDIUM-1 two representations of the actor · MEDIUM-2..4 · LOW-1..3. Ratings: encapsulation 4/5, invariant expression 4/5, usefulness 5/5, enforcement 3/5 |
+| `comment-analyzer` | no blocker | H1–H4 + M1–M4 + L1–L8, all comment rot: four cycles changed behaviour and updated the NEAREST comment, never the mirrors in other files |
+
+**B-1 was real and was fixed first**: cycle 13 widened the suppression fetch to
+every `state` filter and added `emailLowerNotIn` to both `off_*` legs, but only
+the integration test was updated — `list-marketing-audience.test.ts` still
+asserted the old "no suppression fetch" behaviour and the branch carried a red
+required check. It also left line 144 (`off_by_contact` → `optOut: 'self'`)
+uncovered. Closed by splitting that case per leg, each asserting the exclusion,
+plus a case pinning that the UNFILTERED view still skips the fetch. The lesson
+is the one this repo already has written down: after changing a use case, run
+the WHOLE module suite, not the files you happened to touch.
+
+**Cycle 15** closed the rest:
+
+- **types HIGH-1 + MEDIUM-1** — `ContactRepo.setMarketingOptOutInTx` now takes ONE
+  `SetMarketingCommand` (`{kind:'off', actor, byUserId, at}` | `{kind:'on', actor}`)
+  and returns a DISCRIMINATED `SetMarketingOutcome` whose `refused_self_opted_out`
+  arm carries no `contact`. The FR-025 guard that took four cycles to get right is
+  now something `tsc` enforces: six call sites had to narrow before reading
+  `.contact`, which is exactly the check that was previously optional. The actor is
+  stated once, so a payload and an `opts.actorSource` can no longer disagree.
+- **code H1** — a contact's OWN objection follows the ADDRESS: `addInTx` carries a
+  `self` opt-out forward from the most recent row with that `lower(email)` in the
+  tenant (removed rows included). A `staff` opt-out does NOT follow — it is an
+  operational setting on a row, not the person's objection. This is the shape
+  SweCham's pending secondary-contact import has, and it is the difference the spec
+  claimed ("the same objection as the unsubscribe link") but the code did not give.
+  Proved on live Neon in both directions.
+- **errors HIGH-1** — `makeMarketingSuppressionLookup` logs (class only, via
+  `errKind`) and counts `broadcasts_suppression_lookup_failed{tenant, op}` before
+  re-throwing. Six `catch {}` blocks upstream degrade on that throw; none of them
+  could see it, so a sustained outage was invisible until staff filed a ticket.
+  The parse branch keeps returning "not suppressed" but with the HONEST reason in
+  the comment and a debug breadcrumb: the two email grammars are identical, so the
+  branch is unreachable — the old reason ("the list only holds parsed values") was
+  false, because the multi-batch webhook path brands without parsing.
+- **errors HIGH-2** — `RepoError.cause` is carried into the logs at the bridge, the
+  toggle use case and the audience read. A statement timeout, an RLS refusal and a
+  violated 0294 CHECK used to be one indistinguishable `repo.unexpected`.
+- **errors MEDIUM-2** — a degraded suppression read no longer answers `on` or either
+  `off_*`: those filters are DEFINED by the list, so answering without it listed
+  people who had unsubscribed under "on" and inflated the count on the FR-027a
+  pre-flight page. The unfiltered view is unaffected (it only labels rows).
+- **errors MEDIUM-1/3/5, LOW-2** — the audience read logs its repo failure (the page
+  renders an EmptyState from a Result, so `error.tsx` never sees it); the portal
+  names every refusal (503 `suppression_unavailable` with a new key in three
+  locales, 409 by code); a bridge throw at dispatch is a typed
+  `dispatch.server_error`, not the `uncaught_error` class that pages someone.
+- **code M1** — `narrowed` (default eligibility included) drives the count copy and
+  the empty state, and the Clear CTA lifts the eligibility leg; a tenant whose
+  members are all inactive was being told "No contacts yet" with no way back.
+- **code L1 / types MEDIUM-4** — `AUDIENCE_COUNT_ID` moved to a server-safe module;
+  the bridge answers with the CALLER's own values so a case difference cannot fail
+  open.
+- **tests H-1, M-1..M-6** — live-Neon proof that the write and its audit row roll back
+  together; the portal PATCH pins the state it derives after a successful "off"
+  (unsubscribed / unavailable) and its 503; `ReadOnlyBanner` has its own suite; the
+  audience table pins "read-only viewer sees no switch"; the memoised bridge pins
+  that the opt-out lookup is NOT cached; the FR-052 audience-query proof joined the
+  required smoke job.
+- **comments H1–H4, M1–M4, L1–L8** — every claim now matches the code beside it.
+
+**Recorded, not changed**: the idempotency reservation is not released on a failed
+request (errors MEDIUM-4 / code L2) — that is the repo-wide convention and both UI
+clients mint a fresh key per request; the behaviour is now WRITTEN into contract
+§1 so the next integration author does not discover it as a 24-hour 409.
+`scrub-contacts-pii-column-coverage.test.ts` remains an allow-list rather than a
+behavioural scrub test (tests V-2) — the classification is what that gate is for,
+and the retention decision itself was settled in the privacy round.
+
+**Verification after cycle 15 (HEAD `5b818ee8c`)**: lint 0 · typecheck 0 ·
+`check:i18n` 5290 keys × 3 · thirteen static gates OK · unit sweep of every folder
+the cycle touched green · live Neon: `contact-marketing-opt-out` 26 (incl. the
+rollback and carry-over proofs) · `contact-marketing-opt-out-guard` 4 ·
+`marketing-opt-out-dispatch` 4 · `marketing-audience-query` · contract
+`profile-marketing` + `contact-marketing` 32.
+
 ### Round 2 — two fresh-eyes whole-branch reviews (2026-09-06), 28 findings, all closed in cycles 13–14
 
 Two `whole-branch-reviewer` passes over the full diff, launched after cycle 12: one on

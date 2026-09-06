@@ -68,3 +68,13 @@
 - **Residual recorded, not closed by PR-D**: the Art. 14 / PDPA §23 notice to a secondary contact is attested by staff, never delivered by the system (M-1) — recorded in the ROPA as a PR-C flag-flip gate condition. `marketing_opt_out_by_user_id` for `source='self'` is the data subject's own id, kept at parity with `linked_user_id` and swept with it when F1 user erasure lands (L-3, recorded in the ROPA retention table and the scrub-coverage rationale).
 
 **Co-sign verdict**: privacy.md is **CO-SIGNED for PR-D** at HEAD `dd3408d79`, with the Art. 14 residual carried forward to PR-C's flag flip.
+
+### Re-affirmed after `/speckit.review` (round 3, cycle 15)
+
+The co-sign above was signed at an earlier HEAD. Round 3 (five agents, 60
+findings) closed one RED unit test, four HIGH items and the comment rot; the
+substantive changes on this checklist's surface are listed in
+`reviews/pr-d.md` § Review rounds. **Re-affirmed at HEAD `5b818ee8c`** — lint 0,
+typecheck 0, thirteen static gates OK, the live-Neon proofs green (including
+the new transaction-rollback and objection-carry-over cases).
+

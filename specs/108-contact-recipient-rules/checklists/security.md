@@ -272,3 +272,13 @@ the Principle III line corrected for the second time rather than carried forward
 - **CHK001–CHK026 (spec-completeness)** were co-signed at PR-A; the security reviewer's PR-D verdicts on the rows PR-D touches (CHK001–006, 010–019) are PASS with the two conditions above now closed.
 
 **Co-sign verdict**: security.md is **CO-SIGNED for PR-D** at HEAD `dd3408d79`.
+
+### Re-affirmed after `/speckit.review` (round 3, cycle 15)
+
+The co-sign above was signed at an earlier HEAD. Round 3 (five agents, 60
+findings) closed one RED unit test, four HIGH items and the comment rot; the
+substantive changes on this checklist's surface are listed in
+`reviews/pr-d.md` § Review rounds. **Re-affirmed at HEAD `5b818ee8c`** — lint 0,
+typecheck 0, thirteen static gates OK, the live-Neon proofs green (including
+the new transaction-rollback and objection-carry-over cases).
+

@@ -88,3 +88,13 @@
 - **Recorded, not changed (with reasons in `reviews/pr-d.md`)**: portal has no Undo (FR-030c binds Undo to the staff switch); Bangkok-time timestamps carry no TZ hint (consistent app-wide); the switch primitive's unchecked-track contrast (1.26:1 light) is a PRE-EXISTING primitive issue for a separate ticket; 44×44 mobile targets are a design-system decision for the Switch primitive; the `<caption>` and the region name carry the same string (distinct landmarks, members-table precedent).
 
 **Co-sign verdict**: ux.md (CHK001–CHK035) is **CO-SIGNED for PR-D** at HEAD `dd3408d79`.
+
+### Re-affirmed after `/speckit.review` (round 3, cycle 15)
+
+The co-sign above was signed at an earlier HEAD. Round 3 (five agents, 60
+findings) closed one RED unit test, four HIGH items and the comment rot; the
+substantive changes on this checklist's surface are listed in
+`reviews/pr-d.md` § Review rounds. **Re-affirmed at HEAD `5b818ee8c`** — lint 0,
+typecheck 0, thirteen static gates OK, the live-Neon proofs green (including
+the new transaction-rollback and objection-carry-over cases).
+
