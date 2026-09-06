@@ -61,7 +61,7 @@
 - [x] CHK030 Are all new keys enumerated by namespace so `check:i18n` and the Thai-script label test can be run as acceptance? [Completeness, Contract §6, Spec §FR-050] → resolved: contract §6
 - [x] CHK031 Are TH typographic constraints (no italic on Thai text; muted colour reserved for empty sentinels, not links) restated for the new badges and hints? [Gap, ux-standards / project memory] → resolved: Assumptions (TH typography)
 - [x] CHK032 Are timestamps on the audience page ("changed at") required to use the existing locale formatters (BE display-only for TH, UTC stored)? [Consistency, Plan Constitution V] → resolved: plan Constitution V
-- [ ] CHK033 Is content-length variance (SV/TH labels longer than EN) accounted for in badge and column width requirements? [Coverage, Constitution V] → OPEN: add SV/TH length-variance note to FR-050 during the enterprise-ux-designer pass in tasks
+- [x] CHK033 Is content-length variance (SV/TH labels longer than EN) accounted for in badge and column width requirements? [Coverage, Constitution V] → resolved 2026-09-06: FR-050a (five measured constraints + the three-locale 320-px e2e acceptance), written at the PR-D UX review
 
 ## Acceptance measurability
 

@@ -43,7 +43,9 @@ defineGuard('contacts.read')`; breadcrumbs `breadcrumb.marketing`, `breadcrumb.a
 Columns: member (link), contact name, primary/secondary, member status, marketing state
 (badge, text + icon, never colour-alone), changed by / at, switch (rendered only when
 `canPerform(role, 'contacts.marketing')`; read-only badge otherwise). Filters (URL search
-params, chips): `q` (member/contact name), `member_id`, `kind=primary|secondary`,
+params as the single source of truth — a search box plus three `Select` filters and a
+"Clear filters" button, the members-directory pattern; there are no removable chips): `q`
+(member/contact name), `member_id`, `kind=primary|secondary`,
 `state=on|off_staff|off_contact|unsubscribed`, `eligible=1` (member active + not erased +
 not halted). Page size 50, offset pagination via `TablePagination`; count shown above the
 table. Pre-flight preset link: `?kind=secondary&state=on&eligible=1`.
@@ -57,9 +59,12 @@ fields (T057 fence).
 Responsive: same as the members directory — `overflow-x-auto` inside `TableContainer`, page never
 scrolls horizontally; name + state columns ordered first so they stay in view at 320 px (FR-035c).
 
-Toggle interaction: `Switch` + `useTransition` + `fetch` + `router.refresh()` (plans-table
-pattern); `toast.success` on change, `toast.info` on `unchanged`, `toast.error` with the
-localized reason on 409/403/5xx. Every request — including the Undo action — sends its own freshly
+Toggle interaction: `Switch` + optimistic local state (flips on click, rolls back on any
+refusal) + `fetch` + `startTransition(router.refresh)` with the switch disabled until the
+refresh settles; `toast.success` on change, `toast.info` on `unchanged`, `toast.error` with
+the localized reason on 409/403/5xx. Under a state-filtered view the row leaves on refresh:
+focus is handed to the next row's switch (else the count line) BEFORE the refresh and the
+toast says the row left the view. Every request — including the Undo action — sends its own freshly
 generated `Idempotency-Key`; a reused key returns the stored outcome and would make Undo a no-op
 (FR-030b / FR-030c).
 
