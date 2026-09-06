@@ -32,7 +32,7 @@
 | 7 | T078 / T073 unsubscribe attribution + migration 0297 | unit 3 × (`memberId` null / `contactId` undefined); live Neon `unsubscribe-contact-attribution.test.ts` `column "contact_id" does not exist` (42703) | unit 11/11; 0297 applied to dev and verified via information_schema (column + partial index); attribution 2/2, precedence + token 12/12; typecheck 0 | `8cbafe3d1` |
 | 8 | T104 erasure severs suppression back-references | unit 3 × (`suppressionRefsSevered` undefined / sever spy not called / sever error swallowed); live Neon `erasure-severs-suppression-refs.test.ts` 2 × output undefined | unit 11/11; live 2/2 + `erase-member-f7-content` (real F3 erasure path) 7/7; typecheck 0 | `63271c71a` |
 | 9 | T105 SC-011 parity pin | none — GREEN on first run (a cross-module PIN of two shipped paths, not a driver: page `{eligible, state: on}` total = resolver `all_contacts` estimate = 3, same addresses, orphan on neither side) | live Neon `audience-page-vs-compose-count.test.ts` 1/1 | `296a75044` |
-| 10 | T080 spec amendments | docs only | AMENDMENT block in `specs/010-email-broadcast/spec.md` (Q8 / FR-015 / FR-015c / Q16 / FR-029 edge case / FR-002(h) / FR-016a / unsubscribe attribution / custom-list drop) + SUPERSEDED note on f71b backlog US3 | (this commit) |
+| 10 | T080 spec amendments | docs only | AMENDMENT block in `specs/010-email-broadcast/spec.md` (Q8 / FR-015 / FR-015c / Q16 / FR-029 edge case / FR-002(h) / FR-016a / unsubscribe attribution / custom-list drop) + SUPERSEDED note on f71b backlog US3 | `e52671b38` |
 
 ## Design points settled in cycle 4 (reviewers: check these first)
 
@@ -83,3 +83,22 @@ Deferred into US5 on purpose: **T079** (compose copy interpolating `{ceiling}` +
 `selfExclusionHint`) — it needs the ceiling value the page can only know once
 `audienceCeiling(isF71aUs1Enabled())` exists (T085); doing it now would hard-code 5,000
 again.
+
+## US5 scope decision (2026-09-07, advisor-reviewed) — import-based build deferred
+
+Facts that forced it (Resend docs fetched 2026-09-07): `POST /contacts/imports` and
+`GET /contacts/imports/{id}` exist as research R9 says, but the import targets
+**segments** (`segments: [{ id }]`), `POST /broadcasts` now requires `segment_id`
+("Audiences are now called Segments"), the migration guide is silent on whether an
+audience created via `POST /audiences` — the surface prod is live on through SDK 4.8 —
+is a valid segment id, and the `status` enum the completion rule depends on is not
+enumerated. Nothing in PR-C's test pyramid can verify that shape without a probe against
+the team's Resend account (an outward-facing action the maintainer decides).
+
+Decision: T086 / T087 / T106 → follow-up PR with T110 (SDK 4 → 6), which starts with the
+probe. PR-C ships T085 (one ceiling), T088 / T089 (truthful count + compose UI), T079
+(copy), T090 / T091 (observability, runbook), T092 (gates + review). FR-044 is met by
+per-tick retry of a push bounded by the ceiling; SweCham is ~150 members. No
+`audience_building` enum value in PR-C (the open question from cycle 0 closes as "not
+needed here"). Recorded as an AMENDMENT under spec US5, notes in data-model § 2.5 / § 3,
+research R9 and tasks Phase 8.

@@ -282,6 +282,11 @@ affects F7's `audienceId`-based gateway (R16).
 
 ## R9 — One audience ceiling, and the Resend push must be resumable
 
+> **DEFERRED out of PR-C (2026-09-07)** — see the spec AMENDMENT under User
+> Story 5: the import-based build ships in a follow-up PR with T110, after a
+> probe confirms the audience-id / segment-id relationship and the import
+> `status` values. PR-C keeps the bounded per-contact push.
+
 - **Decision**: `src/modules/broadcasts/domain/audience-ceiling.ts` exports
   `audienceCeiling(batchingEnabled: boolean): number` = 5,000 when the F7.1a batching flag
   is OFF, 50,000 when ON (matches the DB CHECK `broadcasts_estimated_recipient_cap` and

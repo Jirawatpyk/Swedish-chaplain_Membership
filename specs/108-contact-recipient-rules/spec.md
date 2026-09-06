@@ -144,6 +144,31 @@ When a member composes a broadcast, the estimated number of recipients shown is 
 3. **Given** an audience of 4,900 contacts, **When** 300 secondary contacts are added to eligible members, **Then** compose shows 5,200.
 4. **Given** an audience of 20,000 contacts, **When** the member opens compose, **Then** the count appears within the compose page's normal loading time.
 
+> **AMENDMENT (108 PR-C start of US5, 2026-09-07 — advisor-reviewed scope
+> narrowing).** The provider-side audience build via Resend's Contacts Import
+> API (research R9 "Decision (push)", data-model § 2.5 / § 3
+> `audience_building`, tasks T086 / T087 / T106, contract § 4) is DEFERRED out
+> of PR-C into a follow-up PR that ships with the `resend` 4 → 6 upgrade (T110).
+> Reason: the Resend documentation fetched 2026-09-07 confirms `POST
+> /contacts/imports` (multipart `file`, `column_map`, `on_conflict`) and `GET
+> /contacts/imports/{id}` (`status`, `counts{total,created,updated,skipped,failed}`),
+> but targets **segments** (`segments: [{ id }]`), does not state whether an
+> audience created through the surface F7 is live on (`POST /audiences`) is a
+> valid segment id, and does not enumerate the `status` values the completion
+> rule depends on. Building the tick machinery against a shape that cannot be
+> verified without a probe against the team's Resend account would put an
+> unverifiable path in front of the first send under the new rule. The
+> follow-up PR starts with that probe. Until then the existing per-contact
+> push stays: it is bounded by the ceiling, retried per tick on any retryable
+> failure (the row stays `approved`), and SweCham's audience (150 members,
+> secondaries pending import) is two orders of magnitude below the 5,000
+> ceiling. **FR-044** is therefore satisfied in PR-C by per-tick retry of a
+> bounded push rather than by a persisted import job; **FR-041 / FR-042 / FR-040**
+> (one ceiling, truthful count, no truncation) ship in PR-C as planned.
+> Scenario 2 above (6,200 with batching ON) stays reachable through the
+> existing F7.1a batch path, which pushes per-batch audiences below the split
+> threshold. `broadcast_status` gains NO `audience_building` value in PR-C.
+
 ---
 
 ### User Story 6 - A contact manages their own marketing preference in the portal (Priority: P3)
