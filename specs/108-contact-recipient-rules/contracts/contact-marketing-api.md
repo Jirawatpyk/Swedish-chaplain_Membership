@@ -22,6 +22,10 @@ header rule.
 | 503 | problem `suppression_unavailable` (+ `Retry-After`) | `state: 'on'` while the suppression list cannot be read — a blind "on" could override an unsubscribe nobody checked (FR-031a) |
 | 429 | problem + `Retry-After` | 60/min per (tenant, user) exhausted |
 | 403 / 401 | RBAC denial (audited) | |
+| 400 | problem `invalid_body` | body is not exactly `{ state: 'on' \| 'off' }`, or is not JSON |
+| 409 | problem `idempotency_conflict` | the same `Idempotency-Key` with a different body |
+| 503 | problem `idempotency_reservation_failed` (+ `Retry-After`) | the reservation store is unavailable |
+| 500 | problem `server_error` | anything else; the message is a synthetic `set-marketing: <code>`, never a DB message |
 
 **Idempotency-Key after a FAILED request** (house convention, confirmed at the
 PR-D review): only a 200 is remembered. A key whose request ended in 4xx/5xx
@@ -39,11 +43,29 @@ marketingSuppression: MarketingSuppressionLookupPort }` — the last adapter liv
 ## 2. Portal self-toggle
 
 `PATCH /api/portal/profile/marketing` — `requireMemberContext`; acts on `ctx.ownContactId`
-only. Request `{ "optOut": boolean }`. Same use case with `source: 'self'`. 409 `suppressed`
-when the contact's address is on the suppression list (the portal hides the control in that
-state and shows "unsubscribed"). `GET /api/portal/profile` gains
-`marketing: { state: 'on' | 'off_by_staff' | 'off_by_contact' | 'unsubscribed' }` per contact
-(own contact only carries the control).
+only, and the request body carries NO contact id (`{ "optOut": boolean }`, `.strict()`), so a
+member cannot address anyone else's contact. Same use case with `source: 'self'`.
+`Idempotency-Key` required. Rate limit 60/min per (tenant, user) — the SAME bucket as the
+staff toggle, so switching surfaces does not buy extra budget.
+
+Responses (staff review A5 — §2 previously listed only the 409):
+
+| Status | Body `error.code` | When |
+|---|---|---|
+| 200 | — | changed, or already in that state |
+| 400 | `invalid_body` | not `{ optOut: boolean }` exactly |
+| 400 | `missing_idempotency_key` | header absent or malformed |
+| 401 / 403 | — | no session / not a member session |
+| 409 | `suppressed` | the address is on the suppression list; the portal renders text, not a control |
+| 409 | `idempotency_conflict` | same key, different body |
+| 429 | — | rate limit |
+| 503 | `suppression_unavailable` | the suppression list could not be read — switching ON is refused rather than done blind |
+| 503 | `idempotency_reservation_failed` | reservation store unavailable |
+| 500 | `internal` | anything else |
+
+`GET /api/portal/profile` returns `marketing: { state: 'on' | 'off_by_staff' |
+'off_by_contact' | 'unsubscribed' }` on the session's OWN contact ONLY — never per contact
+(FR-032: a portal user must not learn another contact's marketing state).
 
 ## 3. Marketing audience page
 

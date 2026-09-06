@@ -123,7 +123,7 @@ On the member page, and across the whole tenant on a new Marketing audience page
 4. **Given** a contact whose address is on the suppression list, **When** staff attempt to switch marketing on, **Then** the contact stays excluded and the interface explains that the person's unsubscribe takes precedence.
 5. **Given** a staff user without the marketing-audience right (for example a manager), **When** they view the member page, **Then** they see the states but cannot change them.
 6. **Given** a signed-in marketing-role user, **When** they switch a contact's marketing state, **Then** it succeeds, while any attempt by that user to edit the same contact's name, email or phone is still refused.
-7. **Given** the feature has just been enabled and no member-based broadcast has been sent under the new rule yet, **When** staff open the Marketing audience page filtered to "secondary, currently on", **Then** every existing secondary contact that will newly become a recipient is listed grouped by member, each with a switch-off control, and switching one off takes effect on the next send.
+7. **Given** the feature has just been enabled and no member-based broadcast has been sent under the new rule yet, **When** staff open the Marketing audience page filtered to "secondary, currently on", **Then** every existing secondary contact that will newly become a recipient is listed, ordered by member name then contact name so a member's contacts read together (the normative wording is FR-035; "grouped by member" here was loose — staff review A12), each with a switch-off control, and switching one off takes effect on the next send.
 8. **Given** the Marketing audience page, **When** a marketing-role user filters by member "Acme Co." and state "off", **Then** only Acme's switched-off contacts are shown with who switched them off and when, and the count matches the rows.
 9. **Given** a tenant with 20,000 contacts, **When** staff open the Marketing audience page, **Then** it loads a first page of 50 results with LCP under 2.5 seconds and paginates the rest.
 
@@ -260,9 +260,23 @@ A contact signed in to the member portal, the primary contact included, can see 
 - **FR-021**: An eligible member is one whose membership status is **active**, that is not erased, and that is not currently halted from broadcasts. Inactive (lapsed) and archived members, and all of their contacts, MUST be excluded from member-based audiences. (Today no status filter is applied at all, so archived members' primaries still receive E-Blasts; this closes that leak. Win-back of lapsed members stays with renewal reminders, not broadcasts.)
 - **FR-022**: A contact MUST be excluded from a member-based audience when any of the following holds: the contact is removed; its address is on the tenant's suppression list; staff have switched marketing off for it; the contact has switched marketing off for themselves; or it belongs to the member submitting the broadcast (self-exclusion covers all of the sender's contacts, not just the primary).
 - **FR-022a**: The suppression-list, staff opt-out and self opt-out exclusions in FR-022 MUST apply to **every** segment type, including the custom list and recent-event-attendees. For a custom list, opted-out addresses MUST be dropped at submit time and the sender MUST be told how many were dropped (never which); the submission is not rejected on that account. Sender self-exclusion does NOT apply to the custom list (unchanged).
+
+> **AMENDMENT (108 PR-D staff review, 2026-09-06 — spec A1).** PR-D ships the DROP
+> without the TELL. The count is computed and returned by the segment resolver
+> (`droppedByPreference`) and emitted as a metric, but no sender-facing surface reads
+> it yet; that surface is PR-C (T088/T089). Recorded here so the interim is a stated
+> scope decision rather than an undiscovered gap: for the duration of PR-D a sender
+> sees the corrected recipient count, not the reason it is lower.
 - **FR-022b**: The compose screen MUST tell the sender that they and their colleagues will not receive their own broadcast (replacing the current "your primary contact email is excluded" wording).
 - **FR-023**: The resolved recipient list MUST contain each email address at most once.
 - **FR-024**: An unsubscribe by any contact MUST be honoured for that address on every later send and MUST be recorded with attribution to the member and the specific contact.
+
+> **AMENDMENT (108 PR-D staff review, 2026-09-06 — spec A8).** The dispatch-time
+> filter that honours a per-contact opt-out (FR-022a) ships WITHOUT a feature flag,
+> by design. FR-045's rollback story covers the audience WIDENING (PR-C), where a
+> flag-off is safe. It is not safe here: switching this filter off would resume
+> sending to people who have objected. The rollback path for this behaviour is a code
+> revert, not a flag flip.
 - **FR-025**: A personal unsubscribe MUST take precedence over any staff setting; staff MUST NOT be able to re-enable a suppressed address.
 
 > **AMENDMENT (108 PR-D review, 2026-09-06 — privacy officer B-2, GDPR Art. 21(3) / PDPA §32).**
@@ -278,7 +292,32 @@ A contact signed in to the member portal, the primary contact included, can see 
 > > contact's own opt-out > staff opt-out > on. Data-model § 3 is corrected accordingly.
 - **FR-026**: Custom-list and recent-event-attendee audiences keep their existing composition rules (bring-your-own list ≤100 known addresses; attendees of events in the last 90 days) and are otherwise unaffected, except for the opt-out exclusions in FR-022a.
 - **FR-027**: Default eligibility is opt-out: a contact is a marketing recipient unless excluded by FR-022. This applies equally to contacts created after this feature ships and to every secondary contact that already exists at cutover; no contact starts switched off and no backfill of preference state is required.
+
+> **AMENDMENT (108 PR-D staff review, 2026-09-06 — correctness C1/C2, spec A6).**
+> "No contact starts switched off" holds for a genuinely new person. It does NOT
+> hold for an ADDRESS that already carries the person's own objection: a contact who
+> switched marketing off themself (`source: self`), was removed, and is later
+> re-created under the same or a different member MUST be re-created with that
+> objection intact. FR-025 already makes a self opt-out the same objection as the
+> unsubscribe link, and the unsubscribe list is address-keyed and survives a deleted
+> contact row; a preference stored on the row would not, so the row-level state is
+> carried forward to match. A STAFF opt-out does NOT follow the address — it is an
+> operational setting on a row, not the person's objection. The objection carried is
+> the one on the LATEST row for that address, so a person who opted out and later
+> opted back in is not re-silenced by a long-removed row. This applies on every
+> insert path (`addInTx`, `createWithPrimaryContactInTx`, and the member import
+> script). No backfill is required or performed.
 - **FR-027a**: Before the first member-based broadcast is dispatched under the new rule, staff MUST be able to review every secondary contact that will newly become a recipient, grouped by member, with a per-contact switch-off control on the same screen. This review is performed on the Marketing audience page (FR-035) using the pre-flight preset (secondary, currently on, member eligible) by a user holding the marketing-audience right (marketing or admin). The first dispatch MUST NOT be technically blocked on the review; the review is an operational step recorded in the go-live checklist with the date and the reviewer.
+
+> **AMENDMENT (108 PR-D staff review, 2026-09-06 — spec A7).** The Marketing audience
+> page's reachability (FR-035, "permanent") is scoped to tenants with the broadcast
+> feature enabled: when `FEATURE_F7_BROADCASTS` is off the page 404s, matching the
+> nav and command-palette entries which are already hidden by the same flag. A page
+> hidden from every entry point but still served on its URL is a one-sided gate. The
+> page exists to choose a broadcast audience and has no function without broadcasts;
+> the per-contact preference itself is NOT gated, because a person's objection is a
+> privacy record rather than a broadcast feature. F7 is ON in production, so this
+> records existing behaviour rather than changing it.
 - **FR-028**: The reply-to address of a member-submitted broadcast MUST remain that member's primary contact.
 - **FR-029**: The existing "member missing recipient" signal MUST fire when an eligible member has no eligible contact at all, and MUST NOT fire merely because a member has secondaries but no primary.
 
@@ -291,6 +330,13 @@ A contact signed in to the member portal, the primary contact included, can see 
 - **FR-031**: The member page MUST show, for every non-removed contact, the existing "Primary" badge (the term "billing contact" is not used in the interface; the badge carries the descriptor "receives invoices and payment emails") and its marketing state: on, off (by staff), off (by contact), or unsubscribed.
 - **FR-031a**: When the suppression list cannot be read, the marketing state MUST render as "status unavailable" (neither on nor off) on every surface that shows it; a send is never affected because dispatch re-resolves suppression itself.
 - **FR-031b**: The reasons a contact does not receive a broadcast MUST use one shared vocabulary on the member page, the audience page and the count feedback: member inactive, member archived, member erased, member halted, contact removed, off by staff, off by contact, unsubscribed, sender's own contact, member has no eligible contact.
+
+> **AMENDMENT (108 PR-D staff review, 2026-09-06 — spec A3).** The fixed vocabulary
+> (10 codes, `domain/marketing-reason.ts`) is consumed by the audience page in PR-D.
+> The member page states the same facts through the badge's own accessible-name
+> phrasing rather than the reason codes, and the compose screen does not exist until
+> PR-C. "The same wording on all three surfaces" is therefore a PR-C completion
+> criterion, not a PR-D one.
 - **FR-032**: A signed-in portal contact MUST be able to view and switch their own marketing preference; they MUST NOT be able to change another contact's preference, and other contacts' marketing states are not shown in the portal. Changes MUST be audited.
 - **FR-033**: There MUST be no control that switches money emails off for the primary contact. The primary contact MAY switch marketing off for themselves (portal or unsubscribe link) exactly like any other contact; doing so MUST NOT affect any money email, and the member page MUST still show the Primary badge on that contact with marketing off.
 - **FR-034**: Staff without the marketing-audience right MUST see the states read-only.
@@ -318,6 +364,13 @@ A contact signed in to the member portal, the primary contact included, can see 
 - **FR-052**: New per-contact data and every new query MUST be tenant-scoped, with a cross-tenant isolation test.
 - **FR-053**: New audit event types MUST be added: `contact_marketing_opted_out` and `contact_marketing_opted_in` (payload: member id, contact id, source staff|self), and `auto_email_skipped_no_recipient` (document id, `email_event_type`, `related_member_id`). The member key is deliberately NOT the conventional `member_id`: migration 0009's trigger bumps `members.last_activity_at` for any audit row carrying that key and the member-timeline view selects on it, and a skipped email is neither member activity nor a timeline event — stamping it would inflate the at-risk scorer's recency signal for exactly the members whose contact data is broken. Staff visibility comes from FR-003's banner instead. The existing unsubscribe events gain the contact id. Retention 5 years for the two contact-marketing events; **10 years** for `auto_email_skipped_no_recipient`, matching the tax-document events it refers to (a record that a document was never delivered must outlive neither more nor less than the record that one was). Audit-count gates and the three-locale labels MUST be updated.
 - **FR-053a**: No audit payload, log line, count response or toast introduced by this feature may contain an email address; identifiers and hashes only.
+
+> **AMENDMENT (108 PR-D staff review, 2026-09-06 — spec A4).** "The member id" in the
+> preference audit rows is `related_member_id` for a STAFF change and `member_id` for
+> the person's own change. The two keys are not interchangeable: migration 0009's
+> trigger bumps `members.last_activity_at` from any audit payload carrying
+> `member_id`, and a staff action is not member activity. Both keys are read by
+> `member_timeline_v`, so the row appears on the member timeline either way.
 - **FR-054**: No secondary contact may receive a money email through any path introduced or modified by this feature (verified by a recipient-path inventory test covering every send path catalogued in the gap analysis, with inputs: primary promoted after issue, primary email changed after issue, secondary pays online, secondary triggers a portal resend).
 - **FR-055**: The record of processing MUST be updated for the new processing activities (per-contact marketing preference; marketing to secondary contacts of member companies) with the lawful basis and a short legitimate-interest assessment, before the audience rule is switched on.
 - **FR-056**: On member erasure the per-contact marketing preference fields carry no personal data once the contact is scrubbed and are retained as-is; the contact reference on a suppression record is removed while the email-keyed suppression itself is kept (existing behaviour). A staff user id recorded on a preference change is retained after that user's erasure because the audit trail, not the field, is the authoritative record.
