@@ -16,12 +16,29 @@
  * shape of the `void-pdf-reconcile` cron that shipped broken and rode 31
  * commits.
  *
- * Mocked: `@/lib/auth-session` only — session lookup needs a Next.js request
+ * Mocked: `@/lib/auth-session` — session lookup needs a Next.js request
  * scope this harness does not have. Everything below it is real: RBAC
  * evaluation, tenant resolution (`x-tenant`, gated on
- * `E2E_X_TENANT_HEADER_ENABLED`), the Upstash rate limiter, the idempotency
- * table, `buildContactMarketingDeps`, `drizzleContactRepo` and the audit
- * append — all against the live Neon `dev` branch.
+ * `E2E_X_TENANT_HEADER_ENABLED`), `buildContactMarketingDeps`,
+ * `drizzleContactRepo` and the audit append — all against the live Neon
+ * `dev` branch.
+ *
+ * The idempotency store is Upstash Redis, and its reservation FAILS CLOSED on
+ * an outage by design (post-ship R6 C3: a write that cannot be reserved is
+ * refused with 503, never processed twice). The required smoke job seeds its
+ * env from `.env.example`, whose Upstash URL is the placeholder
+ * `https://example.upstash.io` — so in CI every Idempotency-Key route 503s
+ * before it reaches the database, and this file was the first in that job to
+ * find out (7 of 8 cases: `expected 503 to be 200`). Rather than skip in the
+ * required job (vacuous) or weaken the route (wrong), the store is replaced
+ * with a faithful in-memory one ONLY when no real Redis is configured. The
+ * state machine is identical — first / replay-with-stored-body / conflict-on-
+ * different-body / conflict-while-in-flight — so the replay and conflict
+ * cases still test the route's handling of each outcome. Locally and in the
+ * pre-push gate `.env.local` carries real credentials and the REAL store runs;
+ * that is where the "against Upstash" evidence for FR-030b comes from. Adding
+ * `UPSTASH_REDIS_REST_URL/TOKEN` secrets to the smoke job makes CI take the
+ * real path too, with no change here.
  *
  * What it proves that the mocked contract tests cannot:
  *   1. a staff "off" writes all three 0294 columns AND its audit row;
@@ -53,6 +70,41 @@ import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { createActiveTestUser, deleteTestUser, type TestUser } from '../helpers/test-users';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { seedPortalMemberWithContact, seedPortalPlan } from '../helpers/portal-seed';
+
+// See the file header. Decided at import time from the env the setup file
+// loaded; the placeholder host is what `.env.example` ships and what CI seeds.
+vi.mock('@/lib/idempotency', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/idempotency')>('@/lib/idempotency');
+  const url = process.env.KV_REST_API_URL ?? process.env.UPSTASH_REDIS_REST_URL ?? '';
+  const realRedis = url.length > 0 && !url.includes('example.upstash.io');
+  if (realRedis) return actual;
+
+  type Stored = { bodyHash: string; response: { status: number; body: unknown } | null };
+  const store = new Map<string, Stored>();
+  const k = (tenant: { slug: string }, key: string) => `${tenant.slug}:${key}`;
+  return {
+    ...actual,
+    async classifyIdempotencyRequest(tenant: { slug: string }, key: string, bodyHash: string) {
+      const hit = store.get(k(tenant, key));
+      if (!hit) return { kind: 'first' as const };
+      if (hit.bodyHash !== bodyHash) return { kind: 'conflict' as const };
+      if (hit.response === null) return { kind: 'conflict' as const };
+      return { kind: 'replay' as const, previousResponse: hit.response };
+    },
+    async reserveIdempotencyRecord(tenant: { slug: string }, key: string, bodyHash: string) {
+      store.set(k(tenant, key), { bodyHash, response: null });
+      return { ok: true as const, value: { kind: 'reserved' as const } };
+    },
+    async rememberIdempotentResponse(
+      tenant: { slug: string },
+      key: string,
+      bodyHash: string,
+      response: { status: number; body: unknown },
+    ) {
+      store.set(k(tenant, key), { bodyHash, response });
+    },
+  };
+});
 
 const getCurrentSessionMock = vi.fn();
 vi.mock('@/lib/auth-session', () => ({

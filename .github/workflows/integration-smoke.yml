@@ -77,6 +77,13 @@ jobs:
       # it in production), which silently points cron routes at the deployed
       # tenant instead.
       E2E_X_TENANT_HEADER_ENABLED: 'true'
+      # NO Redis here: the .env.example Upstash URL is a placeholder, and the
+      # idempotency reservation fails CLOSED by design (post-ship R6 C3), so
+      # every Idempotency-Key route would 503 before reaching the database.
+      # contact-marketing-routes.test.ts detects the placeholder and swaps in a
+      # faithful in-memory store (see its header). Adding
+      # UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN secrets to this job
+      # makes it take the real path automatically — no test change needed.
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

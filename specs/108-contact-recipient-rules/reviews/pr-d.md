@@ -219,6 +219,8 @@ errors** · unit + contract 1224 files / 13650 tests · live Neon
 `contact-marketing-opt-out` 30 (incl. the tie-break and the 0296 pin) · five
 static gates re-run · `db:verify` OK · lint 0 · typecheck 0.
 
+**Addendum — the first CI run of this round.** Every check went green except the required Integration smoke: `contact-marketing-routes.test.ts` returned 503 on seven of eight cases, ~13 s each. The log said why: `idempotency: Redis reserve failed - caller must surface 503`. The smoke job seeds its env from `.env.example`, whose Upstash URL is the placeholder `https://example.upstash.io`, and the idempotency reservation fails CLOSED on an outage by design (post-ship R6 C3). So the required job has NEVER been able to run an Idempotency-Key route; this file was the first to try. The route is right and skipping in a required job is vacuous, so the file now swaps in a faithful in-memory store ONLY when it sees the placeholder host, and takes the real store locally and in pre-push (where `.env.local` has credentials). Proved both ways: 8/8 against real Upstash, 8/8 with the exact placeholder pair CI inherits. Adding `UPSTASH_REDIS_REST_URL/TOKEN` secrets to the job flips it to the real path with no test change. Worth noting against the advisor's earlier warning to check the smoke job's env BEFORE it fails: I checked the tenant header and the rate-limiter fallback and asserted the idempotency table was Postgres without reading `@/lib/idempotency`. It is Redis. The claim outran the code one more time.
+
 **The lesson this round adds** to the one round 4 taught: a fix is not done when
 the test it was written for goes green — it is done when the NEXT reviewer
 cannot find the same class in it. Four of pass 1's findings and most of pass 2's
