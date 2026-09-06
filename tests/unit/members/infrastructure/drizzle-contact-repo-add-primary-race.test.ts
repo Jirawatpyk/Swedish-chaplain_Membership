@@ -19,7 +19,20 @@ function txThatRejectsInsertWith(cause: unknown): TenantTx {
   const chain = {
     values: () => ({ returning: () => Promise.reject(cause) }),
   };
-  return { insert: () => chain } as unknown as TenantTx;
+  // 108 PR-D (review code H1): `addInTx` first looks for a prior `self`
+  // opt-out on this address so a person's own objection survives a
+  // remove → re-add. The stub answers "no prior row"; the carry-over itself
+  // is proved on live Neon in contact-marketing-opt-out.test.ts.
+  const selectChain = {
+    from: () => selectChain,
+    where: () => selectChain,
+    orderBy: () => selectChain,
+    limit: () => Promise.resolve([]),
+  };
+  return {
+    insert: () => chain,
+    select: () => selectChain,
+  } as unknown as TenantTx;
 }
 
 function pgUniqueViolation(constraintName: string): Error {
@@ -46,6 +59,9 @@ const draft = {
   linkedUserId: null,
   inviteBouncedAt: null,
   art14AttestedAt: new Date(),
+  // 108 PR-D — `Contact.marketing` is REQUIRED; the serialiser reads it
+  // without a `?.` (review types MEDIUM-3), so a fixture must carry it.
+  marketing: { optedOutAt: null, source: null, byUserId: null },
   removedAt: null,
 } as unknown as Parameters<typeof drizzleContactRepo.addInTx>[1];
 

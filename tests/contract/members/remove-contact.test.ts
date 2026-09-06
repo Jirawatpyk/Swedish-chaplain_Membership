@@ -70,6 +70,9 @@ const removed = {
   isPrimary: false,
   dateOfBirth: null,
   linkedUserId: null,
+  // 108 PR-D — `Contact.marketing` is REQUIRED; the serialiser reads it
+  // without a `?.` (review types MEDIUM-3), so a fixture must carry it.
+  marketing: { optedOutAt: null, source: null, byUserId: null },
   removedAt: new Date('2026-09-05T00:00:00Z'),
   createdAt: new Date(),
   updatedAt: new Date(),
