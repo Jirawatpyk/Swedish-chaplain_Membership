@@ -144,6 +144,9 @@ describe('findMissingEnumValues', () => {
           'member_plan_change_billing_effect',
           // 0292 (108-contact-recipient-rules PR-A):
           'auto_email_skipped_no_recipient',
+          // 0295 (108-contact-recipient-rules PR-D):
+          'contact_marketing_opted_out',
+          'contact_marketing_opted_in',
         ]),
       ],
     ]);
@@ -186,6 +189,9 @@ describe('findMissingEnumValues', () => {
           'member_plan_change_billing_effect',
           // 0292 (108-contact-recipient-rules PR-A):
           'auto_email_skipped_no_recipient',
+          // 0295 (108-contact-recipient-rules PR-D):
+          'contact_marketing_opted_out',
+          'contact_marketing_opted_in',
         ]),
       ],
     ]);
@@ -236,6 +242,9 @@ describe('findMissingEnumValues', () => {
           'member_plan_change_billing_effect',
           // 0292 (108-contact-recipient-rules PR-A):
           'auto_email_skipped_no_recipient',
+          // 0295 (108-contact-recipient-rules PR-D):
+          'contact_marketing_opted_out',
+          'contact_marketing_opted_in',
         ],
       },
     ]);
@@ -265,6 +274,11 @@ describe('findMissingEnumValues', () => {
     expect(REQUIRED_ENUM_VALUES['audit_event_type']).toContain(
       'event_attendance_by_suspended_member',
     );
+    // 108 PR-D (mig 0295): `setContactMarketingOptOut` INSERTs these labels on
+    // every toggle; a 0230-class non-persisting ADD VALUE would 500 both the
+    // staff switch and the portal self-toggle in prod.
+    expect(REQUIRED_ENUM_VALUES['audit_event_type']).toContain('contact_marketing_opted_out');
+    expect(REQUIRED_ENUM_VALUES['audit_event_type']).toContain('contact_marketing_opted_in');
   });
 });
 

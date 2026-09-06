@@ -116,6 +116,7 @@ describe('GET /api/internal/metrics/broadcasts-gauges — wire contract', () => 
     dbTransactionMock.mockImplementationOnce(async () => ({
       pendingRows: [{ tenant_id: 't1', count: 12 }],
       stuckRows: [{ tenant_id: 't1', count: 2 }],
+      suppressionRows: [{ tenant_id: 't1', count: 7 }],
       // tenant t1: 30% failure rate (3/10), tenant t2: 0% (0/5)
       dispatchRows: [
         { tenant_id: 't1', failed: 3, dispatched: 10 },
@@ -162,6 +163,8 @@ describe('GET /api/internal/metrics/broadcasts-gauges — wire contract', () => 
       pendingRows: [],
       stuckRows: [],
       dispatchRows: [],
+      // 108 PR-D (staff review P4): the fourth gauge family.
+      suppressionRows: [],
     }));
 
     const { GET } = await import(
@@ -199,6 +202,8 @@ describe('GET /api/internal/metrics/broadcasts-gauges — wire contract', () => 
       pendingRows: [],
       stuckRows: [],
       dispatchRows: [],
+      // 108 PR-D (staff review P4): the fourth gauge family.
+      suppressionRows: [],
     }));
 
     const { GET } = await import(

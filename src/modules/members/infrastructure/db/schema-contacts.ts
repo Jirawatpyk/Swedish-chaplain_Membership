@@ -90,6 +90,16 @@ export const contacts = pgTable(
     // promote/demote primary-contact transitions.
     art14AttestedAt: timestamp('art14_attested_at', { withTimezone: true }),
 
+    // 108 PR-D (migration 0294) — per-contact marketing opt-out. All three
+    // NULL = receives marketing (no backfill); all three set = switched off
+    // by `marketing_opt_out_source` ('staff' | 'self') at `_at`. Correlated
+    // by the DB CHECK `contacts_marketing_opt_out_correlated` and by the
+    // Domain constructor `contactMarketing()`. `_by_user_id` has NO FK on
+    // purpose (users can be erased; the audit row is authoritative).
+    marketingOptOutAt: timestamp('marketing_opt_out_at', { withTimezone: true }),
+    marketingOptOutSource: text('marketing_opt_out_source'),
+    marketingOptOutByUserId: uuid('marketing_opt_out_by_user_id'),
+
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -119,6 +129,26 @@ export const contacts = pgTable(
     // of the partial indexes above can serve. Declared here for drift
     // hygiene only; the DDL is hand-written in 0293.
     index('contacts_tenant_member_all_idx').on(table.tenantId, table.memberId),
+    // 108 PR-D (migration 0294) — added for PR-C's 1:N audience resolver
+    // (live, not-opted-out contacts per tenant+member). NOT unused by PR-D
+    // (staff review P1): the audience page's `state=on` filter builds this
+    // exact predicate plus the leading `tenant_id`, and `state=on` is half of
+    // the FR-027a pre-flight preset. Drift hygiene only; DDL is hand-written.
+    index('contacts_marketing_recipients_idx')
+      .on(table.tenantId, table.memberId, table.contactId)
+      .where(sql`removed_at IS NULL AND marketing_opt_out_at IS NULL`),
+    // 108 PR-D (migration 0296, code-review finding 4) — serves
+    // `findCarriedSelfOptOut`, which must see REMOVED rows and therefore
+    // cannot use either partial `lower(email)` index (0009, 0182). The
+    // trailing `created_at DESC` supplies the ORDER BY, so the lookup is an
+    // index scan with LIMIT 1 and no sort node. Runs on every contact INSERT,
+    // including once per row in `scripts/import-members.ts`. Drift hygiene
+    // only; DDL is hand-written.
+    index('contacts_tenant_lower_email_all_idx').on(
+      table.tenantId,
+      sql`lower(${table.email})`,
+      table.createdAt.desc(),
+    ),
     // Note: pg_trgm GIN index on (first_name || ' ' || last_name) is added
     // via raw SQL in the migration.
   ],

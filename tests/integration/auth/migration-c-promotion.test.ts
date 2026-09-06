@@ -97,7 +97,12 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 function migrationCStatements(): string[] {
   const raw = readFileSync(MIGRATION_C_PATH, 'utf-8');
   return raw
-    .split('\n')
+    // `\r?\n`, not `\n`: on a CRLF checkout a `\n` split leaves each line
+    // ending in `\r`, and `/--.*$/` then matches NOTHING — `.` never matches a
+    // line terminator and `\r` is one — so the strip below silently did
+    // nothing and a `;` inside a comment cut a fragment mid-word. Pinned by
+    // the positive control in the first test.
+    .split(/\r?\n/)
     .map((line) => line.replace(/--.*$/, ''))
     .join('\n')
     .split(';')
@@ -238,6 +243,22 @@ describe('T042 Migration C promotion rehearsal (live Neon, reads the real SQL)',
     expect(raw, 'literal BEGIN/COMMIT is forbidden (design §5) and breaks atomicity').not.toMatch(
       /^\s*(BEGIN|COMMIT)\s*;/im,
     );
+    // POSITIVE CONTROL. Both assertions above describe the FILE; neither says
+    // the splitter produced anything executable — and on a CRLF checkout it
+    // did not. `/--.*$/` cannot match a line ending in `\r`: `.` never matches
+    // a line terminator and `\r` is one, so with `.split('\n')` every comment
+    // survived, and the `;` inside one of them ("… (0286); use") cut a
+    // fragment Postgres rejects with `syntax error at or near "use"`. Assert
+    // the OUTPUT of the splitter, so a stripper that silently does nothing
+    // fails here instead of six rehearsals down.
+    const statements = migrationCStatements();
+    expect(statements.length).toBeGreaterThan(0);
+    for (const statement of statements) {
+      expect(statement, 'a comment survived the strip — the splitter is not CRLF-safe').not.toContain(
+        '--',
+      );
+      expect(statement, 'every statement must be an executable UPDATE').toMatch(/^UPDATE\b/i);
+    }
   });
 
   it('promotes every human admin — active AND disabled — to super_admin', async () => {

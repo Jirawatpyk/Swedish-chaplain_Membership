@@ -21,6 +21,7 @@ import {
   findUndocumentedKeys,
   parseDocumentedKeys,
   parseSchemaKeys,
+  HARNESS_ONLY_KEYS,
 } from '../../../scripts/lib/env-example-core';
 
 const FIXTURE_ENV_TS = `import { z } from 'zod';
@@ -213,5 +214,43 @@ describe('production wiring (regression guard for the real files)', () => {
       expect(entry.key.length).toBeGreaterThan(0);
       expect(entry.reason.length).toBeGreaterThan(10);
     }
+  });
+});
+
+/**
+ * 108 PR-D review cycle 11 (security LOW-5) — `HARNESS_ONLY_KEYS`: keys the
+ * template documents for the test harness only. The allow-list must be REAL
+ * in both directions, or the stale-key pin above goes vacuous.
+ */
+describe('HARNESS_ONLY_KEYS (template keys the app schema never declares)', () => {
+  const envTs = readFileSync(resolve(process.cwd(), 'src/lib/env.ts'), 'utf8');
+  const envExample = readFileSync(resolve(process.cwd(), '.env.example'), 'utf8');
+
+  it('every entry is documented in the REAL .env.example (not a dead allow-list line)', () => {
+    const documented = new Set(parseDocumentedKeys(envExample));
+    for (const entry of HARNESS_ONLY_KEYS) {
+      expect(documented.has(entry.key), `${entry.key} is allow-listed but not in .env.example`).toBe(true);
+    }
+  });
+
+  it('no entry is ALSO declared by src/lib/env.ts (then it is an app key, not a harness key)', () => {
+    const schema = new Set(parseSchemaKeys(envTs));
+    for (const entry of HARNESS_ONLY_KEYS) {
+      expect(schema.has(entry.key), `${entry.key} is in the schema — drop it from HARNESS_ONLY_KEYS`).toBe(false);
+    }
+  });
+
+  it('every entry carries a substantive reason', () => {
+    expect(HARNESS_ONLY_KEYS.length).toBeGreaterThan(0);
+    for (const entry of HARNESS_ONLY_KEYS) {
+      expect(entry.reason.length).toBeGreaterThan(10);
+    }
+  });
+
+  it('the allow-list is what keeps the stale-key check green — an empty list reports the harness key', () => {
+    // Positive control: prove the filter does work, so the "no stale keys"
+    // pin above cannot pass because the parser matched nothing.
+    const stale = findStaleKeys(parseSchemaKeys(envTs), parseDocumentedKeys(envExample), []);
+    expect(stale).toEqual(HARNESS_ONLY_KEYS.map((e) => e.key).sort());
   });
 });

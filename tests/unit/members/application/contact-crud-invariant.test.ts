@@ -62,6 +62,7 @@ function contactRow(
     linkedUserId: null,
     inviteBouncedAt: null,
     art14AttestedAt: null,
+    marketing: { optedOutAt: null, source: null, byUserId: null },
     removedAt: opts.removed ? new Date('2026-02-01') : null,
     createdAt: new Date('2026-01-01'),
     updatedAt: new Date('2026-01-01'),

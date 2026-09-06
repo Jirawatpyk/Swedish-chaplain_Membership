@@ -131,6 +131,11 @@ export const REQUIRED_ENUM_VALUES: Readonly<Record<string, readonly string[]>> =
     // non-persisting ADD VALUE would 500 that path in prod instead of failing
     // the deploy here.
     'auto_email_skipped_no_recipient',
+    // 108 PR-D (0295) — `setContactMarketingOptOut` INSERTs one of these on
+    // every real toggle (staff switch + portal self-toggle); a non-persisting
+    // ADD VALUE would 500 both surfaces in prod.
+    'contact_marketing_opted_out',
+    'contact_marketing_opted_in',
   ],
 };
 

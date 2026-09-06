@@ -104,11 +104,50 @@ business categorisation, not special-category PII.
 
 ### Purpose of processing
 
-- **Marketing communications** under contract performance per **PDPA
-  §24** + **GDPR Art. 6(1)(b)** — chamber membership tiers contractually
-  include an annual quota of E-Blasts (1–15 per year across paying
-  tiers). The processing is necessary to deliver the contractually
-  promised benefit.
+- **Marketing communications — SENDER side** under contract performance
+  per **PDPA §24** + **GDPR Art. 6(1)(b)** — chamber membership tiers
+  contractually include an annual quota of E-Blasts (1–15 per year
+  across paying tiers). The processing of the SENDING member's data
+  (quota, approval, delivery results) is necessary to deliver the
+  contractually promised benefit.
+- **Marketing communications — RECIPIENT side** under legitimate
+  interest per **GDPR Art. 6(1)(f)** + Recital 47 and **PDPA §24(5)**
+  (108 PR-D, 2026-09-06; supersedes the single contract-basis line above
+  for recipients — the contract binds the member COMPANY, not the person
+  who receives the email). Legitimate-interest assessment (spec 108 D3):
+  recipients are the member company's primary and secondary contacts
+  acting in a B2B professional capacity, in an existing relationship
+  with the chamber; every contact was added by the member's own primary
+  contact or by staff under an Art. 14 attestation; every broadcast
+  carries one-click unsubscribe — the universal channel; a contact who has a
+  portal login can additionally object there (self opt-out), and ANY contact
+  can ask staff to switch it off (staff opt-out). A secondary contact never
+  invited to the portal has the unsubscribe link and the staff channel, not
+  the portal one. Every objection is honoured at dispatch across every
+  audience kind, and a contact's OWN objection follows the ADDRESS if the
+  contact row is deleted and re-created. **Residual (108
+  privacy review M-1)**: the Art. 14 / PDPA §23 notice to a secondary
+  contact is ATTESTED by staff at add time (`art14_attested`) and is not
+  yet delivered by the system; the portal invite-colleague path records
+  no attestation. PR-C's flag flip (1:N audience) MUST NOT happen until
+  either the system sends a notice to a new secondary on first marketing
+  contact, or the FR-027a pre-flight step verifies the attestation per
+  contact.
+- **Per-contact marketing preference** (108 PR-D, 2026-09-06) — a NEW
+  processing activity: `contacts.marketing_opt_out_at` /
+  `marketing_opt_out_source` (`staff` | `self`) /
+  `marketing_opt_out_by_user_id`, plus the audit events
+  `contact_marketing_opted_out` / `contact_marketing_opted_in` (ids +
+  source + actor role only, never an address). Purpose: audience
+  management and honouring an objection (GDPR Art. 21 / PDPA §32). Basis:
+  legal obligation to honour the objection (Art. 6(1)(c)) + the
+  legitimate interest above (Art. 6(1)(f)). Recipients of this datum:
+  none outside the controller. Access: `contacts.read` holders view the
+  state (admin, super_admin, marketing, manager read-only);
+  `contacts.marketing` holders change it (admin, super_admin, marketing —
+  never manager). Precedence: the person's own unsubscribe > their own
+  opt-out > a staff opt-out > receiving; staff cannot lift the person's
+  own objection (FR-025 AMENDMENT).
 - **Demonstrable consent timestamp** per **GDPR Art. 7** — the Q15
   banner CTA records `broadcasts_acknowledged_at` as evidence-
   strengthening for the "demonstrable consent" obligation. Does NOT
@@ -154,6 +193,8 @@ business categorisation, not special-category PII.
 | `marketing_unsubscribes` rows | **Indefinite** | GDPR Art. 21 right to object — once a recipient unsubscribes, the suppression record MUST persist forever to honour future processing avoidance |
 | `members.broadcasts_acknowledged_at` | **Indefinite** while member row exists | GDPR Art. 7 demonstrable consent — deleted alongside member on Art. 17 erasure; admin SHOULD reset to NULL on F12 white-label terms change to force re-acknowledgement |
 | `members.broadcasts_halted_until_admin_review` | **Indefinite** while member row exists | Q14 SC-005 (b) auto-halt operational state |
+| `contacts.marketing_opt_out_{at,source,by_user_id}` (108 PR-D) | **Life of the contact row**, KEPT through the Art. 17 scrub (no PII: a timestamp, an enum and a user id) | Kept because it carries no PII and the audit trail (`contact_marketing_opted_out` / `_in`) is the authoritative record of the objection. It does NOT survive as a suppression: the scrub stamps `removed_at`, the dispatch filter reads live rows only, and the preference is bound to the contact ROW, not the address — a re-added address is re-marketed unless it is on `marketing_unsubscribes`, which is the only address-keyed, indefinite suppression (see its row above). The `self` case's `by_user_id` is the data subject's own user id and is swept together with `linked_user_id` when F1 user erasure lands (108 privacy review L-3) |
+| `audit_log` rows `contact_marketing_opted_out` / `contact_marketing_opted_in` (108 PR-D) | **5 years** | Constitution default; payload carries `member_id` / `related_member_id`, `contact_id`, `source`, `actor_role` — no address (FR-053a) |
 | `audit_log` rows for F7 events (37 event types) | **5 years** | All F7 events default 5y per `src/modules/broadcasts/application/ports/audit-port.ts` `F7_AUDIT_RETENTION_YEARS` map |
 | Resend Broadcasts API send logs | Resend default (90 days) | Provider retention; not under chamber control |
 
@@ -230,6 +271,7 @@ business categorisation, not special-category PII.
 | Date | Change | Author |
 |---|---|---|
 | 2026-04-29 | Initial F7 entry created (Batch D T034 spec scaffolding) | F7 implementation pass |
+| 2026-09-06 | 108 PR-D: recipient-side basis split out as legitimate interest (LIA from spec 108 D3); new activity "per-contact marketing preference" + its two audit events; Art. 14 attestation residual recorded as a PR-C gate condition (privacy review H-1 / M-1) | 108 PR-D review cycle 12 |
 
 ---
 

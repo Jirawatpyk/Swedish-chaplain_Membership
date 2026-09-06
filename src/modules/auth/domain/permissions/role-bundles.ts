@@ -30,10 +30,10 @@ const NON_SUPER_ADMIN_ONLY_KEYS: readonly PermissionKey[] = [...ALL_PERMISSION_K
 const MANAGER_KEYS: readonly PermissionKey[] = [
   'dashboard.view',
   'members.read',
-  // `contacts.read` + `payments.read` are UNENFORCED vocabulary today (no
-  // gate checks them — see the notes in permission-catalogue.ts). They stay
-  // granted for § 4.1 parity, but editing THEM changes nothing: contact
-  // access rides `members.read`, the payment timeline rides `invoicing.read`.
+  // `contacts.read` gates the Marketing audience page since 108 PR-D (manager
+  // sees it read-only — FR-035). `payments.read` is still UNENFORCED
+  // vocabulary (see permission-catalogue.ts): the payment timeline rides
+  // `invoicing.read`.
   'contacts.read',
   'directory.export',
   'plans.read',
@@ -49,8 +49,12 @@ const MANAGER_KEYS: readonly PermissionKey[] = [
 const MARKETING_KEYS: readonly PermissionKey[] = [
   'dashboard.view',
   'members.read',
-  // Unenforced today — see the MANAGER_KEYS note / permission-catalogue.ts.
+  // Gates the Marketing audience page (108 PR-D, FR-035) — the pre-flight
+  // surface marketing needs before a send under the new audience rule.
   'contacts.read',
+  // 108 PR-D (FR-030) — marketing may switch a contact's marketing state;
+  // it still holds NO `contacts.write`, so name/email/phone stay read-only.
+  'contacts.marketing',
   'broadcasts.read',
   'broadcasts.write',
   'broadcasts.send',

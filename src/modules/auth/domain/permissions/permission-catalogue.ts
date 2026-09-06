@@ -34,15 +34,28 @@ const CATALOGUE_RAW = [
   { key: 'members.pii_sensitive', sensitive: 'pii' },
   { key: 'members.erasure', superAdminOnly: true, sensitive: 'pii' },
   { key: 'members.erasure_log_read', superAdminOnly: true, sensitive: 'pii' },
-  // UNENFORCED VOCABULARY (016 post-ship review, below-cap): no gate,
-  // canPerform or hasPermission call anywhere in src/ or scripts/ checks
-  // this key — contact reads ride the `members.read`-gated member-detail
-  // surfaces, so granting or revoking it changes NOTHING at runtime today.
-  // Kept for § 4.1 matrix parity. If a dedicated contacts surface ever
-  // ships, gate it on this key and delete this note; until then, reviewers
-  // reasoning about contact access must look at `members.read`.
-  { key: 'contacts.read' },
+  // ENFORCED since 108 PR-D: the Marketing audience page
+  // (`/admin/marketing/audience`, FR-035) is gated on this key — the first
+  // dedicated contacts surface. Contact reads on the member-detail page still
+  // ride `members.read`, so revoking this key hides the audience page and the
+  // ⌘K entry for it but NOT the contacts shown on a member's own page.
+  // 108 PR-D (code-review finding 8) — `sensitive: 'pii'`. Before this feature
+  // `contacts.read` gated one member's contacts at a time; it now also gates
+  // `/admin/marketing/audience`, a TENANT-WIDE listing of every live contact's
+  // name and email, 50 per page. The flag is what reviewers and gates key on to
+  // decide a surface is PII-bearing, so leaving it unset would make a future
+  // bundle change or a new surface behind this key read as non-sensitive and
+  // skip the PII review path. It grants no less than before — `manager` and
+  // `marketing` keep the key; only its classification is corrected.
+  { key: 'contacts.read', sensitive: 'pii' },
   { key: 'contacts.write', sensitive: 'pii' },
+  // 108 PR-D (FR-030) — "manage contact marketing audience": switch a
+  // contact's marketing state on/off (staff toggle on the member page and
+  // the Marketing audience page). Deliberately SEPARATE from
+  // `contacts.write`: the marketing role holds this key and must NOT gain
+  // the name/email/phone edit that `contacts.write` gates (spec US4 AS6).
+  // `sensitive: 'pii'` because it writes a per-person preference.
+  { key: 'contacts.marketing', sensitive: 'pii' },
   { key: 'directory.export', sensitive: 'pii' },
   { key: 'plans.read' },
   { key: 'plans.write', sensitive: 'money' },

@@ -34,6 +34,7 @@ import { z } from 'zod';
 import { runInTenant } from '@/lib/db';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { verifyCronBearer } from '@/lib/cron-auth';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 
@@ -198,7 +199,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         tenant,
         broadcast.requestedByMemberId,
       );
-      const resolved = await resolveSegmentRecipients(
+      // Staff review A11: the 108 PR-D opt-out lookup is fail-closed and
+      // THROWS when the read fails. `dispatch-scheduled-broadcast.ts` maps that
+      // to a typed `dispatch.server_error`; here it fell to the generic
+      // per-broadcast catch, so one outage was classified two different ways
+      // depending on which cron observed it. Safety was never in question —
+      // the tick survives either way — only the alerting signal.
+      let resolved: Awaited<ReturnType<typeof resolveSegmentRecipients>>;
+      try {
+        resolved = await resolveSegmentRecipients(
         {
           tenant,
           membersBridge,
@@ -207,6 +216,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         },
         {
           segment,
+          phase: 'dispatch',
           requestingMemberPrimaryEmail: requestingPrimary,
           customRecipients:
             broadcast.customRecipientEmails === null
@@ -215,7 +225,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
                   unsafeBrandEmailLower(e.toLowerCase().trim()),
                 ),
         },
-      );
+        );
+      } catch (e) {
+        summary.errors++;
+        logger.error(
+          {
+            tenantId: tenant.slug,
+            broadcastId: row.broadcast_id,
+            errorKind: 'dispatch.server_error',
+            err: errKind(e),
+          },
+          'cron.broadcasts.split_large.recipient_resolution_failed',
+        );
+        continue;
+      }
       if (!resolved.ok) {
         summary.errors++;
         logger.error(
@@ -227,6 +250,23 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           'cron.broadcasts.split_large.recipient_resolution_failed',
         );
         continue;
+      }
+
+      // Round-2 finding 9: the per-broadcast drop count was logged only on the
+      // `dispatchScheduledBroadcast` path, so a >5,000-recipient broadcast —
+      // which travels split-large-broadcasts -> dispatch-batches and never
+      // touches that path — remained unanswerable for exactly the broadcasts
+      // where the gap is largest. Counts only, never an address (FR-053a).
+      if (resolved.value.droppedByPreference > 0) {
+        logger.info(
+          {
+            tenantId: tenant.slug,
+            broadcastId: row.broadcast_id,
+            droppedByPreference: resolved.value.droppedByPreference,
+            recipientCount: resolved.value.recipients.length,
+          },
+          'cron.broadcasts.split_large.marketing_opt_out_dropped',
+        );
       }
 
       const resolvedCount = resolved.value.recipients.length;

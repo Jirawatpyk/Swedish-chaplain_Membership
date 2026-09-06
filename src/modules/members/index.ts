@@ -209,6 +209,50 @@ export {
   type ContactCrudDeps,
 } from './application/use-cases/contact-crud';
 
+// --- 108 PR-D — per-contact marketing opt-out (staff toggle + portal self) ---
+export {
+  setContactMarketingOptOut,
+  type SetContactMarketingOptOutDeps,
+  type SetContactMarketingOptOutError,
+  type SetContactMarketingOptOutInput,
+  type SetContactMarketingOptOutOutcome,
+} from './application/use-cases/set-contact-marketing-opt-out';
+export type { MarketingSuppressionLookupPort } from './application/ports/marketing-suppression-lookup-port';
+export {
+  filterMarketingOptedOutEmails,
+  type FilterMarketingOptedOutEmailsDeps,
+} from './application/use-cases/filter-marketing-opted-out-emails';
+export {
+  listMarketingAudience,
+  MARKETING_AUDIENCE_PAGE_SIZE,
+  type ListMarketingAudienceDeps,
+  type ListMarketingAudienceError,
+  type ListMarketingAudienceInput,
+  type ListMarketingAudienceResult,
+  type MarketingAudienceFilter,
+  type MarketingAudienceRow,
+  type MarketingAudienceStateFilter,
+} from './application/use-cases/list-marketing-audience';
+export type {
+  MarketingAudienceRepoFilter,
+  MarketingAudienceRepoRow,
+} from './application/ports/member-repo';
+export {
+  MARKETING_REASONS,
+  marketingNonReceiptReasons,
+  type MarketingReason,
+} from './domain/marketing-reason';
+export {
+  contactMarketing,
+  deriveMarketingState,
+  MARKETING_OPT_OUT_SOURCES,
+  MARKETING_STATES,
+  RECEIVES_MARKETING,
+  type MarketingOptOut,
+  type MarketingOptOutSource,
+  type MarketingState,
+} from './domain/contact';
+
 export {
   affectedMembersCount,
   type AffectedMembersCountInput,

@@ -29,8 +29,8 @@ import type { Role } from '@/modules/auth/domain/role';
 const allowed = (role: Role, s: ObservedSurface): boolean => hasPermission(role, s.key);
 
 describe('T015 baseline integrity', () => {
-  it('captured 46 guarded pages + 1 exemption = the pinned 47-page inventory', () => {
-    expect(OBSERVED_PAGES).toHaveLength(46);
+  it('captured 47 guarded pages + 1 exemption = the pinned 48-page inventory (108: +/admin/marketing/audience)', () => {
+    expect(OBSERVED_PAGES).toHaveLength(47);
     expect(GUARD_EXEMPT_PAGES).toHaveLength(1);
   });
 
@@ -238,6 +238,9 @@ describe('T053 marketing reachable surfaces (US3)', () => {
     '/admin/events/[eventId]',
     '/admin/events/import',
     '/admin/events/import/history',
+    // 108 PR-D — the Marketing audience page (`contacts.read`, FR-035). Name,
+    // email and marketing state only — no `pii_sensitive` field (FR-035a).
+    '/admin/marketing/audience',
     '/admin/members',
     '/admin/members/[memberId]',
     '/admin/members/[memberId]/benefits',
@@ -266,6 +269,11 @@ describe('T053 marketing reachable surfaces (US3)', () => {
     'POST /api/admin/broadcasts/[id]/retry',
     'POST /api/admin/broadcasts/proxy-submit',
     'POST /api/admin/broadcasts/templates',
+    // 108 PR-D — the contact marketing toggle, keyed `contacts.marketing`,
+    // which the marketing bundle holds (FR-030). It confers NO other contact
+    // edit: every `contacts.write` surface stays below in MUST_DENY territory
+    // by omission from this list.
+    'POST /api/admin/contacts/[contactId]/marketing',
     'POST /api/admin/events',
     'POST /api/admin/events/[eventId]/archive',
     'POST /api/admin/events/[eventId]/toggle-cultural-event',
@@ -280,7 +288,7 @@ describe('T053 marketing reachable surfaces (US3)', () => {
     'GET /api/plans/search',
   ];
 
-  it('reaches EXACTLY the frozen 47-surface set — nothing more, nothing less', () => {
+  it('reaches EXACTLY the frozen 49-surface set — nothing more, nothing less', () => {
     const actual = OBSERVED_BASELINE.filter((s) => allowed('marketing', s))
       .map((s) => s.surface)
       .sort();
@@ -307,6 +315,12 @@ describe('T053 marketing reachable surfaces (US3)', () => {
     'POST /api/admin/members/[id]/data-export',
     '/admin/directory',
     'POST /api/admin/directory/exports',
+    // 108 PR-D (US4 AS6) — `contacts.marketing` must NOT bleed into contact
+    // edits: marketing can switch a contact's marketing state, never its
+    // name / email / phone.
+    'PATCH /api/members/[memberId]/contacts/[contactId]',
+    'DELETE /api/members/[memberId]/contacts/[contactId]',
+    'POST /api/members/[memberId]/contacts/[contactId]/promote-primary',
     // compliance / administration
     '/admin/audit',
     '/admin/users',

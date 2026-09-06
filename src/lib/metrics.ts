@@ -2229,6 +2229,76 @@ export const broadcastsMetrics = {
   },
 
   /**
+   * `broadcasts.suppression_lookup_failed{tenant, op}` — 108 PR-D (review
+   * errors HIGH-1): the marketing suppression read threw. `op` is the lookup
+   * that failed (`isSuppressed` | `lookupSuppressed` | `listSuppressedEmailLowers`).
+   * Every caller swallows the throw into a degraded state ("status
+   * unavailable", a refused "switch on"), so without this counter a sustained
+   * outage is invisible until staff open a ticket.
+   */
+  suppressionLookupFailed(tenantId: string, op: string): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_suppression_lookup_failed',
+        'Marketing suppression-list reads that threw (every caller degrades on it)',
+      ).add(1, { tenant: tenantId, op });
+    });
+  },
+
+  /**
+   * `broadcasts.suppression_list_size{tenant}` — 108 PR-D (staff review P4):
+   * rows in `marketing_unsubscribes` for this tenant. The Marketing audience
+   * page loads this WHOLE list per request for any `state` filter and binds it
+   * into two queries, and the list is bounded by TIME, not by tenant size (it
+   * also accrues bounces, complaints, `admin_added`, and addresses that were
+   * never contacts). This is the leading indicator for when that stops being
+   * free; it was previously the only unbounded input with no signal.
+   */
+  suppressionListSize(tenantId: string, size: number): void {
+    safeMetric(() => {
+      observeGauge(
+        'broadcasts_suppression_list_size',
+        'Rows in marketing_unsubscribes per tenant (the audience page loads all of them)',
+        { tenant: tenantId },
+        size,
+      );
+    });
+  },
+
+  /**
+   * `broadcasts.marketing_opt_out_filter_count{tenant, phase}` — 108 PR-D
+   * (FR-022a): recipients removed because their contact row carries a
+   * marketing opt-out (staff or self). Distinct from the suppression
+   * anti-join — an address on BOTH lists counts once, as suppressed.
+   *
+   * Emitted whenever the filter RUNS, **including at zero**, so that "nobody
+   * has opted out" and "the filter stopped running" are distinguishable: the
+   * alarm is the SERIES DISAPPEARING, not a zero value. `phase` separates the
+   * submit-time call from the dispatch-time one — without it, ongoing submits
+   * would keep the series alive and mask a dead dispatch filter (code-review
+   * finding 6).
+   *
+   * NOT a count of distinct people: `phase="dispatch"` counts once per RESOLVE,
+   * and a multi-batch broadcast re-resolves on every tick (round-2 finding 15
+   * corrected an earlier claim that the label stopped double counting — it
+   * separates the two phases, it does not de-duplicate within one). Read it as
+   * a liveness signal; the per-broadcast figure is the
+   * `broadcasts.dispatch.marketing_opt_out_dropped` log line.
+   */
+  marketingOptOutFilterCount(
+    tenantId: string,
+    count: number,
+    phase: 'submit' | 'dispatch',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_marketing_opt_out_filter_count',
+        'Recipients removed by a per-contact marketing opt-out, per resolver phase',
+      ).add(count, { tenant: tenantId, phase });
+    });
+  },
+
+  /**
    * `broadcasts.audit_emit_count{tenant, event_type}` — ops-dashboard
    * audit-event volume per tenant per type. Distinct from
    * `auditEmitFailed` (which counts FAILURES).

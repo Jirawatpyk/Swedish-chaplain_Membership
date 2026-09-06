@@ -61,7 +61,7 @@
 - [x] CHK030 Are all new keys enumerated by namespace so `check:i18n` and the Thai-script label test can be run as acceptance? [Completeness, Contract §6, Spec §FR-050] → resolved: contract §6
 - [x] CHK031 Are TH typographic constraints (no italic on Thai text; muted colour reserved for empty sentinels, not links) restated for the new badges and hints? [Gap, ux-standards / project memory] → resolved: Assumptions (TH typography)
 - [x] CHK032 Are timestamps on the audience page ("changed at") required to use the existing locale formatters (BE display-only for TH, UTC stored)? [Consistency, Plan Constitution V] → resolved: plan Constitution V
-- [ ] CHK033 Is content-length variance (SV/TH labels longer than EN) accounted for in badge and column width requirements? [Coverage, Constitution V] → OPEN: add SV/TH length-variance note to FR-050 during the enterprise-ux-designer pass in tasks
+- [x] CHK033 Is content-length variance (SV/TH labels longer than EN) accounted for in badge and column width requirements? [Coverage, Constitution V] → resolved 2026-09-06: FR-050a (five measured constraints + the three-locale 320-px e2e acceptance), written at the PR-D UX review
 
 ## Acceptance measurability
 
@@ -71,3 +71,53 @@
 ## Notes
 
 - Gaps CHK004–CHK007, CHK011, CHK017, CHK028, CHK031 should be resolved by an `enterprise-ux-designer` pass that writes the missing sentences into spec.md or contracts before `/speckit.tasks`.
+
+## Co-Sign Footer — PR-D (T066)
+
+**T066 Review Gate — UX Checklist Co-Sign (PR-D)**
+
+- **Co-signer**: Claude Fable 5.1 (AI maintainer), solo-maintainer substitute per Constitution v1.4.2 Principle IX
+- **Date**: 2026-09-06
+- **Branch**: `108-pr-d-contact-marketing` (PR-D — US4 staff marketing state + Marketing audience page, US6 portal self-toggle)
+- **Branch HEAD at co-sign**: `dd3408d79` (fix(108): keep the count line at zero as the focus fallback (not live) โ€” H4 vs M-14)
+- **Verification at this HEAD**: lint 0 · typecheck 0 · `check:i18n` 5289 keys × 3 · the eleven static gates OK · unit/RTL suites touched by cycles 9–14 green (members, broadcasts, components, lib, scripts, e2e-helpers, app pages) · full `pnpm test` after cycle 12: 1219 files / 13581 tests (one `.env.example` regression closed in the cycle-11 follow-up) · live Neon: `contact-marketing-opt-out` 22, `contact-marketing-opt-out-guard` 4, `marketing-opt-out-dispatch` 4, `marketing-audience-query`, `self-service-whitelist`, six broadcasts dispatch/audience files · e2e `admin-marketing-audience` 10/10 + `portal-marketing-toggle` 3/3 (re-run after cycle 14).
+- **User-invoked gates**: `/speckit-review` ran 2026-09-06 (five agents, 60 findings, all closed) and `/speckit-staff-review-run` ran the same day (five reviewers; report in `reviews/review-20260906-152258.md`). PR #344 remains a DRAFT until the maintainer marks it ready.
+
+- **Reviewer stack**: `enterprise-ux-designer` (round 1: H1–H6, M1–M10, L1–L8), `mobile-a11y-ux-reviewer` (2 HIGH, 7 MEDIUM, 8 LOW), `i18n-translation-reviewer` (M1–M2, L1–L11) → cycle 11 → two `whole-branch-reviewer` passes → cycles 13–14.
+- **Rows the round-1 reviewer marked FAIL / PARTIAL, now**: CHK006 (skeleton = table, CLS 0) — CLOSED: 44-px row pitch, 8 columns by default, `w-full` + min-width body, growable action skeleton; CHK007 (320 px, never the page) — CLOSED: the preset action wraps, SV copy shortened, and the reflow assertion runs for EN/TH/SV; CHK013 (state announced) — CLOSED: optimistic `aria-checked` on click, rolled back on refusal, on both switches; CHK019 (switch placement) — CLOSED: badge + switch grouped as a pair outside the `role="group"` status cluster, which hides when empty; CHK031 (muted = empty sentinels only) — CLOSED: the portal state text and the `unavailable` badge are states, not muted; CHK033 (SV/TH length variance) — CLOSED: FR-050a written with five measured constraints and the three-locale acceptance; CHK035 (axe on every surface) — CLOSED: the member page is swept too (it caught the empty labelled `<div>` the same day); CHK009 (contract says "chips") — CLOSED: contract § 3 describes the select-filters + Clear pattern.
+- **Recorded, not changed (with reasons in `reviews/pr-d.md`)**: portal has no Undo (FR-030c binds Undo to the staff switch); Bangkok-time timestamps carry no TZ hint (consistent app-wide); the switch primitive's unchecked-track contrast (1.26:1 light) is a PRE-EXISTING primitive issue for a separate ticket; 44×44 mobile targets are a design-system decision for the Switch primitive; the `<caption>` and the region name carry the same string (distinct landmarks, members-table precedent).
+
+**Co-sign verdict**: ux.md (CHK001–CHK035) is **CO-SIGNED for PR-D** at HEAD `dd3408d79`.
+
+### Re-affirmed after `/speckit.review` (round 3, cycle 15)
+
+The co-sign above was signed at an earlier HEAD. Round 3 (five agents, 60
+findings) closed one RED unit test, four HIGH items and the comment rot; the
+substantive changes on this checklist's surface are listed in
+`reviews/pr-d.md` § Review rounds. **Re-affirmed at HEAD `5b818ee8c`** — lint 0,
+typecheck 0, thirteen static gates OK, the live-Neon proofs green (including
+the new transaction-rollback and objection-carry-over cases).
+
+### Re-affirmed after `/speckit-staff-review-run` (2026-09-06)
+
+Staff review S1 caught this footer naming a HEAD five commits behind the branch
+— the failure this gate exists to catch — so the correction is recorded rather
+than quietly overwritten. That particular drift was benign
+(`git diff 5b818ee8c..7e06cd7a7 -- src/ scripts/ drizzle/` was a JSDoc reorder
+in `src/lib/metrics.ts` and nothing else), but the review that followed was not:
+one BLOCKER and twenty warnings, closed across four commits.
+
+**Re-affirmed at HEAD `0b574a30c`** — the last commit carrying source changes;
+only this re-stamp follows it. Evidence at that HEAD: `pnpm test:coverage`
+**exit 0 with zero threshold errors** (this is the required check that was RED
+when the gate opened — 97.72 % branch against a 100 % pin) · full unit +
+contract 1224 files / 13642 tests · fifteen static gates OK · lint 0 ·
+typecheck 0 · live Neon: `contact-marketing-opt-out` 28 (incl. the two new
+carry-forward directions), `contact-marketing-routes` 8 (incl. the live
+idempotency replay and conflict), `contact-marketing-opt-out-guard` 4,
+`primary-contact-read-agreement` 7 (incl. FR-033 with an opted-out primary).
+
+Changes on THIS checklist's surface since the previous stamp: none to any
+rendered surface. The audience page, both toggles, the five-state badge and
+every string are byte-identical; the work was correctness, observability, spec
+AMENDMENTs and test quality.

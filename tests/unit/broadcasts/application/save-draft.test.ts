@@ -220,6 +220,7 @@ function makeMembersBridge(opts: FixtureOpts = {}): MembersBridgePort {
     async markBroadcastsAcknowledged() {
       return { ok: true, value: { previouslyNull: true } };
     },
+    async filterMarketingOptedOut() { return new Set(); },
     async getMemberPreferredLocale() { return null; },
   };
 }

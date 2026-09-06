@@ -2,7 +2,8 @@
  * S1 (056 reliability follow-up) — contact-subscription resolver unit spec.
  *
  * Proves the discriminated result that drives the member-detail page's
- * tri-state `SubscriptionBadge`:
+ * marketing state (since 108 PR-D the five-state `MarketingStateBadge`,
+ * via `deriveMarketingState`; before that the tri-state `SubscriptionBadge`):
  *   - successful lookup → `{ degraded: false, unsubscribed }` and the page
  *     would render Subscribed / Unsubscribed per `unsubscribed.has(id)`.
  *   - the marketing-suppression read THROWS → `{ degraded: true }` so EVERY

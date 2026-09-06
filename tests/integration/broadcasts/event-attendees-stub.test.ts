@@ -48,6 +48,7 @@ const emptyMembersBridge: MembersBridgePort = {
   async markBroadcastsAcknowledged() {
     return ok({ previouslyNull: true });
   },
+  async filterMarketingOptedOut() { return new Set(); },
   async getMemberPreferredLocale() { return null; },
 };
 
@@ -91,6 +92,7 @@ describe('event-attendees-stub (T050)', () => {
       },
       {
         segment: { kind: 'event_attendees_last_90d' },
+        phase: 'dispatch',
         requestingMemberPrimaryEmail: null,
         customRecipients: null,
       },

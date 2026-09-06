@@ -88,6 +88,8 @@ function stubDeps(overrides?: Partial<InlineEditDeps>): InlineEditDeps {
     })),
     enrolAutoInvoiceInTx: vi.fn(),
     unenrolAutoInvoiceInTx: vi.fn(),
+    // 108 PR-D — never reached by inline edit.
+    listContactsForMarketingAudience: vi.fn(),
     },
     audit: {
       record: vi.fn().mockResolvedValue(ok(undefined)),

@@ -8,9 +8,9 @@
  */
 
 import { useState, useCallback, useMemo } from 'react';
+import { ReadOnlyBanner } from '@/components/shell/read-only-banner';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { InfoIcon } from 'lucide-react';
 import {
   MembersTable,
   type MembersTableRow,
@@ -228,19 +228,5 @@ export function DirectoryWithBulk({
  */
 function ManagerReadOnlyBanner() {
   const t = useTranslations('admin.members.directory');
-  // No `aria-label` on the note: it would equal the visible `<p>` text and a
-  // screen reader would announce the region name AND its content (double-
-  // announce). The visible `<p>` is the region's accessible content.
-  return (
-    <div
-      role="note"
-      className="flex items-start gap-3 rounded-md border border-border bg-muted/40 px-4 py-3 text-sm"
-    >
-      <InfoIcon
-        aria-hidden="true"
-        className="size-4 shrink-0 text-muted-foreground"
-      />
-      <p className="text-muted-foreground">{t('managerReadOnlyBanner')}</p>
-    </div>
-  );
+  return <ReadOnlyBanner>{t('managerReadOnlyBanner')}</ReadOnlyBanner>;
 }

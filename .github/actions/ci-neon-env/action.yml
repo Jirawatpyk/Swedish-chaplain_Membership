@@ -47,6 +47,15 @@ runs:
         DATABASE_URL: ${{ inputs.database-url }}
         TEST_DB_HOST_BLOCKLIST: ${{ inputs.blocklist }}
       run: |
+        # Round-2 review finding 7: an `.env.example` placeholder is a
+        # non-empty value that matches no real host — a blocklist that runs and
+        # blocks nothing. Refuse it outright rather than looping over it.
+        case "${TEST_DB_HOST_BLOCKLIST}" in
+          *REPLACE-WITH-YOUR-PROD-ENDPOINT-ID*|*ep-prod-endpoint-id*)
+            echo "::error title=Blocklist is a placeholder::TEST_DB_HOST_BLOCKLIST still holds an .env.example placeholder, so it matches no real host and protects nothing. Set the repository variable to the production Neon endpoint id."
+            exit 1
+            ;;
+        esac
         IFS=',' read -ra BLOCKED <<< "${TEST_DB_HOST_BLOCKLIST}"
         for host in "${BLOCKED[@]}"; do
           trimmed="$(echo "$host" | xargs)"

@@ -123,7 +123,24 @@ export type F3AuditEventType =
   // when. Emitted once per ACTUALLY un-enrolled member (never for a
   // member who was already un-enrolled) inside the same tx as the
   // UPDATE, with the same `action` + `bulk_request_id` payload shape.
-  | 'member_auto_invoice_unenrolled';
+  | 'member_auto_invoice_unenrolled'
+  // 108 PR-D (migration 0295, FR-053) — the per-contact marketing
+  // preference changed. Emitted by `setContactMarketingOptOut` once per
+  // ACTUAL change, in the same tx as the `contacts` UPDATE. The same on/off
+  // state is `unchanged` and emits nothing — EXCEPT a `source:'self'` "off"
+  // over a `'staff'` "off", which IS recorded (source → self, FR-025
+  // AMENDMENT) and emits `contact_marketing_opted_out` again, so two
+  // `_opted_out` rows with no `_in` between them is a valid trail. Payload:
+  //   { member_id | related_member_id, contact_id, source: 'staff' | 'self',
+  //     actor_role }
+  // — ids only, never an address (FR-053a). The member key depends on WHO
+  // acted: the contact's own change (`source: 'self'`) carries `member_id`
+  // because it IS member activity and migration 0009's `last_activity_at`
+  // bump is wanted; a STAFF change carries `related_member_id` (as 0292
+  // does) so it stays on the member timeline without touching recency
+  // (108 security review MEDIUM-1). 5y retention (F3 default).
+  | 'contact_marketing_opted_out'
+  | 'contact_marketing_opted_in';
 
 // F7 cross-module event types (`broadcast_member_dispatch_resumed` +
 // `member_acknowledged_broadcasts_terms`) are NOT in this union —

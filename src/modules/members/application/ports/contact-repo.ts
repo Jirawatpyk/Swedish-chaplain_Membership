@@ -4,10 +4,15 @@
 import type { TenantTx } from '@/lib/db';
 import type { Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
-import type { Contact, ContactId } from '../../domain/contact';
+import type {
+  Contact,
+  ContactId,
+  MarketingOptOutSource,
+} from '../../domain/contact';
 import type { MemberId } from '../../domain/member';
 import type { Email } from '../../domain/value-objects/email';
 import type { Phone } from '../../domain/value-objects/phone';
+import type { UserId } from '../../domain/value-objects/user-id';
 import type { RepoError } from './member-repo';
 
 /**
@@ -22,6 +27,32 @@ export type ContactPatch = Partial<
     phone: Phone | null;
   }
 >;
+
+/**
+ * 108 PR-D — the marketing write as ONE command (review types HIGH-1 /
+ * MEDIUM-1). `actor` is the single representation of who is acting: there is
+ * no second `source` field on a payload that could disagree with it, and
+ * "on" carries an actor too (it did not, which is why the guard needed a
+ * separate `opts.actorSource`).
+ */
+export type SetMarketingCommand =
+  | {
+      readonly kind: 'off';
+      readonly actor: MarketingOptOutSource;
+      readonly byUserId: UserId;
+      readonly at: Date;
+    }
+  | { readonly kind: 'on'; readonly actor: MarketingOptOutSource };
+
+/**
+ * The write's outcome. `refused_self_opted_out` carries NO contact: a caller
+ * that reaches for `.contact` without narrowing on `outcome` does not
+ * compile, so the FR-025 guard cannot be read as success by accident.
+ */
+export type SetMarketingOutcome =
+  | { readonly outcome: 'changed'; readonly contact: Contact }
+  | { readonly outcome: 'unchanged'; readonly contact: Contact }
+  | { readonly outcome: 'refused_self_opted_out' };
 
 export interface ContactRepo {
   listByMember(
@@ -69,7 +100,13 @@ export interface ContactRepo {
    */
   addInTx(
     tx: TenantTx,
-    draft: Omit<Contact, 'createdAt' | 'updatedAt'>,
+    // 108 PR-D: `marketing` is omitted — the CALLER never chooses it. The
+    // implementation decides: `RECEIVES_MARKETING` (FR-027) unless this
+    // address already carries the person's OWN objection, which follows the
+    // address across remove → re-add (FR-027 AMENDMENT; see
+    // `infrastructure/db/carried-marketing-opt-out.ts`). Changing it later has
+    // its own write path.
+    draft: Omit<Contact, 'createdAt' | 'updatedAt' | 'marketing'>,
   ): Promise<Result<Contact, RepoError>>;
 
   /**
@@ -256,6 +293,33 @@ export interface ContactRepo {
   ): Promise<Result<{ affected: number }, RepoError>>;
 
   /**
+   * 108 PR-D (FR-030, FR-032) — write the marketing opt-out for a LIVE contact
+   * (`removed_at IS NULL`; a removed contact has no marketing state →
+   * `repo.not_found`), inside the caller's transaction, under a row lock.
+   *
+   * The three columns land together (the DB CHECK
+   * `contacts_marketing_opt_out_correlated` refuses anything else). SAME
+   * STATE — "off" when already off, "on" when already on — is reported as
+   * `unchanged` WITHOUT rewriting the row, so a repeated "off" keeps the
+   * original actor + timestamp and the caller emits no audit (FR-030b).
+   * ONE exception (FR-025 AMENDMENT): a `source: 'self'` "off" over a
+   * `'staff'` "off" IS a change — the person's objection replaces the staff
+   * record; the reverse stays `unchanged`.
+   *
+   * The same amendment's other half is enforced HERE, under the lock, not
+   * only by the caller's pre-read (whole-branch review MEDIUM-1): a
+   * `'staff'` actor switching "on" over a `'self'` record is REFUSED —
+   * `refused_self_opted_out`, no write — because a self opt-out that
+   * committed after the caller's read must still win. `opts.actorSource`
+   * Does NOT emit audit — caller emits `contact_marketing_opted_out` / `_in`.
+   */
+  setMarketingOptOutInTx(
+    tx: TenantTx,
+    contactId: ContactId,
+    command: SetMarketingCommand,
+  ): Promise<Result<SetMarketingOutcome, RepoError>>;
+
+  /**
    * COMP-1 US2a (L1) — list the REAL email addresses of every contact on the
    * member (any state, including already-removed rows), inside the caller's
    * transaction. Read BEFORE `scrubPiiForMemberInTx` sentinel-izes the emails,
@@ -365,4 +429,16 @@ export interface ContactRepo {
     memberId: MemberId,
     opts: { readonly erasedAt: Date },
   ): Promise<Result<{ readonly scrubbedCount: number }, RepoError>>;
+
+  /**
+   * 108 PR-D (B-1) — which of `emailLowers` belong to a LIVE contact in this
+   * tenant that carries a marketing opt-out (`marketing_opt_out_at IS NOT
+   * NULL`, `removed_at IS NULL`). Matched on `lower(email)`; the answer is a
+   * subset of the input. ONE query, one array bind (not one parameter per
+   * address). Read by F7 at dispatch through `filterMarketingOptedOutEmails`.
+   */
+  findMarketingOptedOutEmailLowers(
+    ctx: TenantContext,
+    emailLowers: ReadonlyArray<string>,
+  ): Promise<Result<ReadonlySet<string>, RepoError>>;
 }

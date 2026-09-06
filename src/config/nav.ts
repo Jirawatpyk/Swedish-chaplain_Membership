@@ -312,6 +312,20 @@ export const staffNavConfig: NavConfig = {
           // pages call `notFound()` when the flag is off, so a visible link 404s).
           visibilityFlag: 'eventsEnabled',
         },
+        // 108 PR-D — Marketing audience (FR-035): every contact who can
+        // receive E-Blasts, with the staff switch for `contacts.marketing`
+        // holders. Viewing is `contacts.read` (admin, super_admin, marketing,
+        // and manager read-only). Hidden with the rest of the Engagement
+        // section when FEATURE_F7_BROADCASTS is off — the page is about
+        // E-Blast recipients, so without broadcasts it answers nothing.
+        {
+          titleKey: 'nav.staff.marketingAudience',
+          icon: BookUserIcon,
+          href: '/admin/marketing/audience',
+          guard: defineGuard('contacts.read'),
+          activePattern: '/admin/marketing/audience',
+          visibilityFlag: 'broadcastsEnabled',
+        },
       ],
     },
     // System — account administration + the audit trail.

@@ -10,9 +10,34 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { requireMemberContext } from '@/lib/member-context';
 import { buildMembersDeps } from '@/modules/members/members-deps';
-import { getMember, memberSelfUpdate } from '@/modules/members';
+import {
+  deriveMarketingState,
+  getMember,
+  memberSelfUpdate,
+  type Contact,
+  type MarketingState,
+} from '@/modules/members';
+import { makeMarketingSuppressionLookup } from '@/lib/contact-marketing-deps';
 import { parseIdempotencyKey } from '@/lib/idempotency';
 import { logger } from '@/lib/logger';
+
+/**
+ * 108 PR-D (US6 / FR-031a, FR-032) — the OWN contact's displayed marketing
+ * state: suppression (the person's own unsubscribe) > opt-out > on; an
+ * unreadable suppression list → 'unavailable', never a guess.
+ */
+async function ownMarketingState(
+  tenant: Parameters<typeof makeMarketingSuppressionLookup>[0],
+  own: Contact,
+): Promise<MarketingState> {
+  let suppressed: boolean | 'unknown';
+  try {
+    suppressed = await makeMarketingSuppressionLookup(tenant).isSuppressed(own.email);
+  } catch {
+    suppressed = 'unknown';
+  }
+  return deriveMarketingState(own.marketing, suppressed);
+}
 
 // ---------------------------------------------------------------------------
 // Serialisation helpers
@@ -119,11 +144,20 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  // FR-032 — `marketing.state` for the OWN contact only; other contacts'
+  // marketing states are never shown to a portal user.
+  const own = result.value.contacts.find((c) => c.contactId === ctx.ownContactId);
+  const ownState = own ? await ownMarketingState(ctx.tenant, own) : null;
+
   return NextResponse.json({
     ...serialiseMember(result.value.member),
     contacts: result.value.contacts
       .filter((c) => !c.removedAt)
-      .map(serialiseContact),
+      .map((c) =>
+        c.contactId === ctx.ownContactId && ownState !== null
+          ? { ...serialiseContact(c), marketing: { state: ownState } }
+          : serialiseContact(c),
+      ),
   });
 }
 

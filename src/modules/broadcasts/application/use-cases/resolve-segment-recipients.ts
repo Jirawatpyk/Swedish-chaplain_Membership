@@ -14,6 +14,10 @@
  *   2. Filter halted members (already done by F3 use-case)
  *   3. Filter self (Q16 — exclude requesting member's primary contact email)
  *   4. Filter suppressed (marketingUnsubscribesRepo.lookupBatch)
+ * 4b. Filter the per-contact marketing opt-out (108 PR-D, FR-022a) —
+ *     `membersBridge.filterMarketingOptedOut`, AFTER suppression so an
+ *     address on both lists counts once; a failed lookup REJECTS, never
+ *     fail-open
  *   5. Surface orphans (members with NULL primary email — caller emits
  *      `broadcast_member_missing_primary_contact_email` audit per orphan)
  *   6. Hard-cap 5,000 (FR-016a)
@@ -56,6 +60,15 @@ export interface ResolveSegmentInput {
   readonly requestingMemberPrimaryEmail: EmailLower | null;
   /** Already-validated custom emails (when segment.kind === 'custom'). */
   readonly customRecipients: ReadonlyArray<EmailLower> | null;
+  /**
+   * Which call site is asking (code-review finding 6). This resolver runs at
+   * SUBMIT and again at DISPATCH; `broadcasts.marketing_opt_out_filter_count`
+   * is documented as a per-dispatch counter whose ABSENCE is the alarm, so
+   * submits emitting the same series would keep it alive and mask a dead
+   * dispatch-side filter — the exact failure the emit-at-zero design exists to
+   * catch. The label also stops the same drop being counted twice.
+   */
+  readonly phase: 'submit' | 'dispatch';
 }
 
 export interface ResolveSegmentOutput {
@@ -63,6 +76,13 @@ export interface ResolveSegmentOutput {
   readonly estimatedCount: number;
   /** Member IDs missing a primary contact email (audit emit per orphan). */
   readonly orphans: ReadonlyArray<string>;
+  /**
+   * 108 PR-D (FR-022a) — recipients removed because their contact row
+   * carries a marketing opt-out (staff or self). Counted separately from
+   * `orphans` (the member still has a primary contact) and from the
+   * suppression drop (an address that is both counts once, as suppressed).
+   */
+  readonly droppedByPreference: number;
 }
 
 export async function resolveSegmentRecipients(
@@ -127,6 +147,37 @@ export async function resolveSegmentRecipients(
     }
   }
 
+  // Step 4b (108 PR-D, FR-022a): per-contact marketing opt-out — runs on
+  // the post-suppression list so a double-listed address counts once, and
+  // is skipped when nothing is left. The bridge REJECTS on a failed lookup:
+  // never fail-open onto people who objected (privacy B-1 / security HIGH-1).
+  let droppedByPreference = 0;
+  if (final.length > 0) {
+    const optedOut = await deps.membersBridge.filterMarketingOptedOut(
+      deps.tenant,
+      final,
+    );
+    if (optedOut.size > 0) {
+      // Measured, not trusted: a bridge answering outside the batch must not
+      // inflate the count or the metric (review LOW-17).
+      const before = final.length;
+      final = final.filter((e) => !optedOut.has(e));
+      droppedByPreference = before - final.length;
+    }
+    // Emitted whenever the filter RAN, including at zero (staff review P2).
+    // Guarding on `> 0` made "nobody has opted out" and "step 4b was deleted"
+    // the same signal — no series either way — and SweCham cuts over with zero
+    // opt-outs, so the catalogue's "a drop to 0 means the filter stopped"
+    // alarm could never have fired. `.add(0)` still registers the series.
+    // Labelled by phase (code-review finding 6): the alarm watches the
+    // `dispatch` series, which ongoing submits must not keep alive.
+    broadcastsMetrics.marketingOptOutFilterCount(
+      deps.tenant.slug,
+      droppedByPreference,
+      input.phase,
+    );
+  }
+
   // Brand-cast (defence-in-depth — primary contact emails could be string at the source)
   final = final.map((e) => unsafeBrandEmailLower(e));
 
@@ -148,5 +199,6 @@ export async function resolveSegmentRecipients(
     recipients: final,
     estimatedCount: final.length,
     orphans,
+    droppedByPreference,
   });
 }

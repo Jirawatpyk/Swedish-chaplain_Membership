@@ -54,6 +54,7 @@ function partialBridge(
     getMembersHaltedInTenant: notUsed as unknown as MembersBridgePort['getMembersHaltedInTenant'],
     setMemberHalt: notUsed as unknown as MembersBridgePort['setMemberHalt'],
     markBroadcastsAcknowledged,
+    filterMarketingOptedOut: notUsed as unknown as MembersBridgePort['filterMarketingOptedOut'],
     getMemberPreferredLocale: notUsed as unknown as MembersBridgePort['getMemberPreferredLocale'],
   };
 }

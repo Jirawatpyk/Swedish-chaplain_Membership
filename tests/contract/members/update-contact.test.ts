@@ -105,6 +105,9 @@ const stubContact = {
   isPrimary: true,
   dateOfBirth: null,
   linkedUserId: null,
+  // 108 PR-D — `Contact.marketing` is REQUIRED; the serialiser reads it
+  // without a `?.` (review types MEDIUM-3), so a fixture must carry it.
+  marketing: { optedOutAt: null, source: null, byUserId: null },
   removedAt: null,
   createdAt: new Date(),
   updatedAt: new Date(),

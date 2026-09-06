@@ -58,12 +58,15 @@ describe('staffNavConfig', () => {
     expect((finance.items[1]! as NavItem).href).toBe('/admin/credit-notes');
   });
 
-  it('section 3 (Engagement) groups Broadcasts, Events', () => {
+  it('section 3 (Engagement) groups Broadcasts, Events, Marketing audience', () => {
     const engagement = staffNavConfig.sections[3]!;
     expect(engagement.titleKey).toBe('nav.staff.sections.engagement');
     expect(engagement.items.map((i) => i.titleKey)).toEqual([
       'nav.staff.broadcasts',
       'nav.staff.events',
+      // 108 PR-D — the E-Blast recipients page; hidden with the section when
+      // broadcasts are off (see the both-OFF case below).
+      'nav.staff.marketingAudience',
     ]);
     expect((engagement.items[1]! as NavItem).href).toBe('/admin/events');
   });

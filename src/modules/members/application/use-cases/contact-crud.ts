@@ -300,6 +300,12 @@ export async function addContact(
           member_id: memberId,
           contact_id: added.value.contactId,
           is_primary: added.value.isPrimary,
+          // Staff review C3: a contact can be BORN opted-out when the address
+          // carries the person's own prior objection. Without this the member
+          // page shows "off (by contact)" at a timestamp predating the contact
+          // and the audit viewer, filtered by this contact_id, explains
+          // nothing. `null` = started in RECEIVES_MARKETING.
+          marketing_opt_out_source: added.value.marketing.source,
         },
       });
       // W1: rollback the `addInTx` row if audit write fails — keeps

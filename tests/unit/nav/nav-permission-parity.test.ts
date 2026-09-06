@@ -67,7 +67,8 @@ describe('staff nav declares a permission for every entry (T061)', () => {
     // disappear unnoticed, and a flattener that returned [] would make every
     // other test in this file pass vacuously. Update deliberately when the
     // sidebar gains or loses an entry.
-    expect(STAFF_ITEMS).toHaveLength(16);
+    // 108 PR-D: +1 — the Marketing audience page under Engagement.
+    expect(STAFF_ITEMS).toHaveLength(17);
   });
 
   it('every staff nav item declares a guard', () => {
@@ -219,7 +220,16 @@ describe('ON-leg sidebar per role (T063)', () => {
       '/admin/members',
       '/admin/broadcasts',
       '/admin/events',
+      // 108 PR-D — the pre-flight surface (FR-027a / FR-035), keyed
+      // `contacts.read`, which marketing already held as unenforced vocabulary.
+      '/admin/marketing/audience',
     ]);
+  });
+
+  it('manager reaches the Marketing audience page read-only (contacts.read), like the members list', () => {
+    // FR-035: viewing needs `contacts.read` (manager holds it); the switch is
+    // gated separately on `contacts.marketing` inside the page.
+    expect(sidebarFor('manager')).toContain('/admin/marketing/audience');
   });
 
   it('marketing sees NO money, compliance, user-admin or settings surface', () => {

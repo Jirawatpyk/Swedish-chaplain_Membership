@@ -28,10 +28,10 @@ describe('permission catalogue (§ 4.1 pinned)', () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it('contains exactly the 40 pinned § 4.1 keys', () => {
+  it('contains exactly the 42 pinned § 4.1 keys (40 + 018 broadcasts.clear_halt + 108 contacts.marketing)', () => {
     const keys = PERMISSION_CATALOGUE.map((e) => e.key).sort();
     expect(keys).toEqual([...PINNED_KEYS].sort());
-    expect(keys).toHaveLength(41);
+    expect(keys).toHaveLength(42);
   });
 
   it('superAdminOnly flags match the pinned set exactly', () => {

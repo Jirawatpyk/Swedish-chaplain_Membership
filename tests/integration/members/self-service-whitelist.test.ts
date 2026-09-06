@@ -78,6 +78,7 @@ const baseContact: Contact = {
   linkedUserId: 'user-1' as Contact['linkedUserId'],
   inviteBouncedAt: null,
   art14AttestedAt: null,
+  marketing: { optedOutAt: null, source: null, byUserId: null },
   removedAt: null,
   createdAt: now,
   updatedAt: now,
@@ -132,12 +133,18 @@ function makeStubDeps(): MemberSelfUpdateDeps {
     }),
     enrolAutoInvoiceInTx: async () => ({ ok: true as const, value: [] }),
     unenrolAutoInvoiceInTx: async () => ({ ok: true as const, value: [] }),
+    // 108 PR-D — never reached by the self-service whitelist path.
+    listContactsForMarketingAudience: async () => ({
+      ok: true as const,
+      value: { rows: [], total: 0 },
+    }),
   };
 
   const contactRepo: ContactRepo = {
     listByMember: async () => ok([baseContact]),
     findById: async () => ok(baseContact),
     findByEmail: async () => err({ code: 'repo.not_found' as const }),
+    findMarketingOptedOutEmailLowers: async () => ok(new Set<string>()),
     addInTx: async () => err({ code: 'repo.unexpected' as const }),
     updateInTx: async (_tx, _id, patch) =>
       ok({ ...baseContact, ...patch } as Contact),
@@ -157,6 +164,9 @@ function makeStubDeps(): MemberSelfUpdateDeps {
     listTombstoneEmailsForMemberInTx: async () => [],
     markInviteBouncedInTx: async () => ok({ affected: 0 }),
     clearInviteBouncedInTx: async () => ok({ affected: 0 }),
+    // 108 PR-D — the self-service whitelist never reaches the marketing write
+    // (the portal toggle bypasses `memberSelfUpdate`); a reaching call is a bug.
+    setMarketingOptOutInTx: async () => err({ code: 'repo.unexpected' as const }),
     scrubPiiForMemberInTx: async () => ok({ scrubbedCount: 0 }),
   };
 

@@ -54,6 +54,9 @@ function makeContact(overrides: Partial<Contact> = {}): Contact {
     isPrimary: true,
     dateOfBirth: null,
     linkedUserId: null,
+    // `Contact.marketing` is REQUIRED (108 PR-D); the cast below would hide a
+    // missing field and the serialiser used to carry a `?.` for exactly that.
+    marketing: { optedOutAt: null, source: null, byUserId: null },
     removedAt: null,
     createdAt: new Date('2026-01-01'),
     updatedAt: new Date('2026-01-01'),

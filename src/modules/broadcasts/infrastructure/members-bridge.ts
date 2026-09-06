@@ -19,6 +19,7 @@
  */
 import { ok, err, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import {
   drizzleMemberRepo,
@@ -28,6 +29,7 @@ import {
   getMemberPrimaryContact as f3GetMemberPrimaryContact,
   getMemberPreferredLocale as f3GetMemberPreferredLocale,
   lookupContactEmailInTenant as f3LookupContactEmailInTenant,
+  filterMarketingOptedOutEmails as f3FilterMarketingOptedOutEmails,
   lookupMemberPrimaryContactEmailInTenant as f3LookupMemberPrimaryContactEmailInTenant,
   getMembersHaltedInTenant as f3GetMembersHaltedInTenant,
   setMemberHalt as f3SetMemberHalt,
@@ -262,5 +264,48 @@ export const membersBridge: MembersBridgePort = {
       return null;
     }
     return result.value;
+  },
+
+  /**
+   * 108 PR-D (FR-022a) — NOT best-effort, unlike the locale lookup above:
+   * a failed read THROWS so the resolve (and the dispatch tick) fails and
+   * retries, instead of sending to people who objected.
+   */
+  async filterMarketingOptedOut(
+    tenantCtx: TenantContext,
+    emails: ReadonlyArray<EmailLower>,
+  ): Promise<ReadonlySet<EmailLower>> {
+    // Key the answer by the CALLER's own values, not by what came back from
+    // the DB (review types MEDIUM-4): the resolver tests membership with
+    // `optedOut.has(e)` on its own array, so a case difference between the
+    // two sides would silently fail OPEN — the one direction this filter
+    // must never fail in. `unsafeBrandEmailLower` is a cast, not a
+    // normaliser, so it cannot rescue that.
+    const byLower = new Map<string, EmailLower>();
+    for (const e of emails) byLower.set(String(e).toLowerCase().trim(), e);
+    const result = await f3FilterMarketingOptedOutEmails(
+      { tenant: tenantCtx, contactRepo: drizzleContactRepo },
+      [...byLower.keys()],
+    );
+    if (!result.ok) {
+      logger.error(
+        {
+          err: result.error.code,
+          cause: errKind('cause' in result.error ? result.error.cause : undefined),
+          tenantId: tenantCtx.slug,
+          batch: emails.length,
+        },
+        'broadcasts.members_bridge.marketing_opt_out_lookup_failed',
+      );
+      throw new Error(
+        `marketing opt-out lookup failed (${result.error.code}) — refusing to resolve fail-open`,
+      );
+    }
+    const out = new Set<EmailLower>();
+    for (const e of result.value) {
+      const original = byLower.get(e.toLowerCase());
+      if (original !== undefined) out.add(original);
+    }
+    return out;
   },
 };

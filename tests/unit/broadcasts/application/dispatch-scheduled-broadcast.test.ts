@@ -17,6 +17,7 @@ import { access } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { dispatchScheduledBroadcast } from '@/modules/broadcasts/application/use-cases/dispatch-scheduled-broadcast';
 import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
+import { logger } from '@/lib/logger';
 import { asTenantContext, type TenantContext } from '@/modules/tenants';
 import { ok, err } from '@/lib/result';
 import {
@@ -389,6 +390,7 @@ function makeMembersBridge(opts: {
     async markBroadcastsAcknowledged() {
       return ok({ previouslyNull: true });
     },
+    async filterMarketingOptedOut() { return new Set(); },
     async getMemberPreferredLocale() { return opts.preferredLocale ?? null; },
   };
 }
@@ -2090,3 +2092,53 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
     ).toBeDefined();
   });
 });
+
+// Round-2 code review, finding 10 (third behaviour): the per-broadcast
+// `droppedByPreference` log line. Its sibling `orphans` is audited per member;
+// this is the cheaper equivalent while the sender-facing surface waits for
+// PR-C — one line, with the broadcast id, counts only, never an address.
+describe('dispatch-scheduled-broadcast — per-broadcast opt-out drop log (round-2 finding 10)', () => {
+  it('a non-zero droppedByPreference is logged against the broadcast id, addresses excluded', async () => {
+    const info = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
+    const audit = makeAudit();
+    const repo = makeRepo({ lockedStatus: 'approved', broadcast: makeBroadcast('approved') });
+    const gw = makeGateway();
+    const bridge = makeMembersBridge({
+      recipients: [recipient('m-1', 'one@example.com'), recipient('m-2', 'two@example.com')],
+      primaryContact: 'sender@example.com',
+    });
+    // One of the two recipients carries a marketing opt-out.
+    bridge.filterMarketingOptedOut = async () => new Set(['two@example.com'] as never);
+
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        broadcastsGateway: gw.port,
+        membersBridge: bridge,
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
+      },
+      baseInput,
+    );
+    expect(result.ok).toBe(true);
+
+    const call = info.mock.calls.find((c) => c[1] === 'broadcasts.dispatch.marketing_opt_out_dropped');
+    expect(call).toBeDefined();
+    const fields = call![0] as Record<string, unknown>;
+    expect(fields.droppedByPreference).toBe(1);
+    expect(fields.recipientCount).toBe(1);
+    expect(fields.broadcastId).toBe(baseInput.broadcastId);
+    // FR-053a — never an address in a log line.
+    expect(JSON.stringify(fields)).not.toContain('@');
+    info.mockRestore();
+  });
+});
+

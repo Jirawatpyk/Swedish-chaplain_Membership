@@ -48,6 +48,12 @@ export type TablePaginationProps = {
   readonly baseHref?: string;
   /** Override the searchParams source (testing / deep-link injection). */
   readonly searchParams?: URLSearchParams;
+  /**
+   * Announce the summary to AT on change (default). Pass `false` when the
+   * page already owns a live region for the same count — two polite regions
+   * updating together read the number twice (108 PR-D review L2).
+   */
+  readonly live?: boolean;
 };
 
 /**
@@ -79,6 +85,7 @@ export function TablePagination({
   total,
   baseHref,
   searchParams: injected,
+  live = true,
 }: TablePaginationProps) {
   const t = useTranslations('pagination');
   const pathname = usePathname();
@@ -112,8 +119,8 @@ export function TablePagination({
     >
       <p
         className="text-sm text-muted-foreground"
-        aria-live="polite"
-        aria-atomic="true"
+        aria-live={live ? 'polite' : undefined}
+        aria-atomic={live ? 'true' : undefined}
       >
         {total === 0
           ? t('emptyCount')

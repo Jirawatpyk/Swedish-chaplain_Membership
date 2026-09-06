@@ -39,8 +39,9 @@ import {
   formatMemberNumber,
   resolveMemberNumberPrefix,
   getMemberErasureStatus,
+  deriveMarketingState,
 } from '@/modules/members';
-import type { MemberId, Contact } from '@/modules/members';
+import type { MemberId, Contact, MarketingState } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 // Pass A · Section 3 — F7 marketing-suppression read (cross-context via the
 // broadcasts public barrel; the Drizzle repo wraps queries in runInTenant).
@@ -78,7 +79,8 @@ import { EraseMemberButton } from '@/components/members/erase-member-button';
 import { ErasedBanner } from '@/components/members/erased-banner';
 import { ContactFormDialog } from '@/components/members/contact-form-dialog';
 import { ContactActions } from '@/components/members/contact-actions';
-import { SubscriptionBadge } from '@/components/members/subscription-badge';
+import { MarketingStateBadge } from '@/components/members/marketing-state-badge';
+import { MarketingSwitch } from '@/components/members/marketing-switch';
 import { Suspense } from 'react';
 import { MemberInvoicesSection } from './_components/member-invoices-section';
 import { MemberInvoicesSkeleton } from './_components/member-invoices-skeleton';
@@ -291,8 +293,9 @@ export function ContactBlock({
   contact,
   memberId,
   pendingInvitation,
-  subscribed,
+  marketingState,
   canWrite,
+  canMarketing,
   verificationPending,
   locale,
   t,
@@ -301,16 +304,21 @@ export function ContactBlock({
   memberId: string;
   pendingInvitation?: PendingInvitation | undefined;
   /**
-   * Pass A · Section 3 / S1 — F7 marketing-subscription tri-state. `true`
-   * when the contact's email is NOT in `marketing_unsubscribes`; `false`
-   * when they have unsubscribed from E-Blasts (PDPA/GDPR); `'unknown'` when
-   * the suppression read was degraded (marketing-DB outage) so the badge
-   * shows a neutral "Status unavailable" instead of a misleading default.
-   * Always rendered as a text label so admins see reachability at a glance.
+   * 108 PR-D (FR-031 / FR-031a) — the DISPLAYED marketing state, derived by
+   * the page via `deriveMarketingState` (suppression > opt-out > on;
+   * `'unavailable'` when the suppression read was degraded). Replaces the
+   * pre-108 two-state "Subscribed" badge so this page and the Marketing
+   * audience page always agree. Always a text label (never colour alone).
    */
-  subscribed: boolean | 'unknown';
+  marketingState: MarketingState;
   /** S1-P1-10: false for the read-only manager — hides Invite/Promote/Remove. */
   canWrite: boolean;
+  /**
+   * 108 PR-D (FR-030 / FR-034) — `contacts.marketing` holder: renders the
+   * switch. Independent of `canWrite`: the marketing role holds this but
+   * not `contacts.write`, and a manager holds neither (badge only).
+   */
+  canMarketing: boolean;
   /** DV-11 — true when the linked user's email is unverified → show the
    *  "Re-send verification email" button. */
   verificationPending: boolean;
@@ -347,12 +355,24 @@ export function ContactBlock({
           <h3 className="text-base font-semibold">
             {`${contact.firstName} ${contact.lastName}`.trim()}
           </h3>
+          {/* `role="group"` — a bare <div> is `generic`, on which `aria-label`
+              is ARIA-prohibited (axe `aria-prohibited-attr`, a hard violation
+              once the cluster is empty). `empty:hidden` drops the labelled
+              group for a contact with no badge at all. */}
           <div
-            className="flex flex-wrap items-center gap-2"
+            role="group"
+            className="flex flex-wrap items-center gap-2 empty:hidden [&:not(:empty)]:border-e [&:not(:empty)]:pe-2"
             aria-label={t('sections.contactStatusBadges')}
           >
             {contact.isPrimary && (
-              <Badge variant="default">{t('sections.primary')}</Badge>
+              <>
+                <Badge variant="default">{t('sections.primary')}</Badge>
+                {/* 108 FR-031 — the descriptor says WHAT primary means for
+                    money email; the phrase "billing contact" is never used. */}
+                <span className="text-xs text-muted-foreground">
+                  {t('marketing.primaryDescriptor')}
+                </span>
+              </>
             )}
             {contact.linkedUserId && !pendingInvitation && (
               <Badge variant="secondary">{t('portal.linked')}</Badge>
@@ -438,11 +458,28 @@ export function ContactBlock({
                 <span>{t('inviteBounced.badge')}</span>
               </Badge>
             )}
-            {/* Pass A · Section 3 — E-Blast subscription status. Only shown
-                for contacts that HAVE an email (no email = no E-Blast
-                target, so the badge would be meaningless). */}
-            {contact.email && <SubscriptionBadge subscribed={subscribed} />}
           </div>
+          {/* 108 PR-D (FR-031 / FR-030 / FR-034) — the marketing PAIR: the
+              five-state badge (was the two-state E-Blast subscription badge)
+              plus, for `contacts.marketing` holders, its switch. Grouped
+              together and OUTSIDE the status-badge cluster so an interactive
+              control is never announced as a "status badge" (review M9), and
+              OUTSIDE the `canWrite` cluster (marketing holds this right
+              without `contacts.write`). Only for contacts that HAVE an email
+              (no email = no E-Blast target). */}
+          {contact.email && (
+            <span className="inline-flex items-center gap-2">
+              <MarketingStateBadge state={marketingState} />
+              {canMarketing && (
+                <MarketingSwitch
+                  contactId={contact.contactId}
+                  contactName={`${contact.firstName} ${contact.lastName}`.trim()}
+                  state={marketingState}
+                  size="sm"
+                />
+              )}
+            </span>
+          )}
         </div>
         {/* S1-P1-10: write affordances hidden for the read-only manager. */}
         {canWrite && (
@@ -752,6 +789,15 @@ export default async function MemberDetailPage({
     subscriptionResult.degraded
       ? 'unknown'
       : !subscriptionResult.unsubscribed.has(contactId);
+  // 108 PR-D (FR-031) — the displayed five-state marketing state per contact:
+  // suppression (the person's own unsubscribe) > opt-out (staff / self) > on;
+  // a degraded suppression read → 'unavailable' (FR-031a), never a guess.
+  const marketingStateFor = (c: Contact): MarketingState => {
+    const sub = subscriptionFor(c.contactId);
+    return deriveMarketingState(c.marketing, sub === 'unknown' ? 'unknown' : !sub);
+  };
+  // FR-030 / FR-034 — the switch is for `contacts.marketing` holders only.
+  const canMarketing = canPerform(session.user.role, 'contacts.marketing');
 
   // DV-11 — per-contact verification-pending flag for the visible-gate on the
   // "Re-send verification email" button.
@@ -1307,6 +1353,18 @@ export default async function MemberDetailPage({
                   </p>
                 </PopoverContent>
               </Popover>
+              {/* 108 PR-D (US4 s8) — deep link into the Marketing audience filtered
+                  to this member (`member_id` is a parsed param there); every staff
+                  role on this page holds `contacts.read`. Gated like the page it
+                  links to (F7 flag), and a ≥ 24-px target (WCAG 2.5.8). */}
+              {env.features.f7Broadcasts && (
+                <Link
+                  href={`/admin/marketing/audience?member_id=${encodeURIComponent(memberId)}&eligible=0`}
+                  className="ms-auto inline-flex min-h-6 items-center text-sm font-medium text-primary underline-offset-4 hover:underline"
+                >
+                  {t('marketing.audienceLink')}
+                </Link>
+              )}
               {canModify && member.status !== 'archived' && (
                 <ContactFormDialog
                   memberId={member.memberId}
@@ -1333,8 +1391,9 @@ export default async function MemberDetailPage({
                   pendingInvitation={pendingInvitationsByContactId.get(
                     primary.contactId,
                   )}
-                  subscribed={subscriptionFor(primary.contactId)}
+                  marketingState={marketingStateFor(primary)}
                   canWrite={canWrite}
+                  canMarketing={canMarketing}
                   verificationPending={verificationPendingFor(primary.contactId)}
                   locale={locale}
                   t={t}
@@ -1356,8 +1415,9 @@ export default async function MemberDetailPage({
                         pendingInvitation={pendingInvitationsByContactId.get(
                           c.contactId,
                         )}
-                        subscribed={subscriptionFor(c.contactId)}
+                        marketingState={marketingStateFor(c)}
                         canWrite={canWrite}
+                        canMarketing={canMarketing}
                         verificationPending={verificationPendingFor(c.contactId)}
                         locale={locale}
                         t={t}

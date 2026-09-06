@@ -56,8 +56,11 @@ vi.mock('@/app/(staff)/admin/members/[memberId]/_lib/resolve-contact-verificatio
 }));
 
 // --- Child presentation stubs (client components ContactBlock renders). -----
-vi.mock('@/components/members/subscription-badge', () => ({
-  SubscriptionBadge: () => <span data-testid="subscription-badge" />,
+vi.mock('@/components/members/marketing-state-badge', () => ({
+  MarketingStateBadge: () => <span data-testid="marketing-state-badge" />,
+}));
+vi.mock('@/components/members/marketing-switch', () => ({
+  MarketingSwitch: () => <span data-testid="marketing-switch" />,
 }));
 vi.mock('@/components/members/invite-portal-button', () => ({
   InvitePortalButton: () => <button data-testid="invite-portal-btn">invite</button>,
@@ -121,7 +124,9 @@ function renderBlock(props: Partial<ContactBlockProps>): string {
   const full: ContactBlockProps = {
     contact: makeContact(),
     memberId: '11111111-1111-4111-8111-111111111111',
-    subscribed: true,
+    // 108 PR-D — the two-state `subscribed` prop became the five-state badge.
+    marketingState: 'on',
+    canMarketing: true,
     canWrite: true,
     verificationPending: false,
     locale: 'en',

@@ -23,6 +23,7 @@
  *  11. Server error fall-through
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { broadcastsMetrics } from '@/lib/metrics';
 import { access } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { submitBroadcast } from '@/modules/broadcasts';
@@ -143,6 +144,7 @@ function makeMembersBridge(opts: FixtureOpts = {}): MembersBridgePort {
     async markBroadcastsAcknowledged() {
       return ok({ previouslyNull: true });
     },
+    async filterMarketingOptedOut() { return new Set(); },
     async getMemberPreferredLocale() { return null; },
   };
 }
@@ -1667,3 +1669,44 @@ describe('submit-broadcast โ€” Wave 6 (T069 GREEN โ€” 100% branch)',
 
 // Ensure ts-tooling consumes asBroadcastId from import (treeshake guard).
 void asBroadcastId;
+
+// Round-2 code review, finding 10: three behaviours shipped with no test.
+// The two that live in this use case are pinned here; the third (the
+// per-broadcast drop log) is pinned in dispatch-scheduled-broadcast.test.ts.
+describe('submit-broadcast — 108 PR-D opt-out filter at submit (round-2 finding 10)', () => {
+  it('a THROWING opt-out lookup becomes a typed submit.server_error, not an escaped rejection', async () => {
+    // The resolver throws by design (fail-closed). The three dispatch call
+    // sites map that to `dispatch.server_error`; this one used to let it
+    // escape `submitBroadcast` entirely, so the route logged it as
+    // `broadcasts.submit.unexpected_error` — the "page someone" class.
+    const { deps } = makeDeps({
+      primaryContact: 'me@example.com',
+      memberInBridge: [{ memberId: 'm-9', primaryContactEmail: 'nine@example.com' }],
+    });
+    const bridge = deps.membersBridge as MembersBridgePort & {
+      filterMarketingOptedOut: MembersBridgePort['filterMarketingOptedOut'];
+    };
+    bridge.filterMarketingOptedOut = async () => {
+      throw new Error('neon: statement timeout');
+    };
+    const result = await submitBroadcast(deps, baseInput);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('submit.server_error');
+  });
+
+  it("the metric is labelled phase:'submit' from this call site", async () => {
+    // Without the label, member submits keep the series alive and mask a dead
+    // DISPATCH-side filter — the exact masking the label exists to prevent.
+    const spy = vi.spyOn(broadcastsMetrics, 'marketingOptOutFilterCount');
+    const { deps } = makeDeps({
+      primaryContact: 'me@example.com',
+      memberInBridge: [{ memberId: 'm-9', primaryContactEmail: 'nine@example.com' }],
+    });
+    await submitBroadcast(deps, baseInput);
+    expect(spy).toHaveBeenCalled();
+    for (const call of spy.mock.calls) expect(call[2]).toBe('submit');
+    spy.mockRestore();
+  });
+});
+

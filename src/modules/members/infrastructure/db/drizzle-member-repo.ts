@@ -43,6 +43,7 @@ import { membershipPlans } from '@/modules/plans';
 import { invitations } from '@/modules/auth/infrastructure/db/schema';
 import { members, type MemberRow } from './schema-members';
 import { contacts } from './schema-contacts';
+import { findCarriedSelfOptOut } from './carried-marketing-opt-out';
 import { rowToContact } from './drizzle-contact-repo';
 import type {
   DirectoryFilter,
@@ -393,12 +394,19 @@ function directoryPlanNameSubquery(tx: RepoTx) {
 async function insertContactRow(
   tx: RepoTx,
   memberId: string,
-  contact: Omit<Contact, 'createdAt' | 'updatedAt' | 'memberId'>,
+  contact: Omit<Contact, 'createdAt' | 'updatedAt' | 'memberId' | 'marketing'>,
   isPrimary: boolean,
 ) {
+  // 108 PR-D (staff review C1): this path — `createWithPrimaryContactInTx`,
+  // i.e. every `POST /api/members` — used to insert without asking whether the
+  // address already carried the person's own objection, so a re-add under a
+  // new member resubscribed someone who had opted out. Fail OPEN, unlike
+  // `addInTx` which was fixed in cycle 15.
+  const carried = await findCarriedSelfOptOut(tx, contact.tenantId, contact.email);
   const inserted = await tx
     .insert(contacts)
     .values({
+      ...(carried ?? {}),
       tenantId: contact.tenantId,
       contactId: contact.contactId,
       memberId,
@@ -1292,6 +1300,113 @@ export const drizzleMemberRepo: MemberRepo = {
       );
 
       return ok({ items, total: result.total });
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
+
+  async listContactsForMarketingAudience(ctx, filter) {
+    try {
+      const result = await runInTenant(ctx, async (tx) => {
+        // An empty IN list can only mean "nothing is suppressed" — the use
+        // case short-circuits it, but never let drizzle render `IN ()`.
+        if (filter.emailLowerIn !== undefined && filter.emailLowerIn.length === 0) {
+          return { rows: [], total: 0 };
+        }
+        const conds: SQL[] = [isNull(contacts.removedAt)];
+        if (filter.memberId !== undefined) conds.push(eq(contacts.memberId, filter.memberId));
+        if (filter.kind === 'primary') conds.push(eq(contacts.isPrimary, true));
+        if (filter.kind === 'secondary') conds.push(eq(contacts.isPrimary, false));
+        if (filter.optOut === 'none') conds.push(isNull(contacts.marketingOptOutAt));
+        if (filter.optOut === 'staff') conds.push(eq(contacts.marketingOptOutSource, 'staff'));
+        if (filter.optOut === 'self') conds.push(eq(contacts.marketingOptOutSource, 'self'));
+        if (filter.eligibleOnly) {
+          conds.push(
+            eq(members.status, 'active'),
+            isNull(members.erasedAt),
+            eq(members.broadcastsHaltedUntilAdminReview, false),
+          );
+        }
+        // Defence in depth beside RLS (review LOW-18): state the tenant, as
+        // the sibling `findMarketingOptedOutEmailLowers` does.
+        conds.push(eq(contacts.tenantId, ctx.slug));
+        const emailLower = sql`lower(${contacts.email})`;
+        // ONE array bind per list (security review LOW-3): the unsubscribe
+        // list is unbounded and `inArray` renders one parameter per address.
+        // `= ANY('{}')` is FALSE and `<> ALL('{}')` is TRUE — the same
+        // semantics as the `inArray` forms they replace.
+        if (filter.emailLowerIn !== undefined) {
+          conds.push(
+            sql`${emailLower} = ANY(${sql.param([...filter.emailLowerIn])}::text[])`,
+          );
+        }
+        if (filter.emailLowerNotIn !== undefined && filter.emailLowerNotIn.length > 0) {
+          conds.push(
+            sql`${emailLower} <> ALL(${sql.param([...filter.emailLowerNotIn])}::text[])`,
+          );
+        }
+        if (filter.q) {
+          // Same escaping as the directory search: `%`/`_`/`\` are literal.
+          const like = `%${filter.q.replace(/[\\%_]/g, '\\$&')}%`;
+          conds.push(
+            or(
+              ilike(members.companyName, like),
+              ilike(sql`(${contacts.firstName} || ' ' || ${contacts.lastName})`, like),
+            )!,
+          );
+        }
+        const whereClause = and(...conds);
+        const joinOn = and(
+          eq(members.tenantId, contacts.tenantId),
+          eq(members.memberId, contacts.memberId),
+        );
+
+        const countRows = await tx
+          .select({ n: sql<number>`count(*)::int` })
+          .from(contacts)
+          .innerJoin(members, joinOn)
+          .where(whereClause);
+        const total = countRows[0]?.n ?? 0;
+
+        const rows = await tx
+          .select({
+            contact: contacts,
+            memberId: members.memberId,
+            memberNumber: members.memberNumber,
+            companyName: members.companyName,
+            status: members.status,
+            erasedAt: members.erasedAt,
+            halted: members.broadcastsHaltedUntilAdminReview,
+          })
+          .from(contacts)
+          .innerJoin(members, joinOn)
+          .where(whereClause)
+          .orderBy(
+            asc(members.companyName),
+            asc(contacts.lastName),
+            asc(contacts.firstName),
+            asc(contacts.contactId),
+          )
+          .limit(filter.limit)
+          .offset(Math.max(0, filter.offset));
+
+        return { rows, total };
+      });
+
+      return ok({
+        total: result.total,
+        rows: result.rows.map((r) => ({
+          contact: rowToContact(r.contact),
+          member: {
+            memberId: r.memberId as MemberId,
+            memberNumber: r.memberNumber,
+            companyName: r.companyName,
+            status: r.status,
+            erased: r.erasedAt !== null,
+            halted: r.halted,
+          },
+        })),
+      });
     } catch (e) {
       return err(unexpected(e));
     }

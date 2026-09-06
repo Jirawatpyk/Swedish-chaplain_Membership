@@ -24,6 +24,7 @@ import type { TenantContext } from '@/modules/tenants';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
+import { findCarriedSelfOptOut } from '@/modules/members/infrastructure/db/carried-marketing-opt-out';
 // 055-member-number — allocate the per-tenant human-readable number INSIDE the
 // commit tx, mirroring the canonical createMember path (allocator under tenant
 // RLS, advisory-lock-serialised). The column is NOT NULL with a per-tenant
@@ -208,7 +209,14 @@ export async function commitMembers(
       const NAME_PLACEHOLDER = '-';
       const firstName = c.firstName.trim().length > 0 ? c.firstName : NAME_PLACEHOLDER;
       const lastName = c.lastName.trim().length > 0 ? c.lastName : NAME_PLACEHOLDER;
+      // 108 PR-D (staff review C1): this script writes contacts RAW, bypassing
+      // `drizzleContactRepo.addInTx` entirely — so the cycle-15 carry-forward
+      // never reached the very import it was written for. A person who opted
+      // out of marketing themselves keeps that objection when the import
+      // re-creates their address.
+      const carriedMarketing = await findCarriedSelfOptOut(tx, ctx.slug, c.email);
       await tx.insert(contacts).values({
+        ...(carriedMarketing ?? {}),
         tenantId: ctx.slug,
         contactId,
         memberId,

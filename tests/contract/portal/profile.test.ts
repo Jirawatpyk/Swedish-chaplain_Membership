@@ -45,6 +45,11 @@ vi.mock(
     };
   },
 );
+// 108 PR-D — GET resolves the OWN contact's marketing state through the
+// suppression lookup; stub it so this contract test never opens a DB.
+vi.mock('@/lib/contact-marketing-deps', () => ({
+  makeMarketingSuppressionLookup: vi.fn(() => ({ isSuppressed: async () => false })),
+}));
 vi.mock('@/lib/idempotency', () => ({
   parseIdempotencyKey: (headers: Headers) => {
     const key = headers.get('idempotency-key');
@@ -108,6 +113,8 @@ const memberContext = {
     isPrimary: true,
     dateOfBirth: null,
     linkedUserId: 'user-1',
+    // 108 PR-D — every Contact carries the correlated marketing opt-out shape.
+    marketing: { optedOutAt: null, source: null, byUserId: null },
     removedAt: null,
     createdAt: now,
     updatedAt: now,

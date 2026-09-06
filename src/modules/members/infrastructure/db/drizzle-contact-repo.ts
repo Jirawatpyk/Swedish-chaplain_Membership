@@ -8,16 +8,22 @@
  * `repo.conflict` so callers get a clean error instead of a leaky 500.
  */
 
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import { isUniqueViolationOnConstraint } from '@/lib/db-errors';
 import { err, ok } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { mapDbError, unexpected } from './_repo-error';
 import { contacts } from './schema-contacts';
+import { findCarriedSelfOptOut } from './carried-marketing-opt-out';
 import type {
   ContactRepo,
 } from '../../application/ports/contact-repo';
-import { contactPrimacy, type Contact, type ContactId } from '../../domain/contact';
+import {
+  contactMarketing,
+  contactPrimacy,
+  type Contact,
+  type ContactId,
+} from '../../domain/contact';
 import {
   ERASED_EMAIL_DOMAIN,
   ERASED_EMAIL_LOCAL_PREFIX,
@@ -43,6 +49,13 @@ export function rowToContact(c: typeof contacts.$inferSelect): Contact {
     linkedUserId: c.linkedUserId as UserId | null,
     inviteBouncedAt: c.inviteBouncedAt ?? null,
     art14AttestedAt: c.art14AttestedAt ?? null,
+    // 108 PR-D: narrow the three opt-out columns into the correlated union
+    // (all null ⟹ receives; all set ⟹ opted out) — throws on a partial row.
+    marketing: contactMarketing(
+      c.marketingOptOutAt ?? null,
+      c.marketingOptOutSource ?? null,
+      c.marketingOptOutByUserId ?? null,
+    ),
     createdAt: c.createdAt,
     updatedAt: c.updatedAt,
     // M5: narrow into the correlated primacy union (isPrimary ⟹ not removed).
@@ -104,9 +117,14 @@ export const drizzleContactRepo: ContactRepo = {
 
   async addInTx(tx, draft) {
     try {
+      // 108 PR-D (review code H1, corrected by staff review C1+C2) — a
+      // contact's OWN objection follows the ADDRESS. One helper answers this
+      // for every insert path; see its header for why the LATEST row decides.
+      const carried = await findCarriedSelfOptOut(tx, draft.tenantId, draft.email);
       const rows = await tx
         .insert(contacts)
         .values({
+          ...(carried ?? {}),
           tenantId: draft.tenantId,
           contactId: draft.contactId,
           memberId: draft.memberId,
@@ -355,6 +373,61 @@ export const drizzleContactRepo: ContactRepo = {
     }
   },
 
+  async setMarketingOptOutInTx(tx, contactId, command) {
+    try {
+      // Lock the live row first so the same-state decision and the write see
+      // one snapshot (two staff toggling at once cannot both "change" it).
+      // Tenant-scoped via the caller's runInTenant tx (RLS): another tenant's
+      // contact id reads as 0 rows → not_found, never a cross-tenant write.
+      const rows = await tx
+        .select()
+        .from(contacts)
+        .where(and(eq(contacts.contactId, contactId), isNull(contacts.removedAt)))
+        .for('update')
+        .limit(1);
+      const current = rows[0];
+      if (!current) return err({ code: 'repo.not_found' });
+
+      const currentlyOff = current.marketingOptOutAt !== null;
+      const nextOff = command.kind === 'off';
+      // FR-025 AMENDMENT under the LOCK (whole-branch review MEDIUM-1): the
+      // use case's pre-read is not the source of truth — a self opt-out that
+      // committed after it must still stop a staff "on". No write, no audit.
+      if (!nextOff && command.actor === 'staff' && current.marketingOptOutSource === 'self') {
+        return ok({ outcome: 'refused_self_opted_out' as const });
+      }
+      // Same on/off state is `unchanged` — EXCEPT a contact's own "off" over a
+      // staff-made "off": that is the person's objection and must be RECORDED
+      // (source → 'self') so no later staff "on" can silently override it
+      // (FR-025 AMENDMENT). The reverse (staff over self) keeps the person's
+      // record: unchanged.
+      const selfOverridesStaff =
+        currentlyOff &&
+        nextOff &&
+        current.marketingOptOutSource === 'staff' &&
+        command.actor === 'self';
+      if (currentlyOff === nextOff && !selfOverridesStaff) {
+        return ok({ outcome: 'unchanged' as const, contact: rowToContact(current) });
+      }
+
+      const updated = await tx
+        .update(contacts)
+        .set({
+          marketingOptOutAt: command.kind === 'off' ? command.at : null,
+          marketingOptOutSource: command.kind === 'off' ? command.actor : null,
+          marketingOptOutByUserId: command.kind === 'off' ? command.byUserId : null,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(contacts.contactId, contactId), isNull(contacts.removedAt)))
+        .returning();
+      const row = updated[0];
+      if (!row) return err({ code: 'repo.not_found' });
+      return ok({ outcome: 'changed' as const, contact: rowToContact(row) });
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
+
   async listEmailsForMemberInTx(tx, memberId) {
     // NO try/catch: a thrown DB error (statement timeout / connection blip)
     // MUST propagate so the caller's runInTenant tx ROLLS BACK. An empty array
@@ -564,6 +637,31 @@ export const drizzleContactRepo: ContactRepo = {
       });
     } catch (e) {
       return err(mapDbError(e, 'primary_contact_race'));
+    }
+  },
+  async findMarketingOptedOutEmailLowers(ctx, emailLowers) {
+    if (emailLowers.length === 0) return ok(new Set());
+    try {
+      const rows = await runInTenant(ctx, (tx) =>
+        tx
+          .select({ emailLower: sql<string>`lower(${contacts.email})` })
+          .from(contacts)
+          .where(
+            and(
+              eq(contacts.tenantId, ctx.slug),
+              isNull(contacts.removedAt),
+              isNotNull(contacts.marketingOptOutAt),
+              // ONE array bind for the whole batch (security review LOW-3) —
+              // a custom list or an all-members segment can be thousands of
+              // addresses; one parameter per address is a statement-size
+              // hazard, not a query plan.
+              sql`lower(${contacts.email}) = ANY(${sql.param([...emailLowers])}::text[])`,
+            ),
+          ),
+      );
+      return ok(new Set(rows.map((r) => r.emailLower)));
+    } catch (e) {
+      return err(unexpected(e));
     }
   },
 };

@@ -6,6 +6,7 @@
  * reason clearly rather than silently passing.
  */
 import { beforeAll } from 'vitest';
+import { assertDbHostNotBlocklisted } from './helpers/db-host-guard';
 
 // Pin STRIPE_API_VERSION for F5 webhook integration tests so the
 // fixture `api_version: '2024-06-20'` in tests/integration/payments/*
@@ -51,20 +52,8 @@ beforeAll(() => {
   // Production-safety guard. Integration tests CREATE + mutate data (test
   // tenants, members, export jobs) — they must NEVER run against the
   // production database. `TEST_DB_HOST_BLOCKLIST` is a comma-separated list
-  // of host substrings (e.g. the prod Neon endpoint id) — set it in
-  // `.env.local` + CI. Keeping the value in env (not hard-coded) keeps the
-  // prod identifier OUT of the repo. See
-  // docs/runbooks/db-environment-branching.md.
-  const blocklist = (process.env.TEST_DB_HOST_BLOCKLIST ?? '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
-  const blocked = blocklist.find((needle) => dbUrl.includes(needle));
-  if (blocked) {
-    throw new Error(
-      `Refusing to run integration tests against a blocklisted database ` +
-        `(host matched "${blocked}" from TEST_DB_HOST_BLOCKLIST). Point ` +
-        `DATABASE_URL at a dev/test Neon branch — never production.`,
-    );
-  }
+  // of host substrings (the prod Neon endpoint id) — set it in `.env.local` +
+  // CI. The shared helper fails CLOSED on a match AND on an unset/empty list
+  // (108 PR-D review MEDIUM-12). See docs/runbooks/db-environment-branching.md.
+  assertDbHostNotBlocklisted(dbUrl, process.env.TEST_DB_HOST_BLOCKLIST, 'integration');
 });

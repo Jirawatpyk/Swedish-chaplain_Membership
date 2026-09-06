@@ -116,6 +116,9 @@ jobs:
       # Reproduced locally by unsetting it. Same class as the tenant-context
       # unit failure fixed on 2026-07-28.
       E2E_X_TENANT_HEADER_ENABLED: 'true'
+      # Scale/wall-clock cases (e.g. the 108 PR-D 20k-contact audience budget)
+      # run HERE, not in the required smoke job — see that file's header.
+      RUN_SCALE_TESTS: '1'
       # The RLS-overhead suite asserts a p95 in MILLISECONDS and already reads
       # this knob. 200 ms is a laptop number; a runner an ocean from Neon
       # measured 1387 ms. Raised so the check still guards a runaway (a

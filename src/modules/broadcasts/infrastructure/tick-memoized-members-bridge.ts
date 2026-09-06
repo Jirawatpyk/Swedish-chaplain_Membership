@@ -9,15 +9,16 @@
  * one Neon RTT each ≈ 1.25s of pure DB latency on the cron critical
  * path) the loop approaches the Vercel function timeout.
  *
- * The wrapper interposes a Map cache keyed by
- * `(segmentType, JSON.stringify(params))` so multiple `all_members` or
+ * The wrapper interposes a Map cache keyed by the TENANT SLUG plus
+ * `(segmentType, JSON.stringify(SORTED params))` so multiple `all_members` or
  * `tier:premium` broadcasts in the same tick share a single resolved
  * recipient list. Tier-specific segments retain independent cache
  * entries. Cache lifetime is the wrapper instance — a fresh wrapper
  * per cron tick keeps the cache scoped tightly.
  *
- * Pure pass-through for the other 8 methods (R7 MED-R1 — corrected
- * from "6"; `MembersBridgePort` exposes 9 methods total) so we don't
+ * Pure pass-through for the other 9 methods (R7 MED-R1 — corrected
+ * from "6"; `MembersBridgePort` exposes 10 methods total since 108 PR-D
+ * added `filterMarketingOptedOut`, forwarded by the spread) so we don't
  * accidentally cache mutating calls (`setMemberHalt`,
  * `markBroadcastsAcknowledged`) or per-member lookups whose freshness
  * matters during a tick.

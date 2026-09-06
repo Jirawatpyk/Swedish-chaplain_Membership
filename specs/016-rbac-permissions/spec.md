@@ -167,6 +167,20 @@ surface is listed; `/admin` renders meaningful content for every staff role.
 
 - **FR-001**: The system MUST define exactly five system roles — `super_admin`, `admin`, `manager`, `marketing`, `member` — as the two new pgEnum values plus the existing three; roles remain single-valued per user (1 user = 1 role).
 - **FR-002**: The system MUST define a permission catalogue and per-role bundles as pure data in the auth Domain layer, matching the pinned table in design § 4.1 (40 keys incl. the split keys `invoicing.issue`, `events.relink`, `users.member_accounts`); permission sets are derived synchronously from the role with no database read.
+
+> **AMENDMENT (108 PR-D, 2026-09-06).** The catalogue is **42 keys**: 40 pinned
+> here, `broadcasts.clear_halt` (018, split out of `broadcasts.write`), and
+> `contacts.marketing` (108 FR-030 — "manage contact marketing audience",
+> `sensitive: pii`, granted to admin, super_admin and marketing; manager sees
+> the state read-only per 108 FR-034; the marketing bundle is therefore 10
+> keys, admin 36). `contacts.marketing` confers NO other contact edit — every
+> `contacts.write` surface stays denied to marketing (108 US4 AS6, pinned in
+> the role × endpoint matrix). `contacts.read` — "unenforced vocabulary" since
+> the 016 post-ship review — gains its first ENFORCED surface, the Marketing
+> audience page (`/admin/marketing/audience`, 108 FR-035); revoking it hides
+> that page and its ⌘K entry but not the contacts on a member's own page,
+> which still ride `members.read`. Still ADD-only: no key was renamed or
+> repurposed; `payments.read` remains unenforced.
 - **FR-003**: `super_admin` MUST bypass the evaluator (always allowed); `superAdminOnly` keys MUST be refused by the evaluator for every other role regardless of bundle content; a Domain test MUST prove no bundle contains a `superAdminOnly` key.
 - **FR-004**: Every `(staff)` page MUST call a page-level positive permission gate (denial → 404) and every staff API route a route-level gate (denial → 403), with the F6 route families keeping their existing per-role guard semantics (design D9); page/route coverage MUST be enforced mechanically by static gates that fail the build.
 - **FR-005**: All four call-site pattern classes (raw role comparisons, escalate/demote ternaries, `as`-casts, exhaustive if-chains with default-deny arms) AND the nav/palette role-filter machinery MUST be converted in the same cutover PR, behaviour-preservingly under the flag (design § 6.1).

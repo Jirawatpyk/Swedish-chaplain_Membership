@@ -712,6 +712,21 @@ and `member_undeleted`).
 > demote half of a promote; there is no standalone demote that would leave the
 > member without a primary. The per-contact marketing state that 108 adds to
 > this flag ships with PR-D, not here.
+
+> **AMENDMENT (108 PR-D, 2026-09-06).** Every contact carries a **marketing
+> opt-out** (`contacts.marketing_opt_out_at / _source / _by_user_id`, all null
+> = receives marketing, correlated by a DB CHECK and the Domain constructor
+> `contactMarketing()`; migration 0294). It is switched by staff holding the
+> new `contacts.marketing` right (member page + Marketing audience page, 108
+> FR-030) or by the contact themself in the portal (108 FR-032), audited as
+> `contact_marketing_opted_out` / `_in` with `source: staff | self` (migration
+> 0295). The DISPLAYED state is derived, never stored: the person's own
+> unsubscribe (F7 suppression list) > opt-out > on; an unreadable suppression
+> list renders "status unavailable". Money emails never consult these columns
+> — delivery eligibility is `is_primary AND removed_at IS NULL` only (108
+> FR-033). Erasure: the three columns are classified KEPT (no personal data
+> once the contact is scrubbed; the audit trail is the authoritative actor
+> record — 108 FR-056).
 - **FR-012**: System MUST issue a member-scoped F1 portal invitation
   when admin clicks "Invite to portal" on a contact.
 - **FR-012a**: When a contact's email is edited and that contact is

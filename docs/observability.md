@@ -1238,7 +1238,7 @@ member_compose_page_load
 member_submit_button_click
   └─ api_broadcasts_submit
        └─ html_sanitiser                           (DOMPurify — Application layer)
-            └─ resolve_segment_recipients          (joins members + contacts; suppression filter deferred)
+            └─ resolve_segment_recipients          (joins members + contacts; suppression anti-join, then the 108 PR-D per-contact marketing opt-out filter — `broadcasts_marketing_opt_out_filter_count{tenant}` counts the drop; a failed opt-out lookup REJECTS the tick, never fail-open)
                  └─ broadcasts_repo_insert         (DB — submitted row + reservation derived)
                       └─ audit_broadcast_submitted (DB — same tx)
                            └─ admin_notification_enqueue (Resend transactional, async)
@@ -1281,7 +1281,13 @@ recipient email addresses (when used as keys), `Svix-Signature` header
 value, or unsubscribe-token plaintext is ever attributed** — those are in
 pino's redact list (see § 22.4).
 
-### 22.1 Metrics catalogue (18 metrics)
+### 22.1 Metrics catalogue
+
+> **Naming**: rows are titled in dotted form for readability, but the EMITTED
+> instrument name is the underscored one — `broadcasts.cron.dispatched.count`
+> is emitted as `broadcasts_cron_dispatched_count`. Copy the underscored name
+> into a dashboard query, not the row title. (The stale "(18 metrics)" count in
+> this heading was dropped rather than re-guessed: no gate keeps it honest.)
 
 | Metric | Type | Labels | Purpose |
 |---|---|---|---|
@@ -1306,6 +1312,9 @@ pino's redact list (see § 22.4).
 | `broadcasts.drift_check_unverifiable.count` | counter | `tenant` | Round-5 R5-S1 — emitted when `getAudienceContactCount` fails on a non-404 (Resend 5xx / network) during idempotency replay. The replay still advances to `sending` but recipients-delivered count cannot be verified. Backed by audit event `broadcast_resend_drift_check_unverifiable`. > 1 / hour alarm. |
 | `broadcasts.dispatch_budget_exhausted.count` | counter | `tenant`, `sub_kind` (network\|timeout\|server_5xx\|api) | **Phase 8 / FR-021 / AS2 (E2 verify-fix 2026-05-02)** — incremented when the 1-hour retry budget elapses with Resend still failing → row transitioned to `failed_to_dispatch`. **Steady state = 0**; any non-zero count in a 15-minute window pages on-call (a member's scheduled E-Blast did not go out). Backed by audit event `broadcast_failed_to_dispatch` + Slice E member transactional notification email. |
 | `broadcasts_audit_emit_failed_total` | counter | `tenant`, `event_type` | **R8.5 (R7 silent-failure MED-1 close)** — wired in `safeAuditEmit` + `safeAuditEmitTyped` catch arms (`src/modules/broadcasts/application/use-cases/_safe-audit-emit.ts`). Increments when audit-storage hiccups during a security-rejection / read-only forensic-emit path. **Alert F7-A1**: any non-zero rate sustained ≥ 1 min pages on-call (Principle VIII audit invariant; forensic-trail gap on a swallowable catch arm). Companion to F8-A2 / F6 cron-audit alarms — mirrors the same SIEM-actionable signal-loss pattern. Runbook: `docs/runbooks/audit-emit-loss.md`. |
+| `broadcasts.marketing_opt_out_filter_count` | counter | `tenant`, `phase` (submit\|dispatch) | **108 PR-D (FR-022a)** — recipients dropped per dispatch because their contact row carries a marketing opt-out (`staff` or `self`). Emitted by `resolveSegmentRecipients` AFTER the suppression anti-join, so an address on both lists counts once, as suppressed; emitted (instrument `broadcasts_marketing_opt_out_filter_count`) on EVERY dispatch where the filter ran, **including at zero** — guarding the emit on a non-zero drop would make "nobody has opted out" and "step 4b was deleted" the same absent series, and SweCham cuts over with zero opt-outs. So: a present series at 0 is healthy; the series DISAPPEARING while `queue_pending` is non-zero means the filter stopped running. **Alarm on `phase="dispatch"` only** — the resolver also runs at submit, and an unlabelled alarm would be kept alive by member submits while the dispatch-side filter was dead, which is the masking the label exists to prevent. NOTE: `phase="dispatch"` counts once per resolve, and a multi-batch broadcast resolves on every tick, so the dispatch total is NOT a count of distinct people dropped — use it as a liveness signal, not a privacy-reporting figure. |
+| `broadcasts.suppression_lookup_failed` | counter | `tenant`, `op` (isSuppressed\|lookupSuppressed\|listSuppressedEmailLowers) | **108 PR-D (review errors HIGH-1)** — the marketing suppression read threw. Wired in the composition layer (`src/lib/contact-marketing-deps.ts`) which logs the error CLASS only (a Postgres error carries bound parameters, and those are addresses) and re-throws, so every caller inherits it. Callers DEGRADE on the throw — the audience page answers empty for a state filter, the portal returns 503 `suppression_unavailable`, a dispatch tick REJECTS — so without this counter a sustained outage is invisible until staff open a ticket. **Steady state = 0**; any non-zero rate sustained ≥ 5 min warns. |
+| `broadcasts.suppression_list_size` | gauge | `tenant` | **108 PR-D (staff review P4)** — rows in `marketing_unsubscribes` per tenant, sampled by the `broadcasts-gauges` cron. The Marketing audience page loads this WHOLE list per request for any `state` filter and binds it into two queries; the list is bounded by TIME, not tenant size (it also accrues bounces, complaints, `admin_added`, and addresses that were never contacts), so it is the one input on that page that grows without limit. SweCham is at 0 today. **Warn above 5,000**: that is the point to move the anti-join SQL-side, which is a cross-module change and needs a plan entry (plan § Complexity Tracking #3 keeps members out of the broadcasts table). |
 
 **Cardinality**: `precondition`, `failure_reason`, `reason`, `event_type`
 are bounded enums; `tenant` is small-cardinality (≤ a few hundred over
@@ -1328,6 +1337,8 @@ the recipient cap × broadcast count per tenant per quota year (10/year/member
 | SLO-F7-008 webhook idempotency | 100 % zero double-processed events | UNIQUE `(tenant_id, resend_event_id)` index (migration 0065) |
 | SLO-F7-009 dispatch failure rate | < 1 % over 1 h excluding Resend service incidents | `broadcasts.dispatch_failure_rate` gauge |
 | SLO-F7-010 sender reputation | Per-broadcast bounce < 2 %, complaint < 0.1 % steady-state | `bounce_rate_per_broadcast` + `complaint_rate_per_broadcast` |
+| SLO-F7-011 `/admin/marketing/audience` TTFB | p95 < 500 ms @ 10k contacts | Vercel Speed Insights. **108 PR-D (staff review P3)** — reference query is the FR-027a pre-flight preset (`?kind=secondary&state=on&eligible=1`), the heaviest and most-used shape: it loads the whole suppression list and runs a count + page over `contacts ⋈ members`. PR-D added two counters and no latency signal, so a 10× regression here would have been invisible. **UNVERIFIED** until prod RUM. |
+| SLO-F7-012 `cron_dispatch_scheduled` tick | p99 < 60 s | OTel span. **108 PR-D (staff review P5)** — the per-contact opt-out filter adds one uncached `runInTenant` round trip PER BROADCAST per tick (deliberately not memoised: a person who opts out mid-tick must be honoured by the next broadcast in that same tick). At the 50-broadcast cap that is ~200 extra round trips on the cron critical path. If it ever needs optimising the answer is batching across broadcasts within a tick, NOT caching a privacy filter. **UNVERIFIED** until the first 50-broadcast tick in prod. |
 
 ### 22.3 Alert rules (11 alerts)
 

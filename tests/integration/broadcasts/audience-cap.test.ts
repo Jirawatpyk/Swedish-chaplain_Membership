@@ -70,6 +70,7 @@ function makeBridges(members: ReadonlyArray<MemberRecipient>): {
       async markBroadcastsAcknowledged() {
         return ok({ previouslyNull: true });
       },
+      async filterMarketingOptedOut() { return new Set(); },
       async getMemberPreferredLocale() { return null; },
     },
     eventAttendees: {
@@ -106,6 +107,7 @@ describe('audience-cap integration (T049)', () => {
       { tenant, ...bridges },
       {
         segment: SEG_ALL,
+        phase: 'dispatch',
         requestingMemberPrimaryEmail: null,
         customRecipients: null,
       },
@@ -126,6 +128,7 @@ describe('audience-cap integration (T049)', () => {
       { tenant, ...bridges },
       {
         segment: SEG_ALL,
+        phase: 'dispatch',
         requestingMemberPrimaryEmail: null,
         customRecipients: null,
       },
@@ -140,6 +143,7 @@ describe('audience-cap integration (T049)', () => {
       { tenant, ...bridges },
       {
         segment: SEG_ALL,
+        phase: 'dispatch',
         requestingMemberPrimaryEmail: null,
         customRecipients: null,
       },
@@ -178,6 +182,7 @@ describe('audience-cap integration (T049)', () => {
       },
       {
         segment: SEG_ALL,
+        phase: 'dispatch',
         requestingMemberPrimaryEmail: null,
         customRecipients: null,
       },
@@ -193,6 +198,7 @@ describe('audience-cap integration (T049)', () => {
       { tenant, ...makeBridges(all) },
       {
         segment: SEG_ALL,
+        phase: 'dispatch',
         requestingMemberPrimaryEmail: all[0]!.primaryContactEmail,
         customRecipients: null,
       },

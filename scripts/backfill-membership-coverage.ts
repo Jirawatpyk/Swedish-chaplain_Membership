@@ -68,6 +68,7 @@
  * Exit codes: 0 = inventory printed / apply executed; 1 = validation error.
  */
 import { existsSync, readFileSync } from 'node:fs';
+import { DB_HOST_BLOCKLIST_PLACEHOLDERS } from '../tests/helpers/db-host-guard';
 import { fileURLToPath } from 'node:url';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 
@@ -336,7 +337,13 @@ async function main(): Promise<number> {
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
-  const looksProd = blocklist.length === 0 || blocklist.some((needle) => dbUrl.includes(needle));
+  // Round-2 review finding 7: an `.env.example` PLACEHOLDER is not evidence
+  // that the target is safe — it is a value that matches no real host, so it
+  // made `looksProd` FALSE and quietly waived the --confirm-prod requirement on
+  // a WRITE script. An unset blocklist was already treated as "cannot rule out
+  // prod"; a placeholder tells us exactly as little, so it counts the same.
+  const usable = blocklist.filter((v) => !DB_HOST_BLOCKLIST_PLACEHOLDERS.includes(v));
+  const looksProd = usable.length === 0 || usable.some((needle) => dbUrl.includes(needle));
   if (looksProd && !flags.confirmProd) {
     console.error(
       'backfill-membership-coverage: target may be PRODUCTION (DATABASE_URL host ' +
