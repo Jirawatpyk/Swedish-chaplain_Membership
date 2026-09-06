@@ -160,6 +160,86 @@ describes the optimistic / focus hand-off behaviour; FR-050a written (ux CHK033)
   stamps `removed_at`). Correct outcome — erased people never appear; the vocabulary stays
   for the compose-time count feedback (PR-C).
 
+### Round 4 — `/speckit-staff-review-run` (2026-09-06), 5 reviewers, 50 findings
+
+The gate the maintainer runs. Five project reviewers on Opus, one per review
+pass, each told that this ledger contains ALLEGATIONS to verify against the
+code. Full report: `reviews/review-20260906-152258.md`.
+
+| Pass | Reviewer | Files read | Verdict |
+|---|---|---|---|
+| 1 Correctness | `reliability-guardian` | 35 | CONDITIONS |
+| 2 Security | `security-engineer` | 48 + 7 gates + 225 tests re-run live | APPROVE WITH FIXES |
+| 3 Performance | `performance-slo-guardian` | 31 | PASS WITH CONDITIONS |
+| 4 Spec + architecture | `spec-compliance-auditor` | 56 | PARTIALLY COMPLIANT, 0 blockers |
+| 5 Test quality | `senior-tester` | 45 | **NOT MERGEABLE** |
+
+**1 BLOCKER · 20 WARNING · 26 SUGGESTION · 3 INFO.** Spec coverage 94.9 %
+(strict 89.7 %), 0 requirements unimplemented, 0 architecture violations, 0
+security blockers.
+
+**The blocker was real and was ours.** Cycle 15's errors HIGH-2 fix added
+`cause: errKind('cause' in re ? re.cause : undefined)` to a file already pinned
+at 100 % branch. Every test fed a `RepoError` that HAS a cause; the one shape
+without it early-returns before the ternary. `Unit + contract coverage vs
+pinned thresholds` — a required check — failed at 97.72 %. Two independent
+confirmations: the reviewer measured it locally and CI said the same thing to
+the character. The ledger's own T060 line ("measured 100/100/100/100") was
+stale, written before the branch that broke it.
+
+**The pattern, and it is the point of this round.** Of the 20 warnings, most
+are not logic defects — they are **claims stated more strongly than the code
+supports**, and most were introduced by cycles 15 and 16, whose entire purpose
+was closing "recorded but never read":
+
+| The claim | The code |
+|---|---|
+| this ledger: carry-forward matches "SweCham's pending import" | the import script bypasses `addInTx` entirely (C1) |
+| `0294` header + `schema-contacts.ts`: "PR-D does not use it … drop it if unused" | `state=on` implies the partial predicate verbatim (P1) |
+| `observability.md`, written that morning: "a drop to 0 means the filter stopped" | the emit was guarded on a non-zero drop; at SweCham's 0 opt-outs the series never appears (P2) |
+| `checklists/security.md` CHK019: "timing-safe 404" | not timing-safe, and `grep timing` in spec + contract returns zero (S3) |
+| `domain/contact.ts` ×3: "a new contact always starts in RECEIVES_MARKETING" | false since cycle 15 (C6) |
+| cycle 15: "every claim now matches the code beside it" | the same cycle invalidated four test docstrings (T3) |
+| three co-signs stamped at `5b818ee8c` | HEAD was five commits later (S1) |
+
+**Two genuine correctness finds**, both on the carry-forward that cycle 15 had
+just added and reviewed four times: it guarded ONE of three insert paths, so
+`POST /api/members` and the import script re-subscribed people who had objected
+(C1 — fail OPEN); and it selected the latest row *carrying* an objection rather
+than the latest row for the address, so an opt-IN could be undone by a
+long-removed row (C2 — silently discarding the person's own decision).
+
+**Closed in five commits** (`b33f4a503`, `472317bcb`, `e6e8d6ebf`,
+`0b574a30c`, `0ae9d89c3`): 45 accepted and fixed, 2 rejected with reasoning,
+1 decided where two reviewers contradicted each other.
+
+- **Rejected — C4** (explicit `tenant_id` on the new write): correct
+  implementation needs a signature change rippling through ~40 call sites; the
+  version that avoids it must read `current_setting('app.current_tenant')`,
+  the same source RLS reads, so it is not an independent layer. RLS FORCE is
+  proven live in both directions (FR-052). Follow-up ticket, as both reviewers
+  proposed.
+- **Rejected — T6** (integration cases share state): Vitest runs a file
+  serially by contract and each case asserts its own precondition, so it fails
+  loudly. Restructuring ~700 lines of live-Neon tests risks more than it fixes.
+- **Decided — A7 vs C11**, which pointed opposite ways on the same flag. Split
+  by meaning: the page for CHOOSING a broadcast audience may follow
+  `FEATURE_F7_BROADCASTS` (without broadcasts it has no function); a person's
+  OBJECTION may not, because it is a privacy record. FR-035 gained the
+  AMENDMENT; the switch stays ungated.
+
+Six AMENDMENT blocks (FR-022a, FR-024, FR-027, FR-027a, FR-031b, FR-053a) close
+the "authorised only by a review ledger" class the spec's own § rules exist to
+prevent.
+
+**Verification at `0b574a30c`** (the last source commit; only the co-sign
+re-stamp follows): `pnpm test:coverage` **exit 0, zero threshold errors** ·
+full unit + contract 1224 files / 13642 tests · fifteen static gates · lint 0 ·
+typecheck 0 · live Neon `contact-marketing-opt-out` 28,
+`contact-marketing-routes` 8, `contact-marketing-opt-out-guard` 4,
+`primary-contact-read-agreement` 7, `marketing-audience-query` 8 (+3 scale
+cases moved to the nightly sweep).
+
 ### Cycle 16 — the gate that was running on nothing (found at push, 2026-09-06)
 
 Not a review round. The branch's first successful push printed, after four green
