@@ -183,15 +183,36 @@ describe('listMarketingAudience — filter → repo predicate', () => {
     expect(repoFilter(memberRepo).emailLowerNotIn).toBeUndefined();
   });
 
-  it('state=off_by_staff → optOut staff; state=off_by_contact → optOut self (no suppression fetch)', async () => {
-    const a = makeDeps();
-    await listMarketingAudience({ filter: { state: 'off_by_staff', eligible: true }, page: 1 }, a.deps);
-    expect(repoFilter(a.memberRepo).optOut).toBe('staff');
-    expect(a.marketingSuppression.listSuppressedEmailLowers).not.toHaveBeenCalled();
+  // Both `off_*` filters EXCLUDE suppressed addresses (cycle 13, review LOW-7):
+  // the badge on such a row reads "unsubscribed" — precedence — so a filter
+  // named "off (by staff)" must not list it. That makes the whole-tenant
+  // suppression fetch necessary for these two as well.
+  it('state=off_by_staff → optOut staff, suppressed addresses excluded', async () => {
+    const { deps, memberRepo, marketingSuppression } = makeDeps();
+    await listMarketingAudience({ filter: { state: 'off_by_staff', eligible: true }, page: 1 }, deps);
+    expect(marketingSuppression.listSuppressedEmailLowers).toHaveBeenCalledTimes(1);
+    const f = repoFilter(memberRepo);
+    expect(f.optOut).toBe('staff');
+    expect(f.emailLowerNotIn).toEqual(['unsub@example.com']);
+    expect(f.emailLowerIn).toBeUndefined();
+  });
 
-    const b = makeDeps();
-    await listMarketingAudience({ filter: { state: 'off_by_contact', eligible: true }, page: 1 }, b.deps);
-    expect(repoFilter(b.memberRepo).optOut).toBe('self');
+  it('state=off_by_contact → optOut self, suppressed addresses excluded', async () => {
+    const { deps, memberRepo, marketingSuppression } = makeDeps();
+    await listMarketingAudience(
+      { filter: { state: 'off_by_contact', eligible: true }, page: 1 },
+      deps,
+    );
+    expect(marketingSuppression.listSuppressedEmailLowers).toHaveBeenCalledTimes(1);
+    const f = repoFilter(memberRepo);
+    expect(f.optOut).toBe('self');
+    expect(f.emailLowerNotIn).toEqual(['unsub@example.com']);
+  });
+
+  it('no state filter → the whole-tenant suppression list is NOT fetched', async () => {
+    const { deps, marketingSuppression } = makeDeps();
+    await listMarketingAudience({ filter: { eligible: true }, page: 1 }, deps);
+    expect(marketingSuppression.listSuppressedEmailLowers).not.toHaveBeenCalled();
   });
 
   it('state=unsubscribed → IN the suppression list, any opt-out state', async () => {
