@@ -57,6 +57,10 @@ export function MarketingSwitch({
 
   const checked = state === 'on';
   const disabled = state === 'unavailable';
+  // FR-025 AMENDMENT (privacy review B-2 / L-1): the person's own objection —
+  // their unsubscribe OR their own opt-out — is not something staff can lift,
+  // so there is no control to offer, only the badge with its explanation.
+  const staffCanAct = state !== 'off_by_contact' && state !== 'unsubscribed';
 
   async function send(next: 'on' | 'off', opts: { readonly offerUndo: boolean }): Promise<void> {
     if (busy) return;
@@ -76,7 +80,9 @@ export function MarketingSwitch({
       if (!res.ok) {
         const kind = problemKind(body);
         if (res.status === 409 && kind === 'suppressed') toast.error(t('errors.suppressed'));
-        else if (res.status === 403) toast.error(t('errors.forbidden'));
+        else if (res.status === 409 && kind === 'self_opted_out') {
+          toast.error(t('errors.selfOptedOut'));
+        } else if (res.status === 403) toast.error(t('errors.forbidden'));
         else if (res.status === 404) toast.error(t('errors.notFound'));
         else if (res.status === 429) toast.error(t('errors.rateLimited'));
         else if (res.status === 503 && kind === 'suppression_unavailable') {
@@ -108,6 +114,8 @@ export function MarketingSwitch({
       setBusy(false);
     }
   }
+
+  if (!staffCanAct) return <></>;
 
   return (
     <span className="inline-flex min-h-6 min-w-6 items-center">

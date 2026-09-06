@@ -6688,6 +6688,7 @@
         "unchanged": "No change — the contact was already in that state.",
         "errors": {
           "suppressed": "This person unsubscribed themselves. Their choice takes precedence and cannot be switched back on by staff.",
+          "selfOptedOut": "This person switched marketing off themselves. Only they can switch it back on.",
           "forbidden": "You do not have permission to change marketing for contacts.",
           "notFound": "This contact no longer exists.",
           "rateLimited": "Too many changes in a short time. Please wait a minute and try again.",

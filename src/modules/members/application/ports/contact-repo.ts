@@ -267,6 +267,9 @@ export interface ContactRepo {
    * STATE — "off" when already off, "on" when already on — is reported as
    * `unchanged` WITHOUT rewriting the row, so a repeated "off" keeps the
    * original actor + timestamp and the caller emits no audit (FR-030b).
+   * ONE exception (FR-025 AMENDMENT): a `source: 'self'` "off" over a
+   * `'staff'` "off" IS a change — the person's objection replaces the staff
+   * record; the reverse stays `unchanged`.
    * Does NOT emit audit — caller emits `contact_marketing_opted_out` / `_in`.
    */
   setMarketingOptOutInTx(

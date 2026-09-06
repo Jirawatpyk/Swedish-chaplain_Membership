@@ -4,11 +4,13 @@
 -- `contact_marketing_opted_out` / `contact_marketing_opted_in` are emitted by
 -- `setContactMarketingOptOut` (members Application) in the same transaction as
 -- the `contacts` UPDATE, once per ACTUAL change (same-state calls are
--- `unchanged` and emit nothing). Payload: `{ member_id, contact_id, source:
--- 'staff' | 'self' }` — ids only, never an address (FR-053a). `member_id` is
--- deliberately the conventional key here (unlike 0292's
--- `related_member_id`): a person changing their marketing preference IS
--- member activity, so migration 0009's `last_activity_at` bump is wanted.
+-- `unchanged` and emit nothing). Payload: `{ member_id | related_member_id,
+-- contact_id, source: 'staff' | 'self', actor_role }` — ids only, never an
+-- address (FR-053a). The member key depends on WHO acted: a contact changing
+-- their OWN preference IS member activity, so that row carries `member_id`
+-- and migration 0009's `last_activity_at` bump is wanted; a STAFF change is
+-- not member activity and carries `related_member_id` (the 0292 key — the
+-- member timeline COALESCEs both, the recency trigger fires on neither).
 -- Actor role = the session role (check:actor-role-truth). Retention 5 years
 -- (F3 default — not a tax-document event).
 --

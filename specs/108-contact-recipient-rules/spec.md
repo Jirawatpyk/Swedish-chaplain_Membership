@@ -264,6 +264,18 @@ A contact signed in to the member portal, the primary contact included, can see 
 - **FR-023**: The resolved recipient list MUST contain each email address at most once.
 - **FR-024**: An unsubscribe by any contact MUST be honoured for that address on every later send and MUST be recorded with attribution to the member and the specific contact.
 - **FR-025**: A personal unsubscribe MUST take precedence over any staff setting; staff MUST NOT be able to re-enable a suppressed address.
+
+> **AMENDMENT (108 PR-D review, 2026-09-06 — privacy officer B-2, GDPR Art. 21(3) / PDPA §32).**
+> A contact's OWN opt-out made in the portal (FR-032, `source: self`) is the same
+> objection as the unsubscribe link and takes the same precedence: staff MUST NOT be
+> able to switch marketing back on for a contact who switched it off themself (the
+> staff surfaces show the state read-only with the explanation; the API refuses with
+> 409 `self_opted_out`); only the contact lifts it. When a contact switches off over a
+> STAFF-made opt-out, the system MUST record the objection as the contact's own
+> (`source` becomes `self`, audited as `contact_marketing_opted_out{source:'self'}`) so
+> no later staff action can silently override it; a staff switch-off over the contact's
+> own record leaves that record untouched. Precedence is therefore: personal unsubscribe
+> > contact's own opt-out > staff opt-out > on. Data-model § 3 is corrected accordingly.
 - **FR-026**: Custom-list and recent-event-attendee audiences keep their existing composition rules (bring-your-own list ≤100 known addresses; attendees of events in the last 90 days) and are otherwise unaffected, except for the opt-out exclusions in FR-022a.
 - **FR-027**: Default eligibility is opt-out: a contact is a marketing recipient unless excluded by FR-022. This applies equally to contacts created after this feature ships and to every secondary contact that already exists at cutover; no contact starts switched off and no backfill of preference state is required.
 - **FR-027a**: Before the first member-based broadcast is dispatched under the new rule, staff MUST be able to review every secondary contact that will newly become a recipient, grouped by member, with a per-contact switch-off control on the same screen. This review is performed on the Marketing audience page (FR-035) using the pre-flight preset (secondary, currently on, member eligible) by a user holding the marketing-audience right (marketing or admin). The first dispatch MUST NOT be technically blocked on the review; the review is an operational step recorded in the go-live checklist with the date and the reviewer.

@@ -281,11 +281,11 @@ describe('108 PR-D — setMarketingOptOutInTx + setContactMarketingOptOut (live 
     expect(read.ok && read.value.marketing.source).toBe('staff');
   });
 
-  it('off again (another actor) → unchanged; the ORIGINAL actor + timestamp are kept', async () => {
+  it('off again (another STAFF actor) → unchanged; the ORIGINAL actor + timestamp are kept', async () => {
     const r = await runInTenant(tenantA.ctx, (tx) =>
       drizzleContactRepo.setMarketingOptOutInTx(tx, asContactId(contactId), {
         optedOutAt: new Date('2026-09-06T02:00:00Z'),
-        source: 'self',
+        source: 'staff',
         byUserId: STAFF_2 as never,
       }),
     );
@@ -414,11 +414,13 @@ describe('108 PR-D — setMarketingOptOutInTx + setContactMarketingOptOut (live 
     expect(row.eventType).toBe('contact_marketing_opted_out');
     expect(row.actorUserId).toBe(admin.userId);
     expect(row.payload).toMatchObject({
-      member_id: memberId,
+      // Staff action → `related_member_id` (no last_activity_at bump).
+      related_member_id: memberId,
       contact_id: contactId,
       source: 'staff',
       actor_role: 'admin',
     });
+    expect(row.payload).not.toHaveProperty('member_id');
     expect(JSON.stringify(row.payload) + row.summary).not.toContain('@');
   });
 
@@ -473,12 +475,23 @@ describe('108 PR-D — setMarketingOptOutInTx + setContactMarketingOptOut (live 
     expect(after).not.toBeNull();
     expect(after!.getTime()).toBeGreaterThan(anchor.getTime());
 
-    // Back to ON via the contact themself (staff cannot, see the case below).
+    // Back to ON via the contact themself (staff cannot, see the case below),
+    // then staff OFF again so the next case ("same state again") sees a
+    // staff record, as it did before this guard was inserted.
     await setContactMarketingOptOut(
       {
         contactId: asContactId(contactId),
         state: 'on',
         actor: { userId: admin.userId, role: 'member', source: 'self' },
+        requestId: `req-${randomUUID().slice(0, 8)}`,
+      },
+      deps,
+    );
+    await setContactMarketingOptOut(
+      {
+        contactId: asContactId(contactId),
+        state: 'off',
+        actor: { userId: admin.userId, role: 'admin', source: 'staff' },
         requestId: `req-${randomUUID().slice(0, 8)}`,
       },
       deps,

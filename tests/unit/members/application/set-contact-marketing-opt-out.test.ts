@@ -218,7 +218,7 @@ describe('setContactMarketingOptOut — switching ON', () => {
     );
     expect(audit.recordInTx.mock.calls[0]![2]).toMatchObject({
       type: 'contact_marketing_opted_in',
-      payload: { member_id: memberId, contact_id: CONTACT, source: 'staff' },
+      payload: { related_member_id: memberId, contact_id: CONTACT, source: 'staff' },
     });
   });
 
@@ -251,11 +251,11 @@ describe('setContactMarketingOptOut — switching ON', () => {
  */
 describe('setContactMarketingOptOut — self opt-out takes precedence over staff (FR-025 amendment)', () => {
   beforeEach(() => vi.clearAllMocks());
-  const selfOff = contact({ marketing: { optedOutAt: NOW, source: 'self', byUserId: SELF_USER as never } });
-  const staffOff = contact({ marketing: { optedOutAt: NOW, source: 'staff', byUserId: STAFF as never } });
+  const selfOffContact = contact({ marketing: { optedOutAt: NOW, source: 'self', byUserId: SELF_USER as never } });
+  const staffOffContact = contact({ marketing: { optedOutAt: NOW, source: 'staff', byUserId: STAFF as never } });
 
   it('staff "on" over a SELF opt-out → self_opted_out; nothing written, nothing audited', async () => {
-    const { deps, contactRepo, audit, marketingSuppression } = makeDeps({ found: selfOff });
+    const { deps, contactRepo, audit, marketingSuppression } = makeDeps({ found: selfOffContact });
     const r = await setContactMarketingOptOut({ ...staffOff, state: 'on' }, deps);
     expect(r.ok).toBe(false);
     if (r.ok) return;
@@ -267,7 +267,7 @@ describe('setContactMarketingOptOut — self opt-out takes precedence over staff
   });
 
   it('the contact themself may switch back on after their own opt-out', async () => {
-    const { deps, contactRepo } = makeDeps({ found: selfOff });
+    const { deps, contactRepo } = makeDeps({ found: selfOffContact });
     const r = await setContactMarketingOptOut(
       { ...staffOff, state: 'on', actor: { userId: SELF_USER, role: 'member', source: 'self' } },
       deps,
@@ -281,13 +281,13 @@ describe('setContactMarketingOptOut — self opt-out takes precedence over staff
   });
 
   it('staff "on" over a STAFF opt-out is still allowed', async () => {
-    const { deps } = makeDeps({ found: staffOff });
+    const { deps } = makeDeps({ found: staffOffContact });
     const r = await setContactMarketingOptOut({ ...staffOff, state: 'on' }, deps);
     expect(r.ok).toBe(true);
   });
 
   it('self "off" over a STAFF opt-out is a CHANGE: the objection is recorded as source self and audited', async () => {
-    const { deps, contactRepo, audit } = makeDeps({ found: staffOff });
+    const { deps, contactRepo, audit } = makeDeps({ found: staffOffContact });
     contactRepo.setMarketingOptOutInTx.mockResolvedValueOnce(
       ok({
         outcome: 'changed' as const,

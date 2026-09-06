@@ -35,7 +35,6 @@ import {
 import { problemResponse } from '@/lib/http/problem-response';
 import { rateLimitedJson } from '@/lib/rate-limit-helpers';
 import { logger } from '@/lib/logger';
-import { errKind } from '@/lib/log-id';
 import { rateLimiter } from '@/modules/auth';
 import { asContactId, setContactMarketingOptOut } from '@/modules/members';
 import { buildContactMarketingDeps } from '@/lib/contact-marketing-deps';
@@ -142,22 +141,34 @@ export async function POST(
 
   switch (result.error.type) {
     case 'not_found': {
-      try {
-        await deps.audit.record(tenant, {
-          type: 'member_cross_tenant_probe',
-          actorUserId,
-          requestId: ctx.requestId,
-          summary: `probe on contact ${contactId}`,
-          payload: { attempted_contact_id: contactId, actor_tenant_id: tenant.slug },
-        });
-      } catch (e) {
+      // The adapter returns a Result (it never throws) — read it, or a failed
+      // probe write would be silent (security review LOW-2).
+      const probe = await deps.audit.record(tenant, {
+        type: 'member_cross_tenant_probe',
+        actorUserId,
+        requestId: ctx.requestId,
+        summary: `probe on contact ${contactId}`,
+        payload: { attempted_contact_id: contactId, actor_tenant_id: tenant.slug },
+      });
+      if (!probe.ok) {
         logger.error(
-          { requestId: ctx.requestId, err: errKind(e) },
+          { requestId: ctx.requestId, err: probe.error.code },
           'contact-marketing: probe audit failed',
         );
       }
       return problemResponse(404, 'not_found', 'Contact not found.');
     }
+    case 'removed':
+      // Same 404 to the client (non-disclosure), but NO probe audit: an
+      // in-tenant soft-deleted contact is a benign race (security LOW-1).
+      return problemResponse(404, 'not_found', 'Contact not found.');
+    case 'self_opted_out':
+      return problemResponse(
+        409,
+        'self_opted_out',
+        'Marketing cannot be switched on.',
+        'This person switched marketing off themselves; only they can switch it back on.',
+      );
     case 'suppressed':
       return problemResponse(
         409,

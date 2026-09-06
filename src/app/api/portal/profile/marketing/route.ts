@@ -129,7 +129,12 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
 
   switch (result.error.type) {
     case 'not_found':
+    case 'removed':
       return errorJson(404, 'not_found');
+    case 'self_opted_out':
+      // Unreachable for `source: 'self'` (the contact may always lift their
+      // own opt-out) — mapped for exhaustiveness.
+      return errorJson(409, 'self_opted_out');
     case 'suppressed':
       return errorJson(
         409,

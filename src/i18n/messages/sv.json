@@ -6688,6 +6688,7 @@
         "unchanged": "Ingen ändring — kontakten hade redan det läget.",
         "errors": {
           "suppressed": "Personen har avregistrerat sig själv. Det valet gäller och kan inte slås på igen av personal.",
+          "selfOptedOut": "Personen stängde av marknadsföring själv. Bara personen själv kan slå på den igen.",
           "forbidden": "Du har inte behörighet att ändra marknadsföring för kontakter.",
           "notFound": "Kontakten finns inte längre.",
           "rateLimited": "För många ändringar på kort tid. Vänta en minut och försök igen.",

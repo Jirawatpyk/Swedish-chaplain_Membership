@@ -11,11 +11,25 @@
  *     own unsubscribe always wins (FR-025) and staff cannot override it. ON
  *     also refuses when the list cannot be read — re-enabling blind would
  *     override an unsubscribe nobody checked (`suppression_unavailable`).
+ *   - A contact's OWN opt-out (`source: 'self'`) is the same objection as the
+ *     unsubscribe link (GDPR Art. 21(3) / PDPA §32 — FR-025 AMENDMENT,
+ *     privacy review B-2): staff "on" over it → `self_opted_out`; only the
+ *     contact lifts it. A self "off" over a STAFF record is a CHANGE — the
+ *     objection is recorded (source becomes `self`) so no later staff action
+ *     can silently override it; a staff "off" over a self record is
+ *     `unchanged` (the person's record stays).
  *   - Same state → `unchanged`, no write, no audit (FR-030b idempotency —
  *     and the ORIGINAL actor + timestamp survive a repeated "off").
- *   - A removed contact has no marketing state → `not_found`.
+ *   - A removed contact has no marketing state → `removed` (the route answers
+ *     404 like `not_found`, but does NOT audit it as a cross-tenant probe —
+ *     an in-tenant soft-deleted row is a benign race, security review LOW-1).
  *   - The write and its audit row commit together; the audit payload is
- *     ids + `source` + the session role, never an address (FR-053a).
+ *     ids + `source` + the session role, never an address (FR-053a). The
+ *     member key is `member_id` ONLY for a self change: migration 0009's
+ *     trigger bumps `members.last_activity_at` for any audit row carrying
+ *     that key, and a STAFF action is not member activity (security review
+ *     MEDIUM-1) — staff rows carry `related_member_id` instead (same key as
+ *     0292; the member timeline COALESCEs both).
  *
  * Money emails are never affected by anything here (FR-033): delivery
  * eligibility is `isPrimary && removedAt === null` only.
@@ -59,8 +73,12 @@ export type SetContactMarketingOptOutDeps = {
 
 export type SetContactMarketingOptOutError =
   | { readonly type: 'not_found' }
+  /** An in-tenant contact that has been removed (soft-deleted) — 404, not a probe. */
+  | { readonly type: 'removed' }
   /** FR-025 — the address is on the suppression list; "on" is refused. */
   | { readonly type: 'suppressed' }
+  /** FR-025 AMENDMENT — the contact opted out themself; staff cannot lift it. */
+  | { readonly type: 'self_opted_out' }
   /** The suppression list could not be read; "on" is refused, not guessed. */
   | { readonly type: 'suppression_unavailable' }
   | { readonly type: 'server_error'; readonly message: string };
@@ -90,10 +108,21 @@ export async function setContactMarketingOptOut(
     if (found.error.code === 'repo.not_found') return err({ type: 'not_found' });
     return err({ type: 'server_error', message: `pre-read: ${found.error.code}` });
   }
-  if (found.value.removedAt !== null) return err({ type: 'not_found' });
+  if (found.value.removedAt !== null) return err({ type: 'removed' });
 
-  // 2. FR-025 — "on" is refused for a suppressed address, and refused when the
-  //    list cannot be read. "off" needs no check.
+  // 2a. FR-025 AMENDMENT — a self opt-out is the person's objection; staff
+  //     cannot lift it. Decided before the suppression lookup: the objection
+  //     alone is sufficient, no external read needed.
+  if (
+    input.state === 'on' &&
+    input.actor.source === 'staff' &&
+    found.value.marketing.source === 'self'
+  ) {
+    return err({ type: 'self_opted_out' });
+  }
+
+  // 2b. FR-025 — "on" is refused for a suppressed address, and refused when
+  //     the list cannot be read. "off" needs no check.
   if (input.state === 'on') {
     let suppressed: boolean;
     try {
@@ -130,7 +159,13 @@ export async function setContactMarketingOptOut(
         requestId: input.requestId,
         summary: `${event} for contact ${input.contactId}`,
         payload: {
-          member_id: written.value.contact.memberId,
+          // `member_id` bumps `members.last_activity_at` (migration 0009) —
+          // wanted ONLY when the contact acted themself. A staff action is
+          // not member activity: `related_member_id` keeps the row on the
+          // member timeline without touching recency (security MEDIUM-1).
+          ...(input.actor.source === 'self'
+            ? { member_id: written.value.contact.memberId }
+            : { related_member_id: written.value.contact.memberId }),
           contact_id: input.contactId,
           source: input.actor.source,
           actor_role: input.actor.role,

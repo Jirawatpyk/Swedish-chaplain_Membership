@@ -188,10 +188,17 @@ research V4.
 ### Contact marketing state
 
 ```
-on ──(staff off / self off)──▶ off_by_staff | off_by_contact ──(staff on / self on)──▶ on
+on ──(staff off)──▶ off_by_staff ──(staff on)──▶ on
+on ──(self off)───▶ off_by_contact ──(self on)──▶ on
+off_by_staff ──(self off)──▶ off_by_contact        (the objection is RECORDED; audited source=self)
+off_by_contact ──(staff off)──▶ off_by_contact     (unchanged — the person's record stays)
+off_by_contact ──(staff on)──▶ REFUSED 409 self_opted_out   (FR-025 AMENDMENT 2026-09-06)
 any ──(unsubscribe link)──▶ unsubscribed   (terminal for this feature; suppression row)
 unsubscribed ──(staff on)──▶ REFUSED 409 suppressed
 ```
+
+Precedence: personal unsubscribe > contact's own opt-out > staff opt-out > on. The
+staff switch renders NO control for `off_by_contact` / `unsubscribed` (badge only).
 
 Audit: `contact_marketing_opted_out` / `contact_marketing_opted_in` with `source`; the
 existing `broadcast_unsubscribed` + `broadcast_suppression_applied` gain `contact_id`.

@@ -384,7 +384,17 @@ export const drizzleContactRepo: ContactRepo = {
 
       const currentlyOff = current.marketingOptOutAt !== null;
       const nextOff = next.optedOutAt !== null;
-      if (currentlyOff === nextOff) {
+      // Same on/off state is `unchanged` — EXCEPT a contact's own "off" over a
+      // staff-made "off": that is the person's objection and must be RECORDED
+      // (source → 'self') so no later staff "on" can silently override it
+      // (FR-025 AMENDMENT). The reverse (staff over self) keeps the person's
+      // record: unchanged.
+      const selfOverridesStaff =
+        currentlyOff &&
+        nextOff &&
+        current.marketingOptOutSource === 'staff' &&
+        next.source === 'self';
+      if (currentlyOff === nextOff && !selfOverridesStaff) {
         return ok({ outcome: 'unchanged' as const, contact: rowToContact(current) });
       }
 
