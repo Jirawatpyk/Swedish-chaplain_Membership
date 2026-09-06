@@ -97,7 +97,12 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 function migrationCStatements(): string[] {
   const raw = readFileSync(MIGRATION_C_PATH, 'utf-8');
   return raw
-    .split('\n')
+    // `\r?\n`, not `\n`: on a CRLF checkout a `\n` split leaves each line
+    // ending in `\r`, and `/--.*$/` then matches NOTHING — `.` never matches a
+    // line terminator and `\r` is one — so the strip below silently did
+    // nothing and a `;` inside a comment cut a fragment mid-word. Pinned by
+    // the positive control in the first test.
+    .split(/\r?\n/)
     .map((line) => line.replace(/--.*$/, ''))
     .join('\n')
     .split(';')
