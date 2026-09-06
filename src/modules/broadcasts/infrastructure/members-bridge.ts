@@ -26,6 +26,8 @@ import {
   drizzleContactRepo,
   asMemberId,
   getMembersBySegment as f3GetMembersBySegment,
+  getBroadcastRecipientContacts as f3GetBroadcastRecipientContacts,
+  type BroadcastRecipientCursor,
   getMemberPrimaryContact as f3GetMemberPrimaryContact,
   getMemberPreferredLocale as f3GetMemberPreferredLocale,
   lookupContactEmailInTenant as f3LookupContactEmailInTenant,
@@ -39,6 +41,7 @@ import type { BroadcastSegmentType } from '../domain/value-objects/segment-type'
 import { unsafeBrandEmailLower } from '../domain/value-objects/email-lower';
 import type {
   ContactLookup,
+  ContactRecipient,
   MarkAckError,
   MarkAckSuccess,
   MemberHaltError,
@@ -48,6 +51,13 @@ import type {
   SegmentResolveParams,
 } from '../application/ports/members-bridge-port';
 import type { EmailLower } from '../domain/value-objects/email-lower';
+
+/**
+ * 108 PR-C — F3 keyset page size for the 1:N audience (contract
+ * broadcast-audience § 2 step 1). One round trip per 1,000 rows; a 50,000
+ * ceiling is 50 pages.
+ */
+const CONTACT_PAGE_SIZE = 1000;
 
 function brandRecipient(r: {
   memberId: string;
@@ -87,8 +97,90 @@ export const membersBridge: MembersBridgePort = {
         ...(params.tierCodes !== undefined && { tierCodes: params.tierCodes }),
       },
     );
-    if (!result.ok) return [];
+    if (!result.ok) {
+      // 108 PR-C T075 — this used to `return []`, which turned a Neon
+      // outage into "nobody to send to" (`broadcast_empty_segment_blocked`):
+      // the submit refused with a misleading reason and the dispatch tick
+      // marked the broadcast failed for an audience that exists. A failed
+      // read must fail the resolve so the caller retries (research R8).
+      logger.error(
+        {
+          err: result.error.code,
+          cause: errKind('cause' in result.error ? result.error.cause : undefined),
+          tenantId: tenantCtx.slug,
+          segmentType,
+        },
+        'broadcasts.members_bridge.segment_read_failed',
+      );
+      throw new Error(
+        `members-bridge.getMembersBySegment: ${result.error.code} — refusing to resolve an empty audience`,
+      );
+    }
     return result.value.map(brandRecipient);
+  },
+
+  /**
+   * 108 PR-C T075 — the 1:N page walk (port docblock has the contract). One
+   * F3 call per 1,000 rows, cursor = the last row of the previous page (an
+   * orphan's null contact id included — the F3 query compares on member_id
+   * alone for that shape). A page shorter than the page size proves
+   * exhaustion, so a small audience is one call and an exact multiple costs
+   * one extra empty page. A failed page THROWS with the rows read so far in
+   * the log (counts only — never an address, FR-053a).
+   */
+  async getContactsBySegment(
+    tenantCtx: TenantContext,
+    segmentType: BroadcastSegmentType,
+    params: SegmentResolveParams,
+  ): Promise<ReadonlyArray<ContactRecipient>> {
+    if (segmentType === 'event_attendees_last_90d' || segmentType === 'custom') {
+      return [];
+    }
+    const out: ContactRecipient[] = [];
+    let after: BroadcastRecipientCursor | null = null;
+    let pages = 0;
+    for (;;) {
+      const page = await f3GetBroadcastRecipientContacts(
+        { tenant: tenantCtx, memberRepo: drizzleMemberRepo },
+        {
+          segmentType,
+          ...(params.tierCodes !== undefined && { tierCodes: params.tierCodes }),
+          after,
+          limit: CONTACT_PAGE_SIZE,
+        },
+      );
+      pages += 1;
+      if (!page.ok) {
+        logger.error(
+          {
+            err: page.error.code,
+            cause: errKind('cause' in page.error ? page.error.cause : undefined),
+            tenantId: tenantCtx.slug,
+            segmentType,
+            pages,
+            rowsSoFar: out.length,
+          },
+          'broadcasts.members_bridge.contacts_page_failed',
+        );
+        throw new Error(
+          `members-bridge.getContactsBySegment: ${page.error.code} — refusing to resolve a partial audience`,
+        );
+      }
+      for (const r of page.value) {
+        out.push({
+          memberId: r.memberId,
+          contactId: r.contactId,
+          emailLower:
+            r.emailLower === null
+              ? null
+              : unsafeBrandEmailLower(r.emailLower.toLowerCase().trim()),
+          isPrimary: r.isPrimary,
+        });
+      }
+      if (page.value.length < CONTACT_PAGE_SIZE) return out;
+      const last = page.value[page.value.length - 1]!;
+      after = { memberId: last.memberId, contactId: last.contactId };
+    }
   },
 
   async getMemberPrimaryContact(

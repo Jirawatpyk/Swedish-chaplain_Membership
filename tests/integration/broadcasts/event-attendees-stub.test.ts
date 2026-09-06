@@ -49,6 +49,7 @@ const emptyMembersBridge: MembersBridgePort = {
     return ok({ previouslyNull: true });
   },
   async filterMarketingOptedOut() { return new Set(); },
+  async getContactsBySegment() { return []; },
   async getMemberPreferredLocale() { return null; },
 };
 

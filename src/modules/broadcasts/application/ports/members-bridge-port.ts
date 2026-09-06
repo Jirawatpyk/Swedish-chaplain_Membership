@@ -39,6 +39,19 @@ export interface ContactLookup {
 }
 
 /**
+ * 108 PR-C (data-model § 1) — one row of the 1:N audience. `contactId ===
+ * null` ⇔ the member is ELIGIBLE but has no eligible contact (FR-029 orphan:
+ * the resolver reports it, the caller emits the missing-recipient audit);
+ * then `emailLower` is null and `isPrimary` is false.
+ */
+export interface ContactRecipient {
+  readonly memberId: string;
+  readonly contactId: string | null;
+  readonly emailLower: EmailLower | null;
+  readonly isPrimary: boolean;
+}
+
+/**
  * Halt-flag summary for the admin queue surface (Q14 / R3-NEW-3
  * banner). One row per member with `broadcasts_halted_until_admin_review = true`.
  */
@@ -90,6 +103,24 @@ export interface MembersBridgePort {
     segmentType: BroadcastSegmentType,
     params: SegmentResolveParams,
   ): Promise<ReadonlyArray<MemberRecipient>>;
+
+  /**
+   * 108 PR-C (US3 / FR-020–FR-022, FR-029) — the 1:N audience: every
+   * ELIGIBLE contact (live, not opted out) of every eligible member (active,
+   * not erased, not halted; + tier) of a member-based segment, plus one
+   * orphan row (`contactId: null`) per eligible member that has no eligible
+   * contact. Walks F3's keyset pages (1,000 rows) to exhaustion. NOT
+   * best-effort: a failed page THROWS — an adapter answering `[]` on error
+   * would be a silent truncation, the class research R8 exists to close.
+   * `event_attendees_last_90d` and `custom` answer `[]` without a read
+   * (resolved elsewhere, exactly like `getMembersBySegment`). Suppression,
+   * sender self-exclusion, dedupe and the ceiling stay in the resolver.
+   */
+  getContactsBySegment(
+    tenantCtx: TenantContext,
+    segmentType: BroadcastSegmentType,
+    params: SegmentResolveParams,
+  ): Promise<ReadonlyArray<ContactRecipient>>;
 
   /**
    * Get a single member's primary contact email (FR-002 precondition

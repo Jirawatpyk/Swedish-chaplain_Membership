@@ -67,6 +67,10 @@ function makeMembersBridge({
   optOutCalls,
 }: BridgeFixture = {}): MembersBridgePort {
   return {
+    // 108 PR-C — the 1:N leg; re-targeted with real fixture rows in T067.
+    async getContactsBySegment() {
+      return [];
+    },
     async filterMarketingOptedOut(_ctx, emails) {
       optOutCalls?.push(emails);
       if (optOutLookupThrows) throw new Error('contacts lookup down');

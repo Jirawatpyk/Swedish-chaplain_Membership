@@ -32,16 +32,30 @@ function makeRecipient(memberId: string): MemberRecipient {
 function makeStubBridge(): {
   bridge: MembersBridgePort;
   segmentCalls: Array<{ type: string; params: unknown }>;
+  contactCalls: Array<{ type: string; params: unknown }>;
   haltCalls: Array<{ memberId: string; halted: boolean }>;
   primaryCalls: Array<{ memberId: string }>;
 } {
   const segmentCalls: Array<{ type: string; params: unknown }> = [];
+  const contactCalls: Array<{ type: string; params: unknown }> = [];
   const haltCalls: Array<{ memberId: string; halted: boolean }> = [];
   const primaryCalls: Array<{ memberId: string }> = [];
   const bridge: MembersBridgePort = {
     async getMembersBySegment(_ctx, type, params) {
       segmentCalls.push({ type, params });
       return [makeRecipient('m-1')];
+    },
+    // 108 PR-C — the 1:N page walk; memoised per tick like the member leg.
+    async getContactsBySegment(_ctx, type, params) {
+      contactCalls.push({ type, params });
+      return [
+        {
+          memberId: 'm-1',
+          contactId: 'c-1',
+          emailLower: unsafeBrandEmailLower('c-1@example.com'),
+          isPrimary: true,
+        },
+      ];
     },
     async getMemberPrimaryContact(_ctx, memberId) {
       primaryCalls.push({ memberId });
@@ -71,7 +85,7 @@ function makeStubBridge(): {
       return null;
     },
   };
-  return { bridge, segmentCalls, haltCalls, primaryCalls };
+  return { bridge, segmentCalls, contactCalls, haltCalls, primaryCalls };
 }
 
 const tenant = asTenantContext('test-tenant');
@@ -168,5 +182,40 @@ describe('makeTickMemoizedMembersBridge — filterMarketingOptedOut is NOT memoi
     expect(calls).toHaveLength(2);
     expect([...first]).toEqual(['a@example.com']);
     expect([...second]).toEqual(['a@example.com']);
+  });
+});
+
+describe('makeTickMemoizedMembersBridge — getContactsBySegment is memoized per tick (108 PR-C T075)', () => {
+  it('cache hit: identical (tenant, segmentType, params) → the inner bridge walks the pages ONCE', async () => {
+    const stub = makeStubBridge();
+    const memo = makeTickMemoizedMembersBridge(stub.bridge);
+    const a = await memo.getContactsBySegment(tenant, 'all_members', {});
+    const b = await memo.getContactsBySegment(tenant, 'all_members', {});
+    expect(stub.contactCalls).toHaveLength(1);
+    expect(a).toBe(b);
+  });
+
+  it('tierCodes sort normalises the key; a different tenant is a different slot', async () => {
+    const stub = makeStubBridge();
+    const memo = makeTickMemoizedMembersBridge(stub.bridge);
+    await memo.getContactsBySegment(tenant, 'tier', { tierCodes: ['B', 'A'] });
+    await memo.getContactsBySegment(tenant, 'tier', { tierCodes: ['A', 'B'] });
+    expect(stub.contactCalls).toHaveLength(1);
+    await memo.getContactsBySegment(asTenantContext('other-tenant'), 'tier', { tierCodes: ['A', 'B'] });
+    expect(stub.contactCalls).toHaveLength(2);
+  });
+
+  it('the member-level and contact-level caches never share a slot: the same segment asked both ways runs both', async () => {
+    // A `MemberRecipient[]` handed to a caller expecting `ContactRecipient[]`
+    // would resolve to ZERO recipients (no `emailLower` field) — exactly the
+    // silent-empty class research R8 exists to close.
+    const stub = makeStubBridge();
+    const memo = makeTickMemoizedMembersBridge(stub.bridge);
+    const memberRows = await memo.getMembersBySegment(tenant, 'all_members', {});
+    const contactRows = await memo.getContactsBySegment(tenant, 'all_members', {});
+    expect(stub.segmentCalls).toHaveLength(1);
+    expect(stub.contactCalls).toHaveLength(1);
+    expect(contactRows as unknown).not.toBe(memberRows as unknown);
+    expect(contactRows[0]).toMatchObject({ contactId: 'c-1', emailLower: 'c-1@example.com' });
   });
 });
