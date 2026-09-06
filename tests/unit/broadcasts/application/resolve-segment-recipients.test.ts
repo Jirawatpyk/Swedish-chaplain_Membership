@@ -9,9 +9,10 @@
  * so the F7 resolver inherits that behaviour (we verify by feeding a
  * mock bridge that pre-filters or pre-excludes halted rows).
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { access } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { broadcastsMetrics } from '@/lib/metrics';
 import { resolveSegmentRecipients } from '@/modules/broadcasts';
 import { unsafeBrandEmailLower } from '@/modules/broadcasts/domain/value-objects/email-lower';
 import { asTenantContext, type TenantContext } from '@/modules/tenants';
@@ -50,13 +51,31 @@ function recipient(
 interface BridgeFixture {
   readonly members?: ReadonlyArray<MemberRecipient>;
   readonly tierFilter?: (m: MemberRecipient, codes: readonly string[]) => boolean;
+  /** 108 PR-D — addresses whose contact row carries a marketing opt-out. */
+  readonly optedOut?: ReadonlySet<string>;
+  /** 108 PR-D — the opt-out lookup fails (Neon outage): the bridge REJECTS. */
+  readonly optOutLookupThrows?: boolean;
+  /** 108 PR-D — records every batch handed to the opt-out lookup. */
+  readonly optOutCalls?: Array<ReadonlyArray<EmailLower>>;
 }
 
 function makeMembersBridge({
   members = [],
   tierFilter = (m, codes) => codes.includes(m.tierCode ?? ''),
+  optedOut = new Set<string>(),
+  optOutLookupThrows = false,
+  optOutCalls,
 }: BridgeFixture = {}): MembersBridgePort {
   return {
+    async filterMarketingOptedOut(_ctx, emails) {
+      optOutCalls?.push(emails);
+      if (optOutLookupThrows) throw new Error('contacts lookup down');
+      const matched = new Set<EmailLower>();
+      for (const e of emails) {
+        if (optedOut.has(e)) matched.add(e);
+      }
+      return matched;
+    },
     async getMembersBySegment(_ctx, kind, params) {
       // Mimic F3 — already excludes halted members
       const eligible = members.filter(
@@ -143,6 +162,9 @@ interface DepsFixture {
   readonly attendees?: ReadonlyArray<EmailLower>;
   readonly suppressed?: ReadonlySet<string>;
   readonly tierFilter?: BridgeFixture['tierFilter'];
+  readonly optedOut?: BridgeFixture['optedOut'];
+  readonly optOutLookupThrows?: BridgeFixture['optOutLookupThrows'];
+  readonly optOutCalls?: BridgeFixture['optOutCalls'];
 }
 
 function makeDeps(opts: DepsFixture = {}) {
@@ -151,6 +173,11 @@ function makeDeps(opts: DepsFixture = {}) {
     membersBridge: makeMembersBridge({
       ...(opts.members !== undefined && { members: opts.members }),
       ...(opts.tierFilter !== undefined && { tierFilter: opts.tierFilter }),
+      ...(opts.optedOut !== undefined && { optedOut: opts.optedOut }),
+      ...(opts.optOutLookupThrows !== undefined && {
+        optOutLookupThrows: opts.optOutLookupThrows,
+      }),
+      ...(opts.optOutCalls !== undefined && { optOutCalls: opts.optOutCalls }),
     }),
     eventAttendees: makeEventAttendees(
       opts.attendees !== undefined ? { attendees: opts.attendees } : {},
@@ -487,5 +514,193 @@ describe('resolve-segment-recipients — Wave 6 (T066 GREEN)', () => {
     if (!result.ok) {
       expect(result.error.kind).toBe('broadcast_empty_segment_blocked');
     }
+  });
+});
+
+/**
+ * 108 PR-D review cycle 10 — privacy B-1 / security HIGH-1: a per-contact
+ * marketing opt-out (FR-022a) is honoured WHERE IT MATTERS — at dispatch.
+ * Until this cycle the resolver consulted only the unsubscribe list, so a
+ * contact switched off by staff or by themself still received every
+ * broadcast (an Art. 21 objection recorded, not acted on).
+ *
+ * Rules pinned here:
+ *   - every segment kind is filtered (members, tier, attendees, custom);
+ *   - the drop is counted separately (`droppedByPreference`) and is NOT an
+ *     orphan (the member still has a primary contact);
+ *   - an address that is both unsubscribed and opted out counts once, as
+ *     unsubscribed (suppression runs first);
+ *   - the lookup failing REJECTS the resolve — never fail-open onto people
+ *     who objected;
+ *   - the lookup is a single batch over the post-suppression list, skipped
+ *     when there is nothing left to check.
+ */
+describe('resolve-segment-recipients — 108 PR-D marketing opt-out at dispatch (B-1)', () => {
+  const OPTED = unsafeBrandEmailLower('opted-out@example.com');
+
+  it('all_members: an opted-out primary contact is dropped and counted as a preference drop, not an orphan', async () => {
+    const deps = makeDeps({
+      members: [recipient('a@example.com'), recipient('opted-out@example.com')],
+      optedOut: new Set([OPTED]),
+    });
+    const result = await resolveSegmentRecipients(deps, {
+      segment: { kind: 'all_members' },
+      requestingMemberPrimaryEmail: null,
+      customRecipients: null,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.recipients).toEqual([unsafeBrandEmailLower('a@example.com')]);
+    expect(result.value.estimatedCount).toBe(1);
+    expect(result.value.droppedByPreference).toBe(1);
+    expect(result.value.orphans).toEqual([]);
+  });
+
+  it('tier: filtered the same way', async () => {
+    const deps = makeDeps({
+      members: [
+        recipient('a@example.com', { tierCode: 'gold' }),
+        recipient('opted-out@example.com', { tierCode: 'gold' }),
+      ],
+      optedOut: new Set([OPTED]),
+    });
+    const result = await resolveSegmentRecipients(deps, {
+      segment: { kind: 'tier', tierCodes: ['gold'] },
+      requestingMemberPrimaryEmail: null,
+      customRecipients: null,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.recipients).toEqual([unsafeBrandEmailLower('a@example.com')]);
+    expect(result.value.droppedByPreference).toBe(1);
+  });
+
+  it('custom list: an opted-out address (e.g. a secondary contact) is dropped', async () => {
+    const deps = makeDeps({ optedOut: new Set([OPTED]) });
+    const result = await resolveSegmentRecipients(deps, {
+      segment: { kind: 'custom' },
+      requestingMemberPrimaryEmail: null,
+      customRecipients: [unsafeBrandEmailLower('keep@example.com'), OPTED],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.recipients).toEqual([unsafeBrandEmailLower('keep@example.com')]);
+    expect(result.value.droppedByPreference).toBe(1);
+  });
+
+  it('event attendees: filtered too', async () => {
+    const deps = makeDeps({
+      attendees: [unsafeBrandEmailLower('keep@example.com'), OPTED],
+      optedOut: new Set([OPTED]),
+    });
+    const result = await resolveSegmentRecipients(deps, {
+      segment: { kind: 'event_attendees_last_90d' },
+      requestingMemberPrimaryEmail: null,
+      customRecipients: null,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.recipients).toEqual([unsafeBrandEmailLower('keep@example.com')]);
+    expect(result.value.droppedByPreference).toBe(1);
+  });
+
+  it('unsubscribed AND opted out counts once, as unsubscribed (suppression runs first)', async () => {
+    const calls: Array<ReadonlyArray<EmailLower>> = [];
+    const deps = makeDeps({
+      members: [recipient('a@example.com'), recipient('opted-out@example.com')],
+      suppressed: new Set([OPTED]),
+      optedOut: new Set([OPTED]),
+      optOutCalls: calls,
+    });
+    const result = await resolveSegmentRecipients(deps, {
+      segment: { kind: 'all_members' },
+      requestingMemberPrimaryEmail: null,
+      customRecipients: null,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.recipients).toEqual([unsafeBrandEmailLower('a@example.com')]);
+    expect(result.value.droppedByPreference).toBe(0);
+    // One batch, over the post-suppression list only.
+    expect(calls).toEqual([[unsafeBrandEmailLower('a@example.com')]]);
+  });
+
+  it('nothing dropped → droppedByPreference is 0 and the metric is silent', async () => {
+    const spy = vi.spyOn(broadcastsMetrics, 'marketingOptOutFilterCount');
+    const deps = makeDeps({ members: [recipient('a@example.com')] });
+    const result = await resolveSegmentRecipients(deps, {
+      segment: { kind: 'all_members' },
+      requestingMemberPrimaryEmail: null,
+      customRecipients: null,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.droppedByPreference).toBe(0);
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it('a drop emits broadcasts.marketing_opt_out_filter_count{tenant} with the count', async () => {
+    const spy = vi.spyOn(broadcastsMetrics, 'marketingOptOutFilterCount');
+    const deps = makeDeps({
+      members: [
+        recipient('a@example.com'),
+        recipient('opted-out@example.com'),
+        recipient('b@example.com'),
+      ],
+      optedOut: new Set([OPTED, unsafeBrandEmailLower('b@example.com')]),
+    });
+    await resolveSegmentRecipients(deps, {
+      segment: { kind: 'all_members' },
+      requestingMemberPrimaryEmail: null,
+      customRecipients: null,
+    });
+    expect(spy).toHaveBeenCalledWith('test-tenant', 2);
+    spy.mockRestore();
+  });
+
+  it('everyone opted out → broadcast_empty_segment_blocked (a drop is a real removal)', async () => {
+    const deps = makeDeps({
+      members: [recipient('opted-out@example.com')],
+      optedOut: new Set([OPTED]),
+    });
+    const result = await resolveSegmentRecipients(deps, {
+      segment: { kind: 'all_members' },
+      requestingMemberPrimaryEmail: null,
+      customRecipients: null,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('broadcast_empty_segment_blocked');
+  });
+
+  it('the lookup failing REJECTS the resolve — never fail-open onto people who objected', async () => {
+    const deps = makeDeps({
+      members: [recipient('a@example.com')],
+      optOutLookupThrows: true,
+    });
+    await expect(
+      resolveSegmentRecipients(deps, {
+        segment: { kind: 'all_members' },
+        requestingMemberPrimaryEmail: null,
+        customRecipients: null,
+      }),
+    ).rejects.toThrow('contacts lookup down');
+  });
+
+  it('nothing left after suppression → the opt-out lookup is not called', async () => {
+    const calls: Array<ReadonlyArray<EmailLower>> = [];
+    const deps = makeDeps({
+      members: [recipient('a@example.com')],
+      suppressed: new Set(['a@example.com']),
+      optOutCalls: calls,
+    });
+    const result = await resolveSegmentRecipients(deps, {
+      segment: { kind: 'all_members' },
+      requestingMemberPrimaryEmail: null,
+      customRecipients: null,
+    });
+    expect(result.ok).toBe(false);
+    expect(calls).toEqual([]);
   });
 });
