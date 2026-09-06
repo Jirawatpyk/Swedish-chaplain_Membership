@@ -151,7 +151,7 @@ CREATE CONSTRAINT TRIGGER members_one_primary_ct AFTER UPDATE OF status, erased_
   commit a violation between the pre-check and `CREATE TRIGGER` (the migrator runs the file in
   one transaction).
 
-### 2.3 `marketing_unsubscribes` — migration 0296 (PR-C)
+### 2.3 `marketing_unsubscribes` — migration 0297 (PR-C)
 
 | Column | Type | Notes |
 |---|---|---|
@@ -166,7 +166,7 @@ Index `marketing_unsubscribes_contact_lookup_idx (tenant_id, contact_id) WHERE c
 `contact_marketing_opted_in` (0295). Own file(s), no other DDL (autocommit pre-pass rule).
 Retention: 5 years (default). Payloads carry ids and `source`, never an email address.
 
-### 2.5 Audience build via the Resend Contacts Import API (PR-C) — migration 0297
+### 2.5 Audience build via the Resend Contacts Import API (PR-C) — migration 0298
 
 Research R9 (corrected): the provider audience is built with one asynchronous import per
 broadcast, so no per-recipient working table is needed. Two nullable columns on `broadcasts`:

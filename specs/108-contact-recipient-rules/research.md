@@ -313,7 +313,7 @@ affects F7's `audienceId`-based gateway (R16).
   `created + updated + skipped = total` with `failed = 0` the tick calls `sendBroadcast`; any
   `failed > 0` or a non-completed status after 30 min fails the dispatch with a typed reason
   (audit + alert). This is still "resumable across ticks" in FR-044's terms — progress is the
-  provider's import job, not a per-recipient table — so **migration 0297 becomes two nullable
+  provider's import job, not a per-recipient table — so **migration 0298 becomes two nullable
   columns on `broadcasts`** (`audience_import_id`, `audience_import_completed_at`), not a new
   table. Idempotency comes from `upsert` (V2 no longer needs a duplicate-semantics spike).
 - **SDK**: the installed `resend@4.8.0` (`package.json` `^4.0.1`) has no `contacts.imports`; the
@@ -338,8 +338,8 @@ affects F7's `audienceId`-based gateway (R16).
   with enum migration 0292 · **PR-B** invariant (R4, R5, migration 0293 triggers) · **PR-D**
   permission key + contacts marketing columns (0294) + enum migration 0295 + member-page
   badges/toggle + Marketing audience page + portal self-toggle (R6, R7) · **PR-C** resolver,
-  ceiling, import-based audience build (0297 broadcasts import columns), custom-list drop, unsubscribe
-  attribution (0296 `contact_id`), count endpoint, spec-010 amendments (R8, R9, R11), behind
+  ceiling, import-based audience build (0298 broadcasts import columns), custom-list drop, unsubscribe
+  attribution (0297 `contact_id`), count endpoint, spec-010 amendments (R8, R9, R11), behind
   the flag · operator runs the FR-027a pre-flight review on the audience page ·
   flag ON in Vercel · the flag and the `primary_only` leg are deleted in a follow-up PR once
   a week of sends is clean.
@@ -352,7 +352,7 @@ affects F7's `audienceId`-based gateway (R16).
 
 ## R11 — Unsubscribe attribution + custom-list opt-out drop
 
-- **Decision**: `marketing_unsubscribes` gains `contact_id uuid NULL` (0296, PR-C);
+- **Decision**: `marketing_unsubscribes` gains `contact_id uuid NULL` (0297, PR-C);
   `unsubscribe-recipient.ts:147-162` resolves via `lookupContactEmailInTenant` (returns
   `{ memberId, contactId }`, exists on the bridge but unused there) and falls back to the
   primary lookup only for legacy rows; both audit payloads gain `contact_id`.
@@ -457,7 +457,7 @@ affects F7's `audienceId`-based gateway (R16).
 - Next migration: tag `0292_…`, `idx: 293`, `when: 1798542000000` (+100000 ms per file);
   enum `ADD VALUE` migrations must be their own file(s) (autocommit pre-pass,
   `enum-migration-guard.ts`). Planned sequence: 0292 enum (PR-A) · 0293 triggers (PR-B) ·
-  0294 contacts columns + 0295 enum (PR-D) · 0296 `contact_id` + 0297 broadcasts import
+  0294 contacts columns + 0295 enum (PR-D) · 0297 `contact_id` + 0298 broadcasts import
   columns (PR-C). If PRs land out of order, renumber the later one (memory: parallel-branch
   migration collision).
 - `.limit(5000)`: `drizzle-member-repo.ts:1358`; 1:1 join `:1333-1340`; no status filter
