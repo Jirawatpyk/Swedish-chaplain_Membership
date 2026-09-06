@@ -71,3 +71,20 @@
 ## Notes
 
 - Gaps CHK004–CHK007, CHK011, CHK017, CHK028, CHK031 should be resolved by an `enterprise-ux-designer` pass that writes the missing sentences into spec.md or contracts before `/speckit.tasks`.
+
+## Co-Sign Footer — PR-D (T066)
+
+**T066 Review Gate — UX Checklist Co-Sign (PR-D)**
+
+- **Co-signer**: Claude Fable 5.1 (AI maintainer), solo-maintainer substitute per Constitution v1.4.2 Principle IX
+- **Date**: 2026-09-06
+- **Branch**: `108-pr-d-contact-marketing` (PR-D — US4 staff marketing state + Marketing audience page, US6 portal self-toggle)
+- **Branch HEAD at co-sign**: `dd3408d79` (fix(108): keep the count line at zero as the focus fallback (not live) โ€” H4 vs M-14)
+- **Verification at this HEAD**: lint 0 · typecheck 0 · `check:i18n` 5289 keys × 3 · the eleven static gates OK · unit/RTL suites touched by cycles 9–14 green (members, broadcasts, components, lib, scripts, e2e-helpers, app pages) · full `pnpm test` after cycle 12: 1219 files / 13581 tests (one `.env.example` regression closed in the cycle-11 follow-up) · live Neon: `contact-marketing-opt-out` 22, `contact-marketing-opt-out-guard` 4, `marketing-opt-out-dispatch` 4, `marketing-audience-query`, `self-service-whitelist`, six broadcasts dispatch/audience files · e2e `admin-marketing-audience` 10/10 + `portal-marketing-toggle` 3/3 (re-run after cycle 14).
+- **Still ahead of the PR (user-invoked gates, cannot be run by the maintainer's AI)**: `/speckit-review` ×3 and `/speckit-staff-review-run`; the PR is opened as a DRAFT with that checklist.
+
+- **Reviewer stack**: `enterprise-ux-designer` (round 1: H1–H6, M1–M10, L1–L8), `mobile-a11y-ux-reviewer` (2 HIGH, 7 MEDIUM, 8 LOW), `i18n-translation-reviewer` (M1–M2, L1–L11) → cycle 11 → two `whole-branch-reviewer` passes → cycles 13–14.
+- **Rows the round-1 reviewer marked FAIL / PARTIAL, now**: CHK006 (skeleton = table, CLS 0) — CLOSED: 44-px row pitch, 8 columns by default, `w-full` + min-width body, growable action skeleton; CHK007 (320 px, never the page) — CLOSED: the preset action wraps, SV copy shortened, and the reflow assertion runs for EN/TH/SV; CHK013 (state announced) — CLOSED: optimistic `aria-checked` on click, rolled back on refusal, on both switches; CHK019 (switch placement) — CLOSED: badge + switch grouped as a pair outside the `role="group"` status cluster, which hides when empty; CHK031 (muted = empty sentinels only) — CLOSED: the portal state text and the `unavailable` badge are states, not muted; CHK033 (SV/TH length variance) — CLOSED: FR-050a written with five measured constraints and the three-locale acceptance; CHK035 (axe on every surface) — CLOSED: the member page is swept too (it caught the empty labelled `<div>` the same day); CHK009 (contract says "chips") — CLOSED: contract § 3 describes the select-filters + Clear pattern.
+- **Recorded, not changed (with reasons in `reviews/pr-d.md`)**: portal has no Undo (FR-030c binds Undo to the staff switch); Bangkok-time timestamps carry no TZ hint (consistent app-wide); the switch primitive's unchecked-track contrast (1.26:1 light) is a PRE-EXISTING primitive issue for a separate ticket; 44×44 mobile targets are a design-system decision for the Switch primitive; the `<caption>` and the region name carry the same string (distinct landmarks, members-table precedent).
+
+**Co-sign verdict**: ux.md (CHK001–CHK035) is **CO-SIGNED for PR-D** at HEAD `dd3408d79`.

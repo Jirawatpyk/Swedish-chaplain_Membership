@@ -255,3 +255,20 @@ Verification at HEAD `631e5fd33`: lint 0 · typecheck 0 · static gates PASS · 
 
 **Re-affirmed**: security.md (CHK001-CHK026) is **CO-SIGNED** at this HEAD, with
 the Principle III line corrected for the second time rather than carried forward.
+
+## Co-Sign Footer — PR-D (T066)
+
+**T066 Review Gate — Security Checklist Co-Sign (PR-D)**
+
+- **Co-signer**: Claude Fable 5.1 (AI maintainer), solo-maintainer substitute per Constitution v1.4.2 Principle IX
+- **Date**: 2026-09-06
+- **Branch**: `108-pr-d-contact-marketing` (PR-D — US4 staff marketing state + Marketing audience page, US6 portal self-toggle)
+- **Branch HEAD at co-sign**: `dd3408d79` (fix(108): keep the count line at zero as the focus fallback (not live) โ€” H4 vs M-14)
+- **Verification at this HEAD**: lint 0 · typecheck 0 · `check:i18n` 5289 keys × 3 · the eleven static gates OK · unit/RTL suites touched by cycles 9–14 green (members, broadcasts, components, lib, scripts, e2e-helpers, app pages) · full `pnpm test` after cycle 12: 1219 files / 13581 tests (one `.env.example` regression closed in the cycle-11 follow-up) · live Neon: `contact-marketing-opt-out` 22, `contact-marketing-opt-out-guard` 4, `marketing-opt-out-dispatch` 4, `marketing-audience-query`, `self-service-whitelist`, six broadcasts dispatch/audience files · e2e `admin-marketing-audience` 10/10 + `portal-marketing-toggle` 3/3 (re-run after cycle 14).
+- **Still ahead of the PR (user-invoked gates, cannot be run by the maintainer's AI)**: `/speckit-review` ×3 and `/speckit-staff-review-run`; the PR is opened as a DRAFT with that checklist.
+
+- **Reviewer stack**: `security-engineer` (round 1: HIGH-1, MEDIUM-1, LOW-1..5 — APPROVE WITH FIXES conditioned on HIGH-1 + MEDIUM-1) → cycles 9–11 → two `whole-branch-reviewer` passes (round 2) → cycles 13–14. Evidence per finding in `reviews/pr-d.md` § Review rounds.
+- **What changed on security grounds**: the opt-out is consulted AT DISPATCH through the real F7→F3 bridge, fail-closed (HIGH-1); a staff toggle audits `related_member_id` so migration 0009's `last_activity_at` bump fires only for the contact's own action (MEDIUM-1, live-Neon guard); a removed in-tenant contact is 404 without a probe audit and a failed probe write is logged (LOW-1/LOW-2); one `text[]` array bind per list (LOW-3); `?page` clamped both ways (LOW-4); one shared production-host guard behind the integration harness AND the e2e seed client, fail-closed on a match and on an empty list, documented in `.env.example` (LOW-5 + round-2 M-12); the FR-025 AMENDMENT is enforced UNDER THE ROW LOCK, not only on the pre-read — a concurrent self opt-out is never cleared by a staff "on" (round-2 HIGH/MEDIUM-1); the page 404s when the feature flag hides it (round-2 M-11); the three PR-D live-Neon proofs are in the required `integration-smoke.yml` check (round-2 M-6).
+- **CHK001–CHK026 (spec-completeness)** were co-signed at PR-A; the security reviewer's PR-D verdicts on the rows PR-D touches (CHK001–006, 010–019) are PASS with the two conditions above now closed.
+
+**Co-sign verdict**: security.md is **CO-SIGNED for PR-D** at HEAD `dd3408d79`.
