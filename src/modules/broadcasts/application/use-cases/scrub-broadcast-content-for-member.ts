@@ -60,6 +60,7 @@ import type { TenantContext } from '@/modules/tenants';
 import type { MemberId } from '@/modules/members';
 import type { AuditPort } from '../ports/audit-port';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
+import type { MarketingUnsubscribesRepo } from '../ports/marketing-unsubscribes-repo';
 
 export type ScrubBroadcastContentForMemberError = {
   readonly kind: 'scrub.server_error';
@@ -113,11 +114,21 @@ export interface ScrubBroadcastContentForMemberInput {
 export interface ScrubBroadcastContentForMemberOutput {
   readonly scrubbedCount: number;
   readonly tombstonedCount: number;
+  /**
+   * 108 PR-C T104 — suppression rows whose `member_id` + `contact_id`
+   * back-references were nulled here (rows retained, email-keyed).
+   */
+  readonly suppressionRefsSevered: number;
 }
 
 export interface ScrubBroadcastContentForMemberDeps {
   readonly broadcastsRepo: BroadcastsRepo;
   readonly audit: AuditPort;
+  /**
+   * 108 PR-C T104 — `severMemberRefs` runs inside the content-scrub tx so
+   * the redaction and the back-reference severing co-commit.
+   */
+  readonly marketingUnsubscribes: MarketingUnsubscribesRepo;
 }
 
 const SYSTEM_ACTOR_USER_ID = 'system';
@@ -139,14 +150,30 @@ export async function scrubBroadcastContentForMember(
   const tombstonedCount = input.tombstonedCount ?? 0;
 
   try {
-    const { scrubbedCount } = await deps.broadcastsRepo.withTx(async (tx) => {
-      // Order: scrub authored content → emit audit. Both co-commit in this
-      // single tx. (The delivery tombstone is no longer here — it ran in the
-      // caller's atomic members-scrub tx; see the file header.)
+    const { scrubbedCount, suppressionRefsSevered } = await deps.broadcastsRepo.withTx(async (tx) => {
+      // Order: scrub authored content → sever suppression back-references →
+      // emit audit. All co-commit in this single tx. (The delivery tombstone
+      // is no longer here — it ran in the caller's atomic members-scrub tx;
+      // see the file header.)
       const scrub = await deps.broadcastsRepo.scrubContentForMemberInTx(
         tx,
         tenantSlug,
         input.memberId,
+      );
+
+      // 108 PR-C T104 (FR-056): null `member_id` + `contact_id` on the
+      // member's suppression rows; the email-keyed rows survive. The port
+      // method is optional only so partial test fixtures compile — its
+      // absence in a real composition is a programming error, and it must
+      // fail the scrub (the members adapter records `outcome: 'failed'`) rather
+      // than leave a re-identifiable back-reference behind.
+      if (typeof deps.marketingUnsubscribes.severMemberRefs !== 'function') {
+        throw new Error('scrubBroadcastContentForMember: marketingUnsubscribes.severMemberRefs is not wired');
+      }
+      const sever = await deps.marketingUnsubscribes.severMemberRefs(
+        tx,
+        tenantSlug,
+        input.memberId as unknown as string,
       );
 
       // Audit hygiene: skip the `broadcast_content_redacted` emit on a pure
@@ -161,8 +188,9 @@ export async function scrubBroadcastContentForMember(
       // When there is real work in EITHER axis (newly-changed content OR the
       // caller's delivery tombstone), the audit still fires so both counts
       // are recorded.
-      if (scrub.scrubbedCount === 0 && tombstonedCount === 0) {
-        return { scrubbedCount: 0 };
+      // 108 PR-C T104: severed back-references are a THIRD axis of work.
+      if (scrub.scrubbedCount === 0 && tombstonedCount === 0 && sever.affected === 0) {
+        return { scrubbedCount: 0, suppressionRefsSevered: 0 };
       }
 
       // S1 type-design: emit via the COMPILE-CHECKED `emitTyped` path
@@ -184,6 +212,9 @@ export async function scrubBroadcastContentForMember(
           // Threaded from the caller's atomic delivery tombstone (not
           // produced here) so this single audit row records BOTH axes.
           tombstoned_count: tombstonedCount,
+          // 108 PR-C T104 — suppression rows whose back-references were
+          // nulled (rows retained). A count, never an address.
+          suppression_refs_severed: sever.affected,
           reason,
           // Forensic join key: same `cascade` tag the completion/
           // failure logs carry, so the audit row correlates with the
@@ -193,12 +224,12 @@ export async function scrubBroadcastContentForMember(
         requestId: input.requestId,
       });
 
-      return { scrubbedCount: scrub.scrubbedCount };
+      return { scrubbedCount: scrub.scrubbedCount, suppressionRefsSevered: sever.affected };
     });
 
     // Only count an audit emit when one actually happened — a zero-work run
     // skips the emit (above), so it must not bump the audit-emit metric.
-    if (scrubbedCount > 0 || tombstonedCount > 0) {
+    if (scrubbedCount > 0 || tombstonedCount > 0 || suppressionRefsSevered > 0) {
       broadcastsMetrics.auditEmitCount(tenantSlug, 'broadcast_content_redacted');
     }
     logger.info(
@@ -207,12 +238,13 @@ export async function scrubBroadcastContentForMember(
         memberId: input.memberId as unknown as string,
         scrubbedCount,
         tombstonedCount,
+        suppressionRefsSevered,
         cascade: 'f3_member_erasure',
       },
       'broadcasts.content_scrub.completed',
     );
 
-    return ok({ scrubbedCount, tombstonedCount });
+    return ok({ scrubbedCount, tombstonedCount, suppressionRefsSevered });
   } catch (e) {
     // Fail-loud: the repo methods + audit emit propagate DB errors so
     // the caller's tx rolls back. We translate the throw to a typed

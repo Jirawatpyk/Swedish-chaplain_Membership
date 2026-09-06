@@ -387,6 +387,9 @@ export function makeScrubBroadcastContentForMemberDeps(tenantId: string) {
   return {
     broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
     audit: f7AuditAdapter,
+    // 108 PR-C T104 — severs the erased member's suppression back-references
+    // inside the same content-scrub tx.
+    marketingUnsubscribes: makeDrizzleMarketingUnsubscribesRepo(tenantId),
   };
 }
 

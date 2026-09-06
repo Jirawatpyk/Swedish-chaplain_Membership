@@ -360,6 +360,12 @@ export interface F7AuditPayloadShapes {
     readonly member_id: string;
     readonly scrubbed_count: number;
     readonly tombstoned_count: number;
+    /**
+     * 108 PR-C T104 — `marketing_unsubscribes` rows whose `member_id` +
+     * `contact_id` back-references were nulled for this member (the rows
+     * themselves survive, email-keyed). A third axis of erasure work.
+     */
+    readonly suppression_refs_severed: number;
     readonly reason:
       | 'originator_member_deleted'
       | 'gdpr_erasure_request'

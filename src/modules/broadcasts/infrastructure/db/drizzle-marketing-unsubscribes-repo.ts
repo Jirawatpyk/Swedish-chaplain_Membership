@@ -214,5 +214,29 @@ export function makeDrizzleMarketingUnsubscribesRepo(
       `)) as unknown as Array<{ email_lower: string }>;
       return { affected: result.length };
     },
+
+    /**
+     * 108 PR-C T104 — see the port. Both back-references go in one UPDATE
+     * keyed on `member_id` (a `contact_id` is only ever written together
+     * with its member, so no row carries a contact of this member under a
+     * different member_id). `RETURNING 1` — never the address — keeps the
+     * count without pulling plaintext through the driver.
+     */
+    async severMemberRefs(
+      txUnknown,
+      tenantIdArg: string,
+      memberId: string,
+    ): Promise<{ readonly affected: number }> {
+      const tx = txUnknown as TenantTx;
+      const result = (await tx.execute(sql`
+        UPDATE marketing_unsubscribes
+           SET member_id = NULL,
+               contact_id = NULL
+         WHERE tenant_id = ${tenantIdArg}
+           AND member_id = ${memberId}
+        RETURNING 1 AS severed
+      `)) as unknown as Array<{ severed: number }>;
+      return { affected: result.length };
+    },
   };
 }

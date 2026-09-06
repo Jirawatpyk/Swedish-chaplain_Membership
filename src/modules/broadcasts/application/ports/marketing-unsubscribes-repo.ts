@@ -121,14 +121,32 @@ export interface MarketingUnsubscribesRepo {
    * referenced a given member, RETAINING the row (and its plaintext
    * `email_lower`, so suppression survives).
    *
-   * CURRENTLY UNWIRED — no production code calls this. The COMP-1
-   * member-erasure design retains `marketing_unsubscribes` rows whole
-   * (never-erased; `email_lower` is a documented residual), so the
-   * erasure cascade does NOT call this. Kept for a deferred US3 decision
-   * on whether to sever `member_id` while keeping `email_lower`. Do not
-   * delete — US3 may adopt it.
+   * SUPERSEDED by `severMemberRefs` (108 PR-C T104), which nulls
+   * `contact_id` as well. Still unwired; kept only because ~20 port
+   * fixtures stub it — delete together with those stubs in the flag-removal
+   * PR (tasks T099).
    */
   setMemberIdNull(
+    tx: unknown,
+    tenantId: string,
+    memberId: string,
+  ): Promise<{ readonly affected: number }>;
+
+  /**
+   * 108 PR-C T104 (FR-056) — the deferred US3 decision, taken: on member
+   * erasure, null BOTH back-references (`member_id`, `contact_id`) on every
+   * suppression row attributed to the member, RETAINING the row and its
+   * `email_lower` (the address-keyed promise outlives the person's record —
+   * GDPR Art. 21 / PDPA §32; `email_lower` stays the documented COMP-1
+   * residual). Called inside the content-scrub tx by
+   * `scrubBroadcastContentForMember`; idempotent (a re-drive affects 0).
+   *
+   * OPTIONAL for the same reason as `upsertStandalone` / `listEmailLowers`:
+   * the partial fixtures of this port need not stub it; the production
+   * Drizzle adapter always implements it and the use case throws when it is
+   * absent (never in prod).
+   */
+  severMemberRefs?(
     tx: unknown,
     tenantId: string,
     memberId: string,
