@@ -85,11 +85,14 @@ describe('PortalMarketingToggle — rendering per state', () => {
     expect(screen.getByText(t.unsubscribedHint)).toBeInTheDocument();
   });
 
-  it('unavailable → disabled switch + explanation', () => {
+  it('unavailable → NO switch; the state sentence and the hint carry it', () => {
+    // Code-review finding 3: a disabled switch is still a switch in a
+    // position, and `checked` is false here — it asserted "off" about a state
+    // that could not be read. Words, not a control we cannot vouch for.
     renderToggle('unavailable');
-    const sw = screen.getByRole('switch');
-    expect(sw.getAttribute('aria-disabled') === 'true' || (sw as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByRole('switch')).toBeNull();
     expect(screen.getByText(t.state.unavailable)).toBeInTheDocument();
+    expect(screen.getByText(t.unavailableHint)).toBeInTheDocument();
   });
 
   it('primary contact → the FR-033 note that invoices and payment emails are unaffected', () => {
@@ -138,18 +141,24 @@ describe('PortalMarketingToggle — switching', () => {
     await waitFor(() => expect(toast.info).toHaveBeenCalledWith(t.toast.unchanged));
   });
 
+  // Fourth column: only `suppressed` proves the rendered control is stale (the
+  // address joined the list since the page loaded), so only it refreshes
+  // (round-1 finding 5, narrowed by round-2 finding 3 — a 429 or 500 must not
+  // trigger a full re-render of a page the server just asked us to ease off).
   it.each([
-    [409, 'suppressed', t.toast.errors.suppressed],
-    [429, 'rate_limited', t.toast.errors.rateLimited],
-    [500, 'server_error', t.toast.errors.generic],
-  ] as const)('HTTP %s (%s) → localized error toast', async (status, code, expected) => {
+    [409, 'suppressed', t.toast.errors.suppressed, true],
+    [409, 'idempotency_conflict', t.toast.errors.generic, false],
+    [429, 'rate_limited', t.toast.errors.rateLimited, false],
+    [500, 'server_error', t.toast.errors.generic, false],
+  ] as const)('HTTP %s (%s) → localized error toast (refresh: %s)', async (status, code, expected, refreshes) => {
     // The status alone is not the reason (cycle 15): 409 covers `suppressed`,
     // `self_opted_out` and `idempotency_conflict`.
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse(status, { error: { code } }));
     renderToggle('on');
     fireEvent.click(screen.getByRole('switch'));
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith(expected));
-    expect(refreshSpy).not.toHaveBeenCalled();
+    if (refreshes) expect(refreshSpy).toHaveBeenCalled();
+    else expect(refreshSpy).not.toHaveBeenCalled();
   });
 
   it('network failure → generic error toast', async () => {
@@ -177,13 +186,17 @@ describe('PortalMarketingToggle — cycle 11 (UX M7, a11y 11)', () => {
     expect(described.join(' ')).toContain(t.state.off_by_staff);
   });
 
-  it('"unavailable" — the disabled switch is also described by the hint', () => {
+  it('"unavailable" — the state and the reason are both READ, now as text', () => {
+    // The a11y requirement from cycle 11 was that a screen-reader user hears
+    // WHY the preference cannot be changed, not only that it cannot. That was
+    // met with `aria-describedby` on a disabled switch; with the switch gone
+    // (code-review finding 3) the same two strings sit in the flow right after
+    // the label, where browse mode reads them in order. The requirement holds;
+    // only its mechanism changed.
     renderToggle('unavailable');
-    const sw = screen.getByRole('switch');
-    const ids = (sw.getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean);
-    const described = ids.map((id) => document.getElementById(id)?.textContent ?? '').join(' ');
-    expect(described).toContain(t.state.unavailable);
-    expect(described).toContain(t.unavailableHint);
+    expect(screen.queryByRole('switch')).toBeNull();
+    expect(screen.getByText(t.state.unavailable)).toBeInTheDocument();
+    expect(screen.getByText(t.unavailableHint)).toBeInTheDocument();
   });
 });
 
@@ -218,7 +231,9 @@ describe('PortalMarketingToggle — optimistic state (cycle 13, whole-branch LOW
     d.resolve(jsonResponse(409, { error: { code: 'suppressed' } }));
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith(t.toast.errors.suppressed));
     expect(sw).toHaveAttribute('aria-checked', 'false');
-    expect(refreshSpy).not.toHaveBeenCalled();
+    // Rolled back AND refreshed — the control should not be on screen once
+    // the server's truth (unsubscribed) arrives (round-1 finding 5).
+    expect(refreshSpy).toHaveBeenCalled();
   });
 });
 

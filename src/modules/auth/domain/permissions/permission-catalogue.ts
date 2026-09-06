@@ -39,7 +39,15 @@ const CATALOGUE_RAW = [
   // dedicated contacts surface. Contact reads on the member-detail page still
   // ride `members.read`, so revoking this key hides the audience page and the
   // ⌘K entry for it but NOT the contacts shown on a member's own page.
-  { key: 'contacts.read' },
+  // 108 PR-D (code-review finding 8) — `sensitive: 'pii'`. Before this feature
+  // `contacts.read` gated one member's contacts at a time; it now also gates
+  // `/admin/marketing/audience`, a TENANT-WIDE listing of every live contact's
+  // name and email, 50 per page. The flag is what reviewers and gates key on to
+  // decide a surface is PII-bearing, so leaving it unset would make a future
+  // bundle change or a new surface behind this key read as non-sensitive and
+  // skip the PII review path. It grants no less than before — `manager` and
+  // `marketing` keep the key; only its classification is corrected.
+  { key: 'contacts.read', sensitive: 'pii' },
   { key: 'contacts.write', sensitive: 'pii' },
   // 108 PR-D (FR-030) — "manage contact marketing audience": switch a
   // contact's marketing state on/off (staff toggle on the member page and

@@ -69,7 +69,8 @@ ALTER TABLE "contacts"
     ("marketing_opt_out_at" IS NOT NULL AND "marketing_opt_out_source" IS NOT NULL AND "marketing_opt_out_by_user_id" IS NOT NULL)
   );--> statement-breakpoint
 
--- Reserved for PR-C's audience resolver (see the header note) — unused by PR-D.
+-- For PR-C's audience resolver, and ALSO planned against by PR-D's `state=on`
+-- filter — see the CORRECTION in the header before considering a drop.
 CREATE INDEX IF NOT EXISTS "contacts_marketing_recipients_idx"
   ON "contacts" USING btree ("tenant_id", "member_id", "contact_id")
   WHERE removed_at IS NULL AND marketing_opt_out_at IS NULL;

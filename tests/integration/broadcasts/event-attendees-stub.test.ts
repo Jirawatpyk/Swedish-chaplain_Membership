@@ -92,6 +92,7 @@ describe('event-attendees-stub (T050)', () => {
       },
       {
         segment: { kind: 'event_attendees_last_90d' },
+        phase: 'dispatch',
         requestingMemberPrimaryEmail: null,
         customRecipients: null,
       },

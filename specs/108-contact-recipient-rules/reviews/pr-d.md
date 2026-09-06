@@ -160,6 +160,71 @@ describes the optimistic / focus hand-off behaviour; FR-050a written (ux CHK033)
   stamps `removed_at`). Correct outcome — erased people never appear; the vocabulary stays
   for the compose-time count feedback (PR-C).
 
+### Round 5 — `/code-review` ×2 (2026-09-06), 11 + 15 findings, all closed
+
+Two passes of the repo's own `/code-review` skill, run by the maintainer after
+the staff-review fixes landed. The second pass reviewed the first pass's fixes.
+
+**Pass 1 (11 findings).** Four were in code written THAT DAY to close the
+staff review: the JSDoc for `marketingOptOutFilterCount` was orphaned a second
+time in the same file (fixed at 08:00, re-broken at 14:00 by inserting a new
+method between a doc block and its body); the P2 "emit at zero" canary was fed
+by the SUBMIT call site too, so member submits kept the series alive and the
+alarm could not detect a dead dispatch filter; `findCarriedSelfOptOut` could
+use NO index (both `lower(email)` indexes are partial on `removed_at IS NULL`,
+and the helper must see removed rows) so every contact INSERT scanned the
+tenant; and the `0294` line-72 comment contradicted the header correction three
+lines above it. The rest: `isSuppressed` answered "not suppressed" for an
+address the grammar rejects — the ONE fail-open path in the feature, and it
+allowed switching marketing back on for someone who had unsubscribed; the
+`.env.example` placeholder was a non-empty value matching no host, so the
+"fail-closed" DB guard ran and blocked nothing; `submit-broadcast` was the one
+resolver call site left unguarded; `contacts.read` now gates a tenant-wide PII
+listing without the `pii` flag; `droppedByPreference` had no per-broadcast
+record; the disabled switch asserted "off" for an unreadable state; no refresh
+after a 409 left a control the server had already invalidated.
+
+**Pass 2 (15 findings), on pass 1's fixes.** The guard now rejected only the
+NEW placeholder — every existing checkout still held the old one and passed;
+the same guard logic lived in two more places, one a WRITE script where the
+placeholder silently waived `--confirm-prod`; `created_at` is
+`transaction_timestamp()`, so the "latest row for the address" rule tied
+within one transaction — on the import path it was written for — and the tie
+was arbitrary; `parseAll` threw OUTSIDE `observed`, so the new fail-closed path
+was neither logged nor counted; the refresh fired on 429/503 too, amplifying
+load on a server that had asked us to back off; it unmounted the focused switch
+without the file's own hand-off helper; three behaviours shipped with no test
+(TDD is non-negotiable here); the new index was pinned by nothing; the metric
+catalogue did not know about `phase`; four doc blocks described the replaced
+behaviour; and the "counts once" JSDoc claim was itself overstated.
+
+**Two facts the tests had to teach.** `coalesce(source = 'self', false)` in the
+tie-break: `NULL = 'self'` is NULL and Postgres sorts NULLs FIRST under DESC, so
+without it the row that said "on" beat the row that said "objected" — the live
+tie-break case failed on its first run and caught it. And `desc(created_at)`
+alone is not an order: the migration 0296 index carries `created_at DESC`, and
+the SQL now breaks ties by "honour the objection we cannot date", then by
+`contact_id` for reproducibility.
+
+**Closed** in `fdc02eb82`: migration `0296` (`contacts_tenant_lower_email_all_idx`,
+`EXPLAIN` = Index Scan, no Sort node, pinned in `pg_indexes`); fail-closed
+parse on both suppression paths inside `observed`; `phase` label + catalogue;
+typed `submit.server_error`; 409-only refresh with focus hand-off; no control
+for an unknown state; `contacts.read` → `pii`; every shipped placeholder
+rejected in all three guard copies; per-broadcast drop log on all three
+dispatch paths; six new tests including the same-transaction tie.
+
+**Verification at `fdc02eb82`**: `pnpm test:coverage` **exit 0, zero threshold
+errors** · unit + contract 1224 files / 13650 tests · live Neon
+`contact-marketing-opt-out` 30 (incl. the tie-break and the 0296 pin) · five
+static gates re-run · `db:verify` OK · lint 0 · typecheck 0.
+
+**The lesson this round adds** to the one round 4 taught: a fix is not done when
+the test it was written for goes green — it is done when the NEXT reviewer
+cannot find the same class in it. Four of pass 1's findings and most of pass 2's
+were created by the fixes for the round before. The tools that caught them were
+the ones that read the code again, not the ones that re-ran the tests.
+
 ### Round 4 — `/speckit-staff-review-run` (2026-09-06), 5 reviewers, 50 findings
 
 The gate the maintainer runs. Five project reviewers on Opus, one per review

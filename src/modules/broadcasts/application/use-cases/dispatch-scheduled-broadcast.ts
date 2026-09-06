@@ -515,6 +515,7 @@ export async function dispatchScheduledBroadcast(
       },
       {
         segment,
+        phase: 'dispatch',
         requestingMemberPrimaryEmail: requestingPrimary,
         customRecipients:
           broadcast.customRecipientEmails === null
@@ -615,6 +616,25 @@ export async function dispatchScheduledBroadcast(
           resendAudienceId,
         );
       });
+    }
+
+    // Code-review finding 9: `droppedByPreference` was computed, returned and
+    // read by nobody, so "why did broadcast X reach 40 people instead of 55?"
+    // had only a tenant-scoped counter behind it — unattributable to a
+    // broadcast. Its sibling `orphans` is audited per member; this is the
+    // cheaper equivalent while the sender-facing surface waits for PR-C
+    // (T088/T089, recorded as an AMENDMENT at FR-022a): one line, with the
+    // broadcast id, counts only — never an address (FR-053a).
+    if (resolvedResult.value.droppedByPreference > 0) {
+      logger.info(
+        {
+          tenantId: deps.tenant.slug,
+          broadcastId: input.broadcastId,
+          droppedByPreference: resolvedResult.value.droppedByPreference,
+          recipientCount: resolvedResult.value.recipients.length,
+        },
+        'broadcasts.dispatch.marketing_opt_out_dropped',
+      );
     }
 
     const contacts: ReadonlyArray<AudienceContact> = resolvedResult.value.recipients.map(

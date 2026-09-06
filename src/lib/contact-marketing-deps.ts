@@ -39,14 +39,15 @@ import {
 /**
  * Suppression lookup over the RLS-safe broadcasts repo.
  *
- * An address that fails the `EmailLower` parse is answered "not suppressed"
- * WITHOUT a query. The honest reason (review errors LOW-1) is that
- * `asEmail` (members) and `asEmailLower` (broadcasts) share one grammar, so
- * no stored `contacts.email` can pass the first and fail the second — NOT
- * that "the list only holds parsed values": the multi-batch webhook path
- * brands a Resend payload without parsing it. The branch therefore logs a
- * debug breadcrumb; if it ever fires the two grammars have drifted and
- * somebody needs to know before people who unsubscribed start receiving.
+ * An address that fails the `EmailLower` parse THROWS (code-review finding 1).
+ * It used to be answered "not suppressed" without a query, which the caller
+ * reads as permission to switch marketing back ON — so a person who had
+ * unsubscribed could start receiving again. `asEmail` (members) and
+ * `asEmailLower` (broadcasts) share one grammar, so no stored `contacts.email`
+ * should fail here; but the multi-batch webhook path brands a Resend payload
+ * WITHOUT parsing, so the suppression list can hold a value this side rejects.
+ * If the branch ever fires the honest answer is "I could not check", which the
+ * callers already turn into 503 `suppression_unavailable`.
  *
  * A DB failure THROWS — the port contract — so the toggle refuses to switch
  * "on" and the list surfaces degrade to "status unavailable" rather than
@@ -54,15 +55,35 @@ import {
  * THIS is the layer that logs and counts it (review errors HIGH-1): six
  * `catch {}` blocks upstream would otherwise leave an outage with no trace.
  */
+/**
+ * Thrown when an address fails `asEmailLower` on the suppression path. Its own
+ * class so `errKind` names it in the log without carrying the address.
+ */
+class UnparseableSuppressionAddress extends Error {
+  constructor() {
+    super('suppression lookup: address failed the EmailLower grammar');
+    this.name = 'UnparseableSuppressionAddress';
+  }
+}
+
 export function makeMarketingSuppressionLookup(
   tenant: TenantContext,
 ): MarketingSuppressionLookupPort {
   const repo = makeDrizzleMarketingUnsubscribesRepo(tenant.slug);
+  // Code-review finding 1 — FAIL CLOSED on a value this grammar rejects.
+  // The old behaviour silently DROPPED such an address from the batch, which
+  // the caller then read as "not suppressed": the audience page and the member
+  // badge would show `on` for someone who had unsubscribed. The branch is
+  // believed unreachable (the two grammars are identical), but the multi-batch
+  // webhook path brands a Resend payload WITHOUT parsing, so a suppression row
+  // can hold a value this side rejects — and if that ever happens the answer
+  // must be "I don't know", never "not suppressed".
   const parseAll = (emails: readonly string[]): EmailLower[] => {
     const out: EmailLower[] = [];
     for (const email of emails) {
       const parsed = asEmailLower(email.toLowerCase());
-      if (parsed.ok) out.push(parsed.value);
+      if (!parsed.ok) throw new UnparseableSuppressionAddress();
+      out.push(parsed.value);
     }
     return out;
   };
@@ -82,15 +103,13 @@ export function makeMarketingSuppressionLookup(
   };
   return {
     async isSuppressed(email) {
-      const parsed = asEmailLower(email.toLowerCase());
-      if (!parsed.ok) {
-        logger.debug(
-          { tenantId: tenant.slug },
-          'marketing.suppression_email_unparseable — grammars drifted?',
-        );
-        return false;
-      }
       return observed('isSuppressed', async () => {
+        const parsed = asEmailLower(email.toLowerCase());
+        // Inside `observed` so the throw is logged (class only) and counted
+        // like any other suppression-lookup failure; the callers already map
+        // it to 503 `suppression_unavailable` and refuse to switch marketing
+        // ON, which is the correct answer to "I could not check".
+        if (!parsed.ok) throw new UnparseableSuppressionAddress();
         const suppressed = await repo.lookupBatch(tenant.slug, [parsed.value]);
         return suppressed.has(parsed.value);
       });

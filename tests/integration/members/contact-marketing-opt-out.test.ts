@@ -180,6 +180,22 @@ describe('108 PR-D — contact marketing opt-out columns (migrations 0294 + 0295
     expect(def).toMatch(/marketing_opt_out_at IS NULL/);
   });
 
+  it('0296: the NON-partial carry-forward index exists on (tenant_id, lower(email), created_at DESC)', async () => {
+    // Round-2 review finding 11. `findCarriedSelfOptOut` must see REMOVED
+    // rows, so neither partial lower(email) index (0009, 0182) can serve it;
+    // without this one every contact INSERT scans the tenant. A migration that
+    // drops or renames it would silently restore that scan — so it is pinned.
+    const rows = await db.execute(sql`
+      SELECT indexdef FROM pg_indexes
+      WHERE schemaname = 'public' AND tablename = 'contacts'
+        AND indexname = 'contacts_tenant_lower_email_all_idx'
+    `);
+    expect(rows).toHaveLength(1);
+    const def = (rows[0] as { indexdef: string }).indexdef;
+    expect(def).toMatch(/\(tenant_id, lower\(email\), created_at DESC\)/);
+    expect(def).not.toMatch(/WHERE/);
+  });
+
   it('0295: both contact-marketing audit event types are registered', async () => {
     const rows = await db.execute(sql`
       SELECT enumlabel FROM pg_enum e
@@ -787,6 +803,71 @@ describe('108 PR-D — a self opt-out survives remove → re-add of the same add
     const fresh = await drizzleContactRepo.findById(tenant.ctx, asContactId(third));
     if (!fresh.ok) throw new Error('expected the contact');
     expect(fresh.value.marketing).toEqual(RECEIVES_MARKETING);
+  });
+
+  // Round-2 review finding 12: `created_at` defaults to now() = the TRANSACTION
+  // timestamp, so rows for one address written in ONE transaction tie, and
+  // `LIMIT 1` over a tie is arbitrary — it could resurrect a withdrawn objection
+  // or drop a live one. The tie-break is deliberate: a `self` opt-out wins when
+  // the record cannot say which row came last. Proved here by building the
+  // exact tie the import path can create.
+  it('two rows for one address in ONE transaction tie on created_at; the self opt-out wins the tie', async () => {
+    const address = `tie-${randomUUID().slice(0, 8)}@example.test`;
+    const draftFor = (id: string) =>
+      ({
+        tenantId: tenant.ctx.slug,
+        contactId: asContactId(id),
+        memberId: asMemberId(memberId),
+        firstName: 'Tie',
+        lastName: 'Break',
+        email: address as never,
+        phone: null,
+        roleTitle: null,
+        preferredLanguage: 'en',
+        dateOfBirth: null,
+        linkedUserId: null,
+        inviteBouncedAt: null,
+        art14AttestedAt: null,
+        isPrimary: false,
+        removedAt: null,
+      }) as never;
+    const a = randomUUID();
+    const b = randomUUID();
+
+    // One transaction: A (self-off, then removed) and B (carried, then switched
+    // back ON by the person, then removed). Both rows now share created_at, and
+    // they disagree — A says "objected", B says "on".
+    await runInTenant(tenant.ctx, async (tx) => {
+      const addedA = await drizzleContactRepo.addInTx(tx, draftFor(a));
+      if (!addedA.ok) throw new Error(`add A failed: ${addedA.error.code}`);
+      await drizzleContactRepo.setMarketingOptOutInTx(tx, asContactId(a), {
+        kind: 'off',
+        actor: 'self',
+        byUserId: admin.userId as never,
+        at: new Date('2026-09-06T13:00:00Z'),
+      });
+      await drizzleContactRepo.removeInTx(tx, asContactId(a));
+      const addedB = await drizzleContactRepo.addInTx(tx, draftFor(b));
+      if (!addedB.ok) throw new Error(`add B failed: ${addedB.error.code}`);
+      await drizzleContactRepo.setMarketingOptOutInTx(tx, asContactId(b), { kind: 'on', actor: 'self' });
+      await drizzleContactRepo.removeInTx(tx, asContactId(b));
+    });
+
+    // The tie is real, not assumed.
+    const stamps = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({ id: contacts.contactId, createdAt: contacts.createdAt })
+        .from(contacts)
+        .where(sql`lower(${contacts.email}) = lower(${address})`),
+    );
+    expect(stamps).toHaveLength(2);
+    expect(stamps[0]!.createdAt.getTime()).toBe(stamps[1]!.createdAt.getTime());
+
+    // Fail closed: with no way to order A and B in time, the objection wins.
+    const third = await addContactWith(address);
+    const fresh = await drizzleContactRepo.findById(tenant.ctx, asContactId(third));
+    if (!fresh.ok) throw new Error('expected the contact');
+    expect(fresh.value.marketing.source).toBe('self');
   });
 
   // Staff review C1: `createWithPrimaryContactInTx` — every `POST /api/members`

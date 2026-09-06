@@ -102,14 +102,14 @@ describe('MarketingSwitch — rendering', () => {
     },
   );
 
-  it('"status unavailable" → disabled; a click sends nothing', async () => {
-    vi.spyOn(globalThis, 'fetch');
+  it('"status unavailable" → NO switch at all; the badge explains it', () => {
+    // Code-review finding 3. A disabled switch still renders in a POSITION —
+    // and `checked` is false for `unavailable`, so it asserted "off" about a
+    // state we could not read. Someone still receiving marketing saw a control
+    // saying they were not. An unknown state gets words, not a control, the
+    // same as `unsubscribed` and `off_by_contact` already do.
     renderSwitch('unavailable');
-    const sw = screen.getByRole('switch');
-    expect(sw.getAttribute('aria-disabled') === 'true' || (sw as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(sw);
-    await new Promise((r) => setTimeout(r, 0));
-    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(screen.queryByRole('switch')).toBeNull();
   });
 });
 
@@ -199,21 +199,29 @@ describe('MarketingSwitch — switching on and the error map', () => {
     expect(refreshSpy).toHaveBeenCalled();
   });
 
+  // Fourth column: does the refusal PROVE the rendered state is stale? Only
+  // `suppressed` / `self_opted_out` do (the row changed under us and the switch
+  // should not be on screen) — those refresh so the server's truth arrives
+  // (round-1 finding 5). `idempotency_conflict` is also a 409 but says nothing
+  // about the row; 429 / 503 are the server asking us to back off, and a
+  // refresh there would amplify load (round-2 finding 3).
   it.each([
-    [409, { type: 'https://chamber-os.app/errors/suppressed' }, t.errors.suppressed],
-    [409, { type: 'https://chamber-os.app/errors/idempotency_conflict' }, t.errors.generic],
-    [403, {}, t.errors.forbidden],
-    [404, {}, t.errors.notFound],
-    [429, {}, t.errors.rateLimited],
-    [503, { type: 'https://chamber-os.app/errors/suppression_unavailable' }, t.errors.unavailable],
-    [500, {}, t.errors.generic],
-  ] as const)('HTTP %s → localized error toast', async (status, body, expected) => {
+    [409, { type: 'https://chamber-os.app/errors/suppressed' }, t.errors.suppressed, true],
+    [409, { type: 'https://chamber-os.app/errors/self_opted_out' }, t.errors.selfOptedOut, true],
+    [409, { type: 'https://chamber-os.app/errors/idempotency_conflict' }, t.errors.generic, false],
+    [403, {}, t.errors.forbidden, false],
+    [404, {}, t.errors.notFound, false],
+    [429, {}, t.errors.rateLimited, false],
+    [503, { type: 'https://chamber-os.app/errors/suppression_unavailable' }, t.errors.unavailable, false],
+    [500, {}, t.errors.generic, false],
+  ] as const)('HTTP %s → localized error toast (refresh: %s)', async (status, body, expected, refreshes) => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse(status, body));
     renderSwitch('off_by_staff');
     fireEvent.click(screen.getByRole('switch'));
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith(expected));
     expect(toast.success).not.toHaveBeenCalled();
-    expect(refreshSpy).not.toHaveBeenCalled();
+    if (refreshes) expect(refreshSpy).toHaveBeenCalled();
+    else expect(refreshSpy).not.toHaveBeenCalled();
   });
 
   it('a network failure → generic error toast', async () => {
@@ -263,7 +271,10 @@ describe('MarketingSwitch — optimistic state (cycle 11)', () => {
     d.resolve(jsonResponse(409, { type: 'https://chamber-os.app/errors/suppressed' }));
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith(t.errors.suppressed));
     expect(sw).toHaveAttribute('aria-checked', 'false');
-    expect(refreshSpy).not.toHaveBeenCalled();
+    // The optimistic value rolls back AND the row is refreshed: `suppressed`
+    // means the address joined the list under us, so the stale prop is not
+    // the truth either (round-1 finding 5).
+    expect(refreshSpy).toHaveBeenCalled();
   });
 
   it('rolls back on a network failure', async () => {

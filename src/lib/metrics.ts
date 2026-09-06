@@ -2246,12 +2246,6 @@ export const broadcastsMetrics = {
   },
 
   /**
-   * `broadcasts.marketing_opt_out_filter_count{tenant}` — 108 PR-D (FR-022a):
-   * recipients removed per dispatch because their contact row carries a
-   * marketing opt-out (staff or self). Distinct from the suppression
-   * anti-join above — an address on BOTH lists counts once, as suppressed.
-   */
-  /**
    * `broadcasts.suppression_list_size{tenant}` — 108 PR-D (staff review P4):
    * rows in `marketing_unsubscribes` for this tenant. The Marketing audience
    * page loads this WHOLE list per request for any `state` filter and binds it
@@ -2271,12 +2265,36 @@ export const broadcastsMetrics = {
     });
   },
 
-  marketingOptOutFilterCount(tenantId: string, count: number): void {
+  /**
+   * `broadcasts.marketing_opt_out_filter_count{tenant, phase}` — 108 PR-D
+   * (FR-022a): recipients removed because their contact row carries a
+   * marketing opt-out (staff or self). Distinct from the suppression
+   * anti-join — an address on BOTH lists counts once, as suppressed.
+   *
+   * Emitted whenever the filter RUNS, **including at zero**, so that "nobody
+   * has opted out" and "the filter stopped running" are distinguishable: the
+   * alarm is the SERIES DISAPPEARING, not a zero value. `phase` separates the
+   * submit-time call from the dispatch-time one — without it, ongoing submits
+   * would keep the series alive and mask a dead dispatch filter (code-review
+   * finding 6).
+   *
+   * NOT a count of distinct people: `phase="dispatch"` counts once per RESOLVE,
+   * and a multi-batch broadcast re-resolves on every tick (round-2 finding 15
+   * corrected an earlier claim that the label stopped double counting — it
+   * separates the two phases, it does not de-duplicate within one). Read it as
+   * a liveness signal; the per-broadcast figure is the
+   * `broadcasts.dispatch.marketing_opt_out_dropped` log line.
+   */
+  marketingOptOutFilterCount(
+    tenantId: string,
+    count: number,
+    phase: 'submit' | 'dispatch',
+  ): void {
     safeMetric(() => {
       counter(
         'broadcasts_marketing_opt_out_filter_count',
-        'Recipients removed per dispatch by a per-contact marketing opt-out',
-      ).add(count, { tenant: tenantId });
+        'Recipients removed by a per-contact marketing opt-out, per resolver phase',
+      ).add(count, { tenant: tenantId, phase });
     });
   },
 

@@ -107,6 +107,7 @@ describe('audience-cap integration (T049)', () => {
       { tenant, ...bridges },
       {
         segment: SEG_ALL,
+        phase: 'dispatch',
         requestingMemberPrimaryEmail: null,
         customRecipients: null,
       },
@@ -127,6 +128,7 @@ describe('audience-cap integration (T049)', () => {
       { tenant, ...bridges },
       {
         segment: SEG_ALL,
+        phase: 'dispatch',
         requestingMemberPrimaryEmail: null,
         customRecipients: null,
       },
@@ -141,6 +143,7 @@ describe('audience-cap integration (T049)', () => {
       { tenant, ...bridges },
       {
         segment: SEG_ALL,
+        phase: 'dispatch',
         requestingMemberPrimaryEmail: null,
         customRecipients: null,
       },
@@ -179,6 +182,7 @@ describe('audience-cap integration (T049)', () => {
       },
       {
         segment: SEG_ALL,
+        phase: 'dispatch',
         requestingMemberPrimaryEmail: null,
         customRecipients: null,
       },
@@ -194,6 +198,7 @@ describe('audience-cap integration (T049)', () => {
       { tenant, ...makeBridges(all) },
       {
         segment: SEG_ALL,
+        phase: 'dispatch',
         requestingMemberPrimaryEmail: all[0]!.primaryContactEmail,
         customRecipients: null,
       },

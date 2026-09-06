@@ -137,6 +137,18 @@ export const contacts = pgTable(
     index('contacts_marketing_recipients_idx')
       .on(table.tenantId, table.memberId, table.contactId)
       .where(sql`removed_at IS NULL AND marketing_opt_out_at IS NULL`),
+    // 108 PR-D (migration 0296, code-review finding 4) — serves
+    // `findCarriedSelfOptOut`, which must see REMOVED rows and therefore
+    // cannot use either partial `lower(email)` index (0009, 0182). The
+    // trailing `created_at DESC` supplies the ORDER BY, so the lookup is an
+    // index scan with LIMIT 1 and no sort node. Runs on every contact INSERT,
+    // including once per row in `scripts/import-members.ts`. Drift hygiene
+    // only; DDL is hand-written.
+    index('contacts_tenant_lower_email_all_idx').on(
+      table.tenantId,
+      sql`lower(${table.email})`,
+      table.createdAt.desc(),
+    ),
     // Note: pg_trgm GIN index on (first_name || ' ' || last_name) is added
     // via raw SQL in the migration.
   ],

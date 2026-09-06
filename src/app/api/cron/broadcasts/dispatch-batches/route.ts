@@ -260,6 +260,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         },
         {
           segment,
+          phase: 'dispatch',
           requestingMemberPrimaryEmail: requestingPrimary,
           customRecipients:
             broadcast.customRecipientEmails === null
@@ -293,6 +294,23 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           'cron.broadcasts.dispatch_batches.recipient_resolution_failed',
         );
         continue;
+      }
+
+      // Round-2 finding 9: the per-broadcast drop count was logged only on the
+      // `dispatchScheduledBroadcast` path, so a >5,000-recipient broadcast —
+      // which travels split-large-broadcasts -> dispatch-batches and never
+      // touches that path — remained unanswerable for exactly the broadcasts
+      // where the gap is largest. Counts only, never an address (FR-053a).
+      if (resolved.value.droppedByPreference > 0) {
+        logger.info(
+          {
+            tenantId: tenant.slug,
+            broadcastId: row.broadcast_id,
+            droppedByPreference: resolved.value.droppedByPreference,
+            recipientCount: resolved.value.recipients.length,
+          },
+          'cron.broadcasts.dispatch_batches.marketing_opt_out_dropped',
+        );
       }
 
       const allRecipients = resolved.value.recipients.map((e) => ({

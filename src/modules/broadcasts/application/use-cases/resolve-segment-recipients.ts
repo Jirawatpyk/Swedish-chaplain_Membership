@@ -60,6 +60,15 @@ export interface ResolveSegmentInput {
   readonly requestingMemberPrimaryEmail: EmailLower | null;
   /** Already-validated custom emails (when segment.kind === 'custom'). */
   readonly customRecipients: ReadonlyArray<EmailLower> | null;
+  /**
+   * Which call site is asking (code-review finding 6). This resolver runs at
+   * SUBMIT and again at DISPATCH; `broadcasts.marketing_opt_out_filter_count`
+   * is documented as a per-dispatch counter whose ABSENCE is the alarm, so
+   * submits emitting the same series would keep it alive and mask a dead
+   * dispatch-side filter — the exact failure the emit-at-zero design exists to
+   * catch. The label also stops the same drop being counted twice.
+   */
+  readonly phase: 'submit' | 'dispatch';
 }
 
 export interface ResolveSegmentOutput {
@@ -155,12 +164,18 @@ export async function resolveSegmentRecipients(
       final = final.filter((e) => !optedOut.has(e));
       droppedByPreference = before - final.length;
     }
-    // Emitted whenever the filter RAN, including at zero (staff review P3-P2).
+    // Emitted whenever the filter RAN, including at zero (staff review P2).
     // Guarding on `> 0` made "nobody has opted out" and "step 4b was deleted"
     // the same signal — no series either way — and SweCham cuts over with zero
     // opt-outs, so the catalogue's "a drop to 0 means the filter stopped"
     // alarm could never have fired. `.add(0)` still registers the series.
-    broadcastsMetrics.marketingOptOutFilterCount(deps.tenant.slug, droppedByPreference);
+    // Labelled by phase (code-review finding 6): the alarm watches the
+    // `dispatch` series, which ongoing submits must not keep alive.
+    broadcastsMetrics.marketingOptOutFilterCount(
+      deps.tenant.slug,
+      droppedByPreference,
+      input.phase,
+    );
   }
 
   // Brand-cast (defence-in-depth — primary contact emails could be string at the source)

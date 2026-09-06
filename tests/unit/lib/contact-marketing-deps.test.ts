@@ -70,18 +70,24 @@ describe('makeMarketingSuppressionLookup — isSuppressed', () => {
     await expect(port.isSuppressed('jane@example.com')).resolves.toBe(false);
   });
 
-  it('an UNPARSEABLE address → false WITHOUT a lookup, and leaves a debug breadcrumb', async () => {
-    // The honest reason (review errors LOW-1): `asEmail` (members) and
-    // `asEmailLower` (broadcasts) share one grammar, so no stored
-    // `contacts.email` can pass one and fail the other. It is NOT "the list
-    // only holds parsed values" — the multi-batch webhook path brands without
-    // parsing. If this branch ever fires, the two grammars have drifted and
-    // somebody must know.
+  it('an UNPARSEABLE address THROWS — never "not suppressed" (code-review finding 1)', async () => {
+    // `asEmail` (members) and `asEmailLower` (broadcasts) share one grammar, so
+    // no stored `contacts.email` should fail here — but the multi-batch webhook
+    // path brands a Resend payload WITHOUT parsing, so a suppression row CAN
+    // hold a value this side rejects. The old behaviour answered `false`, which
+    // the caller reads as "not suppressed" and uses to allow switching marketing
+    // ON: a person who unsubscribed would start receiving mail again. Every
+    // other suppression failure here is fail-closed; this one now is too.
     const port = makeMarketingSuppressionLookup(tenant);
-    await expect(port.isSuppressed('not an address')).resolves.toBe(false);
+    await expect(port.isSuppressed('not an address')).rejects.toThrow(
+      /UnparseableSuppressionAddress|EmailLower grammar/,
+    );
     expect(lookupBatch).not.toHaveBeenCalled();
-    expect(loggerDebug).toHaveBeenCalledTimes(1);
-    expect(JSON.stringify(loggerDebug.mock.calls[0])).not.toContain('not an address');
+    // Logged (class only) and counted like any other lookup failure — the
+    // address itself never reaches the log line.
+    expect(loggerError).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(loggerError.mock.calls[0])).not.toContain('not an address');
+    expect(suppressionLookupFailed).toHaveBeenCalledWith('test-tenant', 'isSuppressed');
   });
 
   it('a repo failure THROWS — never "not suppressed" (fail closed)', async () => {
@@ -126,12 +132,20 @@ describe('makeMarketingSuppressionLookup — isSuppressed', () => {
 });
 
 describe('makeMarketingSuppressionLookup — batch + list', () => {
-  it('lookupSuppressed drops unparseable input, skips the repo for an empty batch', async () => {
+  it('lookupSuppressed THROWS on unparseable input rather than silently dropping it', async () => {
+    // Dropping the address made the caller read it as "not suppressed" — the
+    // audience page and the member badge would show `on` for someone who had
+    // unsubscribed (code-review finding 1).
     lookupBatch.mockResolvedValue(new Set(['b@example.com']));
     const port = makeMarketingSuppressionLookup(tenant);
-    await expect(port.lookupSuppressed(['nope'])).resolves.toEqual(new Set());
+    await expect(port.lookupSuppressed(['nope'])).rejects.toThrow(/EmailLower grammar/);
+    await expect(
+      port.lookupSuppressed(['A@example.com', 'nope', 'b@example.com']),
+    ).rejects.toThrow(/EmailLower grammar/);
     expect(lookupBatch).not.toHaveBeenCalled();
-    const r = await port.lookupSuppressed(['A@example.com', 'nope', 'b@example.com']);
+
+    // A clean batch still normalises, dedupes to the repo, and answers.
+    const r = await port.lookupSuppressed(['A@example.com', 'b@example.com']);
     expect([...r]).toEqual(['b@example.com']);
     expect(lookupBatch).toHaveBeenCalledWith('test-tenant', ['a@example.com', 'b@example.com']);
   });

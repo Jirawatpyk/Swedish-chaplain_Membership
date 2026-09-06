@@ -201,6 +201,7 @@ describe('resolve-segment-recipients — Wave 6 (T066 GREEN)', () => {
     });
     const result = await resolveSegmentRecipients(deps, {
       segment: { kind: 'all_members' },
+      phase: 'dispatch',
       requestingMemberPrimaryEmail: null,
       customRecipients: null,
     });
@@ -220,6 +221,7 @@ describe('resolve-segment-recipients — Wave 6 (T066 GREEN)', () => {
     });
     const result = await resolveSegmentRecipients(deps, {
       segment: { kind: 'tier', tierCodes: ['premium'] },
+      phase: 'dispatch',
       requestingMemberPrimaryEmail: null,
       customRecipients: null,
     });
@@ -241,6 +243,7 @@ describe('resolve-segment-recipients — Wave 6 (T066 GREEN)', () => {
     });
     const result = await resolveSegmentRecipients(deps, {
       segment: { kind: 'tier', tierCodes: ['premium', 'large'] },
+      phase: 'dispatch',
       requestingMemberPrimaryEmail: null,
       customRecipients: null,
     });
@@ -258,6 +261,7 @@ describe('resolve-segment-recipients — Wave 6 (T066 GREEN)', () => {
     const deps = makeDeps({ attendees: [] });
     const result = await resolveSegmentRecipients(deps, {
       segment: { kind: 'event_attendees_last_90d' },
+      phase: 'dispatch',
       requestingMemberPrimaryEmail: null,
       customRecipients: null,
     });
@@ -275,6 +279,7 @@ describe('resolve-segment-recipients — Wave 6 (T066 GREEN)', () => {
     ];
     const result = await resolveSegmentRecipients(deps, {
       segment: { kind: 'custom', emails: ['x@example.com', 'y@example.com'] },
+      phase: 'dispatch',
       requestingMemberPrimaryEmail: null,
       customRecipients,
     });
@@ -293,6 +298,7 @@ describe('resolve-segment-recipients — Wave 6 (T066 GREEN)', () => {
     });
     const result = await resolveSegmentRecipients(deps, {
       segment: { kind: 'all_members' },
+      phase: 'dispatch',
       requestingMemberPrimaryEmail: null,
       customRecipients: null,
     });
@@ -310,6 +316,7 @@ describe('resolve-segment-recipients — Wave 6 (T066 GREEN)', () => {
     });
     const result = await resolveSegmentRecipients(deps, {
       segment: { kind: 'all_members' },
+      phase: 'dispatch',
       requestingMemberPrimaryEmail: null,
       customRecipients: null,
     });
@@ -328,6 +335,7 @@ describe('resolve-segment-recipients — Wave 6 (T066 GREEN)', () => {
     });
     const result = await resolveSegmentRecipients(deps, {
       segment: { kind: 'all_members' },
+      phase: 'dispatch',
       requestingMemberPrimaryEmail: null,
       customRecipients: null,
     });
@@ -346,6 +354,7 @@ describe('resolve-segment-recipients — Wave 6 (T066 GREEN)', () => {
     });
     const result = await resolveSegmentRecipients(deps, {
       segment: { kind: 'all_members' },
+      phase: 'dispatch',
       requestingMemberPrimaryEmail: unsafeBrandEmailLower('me@example.com'),
       customRecipients: null,
     });
@@ -369,6 +378,7 @@ describe('resolve-segment-recipients — Wave 6 (T066 GREEN)', () => {
     });
     const result = await resolveSegmentRecipients(deps, {
       segment: { kind: 'tier', tierCodes: ['premium'] },
+      phase: 'dispatch',
       requestingMemberPrimaryEmail: unsafeBrandEmailLower('me@example.com'),
       customRecipients: null,
     });
@@ -389,6 +399,7 @@ describe('resolve-segment-recipients — Wave 6 (T066 GREEN)', () => {
     const deps = makeDeps({ members });
     const result = await resolveSegmentRecipients(deps, {
       segment: { kind: 'all_members' },
+      phase: 'dispatch',
       requestingMemberPrimaryEmail: null,
       customRecipients: null,
     });
@@ -405,6 +416,7 @@ describe('resolve-segment-recipients — Wave 6 (T066 GREEN)', () => {
     const deps = makeDeps({ members });
     const result = await resolveSegmentRecipients(deps, {
       segment: { kind: 'all_members' },
+      phase: 'dispatch',
       requestingMemberPrimaryEmail: null,
       customRecipients: null,
     });
@@ -432,6 +444,7 @@ describe('resolve-segment-recipients — Wave 6 (T066 GREEN)', () => {
     });
     const result = await resolveSegmentRecipients(deps, {
       segment: { kind: 'all_members' },
+      phase: 'dispatch',
       requestingMemberPrimaryEmail: null,
       customRecipients: null,
     });
@@ -454,6 +467,7 @@ describe('resolve-segment-recipients — Wave 6 (T066 GREEN)', () => {
     });
     const result = await resolveSegmentRecipients(deps, {
       segment: { kind: 'all_members' },
+      phase: 'dispatch',
       requestingMemberPrimaryEmail: null,
       customRecipients: null,
     });
@@ -476,6 +490,7 @@ describe('resolve-segment-recipients — Wave 6 (T066 GREEN)', () => {
     });
     const result = await resolveSegmentRecipients(deps, {
       segment: { kind: 'all_members' },
+      phase: 'dispatch',
       requestingMemberPrimaryEmail: null,
       customRecipients: null,
     });
@@ -493,6 +508,7 @@ describe('resolve-segment-recipients — Wave 6 (T066 GREEN)', () => {
     const deps = makeDeps({ members: [] });
     const result = await resolveSegmentRecipients(deps, {
       segment: { kind: 'all_members' },
+      phase: 'dispatch',
       requestingMemberPrimaryEmail: null,
       customRecipients: null,
     });
@@ -507,6 +523,7 @@ describe('resolve-segment-recipients — Wave 6 (T066 GREEN)', () => {
     const deps = makeDeps();
     const result = await resolveSegmentRecipients(deps, {
       segment: { kind: 'custom', emails: [] },
+      phase: 'dispatch',
       requestingMemberPrimaryEmail: null,
       customRecipients: null,
     });
@@ -545,6 +562,7 @@ describe('resolve-segment-recipients — 108 PR-D marketing opt-out at dispatch 
     });
     const result = await resolveSegmentRecipients(deps, {
       segment: { kind: 'all_members' },
+      phase: 'dispatch',
       requestingMemberPrimaryEmail: null,
       customRecipients: null,
     });
@@ -566,6 +584,7 @@ describe('resolve-segment-recipients — 108 PR-D marketing opt-out at dispatch 
     });
     const result = await resolveSegmentRecipients(deps, {
       segment: { kind: 'tier', tierCodes: ['gold'] },
+      phase: 'dispatch',
       requestingMemberPrimaryEmail: null,
       customRecipients: null,
     });
@@ -579,6 +598,7 @@ describe('resolve-segment-recipients — 108 PR-D marketing opt-out at dispatch 
     const deps = makeDeps({ optedOut: new Set([OPTED]) });
     const result = await resolveSegmentRecipients(deps, {
       segment: { kind: 'custom', emails: ['keep@example.com', 'opted-out@example.com'] },
+      phase: 'dispatch',
       requestingMemberPrimaryEmail: null,
       customRecipients: [unsafeBrandEmailLower('keep@example.com'), OPTED],
     });
@@ -595,6 +615,7 @@ describe('resolve-segment-recipients — 108 PR-D marketing opt-out at dispatch 
     });
     const result = await resolveSegmentRecipients(deps, {
       segment: { kind: 'event_attendees_last_90d' },
+      phase: 'dispatch',
       requestingMemberPrimaryEmail: null,
       customRecipients: null,
     });
@@ -614,6 +635,7 @@ describe('resolve-segment-recipients — 108 PR-D marketing opt-out at dispatch 
     });
     const result = await resolveSegmentRecipients(deps, {
       segment: { kind: 'all_members' },
+      phase: 'dispatch',
       requestingMemberPrimaryEmail: null,
       customRecipients: null,
     });
@@ -630,6 +652,7 @@ describe('resolve-segment-recipients — 108 PR-D marketing opt-out at dispatch 
     const deps = makeDeps({ members: [recipient('a@example.com')] });
     const result = await resolveSegmentRecipients(deps, {
       segment: { kind: 'all_members' },
+      phase: 'dispatch',
       requestingMemberPrimaryEmail: null,
       customRecipients: null,
     });
@@ -640,7 +663,7 @@ describe('resolve-segment-recipients — 108 PR-D marketing opt-out at dispatch 
     // DISTINGUISHABLE from a filter that no longer runs. Both used to produce
     // no series at all, and SweCham cuts over with zero opt-outs — so the
     // absent-series alarm could never have fired.
-    expect(spy).toHaveBeenCalledWith('test-tenant', 0);
+    expect(spy).toHaveBeenCalledWith('test-tenant', 0, 'dispatch');
     spy.mockRestore();
   });
 
@@ -656,10 +679,11 @@ describe('resolve-segment-recipients — 108 PR-D marketing opt-out at dispatch 
     });
     await resolveSegmentRecipients(deps, {
       segment: { kind: 'all_members' },
+      phase: 'dispatch',
       requestingMemberPrimaryEmail: null,
       customRecipients: null,
     });
-    expect(spy).toHaveBeenCalledWith('test-tenant', 2);
+    expect(spy).toHaveBeenCalledWith('test-tenant', 2, 'dispatch');
     spy.mockRestore();
   });
 
@@ -670,6 +694,7 @@ describe('resolve-segment-recipients — 108 PR-D marketing opt-out at dispatch 
     });
     const result = await resolveSegmentRecipients(deps, {
       segment: { kind: 'all_members' },
+      phase: 'dispatch',
       requestingMemberPrimaryEmail: null,
       customRecipients: null,
     });
@@ -686,6 +711,7 @@ describe('resolve-segment-recipients — 108 PR-D marketing opt-out at dispatch 
     await expect(
       resolveSegmentRecipients(deps, {
         segment: { kind: 'all_members' },
+        phase: 'dispatch',
         requestingMemberPrimaryEmail: null,
         customRecipients: null,
       }),
@@ -701,6 +727,7 @@ describe('resolve-segment-recipients — 108 PR-D marketing opt-out at dispatch 
     });
     const result = await resolveSegmentRecipients(deps, {
       segment: { kind: 'all_members' },
+      phase: 'dispatch',
       requestingMemberPrimaryEmail: null,
       customRecipients: null,
     });
@@ -723,6 +750,7 @@ describe('resolve-segment-recipients — droppedByPreference is measured, not tr
       new Set([unsafeBrandEmailLower('stray@example.com')]);
     const result = await resolveSegmentRecipients(deps, {
       segment: { kind: 'all_members' },
+      phase: 'dispatch',
       requestingMemberPrimaryEmail: null,
       customRecipients: null,
     });
@@ -732,7 +760,7 @@ describe('resolve-segment-recipients — droppedByPreference is measured, not tr
     expect(result.value.droppedByPreference).toBe(0);
     // A stray answer must not inflate the COUNT; the metric still reports the
     // honest 0 (staff review P2).
-    expect(spy).toHaveBeenCalledWith('test-tenant', 0);
+    expect(spy).toHaveBeenCalledWith('test-tenant', 0, 'dispatch');
     spy.mockRestore();
   });
 });

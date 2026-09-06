@@ -1,0 +1,34 @@
+-- 0296 — index the carry-forward lookup that PR-D's own review added.
+--
+-- WHY. `findCarriedSelfOptOut` (src/modules/members/infrastructure/db/
+-- carried-marketing-opt-out.ts) answers "does this ADDRESS already carry the
+-- person's own marketing objection?" on every contact INSERT. It must see
+-- REMOVED rows — that is the entire point: the objection has to survive a
+-- remove → re-add, which is the shape SweCham's pending secondary-contact
+-- import has.
+--
+-- Both existing lower(email) indexes are PARTIAL on exactly the predicate this
+-- query must not apply:
+--   contacts_tenant_email_uniq (tenant_id, lower(email)) WHERE removed_at IS NULL  (0009)
+--   contacts_lower_email_idx   (lower(email))            WHERE removed_at IS NULL  (0182)
+-- Postgres cannot use a partial index for a query that must return rows the
+-- predicate excludes, so the lookup fell back to scanning the tenant's contacts
+-- and sorting for `ORDER BY created_at DESC` — once per INSERT, including once
+-- per row inside `scripts/import-members.ts`'s loop (code-review finding 4).
+--
+-- SHAPE. `(tenant_id, lower(email), created_at DESC)` serves the equality pair
+-- AND supplies the ordering, so the query is an index scan with LIMIT 1 and no
+-- sort node. NOT partial and NOT unique: it must match removed rows, and an
+-- address legitimately appears many times over a tenant's lifetime.
+--
+-- COST. One more index to maintain on `contacts` INSERT/UPDATE. Accepted: the
+-- read it removes runs on the same statements, and the write amplification is a
+-- single btree entry against a table scan.
+--
+-- CONCURRENTLY is deliberately NOT used — this repo applies migrations inside a
+-- transaction (scripts/run-migrations.ts) and `contacts` is small enough at
+-- every current tenant that the brief ACCESS EXCLUSIVE lock is not worth
+-- splitting the migration to avoid.
+
+CREATE INDEX IF NOT EXISTS "contacts_tenant_lower_email_all_idx"
+  ON "contacts" USING btree ("tenant_id", lower("email"), "created_at" DESC);

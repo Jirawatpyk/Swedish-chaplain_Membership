@@ -13,8 +13,10 @@
  *     whole-branch review LOW-6);
  *   - unsubscribed → plain text and NO control: the person's own unsubscribe
  *     stands and is not something to flip from here (FR-025);
- *   - unavailable → a disabled switch with an explanation (FR-031a), and a
- *     503 from the write says so rather than "something went wrong";
+ *   - unavailable → plain text and NO control, same as unsubscribed
+ *     (code-review finding 3): a switch we cannot vouch for asserts a state.
+ *     The explanation stays (FR-031a), and a 503 from the write says so
+ *     rather than "something went wrong";
  *   - primary contact → the FR-033 note: invoices and payment emails are
  *     unaffected by this preference.
  *
@@ -54,12 +56,23 @@ export function PortalMarketingToggle({
   }
 
   const checked = (optimistic ?? (state === 'on' ? 'on' : 'off')) === 'on';
-  const controllable = state !== 'unsubscribed';
-  const disabled = state === 'unavailable';
-  // a11y review 11: the state sentence and the "unavailable" hint describe the
-  // switch, so a screen reader hears them with the control — not only in
-  // browse mode (the disabled switch is `aria-disabled` + tabIndex -1).
-  const describedBy = state === 'unavailable' ? `${stateId} ${hintId}` : stateId;
+  // Code-review finding 3, corrected. The reported scenario ("a person cannot
+  // opt OUT during an outage") is inverted: `checked` is false for
+  // `unavailable`, so the rendered switch already SHOWS off and the direction
+  // it blocks is opting IN — which the server refuses with 503 anyway. The
+  // real defect is the misrepresentation: an UNKNOWN state was drawn as a
+  // definite "off", so someone still receiving marketing saw a control saying
+  // they were not. Do what `unsubscribed` already does — state the situation in
+  // words and render no control, rather than a control in a position we cannot
+  // vouch for.
+  const controllable = state !== 'unsubscribed' && state !== 'unavailable';
+  // a11y review 11 asked that a screen-reader user hear the state and, when it
+  // cannot be changed, WHY. That was met with `aria-describedby` on a disabled
+  // switch; with no switch rendered for `unavailable` (finding 3) the two
+  // strings sit in the flow right after the label, where browse mode reads them
+  // in order. So `describedBy` is now just the state sentence — the switch only
+  // exists in states that have nothing extra to explain.
+  const describedBy = stateId;
 
   async function send(optOut: boolean): Promise<void> {
     if (busy) return;
@@ -86,6 +99,12 @@ export function PortalMarketingToggle({
         else if (res.status === 503 && code === 'suppression_unavailable') {
           toast.error(t('toast.errors.unavailable'));
         } else toast.error(t('toast.errors.generic'));
+        // Round-1 finding 5, narrowed by round-2 finding 3: only a 409
+        // proves the rendered state is stale (the address reached the
+        // suppression list since this page loaded, so the control should be
+        // gone). A 429 or a 503 is the server asking us to back off — and on
+        // `suppression_unavailable` a refresh re-runs the lookup that threw.
+        if (res.status === 409 && code === 'suppressed') startRefresh(() => router.refresh());
         return;
       }
       if (body.outcome === 'unchanged') {
@@ -118,7 +137,7 @@ export function PortalMarketingToggle({
           <span className="inline-flex min-h-6 min-w-6 items-center">
             <Switch
               checked={checked}
-              disabled={disabled || busy || isRefreshing}
+              disabled={busy || isRefreshing}
               aria-label={t('switchLabel')}
               aria-describedby={describedBy}
               onCheckedChange={(next) => {

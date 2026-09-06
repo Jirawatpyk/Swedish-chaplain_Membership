@@ -19,8 +19,10 @@
  *   - `unchanged` (someone else got there first) is an info toast; every
  *     refusal maps to a localized error toast — the 409 `suppressed` one
  *     explains that the person's own unsubscribe takes precedence (FR-025);
- *   - "status unavailable" renders the switch DISABLED: a blind change could
- *     override an unsubscribe nobody could verify (FR-031a);
+ *   - "status unavailable" renders NO switch at all (code-review finding 3):
+ *     a disabled switch still shows a POSITION, and `checked` is false for an
+ *     unreadable state, so it asserted "off" about someone who might be on.
+ *     The badge carries the state and the reason instead (FR-031a);
  *   - under a state-filtered view (`leavesView`, e.g. the FR-027a pre-flight
  *     preset) the row LEAVES the view on refresh: focus is handed to the next
  *     row's switch — else the count line, else the previous row — BEFORE the
@@ -98,11 +100,14 @@ export function MarketingSwitch({
   }
 
   const checked = (optimistic ?? (state === 'on' ? 'on' : 'off')) === 'on';
-  const disabled = state === 'unavailable';
   // FR-025 AMENDMENT (privacy review B-2 / L-1): the person's own objection —
   // their unsubscribe OR their own opt-out — is not something staff can lift,
   // so there is no control to offer, only the badge with its explanation.
-  const staffCanAct = state !== 'off_by_contact' && state !== 'unsubscribed';
+  // `unavailable` joins the read-only states (code-review finding 3): the
+  // switch rendered UNCHECKED for a state we could not read, asserting "off"
+  // about someone who may well be on. The badge already explains it.
+  const staffCanAct =
+    state !== 'off_by_contact' && state !== 'unsubscribed' && state !== 'unavailable';
 
   async function send(next: 'on' | 'off', opts: { readonly offerUndo: boolean }): Promise<void> {
     if (busy) return;
@@ -132,6 +137,24 @@ export function MarketingSwitch({
         else if (res.status === 503 && kind === 'suppression_unavailable') {
           toast.error(t('errors.unavailable'));
         } else toast.error(t('errors.generic'));
+        // Round-1 finding 5, narrowed by round-2 finding 3: refresh ONLY when
+        // the refusal PROVES the rendered state is stale — `suppressed` and
+        // `self_opted_out` both mean the row changed under us and the switch
+        // should not be on screen at all. `idempotency_conflict` is also a 409
+        // but says nothing about the row. On 429 and 503 the
+        // server has just asked us to back off — re-rendering the page there
+        // amplifies load, and on `suppression_unavailable` it re-runs the very
+        // lookup that threw. 403/404/500 say nothing about the marketing state.
+        const stateIsStale =
+          res.status === 409 && (kind === 'suppressed' || kind === 'self_opted_out');
+        if (stateIsStale) {
+          // Hand focus off BEFORE the refresh: the row is about to lose its
+          // switch (409 → `off_by_contact` / `suppressed`, neither of which
+          // `staffCanAct` renders), so without this the focused button unmounts
+          // and focus falls to <body> (round-2 finding 4). axe never sees it.
+          if (ref.current) focusHandOffTarget(ref.current)?.focus();
+          startRefresh(() => router.refresh());
+        }
         return;
       }
 
@@ -196,7 +219,7 @@ export function MarketingSwitch({
         ref={ref}
         size={size}
         checked={checked}
-        disabled={disabled || busy || isRefreshing}
+        disabled={busy || isRefreshing}
         aria-label={t('ariaLabel', { name: contactName, state: tState(state) })}
         data-marketing-state={state}
         onCheckedChange={(next) => {

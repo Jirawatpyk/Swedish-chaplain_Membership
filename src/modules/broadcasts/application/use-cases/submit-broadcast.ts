@@ -39,6 +39,8 @@
  */
 import { randomUUID } from 'node:crypto';
 import { err, ok, type Result } from '@/lib/result';
+import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { broadcastsMetrics } from '@/lib/metrics';
 import { asMemberId } from '@/modules/members';
 import type { TenantContext } from '@/modules/tenants';
@@ -577,19 +579,39 @@ export async function submitBroadcast(
   }
 
   // ---- Preconditions (f, g, i): segment resolve --------------------
-  const resolved = await resolveSegmentRecipients(
-    {
-      tenant: deps.tenant,
-      membersBridge: deps.membersBridge,
-      eventAttendees: deps.eventAttendees,
-      marketingUnsubscribes: deps.marketingUnsubscribes,
-    },
-    {
-      segment: input.segment,
-      requestingMemberPrimaryEmail: unsafeBrandEmailLower(replyTo as string),
-      customRecipients,
-    },
-  );
+  // 108 PR-D made this resolver THROW by design: `filterMarketingOptedOut`
+  // rejects rather than fail open onto people who objected. The three dispatch
+  // call sites map that to a typed `dispatch.server_error`; this one — the
+  // member-facing entry point — was left unguarded (code-review finding 2), so
+  // a Neon blip escaped `submitBroadcast` entirely: no reject audit, and the
+  // route logged it as `broadcasts.submit.unexpected_error`, the "programming
+  // bug, page someone" class. Same throw, same cause, correct classification.
+  let resolved: Awaited<ReturnType<typeof resolveSegmentRecipients>>;
+  try {
+    resolved = await resolveSegmentRecipients(
+      {
+        tenant: deps.tenant,
+        membersBridge: deps.membersBridge,
+        eventAttendees: deps.eventAttendees,
+        marketingUnsubscribes: deps.marketingUnsubscribes,
+      },
+      {
+        segment: input.segment,
+        phase: 'submit',
+        requestingMemberPrimaryEmail: unsafeBrandEmailLower(replyTo as string),
+        customRecipients,
+      },
+    );
+  } catch (e) {
+    logger.error(
+      { tenantId: deps.tenant.slug, memberId: input.memberId, err: errKind(e) },
+      'broadcasts.submit.recipient_resolution_threw',
+    );
+    return err({
+      kind: 'submit.server_error' as const,
+      message: 'recipient resolution unavailable',
+    });
+  }
   if (!resolved.ok) {
     const eventType: F7AuditEventType =
       resolved.error.kind === 'broadcast_audience_too_large'

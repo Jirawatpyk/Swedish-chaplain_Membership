@@ -26,6 +26,16 @@
  *    `contacts_tenant_email_uniq (tenant_id, lower(email)) WHERE removed_at IS
  *    NULL` guarantees the previous row was removed before the next one existed.
  *
+ * 3. **`created_at` is not a total order** (round-2 review). It defaults to
+ *    `now()`, which is the TRANSACTION timestamp, so two rows for one address
+ *    written in a single transaction tie — and `scripts/import-members.ts`
+ *    writes many contacts per transaction. `LIMIT 1` over a tie is arbitrary,
+ *    which could resurrect a withdrawn objection or drop a live one. The tie is
+ *    broken deliberately, not randomly: among rows we cannot order in time, a
+ *    `self` opt-out WINS. If the record cannot tell us which came last, honour
+ *    the objection — the same fail-closed rule the rest of this feature uses.
+ *    `contact_id` then makes the order total so the answer is reproducible.
+ *
  * Caller contract: run inside the SAME transaction as the INSERT. There is no
  * row to lock (the new row does not exist yet), so a `self` "on" committing
  * between this read and the insert would still be missed — that window is
@@ -62,7 +72,17 @@ export async function findCarriedSelfOptOut(
     .where(
       and(eq(contacts.tenantId, tenantId), sql`lower(${contacts.email}) = lower(${email})`),
     )
-    .orderBy(desc(contacts.createdAt))
+    .orderBy(
+      desc(contacts.createdAt),
+      // Tie-breakers, in order: honour an objection we cannot date, then be
+      // reproducible. See point 3 in the header. `coalesce(…, false)` matters:
+      // a row with NO opt-out has a NULL source, `NULL = 'self'` is NULL, and
+      // Postgres sorts NULLs FIRST under DESC — so without it the row that says
+      // "on" would beat the row that says "objected", the exact wrong answer.
+      // (The live tie-break test caught this on its first run.)
+      desc(sql`coalesce(${contacts.marketingOptOutSource} = 'self', false)`),
+      desc(contacts.contactId),
+    )
     .limit(1);
 
   const latest = prior[0];

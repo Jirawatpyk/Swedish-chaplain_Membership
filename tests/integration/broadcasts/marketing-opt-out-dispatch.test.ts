@@ -157,6 +157,7 @@ describe('108 PR-D B-1 — marketing opt-out honoured at dispatch (live Neon, re
   it('all_members: both opted-out primaries are dropped and counted; the member is not an orphan', async () => {
     const result = await resolveSegmentRecipients(deps(tenantA), {
       segment: { kind: 'all_members' },
+      phase: 'dispatch',
       requestingMemberPrimaryEmail: null,
       customRecipients: null,
     });
@@ -171,6 +172,7 @@ describe('108 PR-D B-1 — marketing opt-out honoured at dispatch (live Neon, re
   it('custom list: an opted-out SECONDARY contact is dropped; the kept primary stays', async () => {
     const result = await resolveSegmentRecipients(deps(tenantA), {
       segment: { kind: 'custom', emails: [keepEmail, secondaryOffEmail, selfOffEmail] },
+      phase: 'dispatch',
       requestingMemberPrimaryEmail: null,
       customRecipients: [
         unsafeBrandEmailLower(keepEmail),
