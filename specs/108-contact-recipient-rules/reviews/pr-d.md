@@ -206,7 +206,7 @@ alone is not an order: the migration 0296 index carries `created_at DESC`, and
 the SQL now breaks ties by "honour the objection we cannot date", then by
 `contact_id` for reproducibility.
 
-**Closed** in `fdc02eb82`: migration `0296` (`contacts_tenant_lower_email_all_idx`,
+**Closed** in `9f5e0f7c7`: migration `0296` (`contacts_tenant_lower_email_all_idx`,
 `EXPLAIN` = Index Scan, no Sort node, pinned in `pg_indexes`); fail-closed
 parse on both suppression paths inside `observed`; `phase` label + catalogue;
 typed `submit.server_error`; 409-only refresh with focus hand-off; no control
@@ -214,7 +214,7 @@ for an unknown state; `contacts.read` → `pii`; every shipped placeholder
 rejected in all three guard copies; per-broadcast drop log on all three
 dispatch paths; six new tests including the same-transaction tie.
 
-**Verification at `fdc02eb82`**: `pnpm test:coverage` **exit 0, zero threshold
+**Verification at `9f5e0f7c7`**: `pnpm test:coverage` **exit 0, zero threshold
 errors** · unit + contract 1224 files / 13650 tests · live Neon
 `contact-marketing-opt-out` 30 (incl. the tie-break and the 0296 pin) · five
 static gates re-run · `db:verify` OK · lint 0 · typecheck 0.
