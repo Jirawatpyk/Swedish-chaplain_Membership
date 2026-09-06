@@ -158,7 +158,30 @@ export function findUndocumentedKeys(
 export function findStaleKeys(
   schemaKeys: readonly string[],
   documentedKeys: readonly string[],
+  harnessOnlyKeys: readonly ExemptEnvKey[] = HARNESS_ONLY_KEYS,
 ): string[] {
   const schema = new Set(schemaKeys);
-  return documentedKeys.filter((k) => !schema.has(k)).sort();
+  const harnessOnly = new Set(harnessOnlyKeys.map((e) => e.key));
+  return documentedKeys.filter((k) => !schema.has(k) && !harnessOnly.has(k)).sort();
 }
+
+/**
+ * Keys that legitimately live in `.env.example` WITHOUT a `src/lib/env.ts`
+ * declaration: consumed by the test harness / scripts only, never by the app
+ * at boot. Listed here (with the reason) so the stale-key check stays a real
+ * pin — a harness key that is later dropped from the template shows up as a
+ * unit-test failure, and one that grows an env.ts declaration must leave this
+ * list (the regression test asserts both directions).
+ */
+export const HARNESS_ONLY_KEYS: readonly ExemptEnvKey[] = [
+  {
+    key: 'TEST_DB_HOST_BLOCKLIST',
+    reason:
+      'Production-host guard read by tests/integration-setup.ts and the e2e ' +
+      'seed client (tests/e2e/helpers/open-seed-client.ts), which REFUSE to ' +
+      'touch a listed Neon host and fail closed when the list is empty. The ' +
+      'app never reads it, so env.ts does not declare it; it must still be in ' +
+      'the template so a fresh checkout does not run the BYPASSRLS fixture ' +
+      'writers unguarded (108 PR-D security review LOW-5).',
+  },
+];
