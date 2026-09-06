@@ -384,6 +384,12 @@ Dispatches scheduled E-Blast broadcasts whose `scheduled_for <= NOW()`
 and `status='approved'`. Expected recipient cap per tick: ≤ 5,000
 recipients per broadcast (FR-016a) × N broadcasts due in the window.
 
+> **108 PR-C (2026-09-07)**: the per-tick audience is built by ONE resolver
+> (compose count = submit = dispatch, SC-004) walking F3's 5,000-row keyset
+> pages; with F7.1a batching ON the ceiling is 50,000 and the split cron takes
+> over above 10,000. A tick that cannot build the audience REJECTS and the
+> next tick retries — never a partial push. Triage: `docs/runbooks/broadcast-audience-build.md`.
+
 ### Setup steps (one-time, reproducible)
 
 1. Sign in to https://cron-job.org with the SweCham ops account
