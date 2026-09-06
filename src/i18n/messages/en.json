@@ -5782,6 +5782,12 @@
           "custom": "Recipients: each line below is one email. Maximum 100 entries. Each must match a member or contact in your chamber.",
           "customCount": "{count} email(s) entered."
         },
+        "recipientCount": {
+          "loading": "Counting recipients…",
+          "ready": "{count, number} recipients will receive this broadcast.",
+          "exceeds": "{count, number} recipients — above the ceiling of {ceiling, number}. Narrow the audience; the submission would be refused.",
+          "unavailable": "Recipient count unavailable right now — you can still submit; the server recomputes the audience."
+        },
         "errors": {
           "broadcast_quota_blocked": "You've used all of your E-Blast quota for this year.",
           "broadcast_not_in_plan": "Your membership plan does not include the E-Blast benefit.",

@@ -45,6 +45,7 @@ import { SchedulePicker } from './schedule-picker';
 import { PreviewPane } from './preview-pane';
 import { SubmitButton } from './submit-button';
 import { buildSegmentPayload } from './compose-form';
+import { RecipientCountLine, useRecipientCount } from './recipient-count';
 
 // Proxy form drops inline images + draft lifecycle — the Tiptap editor is
 // loaded with the same loader the member compose form uses, minus the
@@ -165,6 +166,13 @@ export function ProxyComposeForm(): React.ReactElement {
 
   const deferredBody = useDeferredValue(bodyHtml);
   const customLines = parseLines(customList);
+  // 108 PR-C T089 — live count for the PROXIED member (its contacts are the
+  // ones self-excluded server-side); idle until a member is picked.
+  const recipientCount = useRecipientCount({
+    mode: 'admin',
+    memberId: member?.memberId ?? null,
+    segment: { kind: segment.kind, tierCodes: segment.tierCodes },
+  });
 
   // Submit precondition: member picked + subject/body valid + segment
   // shape valid (custom needs 1–100 entries; tier needs ≥1 code). Mirrors
@@ -370,6 +378,8 @@ export function ProxyComposeForm(): React.ReactElement {
             {fieldError.message}
           </p>
         ) : null}
+        {/* 108 PR-C T089 (FR-040): live count for the proxied member. */}
+        <RecipientCountLine state={recipientCount} />
 
         {segment.kind === 'custom' ? (
           <CustomListInput

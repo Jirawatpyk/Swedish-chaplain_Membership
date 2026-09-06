@@ -5782,6 +5782,12 @@
           "custom": "Mottagare: en e-post per rad nedan. Max 100 rader. Varje måste matcha en medlem eller kontakt i din kammare.",
           "customCount": "{count} e-post angiven."
         },
+        "recipientCount": {
+          "loading": "Räknar mottagare…",
+          "ready": "{count, number} mottagare får detta utskick.",
+          "exceeds": "{count, number} mottagare – över gränsen på {ceiling, number}. Begränsa målgruppen; annars avvisas inlämningen.",
+          "unavailable": "Antalet mottagare kan inte hämtas just nu – du kan ändå skicka in; servern räknar om målgruppen."
+        },
         "errors": {
           "broadcast_quota_blocked": "Du har använt hela din E-Blast-kvot för i år.",
           "broadcast_not_in_plan": "Din medlemsplan inkluderar inte E-Blast-förmånen.",

@@ -42,6 +42,7 @@ import { PreviewPane } from './preview-pane';
 import { QuotaDisplay, type QuotaSnapshot } from './quota-display';
 import { SubmitButton } from './submit-button';
 import { UnsafeImageSourcesList } from './unsafe-image-sources-list';
+import { RecipientCountLine, useRecipientCount } from './recipient-count';
 
 const TiptapEditor = loadTiptapEditor<{
   initialHtml: string;
@@ -178,6 +179,12 @@ export function ComposeForm({
   const bodyContainerRef = useRef<HTMLDivElement>(null);
 
   const deferredBody = useDeferredValue(bodyHtml);
+  // 108 PR-C T089 — debounced live count for the chosen segment (member mode:
+  // the caller's own member is the one self-excluded server-side).
+  const recipientCount = useRecipientCount({
+    mode: 'member',
+    segment: { kind: segment.kind, tierCodes: segment.tierCodes },
+  });
 
   // UX-3 — beforeunload guard so a member who composed substantial
   // content + accidentally closes the tab gets a browser-native
@@ -476,6 +483,9 @@ export function ComposeForm({
             // the sending member, not only the primary address.
             <p className="text-xs text-muted-foreground">{t('selfExclusionHint')}</p>
           ) : null}
+          {/* 108 PR-C T089 (FR-040): the live count — the same resolver that
+              decides the send, so the number shown is the number sent (SC-004). */}
+          <RecipientCountLine state={recipientCount} />
 
           {segment.kind === 'custom' ? (
             <CustomListInput
