@@ -3160,6 +3160,7 @@
         "emptySegmentError": "No eligible recipients matched.",
         "audienceTooLargeError": "Audience exceeds the 5,000 recipient limit.",
         "successToast": "Broadcast queued for review on behalf of {company}.",
+        "preferenceExcluded": "{count, plural, one {# address was} other {# addresses were}} excluded by recipient preference.",
         "searchFailed": "Member search failed. Try again.",
         "noResults": "No members found.",
         "missingContactEmailWarning": "This member has no primary contact email. A broadcast can't be sent on their behalf until a primary contact with an email address is added.",
@@ -5759,6 +5760,7 @@
           "drafted": "Draft saved.",
           "submitted": "Submitted for admin review.",
           "submittedSlaHint": "Admin review target: 48 hours.",
+          "preferenceExcluded": "{count, plural, one {# address was} other {# addresses were}} excluded by recipient preference.",
           "sanitiserStripped": "Some unsupported formatting was removed automatically.",
           "submitting": "Submitting…",
           "takingLonger": "Taking longer than expected — please wait."

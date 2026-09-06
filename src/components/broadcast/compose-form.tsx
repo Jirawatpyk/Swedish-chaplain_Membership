@@ -22,6 +22,7 @@ import { useDeferredValue, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
+import { submitSuccessDescription } from '@/components/broadcast/submit-feedback';
 import { z } from 'zod';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -238,6 +239,9 @@ export function ComposeForm({
           details?: { disallowedSources?: ReadonlyArray<string> };
         };
         broadcastId?: string;
+        // 108 PR-C (FR-022a) — how many entries the resolver excluded by
+        // recipient preference; shown as a number in the success toast.
+        recipientPreferenceExcluded?: unknown;
       } = {};
       try {
         responseBody = (await res.json()) as typeof responseBody;
@@ -262,7 +266,9 @@ export function ComposeForm({
       if (res.ok && responseBody.broadcastId) {
         setUnsafeImageSources(null);
         toast.success(t('toast.submitted'), {
-          description: t('toast.submittedSlaHint'),
+          // 108 PR-C T077: "{n} addresses were excluded by recipient
+          // preference." precedes the SLA hint when n > 0 (FR-022a).
+          description: submitSuccessDescription(t, responseBody),
         });
         setQuotaRefreshKey((n) => n + 1);
         router.push(`/portal/benefits?tab=broadcasts&submitted=${responseBody.broadcastId}`);

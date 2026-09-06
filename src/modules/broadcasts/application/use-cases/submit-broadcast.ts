@@ -222,6 +222,14 @@ export interface SubmitBroadcastOutput {
   readonly broadcastId: string;
   readonly submittedAt: Date;
   readonly estimatedRecipientCount: number;
+  /**
+   * 108 PR-C (FR-022a, T077) — entries the resolver removed "by recipient
+   * preference" (opt-out on any segment; plus suppression on a custom list
+   * or the attendee segment). The route returns it as
+   * `recipientPreferenceExcluded` so the sender learns HOW MANY — never
+   * which addresses, never why beyond "recipient preference".
+   */
+  readonly droppedByPreference: number;
   readonly reservedQuotaSlot: true;
   readonly reviewSlaTargetHours: number;
 }
@@ -870,6 +878,7 @@ export async function submitBroadcast(
         broadcastId: broadcastId as string,
         submittedAt: now,
         estimatedRecipientCount: resolved.value.estimatedCount,
+        droppedByPreference: resolved.value.droppedByPreference,
         reservedQuotaSlot: true as const,
         reviewSlaTargetHours: REVIEW_SLA_TARGET_HOURS,
       });

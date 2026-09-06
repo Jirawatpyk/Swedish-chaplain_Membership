@@ -153,6 +153,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         status: 'submitted' as const,
         submittedAt: result.value.submittedAt.toISOString(),
         estimatedRecipientCount: result.value.estimatedRecipientCount,
+        // 108 PR-C (FR-022a): how many entries were excluded by recipient
+        // preference — a count only, never the addresses.
+        recipientPreferenceExcluded: result.value.droppedByPreference,
         actorRole: 'admin_proxy' as const,
         reservedQuotaSlot: true as const,
         reviewSlaTargetHours: result.value.reviewSlaTargetHours,

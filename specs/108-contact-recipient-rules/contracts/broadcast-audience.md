@@ -95,7 +95,7 @@ composition site; submit, count and dispatch compare against the same number.
 
 ## 6. Submit / dispatch changes
 
-- `POST /api/broadcasts/submit` 201 body gains `recipient_preference_excluded: number`.
+- `POST /api/broadcasts/submit` (and the admin proxy-submit) 200 body gains `recipientPreferenceExcluded: number` — camelCase like its siblings (`estimatedRecipientCount`); the route answers 200, not 201. Both compose forms render it in the success toast as a count (`…toast.preferenceExcluded`), never as addresses.
 - `estimated_recipient_count` is written from `estimatedCount` (unchanged) and now equals
   the dispatched count for the same tenant state (SC-004).
 - Orphan audit `broadcast_member_missing_primary_contact_email` is emitted only for members

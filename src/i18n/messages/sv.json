@@ -3160,6 +3160,7 @@
         "emptySegmentError": "Inga matchande mottagare hittades.",
         "audienceTooLargeError": "Mottagarlistan överstiger gränsen på 5 000.",
         "successToast": "Utskicket har kölagts för granskning å {company}:s vägnar.",
+        "preferenceExcluded": "{count, plural, one {# adress uteslöts} other {# adresser uteslöts}} enligt mottagarens önskemål.",
         "searchFailed": "Medlemssökningen misslyckades. Försök igen.",
         "noResults": "Inga medlemmar hittades.",
         "missingContactEmailWarning": "Den här medlemmen saknar e-postadress för primär kontakt. Det går inte att skicka utskick å deras vägnar förrän en primär kontakt med e-postadress har lagts till.",
@@ -5759,6 +5760,7 @@
           "drafted": "Utkast sparat.",
           "submitted": "Inskickad för administratörsgranskning.",
           "submittedSlaHint": "Mål för administratörsgranskning: 48 timmar.",
+          "preferenceExcluded": "{count, plural, one {# adress uteslöts} other {# adresser uteslöts}} enligt mottagarens önskemål.",
           "sanitiserStripped": "Viss formatering som inte stöds togs bort automatiskt.",
           "submitting": "Skickar in…",
           "takingLonger": "Det tar längre tid än väntat — vänligen vänta."

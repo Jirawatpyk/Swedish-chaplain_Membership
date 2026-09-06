@@ -1778,3 +1778,30 @@ describe('submit-broadcast — 108 PR-C resolver contract (T076)', () => {
     expect(rejectKinds).toEqual([]);
   });
 });
+
+/**
+ * 108 PR-C T077 — FR-022a "tell the sender how many were dropped": the
+ * success output carries the resolver's `droppedByPreference` so the route
+ * can return it as `recipientPreferenceExcluded` (a number, never addresses).
+ */
+describe('submit-broadcast — 108 PR-C droppedByPreference on the success output (T077)', () => {
+  it('carries the resolver count: one opted-out primary → estimated 1, dropped 1', async () => {
+    const { deps } = makeDeps({
+      primaryContact: 'me@example.com',
+      memberInBridge: [
+        { memberId: 'm-2', primaryContactEmail: 'two@example.com' },
+        { memberId: 'm-3', primaryContactEmail: 'three-off@example.com' },
+      ],
+    });
+    const bridge = deps.membersBridge as MembersBridgePort & {
+      filterMarketingOptedOut: MembersBridgePort['filterMarketingOptedOut'];
+    };
+    bridge.filterMarketingOptedOut = async () =>
+      new Set([unsafeBrandEmailLower('three-off@example.com')]);
+    const result = await submitBroadcast(deps, baseInput);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.estimatedRecipientCount).toBe(1);
+    expect(result.value.droppedByPreference).toBe(1);
+  });
+});

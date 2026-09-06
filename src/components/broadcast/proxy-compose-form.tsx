@@ -29,6 +29,7 @@ import { useDeferredValue, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
+import { submitSuccessDescription } from '@/components/broadcast/submit-feedback';
 import { z } from 'zod';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -252,7 +253,20 @@ export function ProxyComposeForm(): React.ReactElement {
       });
 
       if (res.ok) {
-        toast.success(t('successToast', { company: companyName }));
+        // 108 PR-C T077 (FR-022a): the count of entries excluded by
+        // recipient preference rides on the 200 body; the admin sees the
+        // number, never the addresses.
+        const okBody = (await res.json().catch(() => null)) as {
+          recipientPreferenceExcluded?: unknown;
+        } | null;
+        const description = submitSuccessDescription(t, okBody ?? {}, {
+          hintKey: null,
+          countKey: 'preferenceExcluded',
+        });
+        toast.success(
+          t('successToast', { company: companyName }),
+          description === undefined ? undefined : { description },
+        );
         router.push('/admin/broadcasts');
         router.refresh();
         return;

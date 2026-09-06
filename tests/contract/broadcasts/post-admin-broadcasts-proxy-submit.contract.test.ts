@@ -111,6 +111,7 @@ const submitOutput = {
   status: 'submitted' as const,
   submittedAt: new Date('2026-06-15T05:00:00Z'),
   estimatedRecipientCount: 42,
+  droppedByPreference: 2,
   reservedQuotaSlot: true as const,
   reviewSlaTargetHours: 48,
 };
@@ -130,6 +131,7 @@ describe('POST /api/admin/broadcasts/proxy-submit — Wave 6 GREEN (T095)', () =
       broadcastId: NEW_BROADCAST_ID,
       status: 'submitted',
       estimatedRecipientCount: 42,
+      recipientPreferenceExcluded: 2,
       actorRole: 'admin_proxy',
       reservedQuotaSlot: true,
       reviewSlaTargetHours: 48,

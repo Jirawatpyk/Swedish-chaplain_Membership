@@ -73,6 +73,7 @@ const submitOutput = {
   status: 'submitted' as const,
   submittedAt: new Date('2026-06-15T05:00:00Z'),
   estimatedRecipientCount: 42,
+  droppedByPreference: 2,
   reservedQuotaSlot: true as const,
   reviewSlaTargetHours: 48,
 };
@@ -104,6 +105,7 @@ describe('POST /api/broadcasts/submit — Wave 6 GREEN (T037)', () => {
       broadcastId: BROADCAST_ID,
       status: 'submitted',
       estimatedRecipientCount: 42,
+      recipientPreferenceExcluded: 2,
       reviewSlaTargetHours: 48,
     });
     expect(typeof body.submittedAt).toBe('string');
