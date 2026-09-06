@@ -242,12 +242,24 @@ clients mint a fresh key per request; the behaviour is now WRITTEN into contract
 behavioural scrub test (tests V-2) — the classification is what that gate is for,
 and the retention decision itself was settled in the privacy round.
 
-**Verification after cycle 15 (HEAD `5b818ee8c`)**: lint 0 · typecheck 0 ·
-`check:i18n` 5290 keys × 3 · thirteen static gates OK · unit sweep of every folder
-the cycle touched green · live Neon: `contact-marketing-opt-out` 26 (incl. the
-rollback and carry-over proofs) · `contact-marketing-opt-out-guard` 4 ·
-`marketing-opt-out-dispatch` 4 · `marketing-audience-query` · contract
-`profile-marketing` + `contact-marketing` 32.
+**Verification after cycle 15 (HEAD `631f3c651`)**: lint 0 · typecheck 0 ·
+`check:i18n` 5290 keys × 3 · thirteen static gates OK · **full unit + contract run
+green — Test Files 1224 passed, Tests 13640 passed** · live Neon:
+`contact-marketing-opt-out` 26 (incl. the rollback and carry-over proofs) ·
+`contact-marketing-opt-out-guard` 4 · `marketing-opt-out-dispatch` 4 ·
+`marketing-audience-query` · contract `profile-marketing` + `contact-marketing` 32 ·
+e2e `admin-marketing-audience` + `portal-marketing-toggle` 12 passed / 1 flaky
+(dev-server warm-up, passed on retry), exit 0.
+
+An earlier draft of this paragraph claimed, at HEAD `5b818ee8c`, a green "unit
+sweep of every folder the cycle touched". It was not green. Dropping the `?.`
+from `src/app/api/members/_serialise.ts` (types MEDIUM-3) made `Contact.marketing`
+genuinely required, and 24 hand-built Contact fixtures across five
+`tests/contract/members` files and one `tests/unit/members/infrastructure` file
+did not carry it. The sweep I ran covered the folders I had EDITED, not the
+folders that CONSUME the type I had tightened — which is the same miss as B-1 in
+this very round, one commit later. Fixed in `631f3c651`; the counts above are
+from the full run, which is the only sweep that can make this claim.
 
 ### Round 2 — two fresh-eyes whole-branch reviews (2026-09-06), 28 findings, all closed in cycles 13–14
 

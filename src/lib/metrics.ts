@@ -2229,17 +2229,12 @@ export const broadcastsMetrics = {
   },
 
   /**
-   * `broadcasts.marketing_opt_out_filter_count{tenant}` — 108 PR-D (FR-022a):
-   * recipients removed per dispatch because their contact row carries a
-   * marketing opt-out (staff or self). Distinct from the suppression
-   * anti-join above — an address that is both counts once, as suppressed.
-   */
-  /**
    * `broadcasts.suppression_lookup_failed{tenant, op}` — 108 PR-D (review
-   * errors HIGH-1): the marketing suppression read threw. Every caller
-   * swallows the throw into a degraded state ("status unavailable", a refused
-   * "switch on"), so without this counter a sustained outage is invisible
-   * until staff open a ticket.
+   * errors HIGH-1): the marketing suppression read threw. `op` is the lookup
+   * that failed (`isSuppressed` | `lookupSuppressed` | `listSuppressedEmailLowers`).
+   * Every caller swallows the throw into a degraded state ("status
+   * unavailable", a refused "switch on"), so without this counter a sustained
+   * outage is invisible until staff open a ticket.
    */
   suppressionLookupFailed(tenantId: string, op: string): void {
     safeMetric(() => {
@@ -2250,6 +2245,12 @@ export const broadcastsMetrics = {
     });
   },
 
+  /**
+   * `broadcasts.marketing_opt_out_filter_count{tenant}` — 108 PR-D (FR-022a):
+   * recipients removed per dispatch because their contact row carries a
+   * marketing opt-out (staff or self). Distinct from the suppression
+   * anti-join above — an address on BOTH lists counts once, as suppressed.
+   */
   marketingOptOutFilterCount(tenantId: string, count: number): void {
     safeMetric(() => {
       counter(
