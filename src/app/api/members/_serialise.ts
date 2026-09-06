@@ -79,12 +79,14 @@ export function serialiseContact(
     ...(opts.includeDateOfBirth && {
       date_of_birth: c.dateOfBirth?.toISOString().slice(0, 10) ?? null,
     }),
-    // 108 PR-D — per-contact marketing opt-out (all null = receives). The
-    // `?.` guards a hand-built Contact fixture that predates the field, like
-    // the `?? null` guards in serialiseMember.
-    marketing_opt_out_at: c.marketing?.optedOutAt?.toISOString() ?? null,
-    marketing_opt_out_source: c.marketing?.source ?? null,
-    marketing_opt_out_by_user_id: c.marketing?.byUserId ?? null,
+    // 108 PR-D — per-contact marketing opt-out (all null = receives).
+    // `Contact.marketing` is REQUIRED and every real Contact comes from
+    // `rowToContact`, so there is no `?.` here: defaulting a missing field to
+    // "receives marketing" would be the wrong direction to fail, and the one
+    // fixture that lacked it was fixed instead (review types MEDIUM-3).
+    marketing_opt_out_at: c.marketing.optedOutAt?.toISOString() ?? null,
+    marketing_opt_out_source: c.marketing.source,
+    marketing_opt_out_by_user_id: c.marketing.byUserId,
     removed_at: c.removedAt?.toISOString() ?? null,
     created_at: c.createdAt.toISOString(),
     updated_at: c.updatedAt.toISOString(),

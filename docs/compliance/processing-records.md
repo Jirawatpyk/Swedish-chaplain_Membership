@@ -119,9 +119,13 @@ business categorisation, not special-category PII.
   acting in a B2B professional capacity, in an existing relationship
   with the chamber; every contact was added by the member's own primary
   contact or by staff under an Art. 14 attestation; every broadcast
-  carries one-click unsubscribe, every contact can object from the portal
-  (self opt-out) or by asking staff (staff opt-out), and the objection is
-  honoured at dispatch across every audience kind. **Residual (108
+  carries one-click unsubscribe — the universal channel; a contact who has a
+  portal login can additionally object there (self opt-out), and ANY contact
+  can ask staff to switch it off (staff opt-out). A secondary contact never
+  invited to the portal has the unsubscribe link and the staff channel, not
+  the portal one. Every objection is honoured at dispatch across every
+  audience kind, and a contact's OWN objection follows the ADDRESS if the
+  contact row is deleted and re-created. **Residual (108
   privacy review M-1)**: the Art. 14 / PDPA §23 notice to a secondary
   contact is ATTESTED by staff at add time (`art14_attested`) and is not
   yet delivered by the system; the portal invite-colleague path records

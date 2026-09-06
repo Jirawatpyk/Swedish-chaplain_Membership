@@ -126,8 +126,11 @@ export type F3AuditEventType =
   | 'member_auto_invoice_unenrolled'
   // 108 PR-D (migration 0295, FR-053) — the per-contact marketing
   // preference changed. Emitted by `setContactMarketingOptOut` once per
-  // ACTUAL change (same-state calls are `unchanged` and emit nothing) in
-  // the same tx as the `contacts` UPDATE. Payload:
+  // ACTUAL change, in the same tx as the `contacts` UPDATE. The same on/off
+  // state is `unchanged` and emits nothing — EXCEPT a `source:'self'` "off"
+  // over a `'staff'` "off", which IS recorded (source → self, FR-025
+  // AMENDMENT) and emits `contact_marketing_opted_out` again, so two
+  // `_opted_out` rows with no `_in` between them is a valid trail. Payload:
   //   { member_id | related_member_id, contact_id, source: 'staff' | 'self',
   //     actor_role }
   // — ids only, never an address (FR-053a). The member key depends on WHO

@@ -6,7 +6,7 @@
  * A query string can only ever NARROW the view: unknown `kind` / `state`
  * values are dropped, `member_id` must be a UUID, `eligible` defaults to ON
  * (the spec's default view) and is lifted only by an explicit `0` / `false`,
- * `page` clamps to ≥ 1. `hasFilters` drives the "no matches → clear filters"
+ * `page` clamps to ≥ 1 AND to `MARKETING_AUDIENCE_MAX_PAGE`. `hasFilters` drives the "no matches → clear filters"
  * empty state, so a stray `?state=banana` renders the full audience, not an
  * empty page.
  *
@@ -59,18 +59,6 @@ const STATE_BY_PARAM: Readonly<Record<MarketingAudienceStateParam, MarketingAudi
   off_contact: 'off_by_contact',
   unsubscribed: 'unsubscribed',
 };
-
-const PARAM_BY_STATE: Readonly<Record<MarketingAudienceStateFilter, MarketingAudienceStateParam>> = {
-  on: 'on',
-  off_by_staff: 'off_staff',
-  off_by_contact: 'off_contact',
-  unsubscribed: 'unsubscribed',
-};
-
-/** Domain state → URL param (for links that pre-select a filter). */
-export function marketingStateToParam(state: MarketingAudienceStateFilter): MarketingAudienceStateParam {
-  return PARAM_BY_STATE[state];
-}
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 /** Same cap as the members directory search box. */

@@ -9,8 +9,8 @@
  * one Neon RTT each ≈ 1.25s of pure DB latency on the cron critical
  * path) the loop approaches the Vercel function timeout.
  *
- * The wrapper interposes a Map cache keyed by
- * `(segmentType, JSON.stringify(params))` so multiple `all_members` or
+ * The wrapper interposes a Map cache keyed by the TENANT SLUG plus
+ * `(segmentType, JSON.stringify(SORTED params))` so multiple `all_members` or
  * `tier:premium` broadcasts in the same tick share a single resolved
  * recipient list. Tier-specific segments retain independent cache
  * entries. Cache lifetime is the wrapper instance — a fresh wrapper

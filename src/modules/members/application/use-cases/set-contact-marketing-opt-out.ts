@@ -20,7 +20,9 @@
  *     `unchanged` (the person's record stays).
  *   - Same state → `unchanged`, no write, no audit (FR-030b idempotency —
  *     and the ORIGINAL actor + timestamp survive a repeated "off").
- *   - A removed contact has no marketing state → `removed` (the route answers
+ *   - a contact ALREADY removed at the pre-read → `removed` (one removed in
+ *     the window before the tx surfaces as `not_found`, and IS probe-audited);
+ *     the route answers
  *     404 like `not_found`, but does NOT audit it as a cross-tenant probe —
  *     an in-tenant soft-deleted row is a benign race, security review LOW-1).
  *   - The write and its audit row commit together; the audit payload is
@@ -40,10 +42,8 @@ import { errKind } from '@/lib/log-id';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import {
-  RECEIVES_MARKETING,
   type Contact,
   type ContactId,
-  type MarketingOptOut,
   type MarketingOptOutSource,
 } from '../../domain/contact';
 import type { UserId } from '../../domain/value-objects/user-id';

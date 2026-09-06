@@ -14,6 +14,10 @@
  *   2. Filter halted members (already done by F3 use-case)
  *   3. Filter self (Q16 — exclude requesting member's primary contact email)
  *   4. Filter suppressed (marketingUnsubscribesRepo.lookupBatch)
+ * 4b. Filter the per-contact marketing opt-out (108 PR-D, FR-022a) —
+ *     `membersBridge.filterMarketingOptedOut`, AFTER suppression so an
+ *     address on both lists counts once; a failed lookup REJECTS, never
+ *     fail-open
  *   5. Surface orphans (members with NULL primary email — caller emits
  *      `broadcast_member_missing_primary_contact_email` audit per orphan)
  *   6. Hard-cap 5,000 (FR-016a)

@@ -4,22 +4,26 @@
  * DISPLAYED marketing state, the member facts that decide eligibility, and
  * the shared non-receipt reasons.
  *
- * Why the suppression list is fetched WHOLE for two filters. The state a
- * person sees is suppression > opt-out > on (FR-025), and suppression lives
- * in the broadcasts-owned list, not on `contacts`. A per-page lookup can
- * re-label rows but cannot make `state=on` EXCLUDE suppressed people from
- * the query (the pre-flight preset would then list people who will not
- * receive — the exact mistake FR-027a exists to prevent) or give a truthful
- * count for `state=unsubscribed`. So for those two filters the use case
- * fetches the tenant's suppressed set (bounded: one row per unsubscribe) and
- * hands it to the repo as an email leg. Every other filter resolves
- * suppression for the page's rows only.
+ * Why the suppression list is fetched WHOLE whenever a state filter is set.
+ * The state a person sees is suppression > opt-out > on (FR-025), and
+ * suppression lives in the broadcasts-owned list, not on `contacts`. A
+ * per-page lookup can re-label rows but cannot make `state=on` and both
+ * `off_*` EXCLUDE suppressed people from the query (the pre-flight preset
+ * would then list people who will not receive — the exact mistake FR-027a
+ * exists to prevent; a row that is BOTH off-by-staff and unsubscribed reads
+ * "unsubscribed" on the badge, so the "off (by staff)" filter must not list
+ * it) or give a truthful count for `state=unsubscribed`. So for EVERY state
+ * filter the use case fetches the tenant's suppressed set (bounded: one row
+ * per unsubscribe) and hands it to the repo as an email leg. Only the
+ * unfiltered view resolves suppression for the page's rows alone.
  *
- * Degraded suppression (list unreadable): rows are still shown with every
- * state `'unavailable'` and no state reason (FR-031a / FR-035b) — except
- * `state=unsubscribed`, which has nothing truthful to show and returns
- * empty. Dispatch re-resolves suppression itself, so display honesty never
- * costs a delivery.
+ * Degraded suppression (list unreadable): the UNFILTERED view still shows its
+ * rows, with every state `'unavailable'` and no state reason (FR-031a /
+ * FR-035b) — it only LABELS rows. Every `state` filter returns empty +
+ * `degraded` instead: each of them is DEFINED by that list, so answering
+ * without it would put people who unsubscribed under "on" and inflate the
+ * count on the page whose job is to say who will receive. Dispatch
+ * re-resolves suppression itself, so display honesty never costs a delivery.
  */
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';

@@ -23,6 +23,14 @@ header rule.
 | 429 | problem + `Retry-After` | 60/min per (tenant, user) exhausted |
 | 403 / 401 | RBAC denial (audited) | |
 
+**Idempotency-Key after a FAILED request** (house convention, confirmed at the
+PR-D review): only a 200 is remembered. A key whose request ended in 4xx/5xx
+leaves a reservation with no stored response, and `classifyIdempotencyRequest`
+reads that as a CONFLICT for the 24 h TTL — so a retry after a 503 MUST use a
+NEW key, not the same one. Both UI clients mint a fresh UUID per request 
+(the Undo included), which is why this never surfaces in the app; an
+integration written against this contract would hit it. Same rule on §2.
+
 Use case `setContactMarketingOptOut(deps, { contactId, state, actor: { userId, role, source:
 'staff' } })` in `members/application`; deps `{ tenant, contactRepo, audit,
 marketingSuppression: MarketingSuppressionLookupPort }` — the last adapter lives in

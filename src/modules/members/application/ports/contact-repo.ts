@@ -7,7 +7,6 @@ import type { TenantContext } from '@/modules/tenants';
 import type {
   Contact,
   ContactId,
-  MarketingOptOut,
   MarketingOptOutSource,
 } from '../../domain/contact';
 import type { MemberId } from '../../domain/member';

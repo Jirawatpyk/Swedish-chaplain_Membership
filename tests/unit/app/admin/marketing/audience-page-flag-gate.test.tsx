@@ -62,8 +62,13 @@ describe('/admin/marketing/audience — F7 flag gate', () => {
     expect(buildMarketingAudienceDeps).not.toHaveBeenCalled();
   });
 
-  it('flag on → the page renders (no notFound)', async () => {
+  it('flag on → the gate is the permission, and the page is returned without 404', async () => {
+    // `toBeTruthy()` alone was vacuous (review tests V-1): the data path sits
+    // under <Suspense>, so the page returns an element even with every
+    // dependency mocked to undefined. Assert what this test is actually for —
+    // the permission gate ran and `notFound()` did not.
     const el = await MarketingAudiencePage({ searchParams: Promise.resolve({}) });
+    expect(requirePagePermission).toHaveBeenCalledWith('contacts.read');
     expect(el).toBeTruthy();
   });
 });

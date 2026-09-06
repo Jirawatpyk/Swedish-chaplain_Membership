@@ -3,8 +3,11 @@
 --
 -- `contact_marketing_opted_out` / `contact_marketing_opted_in` are emitted by
 -- `setContactMarketingOptOut` (members Application) in the same transaction as
--- the `contacts` UPDATE, once per ACTUAL change (same-state calls are
--- `unchanged` and emit nothing). Payload: `{ member_id | related_member_id,
+-- the `contacts` UPDATE, once per ACTUAL change. The same state again is
+-- `unchanged` and emits nothing, EXCEPT a self "off" over a staff "off"
+-- (FR-025 AMENDMENT), which is recorded as the person's objection and emits
+-- `_opted_out` again — two `_opted_out` rows with no `_in` between them is a
+-- valid trail. Payload: `{ member_id | related_member_id,
 -- contact_id, source: 'staff' | 'self', actor_role }` — ids only, never an
 -- address (FR-053a). The member key depends on WHO acted: a contact changing
 -- their OWN preference IS member activity, so that row carries `member_id`

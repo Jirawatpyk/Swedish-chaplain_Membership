@@ -186,6 +186,53 @@ describe('contract: PATCH /api/portal/profile/marketing (108 PR-D T061)', () => 
     expect(rememberMock).toHaveBeenCalledWith(expect.anything(), 'key-1', 'hash', expect.objectContaining({ status: 200 }));
   });
 
+
+  // Review tests MEDIUM-1: the response's `marketing.state` is derived AFTER
+  // the write by asking the suppression list, and every PATCH case pinned it
+  // with the list answering "not suppressed". The two branches that decide
+  // whether the member sees a control at all were untested.
+  it('off succeeds but the address is on the suppression list → state unsubscribed (no control)', async () => {
+    setContactMarketingOptOutMock.mockResolvedValueOnce(
+      ok({
+        outcome: 'changed',
+        contact: contact(OWN, { marketing: { optedOutAt: NOW, source: 'self', byUserId: 'user-1' } }),
+        event: 'contact_marketing_opted_out',
+      }),
+    );
+    isSuppressedMock.mockResolvedValueOnce(true);
+    const { PATCH } = await loadMarketingRoute();
+    const res = await PATCH(patchRequest({ optOut: true }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ outcome: 'changed', marketing: { state: 'unsubscribed' } });
+  });
+
+  it('off succeeds but the suppression list is unreadable → state unavailable (never a guess)', async () => {
+    setContactMarketingOptOutMock.mockResolvedValueOnce(
+      ok({
+        outcome: 'changed',
+        contact: contact(OWN, { marketing: { optedOutAt: NOW, source: 'self', byUserId: 'user-1' } }),
+        event: 'contact_marketing_opted_out',
+      }),
+    );
+    isSuppressedMock.mockRejectedValueOnce(new Error('suppression db down'));
+    const { PATCH } = await loadMarketingRoute();
+    const res = await PATCH(patchRequest({ optOut: true }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ outcome: 'changed', marketing: { state: 'unavailable' } });
+  });
+
+  // Review tests MEDIUM-2: the staff route pins this; the portal did not.
+  it('suppression_unavailable → 503 with Retry-After, and the client can name it', async () => {
+    setContactMarketingOptOutMock.mockResolvedValueOnce(
+      err({ type: 'suppression_unavailable' }),
+    );
+    const { PATCH } = await loadMarketingRoute();
+    const res = await PATCH(patchRequest({ optOut: false }));
+    expect(res.status).toBe(503);
+    expect(res.headers.get('Retry-After')).toBe('5');
+    expect(await res.json()).toMatchObject({ error: { code: 'suppression_unavailable' } });
+  });
+
   it('optOut: false → state on; the body cannot address another contact (strict schema → 400)', async () => {
     setContactMarketingOptOutMock.mockResolvedValueOnce(
       ok({ outcome: 'changed', contact: contact(OWN), event: 'contact_marketing_opted_in' }),

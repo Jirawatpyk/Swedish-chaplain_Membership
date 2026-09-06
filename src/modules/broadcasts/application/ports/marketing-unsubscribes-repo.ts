@@ -95,7 +95,8 @@ export interface MarketingUnsubscribesRepo {
 
   /**
    * 108 PR-D — every suppressed `email_lower` of the tenant. The members
-   * Marketing audience page answers two of its filters from this list
+   * Marketing audience page answers EVERY one of its state filters from this
+   * list (`on` and both `off_*` exclude it; `unsubscribed` IS it)
    * (`state=on` excludes suppressed rows at the query; `state=unsubscribed`
    * IS the list), which a per-page `lookupBatch` cannot do truthfully.
    * Bounded: one row per unsubscribe, never per contact.

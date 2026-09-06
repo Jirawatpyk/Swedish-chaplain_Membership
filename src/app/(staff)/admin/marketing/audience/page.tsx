@@ -139,7 +139,7 @@ async function AudienceBody({
   const tenant = resolveTenantFromRequest();
   const locale = await getLocale();
   const t = await getTranslations('admin.marketing.audience');
-  const { filter, page, hasFilters, narrowed } = parseMarketingAudienceParams(query);
+  const { filter, page, narrowed } = parseMarketingAudienceParams(query);
 
   const result = await listMarketingAudience({ filter, page }, buildMarketingAudienceDeps(tenant));
   if (!result.ok) {

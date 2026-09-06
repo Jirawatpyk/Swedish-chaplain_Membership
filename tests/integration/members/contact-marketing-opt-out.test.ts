@@ -4,7 +4,9 @@
  *
  * Part 1 — schema (migrations 0294 + 0295): the three nullable columns exist,
  * the correlated CHECK refuses a partial row, the source CHECK refuses an
- * unknown source, the partial index that backs the audience query exists, and
+ * unknown source, the partial index RESERVED for PR-C's audience resolver
+ * exists with the expected definition (existence only — PR-D's own queries do
+ * not use it; the 0294 header puts the `EXPLAIN` obligation on PR-C), and
  * the two audit enum values are registered.
  *
  * Part 2 — `setMarketingOptOutInTx` (row lock, same-state = unchanged, removed
