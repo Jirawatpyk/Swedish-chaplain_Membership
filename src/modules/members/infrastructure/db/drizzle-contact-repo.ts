@@ -8,12 +8,13 @@
  * `repo.conflict` so callers get a clean error instead of a leaky 500.
  */
 
-import { and, desc, eq, isNotNull, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import { isUniqueViolationOnConstraint } from '@/lib/db-errors';
 import { err, ok } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { mapDbError, unexpected } from './_repo-error';
 import { contacts } from './schema-contacts';
+import { findCarriedSelfOptOut } from './carried-marketing-opt-out';
 import type {
   ContactRepo,
 } from '../../application/ports/contact-repo';
@@ -116,41 +117,14 @@ export const drizzleContactRepo: ContactRepo = {
 
   async addInTx(tx, draft) {
     try {
-      // 108 PR-D (review code H1) — a contact's OWN marketing objection is the
-      // same objection as the unsubscribe link (FR-025 AMENDMENT, GDPR Art.
-      // 21(3)), but it lives on the contact ROW, so removing the person and
-      // adding the same address back used to restore marketing silently — the
-      // shape SweCham's secondary-contact import has. Carry a `self` opt-out
-      // forward from the most recent row with this address in this tenant
-      // (removed rows included). A `staff` opt-out is an operational setting
-      // on a row, not the person's objection, so it does NOT follow.
-      const priorSelf = await tx
-        .select({
-          at: contacts.marketingOptOutAt,
-          byUserId: contacts.marketingOptOutByUserId,
-        })
-        .from(contacts)
-        .where(
-          and(
-            eq(contacts.tenantId, draft.tenantId),
-            sql`lower(${contacts.email}) = lower(${draft.email})`,
-            eq(contacts.marketingOptOutSource, 'self'),
-            isNotNull(contacts.marketingOptOutAt),
-          ),
-        )
-        .orderBy(desc(contacts.marketingOptOutAt))
-        .limit(1);
-      const carried = priorSelf[0];
+      // 108 PR-D (review code H1, corrected by staff review C1+C2) — a
+      // contact's OWN objection follows the ADDRESS. One helper answers this
+      // for every insert path; see its header for why the LATEST row decides.
+      const carried = await findCarriedSelfOptOut(tx, draft.tenantId, draft.email);
       const rows = await tx
         .insert(contacts)
         .values({
-          ...(carried !== undefined
-            ? {
-                marketingOptOutAt: carried.at,
-                marketingOptOutSource: 'self' as const,
-                marketingOptOutByUserId: carried.byUserId,
-              }
-            : {}),
+          ...(carried ?? {}),
           tenantId: draft.tenantId,
           contactId: draft.contactId,
           memberId: draft.memberId,

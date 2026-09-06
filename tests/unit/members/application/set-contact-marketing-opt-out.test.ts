@@ -77,7 +77,7 @@ function contact(overrides: Partial<Contact> = {}): Contact {
 function makeDeps(opts: {
   found?: Contact | null;
   suppressed?: boolean | 'throws';
-  repoOutcome?: 'changed' | 'unchanged' | 'refused' | 'not_found' | 'error';
+  repoOutcome?: 'changed' | 'unchanged' | 'refused' | 'not_found' | 'error' | 'error_no_cause';
   auditFails?: boolean;
 } = {}) {
   const found = opts.found === undefined ? contact() : opts.found;
@@ -101,6 +101,12 @@ function makeDeps(opts: {
           return ok({ outcome: 'refused_self_opted_out' as const });
         case 'not_found':
           return err({ code: 'repo.not_found' as const });
+        case 'error_no_cause':
+          // `RepoError` is a union: `repo.conflict` has NO `cause` field and
+          // `repo.unexpected.cause` is optional. Every other arm here supplies
+          // one, which left `'cause' in re ? … : undefined` half-covered on a
+          // file pinned at 100% branch — the required coverage check went red.
+          return err({ code: 'repo.unexpected' as const });
         default:
           return err({ code: 'repo.unexpected' as const, cause: new Error('boom') });
       }
@@ -367,6 +373,17 @@ describe('setContactMarketingOptOut — idempotency and refusals', () => {
 
   it('repo failure inside the tx → server_error (thrown → rolled back)', async () => {
     const { deps } = makeDeps({ repoOutcome: 'error' });
+    const r = await setContactMarketingOptOut(staffOff, deps);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.type).toBe('server_error');
+  });
+
+  it('a repo failure carrying NO `cause` still logs and maps to server_error', async () => {
+    // The `: undefined` arm of `errKind('cause' in re ? re.cause : undefined)`.
+    // Reachable in production: `repo.conflict` has no `cause` at all, and the
+    // audit adapter is a second producer of these errors.
+    const { deps } = makeDeps({ repoOutcome: 'error_no_cause' });
     const r = await setContactMarketingOptOut(staffOff, deps);
     expect(r.ok).toBe(false);
     if (r.ok) return;

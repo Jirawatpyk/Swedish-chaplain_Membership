@@ -154,13 +154,13 @@ export async function resolveSegmentRecipients(
       const before = final.length;
       final = final.filter((e) => !optedOut.has(e));
       droppedByPreference = before - final.length;
-      if (droppedByPreference > 0) {
-        broadcastsMetrics.marketingOptOutFilterCount(
-          deps.tenant.slug,
-          droppedByPreference,
-        );
-      }
     }
+    // Emitted whenever the filter RAN, including at zero (staff review P3-P2).
+    // Guarding on `> 0` made "nobody has opted out" and "step 4b was deleted"
+    // the same signal — no series either way — and SweCham cuts over with zero
+    // opt-outs, so the catalogue's "a drop to 0 means the filter stopped"
+    // alarm could never have fired. `.add(0)` still registers the series.
+    broadcastsMetrics.marketingOptOutFilterCount(deps.tenant.slug, droppedByPreference);
   }
 
   // Brand-cast (defence-in-depth — primary contact emails could be string at the source)

@@ -43,6 +43,7 @@ import {
   type TestUser,
 } from '../helpers/test-users';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
+import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 import { seedPortalMemberWithContact, seedPortalPlan } from '../helpers/portal-seed';
 
 async function expectRefused(p: Promise<unknown>, token: RegExp): Promise<void> {
@@ -745,5 +746,107 @@ describe('108 PR-D — a self opt-out survives remove → re-add of the same add
     const r = await drizzleContactRepo.findById(tenant.ctx, asContactId(other));
     if (!r.ok) throw new Error('expected the contact');
     expect(r.value.marketing).toEqual(RECEIVES_MARKETING);
+  });
+
+  // Staff review C2. The first version selected the latest row *carrying* a
+  // self opt-out, so an opt-IN cleared only the current row and a long-removed
+  // one resurrected the withdrawn objection on the next re-add — silently
+  // discarding the person's own decision (FR-032). The LATEST row for the
+  // address decides, whatever it says.
+  it('an objection the person WITHDREW is not resurrected by a later re-add', async () => {
+    const address = `withdrawn-${randomUUID().slice(0, 8)}@example.test`;
+
+    // 1. off (self) → removed. This row is the one that used to haunt the address.
+    const first = await addContactWith(address);
+    await runInTenant(tenant.ctx, (tx) =>
+      drizzleContactRepo.setMarketingOptOutInTx(tx, asContactId(first), {
+        kind: 'off',
+        actor: 'self',
+        byUserId: admin.userId as never,
+        at: new Date('2026-09-06T09:00:00Z'),
+      }),
+    );
+    await runInTenant(tenant.ctx, (tx) => drizzleContactRepo.removeInTx(tx, asContactId(first)));
+
+    // 2. re-added (carries, correctly) → the person switches marketing back ON
+    //    → removed again. The live row now says "on".
+    const second = await addContactWith(address);
+    const carried = await drizzleContactRepo.findById(tenant.ctx, asContactId(second));
+    if (!carried.ok) throw new Error('expected the contact');
+    expect(carried.value.marketing.source).toBe('self');
+    await runInTenant(tenant.ctx, (tx) =>
+      drizzleContactRepo.setMarketingOptOutInTx(tx, asContactId(second), {
+        kind: 'on',
+        actor: 'self',
+      }),
+    );
+    await runInTenant(tenant.ctx, (tx) => drizzleContactRepo.removeInTx(tx, asContactId(second)));
+
+    // 3. re-added once more: the withdrawal is the person's latest word.
+    const third = await addContactWith(address);
+    const fresh = await drizzleContactRepo.findById(tenant.ctx, asContactId(third));
+    if (!fresh.ok) throw new Error('expected the contact');
+    expect(fresh.value.marketing).toEqual(RECEIVES_MARKETING);
+  });
+
+  // Staff review C1: `createWithPrimaryContactInTx` — every `POST /api/members`
+  // — bypassed `addInTx` and so bypassed the carry-forward entirely. That is
+  // the fail-OPEN direction: a person who objected receives E-Blasts again.
+  it('the create-member path carries the objection too (not just addInTx)', async () => {
+    const address = `createpath-${randomUUID().slice(0, 8)}@example.test`;
+    const first = await addContactWith(address);
+    await runInTenant(tenant.ctx, (tx) =>
+      drizzleContactRepo.setMarketingOptOutInTx(tx, asContactId(first), {
+        kind: 'off',
+        actor: 'self',
+        byUserId: admin.userId as never,
+        at: new Date('2026-09-06T10:00:00Z'),
+      }),
+    );
+    await runInTenant(tenant.ctx, (tx) => drizzleContactRepo.removeInTx(tx, asContactId(first)));
+
+    const newMemberId = randomUUID();
+    const newContactId = randomUUID();
+    const created = await runInTenant(tenant.ctx, (tx) =>
+      drizzleMemberRepo.createWithPrimaryContactInTx(tx, {
+        member: {
+          tenantId: tenant.ctx.slug,
+          memberId: asMemberId(newMemberId),
+          memberNumber: nextSeedMemberNumber(),
+          companyName: `CarryCo ${newMemberId.slice(0, 6)}`,
+          country: 'TH',
+          planId,
+          planYear: 2026,
+          // The repo calls `.toISOString()` on this — a string throws.
+          registrationDate: new Date(),
+          registrationFeePaid: false,
+          isVatRegistered: false,
+          status: 'active',
+          archivedAt: null,
+        },
+        primaryContact: {
+          tenantId: tenant.ctx.slug,
+          contactId: asContactId(newContactId),
+          firstName: 'Carry',
+          lastName: 'Path',
+          email: address,
+          phone: null,
+          roleTitle: null,
+          preferredLanguage: 'en',
+          isPrimary: true,
+          dateOfBirth: null,
+          linkedUserId: null,
+          inviteBouncedAt: null,
+          art14AttestedAt: null,
+          removedAt: null,
+        },
+      } as never),
+    );
+    if (!created.ok) throw new Error(`create failed: ${created.error.code}`);
+
+    const born = await drizzleContactRepo.findById(tenant.ctx, asContactId(newContactId));
+    if (!born.ok) throw new Error('expected the new primary contact');
+    expect(born.value.marketing.source).toBe('self');
+    expect(born.value.marketing.optedOutAt).not.toBeNull();
   });
 });

@@ -43,6 +43,7 @@ import { membershipPlans } from '@/modules/plans';
 import { invitations } from '@/modules/auth/infrastructure/db/schema';
 import { members, type MemberRow } from './schema-members';
 import { contacts } from './schema-contacts';
+import { findCarriedSelfOptOut } from './carried-marketing-opt-out';
 import { rowToContact } from './drizzle-contact-repo';
 import type {
   DirectoryFilter,
@@ -396,9 +397,16 @@ async function insertContactRow(
   contact: Omit<Contact, 'createdAt' | 'updatedAt' | 'memberId' | 'marketing'>,
   isPrimary: boolean,
 ) {
+  // 108 PR-D (staff review C1): this path — `createWithPrimaryContactInTx`,
+  // i.e. every `POST /api/members` — used to insert without asking whether the
+  // address already carried the person's own objection, so a re-add under a
+  // new member resubscribed someone who had opted out. Fail OPEN, unlike
+  // `addInTx` which was fixed in cycle 15.
+  const carried = await findCarriedSelfOptOut(tx, contact.tenantId, contact.email);
   const inserted = await tx
     .insert(contacts)
     .values({
+      ...(carried ?? {}),
       tenantId: contact.tenantId,
       contactId: contact.contactId,
       memberId,

@@ -625,7 +625,7 @@ describe('resolve-segment-recipients — 108 PR-D marketing opt-out at dispatch 
     expect(calls).toEqual([[unsafeBrandEmailLower('a@example.com')]]);
   });
 
-  it('nothing dropped → droppedByPreference is 0 and the metric is silent', async () => {
+  it('nothing dropped → droppedByPreference is 0 and the metric STILL reports 0', async () => {
     const spy = vi.spyOn(broadcastsMetrics, 'marketingOptOutFilterCount');
     const deps = makeDeps({ members: [recipient('a@example.com')] });
     const result = await resolveSegmentRecipients(deps, {
@@ -636,7 +636,11 @@ describe('resolve-segment-recipients — 108 PR-D marketing opt-out at dispatch 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.droppedByPreference).toBe(0);
-    expect(spy).not.toHaveBeenCalled();
+    // Staff review P2: a filter that ran and found nothing must be
+    // DISTINGUISHABLE from a filter that no longer runs. Both used to produce
+    // no series at all, and SweCham cuts over with zero opt-outs — so the
+    // absent-series alarm could never have fired.
+    expect(spy).toHaveBeenCalledWith('test-tenant', 0);
     spy.mockRestore();
   });
 
@@ -726,7 +730,9 @@ describe('resolve-segment-recipients — droppedByPreference is measured, not tr
     if (!result.ok) return;
     expect(result.value.recipients).toHaveLength(2);
     expect(result.value.droppedByPreference).toBe(0);
-    expect(spy).not.toHaveBeenCalled();
+    // A stray answer must not inflate the COUNT; the metric still reports the
+    // honest 0 (staff review P2).
+    expect(spy).toHaveBeenCalledWith('test-tenant', 0);
     spy.mockRestore();
   });
 });

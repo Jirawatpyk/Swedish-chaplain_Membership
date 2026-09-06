@@ -103,14 +103,20 @@ function makeDeps(opts: {
   total?: number;
   suppressedAll?: ReadonlySet<string> | 'throws';
   lookup?: 'throws';
-  repoFails?: boolean;
+  repoFails?: boolean | 'no_cause';
 } = {}) {
   const rows = opts.rows ?? [row(ON), row(OFF_STAFF), row(OFF_SELF), row(UNSUB)];
   const memberRepo = {
     listContactsForMarketingAudience: vi.fn(async (_ctx: unknown, _f: MarketingAudienceRepoFilter) =>
-      opts.repoFails
-        ? err({ code: 'repo.unexpected' as const, cause: new Error('boom') })
-        : ok({ rows, total: opts.total ?? rows.length }),
+      opts.repoFails === 'no_cause'
+        ? // `repo.conflict` has no `cause` field and `repo.unexpected.cause` is
+          // optional, so the `: undefined` arm of the log's `'cause' in e`
+          // ternary is reachable — and was uncovered (same class as the T1
+          // blocker on the pinned sibling use case).
+          err({ code: 'repo.unexpected' as const })
+        : opts.repoFails
+          ? err({ code: 'repo.unexpected' as const, cause: new Error('boom') })
+          : ok({ rows, total: opts.total ?? rows.length }),
     ),
   };
   const suppressedAll = opts.suppressedAll ?? new Set(['unsub@example.com']);
@@ -341,6 +347,14 @@ describe('listMarketingAudience — degraded suppression (FR-031a / FR-035b)', (
     );
     expect(r.ok && r.value).toMatchObject({ rows: [], total: 0, degraded: true });
     expect(memberRepo.listContactsForMarketingAudience).not.toHaveBeenCalled();
+  });
+
+  it('a repo failure carrying NO `cause` still logs and maps to server_error', async () => {
+    const { deps } = makeDeps({ repoFails: 'no_cause' });
+    const r = await listMarketingAudience({ filter: { eligible: true }, page: 1 }, deps);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.type).toBe('server_error');
   });
 
   it('repo failure → server_error', async () => {
