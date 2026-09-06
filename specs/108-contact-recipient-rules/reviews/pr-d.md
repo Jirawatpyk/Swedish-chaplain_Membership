@@ -160,6 +160,61 @@ describes the optimistic / focus hand-off behaviour; FR-050a written (ux CHK033)
   stamps `removed_at`). Correct outcome — erased people never appear; the vocabulary stays
   for the compose-time count feedback (PR-C).
 
+### Cycle 16 — the gate that was running on nothing (found at push, 2026-09-06)
+
+Not a review round. The branch's first successful push printed, after four green
+module gates:
+
+```
+[pre-push] no integration test imports src/app/api/admin/contacts/[contactId]/marketing/route.ts — skipping
+[pre-push] no integration test imports src/app/api/portal/profile/marketing/route.ts — skipping
+[pre-push] no integration test imports src/app/api/portal/profile/route.ts — skipping
+```
+
+The API-route gate (#339) had nothing to run for any route PR-D adds. Their
+contract tests mock `@/lib/contact-marketing-deps`, `@/modules/members`,
+`@/lib/idempotency` and `@/lib/tenant-context`, so they pin the routes' SHAPE —
+status codes, order of checks, RFC 7807 bodies — and nothing about the wiring
+underneath. Route → real deps builder → real use case → real repo → RLS → audit
+had only ever been exercised by e2e, which has no CI job. That is the
+`void-pdf-reconcile` shape exactly: green everywhere, unproven where it counts.
+
+`tests/integration/members/contact-marketing-routes.test.ts` closes it — six
+cases against live Neon, mocking `@/lib/auth-session` only: a staff "off" writes
+all three 0294 columns AND its audit row (`related_member_id`, no address); the
+same state again is `unchanged` with no second row; a `manager` is refused with
+the row untouched; a member's own "off" is stamped `self` and audited under
+`member_id`; staff get 409 `self_opted_out` and the objection survives; and
+`GET /api/portal/profile` reports `off_by_contact` on the own contact only. It
+joins `integration-smoke.yml`, which is required on `main` (that job already
+sets `E2E_X_TENANT_HEADER_ENABLED: 'true'`, and `rateLimiter.check` falls back to
+an in-memory bucket when Upstash is unreachable — both checked, not assumed).
+
+**Two mutation facts, measured.** The file's first draft claimed to prove the
+repo's UNDER-LOCK FR-025 guard. Disabling that guard left all six cases GREEN —
+the use case's pre-read refuses first — while
+`contact-marketing-opt-out-guard.test.ts` failed 2 of its 4. So the new file
+proves the refusal REACHES THE CLIENT, and the TOCTOU leg stays where round 2
+put it. The header now says that instead of implying more; a test's docstring is
+a claim, and claims get mutation-checked like any other.
+
+Also closed here: `docs/observability.md` § 22.1 was missing BOTH metrics this
+feature added — `broadcasts_marketing_opt_out_filter_count{tenant}` (cycle 10)
+and `broadcasts_suppression_lookup_failed{tenant, op}` (cycle 15). The second
+exists precisely so a degraded-but-silent suppression outage becomes visible;
+leaving it out of the inventory is the same "recorded but never read" shape it
+was written to close. And in `src/lib/metrics.ts` the new method had been
+inserted BETWEEN `marketingOptOutFilterCount`'s docblock and its body, so the
+surviving comment described the wrong function.
+
+**Verification at HEAD `7e06cd7a7`**: lint 0 · typecheck 0 · pre-push
+`tests/integration/members` 96 passed / 1 skipped (97) · the new file 6/6 and
+`contact-marketing-opt-out-guard` 4/4 with the guard restored. The three commits
+after `631f3c651` are tests + docs + comments only — no production behaviour
+changed — so the three co-signs stand as re-affirmed. Coverage against the
+pinned thresholds is CI-verified only (`pnpm vitest run tests/unit tests/contract`
+is NOT `pnpm test:coverage`); the required job is the verdict.
+
 ### Round 3 — `/speckit.review` (2026-09-06), 5 agents, 60 findings, all closed in cycle 15
 
 The user-invoked gate. Config had no `review-config.yml`, so all six agents were
