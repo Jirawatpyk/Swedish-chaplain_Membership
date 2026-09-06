@@ -265,7 +265,7 @@ the Principle III line corrected for the second time rather than carried forward
 - **Branch**: `108-pr-d-contact-marketing` (PR-D — US4 staff marketing state + Marketing audience page, US6 portal self-toggle)
 - **Branch HEAD at co-sign**: `dd3408d79` (fix(108): keep the count line at zero as the focus fallback (not live) โ€” H4 vs M-14)
 - **Verification at this HEAD**: lint 0 · typecheck 0 · `check:i18n` 5289 keys × 3 · the eleven static gates OK · unit/RTL suites touched by cycles 9–14 green (members, broadcasts, components, lib, scripts, e2e-helpers, app pages) · full `pnpm test` after cycle 12: 1219 files / 13581 tests (one `.env.example` regression closed in the cycle-11 follow-up) · live Neon: `contact-marketing-opt-out` 22, `contact-marketing-opt-out-guard` 4, `marketing-opt-out-dispatch` 4, `marketing-audience-query`, `self-service-whitelist`, six broadcasts dispatch/audience files · e2e `admin-marketing-audience` 10/10 + `portal-marketing-toggle` 3/3 (re-run after cycle 14).
-- **Still ahead of the PR (user-invoked gates, cannot be run by the maintainer's AI)**: `/speckit-review` ×3 and `/speckit-staff-review-run`; the PR is opened as a DRAFT with that checklist.
+- **User-invoked gates**: `/speckit-review` ran 2026-09-06 (five agents, 60 findings, all closed) and `/speckit-staff-review-run` ran the same day (five reviewers; report in `reviews/review-20260906-152258.md`). PR #344 remains a DRAFT until the maintainer marks it ready.
 
 - **Reviewer stack**: `security-engineer` (round 1: HIGH-1, MEDIUM-1, LOW-1..5 — APPROVE WITH FIXES conditioned on HIGH-1 + MEDIUM-1) → cycles 9–11 → two `whole-branch-reviewer` passes (round 2) → cycles 13–14. Evidence per finding in `reviews/pr-d.md` § Review rounds.
 - **What changed on security grounds**: the opt-out is consulted AT DISPATCH through the real F7→F3 bridge, fail-closed (HIGH-1); a staff toggle audits `related_member_id` so migration 0009's `last_activity_at` bump fires only for the contact's own action (MEDIUM-1, live-Neon guard); a removed in-tenant contact is 404 without a probe audit and a failed probe write is logged (LOW-1/LOW-2); one `text[]` array bind per list (LOW-3); `?page` clamped both ways (LOW-4); one shared production-host guard behind the integration harness AND the e2e seed client, fail-closed on a match and on an empty list, documented in `.env.example` (LOW-5 + round-2 M-12); the FR-025 AMENDMENT is enforced UNDER THE ROW LOCK, not only on the pre-read — a concurrent self opt-out is never cleared by a staff "on" (round-2 HIGH/MEDIUM-1); the page 404s when the feature flag hides it (round-2 M-11); the three PR-D live-Neon proofs are in the required `integration-smoke.yml` check (round-2 M-6).
@@ -282,3 +282,28 @@ substantive changes on this checklist's surface are listed in
 typecheck 0, thirteen static gates OK, the live-Neon proofs green (including
 the new transaction-rollback and objection-carry-over cases).
 
+### Re-affirmed after `/speckit-staff-review-run` (2026-09-06)
+
+Staff review S1 caught this footer naming a HEAD five commits behind the branch
+— the failure this gate exists to catch — so the correction is recorded rather
+than quietly overwritten. That particular drift was benign
+(`git diff 5b818ee8c..7e06cd7a7 -- src/ scripts/ drizzle/` was a JSDoc reorder
+in `src/lib/metrics.ts` and nothing else), but the review that followed was not:
+one BLOCKER and twenty warnings, closed across four commits.
+
+**Re-affirmed at HEAD `0b574a30c`** — the last commit carrying source changes;
+only this re-stamp follows it. Evidence at that HEAD: `pnpm test:coverage`
+**exit 0 with zero threshold errors** (this is the required check that was RED
+when the gate opened — 97.72 % branch against a 100 % pin) · full unit +
+contract 1224 files / 13642 tests · fifteen static gates OK · lint 0 ·
+typecheck 0 · live Neon: `contact-marketing-opt-out` 28 (incl. the two new
+carry-forward directions), `contact-marketing-routes` 8 (incl. the live
+idempotency replay and conflict), `contact-marketing-opt-out-guard` 4,
+`primary-contact-read-agreement` 7 (incl. FR-033 with an opted-out primary).
+
+Changes on THIS checklist's surface since the previous stamp: CHK019 reworded
+from "timing-safe 404" — a property the code does not provide and the spec never
+required — to non-disclosure, which is what ships and what the tests prove
+(S3). No authorization, tenant-isolation or PII behaviour changed; the
+`contacts.marketing` matrix, the portal's own-contact-only shape and the
+fail-closed dispatch filter are unchanged and were re-verified live.

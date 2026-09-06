@@ -81,7 +81,7 @@
 - **Branch**: `108-pr-d-contact-marketing` (PR-D — US4 staff marketing state + Marketing audience page, US6 portal self-toggle)
 - **Branch HEAD at co-sign**: `dd3408d79` (fix(108): keep the count line at zero as the focus fallback (not live) โ€” H4 vs M-14)
 - **Verification at this HEAD**: lint 0 · typecheck 0 · `check:i18n` 5289 keys × 3 · the eleven static gates OK · unit/RTL suites touched by cycles 9–14 green (members, broadcasts, components, lib, scripts, e2e-helpers, app pages) · full `pnpm test` after cycle 12: 1219 files / 13581 tests (one `.env.example` regression closed in the cycle-11 follow-up) · live Neon: `contact-marketing-opt-out` 22, `contact-marketing-opt-out-guard` 4, `marketing-opt-out-dispatch` 4, `marketing-audience-query`, `self-service-whitelist`, six broadcasts dispatch/audience files · e2e `admin-marketing-audience` 10/10 + `portal-marketing-toggle` 3/3 (re-run after cycle 14).
-- **Still ahead of the PR (user-invoked gates, cannot be run by the maintainer's AI)**: `/speckit-review` ×3 and `/speckit-staff-review-run`; the PR is opened as a DRAFT with that checklist.
+- **User-invoked gates**: `/speckit-review` ran 2026-09-06 (five agents, 60 findings, all closed) and `/speckit-staff-review-run` ran the same day (five reviewers; report in `reviews/review-20260906-152258.md`). PR #344 remains a DRAFT until the maintainer marks it ready.
 
 - **Reviewer stack**: `enterprise-ux-designer` (round 1: H1–H6, M1–M10, L1–L8), `mobile-a11y-ux-reviewer` (2 HIGH, 7 MEDIUM, 8 LOW), `i18n-translation-reviewer` (M1–M2, L1–L11) → cycle 11 → two `whole-branch-reviewer` passes → cycles 13–14.
 - **Rows the round-1 reviewer marked FAIL / PARTIAL, now**: CHK006 (skeleton = table, CLS 0) — CLOSED: 44-px row pitch, 8 columns by default, `w-full` + min-width body, growable action skeleton; CHK007 (320 px, never the page) — CLOSED: the preset action wraps, SV copy shortened, and the reflow assertion runs for EN/TH/SV; CHK013 (state announced) — CLOSED: optimistic `aria-checked` on click, rolled back on refusal, on both switches; CHK019 (switch placement) — CLOSED: badge + switch grouped as a pair outside the `role="group"` status cluster, which hides when empty; CHK031 (muted = empty sentinels only) — CLOSED: the portal state text and the `unavailable` badge are states, not muted; CHK033 (SV/TH length variance) — CLOSED: FR-050a written with five measured constraints and the three-locale acceptance; CHK035 (axe on every surface) — CLOSED: the member page is swept too (it caught the empty labelled `<div>` the same day); CHK009 (contract says "chips") — CLOSED: contract § 3 describes the select-filters + Clear pattern.
@@ -98,3 +98,26 @@ substantive changes on this checklist's surface are listed in
 typecheck 0, thirteen static gates OK, the live-Neon proofs green (including
 the new transaction-rollback and objection-carry-over cases).
 
+### Re-affirmed after `/speckit-staff-review-run` (2026-09-06)
+
+Staff review S1 caught this footer naming a HEAD five commits behind the branch
+— the failure this gate exists to catch — so the correction is recorded rather
+than quietly overwritten. That particular drift was benign
+(`git diff 5b818ee8c..7e06cd7a7 -- src/ scripts/ drizzle/` was a JSDoc reorder
+in `src/lib/metrics.ts` and nothing else), but the review that followed was not:
+one BLOCKER and twenty warnings, closed across four commits.
+
+**Re-affirmed at HEAD `0b574a30c`** — the last commit carrying source changes;
+only this re-stamp follows it. Evidence at that HEAD: `pnpm test:coverage`
+**exit 0 with zero threshold errors** (this is the required check that was RED
+when the gate opened — 97.72 % branch against a 100 % pin) · full unit +
+contract 1224 files / 13642 tests · fifteen static gates OK · lint 0 ·
+typecheck 0 · live Neon: `contact-marketing-opt-out` 28 (incl. the two new
+carry-forward directions), `contact-marketing-routes` 8 (incl. the live
+idempotency replay and conflict), `contact-marketing-opt-out-guard` 4,
+`primary-contact-read-agreement` 7 (incl. FR-033 with an opted-out primary).
+
+Changes on THIS checklist's surface since the previous stamp: none to any
+rendered surface. The audience page, both toggles, the five-state badge and
+every string are byte-identical; the work was correctness, observability, spec
+AMENDMENTs and test quality.

@@ -61,7 +61,7 @@
 - **Branch**: `108-pr-d-contact-marketing` (PR-D — US4 staff marketing state + Marketing audience page, US6 portal self-toggle)
 - **Branch HEAD at co-sign**: `dd3408d79` (fix(108): keep the count line at zero as the focus fallback (not live) โ€” H4 vs M-14)
 - **Verification at this HEAD**: lint 0 · typecheck 0 · `check:i18n` 5289 keys × 3 · the eleven static gates OK · unit/RTL suites touched by cycles 9–14 green (members, broadcasts, components, lib, scripts, e2e-helpers, app pages) · full `pnpm test` after cycle 12: 1219 files / 13581 tests (one `.env.example` regression closed in the cycle-11 follow-up) · live Neon: `contact-marketing-opt-out` 22, `contact-marketing-opt-out-guard` 4, `marketing-opt-out-dispatch` 4, `marketing-audience-query`, `self-service-whitelist`, six broadcasts dispatch/audience files · e2e `admin-marketing-audience` 10/10 + `portal-marketing-toggle` 3/3 (re-run after cycle 14).
-- **Still ahead of the PR (user-invoked gates, cannot be run by the maintainer's AI)**: `/speckit-review` ×3 and `/speckit-staff-review-run`; the PR is opened as a DRAFT with that checklist.
+- **User-invoked gates**: `/speckit-review` ran 2026-09-06 (five agents, 60 findings, all closed) and `/speckit-staff-review-run` ran the same day (five reviewers; report in `reviews/review-20260906-152258.md`). PR #344 remains a DRAFT until the maintainer marks it ready.
 
 - **Reviewer stack**: `pdpa-gdpr-compliance-officer` (round 1: B-1, B-2, H-1, M-1, L-1..L-4) → cycles 9, 10, 12 → two `whole-branch-reviewer` passes → cycles 13–14.
 - **Row-level outcome for the rows the reviewer marked**: CHK005 (objection honoured on the next send) — CLOSED: dispatch drops opted-out addresses on every segment kind, proved on live Neon through the real bridge; CHK006 (one precedence, stated once) — CLOSED: FR-025 AMENDMENT + data-model § 3 + the guard under the row lock; CHK021 (audit answers "why did/didn't they receive") — CLOSED: a self "off" over a staff "off" is recorded and audited as the person's objection; CHK001/003/004 (LI basis + LIA in the ROPA) — CLOSED: `docs/compliance/processing-records.md` splits sender-side contract from recipient-side legitimate interest with the D3 LIA, records the per-contact preference as its own activity with its two audit events, and states the true retention rationale (no PII; the audit trail is authoritative; NOT an address-keyed suppression — only `marketing_unsubscribes` survives erasure).
@@ -78,3 +78,29 @@ substantive changes on this checklist's surface are listed in
 typecheck 0, thirteen static gates OK, the live-Neon proofs green (including
 the new transaction-rollback and objection-carry-over cases).
 
+### Re-affirmed after `/speckit-staff-review-run` (2026-09-06)
+
+Staff review S1 caught this footer naming a HEAD five commits behind the branch
+— the failure this gate exists to catch — so the correction is recorded rather
+than quietly overwritten. That particular drift was benign
+(`git diff 5b818ee8c..7e06cd7a7 -- src/ scripts/ drizzle/` was a JSDoc reorder
+in `src/lib/metrics.ts` and nothing else), but the review that followed was not:
+one BLOCKER and twenty warnings, closed across four commits.
+
+**Re-affirmed at HEAD `0b574a30c`** — the last commit carrying source changes;
+only this re-stamp follows it. Evidence at that HEAD: `pnpm test:coverage`
+**exit 0 with zero threshold errors** (this is the required check that was RED
+when the gate opened — 97.72 % branch against a 100 % pin) · full unit +
+contract 1224 files / 13642 tests · fifteen static gates OK · lint 0 ·
+typecheck 0 · live Neon: `contact-marketing-opt-out` 28 (incl. the two new
+carry-forward directions), `contact-marketing-routes` 8 (incl. the live
+idempotency replay and conflict), `contact-marketing-opt-out-guard` 4,
+`primary-contact-read-agreement` 7 (incl. FR-033 with an opted-out primary).
+
+Changes on THIS checklist's surface since the previous stamp: a person's own
+opt-out now follows the address on EVERY insert path, not just `addInTx` —
+`createWithPrimaryContactInTx` and the member import script were re-subscribing
+people who had objected (C1, fail-open), and a withdrawn objection could be
+resurrected from a long-removed row (C2, discarding the person's own opt-in).
+FR-027 gained the AMENDMENT that authorises the carry-forward. The Art. 14
+residual is unchanged and still carried forward to PR-C's flag flip.
