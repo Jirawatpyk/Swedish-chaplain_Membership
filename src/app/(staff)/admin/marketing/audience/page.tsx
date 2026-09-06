@@ -204,16 +204,16 @@ async function AudienceBody({
     <>
       {/* FR-040-style honesty for the count: announced to AT on every filter
           change — the ONE live region here (pagination is silenced, L2; the
-          degraded panel is a note; an empty result is announced by the
-          EmptyState alone, so the count line steps aside at zero — M-14).
-          Also the focus fallback when the last row leaves a filtered view. */}
-      {!degradedEmpty && total > 0 && (
+          degraded panel is a note; at ZERO the EmptyState is the one
+          announcement, so the count line stays visible but is not live —
+          M-14). Always rendered: it is the focus fallback when the LAST row
+          leaves a filtered view (H4) — at that moment total is 0. */}
+      {!degradedEmpty && (
         <p
           id={AUDIENCE_COUNT_ID}
           tabIndex={-1}
           className="text-sm text-muted-foreground outline-none"
-          role="status"
-          aria-live="polite"
+          {...(total > 0 ? { role: 'status', 'aria-live': 'polite' as const } : {})}
           data-testid="audience-count"
         >
           {hasFilters ? t('count', { count: total }) : t('countAll', { count: total })}
