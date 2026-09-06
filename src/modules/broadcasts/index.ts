@@ -171,6 +171,7 @@ export {
 } from './application/use-cases/validate-custom-recipients';
 export {
   resolveSegmentRecipients,
+  type ResolveSegmentDeps,
   type ResolveSegmentError,
   type ResolveSegmentInput,
   type ResolveSegmentOutput,
@@ -265,7 +266,7 @@ export {
 // --- F9 cross-module read (dashboard needs-attention, FR-002/AS-2) -------
 export { makeBroadcastApprovalCounter } from './infrastructure/broadcasts-deps';
 // 108 PR-C — the flag-derived resolver leg, read in the composition root only.
-export { currentAudienceMode, currentAudienceCeiling } from './infrastructure/broadcasts-deps';
+export { currentAudienceMode, currentAudienceCeiling, makeResolveSegmentDeps } from './infrastructure/broadcasts-deps';
 // 108 PR-C T085 — the one ceiling (Domain) + the split threshold it bounds.
 export { audienceCeiling, SPLIT_THRESHOLD_RECIPIENTS } from './domain/audience-ceiling';
 export type { BroadcastApprovalCounter } from './application/ports/broadcast-approval-counter';

@@ -29,6 +29,7 @@ import type { BroadcastApprovalCounter } from '../application/ports/broadcast-ap
 
 import type { ClockPort } from '../application/ports/clock-port';
 import type { AudienceMode } from '../domain/audience-mode';
+import type { ResolveSegmentDeps } from '../application/use-cases/resolve-segment-recipients';
 import { audienceCeiling } from '../domain/audience-ceiling';
 import { isF71aUs1Enabled } from './feature-flags';
 import type { ProcessWebhookEventDeps } from '../application/use-cases/process-webhook-event';
@@ -113,6 +114,23 @@ export function currentAudienceMode(): AudienceMode {
  */
 export function currentAudienceCeiling(): number {
   return audienceCeiling(isF71aUs1Enabled());
+}
+
+/**
+ * 108 PR-C T088 — the resolver's deps for the two recipient-count endpoints.
+ * The SAME bridges, repo, leg and ceiling submit and dispatch use, so the
+ * number a member sees at compose is the number that decides the send
+ * (SC-004).
+ */
+export function makeResolveSegmentDeps(tenantId: string): ResolveSegmentDeps {
+  return {
+    tenant: asTenantContext(tenantId),
+    membersBridge,
+    eventAttendees: eventAttendeesBridge,
+    marketingUnsubscribes: makeDrizzleMarketingUnsubscribesRepo(tenantId),
+    audienceMode: currentAudienceMode(),
+    audienceCeiling: currentAudienceCeiling(),
+  };
 }
 
 export function makeSubmitBroadcastDeps(
