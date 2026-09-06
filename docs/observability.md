@@ -1238,7 +1238,7 @@ member_compose_page_load
 member_submit_button_click
   └─ api_broadcasts_submit
        └─ html_sanitiser                           (DOMPurify — Application layer)
-            └─ resolve_segment_recipients          (joins members + contacts; suppression filter deferred)
+            └─ resolve_segment_recipients          (joins members + contacts; suppression anti-join, then the 108 PR-D per-contact marketing opt-out filter — `broadcasts_marketing_opt_out_filter_count{tenant}` counts the drop; a failed opt-out lookup REJECTS the tick, never fail-open)
                  └─ broadcasts_repo_insert         (DB — submitted row + reservation derived)
                       └─ audit_broadcast_submitted (DB — same tx)
                            └─ admin_notification_enqueue (Resend transactional, async)

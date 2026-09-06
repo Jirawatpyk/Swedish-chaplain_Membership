@@ -189,4 +189,16 @@ export interface MembersBridgePort {
     tenantCtx: TenantContext,
     memberId: string,
   ): Promise<'en' | 'th' | 'sv' | null>;
+
+  /**
+   * 108 PR-D (FR-022a, review B-1) — which of `emails` belong to a live
+   * contact that opted out of marketing (by staff or by themself). The
+   * resolver drops them from EVERY segment kind after the suppression
+   * anti-join. NOT best-effort: a failed lookup REJECTS so the dispatch
+   * retries later instead of sending to people who objected.
+   */
+  filterMarketingOptedOut(
+    tenantCtx: TenantContext,
+    emails: ReadonlyArray<EmailLower>,
+  ): Promise<ReadonlySet<EmailLower>>;
 }

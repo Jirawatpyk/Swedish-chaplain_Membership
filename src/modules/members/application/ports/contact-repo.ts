@@ -393,4 +393,16 @@ export interface ContactRepo {
     memberId: MemberId,
     opts: { readonly erasedAt: Date },
   ): Promise<Result<{ readonly scrubbedCount: number }, RepoError>>;
+
+  /**
+   * 108 PR-D (B-1) — which of `emailLowers` belong to a LIVE contact in this
+   * tenant that carries a marketing opt-out (`marketing_opt_out_at IS NOT
+   * NULL`, `removed_at IS NULL`). Matched on `lower(email)`; the answer is a
+   * subset of the input. ONE query, one array bind (not one parameter per
+   * address). Read by F7 at dispatch through `filterMarketingOptedOutEmails`.
+   */
+  findMarketingOptedOutEmailLowers(
+    ctx: TenantContext,
+    emailLowers: ReadonlyArray<string>,
+  ): Promise<Result<ReadonlySet<string>, RepoError>>;
 }

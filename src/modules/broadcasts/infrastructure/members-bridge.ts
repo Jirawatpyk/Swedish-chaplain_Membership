@@ -28,6 +28,7 @@ import {
   getMemberPrimaryContact as f3GetMemberPrimaryContact,
   getMemberPreferredLocale as f3GetMemberPreferredLocale,
   lookupContactEmailInTenant as f3LookupContactEmailInTenant,
+  filterMarketingOptedOutEmails as f3FilterMarketingOptedOutEmails,
   lookupMemberPrimaryContactEmailInTenant as f3LookupMemberPrimaryContactEmailInTenant,
   getMembersHaltedInTenant as f3GetMembersHaltedInTenant,
   setMemberHalt as f3SetMemberHalt,
@@ -262,5 +263,32 @@ export const membersBridge: MembersBridgePort = {
       return null;
     }
     return result.value;
+  },
+
+  /**
+   * 108 PR-D (FR-022a) — NOT best-effort, unlike the locale lookup above:
+   * a failed read THROWS so the resolve (and the dispatch tick) fails and
+   * retries, instead of sending to people who objected.
+   */
+  async filterMarketingOptedOut(
+    tenantCtx: TenantContext,
+    emails: ReadonlyArray<EmailLower>,
+  ): Promise<ReadonlySet<EmailLower>> {
+    const result = await f3FilterMarketingOptedOutEmails(
+      { tenant: tenantCtx, contactRepo: drizzleContactRepo },
+      emails as ReadonlyArray<string>,
+    );
+    if (!result.ok) {
+      logger.error(
+        { err: result.error.code, tenantId: tenantCtx.slug, batch: emails.length },
+        'broadcasts.members_bridge.marketing_opt_out_lookup_failed',
+      );
+      throw new Error(
+        `marketing opt-out lookup failed (${result.error.code}) — refusing to resolve fail-open`,
+      );
+    }
+    const out = new Set<EmailLower>();
+    for (const e of result.value) out.add(unsafeBrandEmailLower(e));
+    return out;
   },
 };

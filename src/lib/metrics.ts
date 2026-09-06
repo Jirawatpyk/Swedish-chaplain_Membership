@@ -2229,6 +2229,21 @@ export const broadcastsMetrics = {
   },
 
   /**
+   * `broadcasts.marketing_opt_out_filter_count{tenant}` — 108 PR-D (FR-022a):
+   * recipients removed per dispatch because their contact row carries a
+   * marketing opt-out (staff or self). Distinct from the suppression
+   * anti-join above — an address that is both counts once, as suppressed.
+   */
+  marketingOptOutFilterCount(tenantId: string, count: number): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_marketing_opt_out_filter_count',
+        'Recipients removed per dispatch by a per-contact marketing opt-out',
+      ).add(count, { tenant: tenantId });
+    });
+  },
+
+  /**
    * `broadcasts.audit_emit_count{tenant, event_type}` — ops-dashboard
    * audit-event volume per tenant per type. Distinct from
    * `auditEmitFailed` (which counts FAILURES).

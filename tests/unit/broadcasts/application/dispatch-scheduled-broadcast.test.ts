@@ -389,6 +389,7 @@ function makeMembersBridge(opts: {
     async markBroadcastsAcknowledged() {
       return ok({ previouslyNull: true });
     },
+    async filterMarketingOptedOut() { return new Set(); },
     async getMemberPreferredLocale() { return opts.preferredLocale ?? null; },
   };
 }

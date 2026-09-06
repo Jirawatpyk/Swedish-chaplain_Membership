@@ -8,7 +8,7 @@
  * `repo.conflict` so callers get a clean error instead of a leaky 500.
  */
 
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import { isUniqueViolationOnConstraint } from '@/lib/db-errors';
 import { err, ok } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
@@ -625,6 +625,31 @@ export const drizzleContactRepo: ContactRepo = {
       });
     } catch (e) {
       return err(mapDbError(e, 'primary_contact_race'));
+    }
+  },
+  async findMarketingOptedOutEmailLowers(ctx, emailLowers) {
+    if (emailLowers.length === 0) return ok(new Set());
+    try {
+      const rows = await runInTenant(ctx, (tx) =>
+        tx
+          .select({ emailLower: sql<string>`lower(${contacts.email})` })
+          .from(contacts)
+          .where(
+            and(
+              eq(contacts.tenantId, ctx.slug),
+              isNull(contacts.removedAt),
+              isNotNull(contacts.marketingOptOutAt),
+              // ONE array bind for the whole batch (security review LOW-3) —
+              // a custom list or an all-members segment can be thousands of
+              // addresses; one parameter per address is a statement-size
+              // hazard, not a query plan.
+              sql`lower(${contacts.email}) = ANY(${sql.param([...emailLowers])}::text[])`,
+            ),
+          ),
+      );
+      return ok(new Set(rows.map((r) => r.emailLower)));
+    } catch (e) {
+      return err(unexpected(e));
     }
   },
 };

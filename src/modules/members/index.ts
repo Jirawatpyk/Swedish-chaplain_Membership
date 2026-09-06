@@ -219,6 +219,10 @@ export {
 } from './application/use-cases/set-contact-marketing-opt-out';
 export type { MarketingSuppressionLookupPort } from './application/ports/marketing-suppression-lookup-port';
 export {
+  filterMarketingOptedOutEmails,
+  type FilterMarketingOptedOutEmailsDeps,
+} from './application/use-cases/filter-marketing-opted-out-emails';
+export {
   listMarketingAudience,
   MARKETING_AUDIENCE_PAGE_SIZE,
   type ListMarketingAudienceDeps,

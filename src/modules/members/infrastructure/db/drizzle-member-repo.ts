@@ -20,7 +20,6 @@ import {
   isNotNull,
   isNull,
   notExists,
-  notInArray,
   or,
   sql,
   type SQL,
@@ -1321,11 +1320,19 @@ export const drizzleMemberRepo: MemberRepo = {
           );
         }
         const emailLower = sql`lower(${contacts.email})`;
+        // ONE array bind per list (security review LOW-3): the unsubscribe
+        // list is unbounded and `inArray` renders one parameter per address.
+        // `= ANY('{}')` is FALSE and `<> ALL('{}')` is TRUE — the same
+        // semantics as the `inArray` forms they replace.
         if (filter.emailLowerIn !== undefined) {
-          conds.push(inArray(emailLower, [...filter.emailLowerIn]));
+          conds.push(
+            sql`${emailLower} = ANY(${sql.param([...filter.emailLowerIn])}::text[])`,
+          );
         }
         if (filter.emailLowerNotIn !== undefined && filter.emailLowerNotIn.length > 0) {
-          conds.push(notInArray(emailLower, [...filter.emailLowerNotIn]));
+          conds.push(
+            sql`${emailLower} <> ALL(${sql.param([...filter.emailLowerNotIn])}::text[])`,
+          );
         }
         if (filter.q) {
           // Same escaping as the directory search: `%`/`_`/`\` are literal.

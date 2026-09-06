@@ -110,6 +110,7 @@ function makeMembersBridge(state: State): MembersBridgePort {
     async markBroadcastsAcknowledged() {
       return ok({ previouslyNull: true });
     },
+    async filterMarketingOptedOut() { return new Set(); },
     async getMemberPreferredLocale() { return null; },
   };
 }

@@ -63,6 +63,13 @@ export interface ResolveSegmentOutput {
   readonly estimatedCount: number;
   /** Member IDs missing a primary contact email (audit emit per orphan). */
   readonly orphans: ReadonlyArray<string>;
+  /**
+   * 108 PR-D (FR-022a) — recipients removed because their contact row
+   * carries a marketing opt-out (staff or self). Counted separately from
+   * `orphans` (the member still has a primary contact) and from the
+   * suppression drop (an address that is both counts once, as suppressed).
+   */
+  readonly droppedByPreference: number;
 }
 
 export async function resolveSegmentRecipients(
@@ -127,6 +134,26 @@ export async function resolveSegmentRecipients(
     }
   }
 
+  // Step 4b (108 PR-D, FR-022a): per-contact marketing opt-out — runs on
+  // the post-suppression list so a double-listed address counts once, and
+  // is skipped when nothing is left. The bridge REJECTS on a failed lookup:
+  // never fail-open onto people who objected (privacy B-1 / security HIGH-1).
+  let droppedByPreference = 0;
+  if (final.length > 0) {
+    const optedOut = await deps.membersBridge.filterMarketingOptedOut(
+      deps.tenant,
+      final,
+    );
+    if (optedOut.size > 0) {
+      final = final.filter((e) => !optedOut.has(e));
+      droppedByPreference = optedOut.size;
+      broadcastsMetrics.marketingOptOutFilterCount(
+        deps.tenant.slug,
+        droppedByPreference,
+      );
+    }
+  }
+
   // Brand-cast (defence-in-depth — primary contact emails could be string at the source)
   final = final.map((e) => unsafeBrandEmailLower(e));
 
@@ -148,5 +175,6 @@ export async function resolveSegmentRecipients(
     recipients: final,
     estimatedCount: final.length,
     orphans,
+    droppedByPreference,
   });
 }
