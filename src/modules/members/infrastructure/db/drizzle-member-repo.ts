@@ -26,7 +26,7 @@ import {
 } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { err, ok, type Result } from '@/lib/result';
-import { runInTenant } from '@/lib/db';
+import { runInTenant, type TenantTx } from '@/lib/db';
 import { mapDbError, unexpected } from './_repo-error';
 import type { TenantContext } from '@/modules/tenants';
 import { membershipPlans } from '@/modules/plans';
@@ -46,6 +46,7 @@ import { contacts } from './schema-contacts';
 import { findCarriedSelfOptOut } from './carried-marketing-opt-out';
 import { rowToContact } from './drizzle-contact-repo';
 import type {
+  BroadcastRecipientContactsQuery,
   DirectoryFilter,
   DirectoryOffsetFilter,
   DirectoryRow,
@@ -446,6 +447,72 @@ function mapDirectoryRow(
 }
 
 // --- Implementation ---------------------------------------------------------
+
+/**
+ * 108 PR-C — the keyset page query behind `findBroadcastRecipientContacts`,
+ * exported as a BUILDER so the live 20,000-contact test can `EXPLAIN` the
+ * exact statement the repo runs (PR-D review M-13: the 0294 partial index
+ * was reserved for this read with an EXPLAIN obligation) instead of a
+ * hand-written copy that would drift. Must be awaited inside the caller's
+ * `runInTenant` tx — it is tenant-scoped by RLS, not by an explicit
+ * predicate on `members.tenant_id`.
+ */
+export function buildBroadcastRecipientContactsQuery(
+  tx: TenantTx,
+  params: BroadcastRecipientContactsQuery,
+) {
+  const tierCodesArr = params.tierCodes ?? [];
+  const tierFilter =
+    params.segmentType === 'tier' && tierCodesArr.length > 0
+      ? sql`${membershipPlans.planCategory}::text = ANY(ARRAY[${sql.join(
+          tierCodesArr.map((c) => sql`${c}`),
+          sql`, `,
+        )}]::text[])`
+      : undefined;
+  const after = params.after;
+  const cursorFilter =
+    after === null
+      ? undefined
+      : after.contactId === null
+        ? sql`${members.memberId} > ${after.memberId}::uuid`
+        : sql`(${members.memberId}, ${contacts.contactId}) > (${after.memberId}::uuid, ${after.contactId}::uuid)`;
+  return tx
+    .select({
+      memberId: members.memberId,
+      contactId: contacts.contactId,
+      emailLower: sql<string | null>`lower(${contacts.email})`,
+      isPrimary: contacts.isPrimary,
+    })
+    .from(members)
+    .leftJoin(
+      contacts,
+      and(
+        eq(contacts.tenantId, members.tenantId),
+        eq(contacts.memberId, members.memberId),
+        isNull(contacts.removedAt),
+        isNull(contacts.marketingOptOutAt),
+      ),
+    )
+    .leftJoin(
+      membershipPlans,
+      and(
+        eq(membershipPlans.tenantId, members.tenantId),
+        eq(membershipPlans.planId, members.planId),
+        eq(membershipPlans.planYear, members.planYear),
+      ),
+    )
+    .where(
+      and(
+        eq(members.status, 'active'),
+        isNull(members.erasedAt),
+        eq(members.broadcastsHaltedUntilAdminReview, false),
+        ...(tierFilter ? [tierFilter] : []),
+        ...(cursorFilter ? [cursorFilter] : []),
+      ),
+    )
+    .orderBy(asc(members.memberId), asc(contacts.contactId))
+    .limit(params.limit);
+}
 
 export const drizzleMemberRepo: MemberRepo = {
   async findById(ctx, memberId) {
@@ -1539,59 +1606,9 @@ export const drizzleMemberRepo: MemberRepo = {
    */
   async findBroadcastRecipientContacts(ctx, params) {
     try {
-      const rows = await runInTenant(ctx, async (tx) => {
-        const tierCodesArr = params.tierCodes ?? [];
-        const tierFilter =
-          params.segmentType === 'tier' && tierCodesArr.length > 0
-            ? sql`${membershipPlans.planCategory}::text = ANY(ARRAY[${sql.join(
-                tierCodesArr.map((c) => sql`${c}`),
-                sql`, `,
-              )}]::text[])`
-            : undefined;
-        const after = params.after;
-        const cursorFilter =
-          after === null
-            ? undefined
-            : after.contactId === null
-              ? sql`${members.memberId} > ${after.memberId}::uuid`
-              : sql`(${members.memberId}, ${contacts.contactId}) > (${after.memberId}::uuid, ${after.contactId}::uuid)`;
-        return tx
-          .select({
-            memberId: members.memberId,
-            contactId: contacts.contactId,
-            emailLower: sql<string | null>`lower(${contacts.email})`,
-            isPrimary: contacts.isPrimary,
-          })
-          .from(members)
-          .leftJoin(
-            contacts,
-            and(
-              eq(contacts.tenantId, members.tenantId),
-              eq(contacts.memberId, members.memberId),
-              isNull(contacts.removedAt),
-              isNull(contacts.marketingOptOutAt),
-            ),
-          )
-          .leftJoin(
-            membershipPlans,
-            and(
-              eq(membershipPlans.tenantId, members.tenantId),
-              eq(membershipPlans.planId, members.planId),
-              eq(membershipPlans.planYear, members.planYear),
-            ),
-          )
-          .where(
-            and(
-              eq(members.status, 'active'),
-              isNull(members.erasedAt),
-              eq(members.broadcastsHaltedUntilAdminReview, false),
-              ...(tierFilter ? [tierFilter] : []),
-              ...(cursorFilter ? [cursorFilter] : []),
-            ),
-          )
-          .orderBy(asc(members.memberId), asc(contacts.contactId))
-          .limit(params.limit);
-      });
+      const rows = await runInTenant(ctx, async (tx) =>
+        buildBroadcastRecipientContactsQuery(tx, params),
+      );
 
       return ok(
         rows.map((r) => ({

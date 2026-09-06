@@ -4,7 +4,7 @@
  * The adapter is the one place where an F3 repo failure could quietly become
  * an EMPTY audience. Pinned:
  *   - `getContactsBySegment` walks the F3 keyset pages to exhaustion — page
- *     size 1,000, cursor = the last row of the previous page INCLUDING an
+ *     size 5,000, cursor = the last row of the previous page INCLUDING an
  *     orphan row's null contact id — and stops on the first short page;
  *   - orphan rows (null contact) are forwarded, not dropped; emails come back
  *     branded and lower-cased; tier codes are forwarded verbatim;
@@ -64,7 +64,7 @@ function contactRow(memberId: string, contactId: string, isPrimary = false): F3R
 function orphanRow(memberId: string): F3Row {
   return { memberId, contactId: null, emailLower: null, isPrimary: false };
 }
-function fullPage(prefix: string, n = 1000): F3Row[] {
+function fullPage(prefix: string, n = 5000): F3Row[] {
   return Array.from({ length: n }, (_, i) =>
     contactRow(`${prefix}-m-${Math.floor(i / 2)}`, `${prefix}-c-${i}`, i % 2 === 0),
   );
@@ -91,14 +91,14 @@ describe('membersBridge.getContactsBySegment (108 PR-C T075)', () => {
 
     const rows = await membersBridge.getContactsBySegment(tenant, 'all_members', {});
 
-    expect(rows).toHaveLength(1003);
+    expect(rows).toHaveLength(5003);
     expect(f3.getBroadcastRecipientContacts).toHaveBeenCalledTimes(2);
-    expect(callInput(0)).toEqual({ segmentType: 'all_members', after: null, limit: 1000 });
+    expect(callInput(0)).toEqual({ segmentType: 'all_members', after: null, limit: 5000 });
     const last = page1[page1.length - 1]!;
     expect(callInput(1)).toEqual({
       segmentType: 'all_members',
       after: { memberId: last.memberId, contactId: last.contactId },
-      limit: 1000,
+      limit: 5000,
     });
   });
 
@@ -114,12 +114,12 @@ describe('membersBridge.getContactsBySegment (108 PR-C T075)', () => {
       .mockResolvedValueOnce(ok(fullPage('e')))
       .mockResolvedValueOnce(ok([]));
     const rows = await membersBridge.getContactsBySegment(tenant, 'all_members', {});
-    expect(rows).toHaveLength(1000);
+    expect(rows).toHaveLength(5000);
     expect(f3.getBroadcastRecipientContacts).toHaveBeenCalledTimes(2);
   });
 
   it('a page ending on an ORPHAN row resumes with a null contact id in the cursor, and the orphan is forwarded', async () => {
-    const page1 = [...fullPage('o', 999), orphanRow('o-orphan')];
+    const page1 = [...fullPage('o', 4999), orphanRow('o-orphan')];
     f3.getBroadcastRecipientContacts
       .mockResolvedValueOnce(ok(page1))
       .mockResolvedValueOnce(ok([contactRow('o-tail', 'o-tail-c')]));
@@ -129,7 +129,7 @@ describe('membersBridge.getContactsBySegment (108 PR-C T075)', () => {
     expect(callInput(1).after).toEqual({ memberId: 'o-orphan', contactId: null });
     const orphan = rows.find((r) => r.memberId === 'o-orphan');
     expect(orphan).toEqual({ memberId: 'o-orphan', contactId: null, emailLower: null, isPrimary: false });
-    expect(rows).toHaveLength(1001);
+    expect(rows).toHaveLength(5001);
   });
 
   it('brands and lower-cases emails, keeps isPrimary, forwards tier codes verbatim', async () => {
@@ -144,7 +144,7 @@ describe('membersBridge.getContactsBySegment (108 PR-C T075)', () => {
       segmentType: 'tier',
       tierCodes: ['corporate'],
       after: null,
-      limit: 1000,
+      limit: 5000,
     });
   });
 

@@ -11,7 +11,7 @@ interface ResolveSegmentDeps {
   tenant: TenantContext;
   membersBridge: MembersBridgePort;          // + getContactsBySegment, filterMarketingOptedOut
   eventAttendees: EventAttendeesRepository;
-  marketingUnsubscribes: MarketingUnsubscribesRepo;   // lookupBatch, chunked ≤1,000
+  marketingUnsubscribes: MarketingUnsubscribesRepo;   // lookupBatch, chunked ≤5,000
   audienceMode: 'primary_only' | 'all_contacts';      // from FEATURE_CONTACT_MARKETING_RECIPIENTS
   audienceCeiling: number;                            // audienceCeiling(isF71aUs1Enabled())
 }
@@ -31,7 +31,7 @@ interface ResolveSegmentOutput {
 ## 2. Pipeline (all_contacts mode)
 
 1. Member-based segment → `membersBridge.getContactsBySegment(tenant, kind, params)`:
-   pages of 1,000 ordered by `(member_id, contact_id)`, looped to exhaustion; **a page
+   pages of 5,000 (T081 raised it from 1,000: latency-bound, see research R8) ordered by `(member_id, contact_id)`, looped to exhaustion; **a page
    failure propagates as `resolve.server_error`** (never `[]`).
    Eligibility: member `status='active' AND erased_at IS NULL AND halted=false` (+ tier);
    contact `removed_at IS NULL AND marketing_opt_out_at IS NULL`.
@@ -41,7 +41,7 @@ interface ResolveSegmentOutput {
 3. Self-exclusion: drop every candidate whose `memberId === requestingMemberId`
    (member-based segments only; custom list unaffected — unchanged rule).
 4. Dedupe by `emailLower`.
-5. Suppression: `lookupBatch` in chunks of 1,000; removed entries count toward
+5. Suppression: `lookupBatch` in chunks of 5,000; removed entries count toward
    `droppedByPreference` for custom/attendee sources.
 6. Empty → `broadcast_empty_segment_blocked`. Above `audienceCeiling` →
    `broadcast_audience_too_large { count, cap }` — **never truncated**.

@@ -1055,16 +1055,16 @@ describe('resolve-segment-recipients — 108 PR-C all_contacts leg (T067/T076)',
   });
 });
 
-describe('resolve-segment-recipients — 108 PR-C suppression lookup is chunked at 1,000 (contract § 2 step 5)', () => {
-  it('2,500 candidates → three lookupBatch calls of 1,000 / 1,000 / 500, and a suppression in each chunk is honoured', async () => {
+describe('resolve-segment-recipients — 108 PR-C suppression lookup is chunked at 5,000 (contract § 2 step 5)', () => {
+  it('12,500 candidates → three lookupBatch calls of 5,000 / 5,000 / 2,500, and a suppression in each chunk is honoured', async () => {
     const lookupCalls: Array<ReadonlyArray<EmailLower>> = [];
-    const members = Array.from({ length: 2500 }, (_, i) => recipient(`u${i}@example.com`));
-    const suppressed = new Set(['u0@example.com', 'u1000@example.com', 'u2499@example.com']);
-    const result = await resolveSegmentRecipients(makeDeps({ members, suppressed, lookupCalls }), input());
-    expect(lookupCalls.map((c) => c.length)).toEqual([1000, 1000, 500]);
+    const members = Array.from({ length: 12500 }, (_, i) => recipient(`u${i}@example.com`));
+    const suppressed = new Set(['u0@example.com', 'u5000@example.com', 'u12499@example.com']);
+    const result = await resolveSegmentRecipients(makeDeps({ members, suppressed, lookupCalls, audienceCeiling: 50_000 }), input());
+    expect(lookupCalls.map((c) => c.length)).toEqual([5000, 5000, 2500]);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.recipients).toHaveLength(2497);
+    expect(result.value.recipients).toHaveLength(12497);
     for (const s of suppressed) {
       expect(result.value.recipients).not.toContain(unsafeBrandEmailLower(s));
     }

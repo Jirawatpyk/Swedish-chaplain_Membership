@@ -109,7 +109,7 @@ export interface MembersBridgePort {
    * ELIGIBLE contact (live, not opted out) of every eligible member (active,
    * not erased, not halted; + tier) of a member-based segment, plus one
    * orphan row (`contactId: null`) per eligible member that has no eligible
-   * contact. Walks F3's keyset pages (1,000 rows) to exhaustion. NOT
+   * contact. Walks F3's keyset pages (5,000 rows) to exhaustion. NOT
    * best-effort: a failed page THROWS — an adapter answering `[]` on error
    * would be a silent truncation, the class research R8 exists to close.
    * `event_attendees_last_90d` and `custom` answer `[]` without a read

@@ -257,7 +257,7 @@ affects F7's `audienceId`-based gateway (R16).
   tierCodes?, after?: { memberId, contactId }, limit })` — `members LEFT JOIN contacts ON
   member_id AND removed_at IS NULL AND marketing_opt_out_at IS NULL`, WHERE `status =
   'active' AND erased_at IS NULL AND broadcasts_halted_until_admin_review = false` (+ tier),
-  ordered by `(member_id, contact_id)`, page size 1,000, **no `.limit(5000)`**. Rows carry
+  ordered by `(member_id, contact_id)`, page size 5,000 (T081 raised it from 1,000: 20,000 contacts at 1,000-row pages were 42 round trips, 9–11 s from a ~220 ms-RTT workstation against FR-043 — the walk is latency-bound), **no `.limit(5000)`**. Rows carry
   `{ memberId, contactId | null, emailLower | null, isPrimary }`; a null contact marks an
   orphan member (FR-029). The broadcasts `MembersBridgePort` gains
   `getContactsBySegment(tenant, kind, params) → ContactRecipient[]` which loops pages until
@@ -265,7 +265,7 @@ affects F7's `audienceId`-based gateway (R16).
   error — a second silent-truncation vector under pagination). `resolveSegmentRecipients`
   works on `{ memberId, contactId, emailLower }` candidates: self-exclusion by
   `memberId === requestingMemberId` (input gains `requestingMemberId`; the email-equality
-  arm is removed), dedupe by email, suppression `lookupBatch` in chunks of 1,000, then the
+  arm is removed), dedupe by email, suppression `lookupBatch` in chunks of 5,000, then the
   ceiling. `tick-memoized-members-bridge` memoises the new method by
   `(tenant, kind, params)` like the old one.
 - **Split by flag** (see R10): the `status = 'active'` predicate ships **unflagged** (it only

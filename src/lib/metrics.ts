@@ -2335,7 +2335,7 @@ export const broadcastsMetrics = {
 
   /**
    * `broadcasts.audience_pages.total{tenant}` — 108 PR-C T090: F3 keyset
-   * pages walked per completed 1:N resolve (1,000 rows each), never on a
+   * pages walked per completed 1:N resolve (5,000 rows each), never on a
    * failed page. Pages per resolve rising toward the per-tick budget is the
    * early signal for a large tenant.
    */

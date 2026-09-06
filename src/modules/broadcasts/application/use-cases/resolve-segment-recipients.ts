@@ -27,7 +27,7 @@
  *      the submitting member, member-based segments only (FR-022, FR-022a —
  *      the custom list is exempt; the old email-equality arm is gone).
  *   4. Dedupe by address (FR-023).
- *   5. Suppression: `lookupBatch` in chunks of 1,000.
+ *   5. Suppression: `lookupBatch` in chunks of 5,000.
  *  5b. Per-contact marketing opt-out (108 PR-D, FR-022a) —
  *      `membersBridge.filterMarketingOptedOut`, AFTER suppression so an
  *      address on both lists counts once; a failed lookup REJECTS (throws),
@@ -58,9 +58,12 @@ import {
 
 /**
  * Contract § 2 step 5 — `lookupBatch` chunk size. A 50,000-recipient audience
- * (US5, batching ON) is 50 round trips, never one 50,000-parameter `= ANY`.
+ * (US5, batching ON) is 10 round trips, never one 50,000-parameter `= ANY`.
+ * 5,000 rather than 1,000: the resolve is latency-bound (T081 measured
+ * 20,000 contacts at 42 round trips ≈ 9–11 s from a ~220 ms-RTT workstation),
+ * and the F3 opt-out filter already sends the whole batch as one array.
  */
-const SUPPRESSION_LOOKUP_CHUNK = 1000;
+const SUPPRESSION_LOOKUP_CHUNK = 5000;
 
 export type ResolveSegmentError =
   | { readonly kind: 'broadcast_empty_segment_blocked' }

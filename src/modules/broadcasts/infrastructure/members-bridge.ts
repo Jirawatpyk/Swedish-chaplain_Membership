@@ -55,10 +55,13 @@ import type { EmailLower } from '../domain/value-objects/email-lower';
 
 /**
  * 108 PR-C — F3 keyset page size for the 1:N audience (contract
- * broadcast-audience § 2 step 1). One round trip per 1,000 rows; a 50,000
- * ceiling is 50 pages.
+ * broadcast-audience § 2 step 1). One round trip per 5,000 rows; a 50,000
+ * ceiling is 10 pages. Raised from 1,000 by T081: 20,000 contacts at
+ * 1,000-row pages were 42 round trips ≈ 9–11 s from a ~220 ms-RTT
+ * workstation against FR-043's 3 s — the walk is latency-bound, so fewer,
+ * larger pages are the honest fix (5,000 rows is ~500 KB of ids + emails).
  */
-const CONTACT_PAGE_SIZE = 1000;
+const CONTACT_PAGE_SIZE = 5000;
 
 function brandRecipient(r: {
   memberId: string;
@@ -122,7 +125,7 @@ export const membersBridge: MembersBridgePort = {
 
   /**
    * 108 PR-C T075 — the 1:N page walk (port docblock has the contract). One
-   * F3 call per 1,000 rows, cursor = the last row of the previous page (an
+   * F3 call per 5,000 rows, cursor = the last row of the previous page (an
    * orphan's null contact id included — the F3 query compares on member_id
    * alone for that shape). A page shorter than the page size proves
    * exhaustion, so a small audience is one call and an exact multiple costs
