@@ -160,6 +160,10 @@ describes the optimistic / focus hand-off behaviour; FR-050a written (ux CHK033)
   stamps `removed_at`). Correct outcome — erased people never appear; the vocabulary stays
   for the compose-time count feedback (PR-C).
 
+### MERGED — 2026-09-06 22:05 SEAST, PR #344, squash `a586351cd`
+
+Marked ready and squash-merged by the maintainer's instruction after CI 10/10 on `4112e0dbd` (six required incl. Integration smoke 13m08s and coverage 19m53s). Vercel production deploy of `a586351cd`: **success**. Verified on PROD read-only afterwards, from `pg_indexes` / `information_schema` / `pg_enum` — not from the migration runner's "applied": `contacts_marketing_recipients_idx` and `contacts_tenant_lower_email_all_idx` present; `marketing_opt_out_at / _source / _by_user_id` present; `contact_marketing_opted_out` and `contact_marketing_opted_in` registered. Follow-ups: docs PR #345 (CLAUDE.md live numbers); operator to add `UPSTASH_REDIS_REST_URL/TOKEN` secrets to `integration-smoke.yml`; PR-C next.
+
 ### Round 5 — `/code-review` ×2 (2026-09-06), 11 + 15 findings, all closed
 
 Two passes of the repo's own `/code-review` skill, run by the maintainer after
