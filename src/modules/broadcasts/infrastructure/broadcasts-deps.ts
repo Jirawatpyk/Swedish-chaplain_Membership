@@ -29,6 +29,8 @@ import type { BroadcastApprovalCounter } from '../application/ports/broadcast-ap
 
 import type { ClockPort } from '../application/ports/clock-port';
 import type { AudienceMode } from '../domain/audience-mode';
+import { audienceCeiling } from '../domain/audience-ceiling';
+import { isF71aUs1Enabled } from './feature-flags';
 import type { ProcessWebhookEventDeps } from '../application/use-cases/process-webhook-event';
 import type { ReconcileStuckSendingDeps } from '../application/use-cases/reconcile-stuck-sending';
 import type { RollUpBatchBroadcastDeps } from '../application/use-cases/roll-up-batch-broadcast';
@@ -103,6 +105,16 @@ export function currentAudienceMode(): AudienceMode {
   return env.features.contactMarketingRecipients ? 'all_contacts' : 'primary_only';
 }
 
+/**
+ * 108 PR-C T085 (FR-042) — the ONE ceiling every resolver caller reads:
+ * 5,000 with the F7.1a batching path OFF, 50,000 with it ON. Read per call
+ * (a flag flip takes effect on the next request/tick), the same way the
+ * legacy `isF71aUs1Enabled()` gate is consulted by the batch crons.
+ */
+export function currentAudienceCeiling(): number {
+  return audienceCeiling(isF71aUs1Enabled());
+}
+
 export function makeSubmitBroadcastDeps(
   tenantId: string,
 ): SubmitBroadcastDeps {
@@ -125,6 +137,7 @@ export function makeSubmitBroadcastDeps(
     eventAttendees: eventAttendeesBridge,
     marketingUnsubscribes: makeDrizzleMarketingUnsubscribesRepo(tenantId),
     audienceMode: currentAudienceMode(),
+    audienceCeiling: currentAudienceCeiling(),
     rateLimiter: broadcastsRateLimiter,
     audit: f7AuditAdapter,
     clock: systemClock,
@@ -306,6 +319,7 @@ export async function makeDispatchScheduledBroadcastDeps(
     marketingUnsubscribes: makeDrizzleMarketingUnsubscribesRepo(tenantId),
     eventAttendees: eventAttendeesBridge,
     audienceMode: currentAudienceMode(),
+    audienceCeiling: currentAudienceCeiling(),
     audit: f7AuditAdapter,
     clock: systemClock,
     fromEmail: env.broadcasts.fromEmail,

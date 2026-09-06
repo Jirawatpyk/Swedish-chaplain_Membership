@@ -22,7 +22,7 @@ import { useDeferredValue, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { submitSuccessDescription } from '@/components/broadcast/submit-feedback';
+import { errorValues, submitSuccessDescription } from '@/components/broadcast/submit-feedback';
 import { z } from 'zod';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -236,7 +236,9 @@ export function ComposeForm({
         error?: {
           code?: string;
           message?: string;
-          details?: { disallowedSources?: ReadonlyArray<string> };
+          // 108 PR-C T085: `cap` / `count` ride on the audience-too-large 422
+          // so the copy can name the ceiling the server refused against.
+          details?: { disallowedSources?: ReadonlyArray<string>; cap?: unknown; count?: unknown };
         };
         broadcastId?: string;
         // 108 PR-C (FR-022a) — how many entries the resolver excluded by
@@ -292,7 +294,9 @@ export function ComposeForm({
       // Use the i18n key if recognised; fall back to the server message.
       let msg: string;
       try {
-        msg = tErr(code);
+        // 108 PR-C T085: the too-large copy interpolates the ceiling from the
+        // 422 body; every other code renders without values as before.
+        msg = tErr(code, errorValues(code, responseBody.error?.details));
       } catch {
         msg = responseBody.error?.message ?? tErr('internal_error');
       }

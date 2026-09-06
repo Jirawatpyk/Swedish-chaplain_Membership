@@ -88,6 +88,7 @@ describe('event-attendees-stub (T050)', () => {
       {
         tenant,
         audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
         membersBridge: emptyMembersBridge,
         eventAttendees: eventAttendeesStub,
         marketingUnsubscribes: emptyUnsubscribes,

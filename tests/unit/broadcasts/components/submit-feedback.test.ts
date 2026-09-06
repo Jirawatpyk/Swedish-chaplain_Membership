@@ -16,7 +16,7 @@ import { describe, expect, it, vi } from 'vitest';
 import en from '@/i18n/messages/en.json';
 import th from '@/i18n/messages/th.json';
 import sv from '@/i18n/messages/sv.json';
-import { submitSuccessDescription } from '@/components/broadcast/submit-feedback';
+import { errorValues, submitSuccessDescription } from '@/components/broadcast/submit-feedback';
 
 type Messages = Record<string, unknown>;
 function pick(messages: Messages, path: string): unknown {
@@ -82,5 +82,32 @@ describe('submitSuccessDescription', () => {
       submitSuccessDescription(t, { recipientPreferenceExcluded: 3 }, { hintKey: null, countKey: 'preferenceExcluded' }),
     ).toBe('preferenceExcluded:3');
     vi.restoreAllMocks();
+  });
+});
+
+/**
+ * 108 PR-C T085 (FR-041 / FR-042) — the "audience too large" copy interpolates
+ * the ceiling the server refused against (`details.cap` on the 422 body),
+ * so the message is true whichever ceiling is in force (5,000 or 50,000).
+ */
+describe('too-large copy interpolates the ceiling (108 PR-C T085)', () => {
+  it.each([
+    ['portal.broadcasts.compose.errors.broadcast_audience_too_large'],
+    ['admin.broadcasts.proxySubmitDialog.audienceTooLargeError'],
+  ])('%s interpolates {ceiling} in en / th / sv and no longer hard-codes 5,000', (path) => {
+    for (const [locale, messages] of [['en', en], ['th', th], ['sv', sv]] as const) {
+      const value = pick(messages as Messages, path);
+      expect(typeof value, `${locale}: ${path}`).toBe('string');
+      expect(value as string, `${locale}: ${path}`).toMatch(/\{ceiling/);
+      expect(value as string, `${locale}: ${path}`).not.toMatch(/5[,. ]?000/);
+    }
+  });
+
+  it('errorValues: the too-large code yields { ceiling } from details.cap; anything else yields undefined', () => {
+    expect(errorValues('broadcast_audience_too_large', { cap: 50000, count: 50001 })).toEqual({ ceiling: 50000 });
+    expect(errorValues('broadcast_audience_too_large', {})).toBeUndefined();
+    expect(errorValues('broadcast_audience_too_large', { cap: 'x' })).toBeUndefined();
+    expect(errorValues('broadcast_empty_segment_blocked', { cap: 5000 })).toBeUndefined();
+    expect(errorValues('broadcast_audience_too_large', undefined)).toBeUndefined();
   });
 });

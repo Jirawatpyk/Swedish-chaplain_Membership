@@ -136,6 +136,7 @@ describe('108 PR-C T105 — SC-011: audience page (eligible, on) = compose count
         eventAttendees: eventAttendeesStub,
         marketingUnsubscribes: makeDrizzleMarketingUnsubscribesRepo(tenant.ctx.slug),
         audienceMode: 'all_contacts',
+        audienceCeiling: 5000,
       },
       { segment: { kind: 'all_members' }, phase: 'submit', requestingMemberId: null, customRecipients: null },
     );

@@ -56,8 +56,6 @@ import {
   type EmailLower,
 } from '../../domain/value-objects/email-lower';
 
-const AUDIENCE_HARD_CAP = 5000;
-
 /**
  * Contract § 2 step 5 — `lookupBatch` chunk size. A 50,000-recipient audience
  * (US5, batching ON) is 50 round trips, never one 50,000-parameter `= ANY`.
@@ -92,6 +90,13 @@ export interface ResolveSegmentDeps {
    * `domain/audience-mode.ts`.
    */
   readonly audienceMode: AudienceMode;
+  /**
+   * 108 PR-C T085 (FR-041 / FR-042) — the ONE ceiling,
+   * `audienceCeiling(batchingEnabled)` from `domain/audience-ceiling.ts`,
+   * passed in by the composition root so count, submit and dispatch compare
+   * against the same number and the refusal echoes it. Never truncate to it.
+   */
+  readonly audienceCeiling: number;
 }
 
 export interface ResolveSegmentInput {
@@ -297,12 +302,12 @@ export async function resolveSegmentRecipients(
     return err({ kind: 'broadcast_empty_segment_blocked' });
   }
 
-  // Step 6: hard cap — never truncated
-  if (final.length > AUDIENCE_HARD_CAP) {
+  // Step 6: the ceiling — never truncated (FR-041), one definition (FR-042)
+  if (final.length > deps.audienceCeiling) {
     return err({
       kind: 'broadcast_audience_too_large',
       count: final.length,
-      cap: AUDIENCE_HARD_CAP,
+      cap: deps.audienceCeiling,
     });
   }
 

@@ -29,7 +29,7 @@ import { useDeferredValue, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { submitSuccessDescription } from '@/components/broadcast/submit-feedback';
+import { errorValues, submitSuccessDescription } from '@/components/broadcast/submit-feedback';
 import { z } from 'zod';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -194,7 +194,13 @@ export function ProxyComposeForm(): React.ReactElement {
     // segment is a radio group — the inline error + toast suffices.
   }, [fieldError]);
 
-  function handleErrorCode(code: string, companyName: string): void {
+  function handleErrorCode(
+    code: string,
+    companyName: string,
+    // 108 PR-C T085 — the 422 `details` (`cap` / `count` on the
+    // audience-too-large refusal) so the copy names the real ceiling.
+    details?: Record<string, unknown>,
+  ): void {
     const handling = ERROR_HANDLING[code] ?? null;
     if (handling === null) {
       // Unmapped: halt, rate-limit, missing-primary-contact, internal,
@@ -220,7 +226,7 @@ export function ProxyComposeForm(): React.ReactElement {
         pickerRef.current?.focus();
         break;
       case 'field': {
-        const message = t(handling.key);
+        const message = t(handling.key, errorValues(code, details));
         setFieldError({ field: handling.field, message });
         toast.error(message);
         break;
@@ -280,7 +286,11 @@ export function ProxyComposeForm(): React.ReactElement {
         typeof (json as { error?: { code?: unknown } }).error?.code === 'string'
           ? (json as { error: { code: string } }).error.code
           : 'internal_error';
-      handleErrorCode(code, companyName);
+      handleErrorCode(
+        code,
+        companyName,
+        (json as { error?: { details?: Record<string, unknown> } } | null)?.error?.details,
+      );
     } catch (e) {
       // Network/CORS/offline — log for local + E2E visibility; generic toast.
 

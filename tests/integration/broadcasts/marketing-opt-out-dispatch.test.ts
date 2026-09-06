@@ -149,6 +149,7 @@ describe('108 PR-D B-1 — marketing opt-out honoured at dispatch (live Neon, re
     return {
       tenant: tenant.ctx,
       audienceMode: 'primary_only' as const,
+      audienceCeiling: 5000,
       membersBridge,
       eventAttendees: eventAttendeesStub,
       marketingUnsubscribes: makeDrizzleMarketingUnsubscribesRepo(tenant.ctx.slug),

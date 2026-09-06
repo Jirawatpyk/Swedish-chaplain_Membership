@@ -195,5 +195,14 @@ function mapProxySubmitError(
     return errorResponse(500, 'internal_error', correlationId);
   }
   const { status, code } = httpStatusForBroadcastError(error.kind);
+  // 108 PR-C T085 (FR-041): the over-ceiling refusal names the true count and
+  // the ceiling it was judged against — the same `details` shape the member
+  // route returns — so the proxy compose copy can interpolate `{ceiling}`
+  // instead of hard-coding a number the server may not be enforcing.
+  if (error.kind === 'broadcast_audience_too_large') {
+    return errorResponse(status, code, correlationId, {
+      details: { count: error.count, cap: error.cap },
+    });
+  }
   return errorResponse(status, code, correlationId);
 }

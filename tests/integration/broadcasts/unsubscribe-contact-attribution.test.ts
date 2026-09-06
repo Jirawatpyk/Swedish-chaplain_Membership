@@ -178,6 +178,7 @@ describe('108 PR-C T078 — unsubscribe attribution to member + contact (live Ne
         eventAttendees: eventAttendeesStub,
         marketingUnsubscribes: makeDrizzleMarketingUnsubscribesRepo(tenant.ctx.slug),
         audienceMode: 'all_contacts',
+        audienceCeiling: 5000,
       },
       { segment: { kind: 'all_members' }, phase: 'dispatch', requestingMemberId: null, customRecipients: null },
     );

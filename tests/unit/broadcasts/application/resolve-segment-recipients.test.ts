@@ -238,6 +238,8 @@ interface DepsFixture {
   readonly optOutCalls?: BridgeFixture['optOutCalls'];
   /** 108 PR-C — which resolver leg; the pre-108 cases pin `primary_only`. */
   readonly audienceMode?: 'primary_only' | 'all_contacts';
+  /** 108 PR-C T085 — the ONE ceiling, passed in by the composition root. */
+  readonly audienceCeiling?: number;
   readonly contacts?: BridgeFixture['contacts'];
   readonly contactsPageThrows?: BridgeFixture['contactsPageThrows'];
   readonly membersReadThrows?: BridgeFixture['membersReadThrows'];
@@ -278,6 +280,8 @@ function makeDeps(opts: DepsFixture = {}) {
     // written before PR-C pins the `primary_only` leg (the flag-OFF prod
     // behaviour); the all_contacts cases opt in explicitly.
     audienceMode: opts.audienceMode ?? ('primary_only' as const),
+    // 108 PR-C T085 — the pre-108 cap cases pin the batching-OFF figure.
+    audienceCeiling: opts.audienceCeiling ?? 5000,
   };
 }
 
@@ -1116,5 +1120,35 @@ describe('resolve-segment-recipients — 108 PR-C custom list / attendees: dropp
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.recipients).toEqual([me, x]);
+  });
+});
+
+/**
+ * 108 PR-C T085 (FR-041 / FR-042) — the ceiling is a DEPENDENCY, not a
+ * module constant: the composition root passes `audienceCeiling(batchingEnabled)`
+ * and the resolver compares against exactly that number and echoes it in the
+ * error, so submit, count and dispatch can never disagree.
+ */
+describe('resolve-segment-recipients — 108 PR-C the ceiling comes from deps (T085)', () => {
+  it('with the batching-ON ceiling (50,000) an audience of 5,001 is accepted, not refused', async () => {
+    const members = Array.from({ length: 5001 }, (_, i) => recipient(`c${i}@example.com`));
+    const result = await resolveSegmentRecipients(makeDeps({ members, audienceCeiling: 50_000 }), input());
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.estimatedCount).toBe(5001);
+  });
+
+  it('the refusal echoes the ceiling it was given, whatever it is', async () => {
+    const members = Array.from({ length: 4 }, (_, i) => recipient(`d${i}@example.com`));
+    const result = await resolveSegmentRecipients(makeDeps({ members, audienceCeiling: 3 }), input());
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toEqual({ kind: 'broadcast_audience_too_large', count: 4, cap: 3 });
+  });
+
+  it('exactly the ceiling is accepted (boundary is inclusive)', async () => {
+    const members = Array.from({ length: 3 }, (_, i) => recipient(`e${i}@example.com`));
+    const result = await resolveSegmentRecipients(makeDeps({ members, audienceCeiling: 3 }), input());
+    expect(result.ok).toBe(true);
   });
 });

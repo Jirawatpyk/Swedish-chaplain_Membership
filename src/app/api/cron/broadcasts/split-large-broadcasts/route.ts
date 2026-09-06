@@ -53,6 +53,8 @@ import {
   membersBridge,
   resolveSegmentRecipients,
   currentAudienceMode,
+  currentAudienceCeiling,
+  SPLIT_THRESHOLD_RECIPIENTS,
   splitBroadcastIntoBatches,
 } from '@/modules/broadcasts';
 import { unsafeBrandEmailLower } from '@/modules/broadcasts/domain/value-objects/email-lower';
@@ -63,10 +65,10 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const MAX_BROADCASTS_PER_TICK = 10;
-// FR-001 + RESEND_PER_AUDIENCE_CAP — only broadcasts EXCEEDING the
-// Resend per-audience cap need splitting. Smaller broadcasts go via
-// the F7 MVP single-audience `dispatch-scheduled` path.
-const SPLIT_THRESHOLD_RECIPIENTS = 10_000;
+// FR-001 + RESEND_PER_AUDIENCE_CAP — only broadcasts EXCEEDING the split
+// threshold are batched. 108 PR-C T085: the threshold now lives in the
+// broadcasts Domain (`audience-ceiling.ts`) next to the ceiling it must stay
+// below, and is imported from the barrel above.
 
 const eligibleRowSchema = z.object({
   broadcast_id: z.string().uuid(),
@@ -214,6 +216,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           eventAttendees: eventAttendeesBridge,
           marketingUnsubscribes,
           audienceMode: currentAudienceMode(),
+          audienceCeiling: currentAudienceCeiling(),
         },
         {
           segment,

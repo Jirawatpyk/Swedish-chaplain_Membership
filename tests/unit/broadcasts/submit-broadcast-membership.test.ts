@@ -277,6 +277,7 @@ function makeDeps(counters: CallCounters, membershipAccess: MembershipAccessPort
       eventAttendees: makeEventAttendees(),
       marketingUnsubscribes: makeMarketingUnsubscribes(),
       audienceMode: 'primary_only' as const,
+      audienceCeiling: 5000,
       rateLimiter: makeRateLimiter(counters),
       membershipAccess,
       audit: audit.port,

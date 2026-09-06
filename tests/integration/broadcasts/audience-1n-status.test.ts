@@ -133,6 +133,7 @@ function deps(tenant: TestTenant, audienceMode: 'primary_only' | 'all_contacts')
     eventAttendees: eventAttendeesStub,
     marketingUnsubscribes: makeDrizzleMarketingUnsubscribesRepo(tenant.ctx.slug),
     audienceMode,
+    audienceCeiling: 5000,
   };
 }
 

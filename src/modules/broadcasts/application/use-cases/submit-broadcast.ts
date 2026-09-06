@@ -190,6 +190,8 @@ export interface SubmitBroadcastDeps {
    * `domain/audience-mode.ts`.
    */
   readonly audienceMode: AudienceMode;
+  /** 108 PR-C T085 — `audienceCeiling(batchingEnabled)`, from the composition root. */
+  readonly audienceCeiling: number;
   readonly rateLimiter: RateLimiterPort;
   readonly audit: AuditPort;
   readonly clock: { now(): Date };
@@ -609,6 +611,7 @@ export async function submitBroadcast(
         eventAttendees: deps.eventAttendees,
         marketingUnsubscribes: deps.marketingUnsubscribes,
         audienceMode: deps.audienceMode,
+        audienceCeiling: deps.audienceCeiling,
       },
       {
         segment: input.segment,

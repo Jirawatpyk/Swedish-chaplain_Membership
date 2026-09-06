@@ -409,6 +409,7 @@ function makeDeps(opts: FixtureOpts = {}, allowRateLimit = true) {
       eventAttendees: makeEventAttendees(),
       marketingUnsubscribes: makeMarketingUnsubscribes(),
       audienceMode: 'primary_only' as const,
+      audienceCeiling: 5000,
       rateLimiter: makeRateLimiter({
         allow: opts.rateLimit?.allow ?? allowRateLimit,
         retryAfterSeconds: opts.rateLimit?.retryAfterSeconds ?? 60,

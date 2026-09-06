@@ -59,6 +59,7 @@ import {
   resendBroadcastsGateway,
   resolveSegmentRecipients,
   currentAudienceMode,
+  currentAudienceCeiling,
   systemClock,
   tenantDefaultLocaleFor,
 } from '@/modules/broadcasts';
@@ -258,6 +259,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           eventAttendees: eventAttendeesBridge,
           marketingUnsubscribes,
           audienceMode: currentAudienceMode(),
+          audienceCeiling: currentAudienceCeiling(),
         },
         {
           segment,

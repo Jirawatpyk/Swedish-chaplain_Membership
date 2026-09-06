@@ -106,6 +106,8 @@ export interface DispatchScheduledBroadcastDeps {
    * so the estimate equals the dispatched set (SC-004).
    */
   readonly audienceMode: AudienceMode;
+  /** 108 PR-C T085 — the same `audienceCeiling(batchingEnabled)` submit read. */
+  readonly audienceCeiling: number;
   readonly audit: AuditPort;
   readonly clock: { now(): Date };
   /**
@@ -507,6 +509,7 @@ export async function dispatchScheduledBroadcast(
         eventAttendees: deps.eventAttendees,
         marketingUnsubscribes: deps.marketingUnsubscribes,
         audienceMode: deps.audienceMode,
+        audienceCeiling: deps.audienceCeiling,
       },
       {
         segment,

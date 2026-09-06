@@ -30,6 +30,25 @@ export interface SubmitFeedbackOptions<K extends string> {
   readonly countKey?: K;
 }
 
+/**
+ * 108 PR-C T085 (FR-041 / FR-042) — interpolation values for a submit error.
+ * The "audience too large" copy names the ceiling the server actually refused
+ * against (`details.cap` on the 422 body — 5,000 or 50,000 depending on the
+ * batching flag), so the message can never claim a limit the server did not
+ * apply. Returns `undefined` for every other code, or when the body carries
+ * no usable cap (an older server): the caller then renders the key without
+ * values, which is the pre-108 behaviour.
+ */
+export function errorValues(
+  code: string,
+  details: Record<string, unknown> | undefined,
+): Record<string, number> | undefined {
+  if (code !== 'broadcast_audience_too_large') return undefined;
+  const cap = details?.['cap'];
+  if (typeof cap !== 'number' || !Number.isInteger(cap) || cap <= 0) return undefined;
+  return { ceiling: cap };
+}
+
 export function excludedByPreference(body: SubmitFeedbackBody): number {
   const n = body.recipientPreferenceExcluded;
   return typeof n === 'number' && Number.isInteger(n) && n > 0 ? n : 0;

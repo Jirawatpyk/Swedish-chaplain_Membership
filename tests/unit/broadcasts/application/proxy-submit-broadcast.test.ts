@@ -327,6 +327,7 @@ function makeDeps(opts: FixtureOpts) {
       eventAttendees: makeEventAttendees(),
       marketingUnsubscribes: makeMarketingUnsubscribes(),
       audienceMode: 'primary_only' as const,
+      audienceCeiling: 5000,
       rateLimiter: makeRateLimiter(opts.rateLimitAllow ?? true),
       audit: audit.port,
       clock: { now: () => FROZEN_NOW },

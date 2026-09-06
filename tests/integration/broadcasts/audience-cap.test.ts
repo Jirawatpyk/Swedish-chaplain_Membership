@@ -105,7 +105,7 @@ describe('audience-cap integration (T049)', () => {
   it('5,001 members on all_members → broadcast_audience_too_large', async () => {
     const bridges = makeBridges(makeMembers(5001));
     const r = await resolveSegmentRecipients(
-      { tenant, audienceMode: 'primary_only' as const, ...bridges },
+      { tenant, audienceMode: 'primary_only' as const, audienceCeiling: 5000, ...bridges },
       {
         segment: SEG_ALL,
         phase: 'dispatch',
@@ -126,7 +126,7 @@ describe('audience-cap integration (T049)', () => {
   it('5,000 members exactly → succeeds (boundary)', async () => {
     const bridges = makeBridges(makeMembers(5000));
     const r = await resolveSegmentRecipients(
-      { tenant, audienceMode: 'primary_only' as const, ...bridges },
+      { tenant, audienceMode: 'primary_only' as const, audienceCeiling: 5000, ...bridges },
       {
         segment: SEG_ALL,
         phase: 'dispatch',
@@ -141,7 +141,7 @@ describe('audience-cap integration (T049)', () => {
   it('4,999 members → succeeds', async () => {
     const bridges = makeBridges(makeMembers(4999));
     const r = await resolveSegmentRecipients(
-      { tenant, audienceMode: 'primary_only' as const, ...bridges },
+      { tenant, audienceMode: 'primary_only' as const, audienceCeiling: 5000, ...bridges },
       {
         segment: SEG_ALL,
         phase: 'dispatch',
@@ -161,6 +161,7 @@ describe('audience-cap integration (T049)', () => {
       {
         tenant,
         audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
         membersBridge: makeBridges(allMembers).membersBridge,
         eventAttendees: makeBridges(allMembers).eventAttendees,
         marketingUnsubscribes: {
@@ -197,7 +198,7 @@ describe('audience-cap integration (T049)', () => {
     // 5001 candidates with self → 5000 after exclusion → succeed
     const all = makeMembers(5001);
     const r = await resolveSegmentRecipients(
-      { tenant, audienceMode: 'primary_only' as const, ...makeBridges(all) },
+      { tenant, audienceMode: 'primary_only' as const, audienceCeiling: 5000, ...makeBridges(all) },
       {
         segment: SEG_ALL,
         phase: 'dispatch',
