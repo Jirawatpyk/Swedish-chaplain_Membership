@@ -128,11 +128,14 @@ export type F3AuditEventType =
   // preference changed. Emitted by `setContactMarketingOptOut` once per
   // ACTUAL change (same-state calls are `unchanged` and emit nothing) in
   // the same tx as the `contacts` UPDATE. Payload:
-  //   { member_id, contact_id, source: 'staff' | 'self' }
-  // — ids only, never an address (FR-053a). `member_id` is the
-  // conventional key on purpose: a preference change IS member activity,
-  // so migration 0009's `last_activity_at` bump is wanted here (contrast
-  // 0292's `related_member_id`). 5y retention (F3 default).
+  //   { member_id | related_member_id, contact_id, source: 'staff' | 'self',
+  //     actor_role }
+  // — ids only, never an address (FR-053a). The member key depends on WHO
+  // acted: the contact's own change (`source: 'self'`) carries `member_id`
+  // because it IS member activity and migration 0009's `last_activity_at`
+  // bump is wanted; a STAFF change carries `related_member_id` (as 0292
+  // does) so it stays on the member timeline without touching recency
+  // (108 security review MEDIUM-1). 5y retention (F3 default).
   | 'contact_marketing_opted_out'
   | 'contact_marketing_opted_in';
 

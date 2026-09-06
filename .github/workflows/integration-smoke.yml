@@ -111,4 +111,7 @@ jobs:
             tests/integration/payments/cross-tenant-probe.test.ts \
             tests/integration/renewals/rbac-defence-in-depth.test.ts \
             tests/integration/payments/refund-vs-voided-invoice.test.ts \
-            tests/integration/broadcasts/audit-event-type-parity.test.ts
+            tests/integration/broadcasts/audit-event-type-parity.test.ts \
+            tests/integration/members/contact-marketing-opt-out.test.ts \
+            tests/integration/members/contact-marketing-opt-out-guard.test.ts \
+            tests/integration/broadcasts/marketing-opt-out-dispatch.test.ts

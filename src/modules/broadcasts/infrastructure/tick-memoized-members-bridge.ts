@@ -16,8 +16,9 @@
  * entries. Cache lifetime is the wrapper instance — a fresh wrapper
  * per cron tick keeps the cache scoped tightly.
  *
- * Pure pass-through for the other 8 methods (R7 MED-R1 — corrected
- * from "6"; `MembersBridgePort` exposes 9 methods total) so we don't
+ * Pure pass-through for the other 9 methods (R7 MED-R1 — corrected
+ * from "6"; `MembersBridgePort` exposes 10 methods total since 108 PR-D
+ * added `filterMarketingOptedOut`, forwarded by the spread) so we don't
  * accidentally cache mutating calls (`setMemberHalt`,
  * `markBroadcastsAcknowledged`) or per-member lookups whose freshness
  * matters during a tick.

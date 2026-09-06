@@ -44,11 +44,12 @@ async function optOut(
   byUserId: string,
 ): Promise<void> {
   const r = await runInTenant(tenant.ctx, (tx) =>
-    drizzleContactRepo.setMarketingOptOutInTx(tx, asContactId(contactId), {
-      optedOutAt: NOW,
-      source,
-      byUserId: byUserId as never,
-    }),
+    drizzleContactRepo.setMarketingOptOutInTx(
+      tx,
+      asContactId(contactId),
+      { optedOutAt: NOW, source, byUserId: byUserId as never },
+      { actorSource: source },
+    ),
   );
   if (!r.ok) throw new Error(`opt-out seed failed: ${r.error.code}`);
 }

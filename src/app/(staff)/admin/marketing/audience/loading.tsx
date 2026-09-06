@@ -21,7 +21,7 @@ export default async function Loading() {
       <PageHeader
         title={t('title')}
         subtitle={t('subtitle')}
-        actions={<Skeleton className="h-9 w-72" />}
+        actions={<Skeleton className="h-auto min-h-9 w-72" />}
       />
       <Card>
         <CardContent className="flex flex-col gap-4">

@@ -267,7 +267,7 @@ describe('108 PR-D — setMarketingOptOutInTx + setContactMarketingOptOut (live 
         optedOutAt: at,
         source: 'staff',
         byUserId: admin.userId as never,
-      }),
+      }, { actorSource: 'staff' }),
     );
     expect(r.ok).toBe(true);
     if (!r.ok) return;
@@ -287,7 +287,7 @@ describe('108 PR-D — setMarketingOptOutInTx + setContactMarketingOptOut (live 
         optedOutAt: new Date('2026-09-06T02:00:00Z'),
         source: 'staff',
         byUserId: STAFF_2 as never,
-      }),
+      }, { actorSource: 'staff' }),
     );
     expect(r.ok).toBe(true);
     if (!r.ok) return;
@@ -301,7 +301,7 @@ describe('108 PR-D — setMarketingOptOutInTx + setContactMarketingOptOut (live 
         optedOutAt: null,
         source: null,
         byUserId: null,
-      }),
+      }, { actorSource: 'staff' }),
     );
     expect(r.ok).toBe(true);
     if (!r.ok) return;
@@ -316,14 +316,14 @@ describe('108 PR-D — setMarketingOptOutInTx + setContactMarketingOptOut (live 
         optedOutAt: new Date('2026-09-06T03:00:00Z'),
         source: 'staff',
         byUserId: admin.userId as never,
-      }),
+      }, { actorSource: 'staff' }),
     );
     const r = await runInTenant(tenantA.ctx, (tx) =>
       drizzleContactRepo.setMarketingOptOutInTx(tx, asContactId(contactId), {
         optedOutAt: new Date('2026-09-06T04:00:00Z'),
         source: 'self',
         byUserId: STAFF_2 as never,
-      }),
+      }, { actorSource: 'self' }),
     );
     expect(r.ok && r.value.outcome).toBe('changed');
     expect(r.ok && r.value.contact.marketing).toMatchObject({ source: 'self', byUserId: STAFF_2 });
@@ -334,7 +334,7 @@ describe('108 PR-D — setMarketingOptOutInTx + setContactMarketingOptOut (live 
         optedOutAt: new Date('2026-09-06T05:00:00Z'),
         source: 'staff',
         byUserId: admin.userId as never,
-      }),
+      }, { actorSource: 'staff' }),
     );
     expect(again.ok && again.value.outcome).toBe('unchanged');
     expect(again.ok && again.value.contact.marketing.source).toBe('self');
@@ -345,7 +345,7 @@ describe('108 PR-D — setMarketingOptOutInTx + setContactMarketingOptOut (live 
         optedOutAt: null,
         source: null,
         byUserId: null,
-      }),
+      }, { actorSource: 'self' }),
     );
   });
 
@@ -355,7 +355,7 @@ describe('108 PR-D — setMarketingOptOutInTx + setContactMarketingOptOut (live 
         optedOutAt: null,
         source: null,
         byUserId: null,
-      }),
+      }, { actorSource: 'staff' }),
     );
     expect(r.ok && r.value.outcome).toBe('unchanged');
   });
@@ -366,7 +366,7 @@ describe('108 PR-D — setMarketingOptOutInTx + setContactMarketingOptOut (live 
         optedOutAt: new Date(),
         source: 'staff',
         byUserId: admin.userId as never,
-      }),
+      }, { actorSource: 'staff' }),
     );
     expect(r.ok).toBe(false);
     if (r.ok) return;
@@ -379,7 +379,7 @@ describe('108 PR-D — setMarketingOptOutInTx + setContactMarketingOptOut (live 
         optedOutAt: new Date(),
         source: 'staff',
         byUserId: admin.userId as never,
-      }),
+      }, { actorSource: 'staff' }),
     );
     expect(r.ok).toBe(false);
     if (r.ok) return;
@@ -445,7 +445,7 @@ describe('108 PR-D — setMarketingOptOutInTx + setContactMarketingOptOut (live 
         optedOutAt: null,
         source: null,
         byUserId: null,
-      }),
+      }, { actorSource: 'self' }),
     );
 
     const staff = await setContactMarketingOptOut(

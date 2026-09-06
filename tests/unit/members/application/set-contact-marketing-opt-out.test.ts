@@ -143,6 +143,7 @@ describe('setContactMarketingOptOut — switching OFF', () => {
       { __tx: true },
       CONTACT,
       { optedOutAt: NOW, source: 'staff', byUserId: STAFF },
+      { actorSource: 'staff' },
     );
     // OFF never consults the suppression list — nothing to protect.
     expect(marketingSuppression.isSuppressed).not.toHaveBeenCalled();
@@ -176,6 +177,7 @@ describe('setContactMarketingOptOut — switching OFF', () => {
       expect.anything(),
       CONTACT,
       { optedOutAt: NOW, source: 'self', byUserId: SELF_USER },
+      { actorSource: 'self' },
     );
     const event = audit.recordInTx.mock.calls[0]![2];
     expect(event).toMatchObject({
@@ -217,6 +219,7 @@ describe('setContactMarketingOptOut — switching ON', () => {
       expect.anything(),
       CONTACT,
       { optedOutAt: null, source: null, byUserId: null },
+      expect.objectContaining({ actorSource: expect.stringMatching(/^(staff|self)$/) }),
     );
     expect(audit.recordInTx.mock.calls[0]![2]).toMatchObject({
       type: 'contact_marketing_opted_in',
@@ -279,6 +282,7 @@ describe('setContactMarketingOptOut — self opt-out takes precedence over staff
       expect.anything(),
       CONTACT,
       { optedOutAt: null, source: null, byUserId: null },
+      expect.objectContaining({ actorSource: expect.stringMatching(/^(staff|self)$/) }),
     );
   });
 
@@ -305,6 +309,7 @@ describe('setContactMarketingOptOut — self opt-out takes precedence over staff
       expect.anything(),
       CONTACT,
       { optedOutAt: NOW, source: 'self', byUserId: SELF_USER },
+      { actorSource: 'self' },
     );
     expect(audit.recordInTx.mock.calls[0]![2]).toMatchObject({
       type: 'contact_marketing_opted_out',

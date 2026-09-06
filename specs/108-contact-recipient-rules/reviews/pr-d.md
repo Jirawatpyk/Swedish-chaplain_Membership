@@ -160,14 +160,74 @@ describes the optimistic / focus hand-off behaviour; FR-050a written (ux CHK033)
   stamps `removed_at`). Correct outcome — erased people never appear; the vocabulary stays
   for the compose-time count feedback (PR-C).
 
-**Verification after cycle 12 (HEAD in the co-sign footers)**: unit/RTL suites touched
+### Round 2 — two fresh-eyes whole-branch reviews (2026-09-06), 28 findings, all closed in cycles 13–14
+
+Two `whole-branch-reviewer` passes over the full diff, launched after cycle 12: one on
+the parent model (Fable — the verdict of record per the maintainer's instruction) and one
+on Opus. Both found the same top issue independently.
+
+| Reviewer | Verdict | Findings |
+|---|---|---|
+| whole-branch (Fable) | MERGEABLE, "close #1 before or right after merge" | MEDIUM-1 TOCTOU on the FR-025 guard · MEDIUM-2 ROPA rationale claims a safeguard the code does not give · MEDIUM-3 contract §1 stale · LOW-4 audit-port comment · LOW-5 Undo toast says "left the view" · LOW-6 portal switch not optimistic · LOW-7 `off_*` filters list suppressed rows |
+| whole-branch (Opus) | NOT MERGEABLE (on the same TOCTOU) | HIGH-1 = TOCTOU · HIGH-2 Undo drops focus on `<body>` (sonner dismisses the toast after the action) · M-3 `?state=banana` reaches a label as a raw key · M-4/M-5 = Fable's MEDIUM-2 / LOW-4 · M-6 the new integration proofs gate nothing on `main` · M-7 the suppression adapter untested · M-8 debounce survives unmount · M-9/M-10 header/badge clipping in fixed columns · M-11 the page serves while the flag hides it · M-12 the integration harness guard was not fail-closed · M-13 0294 index comment claims a use PR-D has not got · M-14 three live regions · M-15 = LOW-6 · M-16 scrub rationale mis-states the `self` case · LOW-17 `droppedByPreference` trusts the bridge · LOW-18 audience query without an explicit tenant predicate · LOW-19 skeleton box mismatch · LOW-20 stray border / sub-24-px link · LOW-21 seven comment drifts |
+
+**Cycle 13 (MEDIUM-1 / HIGH-1 + Fable's set)** — `setMarketingOptOutInTx` takes the actor's
+source and re-checks the FR-025 AMENDMENT on the LOCKED row: staff "on" over a `self`
+record is `refused_self_opted_out` (no write) — the use case's pre-read stays as the fast
+path; a self opt-out committed between the read and the write still wins. Proved on live
+Neon (`contact-marketing-opt-out-guard.test.ts`, 4 cases) + use-case unit cases; every
+direct repo writer now states who is acting (the argument is required, not optional).
+Undo's toast no longer claims the row left the view (LOW-5); the portal switch flips
+optimistically and rolls back (LOW-6); `state=off_by_staff` / `off_by_contact` exclude
+suppressed addresses (LOW-7 — the badge says "unsubscribed", so the filter must agree);
+the ROPA retention rationale now says what the column IS (no-PII actor record; the audit
+trail is authoritative; it is NOT an address-keyed suppression — only
+`marketing_unsubscribes` survives erasure); contract §1 carries the real payload
+(`related_member_id` for staff, `actor_role`) and the 409 `self_opted_out` / 503
+`suppression_unavailable` / 429 rows; the audit-port comment says the self/staff split.
+
+**Cycle 14 (Opus's set)** — the Undo action resolves its focus target (the switch if
+still in the DOM, else the count line) BEFORE `send` and focuses it after (HIGH-2, unit ×2);
+`?state` / `?kind` are NARROWED against the allowed lists before any label (M-3); the
+search debounce is cleared on unmount (M-8); `droppedByPreference` is measured
+(before − after), never the bridge's word (LOW-17); header cells wrap and the `state` /
+`switch` / `memberStatus` columns are sized for the longest locale (M-9/M-10); the page
+calls `notFound()` when `FEATURE_F7_BROADCASTS` is off and the member-page deep link is
+gated the same way (M-11, unit: no read happens after the gate); the degraded panel is a
+`note` and the count line steps aside at zero so the `EmptyState` is the one announcement
+(M-14); one shared `tests/helpers/db-host-guard.ts` behind BOTH the integration harness
+and the e2e seed client, fail-closed on a match AND on an empty list (M-12, unit ×5);
+`contact-marketing-deps.ts` has its own unit suite — the "unparseable → not suppressed"
+branch is pinned WITH its reason (the list only holds parsed values) and a repo failure
+throws (M-7); the three PR-D live-Neon proofs are in `integration-smoke.yml`, the
+required check on `main` (M-6); the 0294 index comment says the index is RESERVED for
+PR-C and unused here, with an `EXPLAIN` obligation (M-13); the scrub-coverage rationale
+records that the `self` case keeps the erased subject's own user id at parity with
+`linked_user_id` (M-16); explicit `tenant_id` predicate on the audience query (LOW-18);
+skeleton body = `w-full` + min-width and the action skeleton may grow (LOW-19); the
+badge-group border paints only when the group is non-empty and the deep link is a ≥ 24-px
+target (LOW-20); the seven comment drifts corrected, incl. tasks.md's deployment line —
+PR-D DOES change the dispatch audience (LOW-21). `unavailable` is no longer muted (it is
+a state).
+
+**Recorded, not changed**: the `<caption>` and the region `aria-label` carry the same
+string (LOW-21 item) — kept on purpose: the region and the table are distinct landmarks
+and the members table sets the same precedent (WCAG 1.3.1 for table navigation). The
+`?.` on `c.marketing` in `_serialise.ts` stays: it guards hand-built fixtures in older
+tests, as its comment says.
+
+**Verification after cycle 14 (HEAD in the co-sign footers)**: unit/RTL suites touched
 (members, broadcasts, components, lib, e2e-helpers) green; `pnpm check:i18n` OK 5289 keys ×
 3; the eleven static gates OK; `pnpm lint` 0 on every touched file; `pnpm typecheck` 0
 (the `.next/dev/types/routes.d.ts` parse errors seen twice were the dev server rewriting
 the generated file mid-run — 0 errors outside `.next`); live Neon:
-`contact-marketing-opt-out` 22 · `marketing-opt-out-dispatch` 4 · `marketing-audience-query`
-· 6 broadcasts dispatch/audience files; e2e `admin-marketing-audience` 10/10 (3-locale
-320 px, member-page axe, preset focus) + `portal-marketing-toggle` 3/3.
+`contact-marketing-opt-out` 22 · `contact-marketing-opt-out-guard` 4 ·
+`marketing-opt-out-dispatch` 4 · `marketing-audience-query` (+ the suppressed staff-off
+contact) · 6 broadcasts dispatch/audience files; full `pnpm test` after cycle 12: 1219 files
+/ 13581 tests green (the one failure was the `.env.example` harness-only key, closed by the
+`HARNESS_ONLY_KEYS` allow-list with positive controls); e2e `admin-marketing-audience` 10/10
+(3-locale 320 px, member-page axe, preset focus) + `portal-marketing-toggle` 3/3, re-run
+after cycle 14.
 
 ## Decisions taken during the build (differ from or refine the brief)
 

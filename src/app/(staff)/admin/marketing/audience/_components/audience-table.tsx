@@ -55,11 +55,14 @@ export type AudienceTableRow = {
 /** px — the skeleton mirrors these (audience-table-skeleton.tsx). */
 export const AUDIENCE_COLUMN_WIDTHS = {
   contact: 220,
-  state: 180,
-  switch: 72,
+  // Sized for the LONGEST locale (FR-050a): SV "Status ej tillgänglig" badge,
+  // SV "REGLAGE" header, EN "Broadcasts halted" badge — badges are atomic
+  // (`whitespace-nowrap overflow-hidden`), so the column, not the badge, wraps.
+  state: 200,
+  switch: 96,
   member: 200,
   kind: 110,
-  memberStatus: 140,
+  memberStatus: 176,
   changedBy: 160,
   changedAt: 170,
 } as const;
@@ -102,14 +105,14 @@ export function AudienceTable({
       </colgroup>
       <TableHeader>
         <TableRow>
-          <TableHead scope="col">{t('columns.contact')}</TableHead>
-          <TableHead scope="col">{t('columns.state')}</TableHead>
-          {canMarketing && <TableHead scope="col">{t('columns.switch')}</TableHead>}
-          <TableHead scope="col">{t('columns.member')}</TableHead>
-          <TableHead scope="col">{t('columns.kind')}</TableHead>
-          <TableHead scope="col">{t('columns.memberStatus')}</TableHead>
-          <TableHead scope="col">{t('columns.changedBy')}</TableHead>
-          <TableHead scope="col">{t('columns.changedAt')}</TableHead>
+          <TableHead scope="col" className="whitespace-normal">{t('columns.contact')}</TableHead>
+          <TableHead scope="col" className="whitespace-normal">{t('columns.state')}</TableHead>
+          {canMarketing && <TableHead scope="col" className="whitespace-normal">{t('columns.switch')}</TableHead>}
+          <TableHead scope="col" className="whitespace-normal">{t('columns.member')}</TableHead>
+          <TableHead scope="col" className="whitespace-normal">{t('columns.kind')}</TableHead>
+          <TableHead scope="col" className="whitespace-normal">{t('columns.memberStatus')}</TableHead>
+          <TableHead scope="col" className="whitespace-normal">{t('columns.changedBy')}</TableHead>
+          <TableHead scope="col" className="whitespace-normal">{t('columns.changedAt')}</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>

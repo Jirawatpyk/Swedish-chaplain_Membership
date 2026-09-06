@@ -1319,6 +1319,9 @@ export const drizzleMemberRepo: MemberRepo = {
             eq(members.broadcastsHaltedUntilAdminReview, false),
           );
         }
+        // Defence in depth beside RLS (review LOW-18): state the tenant, as
+        // the sibling `findMarketingOptedOutEmailLowers` does.
+        conds.push(eq(contacts.tenantId, ctx.slug));
         const emailLower = sql`lower(${contacts.email})`;
         // ONE array bind per list (security review LOW-3): the unsubscribe
         // list is unbounded and `inArray` renders one parameter per address.

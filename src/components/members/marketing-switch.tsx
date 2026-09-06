@@ -146,14 +146,25 @@ export function MarketingSwitch({
           ? t('switchedOff', { name: contactName })
           : t('switchedOn', { name: contactName });
         const toastOptions = {
-          ...(leavesView ? { description: t('leftView') } : {}),
+          // Only the user's own click leaves the view; the Undo brings the
+          // row BACK, so its toast must not claim otherwise (review LOW-5).
+          ...(leavesView && opts.offerUndo ? { description: t('leftView') } : {}),
           ...(next === 'off' && opts.offerUndo
             ? {
                 duration: 10_000,
                 action: {
                   label: t('undo'),
                   onClick: () => {
-                    void send('on', { offerUndo: false });
+                    // sonner dismisses the toast after this handler — the Undo
+                    // button unmounts under the user's focus. Catch it: back to
+                    // this switch if it is still in the DOM, else the count
+                    // line (the row left a filtered view) (review HIGH-2).
+                    const target = ref.current?.isConnected
+                      ? ref.current
+                      : document.getElementById(AUDIENCE_COUNT_ID);
+                    void send('on', { offerUndo: false }).finally(() => {
+                      target?.focus();
+                    });
                   },
                 },
               }
@@ -163,7 +174,10 @@ export function MarketingSwitch({
         else toast.success(message);
         // The row is about to unmount with the refresh — move focus FIRST,
         // or it falls back to <body> (a focus-loss class axe never catches).
-        if (leavesView && ref.current) focusHandOffTarget(ref.current)?.focus();
+        // Only on the user's own click: the Undo brings the row BACK.
+        if (leavesView && opts.offerUndo && ref.current) {
+          focusHandOffTarget(ref.current)?.focus();
+        }
       }
       startRefresh(() => {
         router.refresh();

@@ -145,12 +145,17 @@ export async function resolveSegmentRecipients(
       final,
     );
     if (optedOut.size > 0) {
+      // Measured, not trusted: a bridge answering outside the batch must not
+      // inflate the count or the metric (review LOW-17).
+      const before = final.length;
       final = final.filter((e) => !optedOut.has(e));
-      droppedByPreference = optedOut.size;
-      broadcastsMetrics.marketingOptOutFilterCount(
-        deps.tenant.slug,
-        droppedByPreference,
-      );
+      droppedByPreference = before - final.length;
+      if (droppedByPreference > 0) {
+        broadcastsMetrics.marketingOptOutFilterCount(
+          deps.tenant.slug,
+          droppedByPreference,
+        );
+      }
     }
   }
 

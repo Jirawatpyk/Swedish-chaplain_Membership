@@ -14,10 +14,13 @@ header rule.
 
 | Status | Body | When |
 |---|---|---|
-| 200 | `{ outcome: 'changed', contact: <serialiseContact> }` | state flipped; audit `contact_marketing_opted_out` / `_in` `{ member_id, contact_id, source: 'staff' }`, actor role = session role |
-| 200 | `{ outcome: 'unchanged' }` | already in that state |
-| 404 | problem `not_found` | contact removed / other tenant (non-disclosure) |
+| 200 | `{ outcome: 'changed', contact: <serialiseContact> }` | state flipped; audit `contact_marketing_opted_out` / `_in` with payload `{ related_member_id, contact_id, source: 'staff', actor_role }` — `related_member_id` (NOT `member_id`) for a staff action so migration 0009's `last_activity_at` bump does not fire; the portal self-toggle audits `{ member_id, contact_id, source: 'self', actor_role }`. `actor_role` = session role, never a literal |
+| 200 | `{ outcome: 'unchanged' }` | already in that state (a staff "off" over the person's own "off" is also `unchanged` — the person's record is kept) |
+| 404 | problem `not_found` | contact does not exist / other tenant (non-disclosure; probe audited) — or removed in this tenant (same 404, NOT probe-audited) |
 | 409 | problem `suppressed` | `state: 'on'` while the address is on the suppression list (FR-025) |
+| 409 | problem `self_opted_out` | `state: 'on'` over the person's OWN opt-out (FR-025 AMENDMENT) — decided by a pre-read AND re-checked under the row lock, so a self opt-out that lands between the two still wins |
+| 503 | problem `suppression_unavailable` (+ `Retry-After`) | `state: 'on'` while the suppression list cannot be read — a blind "on" could override an unsubscribe nobody checked (FR-031a) |
+| 429 | problem + `Retry-After` | 60/min per (tenant, user) exhausted |
 | 403 / 401 | RBAC denial (audited) | |
 
 Use case `setContactMarketingOptOut(deps, { contactId, state, actor: { userId, role, source:

@@ -295,19 +295,19 @@ const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
     permission: 'broadcasts.read',
     feature: 'f7Broadcasts',
   },
-  // F7.1a US7 Round 1 R4-S7 L2 — admin broadcast templates library.
-  // Read-only requires for visibility (manager can browse the library
-  // even though they cannot edit; matches the templates page RBAC).
+  // 108 PR-D — the Marketing audience page (FR-035): the staff pre-flight
+  // surface for E-Blast recipients. Keyed `contacts.read` like the page's own
+  // gate (palette-permission-parity pins the pair).
   {
-    // 108 PR-D — the Marketing audience page (FR-035): the staff pre-flight
-    // surface for E-Blast recipients. Keyed `contacts.read` like the page's own
-    // gate (palette-permission-parity pins the pair).
     id: 'nav.marketingAudience',
     label: 'palette.navigate.marketingAudience',
     url: '/admin/marketing/audience',
     permission: 'contacts.read',
     feature: 'f7Broadcasts',
   },
+  // F7.1a US7 Round 1 R4-S7 L2 — admin broadcast templates library.
+  // Read-only requires for visibility (manager can browse the library
+  // even though they cannot edit; matches the templates page RBAC).
   {
     id: 'nav.broadcastTemplates',
     label: 'palette.navigate.broadcastTemplates',

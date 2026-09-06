@@ -11,7 +11,7 @@
 import { Skeleton } from '@/components/ui/skeleton';
 
 /** px — mirrors `AUDIENCE_COLUMN_WIDTHS` in audience-table.tsx. */
-const WIDTHS = [220, 180, 72, 200, 110, 140, 160, 170] as const;
+const WIDTHS = [220, 200, 96, 200, 110, 176, 160, 170] as const;
 
 export function AudienceTableSkeleton({
   withSwitch = true,
@@ -25,7 +25,11 @@ export function AudienceTableSkeleton({
     <div className="flex flex-col gap-4" aria-hidden>
       <Skeleton className="h-5 w-56" />
       <div className="overflow-x-auto">
-        <div className="min-w-[960px]" style={{ width: widths.reduce((a, b) => a + b, 0) }}>
+        <div
+          data-slot="skeleton-body"
+          className="w-full"
+          style={{ minWidth: widths.reduce((a, b) => a + b, 0) }}
+        >
           <div
             data-slot="skeleton-header"
             className="grid h-[var(--table-row-height)] items-center gap-x-4 border-b"

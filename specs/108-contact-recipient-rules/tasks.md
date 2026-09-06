@@ -364,7 +364,7 @@ Task: "RBAC pins T042" · "Contract T043" · "Unit T044" · "Integration T045" �
 
 1. PR-A (US1) → prod: money rule hardened.
 2. PR-B (US2) → prod after V1 = 0: invariant DB-guaranteed.
-3. PR-D (US4 + US6) → prod: staff can see/control marketing state; audience page live; no audience change yet.
+3. PR-D (US4 + US6) → prod: staff can see/control marketing state; audience page live; the dispatch audience DOES change on this PR — an opted-out contact (staff or self) is dropped from every segment kind (review cycle 10, FR-022a); the 1:N secondary-contact widening itself is still PR-C.
 4. PR-C (US3 + US5) → prod with the flag OFF: only the active-only narrowing changes behaviour.
 5. Pre-flight review → flag ON → first send observed → clean week → flag-deletion PR.
 

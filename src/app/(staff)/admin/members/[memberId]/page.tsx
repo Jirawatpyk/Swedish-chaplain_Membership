@@ -361,7 +361,7 @@ export function ContactBlock({
               group for a contact with no badge at all. */}
           <div
             role="group"
-            className="flex flex-wrap items-center gap-2 empty:hidden"
+            className="flex flex-wrap items-center gap-2 empty:hidden [&:not(:empty)]:border-e [&:not(:empty)]:pe-2"
             aria-label={t('sections.contactStatusBadges')}
           >
             {contact.isPrimary && (
@@ -468,7 +468,7 @@ export function ContactBlock({
               without `contacts.write`). Only for contacts that HAVE an email
               (no email = no E-Blast target). */}
           {contact.email && (
-            <span className="inline-flex items-center gap-2 border-s ps-2">
+            <span className="inline-flex items-center gap-2">
               <MarketingStateBadge state={marketingState} />
               {canMarketing && (
                 <MarketingSwitch
@@ -1355,13 +1355,16 @@ export default async function MemberDetailPage({
               </Popover>
               {/* 108 PR-D (US4 s8) — deep link into the Marketing audience filtered
                   to this member (`member_id` is a parsed param there); every staff
-                  role on this page holds `contacts.read`. */}
-              <Link
-                href={`/admin/marketing/audience?member_id=${encodeURIComponent(memberId)}&eligible=0`}
-                className="ms-auto text-sm font-medium text-primary underline-offset-4 hover:underline"
-              >
-                {t('marketing.audienceLink')}
-              </Link>
+                  role on this page holds `contacts.read`. Gated like the page it
+                  links to (F7 flag), and a ≥ 24-px target (WCAG 2.5.8). */}
+              {env.features.f7Broadcasts && (
+                <Link
+                  href={`/admin/marketing/audience?member_id=${encodeURIComponent(memberId)}&eligible=0`}
+                  className="ms-auto inline-flex min-h-6 items-center text-sm font-medium text-primary underline-offset-4 hover:underline"
+                >
+                  {t('marketing.audienceLink')}
+                </Link>
+              )}
               {canModify && member.status !== 'archived' && (
                 <ContactFormDialog
                   memberId={member.memberId}

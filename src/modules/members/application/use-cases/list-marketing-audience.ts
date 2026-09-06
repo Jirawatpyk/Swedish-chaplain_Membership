@@ -112,8 +112,10 @@ export async function listMarketingAudience(
   let degraded = false;
 
   // 1. Filters answered from the suppression list need the whole (bounded) set.
+  //    `on` and both `off_*` EXCLUDE suppressed addresses (the badge would read
+  //    "unsubscribed" — precedence, review LOW-7); `unsubscribed` IS the set.
   let suppressedAll: ReadonlySet<string> | null = null;
-  if (filter.state === 'on' || filter.state === 'unsubscribed') {
+  if (filter.state !== undefined) {
     try {
       suppressedAll = await deps.marketingSuppression.listSuppressedEmailLowers();
     } catch {
@@ -140,7 +142,9 @@ export async function listMarketingAudience(
     ...(filter.state === 'on' && { optOut: 'none' as const }),
     ...(filter.state === 'off_by_staff' && { optOut: 'staff' as const }),
     ...(filter.state === 'off_by_contact' && { optOut: 'self' as const }),
-    ...(filter.state === 'on' &&
+    ...((filter.state === 'on' ||
+      filter.state === 'off_by_staff' ||
+      filter.state === 'off_by_contact') &&
       suppressedAll !== null &&
       suppressedAll.size > 0 && { emailLowerNotIn: [...suppressedAll] }),
     ...(filter.state === 'unsubscribed' &&

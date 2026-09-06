@@ -270,15 +270,26 @@ export interface ContactRepo {
    * ONE exception (FR-025 AMENDMENT): a `source: 'self'` "off" over a
    * `'staff'` "off" IS a change — the person's objection replaces the staff
    * record; the reverse stays `unchanged`.
+   *
+   * The same amendment's other half is enforced HERE, under the lock, not
+   * only by the caller's pre-read (whole-branch review MEDIUM-1): a
+   * `'staff'` actor switching "on" over a `'self'` record is REFUSED —
+   * `refused_self_opted_out`, no write — because a self opt-out that
+   * committed after the caller's read must still win. `opts.actorSource`
+   * is therefore required: every writer states who is acting.
    * Does NOT emit audit — caller emits `contact_marketing_opted_out` / `_in`.
    */
   setMarketingOptOutInTx(
     tx: TenantTx,
     contactId: ContactId,
     next: MarketingOptOut,
+    opts: { readonly actorSource: 'staff' | 'self' },
   ): Promise<
     Result<
-      { readonly outcome: 'changed' | 'unchanged'; readonly contact: Contact },
+      {
+        readonly outcome: 'changed' | 'unchanged' | 'refused_self_opted_out';
+        readonly contact: Contact;
+      },
       RepoError
     >
   >;

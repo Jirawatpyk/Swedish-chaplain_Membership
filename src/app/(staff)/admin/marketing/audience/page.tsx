@@ -25,11 +25,13 @@
 import type { Metadata } from 'next';
 import { Suspense } from 'react';
 import Link from 'next/link';
+import { notFound } from 'next/navigation';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { SearchXIcon, UsersIcon } from 'lucide-react';
 import { canPerform, requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { buildMarketingAudienceDeps } from '@/lib/contact-marketing-deps';
+import { env } from '@/lib/env';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
 import {
   MARKETING_AUDIENCE_PREFLIGHT_QUERY,
@@ -66,6 +68,10 @@ export default async function MarketingAudiencePage({
   searchParams: Promise<MarketingAudienceSearchParams>;
 }) {
   const { user } = await requirePagePermission('contacts.read');
+  // The nav item and the ⌘K entry hide this page when F7 is off (the page is
+  // about E-Blast recipients); a hidden page must not serve on its URL either
+  // — same convention as /admin/events (review M-11).
+  if (!env.features.f7Broadcasts) notFound();
   const query = await searchParams;
   const t = await getTranslations('admin.marketing.audience');
   const canMarketing = canPerform(user.role, 'contacts.marketing');
@@ -197,9 +203,11 @@ async function AudienceBody({
   return (
     <>
       {/* FR-040-style honesty for the count: announced to AT on every filter
-          change — the ONE live region here (pagination is silenced, L2). Also
-          the focus fallback when the last row leaves a filtered view. */}
-      {!degradedEmpty && (
+          change — the ONE live region here (pagination is silenced, L2; the
+          degraded panel is a note; an empty result is announced by the
+          EmptyState alone, so the count line steps aside at zero — M-14).
+          Also the focus fallback when the last row leaves a filtered view. */}
+      {!degradedEmpty && total > 0 && (
         <p
           id={AUDIENCE_COUNT_ID}
           tabIndex={-1}
@@ -214,7 +222,7 @@ async function AudienceBody({
 
       {degraded && (
         <div
-          role="status"
+          role="note"
           className="rounded-md border border-warning bg-warning-surface p-3 text-sm text-warning"
           data-testid="audience-degraded"
         >

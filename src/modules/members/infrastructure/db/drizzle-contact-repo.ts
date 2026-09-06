@@ -367,7 +367,7 @@ export const drizzleContactRepo: ContactRepo = {
     }
   },
 
-  async setMarketingOptOutInTx(tx, contactId, next) {
+  async setMarketingOptOutInTx(tx, contactId, next, opts) {
     try {
       // Lock the live row first so the same-state decision and the write see
       // one snapshot (two staff toggling at once cannot both "change" it).
@@ -384,6 +384,12 @@ export const drizzleContactRepo: ContactRepo = {
 
       const currentlyOff = current.marketingOptOutAt !== null;
       const nextOff = next.optedOutAt !== null;
+      // FR-025 AMENDMENT under the LOCK (whole-branch review MEDIUM-1): the
+      // use case's pre-read is not the source of truth — a self opt-out that
+      // committed after it must still stop a staff "on". No write, no audit.
+      if (!nextOff && opts.actorSource === 'staff' && current.marketingOptOutSource === 'self') {
+        return ok({ outcome: 'refused_self_opted_out' as const, contact: rowToContact(current) });
+      }
       // Same on/off state is `unchanged` — EXCEPT a contact's own "off" over a
       // staff-made "off": that is the person's objection and must be RECORDED
       // (source → 'self') so no later staff "on" can silently override it

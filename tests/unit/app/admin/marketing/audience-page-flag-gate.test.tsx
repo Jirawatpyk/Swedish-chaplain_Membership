@@ -8,6 +8,16 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+// `vi.mock` factories are hoisted above every top-level statement — the
+// mutable handles they close over must be hoisted with them.
+const { features, requirePagePermission, buildMarketingAudienceDeps, listMarketingAudience } =
+  vi.hoisted(() => ({
+    features: { f7Broadcasts: true },
+    requirePagePermission: vi.fn(),
+    buildMarketingAudienceDeps: vi.fn(),
+    listMarketingAudience: vi.fn(),
+  }));
+
 vi.mock('next/navigation', () => ({
   notFound: () => {
     throw new Error('NEXT_NOT_FOUND');
@@ -17,19 +27,15 @@ vi.mock('next-intl/server', () => ({
   getTranslations: vi.fn().mockResolvedValue((key: string) => key),
   getLocale: vi.fn().mockResolvedValue('en'),
 }));
-const requirePagePermission = vi.fn();
 vi.mock('@/lib/rbac', () => ({
   requirePagePermission: (...args: unknown[]) => requirePagePermission(...args),
   canPerform: () => true,
 }));
-const features = { f7Broadcasts: true };
 vi.mock('@/lib/env', () => ({ env: { features } }));
 vi.mock('@/lib/tenant-context', () => ({ resolveTenantFromRequest: () => ({ slug: 'tenant-a' }) }));
-const buildMarketingAudienceDeps = vi.fn();
 vi.mock('@/lib/contact-marketing-deps', () => ({
   buildMarketingAudienceDeps: (...args: unknown[]) => buildMarketingAudienceDeps(...args),
 }));
-const listMarketingAudience = vi.fn();
 vi.mock('@/modules/members', () => ({
   listMarketingAudience: (...args: unknown[]) => listMarketingAudience(...args),
 }));

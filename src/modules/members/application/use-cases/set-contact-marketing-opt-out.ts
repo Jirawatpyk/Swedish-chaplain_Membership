@@ -112,7 +112,9 @@ export async function setContactMarketingOptOut(
 
   // 2a. FR-025 AMENDMENT — a self opt-out is the person's objection; staff
   //     cannot lift it. Decided before the suppression lookup: the objection
-  //     alone is sufficient, no external read needed.
+  //     alone is sufficient, no external read needed. This is the FAST PATH;
+  //     the repo re-checks the same rule on the LOCKED row (step 3), so a
+  //     self opt-out committed after this read still wins.
   if (
     input.state === 'on' &&
     input.actor.source === 'staff' &&
@@ -148,8 +150,14 @@ export async function setContactMarketingOptOut(
   //    audit (idempotent replays and double-clicks leave no trace).
   try {
     const outcome = await runInTenant(deps.tenant, async (tx) => {
-      const written = await deps.contactRepo.setMarketingOptOutInTx(tx, input.contactId, next);
+      const written = await deps.contactRepo.setMarketingOptOutInTx(tx, input.contactId, next, {
+        actorSource: input.actor.source,
+      });
       if (!written.ok) throw new UseCaseAbort<RepoError>(written.error);
+      if (written.value.outcome === 'refused_self_opted_out') {
+        // Nothing was written; the tx has nothing to roll back.
+        return { outcome: 'refused_self_opted_out' as const };
+      }
       if (written.value.outcome === 'unchanged') {
         return { outcome: 'unchanged' as const, contact: written.value.contact };
       }
@@ -174,6 +182,7 @@ export async function setContactMarketingOptOut(
       if (!audited.ok) throw new UseCaseAbort<RepoError>(audited.error);
       return { outcome: 'changed' as const, contact: written.value.contact, event };
     });
+    if (outcome.outcome === 'refused_self_opted_out') return err({ type: 'self_opted_out' });
     return ok(outcome);
   } catch (e) {
     if (e instanceof UseCaseAbort) {

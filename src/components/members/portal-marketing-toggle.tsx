@@ -7,6 +7,10 @@
  *   - on / off (by contact or by staff) → a switch; PATCH
  *     `/api/portal/profile/marketing` with a fresh `Idempotency-Key` per
  *     request and `{ optOut }`;
+ *   - the switch flips OPTIMISTICALLY on click and rolls back on any refusal
+ *     or failure, staying disabled until the refresh that brings the server
+ *     truth has settled (same pattern as the staff `MarketingSwitch`;
+ *     whole-branch review LOW-6);
  *   - unsubscribed → plain text and NO control: the person's own unsubscribe
  *     stands and is not something to flip from here (FR-025);
  *   - unavailable → a disabled switch with an explanation (FR-031a);
@@ -16,7 +20,7 @@
  * Only the session's own state is ever rendered — the page never passes
  * another contact's state in (FR-032).
  */
-import { useId, useState } from 'react';
+import { useId, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
@@ -35,10 +39,20 @@ export function PortalMarketingToggle({
   const t = useTranslations('portal.profile.marketing');
   const router = useRouter();
   const [busy, setBusy] = useState(false);
+  const [isRefreshing, startRefresh] = useTransition();
   const stateId = useId();
   const hintId = useId();
 
-  const checked = state === 'on';
+  // Optimistic value shown until the server truth (`state`) changes under
+  // us — the "adjust state when a prop changes" pattern, during render.
+  const [optimistic, setOptimistic] = useState<'on' | 'off' | null>(null);
+  const [syncedState, setSyncedState] = useState(state);
+  if (state !== syncedState) {
+    setSyncedState(state);
+    setOptimistic(null);
+  }
+
+  const checked = (optimistic ?? (state === 'on' ? 'on' : 'off')) === 'on';
   const controllable = state !== 'unsubscribed';
   const disabled = state === 'unavailable';
   // a11y review 11: the state sentence and the "unavailable" hint describe the
@@ -49,6 +63,7 @@ export function PortalMarketingToggle({
   async function send(optOut: boolean): Promise<void> {
     if (busy) return;
     setBusy(true);
+    setOptimistic(optOut ? 'off' : 'on');
     try {
       const res = await fetch('/api/portal/profile/marketing', {
         method: 'PATCH',
@@ -60,15 +75,24 @@ export function PortalMarketingToggle({
       });
       const body = (await res.json().catch(() => ({}))) as ResponseBody;
       if (!res.ok) {
+        setOptimistic(null);
         if (res.status === 409) toast.error(t('toast.errors.suppressed'));
         else if (res.status === 429) toast.error(t('toast.errors.rateLimited'));
         else toast.error(t('toast.errors.generic'));
         return;
       }
-      if (body.outcome === 'unchanged') toast.info(t('toast.unchanged'));
-      else toast.success(optOut ? t('toast.switchedOff') : t('toast.switchedOn'));
-      router.refresh();
+      if (body.outcome === 'unchanged') {
+        // The server already held this state — show its truth, not our guess.
+        setOptimistic(null);
+        toast.info(t('toast.unchanged'));
+      } else {
+        toast.success(optOut ? t('toast.switchedOff') : t('toast.switchedOn'));
+      }
+      startRefresh(() => {
+        router.refresh();
+      });
     } catch {
+      setOptimistic(null);
       toast.error(t('toast.errors.generic'));
     } finally {
       setBusy(false);
@@ -87,7 +111,7 @@ export function PortalMarketingToggle({
           <span className="inline-flex min-h-6 min-w-6 items-center">
             <Switch
               checked={checked}
-              disabled={disabled || busy}
+              disabled={disabled || busy || isRefreshing}
               aria-label={t('switchLabel')}
               aria-describedby={describedBy}
               onCheckedChange={(next) => {

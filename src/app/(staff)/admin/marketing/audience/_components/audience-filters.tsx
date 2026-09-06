@@ -19,7 +19,7 @@
  * (a11y review 7); the triggers size to content (`min-w`) so a long SV/TH
  * value wraps instead of clipping (FR-035c, review M5).
  */
-import { useCallback, useRef, useState, useTransition } from 'react';
+import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { SearchIcon, XIcon } from 'lucide-react';
@@ -49,10 +49,30 @@ export function AudienceFilters() {
   const [, startTransition] = useTransition();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  // A pending debounce must die with the component (review M-8): typing then
+  // clicking a member link within 300 ms used to `router.replace` the user
+  // straight back off the member page.
+  useEffect(
+    () => () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    },
+    [],
+  );
 
   const currentQ = searchParams.get('q') ?? '';
-  const currentKind = (searchParams.get('kind') ?? 'all') as KindValue;
-  const currentState = (searchParams.get('state') ?? 'all') as StateValue;
+  // NARROW, never cast (review M-3): the server parser drops unknown values,
+  // so an unknown `?state=` / `?kind=` must read as "all" here too — a raw
+  // key would otherwise land in the trigger text AND its accessible name.
+  const rawKind = searchParams.get('kind');
+  const currentKind: KindValue =
+    rawKind !== null && (KIND_VALUES as readonly string[]).includes(rawKind)
+      ? (rawKind as KindValue)
+      : 'all';
+  const rawState = searchParams.get('state');
+  const currentState: StateValue =
+    rawState !== null && (MARKETING_AUDIENCE_STATE_PARAMS as readonly string[]).includes(rawState)
+      ? (rawState as StateValue)
+      : 'all';
   const eligibleRaw = searchParams.get('eligible');
   const currentEligible: EligibleValue =
     eligibleRaw === '0' || eligibleRaw === 'false' ? 'off' : 'on';

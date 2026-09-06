@@ -46,7 +46,8 @@ const TONE: Record<MarketingState, string> = {
   off_by_staff: OFF_TONE,
   off_by_contact: OFF_TONE,
   unsubscribed: OFF_TONE,
-  unavailable: 'text-muted-foreground',
+  // A STATE, not an empty sentinel — never muted (portal toggle rule).
+  unavailable: '',
 };
 
 export function MarketingStateBadge({
