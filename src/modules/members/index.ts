@@ -517,6 +517,13 @@ export {
   type GetMembersBySegmentInput,
 } from './application/use-cases/get-members-by-segment';
 
+// 108 PR-C — 1:N audience: one keyset page of recipient CONTACTS (US3).
+export {
+  getBroadcastRecipientContacts,
+  type GetBroadcastRecipientContactsDeps,
+  type GetBroadcastRecipientContactsInput,
+} from './application/use-cases/get-broadcast-recipient-contacts';
+
 export {
   getMemberPrimaryContact,
   type GetMemberPrimaryContactDeps,
@@ -576,6 +583,10 @@ export {
 export type {
   F7MemberRecipient,
   F7MemberHaltSummary,
+  // 108 PR-C — contact-level projection + keyset cursor for the 1:N audience.
+  F7ContactRecipient,
+  BroadcastRecipientCursor,
+  BroadcastRecipientContactsQuery,
 } from './application/ports/member-repo';
 
 // F7 bridge — concrete `MemberRepo` + `ContactRepo` instances for F7's

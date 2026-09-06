@@ -1512,6 +1512,92 @@ export const drizzleMemberRepo: MemberRepo = {
     }
   },
 
+  /**
+   * 108 PR-C (US3) — see the port docblock for the eligibility contract.
+   *
+   * Plan shape: `members` filtered on `(status, erased_at, halted)` drives;
+   * `contacts` is LEFT JOINed on the SAME predicate as the partial index
+   * `contacts_marketing_recipients_idx (tenant_id, member_id, contact_id)
+   * WHERE removed_at IS NULL AND marketing_opt_out_at IS NULL` (migration
+   * 0294, reserved for exactly this read — M-13), so the join is an index
+   * scan per member and the opt-out exclusion never needs the row. The
+   * keyset predicate is a Postgres row comparison: for a cursor at a contact,
+   * `(member_id, contact_id) > (m, c)`; an orphan row (null contact) is
+   * compared on `member_id` alone — it is the only row of that member, so
+   * "after the orphan" is "the next member". Row comparison stops at the
+   * first unequal pair, so an orphan's null contact_id never poisons the
+   * result: it is only reached when member ids tie, which cannot happen for a
+   * member with no contacts.
+   */
+  async findBroadcastRecipientContacts(ctx, params) {
+    try {
+      const rows = await runInTenant(ctx, async (tx) => {
+        const tierCodesArr = params.tierCodes ?? [];
+        const tierFilter =
+          params.segmentType === 'tier' && tierCodesArr.length > 0
+            ? sql`${membershipPlans.planCategory}::text = ANY(ARRAY[${sql.join(
+                tierCodesArr.map((c) => sql`${c}`),
+                sql`, `,
+              )}]::text[])`
+            : undefined;
+        const after = params.after;
+        const cursorFilter =
+          after === null
+            ? undefined
+            : after.contactId === null
+              ? sql`${members.memberId} > ${after.memberId}::uuid`
+              : sql`(${members.memberId}, ${contacts.contactId}) > (${after.memberId}::uuid, ${after.contactId}::uuid)`;
+        return tx
+          .select({
+            memberId: members.memberId,
+            contactId: contacts.contactId,
+            emailLower: sql<string | null>`lower(${contacts.email})`,
+            isPrimary: contacts.isPrimary,
+          })
+          .from(members)
+          .leftJoin(
+            contacts,
+            and(
+              eq(contacts.tenantId, members.tenantId),
+              eq(contacts.memberId, members.memberId),
+              isNull(contacts.removedAt),
+              isNull(contacts.marketingOptOutAt),
+            ),
+          )
+          .leftJoin(
+            membershipPlans,
+            and(
+              eq(membershipPlans.tenantId, members.tenantId),
+              eq(membershipPlans.planId, members.planId),
+              eq(membershipPlans.planYear, members.planYear),
+            ),
+          )
+          .where(
+            and(
+              eq(members.status, 'active'),
+              isNull(members.erasedAt),
+              eq(members.broadcastsHaltedUntilAdminReview, false),
+              ...(tierFilter ? [tierFilter] : []),
+              ...(cursorFilter ? [cursorFilter] : []),
+            ),
+          )
+          .orderBy(asc(members.memberId), asc(contacts.contactId))
+          .limit(params.limit);
+      });
+
+      return ok(
+        rows.map((r) => ({
+          memberId: r.memberId as MemberId,
+          contactId: r.contactId,
+          emailLower: r.emailLower,
+          isPrimary: r.isPrimary ?? false,
+        })),
+      );
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
+
   async findMembersHaltedForBroadcast(ctx) {
     try {
       const rows = await runInTenant(ctx, async (tx) =>

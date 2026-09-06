@@ -69,6 +69,8 @@ function stubDeps(): BulkActionDeps {
     unenrolAutoInvoiceInTx: vi.fn(),
     // 108 PR-D — never reached by bulk actions.
     listContactsForMarketingAudience: vi.fn(),
+    // 108 PR-C — never reached by bulk actions.
+    findBroadcastRecipientContacts: vi.fn(),
     },
     audit: {
       record: vi.fn().mockResolvedValue(ok(undefined)),

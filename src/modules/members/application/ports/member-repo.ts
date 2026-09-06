@@ -646,6 +646,27 @@ export interface MemberRepo {
   ): Promise<Result<readonly F7MemberRecipient[], RepoError>>;
 
   /**
+   * 108 PR-C (US3 / FR-020–FR-022, FR-029) — ONE keyset page of broadcast
+   * recipient CONTACTS for a member-based segment. Eligibility lives in the
+   * SQL (data-model § 1): member `status = 'active' AND erased_at IS NULL AND
+   * broadcasts_halted_until_admin_review = false` (+ tier); contact
+   * `removed_at IS NULL AND marketing_opt_out_at IS NULL` (staff and self
+   * opt-outs alike). `members LEFT JOIN contacts`, so an eligible member with
+   * NO eligible contact is returned as one row with a null `contactId` — the
+   * FR-029 orphan — and a member whose primary opted out but has a live
+   * secondary is NOT an orphan. Ordered by `(member_id, contact_id)`; `after`
+   * is the last row of the previous page (a null `contactId` names an orphan
+   * row and resumes at the next member). `limit` is the ONLY bound — no
+   * hidden cap (research R8): the resolver's ceiling is the truthful check.
+   * Suppression (`marketing_unsubscribes`) and sender self-exclusion stay at
+   * F7's boundary, as for `findMembersBySegmentForBroadcast`.
+   */
+  findBroadcastRecipientContacts(
+    ctx: TenantContext,
+    params: BroadcastRecipientContactsQuery,
+  ): Promise<Result<readonly F7ContactRecipient[], RepoError>>;
+
+  /**
    * F7 — list members with `broadcasts_halted_until_admin_review = true`.
    * Powers Q14 admin queue red banner (T121, Phase 3+).
    */
@@ -914,6 +935,32 @@ export type F7MemberRecipient = {
   readonly primaryContactEmail: string | null;
   readonly tierCode: string | null;
   readonly broadcastsHaltedUntilAdminReview: boolean;
+};
+
+/**
+ * 108 PR-C — one broadcast recipient CONTACT row (data-model § 1
+ * `ContactRecipient`, F3 side). `contactId === null` ⇔ the member has no
+ * eligible contact (FR-029 orphan); then `emailLower` is null and `isPrimary`
+ * is false. Emails are lower-cased in the SQL.
+ */
+export type F7ContactRecipient = {
+  readonly memberId: MemberId;
+  readonly contactId: string | null;
+  readonly emailLower: string | null;
+  readonly isPrimary: boolean;
+};
+
+/** Keyset cursor = the last row of the previous page. */
+export type BroadcastRecipientCursor = {
+  readonly memberId: string;
+  readonly contactId: string | null;
+};
+
+export type BroadcastRecipientContactsQuery = {
+  readonly segmentType: 'all_members' | 'tier';
+  readonly tierCodes?: readonly string[];
+  readonly after: BroadcastRecipientCursor | null;
+  readonly limit: number;
 };
 
 /**
