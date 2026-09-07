@@ -229,6 +229,25 @@ describe('tenant-payment-settings — isPublishableKeyConsistent', () => {
       isPublishableKeyConsistent({ ...COMPLETE, processorPublishableKey: '' }),
     ).toBe(false);
   });
+
+  // Found by grepping for survivors of the class 108 PR-C fixed in
+  // `isMissingAddressOrphan`. The default arm used to `return _exhaustive`,
+  // which at RUNTIME returns the environment STRING — truthy — so an
+  // unrecognised environment answered "consistent": exactly the "silent
+  // always-consistent false positive" the arm's own comment says it prevents.
+  // `tsc` covers every value THIS build compiles, not a settings row written
+  // by a newer deploy and read by an older pod, which is how a new
+  // environment actually arrives. A key whose prefix nobody could check is
+  // not consistent.
+  it('an unrecognised processor environment is NOT consistent — fail closed', () => {
+    expect(
+      isPublishableKeyConsistent({
+        ...COMPLETE,
+        processorEnvironment: 'sandbox' as unknown as TenantPaymentSettings['processorEnvironment'],
+        processorPublishableKey: 'pk_live_123',
+      }),
+    ).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------

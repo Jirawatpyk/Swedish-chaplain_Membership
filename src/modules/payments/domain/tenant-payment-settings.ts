@@ -121,12 +121,27 @@ export function isPublishableKeyConsistent(s: TenantPaymentSettings): boolean {
       return s.processorPublishableKey.startsWith('pk_live_');
     case 'test':
       return s.processorPublishableKey.startsWith('pk_test_');
-    /* c8 ignore start — TS-exhaustive default; unreachable at runtime */
     default: {
+      // The `never` binding is the compile-time half and is why this arm
+      // exists: adding `'sandbox'` to PROCESSOR_ENVIRONMENTS fails the build
+      // here rather than silently defaulting.
       const _exhaustive: never = s.processorEnvironment;
-      return _exhaustive;
+      // The RUNTIME half. This used to `return _exhaustive` — the environment
+      // STRING, which is truthy — so an unrecognised environment answered
+      // "consistent": precisely the "silent always-consistent false positive"
+      // the comment above says this arm prevents. `tsc` covers every value
+      // THIS build compiles; it does not cover a row written by a newer
+      // deploy and read by an older one, which is exactly how a new
+      // environment reaches a live pod. A key whose prefix nobody could
+      // check is not consistent — fail CLOSED, so the caller's typed error
+      // fires instead of a live-mode capture being blessed.
+      //
+      // The `/* c8 ignore */` that used to wrap this arm is gone with it: the
+      // 100 % line+branch pin on `payments/domain/**` now covers the arm for
+      // real, because there is a test that reaches it.
+      void _exhaustive;
+      return false;
     }
-    /* c8 ignore stop */
   }
 }
 
