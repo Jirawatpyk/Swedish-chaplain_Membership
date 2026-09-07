@@ -6766,6 +6766,12 @@
       "body1": "Vi kunde inte skicka ditt schemalagda utskick för {tenantDisplayName}.",
       "scheduledForLabel": "Ursprungligen schemalagt till: {scheduledFor}",
       "failureReasonLabel": "Orsak: {reason}",
+      "failureReason": {
+        "audience_too_large": "målgruppen växte förbi gränsen mellan inskickning och utskick",
+        "audience_post_suppression_empty": "inga mottagare återstod när avregistreringar och önskemål hade tillämpats",
+        "malformed_segment": "den sparade målgruppen för detta utskick är ofullständig – din kammaradministratör behöver skapa den på nytt",
+        "generic": "ett tekniskt problem hindrade leveransen"
+      },
       "body2": "Vår leveranstjänst var oåtkomlig i mer än en timme, så vi slutade försöka för att inte skicka utskicket vid en oväntad tidpunkt.",
       "reassurance": "Din utskickskvot har INTE förbrukats och är fortfarande reserverad. Du kan schemalägga om samma utskick från administrationskön, eller låta din kammaradministratör skicka det manuellt.",
       "ctaRescheduleLabel": "Öppna utskicksdetaljer",

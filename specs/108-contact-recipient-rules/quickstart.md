@@ -115,6 +115,21 @@ Before opening any PR: `pnpm lint && pnpm typecheck && pnpm check:i18n && pnpm v
    matrix above (active-only narrowing, no silent cut, fail-closed reads, the compose UI).
 3. Staff run the FR-027a pre-flight review on the audience page (preset link) and switch
    off anyone who should not receive.
+3a. **GDPR Art. 14 gate (staff review 🟡-3 lifted it here from
+   `docs/compliance/processing-records.md:128-135`, where an operator would not have seen
+   it).** The flip MUST NOT happen until EITHER the system sends a notice to a new
+   secondary contact on first marketing contact, OR the FR-027a pre-flight above verifies
+   the attestation per contact. A secondary who never gave their address to the chamber
+   directly is a data subject the chamber has not yet informed.
+3b. **Push-capacity gate (staff review 🔴).** The 1:N ceiling accepts up to 50,000, but the
+   dispatch push is a serial one-contact-at-a-time loop at ~2 req/s inside a 300 s
+   function budget, and `split-large-broadcasts` skips anything at or below 10,000 — so a
+   broadcast in that band is accepted and then never delivered. Before flipping, land ONE
+   of: the import build (T086/T087/T106); a lowered `SPLIT_THRESHOLD_RECIPIENTS` **plus** a
+   wall-clock budget with resume in `addContactsToAudience`; or an explicit submit-time
+   refusal above `300 s × measured req/s − margin`. Measure the team's real req/s
+   (Settings → Usage, T095) and record the number in `reviews/pr-c.md` row 33. At
+   SweCham's ~150 members × 3 contacts this is ~225 s against 300 s — no margin.
 4. Flip `FEATURE_CONTACT_MARKETING_RECIPIENTS=true` in Vercel; redeploy.
 5. First send — watch the five signals PR-C ships (the `audience_import_status` gauge went
    with the deferred T086 and does not exist):

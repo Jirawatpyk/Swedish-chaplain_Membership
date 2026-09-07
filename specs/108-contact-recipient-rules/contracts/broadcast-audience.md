@@ -9,7 +9,7 @@ batch crons. Any other recipient query is a defect.
 ```ts
 interface ResolveSegmentDeps {
   tenant: TenantContext;
-  membersBridge: MembersBridgePort;          // + getContactsBySegment, filterMarketingOptedOut
+  membersBridge: MembersBridgePort;          // + getContactsBySegment, countOptedOutContactsBySegment, filterMarketingOptedOut
   eventAttendees: EventAttendeesRepository;
   marketingUnsubscribes: MarketingUnsubscribesRepo;   // lookupBatch, chunked ≤5,000
   audienceMode: 'primary_only' | 'all_contacts';      // from FEATURE_CONTACT_MARKETING_RECIPIENTS
@@ -17,6 +17,9 @@ interface ResolveSegmentDeps {
 }
 interface ResolveSegmentInput {
   segment: RecipientSegment;
+  phase: 'submit' | 'dispatch';              // required — labels audience_resolved_total and
+                                             // marketing_opt_out_filter_count, so a compose-time
+                                             // count cannot keep the dispatch-side alarm alive
   requestingMemberId: string | null;         // replaces requestingMemberPrimaryEmail
   customRecipients: ReadonlyArray<EmailLower> | null;
 }
@@ -42,9 +45,12 @@ interface ResolveSegmentOutput {
    failure propagates as `resolve.server_error`** (never `[]`).
    Eligibility: member `status='active' AND erased_at IS NULL AND halted=false` (+ tier);
    contact `removed_at IS NULL AND marketing_opt_out_at IS NULL`.
-2. Event-attendee and custom segments → existing sources, then
-   `membersBridge.filterMarketingOptedOut(tenant, emails)` removes opted-out contacts and
-   counts them in `droppedByPreference`.
+2. Event-attendee and custom segments → existing sources. (**Corrected 2026-09-07, staff
+   review 🟡-2**: `filterMarketingOptedOut` does NOT run here. It runs at step 5b below —
+   AFTER suppression, and for EVERY segment kind, not only these two — so an address on
+   both lists counts once, as suppressed. The totals are identical either way; the ORDER
+   documented here was not the code's, and the code's own docblock explains why it must be
+   after.)
 3. Self-exclusion: drop every candidate whose `memberId === requestingMemberId`
    (member-based segments only; custom list unaffected — unchanged rule).
 4. Dedupe by `emailLower`.
@@ -135,6 +141,12 @@ compare against the same number.
 gain `contact_id`. Suppression remains email-keyed and authoritative.
 
 ## 8. Tests
+
+> **PARTLY DEFERRED (2026-09-07, staff review 🟡-2 — § 4 carried this banner and § 8 did
+> not).** Every artefact below that belongs to the Contacts-Import build —
+> `audience-import-two-tick.test.ts`, `build-audience-tick.test.ts`,
+> `resend-contact-import.test.ts` — ships with T086/T087/T106 in the follow-up PR, not in
+> PR-C. Do not hunt for them here.
 
 - Unit: `resolve-segment-recipients.test.ts` (17 existing cases re-targeted to the
   `ContactRecipient` shape + new: 1:N fan-out, opt-out exclusion, all-contacts self-exclusion,

@@ -8,9 +8,7 @@
  *
  * The split threshold (10,000) must sit BELOW the 50,000 ceiling, or an
  * accepted audience above the threshold would never be picked up by
- * `split-large-broadcasts` and would sit in `approved` forever. (5,001–10,000
- * is the intended SINGLE-audience path under `RESEND_PER_AUDIENCE_CAP`, not a
- * gap — review 2026-09-07 round 2 corrected this docblock.) The 50,000
+ * `split-large-broadcasts` and would sit in `approved` forever. The 50,000
  * argument is `batching AND the 1:N flag` at the composition root (H-2).
  */
 import { describe, expect, it } from 'vitest';

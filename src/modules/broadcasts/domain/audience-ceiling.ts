@@ -35,5 +35,18 @@ export function audienceCeiling(batchingEnabled: boolean): number {
  * the split never picks up would sit in `approved` forever — and it is
  * only ever reached with batching ON (`audienceCeiling(false)` is below
  * it). Pinned by `tests/unit/broadcasts/domain/audience-ceiling.test.ts`.
+ *
+ * **5,001–10,000 IS a gap — do not re-derive that it is not.** Round 2 of the
+ * 2026-09-07 review called this band "the intended SINGLE-audience path under
+ * `RESEND_PER_AUDIENCE_CAP`, not a gap": a correct statement about ROUTING
+ * (Resend permits 10,000 contacts per audience) that never checked the WALL
+ * CLOCK. Pass 4 of the staff review did. `split-large-broadcasts` skips
+ * `resolvedCount <= SPLIT_THRESHOLD_RECIPIENTS`, so the band falls to
+ * `dispatch-scheduled`, whose push is a SERIAL one-contact-at-a-time loop at
+ * ~2 req/s inside `maxDuration = 300` — and `plan.md:268` states the serial
+ * push cannot finish even 5,000 contacts in that budget. Such a broadcast is
+ * accepted at submit and never delivered. Unreachable while the 1:N flag is
+ * OFF (the ceiling is 5,000 then); a precondition of the flag flip — see the
+ * US5 AMENDMENT in `spec.md` and `reviews/pr-c.md` row 33.
  */
 export const SPLIT_THRESHOLD_RECIPIENTS = 10_000;

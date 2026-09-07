@@ -79,6 +79,16 @@ interface BroadcastFailedCopy {
   readonly body1: string;
   readonly scheduledForLabel: string;
   readonly failureReasonLabel: string;
+  /**
+   * Staff review 2026-09-07 (Pass 4, 🟡-1) — the member-facing sentence for
+   * each internal failure token. `input.reason` is an ENGINEERING string
+   * (`malformed_segment`, or on the unknown branch a raw `Error.message`),
+   * and it used to be interpolated straight into the member's email: a Thai
+   * member read "สาเหตุ: malformed_segment" about a data defect they cannot
+   * act on. Unmapped tokens fall back to `generic` — a member is never shown
+   * an identifier, and never an exception message.
+   */
+  readonly failureReason: Readonly<Record<string, string>>;
   readonly body2: string;
   readonly reassurance: string;
   readonly ctaRescheduleLabel: string;
@@ -251,7 +261,9 @@ export function buildBroadcastFailedToDispatchEmail(
   // UX-GAP2 closure (2026-05-02) — locale-aware date format
   const scheduledFormatted = formatEmailDate(input.scheduledFor, input.locale);
   const scheduledLine = fillTemplate(copy.scheduledForLabel, { scheduledFor: scheduledFormatted });
-  const reasonLine = fillTemplate(copy.failureReasonLabel, { reason: input.reason });
+  // Staff review 2026-09-07 (Pass 4, 🟡-1): translate the token, never print it.
+  const reasonText = copy.failureReason[input.reason] ?? copy.failureReason['generic'] ?? '';
+  const reasonLine = fillTemplate(copy.failureReasonLabel, { reason: reasonText });
   const ctaUrl = broadcastDetailUrl(input.broadcastId);
 
   const html = `<!doctype html>

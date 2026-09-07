@@ -2318,12 +2318,16 @@ export const broadcastsMetrics = {
   },
 
   /**
-   * `broadcasts.audience_resolved.total{tenant, segment, mode}` — 108 PR-C
-   * T090: one increment per member-based resolve that REACHED the source read
-   * (any phase — including resolves later refused as empty or too large; it
-   * counts attempts, not sends), labelled by segment kind and the leg in
-   * force, so the cutover flag flip is visible on the dashboard as the `mode`
-   * label changing (research R15).
+   * `broadcasts.audience_resolved.total{tenant, segment, mode, phase}` — 108
+   * PR-C T090: one increment per member-based resolve that COMPLETED the
+   * source read (including resolves later refused as empty or too large — it
+   * counts attempts, not sends; a resolve whose read FAILED is not counted,
+   * so this is not the denominator of `dispatch_resolve_failed_total`),
+   * labelled by segment kind, the leg in force — so the cutover flag flip is
+   * visible on the dashboard as the `mode` label changing (research R15) —
+   * and `phase` (staff review 🟢-5 added it to this list; the code has
+   * emitted it since the round-2 fix), which keeps a compose-time count poll
+   * and a real dispatch out of one series.
    */
   audienceResolvedTotal(
     tenantId: string,

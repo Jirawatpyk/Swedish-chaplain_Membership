@@ -6766,6 +6766,12 @@
       "body1": "We were unable to dispatch your scheduled E-Blast for {tenantDisplayName}.",
       "scheduledForLabel": "Originally scheduled for: {scheduledFor}",
       "failureReasonLabel": "Reason: {reason}",
+      "failureReason": {
+        "audience_too_large": "the audience grew past the limit between submission and sending",
+        "audience_post_suppression_empty": "no eligible recipients were left once unsubscribes and preferences were applied",
+        "malformed_segment": "the saved audience for this broadcast is incomplete — your chamber administrator needs to re-create it",
+        "generic": "a technical problem prevented delivery"
+      },
       "body2": "Our delivery service was unreachable for over an hour, so we stopped retrying to avoid sending the broadcast at an unexpected time.",
       "reassurance": "Your E-Blast quota slot has NOT been consumed and remains reserved. You can re-schedule the same broadcast from the admin queue, or your chamber admin can re-trigger dispatch manually.",
       "ctaRescheduleLabel": "Open broadcast detail",
