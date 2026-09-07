@@ -8,6 +8,7 @@
  * RBAC: admin only. Same shape as `/done` route.
  */
 import { type NextRequest } from 'next/server';
+import { assertNever } from '@/lib/assert-never';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { env } from '@/lib/env';
@@ -112,8 +113,19 @@ export async function POST(
             correlationId: ctx.correlationId,
           });
       }
-      const _exhaustive: never = result.error;
-      return _exhaustive;
+      // docs/code-conventions.md § 8 — `return _exhaustive` returned the
+      // ERROR OBJECT into a `Response` position and, worse, left the `try`
+      // NORMALLY, so the catch below and its `errorId` never fired: the 500
+      // carried no correlationId, contrary to the comment sitting on that
+      // catch. `assertNever` throws INSIDE the try, so the routable signal
+      // those comments promise is real. The message names the KIND only -
+      // `assertNever`'s default stringifies the whole error object into a
+      // message this catch then logs, and a future error kind's payload is
+      // not something we can promise is free of member data.
+      return assertNever(
+        result.error,
+        `skip-renewal-task: unhandled error kind '${(result.error as { readonly kind: string }).kind}'`,
+      );
     }
     renewalsMetrics.escalationTaskAction(tenantCtx.slug, 'skip', 'success');
     return successResponse(

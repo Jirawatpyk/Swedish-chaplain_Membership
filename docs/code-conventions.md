@@ -230,25 +230,40 @@ direction that asserts less:
 
 ### Known violations
 
-`assert-never.ts`'s own docblock records that it was introduced on 2026-05-20
-(TD-M4) *"to replace ad-hoc `const _exhaustive: never` patterns scattered
-across route handlers"*. That migration was never finished. **Eight** sites
-remain, all in F8 renewals route handlers:
+**None.** `assert-never.ts`'s docblock records that it was introduced on
+2026-05-20 (TD-M4) *"to replace ad-hoc `const _exhaustive: never` patterns
+scattered across route handlers"*. That migration stalled with eight sites
+left; they were finished on 2026-09-07, the same day the rule was written
+down. `rg "^\s*return _exhaustive;" src/` is the check, and it is empty.
 
-```
-src/app/api/admin/renewals/at-risk/[memberId]/{outreach,snooze}/route.ts
-src/app/api/admin/renewals/tasks/[taskId]/{done,skip,reassign}/route.ts
-src/app/api/admin/renewals/tier-upgrades/[suggestionId]/{accept,dismiss,escalate}/route.ts
+The eight were all F8 renewals route handlers, and the reason to migrate them
+was not the one that is usually given. They were already **fail-closed**: the
+arm returns into a `Response` position, Next rejects a non-Response and 500s,
+and the thrown message carries only a constructor name, so nothing leaked.
+What the fail-closed argument hides is that `return _exhaustive` leaves the
+`try` **normally** — so each route's `catch`, and the `errorId` its F8 alert
+rule keys on, never fired. The 500 carried no `correlationId`, contrary to the
+comment sitting directly above that catch in every one of the eight files.
+`assertNever` throws *inside* the `try` and makes those comments true.
+
+One caveat carried over into all eight call sites: `assertNever`'s default
+message is `JSON.stringify(value)`, and these catches log the thrown Error. A
+future error variant's payload is not something we can promise is free of
+member data, so each site passes an explicit message naming the **kind** only:
+
+```ts
+return assertNever(
+  result.error,
+  `accept-tier-upgrade: unhandled error kind '${(result.error as { readonly kind: string }).kind}'`,
+);
 ```
 
-They are **fail-closed** — the arm returns into a `Response` position, Next
-rejects a non-Response and 500s, and the thrown message carries only a
-constructor name, so nothing leaks. They are still worth migrating for a
-reason the fail-closed argument hides: `return _exhaustive` exits the `try`
-**normally**, so each route's `catch` and its `errorId` never fire, and the
-500 carries no `correlationId` — contrary to the comment sitting directly
-above it in each file. `assertNever` throws *inside* the `try` and restores
-the routable signal those comments promise.
+Proven by `tests/contract/renewals/admin-accept-tier-upgrade-route.test.ts`,
+which returns a well-formed `err` whose `kind` no arm handles — the shape a
+new error variant actually has — and asserts the 500 carries the
+correlationId in body and header plus an `F8.ACCEPT_TIER.UNEXPECTED` log
+naming the kind. The pre-existing throw-path test could not see this: it
+rejects the use-case, which never reaches the arm.
 
 ---
 
