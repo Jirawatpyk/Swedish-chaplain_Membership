@@ -106,6 +106,14 @@ For F8 `accept-tier-upgrade`:
 | errorId | When it fires |
 |---|---|
 | `F8.ACCEPT_TIER.SERVER_ERROR` | use-case returned `{kind:'server_error', message:'deploy-skew:unhandled-gateway-arm:*'}` — gateway-arm exhaustiveness violation |
+
+Every F8 renewals action route emits `F8.<ROUTE>.UNEXPECTED` from its outer
+catch, added 2026-09-07 with the `assertNever` migration: `ACCEPT_TIER`,
+`DISMISS_TIER`, `ESCALATE_TIER`, `AT_RISK_SNOOZE`, `AT_RISK_OUTREACH`,
+`TASK_DONE`, `TASK_SKIP`, `TASK_REASSIGN` (plus
+`TASK_REASSIGN.ASSIGNEE_LOOKUP_FAILED`). An `*.UNEXPECTED` line whose message
+reads `<slug>: unhandled error kind '<kind>'` is not an outage — it is a
+use-case error variant this build's route does not map, i.e. deploy skew.
 | `F8.ACCEPT_TIER.UNEXPECTED` | route's outer `catch (e)` caught an uncaught throw (R3-C3 pre-tx wrap blocks documented paths; this is defence-in-depth) |
 | `F8.ACCEPT_TIER.CONTEXT_RESOLUTION_FAILED` | `requireRenewalAdminContext` helper caught an infrastructure error (DB outage during session-lookup) |
 

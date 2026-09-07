@@ -230,17 +230,23 @@ direction that asserts less:
 
 ### Known violations
 
-**None.** The check is on the CLASS, not on a variable name:
+**None**, on this check:
 
 ```
-rg -n "^\s*(return|throw) _exhaustive;" src/
+rg -n "^\s*(return|throw) (_exhaustive|exhaustive|_never|exhaustiveReason);" src/
 ```
 
-That distinction is not pedantic — the first version of this section grepped
-`return _exhaustive;` only, declared "None", and missed a live
-`throw _exhaustive;` in `scheduled-plan-changes/[id]/cancel/route.ts`. Throwing
-the raw error OBJECT is worse than returning it: a catch doing
-`new Error(String(e))` gets `"[object Object]"`.
+Two things that check gets wrong if you shorten it. It must cover `throw`, not
+just `return` — the first version of this section grepped `return _exhaustive;`
+only, declared "None", and missed a live `throw _exhaustive;` in
+`scheduled-plan-changes/[id]/cancel/route.ts`. And it must cover the sentinel
+NAMES actually in use: `refunds/initiate/route.ts` declares
+`const exhaustive: never = code`, so a name-specific grep would sail past a
+future `return exhaustive;` under a "None" heading. (All six renamed sentinels
+are in a safe form today; it is the *check* that was narrow, not the result.)
+
+The right sweep when in doubt is the class itself — `rg ": never ="` — and
+then read each arm.
 
 `assert-never.ts`'s docblock records that it was introduced on 2026-05-20
 (TD-M4) *"to replace ad-hoc `const _exhaustive: never` patterns scattered
@@ -283,10 +289,23 @@ well-formed `err` whose `kind` no arm handles — the shape a new error variant
 actually has — and asserting the 500 carries the correlationId in body and
 header plus the route's `errorId` and the kind in the thrown message. `dismiss`
 was chosen deliberately: four of the eight (dismiss, escalate, snooze,
-outreach) had **no contract test importing them at all**, so nothing — not CI,
-not the pre-push API-route gate, which matches on a test that imports the route
-— would have caught a regression in them. The remaining six are the same swap;
-that is stated rather than implied by eight near-duplicate tests.
+outreach) had **no test importing them at all**, so a regression in them was
+caught by nothing in CI.
+
+Be precise about what that test does and does not buy, because the first
+version of this paragraph was not: it closes the **CI contract-shard** gap. It
+does **not** put those routes behind the pre-push API-route gate —
+`.husky/pre-push` greps `tests/integration/` only, so a `tests/contract/` file
+is invisible to it and all nine routes here still print
+*"no integration test imports … — skipping"*. A maintainer who reads this
+section as "dismiss is now gated pre-push" would be wrong. The remaining six renewals routes are the
+same swap; that is stated rather than implied by six near-duplicate tests.
+
+The ninth site is **not** the same swap and is called out separately:
+`scheduled-plan-changes/[id]/cancel` discriminates on `code`, has **no
+enclosing try/catch**, emits no `errorId` and no metric, and its `default:` arm
+is **untested** — `cancel-route.test.ts` has 15 tests and none reaches it. It
+is the highest-variance change of the nine and the one with the least proof.
 
 ---
 

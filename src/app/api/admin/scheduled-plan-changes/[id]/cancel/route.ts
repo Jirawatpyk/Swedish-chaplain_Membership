@@ -280,9 +280,13 @@ export async function POST(
       // `never` fails compile. The throw is unreachable today (use-case
       // error union is closed); it's purely a compile-time guard.
       // docs/code-conventions.md § 8 — was `throw _exhaustive`, which throws
-      // the raw error OBJECT rather than an Error: a catch doing
-      // `new Error(String(e))` gets "[object Object]" and the incident is
-      // undiagnosable. Found by sweeping the CLASS rather than the variable
+      // the raw error OBJECT rather than an Error, so it reaches Next with
+      // no message and no stack. (NOTE: unlike the eight renewals routes,
+      // NO catch encloses this switch - the only try in this file wraps
+      // `request.json()` - so neither the "[object Object]" incident nor
+      // the pino-serializer privacy argument applies here. An Error simply
+      // carries a stack and a message where the bare object carried
+      // neither.) Found by sweeping the CLASS rather than the variable
       // name — the § 8 check greps `return _exhaustive;` and could not see a
       // `throw`. Note this union discriminates on `code`, not `kind`.
       return assertNever(

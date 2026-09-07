@@ -7,9 +7,15 @@
  * accept route's proof asserts `errorId: 'F8.ACCEPT_TIER.UNEXPECTED'`, a
  * value only that route emitted, so copying the test anywhere else would
  * have failed. Four of the eight routes — this one, escalate, snooze and
- * outreach — had NO contract test importing them at all, so a regression in
- * them was caught by nothing: not CI, and not the pre-push API-route gate,
- * which matches on a test that imports the route.
+ * outreach — had NO test importing them at all, so a regression in them was
+ * caught by nothing in CI.
+ *
+ * What this file does and does not buy, stated precisely because the first
+ * version of this docblock overstated it: it closes the CI contract-shard
+ * gap. It does NOT put this route behind the pre-push API-route gate —
+ * `.husky/pre-push` greps `tests/integration/` only, so a `tests/contract/`
+ * file is invisible to it and this route still prints "no integration test
+ * imports … — skipping" on push.
  *
  * This pins the shared mechanism on a second route, one that had no test:
  * an unhandled error KIND leaves the switch, `assertNever` throws INSIDE the

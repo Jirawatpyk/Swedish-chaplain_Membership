@@ -105,10 +105,12 @@ export async function POST(
       }
       // docs/code-conventions.md § 8 — `return _exhaustive` returned the
       // ERROR OBJECT into a `Response` position and, worse, left the `try`
-      // NORMALLY, so the catch below and its `errorId` never fired: the 500
-      // carried no correlationId, contrary to the comment sitting on that
-      // catch. `assertNever` throws INSIDE the try, so the routable signal
-      // those comments promise is real. The message names the KIND only -
+      // NORMALLY, so the catch below never fired and the 500 carried no
+      // correlationId. This catch also had no `errorId` at all until the
+      // review of that first fix - the convention at 40+ other F8 sites -
+      // so nothing an alert rule keys on matched it either, before or
+      // after. `assertNever` throws INSIDE the try; the errorId is now
+      // emitted. The message names the KIND only -
       // `assertNever`'s default stringifies the whole error object into a
       // message this catch then logs, and a future error kind's payload is
       // not something we can promise is free of member data.
