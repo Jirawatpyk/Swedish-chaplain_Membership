@@ -95,6 +95,12 @@ export async function GET(request: NextRequest) {
       // so ops can detect a sustained failure pattern.
       logger.error(
         {
+          // NOT `.UNEXPECTED`: this catch sits on the kill-switch path,
+          // which answers 404. The alertable fact is that the
+          // `kill_switch_blocked` audit row was lost, not that a request
+          // 500ed — a rule keyed on `.UNEXPECTED` firing here would send
+          // the on-call looking for an outage that did not happen.
+          errorId: `${ERROR_ID}.KILL_SWITCH_AUDIT_EMIT_FAILED`,
           err: e instanceof Error ? e : new Error(String(e)),
           correlationId,
           route: '/api/admin/renewals',

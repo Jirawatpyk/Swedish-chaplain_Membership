@@ -102,7 +102,7 @@ export async function POST(
           // R3-S5 never reaches Sentry/Grafana.
           logger.error(
             {
-              errorId: 'F8.ACCEPT_TIER.SERVER_ERROR',
+              errorId: `${ERROR_ID}.SERVER_ERROR`,
               correlationId: ctx.correlationId,
               suggestionId,
               message: result.error.message,

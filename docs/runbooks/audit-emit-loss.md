@@ -107,58 +107,54 @@ For F8 `accept-tier-upgrade`:
 |---|---|
 | `F8.ACCEPT_TIER.SERVER_ERROR` | use-case returned `{kind:'server_error', message:'deploy-skew:unhandled-gateway-arm:*'}` — gateway-arm exhaustiveness violation |
 | `F8.ACCEPT_TIER.UNEXPECTED` | route's outer `catch (e)` caught an uncaught throw (R3-C3 pre-tx wrap blocks documented paths; this is defence-in-depth) |
-| `F8.ACCEPT_TIER.CONTEXT_RESOLUTION_FAILED` | `requireRenewalAdminContext` helper caught an infrastructure error (DB outage during session-lookup) |
+| `F8.ACCEPT_TIER.CONTEXT_RESOLUTION_FAILED` | `requireRenewalAdminContext` caught an infrastructure error (DB outage during session-lookup). **Every F8 route emits its own `<entry>.CONTEXT_RESOLUTION_FAILED`** — see § The F8 errorId taxonomy; before 2026-09-07 all 24 emitted this one |
 
-### `*.UNEXPECTED` on the eight migrated F8 renewals routes
+### The F8 errorId taxonomy
 
-The **eight** action routes migrated to `assertNever` on 2026-09-07 emit an
-`errorId` from their outer catch. Seven of those ids were added by that
-migration; `F8.ACCEPT_TIER.UNEXPECTED` (the row above) already existed and is
-what the other seven were modelled on:
+**Every** F8 renewals route names itself. The names live in one place — the
+`F8ErrorId` union in `src/lib/renewals-route-helpers.ts` — and that union IS
+the taxonomy; read it there rather than trusting a list in this file, which
+is how the previous version of this section went stale.
 
-`ACCEPT_TIER` · `DISMISS_TIER` · `ESCALATE_TIER` · `AT_RISK_SNOOZE` ·
-`AT_RISK_OUTREACH` · `TASK_DONE` · `TASK_SKIP` · `TASK_REASSIGN`, each
-suffixed `.UNEXPECTED`, plus `F8.TASK_REASSIGN.ASSIGNEE_LOOKUP_FAILED` on the
-separate assignee-lookup catch in that same route.
+A route declares its entry once (`const ERROR_ID = 'F8.…'`) and uses it twice:
 
-An `*.UNEXPECTED` line whose message reads `<slug>: unhandled error kind
+| suffix | emitted by | means |
+|---|---|---|
+| `.CONTEXT_RESOLUTION_FAILED` | `requireRenewalAdminContext`, before the route's `try` | session-lookup / RBAC infrastructure failed (DB outage) |
+| `.UNEXPECTED` | the route's own outer catch | the handler threw |
+| `.SERVER_ERROR`, `.ASSIGNEE_LOOKUP_FAILED`, `.KILL_SWITCH_AUDIT_EMIT_FAILED` | a named inner catch | see the route |
+
+So a rule keyed on `<entry>.*` matches every failure that route can produce,
+and **`F8.*` is blind to nothing** — enforced by `pnpm check:f8-error-id`
+(pre-push + `quality-gates.yml`), which fails on a route that declares no
+entry, a `logger.error` in a `catch` with no `errorId`, and a hardcoded `F8.`
+string literal. A claim backed by a failing gate cannot rot; that is why this
+section no longer counts anything.
+
+An `*.UNEXPECTED` line whose message reads `<entry>: unhandled error kind
 '<kind>'` is **not an outage** — it is a use-case error variant this build's
 route does not map, i.e. deploy skew. Look for a newer deploy writing a
 `Result.error.kind` the running build's `switch` has no arm for.
 
-**Coverage limit — read this before pinning a rule.** *Pin SRE alert rules to
-errorId* above still applies, but `F8.*.UNEXPECTED` covers only the eight
-routes listed here. **Most F8 renewals routes still emit no `errorId` at
-all**, so a rule keyed on `F8.*` is blind to them.
+**Until 2026-09-07 the id lied.** `requireRenewalAdminContext` hardcoded
+`F8.ACCEPT_TIER.CONTEXT_RESOLUTION_FAILED` while being composed by 24 routes,
+so a session-lookup failure on `mark-paid-offline` — a money path — paged with
+an id naming the tier-upgrade accept route. If you are reading logs from
+before that date, `F8.ACCEPT_TIER.CONTEXT_RESOLUTION_FAILED` means *some* F8
+route, not that one; use `requestId` to find which.
 
-Do not trust a hand-written list for this — enumerate it, because the set
-changes every time a route is migrated:
+Worth keeping from that change: the routes were found by enumerating on HTTP
+**method**, not by name. The hand-written list this section used to carry
+named seven state-changing routes and missed `portal/renewal/redeem-link`,
+whose POST redeems a one-time renewal link — a write, and the one a member
+actually touches.
 
-```
-# F8 renewals routes with an outer catch that logs NO errorId
-for f in $(rg -l 'catch \(e' src/app/api/**/renewals/**/route.ts \
-                   src/app/api/portal/renewal/**/route.ts); do
-  rg -q "errorId: 'F8\." "$f" || echo "$f"
-done
-```
-
-Run it rather than trusting a number here: every count written into this
-repo's comments during this migration turned out to be wrong, including two
-in the commit that added this section. The ones worth knowing by name,
-because they change state:
-
-- `admin/renewals/[cycleId]/mark-paid-offline` — **money path**
-- `admin/renewals/[cycleId]/cancel` · `reject` · `reactivate` ·
-  `send-reminder-now` — the rest of the cycle-level actions
-- `admin/renewals/settings/schedules/[tierBucket]` (PUT) and
-  `portal/renewal/[memberId]/confirm` (POST) — writes outside the
-  cycle-level group, and easy to miss for exactly that reason
-
-The metric route does not close the gap either:
+**What the taxonomy still does NOT give you: metrics.**
 `renewals.escalation_task.action_total{outcome="server_error"}` (alarm F8-A8)
 is emitted only by `done` / `skip` / `reassign`, and the assignee-lookup catch
 inside `reassign` logs its errorId but emits **no** metric, so F8-A8 does not
-fire for that one.
+fire for that one. Every other F8 route is log-only: alert on the errorId, not
+on a counter that does not exist.
 
 The `plans_cancel_audit_backfill_required_total` OTel counter (label `audit_error_type ∈ {persist_failed, invalid_payload}`)
 backs the audit-backfill SLO. Sum the counter against backfilled audit rows to compute SLO depth.
