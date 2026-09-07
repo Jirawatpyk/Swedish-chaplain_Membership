@@ -78,6 +78,22 @@ describe('evaluateBatchCompletion (Ship-blocker A)', () => {
     expect(r.failedBatchIds).toEqual([]);
   });
 
+  // Review of this change — the first version of that arm ignored `force`,
+  // making it the ONLY arm that can never become terminal, which falsified
+  // this file's own docblock ("neither done nor failed, forever" is listed
+  // as unrepresentable). Under the 24 h backstop an unclassifiable batch is
+  // abandoned: we do not know it succeeded, and staying stuck is not an
+  // option the backstop allows.
+  it('under forceComplete an unclassifiable batch is ABANDONED, not stuck forever', () => {
+    const r = evaluateBatchCompletion(
+      [batch({ status: 'quarantined' as unknown as BatchManifest['status'] })],
+      { forceComplete: true },
+    );
+    expect(r.allDone).toBe(true);
+    expect(r.anyFailed).toBe(true);
+    expect(r.failedBatchIds).toEqual(['b-1']);
+  });
+
   it('counters reach recipient_count → done (even while status sending)', () => {
     const r = evaluateBatchCompletion([
       batch({ deliveredCount: 98, bouncedCount: 2 }), // 100 of 100

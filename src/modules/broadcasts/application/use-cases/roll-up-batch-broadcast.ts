@@ -139,6 +139,15 @@ function classifyBatch(b: BatchManifest, force: boolean): BatchDisposition {
       // conservative answer — it keeps the broadcast un-finalised, which
       // `stuck_sending_count` already alarms on.
       void _exhaustive;
+      // `force` is honoured here exactly as it is by `sending`, `pending`
+      // and `failed` above. The first version of this arm ignored it, which
+      // made it the ONLY arm that can never become terminal — and that
+      // falsified the docblock at the top of this file, which lists "neither
+      // done nor failed, forever" as an unrepresentable state. Under the
+      // 24 h backstop an unclassifiable batch is `abandoned`: we do not know
+      // it succeeded, and staying stuck is not an option the backstop
+      // allows. (Review of this change, 2026-09-07.)
+      if (force) return { kind: 'abandoned', batchId: b.id };
       return { kind: 'in_flight' };
     }
   }

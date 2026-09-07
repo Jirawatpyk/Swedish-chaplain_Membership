@@ -26,6 +26,17 @@
  * No throw is needed — the use-case's own try/catch also guards, but
  * returning `null` is the documented contract.
  *
+ * ONE case is deliberately NOT a failure and does NOT collapse to `null`:
+ * an insights key this build cannot map is DROPPED from the list
+ * (`mapQuantifiableKey` → null → `flatMap`). The port distinguishes `null`
+ * ("unavailable") from `[]` ("available, nothing metered"), so a dropped
+ * entry shifts the answer toward the latter — which is why the drop is
+ * confined to a single unmappable key rather than being a failure mode.
+ * If every key were ever unmappable the reader would answer `[]`, i.e.
+ * "nothing metered", which would be wrong; that is unreachable today (see
+ * the default arm) and is the reason it is written down here rather than
+ * guarded against speculatively.
+ *
  * Pure Infrastructure — only the insights + tenants public barrels + the
  * F8 port type (Constitution Principle III).
  */
@@ -57,15 +68,24 @@ function mapQuantifiableKey(
       return 'cultural_ticket';
     default: {
       const _exhaustive: never = key;
-      // The docblock above says this arm stops a new key "silently
-      // mis-mapping to 'eblast'". `return _exhaustive` returned the KEY
-      // STRING, which the caller then wrote straight into a
-      // `BenefitConsumptionEntry.key` position — so the entry carried a name
-      // this build cannot resolve, and the member's renewal summary showed a
-      // consumption figure attributed to a benefit nobody could name. Every
-      // member of the target union asserts WHICH benefit was consumed, so
-      // there is no safe substitute: the honest answer is to emit no entry.
-      // The caller drops it (see `read`).
+      // DEFENCE IN DEPTH ONLY — and unlike its two siblings in this change,
+      // this arm has NO reachable path today. The review that followed the
+      // fix proved it: the keys are string literals pushed in the SAME
+      // bundle (`compute-benefit-usage.ts:121` and `:129`) and reached
+      // in-process, so there is no DB row, no query param and no deploy
+      // skew that can widen this union without `never` failing the build
+      // first. The commit that introduced this arm claimed otherwise; that
+      // claim was wrong and is corrected here.
+      //
+      // The arm is still worth having, because the OLD one was wrong in a
+      // way that mattered if it ever did run: `return _exhaustive` returned
+      // the KEY STRING, which the caller wrote straight into a
+      // `BenefitConsumptionEntry.key`, so the renewal summary would carry a
+      // consumption figure attributed to a benefit this build cannot name —
+      // exactly the "silently mis-mapping to 'eblast'" the docblock above
+      // says this default prevents. Every member of the target union
+      // asserts WHICH benefit was consumed, so there is no safe substitute:
+      // emit no entry. The caller drops it (see `read`).
       void _exhaustive;
       return null;
     }
