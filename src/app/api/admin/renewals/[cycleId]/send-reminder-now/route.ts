@@ -32,6 +32,7 @@ import {
   requireRenewalAdminContext,
 } from '@/lib/renewals-route-helpers';
 import { sendReminderNow, makeRenewalsDeps } from '@/modules/renewals';
+import { assertNever } from '@/lib/assert-never';
 
 /**
  * This route's entry in the F8 errorId taxonomy (`F8ErrorId` in
@@ -127,13 +128,18 @@ export async function POST(
           });
         default: {
           // K1-E1: exhaustiveness pin.
-          const _exhaustive: never = result.error;
-          void _exhaustive;
-          return errorResponse({
-            status: 500,
-            code: 'server_error',
-            correlationId: ctx.correlationId,
-          });
+          // Review of this branch — this arm RETURNED the 500, so the one
+          // failure mode that means "two deploys disagree" produced a 500
+          // with no log line at all, while the docblock above promised an
+          // SRE rule keyed on `${ERROR_ID}.*` matches every 500 this route
+          // can produce. Throwing lands it in the outer catch, which does
+          // carry that id.
+          return assertNever(
+            result.error,
+            `${ERROR_ID}: unhandled error kind '${
+              (result.error as { readonly kind: string }).kind
+            }'`,
+          );
         }
       }
     }

@@ -236,8 +236,8 @@ describe('requireRenewalAdminContext (Phase 6 review I8)', () => {
  * The 500 path had no test, and what it logged was wrong in a way no test
  * could have caught by accident: the errorId was the hardcoded literal
  * `'F8.ACCEPT_TIER.CONTEXT_RESOLUTION_FAILED'`. This helper is called by 24
- * routes — every cycle-level action, the settings writes, the portal confirm
- * and three `admin/members/**` routes that are not renewals at all — so a
+ * routes — every cycle-level action, the settings writes, the list/detail
+ * reads, and three `admin/members/**` routes that are not renewals at all — so a
  * session-lookup failure anywhere in that surface paged SRE with an id naming
  * the tier-upgrade ACCEPT route. Same shape as the `actor_role` fabrication
  * class: a shared helper stamping one caller's identity onto every caller's

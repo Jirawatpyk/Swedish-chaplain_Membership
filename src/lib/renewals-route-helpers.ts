@@ -104,8 +104,13 @@ export type RenewalAdminAction = 'read' | 'write' | 'manager_exception';
  * A closed union rather than `` `F8.${string}` `` on purpose: this list IS the
  * taxonomy, so the runbook can point at it instead of carrying a hand-written
  * copy that rots. Adding a renewals route is a compile error until its name is
- * added here, and two routes cannot silently share a name — which is exactly
- * what went wrong when every caller logged `F8.ACCEPT_TIER.*`.
+ * added here.
+ *
+ * It does NOT stop two routes sharing a name — a union of literals is happy to
+ * see the same member twice, which is precisely how a copy-pasted route would
+ * restore the `F8.ACCEPT_TIER.*` defect. `pnpm check:f8-error-id` enforces
+ * uniqueness, and that every declared `ERROR_ID` is a member of this union;
+ * an earlier version of this docblock claimed the type system did both.
  *
  * A route uses its entry TWICE: the helper appends
  * `.CONTEXT_RESOLUTION_FAILED` for a failure before the route's try block, and
@@ -159,7 +164,9 @@ export type F8ErrorId =
  * three F8-contract behaviours layered on top: the F8 error ENVELOPE
  * (`{ error: { code }, correlationId }` + `X-Correlation-Id`, admin-renewals-api.md
  * § 1), the `f8_role_violation_blocked` audit on the 403 path, and the
- * `F8.ACCEPT_TIER.*` taxonomy log line on the 500 path. `key` is the surface's
+ * `<errorId>.CONTEXT_RESOLUTION_FAILED` taxonomy log line on the 500 path —
+ * `<errorId>` being the CALLER's entry, passed in; it was hardcoded to this
+ * one route's name until 2026-09-07. `key` is the surface's
  * permission (single leg since PR 5 removed the shim row this helper used to
  * derive from the action).
  *

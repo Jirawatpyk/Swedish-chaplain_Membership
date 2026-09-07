@@ -279,6 +279,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       if (!contactsResult.ok) {
         logger.error(
           {
+            // Not in a `catch`, so `check:f8-error-id` does not see it — but a
+            // member whose renewal link silently dies is the failure worth
+            // alerting on, which is the same reason the outer catch below has
+            // an id. Review finding: this route had four such lines.
+            errorId: `${ERROR_ID}.PRECONSUME_CONTACTS_FAILED`,
             correlationId,
             tenantId: tenant.slug,
             memberId: args.memberId,
@@ -318,6 +323,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       if (userBlocked) {
         logger.error(
           {
+            // Not in a `catch`, so `check:f8-error-id` does not see it — but a
+            // member whose renewal link silently dies is the failure worth
+            // alerting on, which is the same reason the outer catch below has
+            // an id. Review finding: this route had four such lines.
+            errorId: `${ERROR_ID}.PRECONSUME_USER_UNUSABLE`,
             correlationId,
             tenantId: tenant.slug,
             memberId: args.memberId,
@@ -367,6 +377,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       if (verifyResult.error.kind === 'invalid_input') {
         logger.error(
           {
+            // Not in a `catch`, so `check:f8-error-id` does not see it — but a
+            // member whose renewal link silently dies is the failure worth
+            // alerting on, which is the same reason the outer catch below has
+            // an id. Review finding: this route had four such lines.
+            errorId: `${ERROR_ID}.PRECONSUME_INPUT_SHAPE`,
             correlationId,
             tenantId: tenant.slug,
             message: verifyResult.error.message,
@@ -386,7 +401,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       // Defensive — should be unreachable. If it ever fires, the gate
       // contract has drifted and we want a loud signal.
       logger.error(
-        { correlationId, tenantId: tenant.slug, memberId },
+        {
+          // The same "two deploys disagree" class the exhaustiveness arms
+          // were raised for — worth its own suffix, not `.UNEXPECTED`.
+          errorId: `${ERROR_ID}.GATE_CONTRACT_DRIFT`,
+          correlationId,
+          tenantId: tenant.slug,
+          memberId,
+        },
         '[redeem-renewal-link] verify succeeded but preConsumeGate did not capture userId — gate contract drift',
       );
       return failureRedirect(request);

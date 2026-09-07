@@ -111,10 +111,15 @@ For F8 `accept-tier-upgrade`:
 
 ### The F8 errorId taxonomy
 
-**Every** F8 renewals route names itself. The names live in one place — the
-`F8ErrorId` union in `src/lib/renewals-route-helpers.ts` — and that union IS
-the taxonomy; read it there rather than trusting a list in this file, which
-is how the previous version of this section went stale.
+Every **admin + portal renewal route** names itself. The names live in one
+place — the `F8ErrorId` union in `src/lib/renewals-route-helpers.ts` — and that
+union IS the taxonomy; read it there rather than trusting a list in this file,
+which is how the previous version of this section went stale.
+
+**Read the scope sentence above literally.** It says *admin + portal renewal*,
+not *F8*. An earlier draft of this section said "`F8.*` is blind to nothing",
+which was false in a way that would have cost someone a night: see § Where the
+taxonomy does NOT reach, below.
 
 A route declares its entry once (`const ERROR_ID = 'F8.…'`) and uses it twice:
 
@@ -124,12 +129,33 @@ A route declares its entry once (`const ERROR_ID = 'F8.…'`) and uses it twice:
 | `.UNEXPECTED` | the route's own outer catch | the handler threw |
 | `.SERVER_ERROR`, `.ASSIGNEE_LOOKUP_FAILED`, `.KILL_SWITCH_AUDIT_EMIT_FAILED` | a named inner catch | see the route |
 
-So a rule keyed on `<entry>.*` matches every failure that route can produce,
-and **`F8.*` is blind to nothing** — enforced by `pnpm check:f8-error-id`
-(pre-push + `quality-gates.yml`), which fails on a route that declares no
-entry, a `logger.error` in a `catch` with no `errorId`, and a hardcoded `F8.`
-string literal. A claim backed by a failing gate cannot rot; that is why this
-section no longer counts anything.
+So a rule keyed on `<entry>.*` matches every failure **that route** can produce.
+`pnpm check:f8-error-id` (pre-push + `quality-gates.yml`) enforces it: it fails
+on a route in scope that declares no entry, an entry two routes share, an entry
+missing from the union, a `logger.error` in a `catch` with no `errorId`, a
+`catch` that answers 500 while logging nothing at all, a hardcoded `F8.` literal
+(either quote style), and an exhaustiveness arm that RETURNS instead of throwing.
+That last rule exists because the first version of this work stamped 24 routes
+with the promise above while ten of them still returned an unlogged 500 from
+that arm — the gate vouched for routes it had never looked inside.
+
+### Where the taxonomy does NOT reach
+
+The gate's scope is `admin/renewals/**` ∪ `portal/renewal/**` ∪ anything that
+composes `requireRenewalAdminContext`. **The renewals CRON fleet is outside it**
+and carries no `errorId` at all — which matters more than the admin routes,
+because nobody is watching at 03:00. Enumerate rather than trust this sentence:
+
+```
+# F8-adjacent routes the taxonomy does NOT cover
+for f in $(find src/app/api/cron/renewals src/app/api/portal/preferences/renewals \
+                -name route.ts); do
+  rg -q 'errorId' "$f" || echo "$f"
+done
+```
+
+For those, an `F8.*` rule matches nothing. Pair it with a route-path or
+message-text rule until they are migrated (tracked as follow-up, not done here).
 
 An `*.UNEXPECTED` line whose message reads `<entry>: unhandled error kind
 '<kind>'` is **not an outage** — it is a use-case error variant this build's
