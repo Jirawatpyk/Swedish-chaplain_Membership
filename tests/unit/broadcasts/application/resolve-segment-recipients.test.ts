@@ -1213,7 +1213,9 @@ describe('resolve-segment-recipients — 108 PR-C audience_resolved_total metric
       input({ segment: { kind: 'all_members' } }),
     );
     expect(spy).toHaveBeenCalledTimes(1);
-    expect(spy).toHaveBeenCalledWith('test-tenant', 'all_members', 'all_contacts');
+    // Review 2026-09-07 round 2 (observability MEDIUM) — labelled by phase,
+    // so a compose-count poll and a real dispatch are not one series.
+    expect(spy).toHaveBeenCalledWith('test-tenant', 'all_members', 'all_contacts', 'dispatch');
     spy.mockRestore();
   });
 

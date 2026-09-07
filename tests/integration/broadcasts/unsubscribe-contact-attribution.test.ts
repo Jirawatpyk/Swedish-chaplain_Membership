@@ -186,4 +186,55 @@ describe('108 PR-C T078 — unsubscribe attribution to member + contact (live Ne
     if (!resolved.ok) return;
     expect(resolved.value.recipients).toEqual([unsafeBrandEmailLower(primaryEmail)]);
   }, 60_000);
+
+  // Review 2026-09-07 round 2 (C10 — security MEDIUM-1 + errors LOW) — the
+  // two COALESCEs in the upsert were independent, so a row `(M1, C1)` that
+  // was later re-attributed to another member (contact lookup threw during
+  // a blip, the primary-contact fallback found M2) became `(M2, C1)`: a
+  // contact of M1 filed under M2. Erasing M1 (`WHERE member_id = M1`) then
+  // missed C1 — an identifying back-reference of an erased person that
+  // FR-056 could never reach. The pair moves together now. LAST in this
+  // file: it seeds a second member, which the resolve above must not see.
+  it('re-attribution to another member never keeps the previous member\'s contact_id (FR-056 reachability)', async () => {
+    const other = await seedPortalMemberWithContact(tenant, planId, {
+      contactEmail: `attr-o-${tag}@example.test`,
+    });
+    const repo = makeDrizzleMarketingUnsubscribesRepo(tenant.ctx.slug);
+    const email = unsafeBrandEmailLower(`attr-c10-${tag}@example.test`);
+    const base = {
+      tenantId: tenant.ctx.slug,
+      emailLower: email,
+      reason: 'recipient_initiated' as const,
+      reasonText: null,
+      sourceBroadcastId: null,
+    };
+    const read = async () =>
+      (
+        (await runInTenant(tenant.ctx, (tx) =>
+          tx.execute(sql`
+            SELECT member_id::text AS member_id, contact_id::text AS contact_id
+            FROM marketing_unsubscribes
+            WHERE tenant_id = ${tenant.ctx.slug} AND email_lower = ${email}
+          `),
+        )) as unknown as Array<{ member_id: string | null; contact_id: string | null }>
+      )[0];
+
+    await runInTenant(tenant.ctx, (tx) =>
+      repo.upsert(tx, { ...base, memberId, contactId: secondaryContactId, sourceTokenHash: 'a'.repeat(64) }),
+    );
+    expect(await read()).toEqual({ member_id: memberId, contact_id: secondaryContactId });
+
+    // A later event attributes the address to ANOTHER member and knows no
+    // contact: the old contact must not survive under the new member.
+    await runInTenant(tenant.ctx, (tx) =>
+      repo.upsert(tx, { ...base, memberId: other.memberId as string, contactId: null, sourceTokenHash: 'b'.repeat(64) }),
+    );
+    expect(await read()).toEqual({ member_id: other.memberId, contact_id: null });
+
+    // An event that knows neither id (a webhook bounce) still never blanks.
+    await runInTenant(tenant.ctx, (tx) =>
+      repo.upsert(tx, { ...base, memberId: null, contactId: null, sourceTokenHash: 'c'.repeat(64) }),
+    );
+    expect(await read()).toEqual({ member_id: other.memberId, contact_id: null });
+  }, 60_000);
 });

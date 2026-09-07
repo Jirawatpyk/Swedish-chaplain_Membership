@@ -46,6 +46,44 @@ function frozenClock() {
   return { now: () => new Date('2026-05-01T10:00:00Z') };
 }
 
+// Review 2026-09-07 round 2 (reliability M-2) — the two F3 attribution reads
+// ran INSIDE `withTx`, each opening its own `runInTenant` (a second pooled
+// connection) while the first was held; PR-C added a third sequential
+// acquisition. They are read-only and best-effort, so they run BEFORE the
+// transaction opens.
+describe('unsubscribeRecipient — attribution reads run before the transaction opens', () => {
+  it('lookupContactEmailInTenant and the primary fallback both precede withTx', async () => {
+    const deps = makeDeps();
+    const order: string[] = [];
+    (deps.broadcastsRepo.withTx as ReturnType<typeof vi.fn>).mockImplementation(async (fn: (tx: unknown) => unknown) => {
+      order.push('withTx');
+      return fn({ tx: 'fake' });
+    });
+    (deps.membersBridge.lookupContactEmailInTenant as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+      order.push('lookupContact');
+      return null;
+    });
+    (deps.membersBridge.lookupMemberPrimaryContactEmailInTenant as ReturnType<typeof vi.fn>).mockImplementation(
+      async () => {
+        order.push('lookupMember');
+        return { memberId: 'mem-1' };
+      },
+    );
+    const result = await unsubscribeRecipient(deps, {
+      tenantId: TENANT_SLUG,
+      broadcastId,
+      emailLower: recipient,
+      tokenPlaintext: 'v1.fake.fakemac',
+      requestId: 'req-order',
+      reasonText: null,
+    });
+    expect(result.ok).toBe(true);
+    expect(order.indexOf('lookupContact')).toBeGreaterThanOrEqual(0);
+    expect(order.indexOf('lookupContact')).toBeLessThan(order.indexOf('withTx'));
+    expect(order.indexOf('lookupMember')).toBeLessThan(order.indexOf('withTx'));
+  });
+});
+
 function makeDeps(
   overrides: Partial<UnsubscribeRecipientDeps> = {},
 ): UnsubscribeRecipientDeps {

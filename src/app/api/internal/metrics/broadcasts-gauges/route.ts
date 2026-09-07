@@ -37,6 +37,10 @@ export const dynamic = 'force-dynamic';
 
 const STUCK_SENDING_HOURS = 24;
 
+interface TenantRow extends Record<string, unknown> {
+  tenant_id: string;
+}
+
 interface PendingRow extends Record<string, unknown> {
   readonly tenant_id: string;
   readonly count: number;
@@ -65,6 +69,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
 
+  let tenants: TenantRow[];
   let pending: PendingRow[];
   let stuck: PendingRow[];
   let dispatchRatios: DispatchRatioRow[];
@@ -127,8 +132,19 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           AND scheduled_for < now() - interval '1 hour'
         GROUP BY tenant_id
       `);
-      return { pendingRows, stuckRows, dispatchRows, suppressionRows, approvedOverdueRows };
+      // Review 2026-09-07 round 2 (C9 — errors LOW + observability HIGH) —
+      // every tenant with broadcasts is observed, ZERO included. The three
+      // count gauges above emit no row for a tenant at zero, and
+      // `observeGauge` re-reports the last value at every scrape, so a gauge
+      // that once read 1 kept reading 1 after the incident was resolved —
+      // the "≥ 1 sustained 30 min" rule on `approved_overdue_count` was a
+      // latch, not a level. "0 means 0" (see `forgetAutoInvoiceGauges`).
+      const tenantRows = await tx.execute<TenantRow>(sql`
+        SELECT DISTINCT tenant_id FROM broadcasts
+      `);
+      return { tenantRows, pendingRows, stuckRows, dispatchRows, suppressionRows, approvedOverdueRows };
     });
+    tenants = Array.from(result.tenantRows ?? []);
     pending = Array.from(result.pendingRows);
     stuck = Array.from(result.stuckRows);
     dispatchRatios = Array.from(result.dispatchRows);
@@ -145,21 +161,34 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   let pendingTotal = 0;
   let stuckTotal = 0;
   let dispatchRatioMaxBps = 0; // basis points — 0..10000
-  for (const row of pending) {
-    broadcastsMetrics.queuePending(row.tenant_id, row.count);
-    pendingTotal += row.count;
+  // C9: zero-fill — a tenant absent from a GROUP BY is at 0, and 0 is
+  // observed, so a resolved incident clears the gauge on the next tick.
+  const pendingByTenant = new Map(pending.map((r) => [r.tenant_id, r.count]));
+  const stuckByTenant = new Map(stuck.map((r) => [r.tenant_id, r.count]));
+  const overdueByTenant = new Map(approvedOverdue.map((r) => [r.tenant_id, r.count]));
+  const observed = new Set<string>();
+  for (const t of [
+    ...tenants.map((r) => r.tenant_id),
+    ...pendingByTenant.keys(),
+    ...stuckByTenant.keys(),
+    ...overdueByTenant.keys(),
+  ]) {
+    observed.add(t);
   }
-  for (const row of stuck) {
-    broadcastsMetrics.stuckSendingCount(row.tenant_id, row.count);
-    stuckTotal += row.count;
+  let approvedOverdueTotal = 0;
+  for (const tenantId of observed) {
+    const p = pendingByTenant.get(tenantId) ?? 0;
+    const s = stuckByTenant.get(tenantId) ?? 0;
+    const o = overdueByTenant.get(tenantId) ?? 0;
+    broadcastsMetrics.queuePending(tenantId, p);
+    broadcastsMetrics.stuckSendingCount(tenantId, s);
+    broadcastsMetrics.approvedOverdueCount(tenantId, o);
+    pendingTotal += p;
+    stuckTotal += s;
+    approvedOverdueTotal += o;
   }
   for (const row of suppressionSizes) {
     broadcastsMetrics.suppressionListSize(row.tenant_id, row.count);
-  }
-  let approvedOverdueTotal = 0;
-  for (const row of approvedOverdue) {
-    broadcastsMetrics.approvedOverdueCount(row.tenant_id, row.count);
-    approvedOverdueTotal += row.count;
   }
   for (const row of dispatchRatios) {
     // dispatched > 0 enforced by HAVING clause — division safe.

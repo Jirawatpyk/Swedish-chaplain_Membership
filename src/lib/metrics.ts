@@ -2307,13 +2307,13 @@ export const broadcastsMetrics = {
    * histogram. Review 2026-09-07: the docblock used to say
    * `.duration_ms`, a name that resolves to nothing.
    */
-  recipientCountMs(tenantId: string, ms: number): void {
+  recipientCountMs(tenantId: string, ms: number, outcome: 'ok' | 'unavailable'): void {
     safeMetric(() => {
       histogram(
         'broadcasts_recipient_count_ms',
-        'Recipient-count endpoint duration (FR-043: p95 < 3 s at 20,000 contacts)',
+        'Recipient-count endpoint duration (FR-043: p95 < 400 ms at 5,000 / < 3 s at 20,000 contacts)',
         'ms',
-      ).record(ms, { tenant: tenantId });
+      ).record(ms, { tenant: tenantId, outcome });
     });
   },
 
@@ -2329,12 +2329,13 @@ export const broadcastsMetrics = {
     tenantId: string,
     segment: 'all_members' | 'tier',
     mode: 'primary_only' | 'all_contacts',
+    phase: 'submit' | 'dispatch',
   ): void {
     safeMetric(() => {
       counter(
         'broadcasts_audience_resolved_total',
-        'Member-based audiences resolved, by segment kind and audience leg',
-      ).add(1, { tenant: tenantId, segment, mode });
+        'Member-based audiences resolved, by segment kind, audience leg and phase',
+      ).add(1, { tenant: tenantId, segment, mode, phase });
     });
   },
 

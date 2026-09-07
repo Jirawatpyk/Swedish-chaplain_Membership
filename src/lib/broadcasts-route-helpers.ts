@@ -169,9 +169,12 @@ const F7_ERROR_MESSAGES: Record<F7RouteErrorCode, BilingualMessage> = {
     message: 'No eligible recipients found for this segment.',
     messageThai: 'ไม่พบผู้รับที่ตรงกับเงื่อนไขที่เลือก',
   },
+  // Review 2026-09-07 round 2 (C11, FR-042): the ceiling has ONE definition
+  // — `details.cap` on this same body carries it; the copy no longer states
+  // a number that becomes a lie the day the flag flips.
   broadcast_audience_too_large: {
-    message: 'Audience exceeds the 5,000 recipient limit.',
-    messageThai: 'จำนวนผู้รับเกินขีดจำกัด 5,000 ราย',
+    message: 'Audience exceeds the recipient limit.',
+    messageThai: 'จำนวนผู้รับเกินขีดจำกัด',
   },
   broadcast_immutable_after_submit: {
     message: 'This broadcast has been submitted and can no longer be edited.',

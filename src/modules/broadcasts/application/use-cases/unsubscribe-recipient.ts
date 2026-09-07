@@ -27,6 +27,7 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import { sha256Hex } from '@/lib/crypto';
+import { errKind } from '@/lib/log-id';
 import { logger } from '@/lib/logger';
 import { broadcastsMetrics } from '@/lib/metrics';
 import type { TenantContext, TenantSlug } from '@/modules/tenants';
@@ -122,6 +123,46 @@ export async function unsubscribeRecipient(
 
   const tokenHash = sha256Hex(input.tokenPlaintext);
 
+  // Best-effort attribution (108 PR-C, FR-024 / US3 s7): the address is
+  // looked up against EVERY live contact in the tenant graph first, so a
+  // secondary contact's unsubscribe is recorded against the member AND the
+  // specific contact. The primary-contact lookup stays as the legacy
+  // fallback for an address that is a member's primary but has no contact
+  // row. Neither lookup may block the suppression: an outage here leaves
+  // both ids null and the row + audits are still written (GDPR Art. 21).
+  //
+  // Review 2026-09-07 round 2 (reliability M-2): both reads run BEFORE the
+  // transaction opens. Each one is its own `runInTenant` (a second pooled
+  // connection); holding the suppression tx while acquiring it was the
+  // nested-connection shape F4 and F8 already paid for once.
+  let memberId: string | null = null;
+  let contactId: string | null = null;
+  try {
+    const c = await deps.membersBridge.lookupContactEmailInTenant(
+      deps.tenant,
+      input.emailLower,
+    );
+    if (c !== null) {
+      memberId = c.memberId;
+      contactId = c.contactId;
+    }
+  } catch (cause) {
+    logger.warn({ err: errKind(cause) }, 'unsubscribe_contact_lookup_failed');
+    // Fall through to the legacy lookup.
+  }
+  if (memberId === null) {
+    try {
+      const m = await deps.membersBridge.lookupMemberPrimaryContactEmailInTenant(
+        deps.tenant,
+        input.emailLower,
+      );
+      if (m !== null) memberId = m.memberId;
+    } catch (cause) {
+      logger.warn({ err: errKind(cause) }, 'unsubscribe_member_lookup_failed');
+      // Continue with memberId=null.
+    }
+  }
+
   return deps.broadcastsRepo.withTx(async (tx) => {
     // Best-effort: confirm the broadcast exists in this tenant. We do
     // NOT fail the unsubscribe if the broadcast was hard-deleted (e.g.
@@ -138,51 +179,10 @@ export async function unsubscribeRecipient(
       if (broadcast !== null) sourceBroadcastId = broadcast.broadcastId;
     } catch (cause) {
       logger.warn(
-        { broadcastId: input.broadcastId, err: (cause as Error).message },
+        { broadcastId: input.broadcastId, err: errKind(cause) },
         'unsubscribe_broadcast_lookup_failed',
       );
       // Continue — the suppression upsert + audit MUST still happen.
-    }
-
-    // Best-effort attribution (108 PR-C, FR-024 / US3 s7): the address is
-    // looked up against EVERY live contact in the tenant graph first, so a
-    // secondary contact's unsubscribe is recorded against the member AND the
-    // specific contact. The primary-contact lookup stays as the legacy
-    // fallback for an address that is a member's primary but has no contact
-    // row. Neither lookup may block the suppression: an outage here leaves
-    // both ids null and the row + audits are still written (GDPR Art. 21).
-    let memberId: string | null = null;
-    let contactId: string | null = null;
-    try {
-      const c = await deps.membersBridge.lookupContactEmailInTenant(
-        deps.tenant,
-        input.emailLower,
-      );
-      if (c !== null) {
-        memberId = c.memberId;
-        contactId = c.contactId;
-      }
-    } catch (cause) {
-      logger.warn(
-        { err: (cause as Error).message },
-        'unsubscribe_contact_lookup_failed',
-      );
-      // Fall through to the legacy lookup.
-    }
-    if (memberId === null) {
-      try {
-        const m = await deps.membersBridge.lookupMemberPrimaryContactEmailInTenant(
-          deps.tenant,
-          input.emailLower,
-        );
-        if (m !== null) memberId = m.memberId;
-      } catch (cause) {
-        logger.warn(
-          { err: (cause as Error).message },
-          'unsubscribe_member_lookup_failed',
-        );
-        // Continue with memberId=null.
-      }
     }
 
     let upsertResult: UpsertSuppressionResult;

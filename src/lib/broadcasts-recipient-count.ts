@@ -108,11 +108,17 @@ export async function countRecipients(
 ): Promise<RecipientCountOutcome> {
   // 108 PR-C T090 (SLO-F7-013) — observed on every outcome, including the
   // failures: a count that times out is exactly the sample the p95 needs.
+  // Review 2026-09-07 round 2 (observability MEDIUM): the outcome is a label
+  // — a fast-failing count records ~20 ms samples, so without it the p95
+  // read healthy while every count answered 503.
   const startedAt = Date.now();
+  let outcome: 'ok' | 'unavailable' = 'unavailable';
   try {
-    return await countRecipientsInner(deps, input);
+    const result = await countRecipientsInner(deps, input);
+    outcome = result.status;
+    return result;
   } finally {
-    broadcastsMetrics.recipientCountMs(deps.tenant.slug, Date.now() - startedAt);
+    broadcastsMetrics.recipientCountMs(deps.tenant.slug, Date.now() - startedAt, outcome);
   }
 }
 

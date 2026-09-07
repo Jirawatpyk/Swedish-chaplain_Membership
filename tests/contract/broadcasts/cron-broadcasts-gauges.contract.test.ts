@@ -167,8 +167,39 @@ describe('GET /api/internal/metrics/broadcasts-gauges — wire contract', () => 
     expect((body as unknown as { approvedOverdueTotal: number }).approvedOverdueTotal).toBe(1);
   });
 
+  // Review 2026-09-07 round 2 (C9 — errors LOW + observability HIGH) — a
+  // count gauge LATCHED: the GROUP BY emits no row for a tenant at zero and
+  // `observeGauge` never forgets, so once `approved_overdue_count` read 1 it
+  // kept reading 1 after the incident was resolved, until the lambda
+  // recycled — and the new "≥ 1 sustained 30 min" rule became a latch, not a
+  // level. Every tenant the tick scanned is observed, 0 included ("0 means 0").
+  it('a tenant with broadcasts but no overdue / pending / stuck rows is observed at 0, not left at its last value', async () => {
+    dbTransactionMock.mockImplementationOnce(async () => ({
+      tenantRows: [{ tenant_id: 't1' }, { tenant_id: 't2' }],
+      pendingRows: [{ tenant_id: 't2', count: 3 }],
+      stuckRows: [],
+      dispatchRows: [],
+      suppressionRows: [],
+      approvedOverdueRows: [],
+    }));
+
+    const { GET } = await import(
+      '@/app/api/internal/metrics/broadcasts-gauges/route'
+    );
+    const res = await GET(makeRequest('Bearer test-cron-secret'));
+    expect(res.status).toBe(200);
+
+    expect(approvedOverdueCountSpy).toHaveBeenCalledWith('t1', 0);
+    expect(approvedOverdueCountSpy).toHaveBeenCalledWith('t2', 0);
+    expect(stuckSendingCountSpy).toHaveBeenCalledWith('t1', 0);
+    expect(stuckSendingCountSpy).toHaveBeenCalledWith('t2', 0);
+    expect(queuePendingSpy).toHaveBeenCalledWith('t1', 0);
+    expect(queuePendingSpy).toHaveBeenCalledWith('t2', 3);
+  });
+
   it('valid bearer + zero traffic → 200 + zero summary, no metrics emitted', async () => {
     dbTransactionMock.mockImplementationOnce(async () => ({
+      tenantRows: [],
       pendingRows: [],
       stuckRows: [],
       dispatchRows: [],

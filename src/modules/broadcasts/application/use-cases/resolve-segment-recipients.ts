@@ -301,7 +301,7 @@ export async function resolveSegmentRecipients(
     candidates = sourced;
     // 108 PR-C T090 — one increment per member-based resolve, labelled by the
     // leg in force so the flag flip shows on the dashboard.
-    broadcastsMetrics.audienceResolvedTotal(deps.tenant.slug, segment.kind, deps.audienceMode);
+    broadcastsMetrics.audienceResolvedTotal(deps.tenant.slug, segment.kind, deps.audienceMode, input.phase);
   } else if (segment.kind === 'event_attendees_last_90d') {
     const attendees = await deps.eventAttendees.getLastNinetyDayAttendees(
       deps.tenant,

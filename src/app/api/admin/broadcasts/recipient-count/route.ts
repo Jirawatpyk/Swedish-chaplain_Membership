@@ -89,8 +89,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       payload: { attempted_member_id: memberId, actor_tenant_id: tenant.slug, surface: 'recipient_count' },
     });
     if (!probe.ok) {
+      // Round 2 (observability MEDIUM): the CLASS only — a DrizzleQueryError
+      // `cause` carries query text + params and redaction is exact-key.
       logger.error(
-        { tenantId: tenant.slug, correlationId, err: probe.error },
+        { tenantId: tenant.slug, correlationId, err: probe.error.code },
         'broadcasts.recipient_count.probe_audit_failed',
       );
     }

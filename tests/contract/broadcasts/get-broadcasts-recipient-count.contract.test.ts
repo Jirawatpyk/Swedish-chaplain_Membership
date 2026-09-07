@@ -43,6 +43,7 @@ vi.mock('@/lib/tenant-context', () => ({
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
+import { logger } from '@/lib/logger';
 vi.mock('@/modules/broadcasts', () => ({
   resolveSegmentRecipients: (...args: unknown[]) => resolveSegmentRecipientsMock(...args),
   makeResolveSegmentDeps: () => ({ tenant: { slug: 'test-tenant' }, audienceCeiling: 5000 }),
@@ -245,6 +246,27 @@ describe('GET /api/admin/broadcasts/recipient-count (admin proxy) — 108 PR-C T
     expect(event.type).toBe('member_cross_tenant_probe');
     expect(event.actorUserId).toBe('user-admin-1');
     expect(event.payload).toMatchObject({ attempted_member_id: '22222222-2222-4222-8222-222222222222' });
+  });
+
+  // Review 2026-09-07 round 2 (observability MEDIUM) — `err: probe.error`
+  // logged the whole RepoError; a DrizzleQueryError `cause` carries the
+  // query text + params, and redaction is exact-key. Line 79 of the same
+  // route already logs the code only.
+  it('the probe audit failing is logged with the error CLASS only — never the raw RepoError', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
+    findByIdMock.mockResolvedValueOnce(err({ code: 'repo.not_found' }));
+    auditRecordMock.mockResolvedValueOnce(
+      err({ code: 'repo.unexpected', cause: new Error('boom: SELECT * FROM audit_log') }) as never,
+    );
+    const { GET } = await importAdminRoute();
+    const res = await GET(adminRequest('?member_id=22222222-2222-4222-8222-222222222222&segment=all_members'));
+    expect(res.status).toBe(404);
+    const call = vi
+      .mocked(logger.error)
+      .mock.calls.find(([, msg]: unknown[]) => msg === 'broadcasts.recipient_count.probe_audit_failed');
+    expect(call).toBeDefined();
+    expect(call?.[0]).toMatchObject({ err: 'repo.unexpected' });
+    expect(JSON.stringify(call?.[0])).not.toContain('SELECT');
   });
 
   it('503 count_unavailable when the member lookup FAILS (repo.unexpected) — no probe audit, no resolve (review H-1)', async () => {

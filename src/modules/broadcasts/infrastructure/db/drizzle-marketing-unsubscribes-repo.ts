@@ -97,7 +97,18 @@ async function executeSuppressionUpsert(
               -- knows it and never blanked by one that does not (a webhook
               -- bounce carries neither id).
               member_id = COALESCE(EXCLUDED.member_id, marketing_unsubscribes.member_id),
-              contact_id = COALESCE(EXCLUDED.contact_id, marketing_unsubscribes.contact_id),
+              -- Review 2026-09-07 round 2 (C10 — security MEDIUM-1): the pair
+              -- moves TOGETHER. When the event re-attributes the address to a
+              -- DIFFERENT member, the old contact_id is dropped (it belonged
+              -- to the previous member; keeping it filed a contact of M1
+              -- under M2, out of reach of M1's erasure — FR-056). Otherwise
+              -- the same fill-never-blank rule as member_id.
+              contact_id = CASE
+                WHEN EXCLUDED.member_id IS NOT NULL
+                 AND EXCLUDED.member_id IS DISTINCT FROM marketing_unsubscribes.member_id
+                THEN EXCLUDED.contact_id
+                ELSE COALESCE(EXCLUDED.contact_id, marketing_unsubscribes.contact_id)
+              END,
               reason = CASE
                 WHEN ${newRank()} >= ${oldRank()}
                 THEN EXCLUDED.reason

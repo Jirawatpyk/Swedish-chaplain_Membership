@@ -36,19 +36,24 @@ describe('countRecipients records the recipient-count histogram (108 PR-C T090)'
     const r = await countRecipients(deps, input);
     expect(r).toEqual({ status: 'ok', body: { count: 3, ceiling: 5000, exceeds: false, orphans: 0, droppedByPreference: 0 } });
     expect(spy).toHaveBeenCalledTimes(1);
-    expect(spy).toHaveBeenCalledWith('test-tenant', expect.any(Number));
+    // Review 2026-09-07 round 2 (observability MEDIUM) — the OUTCOME is a
+    // label: a fast-failing count records ~20 ms samples, so without it
+    // SLO-F7-013 read healthy while 100 % of counts answered 503.
+    expect(spy).toHaveBeenCalledWith('test-tenant', expect.any(Number), 'ok');
   });
 
-  it('a typed server error → unavailable, still observed', async () => {
+  it('a typed server error → unavailable, still observed — as unavailable', async () => {
     resolveMock.mockResolvedValueOnce(err({ kind: 'resolve.server_error', message: 'x' }));
     expect(await countRecipients(deps, input)).toEqual({ status: 'unavailable' });
     expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenCalledWith('test-tenant', expect.any(Number), 'unavailable');
   });
 
-  it('a throw → unavailable, still observed', async () => {
+  it('a throw → unavailable, still observed — as unavailable', async () => {
     resolveMock.mockRejectedValueOnce(new Error('contacts lookup down'));
     expect(await countRecipients(deps, input)).toEqual({ status: 'unavailable' });
     expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenCalledWith('test-tenant', expect.any(Number), 'unavailable');
   });
 });
 

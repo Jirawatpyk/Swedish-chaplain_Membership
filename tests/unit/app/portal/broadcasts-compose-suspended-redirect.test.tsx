@@ -151,20 +151,25 @@ describe('/portal/broadcasts/new — membership-access + quota redirect (059-mem
   });
 
   // Review 2026-09-07 — surfaced by T084: an UNLINKED e2e persona reached the
-  // compose form because the lookup failure skipped the access gate.
+  // compose form because the lookup failure skipped the access gate. Round 2
+  // (C13) split the two situations: a genuine miss redirects and the
+  // destination is told why; a FAILED read throws to error.tsx (the round-1
+  // version redirected both, and the benefits page then threw on the same
+  // failed read). Either way the gate stays closed: no access read, no quota.
   it('redirects when the member lookup MISSES (no linked member) — the form is never rendered', async () => {
     findByLinkedUserId.mockResolvedValue({ ok: false, error: { code: 'repo.not_found' } });
-    await expect(renderPage()).rejects.toThrow('NEXT_REDIRECT:/portal/benefits?tab=broadcasts');
-    expect(redirect).toHaveBeenCalledWith('/portal/benefits?tab=broadcasts');
+    await expect(renderPage()).rejects.toThrow('NEXT_REDIRECT:/portal/benefits?tab=broadcasts&unavailable=no_member');
+    expect(redirect).toHaveBeenCalledWith('/portal/benefits?tab=broadcasts&unavailable=no_member');
     expect(loadMembershipAccess).not.toHaveBeenCalled();
     expect(computeQuotaCounter).not.toHaveBeenCalled();
   });
 
-  it('redirects when the member lookup FAILS (repo.unexpected / throw) — a failed gate is closed, not open', async () => {
+  it('THROWS when the member lookup FAILS (repo.unexpected / throw) — a failed gate is closed, and it is an error, not an eligibility outcome', async () => {
     findByLinkedUserId.mockResolvedValue({ ok: false, error: { code: 'repo.unexpected', cause: new Error('neon') } });
-    await expect(renderPage()).rejects.toThrow('NEXT_REDIRECT:/portal/benefits?tab=broadcasts');
+    await expect(renderPage()).rejects.toThrow(/member_lookup_failed: repo\.unexpected/);
     findByLinkedUserId.mockRejectedValue(new Error('neon: connection reset'));
-    await expect(renderPage()).rejects.toThrow('NEXT_REDIRECT:/portal/benefits?tab=broadcasts');
+    await expect(renderPage()).rejects.toThrow(/neon: connection reset/);
+    expect(redirect).not.toHaveBeenCalled();
     expect(loadMembershipAccess).not.toHaveBeenCalled();
   });
 
