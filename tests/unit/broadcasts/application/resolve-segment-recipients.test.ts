@@ -16,6 +16,7 @@ import { broadcastsMetrics } from '@/lib/metrics';
 import {
   isMissingAddressOrphan,
   resolveSegmentRecipients,
+  type OrphanReason,
   type ResolveSegmentInput,
 } from '@/modules/broadcasts';
 import { unsafeBrandEmailLower } from '@/modules/broadcasts/domain/value-objects/email-lower';
@@ -1340,6 +1341,19 @@ describe('resolve-segment-recipients — orphan reasons + the SQL-excluded opt-o
       expect(isMissingAddressOrphan('no_primary_email')).toBe(true);
       expect(isMissingAddressOrphan('no_eligible_contact')).toBe(true);
       expect(isMissingAddressOrphan('all_opted_out')).toBe(false);
+    });
+
+    // The `tsc` guarantee covers everything this repo compiles; it does NOT
+    // cover a reason string that reaches an older deploy from a newer writer.
+    // The default arm used to `return _exhaustive` — the reason STRING, which
+    // is truthy — so an unknown reason was audited as a missing primary
+    // contact email: a permanent row asserting a fact nobody established.
+    // Fail closed instead. (CI 2026-09-07 surfaced the arm as the one line
+    // this file's 100 % pin had never executed.)
+    it('an unrecognised reason asserts nothing — it is not a missing-address fact', () => {
+      expect(isMissingAddressOrphan('reason_from_a_newer_deploy' as unknown as OrphanReason)).toBe(
+        false,
+      );
     });
   });
 

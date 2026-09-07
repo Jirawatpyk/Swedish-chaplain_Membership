@@ -176,8 +176,16 @@ export function isMissingAddressOrphan(reason: OrphanReason): boolean {
     case 'all_opted_out':
       return false;
     default: {
+      // The compile-time half: a fourth reason fails `tsc` on this line.
       const _exhaustive: never = reason;
-      return _exhaustive;
+      // The RUNTIME half, added when the 100 % pin caught this arm uncovered
+      // (CI 2026-09-07). `return _exhaustive` returns the reason STRING, which
+      // is truthy — so an unrecognised reason arriving from a newer writer
+      // would have been audited as `broadcast_member_missing_primary_contact_email`:
+      // fail-OPEN, and the exact append-only row this predicate exists to
+      // withhold. An unknown reason asserts nothing.
+      void _exhaustive;
+      return false;
     }
   }
 }
