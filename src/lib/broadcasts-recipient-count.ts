@@ -178,6 +178,17 @@ async function countRecipientsInner(
         };
       case 'resolve.server_error':
         logger.error(
+          // Staff review 🟢-9 asked whether this should be `errKind()` like
+          // the catch arm below. It must NOT be: `errKind` answers an Error's
+          // constructor name and returns 'unknown' for a string, which would
+          // throw away the one thing this line is for — WHICH bridge read
+          // failed. The message is safe by construction, and the guarantee
+          // lives at the source, not here: `resolve.server_error` has ONE
+          // construction site (`resolve-segment-recipients.ts`, its `try`
+          // wrapping only the bridge reads), and every bridge throw is a
+          // fixed-format `members-bridge.<method>: <error code>` string —
+          // never a row value, never an address. If a bridge ever throws a
+          // message built from data, fix it THERE.
           { tenantId: deps.tenant.slug, correlationId: input.correlationId, err: result.error.message },
           'broadcasts.recipient_count.resolve_failed',
         );

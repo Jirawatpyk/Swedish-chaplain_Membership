@@ -352,6 +352,91 @@ test.describe('Broadcast compose + submit (T052 — US1 AS1)', () => {
     await expect(countLine(page, READY_OR_EXCEEDS)).toBeVisible({ timeout: 10_000 });
   });
 
+  // Staff review 🟡-8 (FR-050a) — the requirement's stated acceptance is a
+  // 320-px reflow assertion on PR-D's audience page; PR-C put new labels on
+  // the COMPOSE surface and its e2e was EN-only. The only accommodation is
+  // `recipient-count.tsx`'s `min-h-10` "for two lines of TH / SV" — a guess
+  // with nothing to catch it if it is wrong. SV is the long one here
+  // (`recipientCount.unavailable` 104 chars vs EN 97). Same pattern as
+  // `admin-marketing-audience.spec.ts` case 6.
+  test('T084 + FR-050a: at 320 px the compose page never scrolls horizontally, in EN, TH and SV', async ({
+    page,
+    context,
+  }) => {
+    test.setTimeout(120_000);
+    await page.setViewportSize({ width: 320, height: 800 });
+    // Sign in ONCE. `openCompose` signs in on every call, which is fine for
+    // the single-visit cases above but times out on the second pass here:
+    // the session already exists, `/portal/sign-in` redirects away, and
+    // `input#email` never appears.
+    await openCompose(page);
+    for (const locale of ['en', 'th', 'sv'] as const) {
+      await context.addCookies([
+        { name: 'NEXT_LOCALE', value: locale, url: 'http://localhost:3100' },
+      ]);
+      await page.goto('/portal/broadcasts/new');
+      // Anchor on the ID, not on an accessible NAME: `getByRole('textbox',
+      // { name: /subject/i })` is an English string and finds nothing once
+      // the locale flips — which is what this test exists to exercise.
+      await expect(page.locator('#broadcast-subject')).toBeVisible({ timeout: 15_000 });
+      // Wait for the count to SETTLE — the line at its widest (a measured
+      // number plus its icon), not the shorter "counting…" state. Polling for
+      // a DIGIT is what makes that locale-independent: every settled variant
+      // interpolates a number, the loading string in no locale does. Polling
+      // for merely non-empty text was the first version of this test, and it
+      // measured the loading line — which is why it survived the mutation
+      // below.
+      await expect
+        .poll(
+          async () =>
+            page.evaluate(() =>
+              /\d/.test(
+                document.querySelector('[role="status"][aria-live="polite"]')?.textContent ?? '',
+              ),
+            ),
+          { timeout: 15_000 },
+        )
+        .toBe(true);
+
+      // MUTATION-PROVEN. An 84-character unbreakable token dropped into the
+      // TH `recipientCount.ready` string yields, at 320 px:
+      //   documentElement.scrollWidth 305 < clientWidth 320   ← page does NOT scroll
+      //   the count region              847 > 209             ← the text overflows
+      // An ancestor clips the overflow, so the page-level check FR-050a is
+      // usually written with cannot see this at all. Both assertions stay:
+      // the page-level one for the requirement's literal wording, and the
+      // element-level one because it is the half that actually fails.
+      const overflow = await page.evaluate(() => {
+        const vw = document.documentElement.clientWidth;
+        const offenders: string[] = [];
+        document.querySelectorAll('body *').forEach((el) => {
+          if (el.getBoundingClientRect().right > vw + 1) {
+            offenders.push(`${el.tagName}: ${(el.textContent ?? '').slice(0, 40)}`);
+          }
+        });
+        const region = document.querySelector('[role="status"][aria-live="polite"]');
+        return {
+          pageScrolls: document.documentElement.scrollWidth > vw,
+          offenders,
+          regionOverflows: region !== null && region.scrollWidth > region.clientWidth,
+          regionText: (region?.textContent ?? '').slice(0, 60),
+        };
+      });
+      expect(overflow.pageScrolls, `[${locale}] the compose page must never scroll horizontally`).toBe(false);
+      expect(
+        overflow.offenders,
+        `[${locale}] these elements extend past the 320 px viewport`,
+      ).toEqual([]);
+      expect(
+        overflow.regionOverflows,
+        `[${locale}] the recipient-count line overflows its own box: "${overflow.regionText}"`,
+      ).toBe(false);
+    }
+    await context.addCookies([
+      { name: 'NEXT_LOCALE', value: 'en', url: 'http://localhost:3100' },
+    ]);
+  });
+
   // Round 2 (UX H-3): every segment kind says which way the self-exclusion
   // rule goes — the custom list says the sender IS included.
   test('T084: the self-exclusion hint follows the segment — excluded on member-based, included on a custom list', async ({
