@@ -145,7 +145,14 @@ describe.runIf(process.env.RUN_SCALE_TESTS === '1')(
       });
       expect(r.ok).toBe(false);
       if (r.ok) return;
-      expect(r.error).toEqual({ kind: 'broadcast_audience_too_large', count: N, cap: 5_000 });
+      // Round 2 (C8): the refusal carries the measured numbers too.
+      expect(r.error).toEqual({
+        kind: 'broadcast_audience_too_large',
+        count: N,
+        cap: 5_000,
+        droppedByPreference: 0,
+        orphans: [],
+      });
     }, 120_000);
 
     it('the compose-time count equals the dispatch-time set (SC-004)', async () => {

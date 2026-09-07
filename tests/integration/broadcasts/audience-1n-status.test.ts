@@ -302,6 +302,13 @@ describe('108 PR-C T068 — 1:N audience by member status, both legs (live Neon,
     const r = await resolveSegmentRecipients(deps(tenantB, 'primary_only'), input());
     expect(r.ok).toBe(false);
     if (r.ok) return;
-    expect(r.error).toEqual({ kind: 'broadcast_audience_too_large', count: 5001, cap: 5000 });
+    // Round 2 (C8): the refusal carries the measured numbers too.
+    expect(r.error).toEqual({
+      kind: 'broadcast_audience_too_large',
+      count: 5001,
+      cap: 5000,
+      droppedByPreference: 0,
+      orphans: [],
+    });
   }, 120_000);
 });
