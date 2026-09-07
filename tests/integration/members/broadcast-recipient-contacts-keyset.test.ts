@@ -28,7 +28,10 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { runInTenant } from '@/lib/db';
 import { countBroadcastOptedOutContacts, drizzleMemberRepo, getBroadcastRecipientContacts } from '@/modules/members';
-import type { F7ContactRecipient } from '@/modules/members/application/ports/member-repo';
+import type {
+  BroadcastRecipientCursor,
+  F7ContactRecipient,
+} from '@/modules/members/application/ports/member-repo';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
@@ -279,7 +282,7 @@ describe('108 PR-C T071 — broadcast recipient contacts, keyset (live Neon)', (
 
   it('keyset: pages of 3 walked to exhaustion equal the single page — a page boundary that falls ON an orphan row resumes correctly', async () => {
     const seen: Array<readonly [string, string | null]> = [];
-    let after: { memberId: string; contactId: string | null } | null = null;
+    let after: BroadcastRecipientCursor | null = null;
     let pages = 0;
     for (;;) {
       const rows = await page(tenantA, { segmentType: 'all_members', after, limit: 3 });
@@ -288,7 +291,10 @@ describe('108 PR-C T071 — broadcast recipient contacts, keyset (live Neon)', (
       expect(rows.length).toBeLessThanOrEqual(3);
       seen.push(...rows.map(key));
       const last = rows[rows.length - 1]!;
-      after = { memberId: last.memberId as string, contactId: last.contactId };
+      after =
+        last.contactId === null
+          ? { kind: 'after_member', memberId: last.memberId as string }
+          : { kind: 'after_contact', memberId: last.memberId as string, contactId: last.contactId };
       if (pages > 10) throw new Error('keyset did not terminate');
     }
     // Page 1 ends on the orphan m02 (contact null); page 2 starts at m03.
@@ -299,7 +305,7 @@ describe('108 PR-C T071 — broadcast recipient contacts, keyset (live Neon)', (
   it('keyset: a cursor INSIDE a member resumes at that member\'s next contact', async () => {
     const rows = await page(tenantA, {
       segmentType: 'all_members',
-      after: { memberId: mid(1), contactId: cid(0x11) },
+      after: { kind: 'after_contact', memberId: mid(1), contactId: cid(0x11) },
       limit: 1000,
     });
     expect(rows.map(key)).toEqual(expectedAll.slice(1));
@@ -355,6 +361,24 @@ describe('108 PR-C T071 — broadcast recipient contacts, keyset (live Neon)', (
       { segmentType: 'all_members' },
     );
     expect(b).toEqual({ ok: true, value: 1 });
+  });
+
+
+  // Review 2026-09-07 (types MEDIUM) — a tier segment with no codes must
+  // never quietly read every member: the repo refuses (repo.unexpected), the
+  // bridge throws, the resolver answers resolve.server_error.
+  it('tier with NO codes is refused by both reads — never "everyone"', async () => {
+    const pageRead = await getBroadcastRecipientContacts(
+      { tenant: tenantA.ctx, memberRepo: drizzleMemberRepo },
+      { segmentType: 'tier', tierCodes: [], after: null, limit: 1000 },
+    );
+    expect(pageRead.ok).toBe(false);
+    if (!pageRead.ok) expect(pageRead.error.code).toBe('repo.unexpected');
+    const count = await countBroadcastOptedOutContacts(
+      { tenant: tenantA.ctx, memberRepo: drizzleMemberRepo },
+      { segmentType: 'tier', tierCodes: [] },
+    );
+    expect(count.ok).toBe(false);
   });
 
 });

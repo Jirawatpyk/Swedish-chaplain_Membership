@@ -101,7 +101,7 @@ describe('membersBridge.getContactsBySegment (108 PR-C T075)', () => {
     const last = page1[page1.length - 1]!;
     expect(callInput(1)).toEqual({
       segmentType: 'all_members',
-      after: { memberId: last.memberId, contactId: last.contactId },
+      after: { kind: 'after_contact', memberId: last.memberId, contactId: last.contactId },
       limit: 5000,
     });
   });
@@ -130,7 +130,7 @@ describe('membersBridge.getContactsBySegment (108 PR-C T075)', () => {
 
     const rows = await membersBridge.getContactsBySegment(tenant, 'all_members', {});
 
-    expect(callInput(1).after).toEqual({ memberId: 'o-orphan', contactId: null });
+    expect(callInput(1).after).toEqual({ kind: 'after_member', memberId: 'o-orphan' });
     const orphan = rows.find((r) => r.memberId === 'o-orphan');
     expect(orphan).toEqual({ memberId: 'o-orphan', contactId: null, emailLower: null, hasOptedOutContact: false });
     expect(rows).toHaveLength(5001);

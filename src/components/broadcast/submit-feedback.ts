@@ -77,7 +77,13 @@ export function estimateNoteKey(
   if (segmentKind === 'tier') {
     return audienceMode === 'all_contacts' ? 'estimateNote.tierAllContacts' : 'estimateNote.tier';
   }
-  return 'estimateNote.custom';
+  if (segmentKind === 'custom' || segmentKind === 'event_attendees_last_90d') {
+    return 'estimateNote.custom';
+  }
+  // Review 2026-09-07 — a fifth segment kind must choose its copy here, not
+  // inherit the custom-list wording by falling through.
+  const _exhaustive: never = segmentKind;
+  return _exhaustive;
 }
 
 /**

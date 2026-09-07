@@ -490,12 +490,6 @@ export const marketingUnsubscribes = pgTable(
       .on(table.tenantId, table.memberId)
       .where(sql`member_id IS NOT NULL`),
 
-    // 108 PR-C (0297) — contact-side lookup + the erasure cascade's
-    // "rows referencing these contacts". Partial: most rows have none.
-    index('marketing_unsubscribes_contact_lookup_idx')
-      .on(table.tenantId, table.contactId)
-      .where(sql`contact_id IS NOT NULL`),
-
     // Time-series query for ops dashboard
     index('marketing_unsubscribes_unsubscribed_at_idx').on(
       table.tenantId,

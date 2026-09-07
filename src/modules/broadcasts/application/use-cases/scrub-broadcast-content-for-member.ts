@@ -128,7 +128,9 @@ export interface ScrubBroadcastContentForMemberDeps {
    * 108 PR-C T104 — `severMemberRefs` runs inside the content-scrub tx so
    * the redaction and the back-reference severing co-commit.
    */
-  readonly marketingUnsubscribes: MarketingUnsubscribesRepo;
+  /** Review 2026-09-07 — `severMemberRefs` is REQUIRED here (see the call site). */
+  readonly marketingUnsubscribes: MarketingUnsubscribesRepo &
+    Required<Pick<MarketingUnsubscribesRepo, 'severMemberRefs'>>;
 }
 
 const SYSTEM_ACTOR_USER_ID = 'system';
@@ -162,19 +164,11 @@ export async function scrubBroadcastContentForMember(
       );
 
       // 108 PR-C T104 (FR-056): null `member_id` + `contact_id` on the
-      // member's suppression rows; the email-keyed rows survive. The port
-      // method is optional only so partial test fixtures compile — its
-      // absence in a real composition is a programming error, and it must
-      // fail the scrub (the members adapter records `outcome: 'failed'`) rather
-      // than leave a re-identifiable back-reference behind.
-      if (typeof deps.marketingUnsubscribes.severMemberRefs !== 'function') {
-        throw new Error('scrubBroadcastContentForMember: marketingUnsubscribes.severMemberRefs is not wired');
-      }
-      const sever = await deps.marketingUnsubscribes.severMemberRefs(
-        tx,
-        tenantSlug,
-        input.memberId as unknown as string,
-      );
+      // member's suppression rows; the email-keyed rows survive. Review
+      // 2026-09-07: the port method is optional for unrelated fixtures, so
+      // THIS deps type requires it — a composition that forgets to wire it
+      // fails at `tsc`, not inside a GDPR erasure transaction.
+      const sever = await deps.marketingUnsubscribes.severMemberRefs(tx, tenantSlug, input.memberId);
 
       // Audit hygiene: skip the `broadcast_content_redacted` emit on a pure
       // no-op (the member authored nothing left to scrub AND the caller

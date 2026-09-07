@@ -463,13 +463,19 @@ function mapDirectoryRow(
  * opted-out count, so the two can never narrow differently (SC-004).
  */
 function broadcastSegmentTierFilter(params: BroadcastOptedOutCountQuery) {
+  if (params.segmentType !== 'tier') return undefined;
   const tierCodesArr = params.tierCodes ?? [];
-  return params.segmentType === 'tier' && tierCodesArr.length > 0
-    ? sql`${membershipPlans.planCategory}::text = ANY(ARRAY[${sql.join(
-        tierCodesArr.map((c) => sql`${c}`),
-        sql`, `,
-      )}]::text[])`
-    : undefined;
+  // Review 2026-09-07 (types MEDIUM) — a tier segment with NO codes used to
+  // drop the filter and read EVERY member. The only guard was `.min(1)` in
+  // two HTTP schemas; a `segment_params` row missing its key would have
+  // mis-addressed a 1:N send. Loud, never wide.
+  if (tierCodesArr.length === 0) {
+    throw new Error('broadcast tier segment without tier codes — refusing to read every member');
+  }
+  return sql`${membershipPlans.planCategory}::text = ANY(ARRAY[${sql.join(
+    tierCodesArr.map((c) => sql`${c}`),
+    sql`, `,
+  )}]::text[])`;
 }
 
 export function buildBroadcastRecipientContactsQuery(
@@ -481,7 +487,7 @@ export function buildBroadcastRecipientContactsQuery(
   const cursorFilter =
     after === null
       ? undefined
-      : after.contactId === null
+      : after.kind === 'after_member'
         ? sql`${members.memberId} > ${after.memberId}::uuid`
         : sql`(${members.memberId}, ${contacts.contactId}) > (${after.memberId}::uuid, ${after.contactId}::uuid)`;
   return tx

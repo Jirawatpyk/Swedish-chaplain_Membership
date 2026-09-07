@@ -2,9 +2,10 @@
  * 108 PR-C T085 (FR-041 / FR-042; research R9, contract broadcast-audience
  * § 3) — the ONE audience ceiling.
  *
- * Before 108 the number 5,000 lived in four places (`AUDIENCE_HARD_CAP` in
- * the resolver, the submit and dispatch checks, and the F3 read's
- * `.limit(5000)`), and the F7.1a batching path — built for 5,001–50,000 —
+ * Before 108 the number 5,000 lived in the resolver's `AUDIENCE_HARD_CAP`,
+ * the F3 read's `.limit(5000)` and four i18n copy strings × 3 locales
+ * (submit and dispatch had no number of their own — they relayed the
+ * resolver's refusal), and the F7.1a batching path — built for 5,001–50,000 —
  * was unreachable because the resolver refused everything above 5,000 first
  * (R-C § 4). Now every caller reads this function through the composition
  * root (`currentAudienceCeiling()` in broadcasts-deps) and compares against

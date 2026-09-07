@@ -152,3 +152,13 @@ export interface MarketingUnsubscribesRepo {
     memberId: string,
   ): Promise<{ readonly affected: number }>;
 }
+
+/**
+ * Review 2026-09-07 — what the Drizzle adapter actually implements. The
+ * optional members on `MarketingUnsubscribesRepo` exist so partial test
+ * fixtures compile; a use case that NEEDS one names it in its own deps type
+ * (`scrub-broadcast-content-for-member`), and the composition root satisfies
+ * that at compile time through this alias instead of a runtime guard.
+ */
+export type FullMarketingUnsubscribesRepo = MarketingUnsubscribesRepo &
+  Required<Pick<MarketingUnsubscribesRepo, 'severMemberRefs'>>;

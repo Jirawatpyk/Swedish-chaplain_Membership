@@ -18,23 +18,20 @@
 -- member erasure hard-deletes contacts. The erasure cascade nulls both
 -- back-references instead (tasks T104); the email-keyed row survives.
 --
--- INDEX. `(tenant_id, contact_id) WHERE contact_id IS NOT NULL` serves the
--- member-page / audience-page read "is THIS contact unsubscribed?" without a
--- lower(email) join, and the erasure cascade's "rows referencing these
--- contacts". Partial: most historical rows (and every webhook-written bounce
--- or complaint) have no contact attribution.
+-- INDEX. None (review 2026-09-07). The partial `(tenant_id, contact_id)`
+-- index this migration first carried had no reader: the audience page
+-- resolves suppression by email and the erasure cascade filters on
+-- `member_id` (already indexed). An index nothing reads costs a write on
+-- every unsubscribe; add it with the first "is THIS contact unsubscribed?"
+-- reader, in the same migration.
 --
 -- BACKFILL. None. Attribution is best-effort and forward-only; the
 -- suppression itself stays keyed on (tenant_id, email_lower) and is
 -- authoritative with or without it (FR-024 "honoured for that address on
 -- every later send").
 --
--- ROLLBACK. Column and index are unused when PR-C is reverted or the audience
+-- ROLLBACK. The column is unused when PR-C is reverted or the audience
 -- flag is off; drop only via a new migration.
 
 ALTER TABLE "marketing_unsubscribes"
-  ADD COLUMN IF NOT EXISTS "contact_id" uuid;--> statement-breakpoint
-
-CREATE INDEX IF NOT EXISTS "marketing_unsubscribes_contact_lookup_idx"
-  ON "marketing_unsubscribes" USING btree ("tenant_id", "contact_id")
-  WHERE contact_id IS NOT NULL;
+  ADD COLUMN IF NOT EXISTS "contact_id" uuid;

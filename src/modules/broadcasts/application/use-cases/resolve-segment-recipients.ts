@@ -51,17 +51,15 @@ import type { AudienceMode } from '../../domain/audience-mode';
 import type { MembersBridgePort } from '../ports/members-bridge-port';
 import type { EventAttendeesRepository } from '../ports/event-attendees-repository';
 import type { MarketingUnsubscribesRepo } from '../ports/marketing-unsubscribes-repo';
-import {
-  unsafeBrandEmailLower,
-  type EmailLower,
-} from '../../domain/value-objects/email-lower';
+import type { EmailLower } from '../../domain/value-objects/email-lower';
 
 /**
  * Contract § 2 step 5 — `lookupBatch` chunk size. A 50,000-recipient audience
  * (US5, batching ON) is 10 round trips, never one 50,000-parameter `= ANY`.
  * 5,000 rather than 1,000: the resolve is latency-bound (T081 measured
- * 20,000 contacts at 42 round trips ≈ 9–11 s from a ~220 ms-RTT workstation),
- * and the F3 opt-out filter already sends the whole batch as one array.
+ * 20,000 contacts at 1,000-row pages: 42 round trips ≈ 9–11 s from a
+ * ~220 ms-RTT workstation; at 5,000 it is ~10 trips ≈ 3.7 s), and the F3
+ * opt-out filter already sends the whole batch as one array.
  */
 const SUPPRESSION_LOOKUP_CHUNK = 5000;
 
@@ -107,8 +105,10 @@ export interface ResolveSegmentInput {
   /**
    * Member submitting the broadcast — EVERY contact of that member is
    * excluded from a member-based audience (FR-022; Q16 widened from "the
-   * primary contact email"). `null` for a non-member caller (an admin
-   * counting an audience without a proxied member).
+   * primary contact email"). `null` is typed for completeness only: every
+   * caller today passes a member id (the count routes 400 without one), so a
+   * future non-member caller must decide self-exclusion on purpose, not by
+   * default.
    */
   readonly requestingMemberId: string | null;
   /** Already-validated custom emails (when segment.kind === 'custom'). */
@@ -346,15 +346,13 @@ export async function resolveSegmentRecipients(
   const droppedByPreference =
     optOutDropped + sqlExcludedOptOuts + (memberBased ? 0 : suppressionDropped);
 
-  // Brand-cast (defence-in-depth — primary contact emails could be string at the source)
-  final = final.map((e) => unsafeBrandEmailLower(e));
 
   // Step 6: empty-after-filter check
   if (final.length === 0) {
     return err({ kind: 'broadcast_empty_segment_blocked' });
   }
 
-  // Step 6: the ceiling — never truncated (FR-041), one definition (FR-042)
+  // Step 7: the ceiling — never truncated (FR-041), one definition (FR-042)
   if (final.length > deps.audienceCeiling) {
     return err({
       kind: 'broadcast_audience_too_large',

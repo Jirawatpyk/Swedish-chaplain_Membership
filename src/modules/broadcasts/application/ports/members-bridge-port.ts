@@ -9,8 +9,11 @@
  *   - Acknowledgement flag management (Q15 — GDPR Art. 7 banner)
  *
  * Concrete adapter (Phase 4 Infrastructure) calls F3's barrel exports
- * added in T029 (Batch C). The 7 methods below correspond 1:1 with
- * the 7 new F3 exports specified in tasks.md L111.
+ * added in T029 (Batch C). The methods below front F3's barrel exports; the
+ * original 1:1 correspondence with tasks.md L111's seven no longer holds
+ * (`getMemberPreferredLocale`, `filterMarketingOptedOut`,
+ * `getContactsBySegment` and `countOptedOutContactsBySegment` were added
+ * later).
  *
  * Pure interface — no framework imports (Constitution Principle III).
  */
@@ -95,11 +98,14 @@ export interface SegmentResolveParams {
 
 export interface MembersBridgePort {
   /**
-   * Resolve a segment to its recipient list (FR-015 + FR-015c).
-   * Filters out members with NULL `primary_contact_email` (emits
-   * `broadcast_member_missing_primary_contact_email` audit at use-case
-   * site for each one). Filters out members halted via Q14
-   * (`broadcasts_halted_until_admin_review = true`).
+   * Resolve a segment to its recipient list (FR-015 + FR-015c) — the
+   * `primary_only` leg. Active, non-erased, non-halted members only
+   * (108 PR-C: `status = 'active'` was added and the `.limit(5000)` removed —
+   * no row cap, the resolver's ceiling is the truthful check). A member with
+   * a NULL `primary_contact_email` is returned as such (the resolver reports
+   * it as an orphan). NOT best-effort: a failed read THROWS (research R8) —
+   * it used to answer `[]`, which turned a Neon outage into "nobody to send
+   * to".
    */
   getMembersBySegment(
     tenantCtx: TenantContext,

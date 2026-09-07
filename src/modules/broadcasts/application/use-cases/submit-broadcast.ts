@@ -26,7 +26,8 @@
  *   f. body size → broadcast_body_too_large
  *   h. custom validate → broadcast_custom_recipient_unknown / invalid format
  *   g+i. segment resolve → broadcast_empty_segment_blocked /
- *      broadcast_audience_too_large; orphans emit
+ *      broadcast_audience_too_large / submit.server_error (a failed read,
+ *      no reject audit); orphans whose reason is not a preference emit
  *      broadcast_member_missing_primary_contact_email (non-blocking)
  *
  * Atomic insert + transition + audit in `runInTenant + withTx`. Failure

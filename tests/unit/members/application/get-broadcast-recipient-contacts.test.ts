@@ -54,7 +54,7 @@ describe('getBroadcastRecipientContacts (108 PR-C)', () => {
     });
   });
 
-  it('forwards tier codes AND the keyset cursor verbatim — including a null contact id after an orphan row', async () => {
+  it('forwards tier codes AND the keyset cursor verbatim — including an after_member cursor after an orphan row', async () => {
     const memberRepo = {
       findBroadcastRecipientContacts: vi.fn().mockResolvedValue(ok([])),
     } as unknown as Deps['memberRepo'];
@@ -64,7 +64,7 @@ describe('getBroadcastRecipientContacts (108 PR-C)', () => {
       {
         segmentType: 'tier',
         tierCodes: ['corporate', 'partnership'],
-        after: { memberId: 'm-orphan', contactId: null },
+        after: { kind: 'after_member', memberId: 'm-orphan' },
         limit: 1000,
       },
     );
@@ -72,7 +72,7 @@ describe('getBroadcastRecipientContacts (108 PR-C)', () => {
     expect(memberRepo.findBroadcastRecipientContacts).toHaveBeenCalledWith(tenant, {
       segmentType: 'tier',
       tierCodes: ['corporate', 'partnership'],
-      after: { memberId: 'm-orphan', contactId: null },
+      after: { kind: 'after_member', memberId: 'm-orphan' },
       limit: 1000,
     });
   });

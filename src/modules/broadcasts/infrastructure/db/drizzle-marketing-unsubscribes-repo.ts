@@ -21,7 +21,7 @@ import {
   type EmailLower,
 } from '../../domain/value-objects/email-lower';
 import type {
-  MarketingUnsubscribesRepo,
+  FullMarketingUnsubscribesRepo,
   NewSuppressionInput,
 } from '../../application/ports/marketing-unsubscribes-repo';
 import {
@@ -128,7 +128,7 @@ async function executeSuppressionUpsert(
 
 export function makeDrizzleMarketingUnsubscribesRepo(
   tenantId: string,
-): MarketingUnsubscribesRepo {
+): FullMarketingUnsubscribesRepo {
   const ctx = asTenantContext(tenantId);
 
   return {

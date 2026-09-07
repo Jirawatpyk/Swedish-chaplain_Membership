@@ -973,11 +973,17 @@ export type F7ContactRecipient = {
   readonly hasOptedOutContact: boolean;
 };
 
-/** Keyset cursor = the last row of the previous page. */
-export type BroadcastRecipientCursor = {
-  readonly memberId: string;
-  readonly contactId: string | null;
-};
+/**
+ * Keyset cursor = the last row of the previous page. Review 2026-09-07
+ * (types MEDIUM): the two resume semantics are NAMED. `after_member` is
+ * "the previous page ended on an orphan row — resume at the NEXT member"
+ * (exclusive on the member); `after_contact` resumes inside a member. The
+ * old `{ memberId, contactId: null }` read naturally as "start at member M"
+ * and silently skipped M and every one of its contacts.
+ */
+export type BroadcastRecipientCursor =
+  | { readonly kind: 'after_member'; readonly memberId: string }
+  | { readonly kind: 'after_contact'; readonly memberId: string; readonly contactId: string };
 
 export type BroadcastRecipientContactsQuery = {
   readonly segmentType: 'all_members' | 'tier';

@@ -54,7 +54,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
   const outcome = await countRecipients(makeResolveSegmentDeps(ctx.tenant.slug), {
     segment: query.segment,
-    requestingMemberId: ctx.member.memberId as string,
+    requestingMemberId: ctx.member.memberId,
     correlationId,
   });
   if (outcome.status === 'unavailable') {

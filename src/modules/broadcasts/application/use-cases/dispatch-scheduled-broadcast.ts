@@ -544,9 +544,10 @@ export async function dispatchScheduledBroadcast(
 
   if (!resolvedResult.ok) {
     // Bug #13 fix (2026-07-10): distinguish the TWO resolve failures.
-    // `resolveSegmentRecipients` returns either `broadcast_empty_segment_blocked`
-    // OR `broadcast_audience_too_large`. The segment is re-resolved here because
-    // it can change since submit (e.g. membership grew past the 5,000 hard cap
+    // `resolveSegmentRecipients` returns `broadcast_empty_segment_blocked`,
+    // `broadcast_audience_too_large`, or `resolve.server_error` (handled above); the first two:
+    // The segment is re-resolved here because
+    // it can change since submit (e.g. membership grew past the audience ceiling
     // via a bulk import). Hard-coding 'audience_post_suppression_empty' for
     // EVERY error mislabelled the failure_reason, the audit payload, AND the
     // AS2 member-notification email as "empty audience" when the true cause was

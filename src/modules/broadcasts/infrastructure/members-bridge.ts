@@ -6,7 +6,11 @@
  * to F7's `MemberRecipient` (branded `EmailLower`).
  *
  * Segment dispatch:
- *   - `all_members` / `tier` → F3 `getMembersBySegment`
+ *   - `all_members` / `tier`, `audienceMode = 'primary_only'` → F3
+ *     `getMembersBySegment` (one primary per member)
+ *   - `all_members` / `tier`, `audienceMode = 'all_contacts'` → F3
+ *     `getBroadcastRecipientContacts` (keyset walk, 5,000/page) +
+ *     `countBroadcastOptedOutContacts` (108 PR-C)
  *   - `event_attendees_last_90d` / `custom` → return `[]` (resolved by
  *     F7's own use-cases via `EventAttendeesRepository` stub +
  *     `validate-custom-recipients`)
@@ -188,7 +192,10 @@ export const membersBridge: MembersBridgePort = {
         return out;
       }
       const last = page.value[page.value.length - 1]!;
-      after = { memberId: last.memberId, contactId: last.contactId };
+      after =
+        last.contactId === null
+          ? { kind: 'after_member', memberId: last.memberId }
+          : { kind: 'after_contact', memberId: last.memberId, contactId: last.contactId };
     }
   },
 

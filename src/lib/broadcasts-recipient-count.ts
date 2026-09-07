@@ -24,7 +24,7 @@ import { errKind } from '@/lib/log-id';
 import { logger } from '@/lib/logger';
 import { broadcastsMetrics } from '@/lib/metrics';
 import { resolveSegmentRecipients, type ResolveSegmentDeps } from '@/modules/broadcasts';
-import type { RecipientSegment } from '@/modules/broadcasts/domain/recipient-segment';
+import type { RecipientSegment } from '@/modules/broadcasts';
 
 /** FR-040 / contract § 5 — 30 counts per minute per (tenant, user), atomic. */
 export const RECIPIENT_COUNT_RATE_MAX = 30;
@@ -59,7 +59,12 @@ export function parseRecipientCountQuery(
     const tierCodes = (tier ?? '')
       .split(',')
       .map((c) => c.trim())
-      .filter((c) => c.length > 0 && c.length <= 64);
+      .filter((c) => c.length > 0);
+    // Review 2026-09-07 (code LOW) — an over-length code used to be silently
+    // DROPPED, so the count answered for a different audience than the submit
+    // would send (SC-004 broken with a wrong number shown as truth). It is a
+    // malformed query.
+    if (tierCodes.some((c) => c.length > 64)) return { ok: false };
     if (tierCodes.length === 0 || tierCodes.length > TIER_CODE_MAX) return { ok: false };
     return { ok: true, segment: { kind: 'tier', tierCodes } };
   }

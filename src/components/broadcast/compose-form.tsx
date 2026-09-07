@@ -467,13 +467,13 @@ export function ComposeForm({
             disabled={submitting}
           />
 
-          {/* UX-1 — surface expectations about recipient counts so the
-              member doesn't hit the 5,000 cap or empty-segment-block as
-              a "submit-to-discover" surprise. We deliberately don't
-              compute the live count here (would require an auth'd API
-              endpoint + debounced fetch + cap pre-check) — instead
-              describe the segment shape + link to broadcast detail
-              page where the post-submit count is visible. */}
+          {/* UX-1 — set expectations before the live count settles: the
+              estimate note describes the segment shape and the REAL
+              ceiling (`audienceCeiling`, not a hard-coded 5,000), and
+              `RecipientCountLine` below shows the resolver's own number
+              once it lands (108 PR-C T089 — the auth'd endpoint, the
+              debounced fetch and the cap pre-check this comment once said
+              were deliberately not built). */}
           <p className="text-xs text-muted-foreground">
             {/* 108 PR-C T079: leg-aware wording + the real ceiling (FR-041). */}
             {t(estimateNoteKey(segment.kind, audienceMode), { ceiling: audienceCeiling })}
