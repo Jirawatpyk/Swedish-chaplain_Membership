@@ -1292,4 +1292,34 @@ describe('resolve-segment-recipients — orphan reasons + the SQL-excluded opt-o
     if (!result.ok) return;
     expect(result.value.orphans).toEqual([]);
   });
+
+  it.each([
+    [5000, [5000]],
+    [10000, [5000, 5000]],
+    [5001, [5000, 1]],
+  ])('exactly %d candidates → lookupBatch chunks %j (no empty trailing chunk, no off-by-one)', async (n, chunks) => {
+    const lookupCalls: Array<ReadonlyArray<EmailLower>> = [];
+    const members = Array.from({ length: n }, (_, i) => recipient(`b${i}@example.com`));
+    const result = await resolveSegmentRecipients(
+      makeDeps({ members, suppressed: new Set(), lookupCalls, audienceCeiling: 50_000 }),
+      input(),
+    );
+    expect(lookupCalls.map((c) => c.length)).toEqual(chunks);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.recipients).toHaveLength(n);
+  });
+
+
+  it('a bridge that throws a non-Error value is still resolve.server_error with a placeholder message', async () => {
+    const deps = makeDeps({ audienceMode: 'all_contacts', contacts: [contact('m1', 'c-p1', 'p1@example.com')] });
+    deps.membersBridge.getContactsBySegment = async () => {
+      throw 'not an Error';
+    };
+    const result = await resolveSegmentRecipients(deps, input());
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toEqual({ kind: 'resolve.server_error', message: 'unknown error' });
+  });
+
 });

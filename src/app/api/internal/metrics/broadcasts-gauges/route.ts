@@ -69,6 +69,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   let stuck: PendingRow[];
   let dispatchRatios: DispatchRatioRow[];
   let suppressionSizes: PendingRow[];
+  let approvedOverdue: PendingRow[];
   try {
     const result = await db.transaction(async (tx) => {
       await tx.execute(sql`SET LOCAL statement_timeout = '10s'`);
@@ -114,12 +115,25 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         FROM marketing_unsubscribes
         GROUP BY tenant_id
       `);
-      return { pendingRows, stuckRows, dispatchRows, suppressionRows };
+      // Review 2026-09-07 (errors HIGH-4b) — a broadcast whose audience
+      // cannot be built stays `approved` and is retried every tick with NO
+      // wall-clock budget; `queue_pending` (alert > 8,000) cannot see one
+      // row slipping. Count approved rows more than an hour past schedule.
+      const approvedOverdueRows = await tx.execute<PendingRow>(sql`
+        SELECT tenant_id, COUNT(*)::int AS count
+        FROM broadcasts
+        WHERE status::text = 'approved'
+          AND scheduled_for IS NOT NULL
+          AND scheduled_for < now() - interval '1 hour'
+        GROUP BY tenant_id
+      `);
+      return { pendingRows, stuckRows, dispatchRows, suppressionRows, approvedOverdueRows };
     });
     pending = Array.from(result.pendingRows);
     stuck = Array.from(result.stuckRows);
     dispatchRatios = Array.from(result.dispatchRows);
     suppressionSizes = Array.from(result.suppressionRows);
+    approvedOverdue = Array.from(result.approvedOverdueRows);
   } catch (e) {
     logger.error(
       { requestId, err: e instanceof Error ? e.message : String(e) },
@@ -142,6 +156,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   for (const row of suppressionSizes) {
     broadcastsMetrics.suppressionListSize(row.tenant_id, row.count);
   }
+  let approvedOverdueTotal = 0;
+  for (const row of approvedOverdue) {
+    broadcastsMetrics.approvedOverdueCount(row.tenant_id, row.count);
+    approvedOverdueTotal += row.count;
+  }
   for (const row of dispatchRatios) {
     // dispatched > 0 enforced by HAVING clause — division safe.
     const rate = row.failed / row.dispatched;
@@ -158,6 +177,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       dispatchRatioTenantCount: dispatchRatios.length,
       pendingTotal,
       stuckTotal,
+      approvedOverdueTotal,
       dispatchRatioMaxBps,
       stuckHours: STUCK_SENDING_HOURS,
       dispatchWindowHours: DISPATCH_FAILURE_WINDOW_HOURS,
@@ -173,6 +193,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       dispatchRatioTenantCount: dispatchRatios.length,
       pendingTotal,
       stuckTotal,
+      approvedOverdueTotal,
       dispatchRatioMaxBps,
       stuckHours: STUCK_SENDING_HOURS,
       dispatchWindowHours: DISPATCH_FAILURE_WINDOW_HOURS,

@@ -342,6 +342,29 @@ describe('scrubBroadcastContentForMember (COMP-1 US2b)', () => {
     expect(contentScrubFailedSpy).toHaveBeenCalledTimes(1);
     expect(contentScrubFailedSpy).toHaveBeenCalledWith('test-tenant');
   });
+
+  // Review 2026-09-07 (tests MEDIUM) — the port keeps `severMemberRefs`
+  // optional so unrelated fixtures compile; this guard is the only thing
+  // standing between a composition that forgot to wire it and an erasure
+  // that COMPLETES while the erased member stays re-identifiable on
+  // marketing_unsubscribes. Delete the guard and this case goes red.
+  it('a composition without severMemberRefs FAILS the erasure inside the tx — no audit, no success', async () => {
+    const deps = makeDeps({ severImpl: async () => ({ affected: 1 }) });
+    delete (deps.marketingUnsubscribes as { severMemberRefs?: unknown }).severMemberRefs;
+    const result = await scrubBroadcastContentForMember(deps as never, {
+      tenant,
+      memberId,
+      tombstonedCount: 0,
+      reason: 'gdpr_erasure_request',
+      initiatedByUserId: 'admin-user-1',
+      requestId: 'req-104-unwired',
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('scrub.server_error');
+    expect(deps.audit.emitTyped).not.toHaveBeenCalled();
+  });
+
 });
 
 /**

@@ -208,18 +208,22 @@ export async function resolveSegmentRecipients(
     // them (a TypeError on a malformed row) was reclassified as a transient
     // `resolve.server_error` — retried every tick forever instead of reaching
     // the cron's `uncaught_error` bucket, the one that pages.
-    let contactRows: Awaited<ReturnType<MembersBridgePort['getContactsBySegment']>> | null = null;
-    let memberRows: Awaited<ReturnType<MembersBridgePort['getMembersBySegment']>> | null = null;
+    type SourcedRows =
+      | { readonly leg: 'contacts'; readonly rows: Awaited<ReturnType<MembersBridgePort['getContactsBySegment']>> }
+      | { readonly leg: 'members'; readonly rows: Awaited<ReturnType<MembersBridgePort['getMembersBySegment']>> };
+    let sourcedRows: SourcedRows;
     try {
       if (deps.audienceMode === 'all_contacts') {
-        contactRows = await deps.membersBridge.getContactsBySegment(deps.tenant, segment.kind, params);
+        const rows = await deps.membersBridge.getContactsBySegment(deps.tenant, segment.kind, params);
         sqlExcludedOptOuts = await deps.membersBridge.countOptedOutContactsBySegment(
           deps.tenant,
           segment.kind,
           params,
         );
+        sourcedRows = { leg: 'contacts', rows };
       } else {
-        memberRows = await deps.membersBridge.getMembersBySegment(deps.tenant, segment.kind, params);
+        const rows = await deps.membersBridge.getMembersBySegment(deps.tenant, segment.kind, params);
+        sourcedRows = { leg: 'members', rows };
       }
     } catch (e) {
       // The bridge already logged the class of failure; the caller decides
@@ -229,8 +233,8 @@ export async function resolveSegmentRecipients(
         message: e instanceof Error ? e.message : 'unknown error',
       });
     }
-    if (contactRows !== null) {
-      for (const r of contactRows) {
+    if (sourcedRows.leg === 'contacts') {
+      for (const r of sourcedRows.rows) {
         if (r.contactId === null || r.emailLower === null) {
           // The sender is never their own orphan (FR-022b covers them).
           if (r.memberId !== input.requestingMemberId) {
@@ -243,8 +247,8 @@ export async function resolveSegmentRecipients(
         }
         sourced.push({ memberId: r.memberId, emailLower: r.emailLower });
       }
-    } else if (memberRows !== null) {
-      for (const m of memberRows) {
+    } else {
+      for (const m of sourcedRows.rows) {
         if (m.primaryContactEmail === null) {
           if (m.memberId !== input.requestingMemberId) {
             orphans.push({ memberId: m.memberId, reason: 'no_primary_email' });

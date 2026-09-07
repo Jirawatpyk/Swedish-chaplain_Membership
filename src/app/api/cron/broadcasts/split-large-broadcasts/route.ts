@@ -34,6 +34,7 @@ import { z } from 'zod';
 import { runInTenant } from '@/lib/db';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { broadcastsMetrics } from '@/lib/metrics';
 import { errKind } from '@/lib/log-id';
 import { verifyCronBearer } from '@/lib/cron-auth';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
@@ -232,6 +233,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         );
       } catch (e) {
         summary.errors++;
+        // Review 2026-09-07 (errors HIGH-4) — the row stays `approved` and is
+        // retried next tick with no budget; the counter is the alarm.
+        broadcastsMetrics.dispatchResolveFailedTotal(tenant.slug);
         logger.error(
           {
             tenantId: tenant.slug,
@@ -245,6 +249,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
       if (!resolved.ok) {
         summary.errors++;
+        if (resolved.error.kind === 'resolve.server_error') {
+          broadcastsMetrics.dispatchResolveFailedTotal(tenant.slug);
+        }
         logger.error(
           {
             tenantId: tenant.slug,

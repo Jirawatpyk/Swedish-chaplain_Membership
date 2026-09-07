@@ -30,7 +30,8 @@ export type RecipientCountState =
       readonly exceeds: boolean;
       /** Staff route only (review 2026-09-07, M-3) — the member body omits it. */
       readonly orphans?: number;
-      readonly droppedByPreference: number;
+      /** Absent when the server refused before measuring (exceeds / empty). */
+      readonly droppedByPreference?: number;
     };
 
 export type CountableSegmentKind = 'all_members' | 'tier' | 'custom' | 'event_attendees_last_90d';
@@ -73,11 +74,14 @@ function isNonNegativeInt(v: unknown): v is number {
 function toReady(body: unknown): RecipientCountState {
   if (typeof body !== 'object' || body === null) return { status: 'unavailable' };
   const b = body as Record<string, unknown>;
+  // The three fields every answer carries are required; the two MEASURED
+  // fields are optional but, when present, must be well-formed — a malformed
+  // value is a malformed body, never coerced.
   if (
     !isNonNegativeInt(b['count']) ||
     !isNonNegativeInt(b['ceiling']) ||
     typeof b['exceeds'] !== 'boolean' ||
-    !isNonNegativeInt(b['droppedByPreference']) ||
+    (b['droppedByPreference'] !== undefined && !isNonNegativeInt(b['droppedByPreference'])) ||
     (b['orphans'] !== undefined && !isNonNegativeInt(b['orphans']))
   ) {
     return { status: 'unavailable' };
@@ -88,7 +92,7 @@ function toReady(body: unknown): RecipientCountState {
     ceiling: b['ceiling'],
     exceeds: b['exceeds'],
     ...(isNonNegativeInt(b['orphans']) && { orphans: b['orphans'] }),
-    droppedByPreference: b['droppedByPreference'],
+    ...(isNonNegativeInt(b['droppedByPreference']) && { droppedByPreference: b['droppedByPreference'] }),
   };
 }
 

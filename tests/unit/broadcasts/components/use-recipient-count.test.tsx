@@ -204,3 +204,40 @@ describe('useRecipientCount — the member body carries no `orphans` (review 202
     });
   });
 });
+
+describe('useRecipientCount — a 200 with a malformed body is unavailable, never a false number (review 2026-09-07)', () => {
+  // Delete the validator and return `body as RecipientCountState` and every
+  // other case here still passes — a renamed field would then render
+  // "NaN recipients will receive this broadcast", the exact promise FR-040b
+  // makes never to show.
+  let fetchMock: FetchMock;
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it.each<[string, unknown]>([
+    ['empty object', {}],
+    ['count as a string', { count: '3', ceiling: 5000, exceeds: false, droppedByPreference: 0 }],
+    ['negative count', { count: -1, ceiling: 5000, exceeds: false, droppedByPreference: 0 }],
+    ['exceeds not boolean', { count: 3, ceiling: 5000, exceeds: 'no', droppedByPreference: 0 }],
+    ['droppedByPreference present but malformed', { count: 3, ceiling: 5000, exceeds: false, droppedByPreference: 'two' }],
+    ['orphans present but malformed', { count: 3, ceiling: 5000, exceeds: false, droppedByPreference: 0, orphans: 'many' }],
+    ['null body', null],
+  ])('%s → unavailable', async (_label, body) => {
+    vi.useFakeTimers();
+    fetchMock = vi.fn(async () => jsonResponse(200, body));
+    vi.stubGlobal('fetch', fetchMock);
+    const { result } = renderHook(() =>
+      useRecipientCount({ mode: 'member', segment: { kind: 'all_members', tierCodes: [] } }),
+    );
+    await act(async () => {
+      vi.advanceTimersByTime(400);
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(result.current).toEqual({ status: 'unavailable' });
+  });
+});

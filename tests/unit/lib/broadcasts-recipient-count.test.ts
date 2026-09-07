@@ -51,3 +51,40 @@ describe('countRecipients records the recipient-count histogram (108 PR-C T090)'
     expect(spy).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('countRecipients — a resolver that THROWS is unavailable (review 2026-09-07, pinned for the coverage floor)', () => {
+  // The typed `resolve.server_error` path and the outer catch are two
+  // different doors to the same answer; only the first had a case.
+  it('resolver throws → { status: unavailable }, the histogram still observed', async () => {
+    resolveMock.mockRejectedValueOnce(new Error('members-bridge.getContactsBySegment: repo.unexpected'));
+    const r = await countRecipients(deps, {
+      segment: { kind: 'all_members' },
+      requestingMemberId: 'm-1',
+      correlationId: 'corr-throw',
+    });
+    expect(r).toEqual({ status: 'unavailable' });
+  });
+
+  // Review 2026-09-07 (types MEDIUM) — a refusal never fabricates the
+  // measured fields: `orphans` / `droppedByPreference` are ABSENT, not 0.
+  it('too large → the TRUE count + exceeds, and no orphans / droppedByPreference at all', async () => {
+    resolveMock.mockResolvedValueOnce(err({ kind: 'broadcast_audience_too_large', count: 5001, cap: 5000 }));
+    const r = await countRecipients(deps, {
+      segment: { kind: 'all_members' },
+      requestingMemberId: 'm-1',
+      correlationId: 'corr-large',
+    });
+    expect(r).toEqual({ status: 'ok', body: { count: 5001, ceiling: 5000, exceeds: true } });
+  });
+
+  it('empty → count 0, and no orphans / droppedByPreference at all', async () => {
+    resolveMock.mockResolvedValueOnce(err({ kind: 'broadcast_empty_segment_blocked' }));
+    const r = await countRecipients(deps, {
+      segment: { kind: 'all_members' },
+      requestingMemberId: 'm-1',
+      correlationId: 'corr-empty',
+    });
+    expect(r).toEqual({ status: 'ok', body: { count: 0, ceiling: 5000, exceeds: false } });
+  });
+
+});

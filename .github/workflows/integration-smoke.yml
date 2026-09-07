@@ -123,4 +123,6 @@ jobs:
             tests/integration/members/contact-marketing-opt-out-guard.test.ts \
             tests/integration/members/contact-marketing-routes.test.ts \
             tests/integration/broadcasts/marketing-opt-out-dispatch.test.ts \
-            tests/integration/members/marketing-audience-query.test.ts
+            tests/integration/members/marketing-audience-query.test.ts \
+            tests/integration/members/broadcast-recipient-contacts-keyset.test.ts \
+            tests/integration/broadcasts/audience-1n-status.test.ts

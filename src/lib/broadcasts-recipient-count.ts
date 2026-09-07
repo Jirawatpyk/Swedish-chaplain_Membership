@@ -70,8 +70,16 @@ export interface RecipientCountBody {
   readonly count: number;
   readonly ceiling: number;
   readonly exceeds: boolean;
-  readonly orphans: number;
-  readonly droppedByPreference: number;
+  /**
+   * Measured fields — present only when the resolver COMPLETED (review
+   * 2026-09-07, types MEDIUM): a refusal (`exceeds: true`, or an empty
+   * audience) never computed them, and a hardcoded 0 in the same field the
+   * ok branch measures would be a fabricated number. `orphans` is also
+   * stripped by the MEMBER route (it is a fact about other members); the
+   * staff route keeps it.
+   */
+  readonly orphans?: number;
+  readonly droppedByPreference?: number;
 }
 
 export type RecipientCountOutcome =
@@ -131,13 +139,17 @@ async function countRecipientsInner(
       };
     }
     switch (result.error.kind) {
+      // Review 2026-09-07 (types MEDIUM) — the resolver refused before it
+      // measured orphans or preference drops, so neither field is sent: a
+      // hardcoded 0 would be a fabricated number in the same field where the
+      // ok branch reports a measured one. Absent means "not computed".
       case 'broadcast_audience_too_large':
         return {
           status: 'ok',
-          body: { count: result.error.count, ceiling: result.error.cap, exceeds: true, orphans: 0, droppedByPreference: 0 },
+          body: { count: result.error.count, ceiling: result.error.cap, exceeds: true },
         };
       case 'broadcast_empty_segment_blocked':
-        return { status: 'ok', body: { count: 0, ceiling, exceeds: false, orphans: 0, droppedByPreference: 0 } };
+        return { status: 'ok', body: { count: 0, ceiling, exceeds: false } };
       case 'resolve.server_error':
         logger.error(
           { tenantId: deps.tenant.slug, correlationId: input.correlationId, err: result.error.message },

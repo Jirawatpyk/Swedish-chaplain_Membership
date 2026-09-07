@@ -81,11 +81,32 @@ export default async function ComposeBroadcastPage({
   let membershipAccessBlocked = false;
   // FR-009 cap=0 flag, also hoisted for the same reason (see below).
   let quotaExhausted = false;
+  // Review 2026-09-07 (observation from T084, pinned in
+  // broadcasts-compose-suspended-redirect.test.tsx) — the member lookup used
+  // to sit inside the same `try` as the quota init, so a FAILED or MISSED
+  // lookup fell through past the access redirect and rendered the form to a
+  // user with no member row at all (the API still answered 404, so nothing
+  // sent — but the page-level gate was bypassed). A lookup that fails or
+  // misses is a redirect, exactly like `suspended`; only the quota init stays
+  // best-effort.
+  let memberLookup: Awaited<ReturnType<typeof membersDeps.memberRepo.findByLinkedUserId>>;
   try {
-    const memberLookup = await membersDeps.memberRepo.findByLinkedUserId(
-      tenant,
-      session.user.id,
+    memberLookup = await membersDeps.memberRepo.findByLinkedUserId(tenant, session.user.id);
+  } catch (err) {
+    logger.warn(
+      {
+        err: err instanceof Error ? err.message : String(err),
+        tenantId: tenant.slug,
+        userId: session.user.id,
+      },
+      'broadcasts.compose.member_lookup_failed',
     );
+    redirect('/portal/benefits?tab=broadcasts');
+  }
+  if (!memberLookup.ok) {
+    redirect('/portal/benefits?tab=broadcasts');
+  }
+  try {
     if (memberLookup.ok) {
       const membershipAccess = await loadMembershipAccess(
         tenant.slug,

@@ -140,7 +140,7 @@ describe('GET /api/broadcasts/recipient-count (member) — 108 PR-C T082/T088', 
     const { GET } = await importMemberRoute();
     const res = await GET(memberRequest('?segment=all_members'));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ count: 5001, ceiling: 5000, exceeds: true, droppedByPreference: 0 });
+    expect(await res.json()).toEqual({ count: 5001, ceiling: 5000, exceeds: true });
   });
 
   it('empty audience → 200 with count 0', async () => {
@@ -149,7 +149,7 @@ describe('GET /api/broadcasts/recipient-count (member) — 108 PR-C T082/T088', 
     const { GET } = await importMemberRoute();
     const res = await GET(memberRequest('?segment=event_attendees_last_90d'));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ count: 0, ceiling: 5000, exceeds: false, droppedByPreference: 0 });
+    expect(await res.json()).toEqual({ count: 0, ceiling: 5000, exceeds: false });
   });
 
   it.each([

@@ -21,6 +21,10 @@ const dbTransactionMock = vi.fn();
 const queuePendingSpy = vi.fn();
 const stuckSendingCountSpy = vi.fn();
 const dispatchFailureRateSpy = vi.fn();
+// Review 2026-09-07 (errors HIGH-4b) — the fifth family: approved rows more
+// than 1 h past `scheduled_for`, the only signal for a schedule slipping tick
+// after tick because the audience cannot be built.
+const approvedOverdueCountSpy = vi.fn();
 
 const envMock = {
   isDevelopment: false,
@@ -54,6 +58,7 @@ vi.mock('@/lib/metrics', async () => {
       queuePending: queuePendingSpy,
       stuckSendingCount: stuckSendingCountSpy,
       dispatchFailureRate: dispatchFailureRateSpy,
+      approvedOverdueCount: approvedOverdueCountSpy,
     },
   };
 });
@@ -74,6 +79,7 @@ beforeEach(() => {
   queuePendingSpy.mockReset();
   stuckSendingCountSpy.mockReset();
   dispatchFailureRateSpy.mockReset();
+  approvedOverdueCountSpy.mockReset();
 });
 
 afterEach(() => {
@@ -112,10 +118,11 @@ describe('GET /api/internal/metrics/broadcasts-gauges — wire contract', () => 
     expect(dbTransactionMock).not.toHaveBeenCalled();
   });
 
-  it('valid bearer + 3 tenants with traffic → 200 + emits all 3 gauge families', async () => {
+  it('valid bearer + tenants with traffic → 200 + emits every gauge family', async () => {
     dbTransactionMock.mockImplementationOnce(async () => ({
       pendingRows: [{ tenant_id: 't1', count: 12 }],
       stuckRows: [{ tenant_id: 't1', count: 2 }],
+      approvedOverdueRows: [{ tenant_id: 't1', count: 1 }],
       suppressionRows: [{ tenant_id: 't1', count: 7 }],
       // tenant t1: 30% failure rate (3/10), tenant t2: 0% (0/5)
       dispatchRows: [
@@ -156,6 +163,8 @@ describe('GET /api/internal/metrics/broadcasts-gauges — wire contract', () => 
     expect(stuckSendingCountSpy).toHaveBeenCalledWith('t1', 2);
     expect(dispatchFailureRateSpy).toHaveBeenCalledWith('t1', 0.3);
     expect(dispatchFailureRateSpy).toHaveBeenCalledWith('t2', 0);
+    expect(approvedOverdueCountSpy).toHaveBeenCalledWith('t1', 1);
+    expect((body as unknown as { approvedOverdueTotal: number }).approvedOverdueTotal).toBe(1);
   });
 
   it('valid bearer + zero traffic → 200 + zero summary, no metrics emitted', async () => {
@@ -165,6 +174,7 @@ describe('GET /api/internal/metrics/broadcasts-gauges — wire contract', () => 
       dispatchRows: [],
       // 108 PR-D (staff review P4): the fourth gauge family.
       suppressionRows: [],
+      approvedOverdueRows: [],
     }));
 
     const { GET } = await import(
@@ -177,6 +187,7 @@ describe('GET /api/internal/metrics/broadcasts-gauges — wire contract', () => 
     expect(queuePendingSpy).not.toHaveBeenCalled();
     expect(stuckSendingCountSpy).not.toHaveBeenCalled();
     expect(dispatchFailureRateSpy).not.toHaveBeenCalled();
+    expect(approvedOverdueCountSpy).not.toHaveBeenCalled();
   });
 
   it('valid bearer + DB transaction throws → 500 query_failed (no metrics emitted)', async () => {
@@ -193,6 +204,7 @@ describe('GET /api/internal/metrics/broadcasts-gauges — wire contract', () => 
     expect(body.error).toBe('query_failed');
     expect(queuePendingSpy).not.toHaveBeenCalled();
     expect(dispatchFailureRateSpy).not.toHaveBeenCalled();
+    expect(approvedOverdueCountSpy).not.toHaveBeenCalled();
   });
 
   it('dev env without CRON_SECRET → request still allowed (smoke convenience)', async () => {
@@ -204,6 +216,7 @@ describe('GET /api/internal/metrics/broadcasts-gauges — wire contract', () => 
       dispatchRows: [],
       // 108 PR-D (staff review P4): the fourth gauge family.
       suppressionRows: [],
+      approvedOverdueRows: [],
     }));
 
     const { GET } = await import(
