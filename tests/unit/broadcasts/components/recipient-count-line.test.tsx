@@ -108,6 +108,20 @@ describe('<RecipientCountLine> (108 PR-C T089)', () => {
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
 
+  // /code-review 2026-09-07 (finding #8) — the button used to be a CHILD of
+  // the live region, so every status change announced the control's label as
+  // part of the status ("Counting recipients… Try again") and the control
+  // itself was inserted/removed inside a region whose job is to narrate text.
+  // Nothing in this file could fail on that: every assertion here reads
+  // `region.textContent`, which is exactly what the defect polluted.
+  it('the retry control is a SIBLING of the live region, not part of the announcement', () => {
+    renderLine({ status: 'unavailable' }, 'en');
+    const region = screen.getByRole('status');
+    const retry = screen.getByRole('button', { name: /try again/i });
+    expect(region).not.toContainElement(retry);
+    expect(region.textContent).not.toMatch(/try again/i);
+  });
+
   it('a NON-blocking ready state offers no retry (nothing to re-ask)', () => {
     renderLine({ status: 'ready', count: 12, ceiling: 5000, exceeds: false, orphans: 0, droppedByPreference: 0 });
     expect(screen.queryByRole('button', { name: /try again/i })).toBeNull();

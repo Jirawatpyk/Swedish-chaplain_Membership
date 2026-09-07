@@ -213,9 +213,22 @@ export function RecipientCountLine({
     // Always rendered, `min-h` for two lines of TH / SV, so the count
     // settling never shifts the form (UX M-4) and the live region exists
     // before its content changes (L-1 — an inserted region is not announced).
-    <p role="status" aria-live="polite" className={`flex min-h-10 items-start gap-1.5 text-sm ${tone}`}>
-      {icon !== null ? <span className="mt-0.5">{icon}</span> : null}
-      {text !== null ? <span>{text}</span> : null}
+    <div className={`flex min-h-10 items-start gap-1.5 text-sm ${tone}`}>
+      {/*
+        /code-review 2026-09-07 (finding #8) — the retry BUTTON used to live
+        inside this region. A live region announces its whole text content on
+        every change, so the control's label was read as part of the status
+        ("Counting recipients… Try again"), and inserting/removing an
+        interactive element inside a live region is announced as a status
+        change rather than offered as an action. The region now holds only the
+        status text; the button is a sibling. `aria-live="polite"` is kept
+        alongside `role="status"` — redundant, but it is the hook the e2e
+        reflow assertion selects on and it costs nothing.
+      */}
+      <p role="status" aria-live="polite" className="flex items-start gap-1.5">
+        {icon !== null ? <span className="mt-0.5">{icon}</span> : null}
+        {text !== null ? <span>{text}</span> : null}
+      </p>
       {retry ? (
         <button
           type="button"
@@ -225,6 +238,6 @@ export function RecipientCountLine({
           {t('retry')}
         </button>
       ) : null}
-    </p>
+    </div>
   );
 }

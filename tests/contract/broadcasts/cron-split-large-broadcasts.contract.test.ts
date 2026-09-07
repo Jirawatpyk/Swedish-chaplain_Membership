@@ -59,6 +59,11 @@ vi.mock('@/lib/metrics', async (importOriginal) => {
 });
 // Every key the route imports from the barrel (a missing key throws on
 // access — the stale-stub class this file exists to close).
+// /code-review 2026-09-07 (finding #3) — the per-tick memo wrapper. The spy
+// returns a MARKER so the resolver's deps can be checked for the wrapper
+// rather than the raw bridge, and its call count proves once-per-TICK
+// rather than once-per-row.
+const makeTickMemoMock = vi.fn((bridge: unknown) => ({ kind: 'tick-memoized', inner: bridge }));
 vi.mock('@/modules/broadcasts', async () => ({
   asBroadcastId: (raw: string) => raw,
   BroadcastConcurrentMutationError: class BroadcastConcurrentMutationError extends Error {},
@@ -81,6 +86,7 @@ vi.mock('@/modules/broadcasts', async () => ({
   makeDrizzleMarketingUnsubscribesRepo: () => ({ kind: 'unsubscribes-stub' }),
   makeSplitBroadcastIntoBatchesDeps: () => ({ kind: 'split-deps-stub' }),
   membersBridge: { kind: 'members-bridge-stub' },
+  makeTickMemoizedMembersBridge: (bridge: unknown) => makeTickMemoMock(bridge),
   resolveSegmentRecipients: (...args: unknown[]) => resolveSegmentRecipientsMock(...args),
   currentAudienceMode: () => 'all_contacts',
   currentAudienceCeiling: () => 50_000,
@@ -101,6 +107,7 @@ function makeRequest(opts: { auth?: string }): NextRequest {
 }
 
 const BROADCAST_ID = '22222222-2222-4222-8222-222222222222';
+const SECOND_ID = '22222222-2222-4222-8222-333333333333';
 
 beforeEach(() => {
   isF71aUs1EnabledMock.mockReturnValue(true);
@@ -152,6 +159,45 @@ describe('cron split-large-broadcasts — wire contract (108 PR-C review)', () =
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ processed: 0, split: 0, skipped: 0, errors: 0 });
     expect(splitBroadcastIntoBatchesMock).not.toHaveBeenCalled();
+  });
+
+  // /code-review 2026-09-07 (finding #3) — `dispatch-scheduled` has wrapped its
+  // bridge in the per-tick memo since R6; this cron never did, so N rows on
+  // one segment each re-walked the identical audience — and after 108 PR-C
+  // that walk is a full 1:N keyset paginate plus an opted-out aggregate. TWO
+  // rows, because with one row "wrapped once per tick" and "wrapped once per
+  // row" are the same number.
+  it('the tick memo wraps the bridge ONCE per tick, and the resolver gets the wrapper — not the raw bridge', async () => {
+    runInTenantMock.mockImplementation(async (_ctx, fn) =>
+      fn({ execute: async () => [{ broadcast_id: BROADCAST_ID }, { broadcast_id: SECOND_ID }] }),
+    );
+    findByIdMock.mockResolvedValue({
+      broadcastId: BROADCAST_ID,
+      requestedByMemberId: 'm-requester',
+      segmentType: 'all_members',
+      segmentParams: null,
+      customRecipientEmails: null,
+      status: 'approved',
+      estimatedRecipientCount: 12_000,
+    });
+    resolveSegmentRecipientsMock.mockResolvedValue(
+      err({ kind: 'resolve.server_error', message: 'members-bridge.getContactsBySegment: repo.unexpected' }),
+    );
+
+    const { POST } = await import('@/app/api/cron/broadcasts/split-large-broadcasts/route');
+    const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    expect(res.status).toBe(200);
+
+    expect(resolveSegmentRecipientsMock).toHaveBeenCalledTimes(2);
+    expect(makeTickMemoMock).toHaveBeenCalledTimes(1);
+    expect(makeTickMemoMock).toHaveBeenCalledWith({ kind: 'members-bridge-stub' });
+    for (const call of resolveSegmentRecipientsMock.mock.calls) {
+      const [deps] = call as [Record<string, unknown>];
+      expect(deps['membersBridge']).toEqual({
+        kind: 'tick-memoized',
+        inner: { kind: 'members-bridge-stub' },
+      });
+    }
   });
 
   it('one eligible row: the resolver gets the composition root mode/ceiling, phase dispatch and the requesting member; a failed resolve counts, leaves the row, continues', async () => {

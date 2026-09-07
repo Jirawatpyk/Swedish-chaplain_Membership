@@ -151,7 +151,7 @@ export default async function ComposeBroadcastPage({
       {
         err: err instanceof Error ? err.message : String(err),
         tenantId: tenant.slug,
-        userId: session.user.id,
+        userIdHash: hashId(session.user.id),
       },
       'broadcasts.compose.quota_init_failed',
     );
@@ -217,7 +217,7 @@ export default async function ComposeBroadcastPage({
         {
           err: err instanceof Error ? err.message : String(err),
           tenantId: tenant.slug,
-          userId: session.user.id,
+          userIdHash: hashId(session.user.id),
         },
         'broadcasts.compose.template_picker_list_failed',
       );
@@ -291,7 +291,7 @@ export default async function ComposeBroadcastPage({
             err: err instanceof Error ? err.message : String(err),
             tenantId: tenant.slug,
             templateIdParam,
-            userId: session.user.id,
+            userIdHash: hashId(session.user.id),
           },
           'broadcasts.compose.template_pre_populate_failed',
         );

@@ -26,6 +26,9 @@ const dispatchFailureRateSpy = vi.fn();
 // after tick because the audience cannot be built.
 const approvedOverdueCountSpy = vi.fn();
 const forgetDispatchFailureRateSpy = vi.fn();
+// /code-review 2026-09-07 (finding #6) — the sixth family, and the last one
+// still latching: it was emitted straight from its GROUP BY rows.
+const suppressionListSizeSpy = vi.fn();
 
 const envMock = {
   isDevelopment: false,
@@ -61,6 +64,7 @@ vi.mock('@/lib/metrics', async () => {
       dispatchFailureRate: dispatchFailureRateSpy,
       forgetDispatchFailureRate: forgetDispatchFailureRateSpy,
       approvedOverdueCount: approvedOverdueCountSpy,
+      suppressionListSize: suppressionListSizeSpy,
     },
   };
 });
@@ -83,6 +87,7 @@ beforeEach(() => {
   dispatchFailureRateSpy.mockReset();
   approvedOverdueCountSpy.mockReset();
   forgetDispatchFailureRateSpy.mockReset();
+  suppressionListSizeSpy.mockReset();
 });
 
 afterEach(() => {
@@ -198,6 +203,51 @@ describe('GET /api/internal/metrics/broadcasts-gauges — wire contract', () => 
     expect(stuckSendingCountSpy).toHaveBeenCalledWith('t2', 0);
     expect(queuePendingSpy).toHaveBeenCalledWith('t1', 0);
     expect(queuePendingSpy).toHaveBeenCalledWith('t2', 3);
+  });
+
+  // /code-review 2026-09-07 (finding #6) — and the C9 latch class ONE MORE
+  // loop down. `suppression_list_size` was emitted straight from its GROUP BY
+  // rows, so a tenant with no `marketing_unsubscribes` row never got a sample
+  // and `observeGauge` re-reported its last size forever: clear the list and
+  // the gauge still says 7. It is a COUNT, so unlike the ratio it zero-fills.
+  it('a tenant with no suppression rows is observed at 0 — a cleared list does not keep reporting its old size', async () => {
+    dbTransactionMock.mockImplementationOnce(async () => ({
+      tenantRows: [{ tenant_id: 't1' }, { tenant_id: 't2' }],
+      pendingRows: [],
+      stuckRows: [],
+      dispatchRows: [],
+      suppressionRows: [{ tenant_id: 't1', count: 7 }],
+      approvedOverdueRows: [],
+    }));
+
+    const { GET } = await import(
+      '@/app/api/internal/metrics/broadcasts-gauges/route'
+    );
+    expect((await GET(makeRequest('Bearer test-cron-secret'))).status).toBe(200);
+
+    expect(suppressionListSizeSpy).toHaveBeenCalledWith('t1', 7);
+    expect(suppressionListSizeSpy).toHaveBeenCalledWith('t2', 0);
+  });
+
+  // A tenant can carry unsubscribes before it has ever sent a broadcast (a
+  // contact-level opt-out recorded first), so the suppression keys join the
+  // observed set rather than depending on it.
+  it('a tenant present ONLY in the suppression rows is still observed', async () => {
+    dbTransactionMock.mockImplementationOnce(async () => ({
+      tenantRows: [],
+      pendingRows: [],
+      stuckRows: [],
+      dispatchRows: [],
+      suppressionRows: [{ tenant_id: 't-quiet', count: 4 }],
+      approvedOverdueRows: [],
+    }));
+
+    const { GET } = await import(
+      '@/app/api/internal/metrics/broadcasts-gauges/route'
+    );
+    expect((await GET(makeRequest('Bearer test-cron-secret'))).status).toBe(200);
+
+    expect(suppressionListSizeSpy).toHaveBeenCalledWith('t-quiet', 4);
   });
 
   // Re-review 2026-09-07 (finding #2) — the C9 latch class, unclosed in the

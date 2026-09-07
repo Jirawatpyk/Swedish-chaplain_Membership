@@ -167,12 +167,17 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const pendingByTenant = new Map(pending.map((r) => [r.tenant_id, r.count]));
   const stuckByTenant = new Map(stuck.map((r) => [r.tenant_id, r.count]));
   const overdueByTenant = new Map(approvedOverdue.map((r) => [r.tenant_id, r.count]));
+  const suppressionByTenant = new Map(suppressionSizes.map((r) => [r.tenant_id, r.count]));
   const observed = new Set<string>();
   for (const t of [
     ...tenants.map((r) => r.tenant_id),
     ...pendingByTenant.keys(),
     ...stuckByTenant.keys(),
     ...overdueByTenant.keys(),
+    // A tenant can carry unsubscribes with no `broadcasts` row at all (a
+    // contact-level opt-out recorded before the first send), so the
+    // suppression keys join the observed set rather than relying on it.
+    ...suppressionByTenant.keys(),
   ]) {
     observed.add(t);
   }
@@ -188,8 +193,15 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     stuckTotal += s;
     approvedOverdueTotal += o;
   }
-  for (const row of suppressionSizes) {
-    broadcastsMetrics.suppressionListSize(row.tenant_id, row.count);
+  // /code-review 2026-09-07 (finding #6) — the SAME latch class as C9, one
+  // loop below the three gauges C9 fixed. `suppressionSizes` comes from a
+  // GROUP BY over `marketing_unsubscribes`, so a tenant with no rows emitted
+  // no sample and `observeGauge` re-reported its last value forever: a
+  // suppression list that is cleared (a data fix, an offboarding) kept
+  // reporting its old size. It is a COUNT, so it zero-fills like its three
+  // siblings rather than being forgotten like the ratio.
+  for (const tenantId of observed) {
+    broadcastsMetrics.suppressionListSize(tenantId, suppressionByTenant.get(tenantId) ?? 0);
   }
   const ratioTenants = new Set<string>();
   for (const row of dispatchRatios) {

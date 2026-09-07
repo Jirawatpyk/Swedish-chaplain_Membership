@@ -51,6 +51,7 @@ import {
   makeDrizzleBroadcastsRepo,
   makeDrizzleMarketingUnsubscribesRepo,
   makeSplitBroadcastIntoBatchesDeps,
+  makeTickMemoizedMembersBridge,
   membersBridge,
   recipientSegmentFromPersisted,
   resolveSegmentRecipients,
@@ -185,6 +186,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     raceLost: 0,
   };
 
+  // /code-review 2026-09-07 (finding #3) — see the twin comment in
+  // `dispatch-batches`: only `dispatch-scheduled` wrapped its bridge in the
+  // per-tick memo, so N eligible rows on one segment each re-walked the same
+  // 1:N audience. This route's own `maxDuration = 300` comment names that
+  // walk ("108 PR-C made each row a full 1:N audience walk (×MAX_…)") as the
+  // reason for the budget; the memo is the fix that comment assumed.
+  const tickMembersBridge = makeTickMemoizedMembersBridge(membersBridge);
+
   for (const row of eligible) {
     summary.processed++;
     const broadcastId = asBroadcastId(row.broadcast_id);
@@ -234,7 +243,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         resolved = await resolveSegmentRecipients(
         {
           tenant,
-          membersBridge,
+          membersBridge: tickMembersBridge,
           eventAttendees: eventAttendeesBridge,
           marketingUnsubscribes,
           audienceMode: currentAudienceMode(),

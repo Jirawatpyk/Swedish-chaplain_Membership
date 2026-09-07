@@ -109,13 +109,21 @@ beforeEach(() => {
 afterEach(() => vi.clearAllMocks());
 
 describe('GET /api/broadcasts/recipient-count (member) — 108 PR-C T082/T088', () => {
-  it('200: numbers only — { count, ceiling, exceeds:false, droppedByPreference } — no `orphans` (it is about OTHER members); no address or id leaks', async () => {
+  // /code-review 2026-09-07 (finding #4) — `orphans` was stripped as a fact
+  // about OTHER members; `droppedByPreference` is the same shape (how many of
+  // other members' contacts objected) and this endpoint answers 30×/min, so a
+  // member could walk it tier by tier. It now rides ONLY on the answer that
+  // renders it — count 0, where "everyone objected" must read differently
+  // from "nobody is in this tier". FR-022a's "tell the sender how many" binds
+  // on the CUSTOM LIST at SUBMIT time, not on this poll.
+  it('200: numbers only — { count, ceiling, exceeds:false } — no `orphans`, and no `droppedByPreference` on a non-empty answer; no address or id leaks', async () => {
     requireMemberContextMock.mockResolvedValueOnce(memberCtx);
     const { GET } = await importMemberRoute();
     const res = await GET(memberRequest('?segment=all_members'));
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toEqual({ count: 42, ceiling: 5000, exceeds: false, droppedByPreference: 2 });
+    expect(body).toEqual({ count: 42, ceiling: 5000, exceeds: false });
+    expect(Object.keys(body)).not.toContain('droppedByPreference');
     expect(JSON.stringify(body)).not.toMatch(/@|m-orphan|m-1/);
   });
 
@@ -150,7 +158,10 @@ describe('GET /api/broadcasts/recipient-count (member) — 108 PR-C T082/T088', 
     const { GET } = await importMemberRoute();
     const res = await GET(memberRequest('?segment=all_members'));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ count: 5001, ceiling: 5000, exceeds: true, droppedByPreference: 2 });
+    // Over the ceiling is not the empty answer, so the preference count is
+    // not carried here either (finding #4) — the `exceeds` string never
+    // rendered it.
+    expect(await res.json()).toEqual({ count: 5001, ceiling: 5000, exceeds: true });
   });
 
   it('empty audience → 200 with count 0 and the measured droppedByPreference (everyone objected ≠ nobody there)', async () => {
@@ -162,6 +173,21 @@ describe('GET /api/broadcasts/recipient-count (member) — 108 PR-C T082/T088', 
     const res = await GET(memberRequest('?segment=event_attendees_last_90d'));
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ count: 0, ceiling: 5000, exceeds: false, droppedByPreference: 3 });
+  });
+
+  // The narrowing is honest about what it does NOT close: a tier whose every
+  // member objected still answers `count 0, dropped N`. That answer is the
+  // one the sender needs (their audience is empty and this is why), and it is
+  // the whole remaining surface — a tier with anyone reachable in it now says
+  // nothing about the others.
+  it('a non-empty tier answers nothing about the preferences of other members (the probe M-3 closed for orphans)', async () => {
+    requireMemberContextMock.mockResolvedValue(memberCtx);
+    const { GET } = await importMemberRoute();
+    for (const tier of ['corporate', 'partnership', 'gold']) {
+      const res = await GET(memberRequest(`?segment=tier&tier=${tier}`));
+      expect(res.status).toBe(200);
+      expect(Object.keys(await res.json())).toEqual(['count', 'ceiling', 'exceeds']);
+    }
   });
 
   it.each([

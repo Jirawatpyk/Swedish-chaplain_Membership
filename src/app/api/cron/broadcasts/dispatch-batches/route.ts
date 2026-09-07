@@ -55,6 +55,7 @@ import {
   makeDrizzleBatchManifestsRepo,
   makeDrizzleBroadcastsRepo,
   makeDrizzleMarketingUnsubscribesRepo,
+  makeTickMemoizedMembersBridge,
   membersBridge,
   noOpAdvisoryLock,
   recipientSegmentFromPersisted,
@@ -212,6 +213,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     errors: 0,
   };
 
+  // /code-review 2026-09-07 (finding #3) — `dispatch-scheduled` has wrapped
+  // its bridge in the per-tick memo since R6; this cron and
+  // `split-large-broadcasts` never did, so N eligible rows on the same
+  // segment each re-walked the identical audience. 108 PR-C made that walk a
+  // full 1:N keyset paginate (N/5,000 F3 round trips) plus an opted-out
+  // aggregate — the cost this route's own `maxDuration` comment cites. The
+  // memo is also what pairs a tick's frozen audience with ONE opt-out count
+  // (C18), so without it two rows on one segment got independently timed
+  // audiences. Fresh Map per tick; tenant-keyed.
+  const tickMembersBridge = makeTickMemoizedMembersBridge(membersBridge);
+
   // 5. Per-broadcast: load + resolve recipients + dispatch all pending batches.
   for (const row of eligible) {
     summary.processed++;
@@ -274,7 +286,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         resolved = await resolveSegmentRecipients(
         {
           tenant,
-          membersBridge,
+          membersBridge: tickMembersBridge,
           eventAttendees: eventAttendeesBridge,
           marketingUnsubscribes,
           audienceMode: currentAudienceMode(),

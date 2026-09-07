@@ -67,5 +67,22 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   // the admin route.
   const { orphans: _orphans, ...memberBody } = outcome.body;
   void _orphans;
-  return NextResponse.json(memberBody, { status: 200, headers: baseHeaders(correlationId) });
+  // /code-review 2026-09-07 (finding #4) — M-3 stripped `orphans` as a fact
+  // about OTHER members that the compose UI never renders, then left
+  // `droppedByPreference` — which is the same shape: a count of other
+  // members' contacts who objected, answerable 30×/min and probeable tier by
+  // tier (some SweCham tiers hold 3 members, so "2 of 3 objected" is close to
+  // naming them). FR-022a's "tell the sender how many" binds on the CUSTOM
+  // LIST at SUBMIT time; this is the polled segment count. The single
+  // rendered use is the `empty` string — "a tier where everyone objected
+  // reads differently from a tier with nobody in it" — which is only reached
+  // at count 0, so that is the only answer that carries it. The field is
+  // already optional on the client (`droppedByPreference?: number`, `?? 0`),
+  // so omitting it changes no rendered string. Staff keep it on the admin
+  // route, and the submit response is untouched.
+  const body =
+    memberBody.count === 0
+      ? memberBody
+      : (({ droppedByPreference: _dropped, ...rest }) => rest)(memberBody);
+  return NextResponse.json(body, { status: 200, headers: baseHeaders(correlationId) });
 }
