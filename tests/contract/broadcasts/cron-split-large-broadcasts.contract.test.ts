@@ -18,7 +18,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
-import { err } from '@/lib/result';
+import { err, ok } from '@/lib/result';
 
 const runInTenantMock = vi.fn();
 const isF71aUs1EnabledMock = vi.fn();
@@ -71,7 +71,13 @@ vi.mock('@/modules/broadcasts', async () => ({
   eventAttendeesBridge: { kind: 'event-attendees-stub' },
   f71aUs1DisabledReason: () => f71aUs1DisabledReasonMock(),
   isF71aUs1Enabled: () => isF71aUs1EnabledMock(),
-  makeDrizzleBroadcastsRepo: () => ({ findById: (...args: unknown[]) => findByIdMock(...args) }),
+  makeDrizzleBroadcastsRepo: () => ({
+    findById: (...args: unknown[]) => findByIdMock(...args),
+    // Round 2 (tests M-3): the success branch transitions `approved → sending`
+    // inside a tx; the stub lets that path run so the split is observable.
+    withTx: async (fn: (tx: unknown) => unknown) => fn({ tx: 'fake' }),
+    applyTransition: async () => undefined,
+  }),
   makeDrizzleMarketingUnsubscribesRepo: () => ({ kind: 'unsubscribes-stub' }),
   makeSplitBroadcastIntoBatchesDeps: () => ({ kind: 'split-deps-stub' }),
   membersBridge: { kind: 'members-bridge-stub' },
@@ -187,6 +193,51 @@ describe('cron split-large-broadcasts — wire contract (108 PR-C review)', () =
     // Review errors HIGH-4 — counted, not just logged; the split never ran,
     // so the row stays `approved` for the next tick.
     expect(dispatchResolveFailedTotalSpy).toHaveBeenCalledWith('test-tenant');
+    expect(splitBroadcastIntoBatchesMock).not.toHaveBeenCalled();
+  });
+
+  // Review 2026-09-07 round 2 (tests M-3) — the success branch was never
+  // reached. PINS: above the threshold the split runs with the resolved
+  // count; at or below it the row is skipped and the split never runs.
+  it('PIN — a resolve above SPLIT_THRESHOLD_RECIPIENTS splits; one at the threshold is skipped', async () => {
+    runInTenantMock.mockImplementation(async (_ctx, fn) =>
+      fn({ execute: async () => [{ broadcast_id: BROADCAST_ID }] }),
+    );
+    findByIdMock.mockResolvedValue({
+      broadcastId: BROADCAST_ID,
+      requestedByMemberId: 'm-requester',
+      segmentType: 'all_members',
+      segmentParams: null,
+      customRecipientEmails: null,
+      status: 'approved',
+      estimatedRecipientCount: 12_000,
+    });
+    const big = Array.from({ length: 10_001 }, (_, i) => `r${i}@example.com`);
+    resolveSegmentRecipientsMock.mockResolvedValueOnce(
+      ok({ recipients: big, orphans: [], droppedByPreference: 0, estimatedCount: big.length }),
+    );
+    splitBroadcastIntoBatchesMock.mockResolvedValueOnce(ok({ batchCount: 2 }));
+
+    const { POST } = await import('@/app/api/cron/broadcasts/split-large-broadcasts/route');
+    let res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    expect(res.status).toBe(200);
+    let body = (await res.json()) as { processed: number; split: number; skipped: number; errors: number };
+    expect(body.split).toBe(1);
+    expect(body.errors).toBe(0);
+    expect(splitBroadcastIntoBatchesMock).toHaveBeenCalledTimes(1);
+    // The split is told the RESOLVED count (its batch arithmetic), never the
+    // stale `estimated_recipient_count` from submit time.
+    expect(splitBroadcastIntoBatchesMock.mock.calls[0]?.[1]).toMatchObject({ resolvedRecipientCount: 10_001 });
+
+    // At the threshold: not split, skipped.
+    splitBroadcastIntoBatchesMock.mockClear();
+    resolveSegmentRecipientsMock.mockResolvedValueOnce(
+      ok({ recipients: big.slice(0, 10_000), orphans: [], droppedByPreference: 0, estimatedCount: 10_000 }),
+    );
+    res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    body = (await res.json()) as { processed: number; split: number; skipped: number; errors: number };
+    expect(body.split).toBe(0);
+    expect(body.skipped).toBe(1);
     expect(splitBroadcastIntoBatchesMock).not.toHaveBeenCalled();
   });
 

@@ -33,8 +33,11 @@
  *      address on both lists counts once; a failed lookup REJECTS (throws),
  *      never fail-open. On the all_contacts leg the F3 query already
  *      excluded opted-out contacts, so this is defence in depth there.
- *   6. Empty → `broadcast_empty_segment_blocked`; above the cap →
- *      `broadcast_audience_too_large` — never truncated (FR-016a, US5).
+ *   6. Empty → `broadcast_empty_segment_blocked`.
+ *   7. Above the ceiling → `broadcast_audience_too_large` — never truncated
+ *      (FR-016a, US5). Both refusals carry the MEASURED `droppedByPreference`
+ *      and `orphans` (round 2, C8) — the pipeline ran to the end.
+ *   (The numbering matches the step comments in the body below.)
  *
  * `droppedByPreference` (FR-022a "tell the sender how many"): every
  * opt-out drop, plus — for the custom list and the attendee segment only —
@@ -55,7 +58,8 @@ import type { EmailLower } from '../../domain/value-objects/email-lower';
 
 /**
  * Contract § 2 step 5 — `lookupBatch` chunk size. A 50,000-recipient audience
- * (US5, batching ON) is 10 round trips, never one 50,000-parameter `= ANY`.
+ * (US5, batching AND the 1:N flag ON) is 10 round trips, never one
+ * 50,000-parameter `= ANY`.
  * 5,000 rather than 1,000: the resolve is latency-bound (T081 measured
  * 20,000 contacts at 1,000-row pages: 42 round trips ≈ 9–11 s from a
  * ~220 ms-RTT workstation; at 5,000 it is ~10 trips ≈ 3.7 s), and the F3
@@ -241,9 +245,13 @@ export async function resolveSegmentRecipients(
     const sourced: Candidate[] = [];
     // Review 2026-09-07 (errors HIGH-4c) — the `try` wraps ONLY the bridge
     // reads. It used to wrap the mapping loops too, so a programming error in
-    // them (a TypeError on a malformed row) was reclassified as a transient
-    // `resolve.server_error` — retried every tick forever instead of reaching
-    // the cron's `uncaught_error` bucket, the one that pages.
+    // them (a TypeError on a malformed row) was reclassified as the typed
+    // `resolve.server_error`. Round 2 (comments HIGH-2) corrected what the
+    // narrowing BUYS: every caller wraps this function in its own catch-all,
+    // so a thrown TypeError does NOT reach a cron's `uncaught_error` bucket —
+    // it lands in the same retry path under a different log event
+    // (`resolve_threw` / `dispatch.server_error`). The narrowing keeps the
+    // typed error honest about its cause; it does not change who is paged.
     type SourcedRows =
       | { readonly leg: 'contacts'; readonly rows: Awaited<ReturnType<MembersBridgePort['getContactsBySegment']>> }
       | { readonly leg: 'members'; readonly rows: Awaited<ReturnType<MembersBridgePort['getMembersBySegment']>> };

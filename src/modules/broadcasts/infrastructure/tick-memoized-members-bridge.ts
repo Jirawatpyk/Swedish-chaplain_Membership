@@ -20,11 +20,14 @@
  * same way, in its OWN map: the two methods answer different shapes for the
  * same `(tenant, segment, params)` key, and a `MemberRecipient[]` served to a
  * caller expecting `ContactRecipient[]` would resolve to zero recipients.
+ * The review round 2 (C18) added `countOptedOutContactsBySegment` to the
+ * memo (a third map, keyed with the excluded sender too), so a tick's frozen
+ * audience is paired with ONE count, not N independently timed ones.
  *
- * Pure pass-through for the other 10 methods (R7 MED-R1 — corrected
- * from "6"; `MembersBridgePort` exposes 12 methods total since 108 PR-D
- * added `filterMarketingOptedOut` and PR-C `getContactsBySegment`; the
- * spread forwards the rest) so we don't accidentally cache mutating calls
+ * Pure pass-through for the other 9 methods (`MembersBridgePort` exposes
+ * 12 methods total since 108 PR-D added `filterMarketingOptedOut` and PR-C
+ * `getContactsBySegment` + `countOptedOutContactsBySegment`; the spread
+ * forwards the rest) so we don't accidentally cache mutating calls
  * (`setMemberHalt`, `markBroadcastsAcknowledged`) or per-member lookups
  * whose freshness matters during a tick.
  */

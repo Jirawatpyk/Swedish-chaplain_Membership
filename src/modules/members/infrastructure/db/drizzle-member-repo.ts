@@ -450,15 +450,6 @@ function mapDirectoryRow(
 // --- Implementation ---------------------------------------------------------
 
 /**
- * 108 PR-C — the keyset page query behind `findBroadcastRecipientContacts`,
- * exported as a BUILDER so the live 20,000-contact test can `EXPLAIN` the
- * exact statement the repo runs (PR-D review M-13: the 0294 partial index
- * was reserved for this read with an EXPLAIN obligation) instead of a
- * hand-written copy that would drift. Must be awaited inside the caller's
- * `runInTenant` tx — it is tenant-scoped by RLS, not by an explicit
- * predicate on `members.tenant_id`.
- */
-/**
  * Review 2026-09-07 — the tier predicate shared by the page read, the
  * opted-out count AND (round 2, C1) the primary_only read, so the three can
  * never narrow differently (SC-004). Round 2 found the guard below had been
@@ -483,6 +474,15 @@ function broadcastSegmentTierFilter(
   )}]::text[])`;
 }
 
+/**
+ * 108 PR-C — the keyset page query behind `findBroadcastRecipientContacts`,
+ * exported as a BUILDER so the live 20,000-contact test can `EXPLAIN` the
+ * exact statement the repo runs (PR-D review M-13: the 0294 partial index
+ * was reserved for this read with an EXPLAIN obligation) instead of a
+ * hand-written copy that would drift. Must be awaited inside the caller's
+ * `runInTenant` tx — it is tenant-scoped by RLS, not by an explicit
+ * predicate on `members.tenant_id`.
+ */
 export function buildBroadcastRecipientContactsQuery(
   tx: TenantTx,
   params: BroadcastRecipientContactsQuery,

@@ -35,6 +35,8 @@ import { GET as memberCountGet } from '@/app/api/broadcasts/recipient-count/rout
 import { GET as adminCountGet } from '@/app/api/admin/broadcasts/recipient-count/route';
 
 let tenant: TestTenant;
+let otherTenant: TestTenant | undefined;
+let foreignMemberId: string;
 let admin: TestUser;
 let manager: TestUser;
 let memberUser: TestUser;
@@ -80,10 +82,21 @@ beforeAll(async () => {
   const peer = await seedPortalMemberWithContact(tenant, planId, { contactEmail: `cnt-p2-${tag}@example.test` });
   peerId = peer.memberId as string;
   await seedPortalMemberWithContact(tenant, planId, { contactEmail: `cnt-p3-${tag}@example.test` });
+  // Review 2026-09-07 round 2 (security test gap 1) — a REAL member of
+  // another tenant, so the route-level probe is proven with the exact input
+  // an attacker would use, not a random UUID.
+  otherTenant = await createTestTenant('test-chamber');
+  const otherPlanId = `cnt-o-${randomUUID().slice(0, 6)}`;
+  await seedPortalPlan(otherTenant.ctx.slug, admin.userId, otherPlanId);
+  const foreign = await seedPortalMemberWithContact(otherTenant, otherPlanId, {
+    contactEmail: `cnt-foreign-${tag}@example.test`,
+  });
+  foreignMemberId = foreign.memberId as string;
 }, 120_000);
 
 afterAll(async () => {
   await tenant.cleanup().catch(() => {});
+  await otherTenant?.cleanup().catch(() => {});
   await Promise.all([admin, manager, memberUser].map((u) => deleteTestUser(u).catch(() => {})));
 }, 120_000);
 
@@ -122,6 +135,22 @@ describe('108 PR-C T088 — recipient-count routes (live Neon, real gates)', () 
     );
     expect(forPeer.status).toBe(200);
     expect((await forPeer.json()).count).toBe(2);
+  });
+
+  it('admin: a REAL member of ANOTHER tenant → 404 + member_cross_tenant_probe, indistinguishable from unknown (Principle I.3 at the route)', async () => {
+    sessionAs(admin, 'admin');
+    const requestId = reqId();
+    const res = await adminCountGet(
+      makeRequest(`/api/admin/broadcasts/recipient-count?member_id=${foreignMemberId}&segment=all_members`, requestId),
+    );
+    expect(res.status).toBe(404);
+    expect((await res.json()).error.code).toBe('broadcast_member_not_found');
+    const rows = await auditRowsFor(requestId);
+    const probe = rows.find((r) => r.eventType === 'member_cross_tenant_probe');
+    expect(probe).toBeDefined();
+    expect(probe?.payload).toMatchObject({ attempted_member_id: foreignMemberId, surface: 'recipient_count' });
+    // Numbers and ids only — never the foreign member's address or name.
+    expect(JSON.stringify(probe?.payload)).not.toMatch(/@|foreign/i);
   });
 
   it('admin: an unknown member_id → 404 + member_cross_tenant_probe audit carrying ids only', async () => {

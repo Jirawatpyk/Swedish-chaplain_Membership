@@ -120,8 +120,10 @@ re-checked post-Phase-1 design (see § Post-Design Re-check).*
       `aria-live="polite"`; axe sweeps on the new page, member detail, portal profile,
       compose. `enterprise-ux-designer` pass on every UI PR.
 - [x] **VII. Performance & Observability** — Budgets in Technical Context; new metrics
-      `broadcasts.audience_resolved_total`, `audience_pages_total`,
-      `audience_import_status`, `recipient_count_ms`; existing
+      `broadcasts.audience_resolved_total{segment,mode,phase}`, `audience_pages_total`,
+      `recipient_count_ms{outcome}` (the `audience_import_status` gauge went with the
+      deferred T086), plus `dispatch_resolve_failed_total` and `approved_overdue_count`
+      from the 2026-09-07 review; existing
       `invoicing.auto_email_skipped{reason}`; structured logs with member-id hashes;
       runbook `docs/runbooks/broadcast-audience-build.md`; `docs/observability.md` updated.
       Keyset pagination (5,000/page — T081) bounds memory; partial index backs the audience query.
@@ -157,7 +159,7 @@ specs/108-contact-recipient-rules/
 ├── spec.md              # Feature spec (3 clarification sessions, 2026-09-04)
 ├── plan.md              # This file
 ├── research.md          # Phase 0 — R1..R15 decisions + pinned repo facts + V1..V3 verify items
-├── data-model.md        # Phase 1 — Domain unions, DDL for 0292..0298, states, permissions, flag
+├── data-model.md        # Phase 1 — Domain unions, DDL for 0292..0297 (0298 deferred with T086), states, permissions, flag
 ├── quickstart.md        # Phase 1 — per-PR test loops, manual verification, cutover checklist
 ├── contracts/
 │   ├── money-email-recipient.md    # Tier A resolution rule, widened port, F5 port, routes, gate
@@ -280,5 +282,6 @@ complete deviation set. **GATE: PASS.**
   `.specify/scripts/powershell/update-agent-context.ps1 -AgentType claude`.
 - **Phase 2**: tasks.md — produced by `/speckit.tasks`, not by this command. Suggested
   task grouping: PR-A (R1–R3, R14 gate, 0292) · PR-B (R4, R5, 0293, V1) · PR-D (R6, R7,
-  0294, 0295, audience page, portal toggle) · PR-C (R8–R12, R16, 0297, 0298, V2, V3, V5, spec-010 /
-  005 / 007 / 014 / 016 AMENDMENT blocks) · follow-up (flag + `primary_only` leg deletion).
+  0294, 0295, audience page, portal toggle) · PR-C (R8–R12, R16, 0297, V2, V3, V5, spec-010 /
+  005 / 007 / 014 / 016 AMENDMENT blocks; 0298 + the import build DEFERRED to the follow-up
+  with T110) · follow-up (flag + `primary_only` leg deletion).

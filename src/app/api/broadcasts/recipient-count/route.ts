@@ -2,8 +2,9 @@
  * 108 PR-C T088 — `GET /api/broadcasts/recipient-count` (member compose).
  *
  * Query: `segment=all_members|tier|event_attendees_last_90d`, `tier=<code>[,<code>]`.
- * 200 `{ count, ceiling, exceeds, orphans, droppedByPreference }` — numbers
- * only (FR-040a). Order of checks is the contract: member gate → query
+ * 200 `{ count, ceiling, exceeds, droppedByPreference }` — numbers only
+ * (FR-040a); `orphans` is stripped here (a fact about OTHER members — the
+ * staff route keeps it). Order of checks is the contract: member gate → query
  * (400 `invalid_query`) → 30/min (tenant, user) limiter consumed BEFORE the
  * resolve (429 + `Retry-After`) → resolve for the caller's member → 503
  * `count_unavailable` when resolution fails (FR-040b). The custom list is

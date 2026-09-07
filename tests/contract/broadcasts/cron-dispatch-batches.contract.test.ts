@@ -26,7 +26,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
-import { err } from '@/lib/result';
+import { err, ok } from '@/lib/result';
 
 const runInTenantMock = vi.fn();
 const isF71aUs1EnabledMock = vi.fn();
@@ -50,6 +50,10 @@ const dispatchAllPendingBatchesMock = vi.fn().mockResolvedValue({
 const envMock = {
   cron: { secret: 'test-cron-secret' },
   features: { f7Broadcasts: true, f71aBroadcastAdvanced: true, f71aUs1Pagination: true },
+  // Round 2 (tests M-3): the success branch builds the BroadcastContent,
+  // which reads the from address; without it the route threw before the
+  // dispatcher — exactly the unreachable loop the PIN below exists to close.
+  broadcasts: { fromEmail: 'noreply@swecham-fixture.com' },
   isDevelopment: false,
 };
 
@@ -59,6 +63,7 @@ vi.mock('@/lib/env', () => ({
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
+import { logger } from '@/lib/logger';
 vi.mock('@/lib/db', () => ({
   runInTenant: (...args: unknown[]) => runInTenantMock(...args),
 }));
@@ -235,6 +240,45 @@ describe('cron dispatch-batches — wire contract (Phase 3F.11.5 / Finding 9)', 
     // the batches are left untouched for the next tick.
     expect(dispatchResolveFailedTotalSpy).toHaveBeenCalledWith('test-tenant');
     expect(dispatchAllPendingBatchesMock).not.toHaveBeenCalled();
+  });
+
+  // Review 2026-09-07 round 2 (tests M-3) — the per-row loop was reached on
+  // the `!resolved.ok` branch only; a route handing the dispatcher `[]`
+  // shipped green. PIN: the resolved addresses reach the dispatcher.
+  it('PIN — a successful resolve hands the dispatcher exactly the resolved recipients', async () => {
+    runInTenantMock.mockImplementation(async (_ctx, fn) =>
+      fn({
+        execute: async () => [{ broadcast_id: BROADCAST_ID }],
+      }),
+    );
+    findByIdMock.mockResolvedValue({
+      broadcastId: BROADCAST_ID,
+      requestedByMemberId: 'm-requester',
+      segmentType: 'all_members',
+      segmentParams: null,
+      customRecipientEmails: null,
+      subject: 'S',
+      bodyHtml: '<p>b</p>',
+      fromName: 'F',
+      replyToEmail: 'r@example.com',
+      status: 'sending',
+    });
+    findPendingByBroadcastMock.mockResolvedValue([{ batchId: 'b-1', status: 'pending' }]);
+    resolveSegmentRecipientsMock.mockResolvedValue(
+      ok({ recipients: ['a@example.com', 'b@example.com'], orphans: [], droppedByPreference: 0, estimatedCount: 2 }),
+    );
+    dispatchAllPendingBatchesMock.mockResolvedValue({ dispatched: 1, failed: 0, skipped: 0 });
+
+    const { POST } = await import('@/app/api/cron/broadcasts/dispatch-batches/route');
+    const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { processed: number; errors: number; broadcastsDispatched: number };
+    expect(body, JSON.stringify(vi.mocked(logger.error).mock.calls)).toMatchObject({ processed: 1, errors: 0 });
+    expect(dispatchAllPendingBatchesMock).toHaveBeenCalledTimes(1);
+    const serialised = JSON.stringify(dispatchAllPendingBatchesMock.mock.calls[0]);
+    expect(serialised).toContain('a@example.com');
+    expect(serialised).toContain('b@example.com');
+    expect(dispatchResolveFailedTotalSpy).not.toHaveBeenCalled();
   });
 
   // Review 2026-09-07 round 2 (C2) — a tier row with no codes is a permanent

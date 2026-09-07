@@ -224,7 +224,7 @@ export const membersBridge: MembersBridgePort = {
           err: result.error.code,
           cause: errKind('cause' in result.error ? result.error.cause : undefined),
         },
-        'members-bridge.count_opted_out_contacts_failed',
+        'broadcasts.members_bridge.opted_out_count_failed',
       );
       throw new Error(
         `members-bridge.countOptedOutContactsBySegment: ${result.error.code} — refusing to guess the preference count`,

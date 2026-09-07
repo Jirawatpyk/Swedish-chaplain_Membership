@@ -157,7 +157,12 @@ CREATE CONSTRAINT TRIGGER members_one_primary_ct AFTER UPDATE OF status, erased_
 |---|---|---|
 | `contact_id` | `uuid NULL` | best-effort attribution alongside the existing nullable `member_id`; PK `(tenant_id, email_lower)` unchanged; rows still never deleted |
 
-Index `marketing_unsubscribes_contact_lookup_idx (tenant_id, contact_id) WHERE contact_id IS NOT NULL`.
+No index: the planned `marketing_unsubscribes_contact_lookup_idx` was dropped from 0297 at the
+2026-09-07 review — nothing reads `contact_id` as a predicate (`severMemberRefs` filters on
+`member_id`, already indexed), and an index nothing reads costs a write on every unsubscribe.
+The upsert keeps `contact_id` and `member_id` moving TOGETHER (round 2, C10): a re-attribution
+to a different member drops the previous member's contact, so erasure by `member_id` reaches
+every back-reference (FR-056).
 
 ### 2.4 Audit enum — migrations 0292 (PR-A) and 0295 (PR-D)
 

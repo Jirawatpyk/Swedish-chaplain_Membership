@@ -13,7 +13,7 @@ interface ResolveSegmentDeps {
   eventAttendees: EventAttendeesRepository;
   marketingUnsubscribes: MarketingUnsubscribesRepo;   // lookupBatch, chunked ≤5,000
   audienceMode: 'primary_only' | 'all_contacts';      // from FEATURE_CONTACT_MARKETING_RECIPIENTS
-  audienceCeiling: number;                            // audienceCeiling(isF71aUs1Enabled())
+  audienceCeiling: number;                            // audienceCeiling(isF71aUs1Enabled() && contactMarketingRecipients) — review H-2: 50,000 needs BOTH flags
 }
 interface ResolveSegmentInput {
   segment: RecipientSegment;
@@ -38,7 +38,7 @@ interface ResolveSegmentOutput {
 ## 2. Pipeline (all_contacts mode)
 
 1. Member-based segment → `membersBridge.getContactsBySegment(tenant, kind, params)`:
-   pages of 5,000 (T081 raised it from 1,000: latency-bound, see research R8) ordered by `(member_id, contact_id)`, looped to exhaustion (cursor = `{ kind: 'after_member' | 'after_contact', … }` — review 2026-09-07; a `tier` segment with no codes is REFUSED by F3, never read as everyone); **a page
+   pages of 5,000 (T081 raised it from 1,000: latency-bound, see research R8) ordered by `(member_id, contact_id)`, looped to exhaustion (cursor = `{ kind: 'after_member' | 'after_contact', … }` — review 2026-09-07; the `after_contact` bound is `member_id >= m AND (member_id > m OR contact_id > c)`, an index bound — round 2 perf HIGH-1; a `tier` segment with no codes is REFUSED by all three F3 reads — page, opted-out count AND the primary-only read (round 2, C1) — and refused before that at the persisted-row boundary, `recipientSegmentFromPersisted`, so a malformed row is a terminal `failed_to_dispatch`, never a retry); **a page
    failure propagates as `resolve.server_error`** (never `[]`).
    Eligibility: member `status='active' AND erased_at IS NULL AND halted=false` (+ tier);
    contact `removed_at IS NULL AND marketing_opt_out_at IS NULL`.
@@ -58,12 +58,23 @@ applies in both modes (FR-021).
 
 ## 3. Ceiling
 
-`audienceCeiling(batchingEnabled)` = 5,000 (flag OFF) | 50,000 (flag ON). Read at one
-composition site; submit, count and dispatch compare against the same number.
+`audienceCeiling(batchingEnabled)` = 5,000 | 50,000, where the argument is
+`isF71aUs1Enabled() && FEATURE_CONTACT_MARKETING_RECIPIENTS` (review H-2: the wide ceiling
+belongs to the wide audience; with the 1:N flag OFF the ceiling is 5,000 whatever the batching
+flag says — prod has batching ON). Read at one composition site; submit, count and dispatch
+compare against the same number.
 `split-large-broadcasts` threshold stays 10,000 (< ceiling when ON). DB CHECK
 `broadcasts_estimated_recipient_cap (0..50000)` unchanged.
 
 ## 4. Audience push (dispatch)
+
+> **DEFERRED out of PR-C (2026-09-07)** — everything in this section (the Contacts Import
+> API, `createContactImport` / `getContactImport`, `broadcasts.audience_import_id`,
+> `audience_building`, the 30-minute stuck rule) ships in the follow-up PR with T110
+> (tasks T086 / T087 / T106; spec AMENDMENT under User Story 5). What PR-C ships at
+> dispatch is the bounded per-tick push of the resolved audience: a tick that cannot build
+> it rejects, counts `broadcasts_dispatch_resolve_failed_total`, and the next tick retries
+> (FR-044); nothing partial is ever pushed.
 
 - First dispatch tick resolves the audience, renders a CSV with a single `email` column
   (never `unsubscribed`), and submits ONE import: `POST /contacts/imports` (multipart:
@@ -87,15 +98,18 @@ composition site; submit, count and dispatch compare against the same number.
 
 | Route | Guard | Query | 200 body |
 |---|---|---|---|
-| `GET /api/broadcasts/recipient-count` | `requireMemberContext` (portal compose) | `segment=all_members\|tier\|event_attendees_last_90d`, `tier=<code>[,<code>]` | `{ count, ceiling, exceeds: boolean, orphans: number, droppedByPreference: number }` |
-| `GET /api/admin/broadcasts/recipient-count` | `requireApiPermission('broadcasts.write')` | same + `member_id=<uuid>` (proxied member) | same |
+| `GET /api/broadcasts/recipient-count` | `requireMemberContext` (portal compose) | `segment=all_members\|tier\|event_attendees_last_90d`, `tier=<code>[,<code>]` | `{ count, ceiling, exceeds: boolean, droppedByPreference: number }` |
+| `GET /api/admin/broadcasts/recipient-count` | `requireApiPermission('broadcasts.write')` | same + `member_id=<uuid>` (proxied member) | same `+ orphans: number` |
 
-- Response body (review 2026-09-07): `{ count, ceiling, exceeds }` on every answer; `droppedByPreference`
-  is present only when the resolver COMPLETED (a refusal — `exceeds: true` or an empty audience — never
-  fabricates a 0); `orphans` is sent to STAFF only (`/api/admin/...`) — it is a fact about other members
-  a member could otherwise probe tier by tier. A tier code over 64 characters is a 400 `invalid_query`,
-  never a silently narrower audience. The staff route answers 503 `count_unavailable` (not 404, no probe
-  audit) when the member lookup FAILS (`repo.unexpected`).
+- Response body (review 2026-09-07, round 2 C8): `count`, `ceiling`, `exceeds` and `droppedByPreference`
+  on EVERY answer — the resolver runs its whole pipeline before it refuses, so an empty or over-ceiling
+  audience carries the same MEASURED number the ok answer does (a tier where everyone objected reads
+  `count 0, droppedByPreference N`; round 1's "absent means not computed" was false — it was computed);
+  `orphans` is sent to STAFF only (`/api/admin/...`) — it is a fact about other members a member could
+  otherwise probe tier by tier. A tier code over 64 characters is a 400 `invalid_query`, never a
+  silently narrower audience. The staff route answers 503 `count_unavailable` (not 404, no probe audit)
+  when the member lookup FAILS (`repo.unexpected`). `broadcasts_recipient_count_ms` carries an
+  `outcome` label (`ok` | `unavailable`).
 - Custom lists are counted client-side after validation (the existing flow) and reported
   with `droppedByPreference` from `POST /api/broadcasts/submit`'s response.
 - Rate limit 30 / min per `(tenant, user)`, atomic `check` before the resolve. Errors: 429

@@ -99,8 +99,10 @@ export function makeSaveDraftDeps(tenantId: string): SaveDraftDeps {
  * recipient-count endpoints, dispatch-scheduled, split-large-broadcasts,
  * dispatch-batches — takes the leg from here so the estimate shown at compose
  * equals the dispatched set for the same tenant state (SC-004). Read per call
- * (not cached at module load) so a Vercel env flip takes effect on the next
- * request/tick without a process restart.
+ * so this module holds NO copy of its own; `env` memoises its parse, so a
+ * Vercel env flip takes effect on the next deploy / cold start — the same
+ * as every other flag here (review round 2, tests L-1: the previous claim
+ * "on the next request without a restart" was not true).
  */
 export function currentAudienceMode(): AudienceMode {
   return env.features.contactMarketingRecipients ? 'all_contacts' : 'primary_only';

@@ -124,12 +124,15 @@ describe('broadcasts-deps — audience mode + ceiling from the flag matrix (108 
     expect(dispatch.audienceCeiling).toBe(count.audienceCeiling);
   }, 30_000);
 
-  it('the mode is read per call, not cached at module load (a Vercel env flip takes effect next tick)', async () => {
+  // Review round 2 (tests L-1): renamed — `vi.resetModules()` re-evaluates the
+  // module, so this case cannot observe "per call vs module load" (a
+  // module-level constant would pass too). What it DOES pin is that
+  // `broadcasts-deps` holds no copy of its own: a fresh env parse yields a
+  // fresh answer. `env` memoises, so a flip lands on the next cold start.
+  it('broadcasts-deps holds no copy of the flags: a fresh env parse yields a fresh mode and ceiling', async () => {
     stubEnv({ contactMarketing: 'false', batching: false });
     const deps = await loadDeps();
     expect(deps.currentAudienceMode()).toBe('primary_only');
-    // The env module memoises its parse, so a flip needs a fresh env module;
-    // what this pins is that broadcasts-deps holds NO copy of its own.
     vi.resetModules();
     stubEnv({ contactMarketing: 'true', batching: true });
     const fresh = await loadDeps();

@@ -45,7 +45,7 @@ inventory until it prints 0, then merge / redeploy.
 | A (money hardening) | `vercel promote` previous deployment; 0292 is an enum add (harmless when unused) | none | none |
 | B (invariant) | revert restores the racy path; triggers stay installed and are safe with correct data | none | 0293 forward-only; drop triggers only via a new migration |
 | D (permission + page + columns) | revert hides the page/route; 0294/0295 columns + enum values are unused when reverted | none | none |
-| C (audience) | not needed for behaviour — **flip the flag OFF** (primary-only leg) | `FEATURE_CONTACT_MARKETING_RECIPIENTS=false` + redeploy | 0297 unused when OFF (0298 deferred with T086) |
+| C (audience) | flag OFF restores the primary-only leg and the 5,000 ceiling — but **three changes are UNFLAGGED and land on merge** (reliability M-3): the FR-021 `status = 'active'` narrowing (an inactive / archived member's primary stops receiving), the `.limit(5000)` removal (a >5,000 audience is refused instead of silently cut), and the four bridge lookups + `setMemberHalt` throwing on a failed read (submit 500s / dispatch retries instead of failing open). If any of THOSE is the wrong call, it is a code revert (`vercel promote`), not a flag flip. The UI layer (live count, hints, halt banner) is unflagged too. | `FEATURE_CONTACT_MARKETING_RECIPIENTS=false` + redeploy for the widening only | 0297 unused when OFF (0298 deferred with T086) |
 
 Incident notes: a broadcast already delivered under the wrong audience cannot be recalled —
 record the broadcast id, notify the tenant admin contact, and flip the flag off before the
@@ -111,12 +111,22 @@ Before opening any PR: `pnpm lint && pnpm typecheck && pnpm check:i18n && pnpm v
 ## Cutover checklist (prod)
 
 1. PR-A, PR-B, PR-D deployed; V1 counts confirmed 0 violations before PR-B.
-2. PR-C deployed with the flag OFF; no behaviour change except `status = 'active'`.
+2. PR-C deployed with the flag OFF; the unflagged changes are the ones listed in the rollback
+   matrix above (active-only narrowing, no silent cut, fail-closed reads, the compose UI).
 3. Staff run the FR-027a pre-flight review on the audience page (preset link) and switch
    off anyone who should not receive.
 4. Flip `FEATURE_CONTACT_MARKETING_RECIPIENTS=true` in Vercel; redeploy.
-5. First send: watch `broadcasts.audience_import_status` (and the import's `counts` in the Resend dashboard) and the outbox; confirm
-   `estimated_recipient_count` = delivered.
+5. First send — watch the five signals PR-C ships (the `audience_import_status` gauge went
+   with the deferred T086 and does not exist):
+   - `broadcasts_audience_resolved_total{mode}` flips from `primary_only` to `all_contacts`
+     on the first resolve (phase `dispatch`);
+   - `broadcasts_recipient_count_ms{outcome="ok"}` p95 inside SLO-F7-013 (400 ms @ 5,000);
+   - `broadcasts_dispatch_resolve_failed_total` stays 0 and `broadcasts_approved_overdue_count`
+     stays 0 through the send;
+   - `broadcasts_marketing_opt_out_filter_count{phase="dispatch"}` is a LIVE series (present,
+     even at 0 — its absence means the filter stopped running);
+   - the outbox: `estimated_recipient_count` = delivered.
+   Any of the first four wrong → § Rollback (flag OFF) before the next tick.
 6. After one clean week: follow-up PR deletes the flag and the `primary_only` leg.
 7. Live-mode switch checklist (separate): Stripe Dashboard → Customer emails →
    "Successful payments" OFF.

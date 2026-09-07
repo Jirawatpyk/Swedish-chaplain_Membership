@@ -141,10 +141,12 @@ export interface MarketingUnsubscribesRepo {
    * residual). Called inside the content-scrub tx by
    * `scrubBroadcastContentForMember`; idempotent (a re-drive affects 0).
    *
-   * OPTIONAL for the same reason as `upsertStandalone` / `listEmailLowers`:
-   * the partial fixtures of this port need not stub it; the production
-   * Drizzle adapter always implements it and the use case throws when it is
-   * absent (never in prod).
+   * OPTIONAL on the port for the same reason as `upsertStandalone` /
+   * `listEmailLowers` (partial fixtures need not stub it). The use case that
+   * needs it (`scrubBroadcastContentForMember`) takes
+   * `FullMarketingUnsubscribesRepo`, so its presence is a COMPILE-TIME fact
+   * there — no runtime guard (review 2026-09-07 round 1 types MEDIUM; the
+   * "throws when absent" wording this docblock used to carry was stale).
    */
   severMemberRefs?(
     tx: unknown,

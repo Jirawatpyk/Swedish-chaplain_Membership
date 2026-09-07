@@ -386,8 +386,10 @@ recipients per broadcast (FR-016a) × N broadcasts due in the window.
 
 > **108 PR-C (2026-09-07)**: the per-tick audience is built by ONE resolver
 > (compose count = submit = dispatch, SC-004) walking F3's 5,000-row keyset
-> pages; with F7.1a batching ON the ceiling is 50,000 and the split cron takes
-> over above 10,000. A tick that cannot build the audience REJECTS and the
+> pages; the ceiling is 5,000 unless BOTH F7.1a batching AND
+> `FEATURE_CONTACT_MARKETING_RECIPIENTS` are ON (then 50,000, and the split
+> cron takes over above 10,000) — prod has batching ON and the 1:N flag OFF, so
+> prod's ceiling today is 5,000. A tick that cannot build the audience REJECTS and the
 > next tick retries — never a partial push. Triage: `docs/runbooks/broadcast-audience-build.md`.
 
 ### Setup steps (one-time, reproducible)

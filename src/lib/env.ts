@@ -623,9 +623,12 @@ const schema = z.object({
   // --- 108 PR-C — contact marketing recipients (TEMPORARY cutover flag) ----
   // Widens member-based broadcast audiences from one primary contact per
   // member to every eligible contact of every active member (US3, FR-020).
-  // Read in ONE place: `src/modules/broadcasts/infrastructure/broadcasts-deps.ts`
+  // Read in ONE module: `src/modules/broadcasts/infrastructure/broadcasts-deps.ts`
   // maps it to `ResolveSegmentDeps.audienceMode` ('primary_only' |
-  // 'all_contacts'), so Domain and Application never see the env. Default
+  // 'all_contacts') AND — review H-2 — gates the audience ceiling with
+  // FEATURE_F71A_US1_PAGINATION (50,000 only when BOTH are on, else 5,000),
+  // so Domain and Application never see the env. A flip therefore also moves
+  // the accepted audience size and the compose-page copy. Default
   // FALSE — ships dark; the operator flips it only after the FR-027a
   // pre-flight review on /admin/marketing/audience (tasks T093/T094).
   // Flag-off is the rollback for the WIDENING (quickstart § Rollback matrix);

@@ -12,10 +12,15 @@
  * the same value at count, submit and dispatch, so the estimate a member
  * sees at compose is the number that decides the send.
  *
- *   - batching OFF → 5,000: the F7 MVP figure; a single Resend audience
- *     pushed by one dispatch tick.
- *   - batching ON  → 50,000: the DB CHECK `broadcasts_estimated_recipient_cap
+ *   - `false` → 5,000: the F7 MVP figure; a single Resend audience pushed by
+ *     one dispatch tick.
+ *   - `true`  → 50,000: the DB CHECK `broadcasts_estimated_recipient_cap
  *     (0..50000)` and `MAX_RECIPIENT_COUNT` — unchanged — are the hard bound.
+ *
+ * The composition root passes `isF71aUs1Enabled() && contactMarketingRecipients`
+ * (review H-2, 2026-09-07): the wide ceiling was raised FOR the 1:N audience,
+ * so it moves with the 1:N flag, not with batching alone — prod has batching
+ * ON, and batching alone would have raised prod to 50,000 on a flag-OFF deploy.
  *
  * Pure Domain: the flag value is passed in; nothing here reads the env.
  */

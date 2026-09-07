@@ -261,12 +261,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         continue;
       }
       const segment = segmentResult.value;
-      // Staff review A11: the 108 PR-D opt-out lookup is fail-closed and
-      // THROWS when the read fails. `dispatch-scheduled-broadcast.ts` maps that
-      // to a typed `dispatch.server_error`; here it fell to the generic
-      // per-broadcast catch, so one outage was classified two different ways
-      // depending on which cron observed it. Safety was never in question —
-      // the tick survives either way — only the alerting signal.
+      // Staff review A11 (closed by the 2026-09-07 review, errors HIGH-4): the
+      // fail-closed bridge reads THROW; this cron used to let that fall to the
+      // generic per-broadcast catch, so one outage was classified differently
+      // per cron. Now every cron counts it in `dispatch_resolve_failed_total`
+      // from the catch below — one signal, three crons.
       // 108 PR-C: self-exclusion is by MEMBER id (FR-022), so the requesting
       // member's primary email is no longer read here; the leg comes from
       // the same flag read the submit and dispatch paths use (SC-004).

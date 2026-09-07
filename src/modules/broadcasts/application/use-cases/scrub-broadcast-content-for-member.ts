@@ -60,7 +60,7 @@ import type { TenantContext } from '@/modules/tenants';
 import type { MemberId } from '@/modules/members';
 import type { AuditPort } from '../ports/audit-port';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
-import type { MarketingUnsubscribesRepo } from '../ports/marketing-unsubscribes-repo';
+import type { FullMarketingUnsubscribesRepo } from '../ports/marketing-unsubscribes-repo';
 
 export type ScrubBroadcastContentForMemberError = {
   readonly kind: 'scrub.server_error';
@@ -126,11 +126,10 @@ export interface ScrubBroadcastContentForMemberDeps {
   readonly audit: AuditPort;
   /**
    * 108 PR-C T104 — `severMemberRefs` runs inside the content-scrub tx so
-   * the redaction and the back-reference severing co-commit.
+   * the redaction and the back-reference severing co-commit; it is REQUIRED
+   * here at compile time (the port's alias — review 2026-09-07).
    */
-  /** Review 2026-09-07 — `severMemberRefs` is REQUIRED here (see the call site). */
-  readonly marketingUnsubscribes: MarketingUnsubscribesRepo &
-    Required<Pick<MarketingUnsubscribesRepo, 'severMemberRefs'>>;
+  readonly marketingUnsubscribes: FullMarketingUnsubscribesRepo;
 }
 
 const SYSTEM_ACTOR_USER_ID = 'system';

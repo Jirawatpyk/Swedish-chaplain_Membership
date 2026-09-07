@@ -6,10 +6,12 @@
  * the DB CHECK `broadcasts_estimated_recipient_cap (0..50000)` and
  * `MAX_RECIPIENT_COUNT`, which do not change.
  *
- * The split threshold (10,000) must sit BELOW the batching-ON ceiling, or an
- * audience of 5,001–10,000 would be accepted at submit and never reach the
- * batch path (the exact gap research R-C § 4 found with the old 5,000 hard
- * cap making the split path unreachable).
+ * The split threshold (10,000) must sit BELOW the 50,000 ceiling, or an
+ * accepted audience above the threshold would never be picked up by
+ * `split-large-broadcasts` and would sit in `approved` forever. (5,001–10,000
+ * is the intended SINGLE-audience path under `RESEND_PER_AUDIENCE_CAP`, not a
+ * gap — review 2026-09-07 round 2 corrected this docblock.) The 50,000
+ * argument is `batching AND the 1:N flag` at the composition root (H-2).
  */
 import { describe, expect, it } from 'vitest';
 import {

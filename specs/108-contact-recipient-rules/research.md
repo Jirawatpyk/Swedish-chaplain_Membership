@@ -288,11 +288,14 @@ affects F7's `audienceId`-based gateway (R16).
 > `status` values. PR-C keeps the bounded per-contact push.
 
 - **Decision**: `src/modules/broadcasts/domain/audience-ceiling.ts` exports
-  `audienceCeiling(batchingEnabled: boolean): number` = 5,000 when the F7.1a batching flag
-  is OFF, 50,000 when ON (matches the DB CHECK `broadcasts_estimated_recipient_cap` and
-  `MAX_RECIPIENT_COUNT`). The composition root passes the number into
-  `ResolveSegmentDeps.audienceCeiling`; `AUDIENCE_HARD_CAP`, the submit and dispatch checks
-  all read that one value; `split-large-broadcasts` keeps its 10,000 threshold *below* the
+  `audienceCeiling(batchingEnabled: boolean): number` = 5,000 | 50,000 (matches the DB
+  CHECK `broadcasts_estimated_recipient_cap` and `MAX_RECIPIENT_COUNT`). **Review H-2
+  (2026-09-07)**: the composition root passes `isF71aUs1Enabled() &&
+  FEATURE_CONTACT_MARKETING_RECIPIENTS` — 50,000 needs BOTH flags, because the wide ceiling
+  was raised for the 1:N audience and prod already has batching ON. The number goes into
+  `ResolveSegmentDeps.audienceCeiling`; the resolver's old `AUDIENCE_HARD_CAP` is deleted
+  (T085) and the submit and dispatch checks all read that one value;
+  `split-large-broadcasts` keeps its 10,000 threshold *below* the
   ceiling so audiences 5,001–50,000 are reachable through the batch path (today
   `AUDIENCE_HARD_CAP = 5000` makes the split path unreachable — R-C §4). The compose-page
   `estimateNote` copy (hardcoded "capped at 5,000" in EN/TH/SV, `en.json:5667`) is
@@ -431,15 +434,18 @@ affects F7's `audienceId`-based gateway (R16).
   exhaustion page at 20,000 — T081); Marketing audience page LCP < 2.5 s at 50 rows/page; toggle API p95 < 400 ms.
   `docs/observability.md` gains three of the four metrics (the `audience_import_status` gauge went with the
   deferred T086) plus, from the 2026-09-07 review, `dispatch_resolve_failed.total` and
-  `approved_overdue_count`; `docs/runbooks/broadcast-audience-build.md`
-  documents the import-based audience build (submit → poll → send) and the
-  stuck-`audience_building` reconcile.
-- **Alert thresholds**: `audience_import_status` not `completed` within 30 min of submission,
-  or `failed`/`stuck` → page; `invoicing.auto_email_skipped{reason:no_recipient}` > 0 in
-  any 24 h → warn (expected 0 once the invariant ships); `recipient_count_ms` p95 > 3,000
-  over 15 min → warn; existing bounce/complaint alerts unchanged. Runbooks to update:
-  `docs/runbooks/cron-jobs.md` (new sub-state), `reconcile-stuck-sending` runbook
-  (audience_building case), `void-pdf-reconcile` runbook (copy-forward note). Env: the flag
+  `approved_overdue_count`, and (round 2) a `phase` label on `audience_resolved.total` and an
+  `outcome` label on `recipient_count_ms`; `docs/runbooks/broadcast-audience-build.md`
+  documents the bounded per-tick push PR-C ships — the resolver's steps, the failure
+  signals, the rollback — NOT the import-based build (deferred with T086/T087/T106).
+- **Alert thresholds**: `dispatch_resolve_failed.total` rate > 0 sustained 15 min → alarm;
+  `approved_overdue_count` ≥ 1 sustained 30 min → alarm; `recipient_count_ms{outcome="ok"}`
+  p95 > 3,000 over 15 min → warn (SLO-F7-013 carries both FR-043 bands);
+  `invoicing.auto_email_skipped{reason:no_recipient}` > 0 in any 24 h → warn (expected 0
+  once the invariant ships); existing bounce/complaint alerts unchanged. The
+  `audience_import_status` alert, the `reconcile-stuck-sending` (`audience_building`) and
+  `void-pdf-reconcile` runbook updates are DEFERRED with T086/T106. Runbooks updated by
+  PR-C: `cron-jobs.md`, `broadcasts-stuck-sending.md` (cross-links). Env: the flag
   is added to `.env.example` and passes `check:env-example` + `check:env-boot`.
 
 ## R16 — Resend Audiences → Segments / Global Contacts (risk outside this feature's scope)
@@ -464,9 +470,9 @@ affects F7's `audienceId`-based gateway (R16).
 - Next migration: tag `0292_…`, `idx: 293`, `when: 1798542000000` (+100000 ms per file);
   enum `ADD VALUE` migrations must be their own file(s) (autocommit pre-pass,
   `enum-migration-guard.ts`). Planned sequence: 0292 enum (PR-A) · 0293 triggers (PR-B) ·
-  0294 contacts columns + 0295 enum (PR-D) · 0297 `contact_id` + 0298 broadcasts import
-  columns (PR-C). If PRs land out of order, renumber the later one (memory: parallel-branch
-  migration collision).
+  0294 contacts columns + 0295 enum (PR-D) · 0297 `contact_id` (PR-C; the 0298 broadcasts
+  import columns are DEFERRED with T086 — no 0298 on the PR-C branch). If PRs land out of
+  order, renumber the later one (memory: parallel-branch migration collision).
 - `.limit(5000)`: `drizzle-member-repo.ts:1358`; 1:1 join `:1333-1340`; no status filter
   `:1349-1357`. `AUDIENCE_HARD_CAP` private at `resolve-segment-recipients.ts:36`.
 - F7 audit union pinned at 61 by a compile-time assert (`audit-port.ts:199-202`) — unchanged.

@@ -1093,6 +1093,41 @@ describe('resolve-segment-recipients — 108 PR-C all_contacts leg (T067/T076)',
     if (result.ok) return;
     expect(result.error.kind).toBe('broadcast_empty_segment_blocked');
   });
+
+  // Review 2026-09-07 round 2 (tests M-2) — the pipeline ORDER was pinned at
+  // one boundary of three. These two are PINS (they pass on the code as it
+  // stands); each names the reordering that would make it fail.
+  it('PIN — the filters run BEFORE the ceiling: 5,010 contacts with 20 suppressed is a 4,990 send, not a refusal', async () => {
+    // Hoisting the ceiling check above the suppression step refuses this.
+    const contacts = Array.from({ length: 5010 }, (_, i) =>
+      contact(`m${i}`, `c${i}`, `p${i}@example.com`),
+    );
+    const suppressed = new Set(
+      Array.from({ length: 20 }, (_, i) => unsafeBrandEmailLower(`p${i}@example.com`)),
+    );
+    const result = await resolveSegmentRecipients(
+      makeDeps({ audienceMode: ALL, contacts, suppressed, audienceCeiling: 5000 }),
+      input(),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.estimatedCount).toBe(4990);
+  });
+
+  it('PIN — self-exclusion runs BEFORE dedupe: a shared address keeps the OTHER member\'s copy', async () => {
+    // Dedupe-first (keeping the first candidate) would drop the address
+    // entirely once m1 is self-excluded — an empty audience for a real one.
+    const result = await resolveSegmentRecipients(
+      makeDeps({
+        audienceMode: ALL,
+        contacts: [contact('m1', 'c1', 'shared@example.com'), contact('m2', 'c2', 'shared@example.com')],
+      }),
+      input({ requestingMemberId: 'm1' }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.recipients).toEqual([unsafeBrandEmailLower('shared@example.com')]);
+  });
 });
 
 describe('resolve-segment-recipients — 108 PR-C suppression lookup is chunked at 5,000 (contract § 2 step 5)', () => {
