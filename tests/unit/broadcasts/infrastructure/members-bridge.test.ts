@@ -26,6 +26,7 @@ import { asTenantContext } from '@/modules/tenants';
 const f3 = vi.hoisted(() => ({
   getBroadcastRecipientContacts: vi.fn(),
   getMembersBySegment: vi.fn(),
+  countBroadcastOptedOutContacts: vi.fn(),
 }));
 
 vi.mock('@/modules/members', () => ({
@@ -34,6 +35,7 @@ vi.mock('@/modules/members', () => ({
   asMemberId: (id: string) => id,
   getBroadcastRecipientContacts: (...a: unknown[]) => f3.getBroadcastRecipientContacts(...a),
   getMembersBySegment: (...a: unknown[]) => f3.getMembersBySegment(...a),
+  countBroadcastOptedOutContacts: (...a: unknown[]) => f3.countBroadcastOptedOutContacts(...a),
   getMemberPrimaryContact: vi.fn(),
   getMemberPreferredLocale: vi.fn(),
   lookupContactEmailInTenant: vi.fn(),
@@ -57,14 +59,14 @@ type F3Row = {
   memberId: string;
   contactId: string | null;
   emailLower: string | null;
-  isPrimary: boolean;
+  hasOptedOutContact: boolean;
 };
 
-function contactRow(memberId: string, contactId: string, isPrimary = false): F3Row {
-  return { memberId, contactId, emailLower: `${contactId}@example.com`, isPrimary };
+function contactRow(memberId: string, contactId: string, hasOptedOutContact = false): F3Row {
+  return { memberId, contactId, emailLower: `${contactId}@example.com`, hasOptedOutContact };
 }
 function orphanRow(memberId: string): F3Row {
-  return { memberId, contactId: null, emailLower: null, isPrimary: false };
+  return { memberId, contactId: null, emailLower: null, hasOptedOutContact: false };
 }
 function fullPage(prefix: string, n = 5000): F3Row[] {
   return Array.from({ length: n }, (_, i) =>
@@ -130,17 +132,17 @@ describe('membersBridge.getContactsBySegment (108 PR-C T075)', () => {
 
     expect(callInput(1).after).toEqual({ memberId: 'o-orphan', contactId: null });
     const orphan = rows.find((r) => r.memberId === 'o-orphan');
-    expect(orphan).toEqual({ memberId: 'o-orphan', contactId: null, emailLower: null, isPrimary: false });
+    expect(orphan).toEqual({ memberId: 'o-orphan', contactId: null, emailLower: null, hasOptedOutContact: false });
     expect(rows).toHaveLength(5001);
   });
 
-  it('brands and lower-cases emails, keeps isPrimary, forwards tier codes verbatim', async () => {
+  it('brands and lower-cases emails, keeps hasOptedOutContact, forwards tier codes verbatim', async () => {
     f3.getBroadcastRecipientContacts.mockResolvedValueOnce(
-      ok([{ memberId: 'm-1', contactId: 'c-1', emailLower: 'Mixed.Case@Example.COM', isPrimary: true }]),
+      ok([{ memberId: 'm-1', contactId: 'c-1', emailLower: 'Mixed.Case@Example.COM', hasOptedOutContact: true }]),
     );
     const rows = await membersBridge.getContactsBySegment(tenant, 'tier', { tierCodes: ['corporate'] });
     expect(rows).toEqual([
-      { memberId: 'm-1', contactId: 'c-1', emailLower: 'mixed.case@example.com', isPrimary: true },
+      { memberId: 'm-1', contactId: 'c-1', emailLower: 'mixed.case@example.com', hasOptedOutContact: true },
     ]);
     expect(callInput(0)).toEqual({
       segmentType: 'tier',
@@ -266,5 +268,30 @@ describe('membersBridge.getContactsBySegment — pages metric (108 PR-C T090)', 
     expect(spy).toHaveBeenCalledTimes(1);
     expect(spy).toHaveBeenCalledWith('test-tenant', 2);
     spy.mockRestore();
+  });
+});
+
+describe('membersBridge.countOptedOutContactsBySegment — the SQL-excluded opt-outs, counted (review 2026-09-07)', () => {
+  it("answers F3's address-level count and forwards the segment + tier codes", async () => {
+    f3.countBroadcastOptedOutContacts.mockResolvedValueOnce(ok(3));
+    const n = await membersBridge.countOptedOutContactsBySegment(tenant, 'tier', { tierCodes: ['corporate'] });
+    expect(n).toBe(3);
+    const input = f3.countBroadcastOptedOutContacts.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(input).toEqual({ segmentType: 'tier', tierCodes: ['corporate'] });
+  });
+
+  it('a failed count THROWS — the preference number is fail-closed like the opt-out filter', async () => {
+    f3.countBroadcastOptedOutContacts.mockResolvedValueOnce(
+      err({ code: 'repo.unexpected' as const, cause: new Error('neon down') }),
+    );
+    await expect(membersBridge.countOptedOutContactsBySegment(tenant, 'all_members', {})).rejects.toThrow(
+      /repo\.unexpected/,
+    );
+  });
+
+  it('custom / attendee segments are not member-keyed: answers 0 without a read', async () => {
+    expect(await membersBridge.countOptedOutContactsBySegment(tenant, 'custom', {})).toBe(0);
+    expect(await membersBridge.countOptedOutContactsBySegment(tenant, 'event_attendees_last_90d', {})).toBe(0);
+    expect(f3.countBroadcastOptedOutContacts).not.toHaveBeenCalled();
   });
 });

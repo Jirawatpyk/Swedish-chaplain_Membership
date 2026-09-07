@@ -27,7 +27,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { runInTenant } from '@/lib/db';
-import { drizzleMemberRepo, getBroadcastRecipientContacts } from '@/modules/members';
+import { countBroadcastOptedOutContacts, drizzleMemberRepo, getBroadcastRecipientContacts } from '@/modules/members';
 import type { F7ContactRecipient } from '@/modules/members/application/ports/member-repo';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
@@ -193,7 +193,11 @@ describe('108 PR-C T071 — broadcast recipient contacts, keyset (live Neon)', (
     // m09: partnership tier, primary on.
     await seedMember(tenantA, mid(9), partnershipPlan, [{ id: cid(0x91), isPrimary: true }]);
     // Tenant B: an active member with a live primary — never visible from A.
-    await seedMember(tenantB, mid(0xb1), corporatePlan, [{ id: cid(0xb1), isPrimary: true }]);
+    await seedMember(tenantB, mid(0xb1), corporatePlan, [
+      { id: cid(0xb1), isPrimary: true },
+      // One opted-out secondary in B: A's opted-out COUNT must never include it.
+      { id: cid(0xb2), isPrimary: false, optOut: 'staff' },
+    ], {}, u);
   }, 120_000);
 
   afterAll(async () => {
@@ -222,7 +226,9 @@ describe('108 PR-C T071 — broadcast recipient contacts, keyset (live Neon)', (
     expect(orphans.map((r) => r.memberId)).toEqual([mid(2), mid(3)]);
     for (const o of orphans) {
       expect(o.emailLower).toBeNull();
-      expect(o.isPrimary).toBe(false);
+      // Review 2026-09-07 — the orphan REASON comes from this flag: m02 has no
+      // contact at all; m03's only contact opted out.
+      expect(o.hasOptedOutContact).toBe(o.memberId === mid(3));
     }
   });
 
@@ -230,15 +236,19 @@ describe('108 PR-C T071 — broadcast recipient contacts, keyset (live Neon)', (
     const rows = await page(tenantA, { segmentType: 'all_members', after: null, limit: 1000 });
     const m4 = rows.filter((r) => r.memberId === mid(4));
     expect(m4.map(key)).toEqual([[mid(4), cid(0x42)]]);
-    expect(m4[0]?.isPrimary).toBe(false);
+    expect(m4[0]?.hasOptedOutContact).toBe(true);
   });
 
-  it('reports isPrimary and lower-cases the stored address', async () => {
+  it('reports hasOptedOutContact per MEMBER and lower-cases the stored address', async () => {
     const rows = await page(tenantA, { segmentType: 'all_members', after: null, limit: 1000 });
     const first = rows.find((r) => r.contactId === cid(0x11));
-    expect(first?.isPrimary).toBe(true);
     expect(first?.emailLower).toBe(mixedCaseEmail.toLowerCase());
-    expect(rows.find((r) => r.contactId === cid(0x12))?.isPrimary).toBe(false);
+    // m01 carries two opted-out live contacts (0x13, 0x14) → every one of its
+    // rows says so; m09 has none → false. A REMOVED contact never counts
+    // (0x15 is removed, not opted out — and removed rows are out anyway).
+    expect(first?.hasOptedOutContact).toBe(true);
+    expect(rows.find((r) => r.contactId === cid(0x12))?.hasOptedOutContact).toBe(true);
+    expect(rows.find((r) => r.contactId === cid(0x91))?.hasOptedOutContact).toBe(false);
   });
 
   it('tier: the same contact rules apply to members of the selected tiers only', async () => {
@@ -308,4 +318,43 @@ describe('108 PR-C T071 — broadcast recipient contacts, keyset (live Neon)', (
     const a = await page(tenantA, { segmentType: 'all_members', after: null, limit: 1000 });
     expect(a.some((r) => r.memberId === mid(0xb1))).toBe(false);
   });
+
+  // Review 2026-09-07 — the address-level count of opted-out LIVE contacts of
+  // eligible members. The resolver adds it to `droppedByPreference` on the
+  // all_contacts leg, because the LEFT JOIN above excludes those contacts
+  // before the resolver ever sees an address (FR-022a would otherwise report
+  // 0 on the feature's main path).
+  it('countBroadcastOptedOutContacts: all_members = every opted-out live contact of every ELIGIBLE member', async () => {
+    const r = await countBroadcastOptedOutContacts(
+      { tenant: tenantA.ctx, memberRepo: drizzleMemberRepo },
+      { segmentType: 'all_members' },
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    // m01: 0x13 + 0x14 (0x15 is REMOVED, not counted) · m03: 0x31 · m04: 0x41
+    // · m05–m08 ineligible → excluded · m09 none.
+    expect(r.value).toBe(4);
+  });
+
+  it('countBroadcastOptedOutContacts: tier narrows it the same way the rows are narrowed', async () => {
+    const corporate = await countBroadcastOptedOutContacts(
+      { tenant: tenantA.ctx, memberRepo: drizzleMemberRepo },
+      { segmentType: 'tier', tierCodes: ['corporate'] },
+    );
+    const partnership = await countBroadcastOptedOutContacts(
+      { tenant: tenantA.ctx, memberRepo: drizzleMemberRepo },
+      { segmentType: 'tier', tierCodes: ['partnership'] },
+    );
+    expect(corporate).toEqual({ ok: true, value: 4 });
+    expect(partnership).toEqual({ ok: true, value: 0 });
+  });
+
+  it('countBroadcastOptedOutContacts: cross-tenant isolation (FR-052) — B counts only its own', async () => {
+    const b = await countBroadcastOptedOutContacts(
+      { tenant: tenantB.ctx, memberRepo: drizzleMemberRepo },
+      { segmentType: 'all_members' },
+    );
+    expect(b).toEqual({ ok: true, value: 1 });
+  });
+
 });

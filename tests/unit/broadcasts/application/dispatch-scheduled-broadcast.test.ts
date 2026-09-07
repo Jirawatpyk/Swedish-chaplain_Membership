@@ -392,6 +392,7 @@ function makeMembersBridge(opts: {
     },
     async filterMarketingOptedOut() { return new Set(); },
     async getContactsBySegment() { return []; },
+    async countOptedOutContactsBySegment() { return 0; },
     async getMemberPreferredLocale() { return opts.preferredLocale ?? null; },
   };
 }
@@ -2304,8 +2305,8 @@ describe('dispatch-scheduled-broadcast — 108 PR-C resolver contract (T076)', (
         async getContactsBySegment(_ctx, kind) {
           kinds.push(kind);
           return [
-            { memberId: 'm-2', contactId: 'c-2p', emailLower: unsafeBrandEmailLower('two@example.com'), isPrimary: true },
-            { memberId: 'm-2', contactId: 'c-2s', emailLower: unsafeBrandEmailLower('two-secondary@example.com'), isPrimary: false },
+            { memberId: 'm-2', contactId: 'c-2p', emailLower: unsafeBrandEmailLower('two@example.com'), hasOptedOutContact: false },
+            { memberId: 'm-2', contactId: 'c-2s', emailLower: unsafeBrandEmailLower('two-secondary@example.com'), hasOptedOutContact: false },
           ];
         },
       },

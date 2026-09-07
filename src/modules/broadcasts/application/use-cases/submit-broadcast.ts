@@ -697,16 +697,22 @@ export async function submitBroadcast(
   // via Promise.all so 50 INSERTs land in <100ms instead of sequential
   // 50× DB roundtrip cost.
   const ORPHAN_AUDIT_CAP = 50;
-  const orphans = resolved.value.orphans;
+  // Review 2026-09-07 — a member whose contacts ALL opted out is not "missing
+  // a primary contact email": they objected, the opt-out is already recorded
+  // (`contact_marketing_opted_out`) and the resolver counts them into
+  // `droppedByPreference`. Only the other reasons get this audit, and it says
+  // which one — an append-only row must never assert a reason nobody observed.
+  const orphans = resolved.value.orphans.filter((o) => o.reason !== 'all_opted_out');
   const reportedOrphans = orphans.slice(0, ORPHAN_AUDIT_CAP);
   await Promise.all(
-    reportedOrphans.map((orphanMemberId) =>
+    reportedOrphans.map((orphan) =>
       emitReject(
         deps,
-        { ...input, memberId: orphanMemberId },
+        { ...input, memberId: orphan.memberId },
         'broadcast_member_missing_primary_contact_email',
         {
-          memberId: orphanMemberId,
+          memberId: orphan.memberId,
+          orphan_reason: orphan.reason,
           triggeredBySubmissionFromMember: input.memberId,
         },
       ),

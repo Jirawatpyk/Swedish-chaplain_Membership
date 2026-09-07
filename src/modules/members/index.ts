@@ -634,3 +634,8 @@ export type { MemberSettingsReaderPort } from './application/ports/member-settin
 // (RLS) so every presentation surface formatting a member number reuses
 // one RLS-safe helper instead of hand-copying the incantation.
 export { resolveMemberNumberPrefix } from './application/use-cases/resolve-member-number-prefix';
+
+// Review 2026-09-07 (108 PR-C, FR-022a) — the opted-out count behind
+// `droppedByPreference` on the all_contacts leg.
+export { countBroadcastOptedOutContacts } from './application/use-cases/count-broadcast-opted-out-contacts';
+export type { BroadcastOptedOutCountQuery } from './application/ports/member-repo';

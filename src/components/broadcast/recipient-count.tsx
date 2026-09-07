@@ -28,7 +28,8 @@ export type RecipientCountState =
       readonly count: number;
       readonly ceiling: number;
       readonly exceeds: boolean;
-      readonly orphans: number;
+      /** Staff route only (review 2026-09-07, M-3) — the member body omits it. */
+      readonly orphans?: number;
       readonly droppedByPreference: number;
     };
 
@@ -76,8 +77,8 @@ function toReady(body: unknown): RecipientCountState {
     !isNonNegativeInt(b['count']) ||
     !isNonNegativeInt(b['ceiling']) ||
     typeof b['exceeds'] !== 'boolean' ||
-    !isNonNegativeInt(b['orphans']) ||
-    !isNonNegativeInt(b['droppedByPreference'])
+    !isNonNegativeInt(b['droppedByPreference']) ||
+    (b['orphans'] !== undefined && !isNonNegativeInt(b['orphans']))
   ) {
     return { status: 'unavailable' };
   }
@@ -86,7 +87,7 @@ function toReady(body: unknown): RecipientCountState {
     count: b['count'],
     ceiling: b['ceiling'],
     exceeds: b['exceeds'],
-    orphans: b['orphans'],
+    ...(isNonNegativeInt(b['orphans']) && { orphans: b['orphans'] }),
     droppedByPreference: b['droppedByPreference'],
   };
 }

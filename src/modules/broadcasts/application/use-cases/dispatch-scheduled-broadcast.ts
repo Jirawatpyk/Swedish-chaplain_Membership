@@ -635,6 +635,27 @@ export async function dispatchScheduledBroadcast(
     // cheaper equivalent while the sender-facing surface waits for PR-C
     // (T088/T089, recorded as an AMENDMENT at FR-022a): one line, with the
     // broadcast id, counts only — never an address (FR-053a).
+    // Review 2026-09-07 — dispatch re-resolves, so a member who lost their
+    // last eligible contact between submit and this tick surfaces HERE, and
+    // this branch used to discard `orphans` entirely. Counts by reason only,
+    // with the broadcast id (FR-053a) — the per-member audit stays at submit.
+    if (resolvedResult.value.orphans.length > 0) {
+      const byReason: Record<string, number> = {};
+      for (const o of resolvedResult.value.orphans) {
+        byReason[o.reason] = (byReason[o.reason] ?? 0) + 1;
+      }
+      logger.info(
+        {
+          tenantId: deps.tenant.slug,
+          broadcastId: input.broadcastId,
+          orphans: resolvedResult.value.orphans.length,
+          orphansByReason: byReason,
+          estimatedAtSubmit: broadcast.estimatedRecipientCount,
+          resolvedAtDispatch: resolvedResult.value.estimatedCount,
+        },
+        'broadcasts.dispatch.orphans_at_dispatch',
+      );
+    }
     if (resolvedResult.value.droppedByPreference > 0) {
       logger.info(
         {

@@ -60,24 +60,26 @@ function contact(
   memberId: string,
   contactId: string,
   email: string,
-  opts: { readonly isPrimary?: boolean; readonly tierCode?: string } = {},
+  opts: { readonly tierCode?: string } = {},
 ): ContactFixtureRow {
   return {
     memberId,
     contactId,
     emailLower: unsafeBrandEmailLower(email),
-    isPrimary: opts.isPrimary ?? false,
+    hasOptedOutContact: false,
     ...(opts.tierCode !== undefined && { tierCode: opts.tierCode }),
   };
 }
 
 /** An eligible member with ZERO eligible contacts — F3's LEFT JOIN shape. */
-function orphan(memberId: string, tierCode?: string): ContactFixtureRow {
+function orphan(memberId: string, tierCode?: string, optedOut = false): ContactFixtureRow {
   return {
     memberId,
     contactId: null,
     emailLower: null,
-    isPrimary: false,
+    // Review 2026-09-07 — true ⇔ the member has a live contact that opted out
+    // (F3's correlated EXISTS); the resolver turns it into the orphan REASON.
+    hasOptedOutContact: optedOut,
     ...(tierCode !== undefined && { tierCode }),
   };
 }
@@ -100,6 +102,10 @@ interface BridgeFixture {
   /** 108 PR-C — records which leg the resolver asked for. */
   readonly contactCalls?: Array<{ kind: string; params: unknown }>;
   readonly memberCalls?: Array<{ kind: string; params: unknown }>;
+  /** Review 2026-09-07 — the address-level opted-out count F3 answers for the segment. */
+  readonly optedOutContactCount?: number;
+  readonly optedOutCountThrows?: boolean;
+  readonly optOutCountCalls?: Array<{ kind: string; params: unknown }>;
 }
 
 function makeMembersBridge({
@@ -113,8 +119,16 @@ function makeMembersBridge({
   membersReadThrows = false,
   contactCalls,
   memberCalls,
+  optedOutContactCount = 0,
+  optedOutCountThrows = false,
+  optOutCountCalls,
 }: BridgeFixture = {}): MembersBridgePort {
   return {
+    async countOptedOutContactsBySegment(_ctx, kind, params) {
+      optOutCountCalls?.push({ kind, params });
+      if (optedOutCountThrows) throw new Error('members-bridge.countOptedOutContactsBySegment: repo.unexpected');
+      return optedOutContactCount;
+    },
     // 108 PR-C — the 1:N leg (T067/T076). Mimics F3: rows are already
     // member- and contact-eligible; a `tier` segment keeps the rows whose
     // test-only tierCode matches.
@@ -246,6 +260,9 @@ interface DepsFixture {
   readonly contactCalls?: BridgeFixture['contactCalls'];
   readonly memberCalls?: BridgeFixture['memberCalls'];
   readonly lookupCalls?: Array<ReadonlyArray<EmailLower>>;
+  readonly optedOutContactCount?: BridgeFixture['optedOutContactCount'];
+  readonly optedOutCountThrows?: BridgeFixture['optedOutCountThrows'];
+  readonly optOutCountCalls?: BridgeFixture['optOutCountCalls'];
 }
 
 function makeDeps(opts: DepsFixture = {}) {
@@ -268,6 +285,9 @@ function makeDeps(opts: DepsFixture = {}) {
       }),
       ...(opts.contactCalls !== undefined && { contactCalls: opts.contactCalls }),
       ...(opts.memberCalls !== undefined && { memberCalls: opts.memberCalls }),
+      ...(opts.optedOutContactCount !== undefined && { optedOutContactCount: opts.optedOutContactCount }),
+      ...(opts.optedOutCountThrows !== undefined && { optedOutCountThrows: opts.optedOutCountThrows }),
+      ...(opts.optOutCountCalls !== undefined && { optOutCountCalls: opts.optOutCountCalls }),
     }),
     eventAttendees: makeEventAttendees(
       opts.attendees !== undefined ? { attendees: opts.attendees } : {},
@@ -558,7 +578,7 @@ describe('resolve-segment-recipients — Wave 6 (T066 GREEN)', () => {
     });
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.value.orphans).toContain('orphan-1');
+      expect(result.value.orphans).toEqual([{ memberId: 'orphan-1', reason: 'no_primary_email' }]);
       expect(result.value.recipients).toEqual([
         unsafeBrandEmailLower('a@example.com'),
       ]);
@@ -581,7 +601,7 @@ describe('resolve-segment-recipients — Wave 6 (T066 GREEN)', () => {
     });
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.value.orphans).toEqual(['o-1', 'o-2']);
+      expect(result.value.orphans.map((o) => o.memberId)).toEqual(['o-1', 'o-2']);
     }
   });
 
@@ -901,10 +921,10 @@ describe('resolve-segment-recipients — 108 PR-C all_contacts leg (T067/T076)',
   const S2 = unsafeBrandEmailLower('s2@example.com');
   const P2 = unsafeBrandEmailLower('p2@example.com');
   const twoMembers = [
-    contact('m1', 'c-p1', 'p1@example.com', { isPrimary: true }),
+    contact('m1', 'c-p1', 'p1@example.com'),
     contact('m1', 'c-s1', 's1@example.com'),
     contact('m1', 'c-s2', 's2@example.com'),
-    contact('m2', 'c-p2', 'p2@example.com', { isPrimary: true }),
+    contact('m2', 'c-p2', 'p2@example.com'),
   ];
 
   it('all_members fans out to every eligible contact — primary AND secondary — once each, in bridge order', async () => {
@@ -924,13 +944,16 @@ describe('resolve-segment-recipients — 108 PR-C all_contacts leg (T067/T076)',
   it('an eligible member with no eligible contact is an orphan (FR-029) — including "every contact opted out"', async () => {
     const deps = makeDeps({
       audienceMode: ALL,
-      contacts: [contact('m1', 'c-p1', 'p1@example.com', { isPrimary: true }), orphan('m-empty'), orphan('m-all-off')],
+      contacts: [contact('m1', 'c-p1', 'p1@example.com'), orphan('m-empty'), orphan('m-all-off', undefined, true)],
     });
     const result = await resolveSegmentRecipients(deps, input());
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.recipients).toEqual([P1]);
-    expect(result.value.orphans).toEqual(['m-empty', 'm-all-off']);
+    expect(result.value.orphans).toEqual([
+      { memberId: 'm-empty', reason: 'no_eligible_contact' },
+      { memberId: 'm-all-off', reason: 'all_opted_out' },
+    ]);
     // Opted-out contacts never reached the resolver (excluded in SQL), so
     // nothing is a "preference drop" here — the member is simply an orphan.
     expect(result.value.droppedByPreference).toBe(0);
@@ -948,10 +971,10 @@ describe('resolve-segment-recipients — 108 PR-C all_contacts leg (T067/T076)',
     const deps = makeDeps({
       audienceMode: ALL,
       contacts: [
-        contact('m1', 'c-p1', 'p1@example.com', { isPrimary: true, tierCode: 'gold' }),
+        contact('m1', 'c-p1', 'p1@example.com', { tierCode: 'gold' }),
         contact('m1', 'c-s1', 's1@example.com', { tierCode: 'gold' }),
-        contact('m2', 'c-p2', 'p2@example.com', { isPrimary: true, tierCode: 'gold' }),
-        contact('m3', 'c-p3', 'p3@example.com', { isPrimary: true, tierCode: 'silver' }),
+        contact('m2', 'c-p2', 'p2@example.com', { tierCode: 'gold' }),
+        contact('m3', 'c-p3', 'p3@example.com', { tierCode: 'silver' }),
       ],
     });
     const result = await resolveSegmentRecipients(
@@ -988,8 +1011,8 @@ describe('resolve-segment-recipients — 108 PR-C all_contacts leg (T067/T076)',
     const deps = makeDeps({
       audienceMode: ALL,
       contacts: [
-        contact('m1', 'c-1', 'shared@example.com', { isPrimary: true }),
-        contact('m2', 'c-2', 'shared@example.com', { isPrimary: true }),
+        contact('m1', 'c-1', 'shared@example.com'),
+        contact('m2', 'c-2', 'shared@example.com'),
       ],
     });
     const result = await resolveSegmentRecipients(deps, input());
@@ -1036,7 +1059,7 @@ describe('resolve-segment-recipients — 108 PR-C all_contacts leg (T067/T076)',
 
   it('the ceiling is checked AFTER the fan-out: 5,001 contacts across members → broadcast_audience_too_large', async () => {
     const contacts = Array.from({ length: 5001 }, (_, i) =>
-      contact(`m-${Math.floor(i / 3)}`, `c-${i}`, `u${i}@example.com`, { isPrimary: i % 3 === 0 }),
+      contact(`m-${Math.floor(i / 3)}`, `c-${i}`, `u${i}@example.com`),
     );
     const result = await resolveSegmentRecipients(makeDeps({ audienceMode: ALL, contacts }), input());
     expect(result.ok).toBe(false);
@@ -1163,7 +1186,7 @@ describe('resolve-segment-recipients — 108 PR-C audience_resolved_total metric
   it('a member-based resolve increments once with {segment, mode}', async () => {
     const spy = vi.spyOn(broadcastsMetrics, 'audienceResolvedTotal');
     await resolveSegmentRecipients(
-      makeDeps({ audienceMode: 'all_contacts', contacts: [contact('m1', 'c1', 'x@example.com', { isPrimary: true })] }),
+      makeDeps({ audienceMode: 'all_contacts', contacts: [contact('m1', 'c1', 'x@example.com')] }),
       input({ segment: { kind: 'all_members' } }),
     );
     expect(spy).toHaveBeenCalledTimes(1);
@@ -1180,5 +1203,93 @@ describe('resolve-segment-recipients — 108 PR-C audience_resolved_total metric
     );
     expect(spy).not.toHaveBeenCalled();
     spy.mockRestore();
+  });
+});
+
+/**
+ * Review 2026-09-07 (types HIGH / errors MEDIUM / code M-2 — three
+ * reviewers, one root): on the all_contacts leg a member whose contacts ALL
+ * opted out came back as an orphan, and (a) submit audited it as
+ * `broadcast_member_missing_primary_contact_email` — a permanent row about a
+ * member who has one — and (b) `droppedByPreference` was structurally 0,
+ * because the opt-out exclusion happens in SQL before the resolver ever sees
+ * an address. Now: orphans carry a REASON, and the leg asks F3 for the
+ * address-level opted-out count and adds it to the preference drops.
+ */
+describe('resolve-segment-recipients — orphan reasons + the SQL-excluded opt-outs are still "preference drops" (review 2026-09-07)', () => {
+  const ALL = 'all_contacts' as const;
+
+  it('all_contacts: an orphan whose contacts all opted out is reason all_opted_out; one with none is no_eligible_contact', async () => {
+    const deps = makeDeps({
+      audienceMode: ALL,
+      contacts: [contact('m1', 'c-p1', 'p1@example.com'), orphan('m-empty'), orphan('m-all-off', undefined, true)],
+    });
+    const result = await resolveSegmentRecipients(deps, input());
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.orphans).toEqual([
+      { memberId: 'm-empty', reason: 'no_eligible_contact' },
+      { memberId: 'm-all-off', reason: 'all_opted_out' },
+    ]);
+  });
+
+  it('primary_only: an orphan is reason no_primary_email', async () => {
+    const deps = makeDeps({
+      members: [recipient('a@example.com', { memberId: 'm-a' }), recipient('x', { memberId: 'm-o', primaryContactEmail: null })],
+    });
+    const result = await resolveSegmentRecipients(deps, input());
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.orphans).toEqual([{ memberId: 'm-o', reason: 'no_primary_email' }]);
+  });
+
+  it('all_contacts: the opted-out contacts the SQL excluded are counted into droppedByPreference (FR-022a)', async () => {
+    const optOutCountCalls: Array<{ kind: string; params: unknown }> = [];
+    const deps = makeDeps({
+      audienceMode: ALL,
+      contacts: [
+        contact('m1', 'c-p1', 'p1@example.com', { tierCode: 'corporate' }),
+        contact('m2', 'c-p2', 'p2@example.com', { tierCode: 'corporate' }),
+      ],
+      optedOutContactCount: 3,
+      optOutCountCalls,
+    });
+    const result = await resolveSegmentRecipients(deps, input({ segment: { kind: 'tier', tierCodes: ['corporate'] } }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.droppedByPreference).toBe(3);
+    // Asked for the SAME segment the rows came from.
+    expect(optOutCountCalls).toEqual([{ kind: 'tier', params: { tierCodes: ['corporate'] } }]);
+  });
+
+  it('all_contacts: a failed opted-out count is resolve.server_error — the preference number is never guessed', async () => {
+    const deps = makeDeps({
+      audienceMode: ALL,
+      contacts: [contact('m1', 'c-p1', 'p1@example.com')],
+      optedOutCountThrows: true,
+    });
+    const result = await resolveSegmentRecipients(deps, input());
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('resolve.server_error');
+  });
+
+  it('primary_only never asks for the opted-out count (the leg has no SQL exclusion to account for)', async () => {
+    const optOutCountCalls: Array<{ kind: string; params: unknown }> = [];
+    const deps = makeDeps({ members: [recipient('a@example.com', { memberId: 'm-a' })], optOutCountCalls });
+    const result = await resolveSegmentRecipients(deps, input());
+    expect(result.ok).toBe(true);
+    expect(optOutCountCalls).toEqual([]);
+  });
+
+  it('the sender is never reported as an orphan of their own broadcast', async () => {
+    const deps = makeDeps({
+      audienceMode: ALL,
+      contacts: [contact('m1', 'c-p1', 'p1@example.com'), orphan('m-me', undefined, true)],
+    });
+    const result = await resolveSegmentRecipients(deps, input({ requestingMemberId: 'm-me' }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.orphans).toEqual([]);
   });
 });

@@ -5,7 +5,7 @@
  * compose).
  *
  * Wire contract, resolver mocked at the barrel:
- *   - numbers only: `{ count, ceiling, exceeds, orphans, droppedByPreference }`
+ *   - numbers only: `{ count, ceiling, exceeds, droppedByPreference }` for a member, `+ orphans` for staff
  *     — never an address, never a member or contact id (FR-040a);
  *   - the count is the resolver's estimate for the CALLER's member
  *     (`requestingMemberId`), phase `'submit'` (a count must not keep the
@@ -81,7 +81,7 @@ const adminCtx = {
 const okResolve = ok({
   recipients: ['a@example.com', 'b@example.com'],
   estimatedCount: 42,
-  orphans: ['m-orphan'],
+  orphans: [{ memberId: 'm-orphan', reason: 'no_eligible_contact' }],
   droppedByPreference: 2,
 });
 
@@ -108,13 +108,13 @@ beforeEach(() => {
 afterEach(() => vi.clearAllMocks());
 
 describe('GET /api/broadcasts/recipient-count (member) — 108 PR-C T082/T088', () => {
-  it('200: numbers only — { count, ceiling, exceeds:false, orphans, droppedByPreference }; no address or id leaks', async () => {
+  it('200: numbers only — { count, ceiling, exceeds:false, droppedByPreference } — no `orphans` (it is about OTHER members); no address or id leaks', async () => {
     requireMemberContextMock.mockResolvedValueOnce(memberCtx);
     const { GET } = await importMemberRoute();
     const res = await GET(memberRequest('?segment=all_members'));
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toEqual({ count: 42, ceiling: 5000, exceeds: false, orphans: 1, droppedByPreference: 2 });
+    expect(body).toEqual({ count: 42, ceiling: 5000, exceeds: false, droppedByPreference: 2 });
     expect(JSON.stringify(body)).not.toMatch(/@|m-orphan|m-1/);
   });
 
@@ -140,7 +140,7 @@ describe('GET /api/broadcasts/recipient-count (member) — 108 PR-C T082/T088', 
     const { GET } = await importMemberRoute();
     const res = await GET(memberRequest('?segment=all_members'));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ count: 5001, ceiling: 5000, exceeds: true, orphans: 0, droppedByPreference: 0 });
+    expect(await res.json()).toEqual({ count: 5001, ceiling: 5000, exceeds: true, droppedByPreference: 0 });
   });
 
   it('empty audience → 200 with count 0', async () => {
@@ -149,7 +149,7 @@ describe('GET /api/broadcasts/recipient-count (member) — 108 PR-C T082/T088', 
     const { GET } = await importMemberRoute();
     const res = await GET(memberRequest('?segment=event_attendees_last_90d'));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ count: 0, ceiling: 5000, exceeds: false, orphans: 0, droppedByPreference: 0 });
+    expect(await res.json()).toEqual({ count: 0, ceiling: 5000, exceeds: false, droppedByPreference: 0 });
   });
 
   it.each([

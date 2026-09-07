@@ -46,6 +46,7 @@ function makeStubBridge(): {
       return [makeRecipient('m-1')];
     },
     // 108 PR-C — the 1:N page walk; memoised per tick like the member leg.
+    async countOptedOutContactsBySegment() { return 0; },
     async getContactsBySegment(_ctx, type, params) {
       contactCalls.push({ type, params });
       return [
@@ -53,7 +54,7 @@ function makeStubBridge(): {
           memberId: 'm-1',
           contactId: 'c-1',
           emailLower: unsafeBrandEmailLower('c-1@example.com'),
-          isPrimary: true,
+          hasOptedOutContact: false,
         },
       ];
     },

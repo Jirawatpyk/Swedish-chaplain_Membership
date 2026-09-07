@@ -266,9 +266,13 @@ describe('108 PR-C T068 — 1:N audience by member status, both legs (live Neon,
     expect(r.value.recipients).not.toContain(sSender);
     for (const e of never) expect(r.value.recipients).not.toContain(e);
     // m3's only contact is opted out → excluded in SQL → the member is an
-    // orphan (FR-029), not a preference drop.
-    expect(r.value.orphans).toEqual([m3]);
-    expect(r.value.droppedByPreference).toBe(0);
+    // orphan (FR-029) whose REASON is the opt-out (review 2026-09-07), and
+    // the two opted-out live contacts of eligible members (s2StaffOff on m1,
+    // p3StaffOff on m3) ARE preference drops even though the resolver never
+    // saw their addresses — F3 counts them (FR-022a). s1Unsub is a
+    // suppression drop on a member-based segment: not a preference.
+    expect(r.value.orphans).toEqual([{ memberId: m3, reason: 'all_opted_out' }]);
+    expect(r.value.droppedByPreference).toBe(2);
   });
 
   it('tier: the same contact rules apply to members of the selected tiers only, on both legs (US3 s6)', async () => {

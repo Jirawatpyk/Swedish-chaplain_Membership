@@ -151,6 +151,7 @@ function makeMembersBridge(opts: FixtureOpts = {}): MembersBridgePort {
     },
     async filterMarketingOptedOut() { return new Set(); },
     async getContactsBySegment() { return []; },
+    async countOptedOutContactsBySegment() { return 0; },
     async getMemberPreferredLocale() { return null; },
   };
 }
@@ -1836,5 +1837,65 @@ describe('submitBroadcast — a failed bridge READ is a 500, never a fabricated 
     if (result.ok) return;
     expect(result.error.kind).toBe('submit.server_error');
     expect(audit.emits.find((e) => e.eventType === 'broadcast_member_missing_primary_contact_email')).toBeUndefined();
+  });
+});
+
+describe('submitBroadcast — orphan reasons decide the audit (review 2026-09-07)', () => {
+  // A member whose contacts ALL opted out is not "missing a primary contact
+  // email" — they objected. Auditing them under that event name wrote a false
+  // row into an append-only table; the opt-out itself is already recorded
+  // (`contact_marketing_opted_out`). Only a member with no eligible contact
+  // for a NON-preference reason gets the missing-contact audit, and it says why.
+  function withContactLeg(
+    deps: ReturnType<typeof makeDeps>['deps'],
+    rows: Awaited<ReturnType<MembersBridgePort['getContactsBySegment']>>,
+    optedOutCount: number,
+  ) {
+    const bridge = deps.membersBridge as MembersBridgePort & {
+      getContactsBySegment: MembersBridgePort['getContactsBySegment'];
+      countOptedOutContactsBySegment: MembersBridgePort['countOptedOutContactsBySegment'];
+    };
+    bridge.getContactsBySegment = async () => rows;
+    bridge.countOptedOutContactsBySegment = async () => optedOutCount;
+    return { ...deps, audienceMode: 'all_contacts' as const };
+  }
+
+  it('all_opted_out orphan → NO broadcast_member_missing_primary_contact_email; the drop is a preference count', async () => {
+    const { audit, deps } = makeDeps({ primaryContact: 'me@example.com' });
+    const result = await submitBroadcast(
+      withContactLeg(
+        deps,
+        [
+          { memberId: 'm-9', contactId: 'c-9', emailLower: unsafeBrandEmailLower('nine@example.com'), hasOptedOutContact: false },
+          { memberId: 'm-off', contactId: null, emailLower: null, hasOptedOutContact: true },
+        ],
+        1,
+      ),
+      baseInput,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.droppedByPreference).toBe(1);
+    expect(audit.emits.find((e) => e.eventType === 'broadcast_member_missing_primary_contact_email')).toBeUndefined();
+  });
+
+  it('no_eligible_contact orphan → the missing-contact audit carries orphan_reason', async () => {
+    const { audit, deps } = makeDeps({ primaryContact: 'me@example.com' });
+    const result = await submitBroadcast(
+      withContactLeg(
+        deps,
+        [
+          { memberId: 'm-9', contactId: 'c-9', emailLower: unsafeBrandEmailLower('nine@example.com'), hasOptedOutContact: false },
+          { memberId: 'm-empty', contactId: null, emailLower: null, hasOptedOutContact: false },
+        ],
+        0,
+      ),
+      baseInput,
+    );
+    expect(result.ok).toBe(true);
+    const emit = audit.emits.find((e) => e.eventType === 'broadcast_member_missing_primary_contact_email');
+    expect(emit).toBeDefined();
+    expect((emit?.payload as Record<string, unknown>)['orphan_reason']).toBe('no_eligible_contact');
+    expect((emit?.payload as Record<string, unknown>)['memberId']).toBe('m-empty');
   });
 });

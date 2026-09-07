@@ -166,3 +166,41 @@ describe('useRecipientCount (108 PR-C T089)', () => {
     expect(result.current).toMatchObject({ status: 'ready', count: 2 });
   });
 });
+
+describe('useRecipientCount — the member body carries no `orphans` (review 2026-09-07, code M-3)', () => {
+  // `orphans` is a fact about OTHER members ("N companies have no reachable
+  // contact"); the member route stops disclosing it and the hook must not
+  // treat its absence as a malformed body. The staff route still sends it.
+  let fetchMock: FetchMock;
+  beforeEach(() => {
+    vi.useFakeTimers();
+    fetchMock = vi.fn(async () =>
+      jsonResponse(200, { count: 7, ceiling: 5000, exceeds: false, droppedByPreference: 1 }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it('a 200 body without orphans is ready, and ready carries no orphans key', async () => {
+    const { result } = renderHook(() =>
+      useRecipientCount({ mode: 'member', segment: { kind: 'all_members', tierCodes: [] } }),
+    );
+    await act(async () => {
+      vi.advanceTimersByTime(400);
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(result.current).toEqual({
+      status: 'ready',
+      count: 7,
+      ceiling: 5000,
+      exceeds: false,
+      droppedByPreference: 1,
+    });
+  });
+});

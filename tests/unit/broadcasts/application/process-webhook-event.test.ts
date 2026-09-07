@@ -268,6 +268,7 @@ function makeMembersBridge(): { port: MembersBridgePort; haltCalls: Array<{ memb
     },
     async filterMarketingOptedOut() { return new Set(); },
     async getContactsBySegment() { return []; },
+    async countOptedOutContactsBySegment() { return 0; },
     async getMemberPreferredLocale() { return null; },
   };
   return { port, haltCalls };
@@ -1022,6 +1023,7 @@ describe('process-webhook-event — outbox best-effort + observability fallback 
       async markBroadcastsAcknowledged() { return ok({ previouslyNull: true }); },
       async filterMarketingOptedOut() { return new Set(); },
       async getContactsBySegment() { return []; },
+    async countOptedOutContactsBySegment() { return 0; },
       async getMemberPreferredLocale() { return null; },
     };
     // Email transport throws โ€” simulating a Postgres outage on the
@@ -1126,6 +1128,7 @@ describe('process-webhook-event — delivered-summary locale (email-locale audit
       // Member explicitly prefers Thai.
       async filterMarketingOptedOut() { return new Set(); },
       async getContactsBySegment() { return []; },
+    async countOptedOutContactsBySegment() { return 0; },
       async getMemberPreferredLocale() { return 'th'; },
     };
     const sent: Array<{ templateKey: string; locale: string }> = [];

@@ -46,6 +46,7 @@ import { contacts } from './schema-contacts';
 import { findCarriedSelfOptOut } from './carried-marketing-opt-out';
 import { rowToContact } from './drizzle-contact-repo';
 import type {
+  BroadcastOptedOutCountQuery,
   BroadcastRecipientContactsQuery,
   DirectoryFilter,
   DirectoryOffsetFilter,
@@ -457,18 +458,25 @@ function mapDirectoryRow(
  * `runInTenant` tx — it is tenant-scoped by RLS, not by an explicit
  * predicate on `members.tenant_id`.
  */
+/**
+ * Review 2026-09-07 — the tier predicate shared by the page read and the
+ * opted-out count, so the two can never narrow differently (SC-004).
+ */
+function broadcastSegmentTierFilter(params: BroadcastOptedOutCountQuery) {
+  const tierCodesArr = params.tierCodes ?? [];
+  return params.segmentType === 'tier' && tierCodesArr.length > 0
+    ? sql`${membershipPlans.planCategory}::text = ANY(ARRAY[${sql.join(
+        tierCodesArr.map((c) => sql`${c}`),
+        sql`, `,
+      )}]::text[])`
+    : undefined;
+}
+
 export function buildBroadcastRecipientContactsQuery(
   tx: TenantTx,
   params: BroadcastRecipientContactsQuery,
 ) {
-  const tierCodesArr = params.tierCodes ?? [];
-  const tierFilter =
-    params.segmentType === 'tier' && tierCodesArr.length > 0
-      ? sql`${membershipPlans.planCategory}::text = ANY(ARRAY[${sql.join(
-          tierCodesArr.map((c) => sql`${c}`),
-          sql`, `,
-        )}]::text[])`
-      : undefined;
+  const tierFilter = broadcastSegmentTierFilter(params);
   const after = params.after;
   const cursorFilter =
     after === null
@@ -481,7 +489,16 @@ export function buildBroadcastRecipientContactsQuery(
       memberId: members.memberId,
       contactId: contacts.contactId,
       emailLower: sql<string | null>`lower(${contacts.email})`,
-      isPrimary: contacts.isPrimary,
+      // Review 2026-09-07 — per MEMBER: does any live contact carry a
+      // marketing opt-out? The 0294 predicate inverted, as a correlated
+      // EXISTS so it costs an index probe per member, not a second join.
+      hasOptedOutContact: sql<boolean>`EXISTS (
+        SELECT 1 FROM contacts c2
+        WHERE c2.tenant_id = ${members.tenantId}
+          AND c2.member_id = ${members.memberId}
+          AND c2.removed_at IS NULL
+          AND c2.marketing_opt_out_at IS NOT NULL
+      )`,
     })
     .from(members)
     .leftJoin(
@@ -1615,9 +1632,50 @@ export const drizzleMemberRepo: MemberRepo = {
           memberId: r.memberId as MemberId,
           contactId: r.contactId,
           emailLower: r.emailLower,
-          isPrimary: r.isPrimary ?? false,
+          hasOptedOutContact: r.hasOptedOutContact === true,
         })),
       );
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
+
+  async countBroadcastOptedOutContacts(ctx, params) {
+    try {
+      const tierFilter = broadcastSegmentTierFilter(params);
+      const rows = await runInTenant(ctx, async (tx) =>
+        tx
+          .select({ n: sql<number>`count(*)::int` })
+          .from(contacts)
+          .innerJoin(
+            members,
+            and(
+              eq(members.tenantId, contacts.tenantId),
+              eq(members.memberId, contacts.memberId),
+            ),
+          )
+          .leftJoin(
+            membershipPlans,
+            and(
+              eq(membershipPlans.tenantId, members.tenantId),
+              eq(membershipPlans.planId, members.planId),
+              eq(membershipPlans.planYear, members.planYear),
+            ),
+          )
+          .where(
+            and(
+              // The SAME member eligibility as the page read.
+              eq(members.status, 'active'),
+              isNull(members.erasedAt),
+              eq(members.broadcastsHaltedUntilAdminReview, false),
+              ...(tierFilter ? [tierFilter] : []),
+              // The contacts the page read's LEFT JOIN excluded: live, opted out.
+              isNull(contacts.removedAt),
+              isNotNull(contacts.marketingOptOutAt),
+            ),
+          ),
+      );
+      return ok(rows[0]?.n ?? 0);
     } catch (e) {
       return err(unexpected(e));
     }

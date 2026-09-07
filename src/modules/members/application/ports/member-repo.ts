@@ -671,6 +671,19 @@ export interface MemberRepo {
   ): Promise<Result<readonly F7ContactRecipient[], RepoError>>;
 
   /**
+   * Review 2026-09-07 (FR-022a) — how many LIVE contacts of the segment's
+   * ELIGIBLE members opted out of marketing. `findBroadcastRecipientContacts`
+   * excludes those contacts in its LEFT JOIN, so the resolver never sees the
+   * addresses; this count is what lets it still report them to the sender as
+   * "excluded by recipient preference" instead of a structural 0. Same
+   * member eligibility + tier filter as the page read; one aggregate query.
+   */
+  countBroadcastOptedOutContacts(
+    ctx: TenantContext,
+    params: BroadcastOptedOutCountQuery,
+  ): Promise<Result<number, RepoError>>;
+
+  /**
    * F7 — list members with `broadcasts_halted_until_admin_review = true`.
    * Powers Q14 admin queue red banner (T121, Phase 3+).
    */
@@ -951,7 +964,13 @@ export type F7ContactRecipient = {
   readonly memberId: MemberId;
   readonly contactId: string | null;
   readonly emailLower: string | null;
-  readonly isPrimary: boolean;
+  /**
+   * Review 2026-09-07 — true ⇔ the MEMBER has at least one live contact that
+   * opted out of marketing (correlated EXISTS, the 0294 predicate inverted).
+   * On an orphan row it is the orphan's REASON: `all_opted_out` vs
+   * `no_eligible_contact`. Replaces `isPrimary`, which nothing read.
+   */
+  readonly hasOptedOutContact: boolean;
 };
 
 /** Keyset cursor = the last row of the previous page. */
@@ -965,6 +984,12 @@ export type BroadcastRecipientContactsQuery = {
   readonly tierCodes?: readonly string[];
   readonly after: BroadcastRecipientCursor | null;
   readonly limit: number;
+};
+
+/** Review 2026-09-07 — the segment half of `BroadcastRecipientContactsQuery`. */
+export type BroadcastOptedOutCountQuery = {
+  readonly segmentType: 'all_members' | 'tier';
+  readonly tierCodes?: readonly string[];
 };
 
 /**

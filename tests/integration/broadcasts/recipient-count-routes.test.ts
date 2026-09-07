@@ -18,7 +18,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
-import { currentAudienceCeiling } from '@/modules/broadcasts';
+import { env } from '@/lib/env';
+import { isF71aUs1Enabled } from '@/modules/broadcasts/infrastructure/feature-flags';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { createActiveTestUser, deleteTestUser, type TestUser } from '../helpers/test-users';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
@@ -92,10 +93,13 @@ describe('108 PR-C T088 — recipient-count routes (live Neon, real gates)', () 
     const res = await memberCountGet(makeRequest('/api/broadcasts/recipient-count?segment=all_members', reqId()));
     expect(res.status).toBe(200);
     const body = await res.json();
-    // The ceiling is whatever the composition root says for THIS env (the dev
-    // `.env.local` has the F7.1a batching flag ON → 50,000) — pinning a literal
-    // would pin the env, not the contract (FR-042: one definition).
-    expect(body).toEqual({ count: 2, ceiling: currentAudienceCeiling(), exceeds: false, orphans: 0, droppedByPreference: 0 });
+    // The ceiling restated from the FLAGS (FR-042 + review H-2: 50,000 only
+    // when batching AND the 1:N flag are both on), never from
+    // `currentAudienceCeiling()` itself — that comparison was a tautology
+    // (review BLOCKER); the composition root's own unit test pins the matrix.
+    const expectedCeiling = isF71aUs1Enabled() && env.features.contactMarketingRecipients ? 50_000 : 5_000;
+    // No `orphans` on the member body (review M-3): it is about OTHER members.
+    expect(body).toEqual({ count: 2, ceiling: expectedCeiling, exceeds: false, droppedByPreference: 0 });
     expect(JSON.stringify(body)).not.toMatch(/@|-4[0-9a-f]{3}-/);
   });
 

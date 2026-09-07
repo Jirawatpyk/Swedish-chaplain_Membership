@@ -112,6 +112,7 @@ function makeMembersBridge(state: State): MembersBridgePort {
     },
     async filterMarketingOptedOut() { return new Set(); },
     async getContactsBySegment() { return []; },
+    async countOptedOutContactsBySegment() { return 0; },
     async getMemberPreferredLocale() { return null; },
   };
 }

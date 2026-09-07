@@ -72,6 +72,7 @@ function makeBridges(members: ReadonlyArray<MemberRecipient>): {
       },
       async filterMarketingOptedOut() { return new Set(); },
       async getContactsBySegment() { return []; },
+    async countOptedOutContactsBySegment() { return 0; },
       async getMemberPreferredLocale() { return null; },
     },
     eventAttendees: {

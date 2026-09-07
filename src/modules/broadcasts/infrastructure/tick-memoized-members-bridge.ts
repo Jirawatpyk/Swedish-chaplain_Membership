@@ -21,8 +21,8 @@
  * same `(tenant, segment, params)` key, and a `MemberRecipient[]` served to a
  * caller expecting `ContactRecipient[]` would resolve to zero recipients.
  *
- * Pure pass-through for the other 9 methods (R7 MED-R1 — corrected
- * from "6"; `MembersBridgePort` exposes 11 methods total since 108 PR-D
+ * Pure pass-through for the other 10 methods (R7 MED-R1 — corrected
+ * from "6"; `MembersBridgePort` exposes 12 methods total since 108 PR-D
  * added `filterMarketingOptedOut` and PR-C `getContactsBySegment`; the
  * spread forwards the rest) so we don't accidentally cache mutating calls
  * (`setMemberHalt`, `markBroadcastsAcknowledged`) or per-member lookups

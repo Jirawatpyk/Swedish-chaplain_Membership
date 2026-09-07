@@ -60,5 +60,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   if (outcome.status === 'unavailable') {
     return errorResponse(503, 'count_unavailable', correlationId);
   }
-  return NextResponse.json(outcome.body, { status: 200, headers: baseHeaders(correlationId) });
+  // Review 2026-09-07 (code M-3) — `orphans` is a fact about OTHER members
+  // ("N companies have no reachable contact"); the compose UI never renders
+  // it and a member could otherwise probe it tier by tier. Staff keep it on
+  // the admin route.
+  const { orphans: _orphans, ...memberBody } = outcome.body;
+  void _orphans;
+  return NextResponse.json(memberBody, { status: 200, headers: baseHeaders(correlationId) });
 }

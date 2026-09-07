@@ -92,6 +92,7 @@ function stubDeps(overrides?: Partial<InlineEditDeps>): InlineEditDeps {
     listContactsForMarketingAudience: vi.fn(),
     // 108 PR-C — never reached by inline edit.
     findBroadcastRecipientContacts: vi.fn(),
+    countBroadcastOptedOutContacts: vi.fn(),
     },
     audit: {
       record: vi.fn().mockResolvedValue(ok(undefined)),

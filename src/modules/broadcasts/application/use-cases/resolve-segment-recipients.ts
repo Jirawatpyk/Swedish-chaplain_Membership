@@ -124,16 +124,36 @@ export interface ResolveSegmentInput {
   readonly phase: 'submit' | 'dispatch';
 }
 
+/**
+ * Review 2026-09-07 — WHY a member has nobody to send to. Under `primary_only`
+ * an orphan had one cause; under `all_contacts` it has three, and flattening
+ * them let `submit-broadcast` audit an opted-out-only member as "missing
+ * primary contact email" — a permanent row about a member who has one.
+ *   - `no_primary_email`     — primary_only leg: `primary_contact_email` is null;
+ *   - `no_eligible_contact`  — all_contacts leg: no live contact at all;
+ *   - `all_opted_out`        — all_contacts leg: live contacts exist and every
+ *                              one objected. Counted in `droppedByPreference`,
+ *                              NOT audited as missing.
+ */
+export type OrphanReason = 'no_primary_email' | 'no_eligible_contact' | 'all_opted_out';
+
+export interface ResolvedOrphan {
+  readonly memberId: string;
+  readonly reason: OrphanReason;
+}
+
 export interface ResolveSegmentOutput {
   readonly recipients: ReadonlyArray<EmailLower>;
   readonly estimatedCount: number;
   /**
-   * Member ids with NO eligible contact (FR-029) — the caller emits the
-   * missing-recipient audit per orphan. On the primary_only leg: a null
-   * primary email. On the all_contacts leg: zero live, not-opted-out
-   * contacts (a member with secondaries but no primary is NOT an orphan).
+   * Eligible members with NO eligible contact (FR-029), each with its
+   * reason — the caller decides which reasons get the missing-recipient
+   * audit. On the primary_only leg: a null primary email. On the
+   * all_contacts leg: zero live, not-opted-out contacts (a member with
+   * secondaries but no primary is NOT an orphan). The sender is never their
+   * own orphan.
    */
-  readonly orphans: ReadonlyArray<string>;
+  readonly orphans: ReadonlyArray<ResolvedOrphan>;
   /**
    * FR-022a — entries removed "by recipient preference": every per-contact
    * opt-out drop (any segment kind), plus every suppression drop on the
@@ -173,39 +193,33 @@ export async function resolveSegmentRecipients(
 
   // Step 1: source by segment kind
   let candidates: ReadonlyArray<Candidate> = [];
-  const orphans: string[] = [];
+  const orphans: ResolvedOrphan[] = [];
+  // Review 2026-09-07 (FR-022a) — the opted-out contacts F3 excluded in SQL on
+  // the all_contacts leg; the resolver never sees those addresses, so step 5b
+  // cannot count them. Read once per resolve, fail-closed.
+  let sqlExcludedOptOuts = 0;
 
   if (segment.kind === 'all_members' || segment.kind === 'tier') {
     const params =
       segment.kind === 'tier' ? { tierCodes: segment.tierCodes } : {};
     const sourced: Candidate[] = [];
+    // Review 2026-09-07 (errors HIGH-4c) — the `try` wraps ONLY the bridge
+    // reads. It used to wrap the mapping loops too, so a programming error in
+    // them (a TypeError on a malformed row) was reclassified as a transient
+    // `resolve.server_error` — retried every tick forever instead of reaching
+    // the cron's `uncaught_error` bucket, the one that pages.
+    let contactRows: Awaited<ReturnType<MembersBridgePort['getContactsBySegment']>> | null = null;
+    let memberRows: Awaited<ReturnType<MembersBridgePort['getMembersBySegment']>> | null = null;
     try {
       if (deps.audienceMode === 'all_contacts') {
-        const rows = await deps.membersBridge.getContactsBySegment(
+        contactRows = await deps.membersBridge.getContactsBySegment(deps.tenant, segment.kind, params);
+        sqlExcludedOptOuts = await deps.membersBridge.countOptedOutContactsBySegment(
           deps.tenant,
           segment.kind,
           params,
         );
-        for (const r of rows) {
-          if (r.contactId === null || r.emailLower === null) {
-            orphans.push(r.memberId);
-            continue;
-          }
-          sourced.push({ memberId: r.memberId, emailLower: r.emailLower });
-        }
       } else {
-        const members = await deps.membersBridge.getMembersBySegment(
-          deps.tenant,
-          segment.kind,
-          params,
-        );
-        for (const m of members) {
-          if (m.primaryContactEmail === null) {
-            orphans.push(m.memberId);
-            continue;
-          }
-          sourced.push({ memberId: m.memberId, emailLower: m.primaryContactEmail });
-        }
+        memberRows = await deps.membersBridge.getMembersBySegment(deps.tenant, segment.kind, params);
       }
     } catch (e) {
       // The bridge already logged the class of failure; the caller decides
@@ -214,6 +228,31 @@ export async function resolveSegmentRecipients(
         kind: 'resolve.server_error',
         message: e instanceof Error ? e.message : 'unknown error',
       });
+    }
+    if (contactRows !== null) {
+      for (const r of contactRows) {
+        if (r.contactId === null || r.emailLower === null) {
+          // The sender is never their own orphan (FR-022b covers them).
+          if (r.memberId !== input.requestingMemberId) {
+            orphans.push({
+              memberId: r.memberId,
+              reason: r.hasOptedOutContact ? 'all_opted_out' : 'no_eligible_contact',
+            });
+          }
+          continue;
+        }
+        sourced.push({ memberId: r.memberId, emailLower: r.emailLower });
+      }
+    } else if (memberRows !== null) {
+      for (const m of memberRows) {
+        if (m.primaryContactEmail === null) {
+          if (m.memberId !== input.requestingMemberId) {
+            orphans.push({ memberId: m.memberId, reason: 'no_primary_email' });
+          }
+          continue;
+        }
+        sourced.push({ memberId: m.memberId, emailLower: m.primaryContactEmail });
+      }
     }
     candidates = sourced;
     // 108 PR-C T090 — one increment per member-based resolve, labelled by the
@@ -296,9 +335,12 @@ export async function resolveSegmentRecipients(
     );
   }
 
-  // FR-022a — what the sender is told was "excluded by recipient preference".
+  // FR-022a — what the sender is told was "excluded by recipient preference":
+  // the step-5b drops, the opt-outs F3 excluded in SQL before this resolver
+  // saw an address (all_contacts leg only — 0 elsewhere), and the suppression
+  // drops on the two non-member-keyed kinds.
   const droppedByPreference =
-    optOutDropped + (memberBased ? 0 : suppressionDropped);
+    optOutDropped + sqlExcludedOptOuts + (memberBased ? 0 : suppressionDropped);
 
   // Brand-cast (defence-in-depth — primary contact emails could be string at the source)
   final = final.map((e) => unsafeBrandEmailLower(e));

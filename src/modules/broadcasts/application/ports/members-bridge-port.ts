@@ -41,14 +41,17 @@ export interface ContactLookup {
 /**
  * 108 PR-C (data-model § 1) — one row of the 1:N audience. `contactId ===
  * null` ⇔ the member is ELIGIBLE but has no eligible contact (FR-029 orphan:
- * the resolver reports it, the caller emits the missing-recipient audit);
- * then `emailLower` is null and `isPrimary` is false.
+ * the resolver reports it with a REASON, the caller decides the audit); then
+ * `emailLower` is null. `hasOptedOutContact` is per MEMBER — true when at
+ * least one live contact opted out — and on an orphan row it is the reason:
+ * `all_opted_out` (they objected) vs `no_eligible_contact` (nothing to send
+ * to). Review 2026-09-07: replaces `isPrimary`, which nothing read.
  */
 export interface ContactRecipient {
   readonly memberId: string;
   readonly contactId: string | null;
   readonly emailLower: EmailLower | null;
-  readonly isPrimary: boolean;
+  readonly hasOptedOutContact: boolean;
 }
 
 /**
@@ -121,6 +124,22 @@ export interface MembersBridgePort {
     segmentType: BroadcastSegmentType,
     params: SegmentResolveParams,
   ): Promise<ReadonlyArray<ContactRecipient>>;
+
+  /**
+   * Review 2026-09-07 (FR-022a) — how many live contacts of the segment's
+   * eligible members opted out of marketing. F3 excludes them in SQL before
+   * `getContactsBySegment` ever answers, so the resolver adds this number to
+   * `droppedByPreference` on the all_contacts leg. NOT best-effort: a failed
+   * count THROWS (the preference number is never guessed — the same
+   * fail-closed rule as `filterMarketingOptedOut`). `custom` and
+   * `event_attendees_last_90d` are not member-keyed and answer 0 without a
+   * read.
+   */
+  countOptedOutContactsBySegment(
+    tenantCtx: TenantContext,
+    segmentType: BroadcastSegmentType,
+    params: SegmentResolveParams,
+  ): Promise<number>;
 
   /**
    * Get a single member's primary contact email (FR-002 precondition

@@ -28,6 +28,7 @@ import {
   asMemberId,
   getMembersBySegment as f3GetMembersBySegment,
   getBroadcastRecipientContacts as f3GetBroadcastRecipientContacts,
+  countBroadcastOptedOutContacts as f3CountBroadcastOptedOutContacts,
   type BroadcastRecipientCursor,
   getMemberPrimaryContact as f3GetMemberPrimaryContact,
   getMemberPreferredLocale as f3GetMemberPreferredLocale,
@@ -178,7 +179,7 @@ export const membersBridge: MembersBridgePort = {
             r.emailLower === null
               ? null
               : unsafeBrandEmailLower(r.emailLower.toLowerCase().trim()),
-          isPrimary: r.isPrimary,
+          hasOptedOutContact: r.hasOptedOutContact,
         });
       }
       if (page.value.length < CONTACT_PAGE_SIZE) {
@@ -189,6 +190,38 @@ export const membersBridge: MembersBridgePort = {
       const last = page.value[page.value.length - 1]!;
       after = { memberId: last.memberId, contactId: last.contactId };
     }
+  },
+
+  async countOptedOutContactsBySegment(
+    tenantCtx: TenantContext,
+    segmentType: BroadcastSegmentType,
+    params: SegmentResolveParams,
+  ): Promise<number> {
+    // Review 2026-09-07 (FR-022a) — see the port docblock. Not member-keyed
+    // → nothing was excluded in SQL for these kinds.
+    if (segmentType !== 'all_members' && segmentType !== 'tier') return 0;
+    const result = await f3CountBroadcastOptedOutContacts(
+      { tenant: tenantCtx, memberRepo: drizzleMemberRepo },
+      {
+        segmentType,
+        ...(params.tierCodes !== undefined && { tierCodes: params.tierCodes }),
+      },
+    );
+    if (!result.ok) {
+      logger.error(
+        {
+          tenantId: tenantCtx.slug,
+          segmentType,
+          err: result.error.code,
+          cause: errKind('cause' in result.error ? result.error.cause : undefined),
+        },
+        'members-bridge.count_opted_out_contacts_failed',
+      );
+      throw new Error(
+        `members-bridge.countOptedOutContactsBySegment: ${result.error.code} — refusing to guess the preference count`,
+      );
+    }
+    return result.value;
   },
 
   async getMemberPrimaryContact(

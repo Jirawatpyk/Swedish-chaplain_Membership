@@ -27,7 +27,7 @@ function row(memberId: string, contactId: string | null): F7ContactRecipient {
     memberId: memberId as F7ContactRecipient['memberId'],
     contactId,
     emailLower: contactId === null ? null : `${contactId}@example.com`,
-    isPrimary: contactId !== null,
+    hasOptedOutContact: false,
   };
 }
 

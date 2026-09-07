@@ -56,6 +56,7 @@ function partialBridge(
     markBroadcastsAcknowledged,
     filterMarketingOptedOut: notUsed as unknown as MembersBridgePort['filterMarketingOptedOut'],
     getContactsBySegment: notUsed as unknown as MembersBridgePort['getContactsBySegment'],
+    countOptedOutContactsBySegment: notUsed as unknown as MembersBridgePort['countOptedOutContactsBySegment'],
     getMemberPreferredLocale: notUsed as unknown as MembersBridgePort['getMemberPreferredLocale'],
   };
 }
