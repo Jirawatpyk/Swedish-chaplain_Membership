@@ -154,8 +154,8 @@ describe('contract: POST /api/admin/renewals/tier-upgrades/[suggestionId]/dismis
     expect(loggerErrorMock).toHaveBeenCalledTimes(1);
     const [structured] = loggerErrorMock.mock.calls[0]!;
     // The half the review found missing in seven of the eight routes: the
-    // catch logged no errorId at all, so the F8 alert rules — the convention
-    // at 50+ sites in this repo — could not match this 500.
+    // catch logged no errorId at all, so the F8 alert rules — which key on
+    // this field, not on message text — could not match this 500.
     expect(structured.errorId).toBe('F8.DISMISS_TIER.UNEXPECTED');
     expect(structured.correlationId).toBe('corr-dismiss-1');
     // The thrown message names the KIND and carries nothing else from the

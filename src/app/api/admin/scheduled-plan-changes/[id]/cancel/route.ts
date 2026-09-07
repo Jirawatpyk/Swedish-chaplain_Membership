@@ -287,8 +287,9 @@ export async function POST(
       // the pino-serializer privacy argument applies here. An Error simply
       // carries a stack and a message where the bare object carried
       // neither.) Found by sweeping the CLASS rather than the variable
-      // name — the § 8 check greps `return _exhaustive;` and could not see a
-      // `throw`. Note this union discriminates on `code`, not `kind`.
+      // name: the § 8 check greps for `return` only at the time this was
+      // written, so a `throw` was invisible to it. It covers both now.
+      // Note this union discriminates on `code`, not `kind`.
       return assertNever(
         result.error,
         `cancel-scheduled-plan-change: unhandled error code '${(result.error as { readonly code: string }).code}'`,

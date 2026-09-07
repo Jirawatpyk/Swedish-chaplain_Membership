@@ -106,16 +106,44 @@ For F8 `accept-tier-upgrade`:
 | errorId | When it fires |
 |---|---|
 | `F8.ACCEPT_TIER.SERVER_ERROR` | use-case returned `{kind:'server_error', message:'deploy-skew:unhandled-gateway-arm:*'}` — gateway-arm exhaustiveness violation |
-
-Every F8 renewals action route emits `F8.<ROUTE>.UNEXPECTED` from its outer
-catch, added 2026-09-07 with the `assertNever` migration: `ACCEPT_TIER`,
-`DISMISS_TIER`, `ESCALATE_TIER`, `AT_RISK_SNOOZE`, `AT_RISK_OUTREACH`,
-`TASK_DONE`, `TASK_SKIP`, `TASK_REASSIGN` (plus
-`TASK_REASSIGN.ASSIGNEE_LOOKUP_FAILED`). An `*.UNEXPECTED` line whose message
-reads `<slug>: unhandled error kind '<kind>'` is not an outage — it is a
-use-case error variant this build's route does not map, i.e. deploy skew.
 | `F8.ACCEPT_TIER.UNEXPECTED` | route's outer `catch (e)` caught an uncaught throw (R3-C3 pre-tx wrap blocks documented paths; this is defence-in-depth) |
 | `F8.ACCEPT_TIER.CONTEXT_RESOLUTION_FAILED` | `requireRenewalAdminContext` helper caught an infrastructure error (DB outage during session-lookup) |
+
+### `*.UNEXPECTED` on the eight migrated F8 renewals routes
+
+The **eight** action routes migrated to `assertNever` on 2026-09-07 emit an
+`errorId` from their outer catch. Seven of those ids were added by that
+migration; `F8.ACCEPT_TIER.UNEXPECTED` (the row above) already existed and is
+what the other seven were modelled on:
+
+`ACCEPT_TIER` · `DISMISS_TIER` · `ESCALATE_TIER` · `AT_RISK_SNOOZE` ·
+`AT_RISK_OUTREACH` · `TASK_DONE` · `TASK_SKIP` · `TASK_REASSIGN`, each
+suffixed `.UNEXPECTED`, plus `F8.TASK_REASSIGN.ASSIGNEE_LOOKUP_FAILED` on the
+separate assignee-lookup catch in that same route.
+
+An `*.UNEXPECTED` line whose message reads `<slug>: unhandled error kind
+'<kind>'` is **not an outage** — it is a use-case error variant this build's
+route does not map, i.e. deploy skew. Look for a newer deploy writing a
+`Result.error.kind` the running build's `switch` has no arm for.
+
+**Coverage limit — read this before pinning a rule.** *Pin SRE alert rules to
+errorId* above still applies, but `F8.*.UNEXPECTED` does **not** cover every
+F8 renewals route. These five cycle-level routes have an outer `catch` that
+logs **no `errorId` at all**, so a rule keyed on `F8.*` is blind to them:
+
+- `admin/renewals/[cycleId]/cancel`
+- `admin/renewals/[cycleId]/reject`
+- `admin/renewals/[cycleId]/reactivate`
+- `admin/renewals/[cycleId]/mark-paid-offline` — **money path**
+- `admin/renewals/[cycleId]/send-reminder-now`
+
+Until those are migrated, pair any `F8.*.UNEXPECTED` rule with a message-text
+or route-path rule for the five. The metric route does not close the gap
+either: `renewals.escalation_task.action_total{outcome="server_error"}`
+(alarm F8-A8) covers only `done` / `skip` / `reassign`, and the
+assignee-lookup catch inside `reassign` logs its errorId but emits **no**
+metric, so F8-A8 does not fire for that one.
+
 
 The `plans_cancel_audit_backfill_required_total` OTel counter (label `audit_error_type ∈ {persist_failed, invalid_payload}`)
 backs the audit-backfill SLO. Sum the counter against backfilled audit rows to compute SLO depth.

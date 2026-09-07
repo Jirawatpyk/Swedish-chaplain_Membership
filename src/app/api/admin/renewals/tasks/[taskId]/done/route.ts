@@ -118,7 +118,8 @@ export async function POST(
       // ERROR OBJECT into a `Response` position and, worse, left the `try`
       // NORMALLY, so the catch below never fired and the 500 carried no
       // correlationId. This catch also had no `errorId` at all until the
-      // review of that first fix - the convention at 40+ other F8 sites -
+      // review of that first fix, though every other F8 route already had
+      // one -
       // so nothing an alert rule keys on matched it either, before or
       // after. `assertNever` throws INSIDE the try; the errorId is now
       // emitted. The message names the KIND only -
@@ -143,7 +144,7 @@ export async function POST(
       {
         // Review of this change - the comment above the assertNever arm
         // promised an `errorId` this catch did not emit. The F8 alert
-        // rules key on it (the convention is used at 50+ sites), so
+        // rules key on it, as they do across the F8 surface, so
         // without it an unhandled error kind reached a 500 that no rule
         // could match. Added so the comment and docs/code-conventions.md
         // are true of this file, not only of the accept route.
