@@ -58,13 +58,13 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function PortalBenefitsPage(props: {
-  searchParams: Promise<{ tab?: string; page?: string }>;
+  searchParams: Promise<{ tab?: string; page?: string; unavailable?: string }>;
 }) {
   const { user } = await requireSession('member');
   const tenant = resolveTenantFromRequest();
   const t = await getTranslations('benefits.page');
   const locale = await getLocale();
-  const { tab, page } = await props.searchParams;
+  const { tab, page, unavailable } = await props.searchParams;
 
   // F7 kill-switch (break-glass) — gate the Broadcasts tab server-side using
   // the SAME flag the proxy checks (`env.features.f7Broadcasts`). The proxy is
@@ -102,6 +102,11 @@ export default async function PortalBenefitsPage(props: {
             <UserX aria-hidden="true" className="size-10 text-muted-foreground/60" />
             <p className="text-lg font-semibold">{t('emptyTitle')}</p>
             <p className="text-sm text-muted-foreground">{t('empty')}</p>
+            {/* Review 2026-09-07 round 2 (C13 / UX M-3): the compose page
+                sends a member with no profile here — say that is why. */}
+            {unavailable === 'no_member' ? (
+              <p className="text-sm text-muted-foreground">{t('emptyFromBroadcasts')}</p>
+            ) : null}
           </CardContent>
         </Card>
       </DetailContainer>

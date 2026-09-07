@@ -11,9 +11,9 @@
  *   - the count line is numbers-only text — never an address.
  * Also pins the i18n keys statically in en / th / sv.
  */
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import en from '@/i18n/messages/en.json';
 import th from '@/i18n/messages/th.json';
 import sv from '@/i18n/messages/sv.json';
@@ -24,11 +24,11 @@ function pick(messages: Messages, path: string): unknown {
   return path.split('.').reduce<unknown>((acc, k) => (acc as Messages | undefined)?.[k], messages);
 }
 
-function renderLine(state: RecipientCountState, locale: 'en' | 'sv' = 'en') {
+function renderLine(state: RecipientCountState, locale: 'en' | 'sv' = 'en', onRetry: () => void = () => {}) {
   const messages = locale === 'sv' ? sv : en;
   return render(
     <NextIntlClientProvider locale={locale} messages={messages as never}>
-      <RecipientCountLine state={state} />
+      <RecipientCountLine state={state} onRetry={onRetry} />
     </NextIntlClientProvider>,
   );
 }
@@ -69,9 +69,33 @@ describe('<RecipientCountLine> (108 PR-C T089)', () => {
     expect(text).toContain(new Intl.NumberFormat('en').format(50000));
   });
 
-  it('unavailable: says so and that submission is still possible', () => {
-    renderLine({ status: 'unavailable' });
+  // Review 2026-09-07 round 2 (UX H-5) — `unavailable` was visually identical
+  // to `loading` (the muted empty-state colour) and was a TERMINAL state: the
+  // effect re-ran only on a url change, so a fixed-url segment that hit 429
+  // once never showed a number again. It is now a warning with a way out.
+  it('unavailable: says so, that submission is still possible, and offers a retry that the form can act on', () => {
+    const onRetry = vi.fn();
+    renderLine({ status: 'unavailable' }, 'en', onRetry);
     expect(screen.getByRole('status').textContent).toMatch(/unavailable/i);
+    const retry = screen.getByRole('button', { name: /try again/i });
+    fireEvent.click(retry);
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  // Review round 2 (i18n H1) — `count: 0` rendered "0 recipients will receive
+  // this broadcast" while the submit would be refused; and a tier where
+  // everyone objected must read differently from a tier with nobody in it.
+  it('ready with count 0: says no one will receive it and how many were excluded by preference', () => {
+    renderLine({ status: 'ready', count: 0, ceiling: 5000, exceeds: false, orphans: 0, droppedByPreference: 3 });
+    const text = screen.getByRole('status').textContent ?? '';
+    expect(text).toMatch(/no eligible recipients/i);
+    expect(text).toContain('3');
+    expect(text).not.toMatch(/0 recipients will receive/i);
+  });
+
+  it('ready with count 1 (EN): "1 recipient", not "1 recipients"', () => {
+    renderLine({ status: 'ready', count: 1, ceiling: 5000, exceeds: false, orphans: 0, droppedByPreference: 0 });
+    expect(screen.getByRole('status').textContent).toMatch(/\b1 recipient will\b/);
   });
 
   it('loading: announces counting', () => {
@@ -79,8 +103,14 @@ describe('<RecipientCountLine> (108 PR-C T089)', () => {
     expect(screen.getByRole('status').textContent).toMatch(/counting/i);
   });
 
-  it('idle: renders no live region at all', () => {
+  // Review round 2 (UX M-4 + L-1) — the live region used to be REMOVED from
+  // the DOM when idle and re-inserted with content, which most screen
+  // readers do not announce; and the line flipped 0 / 1 / 2 lines high,
+  // shifting the whole form. The region is always present, empty when idle.
+  it('idle: the live region is present in the DOM and empty', () => {
     renderLine({ status: 'idle' });
-    expect(screen.queryByRole('status')).toBeNull();
+    const region = screen.getByRole('status');
+    expect(region).toHaveAttribute('aria-live', 'polite');
+    expect(region.textContent).toBe('');
   });
 });

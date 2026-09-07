@@ -29,7 +29,13 @@ import { useDeferredValue, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { errorValues, submitSuccessDescription } from '@/components/broadcast/submit-feedback';
+import {
+  errorValues,
+  excludedByPreference,
+  PREFERENCE_TOAST_DURATION_MS,
+  proxySelfExclusionNoticeKey,
+  submitBlockedByCount,
+} from '@/components/broadcast/submit-feedback';
 import { z } from 'zod';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -136,7 +142,15 @@ const ERROR_HANDLING: Record<string, ProxyErrorHandling> = {
   },
 };
 
-export function ProxyComposeForm(): React.ReactElement {
+export interface ProxyComposeFormProps {
+  /**
+   * Round 2 (i18n H4) — the ceiling the page resolved server-side; the
+   * fallback for the too-large error copy when the 422 body carries no cap.
+   */
+  readonly audienceCeiling: number;
+}
+
+export function ProxyComposeForm({ audienceCeiling }: ProxyComposeFormProps): React.ReactElement {
   const t = useTranslations('admin.broadcasts.proxySubmitDialog');
   // The proxySubmitDialog namespace has no member-search loading string;
   // reuse the canonical members-picker loading copy ("Loading members…")
@@ -168,11 +182,15 @@ export function ProxyComposeForm(): React.ReactElement {
   const customLines = parseLines(customList);
   // 108 PR-C T089 — live count for the PROXIED member (its contacts are the
   // ones self-excluded server-side); idle until a member is picked.
-  const recipientCount = useRecipientCount({
-    mode: 'admin',
-    memberId: member?.memberId ?? null,
-    segment: { kind: segment.kind, tierCodes: segment.tierCodes },
-  });
+  const [countRetry, setCountRetry] = useState(0);
+  const recipientCount = useRecipientCount(
+    {
+      mode: 'admin',
+      memberId: member?.memberId ?? null,
+      segment: { kind: segment.kind, tierCodes: segment.tierCodes },
+    },
+    countRetry,
+  );
 
   // Submit precondition: member picked + subject/body valid + segment
   // shape valid (custom needs 1–100 entries; tier needs ≥1 code). Mirrors
@@ -192,7 +210,9 @@ export function ProxyComposeForm(): React.ReactElement {
     memberMissingEmail ||
     !validation.success ||
     !customListValid ||
-    !tierValid;
+    !tierValid ||
+    // Round 2 (UX H-4): a measured refusal from the live count blocks here too.
+    submitBlockedByCount(recipientCount);
 
   // Auto-focus the failing field when a field-level server error arrives.
   useEffect(() => {
@@ -234,7 +254,7 @@ export function ProxyComposeForm(): React.ReactElement {
         pickerRef.current?.focus();
         break;
       case 'field': {
-        const message = t(handling.key, errorValues(code, details));
+        const message = t(handling.key, errorValues(code, details, audienceCeiling));
         setFieldError({ field: handling.field, message });
         toast.error(message);
         break;
@@ -273,14 +293,14 @@ export function ProxyComposeForm(): React.ReactElement {
         const okBody = (await res.json().catch(() => null)) as {
           recipientPreferenceExcluded?: unknown;
         } | null;
-        const description = submitSuccessDescription(t, okBody ?? {}, {
-          hintKey: null,
-          countKey: 'preferenceExcluded',
-        });
-        toast.success(
-          t('successToast', { company: companyName }),
-          description === undefined ? undefined : { description },
-        );
+        toast.success(t('successToast', { company: companyName }));
+        // Round 2 (UX H-6): its own toast, held longer.
+        const excluded = excludedByPreference(okBody ?? {});
+        if (excluded > 0) {
+          toast.info(t('preferenceExcluded', { count: excluded }), {
+            duration: PREFERENCE_TOAST_DURATION_MS,
+          });
+        }
         router.push('/admin/broadcasts');
         router.refresh();
         return;
@@ -344,18 +364,6 @@ export function ProxyComposeForm(): React.ReactElement {
               {t('missingContactEmailWarning')}
             </p>
           ) : null}
-          {member !== null && !memberMissingEmail ? (
-            // UX-review fix (DV-4) — WCAG 4.1.3 Status Messages: this
-            // notice appears when a member is picked and focus returns to
-            // the picker trigger, so it must be announced. `role="status"`
-            // (implicit aria-live="polite") makes SR users hear it without
-            // stealing focus. Scoped to the <p> rather than the wrapping
-            // <div> so it does not interfere with the picker's combobox
-            // interactions or the sibling member-not-found `role="alert"`.
-            <p role="status" className="text-sm text-muted-foreground">
-              {t('selfExclusionNotice', { company: member.companyName })}
-            </p>
-          ) : null}
         </div>
 
         {/* SegmentPicker / SchedulePicker / SubmitButton are the shared
@@ -372,6 +380,17 @@ export function ProxyComposeForm(): React.ReactElement {
           }}
           disabled={submitting}
         />
+        {member !== null && !memberMissingEmail ? (
+          // UX-review fix (DV-4) — WCAG 4.1.3 Status Messages: `role="status"`
+          // (implicit aria-live="polite") so SR users hear it without focus
+          // moving. Round 2 (UX H-1 + i18n H3): it FOLLOWS the segment picker
+          // and follows the segment — it used to render on member selection
+          // regardless of segment, above the picker, promising an exclusion
+          // that the custom list and the attendee segment do not apply.
+          <p role="status" className="text-sm text-muted-foreground">
+            {t(proxySelfExclusionNoticeKey(segment.kind), { company: member.companyName })}
+          </p>
+        ) : null}
 
         {fieldError?.field === 'segment' ? (
           <p role="alert" className="text-xs text-destructive">
@@ -379,7 +398,7 @@ export function ProxyComposeForm(): React.ReactElement {
           </p>
         ) : null}
         {/* 108 PR-C T089 (FR-040): live count for the proxied member. */}
-        <RecipientCountLine state={recipientCount} />
+        <RecipientCountLine state={recipientCount} onRetry={() => setCountRetry((n) => n + 1)} />
 
         {segment.kind === 'custom' ? (
           <CustomListInput

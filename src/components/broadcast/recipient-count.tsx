@@ -11,13 +11,18 @@
  * a newer one. A non-200 or a network failure is `unavailable` — never a
  * stale number (FR-040b); the custom list is counted client-side and is
  * `idle` here, as is a tier with no codes or an admin with no member picked.
+ * A `retryNonce` bump re-runs the SAME url (review 2026-09-07 round 2, UX
+ * H-5: `unavailable` used to be terminal for a fixed-url segment).
  *
  * `<RecipientCountLine>` renders the state in a polite live region so a
  * screen-reader user hears the count change without focus moving, with
- * locale digit grouping through next-intl's ICU `{count, number}`.
+ * locale digit grouping through next-intl's ICU `{count, number}`. The
+ * region is ALWAYS in the DOM (empty when idle) so an insertion is never
+ * what a screen reader has to notice, and the line never shifts the form.
  */
 import { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
+import { TriangleAlert, Users } from 'lucide-react';
 
 export type RecipientCountState =
   | { readonly status: 'idle' }
@@ -30,7 +35,10 @@ export type RecipientCountState =
       readonly exceeds: boolean;
       /** Staff route only (review 2026-09-07, M-3) — the member body omits it. */
       readonly orphans?: number;
-      /** Absent when the server refused before measuring (exceeds / empty). */
+      /**
+       * Measured on every outcome since round 2 (C8); optional here so an
+       * older server's body still renders. Read by the `empty` copy.
+       */
       readonly droppedByPreference?: number;
     };
 
@@ -96,14 +104,18 @@ function toReady(body: unknown): RecipientCountState {
   };
 }
 
-export function useRecipientCount(props: UseRecipientCountProps): RecipientCountState {
+export function useRecipientCount(props: UseRecipientCountProps, retryNonce = 0): RecipientCountState {
   const url = recipientCountUrl(props);
-  // Only SETTLED answers are stored, keyed by the url they answer; the
-  // transient states (`idle`, `loading`) are DERIVED from the current url, so
+  // The settled answer is keyed by (url, retryNonce): a retry is a NEW key
+  // for the same url, so the line reads "loading" on the very same render
+  // and the old `unavailable` never lingers.
+  const key = url === null ? null : `${url}#${retryNonce}`;
+  // Only SETTLED answers are stored, keyed by the request they answer; the
+  // transient states (`idle`, `loading`) are DERIVED from the current key, so
   // the effect never sets state synchronously (react-hooks/set-state-in-effect)
-  // and a url change is "loading" on the very same render.
+  // and a key change is "loading" on the very same render.
   const [settled, setSettled] = useState<{
-    readonly url: string;
+    readonly key: string;
     readonly state: RecipientCountState;
   } | null>(null);
   // Monotonic request sequence: only the LATEST request may write state — a
@@ -112,8 +124,10 @@ export function useRecipientCount(props: UseRecipientCountProps): RecipientCount
   const seqRef = useRef(0);
 
   useEffect(() => {
+    // Bumped BEFORE the null check on purpose: a segment that becomes
+    // uncountable must invalidate an in-flight answer for the previous one.
     const seq = ++seqRef.current;
-    if (url === null) return;
+    if (url === null || key === null) return;
     const controller = new AbortController();
     const timer = setTimeout(async () => {
       let next: RecipientCountState;
@@ -131,43 +145,81 @@ export function useRecipientCount(props: UseRecipientCountProps): RecipientCount
         if (seq !== seqRef.current) return;
         next = { status: 'unavailable' };
       }
-      setSettled({ url, state: next });
+      setSettled({ key, state: next });
     }, RECIPIENT_COUNT_DEBOUNCE_MS);
     return () => {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [url]);
+  }, [url, key]);
 
-  if (url === null) return { status: 'idle' };
-  if (settled !== null && settled.url === url) return settled.state;
+  if (key === null) return { status: 'idle' };
+  if (settled !== null && settled.key === key) return settled.state;
   return { status: 'loading' };
 }
 
-export function RecipientCountLine({ state }: { readonly state: RecipientCountState }): React.ReactElement | null {
+export function RecipientCountLine({
+  state,
+  onRetry,
+}: {
+  readonly state: RecipientCountState;
+  /** Review round 2 (UX H-5) — re-runs the count for the same segment. */
+  readonly onRetry?: () => void;
+}): React.ReactElement {
   const t = useTranslations('portal.broadcasts.compose.recipientCount');
-  if (state.status === 'idle') return null;
-  let text: string;
+  let text: string | null = null;
+  // Review 2026-09-07 round 2 (UX H-5 / L-6): the tones say what the state
+  // IS. `text-muted-foreground` is this codebase's empty-state sentinel, so
+  // a failure must not wear it; a measured number is the most actionable
+  // figure on the form and gets weight; a refusal is red.
   let tone = 'text-muted-foreground';
+  let icon: React.ReactElement | null = null;
+  let retry = false;
   switch (state.status) {
+    case 'idle':
+      break;
     case 'loading':
       text = t('loading');
       break;
     case 'unavailable':
       text = t('unavailable');
+      tone = 'text-warning';
+      icon = <TriangleAlert className="size-3.5 shrink-0" aria-hidden="true" />;
+      retry = true;
       break;
     case 'ready':
       if (state.exceeds) {
         text = t('exceeds', { count: state.count, ceiling: state.ceiling });
         tone = 'text-destructive';
+      } else if (state.count === 0) {
+        // Review round 2 (i18n H1): "0 recipients will receive" was a lie —
+        // the submit would be refused. And a tier where everyone objected
+        // must read differently from a tier with nobody in it (FR-022a).
+        text = t('empty', { dropped: state.droppedByPreference ?? 0 });
+        tone = 'text-destructive';
       } else {
         text = t('ready', { count: state.count });
+        tone = 'font-medium text-foreground';
+        icon = <Users className="size-3.5 shrink-0" aria-hidden="true" />;
       }
       break;
   }
   return (
-    <p role="status" aria-live="polite" className={`text-xs ${tone}`}>
-      {text}
+    // Always rendered, `min-h` for two lines of TH / SV, so the count
+    // settling never shifts the form (UX M-4) and the live region exists
+    // before its content changes (L-1 — an inserted region is not announced).
+    <p role="status" aria-live="polite" className={`flex min-h-10 items-start gap-1.5 text-sm ${tone}`}>
+      {icon !== null ? <span className="mt-0.5">{icon}</span> : null}
+      {text !== null ? <span>{text}</span> : null}
+      {retry ? (
+        <button
+          type="button"
+          onClick={onRetry}
+          className="ml-1 shrink-0 underline underline-offset-2 hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm"
+        >
+          {t('retry')}
+        </button>
+      ) : null}
     </p>
   );
 }

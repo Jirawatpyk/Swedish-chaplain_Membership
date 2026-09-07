@@ -233,6 +233,15 @@ describe('PortalBenefitsPage — page-level F7 kill-switch (C1, xhigh #12)', () 
   //      implies "reads never run". Belt-and-suspenders for the data-fetch
   //      contract the task pins.
   // -------------------------------------------------------------------------
+  // Review 2026-09-07 round 2 (C13 / UX M-3) — the compose page sends a
+  // member with no profile here with `?unavailable=no_member`; the empty
+  // card then says why they landed here. PIN (written with the page change).
+  it('?unavailable=no_member + no linked member → the empty card explains the E-Blast link', async () => {
+    findByLinkedUserId.mockResolvedValueOnce({ ok: false, error: { code: 'repo.not_found' } });
+    await renderPage({ tab: 'broadcasts', unavailable: 'no_member' } as never);
+    expect(screen.getByText(/followed a link to e-blast/i)).toBeInTheDocument();
+  });
+
   it('f7=false + ?tab=broadcasts → never builds the broadcasts panel', async () => {
     await renderPage({ tab: 'broadcasts' });
     expect(broadcastsPanelRender).not.toHaveBeenCalled();

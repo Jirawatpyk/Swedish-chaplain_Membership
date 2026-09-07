@@ -43,11 +43,18 @@ export interface QueueRow {
 export interface QueueTableProps {
   readonly rows: ReadonlyArray<QueueRow>;
   readonly readOnly?: boolean;
+  /**
+   * Review 2026-09-07 round 2 (UX M-1) — the F3 halt read failed, so this
+   * queue may be hiding halted members. Threaded to the bulk-approve confirm
+   * dialog, which repeats the warning at the decision point.
+   */
+  readonly haltUnknown?: boolean;
 }
 
 export async function QueueTable({
   rows,
   readOnly = false,
+  haltUnknown = false,
 }: QueueTableProps): Promise<React.ReactElement> {
   const t = await getTranslations('admin.broadcasts.queue');
   const tActor = await getTranslations('admin.broadcasts.queue.actorRole');
@@ -140,6 +147,7 @@ export async function QueueTable({
     <QueueWithBulk
       rows={enrichedRows}
       readOnly={readOnly}
+      haltUnknown={haltUnknown}
       columnLabels={{
         submittedAt: t('columns.submittedAt'),
         member: t('columns.member'),

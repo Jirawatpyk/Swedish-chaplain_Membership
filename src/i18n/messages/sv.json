@@ -2979,6 +2979,7 @@
             "sendNow": "Skicka nu",
             "schedule": "Schemalägg",
             "sendNowWarning": "E-post skickas omedelbart och kan inte återkallas.",
+            "haltUnknownWarning": "Spärrstatus kunde inte läsas – ett valt utskick kan tillhöra en spärrad medlem. Uppdatera kön innan du bekräftar.",
             "scheduleLabel": "Sändtid",
             "scheduleHelp": "Minst 5 minuter från nu. Tidszon: Asia/Bangkok.",
             "schedulePreviewLabel": "Skickas den:",
@@ -3053,6 +3054,7 @@
         },
         "overdueBanner": "{count, plural, one {# utskick har} other {# utskick har}} väntat i över 48 timmar — granska nu.",
         "truncationNote": "Visar de första 50 — förfina filtren för att se fler.",
+        "haltStateUnavailableTitle": "Spärrstatus kunde inte läsas",
         "haltStateUnavailable": "Spärrstatus kunde inte läsas just nu. Kön kan dölja spärrade medlemmar. Uppdatera innan du godkänner något."
       },
       "review": {
@@ -3150,7 +3152,8 @@
         "subjectLabel": "Ämne",
         "bodyLabel": "Meddelande",
         "pageSubtitle": "Skapa och kölägg ett utskick för granskning med den här medlemmens e-utskickskvot.",
-        "selfExclusionNotice": "{company} får inte detta utskick – en medlems kontakter exkluderas från sina egna utskick.",
+        "selfExclusionNotice": "{company} tar inte emot detta utskick – en medlems kontakter exkluderas från medlemmens egna utskick.",
+        "selfExclusionNoticeIncluded": "{company}:s egna adresser på den här listan TAR EMOT utskicket – den anpassade listan och deltagarsegmentet undantar inte avsändaren.",
         "memberNotFoundError": "Medlemmen finns inte längre. Välj en annan medlem.",
         "quotaBlockedError": "{company} har använt alla sina utskick för den här perioden.",
         "notInPlanError": "{company}:s paket inkluderar inte e-utskick.",
@@ -3161,7 +3164,7 @@
         "emptySegmentError": "Inga matchande mottagare hittades.",
         "audienceTooLargeError": "Mottagarlistan överstiger gränsen på {ceiling, number}.",
         "successToast": "Utskicket har kölagts för granskning å {company}:s vägnar.",
-        "preferenceExcluded": "{count, plural, one {# adress uteslöts} other {# adresser uteslöts}} enligt mottagarens önskemål.",
+        "preferenceExcluded": "{count, plural, one {# e-postadress uteslöts} other {# e-postadresser uteslöts}} enligt mottagarnas önskemål.",
         "searchFailed": "Medlemssökningen misslyckades. Försök igen.",
         "noResults": "Inga medlemmar hittades.",
         "missingContactEmailWarning": "Den här medlemmen saknar e-postadress för primär kontakt. Det går inte att skicka utskick å deras vägnar förrän en primär kontakt med e-postadress har lagts till.",
@@ -5761,7 +5764,7 @@
           "drafted": "Utkast sparat.",
           "submitted": "Inskickad för administratörsgranskning.",
           "submittedSlaHint": "Mål för administratörsgranskning: 48 timmar.",
-          "preferenceExcluded": "{count, plural, one {# adress uteslöts} other {# adresser uteslöts}} enligt mottagarens önskemål.",
+          "preferenceExcluded": "{count, plural, one {# e-postadress uteslöts} other {# e-postadresser uteslöts}} enligt mottagarnas önskemål.",
           "sanitiserStripped": "Viss formatering som inte stöds togs bort automatiskt.",
           "submitting": "Skickar in…",
           "takingLonger": "Det tar längre tid än väntat — vänligen vänta."
@@ -5774,20 +5777,25 @@
         "submitNote": {
           "cancellable": "Du kan avbryta detta utskick när som helst tills en administratör godkänner det."
         },
-        "selfExclusionHint": "Du och dina kollegor får inte ert eget utskick.",
+        "selfExclusionHint": "Du och dina kollegor tar inte emot ert eget utskick.",
+        "selfExclusionHintCustom": "Alla på den här listan tar emot utskicket – även du, om din egen adress står med.",
+        "selfExclusionHintAttendees": "Alla deltagare tar emot utskicket – även du och dina kollegor, om ni deltog.",
         "estimateNote": {
           "allMembers": "Mottagare: primärkontakten hos varje aktiv medlem (högst {ceiling, number} per utskick).",
           "tier": "Mottagare: primärkontakten hos varje aktiv medlem på valda nivåer (högst {ceiling, number}).",
-          "allMembersAllContacts": "Mottagare: varje kontakt hos varje aktiv medlem – primär och sekundär – som inte avböjt (högst {ceiling, number} per utskick).",
-          "tierAllContacts": "Mottagare: varje kontakt hos varje aktiv medlem på valda nivåer som inte avböjt (högst {ceiling, number}).",
+          "allMembersAllContacts": "Mottagare: varje kontakt hos varje aktiv medlem – primär och sekundär – som inte har avregistrerat sig (högst {ceiling, number} per utskick).",
+          "tierAllContacts": "Mottagare: varje kontakt hos varje aktiv medlem på valda nivåer som inte har avregistrerat sig (högst {ceiling, number}).",
           "custom": "Mottagare: en e-post per rad nedan. Max 100 rader. Varje måste matcha en medlem eller kontakt i din kammare.",
+          "attendees": "Mottagare: alla som deltagit i ett kammarevenemang under de senaste 90 dagarna (högst {ceiling, number}).",
           "customCount": "{count} e-post angiven."
         },
         "recipientCount": {
           "loading": "Räknar mottagare…",
           "ready": "{count, number} mottagare får detta utskick.",
-          "exceeds": "{count, number} mottagare – över gränsen på {ceiling, number}. Begränsa målgruppen; annars avvisas inlämningen.",
-          "unavailable": "Antalet mottagare kan inte hämtas just nu – du kan ändå skicka in; servern räknar om målgruppen."
+          "empty": "Inga mottagare matchar den här målgruppen{dropped, plural, =0 {} other { – # uteslöts enligt mottagarnas önskemål}}. Det går inte att skicka in förrän målgruppen vidgas.",
+          "exceeds": "{count, number} mottagare – över gränsen på {ceiling, number}. Begränsa målgruppen; det går inte att skicka in förrän den ryms.",
+          "unavailable": "Antalet mottagare kan inte hämtas just nu – du kan ändå skicka in; servern räknar om målgruppen.",
+          "retry": "Försök igen"
         },
         "errors": {
           "broadcast_quota_blocked": "Du har använt hela din E-Blast-kvot för i år.",
@@ -6872,6 +6880,7 @@
       "title": "Förmåner",
       "subtitleMember": "Dina medlemsförmåner för i år",
       "empty": "Vi hittade ingen medlemsprofil för ditt konto ännu.",
+      "emptyFromBroadcasts": "Du kom hit via en E-Blast-länk – för att skriva ett utskick behöver kontot vara kopplat till en medlemsprofil. Be din kammare koppla ditt konto.",
       "emptyTitle": "Ingen medlemsprofil ännu"
     },
     "card": {

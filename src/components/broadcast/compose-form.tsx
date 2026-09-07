@@ -25,8 +25,10 @@ import { toast } from 'sonner';
 import {
   errorValues,
   estimateNoteKey,
-  showsSelfExclusionHint,
-  submitSuccessDescription,
+  excludedByPreference,
+  PREFERENCE_TOAST_DURATION_MS,
+  selfExclusionHintKey,
+  submitBlockedByCount,
   type ComposeAudienceMode,
 } from '@/components/broadcast/submit-feedback';
 import { z } from 'zod';
@@ -181,10 +183,16 @@ export function ComposeForm({
   const deferredBody = useDeferredValue(bodyHtml);
   // 108 PR-C T089 — debounced live count for the chosen segment (member mode:
   // the caller's own member is the one self-excluded server-side).
-  const recipientCount = useRecipientCount({
-    mode: 'member',
-    segment: { kind: segment.kind, tierCodes: segment.tierCodes },
-  });
+  // Round 2 (UX H-5): a "Try again" on an unavailable count re-runs the
+  // same segment; the nonce is the only thing that changes.
+  const [countRetry, setCountRetry] = useState(0);
+  const recipientCount = useRecipientCount(
+    {
+      mode: 'member',
+      segment: { kind: segment.kind, tierCodes: segment.tierCodes },
+    },
+    countRetry,
+  );
 
   // UX-3 — beforeunload guard so a member who composed substantial
   // content + accidentally closes the tab gets a browser-native
@@ -221,8 +229,11 @@ export function ComposeForm({
   const customListValid =
     segment.kind !== 'custom' || (customLines.length > 0 && customLines.length <= 100);
   const tierValid = segment.kind !== 'tier' || segment.tierCodes.length > 0;
+  // Round 2 (UX H-4, decision (a)): a MEASURED refusal from the live count
+  // blocks the submit — the count line, in red, is the reason. `unavailable`
+  // never blocks (the server recomputes — FR-040b).
   const submitDisabled =
-    !validation.success || !customListValid || !tierValid;
+    !validation.success || !customListValid || !tierValid || submitBlockedByCount(recipientCount);
 
   // UX-C2 — per-field error tracking for aria-describedby + aria-invalid.
   // Empty subject/body is the "needs input" state, not an "error" state
@@ -292,11 +303,17 @@ export function ComposeForm({
 
       if (res.ok && responseBody.broadcastId) {
         setUnsafeImageSources(null);
-        toast.success(t('toast.submitted'), {
-          // 108 PR-C T077: "{n} addresses were excluded by recipient
-          // preference." precedes the SLA hint when n > 0 (FR-022a).
-          description: submitSuccessDescription(t, responseBody),
-        });
+        toast.success(t('toast.submitted'), { description: t('toast.submittedSlaHint') });
+        // 108 PR-C T077 (FR-022a): "{n} addresses were excluded by recipient
+        // preference." Round 2 (UX H-6): its OWN toast, held longer — as a
+        // description under the success toast it vanished in 4 s while
+        // `router.push()` was already navigating away.
+        const excluded = excludedByPreference(responseBody);
+        if (excluded > 0) {
+          toast.info(t('toast.preferenceExcluded', { count: excluded }), {
+            duration: PREFERENCE_TOAST_DURATION_MS,
+          });
+        }
         setQuotaRefreshKey((n) => n + 1);
         router.push(`/portal/benefits?tab=broadcasts&submitted=${responseBody.broadcastId}`);
         router.refresh();
@@ -316,15 +333,11 @@ export function ComposeForm({
       } else {
         setUnsafeImageSources(null);
       }
-      // Use the i18n key if recognised; fall back to the server message.
-      let msg: string;
-      try {
-        // 108 PR-C T085: the too-large copy interpolates the ceiling from the
-        // 422 body; every other code renders without values as before.
-        msg = tErr(code, errorValues(code, responseBody.error?.details));
-      } catch {
-        msg = responseBody.error?.message ?? tErr('internal_error');
-      }
+      // 108 PR-C T085: the too-large copy interpolates the ceiling from the
+      // 422 body, falling back to the page's own ceiling (round 2, i18n H4 —
+      // next-intl never throws; a missing value would have rendered the raw
+      // key path, so the `try/catch` that used to sit here was dead code).
+      const msg = tErr(code, errorValues(code, responseBody.error?.details, audienceCeiling));
       // UX-R2-1: surface to the failing field; useEffect will focus.
       setServerError({ field: ERROR_CODE_FIELD[code] ?? null, message: msg });
       toast.error(msg);
@@ -478,14 +491,14 @@ export function ComposeForm({
             {/* 108 PR-C T079: leg-aware wording + the real ceiling (FR-041). */}
             {t(estimateNoteKey(segment.kind, audienceMode), { ceiling: audienceCeiling })}
           </p>
-          {showsSelfExclusionHint(segment.kind) ? (
-            // 108 PR-C T079 (FR-022b): self-exclusion covers every contact of
-            // the sending member, not only the primary address.
-            <p className="text-xs text-muted-foreground">{t('selfExclusionHint')}</p>
-          ) : null}
+          {/* 108 PR-C T079 (FR-022b): self-exclusion covers every contact of
+              the sending member, not only the primary address. Round 2 (UX
+              H-3): every segment kind says which way the rule goes — silence
+              on the custom list / attendees read as "same rule". */}
+          <p className="text-xs text-muted-foreground">{t(selfExclusionHintKey(segment.kind))}</p>
           {/* 108 PR-C T089 (FR-040): the live count — the same resolver that
               decides the send, so the number shown is the number sent (SC-004). */}
-          <RecipientCountLine state={recipientCount} />
+          <RecipientCountLine state={recipientCount} onRetry={() => setCountRetry((n) => n + 1)} />
 
           {segment.kind === 'custom' ? (
             <CustomListInput

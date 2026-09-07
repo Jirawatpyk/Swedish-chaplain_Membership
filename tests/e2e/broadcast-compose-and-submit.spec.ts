@@ -13,8 +13,19 @@
  * the e2e-member quota is exhausted (asserts quota_blocked envelope).
  */
 import type { Page } from '@playwright/test';
+import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
+
+// Review 2026-09-07 round 2 (UX § 15 #3) — the T084 states (a live count, an
+// unavailable count with its retry, the hints) were never scanned: the a11y
+// spec scans the compose page in its DEFAULT state only.
+async function expectNoA11yViolations(page: Page): Promise<void> {
+  const results = await new AxeBuilder({ page })
+    .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+    .analyze();
+  expect(results.violations, JSON.stringify(results.violations, null, 2)).toEqual([]);
+}
 
 // The in-good-standing member persona. The primary `e2e-member` deliberately
 // carries a LAPSED renewal cycle (the F8 fixture in `helpers/renewals-seed.ts`),
@@ -233,11 +244,13 @@ test.describe('Broadcast compose + submit (T052 — US1 AS1)', () => {
   // behaviour lives in the unit suites that drove T089 (`use-recipient-count`,
   // `recipient-count-line`); these four are e2e PINS of the wiring: the
   // request and its numbers-only body, the polite live region, the truthful
-  // "unavailable" state that never shows a stale number, and the
-  // self-exclusion hint on member-based segments only.
+  // "unavailable" state that never shows a stale number (with its retry), and
+  // the self-exclusion hint that follows the segment.
   // -------------------------------------------------------------------------
   const COUNT_URL = /\/api\/broadcasts\/recipient-count\?/;
-  const READY_OR_EXCEEDS = /recipients will receive this broadcast|above the ceiling/;
+  // Round 2: a measured answer is one of three lines — a count, "above the
+  // limit", or (i18n H1) "No eligible recipients" when the count is 0.
+  const READY_OR_EXCEEDS = /recipients? will receive this broadcast|above the limit of|No eligible recipients match/;
   const UNAVAILABLE = /Recipient count unavailable right now/;
 
   async function openCompose(page: Page): Promise<void> {
@@ -279,6 +292,7 @@ test.describe('Broadcast compose + submit (T052 — US1 AS1)', () => {
     await expect(line).toContainText(
       new Intl.NumberFormat('en').format(body['count'] as number),
     );
+    await expectNoA11yViolations(page);
   });
 
   test('T084: choosing a tier re-counts for that segment; a tier with no codes has nothing to count', async ({
@@ -301,6 +315,7 @@ test.describe('Broadcast compose + submit (T052 — US1 AS1)', () => {
     expect(response.status()).toBe(200);
     expect(new URL(response.url()).searchParams.get('tier')).toBe('premium');
     await expect(countLine(page, READY_OR_EXCEEDS)).toBeVisible({ timeout: 10_000 });
+    await expectNoA11yViolations(page);
   });
 
   test('T084: a failed count is "unavailable" — never a stale number — and the form stays usable', async ({
@@ -329,9 +344,17 @@ test.describe('Broadcast compose + submit (T052 — US1 AS1)', () => {
     await expect(
       page.getByRole('button', { name: 'Submit for review' }),
     ).toBeEnabled({ timeout: 10_000 });
+    // Round 2 (UX H-5): the failed count is not a dead end — "Try again"
+    // re-runs the same segment; once the route answers, the number lands.
+    await expectNoA11yViolations(page);
+    await page.unroute(COUNT_URL);
+    await page.getByRole('button', { name: 'Try again' }).click();
+    await expect(countLine(page, READY_OR_EXCEEDS)).toBeVisible({ timeout: 10_000 });
   });
 
-  test('T084: the self-exclusion hint shows on member-based segments only', async ({
+  // Round 2 (UX H-3): every segment kind says which way the self-exclusion
+  // rule goes — the custom list says the sender IS included.
+  test('T084: the self-exclusion hint follows the segment — excluded on member-based, included on a custom list', async ({
     page,
   }) => {
     await openCompose(page);
@@ -342,6 +365,8 @@ test.describe('Broadcast compose + submit (T052 — US1 AS1)', () => {
     await expect(hint).toBeVisible();
     await page.getByRole('radio', { name: 'Custom email list' }).click();
     await expect(hint).toHaveCount(0);
+    await expect(page.getByText(/including you, if your own address is on it/i)).toBeVisible();
+    await expectNoA11yViolations(page);
     await page.getByRole('radio', { name: 'All members' }).click();
     await expect(hint).toBeVisible();
   });

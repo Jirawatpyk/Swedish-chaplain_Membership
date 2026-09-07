@@ -122,6 +122,39 @@ describe('useRecipientCount (108 PR-C T089)', () => {
     expect(result.current.status).toBe('unavailable');
   });
 
+  // Review 2026-09-07 round 2 (UX H-5) — `unavailable` was terminal: the
+  // effect depended on the url alone, so a fixed-url segment that failed
+  // once never re-fetched. A retry nonce re-runs the SAME url.
+  it('a retry nonce change re-fetches the same url after an unavailable answer', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(503, { error: { code: 'count_unavailable' } }));
+    const { result, rerender } = renderHook(
+      ({ nonce }: { nonce: number }) =>
+        useRecipientCount({ mode: 'member', segment: { kind: 'all_members', tierCodes: [] } }, nonce),
+      { initialProps: { nonce: 0 } },
+    );
+    await act(async () => {
+      vi.advanceTimersByTime(400);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(result.current.status).toBe('unavailable');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    rerender({ nonce: 1 });
+    expect(result.current.status).toBe('loading');
+    await act(async () => {
+      vi.advanceTimersByTime(400);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect((fetchMock.mock.calls[1] as [string])[0]).toBe('/api/broadcasts/recipient-count?segment=all_members');
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(result.current).toEqual({ status: 'ready', ...READY });
+  });
+
   it('a network failure → unavailable', async () => {
     fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'));
     const { result } = renderHook(() =>

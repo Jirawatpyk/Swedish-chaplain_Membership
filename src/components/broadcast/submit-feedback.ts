@@ -1,52 +1,57 @@
 /**
- * 108 PR-C T077 (FR-022a, US3 AS9) — the success-toast description after a
- * broadcast submit, shared by the member compose form and the admin proxy
- * form.
- *
- * The submit response carries `recipientPreferenceExcluded`: how many
- * entries the resolver removed "by recipient preference" (a per-contact
- * opt-out on any segment; plus an unsubscribed address on a custom list or
- * the attendee segment). The sender is told the NUMBER — never which
- * addresses, never why beyond "recipient preference" (spec edge case
- * "Opted-out contact on a custom list").
+ * 108 PR-C T077 (FR-022a, US3 AS9) — the pure copy decisions shared by the
+ * member compose form and the admin proxy form: which estimate / hint /
+ * notice line describes the segment in hand, whether the live count blocks
+ * the submit, how a submit error is interpolated, and how many entries the
+ * submit response says were removed "by recipient preference". The sender
+ * is told the NUMBER — never which addresses, never why beyond "recipient
+ * preference" (spec edge case "Opted-out contact on a custom list").
  *
  * Pure so it is unit-testable in jsdom: the forms cannot be driven to a
  * submit without a live Tiptap editor. Defensive on the field: an older
- * server, a malformed body or a negative number all fall back to the plain
- * hint — a toast must never read "NaN addresses".
+ * server, a malformed body or a negative number all read as 0 — a toast
+ * must never say "NaN addresses".
  */
+import type { RecipientCountState } from './recipient-count';
+
 export interface SubmitFeedbackBody {
   readonly recipientPreferenceExcluded?: unknown;
-}
-
-export interface SubmitFeedbackOptions<K extends string> {
-  /**
-   * Key of the line that always follows (the member form's review-SLA hint).
-   * `null` = no trailing line (the admin proxy toast has none), in which case
-   * the description is `undefined` at zero exclusions.
-   */
-  readonly hintKey?: K | null;
-  /** Key of the "{count} excluded by recipient preference" line. */
-  readonly countKey?: K;
 }
 
 /**
  * 108 PR-C T085 (FR-041 / FR-042) — interpolation values for a submit error.
  * The "audience too large" copy names the ceiling the server actually refused
  * against (`details.cap` on the 422 body — 5,000 or 50,000 depending on the
- * batching flag), so the message can never claim a limit the server did not
- * apply. Returns `undefined` for every other code, or when the body carries
- * no usable cap (an older server): the caller then renders the key without
- * values, which is the pre-108 behaviour.
+ * flags), so the message can never claim a limit the server did not apply.
+ *
+ * Review 2026-09-07 round 2 (i18n H4): next-intl does NOT throw on a missing
+ * value — it renders the raw key path as the toast — so the too-large code
+ * must ALWAYS carry a ceiling. When the body has no usable cap (an older
+ * server, a malformed body) the value is the ceiling the page resolved
+ * server-side. Every other code yields `undefined` (no placeholders).
  */
 export function errorValues(
   code: string,
   details: Record<string, unknown> | undefined,
+  fallbackCeiling: number,
 ): Record<string, number> | undefined {
   if (code !== 'broadcast_audience_too_large') return undefined;
   const cap = details?.['cap'];
-  if (typeof cap !== 'number' || !Number.isInteger(cap) || cap <= 0) return undefined;
+  if (typeof cap !== 'number' || !Number.isInteger(cap) || cap <= 0) {
+    return { ceiling: fallbackCeiling };
+  }
   return { ceiling: cap };
+}
+
+/**
+ * Review 2026-09-07 round 2 (UX H-4, decision (a)) — does the live count
+ * block the submit? A MEASURED refusal does: over the ceiling, or nobody
+ * left after the filters (the count line says so, in red). `unavailable`
+ * never does — the count is advisory there and the server recomputes the
+ * audience (FR-040b). `loading` / `idle` never do either.
+ */
+export function submitBlockedByCount(state: RecipientCountState): boolean {
+  return state.status === 'ready' && (state.exceeds || state.count === 0);
 }
 
 export type ComposeSegmentKind = 'all_members' | 'tier' | 'custom' | 'event_attendees_last_90d';
@@ -68,22 +73,28 @@ export function estimateNoteKey(
   | 'estimateNote.allMembersAllContacts'
   | 'estimateNote.tier'
   | 'estimateNote.tierAllContacts'
-  | 'estimateNote.custom' {
-  if (segmentKind === 'all_members') {
-    return audienceMode === 'all_contacts'
-      ? 'estimateNote.allMembersAllContacts'
-      : 'estimateNote.allMembers';
+  | 'estimateNote.custom'
+  | 'estimateNote.attendees' {
+  switch (segmentKind) {
+    case 'all_members':
+      return audienceMode === 'all_contacts'
+        ? 'estimateNote.allMembersAllContacts'
+        : 'estimateNote.allMembers';
+    case 'tier':
+      return audienceMode === 'all_contacts' ? 'estimateNote.tierAllContacts' : 'estimateNote.tier';
+    case 'custom':
+      return 'estimateNote.custom';
+    // Review 2026-09-07 round 2 (UX H-2 + i18n L1) — the attendee segment
+    // inherited the custom-list copy ("each line below is one email…") with
+    // no textarea following it, beside a real server count. Its own line.
+    case 'event_attendees_last_90d':
+      return 'estimateNote.attendees';
+    default: {
+      // A fifth segment kind must choose its copy here, never inherit one.
+      const _exhaustive: never = segmentKind;
+      return _exhaustive;
+    }
   }
-  if (segmentKind === 'tier') {
-    return audienceMode === 'all_contacts' ? 'estimateNote.tierAllContacts' : 'estimateNote.tier';
-  }
-  if (segmentKind === 'custom' || segmentKind === 'event_attendees_last_90d') {
-    return 'estimateNote.custom';
-  }
-  // Review 2026-09-07 — a fifth segment kind must choose its copy here, not
-  // inherit the custom-list wording by falling through.
-  const _exhaustive: never = segmentKind;
-  return _exhaustive;
 }
 
 /**
@@ -96,22 +107,54 @@ export function showsSelfExclusionHint(segmentKind: ComposeSegmentKind): boolean
   return segmentKind === 'all_members' || segmentKind === 'tier';
 }
 
+/**
+ * Review 2026-09-07 round 2 (UX H-3) — EVERY segment kind carries a hint that
+ * says which way the self-exclusion rule goes. Silence on the custom list /
+ * attendee segment read as "the same rule applies": a sender who learned
+ * "you won't receive your own broadcast" on all_members switched to a list
+ * containing their own address and got their own e-blast — and on the
+ * attendee segment they cannot even inspect the list.
+ */
+export function selfExclusionHintKey(
+  segmentKind: ComposeSegmentKind,
+): 'selfExclusionHint' | 'selfExclusionHintCustom' | 'selfExclusionHintAttendees' {
+  switch (segmentKind) {
+    case 'all_members':
+    case 'tier':
+      return 'selfExclusionHint';
+    case 'custom':
+      return 'selfExclusionHintCustom';
+    case 'event_attendees_last_90d':
+      return 'selfExclusionHintAttendees';
+    default: {
+      const _exhaustive: never = segmentKind;
+      return _exhaustive;
+    }
+  }
+}
+
+/**
+ * Review 2026-09-07 round 2 (UX H-1 + i18n H3) — the staff proxy form's
+ * "{company} won't receive this broadcast" notice, which used to render on
+ * member selection regardless of segment. On the custom list / attendee
+ * segment the member's own address DOES receive it, and the notice says so.
+ */
+export function proxySelfExclusionNoticeKey(
+  segmentKind: ComposeSegmentKind,
+): 'selfExclusionNotice' | 'selfExclusionNoticeIncluded' {
+  return showsSelfExclusionHint(segmentKind) ? 'selfExclusionNotice' : 'selfExclusionNoticeIncluded';
+}
+
+/**
+ * How many entries the submit response says were removed by recipient
+ * preference. Review 2026-09-07 round 2 (UX H-6): the forms show this as its
+ * OWN toast, held longer — not a description under the success toast that
+ * `router.push()` navigated away from in four seconds.
+ */
 export function excludedByPreference(body: SubmitFeedbackBody): number {
   const n = body.recipientPreferenceExcluded;
   return typeof n === 'number' && Number.isInteger(n) && n > 0 ? n : 0;
 }
 
-export function submitSuccessDescription<K extends string>(
-  t: (key: K, values?: Record<string, number>) => string,
-  body: SubmitFeedbackBody,
-  opts: SubmitFeedbackOptions<K> = {},
-): string | undefined {
-  const hintKey = opts.hintKey === undefined ? ('toast.submittedSlaHint' as K) : opts.hintKey;
-  const countKey = opts.countKey ?? ('toast.preferenceExcluded' as K);
-  const count = excludedByPreference(body);
-  // Resolved in reading order: the preference line first, then the hint.
-  const line = count === 0 ? undefined : t(countKey, { count });
-  const hint = hintKey === null ? undefined : t(hintKey);
-  if (line === undefined) return hint;
-  return hint === undefined ? line : `${line} ${hint}`;
-}
+/** Review round 2 (UX H-6) — the preference toast's duration, in ms. */
+export const PREFERENCE_TOAST_DURATION_MS = 8_000;
