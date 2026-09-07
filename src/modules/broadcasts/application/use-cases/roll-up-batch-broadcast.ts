@@ -128,7 +128,27 @@ function classifyBatch(b: BatchManifest, force: boolean): BatchDisposition {
     default: {
       // Exhaustiveness proof — a new BatchStatus must be handled above.
       const _exhaustive: never = b.status;
-      return _exhaustive;
+      // The RUNTIME half, added 2026-09-07 after a coverage pin caught the
+      // same shape in 108 PR-C. `return _exhaustive` returns the status
+      // STRING, so the caller reads `disposition.kind` as `undefined`, falls
+      // to ITS default, `break`s — and `allDone` stays true. A batch nobody
+      // could classify was therefore counted as cleanly done: the broadcast
+      // rolls up to `sent` and burns the quota. That is fail-OPEN, and it is
+      // the exact outcome reviews C/D/E hardened the arms above against
+      // ("never a clean sent that masks zero-delivery"). `in_flight` is the
+      // conservative answer — it keeps the broadcast un-finalised, which
+      // `stuck_sending_count` already alarms on.
+      void _exhaustive;
+      // `force` is honoured here exactly as it is by `sending`, `pending`
+      // and `failed` above. The first version of this arm ignored it, which
+      // made it the ONLY arm that can never become terminal — and that
+      // falsified the docblock at the top of this file, which lists "neither
+      // done nor failed, forever" as an unrepresentable state. Under the
+      // 24 h backstop an unclassifiable batch is `abandoned`: we do not know
+      // it succeeded, and staying stuck is not an option the backstop
+      // allows. (Review of this change, 2026-09-07.)
+      if (force) return { kind: 'abandoned', batchId: b.id };
+      return { kind: 'in_flight' };
     }
   }
 }

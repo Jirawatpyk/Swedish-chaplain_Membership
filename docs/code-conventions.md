@@ -164,6 +164,94 @@ A bare `eslint-disable` with no reason is treated as a finding at the next code 
 
 ---
 
+## 8. Exhaustive `switch` defaults: `assertNever`, never `return _exhaustive`
+
+### The rule
+
+In the `default:` arm of an exhaustive `switch` over a discriminated union or a
+string-literal union:
+
+```ts
+// ✅
+default:
+  return assertNever(kind);            // @/lib/assert-never — throws
+
+// ✅ when the caller must keep going
+default: {
+  const _exhaustive: never = kind;     // compile-time proof
+  void _exhaustive;                    // consume it
+  return <the fail-SAFE value>;        // decided per call site
+}
+
+// ❌ never
+default: {
+  const _exhaustive: never = kind;
+  return _exhaustive;                  // returns `kind` ITSELF at runtime
+}
+```
+
+### Why the ❌ form is a defect, not a style choice
+
+`return _exhaustive` type-checks as `never`, so it satisfies any return type —
+and at runtime it returns **the switch subject**: a string where a `boolean`,
+an i18n key or a `{ kind }` object was promised. `tsc` proves the arm
+unreachable for every value **this build** compiles. It proves nothing about a
+row written by a newer deploy and read by an older pod, a DB column widened by
+a migration, or a query param.
+
+Three of these were live defects, found in one week (2026-09-07):
+
+| Site | Declared return | What it returned | Consequence |
+|---|---|---|---|
+| `isMissingAddressOrphan` | `boolean` | the reason string — **truthy** | an unknown reason was audited as `broadcast_member_missing_primary_contact_email`: an append-only row asserting a fact nobody established |
+| `isPublishableKeyConsistent` | `boolean` | the env string — **truthy** | an unrecognised `processor_environment` answered "consistent", i.e. a live-mode key blessed unchecked — the exact "silent always-consistent false positive" the arm's own comment claimed to prevent |
+| `classifyBatch` | `{ kind: … }` | the status string | the consumer read `.kind` as `undefined`, fell to its own default and `break`ed, so `allDone` stayed **true**: an unclassifiable batch counted as cleanly sent and the broadcast burned the member's quota |
+
+Two more (`estimateNoteKey`, `selfExclusionHintKey`) returned an i18n key
+position, and next-intl renders a missing key's **path** rather than throwing —
+so the raw key would have appeared as user-facing copy in all three locales.
+
+The first was caught by a 100 % coverage pin: the only line the pin flagged in
+that file was the only line that was wrong. Treat a pin objecting to an
+"unreachable" arm as a question about the arm, not about the pin.
+
+### Choosing the fail-safe value
+
+There is no universal default. Ask what the value **asserts** and pick the
+direction that asserts less:
+
+- a predicate that gates an append-only write or a money path → `false`
+- a copy/i18n key → `null`, and omit the element; every sibling key asserts a
+  reach or promises something, and asserting the wrong one is worse than
+  silence
+- a state classification → the **non-terminal** member (`in_flight`), so a
+  backstop or an alarm still sees it — but honour whatever forcing flag the
+  sibling arms honour, or the arm becomes the one state that can never finish
+
+### Known violations
+
+`assert-never.ts`'s own docblock records that it was introduced on 2026-05-20
+(TD-M4) *"to replace ad-hoc `const _exhaustive: never` patterns scattered
+across route handlers"*. That migration was never finished. **Eight** sites
+remain, all in F8 renewals route handlers:
+
+```
+src/app/api/admin/renewals/at-risk/[memberId]/{outreach,snooze}/route.ts
+src/app/api/admin/renewals/tasks/[taskId]/{done,skip,reassign}/route.ts
+src/app/api/admin/renewals/tier-upgrades/[suggestionId]/{accept,dismiss,escalate}/route.ts
+```
+
+They are **fail-closed** — the arm returns into a `Response` position, Next
+rejects a non-Response and 500s, and the thrown message carries only a
+constructor name, so nothing leaks. They are still worth migrating for a
+reason the fail-closed argument hides: `return _exhaustive` exits the `try`
+**normally**, so each route's `catch` and its `errorId` never fire, and the
+500 carries no `correlationId` — contrary to the comment sitting directly
+above it in each file. `assertNever` throws *inside* the `try` and restores
+the routable signal those comments promise.
+
+---
+
 ## 7. Sources & Cross-References
 
 - Review-tag rot policy precedent: F6 Phase 9 staff-review review-20260516-155013.md R-S04

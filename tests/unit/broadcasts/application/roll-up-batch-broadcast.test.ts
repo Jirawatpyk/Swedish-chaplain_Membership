@@ -59,6 +59,41 @@ describe('evaluateBatchCompletion (Ship-blocker A)', () => {
     });
   });
 
+  // 2026-09-07 — the classifier's `default` arm used to `return _exhaustive`,
+  // i.e. the status STRING. The consumer then reads `disposition.kind` as
+  // `undefined`, falls to ITS OWN default and `break`s — leaving `allDone`
+  // true and the batch out of `failedBatchIds`. So a batch nobody could
+  // classify counted as CLEANLY DONE: the broadcast rolls up to `sent` and
+  // burns the quota, which is the exact outcome reviews C/D/E hardened every
+  // other arm against ("never a clean sent that masks zero-delivery").
+  // `in_flight` keeps the broadcast un-finalised, where `stuck_sending_count`
+  // already alarms.
+  it('a batch status this build cannot classify is NOT clean — allDone stays false', () => {
+    const r = evaluateBatchCompletion([
+      batch({ status: 'quarantined' as unknown as BatchManifest['status'] }),
+    ]);
+    expect(r.allDone).toBe(false);
+    // Not a failure either — we do not know that. It is simply not finished.
+    expect(r.anyFailed).toBe(false);
+    expect(r.failedBatchIds).toEqual([]);
+  });
+
+  // Review of this change — the first version of that arm ignored `force`,
+  // making it the ONLY arm that can never become terminal, which falsified
+  // this file's own docblock ("neither done nor failed, forever" is listed
+  // as unrepresentable). Under the 24 h backstop an unclassifiable batch is
+  // abandoned: we do not know it succeeded, and staying stuck is not an
+  // option the backstop allows.
+  it('under forceComplete an unclassifiable batch is ABANDONED, not stuck forever', () => {
+    const r = evaluateBatchCompletion(
+      [batch({ status: 'quarantined' as unknown as BatchManifest['status'] })],
+      { forceComplete: true },
+    );
+    expect(r.allDone).toBe(true);
+    expect(r.anyFailed).toBe(true);
+    expect(r.failedBatchIds).toEqual(['b-1']);
+  });
+
   it('counters reach recipient_count → done (even while status sending)', () => {
     const r = evaluateBatchCompletion([
       batch({ deliveredCount: 98, bouncedCount: 2 }), // 100 of 100

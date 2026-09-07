@@ -48,11 +48,34 @@ import {
 import { db, runInTenant, type TenantTx } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
 
+/**
+ * Review of the fail-closed change, 2026-09-07 (finding #1). Making
+ * `isPublishableKeyConsistent` answer `false` for an unrecognised
+ * environment is the right direction, but on its own it is SILENT: the
+ * caller maps it to `tenant_settings_incomplete` → 422, and
+ * `payments-route-helpers.ts` only surfaces a `reason` for
+ * `processor_unavailable`. So a `processor_environment` this build cannot
+ * name would take every "Pay now" to the same 422 an actually-incomplete
+ * settings row produces, with nothing in the logs able to tell them apart.
+ *
+ * The sibling repo already had the answer — `drizzle-payments-repo.ts:55`
+ * asserts the same column and names the offending value. This is that
+ * assertion at this boundary. The Domain predicate keeps its `false` as
+ * defence in depth: a row that somehow reaches it unvalidated still fails
+ * closed, it is just no longer the only thing standing there.
+ */
+function assertProcessorEnv(s: string, tenantId: string): ProcessorEnvironment {
+  if (s === 'test' || s === 'live') return s;
+  throw new Error(
+    `drizzle-tenant-payment-settings-repo: unknown processor env '${s}' for tenant ${tenantId}`,
+  );
+}
+
 function toDomain(row: TenantPaymentSettingsRow): TenantPaymentSettings {
   return {
     tenantId: row.tenantId,
     processor: row.processor as Processor,
-    processorEnvironment: row.processorEnvironment as ProcessorEnvironment,
+    processorEnvironment: assertProcessorEnv(row.processorEnvironment, row.tenantId),
     processorAccountId: row.processorAccountId,
     processorPublishableKey: row.processorPublishableKey,
     enabledMethods: row.enabledMethods as readonly PaymentMethod[],
