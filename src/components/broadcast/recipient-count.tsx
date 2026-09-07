@@ -188,6 +188,11 @@ export function RecipientCountLine({
       retry = true;
       break;
     case 'ready':
+      // Re-review 2026-09-07 (finding #4) — a MEASURED refusal blocks the
+      // submit and the count only re-runs on a url or nonce change, so the
+      // member had no way to re-ask after staff fixed the cause. Retry on
+      // every state the count blocks on, not only `unavailable`.
+      retry = state.exceeds || state.count === 0;
       if (state.exceeds) {
         text = t('exceeds', { count: state.count, ceiling: state.ceiling });
         tone = 'text-destructive';

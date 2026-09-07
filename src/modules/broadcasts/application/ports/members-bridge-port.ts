@@ -141,8 +141,12 @@ export interface MembersBridgePort {
    * `event_attendees_last_90d` are not member-keyed and answer 0 without a
    * read. `excludeMemberId` (review round 2, C17) is the requesting member:
    * self-exclusion removes their contacts from the audience, so their
-   * opt-outs are not "excluded by preference" either; `null` on a dispatch
-   * tick, which counts for the whole audience.
+   * opt-outs are not "excluded by preference" either. It carries the
+   * broadcast's `requestedByMemberId` at dispatch too (all three crons) —
+   * dispatch self-excludes the same member, so the count must narrow the
+   * same way; `null` only where there is no requesting member (re-review
+   * 2026-09-07 finding #3 corrected this docblock, which said "null on a
+   * dispatch tick").
    */
   countOptedOutContactsBySegment(
     tenantCtx: TenantContext,

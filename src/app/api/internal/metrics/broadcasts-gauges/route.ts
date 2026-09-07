@@ -98,8 +98,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       // remains populated through both `failed_to_dispatch` and `sent`
       // terminal states (verified in drizzle-broadcasts-repo.ts —
       // status flips don't clear the timestamp). Tenants with zero
-      // rolling-window traffic produce no row → gauge unsampled (safe
-      // for OTel; no false-positive zeros).
+      // rolling-window traffic produce no row → their label is FORGOTTEN
+      // below (re-review finding #2), so the series goes absent rather than
+      // freezing at its last value; never a fabricated 0.
       const dispatchRows = await tx.execute<DispatchRatioRow>(sql`
         SELECT
           tenant_id,
@@ -190,12 +191,27 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   for (const row of suppressionSizes) {
     broadcastsMetrics.suppressionListSize(row.tenant_id, row.count);
   }
+  const ratioTenants = new Set<string>();
   for (const row of dispatchRatios) {
     // dispatched > 0 enforced by HAVING clause — division safe.
     const rate = row.failed / row.dispatched;
     broadcastsMetrics.dispatchFailureRate(row.tenant_id, rate);
+    ratioTenants.add(row.tenant_id);
     const bps = Math.round(rate * 10_000);
     if (bps > dispatchRatioMaxBps) dispatchRatioMaxBps = bps;
+  }
+  // Re-review 2026-09-07 (finding #2) — the C9 latch class, unclosed in this
+  // same function. The ratio query has `HAVING dispatched > 0`, so a quiet
+  // tenant emits no row and `observeGauge` re-reports its last value at every
+  // scrape: one failed send at 10:00 pages until the next successful send,
+  // which for a weekly sender is days. The three COUNT gauges above are
+  // zero-filled ("0 means 0"); a RATIO cannot be — a 0 would assert "we
+  // dispatched and none failed". So the label is FORGOTTEN and the series
+  // goes absent, which monitoring can express as "no data".
+  for (const tenantId of observed) {
+    if (!ratioTenants.has(tenantId)) {
+      broadcastsMetrics.forgetDispatchFailureRate(tenantId);
+    }
   }
 
   logger.info(

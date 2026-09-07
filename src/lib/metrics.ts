@@ -2444,8 +2444,12 @@ export const broadcastsMetrics = {
    * `> 0.10 (10%) → page` (Resend incident / app bug). Emitted by the
    * `broadcasts-gauges` cron alongside `queue_pending` +
    * `stuck_sending_count`. With no traffic the rolling-window query
-   * returns no rows and the gauge is not sampled (no false positives
-   * from quiet tenants).
+   * returns no rows — and, re-review 2026-09-07 (finding #2), the cron then
+   * calls `forgetDispatchFailureRate` for that tenant, because
+   * `observeGauge` otherwise re-reports the LAST value at every scrape: a
+   * tenant whose single send failed at 10:00 would read 1.0 and page for
+   * as long as it stayed quiet. Absence, not a fabricated 0 — a 0 would
+   * claim "we dispatched and none failed", which is a different fact.
    */
   dispatchFailureRate(tenantId: string, rate: number): void {
     safeMetric(() => {
@@ -2455,6 +2459,22 @@ export const broadcastsMetrics = {
         { tenant: tenantId },
         rate,
       );
+    });
+  },
+
+  /**
+   * Re-review 2026-09-07 (finding #2) — drop one tenant's
+   * `broadcasts_dispatch_failure_rate` label so the series goes ABSENT
+   * rather than frozen at its last value. Same reasoning, and the same
+   * shape, as `forgetAutoInvoiceGauges`: for a RATIO an absent series is
+   * honest ("no denominator this window"), a stale one pages forever and a
+   * zero asserts a success that never happened.
+   */
+  forgetDispatchFailureRate(tenantId: string): void {
+    safeMetric(() => {
+      gaugeValues
+        .get('broadcasts_dispatch_failure_rate')
+        ?.delete(JSON.stringify({ tenant: tenantId }));
     });
   },
 

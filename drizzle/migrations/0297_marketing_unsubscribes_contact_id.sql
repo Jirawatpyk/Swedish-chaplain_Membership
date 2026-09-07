@@ -30,8 +30,13 @@
 -- authoritative with or without it (FR-024 "honoured for that address on
 -- every later send").
 --
--- ROLLBACK. The column is unused when PR-C is reverted or the audience
--- flag is off; drop only via a new migration.
+-- ROLLBACK. The column is WRITTEN by every unsubscribe from the moment
+-- PR-C deploys — `unsubscribe-recipient.ts` reads no feature flag, so
+-- `FEATURE_CONTACT_MARKETING_RECIPIENTS=false` does NOT make it unused
+-- (re-review 2026-09-07 finding #1 corrected this header). Dropping it
+-- while that code is deployed fails every unsubscribe INSERT with 42703
+-- and takes down the GDPR Art. 21 path. Drop only AFTER a code revert,
+-- and only via a new migration.
 
 ALTER TABLE "marketing_unsubscribes"
   ADD COLUMN IF NOT EXISTS "contact_id" uuid;

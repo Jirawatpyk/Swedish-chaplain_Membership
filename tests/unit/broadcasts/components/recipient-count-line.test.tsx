@@ -93,6 +93,26 @@ describe('<RecipientCountLine> (108 PR-C T089)', () => {
     expect(text).not.toMatch(/0 recipients will receive/i);
   });
 
+  // Re-review 2026-09-07 (finding #4) — a MEASURED refusal disables Submit,
+  // and the effect only re-runs on a url or nonce change, so a member whose
+  // count was 0 (everyone opted out) or over the limit had no way to re-ask
+  // after staff fixed it: they had to switch segments or reload. The retry
+  // belongs on every state the count BLOCKS on, not only `unavailable`.
+  it.each([
+    ['empty', { status: 'ready', count: 0, ceiling: 5000, exceeds: false, orphans: 0, droppedByPreference: 3 }],
+    ['exceeds', { status: 'ready', count: 5001, ceiling: 5000, exceeds: true, orphans: 0, droppedByPreference: 0 }],
+  ])('a blocking %s state offers the same retry', (_label, state) => {
+    const onRetry = vi.fn();
+    renderLine(state as RecipientCountState, 'en', onRetry);
+    fireEvent.click(screen.getByRole('button', { name: /try again/i }));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it('a NON-blocking ready state offers no retry (nothing to re-ask)', () => {
+    renderLine({ status: 'ready', count: 12, ceiling: 5000, exceeds: false, orphans: 0, droppedByPreference: 0 });
+    expect(screen.queryByRole('button', { name: /try again/i })).toBeNull();
+  });
+
   it('ready with count 1 (EN): "1 recipient", not "1 recipients"', () => {
     renderLine({ status: 'ready', count: 1, ceiling: 5000, exceeds: false, orphans: 0, droppedByPreference: 0 });
     expect(screen.getByRole('status').textContent).toMatch(/\b1 recipient will\b/);

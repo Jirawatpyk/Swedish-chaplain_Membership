@@ -1352,7 +1352,7 @@ the recipient cap × broadcast count per tenant per quota year (10/year/member
 |---|---|---|---|
 | `broadcasts.webhook_signature_rejected_total` ≥ 5 / 5 min | **page** | possible abuse / misconfig (PDPA-relevant) | `docs/runbooks/broadcasts-webhook-attack.md` |
 | `broadcast_cross_tenant_probe` ≥ 1 / 5 min | **page** | Constitution Principle I clause 3 breach attempt | `docs/runbooks/breach-notification.md` |
-| `broadcasts.dispatch_failure_rate` > 10 % / 1 h | **page** | Resend incident or app bug | `docs/runbooks/broadcasts-dispatch-failure.md` |
+| `broadcasts.dispatch_failure_rate` > 10 % / 1 h | **page** | Resend incident or app bug. The series goes ABSENT for a tenant with no dispatch traffic in the window (the gauges cron forgets the label — re-review 2026-09-07 finding #2); before that it froze at its last value and a single failed send paged until the next successful one. Alert on the value, never on "no data" | `docs/runbooks/broadcasts-dispatch-failure.md` |
 | `broadcasts.stuck_sending_count` ≥ 1 (≥ 24 h) | **alarm** | webhook event lost or Resend resource missing | `docs/runbooks/broadcasts-stuck-sending.md` |
 | `broadcasts.dispatch_resolve_failed.total` rate > 0 sustained ≥ 15 min | **alarm** | the audience cannot be built (F3 page / count / opt-out lookup failing); the broadcast stays `approved` with no budget | `docs/runbooks/broadcast-audience-build.md` § C |
 | `broadcasts.approved_overdue_count` ≥ 1 sustained 30 min | **alarm** | a schedule is slipping tick after tick (the gauge is zero-filled per tenant since round 2 — it CLEARS when the incident does) | `docs/runbooks/broadcast-audience-build.md` § C |

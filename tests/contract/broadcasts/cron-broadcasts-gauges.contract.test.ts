@@ -25,6 +25,7 @@ const dispatchFailureRateSpy = vi.fn();
 // than 1 h past `scheduled_for`, the only signal for a schedule slipping tick
 // after tick because the audience cannot be built.
 const approvedOverdueCountSpy = vi.fn();
+const forgetDispatchFailureRateSpy = vi.fn();
 
 const envMock = {
   isDevelopment: false,
@@ -58,6 +59,7 @@ vi.mock('@/lib/metrics', async () => {
       queuePending: queuePendingSpy,
       stuckSendingCount: stuckSendingCountSpy,
       dispatchFailureRate: dispatchFailureRateSpy,
+      forgetDispatchFailureRate: forgetDispatchFailureRateSpy,
       approvedOverdueCount: approvedOverdueCountSpy,
     },
   };
@@ -80,6 +82,7 @@ beforeEach(() => {
   stuckSendingCountSpy.mockReset();
   dispatchFailureRateSpy.mockReset();
   approvedOverdueCountSpy.mockReset();
+  forgetDispatchFailureRateSpy.mockReset();
 });
 
 afterEach(() => {
@@ -195,6 +198,36 @@ describe('GET /api/internal/metrics/broadcasts-gauges — wire contract', () => 
     expect(stuckSendingCountSpy).toHaveBeenCalledWith('t2', 0);
     expect(queuePendingSpy).toHaveBeenCalledWith('t1', 0);
     expect(queuePendingSpy).toHaveBeenCalledWith('t2', 3);
+  });
+
+  // Re-review 2026-09-07 (finding #2) — the C9 latch class, unclosed in the
+  // SAME function: `dispatch_failure_rate`'s query has `HAVING dispatched > 0`,
+  // so a tenant with no traffic in the rolling hour emits no row, and
+  // `observeGauge` re-reports its last value at every scrape. A tenant whose
+  // single send failed at 10:00 reads 1.0 forever and pages forever. A
+  // fabricated 0 would be a different lie ("we dispatched and none failed"),
+  // so the honest answer is ABSENCE — the `forgetAutoInvoiceGauges` pattern.
+  it('a tenant with no dispatch traffic in the window has its failure-rate label FORGOTTEN, not re-reported and not zeroed', async () => {
+    dbTransactionMock.mockImplementationOnce(async () => ({
+      tenantRows: [{ tenant_id: 't1' }, { tenant_id: 't2' }],
+      pendingRows: [],
+      stuckRows: [],
+      suppressionRows: [],
+      approvedOverdueRows: [],
+      // t1 dispatched this hour; t2 did not.
+      dispatchRows: [{ tenant_id: 't1', failed: 1, dispatched: 4 }],
+    }));
+
+    const { GET } = await import(
+      '@/app/api/internal/metrics/broadcasts-gauges/route'
+    );
+    const res = await GET(makeRequest('Bearer test-cron-secret'));
+    expect(res.status).toBe(200);
+
+    expect(dispatchFailureRateSpy).toHaveBeenCalledWith('t1', 0.25);
+    expect(dispatchFailureRateSpy).not.toHaveBeenCalledWith('t2', 0);
+    expect(forgetDispatchFailureRateSpy).toHaveBeenCalledWith('t2');
+    expect(forgetDispatchFailureRateSpy).not.toHaveBeenCalledWith('t1');
   });
 
   it('valid bearer + zero traffic → 200 + zero summary, no metrics emitted', async () => {
