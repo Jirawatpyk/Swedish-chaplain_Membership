@@ -357,7 +357,18 @@ export const membersBridge: MembersBridgePort = {
     if ('code' in result.error && result.error.code === 'member_halt.unauthorised') {
       return err({ kind: 'member_halt.unauthorized', actorRole });
     }
-    return err({ kind: 'member_halt.member_not_found', memberId });
+    if ('code' in result.error && result.error.code === 'member_halt.member_not_found') {
+      return err({ kind: 'member_halt.member_not_found', memberId });
+    }
+    // Review 2026-09-07 round 2 (C4, errors HIGH) — every OTHER F3 answer is a
+    // failed WRITE (Neon blip, RLS/GUC error, statement timeout), not a
+    // missing member. This used to fall through to `member_not_found`: an
+    // admin clearing a halt during a blip was told the member does not exist
+    // while the halt stayed set, and the webhook auto-halt logged that false
+    // reason. Same doctrine as the lookups above: throw, let the caller map
+    // it (`clear_halt.server_error` → 500; the webhook tx rolls back and
+    // Resend retries).
+    throw new Error(`members-bridge.setMemberHalt: ${String(result.error.code)}`);
   },
 
   async markBroadcastsAcknowledged(

@@ -63,6 +63,11 @@ import { unsafeBrandEmailLower } from '@/modules/broadcasts/domain/value-objects
 import { asTenantContext } from '@/modules/tenants';
 
 export const runtime = 'nodejs';
+// Review 2026-09-07 round 2 (perf HIGH-2) — the same 300 s budget as
+// dispatch-scheduled and dispatch-batches. 108 PR-C made each row a full 1:N
+// audience walk (×MAX_BROADCASTS_PER_TICK); on the platform default a killed
+// function runs no `catch`, so `dispatch_resolve_failed_total` never fired.
+export const maxDuration = 300;
 export const dynamic = 'force-dynamic';
 
 const MAX_BROADCASTS_PER_TICK = 10;

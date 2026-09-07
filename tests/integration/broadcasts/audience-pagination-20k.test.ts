@@ -194,5 +194,63 @@ describe.runIf(process.env.RUN_SCALE_TESTS === '1')(
       // The statement is a bounded keyset page.
       expect(plan).toMatch(/Limit/);
     }, 120_000);
+
+    // Review 2026-09-07 round 2 (perf HIGH-1 / HIGH-3) — the assertion above
+    // could not detect the intended plan's ABSENCE: it planned only page 1,
+    // and a row comparison whose columns span TWO relations
+    // (`(members.member_id, contacts.contact_id) > ($1, $2)`) is structurally
+    // unqualifiable — Postgres needs every left-hand column in ONE index —
+    // so every page after the first rescanned the tenant from its first
+    // member (O(pages²·page_size)). With seqscan/bitmapscan/sort disabled the
+    // question becomes "CAN the cursor be an index bound", not "will the
+    // planner pick it at this size" — which is deterministic, and which the
+    // old shape fails on both cursor arms that carry a member bound.
+    it('EXPLAIN: the keyset cursor is an INDEX bound on members for every cursor arm and the tier variant', async () => {
+      const deepCursor = await runInTenant(tenant.ctx, async (tx) => {
+        const rows = (await tx.execute(sql`
+          SELECT m.member_id AS "memberId", c.contact_id AS "contactId"
+          FROM members m
+          JOIN contacts c ON c.tenant_id = m.tenant_id AND c.member_id = m.member_id AND c.removed_at IS NULL
+          ORDER BY m.member_id, c.contact_id
+          OFFSET 15000 LIMIT 1
+        `)) as unknown as Array<{ memberId: string; contactId: string }>;
+        return rows[0]!;
+      });
+      const explainForced = (params: Parameters<typeof buildBroadcastRecipientContactsQuery>[1]) =>
+        runInTenant(tenant.ctx, async (tx) => {
+          await tx.execute(sql`SET LOCAL enable_seqscan = OFF`);
+          await tx.execute(sql`SET LOCAL enable_bitmapscan = OFF`);
+          await tx.execute(sql`SET LOCAL enable_sort = OFF`);
+          const rows = (await tx.execute(
+            sql`EXPLAIN (FORMAT TEXT) ${buildBroadcastRecipientContactsQuery(tx, params)}`,
+          )) as unknown as Array<{ 'QUERY PLAN': string }>;
+          return rows.map((r) => r['QUERY PLAN']).join('\n');
+        });
+      // The cursor's member bound (`member_id >` / `>=`) must sit INSIDE an
+      // Index Cond — a `member_id =` there is the contacts join, not the cursor.
+      const cursorIsIndexBound = /Index Cond:[^\n]*member_id\s*>=?\s/;
+
+      const afterContact = await explainForced({
+        segmentType: 'all_members',
+        after: { kind: 'after_contact', memberId: deepCursor.memberId, contactId: deepCursor.contactId },
+        limit: 5000,
+      });
+      expect(afterContact).toMatch(cursorIsIndexBound);
+
+      const afterMember = await explainForced({
+        segmentType: 'all_members',
+        after: { kind: 'after_member', memberId: deepCursor.memberId },
+        limit: 5000,
+      });
+      expect(afterMember).toMatch(cursorIsIndexBound);
+
+      const tierDeep = await explainForced({
+        segmentType: 'tier',
+        tierCodes: ['corporate'],
+        after: { kind: 'after_contact', memberId: deepCursor.memberId, contactId: deepCursor.contactId },
+        limit: 5000,
+      });
+      expect(tierDeep).toMatch(cursorIsIndexBound);
+    }, 120_000);
   },
 );

@@ -489,12 +489,23 @@ export function buildBroadcastRecipientContactsQuery(
 ) {
   const tierFilter = broadcastSegmentTierFilter(params);
   const after = params.after;
+  // Review 2026-09-07 round 2 (perf HIGH-1, EXPLAIN-proven on the 20k fixture)
+  // — the `after_contact` arm was `(members.member_id, contacts.contact_id)
+  // > ($1, $2)`, a row comparison whose columns span TWO relations. Postgres
+  // can only turn a row comparison into an index bound when every left-hand
+  // column lives in ONE index, so that shape was structurally unqualifiable:
+  // the planner's only Index Cond was `tenant_id`, and every page after the
+  // first re-scanned the tenant from its first member (O(pages²·page_size)).
+  // The expanded form below is the same predicate — including the orphan
+  // arm: a later member's NULL `contact_id` makes the second disjunct
+  // UNKNOWN, but `member_id > $1` is already TRUE, so orphan resume holds —
+  // and its `member_id >= $1` half IS an index bound on `members_pkey`.
   const cursorFilter =
     after === null
       ? undefined
       : after.kind === 'after_member'
         ? sql`${members.memberId} > ${after.memberId}::uuid`
-        : sql`(${members.memberId}, ${contacts.contactId}) > (${after.memberId}::uuid, ${after.contactId}::uuid)`;
+        : sql`(${members.memberId} >= ${after.memberId}::uuid AND (${members.memberId} > ${after.memberId}::uuid OR ${contacts.contactId} > ${after.contactId}::uuid))`;
   return tx
     .select({
       memberId: members.memberId,
@@ -1620,13 +1631,15 @@ export const drizzleMemberRepo: MemberRepo = {
    * WHERE removed_at IS NULL AND marketing_opt_out_at IS NULL` (migration
    * 0294, reserved for exactly this read — M-13), so the join is an index
    * scan per member and the opt-out exclusion never needs the row. The
-   * keyset predicate is a Postgres row comparison: for a cursor at a contact,
-   * `(member_id, contact_id) > (m, c)`; an orphan row (null contact) is
-   * compared on `member_id` alone — it is the only row of that member, so
-   * "after the orphan" is "the next member". Row comparison stops at the
-   * first unequal pair, so an orphan's null contact_id never poisons the
-   * result: it is only reached when member ids tie, which cannot happen for a
-   * member with no contacts.
+   * keyset predicate (see `buildBroadcastRecipientContactsQuery`) is, for a
+   * cursor at a contact, `member_id >= m AND (member_id > m OR contact_id >
+   * c)` — NOT a row comparison across the two relations, which Postgres can
+   * never turn into an index bound (review 2026-09-07 round 2, perf HIGH-1).
+   * An orphan row (null contact) is the only row of its member, so its
+   * cursor is `member_id > m` alone: "after the orphan" is "the next member".
+   * A later member's null contact_id makes the `contact_id > c` disjunct
+   * UNKNOWN, but `member_id > m` is already TRUE for it, so no orphan is
+   * skipped on resume.
    */
   async findBroadcastRecipientContacts(ctx, params) {
     try {

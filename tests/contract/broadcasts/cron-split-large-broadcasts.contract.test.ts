@@ -111,6 +111,16 @@ afterEach(() => {
 });
 
 describe('cron split-large-broadcasts — wire contract (108 PR-C review)', () => {
+  // Review 2026-09-07 round 2 (perf HIGH-2) — both sibling resolver crons
+  // export maxDuration = 300; this one did not, and PR-C made its per-row
+  // cost a full 1:N audience walk ×10. A platform kill runs no `catch`, so
+  // the resolve-failed counter this branch added would never fire.
+  it('exports the same 300 s function budget as its two sibling resolver crons', async () => {
+    const mod = await import('@/app/api/cron/broadcasts/split-large-broadcasts/route');
+    expect(mod.maxDuration).toBe(300);
+    expect(mod.GET).toBe(mod.POST);
+  });
+
   it('missing Authorization → 401; wrong Bearer → 401; no query either way', async () => {
     const { POST } = await import('@/app/api/cron/broadcasts/split-large-broadcasts/route');
     expect((await POST(makeRequest({}))).status).toBe(401);

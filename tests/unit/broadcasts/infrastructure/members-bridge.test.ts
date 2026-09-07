@@ -214,6 +214,32 @@ describe('membersBridge — the other lookups discriminate "no data" from "no an
     vi.mocked(f3mod.lookupMemberPrimaryContactEmailInTenant).mockResolvedValueOnce(ok(null) as never);
     expect(await membersBridge.lookupMemberPrimaryContactEmailInTenant(tenant, email)).toBeNull();
   });
+
+  // Review 2026-09-07 round 2 (C4, errors HIGH) — the WRITE path 20 lines
+  // below the four lookups above still collapsed every repo failure into
+  // "that member does not exist": an admin clearing a halt during a Neon
+  // blip got a 404 with the halt still set, and the webhook auto-halt logged
+  // a false reason. Same doctrine: only a typed F3 answer is typed here.
+  it('setMemberHalt: repo.unexpected THROWS; member_not_found / unauthorised stay typed', async () => {
+    vi.mocked(f3mod.setMemberHalt).mockResolvedValueOnce(boom() as never);
+    await expect(membersBridge.setMemberHalt(tenant, 'm-1', false, 'admin')).rejects.toThrow(
+      /repo\.unexpected/,
+    );
+    vi.mocked(f3mod.setMemberHalt).mockResolvedValueOnce(
+      err({ code: 'member_halt.member_not_found' as const, memberId: 'm-1' }) as never,
+    );
+    expect(await membersBridge.setMemberHalt(tenant, 'm-1', false, 'admin')).toEqual(
+      err({ kind: 'member_halt.member_not_found', memberId: 'm-1' }),
+    );
+    vi.mocked(f3mod.setMemberHalt).mockResolvedValueOnce(
+      err({ code: 'member_halt.unauthorised' as const, actorRole: 'manager' }) as never,
+    );
+    expect(await membersBridge.setMemberHalt(tenant, 'm-1', false, 'admin')).toEqual(
+      err({ kind: 'member_halt.unauthorized', actorRole: 'admin' }),
+    );
+    vi.mocked(f3mod.setMemberHalt).mockResolvedValueOnce(ok(undefined) as never);
+    expect(await membersBridge.setMemberHalt(tenant, 'm-1', false, 'admin')).toEqual(ok(undefined));
+  });
 });
 
 describe('membersBridge.getMembersBySegment — the primary_only leg propagates too (T075 :88)', () => {
