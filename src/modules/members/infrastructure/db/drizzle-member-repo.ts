@@ -26,7 +26,7 @@ import {
 } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { err, ok, type Result } from '@/lib/result';
-import { runInTenant } from '@/lib/db';
+import { runInTenant, type TenantTx } from '@/lib/db';
 import { mapDbError, unexpected } from './_repo-error';
 import type { TenantContext } from '@/modules/tenants';
 import { membershipPlans } from '@/modules/plans';
@@ -46,6 +46,8 @@ import { contacts } from './schema-contacts';
 import { findCarriedSelfOptOut } from './carried-marketing-opt-out';
 import { rowToContact } from './drizzle-contact-repo';
 import type {
+  BroadcastOptedOutCountQuery,
+  BroadcastRecipientContactsQuery,
   DirectoryFilter,
   DirectoryOffsetFilter,
   DirectoryRow,
@@ -446,6 +448,94 @@ function mapDirectoryRow(
 }
 
 // --- Implementation ---------------------------------------------------------
+
+/**
+ * 108 PR-C — the keyset page query behind `findBroadcastRecipientContacts`,
+ * exported as a BUILDER so the live 20,000-contact test can `EXPLAIN` the
+ * exact statement the repo runs (PR-D review M-13: the 0294 partial index
+ * was reserved for this read with an EXPLAIN obligation) instead of a
+ * hand-written copy that would drift. Must be awaited inside the caller's
+ * `runInTenant` tx — it is tenant-scoped by RLS, not by an explicit
+ * predicate on `members.tenant_id`.
+ */
+/**
+ * Review 2026-09-07 — the tier predicate shared by the page read and the
+ * opted-out count, so the two can never narrow differently (SC-004).
+ */
+function broadcastSegmentTierFilter(params: BroadcastOptedOutCountQuery) {
+  if (params.segmentType !== 'tier') return undefined;
+  const tierCodesArr = params.tierCodes ?? [];
+  // Review 2026-09-07 (types MEDIUM) — a tier segment with NO codes used to
+  // drop the filter and read EVERY member. The only guard was `.min(1)` in
+  // two HTTP schemas; a `segment_params` row missing its key would have
+  // mis-addressed a 1:N send. Loud, never wide.
+  if (tierCodesArr.length === 0) {
+    throw new Error('broadcast tier segment without tier codes — refusing to read every member');
+  }
+  return sql`${membershipPlans.planCategory}::text = ANY(ARRAY[${sql.join(
+    tierCodesArr.map((c) => sql`${c}`),
+    sql`, `,
+  )}]::text[])`;
+}
+
+export function buildBroadcastRecipientContactsQuery(
+  tx: TenantTx,
+  params: BroadcastRecipientContactsQuery,
+) {
+  const tierFilter = broadcastSegmentTierFilter(params);
+  const after = params.after;
+  const cursorFilter =
+    after === null
+      ? undefined
+      : after.kind === 'after_member'
+        ? sql`${members.memberId} > ${after.memberId}::uuid`
+        : sql`(${members.memberId}, ${contacts.contactId}) > (${after.memberId}::uuid, ${after.contactId}::uuid)`;
+  return tx
+    .select({
+      memberId: members.memberId,
+      contactId: contacts.contactId,
+      emailLower: sql<string | null>`lower(${contacts.email})`,
+      // Review 2026-09-07 — per MEMBER: does any live contact carry a
+      // marketing opt-out? The 0294 predicate inverted, as a correlated
+      // EXISTS so it costs an index probe per member, not a second join.
+      hasOptedOutContact: sql<boolean>`EXISTS (
+        SELECT 1 FROM contacts c2
+        WHERE c2.tenant_id = ${members.tenantId}
+          AND c2.member_id = ${members.memberId}
+          AND c2.removed_at IS NULL
+          AND c2.marketing_opt_out_at IS NOT NULL
+      )`,
+    })
+    .from(members)
+    .leftJoin(
+      contacts,
+      and(
+        eq(contacts.tenantId, members.tenantId),
+        eq(contacts.memberId, members.memberId),
+        isNull(contacts.removedAt),
+        isNull(contacts.marketingOptOutAt),
+      ),
+    )
+    .leftJoin(
+      membershipPlans,
+      and(
+        eq(membershipPlans.tenantId, members.tenantId),
+        eq(membershipPlans.planId, members.planId),
+        eq(membershipPlans.planYear, members.planYear),
+      ),
+    )
+    .where(
+      and(
+        eq(members.status, 'active'),
+        isNull(members.erasedAt),
+        eq(members.broadcastsHaltedUntilAdminReview, false),
+        ...(tierFilter ? [tierFilter] : []),
+        ...(cursorFilter ? [cursorFilter] : []),
+      ),
+    )
+    .orderBy(asc(members.memberId), asc(contacts.contactId))
+    .limit(params.limit);
+}
 
 export const drizzleMemberRepo: MemberRepo = {
   async findById(ctx, memberId) {
@@ -1488,14 +1578,22 @@ export const drizzleMemberRepo: MemberRepo = {
           )
           .where(
             and(
+              // 108 PR-C (FR-021 / SC-009, UNFLAGGED): only ACTIVE members
+              // are marketing-eligible. Before this predicate an archived or
+              // lapsed member's primary still received every E-Blast.
+              eq(members.status, 'active'),
               // COMP-1 H4 — an erased member must never be a broadcast
               // recipient (erasure keeps `status`, stamps only `erased_at`).
               isNull(members.erasedAt),
               eq(members.broadcastsHaltedUntilAdminReview, false),
               ...(tierFilter ? [tierFilter] : []),
             ),
-          )
-          .limit(5000);
+          );
+        // 108 PR-C (research R8): the `.limit(5000)` that used to end this
+        // query is gone. It silently truncated the audience BELOW the
+        // resolver's ceiling check, so 5,001 members resolved as a clean
+        // 5,000 send instead of `broadcast_audience_too_large`. The resolver
+        // is the one truthful bound; a read must never pre-empt it.
       });
 
       return ok(
@@ -1507,6 +1605,83 @@ export const drizzleMemberRepo: MemberRepo = {
           broadcastsHaltedUntilAdminReview: r.broadcastsHaltedUntilAdminReview,
         })),
       );
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
+
+  /**
+   * 108 PR-C (US3) — see the port docblock for the eligibility contract.
+   *
+   * Plan shape: `members` filtered on `(status, erased_at, halted)` drives;
+   * `contacts` is LEFT JOINed on the SAME predicate as the partial index
+   * `contacts_marketing_recipients_idx (tenant_id, member_id, contact_id)
+   * WHERE removed_at IS NULL AND marketing_opt_out_at IS NULL` (migration
+   * 0294, reserved for exactly this read — M-13), so the join is an index
+   * scan per member and the opt-out exclusion never needs the row. The
+   * keyset predicate is a Postgres row comparison: for a cursor at a contact,
+   * `(member_id, contact_id) > (m, c)`; an orphan row (null contact) is
+   * compared on `member_id` alone — it is the only row of that member, so
+   * "after the orphan" is "the next member". Row comparison stops at the
+   * first unequal pair, so an orphan's null contact_id never poisons the
+   * result: it is only reached when member ids tie, which cannot happen for a
+   * member with no contacts.
+   */
+  async findBroadcastRecipientContacts(ctx, params) {
+    try {
+      const rows = await runInTenant(ctx, async (tx) =>
+        buildBroadcastRecipientContactsQuery(tx, params),
+      );
+
+      return ok(
+        rows.map((r) => ({
+          memberId: r.memberId as MemberId,
+          contactId: r.contactId,
+          emailLower: r.emailLower,
+          hasOptedOutContact: r.hasOptedOutContact === true,
+        })),
+      );
+    } catch (e) {
+      return err(unexpected(e));
+    }
+  },
+
+  async countBroadcastOptedOutContacts(ctx, params) {
+    try {
+      const tierFilter = broadcastSegmentTierFilter(params);
+      const rows = await runInTenant(ctx, async (tx) =>
+        tx
+          .select({ n: sql<number>`count(*)::int` })
+          .from(contacts)
+          .innerJoin(
+            members,
+            and(
+              eq(members.tenantId, contacts.tenantId),
+              eq(members.memberId, contacts.memberId),
+            ),
+          )
+          .leftJoin(
+            membershipPlans,
+            and(
+              eq(membershipPlans.tenantId, members.tenantId),
+              eq(membershipPlans.planId, members.planId),
+              eq(membershipPlans.planYear, members.planYear),
+            ),
+          )
+          .where(
+            and(
+              // The SAME member eligibility as the page read.
+              eq(members.status, 'active'),
+              isNull(members.erasedAt),
+              eq(members.broadcastsHaltedUntilAdminReview, false),
+              ...(tierFilter ? [tierFilter] : []),
+              // The contacts the page read's LEFT JOIN excluded: live, opted out.
+              isNull(contacts.removedAt),
+              isNotNull(contacts.marketingOptOutAt),
+            ),
+          ),
+      );
+      return ok(rows[0]?.n ?? 0);
     } catch (e) {
       return err(unexpected(e));
     }

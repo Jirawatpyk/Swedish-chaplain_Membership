@@ -186,6 +186,7 @@ export async function processWebhookEvent(
           tenantId,
           emailLower: recipientLower.value,
           memberId: null,
+          contactId: null,
           reason,
           reasonText: event.data.errorMessage ?? null,
           sourceBroadcastId: broadcastId,
@@ -248,6 +249,7 @@ export async function processWebhookEvent(
           tenantId,
           emailLower: recipientLower.value,
           memberId: null,
+          contactId: null,
           reason: 'recipient_initiated',
           reasonText: null,
           sourceBroadcastId: broadcastId,
@@ -549,8 +551,8 @@ export async function processWebhookEvent(
         // `> 0` predicate, a row that arrives at `sending` with
         // `estimatedRecipientCount = 0` would transition to `sent` and
         // consume the member's annual quota on the very first webhook
-        // event. The DB CHECK (`broadcasts_estimated_recipient_count`
-        // BETWEEN 0 AND 5000) permits 0; the App-layer guard is the
+        // event. The DB CHECK (`broadcasts_estimated_recipient_cap`
+        // BETWEEN 0 AND 50000, migration 0171) permits 0; the App-layer guard is the
         // only safety net. A 0-count row reaching `sending` indicates
         // a dispatch-logic bug (segment resolved to 0 should fail at
         // submit per FR-002c `broadcast_empty_segment_blocked`); the

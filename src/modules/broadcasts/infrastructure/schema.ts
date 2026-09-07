@@ -464,6 +464,11 @@ export const marketingUnsubscribes = pgTable(
     tenantId: text('tenant_id').notNull(),
     emailLower: text('email_lower').notNull(),
     memberId: uuid('member_id'),
+    // 108 PR-C (migration 0297, FR-024) — the specific CONTACT that
+    // unsubscribed, resolved best-effort at unsubscribe time; NULL for
+    // webhook-written bounces/complaints and for legacy rows. No FK, like
+    // `member_id`: the row outlives the contact (never deleted).
+    contactId: uuid('contact_id'),
 
     reason: marketingUnsubscribeReasonEnum('reason').notNull(),
     reasonText: text('reason_text'),

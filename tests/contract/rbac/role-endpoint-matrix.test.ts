@@ -248,6 +248,14 @@ describe('T053 marketing reachable surfaces (US3)', () => {
     '/admin/settings',
     'DELETE /api/admin/broadcasts/templates/[id]',
     'GET /api/admin/broadcasts',
+    // 108 PR-C — the compose-time recipient COUNT for the staff proxy form,
+    // keyed `broadcasts.write` exactly like `proxy-submit` below (a marketing
+    // user who may submit on a member's behalf may see the size of what they
+    // are about to submit). Reachability only: the body is numbers
+    // (count / ceiling / exceeds / orphans / droppedByPreference) and never an
+    // address (FR-053a) — pinned by the route's own contract test, not here.
+    // The frozen set grows 49 -> 50; this pin is what caught the new surface.
+    'GET /api/admin/broadcasts/recipient-count',
     'GET /api/admin/broadcasts/sla-stats',
     'GET /api/admin/broadcasts/templates',
     'GET /api/admin/events',
@@ -288,7 +296,7 @@ describe('T053 marketing reachable surfaces (US3)', () => {
     'GET /api/plans/search',
   ];
 
-  it('reaches EXACTLY the frozen 49-surface set — nothing more, nothing less', () => {
+  it('reaches EXACTLY the frozen 50-surface set — nothing more, nothing less', () => {
     const actual = OBSERVED_BASELINE.filter((s) => allowed('marketing', s))
       .map((s) => s.surface)
       .sort();

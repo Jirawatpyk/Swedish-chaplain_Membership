@@ -29,6 +29,7 @@ import { useDeferredValue, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
+import { errorValues, submitSuccessDescription } from '@/components/broadcast/submit-feedback';
 import { z } from 'zod';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -44,6 +45,7 @@ import { SchedulePicker } from './schedule-picker';
 import { PreviewPane } from './preview-pane';
 import { SubmitButton } from './submit-button';
 import { buildSegmentPayload } from './compose-form';
+import { RecipientCountLine, useRecipientCount } from './recipient-count';
 
 // Proxy form drops inline images + draft lifecycle — the Tiptap editor is
 // loaded with the same loader the member compose form uses, minus the
@@ -164,6 +166,13 @@ export function ProxyComposeForm(): React.ReactElement {
 
   const deferredBody = useDeferredValue(bodyHtml);
   const customLines = parseLines(customList);
+  // 108 PR-C T089 — live count for the PROXIED member (its contacts are the
+  // ones self-excluded server-side); idle until a member is picked.
+  const recipientCount = useRecipientCount({
+    mode: 'admin',
+    memberId: member?.memberId ?? null,
+    segment: { kind: segment.kind, tierCodes: segment.tierCodes },
+  });
 
   // Submit precondition: member picked + subject/body valid + segment
   // shape valid (custom needs 1–100 entries; tier needs ≥1 code). Mirrors
@@ -193,7 +202,13 @@ export function ProxyComposeForm(): React.ReactElement {
     // segment is a radio group — the inline error + toast suffices.
   }, [fieldError]);
 
-  function handleErrorCode(code: string, companyName: string): void {
+  function handleErrorCode(
+    code: string,
+    companyName: string,
+    // 108 PR-C T085 — the 422 `details` (`cap` / `count` on the
+    // audience-too-large refusal) so the copy names the real ceiling.
+    details?: Record<string, unknown>,
+  ): void {
     const handling = ERROR_HANDLING[code] ?? null;
     if (handling === null) {
       // Unmapped: halt, rate-limit, missing-primary-contact, internal,
@@ -219,7 +234,7 @@ export function ProxyComposeForm(): React.ReactElement {
         pickerRef.current?.focus();
         break;
       case 'field': {
-        const message = t(handling.key);
+        const message = t(handling.key, errorValues(code, details));
         setFieldError({ field: handling.field, message });
         toast.error(message);
         break;
@@ -252,7 +267,20 @@ export function ProxyComposeForm(): React.ReactElement {
       });
 
       if (res.ok) {
-        toast.success(t('successToast', { company: companyName }));
+        // 108 PR-C T077 (FR-022a): the count of entries excluded by
+        // recipient preference rides on the 200 body; the admin sees the
+        // number, never the addresses.
+        const okBody = (await res.json().catch(() => null)) as {
+          recipientPreferenceExcluded?: unknown;
+        } | null;
+        const description = submitSuccessDescription(t, okBody ?? {}, {
+          hintKey: null,
+          countKey: 'preferenceExcluded',
+        });
+        toast.success(
+          t('successToast', { company: companyName }),
+          description === undefined ? undefined : { description },
+        );
         router.push('/admin/broadcasts');
         router.refresh();
         return;
@@ -266,7 +294,11 @@ export function ProxyComposeForm(): React.ReactElement {
         typeof (json as { error?: { code?: unknown } }).error?.code === 'string'
           ? (json as { error: { code: string } }).error.code
           : 'internal_error';
-      handleErrorCode(code, companyName);
+      handleErrorCode(
+        code,
+        companyName,
+        (json as { error?: { details?: Record<string, unknown> } } | null)?.error?.details,
+      );
     } catch (e) {
       // Network/CORS/offline — log for local + E2E visibility; generic toast.
 
@@ -346,6 +378,8 @@ export function ProxyComposeForm(): React.ReactElement {
             {fieldError.message}
           </p>
         ) : null}
+        {/* 108 PR-C T089 (FR-040): live count for the proxied member. */}
+        <RecipientCountLine state={recipientCount} />
 
         {segment.kind === 'custom' ? (
           <CustomListInput

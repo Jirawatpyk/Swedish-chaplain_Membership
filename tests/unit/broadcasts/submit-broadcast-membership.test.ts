@@ -104,6 +104,8 @@ function makeMembersBridge(): MembersBridgePort {
       return ok({ previouslyNull: true });
     },
     async filterMarketingOptedOut() { return new Set(); },
+    async getContactsBySegment() { return []; },
+    async countOptedOutContactsBySegment() { return 0; },
     async getMemberPreferredLocale() {
       return null;
     },
@@ -275,6 +277,8 @@ function makeDeps(counters: CallCounters, membershipAccess: MembershipAccessPort
       emailValidator: rfc5321EmailValidator,
       eventAttendees: makeEventAttendees(),
       marketingUnsubscribes: makeMarketingUnsubscribes(),
+      audienceMode: 'primary_only' as const,
+      audienceCeiling: 5000,
       rateLimiter: makeRateLimiter(counters),
       membershipAccess,
       audit: audit.port,

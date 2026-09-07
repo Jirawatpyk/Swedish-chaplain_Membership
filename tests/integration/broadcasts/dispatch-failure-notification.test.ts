@@ -209,6 +209,8 @@ describe('Phase 8 / Slice E — dispatch-failure-notification integration (live 
       {
         tenant: tenantA.ctx,
         broadcastsRepo: makeDrizzleBroadcastsRepo(tenantA.ctx.slug),
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
         broadcastsGateway: makeRetryableGateway(),
         membersBridge: stubMembersBridge,
         marketingUnsubscribes: makeDrizzleMarketingUnsubscribesRepo(tenantA.ctx.slug),
@@ -304,6 +306,8 @@ describe('Phase 8 / Slice E — dispatch-failure-notification integration (live 
       {
         tenant: tenantA.ctx,
         broadcastsRepo: makeDrizzleBroadcastsRepo(tenantA.ctx.slug),
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
         broadcastsGateway: makeRetryableGateway(),
         membersBridge: stubMembersBridge,
         marketingUnsubscribes: makeDrizzleMarketingUnsubscribesRepo(tenantA.ctx.slug),

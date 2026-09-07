@@ -2299,6 +2299,99 @@ export const broadcastsMetrics = {
   },
 
   /**
+   * `broadcasts.recipient_count_ms{tenant}` (registered as
+   * `broadcasts_recipient_count_ms`) — 108 PR-C T090 (SLO-F7-013, FR-043):
+   * the compose-time count p95 < 3 s at 20,000 contacts (and < 400 ms at
+   * 5,000 — the band SweCham lives in). Observed on EVERY outcome — ok,
+   * typed failure and throw — so a slow failure is not invisible to the
+   * histogram. Review 2026-09-07: the docblock used to say
+   * `.duration_ms`, a name that resolves to nothing.
+   */
+  recipientCountMs(tenantId: string, ms: number): void {
+    safeMetric(() => {
+      histogram(
+        'broadcasts_recipient_count_ms',
+        'Recipient-count endpoint duration (FR-043: p95 < 3 s at 20,000 contacts)',
+        'ms',
+      ).record(ms, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * `broadcasts.audience_resolved.total{tenant, segment, mode}` — 108 PR-C
+   * T090: one increment per member-based resolve that REACHED the source read
+   * (any phase — including resolves later refused as empty or too large; it
+   * counts attempts, not sends), labelled by segment kind and the leg in
+   * force, so the cutover flag flip is visible on the dashboard as the `mode`
+   * label changing (research R15).
+   */
+  audienceResolvedTotal(
+    tenantId: string,
+    segment: 'all_members' | 'tier',
+    mode: 'primary_only' | 'all_contacts',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_audience_resolved_total',
+        'Member-based audiences resolved, by segment kind and audience leg',
+      ).add(1, { tenant: tenantId, segment, mode });
+    });
+  },
+
+  /**
+   * `broadcasts.audience_pages.total{tenant}` — 108 PR-C T090: F3 keyset
+   * pages walked per completed 1:N resolve (5,000 rows each), never on a
+   * failed page. Pages per resolve rising toward the per-tick budget is the
+   * early signal for a large tenant.
+   */
+  audiencePagesTotal(tenantId: string, pages: number): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_audience_pages_total',
+        'F3 keyset pages walked by completed 1:N audience resolves',
+      ).add(pages, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * `broadcasts.dispatch_resolve_failed.total{tenant}` — review 2026-09-07
+   * (errors HIGH-4): a dispatch tick that could not BUILD the audience
+   * (`dispatch.server_error`: a failed F3 page / count / opt-out lookup)
+   * leaves the row `approved` for the next tick with NO wall-clock budget —
+   * unlike a Resend failure (FR-021). Until this counter existed that path
+   * was log-only, so a broadcast could slip its `scheduled_for` forever
+   * without a single alertable signal. Alert on any non-zero rate sustained
+   * ≥ 15 min (`docs/observability.md` § 22.1; runbook
+   * `broadcast-audience-build.md` § C).
+   */
+  dispatchResolveFailedTotal(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_dispatch_resolve_failed_total',
+        'Dispatch ticks that could not build the audience (row stays approved; retried next tick)',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * `broadcasts.approved_overdue_count{tenant}` — review 2026-09-07 (errors
+   * HIGH-4b): `approved` rows whose `scheduled_for` is more than an hour in
+   * the past. `queue_pending` alerts at > 8,000, so ONE broadcast slipping
+   * its schedule forever (a resolver error every tick, no budget) was
+   * invisible. Sampled by the gauges cron; alert at ≥ 1 sustained 30 min.
+   */
+  approvedOverdueCount(tenantId: string, count: number): void {
+    safeMetric(() => {
+      observeGauge(
+        'broadcasts_approved_overdue_count',
+        'Approved broadcasts more than 1 h past scheduled_for (slipping schedule)',
+        { tenant: tenantId },
+        count,
+      );
+    });
+  },
+
+  /**
    * `broadcasts.audit_emit_count{tenant, event_type}` — ops-dashboard
    * audit-event volume per tenant per type. Distinct from
    * `auditEmitFailed` (which counts FAILURES).

@@ -65,6 +65,8 @@ const EXPECTED: Record<F7RouteErrorCode, number> = {
   // R4.2 H-1 — typed 400 code for invalid `locale` query parameter
   // on GET /api/broadcasts/templates (was stringly-typed pre-R4.2).
   invalid_locale: 400,
+  invalid_query: 400,
+  count_unavailable: 503,
   internal_error: 500,
 };
 

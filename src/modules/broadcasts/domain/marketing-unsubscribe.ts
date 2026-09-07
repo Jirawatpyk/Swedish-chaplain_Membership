@@ -42,6 +42,13 @@ export interface MarketingUnsubscribe {
   readonly tenantId: string;
   readonly emailLower: EmailLower;
   readonly memberId: string | null;
+  /**
+   * 108 PR-C (FR-024) — the specific contact that unsubscribed, resolved
+   * best-effort at unsubscribe time. `null` for webhook-written bounces and
+   * complaints and for rows older than migration 0297. Attribution only:
+   * the suppression is keyed on the address and authoritative without it.
+   */
+  readonly contactId: string | null;
 
   readonly reason: MarketingUnsubscribeReason;
   readonly reasonText: string | null;

@@ -218,6 +218,7 @@ describe('enforceSuppressionTenantScoped', () => {
     tenantId: 'tenant-a',
     emailLower: unsafeBrandEmailLower('user@example.com'),
     memberId: null,
+    contactId: null,
     reason: 'recipient_initiated' as const,
     reasonText: null,
     sourceBroadcastId: null,

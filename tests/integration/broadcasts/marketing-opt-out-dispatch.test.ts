@@ -148,6 +148,8 @@ describe('108 PR-D B-1 — marketing opt-out honoured at dispatch (live Neon, re
   function deps(tenant: TestTenant) {
     return {
       tenant: tenant.ctx,
+      audienceMode: 'primary_only' as const,
+      audienceCeiling: 5000,
       membersBridge,
       eventAttendees: eventAttendeesStub,
       marketingUnsubscribes: makeDrizzleMarketingUnsubscribesRepo(tenant.ctx.slug),
@@ -158,7 +160,7 @@ describe('108 PR-D B-1 — marketing opt-out honoured at dispatch (live Neon, re
     const result = await resolveSegmentRecipients(deps(tenantA), {
       segment: { kind: 'all_members' },
       phase: 'dispatch',
-      requestingMemberPrimaryEmail: null,
+      requestingMemberId: null,
       customRecipients: null,
     });
     expect(result.ok).toBe(true);
@@ -173,7 +175,7 @@ describe('108 PR-D B-1 — marketing opt-out honoured at dispatch (live Neon, re
     const result = await resolveSegmentRecipients(deps(tenantA), {
       segment: { kind: 'custom', emails: [keepEmail, secondaryOffEmail, selfOffEmail] },
       phase: 'dispatch',
-      requestingMemberPrimaryEmail: null,
+      requestingMemberId: null,
       customRecipients: [
         unsafeBrandEmailLower(keepEmail),
         unsafeBrandEmailLower(secondaryOffEmail),

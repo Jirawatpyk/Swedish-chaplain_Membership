@@ -73,6 +73,7 @@ const submitOutput = {
   status: 'submitted' as const,
   submittedAt: new Date('2026-06-15T05:00:00Z'),
   estimatedRecipientCount: 42,
+  droppedByPreference: 2,
   reservedQuotaSlot: true as const,
   reviewSlaTargetHours: 48,
 };
@@ -104,6 +105,7 @@ describe('POST /api/broadcasts/submit — Wave 6 GREEN (T037)', () => {
       broadcastId: BROADCAST_ID,
       status: 'submitted',
       estimatedRecipientCount: 42,
+      recipientPreferenceExcluded: 2,
       reviewSlaTargetHours: 48,
     });
     expect(typeof body.submittedAt).toBe('string');
@@ -268,14 +270,22 @@ describe('POST /api/broadcasts/submit — Wave 6 GREEN (T037)', () => {
     expect(res.status).toBe(422);
   });
 
-  it('422 broadcast_audience_too_large (FR-002 precondition h / FR-016a 5k cap)', async () => {
+  it('422 broadcast_audience_too_large carries details {count, cap} — the compose copy interpolates the REAL ceiling', async () => {
+    // Review 2026-09-07 (tests MEDIUM) — the member surface had no body
+    // assertion and its mock lacked `cap`, a shape the error type no longer
+    // permits. Drop `details.cap` from the route and the member would see the
+    // raw server message instead of the localised ceiling copy, in TH and SV
+    // too (`errorValues` reads it; the ICU throw is swallowed client-side).
     requireMemberContextMock.mockResolvedValueOnce(memberCtx);
     submitBroadcastMock.mockResolvedValueOnce(
-      err({ kind: 'broadcast_audience_too_large', count: 6000 }),
+      err({ kind: 'broadcast_audience_too_large', count: 6000, cap: 5000 }),
     );
     const { POST } = await importRoute();
     const res = await POST(makeRequest(VALID_BODY));
     expect(res.status).toBe(422);
+    const body = (await res.json()) as { error: { code: string; details?: Record<string, unknown> } };
+    expect(body.error.code).toBe('broadcast_audience_too_large');
+    expect(body.error.details).toMatchObject({ count: 6000, cap: 5000 });
   });
 
   it('422 broadcast_empty_segment_blocked (FR-002 precondition c)', async () => {

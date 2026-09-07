@@ -3052,7 +3052,8 @@
           "breachWarning": "Reviews are running slow"
         },
         "overdueBanner": "{count, plural, one {# broadcast has} other {# broadcasts have}} been waiting over 48 hours — review now.",
-        "truncationNote": "Showing the first 50 — refine the filters to see more."
+        "truncationNote": "Showing the first 50 — refine the filters to see more.",
+        "haltStateUnavailable": "Halt state could not be read — this queue may be hiding halted members. Refresh before approving anything."
       },
       "review": {
         "title": "Broadcast review",
@@ -3149,7 +3150,7 @@
         "subjectLabel": "Subject",
         "bodyLabel": "Message",
         "pageSubtitle": "Compose and queue a broadcast for review using this member's e-blast quota.",
-        "selfExclusionNotice": "{company} won't receive this broadcast — members are excluded from their own e-blasts.",
+        "selfExclusionNotice": "{company} won't receive this broadcast — a member's contacts are excluded from their own e-blasts.",
         "memberNotFoundError": "That member no longer exists. Pick another member.",
         "quotaBlockedError": "{company} has used all their e-blasts for this period.",
         "notInPlanError": "{company}'s plan doesn't include E-Blast.",
@@ -3158,8 +3159,9 @@
         "bodyTooLargeError": "Message body exceeds the 200 KB size limit.",
         "bodyUnsafeHtmlError": "Message body contains formatting we can't accept — please simplify.",
         "emptySegmentError": "No eligible recipients matched.",
-        "audienceTooLargeError": "Audience exceeds the 5,000 recipient limit.",
+        "audienceTooLargeError": "Audience exceeds the {ceiling, number} recipient limit.",
         "successToast": "Broadcast queued for review on behalf of {company}.",
+        "preferenceExcluded": "{count, plural, one {# address was} other {# addresses were}} excluded by recipient preference.",
         "searchFailed": "Member search failed. Try again.",
         "noResults": "No members found.",
         "missingContactEmailWarning": "This member has no primary contact email. A broadcast can't be sent on their behalf until a primary contact with an email address is added.",
@@ -5759,6 +5761,7 @@
           "drafted": "Draft saved.",
           "submitted": "Submitted for admin review.",
           "submittedSlaHint": "Admin review target: 48 hours.",
+          "preferenceExcluded": "{count, plural, one {# address was} other {# addresses were}} excluded by recipient preference.",
           "sanitiserStripped": "Some unsupported formatting was removed automatically.",
           "submitting": "Submitting…",
           "takingLonger": "Taking longer than expected — please wait."
@@ -5771,11 +5774,20 @@
         "submitNote": {
           "cancellable": "You can cancel this broadcast at any time until an admin approves it."
         },
+        "selfExclusionHint": "You and your colleagues won't receive your own broadcast.",
         "estimateNote": {
-          "allMembers": "Recipients: every active member with a primary contact email (capped at 5,000 per broadcast).",
-          "tier": "Recipients: members on the selected tier with a primary contact email (capped at 5,000).",
+          "allMembers": "Recipients: the primary contact of every active member (up to {ceiling, number} per broadcast).",
+          "tier": "Recipients: the primary contact of every active member on the selected tiers (up to {ceiling, number}).",
+          "allMembersAllContacts": "Recipients: every contact of every active member — primary and secondary — who has not opted out (up to {ceiling, number} per broadcast).",
+          "tierAllContacts": "Recipients: every contact of every active member on the selected tiers who has not opted out (up to {ceiling, number}).",
           "custom": "Recipients: each line below is one email. Maximum 100 entries. Each must match a member or contact in your chamber.",
           "customCount": "{count} email(s) entered."
+        },
+        "recipientCount": {
+          "loading": "Counting recipients…",
+          "ready": "{count, number} recipients will receive this broadcast.",
+          "exceeds": "{count, number} recipients — above the ceiling of {ceiling, number}. Narrow the audience; the submission would be refused.",
+          "unavailable": "Recipient count unavailable right now — you can still submit; the server recomputes the audience."
         },
         "errors": {
           "broadcast_quota_blocked": "You've used all of your E-Blast quota for this year.",
@@ -5786,7 +5798,7 @@
           "broadcast_body_unsafe_html": "Message body contains formatting we can't accept — please simplify.",
           "broadcast_body_image_source_unsafe": "Your message contains image sources not in your chamber's allowlist. See the list below the editor to fix or remove them.",
           "broadcast_empty_segment_blocked": "No eligible recipients matched.",
-          "broadcast_audience_too_large": "Audience exceeds the 5,000 recipient limit.",
+          "broadcast_audience_too_large": "Audience exceeds the {ceiling, number} recipient limit.",
           "broadcast_custom_recipient_unknown": "Some custom recipients are not in your directory.",
           "broadcast_custom_recipient_invalid_format": "Some custom recipients are not valid email addresses.",
           "broadcast_custom_recipient_empty": "Add at least one email to your custom recipient list.",

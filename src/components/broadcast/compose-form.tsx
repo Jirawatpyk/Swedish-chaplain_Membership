@@ -22,6 +22,13 @@ import { useDeferredValue, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
+import {
+  errorValues,
+  estimateNoteKey,
+  showsSelfExclusionHint,
+  submitSuccessDescription,
+  type ComposeAudienceMode,
+} from '@/components/broadcast/submit-feedback';
 import { z } from 'zod';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -35,6 +42,7 @@ import { PreviewPane } from './preview-pane';
 import { QuotaDisplay, type QuotaSnapshot } from './quota-display';
 import { SubmitButton } from './submit-button';
 import { UnsafeImageSourcesList } from './unsafe-image-sources-list';
+import { RecipientCountLine, useRecipientCount } from './recipient-count';
 
 const TiptapEditor = loadTiptapEditor<{
   initialHtml: string;
@@ -112,6 +120,16 @@ export interface ComposeFormProps {
    * when the kill-switch is fully ON.
    */
   readonly imagesEnabled?: boolean;
+  /**
+   * 108 PR-C T079 / T085 — the ceiling and the audience leg in force,
+   * resolved server-side by the page from the composition root
+   * (`currentAudienceCeiling()` / `currentAudienceMode()`), so the copy
+   * names the real limit (FR-041) and says who the recipients are under the
+   * flag (FR-020). REQUIRED on purpose: a default here would be a second
+   * definition of the ceiling (FR-042).
+   */
+  readonly audienceCeiling: number;
+  readonly audienceMode: ComposeAudienceMode;
 }
 
 export function ComposeForm({
@@ -120,6 +138,8 @@ export function ComposeForm({
   initialBodyHtml = '<p></p>',
   initialQuota = null,
   imagesEnabled = false,
+  audienceCeiling,
+  audienceMode,
 }: ComposeFormProps): React.ReactElement {
   const router = useRouter();
   const t = useTranslations('portal.broadcasts.compose');
@@ -159,6 +179,12 @@ export function ComposeForm({
   const bodyContainerRef = useRef<HTMLDivElement>(null);
 
   const deferredBody = useDeferredValue(bodyHtml);
+  // 108 PR-C T089 — debounced live count for the chosen segment (member mode:
+  // the caller's own member is the one self-excluded server-side).
+  const recipientCount = useRecipientCount({
+    mode: 'member',
+    segment: { kind: segment.kind, tierCodes: segment.tierCodes },
+  });
 
   // UX-3 — beforeunload guard so a member who composed substantial
   // content + accidentally closes the tab gets a browser-native
@@ -235,9 +261,14 @@ export function ComposeForm({
         error?: {
           code?: string;
           message?: string;
-          details?: { disallowedSources?: ReadonlyArray<string> };
+          // 108 PR-C T085: `cap` / `count` ride on the audience-too-large 422
+          // so the copy can name the ceiling the server refused against.
+          details?: { disallowedSources?: ReadonlyArray<string>; cap?: unknown; count?: unknown };
         };
         broadcastId?: string;
+        // 108 PR-C (FR-022a) — how many entries the resolver excluded by
+        // recipient preference; shown as a number in the success toast.
+        recipientPreferenceExcluded?: unknown;
       } = {};
       try {
         responseBody = (await res.json()) as typeof responseBody;
@@ -262,7 +293,9 @@ export function ComposeForm({
       if (res.ok && responseBody.broadcastId) {
         setUnsafeImageSources(null);
         toast.success(t('toast.submitted'), {
-          description: t('toast.submittedSlaHint'),
+          // 108 PR-C T077: "{n} addresses were excluded by recipient
+          // preference." precedes the SLA hint when n > 0 (FR-022a).
+          description: submitSuccessDescription(t, responseBody),
         });
         setQuotaRefreshKey((n) => n + 1);
         router.push(`/portal/benefits?tab=broadcasts&submitted=${responseBody.broadcastId}`);
@@ -286,7 +319,9 @@ export function ComposeForm({
       // Use the i18n key if recognised; fall back to the server message.
       let msg: string;
       try {
-        msg = tErr(code);
+        // 108 PR-C T085: the too-large copy interpolates the ceiling from the
+        // 422 body; every other code renders without values as before.
+        msg = tErr(code, errorValues(code, responseBody.error?.details));
       } catch {
         msg = responseBody.error?.message ?? tErr('internal_error');
       }
@@ -432,20 +467,25 @@ export function ComposeForm({
             disabled={submitting}
           />
 
-          {/* UX-1 — surface expectations about recipient counts so the
-              member doesn't hit the 5,000 cap or empty-segment-block as
-              a "submit-to-discover" surprise. We deliberately don't
-              compute the live count here (would require an auth'd API
-              endpoint + debounced fetch + cap pre-check) — instead
-              describe the segment shape + link to broadcast detail
-              page where the post-submit count is visible. */}
+          {/* UX-1 — set expectations before the live count settles: the
+              estimate note describes the segment shape and the REAL
+              ceiling (`audienceCeiling`, not a hard-coded 5,000), and
+              `RecipientCountLine` below shows the resolver's own number
+              once it lands (108 PR-C T089 — the auth'd endpoint, the
+              debounced fetch and the cap pre-check this comment once said
+              were deliberately not built). */}
           <p className="text-xs text-muted-foreground">
-            {segment.kind === 'all_members'
-              ? t('estimateNote.allMembers')
-              : segment.kind === 'tier'
-                ? t('estimateNote.tier')
-                : t('estimateNote.custom')}
+            {/* 108 PR-C T079: leg-aware wording + the real ceiling (FR-041). */}
+            {t(estimateNoteKey(segment.kind, audienceMode), { ceiling: audienceCeiling })}
           </p>
+          {showsSelfExclusionHint(segment.kind) ? (
+            // 108 PR-C T079 (FR-022b): self-exclusion covers every contact of
+            // the sending member, not only the primary address.
+            <p className="text-xs text-muted-foreground">{t('selfExclusionHint')}</p>
+          ) : null}
+          {/* 108 PR-C T089 (FR-040): the live count — the same resolver that
+              decides the send, so the number shown is the number sent (SC-004). */}
+          <RecipientCountLine state={recipientCount} />
 
           {segment.kind === 'custom' ? (
             <CustomListInput

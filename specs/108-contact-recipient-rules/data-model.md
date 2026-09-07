@@ -59,7 +59,7 @@ interface ContactRecipient {            // replaces MemberRecipient in the resol
   readonly memberId: string;
   readonly contactId: string | null;    // null ⇒ orphan member (no eligible contact)
   readonly emailLower: EmailLower | null;
-  readonly isPrimary: boolean;
+  readonly hasOptedOutContact: boolean;   // review 2026-09-07: per MEMBER — replaces `isPrimary`, which nothing read; on an orphan row it is the reason (`all_opted_out` vs `no_eligible_contact`)
 }
 type AudienceMode = 'primary_only' | 'all_contacts';   // flag value passed in, Domain stays pure
 audienceCeiling(batchingEnabled: boolean): 5000 | 50000;
@@ -151,7 +151,7 @@ CREATE CONSTRAINT TRIGGER members_one_primary_ct AFTER UPDATE OF status, erased_
   commit a violation between the pre-check and `CREATE TRIGGER` (the migrator runs the file in
   one transaction).
 
-### 2.3 `marketing_unsubscribes` — migration 0296 (PR-C)
+### 2.3 `marketing_unsubscribes` — migration 0297 (PR-C)
 
 | Column | Type | Notes |
 |---|---|---|
@@ -166,7 +166,12 @@ Index `marketing_unsubscribes_contact_lookup_idx (tenant_id, contact_id) WHERE c
 `contact_marketing_opted_in` (0295). Own file(s), no other DDL (autocommit pre-pass rule).
 Retention: 5 years (default). Payloads carry ids and `source`, never an email address.
 
-### 2.5 Audience build via the Resend Contacts Import API (PR-C) — migration 0297
+### 2.5 Audience build via the Resend Contacts Import API (PR-C) — migration 0298
+
+> **DEFERRED out of PR-C (2026-09-07)** — see the spec AMENDMENT under User
+> Story 5: the import-based build ships in a follow-up PR with T110, after a
+> probe confirms the audience-id / segment-id relationship and the import
+> `status` values. PR-C keeps the bounded per-contact push.
 
 Research R9 (corrected): the provider audience is built with one asynchronous import per
 broadcast, so no per-recipient working table is needed. Two nullable columns on `broadcasts`:
@@ -211,6 +216,11 @@ existing `broadcast_unsubscribed` + `broadcast_suppression_applied` gain `contac
 - Erase: zero primaries by design; excluded from every recipient path.
 
 ### Broadcast (PR-C addition)
+
+> **DEFERRED out of PR-C (2026-09-07)** — see the spec AMENDMENT under User
+> Story 5: the import-based build ships in a follow-up PR with T110, after a
+> probe confirms the audience-id / segment-id relationship and the import
+> `status` values. PR-C keeps the bounded per-contact push.
 
 `approved → audience_building (import submitted; polled each tick) → sending → sent`; an
 `audience_building` broadcast is polled by the next `dispatch-scheduled` tick and

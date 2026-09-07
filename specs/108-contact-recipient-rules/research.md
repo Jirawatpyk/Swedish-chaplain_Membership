@@ -257,7 +257,7 @@ affects F7's `audienceId`-based gateway (R16).
   tierCodes?, after?: { memberId, contactId }, limit })` — `members LEFT JOIN contacts ON
   member_id AND removed_at IS NULL AND marketing_opt_out_at IS NULL`, WHERE `status =
   'active' AND erased_at IS NULL AND broadcasts_halted_until_admin_review = false` (+ tier),
-  ordered by `(member_id, contact_id)`, page size 1,000, **no `.limit(5000)`**. Rows carry
+  ordered by `(member_id, contact_id)`, page size 5,000 (T081 raised it from 1,000: 20,000 contacts at 1,000-row pages were 42 round trips, 9–11 s from a ~220 ms-RTT workstation against FR-043 — the walk is latency-bound), **no `.limit(5000)`**. Rows carry
   `{ memberId, contactId | null, emailLower | null, isPrimary }`; a null contact marks an
   orphan member (FR-029). The broadcasts `MembersBridgePort` gains
   `getContactsBySegment(tenant, kind, params) → ContactRecipient[]` which loops pages until
@@ -265,7 +265,7 @@ affects F7's `audienceId`-based gateway (R16).
   error — a second silent-truncation vector under pagination). `resolveSegmentRecipients`
   works on `{ memberId, contactId, emailLower }` candidates: self-exclusion by
   `memberId === requestingMemberId` (input gains `requestingMemberId`; the email-equality
-  arm is removed), dedupe by email, suppression `lookupBatch` in chunks of 1,000, then the
+  arm is removed), dedupe by email, suppression `lookupBatch` in chunks of 5,000, then the
   ceiling. `tick-memoized-members-bridge` memoises the new method by
   `(tenant, kind, params)` like the old one.
 - **Split by flag** (see R10): the `status = 'active'` predicate ships **unflagged** (it only
@@ -281,6 +281,11 @@ affects F7's `audienceId`-based gateway (R16).
   round trip on the submit path).
 
 ## R9 — One audience ceiling, and the Resend push must be resumable
+
+> **DEFERRED out of PR-C (2026-09-07)** — see the spec AMENDMENT under User
+> Story 5: the import-based build ships in a follow-up PR with T110, after a
+> probe confirms the audience-id / segment-id relationship and the import
+> `status` values. PR-C keeps the bounded per-contact push.
 
 - **Decision**: `src/modules/broadcasts/domain/audience-ceiling.ts` exports
   `audienceCeiling(batchingEnabled: boolean): number` = 5,000 when the F7.1a batching flag
@@ -313,7 +318,7 @@ affects F7's `audienceId`-based gateway (R16).
   `created + updated + skipped = total` with `failed = 0` the tick calls `sendBroadcast`; any
   `failed > 0` or a non-completed status after 30 min fails the dispatch with a typed reason
   (audit + alert). This is still "resumable across ticks" in FR-044's terms — progress is the
-  provider's import job, not a per-recipient table — so **migration 0297 becomes two nullable
+  provider's import job, not a per-recipient table — so **migration 0298 becomes two nullable
   columns on `broadcasts`** (`audience_import_id`, `audience_import_completed_at`), not a new
   table. Idempotency comes from `upsert` (V2 no longer needs a duplicate-semantics spike).
 - **SDK**: the installed `resend@4.8.0` (`package.json` `^4.0.1`) has no `contacts.imports`; the
@@ -338,8 +343,8 @@ affects F7's `audienceId`-based gateway (R16).
   with enum migration 0292 · **PR-B** invariant (R4, R5, migration 0293 triggers) · **PR-D**
   permission key + contacts marketing columns (0294) + enum migration 0295 + member-page
   badges/toggle + Marketing audience page + portal self-toggle (R6, R7) · **PR-C** resolver,
-  ceiling, import-based audience build (0297 broadcasts import columns), custom-list drop, unsubscribe
-  attribution (0296 `contact_id`), count endpoint, spec-010 amendments (R8, R9, R11), behind
+  ceiling, ~~import-based audience build (0298 broadcasts import columns)~~ **DEFERRED 2026-09-07 with T086/T087/T106 — no 0298 was authored (spec AMENDMENT under US5)**, custom-list drop, unsubscribe
+  attribution (0297 `contact_id`), count endpoint, spec-010 amendments (R8, R9, R11), behind
   the flag · operator runs the FR-027a pre-flight review on the audience page ·
   flag ON in Vercel · the flag and the `primary_only` leg are deleted in a follow-up PR once
   a week of sends is clean.
@@ -352,7 +357,7 @@ affects F7's `audienceId`-based gateway (R16).
 
 ## R11 — Unsubscribe attribution + custom-list opt-out drop
 
-- **Decision**: `marketing_unsubscribes` gains `contact_id uuid NULL` (0296, PR-C);
+- **Decision**: `marketing_unsubscribes` gains `contact_id uuid NULL` (0297, PR-C);
   `unsubscribe-recipient.ts:147-162` resolves via `lookupContactEmailInTenant` (returns
   `{ memberId, contactId }`, exists on the bridge but unused there) and falls back to the
   primary lookup only for legacy rows; both audit payloads gain `contact_id`.
@@ -422,9 +427,11 @@ affects F7's `audienceId`-based gateway (R16).
   `broadcasts.audience_import_status{status}` gauge (submitted / completed / failed / stuck),
   `broadcasts.recipient_count_ms`
   histogram; structured logs carry `memberId` hashes, never emails. Budgets: recipient
-  count p95 < 400 ms at 5,000 and < 3 s at 20,000 (SC-004; 1,000-row pages ⇒ 20 round
-  trips); Marketing audience page LCP < 2.5 s at 50 rows/page; toggle API p95 < 400 ms.
-  `docs/observability.md` gains the four metrics; `docs/runbooks/broadcast-audience-build.md`
+  count p95 < 400 ms at 5,000 and < 3 s at 20,000 (SC-004; 5,000-row pages ⇒ 4 pages + one
+  exhaustion page at 20,000 — T081); Marketing audience page LCP < 2.5 s at 50 rows/page; toggle API p95 < 400 ms.
+  `docs/observability.md` gains three of the four metrics (the `audience_import_status` gauge went with the
+  deferred T086) plus, from the 2026-09-07 review, `dispatch_resolve_failed.total` and
+  `approved_overdue_count`; `docs/runbooks/broadcast-audience-build.md`
   documents the import-based audience build (submit → poll → send) and the
   stuck-`audience_building` reconcile.
 - **Alert thresholds**: `audience_import_status` not `completed` within 30 min of submission,
@@ -457,7 +464,7 @@ affects F7's `audienceId`-based gateway (R16).
 - Next migration: tag `0292_…`, `idx: 293`, `when: 1798542000000` (+100000 ms per file);
   enum `ADD VALUE` migrations must be their own file(s) (autocommit pre-pass,
   `enum-migration-guard.ts`). Planned sequence: 0292 enum (PR-A) · 0293 triggers (PR-B) ·
-  0294 contacts columns + 0295 enum (PR-D) · 0296 `contact_id` + 0297 broadcasts import
+  0294 contacts columns + 0295 enum (PR-D) · 0297 `contact_id` + 0298 broadcasts import
   columns (PR-C). If PRs land out of order, renumber the later one (memory: parallel-branch
   migration collision).
 - `.limit(5000)`: `drizzle-member-repo.ts:1358`; 1:1 join `:1333-1340`; no status filter

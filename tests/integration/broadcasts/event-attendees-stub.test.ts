@@ -49,6 +49,8 @@ const emptyMembersBridge: MembersBridgePort = {
     return ok({ previouslyNull: true });
   },
   async filterMarketingOptedOut() { return new Set(); },
+  async getContactsBySegment() { return []; },
+    async countOptedOutContactsBySegment() { return 0; },
   async getMemberPreferredLocale() { return null; },
 };
 
@@ -86,6 +88,8 @@ describe('event-attendees-stub (T050)', () => {
     const r = await resolveSegmentRecipients(
       {
         tenant,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
         membersBridge: emptyMembersBridge,
         eventAttendees: eventAttendeesStub,
         marketingUnsubscribes: emptyUnsubscribes,
@@ -93,7 +97,7 @@ describe('event-attendees-stub (T050)', () => {
       {
         segment: { kind: 'event_attendees_last_90d' },
         phase: 'dispatch',
-        requestingMemberPrimaryEmail: null,
+        requestingMemberId: null,
         customRecipients: null,
       },
     );

@@ -16,14 +16,20 @@
  * entries. Cache lifetime is the wrapper instance — a fresh wrapper
  * per cron tick keeps the cache scoped tightly.
  *
- * Pure pass-through for the other 9 methods (R7 MED-R1 — corrected
- * from "6"; `MembersBridgePort` exposes 10 methods total since 108 PR-D
- * added `filterMarketingOptedOut`, forwarded by the spread) so we don't
- * accidentally cache mutating calls (`setMemberHalt`,
- * `markBroadcastsAcknowledged`) or per-member lookups whose freshness
- * matters during a tick.
+ * 108 PR-C (T075) memoises `getContactsBySegment` — the 1:N page walk — the
+ * same way, in its OWN map: the two methods answer different shapes for the
+ * same `(tenant, segment, params)` key, and a `MemberRecipient[]` served to a
+ * caller expecting `ContactRecipient[]` would resolve to zero recipients.
+ *
+ * Pure pass-through for the other 10 methods (R7 MED-R1 — corrected
+ * from "6"; `MembersBridgePort` exposes 12 methods total since 108 PR-D
+ * added `filterMarketingOptedOut` and PR-C `getContactsBySegment`; the
+ * spread forwards the rest) so we don't accidentally cache mutating calls
+ * (`setMemberHalt`, `markBroadcastsAcknowledged`) or per-member lookups
+ * whose freshness matters during a tick.
  */
 import type {
+  ContactRecipient,
   MembersBridgePort,
   MemberRecipient,
   SegmentResolveParams,
@@ -31,10 +37,28 @@ import type {
 import type { TenantContext } from '@/modules/tenants';
 import type { BroadcastSegmentType } from '../domain/value-objects/segment-type';
 
+/**
+ * Stable key: tenant slug + segment type + sorted params. Sorted params
+ * guards against `{tierCodes:["A","B"]}` and `{tierCodes:["B","A"]}`
+ * producing different cache slots.
+ */
+function segmentKey(
+  tenantCtx: TenantContext,
+  segmentType: BroadcastSegmentType,
+  params: SegmentResolveParams,
+): string {
+  const sortedParams =
+    params.tierCodes !== undefined
+      ? { tierCodes: [...params.tierCodes].sort() }
+      : params;
+  return `${tenantCtx.slug}::${segmentType}::${JSON.stringify(sortedParams)}`;
+}
+
 export function makeTickMemoizedMembersBridge(
   inner: MembersBridgePort,
 ): MembersBridgePort {
   const segmentCache = new Map<string, ReadonlyArray<MemberRecipient>>();
+  const contactCache = new Map<string, ReadonlyArray<ContactRecipient>>();
 
   return {
     ...inner,
@@ -43,14 +67,7 @@ export function makeTickMemoizedMembersBridge(
       segmentType: BroadcastSegmentType,
       params: SegmentResolveParams,
     ): Promise<ReadonlyArray<MemberRecipient>> {
-      // Stable key: tenant slug + segment type + sorted params. Sorted
-      // params guards against `{tierCodes:["A","B"]}` and
-      // `{tierCodes:["B","A"]}` producing different cache slots.
-      const sortedParams =
-        params.tierCodes !== undefined
-          ? { tierCodes: [...params.tierCodes].sort() }
-          : params;
-      const key = `${tenantCtx.slug}::${segmentType}::${JSON.stringify(sortedParams)}`;
+      const key = segmentKey(tenantCtx, segmentType, params);
       const hit = segmentCache.get(key);
       if (hit !== undefined) return hit;
       const fresh = await inner.getMembersBySegment(
@@ -59,6 +76,22 @@ export function makeTickMemoizedMembersBridge(
         params,
       );
       segmentCache.set(key, fresh);
+      return fresh;
+    },
+    async getContactsBySegment(
+      tenantCtx: TenantContext,
+      segmentType: BroadcastSegmentType,
+      params: SegmentResolveParams,
+    ): Promise<ReadonlyArray<ContactRecipient>> {
+      const key = segmentKey(tenantCtx, segmentType, params);
+      const hit = contactCache.get(key);
+      if (hit !== undefined) return hit;
+      const fresh = await inner.getContactsBySegment(
+        tenantCtx,
+        segmentType,
+        params,
+      );
+      contactCache.set(key, fresh);
       return fresh;
     },
   };

@@ -109,6 +109,9 @@ function makeDeps(
   };
 
   const membersBridge: Partial<MembersBridgePort> = {
+    // 108 PR-C T078 — the contact lookup runs FIRST; the pre-108 cases keep
+    // it null so they exercise the legacy primary-lookup fallback.
+    lookupContactEmailInTenant: vi.fn().mockResolvedValue(null),
     lookupMemberPrimaryContactEmailInTenant: vi.fn().mockResolvedValue({
       memberId: 'mem-1',
       displayName: 'Alice',
@@ -319,5 +322,87 @@ describe('unsubscribeRecipient (T137)', () => {
       true,
     );
     expect(upsertCall.reasonText).toHaveLength(500);
+  });
+});
+
+/**
+ * 108 PR-C T078 (FR-024, US3 s7) — an unsubscribe is attributed to the
+ * MEMBER and the specific CONTACT: `lookupContactEmailInTenant` (any live
+ * contact in the tenant graph) resolves `{ memberId, contactId }`; the
+ * primary-contact lookup stays as the legacy fallback for addresses that are
+ * a member's primary but not (yet) a contact row. Both audit payloads carry
+ * `contactId`. Resolution stays best-effort: the suppression row and the
+ * audits are written even when both lookups fail.
+ */
+describe('unsubscribe-recipient — 108 PR-C contact attribution (T078)', () => {
+  const baseInput = {
+    tenantId: TENANT_SLUG,
+    broadcastId,
+    emailLower: recipient,
+    tokenPlaintext: 'v1.fake.fakemac',
+    requestId: 'req-108',
+    reasonText: null,
+  };
+
+  function withContact(found: { memberId: string; contactId: string } | null, primary: unknown = null) {
+    const deps = makeDeps();
+    (deps.membersBridge.lookupContactEmailInTenant as ReturnType<typeof vi.fn>).mockResolvedValue(
+      found === null ? null : { ...found, emailLower: recipient },
+    );
+    (deps.membersBridge.lookupMemberPrimaryContactEmailInTenant as ReturnType<typeof vi.fn>).mockResolvedValue(primary);
+    return deps;
+  }
+
+  it('a secondary contact\'s address resolves to its member AND contact id; both audits carry contactId', async () => {
+    const deps = withContact({ memberId: 'mem-1', contactId: 'c-secondary' });
+    const result = await unsubscribeRecipient(deps, baseInput);
+    expect(result.ok).toBe(true);
+    const upsertCall = (deps.marketingUnsubscribes.upsert as ReturnType<typeof vi.fn>).mock.calls[0]![1];
+    expect(upsertCall.memberId).toBe('mem-1');
+    expect(upsertCall.contactId).toBe('c-secondary');
+    const audits = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[1]);
+    expect(audits.map((a) => a.eventType)).toEqual(['broadcast_unsubscribed', 'broadcast_suppression_applied']);
+    for (const a of audits) {
+      expect(a.payload.contactId).toBe('c-secondary');
+      expect(a.payload.memberId).toBe('mem-1');
+    }
+    // The primary lookup is not needed when the contact row answered.
+    expect(deps.membersBridge.lookupMemberPrimaryContactEmailInTenant).not.toHaveBeenCalled();
+  });
+
+  it('legacy fallback: no contact row but a member primary match → memberId set, contactId null', async () => {
+    const deps = withContact(null, {
+      memberId: 'mem-1',
+      displayName: 'Alice',
+      primaryContactEmail: recipient,
+      tierCode: 'premium',
+      broadcastsHaltedUntilAdminReview: false,
+    });
+    const result = await unsubscribeRecipient(deps, baseInput);
+    expect(result.ok).toBe(true);
+    const upsertCall = (deps.marketingUnsubscribes.upsert as ReturnType<typeof vi.fn>).mock.calls[0]![1];
+    expect(upsertCall.memberId).toBe('mem-1');
+    expect(upsertCall.contactId).toBeNull();
+    const audits = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[1]);
+    for (const a of audits) expect(a.payload.contactId).toBeNull();
+  });
+
+  it('the contact lookup throwing is best-effort: the primary fallback still runs and the row + audits are written', async () => {
+    const deps = withContact(null, {
+      memberId: 'mem-1',
+      displayName: 'Alice',
+      primaryContactEmail: recipient,
+      tierCode: 'premium',
+      broadcastsHaltedUntilAdminReview: false,
+    });
+    (deps.membersBridge.lookupContactEmailInTenant as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error('neon: connection reset'),
+    );
+    const result = await unsubscribeRecipient(deps, baseInput);
+    expect(result.ok).toBe(true);
+    const upsertCall = (deps.marketingUnsubscribes.upsert as ReturnType<typeof vi.fn>).mock.calls[0]![1];
+    expect(upsertCall.memberId).toBe('mem-1');
+    expect(upsertCall.contactId).toBeNull();
+    expect((deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(2);
   });
 });

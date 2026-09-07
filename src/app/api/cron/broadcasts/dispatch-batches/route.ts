@@ -37,6 +37,7 @@ import { z } from 'zod';
 import { runInTenant } from '@/lib/db';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { broadcastsMetrics } from '@/lib/metrics';
 import { errKind } from '@/lib/log-id';
 import { verifyCronBearer } from '@/lib/cron-auth';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
@@ -58,6 +59,8 @@ import {
   noOpAdvisoryLock,
   resendBroadcastsGateway,
   resolveSegmentRecipients,
+  currentAudienceMode,
+  currentAudienceCeiling,
   systemClock,
   tenantDefaultLocaleFor,
 } from '@/modules/broadcasts';
@@ -239,16 +242,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
       // 5c. Resolve recipients (segment + suppression + dedupe).
       const segment = buildSegmentFromBroadcast(broadcast);
-      const requestingPrimary = await membersBridge.getMemberPrimaryContact(
-        tenant,
-        broadcast.requestedByMemberId,
-      );
       // Staff review A11: the 108 PR-D opt-out lookup is fail-closed and
       // THROWS when the read fails. `dispatch-scheduled-broadcast.ts` maps that
       // to a typed `dispatch.server_error`; here it fell to the generic
       // per-broadcast catch, so one outage was classified two different ways
       // depending on which cron observed it. Safety was never in question —
       // the tick survives either way — only the alerting signal.
+      // 108 PR-C: self-exclusion is by MEMBER id (FR-022), so the requesting
+      // member's primary email is no longer read here; the leg comes from
+      // the same flag read the submit and dispatch paths use (SC-004).
       let resolved: Awaited<ReturnType<typeof resolveSegmentRecipients>>;
       try {
         resolved = await resolveSegmentRecipients(
@@ -257,11 +259,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           membersBridge,
           eventAttendees: eventAttendeesBridge,
           marketingUnsubscribes,
+          audienceMode: currentAudienceMode(),
+          audienceCeiling: currentAudienceCeiling(),
         },
         {
           segment,
           phase: 'dispatch',
-          requestingMemberPrimaryEmail: requestingPrimary,
+          requestingMemberId: broadcast.requestedByMemberId,
           customRecipients:
             broadcast.customRecipientEmails === null
               ? null
@@ -272,6 +276,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         );
       } catch (e) {
         summary.errors++;
+        // Review 2026-09-07 (errors HIGH-4) — the row stays where it is and
+        // is retried next tick with no budget; the counter is the alarm.
+        broadcastsMetrics.dispatchResolveFailedTotal(tenant.slug);
         logger.error(
           {
             tenantId: tenant.slug,
@@ -285,6 +292,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
       if (!resolved.ok) {
         summary.errors++;
+        if (resolved.error.kind === 'resolve.server_error') {
+          broadcastsMetrics.dispatchResolveFailedTotal(tenant.slug);
+        }
         logger.error(
           {
             tenantId: tenant.slug,

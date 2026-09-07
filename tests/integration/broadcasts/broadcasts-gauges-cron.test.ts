@@ -60,9 +60,9 @@ function req(token: string): NextRequest {
 }
 
 describe('108 PR-D — broadcasts-gauges cron on live Neon (staff review P4.1)', () => {
-  it('all four gauge queries execute and the route returns its summary', async () => {
+  it('all five gauge queries execute and the route returns its summary', async () => {
     const res = await gaugesGet(req(SECRET));
-    // A 500 here means one of the four statements is invalid against the real
+    // A 500 here means one of the five statements is invalid against the real
     // schema — which is the only thing this file exists to catch.
     expect(res.status).toBe(200);
     const body = (await res.json()) as Record<string, unknown>;

@@ -28,6 +28,10 @@ import { makeDrizzleBroadcastApprovalCounter } from './db/drizzle-broadcast-appr
 import type { BroadcastApprovalCounter } from '../application/ports/broadcast-approval-counter';
 
 import type { ClockPort } from '../application/ports/clock-port';
+import type { AudienceMode } from '../domain/audience-mode';
+import type { ResolveSegmentDeps } from '../application/use-cases/resolve-segment-recipients';
+import { audienceCeiling } from '../domain/audience-ceiling';
+import { isF71aUs1Enabled } from './feature-flags';
 import type { ProcessWebhookEventDeps } from '../application/use-cases/process-webhook-event';
 import type { ReconcileStuckSendingDeps } from '../application/use-cases/reconcile-stuck-sending';
 import type { RollUpBatchBroadcastDeps } from '../application/use-cases/roll-up-batch-broadcast';
@@ -89,6 +93,59 @@ export function makeSaveDraftDeps(tenantId: string): SaveDraftDeps {
   };
 }
 
+/**
+ * 108 PR-C — the ONE place the cutover flag is read (plan Complexity
+ * Tracking #2; data-model § 5). Every resolver caller — submit, the
+ * recipient-count endpoints, dispatch-scheduled, split-large-broadcasts,
+ * dispatch-batches — takes the leg from here so the estimate shown at compose
+ * equals the dispatched set for the same tenant state (SC-004). Read per call
+ * (not cached at module load) so a Vercel env flip takes effect on the next
+ * request/tick without a process restart.
+ */
+export function currentAudienceMode(): AudienceMode {
+  return env.features.contactMarketingRecipients ? 'all_contacts' : 'primary_only';
+}
+
+/**
+ * 108 PR-C T085 (FR-042) — the ONE ceiling every resolver caller reads:
+ * 5,000 unless BOTH the F7.1a batching path AND the 1:N audience flag are
+ * ON, then 50,000. Read per call (a flag flip takes effect on the next
+ * request/tick), the same way the legacy `isF71aUs1Enabled()` gate is
+ * consulted by the batch crons.
+ *
+ * Review H-2 (2026-09-07): the wide ceiling was raised FOR the 1:N audience,
+ * so it moves WITH `FEATURE_CONTACT_MARKETING_RECIPIENTS`. Gating on the
+ * batching flag alone would have changed prod on deploy with the 108 flag
+ * OFF — `FEATURE_F71A_US1_PAGINATION` is already ON there — accepting
+ * audiences of 5,001–50,000 that the pre-branch `AUDIENCE_HARD_CAP` refused,
+ * opening the never-exercised split/batch path, and changing every compose
+ * page's copy to "up to 50,000". With the 108 flag OFF this is byte-for-byte
+ * the old 5,000. Pinned by `broadcasts-deps-audience.test.ts` against an
+ * explicit flag matrix (never against itself).
+ */
+export function currentAudienceCeiling(): number {
+  return audienceCeiling(
+    isF71aUs1Enabled() && env.features.contactMarketingRecipients,
+  );
+}
+
+/**
+ * 108 PR-C T088 — the resolver's deps for the two recipient-count endpoints.
+ * The SAME bridges, repo, leg and ceiling submit and dispatch use, so the
+ * number a member sees at compose is the number that decides the send
+ * (SC-004).
+ */
+export function makeResolveSegmentDeps(tenantId: string): ResolveSegmentDeps {
+  return {
+    tenant: asTenantContext(tenantId),
+    membersBridge,
+    eventAttendees: eventAttendeesBridge,
+    marketingUnsubscribes: makeDrizzleMarketingUnsubscribesRepo(tenantId),
+    audienceMode: currentAudienceMode(),
+    audienceCeiling: currentAudienceCeiling(),
+  };
+}
+
 export function makeSubmitBroadcastDeps(
   tenantId: string,
 ): SubmitBroadcastDeps {
@@ -110,6 +167,8 @@ export function makeSubmitBroadcastDeps(
     emailValidator: rfc5321EmailValidator,
     eventAttendees: eventAttendeesBridge,
     marketingUnsubscribes: makeDrizzleMarketingUnsubscribesRepo(tenantId),
+    audienceMode: currentAudienceMode(),
+    audienceCeiling: currentAudienceCeiling(),
     rateLimiter: broadcastsRateLimiter,
     audit: f7AuditAdapter,
     clock: systemClock,
@@ -290,6 +349,8 @@ export async function makeDispatchScheduledBroadcastDeps(
     membersBridge,
     marketingUnsubscribes: makeDrizzleMarketingUnsubscribesRepo(tenantId),
     eventAttendees: eventAttendeesBridge,
+    audienceMode: currentAudienceMode(),
+    audienceCeiling: currentAudienceCeiling(),
     audit: f7AuditAdapter,
     clock: systemClock,
     fromEmail: env.broadcasts.fromEmail,
@@ -371,6 +432,9 @@ export function makeScrubBroadcastContentForMemberDeps(tenantId: string) {
   return {
     broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
     audit: f7AuditAdapter,
+    // 108 PR-C T104 — severs the erased member's suppression back-references
+    // inside the same content-scrub tx.
+    marketingUnsubscribes: makeDrizzleMarketingUnsubscribesRepo(tenantId),
   };
 }
 

@@ -628,9 +628,13 @@ export interface MemberRepo {
    *   - members with NULL primary-contact email (caller emits
    *     `member_missing_primary_contact` audit per FR-015c)
    *
-   * Hard cap: 5,000 returned rows (FR-016a). Caller is responsible for
-   * suppression filter (`marketing_unsubscribes`) at F7 dispatch boundary
-   * — NOT applied here per Q8 + FR-015c separation of concerns.
+   * 108 PR-C: only `status = 'active'`, non-erased, non-halted members
+   * (FR-021, unflagged — the `primary_only` leg of the resolver), and NO
+   * row cap any more (research R8: the old `.limit(5000)` truncated below
+   * the resolver's ceiling, so an over-limit audience looked like a clean
+   * 5,000 send). Caller is responsible for the suppression filter
+   * (`marketing_unsubscribes`) at F7's dispatch boundary — NOT applied
+   * here per Q8 + FR-015c separation of concerns.
    *
    * For `event_attendees_last_90d` segment: F6 stub-port returns `[]`
    * until F6 ships (FR-015a). This repo method does NOT handle that
@@ -644,6 +648,40 @@ export interface MemberRepo {
       readonly tierCodes?: readonly string[];
     },
   ): Promise<Result<readonly F7MemberRecipient[], RepoError>>;
+
+  /**
+   * 108 PR-C (US3 / FR-020–FR-022, FR-029) — ONE keyset page of broadcast
+   * recipient CONTACTS for a member-based segment. Eligibility lives in the
+   * SQL (data-model § 1): member `status = 'active' AND erased_at IS NULL AND
+   * broadcasts_halted_until_admin_review = false` (+ tier); contact
+   * `removed_at IS NULL AND marketing_opt_out_at IS NULL` (staff and self
+   * opt-outs alike). `members LEFT JOIN contacts`, so an eligible member with
+   * NO eligible contact is returned as one row with a null `contactId` — the
+   * FR-029 orphan — and a member whose primary opted out but has a live
+   * secondary is NOT an orphan. Ordered by `(member_id, contact_id)`; `after`
+   * is the last row of the previous page (a null `contactId` names an orphan
+   * row and resumes at the next member). `limit` is the ONLY bound — no
+   * hidden cap (research R8): the resolver's ceiling is the truthful check.
+   * Suppression (`marketing_unsubscribes`) and sender self-exclusion stay at
+   * F7's boundary, as for `findMembersBySegmentForBroadcast`.
+   */
+  findBroadcastRecipientContacts(
+    ctx: TenantContext,
+    params: BroadcastRecipientContactsQuery,
+  ): Promise<Result<readonly F7ContactRecipient[], RepoError>>;
+
+  /**
+   * Review 2026-09-07 (FR-022a) — how many LIVE contacts of the segment's
+   * ELIGIBLE members opted out of marketing. `findBroadcastRecipientContacts`
+   * excludes those contacts in its LEFT JOIN, so the resolver never sees the
+   * addresses; this count is what lets it still report them to the sender as
+   * "excluded by recipient preference" instead of a structural 0. Same
+   * member eligibility + tier filter as the page read; one aggregate query.
+   */
+  countBroadcastOptedOutContacts(
+    ctx: TenantContext,
+    params: BroadcastOptedOutCountQuery,
+  ): Promise<Result<number, RepoError>>;
 
   /**
    * F7 — list members with `broadcasts_halted_until_admin_review = true`.
@@ -914,6 +952,50 @@ export type F7MemberRecipient = {
   readonly primaryContactEmail: string | null;
   readonly tierCode: string | null;
   readonly broadcastsHaltedUntilAdminReview: boolean;
+};
+
+/**
+ * 108 PR-C — one broadcast recipient CONTACT row (data-model § 1
+ * `ContactRecipient`, F3 side). `contactId === null` ⇔ the member has no
+ * eligible contact (FR-029 orphan); then `emailLower` is null and `isPrimary`
+ * is false. Emails are lower-cased in the SQL.
+ */
+export type F7ContactRecipient = {
+  readonly memberId: MemberId;
+  readonly contactId: string | null;
+  readonly emailLower: string | null;
+  /**
+   * Review 2026-09-07 — true ⇔ the MEMBER has at least one live contact that
+   * opted out of marketing (correlated EXISTS, the 0294 predicate inverted).
+   * On an orphan row it is the orphan's REASON: `all_opted_out` vs
+   * `no_eligible_contact`. Replaces `isPrimary`, which nothing read.
+   */
+  readonly hasOptedOutContact: boolean;
+};
+
+/**
+ * Keyset cursor = the last row of the previous page. Review 2026-09-07
+ * (types MEDIUM): the two resume semantics are NAMED. `after_member` is
+ * "the previous page ended on an orphan row — resume at the NEXT member"
+ * (exclusive on the member); `after_contact` resumes inside a member. The
+ * old `{ memberId, contactId: null }` read naturally as "start at member M"
+ * and silently skipped M and every one of its contacts.
+ */
+export type BroadcastRecipientCursor =
+  | { readonly kind: 'after_member'; readonly memberId: string }
+  | { readonly kind: 'after_contact'; readonly memberId: string; readonly contactId: string };
+
+export type BroadcastRecipientContactsQuery = {
+  readonly segmentType: 'all_members' | 'tier';
+  readonly tierCodes?: readonly string[];
+  readonly after: BroadcastRecipientCursor | null;
+  readonly limit: number;
+};
+
+/** Review 2026-09-07 — the segment half of `BroadcastRecipientContactsQuery`. */
+export type BroadcastOptedOutCountQuery = {
+  readonly segmentType: 'all_members' | 'tier';
+  readonly tierCodes?: readonly string[];
 };
 
 /**

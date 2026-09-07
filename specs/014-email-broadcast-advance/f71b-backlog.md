@@ -44,6 +44,17 @@ Updated 2026-05-21 (T138) — promotion thresholds now reference the live F7 MVP
 **Original placement**: F7.1 US3.
 **Why P2**: Improves authoring + GDPR/PDPA story but doesn't unblock new tenants.
 
+> **SUPERSEDED (2026-09-06) by `specs/108-contact-recipient-rules/` (PR-D +
+> PR-C).** The opt-IN model sketched here (`contacts.receive_broadcasts`
+> default FALSE + a chunked backfill) was replaced by an opt-OUT model: every
+> live contact of an eligible member is a recipient unless unsubscribed,
+> switched off by staff, or switched off by the contact (108 FR-027 — no
+> backfill). Promotion criterion (b) was met by the SweCham request of
+> 2026-09-04. The remaining items below are closed by 108: staff + portal
+> toggles (PR-D), all-contacts self-exclusion and the flag-gated resolver
+> (PR-C); "one-click unsubscribe also flips the flag" is moot — the
+> suppression list stays authoritative and is now attributed to the contact.
+
 A member company often has multiple contacts in F3 (e.g., CEO, CFO, marketing lead). F7 MVP only sends to each company's `primary_contact_email`, so secondary contacts never receive the chamber's E-Blasts. US3 adds a per-contact `receive_broadcasts` opt-in flag (default OFF, member-managed via portal).
 
 **Key FRs preserved for re-spec**:

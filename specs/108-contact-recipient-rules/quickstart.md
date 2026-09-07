@@ -45,7 +45,7 @@ inventory until it prints 0, then merge / redeploy.
 | A (money hardening) | `vercel promote` previous deployment; 0292 is an enum add (harmless when unused) | none | none |
 | B (invariant) | revert restores the racy path; triggers stay installed and are safe with correct data | none | 0293 forward-only; drop triggers only via a new migration |
 | D (permission + page + columns) | revert hides the page/route; 0294/0295 columns + enum values are unused when reverted | none | none |
-| C (audience) | not needed for behaviour — **flip the flag OFF** (primary-only leg) | `FEATURE_CONTACT_MARKETING_RECIPIENTS=false` + redeploy | 0296/0297 unused when OFF |
+| C (audience) | not needed for behaviour — **flip the flag OFF** (primary-only leg) | `FEATURE_CONTACT_MARKETING_RECIPIENTS=false` + redeploy | 0297 unused when OFF (0298 deferred with T086) |
 
 Incident notes: a broadcast already delivered under the wrong audience cannot be recalled —
 record the broadcast id, notify the tenant admin contact, and flip the flag off before the

@@ -26,7 +26,8 @@
  *   f. body size → broadcast_body_too_large
  *   h. custom validate → broadcast_custom_recipient_unknown / invalid format
  *   g+i. segment resolve → broadcast_empty_segment_blocked /
- *      broadcast_audience_too_large; orphans emit
+ *      broadcast_audience_too_large / submit.server_error (a failed read,
+ *      no reject audit); orphans whose reason is not a preference emit
  *      broadcast_member_missing_primary_contact_email (non-blocking)
  *
  * Atomic insert + transition + audit in `runInTenant + withTx`. Failure
@@ -50,9 +51,9 @@ import {
   type BroadcastActorRole,
 } from '../../domain/broadcast';
 import type { RecipientSegment } from '../../domain/recipient-segment';
+import type { AudienceMode } from '../../domain/audience-mode';
 import { composeBroadcastFromName } from '../../domain/from-name';
 import {
-  unsafeBrandEmailLower,
   type EmailLower,
 } from '../../domain/value-objects/email-lower';
 import type { AuditPort, F7AuditEventType } from '../ports/audit-port';
@@ -184,6 +185,14 @@ export interface SubmitBroadcastDeps {
   readonly emailValidator: EmailValidatorPort;
   readonly eventAttendees: EventAttendeesRepository;
   readonly marketingUnsubscribes: MarketingUnsubscribesRepo;
+  /**
+   * 108 PR-C — which resolver leg builds a member-based audience. Set by the
+   * composition root from `FEATURE_CONTACT_MARKETING_RECIPIENTS`; see
+   * `domain/audience-mode.ts`.
+   */
+  readonly audienceMode: AudienceMode;
+  /** 108 PR-C T085 — `audienceCeiling(batchingEnabled)`, from the composition root. */
+  readonly audienceCeiling: number;
   readonly rateLimiter: RateLimiterPort;
   readonly audit: AuditPort;
   readonly clock: { now(): Date };
@@ -216,6 +225,14 @@ export interface SubmitBroadcastOutput {
   readonly broadcastId: string;
   readonly submittedAt: Date;
   readonly estimatedRecipientCount: number;
+  /**
+   * 108 PR-C (FR-022a, T077) — entries the resolver removed "by recipient
+   * preference" (opt-out on any segment; plus suppression on a custom list
+   * or the attendee segment). The route returns it as
+   * `recipientPreferenceExcluded` so the sender learns HOW MANY — never
+   * which addresses, never why beyond "recipient preference".
+   */
+  readonly droppedByPreference: number;
   readonly reservedQuotaSlot: true;
   readonly reviewSlaTargetHours: number;
 }
@@ -317,9 +334,22 @@ export async function submitBroadcast(
   input: SubmitBroadcastInput,
 ): Promise<Result<SubmitBroadcastOutput, SubmitBroadcastError>> {
   // ---- Precondition (k): halt flag ---------------------------------
-  const haltedMembers = await deps.membersBridge.getMembersHaltedInTenant(
-    deps.tenant,
-  );
+  // Review 2026-09-07 — the bridge THROWS on a failed read (it used to answer
+  // `[]`, which let a halted member through during a Neon blip). A read that
+  // did not happen is a 500 with NO reject audit: the gate was never decided.
+  let haltedMembers: ReadonlyArray<{ readonly memberId: string }>;
+  try {
+    haltedMembers = await deps.membersBridge.getMembersHaltedInTenant(deps.tenant);
+  } catch (e) {
+    logger.error(
+      { tenantId: deps.tenant.slug, memberId: input.memberId, err: errKind(e) },
+      'broadcasts.submit.halt_read_failed',
+    );
+    return err({
+      kind: 'submit.server_error' as const,
+      message: 'halt state unavailable',
+    });
+  }
   if (haltedMembers.some((h) => h.memberId === input.memberId)) {
     await emitReject(deps, input, 'broadcast_member_halted_pending_review', {
       memberId: input.memberId,
@@ -435,10 +465,23 @@ export async function submitBroadcast(
   }
 
   // ---- Precondition (j): reply-to derivation -----------------------
-  const replyTo = await deps.membersBridge.getMemberPrimaryContact(
-    deps.tenant,
-    input.memberId,
-  );
+  // Review 2026-09-07 — a failed read THROWS (was: null → an append-only
+  // `broadcast_member_missing_primary_contact_email` row about a member who
+  // has one). Since PR-B every contact-bearing member has exactly one live
+  // primary, so a null here is rare and must mean a real absence.
+  let replyTo: EmailLower | null;
+  try {
+    replyTo = await deps.membersBridge.getMemberPrimaryContact(deps.tenant, input.memberId);
+  } catch (e) {
+    logger.error(
+      { tenantId: deps.tenant.slug, memberId: input.memberId, err: errKind(e) },
+      'broadcasts.submit.reply_to_read_failed',
+    );
+    return err({
+      kind: 'submit.server_error' as const,
+      message: 'reply-to unavailable',
+    });
+  }
   if (replyTo === null) {
     await emitReject(
       deps,
@@ -594,11 +637,15 @@ export async function submitBroadcast(
         membersBridge: deps.membersBridge,
         eventAttendees: deps.eventAttendees,
         marketingUnsubscribes: deps.marketingUnsubscribes,
+        audienceMode: deps.audienceMode,
+        audienceCeiling: deps.audienceCeiling,
       },
       {
         segment: input.segment,
         phase: 'submit',
-        requestingMemberPrimaryEmail: unsafeBrandEmailLower(replyTo as string),
+        // 108 PR-C (FR-022): self-exclusion is by MEMBER — every contact of
+        // the submitting member, not just the address that equals reply-to.
+        requestingMemberId: input.memberId,
         customRecipients,
       },
     );
@@ -612,7 +659,25 @@ export async function submitBroadcast(
       message: 'recipient resolution unavailable',
     });
   }
+  // 108 PR-C — a failed member-leg read is typed by the resolver now
+  // (research R8). Same classification as the throw above: a 500, NO reject
+  // audit — the audience was never decided, so recording it as "empty" or
+  // "too large" would be a fabricated reason in an append-only table.
   if (!resolved.ok) {
+    if (resolved.error.kind === 'resolve.server_error') {
+      logger.error(
+        {
+          tenantId: deps.tenant.slug,
+          memberId: input.memberId,
+          err: resolved.error.message,
+        },
+        'broadcasts.submit.recipient_resolution_failed',
+      );
+      return err({
+        kind: 'submit.server_error' as const,
+        message: 'recipient resolution unavailable',
+      });
+    }
     const eventType: F7AuditEventType =
       resolved.error.kind === 'broadcast_audience_too_large'
         ? 'broadcast_audience_too_large'
@@ -633,16 +698,22 @@ export async function submitBroadcast(
   // via Promise.all so 50 INSERTs land in <100ms instead of sequential
   // 50× DB roundtrip cost.
   const ORPHAN_AUDIT_CAP = 50;
-  const orphans = resolved.value.orphans;
+  // Review 2026-09-07 — a member whose contacts ALL opted out is not "missing
+  // a primary contact email": they objected, the opt-out is already recorded
+  // (`contact_marketing_opted_out`) and the resolver counts them into
+  // `droppedByPreference`. Only the other reasons get this audit, and it says
+  // which one — an append-only row must never assert a reason nobody observed.
+  const orphans = resolved.value.orphans.filter((o) => o.reason !== 'all_opted_out');
   const reportedOrphans = orphans.slice(0, ORPHAN_AUDIT_CAP);
   await Promise.all(
-    reportedOrphans.map((orphanMemberId) =>
+    reportedOrphans.map((orphan) =>
       emitReject(
         deps,
-        { ...input, memberId: orphanMemberId },
+        { ...input, memberId: orphan.memberId },
         'broadcast_member_missing_primary_contact_email',
         {
-          memberId: orphanMemberId,
+          memberId: orphan.memberId,
+          orphan_reason: orphan.reason,
           triggeredBySubmissionFromMember: input.memberId,
         },
       ),
@@ -843,6 +914,7 @@ export async function submitBroadcast(
         broadcastId: broadcastId as string,
         submittedAt: now,
         estimatedRecipientCount: resolved.value.estimatedCount,
+        droppedByPreference: resolved.value.droppedByPreference,
         reservedQuotaSlot: true as const,
         reviewSlaTargetHours: REVIEW_SLA_TARGET_HOURS,
       });

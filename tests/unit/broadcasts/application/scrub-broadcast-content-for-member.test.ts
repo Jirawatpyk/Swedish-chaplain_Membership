@@ -54,6 +54,8 @@ const TOMBSTONED_COUNT = 3;
 interface MakeDepsOverrides {
   scrubImpl?: () => Promise<{ scrubbedCount: number }>;
   auditEmitImpl?: () => Promise<void>;
+  /** 108 PR-C T104 — rows whose member/contact back-references were nulled. */
+  severImpl?: () => Promise<{ affected: number }>;
 }
 
 function makeDeps(overrides: MakeDepsOverrides = {}) {
@@ -82,7 +84,15 @@ function makeDeps(overrides: MakeDepsOverrides = {}) {
     emit: vi.fn(),
     emitTyped: auditEmitImpl,
   };
-  return { broadcastsRepo, audit, fakeTx };
+  // 108 PR-C T104 — the suppression repo severs the erased member's
+  // `member_id` / `contact_id` back-references (rows survive, email-keyed).
+  // Default 0 so the pre-108 zero-work cases keep their meaning.
+  const marketingUnsubscribes = {
+    severMemberRefs: vi.fn(
+      async () => (await overrides.severImpl?.()) ?? { affected: 0 },
+    ),
+  };
+  return { broadcastsRepo, audit, marketingUnsubscribes, fakeTx };
 }
 
 describe('scrubBroadcastContentForMember (COMP-1 US2b)', () => {
@@ -331,5 +341,109 @@ describe('scrubBroadcastContentForMember (COMP-1 US2b)', () => {
     // fires (the catch wraps both the repo scrubs and the audit emit).
     expect(contentScrubFailedSpy).toHaveBeenCalledTimes(1);
     expect(contentScrubFailedSpy).toHaveBeenCalledWith('test-tenant');
+  });
+
+  // Review 2026-09-07 (tests MEDIUM) — the port keeps `severMemberRefs`
+  // optional so unrelated fixtures compile; this guard is the only thing
+  // standing between a composition that forgot to wire it and an erasure
+  // that COMPLETES while the erased member stays re-identifiable on
+  // marketing_unsubscribes. Delete the guard and this case goes red.
+  it('a composition without severMemberRefs FAILS the erasure inside the tx — no audit, no success', async () => {
+    const deps = makeDeps({ severImpl: async () => ({ affected: 1 }) });
+    delete (deps.marketingUnsubscribes as { severMemberRefs?: unknown }).severMemberRefs;
+    const result = await scrubBroadcastContentForMember(deps as never, {
+      tenant,
+      memberId,
+      tombstonedCount: 0,
+      reason: 'gdpr_erasure_request',
+      initiatedByUserId: 'admin-user-1',
+      requestId: 'req-104-unwired',
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('scrub.server_error');
+    expect(deps.audit.emitTyped).not.toHaveBeenCalled();
+  });
+
+});
+
+/**
+ * 108 PR-C T104 (FR-056) — the erasure cascade severs the erased member's
+ * back-references on `marketing_unsubscribes` (`member_id` AND the new
+ * `contact_id`, migration 0297) while the email-keyed row survives, so the
+ * tombstoned member id can no longer be re-identified through the
+ * suppression list. Runs in the SAME tx as the content scrub, before the
+ * audit, and is a third axis of "work" for the zero-work guard.
+ */
+describe('scrubBroadcastContentForMember — 108 PR-C severs suppression back-references (T104)', () => {
+  it('severs in the same tx before the audit; the audit and the output carry the count', async () => {
+    const deps = makeDeps({ severImpl: async () => ({ affected: 2 }) });
+    const result = await scrubBroadcastContentForMember(deps as never, {
+      tenant,
+      memberId,
+      tombstonedCount: 0,
+      reason: 'gdpr_erasure_request',
+      initiatedByUserId: 'admin-user-1',
+      requestId: 'req-104',
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.suppressionRefsSevered).toBe(2);
+
+    expect(deps.marketingUnsubscribes.severMemberRefs).toHaveBeenCalledTimes(1);
+    expect(deps.marketingUnsubscribes.severMemberRefs).toHaveBeenCalledWith(deps.fakeTx, 'test-tenant', memberId);
+    const scrubOrder = deps.broadcastsRepo.scrubContentForMemberInTx.mock.invocationCallOrder[0]!;
+    const severOrder = deps.marketingUnsubscribes.severMemberRefs.mock.invocationCallOrder[0]!;
+    const auditOrder = deps.audit.emitTyped.mock.invocationCallOrder[0]!;
+    expect(scrubOrder).toBeLessThan(severOrder);
+    expect(severOrder).toBeLessThan(auditOrder);
+
+    const [, emitEvent] = deps.audit.emitTyped.mock.calls[0]!;
+    expect(emitEvent.payload).toMatchObject({
+      member_id: memberId,
+      scrubbed_count: 2,
+      tombstoned_count: 0,
+      suppression_refs_severed: 2,
+      cascade: 'f3_member_erasure',
+    });
+    expect(JSON.stringify(emitEvent.payload)).not.toMatch(/@/);
+  });
+
+  it('severed refs alone are work: scrubbed 0 + tombstoned 0 + severed 1 → the audit still fires', async () => {
+    const deps = makeDeps({
+      scrubImpl: async () => ({ scrubbedCount: 0 }),
+      severImpl: async () => ({ affected: 1 }),
+    });
+    const result = await scrubBroadcastContentForMember(deps as never, {
+      tenant,
+      memberId,
+      tombstonedCount: 0,
+      initiatedByUserId: null,
+      requestId: null,
+    });
+    expect(result.ok).toBe(true);
+    expect(deps.audit.emitTyped).toHaveBeenCalledTimes(1);
+    const [, emitEvent] = deps.audit.emitTyped.mock.calls[0]!;
+    expect(emitEvent.payload).toMatchObject({ scrubbed_count: 0, tombstoned_count: 0, suppression_refs_severed: 1 });
+    expect(auditEmitCountSpy).toHaveBeenCalledWith('test-tenant', 'broadcast_content_redacted');
+  });
+
+  it('a sever failure fails the whole scrub (Result.err) — the tx rolls back, no audit', async () => {
+    const deps = makeDeps({
+      severImpl: async () => {
+        throw new Error('neon: statement timeout');
+      },
+    });
+    const result = await scrubBroadcastContentForMember(deps as never, {
+      tenant,
+      memberId,
+      tombstonedCount: 0,
+      initiatedByUserId: null,
+      requestId: null,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('scrub.server_error');
+    expect(deps.audit.emitTyped).not.toHaveBeenCalled();
   });
 });

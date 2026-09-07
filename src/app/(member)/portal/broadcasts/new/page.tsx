@@ -22,6 +22,8 @@ import {
   makeComputeQuotaDeps,
   makeListBroadcastTemplatesDeps,
   substituteChamberName,
+  currentAudienceCeiling,
+  currentAudienceMode,
 } from '@/modules/broadcasts';
 import { makeDrizzleBroadcastTemplatesRepo } from '@/modules/broadcasts/infrastructure/drizzle-broadcast-templates-repo';
 import { safeAuditEmit } from '@/modules/broadcasts/application/use-cases/_safe-audit-emit';
@@ -79,11 +81,32 @@ export default async function ComposeBroadcastPage({
   let membershipAccessBlocked = false;
   // FR-009 cap=0 flag, also hoisted for the same reason (see below).
   let quotaExhausted = false;
+  // Review 2026-09-07 (observation from T084, pinned in
+  // broadcasts-compose-suspended-redirect.test.tsx) — the member lookup used
+  // to sit inside the same `try` as the quota init, so a FAILED or MISSED
+  // lookup fell through past the access redirect and rendered the form to a
+  // user with no member row at all (the API still answered 404, so nothing
+  // sent — but the page-level gate was bypassed). A lookup that fails or
+  // misses is a redirect, exactly like `suspended`; only the quota init stays
+  // best-effort.
+  let memberLookup: Awaited<ReturnType<typeof membersDeps.memberRepo.findByLinkedUserId>>;
   try {
-    const memberLookup = await membersDeps.memberRepo.findByLinkedUserId(
-      tenant,
-      session.user.id,
+    memberLookup = await membersDeps.memberRepo.findByLinkedUserId(tenant, session.user.id);
+  } catch (err) {
+    logger.warn(
+      {
+        err: err instanceof Error ? err.message : String(err),
+        tenantId: tenant.slug,
+        userId: session.user.id,
+      },
+      'broadcasts.compose.member_lookup_failed',
     );
+    redirect('/portal/benefits?tab=broadcasts');
+  }
+  if (!memberLookup.ok) {
+    redirect('/portal/benefits?tab=broadcasts');
+  }
+  try {
     if (memberLookup.ok) {
       const membershipAccess = await loadMembershipAccess(
         tenant.slug,
@@ -143,6 +166,11 @@ export default async function ComposeBroadcastPage({
   // toolbar surface only appears when all three flag layers
   // (f7Broadcasts + f71aBroadcastAdvanced + f71aUs2Images) are ON.
   const imagesEnabled = isF71aUs2Enabled();
+  // 108 PR-C T079 / T085 — resolved ONCE here from the composition root and
+  // handed to the client form as props, so the compose copy names the real
+  // ceiling (FR-041 / FR-042) and describes the audience leg in force.
+  const audienceCeiling = currentAudienceCeiling();
+  const audienceMode = currentAudienceMode();
 
   // F7.1a US7 (T111) — template picker. Server-side fetches the
   // tenant's templates filtered by the member's current locale
@@ -286,6 +314,8 @@ export default async function ComposeBroadcastPage({
         key={selectedTemplateId ?? 'blank'}
         initialQuota={initialQuota}
         imagesEnabled={imagesEnabled}
+        audienceCeiling={audienceCeiling}
+        audienceMode={audienceMode}
         {...(initialSubject !== undefined ? { initialSubject } : {})}
         {...(initialBodyHtml !== undefined ? { initialBodyHtml } : {})}
       />

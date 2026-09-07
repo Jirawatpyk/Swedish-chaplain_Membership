@@ -605,6 +605,37 @@ export default defineConfig({
           functions: 100,
           statements: 100,
         },
+        // 108 PR-C (review 2026-09-07, tests MEDIUM) — the resolver is the ONE
+        // source of truth for who receives a marketing email (compose count,
+        // submit and every dispatch tick); every drop rule, the orphan reasons
+        // and the ceiling-from-deps are pinned in
+        // resolve-segment-recipients.test.ts. Measured 100/100 before pinning.
+        'src/modules/broadcasts/application/use-cases/resolve-segment-recipients.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        // The broadcasts Domain never had the 100% line pin every other
+        // module's Domain carries (Constitution II). `audience-ceiling.ts` is
+        // the first file under it with a function; widen to `**` once the
+        // pre-existing Domain files are measured.
+        'src/modules/broadcasts/domain/audience-ceiling.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        // The count endpoints' shared core. The `_exhaustive: never` arm is
+        // unreachable by construction, so 100% line is not honest here; the
+        // floor is what the unit + contract suites measured (parse, rate key,
+        // ok / too_large / empty / server_error / throw).
+        'src/lib/broadcasts-recipient-count.ts': {
+          lines: 85,
+          branches: 90,
+          functions: 100,
+          statements: 85,
+        },
         // F8: Renewals Domain layer — 100% line coverage per
         // Constitution Principle II. Pure entities (RenewalCycle 7-state
         // machine, TierUpgradeSuggestion 6-status DU, EscalationTask

@@ -9,8 +9,11 @@
  *   - Acknowledgement flag management (Q15 — GDPR Art. 7 banner)
  *
  * Concrete adapter (Phase 4 Infrastructure) calls F3's barrel exports
- * added in T029 (Batch C). The 7 methods below correspond 1:1 with
- * the 7 new F3 exports specified in tasks.md L111.
+ * added in T029 (Batch C). The methods below front F3's barrel exports; the
+ * original 1:1 correspondence with tasks.md L111's seven no longer holds
+ * (`getMemberPreferredLocale`, `filterMarketingOptedOut`,
+ * `getContactsBySegment` and `countOptedOutContactsBySegment` were added
+ * later).
  *
  * Pure interface — no framework imports (Constitution Principle III).
  */
@@ -36,6 +39,22 @@ export interface ContactLookup {
   readonly memberId: string;
   readonly contactId: string;
   readonly emailLower: EmailLower;
+}
+
+/**
+ * 108 PR-C (data-model § 1) — one row of the 1:N audience. `contactId ===
+ * null` ⇔ the member is ELIGIBLE but has no eligible contact (FR-029 orphan:
+ * the resolver reports it with a REASON, the caller decides the audit); then
+ * `emailLower` is null. `hasOptedOutContact` is per MEMBER — true when at
+ * least one live contact opted out — and on an orphan row it is the reason:
+ * `all_opted_out` (they objected) vs `no_eligible_contact` (nothing to send
+ * to). Review 2026-09-07: replaces `isPrimary`, which nothing read.
+ */
+export interface ContactRecipient {
+  readonly memberId: string;
+  readonly contactId: string | null;
+  readonly emailLower: EmailLower | null;
+  readonly hasOptedOutContact: boolean;
 }
 
 /**
@@ -79,17 +98,54 @@ export interface SegmentResolveParams {
 
 export interface MembersBridgePort {
   /**
-   * Resolve a segment to its recipient list (FR-015 + FR-015c).
-   * Filters out members with NULL `primary_contact_email` (emits
-   * `broadcast_member_missing_primary_contact_email` audit at use-case
-   * site for each one). Filters out members halted via Q14
-   * (`broadcasts_halted_until_admin_review = true`).
+   * Resolve a segment to its recipient list (FR-015 + FR-015c) — the
+   * `primary_only` leg. Active, non-erased, non-halted members only
+   * (108 PR-C: `status = 'active'` was added and the `.limit(5000)` removed —
+   * no row cap, the resolver's ceiling is the truthful check). A member with
+   * a NULL `primary_contact_email` is returned as such (the resolver reports
+   * it as an orphan). NOT best-effort: a failed read THROWS (research R8) —
+   * it used to answer `[]`, which turned a Neon outage into "nobody to send
+   * to".
    */
   getMembersBySegment(
     tenantCtx: TenantContext,
     segmentType: BroadcastSegmentType,
     params: SegmentResolveParams,
   ): Promise<ReadonlyArray<MemberRecipient>>;
+
+  /**
+   * 108 PR-C (US3 / FR-020–FR-022, FR-029) — the 1:N audience: every
+   * ELIGIBLE contact (live, not opted out) of every eligible member (active,
+   * not erased, not halted; + tier) of a member-based segment, plus one
+   * orphan row (`contactId: null`) per eligible member that has no eligible
+   * contact. Walks F3's keyset pages (5,000 rows) to exhaustion. NOT
+   * best-effort: a failed page THROWS — an adapter answering `[]` on error
+   * would be a silent truncation, the class research R8 exists to close.
+   * `event_attendees_last_90d` and `custom` answer `[]` without a read
+   * (resolved elsewhere, exactly like `getMembersBySegment`). Suppression,
+   * sender self-exclusion, dedupe and the ceiling stay in the resolver.
+   */
+  getContactsBySegment(
+    tenantCtx: TenantContext,
+    segmentType: BroadcastSegmentType,
+    params: SegmentResolveParams,
+  ): Promise<ReadonlyArray<ContactRecipient>>;
+
+  /**
+   * Review 2026-09-07 (FR-022a) — how many live contacts of the segment's
+   * eligible members opted out of marketing. F3 excludes them in SQL before
+   * `getContactsBySegment` ever answers, so the resolver adds this number to
+   * `droppedByPreference` on the all_contacts leg. NOT best-effort: a failed
+   * count THROWS (the preference number is never guessed — the same
+   * fail-closed rule as `filterMarketingOptedOut`). `custom` and
+   * `event_attendees_last_90d` are not member-keyed and answer 0 without a
+   * read.
+   */
+  countOptedOutContactsBySegment(
+    tenantCtx: TenantContext,
+    segmentType: BroadcastSegmentType,
+    params: SegmentResolveParams,
+  ): Promise<number>;
 
   /**
    * Get a single member's primary contact email (FR-002 precondition

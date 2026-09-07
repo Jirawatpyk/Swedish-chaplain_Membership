@@ -86,6 +86,9 @@ export type F7RouteErrorCode =
   // via `jsonError(400, 'invalid_locale', ...)` pre-R4.2; now flows
   // through `errorResponse` so the bilingual envelope lands.
   | 'invalid_locale'
+  // 108 PR-C T088 — recipient-count endpoints (contract broadcast-audience § 5)
+  | 'invalid_query'
+  | 'count_unavailable'
   | 'internal_error';
 
 interface BilingualMessage {
@@ -259,6 +262,15 @@ const F7_ERROR_MESSAGES: Record<F7RouteErrorCode, BilingualMessage> = {
     message: 'The locale parameter is invalid (must be one of: en, th, sv).',
     messageThai: 'พารามิเตอร์ภาษาไม่ถูกต้อง (ต้องเป็น en, th, หรือ sv)',
   },
+  // 108 PR-C T088 — recipient-count endpoints.
+  invalid_query: {
+    message: 'The recipient-count query is invalid.',
+    messageThai: 'พารามิเตอร์สำหรับนับผู้รับไม่ถูกต้อง',
+  },
+  count_unavailable: {
+    message: 'The recipient count is unavailable right now. You can still submit; the server recomputes the audience.',
+    messageThai: 'ไม่สามารถนับจำนวนผู้รับได้ในขณะนี้ คุณยังส่งได้ตามปกติ ระบบจะคำนวณผู้รับใหม่ฝั่งเซิร์ฟเวอร์',
+  },
   internal_error: {
     message: 'An unexpected error occurred. Please try again.',
     messageThai: 'เกิดข้อผิดพลาดที่ไม่คาดคิด กรุณาลองใหม่อีกครั้ง',
@@ -424,6 +436,8 @@ const F7_ERROR_STATUS: Record<F7RouteErrorCode, number> = {
   feature_disabled: 503,
   no_session: 401,
   invalid_locale: 400,
+  invalid_query: 400,
+  count_unavailable: 503,
   internal_error: 500,
 };
 

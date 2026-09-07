@@ -6,7 +6,11 @@
  * to F7's `MemberRecipient` (branded `EmailLower`).
  *
  * Segment dispatch:
- *   - `all_members` / `tier` → F3 `getMembersBySegment`
+ *   - `all_members` / `tier`, `audienceMode = 'primary_only'` → F3
+ *     `getMembersBySegment` (one primary per member)
+ *   - `all_members` / `tier`, `audienceMode = 'all_contacts'` → F3
+ *     `getBroadcastRecipientContacts` (keyset walk, 5,000/page) +
+ *     `countBroadcastOptedOutContacts` (108 PR-C)
  *   - `event_attendees_last_90d` / `custom` → return `[]` (resolved by
  *     F7's own use-cases via `EventAttendeesRepository` stub +
  *     `validate-custom-recipients`)
@@ -19,6 +23,7 @@
  */
 import { ok, err, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { broadcastsMetrics } from '@/lib/metrics';
 import { errKind } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import {
@@ -26,6 +31,9 @@ import {
   drizzleContactRepo,
   asMemberId,
   getMembersBySegment as f3GetMembersBySegment,
+  getBroadcastRecipientContacts as f3GetBroadcastRecipientContacts,
+  countBroadcastOptedOutContacts as f3CountBroadcastOptedOutContacts,
+  type BroadcastRecipientCursor,
   getMemberPrimaryContact as f3GetMemberPrimaryContact,
   getMemberPreferredLocale as f3GetMemberPreferredLocale,
   lookupContactEmailInTenant as f3LookupContactEmailInTenant,
@@ -39,6 +47,7 @@ import type { BroadcastSegmentType } from '../domain/value-objects/segment-type'
 import { unsafeBrandEmailLower } from '../domain/value-objects/email-lower';
 import type {
   ContactLookup,
+  ContactRecipient,
   MarkAckError,
   MarkAckSuccess,
   MemberHaltError,
@@ -48,6 +57,16 @@ import type {
   SegmentResolveParams,
 } from '../application/ports/members-bridge-port';
 import type { EmailLower } from '../domain/value-objects/email-lower';
+
+/**
+ * 108 PR-C — F3 keyset page size for the 1:N audience (contract
+ * broadcast-audience § 2 step 1). One round trip per 5,000 rows; a 50,000
+ * ceiling is 10 pages. Raised from 1,000 by T081: 20,000 contacts at
+ * 1,000-row pages were 42 round trips ≈ 9–11 s from a ~220 ms-RTT
+ * workstation against FR-043's 3 s — the walk is latency-bound, so fewer,
+ * larger pages are the honest fix (5,000 rows is ~500 KB of ids + emails).
+ */
+const CONTACT_PAGE_SIZE = 5000;
 
 function brandRecipient(r: {
   memberId: string;
@@ -87,8 +106,129 @@ export const membersBridge: MembersBridgePort = {
         ...(params.tierCodes !== undefined && { tierCodes: params.tierCodes }),
       },
     );
-    if (!result.ok) return [];
+    if (!result.ok) {
+      // 108 PR-C T075 — this used to `return []`, which turned a Neon
+      // outage into "nobody to send to" (`broadcast_empty_segment_blocked`):
+      // the submit refused with a misleading reason and the dispatch tick
+      // marked the broadcast failed for an audience that exists. A failed
+      // read must fail the resolve so the caller retries (research R8).
+      logger.error(
+        {
+          err: result.error.code,
+          cause: errKind('cause' in result.error ? result.error.cause : undefined),
+          tenantId: tenantCtx.slug,
+          segmentType,
+        },
+        'broadcasts.members_bridge.segment_read_failed',
+      );
+      throw new Error(
+        `members-bridge.getMembersBySegment: ${result.error.code} — refusing to resolve an empty audience`,
+      );
+    }
     return result.value.map(brandRecipient);
+  },
+
+  /**
+   * 108 PR-C T075 — the 1:N page walk (port docblock has the contract). One
+   * F3 call per 5,000 rows, cursor = the last row of the previous page (an
+   * orphan's null contact id included — the F3 query compares on member_id
+   * alone for that shape). A page shorter than the page size proves
+   * exhaustion, so a small audience is one call and an exact multiple costs
+   * one extra empty page. A failed page THROWS with the rows read so far in
+   * the log (counts only — never an address, FR-053a).
+   */
+  async getContactsBySegment(
+    tenantCtx: TenantContext,
+    segmentType: BroadcastSegmentType,
+    params: SegmentResolveParams,
+  ): Promise<ReadonlyArray<ContactRecipient>> {
+    if (segmentType === 'event_attendees_last_90d' || segmentType === 'custom') {
+      return [];
+    }
+    const out: ContactRecipient[] = [];
+    let after: BroadcastRecipientCursor | null = null;
+    let pages = 0;
+    for (;;) {
+      const page = await f3GetBroadcastRecipientContacts(
+        { tenant: tenantCtx, memberRepo: drizzleMemberRepo },
+        {
+          segmentType,
+          ...(params.tierCodes !== undefined && { tierCodes: params.tierCodes }),
+          after,
+          limit: CONTACT_PAGE_SIZE,
+        },
+      );
+      pages += 1;
+      if (!page.ok) {
+        logger.error(
+          {
+            err: page.error.code,
+            cause: errKind('cause' in page.error ? page.error.cause : undefined),
+            tenantId: tenantCtx.slug,
+            segmentType,
+            pages,
+            rowsSoFar: out.length,
+          },
+          'broadcasts.members_bridge.contacts_page_failed',
+        );
+        throw new Error(
+          `members-bridge.getContactsBySegment: ${page.error.code} — refusing to resolve a partial audience`,
+        );
+      }
+      for (const r of page.value) {
+        out.push({
+          memberId: r.memberId,
+          contactId: r.contactId,
+          emailLower:
+            r.emailLower === null
+              ? null
+              : unsafeBrandEmailLower(r.emailLower.toLowerCase().trim()),
+          hasOptedOutContact: r.hasOptedOutContact,
+        });
+      }
+      if (page.value.length < CONTACT_PAGE_SIZE) {
+        // 108 PR-C T090 — pages walked per COMPLETED resolve (never on failure).
+        broadcastsMetrics.audiencePagesTotal(tenantCtx.slug, pages);
+        return out;
+      }
+      const last = page.value[page.value.length - 1]!;
+      after =
+        last.contactId === null
+          ? { kind: 'after_member', memberId: last.memberId }
+          : { kind: 'after_contact', memberId: last.memberId, contactId: last.contactId };
+    }
+  },
+
+  async countOptedOutContactsBySegment(
+    tenantCtx: TenantContext,
+    segmentType: BroadcastSegmentType,
+    params: SegmentResolveParams,
+  ): Promise<number> {
+    // Review 2026-09-07 (FR-022a) — see the port docblock. Not member-keyed
+    // → nothing was excluded in SQL for these kinds.
+    if (segmentType !== 'all_members' && segmentType !== 'tier') return 0;
+    const result = await f3CountBroadcastOptedOutContacts(
+      { tenant: tenantCtx, memberRepo: drizzleMemberRepo },
+      {
+        segmentType,
+        ...(params.tierCodes !== undefined && { tierCodes: params.tierCodes }),
+      },
+    );
+    if (!result.ok) {
+      logger.error(
+        {
+          tenantId: tenantCtx.slug,
+          segmentType,
+          err: result.error.code,
+          cause: errKind('cause' in result.error ? result.error.cause : undefined),
+        },
+        'members-bridge.count_opted_out_contacts_failed',
+      );
+      throw new Error(
+        `members-bridge.countOptedOutContactsBySegment: ${result.error.code} — refusing to guess the preference count`,
+      );
+    }
+    return result.value;
   },
 
   async getMemberPrimaryContact(
@@ -99,7 +239,15 @@ export const membersBridge: MembersBridgePort = {
       { tenant: tenantCtx, memberRepo: drizzleMemberRepo },
       asMemberId(memberId),
     );
-    if (!result.ok || result.value === null) return null;
+    // Review 2026-09-07 — same doctrine as `memberExistsInTenant` below: a
+    // genuine miss is null; a FAILED read throws. Collapsing both into null
+    // let a Neon blip become `broadcast_member_missing_primary_contact_email`
+    // — an append-only audit row asserting a fact nobody observed.
+    if (!result.ok) {
+      if (result.error.code === 'repo.not_found') return null;
+      throw new Error(`members-bridge.getMemberPrimaryContact: ${result.error.code}`);
+    }
+    if (result.value === null) return null;
     return unsafeBrandEmailLower(result.value.toLowerCase().trim());
   },
 
@@ -131,7 +279,13 @@ export const membersBridge: MembersBridgePort = {
       { tenant: tenantCtx, contactRepo: drizzleContactRepo },
       emailLower as string,
     );
-    if (!result.ok || result.value === null) return null;
+    // Review 2026-09-07 — a failed read THROWS so the unsubscribe use-case's
+    // catch arm (the only log on that path) can actually fire; a miss is null.
+    if (!result.ok) {
+      if (result.error.code === 'repo.not_found') return null;
+      throw new Error(`members-bridge.lookupContactEmailInTenant: ${result.error.code}`);
+    }
+    if (result.value === null) return null;
     return {
       memberId: result.value.memberId,
       contactId: result.value.contactId,
@@ -149,7 +303,13 @@ export const membersBridge: MembersBridgePort = {
       { tenant: tenantCtx, memberRepo: drizzleMemberRepo },
       emailLower as string,
     );
-    if (!result.ok || result.value === null) return null;
+    if (!result.ok) {
+      if (result.error.code === 'repo.not_found') return null;
+      throw new Error(
+        `members-bridge.lookupMemberPrimaryContactEmailInTenant: ${result.error.code}`,
+      );
+    }
+    if (result.value === null) return null;
     return brandRecipient(result.value);
   },
 
@@ -160,7 +320,14 @@ export const membersBridge: MembersBridgePort = {
       tenant: tenantCtx,
       memberRepo: drizzleMemberRepo,
     });
-    if (!result.ok) return [];
+    // Review 2026-09-07 — this read IS the Q14 halt gate (`submit-broadcast`
+    // precondition k). Answering `[]` on a failed read let a halted member's
+    // submit through during a Neon blip, with no log. A failed read THROWS;
+    // the use-case maps it to `submit.server_error` and the admin queue
+    // page renders an error state instead of a clean banner.
+    if (!result.ok) {
+      throw new Error(`members-bridge.getMembersHaltedInTenant: ${result.error.code}`);
+    }
     return result.value.map((row) => ({
       memberId: row.memberId,
       displayName: row.displayName,

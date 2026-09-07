@@ -3052,7 +3052,8 @@
           "breachWarning": "Granskningar går långsamt"
         },
         "overdueBanner": "{count, plural, one {# utskick har} other {# utskick har}} väntat i över 48 timmar — granska nu.",
-        "truncationNote": "Visar de första 50 — förfina filtren för att se fler."
+        "truncationNote": "Visar de första 50 — förfina filtren för att se fler.",
+        "haltStateUnavailable": "Spärrstatus kunde inte läsas just nu. Kön kan dölja spärrade medlemmar. Uppdatera innan du godkänner något."
       },
       "review": {
         "title": "Granska utskick",
@@ -3149,7 +3150,7 @@
         "subjectLabel": "Ämne",
         "bodyLabel": "Meddelande",
         "pageSubtitle": "Skapa och kölägg ett utskick för granskning med den här medlemmens e-utskickskvot.",
-        "selfExclusionNotice": "{company} får inte detta utskick — medlemmar exkluderas från sina egna utskick.",
+        "selfExclusionNotice": "{company} får inte detta utskick – en medlems kontakter exkluderas från sina egna utskick.",
         "memberNotFoundError": "Medlemmen finns inte längre. Välj en annan medlem.",
         "quotaBlockedError": "{company} har använt alla sina utskick för den här perioden.",
         "notInPlanError": "{company}:s paket inkluderar inte e-utskick.",
@@ -3158,8 +3159,9 @@
         "bodyTooLargeError": "Meddelandet överskrider gränsen på 200 KB.",
         "bodyUnsafeHtmlError": "Meddelandet innehåller formatering som inte stöds — förenkla det.",
         "emptySegmentError": "Inga matchande mottagare hittades.",
-        "audienceTooLargeError": "Mottagarlistan överstiger gränsen på 5 000.",
+        "audienceTooLargeError": "Mottagarlistan överstiger gränsen på {ceiling, number}.",
         "successToast": "Utskicket har kölagts för granskning å {company}:s vägnar.",
+        "preferenceExcluded": "{count, plural, one {# adress uteslöts} other {# adresser uteslöts}} enligt mottagarens önskemål.",
         "searchFailed": "Medlemssökningen misslyckades. Försök igen.",
         "noResults": "Inga medlemmar hittades.",
         "missingContactEmailWarning": "Den här medlemmen saknar e-postadress för primär kontakt. Det går inte att skicka utskick å deras vägnar förrän en primär kontakt med e-postadress har lagts till.",
@@ -5759,6 +5761,7 @@
           "drafted": "Utkast sparat.",
           "submitted": "Inskickad för administratörsgranskning.",
           "submittedSlaHint": "Mål för administratörsgranskning: 48 timmar.",
+          "preferenceExcluded": "{count, plural, one {# adress uteslöts} other {# adresser uteslöts}} enligt mottagarens önskemål.",
           "sanitiserStripped": "Viss formatering som inte stöds togs bort automatiskt.",
           "submitting": "Skickar in…",
           "takingLonger": "Det tar längre tid än väntat — vänligen vänta."
@@ -5771,11 +5774,20 @@
         "submitNote": {
           "cancellable": "Du kan avbryta detta utskick när som helst tills en administratör godkänner det."
         },
+        "selfExclusionHint": "Du och dina kollegor får inte ert eget utskick.",
         "estimateNote": {
-          "allMembers": "Mottagare: varje aktiv medlem med primär kontakt-e-post (max 5 000 per utskick).",
-          "tier": "Mottagare: medlemmar på vald nivå med primär kontakt-e-post (max 5 000).",
+          "allMembers": "Mottagare: primärkontakten hos varje aktiv medlem (högst {ceiling, number} per utskick).",
+          "tier": "Mottagare: primärkontakten hos varje aktiv medlem på valda nivåer (högst {ceiling, number}).",
+          "allMembersAllContacts": "Mottagare: varje kontakt hos varje aktiv medlem – primär och sekundär – som inte avböjt (högst {ceiling, number} per utskick).",
+          "tierAllContacts": "Mottagare: varje kontakt hos varje aktiv medlem på valda nivåer som inte avböjt (högst {ceiling, number}).",
           "custom": "Mottagare: en e-post per rad nedan. Max 100 rader. Varje måste matcha en medlem eller kontakt i din kammare.",
           "customCount": "{count} e-post angiven."
+        },
+        "recipientCount": {
+          "loading": "Räknar mottagare…",
+          "ready": "{count, number} mottagare får detta utskick.",
+          "exceeds": "{count, number} mottagare – över gränsen på {ceiling, number}. Begränsa målgruppen; annars avvisas inlämningen.",
+          "unavailable": "Antalet mottagare kan inte hämtas just nu – du kan ändå skicka in; servern räknar om målgruppen."
         },
         "errors": {
           "broadcast_quota_blocked": "Du har använt hela din E-Blast-kvot för i år.",
@@ -5786,7 +5798,7 @@
           "broadcast_body_unsafe_html": "Meddelandet innehåller formatering som inte stöds — förenkla det.",
           "broadcast_body_image_source_unsafe": "Ditt meddelande innehåller bildkällor som inte är tillåtna i din kammares register. Se listan under redigeraren för att åtgärda eller ta bort dem.",
           "broadcast_empty_segment_blocked": "Inga matchande mottagare hittades.",
-          "broadcast_audience_too_large": "Mottagarlistan överstiger gränsen på 5 000.",
+          "broadcast_audience_too_large": "Mottagarlistan överstiger gränsen på {ceiling, number}.",
           "broadcast_custom_recipient_unknown": "Vissa anpassade mottagare finns inte i din katalog.",
           "broadcast_custom_recipient_invalid_format": "Vissa anpassade mottagare är inte giltiga e-postadresser.",
           "broadcast_custom_recipient_empty": "Lägg till minst en e-postadress i din anpassade mottagarlista.",
