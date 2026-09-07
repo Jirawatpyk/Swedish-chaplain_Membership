@@ -33,7 +33,8 @@ import { randomUUID } from 'node:crypto';
  * `docs/runbooks/audit-emit-loss.md`). Used for BOTH the
  * `.CONTEXT_RESOLUTION_FAILED` line the admin gate emits before this
  * handler's try block and the `.UNEXPECTED` line its outer catch emits, so
- * an SRE rule keyed on `F8.CYCLE_LIST.*` matches every 500 this route can produce.
+ * an SRE rule keyed on `F8.CYCLE_LIST.*` matches every 500 this route
+ * can produce.
  */
 const ERROR_ID = 'F8.CYCLE_LIST';
 
@@ -115,7 +116,12 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  const ctx = await requireRenewalAdminContext(request, 'read', 'renewals.read', ERROR_ID);
+  const ctx = await requireRenewalAdminContext(
+    request,
+    'read',
+    'renewals.read',
+    ERROR_ID,
+  );
   if ('response' in ctx) return ctx.response;
 
   // K8-L6: `Object.fromEntries` reads the URLSearchParams iterable

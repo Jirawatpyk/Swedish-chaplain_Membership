@@ -5,9 +5,11 @@
  * `requireRenewalAdminContext` hardcoded
  * `errorId: 'F8.ACCEPT_TIER.CONTEXT_RESOLUTION_FAILED'` while being composed by
  * 24 routes, so a session-lookup failure on the money path paged SRE with an
- * id naming the tier-upgrade accept route. Fifteen of those routes also had no
+ * id naming the tier-upgrade accept route. Separately, most F8 routes had no
  * `errorId` on their outer catch at all, leaving `F8.*` blind to them, while
  * `docs/runbooks/audit-emit-loss.md` told SRE to pin alert rules to that field.
+ * (Run the gate for the current set — a count written here would rot, and
+ * every count written into this migration's comments has been wrong once.)
  *
  * The `F8ErrorId` union already makes an un-named helper CALLER a compile
  * error. This gate covers the half the type system cannot see:
@@ -19,7 +21,7 @@
  *      comes to speak in another route's name
  *
  * Scope is derived, never hand-listed: the renewals + portal-renewal path
- * globs UNION every route that composes `requireRenewalAdminContext`. That
+ * prefixes UNION every route that composes `requireRenewalAdminContext`. That
  * last clause is what pulls in the three `admin/members/**` routes which are
  * F8 surfaces despite their path, and it keeps working when a route moves.
  *
@@ -68,9 +70,13 @@ function inScope(): string[] {
     (p) => p.startsWith(`${SRC}/admin/renewals/`) || p.startsWith(`${SRC}/portal/renewal/`),
   );
   // the clause that pulls in the three admin/members/** F8 routes, and that
-  // keeps working when a route moves
+  // keeps working when a route moves. Stripped, not raw: a non-F8 route that
+  // merely MENTIONS the helper in a comment would otherwise be dragged into
+  // scope and told to declare an F8 id it has no business having.
   const byComposition = all.filter((p) =>
-    readFileSync(p, 'utf8').includes('requireRenewalAdminContext'),
+    stripCommentsPreserveLines(readFileSync(p, 'utf8')).includes(
+      'requireRenewalAdminContext',
+    ),
   );
   return [...new Set([...byPath, ...byComposition])].sort();
 }

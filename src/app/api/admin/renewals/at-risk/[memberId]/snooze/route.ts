@@ -29,7 +29,8 @@ import { snoozeAtRiskMember, makeRenewalsDeps } from '@/modules/renewals';
  * `docs/runbooks/audit-emit-loss.md`). Used for BOTH the
  * `.CONTEXT_RESOLUTION_FAILED` line the admin gate emits before this
  * handler's try block and the `.UNEXPECTED` line its outer catch emits, so
- * an SRE rule keyed on `F8.AT_RISK_SNOOZE.*` matches every 500 this route can produce.
+ * an SRE rule keyed on `F8.AT_RISK_SNOOZE.*` matches every 500 this route
+ * can produce.
  */
 const ERROR_ID = 'F8.AT_RISK_SNOOZE';
 
@@ -49,7 +50,12 @@ export async function POST(
     });
   }
 
-  const ctx = await requireRenewalAdminContext(request, 'write', 'renewals.write', ERROR_ID);
+  const ctx = await requireRenewalAdminContext(
+    request,
+    'write',
+    'renewals.write',
+    ERROR_ID,
+  );
   if ('response' in ctx) return ctx.response;
 
   const { memberId } = await context.params;

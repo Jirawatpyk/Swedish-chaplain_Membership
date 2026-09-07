@@ -38,7 +38,8 @@ import {
  * `docs/runbooks/audit-emit-loss.md`). Used for BOTH the
  * `.CONTEXT_RESOLUTION_FAILED` line the admin gate emits before this
  * handler's try block and the `.UNEXPECTED` line its outer catch emits, so
- * an SRE rule keyed on `F8.AT_RISK_OUTREACH.*` matches every 500 this route can produce.
+ * an SRE rule keyed on `F8.AT_RISK_OUTREACH.*` matches every 500 this route
+ * can produce.
  */
 const ERROR_ID = 'F8.AT_RISK_OUTREACH';
 
@@ -65,7 +66,12 @@ export async function POST(
   // f8_role_violation_blocked audit carrying action='manager_exception'
   // so dashboards can distinguish a manager-permitted write from a
   // pure read.
-  const ctx = await requireRenewalAdminContext(request, 'manager_exception', 'renewals.read', ERROR_ID);
+  const ctx = await requireRenewalAdminContext(
+    request,
+    'manager_exception',
+    'renewals.read',
+    ERROR_ID,
+  );
   if ('response' in ctx) return ctx.response;
 
   // Capture the LITERAL actor role for the audit payload + use-case

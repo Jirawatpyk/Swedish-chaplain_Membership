@@ -206,6 +206,10 @@ describe('GET /api/admin/renewals/settings/schedules (T084)', () => {
       expect.anything(),
       'read',
       'settings.renewal_schedules',
+      // This route's own entry in the F8 errorId taxonomy. Pinned by VALUE:
+      // the defect it replaced was one hardcoded name shared by all 24
+      // callers, which only a per-route assertion can catch coming back.
+      'F8.SCHEDULES_READ',
     );
   });
 
@@ -350,6 +354,10 @@ describe('PUT /api/admin/renewals/settings/schedules/[tierBucket] (T085)', () =>
       expect.anything(),
       'write',
       'settings.renewal_schedules',
+      // This route's own entry in the F8 errorId taxonomy. Pinned by VALUE:
+      // the defect it replaced was one hardcoded name shared by all 24
+      // callers, which only a per-route assertion can catch coming back.
+      'F8.SCHEDULES_WRITE',
     );
   });
 
