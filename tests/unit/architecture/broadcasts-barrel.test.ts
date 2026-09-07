@@ -123,13 +123,11 @@ const KNOWN_BACKLOG: ReadonlySet<string> = new Set([
   // direct-import-pure; `dispatch-broadcast-batch` Application use-case
   // imports its OWN Deps interface which is internal to that file).
   "src/app/api/cron/broadcasts/dispatch-batches/route.ts::@/modules/broadcasts/domain/value-objects/email-lower",
-  "src/app/api/cron/broadcasts/dispatch-batches/route.ts::@/modules/broadcasts/domain/broadcast",
   "src/app/api/cron/broadcasts/dispatch-batches/route.ts::@/modules/broadcasts/domain/policies/batch-concurrency-policy",
   "src/app/api/cron/broadcasts/dispatch-batches/route.ts::@/modules/broadcasts/application/use-cases/dispatch-broadcast-batch",
   // /api/cron/broadcasts/split-large-broadcasts/route.ts (2 remaining post F7.1b B2)
   // — 4 entries closed 2026-05-21. Remaining 2 are Domain-internal.
   "src/app/api/cron/broadcasts/split-large-broadcasts/route.ts::@/modules/broadcasts/domain/value-objects/email-lower",
-  "src/app/api/cron/broadcasts/split-large-broadcasts/route.ts::@/modules/broadcasts/domain/broadcast",
   // /components/broadcast/* (5) — F7 MVP queue + status display + F7.1a US7 template form
   "src/components/broadcast/admin/queue-filters.tsx::@/modules/broadcasts/domain/value-objects/broadcast-status",
   "src/components/broadcast/status-badge-mapping.ts::@/modules/broadcasts/domain/value-objects/broadcast-status",
