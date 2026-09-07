@@ -143,6 +143,18 @@ export async function POST(
             details: { message: result.error.message },
           });
         case 'server_error':
+          // Round-2 review — this arm returns the 500 this route produces
+          // MOST often (the use-case caught something), and it logged no
+          // errorId, so the docblock's promise that a rule keyed on
+          // `${ERROR_ID}.*` matches every 500 was false for the common case.
+          // `accept/route.ts` had done this since R3-S5; nothing else had.
+          logger.error(
+            {
+              errorId: `${ERROR_ID}.SERVER_ERROR`,
+              correlationId: ctx.correlationId,
+            },
+            'admin.renewals.at_risk_outreach_server_error',
+          );
           return errorResponse({
             status: 500,
             code: 'server_error',

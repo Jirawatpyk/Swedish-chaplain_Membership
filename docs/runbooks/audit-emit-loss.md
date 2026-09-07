@@ -107,7 +107,7 @@ For F8 `accept-tier-upgrade`:
 |---|---|
 | `F8.ACCEPT_TIER.SERVER_ERROR` | use-case returned `{kind:'server_error', message:'deploy-skew:unhandled-gateway-arm:*'}` — gateway-arm exhaustiveness violation |
 | `F8.ACCEPT_TIER.UNEXPECTED` | route's outer `catch (e)` caught an uncaught throw (R3-C3 pre-tx wrap blocks documented paths; this is defence-in-depth) |
-| `F8.ACCEPT_TIER.CONTEXT_RESOLUTION_FAILED` | `requireRenewalAdminContext` caught an infrastructure error (DB outage during session-lookup). **Every F8 route emits its own `<entry>.CONTEXT_RESOLUTION_FAILED`** — see § The F8 errorId taxonomy; before 2026-09-07 all 24 emitted this one |
+| `F8.ACCEPT_TIER.CONTEXT_RESOLUTION_FAILED` | `requireRenewalAdminContext` caught an infrastructure error (DB outage during session-lookup). **Every route that composes that helper — 24 of the 26 in scope — emits its own `<entry>.CONTEXT_RESOLUTION_FAILED`**; the two member-facing portal routes do not compose it and never emit this suffix. Before 2026-09-07 all 24 emitted this one |
 
 ### The F8 errorId taxonomy
 
@@ -121,23 +121,34 @@ not *F8*. An earlier draft of this section said "`F8.*` is blind to nothing",
 which was false in a way that would have cost someone a night: see § Where the
 taxonomy does NOT reach, below.
 
-A route declares its entry once (`const ERROR_ID = 'F8.…'`) and uses it twice:
+A route declares its entry once (`const ERROR_ID = 'F8.…'`) and uses it at
+least twice — `redeem-link` uses it five times:
 
 | suffix | emitted by | means |
 |---|---|---|
 | `.CONTEXT_RESOLUTION_FAILED` | `requireRenewalAdminContext`, before the route's `try` | session-lookup / RBAC infrastructure failed (DB outage) |
 | `.UNEXPECTED` | the route's own outer catch | the handler threw |
-| `.SERVER_ERROR`, `.ASSIGNEE_LOOKUP_FAILED`, `.KILL_SWITCH_AUDIT_EMIT_FAILED` | a named inner catch | see the route |
+| `.SERVER_ERROR` | the `case 'server_error'` arm | the use-case caught something and returned its error variant — **the most common 500 on these routes** |
+| `.ASSIGNEE_LOOKUP_FAILED` | a named inner catch (`tasks/[taskId]/reassign`) | the staff-user lookup threw |
+| `.KILL_SWITCH_AUDIT_EMIT_FAILED` | a named inner catch on the kill-switch path | the `kill_switch_blocked` audit row was lost. **The response was 404, not 500** — this is not an outage |
+| `.PRECONSUME_CONTACTS_FAILED`, `.PRECONSUME_USER_UNUSABLE`, `.PRECONSUME_INPUT_SHAPE`, `.GATE_CONTRACT_DRIFT` | an in-`try` guard in `portal/renewal/redeem-link` | a member's renewal link died before redemption; the response is a REDIRECT, not a 500 |
 
 So a rule keyed on `<entry>.*` matches every failure **that route** can produce.
 `pnpm check:f8-error-id` (pre-push + `quality-gates.yml`) enforces it: it fails
 on a route in scope that declares no entry, an entry two routes share, an entry
 missing from the union, a `logger.error` in a `catch` with no `errorId`, a
 `catch` that answers 500 while logging nothing at all, a hardcoded `F8.` literal
-(either quote style), and an exhaustiveness arm that RETURNS instead of throwing.
-That last rule exists because the first version of this work stamped 24 routes
-with the promise above while ten of them still returned an unlogged 500 from
-that arm — the gate vouched for routes it had never looked inside.
+(either quote style, interpolated or not), an exhaustiveness arm that RETURNS
+instead of throwing, and — the rule that subsumes the rest — **any `status: 500`
+with no errorId'd log in the same arm**.
+
+That last rule was added third, after two rounds of review each found a 500 the
+rules before it could not see: first ten exhaustiveness arms that returned
+instead of throwing, then fourteen `case 'server_error'` arms — the 500 these
+routes produce most often. Both times the gate was green and the docblocks
+promised full coverage. Rules keyed on SYNTAX (`catch`, `_exhaustive`) keep
+missing the next spelling; the rule keyed on the OUTCOME (`status: 500`) does
+not.
 
 ### Where the taxonomy does NOT reach
 

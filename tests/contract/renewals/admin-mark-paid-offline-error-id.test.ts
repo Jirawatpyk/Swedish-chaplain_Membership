@@ -142,6 +142,11 @@ describe('contract: POST /api/admin/renewals/[cycleId]/mark-paid-offline — err
     expect(res.status).toBe(500);
     const body = (await res.json()) as { correlationId?: string };
     expect(body.correlationId).toBe('corr-mpo-1');
+    // `code-conventions.md` says all three of these tests assert the
+    // correlationId "in body and header"; this one asserted only the body,
+    // so deleting the header from `errorResponse` would have left the money
+    // path's test green. Making the doc true rather than softening it.
+    expect(res.headers.get('X-Correlation-Id')).toBe('corr-mpo-1');
 
     expect(loggerErrorMock).toHaveBeenCalledTimes(1);
     const [structured] = loggerErrorMock.mock.calls[0]!;

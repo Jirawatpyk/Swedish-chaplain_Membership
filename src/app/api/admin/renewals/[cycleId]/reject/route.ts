@@ -185,6 +185,18 @@ export async function POST(
             },
           });
         case 'server_error':
+          // Round-2 review — this arm returns the 500 this route produces
+          // MOST often (the use-case caught something), and it logged no
+          // errorId, so the docblock's promise that a rule keyed on
+          // `${ERROR_ID}.*` matches every 500 was false for the common case.
+          // `accept/route.ts` had done this since R3-S5; nothing else had.
+          logger.error(
+            {
+              errorId: `${ERROR_ID}.SERVER_ERROR`,
+              correlationId: ctx.correlationId,
+            },
+            'admin.renewals.cycle_reject_server_error',
+          );
           return errorResponse({
             status: 500,
             code: 'server_error',
@@ -250,16 +262,16 @@ export async function POST(
         );
       }
       default: {
-        // Review of this branch — this arm RETURNED the 500, so the one
-        // failure mode that means "two deploys disagree" produced a 500
-        // with no log line at all, while the docblock above promised an
-        // SRE rule keyed on `${ERROR_ID}.*` matches every 500 this route
-        // can produce. Throwing lands it in the outer catch, which does
-        // carry that id.
+        // This switch is on the SUCCESS value's `outcome`, not on an error
+        // `kind` — the round-2 template was pasted across all eleven arms
+        // without checking, so this one read `.kind` off a type that has no
+        // such field and would have paged the on-call with
+        // `unhandled error kind 'undefined'` while the runbook told them to
+        // go looking for a `Result.error.kind` that cannot exist.
         return assertNever(
           result.value,
-          `${ERROR_ID}: unhandled error kind '${
-            (result.value as { readonly kind: string }).kind
+          `${ERROR_ID}: unhandled success outcome '${
+            (result.value as { readonly outcome: string }).outcome
           }'`,
         );
       }

@@ -252,6 +252,22 @@ export async function POST(
             details: { stage: result.error.stage },
           });
         case 'server_error':
+          // Round-2 review — this arm returns the 500 this route produces
+          // MOST often (the use-case caught something), and it logged no
+          // errorId, so the docblock's promise that a rule keyed on
+          // `${ERROR_ID}.*` matches every 500 was false for the common case.
+          // `accept/route.ts` had done this since R3-S5; nothing else had.
+          logger.error(
+            {
+              errorId: `${ERROR_ID}.SERVER_ERROR`,
+              // This route is member-facing: its correlationId is a local
+              // `randomUUID()`, not `ctx.correlationId` — `ctx` here is a
+              // `MemberContext` and has no such field. The scripted pass
+              // assumed the admin shape; `tsc` caught it.
+              correlationId,
+            },
+            'portal.renewal.confirm_server_error',
+          );
           return errorResponse({
             status: 500,
             code: 'server_error',
@@ -260,10 +276,12 @@ export async function POST(
         default: {
           // Review of this branch — this arm RETURNED the 500, so the one
           // failure mode that means "two deploys disagree" produced a 500
-          // with no log line at all, while the docblock above promised an
-          // SRE rule keyed on `${ERROR_ID}.*` matches every 500 this route
-          // can produce. Throwing lands it in the outer catch, which does
-          // carry that id.
+          // with no log line at all. Throwing lands it in the outer catch,
+          // which does carry the id.
+          //
+          // (The pasted template said "the docblock above promised …"; this
+          // file's docblock promises no such thing — it is member-facing and
+          // says so. Kept the fix, dropped the citation.)
           return assertNever(
             result.error,
             `${ERROR_ID}: unhandled error kind '${
