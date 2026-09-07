@@ -34,6 +34,16 @@ import {
 } from '@/lib/renewals-route-helpers';
 import { makeRenewalsDeps } from '@/modules/renewals';
 
+/**
+ * This route's entry in the F8 errorId taxonomy (`F8ErrorId` in
+ * `src/lib/renewals-route-helpers.ts`, documented in
+ * `docs/runbooks/audit-emit-loss.md`). Used for BOTH the
+ * `.CONTEXT_RESOLUTION_FAILED` line the admin gate emits before this
+ * handler's try block and the `.UNEXPECTED` line its outer catch emits, so
+ * an SRE rule keyed on `F8.AT_RISK_LIST.*` matches every 500 this route can produce.
+ */
+const ERROR_ID = 'F8.AT_RISK_LIST';
+
 export async function GET(request: NextRequest) {
   if (!env.features.f8Renewals) {
     return errorResponse({
@@ -43,7 +53,7 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  const ctx = await requireRenewalAdminContext(request, 'read', 'renewals.read');
+  const ctx = await requireRenewalAdminContext(request, 'read', 'renewals.read', ERROR_ID);
   if ('response' in ctx) return ctx.response;
 
   // FR-052b granular kill-switch — return 200 with placeholder shape so
@@ -134,6 +144,7 @@ export async function GET(request: NextRequest) {
   } catch (e) {
     logger.error(
       {
+        errorId: `${ERROR_ID}.UNEXPECTED`,
         err: e instanceof Error ? e : new Error(String(e)),
         correlationId: ctx.correlationId,
         tenantId: tenantCtx.slug,

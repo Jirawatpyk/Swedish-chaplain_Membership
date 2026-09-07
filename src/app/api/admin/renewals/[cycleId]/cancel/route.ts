@@ -18,6 +18,16 @@ import {
 } from '@/lib/renewals-route-helpers';
 import { cancelCycle, makeRenewalsDeps } from '@/modules/renewals';
 
+/**
+ * This route's entry in the F8 errorId taxonomy (`F8ErrorId` in
+ * `src/lib/renewals-route-helpers.ts`, documented in
+ * `docs/runbooks/audit-emit-loss.md`). Used for BOTH the
+ * `.CONTEXT_RESOLUTION_FAILED` line the admin gate emits before this
+ * handler's try block and the `.UNEXPECTED` line its outer catch emits, so
+ * an SRE rule keyed on `F8.CYCLE_CANCEL.*` matches every 500 this route can produce.
+ */
+const ERROR_ID = 'F8.CYCLE_CANCEL';
+
 const BodySchema = z.object({
   reason: z.string().min(1).max(500),
 });
@@ -34,7 +44,7 @@ export async function POST(
     });
   }
 
-  const ctx = await requireRenewalAdminContext(request, 'write', 'renewals.write');
+  const ctx = await requireRenewalAdminContext(request, 'write', 'renewals.write', ERROR_ID);
   if ('response' in ctx) return ctx.response;
 
   const { cycleId } = await context.params;
@@ -133,6 +143,7 @@ export async function POST(
   } catch (e) {
     logger.error(
       {
+        errorId: `${ERROR_ID}.UNEXPECTED`,
         // K12-3 (REL-K-1): pass the Error instance so pino's `err`
         // serializer captures stack + type.
         err: e instanceof Error ? e : new Error(String(e)),

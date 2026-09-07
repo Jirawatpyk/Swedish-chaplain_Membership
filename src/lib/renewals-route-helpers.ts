@@ -97,6 +97,60 @@ export interface RenewalAdminContextRejection {
 export type RenewalAdminAction = 'read' | 'write' | 'manager_exception';
 
 /**
+ * The F8 errorId taxonomy — one entry per route that composes
+ * `requireRenewalAdminContext`, documented in
+ * `docs/runbooks/audit-emit-loss.md`.
+ *
+ * A closed union rather than `` `F8.${string}` `` on purpose: this list IS the
+ * taxonomy, so the runbook can point at it instead of carrying a hand-written
+ * copy that rots. Adding a renewals route is a compile error until its name is
+ * added here, and two routes cannot silently share a name — which is exactly
+ * what went wrong when every caller logged `F8.ACCEPT_TIER.*`.
+ *
+ * A route uses its entry TWICE: the helper appends
+ * `.CONTEXT_RESOLUTION_FAILED` for a failure before the route's try block, and
+ * the route's own outer catch appends `.UNEXPECTED`. An SRE rule keyed on
+ * `<entry>.*` therefore matches every 500 that route can produce.
+ */
+export type F8ErrorId =
+  // cycle-level actions
+  | 'F8.CYCLE_LIST'
+  | 'F8.CYCLE_DETAIL'
+  | 'F8.CYCLE_CANCEL'
+  | 'F8.CYCLE_REJECT'
+  | 'F8.CYCLE_REACTIVATE'
+  | 'F8.CYCLE_MARK_PAID_OFFLINE'
+  | 'F8.CYCLE_SEND_REMINDER'
+  | 'F8.SETTLEMENT_PREVIEW'
+  // at-risk
+  | 'F8.AT_RISK_LIST'
+  | 'F8.AT_RISK_SNOOZE'
+  | 'F8.AT_RISK_OUTREACH'
+  // escalation tasks
+  | 'F8.TASK_LIST'
+  | 'F8.TASK_DONE'
+  | 'F8.TASK_SKIP'
+  | 'F8.TASK_REASSIGN'
+  // tier upgrades
+  | 'F8.TIER_UPGRADE_LIST'
+  | 'F8.ACCEPT_TIER'
+  | 'F8.DISMISS_TIER'
+  | 'F8.ESCALATE_TIER'
+  // reminder-schedule settings
+  | 'F8.SCHEDULES_READ'
+  | 'F8.SCHEDULES_WRITE'
+  // member-scoped renewal actions (admin/members/**, not admin/renewals/**)
+  | 'F8.MEMBER_RENEW'
+  | 'F8.MEMBER_BLOCK_AUTO_REACTIVATION'
+  | 'F8.MEMBER_UNBLOCK_AUTO_REACTIVATION'
+  // member-facing portal routes. These do NOT compose this helper (they run
+  // the member's own session, not an admin gate) and so use their entry only
+  // for the `.UNEXPECTED` half — the taxonomy still covers them because an
+  // alert rule keyed on `F8.*` has to match them too.
+  | 'F8.PORTAL_CONFIRM'
+  | 'F8.PORTAL_REDEEM_LINK';
+
+/**
  * F8-aware admin gate. Drop-in replacement for `requireAdminContext`
  * that adds an F8 audit emit on the manager-deny path.
  *
@@ -117,6 +171,7 @@ export async function requireRenewalAdminContext(
   request: NextRequest,
   action: RenewalAdminAction,
   key: PermissionKey,
+  errorId: F8ErrorId,
 ): Promise<RenewalAdminContext | RenewalAdminContextRejection> {
   const correlationId = randomUUID();
   const requestId = requestIdFromHeaders(request.headers);
@@ -137,13 +192,20 @@ export async function requireRenewalAdminContext(
     }
     if (status === 500) {
       // Attach the F8 errorId taxonomy entry so SRE alert rules keyed on
-      // `F8.ACCEPT_TIER.*` catch infrastructure errors that escape BEFORE the
-      // route's outer try/catch (which attaches F8.ACCEPT_TIER.UNEXPECTED).
+      // `<errorId>.*` catch infrastructure errors that escape BEFORE the
+      // route's outer try/catch (which attaches `<errorId>.UNEXPECTED`).
       // The underlying cause is already logged by `requireApiPermission`
       // (`rbac.session-lookup-failed`) with the same requestId.
+      //
+      // This used to be the hardcoded literal
+      // `'F8.ACCEPT_TIER.CONTEXT_RESOLUTION_FAILED'`, which meant all 24
+      // callers — including three `admin/members/**` routes that are not
+      // renewals at all — reported a failure under the name of the ONE route
+      // this helper was originally written for. `errorId` is required so a
+      // new caller cannot omit it and silently inherit somebody else's name.
       logger.error(
         {
-          errorId: 'F8.ACCEPT_TIER.CONTEXT_RESOLUTION_FAILED',
+          errorId: `${errorId}.CONTEXT_RESOLUTION_FAILED`,
           requestId,
           correlationId,
         },

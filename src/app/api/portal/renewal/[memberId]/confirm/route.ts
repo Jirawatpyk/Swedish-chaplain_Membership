@@ -35,6 +35,18 @@ import {
   type SelfServiceFailureReason,
 } from '@/modules/renewals';
 
+/**
+ * This route's entry in the F8 errorId taxonomy (`F8ErrorId` in
+ * `src/lib/renewals-route-helpers.ts`, documented in
+ * `docs/runbooks/audit-emit-loss.md`).
+ *
+ * This is a MEMBER-facing route: it does not compose
+ * `requireRenewalAdminContext`, so it uses its entry for the `.UNEXPECTED`
+ * half only. The taxonomy still covers it because an alert rule keyed on
+ * `F8.*` has to match member-facing failures too.
+ */
+const ERROR_ID = 'F8.PORTAL_CONFIRM';
+
 const BodySchema = z.object({
   cycleId: z.string().uuid(),
   /** Optional — when present + differs from cycle.planIdAtCycleStart triggers FR-025 plan-change branch. */
@@ -281,6 +293,7 @@ export async function POST(
     renewalsMetrics.selfServiceFailed(ctx.tenant.slug, unhandledReason);
     logger.error(
       {
+        errorId: `${ERROR_ID}.UNEXPECTED`,
         err: e instanceof Error ? e : new Error(String(e)),
         correlationId,
         urlMemberId,

@@ -20,6 +20,16 @@ import {
 } from '@/lib/renewals-route-helpers';
 import { acceptTierUpgrade, makeRenewalsDeps } from '@/modules/renewals';
 
+/**
+ * This route's entry in the F8 errorId taxonomy (`F8ErrorId` in
+ * `src/lib/renewals-route-helpers.ts`, documented in
+ * `docs/runbooks/audit-emit-loss.md`). Used for BOTH the
+ * `.CONTEXT_RESOLUTION_FAILED` line the admin gate emits before this
+ * handler's try block and the `.UNEXPECTED` line its outer catch emits, so
+ * an SRE rule keyed on `F8.ACCEPT_TIER.*` matches every 500 this route can produce.
+ */
+const ERROR_ID = 'F8.ACCEPT_TIER';
+
 export async function POST(
   request: NextRequest,
   context: { params: Promise<{ suggestionId: string }> },
@@ -32,7 +42,7 @@ export async function POST(
     });
   }
 
-  const ctx = await requireRenewalAdminContext(request, 'write', 'renewals.write');
+  const ctx = await requireRenewalAdminContext(request, 'write', 'renewals.write', ERROR_ID);
   if ('response' in ctx) return ctx.response;
 
   const { suggestionId } = await context.params;
@@ -136,7 +146,7 @@ export async function POST(
     // a routable signal.
     logger.error(
       {
-        errorId: 'F8.ACCEPT_TIER.UNEXPECTED',
+        errorId: `${ERROR_ID}.UNEXPECTED`,
         err: e instanceof Error ? e : new Error(String(e)),
         correlationId: ctx.correlationId,
         suggestionId,

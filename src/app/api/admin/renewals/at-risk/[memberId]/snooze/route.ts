@@ -23,6 +23,16 @@ import {
 } from '@/lib/renewals-route-helpers';
 import { snoozeAtRiskMember, makeRenewalsDeps } from '@/modules/renewals';
 
+/**
+ * This route's entry in the F8 errorId taxonomy (`F8ErrorId` in
+ * `src/lib/renewals-route-helpers.ts`, documented in
+ * `docs/runbooks/audit-emit-loss.md`). Used for BOTH the
+ * `.CONTEXT_RESOLUTION_FAILED` line the admin gate emits before this
+ * handler's try block and the `.UNEXPECTED` line its outer catch emits, so
+ * an SRE rule keyed on `F8.AT_RISK_SNOOZE.*` matches every 500 this route can produce.
+ */
+const ERROR_ID = 'F8.AT_RISK_SNOOZE';
+
 const BodySchema = z.object({
   duration_days: z.union([z.literal(7), z.literal(30), z.literal(90)]),
 });
@@ -39,7 +49,7 @@ export async function POST(
     });
   }
 
-  const ctx = await requireRenewalAdminContext(request, 'write', 'renewals.write');
+  const ctx = await requireRenewalAdminContext(request, 'write', 'renewals.write', ERROR_ID);
   if ('response' in ctx) return ctx.response;
 
   const { memberId } = await context.params;
@@ -125,7 +135,7 @@ export async function POST(
         // without it an unhandled error kind reached a 500 that no rule
         // could match. Added so the comment and docs/code-conventions.md
         // are true of this file, not only of the accept route.
-        errorId: 'F8.AT_RISK_SNOOZE.UNEXPECTED',
+        errorId: `${ERROR_ID}.UNEXPECTED`,
         err: e instanceof Error ? e : new Error(String(e)),
         correlationId: ctx.correlationId,
         memberId,

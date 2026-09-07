@@ -175,6 +175,9 @@ describe('GET /api/admin/renewals/settlement-preview — contract', () => {
       expect.anything(),
       'read',
       'renewals.read',
+      // This route's own entry in the F8 errorId taxonomy — see
+      // member-renew-route.test.ts for why it is pinned by value.
+      'F8.SETTLEMENT_PREVIEW',
     );
   });
 

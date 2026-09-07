@@ -16,6 +16,16 @@ import {
   requireRenewalAdminContext,
 } from '@/lib/renewals-route-helpers';
 import { markPaidOffline, makeRenewalsDeps } from '@/modules/renewals';
+import { assertNever } from '@/lib/assert-never';
+
+/**
+ * This route's entry in the F8 errorId taxonomy
+ * (docs/runbooks/audit-emit-loss.md). One name per route, used for BOTH the
+ * context-resolution failure raised inside `requireRenewalAdminContext` and
+ * the `.UNEXPECTED` line from the outer catch — so an SRE rule keyed on
+ * `F8.CYCLE_MARK_PAID_OFFLINE.*` sees every 500 this file can produce.
+ */
+const ERROR_ID = 'F8.CYCLE_MARK_PAID_OFFLINE';
 
 /**
  * Round 5 W-01 / Round 6 B-R5-1+W-R5-4 / Round 7 B-R6-2 — Reject
@@ -111,7 +121,12 @@ export async function POST(
     });
   }
 
-  const ctx = await requireRenewalAdminContext(request, 'write', 'renewals.write');
+  const ctx = await requireRenewalAdminContext(
+    request,
+    'write',
+    'renewals.write',
+    ERROR_ID,
+  );
   if ('response' in ctx) return ctx.response;
 
   const { cycleId } = await context.params;
@@ -304,13 +319,18 @@ export async function POST(
           // K1-E1: exhaustiveness pin. Adding a new MarkPaidOfflineError
           // variant now produces a TS error rather than silently 200ing
           // with `undefined` value.
-          const _exhaustive: never = result.error;
-          void _exhaustive;
-          return errorResponse({
-            status: 500,
-            code: 'server_error',
-            correlationId: ctx.correlationId,
-          });
+          //
+          // It used to RETURN the 500 from here, which meant the one failure
+          // mode that says "two deploys disagree about this money path"
+          // produced a 500 with no log line at all. Throwing puts it in the
+          // outer catch beside the DB-outage case, so both carry the errorId
+          // the F8 alert rules key on.
+          return assertNever(
+            result.error,
+            `${ERROR_ID}: unhandled error kind '${
+              (result.error as { readonly kind: string }).kind
+            }'`,
+          );
         }
       }
     }
@@ -336,6 +356,7 @@ export async function POST(
   } catch (e) {
     logger.error(
       {
+        errorId: `${ERROR_ID}.UNEXPECTED`,
         // K12-3 (REL-K-1): pass the Error instance so pino's `err`
         // serializer captures stack + type.
         err: e instanceof Error ? e : new Error(String(e)),

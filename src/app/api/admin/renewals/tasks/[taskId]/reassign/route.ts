@@ -31,6 +31,16 @@ import {
 import { userRepo } from '@/lib/auth-deps';
 import { asUserId } from '@/modules/auth';
 
+/**
+ * This route's entry in the F8 errorId taxonomy (`F8ErrorId` in
+ * `src/lib/renewals-route-helpers.ts`, documented in
+ * `docs/runbooks/audit-emit-loss.md`). Used for BOTH the
+ * `.CONTEXT_RESOLUTION_FAILED` line the admin gate emits before this
+ * handler's try block and the `.UNEXPECTED` line its outer catch emits, so
+ * an SRE rule keyed on `F8.TASK_REASSIGN.*` matches every 500 this route can produce.
+ */
+const ERROR_ID = 'F8.TASK_REASSIGN';
+
 const BodySchema = z.object({
   to_user_id: z.string().uuid(),
 });
@@ -47,7 +57,7 @@ export async function POST(
     });
   }
 
-  const ctx = await requireRenewalAdminContext(request, 'write', 'renewals.write');
+  const ctx = await requireRenewalAdminContext(request, 'write', 'renewals.write', ERROR_ID);
   if ('response' in ctx) return ctx.response;
 
   const { taskId } = await context.params;
@@ -91,7 +101,7 @@ export async function POST(
         // an errorId and this one, in the same file, had none: an assignee
         // lookup outage 500s with nothing an F8 rule can see, which is the
         // gap this branch exists to close.
-        errorId: 'F8.TASK_REASSIGN.ASSIGNEE_LOOKUP_FAILED',
+        errorId: `${ERROR_ID}.ASSIGNEE_LOOKUP_FAILED`,
         err: e instanceof Error ? e : new Error(String(e)),
         correlationId: ctx.correlationId,
         taskId,
@@ -208,7 +218,7 @@ export async function POST(
         // without it an unhandled error kind reached a 500 that no rule
         // could match. Added so the comment and docs/code-conventions.md
         // are true of this file, not only of the accept route.
-        errorId: 'F8.TASK_REASSIGN.UNEXPECTED',
+        errorId: `${ERROR_ID}.UNEXPECTED`,
         err: e instanceof Error ? e : new Error(String(e)),
         correlationId: ctx.correlationId,
         taskId,
