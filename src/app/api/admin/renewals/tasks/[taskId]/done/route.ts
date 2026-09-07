@@ -10,6 +10,7 @@
  * no external side effects — RBAC + idempotency-by-design suffice).
  */
 import { type NextRequest } from 'next/server';
+import { assertNever } from '@/lib/assert-never';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { env } from '@/lib/env';
@@ -113,8 +114,21 @@ export async function POST(
             correlationId: ctx.correlationId,
           });
       }
-      const _exhaustive: never = result.error;
-      return _exhaustive;
+      // docs/code-conventions.md § 8 — `return _exhaustive` returned the
+      // ERROR OBJECT into a `Response` position and, worse, left the `try`
+      // NORMALLY, so the catch below never fired and the 500 carried no
+      // correlationId. This catch also had no `errorId` at all until the
+      // review of that first fix -
+      // so nothing an alert rule keys on matched it either, before or
+      // after. `assertNever` throws INSIDE the try; the errorId is now
+      // emitted. The message names the KIND only -
+      // `assertNever`'s default stringifies the whole error object into a
+      // message this catch then logs, and a future error kind's payload is
+      // not something we can promise is free of member data.
+      return assertNever(
+        result.error,
+        `complete-escalation-task: unhandled error kind '${(result.error as { readonly kind: string }).kind}'`,
+      );
     }
     renewalsMetrics.escalationTaskAction(tenantCtx.slug, 'done', 'success');
     return successResponse(
@@ -127,6 +141,14 @@ export async function POST(
   } catch (e) {
     logger.error(
       {
+        // Review of this change - the comment above the assertNever arm
+        // promised an `errorId` this catch did not emit. The F8 alert
+        // rules are told to key on it (docs/runbooks/audit-emit-loss.md:
+        // "Pin SRE alert rules to errorId, NOT to message-text strings"), so
+        // without it an unhandled error kind reached a 500 that no rule
+        // could match. Added so the comment and docs/code-conventions.md
+        // are true of this file, not only of the accept route.
+        errorId: 'F8.TASK_DONE.UNEXPECTED',
         err: e instanceof Error ? e : new Error(String(e)),
         correlationId: ctx.correlationId,
         taskId,

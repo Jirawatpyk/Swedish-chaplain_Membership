@@ -230,25 +230,82 @@ direction that asserts less:
 
 ### Known violations
 
-`assert-never.ts`'s own docblock records that it was introduced on 2026-05-20
+**None**, on this check:
+
+```
+rg -n "^\s*(return|throw) (_exhaustive|exhaustive|_never|exhaustiveReason);" src/
+```
+
+Two things that check gets wrong if you shorten it. It must cover `throw`, not
+just `return` — the first version of this section grepped `return _exhaustive;`
+only, declared "None", and missed a live `throw _exhaustive;` in
+`scheduled-plan-changes/[id]/cancel/route.ts`. And it must cover the sentinel
+NAMES actually in use: `refunds/initiate/route.ts` declares
+`const exhaustive: never = code`, so a name-specific grep would sail past a
+future `return exhaustive;` under a "None" heading. (All six renamed sentinels
+are in a safe form today; it is the *check* that was narrow, not the result.)
+
+The right sweep when in doubt is the class itself — `rg ": never ="` — and
+then read each arm.
+
+`assert-never.ts`'s docblock records that it was introduced on 2026-05-20
 (TD-M4) *"to replace ad-hoc `const _exhaustive: never` patterns scattered
-across route handlers"*. That migration was never finished. **Eight** sites
-remain, all in F8 renewals route handlers:
+across route handlers"*. That migration stalled with nine sites left. They were
+finished on 2026-09-07: eight F8 renewals route handlers plus the
+scheduled-plan-changes cancel route.
 
-```
-src/app/api/admin/renewals/at-risk/[memberId]/{outreach,snooze}/route.ts
-src/app/api/admin/renewals/tasks/[taskId]/{done,skip,reassign}/route.ts
-src/app/api/admin/renewals/tier-upgrades/[suggestionId]/{accept,dismiss,escalate}/route.ts
+**What the migration actually found.** The eight were already *fail-closed* —
+the arm returns into a `Response` position, Next rejects a non-Response and
+500s, and the thrown message carries only a constructor name, so nothing
+leaked. The real defect is that `return _exhaustive` leaves the `try`
+**normally**, so each route's `catch` never ran and its 500 carried no
+`correlationId`.
+
+A review of that fix then found the fix's own comment was half wrong: it said
+the catch's `errorId` never fired, but **only `accept/route.ts` had an
+`errorId` in its catch at all**. The other seven logged `err` /
+`correlationId` / an id and nothing an F8 alert rule could key on — so an
+unhandled error kind there produced a 500 that no rule matched, before and
+after. Those seven catches now emit `errorId: 'F8.<ROUTE>.UNEXPECTED'`, which
+is what makes both the comment and this section true rather than aspirational.
+
+**Message argument is not optional at these sites.** `assertNever`'s default is
+`JSON.stringify(value)`, and `src/lib/logger.ts` sets no serializers, so pino's
+default `err` serializer puts the thrown message in the log. A future error
+variant's payload is not something we can promise is free of member data, so
+every call site names the discriminant only — and checks which discriminant it
+is, because they are not uniform (the eight renewals routes use `kind`; the
+cancel route uses `code`):
+
+```ts
+return assertNever(
+  result.error,
+  `dismiss-tier-upgrade: unhandled error kind '${(result.error as { readonly kind: string }).kind}'`,
+);
 ```
 
-They are **fail-closed** — the arm returns into a `Response` position, Next
-rejects a non-Response and 500s, and the thrown message carries only a
-constructor name, so nothing leaks. They are still worth migrating for a
-reason the fail-closed argument hides: `return _exhaustive` exits the `try`
-**normally**, so each route's `catch` and its `errorId` never fire, and the
-500 carries no `correlationId` — contrary to the comment sitting directly
-above it in each file. `assertNever` throws *inside* the `try` and restores
-the routable signal those comments promise.
+**Proof.** Two contract tests, on `accept` and on `dismiss`, each returning a
+well-formed `err` whose `kind` no arm handles — the shape a new error variant
+actually has — and asserting the 500 carries the correlationId in body and
+header plus the route's `errorId` and the kind in the thrown message. `dismiss`
+was chosen deliberately: four of the eight (dismiss, escalate, snooze,
+outreach) had **no test importing them at all**, so a regression in them was
+caught by nothing in CI.
+
+Be precise about what that test does and does not buy, because the first
+version of this paragraph was not: it closes the **CI contract-shard** gap. It
+does **not** put those routes behind the pre-push API-route gate —
+`.husky/pre-push` greps `tests/integration/` only, so a `tests/contract/` file
+is invisible to it and all nine routes here still print
+*"no integration test imports … — skipping"*. A maintainer who reads this
+section as "dismiss is now gated pre-push" would be wrong. The remaining six renewals routes are the
+same swap; that is stated rather than implied by six near-duplicate tests.
+
+The ninth site is **not** the same swap and is called out separately:
+`scheduled-plan-changes/[id]/cancel` discriminates on `code`, has **no
+enclosing try/catch**, emits no `errorId` and no metric, and its `default:` arm
+is **untested** — `cancel-route.test.ts` has 15 tests and none reaches it. It
+is the highest-variance change of the nine and the one with the least proof.
 
 ---
 

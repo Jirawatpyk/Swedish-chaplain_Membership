@@ -287,6 +287,41 @@ describe('contract: POST /api/admin/renewals/tier-upgrades/[suggestionId]/accept
   });
 
   // R4-I4 (Batch 5b) — outer catch emits errorId.
+  // docs/code-conventions.md § 8 — the arm below the switch used to be
+  // `return _exhaustive`, which returns the ERROR OBJECT and, decisively,
+  // leaves the `try` NORMALLY: the catch never ran, so this route answered
+  // a Next-level 500 with no correlationId and no `F8.ACCEPT_TIER.*` line
+  // for the alert rule to key on - exactly what the comment on that catch
+  // promises it does. The throw-path test below could not see it, because
+  // it rejects the use-case; this one returns a well-formed `err` whose
+  // `kind` no arm handles, which is the shape a NEW error variant has.
+  it('500 unhandled error KIND - assertNever routes it through the catch, with correlationId', async () => {
+    requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
+    acceptTierUpgradeMock.mockResolvedValueOnce({
+      ok: false,
+      error: { kind: 'quota_exhausted_in_a_future_release' },
+    });
+
+    const POST = await loadHandler();
+    const res = await POST(makeReq(), makeCtx());
+
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as { correlationId?: string };
+    // `errorResponse` puts correlationId at the TOP level of the body and
+    // in the `X-Correlation-Id` header; both are what an operator greps.
+    expect(body.correlationId).toBe('corr-accept-1');
+    expect(res.headers.get('X-Correlation-Id')).toBe('corr-accept-1');
+
+    expect(loggerErrorMock).toHaveBeenCalledTimes(1);
+    const [structured] = loggerErrorMock.mock.calls[0]!;
+    expect(structured.errorId).toBe('F8.ACCEPT_TIER.UNEXPECTED');
+    expect(structured.correlationId).toBe('corr-accept-1');
+    // The thrown message names the KIND so the incident is diagnosable,
+    // and carries nothing else from the error object.
+    expect(String(structured.err)).toContain('accept-tier-upgrade');
+    expect(String(structured.err)).toContain('quota_exhausted_in_a_future_release');
+  });
+
   it('500 uncaught throw — outer catch emits errorId F8.ACCEPT_TIER.UNEXPECTED', async () => {
     requireRenewalAdminContextMock.mockResolvedValueOnce(ADMIN_CTX);
     acceptTierUpgradeMock.mockRejectedValueOnce(
