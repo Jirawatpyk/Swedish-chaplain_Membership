@@ -45,15 +45,15 @@ export interface ContactLookup {
  * 108 PR-C (data-model § 1) — one row of the 1:N audience. `contactId ===
  * null` ⇔ the member is ELIGIBLE but has no eligible contact (FR-029 orphan:
  * the resolver reports it with a REASON, the caller decides the audit); then
- * `emailLower` is null. `hasOptedOutContact` answers the ORPHAN REASON and
- * ONLY that: on an orphan row, `all_opted_out` (the member has live contacts
- * and every one objected) vs `no_eligible_contact` (nothing to send to). On a
- * row that HAS a contact it is always `false` — not "this member has no
- * opted-out contact", but "not asked". It was computed per member for every
- * row until /code-review 2026-09-07 finding #4; the correlated EXISTS is now
- * evaluated only where the resolver reads it, because its predicate is the
- * inverse of 0294's partial index and every non-orphan row paid for an answer
- * nobody consumed. Do not read this field outside the orphan branch.
+ * `emailLower` is null. `hasOptedOutContact` is per MEMBER — true when at
+ * least one live contact opted out — and on an orphan row it is the reason:
+ * `all_opted_out` (they objected) vs `no_eligible_contact` (nothing to send
+ * to). Per MEMBER is the CONTRACT, not an accident of the resolver's use:
+ * `broadcast-recipient-contacts-keyset.test.ts:245` asserts it on rows that
+ * HAVE a contact. /code-review 2026-09-07 finding #4 proposed narrowing the
+ * SQL to the orphan branch (the only place the resolver reads it); that was
+ * tried, CI caught it on live Neon, and it is reverted — see
+ * `drizzle-member-repo.ts` and reviews/pr-c.md row 43.
  * Review 2026-09-07: replaces `isPrimary`, which nothing read.
  */
 export interface ContactRecipient {

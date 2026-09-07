@@ -965,17 +965,15 @@ export type F7ContactRecipient = {
   readonly contactId: string | null;
   readonly emailLower: string | null;
   /**
-   * Review 2026-09-07 — the ORPHAN REASON, and only that. On an orphan row
-   * (`contactId === null`): true ⇔ the member has at least one live contact
-   * that opted out of marketing, i.e. `all_opted_out` rather than
-   * `no_eligible_contact` (correlated EXISTS, the 0294 predicate inverted).
-   * On a row that HAS a contact it is always `false` — "not asked", NOT "this
-   * member has no opted-out contact". /code-review 2026-09-07 finding #4
-   * narrowed the SQL to `CASE WHEN contact_id IS NULL THEN EXISTS(…) ELSE
-   * false END`, because the EXISTS ran on every row of every page and its
-   * predicate is the inverse of 0294's partial index, so each non-orphan row
-   * paid for an answer nobody read. Do not widen the read without widening
-   * the SQL. Replaces `isPrimary`, which nothing read.
+   * Review 2026-09-07 — true ⇔ the MEMBER has at least one live contact that
+   * opted out of marketing (correlated EXISTS, the 0294 predicate inverted).
+   * On an orphan row it is the orphan's REASON: `all_opted_out` vs
+   * `no_eligible_contact`. Per MEMBER on EVERY row, including rows that have
+   * a contact — that is the contract, and
+   * `broadcast-recipient-contacts-keyset.test.ts:245` asserts it. The
+   * resolver happens to read it only on orphan rows; narrowing the SQL to
+   * match that (code-review 2026-09-07 #4) was tried and reverted when CI
+   * caught it. Replaces `isPrimary`, which nothing read.
    */
   readonly hasOptedOutContact: boolean;
 };
