@@ -127,23 +127,38 @@ route does not map, i.e. deploy skew. Look for a newer deploy writing a
 `Result.error.kind` the running build's `switch` has no arm for.
 
 **Coverage limit — read this before pinning a rule.** *Pin SRE alert rules to
-errorId* above still applies, but `F8.*.UNEXPECTED` does **not** cover every
-F8 renewals route. These five cycle-level routes have an outer `catch` that
-logs **no `errorId` at all**, so a rule keyed on `F8.*` is blind to them:
+errorId* above still applies, but `F8.*.UNEXPECTED` covers only the eight
+routes listed here. **Most F8 renewals routes still emit no `errorId` at
+all**, so a rule keyed on `F8.*` is blind to them.
 
-- `admin/renewals/[cycleId]/cancel`
-- `admin/renewals/[cycleId]/reject`
-- `admin/renewals/[cycleId]/reactivate`
+Do not trust a hand-written list for this — enumerate it, because the set
+changes every time a route is migrated:
+
+```
+# F8 renewals routes with an outer catch that logs NO errorId
+for f in $(rg -l 'catch \(e' src/app/api/**/renewals/**/route.ts \
+                   src/app/api/portal/renewal/**/route.ts); do
+  rg -q "errorId: 'F8\." "$f" || echo "$f"
+done
+```
+
+Run it rather than trusting a number here: every count written into this
+repo's comments during this migration turned out to be wrong, including two
+in the commit that added this section. The ones worth knowing by name,
+because they change state:
+
 - `admin/renewals/[cycleId]/mark-paid-offline` — **money path**
-- `admin/renewals/[cycleId]/send-reminder-now`
+- `admin/renewals/[cycleId]/cancel` · `reject` · `reactivate` ·
+  `send-reminder-now` — the rest of the cycle-level actions
+- `admin/renewals/settings/schedules/[tierBucket]` (PUT) and
+  `portal/renewal/[memberId]/confirm` (POST) — writes outside the
+  cycle-level group, and easy to miss for exactly that reason
 
-Until those are migrated, pair any `F8.*.UNEXPECTED` rule with a message-text
-or route-path rule for the five. The metric route does not close the gap
-either: `renewals.escalation_task.action_total{outcome="server_error"}`
-(alarm F8-A8) covers only `done` / `skip` / `reassign`, and the
-assignee-lookup catch inside `reassign` logs its errorId but emits **no**
-metric, so F8-A8 does not fire for that one.
-
+The metric route does not close the gap either:
+`renewals.escalation_task.action_total{outcome="server_error"}` (alarm F8-A8)
+is emitted only by `done` / `skip` / `reassign`, and the assignee-lookup catch
+inside `reassign` logs its errorId but emits **no** metric, so F8-A8 does not
+fire for that one.
 
 The `plans_cancel_audit_backfill_required_total` OTel counter (label `audit_error_type ∈ {persist_failed, invalid_payload}`)
 backs the audit-backfill SLO. Sum the counter against backfilled audit rows to compute SLO depth.
