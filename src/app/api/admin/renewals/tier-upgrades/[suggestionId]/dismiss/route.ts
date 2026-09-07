@@ -125,6 +125,13 @@ export async function POST(
   } catch (e) {
     logger.error(
       {
+        // Review of this change - the comment above the assertNever arm
+        // promised an `errorId` this catch did not emit. The F8 alert
+        // rules key on it (the convention is used at 50+ sites), so
+        // without it an unhandled error kind reached a 500 that no rule
+        // could match. Added so the comment and docs/code-conventions.md
+        // are true of this file, not only of the accept route.
+        errorId: 'F8.DISMISS_TIER.UNEXPECTED',
         err: e instanceof Error ? e : new Error(String(e)),
         correlationId: ctx.correlationId,
         suggestionId,

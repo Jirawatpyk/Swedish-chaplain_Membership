@@ -95,7 +95,6 @@ export async function POST(
             correlationId: ctx.correlationId,
           });
       }
-      // TS exhaustiveness guard — a new error kind added without a
       // case arm fails the build at this never-assertion.
       // docs/code-conventions.md § 8 — `return _exhaustive` returned the
       // ERROR OBJECT into a `Response` position and, worse, left the `try`
@@ -118,6 +117,13 @@ export async function POST(
   } catch (e) {
     logger.error(
       {
+        // Review of this change - the comment above the assertNever arm
+        // promised an `errorId` this catch did not emit. The F8 alert
+        // rules key on it (the convention is used at 50+ sites), so
+        // without it an unhandled error kind reached a 500 that no rule
+        // could match. Added so the comment and docs/code-conventions.md
+        // are true of this file, not only of the accept route.
+        errorId: 'F8.AT_RISK_SNOOZE.UNEXPECTED',
         err: e instanceof Error ? e : new Error(String(e)),
         correlationId: ctx.correlationId,
         memberId,

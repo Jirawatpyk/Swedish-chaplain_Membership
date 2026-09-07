@@ -179,7 +179,7 @@ export async function POST(
       // not something we can promise is free of member data.
       return assertNever(
         result.error,
-        `reassign-renewal-task: unhandled error kind '${(result.error as { readonly kind: string }).kind}'`,
+        `reassign-escalation-task: unhandled error kind '${(result.error as { readonly kind: string }).kind}'`,
       );
     }
     renewalsMetrics.escalationTaskAction(tenantCtx.slug, 'reassign', 'success');
@@ -194,6 +194,13 @@ export async function POST(
   } catch (e) {
     logger.error(
       {
+        // Review of this change - the comment above the assertNever arm
+        // promised an `errorId` this catch did not emit. The F8 alert
+        // rules key on it (the convention is used at 50+ sites), so
+        // without it an unhandled error kind reached a 500 that no rule
+        // could match. Added so the comment and docs/code-conventions.md
+        // are true of this file, not only of the accept route.
+        errorId: 'F8.TASK_REASSIGN.UNEXPECTED',
         err: e instanceof Error ? e : new Error(String(e)),
         correlationId: ctx.correlationId,
         taskId,

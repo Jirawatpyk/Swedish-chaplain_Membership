@@ -36,6 +36,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { requireApiPermission } from '@/lib/rbac';
+import { assertNever } from '@/lib/assert-never';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { rememberIdempotentResponse } from '@/lib/idempotency';
 import { logger } from '@/lib/logger';
@@ -278,8 +279,16 @@ export async function POST(
       // non-`never` type at this point and the const assignment to
       // `never` fails compile. The throw is unreachable today (use-case
       // error union is closed); it's purely a compile-time guard.
-      const _exhaustive: never = result.error;
-      throw _exhaustive;
+      // docs/code-conventions.md § 8 — was `throw _exhaustive`, which throws
+      // the raw error OBJECT rather than an Error: a catch doing
+      // `new Error(String(e))` gets "[object Object]" and the incident is
+      // undiagnosable. Found by sweeping the CLASS rather than the variable
+      // name — the § 8 check greps `return _exhaustive;` and could not see a
+      // `throw`. Note this union discriminates on `code`, not `kind`.
+      return assertNever(
+        result.error,
+        `cancel-scheduled-plan-change: unhandled error code '${(result.error as { readonly code: string }).code}'`,
+      );
     }
   }
 }
