@@ -23,15 +23,22 @@ interface ResolveSegmentInput {
 interface ResolveSegmentOutput {
   recipients: ReadonlyArray<EmailLower>;     // deduplicated, suppression- and opt-out-filtered
   estimatedCount: number;                    // === recipients.length
-  orphans: ReadonlyArray<string>;            // member ids with zero eligible contacts (FR-029)
-  droppedByPreference: number;               // custom + attendee entries removed by opt-out/suppression (FR-022a)
+  orphans: ReadonlyArray<{ memberId: string; reason: 'no_primary_email' | 'no_eligible_contact' | 'all_opted_out' }>;
+                                             // eligible members with zero eligible contacts (FR-029), WITH the reason
+                                             // (review 2026-09-07): `all_opted_out` is a preference drop, not a
+                                             // missing contact — it is never audited as one. The sender is never
+                                             // their own orphan.
+  droppedByPreference: number;               // opt-out drops on any kind — on the all_contacts leg INCLUDING the
+                                             // opted-out contacts F3 excluded in SQL (counted via
+                                             // `countOptedOutContactsBySegment`) — plus suppression drops on the
+                                             // custom list and the attendee segment (FR-022a)
 }
 ```
 
 ## 2. Pipeline (all_contacts mode)
 
 1. Member-based segment → `membersBridge.getContactsBySegment(tenant, kind, params)`:
-   pages of 5,000 (T081 raised it from 1,000: latency-bound, see research R8) ordered by `(member_id, contact_id)`, looped to exhaustion; **a page
+   pages of 5,000 (T081 raised it from 1,000: latency-bound, see research R8) ordered by `(member_id, contact_id)`, looped to exhaustion (cursor = `{ kind: 'after_member' | 'after_contact', … }` — review 2026-09-07; a `tier` segment with no codes is REFUSED by F3, never read as everyone); **a page
    failure propagates as `resolve.server_error`** (never `[]`).
    Eligibility: member `status='active' AND erased_at IS NULL AND halted=false` (+ tier);
    contact `removed_at IS NULL AND marketing_opt_out_at IS NULL`.
@@ -83,6 +90,12 @@ composition site; submit, count and dispatch compare against the same number.
 | `GET /api/broadcasts/recipient-count` | `requireMemberContext` (portal compose) | `segment=all_members\|tier\|event_attendees_last_90d`, `tier=<code>[,<code>]` | `{ count, ceiling, exceeds: boolean, orphans: number, droppedByPreference: number }` |
 | `GET /api/admin/broadcasts/recipient-count` | `requireApiPermission('broadcasts.write')` | same + `member_id=<uuid>` (proxied member) | same |
 
+- Response body (review 2026-09-07): `{ count, ceiling, exceeds }` on every answer; `droppedByPreference`
+  is present only when the resolver COMPLETED (a refusal — `exceeds: true` or an empty audience — never
+  fabricates a 0); `orphans` is sent to STAFF only (`/api/admin/...`) — it is a fact about other members
+  a member could otherwise probe tier by tier. A tier code over 64 characters is a 400 `invalid_query`,
+  never a silently narrower audience. The staff route answers 503 `count_unavailable` (not 404, no probe
+  audit) when the member lookup FAILS (`repo.unexpected`).
 - Custom lists are counted client-side after validation (the existing flow) and reported
   with `droppedByPreference` from `POST /api/broadcasts/submit`'s response.
 - Rate limit 30 / min per `(tenant, user)`, atomic `check` before the resolve. Errors: 429

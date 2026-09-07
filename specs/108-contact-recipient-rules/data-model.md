@@ -59,7 +59,7 @@ interface ContactRecipient {            // replaces MemberRecipient in the resol
   readonly memberId: string;
   readonly contactId: string | null;    // null ⇒ orphan member (no eligible contact)
   readonly emailLower: EmailLower | null;
-  readonly isPrimary: boolean;
+  readonly hasOptedOutContact: boolean;   // review 2026-09-07: per MEMBER — replaces `isPrimary`, which nothing read; on an orphan row it is the reason (`all_opted_out` vs `no_eligible_contact`)
 }
 type AudienceMode = 'primary_only' | 'all_contacts';   // flag value passed in, Domain stays pure
 audienceCeiling(batchingEnabled: boolean): 5000 | 50000;

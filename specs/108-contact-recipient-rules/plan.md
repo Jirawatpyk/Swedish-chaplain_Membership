@@ -34,10 +34,10 @@ shadcn/ui (`Switch`, table primitives) · Resend Broadcasts API (existing gatewa
 **Storage**: Neon Postgres `ap-southeast-1` (Drizzle, hand-written SQL). DDL: `contacts` +3
 nullable columns + 1 partial index (0294) · `marketing_unsubscribes.contact_id` (0297) · two
 deferred constraint triggers on `contacts`/`members` with a data pre-check (0293) · three
-`audit_event_type` values (0292, 0295) · two nullable `broadcasts` columns for the provider
-import job (0298). No new table, no column drops, no enum widening beyond audit events
+`audit_event_type` values (0292, 0295) · ~~two nullable `broadcasts` columns for the provider
+import job (0298)~~ **DEFERRED 2026-09-07 with T086/T087/T106 — not authored**. No new table, no column drops, no enum widening beyond audit events
 **Testing**: Vitest unit/contract · live-Neon integration (dev branch; race ×100, trigger
-rehearsal, 20k-contact pagination, import-based audience build) · Playwright + axe (`--workers=1`) ·
+rehearsal, 20k-contact pagination, ~~import-based audience build~~ deferred) · Playwright + axe (`--workers=1`) ·
 static gates incl. a new `check:money-recipient`
 **Target Platform**: Vercel `sin1` (prod live at `swecham.dxtspace.com`); native Vercel Cron
 (`dispatch-scheduled` / `dispatch-batches` / `split-large-broadcasts` / `reconcile-stuck-sending`,
@@ -124,7 +124,7 @@ re-checked post-Phase-1 design (see § Post-Design Re-check).*
       `audience_import_status`, `recipient_count_ms`; existing
       `invoicing.auto_email_skipped{reason}`; structured logs with member-id hashes;
       runbook `docs/runbooks/broadcast-audience-build.md`; `docs/observability.md` updated.
-      Keyset pagination (1,000/page) bounds memory; partial index backs the audience query.
+      Keyset pagination (5,000/page — T081) bounds memory; partial index backs the audience query.
 - [x] **VIII. Reliability** — Error paths enumerated per contract (no-recipient →
       audit + skip, never a fallback; page failure in pagination → error, never `[]`;
       suppressed → 409; race → 409 at commit; unarchive without primary → 409 with remedy).
@@ -203,11 +203,11 @@ src/modules/broadcasts/
 ├── application/ports/members-bridge-port.ts          # + getContactsBySegment, filterMarketingOptedOut; ContactRecipient
 ├── application/use-cases/resolve-segment-recipients.ts   # 1:N pipeline, audienceMode, ceiling param, droppedByPreference
 ├── application/use-cases/{validate-custom-recipients,submit-broadcast,dispatch-scheduled-broadcast,unsubscribe-recipient}.ts
-├── application/use-cases/build-audience-tick.ts      # NEW — submit one contact import, poll, send when complete
-├── application/ports/broadcasts-gateway-port.ts      # + createContactImport / getContactImport
-├── infrastructure/resend/resend-broadcasts-gateway.ts # raw multipart fetch for /contacts/imports (SDK 4.8 gap)
+├── application/use-cases/build-audience-tick.ts      # DEFERRED (T086/T087/T106, 2026-09-07) — not in PR-C
+├── application/ports/broadcasts-gateway-port.ts      # DEFERRED — createContactImport / getContactImport not added
+├── infrastructure/resend/resend-broadcasts-gateway.ts # DEFERRED — no /contacts/imports fetch in PR-C
 ├── infrastructure/{members-bridge,tick-memoized-members-bridge,broadcasts-deps}.ts   # errors propagate; memo; flag → mode
-└── infrastructure/schema.ts                          # marketing_unsubscribes.contact_id; broadcasts.audience_import_* (0298)
+└── infrastructure/schema.ts                          # marketing_unsubscribes.contact_id (0297); audience_import_* DEFERRED
 
 src/modules/auth/domain/permissions/{permission-catalogue,role-bundles}.ts   # + contacts.marketing
 src/lib/
@@ -227,7 +227,7 @@ src/components/members/{marketing-state-badge,marketing-switch,restore-primary-d
 src/components/broadcast/{compose-form,segment-picker}.tsx      # live count + self-exclusion hint
 src/i18n/messages/{en,th,sv}.json                               # ~40 keys
 
-drizzle/migrations/0292..0298_*.sql + meta/_journal.json        # see data-model.md
+drizzle/migrations/0292..0297_*.sql + meta/_journal.json        # see data-model.md (0298 deferred with T086)
 scripts/check-money-email-recipient.ts                          # NEW gate (pre-push) with positive control
 scripts/inventory-primary-contact-invariant.ts                  # NEW read-only prod inventory (V1)
 docs/runbooks/broadcast-audience-build.md                       # NEW (+ updates: cron-jobs, reconcile-stuck-sending, void-pdf-reconcile)
@@ -260,7 +260,7 @@ page cloned from the members directory pattern.
 
 Re-evaluated 2026-09-04 after generating research.md, data-model.md, contracts/ (3),
 quickstart.md: no new violations. Phase-1 artefacts add no dependency and no module; the
-migration 0298 adds two nullable columns on `broadcasts` under its existing RLS policy (the
+migration 0298 — DEFERRED 2026-09-07 with T086/T087/T106, never authored — would add two nullable columns on `broadcasts` under its existing RLS policy (the
 earlier working-table idea was dropped after Resend's Contacts Import API was verified —
 research R9, corrected 2026-09-04). The import-based audience build is a reliability
 requirement surfaced by research, not speculative scope: the serial push cannot finish 5,000

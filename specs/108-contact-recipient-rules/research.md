@@ -343,7 +343,7 @@ affects F7's `audienceId`-based gateway (R16).
   with enum migration 0292 · **PR-B** invariant (R4, R5, migration 0293 triggers) · **PR-D**
   permission key + contacts marketing columns (0294) + enum migration 0295 + member-page
   badges/toggle + Marketing audience page + portal self-toggle (R6, R7) · **PR-C** resolver,
-  ceiling, import-based audience build (0298 broadcasts import columns), custom-list drop, unsubscribe
+  ceiling, ~~import-based audience build (0298 broadcasts import columns)~~ **DEFERRED 2026-09-07 with T086/T087/T106 — no 0298 was authored (spec AMENDMENT under US5)**, custom-list drop, unsubscribe
   attribution (0297 `contact_id`), count endpoint, spec-010 amendments (R8, R9, R11), behind
   the flag · operator runs the FR-027a pre-flight review on the audience page ·
   flag ON in Vercel · the flag and the `primary_only` leg are deleted in a follow-up PR once
@@ -427,9 +427,11 @@ affects F7's `audienceId`-based gateway (R16).
   `broadcasts.audience_import_status{status}` gauge (submitted / completed / failed / stuck),
   `broadcasts.recipient_count_ms`
   histogram; structured logs carry `memberId` hashes, never emails. Budgets: recipient
-  count p95 < 400 ms at 5,000 and < 3 s at 20,000 (SC-004; 1,000-row pages ⇒ 20 round
-  trips); Marketing audience page LCP < 2.5 s at 50 rows/page; toggle API p95 < 400 ms.
-  `docs/observability.md` gains the four metrics; `docs/runbooks/broadcast-audience-build.md`
+  count p95 < 400 ms at 5,000 and < 3 s at 20,000 (SC-004; 5,000-row pages ⇒ 4 pages + one
+  exhaustion page at 20,000 — T081); Marketing audience page LCP < 2.5 s at 50 rows/page; toggle API p95 < 400 ms.
+  `docs/observability.md` gains three of the four metrics (the `audience_import_status` gauge went with the
+  deferred T086) plus, from the 2026-09-07 review, `dispatch_resolve_failed.total` and
+  `approved_overdue_count`; `docs/runbooks/broadcast-audience-build.md`
   documents the import-based audience build (submit → poll → send) and the
   stuck-`audience_building` reconcile.
 - **Alert thresholds**: `audience_import_status` not `completed` within 30 min of submission,
