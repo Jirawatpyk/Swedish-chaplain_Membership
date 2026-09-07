@@ -108,12 +108,25 @@ export function currentAudienceMode(): AudienceMode {
 
 /**
  * 108 PR-C T085 (FR-042) — the ONE ceiling every resolver caller reads:
- * 5,000 with the F7.1a batching path OFF, 50,000 with it ON. Read per call
- * (a flag flip takes effect on the next request/tick), the same way the
- * legacy `isF71aUs1Enabled()` gate is consulted by the batch crons.
+ * 5,000 unless BOTH the F7.1a batching path AND the 1:N audience flag are
+ * ON, then 50,000. Read per call (a flag flip takes effect on the next
+ * request/tick), the same way the legacy `isF71aUs1Enabled()` gate is
+ * consulted by the batch crons.
+ *
+ * Review H-2 (2026-09-07): the wide ceiling was raised FOR the 1:N audience,
+ * so it moves WITH `FEATURE_CONTACT_MARKETING_RECIPIENTS`. Gating on the
+ * batching flag alone would have changed prod on deploy with the 108 flag
+ * OFF — `FEATURE_F71A_US1_PAGINATION` is already ON there — accepting
+ * audiences of 5,001–50,000 that the pre-branch `AUDIENCE_HARD_CAP` refused,
+ * opening the never-exercised split/batch path, and changing every compose
+ * page's copy to "up to 50,000". With the 108 flag OFF this is byte-for-byte
+ * the old 5,000. Pinned by `broadcasts-deps-audience.test.ts` against an
+ * explicit flag matrix (never against itself).
  */
 export function currentAudienceCeiling(): number {
-  return audienceCeiling(isF71aUs1Enabled());
+  return audienceCeiling(
+    isF71aUs1Enabled() && env.features.contactMarketingRecipients,
+  );
 }
 
 /**
