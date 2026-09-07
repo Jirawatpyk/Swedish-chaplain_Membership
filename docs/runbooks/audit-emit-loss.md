@@ -202,8 +202,11 @@ actually touches.
 `renewals.escalation_task.action_total{outcome="server_error"}` (alarm F8-A8)
 is emitted only by `done` / `skip` / `reassign`, and the assignee-lookup catch
 inside `reassign` logs its errorId but emits **no** metric, so F8-A8 does not
-fire for that one. Every other F8 route is log-only: alert on the errorId, not
-on a counter that does not exist.
+fire for that one. One more route does have a counter:
+`portal/renewal/[memberId]/confirm` emits
+`renewals_self_service_failed_total{tenant,reason}` alongside its errorId, and
+a sustained `f4_invoice_create_failed` there is a stop-the-line for the F4
+onPaid bridge. The rest are log-only: alert on the errorId.
 
 The `plans_cancel_audit_backfill_required_total` OTel counter (label `audit_error_type ∈ {persist_failed, invalid_payload}`)
 backs the audit-backfill SLO. Sum the counter against backfilled audit rows to compute SLO depth.

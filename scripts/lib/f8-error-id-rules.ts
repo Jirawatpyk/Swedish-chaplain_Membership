@@ -68,6 +68,88 @@ export function fiveHundredSites(code: string): readonly number[] {
 }
 
 /**
+ * A copy of `code` with the CONTENTS of every string, template and regex
+ * literal replaced by spaces — same length, same line breaks, so every offset
+ * still maps back to the original.
+ *
+ * `blockEnd` knew about literals; the backwards walk did not, and round 4
+ * proved both halves of that gap on real house style: `const tpl = 'a } b';`
+ * between an emit and a 500 pushed the depth to 1 and hid the emit, and
+ * `'case closed'` truncated the walk. Both reported a CORRECT 500 as unlogged,
+ * which is worse than a miss — it reds the build on code that is right.
+ */
+export function maskLiterals(code: string): string {
+  const out = code.split('');
+  let i = 0;
+  while (i < code.length) {
+    const c = code[i]!;
+    if (c === "'" || c === '"' || c === '`') {
+      const quote = c;
+      i += 1;
+      while (i < code.length && code[i] !== quote) {
+        if (code[i] === '\\') {
+          out[i] = ' ';
+          i += 1;
+        }
+        if (i < code.length && code[i] !== '\n') out[i] = ' ';
+        i += 1;
+      }
+      i += 1;
+      continue;
+    }
+    if (c === '/' && startsRegex(code.slice(0, i))) {
+      const lineStart = code.lastIndexOf('\n', i) + 1;
+      const lineEnd = code.indexOf('\n', i);
+      const line = code.slice(lineStart, lineEnd === -1 ? code.length : lineEnd);
+      const end = lineStart + skipRegex(line, i - lineStart);
+      for (let j = i + 1; j < end - 1 && j < code.length; j += 1) out[j] = ' ';
+      i = end;
+      continue;
+    }
+    i += 1;
+  }
+  return out.join('');
+}
+
+/** `true` when `code[i..]` starts `word` and is not part of a longer identifier. */
+function wordAt(code: string, i: number, word: string): boolean {
+  if (!code.startsWith(word, i)) return false;
+  const before = i > 0 ? code[i - 1]! : ' ';
+  if (/[A-Za-z0-9_$]/.test(before)) return false;
+  const after = code[i + word.length] ?? ' ';
+  return !/[A-Za-z0-9_$]/.test(after);
+}
+
+/**
+ * Is the `logger.error(` at `at` an unconditional statement, or the body of a
+ * brace-less guard?
+ *
+ * `if (cond) logger.error(…);` sits at the same brace depth as a 500 below it
+ * but does not run on the path that reaches it. `if (cond) stmt;` is the house
+ * style here — ~235 occurrences under `src/app/api/**​/route.ts`, including
+ * `if ('response' in ctx) return ctx.response;` in all 26 F8 routes — so this
+ * is the common shape, not a contrived one.
+ */
+function isUnconditionalStatement(code: string, at: number): boolean {
+  let i = at - 1;
+  while (i >= 0 && /\s/.test(code[i]!)) i -= 1;
+  if (i < 0) return true;
+  const c = code[i]!;
+  // `)` closes an `if (…)` / `for (…)` / `while (…)` head; `?` and `:` are the
+  // arms of a ternary. A `:` can also end a `case` label, which IS a statement
+  // position — distinguish by looking for the `case`/`default` that owns it.
+  if (c === ')' || c === '?') return false;
+  if (c === ':') {
+    const lineStart = code.lastIndexOf('\n', i) + 1;
+    const head = code.slice(lineStart, i);
+    return /\b(case\b|default)/.test(head);
+  }
+  let j = i;
+  while (j >= 0 && /[A-Za-z0-9_$]/.test(code[j]!)) j -= 1;
+  return code.slice(j + 1, i + 1) !== 'else';
+}
+
+/**
  * Does a `logger.error` carrying an `errorId` vouch for the 500 at `pos`?
  *
  * "Same arm" is LEXICAL, not textual. Round 3 proved the `lastIndexOf('case ')`
@@ -77,17 +159,27 @@ export function fiveHundredSites(code: string): readonly number[] {
  * whole switch. Position in the file is not scope.
  *
  * So: walk BACKWARDS from the 500 at relative brace depth 0, descending into
- * nothing. Stop at the enclosing block's `{`, or at the `case` / `default:`
- * that opens this arm. An emit counts only if it is reached at depth 0 — i.e.
- * genuinely in this arm — and only if no completed `return` sits between it and
- * the 500, since such a return means that path exited and never reached here.
+ * nothing, over a copy with literal contents masked. The walk does NOT stop at
+ * the enclosing `{` — it steps out through it, because the first `{` above any
+ * 500 is the object literal of the response itself. It stops at the `case` /
+ * `default` / `catch` / `try` / `function` that opens the arm, matched on word
+ * boundaries.
+ *
+ * An emit counts only if it is reached at depth 0 AND is an unconditional
+ * statement: `if (cond) logger.error(…);` sits at the same depth as the 500 but
+ * does not run on the path that reaches it.
+ *
+ * Round 4 found this docblock describing a `{`-stop and a completed-`return`
+ * guard that the code did not have — the guard only ever matched a `return` on
+ * the same LINE as its `;`, which this repo's multi-line return style never
+ * produces. It has been removed rather than described.
  */
-export function vouchedFor(code: string, pos: number): boolean {
+export function vouchedFor(rawCode: string, pos: number): boolean {
+  // Walk the MASKED copy: same offsets, but braces and keywords inside string,
+  // template and regex literals cannot steer the scan.
+  const code = maskLiterals(rawCode);
   let depth = 0;
   let i = pos - 1;
-  // A `return` whose statement ended before `pos` means the emit that precedes
-  // it belongs to a path that exited; it cannot vouch for this 500.
-  let sawCompletedReturn = false;
   while (i >= 0) {
     const c = code[i]!;
     if (c === '}') {
@@ -96,11 +188,12 @@ export function vouchedFor(code: string, pos: number): boolean {
       continue;
     }
     if (c === '{') {
-      // Walking OUT one level, not stopping. The first `{` above a 500 is the
+      // Walking OUT one level, NOT stopping. The first `{` above a 500 is the
       // object literal of `errorResponse({ status: 500 })` itself, so bailing
       // here rejected the legitimate `emit; return errorResponse(500)` shape —
       // caught by the "accepts the legitimate shape" test, which is why that
-      // test is written first.
+      // test is written first. (An earlier version of this docblock said this
+      // function "stops at the enclosing block's `{`"; it never did.)
       if (depth > 0) depth -= 1;
       i -= 1;
       continue;
@@ -109,19 +202,10 @@ export function vouchedFor(code: string, pos: number): boolean {
       i -= 1;
       continue;
     }
-    if (c === ';') {
-      // a statement boundary at this depth — was it a `return`?
-      const stmtHead = code.lastIndexOf('\n', i);
-      if (/\breturn\b/.test(code.slice(stmtHead === -1 ? 0 : stmtHead, i))) {
-        sawCompletedReturn = true;
-      }
-      i -= 1;
-      continue;
-    }
     if (code.startsWith('logger.error(', i)) {
-      if (!sawCompletedReturn) {
-        const objEnd = blockEnd(code, code.indexOf('{', i) + 1);
-        if (code.slice(i, objEnd).includes('errorId')) return true;
+      if (isUnconditionalStatement(code, i)) {
+        const objEnd = blockEnd(rawCode, rawCode.indexOf('{', i) + 1);
+        if (rawCode.slice(i, objEnd).includes('errorId')) return true;
       }
       i -= 1;
       continue;
@@ -129,13 +213,18 @@ export function vouchedFor(code: string, pos: number): boolean {
     // The arm's upper boundary. Reaching one of these at depth 0 means we have
     // scanned everything that could legitimately vouch and found nothing. `try`
     // is a boundary too: without it, S3's 500 (written after the switch closed)
-    // would keep walking up and find an emit from an unrelated earlier branch.
+    // keeps walking up and finds an emit from an unrelated earlier branch.
+    //
+    // Word boundaries, not `startsWith`: `entry`, `country` and `retry` all
+    // contain `try`, and `entry` is this feature's own vocabulary. Round 4
+    // proved `const country = pick(e);` between an emit and a 500 truncated the
+    // walk and reported a correctly-logged 500 as unlogged.
     if (
-      code.startsWith('case ', i) ||
-      code.startsWith('default:', i) ||
-      code.startsWith('catch', i) ||
-      code.startsWith('try', i) ||
-      code.startsWith('function ', i)
+      wordAt(code, i, 'case') ||
+      wordAt(code, i, 'default') ||
+      wordAt(code, i, 'catch') ||
+      wordAt(code, i, 'try') ||
+      wordAt(code, i, 'function')
     ) {
       return false;
     }

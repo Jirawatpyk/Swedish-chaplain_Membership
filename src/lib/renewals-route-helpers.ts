@@ -112,10 +112,12 @@ export type RenewalAdminAction = 'read' | 'write' | 'manager_exception';
  * uniqueness, and that every declared `ERROR_ID` is a member of this union;
  * an earlier version of this docblock claimed the type system did both.
  *
- * A route uses its entry TWICE: the helper appends
- * `.CONTEXT_RESOLUTION_FAILED` for a failure before the route's try block, and
- * the route's own outer catch appends `.UNEXPECTED`. An SRE rule keyed on
- * `<entry>.*` therefore matches every 500 that route can produce.
+ * A route uses its entry at least twice and often more — `redeem-link` uses it
+ * five times. The suffixes are not listed here on purpose: four rounds of
+ * review found every enumerated list false as soon as a suffix moved. What
+ * holds is the shape — every failure line a route logs is prefixed with its
+ * entry, so an SRE rule keyed on `<entry>.*` matches every failure that route
+ * can produce, and `pnpm check:f8-error-id` is what keeps that true.
  */
 export type F8ErrorId =
   // cycle-level actions
@@ -149,8 +151,9 @@ export type F8ErrorId =
   | 'F8.MEMBER_BLOCK_AUTO_REACTIVATION'
   | 'F8.MEMBER_UNBLOCK_AUTO_REACTIVATION'
   // member-facing portal routes. These do NOT compose this helper (they run
-  // the member's own session, not an admin gate) and so use their entry only
-  // for the `.UNEXPECTED` half — the taxonomy still covers them because an
+  // the member's own session, not an admin gate), so they never emit
+  // `.CONTEXT_RESOLUTION_FAILED` — but they emit plenty else (`redeem-link`
+  // alone uses its entry five times), and the taxonomy covers them because an
   // alert rule keyed on `F8.*` has to match them too.
   | 'F8.PORTAL_CONFIRM'
   | 'F8.PORTAL_REDEEM_LINK';

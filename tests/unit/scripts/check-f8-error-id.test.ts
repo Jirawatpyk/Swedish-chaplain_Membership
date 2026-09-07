@@ -1,12 +1,17 @@
 /**
  * Unit tests for the F8 errorId gate's rules.
  *
- * These exist because three rounds of review each proved a rule wrong, and each
- * time the proof lived in a throwaway script: "10/10 mutants killed" could not
- * be reproduced from the repo, so the next round started from zero and found
- * the next spelling. Every shape a review has demonstrated is pinned here, by
- * the label the review gave it, so a future change to the rules has to keep
- * killing them.
+ * These exist because four rounds of review each proved a rule wrong, and for
+ * the first three the proof lived in a throwaway script: "10/10 mutants killed"
+ * could not be reproduced from the repo, so the next round started from zero
+ * and found the next spelling.
+ *
+ * The shapes pinned below are the ones a review demonstrated AND that the rules
+ * had to change to handle. Round 3's S4 (a helper declared below the handler)
+ * is deliberately absent: the rules already answered it correctly, so a test
+ * would assert nothing about a change. An earlier version of this docblock
+ * claimed EVERY demonstrated shape was pinned, which was false for exactly
+ * that reason — the fourth round caught it.
  *
  * Round 1 — ten routes returned an unlogged 500 from the exhaustiveness arm.
  * Round 2 — fourteen did the same from `case 'server_error':`, and the gate was
@@ -100,6 +105,59 @@ describe('F8 errorId gate — a 500 must be vouched for by an errorId in its own
     ).toBe(1);
     // and `status: 200` must not be swept up
     expect(fiveHundredSites('successResponse({ status: 200 })').length).toBe(0);
+  });
+
+  // Round 4 — the emit is at the same brace depth as the 500 but is GUARDED by
+  // a brace-less `if`, so it does not run on the path that reaches the 500.
+  // `if (cond) stmt;` appears ~235 times in `src/app/api/**/route.ts`, including
+  // `if ('response' in ctx) return ctx.response;` in all 26 F8 routes, so this
+  // is the house style rather than a contrived shape.
+  it('R4 — a brace-less guarded emit does not vouch for the 500 after it', () => {
+    expect(
+      has500Finding(`
+      } catch (e) {
+        if (isKnown(e)) logger.error({ errorId: \`\${ERROR_ID}.UNEXPECTED\` }, 'm');
+        return errorResponse({ status: 500, code: 'server_error' });
+      }`),
+    ).toBe(true);
+  });
+
+  it('R4 — a ternary-guarded emit does not vouch either', () => {
+    expect(
+      has500Finding(`
+      } catch (e) {
+        isKnown(e) ? logger.error({ errorId: \`\${ERROR_ID}.UNEXPECTED\` }, 'm') : noop();
+        return errorResponse({ status: 500, code: 'server_error' });
+      }`),
+    ).toBe(true);
+  });
+
+  // Round 4 NON-BLOCKING set, promoted to tests because each one reds the build
+  // on CORRECT code, which is worse than a miss: the walk was matching keywords
+  // inside identifiers and reading braces inside string literals.
+  it('R4 — an identifier containing "try"/"case" does not truncate the walk', () => {
+    for (const decoy of ['const country = pick(e);', "const s = 'case closed';"]) {
+      expect(
+        has500Finding(`
+      } catch (e) {
+        logger.error({ errorId: \`\${ERROR_ID}.UNEXPECTED\` }, 'm');
+        ${decoy}
+        return errorResponse({ status: 500, code: 'server_error' });
+      }`),
+      ).toBe(false);
+    }
+  });
+
+  it('R4 — a brace inside a string literal does not shift the depth', () => {
+    expect(
+      has500Finding(`
+      } catch (e) {
+        logger.error({ errorId: \`\${ERROR_ID}.UNEXPECTED\` }, 'm');
+        const tpl = 'a } b';
+        void tpl;
+        return errorResponse({ status: 500, code: 'server_error' });
+      }`),
+    ).toBe(false);
   });
 
   it('vouchedFor is lexical, not textual: a nested logged block does not vouch', () => {

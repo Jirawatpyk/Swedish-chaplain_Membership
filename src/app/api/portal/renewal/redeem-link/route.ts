@@ -58,12 +58,15 @@ import {
 /**
  * This route's entry in the F8 errorId taxonomy (`F8ErrorId` in
  * `src/lib/renewals-route-helpers.ts`, documented in
- * `docs/runbooks/audit-emit-loss.md`).
+ * `docs/runbooks/audit-emit-loss.md`). Every line this route logs about a
+ * failure carries it, so an SRE rule keyed on `F8.PORTAL_REDEEM_LINK.*` matches every failure
+ * this route can produce.
  *
- * This is a MEMBER-facing route: it does not compose
- * `requireRenewalAdminContext`, so it uses its entry for the `.UNEXPECTED`
- * half only. The taxonomy still covers it because an alert rule keyed on
- * `F8.*` has to match member-facing failures too.
+ * Which suffixes exist here is whatever the code below emits — deliberately
+ * NOT listed. Four rounds of review found an enumerated list false as soon as
+ * a suffix moved: naming two was wrong once `.SERVER_ERROR` landed, and naming
+ * `.SERVER_ERROR` was wrong for the routes that have no `server_error` arm.
+ * `pnpm check:f8-error-id` is what holds the claim above true.
  */
 const ERROR_ID = 'F8.PORTAL_REDEEM_LINK';
 

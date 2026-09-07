@@ -35,11 +35,14 @@ import { assertNever } from '@/lib/assert-never';
  * This route's entry in the F8 errorId taxonomy (`F8ErrorId` in
  * `src/lib/renewals-route-helpers.ts`, documented in
  * `docs/runbooks/audit-emit-loss.md`). Every line this route logs about a
- * failure carries it with a suffix — `.CONTEXT_RESOLUTION_FAILED` from the
- * admin gate before the try block, `.SERVER_ERROR` from the use-case's own
- * error variant, `.UNEXPECTED` from the outer catch — so
- * an SRE rule keyed on `F8.SCHEDULES_WRITE.*` matches every 500 this route
- * can produce.
+ * failure carries it, so an SRE rule keyed on `F8.SCHEDULES_WRITE.*` matches every failure
+ * this route can produce.
+ *
+ * Which suffixes exist here is whatever the code below emits — deliberately
+ * NOT listed. Four rounds of review found an enumerated list false as soon as
+ * a suffix moved: naming two was wrong once `.SERVER_ERROR` landed, and naming
+ * `.SERVER_ERROR` was wrong for the routes that have no `server_error` arm.
+ * `pnpm check:f8-error-id` is what holds the claim above true.
  */
 const ERROR_ID = 'F8.SCHEDULES_WRITE';
 

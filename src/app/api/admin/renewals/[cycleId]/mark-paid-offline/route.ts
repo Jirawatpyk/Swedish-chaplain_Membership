@@ -19,11 +19,21 @@ import { markPaidOffline, makeRenewalsDeps } from '@/modules/renewals';
 import { assertNever } from '@/lib/assert-never';
 
 /**
- * This route's entry in the F8 errorId taxonomy
- * (docs/runbooks/audit-emit-loss.md). One name per route, used for BOTH the
- * context-resolution failure raised inside `requireRenewalAdminContext` and
- * the `.UNEXPECTED` line from the outer catch — so an SRE rule keyed on
- * `F8.CYCLE_MARK_PAID_OFFLINE.*` sees every 500 this file can produce.
+ * This route's entry in the F8 errorId taxonomy (`F8ErrorId` in
+ * `src/lib/renewals-route-helpers.ts`, documented in
+ * `docs/runbooks/audit-emit-loss.md`). Every line this route logs about a
+ * failure carries it, so an SRE rule keyed on `F8.CYCLE_MARK_PAID_OFFLINE.*`
+ * matches every failure this route can produce.
+ *
+ * Which suffixes exist here is whatever the code below emits — deliberately
+ * NOT listed. Four rounds of review found an enumerated list false as soon as
+ * a suffix moved: naming two was wrong once `.SERVER_ERROR` landed, and naming
+ * `.SERVER_ERROR` was wrong for the routes that have no `server_error` arm.
+ * `pnpm check:f8-error-id` is what holds the claim above true.
+ *
+ * This file was written by hand before the sweep that fixed the other 25, so
+ * its wording differed and every sweep since has missed it — while it is the
+ * money path AND this gate's own first positive control.
  */
 const ERROR_ID = 'F8.CYCLE_MARK_PAID_OFFLINE';
 

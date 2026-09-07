@@ -250,10 +250,12 @@ then read each arm.
 
 `assert-never.ts`'s docblock records that it was introduced on 2026-05-20
 (TD-M4) *"to replace ad-hoc `const _exhaustive: never` patterns scattered
-across route handlers"*. Two passes on 2026-09-07 moved it forward: first nine
-sites (eight F8 renewals route handlers plus the scheduled-plan-changes cancel
-route), then eleven more arms across ten routes when the errorId-taxonomy work
-showed the first pass had stopped one hop short.
+across route handlers"*. Successive passes on 2026-09-07 moved it forward: the
+first covered eight F8 renewals route handlers plus the scheduled-plan-changes
+cancel route, and the errorId-taxonomy work then found the rest of the F8
+surface still on the old form. Counting them here is what this section tells
+you not to do — the previous version said "eleven more arms across ten routes"
+and was already wrong by one when it was written.
 
 **It is still not finished, and saying otherwise is how the second pass got
 missed.** The first pass's own note here read "They were finished" — a reviewer
