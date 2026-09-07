@@ -382,7 +382,11 @@ export async function resolveSegmentRecipients(
       optOutDropped = before - final.length;
     }
   }
-  // Emitted whenever the filter RAN, including at zero (staff review P2).
+  // Emitted on every resolve that REACHES step 5b — including at zero, and
+  // including when the bridge was not consulted because the list was
+  // already empty (see finding #8 below). Not "whenever the filter ran":
+  // that was the lead sentence until the /code-review pass that followed
+  // #8 pointed out the emit no longer means it (staff review P2).
   // Guarding on `> 0` made "nobody has opted out" and "step 5b was deleted"
   // the same signal — no series either way — and SweCham cuts over with zero
   // opt-outs, so the catalogue's "a drop to 0 means the filter stopped"

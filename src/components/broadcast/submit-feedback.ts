@@ -165,8 +165,32 @@ export function selfExclusionHintKey(
  */
 export function proxySelfExclusionNoticeKey(
   segmentKind: ComposeSegmentKind,
-): 'selfExclusionNotice' | 'selfExclusionNoticeIncluded' {
-  return showsSelfExclusionHint(segmentKind) ? 'selfExclusionNotice' : 'selfExclusionNoticeIncluded';
+):
+  | 'selfExclusionNotice'
+  | 'selfExclusionNoticeIncluded'
+  // /code-review 2026-09-07 (the pass AFTER #6) — the same class as
+  // `estimateNoteKey`, one function below it, and #6 walked past it. There is
+  // no `_exhaustive` arm here to be fail-open; the delegation IS the fail-open
+  // path: `showsSelfExclusionHint` answers `false` for anything that is not
+  // `all_members` / `tier`, so an unrecognised kind falls to
+  // `selfExclusionNoticeIncluded` — "{company} WILL receive this broadcast".
+  // #6's own comment calls a borrowed promise worse than silence; this one
+  // borrows the OPPOSITE promise instead of printing a key path, which is not
+  // an improvement. Null, and the notice is omitted.
+  | null {
+  switch (segmentKind) {
+    case 'all_members':
+    case 'tier':
+      return 'selfExclusionNotice';
+    case 'custom':
+    case 'event_attendees_last_90d':
+      return 'selfExclusionNoticeIncluded';
+    default: {
+      const _exhaustive: never = segmentKind;
+      void _exhaustive;
+      return null;
+    }
+  }
 }
 
 /**

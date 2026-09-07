@@ -957,8 +957,10 @@ export type F7MemberRecipient = {
 /**
  * 108 PR-C — one broadcast recipient CONTACT row (data-model § 1
  * `ContactRecipient`, F3 side). `contactId === null` ⇔ the member has no
- * eligible contact (FR-029 orphan); then `emailLower` is null and `isPrimary`
- * is false. Emails are lower-cased in the SQL.
+ * eligible contact (FR-029 orphan); then `emailLower` is null. Emails are
+ * lower-cased in the SQL. (Said "and `isPrimary` is false" until 2026-09-07;
+ * that field was replaced by `hasOptedOutContact` and the sentence outlived
+ * it by two rewrites of the docblock six lines below.)
  */
 export type F7ContactRecipient = {
   readonly memberId: MemberId;

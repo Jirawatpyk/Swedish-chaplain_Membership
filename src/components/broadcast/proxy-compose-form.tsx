@@ -180,6 +180,10 @@ export function ProxyComposeForm({ audienceCeiling }: ProxyComposeFormProps): Re
 
   const deferredBody = useDeferredValue(bodyHtml);
   const customLines = parseLines(customList);
+  // null for a segment kind this build does not recognise — the notice is
+  // then omitted rather than promising the opposite (/code-review, the
+  // pass after #6).
+  const proxySelfExclusionNotice = proxySelfExclusionNoticeKey(segment.kind);
   // 108 PR-C T089 — live count for the PROXIED member (its contacts are the
   // ones self-excluded server-side); idle until a member is picked.
   const [countRetry, setCountRetry] = useState(0);
@@ -380,15 +384,18 @@ export function ProxyComposeForm({ audienceCeiling }: ProxyComposeFormProps): Re
           }}
           disabled={submitting}
         />
-        {member !== null && !memberMissingEmail ? (
+        {member !== null && !memberMissingEmail && proxySelfExclusionNotice !== null ? (
           // UX-review fix (DV-4) — WCAG 4.1.3 Status Messages: `role="status"`
           // (implicit aria-live="polite") so SR users hear it without focus
           // moving. Round 2 (UX H-1 + i18n H3): it FOLLOWS the segment picker
           // and follows the segment — it used to render on member selection
           // regardless of segment, above the picker, promising an exclusion
           // that the custom list and the attendee segment do not apply.
+          // /code-review (the pass after #6): a segment kind this build does
+          // not recognise yields null and the notice is omitted, rather than
+          // falling to "{company} WILL receive this broadcast".
           <p role="status" className="text-sm text-muted-foreground">
-            {t(proxySelfExclusionNoticeKey(segment.kind), { company: member.companyName })}
+            {t(proxySelfExclusionNotice, { company: member.companyName })}
           </p>
         ) : null}
 

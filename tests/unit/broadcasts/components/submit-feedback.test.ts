@@ -163,6 +163,23 @@ describe('compose copy per audience leg (108 PR-C T079)', () => {
     expect(estimateNoteKey(unknown, 'primary_only')).toBeNull();
     expect(estimateNoteKey(unknown, 'all_contacts')).toBeNull();
     expect(selfExclusionHintKey(unknown)).toBeNull();
+    // The /code-review pass AFTER #6: this third one has no `_exhaustive` arm
+    // to be fail-open — the DELEGATION is the fail-open path.
+    // `showsSelfExclusionHint` answers false for anything that is not
+    // all_members / tier, so an unknown kind fell to
+    // `selfExclusionNoticeIncluded`: "{company} WILL receive this broadcast".
+    // #6 called a borrowed promise worse than silence and then walked past
+    // the function one below it that borrows the OPPOSITE promise.
+    expect(proxySelfExclusionNoticeKey(unknown)).toBeNull();
+  });
+
+  it('proxySelfExclusionNoticeKey still answers both real promises', () => {
+    expect(proxySelfExclusionNoticeKey('all_members')).toBe('selfExclusionNotice');
+    expect(proxySelfExclusionNoticeKey('tier')).toBe('selfExclusionNotice');
+    expect(proxySelfExclusionNoticeKey('custom')).toBe('selfExclusionNoticeIncluded');
+    expect(proxySelfExclusionNoticeKey('event_attendees_last_90d')).toBe(
+      'selfExclusionNoticeIncluded',
+    );
   });
 
   it('showsSelfExclusionHint is true for member-based segments only (the custom list is not self-excluded)', () => {
