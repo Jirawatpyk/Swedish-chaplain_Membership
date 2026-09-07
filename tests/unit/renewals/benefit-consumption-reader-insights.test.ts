@@ -110,4 +110,35 @@ describe('benefitConsumptionReaderInsights (F8 → F9 mapping)', () => {
     );
     expect(result).toBeNull();
   });
+
+  // 2026-09-07 — `mapQuantifiableKey`'s docblock says its `never` default
+  // stops a new insights key "silently mis-mapping to 'eblast'". The arm
+  // used to `return _exhaustive`, i.e. the KEY STRING, which the caller wrote
+  // straight into a `BenefitConsumptionEntry.key` position — so the renewal
+  // summary carried a consumption figure attributed to a benefit this build
+  // cannot name. Every member of that union asserts WHICH benefit was
+  // consumed, so there is no safe substitute: emit no entry.
+  it('an insights key this build cannot map yields NO entry — never one attributed to the wrong benefit', async () => {
+    computeBenefitUsageMock.mockResolvedValueOnce(
+      ok(
+        usage([
+          { key: 'eblast', used: 2, entitlement: 5 },
+          { key: 'sponsored_webinar', used: 9, entitlement: 9 },
+          { key: 'cultural_tickets', used: 1, entitlement: 4 },
+        ]),
+      ),
+    );
+    const result = await benefitConsumptionReaderInsights.read(
+      TENANT_ID,
+      MEMBER_ID,
+    );
+    expect(result).toEqual([
+      { key: 'eblast', used: 2, quota: 5 },
+      { key: 'cultural_ticket', used: 1, quota: 4 },
+    ]);
+    // The unmappable one is absent — not present under a borrowed key, and
+    // not present under its own raw string.
+    expect(JSON.stringify(result)).not.toContain('sponsored_webinar');
+    expect(result).toHaveLength(2);
+  });
 });

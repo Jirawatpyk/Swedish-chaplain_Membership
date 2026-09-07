@@ -46,7 +46,10 @@ import type { BenefitConsumptionEntry } from '../../application/use-cases/load-r
  */
 function mapQuantifiableKey(
   key: QuantifiableBenefitKey,
-): Extract<BenefitConsumptionEntry['key'], 'eblast' | 'cultural_ticket'> {
+):
+  | Extract<BenefitConsumptionEntry['key'], 'eblast' | 'cultural_ticket'>
+  // 2026-09-07 — see the default arm.
+  | null {
   switch (key) {
     case 'eblast':
       return 'eblast';
@@ -54,7 +57,17 @@ function mapQuantifiableKey(
       return 'cultural_ticket';
     default: {
       const _exhaustive: never = key;
-      return _exhaustive;
+      // The docblock above says this arm stops a new key "silently
+      // mis-mapping to 'eblast'". `return _exhaustive` returned the KEY
+      // STRING, which the caller then wrote straight into a
+      // `BenefitConsumptionEntry.key` position — so the entry carried a name
+      // this build cannot resolve, and the member's renewal summary showed a
+      // consumption figure attributed to a benefit nobody could name. Every
+      // member of the target union asserts WHICH benefit was consumed, so
+      // there is no safe substitute: the honest answer is to emit no entry.
+      // The caller drops it (see `read`).
+      void _exhaustive;
+      return null;
     }
   }
 }
@@ -71,10 +84,12 @@ export const benefitConsumptionReaderInsights: BenefitConsumptionReader = {
       // member_not_found / compute_failed → unavailable.
       return null;
     }
-    return result.value.quantifiable.map<BenefitConsumptionEntry>((q) => ({
-      key: mapQuantifiableKey(q.key),
-      used: q.used,
-      quota: q.entitlement,
-    }));
+    // `flatMap`, not `map`: a key this build cannot name yields no entry at
+    // all rather than one attributed to the wrong benefit (2026-09-07).
+    return result.value.quantifiable.flatMap<BenefitConsumptionEntry>((q) => {
+      const key = mapQuantifiableKey(q.key);
+      if (key === null) return [];
+      return [{ key, used: q.used, quota: q.entitlement }];
+    });
   },
 };

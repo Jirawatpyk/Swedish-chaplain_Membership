@@ -128,7 +128,18 @@ function classifyBatch(b: BatchManifest, force: boolean): BatchDisposition {
     default: {
       // Exhaustiveness proof — a new BatchStatus must be handled above.
       const _exhaustive: never = b.status;
-      return _exhaustive;
+      // The RUNTIME half, added 2026-09-07 after a coverage pin caught the
+      // same shape in 108 PR-C. `return _exhaustive` returns the status
+      // STRING, so the caller reads `disposition.kind` as `undefined`, falls
+      // to ITS default, `break`s — and `allDone` stays true. A batch nobody
+      // could classify was therefore counted as cleanly done: the broadcast
+      // rolls up to `sent` and burns the quota. That is fail-OPEN, and it is
+      // the exact outcome reviews C/D/E hardened the arms above against
+      // ("never a clean sent that masks zero-delivery"). `in_flight` is the
+      // conservative answer — it keeps the broadcast un-finalised, which
+      // `stuck_sending_count` already alarms on.
+      void _exhaustive;
+      return { kind: 'in_flight' };
     }
   }
 }
