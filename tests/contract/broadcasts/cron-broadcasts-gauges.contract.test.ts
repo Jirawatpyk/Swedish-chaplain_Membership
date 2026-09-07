@@ -21,6 +21,14 @@ const dbTransactionMock = vi.fn();
 const queuePendingSpy = vi.fn();
 const stuckSendingCountSpy = vi.fn();
 const dispatchFailureRateSpy = vi.fn();
+// Review 2026-09-07 (errors HIGH-4b) — the fifth family: approved rows more
+// than 1 h past `scheduled_for`, the only signal for a schedule slipping tick
+// after tick because the audience cannot be built.
+const approvedOverdueCountSpy = vi.fn();
+const forgetDispatchFailureRateSpy = vi.fn();
+// /code-review 2026-09-07 (finding #6) — the sixth family, and the last one
+// still latching: it was emitted straight from its GROUP BY rows.
+const suppressionListSizeSpy = vi.fn();
 
 const envMock = {
   isDevelopment: false,
@@ -54,6 +62,9 @@ vi.mock('@/lib/metrics', async () => {
       queuePending: queuePendingSpy,
       stuckSendingCount: stuckSendingCountSpy,
       dispatchFailureRate: dispatchFailureRateSpy,
+      forgetDispatchFailureRate: forgetDispatchFailureRateSpy,
+      approvedOverdueCount: approvedOverdueCountSpy,
+      suppressionListSize: suppressionListSizeSpy,
     },
   };
 });
@@ -74,6 +85,9 @@ beforeEach(() => {
   queuePendingSpy.mockReset();
   stuckSendingCountSpy.mockReset();
   dispatchFailureRateSpy.mockReset();
+  approvedOverdueCountSpy.mockReset();
+  forgetDispatchFailureRateSpy.mockReset();
+  suppressionListSizeSpy.mockReset();
 });
 
 afterEach(() => {
@@ -112,10 +126,11 @@ describe('GET /api/internal/metrics/broadcasts-gauges — wire contract', () => 
     expect(dbTransactionMock).not.toHaveBeenCalled();
   });
 
-  it('valid bearer + 3 tenants with traffic → 200 + emits all 3 gauge families', async () => {
+  it('valid bearer + tenants with traffic → 200 + emits every gauge family', async () => {
     dbTransactionMock.mockImplementationOnce(async () => ({
       pendingRows: [{ tenant_id: 't1', count: 12 }],
       stuckRows: [{ tenant_id: 't1', count: 2 }],
+      approvedOverdueRows: [{ tenant_id: 't1', count: 1 }],
       suppressionRows: [{ tenant_id: 't1', count: 7 }],
       // tenant t1: 30% failure rate (3/10), tenant t2: 0% (0/5)
       dispatchRows: [
@@ -156,15 +171,124 @@ describe('GET /api/internal/metrics/broadcasts-gauges — wire contract', () => 
     expect(stuckSendingCountSpy).toHaveBeenCalledWith('t1', 2);
     expect(dispatchFailureRateSpy).toHaveBeenCalledWith('t1', 0.3);
     expect(dispatchFailureRateSpy).toHaveBeenCalledWith('t2', 0);
+    expect(approvedOverdueCountSpy).toHaveBeenCalledWith('t1', 1);
+    expect((body as unknown as { approvedOverdueTotal: number }).approvedOverdueTotal).toBe(1);
+  });
+
+  // Review 2026-09-07 round 2 (C9 — errors LOW + observability HIGH) — a
+  // count gauge LATCHED: the GROUP BY emits no row for a tenant at zero and
+  // `observeGauge` never forgets, so once `approved_overdue_count` read 1 it
+  // kept reading 1 after the incident was resolved, until the lambda
+  // recycled — and the new "≥ 1 sustained 30 min" rule became a latch, not a
+  // level. Every tenant the tick scanned is observed, 0 included ("0 means 0").
+  it('a tenant with broadcasts but no overdue / pending / stuck rows is observed at 0, not left at its last value', async () => {
+    dbTransactionMock.mockImplementationOnce(async () => ({
+      tenantRows: [{ tenant_id: 't1' }, { tenant_id: 't2' }],
+      pendingRows: [{ tenant_id: 't2', count: 3 }],
+      stuckRows: [],
+      dispatchRows: [],
+      suppressionRows: [],
+      approvedOverdueRows: [],
+    }));
+
+    const { GET } = await import(
+      '@/app/api/internal/metrics/broadcasts-gauges/route'
+    );
+    const res = await GET(makeRequest('Bearer test-cron-secret'));
+    expect(res.status).toBe(200);
+
+    expect(approvedOverdueCountSpy).toHaveBeenCalledWith('t1', 0);
+    expect(approvedOverdueCountSpy).toHaveBeenCalledWith('t2', 0);
+    expect(stuckSendingCountSpy).toHaveBeenCalledWith('t1', 0);
+    expect(stuckSendingCountSpy).toHaveBeenCalledWith('t2', 0);
+    expect(queuePendingSpy).toHaveBeenCalledWith('t1', 0);
+    expect(queuePendingSpy).toHaveBeenCalledWith('t2', 3);
+  });
+
+  // /code-review 2026-09-07 (finding #6) — and the C9 latch class ONE MORE
+  // loop down. `suppression_list_size` was emitted straight from its GROUP BY
+  // rows, so a tenant with no `marketing_unsubscribes` row never got a sample
+  // and `observeGauge` re-reported its last size forever: clear the list and
+  // the gauge still says 7. It is a COUNT, so unlike the ratio it zero-fills.
+  it('a tenant with no suppression rows is observed at 0 — a cleared list does not keep reporting its old size', async () => {
+    dbTransactionMock.mockImplementationOnce(async () => ({
+      tenantRows: [{ tenant_id: 't1' }, { tenant_id: 't2' }],
+      pendingRows: [],
+      stuckRows: [],
+      dispatchRows: [],
+      suppressionRows: [{ tenant_id: 't1', count: 7 }],
+      approvedOverdueRows: [],
+    }));
+
+    const { GET } = await import(
+      '@/app/api/internal/metrics/broadcasts-gauges/route'
+    );
+    expect((await GET(makeRequest('Bearer test-cron-secret'))).status).toBe(200);
+
+    expect(suppressionListSizeSpy).toHaveBeenCalledWith('t1', 7);
+    expect(suppressionListSizeSpy).toHaveBeenCalledWith('t2', 0);
+  });
+
+  // A tenant can carry unsubscribes before it has ever sent a broadcast (a
+  // contact-level opt-out recorded first), so the suppression keys join the
+  // observed set rather than depending on it.
+  it('a tenant present ONLY in the suppression rows is still observed', async () => {
+    dbTransactionMock.mockImplementationOnce(async () => ({
+      tenantRows: [],
+      pendingRows: [],
+      stuckRows: [],
+      dispatchRows: [],
+      suppressionRows: [{ tenant_id: 't-quiet', count: 4 }],
+      approvedOverdueRows: [],
+    }));
+
+    const { GET } = await import(
+      '@/app/api/internal/metrics/broadcasts-gauges/route'
+    );
+    expect((await GET(makeRequest('Bearer test-cron-secret'))).status).toBe(200);
+
+    expect(suppressionListSizeSpy).toHaveBeenCalledWith('t-quiet', 4);
+  });
+
+  // Re-review 2026-09-07 (finding #2) — the C9 latch class, unclosed in the
+  // SAME function: `dispatch_failure_rate`'s query has `HAVING dispatched > 0`,
+  // so a tenant with no traffic in the rolling hour emits no row, and
+  // `observeGauge` re-reports its last value at every scrape. A tenant whose
+  // single send failed at 10:00 reads 1.0 forever and pages forever. A
+  // fabricated 0 would be a different lie ("we dispatched and none failed"),
+  // so the honest answer is ABSENCE — the `forgetAutoInvoiceGauges` pattern.
+  it('a tenant with no dispatch traffic in the window has its failure-rate label FORGOTTEN, not re-reported and not zeroed', async () => {
+    dbTransactionMock.mockImplementationOnce(async () => ({
+      tenantRows: [{ tenant_id: 't1' }, { tenant_id: 't2' }],
+      pendingRows: [],
+      stuckRows: [],
+      suppressionRows: [],
+      approvedOverdueRows: [],
+      // t1 dispatched this hour; t2 did not.
+      dispatchRows: [{ tenant_id: 't1', failed: 1, dispatched: 4 }],
+    }));
+
+    const { GET } = await import(
+      '@/app/api/internal/metrics/broadcasts-gauges/route'
+    );
+    const res = await GET(makeRequest('Bearer test-cron-secret'));
+    expect(res.status).toBe(200);
+
+    expect(dispatchFailureRateSpy).toHaveBeenCalledWith('t1', 0.25);
+    expect(dispatchFailureRateSpy).not.toHaveBeenCalledWith('t2', 0);
+    expect(forgetDispatchFailureRateSpy).toHaveBeenCalledWith('t2');
+    expect(forgetDispatchFailureRateSpy).not.toHaveBeenCalledWith('t1');
   });
 
   it('valid bearer + zero traffic → 200 + zero summary, no metrics emitted', async () => {
     dbTransactionMock.mockImplementationOnce(async () => ({
+      tenantRows: [],
       pendingRows: [],
       stuckRows: [],
       dispatchRows: [],
       // 108 PR-D (staff review P4): the fourth gauge family.
       suppressionRows: [],
+      approvedOverdueRows: [],
     }));
 
     const { GET } = await import(
@@ -177,6 +301,7 @@ describe('GET /api/internal/metrics/broadcasts-gauges — wire contract', () => 
     expect(queuePendingSpy).not.toHaveBeenCalled();
     expect(stuckSendingCountSpy).not.toHaveBeenCalled();
     expect(dispatchFailureRateSpy).not.toHaveBeenCalled();
+    expect(approvedOverdueCountSpy).not.toHaveBeenCalled();
   });
 
   it('valid bearer + DB transaction throws → 500 query_failed (no metrics emitted)', async () => {
@@ -193,6 +318,7 @@ describe('GET /api/internal/metrics/broadcasts-gauges — wire contract', () => 
     expect(body.error).toBe('query_failed');
     expect(queuePendingSpy).not.toHaveBeenCalled();
     expect(dispatchFailureRateSpy).not.toHaveBeenCalled();
+    expect(approvedOverdueCountSpy).not.toHaveBeenCalled();
   });
 
   it('dev env without CRON_SECRET → request still allowed (smoke convenience)', async () => {
@@ -204,6 +330,7 @@ describe('GET /api/internal/metrics/broadcasts-gauges — wire contract', () => 
       dispatchRows: [],
       // 108 PR-D (staff review P4): the fourth gauge family.
       suppressionRows: [],
+      approvedOverdueRows: [],
     }));
 
     const { GET } = await import(

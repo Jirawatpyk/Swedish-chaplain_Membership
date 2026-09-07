@@ -111,6 +111,7 @@ const submitOutput = {
   status: 'submitted' as const,
   submittedAt: new Date('2026-06-15T05:00:00Z'),
   estimatedRecipientCount: 42,
+  droppedByPreference: 2,
   reservedQuotaSlot: true as const,
   reviewSlaTargetHours: 48,
 };
@@ -130,6 +131,7 @@ describe('POST /api/admin/broadcasts/proxy-submit — Wave 6 GREEN (T095)', () =
       broadcastId: NEW_BROADCAST_ID,
       status: 'submitted',
       estimatedRecipientCount: 42,
+      recipientPreferenceExcluded: 2,
       actorRole: 'admin_proxy',
       reservedQuotaSlot: true,
       reviewSlaTargetHours: 48,
@@ -427,5 +429,27 @@ describe('POST /api/admin/broadcasts/proxy-submit — Wave 6 GREEN (T095)', () =
     const { POST } = await importRoute();
     const res = await POST(makeRequest(VALID_BODY));
     expect(res.status).toBe(500);
+  });
+});
+
+/**
+ * 108 PR-C T085 (FR-041 / FR-042) — the admin proxy 422 for an over-ceiling
+ * audience carries `details.count` + `details.cap`, exactly like the member
+ * route, so the proxy compose copy can name the ceiling the server refused
+ * against (the copy interpolates `{ceiling}` and would otherwise be wrong or
+ * unrenderable).
+ */
+describe('POST /api/admin/broadcasts/proxy-submit — 108 PR-C audience_too_large carries count + cap', () => {
+  it('422 broadcast_audience_too_large → error.details = { count, cap }', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
+    proxySubmitMock.mockResolvedValueOnce(
+      err({ kind: 'broadcast_audience_too_large' as const, count: 5001, cap: 5000 }),
+    );
+    const { POST } = await importRoute();
+    const res = await POST(makeRequest(VALID_BODY));
+    expect(res.status).toBe(422);
+    const body = await res.json();
+    expect(body.error.code).toBe('broadcast_audience_too_large');
+    expect(body.error.details).toMatchObject({ count: 5001, cap: 5000 });
   });
 });

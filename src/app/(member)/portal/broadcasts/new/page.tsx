@@ -11,6 +11,7 @@ import {
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { runInTenant } from '@/lib/db';
+import { errKind, hashId } from '@/lib/log-id';
 import { logger } from '@/lib/logger';
 import { loadMembershipAccess } from '@/lib/load-membership-access';
 import {
@@ -22,6 +23,8 @@ import {
   makeComputeQuotaDeps,
   makeListBroadcastTemplatesDeps,
   substituteChamberName,
+  currentAudienceCeiling,
+  currentAudienceMode,
 } from '@/modules/broadcasts';
 import { makeDrizzleBroadcastTemplatesRepo } from '@/modules/broadcasts/infrastructure/drizzle-broadcast-templates-repo';
 import { safeAuditEmit } from '@/modules/broadcasts/application/use-cases/_safe-audit-emit';
@@ -79,36 +82,63 @@ export default async function ComposeBroadcastPage({
   let membershipAccessBlocked = false;
   // FR-009 cap=0 flag, also hoisted for the same reason (see below).
   let quotaExhausted = false;
+  // Review 2026-09-07 (observation from T084, pinned in
+  // broadcasts-compose-suspended-redirect.test.tsx) — the member lookup used
+  // to sit inside the same `try` as the quota init, so a FAILED or MISSED
+  // lookup fell through past the access redirect and rendered the form to a
+  // user with no member row at all.
+  //
+  // Round 2 (C13 — errors MEDIUM, simplify #7, UX M-3): a FAILED read and a
+  // genuine MISS are different situations. The failed read used to take the
+  // same silent redirect to the benefits page — which then THROWS on the
+  // same failed read, so the member crossed two pages to reach an error
+  // card, or (if the second read succeeded) landed on benefits with no
+  // explanation and read the button as broken. A failed read now throws to
+  // `error.tsx` (an error card with retry); only `repo.not_found` redirects,
+  // and the destination is told why. This `try` deliberately holds no
+  // `redirect()` — see the note above the access redirect below.
+  let memberLookup: Awaited<ReturnType<typeof membersDeps.memberRepo.findByLinkedUserId>>;
   try {
-    const memberLookup = await membersDeps.memberRepo.findByLinkedUserId(
-      tenant,
-      session.user.id,
+    memberLookup = await membersDeps.memberRepo.findByLinkedUserId(tenant, session.user.id);
+  } catch (err) {
+    logger.error(
+      { err: errKind(err), tenantId: tenant.slug, userIdHash: hashId(session.user.id) },
+      'broadcasts.compose.member_lookup_failed',
     );
-    if (memberLookup.ok) {
-      const membershipAccess = await loadMembershipAccess(
-        tenant.slug,
-        memberLookup.value.memberId,
+    throw err;
+  }
+  if (!memberLookup.ok) {
+    if (memberLookup.error.code !== 'repo.not_found') {
+      logger.error(
+        { err: memberLookup.error.code, tenantId: tenant.slug, userIdHash: hashId(session.user.id) },
+        'broadcasts.compose.member_lookup_failed',
       );
-      if (membershipAccess.access !== 'full') {
-        membershipAccessBlocked = true;
-      } else {
-        const quotaResult = await computeQuotaCounter(
-          makeComputeQuotaDeps(tenant.slug),
-          { memberId: memberLookup.value.memberId },
-        );
-        if (quotaResult.ok) {
-          // FR-009 — cap=0 means the member's plan has no E-Blast benefit.
-          if (quotaResult.value.counter.cap === 0) {
-            quotaExhausted = true;
-          } else {
-            initialQuota = {
-              used: quotaResult.value.counter.used,
-              reserved: quotaResult.value.counter.reserved,
-              remaining: quotaResult.value.counter.remaining,
-              cap: quotaResult.value.counter.cap,
-              quotaYear: quotaResult.value.quotaYear,
-            };
-          }
+      throw new Error(`broadcasts.compose.member_lookup_failed: ${memberLookup.error.code}`);
+    }
+    redirect('/portal/benefits?tab=broadcasts&unavailable=no_member');
+  }
+  const memberId = memberLookup.value.memberId;
+  try {
+    const membershipAccess = await loadMembershipAccess(tenant.slug, memberId);
+    if (membershipAccess.access !== 'full') {
+      membershipAccessBlocked = true;
+    } else {
+      const quotaResult = await computeQuotaCounter(
+        makeComputeQuotaDeps(tenant.slug),
+        { memberId },
+      );
+      if (quotaResult.ok) {
+        // FR-009 — cap=0 means the member's plan has no E-Blast benefit.
+        if (quotaResult.value.counter.cap === 0) {
+          quotaExhausted = true;
+        } else {
+          initialQuota = {
+            used: quotaResult.value.counter.used,
+            reserved: quotaResult.value.counter.reserved,
+            remaining: quotaResult.value.counter.remaining,
+            cap: quotaResult.value.counter.cap,
+            quotaYear: quotaResult.value.quotaYear,
+          };
         }
       }
     }
@@ -121,7 +151,7 @@ export default async function ComposeBroadcastPage({
       {
         err: err instanceof Error ? err.message : String(err),
         tenantId: tenant.slug,
-        userId: session.user.id,
+        userIdHash: hashId(session.user.id),
       },
       'broadcasts.compose.quota_init_failed',
     );
@@ -130,11 +160,12 @@ export default async function ComposeBroadcastPage({
 
   // `redirect()` throws a special Next.js error that a broad `catch` would
   // otherwise swallow — Next's own docs (and this repo's
-  // `src/lib/portal-page-access.ts`) call this out explicitly, so both
-  // redirects are resolved here, AFTER the try/catch above has fully
-  // settled, never inside it. Both land on the same benefits-page target —
-  // it explains why compose is unavailable either way (paused benefits or
-  // an exhausted/not-in-plan quota).
+  // `src/lib/portal-page-access.ts`) call this out explicitly, so the
+  // access/quota redirects are resolved here, AFTER the quota try/catch has
+  // fully settled, never inside it (the member-lookup `catch` above holds no
+  // redirect either — it rethrows). Both land on the same benefits-page
+  // target — it explains why compose is unavailable either way (paused
+  // benefits or an exhausted/not-in-plan quota).
   if (membershipAccessBlocked || quotaExhausted) {
     redirect('/portal/benefits?tab=broadcasts');
   }
@@ -143,6 +174,11 @@ export default async function ComposeBroadcastPage({
   // toolbar surface only appears when all three flag layers
   // (f7Broadcasts + f71aBroadcastAdvanced + f71aUs2Images) are ON.
   const imagesEnabled = isF71aUs2Enabled();
+  // 108 PR-C T079 / T085 — resolved ONCE here from the composition root and
+  // handed to the client form as props, so the compose copy names the real
+  // ceiling (FR-041 / FR-042) and describes the audience leg in force.
+  const audienceCeiling = currentAudienceCeiling();
+  const audienceMode = currentAudienceMode();
 
   // F7.1a US7 (T111) — template picker. Server-side fetches the
   // tenant's templates filtered by the member's current locale
@@ -181,7 +217,7 @@ export default async function ComposeBroadcastPage({
         {
           err: err instanceof Error ? err.message : String(err),
           tenantId: tenant.slug,
-          userId: session.user.id,
+          userIdHash: hashId(session.user.id),
         },
         'broadcasts.compose.template_picker_list_failed',
       );
@@ -255,7 +291,7 @@ export default async function ComposeBroadcastPage({
             err: err instanceof Error ? err.message : String(err),
             tenantId: tenant.slug,
             templateIdParam,
-            userId: session.user.id,
+            userIdHash: hashId(session.user.id),
           },
           'broadcasts.compose.template_pre_populate_failed',
         );
@@ -286,6 +322,8 @@ export default async function ComposeBroadcastPage({
         key={selectedTemplateId ?? 'blank'}
         initialQuota={initialQuota}
         imagesEnabled={imagesEnabled}
+        audienceCeiling={audienceCeiling}
+        audienceMode={audienceMode}
         {...(initialSubject !== undefined ? { initialSubject } : {})}
         {...(initialBodyHtml !== undefined ? { initialBodyHtml } : {})}
       />

@@ -37,6 +37,10 @@ export const dynamic = 'force-dynamic';
 
 const STUCK_SENDING_HOURS = 24;
 
+interface TenantRow extends Record<string, unknown> {
+  tenant_id: string;
+}
+
 interface PendingRow extends Record<string, unknown> {
   readonly tenant_id: string;
   readonly count: number;
@@ -65,10 +69,12 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
 
+  let tenants: TenantRow[];
   let pending: PendingRow[];
   let stuck: PendingRow[];
   let dispatchRatios: DispatchRatioRow[];
   let suppressionSizes: PendingRow[];
+  let approvedOverdue: PendingRow[];
   try {
     const result = await db.transaction(async (tx) => {
       await tx.execute(sql`SET LOCAL statement_timeout = '10s'`);
@@ -92,8 +98,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       // remains populated through both `failed_to_dispatch` and `sent`
       // terminal states (verified in drizzle-broadcasts-repo.ts —
       // status flips don't clear the timestamp). Tenants with zero
-      // rolling-window traffic produce no row → gauge unsampled (safe
-      // for OTel; no false-positive zeros).
+      // rolling-window traffic produce no row → their label is FORGOTTEN
+      // below (re-review finding #2), so the series goes absent rather than
+      // freezing at its last value; never a fabricated 0.
       const dispatchRows = await tx.execute<DispatchRatioRow>(sql`
         SELECT
           tenant_id,
@@ -114,12 +121,36 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         FROM marketing_unsubscribes
         GROUP BY tenant_id
       `);
-      return { pendingRows, stuckRows, dispatchRows, suppressionRows };
+      // Review 2026-09-07 (errors HIGH-4b) — a broadcast whose audience
+      // cannot be built stays `approved` and is retried every tick with NO
+      // wall-clock budget; `queue_pending` (alert > 8,000) cannot see one
+      // row slipping. Count approved rows more than an hour past schedule.
+      const approvedOverdueRows = await tx.execute<PendingRow>(sql`
+        SELECT tenant_id, COUNT(*)::int AS count
+        FROM broadcasts
+        WHERE status::text = 'approved'
+          AND scheduled_for IS NOT NULL
+          AND scheduled_for < now() - interval '1 hour'
+        GROUP BY tenant_id
+      `);
+      // Review 2026-09-07 round 2 (C9 — errors LOW + observability HIGH) —
+      // every tenant with broadcasts is observed, ZERO included. The three
+      // count gauges above emit no row for a tenant at zero, and
+      // `observeGauge` re-reports the last value at every scrape, so a gauge
+      // that once read 1 kept reading 1 after the incident was resolved —
+      // the "≥ 1 sustained 30 min" rule on `approved_overdue_count` was a
+      // latch, not a level. "0 means 0" (see `forgetAutoInvoiceGauges`).
+      const tenantRows = await tx.execute<TenantRow>(sql`
+        SELECT DISTINCT tenant_id FROM broadcasts
+      `);
+      return { tenantRows, pendingRows, stuckRows, dispatchRows, suppressionRows, approvedOverdueRows };
     });
+    tenants = Array.from(result.tenantRows ?? []);
     pending = Array.from(result.pendingRows);
     stuck = Array.from(result.stuckRows);
     dispatchRatios = Array.from(result.dispatchRows);
     suppressionSizes = Array.from(result.suppressionRows);
+    approvedOverdue = Array.from(result.approvedOverdueRows);
   } catch (e) {
     logger.error(
       { requestId, err: e instanceof Error ? e.message : String(e) },
@@ -131,23 +162,68 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   let pendingTotal = 0;
   let stuckTotal = 0;
   let dispatchRatioMaxBps = 0; // basis points — 0..10000
-  for (const row of pending) {
-    broadcastsMetrics.queuePending(row.tenant_id, row.count);
-    pendingTotal += row.count;
+  // C9: zero-fill — a tenant absent from a GROUP BY is at 0, and 0 is
+  // observed, so a resolved incident clears the gauge on the next tick.
+  const pendingByTenant = new Map(pending.map((r) => [r.tenant_id, r.count]));
+  const stuckByTenant = new Map(stuck.map((r) => [r.tenant_id, r.count]));
+  const overdueByTenant = new Map(approvedOverdue.map((r) => [r.tenant_id, r.count]));
+  const suppressionByTenant = new Map(suppressionSizes.map((r) => [r.tenant_id, r.count]));
+  const observed = new Set<string>();
+  for (const t of [
+    ...tenants.map((r) => r.tenant_id),
+    ...pendingByTenant.keys(),
+    ...stuckByTenant.keys(),
+    ...overdueByTenant.keys(),
+    // A tenant can carry unsubscribes with no `broadcasts` row at all (a
+    // contact-level opt-out recorded before the first send), so the
+    // suppression keys join the observed set rather than relying on it.
+    ...suppressionByTenant.keys(),
+  ]) {
+    observed.add(t);
   }
-  for (const row of stuck) {
-    broadcastsMetrics.stuckSendingCount(row.tenant_id, row.count);
-    stuckTotal += row.count;
+  let approvedOverdueTotal = 0;
+  for (const tenantId of observed) {
+    const p = pendingByTenant.get(tenantId) ?? 0;
+    const s = stuckByTenant.get(tenantId) ?? 0;
+    const o = overdueByTenant.get(tenantId) ?? 0;
+    broadcastsMetrics.queuePending(tenantId, p);
+    broadcastsMetrics.stuckSendingCount(tenantId, s);
+    broadcastsMetrics.approvedOverdueCount(tenantId, o);
+    pendingTotal += p;
+    stuckTotal += s;
+    approvedOverdueTotal += o;
   }
-  for (const row of suppressionSizes) {
-    broadcastsMetrics.suppressionListSize(row.tenant_id, row.count);
+  // /code-review 2026-09-07 (finding #6) — the SAME latch class as C9, one
+  // loop below the three gauges C9 fixed. `suppressionSizes` comes from a
+  // GROUP BY over `marketing_unsubscribes`, so a tenant with no rows emitted
+  // no sample and `observeGauge` re-reported its last value forever: a
+  // suppression list that is cleared (a data fix, an offboarding) kept
+  // reporting its old size. It is a COUNT, so it zero-fills like its three
+  // siblings rather than being forgotten like the ratio.
+  for (const tenantId of observed) {
+    broadcastsMetrics.suppressionListSize(tenantId, suppressionByTenant.get(tenantId) ?? 0);
   }
+  const ratioTenants = new Set<string>();
   for (const row of dispatchRatios) {
     // dispatched > 0 enforced by HAVING clause — division safe.
     const rate = row.failed / row.dispatched;
     broadcastsMetrics.dispatchFailureRate(row.tenant_id, rate);
+    ratioTenants.add(row.tenant_id);
     const bps = Math.round(rate * 10_000);
     if (bps > dispatchRatioMaxBps) dispatchRatioMaxBps = bps;
+  }
+  // Re-review 2026-09-07 (finding #2) — the C9 latch class, unclosed in this
+  // same function. The ratio query has `HAVING dispatched > 0`, so a quiet
+  // tenant emits no row and `observeGauge` re-reports its last value at every
+  // scrape: one failed send at 10:00 pages until the next successful send,
+  // which for a weekly sender is days. The three COUNT gauges above are
+  // zero-filled ("0 means 0"); a RATIO cannot be — a 0 would assert "we
+  // dispatched and none failed". So the label is FORGOTTEN and the series
+  // goes absent, which monitoring can express as "no data".
+  for (const tenantId of observed) {
+    if (!ratioTenants.has(tenantId)) {
+      broadcastsMetrics.forgetDispatchFailureRate(tenantId);
+    }
   }
 
   logger.info(
@@ -158,6 +234,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       dispatchRatioTenantCount: dispatchRatios.length,
       pendingTotal,
       stuckTotal,
+      approvedOverdueTotal,
       dispatchRatioMaxBps,
       stuckHours: STUCK_SENDING_HOURS,
       dispatchWindowHours: DISPATCH_FAILURE_WINDOW_HOURS,
@@ -173,6 +250,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       dispatchRatioTenantCount: dispatchRatios.length,
       pendingTotal,
       stuckTotal,
+      approvedOverdueTotal,
       dispatchRatioMaxBps,
       stuckHours: STUCK_SENDING_HOURS,
       dispatchWindowHours: DISPATCH_FAILURE_WINDOW_HOURS,

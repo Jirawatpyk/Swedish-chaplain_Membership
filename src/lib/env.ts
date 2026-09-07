@@ -620,6 +620,23 @@ const schema = z.object({
   FEATURE_F71A_US2_IMAGES: booleanFromString.default(false),
   FEATURE_F71A_US7_TEMPLATES: booleanFromString.default(false),
 
+  // --- 108 PR-C — contact marketing recipients (TEMPORARY cutover flag) ----
+  // Widens member-based broadcast audiences from one primary contact per
+  // member to every eligible contact of every active member (US3, FR-020).
+  // Read in ONE module: `src/modules/broadcasts/infrastructure/broadcasts-deps.ts`
+  // maps it to `ResolveSegmentDeps.audienceMode` ('primary_only' |
+  // 'all_contacts') AND — review H-2 — gates the audience ceiling with
+  // FEATURE_F71A_US1_PAGINATION (50,000 only when BOTH are on, else 5,000),
+  // so Domain and Application never see the env. A flip therefore also moves
+  // the accepted audience size and the compose-page copy. Default
+  // FALSE — ships dark; the operator flips it only after the FR-027a
+  // pre-flight review on /admin/marketing/audience (tasks T093/T094).
+  // Flag-off is the rollback for the WIDENING (quickstart § Rollback matrix);
+  // the per-contact opt-out filter is NOT behind it (FR-024 AMENDMENT).
+  // Deleted together with the `primary_only` resolver leg after one clean
+  // week of sends (T099 — plan § Complexity Tracking #2).
+  FEATURE_CONTACT_MARKETING_RECIPIENTS: booleanFromString.default(false),
+
   // --- ClamAV virus scanner (US2 dependency) -------------------------------
   // Network address of the clamd daemon. Empty string in dev = US2 disabled.
   // In prod, points at the Fly.io private 6PN address (e.g.
@@ -1036,6 +1053,8 @@ export const env = {
     f71aUs1Pagination: raw.FEATURE_F71A_US1_PAGINATION,
     f71aUs2Images: raw.FEATURE_F71A_US2_IMAGES,
     f71aUs7Templates: raw.FEATURE_F71A_US7_TEMPLATES,
+    // 108 PR-C — temporary cutover flag for the 1:N marketing audience.
+    contactMarketingRecipients: raw.FEATURE_CONTACT_MARKETING_RECIPIENTS,
     f8Renewals: raw.FEATURE_F8_RENEWALS,
     f8AtRiskDisabled: raw.FEATURE_F8_AT_RISK_DISABLED,
     // COMP-1 US2d — member-erasure reconciliation sweep kill-switch.

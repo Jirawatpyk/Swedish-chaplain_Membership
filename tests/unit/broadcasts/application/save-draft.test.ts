@@ -29,6 +29,8 @@ const FROZEN_NOW = new Date('2026-06-15T05:00:00Z');
 
 interface FixtureOpts {
   readonly primaryContact?: string | null;
+  /** Review 2026-09-07 — the bridge THROWS on a failed read (repo.unexpected). */
+  readonly primaryContactThrows?: boolean;
   readonly existingDraft?: Pick<Broadcast, 'broadcastId' | 'status'> | null;
   readonly insertThrows?: boolean;
 }
@@ -200,6 +202,7 @@ function makeMembersBridge(opts: FixtureOpts = {}): MembersBridgePort {
       return [];
     },
     async getMemberPrimaryContact() {
+      if (opts.primaryContactThrows) throw new Error('members-bridge.getMemberPrimaryContact: repo.unexpected');
       return opts.primaryContact !== null && opts.primaryContact !== undefined
         ? unsafeBrandEmailLower(opts.primaryContact)
         : null;
@@ -221,6 +224,8 @@ function makeMembersBridge(opts: FixtureOpts = {}): MembersBridgePort {
       return { ok: true, value: { previouslyNull: true } };
     },
     async filterMarketingOptedOut() { return new Set(); },
+    async getContactsBySegment() { return []; },
+    async countOptedOutContactsBySegment() { return 0; },
     async getMemberPreferredLocale() { return null; },
   };
 }
@@ -440,6 +445,17 @@ describe('save-draft โ€” Wave 6b coverage push', () => {
         expect(result.error.message).toContain('database connection lost');
       }
     }
+  });
+
+  it('reply-to read throws -> save_draft.server_error, never broadcast_member_missing_primary_contact_email (review 2026-09-07)', async () => {
+    // The bridge now THROWS on `repo.unexpected`; a null here means a real
+    // absence. A failed read must not be reported to the member as "you have
+    // no primary contact email".
+    const { deps } = makeDeps({ primaryContactThrows: true });
+    const result = await saveDraft(deps, baseInput);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('save_draft.server_error');
   });
 
   it('repo throw with non-Error value โ’ save_draft.server_error with "unknown error"', async () => {

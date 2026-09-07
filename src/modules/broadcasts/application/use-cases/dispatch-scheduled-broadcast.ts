@@ -39,11 +39,13 @@ import type {
   AudienceContact,
 } from '../ports/broadcasts-gateway-port';
 import type { MembersBridgePort } from '../ports/members-bridge-port';
+import type { AudienceMode } from '../../domain/audience-mode';
 import type { MarketingUnsubscribesRepo } from '../ports/marketing-unsubscribes-repo';
 import type { EventAttendeesRepository } from '../ports/event-attendees-repository';
 import type { PlansBridgePort } from '../ports/plans-bridge-port';
 import type { EmailTransactionalPort } from '../ports/email-transactional-port';
 import { resolveSegmentRecipients } from './resolve-segment-recipients';
+import { recipientSegmentFromPersisted } from '../../domain/recipient-segment';
 import { unsafeBrandEmailLower } from '../../domain/value-objects/email-lower';
 import { resendDashboardName } from '../format/resend-dashboard-name';
 
@@ -98,6 +100,15 @@ export interface DispatchScheduledBroadcastDeps {
   readonly membersBridge: MembersBridgePort;
   readonly marketingUnsubscribes: MarketingUnsubscribesRepo;
   readonly eventAttendees: EventAttendeesRepository;
+  /**
+   * 108 PR-C — which resolver leg builds a member-based audience. Set by the
+   * composition root from `FEATURE_CONTACT_MARKETING_RECIPIENTS`; see
+   * `domain/audience-mode.ts`. Submit and dispatch MUST read the same value
+   * so the estimate equals the dispatched set (SC-004).
+   */
+  readonly audienceMode: AudienceMode;
+  /** 108 PR-C T085 — the same `audienceCeiling(batchingEnabled)` submit read. */
+  readonly audienceCeiling: number;
   readonly audit: AuditPort;
   readonly clock: { now(): Date };
   /**
@@ -476,30 +487,42 @@ export async function dispatchScheduledBroadcast(
   }
 
   // Step 2: re-resolve recipients (segment may have changed since submit)
-  const segment = buildSegmentFromBroadcast(broadcast);
-  const requestingMember = broadcast.requestedByMemberId;
-  // W2-05: a bridge throw here (Neon/RLS/timeout) must map to the typed
-  // dispatch.server_error like Step 1 (L442-447), not escape the use-case past
-  // failDispatchAndAudit. The broadcast is still 'approved' at this point, so the
-  // next cron tick retries it cleanly.
-  let requestingPrimary: Awaited<
-    ReturnType<typeof deps.membersBridge.getMemberPrimaryContact>
-  >;
-  try {
-    requestingPrimary = await deps.membersBridge.getMemberPrimaryContact(
-      deps.tenant,
-      requestingMember,
+  // Review 2026-09-07 round 2 (C1/C2) — a tier row with no codes is refused
+  // at the boundary, TERMINALLY. It used to reach the resolver as
+  // `{ tier, [] }`: the primary_only read then addressed every active member,
+  // and the all_contacts read's throw was retried every tick forever as a
+  // "transient" `dispatch.server_error`. It is neither: it is a data defect,
+  // so the broadcast fails with an honest reason and the member is told.
+  const segmentResult = recipientSegmentFromPersisted(broadcast);
+  if (!segmentResult.ok) {
+    await failDispatchAndAudit(
+      deps,
+      input,
+      now,
+      'malformed_segment',
+      'broadcast_failed_to_dispatch',
+      {
+        broadcastId: input.broadcastId,
+        reason: 'malformed_segment',
+        detail: segmentResult.error.reason,
+        segmentType: segmentResult.error.segmentType,
+        failedAt: now.toISOString(),
+      },
+      'malformed_segment',
+      broadcast,
     );
-  } catch (e) {
-    return err({
-      kind: 'dispatch.server_error',
-      message: e instanceof Error ? e.message : 'unknown error',
-    });
+    return err({ kind: 'broadcast_failed_to_dispatch', reason: 'malformed_segment' });
   }
+  const segment = segmentResult.value;
+  const requestingMember = broadcast.requestedByMemberId;
+  // 108 PR-C (FR-022): the requesting member's PRIMARY email used to be read
+  // here (W2-05) only to feed the resolver's email-equality self-exclusion.
+  // Self-exclusion is by member id now, so that read — and its throw path —
+  // is gone; the reply-to read at Step 1 is untouched.
 
-  // W2-05, extended for 108 PR-D (review errors MEDIUM-5): the resolver now
-  // has TWO bridge reads that throw by design — the suppression anti-join and
-  // the per-contact opt-out filter, both fail-closed. An unhandled throw here
+  // W2-05, extended for 108 PR-D (review errors MEDIUM-5): the resolver has
+  // bridge reads that throw by design — the suppression anti-join and the
+  // per-contact opt-out filter, both fail-closed. An unhandled throw here
   // escapes to the cron route and lands in `summary.uncaught_error`, the class
   // that means "programming bug, page someone". A Neon blip is not that: it is
   // a typed `dispatch.server_error`, and the next tick retries because the
@@ -512,11 +535,13 @@ export async function dispatchScheduledBroadcast(
         membersBridge: deps.membersBridge,
         eventAttendees: deps.eventAttendees,
         marketingUnsubscribes: deps.marketingUnsubscribes,
+        audienceMode: deps.audienceMode,
+        audienceCeiling: deps.audienceCeiling,
       },
       {
         segment,
         phase: 'dispatch',
-        requestingMemberPrimaryEmail: requestingPrimary,
+        requestingMemberId: requestingMember,
         customRecipients:
           broadcast.customRecipientEmails === null
             ? null
@@ -532,12 +557,25 @@ export async function dispatchScheduledBroadcast(
     });
   }
 
+  // 108 PR-C — the member-leg read failing is typed by the resolver
+  // (research R8). It is the SAME class as the throw above: no transition,
+  // no audit, the broadcast stays `approved` and the next tick retries. It
+  // must never fall through to the branches below, which would mark the
+  // broadcast failed with a fabricated "empty audience" reason.
+  if (!resolvedResult.ok && resolvedResult.error.kind === 'resolve.server_error') {
+    return err({
+      kind: 'dispatch.server_error',
+      message: resolvedResult.error.message,
+    });
+  }
+
   if (!resolvedResult.ok) {
-    // Bug #13 fix (2026-07-10): distinguish the TWO resolve failures.
-    // `resolveSegmentRecipients` returns either `broadcast_empty_segment_blocked`
-    // OR `broadcast_audience_too_large`. The segment is re-resolved here because
-    // it can change since submit (e.g. membership grew past the 5,000 hard cap
-    // via a bulk import). Hard-coding 'audience_post_suppression_empty' for
+    // Bug #13 fix (2026-07-10): distinguish the TWO terminal resolve
+    // failures. `resolveSegmentRecipients` returns
+    // `broadcast_empty_segment_blocked`, `broadcast_audience_too_large`, or
+    // `resolve.server_error` (handled above). The segment is re-resolved here
+    // because it can change since submit (e.g. membership grew past the
+    // audience ceiling via a bulk import). Hard-coding 'audience_post_suppression_empty' for
     // EVERY error mislabelled the failure_reason, the audit payload, AND the
     // AS2 member-notification email as "empty audience" when the true cause was
     // "too large". Mirror submit-broadcast.ts's switch on error.kind.
@@ -625,6 +663,27 @@ export async function dispatchScheduledBroadcast(
     // cheaper equivalent while the sender-facing surface waits for PR-C
     // (T088/T089, recorded as an AMENDMENT at FR-022a): one line, with the
     // broadcast id, counts only — never an address (FR-053a).
+    // Review 2026-09-07 — dispatch re-resolves, so a member who lost their
+    // last eligible contact between submit and this tick surfaces HERE, and
+    // this branch used to discard `orphans` entirely. Counts by reason only,
+    // with the broadcast id (FR-053a) — the per-member audit stays at submit.
+    if (resolvedResult.value.orphans.length > 0) {
+      const byReason: Record<string, number> = {};
+      for (const o of resolvedResult.value.orphans) {
+        byReason[o.reason] = (byReason[o.reason] ?? 0) + 1;
+      }
+      logger.info(
+        {
+          tenantId: deps.tenant.slug,
+          broadcastId: input.broadcastId,
+          orphans: resolvedResult.value.orphans.length,
+          orphansByReason: byReason,
+          estimatedAtSubmit: broadcast.estimatedRecipientCount,
+          resolvedAtDispatch: resolvedResult.value.estimatedCount,
+        },
+        'broadcasts.dispatch.orphans_at_dispatch',
+      );
+    }
     if (resolvedResult.value.droppedByPreference > 0) {
       logger.info(
         {
@@ -1254,23 +1313,3 @@ async function emitExpiredPlanAuditIfApplicable(args: {
   }
 }
 
-/**
- * Reconstructs the in-memory `RecipientSegment` discriminated-union from
- * the persisted broadcast row's `segmentType` + `segmentParams` +
- * `customRecipientEmails`.
- */
-function buildSegmentFromBroadcast(b: Broadcast) {
-  if (b.segmentType === 'all_members') return { kind: 'all_members' as const };
-  if (b.segmentType === 'tier') {
-    const tierCodes =
-      (b.segmentParams as { tierCodes?: string[] } | null)?.tierCodes ?? [];
-    return { kind: 'tier' as const, tierCodes };
-  }
-  if (b.segmentType === 'event_attendees_last_90d') {
-    return { kind: 'event_attendees_last_90d' as const };
-  }
-  return {
-    kind: 'custom' as const,
-    emails: b.customRecipientEmails ?? [],
-  };
-}

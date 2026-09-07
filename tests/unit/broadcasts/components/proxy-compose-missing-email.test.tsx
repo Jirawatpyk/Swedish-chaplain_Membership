@@ -93,8 +93,14 @@ vi.mock('@/components/broadcast/member-picker', () => ({
   },
 }));
 
+// Round 2 (UX H-1): the SegmentPicker mock exposes its `onChange` so a test
+// can switch the segment and watch the notice follow it.
+let capturedSegmentOnChange: ((next: unknown) => void) | null = null;
 vi.mock('@/components/broadcast/segment-picker', () => ({
-  SegmentPicker: () => <div data-testid="segment-picker" />,
+  SegmentPicker: ({ onChange }: { onChange: (next: unknown) => void }) => {
+    capturedSegmentOnChange = onChange;
+    return <div data-testid="segment-picker" />;
+  },
 }));
 
 vi.mock('@/components/broadcast/custom-list-input', () => ({
@@ -178,7 +184,7 @@ afterEach(() => {
 function renderForm() {
   return render(
     <NextIntlClientProvider locale="en" messages={en as Record<string, unknown>}>
-      <ProxyComposeForm />
+      <ProxyComposeForm audienceCeiling={5000} />
     </NextIntlClientProvider>,
   );
 }
@@ -213,6 +219,34 @@ describe('ProxyComposeForm — missing primary contact email (Task 6)', () => {
 
     // The submit button must be disabled.
     expect(screen.getByTestId('submit-btn')).toBeDisabled();
+  });
+
+  // Review 2026-09-07 round 2 (UX H-1 + i18n H3) — the self-exclusion notice
+  // rendered on member selection regardless of segment, ABOVE the segment
+  // picker, and this PR had strengthened its copy ("a member's contacts are
+  // excluded"). On a custom list containing that member's address the
+  // opposite happens. The notice now follows the picker and says which way
+  // the rule goes for the segment in hand.
+  it('the self-exclusion notice follows the segment: "won\'t receive" on all_members, "will receive" on a custom list, rendered AFTER the picker', async () => {
+    renderForm();
+    await act(async () => {
+      capturedOnSelect?.({
+        memberId: 'm-hasemail',
+        companyName: 'Has Email Corp',
+        primaryContactName: 'Jane Doe',
+        hasPrimaryContactEmail: true,
+      });
+    });
+    const excluded = screen.getByText(/won't receive this broadcast/i);
+    const picker = screen.getByTestId('segment-picker');
+    // The picker precedes the notice in document order.
+    expect(picker.compareDocumentPosition(excluded) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    await act(async () => {
+      capturedSegmentOnChange?.({ kind: 'custom', tierCodes: [], emails: [] } as never);
+    });
+    expect(screen.queryByText(/won't receive this broadcast/i)).toBeNull();
+    expect(screen.getByText(/will receive it/i)).toBeInTheDocument();
   });
 
   it('no warning shown when hasPrimaryContactEmail is true', async () => {

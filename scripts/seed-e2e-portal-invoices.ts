@@ -379,8 +379,12 @@ async function seedInvoicesIfMissing(
   };
   const memberSnap = {
     company_name: 'E2E Alpha Co',
+    // 0045 `invoices_snapshot_has_contact_email` — non-draft snapshots must
+    // carry string `legal_name` + `address` too (the seed ran red on this
+    // CHECK right after the 0056 one, 2026-09-07).
+    legal_name: 'E2E Alpha Co',
     tax_id: null,
-    address: null,
+    address: 'Bangkok (E2E fixture)',
     // FR-038 — snapshot MUST carry the primary contact email so F4's
     // `recordPayment` can enqueue the auto-email receipt without
     // reaching back into the mutable members/contacts tables.
@@ -447,6 +451,10 @@ async function seedInvoicesIfMissing(
         dueDate: '2026-05-15',
         paidAt: s.status === 'paid' ? new Date('2026-04-18T00:00:00Z') : null,
         paymentMethod: s.status === 'paid' ? 'bank_transfer' : null,
+        // 0056 `invoices_paid_has_receipt_status` — a paid invoice must carry a
+        // receipt PDF status; 'pending' is the async path's initial state and
+        // claims no receipt blob (the seed ran red on this CHECK, 2026-09-07).
+        receiptPdfStatus: s.status === 'paid' ? 'pending' : null,
         subtotalSatang: subtotal,
         vatRateSnapshot: '0.0700',
         vatSatang: vat,

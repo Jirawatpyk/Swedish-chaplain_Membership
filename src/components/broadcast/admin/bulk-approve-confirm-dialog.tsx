@@ -81,6 +81,13 @@ export interface BulkApproveConfirmDialogProps {
    * the selection empties on success) — see `closedViaSuccessRef` below.
    */
   readonly triggerRef?: React.RefObject<HTMLButtonElement | null>;
+  /**
+   * Review 2026-09-07 round 2 (UX M-1) — the queue's halt state could not
+   * be read, so the selection may include a halted member's broadcast. The
+   * page-level banner said "refresh before approving anything"; this is
+   * where the approving happens, so the warning is repeated here.
+   */
+  readonly haltUnknown?: boolean;
 }
 
 export function BulkApproveConfirmDialog(
@@ -209,6 +216,11 @@ export function BulkApproveConfirmDialog(
             {props.selectedCount > props.cap ? (
               <span className="mt-2 block text-destructive">
                 {t('overCapNote', { max: props.cap, selected: props.selectedCount })}
+              </span>
+            ) : null}
+            {props.haltUnknown === true ? (
+              <span className="mt-2 block font-medium text-destructive">
+                {t('haltUnknownWarning')}
               </span>
             ) : null}
           </AlertDialogDescription>

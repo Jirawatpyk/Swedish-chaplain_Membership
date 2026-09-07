@@ -12,6 +12,9 @@ import { SlaBanner, type SlaStats } from '@/components/broadcast/admin/sla-banne
 import { OverdueBanner } from '@/components/broadcast/admin/overdue-banner';
 import { isDefaultBroadcastView } from './_lib/is-default-view';
 import { HaltStateBanner } from '@/components/broadcast/admin/halt-state-banner';
+import { HaltStateUnavailableBanner } from '@/components/broadcast/admin/halt-state-unavailable-banner';
+import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { ManagerReadonlyBanner } from '@/components/broadcast/admin/manager-readonly-banner';
 import { isF71aUs7Enabled } from '@/modules/broadcasts';
 import {
@@ -232,13 +235,31 @@ export default async function AdminBroadcastsPage({
     bannerSeverity: severity,
   };
 
-  // Halt-state members (Q14 banner)
-  const halted = await membersBridge.getMembersHaltedInTenant(tenant);
-  const haltedSerialised = halted.map((m) => ({
-    memberId: m.memberId,
-    displayName: m.displayName,
-    haltedSinceAt: m.haltedSinceAt,
-  }));
+  // Halt-state members (Q14 banner). Review 2026-09-07 — the bridge THROWS
+  // on a failed read (it used to answer `[]`, so an outage rendered a clean
+  // queue with the red banner silently gone). Render an explicit
+  // "unavailable" notice instead: staff must not approve against a queue
+  // that may be hiding a halted member.
+  let haltedSerialised: ReadonlyArray<{
+    memberId: string;
+    displayName: string;
+    haltedSinceAt: Date;
+  }> = [];
+  let haltStateUnavailable = false;
+  try {
+    const halted = await membersBridge.getMembersHaltedInTenant(tenant);
+    haltedSerialised = halted.map((m) => ({
+      memberId: m.memberId,
+      displayName: m.displayName,
+      haltedSinceAt: m.haltedSinceAt,
+    }));
+  } catch (e) {
+    haltStateUnavailable = true;
+    logger.error(
+      { tenantId: tenant.slug, err: errKind(e) },
+      'admin.broadcasts.queue.halt_read_failed',
+    );
+  }
 
   // Member options for filter dropdown (≤200 for SweCham MVP)
   const memberOptionsRows = (await runInTenant(tenant, async (tx) =>
@@ -350,10 +371,19 @@ export default async function AdminBroadcastsPage({
       {truncated ? (
         <p className="text-xs text-muted-foreground">{t('truncationNote')}</p>
       ) : null}
-      <HaltStateBanner halted={haltedSerialised} readOnly={isReadOnlyManager} />
+      {haltStateUnavailable ? (
+        // Round 2 (UX M-2): the same anatomy as the sibling banner in this slot.
+        <HaltStateUnavailableBanner />
+      ) : (
+        <HaltStateBanner halted={haltedSerialised} readOnly={isReadOnlyManager} />
+      )}
       {isReadOnlyManager ? <ManagerReadonlyBanner /> : null}
       <QueueFilters memberOptions={memberOptions} />
-      <QueueTable rows={rows} readOnly={isReadOnlyManager} />
+      {/* Round 2 (UX M-1): the warning travels to the decision point — the
+          bulk-approve confirm dialog repeats it when the halt state is
+          unknown. A NEW prop, not `readOnly`: "manager cannot approve" and
+          "the halt read failed" are different facts. */}
+      <QueueTable rows={rows} readOnly={isReadOnlyManager} haltUnknown={haltStateUnavailable} />
     </TableContainer>
   );
 }

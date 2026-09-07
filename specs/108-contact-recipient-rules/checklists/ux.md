@@ -121,3 +121,20 @@ Changes on THIS checklist's surface since the previous stamp: none to any
 rendered surface. The audience page, both toggles, the five-state badge and
 every string are byte-identical; the work was correctness, observability, spec
 AMENDMENTs and test quality.
+
+## Co-Sign Footer — PR-C (T092)
+
+**T092 Review Gate — UX Checklist Co-Sign (PR-C: the compose live count, hints, halt banner, submit feedback)**
+
+- **Co-signer**: Claude (AI maintainer; the `enterprise-ux-designer` pass ran 2026-09-07 — the FIRST UX pass on this branch, after the maintainer asked whether one had run), solo-maintainer substitute per Constitution v1.4.2 Principle IX
+- **Date**: 2026-09-07
+- **Branch**: `108-pr-c-audience-1n` (PR #346)
+- **Branch HEAD at review**: `deb5a1c09` — verdict then **SHIP WITH FIX-BEFORE-MERGE** (6 HIGH, § 15 FAIL on #3 and #7). **Re-verified at `a5dc67f2a`** (the UI commit; unchanged since).
+- **What the pass established that the PR body had not said**: `FEATURE_CONTACT_MARKETING_RECIPIENTS` gates only which `estimateNote` copy is chosen — the live count, the hints, the proxy notice, the halt alert and the toasts are all LIVE ON MERGE for SweCham's members. The PR body now says so.
+- **HIGH ×6 — all FIXED in `a5dc67f2a`**: H-1 the proxy form's self-exclusion notice rendered on member selection regardless of segment, above the picker, promising an exclusion the custom list and the attendee segment do not apply → follows the picker AND the segment (`proxySelfExclusionNoticeKey`); H-2 the attendee segment inherited the custom-list copy → its own `estimateNote.attendees`; H-3 the absence of a hint on custom/attendee read as "same rule" → every segment kind carries one (`selfExclusionHintKey`); H-4 "the submission would be refused" with Submit enabled → a measured refusal disables it (`submitBlockedByCount`; `unavailable` never does — FR-040b); H-5 `unavailable` looked like `loading` and was terminal → warning tone + icon + "Try again" (retry nonce in the hook); H-6 the preference count lived in a 4 s toast under a `router.push()` → its own toast, 8 s.
+- **MEDIUM ×6**: M-1 the halt warning reaches the decision point (`haltUnknown` → `BulkApproveConfirmDialog`) ✔ · M-2 `HaltStateUnavailableBanner` with the sibling banner's anatomy, no server-rendered `role="alert"` ✔ · M-3 the benefits page says why on `?unavailable=no_member`; a FAILED read throws to `error.tsx` instead of redirecting ✔ · M-4 the count region is always rendered with `min-h` (no CLS) ✔ · M-5 "limit" everywhere in EN ✔ · M-6 `droppedByPreference` is now READ by the `empty` copy (a tier where everyone objected reads differently from an empty one) ✔.
+- **LOW**: L-1 the live region is in the DOM when idle ✔ · L-2 TH `{count, number}` ✔ · L-3 SV `mottagarnas` ✔ · L-4 `border-destructive/40` at 2.26:1 — recorded as NOT a finding (meaning carried by 6.72:1 text; repo-wide pattern) · L-5 the proxy form still has no `estimateNote` (LOW, open) · L-6 the measured count carries `font-medium` + icon ✔.
+- **§ 15 at `a5dc67f2a`**: #1 PASS · #2 PASS · **#3 PASS** (the four T084 cases run axe wcag2a/aa + 21a/aa on the live-count, tier, unavailable+retry and hint states — 0 violations, chromium `--workers=1`) · #4 PASS (5,309 keys ×3; the i18n reviewer's TH/SV corrections applied) · #5 WAIVED (inline status line, not a first-load data section) · #6 PASS · **#7 PASS** (error states distinguishable, with a way out) · #8 PASS (separate toasts) · #9 PASS (the bulk dialog carries the halt warning) · #10–#12 N/A · #13 PASS (the retry link has the focus ring) · #14 PASS (both themes computed) · #15 PASS (region present before content; the banner has an h2) · #16 PASS · #17–#18 N/A.
+- **Do not churn**: `useRecipientCount`'s settled-answer/url pairing and monotonic `seqRef` are unchanged; the retry nonce is additive (the answer is keyed by `(url, nonce)`).
+
+**Co-sign verdict**: ux.md is **CO-SIGNED for PR-C** at `a5dc67f2a`. Open LOW: L-5 (proxy `estimateNote`). Re-sign if any of the six surfaces above changes.

@@ -22,6 +22,15 @@ import { useDeferredValue, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
+import {
+  errorValues,
+  estimateNoteKey,
+  excludedByPreference,
+  PREFERENCE_TOAST_DURATION_MS,
+  selfExclusionHintKey,
+  submitBlockedByCount,
+  type ComposeAudienceMode,
+} from '@/components/broadcast/submit-feedback';
 import { z } from 'zod';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -35,6 +44,7 @@ import { PreviewPane } from './preview-pane';
 import { QuotaDisplay, type QuotaSnapshot } from './quota-display';
 import { SubmitButton } from './submit-button';
 import { UnsafeImageSourcesList } from './unsafe-image-sources-list';
+import { RecipientCountLine, useRecipientCount } from './recipient-count';
 
 const TiptapEditor = loadTiptapEditor<{
   initialHtml: string;
@@ -112,6 +122,16 @@ export interface ComposeFormProps {
    * when the kill-switch is fully ON.
    */
   readonly imagesEnabled?: boolean;
+  /**
+   * 108 PR-C T079 / T085 — the ceiling and the audience leg in force,
+   * resolved server-side by the page from the composition root
+   * (`currentAudienceCeiling()` / `currentAudienceMode()`), so the copy
+   * names the real limit (FR-041) and says who the recipients are under the
+   * flag (FR-020). REQUIRED on purpose: a default here would be a second
+   * definition of the ceiling (FR-042).
+   */
+  readonly audienceCeiling: number;
+  readonly audienceMode: ComposeAudienceMode;
 }
 
 export function ComposeForm({
@@ -120,6 +140,8 @@ export function ComposeForm({
   initialBodyHtml = '<p></p>',
   initialQuota = null,
   imagesEnabled = false,
+  audienceCeiling,
+  audienceMode,
 }: ComposeFormProps): React.ReactElement {
   const router = useRouter();
   const t = useTranslations('portal.broadcasts.compose');
@@ -159,6 +181,18 @@ export function ComposeForm({
   const bodyContainerRef = useRef<HTMLDivElement>(null);
 
   const deferredBody = useDeferredValue(bodyHtml);
+  // 108 PR-C T089 — debounced live count for the chosen segment (member mode:
+  // the caller's own member is the one self-excluded server-side).
+  // Round 2 (UX H-5): a "Try again" on an unavailable count re-runs the
+  // same segment; the nonce is the only thing that changes.
+  const [countRetry, setCountRetry] = useState(0);
+  const recipientCount = useRecipientCount(
+    {
+      mode: 'member',
+      segment: { kind: segment.kind, tierCodes: segment.tierCodes },
+    },
+    countRetry,
+  );
 
   // UX-3 — beforeunload guard so a member who composed substantial
   // content + accidentally closes the tab gets a browser-native
@@ -191,12 +225,20 @@ export function ComposeForm({
   }, [serverError]);
 
   const customLines = parseLines(customList);
+  // /code-review 2026-09-07 (finding #6) — both are null for a segment
+  // kind this build does not recognise; the JSX omits the line rather
+  // than rendering a raw i18n key path (next-intl does not throw).
+  const estimateNote = estimateNoteKey(segment.kind, audienceMode);
+  const selfExclusionHint = selfExclusionHintKey(segment.kind);
   const validation = SubmitSchema.safeParse({ subject, bodyHtml });
   const customListValid =
     segment.kind !== 'custom' || (customLines.length > 0 && customLines.length <= 100);
   const tierValid = segment.kind !== 'tier' || segment.tierCodes.length > 0;
+  // Round 2 (UX H-4, decision (a)): a MEASURED refusal from the live count
+  // blocks the submit — the count line, in red, is the reason. `unavailable`
+  // never blocks (the server recomputes — FR-040b).
   const submitDisabled =
-    !validation.success || !customListValid || !tierValid;
+    !validation.success || !customListValid || !tierValid || submitBlockedByCount(recipientCount);
 
   // UX-C2 — per-field error tracking for aria-describedby + aria-invalid.
   // Empty subject/body is the "needs input" state, not an "error" state
@@ -235,9 +277,14 @@ export function ComposeForm({
         error?: {
           code?: string;
           message?: string;
-          details?: { disallowedSources?: ReadonlyArray<string> };
+          // 108 PR-C T085: `cap` / `count` ride on the audience-too-large 422
+          // so the copy can name the ceiling the server refused against.
+          details?: { disallowedSources?: ReadonlyArray<string>; cap?: unknown; count?: unknown };
         };
         broadcastId?: string;
+        // 108 PR-C (FR-022a) — how many entries the resolver excluded by
+        // recipient preference; shown as a number in the success toast.
+        recipientPreferenceExcluded?: unknown;
       } = {};
       try {
         responseBody = (await res.json()) as typeof responseBody;
@@ -261,9 +308,17 @@ export function ComposeForm({
 
       if (res.ok && responseBody.broadcastId) {
         setUnsafeImageSources(null);
-        toast.success(t('toast.submitted'), {
-          description: t('toast.submittedSlaHint'),
-        });
+        toast.success(t('toast.submitted'), { description: t('toast.submittedSlaHint') });
+        // 108 PR-C T077 (FR-022a): "{n} addresses were excluded by recipient
+        // preference." Round 2 (UX H-6): its OWN toast, held longer — as a
+        // description under the success toast it vanished in 4 s while
+        // `router.push()` was already navigating away.
+        const excluded = excludedByPreference(responseBody);
+        if (excluded > 0) {
+          toast.info(t('toast.preferenceExcluded', { count: excluded }), {
+            duration: PREFERENCE_TOAST_DURATION_MS,
+          });
+        }
         setQuotaRefreshKey((n) => n + 1);
         router.push(`/portal/benefits?tab=broadcasts&submitted=${responseBody.broadcastId}`);
         router.refresh();
@@ -283,13 +338,11 @@ export function ComposeForm({
       } else {
         setUnsafeImageSources(null);
       }
-      // Use the i18n key if recognised; fall back to the server message.
-      let msg: string;
-      try {
-        msg = tErr(code);
-      } catch {
-        msg = responseBody.error?.message ?? tErr('internal_error');
-      }
+      // 108 PR-C T085: the too-large copy interpolates the ceiling from the
+      // 422 body, falling back to the page's own ceiling (round 2, i18n H4 —
+      // next-intl never throws; a missing value would have rendered the raw
+      // key path, so the `try/catch` that used to sit here was dead code).
+      const msg = tErr(code, errorValues(code, responseBody.error?.details, audienceCeiling));
       // UX-R2-1: surface to the failing field; useEffect will focus.
       setServerError({ field: ERROR_CODE_FIELD[code] ?? null, message: msg });
       toast.error(msg);
@@ -432,20 +485,32 @@ export function ComposeForm({
             disabled={submitting}
           />
 
-          {/* UX-1 — surface expectations about recipient counts so the
-              member doesn't hit the 5,000 cap or empty-segment-block as
-              a "submit-to-discover" surprise. We deliberately don't
-              compute the live count here (would require an auth'd API
-              endpoint + debounced fetch + cap pre-check) — instead
-              describe the segment shape + link to broadcast detail
-              page where the post-submit count is visible. */}
-          <p className="text-xs text-muted-foreground">
-            {segment.kind === 'all_members'
-              ? t('estimateNote.allMembers')
-              : segment.kind === 'tier'
-                ? t('estimateNote.tier')
-                : t('estimateNote.custom')}
-          </p>
+          {/* UX-1 — set expectations before the live count settles: the
+              estimate note describes the segment shape and the REAL
+              ceiling (`audienceCeiling`, not a hard-coded 5,000), and
+              `RecipientCountLine` below shows the resolver's own number
+              once it lands (108 PR-C T089 — the auth'd endpoint, the
+              debounced fetch and the cap pre-check this comment once said
+              were deliberately not built). */}
+          {/* 108 PR-C T079: leg-aware wording + the real ceiling (FR-041).
+              /code-review finding #6: an unrecognised segment kind yields
+              null and this line is omitted — never a raw i18n key path,
+              which is what next-intl renders for an unknown key. */}
+          {estimateNote !== null ? (
+            <p className="text-xs text-muted-foreground">
+              {t(estimateNote, { ceiling: audienceCeiling })}
+            </p>
+          ) : null}
+          {/* 108 PR-C T079 (FR-022b): self-exclusion covers every contact of
+              the sending member, not only the primary address. Round 2 (UX
+              H-3): every segment kind says which way the rule goes — silence
+              on the custom list / attendees read as "same rule". */}
+          {selfExclusionHint !== null ? (
+            <p className="text-xs text-muted-foreground">{t(selfExclusionHint)}</p>
+          ) : null}
+          {/* 108 PR-C T089 (FR-040): the live count — the same resolver that
+              decides the send, so the number shown is the number sent (SC-004). */}
+          <RecipientCountLine state={recipientCount} onRetry={() => setCountRetry((n) => n + 1)} />
 
           {segment.kind === 'custom' ? (
             <CustomListInput

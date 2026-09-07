@@ -130,6 +130,8 @@ export interface QueueBulkActionBarProps {
   readonly selectedIds: string[];
   readonly onClear: () => void;
   readonly readOnly: boolean;
+  /** Round 2 (UX M-1) — see `QueueTableProps.haltUnknown`. */
+  readonly haltUnknown?: boolean;
   /**
    * Task 6 CF-2 — called (instead of `onClear`) after a PARTIAL fan-out
    * failure (some approvals succeeded, some didn't), with the list of ids
@@ -162,6 +164,7 @@ export function QueueBulkActionBar({
   onClear,
   onPartialFailure,
   readOnly,
+  haltUnknown = false,
   recipientByIdRows,
 }: QueueBulkActionBarProps): React.JSX.Element | null {
   const t = useTranslations('admin.broadcasts.queue.bulk');
@@ -483,6 +486,7 @@ export function QueueBulkActionBar({
         totalRecipients={totalRecipients}
         onConfirm={(d) => handleBulkApprove(d)}
         triggerRef={approveBtnRef}
+        haltUnknown={haltUnknown}
       />
     </>
   );

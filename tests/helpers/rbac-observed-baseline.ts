@@ -95,6 +95,8 @@ export const OBSERVED_API: readonly ObservedSurface[] = [
   { surface: 'DELETE /api/plans/[year]/[planId]', kind: 'api', key: 'plans.write' },
   { surface: 'GET /api/admin/audit/export.csv', kind: 'api', key: 'audit.read' },
   { surface: 'GET /api/admin/broadcasts', kind: 'api', key: 'broadcasts.read' },
+  // 108 PR-C T088 — admin proxy compose count (data-model § 4).
+  { surface: 'GET /api/admin/broadcasts/recipient-count', kind: 'api', key: 'broadcasts.write' },
   { surface: 'GET /api/admin/broadcasts/sla-stats', kind: 'api', key: 'broadcasts.read' },
   { surface: 'GET /api/admin/broadcasts/templates', kind: 'api', key: 'broadcasts.read' },
   { surface: 'GET /api/admin/directory/exports/[jobId]/download', kind: 'api', key: 'directory.export' },

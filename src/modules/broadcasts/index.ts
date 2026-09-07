@@ -49,10 +49,12 @@ export {
 export {
   asBroadcastSegmentDefinitionId,
   parseBroadcastSegmentDefinitionId,
+  recipientSegmentFromPersisted,
   type BroadcastSegmentDefinition,
   type BroadcastSegmentDefinitionId,
   type BroadcastSegmentDefinitionIdError,
   type BroadcastSegmentDefinitionParams,
+  type MalformedSegmentError,
   type RecipientSegment,
 } from './domain/recipient-segment';
 
@@ -170,11 +172,18 @@ export {
   type ValidateCustomRecipientsOutput,
 } from './application/use-cases/validate-custom-recipients';
 export {
+  isMissingAddressOrphan,
   resolveSegmentRecipients,
+  type OrphanReason,
+  type ResolvedOrphan,
+  type ResolveSegmentDeps,
   type ResolveSegmentError,
   type ResolveSegmentInput,
   type ResolveSegmentOutput,
 } from './application/use-cases/resolve-segment-recipients';
+// 108 PR-C — the flag-derived resolver leg (Domain type; env read only in the
+// composition root).
+export type { AudienceMode } from './domain/audience-mode';
 
 // --- Application use-cases (Phase 4 US2) ---------------------------------
 export {
@@ -261,6 +270,10 @@ export {
 
 // --- F9 cross-module read (dashboard needs-attention, FR-002/AS-2) -------
 export { makeBroadcastApprovalCounter } from './infrastructure/broadcasts-deps';
+// 108 PR-C — the flag-derived resolver leg, read in the composition root only.
+export { currentAudienceMode, currentAudienceCeiling, makeResolveSegmentDeps } from './infrastructure/broadcasts-deps';
+// 108 PR-C T085 — the one ceiling (Domain) + the split threshold it bounds.
+export { audienceCeiling, SPLIT_THRESHOLD_RECIPIENTS } from './domain/audience-ceiling';
 export type { BroadcastApprovalCounter } from './application/ports/broadcast-approval-counter';
 
 // --- Composition root factories (Phase 4 US2) ----------------------------

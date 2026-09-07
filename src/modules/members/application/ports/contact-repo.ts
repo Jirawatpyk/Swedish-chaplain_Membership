@@ -77,6 +77,18 @@ export interface ContactRepo {
    * (`removed_at IS NULL`) — a soft-deleted contact with the same
    * email should not block a new invite.
    *
+   * Matched CASE-INSENSITIVELY, on `lower(email)`. Storage is not
+   * guaranteed normalised and every email index on `contacts` reflects that
+   * — `contacts_tenant_email_uniq (tenant_id, lower(email))` (0009),
+   * `contacts_lower_email_idx` (0182), `contacts_tenant_lower_email_all_idx`
+   * (0296). An implementation that compares the column directly returns zero
+   * rows for a mixed-case row, CLEANLY: no throw, no log. That was the live
+   * defect /code-review 2026-09-07 #3 found — it wrote
+   * `marketing_unsubscribes.contact_id = NULL` and sent the invite
+   * duplicate-check down the create path into a 23505. Stated here, on the
+   * PORT, because until then only the use-case docblock said it and a second
+   * implementation could re-derive the bug from this contract alone.
+   *
    * Returns `repo.not_found` when no live contact with that email
    * exists in the tenant.
    */

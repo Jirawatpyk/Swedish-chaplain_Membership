@@ -3,61 +3,132 @@
  *
  * Resolves a `RecipientSegment` to a deduplicated, suppression-filtered,
  * self-excluded, halt-aware recipient list. The single source of truth
- * for "who actually receives this broadcast" used by both submit-time
- * (estimatedRecipientCount) and dispatch-time (actual send list).
+ * for "who actually receives this broadcast" used by submit-time
+ * (estimatedRecipientCount), the recipient-count endpoints, and every
+ * dispatch path (dispatch-scheduled, split-large-broadcasts,
+ * dispatch-batches). Any other recipient query is a defect (108 contract
+ * broadcast-audience § preamble).
  *
- * Pipeline:
- *   1. Dispatch by segment kind →
- *      - all_members / tier → membersBridge.getMembersBySegment
- *      - event_attendees_last_90d → eventAttendees.getLastNinetyDayAttendees (F6 bridge — distinct attendees of events in the last 90 days)
- *      - custom → use input emails (already validated by validate-custom-recipients)
- *   2. Filter halted members (already done by F3 use-case)
- *   3. Filter self (Q16 — exclude requesting member's primary contact email)
- *   4. Filter suppressed (marketingUnsubscribesRepo.lookupBatch)
- * 4b. Filter the per-contact marketing opt-out (108 PR-D, FR-022a) —
- *     `membersBridge.filterMarketingOptedOut`, AFTER suppression so an
- *     address on both lists counts once; a failed lookup REJECTS, never
- *     fail-open
- *   5. Surface orphans (members with NULL primary email — caller emits
- *      `broadcast_member_missing_primary_contact_email` audit per orphan)
- *   6. Hard-cap 5,000 (FR-016a)
+ * Pipeline (108 PR-C, contract § 2):
+ *   1. Source by segment kind →
+ *      - all_members / tier, `audienceMode = 'all_contacts'` →
+ *        membersBridge.getContactsBySegment: every eligible contact of every
+ *        eligible member (FR-020); a null contact is an orphan (FR-029)
+ *      - all_members / tier, `audienceMode = 'primary_only'` →
+ *        membersBridge.getMembersBySegment: one primary per member (the
+ *        pre-108 leg; a null primary email is an orphan)
+ *      - event_attendees_last_90d → eventAttendees.getLastNinetyDayAttendees
+ *      - custom → input emails (already validated by validate-custom-recipients)
+ *      A failed bridge read on either member leg is a typed
+ *      `resolve.server_error` — never an empty audience (research R8).
+ *   2. Halted / inactive / archived / erased members are excluded by the F3
+ *      query behind the bridge (FR-021), on both legs.
+ *   3. Self-exclusion by MEMBER id (`requestingMemberId`): every contact of
+ *      the submitting member, member-based segments only (FR-022, FR-022a —
+ *      the custom list is exempt; the old email-equality arm is gone).
+ *   4. Dedupe by address (FR-023).
+ *   5. Suppression: `lookupBatch` in chunks of 5,000.
+ *  5b. Per-contact marketing opt-out (108 PR-D, FR-022a) —
+ *      `membersBridge.filterMarketingOptedOut`, AFTER suppression so an
+ *      address on both lists counts once; a failed lookup REJECTS (throws),
+ *      never fail-open. On the all_contacts leg the F3 query already
+ *      excluded opted-out contacts, so this is defence in depth there.
+ *   6. Empty → `broadcast_empty_segment_blocked`.
+ *   7. Above the ceiling → `broadcast_audience_too_large` — never truncated
+ *      (FR-016a, US5). Both refusals carry the MEASURED `droppedByPreference`
+ *      and `orphans` (round 2, C8) — the pipeline ran to the end.
+ *   (The numbering matches the step comments in the body below.)
  *
- * Returns the resolved recipient list (non-empty if successful) +
- * orphan member ids + dedup count for observability.
+ * `droppedByPreference` (FR-022a "tell the sender how many"): every
+ * opt-out drop, plus — for the custom list and the attendee segment only —
+ * every suppression drop (US3 AS9: "2 addresses were excluded by recipient
+ * preference" covers an unsubscribed address as much as a switched-off
+ * one). On a member-based segment an unsubscribed person is simply not in
+ * the audience, so suppression is not a "drop" there.
  */
 import { err, ok, type Result } from '@/lib/result';
 import { broadcastsMetrics } from '@/lib/metrics';
 import type { TenantContext } from '@/modules/tenants';
 import type { RecipientSegment } from '../../domain/recipient-segment';
+import type { AudienceMode } from '../../domain/audience-mode';
 import type { MembersBridgePort } from '../ports/members-bridge-port';
 import type { EventAttendeesRepository } from '../ports/event-attendees-repository';
 import type { MarketingUnsubscribesRepo } from '../ports/marketing-unsubscribes-repo';
-import {
-  unsafeBrandEmailLower,
-  type EmailLower,
-} from '../../domain/value-objects/email-lower';
+import type { EmailLower } from '../../domain/value-objects/email-lower';
 
-const AUDIENCE_HARD_CAP = 5000;
+/**
+ * Contract § 2 step 5 — `lookupBatch` chunk size. A 50,000-recipient audience
+ * (US5, batching AND the 1:N flag ON) is 10 round trips, never one
+ * 50,000-parameter `= ANY`.
+ * 5,000 rather than 1,000: the resolve is latency-bound (T081 measured
+ * 20,000 contacts at 1,000-row pages: 42 round trips ≈ 9–11 s from a
+ * ~220 ms-RTT workstation; at 5,000 it is ~10 trips ≈ 3.7 s), and the F3
+ * opt-out filter already sends the whole batch as one array.
+ */
+const SUPPRESSION_LOOKUP_CHUNK = 5000;
 
 export type ResolveSegmentError =
-  | { readonly kind: 'broadcast_empty_segment_blocked' }
+  /**
+   * Review 2026-09-07 round 2 (C8 — types F-5 + code M-2): both refusals are
+   * reached AFTER the whole pipeline ran, so they carry what it MEASURED. A
+   * tier where every contact objected is `empty` with `droppedByPreference
+   * N`, distinguishable from a tier with nobody in it (FR-022a); the old
+   * bare `{ kind }` threw that number away at the one point it explained
+   * the outcome.
+   */
+  | {
+      readonly kind: 'broadcast_empty_segment_blocked';
+      readonly droppedByPreference: number;
+      readonly orphans: ReadonlyArray<ResolvedOrphan>;
+    }
   | {
       readonly kind: 'broadcast_audience_too_large';
       readonly count: number;
       readonly cap: number;
-    };
+      readonly droppedByPreference: number;
+      readonly orphans: ReadonlyArray<ResolvedOrphan>;
+    }
+  /**
+   * 108 PR-C — the member-leg bridge read failed (Neon outage, RLS denial,
+   * a keyset page that did not come back). Typed so submit maps it to
+   * `submit.server_error` (no reject audit — nothing was decided) and the
+   * dispatch paths to `dispatch.server_error` (the broadcast stays
+   * `approved`; the next tick retries). It must never be reported as an
+   * empty or too-large audience.
+   */
+  | { readonly kind: 'resolve.server_error'; readonly message: string };
 
 export interface ResolveSegmentDeps {
   readonly tenant: TenantContext;
   readonly membersBridge: MembersBridgePort;
   readonly eventAttendees: EventAttendeesRepository;
   readonly marketingUnsubscribes: MarketingUnsubscribesRepo;
+  /**
+   * 108 PR-C — which leg builds a member-based audience. Decided once in the
+   * composition root from `FEATURE_CONTACT_MARKETING_RECIPIENTS`; see
+   * `domain/audience-mode.ts`.
+   */
+  readonly audienceMode: AudienceMode;
+  /**
+   * 108 PR-C T085 (FR-041 / FR-042) — the ONE ceiling,
+   * `audienceCeiling(batchingEnabled)` from `domain/audience-ceiling.ts`,
+   * passed in by the composition root so count, submit and dispatch compare
+   * against the same number and the refusal echoes it. Never truncate to it.
+   */
+  readonly audienceCeiling: number;
 }
 
 export interface ResolveSegmentInput {
   readonly segment: RecipientSegment;
-  /** Member submitting the broadcast — excluded from recipients (Q16). */
-  readonly requestingMemberPrimaryEmail: EmailLower | null;
+  /**
+   * Member submitting the broadcast — EVERY contact of that member is
+   * excluded from a member-based audience (FR-022; Q16 widened from "the
+   * primary contact email"). `null` is typed for completeness only: every
+   * caller today passes a member id (the count routes 400 without one), so a
+   * future non-member caller must decide self-exclusion on purpose, not by
+   * default.
+   */
+  readonly requestingMemberId: string | null;
   /** Already-validated custom emails (when segment.kind === 'custom'). */
   readonly customRecipients: ReadonlyArray<EmailLower> | null;
   /**
@@ -71,18 +142,94 @@ export interface ResolveSegmentInput {
   readonly phase: 'submit' | 'dispatch';
 }
 
+/**
+ * Review 2026-09-07 — WHY a member has nobody to send to. Under `primary_only`
+ * an orphan had one cause; under `all_contacts` it has three, and flattening
+ * them let `submit-broadcast` audit an opted-out-only member as "missing
+ * primary contact email" — a permanent row about a member who has one.
+ *   - `no_primary_email`     — primary_only leg: `primary_contact_email` is null;
+ *   - `no_eligible_contact`  — all_contacts leg: no live contact at all;
+ *   - `all_opted_out`        — all_contacts leg: live contacts exist and every
+ *                              one objected. Counted in `droppedByPreference`,
+ *                              NOT audited as missing.
+ */
+export type OrphanReason = 'no_primary_email' | 'no_eligible_contact' | 'all_opted_out';
+
+export interface ResolvedOrphan {
+  readonly memberId: string;
+  readonly reason: OrphanReason;
+}
+
+/**
+ * Review 2026-09-07 round 2 (C12, types F-3) — is this orphan a fact about a
+ * MISSING ADDRESS (auditable as `broadcast_member_missing_primary_contact_email`)
+ * or a fact about a PREFERENCE (counted, never audited as missing)? The one
+ * consumer that writes an append-only row used to ask this with a negative
+ * filter (`!== 'all_opted_out'`), which admitted every future reason by
+ * default. Exhaustive here: a fourth reason fails `tsc`, not audit_log.
+ */
+export function isMissingAddressOrphan(reason: OrphanReason): boolean {
+  switch (reason) {
+    case 'no_primary_email':
+    case 'no_eligible_contact':
+      return true;
+    case 'all_opted_out':
+      return false;
+    default: {
+      // The compile-time half: a fourth reason fails `tsc` on this line.
+      const _exhaustive: never = reason;
+      // The RUNTIME half, added when the 100 % pin caught this arm uncovered
+      // (CI 2026-09-07). `return _exhaustive` returns the reason STRING, which
+      // is truthy — so an unrecognised reason arriving from a newer writer
+      // would have been audited as `broadcast_member_missing_primary_contact_email`:
+      // fail-OPEN, and the exact append-only row this predicate exists to
+      // withhold. An unknown reason asserts nothing.
+      void _exhaustive;
+      return false;
+    }
+  }
+}
+
 export interface ResolveSegmentOutput {
   readonly recipients: ReadonlyArray<EmailLower>;
   readonly estimatedCount: number;
-  /** Member IDs missing a primary contact email (audit emit per orphan). */
-  readonly orphans: ReadonlyArray<string>;
   /**
-   * 108 PR-D (FR-022a) — recipients removed because their contact row
-   * carries a marketing opt-out (staff or self). Counted separately from
-   * `orphans` (the member still has a primary contact) and from the
-   * suppression drop (an address that is both counts once, as suppressed).
+   * Eligible members with NO eligible contact (FR-029), each with its
+   * reason — the caller decides which reasons get the missing-recipient
+   * audit. On the primary_only leg: a null primary email. On the
+   * all_contacts leg: zero live, not-opted-out contacts (a member with
+   * secondaries but no primary is NOT an orphan). The sender is never their
+   * own orphan.
+   */
+  readonly orphans: ReadonlyArray<ResolvedOrphan>;
+  /**
+   * FR-022a — entries removed "by recipient preference": every per-contact
+   * opt-out drop (any segment kind), plus every suppression drop on the
+   * custom list and the attendee segment (see the module docblock). Counted
+   * separately from `orphans`. Shown to the sender as a number, never as
+   * addresses.
    */
   readonly droppedByPreference: number;
+}
+
+interface Candidate {
+  /** Owning member for self-exclusion; null for attendee / custom entries. */
+  readonly memberId: string | null;
+  readonly emailLower: EmailLower;
+}
+
+async function lookupSuppressedChunked(
+  repo: MarketingUnsubscribesRepo,
+  tenantId: string,
+  emails: ReadonlyArray<EmailLower>,
+): Promise<ReadonlySet<EmailLower>> {
+  const suppressed = new Set<EmailLower>();
+  for (let i = 0; i < emails.length; i += SUPPRESSION_LOOKUP_CHUNK) {
+    const chunk = emails.slice(i, i + SUPPRESSION_LOOKUP_CHUNK);
+    const hit = await repo.lookupBatch(tenantId, chunk);
+    for (const e of hit) suppressed.add(e);
+  }
+  return suppressed;
 }
 
 export async function resolveSegmentRecipients(
@@ -90,68 +237,138 @@ export async function resolveSegmentRecipients(
   input: ResolveSegmentInput,
 ): Promise<Result<ResolveSegmentOutput, ResolveSegmentError>> {
   const { segment } = input;
+  const memberBased = segment.kind === 'all_members' || segment.kind === 'tier';
 
-  // Step 1: dispatch by segment kind
-  let candidates: ReadonlyArray<EmailLower> = [];
-  const orphans: string[] = [];
+  // Step 1: source by segment kind
+  let candidates: ReadonlyArray<Candidate> = [];
+  const orphans: ResolvedOrphan[] = [];
+  // Review 2026-09-07 (FR-022a) — the opted-out contacts F3 excluded in SQL on
+  // the all_contacts leg; the resolver never sees those addresses, so step 5b
+  // cannot count them. Read once per resolve, fail-closed.
+  let sqlExcludedOptOuts = 0;
 
   if (segment.kind === 'all_members' || segment.kind === 'tier') {
-    const members = await deps.membersBridge.getMembersBySegment(
-      deps.tenant,
-      segment.kind === 'all_members' ? 'all_members' : 'tier',
-      segment.kind === 'tier' ? { tierCodes: segment.tierCodes } : {},
-    );
-    const emails: EmailLower[] = [];
-    for (const m of members) {
-      if (m.primaryContactEmail === null) {
-        orphans.push(m.memberId);
-        continue;
+    const params =
+      segment.kind === 'tier' ? { tierCodes: segment.tierCodes } : {};
+    const sourced: Candidate[] = [];
+    // Review 2026-09-07 (errors HIGH-4c) — the `try` wraps ONLY the bridge
+    // reads. It used to wrap the mapping loops too, so a programming error in
+    // them (a TypeError on a malformed row) was reclassified as the typed
+    // `resolve.server_error`. Round 2 (comments HIGH-2) corrected what the
+    // narrowing BUYS: every caller wraps this function in its own catch-all,
+    // so a thrown TypeError does NOT reach a cron's `uncaught_error` bucket —
+    // it lands in the same retry path under a different log event
+    // (`resolve_threw` / `dispatch.server_error`). The narrowing keeps the
+    // typed error honest about its cause; it does not change who is paged.
+    type SourcedRows =
+      | { readonly leg: 'contacts'; readonly rows: Awaited<ReturnType<MembersBridgePort['getContactsBySegment']>> }
+      | { readonly leg: 'members'; readonly rows: Awaited<ReturnType<MembersBridgePort['getMembersBySegment']>> };
+    let sourcedRows: SourcedRows;
+    try {
+      if (deps.audienceMode === 'all_contacts') {
+        const rows = await deps.membersBridge.getContactsBySegment(deps.tenant, segment.kind, params);
+        // Review 2026-09-07 round 2 (C17 — three reviewers): the sender's own
+        // contacts are removed by self-exclusion at step 3 and were never in
+        // the audience this number describes, so they are left out of it too.
+        sqlExcludedOptOuts = await deps.membersBridge.countOptedOutContactsBySegment(
+          deps.tenant,
+          segment.kind,
+          params,
+          input.requestingMemberId,
+        );
+        sourcedRows = { leg: 'contacts', rows };
+      } else {
+        const rows = await deps.membersBridge.getMembersBySegment(deps.tenant, segment.kind, params);
+        sourcedRows = { leg: 'members', rows };
       }
-      emails.push(m.primaryContactEmail);
+    } catch (e) {
+      // The bridge already logged the class of failure; the caller decides
+      // whether this is a retry (dispatch) or a 500 (submit).
+      return err({
+        kind: 'resolve.server_error',
+        message: e instanceof Error ? e.message : 'unknown error',
+      });
     }
-    candidates = emails;
+    if (sourcedRows.leg === 'contacts') {
+      for (const r of sourcedRows.rows) {
+        if (r.contactId === null || r.emailLower === null) {
+          // The sender is never their own orphan (FR-022b covers them).
+          if (r.memberId !== input.requestingMemberId) {
+            orphans.push({
+              memberId: r.memberId,
+              reason: r.hasOptedOutContact ? 'all_opted_out' : 'no_eligible_contact',
+            });
+          }
+          continue;
+        }
+        sourced.push({ memberId: r.memberId, emailLower: r.emailLower });
+      }
+    } else {
+      for (const m of sourcedRows.rows) {
+        if (m.primaryContactEmail === null) {
+          if (m.memberId !== input.requestingMemberId) {
+            orphans.push({ memberId: m.memberId, reason: 'no_primary_email' });
+          }
+          continue;
+        }
+        sourced.push({ memberId: m.memberId, emailLower: m.primaryContactEmail });
+      }
+    }
+    candidates = sourced;
+    // 108 PR-C T090 — one increment per member-based resolve, labelled by the
+    // leg in force so the flag flip shows on the dashboard.
+    broadcastsMetrics.audienceResolvedTotal(deps.tenant.slug, segment.kind, deps.audienceMode, input.phase);
   } else if (segment.kind === 'event_attendees_last_90d') {
     const attendees = await deps.eventAttendees.getLastNinetyDayAttendees(
       deps.tenant,
     );
-    candidates = attendees.map((a) => a.emailLower);
+    candidates = attendees.map((a) => ({ memberId: null, emailLower: a.emailLower }));
   } else if (segment.kind === 'custom') {
-    candidates = input.customRecipients ?? [];
+    candidates = (input.customRecipients ?? []).map((emailLower) => ({
+      memberId: null,
+      emailLower,
+    }));
   }
 
-  // Step 2 (halted) is enforced by membersBridge.getMembersBySegment
-  // (F3 use-case excludes halted members before returning).
+  // Step 2 (member eligibility: active, not erased, not halted) is enforced
+  // by the F3 query behind the bridge on both legs (FR-021).
 
-  // Step 3: exclude self
+  // Step 3: self-exclusion by member id — member-based segments only. The
+  // custom list is exempt (FR-022a, contract § 2 step 3); attendee rows are
+  // not member-keyed here.
   const selfExcluded =
-    input.requestingMemberPrimaryEmail === null
-      ? candidates
-      : candidates.filter((e) => e !== input.requestingMemberPrimaryEmail);
+    memberBased && input.requestingMemberId !== null
+      ? candidates.filter((c) => c.memberId !== input.requestingMemberId)
+      : candidates;
 
-  // Deduplicate (lower-cased branded values)
-  const dedup = Array.from(new Set(selfExcluded)) as EmailLower[];
+  // Step 4: dedupe by address (lower-cased branded values), keeping order.
+  const dedup = Array.from(new Set(selfExcluded.map((c) => c.emailLower)));
 
-  // Step 4: suppression filter (single batched query)
+  // Step 5: suppression filter, chunked (contract § 2 step 5).
   let final: EmailLower[] = dedup;
+  let suppressionDropped = 0;
   if (dedup.length > 0) {
-    const suppressed = await deps.marketingUnsubscribes.lookupBatch(
+    const suppressed = await lookupSuppressedChunked(
+      deps.marketingUnsubscribes,
       deps.tenant.slug,
       dedup,
     );
     final = dedup.filter((e) => !suppressed.has(e));
     // T172 — emit-site wiring (Phase 9). Number of recipients dropped
-    // by the suppression anti-join — `dedup.length - final.length`.
-    const filtered = dedup.length - final.length;
-    if (filtered > 0) {
-      broadcastsMetrics.suppressionFilterCount(deps.tenant.slug, filtered);
+    // by the suppression anti-join.
+    suppressionDropped = dedup.length - final.length;
+    if (suppressionDropped > 0) {
+      broadcastsMetrics.suppressionFilterCount(deps.tenant.slug, suppressionDropped);
     }
   }
 
-  // Step 4b (108 PR-D, FR-022a): per-contact marketing opt-out — runs on
+  // Step 5b (108 PR-D, FR-022a): per-contact marketing opt-out — runs on
   // the post-suppression list so a double-listed address counts once, and
   // is skipped when nothing is left. The bridge REJECTS on a failed lookup:
   // never fail-open onto people who objected (privacy B-1 / security HIGH-1).
-  let droppedByPreference = 0;
+  // On the all_contacts leg the SQL already excluded opted-out contacts;
+  // this is defence in depth there and the count is still MEASURED.
+  let optOutDropped = 0;
   if (final.length > 0) {
     const optedOut = await deps.membersBridge.filterMarketingOptedOut(
       deps.tenant,
@@ -162,36 +379,57 @@ export async function resolveSegmentRecipients(
       // inflate the count or the metric (review LOW-17).
       const before = final.length;
       final = final.filter((e) => !optedOut.has(e));
-      droppedByPreference = before - final.length;
+      optOutDropped = before - final.length;
     }
-    // Emitted whenever the filter RAN, including at zero (staff review P2).
-    // Guarding on `> 0` made "nobody has opted out" and "step 4b was deleted"
-    // the same signal — no series either way — and SweCham cuts over with zero
-    // opt-outs, so the catalogue's "a drop to 0 means the filter stopped"
-    // alarm could never have fired. `.add(0)` still registers the series.
-    // Labelled by phase (code-review finding 6): the alarm watches the
-    // `dispatch` series, which ongoing submits must not keep alive.
-    broadcastsMetrics.marketingOptOutFilterCount(
-      deps.tenant.slug,
-      droppedByPreference,
-      input.phase,
-    );
   }
+  // Emitted on every resolve that REACHES step 5b — including at zero, and
+  // including when the bridge was not consulted because the list was
+  // already empty (see finding #8 below). Not "whenever the filter ran":
+  // that was the lead sentence until the /code-review pass that followed
+  // #8 pointed out the emit no longer means it (staff review P2).
+  // Guarding on `> 0` made "nobody has opted out" and "step 5b was deleted"
+  // the same signal — no series either way — and SweCham cuts over with zero
+  // opt-outs, so the catalogue's "a drop to 0 means the filter stopped"
+  // alarm could never have fired. `.add(0)` still registers the series.
+  // Labelled by phase (code-review finding 6): the alarm watches the
+  // `dispatch` series, which ongoing submits must not keep alive.
+  //
+  // /code-review 2026-09-07 (finding #8) — that P2 fix removed the INNER
+  // `> 0` guard and left an OUTER one with the identical effect: a resolve
+  // whose audience is emptied by suppression emitted NOTHING, so a run of
+  // legitimately-empty dispatches read exactly like "step 5b was deleted",
+  // which is the one thing `.add(0)` exists to distinguish. The emit moves
+  // out; the CALL stays in, because asking the bridge about an empty list is
+  // a wasted round trip and 0 dropped from 0 addresses is the honest count
+  // either way. (A bridge outage cannot be hidden here — it THROWS, so the
+  // resolve fails and never reaches this line.)
+  broadcastsMetrics.marketingOptOutFilterCount(
+    deps.tenant.slug,
+    optOutDropped,
+    input.phase,
+  );
 
-  // Brand-cast (defence-in-depth — primary contact emails could be string at the source)
-  final = final.map((e) => unsafeBrandEmailLower(e));
+  // FR-022a — what the sender is told was "excluded by recipient preference":
+  // the step-5b drops, the opt-outs F3 excluded in SQL before this resolver
+  // saw an address (all_contacts leg only — 0 elsewhere), and the suppression
+  // drops on the two non-member-keyed kinds.
+  const droppedByPreference =
+    optOutDropped + sqlExcludedOptOuts + (memberBased ? 0 : suppressionDropped);
 
-  // Step 5: empty-after-filter check
+
+  // Step 6: empty-after-filter check — carries the measured numbers (C8)
   if (final.length === 0) {
-    return err({ kind: 'broadcast_empty_segment_blocked' });
+    return err({ kind: 'broadcast_empty_segment_blocked', droppedByPreference, orphans });
   }
 
-  // Step 6: 5,000 hard cap
-  if (final.length > AUDIENCE_HARD_CAP) {
+  // Step 7: the ceiling — never truncated (FR-041), one definition (FR-042)
+  if (final.length > deps.audienceCeiling) {
     return err({
       kind: 'broadcast_audience_too_large',
       count: final.length,
-      cap: AUDIENCE_HARD_CAP,
+      cap: deps.audienceCeiling,
+      droppedByPreference,
+      orphans,
     });
   }
 

@@ -144,6 +144,56 @@ When a member composes a broadcast, the estimated number of recipients shown is 
 3. **Given** an audience of 4,900 contacts, **When** 300 secondary contacts are added to eligible members, **Then** compose shows 5,200.
 4. **Given** an audience of 20,000 contacts, **When** the member opens compose, **Then** the count appears within the compose page's normal loading time.
 
+> **AMENDMENT (108 PR-C start of US5, 2026-09-07 — advisor-reviewed scope
+> narrowing).** The provider-side audience build via Resend's Contacts Import
+> API (research R9 "Decision (push)", data-model § 2.5 / § 3
+> `audience_building`, tasks T086 / T087 / T106, contract § 4) is DEFERRED out
+> of PR-C into a follow-up PR that ships with the `resend` 4 → 6 upgrade (T110).
+> Reason: the Resend documentation fetched 2026-09-07 confirms `POST
+> /contacts/imports` (multipart `file`, `column_map`, `on_conflict`) and `GET
+> /contacts/imports/{id}` (`status`, `counts{total,created,updated,skipped,failed}`),
+> but targets **segments** (`segments: [{ id }]`), does not state whether an
+> audience created through the surface F7 is live on (`POST /audiences`) is a
+> valid segment id, and does not enumerate the `status` values the completion
+> rule depends on. Building the tick machinery against a shape that cannot be
+> verified without a probe against the team's Resend account would put an
+> unverifiable path in front of the first send under the new rule. The
+> follow-up PR starts with that probe. Until then the existing per-contact
+> push stays: it is bounded by the ceiling, retried per tick on any retryable
+> failure (the row stays `approved`), and SweCham's audience (150 members,
+> secondaries pending import) is two orders of magnitude below the 5,000
+> ceiling. **FR-044** is therefore satisfied in PR-C by per-tick retry of a
+> bounded push rather than by a persisted import job; **FR-041 / FR-042 / FR-040**
+> (one ceiling, truthful count, no truncation) ship in PR-C as planned.
+> ~~Scenario 2 above (6,200 with batching ON) stays reachable through the
+> existing F7.1a batch path, which pushes per-batch audiences below the split
+> threshold.~~ **CORRECTED 2026-09-07 (staff review Pass 4) — this sentence was
+> FALSE and is the reason AS2 is recorded as MISSING.** `split-large-broadcasts`
+> skips anything at or below `SPLIT_THRESHOLD_RECIPIENTS = 10_000`
+> (`src/app/api/cron/broadcasts/split-large-broadcasts/route.ts:310`), so 6,200
+> never enters the batch path at all; `dispatch-scheduled` picks it up and
+> pushes it through `addContactsToAudience`, a SERIAL one-contact-at-a-time
+> loop against an account capped at ~2 req/s
+> (`src/modules/broadcasts/infrastructure/resend/resend-broadcasts-gateway.ts:229-246`)
+> inside a 300 s function budget — this plan says so itself at `plan.md:268`
+> ("the serial push cannot finish 5,000 contacts inside the 300 s function
+> budget even at the documented 10 req/s"), which is precisely why the
+> import-based build exists. A 6,200-contact broadcast would therefore be
+> ACCEPTED at submit, killed mid-push every tick, and never delivered — the
+> member sees it sitting approved.
+>
+> **AS2 is consequently NOT satisfied by PR-C, and its gap gates the FLAG
+> FLIP, not this merge**: with `FEATURE_CONTACT_MARKETING_RECIPIENTS=false`
+> the ceiling is 5,000 and the leg is `primary_only`, so no audience above
+> 5,000 is ever accepted and the band is unreachable. Before T094 one of
+> three must land — the import build (T086/T087/T106), a split threshold
+> lowered below the measured push ceiling PLUS a wall-clock budget with
+> resume in `addContactsToAudience`, or an explicit submit-time refusal above
+> `300 s × measured req/s − margin`. Recorded as a precondition in
+> `reviews/pr-c.md` row 33.
+>
+> `broadcast_status` gains NO `audience_building` value in PR-C.
+
 ---
 
 ### User Story 6 - A contact manages their own marketing preference in the portal (Priority: P3)

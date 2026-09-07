@@ -34,6 +34,7 @@ import { z } from 'zod';
 import { runInTenant } from '@/lib/db';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { broadcastsMetrics } from '@/lib/metrics';
 import { errKind } from '@/lib/log-id';
 import { verifyCronBearer } from '@/lib/cron-auth';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
@@ -50,22 +51,31 @@ import {
   makeDrizzleBroadcastsRepo,
   makeDrizzleMarketingUnsubscribesRepo,
   makeSplitBroadcastIntoBatchesDeps,
+  makeTickMemoizedMembersBridge,
   membersBridge,
+  recipientSegmentFromPersisted,
   resolveSegmentRecipients,
+  currentAudienceMode,
+  currentAudienceCeiling,
+  SPLIT_THRESHOLD_RECIPIENTS,
   splitBroadcastIntoBatches,
 } from '@/modules/broadcasts';
 import { unsafeBrandEmailLower } from '@/modules/broadcasts/domain/value-objects/email-lower';
 import { asTenantContext } from '@/modules/tenants';
-import type { Broadcast } from '@/modules/broadcasts/domain/broadcast';
 
 export const runtime = 'nodejs';
+// Review 2026-09-07 round 2 (perf HIGH-2) — the same 300 s budget as
+// dispatch-scheduled and dispatch-batches. 108 PR-C made each row a full 1:N
+// audience walk (×MAX_BROADCASTS_PER_TICK); on the platform default a killed
+// function runs no `catch`, so `dispatch_resolve_failed_total` never fired.
+export const maxDuration = 300;
 export const dynamic = 'force-dynamic';
 
 const MAX_BROADCASTS_PER_TICK = 10;
-// FR-001 + RESEND_PER_AUDIENCE_CAP — only broadcasts EXCEEDING the
-// Resend per-audience cap need splitting. Smaller broadcasts go via
-// the F7 MVP single-audience `dispatch-scheduled` path.
-const SPLIT_THRESHOLD_RECIPIENTS = 10_000;
+// FR-001 + RESEND_PER_AUDIENCE_CAP — only broadcasts EXCEEDING the split
+// threshold are batched. 108 PR-C T085: the threshold now lives in the
+// broadcasts Domain (`audience-ceiling.ts`) next to the ceiling it must stay
+// below, and is imported from the barrel above.
 
 const eligibleRowSchema = z.object({
   broadcast_id: z.string().uuid(),
@@ -176,6 +186,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     raceLost: 0,
   };
 
+  // /code-review 2026-09-07 (finding #3) — see the twin comment in
+  // `dispatch-batches`: only `dispatch-scheduled` wrapped its bridge in the
+  // per-tick memo, so N eligible rows on one segment each re-walked the same
+  // 1:N audience. This route's own `maxDuration = 300` comment names that
+  // walk ("108 PR-C made each row a full 1:N audience walk (×MAX_…)") as the
+  // reason for the budget; the memo is the fix that comment assumed.
+  const tickMembersBridge = makeTickMemoizedMembersBridge(membersBridge);
+
   for (const row of eligible) {
     summary.processed++;
     const broadcastId = asBroadcastId(row.broadcast_id);
@@ -194,30 +212,47 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
       // 4b. Resolve recipients via segment resolver — source of truth
       //     for the resolved count that splitBroadcastIntoBatches uses.
-      const segment = buildSegmentFromBroadcast(broadcast);
-      const requestingPrimary = await membersBridge.getMemberPrimaryContact(
-        tenant,
-        broadcast.requestedByMemberId,
-      );
-      // Staff review A11: the 108 PR-D opt-out lookup is fail-closed and
-      // THROWS when the read fails. `dispatch-scheduled-broadcast.ts` maps that
-      // to a typed `dispatch.server_error`; here it fell to the generic
-      // per-broadcast catch, so one outage was classified two different ways
-      // depending on which cron observed it. Safety was never in question —
-      // the tick survives either way — only the alerting signal.
+      // Review 2026-09-07 round 2 (C1/C2) — see dispatch-batches: a tier row
+      // with no codes is refused here, never resolved, never counted as
+      // transient. The row stays `approved`; `approved_overdue_count` alarms.
+      const segmentResult = recipientSegmentFromPersisted(broadcast);
+      if (!segmentResult.ok) {
+        summary.errors++;
+        logger.error(
+          {
+            tenantId: tenant.slug,
+            broadcastId: row.broadcast_id,
+            errorKind: 'malformed_segment',
+            detail: segmentResult.error.reason,
+          },
+          'cron.broadcasts.split_large.malformed_segment',
+        );
+        continue;
+      }
+      const segment = segmentResult.value;
+      // Staff review A11 (closed by the 2026-09-07 review, errors HIGH-4): the
+      // fail-closed bridge reads THROW; this cron used to let that fall to the
+      // generic per-broadcast catch, so one outage was classified differently
+      // per cron. Now every cron counts it in `dispatch_resolve_failed_total`
+      // from the catch below — one signal, three crons.
+      // 108 PR-C: self-exclusion is by MEMBER id (FR-022), so the requesting
+      // member's primary email is no longer read here; the leg comes from
+      // the same flag read the submit and dispatch paths use (SC-004).
       let resolved: Awaited<ReturnType<typeof resolveSegmentRecipients>>;
       try {
         resolved = await resolveSegmentRecipients(
         {
           tenant,
-          membersBridge,
+          membersBridge: tickMembersBridge,
           eventAttendees: eventAttendeesBridge,
           marketingUnsubscribes,
+          audienceMode: currentAudienceMode(),
+          audienceCeiling: currentAudienceCeiling(),
         },
         {
           segment,
           phase: 'dispatch',
-          requestingMemberPrimaryEmail: requestingPrimary,
+          requestingMemberId: broadcast.requestedByMemberId,
           customRecipients:
             broadcast.customRecipientEmails === null
               ? null
@@ -228,11 +263,25 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         );
       } catch (e) {
         summary.errors++;
+        // Review 2026-09-07 (errors HIGH-4) — the row stays `approved` and is
+        // retried next tick with no budget; the counter is the alarm.
+        broadcastsMetrics.dispatchResolveFailedTotal(tenant.slug);
         logger.error(
           {
             tenantId: tenant.slug,
             broadcastId: row.broadcast_id,
-            errorKind: 'dispatch.server_error',
+            // /code-review 2026-09-07 (finding #7) — this said
+            // `dispatch.server_error` for ANY throw. That kind belongs to a
+            // DIFFERENT use case's error union — `dispatchScheduledBroadcast`
+            // maps into it; this resolver's own union yields
+            // `resolve.server_error` (handled below). A THROW is
+            // either the fail-closed opt-out lookup or a programming error,
+            // and the log has no way to tell. Stamping the typed name made
+            // a TypeError read as a Neon outage to whoever follows
+            // `broadcast-audience-build.md § C`. Same lesson as
+            // check:actor-role-truth: record what you observed, never a
+            // classification nobody established.
+            errorKind: 'unclassified_throw',
             err: errKind(e),
           },
           'cron.broadcasts.split_large.recipient_resolution_failed',
@@ -241,6 +290,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
       if (!resolved.ok) {
         summary.errors++;
+        if (resolved.error.kind === 'resolve.server_error') {
+          broadcastsMetrics.dispatchResolveFailedTotal(tenant.slug);
+        }
         logger.error(
           {
             tenantId: tenant.slug,
@@ -424,24 +476,3 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   return NextResponse.json(summary, { status: 200 });
 }
 
-/**
- * Reconstruct the `RecipientSegment` discriminated-union from the
- * persisted broadcast row. Duplicated from
- * `dispatch-scheduled-broadcast.ts` (file-private helper) and from
- * `dispatch-batches/route.ts` — Phase 3F consolidation candidate.
- */
-function buildSegmentFromBroadcast(b: Broadcast) {
-  if (b.segmentType === 'all_members') return { kind: 'all_members' as const };
-  if (b.segmentType === 'tier') {
-    const tierCodes =
-      (b.segmentParams as { tierCodes?: string[] } | null)?.tierCodes ?? [];
-    return { kind: 'tier' as const, tierCodes };
-  }
-  if (b.segmentType === 'event_attendees_last_90d') {
-    return { kind: 'event_attendees_last_90d' as const };
-  }
-  return {
-    kind: 'custom' as const,
-    emails: b.customRecipientEmails ?? [],
-  };
-}

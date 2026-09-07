@@ -45,7 +45,7 @@ inventory until it prints 0, then merge / redeploy.
 | A (money hardening) | `vercel promote` previous deployment; 0292 is an enum add (harmless when unused) | none | none |
 | B (invariant) | revert restores the racy path; triggers stay installed and are safe with correct data | none | 0293 forward-only; drop triggers only via a new migration |
 | D (permission + page + columns) | revert hides the page/route; 0294/0295 columns + enum values are unused when reverted | none | none |
-| C (audience) | not needed for behaviour — **flip the flag OFF** (primary-only leg) | `FEATURE_CONTACT_MARKETING_RECIPIENTS=false` + redeploy | 0296/0297 unused when OFF |
+| C (audience) | flag OFF restores the primary-only leg and the 5,000 ceiling. **Everything else in PR-C is UNFLAGGED and lands on merge** — a code revert (`vercel promote`), not a flag flip, is the rollback for any of it (reliability M-3; the list below was completed at the re-review, finding #1): **(1)** FR-021 `status = 'active'` — an inactive / archived member's primary stops receiving; **(2)** the `.limit(5000)` removal — a >5,000 audience is refused, not silently cut; **(3)** the bridge lookups AND `setMemberHalt` throw on a failed read/write — submit 500s, dispatch retries, clear-halt 500s, instead of failing open; **(4)** self-exclusion is by MEMBER id on member-based segments only — pre-108 the sender's primary address was filtered out of EVERY segment kind, so a member who puts their own address on a custom list now receives their own e-blast (FR-022a/b; the compose hint says so); **(5)** every unsubscribe writes `marketing_unsubscribes.contact_id` — the column is in use from merge, see the Data column; **(6)** GDPR erasure now severs `member_id` AND `contact_id` on that member's suppression rows (`severMemberRefs`, FR-056) — before PR-C the `member_id` back-reference was retained; **(7)** a persisted `tier` broadcast whose `segment_params` lost its codes is a terminal `failed_to_dispatch` (before: it was sent to every active member); **(8)** the whole compose UI — live count, per-segment hints, the submit block on a measured refusal, the separate preference toast, the halt-state banner, the compose page throwing on a failed member read; **(9)** the `approved_overdue_count` gauge and the zero-fill / forget behaviour of the gauges cron. | `FEATURE_CONTACT_MARKETING_RECIPIENTS=false` + redeploy — for the WIDENING and the 50,000 ceiling only | **0297 is WRITTEN from merge, flag or not**: `contact_id` is filled by every unsubscribe (`unsubscribe-recipient.ts` reads no flag). Dropping the column while PR-C's code is deployed breaks every unsubscribe with a 42703 — drop it only after a code revert, via a new migration. (0298 deferred with T086.) |
 
 Incident notes: a broadcast already delivered under the wrong audience cannot be recalled —
 record the broadcast id, notify the tenant admin contact, and flip the flag off before the
@@ -111,12 +111,37 @@ Before opening any PR: `pnpm lint && pnpm typecheck && pnpm check:i18n && pnpm v
 ## Cutover checklist (prod)
 
 1. PR-A, PR-B, PR-D deployed; V1 counts confirmed 0 violations before PR-B.
-2. PR-C deployed with the flag OFF; no behaviour change except `status = 'active'`.
+2. PR-C deployed with the flag OFF; the unflagged changes are the ones listed in the rollback
+   matrix above (active-only narrowing, no silent cut, fail-closed reads, the compose UI).
 3. Staff run the FR-027a pre-flight review on the audience page (preset link) and switch
    off anyone who should not receive.
+3a. **GDPR Art. 14 gate (staff review 🟡-3 lifted it here from
+   `docs/compliance/processing-records.md:128-135`, where an operator would not have seen
+   it).** The flip MUST NOT happen until EITHER the system sends a notice to a new
+   secondary contact on first marketing contact, OR the FR-027a pre-flight above verifies
+   the attestation per contact. A secondary who never gave their address to the chamber
+   directly is a data subject the chamber has not yet informed.
+3b. **Push-capacity gate (staff review 🔴).** The 1:N ceiling accepts up to 50,000, but the
+   dispatch push is a serial one-contact-at-a-time loop at ~2 req/s inside a 300 s
+   function budget, and `split-large-broadcasts` skips anything at or below 10,000 — so a
+   broadcast in that band is accepted and then never delivered. Before flipping, land ONE
+   of: the import build (T086/T087/T106); a lowered `SPLIT_THRESHOLD_RECIPIENTS` **plus** a
+   wall-clock budget with resume in `addContactsToAudience`; or an explicit submit-time
+   refusal above `300 s × measured req/s − margin`. Measure the team's real req/s
+   (Settings → Usage, T095) and record the number in `reviews/pr-c.md` row 33. At
+   SweCham's ~150 members × 3 contacts this is ~225 s against 300 s — no margin.
 4. Flip `FEATURE_CONTACT_MARKETING_RECIPIENTS=true` in Vercel; redeploy.
-5. First send: watch `broadcasts.audience_import_status` (and the import's `counts` in the Resend dashboard) and the outbox; confirm
-   `estimated_recipient_count` = delivered.
+5. First send — watch the five signals PR-C ships (the `audience_import_status` gauge went
+   with the deferred T086 and does not exist):
+   - `broadcasts_audience_resolved_total{mode}` flips from `primary_only` to `all_contacts`
+     on the first resolve (phase `dispatch`);
+   - `broadcasts_recipient_count_ms{outcome="ok"}` p95 inside SLO-F7-013 (400 ms @ 5,000);
+   - `broadcasts_dispatch_resolve_failed_total` stays 0 and `broadcasts_approved_overdue_count`
+     stays 0 through the send;
+   - `broadcasts_marketing_opt_out_filter_count{phase="dispatch"}` is a LIVE series (present,
+     even at 0 — its absence means the filter stopped running);
+   - the outbox: `estimated_recipient_count` = delivered.
+   Any of the first four wrong → § Rollback (flag OFF) before the next tick.
 6. After one clean week: follow-up PR deletes the flag and the `primary_only` leg.
 7. Live-mode switch checklist (separate): Stripe Dashboard → Customer emails →
    "Successful payments" OFF.

@@ -21,7 +21,7 @@ import {
   type EmailLower,
 } from '../../domain/value-objects/email-lower';
 import type {
-  MarketingUnsubscribesRepo,
+  FullMarketingUnsubscribesRepo,
   NewSuppressionInput,
 } from '../../application/ports/marketing-unsubscribes-repo';
 import {
@@ -36,6 +36,7 @@ function rowToSuppression(row: MarketingUnsubscribeRow): MarketingUnsubscribe {
     tenantId: row.tenantId,
     emailLower: unsafeBrandEmailLower(row.emailLower),
     memberId: row.memberId,
+    contactId: row.contactId,
     reason: row.reason as MarketingUnsubscribeReason,
     reasonText: row.reasonText,
     sourceBroadcastId:
@@ -85,14 +86,30 @@ async function executeSuppressionUpsert(
 }> {
   const result = (await tx.execute(sql`
         INSERT INTO marketing_unsubscribes
-          (tenant_id, email_lower, member_id, reason, reason_text,
+          (tenant_id, email_lower, member_id, contact_id, reason, reason_text,
            source_broadcast_id, source_token_hash)
         VALUES
-          (${input.tenantId}, ${input.emailLower}, ${input.memberId},
+          (${input.tenantId}, ${input.emailLower}, ${input.memberId}, ${input.contactId},
            ${input.reason}::marketing_unsubscribe_reason, ${input.reasonText},
            ${input.sourceBroadcastId}, ${input.sourceTokenHash})
         ON CONFLICT (tenant_id, email_lower) DO UPDATE
-          SET reason = CASE
+          SET -- 108 PR-C (FR-024): attribution is filled in when a later event
+              -- knows it and never blanked by one that does not (a webhook
+              -- bounce carries neither id).
+              member_id = COALESCE(EXCLUDED.member_id, marketing_unsubscribes.member_id),
+              -- Review 2026-09-07 round 2 (C10 — security MEDIUM-1): the pair
+              -- moves TOGETHER. When the event re-attributes the address to a
+              -- DIFFERENT member, the old contact_id is dropped (it belonged
+              -- to the previous member; keeping it filed a contact of M1
+              -- under M2, out of reach of M1's erasure — FR-056). Otherwise
+              -- the same fill-never-blank rule as member_id.
+              contact_id = CASE
+                WHEN EXCLUDED.member_id IS NOT NULL
+                 AND EXCLUDED.member_id IS DISTINCT FROM marketing_unsubscribes.member_id
+                THEN EXCLUDED.contact_id
+                ELSE COALESCE(EXCLUDED.contact_id, marketing_unsubscribes.contact_id)
+              END,
+              reason = CASE
                 WHEN ${newRank()} >= ${oldRank()}
                 THEN EXCLUDED.reason
                 ELSE marketing_unsubscribes.reason
@@ -122,7 +139,7 @@ async function executeSuppressionUpsert(
 
 export function makeDrizzleMarketingUnsubscribesRepo(
   tenantId: string,
-): MarketingUnsubscribesRepo {
+): FullMarketingUnsubscribesRepo {
   const ctx = asTenantContext(tenantId);
 
   return {
@@ -206,6 +223,30 @@ export function makeDrizzleMarketingUnsubscribesRepo(
            AND member_id = ${memberId}
         RETURNING email_lower
       `)) as unknown as Array<{ email_lower: string }>;
+      return { affected: result.length };
+    },
+
+    /**
+     * 108 PR-C T104 — see the port. Both back-references go in one UPDATE
+     * keyed on `member_id` (a `contact_id` is only ever written together
+     * with its member, so no row carries a contact of this member under a
+     * different member_id). `RETURNING 1` — never the address — keeps the
+     * count without pulling plaintext through the driver.
+     */
+    async severMemberRefs(
+      txUnknown,
+      tenantIdArg: string,
+      memberId: string,
+    ): Promise<{ readonly affected: number }> {
+      const tx = txUnknown as TenantTx;
+      const result = (await tx.execute(sql`
+        UPDATE marketing_unsubscribes
+           SET member_id = NULL,
+               contact_id = NULL
+         WHERE tenant_id = ${tenantIdArg}
+           AND member_id = ${memberId}
+        RETURNING 1 AS severed
+      `)) as unknown as Array<{ severed: number }>;
       return { affected: result.length };
     },
   };

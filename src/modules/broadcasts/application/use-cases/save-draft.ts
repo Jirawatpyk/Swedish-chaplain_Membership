@@ -19,6 +19,8 @@
 import { randomUUID } from 'node:crypto';
 import { err, ok, type Result } from '@/lib/result';
 import { broadcastsMetrics } from '@/lib/metrics';
+import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import {
   asBroadcastId,
@@ -115,11 +117,19 @@ export async function saveDraft(
     return err(sanitised.error);
   }
 
-  // 3. Member primary contact (reply-to)
-  const replyTo = await deps.membersBridge.getMemberPrimaryContact(
-    deps.tenant,
-    input.memberId,
-  );
+  // 3. Member primary contact (reply-to). Review 2026-09-07 — the bridge
+  // THROWS on a failed read; only a genuine absence is null. A failed read is
+  // a 500, never "you have no primary contact email".
+  let replyTo: Awaited<ReturnType<MembersBridgePort['getMemberPrimaryContact']>>;
+  try {
+    replyTo = await deps.membersBridge.getMemberPrimaryContact(deps.tenant, input.memberId);
+  } catch (e) {
+    logger.error(
+      { tenantId: deps.tenant.slug, memberId: input.memberId, err: errKind(e) },
+      'broadcasts.save_draft.reply_to_read_failed',
+    );
+    return err({ kind: 'save_draft.server_error', message: 'reply-to unavailable' });
+  }
   if (replyTo === null) {
     return err({
       kind: 'broadcast_member_missing_primary_contact_email',

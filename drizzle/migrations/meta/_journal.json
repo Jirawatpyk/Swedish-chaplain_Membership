@@ -2017,6 +2017,13 @@
       "when": 1798542800000,
       "tag": "0296_contacts_tenant_lower_email_all_idx",
       "breakpoints": true
+    },
+    {
+      "idx": 298,
+      "version": "7",
+      "when": 1798542900000,
+      "tag": "0297_marketing_unsubscribes_contact_id",
+      "breakpoints": true
     }
   ]
 }

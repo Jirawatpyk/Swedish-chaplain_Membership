@@ -37,6 +37,7 @@ import { z } from 'zod';
 import { runInTenant } from '@/lib/db';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { broadcastsMetrics } from '@/lib/metrics';
 import { errKind } from '@/lib/log-id';
 import { verifyCronBearer } from '@/lib/cron-auth';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
@@ -54,16 +55,19 @@ import {
   makeDrizzleBatchManifestsRepo,
   makeDrizzleBroadcastsRepo,
   makeDrizzleMarketingUnsubscribesRepo,
+  makeTickMemoizedMembersBridge,
   membersBridge,
   noOpAdvisoryLock,
+  recipientSegmentFromPersisted,
   resendBroadcastsGateway,
   resolveSegmentRecipients,
+  currentAudienceMode,
+  currentAudienceCeiling,
   systemClock,
   tenantDefaultLocaleFor,
 } from '@/modules/broadcasts';
 import { unsafeBrandEmailLower } from '@/modules/broadcasts/domain/value-objects/email-lower';
 import { asTenantContext } from '@/modules/tenants';
-import type { Broadcast } from '@/modules/broadcasts/domain/broadcast';
 
 // Domain policy import — Domain types are barrel-pure but
 // `DEFAULT_CONCURRENCY_CAP` + `validateConcurrencyCap` are Domain-internal
@@ -209,6 +213,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     errors: 0,
   };
 
+  // /code-review 2026-09-07 (finding #3) — `dispatch-scheduled` has wrapped
+  // its bridge in the per-tick memo since R6; this cron and
+  // `split-large-broadcasts` never did, so N eligible rows on the same
+  // segment each re-walked the identical audience. 108 PR-C made that walk a
+  // full 1:N keyset paginate (N/5,000 F3 round trips) plus an opted-out
+  // aggregate — the cost this route's own `maxDuration` comment cites. The
+  // memo is also what pairs a tick's frozen audience with ONE opt-out count
+  // (C18), so without it two rows on one segment got independently timed
+  // audiences. Fresh Map per tick; tenant-keyed.
+  const tickMembersBridge = makeTickMemoizedMembersBridge(membersBridge);
+
   // 5. Per-broadcast: load + resolve recipients + dispatch all pending batches.
   for (const row of eligible) {
     summary.processed++;
@@ -238,30 +253,49 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
 
       // 5c. Resolve recipients (segment + suppression + dedupe).
-      const segment = buildSegmentFromBroadcast(broadcast);
-      const requestingPrimary = await membersBridge.getMemberPrimaryContact(
-        tenant,
-        broadcast.requestedByMemberId,
-      );
-      // Staff review A11: the 108 PR-D opt-out lookup is fail-closed and
-      // THROWS when the read fails. `dispatch-scheduled-broadcast.ts` maps that
-      // to a typed `dispatch.server_error`; here it fell to the generic
-      // per-broadcast catch, so one outage was classified two different ways
-      // depending on which cron observed it. Safety was never in question —
-      // the tick survives either way — only the alerting signal.
+      // Review 2026-09-07 round 2 (C1/C2) — a tier row with no codes is a
+      // permanent data defect: refused here, never resolved (the primary_only
+      // read used to address EVERY member for it), and NOT counted as a
+      // transient resolve failure, which would page for a retry that cannot
+      // succeed. The row stays put; `stuck_sending_count` is its alarm.
+      const segmentResult = recipientSegmentFromPersisted(broadcast);
+      if (!segmentResult.ok) {
+        summary.errors++;
+        logger.error(
+          {
+            tenantId: tenant.slug,
+            broadcastId: row.broadcast_id,
+            errorKind: 'malformed_segment',
+            detail: segmentResult.error.reason,
+          },
+          'cron.broadcasts.dispatch_batches.malformed_segment',
+        );
+        continue;
+      }
+      const segment = segmentResult.value;
+      // Staff review A11 (closed by the 2026-09-07 review, errors HIGH-4): the
+      // fail-closed bridge reads THROW; this cron used to let that fall to the
+      // generic per-broadcast catch, so one outage was classified differently
+      // per cron. Now every cron counts it in `dispatch_resolve_failed_total`
+      // from the catch below — one signal, three crons.
+      // 108 PR-C: self-exclusion is by MEMBER id (FR-022), so the requesting
+      // member's primary email is no longer read here; the leg comes from
+      // the same flag read the submit and dispatch paths use (SC-004).
       let resolved: Awaited<ReturnType<typeof resolveSegmentRecipients>>;
       try {
         resolved = await resolveSegmentRecipients(
         {
           tenant,
-          membersBridge,
+          membersBridge: tickMembersBridge,
           eventAttendees: eventAttendeesBridge,
           marketingUnsubscribes,
+          audienceMode: currentAudienceMode(),
+          audienceCeiling: currentAudienceCeiling(),
         },
         {
           segment,
           phase: 'dispatch',
-          requestingMemberPrimaryEmail: requestingPrimary,
+          requestingMemberId: broadcast.requestedByMemberId,
           customRecipients:
             broadcast.customRecipientEmails === null
               ? null
@@ -272,11 +306,25 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         );
       } catch (e) {
         summary.errors++;
+        // Review 2026-09-07 (errors HIGH-4) — the row stays where it is and
+        // is retried next tick with no budget; the counter is the alarm.
+        broadcastsMetrics.dispatchResolveFailedTotal(tenant.slug);
         logger.error(
           {
             tenantId: tenant.slug,
             broadcastId: row.broadcast_id,
-            errorKind: 'dispatch.server_error',
+            // /code-review 2026-09-07 (finding #7) — this said
+            // `dispatch.server_error` for ANY throw. That kind belongs to a
+            // DIFFERENT use case's error union — `dispatchScheduledBroadcast`
+            // maps into it; this resolver's own union yields
+            // `resolve.server_error` (handled below). A THROW is
+            // either the fail-closed opt-out lookup or a programming error,
+            // and the log has no way to tell. Stamping the typed name made
+            // a TypeError read as a Neon outage to whoever follows
+            // `broadcast-audience-build.md § C`. Same lesson as
+            // check:actor-role-truth: record what you observed, never a
+            // classification nobody established.
+            errorKind: 'unclassified_throw',
             err: errKind(e),
           },
           'cron.broadcasts.dispatch_batches.recipient_resolution_failed',
@@ -285,6 +333,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
       if (!resolved.ok) {
         summary.errors++;
+        if (resolved.error.kind === 'resolve.server_error') {
+          broadcastsMetrics.dispatchResolveFailedTotal(tenant.slug);
+        }
         logger.error(
           {
             tenantId: tenant.slug,
@@ -444,25 +495,3 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   return NextResponse.json(summary, { status: 200 });
 }
 
-/**
- * Reconstruct the `RecipientSegment` discriminated-union from the
- * persisted broadcast row. Mirrors the helper in
- * `dispatch-scheduled-broadcast.ts` — duplicated here so the cron
- * handler doesn't depend on a private helper not exported by the F7
- * MVP use case file.
- */
-function buildSegmentFromBroadcast(b: Broadcast) {
-  if (b.segmentType === 'all_members') return { kind: 'all_members' as const };
-  if (b.segmentType === 'tier') {
-    const tierCodes =
-      (b.segmentParams as { tierCodes?: string[] } | null)?.tierCodes ?? [];
-    return { kind: 'tier' as const, tierCodes };
-  }
-  if (b.segmentType === 'event_attendees_last_90d') {
-    return { kind: 'event_attendees_last_90d' as const };
-  }
-  return {
-    kind: 'custom' as const,
-    emails: b.customRecipientEmails ?? [],
-  };
-}

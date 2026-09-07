@@ -69,6 +69,9 @@ interface FixtureOpts {
   readonly used?: number;
   readonly reserved?: number;
   readonly primaryContact?: string | null;
+  /** Review 2026-09-07 — the bridge THROWS on a failed read (repo.unexpected). */
+  readonly primaryContactThrows?: boolean;
+  readonly haltReadThrows?: boolean;
   readonly memberInBridge?: ReadonlyArray<{
     memberId: string;
     primaryContactEmail: string | null;
@@ -124,6 +127,7 @@ function makeMembersBridge(opts: FixtureOpts = {}): MembersBridgePort {
       }));
     },
     async getMemberPrimaryContact() {
+      if (opts.primaryContactThrows) throw new Error('members-bridge.getMemberPrimaryContact: repo.unexpected');
       return opts.primaryContact !== null && opts.primaryContact !== undefined
         ? unsafeBrandEmailLower(opts.primaryContact)
         : null;
@@ -135,6 +139,7 @@ function makeMembersBridge(opts: FixtureOpts = {}): MembersBridgePort {
       return null;
     },
     async getMembersHaltedInTenant() {
+      if (opts.haltReadThrows) throw new Error('members-bridge.getMembersHaltedInTenant: repo.unexpected');
       return halted;
     },
     async setMemberHalt() {
@@ -145,6 +150,8 @@ function makeMembersBridge(opts: FixtureOpts = {}): MembersBridgePort {
       return ok({ previouslyNull: true });
     },
     async filterMarketingOptedOut() { return new Set(); },
+    async getContactsBySegment() { return []; },
+    async countOptedOutContactsBySegment() { return 0; },
     async getMemberPreferredLocale() { return null; },
   };
 }
@@ -407,6 +414,8 @@ function makeDeps(opts: FixtureOpts = {}, allowRateLimit = true) {
       emailValidator: rfc5321EmailValidator,
       eventAttendees: makeEventAttendees(),
       marketingUnsubscribes: makeMarketingUnsubscribes(),
+      audienceMode: 'primary_only' as const,
+      audienceCeiling: 5000,
       rateLimiter: makeRateLimiter({
         allow: opts.rateLimit?.allow ?? allowRateLimit,
         retryAfterSeconds: opts.rateLimit?.retryAfterSeconds ?? 60,
@@ -1710,3 +1719,183 @@ describe('submit-broadcast — 108 PR-D opt-out filter at submit (round-2 findin
   });
 });
 
+
+/**
+ * 108 PR-C T076 — submit hands the resolver the MEMBER id (self-exclusion by
+ * member, FR-022), threads `audienceMode` from deps, and maps the resolver's
+ * typed `resolve.server_error` to `submit.server_error` WITHOUT a reject
+ * audit — nothing was decided about the audience, so nothing must be
+ * recorded as "empty" or "too large".
+ */
+describe('submit-broadcast — 108 PR-C resolver contract (T076)', () => {
+  it('self-exclusion is by member id: the sender is excluded even when the bridge lists them under another address', async () => {
+    // Old rule: exclude the address equal to the sender's primary. The bridge
+    // answers the sender's member under a DIFFERENT address, so the old rule
+    // would keep it and the submit would succeed with one recipient.
+    const { deps } = makeDeps({
+      primaryContact: 'me@example.com',
+      memberInBridge: [{ memberId: 'm-1', primaryContactEmail: 'other@example.com' }],
+    });
+    const result = await submitBroadcast(deps, baseInput);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('broadcast_empty_segment_blocked');
+  });
+
+  it("audienceMode 'all_contacts' resolves through getContactsBySegment, not the primary-only read", async () => {
+    const { deps } = makeDeps({
+      primaryContact: 'me@example.com',
+      memberInBridge: [{ memberId: 'm-9', primaryContactEmail: 'nine@example.com' }],
+    });
+    const contactCalls: string[] = [];
+    const bridge = deps.membersBridge as MembersBridgePort & {
+      getContactsBySegment: MembersBridgePort['getContactsBySegment'];
+    };
+    bridge.getContactsBySegment = async (_ctx, kind) => {
+      contactCalls.push(kind);
+      return [];
+    };
+    const result = await submitBroadcast({ ...deps, audienceMode: 'all_contacts' }, baseInput);
+    // The contact leg answered nothing, so the member-leg rows must NOT have
+    // been used instead.
+    expect(contactCalls).toEqual(['all_members']);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('broadcast_empty_segment_blocked');
+  });
+
+  it('a failed member read (resolve.server_error) → submit.server_error and NO reject audit', async () => {
+    const { audit, deps } = makeDeps({
+      primaryContact: 'me@example.com',
+      memberInBridge: [{ memberId: 'm-9', primaryContactEmail: 'nine@example.com' }],
+    });
+    const bridge = deps.membersBridge as MembersBridgePort & {
+      getMembersBySegment: MembersBridgePort['getMembersBySegment'];
+    };
+    bridge.getMembersBySegment = async () => {
+      throw new Error('members-bridge.getMembersBySegment: repo.unexpected');
+    };
+    const result = await submitBroadcast(deps, baseInput);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('submit.server_error');
+    const rejectKinds = audit.emits
+      .map((e) => e.eventType)
+      .filter((t) => t === 'broadcast_empty_segment_blocked' || t === 'broadcast_audience_too_large');
+    expect(rejectKinds).toEqual([]);
+  });
+});
+
+/**
+ * 108 PR-C T077 — FR-022a "tell the sender how many were dropped": the
+ * success output carries the resolver's `droppedByPreference` so the route
+ * can return it as `recipientPreferenceExcluded` (a number, never addresses).
+ */
+describe('submit-broadcast — 108 PR-C droppedByPreference on the success output (T077)', () => {
+  it('carries the resolver count: one opted-out primary → estimated 1, dropped 1', async () => {
+    const { deps } = makeDeps({
+      primaryContact: 'me@example.com',
+      memberInBridge: [
+        { memberId: 'm-2', primaryContactEmail: 'two@example.com' },
+        { memberId: 'm-3', primaryContactEmail: 'three-off@example.com' },
+      ],
+    });
+    const bridge = deps.membersBridge as MembersBridgePort & {
+      filterMarketingOptedOut: MembersBridgePort['filterMarketingOptedOut'];
+    };
+    bridge.filterMarketingOptedOut = async () =>
+      new Set([unsafeBrandEmailLower('three-off@example.com')]);
+    const result = await submitBroadcast(deps, baseInput);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.estimatedRecipientCount).toBe(1);
+    expect(result.value.droppedByPreference).toBe(1);
+  });
+});
+
+describe('submitBroadcast — a failed bridge READ is a 500, never a fabricated precondition (review 2026-09-07)', () => {
+  // The bridge now THROWS on `repo.unexpected` (members-bridge.test.ts). A
+  // Neon blip on the halt read used to answer `[]` → the halted member's
+  // submit was ACCEPTED; on the reply-to read it answered `null` → an
+  // append-only `broadcast_member_missing_primary_contact_email` row was
+  // written about a member who has one. Both are now `submit.server_error`
+  // with NO reject audit: the precondition was never decided.
+  it('halt read throws → submit.server_error; the halt gate does not fail open and no audit is emitted', async () => {
+    const { audit, deps } = makeDeps({ haltReadThrows: true, primaryContact: 'me@example.com' });
+    const result = await submitBroadcast(deps, baseInput);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('submit.server_error');
+    expect(audit.emits.find((e) => e.eventType === 'broadcast_member_halted_pending_review')).toBeUndefined();
+    expect(audit.emits.find((e) => e.eventType === 'broadcast_member_missing_primary_contact_email')).toBeUndefined();
+  });
+
+  it('reply-to read throws → submit.server_error; NO broadcast_member_missing_primary_contact_email audit', async () => {
+    const { audit, deps } = makeDeps({ primaryContactThrows: true });
+    const result = await submitBroadcast(deps, baseInput);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('submit.server_error');
+    expect(audit.emits.find((e) => e.eventType === 'broadcast_member_missing_primary_contact_email')).toBeUndefined();
+  });
+});
+
+describe('submitBroadcast — orphan reasons decide the audit (review 2026-09-07)', () => {
+  // A member whose contacts ALL opted out is not "missing a primary contact
+  // email" — they objected. Auditing them under that event name wrote a false
+  // row into an append-only table; the opt-out itself is already recorded
+  // (`contact_marketing_opted_out`). Only a member with no eligible contact
+  // for a NON-preference reason gets the missing-contact audit, and it says why.
+  function withContactLeg(
+    deps: ReturnType<typeof makeDeps>['deps'],
+    rows: Awaited<ReturnType<MembersBridgePort['getContactsBySegment']>>,
+    optedOutCount: number,
+  ) {
+    const bridge = deps.membersBridge as MembersBridgePort & {
+      getContactsBySegment: MembersBridgePort['getContactsBySegment'];
+      countOptedOutContactsBySegment: MembersBridgePort['countOptedOutContactsBySegment'];
+    };
+    bridge.getContactsBySegment = async () => rows;
+    bridge.countOptedOutContactsBySegment = async () => optedOutCount;
+    return { ...deps, audienceMode: 'all_contacts' as const };
+  }
+
+  it('all_opted_out orphan → NO broadcast_member_missing_primary_contact_email; the drop is a preference count', async () => {
+    const { audit, deps } = makeDeps({ primaryContact: 'me@example.com' });
+    const result = await submitBroadcast(
+      withContactLeg(
+        deps,
+        [
+          { memberId: 'm-9', contactId: 'c-9', emailLower: unsafeBrandEmailLower('nine@example.com'), hasOptedOutContact: false },
+          { memberId: 'm-off', contactId: null, emailLower: null, hasOptedOutContact: true },
+        ],
+        1,
+      ),
+      baseInput,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.droppedByPreference).toBe(1);
+    expect(audit.emits.find((e) => e.eventType === 'broadcast_member_missing_primary_contact_email')).toBeUndefined();
+  });
+
+  it('no_eligible_contact orphan → the missing-contact audit carries orphan_reason', async () => {
+    const { audit, deps } = makeDeps({ primaryContact: 'me@example.com' });
+    const result = await submitBroadcast(
+      withContactLeg(
+        deps,
+        [
+          { memberId: 'm-9', contactId: 'c-9', emailLower: unsafeBrandEmailLower('nine@example.com'), hasOptedOutContact: false },
+          { memberId: 'm-empty', contactId: null, emailLower: null, hasOptedOutContact: false },
+        ],
+        0,
+      ),
+      baseInput,
+    );
+    expect(result.ok).toBe(true);
+    const emit = audit.emits.find((e) => e.eventType === 'broadcast_member_missing_primary_contact_email');
+    expect(emit).toBeDefined();
+    expect((emit?.payload as Record<string, unknown>)['orphan_reason']).toBe('no_eligible_contact');
+    expect((emit?.payload as Record<string, unknown>)['memberId']).toBe('m-empty');
+  });
+});

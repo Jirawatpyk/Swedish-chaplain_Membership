@@ -60,12 +60,15 @@ export interface QueueWithBulkProps {
   readonly rows: ReadonlyArray<EnrichedQueueRow>;
   readonly columnLabels: QueueTableClientProps['columnLabels'];
   readonly readOnly?: boolean;
+  /** Round 2 (UX M-1) — see `QueueTableProps.haltUnknown`. */
+  readonly haltUnknown?: boolean;
 }
 
 export function QueueWithBulk({
   rows,
   columnLabels,
   readOnly = false,
+  haltUnknown = false,
 }: QueueWithBulkProps): React.ReactElement {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [clearNonce, setClearNonce] = useState(0);
@@ -108,6 +111,7 @@ export function QueueWithBulk({
       <QueueBulkActionBar
         selectedIds={selectedIds}
         readOnly={readOnly}
+        haltUnknown={haltUnknown}
         onClear={handleClear}
         onPartialFailure={handlePartialFailure}
         recipientByIdRows={rows.map((r) => ({

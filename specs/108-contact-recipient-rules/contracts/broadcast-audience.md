@@ -9,39 +9,52 @@ batch crons. Any other recipient query is a defect.
 ```ts
 interface ResolveSegmentDeps {
   tenant: TenantContext;
-  membersBridge: MembersBridgePort;          // + getContactsBySegment, filterMarketingOptedOut
+  membersBridge: MembersBridgePort;          // + getContactsBySegment, countOptedOutContactsBySegment, filterMarketingOptedOut
   eventAttendees: EventAttendeesRepository;
-  marketingUnsubscribes: MarketingUnsubscribesRepo;   // lookupBatch, chunked ≤1,000
+  marketingUnsubscribes: MarketingUnsubscribesRepo;   // lookupBatch, chunked ≤5,000
   audienceMode: 'primary_only' | 'all_contacts';      // from FEATURE_CONTACT_MARKETING_RECIPIENTS
-  audienceCeiling: number;                            // audienceCeiling(isF71aUs1Enabled())
+  audienceCeiling: number;                            // audienceCeiling(isF71aUs1Enabled() && contactMarketingRecipients) — review H-2: 50,000 needs BOTH flags
 }
 interface ResolveSegmentInput {
   segment: RecipientSegment;
+  phase: 'submit' | 'dispatch';              // required — labels audience_resolved_total and
+                                             // marketing_opt_out_filter_count, so a compose-time
+                                             // count cannot keep the dispatch-side alarm alive
   requestingMemberId: string | null;         // replaces requestingMemberPrimaryEmail
   customRecipients: ReadonlyArray<EmailLower> | null;
 }
 interface ResolveSegmentOutput {
   recipients: ReadonlyArray<EmailLower>;     // deduplicated, suppression- and opt-out-filtered
   estimatedCount: number;                    // === recipients.length
-  orphans: ReadonlyArray<string>;            // member ids with zero eligible contacts (FR-029)
-  droppedByPreference: number;               // custom + attendee entries removed by opt-out/suppression (FR-022a)
+  orphans: ReadonlyArray<{ memberId: string; reason: 'no_primary_email' | 'no_eligible_contact' | 'all_opted_out' }>;
+                                             // eligible members with zero eligible contacts (FR-029), WITH the reason
+                                             // (review 2026-09-07): `all_opted_out` is a preference drop, not a
+                                             // missing contact — it is never audited as one. The sender is never
+                                             // their own orphan.
+  droppedByPreference: number;               // opt-out drops on any kind — on the all_contacts leg INCLUDING the
+                                             // opted-out contacts F3 excluded in SQL (counted via
+                                             // `countOptedOutContactsBySegment`) — plus suppression drops on the
+                                             // custom list and the attendee segment (FR-022a)
 }
 ```
 
 ## 2. Pipeline (all_contacts mode)
 
 1. Member-based segment → `membersBridge.getContactsBySegment(tenant, kind, params)`:
-   pages of 1,000 ordered by `(member_id, contact_id)`, looped to exhaustion; **a page
+   pages of 5,000 (T081 raised it from 1,000: latency-bound, see research R8) ordered by `(member_id, contact_id)`, looped to exhaustion (cursor = `{ kind: 'after_member' | 'after_contact', … }` — review 2026-09-07; the `after_contact` bound is `member_id >= m AND (member_id > m OR contact_id > c)`, an index bound — round 2 perf HIGH-1; a `tier` segment with no codes is REFUSED by all three F3 reads — page, opted-out count AND the primary-only read (round 2, C1) — and refused before that at the persisted-row boundary, `recipientSegmentFromPersisted`, so a malformed row is a terminal `failed_to_dispatch`, never a retry); **a page
    failure propagates as `resolve.server_error`** (never `[]`).
    Eligibility: member `status='active' AND erased_at IS NULL AND halted=false` (+ tier);
    contact `removed_at IS NULL AND marketing_opt_out_at IS NULL`.
-2. Event-attendee and custom segments → existing sources, then
-   `membersBridge.filterMarketingOptedOut(tenant, emails)` removes opted-out contacts and
-   counts them in `droppedByPreference`.
+2. Event-attendee and custom segments → existing sources. (**Corrected 2026-09-07, staff
+   review 🟡-2**: `filterMarketingOptedOut` does NOT run here. It runs at step 5b below —
+   AFTER suppression, and for EVERY segment kind, not only these two — so an address on
+   both lists counts once, as suppressed. The totals are identical either way; the ORDER
+   documented here was not the code's, and the code's own docblock explains why it must be
+   after.)
 3. Self-exclusion: drop every candidate whose `memberId === requestingMemberId`
    (member-based segments only; custom list unaffected — unchanged rule).
 4. Dedupe by `emailLower`.
-5. Suppression: `lookupBatch` in chunks of 1,000; removed entries count toward
+5. Suppression: `lookupBatch` in chunks of 5,000; removed entries count toward
    `droppedByPreference` for custom/attendee sources.
 6. Empty → `broadcast_empty_segment_blocked`. Above `audienceCeiling` →
    `broadcast_audience_too_large { count, cap }` — **never truncated**.
@@ -51,12 +64,23 @@ applies in both modes (FR-021).
 
 ## 3. Ceiling
 
-`audienceCeiling(batchingEnabled)` = 5,000 (flag OFF) | 50,000 (flag ON). Read at one
-composition site; submit, count and dispatch compare against the same number.
+`audienceCeiling(batchingEnabled)` = 5,000 | 50,000, where the argument is
+`isF71aUs1Enabled() && FEATURE_CONTACT_MARKETING_RECIPIENTS` (review H-2: the wide ceiling
+belongs to the wide audience; with the 1:N flag OFF the ceiling is 5,000 whatever the batching
+flag says — prod has batching ON). Read at one composition site; submit, count and dispatch
+compare against the same number.
 `split-large-broadcasts` threshold stays 10,000 (< ceiling when ON). DB CHECK
 `broadcasts_estimated_recipient_cap (0..50000)` unchanged.
 
 ## 4. Audience push (dispatch)
+
+> **DEFERRED out of PR-C (2026-09-07)** — everything in this section (the Contacts Import
+> API, `createContactImport` / `getContactImport`, `broadcasts.audience_import_id`,
+> `audience_building`, the 30-minute stuck rule) ships in the follow-up PR with T110
+> (tasks T086 / T087 / T106; spec AMENDMENT under User Story 5). What PR-C ships at
+> dispatch is the bounded per-tick push of the resolved audience: a tick that cannot build
+> it rejects, counts `broadcasts_dispatch_resolve_failed_total`, and the next tick retries
+> (FR-044); nothing partial is ever pushed.
 
 - First dispatch tick resolves the audience, renders a CSV with a single `email` column
   (never `unsubscribed`), and submits ONE import: `POST /contacts/imports` (multipart:
@@ -80,9 +104,18 @@ composition site; submit, count and dispatch compare against the same number.
 
 | Route | Guard | Query | 200 body |
 |---|---|---|---|
-| `GET /api/broadcasts/recipient-count` | `requireMemberContext` (portal compose) | `segment=all_members\|tier\|event_attendees_last_90d`, `tier=<code>[,<code>]` | `{ count, ceiling, exceeds: boolean, orphans: number, droppedByPreference: number }` |
-| `GET /api/admin/broadcasts/recipient-count` | `requireApiPermission('broadcasts.write')` | same + `member_id=<uuid>` (proxied member) | same |
+| `GET /api/broadcasts/recipient-count` | `requireMemberContext` (portal compose) | `segment=all_members\|tier\|event_attendees_last_90d`, `tier=<code>[,<code>]` | `{ count, ceiling, exceeds: boolean, droppedByPreference: number }` |
+| `GET /api/admin/broadcasts/recipient-count` | `requireApiPermission('broadcasts.write')` | same + `member_id=<uuid>` (proxied member) | same `+ orphans: number` |
 
+- Response body (review 2026-09-07, round 2 C8): `count`, `ceiling`, `exceeds` and `droppedByPreference`
+  on EVERY answer — the resolver runs its whole pipeline before it refuses, so an empty or over-ceiling
+  audience carries the same MEASURED number the ok answer does (a tier where everyone objected reads
+  `count 0, droppedByPreference N`; round 1's "absent means not computed" was false — it was computed);
+  `orphans` is sent to STAFF only (`/api/admin/...`) — it is a fact about other members a member could
+  otherwise probe tier by tier. A tier code over 64 characters is a 400 `invalid_query`, never a
+  silently narrower audience. The staff route answers 503 `count_unavailable` (not 404, no probe audit)
+  when the member lookup FAILS (`repo.unexpected`). `broadcasts_recipient_count_ms` carries an
+  `outcome` label (`ok` | `unavailable`).
 - Custom lists are counted client-side after validation (the existing flow) and reported
   with `droppedByPreference` from `POST /api/broadcasts/submit`'s response.
 - Rate limit 30 / min per `(tenant, user)`, atomic `check` before the resolve. Errors: 429
@@ -95,7 +128,7 @@ composition site; submit, count and dispatch compare against the same number.
 
 ## 6. Submit / dispatch changes
 
-- `POST /api/broadcasts/submit` 201 body gains `recipient_preference_excluded: number`.
+- `POST /api/broadcasts/submit` (and the admin proxy-submit) 200 body gains `recipientPreferenceExcluded: number` — camelCase like its siblings (`estimatedRecipientCount`); the route answers 200, not 201. Both compose forms render it in the success toast as a count (`…toast.preferenceExcluded`), never as addresses.
 - `estimated_recipient_count` is written from `estimatedCount` (unchanged) and now equals
   the dispatched count for the same tenant state (SC-004).
 - Orphan audit `broadcast_member_missing_primary_contact_email` is emitted only for members
@@ -108,6 +141,12 @@ composition site; submit, count and dispatch compare against the same number.
 gain `contact_id`. Suppression remains email-keyed and authoritative.
 
 ## 8. Tests
+
+> **PARTLY DEFERRED (2026-09-07, staff review 🟡-2 — § 4 carried this banner and § 8 did
+> not).** Every artefact below that belongs to the Contacts-Import build —
+> `audience-import-two-tick.test.ts`, `build-audience-tick.test.ts`,
+> `resend-contact-import.test.ts` — ships with T086/T087/T106 in the follow-up PR, not in
+> PR-C. Do not hunt for them here.
 
 - Unit: `resolve-segment-recipients.test.ts` (17 existing cases re-targeted to the
   `ContactRecipient` shape + new: 1:N fan-out, opt-out exclusion, all-contacts self-exclusion,

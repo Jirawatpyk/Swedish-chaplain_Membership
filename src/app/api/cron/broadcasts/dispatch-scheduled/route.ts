@@ -220,6 +220,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             // pollutes `unknown_error` (an enum-drift "should be 0" signal that
             // would page on-call for a routine transient DB blip).
             summary.retryable++;
+            // Review 2026-09-07 (errors HIGH-4) — this was log-only: no
+            // counter, and no wall-clock budget on this path (that budget is
+            // the `gateway_retryable` branch's, FR-021), so a broadcast that
+            // could not build its audience slipped `scheduled_for` forever
+            // with nothing to alert on. The counter is the alarm; the row
+            // still stays `approved` for a clean next-tick retry.
+            broadcastsMetrics.dispatchResolveFailedTotal(tenant.slug);
             logger.warn(
               {
                 tenantId: tenant.slug,

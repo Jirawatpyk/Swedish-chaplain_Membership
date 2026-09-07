@@ -15,6 +15,7 @@ import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { ProxyComposeForm } from '@/components/broadcast/proxy-compose-form';
 import { requirePagePermission } from '@/lib/rbac';
+import { currentAudienceCeiling } from '@/modules/broadcasts';
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.broadcasts.proxySubmitDialog');
   return { title: t('title') };
@@ -28,7 +29,9 @@ export default async function AdminProxyComposePage(): Promise<React.ReactElemen
   return (
     <FormContainer>
       <PageHeader title={t('title')} subtitle={t('pageSubtitle')} />
-      <ProxyComposeForm />
+      {/* Round 2 (i18n H4): the same ceiling the member page resolves — the
+          fallback for the too-large copy when a 422 body carries no cap. */}
+      <ProxyComposeForm audienceCeiling={currentAudienceCeiling()} />
     </FormContainer>
   );
 }

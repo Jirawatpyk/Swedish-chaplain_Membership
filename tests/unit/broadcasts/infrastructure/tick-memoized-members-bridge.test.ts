@@ -32,16 +32,36 @@ function makeRecipient(memberId: string): MemberRecipient {
 function makeStubBridge(): {
   bridge: MembersBridgePort;
   segmentCalls: Array<{ type: string; params: unknown }>;
+  contactCalls: Array<{ type: string; params: unknown }>;
+  countCalls: Array<{ type: string; params: unknown; excludeMemberId: string | null }>;
   haltCalls: Array<{ memberId: string; halted: boolean }>;
   primaryCalls: Array<{ memberId: string }>;
 } {
   const segmentCalls: Array<{ type: string; params: unknown }> = [];
+  const contactCalls: Array<{ type: string; params: unknown }> = [];
+  const countCalls: Array<{ type: string; params: unknown; excludeMemberId: string | null }> = [];
   const haltCalls: Array<{ memberId: string; halted: boolean }> = [];
   const primaryCalls: Array<{ memberId: string }> = [];
   const bridge: MembersBridgePort = {
     async getMembersBySegment(_ctx, type, params) {
       segmentCalls.push({ type, params });
       return [makeRecipient('m-1')];
+    },
+    // 108 PR-C — the 1:N page walk; memoised per tick like the member leg.
+    async countOptedOutContactsBySegment(_ctx, type, params, excludeMemberId) {
+      countCalls.push({ type, params, excludeMemberId });
+      return 0;
+    },
+    async getContactsBySegment(_ctx, type, params) {
+      contactCalls.push({ type, params });
+      return [
+        {
+          memberId: 'm-1',
+          contactId: 'c-1',
+          emailLower: unsafeBrandEmailLower('c-1@example.com'),
+          hasOptedOutContact: false,
+        },
+      ];
     },
     async getMemberPrimaryContact(_ctx, memberId) {
       primaryCalls.push({ memberId });
@@ -71,7 +91,7 @@ function makeStubBridge(): {
       return null;
     },
   };
-  return { bridge, segmentCalls, haltCalls, primaryCalls };
+  return { bridge, segmentCalls, contactCalls, countCalls, haltCalls, primaryCalls };
 }
 
 const tenant = asTenantContext('test-tenant');
@@ -168,5 +188,58 @@ describe('makeTickMemoizedMembersBridge — filterMarketingOptedOut is NOT memoi
     expect(calls).toHaveLength(2);
     expect([...first]).toEqual(['a@example.com']);
     expect([...second]).toEqual(['a@example.com']);
+  });
+});
+
+describe('makeTickMemoizedMembersBridge — getContactsBySegment is memoized per tick (108 PR-C T075)', () => {
+  it('cache hit: identical (tenant, segmentType, params) → the inner bridge walks the pages ONCE', async () => {
+    const stub = makeStubBridge();
+    const memo = makeTickMemoizedMembersBridge(stub.bridge);
+    const a = await memo.getContactsBySegment(tenant, 'all_members', {});
+    const b = await memo.getContactsBySegment(tenant, 'all_members', {});
+    expect(stub.contactCalls).toHaveLength(1);
+    expect(a).toBe(b);
+  });
+
+  it('tierCodes sort normalises the key; a different tenant is a different slot', async () => {
+    const stub = makeStubBridge();
+    const memo = makeTickMemoizedMembersBridge(stub.bridge);
+    await memo.getContactsBySegment(tenant, 'tier', { tierCodes: ['B', 'A'] });
+    await memo.getContactsBySegment(tenant, 'tier', { tierCodes: ['A', 'B'] });
+    expect(stub.contactCalls).toHaveLength(1);
+    await memo.getContactsBySegment(asTenantContext('other-tenant'), 'tier', { tierCodes: ['A', 'B'] });
+    expect(stub.contactCalls).toHaveLength(2);
+  });
+
+  // Review 2026-09-07 round 2 (C18 — four reviewers) — the page walk was
+  // memoised per tick but the opted-out COUNT was not, so two broadcasts on
+  // one segment got a frozen audience paired with two independently-timed
+  // counts. Same key, same tick, one read; the excluded sender is part of the
+  // key because it changes the number.
+  it('countOptedOutContactsBySegment is memoised per (tenant, segment, params, excludeMemberId)', async () => {
+    const stub = makeStubBridge();
+    const memo = makeTickMemoizedMembersBridge(stub.bridge);
+    await memo.countOptedOutContactsBySegment(tenant, 'all_members', {}, null);
+    await memo.countOptedOutContactsBySegment(tenant, 'all_members', {}, null);
+    expect(stub.countCalls).toHaveLength(1);
+    await memo.countOptedOutContactsBySegment(tenant, 'all_members', {}, 'm-sender');
+    expect(stub.countCalls).toHaveLength(2);
+    await memo.countOptedOutContactsBySegment(tenant, 'tier', { tierCodes: ['B', 'A'] }, null);
+    await memo.countOptedOutContactsBySegment(tenant, 'tier', { tierCodes: ['A', 'B'] }, null);
+    expect(stub.countCalls).toHaveLength(3);
+  });
+
+  it('the member-level and contact-level caches never share a slot: the same segment asked both ways runs both', async () => {
+    // A `MemberRecipient[]` handed to a caller expecting `ContactRecipient[]`
+    // would resolve to ZERO recipients (no `emailLower` field) — exactly the
+    // silent-empty class research R8 exists to close.
+    const stub = makeStubBridge();
+    const memo = makeTickMemoizedMembersBridge(stub.bridge);
+    const memberRows = await memo.getMembersBySegment(tenant, 'all_members', {});
+    const contactRows = await memo.getContactsBySegment(tenant, 'all_members', {});
+    expect(stub.segmentCalls).toHaveLength(1);
+    expect(stub.contactCalls).toHaveLength(1);
+    expect(contactRows as unknown).not.toBe(memberRows as unknown);
+    expect(contactRows[0]).toMatchObject({ contactId: 'c-1', emailLower: 'c-1@example.com' });
   });
 });

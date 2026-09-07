@@ -65,6 +65,8 @@ const EXPECTED: Record<F7RouteErrorCode, number> = {
   // R4.2 H-1 — typed 400 code for invalid `locale` query parameter
   // on GET /api/broadcasts/templates (was stringly-typed pre-R4.2).
   invalid_locale: 400,
+  invalid_query: 400,
+  count_unavailable: 503,
   internal_error: 500,
 };
 
@@ -99,6 +101,19 @@ describe('httpStatusForBroadcastError', () => {
 // route-mapping test Task 5 skipped (it only covered the Application
 // use-case). Non-vacuous: pins the exact status + bilingual copy, not just
 // "is defined".
+// Review 2026-09-07 round 2 (C11 — code MEDIUM + i18n L7): the 422 envelope
+// hard-coded "5,000" in `message` / `messageThai`, so with both flags ON the
+// same body read `details.cap: 50000` next to "exceeds the 5,000 recipient
+// limit" — a second definition of the ceiling (FR-042), one degraded i18n
+// path away from a member's screen (`compose-form` falls back to `message`).
+describe('the audience ceiling has ONE definition (FR-042)', () => {
+  it('no broadcast error copy hard-codes a ceiling in either language', () => {
+    const { message, messageThai } = messagesFor('broadcast_audience_too_large');
+    expect(message).not.toMatch(/\d[\d,.]{3,}/);
+    expect(messageThai).not.toMatch(/\d[\d,.]{3,}/);
+  });
+});
+
 describe('broadcast_membership_suspended_blocked route mapping', () => {
   it('maps to 422, not the 500 fallback', () => {
     const result = httpStatusForBroadcastError(

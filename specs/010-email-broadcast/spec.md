@@ -360,6 +360,47 @@ per US5.
 
 ## Requirements *(mandatory)*
 
+> **AMENDMENT — member-based audiences reach every eligible contact (raised
+> 2026-09-04, DECIDED in `specs/108-contact-recipient-rules/`; implemented in
+> 108 PR-C behind `FEATURE_CONTACT_MARKETING_RECIPIENTS`, default OFF, flipped
+> after the FR-027a pre-flight review).** For the member-based segments
+> (`all_members`, `tier:<code>`) this supersedes:
+>
+> - **Q8 / FR-015 / FR-015c ("primary contact only")** — with the flag ON the
+>   recipient set is every live, not-opted-out contact, primary AND secondary,
+>   of every ELIGIBLE member (108 FR-020/FR-021: `status = 'active'`, not
+>   erased, not halted), deduplicated by address. The `status = 'active'`
+>   predicate ships UNFLAGGED on the flag-OFF leg too (108 SC-009: an archived
+>   or lapsed member's primary no longer receives E-Blasts). The FR-015c
+>   `SELECT DISTINCT primary_contact_email …` SQL is replaced by F3's keyset
+>   read `findBroadcastRecipientContacts` (108 `contracts/broadcast-audience.md`).
+> - **Q16 (self-exclusion = "the submitter's primary contact email")** —
+>   self-exclusion is by MEMBER id and removes ALL of the submitter's contacts
+>   (108 FR-022). The custom list is NOT self-excluded (108 FR-022a, contract
+>   § 2 step 3); note the shipped code used to strip the address from every
+>   segment kind, so this is a behaviour change, pinned in
+>   `tests/unit/broadcasts/application/resolve-segment-recipients.test.ts`.
+> - **"Member missing primary contact email" edge case /
+>   `member_missing_primary_contact` signal** — redefined by 108 FR-029: it
+>   fires for an eligible member with NO eligible contact at all, never merely
+>   for lacking a primary (a member with a live secondary is a recipient).
+> - **FR-002(h) / FR-016a / "Recipient list cap exceeded"** — the 5,000 figure
+>   becomes one ceiling parameter, `audienceCeiling(batchingEnabled)` = 5,000
+>   (F7.1a US1 OFF) | 50,000 (ON), read at one composition site and compared
+>   identically at submit, count and dispatch; the audience is never truncated
+>   below it — the F3 read's `.limit(5000)` is gone (108 US5, research R8/R9).
+> - **Unsubscribe attribution** — `marketing_unsubscribes` gains `contact_id`
+>   (migration 0297) and the `broadcast_unsubscribed` /
+>   `broadcast_suppression_applied` payloads carry `contactId` (108 FR-024).
+> - **Custom list / attendees** — a per-contact opt-out (108 PR-D) and an
+>   unsubscribed address are dropped at submit and the sender is told HOW MANY
+>   (`recipientPreferenceExcluded` on the submit body), never which
+>   (108 FR-022a).
+>
+> Q14's halt-as-recipient semantics are unchanged: a halted member is excluded
+> as a recipient on both legs. The flag and the primary-only leg are deleted
+> after one clean week of sends (108 tasks T099).
+
 > **AMENDMENT — clear-halt actor set (raised + DECIDED 2026-08-15, 018
 > actor-role follow-up). Decision: NARROW to the admin tier. Implemented in the
 > same PR; `manager`-role users still cannot clear (unchanged), and `marketing`
