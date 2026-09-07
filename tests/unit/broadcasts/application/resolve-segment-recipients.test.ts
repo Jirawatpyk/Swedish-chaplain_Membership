@@ -780,6 +780,34 @@ describe('resolve-segment-recipients — 108 PR-D marketing opt-out at dispatch 
     expect(calls).toEqual([[unsafeBrandEmailLower('a@example.com')]]);
   });
 
+  // /code-review 2026-09-07 (finding #8) — the staff-review P2 fix removed
+  // the INNER `> 0` guard on this emit and left an OUTER `if (final.length >
+  // 0)` with the identical effect. A resolve whose audience is emptied by
+  // SUPPRESSION emitted nothing at all, so a run of legitimately-empty
+  // dispatches read exactly like "step 5b was deleted" — the one thing the
+  // `.add(0)` design exists to distinguish, and the alarm in
+  // docs/observability.md is series ABSENCE.
+  it('suppression removes EVERYONE → the opt-out filter still reports 0 (the canary is series absence)', async () => {
+    const spy = vi.spyOn(broadcastsMetrics, 'marketingOptOutFilterCount');
+    const deps = makeDeps({
+      members: [recipient('gone@example.com')],
+      suppressed: new Set([unsafeBrandEmailLower('gone@example.com')]),
+    });
+    const result = await resolveSegmentRecipients(deps, {
+      segment: { kind: 'all_members' },
+      phase: 'dispatch',
+      requestingMemberId: null,
+      customRecipients: null,
+    });
+    // The audience IS empty — that refusal is correct and unchanged.
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('broadcast_empty_segment_blocked');
+    // …and the series stays alive, because step 5b is still wired.
+    expect(spy).toHaveBeenCalledWith('test-tenant', 0, 'dispatch');
+    spy.mockRestore();
+  });
+
   it('nothing dropped → droppedByPreference is 0 and the metric STILL reports 0', async () => {
     const spy = vi.spyOn(broadcastsMetrics, 'marketingOptOutFilterCount');
     const deps = makeDeps({ members: [recipient('a@example.com')] });

@@ -136,6 +136,67 @@ describe('108 PR-C T078 — unsubscribe attribution to member + contact (live Ne
     }
   });
 
+  // /code-review 2026-09-07 (finding #3) — `ContactRepo.findByEmail` compared
+  // `contacts.email` with a case-SENSITIVE `eq` while its own use-case
+  // docblock promises "case-insensitive match via contacts_tenant_email_uniq
+  // lower-index" and the member fallback three frames away already runs
+  // `lower(...) = $1`. A mixed-case row returned 0 rows CLEANLY — not a
+  // throw — so the code fell through to the member lookup and wrote the
+  // suppression with `contact_id` NULL and no log: FR-024's "S1 unsubscribed"
+  // silently degraded to "the member unsubscribed" for exactly the rows this
+  // feature exists for. Every email index on `contacts` is on `lower(email)`
+  // (0009 uniq, 0182, 0296) — the schema does not trust storage to be
+  // normalised, and neither may this read. SweCham's secondary-contact
+  // import is the vector that would have produced such rows.
+  it('a contact stored with MIXED CASE is still attributed — the lookup is case-insensitive, as its contract says', async () => {
+    const mixedContactId = randomUUID();
+    const mixedLocal = `Mixed.Case.${tag}`;
+    const mixedStored = `${mixedLocal}@Example.TEST`;
+    await runInTenant(tenant.ctx, (tx) =>
+      tx.insert(contacts).values({
+        tenantId: tenant.ctx.slug,
+        contactId: mixedContactId,
+        memberId,
+        firstName: 'Mixed',
+        lastName: 'Case',
+        email: mixedStored,
+        phone: null,
+        roleTitle: null,
+        preferredLanguage: 'en',
+        isPrimary: false,
+        dateOfBirth: null,
+        linkedUserId: null,
+        removedAt: null,
+      }),
+    );
+    // The row really is stored un-normalised — otherwise this test proves
+    // nothing about the lookup.
+    const stored = (await db.execute(sql`
+      SELECT email FROM contacts WHERE tenant_id = ${tenant.ctx.slug} AND contact_id = ${mixedContactId}::uuid
+    `)) as unknown as Array<{ email: string }>;
+    expect(stored[0]!.email).not.toBe(stored[0]!.email.toLowerCase());
+
+    const r = await unsubscribeRecipient(deps(), {
+      tenantId: tenant.ctx.slug as never,
+      broadcastId,
+      emailLower: unsafeBrandEmailLower(mixedStored.toLowerCase()),
+      tokenPlaintext: `tok-mixed-${tag}`,
+      requestId: randomUUID(),
+      reasonText: null,
+    });
+    expect(r.ok).toBe(true);
+
+    const rows = (await db.execute(sql`
+      SELECT member_id::text AS member_id, contact_id::text AS contact_id
+        FROM marketing_unsubscribes
+       WHERE tenant_id = ${tenant.ctx.slug} AND email_lower = ${mixedStored.toLowerCase()}
+    `)) as unknown as Array<{ member_id: string | null; contact_id: string | null }>;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.member_id).toBe(memberId);
+    // The half that used to be NULL.
+    expect(rows[0]!.contact_id).toBe(mixedContactId);
+  }, 120_000);
+
   it('removed then re-added under the same address: the new contact row shows "unsubscribed" and is never resolved again', async () => {
     await runInTenant(tenant.ctx, (tx) =>
       tx

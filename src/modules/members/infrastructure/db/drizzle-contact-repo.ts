@@ -102,7 +102,22 @@ export const drizzleContactRepo: ContactRepo = {
           .where(
             and(
               eq(contacts.tenantId, ctx.slug),
-              eq(contacts.email, email),
+              // /code-review 2026-09-07 (finding #3) — this was
+              // `eq(contacts.email, email)`, a case-SENSITIVE compare, while
+              // the caller's docblock promises "case-insensitive match via
+              // `contacts_tenant_email_uniq` lower-index" and the member
+              // fallback three frames away already runs `lower(...) = $1`.
+              // Every index this table has on email is on `lower(email)`
+              // (0009 uniq, 0182, 0296) — the schema does not trust storage
+              // to be normalised, so neither may this read. A mixed-case row
+              // returned 0 rows CLEANLY (not a throw), so the unsubscribe
+              // fell through to the member lookup and wrote the suppression
+              // with `contact_id` NULL: FR-024's "S1 unsubscribed" silently
+              // degraded to "the member unsubscribed", with no log. The
+              // literal is already lowercased by `asEmail`, so this also
+              // makes the read index-eligible on the partial uniq index
+              // (same `removed_at IS NULL` predicate).
+              sql`lower(${contacts.email}) = ${email}`,
               isNull(contacts.removedAt),
             ),
           )

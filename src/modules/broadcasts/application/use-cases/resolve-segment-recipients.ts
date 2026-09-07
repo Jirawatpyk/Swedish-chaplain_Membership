@@ -381,19 +381,29 @@ export async function resolveSegmentRecipients(
       final = final.filter((e) => !optedOut.has(e));
       optOutDropped = before - final.length;
     }
-    // Emitted whenever the filter RAN, including at zero (staff review P2).
-    // Guarding on `> 0` made "nobody has opted out" and "step 5b was deleted"
-    // the same signal — no series either way — and SweCham cuts over with zero
-    // opt-outs, so the catalogue's "a drop to 0 means the filter stopped"
-    // alarm could never have fired. `.add(0)` still registers the series.
-    // Labelled by phase (code-review finding 6): the alarm watches the
-    // `dispatch` series, which ongoing submits must not keep alive.
-    broadcastsMetrics.marketingOptOutFilterCount(
-      deps.tenant.slug,
-      optOutDropped,
-      input.phase,
-    );
   }
+  // Emitted whenever the filter RAN, including at zero (staff review P2).
+  // Guarding on `> 0` made "nobody has opted out" and "step 5b was deleted"
+  // the same signal — no series either way — and SweCham cuts over with zero
+  // opt-outs, so the catalogue's "a drop to 0 means the filter stopped"
+  // alarm could never have fired. `.add(0)` still registers the series.
+  // Labelled by phase (code-review finding 6): the alarm watches the
+  // `dispatch` series, which ongoing submits must not keep alive.
+  //
+  // /code-review 2026-09-07 (finding #8) — that P2 fix removed the INNER
+  // `> 0` guard and left an OUTER one with the identical effect: a resolve
+  // whose audience is emptied by suppression emitted NOTHING, so a run of
+  // legitimately-empty dispatches read exactly like "step 5b was deleted",
+  // which is the one thing `.add(0)` exists to distinguish. The emit moves
+  // out; the CALL stays in, because asking the bridge about an empty list is
+  // a wasted round trip and 0 dropped from 0 addresses is the honest count
+  // either way. (A bridge outage cannot be hidden here — it THROWS, so the
+  // resolve fails and never reaches this line.)
+  broadcastsMetrics.marketingOptOutFilterCount(
+    deps.tenant.slug,
+    optOutDropped,
+    input.phase,
+  );
 
   // FR-022a — what the sender is told was "excluded by recipient preference":
   // the step-5b drops, the opt-outs F3 excluded in SQL before this resolver

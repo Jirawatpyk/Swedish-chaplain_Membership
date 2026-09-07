@@ -3,7 +3,12 @@
  * US3, FR-020–FR-022, FR-029).
  *
  * Consumed by F7's `MembersBridgePort.getContactsBySegment`, which loops
- * pages until an empty one and PROPAGATES a failed page (research R8: an
+ * pages until a SHORT one — a page smaller than `CONTACT_PAGE_SIZE` proves
+ * exhaustion, so a small audience is one round trip, not two (this line said
+ * "until an empty one" until /code-review 2026-09-07 finding #10; a reader
+ * who believed it would either add a redundant page per resolve to "restore"
+ * that or change the exit condition to `length === 0` and make the extra
+ * round trip guaranteed) — and PROPAGATES a failed page (research R8: an
  * adapter answering `[]` on error is a second silent-truncation vector under
  * pagination). Pure pass-through, like `getMembersBySegment`: every rule that
  * decides eligibility is in `MemberRepo.findBroadcastRecipientContacts`'s SQL

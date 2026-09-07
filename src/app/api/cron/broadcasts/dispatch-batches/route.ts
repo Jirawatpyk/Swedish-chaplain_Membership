@@ -313,7 +313,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           {
             tenantId: tenant.slug,
             broadcastId: row.broadcast_id,
-            errorKind: 'dispatch.server_error',
+            // /code-review 2026-09-07 (finding #7) — this said
+            // `dispatch.server_error` for ANY throw. That is a typed kind
+            // the resolver produces as a RESULT (handled below); a THROW is
+            // either the fail-closed opt-out lookup or a programming error,
+            // and the log has no way to tell. Stamping the typed name made
+            // a TypeError read as a Neon outage to whoever follows
+            // `broadcast-audience-build.md § C`. Same lesson as
+            // check:actor-role-truth: record what you observed, never a
+            // classification nobody established.
+            errorKind: 'unclassified_throw',
             err: errKind(e),
           },
           'cron.broadcasts.dispatch_batches.recipient_resolution_failed',

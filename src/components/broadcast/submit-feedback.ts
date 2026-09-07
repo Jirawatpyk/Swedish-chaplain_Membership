@@ -74,7 +74,9 @@ export function estimateNoteKey(
   | 'estimateNote.tier'
   | 'estimateNote.tierAllContacts'
   | 'estimateNote.custom'
-  | 'estimateNote.attendees' {
+  | 'estimateNote.attendees'
+  // /code-review 2026-09-07 (finding #6) — see the default arm.
+  | null {
   switch (segmentKind) {
     case 'all_members':
       return audienceMode === 'all_contacts'
@@ -92,7 +94,19 @@ export function estimateNoteKey(
     default: {
       // A fifth segment kind must choose its copy here, never inherit one.
       const _exhaustive: never = segmentKind;
-      return _exhaustive;
+      // /code-review 2026-09-07 (finding #6) — this used to `return
+      // _exhaustive`, i.e. the segment STRING, which the caller then hands
+      // straight to `t()`. next-intl does not throw on a missing key: it
+      // renders the key PATH, so an unrecognised kind would have printed
+      // "portal.broadcasts.compose.event_attendees_last_30d" on the compose
+      // form in all three locales. Same fail-open shape as
+      // `isMissingAddressOrphan`, one file over, fixed the same day.
+      // Returning null rather than a "safe" sibling key because every
+      // sibling asserts a REACH ("every contact of every member", "each line
+      // below is one email") and asserting the wrong one is worse than
+      // saying nothing about a segment we do not recognise.
+      void _exhaustive;
+      return null;
     }
   }
 }
@@ -117,7 +131,12 @@ export function showsSelfExclusionHint(segmentKind: ComposeSegmentKind): boolean
  */
 export function selfExclusionHintKey(
   segmentKind: ComposeSegmentKind,
-): 'selfExclusionHint' | 'selfExclusionHintCustom' | 'selfExclusionHintAttendees' {
+):
+  | 'selfExclusionHint'
+  | 'selfExclusionHintCustom'
+  | 'selfExclusionHintAttendees'
+  // /code-review 2026-09-07 (finding #6) — see the default arm.
+  | null {
   switch (segmentKind) {
     case 'all_members':
     case 'tier':
@@ -128,7 +147,12 @@ export function selfExclusionHintKey(
       return 'selfExclusionHintAttendees';
     default: {
       const _exhaustive: never = segmentKind;
-      return _exhaustive;
+      // Same class as `estimateNoteKey` above. Null rather than a default
+      // arm: `selfExclusionHint` PROMISES "you and your colleagues won't
+      // receive your own broadcast", and a promise of exclusion is the one
+      // thing an unrecognised segment must not make.
+      void _exhaustive;
+      return null;
     }
   }
 }

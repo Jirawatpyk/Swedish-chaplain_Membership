@@ -225,6 +225,11 @@ export function ComposeForm({
   }, [serverError]);
 
   const customLines = parseLines(customList);
+  // /code-review 2026-09-07 (finding #6) — both are null for a segment
+  // kind this build does not recognise; the JSX omits the line rather
+  // than rendering a raw i18n key path (next-intl does not throw).
+  const estimateNote = estimateNoteKey(segment.kind, audienceMode);
+  const selfExclusionHint = selfExclusionHintKey(segment.kind);
   const validation = SubmitSchema.safeParse({ subject, bodyHtml });
   const customListValid =
     segment.kind !== 'custom' || (customLines.length > 0 && customLines.length <= 100);
@@ -487,15 +492,22 @@ export function ComposeForm({
               once it lands (108 PR-C T089 — the auth'd endpoint, the
               debounced fetch and the cap pre-check this comment once said
               were deliberately not built). */}
-          <p className="text-xs text-muted-foreground">
-            {/* 108 PR-C T079: leg-aware wording + the real ceiling (FR-041). */}
-            {t(estimateNoteKey(segment.kind, audienceMode), { ceiling: audienceCeiling })}
-          </p>
+          {/* 108 PR-C T079: leg-aware wording + the real ceiling (FR-041).
+              /code-review finding #6: an unrecognised segment kind yields
+              null and this line is omitted — never a raw i18n key path,
+              which is what next-intl renders for an unknown key. */}
+          {estimateNote !== null ? (
+            <p className="text-xs text-muted-foreground">
+              {t(estimateNote, { ceiling: audienceCeiling })}
+            </p>
+          ) : null}
           {/* 108 PR-C T079 (FR-022b): self-exclusion covers every contact of
               the sending member, not only the primary address. Round 2 (UX
               H-3): every segment kind says which way the rule goes — silence
               on the custom list / attendees read as "same rule". */}
-          <p className="text-xs text-muted-foreground">{t(selfExclusionHintKey(segment.kind))}</p>
+          {selfExclusionHint !== null ? (
+            <p className="text-xs text-muted-foreground">{t(selfExclusionHint)}</p>
+          ) : null}
           {/* 108 PR-C T089 (FR-040): the live count — the same resolver that
               decides the send, so the number shown is the number sent (SC-004). */}
           <RecipientCountLine state={recipientCount} onRetry={() => setCountRetry((n) => n + 1)} />

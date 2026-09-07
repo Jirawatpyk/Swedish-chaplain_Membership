@@ -514,13 +514,25 @@ export function buildBroadcastRecipientContactsQuery(
       // Review 2026-09-07 — per MEMBER: does any live contact carry a
       // marketing opt-out? The 0294 predicate inverted, as a correlated
       // EXISTS so it costs an index probe per member, not a second join.
-      hasOptedOutContact: sql<boolean>`EXISTS (
+      //
+      // /code-review 2026-09-07 (finding #4) — the EXISTS ran on EVERY row of
+      // every page, but `resolve-segment-recipients.ts:299` reads it only on
+      // the ORPHAN branch (`contactId === null`), and its
+      // `marketing_opt_out_at IS NOT NULL` predicate is the INVERSE of
+      // 0294's partial index (`… IS NULL`), so it cannot use the index
+      // reserved for this data and fell back per row. Guarding on the join
+      // miss gives the identical value for every row the consumer actually
+      // reads — a row WITH a contact never reads it — and skips the probe
+      // for the ~all of them. (The consumer also treats a null email as an
+      // orphan; `contacts.email` is `NOT NULL` — schema-contacts.ts:52 — so
+      // that disjunct can only be true when this one is.)
+      hasOptedOutContact: sql<boolean>`CASE WHEN ${contacts.contactId} IS NULL THEN EXISTS (
         SELECT 1 FROM contacts c2
         WHERE c2.tenant_id = ${members.tenantId}
           AND c2.member_id = ${members.memberId}
           AND c2.removed_at IS NULL
           AND c2.marketing_opt_out_at IS NOT NULL
-      )`,
+      ) ELSE false END`,
     })
     .from(members)
     .leftJoin(

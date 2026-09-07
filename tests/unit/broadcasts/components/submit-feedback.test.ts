@@ -19,6 +19,7 @@ import sv from '@/i18n/messages/sv.json';
 import {
   errorValues,
   estimateNoteKey,
+  type ComposeSegmentKind,
   excludedByPreference,
   proxySelfExclusionNoticeKey,
   selfExclusionHintKey,
@@ -146,6 +147,22 @@ describe('compose copy per audience leg (108 PR-C T079)', () => {
     // with no textarea following it, next to a real server count.
     expect(estimateNoteKey('event_attendees_last_90d', 'primary_only')).toBe('estimateNote.attendees');
     expect(estimateNoteKey('event_attendees_last_90d', 'all_contacts')).toBe('estimateNote.attendees');
+  });
+
+  // /code-review 2026-09-07 (finding #6) — both functions ended with
+  // `return _exhaustive`, which at RUNTIME returns the segment STRING. The
+  // caller feeds it to `t()`, and next-intl does not throw on a missing key:
+  // it renders the key PATH, so an unrecognised kind would have printed
+  // "portal.broadcasts.compose.event_attendees_last_30d" on the compose form
+  // in all three locales. Same fail-open shape as `isMissingAddressOrphan`,
+  // one file over. Null, so the caller omits the line: every sibling key
+  // asserts a REACH or PROMISES self-exclusion, and asserting the wrong one
+  // about a segment we do not recognise is worse than saying nothing.
+  it('an unrecognised segment kind yields NO key — never a raw i18n path, never a borrowed promise', () => {
+    const unknown = 'event_attendees_last_30d' as unknown as ComposeSegmentKind;
+    expect(estimateNoteKey(unknown, 'primary_only')).toBeNull();
+    expect(estimateNoteKey(unknown, 'all_contacts')).toBeNull();
+    expect(selfExclusionHintKey(unknown)).toBeNull();
   });
 
   it('showsSelfExclusionHint is true for member-based segments only (the custom list is not self-excluded)', () => {
