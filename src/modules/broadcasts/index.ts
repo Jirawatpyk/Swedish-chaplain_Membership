@@ -49,10 +49,12 @@ export {
 export {
   asBroadcastSegmentDefinitionId,
   parseBroadcastSegmentDefinitionId,
+  recipientSegmentFromPersisted,
   type BroadcastSegmentDefinition,
   type BroadcastSegmentDefinitionId,
   type BroadcastSegmentDefinitionIdError,
   type BroadcastSegmentDefinitionParams,
+  type MalformedSegmentError,
   type RecipientSegment,
 } from './domain/recipient-segment';
 

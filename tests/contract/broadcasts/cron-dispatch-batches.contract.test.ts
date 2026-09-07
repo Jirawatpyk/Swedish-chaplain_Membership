@@ -80,9 +80,15 @@ vi.mock('@/lib/metrics', async (importOriginal) => {
 });
 // Every key the route imports from the barrel — nothing the route does not
 // read, nothing missing (a missing key throws on access instead of `undefined`).
-vi.mock('@/modules/broadcasts', () => ({
+vi.mock('@/modules/broadcasts', async () => ({
   asBroadcastId: (raw: string) => raw,
   dispatchAllPendingBatches: (...args: unknown[]) => dispatchAllPendingBatchesMock(...args),
+  // Pure Domain — the real one, so the boundary refusal is exercised.
+  recipientSegmentFromPersisted: (
+    await vi.importActual<typeof import('@/modules/broadcasts/domain/recipient-segment')>(
+      '@/modules/broadcasts/domain/recipient-segment',
+    )
+  ).recipientSegmentFromPersisted,
   eventAttendeesBridge: { kind: 'event-attendees-stub' },
   f71aUs1DisabledReason: () => f71aUs1DisabledReasonMock(),
   f7AuditAdapter: { kind: 'audit-stub' },
@@ -228,6 +234,40 @@ describe('cron dispatch-batches — wire contract (Phase 3F.11.5 / Finding 9)', 
     // Review errors HIGH-4 — the failure is counted, not just logged, and
     // the batches are left untouched for the next tick.
     expect(dispatchResolveFailedTotalSpy).toHaveBeenCalledWith('test-tenant');
+    expect(dispatchAllPendingBatchesMock).not.toHaveBeenCalled();
+  });
+
+  // Review 2026-09-07 round 2 (C2) — a tier row with no codes is a permanent
+  // data defect. It must never reach the resolver as `{ tier, [] }` (which
+  // read EVERY member on the flag-OFF leg), and it must not be counted as a
+  // transient resolve failure (which would page on-call for a retry that can
+  // never succeed).
+  it('a tier row with no codes is refused BEFORE the resolver — errors++, not the transient counter', async () => {
+    runInTenantMock.mockImplementation(async (_ctx, fn) =>
+      fn({
+        execute: async () => [{ broadcast_id: BROADCAST_ID }],
+      }),
+    );
+    findByIdMock.mockResolvedValue({
+      broadcastId: BROADCAST_ID,
+      requestedByMemberId: 'm-requester',
+      segmentType: 'tier',
+      segmentParams: null,
+      customRecipientEmails: null,
+      status: 'sending',
+    });
+    findPendingByBroadcastMock.mockResolvedValue([{ batchId: 'b-1', status: 'pending' }]);
+
+    const { POST } = await import('@/app/api/cron/broadcasts/dispatch-batches/route');
+    const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { processed: number; errors: number; broadcastsDispatched: number };
+    expect(body.processed).toBe(1);
+    expect(body.errors).toBe(1);
+    expect(body.broadcastsDispatched).toBe(0);
+
+    expect(resolveSegmentRecipientsMock).not.toHaveBeenCalled();
+    expect(dispatchResolveFailedTotalSpy).not.toHaveBeenCalled();
     expect(dispatchAllPendingBatchesMock).not.toHaveBeenCalled();
   });
 });

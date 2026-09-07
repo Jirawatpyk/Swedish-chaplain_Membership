@@ -57,6 +57,7 @@ import {
   makeDrizzleMarketingUnsubscribesRepo,
   membersBridge,
   noOpAdvisoryLock,
+  recipientSegmentFromPersisted,
   resendBroadcastsGateway,
   resolveSegmentRecipients,
   currentAudienceMode,
@@ -66,7 +67,6 @@ import {
 } from '@/modules/broadcasts';
 import { unsafeBrandEmailLower } from '@/modules/broadcasts/domain/value-objects/email-lower';
 import { asTenantContext } from '@/modules/tenants';
-import type { Broadcast } from '@/modules/broadcasts/domain/broadcast';
 
 // Domain policy import — Domain types are barrel-pure but
 // `DEFAULT_CONCURRENCY_CAP` + `validateConcurrencyCap` are Domain-internal
@@ -241,7 +241,26 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
 
       // 5c. Resolve recipients (segment + suppression + dedupe).
-      const segment = buildSegmentFromBroadcast(broadcast);
+      // Review 2026-09-07 round 2 (C1/C2) — a tier row with no codes is a
+      // permanent data defect: refused here, never resolved (the primary_only
+      // read used to address EVERY member for it), and NOT counted as a
+      // transient resolve failure, which would page for a retry that cannot
+      // succeed. The row stays put; `stuck_sending_count` is its alarm.
+      const segmentResult = recipientSegmentFromPersisted(broadcast);
+      if (!segmentResult.ok) {
+        summary.errors++;
+        logger.error(
+          {
+            tenantId: tenant.slug,
+            broadcastId: row.broadcast_id,
+            errorKind: 'malformed_segment',
+            detail: segmentResult.error.reason,
+          },
+          'cron.broadcasts.dispatch_batches.malformed_segment',
+        );
+        continue;
+      }
+      const segment = segmentResult.value;
       // Staff review A11: the 108 PR-D opt-out lookup is fail-closed and
       // THROWS when the read fails. `dispatch-scheduled-broadcast.ts` maps that
       // to a typed `dispatch.server_error`; here it fell to the generic
@@ -454,25 +473,3 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   return NextResponse.json(summary, { status: 200 });
 }
 
-/**
- * Reconstruct the `RecipientSegment` discriminated-union from the
- * persisted broadcast row. Mirrors the helper in
- * `dispatch-scheduled-broadcast.ts` — duplicated here so the cron
- * handler doesn't depend on a private helper not exported by the F7
- * MVP use case file.
- */
-function buildSegmentFromBroadcast(b: Broadcast) {
-  if (b.segmentType === 'all_members') return { kind: 'all_members' as const };
-  if (b.segmentType === 'tier') {
-    const tierCodes =
-      (b.segmentParams as { tierCodes?: string[] } | null)?.tierCodes ?? [];
-    return { kind: 'tier' as const, tierCodes };
-  }
-  if (b.segmentType === 'event_attendees_last_90d') {
-    return { kind: 'event_attendees_last_90d' as const };
-  }
-  return {
-    kind: 'custom' as const,
-    emails: b.customRecipientEmails ?? [],
-  };
-}

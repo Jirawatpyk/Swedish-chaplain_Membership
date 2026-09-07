@@ -459,10 +459,15 @@ function mapDirectoryRow(
  * predicate on `members.tenant_id`.
  */
 /**
- * Review 2026-09-07 — the tier predicate shared by the page read and the
- * opted-out count, so the two can never narrow differently (SC-004).
+ * Review 2026-09-07 — the tier predicate shared by the page read, the
+ * opted-out count AND (round 2, C1) the primary_only read, so the three can
+ * never narrow differently (SC-004). Round 2 found the guard below had been
+ * added to the two flag-ON reads only; the leg production runs today still
+ * dropped the predicate on `[]` and read every member.
  */
-function broadcastSegmentTierFilter(params: BroadcastOptedOutCountQuery) {
+function broadcastSegmentTierFilter(
+  params: Pick<BroadcastOptedOutCountQuery, 'segmentType' | 'tierCodes'>,
+) {
   if (params.segmentType !== 'tier') return undefined;
   const tierCodesArr = params.tierCodes ?? [];
   // Review 2026-09-07 (types MEDIUM) — a tier segment with NO codes used to
@@ -1542,14 +1547,10 @@ export const drizzleMemberRepo: MemberRepo = {
         // unconstrained string[] from the F2 plan benefit-matrix). The
         // raw fragment uses parameterised binds so SQL injection is not
         // a concern even though the input is unconstrained.
-        const tierCodesArr = params.tierCodes ?? [];
-        const tierFilter =
-          params.segmentType === 'tier' && tierCodesArr.length > 0
-            ? sql`${membershipPlans.planCategory}::text = ANY(ARRAY[${sql.join(
-                tierCodesArr.map((c) => sql`${c}`),
-                sql`, `,
-              )}]::text[])`
-            : undefined;
+        // Review 2026-09-07 round 2 (C1) — the SAME predicate as the two
+        // 1:N reads: a tier segment with no codes is refused, never widened
+        // to every member. This is the leg production runs today.
+        const tierFilter = broadcastSegmentTierFilter(params);
         return tx
           .select({
             memberId: members.memberId,

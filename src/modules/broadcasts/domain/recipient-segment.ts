@@ -69,6 +69,57 @@ export type RecipientSegment =
     };
 
 /**
+ * Review 2026-09-07 round 2 (C1/C2) — a persisted `tier` row whose
+ * `segment_params` carries no usable codes. A PERMANENT data defect (DB
+ * drift, a partial write, a manual fix), never a transient read failure.
+ */
+export type MalformedSegmentError = {
+  readonly kind: 'malformed_segment';
+  readonly segmentType: BroadcastSegmentType;
+  readonly reason: 'tier_without_codes';
+};
+
+/**
+ * Review 2026-09-07 round 2 (C1/C2 — six reviewers converged) — the ONE
+ * place a persisted `broadcasts` row becomes a `RecipientSegment` again.
+ *
+ * Three private `buildSegmentFromBroadcast` copies (dispatch-scheduled,
+ * dispatch-batches, split-large-broadcasts) used to manufacture
+ * `{ kind: 'tier', tierCodes: [] }` from a malformed `segment_params` with
+ * `?? []`. Downstream, the primary_only read dropped its tier predicate and
+ * addressed EVERY active member, while the all_contacts read threw and the
+ * throw was laundered into a transient `resolve.server_error` — retried every
+ * tick forever. Both legs now agree because neither is ever asked: a tier
+ * row without codes is refused HERE, typed, so the callers can fail the
+ * broadcast terminally with an honest reason.
+ */
+export function recipientSegmentFromPersisted(row: {
+  readonly segmentType: BroadcastSegmentType;
+  readonly segmentParams: Record<string, unknown> | null;
+  readonly customRecipientEmails: ReadonlyArray<string> | null;
+}): Result<RecipientSegment, MalformedSegmentError> {
+  switch (row.segmentType) {
+    case 'all_members':
+      return ok({ kind: 'all_members' });
+    case 'tier': {
+      const raw = row.segmentParams?.['tierCodes'];
+      const tierCodes =
+        Array.isArray(raw) && raw.every((c) => typeof c === 'string' && c.length > 0)
+          ? (raw as string[])
+          : [];
+      if (tierCodes.length === 0) {
+        return err({ kind: 'malformed_segment', segmentType: 'tier', reason: 'tier_without_codes' });
+      }
+      return ok({ kind: 'tier', tierCodes });
+    }
+    case 'event_attendees_last_90d':
+      return ok({ kind: 'event_attendees_last_90d' });
+    case 'custom':
+      return ok({ kind: 'custom', emails: row.customRecipientEmails ?? [] });
+  }
+}
+
+/**
  * Round 5 review type-design fix — bound segment-definition params to
  * the same DU shape as `RecipientSegment` rather than `Record<string,
  * unknown>`. This catches mis-typed param keys at compile time and

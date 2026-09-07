@@ -52,6 +52,7 @@ import {
   makeDrizzleMarketingUnsubscribesRepo,
   makeSplitBroadcastIntoBatchesDeps,
   membersBridge,
+  recipientSegmentFromPersisted,
   resolveSegmentRecipients,
   currentAudienceMode,
   currentAudienceCeiling,
@@ -60,7 +61,6 @@ import {
 } from '@/modules/broadcasts';
 import { unsafeBrandEmailLower } from '@/modules/broadcasts/domain/value-objects/email-lower';
 import { asTenantContext } from '@/modules/tenants';
-import type { Broadcast } from '@/modules/broadcasts/domain/broadcast';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -198,7 +198,24 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
       // 4b. Resolve recipients via segment resolver — source of truth
       //     for the resolved count that splitBroadcastIntoBatches uses.
-      const segment = buildSegmentFromBroadcast(broadcast);
+      // Review 2026-09-07 round 2 (C1/C2) — see dispatch-batches: a tier row
+      // with no codes is refused here, never resolved, never counted as
+      // transient. The row stays `approved`; `approved_overdue_count` alarms.
+      const segmentResult = recipientSegmentFromPersisted(broadcast);
+      if (!segmentResult.ok) {
+        summary.errors++;
+        logger.error(
+          {
+            tenantId: tenant.slug,
+            broadcastId: row.broadcast_id,
+            errorKind: 'malformed_segment',
+            detail: segmentResult.error.reason,
+          },
+          'cron.broadcasts.split_large.malformed_segment',
+        );
+        continue;
+      }
+      const segment = segmentResult.value;
       // Staff review A11: the 108 PR-D opt-out lookup is fail-closed and
       // THROWS when the read fails. `dispatch-scheduled-broadcast.ts` maps that
       // to a typed `dispatch.server_error`; here it fell to the generic
@@ -435,24 +452,3 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   return NextResponse.json(summary, { status: 200 });
 }
 
-/**
- * Reconstruct the `RecipientSegment` discriminated-union from the
- * persisted broadcast row. Duplicated from
- * `dispatch-scheduled-broadcast.ts` (file-private helper) and from
- * `dispatch-batches/route.ts` — Phase 3F consolidation candidate.
- */
-function buildSegmentFromBroadcast(b: Broadcast) {
-  if (b.segmentType === 'all_members') return { kind: 'all_members' as const };
-  if (b.segmentType === 'tier') {
-    const tierCodes =
-      (b.segmentParams as { tierCodes?: string[] } | null)?.tierCodes ?? [];
-    return { kind: 'tier' as const, tierCodes };
-  }
-  if (b.segmentType === 'event_attendees_last_90d') {
-    return { kind: 'event_attendees_last_90d' as const };
-  }
-  return {
-    kind: 'custom' as const,
-    emails: b.customRecipientEmails ?? [],
-  };
-}

@@ -59,9 +59,15 @@ vi.mock('@/lib/metrics', async (importOriginal) => {
 });
 // Every key the route imports from the barrel (a missing key throws on
 // access — the stale-stub class this file exists to close).
-vi.mock('@/modules/broadcasts', () => ({
+vi.mock('@/modules/broadcasts', async () => ({
   asBroadcastId: (raw: string) => raw,
   BroadcastConcurrentMutationError: class BroadcastConcurrentMutationError extends Error {},
+  // Pure Domain — the real one, so the boundary refusal is exercised.
+  recipientSegmentFromPersisted: (
+    await vi.importActual<typeof import('@/modules/broadcasts/domain/recipient-segment')>(
+      '@/modules/broadcasts/domain/recipient-segment',
+    )
+  ).recipientSegmentFromPersisted,
   eventAttendeesBridge: { kind: 'event-attendees-stub' },
   f71aUs1DisabledReason: () => f71aUs1DisabledReasonMock(),
   isF71aUs1Enabled: () => isF71aUs1EnabledMock(),
@@ -171,6 +177,36 @@ describe('cron split-large-broadcasts — wire contract (108 PR-C review)', () =
     // Review errors HIGH-4 — counted, not just logged; the split never ran,
     // so the row stays `approved` for the next tick.
     expect(dispatchResolveFailedTotalSpy).toHaveBeenCalledWith('test-tenant');
+    expect(splitBroadcastIntoBatchesMock).not.toHaveBeenCalled();
+  });
+
+  // Review 2026-09-07 round 2 (C2) — see the sibling case in
+  // cron-dispatch-batches: a tier row with no codes is refused at the
+  // boundary, never resolved, never counted as transient.
+  it('a tier row with no codes is refused BEFORE the resolver — errors++, not the transient counter', async () => {
+    runInTenantMock.mockImplementation(async (_ctx, fn) =>
+      fn({ execute: async () => [{ broadcast_id: BROADCAST_ID }] }),
+    );
+    findByIdMock.mockResolvedValue({
+      broadcastId: BROADCAST_ID,
+      requestedByMemberId: 'm-requester',
+      segmentType: 'tier',
+      segmentParams: { tierCodes: [] },
+      customRecipientEmails: null,
+      status: 'approved',
+      estimatedRecipientCount: 12_000,
+    });
+
+    const { POST } = await import('@/app/api/cron/broadcasts/split-large-broadcasts/route');
+    const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { processed: number; split: number; errors: number };
+    expect(body.processed).toBe(1);
+    expect(body.split).toBe(0);
+    expect(body.errors).toBe(1);
+
+    expect(resolveSegmentRecipientsMock).not.toHaveBeenCalled();
+    expect(dispatchResolveFailedTotalSpy).not.toHaveBeenCalled();
     expect(splitBroadcastIntoBatchesMock).not.toHaveBeenCalled();
   });
 });

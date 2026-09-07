@@ -381,4 +381,17 @@ describe('108 PR-C T071 — broadcast recipient contacts, keyset (live Neon)', (
     expect(count.ok).toBe(false);
   });
 
+  // Review 2026-09-07 round 2 (C1 — six reviewers) — the refusal above had
+  // landed on the two flag-ON reads only. The primary_only read, the leg
+  // production runs today, still dropped the predicate and read EVERY active
+  // member. Same guard, same answer, on the leg that is live.
+  it('tier with NO codes is refused by the primary_only read too — the leg prod runs today', async () => {
+    const prodLeg = await drizzleMemberRepo.findMembersBySegmentForBroadcast(
+      tenantA.ctx,
+      { segmentType: 'tier', tierCodes: [] },
+    );
+    expect(prodLeg.ok).toBe(false);
+    if (!prodLeg.ok) expect(prodLeg.error.code).toBe('repo.unexpected');
+  });
+
 });

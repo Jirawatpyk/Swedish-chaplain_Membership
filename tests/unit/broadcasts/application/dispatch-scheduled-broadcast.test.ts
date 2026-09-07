@@ -727,6 +727,72 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
     );
   });
 
+  // Review 2026-09-07 round 2 (C2 — five reviewers) — a `tier` row whose
+  // `segment_params` lost its codes is a PERMANENT data defect, not a Neon
+  // blip. It used to reach the resolver as `{ tier, [] }`: on the flag-OFF
+  // leg the predicate dropped and every active member was addressed; on the
+  // flag-ON leg the repo threw and the throw was reclassified as a transient
+  // `resolve.server_error`, retried every tick forever with no budget. Now it
+  // is refused at the boundary: terminal `failed_to_dispatch`, an honest
+  // audit reason, and the resolver is never asked.
+  it('a tier row with no codes is a TERMINAL failed_to_dispatch (malformed_segment) — the resolver is never called', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: {
+        ...makeBroadcast('approved'),
+        segmentType: 'tier',
+        segmentParams: null,
+      },
+    });
+    const gw = makeGateway();
+    const bridge = makeMembersBridge({
+      recipients: [recipient('m-2', 'b@example.com')],
+      primaryContact: 'sender@example.com',
+    });
+    const segmentRead = vi.spyOn(bridge, 'getMembersBySegment');
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
+        broadcastsGateway: gw.port,
+        membersBridge: bridge,
+        marketingUnsubscribes: makeMarketingUnsubscribes(new Set()),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: makeEmailTransactional().port,
+      },
+      baseInput,
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.kind).toBe('broadcast_failed_to_dispatch');
+      if (result.error.kind === 'broadcast_failed_to_dispatch') {
+        expect(result.error.reason).toBe('malformed_segment');
+      }
+    }
+    // Never "everyone", never a retry: no segment read, no Resend call.
+    expect(segmentRead).not.toHaveBeenCalled();
+    expect(gw.audienceCalls).toHaveLength(0);
+    expect(repo.transitions.map((t) => t.status)).toContain('failed_to_dispatch');
+    const failAudit = audit.emits.find(
+      (e) => e.eventType === 'broadcast_failed_to_dispatch',
+    );
+    expect(failAudit).toBeDefined();
+    expect(failAudit?.payload).toMatchObject({
+      reason: 'malformed_segment',
+      detail: 'tier_without_codes',
+    });
+  });
+
   // ---- Bridge throw on the member-leg read (W2-05; re-targeted by 108 PR-C —
   //      the requesting-member primary read that used to sit here is gone) ------
 

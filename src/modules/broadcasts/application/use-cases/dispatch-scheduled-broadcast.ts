@@ -45,6 +45,7 @@ import type { EventAttendeesRepository } from '../ports/event-attendees-reposito
 import type { PlansBridgePort } from '../ports/plans-bridge-port';
 import type { EmailTransactionalPort } from '../ports/email-transactional-port';
 import { resolveSegmentRecipients } from './resolve-segment-recipients';
+import { recipientSegmentFromPersisted } from '../../domain/recipient-segment';
 import { unsafeBrandEmailLower } from '../../domain/value-objects/email-lower';
 import { resendDashboardName } from '../format/resend-dashboard-name';
 
@@ -486,7 +487,33 @@ export async function dispatchScheduledBroadcast(
   }
 
   // Step 2: re-resolve recipients (segment may have changed since submit)
-  const segment = buildSegmentFromBroadcast(broadcast);
+  // Review 2026-09-07 round 2 (C1/C2) — a tier row with no codes is refused
+  // at the boundary, TERMINALLY. It used to reach the resolver as
+  // `{ tier, [] }`: the primary_only read then addressed every active member,
+  // and the all_contacts read's throw was retried every tick forever as a
+  // "transient" `dispatch.server_error`. It is neither: it is a data defect,
+  // so the broadcast fails with an honest reason and the member is told.
+  const segmentResult = recipientSegmentFromPersisted(broadcast);
+  if (!segmentResult.ok) {
+    await failDispatchAndAudit(
+      deps,
+      input,
+      now,
+      'malformed_segment',
+      'broadcast_failed_to_dispatch',
+      {
+        broadcastId: input.broadcastId,
+        reason: 'malformed_segment',
+        detail: segmentResult.error.reason,
+        segmentType: segmentResult.error.segmentType,
+        failedAt: now.toISOString(),
+      },
+      'malformed_segment',
+      broadcast,
+    );
+    return err({ kind: 'broadcast_failed_to_dispatch', reason: 'malformed_segment' });
+  }
+  const segment = segmentResult.value;
   const requestingMember = broadcast.requestedByMemberId;
   // 108 PR-C (FR-022): the requesting member's PRIMARY email used to be read
   // here (W2-05) only to feed the resolver's email-equality self-exclusion.
@@ -1286,23 +1313,3 @@ async function emitExpiredPlanAuditIfApplicable(args: {
   }
 }
 
-/**
- * Reconstructs the in-memory `RecipientSegment` discriminated-union from
- * the persisted broadcast row's `segmentType` + `segmentParams` +
- * `customRecipientEmails`.
- */
-function buildSegmentFromBroadcast(b: Broadcast) {
-  if (b.segmentType === 'all_members') return { kind: 'all_members' as const };
-  if (b.segmentType === 'tier') {
-    const tierCodes =
-      (b.segmentParams as { tierCodes?: string[] } | null)?.tierCodes ?? [];
-    return { kind: 'tier' as const, tierCodes };
-  }
-  if (b.segmentType === 'event_attendees_last_90d') {
-    return { kind: 'event_attendees_last_90d' as const };
-  }
-  return {
-    kind: 'custom' as const,
-    emails: b.customRecipientEmails ?? [],
-  };
-}
