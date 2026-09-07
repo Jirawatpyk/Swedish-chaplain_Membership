@@ -199,7 +199,15 @@ export const membersBridge: MembersBridgePort = {
       { tenant: tenantCtx, memberRepo: drizzleMemberRepo },
       asMemberId(memberId),
     );
-    if (!result.ok || result.value === null) return null;
+    // Review 2026-09-07 — same doctrine as `memberExistsInTenant` below: a
+    // genuine miss is null; a FAILED read throws. Collapsing both into null
+    // let a Neon blip become `broadcast_member_missing_primary_contact_email`
+    // — an append-only audit row asserting a fact nobody observed.
+    if (!result.ok) {
+      if (result.error.code === 'repo.not_found') return null;
+      throw new Error(`members-bridge.getMemberPrimaryContact: ${result.error.code}`);
+    }
+    if (result.value === null) return null;
     return unsafeBrandEmailLower(result.value.toLowerCase().trim());
   },
 
@@ -231,7 +239,13 @@ export const membersBridge: MembersBridgePort = {
       { tenant: tenantCtx, contactRepo: drizzleContactRepo },
       emailLower as string,
     );
-    if (!result.ok || result.value === null) return null;
+    // Review 2026-09-07 — a failed read THROWS so the unsubscribe use-case's
+    // catch arm (the only log on that path) can actually fire; a miss is null.
+    if (!result.ok) {
+      if (result.error.code === 'repo.not_found') return null;
+      throw new Error(`members-bridge.lookupContactEmailInTenant: ${result.error.code}`);
+    }
+    if (result.value === null) return null;
     return {
       memberId: result.value.memberId,
       contactId: result.value.contactId,
@@ -249,7 +263,13 @@ export const membersBridge: MembersBridgePort = {
       { tenant: tenantCtx, memberRepo: drizzleMemberRepo },
       emailLower as string,
     );
-    if (!result.ok || result.value === null) return null;
+    if (!result.ok) {
+      if (result.error.code === 'repo.not_found') return null;
+      throw new Error(
+        `members-bridge.lookupMemberPrimaryContactEmailInTenant: ${result.error.code}`,
+      );
+    }
+    if (result.value === null) return null;
     return brandRecipient(result.value);
   },
 
@@ -260,7 +280,14 @@ export const membersBridge: MembersBridgePort = {
       tenant: tenantCtx,
       memberRepo: drizzleMemberRepo,
     });
-    if (!result.ok) return [];
+    // Review 2026-09-07 — this read IS the Q14 halt gate (`submit-broadcast`
+    // precondition k). Answering `[]` on a failed read let a halted member's
+    // submit through during a Neon blip, with no log. A failed read THROWS;
+    // the use-case maps it to `submit.server_error` and the admin queue
+    // page renders an error state instead of a clean banner.
+    if (!result.ok) {
+      throw new Error(`members-bridge.getMembersHaltedInTenant: ${result.error.code}`);
+    }
     return result.value.map((row) => ({
       memberId: row.memberId,
       displayName: row.displayName,

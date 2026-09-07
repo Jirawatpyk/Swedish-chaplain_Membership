@@ -333,9 +333,22 @@ export async function submitBroadcast(
   input: SubmitBroadcastInput,
 ): Promise<Result<SubmitBroadcastOutput, SubmitBroadcastError>> {
   // ---- Precondition (k): halt flag ---------------------------------
-  const haltedMembers = await deps.membersBridge.getMembersHaltedInTenant(
-    deps.tenant,
-  );
+  // Review 2026-09-07 — the bridge THROWS on a failed read (it used to answer
+  // `[]`, which let a halted member through during a Neon blip). A read that
+  // did not happen is a 500 with NO reject audit: the gate was never decided.
+  let haltedMembers: ReadonlyArray<{ readonly memberId: string }>;
+  try {
+    haltedMembers = await deps.membersBridge.getMembersHaltedInTenant(deps.tenant);
+  } catch (e) {
+    logger.error(
+      { tenantId: deps.tenant.slug, memberId: input.memberId, err: errKind(e) },
+      'broadcasts.submit.halt_read_failed',
+    );
+    return err({
+      kind: 'submit.server_error' as const,
+      message: 'halt state unavailable',
+    });
+  }
   if (haltedMembers.some((h) => h.memberId === input.memberId)) {
     await emitReject(deps, input, 'broadcast_member_halted_pending_review', {
       memberId: input.memberId,
@@ -451,10 +464,23 @@ export async function submitBroadcast(
   }
 
   // ---- Precondition (j): reply-to derivation -----------------------
-  const replyTo = await deps.membersBridge.getMemberPrimaryContact(
-    deps.tenant,
-    input.memberId,
-  );
+  // Review 2026-09-07 — a failed read THROWS (was: null → an append-only
+  // `broadcast_member_missing_primary_contact_email` row about a member who
+  // has one). Since PR-B every contact-bearing member has exactly one live
+  // primary, so a null here is rare and must mean a real absence.
+  let replyTo: EmailLower | null;
+  try {
+    replyTo = await deps.membersBridge.getMemberPrimaryContact(deps.tenant, input.memberId);
+  } catch (e) {
+    logger.error(
+      { tenantId: deps.tenant.slug, memberId: input.memberId, err: errKind(e) },
+      'broadcasts.submit.reply_to_read_failed',
+    );
+    return err({
+      kind: 'submit.server_error' as const,
+      message: 'reply-to unavailable',
+    });
+  }
   if (replyTo === null) {
     await emitReject(
       deps,

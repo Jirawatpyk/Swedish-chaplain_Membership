@@ -68,6 +68,19 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   // logged and never masks the 404.
   const lookup = await drizzleMemberRepo.findById(tenant, asMemberId(memberId));
   if (!lookup.ok) {
+    // Review H-1 (2026-09-07) — a FAILED read (Neon timeout, RLS/GUC error)
+    // is not a probe. Before this branch existed the route branched on
+    // `!lookup.ok` alone, so an outage wrote `member_cross_tenant_probe`
+    // rows into the append-only audit log about members that exist and
+    // answered "not found". Same discrimination as `proxy-submit` and
+    // `membersBridge.memberExistsInTenant`.
+    if (lookup.error.code !== 'repo.not_found') {
+      logger.error(
+        { tenantId: tenant.slug, correlationId, err: lookup.error.code },
+        'broadcasts.recipient_count.member_lookup_failed',
+      );
+      return errorResponse(503, 'count_unavailable', correlationId);
+    }
     const probe = await buildContactMarketingDeps(tenant).audit.record(tenant, {
       type: 'member_cross_tenant_probe',
       actorUserId,

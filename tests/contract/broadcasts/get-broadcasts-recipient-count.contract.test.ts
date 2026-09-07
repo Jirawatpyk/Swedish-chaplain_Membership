@@ -236,6 +236,25 @@ describe('GET /api/admin/broadcasts/recipient-count (admin proxy) — 108 PR-C T
     expect(event.payload).toMatchObject({ attempted_member_id: '22222222-2222-4222-8222-222222222222' });
   });
 
+  it('503 count_unavailable when the member lookup FAILS (repo.unexpected) — no probe audit, no resolve (review H-1)', async () => {
+    // A Neon timeout / RLS hiccup on `findById` is NOT a cross-tenant probe.
+    // Before this case the route branched on `!lookup.ok` alone, so an
+    // outage wrote `member_cross_tenant_probe` rows into the append-only
+    // audit log about members that exist, and answered "not found".
+    requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
+    findByIdMock.mockResolvedValueOnce(
+      err({ code: 'repo.unexpected', cause: new Error('neon: statement timeout') }),
+    );
+    const { GET } = await importAdminRoute();
+    const res = await GET(adminRequest('?member_id=22222222-2222-4222-8222-222222222222&segment=all_members'));
+    expect(res.status).toBe(503);
+    const body = await res.json();
+    expect(body.error.code).toBe('count_unavailable');
+    expect(auditRecordMock).not.toHaveBeenCalled();
+    expect(resolveSegmentRecipientsMock).not.toHaveBeenCalled();
+    expect(JSON.stringify(body)).not.toMatch(/statement timeout|neon/);
+  });
+
   it('400 when member_id is missing or not a uuid', async () => {
     requireApiPermissionMock.mockResolvedValue(adminCtx);
     const { GET } = await importAdminRoute();

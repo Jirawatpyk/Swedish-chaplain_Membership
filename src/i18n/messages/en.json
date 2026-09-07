@@ -3052,7 +3052,8 @@
           "breachWarning": "Reviews are running slow"
         },
         "overdueBanner": "{count, plural, one {# broadcast has} other {# broadcasts have}} been waiting over 48 hours — review now.",
-        "truncationNote": "Showing the first 50 — refine the filters to see more."
+        "truncationNote": "Showing the first 50 — refine the filters to see more.",
+        "haltStateUnavailable": "Halt state could not be read — this queue may be hiding halted members. Refresh before approving anything."
       },
       "review": {
         "title": "Broadcast review",

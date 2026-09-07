@@ -48,6 +48,8 @@ const log = vi.hoisted(() => ({ error: vi.fn(), warn: vi.fn(), info: vi.fn(), de
 vi.mock('@/lib/logger', () => ({ logger: log }));
 
 import { membersBridge } from '@/modules/broadcasts/infrastructure/members-bridge';
+import * as f3mod from '@/modules/members';
+import { unsafeBrandEmailLower } from '@/modules/broadcasts/domain/value-objects/email-lower';
 
 const tenant = asTenantContext('test-tenant');
 
@@ -167,6 +169,48 @@ describe('membersBridge.getContactsBySegment (108 PR-C T075)', () => {
     const logged = JSON.stringify(log.error.mock.calls[0]);
     expect(logged).toContain('repo.unexpected');
     expect(logged).not.toMatch(/@example\.com/);
+  });
+});
+
+describe('membersBridge — the other lookups discriminate "no data" from "no answer" (review 2026-09-07)', () => {
+  // Same doctrine as `memberExistsInTenant` (T075 / R5-S2): `repo.not_found`
+  // and a null value are a genuine miss → null / []; `repo.unexpected` is a
+  // failed READ and THROWS, so the caller surfaces a 500/retry instead of a
+  // fabricated "no primary contact" / "nobody is halted" / "unattributed".
+  const boom = () => err({ code: 'repo.unexpected' as const, cause: new Error('neon down') });
+
+  it('getMemberPrimaryContact: repo.unexpected THROWS; not_found / null answer null', async () => {
+    vi.mocked(f3mod.getMemberPrimaryContact).mockResolvedValueOnce(boom() as never);
+    await expect(membersBridge.getMemberPrimaryContact(tenant, 'm-1')).rejects.toThrow(/repo\.unexpected/);
+    vi.mocked(f3mod.getMemberPrimaryContact).mockResolvedValueOnce(ok(null) as never);
+    expect(await membersBridge.getMemberPrimaryContact(tenant, 'm-1')).toBeNull();
+    vi.mocked(f3mod.getMemberPrimaryContact).mockResolvedValueOnce(err({ code: 'repo.not_found' as const }) as never);
+    expect(await membersBridge.getMemberPrimaryContact(tenant, 'm-1')).toBeNull();
+  });
+
+  it('getMembersHaltedInTenant: repo.unexpected THROWS — a halt gate must never fail open', async () => {
+    vi.mocked(f3mod.getMembersHaltedInTenant).mockResolvedValueOnce(boom() as never);
+    await expect(membersBridge.getMembersHaltedInTenant(tenant)).rejects.toThrow(/repo\.unexpected/);
+  });
+
+  it('lookupContactEmailInTenant: repo.unexpected THROWS; not_found / null answer null', async () => {
+    const email = unsafeBrandEmailLower('a@b.co');
+    vi.mocked(f3mod.lookupContactEmailInTenant).mockResolvedValueOnce(boom() as never);
+    await expect(membersBridge.lookupContactEmailInTenant(tenant, email)).rejects.toThrow(/repo\.unexpected/);
+    vi.mocked(f3mod.lookupContactEmailInTenant).mockResolvedValueOnce(ok(null) as never);
+    expect(await membersBridge.lookupContactEmailInTenant(tenant, email)).toBeNull();
+    vi.mocked(f3mod.lookupContactEmailInTenant).mockResolvedValueOnce(err({ code: 'repo.not_found' as const }) as never);
+    expect(await membersBridge.lookupContactEmailInTenant(tenant, email)).toBeNull();
+  });
+
+  it('lookupMemberPrimaryContactEmailInTenant: repo.unexpected THROWS; not_found / null answer null', async () => {
+    const email = unsafeBrandEmailLower('a@b.co');
+    vi.mocked(f3mod.lookupMemberPrimaryContactEmailInTenant).mockResolvedValueOnce(boom() as never);
+    await expect(membersBridge.lookupMemberPrimaryContactEmailInTenant(tenant, email)).rejects.toThrow(
+      /repo\.unexpected/,
+    );
+    vi.mocked(f3mod.lookupMemberPrimaryContactEmailInTenant).mockResolvedValueOnce(ok(null) as never);
+    expect(await membersBridge.lookupMemberPrimaryContactEmailInTenant(tenant, email)).toBeNull();
   });
 });
 

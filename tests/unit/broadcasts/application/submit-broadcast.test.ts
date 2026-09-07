@@ -69,6 +69,9 @@ interface FixtureOpts {
   readonly used?: number;
   readonly reserved?: number;
   readonly primaryContact?: string | null;
+  /** Review 2026-09-07 — the bridge THROWS on a failed read (repo.unexpected). */
+  readonly primaryContactThrows?: boolean;
+  readonly haltReadThrows?: boolean;
   readonly memberInBridge?: ReadonlyArray<{
     memberId: string;
     primaryContactEmail: string | null;
@@ -124,6 +127,7 @@ function makeMembersBridge(opts: FixtureOpts = {}): MembersBridgePort {
       }));
     },
     async getMemberPrimaryContact() {
+      if (opts.primaryContactThrows) throw new Error('members-bridge.getMemberPrimaryContact: repo.unexpected');
       return opts.primaryContact !== null && opts.primaryContact !== undefined
         ? unsafeBrandEmailLower(opts.primaryContact)
         : null;
@@ -135,6 +139,7 @@ function makeMembersBridge(opts: FixtureOpts = {}): MembersBridgePort {
       return null;
     },
     async getMembersHaltedInTenant() {
+      if (opts.haltReadThrows) throw new Error('members-bridge.getMembersHaltedInTenant: repo.unexpected');
       return halted;
     },
     async setMemberHalt() {
@@ -1804,5 +1809,32 @@ describe('submit-broadcast — 108 PR-C droppedByPreference on the success outpu
     if (!result.ok) return;
     expect(result.value.estimatedRecipientCount).toBe(1);
     expect(result.value.droppedByPreference).toBe(1);
+  });
+});
+
+describe('submitBroadcast — a failed bridge READ is a 500, never a fabricated precondition (review 2026-09-07)', () => {
+  // The bridge now THROWS on `repo.unexpected` (members-bridge.test.ts). A
+  // Neon blip on the halt read used to answer `[]` → the halted member's
+  // submit was ACCEPTED; on the reply-to read it answered `null` → an
+  // append-only `broadcast_member_missing_primary_contact_email` row was
+  // written about a member who has one. Both are now `submit.server_error`
+  // with NO reject audit: the precondition was never decided.
+  it('halt read throws → submit.server_error; the halt gate does not fail open and no audit is emitted', async () => {
+    const { audit, deps } = makeDeps({ haltReadThrows: true, primaryContact: 'me@example.com' });
+    const result = await submitBroadcast(deps, baseInput);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('submit.server_error');
+    expect(audit.emits.find((e) => e.eventType === 'broadcast_member_halted_pending_review')).toBeUndefined();
+    expect(audit.emits.find((e) => e.eventType === 'broadcast_member_missing_primary_contact_email')).toBeUndefined();
+  });
+
+  it('reply-to read throws → submit.server_error; NO broadcast_member_missing_primary_contact_email audit', async () => {
+    const { audit, deps } = makeDeps({ primaryContactThrows: true });
+    const result = await submitBroadcast(deps, baseInput);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.kind).toBe('submit.server_error');
+    expect(audit.emits.find((e) => e.eventType === 'broadcast_member_missing_primary_contact_email')).toBeUndefined();
   });
 });

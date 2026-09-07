@@ -3052,7 +3052,8 @@
           "breachWarning": "Granskningar går långsamt"
         },
         "overdueBanner": "{count, plural, one {# utskick har} other {# utskick har}} väntat i över 48 timmar — granska nu.",
-        "truncationNote": "Visar de första 50 — förfina filtren för att se fler."
+        "truncationNote": "Visar de första 50 — förfina filtren för att se fler.",
+        "haltStateUnavailable": "Spärrstatus kunde inte läsas just nu. Kön kan dölja spärrade medlemmar. Uppdatera innan du godkänner något."
       },
       "review": {
         "title": "Granska utskick",
