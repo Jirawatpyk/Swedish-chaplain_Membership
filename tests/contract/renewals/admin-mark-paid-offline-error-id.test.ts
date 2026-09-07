@@ -166,6 +166,11 @@ describe('contract: POST /api/admin/renewals/[cycleId]/mark-paid-offline — err
     expect(res.status).toBe(500);
     const body = (await res.json()) as { correlationId?: string };
     expect(body.correlationId).toBe('corr-mpo-1');
+    // `code-conventions.md` describes THIS test — the unmapped-kind one — as
+    // asserting the correlationId "in body and header". The header assertion
+    // had landed on the thrown-use-case test one block up, so the sentence was
+    // true of the file but not of the test it names.
+    expect(res.headers.get('X-Correlation-Id')).toBe('corr-mpo-1');
 
     expect(loggerErrorMock).toHaveBeenCalledTimes(1);
     const [structured] = loggerErrorMock.mock.calls[0]!;

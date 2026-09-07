@@ -139,16 +139,24 @@ on a route in scope that declares no entry, an entry two routes share, an entry
 missing from the union, a `logger.error` in a `catch` with no `errorId`, a
 `catch` that answers 500 while logging nothing at all, a hardcoded `F8.` literal
 (either quote style, interpolated or not), an exhaustiveness arm that RETURNS
-instead of throwing, and — the rule that subsumes the rest — **any `status: 500`
-with no errorId'd log in the same arm**.
+instead of throwing, and the broadest of them — **any 500 with no errorId'd
+log in the same arm**.
 
-That last rule was added third, after two rounds of review each found a 500 the
+Broadest is not *all*: `return _exhaustive` produces no 500 in this file at
+all — Next rejects the non-Response and 500s on its own — so only the
+exhaustiveness rule can see it. Do not delete a rule here as redundant; the
+shapes each one catches are pinned in
+`tests/unit/scripts/check-f8-error-id.test.ts`, named for the review round
+that proved them.
+
+That rule was added third, after two rounds of review each found a 500 the
 rules before it could not see: first ten exhaustiveness arms that returned
 instead of throwing, then fourteen `case 'server_error'` arms — the 500 these
-routes produce most often. Both times the gate was green and the docblocks
-promised full coverage. Rules keyed on SYNTAX (`catch`, `_exhaustive`) keep
-missing the next spelling; the rule keyed on the OUTCOME (`status: 500`) does
-not.
+routes produce most often. A third round then found five more shapes it let
+through, because it matched the token `status: 500,` and scoped "same arm"
+with a text search that could not tell whether the block it found had already
+closed. It now matches the 500 loosely (no-comma and named-constant forms
+included) and walks brace depth backwards, so scope is lexical.
 
 ### Where the taxonomy does NOT reach
 
@@ -168,8 +176,12 @@ done
 For those, an `F8.*` rule matches nothing. Pair it with a route-path or
 message-text rule until they are migrated (tracked as follow-up, not done here).
 
-An `*.UNEXPECTED` line whose message reads `<entry>: unhandled error kind
-'<kind>'` is **not an outage** — it is a use-case error variant this build's
+An `*.UNEXPECTED` line whose message reads `<prefix>: unhandled error kind
+'<kind>'` is **not an outage**. The `<prefix>` is the route's taxonomy entry
+(`F8.CYCLE_CANCEL: …`) on the routes migrated with it, and the use-case slug
+(`accept-tier-upgrade: …`) on the ones migrated in the first pass — so search
+on `unhandled error kind`, which both forms carry, not on the prefix. It is a
+use-case error variant this build's
 route does not map, i.e. deploy skew. Look for a newer deploy writing a
 `Result.error.kind` the running build's `switch` has no arm for.
 

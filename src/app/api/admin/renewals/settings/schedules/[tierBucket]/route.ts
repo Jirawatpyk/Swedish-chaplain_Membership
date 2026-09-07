@@ -34,9 +34,10 @@ import { assertNever } from '@/lib/assert-never';
 /**
  * This route's entry in the F8 errorId taxonomy (`F8ErrorId` in
  * `src/lib/renewals-route-helpers.ts`, documented in
- * `docs/runbooks/audit-emit-loss.md`). Used for BOTH the
- * `.CONTEXT_RESOLUTION_FAILED` line the admin gate emits before this
- * handler's try block and the `.UNEXPECTED` line its outer catch emits, so
+ * `docs/runbooks/audit-emit-loss.md`). Every line this route logs about a
+ * failure carries it with a suffix — `.CONTEXT_RESOLUTION_FAILED` from the
+ * admin gate before the try block, `.SERVER_ERROR` from the use-case's own
+ * error variant, `.UNEXPECTED` from the outer catch — so
  * an SRE rule keyed on `F8.SCHEDULES_WRITE.*` matches every 500 this route
  * can produce.
  */
