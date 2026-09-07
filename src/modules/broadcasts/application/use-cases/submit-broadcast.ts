@@ -70,7 +70,7 @@ import type { RateLimiterPort } from '../ports/rate-limiter-port';
 import { sanitizeHtml } from './sanitize-html';
 import { validateImageSourceAllowlist } from './validate-image-source-allowlist';
 import { validateCustomRecipients } from './validate-custom-recipients';
-import { resolveSegmentRecipients } from './resolve-segment-recipients';
+import { isMissingAddressOrphan, resolveSegmentRecipients } from './resolve-segment-recipients';
 import { computeQuotaCounter } from './compute-quota-counter';
 
 const MAX_SUBJECT_LENGTH = 200;
@@ -703,7 +703,9 @@ export async function submitBroadcast(
   // (`contact_marketing_opted_out`) and the resolver counts them into
   // `droppedByPreference`. Only the other reasons get this audit, and it says
   // which one — an append-only row must never assert a reason nobody observed.
-  const orphans = resolved.value.orphans.filter((o) => o.reason !== 'all_opted_out');
+  // Round 2 (C12): a POSITIVE, exhaustive mapping — a fourth reason fails
+  // `tsc` in `isMissingAddressOrphan` instead of being audited by default.
+  const orphans = resolved.value.orphans.filter((o) => isMissingAddressOrphan(o.reason));
   const reportedOrphans = orphans.slice(0, ORPHAN_AUDIT_CAP);
   await Promise.all(
     reportedOrphans.map((orphan) =>

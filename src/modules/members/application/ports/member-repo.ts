@@ -992,10 +992,16 @@ export type BroadcastRecipientContactsQuery = {
   readonly limit: number;
 };
 
-/** Review 2026-09-07 — the segment half of `BroadcastRecipientContactsQuery`. */
+/**
+ * Review 2026-09-07 — the segment half of `BroadcastRecipientContactsQuery`.
+ * `excludeMemberId` (round 2, C17): the requesting member, whose contacts
+ * F7 self-excludes from the audience and whose opt-outs must therefore not
+ * be reported to them as "excluded by recipient preference".
+ */
 export type BroadcastOptedOutCountQuery = {
   readonly segmentType: 'all_members' | 'tier';
   readonly tierCodes?: readonly string[];
+  readonly excludeMemberId?: string;
 };
 
 /**

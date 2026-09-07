@@ -172,7 +172,10 @@ export {
   type ValidateCustomRecipientsOutput,
 } from './application/use-cases/validate-custom-recipients';
 export {
+  isMissingAddressOrphan,
   resolveSegmentRecipients,
+  type OrphanReason,
+  type ResolvedOrphan,
   type ResolveSegmentDeps,
   type ResolveSegmentError,
   type ResolveSegmentInput,

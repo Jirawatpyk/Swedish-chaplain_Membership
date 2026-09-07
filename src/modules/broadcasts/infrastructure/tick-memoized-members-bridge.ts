@@ -59,9 +59,32 @@ export function makeTickMemoizedMembersBridge(
 ): MembersBridgePort {
   const segmentCache = new Map<string, ReadonlyArray<MemberRecipient>>();
   const contactCache = new Map<string, ReadonlyArray<ContactRecipient>>();
+  // Review 2026-09-07 round 2 (C18 — four reviewers): the page walk was
+  // memoised but the opted-out count was not, so two broadcasts on one
+  // segment in a tick paired one frozen audience with two independently
+  // timed counts. Same key (+ the excluded sender, which changes the number).
+  const countCache = new Map<string, number>();
 
   return {
     ...inner,
+    async countOptedOutContactsBySegment(
+      tenantCtx: TenantContext,
+      segmentType: BroadcastSegmentType,
+      params: SegmentResolveParams,
+      excludeMemberId: string | null,
+    ): Promise<number> {
+      const key = `${segmentKey(tenantCtx, segmentType, params)}::${excludeMemberId ?? ''}`;
+      const hit = countCache.get(key);
+      if (hit !== undefined) return hit;
+      const fresh = await inner.countOptedOutContactsBySegment(
+        tenantCtx,
+        segmentType,
+        params,
+        excludeMemberId,
+      );
+      countCache.set(key, fresh);
+      return fresh;
+    },
     async getMembersBySegment(
       tenantCtx: TenantContext,
       segmentType: BroadcastSegmentType,

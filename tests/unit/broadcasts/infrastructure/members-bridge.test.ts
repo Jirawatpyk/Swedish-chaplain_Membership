@@ -298,26 +298,31 @@ describe('membersBridge.getContactsBySegment — pages metric (108 PR-C T090)', 
 });
 
 describe('membersBridge.countOptedOutContactsBySegment — the SQL-excluded opt-outs, counted (review 2026-09-07)', () => {
-  it("answers F3's address-level count and forwards the segment + tier codes", async () => {
+  it("answers F3's address-level count and forwards the segment + tier codes + the excluded sender", async () => {
     f3.countBroadcastOptedOutContacts.mockResolvedValueOnce(ok(3));
-    const n = await membersBridge.countOptedOutContactsBySegment(tenant, 'tier', { tierCodes: ['corporate'] });
+    const n = await membersBridge.countOptedOutContactsBySegment(tenant, 'tier', { tierCodes: ['corporate'] }, 'm-sender');
     expect(n).toBe(3);
     const input = f3.countBroadcastOptedOutContacts.mock.calls[0]?.[1] as Record<string, unknown>;
-    expect(input).toEqual({ segmentType: 'tier', tierCodes: ['corporate'] });
+    expect(input).toEqual({ segmentType: 'tier', tierCodes: ['corporate'], excludeMemberId: 'm-sender' });
+    // No sender (a dispatch tick counts for the whole audience) → no key at all.
+    f3.countBroadcastOptedOutContacts.mockResolvedValueOnce(ok(4));
+    await membersBridge.countOptedOutContactsBySegment(tenant, 'all_members', {}, null);
+    const input2 = f3.countBroadcastOptedOutContacts.mock.calls[1]?.[1] as Record<string, unknown>;
+    expect(input2).toEqual({ segmentType: 'all_members' });
   });
 
   it('a failed count THROWS — the preference number is fail-closed like the opt-out filter', async () => {
     f3.countBroadcastOptedOutContacts.mockResolvedValueOnce(
       err({ code: 'repo.unexpected' as const, cause: new Error('neon down') }),
     );
-    await expect(membersBridge.countOptedOutContactsBySegment(tenant, 'all_members', {})).rejects.toThrow(
+    await expect(membersBridge.countOptedOutContactsBySegment(tenant, 'all_members', {}, null)).rejects.toThrow(
       /repo\.unexpected/,
     );
   });
 
   it('custom / attendee segments are not member-keyed: answers 0 without a read', async () => {
-    expect(await membersBridge.countOptedOutContactsBySegment(tenant, 'custom', {})).toBe(0);
-    expect(await membersBridge.countOptedOutContactsBySegment(tenant, 'event_attendees_last_90d', {})).toBe(0);
+    expect(await membersBridge.countOptedOutContactsBySegment(tenant, 'custom', {}, null)).toBe(0);
+    expect(await membersBridge.countOptedOutContactsBySegment(tenant, 'event_attendees_last_90d', {}, null)).toBe(0);
     expect(f3.countBroadcastOptedOutContacts).not.toHaveBeenCalled();
   });
 });

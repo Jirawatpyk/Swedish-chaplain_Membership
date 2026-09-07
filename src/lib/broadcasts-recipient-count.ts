@@ -76,15 +76,16 @@ export interface RecipientCountBody {
   readonly ceiling: number;
   readonly exceeds: boolean;
   /**
-   * Measured fields — present only when the resolver COMPLETED (review
-   * 2026-09-07, types MEDIUM): a refusal (`exceeds: true`, or an empty
-   * audience) never computed them, and a hardcoded 0 in the same field the
-   * ok branch measures would be a fabricated number. `orphans` is also
-   * stripped by the MEMBER route (it is a fact about other members); the
-   * staff route keeps it.
+   * Measured on EVERY outcome (review 2026-09-07 round 2, C8): the resolver
+   * runs its whole pipeline before it refuses, so an empty or over-ceiling
+   * audience carries the same measured numbers the ok branch does — never a
+   * fabricated 0, and never "absent means not computed" (round 1's shape,
+   * whose justification was false: the numbers WERE computed). `orphans` is
+   * stripped by the MEMBER route (a fact about other members); the staff
+   * route keeps it.
    */
-  readonly orphans?: number;
-  readonly droppedByPreference?: number;
+  readonly orphans: number;
+  readonly droppedByPreference: number;
 }
 
 export type RecipientCountOutcome =
@@ -144,17 +145,31 @@ async function countRecipientsInner(
       };
     }
     switch (result.error.kind) {
-      // Review 2026-09-07 (types MEDIUM) — the resolver refused before it
-      // measured orphans or preference drops, so neither field is sent: a
-      // hardcoded 0 would be a fabricated number in the same field where the
-      // ok branch reports a measured one. Absent means "not computed".
+      // Round 2 (C8): both refusals are reached after the pipeline measured
+      // orphans and preference drops, so the body carries them — a tier where
+      // everyone objected reads `count 0, droppedByPreference N` (FR-022a).
       case 'broadcast_audience_too_large':
         return {
           status: 'ok',
-          body: { count: result.error.count, ceiling: result.error.cap, exceeds: true },
+          body: {
+            count: result.error.count,
+            ceiling: result.error.cap,
+            exceeds: true,
+            orphans: result.error.orphans.length,
+            droppedByPreference: result.error.droppedByPreference,
+          },
         };
       case 'broadcast_empty_segment_blocked':
-        return { status: 'ok', body: { count: 0, ceiling, exceeds: false } };
+        return {
+          status: 'ok',
+          body: {
+            count: 0,
+            ceiling,
+            exceeds: false,
+            orphans: result.error.orphans.length,
+            droppedByPreference: result.error.droppedByPreference,
+          },
+        };
       case 'resolve.server_error':
         logger.error(
           { tenantId: deps.tenant.slug, correlationId: input.correlationId, err: result.error.message },

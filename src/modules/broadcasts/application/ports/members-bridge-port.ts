@@ -139,12 +139,16 @@ export interface MembersBridgePort {
    * count THROWS (the preference number is never guessed — the same
    * fail-closed rule as `filterMarketingOptedOut`). `custom` and
    * `event_attendees_last_90d` are not member-keyed and answer 0 without a
-   * read.
+   * read. `excludeMemberId` (review round 2, C17) is the requesting member:
+   * self-exclusion removes their contacts from the audience, so their
+   * opt-outs are not "excluded by preference" either; `null` on a dispatch
+   * tick, which counts for the whole audience.
    */
   countOptedOutContactsBySegment(
     tenantCtx: TenantContext,
     segmentType: BroadcastSegmentType,
     params: SegmentResolveParams,
+    excludeMemberId: string | null,
   ): Promise<number>;
 
   /**

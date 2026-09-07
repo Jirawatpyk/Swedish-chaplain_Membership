@@ -134,22 +134,33 @@ describe('GET /api/broadcasts/recipient-count (member) — 108 PR-C T082/T088', 
 
   it('over the ceiling → 200 with the TRUE count and exceeds:true (never truncated)', async () => {
     requireMemberContextMock.mockResolvedValueOnce(memberCtx);
+    // Review 2026-09-07 round 2 (C8) — a refusal is reached after the pipeline
+    // measured the preference drops, so the member body carries the number;
+    // `orphans` is still stripped (a fact about OTHER members).
     resolveSegmentRecipientsMock.mockResolvedValueOnce(
-      err({ kind: 'broadcast_audience_too_large', count: 5001, cap: 5000 }),
+      err({
+        kind: 'broadcast_audience_too_large',
+        count: 5001,
+        cap: 5000,
+        droppedByPreference: 2,
+        orphans: [{ memberId: 'm-orphan', reason: 'no_eligible_contact' }],
+      }),
     );
     const { GET } = await importMemberRoute();
     const res = await GET(memberRequest('?segment=all_members'));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ count: 5001, ceiling: 5000, exceeds: true });
+    expect(await res.json()).toEqual({ count: 5001, ceiling: 5000, exceeds: true, droppedByPreference: 2 });
   });
 
-  it('empty audience → 200 with count 0', async () => {
+  it('empty audience → 200 with count 0 and the measured droppedByPreference (everyone objected ≠ nobody there)', async () => {
     requireMemberContextMock.mockResolvedValueOnce(memberCtx);
-    resolveSegmentRecipientsMock.mockResolvedValueOnce(err({ kind: 'broadcast_empty_segment_blocked' }));
+    resolveSegmentRecipientsMock.mockResolvedValueOnce(
+      err({ kind: 'broadcast_empty_segment_blocked', droppedByPreference: 3, orphans: [] }),
+    );
     const { GET } = await importMemberRoute();
     const res = await GET(memberRequest('?segment=event_attendees_last_90d'));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ count: 0, ceiling: 5000, exceeds: false });
+    expect(await res.json()).toEqual({ count: 0, ceiling: 5000, exceeds: false, droppedByPreference: 3 });
   });
 
   it.each([

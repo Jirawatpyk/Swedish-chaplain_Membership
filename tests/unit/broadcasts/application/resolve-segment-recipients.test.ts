@@ -13,7 +13,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { access } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { broadcastsMetrics } from '@/lib/metrics';
-import { resolveSegmentRecipients, type ResolveSegmentInput } from '@/modules/broadcasts';
+import {
+  isMissingAddressOrphan,
+  resolveSegmentRecipients,
+  type ResolveSegmentInput,
+} from '@/modules/broadcasts';
 import { unsafeBrandEmailLower } from '@/modules/broadcasts/domain/value-objects/email-lower';
 import { asTenantContext, type TenantContext } from '@/modules/tenants';
 import type {
@@ -105,7 +109,7 @@ interface BridgeFixture {
   /** Review 2026-09-07 — the address-level opted-out count F3 answers for the segment. */
   readonly optedOutContactCount?: number;
   readonly optedOutCountThrows?: boolean;
-  readonly optOutCountCalls?: Array<{ kind: string; params: unknown }>;
+  readonly optOutCountCalls?: Array<{ kind: string; params: unknown; excludeMemberId?: string | null }>;
 }
 
 function makeMembersBridge({
@@ -124,8 +128,8 @@ function makeMembersBridge({
   optOutCountCalls,
 }: BridgeFixture = {}): MembersBridgePort {
   return {
-    async countOptedOutContactsBySegment(_ctx, kind, params) {
-      optOutCountCalls?.push({ kind, params });
+    async countOptedOutContactsBySegment(_ctx, kind, params, excludeMemberId) {
+      optOutCountCalls?.push({ kind, params, excludeMemberId });
       if (optedOutCountThrows) throw new Error('members-bridge.countOptedOutContactsBySegment: repo.unexpected');
       return optedOutContactCount;
     },
@@ -828,7 +832,14 @@ describe('resolve-segment-recipients — 108 PR-D marketing opt-out at dispatch 
     });
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error.kind).toBe('broadcast_empty_segment_blocked');
+    // Review 2026-09-07 round 2 (C8 — types + code) — the refusal carries
+    // what was MEASURED: the pipeline ran to the end, so "everyone objected"
+    // is distinguishable from "this segment is empty" (FR-022a).
+    expect(result.error).toEqual({
+      kind: 'broadcast_empty_segment_blocked',
+      droppedByPreference: 1,
+      orphans: [],
+    });
   });
 
   it('the lookup failing REJECTS the resolve — never fail-open onto people who objected', async () => {
@@ -1064,7 +1075,13 @@ describe('resolve-segment-recipients — 108 PR-C all_contacts leg (T067/T076)',
     const result = await resolveSegmentRecipients(makeDeps({ audienceMode: ALL, contacts }), input());
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error).toEqual({ kind: 'broadcast_audience_too_large', count: 5001, cap: 5000 });
+    expect(result.error).toEqual({
+      kind: 'broadcast_audience_too_large',
+      count: 5001,
+      cap: 5000,
+      droppedByPreference: 0,
+      orphans: [],
+    });
   });
 
   it('nothing left after the fan-out and the filters → broadcast_empty_segment_blocked', async () => {
@@ -1166,7 +1183,13 @@ describe('resolve-segment-recipients — 108 PR-C the ceiling comes from deps (T
     const result = await resolveSegmentRecipients(makeDeps({ members, audienceCeiling: 3 }), input());
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error).toEqual({ kind: 'broadcast_audience_too_large', count: 4, cap: 3 });
+    expect(result.error).toEqual({
+      kind: 'broadcast_audience_too_large',
+      count: 4,
+      cap: 3,
+      droppedByPreference: 0,
+      orphans: [],
+    });
   });
 
   it('exactly the ceiling is accepted (boundary is inclusive)', async () => {
@@ -1244,7 +1267,7 @@ describe('resolve-segment-recipients — orphan reasons + the SQL-excluded opt-o
   });
 
   it('all_contacts: the opted-out contacts the SQL excluded are counted into droppedByPreference (FR-022a)', async () => {
-    const optOutCountCalls: Array<{ kind: string; params: unknown }> = [];
+    const optOutCountCalls: Array<{ kind: string; params: unknown; excludeMemberId?: string | null }> = [];
     const deps = makeDeps({
       audienceMode: ALL,
       contacts: [
@@ -1254,12 +1277,33 @@ describe('resolve-segment-recipients — orphan reasons + the SQL-excluded opt-o
       optedOutContactCount: 3,
       optOutCountCalls,
     });
-    const result = await resolveSegmentRecipients(deps, input({ segment: { kind: 'tier', tierCodes: ['corporate'] } }));
+    const result = await resolveSegmentRecipients(
+      deps,
+      input({ segment: { kind: 'tier', tierCodes: ['corporate'] }, requestingMemberId: 'm1' }),
+    );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.droppedByPreference).toBe(3);
-    // Asked for the SAME segment the rows came from.
-    expect(optOutCountCalls).toEqual([{ kind: 'tier', params: { tierCodes: ['corporate'] } }]);
+    // Asked for the SAME segment the rows came from — and (review round 2,
+    // C17: three reviewers) WITHOUT the sender's own company, whose contacts
+    // self-exclusion removes at step 3 and who were therefore never in the
+    // audience the number describes.
+    expect(optOutCountCalls).toEqual([
+      { kind: 'tier', params: { tierCodes: ['corporate'] }, excludeMemberId: 'm1' },
+    ]);
+  });
+
+  // Review 2026-09-07 round 2 (C12, types F-3) — the ONE consumer that writes
+  // an append-only row used a negative filter (`!== 'all_opted_out'`), so a
+  // fourth reason would have been audited as "missing primary contact email"
+  // by default. The mapping is now a positive, exhaustive function: a new
+  // reason fails `tsc` here instead of landing in audit_log.
+  describe('isMissingAddressOrphan', () => {
+    it('no_primary_email and no_eligible_contact are missing-address facts; all_opted_out is a preference', () => {
+      expect(isMissingAddressOrphan('no_primary_email')).toBe(true);
+      expect(isMissingAddressOrphan('no_eligible_contact')).toBe(true);
+      expect(isMissingAddressOrphan('all_opted_out')).toBe(false);
+    });
   });
 
   it('all_contacts: a failed opted-out count is resolve.server_error — the preference number is never guessed', async () => {

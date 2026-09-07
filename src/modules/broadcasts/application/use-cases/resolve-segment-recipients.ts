@@ -64,11 +64,25 @@ import type { EmailLower } from '../../domain/value-objects/email-lower';
 const SUPPRESSION_LOOKUP_CHUNK = 5000;
 
 export type ResolveSegmentError =
-  | { readonly kind: 'broadcast_empty_segment_blocked' }
+  /**
+   * Review 2026-09-07 round 2 (C8 — types F-5 + code M-2): both refusals are
+   * reached AFTER the whole pipeline ran, so they carry what it MEASURED. A
+   * tier where every contact objected is `empty` with `droppedByPreference
+   * N`, distinguishable from a tier with nobody in it (FR-022a); the old
+   * bare `{ kind }` threw that number away at the one point it explained
+   * the outcome.
+   */
+  | {
+      readonly kind: 'broadcast_empty_segment_blocked';
+      readonly droppedByPreference: number;
+      readonly orphans: ReadonlyArray<ResolvedOrphan>;
+    }
   | {
       readonly kind: 'broadcast_audience_too_large';
       readonly count: number;
       readonly cap: number;
+      readonly droppedByPreference: number;
+      readonly orphans: ReadonlyArray<ResolvedOrphan>;
     }
   /**
    * 108 PR-C — the member-leg bridge read failed (Neon outage, RLS denial,
@@ -140,6 +154,28 @@ export type OrphanReason = 'no_primary_email' | 'no_eligible_contact' | 'all_opt
 export interface ResolvedOrphan {
   readonly memberId: string;
   readonly reason: OrphanReason;
+}
+
+/**
+ * Review 2026-09-07 round 2 (C12, types F-3) — is this orphan a fact about a
+ * MISSING ADDRESS (auditable as `broadcast_member_missing_primary_contact_email`)
+ * or a fact about a PREFERENCE (counted, never audited as missing)? The one
+ * consumer that writes an append-only row used to ask this with a negative
+ * filter (`!== 'all_opted_out'`), which admitted every future reason by
+ * default. Exhaustive here: a fourth reason fails `tsc`, not audit_log.
+ */
+export function isMissingAddressOrphan(reason: OrphanReason): boolean {
+  switch (reason) {
+    case 'no_primary_email':
+    case 'no_eligible_contact':
+      return true;
+    case 'all_opted_out':
+      return false;
+    default: {
+      const _exhaustive: never = reason;
+      return _exhaustive;
+    }
+  }
 }
 
 export interface ResolveSegmentOutput {
@@ -215,10 +251,14 @@ export async function resolveSegmentRecipients(
     try {
       if (deps.audienceMode === 'all_contacts') {
         const rows = await deps.membersBridge.getContactsBySegment(deps.tenant, segment.kind, params);
+        // Review 2026-09-07 round 2 (C17 — three reviewers): the sender's own
+        // contacts are removed by self-exclusion at step 3 and were never in
+        // the audience this number describes, so they are left out of it too.
         sqlExcludedOptOuts = await deps.membersBridge.countOptedOutContactsBySegment(
           deps.tenant,
           segment.kind,
           params,
+          input.requestingMemberId,
         );
         sourcedRows = { leg: 'contacts', rows };
       } else {
@@ -347,9 +387,9 @@ export async function resolveSegmentRecipients(
     optOutDropped + sqlExcludedOptOuts + (memberBased ? 0 : suppressionDropped);
 
 
-  // Step 6: empty-after-filter check
+  // Step 6: empty-after-filter check — carries the measured numbers (C8)
   if (final.length === 0) {
-    return err({ kind: 'broadcast_empty_segment_blocked' });
+    return err({ kind: 'broadcast_empty_segment_blocked', droppedByPreference, orphans });
   }
 
   // Step 7: the ceiling — never truncated (FR-041), one definition (FR-042)
@@ -358,6 +398,8 @@ export async function resolveSegmentRecipients(
       kind: 'broadcast_audience_too_large',
       count: final.length,
       cap: deps.audienceCeiling,
+      droppedByPreference,
+      orphans,
     });
   }
 

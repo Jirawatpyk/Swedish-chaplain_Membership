@@ -203,6 +203,7 @@ export const membersBridge: MembersBridgePort = {
     tenantCtx: TenantContext,
     segmentType: BroadcastSegmentType,
     params: SegmentResolveParams,
+    excludeMemberId: string | null,
   ): Promise<number> {
     // Review 2026-09-07 (FR-022a) — see the port docblock. Not member-keyed
     // → nothing was excluded in SQL for these kinds.
@@ -212,6 +213,7 @@ export const membersBridge: MembersBridgePort = {
       {
         segmentType,
         ...(params.tierCodes !== undefined && { tierCodes: params.tierCodes }),
+        ...(excludeMemberId !== null && { excludeMemberId }),
       },
     );
     if (!result.ok) {

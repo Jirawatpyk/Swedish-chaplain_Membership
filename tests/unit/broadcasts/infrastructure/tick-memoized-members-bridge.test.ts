@@ -33,11 +33,13 @@ function makeStubBridge(): {
   bridge: MembersBridgePort;
   segmentCalls: Array<{ type: string; params: unknown }>;
   contactCalls: Array<{ type: string; params: unknown }>;
+  countCalls: Array<{ type: string; params: unknown; excludeMemberId: string | null }>;
   haltCalls: Array<{ memberId: string; halted: boolean }>;
   primaryCalls: Array<{ memberId: string }>;
 } {
   const segmentCalls: Array<{ type: string; params: unknown }> = [];
   const contactCalls: Array<{ type: string; params: unknown }> = [];
+  const countCalls: Array<{ type: string; params: unknown; excludeMemberId: string | null }> = [];
   const haltCalls: Array<{ memberId: string; halted: boolean }> = [];
   const primaryCalls: Array<{ memberId: string }> = [];
   const bridge: MembersBridgePort = {
@@ -46,7 +48,10 @@ function makeStubBridge(): {
       return [makeRecipient('m-1')];
     },
     // 108 PR-C — the 1:N page walk; memoised per tick like the member leg.
-    async countOptedOutContactsBySegment() { return 0; },
+    async countOptedOutContactsBySegment(_ctx, type, params, excludeMemberId) {
+      countCalls.push({ type, params, excludeMemberId });
+      return 0;
+    },
     async getContactsBySegment(_ctx, type, params) {
       contactCalls.push({ type, params });
       return [
@@ -86,7 +91,7 @@ function makeStubBridge(): {
       return null;
     },
   };
-  return { bridge, segmentCalls, contactCalls, haltCalls, primaryCalls };
+  return { bridge, segmentCalls, contactCalls, countCalls, haltCalls, primaryCalls };
 }
 
 const tenant = asTenantContext('test-tenant');
@@ -204,6 +209,24 @@ describe('makeTickMemoizedMembersBridge — getContactsBySegment is memoized per
     expect(stub.contactCalls).toHaveLength(1);
     await memo.getContactsBySegment(asTenantContext('other-tenant'), 'tier', { tierCodes: ['A', 'B'] });
     expect(stub.contactCalls).toHaveLength(2);
+  });
+
+  // Review 2026-09-07 round 2 (C18 — four reviewers) — the page walk was
+  // memoised per tick but the opted-out COUNT was not, so two broadcasts on
+  // one segment got a frozen audience paired with two independently-timed
+  // counts. Same key, same tick, one read; the excluded sender is part of the
+  // key because it changes the number.
+  it('countOptedOutContactsBySegment is memoised per (tenant, segment, params, excludeMemberId)', async () => {
+    const stub = makeStubBridge();
+    const memo = makeTickMemoizedMembersBridge(stub.bridge);
+    await memo.countOptedOutContactsBySegment(tenant, 'all_members', {}, null);
+    await memo.countOptedOutContactsBySegment(tenant, 'all_members', {}, null);
+    expect(stub.countCalls).toHaveLength(1);
+    await memo.countOptedOutContactsBySegment(tenant, 'all_members', {}, 'm-sender');
+    expect(stub.countCalls).toHaveLength(2);
+    await memo.countOptedOutContactsBySegment(tenant, 'tier', { tierCodes: ['B', 'A'] }, null);
+    await memo.countOptedOutContactsBySegment(tenant, 'tier', { tierCodes: ['A', 'B'] }, null);
+    expect(stub.countCalls).toHaveLength(3);
   });
 
   it('the member-level and contact-level caches never share a slot: the same segment asked both ways runs both', async () => {

@@ -1689,6 +1689,11 @@ export const drizzleMemberRepo: MemberRepo = {
               isNull(members.erasedAt),
               eq(members.broadcastsHaltedUntilAdminReview, false),
               ...(tierFilter ? [tierFilter] : []),
+              // Round 2 (C17): never the sender's own company — F7
+              // self-excludes it from the audience before this number is shown.
+              ...(params.excludeMemberId !== undefined
+                ? [sql`${members.memberId} <> ${params.excludeMemberId}::uuid`]
+                : []),
               // The contacts the page read's LEFT JOIN excluded: live, opted out.
               isNull(contacts.removedAt),
               isNotNull(contacts.marketingOptOutAt),

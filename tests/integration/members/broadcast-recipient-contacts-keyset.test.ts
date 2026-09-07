@@ -342,6 +342,17 @@ describe('108 PR-C T071 — broadcast recipient contacts, keyset (live Neon)', (
     expect(r.value).toBe(4);
   });
 
+  // Review 2026-09-07 round 2 (C17) — the sender's own opted-out contacts are
+  // never in the audience (self-exclusion by member id), so they must not be
+  // reported to the sender as "excluded by recipient preference".
+  it('countBroadcastOptedOutContacts: excludeMemberId leaves the sender\'s own opted-out contacts out of the number', async () => {
+    const r = await countBroadcastOptedOutContacts(
+      { tenant: tenantA.ctx, memberRepo: drizzleMemberRepo },
+      { segmentType: 'all_members', excludeMemberId: mid(0x01) },
+    );
+    expect(r).toEqual({ ok: true, value: 2 }); // 4 minus m01's 0x13 + 0x14
+  });
+
   it('countBroadcastOptedOutContacts: tier narrows it the same way the rows are narrowed', async () => {
     const corporate = await countBroadcastOptedOutContacts(
       { tenant: tenantA.ctx, memberRepo: drizzleMemberRepo },

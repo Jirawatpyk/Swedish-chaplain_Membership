@@ -65,26 +65,44 @@ describe('countRecipients — a resolver that THROWS is unavailable (review 2026
     expect(r).toEqual({ status: 'unavailable' });
   });
 
-  // Review 2026-09-07 (types MEDIUM) — a refusal never fabricates the
-  // measured fields: `orphans` / `droppedByPreference` are ABSENT, not 0.
-  it('too large → the TRUE count + exceeds, and no orphans / droppedByPreference at all', async () => {
-    resolveMock.mockResolvedValueOnce(err({ kind: 'broadcast_audience_too_large', count: 5001, cap: 5000 }));
+  // Review 2026-09-07 round 2 (C8 — types F-5 + code M-2) — a refusal is
+  // reached AFTER the pipeline measured orphans and preference drops, so the
+  // body carries the measured numbers; a tier where everyone objected reads
+  // `count 0, droppedByPreference N`, never a bare 0 (FR-022a).
+  it('too large → the TRUE count + exceeds, with the measured orphans / droppedByPreference', async () => {
+    resolveMock.mockResolvedValueOnce(
+      err({
+        kind: 'broadcast_audience_too_large',
+        count: 5001,
+        cap: 5000,
+        droppedByPreference: 2,
+        orphans: [{ memberId: 'm-o', reason: 'no_eligible_contact' }],
+      }),
+    );
     const r = await countRecipients(deps, {
       segment: { kind: 'all_members' },
       requestingMemberId: 'm-1',
       correlationId: 'corr-large',
     });
-    expect(r).toEqual({ status: 'ok', body: { count: 5001, ceiling: 5000, exceeds: true } });
+    expect(r).toEqual({
+      status: 'ok',
+      body: { count: 5001, ceiling: 5000, exceeds: true, orphans: 1, droppedByPreference: 2 },
+    });
   });
 
-  it('empty → count 0, and no orphans / droppedByPreference at all', async () => {
-    resolveMock.mockResolvedValueOnce(err({ kind: 'broadcast_empty_segment_blocked' }));
+  it('empty → count 0 with the measured orphans / droppedByPreference (everyone objected ≠ nobody there)', async () => {
+    resolveMock.mockResolvedValueOnce(
+      err({ kind: 'broadcast_empty_segment_blocked', droppedByPreference: 3, orphans: [] }),
+    );
     const r = await countRecipients(deps, {
       segment: { kind: 'all_members' },
       requestingMemberId: 'm-1',
       correlationId: 'corr-empty',
     });
-    expect(r).toEqual({ status: 'ok', body: { count: 0, ceiling: 5000, exceeds: false } });
+    expect(r).toEqual({
+      status: 'ok',
+      body: { count: 0, ceiling: 5000, exceeds: false, orphans: 0, droppedByPreference: 3 },
+    });
   });
 
 });
