@@ -143,6 +143,23 @@ that verdict in `docs/go-live-readiness.md` with the date and the number, not as
 
 ## 4. First send — the five signals (T094 completion criteria)
 
+> **Prod has never had a broadcast.** The `broadcasts` table is empty for swecham in every status
+> (measured 2026-09-08 14:19) — no draft, no sent, nothing. So "observe the first send" waits on an
+> event with **no precedent in this tenant**, and left alone it could stay open indefinitely
+> through nobody's fault. Two things follow.
+>
+> **The signals do not all need a send.** `phase` on `broadcasts_audience_resolved_total` is a
+> `'submit' | 'dispatch'` union, so the mode flip is observable at **submit** — compose, submit,
+> then cancel before approval, and no mail leaves. Only the dispatch-phase signals need a real
+> dispatch.
+>
+> **And the dispatch ones can be earned on dev.** `quickstart.md` § "Dev rehearsal before the flip"
+> has the procedure and `scripts/seed-dev-secondary-contacts.ts` the seed — dev is also the only
+> place the 1:N widening can be *seen*, since prod has 0 secondary contacts and both legs resolve
+> to the same 150 addresses there. Note the trap recorded there: the Neon branch is isolated, the
+> **Resend account is not** (same key, same sender domain), so a dev dispatch must go to addresses
+> you own.
+
 The `audience_import_status` gauge went with the deferred T086 and **does not exist** — do not
 wait for it. The five signals PR-C actually ships:
 

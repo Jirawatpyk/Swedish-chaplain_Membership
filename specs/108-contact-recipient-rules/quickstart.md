@@ -110,6 +110,90 @@ Before opening any PR: `pnpm lint && pnpm typecheck && pnpm check:i18n && pnpm v
    eligible count minus your own contacts; submit; after dispatch, the Resend audience
    contains every eligible contact once and none of the switched-off / unsubscribed ones.
 
+## Dev rehearsal before the flip
+
+**Why bother, when the resolver is already covered by live-Neon tests?** Because prod cannot
+exercise the thing the flag actually changes. It holds **150 members / 150 primaries / 0 secondary
+contacts** (measured 2026-09-08), so `all_contacts` and `primary_only` resolve to the *same* 150
+addresses there — flipping in prod proves the flag is wired, not that the widening works. Dev can
+have secondaries. It is the only place the 1:N fan-out can be seen before SweCham's import lands.
+
+It also removes the awkward dependency in T094's completion criterion: prod has **never had a
+single broadcast** — the `broadcasts` table is empty in every status — so "observe the first send"
+waits on an event with no precedent. Rehearsal ② below produces that observation on an audience
+you control entirely.
+
+> ### ⚠️ The Neon branch is isolated. The Resend account is NOT.
+>
+> `.env.local` and `.env.production` carry the **same `RESEND_BROADCASTS_API_KEY`** and the **same
+> `BROADCASTS_FROM_EMAIL`** (`SweCham <noreply@dxtspace.com>`). A dispatch on dev therefore sends
+> real mail from the production sender identity, spends the same Free-plan 1,000-contact quota and
+> 3 audience slots, and any bounce lands in the **production** suppression list and on the
+> production domain's reputation.
+>
+> So: **never seed fake addresses and then dispatch.** `scripts/seed-dev-secondary-contacts.ts`
+> refuses `@example.com` and friends for exactly this reason, and refuses to invent any address at
+> all — you pass ones you own. Separating the dev Resend key (or at least its sender domain) is a
+> worthwhile follow-up; the Free plan allows 3 domains.
+
+### ① Prove the widening with ZERO email sent
+
+Everything here stops before approval, and nothing is dispatched.
+
+```bash
+# 1. Seed secondaries onto a real dev member. Use + sub-addresses of an inbox you own.
+#    The script refuses prod (host blocklist), refuses unroutable domains, and only ever
+#    inserts is_primary = false, so migration 0293's invariant is untouched.
+SEED_SECONDARY_EMAILS="you+sec1@gmail.com,you+sec2@gmail.com" \
+EXPORT_DOWNLOAD_TOKEN_SECRET='<any 32+ char dummy>' TENANT_SLUG=swecham \
+TSX_TSCONFIG_PATH=tsconfig.scripts.json \
+node --env-file=.env.local --import tsx scripts/seed-dev-secondary-contacts.ts
+
+# 2. Turn the flag on for the dev runtime only.
+#    Local: add FEATURE_CONTACT_MARKETING_RECIPIENTS=true to .env.local and restart.
+#    Preview: set it in Vercel scoped to Preview, then redeploy the branch.
+```
+
+Then, signed in as a member:
+
+1. Open compose → segment **all members**. The live count should rise by the number of secondaries
+   you seeded. That number is the resolver running the `all_contacts` leg.
+2. Compare against `/admin/marketing/audience?kind=secondary&state=on&eligible=1` — the same rows,
+   which is SC-011 (page total = compose estimate).
+3. Toggle one seeded contact's marketing preference OFF and re-check the count: it drops by one,
+   and the difference is reported as `droppedByPreference`.
+4. **Submit** the broadcast. This emits `broadcasts_audience_resolved_total{mode, phase="submit"}`
+   — the mode flip, observed, with no mail sent (`phase` is a `'submit' | 'dispatch'` union; there
+   is no count phase, so opening compose alone does not emit it).
+5. **Cancel it before approval.** The state machine allows cancellation up to `approved`; nothing
+   leaves.
+
+### ② Prove the send path, to an audience of exactly you
+
+This is the only step that puts mail on the wire, and it is what closes the signals rehearsal ①
+cannot reach — the real Resend gateway, the real cron under `maxDuration`, and a throughput figure
+measured from `sin1` rather than from a Bangkok workstation with `GET` (the caveat T095 left open,
+recorded in `research.md` § R9).
+
+1. Make the audience **only addresses you own**. Easiest: archive or opt out every other dev member
+   so the `all_members` segment resolves to your seeded contacts alone, and confirm the compose
+   count says so before submitting. Verify the number, do not assume it.
+2. Submit → approve → let `dispatch-scheduled` pick it up (or invoke the cron route with the
+   `CRON_SECRET` bearer).
+3. Watch, in order: `broadcasts_audience_resolved_total{mode="all_contacts", phase="dispatch"}` ·
+   `broadcasts_marketing_opt_out_filter_count{phase="dispatch"}` present as a live series ·
+   `broadcasts_dispatch_resolve_failed_total` and `broadcasts_approved_overdue_count` both 0 ·
+   the outbox showing `estimated_recipient_count` = delivered.
+4. **Record the throughput**: the elapsed time between the dispatch start and
+   `resend.broadcasts.contacts_added` in the Vercel logs, divided by the recipient count. Put it in
+   `research.md` § R9 next to the workstation figure. If it is materially below ~3.45 req/s,
+   `DELIVERABLE_RECIPIENTS_PER_TICK` needs revisiting before any ceiling is raised.
+5. Clean up: `SEED_SECONDARY_MODE=remove` with the same env removes only the rows the script added.
+
+Rehearsal ② is not a prerequisite of the prod flip — at 0 secondaries the flip is a no-op on the
+audience — but it is the cheapest way to learn whether the 1:N dispatch path works before
+SweCham's import makes it load-bearing.
+
 ## Cutover checklist (prod)
 
 1. PR-A, PR-B, PR-D deployed; V1 counts confirmed 0 violations before PR-B.
