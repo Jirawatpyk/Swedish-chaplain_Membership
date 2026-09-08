@@ -233,6 +233,21 @@ export function vouchedFor(rawCode: string, pos: number): boolean {
   return false;
 }
 
+/**
+ * Parse the `F8ErrorId` union out of its own source.
+ *
+ * Lives here, and is tested, because the gate had this regex inline with a
+ * bare-LF terminator and went INERT on every Windows checkout —
+ * `core.autocrlf=true` ends the union with a CR before the LF. CI never saw it
+ * (Linux checks out LF), and the only reason it surfaced is the gate declaring
+ * itself inert the first time it ran on `main`.
+ */
+export function parseUnion(src: string): ReadonlySet<string> {
+  const block = /export type F8ErrorId =([\s\S]*?);\r?\n/.exec(src);
+  if (!block) return new Set();
+  return new Set([...block[1]!.matchAll(/'(F8\.[A-Z_]+)'/g)].map((m) => m[1]!));
+}
+
 export interface RuleFailure {
   readonly line: number;
   readonly message: string;

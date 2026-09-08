@@ -22,7 +22,12 @@
  *   found had already closed. Five shapes passed all seven rules.
  */
 import { describe, expect, it } from 'vitest';
-import { checkSource, fiveHundredSites, vouchedFor } from '../../../scripts/lib/f8-error-id-rules';
+import {
+  checkSource,
+  fiveHundredSites,
+  parseUnion,
+  vouchedFor,
+} from '../../../scripts/lib/f8-error-id-rules';
 
 const UNION = new Set(['F8.CYCLE_CANCEL', 'F8.ACCEPT_TIER']);
 const DECL = "const ERROR_ID = 'F8.CYCLE_CANCEL';\n";
@@ -230,6 +235,23 @@ describe('F8 errorId gate — the rules the 500 rule does NOT subsume', () => {
   it('an id outside the union is rejected', () => {
     const found = checkSource("const ERROR_ID = 'F8.NOT_IN_UNION';\n", UNION).failures;
     expect(found.some((f) => f.message.includes('not a member'))).toBe(true);
+  });
+
+  // Found the moment this work landed on `main`: the gate declared itself
+  // inert on a Windows checkout, because `core.autocrlf=true` ends the union
+  // with `;\r\n` and the parser required `;\n`. CI could never have caught it —
+  // Linux checks out LF — so it is pinned here on BOTH line endings.
+  it('parses the union on CRLF as well as LF', () => {
+    const src = (eol: string) =>
+      ["export type F8ErrorId =", "  | 'F8.CYCLE_CANCEL'", "  | 'F8.ACCEPT_TIER';", ''].join(eol);
+    expect(parseUnion(src('\n')).size).toBe(2);
+    expect(parseUnion(src('\r\n')).size).toBe(2);
+  });
+
+  it('an unparseable union yields an empty set, so the gate can call itself inert', () => {
+    // The guard that surfaced the CRLF bug depends on this returning empty
+    // rather than throwing or guessing.
+    expect(parseUnion('export type Something Else = never;\n').size).toBe(0);
   });
 
   it('a file declaring no ERROR_ID is rejected', () => {
