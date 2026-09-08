@@ -62,3 +62,46 @@ export function audienceCeiling(batchingEnabled: boolean): number {
  * see the US5 AMENDMENT in `spec.md` and `reviews/pr-c.md` row 33.
  */
 export const SPLIT_THRESHOLD_RECIPIENTS = 10_000;
+
+/**
+ * T095 (2026-09-08) — how many contacts ONE dispatch tick can actually push.
+ *
+ * `audienceCeiling` above says what the system is willing to ACCEPT. This says
+ * what it can DELIVER, and until this constant existed the two were 5,000 and
+ * ~1,000. A broadcast in between was accepted at submit and then killed
+ * mid-push on every tick, sitting in `approved` until
+ * `broadcasts_approved_overdue_count` noticed roughly ninety minutes later.
+ * The composition root now enforces `min(audienceCeiling(flags), this)`, so
+ * the number a member sees at compose is a number the push can honour.
+ *
+ * **Measured, not assumed** (`specs/108-contact-recipient-rules/research.md`
+ * § R9, T095 block; five `GET /audiences` calls on one keep-alive connection
+ * with the production key):
+ *
+ *   - the Resend account limit is **10 req/s** — `ratelimit-policy: 10;w=1`,
+ *     read from the API's own headers. The "~2 req/s" that this file and three
+ *     others claimed for a year was wrong;
+ *   - but `addContactsToAudience` is a **serial `await` loop**, so it reaches
+ *     only `min(limit, 1/RTT)`, and the warm round trip is **~0.29 s** —
+ *     about **3.4 req/s**. Latency binds, not the plan. Using the documented
+ *     10 as a capacity input overestimates by ~3×;
+ *   - `maxDuration = 300` minus dispatch's own work ⇒ ~950 contacts; with a
+ *     20 % margin, ~760;
+ *   - the account is on Resend's **Free** plan, whose 1,000-contact cap bites
+ *     at ~987 (13 already stored). Above it Resend answers 4xx — not 429 — so
+ *     `classifyResendError` returns `permanent` and the broadcast fails
+ *     terminally in one tick, which is the *better* failure of the two.
+ *
+ * **800 sits under both bounds.** It is round rather than computed on purpose:
+ * two independent limits that agree to within 20 % do not justify false
+ * precision, and the inputs carry caveats that all push the true figure down
+ * (measured from Bangkok, not `sin1`; `GET` latency, not `POST /contacts`;
+ * four warm samples).
+ *
+ * **Raise it only with a new measurement**, or when the push stops being
+ * serial — batched multi-tick dispatch, or Resend's Contacts Import API
+ * (T086 / T087 / T106, deferred). Upgrading the Resend plan is not enough:
+ * Pro raises the contact cap to 5,000 but changes no latency, so ~830 per tick
+ * survives the upgrade. Money buys the cap, not the wall clock.
+ */
+export const DELIVERABLE_RECIPIENTS_PER_TICK = 800;

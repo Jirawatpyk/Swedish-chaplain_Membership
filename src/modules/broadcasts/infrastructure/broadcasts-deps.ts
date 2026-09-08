@@ -30,7 +30,10 @@ import type { BroadcastApprovalCounter } from '../application/ports/broadcast-ap
 import type { ClockPort } from '../application/ports/clock-port';
 import type { AudienceMode } from '../domain/audience-mode';
 import type { ResolveSegmentDeps } from '../application/use-cases/resolve-segment-recipients';
-import { audienceCeiling } from '../domain/audience-ceiling';
+import {
+  audienceCeiling,
+  DELIVERABLE_RECIPIENTS_PER_TICK,
+} from '../domain/audience-ceiling';
 import { isF71aUs1Enabled } from './feature-flags';
 import type { ProcessWebhookEventDeps } from '../application/use-cases/process-webhook-event';
 import type { ReconcileStuckSendingDeps } from '../application/use-cases/reconcile-stuck-sending';
@@ -125,10 +128,39 @@ export function currentAudienceMode(): AudienceMode {
  * the old 5,000. Pinned by `broadcasts-deps-audience.test.ts` against an
  * explicit flag matrix (never against itself).
  */
-export function currentAudienceCeiling(): number {
+export function configuredAudienceCeiling(): number {
   return audienceCeiling(
     isF71aUs1Enabled() && env.features.contactMarketingRecipients,
   );
+}
+
+/**
+ * The ceiling every call site actually compares against: what the flags
+ * configure, clamped to what one dispatch tick can push.
+ *
+ * T095 (2026-09-08) separated these two. `configuredAudienceCeiling()` is the
+ * flag decision — 5,000, or 50,000 when the batching path and the 1:N audience
+ * are both on — and it stays pinned on its own so an inverted flag expression
+ * still fails a test (the H-2 guard above). `DELIVERABLE_RECIPIENTS_PER_TICK`
+ * is the measured bound of the serial Resend push: ~3.4 req/s across a 300 s
+ * function budget, i.e. ~830, rounded down to 800.
+ *
+ * They were never the same number, and before this clamp the gap was the bug:
+ * a broadcast between ~830 and the configured ceiling passed submit and then
+ * could not be delivered by any path — `split-large-broadcasts` ignores
+ * anything at or below 10,000, and `dispatch-batches` runs the same serial
+ * push under the same 300 s. Such a broadcast sat in `approved` and surfaced
+ * only as `broadcasts_approved_overdue_count` about ninety minutes later.
+ *
+ * Clamping here rather than inside `audienceCeiling()` keeps the Domain
+ * function pure and its own contract (`SPLIT_THRESHOLD_RECIPIENTS <
+ * audienceCeiling(true)`) intact, and keeps FR-042 true: one value, read at
+ * count, submit and dispatch, so what compose shows is what the send obeys.
+ * Every i18n string interpolates `{ceiling, number}`, so the copy follows
+ * automatically in all three locales.
+ */
+export function currentAudienceCeiling(): number {
+  return Math.min(configuredAudienceCeiling(), DELIVERABLE_RECIPIENTS_PER_TICK);
 }
 
 /**

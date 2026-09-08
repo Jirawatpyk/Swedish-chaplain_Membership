@@ -271,9 +271,18 @@ export {
 // --- F9 cross-module read (dashboard needs-attention, FR-002/AS-2) -------
 export { makeBroadcastApprovalCounter } from './infrastructure/broadcasts-deps';
 // 108 PR-C — the flag-derived resolver leg, read in the composition root only.
-export { currentAudienceMode, currentAudienceCeiling, makeResolveSegmentDeps } from './infrastructure/broadcasts-deps';
+export {
+  currentAudienceMode,
+  configuredAudienceCeiling,
+  currentAudienceCeiling,
+  makeResolveSegmentDeps,
+} from './infrastructure/broadcasts-deps';
 // 108 PR-C T085 — the one ceiling (Domain) + the split threshold it bounds.
-export { audienceCeiling, SPLIT_THRESHOLD_RECIPIENTS } from './domain/audience-ceiling';
+export {
+  audienceCeiling,
+  DELIVERABLE_RECIPIENTS_PER_TICK,
+  SPLIT_THRESHOLD_RECIPIENTS,
+} from './domain/audience-ceiling';
 export type { BroadcastApprovalCounter } from './application/ports/broadcast-approval-counter';
 
 // --- Composition root factories (Phase 4 US2) ----------------------------
