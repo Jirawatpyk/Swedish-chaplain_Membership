@@ -151,6 +151,16 @@ export interface Broadcast {
   readonly resendAudienceId: string | null;
   readonly resendBroadcastId: string | null;
 
+  // 108 US5 / T086 — the Contacts-Import audience build (migration 0298).
+  // A non-null `audienceImportId` means an import is in flight or finished and
+  // is the idempotency guard: a tick never submits a second one while it is
+  // set. The 30-minute stuck rule measures from `audienceImportSubmittedAt`.
+  // `audienceImportCompletedAt` is stamped only after the full completion rule
+  // passes and is what makes a send legitimate.
+  readonly audienceImportId: string | null;
+  readonly audienceImportSubmittedAt: Date | null;
+  readonly audienceImportCompletedAt: Date | null;
+
   // Audit retention (Constitution v1.4.0)
   readonly retentionYears: 5 | 10;
 

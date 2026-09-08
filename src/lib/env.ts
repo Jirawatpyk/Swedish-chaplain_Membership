@@ -637,6 +637,25 @@ const schema = z.object({
   // week of sends (T099 — plan § Complexity Tracking #2).
   FEATURE_CONTACT_MARKETING_RECIPIENTS: booleanFromString.default(false),
 
+  // 108 US5 / T086-T087 — build the Resend audience with ONE Contacts-Import
+  // call instead of the per-contact `addContactsToAudience` loop.
+  //
+  // The loop is serial and latency-bound at a measured ~2.08 req/s, so roughly
+  // 623 contacts is all one 300 s function can drain; the import is a single
+  // multipart request, ~412 ms whether it carries one address or fifty
+  // thousand. Everything this codebase grew to work around the loop — the
+  // split threshold, per-batch manifests, one-wave dispatch, cross-tick drift
+  // guards — exists only because the push was per-contact.
+  //
+  // A NEW flag on purpose. Reusing `FEATURE_F71A_US1_PAGINATION` would change
+  // that flag's meaning for the third time on this branch, and this branch has
+  // twice been bitten by a constant or a flag that meant something different
+  // depending on when you read it.
+  //
+  // Flag OFF is the rollback and is the pre-108 behaviour exactly: the loop,
+  // the batch path, and the ceiling clamp, all unchanged.
+  FEATURE_F7_IMPORT_AUDIENCE: booleanFromString.default(false),
+
   // --- ClamAV virus scanner (US2 dependency) -------------------------------
   // Network address of the clamd daemon. Empty string in dev = US2 disabled.
   // In prod, points at the Fly.io private 6PN address (e.g.
@@ -1055,6 +1074,8 @@ export const env = {
     f71aUs7Templates: raw.FEATURE_F71A_US7_TEMPLATES,
     // 108 PR-C — temporary cutover flag for the 1:N marketing audience.
     contactMarketingRecipients: raw.FEATURE_CONTACT_MARKETING_RECIPIENTS,
+    // 108 US5 — one Contacts-Import call instead of the per-contact loop.
+    f7ImportAudience: raw.FEATURE_F7_IMPORT_AUDIENCE,
     f8Renewals: raw.FEATURE_F8_RENEWALS,
     f8AtRiskDisabled: raw.FEATURE_F8_AT_RISK_DISABLED,
     // COMP-1 US2d — member-erasure reconciliation sweep kill-switch.

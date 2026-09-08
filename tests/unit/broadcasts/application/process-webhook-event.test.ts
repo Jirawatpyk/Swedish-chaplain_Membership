@@ -74,6 +74,10 @@ function baseBroadcast(overrides: Partial<Broadcast> = {}): Broadcast {
     quotaYearConsumed: null,
     quotaConsumedAt: null,
     resendAudienceId: 'aud-1',
+    // T086 — the Contacts-Import build (migration 0298). Absent on every fixture written before it.
+    audienceImportId: null,
+    audienceImportSubmittedAt: null,
+    audienceImportCompletedAt: null,
     resendBroadcastId: 'rsb-1',
     retentionYears: 5,
     manualRetryCount: 0,

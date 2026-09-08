@@ -46,6 +46,26 @@ export function isF71aUs1Enabled(): boolean {
 }
 
 /**
+ * 108 US5 (T086/T087) — `true` when the audience should be built with ONE
+ * Resend Contacts-Import call instead of the per-contact
+ * `addContactsToAudience` loop.
+ *
+ * Gated on the F7 master flag too, so the kill switch still kills everything.
+ *
+ * When this is ON, `dispatch-scheduled` routes an eligible broadcast to
+ * `buildAudienceTick` and `dispatchScheduledBroadcast` is not called for it.
+ * The import is submitted on one tick and confirmed on a later one, so a
+ * broadcast can span ticks without any of the batch machinery — no split
+ * threshold, no manifests, no cross-tick index slices.
+ *
+ * OFF is the pre-108 behaviour exactly (loop + batch path + ceiling clamp) and
+ * is the rollback position, so it must keep working unchanged.
+ */
+export function isF7ImportAudienceEnabled(): boolean {
+  return env.features.f7Broadcasts && env.features.f7ImportAudience;
+}
+
+/**
  * Discriminated reason for the flag-disabled state — used by route
  * handlers + the cron handler to emit structured logs at the right
  * level (info for kill-switch, warn for unexpected combinations).

@@ -243,6 +243,9 @@ export function rowToBroadcast(row: BroadcastRow): Broadcast {
     quotaConsumedAt: row.quotaConsumedAt,
 
     resendAudienceId: row.resendAudienceId,
+    audienceImportId: row.audienceImportId,
+    audienceImportSubmittedAt: row.audienceImportSubmittedAt,
+    audienceImportCompletedAt: row.audienceImportCompletedAt,
     resendBroadcastId: row.resendBroadcastId,
 
     retentionYears: row.retentionYears as 5 | 10,
