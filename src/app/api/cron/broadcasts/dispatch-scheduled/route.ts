@@ -35,8 +35,6 @@ import {
   dispatchScheduledBroadcast,
   makeDispatchScheduledBroadcastDeps,
   makeTickMemoizedMembersBridge,
-  SPLIT_THRESHOLD_RECIPIENTS,
-  isF71aUs1Enabled,
   isF7ImportAudienceEnabled,
   buildAudienceTick,
   makeBuildAudienceTickDeps,
@@ -124,45 +122,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // grabbing the same row — the second tick's transaction will skip
   // any row whose advisory lock is held by an in-flight worker.
   //
-  // Phase 9b (T137) — the `estimated_recipient_count` predicate is what makes
-  // this cron and `split-large-broadcasts` a PARTITION of the `approved` set
-  // rather than two overlapping filters. Both run every five minutes; the
-  // sibling selects `> SPLIT_THRESHOLD_RECIPIENTS`, and `splitBroadcastIntoBatches`
-  // does not change the broadcast's status, so without this line whichever cron
-  // runs first claims the row. `FOR UPDATE SKIP LOCKED` does not help: it stops
-  // CONCURRENT claims on the same row, not sequential ones seconds apart. A row
-  // above the threshold claimed here would be pushed by the serial single-tick
-  // loop and killed at `maxDuration = 300`.
-  //
-  // The estimate is frozen at submit and can be days stale, so this predicate
-  // is a cheap indexed FIRST pass, not the real bound. The use case re-resolves
-  // and hands a grown audience back to the split path (T147); the split cron
-  // never releases a row whose audience shrank (T148). Between them every
-  // `approved` row has exactly one owner in either direction of drift.
-  //
-  // **The predicate MOVES WITH THE BATCHING FLAG** (H-4 / whole-branch #13).
-  // `split-large-broadcasts` returns `feature_disabled` outright when
-  // `isF71aUs1Enabled()` is false, so keeping the exclusion in that state would
-  // leave a row above the threshold owned by NEITHER cron — silently stuck in
-  // `approved`, which is strictly worse than the pre-branch behaviour where it
-  // was claimed here and refused loudly. Flag OFF is the documented rollback
-  // position; it has to keep behaving as it did before this branch.
-  // THREE states, written out because two of them look alike:
-  //   import ON   -> no bound. One call carries the whole audience, so there is
-  //                  no per-tick capacity to partition around, and handing a
-  //                  large row to `split-large-broadcasts` would build
-  //                  manifests for a path nothing uses any more.
-  //   import OFF, batching ON  -> bound. The serial push is the delivery
-  //                  mechanism and rows above the threshold belong to the split
-  //                  cron.
-  //   import OFF, batching OFF -> no bound. The split cron answers
-  //                  `feature_disabled`, so an excluded row would be owned by
-  //                  NOBODY (H-4). Flag-off must behave as it did pre-branch:
-  //                  claimed here, and refused loudly if it is too large.
-  const claimBound =
-    !isF7ImportAudienceEnabled() && isF71aUs1Enabled()
-      ? sql`AND estimated_recipient_count <= ${SPLIT_THRESHOLD_RECIPIENTS}`
-      : sql``;
+  // With the batch path deleted there is no sibling cron to partition
+  // against: this is the only claimant of `approved` rows. Size is bounded
+  // where it belongs instead — with the import ON one call carries any
+  // audience, and with it OFF `currentAudienceCeiling()` clamps to what the
+  // serial push can drain, so an oversized audience is refused at submit
+  // rather than claimed and stranded.
   let eligible: ReadonlyArray<{ broadcast_id: string }>;
   try {
     eligible = await runInTenant(tenant, async (tx) => {
@@ -173,7 +138,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           AND status = 'approved'
           AND scheduled_for IS NOT NULL
           AND scheduled_for <= now()
-          ${claimBound}
         ORDER BY scheduled_for ASC
         LIMIT ${MAX_PER_TICK}
         FOR UPDATE SKIP LOCKED
@@ -200,14 +164,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     retryable: 0,
     permanent_failed: 0,
     resource_missing: 0,
-    /**
-     * Phase 9b (T147) — rows handed to `split-large-broadcasts` because the
-     * audience outgrew one tick since submit. Neither a success nor a failure:
-     * the broadcast is intact, still `approved`, and delivered by the batch
-     * path within ~5 minutes. A sustained non-zero value means audiences are
-     * routinely crossing the threshold, which is information, not an incident.
-     */
-    deferred_to_batch_path: 0,
     /**
      * T087 — imports handed to Resend this tick. Neither a success nor a
      * failure: nothing is delivered yet, and a later tick confirms it.
@@ -389,27 +345,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           case 'broadcast_failed_to_dispatch':
           case 'broadcast_audience_post_suppression_empty':
             summary.permanent_failed++;
-            break;
-          case 'DEFERRED_TO_BATCH_PATH':
-            // Phase 9b (T147) — NOT a failure. The audience grew past what one
-            // tick can push since submit, so the use case corrected
-            // `estimated_recipient_count` and left the row `approved`; the next
-            // `split-large-broadcasts` tick claims it on the corrected number
-            // and the batch path delivers it.
-            //
-            // It needs its own counter precisely because the `default` arm
-            // below raises `cronUnknownErrorCount`, which is alarmed on. A
-            // routine hand-off must not page anyone.
-            summary.deferred_to_batch_path++;
-            logger.info(
-              {
-                tenantId: tenant.slug,
-                broadcastId: row.broadcast_id,
-                resolvedCount: result.error.resolvedCount,
-                deliverablePerTick: result.error.deliverablePerTick,
-              },
-              'cron.broadcasts.dispatch.deferred_to_batch_path',
-            );
             break;
           default: {
             // Round-4 HIGH-D + Round-5 R5-CRON — unknown error kind

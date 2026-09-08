@@ -80,19 +80,6 @@ export interface CancelBroadcastDeps {
   readonly emailTransactional?: EmailTransactionalPort;
   /** R4 Types-#6 — see approve-broadcast.ts. */
   readonly membersBridge?: MembersBridgePort;
-  /**
-   * F7.1a US1 FR-004 (Phase 3E.3 fix 2026-05-19) — halt all not-yet-
-   * dispatched batch_manifests when the broadcast is cancelled in
-   * `sending` state. Optional for backward compat with F7 MVP tests
-   * that mock the deps without batch awareness; production factory
-   * (`makeCancelBroadcastDeps`) wires the real Drizzle port.
-   *
-   * When undefined: batches are not halted (F7 MVP behaviour). When
-   * provided: cancellation calls `markCancelled(slug, pendingIds)`
-   * before the broadcast-row transition so the dispatcher cron can
-   * no longer pick up the now-stale pending rows.
-   */
-  readonly batchManifests?: import('../ports/batch-manifests-port').BatchManifestsPort;
 }
 
 export interface CancelBroadcastInput {
@@ -184,19 +171,9 @@ export async function cancelBroadcast(
       // Phase 3F.11.3 (M1 — Round 2 fix) — skip pending-batch lookup
       // unless status carries batches (saves a DB roundtrip on the
       // common cancel-of-non-multi-audience path).
-      let pendingBatchIds: readonly string[] = [];
-      let hasBatches = false;
-      const statusMightHaveBatches =
-        existing.status === 'approved' || existing.status === 'sending';
-      if (deps.batchManifests !== undefined && statusMightHaveBatches) {
-        const pendingBatches = await deps.batchManifests.findPendingByBroadcast(
-          deps.tenant.slug as never,
-          input.broadcastId,
-        );
-        pendingBatchIds = pendingBatches.map((b) => b.id);
-        hasBatches = pendingBatchIds.length > 0;
-      }
-
+      // The batch path is gone (108 US5): a broadcast has no per-batch rows to
+      // halt, so cancellation is decided by status alone.
+      const hasBatches = false;
       const policyResult = authorizeCancel(existing.status, hasBatches);
       if (!policyResult.ok) {
         // R7 staff-review MED-R2 — `null` tx is intentional here: the
@@ -252,30 +229,6 @@ export async function cancelBroadcast(
       // outer tx rollback now also reverts the batch halts → no half-
       // committed "M batches cancelled + broadcast still sending"
       // inconsistency. Log halt count for ops observability.
-      let haltedCount = 0;
-      if (hasBatches) {
-        // Phase 3F.11.13 (Step 3) — brand the raw `tx` (typed as
-        // `unknown` by F7 MVP `BroadcastsRepo.withTx`'s callback —
-        // not widened in Step 2 since F7 MVP shares this repo). The
-        // markCancelled port now requires TxToken, so we brand at
-        // the call site (last surviving asTxToken boundary).
-        haltedCount = await deps.batchManifests!.markCancelled(
-          deps.tenant.slug as never,
-          pendingBatchIds,
-          asTxToken(tx),
-        );
-        if (haltedCount < pendingBatchIds.length) {
-          logger.warn(
-            {
-              tenantId: deps.tenant.slug,
-              broadcastId: input.broadcastId as string,
-              requested: pendingBatchIds.length,
-              halted: haltedCount,
-            },
-            'broadcasts.cancel.batch_halt_partial',
-          );
-        }
-      }
 
       try {
         // Verify-fix R3 (Code-M1, 2026-05-02): pass `expectedFromStatus`

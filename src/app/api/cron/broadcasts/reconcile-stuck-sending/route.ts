@@ -26,11 +26,7 @@ import {
   makeReconcileStuckSendingDeps,
   reconcileStuckSending,
   // F7.1a Phase 3 T056 — per-batch auto-retry sweep (FR-005 / 5-attempt budget)
-  makeAutoRetryFailedBatchesDeps,
-  sweepAutoRetryFailedBatches,
   // Ship-blocker A — batch-completion roll-up sweep
-  makeRollUpBatchBroadcastDeps,
-  sweepBatchCompletion,
 } from '@/modules/broadcasts';
 import { runInTenant } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
@@ -224,190 +220,38 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // re-queue them. The dispatch-batches cron (T055) picks them up
   // on the next 5-min tick.
   //
-  // Run AFTER the broadcast loop so that any broadcast just
-  // reconciled `sending → sent` doesn't have its individual batches
-  // unnecessarily retried. The batch-level sweep is idempotent
-  // regardless — the use case checks `status='failed' AND retry_count
-  // < 5` at the moment of mutation; a flipped-since-scan row just
-  // surfaces as a no-op.
-  let batchSweep: Awaited<ReturnType<typeof sweepAutoRetryFailedBatches>> = {
-    eligibleCount: 0,
-    retriedCount: 0,
-    errorCount: 0,
-    outcomes: [],
-  };
-  try {
-    const autoRetryDeps = makeAutoRetryFailedBatchesDeps(tenant.slug);
-    batchSweep = await sweepAutoRetryFailedBatches(autoRetryDeps, {
-      tenantId: tenant,
-      requestId: null,
-    });
-    if (batchSweep.errorCount > 0) {
-      logger.warn(
-        {
-          tenantId: tenant.slug,
-          batchSweep: {
-            eligible: batchSweep.eligibleCount,
-            retried: batchSweep.retriedCount,
-            errored: batchSweep.errorCount,
-          },
-        },
-        'cron.broadcasts.reconcile.batch_auto_retry_partial_failure',
-      );
-    }
-  } catch (e) {
-    logger.error(
-      {
-        err: e instanceof Error ? e.message : String(e),
-        tenantId: tenant.slug,
-      },
-      'cron.broadcasts.reconcile.batch_auto_retry_threw',
-    );
-  }
-
-  // Ship-blocker A — batch-completion roll-up. Finds `sending` broadcasts
-  // split into batches and, for the ones whose batches are all done,
-  // transitions sending → sent (+ quota) or → partially_sent (≥1 failed
-  // batch). Runs AFTER the auto-retry sweep so a just-re-queued batch is
-  // re-evaluated as in-progress (no premature roll-up). Best-effort +
-  // per-item guarded inside the sweep.
-  let rollUp: Awaited<ReturnType<typeof sweepBatchCompletion>> = {
-    scanned: 0,
-    sentCount: 0,
-    partialCount: 0,
-    inProgressCount: 0,
-    errorCount: 0,
-  };
-  try {
-    rollUp = await sweepBatchCompletion(
-      makeRollUpBatchBroadcastDeps(tenant.slug),
-      { requestId: null },
-    );
-    if (
-      rollUp.sentCount > 0 ||
-      rollUp.partialCount > 0 ||
-      rollUp.errorCount > 0
-    ) {
-      logger.info(
-        { tenantId: tenant.slug, rollUp },
-        'cron.broadcasts.reconcile.batch_completion_rollup',
-      );
-    }
-  } catch (e) {
-    logger.error(
-      { err: e instanceof Error ? e.message : String(e), tenantId: tenant.slug },
-      'cron.broadcasts.reconcile.batch_rollup_threw',
-    );
-  }
-
-  // Phase 3F.11.16 (Round 1 F-15 observability sweep — pulled forward
-  // from F7.1a.1 backlog per user directive). F71A US1 dispatch-broadcast-
-  // batch.ts:312 has a known forensic-only failure mode: Resend acknowledged
-  // the broadcast but our `updateStatus(providerBroadcastId=...)` persist
-  // failed. The batch row is stuck in `sending` with NULL provider_broadcast_id;
-  // the webhook can never route events to it. Phase 3F.11.1 C4 wrap +
-  // logger.error covers the forensic audit emit failure; this sweep covers
-  // the residual "row still NULL > 10 min later" gap so ops can see the
-  // accumulation rate and decide whether to dashboard-build a Resend
-  // dashboard backfill workflow (F7.1a.1 feature work).
-  //
-  // No auto-backfill — that requires Resend "list broadcasts by metadata"
-  // dashboard query which is a separate feature; this sweep is OBSERVABILITY
-  // ONLY. Warns at sustained rate > 5/tick = real ops attention needed.
-  let orphanedProviderIdCount = 0;
-  try {
-    const orphanRows = await runInTenant(tenant, async (tx) => {
-      const result = (await tx.execute(sql`
-        SELECT id, broadcast_id::text AS broadcast_id, batch_index
-        FROM broadcast_batch_manifests
-        WHERE tenant_id = ${tenant.slug}
-          AND status = 'sending'
-          AND provider_broadcast_id IS NULL
-          AND updated_at < now() - interval '10 minutes'
-        ORDER BY updated_at ASC
-        LIMIT 50
-      `)) as unknown as Array<{
-        id: string;
-        broadcast_id: string;
-        batch_index: number;
-      }>;
-      return result;
-    });
-    orphanedProviderIdCount = orphanRows.length;
-    if (orphanedProviderIdCount > 0) {
-      // Log each row at warn level (capped at 50 per tick to bound
-      // pino volume). Ops dashboards plot orphanedProviderIdCount over
-      // time; sustained > 5/tick is the alert threshold (manual ops
-      // backfill via Resend dashboard required).
-      for (const row of orphanRows) {
-        logger.warn(
-          {
-            tenantId: tenant.slug,
-            broadcastId: row.broadcast_id,
-            batchManifestId: row.id,
-            batchIndex: row.batch_index,
-          },
-          'cron.broadcasts.reconcile.batch_manifest_provider_id_orphan',
-        );
-      }
-    }
-  } catch (e) {
-    logger.error(
-      {
-        err: e instanceof Error ? e.message : String(e),
-        tenantId: tenant.slug,
-      },
-      'cron.broadcasts.reconcile.orphan_sweep_failed',
-    );
-  }
+  // The batch path was removed in 108 US5, and with it three sweeps that used
+  // to live here: per-batch auto-retry, batch completion roll-up, and the
+  // orphaned-provider-id observability scan over `broadcast_batch_manifests`.
+  // A broadcast is now either single-audience (the MVP push) or import-built,
+  // and both are reconciled by the loop above.
 
   logger.info(
-    {
-      tenantId: tenant.slug,
-      ...summary,
-      batch_auto_retry_eligible: batchSweep.eligibleCount,
-      batch_auto_retry_retried: batchSweep.retriedCount,
-      batch_auto_retry_errors: batchSweep.errorCount,
-      // Phase 3F.11.16 — F-15 observability sweep result.
-      orphaned_provider_id_count: orphanedProviderIdCount,
-    },
+    { tenantId: tenant.slug, ...summary },
     'cron.broadcasts.reconcile.tick_complete',
   );
 
-  // Review ERR-H-R3-2 (round 3): split escalation between "harness
-  // should retry" (uncaught_error / server_error → 500) and
-  // "operator should look but harness MUST NOT retry"
-  // (gateway_error → 200 + dedicated alert log). cron-job.org retries
-  // 500 responses; returning 500 on a Resend outage caused duplicate
-  // reconcile attempts every retry tick (the per-row work was already
-  // done idempotently — the 500 just wasted compute and emitted
-  // duplicate audit rows). The next 15-min tick is the natural retry.
+  // Review ERR-H-R3-2 (round 3): split escalation between "harness should
+  // retry" (uncaught_error / server_error → 500) and "operator should look but
+  // the harness MUST NOT retry" (gateway_error → 200 + a dedicated alert log).
+  // Returning 500 on a Resend outage caused duplicate reconcile attempts every
+  // retry tick; the per-row work was already idempotent, so the 500 only wasted
+  // compute. The next 15-minute tick is the natural retry.
   if (summary.gateway_error > 0) {
     logger.error(
       {
         tenantId: tenant.slug,
         gateway_error: summary.gateway_error,
         processed: summary.processed,
-        // dedupeKey lets the alert pipeline coalesce a Resend-outage
-        // burst into one alert per tenant per outage window.
+        // Lets the alert pipeline coalesce a Resend-outage burst into one
+        // alert per tenant per outage window.
         dedupeKey: `f7-reconcile-gateway-error:${tenant.slug}`,
       },
       'cron.broadcasts.reconcile.gateway_outage',
     );
   }
 
-  // Programmer bugs + use-case server errors → harness retry is
-  // appropriate (transient DB blip, in-process state issue). Per-row
-  // try/catch already logged + audited each row; this 500 is the
-  // tick-level escalation hook for cron-job.org dashboard.
-  const responseBody = {
-    ...summary,
-    batch_auto_retry: {
-      eligible: batchSweep.eligibleCount,
-      retried: batchSweep.retriedCount,
-      errored: batchSweep.errorCount,
-    },
-  };
+  const responseBody = { ...summary };
   if (summary.uncaught_error > 0 || summary.server_error > 0) {
     return NextResponse.json(responseBody, { status: 500 });
   }

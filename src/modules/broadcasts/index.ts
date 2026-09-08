@@ -287,7 +287,6 @@ export {
 export {
   audienceCeiling,
   DELIVERABLE_RECIPIENTS_PER_TICK,
-  SPLIT_THRESHOLD_RECIPIENTS,
 } from './domain/audience-ceiling';
 export type { BroadcastApprovalCounter } from './application/ports/broadcast-approval-counter';
 
@@ -307,56 +306,7 @@ export {
 
 // --- F7.1a Phase 3 Cluster B (US1 — Pagination 5k→50k) -------------------
 export {
-  splitBroadcastIntoBatches,
-  type SplitBroadcastIntoBatchesDeps,
-  type SplitBroadcastIntoBatchesError,
-  type SplitBroadcastIntoBatchesInput,
-  type SplitBroadcastIntoBatchesOutput,
-} from './application/use-cases/split-broadcast-into-batches';
-export {
-  retryFailedBatches,
-  MANUAL_RETRY_BUDGET,
-  type RetryFailedBatchesDeps,
-  type RetryFailedBatchesError,
-  type RetryFailedBatchesInput,
-  type RetryFailedBatchesOutput,
-} from './application/use-cases/retry-failed-batches';
-export {
-  acceptPartialDelivery,
-  MAX_REASON_LENGTH,
-  type AcceptPartialDeliveryDeps,
-  type AcceptPartialDeliveryError,
-  type AcceptPartialDeliveryInput,
-  type AcceptPartialDeliveryOutput,
-} from './application/use-cases/accept-partial-delivery';
-export {
-  makeSplitBroadcastIntoBatchesDeps,
-  makeRetryFailedBatchesDeps,
-  makeAcceptPartialDeliveryDeps,
-  makeAutoRetryFailedBatchesDeps,
-  makeApplyBatchWebhookEventDeps,
-  resolveTenantByBatchProviderBroadcastId,
 } from './infrastructure/broadcasts-deps';
-export {
-  autoRetryFailedBatch,
-  sweepAutoRetryFailedBatches,
-  AUTO_RETRY_BUDGET,
-  AUTO_RETRY_COOLOFF_SECONDS,
-  type AutoRetryFailedBatchesDeps,
-  type AutoRetryFailedBatchesError,
-  type AutoRetryFailedBatchesInput,
-  type AutoRetryFailedBatchesOutput,
-  type AutoRetrySweepInput,
-  type AutoRetrySweepOutcome,
-  type AutoRetrySweepOutput,
-} from './application/use-cases/auto-retry-failed-batches';
-export {
-  applyBatchWebhookEvent,
-  type ApplyBatchWebhookEventDeps,
-  type ApplyBatchWebhookEventError,
-  type ApplyBatchWebhookEventInput,
-  type BatchWebhookEventType,
-} from './application/use-cases/apply-batch-webhook-event';
 export {
   isF71aUs1Enabled,
   isF7ImportAudienceEnabled,
@@ -433,24 +383,11 @@ export {
 export { makeReclaimOrphanedAudiencesDeps } from './infrastructure/broadcasts-deps';
 
 // --- Ship-blocker A — batch completion roll-up --------------------------
-export {
-  rollUpBatchBroadcast,
-  sweepBatchCompletion,
-  evaluateBatchCompletion,
-  type RollUpBatchBroadcastDeps,
-  type RollUpBatchBroadcastInput,
-  type RollUpOutcome,
-  type RollUpError,
-  type BatchCompletion,
-  type SweepBatchCompletionInput,
-  type SweepBatchCompletionOutput,
-} from './application/use-cases/roll-up-batch-broadcast';
 
 // --- Composition root factories (Phase 7 US5) ----------------------------
 export {
   makeProcessWebhookEventDeps,
   makeReconcileStuckSendingDeps,
-  makeRollUpBatchBroadcastDeps,
   resendBroadcastsWebhookVerifier,
   resolveTenantByResendBroadcastId,
 } from './infrastructure/broadcasts-deps';
@@ -530,7 +467,6 @@ export { f7AuditAdapter } from './infrastructure/audit-adapter';
 // `@/modules/broadcasts/infrastructure/...`. Closes ~28 entries from
 // the `broadcasts-barrel.test.ts` KNOWN_BACKLOG (Round 2 staff-review
 // W3 architectural warning).
-export { makeDrizzleBatchManifestsRepo } from './infrastructure/drizzle-batch-manifests-repo';
 export { makeDrizzleBroadcastsRepo } from './infrastructure/db/drizzle-broadcasts-repo';
 export { makeDrizzleMarketingUnsubscribesRepo } from './infrastructure/db/drizzle-marketing-unsubscribes-repo';
 export { eventAttendeesStub } from './infrastructure/event-attendees-stub';
@@ -540,7 +476,6 @@ export { eventAttendeesStub } from './infrastructure/event-attendees-stub';
 export { eventAttendeesBridge } from './infrastructure/event-attendees-bridge';
 export { resendBroadcastsGateway } from './infrastructure/resend/resend-broadcasts-gateway';
 export { noOpAdvisoryLock } from './infrastructure/noop-advisory-lock';
-export { dispatchAllPendingBatches } from './application/services/batch-dispatcher';
 export type {
   MemberHaltSummary,
   MemberRecipient,
@@ -584,15 +519,6 @@ export {
 // ---------------------------------------------------------------------------
 
 // US1 (Pagination) — BatchManifest port types + Domain value types
-export type {
-  BatchManifest,
-  BatchManifestsPort,
-  BatchStatus,
-  BatchInsertError,
-  BatchUpdateError,
-  BatchStatusUpdate,
-  NewBatchManifestInput,
-} from './application/ports/batch-manifests-port';
 
 // US2 (Image embedding) — VirusScanner + ImageAllowlist port types
 export type {

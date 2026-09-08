@@ -67,7 +67,7 @@ const BASE_ENV: Record<string, string> = {
 
 type Flags = {
   readonly contactMarketing: 'true' | 'false' | undefined;
-  readonly batching: boolean;
+  readonly importAudience: boolean;
 };
 
 function stubEnv(flags: Flags): void {
@@ -75,10 +75,13 @@ function stubEnv(flags: Flags): void {
   // Stub to `undefined` so vitest DELETES the key — a real .env.local value
   // (loaded by tests/setup.ts) would otherwise leak into the "unset" case.
   vi.stubEnv('FEATURE_CONTACT_MARKETING_RECIPIENTS', flags.contactMarketing);
-  const b = flags.batching ? 'true' : 'false';
-  vi.stubEnv('FEATURE_F7_BROADCASTS', b);
-  vi.stubEnv('FEATURE_F71A_BROADCAST_ADVANCED', b);
-  vi.stubEnv('FEATURE_F71A_US1_PAGINATION', b);
+  // The F7 master flag stays ON — the kill switch is not what this file pins.
+  vi.stubEnv('FEATURE_F7_BROADCASTS', 'true');
+  vi.stubEnv('FEATURE_F71A_BROADCAST_ADVANCED', 'true');
+  vi.stubEnv(
+    'FEATURE_F7_IMPORT_AUDIENCE',
+    flags.importAudience ? 'true' : 'false',
+  );
 }
 
 async function loadDeps() {
@@ -105,7 +108,7 @@ describe('broadcasts-deps — audience mode + ceiling from the flag matrix (108 
   // ON, `DELIVERABLE_RECIPIENTS_PER_TICK` stops being a ceiling and becomes the
   // BATCH SIZE — `split-large-broadcasts` cuts the audience at exactly that
   // number and `dispatch-batches` delivers one wave per tick — so the accepted
-  // ceiling can safely return to what the flags configure. With batching OFF
+  // ceiling can safely return to what the flags configure. With the import OFF
   // there is still only the serial single-tick push, so the clamp still binds.
   //
   // Keeping BOTH columns is deliberate. Capping the enforced value alone would
@@ -113,17 +116,17 @@ describe('broadcasts-deps — audience mode + ceiling from the flag matrix (108 
   // expression could then be inverted with no assertion noticing, which is the
   // exact failure this file was written for.
   it.each<[Flags, 'primary_only' | 'all_contacts', number, number]>([
-    [{ contactMarketing: undefined, batching: false }, 'primary_only', 5_000, 500],
-    [{ contactMarketing: 'false', batching: false }, 'primary_only', 5_000, 500],
-    [{ contactMarketing: 'true', batching: false }, 'all_contacts', 5_000, 500],
-    // The H-2 case: batching ON (as prod is today) with the 108 flag OFF
+    [{ contactMarketing: undefined, importAudience: false }, 'primary_only', 5_000, 500],
+    [{ contactMarketing: 'false', importAudience: false }, 'primary_only', 5_000, 500],
+    [{ contactMarketing: 'true', importAudience: false }, 'all_contacts', 5_000, 500],
+    // The H-2 case: the import ON (as prod is today) with the 108 flag OFF
     // must keep the pre-branch 5,000 — the ceiling belongs to the audience.
-    [{ contactMarketing: undefined, batching: true }, 'primary_only', 5_000, 5_000],
-    [{ contactMarketing: 'false', batching: true }, 'primary_only', 5_000, 5_000],
+    [{ contactMarketing: undefined, importAudience: true }, 'primary_only', 5_000, 5_000],
+    [{ contactMarketing: 'false', importAudience: true }, 'primary_only', 5_000, 5_000],
     // Both ON: the wide ceiling and the wide audience, as one unit — and with
-    // batching ON the enforced ceiling is the configured one, because 50,000
+    // the import ON the enforced ceiling is the configured one, because 50,000
     // now means 100 batches across 100 ticks rather than one impossible push.
-    [{ contactMarketing: 'true', batching: true }, 'all_contacts', 50_000, 50_000],
+    [{ contactMarketing: 'true', importAudience: true }, 'all_contacts', 50_000, 50_000],
   ])(
     'flags %j → mode %s, configured ceiling %d, enforced ceiling %d',
     async (flags, mode, configured, enforced) => {
@@ -135,7 +138,7 @@ describe('broadcasts-deps — audience mode + ceiling from the flag matrix (108 
     },
   );
 
-  it('with batching OFF the enforced ceiling is never above what one dispatch tick can push', async () => {
+  it('with the import OFF the enforced ceiling is never above what one dispatch tick can push', async () => {
     // The invariant for the single-tick path, stated independently of the
     // numbers above so that raising a configured ceiling can never silently
     // raise what is accepted while the push is still one serial loop.
@@ -151,8 +154,8 @@ describe('broadcasts-deps — audience mode + ceiling from the flag matrix (108 
       '@/modules/broadcasts/domain/audience-ceiling'
     );
     for (const flags of [
-      { contactMarketing: 'false', batching: false },
-      { contactMarketing: 'true', batching: false },
+      { contactMarketing: 'false', importAudience: false },
+      { contactMarketing: 'true', importAudience: false },
     ] as const) {
       vi.resetModules();
       stubEnv(flags);
@@ -175,7 +178,7 @@ describe('broadcasts-deps — audience mode + ceiling from the flag matrix (108 
   });
 
   /**
-   * T146 + T128 — with batching ON, the five readers compare against ONE
+   * T146 + T128 — with the import ON, the five readers compare against ONE
    * number again (FR-042).
    *
    * There are two ceiling functions and five call sites, and they do not all
@@ -191,35 +194,34 @@ describe('broadcasts-deps — audience mode + ceiling from the flag matrix (108 
    * The per-tick bound does not disappear — it moves to the batch size, which
    * is the assertion below it.
    */
-  it('with batching ON, the enforced ceiling IS the configured one — so all five readers compare against one number', async () => {
-    const { DELIVERABLE_RECIPIENTS_PER_TICK, SPLIT_THRESHOLD_RECIPIENTS } =
-      await import('@/modules/broadcasts/domain/audience-ceiling');
+  it('with the import ON, the enforced ceiling IS the configured one — so all five readers compare against one number', async () => {
+    const { DELIVERABLE_RECIPIENTS_PER_TICK } = await import(
+      '@/modules/broadcasts/domain/audience-ceiling'
+    );
     for (const flags of [
-      { contactMarketing: 'false', batching: true },
-      { contactMarketing: 'true', batching: true },
+      { contactMarketing: 'false', importAudience: true },
+      { contactMarketing: 'true', importAudience: true },
     ] as const) {
       vi.resetModules();
       stubEnv(flags);
       const deps = await loadDeps();
       expect(deps.currentAudienceCeiling()).toBe(deps.configuredAudienceCeiling());
-      // …and the per-tick bound is still enforced, one layer down: the split
-      // threshold is what the batch path cuts at, so no single tick is ever
-      // asked to push more than the measured bound even though the ACCEPTED
-      // ceiling is now 5,000 or 50,000.
-      expect(SPLIT_THRESHOLD_RECIPIENTS).toBeLessThanOrEqual(
-        DELIVERABLE_RECIPIENTS_PER_TICK,
+      // The per-tick bound does not disappear; it stops applying, because one
+      // import call carries any audience. It is asserted below the loop.
+      expect(DELIVERABLE_RECIPIENTS_PER_TICK).toBeLessThan(
+        deps.configuredAudienceCeiling(),
       );
     }
   });
 
   it('SC-004 — the count, submit and dispatch deps carry the SAME mode and ceiling under one env', async () => {
-    stubEnv({ contactMarketing: 'true', batching: true });
+    stubEnv({ contactMarketing: 'true', importAudience: true });
     const deps = await loadDeps();
     const count = deps.makeResolveSegmentDeps('swecham');
     const submit = deps.makeSubmitBroadcastDeps('swecham');
     const dispatch = await deps.makeDispatchScheduledBroadcastDeps('swecham');
     expect(count.audienceMode).toBe('all_contacts');
-    // 50,000 with batching ON: what compose shows must be what submit and
+    // 50,000 with the import ON: what compose shows must be what submit and
     // dispatch enforce. Between T095 and Phase 9b this read 500 — the
     // deliverable bound doubling as the ceiling — because a single tick had to
     // carry the whole audience. It no longer does, so the number a member sees
@@ -238,11 +240,11 @@ describe('broadcasts-deps — audience mode + ceiling from the flag matrix (108 
   // `broadcasts-deps` holds no copy of its own: a fresh env parse yields a
   // fresh answer. `env` memoises, so a flip lands on the next cold start.
   it('broadcasts-deps holds no copy of the flags: a fresh env parse yields a fresh mode and ceiling', async () => {
-    stubEnv({ contactMarketing: 'false', batching: false });
+    stubEnv({ contactMarketing: 'false', importAudience: false });
     const deps = await loadDeps();
     expect(deps.currentAudienceMode()).toBe('primary_only');
     vi.resetModules();
-    stubEnv({ contactMarketing: 'true', batching: true });
+    stubEnv({ contactMarketing: 'true', importAudience: true });
     const fresh = await loadDeps();
     expect(fresh.currentAudienceMode()).toBe('all_contacts');
     expect(fresh.configuredAudienceCeiling()).toBe(50_000);

@@ -276,38 +276,5 @@ describe('cron reconcile-stuck-sending — wire contract', () => {
   // A sweep throw must NOT 500 the tick (the next 15-min tick re-picks it);
   // these pin both the wiring and that 200-on-throw escalation choice.
 
-  it('valid bearer + sweepBatchCompletion throws → still 200 (best-effort, not 500) (speckit-review I-1)', async () => {
-    runInTenantMock.mockImplementation(async (_ctx, fn) =>
-      fn({ execute: async () => [] }),
-    );
-    sweepBatchCompletionMock.mockRejectedValueOnce(new Error('rollup boom'));
-    const { POST } = await import(
-      '@/app/api/cron/broadcasts/reconcile-stuck-sending/route'
-    );
-    const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
-    expect(res.status).toBe(200);
-    // Wiring proof — the roll-up sweep was actually invoked by the route,
-    // and the auto-retry sweep ran first (independent arms; the roll-up
-    // throwing doesn't unwind the already-completed auto-retry arm).
-    expect(sweepAutoRetryFailedBatchesMock).toHaveBeenCalledTimes(1);
-    expect(sweepBatchCompletionMock).toHaveBeenCalledTimes(1);
-  });
 
-  it('valid bearer + sweepAutoRetryFailedBatches throws → still 200 (best-effort, not 500) (speckit-review I-1)', async () => {
-    runInTenantMock.mockImplementation(async (_ctx, fn) =>
-      fn({ execute: async () => [] }),
-    );
-    sweepAutoRetryFailedBatchesMock.mockRejectedValueOnce(
-      new Error('auto-retry boom'),
-    );
-    const { POST } = await import(
-      '@/app/api/cron/broadcasts/reconcile-stuck-sending/route'
-    );
-    const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
-    expect(res.status).toBe(200);
-    expect(sweepAutoRetryFailedBatchesMock).toHaveBeenCalledTimes(1);
-    // The roll-up sweep still runs even after the auto-retry sweep threw
-    // (independent try/catch blocks — one failing arm doesn't skip the next).
-    expect(sweepBatchCompletionMock).toHaveBeenCalledTimes(1);
-  });
 });

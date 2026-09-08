@@ -92,7 +92,6 @@ export const F7_AUDIT_EVENT_TYPES = [
   // because the batch was force-deleted). Separated from the
   // security-forensic `broadcast_cross_tenant_probe` to keep SIEM
   // alerts noise-free. Added via migration 0173.
-  'broadcast_webhook_batch_missing',
 
   // --- Unsubscribe + suppression (US5) — 4 events --------------------
   // All US5-deferred — emit sites land with the public unsubscribe
@@ -127,15 +126,10 @@ export const F7_AUDIT_EVENT_TYPES = [
   // (T031 Phase 2, FR-002 / FR-008a-d). Migration 0167 added these enum
   // values to the DB; this list mirrors the DB enum + data-model § 7
   // taxonomy. All 5y retention via Constitution v1.4.0 trigger.
-  'broadcast_dispatched_in_batches',
-  'broadcast_retry_initiated',
-  'broadcast_retry_completed',
-  'broadcast_partial_delivery_accepted',
   // review-fix F (migration 0220) — system roll-up of a batched broadcast
   // to `partially_sent`. Distinct from the 24h single-audience
   // `broadcast_send_timeout_completed` so name-keyed alerts / the
   // stuck-sending runbook do not misfire on a normal partial roll-up.
-  'broadcast_partially_sent',
 
   // --- F7.1a US2 (Image embedding + allowlist + scan) — 4 events ----
   'broadcast_body_image_source_unsafe',
@@ -196,7 +190,15 @@ export const F7_AUDIT_EVENT_TYPES = [
  * additions", so it summed to 60 while the real count was 59. Don't
  * re-introduce a hand-summed breakdown next to a self-checking assert.)
  */
-type _AssertF7AuditEventCount = (typeof F7_AUDIT_EVENT_TYPES)['length'] extends 61
+// 61 → 55: the batch path was deleted in 108 US5 and took six event types with
+// it (`broadcast_webhook_batch_missing`, `broadcast_dispatched_in_batches`,
+// `broadcast_retry_initiated`, `broadcast_retry_completed`,
+// `broadcast_partial_delivery_accepted`, `broadcast_partially_sent`). They stay
+// in the DB enum — Postgres cannot drop an enum value, and historical rows may
+// carry them — but nothing emits them any more, and the emission-site parity
+// test is what forces this tuple to say so rather than quietly declaring six
+// events that can never appear.
+type _AssertF7AuditEventCount = (typeof F7_AUDIT_EVENT_TYPES)['length'] extends 55
   ? true
   : never;
 const _assertF7AuditEventCount: _AssertF7AuditEventCount = true;
