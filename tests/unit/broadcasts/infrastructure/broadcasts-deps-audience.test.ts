@@ -93,21 +93,61 @@ describe('broadcasts-deps — audience mode + ceiling from the flag matrix (108 
     vi.unstubAllEnvs();
   });
 
-  it.each<[Flags, 'primary_only' | 'all_contacts', number]>([
-    [{ contactMarketing: undefined, batching: false }, 'primary_only', 5_000],
-    [{ contactMarketing: 'false', batching: false }, 'primary_only', 5_000],
-    [{ contactMarketing: 'true', batching: false }, 'all_contacts', 5_000],
+  // `configured` is what the FLAGS say the system would accept — the H-2
+  // decision, still pinned here because it is the only thing that catches an
+  // inverted or mis-spelled flag expression. `enforced` is what call sites
+  // actually compare against: `min(configured, DELIVERABLE_RECIPIENTS_PER_TICK)`
+  // since T095 (2026-09-08), i.e. 800 in every row, because the push cannot
+  // deliver more than ~830 in one 300 s tick at the measured 3.4 req/s.
+  //
+  // Keeping BOTH columns is deliberate. Capping the enforced value alone would
+  // have made every row read 800 and quietly retired the H-2 guard: the flag
+  // expression could then be inverted with no assertion noticing, which is the
+  // exact failure this file was written for.
+  it.each<[Flags, 'primary_only' | 'all_contacts', number, number]>([
+    [{ contactMarketing: undefined, batching: false }, 'primary_only', 5_000, 800],
+    [{ contactMarketing: 'false', batching: false }, 'primary_only', 5_000, 800],
+    [{ contactMarketing: 'true', batching: false }, 'all_contacts', 5_000, 800],
     // The H-2 case: batching ON (as prod is today) with the 108 flag OFF
     // must keep the pre-branch 5,000 — the ceiling belongs to the audience.
-    [{ contactMarketing: undefined, batching: true }, 'primary_only', 5_000],
-    [{ contactMarketing: 'false', batching: true }, 'primary_only', 5_000],
+    [{ contactMarketing: undefined, batching: true }, 'primary_only', 5_000, 800],
+    [{ contactMarketing: 'false', batching: true }, 'primary_only', 5_000, 800],
     // Both ON: the wide ceiling and the wide audience, as one unit.
-    [{ contactMarketing: 'true', batching: true }, 'all_contacts', 50_000],
-  ])('flags %j → mode %s, ceiling %d', async (flags, mode, ceiling) => {
-    stubEnv(flags);
-    const deps = await loadDeps();
-    expect(deps.currentAudienceMode()).toBe(mode);
-    expect(deps.currentAudienceCeiling()).toBe(ceiling);
+    [{ contactMarketing: 'true', batching: true }, 'all_contacts', 50_000, 800],
+  ])(
+    'flags %j → mode %s, configured ceiling %d, enforced ceiling %d',
+    async (flags, mode, configured, enforced) => {
+      stubEnv(flags);
+      const deps = await loadDeps();
+      expect(deps.currentAudienceMode()).toBe(mode);
+      expect(deps.configuredAudienceCeiling()).toBe(configured);
+      expect(deps.currentAudienceCeiling()).toBe(enforced);
+    },
+  );
+
+  it('the enforced ceiling is never above what one dispatch tick can push', async () => {
+    // The invariant, stated independently of the numbers above so that raising
+    // a configured ceiling can never silently raise what is accepted. If the
+    // push is ever made faster (batched multi-tick dispatch, or Resend's
+    // Contacts Import API — T086/T087/T106), raise
+    // DELIVERABLE_RECIPIENTS_PER_TICK and this stays true by construction.
+    const { DELIVERABLE_RECIPIENTS_PER_TICK } = await import(
+      '@/modules/broadcasts/domain/audience-ceiling'
+    );
+    for (const flags of [
+      { contactMarketing: 'false', batching: false },
+      { contactMarketing: 'true', batching: true },
+    ] as const) {
+      vi.resetModules();
+      stubEnv(flags);
+      const deps = await loadDeps();
+      expect(deps.currentAudienceCeiling()).toBeLessThanOrEqual(
+        DELIVERABLE_RECIPIENTS_PER_TICK,
+      );
+      expect(deps.currentAudienceCeiling()).toBeLessThanOrEqual(
+        deps.configuredAudienceCeiling(),
+      );
+    }
   });
 
   it('SC-004 — the count, submit and dispatch deps carry the SAME mode and ceiling under one env', async () => {
@@ -117,7 +157,10 @@ describe('broadcasts-deps — audience mode + ceiling from the flag matrix (108 
     const submit = deps.makeSubmitBroadcastDeps('swecham');
     const dispatch = await deps.makeDispatchScheduledBroadcastDeps('swecham');
     expect(count.audienceMode).toBe('all_contacts');
-    expect(count.audienceCeiling).toBe(50_000);
+    // 800, not 50,000: what compose shows must be what submit and dispatch
+    // enforce, and since T095 that is the deliverable bound, not the
+    // configured one.
+    expect(count.audienceCeiling).toBe(800);
     expect(submit.audienceMode).toBe(count.audienceMode);
     expect(submit.audienceCeiling).toBe(count.audienceCeiling);
     expect(dispatch.audienceMode).toBe(count.audienceMode);
@@ -137,6 +180,7 @@ describe('broadcasts-deps — audience mode + ceiling from the flag matrix (108 
     stubEnv({ contactMarketing: 'true', batching: true });
     const fresh = await loadDeps();
     expect(fresh.currentAudienceMode()).toBe('all_contacts');
-    expect(fresh.currentAudienceCeiling()).toBe(50_000);
+    expect(fresh.configuredAudienceCeiling()).toBe(50_000);
+    expect(fresh.currentAudienceCeiling()).toBe(800);
   });
 });
