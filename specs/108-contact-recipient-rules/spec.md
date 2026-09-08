@@ -209,12 +209,34 @@ When a member composes a broadcast, the estimated number of recipients shown is 
 > **AS2 is consequently NOT satisfied by PR-C, and its gap gates the FLAG
 > FLIP, not this merge**: with `FEATURE_CONTACT_MARKETING_RECIPIENTS=false`
 > the ceiling is 5,000 and the leg is `primary_only`, so no audience above
-> 5,000 is ever accepted and the band is unreachable. Before T094 one of
+> 5,000 is ever accepted and the band is unreachable.
+>
+> **RESTATED 2026-09-08: AS2 is no longer "MISSING" — its premise is now
+> REFUSED BY DESIGN.** "Missing" means a scenario that ought to pass and does
+> not. Since the ceiling clamp, a 6,200-recipient broadcast is rejected at
+> submit with the true count and the enforced ceiling, deliberately and
+> testably, because the push cannot deliver it. AS2 therefore describes a
+> capability this system does not claim: it becomes reachable again only when
+> the push stops being serial (the import build, or batched multi-tick
+> dispatch), at which point `DELIVERABLE_RECIPIENTS_PER_TICK` rises and the
+> scenario can be written honestly. Mirrored in
+> `reviews/task-coverage-review.md`'s US5 row. Before T094 one of
 > three must land — the import build (T086/T087/T106), a split threshold
 > lowered below the measured push ceiling PLUS a wall-clock budget with
 > resume in `addContactsToAudience`, or an explicit submit-time refusal above
 > `300 s × measured req/s − margin`. Recorded as a precondition in
 > `reviews/pr-c.md` row 33.
+>
+> **CLOSED 2026-09-08 — the third option landed.** T095 measured the push at
+> ~3.4 req/s (account limit 10 req/s, but a serial `await` loop reaches only
+> `min(limit, 1/RTT)` on a ~0.29 s round trip), so
+> `DELIVERABLE_RECIPIENTS_PER_TICK = 800` and
+> `currentAudienceCeiling() = min(configuredAudienceCeiling(), 800)`. Compose,
+> submit and dispatch now refuse above what one tick can push, in every flag
+> state. **And the sentence above is itself corrected**: "unreachable while the
+> flag is OFF" was wrong — at 3.4 req/s the band starts near 830, below the
+> 5,000 ceiling enforced with the flag OFF, so it was never the "5,001–10,000
+> slice the flip adds" and the fix was owed regardless of the flip.
 >
 > `broadcast_status` gains NO `audience_building` value in PR-C.
 

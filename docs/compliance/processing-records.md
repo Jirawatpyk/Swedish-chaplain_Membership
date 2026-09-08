@@ -133,6 +133,26 @@ business categorisation, not special-category PII.
   either the system sends a notice to a new secondary on first marketing
   contact, or the FR-027a pre-flight step verifies the attestation per
   contact.
+
+  **Gate EVALUATED 2026-09-08 10:45 (Asia/Bangkok) — satisfied VACUOUSLY.**
+  A read-only inventory of production
+  (`scripts/inventory-primary-contact-invariant.ts`, counts only, no PII)
+  returned **150 members / 150 primary contacts / 0 secondary contacts / 0
+  `marketing_unsubscribes` / 0 invariant violations**. With no secondary
+  contact in existence there is no data subject the chamber has not
+  informed, and the FR-027a pre-flight page renders an empty list. The gate
+  is therefore met — by the absence of the population it protects, not by a
+  notice being sent. Recorded with the count rather than as "n/a" because
+  the finding is a measurement and measurements expire.
+
+  **This evaluation LAPSES the moment SweCham's secondary-contact import
+  lands** — an imported marketing list is by definition a population that
+  gave its addresses to someone other than the chamber, which is exactly
+  what Art. 14 governs. Before the first marketing send after that import,
+  re-run the inventory and satisfy this gate the real way: either ship the
+  first-contact notice, or attest per contact through the FR-027a pre-flight.
+  Sign-off surface: `docs/go-live-readiness.md` § 6.9; full record:
+  `specs/108-contact-recipient-rules/reviews/cutover.md` § 2–3.
 - **Per-contact marketing preference** (108 PR-D, 2026-09-06) — a NEW
   processing activity: `contacts.marketing_opt_out_at` /
   `marketing_opt_out_source` (`staff` | `self`) /

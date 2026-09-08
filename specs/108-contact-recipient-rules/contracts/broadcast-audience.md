@@ -74,6 +74,25 @@ applies in both modes (FR-021).
 belongs to the wide audience; with the 1:N flag OFF the ceiling is 5,000 whatever the batching
 flag says — prod has batching ON). Read at one composition site; submit, count and dispatch
 compare against the same number.
+
+**Amended 2026-09-08 (T095): that is the CONFIGURED ceiling, and it is no longer what is
+enforced.** The composition root exposes both and clamps:
+
+```
+configuredAudienceCeiling()  = audienceCeiling(isF71aUs1Enabled() && contactMarketingRecipients)
+currentAudienceCeiling()     = min(configuredAudienceCeiling(), DELIVERABLE_RECIPIENTS_PER_TICK)
+DELIVERABLE_RECIPIENTS_PER_TICK = 800
+```
+
+Every caller reads `currentAudienceCeiling()`, so submit, count and dispatch still compare
+against ONE number — FR-042 is unchanged. The clamp exists because the configured ceiling
+exceeded what a dispatch tick can push: the serial per-contact loop runs at a measured
+~3.4 req/s (`min(10 req/s account limit, 1 / 0.29 s round trip)`), i.e. ~830 in a 300 s budget,
+and Resend's Free plan independently caps usable contacts near 987. `configuredAudienceCeiling()`
+stays separately exported and separately pinned so the H-2 flag-expression guard survives the
+clamp. **Consequence: nothing can reach `SPLIT_THRESHOLD_RECIPIENTS`, so the split path is
+unreachable** — no capability is lost, because `dispatch-batches` runs the same serial push under
+the same `maxDuration = 300`.
 `split-large-broadcasts` threshold stays 10,000 (< ceiling when ON). DB CHECK
 `broadcasts_estimated_recipient_cap (0..50000)` unchanged.
 

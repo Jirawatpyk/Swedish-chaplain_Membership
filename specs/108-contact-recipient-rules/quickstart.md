@@ -123,15 +123,29 @@ Before opening any PR: `pnpm lint && pnpm typecheck && pnpm check:i18n && pnpm v
    secondary contact on first marketing contact, OR the FR-027a pre-flight above verifies
    the attestation per contact. A secondary who never gave their address to the chamber
    directly is a data subject the chamber has not yet informed.
-3b. **Push-capacity gate (staff review 🔴).** The 1:N ceiling accepts up to 50,000, but the
-   dispatch push is a serial one-contact-at-a-time loop at ~2 req/s inside a 300 s
-   function budget, and `split-large-broadcasts` skips anything at or below 10,000 — so a
-   broadcast in that band is accepted and then never delivered. Before flipping, land ONE
-   of: the import build (T086/T087/T106); a lowered `SPLIT_THRESHOLD_RECIPIENTS` **plus** a
-   wall-clock budget with resume in `addContactsToAudience`; or an explicit submit-time
-   refusal above `300 s × measured req/s − margin`. Measure the team's real req/s
-   (Settings → Usage, T095) and record the number in `reviews/pr-c.md` row 33. At
-   SweCham's ~150 members × 3 contacts this is ~225 s against 300 s — no margin.
+3b. **Push-capacity gate (staff review 🔴) — ✅ CLOSED IN CODE 2026-09-08. No operator action.**
+   `DELIVERABLE_RECIPIENTS_PER_TICK = 800` in
+   `src/modules/broadcasts/domain/audience-ceiling.ts`, and the composition root now enforces
+   `currentAudienceCeiling() = min(configuredAudienceCeiling(), 800)` — so compose, submit and
+   dispatch all refuse above what one 300 s tick can actually push. This is option (c) of
+   `reviews/pr-c.md` row 33, writable only after T095 measured the number.
+
+   ~~The 1:N ceiling accepts up to 50,000, but the dispatch push is a serial
+   one-contact-at-a-time loop at ~2 req/s inside a 300 s function budget, and
+   `split-large-broadcasts` skips anything at or below 10,000 — so a broadcast in that band
+   is accepted and then never delivered. Before flipping, land ONE of: the import build
+   (T086/T087/T106); a lowered `SPLIT_THRESHOLD_RECIPIENTS` plus a wall-clock budget with
+   resume; or an explicit submit-time refusal. At SweCham's ~150 members × 3 contacts this is
+   ~225 s against 300 s — no margin.~~
+
+   **Two corrections in the struck text, both worth carrying forward.** The rate was wrong:
+   T095 measured the account limit at **10 req/s** (`ratelimit-policy: 10;w=1`, read from the
+   API), but the serial loop only reaches `min(limit, 1/RTT)` and the warm round trip is
+   ~0.29 s — so ~**3.4 req/s**, latency-bound. And the band was wrong: at 3.4 req/s it starts
+   near **830**, which is *below* the 5,000 ceiling enforced with the flag OFF — so this was
+   never "the 5,001–10,000 slice the flip adds", and the fix was worth shipping regardless of
+   the flip. SweCham's post-import ~450 contacts push in ~132 s of the 300 s budget.
+   (Detail: `research.md` § R9 T095 block; `reviews/cutover.md` § 5 / § 5a.)
 4. Flip `FEATURE_CONTACT_MARKETING_RECIPIENTS=true` in Vercel; redeploy.
 5. First send — watch the five signals PR-C ships (the `audience_import_status` gauge went
    with the deferred T086 and does not exist):
