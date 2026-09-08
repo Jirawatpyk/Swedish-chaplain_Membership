@@ -325,8 +325,17 @@ async function submitImport(
     });
   }
 
+  // S48 — time the one call the whole design rests on. Nothing measured it
+  // before, so neither the ~412 ms it is sized against nor the 30-minute stuck
+  // threshold derived from it was checkable in production.
+  const submitStartedAt = Date.now();
   const submitted = await viaGateway(() =>
     deps.broadcastsGateway.createContactImport(audienceId, resolved.value.recipients),
+  );
+  broadcastsMetrics.audienceImportSubmitMs(
+    deps.tenant.slug,
+    Date.now() - submitStartedAt,
+    submitted.ok ? 'ok' : 'failed',
   );
   if (!submitted.ok) return onGatewayFailure(deps, input, broadcast, submitted.error, null);
 

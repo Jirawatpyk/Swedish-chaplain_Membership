@@ -2397,6 +2397,36 @@ export const broadcastsMetrics = {
   },
 
   /**
+   * `broadcasts.audience_import_submit_ms{tenant}` — 108 Phase 9 review S48.
+   *
+   * How long the ONE multipart Contacts-Import call takes. Nothing timed it
+   * before: the whole design rests on that call being size-independent at
+   * roughly 412 ms, and the 30-minute stuck threshold rests on it too, yet
+   * neither number was observable in production. A design constant that cannot
+   * be checked against reality is an assumption with a decimal point.
+   *
+   * Deliberately has **no SLO row and no alert yet** — a target needs data
+   * first, and picking one from the same measurement the code was written
+   * against would only restate the assumption. Recorded on both outcomes so a
+   * slow failure is not invisible to the histogram, which is the mistake
+   * `recipientCountMs` above documents having made once.
+   *
+   * The number to compare against is `research.md` § R9's warm round trip,
+   * measured from a Bangkok workstation against a ~220 ms-RTT link. Vercel
+   * `sin1` sits beside Neon and does not pay that, so a prod p50 well under the
+   * measured figure is the expected shape, not a surprise.
+   */
+  audienceImportSubmitMs(tenantId: string, ms: number, outcome: 'ok' | 'failed'): void {
+    safeMetric(() => {
+      histogram(
+        'broadcasts_audience_import_submit_ms',
+        'Duration of the single Contacts-Import multipart call (no SLO target set yet — see S48)',
+        'ms',
+      ).record(ms, { tenant: tenantId, outcome });
+    });
+  },
+
+  /**
    * `broadcasts.audience_import_stuck_count{tenant}` — 108 US5 (T106, FR-044 f):
    * broadcasts whose Resend Contacts-Import was submitted, never completed, and
    * is older than `IMPORT_STUCK_AFTER_MS` (30 min).
