@@ -308,6 +308,92 @@ Modular monolith: `src/modules/<context>/{domain,application,infrastructure}`, p
 
 ---
 
+## Phase 9b: Deliverable batches — audiences above one tick deliver across ticks
+
+**Decision (maintainer, 2026-09-08 16:42)**: build this NOW, on PR #352, rather than when SweCham's
+import lands — it is the deferred wall-clock half of FR-044 and belongs in the polish phase.
+Rejected alternative: leave `DELIVERABLE_RECIPIENTS_PER_TICK = 500` as a hard ceiling and revisit
+at import time (the maintainer's objection: a growing chamber should not hit an engineering wall
+that needs a code change; headcount should be a billing decision).
+
+**Purpose**: `DELIVERABLE_RECIPIENTS_PER_TICK` stops being the CEILING and becomes the BATCH SIZE.
+With batching on, the enforced ceiling returns to the configured 5,000 / 50,000; anything above
+one tick's capacity splits and delivers across ticks through the manifest machinery F7.1a already
+ships. Headcount then binds on the Resend plan (Free: 1,000 contacts / 3 audiences; Pro: 5,000 /
+unlimited), which is the lever the maintainer asked for.
+
+**Facts this phase rests on — every one verified 2026-09-08, none assumed** (detail in
+`reviews/cutover.md` § 5 / § 5a and `quickstart.md` § Dev rehearsal):
+
+- `POST /contacts` mean **481 ms** over 15 serial samples (p95 894, zero 429s) → **2.08 req/s** →
+  ~623 in a 300 s tick → 500 with a 20 % margin. `GET /audiences` had said 290 ms; writes are
+  ~1.7× slower. Mean is the statistic: a serial loop of N requests takes N × mean.
+- **Each batch creates its own Resend audience** (`dispatch-broadcast-batch.ts:264`
+  `createAudience → addContactsToAudience → createBroadcast → sendBroadcast`).
+- **`batch-dispatcher.ts` queues ALL pending batches and its workers pull until the queue is empty**
+  (`services/batch-dispatcher.ts` — `const queue = [...input.pendingBatches]`, `for (;;) {
+  queue.shift() … }`, `Promise.allSettled(workers)`). With ~240 s batches a SECOND wave starts at
+  ~240 s and is killed at `maxDuration = 300`; the manifest stays `pending`, and the next tick
+  re-pushes it from index 0 into a NEW audience — an orphan audience plus a full batch of contact
+  quota burned per retry. Free plan holds 1,000 contacts. This is the "resume half" `reviews/pr-c.md`
+  row 33 said is "not optional".
+- **Two crons can claim the same row.** `dispatch-scheduled/route.ts:125-132` selects every
+  `approved` row with **no predicate on `estimated_recipient_count`**; `split-large-broadcasts`
+  selects `> SPLIT_THRESHOLD_RECIPIENTS`; `splitBroadcastIntoBatches` does **not** transition the
+  broadcast's status. `FOR UPDATE SKIP LOCKED` stops CONCURRENT claims, not sequential ones — if
+  `dispatch-scheduled` runs first on a 600-recipient row it pushes 600 serially and dies at 300 s.
+  Moot today (nothing above 10,000 exists); live the moment the threshold drops to 500. Row 33 had
+  flagged this ("the two `*/5` crons' shared `approved` predicate once audiences > 10,000 are
+  accepted").
+- `computeBatchRanges(count, perBatchCap = RESEND_PER_AUDIENCE_CAP)` already takes the cap as a
+  parameter (`domain/value-objects/batch-boundary.ts:90-93`); `splitBroadcastIntoBatches` passes
+  `RESEND_PER_AUDIENCE_CAP` (10,000) at `split-broadcast-into-batches.ts:110`.
+- `dispatch_concurrency_cap` is a per-tenant setting, default 4, range 1–8
+  (`domain/policies/batch-concurrency-policy.ts`). 4 × 2.08 = 8.3 req/s fits the 10 req/s policy;
+  8 × 2.08 = 16.6 does not — and on Free, 4 concurrent audiences + `General` = 5 > 3.
+- `auto-retry-failed-batches.ts` has a 5-attempt budget; `retry-failed-batches.ts` 3 manual. Whether
+  either re-queues a batch whose failure was classified `permanent` (a 4xx at the contact cap) is
+  **unverified** — T130 checks it, because 5 automatic retries of a permanent 4xx would create 5
+  audiences and burn 5 × 500 contacts.
+- The import API is NOT this phase. It works (`POST /contacts/imports` 201 in 458 ms,
+  size-independent, `status: completed` in ~270 ms with honest `counts`) but it creates contacts in
+  **Global Contacts and does not associate them with the `audience_id` passed** — verified twice,
+  the second time with never-seen addresses and a 5 s settle. Bridging that is the segments
+  migration, i.e. T110 + `resend` 4.8 → 6.x. Not a quick close.
+
+**Not in scope**: concurrency above 4; the import API; any change to `RESEND_PER_AUDIENCE_CAP`
+(Resend's own per-audience limit — it stays as the hard upper bound the batch size must not exceed).
+
+### Tests for Phase 9b (RED first — commit red)
+
+- [ ] T126 [P] Unit RED `tests/unit/broadcasts/domain/audience-ceiling.test.ts`: (a) `SPLIT_THRESHOLD_RECIPIENTS === DELIVERABLE_RECIPIENTS_PER_TICK`; (b) `DELIVERABLE_RECIPIENTS_PER_TICK <= RESEND_PER_AUDIENCE_CAP`; (c) `SPLIT_THRESHOLD_RECIPIENTS < audienceCeiling(true)` stays. **REPLACE** the pin `SPLIT_THRESHOLD_RECIPIENTS > audienceCeiling(false)` — it is false once the threshold is 500, and its premise ("with batching OFF nothing is ever split because nothing above 5,000 is accepted") is restated by T128 as "with batching OFF the enforced ceiling equals the threshold, so nothing above it is accepted"
+- [ ] T127 [P] Unit RED for `splitBroadcastIntoBatches` (find or create its unit file next to `tests/unit/broadcasts/batch-boundary.test.ts`): batches are sized at `DELIVERABLE_RECIPIENTS_PER_TICK`, never `RESEND_PER_AUDIENCE_CAP` — 1,200 → `[500, 500, 200]`; 500 → `[500]`; 501 → `[500, 1]`; 50,000 → 100 batches. Pin the range boundaries the way `batch-boundary.test.ts` does
+- [ ] T128 [P] Unit RED `tests/unit/broadcasts/infrastructure/broadcasts-deps-audience.test.ts`: the `enforced` column becomes `batching ? configured : min(configured, DELIVERABLE)` — rows `(any 1:N, batching:false) → 500`, `(1:N off, batching:true) → 5_000`, `(1:N on, batching:true) → 50_000`. KEEP the `configured` column (the H-2 guard). Restate the invariant case: with batching OFF, `enforced <= DELIVERABLE`; with batching ON, `enforced <= configured` AND `SPLIT_THRESHOLD_RECIPIENTS <= DELIVERABLE` (delivery is per batch, so the per-tick bound moves to the batch size)
+- [ ] T129 [P] Unit RED `tests/unit/broadcasts/application/batch-dispatcher.test.ts` (create if absent): **one wave per invocation** — 10 pending with `concurrencyCap: 4` → exactly 4 outcomes, 6 batches untouched (never passed to `dispatchBroadcastBatch`), output carries `deferredToNextTick: 6`; 3 pending with cap 4 → 3 outcomes, `deferredToNextTick: 0`; cap 1 → strictly serial. Use a stub `dispatchBroadcastBatch` that records calls
+- [ ] T130 Unit RED (verify-then-pin) `auto-retry-failed-batches` + `retry-failed-batches`: a batch whose last failure is `permanent` is NOT re-queued by auto-retry; a `retryable` one is. If the code already does this, the test pins it; if it does not, this is a real fix (contact-quota burn on Free) and the test goes RED first
+- [ ] T131 Contract RED `tests/contract/broadcasts/cron-dispatch-scheduled*.test.ts` (find the existing one): a row with `estimated_recipient_count > SPLIT_THRESHOLD_RECIPIENTS` is **NOT** selected by `dispatch-scheduled` — it belongs to `split-large-broadcasts`. And `cron-split-large-broadcasts.contract.test.ts`: a 600 row IS selected and split, a 500 row is not. Update both mocks' `configuredAudienceCeiling` / `currentAudienceCeiling` forwarding fixtures + comments to the new semantics
+- [ ] T132 Integration RED `tests/integration/broadcasts/deliverable-batches-multi-tick.test.ts` (live Neon; a recording fake gateway, as the contract tests use — NOT real Resend): seed a broadcast with 1,200 resolved recipients → `splitBroadcastIntoBatches` → 3 manifests `[500, 500, 200]` all `pending` → `dispatchAllPendingBatches` with `concurrencyCap: 2` → exactly 2 `sent_to_resend`, 1 still `pending`, `deferredToNextTick: 1`, fake gateway saw ≤ 500 contacts per `addContactsToAudience` and exactly 2 `createAudience` → second invocation → the last batch sent, 3 audiences total, no manifest pushed twice (idempotency key) → roll-up leaves the broadcast `sent`. Model the seeding on `pagination-7500-end-to-end.test.ts` (throwaway ids, per-test cleanup)
+
+### Implementation for Phase 9b (GREEN — commit green)
+
+- [ ] T133 `src/modules/broadcasts/domain/audience-ceiling.ts`: `export const SPLIT_THRESHOLD_RECIPIENTS = DELIVERABLE_RECIPIENTS_PER_TICK;` (derived, not a second literal). Rewrite BOTH docblocks: the constant is now the batch size and the split threshold; the "5,001–10,000 IS a gap" paragraph becomes history ("was a gap until Phase 9b — the batch size now equals what one tick can push, so nothing falls between the threshold and the batch cap"); keep the T095 measurement + caveats + the Principle III note; add that it MUST stay ≤ `RESEND_PER_AUDIENCE_CAP`
+- [ ] T134 `src/modules/broadcasts/application/use-cases/split-broadcast-into-batches.ts:110`: `computeBatchRanges(input.resolvedRecipientCount, DELIVERABLE_RECIPIENTS_PER_TICK)`; keep the `MAX_RECIPIENT_COUNT` guard; docblock says why the cap is the tick bound, not Resend's audience limit
+- [ ] T135 `src/modules/broadcasts/infrastructure/broadcasts-deps.ts` `currentAudienceCeiling()`: `isF71aUs1Enabled() ? configuredAudienceCeiling() : Math.min(configuredAudienceCeiling(), DELIVERABLE_RECIPIENTS_PER_TICK)`. Docblock: the clamp exists ONLY for the single-tick path; with batching on, everything above the threshold splits, so `dispatch-scheduled` never sees more than one tick's worth. The two batch crons keep reading `configuredAudienceCeiling()` (T-review 2026-09-08 — a per-tick clamp is not their bound)
+- [ ] T136 `src/modules/broadcasts/application/services/batch-dispatcher.ts`: **one wave per invocation** — take `input.pendingBatches.slice(0, cap)` as the queue; the remainder is neither dispatched nor touched; output gains `deferredToNextTick`. Docblock states the reason in one paragraph (a second wave is killed at `maxDuration`, stranding a half-pushed audience and re-burning the whole batch's contact quota on the retry) so the next person does not "optimise" it back
+- [ ] T137 `src/app/api/cron/broadcasts/dispatch-scheduled/route.ts:125-132`: add `AND estimated_recipient_count <= ${SPLIT_THRESHOLD_RECIPIENTS}` to the claim query (import the constant through the barrel). Comment: rows above the threshold belong to `split-large-broadcasts`; without this predicate the two `*/5` crons race for the same `approved` row and the serial push loses at 300 s
+- [ ] T138 `src/app/api/cron/broadcasts/dispatch-batches/route.ts`: log + count `deferredToNextTick` per broadcast (`broadcasts_batches_deferred_total{tenant}` or fold into the existing summary — check `src/lib/metrics.ts` for the batch counters first); fix the route header docblock (the "per INVOCATION … up to `concurrencyCap` in flight" note now says one wave per tick and why)
+- [ ] T139 If T130 went RED: gate auto-retry on `retryable` failures only; a `permanent` failure leaves the batch `failed` for manual review with its reason in the audit payload
+
+### Docs + gates for Phase 9b
+
+- [ ] T140 Docs, all in the same commit as GREEN so no artefact describes the pre-9b state (the T098 lesson — a clamp shipped at 13:00 left five documents false until 14:30): `quickstart.md` § Rollback matrix row C item (10) → "500 is the BATCH SIZE; the enforced ceiling is the configured 5,000 / 50,000 with batching on, 500 with it off" + a NEW operator line: **on Resend Free set `tenant_broadcast_settings.dispatch_concurrency_cap = 2`** (3 audiences minus `General`), and above ~1,000 contacts the plan is the limit — batches beyond it fail loudly with an audit row, and that is the intended signal to upgrade; `reviews/cutover.md` § 5 ("closed in code" → "closed, then removed as a ceiling by Phase 9b"), § 5a table; `contracts/broadcast-audience.md` § 3; `docs/runbooks/broadcast-audience-build.md` remedy #2 — UN-strike it, batching IS the remedy again, and add the concurrency-cap note; `docs/runbooks/cron-jobs.md` (the "prod's ceiling today is 500" line); `.env.example`; `CLAUDE.md` § Recent Changes; `spec.md` FR-041 note and **US5 AS2** — 6,200 with batching ON is REACHABLE again (13 batches across ticks); flip its status from "REFUSED BY DESIGN" to "TESTED BY T132 at 1,200; 6,200 needs Pro" and mirror in `reviews/task-coverage-review.md`; `reviews/pr-c.md` row 33 → option **(b)** landed (lowered threshold + one-wave-per-tick resume), not (c); `docs/contacts-primary-secondary-gap-analysis.md` § 10 item 2/3
+- [ ] T141 Gates: `pnpm typecheck` · `pnpm lint` · `pnpm check:i18n` · `pnpm vitest run tests/unit/broadcasts tests/contract/broadcasts` · `pnpm test:integration tests/integration/broadcasts/deliverable-batches-multi-tick.test.ts` · then `git push` (pre-push runs the whole `tests/integration/broadcasts/` folder — do NOT `SKIP_INTEGRATION_PREPUSH`). Then `reliability-guardian` (opus) + `whole-branch-reviewer` (fable) before PR #352 is re-declared MERGEABLE; run the outbox inventory once more before merge
+- [ ] T142 Post-merge observation (no code): confirm on prod that a 150-recipient send still takes `dispatch-scheduled` (150 ≤ 500) — i.e. nothing changes for SweCham until an audience exceeds 500, at which point it splits. Record in `reviews/cutover.md` § 4
+
+**Phase 9b dependencies**: T126–T132 in parallel (different files) → T133 → T134 → T135 → T136 → T137 → T138 → T139 (sequential, shared module) → T140 in the SAME commit as the last GREEN → T141 → T142 after merge.
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
@@ -318,6 +404,7 @@ Modular monolith: `src/modules/<context>/{domain,application,infrastructure}`, p
 - **US4 (Phase 5) + US6 (Phase 6) = PR-D**: depend on Foundational; independent of US1/US2 at the code level (they may land in any order after A and B, but the plan sequences A → B → D).
 - **US3 (Phase 7) + US5 (Phase 8) = PR-C**: depend on **US4** (contact marketing columns from T048–T051; audience page from T058 for FR-027a) and on T006. US5 depends on US3's resolver (T076).
 - **Polish (Phase 9)**: T093–T094 after PR-C is deployed; T099 after the clean week; T096 before T094.
+- **Deliverable batches (Phase 9b, added 2026-09-08)**: on PR #352, after the T095 measurement and the `DELIVERABLE_RECIPIENTS_PER_TICK` clamp (both landed). T126–T132 RED in parallel → T133–T139 GREEN sequentially → T140 docs in the same commit → T141 gates → T142 after merge. Independent of T094: the flip needs none of it (0 secondaries today), and it needs no flip.
 
 ### User Story Dependencies
 
