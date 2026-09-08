@@ -274,6 +274,7 @@ page cloned from the members directory pattern.
 | **#2 — Principle X: temporary `FEATURE_CONTACT_MARKETING_RECIPIENTS` flag + `primary_only` resolver leg (PR-C → follow-up deletion)** | The audience change is the one behaviour a code rollback cannot undo once a send has gone out; FR-027a requires a staff pre-flight review before the first send under the new rule | Flip-on-merge was rejected: no operator gate between deploy and the first E-Blast to newly eligible contacts. The flag is read in one composition site, passed as a parameter (Domain pure), parameterised in tests (both legs), and its deletion is a named task after one clean week. |
 | **#3 — Principle III (note, not a deviation): the members-module `MarketingSuppressionLookupPort` adapter is composed in `src/lib/contact-marketing-deps.ts`, not in `members-deps.ts`** | `setContactMarketingOptOut` must refuse "on" for a suppressed address, and suppression is owned by broadcasts, which already imports the members barrel (`members-bridge.ts`) | Implementing the adapter inside `members-deps.ts` would create a members↔broadcasts barrel cycle (066 barrel-cycle class, breaks tsx scripts and client bundles). `src/lib` is the sanctioned composition layer (Principle III "barrel-rule-exempt by constitution", precedent `events-csv-import-deps.ts`). Duplicating the suppression read inside members was rejected: two readers of one GDPR record drift. |
 | **#4 — Development-workflow: migration 0293 carries a data pre-check that fails the deploy if any active member already violates the invariant** | Prod migrates automatically on deploy; a trigger created over violating rows would make every later contact write on those members fail | A silent backfill (auto-promote a contact) was rejected: it silently chooses who receives money emails. Instead V1 (read-only prod inventory) is a named operator task BEFORE PR-B merges, and the pre-check is the technical enforcement that the task actually ran. |
+| **#5 — Principle III (layering, not imports): `DELIVERABLE_RECIPIENTS_PER_TICK` is an Infrastructure fact in `domain/audience-ceiling.ts`** (added 2026-09-08, `/speckit.analyze` C1) | The constant encodes Resend's measured write latency (481 ms → 2.08 req/s), Vercel's `maxDuration = 300` and the Resend plan tier — none of them Domain concepts. It is a bare number with no import, so the constitution's import rule (:410) is not breached; the deviation is where the *contract* lives. It sits in Domain because the clamp must compare it against `audienceCeiling()` and `SPLIT_THRESHOLD_RECIPIENTS`, which already carried provider facts (5,000 / 50,000 / 10,000) in that file before 108, and because `tests/unit/broadcasts/domain/audience-ceiling.test.ts` pins all three together. | **Rejected for now: moving all three to `infrastructure/`** next to the gateway that was measured. Correct in principle; deferred because Phase 9b's T133 rewrites this file and the barrel anyway, and moving it in the same change as the batch-size semantics would mix a layering refactor into a behaviour change on a live dispatch path. Decision hook: T133 either moves the three constants (retiring this row) or keeps them here and leaves this row standing. |
 
 ## Post-Design Constitution Re-check (after Phase 0 + Phase 1 artefacts)
 
@@ -283,8 +284,10 @@ migration 0298 — DEFERRED 2026-09-07 with T086/T087/T106, never authored — w
 earlier working-table idea was dropped after Resend's Contacts Import API was verified —
 research R9, corrected 2026-09-04). The import-based audience build is a reliability
 requirement surfaced by research, not speculative scope: the serial push cannot finish 5,000
-contacts inside the 300 s function budget even at the documented 10 req/s. The four Complexity Tracking entries are the
-complete deviation set. **GATE: PASS.**
+contacts inside the 300 s function budget even at the documented 10 req/s. ~~The four Complexity Tracking entries are the
+complete deviation set.~~ **Five, since 2026-09-08 — #5 records the layering deviation the
+Phase-9 clamp introduced** (`/speckit.analyze` C1; decision hook in Phase 9b T133).
+**GATE: PASS.**
 
 ## Phase Outputs
 

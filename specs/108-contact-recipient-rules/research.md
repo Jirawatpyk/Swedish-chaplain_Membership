@@ -330,14 +330,35 @@ affects F7's `audienceId`-based gateway (R16).
 > `min(account_limit, 1 / RTT)` and the warm RTT is **~0.29 s**:
 >
 > ```
-> throughput   = min(10, 1/0.29)  ≈  3.4 req/s      ← latency-bound, not plan-bound
-> per_tick_max = 300 s × 3.4 × 0.8 ≈ 830 contacts   (20 % margin)
+> throughput   = min(10, 1/0.29)  ≈  3.4 req/s      ← from GET /audiences — SUPERSEDED, see below
+> per_tick_max = 300 s × 3.4 × 0.8 ≈ 830 contacts   (20 % margin)                 ← SUPERSEDED
 > ```
 >
-> **Using the documented 10 req/s as a capacity input overestimates by ~3×.** The undeliverable
-> band therefore starts near **~830–1,000 recipients**, not at the 5,001 the review reasoned
-> about — i.e. **below the 5,000 ceiling enforced today**, so the exposure predates the 108 flag
-> exactly as `plan.md:268` claimed.
+> ### CORRECTED 2026-09-08 15:00 — the verb was wrong, and this is the CANONICAL derivation
+>
+> The sample above used `GET /audiences` because nothing had ever been dispatched and a read was
+> the only probe available. Rehearsal ② (`quickstart.md` § Dev rehearsal) then dispatched a real
+> broadcast, and **15 serial samples of `POST /contacts` — the verb `addContactsToAudience`
+> actually calls —** came back at:
+>
+> ```
+> mean 481 ms   median 420 ms   p95 894 ms   min 380 ms   zero 429s across all 15
+> throughput   = min(10, 1/0.481)  ≈  2.08 req/s     ← latency-bound; writes ~1.7× slower than reads
+> one tick     = 300 s × 2.08       ≈  623 contacts
+> per_tick_max = 623 × 0.8          ≈  499  →  DELIVERABLE_RECIPIENTS_PER_TICK = 500
+> ```
+>
+> Mean is the statistic (a serial loop of N requests takes N × mean, not N × p95). Caveat 2
+> below — "GET latency, not POST" — turned out to be worth ~300 recipients. **Every other file
+> that states this number (`domain/audience-ceiling.ts`, its unit test, `reviews/cutover.md`
+> § 5a, `tasks.md` Phase 9b) cites THIS block; do not restate the arithmetic elsewhere, point
+> here** (analyze 2026-09-08 D1 — five restatements had drifted by rounding and one was wrong).
+>
+> **Using the documented 10 req/s as a capacity input overestimates by ~5×.** The undeliverable
+> band therefore starts near **~623 recipients**, not at the 5,001 the review reasoned about —
+> i.e. **well below the 5,000 ceiling enforced before the clamp**, so the exposure predates the
+> 108 flag exactly as `plan.md:268` claimed. The year-old "~2 req/s" comment was right about the
+> effect and wrong only about the cause (it read as an account cap; the account allows 10).
 >
 > Three caveats, all of which push the true number DOWN, not up:
 > 1. Measured from a Bangkok workstation, not from Vercel `sin1`. Re-check on the first real send.
@@ -346,12 +367,27 @@ affects F7's `audienceId`-based gateway (R16).
 > 3. Four warm samples (281–300 ms, tight), one cold. Handshake is only ~37 ms, so connection
 >    reuse is not the lever — the ~285 ms is the server round trip itself.
 >
-> One thing this settles cheerfully: at 3.4 req/s the loop never approaches the 10 req/s policy,
-> so `withRetry`'s reactive 429 backoff never fires in normal operation.
+> One thing this settles cheerfully: at 2.08 req/s the loop never approaches the 10 req/s policy
+> (zero 429s in 15 consecutive writes), so `withRetry`'s reactive 429 backoff never fires on the
+> serial `dispatch-scheduled` path. It DOES fire on `dispatch-batches`, where `batch-dispatcher.ts`
+> runs up to `concurrencyCap` (default 4) serial loops in parallel — 4 × 2.08 ≈ 8.3 req/s fits,
+> 8 × 2.08 ≈ 16.6 does not (`MAX_CONCURRENCY_CAP = 8` exceeds the policy at this batch size).
 >
-> **SweCham today** (measured 2026-09-08: 150 primaries, 0 secondaries): 150 ÷ 3.4 ≈ **44 s** of
-> a 300 s budget — 15 %. **Post-import** (~150 members × 3 contacts ≈ 450): ≈ **132 s**, 44 %.
-> Both fit. The gap is between ~830 and whatever ceiling is enforced.
+> **SweCham today** (measured 2026-09-08: 150 primaries, 0 secondaries): 150 ÷ 2.08 ≈ **72 s** of
+> a 300 s budget — 24 %. **Post-import** (~150 members × 3 contacts ≈ 450): ≈ **216 s**, 72 %.
+> Both fit under 500, the second with little room. The gap is between ~623 and whatever ceiling
+> is enforced — closed by the clamp, and reopened as the batch size by Phase 9b.
+>
+> ### V4 — does the Contacts Import API attach contacts to the target audience? (OPEN)
+>
+> Two probes on 2026-09-08 (`POST /contacts/imports`, 201 in 418–458 ms, `status: completed`
+> in ~270 ms, `counts` honest) created contacts that did NOT appear in
+> `GET /audiences/{id}/contacts` — **but both sent the field as `audience_id`**, while contract
+> § 4 specifies multipart `segments=[<audience id>]`. So the only verified statement is "does not
+> attach when passed as `audience_id`". **T145 re-probes with the contract's field and records
+> the answer here.** If it attaches: the import build (T086/T087/T106) is a ~2-call,
+> size-independent push and retires batch sizing. If it does not: the working-table design in
+> `data-model.md` § 2.5 stands, and Phase 9b's T143 drift-halt is the interim for FR-044 (a)/(d).
 >
 > ### T095 addendum — the account is on Resend's **FREE** plan, and that binds first
 >
@@ -371,7 +407,7 @@ affects F7's `audienceId`-based gateway (R16).
 > (`resend-broadcasts-gateway.ts:12,158`), and `dispatch-scheduled-broadcast.ts:21-22` transitions
 > the broadcast to `failed_to_dispatch` with an audit event. **That is the good failure mode**: it
 > fails loudly and terminally in one tick instead of sitting in `approved` being killed mid-push
-> forever. The wall-clock bound (~830) and the plan bound (~987) land within 20 % of each other by
+> forever. The wall-clock bound (~623) and the plan bound (~987) land within ~40 % of each other by
 > coincidence; both say the same thing about where the safe ceiling is.
 >
 > **2. Three segments means at most THREE audiences can exist at once — and one is already taken.**
@@ -383,7 +419,7 @@ affects F7's `audienceId`-based gateway (R16).
 >
 > **3. Upgrading does not fix the push.** Pro marketing ($40/mo) raises contacts to 5,000 — which
 > happens to equal the app's flag-OFF ceiling — and segments to unlimited. It does **not** change
-> latency, so the ~3.4 req/s and the ~830-per-tick bound survive the upgrade unchanged. Money buys
+> latency, so the ~2.08 req/s and the ~623-per-tick bound survive the upgrade unchanged. Money buys
 > the contact cap, not the wall clock.
 >
 > **Consequence for the enforced ceiling**: the app currently accepts up to 5,000 (50,000 after the

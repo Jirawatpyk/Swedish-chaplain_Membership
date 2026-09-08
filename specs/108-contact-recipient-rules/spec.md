@@ -231,7 +231,11 @@ When a member composes a broadcast, the estimated number of recipients shown is 
 > the push stops being serial (the import build, or batched multi-tick
 > dispatch), at which point `DELIVERABLE_RECIPIENTS_PER_TICK` rises and the
 > scenario can be written honestly. Mirrored in
-> `reviews/task-coverage-review.md`'s US5 row. Before T094 one of
+> `reviews/task-coverage-review.md`'s US5 row. **Phase 9b (tasks T126–T146, planned
+> 2026-09-08) is exactly that: it makes 500 the batch size, so a 6,200 audience with batching ON
+> splits into 13 batches across ticks and AS2 becomes reachable — tested at 1,200 by T132 with a
+> fake gateway; 6,200 real needs Resend Pro (1,000-contact Free cap). This "REFUSED BY DESIGN"
+> reading holds until 9b's GREEN.** Before T094 one of
 > three must land — the import build (T086/T087/T106), a split threshold
 > lowered below the measured push ceiling PLUS a wall-clock budget with
 > resume in `addContactsToAudience`, or an explicit submit-time refusal above
@@ -510,6 +514,10 @@ A contact signed in to the member portal, the primary contact included, can see 
   > dispatch refuse above what one tick can push, in every flag state, and this FR's exception is
   > true again. 500 also sits under the Resend **Free** plan's ~987 usable contacts, a second and
   > independent bound. See `reviews/cutover.md` § 5 / § 5a and `research.md` § R9 (T095).
+  > **Phase 9b is planned and supersedes "in every flag state" on its GREEN** (`tasks.md`
+  > T126–T146, decided 2026-09-08 16:42): 500 becomes the BATCH SIZE and the split threshold; with
+  > batching ON the enforced ceiling returns to the configured 5,000 / 50,000 and audiences above
+  > 500 deliver across ticks. Until T140 lands this paragraph describes the shipped state.
 - **FR-042**: The audience ceiling MUST be defined in exactly one place and enforced consistently at count, submit and dispatch.
 - **FR-043**: Resolving an audience MUST complete within 400 ms (p95) at 5,000 contacts and within 3 seconds at 20,000 contacts, both for the compose-time count and at submit.
 
