@@ -112,12 +112,13 @@ export type RenewalAdminAction = 'read' | 'write' | 'manager_exception';
  * uniqueness, and that every declared `ERROR_ID` is a member of this union;
  * an earlier version of this docblock claimed the type system did both.
  *
- * A route uses its entry at least twice and often more — `redeem-link` uses it
- * five times. The suffixes are not listed here on purpose: four rounds of
- * review found every enumerated list false as soon as a suffix moved. What
- * holds is the shape — every failure line a route logs is prefixed with its
- * entry, so an SRE rule keyed on `<entry>.*` matches every failure that route
- * can produce, and `pnpm check:f8-error-id` is what keeps that true.
+ * The suffixes are not listed here on purpose: five rounds of review found
+ * every enumerated list false as soon as a suffix moved, and then found the
+ * behavioural replacement ("every failure line a route logs is prefixed with
+ * its entry") false too — a failure logged at WARN is not covered by the
+ * gate. What `pnpm check:f8-error-id` actually enforces is narrower and
+ * checkable: every 500 a route answers with, and every error-level line
+ * inside a catch, carries that route's entry. State that, not more.
  */
 export type F8ErrorId =
   // cycle-level actions
@@ -198,7 +199,13 @@ export async function requireRenewalAdminContext(
   if ('response' in gate) {
     const status = gate.response.status;
     if (status === 403) {
-      await emitF8RoleViolationBlocked(request, action, correlationId, requestId);
+      await emitF8RoleViolationBlocked(
+        request,
+        action,
+        correlationId,
+        requestId,
+        errorId,
+      );
     }
     if (status === 500) {
       // Attach the F8 errorId taxonomy entry so SRE alert rules keyed on
@@ -247,6 +254,10 @@ async function emitF8RoleViolationBlocked(
   action: RenewalAdminAction,
   correlationId: string,
   requestId: string,
+  // Threaded in so a lost audit row names the route it was lost on. The
+  // review that found this said the helper "already receives it" — `tsc`
+  // disagreed, which is why the claim was checked instead of taken.
+  errorId: F8ErrorId,
 ): Promise<void> {
   try {
     const current = await getCurrentSession();
@@ -276,8 +287,16 @@ async function emitF8RoleViolationBlocked(
     );
   } catch (auditErr) {
     // Audit failure must NOT block the 403 — log + continue.
+    //
+    // The id was missing here until round 5, which is the sharpest instance
+    // of this branch's own subject: an F8-contract audit row silently lost,
+    // on the 403 path shared by all 24 admin routes, in the file that owns
+    // the taxonomy, on the branch whose runbook is `audit-emit-loss.md`. The
+    // sibling audit-loss path in `admin/renewals/route.ts` got
+    // `.KILL_SWITCH_AUDIT_EMIT_FAILED`; this one did not.
     logger.warn(
       {
+        errorId: `${errorId}.ROLE_VIOLATION_AUDIT_EMIT_FAILED`,
         err: auditErr instanceof Error ? auditErr.message : String(auditErr),
         correlationId,
       },

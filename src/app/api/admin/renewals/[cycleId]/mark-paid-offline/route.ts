@@ -21,19 +21,18 @@ import { assertNever } from '@/lib/assert-never';
 /**
  * This route's entry in the F8 errorId taxonomy (`F8ErrorId` in
  * `src/lib/renewals-route-helpers.ts`, documented in
- * `docs/runbooks/audit-emit-loss.md`). Every line this route logs about a
- * failure carries it, so an SRE rule keyed on `F8.CYCLE_MARK_PAID_OFFLINE.*`
- * matches every failure this route can produce.
+ * `docs/runbooks/audit-emit-loss.md`). `pnpm check:f8-error-id` enforces that
+ * every 500 this file answers with, and every error-level line inside a catch,
+ * carries `F8.CYCLE_MARK_PAID_OFFLINE` with some suffix — so an alert keyed on
+ * `F8.CYCLE_MARK_PAID_OFFLINE.*` matches those.
  *
- * Which suffixes exist here is whatever the code below emits — deliberately
- * NOT listed. Four rounds of review found an enumerated list false as soon as
- * a suffix moved: naming two was wrong once `.SERVER_ERROR` landed, and naming
- * `.SERVER_ERROR` was wrong for the routes that have no `server_error` arm.
- * `pnpm check:f8-error-id` is what holds the claim above true.
+ * That is the whole claim, and it is the gate's, not this comment's. Five
+ * rounds of review falsified five stronger versions of this docblock.
  *
- * This file was written by hand before the sweep that fixed the other 25, so
- * its wording differed and every sweep since has missed it — while it is the
- * money path AND this gate's own first positive control.
+ * This file keeps being the one a sweep misses — three times now — because it
+ * was hand-written before the first sweep and its wording never matched the
+ * pattern the others share. It is the money path and the gate's own first
+ * positive control, so check it BY NAME after any docblock change here.
  */
 const ERROR_ID = 'F8.CYCLE_MARK_PAID_OFFLINE';
 
@@ -271,6 +270,11 @@ export async function POST(
           // data which would leak into the admin UI.
           logger.warn(
             {
+              // The F4 chain breaking is an operational failure on a money
+              // path, not a business refusal — round 5 found it logged at WARN
+              // with no id, so `F8.CYCLE_MARK_PAID_OFFLINE.*` showed nothing
+              // while every mark-paid-offline answered 502.
+              errorId: `${ERROR_ID}.F4_FAILURE`,
               correlationId: ctx.correlationId,
               cycleId,
               tenantId: tenantCtx.slug,
@@ -299,6 +303,9 @@ export async function POST(
           // f4_failure above.
           logger.warn(
             {
+              // An orphan §86/4 has been minted. Nothing else in the system
+              // notices; without an id this accumulated unseen.
+              errorId: `${ERROR_ID}.F4_ORPHAN_INVOICE`,
               correlationId: ctx.correlationId,
               cycleId,
               tenantId: tenantCtx.slug,

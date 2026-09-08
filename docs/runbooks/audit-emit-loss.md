@@ -133,7 +133,12 @@ least twice — `redeem-link` uses it five times:
 | `.KILL_SWITCH_AUDIT_EMIT_FAILED` | a named inner catch on the kill-switch path | the `kill_switch_blocked` audit row was lost. **The response was 404, not 500** — this is not an outage |
 | `.PRECONSUME_CONTACTS_FAILED`, `.PRECONSUME_USER_UNUSABLE`, `.PRECONSUME_INPUT_SHAPE`, `.GATE_CONTRACT_DRIFT` | an in-`try` guard in `portal/renewal/redeem-link` | a member's renewal link died before redemption; the response is a REDIRECT, not a 500 |
 
-So a rule keyed on `<entry>.*` matches every failure **that route** can produce.
+So a rule keyed on `<entry>.*` matches every 500 that route answers with, and
+every error-level line inside one of its catches. That is what the gate
+enforces and therefore all this section claims — an earlier version said
+"every failure that route can produce", which is not true of a failure logged
+at WARN, and was not true at all for `portal/renewal/[memberId]/confirm` until
+round 5 found its `requireMemberContext` 500 passing through unlogged.
 `pnpm check:f8-error-id` (pre-push + `quality-gates.yml`) enforces it: it fails
 on a route in scope that declares no entry, an entry two routes share, an entry
 missing from the union, a `logger.error` in a `catch` with no `errorId`, a

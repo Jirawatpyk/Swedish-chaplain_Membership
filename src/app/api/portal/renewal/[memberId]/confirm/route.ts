@@ -39,15 +39,15 @@ import { assertNever } from '@/lib/assert-never';
 /**
  * This route's entry in the F8 errorId taxonomy (`F8ErrorId` in
  * `src/lib/renewals-route-helpers.ts`, documented in
- * `docs/runbooks/audit-emit-loss.md`). Every line this route logs about a
- * failure carries it, so an SRE rule keyed on `F8.PORTAL_CONFIRM.*` matches every failure
- * this route can produce.
+ * `docs/runbooks/audit-emit-loss.md`). `pnpm check:f8-error-id` enforces that
+ * every 500 this file answers with, and every error-level line inside a catch,
+ * carries `F8.PORTAL_CONFIRM` with some suffix — so an alert keyed on `F8.PORTAL_CONFIRM.*` matches those.
  *
- * Which suffixes exist here is whatever the code below emits — deliberately
- * NOT listed. Four rounds of review found an enumerated list false as soon as
- * a suffix moved: naming two was wrong once `.SERVER_ERROR` landed, and naming
- * `.SERVER_ERROR` was wrong for the routes that have no `server_error` arm.
- * `pnpm check:f8-error-id` is what holds the claim above true.
+ * That is the whole claim, and it is the gate's, not this comment's. Five rounds
+ * of review falsified five stronger versions of this docblock — an enumerated
+ * suffix list, then "every line this route logs about a failure", which is still
+ * untrue wherever a failure is logged at WARN. A comment that describes a
+ * checkable rule cannot drift from the file; one that describes the file does.
  */
 const ERROR_ID = 'F8.PORTAL_CONFIRM';
 
@@ -88,7 +88,31 @@ export async function POST(
   }
 
   const ctx = await requireMemberContext(request);
-  if ('response' in ctx && ctx.response) return ctx.response;
+  if ('response' in ctx && ctx.response) {
+    // Round-5 review: this pass-through was the one path in the 26 F8 routes
+    // that answered 500 with nothing an alert rule could match.
+    // `requireMemberContext` has three 500 exits; two log at error level with
+    // no errorId, and the contacts-lookup one logs NOTHING — the repo swallows
+    // the DB error into a Result. A Neon fault while a member submits their
+    // renewal therefore died silently on the money path.
+    //
+    // Logged HERE rather than in the shared helper: that helper serves other
+    // portal surfaces, each with its own taxonomy entry. The 24 admin routes
+    // get the equivalent line from `requireRenewalAdminContext`.
+    //
+    // Only the 500. A 401/403/404 from the gate is an ordinary authorisation
+    // outcome, and logging those at error level would bury this signal.
+    if (ctx.response.status === 500) {
+      logger.error(
+        {
+          errorId: `${ERROR_ID}.CONTEXT_RESOLUTION_FAILED`,
+          correlationId,
+        },
+        'portal.renewal.confirm_context_resolution_failed',
+      );
+    }
+    return ctx.response;
+  }
 
   const { memberId: urlMemberId } = await context.params;
 
@@ -282,9 +306,11 @@ export async function POST(
           // with no log line at all. Throwing lands it in the outer catch,
           // which does carry the id.
           //
-          // (The pasted template said "the docblock above promised …"; this
-          // file's docblock promises no such thing — it is member-facing and
-          // says so. Kept the fix, dropped the citation.)
+          // (This carried a parenthetical claiming the file's docblock made no
+          // such promise. The very next commit added one and deleted the
+          // sentence it cited — a comment about a neighbouring comment, made
+          // false by the commit that claimed to be closing exactly that class.
+          // Removed rather than re-worded: it described no behaviour.)
           return assertNever(
             result.error,
             `${ERROR_ID}: unhandled error kind '${

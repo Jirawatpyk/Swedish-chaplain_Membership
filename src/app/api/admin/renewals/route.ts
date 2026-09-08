@@ -30,15 +30,15 @@ import { randomUUID } from 'node:crypto';
 /**
  * This route's entry in the F8 errorId taxonomy (`F8ErrorId` in
  * `src/lib/renewals-route-helpers.ts`, documented in
- * `docs/runbooks/audit-emit-loss.md`). Every line this route logs about a
- * failure carries it, so an SRE rule keyed on `F8.CYCLE_LIST.*` matches every failure
- * this route can produce.
+ * `docs/runbooks/audit-emit-loss.md`). `pnpm check:f8-error-id` enforces that
+ * every 500 this file answers with, and every error-level line inside a catch,
+ * carries `F8.CYCLE_LIST` with some suffix — so an alert keyed on `F8.CYCLE_LIST.*` matches those.
  *
- * Which suffixes exist here is whatever the code below emits — deliberately
- * NOT listed. Four rounds of review found an enumerated list false as soon as
- * a suffix moved: naming two was wrong once `.SERVER_ERROR` landed, and naming
- * `.SERVER_ERROR` was wrong for the routes that have no `server_error` arm.
- * `pnpm check:f8-error-id` is what holds the claim above true.
+ * That is the whole claim, and it is the gate's, not this comment's. Five rounds
+ * of review falsified five stronger versions of this docblock — an enumerated
+ * suffix list, then "every line this route logs about a failure", which is still
+ * untrue wherever a failure is logged at WARN. A comment that describes a
+ * checkable rule cannot drift from the file; one that describes the file does.
  */
 const ERROR_ID = 'F8.CYCLE_LIST';
 
