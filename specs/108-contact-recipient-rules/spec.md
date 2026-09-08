@@ -462,10 +462,21 @@ A contact signed in to the member portal, the primary contact included, can see 
   > skips `resolvedCount <= SPLIT_THRESHOLD_RECIPIENTS`
   > (`src/app/api/cron/broadcasts/split-large-broadcasts/route.ts:330`) so the batching path never
   > picks the broadcast up, and the serial dispatch push cannot finish inside `maxDuration = 300` —
-  > the broadcast is accepted at submit and never delivered. Unreachable while
+  > the broadcast is accepted at submit and never delivered. ~~Unreachable while
   > `FEATURE_CONTACT_MARKETING_RECIPIENTS` is OFF (ceiling 5,000, leg `primary_only`); closing it is a
-  > T094 precondition. See the US5 AMENDMENT above, `quickstart.md` § Cutover 3b and
-  > `reviews/cutover.md` § 5. The "never silently truncate" half of this FR **is** shipped and live.
+  > T094 precondition.~~ The "never silently truncate" half of this FR **is** shipped and live.
+  >
+  > **CLOSED 2026-09-08.** Two corrections and a fix. First, "unreachable while the flag is OFF"
+  > was wrong: T095 measured the serial push at **~3.4 req/s** (account limit 10 req/s, but a
+  > serial `await` loop only reaches `min(limit, 1/RTT)` on a ~0.29 s round trip), which puts the
+  > undeliverable band at roughly **830** — *below* the 5,000 ceiling enforced with the flag OFF.
+  > The band was always reachable; the flip widened it. Second, the fix:
+  > `DELIVERABLE_RECIPIENTS_PER_TICK = 800` in
+  > `src/modules/broadcasts/domain/audience-ceiling.ts`, with
+  > `currentAudienceCeiling() = min(configuredAudienceCeiling(), 800)` — so count, submit and
+  > dispatch refuse above what one tick can push, in every flag state, and this FR's exception is
+  > true again. 800 also sits under the Resend **Free** plan's ~987 usable contacts, a second and
+  > independent bound. See `reviews/cutover.md` § 5 / § 5a and `research.md` § R9 (T095).
 - **FR-042**: The audience ceiling MUST be defined in exactly one place and enforced consistently at count, submit and dispatch.
 - **FR-043**: Resolving an audience MUST complete within 400 ms (p95) at 5,000 contacts and within 3 seconds at 20,000 contacts, both for the compose-time count and at submit.
 

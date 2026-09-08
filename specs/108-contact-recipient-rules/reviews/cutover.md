@@ -58,7 +58,7 @@ for whenever someone next merges anything. Set it when you are ready to redeploy
 | 2 | PR-C deployed with the flag OFF | **CLEARED** | #346 deployed 2026-09-07; the nine unflagged changes have been live since (quickstart § Rollback matrix row C). |
 | 3 | **T093** — FR-027a pre-flight review on `/admin/marketing/audience?kind=secondary&state=on&eligible=1`; switch off anyone who must not receive; record date + reviewer in `docs/go-live-readiness.md` | **CLEARED — VACUOUS at 0 eligible secondaries** (measured 2026-09-08 10:45, maintainer) | The tenant has no secondary contact rows, so the pre-flight page is empty and the 1:N audience equals the primary-only audience. § 3 carries the count. **Expires on SweCham's secondary import — re-run then.** |
 | 3a | **GDPR Art. 14 first-contact attestation** (`docs/compliance/processing-records.md:128-135`) — either the system notices a new secondary on first marketing contact, or T093 attests per contact | **CLEARED — VACUOUS at 0 secondaries** (same measurement) | No secondary contact exists, therefore no data subject the chamber has not informed. **This is the row the import turns back on**: an imported marketing list is exactly a population that never gave the chamber its addresses directly. |
-| 3b | **Push-capacity gate (staff review 🔴)** | **OPEN — and it stays open regardless of today's scale** | See § 5. This is the one precondition that a small member base does not close; it only makes it unreachable today. |
+| 3b | **Push-capacity gate (staff review 🔴)** | **CLEARED 2026-09-08 — closed in code, option (c)** | `DELIVERABLE_RECIPIENTS_PER_TICK = 800` in the Domain; `currentAudienceCeiling()` = `min(configured, 800)`, so count, submit and dispatch all refuse above what one tick can push. Derived from the T095 measurement (§ 5a), not from a guess. The undeliverable band no longer exists in any flag state. |
 | — | **T098** `/speckit.analyze` FR↔SC↔contract traceability, findings folded into `spec.md` | **IN PROGRESS** | Ordered before T094 by `tasks.md:305`. |
 | — | **T095** — record the team's real Resend throughput in `research.md` § R9/R16 | **OPEN — operator, and it is now the ONLY thing between here and a decision** | Needed as the measured input to § 5. Every rate number in the codebase today is an unsourced comment (`~2 req/s` in `audience-ceiling.ts`, `10 req/s` in the F7 notes). **§ 5a below replaces "read Settings → Usage" with a measurement that answers the question the dashboard cannot.** |
 | — | **T096** — record of processing + legitimate-interest assessment | **CLEARED** | Delivered with PR-D in `docs/compliance/processing-records.md` (recipient-side LIA `:113-135`, per-contact-preference activity `:136-152`). |
@@ -139,7 +139,32 @@ Any of the first four wrong → § Rollback (flag OFF + redeploy) before the nex
 
 ---
 
-## 5. The push-capacity gate (§ 2 row 3b) — why it stays open
+## 5. The push-capacity gate (§ 2 row 3b) — CLOSED 2026-09-08
+
+> **RESOLVED in code.** `DELIVERABLE_RECIPIENTS_PER_TICK = 800`
+> (`src/modules/broadcasts/domain/audience-ceiling.ts`) and
+> `currentAudienceCeiling()` = `min(configuredAudienceCeiling(), 800)` in the composition root.
+> Every call site — compose count, submit, dispatch — already read that one function, and every
+> i18n string interpolates `{ceiling, number}`, so the refusal, the copy and all three locales
+> moved together with no message edits.
+>
+> This is option **(c)** from `reviews/pr-c.md` row 33, and it is only writable now because
+> § 5a measured the number. 800 sits under the wall-clock bound (~830) and under the Free-plan
+> contact bound (~987) — two independent limits agreeing to within 20 %.
+>
+> Two consequences, both pinned by tests rather than left to be discovered later:
+> - **The bound binds with the 108 flag OFF too** (800 < 5,000). The undeliverable band always
+>   started below today's ceiling; the flip widened an existing exposure rather than creating
+>   one — so this fix was worth making whether or not 108 ever flips.
+> - **The split path is now unreachable**, since nothing can reach `SPLIT_THRESHOLD_RECIPIENTS`.
+>   No working capability is lost: `dispatch-batches` runs the same serial push under the same
+>   `maxDuration = 300` with batches of up to `RESEND_PER_AUDIENCE_CAP = 10,000`, so it could not
+>   have delivered those audiences either.
+>
+> The analysis below is kept because it is the reasoning the fix rests on, and because the
+> "5,001–10,000 band" framing it corrects is still quoted in older review rows.
+
+### The original analysis — why it stayed open
 
 With the flag ON, `audienceCeiling(true) = 50_000`. `split-large-broadcasts` routes to per-batch
 audiences only above `SPLIT_THRESHOLD_RECIPIENTS = 10_000`, so a broadcast resolving to
