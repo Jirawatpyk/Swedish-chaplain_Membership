@@ -117,12 +117,21 @@ async function main(): Promise<void> {
     }
 
     const chosen = process.env.SEED_MEMBER_ID;
+    // Mirror the resolver's OWN eligibility predicate, not a shorter version
+    // of it (`drizzle-member-repo.ts` findMembersBySegmentForBroadcast:
+    // status = 'active' AND erased_at IS NULL AND NOT halted). The first draft
+    // of this query omitted the halt flag and picked a halted member, so the
+    // seeded secondaries were invisible to every segment and the rehearsal
+    // reported "the widening does not work" — a false alarm about the feature
+    // caused by the seed. A fixture that can't appear in the audience is worse
+    // than no fixture: it fails in the direction of a spurious bug report.
     const memberRows = (await tx.execute(sql`
       SELECT m.member_id::text AS member_id, m.company_name
         FROM members m
        WHERE m.tenant_id = ${tenantId}
          AND m.status = 'active'
          AND m.erased_at IS NULL
+         AND m.broadcasts_halted_until_admin_review = false
          AND EXISTS (SELECT 1 FROM contacts c
                       WHERE c.tenant_id = m.tenant_id
                         AND c.member_id = m.member_id
@@ -136,7 +145,9 @@ async function main(): Promise<void> {
     const member = memberRows[0];
     if (member === undefined) {
       throw new Error(
-        'no active member with a live primary contact found — seed a member first',
+        'no BROADCAST-ELIGIBLE member found (active, not erased, not halted, with a ' +
+          'live primary contact). Seeding onto anything else produces contacts no ' +
+          'segment can see.',
       );
     }
     console.log(`member: ${member.company_name} (${member.member_id})`);

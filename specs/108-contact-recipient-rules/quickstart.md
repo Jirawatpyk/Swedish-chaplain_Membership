@@ -140,6 +140,31 @@ you control entirely.
 
 Everything here stops before approval, and nothing is dispatched.
 
+> **RUN 2026-09-08 on the dev branch — the resolver half passed.** Two secondaries seeded onto an
+> eligible member, then `resolveSegmentRecipients` called on both legs through the real
+> `membersBridge`, the real repos and live RLS:
+>
+> | leg | recipients | droppedByPreference | seeded secondaries visible |
+> |---|---|---|---|
+> | `primary_only` | 110 | 0 | 0 / 2 |
+> | `all_contacts` | **112** | 0 | **2 / 2** |
+> | `all_contacts`, one seeded contact opted out | **111** | **1** | 1 / 2 |
+>
+> The fan-out, the per-contact opt-out drop (FR-022a) and `droppedByPreference` all behave as
+> specified, and `primary_only` stays at 110 throughout — a secondary is invisible to that leg, as
+> it must be. **No mail was sent**: the resolver only reads. The UI steps below (compose count,
+> audience-page cross-check, submit-then-cancel) are still worth walking, and the dispatch half is
+> rehearsal ②.
+>
+> **The run also caught a bug in the seed script itself, which is the point of rehearsing.** The
+> first version picked "the first active member with a live primary" and got one with
+> `broadcasts_halted_until_admin_review = true` — excluded from every segment by design. The
+> seeded contacts were therefore invisible and the first measurement read
+> `all_contacts = primary_only = 110`, i.e. *"the widening does not work"*. It did work; the
+> fixture could not be seen. The member query now mirrors the resolver's own eligibility
+> predicate. A fixture that cannot appear in the audience fails in the direction of a spurious bug
+> report, which is the expensive direction.
+
 ```bash
 # 1. Seed secondaries onto a real dev member. Use + sub-addresses of an inbox you own.
 #    The script refuses prod (host blocklist), refuses unroutable domains, and only ever
