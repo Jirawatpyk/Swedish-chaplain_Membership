@@ -295,6 +295,24 @@ Operator actions specific to the refund-lifecycle bugfix batch (migration 0241/0
 - [ ] **Stand-down**: reverse any ONE key; key 1 is fastest (env + redeploy, no data change). Un-enrolling does not remove drafts already created — discard those from the review queue.
 - [ ] **`FEATURE_ERASURE_DISCARD_DRAFTS` is NOT one of these keys** — see § 6.4. It is independently required, and standing auto-invoice down does not stand it down.
 
+### 6.9 108 Contact recipient rules — `FEATURE_CONTACT_MARKETING_RECIPIENTS` flip (task T094)
+
+> **Full record: `specs/108-contact-recipient-rules/reviews/cutover.md`.** Run that; this is the index entry and the sign-off line.
+>
+> **State on 2026-09-08: the variable is SET in Vercel but production has NOT been redeployed, so the feature is not live.** `src/lib/env.ts` reads `process.env` at boot — the flip takes effect on the **next production deployment**.
+>
+> ⚠️ **That makes the flip armed on any merge to `main`.** `vercel.json` has no `ignoreCommand`, so every push to `main` deploys production — a docs-only PR performs the flip just as well as a deliberate one. **While the gates below are open, set the variable back to `false` (or delete it; `src/lib/env.ts:638` defaults it to `false`) and set it to `true` again as the deliberate first step of the flip.** That is the operator gate the flag exists for — `plan.md` § Complexity Tracking #2 rejected flip-on-merge for precisely this reason.
+
+- [ ] **T093 — FR-027a pre-flight review.** Open `/admin/marketing/audience?kind=secondary&state=on&eligible=1`, switch off anyone who must not receive marketing, and record **date + reviewer + the eligible-secondary count** on the sign-off line below. If the count is 0 the review is *vacuous* — record it as "0 eligible secondaries, nothing to switch off" **with the date**, never as "n/a": the count is the evidence, and SweCham's pending secondary-contact import changes it in one step.
+- [ ] **GDPR Art. 14 first-contact attestation** (`docs/compliance/processing-records.md:128-135`). The flip must not happen until either the system notices a new secondary on first marketing contact, or the T093 pass above attests per contact. A secondary who never gave their address to the chamber directly is a data subject the chamber has not yet informed. Vacuous at 0 eligible secondaries.
+- [ ] **Push-capacity gate (staff review 🔴) — the one gate a small member base does not close.** With the flag ON the audience ceiling moves 5,000 → 50,000, while `split-large-broadcasts` skips anything at or below `SPLIT_THRESHOLD_RECIPIENTS = 10_000` and the dispatch push is a serial one-contact-per-request loop inside `maxDuration = 300`. A broadcast resolving to **5,001–10,000** recipients is therefore accepted at submit and **never delivered** — it sits in `approved`. Close it with ONE of: the deferred import build (T086/T087/T106); a lowered split threshold **plus** a wall-clock budget with resume; or an explicit submit-time refusal above `300 s × measured req/s − margin`. At today's prod scale (150 primaries, 0 secondaries) that is ~75 s of the 300 s budget and the band is unreachable — but after SweCham's secondary import (~150 members × 3 contacts ≈ 450 addresses) it is ≈225 s at the unsourced 2 req/s, i.e. no margin, at the very step SweCham is already preparing.
+- [ ] **T095 — measure the real Resend rate limit** (Resend → Settings → Usage) and record it in `research.md § R9/R16` + `reviews/pr-c.md` row 33. Every rate figure in the codebase today is an unsourced comment; the submit-time bound above must be derived from the measured number, not from a ceiling.
+- [ ] **Flip**: confirm `FEATURE_CONTACT_MARKETING_RECIPIENTS=true` in Vercel → **redeploy production**.
+- [ ] **Observe the first send** — the five signals in `reviews/cutover.md` § 4. The `audience_import_status` gauge went with the deferred T086 and **does not exist**; do not wait for it. Any of the first four wrong → flag OFF + redeploy before the next dispatch tick.
+- [ ] **After one clean week (T099)**: delete the flag from `src/lib/env.ts`, `.env.example` and Vercel, and delete the `primary_only` leg.
+
+**T093 sign-off** — date: `________` · reviewer: `________` · eligible secondaries at review: `____` · Art. 14 attestation: `vacuous (0) / attested per contact / system notice shipped`
+
 ---
 
 ## 6b. Data provisioning order (Stage 3 prerequisite)
@@ -398,6 +416,7 @@ Work that can proceed NOW (does not depend on F9):
 - [ ] 🟡 **Privacy policy / PDPA consent text** — longest lead, hardest blocker; start with legal/customer now
 - [ ] 🟡 **Assign UAT sign-off owner** at SweCham
 - [ ] 🟡 **Stripe live-mode prep** — create live products/prices, plan test→live cutover
+  - [ ] **Stripe Dashboard → Settings → Business → Customer emails → "Successful payments" = OFF** (108 gap G1, quickstart § Cutover 7). Chamber-OS never sets `receipt_email`, but for PromptPay it passes `billing_details.email`, so with this toggle ON Stripe sends its own receipt to that address **in addition** to the chamber's own receipt — two receipts for one payment, one of them not the chamber's document. Turn it off in the LIVE dashboard as part of the test→live cutover, not after.
 - [ ] Confirm ClamAV daemon health + Resend domain still verified
 
 **Housekeeping (anytime):** resolve untracked artifacts (§ 8).

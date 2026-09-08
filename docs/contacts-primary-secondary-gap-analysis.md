@@ -1,6 +1,8 @@
 # Member Contacts — Primary vs Secondary: gap analysis
 
-**Date**: 2026-09-04 · **Status**: analysis + decisions log (no code changed) · **Owner**: maintainer
+**Date**: 2026-09-04 · **Status**: **CLOSED by feature 108 — H1, H2 and G1–G9 are resolved except G3, which was
+deliberately KEPT** (§ 9 below records what closed each one and where). Tier C (bulk import of secondary
+contacts) is NOT built — it remains the one open requirement from § 1. · **Owner**: maintainer
 **Scope**: SweCham/TSCC requirement "Member Info – Primary & Secondary Contacts" (verbatim below) checked against `main` at `057e15ce3`.
 
 ## 1. Requirement (as received from SweCham)
@@ -101,3 +103,44 @@ Ships after B, otherwise imported contacts receive nothing.
 ## 8. Evidence index
 
 Four read-only explorations on 2026-09-04 covering: contacts model + primary enforcement; transactional recipient resolution (24 send paths tabulated); broadcast recipient pipeline; bulk-import infrastructure inventory. Key claims re-verified against source before writing: the `is_primary` join filter, both partial unique indexes, the frozen snapshot read in `record-payment`, the dormant `recipientEmailOverride`, and the portal resend response body.
+
+## 9. Resolution — feature `108-contact-recipient-rules` (T097, 2026-09-08)
+
+All four PRs are merged and deployed: **PR-A #340** + **PR-B #342** (2026-09-05), **PR-D #344**
+(2026-09-06), **PR-C #346** `91505b8f2` (2026-09-07). Migrations `0292`–`0297` are applied to prod.
+Each row below was re-verified against source on 2026-09-08, not taken from the PR description.
+
+| Gap | Status | What closed it |
+|---|---|---|
+| H1 — broadcasts do the inverse of the requirement (primary only) | **Closed, FLAG-GATED** | PR-C's 1:N audience leg in `resolve-segment-recipients.ts`, behind `FEATURE_CONTACT_MARKETING_RECIPIENTS`. **This is the one row that is not yet live**: the flag is set in Vercel but production has not been redeployed, so the resolver still runs the `primary_only` leg. See § 10. |
+| H2 — money mail can go to a FORMER primary (frozen snapshot) | **Closed, LIVE** | PR-A: every money email resolves the LIVE primary contact; `scripts/check-money-email-recipient.ts` is a pre-push + CI gate with a positive control, so a new send path cannot re-introduce the snapshot read. |
+| G1 — Stripe billing email = signed-in portal user | **Closed in code; one operator residual** | F5 takes the address from `BillingRecipientPort` (`src/modules/payments/application/ports/billing-recipient-port.ts:41`, wired at `initiate-payment.ts:218`), not from the session. Residual: the Stripe Dashboard "Successful payments" toggle must be switched OFF at the live-mode switch (quickstart § Cutover 7). |
+| G2 — zero-primary member reachable via a race | **Closed, LIVE** | Migration `0293`: `contacts_check_member_primary()` SECURITY DEFINER (`row_security = off`) behind two DEFERRABLE INITIALLY DEFERRED constraint triggers — the check is at COMMIT, so the pre-check-outside-tx race has no window. Predicate narrowed by spec AMENDMENT to members with ≥ 1 contact row. |
+| G3 — contact email UNIQUE per tenant, not per member | **KEPT — deliberate (D4)** | `contacts_tenant_email_uniq` stays for v1. Relaxing it touches `linked_user_id` (one login ↔ one contact), bounce resolution and suppression keying. PR-C added `contacts_tenant_lower_email_all_idx` (migration `0296`, NOT partial) so the carry-forward opt-out lookup can also match REMOVED rows — that index does not relax the constraint. |
+| G4 — portal resend response discloses the primary's address | **Closed, LIVE** | `src/app/api/portal/invoices/[invoiceId]/resend/route.ts:106` returns `{ ok: true }` with no address. The in-code comment records that the original "leak" framing was overstated on review (the same user can read `GET /api/portal/profile`); the change stands on data minimisation, not on a confidentiality boundary. |
+| G5 — recipient query silently truncates at 5,000 | **Closed, LIVE** | The `.limit(5000)` is gone from `findMembersBySegmentForBroadcast` (`drizzle-member-repo.ts:1621` records why). The resolver's ceiling is now the one truthful bound. **Residual**: there is no walk bound on the unbounded read — deliberately deferred, because a bound placed at the ceiling would re-introduce truncation-before-refusal. It must land before the ceiling is raised (§ 10). |
+| G6 — `all_members` has no `status = 'active'` predicate | **Closed, LIVE (unflagged)** | `drizzle-member-repo.ts:1613` — `eq(members.status, 'active')` plus `isNull(members.erasedAt)`. Archived and lapsed members' primaries no longer receive E-Blasts; this shipped with PR-C and is live now, flag or no flag. |
+| G7 — secondary unsubscribes lose `member_id` | **Closed, LIVE (unflagged)** | `unsubscribe-recipient.ts:139-147` resolves `contactId` via `lookupContactEmailInTenant` and writes it (migration `0297`, `marketing_unsubscribes.contact_id`) on EVERY unsubscribe with no flag read. **Do not drop that column while this code is deployed** — the GDPR Art. 21 path 42703s. |
+| G8 — no per-contact marketing flag / consent record | **Closed, LIVE** | Migration `0294`: `contacts.marketing_opt_out_{at,source,by_user_id}` with a correlated CHECK and a partial index; migration `0295` adds the two audit event types. Permission key `contacts.marketing` (admin / super_admin / marketing — never manager). `MembersBridgePort.filterMarketingOptedOut` drops opted-out addresses from every segment kind at dispatch, fail-closed. |
+| G9 — F4 primary lookup omits `removed_at IS NULL` | **Closed, LIVE** | `src/modules/invoicing/infrastructure/adapters/member-identity-adapter.ts:173`. |
+
+**Tier C (bulk import of secondary contacts) was NOT built.** § 1's "must support bulk upload …
+huge list from SweCham's marketing team" is still an open requirement, and D1 (what columns the
+marketing file actually has) is still unanswered — as of 2026-09-08 the file has not been
+delivered. The separate Resend Contacts-Import build (tasks T086/T087/T106 and migration `0298`)
+was deferred during PR-C and never authored; nothing in the codebase implements it, and no
+`audience_import_status` gauge exists.
+
+## 10. What is still open after 108
+
+1. **The flag flip itself** (task T094). `FEATURE_CONTACT_MARKETING_RECIPIENTS=true` is set in
+   Vercel; production has not been redeployed, so H1 is closed in code but not in behaviour.
+2. **Push-capacity gate** (quickstart § Cutover 3b, staff review 🔴). With the flag ON the audience
+   ceiling moves 5,000 → 50,000, and `split-large-broadcasts` skips anything at or below
+   `SPLIT_THRESHOLD_RECIPIENTS = 10_000`, so a broadcast in the 5,001–10,000 band is accepted at
+   submit and then never delivered by the serial dispatch push. Unreachable while the flag is OFF.
+3. **The walk bound for G5**, which must land with (2) — same reason, same band.
+4. **GDPR Art. 14 first-contact attestation** for secondary contacts the chamber has not itself
+   informed (`docs/compliance/processing-records.md:128-135`, quickstart § Cutover 3a). Vacuous
+   only while no such contact exists.
+5. **Tier C bulk import** + D1, as above.
