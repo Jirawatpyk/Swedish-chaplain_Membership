@@ -45,6 +45,7 @@ import { env } from '@/lib/env';
 import { verifyCronBearer } from '@/lib/cron-auth';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { broadcastsMetrics } from '@/lib/metrics';
 import { broadcastsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import { SpanStatusCode } from '@opentelemetry/api';
@@ -353,12 +354,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             // class without scraping JSON response bodies.
             summary.unknown_error++;
             broadcastsMetrics.cronUnknownErrorCount(tenant.slug);
-            const errKind = (result.error as { kind?: string }).kind ?? 'unknown';
+            // Renamed off `errKind` — that name now belongs to the shared
+            // PII-safe helper imported at the top of this file, and a local
+            // shadowing it in one block while the catch below calls the import
+            // is a reading hazard, not a compile error.
+            const unroutedKind =
+              (result.error as { kind?: string }).kind ?? 'unknown';
             logger.error(
               {
                 tenantId: tenant.slug,
                 broadcastId: row.broadcast_id,
-                errorKind: errKind,
+                errorKind: unroutedKind,
               },
               'cron.broadcasts.dispatch.unknown_error_kind',
             );
@@ -372,10 +378,26 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         // Round 5 R5-CRON-A — also emit dedicated metric counter.
         summary.uncaught_error++;
         broadcastsMetrics.cronUncaughtErrorCount(tenant.slug);
+        // PII-safe (108 Phase 9 review S15). This used to log `e.message` plus
+        // the full `stack` under keys `err` and `stack`, and `REDACT_PATHS` in
+        // `src/lib/logger.ts` is key-based — it covers `email`, `reason` and
+        // friends, but never `err`, `message` or `stack`. A `GatewayThrowable`
+        // carries Resend's response text verbatim, and `importFetch`'s non-JSON
+        // fallback puts `text.slice(0, 200)` of a raw body straight into
+        // `message`. The failing request on this path is the one carrying the
+        // whole member CSV, which makes contact-import validation the single
+        // likeliest place for a provider to echo an address back.
+        //
+        // Whether Resend actually echoes rows is UNMEASURED — which is the
+        // reason to fail safe rather than a reason to wait. The error CLASS plus
+        // the gateway's own `kind` is what an operator needs to route the
+        // incident; the free text adds nothing they can act on.
+        const shape = e as { kind?: unknown; code?: unknown };
         logger.error(
           {
-            err: e instanceof Error ? e.message : String(e),
-            stack: e instanceof Error ? e.stack : undefined,
+            err: errKind(e),
+            errorKind: typeof shape.kind === 'string' ? shape.kind : undefined,
+            code: typeof shape.code === 'string' ? shape.code : undefined,
             tenantId: tenant.slug,
             broadcastId: row.broadcast_id,
           },

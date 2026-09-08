@@ -49,6 +49,14 @@ interface CapturedRequest {
   readonly authorization: string | null;
   readonly fields: Record<string, string>;
   readonly fileText: string;
+  /**
+   * 108 Phase 9 review S29 — the multipart FIELD NAME and FILENAME were
+   * unpinned. The capture below keys the file part on `v instanceof Blob`, so
+   * renaming the form key from `file` to anything else still populated
+   * `fileText` and every assertion in this file passed while Resend 422'd.
+   */
+  readonly fileFieldName: string | null;
+  readonly fileName: string | null;
 }
 
 const captured: CapturedRequest[] = [];
@@ -67,10 +75,15 @@ function stubFetch(respond: (call: number) => Response): void {
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const fields: Record<string, string> = {};
       let fileText = '';
+      let fileFieldName: string | null = null;
+      let fileName: string | null = null;
       if (init?.body instanceof FormData) {
         for (const [k, v] of init.body.entries()) {
-          if (v instanceof Blob) fileText = await v.text();
-          else fields[k] = String(v);
+          if (v instanceof Blob) {
+            fileText = await v.text();
+            fileFieldName = k;
+            fileName = v instanceof File ? v.name : null;
+          } else fields[k] = String(v);
         }
       }
       const headers = new Headers(init?.headers ?? {});
@@ -80,6 +93,8 @@ function stubFetch(respond: (call: number) => Response): void {
         authorization: headers.get('authorization'),
         fields,
         fileText,
+        fileFieldName,
+        fileName,
       });
       return respond(captured.length);
     }),
@@ -241,5 +256,100 @@ describe('getContactImport — the completion signal (T086)', () => {
 
     expect(out.status).toBe('pending');
     expect(out.counts).toEqual({ total: 0, created: 0, updated: 0, skipped: 0, failed: 0 });
+  });
+
+  /**
+   * S29 — the multipart envelope, pinned BY VALUE like `column_map` and
+   * `on_conflict` already are.
+   *
+   * The capture harness keys the file part on `v instanceof Blob`, so a rename
+   * of the form key would still fill `fileText` and leave every other assertion
+   * in this file green while Resend rejected the request. Same class as the
+   * three wrong `segments` spellings that made the by-value pinning necessary
+   * in the first place.
+   */
+  it('pins the multipart file field name and filename', async () => {
+    stubFetch(() => jsonResponse(200, { id: 'imp_env' }));
+
+    await resendBroadcastsGateway.createContactImport(AUDIENCE_ID, ['a@example.com']);
+
+    expect(captured[0]!.fileFieldName).toBe('file');
+    expect(captured[0]!.fileName).toBe('audience.csv');
+  });
+
+  /**
+   * S16 — boundary validation for CSV control characters.
+   *
+   * `EmailLower` reads like a guarantee and is not: `unsafeBrandEmailLower` is
+   * a bare `return raw as EmailLower`, and it feeds every path into this method.
+   * An address carrying a newline injects an extra CSV row, creating a contact
+   * that was never in the resolved list. The completion rule catches that
+   * downstream — but only AFTER the contact exists at Resend, which makes it a
+   * backstop rather than a boundary.
+   */
+  it('refuses an address containing a newline before anything reaches Resend', async () => {
+    stubFetch(() => jsonResponse(200, { id: 'imp_never' }));
+
+    await expect(
+      resendBroadcastsGateway.createContactImport(AUDIENCE_ID, [
+        'ok@example.com',
+        'evil@example.com\ninjected@attacker.example',
+      ]),
+    ).rejects.toMatchObject({ kind: 'permanent' });
+
+    // Nothing was sent. A refusal that still made the request would leave the
+    // injected contact behind, which is the whole point of moving this earlier.
+    expect(captured).toHaveLength(0);
+  });
+
+  it.each([
+    ['carriage return', 'a@example.com\rx@example.com'],
+    ['comma', 'a@example.com,x@example.com'],
+    ['double quote', 'a"@example.com'],
+  ])('refuses an address containing a %s', async (_label, bad) => {
+    stubFetch(() => jsonResponse(200, { id: 'imp_never' }));
+
+    await expect(
+      resendBroadcastsGateway.createContactImport(AUDIENCE_ID, [bad]),
+    ).rejects.toMatchObject({ kind: 'permanent' });
+    expect(captured).toHaveLength(0);
+  });
+
+  it('POSITIVE CONTROL — ordinary addresses still pass the boundary', async () => {
+    // Without this, the four refusals above pass just as happily if the filter
+    // rejected everything. `+` and `-` are legal in a local part and MUST NOT be
+    // caught: plus-addressing is a real, common address shape.
+    stubFetch(() => jsonResponse(200, { id: 'imp_ok' }));
+
+    const out = await resendBroadcastsGateway.createContactImport(AUDIENCE_ID, [
+      'a@example.com',
+      'first.last+tag@example.co.th',
+      'o-brien@example.org',
+    ]);
+
+    expect(out.importId).toBe('imp_ok');
+    expect(captured).toHaveLength(1);
+    expect(captured[0]!.fileText).toBe(
+      'email\na@example.com\nfirst.last+tag@example.co.th\no-brien@example.org\n',
+    );
+  });
+
+  /**
+   * S23 — `importId` arrives as `body.id` from the provider, is persisted
+   * without validation, and goes into a URL PATH. `fetch` normalises `..`
+   * segments, so an id carrying one would change which endpoint is called.
+   */
+  it('URL-encodes the import id rather than interpolating it raw', async () => {
+    stubFetch(() => jsonResponse(200, { status: 'pending' }));
+
+    await resendBroadcastsGateway.getContactImport('../audiences/evil');
+
+    const url = captured[0]!.url;
+    // `encodeURIComponent` leaves `.` alone — it is unreserved — and encodes the
+    // SEPARATOR. That is the part that matters: without a `/` there is no path
+    // to traverse, so the id stays one path segment however many dots it holds.
+    expect(url).toContain('%2Faudiences%2Fevil');
+    expect(url).not.toContain('/audiences/evil');
+    expect(url.startsWith('https://api.resend.com/contacts/imports/')).toBe(true);
   });
 });

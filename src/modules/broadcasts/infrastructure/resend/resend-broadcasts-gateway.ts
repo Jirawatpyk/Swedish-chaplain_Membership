@@ -180,7 +180,15 @@ async function withRetry<T>(
           method: ctx.method,
           attempt: attempt + 1,
           backoffMs: backoff,
-          err: e instanceof Error ? e.message : String(e),
+          // Class + kind, never the provider's free text (108 Phase 9 review
+          // S15). Only `retryable` errors reach this line, so a 4xx echoing a
+          // submitted row cannot appear here today — but the classification
+          // that keeps it out lives four lines up and is one edit away from
+          // changing. The redaction in `logger.ts` is key-based and covers
+          // neither `err` nor `message`.
+          err: e instanceof Error ? e.constructor.name : 'unknown',
+          errorKind: e instanceof GatewayThrowable ? e.kind : undefined,
+          subKind: e instanceof GatewayThrowable ? e.subKind : undefined,
         },
         'resend.broadcasts.retry',
       );
@@ -543,12 +551,53 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
    *   - `upsert` also makes a resubmitted import harmless, which is what lets
    *     the caller retry a tick without tracking partial progress.
    */
+  /**
+   * KNOWN, ACCEPTED: this call is wrapped in `withRetry` but carries no
+   * idempotency key, because `POST /contacts/imports` does not accept one
+   * (108 Phase 9 review S18).
+   *
+   * A transport failure AFTER the request reached Resend therefore creates a
+   * SECOND import job, and only the second id is stored. State stays correct —
+   * `on_conflict=upsert` means both jobs converge on the same contact set, so
+   * the counts the completion rule reads still match — but it burns contact
+   * quota and orphans a job nothing will ever poll. On the Free plan's 1,000
+   * contacts that is worth knowing before a large send.
+   *
+   * Not fixed here because the honest fixes both cost more than the defect:
+   * dropping the retry makes a routine network blip fail a broadcast, and
+   * de-duplicating would mean listing recent imports and matching them by
+   * audience — a second provider round trip on every submit to save a rare
+   * duplicate. Recorded instead of silently retried.
+   */
   async createContactImport(
     audienceId: string,
     emails: readonly string[],
   ): Promise<{ readonly importId: string }> {
     return withRetry(
       async () => {
+        // BOUNDARY VALIDATION (108 Phase 9 review S16). `EmailLower` looks like
+        // a guarantee and is not: `unsafeBrandEmailLower` is `return raw as
+        // EmailLower` with no validation, and it is what feeds every path into
+        // this method. So the CSV's safety rested entirely on validation done
+        // when the address was written to the database, with nothing re-checking
+        // it here.
+        //
+        // An address containing \n or \r injects an extra CSV row — creating a
+        // contact in the audience that was never in the resolved list. One with
+        // a comma or a quote shifts columns. The completion rule DOES catch the
+        // injected-row case downstream (`total !== resolvedCount` refuses the
+        // send), but only AFTER the contact exists at Resend: that is a
+        // backstop, not a boundary. Refuse here so the bad row is never created.
+        const unsafe = emails.filter((e) => /[\r\n",]/.test(e));
+        if (unsafe.length > 0) {
+          throw classifyResendError({
+            statusCode: 422,
+            name: 'unsafe_recipient_format',
+            // Count only — never echo the addresses into an error whose message
+            // reaches a log line (S15 is about exactly that path).
+            message: `${unsafe.length} recipient address(es) contain CSV control characters`,
+          });
+        }
         const csv = ['email', ...emails].join('\n') + '\n';
         const form = new FormData();
         form.append('file', new Blob([csv], { type: 'text/csv' }), 'audience.csv');
@@ -604,9 +653,17 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
   }> {
     return withRetry(
       async () => {
-        const body = await importFetch(`/contacts/imports/${importId}`, {
-          method: 'GET',
-        });
+        // `importId` is provider-controlled — it arrives as `body.id` from
+        // Resend and is persisted without validation — and it goes straight into
+        // a URL PATH. `fetch` normalises `..` segments, so an id carrying one
+        // would change which endpoint this calls (108 Phase 9 review S23). Low
+        // risk, since it needs a compromised or misbehaving Resend, and one
+        // function call to remove.
+        const body = await importFetch(
+          `/contacts/imports/${encodeURIComponent(importId)}`,
+          { method: 'GET' },
+          importId,
+        );
         const c = body.counts ?? {};
         return {
           status: body.status ?? 'unknown',
@@ -651,23 +708,50 @@ interface ResendImportResponse {
   readonly message?: string;
 }
 
-/** Throw the gateway's own classified error for a non-2xx import response. */
-function throwImportError(status: number, body: ResendImportResponse): never {
-  throw classifyResendError({
-    statusCode: status,
-    name: body.name ?? `http_${status}`,
-    message: body.message ?? 'resend contact import error',
-  });
+/**
+ * Throw the gateway's own classified error for a non-2xx import response.
+ *
+ * `resourceType` + `resourceId` are BOTH required by `classifyResendError`'s 404
+ * branch, and this used to pass neither — so a 404 for a purged import job was
+ * classified `permanent` rather than `resource_missing` (108 Phase 9 review
+ * S17). Callers that want to tell "the job is gone" from "Resend refused the
+ * request" could not.
+ */
+function throwImportError(
+  status: number,
+  body: ResendImportResponse,
+  resourceId?: string,
+): never {
+  throw classifyResendError(
+    {
+      statusCode: status,
+      name: body.name ?? `http_${status}`,
+      message: body.message ?? 'resend contact import error',
+    },
+    'audience',
+    resourceId,
+  );
 }
+
+/**
+ * A hung `fetch` has no default timeout. This one is bounded by the route's
+ * `maxDuration = 300`, but that budget is shared with every remaining broadcast
+ * in the same tick loop (`MAX_PER_TICK = 50`, no wall-clock check between rows),
+ * so one stalled call can starve the rest of the tick. 30 s is generous against
+ * a measured ~481 ms round trip and still leaves the loop time to continue.
+ */
+const IMPORT_FETCH_TIMEOUT_MS = 30_000;
 
 async function importFetch(
   path: string,
   init: RequestInit,
+  resourceId?: string,
 ): Promise<ResendImportResponse> {
   let res: Response;
   try {
     res = await fetch(`${RESEND_API_BASE}${path}`, {
       ...init,
+      signal: AbortSignal.timeout(IMPORT_FETCH_TIMEOUT_MS),
       headers: {
         ...(init.headers ?? {}),
         Authorization: `Bearer ${env.broadcasts.apiKey}`,
@@ -689,7 +773,7 @@ async function importFetch(
   } catch {
     body = { message: text.slice(0, 200) };
   }
-  if (!res.ok) throwImportError(res.status, body);
+  if (!res.ok) throwImportError(res.status, body, resourceId);
   return body;
 }
 

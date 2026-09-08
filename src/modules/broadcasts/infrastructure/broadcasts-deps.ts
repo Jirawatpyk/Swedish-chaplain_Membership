@@ -59,9 +59,15 @@ import type { PruneExpiredDraftsDeps } from '../application/use-cases/prune-expi
 import type { AcknowledgeBroadcastsTermsDeps } from '../application/use-cases/acknowledge-broadcasts-terms';
 import type { GetMemberBroadcastDeps } from '../application/use-cases/get-member-broadcast';
 import type { ListMemberBroadcastsDeps } from '../application/use-cases/list-member-broadcasts';
-// F7.1a Phase 3 Cluster B (US1 — Pagination 5k→50k)
-import { makeDrizzleBroadcastsRetryRepo } from './drizzle-broadcasts-retry-repo';
-import { pgAdvisoryLockAdapter } from './pg-advisory-lock-adapter';
+// Two imports were removed here in 108 Phase 9 review round 1: the batch
+// deletion left `makeDrizzleBroadcastsRetryRepo` and `pgAdvisoryLockAdapter`
+// unused in this file. Both MODULES still exist and `pgAdvisoryLockAdapter` has
+// its own integration test, so only the dead imports went.
+//
+// `drizzle-broadcasts-retry-repo.ts` now has no consumer anywhere in `src/`.
+// Left in place rather than deleted on my own initiative — that is a module
+// deletion, not a review finding, and it deserves someone deciding it on
+// purpose.
 // F7.1a Phase 4 (US2 — Image embedding + allowlist + ClamAV scan)
 import { makeDrizzleImageAllowlistRepo } from './drizzle-image-allowlist-repo';
 import { vercelBlobImageStorage } from './vercel-blob-image-storage';
