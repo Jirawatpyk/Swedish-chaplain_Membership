@@ -64,7 +64,7 @@ Never raise `audienceCeiling` by hand for one member: the ceiling is a Resend-fa
 
 ### C. Dispatch tick cannot build the audience, or is slow
 
-1. **Alarm**: `broadcasts.dispatch_resolve_failed.total` rising for ≥ 15 min on one tenant, or `broadcasts.approved_overdue_count ≥ 1` for 30 min. Unlike a Resend failure, a resolver error has NO FR-021 wall-clock budget: the row stays `approved` until a tick succeeds, nothing transitions it and nobody is notified — without these two signals a schedule slips silently. Find the broadcast id in `cron.broadcasts.dispatch.server_error` (or the batch crons' `recipient_resolution_failed`) and tell the requesting member. Two things the pair does NOT cover: a `dispatch-batches` failure leaves the row in `sending`, not `approved` — its overdue signal is `broadcasts.stuck_sending_count` (≥ 24 h, `broadcasts-stuck-sending.md`); and on `dispatch-scheduled` the counter also fires for a Step-1 lock/read failure, not only a failed audience build — the log event says which. A `malformed_segment` (a `tier` row with no codes) is NOT counted here: it is a terminal `failed_to_dispatch` on `dispatch-scheduled` and a logged `errors++` (`cron.broadcasts.*.malformed_segment`) on the batch crons — a data defect to fix in the row, never a retry.
+1. **Alarm**: `broadcasts.dispatch_resolve_failed.total` rising for ≥ 15 min on one tenant, or `broadcasts.approved_overdue_count ≥ 1` for 30 min. Unlike a Resend failure, a resolver error has NO FR-021 wall-clock budget: the row stays `approved` until a tick succeeds, nothing transitions it and nobody is notified — without these two signals a schedule slips silently. Find the broadcast id in `cron.broadcasts.dispatch.server_error` and tell the requesting member. One thing the pair does NOT cover: on `dispatch-scheduled` the counter also fires for a Step-1 lock/read failure, not only a failed audience build — the log event says which. (This paragraph named `dispatch-batches` as a second uncovered case until 108 Phase 9; that cron was deleted.) A `malformed_segment` (a `tier` row with no codes) is NOT counted here: it is a terminal `failed_to_dispatch` on both dispatch legs — a data defect to fix in the row, never a retry. (The import leg reached this only after 108 Phase 9 review S6; before that it fell through to a transient `dispatch.server_error` and retried for ever.)
 2. **Size**: `broadcasts.audience_pages.total` is CUMULATIVE — read it as a rate, not a size. Each completed resolve costs one page per 5,000 rows plus one exhaustion page (20,000 contacts = 5 pages; T081 pins "4 full pages plus the empty proof page"); N broadcasts on one segment in a tick walk the pages ONCE (per-tick memo). 20,000 contacts measured **3.1–3.4 s** from a ~220 ms-RTT workstation (first measured 3.7 s; the spread between runs of identical code is ~200 ms, so treat these as one figure) and are budgeted < 3 s from Vercel `sin1` (same region as Neon) — `tests/integration/broadcasts/audience-pagination-20k.test.ts`. That budget is UNVERIFIED from `sin1` until the first prod sample (perf review: projected 1.4–1.8 s).
 3. If SLO-F7-013 (`broadcasts.recipient_count_ms{outcome="ok"}` p95) is breached in prod, run the EXPLAIN from that test's last two cases against prod READ-ONLY (`node --env-file=.env.production`, dummy `EXPORT_DOWNLOAD_TOKEN_SECRET`): the deep-cursor case asserts the keyset bound sits INSIDE an `Index Cond` on `members` (`member_id >=`) — a cursor that shows up as a `Filter` instead means every page is re-scanning the tenant from its first member (the shape round 2 fixed); a Nested Loop over a Seq Scan on `contacts` is the N+1 shape the 0294 index prevents; a missing index after a restore is the usual cause (§ A step 4 has the query).
 
@@ -78,11 +78,43 @@ Never raise `audienceCeiling` by hand for one member: the ceiling is a Resend-fa
 
    **Free-plan limits, worth checking before blaming the code**: 3 audiences (`POST /audiences` fails outright for a fourth — measured 2026-09-08) and 1,000 contacts, counted account-wide across ephemeral audiences until `cleanup-audiences` reaps them (grace 1 h, cron every 15 min). Both surface as a `permanent` 4xx, which fails the broadcast loudly rather than silently, and that is the intended signal to upgrade the plan.
 
+### E. The Contacts-Import build must be switched off (rollback)
+
+`FEATURE_F7_IMPORT_AUDIENCE=false`, or remove the variable — `src/lib/env.ts`
+defaults it to `false`, so absent is a valid boot that resolves to off.
+
+**⚠️ DRAIN FIRST. This rollback is not safe at an arbitrary moment.**
+
+The flag routes each tick to one leg or the other. `dispatchScheduledBroadcast`
+does not read `audience_import_*` at all, but it DOES reuse
+`resend_audience_id` — so a row mid-import handed back to the legacy leg gets
+contacts pushed into an audience the import is still filling, and is then sent
+with no completion rule applied. That is the one way this feature can deliver to
+a half-built audience.
+
+Run against prod and require **0 rows** before removing the variable:
+
+```sql
+SELECT tenant_id, broadcast_id, audience_import_submitted_at
+  FROM broadcasts
+ WHERE audience_import_id IS NOT NULL
+   AND audience_import_completed_at IS NULL;
+```
+
+It is the same predicate as the `broadcasts_audience_import_pending_idx` partial
+index, so it is cheap. A row that will not drain is stuck (§ C.4) — let it reach
+`failed_to_dispatch` and re-submit it after the rollback, rather than flipping
+underneath it.
+
+What changes on the OFF leg: the accepted ceiling becomes `min(configured, 500)`,
+because the serial push drains ~623 contacts per 300 s tick at the measured
+2.08 req/s. Broadcasts already `sending` are unaffected.
+
 ### D. The 1:N audience must be switched off (rollback)
 
 `FEATURE_CONTACT_MARKETING_RECIPIENTS=false` in Vercel env + redeploy (~30 s, no code deploy).
 
-What changes: every NEW resolve (compose count, submit, every dispatch tick) sources the primary contact only (`primary_only`), and the ceiling returns to 5,000. *(An interim clamp on 2026-09-08 held it at 500 in every flag state; Phase 9b removed the clamp the same day and made 500 the BATCH SIZE and split threshold instead, so 5,000 is real again — but the split threshold, the one-wave dispatcher, the cron partition, the permanent-failure retry gate and the drift halt are all code, not configuration, and a flag flip undoes none of them.)* Rolling those back is a code revert (`vercel promote`). A broadcast already `approved` but not yet dispatched is re-resolved at its dispatch tick, so it shrinks to primaries — that is the intended blast radius, not a bug. **One edge (round 2, errors LOW)**: if that primary-only audience is STILL over 5,000, the re-resolve answers `broadcast_audience_too_large`, which dispatch treats as TERMINAL — `failed_to_dispatch` plus the FR-021 member notification — so the rollback kills that broadcast rather than shrinking it. Not reachable at SweCham's scale (~150 members); at a tenant where it is, cancel such broadcasts before the flip and tell the members. A broadcast already `sending` is unaffected (its recipient rows are written).
+What changes: every NEW resolve (compose count, submit, every dispatch tick) sources the primary contact only (`primary_only`), and the ceiling returns to 5,000. *(⚠️ CORRECTED 2026-09-09: 5,000 is the CONFIGURED ceiling, not the enforced one. With `FEATURE_F7_IMPORT_AUDIENCE` off — the default — the enforced bound is `min(configured, 500)`. This sentence previously described a Phase 9b batch/split model that `ca51f59a1` deleted.)* Rolling those back is a code revert (`vercel promote`). A broadcast already `approved` but not yet dispatched is re-resolved at its dispatch tick, so it shrinks to primaries — that is the intended blast radius, not a bug. **One edge (round 2, errors LOW)**: if that primary-only audience is STILL over 5,000, the re-resolve answers `broadcast_audience_too_large`, which dispatch treats as TERMINAL — `failed_to_dispatch` plus the FR-021 member notification — so the rollback kills that broadcast rather than shrinking it. Not reachable at SweCham's scale (~150 members); at a tenant where it is, cancel such broadcasts before the flip and tell the members. A broadcast already `sending` is unaffected (its recipient rows are written).
 
 What does NOT change with the flag: nine things, listed in full in `specs/108-contact-recipient-rules/quickstart.md` § Rollback matrix row C. The two an operator is most likely to be surprised by: **`marketing_unsubscribes.contact_id` is written by every unsubscribe from merge onward** (no flag read — do not drop the column while this code is deployed), and **the sender is no longer excluded from a custom list or the attendee segment** (pre-108 their primary address was filtered out of every segment kind). Rolling any of the nine back is a code revert, not a flag flip.
 

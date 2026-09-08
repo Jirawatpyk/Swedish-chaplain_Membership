@@ -58,8 +58,24 @@ export function isF71aUs1Enabled(): boolean {
  * broadcast can span ticks without any of the batch machinery — no split
  * threshold, no manifests, no cross-tick index slices.
  *
- * OFF is the pre-108 behaviour exactly (loop + batch path + ceiling clamp) and
- * is the rollback position, so it must keep working unchanged.
+ * OFF is the serial `addContactsToAudience` loop with the accepted ceiling
+ * clamped to `DELIVERABLE_RECIPIENTS_PER_TICK`. It is the rollback position, so
+ * it must keep working unchanged — but it is NOT "the pre-108 behaviour
+ * exactly", as this line claimed until 108 Phase 9 review round 1: the batch
+ * path it named was deleted by `ca51f59a1`, and `origin/main` has no clamp at
+ * all.
+ *
+ * ⚠️ **Draining comes before the rollback.** Turning this OFF hands any
+ * in-flight row to `dispatchScheduledBroadcast`, which does not read
+ * `audience_import_*` but DOES reuse `resend_audience_id` — so it would push
+ * contacts into an audience the import is still filling and then send with no
+ * completion rule. Confirm zero rows first:
+ *
+ * ```sql
+ * SELECT tenant_id, broadcast_id FROM broadcasts
+ *  WHERE audience_import_id IS NOT NULL
+ *    AND audience_import_completed_at IS NULL;
+ * ```
  */
 export function isF7ImportAudienceEnabled(): boolean {
   return env.features.f7Broadcasts && env.features.f7ImportAudience;

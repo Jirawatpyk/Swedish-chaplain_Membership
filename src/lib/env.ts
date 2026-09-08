@@ -652,8 +652,11 @@ const schema = z.object({
   // twice been bitten by a constant or a flag that meant something different
   // depending on when you read it.
   //
-  // Flag OFF is the rollback and is the pre-108 behaviour exactly: the loop,
-  // the batch path, and the ceiling clamp, all unchanged.
+  // Flag OFF is the rollback: the serial loop with the ceiling clamped to
+  // DELIVERABLE_RECIPIENTS_PER_TICK. NOT "the pre-108 behaviour exactly" — the
+  // batch path that phrase named was deleted, and origin/main has no clamp.
+  // Drain in-flight imports BEFORE removing the variable; see the docblock on
+  // `isF7ImportAudienceEnabled` for the query and why it matters.
   FEATURE_F7_IMPORT_AUDIENCE: booleanFromString.default(false),
 
   // --- ClamAV virus scanner (US2 dependency) -------------------------------
