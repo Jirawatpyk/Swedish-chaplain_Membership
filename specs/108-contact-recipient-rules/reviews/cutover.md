@@ -79,12 +79,16 @@ node --env-file=.env.production --import tsx scripts/inventory-primary-contact-i
 
 | Measure | Value | Measured (Asia/Bangkok) |
 |---|---|---|
-| live contacts — primaries | _pending_ | |
-| live contacts — secondaries | _pending_ | |
-| of those, marketing-eligible (opt-out NULL, not suppressed) — the T093 preset set | _pending_ | |
-| `marketing_unsubscribes` rows | _pending_ | |
-| members with zero live primaries / more than one (`violations`) | _pending_ | |
-| broadcasts currently in `approved` / `scheduled` / `sending` | _pending_ | |
+| live contacts — primaries | **not measured 2026-09-08 — run before the flip** | |
+| live contacts — secondaries | **not measured 2026-09-08 — run before the flip** | |
+| of those, marketing-eligible (opt-out NULL, not suppressed) — the T093 preset set | **not measured 2026-09-08 — run before the flip** | |
+| `marketing_unsubscribes` rows | **not measured 2026-09-08 — run before the flip** | |
+| members with zero live primaries / more than one (`violations`) | **not measured 2026-09-08 — run before the flip** | |
+| broadcasts currently in `approved` / `scheduled` / `sending` | **not measured 2026-09-08 — run before the flip** | |
+
+No measurement was in flight when this file was written. The session that opened it could not
+reach `.env.production` (the tool sandbox refuses it), so the numbers below the header are absent
+by circumstance, not pending by process — someone has to run the command above.
 
 Last known figures (2026-09-05, PR-B post-deploy inventory): 150 members / 150 primaries /
 **0 secondaries** / 0 violations. If that still holds, rows 3 and 3a of § 2 are **VACUOUS** — record

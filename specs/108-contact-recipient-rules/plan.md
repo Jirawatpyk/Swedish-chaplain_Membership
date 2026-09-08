@@ -132,9 +132,12 @@ re-checked post-Phase-1 design (see § Post-Design Re-check).*
       `aria-live="polite"`; axe sweeps on the new page, member detail, portal profile,
       compose. `enterprise-ux-designer` pass on every UI PR.
 - [x] **VII. Performance & Observability** — Budgets in Technical Context; new metrics
-      `broadcasts.audience_resolved_total{segment,mode,phase}`, `audience_pages_total`,
-      `recipient_count_ms{outcome}` (the `audience_import_status` gauge went with the
-      deferred T086), plus `dispatch_resolve_failed_total` and `approved_overdue_count`
+      `broadcasts_audience_resolved_total{segment,mode,phase}`, `broadcasts_audience_pages_total`,
+      `broadcasts_recipient_count_ms{outcome}` (dot-separated names were used in this
+      paragraph until 2026-09-08, T098 — the names on the wire are underscored, with no
+      transform in `src/lib/metrics.ts`; grep for the dotted form finds nothing. The
+      `audience_import_status` gauge went with the
+      deferred T086), plus `broadcasts_dispatch_resolve_failed_total` and `broadcasts_approved_overdue_count`
       from the 2026-09-07 review; existing
       `invoicing.auto_email_skipped{reason}`; structured logs with member-id hashes;
       runbook `docs/runbooks/broadcast-audience-build.md`; `docs/observability.md` updated.
