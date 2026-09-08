@@ -148,12 +148,31 @@ export interface BroadcastsGatewayPort {
   ): Promise<GetAudienceContactCountOutcome>;
 
   /**
-   * COMP-1 US3-C — best-effort removal of a contact from an audience on
-   * member erasure. A 404 (contact or audience already absent) resolves
-   * (idempotent); a 5xx / network error throws a retryable GatewayThrowable
-   * so the caller can classify it as a propagation failure.
+   * Detach a contact from ONE audience. A 404 (contact or audience already
+   * absent) resolves (idempotent); a 5xx / network error throws a retryable
+   * GatewayThrowable so the caller can classify it as a propagation failure.
+   *
+   * ⚠️ This does NOT satisfy GDPR Art. 17, and its provider response says
+   * otherwise. Measured 2026-09-09 (108 Phase 9 review U1): after a successful
+   * call answering `{"deleted": true}`, the audience-scoped read 404s while an
+   * audience-less `GET /contacts/{email}` still returns the contact at 200. It
+   * detaches. For erasure use `deleteContactGlobally` below.
    */
   removeContactFromAudience(audienceId: string, email: string): Promise<void>;
+
+  /**
+   * COMP-1 US3-C — DELETE the contact record itself, across every audience.
+   *
+   * Measured in the same run (U1b): `DELETE /contacts/{email}` answers 200 and
+   * the read-back is a genuine 404, so unlike the audience-scoped call above
+   * this is the one that actually erases. The erasure cascade had been calling
+   * the other one and reporting `resendOutcome: 'ok'` while every address
+   * remained at the processor — on both dispatch paths, not just the import.
+   *
+   * Same idempotency contract: a 404 resolves, transport errors throw
+   * retryable.
+   */
+  deleteContactGlobally(email: string): Promise<void>;
 
   /**
    * T086 (108 US5) — hand an entire audience to the provider in ONE call.

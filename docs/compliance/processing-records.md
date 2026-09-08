@@ -184,7 +184,10 @@ business categorisation, not special-category PII.
   broadcast emails dispatched by F7.
 - **Resend Inc. (processor)** — receives the broadcast HTML body +
   recipient list at dispatch time; transmits the email; reports
-  delivery events back via webhook.
+  delivery events back via webhook. It also **retains each recipient
+  address as a team-level contact record** that outlives both the
+  ephemeral audience and the member's erasure — see the retention table
+  and residual 8a. Measured 2026-09-09, not assumed.
 - **Chamber admins (data subjects in the controller's role)** —
   receive admin-notification emails on submission via F1+F4
   transactional path (NOT via F7 Broadcasts).
@@ -217,6 +220,7 @@ business categorisation, not special-category PII.
 | `audit_log` rows `contact_marketing_opted_out` / `contact_marketing_opted_in` (108 PR-D) | **5 years** | Constitution default; payload carries `member_id` / `related_member_id`, `contact_id`, `source`, `actor_role` — no address (FR-053a) |
 | `audit_log` rows for F7 events (37 event types) | **5 years** | All F7 events default 5y per `src/modules/broadcasts/application/ports/audit-port.ts` `F7_AUDIT_RETENTION_YEARS` map |
 | Resend Broadcasts API send logs | Resend default (90 days) | Provider retention; not under chamber control |
+| **Resend contact records ("Global Contacts")** | **Indefinite — survives both audience deletion and member erasure** | One record per team, not per audience (research § R16). The erasure cascade detaches the contact from the audience; measured 2026-09-09 (U1), that leaves the contact readable at `GET /contacts/{email}`. Not under chamber control and **not currently erased** — see residual 8a for why the audience-less delete is not called and what closing it needs. |
 
 ### Technical + organisational measures (TOMs)
 
@@ -1160,6 +1164,7 @@ when answering a DSR:
 | 6 | **Old-address broadcast deliveries / outbox mail** — a contact's email was *edited off* its row before erasure (peer-collision sub-case) | A contact **archived** before erasure is now tombstoned: the in-tx redaction set is **all** the member's contact emails (any `removed_at`) **minus** any address a *peer* holds via a LIVE contact (COMP-1 review **FIX-3**), and the `notifications_outbox` cancel carries a two-pronged cross-member ownership guard (**FIX-4**). The residual is narrowed to (a) an address that was UPDATE-edited off every contact row (no longer discoverable) and (b) the deliberate **peer-collision exclusion** — an address a peer still holds live is left un-redacted to avoid cross-member over-deletion. |
 | 7 | **Cross-author `custom_recipient_emails`** (peer-collision edge only) | The erased member's email is now **element-wise redacted** out of OTHER authors' custom recipient lists tenant-wide, keyed on the same peer-excluding email set as the tombstone (COMP-1 review **FIX-9**). Residual narrowed to the deliberate peer-collision exclusion: an email that is ALSO a peer's LIVE contact is left in place to avoid over-redacting the peer's legitimate target. |
 | 8 | **Resend historical / un-enumerable audiences** (US3-C #H-2 above) | Best-effort-once; manual remediation within the §30 window. |
+| 8a | **Resend "Global Contacts" survive erasure — MEASURED, not inferred** | The erasure cascade calls `DELETE /audiences/{id}/contacts/{email}`, which **detaches** rather than deletes. Measured 2026-09-09 (108 Phase 9 review U1) against the live account: the call answers `{"deleted": true}` and the audience-scoped read then 404s, **while an audience-less `GET /contacts/{email}` still returns the contact at 200**. The provider's own response is what made this invisible for as long as it was. Per research § R16 a contact is one record per team that survives an audience delete, so the address persists at the processor indefinitely and is **not under chamber control**. An audience-less `DELETE /contacts/{email}` was measured in the same run to delete for real (read-back 404) and is implemented as `deleteContactGlobally`, but it is **deliberately not called by the cascade**: the Resend account is shared by every tenant, so two tenants whose members share an address share ONE contact record, and deleting it during tenant A's erasure would destroy tenant B's record together with the Resend-side `unsubscribed` flag that `on_conflict=upsert` exists to preserve — trading an Art. 17 residual for an Art. 21 regression on an uninvolved person. Closing this properly requires a cross-tenant "is this address held by any live member anywhere" check, which is an architectural decision and is **OPEN**. Until then, a DSR answer must say the address may remain in the processor's contact store. |
 | 9 | **Sentinel vocabulary divergence** (`'[erased]'` F1/F3 vs `'[redacted]'` F7) | Clean-Architecture prevents F7 importing F3's constant; a single-token PII-oracle must check both. Cosmetic, no leak. |
 
 ### Technical + organisational measures (TOMs)

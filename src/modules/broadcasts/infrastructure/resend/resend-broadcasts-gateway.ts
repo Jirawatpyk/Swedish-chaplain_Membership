@@ -468,10 +468,65 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
         },
         { method: 'removeContactFromAudience' },
       );
-      logger.info({ audienceId }, 'resend.broadcasts.contact_removed');
+      logger.info({ audienceId }, 'resend.broadcasts.contact_detached');
     } catch (e) {
-      // A 404 → the contact/audience is already gone → erasure goal already met.
+      // A 404 → the contact/audience is already gone → nothing to detach.
       if (e instanceof GatewayThrowable && e.kind === 'resource_missing') return;
+      throw e;
+    }
+  },
+
+  /**
+   * COMP-1 US3-C — the call that actually erases.
+   *
+   * `removeContactFromAudience` above answers `{"deleted": true}` and DETACHES:
+   * measured 2026-09-09, the audience-scoped read 404s afterwards while
+   * `GET /contacts/{email}` still returns the contact at 200. This endpoint's
+   * read-back is a real 404.
+   *
+   * The distinction matters because the erasure cascade was calling the wrong
+   * one and counting each call as a removal, so `resendOutcome: 'ok'` was
+   * reported for members whose addresses were still at the processor.
+   */
+  async deleteContactGlobally(email: string): Promise<void> {
+    try {
+      await withRetry(
+        async () => {
+          const body = await importFetch(
+            `/contacts/${encodeURIComponent(email)}`,
+            { method: 'DELETE' },
+            // No resourceId: it would be the address, and that must not reach a
+            // classified error's `reason`, which is logged.
+          );
+          // The provider says `deleted: true` for a detach as well, so this is
+          // logged rather than trusted as proof. What makes this call correct is
+          // the endpoint, not the answer.
+          if ((body as { deleted?: unknown }).deleted !== true) {
+            logger.warn(
+              { deleted: (body as { deleted?: unknown }).deleted },
+              'resend.broadcasts.contact_delete_unexpected_body',
+            );
+          }
+        },
+        { method: 'deleteContactGlobally' },
+      );
+      // No email in the log line — forbidden-fields hygiene (FR-053a).
+      logger.info({}, 'resend.broadcasts.contact_deleted_globally');
+    } catch (e) {
+      // A 404 means the contact is already gone: the erasure goal is met.
+      if (e instanceof GatewayThrowable && e.kind === 'resource_missing') return;
+      // `resource_missing` needs a resourceId, and the only id available here is
+      // the address itself — which must not reach a classified error's `reason`,
+      // because that is logged. So a genuine 404 arrives as `permanent`, and its
+      // `code` carries the provider's `name`. Measured: Resend answers
+      // `{"statusCode":404,"name":"not_found"}`.
+      if (
+        e instanceof GatewayThrowable &&
+        e.kind === 'permanent' &&
+        (e.code === 'not_found' || e.code === 'http_404')
+      ) {
+        return;
+      }
       throw e;
     }
   },

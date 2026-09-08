@@ -174,6 +174,7 @@ function makeGateway(opts: {
     async retrieveBroadcast() { throw new Error('not used'); },
     async getAudienceContactCount() { return { kind: 'not_found' as const }; },
     async removeContactFromAudience() { throw new Error('not used'); },
+    async deleteContactGlobally() { throw new Error('not used'); },
     async listAudiences() {
       if (opts.listThrows) throw new Error('Resend: list audiences 503');
       return [...opts.audiences];
