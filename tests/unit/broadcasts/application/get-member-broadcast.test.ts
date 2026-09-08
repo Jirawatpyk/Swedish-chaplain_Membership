@@ -60,6 +60,13 @@ function makeRepoMocks(opts: {
     updateEstimatedRecipientCount: async () => {
       // no-op
     },
+    // T086 — unused here; present so the stub still satisfies BroadcastsRepo.
+    attachAudienceImport: async () => {
+      // no-op
+    },
+    markAudienceImportCompleted: async () => {
+      // no-op
+    },
     listByTenantStatus: async () => ({ rows: [], nextCursor: null }),
     countForMemberQuota: async () => ({ submittedOrApproved: 0, sent: 0 }),
     findByResendBroadcastIdBypassRls: async () => null,

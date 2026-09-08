@@ -209,6 +209,24 @@ export const broadcasts = pgTable(
     resendAudienceId: text('resend_audience_id'),
     resendBroadcastId: text('resend_broadcast_id'),
 
+    // 108 US5 / T086 — the Contacts-Import audience build (migration 0298).
+    // `audienceImportId` NON-NULL means an import is in flight or finished and
+    // is the idempotency guard: a tick never submits a second one while it is
+    // set. The 30-minute stuck rule measures from `submittedAt`, not from
+    // `scheduledFor`. `completedAt` is stamped only after the completion rule
+    // passes (`completed`, `failed === 0`, parts sum to `total`, and `total`
+    // equals the resolved count) — `sendBroadcast` runs only after that,
+    // because a `completed` import can still have processed zero rows.
+    // Deliberately NO `audience_building` status: it would make the row
+    // un-cancellable (cancel accepts only submitted/approved). See 0298.
+    audienceImportId: text('audience_import_id'),
+    audienceImportSubmittedAt: timestamp('audience_import_submitted_at', {
+      withTimezone: true,
+    }),
+    audienceImportCompletedAt: timestamp('audience_import_completed_at', {
+      withTimezone: true,
+    }),
+
     // Audit retention (Constitution v1.4.0 retention column)
     retentionYears: smallint('retention_years').notNull().default(5),
 

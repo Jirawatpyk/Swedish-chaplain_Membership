@@ -180,6 +180,9 @@ function makeBroadcastsRepo(state: State): BroadcastsRepo {
     // Phase 9b (T147) — unused here; present so the stub still satisfies
     // BroadcastsRepo.
     async updateEstimatedRecipientCount() {},
+    // T086 — unused here; present so the stub still satisfies BroadcastsRepo.
+    async attachAudienceImport() {},
+    async markAudienceImportCompleted() {},
     async listByTenantStatus() {
       return { rows: [], nextCursor: null };
     },

@@ -756,6 +756,62 @@ export function makeDrizzleBroadcastsRepo(
       }
     },
 
+    async attachAudienceImport(
+      txUnknown,
+      tenantIdArg: TenantSlug,
+      broadcastId: BroadcastId,
+      importId: string,
+    ): Promise<void> {
+      const tx = txUnknown as TenantTx;
+      await assertTenantBoundTx(tx, ctx.slug, 'attachAudienceImport');
+      const updated = await tx
+        .update(broadcasts)
+        .set({
+          audienceImportId: importId,
+          audienceImportSubmittedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(broadcasts.tenantId, tenantIdArg),
+            eq(broadcasts.broadcastId, broadcastId),
+          ),
+        )
+        .returning({ broadcastId: broadcasts.broadcastId });
+      if (updated.length !== 1) {
+        throw new Error(
+          `attachAudienceImport: expected 1 row updated for broadcast ${broadcastId} (tenant ${tenantIdArg}) but updated ${updated.length}`,
+        );
+      }
+    },
+
+    async markAudienceImportCompleted(
+      txUnknown,
+      tenantIdArg: TenantSlug,
+      broadcastId: BroadcastId,
+    ): Promise<void> {
+      const tx = txUnknown as TenantTx;
+      await assertTenantBoundTx(tx, ctx.slug, 'markAudienceImportCompleted');
+      const updated = await tx
+        .update(broadcasts)
+        .set({
+          audienceImportCompletedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(broadcasts.tenantId, tenantIdArg),
+            eq(broadcasts.broadcastId, broadcastId),
+          ),
+        )
+        .returning({ broadcastId: broadcasts.broadcastId });
+      if (updated.length !== 1) {
+        throw new Error(
+          `markAudienceImportCompleted: expected 1 row updated for broadcast ${broadcastId} (tenant ${tenantIdArg}) but updated ${updated.length}`,
+        );
+      }
+    },
+
     async updateEstimatedRecipientCount(
       txUnknown,
       tenantIdArg: TenantSlug,

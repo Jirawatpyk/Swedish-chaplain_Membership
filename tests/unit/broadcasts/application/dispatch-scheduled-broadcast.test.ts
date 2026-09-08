@@ -174,6 +174,9 @@ function makeRepo(opts: RepoOpts): {
       async updateEstimatedRecipientCount(_tx, _t, _b, count: number) {
         estimateWrites.push({ count });
       },
+      // T086 — unused here; present so the stub still satisfies BroadcastsRepo.
+      async attachAudienceImport() {},
+      async markAudienceImportCompleted() {},
       async listByTenantStatus() {
         return { rows: [], nextCursor: null };
       },

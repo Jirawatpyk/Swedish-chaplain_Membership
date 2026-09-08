@@ -261,6 +261,47 @@ export interface BroadcastsRepo {
   ): Promise<void>;
 
   /**
+   * T086 (108 US5) — record that a Contacts-Import job has been handed to the
+   * provider, stamping `audience_import_submitted_at` alongside the id.
+   *
+   * A non-null id is the idempotency guard: a later tick sees it and does not
+   * submit a second import. The timestamp is what the 30-minute stuck rule
+   * (FR-044 f) measures from — `scheduled_for` would be wrong, because a
+   * broadcast can sit approved for hours before a tick picks it up.
+   *
+   * Idempotent by overwrite: writing a second id replaces the first rather
+   * than erroring, so a retried tick cannot 23514 the row.
+   *
+   * Does NOT change status. The broadcast stays `approved` for the whole
+   * build, which is what keeps it cancellable (`cancelBroadcast` accepts only
+   * submitted/approved) — migration 0298 records why no `audience_building`
+   * status exists.
+   */
+  attachAudienceImport(
+    tx: unknown,
+    tenantId: TenantSlug,
+    broadcastId: BroadcastId,
+    importId: string,
+  ): Promise<void>;
+
+  /**
+   * T086 — stamp `audience_import_completed_at`.
+   *
+   * The caller MUST have applied the full completion rule first: provider
+   * status `completed`, `failed === 0`, `created + updated + skipped === total`,
+   * and `total` equal to the count it resolved. `completed` alone is not
+   * enough — one import in five identical probes reported `completed` with
+   * `failed: 0` and `total: 0` and had attached nothing (research R9 V2 (c)).
+   * This stamp is the gate `sendBroadcast` waits on, so a premature one sends
+   * a broadcast to a partly-built or empty audience.
+   */
+  markAudienceImportCompleted(
+    tx: unknown,
+    tenantId: TenantSlug,
+    broadcastId: BroadcastId,
+  ): Promise<void>;
+
+  /**
    * List broadcasts for the admin queue / member history surfaces.
    */
   listByTenantStatus(
