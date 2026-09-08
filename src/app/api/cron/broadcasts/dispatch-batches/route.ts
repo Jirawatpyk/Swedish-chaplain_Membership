@@ -85,8 +85,12 @@ import type {
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-// BUG-028: full function budget for the per-contact audience sync (Resend
-// 2 req/s + reactive 429 backoff). See dispatch-scheduled for the rationale.
+// BUG-028: full function budget for the per-contact audience sync (Resend's
+// limit is 10 req/s but the serial loop is latency-bound at ~3.4 — measured
+// 2026-09-08, T095; this said 2 before). See dispatch-scheduled for the
+// rationale. NOTE: this route's 300 s budget is per BATCH, and a batch may
+// hold up to RESEND_PER_AUDIENCE_CAP = 10,000 contacts — so splitting does
+// not escape the wall clock, it only makes the same serial push smaller.
 export const maxDuration = 300;
 
 const MAX_BROADCASTS_PER_TICK = 20;

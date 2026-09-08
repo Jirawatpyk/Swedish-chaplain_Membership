@@ -42,11 +42,23 @@ export function audienceCeiling(batchingEnabled: boolean): number {
  * (Resend permits 10,000 contacts per audience) that never checked the WALL
  * CLOCK. Pass 4 of the staff review did. `split-large-broadcasts` skips
  * `resolvedCount <= SPLIT_THRESHOLD_RECIPIENTS`, so the band falls to
- * `dispatch-scheduled`, whose push is a SERIAL one-contact-at-a-time loop at
- * ~2 req/s inside `maxDuration = 300` — and `plan.md:268` states the serial
- * push cannot finish even 5,000 contacts in that budget. Such a broadcast is
- * accepted at submit and never delivered. Unreachable while the 1:N flag is
- * OFF (the ceiling is 5,000 then); a precondition of the flag flip — see the
- * US5 AMENDMENT in `spec.md` and `reviews/pr-c.md` row 33.
+ * `dispatch-scheduled`, whose push is a SERIAL one-contact-at-a-time loop
+ * inside `maxDuration = 300` — and `plan.md:268` states the serial push cannot
+ * finish even 5,000 contacts in that budget. Such a broadcast is accepted at
+ * submit and never delivered.
+ *
+ * **T095, measured 2026-09-08 — the band is WIDER than "5,001–10,000", and it
+ * is NOT created by the 1:N flag.** The account limit is 10 req/s
+ * (`ratelimit-policy: 10;w=1`, read from the API), but this loop is serial, so
+ * its throughput is `min(limit, 1/RTT)` and the warm round trip is ~0.29 s —
+ * about **3.4 req/s, latency-bound**. One 300 s tick therefore drains ~1,000
+ * contacts, so anything above roughly **830** (with a 20 % margin) is
+ * undeliverable **at the 5,000 ceiling that is enforced today, flag or no
+ * flag**. The 1:N flip widens an existing exposure; it does not introduce one.
+ * The earlier "~2 req/s" in this docblock was wrong about the account and
+ * accidentally close about the effect. Detail + caveats:
+ * `specs/108-contact-recipient-rules/research.md` § R9 (T095 block) and
+ * `reviews/cutover.md` § 5a. Closing it is a precondition of the flag flip —
+ * see the US5 AMENDMENT in `spec.md` and `reviews/pr-c.md` row 33.
  */
 export const SPLIT_THRESHOLD_RECIPIENTS = 10_000;

@@ -55,9 +55,12 @@ const MAX_PER_TICK = 50;
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 // BUG-028: give the audience sync the full function budget. Resend's Contacts
-// API is one-at-a-time under a 2 req/s account limit, and the gateway relies
-// on reactive 429 backoff (no fixed pacing) — so a ~130-recipient broadcast
-// takes ~65-130s to sync, comfortably under 300s. (Genuinely huge audiences
+// API is one-at-a-time; the account limit is 10 req/s (measured 2026-09-08,
+// T095 — this comment previously said 2), but the loop is serial so it runs at
+// `min(10, 1/RTT)` ≈ 3.4 req/s on a ~0.29 s warm round trip. A ~130-recipient
+// broadcast therefore syncs in ~40 s, and ~1,000 contacts is what one 300 s
+// tick can drain — the gateway's reactive 429 backoff (no fixed pacing) never
+// fires at that rate. (Genuinely huge audiences
 // still need the batched multi-tick model; this covers SweCham scale +
 // moderate growth without the fixed-pacing timeout that was rejected in
 // review.)

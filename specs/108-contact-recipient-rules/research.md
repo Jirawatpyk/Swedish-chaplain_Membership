@@ -37,7 +37,7 @@ retrieval returns a publishable-key-scoped PI with `payment_method` unexpanded),
 is not settleable from source: initiate a PromptPay payment in test mode, call it in the
 console, and grep the result. Also eyeball Stripe's hosted PromptPay instructions page.
 V5 the team's actual Resend
-rate limit (Settings → Usage; docs default is 10 req/s per team, raisable via support) and
+rate limit (~~Settings → Usage~~ — **MEASURED 2026-09-08 from the API's own `ratelimit-*` headers: 10 req/s confirmed, but the serial loop is latency-bound at ~3.4 req/s; see the T095 block in R9**) and
 whether the Audiences → Segments / Global Contacts migration has a deprecation date that
 affects F7's `audienceId`-based gateway (R16).
 
@@ -312,6 +312,84 @@ affects F7's `audienceId`-based gateway (R16).
   `status` + `counts { total, created, updated, skipped, failed }`). Even at 10 req/s the
   serial loop needs ~500 s for 5,000 contacts, so the loop cannot stay; the import API removes
   the problem instead of pacing it.
+
+> **T095 — MEASURED 2026-09-08 12:41 (Asia/Bangkok). The limit is real; it is also not the
+> binding constraint.** Five `GET /audiences` calls against the production
+> `RESEND_BROADCASTS_API_KEY`, keep-alive on one connection, from the maintainer's Bangkok
+> workstation:
+>
+> ```
+> ratelimit-policy: 10;w=1   ratelimit-limit: 10   (200 OK on every call)
+> req0 (cold)  dns=4ms  tcp=8.5ms  tls=37ms  total=333ms
+> req1..req4   (keep-alive)                  total=285 / 281 / 300 / 291 ms
+> ```
+>
+> So the account limit is **10 req/s, confirmed from the API's own headers** — the paragraph
+> above is right and `resend-broadcasts-gateway.ts`'s "2 req/s" comment is wrong. But
+> `addContactsToAudience` is a **serial `await` loop**, so its throughput is
+> `min(account_limit, 1 / RTT)` and the warm RTT is **~0.29 s**:
+>
+> ```
+> throughput   = min(10, 1/0.29)  ≈  3.4 req/s      ← latency-bound, not plan-bound
+> per_tick_max = 300 s × 3.4 × 0.8 ≈ 830 contacts   (20 % margin)
+> ```
+>
+> **Using the documented 10 req/s as a capacity input overestimates by ~3×.** The undeliverable
+> band therefore starts near **~830–1,000 recipients**, not at the 5,001 the review reasoned
+> about — i.e. **below the 5,000 ceiling enforced today**, so the exposure predates the 108 flag
+> exactly as `plan.md:268` claimed.
+>
+> Three caveats, all of which push the true number DOWN, not up:
+> 1. Measured from a Bangkok workstation, not from Vercel `sin1`. Re-check on the first real send.
+> 2. `GET /audiences` is a read; the loop calls `POST /contacts`, a write. This is a lower bound
+>    on latency and therefore an upper bound on throughput.
+> 3. Four warm samples (281–300 ms, tight), one cold. Handshake is only ~37 ms, so connection
+>    reuse is not the lever — the ~285 ms is the server round trip itself.
+>
+> One thing this settles cheerfully: at 3.4 req/s the loop never approaches the 10 req/s policy,
+> so `withRetry`'s reactive 429 backoff never fires in normal operation.
+>
+> **SweCham today** (measured 2026-09-08: 150 primaries, 0 secondaries): 150 ÷ 3.4 ≈ **44 s** of
+> a 300 s budget — 15 %. **Post-import** (~150 members × 3 contacts ≈ 450): ≈ **132 s**, 44 %.
+> Both fit. The gap is between ~830 and whatever ceiling is enforced.
+>
+> ### T095 addendum — the account is on Resend's **FREE** plan, and that binds first
+>
+> Confirmed from the Resend billing + usage pages, 2026-09-08:
+>
+> | Free-plan limit | Value | In use now |
+> |---|---|---|
+> | **Contacts** | **1,000** | 13 |
+> | **Segments** (= Audiences) | **3** | 1 (`General`, id `e367de00…`) |
+> | Domains | 3 | — |
+> | Broadcast sending | unlimited | — |
+>
+> **1. The 1,000-contact cap is a harder bound than the wall clock, and it arrives first.** Every
+> dispatch pushes the whole resolved audience into a Resend audience, so a broadcast above roughly
+> **987** recipients (1,000 − the 13 already stored) hits the cap mid-push. Resend answers 4xx —
+> not 429 — so `classifyResendError` returns `permanent`
+> (`resend-broadcasts-gateway.ts:12,158`), and `dispatch-scheduled-broadcast.ts:21-22` transitions
+> the broadcast to `failed_to_dispatch` with an audit event. **That is the good failure mode**: it
+> fails loudly and terminally in one tick instead of sitting in `approved` being killed mid-push
+> forever. The wall-clock bound (~830) and the plan bound (~987) land within 20 % of each other by
+> coincidence; both say the same thing about where the safe ceiling is.
+>
+> **2. Three segments means at most THREE audiences can exist at once — and one is already taken.**
+> Chamber-OS creates an ephemeral audience per broadcast and lets the `cleanup-audiences` cron
+> (`*/15`) delete it once the broadcast is terminal. With `General` occupying a slot, **two
+> concurrent in-flight broadcasts is the real limit**; a third fails until the cron frees room.
+> This is the "transient plan-segment-limit overflow surfaces as a `failed_to_dispatch`" already
+> noted in `go-live-readiness.md` § 6.6 — on the Free plan the number behind that sentence is 2.
+>
+> **3. Upgrading does not fix the push.** Pro marketing ($40/mo) raises contacts to 5,000 — which
+> happens to equal the app's flag-OFF ceiling — and segments to unlimited. It does **not** change
+> latency, so the ~3.4 req/s and the ~830-per-tick bound survive the upgrade unchanged. Money buys
+> the contact cap, not the wall clock.
+>
+> **Consequence for the enforced ceiling**: the app currently accepts up to 5,000 (50,000 after the
+> 108 flip) while the provider account can physically hold 1,000. Nothing SweCham can compose today
+> reaches either — 150 now, ~450 post-import — but the configured ceiling is 5× to 50× larger than
+> what the account can accept, and that mismatch is invisible until a send fails.
 - **Decision (push)**: build the provider audience with **one import per broadcast**: the first
   `dispatch-scheduled` tick resolves the audience, renders a CSV (`email` column only — never an
   `unsubscribed` column, so the upsert cannot flip a Global Contact's Resend-side preference),

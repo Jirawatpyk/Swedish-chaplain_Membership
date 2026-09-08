@@ -129,7 +129,8 @@ function classifyResendError(
     });
   }
   if (status === 429) {
-    // Resend's default 2 req/s account rate limit. The request is fine —
+    // Resend's account rate limit — measured at 10 req/s, not the 2 this
+    // said before T095 (2026-09-08). The request is fine —
     // it was merely too fast — so back off and retry rather than treating
     // it as a permanent failure that kills the whole broadcast (BUG-028).
     // Without this branch a 429 fell through to `permanent` below and
@@ -226,8 +227,18 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
   ): Promise<void> {
     if (contacts.length === 0) return;
 
-    // The Resend Contacts API is one-at-a-time (no bulk endpoint) and the
-    // account is capped at 2 req/s. Wrap EACH single create in its own
+    // The Resend Contacts API is one-at-a-time (no bulk endpoint). The
+    // account limit is 10 req/s, NOT the 2 this comment used to claim
+    // (measured 2026-09-08, T095: `ratelimit-policy: 10;w=1` straight from
+    // the API's headers). But this loop is serial, so it can only reach
+    // `min(10, 1/RTT)` and the warm round trip is ~0.29 s — i.e. ~3.4 req/s,
+    // latency-bound. Two consequences worth knowing before you tune anything
+    // here: one tick drains ~1,000 contacts, not the ~3,000 the documented
+    // limit suggests; and the 429 backoff below never actually fires in
+    // normal operation, because 3.4 req/s never approaches 10.
+    // See `specs/108-contact-recipient-rules/research.md` § R9 (T095 block).
+    //
+    // Wrap EACH single create in its own
     // withRetry so that when Resend answers 429 (now classified retryable —
     // see classifyResendError), the 1/2/4/8/16s backoff self-throttles just
     // that ONE contact and retries it, WITHOUT re-creating the contacts that

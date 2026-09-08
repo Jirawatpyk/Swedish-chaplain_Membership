@@ -60,7 +60,7 @@ for whenever someone next merges anything. Set it when you are ready to redeploy
 | 3a | **GDPR Art. 14 first-contact attestation** (`docs/compliance/processing-records.md:128-135`) — either the system notices a new secondary on first marketing contact, or T093 attests per contact | **CLEARED — VACUOUS at 0 secondaries** (same measurement) | No secondary contact exists, therefore no data subject the chamber has not informed. **This is the row the import turns back on**: an imported marketing list is exactly a population that never gave the chamber its addresses directly. |
 | 3b | **Push-capacity gate (staff review 🔴)** | **OPEN — and it stays open regardless of today's scale** | See § 5. This is the one precondition that a small member base does not close; it only makes it unreachable today. |
 | — | **T098** `/speckit.analyze` FR↔SC↔contract traceability, findings folded into `spec.md` | **IN PROGRESS** | Ordered before T094 by `tasks.md:305`. |
-| — | **T095** — record the team's real Resend rate limit (Settings → Usage) in `research.md` § R9/R16 | **OPEN — operator** | Needed as the measured input to § 5. Every rate number in the codebase today is an unsourced comment (`~2 req/s` in `audience-ceiling.ts`, `10 req/s` in the F7 notes). |
+| — | **T095** — record the team's real Resend throughput in `research.md` § R9/R16 | **OPEN — operator, and it is now the ONLY thing between here and a decision** | Needed as the measured input to § 5. Every rate number in the codebase today is an unsourced comment (`~2 req/s` in `audience-ceiling.ts`, `10 req/s` in the F7 notes). **§ 5a below replaces "read Settings → Usage" with a measurement that answers the question the dashboard cannot.** |
 | — | **T096** — record of processing + legitimate-interest assessment | **CLEARED** | Delivered with PR-D in `docs/compliance/processing-records.md` (recipient-side LIA `:113-135`, per-contact-preference activity `:136-152`). |
 
 ---
@@ -183,6 +183,164 @@ step SweCham is already preparing. Record the measured rate in `reviews/pr-c.md`
 lands, and re-derive both numbers from it rather than from the 2 req/s guess above.
 
 ---
+
+## 5a. T095 — MEASURED 2026-09-08 12:41
+
+**Decision, 2026-09-08 (maintainer): the flip WAITS for T095.** Not because the risk was large at
+today's scale — § 3 measured 150 primaries and 0 secondaries — but because no correct bound can be
+written without the number, and a guessed bound is the exact defect this feature spent seven
+review rounds removing. **T095 is now done. T094 remains open pending the decision it enables.**
+
+### The result
+
+Five `GET /audiences` calls with the production `RESEND_BROADCASTS_API_KEY`, keep-alive on one
+connection, from the maintainer's Bangkok workstation:
+
+```
+ratelimit-policy: 10;w=1    ratelimit-limit: 10    200 OK on every call
+req0 (cold)   dns=4ms  tcp=8.5ms  tls=37ms   total=333ms
+req1..req4    (connection reused)            total=285 / 281 / 300 / 291 ms
+```
+
+| | |
+|---|---|
+| Account rate limit | **10 req/s** — confirmed from the API's own headers, not from a docs page |
+| Warm round trip | **~0.29 s** (tight: 281–300 ms; the TLS handshake is only 37 ms, so connection reuse is not the lever) |
+| **Serial-loop throughput** | **≈ 3.4 req/s** = `min(10, 1 / 0.29)` — **latency-bound, not plan-bound** |
+| `per_tick_max` = `300 × 3.4 × 0.8` | **≈ 830 contacts** |
+
+### What it changes
+
+- **The "~2 req/s" in `resend-broadcasts-gateway.ts` and in `reviews/pr-c.md` row 33 was wrong**
+  about the account: the limit is 10. It was accidentally close about the *effect*, for the wrong
+  reason.
+- **The documented 10 req/s overestimates capacity by ~3×** if used as a throughput input, which
+  is what `plan.md:268` and `research.md` R9 both did.
+- **The undeliverable band starts near ~830–1,000 recipients — below the 5,000 ceiling enforced
+  today.** So this is not a hazard the flip introduces; the flip widens an exposure that already
+  exists on the `primary_only` leg, exactly as `plan.md:268` claimed and as the 5,001–10,000
+  framing obscured.
+- **`withRetry`'s 429 backoff never fires.** At 3.4 req/s the loop never approaches a 10 req/s
+  policy, so row 33's "one 429 backoff burst eats the margin" cannot happen in normal operation.
+
+### Against SweCham's real numbers
+
+| Population | Push time at 3.4 req/s | Share of the 300 s budget |
+|---|---|---|
+| Today — 150 primaries, 0 secondaries (§ 3) | ≈ **44 s** | 15 % |
+| After the secondary import (~150 × 3 ≈ 450) | ≈ **132 s** | 44 % |
+| The bound | ~830 | 80 % (the margin) |
+
+Both real populations fit comfortably. **The gap is entirely between ~830 and whatever ceiling is
+enforced** — 5,000 today, 50,000 after the flip. Nothing SweCham can currently compose reaches it;
+a pasted custom list could.
+
+### And the account is on Resend's FREE plan — which binds before any of this
+
+Confirmed 2026-09-08 from the Resend billing + usage pages: **1,000 contacts** (13 in use),
+**3 segments/audiences** (1 in use — `General`), 3 domains, unlimited broadcast sending.
+
+| Bound | Where it bites | Failure mode |
+|---|---|---|
+| **Free plan: 1,000 contacts** | a broadcast above ~**987** recipients (1,000 − 13 stored) | 4xx → `permanent` → **`failed_to_dispatch`** in one tick, audited. **Loud and terminal — the good failure.** |
+| Wall clock: ~830/tick | above ~830 | killed mid-push every tick, sits in `approved`, alarmed ~90 min later by `approved_overdue_count`. **Silent — the bad one.** |
+| **Free plan: 3 segments** | **2** concurrent in-flight broadcasts (`General` holds one slot) | third fails until the `cleanup-audiences` cron frees room — the "plan-segment-limit overflow" already in `go-live-readiness.md` § 6.6 |
+
+Two bounds, 20 % apart, arrived at independently — they agree on where the safe ceiling is.
+
+**Upgrading does not fix the push.** Pro marketing ($40/mo) takes contacts to 5,000 and segments to
+unlimited, but latency is latency: ~3.4 req/s and ~830-per-tick survive the upgrade. Money buys the
+contact cap, not the wall clock.
+
+**The mismatch worth naming**: the app accepts up to 5,000 today (50,000 after the flip) while the
+provider account can hold 1,000. SweCham reaches neither — 150 now, ~450 post-import — but a
+configured ceiling 5× to 50× above what the account can physically accept is invisible until a
+send fails.
+
+### Caveats — all of which push the true number DOWN, not up
+
+1. Measured from a Bangkok workstation, not from Vercel `sin1`. Re-check against
+   `resend.broadcasts.contacts_added` on the first real send.
+2. `GET /audiences` is a read; the loop calls `POST /contacts`, a write. This is a lower bound on
+   latency and therefore an **upper** bound on throughput.
+3. Four warm samples. Variance was low (281–300 ms), but four is four.
+
+### The method, kept because it is the part that was wrong
+
+### The measurement the task originally asked for is insufficient
+
+"Resend → Settings → Usage" gives the **account's rate limit**. The push cannot necessarily reach
+it. `addContactsToAudience` is a *serial* `await` loop — one request, wait for the response, next
+request (`resend-broadcasts-gateway.ts:246-267`) — so its throughput is
+
+```
+observed_req_per_sec  =  min( account_rate_limit , 1 / round_trip_time )
+```
+
+A 50 req/s account still pushes ~5 req/s if each round trip from `sin1` takes 200 ms. **The
+binding constraint may be latency, not the plan.** Recording only the plan's limit would put a
+second unsourced number in the repo next to the two already there.
+
+### One command, both numbers
+
+Run from the repo root (reads the key out of `.env.production` without printing it; `GET
+/audiences` is read-only and changes nothing):
+
+```bash
+KEY=$(grep -m1 '^RESEND_BROADCASTS_API_KEY=' .env.production | cut -d= -f2- | tr -d '"\r')
+curl -sS -D - -o /dev/null -w '\nround_trip_seconds: %{time_total}\n' \
+  -H "Authorization: Bearer $KEY" https://api.resend.com/audiences \
+  | grep -iE '^HTTP|ratelimit|retry-after|round_trip'
+```
+
+Record all of it in `research.md` § R9/R16 and in `reviews/pr-c.md` row 33:
+
+- `ratelimit-limit` / `ratelimit-remaining` / `ratelimit-reset` — the account's limit, from the
+  API itself rather than from a docs page;
+- `round_trip_seconds` — one sample of the RTT that bounds the serial loop. Take three or four
+  samples; use the slowest.
+
+### Then the arithmetic, done once
+
+```
+throughput      = min( ratelimit-limit , 1 / round_trip_seconds )
+per_tick_max    = 300 s × throughput × 0.8      (20 % margin for retries and the rest of the tick)
+```
+
+| If throughput is | one tick drains about | the undeliverable band starts near |
+|---|---|---|
+| 2 req/s | 600 | 480 |
+| **3.4 req/s ← measured** | **1,035** | **830** |
+| 5 req/s | 1,500 | 1,200 |
+| 10 req/s (the documented limit — *not* the achievable throughput) | 3,000 | 2,400 |
+
+Every row **starts below the 5,000 ceiling that is enforced today**, which is the finding that
+matters: the wall-clock hazard is not the 5,001–10,000 slice the flip adds, it is everything above
+`throughput × 300` in *any* path. `dispatch-batches` also runs `maxDuration = 300`
+(`route.ts:90`) and `RESEND_PER_AUDIENCE_CAP = 10_000` per batch, so splitting does not escape it
+— a batch is just a smaller version of the same serial push.
+
+### What the number decides — now that it is known
+
+The measured 3.4 req/s puts us squarely in the second case below, so **the fix is worth doing
+whether or not 108 ever flips**:
+
+- **The exposure already exists at today's ceiling.** A broadcast between ~830 and 5,000
+  recipients is accepted at submit today, on the `primary_only` leg, with the 108 flag off, and
+  cannot finish its push. Nothing about the flip created that.
+- **The cheapest correct closure is now writable with a measured number**: an explicit
+  submit-time refusal above `per_tick_max` with its own error code, the constant carrying the
+  measurement, its date and its method — option (c) of `reviews/pr-c.md` row 33. A round **800**
+  sits just under the computed 830 and three orders of magnitude above anything SweCham can
+  compose, so its blast radius today is zero while it closes the band completely.
+- **It is still a behaviour change on a live path**: audiences of 801–5,000 are accepted today and
+  would start being refused. They are exactly the ones that silently fail now, so the refusal
+  replaces a silent failure with a legible one — but it must ship as a stated change, with a
+  Domain test, an error code, i18n copy in three locales and its own review stack, not as a
+  quiet constant.
+- **The ceiling raise then stops mattering.** With a refusal at ~800 binding first, whether the
+  ceiling reads 5,000 or 50,000 is cosmetic, and gate 3b is closed by construction rather than by
+  argument.
 
 ## 6. After the flip
 
