@@ -220,6 +220,12 @@ export {
   type ClearHaltOutput,
 } from './application/use-cases/clear-halt';
 export {
+  buildAudienceTick,
+  IMPORT_STUCK_AFTER_MS,
+  type BuildAudienceTickError,
+  type BuildAudienceTickOutput,
+} from './application/use-cases/build-audience-tick';
+export {
   dispatchScheduledBroadcast,
   enqueueDispatchFailureNotification,
   type DispatchScheduledBroadcastError,
@@ -293,6 +299,7 @@ export {
   makeProxySubmitBroadcastDeps,
   makeClearHaltDeps,
   makeDispatchScheduledBroadcastDeps,
+  makeBuildAudienceTickDeps,
   makePruneExpiredDraftsDeps,
   makeCancelInFlightBroadcastsForMemberDeps,
   makeScrubBroadcastContentForMemberDeps,
@@ -352,6 +359,7 @@ export {
 } from './application/use-cases/apply-batch-webhook-event';
 export {
   isF71aUs1Enabled,
+  isF7ImportAudienceEnabled,
   f71aUs1DisabledReason,
   type F71aUs1DisabledReason,
   isF71aUs7Enabled,

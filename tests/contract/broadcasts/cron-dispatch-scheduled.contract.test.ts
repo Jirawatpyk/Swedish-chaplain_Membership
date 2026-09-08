@@ -24,6 +24,8 @@ import { err } from '@/lib/result';
 
 const runInTenantMock = vi.fn();
 const isF71aUs1EnabledMock = vi.fn(() => true);
+const isF7ImportAudienceEnabledMock = vi.fn(() => false);
+const buildAudienceTickMock = vi.fn();
 const dispatchScheduledBroadcastMock = vi.fn();
 const dispatchResolveFailedTotalSpy = vi.fn();
 const cronSkippedCountSpy = vi.fn();
@@ -79,6 +81,9 @@ vi.mock('@/modules/broadcasts', () => ({
   // SQL and every case in this file answered 500.
   SPLIT_THRESHOLD_RECIPIENTS: 500,
   isF71aUs1Enabled: () => isF71aUs1EnabledMock(),
+  isF7ImportAudienceEnabled: () => isF7ImportAudienceEnabledMock(),
+  buildAudienceTick: (...args: unknown[]) => buildAudienceTickMock(...args),
+  makeBuildAudienceTickDeps: async () => ({ kind: 'build-deps-stub' }),
 }));
 
 function makeRequest(opts: { auth?: string }): NextRequest {
@@ -96,6 +101,8 @@ beforeEach(() => {
   envMock.features.f7Broadcasts = true;
   runInTenantMock.mockReset();
   isF71aUs1EnabledMock.mockReturnValue(true);
+  isF7ImportAudienceEnabledMock.mockReturnValue(false);
+  buildAudienceTickMock.mockReset();
   dispatchScheduledBroadcastMock.mockReset();
   dispatchResolveFailedTotalSpy.mockReset();
   cronSkippedCountSpy.mockReset();
@@ -231,6 +238,105 @@ describe('cron dispatch-scheduled — wire contract (108 PR-C review)', () => {
     await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
 
     expect(sqlTextOf(executed[0])).not.toContain('estimated_recipient_count');
+  });
+  /**
+   * T087 (108 US5) — with the import flag ON the cron routes to
+   * `buildAudienceTick` and `dispatchScheduledBroadcast` is never called.
+   *
+   * Two separate use cases rather than one with a branch inside: the
+   * single-tick path is ~1,200 lines of orphan reuse, idempotency replay,
+   * retry budget and batch hand-off, and giving all of it two shapes would
+   * make its suite the regression surface for both. The route is the ONLY
+   * place that knows both exist.
+   */
+  it('import flag ON → buildAudienceTick runs and the single-tick path does not', async () => {
+    isF7ImportAudienceEnabledMock.mockReturnValue(true);
+    runInTenantMock.mockImplementation(async (_ctx, fn) =>
+      fn({ execute: async () => [{ broadcast_id: BROADCAST_ID }] }),
+    );
+    buildAudienceTickMock.mockResolvedValue({
+      ok: true,
+      value: { kind: 'import_submitted', importId: 'imp-1', recipientCount: 3 },
+    });
+
+    const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
+    const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    expect(res.status).toBe(200);
+
+    expect(buildAudienceTickMock).toHaveBeenCalledTimes(1);
+    expect(dispatchScheduledBroadcastMock).not.toHaveBeenCalled();
+    const body = (await res.json()) as Record<string, number>;
+    expect(body['processed']).toBe(1);
+    // An import submitted is neither a success nor a failure: nothing has been
+    // delivered, and the next tick confirms it. Counting it as `succeeded`
+    // would make the dashboard claim a send that has not happened.
+    expect(body['import_submitted']).toBe(1);
+    expect(body['succeeded']).toBe(0);
+  });
+
+  it('import flag ON → the claim query has NO count bound, so a large audience reaches this cron', async () => {
+    // With the import there is no per-tick capacity to partition around: one
+    // call carries the whole audience. Keeping the batching predicate would
+    // hand a >500 row to `split-large-broadcasts`, which would build manifests
+    // for a path that is no longer the one used.
+    isF7ImportAudienceEnabledMock.mockReturnValue(true);
+    const executed: unknown[] = [];
+    runInTenantMock.mockImplementation(async (_ctx, fn) =>
+      fn({
+        execute: async (q: unknown) => {
+          executed.push(q);
+          return [];
+        },
+      }),
+    );
+
+    const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
+    await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+
+    expect(sqlTextOf(executed[0])).not.toContain('estimated_recipient_count');
+  });
+
+  it('import flag ON and the tick reports sent → counted as succeeded', async () => {
+    isF7ImportAudienceEnabledMock.mockReturnValue(true);
+    runInTenantMock.mockImplementation(async (_ctx, fn) =>
+      fn({ execute: async () => [{ broadcast_id: BROADCAST_ID }] }),
+    );
+    buildAudienceTickMock.mockResolvedValue({
+      ok: true,
+      value: { kind: 'sent', resendBroadcastId: 'rb-1', recipientCount: 3 },
+    });
+
+    const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
+    const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    const body = (await res.json()) as Record<string, number>;
+    expect(body['succeeded']).toBe(1);
+  });
+
+  it('import flag ON and the completion rule refuses → permanent_failed, not retryable', async () => {
+    // A refused completion is terminal by design: every reason is a statement
+    // about a job that has already finished, so re-polling produces the same
+    // answer. Counting it retryable would hide it in a bucket that is expected
+    // to clear on its own.
+    isF7ImportAudienceEnabledMock.mockReturnValue(true);
+    runInTenantMock.mockImplementation(async (_ctx, fn) =>
+      fn({ execute: async () => [{ broadcast_id: BROADCAST_ID }] }),
+    );
+    buildAudienceTickMock.mockResolvedValue({
+      ok: false,
+      error: {
+        kind: 'audience_import_failed',
+        reason: 'count_mismatch',
+        importId: 'imp-1',
+        observed: 0,
+        expected: 3,
+      },
+    });
+
+    const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
+    const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    const body = (await res.json()) as Record<string, number>;
+    expect(body['permanent_failed']).toBe(1);
+    expect(body['unknown_error']).toBe(0);
   });
 });
 

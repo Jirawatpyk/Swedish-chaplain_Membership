@@ -26,6 +26,7 @@ const dispatchFailureRateSpy = vi.fn();
 // after tick because the audience cannot be built.
 const approvedOverdueCountSpy = vi.fn();
 const batchNoProgressCountSpy = vi.fn();
+const audienceImportStuckCountSpy = vi.fn();
 const forgetDispatchFailureRateSpy = vi.fn();
 // /code-review 2026-09-07 (finding #6) — the sixth family, and the last one
 // still latching: it was emitted straight from its GROUP BY rows.
@@ -66,6 +67,7 @@ vi.mock('@/lib/metrics', async () => {
       forgetDispatchFailureRate: forgetDispatchFailureRateSpy,
       approvedOverdueCount: approvedOverdueCountSpy,
       batchNoProgressCount: batchNoProgressCountSpy,
+      audienceImportStuckCount: audienceImportStuckCountSpy,
       suppressionListSize: suppressionListSizeSpy,
     },
   };
@@ -89,6 +91,7 @@ beforeEach(() => {
   dispatchFailureRateSpy.mockReset();
   approvedOverdueCountSpy.mockReset();
   batchNoProgressCountSpy.mockReset();
+  audienceImportStuckCountSpy.mockReset();
   forgetDispatchFailureRateSpy.mockReset();
   suppressionListSizeSpy.mockReset();
 });
@@ -385,5 +388,41 @@ describe('GET /api/internal/metrics/broadcasts-gauges — wire contract', () => 
     expect(batchNoProgressCountSpy).toHaveBeenCalledWith('t2', 0);
     const body = (await res.json()) as { batchNoProgressTotal: number };
     expect(body.batchNoProgressTotal).toBe(1);
+  });
+  /**
+   * T106 (108 US5, FR-044 f) — an audience IMPORT that never finished.
+   *
+   * The use case turns one terminal at 30 minutes, but only on a tick that
+   * reaches that broadcast. This gauge is the independent signal: it counts
+   * rows whose import was submitted, never completed, and is older than the
+   * threshold, so a broadcast the cron has stopped visiting at all is still
+   * visible.
+   *
+   * Alarm, not page — nothing is lost and the row is already terminal or about
+   * to be; what an operator needs is to know Resend has stopped answering.
+   */
+  it('an import submitted but never completed past the threshold is counted, and zero-filled elsewhere', async () => {
+    dbTransactionMock.mockImplementationOnce(async () => ({
+      tenantRows: [{ tenant_id: 't1' }, { tenant_id: 't2' }],
+      pendingRows: [],
+      stuckRows: [],
+      dispatchRows: [],
+      suppressionRows: [],
+      approvedOverdueRows: [],
+      batchNoProgressRows: [],
+      audienceImportStuckRows: [{ tenant_id: 't1', count: 2 }],
+    }));
+
+    const { GET } = await import('@/app/api/internal/metrics/broadcasts-gauges/route');
+    const res = await GET(makeRequest('Bearer test-cron-secret'));
+    expect(res.status).toBe(200);
+
+    expect(audienceImportStuckCountSpy).toHaveBeenCalledWith('t1', 2);
+    // Same latch class as C9: observeGauge re-reports its last value, so a
+    // tenant that drops out of the GROUP BY would keep alarming after the
+    // incident cleared.
+    expect(audienceImportStuckCountSpy).toHaveBeenCalledWith('t2', 0);
+    const body = (await res.json()) as { audienceImportStuckTotal: number };
+    expect(body.audienceImportStuckTotal).toBe(2);
   });
 });

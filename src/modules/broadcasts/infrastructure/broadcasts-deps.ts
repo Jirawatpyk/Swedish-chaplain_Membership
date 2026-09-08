@@ -35,6 +35,13 @@ import {
   DELIVERABLE_RECIPIENTS_PER_TICK,
 } from '../domain/audience-ceiling';
 import { isF71aUs1Enabled } from './feature-flags';
+import { err, ok } from '@/lib/result';
+import { recipientSegmentFromPersisted } from '../domain/recipient-segment';
+import { unsafeBrandEmailLower } from '../domain/value-objects/email-lower';
+import { resolveSegmentRecipients } from '../application/use-cases/resolve-segment-recipients';
+import type { MembersBridgePort } from '../application/ports/members-bridge-port';
+import type { BuildAudienceTickDeps } from '../application/use-cases/build-audience-tick';
+import type { Broadcast } from '../domain/broadcast';
 import type { ProcessWebhookEventDeps } from '../application/use-cases/process-webhook-event';
 import type { ReconcileStuckSendingDeps } from '../application/use-cases/reconcile-stuck-sending';
 import type { RollUpBatchBroadcastDeps } from '../application/use-cases/roll-up-batch-broadcast';
@@ -987,5 +994,82 @@ export function makeListBroadcastTemplatesDeps(
 ): ListBroadcastTemplatesDeps {
   return {
     port: makeDrizzleBroadcastTemplatesRepo(),
+  };
+}
+
+/**
+ * T087 (108 US5) — composition root for the Contacts-Import audience build.
+ *
+ * `buildAudienceTick` takes the resolver as a FUNCTION rather than composing
+ * its dependency graph itself: the resolver needs the members bridge, the
+ * suppression repo, the attendee bridge, the audience mode and the ceiling, and
+ * threading all five through the use case would bury a completion rule that
+ * ought to be readable in one screen. They are wired here, where every other
+ * caller already wires them.
+ *
+ * The per-tick memo wrapper is applied by the CALLER (the cron builds one per
+ * tick and shares it across broadcasts), so it is passed in rather than built
+ * here — the same shape `makeDispatchScheduledBroadcastDeps` expects.
+ */
+export async function makeBuildAudienceTickDeps(
+  tenantId: string,
+  bridge: MembersBridgePort,
+): Promise<BuildAudienceTickDeps> {
+  const tenant = asTenantContext(tenantId);
+  const { resolveTenantDisplayName } = await import('@/lib/broadcasts-route-helpers');
+  let tenantDisplayName: string;
+  try {
+    tenantDisplayName = await resolveTenantDisplayName(tenantId);
+  } catch {
+    // Same best-effort rule as the sibling maker: a tenant-settings outage must
+    // not wedge the cron loop, and the display name is cosmetic.
+    tenantDisplayName = tenantId;
+  }
+
+  const resolverDeps = {
+    tenant,
+    membersBridge: bridge,
+    eventAttendees: eventAttendeesBridge,
+    marketingUnsubscribes: makeDrizzleMarketingUnsubscribesRepo(tenantId),
+    audienceMode: currentAudienceMode(),
+    audienceCeiling: currentAudienceCeiling(),
+  };
+
+  return {
+    tenant,
+    broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
+    broadcastsGateway: resendBroadcastsGateway,
+    audit: f7AuditAdapter,
+    clock: systemClock,
+    fromEmail: env.broadcasts.fromEmail,
+    tenantDisplayName,
+    locale: tenantDefaultLocaleFor(tenantId),
+    async resolveRecipients(broadcast: Broadcast) {
+      // A malformed persisted segment (a `tier` row that lost its codes) is a
+      // DATA DEFECT, not a transient error: read as `{ tier, [] }` the
+      // primary-only leg would address every active member. Refuse it here the
+      // way the single-tick path refuses it, so the two paths cannot disagree
+      // about what a broken row means.
+      const segmentResult = recipientSegmentFromPersisted(broadcast);
+      if (!segmentResult.ok) {
+        return err({ kind: 'malformed_segment' as const });
+      }
+      const resolved = await resolveSegmentRecipients(resolverDeps, {
+        segment: segmentResult.value,
+        phase: 'dispatch',
+        requestingMemberId: broadcast.requestedByMemberId,
+        customRecipients:
+          broadcast.customRecipientEmails === null
+            ? null
+            : broadcast.customRecipientEmails.map((e) =>
+                unsafeBrandEmailLower(e.toLowerCase().trim()),
+              ),
+      });
+      if (!resolved.ok) return err(resolved.error);
+      return ok({
+        recipients: resolved.value.recipients as unknown as readonly string[],
+        estimatedCount: resolved.value.estimatedCount,
+      });
+    },
   };
 }

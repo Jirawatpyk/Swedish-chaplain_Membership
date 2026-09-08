@@ -76,6 +76,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   let suppressionSizes: PendingRow[];
   let approvedOverdue: PendingRow[];
   let batchNoProgress: PendingRow[];
+  let audienceImportStuck: PendingRow[];
   try {
     const result = await db.transaction(async (tx) => {
       await tx.execute(sql`SET LOCAL statement_timeout = '10s'`);
@@ -169,10 +170,23 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
           )
         GROUP BY b.tenant_id
       `);
+      // T106 (108 US5, FR-044 f) — an audience IMPORT submitted but never
+      // completed. `buildAudienceTick` turns such a row terminal, but only on a
+      // tick that reaches it; this is the independent signal, and the one
+      // number that says "Resend has stopped answering". 30 min matches
+      // IMPORT_STUCK_AFTER_MS.
+      const audienceImportStuckRows = await tx.execute<PendingRow>(sql`
+        SELECT tenant_id, COUNT(*)::int AS count
+        FROM broadcasts
+        WHERE audience_import_id IS NOT NULL
+          AND audience_import_completed_at IS NULL
+          AND audience_import_submitted_at < now() - interval '30 minutes'
+        GROUP BY tenant_id
+      `);
       const tenantRows = await tx.execute<TenantRow>(sql`
         SELECT DISTINCT tenant_id FROM broadcasts
       `);
-      return { tenantRows, pendingRows, stuckRows, dispatchRows, suppressionRows, approvedOverdueRows, batchNoProgressRows };
+      return { tenantRows, pendingRows, stuckRows, dispatchRows, suppressionRows, approvedOverdueRows, batchNoProgressRows, audienceImportStuckRows };
     });
     tenants = Array.from(result.tenantRows ?? []);
     pending = Array.from(result.pendingRows);
@@ -181,6 +195,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     suppressionSizes = Array.from(result.suppressionRows);
     approvedOverdue = Array.from(result.approvedOverdueRows);
     batchNoProgress = Array.from(result.batchNoProgressRows ?? []);
+    audienceImportStuck = Array.from(result.audienceImportStuckRows ?? []);
   } catch (e) {
     logger.error(
       { requestId, err: e instanceof Error ? e.message : String(e) },
@@ -198,6 +213,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const stuckByTenant = new Map(stuck.map((r) => [r.tenant_id, r.count]));
   const overdueByTenant = new Map(approvedOverdue.map((r) => [r.tenant_id, r.count]));
   const noProgressByTenant = new Map(batchNoProgress.map((r) => [r.tenant_id, r.count]));
+  const importStuckByTenant = new Map(audienceImportStuck.map((r) => [r.tenant_id, r.count]));
   const suppressionByTenant = new Map(suppressionSizes.map((r) => [r.tenant_id, r.count]));
   const observed = new Set<string>();
   for (const t of [
@@ -206,6 +222,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     ...stuckByTenant.keys(),
     ...overdueByTenant.keys(),
     ...noProgressByTenant.keys(),
+    ...importStuckByTenant.keys(),
     // A tenant can carry unsubscribes with no `broadcasts` row at all (a
     // contact-level opt-out recorded before the first send), so the
     // suppression keys join the observed set rather than relying on it.
@@ -215,6 +232,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   }
   let approvedOverdueTotal = 0;
   let batchNoProgressTotal = 0;
+  let audienceImportStuckTotal = 0;
   for (const tenantId of observed) {
     const p = pendingByTenant.get(tenantId) ?? 0;
     const s = stuckByTenant.get(tenantId) ?? 0;
@@ -225,6 +243,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const np = noProgressByTenant.get(tenantId) ?? 0;
     broadcastsMetrics.batchNoProgressCount(tenantId, np);
     batchNoProgressTotal += np;
+    const ais = importStuckByTenant.get(tenantId) ?? 0;
+    broadcastsMetrics.audienceImportStuckCount(tenantId, ais);
+    audienceImportStuckTotal += ais;
     pendingTotal += p;
     stuckTotal += s;
     approvedOverdueTotal += o;
@@ -272,6 +293,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       stuckTotal,
       approvedOverdueTotal,
       batchNoProgressTotal,
+      audienceImportStuckTotal,
       dispatchRatioMaxBps,
       stuckHours: STUCK_SENDING_HOURS,
       dispatchWindowHours: DISPATCH_FAILURE_WINDOW_HOURS,
@@ -289,6 +311,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       stuckTotal,
       approvedOverdueTotal,
       batchNoProgressTotal,
+      audienceImportStuckTotal,
       dispatchRatioMaxBps,
       stuckHours: STUCK_SENDING_HOURS,
       dispatchWindowHours: DISPATCH_FAILURE_WINDOW_HOURS,

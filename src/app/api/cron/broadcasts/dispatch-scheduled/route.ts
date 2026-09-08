@@ -37,6 +37,9 @@ import {
   makeTickMemoizedMembersBridge,
   SPLIT_THRESHOLD_RECIPIENTS,
   isF71aUs1Enabled,
+  isF7ImportAudienceEnabled,
+  buildAudienceTick,
+  makeBuildAudienceTickDeps,
 } from '@/modules/broadcasts';
 import { runInTenant } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
@@ -144,9 +147,22 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // `approved`, which is strictly worse than the pre-branch behaviour where it
   // was claimed here and refused loudly. Flag OFF is the documented rollback
   // position; it has to keep behaving as it did before this branch.
-  const claimBound = isF71aUs1Enabled()
-    ? sql`AND estimated_recipient_count <= ${SPLIT_THRESHOLD_RECIPIENTS}`
-    : sql``;
+  // THREE states, written out because two of them look alike:
+  //   import ON   -> no bound. One call carries the whole audience, so there is
+  //                  no per-tick capacity to partition around, and handing a
+  //                  large row to `split-large-broadcasts` would build
+  //                  manifests for a path nothing uses any more.
+  //   import OFF, batching ON  -> bound. The serial push is the delivery
+  //                  mechanism and rows above the threshold belong to the split
+  //                  cron.
+  //   import OFF, batching OFF -> no bound. The split cron answers
+  //                  `feature_disabled`, so an excluded row would be owned by
+  //                  NOBODY (H-4). Flag-off must behave as it did pre-branch:
+  //                  claimed here, and refused loudly if it is too large.
+  const claimBound =
+    !isF7ImportAudienceEnabled() && isF71aUs1Enabled()
+      ? sql`AND estimated_recipient_count <= ${SPLIT_THRESHOLD_RECIPIENTS}`
+      : sql``;
   let eligible: ReadonlyArray<{ broadcast_id: string }>;
   try {
     eligible = await runInTenant(tenant, async (tx) => {
@@ -192,6 +208,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
      * routinely crossing the threshold, which is information, not an incident.
      */
     deferred_to_batch_path: 0,
+    /**
+     * T087 — imports handed to Resend this tick. Neither a success nor a
+     * failure: nothing is delivered yet, and a later tick confirms it.
+     * Counting these as `succeeded` would make the dashboard claim sends
+     * that have not happened.
+     */
+    import_submitted: 0,
+    import_pending: 0,
     unknown_error: 0,
     uncaught_error: 0,
   };
@@ -241,9 +265,70 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       ...baseDeps,
       membersBridge: makeTickMemoizedMembersBridge(baseDeps.membersBridge),
     };
+    // T087 — with the import flag ON, the whole audience goes to Resend in ONE
+    // call and is confirmed on a later tick, so this cron drives
+    // `buildAudienceTick` instead of the serial single-tick push. Built once
+    // per tick like `deps`, and only when it will be used: the maker resolves
+    // the tenant display name, which is a DB read nobody should pay for on the
+    // flag-OFF path.
+    const importEnabled = isF7ImportAudienceEnabled();
+    const importDeps = importEnabled
+      ? {
+          ...(await makeBuildAudienceTickDeps(tenant.slug, deps.membersBridge)),
+          // Share the tick memo: several broadcasts on one segment resolve it
+          // once, exactly as the single-tick path does.
+          tenant: deps.tenant,
+        }
+      : null;
+
     for (const row of eligible) {
       summary.processed++;
       try {
+        if (importDeps !== null) {
+          const built = await buildAudienceTick(importDeps, {
+            broadcastId: asBroadcastId(row.broadcast_id),
+          });
+          if (built.ok) {
+            // Three distinct outcomes, counted apart. `import_submitted` and
+            // `import_pending` are NOT successes: nothing has been delivered,
+            // and folding them into `succeeded` would have the dashboard claim
+            // sends that have not happened.
+            if (built.value.kind === 'sent') summary.succeeded++;
+            else if (built.value.kind === 'import_submitted') summary.import_submitted++;
+            else summary.import_pending++;
+            continue;
+          }
+          switch (built.error.kind) {
+            case 'dispatch.server_error':
+              // Transient: the row stays `approved` and the next tick retries.
+              summary.retryable++;
+              broadcastsMetrics.dispatchResolveFailedTotal(tenant.slug);
+              break;
+            case 'audience_import_failed':
+            case 'audience_import_stuck':
+            case 'broadcast_audience_too_large':
+            case 'broadcast_audience_post_suppression_empty':
+              // Terminal by design — every one of these is a statement about a
+              // job that has already finished or an audience that cannot be
+              // sent, so re-polling produces the same answer. The use case has
+              // already moved the row to `failed_to_dispatch` and audited it.
+              summary.permanent_failed++;
+              break;
+            default:
+              summary.unknown_error++;
+              broadcastsMetrics.cronUnknownErrorCount(tenant.slug);
+              logger.error(
+                {
+                  tenantId: tenant.slug,
+                  broadcastId: row.broadcast_id,
+                  errorKind: (built.error as { kind?: string }).kind ?? 'unknown',
+                },
+                'cron.broadcasts.dispatch.unknown_error_kind',
+              );
+          }
+          continue;
+        }
+
         const result = await dispatchScheduledBroadcast(deps, {
           broadcastId: asBroadcastId(row.broadcast_id),
         });

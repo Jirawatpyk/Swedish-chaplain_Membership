@@ -2412,6 +2412,31 @@ export const broadcastsMetrics = {
    * the same tier as `approved_overdue_count`. Runbook:
    * `docs/runbooks/broadcast-audience-build.md` § C.
    */
+  /**
+   * `broadcasts.audience_import_stuck_count{tenant}` — 108 US5 (T106, FR-044 f):
+   * broadcasts whose Resend Contacts-Import was submitted, never completed, and
+   * is older than `IMPORT_STUCK_AFTER_MS` (30 min).
+   *
+   * `buildAudienceTick` already turns such a row terminal — but only on a tick
+   * that reaches that broadcast. This gauge is the independent signal, so a
+   * broadcast the cron has stopped visiting at all is still visible. It is also
+   * the one number that says "Resend has stopped answering", which no
+   * per-broadcast status can.
+   *
+   * Sampled by the gauges cron; **alarm** (not page) at ≥ 1 sustained 30 min.
+   * Runbook: `docs/runbooks/broadcast-audience-build.md` § C.
+   */
+  audienceImportStuckCount(tenantId: string, count: number): void {
+    safeMetric(() => {
+      observeGauge(
+        'broadcasts_audience_import_stuck_count',
+        'Broadcasts whose Resend contact import was submitted but never completed within 30 min',
+        { tenant: tenantId },
+        count,
+      );
+    });
+  },
+
   batchNoProgressCount(tenantId: string, count: number): void {
     safeMetric(() => {
       observeGauge(
