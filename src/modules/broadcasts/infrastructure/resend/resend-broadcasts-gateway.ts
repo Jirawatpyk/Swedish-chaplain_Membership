@@ -237,12 +237,17 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
     // (BUG-028).
     //
     // We deliberately do NOT add a fixed per-contact sleep: a blanket delay
-    // across an unbounded (up to AUDIENCE_HARD_CAP) list would burn the whole
-    // dispatch-function time budget on sleeping and time the invocation out
-    // before it finishes. Reactive backoff only pays the cost when the limit
-    // is actually hit. Reliable delivery of very large audiences within a
-    // single invocation is a separate architectural concern (batched
-    // multi-tick dispatch), tracked outside this fix.
+    // across a list bounded only by `audienceCeiling()` (5,000, or 50,000 once
+    // the 108 flag and batching are both on — `domain/audience-ceiling.ts`;
+    // the `AUDIENCE_HARD_CAP` this comment used to name was deleted by 108
+    // T085) would burn the whole dispatch-function time budget on sleeping and
+    // time the invocation out before it finishes. Reactive backoff only pays
+    // the cost when the limit is actually hit. Reliable delivery of very large
+    // audiences within a single invocation is a separate architectural concern
+    // (batched multi-tick dispatch), tracked outside this fix — and it is the
+    // open push-capacity gate on the 108 flag flip: everything at or below
+    // `SPLIT_THRESHOLD_RECIPIENTS` falls to this serial loop, so an audience
+    // above what 300 s of it can drain is accepted and never delivered.
     for (const c of contacts) {
       await withRetry(
         async () => {

@@ -84,7 +84,9 @@ pnpm test:e2e tests/e2e/admin-marketing-audience.spec.ts --workers=1
 pnpm test tests/unit/broadcasts tests/unit/members/application/get-members-by-segment.test.ts
 pnpm test:integration tests/integration/broadcasts/audience-1n-status.test.ts
 pnpm test:integration tests/integration/broadcasts/audience-pagination-20k.test.ts
-pnpm test:integration tests/integration/broadcasts/audience-import-two-tick.test.ts
+# NOTE: audience-import-two-tick.test.ts was listed here until 2026-09-08 (T098) and does
+# NOT exist — it was dropped with the deferred import build (T086/T087/T106). Running it
+# returned "no test files found", which vitest reports without failing the command.
 ```
 
 Before opening any PR: `pnpm lint && pnpm typecheck && pnpm check:i18n && pnpm vitest run tests/contract/`

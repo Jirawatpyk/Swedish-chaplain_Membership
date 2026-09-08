@@ -37,11 +37,17 @@
 
 ## Resumable audience push
 
-- [x] CHK018 Are the requirements for building the Resend audience across cron ticks specified — snapshot of the recipient list, per-tick time budget, progress persistence, resume condition, send-only-when-complete? [Gap in spec / defined in Contract §4, Research R9] → resolved: FR-044
-- [x] CHK019 Is idempotency of contact creation per `(audience, email)` stated as a requirement with the verification item (V2) that decides the guard strategy? [Completeness, Research R9/V2] → resolved: FR-044 + V2
-- [x] CHK020 Is the stuck-state definition (`audience_building` with no progress for 30 min) and its reconcile action specified, with a runbook named? [Completeness, Contract §4, Plan Constitution VII] → resolved: FR-044 (30 min) + R15 runbook
-- [x] CHK021 Are recovery requirements defined for a tick that fails mid-push (partial `pushed_at` stamps, retry semantics, no duplicate sends)? [Coverage, Contract §4] → resolved: FR-044 + contract §4
-- [x] CHK022 Is the audience working set's lifecycle (deleted at `sent`/`failed`) specified, including the erasure cascade? [Completeness, data-model §2.5] → resolved: FR-044 (delete + erasure)
+> **`[~]` = N/A-DEFERRED, not passed (marker corrected 2026-09-08, T098).** All five rows below
+> specify the Resend Contacts-Import build, deferred with T086/T087/T106 and never authored; they
+> resolve to FR-044, which is itself DEFERRED. They were ticked `[x]` while this file's own footer
+> recorded them as N/A-DEFERRED — five green ticks for a design that is not on the branch. Nothing
+> here is a PR-C regression; the marker is.
+
+- [~] CHK018 Are the requirements for building the Resend audience across cron ticks specified — snapshot of the recipient list, per-tick time budget, progress persistence, resume condition, send-only-when-complete? [Gap in spec / defined in Contract §4, Research R9] → resolved: FR-044
+- [~] CHK019 Is idempotency of contact creation per `(audience, email)` stated as a requirement with the verification item (V2) that decides the guard strategy? [Completeness, Research R9/V2] → resolved: FR-044 + V2
+- [~] CHK020 Is the stuck-state definition (`audience_building` with no progress for 30 min) and its reconcile action specified, with a runbook named? [Completeness, Contract §4, Plan Constitution VII] → resolved: FR-044 (30 min) + R15 runbook
+- [~] CHK021 Are recovery requirements defined for a tick that fails mid-push (partial `pushed_at` stamps, retry semantics, no duplicate sends)? [Coverage, Contract §4] → resolved: FR-044 + contract §4
+- [~] CHK022 Is the audience working set's lifecycle (deleted at `sent`/`failed`) specified, including the erasure cascade? [Completeness, data-model §2.5] → resolved: FR-044 (delete + erasure)
 
 ## Toggle, count and degraded modes
 

@@ -1,6 +1,14 @@
 # Task Coverage Review — 108 Contact Recipient Rules
 
 **Run**: 2026-09-04 · `/speckit.superb.review` (post-`/speckit.tasks`) · reviewer: maintainer AI session
+
+> **SUPERSEDED IN PART — the T098 re-run of 2026-09-08 (`/speckit.analyze`) is the current answer.**
+> This matrix was built three days before the 2026-09-07 deferral of T086 / T087 / T106 and
+> migration 0298, so four of its rows tick tasks that were never authored. They are annotated
+> inline below rather than deleted — a matrix that quietly loses a row is worse than one that shows
+> what changed. Everything else in this file still holds. Current verdict: **60 of 61 FRs
+> traceable; FR-044 is a true orphan** (no SC, no shipped task, contract clause under a DEFERRED
+> banner).
 **Inputs**: spec.md (FR-001…FR-056, SC-001…SC-011, US1–US6, 13 edge cases), plan.md, tasks.md (T001–T100 at review start), data-model.md, contracts/ (3)
 
 ## 1. Requirements extracted
@@ -60,8 +68,8 @@ The spec already carries a stable ID scheme (FR-xxx / SC-xxx / USn-sN / edge cas
 | FR-040b | Count unavailable; submit allowed | T/O | T082, T084, T089 | ✓ |
 | FR-041 | No truncation; page failure aborts | T | T067, T074, T075, T081 | ✓ |
 | FR-042 | Single ceiling | T | T083, T085 | ✓ |
-| FR-043 | 20k within budget | T | T081 | ✓ |
-| FR-044 | Resumable build; stuck 30 min; working set deleted + erasure | T | T081, T083, T086, T087, **T106** | ✓ (split) |
+| FR-043 | 20k within budget | T | T081 | ⚠ 2026-09-08: the 20k assertion is `ciScaled(3_000)` = 18 s on CI; the **400 ms @ 5,000 band has no test at all**. UNVERIFIED, T094 precondition |
+| FR-044 | Resumable build; stuck 30 min; working set deleted + erasure | T | ~~T081, T083, T086, T087, **T106**~~ | ✗ 2026-09-08: **DEFERRED, true orphan** — T086/T087/T106 never authored, and T081/T083's import legs were dropped (files absent on disk) |
 | FR-045 | Rollback + incident | S | T091, quickstart rollback matrix | ✓ |
 | FR-050 | i18n EN/TH/SV | S/T | every UI task + `check:i18n` in T028/T041/T060/T092 | ✓ |
 | FR-051 | WCAG 2.1 AA | T | T040, T047, T062, T084 (axe) | ✓ |
@@ -86,7 +94,7 @@ The spec already carries a stable ID scheme (FR-xxx / SC-xxx / USn-sN / edge cas
 | US2-s1…s5 | acceptance scenarios | T | T030–T033 | ✓ |
 | US3-s1…s10 | acceptance scenarios | T | T067–T071 (s6 tier + erased added to T068) | ✓ |
 | US4-s1…s9 | acceptance scenarios | T | T042–T047 | ✓ |
-| US5-s1…s4 | acceptance scenarios | T | T081–T084 | ✓ |
+| US5-s1…s4 | acceptance scenarios | T | T081–T084 | ⚠ 2026-09-08: **AS2 (6,200 + batching ON → every recipient gets one copy) is MISSING**, recorded as such in `spec.md`; no test can prove it until the push-capacity gate is closed. s1/s3/s4 stand |
 | US6-s1…s4 | acceptance scenarios | T | T061, T062 | ✓ |
 | Edge: queued-then-changed | accepted, documented | S | — (no task by design) | ✓ |
 | Edge: no contacts at all | orphan signal | T | T067 | ✓ |

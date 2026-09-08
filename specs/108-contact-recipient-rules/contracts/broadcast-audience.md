@@ -52,7 +52,12 @@ interface ResolveSegmentOutput {
    documented here was not the code's, and the code's own docblock explains why it must be
    after.)
 3. Self-exclusion: drop every candidate whose `memberId === requestingMemberId`
-   (member-based segments only; custom list unaffected — unchanged rule).
+   (member-based segments only; custom list and attendee rows unaffected). (**Corrected
+   2026-09-08, T098**: this said "unchanged rule" and it is not one. Pre-108 the filter
+   compared *addresses* and ran on every segment kind, custom list included
+   (`resolve-segment-recipients.ts:125-129` at `91505b8f2^`); keying it on member id
+   necessarily exempts the two sources that are not member-keyed. The change is live on
+   merge, behind no flag — a sender on their own custom list now receives their own send.)
 4. Dedupe by `emailLower`.
 5. Suppression: `lookupBatch` in chunks of 5,000; removed entries count toward
    `droppedByPreference` for custom/attendee sources.
@@ -71,6 +76,16 @@ flag says — prod has batching ON). Read at one composition site; submit, count
 compare against the same number.
 `split-large-broadcasts` threshold stays 10,000 (< ceiling when ON). DB CHECK
 `broadcasts_estimated_recipient_cap (0..50000)` unchanged.
+
+**Push-capacity gate (added 2026-09-08, T098 — the contract was silent on it).** Being under
+the ceiling is NOT sufficient for delivery. `split-large-broadcasts` skips
+`resolvedCount <= SPLIT_THRESHOLD_RECIPIENTS` (`route.ts:330`), so everything at or below
+10,000 falls to `dispatch-scheduled`, whose push is a serial one-contact-per-request loop
+inside `maxDuration = 300`. A broadcast in `(300 s × measured req/s − margin) … 10,000` is
+therefore **accepted at submit and never delivered** — it sits in `approved`. The band is
+unreachable while `FEATURE_CONTACT_MARKETING_RECIPIENTS` is OFF (ceiling 5,000), and closing
+it is a precondition of the flip: `quickstart.md` § Cutover 3b, `reviews/pr-c.md` row 33,
+`reviews/cutover.md` § 5. The req/s figure is UNMEASURED — T095 is the source of record.
 
 ## 4. Audience push (dispatch)
 

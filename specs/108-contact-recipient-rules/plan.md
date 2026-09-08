@@ -17,8 +17,20 @@ application and at commit by deferred DB constraint triggers, and unarchive must
 primary. **Tier B** — member-based broadcast audiences fan out to every eligible contact
 (primary + secondaries) of **active** members, minus suppressions, a new per-contact opt-out
 (staff or self) and all contacts of the sender; opt-out applies to every segment; audiences
-are keyset-paginated with no silent truncation, one ceiling, a resumable Resend push, and a
-truthful compose-time count; unsubscribes gain contact attribution. **Operations** — a new
+are keyset-paginated with no silent truncation, one ceiling, ~~a resumable Resend push~~, and a
+truthful compose-time count; unsubscribes gain contact attribution.
+
+> **DEFERRAL NOTE (added 2026-09-08, T098 — applies to every mention of the import build in this
+> file).** The resumable, import-based audience push was **deferred out of PR-C on 2026-09-07**
+> with tasks T086 / T087 / T106 and migration 0298; none of them were authored and nothing in the
+> codebase implements them. Five statements in this plan still describe it as the shipped
+> mechanism — this line, the `≤ 240 s per cron tick, resumable` budget below, the Constraints
+> sentence "the provider audience **is built with** Resend's asynchronous Contacts Import API",
+> the "audience snapshot + progress stamps per tick" note, and the Principle X justification
+> "Replacing the serial per-contact push with one provider import per broadcast **is** simpler".
+> Read every one of them as *the design that was deferred*. What ships is the pre-existing serial
+> per-contact push, and its wall-clock limit is the push-capacity gate on the flag flip
+> (`quickstart.md` § Cutover 3b, `reviews/cutover.md` § 5). **Operations** — a new
 `contacts.marketing` right, a permanent Marketing audience page (also the FR-027a pre-flight
 surface), member-page badges/toggle, and a portal self-toggle. Delivery in four PRs
 (A → B → D → C) with the audience change behind a temporary flag flipped only after the
@@ -46,12 +58,12 @@ GET, UTC, `maxDuration = 300`)
 contexts: invoicing, payments, members, broadcasts, auth; App Router presentation)
 **Performance Goals**: money-email enqueue adds one indexed contact read (p95 < 20 ms);
 recipient count p95 < 400 ms at 5,000 and < 3 s at 20,000 contacts (SC-004); toggle API
-p95 < 400 ms; Marketing audience page LCP < 2.5 s at 50 rows; audience push ≤ 240 s per
-cron tick, resumable
+p95 < 400 ms; Marketing audience page LCP < 2.5 s at 50 rows; ~~audience push ≤ 240 s per
+cron tick, resumable~~ (DEFERRED — the shipped push has no per-tick budget and no resume)
 **Constraints**: live money path — tax-document buyer identity stays frozen (only delivery
 address goes live); no PII in logs or audit payloads (ids + hashes only); actor role always
 the session role (`check:actor-role-truth`); tenant isolation two-layer for every new query
-(`runInTenant` tx + RLS FORCE); the provider audience is built with Resend's asynchronous
+(`runInTenant` tx + RLS FORCE); the provider audience ~~is built~~ **was to be built** (DEFERRED — see the note above) with Resend's asynchronous
 Contacts Import API (one import per broadcast, polled across cron ticks — research R9; the
 installed SDK 4.8 lacks the method, so the adapter calls the endpoint directly); flag OFF
 must be behaviour-identical except the `status = 'active'` narrowing
@@ -131,8 +143,8 @@ re-checked post-Phase-1 design (see § Post-Design Re-check).*
       audit + skip, never a fallback; page failure in pagination → error, never `[]`;
       suppressed → 409; race → 409 at commit; unarchive without primary → 409 with remedy).
       Transactions: recipient resolve + enqueue + audit in one tenant tx (or the port's own
-      tx on resend); designate-primary + unarchive atomic; audience snapshot + progress
-      stamps per tick; deferred constraint triggers = DB-level defence-in-depth (IX.4).
+      tx on resend); designate-primary + unarchive atomic; ~~audience snapshot + progress
+      stamps per tick~~ (DEFERRED); deferred constraint triggers = DB-level defence-in-depth (IX.4).
       Idempotency: toggle same-state = `unchanged`; audience push idempotent per
       `(audience, email)`; existing Stripe idempotency keys unchanged. Audit entries:
       `auto_email_skipped_no_recipient`, `contact_marketing_opted_out/in`, existing
@@ -147,8 +159,10 @@ re-checked post-Phase-1 design (see § Post-Design Re-check).*
       toggle patterns; three columns + one index instead of a preferences table; two audit
       events with a `source` payload instead of four. Accepted temporary complexity: the
       cutover flag with a scheduled deletion (Complexity Tracking #2). Replacing the serial
-      per-contact push with one provider import per broadcast is simpler, not more complex:
-      2–3 API calls instead of thousands, and no per-recipient working table (research R9).
+      per-contact push with one provider import per broadcast **would be** simpler, not more
+      complex: 2–3 API calls instead of thousands, and no per-recipient working table
+      (research R9) — **but it was DEFERRED (see the note at the top of this file), so the
+      simplification is not banked and the serial push is what runs.**
 
 ## Project Structure
 

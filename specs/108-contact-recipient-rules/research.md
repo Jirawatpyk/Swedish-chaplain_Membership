@@ -450,6 +450,12 @@ affects F7's `audienceId`-based gateway (R16).
 
 ## R16 — Resend Audiences → Segments / Global Contacts (risk outside this feature's scope)
 
+> **DEFERRED out of PR-C (2026-09-07); banner added 2026-09-08 (T098).** Everything below that
+> describes adopting `contacts.imports`, segments or topics belongs to the follow-up PR with T110
+> (tasks T086 / T087 / T106, migration 0298 — none authored). PR-C ships none of it and still runs
+> the bounded per-contact push on `resend@4.8`. R9 carried this banner and R16 did not, so this
+> section read as though the import path were already available.
+
 - **Fact** (Resend docs `dashboard/segments/migrating-from-audiences-to-segments`, 2026-09):
   Audiences are being replaced by Segments; a contact is now one record per team across
   segments ("Global Contacts"); unsubscribe preference moves to Topics; "Contacts API
