@@ -56,8 +56,8 @@ for whenever someone next merges anything. Set it when you are ready to redeploy
 |---|---|---|---|
 | 1 | PR-A, PR-B, PR-D deployed; V1 = 0 violations before PR-B | **CLEARED** | All four PRs merged; `0292`–`0297` applied. V1 ran read-only against prod before PR-B merged. |
 | 2 | PR-C deployed with the flag OFF | **CLEARED** | #346 deployed 2026-09-07; the nine unflagged changes have been live since (quickstart § Rollback matrix row C). |
-| 3 | **T093** — FR-027a pre-flight review on `/admin/marketing/audience?kind=secondary&state=on&eligible=1`; switch off anyone who must not receive; record date + reviewer in `docs/go-live-readiness.md` | **OPEN — measurement pending** | Vacuous if and only if the eligible-secondary count is 0. NOT YET MEASURED against prod on 2026-09-08. See § 3. |
-| 3a | **GDPR Art. 14 first-contact attestation** (`docs/compliance/processing-records.md:128-135`) — either the system notices a new secondary on first marketing contact, or T093 attests per contact | **OPEN — measurement pending** | Same dependency as row 3: a secondary who never gave their address to the chamber directly is a data subject the chamber has not informed. Vacuous at 0 eligible secondaries. |
+| 3 | **T093** — FR-027a pre-flight review on `/admin/marketing/audience?kind=secondary&state=on&eligible=1`; switch off anyone who must not receive; record date + reviewer in `docs/go-live-readiness.md` | **CLEARED — VACUOUS at 0 eligible secondaries** (measured 2026-09-08 10:45, maintainer) | The tenant has no secondary contact rows, so the pre-flight page is empty and the 1:N audience equals the primary-only audience. § 3 carries the count. **Expires on SweCham's secondary import — re-run then.** |
+| 3a | **GDPR Art. 14 first-contact attestation** (`docs/compliance/processing-records.md:128-135`) — either the system notices a new secondary on first marketing contact, or T093 attests per contact | **CLEARED — VACUOUS at 0 secondaries** (same measurement) | No secondary contact exists, therefore no data subject the chamber has not informed. **This is the row the import turns back on**: an imported marketing list is exactly a population that never gave the chamber its addresses directly. |
 | 3b | **Push-capacity gate (staff review 🔴)** | **OPEN — and it stays open regardless of today's scale** | See § 5. This is the one precondition that a small member base does not close; it only makes it unreachable today. |
 | — | **T098** `/speckit.analyze` FR↔SC↔contract traceability, findings folded into `spec.md` | **IN PROGRESS** | Ordered before T094 by `tasks.md:305`. |
 | — | **T095** — record the team's real Resend rate limit (Settings → Usage) in `research.md` § R9/R16 | **OPEN — operator** | Needed as the measured input to § 5. Every rate number in the codebase today is an unsourced comment (`~2 req/s` in `audience-ceiling.ts`, `10 req/s` in the F7 notes). |
@@ -84,16 +84,37 @@ node --env-file=.env.production --import tsx scripts/inventory-primary-contact-i
 
 | Measure | Value | Measured (Asia/Bangkok) |
 |---|---|---|
-| live contacts — primaries | **not measured 2026-09-08 — run before the flip** | |
-| live contacts — secondaries | **not measured 2026-09-08 — run before the flip** | |
-| of those, marketing-eligible (opt-out NULL, not suppressed) — the T093 preset set | **not measured 2026-09-08 — run before the flip** | |
-| `marketing_unsubscribes` rows | **not measured 2026-09-08 — run before the flip** | |
-| members with zero live primaries / more than one (`violations`) | **not measured 2026-09-08 — run before the flip** | |
-| broadcasts currently in `approved` / `scheduled` / `sending` | **not measured 2026-09-08 — run before the flip** | |
+| members (active/inactive, non-erased) | **150** | 2026-09-08 10:45 |
+| live contacts — primaries | **150** | 2026-09-08 10:45 |
+| live contacts — secondaries | **0** | 2026-09-08 10:45 |
+| of those, marketing-eligible (opt-out NULL, not suppressed) — the T093 preset set | **0** (necessarily — the tenant has no secondary contact rows at all) | 2026-09-08 10:45 |
+| of those, with a portal login | **0** | 2026-09-08 10:45 |
+| `marketing_unsubscribes` rows | **0** | 2026-09-08 10:45 |
+| members with zero live primaries / more than one (`violations`) | **0 / 0** | 2026-09-08 10:45 |
+| members with NO contact row at all | **0** | 2026-09-08 10:45 |
+| broadcasts currently in `approved` / `scheduled` / `sending` | not covered by this script — check the outbox before the flip | — |
 
-No measurement was in flight when this file was written. The session that opened it could not
-reach `.env.production` (the tool sandbox refuses it), so the numbers below the header are absent
-by circumstance, not pending by process — someone has to run the command above.
+Run by the maintainer against prod, read-only, output pasted into the session. Exit: *"Invariant
+holds — migration 0293 (PR-B) is safe to apply."*
+
+### What these numbers settle, and what they do not
+
+**Settled — § 2 rows 3 and 3a are VACUOUS.** With zero secondary contact rows in the tenant, the
+`all_contacts` audience is **identical** to the `primary_only` audience: same 150 addresses, in
+the same order. The FR-027a pre-flight page renders an empty list — there is nobody to switch off
+— and GDPR Art. 14 has no uninformed data subject to notify, because no secondary contact exists.
+Recorded with the count rather than as "n/a", per FR-027a.
+
+**Not settled — the flip is still not a no-op.** It also moves the enforced ceiling from 5,000 to
+50,000 (`audienceCeiling(isF71aUs1Enabled() && contactMarketingRecipients)`; prod has batching ON),
+which is what arms the undeliverable 5,001–10,000 band in § 5. That band does not depend on the
+member count at all — a **custom list** reaches it directly, and a custom list of thousands is
+precisely what SweCham's pending marketing import is for. **Zero secondaries closes rows 3 and 3a;
+it does not close row 3b.**
+
+**These numbers expire on the import.** They are the state at 10:45 on 2026-09-08, before the
+secondary-contact import. Re-run the command above immediately after that import lands: it flips
+every row in this table at once, and it turns rows 3 and 3a from vacuous into real work.
 
 Last known figures (2026-09-05, PR-B post-deploy inventory): 150 members / 150 primaries /
 **0 secondaries** / 0 violations. If that still holds, rows 3 and 3a of § 2 are **VACUOUS** — record
@@ -152,7 +173,7 @@ therefore takes its own TDD cycle, review stack and PR — it is not part of thi
 
 Two different numbers get conflated here — keep them apart:
 
-- **Today** (0 secondaries, § 3): ~150 addresses ≈ **75 s** at 2 req/s. Comfortable.
+- **Today** (measured 2026-09-08: 150 primaries, 0 secondaries — § 3): 150 addresses ≈ **75 s** at 2 req/s. Comfortable — for a *member-based* send. A **custom list** is not bounded by the member count and reaches the band directly.
 - **After SweCham's secondary import** (the quickstart's projection, ~150 members × 3 contacts
   ≈ 450 addresses): ≈ **225 s against a 300 s budget** — no margin, and that is before anyone
   writes a broadcast to a custom list.
