@@ -737,12 +737,18 @@ on cron-job.org in **Asia/Bangkok** (UTC+7) are shifted **−7h** in
 uniformly. Weekly F8 jobs also shift day-of-week (Sun ICT → Sat UTC;
 Sat ICT → Fri UTC).
 
-### Authoritative `vercel.json` ↔ logical-schedule mapping (39 jobs)
+### Authoritative `vercel.json` ↔ logical-schedule mapping (37 jobs)
 
-Pro plan limit is 40 cron jobs/project — **39 used, 1 headroom** (verified by
-counting `vercel.json` on 2026-07-24: main's 36-job money/plan-change base plus
-this branch's 3 auto-invoice crons — auto-draft-coordinator, prune-auto-drafts,
-reconcile-issued-orphans = 39). **Re-count before adding a cron — only 1 slot remains.**
+Pro plan limit is 40 cron jobs/project — **37 used, 3 headroom** (counted from
+`vercel.json` on 2026-09-09). It read "39 used, 1 headroom" until then: 108
+Phase 9 (`ca51f59a1`) deleted the `split-large-broadcasts` and `dispatch-batches`
+entries with the batch path and this line was not re-counted — in the one file
+that tells its reader to re-count before adding a cron. Found by the 108 Phase 9
+review (S51).
+
+**Re-count from `vercel.json` rather than trusting this number** — it has now
+drifted once, and the failure mode is silent: a 41st cron is rejected at deploy,
+not at review.
 
 | `vercel.json` path | UTC schedule | Logical time / cadence | Verb |
 |---|---|---|---|

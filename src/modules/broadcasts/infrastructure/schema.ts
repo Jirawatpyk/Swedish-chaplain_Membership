@@ -343,6 +343,21 @@ export const broadcasts = pgTable(
       sql`(started_from_template_id IS NULL AND template_name_snapshot IS NULL)
        OR (started_from_template_id IS NOT NULL AND template_name_snapshot IS NOT NULL)`,
     ),
+    // 108 US5 — the audience-import columns. Written by migration 0298 and
+    // TIGHTENED by 0299 after review S10 found 0298's version was an implication
+    // rather than an iff: it admitted `(import_id set, submitted_at NULL)`, a row
+    // that polled for ever (`ageMs = 0`) AND was invisible to the stuck gauge
+    // (`NULL < now() - interval` is NULL, not true). Declared here because this
+    // file documents every hand-written constraint even though `db:generate` was
+    // abandoned at 0018 — an integration test asserting this `constraint_name`
+    // should not look like it came from nowhere.
+    check(
+      'broadcasts_audience_import_coherent',
+      sql`(audience_import_id IS NULL) = (audience_import_submitted_at IS NULL)
+       AND (audience_import_completed_at IS NULL OR audience_import_submitted_at IS NOT NULL)
+       AND (audience_import_completed_at IS NULL
+            OR audience_import_completed_at >= audience_import_submitted_at)`,
+    ),
 
     // Indexes
     index('broadcasts_tenant_status_member_idx').on(
@@ -369,6 +384,13 @@ export const broadcasts = pgTable(
     uniqueIndex('broadcasts_resend_broadcast_id_uniq')
       .on(table.resendBroadcastId)
       .where(sql`resend_broadcast_id IS NOT NULL`),
+    // 108 US5 (migration 0298) — the partial index behind the stuck-import
+    // gauge. Leads with `tenant_id` per convention.
+    index('broadcasts_audience_import_pending_idx')
+      .on(table.tenantId, table.audienceImportSubmittedAt)
+      .where(
+        sql`audience_import_id IS NOT NULL AND audience_import_completed_at IS NULL`,
+      ),
   ],
 );
 

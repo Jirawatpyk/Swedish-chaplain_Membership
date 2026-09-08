@@ -3191,15 +3191,6 @@
         "body": "บทบาท Manager: คุณสามารถดูคิวและรายละเอียด E-Blast ได้ แต่อนุมัติ ปฏิเสธ หรือยกเลิกไม่ได้"
       },
       "toast": {
-        "retrySuccess": "เริ่มการลองส่งซ้ำครั้งที่ {attempt} สำหรับ {count} กลุ่มที่ล้มเหลว",
-        "retryBudgetExhausted": "ใช้สิทธิ์ลองส่งซ้ำครบ 3 ครั้งแล้ว ลองยอมรับการส่งบางส่วนเพื่อปิด E-Blast นี้",
-        "retryAlreadyInProgress": "มีผู้ดูแลคนอื่นกำลังลองส่งซ้ำ E-Blast นี้อยู่ กรุณารอสักครู่แล้วรีเฟรช",
-        "retryInvalidState": "E-Blast นี้ไม่อยู่ในสถานะที่อนุญาตให้ลองส่งซ้ำ",
-        "retryServerError": "ลองส่งซ้ำไม่สำเร็จ กรุณาลองอีกครั้งหรือติดต่อทีมสนับสนุน",
-        "acceptPartialSuccess": "ยอมรับการส่งบางส่วนเรียบร้อยแล้ว E-Blast นี้ถูกปิดแล้ว",
-        "acceptPartialInvalidState": "E-Blast นี้ไม่อยู่ในสถานะที่อนุญาตให้ยอมรับการส่งบางส่วน",
-        "acceptPartialReasonTooLong": "เหตุผลต้องมีไม่เกิน 500 ตัวอักษร",
-        "acceptPartialServerError": "ยอมรับการส่งบางส่วนไม่สำเร็จ กรุณาลองอีกครั้ง",
         "approved": "อนุมัติ E-Blast แล้ว",
         "rejected": "ปฏิเสธ E-Blast แล้ว และแจ้งสมาชิกทางอีเมลแล้ว",
         "cancelled": "ยกเลิก E-Blast แล้ว แจ้งสมาชิกเรียบร้อย",
@@ -3209,65 +3200,6 @@
         "concurrentRace": "E-Blast นี้ถูกดำเนินการโดยผู้ดูแลคนอื่นไปแล้ว ระบบได้รีเฟรชหน้าให้แล้ว",
         "clearHalted": "ยกเลิกการระงับ E-Blast ของสมาชิกรายนี้แล้ว",
         "error": "เกิดข้อผิดพลาด กรุณาลองอีกครั้ง"
-      },
-      "batches": {
-        "title": "รายละเอียดการส่งแบบแบ่งกลุ่ม",
-        "description": "E-Blast นี้ถูกแบ่งออกเป็น {count} กลุ่ม เนื่องจากรายชื่อผู้รับเกิน 10,000 รายต่อ audience ของ Resend แต่ละกลุ่มถูกส่งแยกอิสระ",
-        "expandLabel": "แสดงรายละเอียดต่อกลุ่ม",
-        "collapseLabel": "ซ่อนรายละเอียดต่อกลุ่ม",
-        "summary": "ส่งสำเร็จ {succeeded} · ล้มเหลว {failed} · รอส่ง {pending} จาก {total} กลุ่ม",
-        "tableCaption": "รายละเอียดการส่งแบบแบ่งกลุ่ม {count} กลุ่ม",
-        "columns": {
-          "batchIndex": "กลุ่ม",
-          "recipientRange": "ช่วง",
-          "recipientCount": "จำนวนผู้รับ",
-          "status": "สถานะ",
-          "dispatchedAt": "ส่งเมื่อ",
-          "delivered": "ส่งถึง",
-          "bounced": "ตีกลับ",
-          "complained": "ร้องเรียน",
-          "unsubscribed": "ยกเลิกรับ",
-          "retryCount": "รอบลองใหม่"
-        },
-        "batchLabel": "กลุ่มที่ {index} จาก {total}",
-        "rangeLabel": "{start}–{end}",
-        "retryCountLabel": "{count} / 5",
-        "manualRetryRemaining": "ลองส่งซ้ำได้อีก: {remaining} / 3 ครั้ง",
-        "manualRetryExhausted": "ใช้สิทธิ์ลองส่งซ้ำครบ 3 ครั้งแล้ว",
-        "batchStatus": {
-          "pending": "รอส่ง",
-          "sending": "กำลังส่ง",
-          "sent": "ส่งแล้ว",
-          "failed": "ล้มเหลว",
-          "cancelled": "ยกเลิก"
-        },
-        "notSplit": "E-Blast นี้ส่งเป็น audience เดียวเนื่องจากผู้รับน้อยพอ"
-      },
-      "retryDialog": {
-        "trigger": "ลองส่งซ้ำกลุ่มที่ล้มเหลว",
-        "triggerAria": "ลองส่งซ้ำ {count} กลุ่มที่ล้มเหลว",
-        "triggerDisabledAria": "ไม่สามารถลองส่งซ้ำได้ — ใช้สิทธิ์ครบแล้ว",
-        "title": "ลองส่งซ้ำกลุ่มที่ล้มเหลว?",
-        "description": "ระบบจะส่ง {count} กลุ่มที่ล้มเหลวอีกครั้ง การกระทำนี้นับเป็น 1 ใน 3 ครั้งของสิทธิ์ลองส่งซ้ำ",
-        "budgetLine": "เหลือสิทธิ์ลองส่งซ้ำอีก {remaining} จาก 3 ครั้ง",
-        "warning": "การส่งซ้ำใช้โควต้า Resend API และอาจทำให้ผู้รับได้รับอีเมลซ้ำหากการส่งครั้งก่อนสำเร็จไปแล้วบางส่วน",
-        "confirm": "ลองส่งซ้ำตอนนี้",
-        "cancel": "ยกเลิก",
-        "submitting": "กำลังลองส่งซ้ำ…"
-      },
-      "acceptPartialDialog": {
-        "trigger": "ยอมรับการส่งบางส่วน",
-        "triggerAria": "ยอมรับการส่งบางส่วนและปิด E-Blast นี้",
-        "title": "ยอมรับการส่งบางส่วน?",
-        "description": "E-Blast นี้จะถูกบันทึกว่าสำเร็จในสถานะปัจจุบัน ระบบจะไม่ลองส่งกลุ่มที่ล้มเหลวอีก และไม่สามารถเปลี่ยนสถานะภายหลังได้",
-        "summary": "ส่งสำเร็จ {sent} จาก {total} กลุ่ม",
-        "reasonLabel": "เหตุผล (ไม่บังคับ)",
-        "reasonPlaceholder": "ไม่บังคับ — เช่น Resend ติดขีดจำกัด rate-limit, สมาชิกได้รับการแจ้งทางอื่นแล้ว…",
-        "reasonHelp": "บริบทเพิ่มเติมสำหรับ audit trail ความยาวสูงสุด 500 ตัวอักษร",
-        "reasonCounter": "{count} / 500",
-        "confirm": "ยอมรับการส่งบางส่วน",
-        "cancel": "ยกเลิก",
-        "submitting": "กำลังยอมรับ…"
       },
       "templates": {
         "pageTitle": "เทมเพลต E-Blast",

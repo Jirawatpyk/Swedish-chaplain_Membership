@@ -5,7 +5,29 @@
 **Source signal**: `broadcasts.partial_send_count[1h] / broadcasts.submit.count[1h] > 0.05`
 **Audit events**: `broadcast_partial_delivery_accepted` (admin acceptance — emitted by `accept-partial-delivery.ts`) · `broadcast_retry_initiated` + `broadcast_retry_completed` (retry path emitted by `retry-failed-batches.ts` + `auto-retry-failed-batches.ts`). Per-batch failure forensics live in `broadcast_batch_manifests.last_failure_reason` column (NOT a discrete audit event) + the metric `broadcasts.failed_to_dispatch.count{tenant, failure_reason}` + the pino log line `broadcasts.batch.failed_transition_db_write_failed`.
 **Last reviewed**: 2026-05-21 (M3 Round 2 review fix — replaced nonexistent `broadcast_partial_delivery` + `broadcast_batch_failed` event refs with the real audit-event names from `audit-port.ts`).
-**Status**: SPEC — operational once F7.1a US1 (pagination + per-batch dispatch) lands.
+**Status**: ⚰️ **OBSOLETE — the subsystem this runbook covers no longer exists.**
+
+> Deleted in 108 Phase 9 (`ca51f59a1`, 2026-09-08): the batch dispatch path went
+> in full — both crons, the manifests repo, and the `retry` / `accept-partial`
+> admin routes this runbook instructs an operator to use. The Resend
+> Contacts-Import API removed the constraint batching existed to work around:
+> one multipart upload carries the whole audience in a single size-independent
+> call, so there are no per-batch failures to recover from.
+>
+> **A partial send is no longer a state the system can produce.**
+> `partially_sent` and `partial_delivery_accepted` remain in the status enum so
+> historical rows still render, and are registered in
+> `RETIRED_BROADCAST_STATUSES` so no filter offers them — a query that can only
+> return zero rows reads as "it never happened".
+>
+> Kept rather than deleted because prod may hold rows from before the change
+> and their forensics still live in `broadcast_batch_manifests` (the table is
+> retained; only its writers are gone). **Everything below is history.** For a
+> broadcast stuck today see `broadcasts-stuck-sending.md`, and for the
+> import build see `broadcast-audience-build.md`.
+>
+> Tombstoned 2026-09-09 — 108 Phase 9 review round 1 (S51), which found this
+> file had not been touched by the deletion at all.
 
 ---
 

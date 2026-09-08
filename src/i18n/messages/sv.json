@@ -3191,15 +3191,6 @@
         "body": "Manager-roll: du kan se kön och utskicksdetaljer men inte godkänna, avvisa eller avbryta."
       },
       "toast": {
-        "retrySuccess": "Försök {attempt} har initierats för {count} misslyckade batcher.",
-        "retryBudgetExhausted": "Alla 3 manuella försök är förbrukade. Godkänn partiell leverans för att slutföra utskicket.",
-        "retryAlreadyInProgress": "En annan administratör försöker just nu med detta utskick. Vänta ett ögonblick och uppdatera sidan.",
-        "retryInvalidState": "Detta utskick är inte i ett tillstånd som tillåter försök igen.",
-        "retryServerError": "Försöket misslyckades. Försök igen eller kontakta support.",
-        "acceptPartialSuccess": "Partiell leverans godkänd. Detta utskick är nu slutfört.",
-        "acceptPartialInvalidState": "Detta utskick är inte i ett tillstånd som tillåter godkännande av partiell leverans.",
-        "acceptPartialReasonTooLong": "Anledningen får vara högst 500 tecken.",
-        "acceptPartialServerError": "Misslyckades med att godkänna partiell leverans. Försök igen.",
         "approved": "Utskicket har godkänts.",
         "rejected": "Utskicket har avvisats. Medlemmen har meddelats.",
         "cancelled": "Utskicket har avbrutits. Medlemmen har meddelats.",
@@ -3209,65 +3200,6 @@
         "concurrentRace": "Detta utskick har redan hanterats av en annan administratör. Vyn har uppdaterats.",
         "clearHalted": "Utskicksspärren har hävts för medlemmen.",
         "error": "Något gick fel. Försök igen."
-      },
-      "batches": {
-        "title": "Leveransdetaljer per batch",
-        "description": "Detta utskick delades i {count} batcher eftersom mottagarlistan översteg Resends gräns på 10 000 per audience. Varje batch skickas oberoende.",
-        "expandLabel": "Visa batch-detaljer",
-        "collapseLabel": "Dölj batch-detaljer",
-        "summary": "{succeeded} skickade · {failed} misslyckade · {pending} väntar av totalt {total} batcher",
-        "tableCaption": "Leveransdetaljer per batch, {count} batcher",
-        "columns": {
-          "batchIndex": "Batch",
-          "recipientRange": "Intervall",
-          "recipientCount": "Mottagare",
-          "status": "Status",
-          "dispatchedAt": "Skickad",
-          "delivered": "Levererade",
-          "bounced": "Studsade",
-          "complained": "Anmälda",
-          "unsubscribed": "Avslutade",
-          "retryCount": "Försök"
-        },
-        "batchLabel": "Batch {index} av {total}",
-        "rangeLabel": "{start}–{end}",
-        "retryCountLabel": "{count} / 5",
-        "manualRetryRemaining": "Återstående manuella försök: {remaining} / 3",
-        "manualRetryExhausted": "Alla 3 manuella försök är förbrukade",
-        "batchStatus": {
-          "pending": "Väntar",
-          "sending": "Skickar",
-          "sent": "Skickad",
-          "failed": "Misslyckad",
-          "cancelled": "Avbruten"
-        },
-        "notSplit": "Detta utskick var litet nog att skickas som en enskild audience och delades inte."
-      },
-      "retryDialog": {
-        "trigger": "Försök igen med misslyckade batcher",
-        "triggerAria": "Försök igen med {count} misslyckade batcher",
-        "triggerDisabledAria": "Försök igen otillgängligt — alla försök förbrukade",
-        "title": "Försök igen med misslyckade batcher?",
-        "description": "{count} misslyckade batcher köas om för ett nytt försök. Detta räknas som ett av dina 3 manuella försök.",
-        "budgetLine": "Du har {remaining} av 3 manuella försök kvar.",
-        "warning": "Att skicka om förbrukar Resend API-kvot och kan orsaka dubbletter om de ursprungliga mottagarna redan har fått meddelandet.",
-        "confirm": "Försök igen nu",
-        "cancel": "Avbryt",
-        "submitting": "Försöker igen…"
-      },
-      "acceptPartialDialog": {
-        "trigger": "Godkänn partiell leverans",
-        "triggerAria": "Godkänn partiell leverans och slutför utskick",
-        "title": "Godkänn partiell leverans?",
-        "description": "Detta utskick markeras som slutfört i nuvarande tillstånd. Misslyckade batcher kommer inte att försökas igen, och utskickets status kan inte ändras efteråt.",
-        "summary": "{sent} av {total} batcher levererades framgångsrikt.",
-        "reasonLabel": "Anledning (valfri)",
-        "reasonPlaceholder": "Valfri — t.ex. Resend rate-limit kvarstår, medlem informerad separat…",
-        "reasonHelp": "Valfri kontext för granskningsspår. Max 500 tecken.",
-        "reasonCounter": "{count} / 500",
-        "confirm": "Bekräfta partiell leverans",
-        "cancel": "Avbryt",
-        "submitting": "Bekräftar…"
       },
       "templates": {
         "pageTitle": "Utskicksmallar",

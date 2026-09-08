@@ -639,11 +639,24 @@ affects F7's `audienceId`-based gateway (R16).
 
 ## R16 — Resend Audiences → Segments / Global Contacts (risk outside this feature's scope)
 
-> **DEFERRED out of PR-C (2026-09-07); banner added 2026-09-08 (T098).** Everything below that
-> describes adopting `contacts.imports`, segments or topics belongs to the follow-up PR with T110
-> (tasks T086 / T087 / T106, migration 0298 — none authored). PR-C ships none of it and still runs
-> the bounded per-contact push on `resend@4.8`. R9 carried this banner and R16 did not, so this
-> section read as though the import path were already available.
+> **STATUS 2026-09-09 — SUPERSEDED. The import path is BUILT.** This section carried a
+> DEFERRED banner saying T086 / T087 / T106 and migration 0298 were "none authored" and that
+> PR-C shipped none of it. Branch `108-phase9-cutover` authors all of them, so the banner was
+> describing the opposite of the tree it sat in — found by the 108 Phase 9 review (S37), which
+> also noted that R9 got its correction and R16 did not, for the second time.
+>
+> **Two claims below are now MEASURED rather than read from docs** (2026-09-09, live account,
+> synthetic `@example.com`, positive control first):
+>
+> - **Global Contacts are real and they outlive the audience.** `DELETE
+>   /audiences/{id}/contacts/{email}` answers `{"deleted": true}` and merely DETACHES: the
+>   audience-scoped read then 404s while `GET /contacts/{email}` still returns the contact at
+>   200. The provider's own response is why this went unnoticed for as long as it did.
+> - **An audience-less `DELETE /contacts/{email}` deletes for real** (read-back 404). It is
+>   implemented as `deleteContactGlobally` and deliberately NOT called by the erasure cascade:
+>   one Resend account serves every tenant, so a global delete during tenant A's erasure would
+>   destroy tenant B's contact record and the Resend-side unsubscribe flag with it. See residual
+>   8a in `docs/compliance/processing-records.md`.
 
 - **Fact** (Resend docs `dashboard/segments/migrating-from-audiences-to-segments`, 2026-09):
   Audiences are being replaced by Segments; a contact is now one record per team across

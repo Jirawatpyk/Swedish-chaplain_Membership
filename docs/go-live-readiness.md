@@ -322,6 +322,66 @@ Operator actions specific to the refund-lifecycle bugfix batch (migration 0241/0
 
 ---
 
+### 6.10 108 Phase 9 — `FEATURE_F7_IMPORT_AUDIENCE` flip
+
+> **A second flag, with its own gate.** § 6.9 covers the audience LEG
+> (`FEATURE_CONTACT_MARKETING_RECIPIENTS`, primary-only → 1:N). This one covers
+> HOW the audience reaches Resend: OFF is the serial per-contact push, ON is a
+> single Contacts-Import upload confirmed on a later tick.
+>
+> The same property as § 6.9 applies and is the reason this section exists at
+> all: `vercel.json` has no `ignoreCommand`, so **setting the variable IS the
+> flip**, scheduled for whoever merges next. `src/lib/env.ts` defaults it to
+> `false`, so absent is a valid boot that resolves to off.
+>
+> Added 2026-09-09 by the 108 Phase 9 review (S36): a flag that changes where
+> recipient lists go had no go-live gate, appearing only in a runbook and
+> `.env.example`.
+
+**Unflagged on merge — true whatever this flag is set to:**
+
+- [ ] **Accepted audience ceiling moves 5,000 → 500** while the import flag is
+  OFF. Deliberate (`reviews/cutover.md` § 5): 501–5,000 is accepted today and
+  already fails silently, because 300 s of the serial loop drains ~623. Run
+  `scripts/inventory-broadcast-outbox.ts` against prod before merging and
+  confirm nothing is queued in that band.
+- [ ] **Migrations `0298` + `0299` apply on the deploy.** Both were measured
+  against an empty `broadcasts` table in prod on 2026-09-09; re-check
+  `SELECT count(*) FROM broadcasts` if that is no longer true, because `0299`
+  validates a CHECK under ACCESS EXCLUSIVE.
+
+**Before setting the flag:**
+
+- [ ] **Resend plan headroom.** The Free plan allows 3 audiences and 1,000
+  contacts. One in-flight broadcast + one recently sent (reaped ≥ 1 h after
+  terminal) + one crash-orphan (reaped at 24–48 h) fills it. Confirm the plan
+  or the audience count before the first large send.
+- [ ] **Privacy sign-off.** `docs/compliance/processing-records.md` residual 8a
+  records that Resend contact records survive member erasure — measured, not
+  inferred. A DSR answer must say so. Sign the line below acknowledging it.
+- [ ] **FR-043's 400 ms @ 5,000 band has no test**, and the 3 s @ 20,000 budget
+  is asserted only through `ciScaled(3_000)`. Both must be measured from
+  `sin1`, never from CI or a workstation.
+
+**The flip, then the observation:**
+
+- [ ] Add `FEATURE_F7_IMPORT_AUDIENCE=true` → **redeploy immediately after**,
+  in that order, with no unrelated merge in between.
+- [ ] **Observe the first send.** A submit tick logs
+  `broadcasts.audience_import.submitted`; the confirming tick logs
+  `broadcasts.audience_import.sent` AND writes a `broadcast_send_started` audit
+  row. **If the audit row is missing the send did not go through this path** —
+  flag OFF and redeploy before the next dispatch tick.
+- [ ] Watch `broadcasts_audience_import_stuck_count` for one hour. It is
+  filtered to `status = 'approved'`, so a resolved incident clears it; a value
+  that will not clear means the filter regressed, not that the incident
+  persists.
+
+**§ 6.10 privacy sign-off** — date: ______ · reviewer: ______ · residual 8a
+acknowledged: ☐
+
+---
+
 ## 6b. Data provisioning order (Stage 3 prerequisite)
 
 Member import has hard prerequisites — run in this exact order in production:
