@@ -83,6 +83,15 @@ function makeStubDeps(opts: {
    * `results.sort((a, b) => a.batchIndex - b.batchIndex)` non-trivially.
    */
   delayByAudienceName?: ReadonlyMap<string, number>;
+  /**
+   * Phase 9b (T129) — every `createAudience` name is appended here. Each
+   * dispatched batch calls `createAudience` exactly once with its own index in
+   * the name, so this array IS the record of which batches the service passed
+   * to `dispatchBroadcastBatch`. The one-wave assertions need to see what did
+   * NOT happen, and a count of outcomes alone cannot: a batch that was
+   * dispatched and failed also produces no success.
+   */
+  createdAudienceNames?: string[];
 }): unknown {
   return {
     batchManifests: {
@@ -99,6 +108,7 @@ function makeStubDeps(opts: {
     },
     gateway: {
       async createAudience(audienceName: string) {
+        opts.createdAudienceNames?.push(audienceName);
         if (opts.failOnAudienceNames?.has(audienceName)) {
           throw new Error(`createAudience-boom-${audienceName}`);
         }
@@ -317,5 +327,163 @@ describe('dispatchAllPendingBatches contract (Phase 3F.10)', () => {
     // of the explicit sort. Without the sort, this would be reversed.
     expect(result.results.map((r) => r.batchIndex)).toEqual([0, 1, 2, 3, 4]);
     expect(result.succeeded).toBe(5);
+  });
+
+  /**
+   * Phase 9b (T129) — **one wave per invocation.**
+   *
+   * The service currently queues EVERY pending batch and each worker pulls
+   * until the queue is empty (`const queue = [...input.pendingBatches]`, `for
+   * (;;) { queue.shift() … }`). That was harmless while a batch held up to
+   * 10,000 contacts and nothing above 10,000 recipients existed, so there was
+   * never a second wave. Phase 9b makes batches 500 contacts — ~240 s of serial
+   * `POST /contacts` each — so with `concurrencyCap = 4` and 10 pending
+   * batches, wave 1 finishes at ~240 s and wave 2 starts inside a function
+   * whose `maxDuration` is 300. Wave 2 is killed mid-push: its manifests stay
+   * `pending`, and the next tick re-pushes each from index 0 into a NEW Resend
+   * audience. On the Free plan (1,000 contacts) two such orphans exhaust the
+   * account.
+   *
+   * The fix is to stop after one wave and let the cron's next tick take the
+   * rest — `dispatch-batches` runs every 5 minutes, so a deferral costs
+   * latency, not delivery. This is `reviews/pr-c.md` row 33's "resume half".
+   *
+   * Roll-up is unaffected: `evaluateBatchCompletion` classifies a `pending`
+   * manifest as `in_flight` without `forceComplete`, so a deferred batch keeps
+   * the broadcast `sending` rather than rolling it to `sent` early. Verified in
+   * `roll-up-batch-broadcast.ts` at the gate, not assumed.
+   */
+  it('10 pending with cap 4 → exactly one wave: 4 dispatched, 6 untouched and deferred', async () => {
+    const manifests = Array.from({ length: 10 }, (_, i) =>
+      makeManifest({
+        id: `batch-${i}`,
+        batchIndex: i,
+        recipientRangeStart: i * 3,
+        recipientRangeEnd: i * 3 + 2,
+        recipientCount: 3,
+      }),
+    );
+    const createdAudienceNames: string[] = [];
+    const deps = makeStubDeps({ manifests, createdAudienceNames });
+
+    const result = await dispatchAllPendingBatches(deps as never, {
+      tenantId: tenant,
+      broadcastContent,
+      allRecipients,
+      pendingBatches: manifests,
+      concurrencyCap: 4,
+    });
+
+    // The six deferred batches were never PASSED to `dispatchBroadcastBatch` —
+    // not dispatched-and-skipped, not attempted. Asserting on the gateway is
+    // what proves that; `results.length` alone would also be 4 if six batches
+    // had been dispatched and silently dropped from the output.
+    expect(createdAudienceNames).toHaveLength(4);
+    expect(result.results).toHaveLength(4);
+    expect(result.succeeded).toBe(4);
+    expect(result.failed).toBe(0);
+    expect(result.deferredToNextTick).toBe(6);
+    // Self-consistency: every pending batch is accounted for exactly once.
+    expect(result.succeeded + result.failed + result.deferredToNextTick).toBe(
+      result.totalBatches,
+    );
+    expect(result.totalBatches).toBe(10);
+  });
+
+  it('3 pending with cap 4 → all dispatched, nothing deferred', async () => {
+    const manifests = Array.from({ length: 3 }, (_, i) =>
+      makeManifest({
+        id: `batch-${i}`,
+        batchIndex: i,
+        recipientRangeStart: i * 3,
+        recipientRangeEnd: i * 3 + 2,
+        recipientCount: 3,
+      }),
+    );
+    const createdAudienceNames: string[] = [];
+    const deps = makeStubDeps({ manifests, createdAudienceNames });
+
+    const result = await dispatchAllPendingBatches(deps as never, {
+      tenantId: tenant,
+      broadcastContent,
+      allRecipients: allRecipients.slice(0, 9),
+      pendingBatches: manifests,
+      concurrencyCap: 4,
+    });
+
+    // Fewer batches than the cap must not defer anything — the common case,
+    // and the one an off-by-one in the slice would break silently.
+    expect(createdAudienceNames).toHaveLength(3);
+    expect(result.succeeded).toBe(3);
+    expect(result.deferredToNextTick).toBe(0);
+  });
+
+  it('cap 1 → strictly one batch per invocation', async () => {
+    const manifests = Array.from({ length: 5 }, (_, i) =>
+      makeManifest({
+        id: `batch-${i}`,
+        batchIndex: i,
+        recipientRangeStart: i * 3,
+        recipientRangeEnd: i * 3 + 2,
+        recipientCount: 3,
+      }),
+    );
+    const createdAudienceNames: string[] = [];
+    const deps = makeStubDeps({ manifests, createdAudienceNames });
+
+    const result = await dispatchAllPendingBatches(deps as never, {
+      tenantId: tenant,
+      broadcastContent,
+      allRecipients: allRecipients.slice(0, 15),
+      pendingBatches: manifests,
+      concurrencyCap: 1,
+    });
+
+    // `dispatch_concurrency_cap = 1` is a legal tenant setting and the one an
+    // operator reaches for on a constrained Resend plan. It must mean "one
+    // batch per tick", not "all of them, serially" — which is the worst case
+    // for the maxDuration kill.
+    expect(createdAudienceNames).toEqual([
+      `broadcast-${tenant.slug}-${broadcastId}-batch-0`,
+    ]);
+    expect(result.succeeded).toBe(1);
+    expect(result.deferredToNextTick).toBe(4);
+  });
+
+  it('a failing batch still consumes its slot in the wave — the rest defer, they do not backfill', async () => {
+    const manifests = Array.from({ length: 6 }, (_, i) =>
+      makeManifest({
+        id: `batch-${i}`,
+        batchIndex: i,
+        recipientRangeStart: i * 3,
+        recipientRangeEnd: i * 3 + 2,
+        recipientCount: 3,
+      }),
+    );
+    const createdAudienceNames: string[] = [];
+    const deps = makeStubDeps({
+      manifests,
+      createdAudienceNames,
+      failOnAudienceNames: new Set([
+        `broadcast-${tenant.slug}-${broadcastId}-batch-1`,
+      ]),
+    });
+
+    const result = await dispatchAllPendingBatches(deps as never, {
+      tenantId: tenant,
+      broadcastContent,
+      allRecipients,
+      pendingBatches: manifests,
+      concurrencyCap: 2,
+    });
+
+    // A failure must NOT free the worker to pull batch-2 — that is a second
+    // wave through the back door, and a batch fails fastest when Resend
+    // rejects it at the contact cap, i.e. exactly when the account can least
+    // afford another audience. Wave size is a budget, not a success quota.
+    expect(createdAudienceNames).toHaveLength(2);
+    expect(result.succeeded).toBe(1);
+    expect(result.failed).toBe(1);
+    expect(result.deferredToNextTick).toBe(4);
   });
 });

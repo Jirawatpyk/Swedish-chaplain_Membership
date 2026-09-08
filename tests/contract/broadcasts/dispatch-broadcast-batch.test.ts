@@ -95,7 +95,7 @@ const allRecipients = [
 
 interface StubDeps {
   readonly emits: Array<{ eventType: string; payload?: unknown }>;
-  readonly statusUpdates: Array<{ status: string; providerBroadcastId?: string }>;
+  readonly statusUpdates: Array<{ status: string; providerBroadcastId?: string; failureReason?: string | null }>;
   readonly gatewayCalls: string[];
   readonly deps: unknown;
 }
@@ -110,10 +110,18 @@ function makeStubDeps(opts: {
    * returns `ok` on success-path audit failure (Resend already sent).
    */
   auditThrowsForEvents?: ReadonlySet<string>;
+  /**
+   * Phase 9b (T130) — throw THIS instead of a plain `Error` at
+   * `gatewayThrowsAt`. The real gateway throws a `GatewayThrowable` carrying
+   * `kind: 'permanent' | 'retryable'` (declared on the PORT, so reading it in
+   * Application is not a layering violation), and until Phase 9b the catch
+   * block dropped that field on the floor. A plain `Error` cannot exercise it.
+   */
+  gatewayThrowError?: unknown;
 }): StubDeps {
   const manifest = opts.manifest ?? makeManifest();
   const emits: Array<{ eventType: string; payload?: unknown }> = [];
-  const statusUpdates: Array<{ status: string; providerBroadcastId?: string }> = [];
+  const statusUpdates: Array<{ status: string; providerBroadcastId?: string; failureReason?: string | null }> = [];
   const gatewayCalls: string[] = [];
 
   return {
@@ -125,7 +133,15 @@ function makeStubDeps(opts: {
         async findByBroadcast() {
           return [manifest];
         },
-        async updateStatus(_t: unknown, _id: unknown, update: { status: string; providerBroadcastId?: string }) {
+        async updateStatus(
+          _t: unknown,
+          _id: unknown,
+          update: {
+            status: string;
+            providerBroadcastId?: string;
+            failureReason?: string | null;
+          },
+        ) {
           statusUpdates.push(update);
           if (opts.persistFails && update.providerBroadcastId !== undefined) {
             return { ok: false, error: { kind: 'storage_error' as const, detail: 'simulated' } };
@@ -141,7 +157,9 @@ function makeStubDeps(opts: {
         },
         async addContactsToAudience() {
           gatewayCalls.push('addContactsToAudience');
-          if (opts.gatewayThrowsAt === 'addContactsToAudience') throw new Error('addContacts-boom');
+          if (opts.gatewayThrowsAt === 'addContactsToAudience') {
+            throw opts.gatewayThrowError ?? new Error('addContacts-boom');
+          }
         },
         async createBroadcast() {
           gatewayCalls.push('createBroadcast');
@@ -448,5 +466,77 @@ describe('dispatchBroadcastBatch contract (Phase 3F.5)', () => {
     expect((result.error as { kind: string }).kind).toBe('ALREADY_DISPATCHING_IN_PROGRESS');
     // Lock not acquired → no gateway calls
     expect(baseDeps.gatewayCalls).toEqual([]);
+  });
+
+  /**
+   * Phase 9b (T130, writer half) — **the failure CLASSIFICATION survives to
+   * the manifest row.**
+   *
+   * The gateway already distinguishes permanent from retryable
+   * (`classifyResendError` → `GatewayThrowable.kind`, a union declared on
+   * `broadcasts-gateway-port.ts`). This catch block threw it away, persisting
+   * only `"${stage}: ${message}"`. `autoRetryFailedBatch` then re-queued
+   * everything five times, including 4xx failures that cannot succeed — see
+   * the sibling cases in `auto-retry-failed-batches.test.ts`.
+   *
+   * A prefix on the existing free-text `failure_reason` column is what carries
+   * it: no migration, and every row written before this deploy simply has no
+   * prefix and stays retryable, which is exactly today's behaviour.
+   *
+   * The stage and the provider's own message must both survive — they are what
+   * a human reads in the admin retry queue, and losing them to make room for
+   * the prefix would trade one silent failure for another.
+   */
+  it.each<['permanent' | 'retryable', string]>([
+    ['permanent', 'permanent/addContactsToAudience: '],
+    ['retryable', 'retryable/addContactsToAudience: '],
+  ])(
+    'a %s gateway failure persists its classification as a failureReason prefix',
+    async (kind, expectedPrefix) => {
+      const { deps, statusUpdates } = makeStubDeps({
+        gatewayThrowsAt: 'addContactsToAudience',
+        gatewayThrowError: Object.assign(
+          new Error('You have reached your contact limit'),
+          kind === 'permanent'
+            ? { kind, code: 'validation_error', reason: 'contact limit' }
+            : { kind, subKind: 'server_5xx', reason: 'upstream' },
+        ),
+      });
+
+      const result = await dispatchBroadcastBatch(deps as never, {
+        tenantId: tenant,
+        batchManifestId: 'batch-id-1',
+        allRecipients,
+        broadcastContent,
+      });
+
+      expect(result.ok).toBe(false);
+      const failed = statusUpdates.find((u) => u.status === 'failed');
+      expect(failed?.failureReason).toMatch(
+        new RegExp(`^${expectedPrefix.replace('/', '\\/')}`),
+      );
+      // The operator-facing detail is not sacrificed to the prefix.
+      expect(failed?.failureReason).toContain(
+        'You have reached your contact limit',
+      );
+    },
+  );
+
+  it('a plain Error (no classification) persists no prefix — it must stay retryable downstream', async () => {
+    const { deps, statusUpdates } = makeStubDeps({
+      gatewayThrowsAt: 'createAudience',
+    });
+
+    await dispatchBroadcastBatch(deps as never, {
+      tenantId: tenant,
+      batchManifestId: 'batch-id-1',
+      allRecipients,
+      broadcastContent,
+    });
+
+    const failed = statusUpdates.find((u) => u.status === 'failed');
+    // An unclassified throw is not evidence of permanence — a bug in our own
+    // code reaches this catch too. It must read the same as every pre-9b row.
+    expect(failed?.failureReason).toBe('createAudience: createAudience-boom');
   });
 });

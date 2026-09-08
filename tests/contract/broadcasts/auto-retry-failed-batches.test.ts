@@ -126,6 +126,90 @@ describe('autoRetryFailedBatch + sweepAutoRetryFailedBatches contract (Phase 3F.
     expect(updates).toHaveLength(0); // no DB write
   });
 
+  /**
+   * Phase 9b (T130) — **a PERMANENT failure is not retried.**
+   *
+   * Verified at the TDD gate rather than assumed (the task said "verify then
+   * pin"; it turned out to be a real fix): `autoRetryFailedBatch` gates on
+   * `status === 'failed'` and `retryCount < AUTO_RETRY_BUDGET` and nothing
+   * else. It reads `batch.failureReason` only to copy it into the audit
+   * payload as `previousFailureReason`. So a 4xx — which the gateway's
+   * `classifyResendError` already knows is `permanent` — is re-queued five
+   * times.
+   *
+   * Why that matters now and did not before: Phase 9b makes batches 500
+   * contacts and puts several in flight. The archetypal permanent 4xx is
+   * Resend refusing at the account contact cap, which on the Free plan is
+   * 1,000. Five automatic retries of that failure create five ephemeral
+   * audiences and burn five batches' worth of contact quota against the very
+   * cap that caused the failure — each retry making the next one more certain.
+   *
+   * The classification exists but is thrown away: `dispatch-broadcast-batch.ts`
+   * catches `GatewayThrowable` and persists `failureReason` as
+   * `"${gatewayStage}: ${message}"`, dropping `kind`. GREEN persists it as a
+   * parseable prefix (no migration — `failure_reason` is free text) and gates
+   * auto-retry on it.
+   *
+   * **The expected strings below are written out by hand on purpose.** Sharing
+   * a formatter between the code under test and its assertion would make any
+   * change to the persisted format pass vacuously, and this format is a
+   * cross-tick contract read by a different use case than the one that writes
+   * it.
+   */
+  it('failureReason classified permanent → BATCH_NOT_RETRY_ELIGIBLE, no DB write, retry budget untouched', async () => {
+    const batch = makeBatch({
+      retryCount: 0,
+      failureReason:
+        'permanent/addContactsToAudience: You have reached your contact limit',
+    });
+    const { deps, updates } = makeStubDeps();
+    const result = await autoRetryFailedBatch(deps as never, {
+      tenantId: tenant,
+      batch,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect((result.error as { kind: string }).kind).toBe('BATCH_NOT_RETRY_ELIGIBLE');
+    // No re-queue: the batch stays `failed` for a human, with its reason
+    // already in the manifest. Burning a retry slot would ALSO be wrong — it
+    // would let a later manual retry silently fall off the budget.
+    expect(updates).toHaveLength(0);
+  });
+
+  it('failureReason classified retryable → still retried', async () => {
+    const batch = makeBatch({
+      retryCount: 0,
+      failureReason: 'retryable/createAudience: 503 upstream unavailable',
+    });
+    const { deps, updates } = makeStubDeps();
+    const result = await autoRetryFailedBatch(deps as never, {
+      tenantId: tenant,
+      batch,
+    });
+    expect(result.ok).toBe(true);
+    expect(updates[0]?.retryCount).toBe(1);
+  });
+
+  it('an UNCLASSIFIED failureReason is still retried — every pre-9b row is one', async () => {
+    // Backward compatibility stated as a test, not as a comment. Rows written
+    // before this change carry `"createAudience: …"` with no prefix, and
+    // `failureReason` may be null. Treating "unknown" as permanent would strand
+    // every in-flight batch on the deploy; treating it as retryable preserves
+    // exactly today's behaviour for them.
+    for (const failureReason of [
+      'createAudience: connection reset',
+      null,
+    ] as const) {
+      const { deps, updates } = makeStubDeps();
+      const result = await autoRetryFailedBatch(deps as never, {
+        tenantId: tenant,
+        batch: makeBatch({ retryCount: 0, failureReason }),
+      });
+      expect(result.ok).toBe(true);
+      expect(updates[0]?.retryCount).toBe(1);
+    }
+  });
+
   it('batch.status !== "failed" → BATCH_NOT_RETRY_ELIGIBLE with reason', async () => {
     const batch = makeBatch({ status: 'sending' });
     const { deps } = makeStubDeps();

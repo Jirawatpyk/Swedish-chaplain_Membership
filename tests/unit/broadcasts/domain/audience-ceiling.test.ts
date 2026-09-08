@@ -17,6 +17,7 @@ import {
   DELIVERABLE_RECIPIENTS_PER_TICK,
   SPLIT_THRESHOLD_RECIPIENTS,
 } from '@/modules/broadcasts/domain/audience-ceiling';
+import { RESEND_PER_AUDIENCE_CAP } from '@/modules/broadcasts/domain/value-objects/batch-boundary';
 
 describe('audienceCeiling (108 PR-C)', () => {
   it('is 5,000 when the batching path is OFF (the F7 MVP figure)', () => {
@@ -28,11 +29,41 @@ describe('audienceCeiling (108 PR-C)', () => {
   });
 
   it('the split threshold sits strictly below the batching-ON ceiling, so every accepted large audience can reach the batch path', () => {
-    expect(SPLIT_THRESHOLD_RECIPIENTS).toBe(10_000);
     expect(SPLIT_THRESHOLD_RECIPIENTS).toBeLessThan(audienceCeiling(true));
-    // …and above the OFF ceiling: with batching OFF nothing is ever split,
-    // because nothing above 5,000 is ever accepted.
-    expect(SPLIT_THRESHOLD_RECIPIENTS).toBeGreaterThan(audienceCeiling(false));
+  });
+
+  /**
+   * Phase 9b (T126) — the threshold IS the batch size.
+   *
+   * Before 9b the two were 10,000 and 500, and the gap between them was the
+   * whole bug: `split-large-broadcasts` ignored everything at or below 10,000,
+   * so a 600-recipient audience fell to `dispatch-scheduled`'s serial push and
+   * died at `maxDuration`. Deriving one from the other is what closes the band
+   * permanently — there is no arithmetic left in which a broadcast can be too
+   * big for one tick and too small to be split.
+   *
+   * The old pin `SPLIT_THRESHOLD_RECIPIENTS > audienceCeiling(false)` is gone
+   * rather than adjusted. Its premise was "with batching OFF nothing is ever
+   * split because nothing above 5,000 is accepted", which the enforced-ceiling
+   * clamp now states directly and more honestly in
+   * `broadcasts-deps-audience.test.ts` — with batching OFF the enforced ceiling
+   * EQUALS the threshold, so nothing above it is accepted in the first place.
+   * The same reasoning retires the old "sits below the split threshold" case:
+   * it asserted a strict `<` that equality makes false, and equality is now
+   * the point.
+   */
+  it('the split threshold IS the per-tick batch size — one constant, so no audience can fall between them', () => {
+    expect(SPLIT_THRESHOLD_RECIPIENTS).toBe(DELIVERABLE_RECIPIENTS_PER_TICK);
+  });
+
+  it('one batch never exceeds what Resend accepts in a single audience', () => {
+    // The hard upper bound the batch size must stay under. Resend's own limit
+    // is 10,000 contacts per audience; the tick bound (500) is far stricter
+    // today, but this pin is what stops a future latency win from raising the
+    // batch size past the provider's cap and turning every split into a 4xx.
+    expect(DELIVERABLE_RECIPIENTS_PER_TICK).toBeLessThanOrEqual(
+      RESEND_PER_AUDIENCE_CAP,
+    );
   });
 });
 
@@ -61,7 +92,7 @@ describe('audienceCeiling (108 PR-C)', () => {
  * T095's first answer used `GET /audiences` (290 ms → 3.45 req/s → a bound near
  * 830) because nothing had been dispatched yet and that was the only read-only
  * probe. Writes are ~1.7× slower. The caveat filed with that measurement —
- * "`GET` latency, not `POST /contacts`" — was worth 300 recipients. **800 sits under both bounds, for one
+ * "`GET` latency, not `POST /contacts`" — was worth 300 recipients. **500 sits under both bounds, for one
  * broadcast in flight** — neither bound is per-broadcast (the 300 s is per
  * invocation across `MAX_PER_TICK = 50` rows; the 1,000 contacts is per
  * account across un-reaped ephemeral audiences). The constant's own docblock
@@ -89,14 +120,9 @@ describe('DELIVERABLE_RECIPIENTS_PER_TICK (T095, 2026-09-08)', () => {
     expect(DELIVERABLE_RECIPIENTS_PER_TICK).toBeLessThan(audienceCeiling(true));
   });
 
-  it('sits below the split threshold, so nothing reachable ever needs splitting', () => {
-    // A consequence worth stating out loud rather than discovering later: with
-    // the enforced ceiling capped here, no audience can reach
-    // SPLIT_THRESHOLD_RECIPIENTS, so `split-large-broadcasts` has nothing to
-    // pick up. That path could not deliver anyway — `dispatch-batches` runs
-    // the same serial push under the same `maxDuration = 300`, with batches of
-    // up to RESEND_PER_AUDIENCE_CAP = 10,000 — so this makes an unusable path
-    // unreachable rather than removing a working one.
-    expect(DELIVERABLE_RECIPIENTS_PER_TICK).toBeLessThan(SPLIT_THRESHOLD_RECIPIENTS);
-  });
+  // The case that used to sit here — "sits below the split threshold, so
+  // nothing reachable ever needs splitting" — was true of the CLAMP and is
+  // false of the design that replaced it. Phase 9b makes the threshold equal
+  // this constant, so audiences above it are split and delivered across ticks
+  // instead of being refused; the equality is pinned above.
 });

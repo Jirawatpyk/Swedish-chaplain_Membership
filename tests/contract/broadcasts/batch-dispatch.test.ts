@@ -62,17 +62,30 @@ async function importSplitUseCase(): Promise<{
 const tenant = asTenantContext('test-tenant');
 const broadcastId = asBroadcastId('11111111-1111-1111-1111-111111111111');
 
+/**
+ * Phase 9b (T127) widened the recorder with `recipientRangeStart` /
+ * `recipientRangeEnd`. They were dropped on the floor here, so nothing in this
+ * file could see the indices — and the indices are the whole contract between
+ * split and dispatch: `dispatchBroadcastBatch` sends
+ * `allRecipients.slice(recipientRangeStart, recipientRangeEnd + 1)`. An
+ * off-by-one in the ranges skips or double-sends real recipients while every
+ * `recipientCount` assertion stays green.
+ */
+type RecordedBatch = {
+  batchIndex: number;
+  recipientCount: number;
+  recipientRangeStart: number;
+  recipientRangeEnd: number;
+  idempotencyKey: string;
+};
+
 function makeStubDeps(): {
   emits: unknown[];
-  insertedBatches: Array<{ batchIndex: number; recipientCount: number; idempotencyKey: string }>;
+  insertedBatches: RecordedBatch[];
   deps: unknown;
 } {
   const emits: unknown[] = [];
-  const insertedBatches: Array<{
-    batchIndex: number;
-    recipientCount: number;
-    idempotencyKey: string;
-  }> = [];
+  const insertedBatches: RecordedBatch[] = [];
 
   return {
     emits,
@@ -86,11 +99,7 @@ function makeStubDeps(): {
       batchManifests: {
         async bulkInsert(
           _tenantId: unknown,
-          inputs: ReadonlyArray<{
-            batchIndex: number;
-            recipientCount: number;
-            idempotencyKey: string;
-          }>,
+          inputs: ReadonlyArray<RecordedBatch>,
         ) {
           // Idempotency-key collision contract — same key returns error
           for (const input of inputs) {
@@ -103,6 +112,8 @@ function makeStubDeps(): {
             insertedBatches.push({
               batchIndex: input.batchIndex,
               recipientCount: input.recipientCount,
+              recipientRangeStart: input.recipientRangeStart,
+              recipientRangeEnd: input.recipientRangeEnd,
               idempotencyKey: input.idempotencyKey,
             });
           }
@@ -115,39 +126,62 @@ function makeStubDeps(): {
 }
 
 describe('splitBroadcastIntoBatches contract (T032)', () => {
-  it('5,000 recipients → exactly 1 batch (recipient_range_start=0, end=4999)', async () => {
-    const { splitBroadcastIntoBatches } = await importSplitUseCase();
-    const { deps, emits, insertedBatches } = makeStubDeps();
+  /**
+   * Phase 9b (T127) — **batches are sized at what ONE TICK can push, not at
+   * what Resend accepts in one audience.**
+   *
+   * The three cases below used to read 5,000 → 1 batch, 25,000 → 10k/10k/5k
+   * and 50,000 → 5 × 10k, because `splitBroadcastIntoBatches` passed
+   * `RESEND_PER_AUDIENCE_CAP` (10,000) as the per-batch cap. That number is the
+   * PROVIDER's limit — how many contacts one Resend audience may hold — and it
+   * was never the binding constraint. The binding constraint is the wall clock:
+   * `addContactsToAudience` is a serial `await` loop at a measured 2.08 req/s
+   * (`POST /contacts`, mean 481 ms), so a 10,000-contact batch needs ~80 min
+   * inside a `maxDuration = 300` function. Every batch above ~623 was killed
+   * mid-push and re-pushed from index 0 on the next tick, into a NEW audience,
+   * burning the whole batch's contact quota per retry.
+   *
+   * So the cap becomes `DELIVERABLE_RECIPIENTS_PER_TICK`. 10,000 stays as the
+   * hard upper bound the batch size may never exceed (pinned in
+   * `audience-ceiling.test.ts`), not as the size itself.
+   *
+   * The boundary cases are the point: 500 must be ONE batch (not two, an
+   * off-by-one that would double every send) and 501 must be two.
+   */
+  it.each<[number, readonly number[]]>([
+    [500, [500]],
+    [501, [500, 1]],
+    [1_200, [500, 500, 200]],
+    [5_000, Array.from({ length: 10 }, () => 500)],
+    [25_000, Array.from({ length: 50 }, () => 500)],
+  ])(
+    '%d recipients → batches sized at the per-tick bound, last batch smaller',
+    async (count, expected) => {
+      const { splitBroadcastIntoBatches } = await importSplitUseCase();
+      const { deps, emits, insertedBatches } = makeStubDeps();
 
-    const result = await splitBroadcastIntoBatches(deps, {
-      tenantId: tenant,
-      broadcastId,
-      resolvedRecipientCount: 5_000,
-    });
+      const result = await splitBroadcastIntoBatches(deps, {
+        tenantId: tenant,
+        broadcastId,
+        resolvedRecipientCount: count,
+      });
 
-    expect(result.ok).toBe(true);
-    expect(insertedBatches).toHaveLength(1);
-    expect(insertedBatches[0]?.batchIndex).toBe(0);
-    expect(insertedBatches[0]?.recipientCount).toBe(5_000);
-    expect(emits.filter(isDispatchEvent)).toHaveLength(1);
-  });
+      expect(result.ok).toBe(true);
+      expect(insertedBatches.map((b) => b.recipientCount)).toEqual([...expected]);
+      // Ranges stay contiguous and gap-free across the new size — the
+      // invariant `batch-boundary.test.ts` pins for `computeBatchRanges` has
+      // to survive the cap change, because `dispatchBroadcastBatch` slices
+      // `allRecipients` by exactly these indices.
+      expect(insertedBatches.map((b) => b.batchIndex)).toEqual(
+        expected.map((_, i) => i),
+      );
+      expect(insertedBatches[0]?.recipientRangeStart).toBe(0);
+      expect(insertedBatches.at(-1)?.recipientRangeEnd).toBe(count - 1);
+      expect(emits.filter(isDispatchEvent)).toHaveLength(1);
+    },
+  );
 
-  it('25,000 recipients → 3 batches of 10k / 10k / 5k (last-batch-smaller)', async () => {
-    const { splitBroadcastIntoBatches } = await importSplitUseCase();
-    const { deps, insertedBatches } = makeStubDeps();
-
-    const result = await splitBroadcastIntoBatches(deps, {
-      tenantId: tenant,
-      broadcastId,
-      resolvedRecipientCount: 25_000,
-    });
-
-    expect(result.ok).toBe(true);
-    expect(insertedBatches.map((b) => b.recipientCount)).toEqual([10_000, 10_000, 5_000]);
-    expect(insertedBatches.map((b) => b.batchIndex)).toEqual([0, 1, 2]);
-  });
-
-  it('50,000 recipients (max) → 5 batches of 10k each (Resend per-audience cap)', async () => {
+  it('50,000 recipients (the DB CHECK maximum) → 100 batches, each one tick', async () => {
     const { splitBroadcastIntoBatches } = await importSplitUseCase();
     const { deps, insertedBatches } = makeStubDeps();
 
@@ -158,8 +192,10 @@ describe('splitBroadcastIntoBatches contract (T032)', () => {
     });
 
     expect(result.ok).toBe(true);
-    expect(insertedBatches).toHaveLength(5);
-    expect(insertedBatches.every((b) => b.recipientCount === 10_000)).toBe(true);
+    // 100 batches at `dispatch_concurrency_cap = 4` and one wave per tick is
+    // 25 ticks ≈ 2 h — deliverable, which the single 5 × 10,000 split was not.
+    expect(insertedBatches).toHaveLength(100);
+    expect(insertedBatches.every((b) => b.recipientCount === 500)).toBe(true);
   });
 
   it('idempotency-key collision → returns BATCH_ALREADY_DISPATCHED error', async () => {
