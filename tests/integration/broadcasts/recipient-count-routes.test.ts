@@ -20,6 +20,7 @@ import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
 import { env } from '@/lib/env';
 import { isF71aUs1Enabled } from '@/modules/broadcasts/infrastructure/feature-flags';
+import { DELIVERABLE_RECIPIENTS_PER_TICK } from '@/modules/broadcasts/domain/audience-ceiling';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { createActiveTestUser, deleteTestUser, type TestUser } from '../helpers/test-users';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
@@ -110,9 +111,28 @@ describe('108 PR-C T088 — recipient-count routes (live Neon, real gates)', () 
     // when batching AND the 1:N flag are both on), never from
     // `currentAudienceCeiling()` itself — that comparison was a tautology
     // (review BLOCKER); the composition root's own unit test pins the matrix.
-    const expectedCeiling = isF71aUs1Enabled() && env.features.contactMarketingRecipients ? 50_000 : 5_000;
+    //
+    // T095 (2026-09-08) added the second half: what the flags CONFIGURE is
+    // clamped to what one dispatch tick can actually push. Restated here the
+    // same way — from the flags and the Domain constant, not from the function
+    // under test — so this stays an independent statement of the rule rather
+    // than an echo of it.
+    const configured = isF71aUs1Enabled() && env.features.contactMarketingRecipients ? 50_000 : 5_000;
+    const expectedCeiling = Math.min(configured, DELIVERABLE_RECIPIENTS_PER_TICK);
     // No `orphans` on the member body (review M-3): it is about OTHER members.
-    expect(body).toEqual({ count: 2, ceiling: expectedCeiling, exceeds: false, droppedByPreference: 0 });
+    //
+    // And no `droppedByPreference` either, whenever the count is non-zero.
+    // FIXED 2026-09-08: this expectation still listed it and had been RED on
+    // `main` since PR-C (#346, `91505b8f2`) — that PR's `/code-review` finding
+    // #4 made the route strip the field for exactly the same reason M-3
+    // stripped `orphans` (it is a count of other members' contacts who
+    // objected, pollable 30×/min and probeable tier by tier), but the
+    // assertion was never updated. Nothing caught it: this file is not in the
+    // per-PR integration gate. The field survives only at count 0, where the
+    // "everyone objected" empty-state copy needs it.
+    expect(body).toEqual({ count: 2, ceiling: expectedCeiling, exceeds: false });
+    expect(body).not.toHaveProperty('droppedByPreference');
+    expect(body).not.toHaveProperty('orphans');
     expect(JSON.stringify(body)).not.toMatch(/@|-4[0-9a-f]{3}-/);
   });
 
