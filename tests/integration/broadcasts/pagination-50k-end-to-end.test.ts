@@ -16,7 +16,7 @@
  *
  * Split-correctness verified IN-SESSION (this file):
  *   - exactly 5 batch_manifest rows created
- *   - each batch.recipient_count = 10000
+ *   - each batch.recipient_count = 500 (Phase 9b: the per-tick batch size)
  *   - batch_index 0..4 contiguous + monotonic
  *   - recipient_range_start / _end correct (no gaps, no overlaps)
  *   - idempotency_key in expected format
@@ -30,7 +30,7 @@
  *      polluting the Resend account + sending fake emails)
  *   3. Webhook simulator OR live Resend webhook for per-batch counter
  *      reconciliation
- *   4. Wall-clock measurement: split → dispatch → 5 batches reach
+ *   4. Wall-clock measurement: split → dispatch → 100 batches reach
  *      terminal `sent` status within 45 min
  * The wall-clock measurement is necessarily a staging exercise;
  * Bangkok ↔ Neon Singapore RTT (~25ms) × 50,000 recipient inserts
@@ -103,7 +103,7 @@ describe.runIf(RUN_INTEGRATION)(
       });
     });
 
-    it('50,000 recipients → exactly 5 batches × 10,000 with contiguous ranges + correct status + correct idempotency keys', async () => {
+    it('50,000 recipients → exactly 100 batches × 500 with contiguous ranges + correct status + correct idempotency keys', async () => {
       const tenantCtx = asTenantContext(TEST_TENANT);
       const broadcastId = asBroadcastId(TEST_BROADCAST_IDS[0]!);
       const batchManifestsRepo = makeDrizzleBatchManifestsRepo(TEST_TENANT);
@@ -126,7 +126,11 @@ describe.runIf(RUN_INTEGRATION)(
       expect(result.ok).toBe(true);
       if (!result.ok) return;
 
-      expect(result.value.batchManifestIds).toHaveLength(5);
+      // Phase 9b (T134): batches are sized at DELIVERABLE_RECIPIENTS_PER_TICK,
+      // not at Resend's per-audience cap, so 50,000 is 100 batches of 500 rather
+      // than 5 of 10,000. The provider limit was never the binding one: a
+      // 10,000-contact serial push needs ~80 min inside a 300 s function.
+      expect(result.value.batchManifestIds).toHaveLength(100);
 
       // Verify per-batch row shape via bypass-RLS read on the schema-
       // owner connection (matches the T037 read pattern).
@@ -141,7 +145,7 @@ describe.runIf(RUN_INTEGRATION)(
         )
         .orderBy(broadcastBatchManifests.batchIndex);
 
-      expect(rows).toHaveLength(5);
+      expect(rows).toHaveLength(100);
 
       // Each batch: 10,000 recipients · contiguous ranges · pending status
       // · idempotency key in expected per-batch-attempt format.
@@ -149,16 +153,16 @@ describe.runIf(RUN_INTEGRATION)(
       for (let i = 0; i < rows.length; i += 1) {
         const row = rows[i]!;
         expect(row.batchIndex).toBe(i);
-        expect(row.recipientCount).toBe(10_000);
+        expect(row.recipientCount).toBe(500);
         expect(row.recipientRangeStart).toBe(expectedRangeStart);
-        expect(row.recipientRangeEnd).toBe(expectedRangeStart + 10_000 - 1);
+        expect(row.recipientRangeEnd).toBe(expectedRangeStart + 500 - 1);
         expect(row.status).toBe('pending');
         // Idempotency key format (per plan.md § VIII Reliability):
         //   `broadcast-{broadcastId}-batch-{batchIndex}-attempt-{retryCount}`
         expect(row.idempotencyKey).toBe(
           `broadcast-${broadcastId as string}-batch-${i}-attempt-0`,
         );
-        expectedRangeStart += 10_000;
+        expectedRangeStart += 500;
       }
 
       // Contiguous + non-overlapping invariant: last range_end MUST be

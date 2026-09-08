@@ -389,11 +389,21 @@ recipients per broadcast (FR-016a) × N broadcasts due in the window.
 > pages; the ceiling is 5,000 unless BOTH F7.1a batching AND
 > `FEATURE_CONTACT_MARKETING_RECIPIENTS` are ON (then 50,000, and the split
 > cron takes over above 10,000) — prod has batching ON and the 1:N flag OFF.
-> **Superseded 2026-09-08: the ENFORCED ceiling is `min(configured, 500)` in
-> every flag state** (`DELIVERABLE_RECIPIENTS_PER_TICK` — the serial Resend
-> push delivers ~2.08 req/s and cannot finish more than ~623 in 300 s). So
-> prod's ceiling today is **500**, the split cron is unreachable, and the
-> "≤ 5,000 recipients per broadcast" line above should read ≤ 500.
+> **Superseded 2026-09-08 — twice, the same day. This is the second and
+> current answer.** The interim T095 clamp made the ENFORCED ceiling
+> `min(configured, 500)` in every flag state, because the serial Resend push
+> delivers ~2.08 req/s and cannot finish more than ~623 in 300 s. Phase 9b
+> replaced that clamp with batching: `DELIVERABLE_RECIPIENTS_PER_TICK` is now
+> the BATCH SIZE, `SPLIT_THRESHOLD_RECIPIENTS` derives from it, and the clamp
+> applies only with batching OFF. **Prod has batching ON, so the accepted
+> ceiling is 5,000 (50,000 once the 1:N flag flips) and `split-large-broadcasts`
+> takes over above 500** — an audience bigger than one tick is SPLIT and
+> delivered one wave per tick, not refused. Two operational consequences:
+> `dispatch-scheduled` now claims only rows whose `estimated_recipient_count`
+> is at or below 500 (a row that GREW past it since submit is handed to the
+> split cron with a corrected estimate rather than pushed and killed at 300 s),
+> and `dispatch-batches` dispatches at most `dispatch_concurrency_cap` batches
+> per invocation, deferring the rest to the next tick.
 > A tick that cannot build the audience REJECTS and the
 > next tick retries — never a partial push. Triage: `docs/runbooks/broadcast-audience-build.md`.
 

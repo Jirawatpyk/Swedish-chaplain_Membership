@@ -231,11 +231,21 @@ When a member composes a broadcast, the estimated number of recipients shown is 
 > the push stops being serial (the import build, or batched multi-tick
 > dispatch), at which point `DELIVERABLE_RECIPIENTS_PER_TICK` rises and the
 > scenario can be written honestly. Mirrored in
-> `reviews/task-coverage-review.md`'s US5 row. **Phase 9b (tasks T126–T146, planned
-> 2026-09-08) is exactly that: it makes 500 the batch size, so a 6,200 audience with batching ON
-> splits into 13 batches across ticks and AS2 becomes reachable — tested at 1,200 by T132 with a
-> fake gateway; 6,200 real needs Resend Pro (1,000-contact Free cap). This "REFUSED BY DESIGN"
-> reading holds until 9b's GREEN.** Before T094 one of
+> `reviews/task-coverage-review.md`'s US5 row.
+>
+> **SUPERSEDED 2026-09-08 — Phase 9b (T126–T148) SHIPPED, and AS2 is REACHABLE
+> again.** `DELIVERABLE_RECIPIENTS_PER_TICK` is the batch size, not a ceiling:
+> with batching ON a 6,200-recipient audience is accepted (the ceiling is the
+> configured 5,000, or 50,000 with the 1:N flag) and split into 13 batches
+> delivered one wave per tick. The clamp survives only with batching OFF, where
+> there is no split path and the single-tick bound is still real. Pinned at
+> 1,200 → `[500, 500, 200]` in `tests/contract/broadcasts/batch-dispatch.test.ts`
+> and end-to-end across two invocations in
+> `tests/integration/broadcasts/deliverable-batches-multi-tick.test.ts`, both
+> against a recording fake gateway. **6,200 recipients for real needs Resend Pro**
+> — the Free plan's 1,000-contact cap binds long before the wall clock does, and
+> that is now a billing decision rather than an engineering one, which was the
+> point. Before T094 one of
 > three must land — the import build (T086/T087/T106), a split threshold
 > lowered below the measured push ceiling PLUS a wall-clock budget with
 > resume in `addContactsToAudience`, or an explicit submit-time refusal above

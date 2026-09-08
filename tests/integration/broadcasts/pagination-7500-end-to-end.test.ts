@@ -11,8 +11,8 @@
  *
  * The lean variant verifies:
  *   (a) `splitBroadcastIntoBatches` accepts 7,500 recipients and
- *       produces exactly 1 `broadcast_batch_manifests` row
- *   (b) The persisted row has recipient_count=7500, range [0..7499],
+ *       produces 15 `broadcast_batch_manifests` rows of 500 (Phase 9b)
+ *   (b) The first row has recipient_count=500, range [0..499], the last ends at 7499,
  *       status='pending', idempotency_key in expected format
  *   (c) Re-invocation with same broadcastId returns
  *       BATCH_ALREADY_DISPATCHED (idempotency)
@@ -100,8 +100,11 @@ describe.runIf(RUN_INTEGRATION)(
 
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      expect(result.value.batchCount).toBe(1);
-      expect(result.value.batchManifestIds).toHaveLength(1);
+      // Phase 9b (T134): 7,500 is 15 batches of 500, not one batch of 7,500 —
+      // the batch size is what ONE TICK can push, not what one Resend audience
+      // can hold.
+      expect(result.value.batchCount).toBe(15);
+      expect(result.value.batchManifestIds).toHaveLength(15);
 
       // Verify the persisted row matches expectations.
       const rows = (await runInTenant(tenantCtx, async (tx) =>
@@ -121,11 +124,12 @@ describe.runIf(RUN_INTEGRATION)(
         status: string;
         idempotency_key: string;
       }>;
-      expect(rows).toHaveLength(1);
+      expect(rows).toHaveLength(15);
       expect(rows[0]!.batch_index).toBe(0);
-      expect(rows[0]!.recipient_count).toBe(7500);
+      expect(rows[0]!.recipient_count).toBe(500);
       expect(rows[0]!.recipient_range_start).toBe(0);
-      expect(rows[0]!.recipient_range_end).toBe(7499);
+      expect(rows[0]!.recipient_range_end).toBe(499);
+      expect(rows.at(-1)!.recipient_range_end).toBe(7499);
       expect(rows[0]!.status).toBe('pending');
       expect(rows[0]!.idempotency_key).toMatch(
         new RegExp(`^broadcast-${broadcastIdRaw}-batch-0-attempt-0$`),
@@ -165,7 +169,10 @@ describe.runIf(RUN_INTEGRATION)(
         'BATCH_ALREADY_DISPATCHED',
       );
 
-      // Verify only 1 row persisted (the second call's INSERT was rejected).
+      // Verify the FIRST call's rows are all that persisted — the second call's
+      // bulk INSERT was rejected whole, not partially applied. Phase 9b (T134)
+      // made that 15 rows of 500 rather than one of 7,500; the invariant under
+      // test is unchanged (a duplicate split adds nothing).
       const rows = (await runInTenant(tenantCtx, async (tx) =>
         tx.execute(sql`
           SELECT COUNT(*)::int AS count
@@ -174,7 +181,7 @@ describe.runIf(RUN_INTEGRATION)(
             AND broadcast_id = ${broadcastIdRaw}::uuid
         `),
       )) as unknown as Array<{ count: number }>;
-      expect(rows[0]!.count).toBe(1);
+      expect(rows[0]!.count).toBe(15);
     }, 15_000);
   },
 );
