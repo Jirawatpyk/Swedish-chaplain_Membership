@@ -36,6 +36,7 @@ import {
   makeDispatchScheduledBroadcastDeps,
   makeTickMemoizedMembersBridge,
   SPLIT_THRESHOLD_RECIPIENTS,
+  isF71aUs1Enabled,
 } from '@/modules/broadcasts';
 import { runInTenant } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
@@ -135,6 +136,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // and hands a grown audience back to the split path (T147); the split cron
   // never releases a row whose audience shrank (T148). Between them every
   // `approved` row has exactly one owner in either direction of drift.
+  //
+  // **The predicate MOVES WITH THE BATCHING FLAG** (H-4 / whole-branch #13).
+  // `split-large-broadcasts` returns `feature_disabled` outright when
+  // `isF71aUs1Enabled()` is false, so keeping the exclusion in that state would
+  // leave a row above the threshold owned by NEITHER cron — silently stuck in
+  // `approved`, which is strictly worse than the pre-branch behaviour where it
+  // was claimed here and refused loudly. Flag OFF is the documented rollback
+  // position; it has to keep behaving as it did before this branch.
+  const claimBound = isF71aUs1Enabled()
+    ? sql`AND estimated_recipient_count <= ${SPLIT_THRESHOLD_RECIPIENTS}`
+    : sql``;
   let eligible: ReadonlyArray<{ broadcast_id: string }>;
   try {
     eligible = await runInTenant(tenant, async (tx) => {
@@ -145,7 +157,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           AND status = 'approved'
           AND scheduled_for IS NOT NULL
           AND scheduled_for <= now()
-          AND estimated_recipient_count <= ${SPLIT_THRESHOLD_RECIPIENTS}
+          ${claimBound}
         ORDER BY scheduled_for ASC
         LIMIT ${MAX_PER_TICK}
         FOR UPDATE SKIP LOCKED

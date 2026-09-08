@@ -47,6 +47,7 @@ import type { ClockPort } from '../ports/clock-port';
 
 import { currentQuotaYear } from './compute-quota-counter';
 import { AUTO_RETRY_BUDGET } from './auto-retry-failed-batches';
+import { parseBatchFailureKind } from '../../domain/value-objects/batch-failure-reason';
 
 /** 24h batched-row backstop (mirrors STUCK_SENDING_THRESHOLD_MS). */
 const STUCK_BATCH_THRESHOLD_MS = 24 * 60 * 60 * 1000;
@@ -116,10 +117,23 @@ function classifyBatch(b: BatchManifest, force: boolean): BatchDisposition {
       if (force) return { kind: 'abandoned', batchId: b.id };
       return { kind: 'in_flight' };
     case 'failed':
+      // Phase 9b H-1 — a PERMANENT failure is terminal at once, regardless of
+      // retryCount. Since T139 `autoRetryFailedBatch` refuses such a batch and
+      // deliberately does not spend a retry slot doing so, so it stays at
+      // retryCount 0 forever; reading that as "still retry-eligible" left the
+      // broadcast in_flight, kept it out of `partially_sent`, and so made
+      // `retryFailedBatches` — which requires that status — refuse to run.
+      // The documented recovery ("a human can raise the plan and retry") was
+      // inert for 24 h until the forceComplete backstop. The manual path has
+      // its own budget (`manual_retry_count`) and resets retryCount, which is
+      // why the fix belongs in what "terminal" means rather than in the gate.
+      if (parseBatchFailureKind(b.failureReason) === 'permanent')
+        return { kind: 'failed_terminal', batchId: b.id };
       // A cooling-off failure with retry_count < budget is still
       // retry-eligible → stay in_flight until the budget is truly spent;
       // forceComplete gives up at 24h (review B — counters never override
-      // failed status into a clean sent).
+      // failed status into a clean sent). An UNCLASSIFIED reason lands here,
+      // which is correct: every row written before Phase 9b has one.
       if (force || b.retryCount >= AUTO_RETRY_BUDGET)
         return { kind: 'failed_terminal', batchId: b.id };
       return { kind: 'in_flight' };

@@ -140,6 +140,66 @@ describe('evaluateBatchCompletion (Ship-blocker A)', () => {
     expect(r.allDone).toBe(false);
   });
 
+  /**
+   * Phase 9b H-1 (reliability review, 2026-09-08) — **`retryCount` stopped
+   * being evidence of remaining budget the moment permanent failures stopped
+   * being auto-retried.**
+   *
+   * T139 made `autoRetryFailedBatch` refuse a batch whose failure is classified
+   * `permanent`, and it deliberately does NOT spend a retry slot doing so. So
+   * such a batch sits at `retryCount: 0` forever — and this classifier reads
+   * `retryCount < AUTO_RETRY_BUDGET` as "still retry-eligible" and answers
+   * `in_flight`. The broadcast therefore never reaches `partially_sent`, and
+   * `retryFailedBatches` refuses to run because it requires exactly that status.
+   *
+   * Net effect of the two changes together: the docblock on the permanent gate
+   * tells an operator "a human can still retry it manually — after raising the
+   * plan", and the button is inert for 24 hours until the `forceComplete`
+   * backstop fires. A gate that blocks its own documented recovery is worse
+   * than no gate.
+   *
+   * The retry budgets are separate, which is why not spending one was right:
+   * `retryFailedBatches` resets `retryCount` to 0 and counts against
+   * `manual_retry_count` / `MANUAL_RETRY_BUDGET`. So the fix belongs here, in
+   * what "terminal" means, not there.
+   */
+  it('a PERMANENT failure is terminal immediately — retryCount is not evidence when auto-retry will never run', () => {
+    const r = evaluateBatchCompletion([
+      batch({ id: 'b-1', deliveredCount: 100 }),
+      batch({
+        id: 'b-2',
+        status: 'failed',
+        retryCount: 0,
+        deliveredCount: 0,
+        failureReason:
+          'permanent/addContactsToAudience: You have reached your contact limit',
+      }),
+    ]);
+    expect(r.allDone).toBe(true);
+    // …and PARTIAL, never a clean sent: one batch never reached anybody, and
+    // `anyFailed` is what drives `sending → partially_sent` (FR-008a) rather
+    // than `sending → sent` + quota consumption.
+    expect(r.anyFailed).toBe(true);
+    expect(r.failedBatchIds).toEqual(['b-2']);
+  });
+
+  it('an UNCLASSIFIED failure still waits for the retry budget — every pre-9b row is one', () => {
+    // The other half of the same boundary. Treating "unknown" as terminal here
+    // would strand in-flight batches at deploy time, exactly as it would in
+    // `autoRetryFailedBatch`.
+    const r = evaluateBatchCompletion([
+      batch({ id: 'b-1', deliveredCount: 100 }),
+      batch({
+        id: 'b-2',
+        status: 'failed',
+        retryCount: 2,
+        deliveredCount: 0,
+        failureReason: 'addContactsToAudience: connection reset',
+      }),
+    ]);
+    expect(r.allDone).toBe(false);
+  });
+
   it('cancelled batch → done but not a clean sent (counts toward partially_sent)', () => {
     const r = evaluateBatchCompletion([
       batch({ id: 'b-1', deliveredCount: 100 }),

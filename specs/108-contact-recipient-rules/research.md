@@ -378,6 +378,53 @@ affects F7's `audienceId`-based gateway (R16).
 > Both fit under 500, the second with little room. The gap is between ~623 and whatever ceiling
 > is enforced — closed by the clamp, and reopened as the batch size by Phase 9b.
 >
+> ### V2 — the Contacts Import API on the live account (ANSWERED 2026-09-08, except one clause)
+>
+> Probed before writing any of T086/T087, because one clause could have made the design
+> illegal rather than merely wrong. Synthetic `@example.com` addresses, throwaway audiences,
+> no broadcast created, everything deleted after.
+>
+> **(a) Does `on_conflict=upsert` clear a contact's `unsubscribed` flag when the CSV carries
+> no such column? → NO. SAFE.** Measured directly: import → `PATCH .../contacts/{id}
+> {unsubscribed:true}` → re-import the same address with an email-only CSV → read back →
+> `unsubscribed` is still `true`, and the import reports `updated: 1` (so it DID touch the
+> row and still left the flag alone). `upsert` is therefore usable as designed. This was the
+> gating question: had it cleared the flag, every import would have silently resurrected
+> people who pressed unsubscribe (GDPR Art. 21 / PDPA § 32).
+>
+> **(b) Does an import attach a contact that already exists GLOBALLY but not in the target
+> audience? → YES, and the suppression carries across.** A fresh audience B, importing an
+> address that already existed account-wide, reports `updated: 1` and the address appears in
+> B — **still `unsubscribed: true`**. Resend's suppression is account-wide, not per-audience.
+> Useful, because every dispatch builds a NEW ephemeral audience: an unsubscribe from one
+> broadcast protects the next one for free. **It does not make Resend the source of truth** —
+> a member who opts out in our portal without clicking Resend's link is suppressed on OUR side
+> only, so the CSV must still be built from the resolver, which applies `marketing_unsubscribes`
+> and the PR-D opt-out filter. Resend's flag is defence in depth, one layer below ours.
+>
+> **(c) `status: completed` with `failed: 0` DOES NOT MEAN THE ROWS LANDED.** One import out
+> of five, same code and same shape as the others, returned
+> `{status: "completed", counts: {total: 0, created: 0, updated: 0, skipped: 0, failed: 0}}`
+> and attached nothing. Three deliberate repeats afterwards (one with a 1.5 s delay after
+> audience creation) all reported `total: 1` — so it is **not reproducible on demand, which
+> makes it worse, not better**. Consequence: the contract § 4 completion rule
+> (`total === resolvedCount`) is **load-bearing, not defensive**, and "completed with zero
+> rows → do NOT send" is the first RED case T087 must carry, not an edge case appended later.
+>
+> **(d) The Free plan's 3-audience cap is REAL and `POST /audiences` FAILS at it.** Found by
+> accident: with `General` plus two throwaway audiences live, creating a third returned no id.
+> Every dispatch creates one ephemeral audience, so on Free at most **two** broadcasts can be
+> in flight until `cleanup-audiences` reaps (grace 1 h, cron every 15 min).
+>
+> **(e) UNRESOLVED — whether the 1,000-contact cap counts GLOBAL contacts.** The probe read
+> `GET /contacts` before and after and got **20 both times, and 20 again after cleanup**. 20 is
+> the default page size, not a total: the call measured a page, not the account. **This
+> answers nothing** and is recorded as unanswered rather than as "no change" — the same class
+> as V4's earlier false negative. It matters because if the cap is global, reaping audiences
+> frees no slots and a Free account fills permanently at ~1,000 distinct addresses ever mailed,
+> which is a different operator story from "1,000 in flight". Resolve with the account's own
+> usage page or a paginated count before promising an operator either reading.
+>
 > ### V4 — does the Contacts Import API attach contacts to the target audience? **YES** (T145, ANSWERED 2026-09-08)
 >
 > **It attaches. The two earlier "no" probes were measuring a typo.** They sent the field as

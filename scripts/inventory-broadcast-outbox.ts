@@ -1,15 +1,26 @@
 /**
- * 108 T094 — read-only outbox inventory, run BEFORE any deploy that lowers the
- * enforced audience ceiling and before the flag flip.
+ * 108 T094 — read-only outbox inventory: what is in flight, and how large.
  *
- * Why it exists: `currentAudienceCeiling()` is compared at count, submit AND
- * dispatch. A broadcast already sitting in `submitted` or `approved` was
- * accepted under whatever ceiling was live when it was submitted; the next
- * dispatch tick compares it against the ceiling that is live THEN. Lowering
- * the ceiling (108's `DELIVERABLE_RECIPIENTS_PER_TICK = 500`) can therefore
- * strand a row that was legal at submit time. This prints the two numbers that
- * decide whether that can happen: how many rows are in flight, and the largest
- * `estimated_recipient_count` among them.
+ * **CORRECTED 2026-09-08 (whole-branch review).** This header used to say "run
+ * before any deploy that LOWERS the enforced audience ceiling", and the exit-1
+ * message told the operator those rows "will be REFUSED once the lower one
+ * deploys". Both were written against an interim clamp
+ * (`currentAudienceCeiling() = min(configured, 500)`) that **never merged**.
+ * Phase 9b replaced it with batching, so the Phase-9 merge does **not** lower
+ * the accepted ceiling — it lowers the SPLIT THRESHOLD, and a row above it is
+ * split and delivered across ticks rather than refused. Telling an operator to
+ * cancel those rows would have destroyed broadcasts the system handles fine.
+ *
+ * What it is still for. `currentAudienceCeiling()` is compared at count, submit
+ * AND dispatch. A broadcast sitting in `submitted` or `approved` was accepted
+ * under whatever ceiling was live at submit; its next dispatch tick compares it
+ * against the ceiling live THEN. Any change that LOWERS that number — turning
+ * `FEATURE_F71A_US1_PAGINATION` off (which restores the single-tick clamp), or
+ * turning `FEATURE_CONTACT_MARKETING_RECIPIENTS` off (50,000 → 5,000) — can
+ * strand a row that was legal when it was submitted. This prints the two
+ * numbers that decide whether that can happen: how many rows are in flight, and
+ * the largest `estimated_recipient_count` among them. A quiet outbox is also
+ * simply worth confirming before any behaviour change to the dispatch path.
  *
  * PRIVACY: COUNTS and one broadcast id per offending row — never a subject, a
  * body, a recipient address or a member id (Constitution Principle I; the
@@ -112,7 +123,7 @@ async function main(): Promise<void> {
   if (totalOver > 0) {
     console.log('');
     console.log(
-      'These were accepted under a higher ceiling and will be REFUSED once the lower one deploys — terminally, with an audit row and a failure email to the member who submitted each one. Decide per row before deploying (cancel it, or let it send under the current ceiling first):',
+      'These sit above the per-tick bound. With batching ON (prod today) they are SPLIT and delivered across ticks — no action needed. They are only at risk if you are about to LOWER what dispatch compares against: turning off FEATURE_F71A_US1_PAGINATION restores the single-tick clamp, and turning off FEATURE_CONTACT_MARKETING_RECIPIENTS narrows 50,000 to 5,000. In either of those cases each row below is refused terminally at its next tick, with an audit row and a failure email to the member who submitted it — so decide per row first (cancel it, or let it send before the flip):',
     );
     for (const r of over) {
       console.log(`  ${r.broadcast_id}  status=${r.status}  estimated=${r.estimated_recipient_count}`);
@@ -121,7 +132,9 @@ async function main(): Promise<void> {
     return;
   }
 
-  console.log('Nothing in flight exceeds the bound — safe to deploy the lower ceiling.');
+  console.log(
+    'Nothing in flight exceeds the bound — no row can be stranded by a change to what dispatch compares against.',
+  );
 }
 
 main().catch((e: unknown) => {

@@ -23,6 +23,7 @@ import { NextRequest } from 'next/server';
 import { err } from '@/lib/result';
 
 const runInTenantMock = vi.fn();
+const isF71aUs1EnabledMock = vi.fn(() => true);
 const dispatchScheduledBroadcastMock = vi.fn();
 const dispatchResolveFailedTotalSpy = vi.fn();
 const cronSkippedCountSpy = vi.fn();
@@ -77,6 +78,7 @@ vi.mock('@/modules/broadcasts', () => ({
   // `audience-ceiling.test.ts`). Omitting it interpolated `undefined` into the
   // SQL and every case in this file answered 500.
   SPLIT_THRESHOLD_RECIPIENTS: 500,
+  isF71aUs1Enabled: () => isF71aUs1EnabledMock(),
 }));
 
 function makeRequest(opts: { auth?: string }): NextRequest {
@@ -93,6 +95,7 @@ const BROADCAST_ID = '33333333-3333-4333-8333-333333333333';
 beforeEach(() => {
   envMock.features.f7Broadcasts = true;
   runInTenantMock.mockReset();
+  isF71aUs1EnabledMock.mockReturnValue(true);
   dispatchScheduledBroadcastMock.mockReset();
   dispatchResolveFailedTotalSpy.mockReset();
   cronSkippedCountSpy.mockReset();
@@ -188,16 +191,61 @@ describe('cron dispatch-scheduled — wire contract (108 PR-C review)', () => {
     await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
 
     expect(executed).toHaveLength(1);
-    // Drizzle's `sql` template keeps its literal fragments in `queryChunks`;
-    // flatten whatever is string-shaped and look for the column.
-    const chunks = (executed[0] as { queryChunks?: unknown[] }).queryChunks ?? [];
-    const text = chunks
-      .map((c) => {
-        if (typeof c === 'string') return c;
-        const v = (c as { value?: unknown }).value;
-        return Array.isArray(v) ? v.join('') : '';
-      })
-      .join('');
+    const text = sqlTextOf(executed[0]);
     expect(text).toContain('estimated_recipient_count');
+    // Assert the DIRECTION too (whole-branch review #18): `toContain` on the
+    // column name alone survives a mutant that flips `<=` to `>=` or drops the
+    // bound entirely, which would hand this cron exactly the rows that belong
+    // to `split-large-broadcasts` — the collision the predicate exists to stop.
+    expect(text).toMatch(/estimated_recipient_count\s*<=/);
+  });
+  /**
+   * Phase 9b H-4 / whole-branch #13 — **the predicate must move with the
+   * batching flag, or a rollback strands rows.**
+   *
+   * `split-large-broadcasts` returns 200 `feature_disabled` immediately when
+   * `isF71aUs1Enabled()` is false. If this cron keeps excluding rows above the
+   * threshold in that state, a broadcast approved at, say, 800 recipients while
+   * batching was ON is claimed by NEITHER cron once it is turned off: the split
+   * cron is asleep and this one filters it out. It sits in `approved` until a
+   * human notices.
+   *
+   * That is strictly worse than the pre-branch behaviour, where the row WAS
+   * claimed and then refused loudly (terminal `failed_to_dispatch` + the FR-021
+   * email). Turning the flag off is the documented rollback position, and
+   * `currentAudienceCeiling`'s own docblock promises that state "must keep
+   * behaving exactly as it does today" — so the promise has to be kept here.
+   */
+  it('batching OFF → the claim query drops the count predicate, so no approved row is left ownerless', async () => {
+    isF71aUs1EnabledMock.mockReturnValue(false);
+    const executed: unknown[] = [];
+    runInTenantMock.mockImplementation(async (_ctx, fn) =>
+      fn({
+        execute: async (q: unknown) => {
+          executed.push(q);
+          return [];
+        },
+      }),
+    );
+    const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
+    await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+
+    expect(sqlTextOf(executed[0])).not.toContain('estimated_recipient_count');
   });
 });
+
+/**
+ * Drizzle keeps a template's literal fragments in `queryChunks`. A chunk can
+ * itself be a nested `SQL` (the flag-conditional predicate is one), so this
+ * RECURSES — a flat map would silently miss exactly the fragment these cases
+ * are about and report it as absent.
+ */
+function sqlTextOf(q: unknown): string {
+  const node = q as { queryChunks?: unknown[]; value?: unknown } | undefined;
+  if (node === undefined || node === null) return '';
+  const chunks = node.queryChunks;
+  if (Array.isArray(chunks)) return chunks.map(sqlTextOf).join('');
+  if (typeof q === 'string') return q;
+  if (Array.isArray(node.value)) return node.value.join('');
+  return '';
+}
