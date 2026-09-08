@@ -20,6 +20,10 @@ import { render, screen } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { QueueFilters } from '@/components/broadcast/admin/queue-filters';
+import {
+  BROADCAST_STATUSES,
+  RETIRED_BROADCAST_STATUSES,
+} from '@/modules/broadcasts/domain/value-objects/broadcast-status';
 
 const nav = vi.hoisted(() => ({
   replaceMock: vi.fn(),
@@ -67,14 +71,39 @@ describe('<QueueFilters> — status chip grouping + Reset placement', () => {
     expect(groups.length).toBeGreaterThanOrEqual(2);
   });
 
-  it('still renders all 10 statuses as checkboxes across the two groups', () => {
+  /**
+   * 10 → 8 (108 Phase 9 review S44). `partially_sent` and
+   * `partial_delivery_accepted` are registered in `RETIRED_BROADCAST_STATUSES`:
+   * their producing use cases were deleted with the batch path, so filtering on
+   * either can only ever return zero rows — and zero rows reads as "it never
+   * happened", not as "this state can no longer be produced".
+   *
+   * They remain in `BROADCAST_STATUSES` and in `status-badge-mapping`, so a
+   * historical row still parses and still renders its badge. What is withheld is
+   * the CHIP, and only the chip.
+   *
+   * Derived rather than hard-coded, so the next status added or retired updates
+   * this assertion by itself — the count is what went stale here, and it is the
+   * only thing in the file that could.
+   */
+  it('renders one checkbox per non-retired status across the two groups', () => {
     render(
       <Provider>
         <QueueFilters memberOptions={[]} />
       </Provider>,
     );
 
-    expect(screen.getAllByRole('checkbox')).toHaveLength(10);
+    const offered = BROADCAST_STATUSES.filter(
+      (s) => !(RETIRED_BROADCAST_STATUSES as readonly string[]).includes(s),
+    );
+    expect(screen.getAllByRole('checkbox')).toHaveLength(offered.length);
+
+    // Positive controls: the count alone passes if the strip renders the wrong
+    // eight, and it also passes if a live status were retired by mistake.
+    expect(offered).toHaveLength(8);
+    expect(offered).toContain('sent');
+    expect(offered).toContain('failed_to_dispatch');
+    expect(offered).not.toContain('partially_sent');
   });
 
   it('keeps the Reset button adjacent to the chip strip, not pushed to the row edge', () => {
