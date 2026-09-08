@@ -92,10 +92,22 @@ node --env-file=.env.production --import tsx scripts/inventory-primary-contact-i
 | `marketing_unsubscribes` rows | **0** | 2026-09-08 10:45 |
 | members with zero live primaries / more than one (`violations`) | **0 / 0** | 2026-09-08 10:45 |
 | members with NO contact row at all | **0** | 2026-09-08 10:45 |
-| broadcasts currently in `approved` / `scheduled` / `sending` | not covered by this script — check the outbox before the flip | — |
+| broadcasts in flight (`submitted` / `approved` / `sending` / `partially_sent`) | **NONE** — 0 rows, 0 above the 800 bound | 2026-09-08 13:30 |
 
 Run by the maintainer against prod, read-only, output pasted into the session. Exit: *"Invariant
 holds — migration 0293 (PR-B) is safe to apply."*
+
+The outbox row comes from a second read-only script,
+`scripts/inventory-broadcast-outbox.ts`, added the same day. **Run it before any deploy that
+LOWERS the enforced ceiling**, not only before the flip: `currentAudienceCeiling()` is compared at
+dispatch as well as at submit, so a row accepted under a higher ceiling is re-judged by whatever
+ceiling is live when its tick runs. Lowering the ceiling to 800 could therefore have stranded a
+legally-submitted broadcast. It could not here — the outbox is empty — but "prod is small so it
+probably cannot happen" is the kind of reasoning this feature has been wrong about twice.
+
+(Note for anyone writing a similar query: there is no `scheduled` status. A broadcast waiting for
+its send time sits in `approved` with a `scheduled_at`. The in-flight set is `submitted`,
+`approved`, `sending`, `partially_sent`.)
 
 ### What these numbers settle, and what they do not
 
