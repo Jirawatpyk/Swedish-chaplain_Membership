@@ -31,6 +31,7 @@ import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
 import { splitBroadcastIntoBatches } from '@/modules/broadcasts/application/use-cases/split-broadcast-into-batches';
 import { dispatchAllPendingBatches } from '@/modules/broadcasts/application/services/batch-dispatcher';
 import { makeDrizzleBatchManifestsRepo } from '@/modules/broadcasts/infrastructure/drizzle-batch-manifests-repo';
+import { makeDrizzleBroadcastsRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo';
 import { f7AuditAdapter } from '@/modules/broadcasts/infrastructure/audit-adapter';
 import { systemClock } from '@/modules/broadcasts/infrastructure/broadcasts-deps';
 import { DELIVERABLE_RECIPIENTS_PER_TICK } from '@/modules/broadcasts/domain/audience-ceiling';
@@ -256,5 +257,83 @@ describe.runIf(RUN_INTEGRATION)(
           gw2.contactBatchSizes.reduce((a, b) => a + b, 0),
       ).toBe(RECIPIENT_COUNT);
     }, 60_000);
+
+    /**
+     * T147 (Phase 9b) — the hand-off WRITE, against a real `approved` row.
+     *
+     * `dispatch-scheduled` corrects `estimated_recipient_count` when the
+     * audience outgrew one tick since submit, so the next
+     * `split-large-broadcasts` claim sees a number that is true. Everything
+     * else about that path is covered by unit tests with a stub repo — this is
+     * the one part a stub cannot answer, because the question is whether
+     * Postgres accepts the UPDATE at all.
+     *
+     * The specific worry: `broadcasts_immutable_after_submit_fn` locks the row
+     * after submit. Reading migration `0224` says the non-GUC branch is a
+     * BLOCKLIST of `subject / body_html / body_source / segment_type /
+     * segment_params / custom_recipient_emails / scheduled_for`, and
+     * `estimated_recipient_count` is not among them — so the write should pass.
+     * "Should" is what this test replaces: a trigger, a CHECK, or the adapter's
+     * own `assertTenantBoundTx` + rowcount assertion could each refuse, and all
+     * three are invisible to a stub. If any of them did, every hand-off would
+     * throw and the row would strand exactly as it did before T147 — the
+     * failure the whole task exists to prevent, reintroduced silently.
+     */
+    it('the estimate write-back succeeds on an approved row — the post-submit immutability trigger permits it', async () => {
+      const tenantCtx = asTenantContext(TEST_TENANT);
+      const broadcastIdRaw = randomUUID();
+      TEST_BROADCAST_IDS.push(broadcastIdRaw);
+      const broadcastId = asBroadcastId(broadcastIdRaw);
+
+      await runInTenant(tenantCtx, async (tx) => {
+        await tx.execute(sql`
+          INSERT INTO broadcasts (
+            tenant_id, broadcast_id, status, requested_by_member_id,
+            requested_by_member_plan_id_snapshot, submitted_by_user_id,
+            actor_role, subject, body_html, body_source, from_name,
+            reply_to_email, segment_type, segment_params,
+            custom_recipient_emails, estimated_recipient_count,
+            submitted_at, approved_at
+          ) VALUES (
+            ${TEST_TENANT}, ${broadcastIdRaw}::uuid, 'approved',
+            ${randomUUID()}::uuid, ${randomUUID()}::uuid, ${randomUUID()}::uuid,
+            'admin_proxy', 'T147 hand-off host', '<p>x</p>', '<p>x</p>',
+            'T147 Test', 'noreply@swecham.example', 'all_members', NULL,
+            NULL, 400, now(), now()
+          )
+        `);
+      });
+
+      const broadcastsRepo = makeDrizzleBroadcastsRepo(TEST_TENANT);
+      await broadcastsRepo.withTx(async (tx) => {
+        await broadcastsRepo.updateEstimatedRecipientCount(
+          tx,
+          tenantCtx.slug,
+          broadcastId,
+          600,
+        );
+      });
+
+      const rows = (await runInTenant(tenantCtx, async (tx) =>
+        tx.execute(sql`
+          SELECT estimated_recipient_count, status::text AS status,
+                 approved_at IS NOT NULL AS still_approved
+          FROM broadcasts
+          WHERE tenant_id = ${TEST_TENANT} AND broadcast_id = ${broadcastIdRaw}::uuid
+        `),
+      )) as unknown as Array<{
+        estimated_recipient_count: number;
+        status: string;
+        still_approved: boolean;
+      }>;
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.estimated_recipient_count).toBe(600);
+      // The row must still be claimable by `split-large-broadcasts` — a status
+      // change here would route it nowhere, and re-stamping the approval is why
+      // this is a narrow single-column writer rather than `applyTransition`.
+      expect(rows[0]!.status).toBe('approved');
+      expect(rows[0]!.still_approved).toBe(true);
+    }, 30_000);
   },
 );
