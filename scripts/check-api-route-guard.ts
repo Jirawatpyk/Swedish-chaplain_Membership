@@ -176,10 +176,22 @@ function declaredPairs(
   }
   nonLiteral += (code.match(/requireApiPermission\(/g) ?? []).length - literal1;
 
-  // 2. requireRenewalAdminContext(request, 'action', 'key') — the F8 wrapper
-  //    composes requireApiPermission; only the key matters post-PR-5.
+  // 2. requireRenewalAdminContext(request, 'action', 'key'[, ERROR_ID]) — the
+  //    F8 wrapper composes requireApiPermission; only the key matters post-PR-5.
+  //
+  //    The optional 4th argument is the route's F8 errorId taxonomy entry,
+  //    added when the helper stopped hardcoding one route's name for all 24
+  //    callers. It is an IDENTIFIER (`ERROR_ID`), and this gate previously
+  //    required the call to end right after the key — so every one of those 24
+  //    calls read as "non-literal" and pre-push refused the push. Correct to
+  //    admit it: what this gate must be able to read statically is the
+  //    PERMISSION PAIR, and a telemetry id trailing it does not obscure that.
+  //    A non-literal action or key still counts as non-literal, unchanged.
+  //
+  //    `,?` before the close also admits the multi-line trailing-comma form the
+  //    4-argument calls are wrapped into.
   const FORM2 =
-    /requireRenewalAdminContext\(\s*[A-Za-z_$][\w$]*\s*,\s*'([^']+)'\s*,\s*'([^']+)'\s*\)/g;
+    /requireRenewalAdminContext\(\s*[A-Za-z_$][\w$]*\s*,\s*'([^']+)'\s*,\s*'([^']+)'\s*(?:,\s*[A-Za-z_$][\w$]*\s*)?,?\s*\)/g;
   let literal2 = 0;
   for (const m of code.matchAll(FORM2)) {
     literal2 += 1;

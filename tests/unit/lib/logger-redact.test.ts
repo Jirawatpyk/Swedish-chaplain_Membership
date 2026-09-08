@@ -80,7 +80,13 @@ describe('F5 logger path-based redaction (T032)', () => {
       },
     });
     expect(out).not.toContain('4242424242424242');
-    expect(out).not.toContain('123');
+    // `'123'` unquoted was a coin-flip against the process id. Every pino line
+    // carries `"pid":<number>`, so this assertion failed for real on a full-suite
+    // run whose worker happened to be pid 41232 — `41232` contains `123`. It was
+    // never testing what it claimed either: a bare 3-char substring is not a CVC
+    // leak. The quoted form is the shape pino would actually emit for a leaked
+    // `cvc` (`"cvc":"123"`), and no numeric pid can collide with it.
+    expect(out).not.toContain('"123"');
     expect(out).toContain('[REDACTED]');
   });
 

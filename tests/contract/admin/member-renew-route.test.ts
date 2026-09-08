@@ -146,6 +146,12 @@ describe('POST /api/admin/members/[id]/renew — contract', () => {
       expect.anything(),
       'write',
       'renewals.write',
+      // The 4th argument is this route's own entry in the F8 errorId
+      // taxonomy. Asserted by VALUE, not `expect.anything()`: the defect it
+      // replaced was a shared helper logging one hardcoded name for all 24
+      // callers, and only a per-route value can catch a copy-paste that
+      // reintroduces it.
+      'F8.MEMBER_RENEW',
     );
   });
 

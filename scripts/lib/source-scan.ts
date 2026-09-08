@@ -41,7 +41,7 @@
  * garbled fragment on one line, and the callers only look for
  * `role === 'literal'`, which division never precedes.
  */
-function startsRegex(before: string): boolean {
+export function startsRegex(before: string): boolean {
   const t = before.trimEnd();
   // NOTHING before it on this line → a comment, not a regex. This arm first
   // returned `true` (a `/` at the start of an expression usually IS a regex),
@@ -76,7 +76,7 @@ function startsRegex(before: string): boolean {
  * Honours escapes and character classes (`/[/]/` is one regex, not two).
  * Unterminated on this line → consume to end of line.
  */
-function skipRegex(line: string, start: number): number {
+export function skipRegex(line: string, start: number): number {
   let i = start + 1;
   let inClass = false;
   while (i < line.length) {

@@ -13,6 +13,8 @@
 #                       carries no staff-role affordance literal (re-review D)
 #   - check:authorization-role-reads : no UNMARKED role literal on a decision surface
 #   - check:actor-role-truth  : no audit row states a role its actor did not hold
+#   - check:f8-error-id       : every F8 renewals route names ITSELF in the
+#                               errorId taxonomy (not the accept route)
 #   - check:api-route-guard  : same, per METHOD, for the ~119 staff API route
 #                       files, plus a scan for staff-role literals left behind
 #                       a gate (016 review C3 + re-review hardening)
@@ -79,6 +81,7 @@ pnpm check:api-route-guard
 pnpm check:authorization-role-reads
 pnpm check:actor-role-truth
 pnpm check:money-recipient
+pnpm check:f8-error-id
 pnpm vitest run tests/unit/architecture/ --passWithNoTests
 
 # ===========================================================================

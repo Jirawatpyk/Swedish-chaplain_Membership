@@ -21,6 +21,22 @@ import {
   requireRenewalAdminContext,
 } from '@/lib/renewals-route-helpers';
 import { unblockAutoReactivation, makeRenewalsDeps } from '@/modules/renewals';
+import { assertNever } from '@/lib/assert-never';
+
+/**
+ * This route's entry in the F8 errorId taxonomy (`F8ErrorId` in
+ * `src/lib/renewals-route-helpers.ts`, documented in
+ * `docs/runbooks/audit-emit-loss.md`). `pnpm check:f8-error-id` enforces that
+ * every 500 this file answers with, and every error-level line inside a catch,
+ * carries `F8.MEMBER_UNBLOCK_AUTO_REACTIVATION` with some suffix — so an alert keyed on `F8.MEMBER_UNBLOCK_AUTO_REACTIVATION.*` matches those.
+ *
+ * That is the whole claim, and it is the gate's, not this comment's. Five rounds
+ * of review falsified five stronger versions of this docblock — an enumerated
+ * suffix list, then "every line this route logs about a failure", which is still
+ * untrue wherever a failure is logged at WARN. A comment that describes a
+ * checkable rule cannot drift from the file; one that describes the file does.
+ */
+const ERROR_ID = 'F8.MEMBER_UNBLOCK_AUTO_REACTIVATION';
 
 export async function POST(
   request: NextRequest,
@@ -34,7 +50,12 @@ export async function POST(
     });
   }
 
-  const ctx = await requireRenewalAdminContext(request, 'write', 'renewals.write');
+  const ctx = await requireRenewalAdminContext(
+    request,
+    'write',
+    'renewals.write',
+    ERROR_ID,
+  );
   if ('response' in ctx) return ctx.response;
 
   const { id: memberId } = await context.params;
@@ -68,13 +89,18 @@ export async function POST(
             correlationId: ctx.correlationId,
           });
         default: {
-          const _exhaustive: never = result.error;
-          void _exhaustive;
-          return errorResponse({
-            status: 500,
-            code: 'server_error',
-            correlationId: ctx.correlationId,
-          });
+          // Review of this branch — this arm RETURNED the 500, so the one
+          // failure mode that means "two deploys disagree" produced a 500
+          // with no log line at all, while the docblock above promised an
+          // SRE rule keyed on `${ERROR_ID}.*` matches every 500 this route
+          // can produce. Throwing lands it in the outer catch, which does
+          // carry that id.
+          return assertNever(
+            result.error,
+            `${ERROR_ID}: unhandled error kind '${
+              (result.error as { readonly kind: string }).kind
+            }'`,
+          );
         }
       }
     }
@@ -85,6 +111,7 @@ export async function POST(
   } catch (e) {
     logger.error(
       {
+        errorId: `${ERROR_ID}.UNEXPECTED`,
         err: e instanceof Error ? e : new Error(String(e)),
         correlationId: ctx.correlationId,
         memberId,

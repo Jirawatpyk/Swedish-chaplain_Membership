@@ -30,6 +30,21 @@ import {
 } from '@/lib/renewals-route-helpers';
 import { loadSettlementPreview, makeRenewalsDeps } from '@/modules/renewals';
 
+/**
+ * This route's entry in the F8 errorId taxonomy (`F8ErrorId` in
+ * `src/lib/renewals-route-helpers.ts`, documented in
+ * `docs/runbooks/audit-emit-loss.md`). `pnpm check:f8-error-id` enforces that
+ * every 500 this file answers with, and every error-level line inside a catch,
+ * carries `F8.SETTLEMENT_PREVIEW` with some suffix — so an alert keyed on `F8.SETTLEMENT_PREVIEW.*` matches those.
+ *
+ * That is the whole claim, and it is the gate's, not this comment's. Five rounds
+ * of review falsified five stronger versions of this docblock — an enumerated
+ * suffix list, then "every line this route logs about a failure", which is still
+ * untrue wherever a failure is logged at WARN. A comment that describes a
+ * checkable rule cannot drift from the file; one that describes the file does.
+ */
+const ERROR_ID = 'F8.SETTLEMENT_PREVIEW';
+
 const MAX_CYCLE_IDS = 100;
 
 const QuerySchema = z.object({
@@ -71,6 +86,12 @@ export async function GET(request: NextRequest) {
       // Audit emit failure must NOT block the 404 response.
       logger.error(
         {
+          // NOT `.UNEXPECTED`: this catch sits on the kill-switch path,
+          // which answers 404. The alertable fact is that the
+          // `kill_switch_blocked` audit row was lost, not that a request
+          // 500ed — a rule keyed on `.UNEXPECTED` firing here would send
+          // the on-call looking for an outage that did not happen.
+          errorId: `${ERROR_ID}.KILL_SWITCH_AUDIT_EMIT_FAILED`,
           err: e instanceof Error ? e : new Error(String(e)),
           correlationId,
           route: '/api/admin/renewals/settlement-preview',
@@ -85,7 +106,12 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  const ctx = await requireRenewalAdminContext(request, 'read', 'renewals.read');
+  const ctx = await requireRenewalAdminContext(
+    request,
+    'read',
+    'renewals.read',
+    ERROR_ID,
+  );
   if ('response' in ctx) return ctx.response;
 
   const url = new URL(request.url);
@@ -161,6 +187,7 @@ export async function GET(request: NextRequest) {
   } catch (e) {
     logger.error(
       {
+        errorId: `${ERROR_ID}.UNEXPECTED`,
         err: e instanceof Error ? e : new Error(String(e)),
         correlationId: ctx.correlationId,
         tenantId: tenantCtx.slug,

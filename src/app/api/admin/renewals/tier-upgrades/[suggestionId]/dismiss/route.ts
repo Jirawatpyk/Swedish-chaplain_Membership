@@ -21,6 +21,21 @@ import {
 } from '@/lib/renewals-route-helpers';
 import { dismissTierUpgrade, makeRenewalsDeps } from '@/modules/renewals';
 
+/**
+ * This route's entry in the F8 errorId taxonomy (`F8ErrorId` in
+ * `src/lib/renewals-route-helpers.ts`, documented in
+ * `docs/runbooks/audit-emit-loss.md`). `pnpm check:f8-error-id` enforces that
+ * every 500 this file answers with, and every error-level line inside a catch,
+ * carries `F8.DISMISS_TIER` with some suffix — so an alert keyed on `F8.DISMISS_TIER.*` matches those.
+ *
+ * That is the whole claim, and it is the gate's, not this comment's. Five rounds
+ * of review falsified five stronger versions of this docblock — an enumerated
+ * suffix list, then "every line this route logs about a failure", which is still
+ * untrue wherever a failure is logged at WARN. A comment that describes a
+ * checkable rule cannot drift from the file; one that describes the file does.
+ */
+const ERROR_ID = 'F8.DISMISS_TIER';
+
 const BodySchema = z.object({
   reason: z.string().trim().max(500).optional(),
 });
@@ -37,7 +52,12 @@ export async function POST(
     });
   }
 
-  const ctx = await requireRenewalAdminContext(request, 'write', 'renewals.write');
+  const ctx = await requireRenewalAdminContext(
+    request,
+    'write',
+    'renewals.write',
+    ERROR_ID,
+  );
   if ('response' in ctx) return ctx.response;
 
   const { suggestionId } = await context.params;
@@ -95,6 +115,18 @@ export async function POST(
             correlationId: ctx.correlationId,
           });
         case 'server_error':
+          // Round-2 review — this arm returns the 500 this route produces
+          // MOST often (the use-case caught something), and it logged no
+          // errorId, so the docblock's promise that a rule keyed on
+          // `${ERROR_ID}.*` matches every 500 was false for the common case.
+          // `accept/route.ts` had done this since R3-S5; nothing else had.
+          logger.error(
+            {
+              errorId: `${ERROR_ID}.SERVER_ERROR`,
+              correlationId: ctx.correlationId,
+            },
+            'admin.renewals.tier_dismiss_server_error',
+          );
           return errorResponse({
             status: 500,
             code: 'server_error',
@@ -134,7 +166,7 @@ export async function POST(
         // without it an unhandled error kind reached a 500 that no rule
         // could match. Added so the comment and docs/code-conventions.md
         // are true of this file, not only of the accept route.
-        errorId: 'F8.DISMISS_TIER.UNEXPECTED',
+        errorId: `${ERROR_ID}.UNEXPECTED`,
         err: e instanceof Error ? e : new Error(String(e)),
         correlationId: ctx.correlationId,
         suggestionId,

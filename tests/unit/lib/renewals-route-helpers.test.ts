@@ -59,6 +59,16 @@ vi.mock('@/lib/auth-session', () => ({
   getCurrentSession: getCurrentSessionMock,
 }));
 
+const loggerErrorMock = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/logger', () => ({
+  logger: {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: loggerErrorMock,
+    debug: vi.fn(),
+  },
+}));
+
 // The gate's denial trail appends via a dynamic import of the auth audit repo;
 // stub it so the unit test never touches the (mocked-empty) db client.
 vi.mock('@/modules/auth/infrastructure/db/audit-repo', () => ({
@@ -101,7 +111,7 @@ describe('requireRenewalAdminContext (Phase 6 review I8)', () => {
   // --- 'read' action ---------------------------------------------------
   it("admin + 'read' → context returned", async () => {
     mockSession('admin');
-    const result = await requireRenewalAdminContext(makeRequest(), 'read', 'renewals.read');
+    const result = await requireRenewalAdminContext(makeRequest(), 'read', 'renewals.read', 'F8.AT_RISK_LIST');
     expect('current' in result).toBe(true);
     if ('current' in result) {
       expect(result.current.user.role).toBe('admin');
@@ -111,14 +121,14 @@ describe('requireRenewalAdminContext (Phase 6 review I8)', () => {
 
   it("manager + 'read' → context returned (FR-052a manager full-read)", async () => {
     mockSession('manager');
-    const result = await requireRenewalAdminContext(makeRequest(), 'read', 'renewals.read');
+    const result = await requireRenewalAdminContext(makeRequest(), 'read', 'renewals.read', 'F8.AT_RISK_LIST');
     expect('current' in result).toBe(true);
     expect(auditEmitMock).not.toHaveBeenCalled();
   });
 
   it("member + 'read' → 403 + f8_role_violation_blocked audit", async () => {
     mockSession('member');
-    const result = await requireRenewalAdminContext(makeRequest(), 'read', 'renewals.read');
+    const result = await requireRenewalAdminContext(makeRequest(), 'read', 'renewals.read', 'F8.AT_RISK_LIST');
     expect('response' in result).toBe(true);
     if ('response' in result) {
       expect(result.response.status).toBe(403);
@@ -139,6 +149,7 @@ describe('requireRenewalAdminContext (Phase 6 review I8)', () => {
       makeRequest('/api/admin/renewals/at-risk/m1/snooze'),
       'write',
       'renewals.write',
+      'F8.AT_RISK_SNOOZE',
     );
     expect('current' in result).toBe(true);
     expect(auditEmitMock).not.toHaveBeenCalled();
@@ -150,6 +161,7 @@ describe('requireRenewalAdminContext (Phase 6 review I8)', () => {
       makeRequest('/api/admin/renewals/at-risk/m1/snooze'),
       'write',
       'renewals.write',
+      'F8.AT_RISK_SNOOZE',
     );
     expect('response' in result).toBe(true);
     expect(auditEmitMock).toHaveBeenCalledTimes(1);
@@ -168,6 +180,7 @@ describe('requireRenewalAdminContext (Phase 6 review I8)', () => {
       makeRequest('/api/admin/renewals/at-risk/m1/outreach'),
       'manager_exception',
       'renewals.read',
+      'F8.AT_RISK_OUTREACH',
     );
     expect('current' in result).toBe(true);
     expect(auditEmitMock).not.toHaveBeenCalled();
@@ -181,6 +194,7 @@ describe('requireRenewalAdminContext (Phase 6 review I8)', () => {
       makeRequest('/api/admin/renewals/at-risk/m1/outreach'),
       'manager_exception',
       'renewals.read',
+      'F8.AT_RISK_OUTREACH',
     );
     expect('current' in result).toBe(true);
     expect(auditEmitMock).not.toHaveBeenCalled();
@@ -192,6 +206,7 @@ describe('requireRenewalAdminContext (Phase 6 review I8)', () => {
       makeRequest('/api/admin/renewals/at-risk/m1/outreach'),
       'manager_exception',
       'renewals.read',
+      'F8.AT_RISK_OUTREACH',
     );
     expect('response' in result).toBe(true);
     expect(auditEmitMock).toHaveBeenCalledTimes(1);
@@ -207,12 +222,84 @@ describe('requireRenewalAdminContext (Phase 6 review I8)', () => {
   // --- 401 path --------------------------------------------------------
   it('no session → 401 (no audit emit)', async () => {
     getCurrentSessionMock.mockResolvedValue(null);
-    const result = await requireRenewalAdminContext(makeRequest(), 'read', 'renewals.read');
+    const result = await requireRenewalAdminContext(makeRequest(), 'read', 'renewals.read', 'F8.AT_RISK_LIST');
     expect('response' in result).toBe(true);
     if ('response' in result) {
       expect(result.response.status).toBe(401);
     }
     // No actor identity → no audit signal.
     expect(auditEmitMock).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The 500 path had no test, and what it logged was wrong in a way no test
+ * could have caught by accident: the errorId was the hardcoded literal
+ * `'F8.ACCEPT_TIER.CONTEXT_RESOLUTION_FAILED'`. This helper is called by 24
+ * routes — every cycle-level action, the settings writes, the list/detail
+ * reads, and three `admin/members/**` routes that are not renewals at all — so a
+ * session-lookup failure anywhere in that surface paged SRE with an id naming
+ * the tier-upgrade ACCEPT route. Same shape as the `actor_role` fabrication
+ * class: a shared helper stamping one caller's identity onto every caller's
+ * record.
+ *
+ * The fix makes the caller pass its own taxonomy entry, so the id is a fact
+ * about the route that failed rather than about the route the helper was
+ * first written for.
+ */
+describe('requireRenewalAdminContext — context-resolution 500 errorId', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("names the CALLING route, not the route the helper was written for", async () => {
+    // `requireApiPermission` turns a thrown session lookup into a 500.
+    getCurrentSessionMock.mockRejectedValue(new Error('neon: connection lost'));
+
+    const result = await requireRenewalAdminContext(
+      makeRequest('/api/admin/renewals/c1/mark-paid-offline'),
+      'write',
+      'renewals.write',
+      'F8.CYCLE_MARK_PAID_OFFLINE',
+    );
+
+    expect('response' in result).toBe(true);
+    if ('response' in result) {
+      expect(result.response.status).toBe(500);
+    }
+
+    const taxonomyLine = loggerErrorMock.mock.calls.find(
+      (c) =>
+        typeof (c[0] as { errorId?: unknown }).errorId === 'string' &&
+        (c[0] as { errorId: string }).errorId.endsWith(
+          '.CONTEXT_RESOLUTION_FAILED',
+        ),
+    );
+    expect(taxonomyLine).toBeDefined();
+    expect((taxonomyLine![0] as { errorId: string }).errorId).toBe(
+      'F8.CYCLE_MARK_PAID_OFFLINE.CONTEXT_RESOLUTION_FAILED',
+    );
+  });
+
+  it('a different caller gets a different id — the id is not a constant', async () => {
+    getCurrentSessionMock.mockRejectedValue(new Error('neon: connection lost'));
+
+    await requireRenewalAdminContext(
+      makeRequest('/api/admin/members/m1/renew'),
+      'write',
+      'renewals.write',
+      'F8.MEMBER_RENEW',
+    );
+
+    const taxonomyLine = loggerErrorMock.mock.calls.find(
+      (c) =>
+        typeof (c[0] as { errorId?: unknown }).errorId === 'string' &&
+        (c[0] as { errorId: string }).errorId.endsWith(
+          '.CONTEXT_RESOLUTION_FAILED',
+        ),
+    );
+    expect((taxonomyLine![0] as { errorId: string }).errorId).toBe(
+      'F8.MEMBER_RENEW.CONTEXT_RESOLUTION_FAILED',
+    );
   });
 });

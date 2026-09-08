@@ -44,6 +44,21 @@ import {
   type EscalationTaskStatus,
 } from '@/modules/renewals';
 
+/**
+ * This route's entry in the F8 errorId taxonomy (`F8ErrorId` in
+ * `src/lib/renewals-route-helpers.ts`, documented in
+ * `docs/runbooks/audit-emit-loss.md`). `pnpm check:f8-error-id` enforces that
+ * every 500 this file answers with, and every error-level line inside a catch,
+ * carries `F8.TASK_LIST` with some suffix — so an alert keyed on `F8.TASK_LIST.*` matches those.
+ *
+ * That is the whole claim, and it is the gate's, not this comment's. Five rounds
+ * of review falsified five stronger versions of this docblock — an enumerated
+ * suffix list, then "every line this route logs about a failure", which is still
+ * untrue wherever a failure is logged at WARN. A comment that describes a
+ * checkable rule cannot drift from the file; one that describes the file does.
+ */
+const ERROR_ID = 'F8.TASK_LIST';
+
 const VALID_STATUSES = new Set(ESCALATION_TASK_STATUSES);
 // S18 speckit-review — use the domain-exported status type instead of a
 // hardcoded local union so the route can't drift from `renewal-escalation-task`.
@@ -58,7 +73,12 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  const ctx = await requireRenewalAdminContext(request, 'read', 'renewals.read');
+  const ctx = await requireRenewalAdminContext(
+    request,
+    'read',
+    'renewals.read',
+    ERROR_ID,
+  );
   if ('response' in ctx) return ctx.response;
 
   const tenantCtx = resolveTenantFromRequest(request);
@@ -192,6 +212,7 @@ export async function GET(request: NextRequest) {
     }
     logger.error(
       {
+        errorId: `${ERROR_ID}.UNEXPECTED`,
         err: e instanceof Error ? e : new Error(String(e)),
         correlationId: ctx.correlationId,
       },

@@ -250,9 +250,25 @@ then read each arm.
 
 `assert-never.ts`'s docblock records that it was introduced on 2026-05-20
 (TD-M4) *"to replace ad-hoc `const _exhaustive: never` patterns scattered
-across route handlers"*. That migration stalled with nine sites left. They were
-finished on 2026-09-07: eight F8 renewals route handlers plus the
-scheduled-plan-changes cancel route.
+across route handlers"*. Successive passes on 2026-09-07 moved it forward: the
+first covered eight F8 renewals route handlers plus the scheduled-plan-changes
+cancel route, and the errorId-taxonomy work then found the rest of the F8
+surface still on the old form. Counting them here is what this section tells
+you not to do — the previous version said "eleven more arms across ten routes"
+and was already wrong by one when it was written.
+
+**It is still not finished, and saying otherwise is how the second pass got
+missed.** The first pass's own note here read "They were finished" — a reviewer
+then found ten of the twenty-six routes that pass had just vouched for still
+returning an unlogged 500 from exactly this arm. Do not write a completion claim
+into this section; run the check:
+
+```bash
+rg -n "const _exhaustive: never" src/
+```
+
+F8 renewals routes are now covered by a gate (`pnpm check:f8-error-id` rejects
+the returning form outright); everything the command still lists is outside it.
 
 **What the migration actually found.** The eight were already *fail-closed* —
 the arm returns into a `Response` position, Next rejects a non-Response and
@@ -284,7 +300,8 @@ return assertNever(
 );
 ```
 
-**Proof.** Two contract tests, on `accept` and on `dismiss`, each returning a
+**Proof.** Three contract tests — on `accept`, on `dismiss`, and on
+`mark-paid-offline` (the money path, added with the errorId taxonomy) — each returning a
 well-formed `err` whose `kind` no arm handles — the shape a new error variant
 actually has — and asserting the 500 carries the correlationId in body and
 header plus the route's `errorId` and the kind in the thrown message. `dismiss`

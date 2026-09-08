@@ -31,6 +31,21 @@ import {
 import { userRepo } from '@/lib/auth-deps';
 import { asUserId } from '@/modules/auth';
 
+/**
+ * This route's entry in the F8 errorId taxonomy (`F8ErrorId` in
+ * `src/lib/renewals-route-helpers.ts`, documented in
+ * `docs/runbooks/audit-emit-loss.md`). `pnpm check:f8-error-id` enforces that
+ * every 500 this file answers with, and every error-level line inside a catch,
+ * carries `F8.TASK_REASSIGN` with some suffix — so an alert keyed on `F8.TASK_REASSIGN.*` matches those.
+ *
+ * That is the whole claim, and it is the gate's, not this comment's. Five rounds
+ * of review falsified five stronger versions of this docblock — an enumerated
+ * suffix list, then "every line this route logs about a failure", which is still
+ * untrue wherever a failure is logged at WARN. A comment that describes a
+ * checkable rule cannot drift from the file; one that describes the file does.
+ */
+const ERROR_ID = 'F8.TASK_REASSIGN';
+
 const BodySchema = z.object({
   to_user_id: z.string().uuid(),
 });
@@ -47,7 +62,12 @@ export async function POST(
     });
   }
 
-  const ctx = await requireRenewalAdminContext(request, 'write', 'renewals.write');
+  const ctx = await requireRenewalAdminContext(
+    request,
+    'write',
+    'renewals.write',
+    ERROR_ID,
+  );
   if ('response' in ctx) return ctx.response;
 
   const { taskId } = await context.params;
@@ -91,7 +111,7 @@ export async function POST(
         // an errorId and this one, in the same file, had none: an assignee
         // lookup outage 500s with nothing an F8 rule can see, which is the
         // gap this branch exists to close.
-        errorId: 'F8.TASK_REASSIGN.ASSIGNEE_LOOKUP_FAILED',
+        errorId: `${ERROR_ID}.ASSIGNEE_LOOKUP_FAILED`,
         err: e instanceof Error ? e : new Error(String(e)),
         correlationId: ctx.correlationId,
         taskId,
@@ -167,6 +187,18 @@ export async function POST(
             correlationId: ctx.correlationId,
           });
         case 'server_error':
+          // Round-2 review — this arm returns the 500 this route produces
+          // MOST often (the use-case caught something), and it logged no
+          // errorId, so the docblock's promise that a rule keyed on
+          // `${ERROR_ID}.*` matches every 500 was false for the common case.
+          // `accept/route.ts` had done this since R3-S5; nothing else had.
+          logger.error(
+            {
+              errorId: `${ERROR_ID}.SERVER_ERROR`,
+              correlationId: ctx.correlationId,
+            },
+            'admin.renewals.tasks_reassign_server_error',
+          );
           return errorResponse({
             status: 500,
             code: 'server_error',
@@ -208,7 +240,7 @@ export async function POST(
         // without it an unhandled error kind reached a 500 that no rule
         // could match. Added so the comment and docs/code-conventions.md
         // are true of this file, not only of the accept route.
-        errorId: 'F8.TASK_REASSIGN.UNEXPECTED',
+        errorId: `${ERROR_ID}.UNEXPECTED`,
         err: e instanceof Error ? e : new Error(String(e)),
         correlationId: ctx.correlationId,
         taskId,
