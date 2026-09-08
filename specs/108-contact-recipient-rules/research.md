@@ -378,16 +378,37 @@ affects F7's `audienceId`-based gateway (R16).
 > Both fit under 500, the second with little room. The gap is between ~623 and whatever ceiling
 > is enforced — closed by the clamp, and reopened as the batch size by Phase 9b.
 >
-> ### V4 — does the Contacts Import API attach contacts to the target audience? (OPEN)
+> ### V4 — does the Contacts Import API attach contacts to the target audience? **YES** (T145, ANSWERED 2026-09-08)
 >
-> Two probes on 2026-09-08 (`POST /contacts/imports`, 201 in 418–458 ms, `status: completed`
-> in ~270 ms, `counts` honest) created contacts that did NOT appear in
-> `GET /audiences/{id}/contacts` — **but both sent the field as `audience_id`**, while contract
-> § 4 specifies multipart `segments=[<audience id>]`. So the only verified statement is "does not
-> attach when passed as `audience_id`". **T145 re-probes with the contract's field and records
-> the answer here.** If it attaches: the import build (T086/T087/T106) is a ~2-call,
-> size-independent push and retires batch sizing. If it does not: the working-table design in
-> `data-model.md` § 2.5 stands, and Phase 9b's T143 drift-halt is the interim for FR-044 (a)/(d).
+> **It attaches. The two earlier "no" probes were measuring a typo.** They sent the field as
+> `audience_id`; contract § 4 said `segments=[<audience id>]`; the API wants
+> **`segments=[{ "id": "<uuid>" }]`** — an array of OBJECTS. So all three spellings were
+> different, and the two that were tried were the two that do not work.
+>
+> Measured, one throwaway audience and one synthetic `@example.com` row, deleted after:
+>
+> | Field sent | Answer |
+> |---|---|
+> | `audience_id=<uuid>` (probes 1–2) | 201, import completes, contacts land in **Global Contacts only** — the field is ignored, not rejected |
+> | `segments=["<uuid>"]` (contract § 4's shape) | **422** `validation_error` — *"The `segments` must be an array of objects with a UUID `id` field."* |
+> | `segments=[{"id":"<uuid>"}]` | **201 in 412 ms** → `status: completed` in ~306 ms, `counts {total:1, created:1, updated:0, skipped:0, failed:0}` → `GET /audiences/{id}/contacts` returns **count = 1** ✅ |
+>
+> The 422 is the useful half of the finding: `audience_id` fails SILENTLY (accepted, ignored),
+> which is exactly how two probes reached a confident wrong conclusion, while the wrong
+> `segments` shape fails LOUDLY. Contract § 4 has been corrected to the object form.
+>
+> **What this changes.** The import build (T086 / T087 / T106) is now known to be a ~2-call,
+> size-independent push: one `POST /contacts/imports`, then poll. It does not care whether the
+> audience is 500 or 50,000, so it retires batch SIZING as the scaling mechanism — Phase 9b's
+> batches become an implementation detail rather than the bound. It also supersedes the reason
+> `data-model.md` § 2.5's working table was being held as a fallback for the *push*; the table is
+> still the answer for FR-044 (a)/(d) **list freezing**, which is a different problem (the batch
+> path re-resolves between ticks — see Phase 9b T143's drift halt, the interim guard).
+>
+> Not yet known, and needed before building on this: whether the import respects the Free plan's
+> 1,000-contact cap the same way the serial push does (the addendum below), what it answers when
+> the CSV exceeds it, and whether `on_conflict=upsert` re-attaches a contact that already exists
+> globally but is not in the target audience. Those are T086's questions, not T145's.
 >
 > ### T095 addendum — the account is on Resend's **FREE** plan, and that binds first
 >

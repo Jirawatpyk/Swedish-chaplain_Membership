@@ -125,7 +125,14 @@ what makes "under the ceiling" sufficient for delivery again. History:
 
 - First dispatch tick resolves the audience, renders a CSV with a single `email` column
   (never `unsubscribed`), and submits ONE import: `POST /contacts/imports` (multipart:
-  `file`, `column_map={"email":"email"}`, `on_conflict="upsert"`, `segments=[<audience id>]`)
+  `file`, `column_map={"email":"email"}`, `on_conflict="upsert"`,
+  **`segments=[{"id":"<audience id>"}]`** — an array of OBJECTS. This line said
+  `segments=[<audience id>]` until T145 probed it (2026-09-08) and Resend answered
+  **422** `validation_error`: *"The `segments` must be an array of objects with a UUID
+  `id` field."* The same probe settled the open question underneath: with the object
+  form the imported contacts DO land in the target audience (`GET /audiences/{id}/contacts`
+  → 1 of 1). Two earlier probes had concluded the opposite, but both sent `audience_id`,
+  which Resend **accepts and silently ignores** — see `research.md` § R9 V4)
   through two new port methods `createContactImport` / `getContactImport` on
   `BroadcastsGatewayPort`, implemented with a raw multipart `fetch` in the existing gateway
   adapter (SDK 4.8 has no `contacts.imports`). The returned id is stored in
