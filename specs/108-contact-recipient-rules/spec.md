@@ -144,6 +144,31 @@ When a member composes a broadcast, the estimated number of recipients shown is 
 3. **Given** an audience of 4,900 contacts, **When** 300 secondary contacts are added to eligible members, **Then** compose shows 5,200.
 4. **Given** an audience of 20,000 contacts, **When** the member opens compose, **Then** the count appears within the compose page's normal loading time.
 
+> **SUPERSEDED 2026-09-08 — the import build SHIPPED, and the batch path it was
+> deferred behind was DELETED.** Everything from here to the end of this block
+> is the reasoning as it stood on 2026-09-07 and the several corrections it went
+> through on the 8th. Keep it for the history; do not act on it. Current truth:
+>
+> - **The Contacts Import build is live** (T086 / T087 / T106, behind
+>   `FEATURE_F7_IMPORT_AUDIENCE`, default OFF). One multipart call carries the
+>   whole audience in ~412 ms regardless of size; a later tick confirms it
+>   against a four-clause completion rule and only then sends.
+> - **The batch path is gone** (`ca51f59a1`, −13,380 lines): no
+>   `split-large-broadcasts`, no `dispatch-batches`, no manifests, no
+>   `SPLIT_THRESHOLD_RECIPIENTS`. Every sentence below that reasons about them
+>   is describing files that no longer exist.
+> - **There is no `audience_building` status** — it would make the row
+>   un-cancellable. `audience_import_id IS NOT NULL` draws the same
+>   distinction (migration `0298`).
+> - **The deferral reason below was wrong in one specific way that cost half a
+>   day**: it says the docs "do not state whether an audience created through
+>   `POST /audiences` is a valid target". They do not need to — it was probed
+>   on 2026-09-08 and it IS, with `segments=[{ id }]`. Two earlier probes said
+>   otherwise because they sent `audience_id`, which Resend accepts and
+>   silently ignores. An unexercised contract line is a guess, not a spec.
+>
+> ---
+>
 > **AMENDMENT (108 PR-C start of US5, 2026-09-07 — advisor-reviewed scope
 > narrowing).** The provider-side audience build via Resend's Contacts Import
 > API (research R9 "Decision (push)", data-model § 2.5 / § 3
@@ -233,19 +258,24 @@ When a member composes a broadcast, the estimated number of recipients shown is 
 > scenario can be written honestly. Mirrored in
 > `reviews/task-coverage-review.md`'s US5 row.
 >
-> **SUPERSEDED 2026-09-08 — Phase 9b (T126–T148) SHIPPED, and AS2 is REACHABLE
-> again.** `DELIVERABLE_RECIPIENTS_PER_TICK` is the batch size, not a ceiling:
-> with batching ON a 6,200-recipient audience is accepted (the ceiling is the
-> configured 5,000, or 50,000 with the 1:N flag) and split into 13 batches
-> delivered one wave per tick. The clamp survives only with batching OFF, where
-> there is no split path and the single-tick bound is still real. Pinned at
-> 1,200 → `[500, 500, 200]` in `tests/contract/broadcasts/batch-dispatch.test.ts`
-> and end-to-end across two invocations in
-> `tests/integration/broadcasts/deliverable-batches-multi-tick.test.ts`, both
-> against a recording fake gateway. **6,200 recipients for real needs Resend Pro**
-> — the Free plan's 1,000-contact cap binds long before the wall clock does, and
-> that is now a billing decision rather than an engineering one, which was the
-> point. Before T094 one of
+> **RESOLVED 2026-09-08 — AS2 is REACHABLE, through the import rather than through
+> batching.** This block said "Phase 9b SHIPPED, split into 13 batches" for a few
+> hours; Phase 9b was then deleted along with the whole batch path, so ignore any
+> sentence about batch sizes or waves.
+>
+> With `FEATURE_F7_IMPORT_AUDIENCE` ON, a 6,200-recipient audience is accepted (the
+> ceiling is the configured 5,000, or 50,000 with the 1:N flag too) and handed to
+> Resend in ONE Contacts-Import call — no splitting, no per-tick capacity to reason
+> about. `DELIVERABLE_RECIPIENTS_PER_TICK` still clamps with the import OFF, because
+> that state is the legacy serial loop and ~623 is still its real bound.
+>
+> Covered by `tests/unit/broadcasts/application/build-audience-tick.test.ts` (12
+> cases, the four completion clauses each with their own refusal reason),
+> `tests/integration/broadcasts/audience-import-two-tick.test.ts` (both ticks on live
+> Neon, a recording fake gateway) and one real end-to-end send on 2026-09-08.
+> **6,200 recipients for real needs Resend Pro** — the Free plan's 1,000-contact cap
+> binds long before anything else does, and that is now a billing decision rather
+> than an engineering one, which was the point. Before T094 one of
 > three must land — the import build (T086/T087/T106), a split threshold
 > lowered below the measured push ceiling PLUS a wall-clock budget with
 > resume in `addContactsToAudience`, or an explicit submit-time refusal above
@@ -502,8 +532,17 @@ A contact signed in to the member portal, the primary contact included, can see 
 - **FR-040**: The recipient count shown at compose time MUST equal the number of recipients that would be dispatched at that moment, for audiences of any size up to the tenant ceiling. The count MUST refresh when the segment changes and MUST be announced to assistive technology.
 - **FR-040a**: Count and submit responses MUST carry numbers only (count, ceiling, exceeded, excluded-by-preference, members-without-recipient) — never addresses, member ids or contact ids.
 - **FR-040b**: If the count cannot be computed, the compose screen MUST show "count unavailable" (never a stale or partial number); submission remains possible because the server recomputes the audience at submit and refuses it there if the ceiling is exceeded.
-- **FR-041**: The system MUST NOT silently truncate an audience. A submission whose audience exceeds the ceiling MUST be refused with the true count and the ceiling, unless the large-broadcast batching path is enabled, in which case it MUST be accepted and every recipient MUST receive one copy. A failure while assembling the audience (for example one page of a paged read) MUST abort with an error, never yield a partial audience.
+- **FR-041**: The system MUST NOT silently truncate an audience. A submission whose audience exceeds the ceiling MUST be refused with the true count and the ceiling, unless the Contacts-Import build is enabled, in which case it MUST be accepted and every recipient MUST receive one copy. A failure while assembling the audience (for example one page of a paged read) MUST abort with an error, never yield a partial audience.
 
+  > **TRUE AGAIN as of 2026-09-08 (T086/T087).** With `FEATURE_F7_IMPORT_AUDIENCE` ON there is
+  > no undeliverable band at all: one Contacts-Import call carries the whole audience in ~412 ms
+  > regardless of size. With it OFF, `currentAudienceCeiling()` clamps to
+  > `DELIVERABLE_RECIPIENTS_PER_TICK`, so nothing above what the serial loop can finish is ever
+  > accepted. Either way "accepted" implies "deliverable", which is what this FR asks for.
+  > The note below is the history of how it came to be false and is kept for that reason —
+  > every sentence in it about `split-large-broadcasts` or a 10,000 threshold describes deleted
+  > code.
+  >
   > **NOT CURRENTLY TRUE in the band `(300 s × measured req/s − margin) … 10,000` (T098, 2026-09-08).**
   > "Accepted" and "every recipient receives one copy" come apart there: `split-large-broadcasts`
   > skips `resolvedCount <= SPLIT_THRESHOLD_RECIPIENTS`
@@ -539,7 +578,7 @@ A contact signed in to the member portal, the primary contact included, can see 
   > 3,698 ms (`reviews/pr-c.md:42`). Neither number is evidence for this FR. Both bands MUST be
   > measured from `sin1` on the first production sample — never from CI, never from a workstation.
 
-- **FR-044** *(**DEFERRED** out of PR-C on 2026-09-07 with T086 / T087 / T106 and migration 0298 — none of them authored; ships with T110. The US5 AMENDMENT above claimed this FR was "satisfied by per-tick retry"; T098 checked all six clauses on 2026-09-08 and none hold. It is the one requirement in this spec with no shipped coverage in any of task, contract or success criterion — recorded here rather than left to look green. Not itself a flag-flip precondition; the push-capacity gate under FR-041 is.)*: Building the delivery audience at the provider MUST be resumable: the resolved recipient list is fixed at the first delivery attempt, progress is persisted (per recipient, or per provider import job), each scheduled run works within its time budget and later runs continue where the previous stopped, no recipient is added twice, and the broadcast is sent only when every recipient has been added and the provider's own counts confirm it. A build that makes no progress for 30 minutes MUST be flagged for staff attention through the existing stuck-broadcast reconciliation. Any transient recipient list persisted for this purpose MUST be deleted when the broadcast completes or fails and MUST be covered by the member-erasure cascade.
+- **FR-044** *(**SHIPPED 2026-09-08** with T086 / T087 / T106 and migration `0298`, behind `FEATURE_F7_IMPORT_AUDIENCE`. Was DEFERRED out of PR-C the day before, and was for one day "the one requirement in this spec with no shipped coverage" — the US5 AMENDMENT had claimed per-tick retry satisfied it, T098 checked all six clauses and none held. Clause by clause now: the list is **fixed at the first attempt** because tick 2 re-resolves and refuses on any count mismatch (`count_mismatch`) rather than sending a drifted set; **progress is persisted** as `audience_import_id` + `audience_import_submitted_at`; **later runs continue** by polling that id and never submitting a second import; **no recipient is added twice** because `on_conflict=upsert` makes a resubmitted CSV idempotent; the broadcast is **sent only when the provider's own counts confirm it** — all four clauses of the completion rule, which is load-bearing rather than defensive (`status: completed` with `total: 0` was observed once in five probes); and **no-progress for 30 minutes** is flagged twice over, terminally in the use case and independently by the `broadcasts_audience_import_stuck_count` gauge. The transient-recipient-list clause is moot: no such list is persisted — the CSV lives in memory for one request.)*: Building the delivery audience at the provider MUST be resumable: the resolved recipient list is fixed at the first delivery attempt, progress is persisted (per recipient, or per provider import job), each scheduled run works within its time budget and later runs continue where the previous stopped, no recipient is added twice, and the broadcast is sent only when every recipient has been added and the provider's own counts confirm it. A build that makes no progress for 30 minutes MUST be flagged for staff attention through the existing stuck-broadcast reconciliation. Any transient recipient list persisted for this purpose MUST be deleted when the broadcast completes or fails and MUST be covered by the member-erasure cascade.
 - **FR-045**: Turning the new audience rule off (operator flag) MUST restore the previous primary-only audience for later sends. Broadcasts already delivered cannot be recalled; an incident under the new rule (wrong audience) or under the money rule (email to a former primary) MUST be recorded with the affected broadcast or document ids and reported to the tenant's admin contact, with the remedy (flag off / resend to the correct primary) named in the runbook.
 
 **F. Cross-cutting**

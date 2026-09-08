@@ -378,6 +378,13 @@ affects F7's `audienceId`-based gateway (R16).
 > Both fit under 500, the second with little room. The gap is between ~623 and whatever ceiling
 > is enforced — closed by the clamp, and reopened as the batch size by Phase 9b.
 >
+> **STATUS 2026-09-08 (end of day): the import build SHIPPED and the batch path was DELETED.**
+> Everything in § R9 about batch sizing, split thresholds or waves describes code that no longer
+> exists. What survives, and is still load-bearing, is the MEASUREMENT: the serial per-contact
+> push manages ~2.08 req/s, so ~623 contacts is all one 300 s function can drain — which is why
+> `DELIVERABLE_RECIPIENTS_PER_TICK = 500` still clamps the accepted ceiling whenever
+> `FEATURE_F7_IMPORT_AUDIENCE` is off. V2 and V4 below are the probes that closed the question.
+
 > ### V2 — the Contacts Import API on the live account (ANSWERED 2026-09-08, except one clause)
 >
 > Probed before writing any of T086/T087, because one clause could have made the design

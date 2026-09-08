@@ -61,8 +61,6 @@ gone on Pro.
 | **F7 cleanup-audiences** (PR-2 defect #5) | **`POST /api/cron/broadcasts/cleanup-audiences`** | **`*/15 * * * *`** | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F7 cleanup-audiences) — deletes terminal broadcasts' Resend audiences so the per-account audience count stays bounded |
 | **F7 reclaim-orphan-audiences** (PR-2 Task 4) | **`POST /api/cron/broadcasts/reclaim-orphan-audiences`** | **`30 3 * * *`** (daily 03:30 UTC) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F7 reclaim-orphan-audiences) — safety-net deleting orphaned Resend audiences whose broadcast row is gone (the per-broadcast cleanup-audiences cron can't reach those) |
 | **F7 broadcasts gauges** (T172) | **`GET /api/internal/metrics/broadcasts-gauges`** | **`*/5 * * * *`** | **`Authorization: Bearer ${CRON_SECRET}`** | emits `broadcasts.queue_pending` + `broadcasts.stuck_sending_count` gauges per tenant |
-| **F7.1a US1 split-large-broadcasts** | **`POST /api/cron/broadcasts/split-large-broadcasts`** | **`*/5 * * * *`** | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F7.1a split + dispatch-batches) — splits broadcasts whose recipient count exceeds the Resend per-audience cap into ≤10k batch manifests |
-| **F7.1a US1 dispatch-batches** | **`POST /api/cron/broadcasts/dispatch-batches`** | **`*/5 * * * *`** | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F7.1a split + dispatch-batches) — dispatches pending batch manifests created by split-large-broadcasts |
 | **F8 renewal dispatch (coordinator)** | **`POST /api/cron/renewals/dispatch-coordinator`** | **`0 6 * * *`** (daily 06:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F8 dispatch) |
 | **F8 at-risk recompute (coordinator)** | **`POST /api/cron/renewals/at-risk-recompute-coordinator`** | **`0 2 * * 0`** (Sun 02:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F8 at-risk) |
 | **F8 tier-upgrade evaluate (coordinator)** | **`POST /api/cron/renewals/tier-upgrade-evaluate-coordinator`** | **`0 3 * * 0`** (Sun 03:00 Asia/Bangkok) | **`Authorization: Bearer ${CRON_SECRET}`** | (this file § F8 tier-upgrade) |
@@ -389,21 +387,24 @@ recipients per broadcast (FR-016a) × N broadcasts due in the window.
 > pages; the ceiling is 5,000 unless BOTH F7.1a batching AND
 > `FEATURE_CONTACT_MARKETING_RECIPIENTS` are ON (then 50,000, and the split
 > cron takes over above 10,000) — prod has batching ON and the 1:N flag OFF.
-> **Superseded 2026-09-08 — twice, the same day. This is the second and
-> current answer.** The interim T095 clamp made the ENFORCED ceiling
-> `min(configured, 500)` in every flag state, because the serial Resend push
-> delivers ~2.08 req/s and cannot finish more than ~623 in 300 s. Phase 9b
-> replaced that clamp with batching: `DELIVERABLE_RECIPIENTS_PER_TICK` is now
-> the BATCH SIZE, `SPLIT_THRESHOLD_RECIPIENTS` derives from it, and the clamp
-> applies only with batching OFF. **Prod has batching ON, so the accepted
-> ceiling is 5,000 (50,000 once the 1:N flag flips) and `split-large-broadcasts`
-> takes over above 500** — an audience bigger than one tick is SPLIT and
-> delivered one wave per tick, not refused. Two operational consequences:
-> `dispatch-scheduled` now claims only rows whose `estimated_recipient_count`
-> is at or below 500 (a row that GREW past it since submit is handed to the
-> split cron with a corrected estimate rather than pushed and killed at 300 s),
-> and `dispatch-batches` dispatches at most `dispatch_concurrency_cap` batches
-> per invocation, deferring the rest to the next tick.
+> **Superseded 2026-09-08 — THREE times in one day. This is the last one.**
+> First a clamp held the enforced ceiling at `min(configured, 500)` everywhere;
+> then batching made 500 a batch size and split above it; then the
+> Contacts-Import build landed and the whole batch path was deleted
+> (`ca51f59a1`). Every earlier sentence in this note about split routing or a
+> 10,000 threshold describes files that no longer exist.
+>
+> **Current behaviour.** `dispatch-scheduled` is the ONLY claimant of `approved`
+> rows — there is no sibling cron to partition against, so its query carries no
+> count predicate. With `FEATURE_F7_IMPORT_AUDIENCE` ON it hands the whole
+> audience to Resend in one Contacts-Import call (~412 ms regardless of size)
+> and confirms it on a later tick before sending; the accepted ceiling is 5,000,
+> or 50,000 with the 1:N flag as well. With the import OFF it runs the legacy
+> serial per-contact loop, and `currentAudienceCeiling()` clamps to
+> `DELIVERABLE_RECIPIENTS_PER_TICK = 500`, because that loop manages ~2.08 req/s
+> and cannot finish more than ~623 inside `maxDuration = 300`.
+>
+> The measurement is the one durable thing across all three answers.
 > A tick that cannot build the audience REJECTS and the
 > next tick retries — never a partial push. Triage: `docs/runbooks/broadcast-audience-build.md`.
 
@@ -750,8 +751,6 @@ reconcile-issued-orphans = 39). **Re-count before adding a cron — only 1 slot 
 | `/api/internal/metrics/unprocessed-events-count` | `*/5 * * * *` | every 5 min | GET |
 | `/api/internal/metrics/broadcasts-gauges` | `*/5 * * * *` | every 5 min | GET |
 | `/api/cron/broadcasts/dispatch-scheduled` | `*/5 * * * *` | every 5 min | GET+POST |
-| `/api/cron/broadcasts/split-large-broadcasts` | `*/5 * * * *` | every 5 min | GET+POST |
-| `/api/cron/broadcasts/dispatch-batches` | `*/5 * * * *` | every 5 min | GET+POST |
 | `/api/cron/broadcasts/reconcile-stuck-sending` | `*/15 * * * *` | every 15 min | GET+POST |
 | `/api/cron/broadcasts/cleanup-audiences` | `*/15 * * * *` | every 15 min | GET+POST |
 | `/api/cron/broadcasts/reclaim-orphan-audiences` | `30 3 * * *` | 03:30 UTC (10:30 ICT) | GET+POST |
@@ -852,58 +851,14 @@ prod deploy) and un-pause the cron-job.org jobs. The `export const GET =
 POST` handler aliases are additive and harmless to leave in place. No DB
 or data migration is involved.
 
-## F7.1a — split + dispatch-batches (NEW — F7.1a US1, ship-day T141)
+## F7.1a — split + dispatch-batches (REMOVED 2026-09-08)
 
-F7.1a US1 lets a broadcast exceed the Resend per-audience cap (up to
-50k recipients) by fanning out into ≤10k-recipient batches. Two
-cron-job.org coordinators drive it, BOTH every 5 minutes, BOTH
-`POST` with `Authorization: Bearer ${CRON_SECRET}`:
-
-1. **`split-large-broadcasts`** — finds `approved` broadcasts whose
-   resolved recipient count exceeds the per-audience cap and creates
-   the batch manifests (idempotent; a broadcast already split is a
-   no-op).
-2. **`dispatch-batches`** — finds pending batch manifests and
-   dispatches each via the Resend Broadcasts API (advisory-locked per
-   (tenant, broadcast); at-most-once via the row-state guard).
-
-Ordering: the two run independently — split creates manifests, dispatch
-consumes them on a later tick. No cross-job ordering guarantee is
-needed (eventual consistency; a freshly-split broadcast is picked up by
-the next dispatch tick within 5 min).
-
-### Setup steps (one-time, ship-day T141)
-
-For EACH of the two jobs, in the cron-job.org dashboard:
-
-1. **Create cronjob** →
-   - **Title**: `Chamber-OS · broadcasts.split-large-broadcasts`
-     (resp. `…broadcasts.dispatch-batches`)
-   - **URL**: `https://swecham.zyncdata.app/api/cron/broadcasts/split-large-broadcasts`
-     (resp. `…/dispatch-batches`)
-   - **Schedule**: every 5 minutes (`*/5 * * * *`)
-   - **Request method**: `POST`
-   - **Request headers**: `Authorization: Bearer <CRON_SECRET value>`
-   - **Timeout**: 60 seconds
-   - **Retry**: OFF (per § Retry policy — the next 5-min tick is the
-     natural retry; the routes are idempotent + advisory-locked).
-2. Save + run once manually → expect `200`.
-
-### Expected response codes (both jobs)
-
-| Status | Meaning | Action |
-|--------|---------|--------|
-| 200 | Normal tick (zero or more broadcasts handled) | None |
-| 202 | Overlapping run holds the advisory lock | None — next tick catches up |
-| 401 | Bearer mismatch | Rotate `CRON_SECRET`; reconfigure headers |
-| 200 + `{ skipped: true }` | `FEATURE_F71A_BROADCAST_ADVANCED=false` or `FEATURE_F71A_US1_PAGINATION=false` | Expected while US1 is dark; do nothing |
-
-> **Dark-launch note**: until US1 is flipped on (ship-day T146) both
-> routes return `200 + { skipped: true }` (kill-switch — NOT 503, so
-> cron-job.org does not retry-storm). Configure the jobs at T141 but
-> expect the skipped-200 until the flag flip — that is correct, not an
-> incident.
-
+Both cron jobs were deleted with the batch dispatch path (`ca51f59a1`) and their
+entries are gone from `vercel.json`. An audience larger than one dispatch tick is
+now handed to Resend in a single Contacts-Import call by `dispatch-scheduled`
+itself — there is nothing to split and nothing to dispatch in waves. If you are
+looking at a Vercel cron list that still shows them, that deployment predates the
+change.
 ## F8 — renewals/dispatch-coordinator (NEW — F8 Phase 4)
 
 Coordinator endpoint that fans out per-tenant renewal-reminder dispatch (per

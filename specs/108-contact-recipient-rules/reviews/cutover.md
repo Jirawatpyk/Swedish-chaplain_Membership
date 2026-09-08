@@ -60,7 +60,7 @@ for whenever someone next merges anything. Set it when you are ready to redeploy
 | 2 | PR-C deployed with the flag OFF | **CLEARED** | #346 deployed 2026-09-07; the nine unflagged changes have been live since (quickstart § Rollback matrix row C). |
 | 3 | **T093** — FR-027a pre-flight review on `/admin/marketing/audience?kind=secondary&state=on&eligible=1`; switch off anyone who must not receive; record date + reviewer in `docs/go-live-readiness.md` | **CLEARED — VACUOUS at 0 eligible secondaries** (measured 2026-09-08 10:45, maintainer) | The tenant has no secondary contact rows, so the pre-flight page is empty and the 1:N audience equals the primary-only audience. § 3 carries the count. **Expires on SweCham's secondary import — re-run then.** |
 | 3a | **GDPR Art. 14 first-contact attestation** (`docs/compliance/processing-records.md:128-135`) — either the system notices a new secondary on first marketing contact, or T093 attests per contact | **CLEARED — VACUOUS at 0 secondaries** (same measurement) | No secondary contact exists, therefore no data subject the chamber has not informed. **This is the row the import turns back on**: an imported marketing list is exactly a population that never gave the chamber its addresses directly. |
-| 3b | **Push-capacity gate (staff review 🔴)** | **CLEARED 2026-09-08 — closed in code, option (c)** | `DELIVERABLE_RECIPIENTS_PER_TICK = 500` in the Domain; `currentAudienceCeiling()` = `min(configured, 500)`, so count, submit and dispatch all refuse above what one tick can push. Derived from the T095 measurement (§ 5a), not from a guess. The undeliverable band no longer exists in any flag state. |
+| 3b | **Push-capacity gate (staff review 🔴)** | **CLEARED 2026-09-08 — by the Contacts-Import build (option (a) of `pr-c.md` row 33), NOT by the clamp or by batching.** Both of those shipped earlier the same day and were deleted when the import landed. One import call carries any audience in ~412 ms, so there is no longer a band between what is accepted and what can be delivered. Behind `FEATURE_F7_IMPORT_AUDIENCE`; with it OFF the legacy serial loop runs and `currentAudienceCeiling()` clamps to what that loop can finish. |
 | — | **T098** `/speckit.analyze` FR↔SC↔contract traceability, findings folded into `spec.md` | **CLEARED 2026-09-08** — 28 findings folded (6 HIGH), 60/61 FRs traceable, FR-044 the one declared orphan | Was ordered before T094 by `tasks.md:305`. |
 | — | **T095** — record the team's real Resend throughput in `research.md` § R9/R16 | **CLEARED 2026-09-08 12:41** — 10 req/s account limit, ~2.08 req/s achievable (latency-bound) | The measured input to § 5 and § 5a. It replaced the unsourced `~2 req/s` in `audience-ceiling.ts` and the `10 req/s` in the F7 notes: the first was wrong about the account, the second right about the account and wrong as a throughput input. |
 | — | **T096** — record of processing + legitimate-interest assessment | **CLEARED** | Delivered with PR-D in `docs/compliance/processing-records.md` (recipient-side LIA `:113-135`, per-contact-preference activity `:136-152`). |
@@ -192,7 +192,7 @@ Any of the first four wrong → § Rollback (flag OFF + redeploy) before the nex
 > - **The bound binds with the 108 flag OFF too** (500 < 5,000). The undeliverable band always
 >   started below today's ceiling; the flip widened an existing exposure rather than creating
 >   one — so this fix was worth making whether or not 108 ever flips.
-> - **The split path is now unreachable**, since nothing can reach `SPLIT_THRESHOLD_RECIPIENTS`.
+> - ~~**The split path is now unreachable**~~ — **superseded 2026-09-08: the split path was DELETED outright** (`ca51f59a1`). There is one dispatch path, and above the legacy loop's capacity it is the import.
 >   No working capability is lost: `dispatch-batches` runs the same serial push under the same
 >   `maxDuration = 300` with batches of up to `RESEND_PER_AUDIENCE_CAP = 10,000`, so it could not
 >   have delivered those audiences either.
@@ -413,6 +413,12 @@ whether or not 108 ever flips**:
 - **The exposure already exists at today's ceiling.** A broadcast between ~623 and 5,000
   recipients is accepted at submit today, on the `primary_only` leg, with the 108 flag off, and
   cannot finish its push. Nothing about the flip created that.
+> **Everything from here to the end of § 5a is HISTORY (superseded 2026-09-08).** It reasons
+> toward option (c), a submit-time refusal at 500. That shipped, was replaced by batching hours
+> later, and both were deleted when the Contacts-Import build landed and removed the constraint
+> they were managing. The MEASUREMENT below is still good and still bounds the legacy loop; the
+> conclusions drawn from it are not.
+
 - **The cheapest correct closure is now writable with a measured number**: an explicit
   submit-time refusal above `per_tick_max`, the constant carrying the measurement, its date and
   its method — option (c) of `reviews/pr-c.md` row 33. A round **500** sits just under the
