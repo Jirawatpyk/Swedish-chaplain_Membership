@@ -382,6 +382,65 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
   }, 30_000);
 
   /**
+   * S9 — the erasure derivation must see an audience that was PUSHED but never
+   * SENT.
+   *
+   * The delivery-row join cannot: `broadcast_deliveries` is written only by the
+   * delivery webhook, and the two-tick build has four refusal modes plus a
+   * cancel window that each leave the whole audience at the processor with zero
+   * delivery rows. Before the UNION arm the cascade derived nothing for those
+   * and still reported `resendOutcome: 'ok'`.
+   */
+  it('derives an import-built audience with NO delivery rows for erasure', async () => {
+    if (!RUN_INTEGRATION) return;
+    const raw = await seedApproved();
+    const repo = makeDrizzleBroadcastsRepo(TEST_TENANT);
+    const slug = asTenantContext(TEST_TENANT).slug;
+    const audienceId = `aud-s9-${Date.now()}`;
+    const email = `s9-probe-${Date.now()}@example.com`;
+
+    await runInTenant(asTenantContext(TEST_TENANT), async (tx) => {
+      await tx.execute(sql`
+        UPDATE broadcasts
+           SET resend_audience_id = ${audienceId},
+               audience_import_id = 'imp_s9',
+               audience_import_submitted_at = now()
+         WHERE tenant_id = ${TEST_TENANT} AND broadcast_id = ${raw}::uuid`);
+    });
+
+    const pairs = await repo.withTx(async (tx) =>
+      repo.listMemberResendAudienceContactsInTx(tx, slug, [email]),
+    );
+
+    expect(pairs).toContainEqual({ audienceId, email });
+  }, 30_000);
+
+  it('POSITIVE CONTROL — a broadcast with no import id is NOT swept in by the new arm', async () => {
+    if (!RUN_INTEGRATION) return;
+    // The arm is bounded to the import path that introduced the window. Without
+    // this, an arm matching EVERY audience the tenant ever had would pass the
+    // case above just as well, and every erasure would fan out across the whole
+    // history for no benefit.
+    const raw = await seedApproved();
+    const repo = makeDrizzleBroadcastsRepo(TEST_TENANT);
+    const slug = asTenantContext(TEST_TENANT).slug;
+    const audienceId = `aud-s9-legacy-${Date.now()}`;
+    const email = `s9-legacy-${Date.now()}@example.com`;
+
+    await runInTenant(asTenantContext(TEST_TENANT), async (tx) => {
+      await tx.execute(sql`
+        UPDATE broadcasts SET resend_audience_id = ${audienceId}
+         WHERE tenant_id = ${TEST_TENANT} AND broadcast_id = ${raw}::uuid`);
+    });
+
+    const pairs = await repo.withTx(async (tx) =>
+      repo.listMemberResendAudienceContactsInTx(tx, slug, [email]),
+    );
+
+    expect(pairs).not.toContainEqual({ audienceId, email });
+  }, 30_000);
+
+  /**
    * Constitution v1.4.2 Principle I clause 3 — the mandatory cross-tenant
    * integration test for a new tenant-scoped write surface. A Review-gate
    * blocker regardless of blast radius (precedent: 088 T065b), and this branch

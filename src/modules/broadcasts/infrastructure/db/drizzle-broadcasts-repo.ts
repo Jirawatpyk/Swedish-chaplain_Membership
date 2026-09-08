@@ -1488,6 +1488,30 @@ export function makeDrizzleBroadcastsRepo(
      * Empty email set → short-circuit `[]` (no email can match; skip the `=
      * ANY('{}')` predicate entirely). This is a READ — it mutates nothing — so
      * NO `SET LOCAL app.allow_broadcast_redaction` GUC is needed.
+     *
+     * ## The second UNION arm (108 Phase 9 review S9)
+     *
+     * The delivery-row join cannot see an audience that was PUSHED but never
+     * SENT, because `broadcast_deliveries` is written only by the delivery
+     * webhook. The two-tick import build makes that window ordinary rather than
+     * exotic: tick 1 hands the WHOLE audience to Resend, and there are then four
+     * ways to refuse (`failed_rows`, `counts_incoherent`, `count_mismatch`,
+     * `audience_import_stuck`) plus a cancel window — each leaving every address
+     * at the processor with zero delivery rows. The cascade returned nothing for
+     * those and still reported `resendOutcome: 'ok'`, which is the exact shape
+     * FR-044's last clause forbids.
+     *
+     * A never-sent broadcast has no per-recipient rows to join, so the arm pairs
+     * each of the member's addresses with each live audience in the tenant.
+     * Over-broad on purpose: a detach for an address that was never in that
+     * audience 404s, and the gateway reads a 404 as "the goal is already met".
+     * Bounded by `audience_deleted_at IS NULL` so a reaped audience is not
+     * re-attempted, and by `audience_import_id IS NOT NULL` so it covers the
+     * import path that introduced the window rather than every audience the
+     * tenant has ever had.
+     *
+     * Note this DETACHES; per U1 it does not delete the contact record at the
+     * processor. See residual 8a in `docs/compliance/processing-records.md`.
      */
     async listMemberResendAudienceContactsInTx(txUnknown, tenantIdArg, emails) {
       const lowered = [...new Set(emails.map((e) => e.toLowerCase()))];
@@ -1498,6 +1522,10 @@ export function makeDrizzleBroadcastsRepo(
         ctx.slug,
         'listMemberResendAudienceContactsInTx',
       );
+      const emailArray = sql`ARRAY[${sql.join(
+        lowered.map((e) => sql`${e}`),
+        sql`, `,
+      )}]::text[]`;
       const rows = (await tx.execute(sql`
         SELECT DISTINCT b.resend_audience_id AS audience_id,
                         d.recipient_email_lower AS email
@@ -1506,11 +1534,22 @@ export function makeDrizzleBroadcastsRepo(
           ON b.tenant_id = d.tenant_id
          AND b.broadcast_id = d.broadcast_id
         WHERE d.tenant_id = ${tenantIdArg}
-          AND d.recipient_email_lower = ANY(ARRAY[${sql.join(
-            lowered.map((e) => sql`${e}`),
-            sql`, `,
-          )}]::text[])
+          AND d.recipient_email_lower = ANY(${emailArray})
           AND b.resend_audience_id IS NOT NULL
+
+        UNION
+
+        -- 108 Phase 9 review S9 — the pushed-but-never-sent arm. See the
+        -- docblock above for why it exists. (No backticks in SQL comments: this
+        -- is a sql tagged template and one backtick closes it.)
+        SELECT DISTINCT b.resend_audience_id AS audience_id,
+                        e.email AS email
+        FROM broadcasts b
+        CROSS JOIN unnest(${emailArray}) AS e(email)
+        WHERE b.tenant_id = ${tenantIdArg}
+          AND b.resend_audience_id IS NOT NULL
+          AND b.audience_deleted_at IS NULL
+          AND b.audience_import_id IS NOT NULL
       `)) as unknown as Array<{ audience_id: string; email: string }>;
       return rows.map((r) => ({ audienceId: r.audience_id, email: r.email }));
     },

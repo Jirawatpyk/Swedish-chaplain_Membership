@@ -94,22 +94,6 @@ export type DispatchScheduledBroadcastError =
       readonly kind: 'broadcast_failed_to_dispatch';
       readonly reason: string;
     }
-  /**
-   * Phase 9b (T147) — the audience resolved to more than one tick can push, so
-   * this cron declined to dispatch and handed the row to the batch path by
-   * correcting `estimated_recipient_count`.
-   *
-   * **NOT a failure.** The broadcast is intact and still `approved`; the next
-   * `split-large-broadcasts` tick (≤ 5 min) claims it on the corrected count
-   * and splits it. Callers must not mark the row `failed_to_dispatch` or count
-   * it as an error — nothing is wrong except that the audience grew since
-   * submit, which is a normal thing for a chamber to do.
-   */
-  | {
-      readonly kind: 'DEFERRED_TO_BATCH_PATH';
-      readonly resolvedCount: number;
-      readonly deliverablePerTick: number;
-    }
   | { readonly kind: 'dispatch.server_error'; readonly message: string };
 
 export interface DispatchScheduledBroadcastDeps {
@@ -129,16 +113,22 @@ export interface DispatchScheduledBroadcastDeps {
   /** 108 PR-C T085 — the same `audienceCeiling(batchingEnabled)` submit read. */
   readonly audienceCeiling: number;
   /**
-   * Phase 9b (T147) — how many contacts THIS cron's serial push can deliver in
-   * one invocation (`DELIVERABLE_RECIPIENTS_PER_TICK`).
+   * How many contacts THIS cron's serial push can deliver in one invocation
+   * (`DELIVERABLE_RECIPIENTS_PER_TICK`).
    *
-   * Distinct from `audienceCeiling`, which is what the system ACCEPTS. They
-   * were the same number while `currentAudienceCeiling()` clamped
-   * unconditionally, and that clamp was doing this job by accident: the
-   * resolver refused anything larger with `broadcast_audience_too_large`.
-   * With batching on, the ceiling is deliberately higher — large audiences are
-   * split, not refused — so the delivery bound needs its own name and its own
-   * answer, which is a hand-off rather than a refusal.
+   * Distinct from `audienceCeiling`, which is what the system ACCEPTS. On this
+   * leg they are currently the same number, because `currentAudienceCeiling()`
+   * clamps to exactly this value whenever the import flag is off — and the
+   * import leg, where the ceiling is deliberately higher, does not run this use
+   * case at all.
+   *
+   * So nothing reads this today: the hand-off it was added for
+   * (`DEFERRED_TO_BATCH_PATH`) was removed in 108 Phase 9 review round 1, since
+   * `ca51f59a1` deleted the path it handed off TO. Kept in the interface rather
+   * than deleted because it names a real bound that stops being implicit the
+   * moment the clamp and the ceiling diverge again; the honest answer for an
+   * audience this loop cannot push is `broadcast_audience_too_large`, which the
+   * ceiling already produces upstream.
    */
   readonly deliverablePerTick: number;
   readonly audit: AuditPort;
@@ -495,53 +485,16 @@ export async function dispatchScheduledBroadcast(
     return err({ kind: 'broadcast_audience_post_suppression_empty' });
   }
 
-  // Step 2b (Phase 9b, T147): can this invocation actually PUSH what it just
-  // resolved? If not, hand the row to the batch path instead of dying.
-  //
-  // The eligibility query claimed this row on `estimated_recipient_count`,
-  // frozen at submit and possibly days old. The push is bounded by the count
-  // resolved a moment ago. When the audience has GROWN across
-  // `deliverablePerTick` in between, this cron would push serially and be
-  // killed at `maxDuration` — on every tick, forever, because the stale
-  // estimate keeps routing the row back here and `split-large-broadcasts`
-  // (which claims ABOVE the threshold) never sees it.
-  //
-  // Until Phase 9b that was survivable by accident: `currentAudienceCeiling()`
-  // clamped unconditionally, so the `audience_too_large` branch above caught
-  // it. That branch is the wrong answer anyway — it is TERMINAL, and a
-  // broadcast whose audience merely grew is not broken.
-  //
-  // So: correct the estimate to the truth and return without dispatching. The
-  // row stays `approved`, the next `split-large-broadcasts` tick claims it on
-  // a number that is finally accurate, and the batch path delivers it across
-  // ticks. Nothing is created at Resend — this runs before `createAudience`,
-  // so there is no orphan audience and no contact quota spent.
-  const resolvedCount = resolvedResult.value.recipients.length;
-  if (resolvedCount > deps.deliverablePerTick) {
-    await deps.broadcastsRepo.withTx(async (tx) => {
-      await deps.broadcastsRepo.updateEstimatedRecipientCount(
-        tx,
-        deps.tenant.slug,
-        input.broadcastId,
-        resolvedCount,
-      );
-    });
-    logger.info(
-      {
-        tenantId: deps.tenant.slug,
-        broadcastId: input.broadcastId,
-        estimatedAtSubmit: broadcast.estimatedRecipientCount,
-        resolvedCount,
-        deliverablePerTick: deps.deliverablePerTick,
-      },
-      'broadcasts.dispatch.deferred_to_batch_path',
-    );
-    return err({
-      kind: 'DEFERRED_TO_BATCH_PATH',
-      resolvedCount,
-      deliverablePerTick: deps.deliverablePerTick,
-    });
-  }
+  // Step 2b was a hand-off to the batch path when the audience had grown past
+  // what one invocation could serially push. `ca51f59a1` deleted that path, so
+  // the hand-off had nowhere to go: `DEFERRED_TO_BATCH_PATH` had no case in the
+  // cron's switch, fell to `default` -> `unknown_error`, and left the row
+  // `approved` with no claimant. Unreachable only because
+  // `currentAudienceCeiling()` clamps to exactly `DELIVERABLE_RECIPIENTS_PER_TICK`
+  // on this leg, so an over-size audience is already refused upstream as
+  // `broadcast_audience_too_large` — which is the honest answer when there is no
+  // second path to carry it. Removed in 108 Phase 9 review round 1 (S21) rather
+  // than left to re-arm the first time someone raises the ceiling.
 
   // Step 3: Resend Broadcasts API calls (createAudience + addContacts +
   // createBroadcast + sendBroadcast). External calls happen OUTSIDE tx.
