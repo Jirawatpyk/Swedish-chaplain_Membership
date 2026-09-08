@@ -234,6 +234,33 @@ export interface BroadcastsRepo {
   ): Promise<void>;
 
   /**
+   * Correct `estimated_recipient_count` to a count that has just been
+   * RESOLVED, without touching status or any lifecycle timestamp (Phase 9b,
+   * T147).
+   *
+   * The estimate is written once at submit and can be days stale by dispatch
+   * time, but it is what both every-5-minutes crons claim on — cheaply and
+   * with an index. When `dispatch-scheduled` resolves an audience that has
+   * grown past what one tick can push, it writes the true count here and
+   * declines to dispatch; the row stays `approved` and the next
+   * `split-large-broadcasts` tick claims it on a number that is finally
+   * correct. Without this the two crons partition the `approved` set on a
+   * number neither of them enforces, and a grown broadcast is claimed by the
+   * cron that cannot deliver it — forever.
+   *
+   * Deliberately NOT `applyTransition`: an `approved → approved`
+   * self-transition would re-stamp `approved_at` / `approved_by`, rewriting
+   * who approved the broadcast and when. This follows `attachAudienceId`
+   * above — the port's established shape for a single-column write.
+   */
+  updateEstimatedRecipientCount(
+    tx: unknown,
+    tenantId: TenantSlug,
+    broadcastId: BroadcastId,
+    estimatedRecipientCount: number,
+  ): Promise<void>;
+
+  /**
    * List broadcasts for the admin queue / member history surfaces.
    */
   listByTenantStatus(

@@ -47,6 +47,7 @@ import type {
   BatchManifestsPort,
 } from '../ports/batch-manifests-port';
 import type { ClockPort } from '../ports/clock-port';
+import { parseBatchFailureKind } from '../../domain/value-objects/batch-failure-reason';
 
 export const AUTO_RETRY_BUDGET = 5 as const;
 export const AUTO_RETRY_COOLOFF_SECONDS = 900 as const; // 15 minutes
@@ -95,6 +96,30 @@ export async function autoRetryFailedBatch(
     return err({
       kind: 'BATCH_NOT_RETRY_ELIGIBLE',
       reason: `retry_count ${batch.retryCount} >= budget ${AUTO_RETRY_BUDGET}`,
+    });
+  }
+  // Phase 9b (T139) — a PERMANENT failure is never auto-retried.
+  //
+  // The budget above is a bound on how many times we try; it says nothing
+  // about whether trying again can work. A 4xx means the request itself was
+  // unacceptable, so five identical attempts produce five identical answers —
+  // except that each one creates a fresh ephemeral Resend audience and pushes
+  // a full batch of contacts into it. The archetypal permanent 4xx here is
+  // Resend refusing at the account contact cap, which makes the retries
+  // consume the exact resource whose exhaustion caused the failure.
+  //
+  // The batch stays `failed` with its reason on the manifest, where the admin
+  // retry queue surfaces it. A human can still retry it manually — after
+  // raising the plan, say — which is the only action that can change the
+  // answer. The retry budget is deliberately NOT spent here: burning a slot
+  // would let a later manual retry fall off it for no reason.
+  //
+  // `unknown` (no prefix, or null) is treated as retryable, so every row
+  // written before this shipped behaves exactly as it did.
+  if (parseBatchFailureKind(batch.failureReason) === 'permanent') {
+    return err({
+      kind: 'BATCH_NOT_RETRY_ELIGIBLE',
+      reason: 'failure classified permanent — retrying cannot change the answer',
     });
   }
 

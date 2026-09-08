@@ -141,32 +141,49 @@ export function configuredAudienceCeiling(): number {
 }
 
 /**
- * The ceiling every call site actually compares against: what the flags
- * configure, clamped to what one dispatch tick can push.
+ * The ceiling every SINGLE-TICK call site actually compares against.
  *
- * T095 (2026-09-08) separated these two. `configuredAudienceCeiling()` is the
- * flag decision — 5,000, or 50,000 when the batching path and the 1:N audience
- * are both on — and it stays pinned on its own so an inverted flag expression
- * still fails a test (the H-2 guard above). `DELIVERABLE_RECIPIENTS_PER_TICK`
- * is the measured bound of the serial Resend push: ~2.08 req/s across a 300 s
- * function budget, i.e. ~623, rounded down to 500.
+ * T095 (2026-09-08) separated two numbers that had been conflated.
+ * `configuredAudienceCeiling()` is the flag decision — 5,000, or 50,000 when
+ * the batching path and the 1:N audience are both on — and it stays pinned on
+ * its own so an inverted flag expression still fails a test (the H-2 guard
+ * above). `DELIVERABLE_RECIPIENTS_PER_TICK` is the measured bound of the
+ * serial Resend push (derivation: `research.md` § R9, CORRECTED block).
  *
- * They were never the same number, and before this clamp the gap was the bug:
- * a broadcast between ~623 and the configured ceiling passed submit and then
- * could not be delivered by any path — `split-large-broadcasts` ignores
- * anything at or below 10,000, and `dispatch-batches` runs the same serial
- * push under the same 300 s. Such a broadcast sat in `approved` and surfaced
- * only as `broadcasts_approved_overdue_count` about ninety minutes later.
+ * They were never the same number, and the gap was the bug: a broadcast
+ * between the two passed submit and then could not be delivered by any path,
+ * sitting in `approved` until `broadcasts_approved_overdue_count` noticed
+ * about ninety minutes later.
  *
- * Clamping here rather than inside `audienceCeiling()` keeps the Domain
- * function pure and its own contract (`SPLIT_THRESHOLD_RECIPIENTS <
- * audienceCeiling(true)`) intact, and keeps FR-042 true: one value, read at
- * count, submit and dispatch, so what compose shows is what the send obeys.
- * Every i18n string interpolates `{ceiling, number}`, so the copy follows
- * automatically in all three locales.
+ * **Phase 9b made the clamp conditional on batching, and that is not a
+ * loosening.** T095 closed the gap by REFUSING what one tick could not deliver.
+ * Phase 9b closes it by SPLITTING instead: `SPLIT_THRESHOLD_RECIPIENTS` is now
+ * the same constant, so an audience above one tick's capacity is cut into
+ * batches of exactly that size and delivered one wave per tick. Nothing is
+ * accepted that cannot be delivered — the delivery just takes more than one
+ * tick. Clamping as well would refuse the very audiences the batch path exists
+ * to carry, and would put a chamber's headcount behind a code change instead
+ * of behind its Resend plan.
+ *
+ * With batching OFF there is no split path, so the measured single-tick bound
+ * is still the real one and the clamp still applies. That state is prod's
+ * rollback position, so it must keep behaving exactly as it does today.
+ *
+ * FR-042 survives in both states: with batching ON this returns the configured
+ * value, which is what `split-large-broadcasts` and `dispatch-batches` already
+ * read — so all five readers compare against ONE number (pinned in
+ * `broadcasts-deps-audience.test.ts`). Every i18n string interpolates
+ * `{ceiling, number}`, so the copy follows automatically in all three locales.
+ *
+ * Note this is the ACCEPT bound only. `dispatchScheduledBroadcast` carries a
+ * separate `deliverablePerTick` and hands a grown audience off to the split
+ * path rather than pushing it — the estimate that routed the row was frozen at
+ * submit and can be days stale.
  */
 export function currentAudienceCeiling(): number {
-  return Math.min(configuredAudienceCeiling(), DELIVERABLE_RECIPIENTS_PER_TICK);
+  return isF71aUs1Enabled()
+    ? configuredAudienceCeiling()
+    : Math.min(configuredAudienceCeiling(), DELIVERABLE_RECIPIENTS_PER_TICK);
 }
 
 /**
@@ -391,6 +408,12 @@ export async function makeDispatchScheduledBroadcastDeps(
     eventAttendees: eventAttendeesBridge,
     audienceMode: currentAudienceMode(),
     audienceCeiling: currentAudienceCeiling(),
+    // Phase 9b (T147) — the DELIVERY bound, separate from the ACCEPT ceiling
+    // above. With batching on those two deliberately differ: a large audience
+    // is split rather than refused, so this cron needs its own answer for a
+    // row whose audience grew past one tick since submit — hand it to the
+    // batch path, do not push it and die at `maxDuration`.
+    deliverablePerTick: DELIVERABLE_RECIPIENTS_PER_TICK,
     audit: f7AuditAdapter,
     clock: systemClock,
     fromEmail: env.broadcasts.fromEmail,

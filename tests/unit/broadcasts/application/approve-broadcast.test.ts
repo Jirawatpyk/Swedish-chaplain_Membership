@@ -188,6 +188,9 @@ function makeRepo(opts: RepoOpts): {
       },
       async attachResendIds() {},
       async attachAudienceId() {},
+      // Phase 9b (T147) — unused here; present so the stub still satisfies
+      // BroadcastsRepo.
+      async updateEstimatedRecipientCount() {},
       async listByTenantStatus() {
         return { rows: [], nextCursor: null };
       },

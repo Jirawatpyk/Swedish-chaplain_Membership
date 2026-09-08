@@ -38,6 +38,7 @@ import { logger } from '@/lib/logger';
 import { broadcastsF71aMetrics } from '@/lib/metrics/broadcasts-f71a';
 import { safeAuditEmit } from './_safe-audit-emit';
 import { resendDashboardName } from '../format/resend-dashboard-name';
+import { formatBatchFailureReason } from '../../domain/value-objects/batch-failure-reason';
 import type { TenantContext } from '@/modules/tenants';
 import type { BroadcastId } from '../../domain/broadcast';
 import type { AdvisoryLockPort } from '../ports/advisory-lock-port';
@@ -48,6 +49,32 @@ import type {
 } from '../ports/batch-manifests-port';
 import type { BroadcastsGatewayPort } from '../ports/broadcasts-gateway-port';
 import type { ClockPort } from '../ports/clock-port';
+
+/**
+ * Phase 9b (T130) — persist the gateway's `permanent` / `retryable` verdict
+ * alongside the stage and detail, when there is one.
+ *
+ * The gateway throws a `GatewayThrowable` whose `kind` field the port declares
+ * (`broadcasts-gateway-port.ts`), so reading it structurally here is not a
+ * layering violation. Anything else — a plain `Error`, a thrown string, a bug
+ * in our own code — is left unprefixed and reads exactly as every row written
+ * before this shipped.
+ */
+function classifyFailureReason(
+  thrown: unknown,
+  stage: string,
+  detail: string,
+): string {
+  const kind = (thrown as { kind?: unknown } | null)?.kind;
+  if (kind === 'permanent' || kind === 'retryable') {
+    return formatBatchFailureReason({
+      kind,
+      stage,
+      detail: detail.slice(0, 480),
+    });
+  }
+  return `${stage}: ${detail.slice(0, 500)}`;
+}
 
 export type DispatchBroadcastBatchError =
   | { readonly kind: 'BATCH_NOT_FOUND'; readonly batchManifestId: string }
@@ -306,7 +333,13 @@ export async function dispatchBroadcastBatch(
       {
         status: 'failed',
         failedAt,
-        failureReason: `${gatewayStage}: ${detail.slice(0, 500)}`,
+        // Phase 9b (T130) — keep the gateway's own classification. Without it
+        // `autoRetryFailedBatch` re-queues a 4xx five times, and the 4xx that
+        // matters here is Resend refusing at the account contact cap, so each
+        // retry burns a full batch of the resource that caused the failure.
+        // An unclassified throw (a bug in our code, not the provider's answer)
+        // keeps the pre-9b shape and stays retryable downstream.
+        failureReason: classifyFailureReason(e, gatewayStage, detail),
       },
     );
     if (!failedUpdate.ok) {

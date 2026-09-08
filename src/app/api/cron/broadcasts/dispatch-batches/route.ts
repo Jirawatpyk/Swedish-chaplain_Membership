@@ -85,17 +85,25 @@ import type {
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-// BUG-028: full function budget for the per-contact audience sync (Resend's
-// limit is 10 req/s but the serial loop is latency-bound at ~3.4 — measured
-// 2026-09-08, T095; this said 2 before). See dispatch-scheduled for the
-// rationale. NOTE: this route's 300 s budget is per INVOCATION, not per
-// batch — `batch-dispatcher.ts` keeps up to `concurrencyCap` batches in
-// flight (default 4), each a serial push, and a batch may hold up to
-// RESEND_PER_AUDIENCE_CAP = 10,000 contacts. Two consequences that differ
-// from `dispatch-scheduled`: splitting does not escape the wall clock (10,000
-// contacts need ≥ 1,000 s even at the full 10 req/s policy), and this path IS
-// rate-limit-bound rather than latency-bound — 4 × 3.45 ≈ 13.8 req/s exceeds
-// the policy, so 429s and the gateway's reactive backoff are expected here.
+// BUG-028: full function budget for the per-contact audience sync. Resend's
+// account limit is 10 req/s, but `addContactsToAudience` is a serial `await`
+// loop, so one worker reaches only `min(limit, 1/RTT)` ≈ 2.08 req/s at the
+// measured `POST /contacts` latency (research.md § R9, CORRECTED block).
+//
+// This route's 300 s budget is per INVOCATION, and Phase 9b changed what that
+// means. `batch-dispatcher.ts` now dispatches **one wave per invocation**: up
+// to `concurrencyCap` batches (default 4) in flight, and the remainder is
+// deferred to the next tick rather than started at ~240 s and killed at 300.
+// Batches are sized at `DELIVERABLE_RECIPIENTS_PER_TICK`, so one wave fits the
+// budget by construction — which is the point: before 9b a batch could hold up
+// to RESEND_PER_AUDIENCE_CAP = 10,000 contacts, needing ≥ 1,000 s even at the
+// full policy rate, so splitting did not escape the wall clock at all.
+//
+// This path is still rate-limit-bound rather than latency-bound where
+// `dispatch-scheduled` is not: 4 concurrent workers × 2.08 ≈ 8.3 req/s sits
+// just under the 10 req/s policy, so 429s and the gateway's reactive backoff
+// are expected here. A tenant's `dispatch_concurrency_cap` above 4 exceeds the
+// policy — see `docs/runbooks/broadcast-audience-build.md`.
 export const maxDuration = 300;
 
 const MAX_BROADCASTS_PER_TICK = 20;
@@ -218,6 +226,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     broadcastsDispatched: 0,
     batchesDispatched: 0,
     batchesFailed: 0,
+    /**
+     * Phase 9b (T138) — batches left `pending` because this invocation's wave
+     * was full. Neither dispatched nor failed; they go out on the next tick.
+     * Counted separately so a broadcast progressing normally across ticks is
+     * distinguishable from one that is stuck.
+     */
+    batchesDeferred: 0,
     skipped: 0,
     errors: 0,
   };
@@ -483,6 +498,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       summary.broadcastsDispatched++;
       summary.batchesDispatched += dispatchResult.succeeded;
       summary.batchesFailed += dispatchResult.failed;
+      summary.batchesDeferred += dispatchResult.deferredToNextTick;
 
       logger.info(
         {
@@ -491,6 +507,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           totalBatches: dispatchResult.totalBatches,
           succeeded: dispatchResult.succeeded,
           failed: dispatchResult.failed,
+          // Phase 9b (T138) — batches this invocation deliberately left
+          // `pending` because the wave was full. Not an error: they go out on
+          // the next tick, five minutes later. Worth logging because it is the
+          // only way to tell "a large broadcast is progressing normally across
+          // ticks" from "a broadcast is stuck", which otherwise look identical
+          // until `stuck_sending_count` fires at 24 h.
+          deferredToNextTick: dispatchResult.deferredToNextTick,
           elapsedMs: dispatchResult.elapsedMs,
         },
         'cron.broadcasts.dispatch_batches.broadcast_complete',

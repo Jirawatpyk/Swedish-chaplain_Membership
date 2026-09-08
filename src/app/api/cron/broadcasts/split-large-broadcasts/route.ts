@@ -337,11 +337,28 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
       const resolvedCount = resolved.value.recipients.length;
 
-      // 4c. Recheck against the cap — if recipients dropped below the
-      //     threshold between submit and dispatch (suppression-list
-      //     trim, member archival), skip splitting + let F7 MVP
-      //     dispatch-scheduled handle it on its next tick.
-      if (resolvedCount <= SPLIT_THRESHOLD_RECIPIENTS) {
+      // 4c. Phase 9b (T148) — **a claimed row is never released.**
+      //
+      //     This used to skip when the resolved count had fallen to or below
+      //     the threshold, on the stated grounds that `dispatch-scheduled`
+      //     would pick it up on its next tick. T137 removed that fallback:
+      //     `dispatch-scheduled` now claims only rows whose
+      //     `estimated_recipient_count` is at or below the threshold, and this
+      //     row reached us BECAUSE its estimate is above it. Skipping would
+      //     leave it owned by neither cron, sitting in `approved` until a human
+      //     noticed. With the threshold at the per-tick batch size that needs
+      //     nothing exotic — a broadcast estimated at one over, and a single
+      //     opt-out, which is 108's own mechanism.
+      //
+      //     Splitting a shrunken audience costs nothing: `computeBatchRanges`
+      //     yields one batch, and the batch path pushes it with the same serial
+      //     loop the single-tick path would have used.
+      //
+      //     Zero is still refused — `computeBatchRanges(0, …)` returns `[]` and
+      //     the use case would answer `split_broadcast.server_error`. It should
+      //     be unreachable (the resolver refuses an empty audience above, at
+      //     `!resolved.ok`), so this arm is defence in depth.
+      if (resolvedCount === 0) {
         summary.skipped++;
         logger.info(
           {
@@ -350,7 +367,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             estimatedCount: broadcast.estimatedRecipientCount,
             resolvedCount,
           },
-          'cron.broadcasts.split_large.resolved_count_under_threshold',
+          'cron.broadcasts.split_large.resolved_count_zero',
         );
         continue;
       }

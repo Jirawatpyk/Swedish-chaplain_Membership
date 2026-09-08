@@ -35,6 +35,7 @@ import {
   dispatchScheduledBroadcast,
   makeDispatchScheduledBroadcastDeps,
   makeTickMemoizedMembersBridge,
+  SPLIT_THRESHOLD_RECIPIENTS,
 } from '@/modules/broadcasts';
 import { runInTenant } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
@@ -118,6 +119,22 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // (cron-system context). `FOR UPDATE SKIP LOCKED` prevents two ticks
   // grabbing the same row — the second tick's transaction will skip
   // any row whose advisory lock is held by an in-flight worker.
+  //
+  // Phase 9b (T137) — the `estimated_recipient_count` predicate is what makes
+  // this cron and `split-large-broadcasts` a PARTITION of the `approved` set
+  // rather than two overlapping filters. Both run every five minutes; the
+  // sibling selects `> SPLIT_THRESHOLD_RECIPIENTS`, and `splitBroadcastIntoBatches`
+  // does not change the broadcast's status, so without this line whichever cron
+  // runs first claims the row. `FOR UPDATE SKIP LOCKED` does not help: it stops
+  // CONCURRENT claims on the same row, not sequential ones seconds apart. A row
+  // above the threshold claimed here would be pushed by the serial single-tick
+  // loop and killed at `maxDuration = 300`.
+  //
+  // The estimate is frozen at submit and can be days stale, so this predicate
+  // is a cheap indexed FIRST pass, not the real bound. The use case re-resolves
+  // and hands a grown audience back to the split path (T147); the split cron
+  // never releases a row whose audience shrank (T148). Between them every
+  // `approved` row has exactly one owner in either direction of drift.
   let eligible: ReadonlyArray<{ broadcast_id: string }>;
   try {
     eligible = await runInTenant(tenant, async (tx) => {
@@ -128,6 +145,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           AND status = 'approved'
           AND scheduled_for IS NOT NULL
           AND scheduled_for <= now()
+          AND estimated_recipient_count <= ${SPLIT_THRESHOLD_RECIPIENTS}
         ORDER BY scheduled_for ASC
         LIMIT ${MAX_PER_TICK}
         FOR UPDATE SKIP LOCKED
@@ -154,6 +172,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     retryable: 0,
     permanent_failed: 0,
     resource_missing: 0,
+    /**
+     * Phase 9b (T147) — rows handed to `split-large-broadcasts` because the
+     * audience outgrew one tick since submit. Neither a success nor a failure:
+     * the broadcast is intact, still `approved`, and delivered by the batch
+     * path within ~5 minutes. A sustained non-zero value means audiences are
+     * routinely crossing the threshold, which is information, not an incident.
+     */
+    deferred_to_batch_path: 0,
     unknown_error: 0,
     uncaught_error: 0,
   };
@@ -266,6 +292,27 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           case 'broadcast_failed_to_dispatch':
           case 'broadcast_audience_post_suppression_empty':
             summary.permanent_failed++;
+            break;
+          case 'DEFERRED_TO_BATCH_PATH':
+            // Phase 9b (T147) — NOT a failure. The audience grew past what one
+            // tick can push since submit, so the use case corrected
+            // `estimated_recipient_count` and left the row `approved`; the next
+            // `split-large-broadcasts` tick claims it on the corrected number
+            // and the batch path delivers it.
+            //
+            // It needs its own counter precisely because the `default` arm
+            // below raises `cronUnknownErrorCount`, which is alarmed on. A
+            // routine hand-off must not page anyone.
+            summary.deferred_to_batch_path++;
+            logger.info(
+              {
+                tenantId: tenant.slug,
+                broadcastId: row.broadcast_id,
+                resolvedCount: result.error.resolvedCount,
+                deliverablePerTick: result.error.deliverablePerTick,
+              },
+              'cron.broadcasts.dispatch.deferred_to_batch_path',
+            );
             break;
           default: {
             // Round-4 HIGH-D + Round-5 R5-CRON — unknown error kind

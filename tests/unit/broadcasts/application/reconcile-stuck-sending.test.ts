@@ -124,6 +124,9 @@ function makeBroadcastsRepo(args: {
     },
     async attachResendIds() {},
     async attachAudienceId() {},
+    // Phase 9b (T147) — unused by this use case; present so the stub
+    // still satisfies BroadcastsRepo.
+    async updateEstimatedRecipientCount() {},
     async listByTenantStatus() { return { rows: [], nextCursor: null }; },
     async countForMemberQuota() { return { submittedOrApproved: 0, sent: 0 }; },
     async findByResendBroadcastIdBypassRls() { return null; },

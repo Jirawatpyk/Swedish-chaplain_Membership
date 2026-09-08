@@ -26,10 +26,8 @@ import { safeAuditEmit } from './_safe-audit-emit';
 import type { TenantContext } from '@/modules/tenants';
 import type { BroadcastId } from '../../domain/broadcast';
 import { makeIdempotencyKey } from '../../domain/value-objects/idempotency-key';
-import {
-  computeBatchRanges,
-  RESEND_PER_AUDIENCE_CAP,
-} from '../../domain/value-objects/batch-boundary';
+import { DELIVERABLE_RECIPIENTS_PER_TICK } from '../../domain/audience-ceiling';
+import { computeBatchRanges } from '../../domain/value-objects/batch-boundary';
 import type { AuditPort } from '../ports/audit-port';
 import type {
   BatchManifestsPort,
@@ -105,9 +103,22 @@ export async function splitBroadcastIntoBatches(
   }
 
   const attempt = input.attempt ?? 0;
+  // Phase 9b (T134) — batches are sized at what ONE TICK can push, not at what
+  // Resend accepts in one audience.
+  //
+  // `RESEND_PER_AUDIENCE_CAP` (10,000) is the PROVIDER's limit and was never
+  // the binding one. The binding constraint is the wall clock: each batch gets
+  // its own audience and `addContactsToAudience` is a serial `await` loop at a
+  // measured 2.08 req/s, so a 10,000-contact batch needs ~80 minutes inside a
+  // `maxDuration = 300` function. Every batch above ~623 was killed mid-push
+  // and re-pushed from index 0 on the next tick into a NEW audience — an
+  // orphan audience plus a full batch of contact quota burned per retry.
+  //
+  // `RESEND_PER_AUDIENCE_CAP` remains the hard upper bound the batch size may
+  // never exceed; that relation is pinned in `audience-ceiling.test.ts`.
   const ranges = computeBatchRanges(
     input.resolvedRecipientCount,
-    RESEND_PER_AUDIENCE_CAP,
+    DELIVERABLE_RECIPIENTS_PER_TICK,
   );
 
   if (ranges.length === 0) {

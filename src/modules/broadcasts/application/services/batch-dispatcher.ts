@@ -8,10 +8,15 @@
  * Clarifications round-1 Q1). Caller-supplied cap MUST already be
  * validated by `validateConcurrencyCap` (Domain policy T042).
  *
- * Semaphore impl: minimal Promise pool (no external dependency). All
- * pending batches are queued; up to `concurrencyCap` are in-flight
- * at any moment; each batch dispatch is independent (one batch's
- * failure does NOT abort the others).
+ * Semaphore impl: minimal Promise pool (no external dependency). Up
+ * to `concurrencyCap` batches are in-flight at any moment; each batch
+ * dispatch is independent (one batch's failure does NOT abort the
+ * others).
+ *
+ * **One wave per invocation** (Phase 9b, T136): at most `concurrencyCap`
+ * batches are dispatched per call and the rest stay `pending` for the
+ * next cron tick. The reasoning is in the `wave` comment below — it is
+ * about `maxDuration` and contact quota, not about throughput.
  *
  * Returned summary tells the cron handler (T055) which batches
  * succeeded/failed without surfacing per-batch Result envelopes —
@@ -57,9 +62,17 @@ export interface BatchDispatchOutcome {
 }
 
 export interface DispatchAllPendingBatchesOutput {
+  /** Every batch that was pending when this invocation started. */
   readonly totalBatches: number;
   readonly succeeded: number;
   readonly failed: number;
+  /**
+   * Batches left untouched by this invocation because the wave was full
+   * (Phase 9b, T136). They are still `pending` and the next `dispatch-batches`
+   * tick — five minutes later — picks them up. Always
+   * `totalBatches - succeeded - failed`.
+   */
+  readonly deferredToNextTick: number;
   readonly results: ReadonlyArray<BatchDispatchOutcome>;
   readonly elapsedMs: number;
 }
@@ -84,7 +97,37 @@ export async function dispatchAllPendingBatches(
 ): Promise<DispatchAllPendingBatchesOutput> {
   const startedAt = Date.now();
   const cap = clampConcurrencyCap(input.concurrencyCap);
-  const queue = [...input.pendingBatches];
+  /**
+   * **One wave per invocation** (Phase 9b, T136). The queue holds at most `cap`
+   * batches, so each worker dispatches exactly one and stops; the remainder is
+   * neither dispatched nor touched and stays `pending` for the next tick.
+   *
+   * This service used to queue EVERY pending batch and let each worker pull
+   * until the queue was empty. That was harmless while a batch held up to
+   * `RESEND_PER_AUDIENCE_CAP = 10,000` contacts, because nothing above 10,000
+   * recipients existed and there was never a second wave. Phase 9b sizes
+   * batches at `DELIVERABLE_RECIPIENTS_PER_TICK` — about 240 s of serial
+   * `POST /contacts` each — so a second wave would begin at ~240 s inside a
+   * function whose `maxDuration` is 300 and be killed part-way through pushing
+   * a fresh audience. That audience is orphaned holding real addresses, its
+   * manifest stays `pending`, and the next tick re-pushes the batch from index
+   * 0 into ANOTHER new audience: a full batch of contact quota burned per
+   * retry, against an account cap of 1,000 on Resend's Free plan.
+   *
+   * Deferring costs latency, not delivery — `dispatch-batches` runs every five
+   * minutes. Do not "optimise" this back into draining the queue.
+   *
+   * A failed batch still consumes its slot: a failure is fastest exactly when
+   * Resend is rejecting at the contact cap, so backfilling would open a second
+   * wave through the back door precisely when the account can least afford it.
+   *
+   * Roll-up is unaffected. `evaluateBatchCompletion` classifies a `pending`
+   * manifest as `in_flight` unless `forceComplete` is set (the 24 h backstop),
+   * so a deferred batch keeps the broadcast `sending` rather than rolling it to
+   * `sent` early.
+   */
+  const wave = input.pendingBatches.slice(0, cap);
+  const queue = [...wave];
   const results: BatchDispatchOutcome[] = [];
 
   /** Worker — pulls from the queue until empty, dispatches each batch.
@@ -146,7 +189,7 @@ export async function dispatchAllPendingBatches(
   // worker's rejection (defence-in-depth — the try/catch above
   // shouldn't let any worker reject anymore, but allSettled prevents
   // a future bug from regressing the aggregate-survival invariant).
-  const workerCount = Math.min(cap, input.pendingBatches.length);
+  const workerCount = wave.length;
   const workers = Array.from({ length: workerCount }, () => worker());
   await Promise.allSettled(workers);
 
@@ -163,6 +206,7 @@ export async function dispatchAllPendingBatches(
     totalBatches: input.pendingBatches.length,
     succeeded,
     failed,
+    deferredToNextTick: input.pendingBatches.length - results.length,
     results: sorted,
     elapsedMs: Date.now() - startedAt,
   };

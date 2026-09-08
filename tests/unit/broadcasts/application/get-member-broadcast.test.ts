@@ -55,6 +55,11 @@ function makeRepoMocks(opts: {
     attachAudienceId: async () => {
       // no-op
     },
+    // Phase 9b (T147) — unused by this use case; present so the stub
+    // still satisfies BroadcastsRepo.
+    updateEstimatedRecipientCount: async () => {
+      // no-op
+    },
     listByTenantStatus: async () => ({ rows: [], nextCursor: null }),
     countForMemberQuota: async () => ({ submittedOrApproved: 0, sent: 0 }),
     findByResendBroadcastIdBypassRls: async () => null,

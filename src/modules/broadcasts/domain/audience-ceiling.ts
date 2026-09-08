@@ -29,130 +29,124 @@ export function audienceCeiling(batchingEnabled: boolean): number {
 }
 
 /**
- * Above this many resolved recipients the `split-large-broadcasts` cron
- * routes a broadcast through per-batch audiences instead of one push. It
- * MUST stay strictly below `audienceCeiling(true)` — an accepted audience
- * the split never picks up would sit in `approved` forever — and it is
- * only ever reached with batching ON (`audienceCeiling(false)` is below
- * it). Pinned by `tests/unit/broadcasts/domain/audience-ceiling.test.ts`.
- *
- * **5,001–10,000 IS a gap — do not re-derive that it is not.** Round 2 of the
- * 2026-09-07 review called this band "the intended SINGLE-audience path under
- * `RESEND_PER_AUDIENCE_CAP`, not a gap": a correct statement about ROUTING
- * (Resend permits 10,000 contacts per audience) that never checked the WALL
- * CLOCK. Pass 4 of the staff review did. `split-large-broadcasts` skips
- * `resolvedCount <= SPLIT_THRESHOLD_RECIPIENTS`, so the band falls to
- * `dispatch-scheduled`, whose push is a SERIAL one-contact-at-a-time loop
- * inside `maxDuration = 300` — and `plan.md:268` states the serial push cannot
- * finish even 5,000 contacts in that budget. Such a broadcast is accepted at
- * submit and never delivered.
- *
- * **T095, measured 2026-09-08 — the band is WIDER than "5,001–10,000", and it
- * is NOT created by the 1:N flag.** The account limit is 10 req/s
- * (`ratelimit-policy: 10;w=1`, read from the API), but this loop is serial, so
- * its throughput is `min(limit, 1/RTT)` and the warm round trip is ~0.29 s —
- * about **3.4 req/s, latency-bound**. One 300 s tick therefore drains ~1,000
- * contacts, so anything above roughly **830** (with a 20 % margin) is
- * undeliverable **at the 5,000 ceiling that is enforced today, flag or no
- * flag**. The 1:N flip widens an existing exposure; it does not introduce one.
- * The earlier "~2 req/s" in this docblock was wrong about the account and
- * accidentally close about the effect. Detail + caveats:
- * `specs/108-contact-recipient-rules/research.md` § R9 (T095 block) and
- * `reviews/cutover.md` § 5a. Closing it is a precondition of the flag flip —
- * see the US5 AMENDMENT in `spec.md` and `reviews/pr-c.md` row 33.
- */
-export const SPLIT_THRESHOLD_RECIPIENTS = 10_000;
-
-/**
- * T095 (2026-09-08) — how many contacts ONE dispatch tick can actually push.
+ * T095 (2026-09-08), re-purposed by Phase 9b — how many contacts ONE dispatch
+ * tick can push, and therefore **how big one batch is**.
  *
  * `audienceCeiling` above says what the system is willing to ACCEPT. This says
- * what it can DELIVER, and until this constant existed the two were 5,000 and
- * ~1,000. A broadcast in between was accepted at submit and then killed
- * mid-push on every tick, sitting in `approved` until
- * `broadcasts_approved_overdue_count` noticed roughly ninety minutes later.
- * The composition root now enforces `min(audienceCeiling(flags), this)`, so
- * the number a member sees at compose is a number the push can honour.
+ * what one invocation can DELIVER, and the two used to be 5,000 and ~623: a
+ * broadcast in between was accepted at submit and then killed mid-push on every
+ * tick, sitting in `approved` until `broadcasts_approved_overdue_count` noticed
+ * roughly ninety minutes later.
  *
- * **Measured, not assumed** (`specs/108-contact-recipient-rules/research.md`
- * § R9, T095 block; five `GET /audiences` calls on one keep-alive connection
- * with the production key):
+ * **T095 closed that by clamping the accepted ceiling to this number. Phase 9b
+ * replaced the clamp with batching, and the difference matters:** a clamp
+ * refuses what it cannot deliver in one tick, so a chamber that grows past 500
+ * members hits an engineering wall that needs a code change. Batching cuts the
+ * audience at this number instead and delivers one batch per tick, so headcount
+ * binds on the Resend plan — a billing decision — rather than on a constant.
+ * `SPLIT_THRESHOLD_RECIPIENTS` below is therefore derived from this, and
+ * `currentAudienceCeiling()` clamps to it ONLY on the single-tick path (with
+ * batching off, nothing splits, so the old bound is still the real one).
  *
- *   - the Resend account limit is **10 req/s** — `ratelimit-policy: 10;w=1`,
- *     read from the API's own headers. The "~2 req/s" that this file and three
- *     others claimed for a year was wrong;
- *   - but `addContactsToAudience` is a **serial `await` loop**, so it reaches
- *     only `min(limit, 1/RTT)`, and the warm round trip is **~0.29 s** —
- *     about **3.4 req/s**. Latency binds, not the plan. Using the documented
- *     10 as a capacity input overestimates by ~3×;
- *   - **the number comes from `POST /contacts`, the verb the loop actually
- *     calls** — 15 serial samples through a real dev audience, 2026-09-08:
- *     mean **481 ms** (median 420, p95 894, zero 429s). Mean is the right
- *     statistic here: a serial loop of N requests takes N × mean, not N × p95.
- *     `1 / 0.481 = 2.08 req/s`; `300 s × 2.08 ⇒ ~623` contacts; with a 20 %
- *     margin, **~499**. Read it the other way: **500 contacts take ~240 s,
- *     i.e. 80 % of the 300 s budget**, and the remaining 20 % absorbs
- *     dispatch's own work — the audience resolve (which grows with the
- *     audience) plus `createAudience` + `createBroadcast` + `sendBroadcast`.
+ * **Measured, not assumed. The derivation lives in ONE place —
+ * `specs/108-contact-recipient-rules/research.md` § R9, the block marked
+ * CORRECTED — and is deliberately not restated here.** It was restated in five
+ * places once, and they drifted: the same figure appeared as ~830 and as ~623
+ * depending on which document you opened, because the first sample measured
+ * `GET /audiences` (290 ms) and the loop calls `POST /contacts` (481 ms, 15
+ * serial samples). Writes are ~1.7× slower and mean, not p95, is the statistic
+ * — a serial loop of N requests takes N × mean. The short version: **2.08
+ * req/s ⇒ ~623 per 300 s tick ⇒ 500 with a 20 % margin**, i.e. 500 contacts
+ * take ~240 s and the remaining 20 % absorbs the resolve plus `createAudience`
+ * + `createBroadcast` + `sendBroadcast`.
  *
- *     **This corrects T095's own first answer.** That sample used
- *     `GET /audiences` (290 ms → 3.45 req/s → a bound near 830) because it was
- *     the only read-only probe available before anything had been dispatched.
- *     Writes are ~1.7× slower, and the caveat recorded with that measurement —
- *     "`GET` latency, not `POST /contacts`; all caveats push the number DOWN" —
- *     turned out to be worth 300 recipients. It also means the `~2 req/s` that
- *     four source comments carried for a year was **right about the effect**
- *     and wrong only about the cause (it read as an account cap; the account
- *     allows 10);
- *   - the account is on Resend's **Free** plan, whose 1,000-contact cap bites
- *     around ~987 (1,000 minus the 13 stored when this was checked — that
- *     subtrahend is a snapshot, not a constant, and R16's Global Contacts
- *     survive an audience delete). **What Resend actually returns at the cap
- *     is UNVERIFIED**: T095 measured `GET /audiences` and never touched the
- *     limit. IF it is a plain 4xx, `classifyResendError` makes it `permanent`
- *     and the broadcast fails terminally in one tick with an audit row — the
- *     better of the two failures. If it is a 429 or a 5xx instead, `withRetry`
- *     backs off and rethrows `retryable`, and the row sits in `approved` being
- *     re-pushed every tick — the silent failure this constant exists to
- *     prevent. Confirm on the first real send (contact count in Resend before
- *     and after, against the `resend.broadcasts.contacts_added` log) before
- *     relying on the benign reading.
+ * **What Resend returns at the Free plan's 1,000-contact cap is still
+ * UNVERIFIED**, and the two possibilities differ in kind. A plain 4xx is
+ * classified `permanent`, and since Phase 9b that is no longer auto-retried —
+ * the batch fails once, with its reason on the manifest, for a human. A 429 or
+ * 5xx is `retryable` and will be re-attempted within budget. Confirm on the
+ * first real send (contact count in Resend before and after, against the
+ * `resend.broadcasts.contacts_added` log).
  *
- * **500 sits under both bounds — for ONE broadcast in flight.** Say that part
- * out loud, because neither bound is per-broadcast:
+ * **Neither bound is per-broadcast**, which is the caveat most likely to be
+ * forgotten:
  *
  *   - the 300 s is per INVOCATION. `dispatch-scheduled` runs up to
  *     `MAX_PER_TICK = 50` broadcasts in one `await` loop with no wall-clock
- *     check between rows, so two 500-recipient broadcasts due in the same tick
- *     need ~480 s and the second is killed mid-push — the very failure this
- *     constant closes, one layer up;
+ *     check between rows, so two full-size broadcasts due in the same tick
+ *     need ~480 s and the second is killed mid-push — the same failure, one
+ *     layer up. `dispatch-batches` is bounded by its own concurrency cap;
  *   - the 1,000 contacts is per ACCOUNT. Ephemeral audiences live until
- *     `cleanup-audiences` reaps them (grace 1 h, cron every 15 min), so two live
- *     500-contact audiences are 1,000 against a 1,000 cap — exactly at it.
+ *     `cleanup-audiences` reaps them (grace 1 h, cron every 15 min), so two
+ *     live full-size audiences already sit at the Free cap.
  *
  * Both are unreachable at SweCham's cadence (a handful of sends a month, 150
- * recipients each), and both are follow-ups rather than blockers: a per-tick
- * wall-clock budget in that loop, or `MAX_PER_TICK` derived from this constant
- * and the expected concurrency.
+ * recipients each) and both are follow-ups: a per-tick wall-clock budget in
+ * that loop, or `MAX_PER_TICK` derived from this constant and the expected
+ * concurrency.
  *
  * The value is round rather than computed on purpose: two independent limits
- * that agree to within 20 % do not justify false precision, and the inputs
+ * that agree to within ~40 % do not justify false precision, and the inputs
  * carry caveats that all push the true figure down (measured from Bangkok, not
- * `sin1`; `GET` latency, not `POST /contacts`; four warm samples).
+ * `sin1`; a warm connection; one account).
  *
- * **Raise it only with a new measurement**, or when the push stops being
- * serial — batched multi-tick dispatch, or Resend's Contacts Import API
- * (T086 / T087 / T106, deferred). Upgrading the Resend plan is not enough:
- * Pro raises the contact cap to 5,000 but changes no latency, so the ~830
- * wall-clock bound survives the upgrade. Money buys the cap, not the clock.
+ * **Raise it only with a new measurement from `sin1`.** Upgrading the Resend
+ * plan is not enough: Pro raises the contact cap to 5,000 but changes no
+ * latency, so ~623 survives the upgrade. Money buys the cap, not the clock.
+ * The push stopping being serial WOULD change it — Resend's Contacts Import
+ * API is size-independent (research § R9 V4, open).
  *
  * **Principle III note**: this is an Infrastructure fact (Resend latency,
  * Vercel `maxDuration`, a Resend plan tier) sitting in `domain/`. It is not an
  * import violation — it is a bare number — but the contract it stands for
- * belongs next to the gateway that was measured. It lives here because
- * `audienceCeiling()` and `SPLIT_THRESHOLD_RECIPIENTS` already do the same
- * thing in this file and the clamp has to compare against them; moving all
- * three is the honest fix and is recorded as a follow-up, not smuggled in
- * with a bugfix.
+ * belongs next to the gateway that was measured. Phase 9b re-examined the
+ * question and kept it here: `audienceCeiling()` and
+ * `SPLIT_THRESHOLD_RECIPIENTS` do the same thing in this file, the threshold
+ * is now DERIVED from this constant so the two cannot be separated, and moving
+ * all three during a behaviour change would mix a refactor into a fix. The
+ * deviation is recorded in `plan.md` § Complexity Tracking #5.
  */
 export const DELIVERABLE_RECIPIENTS_PER_TICK = 500;
+
+/**
+ * Above this many resolved recipients the `split-large-broadcasts` cron routes
+ * a broadcast through per-batch audiences instead of one push.
+ *
+ * **It is DERIVED from the constant above, not a second literal, and that
+ * equality is the whole of Phase 9b.** Before 9b it was 10,000 — Resend's
+ * per-audience capacity — while one dispatch tick could push about 623. Every
+ * audience between the two was refused by `split-large-broadcasts` (too small)
+ * and killed at `maxDuration` by `dispatch-scheduled` (too large): accepted at
+ * submit, never delivered, noticed roughly ninety minutes later by
+ * `broadcasts_approved_overdue_count`. Deriving one from the other closes that
+ * band permanently — there is no arithmetic left in which a broadcast can be
+ * too big for one tick and too small to split.
+ *
+ * Two invariants, both pinned in `tests/unit/broadcasts/domain/audience-ceiling.test.ts`:
+ *
+ *   - it MUST stay `<= RESEND_PER_AUDIENCE_CAP` (10,000). That is the
+ *     provider's hard limit on one audience, and a batch is one audience. It is
+ *     nowhere near binding today, which is exactly why it needs a test: a
+ *     future latency win that raises the tick bound would otherwise sail past
+ *     it and turn every split into a 4xx;
+ *   - it MUST stay `< audienceCeiling(true)`, or an accepted audience the split
+ *     never picks up would sit in `approved` forever.
+ *
+ * The old pin `SPLIT_THRESHOLD_RECIPIENTS > audienceCeiling(false)` is gone
+ * rather than adjusted. It encoded "with batching OFF nothing is ever split,
+ * because nothing above 5,000 is accepted" — still true, but now stated where
+ * it can be observed: with batching OFF the ENFORCED ceiling equals this
+ * threshold (`currentAudienceCeiling()` in `broadcasts-deps.ts`), so nothing
+ * above it is accepted in the first place.
+ *
+ * **The two crons must partition the `approved` set, and neither may release a
+ * row it has claimed.** They claim on `estimated_recipient_count`, frozen at
+ * submit; delivery is bounded by the RESOLVED count, read days later. Where
+ * those disagree, `dispatch-scheduled` hands off by writing the resolved count
+ * back as the estimate (it never dies mid-push), and `split-large-broadcasts`
+ * splits whatever it resolved even when that has fallen below this threshold
+ * (it never skips). Removing either half strands broadcasts in `approved` with
+ * no owner — see `specs/108-contact-recipient-rules/tasks.md` Phase 9b, T147
+ * and T148, for the two directions and how each was found.
+ */
+export const SPLIT_THRESHOLD_RECIPIENTS = DELIVERABLE_RECIPIENTS_PER_TICK;

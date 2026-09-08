@@ -473,6 +473,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         broadcastsRepo: repo.port,
         audienceMode: 'primary_only' as const,
         audienceCeiling: 5000,
+        deliverablePerTick: 5_000,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
           recipients: [
@@ -543,6 +544,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         broadcastsRepo: repo.port,
         audienceMode: 'primary_only' as const,
         audienceCeiling: 5000,
+        deliverablePerTick: 5_000,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
           recipients: [recipient('m-r1', 'one@example.com')],
@@ -578,6 +580,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         broadcastsRepo: repo.port,
         audienceMode: 'primary_only' as const,
         audienceCeiling: 5000,
+        deliverablePerTick: 5_000,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({}),
         marketingUnsubscribes: makeMarketingUnsubscribes(),
@@ -609,6 +612,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         broadcastsRepo: repo.port,
         audienceMode: 'primary_only' as const,
         audienceCeiling: 5000,
+        deliverablePerTick: 5_000,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({}),
         marketingUnsubscribes: makeMarketingUnsubscribes(),
@@ -644,6 +648,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         broadcastsRepo: repo.port,
         audienceMode: 'primary_only' as const,
         audienceCeiling: 5000,
+        deliverablePerTick: 5_000,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
           recipients: [recipient('m-r1', 'one@example.com')],
@@ -696,6 +701,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         broadcastsRepo: repo.port,
         audienceMode: 'primary_only' as const,
         audienceCeiling: 5000,
+        deliverablePerTick: 5_000,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
           recipients: bigAudience,
@@ -764,6 +770,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         broadcastsRepo: repo.port,
         audienceMode: 'primary_only' as const,
         audienceCeiling: 5000,
+        deliverablePerTick: 5_000,
         broadcastsGateway: gw.port,
         membersBridge: bridge,
         marketingUnsubscribes: makeMarketingUnsubscribes(new Set()),
@@ -821,6 +828,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         broadcastsRepo: repo.port,
         audienceMode: 'primary_only' as const,
         audienceCeiling: 5000,
+        deliverablePerTick: 5_000,
         broadcastsGateway: gw.port,
         membersBridge: {
           ...makeMembersBridge({
@@ -871,6 +879,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         broadcastsRepo: repo.port,
         audienceMode: 'primary_only' as const,
         audienceCeiling: 5000,
+        deliverablePerTick: 5_000,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
           recipients: [recipient('m-r1', 'one@example.com')],
@@ -918,6 +927,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         broadcastsRepo: repo.port,
         audienceMode: 'primary_only' as const,
         audienceCeiling: 5000,
+        deliverablePerTick: 5_000,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
           recipients: [recipient('m-r1', 'one@example.com')],
@@ -958,6 +968,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         broadcastsRepo: repo.port,
         audienceMode: 'primary_only' as const,
         audienceCeiling: 5000,
+        deliverablePerTick: 5_000,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
           recipients: [recipient('m-r1', 'one@example.com')],
@@ -1013,6 +1024,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         broadcastsRepo: repo.port,
         audienceMode: 'primary_only' as const,
         audienceCeiling: 5000,
+        deliverablePerTick: 5_000,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
           recipients: [recipient('m-r1', 'one@example.com')],
@@ -1067,6 +1079,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         broadcastsRepo: repo.port,
         audienceMode: 'primary_only' as const,
         audienceCeiling: 5000,
+        deliverablePerTick: 5_000,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
           recipients: [recipient('m-r1', 'one@example.com')],
@@ -1109,6 +1122,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         broadcastsRepo: repo.port,
         audienceMode: 'primary_only' as const,
         audienceCeiling: 5000,
+        deliverablePerTick: 5_000,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
           recipients: [
@@ -1152,6 +1166,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         broadcastsRepo: repo.port,
         audienceMode: 'primary_only' as const,
         audienceCeiling: 5000,
+        deliverablePerTick: 5_000,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
           recipients: [recipient('m-r1', 'one@example.com')],
@@ -1191,6 +1206,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         broadcastsRepo: repo.port,
         audienceMode: 'primary_only' as const,
         audienceCeiling: 5000,
+        deliverablePerTick: 5_000,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
           recipients: [recipient('m-r1', 'one@example.com')],
@@ -1246,6 +1262,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         broadcastsRepo: repo.port,
         audienceMode: 'primary_only' as const,
         audienceCeiling: 5000,
+        deliverablePerTick: 5_000,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
           recipients: [recipient('m-r1', 'one@example.com')],
@@ -1288,6 +1305,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         broadcastsRepo: repo.port,
         audienceMode: 'primary_only' as const,
         audienceCeiling: 5000,
+        deliverablePerTick: 5_000,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
           recipients: [recipient('m-r1', 'one@example.com')],
@@ -1324,6 +1342,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         broadcastsRepo: repo.port,
         audienceMode: 'primary_only' as const,
         audienceCeiling: 5000,
+        deliverablePerTick: 5_000,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
           recipients: [
@@ -1371,6 +1390,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         broadcastsRepo: repo,
         audienceMode: 'primary_only' as const,
         audienceCeiling: 5000,
+        deliverablePerTick: 5_000,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({}),
         marketingUnsubscribes: makeMarketingUnsubscribes(),
@@ -1426,6 +1446,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         broadcastsRepo: repo.port,
         audienceMode: 'primary_only' as const,
         audienceCeiling: 5000,
+        deliverablePerTick: 5_000,
         broadcastsGateway: gwPort,
         membersBridge: makeMembersBridge({
           recipients: [
@@ -1483,6 +1504,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         broadcastsRepo: repo.port,
         audienceMode: 'primary_only' as const,
         audienceCeiling: 5000,
+        deliverablePerTick: 5_000,
         broadcastsGateway: gwPort,
         membersBridge: makeMembersBridge({
           recipients: [recipient('m-r1', 'one@example.com')],
@@ -1542,6 +1564,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         broadcastsRepo: repo.port,
         audienceMode: 'primary_only' as const,
         audienceCeiling: 5000,
+        deliverablePerTick: 5_000,
         broadcastsGateway: gwPort,
         membersBridge: makeMembersBridge({
           recipients: [recipient('m-r1', 'one@example.com')],
@@ -1594,6 +1617,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         broadcastsRepo: repo.port,
         audienceMode: 'primary_only' as const,
         audienceCeiling: 5000,
+        deliverablePerTick: 5_000,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
           recipients: [recipient('m-r1', 'one@example.com')],
@@ -1633,6 +1657,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         broadcastsRepo: repo.port,
         audienceMode: 'primary_only' as const,
         audienceCeiling: 5000,
+        deliverablePerTick: 5_000,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
           recipients: [recipient('m-r1', 'one@example.com')],
@@ -1674,6 +1699,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         broadcastsRepo: repo.port,
         audienceMode: 'primary_only' as const,
         audienceCeiling: 5000,
+        deliverablePerTick: 5_000,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
           recipients: [recipient('m-r1', 'one@example.com')],
@@ -1715,6 +1741,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         broadcastsRepo: repo.port,
         audienceMode: 'primary_only' as const,
         audienceCeiling: 5000,
+        deliverablePerTick: 5_000,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
           recipients: [recipient('m-r1', 'one@example.com')],
@@ -1762,6 +1789,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         broadcastsRepo: repo.port,
         audienceMode: 'primary_only' as const,
         audienceCeiling: 5000,
+        deliverablePerTick: 5_000,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
           recipients: [recipient('m-r1', 'one@example.com')],
@@ -1814,6 +1842,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         broadcastsRepo: repo.port,
         audienceMode: 'primary_only' as const,
         audienceCeiling: 5000,
+        deliverablePerTick: 5_000,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
           recipients: [recipient('m-r1', 'one@example.com')],
@@ -1871,6 +1900,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         broadcastsRepo: repo.port,
         audienceMode: 'primary_only' as const,
         audienceCeiling: 5000,
+        deliverablePerTick: 5_000,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
           recipients: [recipient('m-r1', 'one@example.com')],
@@ -1916,6 +1946,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         broadcastsRepo: repo.port,
         audienceMode: 'primary_only' as const,
         audienceCeiling: 5000,
+        deliverablePerTick: 5_000,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
           recipients: [recipient('m-r1', 'one@example.com')],
@@ -1956,6 +1987,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         broadcastsRepo: repo.port,
         audienceMode: 'primary_only' as const,
         audienceCeiling: 5000,
+        deliverablePerTick: 5_000,
         broadcastsGateway: gw.port,
         // primaryContact: null โ’ membersBridge.getMemberPrimaryContact returns null
         membersBridge: makeMembersBridge({
@@ -2000,6 +2032,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         broadcastsRepo: repo.port,
         audienceMode: 'primary_only' as const,
         audienceCeiling: 5000,
+        deliverablePerTick: 5_000,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
           recipients: [recipient('m-r1', 'one@example.com')],
@@ -2050,6 +2083,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         broadcastsRepo: repo.port,
         audienceMode: 'primary_only' as const,
         audienceCeiling: 5000,
+        deliverablePerTick: 5_000,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
           recipients: [recipient('m-r1', 'one@example.com')],
@@ -2106,6 +2140,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
           broadcastsRepo: repo.port,
           audienceMode: 'primary_only' as const,
           audienceCeiling: 5000,
+          deliverablePerTick: 5_000,
           broadcastsGateway: gw.port,
           membersBridge: makeMembersBridge({
             recipients: [recipient('m-r1', 'one@example.com')],
@@ -2146,6 +2181,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         broadcastsRepo: repo.port,
         audienceMode: 'primary_only' as const,
         audienceCeiling: 5000,
+        deliverablePerTick: 5_000,
         broadcastsGateway: gw.port,
         // primaryContact: null โ’ email skipped, audit MUST fire
         membersBridge: makeMembersBridge({
@@ -2206,6 +2242,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
         broadcastsRepo: repo.port,
         audienceMode: 'primary_only' as const,
         audienceCeiling: 5000,
+        deliverablePerTick: 5_000,
         broadcastsGateway: gw.port,
         membersBridge: makeMembersBridge({
           recipients: [recipient('m-r1', 'one@example.com')],
@@ -2267,6 +2304,7 @@ describe('dispatch-scheduled-broadcast — per-broadcast opt-out drop log (round
         broadcastsRepo: repo.port,
         audienceMode: 'primary_only' as const,
         audienceCeiling: 5000,
+        deliverablePerTick: 5_000,
         broadcastsGateway: gw.port,
         membersBridge: bridge,
         marketingUnsubscribes: makeMarketingUnsubscribes(),
@@ -2321,6 +2359,7 @@ describe('dispatch-scheduled-broadcast — 108 PR-C resolver contract (T076)', (
         broadcastsRepo: repo.port,
         audienceMode,
         audienceCeiling: 5000,
+        deliverablePerTick: 5_000,
         broadcastsGateway: gw.port,
         membersBridge: bridge,
         marketingUnsubscribes: makeMarketingUnsubscribes(),

@@ -253,12 +253,18 @@ describe('dispatchAllPendingBatches contract (Phase 3F.10)', () => {
       broadcastContent,
       allRecipients: allRecipients.slice(0, 12),
       pendingBatches: manifests,
-      concurrencyCap: 2,
+      // Phase 9b: the cap is now also the WAVE size, so this case has to fit
+      // all four batches in one wave to keep testing what it is named for.
+      // At cap 2 the failing batch (index 2) is not even in the wave and the
+      // case would pass while exercising no isolation at all — the failure
+      // mode this file exists to catch.
+      concurrencyCap: 4,
     });
 
     expect(result.totalBatches).toBe(4);
     expect(result.succeeded).toBe(3);
     expect(result.failed).toBe(1);
+    expect(result.deferredToNextTick).toBe(0);
 
     // Specifically batch-2 (index 2) is the failed one.
     const failedRow = result.results.find((r) => r.batchIndex === 2);

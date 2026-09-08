@@ -71,6 +71,12 @@ vi.mock('@/modules/broadcasts', () => ({
   dispatchScheduledBroadcast: (...args: unknown[]) => dispatchScheduledBroadcastMock(...args),
   makeDispatchScheduledBroadcastDeps: async () => ({ membersBridge: { kind: 'members-bridge-stub' } }),
   makeTickMemoizedMembersBridge: (inner: unknown) => inner,
+  // Phase 9b (T131/T137) — the claim query bounds on this. A FORWARDING
+  // fixture: what this file pins is that the predicate exists and names the
+  // column, not that 500 is the production value (that lives in
+  // `audience-ceiling.test.ts`). Omitting it interpolated `undefined` into the
+  // SQL and every case in this file answered 500.
+  SPLIT_THRESHOLD_RECIPIENTS: 500,
 }));
 
 function makeRequest(opts: { auth?: string }): NextRequest {

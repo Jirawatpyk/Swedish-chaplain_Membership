@@ -89,6 +89,11 @@ function makeBroadcastsRepo({
     async attachAudienceId() {
       // no-op
     },
+    // Phase 9b (T147) — unused here; present so the stub still satisfies
+    // BroadcastsRepo.
+    async updateEstimatedRecipientCount() {
+      // no-op
+    },
     async listByTenantStatus() {
       return { rows: [], nextCursor: null };
     },
