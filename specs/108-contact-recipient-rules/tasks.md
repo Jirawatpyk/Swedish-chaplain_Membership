@@ -345,6 +345,27 @@ unlimited), which is the lever the maintainer asked for.
   Moot today (nothing above 10,000 exists); live the moment the threshold drops to 500. Row 33 had
   flagged this ("the two `*/5` crons' shared `approved` predicate once audiences > 10,000 are
   accepted").
+- **T135 + T137 as first written PARTITION ON THE ESTIMATE AND LEAVE A HOLE IN EACH DIRECTION**
+  (found at the `/speckit.superb.tdd` gate, 2026-09-08, before any code — verified in source, not
+  reasoned). The claim predicates are on `estimated_recipient_count`, frozen at submit; the push is
+  bounded by the RESOLVED count, read days later. They disagree in both directions:
+  - **est ≤ 500 < resolved** (the audience GREW after submit — the chamber-growth case this phase
+    exists for): `dispatch-scheduled` claims it, resolves 600, and T135 has just raised the bound it
+    compares against from 500 to `configuredAudienceCeiling()` = 5,000, so the resolver's
+    `broadcast_audience_too_large` refusal (`resolve-segment-recipients.ts:426`) no longer fires.
+    It pushes 600 serially and is killed at 300 s — **every tick, forever**. Split never sees it
+    (est ≤ 500). This is precisely the failure 9b exists to prevent, re-created by 9b.
+  - **resolved ≤ 500 < est** (the audience SHRANK — 108's own opt-out is a shrink mechanism):
+    `split-large-broadcasts` claims it (est > 500) and then **releases it**:
+    `split-large-broadcasts/route.ts:344` is `if (resolvedCount <= SPLIT_THRESHOLD_RECIPIENTS) {
+    summary.skipped++; continue; }`, whose comment says out loud that it relies on dispatch-scheduled
+    as the unconditional fallback ("let F7 MVP dispatch-scheduled handle it on its next tick").
+    T137 removes that fallback. The row is claimed by neither cron and **strands in `approved`
+    forever**. At a 500 threshold, ONE opt-out on a 501-estimate broadcast triggers it.
+  Fix = T147 + T148 below: the claim stays on the estimate (cheap, indexed), but neither cron may
+  end a tick having neither delivered nor handed off. `estimated_recipient_count` becomes the
+  durable hand-off channel — which is honest, because when the two numbers disagree the resolved
+  one is the true one and the member-visible estimate was stale.
 - `computeBatchRanges(count, perBatchCap = RESEND_PER_AUDIENCE_CAP)` already takes the cap as a
   parameter (`domain/value-objects/batch-boundary.ts:90-93`); `splitBroadcastIntoBatches` passes
   `RESEND_PER_AUDIENCE_CAP` (10,000) at `split-broadcast-into-batches.ts:110`.
@@ -383,9 +404,9 @@ unlimited), which is the lever the maintainer asked for.
 - [ ] T126 [P] Unit RED `tests/unit/broadcasts/domain/audience-ceiling.test.ts`: (a) `SPLIT_THRESHOLD_RECIPIENTS === DELIVERABLE_RECIPIENTS_PER_TICK`; (b) `DELIVERABLE_RECIPIENTS_PER_TICK <= RESEND_PER_AUDIENCE_CAP`; (c) `SPLIT_THRESHOLD_RECIPIENTS < audienceCeiling(true)` stays. **REPLACE** the pin `SPLIT_THRESHOLD_RECIPIENTS > audienceCeiling(false)` — it is false once the threshold is 500, and its premise ("with batching OFF nothing is ever split because nothing above 5,000 is accepted") is restated by T128 as "with batching OFF the enforced ceiling equals the threshold, so nothing above it is accepted"
 - [ ] T127 [P] Unit RED for `splitBroadcastIntoBatches` (find or create its unit file next to `tests/unit/broadcasts/batch-boundary.test.ts`): batches are sized at `DELIVERABLE_RECIPIENTS_PER_TICK`, never `RESEND_PER_AUDIENCE_CAP` — 1,200 → `[500, 500, 200]`; 500 → `[500]`; 501 → `[500, 1]`; 50,000 → 100 batches. Pin the range boundaries the way `batch-boundary.test.ts` does
 - [ ] T128 [P] Unit RED `tests/unit/broadcasts/infrastructure/broadcasts-deps-audience.test.ts`: the `enforced` column becomes `batching ? configured : min(configured, DELIVERABLE)` — rows `(any 1:N, batching:false) → 500`, `(1:N off, batching:true) → 5_000`, `(1:N on, batching:true) → 50_000`. KEEP the `configured` column (the H-2 guard). Restate the invariant case: with batching OFF, `enforced <= DELIVERABLE`; with batching ON, `enforced <= configured` AND `SPLIT_THRESHOLD_RECIPIENTS <= DELIVERABLE` (delivery is per batch, so the per-tick bound moves to the batch size)
-- [ ] T129 [P] Unit RED `tests/unit/broadcasts/application/batch-dispatcher.test.ts` (create if absent): **one wave per invocation** — 10 pending with `concurrencyCap: 4` → exactly 4 outcomes, 6 batches untouched (never passed to `dispatchBroadcastBatch`), output carries `deferredToNextTick: 6`; 3 pending with cap 4 → 3 outcomes, `deferredToNextTick: 0`; cap 1 → strictly serial. Use a stub `dispatchBroadcastBatch` that records calls
+- [ ] T129 [P] RED — **extend `tests/contract/broadcasts/batch-dispatcher.test.ts`, do NOT create a second file** (the gate found it: it already exists with a `makeManifest` factory + fake deps and already owns this service's orchestration invariants; its docblock excludes only timing-dependent *peak-in-flight* assertions, and a count assertion is not one): **one wave per invocation** — 10 pending with `concurrencyCap: 4` → exactly 4 outcomes, 6 batches untouched (never passed to `dispatchBroadcastBatch`), output carries `deferredToNextTick: 6`; 3 pending with cap 4 → 3 outcomes, `deferredToNextTick: 0`; cap 1 → strictly serial. Use a stub `dispatchBroadcastBatch` that records calls
 - [ ] T130 Unit RED (verify-then-pin) `auto-retry-failed-batches` + `retry-failed-batches`: a batch whose last failure is `permanent` is NOT re-queued by auto-retry; a `retryable` one is. If the code already does this, the test pins it; if it does not, this is a real fix (contact-quota burn on Free) and the test goes RED first
-- [ ] T131 Contract RED `tests/contract/broadcasts/cron-dispatch-scheduled*.test.ts` (find the existing one): a row with `estimated_recipient_count > SPLIT_THRESHOLD_RECIPIENTS` is **NOT** selected by `dispatch-scheduled` — it belongs to `split-large-broadcasts`. And `cron-split-large-broadcasts.contract.test.ts`: a 600 row IS selected and split, a 500 row is not. Update both mocks' `configuredAudienceCeiling` / `currentAudienceCeiling` forwarding fixtures + comments to the new semantics
+- [ ] T131 Contract RED `tests/contract/broadcasts/cron-dispatch-scheduled.contract.test.ts`: a row with `estimated_recipient_count > SPLIT_THRESHOLD_RECIPIENTS` is **NOT** selected by `dispatch-scheduled` — it belongs to `split-large-broadcasts`. And `cron-split-large-broadcasts.contract.test.ts`: a 600 row IS selected and split, a 500 row is not. Update both mocks' `configuredAudienceCeiling` / `currentAudienceCeiling` forwarding fixtures + comments to the new semantics. **Both fixtures must set `estimated_recipient_count` INDEPENDENTLY of the resolved count** — a fixture where the two always agree cannot see either direction of the T147/T148 hole, and every existing fixture in these files makes them agree
 - [ ] T132 Integration RED `tests/integration/broadcasts/deliverable-batches-multi-tick.test.ts` (live Neon; a recording fake gateway, as the contract tests use — NOT real Resend): seed a broadcast with 1,200 resolved recipients → `splitBroadcastIntoBatches` → 3 manifests `[500, 500, 200]` all `pending` → `dispatchAllPendingBatches` with `concurrencyCap: 2` → exactly 2 `sent_to_resend`, 1 still `pending`, `deferredToNextTick: 1`, fake gateway saw ≤ 500 contacts per `addContactsToAudience` and exactly 2 `createAudience` → second invocation → the last batch sent, 3 audiences total, no manifest pushed twice (idempotency key) → roll-up leaves the broadcast `sent`. Model the seeding on `pagination-7500-end-to-end.test.ts` (throwaway ids, per-test cleanup)
 
 ### Implementation for Phase 9b (GREEN — commit green)
@@ -411,7 +432,38 @@ unlimited), which is the lever the maintainer asked for.
 - [ ] T145 [P] **Re-probe the import API with the contract's field** — 30 seconds, no code: throwaway audience → `POST /contacts/imports` with multipart `segments=[<audienceId>]` (NOT `audience_id`) + `column_map` + `on_conflict=upsert`, poll to `completed`, then `GET /audiences/{id}/contacts`. Record the answer in `research.md` § R9 **V4 — the section now exists as a stub with the two probes and the open question (analyze F1); fill in the verdict there**, and correct this phase's preamble bullet. If the contacts DO attach: the import build is a ~2-call, size-independent push and should be scheduled as the follow-up that retires batch sizing; if they do NOT: the working-table fallback stands and T143's freeze becomes the road to FR-044 (a)/(d)
 - [ ] T146 [P] Unit pin (one assertion, in T128's file): with batching ON, `currentAudienceCeiling() === configuredAudienceCeiling()` — so the two batch crons (which read `configured`) and count/submit/`dispatch-scheduled` (which read `current`) compare against ONE number, keeping FR-042 true in the state where all five readers are live
 
-**Phase 9b dependencies**: T126–T132 + T145 in parallel (different files; T145 is a probe) → T133 → T134 → T135 → T136 → T137 → T138 → T139 → T143 → T144 (sequential, shared module) → T140 in the SAME commit as the last GREEN → T141 → T142 after merge. T146 rides with T128.
+### Added by `/speckit.superb.tdd` (2026-09-08 17:20) — the partition hole T135+T137 open
+
+- [ ] T147 RED then GREEN — **`dispatch-scheduled` hands off instead of dying** (hole direction A).
+  RED in `tests/unit/broadcasts/application/dispatch-scheduled-broadcast.test.ts`: a broadcast whose
+  estimate is 400 but which resolves to 600 is NOT pushed — the use case returns a distinct
+  non-terminal outcome, writes `estimated_recipient_count = 600`, leaves the status `approved`, and
+  emits an audit row. A 400/450 broadcast is pushed as today. GREEN: after the resolve in
+  `dispatch-scheduled-broadcast.ts` (next to the existing `orphans` / `droppedByPreference` logging,
+  ~line 690, BEFORE the `contacts` mapping) compare `resolvedResult.value.recipients.length` against
+  a new dep `deliverablePerTick` (composition root passes `DELIVERABLE_RECIPIENTS_PER_TICK`); on
+  exceed, call a NEW narrow port method `updateEstimatedRecipientCount(tx, tenantId, broadcastId,
+  count)` — model it on `attachAudienceId`, the port's established single-column writer, NOT on
+  `applyTransition` (an `approved → approved` self-transition would re-stamp `approved_at` /
+  `approved_by`) — and return without dispatching. **The refusal must be NON-terminal**: the row
+  stays `approved` so the next `split-large-broadcasts` tick claims it on the now-true estimate.
+  Sweep `tests/` for every stub of `BroadcastsRepo` when the port grows (memory: a new port method
+  leaves stale stubs that fail silently at runtime, not at `tsc`)
+- [ ] T148 RED then GREEN — **`split-large-broadcasts` never releases a claimed row** (hole
+  direction B). RED in `tests/contract/broadcasts/cron-split-large-broadcasts.contract.test.ts`: a
+  row with `estimated_recipient_count = 600` that resolves to 480 IS split — one manifest of 480 —
+  and the broadcast reaches `sending`; it is NOT counted in `summary.skipped`. GREEN:
+  `split-large-broadcasts/route.ts:344` — the skip condition narrows from `resolvedCount <=
+  SPLIT_THRESHOLD_RECIPIENTS` to `resolvedCount === 0` (defensive only; the resolver refuses an
+  empty audience first at `!resolved.ok`, so this arm should be unreachable —
+  `computeBatchRanges(0, …)` returns `[]` and `splitBroadcastIntoBatches` would answer
+  `split_broadcast.server_error`). `computeBatchRanges(480, 500)` yields one batch, the batch path
+  delivers it under the same serial push, and the invariant that replaces the old comment is: **a
+  claimed row is never released — whoever claims it either delivers it or hands it off with a
+  corrected estimate.** Rewrite the comment at 340-342 to say that, because it currently documents
+  the fallback T137 deletes
+
+**Phase 9b dependencies**: T126–T132 + T145 in parallel (different files; T145 is a probe) → T133 → T134 → T135 → T136 → T137 → **T147 → T148** → T138 → T139 → T143 → T144 (sequential, shared module) → T140 in the SAME commit as the last GREEN → T141 → T142 after merge. T146 rides with T128. **T147 and T148 are not optional and not deferrable: T135 and T137 must not merge without them** — each opens one direction of the hole, and the pair is what makes the two crons a partition rather than two overlapping filters with a gap.
 
 ---
 
