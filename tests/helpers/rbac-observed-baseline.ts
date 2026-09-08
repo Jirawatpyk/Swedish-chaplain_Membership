@@ -159,11 +159,14 @@ export const OBSERVED_API: readonly ObservedSurface[] = [
   { surface: 'PATCH /api/members/[memberId]/inline-edit', kind: 'api', key: 'members.write' },
   { surface: 'PATCH /api/plans/[year]/[planId]', kind: 'api', key: 'plans.write' },
   { surface: 'PATCH /api/tenant-invoice-settings', kind: 'api', key: 'settings.invoicing' },
-  { surface: 'POST /api/admin/broadcasts/[id]/accept-partial', kind: 'api', key: 'broadcasts.send' },
+  // 108 Phase 9 — `[id]/accept-partial` and `[id]/retry` were deleted with the
+  // batch dispatch path (`ca51f59a1`). Both were keyed `broadcasts.send`; the
+  // frozen marketing set in role-endpoint-matrix.test.ts moved 50 → 48 in the
+  // SAME commit, because that test derives `actual` from this file and would
+  // otherwise go red while comparing two lists that were stale together.
   { surface: 'POST /api/admin/broadcasts/[id]/approve', kind: 'api', key: 'broadcasts.send' },
   { surface: 'POST /api/admin/broadcasts/[id]/cancel', kind: 'api', key: 'broadcasts.write' },
   { surface: 'POST /api/admin/broadcasts/[id]/reject', kind: 'api', key: 'broadcasts.write' },
-  { surface: 'POST /api/admin/broadcasts/[id]/retry', kind: 'api', key: 'broadcasts.send' },
   { surface: 'POST /api/admin/broadcasts/proxy-submit', kind: 'api', key: 'broadcasts.send' },
   { surface: 'POST /api/admin/broadcasts/settings/allowlist', kind: 'api', key: 'settings.broadcasts' },
   { surface: 'POST /api/admin/broadcasts/templates', kind: 'api', key: 'broadcasts.write' },

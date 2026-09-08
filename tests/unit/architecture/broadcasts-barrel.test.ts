@@ -88,18 +88,26 @@ const FORBIDDEN_PATH_PATTERNS: readonly RegExp[] = [
  * allowlist only changes when the actual deep-import path is added
  * or removed.
  *
- * Total: 40 entries (11 consumer files across Phase 1-4 work).
- * R4.4 L-5 — count corrected from "12" → "11" (cmdk-pages share the
- * same allowlist file group; the actual distinct consumer file count
- * is 11 per the grouping comments below).
+ * Total: 20 entries across 9 consumer files.
+ *
+ * 108 Phase 9 — 5 entries removed with the batch dispatch path
+ * (`ca51f59a1`): the `drizzle-batch-manifests-repo` import in
+ * /admin/broadcasts/[id]/page.tsx, three in dispatch-batches/route.ts
+ * and one in split-large-broadcasts/route.ts. The stale-allowlist
+ * positive control below is what caught them — it fails when an entry
+ * no longer resolves in source, so deleting the files failed loudly
+ * instead of leaving the guard blind.
+ *
+ * NOTE: this total is hand-maintained and has now drifted twice — it
+ * read "40 entries (11 consumer files)" against an actual 25/12 before
+ * this edit, and R4.4 L-5 had already "corrected" it once. Treat the
+ * set below as the truth and re-count rather than trusting this line.
  */
 const KNOWN_BACKLOG: ReadonlySet<string> = new Set([
   // /portal/broadcasts/new/page.tsx (3) — F7.1a US2 + US7 compose
   "src/app/(member)/portal/broadcasts/new/page.tsx::@/modules/broadcasts/infrastructure/drizzle-broadcast-templates-repo",
   "src/app/(member)/portal/broadcasts/new/page.tsx::@/modules/broadcasts/application/use-cases/_safe-audit-emit",
   "src/app/(member)/portal/broadcasts/new/page.tsx::@/modules/broadcasts/infrastructure/feature-flags",
-  // /admin/broadcasts/[id]/page.tsx (1) — F7.1a US1 batch detail
-  "src/app/(staff)/admin/broadcasts/[id]/page.tsx::@/modules/broadcasts/infrastructure/drizzle-batch-manifests-repo",
   // /admin/broadcasts/templates/[id]/edit/page.tsx (2) — F7.1a US7 edit
   "src/app/(staff)/admin/broadcasts/templates/[id]/edit/page.tsx::@/modules/broadcasts/infrastructure/drizzle-broadcast-templates-repo",
   "src/app/(staff)/admin/broadcasts/templates/[id]/edit/page.tsx::@/modules/broadcasts/application/use-cases/_safe-audit-emit",
@@ -116,18 +124,6 @@ const KNOWN_BACKLOG: ReadonlySet<string> = new Set([
   "src/app/api/broadcasts/inline-image-upload/route.ts::@/modules/broadcasts/application/use-cases/upload-inline-image",
   "src/app/api/broadcasts/inline-image-upload/route.ts::@/modules/broadcasts/infrastructure/broadcasts-deps",
   "src/app/api/broadcasts/inline-image-upload/route.ts::@/modules/broadcasts/infrastructure/feature-flags",
-  // /api/cron/broadcasts/dispatch-batches/route.ts (4 remaining post F7.1b B2)
-  // — 10 entries closed 2026-05-21 by moving composition-root deps through
-  // the broadcasts barrel. Remaining 4 are Domain-internal imports that
-  // are NOT through the barrel intentionally (Domain types/policies are
-  // direct-import-pure; `dispatch-broadcast-batch` Application use-case
-  // imports its OWN Deps interface which is internal to that file).
-  "src/app/api/cron/broadcasts/dispatch-batches/route.ts::@/modules/broadcasts/domain/value-objects/email-lower",
-  "src/app/api/cron/broadcasts/dispatch-batches/route.ts::@/modules/broadcasts/domain/policies/batch-concurrency-policy",
-  "src/app/api/cron/broadcasts/dispatch-batches/route.ts::@/modules/broadcasts/application/use-cases/dispatch-broadcast-batch",
-  // /api/cron/broadcasts/split-large-broadcasts/route.ts (2 remaining post F7.1b B2)
-  // — 4 entries closed 2026-05-21. Remaining 2 are Domain-internal.
-  "src/app/api/cron/broadcasts/split-large-broadcasts/route.ts::@/modules/broadcasts/domain/value-objects/email-lower",
   // /components/broadcast/* (5) — F7 MVP queue + status display + F7.1a US7 template form
   "src/components/broadcast/admin/queue-filters.tsx::@/modules/broadcasts/domain/value-objects/broadcast-status",
   "src/components/broadcast/status-badge-mapping.ts::@/modules/broadcasts/domain/value-objects/broadcast-status",
