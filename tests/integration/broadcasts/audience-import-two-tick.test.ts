@@ -86,7 +86,7 @@ function makeFakeGateway(counts: {
   };
 }
 
-function makeDeps(gateway: FakeGateway): unknown {
+function makeDeps(gateway: FakeGateway, recipients: readonly string[] = RECIPIENTS): unknown {
   return {
     tenant: asTenantContext(TEST_TENANT),
     broadcastsRepo: makeDrizzleBroadcastsRepo(TEST_TENANT),
@@ -102,8 +102,8 @@ function makeDeps(gateway: FakeGateway): unknown {
     // per-broadcast attribution a previous review round added went missing.
     resolveRecipients: async () =>
       ok({
-        recipients: RECIPIENTS,
-        estimatedCount: RECIPIENTS.length,
+        recipients,
+        estimatedCount: recipients.length,
         orphans: [],
         droppedByPreference: 0,
       }),
@@ -254,5 +254,61 @@ describe.runIf(RUN_INTEGRATION)('T087 — two-tick import build (live Neon)', ()
     // Terminal, not re-polled forever, and NOT stamped complete.
     expect(row.status).toBe('failed_to_dispatch');
     expect(row.completed).toBe(false);
+  }, 60_000);
+
+  /**
+   * S25 — the successor to `audience-cross-member-isolation.test.ts`, deleted in
+   * `ca51f59a1` because it imported a removed module.
+   *
+   * It was deleted on the grounds that it referenced batch machinery. What it
+   * actually asserted was a Constitution-tagged property that has nothing to do
+   * with batching: two members' CONCURRENTLY dispatched broadcasts land in
+   * DISTINCT Resend audiences whose contact sets are exactly disjoint. One
+   * member's E-Blast reaching another member's recipients is the worst outcome
+   * this feature has.
+   *
+   * The property survives structurally — `build-audience-tick.ts` names the
+   * audience `broadcast-{slug}-{broadcastId}`, one per broadcast — but after the
+   * deletion NOTHING asserted it. "Still true" and "still guarded" are different
+   * claims, and only one of them survives a refactor.
+   *
+   * Concurrency is the point: sequential calls would pass even if the audience
+   * name were derived from something shared, because the second call would
+   * simply overwrite. `Promise.all` is what makes an interleaving visible.
+   */
+  it('two members dispatched CONCURRENTLY get distinct audiences with disjoint contacts', async () => {
+    if (!RUN_INTEGRATION) return;
+    const A = ['iso-a1@example.com', 'iso-a2@example.com'];
+    const B = ['iso-b1@example.com', 'iso-b2@example.com', 'iso-b3@example.com'];
+
+    const rawA = await seedApproved();
+    const rawB = await seedApproved();
+    const gw = makeFakeGateway({ total: 0, created: 0, updated: 0, skipped: 0, failed: 0 });
+
+    await Promise.all([
+      buildAudienceTick(makeDeps(gw, A) as never, { broadcastId: asBroadcastId(rawA) }),
+      buildAudienceTick(makeDeps(gw, B) as never, { broadcastId: asBroadcastId(rawB) }),
+    ]);
+
+    expect(gw.imports).toHaveLength(2);
+    const [first, second] = gw.imports as [
+      { audienceId: string; emails: readonly string[] },
+      { audienceId: string; emails: readonly string[] },
+    ];
+
+    // Distinct audiences — never one shared bucket.
+    expect(first.audienceId).not.toBe(second.audienceId);
+
+    // Exactly disjoint contact sets, asserted BOTH ways. A one-way check
+    // ("A's audience has no B address") passes when a set is empty; pairing it
+    // with the exact-set assertion is what makes it mean something.
+    const byAudience = new Map(gw.imports.map((i) => [i.audienceId, [...i.emails].sort()]));
+    const sets = [...byAudience.values()];
+    expect(sets).toContainEqual([...A].sort());
+    expect(sets).toContainEqual([...B].sort());
+    for (const set of sets) {
+      const isA = set.length === A.length;
+      for (const addr of isA ? B : A) expect(set).not.toContain(addr);
+    }
   }, 60_000);
 });

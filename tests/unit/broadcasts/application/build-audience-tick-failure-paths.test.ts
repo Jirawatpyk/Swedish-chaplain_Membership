@@ -532,6 +532,62 @@ describe('buildAudienceTick — an impossible row fails closed', () => {
   });
 });
 
+describe('buildAudienceTick — the completion rule discriminates between its clauses', () => {
+  /**
+   * S28 — clause ORDER was unpinned. Walking the existing fixtures showed that
+   * no case made both the coherence check and the count check true at once, so
+   * swapping `counts_incoherent` and `count_mismatch` changed nothing anyone
+   * could observe. That is not a cosmetic ordering: the mismatch clause
+   * re-resolves the audience, so the order also decides how many resolver round
+   * trips a refusal costs.
+   *
+   * This is the discriminating fixture. `created + updated + skipped` = 1 while
+   * `total` = 5 (incoherent), AND `total` = 5 while the resolver answers 3
+   * (mismatch). Coherence is checked first because it is a statement about the
+   * job's OWN numbers — a job whose parts do not sum cannot be reasoned about
+   * against anything external.
+   */
+  it('reports counts_incoherent, not count_mismatch, when BOTH clauses are true', async () => {
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      counts: { total: 5, created: 1, updated: 0, skipped: 0, failed: 0 },
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.error).toMatchObject({
+        kind: 'audience_import_failed',
+        reason: 'counts_incoherent',
+      });
+    }
+    const row = rec.audits.find((a) => a.eventType === 'broadcast_failed_to_dispatch');
+    expect(row?.payload['reason']).toBe('counts_incoherent');
+  });
+
+  it('POSITIVE CONTROL — coherent counts that merely disagree with the resolver are count_mismatch', async () => {
+    // Without this, the case above passes if `counts_incoherent` were returned
+    // for every refusal.
+    const { deps } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      counts: { total: 5, created: 5, updated: 0, skipped: 0, failed: 0 },
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.error).toMatchObject({
+        kind: 'audience_import_failed',
+        reason: 'count_mismatch',
+      });
+    }
+  });
+});
+
 describe('buildAudienceTick — attribution the port used to discard', () => {
   /**
    * S55. `ResolvedAudience` narrowed the resolver's answer to
