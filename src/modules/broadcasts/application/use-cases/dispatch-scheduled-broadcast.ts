@@ -44,6 +44,9 @@ import type { MarketingUnsubscribesRepo } from '../ports/marketing-unsubscribes-
 import type { EventAttendeesRepository } from '../ports/event-attendees-repository';
 import type { PlansBridgePort } from '../ports/plans-bridge-port';
 import type { EmailTransactionalPort } from '../ports/email-transactional-port';
+import { classifyThrown } from './_classify-thrown';
+import { emitExpiredPlanAuditIfApplicable } from './_expired-plan-audit';
+import { enqueueDispatchFailureNotification } from './_enqueue-dispatch-failure-notification';
 import { resolveSegmentRecipients } from './resolve-segment-recipients';
 import { recipientSegmentFromPersisted } from '../../domain/recipient-segment';
 import { unsafeBrandEmailLower } from '../../domain/value-objects/email-lower';
@@ -309,168 +312,11 @@ async function failDispatchAndAudit(
   }
 }
 
-/**
- * Slice E (Phase 8) — enqueue the FR-021 / AS2 transactional
- * notification email informing the originating member that their
- * scheduled broadcast did not go out. Quota reservation is preserved;
- * member can re-schedule from the admin queue.
- *
- * Best-effort: member-lookup failures + missing primary contact are
- * logged but skipped (NOT thrown). The terminal-fail transition + audit
- * are already committed by the time this runs. Mirrors the US5
- * `enqueueDeliverySummaryEmail` graceful-degrade pattern.
- */
-export async function enqueueDispatchFailureNotification(args: {
-  readonly deps: DispatchScheduledBroadcastDeps;
-  readonly broadcast: Broadcast;
-  readonly reason: string;
-  readonly now: Date;
-}): Promise<void> {
-  const { deps, broadcast, reason, now } = args;
 
-  let memberEmail: string | null;
-  try {
-    memberEmail = await deps.membersBridge.getMemberPrimaryContact(
-      deps.tenant,
-      broadcast.requestedByMemberId,
-    );
-  } catch (e) {
-    logger.error(
-      {
-        err: e instanceof Error ? e.message : String(e),
-        tenantId: deps.tenant.slug,
-        broadcastId: broadcast.broadcastId as string,
-        memberId: broadcast.requestedByMemberId,
-      },
-      'broadcasts.dispatch_failure_email.member_lookup_failed',
-    );
-    return;
-  }
-
-  if (memberEmail === null) {
-    logger.warn(
-      {
-        tenantId: deps.tenant.slug,
-        broadcastId: broadcast.broadcastId as string,
-        memberId: broadcast.requestedByMemberId,
-      },
-      'broadcasts.dispatch_failure_email.skipped_no_primary_contact',
-    );
-    // Verify-fix R3 (Errors-H3, 2026-05-02): emit durable audit event
-    // for the missed AS2 notification so compliance review has a
-    // greppable trail. Pino logs roll out of retention long before
-    // any audit. Best-effort — failure to emit audit also logs but
-    // does NOT throw (mirrors the rest of dispatch use-case best-
-    // effort guards).
-    try {
-      await deps.audit.emit(null, {
-        tenantId: deps.tenant.slug,
-        eventType: 'broadcast_dispatch_failure_notif_skipped_no_email',
-        actorUserId: 'system:cron',
-        summary: `AS2 dispatch-failure notification skipped — member ${broadcast.requestedByMemberId} has no primary contact email`,
-        payload: {
-          broadcastId: broadcast.broadcastId,
-          memberId: broadcast.requestedByMemberId,
-          reason,
-          failedAt: now.toISOString(),
-        },
-        requestId: null,
-      });
-    } catch (auditErr) {
-      logger.error(
-        {
-          err: auditErr instanceof Error ? auditErr.message : String(auditErr),
-          tenantId: deps.tenant.slug,
-          broadcastId: broadcast.broadcastId as string,
-        },
-        'broadcasts.dispatch_failure_email.skipped_audit_emit_failed',
-      );
-    }
-    return;
-  }
-
-  // Email-locale audit 2026-07-16 — render the failure notice in the member's
-  // language (was tenant-default only). Priority: member preferred → tenant
-  // default (deps.locale) → 'en'. Best-effort — a bridge throw falls through.
-  let memberPreferred: 'en' | 'th' | 'sv' | null = null;
-  try {
-    memberPreferred = await deps.membersBridge.getMemberPreferredLocale(
-      deps.tenant,
-      broadcast.requestedByMemberId,
-    );
-  } catch (localeErr) {
-    logger.warn(
-      {
-        err: localeErr instanceof Error ? localeErr.message : String(localeErr),
-        tenantId: deps.tenant.slug,
-        broadcastId: broadcast.broadcastId as string,
-        memberId: broadcast.requestedByMemberId,
-      },
-      'broadcasts.dispatch_failure_email.locale_resolve_failed',
-    );
-  }
-
-  try {
-    await deps.emailTransactional.sendMemberEmail(
-      deps.tenant,
-      {
-        to: memberEmail,
-        subject: broadcast.subject,
-        templateKey: 'broadcast_failed_to_dispatch',
-        payload: {
-          broadcastId: broadcast.broadcastId,
-          broadcastSubject: broadcast.subject,
-          tenantDisplayName: deps.tenantDisplayName,
-          scheduledFor:
-            broadcast.scheduledFor !== null
-              ? broadcast.scheduledFor.toISOString()
-              : now.toISOString(),
-          reason,
-        },
-        locale: memberPreferred ?? deps.locale,
-      },
-      null,
-    );
-  } catch (e) {
-    logger.error(
-      {
-        err: e instanceof Error ? e.message : String(e),
-        tenantId: deps.tenant.slug,
-        broadcastId: broadcast.broadcastId as string,
-      },
-      'broadcasts.dispatch_failure_email.enqueue_failed',
-    );
-  }
-}
-
-/**
- * Duck-type a thrown gateway error into the
- * `BroadcastsGatewayError`-compatible shape. The infrastructure adapter
- * throws a `GatewayThrowable` carrying `kind` + `subKind` + `resourceType`
- * fields; we read them via structural typing so the Application layer
- * does not import from Infrastructure (Constitution Principle III).
- */
-type GatewayThrownShape = {
-  kind?: string;
-  subKind?: string;
-  reason?: string;
-  resourceType?: 'audience' | 'broadcast';
-  resourceId?: string;
-  code?: string;
-};
-
-function classifyThrown(e: unknown): GatewayThrownShape & { kind: string } {
-  if (typeof e === 'object' && e !== null && 'kind' in e) {
-    const shape = e as GatewayThrownShape;
-    if (typeof shape.kind === 'string') {
-      return { ...shape, kind: shape.kind };
-    }
-  }
-  return {
-    kind: 'unknown',
-    reason: e instanceof Error ? e.message : String(e),
-  };
-}
+// `classifyThrown` moved to `_classify-thrown.ts` in 108 Phase 9 so
+// `buildAudienceTick` reads a thrown gateway error the SAME way this path does.
+// It had no catch at all, so every Resend failure reached the cron as
+// `uncaught_error`. See that file for why one shared reader matters here.
 
 export async function dispatchScheduledBroadcast(
   deps: DispatchScheduledBroadcastDeps,
@@ -1248,12 +1094,10 @@ export async function dispatchScheduledBroadcast(
     //
     // Best-effort: lookup failures (Neon outage, plan-bridge throw)
     // are logged but do NOT roll back the successful sending transition.
-    await emitExpiredPlanAuditIfApplicable({
-      deps,
-      broadcast,
-      sentBroadcast: sentRow,
-      now,
-    });
+    // `sentBroadcast` and `now` were passed here and never read by the callee;
+    // dropped when the function moved to `_expired-plan-audit.ts` so both
+    // dispatch paths share one implementation of the AS5 rule.
+    await emitExpiredPlanAuditIfApplicable({ deps, broadcast });
 
     return ok({
       broadcast: sentRow,
@@ -1317,76 +1161,4 @@ export async function dispatchScheduledBroadcast(
   }
 }
 
-/**
- * Slice B (Phase 8 — T171 / AS5) — emit `broadcast_sent_with_expired_member_plan`
- * audit when the originating member's CURRENT plan differs from the
- * snapshot at submit time, OR the current plan no longer entitles
- * (PlansBridge returns error). Forensic only — never throws, never
- * blocks dispatch (lookup failures are swallowed with a logger.error).
- */
-async function emitExpiredPlanAuditIfApplicable(args: {
-  readonly deps: DispatchScheduledBroadcastDeps;
-  readonly broadcast: Broadcast;
-  readonly sentBroadcast: Broadcast;
-  readonly now: Date;
-}): Promise<void> {
-  const { deps, broadcast } = args;
-
-  let planLookup;
-  try {
-    planLookup = await deps.plansBridge.getPlanForMember(
-      deps.tenant,
-      broadcast.requestedByMemberId,
-    );
-  } catch (e) {
-    // Plan-bridge threw (Neon outage, repository bug). Forensic audit
-    // is best-effort; log + skip without blocking the dispatch result.
-    logger.error(
-      {
-        err: e instanceof Error ? e.message : String(e),
-        tenantId: deps.tenant.slug,
-        broadcastId: broadcast.broadcastId as string,
-        memberId: broadcast.requestedByMemberId,
-      },
-      'broadcasts.dispatch.expired_plan_check_threw',
-    );
-    return;
-  }
-
-  const noLongerEntitled = !planLookup.ok;
-  const planChanged =
-    planLookup.ok &&
-    planLookup.value.planId !== broadcast.requestedByMemberPlanIdSnapshot;
-
-  if (!noLongerEntitled && !planChanged) {
-    return; // No expired-plan condition; no audit emit
-  }
-
-  try {
-    await deps.audit.emit(null, {
-      tenantId: deps.tenant.slug,
-      eventType: 'broadcast_sent_with_expired_member_plan',
-      actorUserId: 'system:cron',
-      summary: `Broadcast ${broadcast.broadcastId} dispatched despite member plan change since submit`,
-      payload: {
-        broadcastId: broadcast.broadcastId,
-        memberId: broadcast.requestedByMemberId,
-        planAtSubmit: broadcast.requestedByMemberPlanIdSnapshot,
-        planAtDispatch: planLookup.ok ? planLookup.value.planId : null,
-        planLookupError: planLookup.ok ? null : planLookup.error.kind,
-        currentlyEntitled: planLookup.ok,
-      },
-      requestId: null,
-    });
-  } catch (auditErr) {
-    logger.error(
-      {
-        err: auditErr instanceof Error ? auditErr.message : String(auditErr),
-        tenantId: deps.tenant.slug,
-        broadcastId: broadcast.broadcastId as string,
-      },
-      'broadcasts.dispatch.expired_plan_audit_emit_failed',
-    );
-  }
-}
 

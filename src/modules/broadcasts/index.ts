@@ -228,11 +228,16 @@ export {
 } from './application/use-cases/build-audience-tick';
 export {
   dispatchScheduledBroadcast,
-  enqueueDispatchFailureNotification,
   type DispatchScheduledBroadcastError,
   type DispatchScheduledBroadcastInput,
   type DispatchScheduledBroadcastOutput,
 } from './application/use-cases/dispatch-scheduled-broadcast';
+// Moved out of `dispatch-scheduled-broadcast` in 108 Phase 9 so BOTH dispatch
+// paths can send the FR-021 notification. The import path had none.
+export {
+  enqueueDispatchFailureNotification,
+  type DispatchFailureNotificationDeps,
+} from './application/use-cases/_enqueue-dispatch-failure-notification';
 export {
   pruneExpiredDrafts,
   type PruneExpiredDraftsError,

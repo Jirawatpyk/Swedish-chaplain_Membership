@@ -934,10 +934,27 @@ export async function makeBuildAudienceTickDeps(
               ),
       });
       if (!resolved.ok) return err(resolved.error);
+      // Pass the resolver's answer through WHOLE. This used to return only
+      // `{recipients, estimatedCount}`, which is where `orphans` and
+      // `droppedByPreference` were actually lost — the resolver computes both,
+      // the legacy dispatch logs both per broadcast, and `droppedByPreference`
+      // exists because an earlier review round added it to answer a member
+      // asking why their E-Blast reached 40 people instead of 55. Dropping two
+      // fields at a composition boundary is invisible to a grep for the log
+      // name and to a diff of the two use cases.
       return ok({
         recipients: resolved.value.recipients as unknown as readonly string[],
         estimatedCount: resolved.value.estimatedCount,
+        orphans: resolved.value.orphans,
+        droppedByPreference: resolved.value.droppedByPreference,
       });
     },
+    // Wired in 108 Phase 9 review round 1. Their absence was not an oversight
+    // in composition — the use case's Deps did not DECLARE them, so the FR-021
+    // member notification and the AS5 forensic audit were unrepresentable on
+    // this path rather than merely unwired.
+    membersBridge: bridge,
+    emailTransactional: emailTransactionalBridge,
+    plansBridge,
   };
 }
