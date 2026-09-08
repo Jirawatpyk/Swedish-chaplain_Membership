@@ -107,7 +107,7 @@ For F8 `accept-tier-upgrade`:
 |---|---|
 | `F8.ACCEPT_TIER.SERVER_ERROR` | use-case returned `{kind:'server_error', message:'deploy-skew:unhandled-gateway-arm:*'}` — gateway-arm exhaustiveness violation |
 | `F8.ACCEPT_TIER.UNEXPECTED` | route's outer `catch (e)` caught an uncaught throw (R3-C3 pre-tx wrap blocks documented paths; this is defence-in-depth) |
-| `F8.ACCEPT_TIER.CONTEXT_RESOLUTION_FAILED` | `requireRenewalAdminContext` caught an infrastructure error (DB outage during session-lookup). **Every route that composes that helper — 24 of the 26 in scope — emits its own `<entry>.CONTEXT_RESOLUTION_FAILED`**; the two member-facing portal routes do not compose it and never emit this suffix. Before 2026-09-07 all 24 emitted this one |
+| `F8.ACCEPT_TIER.CONTEXT_RESOLUTION_FAILED` | An admin route's gate caught an infrastructure error (DB outage during session-lookup). Every route composing `requireRenewalAdminContext` emits its own `<entry>.CONTEXT_RESOLUTION_FAILED`, and `portal/renewal/[memberId]/confirm` emits its own on the equivalent path — a `requireMemberContext` 500, most often the **contacts lookup**, not session lookup. Before 2026-09-07 every caller emitted this one id regardless of route |
 
 ### The F8 errorId taxonomy
 
@@ -121,8 +121,10 @@ not *F8*. An earlier draft of this section said "`F8.*` is blind to nothing",
 which was false in a way that would have cost someone a night: see § Where the
 taxonomy does NOT reach, below.
 
-A route declares its entry once (`const ERROR_ID = 'F8.…'`) and uses it at
-least twice — `redeem-link` uses it five times:
+A route declares its entry once (`const ERROR_ID = 'F8.…'`) and prefixes each
+of its failure lines with it. How many that is per route is not written down
+anywhere — grep the file. Every number this section has carried was wrong
+within a commit or two of being written:
 
 | suffix | emitted by | means |
 |---|---|---|

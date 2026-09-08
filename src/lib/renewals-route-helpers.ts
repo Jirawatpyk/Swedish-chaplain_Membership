@@ -151,11 +151,15 @@ export type F8ErrorId =
   | 'F8.MEMBER_RENEW'
   | 'F8.MEMBER_BLOCK_AUTO_REACTIVATION'
   | 'F8.MEMBER_UNBLOCK_AUTO_REACTIVATION'
-  // member-facing portal routes. These do NOT compose this helper (they run
-  // the member's own session, not an admin gate), so they never emit
-  // `.CONTEXT_RESOLUTION_FAILED` — but they emit plenty else (`redeem-link`
-  // alone uses its entry five times), and the taxonomy covers them because an
-  // alert rule keyed on `F8.*` has to match them too.
+  // member-facing portal routes. These do NOT compose this helper — they run
+  // the member's own session, not an admin gate — and emit their own lines
+  // directly. The taxonomy covers them because an alert rule keyed on `F8.*`
+  // has to match them too.
+  //
+  // This said they "never emit `.CONTEXT_RESOLUTION_FAILED`" and used their
+  // entry "five times". The commit that added `confirm`'s pass-through guard
+  // falsified both in one move. Saying what a file does NOT do is as fragile
+  // as saying what it does — so this now says neither.
   | 'F8.PORTAL_CONFIRM'
   | 'F8.PORTAL_REDEEM_LINK';
 
