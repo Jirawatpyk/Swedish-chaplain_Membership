@@ -30,7 +30,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { stripCommentsPreserveLines } from './lib/source-scan';
-import { checkSource } from './lib/f8-error-id-rules';
+import { checkSource, parseUnion } from './lib/f8-error-id-rules';
 
 const SRC = 'src/app/api';
 /**
@@ -97,10 +97,14 @@ function inScope(): string[] {
  * without this the union and their ids could drift apart silently.
  */
 function unionMembers(): ReadonlySet<string> {
-  const src = readFileSync('src/lib/renewals-route-helpers.ts', 'utf8');
-  const block = /export type F8ErrorId =([\s\S]*?);\n/.exec(src);
-  if (!block) return new Set();
-  return new Set([...block[1]!.matchAll(/'(F8\.[A-Z_]+)'/g)].map((m) => m[1]!));
+  // Delegates to the tested module. The parser used to live here with a `;\n`
+  // terminator and went INERT on every Windows checkout — `core.autocrlf=true`
+  // ends the union with `;\r\n`. This is the only raw `readFileSync` in the
+  // gate; every other read goes through `stripCommentsPreserveLines`, which
+  // joins on `\n` and hides the difference. CI never saw it (Linux checks out
+  // LF), and the "union is empty" guard below is the only reason it surfaced
+  // instead of passing over an empty set forever.
+  return parseUnion(readFileSync('src/lib/renewals-route-helpers.ts', 'utf8'));
 }
 
 const failures: string[] = [];
