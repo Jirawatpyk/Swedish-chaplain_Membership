@@ -119,7 +119,7 @@ vi.mock('@/modules/broadcasts', async () => ({
   // 50,000 is a FORWARDING fixture: the composition root cannot return it for
   // `currentAudienceCeiling` any more, and what this file pins is pass-through.
   configuredAudienceCeiling: () => 50_000,
-  currentAudienceCeiling: () => 800,
+  currentAudienceCeiling: () => 500,
   systemClock: { now: () => new Date('2026-09-07T00:00:00Z') },
   tenantDefaultLocaleFor: () => 'en',
 }));

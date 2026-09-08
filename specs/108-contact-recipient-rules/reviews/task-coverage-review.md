@@ -94,7 +94,7 @@ The spec already carries a stable ID scheme (FR-xxx / SC-xxx / USn-sN / edge cas
 | US2-s1…s5 | acceptance scenarios | T | T030–T033 | ✓ |
 | US3-s1…s10 | acceptance scenarios | T | T067–T071 (s6 tier + erased added to T068) | ✓ |
 | US4-s1…s9 | acceptance scenarios | T | T042–T047 | ✓ |
-| US5-s1…s4 | acceptance scenarios | T | T081–T084 | ⚠ 2026-09-08 (revised same day): **AS2 (6,200 + batching ON → every recipient gets one copy) is REFUSED BY DESIGN, not missing.** Since the ceiling clamp (`DELIVERABLE_RECIPIENTS_PER_TICK = 800`) a 6,200 audience is rejected at submit with the true count — deliberately, because the serial push cannot deliver it. AS2 becomes writable again only when the push stops being serial. s1/s3/s4 stand |
+| US5-s1…s4 | acceptance scenarios | T | T081–T084 | ⚠ 2026-09-08 (revised same day): **AS2 (6,200 + batching ON → every recipient gets one copy) is REFUSED BY DESIGN, not missing.** Since the ceiling clamp (`DELIVERABLE_RECIPIENTS_PER_TICK = 500`) a 6,200 audience is rejected at submit with the true count — deliberately, because the serial push cannot deliver it. AS2 becomes writable again only when the push stops being serial. s1/s3/s4 stand |
 | US6-s1…s4 | acceptance scenarios | T | T061, T062 | ✓ |
 | Edge: queued-then-changed | accepted, documented | S | — (no task by design) | ✓ |
 | Edge: no contacts at all | orphan signal | T | T067 | ✓ |

@@ -148,11 +148,11 @@ export function configuredAudienceCeiling(): number {
  * flag decision — 5,000, or 50,000 when the batching path and the 1:N audience
  * are both on — and it stays pinned on its own so an inverted flag expression
  * still fails a test (the H-2 guard above). `DELIVERABLE_RECIPIENTS_PER_TICK`
- * is the measured bound of the serial Resend push: ~3.4 req/s across a 300 s
- * function budget, i.e. ~830, rounded down to 800.
+ * is the measured bound of the serial Resend push: ~2.08 req/s across a 300 s
+ * function budget, i.e. ~623, rounded down to 500.
  *
  * They were never the same number, and before this clamp the gap was the bug:
- * a broadcast between ~830 and the configured ceiling passed submit and then
+ * a broadcast between ~623 and the configured ceiling passed submit and then
  * could not be delivered by any path — `split-large-broadcasts` ignores
  * anything at or below 10,000, and `dispatch-batches` runs the same serial
  * push under the same 300 s. Such a broadcast sat in `approved` and surfaced

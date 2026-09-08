@@ -85,16 +85,25 @@ export const SPLIT_THRESHOLD_RECIPIENTS = 10_000;
  *     only `min(limit, 1/RTT)`, and the warm round trip is **~0.29 s** —
  *     about **3.4 req/s**. Latency binds, not the plan. Using the documented
  *     10 as a capacity input overestimates by ~3×;
- *   - one derivation, used everywhere: `1 / 0.29 s = 3.45 req/s`;
- *     `300 s × 3.45 ⇒ ~1,034` contacts; with a 20 % margin, **~827**.
- *     Read it the other way for the number that matters operationally:
- *     **800 contacts take ~232 s, i.e. 77 % of the 300 s budget.** The
- *     remaining ~23 % absorbs dispatch's own per-broadcast work — the audience
- *     resolve (which itself grows with the audience) and three more Resend
- *     round trips for `createAudience` + `createBroadcast` + `sendBroadcast`
- *     (~0.9 s). (An earlier version of this docblock said "~4 % headroom",
- *     which compared 800 against 827 — a margin already taken — and read as if
- *     the whole budget were nearly spent. It is not.);
+ *   - **the number comes from `POST /contacts`, the verb the loop actually
+ *     calls** — 15 serial samples through a real dev audience, 2026-09-08:
+ *     mean **481 ms** (median 420, p95 894, zero 429s). Mean is the right
+ *     statistic here: a serial loop of N requests takes N × mean, not N × p95.
+ *     `1 / 0.481 = 2.08 req/s`; `300 s × 2.08 ⇒ ~623` contacts; with a 20 %
+ *     margin, **~499**. Read it the other way: **500 contacts take ~240 s,
+ *     i.e. 80 % of the 300 s budget**, and the remaining 20 % absorbs
+ *     dispatch's own work — the audience resolve (which grows with the
+ *     audience) plus `createAudience` + `createBroadcast` + `sendBroadcast`.
+ *
+ *     **This corrects T095's own first answer.** That sample used
+ *     `GET /audiences` (290 ms → 3.45 req/s → a bound near 830) because it was
+ *     the only read-only probe available before anything had been dispatched.
+ *     Writes are ~1.7× slower, and the caveat recorded with that measurement —
+ *     "`GET` latency, not `POST /contacts`; all caveats push the number DOWN" —
+ *     turned out to be worth 300 recipients. It also means the `~2 req/s` that
+ *     four source comments carried for a year was **right about the effect**
+ *     and wrong only about the cause (it read as an account cap; the account
+ *     allows 10);
  *   - the account is on Resend's **Free** plan, whose 1,000-contact cap bites
  *     around ~987 (1,000 minus the 13 stored when this was checked — that
  *     subtrahend is a snapshot, not a constant, and R16's Global Contacts
@@ -109,17 +118,17 @@ export const SPLIT_THRESHOLD_RECIPIENTS = 10_000;
  *     and after, against the `resend.broadcasts.contacts_added` log) before
  *     relying on the benign reading.
  *
- * **800 sits under both bounds — for ONE broadcast in flight.** Say that part
+ * **500 sits under both bounds — for ONE broadcast in flight.** Say that part
  * out loud, because neither bound is per-broadcast:
  *
  *   - the 300 s is per INVOCATION. `dispatch-scheduled` runs up to
  *     `MAX_PER_TICK = 50` broadcasts in one `await` loop with no wall-clock
- *     check between rows, so two 800-recipient broadcasts due in the same tick
- *     need ~470 s and the second is killed mid-push — the very failure this
+ *     check between rows, so two 500-recipient broadcasts due in the same tick
+ *     need ~480 s and the second is killed mid-push — the very failure this
  *     constant closes, one layer up;
  *   - the 1,000 contacts is per ACCOUNT. Ephemeral audiences live until
  *     `cleanup-audiences` reaps them (grace 1 h, cron every 15 min), so two live
- *     800-contact audiences are 1,600 against a 1,000 cap.
+ *     500-contact audiences are 1,000 against a 1,000 cap — exactly at it.
  *
  * Both are unreachable at SweCham's cadence (a handful of sends a month, 150
  * recipients each), and both are follow-ups rather than blockers: a per-tick
@@ -146,4 +155,4 @@ export const SPLIT_THRESHOLD_RECIPIENTS = 10_000;
  * three is the honest fix and is recorded as a follow-up, not smuggled in
  * with a bugfix.
  */
-export const DELIVERABLE_RECIPIENTS_PER_TICK = 800;
+export const DELIVERABLE_RECIPIENTS_PER_TICK = 500;

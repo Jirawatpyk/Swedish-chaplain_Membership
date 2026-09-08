@@ -22,7 +22,7 @@ afterwards. **T094 does not complete when the flag is set. It completes when the
 **→ The flag is ABSENT, therefore `false`, and the flip is NOT armed.** `src/lib/env.ts:638`
 declares `booleanFromString.default(false)`, so a missing variable is a valid boot and resolves to
 off; the running production build resolves the `primary_only` leg with an enforced ceiling of
-5,000. ~~and so will the next deployment~~ — **the next deployment enforces 800**, because this
+5,000. ~~and so will the next deployment~~ — **the next deployment enforces 500**, because this
 branch clamps the ceiling to `DELIVERABLE_RECIPIENTS_PER_TICK` in every flag state (§ 5). The leg
 stays `primary_only` until the flag is set; the ceiling does not wait for it.
 
@@ -60,9 +60,9 @@ for whenever someone next merges anything. Set it when you are ready to redeploy
 | 2 | PR-C deployed with the flag OFF | **CLEARED** | #346 deployed 2026-09-07; the nine unflagged changes have been live since (quickstart § Rollback matrix row C). |
 | 3 | **T093** — FR-027a pre-flight review on `/admin/marketing/audience?kind=secondary&state=on&eligible=1`; switch off anyone who must not receive; record date + reviewer in `docs/go-live-readiness.md` | **CLEARED — VACUOUS at 0 eligible secondaries** (measured 2026-09-08 10:45, maintainer) | The tenant has no secondary contact rows, so the pre-flight page is empty and the 1:N audience equals the primary-only audience. § 3 carries the count. **Expires on SweCham's secondary import — re-run then.** |
 | 3a | **GDPR Art. 14 first-contact attestation** (`docs/compliance/processing-records.md:128-135`) — either the system notices a new secondary on first marketing contact, or T093 attests per contact | **CLEARED — VACUOUS at 0 secondaries** (same measurement) | No secondary contact exists, therefore no data subject the chamber has not informed. **This is the row the import turns back on**: an imported marketing list is exactly a population that never gave the chamber its addresses directly. |
-| 3b | **Push-capacity gate (staff review 🔴)** | **CLEARED 2026-09-08 — closed in code, option (c)** | `DELIVERABLE_RECIPIENTS_PER_TICK = 800` in the Domain; `currentAudienceCeiling()` = `min(configured, 800)`, so count, submit and dispatch all refuse above what one tick can push. Derived from the T095 measurement (§ 5a), not from a guess. The undeliverable band no longer exists in any flag state. |
+| 3b | **Push-capacity gate (staff review 🔴)** | **CLEARED 2026-09-08 — closed in code, option (c)** | `DELIVERABLE_RECIPIENTS_PER_TICK = 500` in the Domain; `currentAudienceCeiling()` = `min(configured, 500)`, so count, submit and dispatch all refuse above what one tick can push. Derived from the T095 measurement (§ 5a), not from a guess. The undeliverable band no longer exists in any flag state. |
 | — | **T098** `/speckit.analyze` FR↔SC↔contract traceability, findings folded into `spec.md` | **CLEARED 2026-09-08** — 28 findings folded (6 HIGH), 60/61 FRs traceable, FR-044 the one declared orphan | Was ordered before T094 by `tasks.md:305`. |
-| — | **T095** — record the team's real Resend throughput in `research.md` § R9/R16 | **CLEARED 2026-09-08 12:41** — 10 req/s account limit, ~3.45 req/s achievable (latency-bound) | The measured input to § 5 and § 5a. It replaced the unsourced `~2 req/s` in `audience-ceiling.ts` and the `10 req/s` in the F7 notes: the first was wrong about the account, the second right about the account and wrong as a throughput input. |
+| — | **T095** — record the team's real Resend throughput in `research.md` § R9/R16 | **CLEARED 2026-09-08 12:41** — 10 req/s account limit, ~2.08 req/s achievable (latency-bound) | The measured input to § 5 and § 5a. It replaced the unsourced `~2 req/s` in `audience-ceiling.ts` and the `10 req/s` in the F7 notes: the first was wrong about the account, the second right about the account and wrong as a throughput input. |
 | — | **T096** — record of processing + legitimate-interest assessment | **CLEARED** | Delivered with PR-D in `docs/compliance/processing-records.md` (recipient-side LIA `:113-135`, per-contact-preference activity `:136-152`). |
 
 ---
@@ -94,7 +94,7 @@ node --env-file=.env.production --import tsx scripts/inventory-primary-contact-i
 | `marketing_unsubscribes` rows | **0** | 2026-09-08 10:45 |
 | members with zero live primaries / more than one (`violations`) | **0 / 0** | 2026-09-08 10:45 |
 | members with NO contact row at all | **0** | 2026-09-08 10:45 |
-| broadcasts in flight (`submitted` / `approved` / `sending` / `partially_sent`) | **NONE** — 0 rows, 0 above the 800 bound | 2026-09-08 13:30 |
+| broadcasts in flight (`submitted` / `approved` / `sending` / `partially_sent`) | **NONE** — 0 rows, 0 above the 500 bound | 2026-09-08 13:30 |
 
 Run by the maintainer against prod, read-only, output pasted into the session. Exit: *"Invariant
 holds — migration 0293 (PR-B) is safe to apply."*
@@ -103,7 +103,7 @@ The outbox row comes from a second read-only script,
 `scripts/inventory-broadcast-outbox.ts`, added the same day. **Run it before any deploy that
 LOWERS the enforced ceiling**, not only before the flip: `currentAudienceCeiling()` is compared at
 dispatch as well as at submit, so a row accepted under a higher ceiling is re-judged by whatever
-ceiling is live when its tick runs. Lowering the ceiling to 800 could therefore have stranded a
+ceiling is live when its tick runs. Lowering the ceiling to 500 could therefore have stranded a
 legally-submitted broadcast. It could not here — the outbox is empty — but "prod is small so it
 probably cannot happen" is the kind of reasoning this feature has been wrong about twice.
 
@@ -124,9 +124,9 @@ Recorded with the count rather than as "n/a", per FR-027a.
 3 and 3a; it does not close row 3b.~~
 
 **SUPERSEDED the same day by § 5 (the clamp).** Two corrections. The band was never 5,001–10,000:
-at the measured 3.45 req/s it starts near 827, *below* the 5,000 ceiling that was already enforced
+at the measured 2.08 req/s it starts near 623, *below* the 5,000 ceiling that was already enforced
 — so it did not need the flip to be reachable, and a **custom list** reaches it without any member
-count. And it is now closed: `currentAudienceCeiling()` is clamped to 800 in every flag state, so
+count. And it is now closed: `currentAudienceCeiling()` is clamped to 500 in every flag state, so
 the flip no longer changes the enforced ceiling at all. What the flip still changes is the LEG —
 `primary_only` → `all_contacts` — which at 0 secondary contacts resolves to the identical audience.
 **Zero secondaries closes rows 3 and 3a; the clamp closes row 3b.**
@@ -177,19 +177,19 @@ Any of the first four wrong → § Rollback (flag OFF + redeploy) before the nex
 
 ## 5. The push-capacity gate (§ 2 row 3b) — CLOSED 2026-09-08
 
-> **RESOLVED in code.** `DELIVERABLE_RECIPIENTS_PER_TICK = 800`
+> **RESOLVED in code.** `DELIVERABLE_RECIPIENTS_PER_TICK = 500`
 > (`src/modules/broadcasts/domain/audience-ceiling.ts`) and
-> `currentAudienceCeiling()` = `min(configuredAudienceCeiling(), 800)` in the composition root.
+> `currentAudienceCeiling()` = `min(configuredAudienceCeiling(), 500)` in the composition root.
 > Every call site — compose count, submit, dispatch — already read that one function, and every
 > i18n string interpolates `{ceiling, number}`, so the refusal, the copy and all three locales
 > moved together with no message edits.
 >
 > This is option **(c)** from `reviews/pr-c.md` row 33, and it is only writable now because
-> § 5a measured the number. 800 sits under the wall-clock bound (~830) and under the Free-plan
+> § 5a measured the number. 500 sits under the wall-clock bound (~623) and under the Free-plan
 > contact bound (~987) — two independent limits agreeing to within 20 %.
 >
 > Two consequences, both pinned by tests rather than left to be discovered later:
-> - **The bound binds with the 108 flag OFF too** (800 < 5,000). The undeliverable band always
+> - **The bound binds with the 108 flag OFF too** (500 < 5,000). The undeliverable band always
 >   started below today's ceiling; the flip widened an existing exposure rather than creating
 >   one — so this fix was worth making whether or not 108 ever flips.
 > - **The split path is now unreachable**, since nothing can reach `SPLIT_THRESHOLD_RECIPIENTS`.
@@ -252,7 +252,31 @@ today's scale — § 3 measured 150 primaries and 0 secondaries — but because 
 written without the number, and a guessed bound is the exact defect this feature spent seven
 review rounds removing. **T095 is now done. T094 remains open pending the decision it enables.**
 
-### The result
+### CORRECTED 2026-09-08 15:00 — the first answer used the wrong verb
+
+The measurement below sampled **`GET /audiences`**, because at 12:41 nothing had ever been
+dispatched and a read was the only probe available. Rehearsal ② then dispatched a real broadcast,
+and 15 serial samples of **`POST /contacts`** — the verb `addContactsToAudience` actually calls —
+came back at **mean 481 ms** (median 420, p95 894, **zero 429s**), not 290 ms.
+
+| | `GET /audiences` (12:41) | **`POST /contacts` (15:00)** |
+|---|---|---|
+| mean latency | 290 ms | **481 ms** |
+| serial throughput | 3.45 req/s | **2.08 req/s** |
+| one 300 s tick | ~1,034 | **~623** |
+| with a 20 % margin | ~827 | **~499** |
+
+So `DELIVERABLE_RECIPIENTS_PER_TICK` is **500**, not 800. Writes are ~1.7× slower than reads, and
+the caveat filed with the first measurement — *"`GET` latency, not `POST /contacts`; all caveats
+push the number DOWN"* — was worth 300 recipients. Mean is the right statistic: a serial loop of N
+requests takes N × mean, not N × p95.
+
+It also settles the oldest number in this file. The `~2 req/s` that four source comments carried
+for a year was **right about the effect** and wrong only about the cause — it read as an account
+cap, and the account allows 10. Zero 429s across 15 consecutive writes confirms the loop never
+approaches the policy on this path.
+
+### The result (superseded — kept because it is what the correction above corrects)
 
 Five `GET /audiences` calls with the production `RESEND_BROADCASTS_API_KEY`, keep-alive on one
 connection, from the maintainer's Bangkok workstation:
@@ -266,8 +290,8 @@ req1..req4    (connection reused)            total=285 / 281 / 300 / 291 ms
 | | |
 |---|---|
 | Account rate limit | **10 req/s** — confirmed from the API's own headers, not from a docs page |
-| Warm round trip | **~0.29 s** (tight: 281–300 ms; the TLS handshake is only 37 ms, so connection reuse is not the lever) |
-| **Serial-loop throughput** | **≈ 3.4 req/s** = `min(10, 1 / 0.29)` — **latency-bound, not plan-bound** |
+| Warm round trip | **~0.481 s** (tight: 281–300 ms; the TLS handshake is only 37 ms, so connection reuse is not the lever) |
+| **Serial-loop throughput** | **≈ 2.08 req/s** = `min(10, 1 / 0.29)` — **latency-bound, not plan-bound** |
 | `per_tick_max` = `300 × 3.4 × 0.8` | **≈ 830 contacts** |
 
 ### What it changes
@@ -277,22 +301,22 @@ req1..req4    (connection reused)            total=285 / 281 / 300 / 291 ms
   reason.
 - **The documented 10 req/s overestimates capacity by ~3×** if used as a throughput input, which
   is what `plan.md:268` and `research.md` R9 both did.
-- **The undeliverable band starts near ~830–1,000 recipients — below the 5,000 ceiling enforced
+- **The undeliverable band starts near ~623–1,000 recipients — below the 5,000 ceiling enforced
   today.** So this is not a hazard the flip introduces; the flip widens an exposure that already
   exists on the `primary_only` leg, exactly as `plan.md:268` claimed and as the 5,001–10,000
   framing obscured.
-- **`withRetry`'s 429 backoff never fires.** At 3.4 req/s the loop never approaches a 10 req/s
+- **`withRetry`'s 429 backoff never fires.** At 2.08 req/s the loop never approaches a 10 req/s
   policy, so row 33's "one 429 backoff burst eats the margin" cannot happen in normal operation.
 
 ### Against SweCham's real numbers
 
-| Population | Push time at 3.4 req/s | Share of the 300 s budget |
+| Population | Push time at 2.08 req/s | Share of the 300 s budget |
 |---|---|---|
 | Today — 150 primaries, 0 secondaries (§ 3) | ≈ **44 s** | 15 % |
 | After the secondary import (~150 × 3 ≈ 450) | ≈ **132 s** | 44 % |
-| The bound | ~830 | 80 % (the margin) |
+| The bound | ~623 | 80 % (the margin) |
 
-Both real populations fit comfortably. **The gap is entirely between ~830 and whatever ceiling is
+Both real populations fit comfortably. **The gap is entirely between ~623 and whatever ceiling is
 enforced** — 5,000 today, 50,000 after the flip. Nothing SweCham can currently compose reaches it;
 a pasted custom list could.
 
@@ -304,13 +328,13 @@ Confirmed 2026-09-08 from the Resend billing + usage pages: **1,000 contacts** (
 | Bound | Where it bites | Failure mode |
 |---|---|---|
 | **Free plan: 1,000 contacts** | a broadcast above ~**987** recipients (1,000 − 13 stored) | 4xx → `permanent` → **`failed_to_dispatch`** in one tick, audited. **Loud and terminal — the good failure.** |
-| Wall clock: ~830/tick | above ~830 | killed mid-push every tick, sits in `approved`, alarmed ~90 min later by `approved_overdue_count`. **Silent — the bad one.** |
+| Wall clock: ~623/tick | above ~623 | killed mid-push every tick, sits in `approved`, alarmed ~90 min later by `approved_overdue_count`. **Silent — the bad one.** |
 | **Free plan: 3 segments** | **2** concurrent in-flight broadcasts (`General` holds one slot) | third fails until the `cleanup-audiences` cron frees room — the "plan-segment-limit overflow" already in `go-live-readiness.md` § 6.6 |
 
 Two bounds, 20 % apart, arrived at independently — they agree on where the safe ceiling is.
 
 **Upgrading does not fix the push.** Pro marketing ($40/mo) takes contacts to 5,000 and segments to
-unlimited, but latency is latency: ~3.4 req/s and ~830-per-tick survive the upgrade. Money buys the
+unlimited, but latency is latency: ~2.08 req/s and ~623-per-tick survive the upgrade. Money buys the
 contact cap, not the wall clock.
 
 **The mismatch worth naming**: the app accepts up to 5,000 today (50,000 after the flip) while the
@@ -371,7 +395,7 @@ per_tick_max    = 300 s × throughput × 0.8      (20 % margin for retries and t
 | If throughput is | one tick drains about | the undeliverable band starts near |
 |---|---|---|
 | 2 req/s | 600 | 480 |
-| **3.4 req/s ← measured** | **1,035** | **830** |
+| **2.08 req/s ← measured** | **1,035** | **830** |
 | 5 req/s | 1,500 | 1,200 |
 | 10 req/s (the documented limit — *not* the achievable throughput) | 3,000 | 2,400 |
 
@@ -383,15 +407,15 @@ matters: the wall-clock hazard is not the 5,001–10,000 slice the flip adds, it
 
 ### What the number decides — now that it is known
 
-The measured 3.4 req/s puts us squarely in the second case below, so **the fix is worth doing
+The measured 2.08 req/s puts us squarely in the second case below, so **the fix is worth doing
 whether or not 108 ever flips**:
 
-- **The exposure already exists at today's ceiling.** A broadcast between ~830 and 5,000
+- **The exposure already exists at today's ceiling.** A broadcast between ~623 and 5,000
   recipients is accepted at submit today, on the `primary_only` leg, with the 108 flag off, and
   cannot finish its push. Nothing about the flip created that.
 - **The cheapest correct closure is now writable with a measured number**: an explicit
   submit-time refusal above `per_tick_max`, the constant carrying the measurement, its date and
-  its method — option (c) of `reviews/pr-c.md` row 33. A round **800** sits just under the
+  its method — option (c) of `reviews/pr-c.md` row 33. A round **500** sits just under the
   computed 830 and about **5× above** anything SweCham can currently compose (150 recipients;
   ~450 after the secondary import), so its blast radius today is zero while it closes the band
   completely. *(Corrected 2026-09-08 after review: an earlier draft of this line said "three
@@ -399,12 +423,12 @@ whether or not 108 ever flips**:
   the shipped fix deliberately reuses `broadcast_audience_too_large` with a smaller `cap`, which
   is better: the eight i18n strings already interpolate `{ceiling, number}`, so no new key and no
   new copy in any of the three locales.)*
-- **It is still a behaviour change on a live path**: audiences of 801–5,000 are accepted today and
+- **It is still a behaviour change on a live path**: audiences of 501–5,000 are accepted today and
   would start being refused. They are exactly the ones that silently fail now, so the refusal
   replaces a silent failure with a legible one — but it must ship as a stated change, with a
   Domain test, an error code, i18n copy in three locales and its own review stack, not as a
   quiet constant.
-- **The ceiling raise then stops mattering.** With a refusal at ~800 binding first, whether the
+- **The ceiling raise then stops mattering.** With a refusal at ~500 binding first, whether the
   ceiling reads 5,000 or 50,000 is cosmetic, and gate 3b is closed by construction rather than by
   argument.
 

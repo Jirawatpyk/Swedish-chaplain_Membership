@@ -2,7 +2,7 @@
 
 **Feature Branch**: `108-contact-recipient-rules`
 **Created**: 2026-09-04
-**Status**: Implemented — all four PRs merged (PR-A #340, PR-B #342, PR-D #344, PR-C #346 `91505b8f2`); migrations 0292–0297 applied to prod. Remaining: Phase 9 cutover — **T093, T095, T096, T097, T098 are cleared and the push-capacity gate is closed in code; only T094 (the flip itself, which completes at first-send observation) and the post-flip T099/T100 remain.** `FEATURE_CONTACT_MARKETING_RECIPIENTS` is **absent** from Vercel (set 09:44, deleted 10:41 on 2026-09-08 once it became clear that setting it arms the flip for the next merge), so the 1:N audience is not live. The enforced audience ceiling, however, **is** 800 from the Phase-9 merge onward, in every flag state — see `reviews/cutover.md`.
+**Status**: Implemented — all four PRs merged (PR-A #340, PR-B #342, PR-D #344, PR-C #346 `91505b8f2`); migrations 0292–0297 applied to prod. Remaining: Phase 9 cutover — **T093, T095, T096, T097, T098 are cleared and the push-capacity gate is closed in code; only T094 (the flip itself, which completes at first-send observation) and the post-flip T099/T100 remain.** `FEATURE_CONTACT_MARKETING_RECIPIENTS` is **absent** from Vercel (set 09:44, deleted 10:41 on 2026-09-08 once it became clear that setting it arms the flip for the next merge), so the 1:N audience is not live. The enforced audience ceiling, however, **is** 500 from the Phase-9 merge onward, in every flag state — see `reviews/cutover.md`.
 **Input**: User description: "Tier A and Tier B + ปิดช่องโหว่ หรือ รูรั่ว ทั้งหมด" — i.e. implement Tier A (harden the primary-contact-only rule for money emails) and Tier B (secondary contacts receive marketing) from `docs/contacts-primary-secondary-gap-analysis.md`, and close every gap that analysis found (H1, H2, G1–G9). Tier C (bulk import of secondary contacts) is a separate follow-on feature and is **out of scope** here.
 
 ## Overview *(context, non-normative)*
@@ -192,7 +192,7 @@ When a member composes a broadcast, the estimated number of recipients shown is 
 > never enters the batch path at all; `dispatch-scheduled` picks it up and
 > pushes it through `addContactsToAudience`, a SERIAL one-contact-at-a-time
 > loop against an account whose rate limit was **UNMEASURED when this was written and is now
-> measured: 10 req/s, with ~3.45 req/s achievable because the loop is serial** (T095,
+> measured: 10 req/s, with ~2.08 req/s achievable because the loop is serial** (T095,
 > 2026-09-08 — see below)
 > (`src/modules/broadcasts/infrastructure/resend/resend-broadcasts-gateway.ts:246-267`)
 > inside a 300 s function budget — this plan says so itself at `plan.md:268`
@@ -207,11 +207,11 @@ When a member composes a broadcast, the estimated number of recipients shown is 
 > different ways: the account limit is **10 req/s** (`ratelimit-policy: 10;w=1`,
 > read from the API — so the `~2 req/s` in four source comments was wrong), but
 > a serial `await` loop reaches only `min(limit, 1/RTT)` and the warm round trip
-> is ~0.29 s, so **~3.45 req/s** is what the push achieves — using the
+> is ~0.481 s, so **~2.08 req/s** is what the push achieves — using the
 > documented 10 as a capacity input overestimates by ~3×. The safe bound is
-> `300 s × 3.45 × 0.8 ≈ 827`, which is *below* the flag-OFF ceiling of 5,000 —
+> `300 s × 3.45 × 0.8 ≈ 623`, which is *below* the flag-OFF ceiling of 5,000 —
 > the point that survives unchanged from the original warning. It is now
-> enforced as `DELIVERABLE_RECIPIENTS_PER_TICK = 800`. The rule this paragraph
+> enforced as `DELIVERABLE_RECIPIENTS_PER_TICK = 500`. The rule this paragraph
 > was written to protect still stands: quote the measurement, never a number
 > chosen to match a ceiling. A 6,200-contact broadcast would therefore be
 > ACCEPTED at submit, killed mid-push every tick, and never delivered — the
@@ -239,13 +239,13 @@ When a member composes a broadcast, the estimated number of recipients shown is 
 > `reviews/pr-c.md` row 33.
 >
 > **CLOSED 2026-09-08 — the third option landed.** T095 measured the push at
-> ~3.4 req/s (account limit 10 req/s, but a serial `await` loop reaches only
-> `min(limit, 1/RTT)` on a ~0.29 s round trip), so
-> `DELIVERABLE_RECIPIENTS_PER_TICK = 800` and
-> `currentAudienceCeiling() = min(configuredAudienceCeiling(), 800)`. Compose,
+> ~2.08 req/s (account limit 10 req/s, but a serial `await` loop reaches only
+> `min(limit, 1/RTT)` on a ~0.481 s round trip), so
+> `DELIVERABLE_RECIPIENTS_PER_TICK = 500` and
+> `currentAudienceCeiling() = min(configuredAudienceCeiling(), 500)`. Compose,
 > submit and dispatch now refuse above what one tick can push, in every flag
 > state. **And the sentence above is itself corrected**: "unreachable while the
-> flag is OFF" was wrong — at 3.4 req/s the band starts near 830, below the
+> flag is OFF" was wrong — at 2.08 req/s the band starts near 830, below the
 > 5,000 ceiling enforced with the flag OFF, so it was never the "5,001–10,000
 > slice the flip adds" and the fix was owed regardless of the flip.
 >
@@ -500,15 +500,15 @@ A contact signed in to the member portal, the primary contact included, can see 
   > T094 precondition.~~ The "never silently truncate" half of this FR **is** shipped and live.
   >
   > **CLOSED 2026-09-08.** Two corrections and a fix. First, "unreachable while the flag is OFF"
-  > was wrong: T095 measured the serial push at **~3.4 req/s** (account limit 10 req/s, but a
-  > serial `await` loop only reaches `min(limit, 1/RTT)` on a ~0.29 s round trip), which puts the
+  > was wrong: T095 measured the serial push at **~2.08 req/s** (account limit 10 req/s, but a
+  > serial `await` loop only reaches `min(limit, 1/RTT)` on a ~0.481 s round trip), which puts the
   > undeliverable band at roughly **830** — *below* the 5,000 ceiling enforced with the flag OFF.
   > The band was always reachable; the flip widened it. Second, the fix:
-  > `DELIVERABLE_RECIPIENTS_PER_TICK = 800` in
+  > `DELIVERABLE_RECIPIENTS_PER_TICK = 500` in
   > `src/modules/broadcasts/domain/audience-ceiling.ts`, with
-  > `currentAudienceCeiling() = min(configuredAudienceCeiling(), 800)` — so count, submit and
+  > `currentAudienceCeiling() = min(configuredAudienceCeiling(), 500)` — so count, submit and
   > dispatch refuse above what one tick can push, in every flag state, and this FR's exception is
-  > true again. 800 also sits under the Resend **Free** plan's ~987 usable contacts, a second and
+  > true again. 500 also sits under the Resend **Free** plan's ~987 usable contacts, a second and
   > independent bound. See `reviews/cutover.md` § 5 / § 5a and `research.md` § R9 (T095).
 - **FR-042**: The audience ceiling MUST be defined in exactly one place and enforced consistently at count, submit and dispatch.
 - **FR-043**: Resolving an audience MUST complete within 400 ms (p95) at 5,000 contacts and within 3 seconds at 20,000 contacts, both for the compose-time count and at submit.

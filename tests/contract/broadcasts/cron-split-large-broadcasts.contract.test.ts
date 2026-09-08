@@ -97,7 +97,7 @@ vi.mock('@/modules/broadcasts', async () => ({
   // and what this file pins is that the route passes through whatever it is
   // given, not that the number is production-real.
   configuredAudienceCeiling: () => 50_000,
-  currentAudienceCeiling: () => 800,
+  currentAudienceCeiling: () => 500,
   SPLIT_THRESHOLD_RECIPIENTS: 10_000,
   splitBroadcastIntoBatches: (...args: unknown[]) => splitBroadcastIntoBatchesMock(...args),
 }));

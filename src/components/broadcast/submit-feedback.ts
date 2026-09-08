@@ -21,7 +21,7 @@ export interface SubmitFeedbackBody {
 /**
  * 108 PR-C T085 (FR-041 / FR-042) — interpolation values for a submit error.
  * The "audience too large" copy names the ceiling the server actually refused
- * against (`details.cap` on the 422 body — 800 since 2026-09-08, being
+ * against (`details.cap` on the 422 body — 500 since 2026-09-08, being
  * `min(configured, DELIVERABLE_RECIPIENTS_PER_TICK)`; the configured 5,000 /
  * 50,000 no longer reaches the wire), so the message can never claim a limit
  * the server did not apply. That property is why the clamp needed no copy

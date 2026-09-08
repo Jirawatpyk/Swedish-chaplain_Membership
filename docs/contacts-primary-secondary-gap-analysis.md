@@ -138,11 +138,11 @@ was deferred during PR-C and never authored; nothing in the codebase implements 
    whoever merges next (`vercel.json` has no `ignoreCommand`). H1 is closed in code, not yet in
    behaviour. T094 completes at first-send observation, not at flag-set.
 2. ~~**Push-capacity gate**~~ — **CLOSED in code 2026-09-08.** The gate was also mis-described
-   here: at the measured ~3.45 req/s the undeliverable band starts near **827**, *below* the 5,000
+   here: at the measured ~2.08 req/s the undeliverable band starts near **623**, *below* the 5,000
    ceiling already enforced, so it was never "the 5,001–10,000 band the flip adds" and it did not
-   need the flip to be reachable. `DELIVERABLE_RECIPIENTS_PER_TICK = 800` now clamps
+   need the flip to be reachable. `DELIVERABLE_RECIPIENTS_PER_TICK = 500` now clamps
    `currentAudienceCeiling()` in every flag state, so compose, submit and dispatch refuse above
-   what one 300 s tick can push. **Consequence for this document: the enforced ceiling is 800,
+   what one 300 s tick can push. **Consequence for this document: the enforced ceiling is 500,
    unflagged, from the Phase-9 merge onward.**
 3. **The walk bound for G5** — still open, and now the only piece of (2) that did not land: the
    read still walks to exhaustion. It matters before any future ceiling RAISE, not for the clamp.

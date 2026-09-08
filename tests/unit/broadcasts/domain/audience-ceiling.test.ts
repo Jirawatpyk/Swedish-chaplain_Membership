@@ -49,12 +49,19 @@ describe('audienceCeiling (108 PR-C)', () => {
  * limit is 10 req/s (`ratelimit-policy: 10;w=1`, read from the API), but
  * `addContactsToAudience` is a serial `await` loop, so it reaches only
  * `min(limit, 1/RTT)` and the warm round trip is ~0.29 s — about 3.4 req/s.
- * One derivation throughout: `1/0.29 = 3.45 req/s`; `300 × 3.45 ≈ 1,034`; with
- * a 20 % margin **~827**. Operationally: **800 contacts take ~232 s, 77 % of
- * the 300 s budget**, and the remaining ~23 % absorbs the resolve and three
- * more Resend round trips. The account is also on Resend's FREE plan, whose
- * 1,000-contact cap bites around ~987 (a snapshot: 1,000 minus what was
- * stored that day). **800 sits under both bounds, for one
+ * Measured on the verb the loop calls — `POST /contacts`, 15 serial samples,
+ * 2026-09-08: mean **481 ms** (median 420, p95 894, zero 429s). A serial loop
+ * of N requests takes N × mean, so mean is the statistic. `1/0.481 = 2.08
+ * req/s`; `300 × 2.08 ≈ 623`; with a 20 % margin **~499**. Operationally:
+ * **500 contacts take ~240 s, 80 % of the 300 s budget**, the rest absorbing
+ * the resolve and three more Resend round trips. The account is also on
+ * Resend's FREE plan, whose 1,000-contact cap bites around ~987 (a snapshot:
+ * 1,000 minus what was stored that day).
+ *
+ * T095's first answer used `GET /audiences` (290 ms → 3.45 req/s → a bound near
+ * 830) because nothing had been dispatched yet and that was the only read-only
+ * probe. Writes are ~1.7× slower. The caveat filed with that measurement —
+ * "`GET` latency, not `POST /contacts`" — was worth 300 recipients. **800 sits under both bounds, for one
  * broadcast in flight** — neither bound is per-broadcast (the 300 s is per
  * invocation across `MAX_PER_TICK = 50` rows; the 1,000 contacts is per
  * account across un-reaped ephemeral audiences). The constant's own docblock
@@ -63,12 +70,12 @@ describe('audienceCeiling (108 PR-C)', () => {
  * precision.
  */
 describe('DELIVERABLE_RECIPIENTS_PER_TICK (T095, 2026-09-08)', () => {
-  it('is 800 — under both the ~830 wall-clock bound and the ~987 Free-plan contact bound', () => {
-    expect(DELIVERABLE_RECIPIENTS_PER_TICK).toBe(800);
+  it('is 500 — under both the ~623 wall-clock bound and the ~987 Free-plan contact bound', () => {
+    expect(DELIVERABLE_RECIPIENTS_PER_TICK).toBe(500);
     // Pinned as inequalities too, so a later edit to the constant has to
     // confront the two numbers it is supposed to sit under rather than just
     // changing a literal and a docblock.
-    expect(DELIVERABLE_RECIPIENTS_PER_TICK).toBeLessThan(827); // 300 s × 3.45 req/s × 0.8
+    expect(DELIVERABLE_RECIPIENTS_PER_TICK).toBeLessThan(623); // 300 s ÷ 481 ms measured POST /contacts
     expect(DELIVERABLE_RECIPIENTS_PER_TICK).toBeLessThan(987); // Resend Free: 1,000 − 13 stored on the day
   });
 

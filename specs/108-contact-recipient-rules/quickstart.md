@@ -45,7 +45,7 @@ inventory until it prints 0, then merge / redeploy.
 | A (money hardening) | `vercel promote` previous deployment; 0292 is an enum add (harmless when unused) | none | none |
 | B (invariant) | revert restores the racy path; triggers stay installed and are safe with correct data | none | 0293 forward-only; drop triggers only via a new migration |
 | D (permission + page + columns) | revert hides the page/route; 0294/0295 columns + enum values are unused when reverted | none | none |
-| C (audience) | flag OFF restores the primary-only leg ~~and the 5,000 ceiling~~ — **the enforced ceiling is 800 in EVERY flag state since the Phase-9 branch; see item (10)**. **Everything else in PR-C is UNFLAGGED and lands on merge** — a code revert (`vercel promote`), not a flag flip, is the rollback for any of it (reliability M-3; the list below was completed at the re-review, finding #1): **(1)** FR-021 `status = 'active'` — an inactive / archived member's primary stops receiving; **(2)** the `.limit(5000)` removal — a >5,000 audience is refused, not silently cut; **(3)** the bridge lookups AND `setMemberHalt` throw on a failed read/write — submit 500s, dispatch retries, clear-halt 500s, instead of failing open; **(4)** self-exclusion is by MEMBER id on member-based segments only — pre-108 the sender's primary address was filtered out of EVERY segment kind, so a member who puts their own address on a custom list now receives their own e-blast (FR-022a/b; the compose hint says so); **(5)** every unsubscribe writes `marketing_unsubscribes.contact_id` — the column is in use from merge, see the Data column; **(6)** GDPR erasure now severs `member_id` AND `contact_id` on that member's suppression rows (`severMemberRefs`, FR-056) — before PR-C the `member_id` back-reference was retained; **(7)** a persisted `tier` broadcast whose `segment_params` lost its codes is a terminal `failed_to_dispatch` (before: it was sent to every active member); **(8)** the whole compose UI — live count, per-segment hints, the submit block on a measured refusal, the separate preference toast, the halt-state banner, the compose page throwing on a failed member read; **(9)** the `approved_overdue_count` gauge and the zero-fill / forget behaviour of the gauges cron; **(10)** *(added by the Phase-9 branch, 2026-09-08)* **the enforced audience ceiling drops 5,000 → 800 in every flag state** — `currentAudienceCeiling() = min(configuredAudienceCeiling(), DELIVERABLE_RECIPIENTS_PER_TICK)`, because the serial push delivers ~3.45 req/s and cannot finish more than ~827 inside `maxDuration = 300`. A compose or submit above 800 is refused with `broadcast_audience_too_large { cap: 800 }`; an `approved` row above 800 becomes a terminal `failed_to_dispatch` on its next tick, audited, with the FR-021 notification email to the member. Rollback is a **code revert**, not a flag flip — flag OFF does not restore 5,000. Nothing SweCham can currently compose reaches it (150 recipients; ~450 after the secondary import), and the prod outbox was empty when it shipped. | `FEATURE_CONTACT_MARKETING_RECIPIENTS=false` + redeploy — for the WIDENING only (the 50,000 ceiling is moot under item (10)'s clamp) | **0297 is WRITTEN from merge, flag or not**: `contact_id` is filled by every unsubscribe (`unsubscribe-recipient.ts` reads no flag). Dropping the column while PR-C's code is deployed breaks every unsubscribe with a 42703 — drop it only after a code revert, via a new migration. (0298 deferred with T086.) |
+| C (audience) | flag OFF restores the primary-only leg ~~and the 5,000 ceiling~~ — **the enforced ceiling is 500 in EVERY flag state since the Phase-9 branch; see item (10)**. **Everything else in PR-C is UNFLAGGED and lands on merge** — a code revert (`vercel promote`), not a flag flip, is the rollback for any of it (reliability M-3; the list below was completed at the re-review, finding #1): **(1)** FR-021 `status = 'active'` — an inactive / archived member's primary stops receiving; **(2)** the `.limit(5000)` removal — a >5,000 audience is refused, not silently cut; **(3)** the bridge lookups AND `setMemberHalt` throw on a failed read/write — submit 500s, dispatch retries, clear-halt 500s, instead of failing open; **(4)** self-exclusion is by MEMBER id on member-based segments only — pre-108 the sender's primary address was filtered out of EVERY segment kind, so a member who puts their own address on a custom list now receives their own e-blast (FR-022a/b; the compose hint says so); **(5)** every unsubscribe writes `marketing_unsubscribes.contact_id` — the column is in use from merge, see the Data column; **(6)** GDPR erasure now severs `member_id` AND `contact_id` on that member's suppression rows (`severMemberRefs`, FR-056) — before PR-C the `member_id` back-reference was retained; **(7)** a persisted `tier` broadcast whose `segment_params` lost its codes is a terminal `failed_to_dispatch` (before: it was sent to every active member); **(8)** the whole compose UI — live count, per-segment hints, the submit block on a measured refusal, the separate preference toast, the halt-state banner, the compose page throwing on a failed member read; **(9)** the `approved_overdue_count` gauge and the zero-fill / forget behaviour of the gauges cron; **(10)** *(added by the Phase-9 branch, 2026-09-08)* **the enforced audience ceiling drops 5,000 → 500 in every flag state** — `currentAudienceCeiling() = min(configuredAudienceCeiling(), DELIVERABLE_RECIPIENTS_PER_TICK)`, because the serial push delivers ~2.08 req/s and cannot finish more than ~623 inside `maxDuration = 300`. A compose or submit above 500 is refused with `broadcast_audience_too_large { cap: 500 }`; an `approved` row above 500 becomes a terminal `failed_to_dispatch` on its next tick, audited, with the FR-021 notification email to the member. Rollback is a **code revert**, not a flag flip — flag OFF does not restore 5,000. Nothing SweCham can currently compose reaches it (150 recipients; ~450 after the secondary import), and the prod outbox was empty when it shipped. | `FEATURE_CONTACT_MARKETING_RECIPIENTS=false` + redeploy — for the WIDENING only (the 50,000 ceiling is moot under item (10)'s clamp) | **0297 is WRITTEN from merge, flag or not**: `contact_id` is filled by every unsubscribe (`unsubscribe-recipient.ts` reads no flag). Dropping the column while PR-C's code is deployed breaks every unsubscribe with a 42703 — drop it only after a code revert, via a new migration. (0298 deferred with T086.) |
 
 Incident notes: a broadcast already delivered under the wrong audience cannot be recalled —
 record the broadcast id, notify the tenant admin contact, and flip the flag off before the
@@ -195,6 +195,28 @@ Then, signed in as a member:
 
 ### ② Prove the send path, to an audience of exactly you
 
+> **RUN 2026-09-08 15:00 on dev — passed, and it moved the ceiling.** A custom-list broadcast to
+> the two seeded addresses went through submit → approve → `dispatchScheduledBroadcast` against the
+> real Resend gateway: audience `2ffc6ad1…`, broadcast `c4bfc0c2…`, 2 recipients, **4,063 ms**.
+> Member-based was deliberately NOT used: dev holds 131 contacts on the placeholder domain
+> `pending.swecham.zyncdata.app`, and dispatching to those would have produced 131 hard bounces on
+> the **production** Resend reputation and suppression list. A custom list proves the gateway, the
+> cron path and the send without that risk.
+>
+> **The 4 s for 2 recipients is what mattered.** Five Resend round trips in 4.06 s is ~0.8 s each —
+> far off the 0.29 s that T095 had measured with `GET /audiences`. Fifteen serial samples of
+> `POST /contacts`, the verb the push actually calls, then gave **mean 481 ms → 2.08 req/s →
+> ~623 per tick → a 20 % margin of ~499**. `DELIVERABLE_RECIPIENTS_PER_TICK` was lowered **800 →
+> 500**. Zero 429s across the fifteen, confirming the serial loop never approaches the 10 req/s
+> policy.
+>
+> Two things the run also surfaced, both of them systems working: submit was refused with
+> `broadcast_quota_blocked {used: 0, reserved: 1, cap: 1}` because a stale `submitted` broadcast
+> from an e2e run the day before still held the member's yearly reservation (cancelled through the
+> real cancel use case, which freed it); and the first opt-out attempt was refused by migration
+> 0294's correlated CHECK for setting `marketing_opt_out_at` + `_source` without `_by_user_id`.
+
+
 This is the only step that puts mail on the wire, and it is what closes the signals rehearsal ①
 cannot reach — the real Resend gateway, the real cron under `maxDuration`, and a throughput figure
 measured from `sin1` rather than from a Bangkok workstation with `GET` (the caveat T095 left open,
@@ -211,7 +233,7 @@ recorded in `research.md` § R9).
    the outbox showing `estimated_recipient_count` = delivered.
 4. **Record the throughput**: the elapsed time between the dispatch start and
    `resend.broadcasts.contacts_added` in the Vercel logs, divided by the recipient count. Put it in
-   `research.md` § R9 next to the workstation figure. If it is materially below ~3.45 req/s,
+   `research.md` § R9 next to the workstation figure. If it is materially below ~2.08 req/s,
    `DELIVERABLE_RECIPIENTS_PER_TICK` needs revisiting before any ceiling is raised.
 5. Clean up: `SEED_SECONDARY_MODE=remove` with the same env removes only the rows the script added.
 
@@ -224,11 +246,11 @@ SweCham's import makes it load-bearing.
 1. PR-A, PR-B, PR-D deployed; V1 counts confirmed 0 violations before PR-B.
 2. PR-C deployed with the flag OFF; the unflagged changes are the ones listed in the rollback
    matrix above (active-only narrowing, no silent cut, fail-closed reads, the compose UI) —
-   **plus item (10), the Phase-9 ceiling clamp to 800, which is not a flag flip and applies in
+   **plus item (10), the Phase-9 ceiling clamp to 500, which is not a flag flip and applies in
    every flag state.**
 
 2a. **Immediately BEFORE merging the Phase-9 branch** (not before the flip — the clamp lands on
-   merge), run `scripts/inventory-broadcast-outbox.ts` against prod. Any `approved` row above 800
+   merge), run `scripts/inventory-broadcast-outbox.ts` against prod. Any `approved` row above 500
    becomes a terminal `failed_to_dispatch` on its next tick, with an email to the member. The
    outbox was empty at 13:30 on 2026-09-08, but that snapshot ages the moment anyone approves a
    broadcast — re-run it, do not cite it.
@@ -241,9 +263,9 @@ SweCham's import makes it load-bearing.
    the attestation per contact. A secondary who never gave their address to the chamber
    directly is a data subject the chamber has not yet informed.
 3b. **Push-capacity gate (staff review 🔴) — ✅ CLOSED IN CODE 2026-09-08. No operator action.**
-   `DELIVERABLE_RECIPIENTS_PER_TICK = 800` in
+   `DELIVERABLE_RECIPIENTS_PER_TICK = 500` in
    `src/modules/broadcasts/domain/audience-ceiling.ts`, and the composition root now enforces
-   `currentAudienceCeiling() = min(configuredAudienceCeiling(), 800)` — so compose, submit and
+   `currentAudienceCeiling() = min(configuredAudienceCeiling(), 500)` — so compose, submit and
    dispatch all refuse above what one 300 s tick can actually push. This is option (c) of
    `reviews/pr-c.md` row 33, writable only after T095 measured the number.
 
@@ -258,7 +280,7 @@ SweCham's import makes it load-bearing.
    **Two corrections in the struck text, both worth carrying forward.** The rate was wrong:
    T095 measured the account limit at **10 req/s** (`ratelimit-policy: 10;w=1`, read from the
    API), but the serial loop only reaches `min(limit, 1/RTT)` and the warm round trip is
-   ~0.29 s — so ~**3.4 req/s**, latency-bound. And the band was wrong: at 3.4 req/s it starts
+   ~0.481 s — so ~**2.08 req/s**, latency-bound. And the band was wrong: at 2.08 req/s it starts
    near **830**, which is *below* the 5,000 ceiling enforced with the flag OFF — so this was
    never "the 5,001–10,000 slice the flip adds", and the fix was worth shipping regardless of
    the flip. SweCham's post-import ~450 contacts push in ~132 s of the 300 s budget.

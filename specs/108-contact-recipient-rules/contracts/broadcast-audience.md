@@ -81,7 +81,7 @@ enforced.** The composition root exposes both and clamps:
 ```
 configuredAudienceCeiling()  = audienceCeiling(isF71aUs1Enabled() && contactMarketingRecipients)
 currentAudienceCeiling()     = min(configuredAudienceCeiling(), DELIVERABLE_RECIPIENTS_PER_TICK)
-DELIVERABLE_RECIPIENTS_PER_TICK = 800
+DELIVERABLE_RECIPIENTS_PER_TICK = 500
 ```
 
 The six single-tick callers read `currentAudienceCeiling()` — both count routes, submit,
@@ -93,7 +93,7 @@ manifests of an audience that was split *because* it exceeds one tick, so a per-
 refuse every row they can pick up — silently, since that refusal is not counted by
 `dispatchResolveFailedTotal`. The clamp exists because the configured ceiling
 exceeded what a dispatch tick can push: the serial per-contact loop runs at a measured
-~3.4 req/s (`min(10 req/s account limit, 1 / 0.29 s round trip)`), i.e. ~830 in a 300 s budget,
+~2.08 req/s (`min(10 req/s account limit, 1 / 0.481 s round trip)`), i.e. ~623 in a 300 s budget,
 and Resend's Free plan independently caps usable contacts near 987. `configuredAudienceCeiling()`
 stays separately exported and separately pinned so the H-2 flag-expression guard survives the
 clamp. **Consequence: nothing can reach `SPLIT_THRESHOLD_RECIPIENTS`, so the split path is
@@ -105,8 +105,8 @@ the same `maxDuration = 300`.
 ~~**Push-capacity gate (added 2026-09-08, T098 — the contract was silent on it).** … The band is
 unreachable while `FEATURE_CONTACT_MARKETING_RECIPIENTS` is OFF (ceiling 5,000) … The req/s figure
 is UNMEASURED.~~ **Superseded the same day by the clamp above.** Two things that paragraph got
-wrong within hours of being written: the rate is measured now (~3.45 req/s achievable against a
-10 req/s account limit), and the band it described starts near **827** — *below* the 5,000 ceiling
+wrong within hours of being written: the rate is measured now (~2.08 req/s achievable against a
+10 req/s account limit), and the band it described starts near **623** — *below* the 5,000 ceiling
 that was already enforced, so it was never gated on the flag. What remains true is the mechanism:
 `split-large-broadcasts` skips `resolvedCount <= SPLIT_THRESHOLD_RECIPIENTS`, so everything at or
 below 10,000 falls to `dispatch-scheduled`'s serial push inside `maxDuration = 300`. The clamp is

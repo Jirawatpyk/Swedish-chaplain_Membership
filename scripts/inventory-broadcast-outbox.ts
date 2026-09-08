@@ -6,7 +6,7 @@
  * dispatch. A broadcast already sitting in `submitted` or `approved` was
  * accepted under whatever ceiling was live when it was submitted; the next
  * dispatch tick compares it against the ceiling that is live THEN. Lowering
- * the ceiling (108's `DELIVERABLE_RECIPIENTS_PER_TICK = 800`) can therefore
+ * the ceiling (108's `DELIVERABLE_RECIPIENTS_PER_TICK = 500`) can therefore
  * strand a row that was legal at submit time. This prints the two numbers that
  * decide whether that can happen: how many rows are in flight, and the largest
  * `estimated_recipient_count` among them.

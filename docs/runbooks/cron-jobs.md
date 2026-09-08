@@ -389,11 +389,11 @@ recipients per broadcast (FR-016a) × N broadcasts due in the window.
 > pages; the ceiling is 5,000 unless BOTH F7.1a batching AND
 > `FEATURE_CONTACT_MARKETING_RECIPIENTS` are ON (then 50,000, and the split
 > cron takes over above 10,000) — prod has batching ON and the 1:N flag OFF.
-> **Superseded 2026-09-08: the ENFORCED ceiling is `min(configured, 800)` in
+> **Superseded 2026-09-08: the ENFORCED ceiling is `min(configured, 500)` in
 > every flag state** (`DELIVERABLE_RECIPIENTS_PER_TICK` — the serial Resend
-> push delivers ~3.45 req/s and cannot finish more than ~827 in 300 s). So
-> prod's ceiling today is **800**, the split cron is unreachable, and the
-> "≤ 5,000 recipients per broadcast" line above should read ≤ 800.
+> push delivers ~2.08 req/s and cannot finish more than ~623 in 300 s). So
+> prod's ceiling today is **500**, the split cron is unreachable, and the
+> "≤ 5,000 recipients per broadcast" line above should read ≤ 500.
 > A tick that cannot build the audience REJECTS and the
 > next tick retries — never a partial push. Triage: `docs/runbooks/broadcast-audience-build.md`.
 
