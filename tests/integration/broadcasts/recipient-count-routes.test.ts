@@ -112,13 +112,23 @@ describe('108 PR-C T088 — recipient-count routes (live Neon, real gates)', () 
     // `currentAudienceCeiling()` itself — that comparison was a tautology
     // (review BLOCKER); the composition root's own unit test pins the matrix.
     //
-    // T095 (2026-09-08) added the second half: what the flags CONFIGURE is
-    // clamped to what one dispatch tick can actually push. Restated here the
-    // same way — from the flags and the Domain constant, not from the function
-    // under test — so this stays an independent statement of the rule rather
-    // than an echo of it.
+    // T095 (2026-09-08) added a second half: what the flags CONFIGURE was
+    // clamped to what one dispatch tick can push. **Phase 9b made that clamp
+    // conditional on batching**, because an audience above one tick is now
+    // SPLIT rather than refused — `DELIVERABLE_RECIPIENTS_PER_TICK` became the
+    // batch size. With batching ON (prod's state) the compose count therefore
+    // shows the configured ceiling again; with it OFF there is no split path,
+    // so the single-tick bound is still the real one and the clamp still binds.
+    //
+    // Restated here from the flags and the Domain constant, not read from the
+    // function under test — the tautology the review BLOCKER caught. That is
+    // also why this file failed on the pre-push hook rather than in CI: the
+    // rule is written out twice on purpose, so changing it in one place has to
+    // be a deliberate act in the other.
     const configured = isF71aUs1Enabled() && env.features.contactMarketingRecipients ? 50_000 : 5_000;
-    const expectedCeiling = Math.min(configured, DELIVERABLE_RECIPIENTS_PER_TICK);
+    const expectedCeiling = isF71aUs1Enabled()
+      ? configured
+      : Math.min(configured, DELIVERABLE_RECIPIENTS_PER_TICK);
     // No `orphans` on the member body (review M-3): it is about OTHER members.
     //
     // And no `droppedByPreference` either, whenever the count is non-zero.
