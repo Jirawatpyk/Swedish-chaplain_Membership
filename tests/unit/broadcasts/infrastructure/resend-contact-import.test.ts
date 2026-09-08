@@ -1,5 +1,14 @@
+// @vitest-environment node
 /**
  * T086 (108 US5) — the Resend **Contacts Import** gateway methods.
+ *
+ * **Runs under the `node` environment, not the project default `jsdom`.** The
+ * adapter builds a `FormData` carrying a `Blob`, and reading that Blob back in
+ * jsdom goes through its `FileReader` shim, which never settles here — every
+ * case hung to the 30 s harness timeout and looked like a broken adapter. This
+ * is Node-side code talking to an HTTP API; jsdom was never the right host for
+ * it. (Sibling symptom of the repo's fake-timer trap: a 30 s timeout is the
+ * harness, not the component.)
  *
  * These two calls replace the per-contact push. `addContactsToAudience` is a
  * serial `await` loop at a measured ~2.08 req/s, so ~623 contacts is all one
@@ -78,6 +87,12 @@ function stubFetch(respond: (call: number) => Response): void {
 }
 
 beforeEach(() => {
+  // `tests/setup.ts` installs fake timers globally. `withRetry` awaits a real
+  // `setTimeout` between attempts, so without this every case here hangs to the
+  // 30 s harness timeout and looks like a broken adapter rather than a broken
+  // clock. (Known trap in this repo — a 30 s timeout is the harness, not the
+  // component under test.)
+  vi.useRealTimers();
   captured.length = 0;
 });
 afterEach(() => {
@@ -146,16 +161,34 @@ describe('createContactImport — the multipart contract (T086)', () => {
     expect(captured).toHaveLength(1);
   });
 
-  it('a 429 is RETRYABLE and the backoff runs before it gives up', async () => {
-    stubFetch(() =>
-      jsonResponse(429, { statusCode: 429, name: 'rate_limit_exceeded', message: 'slow down' }),
+  it('a 429 is RETRYABLE — the next attempt succeeds and the import is NOT resubmitted twice on success', async () => {
+    // Deliberately "429 then 201" rather than "429 forever": exhausting the
+    // 1/2/4/8/16 s schedule costs 31 real seconds, and the exhaustion path is
+    // already pinned for the sibling methods in
+    // `resend-broadcasts-gateway-contract.test.ts`. What is specific to THIS
+    // method is that a rate-limited first attempt must not leave a half-made
+    // import behind — `upsert` is what makes the second attempt harmless.
+    stubFetch((call) =>
+      call === 1
+        ? jsonResponse(429, {
+            statusCode: 429,
+            name: 'rate_limit_exceeded',
+            message: 'slow down',
+          })
+        : jsonResponse(201, { id: 'imp_after_429' }),
     );
 
-    await expect(
-      resendBroadcastsGateway.createContactImport(AUDIENCE_ID, ['a@example.com']),
-    ).rejects.toMatchObject({ kind: 'retryable' });
-    expect(captured.length).toBeGreaterThan(1);
-  }, 30_000);
+    const result = await resendBroadcastsGateway.createContactImport(AUDIENCE_ID, [
+      'a@example.com',
+    ]);
+
+    expect(result).toEqual({ importId: 'imp_after_429' });
+    expect(captured).toHaveLength(2);
+    // Both attempts carried the same audience and the same single row, so the
+    // upsert cannot duplicate anyone.
+    expect(captured[0]!.fileText).toBe(captured[1]!.fileText);
+    expect(captured[1]!.fields['on_conflict']).toBe('upsert');
+  }, 15_000);
 });
 
 describe('getContactImport — the completion signal (T086)', () => {

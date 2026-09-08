@@ -50,6 +50,9 @@ function makeRetryableGateway(): BroadcastsGatewayPort {
       return { audienceId: `aud-test-${name.slice(0, 8)}` };
     },
     async addContactsToAudience() {},
+    // T086 — unused by this fixture; present so the stub still satisfies BroadcastsGatewayPort.
+    async createContactImport() { throw new Error('not used'); },
+    async getContactImport() { throw new Error('not used'); },
     async createBroadcast() {
       return { broadcastId: 'bcast-test-1' };
     },

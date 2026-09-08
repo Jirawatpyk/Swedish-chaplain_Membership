@@ -156,6 +156,55 @@ export interface BroadcastsGatewayPort {
   removeContactFromAudience(audienceId: string, email: string): Promise<void>;
 
   /**
+   * T086 (108 US5) — hand an entire audience to the provider in ONE call.
+   *
+   * The alternative, `addContactsToAudience`, is a serial loop bounded by
+   * latency (~2.08 req/s measured), so roughly 623 contacts is all a 300 s
+   * function can drain. This is size-independent: one multipart request,
+   * ~412 ms whether it carries one address or fifty thousand, because the
+   * provider processes it asynchronously and answers with a job id.
+   *
+   * The caller MUST NOT treat the returned id as delivery. Nothing has been
+   * added yet — `getContactImport` is how completion is learned, and its
+   * completion rule is the only safe send signal.
+   *
+   * Throws the same classified `GatewayThrowable` as every other method here.
+   * A 4xx is `permanent` and must not be retried: the archetypal one is the
+   * account contact cap, where each retry consumes the resource whose
+   * exhaustion caused the failure.
+   */
+  createContactImport(
+    audienceId: string,
+    emails: readonly string[],
+  ): Promise<{ readonly importId: string }>;
+
+  /**
+   * T086 — poll one import job.
+   *
+   * Returns the provider's `status` and `counts` VERBATIM; the completion
+   * decision belongs to the Application layer, which requires ALL of:
+   * `status === 'completed'`, `failed === 0`,
+   * `created + updated + skipped === total`, and `total` equal to the count it
+   * resolved. That rule is load-bearing, not defensive — one import in five
+   * identical probes returned `completed` with `failed: 0` and `total: 0` and
+   * attached nothing (research R9 V2 (c)). A caller that reads only `status`
+   * will eventually send a broadcast to an empty audience.
+   *
+   * Absent counts (a job still `pending` has none) are returned as zeros, so
+   * arithmetic on them compares rather than yielding NaN.
+   */
+  getContactImport(importId: string): Promise<{
+    readonly status: string;
+    readonly counts: {
+      readonly total: number;
+      readonly created: number;
+      readonly updated: number;
+      readonly skipped: number;
+      readonly failed: number;
+    };
+  }>;
+
+  /**
    * PR-2 #5 — delete an ephemeral per-broadcast Resend audience after the
    * broadcast reaches a terminal status (sent / cancelled / failed).
    * Best-effort: 404 (already gone) resolves (idempotent); 5xx / network

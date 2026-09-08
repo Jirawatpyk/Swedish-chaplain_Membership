@@ -264,6 +264,14 @@ function makeGateway(opts: GatewayOpts = {}): {
       async addContactsToAudience(audienceId, contacts) {
         contactsCalls.push({ audienceId, contacts });
       },
+      // T086 — unused by this fixture; present so the stub still satisfies
+      // BroadcastsGatewayPort.
+      async createContactImport() {
+        throw new Error('not used');
+      },
+      async getContactImport() {
+        throw new Error('not used');
+      },
       async createBroadcast(input) {
         createCalls.push({ audienceId: input.audienceId, subject: input.subject, broadcastNameForResendDashboard: input.broadcastNameForResendDashboard });
         maybeThrow(opts.throwOnCreateBroadcast);

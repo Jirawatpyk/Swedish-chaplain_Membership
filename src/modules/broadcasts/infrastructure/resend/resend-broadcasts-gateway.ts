@@ -30,6 +30,7 @@ import type {
   RetrieveBroadcastOutcome,
   ResendAudienceSummary,
 } from '../../application/ports/broadcasts-gateway-port';
+import { env } from '@/lib/env';
 import { getResendBroadcastsClient } from './resend-broadcasts-client';
 import { renderBroadcastHtml } from './email-template';
 import { extractBareEmail, stripAngleBrackets } from './bare-email';
@@ -515,7 +516,181 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
       { method: 'deleteAudience' },
     );
   },
+
+  /**
+   * T086 — hand the WHOLE audience to Resend in one multipart request.
+   *
+   * Replaces the `addContactsToAudience` loop, which is serial and therefore
+   * bounded by latency (~2.08 req/s measured, so ~623 contacts per 300 s
+   * function). This call is size-independent: ~412 ms for one address and the
+   * same for thousands, because Resend processes the CSV asynchronously and
+   * answers with a job id. `getContactImport` below is how we learn it landed.
+   *
+   * Field shapes are not negotiable and are pinned by value in
+   * `tests/unit/broadcasts/infrastructure/resend-contact-import.test.ts`:
+   *
+   *   - `segments` is an array of OBJECTS, `[{ id }]`. `[<id>]` is a 422, and
+   *     `audience_id` — the spelling two 2026-09-08 probes used — is accepted
+   *     and SILENTLY IGNORED, which is how "the import does not attach to an
+   *     audience" became a recorded fact for a day.
+   *   - `column_map` maps `email` only. The CSV must carry no `unsubscribed`
+   *     column: research V2 measured that `on_conflict=upsert` preserves a
+   *     contact's unsubscribed flag precisely while that column is absent, and
+   *     that measurement is the only reason `upsert` is lawful here
+   *     (GDPR Art. 21 / PDPA section 32). Adding the column would resurrect
+   *     everyone who ever pressed unsubscribe.
+   *   - `upsert` also makes a resubmitted import harmless, which is what lets
+   *     the caller retry a tick without tracking partial progress.
+   */
+  async createContactImport(
+    audienceId: string,
+    emails: readonly string[],
+  ): Promise<{ readonly importId: string }> {
+    return withRetry(
+      async () => {
+        const csv = ['email', ...emails].join('\n') + '\n';
+        const form = new FormData();
+        form.append('file', new Blob([csv], { type: 'text/csv' }), 'audience.csv');
+        form.append('column_map', JSON.stringify({ email: 'email' }));
+        form.append('on_conflict', 'upsert');
+        form.append('segments', JSON.stringify([{ id: audienceId }]));
+
+        const body = await importFetch('/contacts/imports', {
+          method: 'POST',
+          body: form,
+        });
+        if (body.id === undefined || body.id === '') {
+          // A 2xx with no id is unusable and cannot be retried into existence.
+          throw classifyResendError({
+            statusCode: 502,
+            name: 'malformed_import_response',
+            message: 'contact import accepted but returned no id',
+          });
+        }
+        logger.info(
+          { audienceId, importId: body.id, recipientCount: emails.length },
+          'resend.broadcasts.contact_import_submitted',
+        );
+        return { importId: body.id };
+      },
+      { method: 'createContactImport' },
+    );
+  },
+
+  /**
+   * T086 — poll one import.
+   *
+   * Returns `status` and `counts` VERBATIM. The completion decision belongs to
+   * the caller (contract section 4: `completed` AND `failed === 0` AND
+   * `created + updated + skipped === total` AND `total` equals the resolved
+   * count), and it is load-bearing rather than defensive: one import in five
+   * identical probes returned `completed` with `failed: 0` and `total: 0` and
+   * attached nothing (research R9 V2 (c)). Smoothing that into "it finished,
+   * so it worked" here would send a broadcast to an empty audience.
+   *
+   * Absent counts (a `pending` import has none) become zeros rather than
+   * `undefined`, so arithmetic on them is comparable rather than NaN.
+   */
+  async getContactImport(importId: string): Promise<{
+    readonly status: string;
+    readonly counts: {
+      readonly total: number;
+      readonly created: number;
+      readonly updated: number;
+      readonly skipped: number;
+      readonly failed: number;
+    };
+  }> {
+    return withRetry(
+      async () => {
+        const body = await importFetch(`/contacts/imports/${importId}`, {
+          method: 'GET',
+        });
+        const c = body.counts ?? {};
+        return {
+          status: body.status ?? 'unknown',
+          counts: {
+            total: c.total ?? 0,
+            created: c.created ?? 0,
+            updated: c.updated ?? 0,
+            skipped: c.skipped ?? 0,
+            failed: c.failed ?? 0,
+          },
+        };
+      },
+      { method: 'getContactImport' },
+    );
+  },
+
 };
+
+/**
+ * T086 — the Contacts Import endpoints, spoken to with a raw `fetch`.
+ *
+ * `resend@4.8` has no `contacts.imports`, so these two are hand-rolled. The
+ * SDK's own error envelope is not available either, so the response body is
+ * mapped onto the same `ResendErrorShape` `classifyResendError` already
+ * understands — that keeps `permanent` / `retryable` meaning one thing across
+ * the whole gateway, which the batch retry gate depends on.
+ */
+const RESEND_API_BASE = 'https://api.resend.com';
+
+interface ResendImportResponse {
+  readonly id?: string;
+  readonly status?: string;
+  readonly counts?: {
+    readonly total?: number;
+    readonly created?: number;
+    readonly updated?: number;
+    readonly skipped?: number;
+    readonly failed?: number;
+  };
+  readonly statusCode?: number;
+  readonly name?: string;
+  readonly message?: string;
+}
+
+/** Throw the gateway's own classified error for a non-2xx import response. */
+function throwImportError(status: number, body: ResendImportResponse): never {
+  throw classifyResendError({
+    statusCode: status,
+    name: body.name ?? `http_${status}`,
+    message: body.message ?? 'resend contact import error',
+  });
+}
+
+async function importFetch(
+  path: string,
+  init: RequestInit,
+): Promise<ResendImportResponse> {
+  let res: Response;
+  try {
+    res = await fetch(`${RESEND_API_BASE}${path}`, {
+      ...init,
+      headers: {
+        ...(init.headers ?? {}),
+        Authorization: `Bearer ${env.broadcasts.apiKey}`,
+      },
+    });
+  } catch (e) {
+    // A transport failure never reached Resend, so it is safe to retry — the
+    // same reading `classifyResendError` gives `statusCode: 0`.
+    throw classifyResendError({
+      statusCode: 0,
+      name: 'network_error',
+      message: e instanceof Error ? e.message : String(e),
+    });
+  }
+  const text = await res.text();
+  let body: ResendImportResponse;
+  try {
+    body = text.length > 0 ? (JSON.parse(text) as ResendImportResponse) : {};
+  } catch {
+    body = { message: text.slice(0, 200) };
+  }
+  if (!res.ok) throwImportError(res.status, body);
+  return body;
+}
 
 function normaliseStatus(
   raw: string,
